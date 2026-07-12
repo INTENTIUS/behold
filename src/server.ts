@@ -11,7 +11,8 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { serve } from "@hono/node-server";
 import { fileURLToPath } from "node:url";
 import { dirname, join, relative } from "node:path";
-import { graphIr, graphLayout, type GraphOptions } from "./chant.ts";
+import { graphIr, type GraphOptions } from "./chant.ts";
+import { renderGraph } from "./render.ts";
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
 
@@ -44,14 +45,14 @@ export function createApp(cfg: ServerOptions): Hono {
 
   // The mixed-substrate source graph — works today (cross-lexicon AttrRefs are
   // direct edges). This is behold's read-only core: the whole estate in one graph.
+  // chant provides the IR; pinhole's painter lays it out and renders the SVG. The
+  // IR rides along so the SPA can inspect a node (by data-node-id) against its attrs.
   app.get("/api/graph", async (c) => {
     try {
       const opts = optsFromQuery(new URL(c.req.url));
-      const [ir, layout] = await Promise.all([
-        graphIr(cfg.projectDir, opts),
-        graphLayout(cfg.projectDir, opts),
-      ]);
-      return c.json({ ir, layout, meta: { projectDir: cfg.projectDir, env: cfg.env ?? null } });
+      const ir = await graphIr(cfg.projectDir, opts);
+      const { svg } = renderGraph(ir);
+      return c.json({ ir, svg, meta: { projectDir: cfg.projectDir, env: cfg.env ?? null } });
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
     }

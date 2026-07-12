@@ -76,19 +76,22 @@ Then open http://localhost:4600.
 src/
   cli.ts       serve verb + arg parsing
   server.ts    Hono read-only API (/api/graph) + static SPA; /api/overlay is a seam
-  chant.ts     shell-out to the chant bin (graph IR + layout) — behold reads, never mutates
+  chant.ts     shell-out to the chant bin (graph IR) — behold reads, never mutates
+  render.ts    pinhole painter (layoutIr + renderSvg) — IR → SVG
   overlay.ts   source-anchored-overlay seam (chant #821) + _status → drift semantics
 web/
   index.html   SPA shell
-  app.js       bootstrap SVG painter (the seam pinhole's painter drops into)
+  app.js       inlines pinhole's SVG + click-inspect by data-node-id
 ```
 
-## The painter seam
+## The painter
 
-behold reuses [pinhole](https://github.com/INTENTIUS/pinhole)'s SVG painter — a
-mature renderer whose `_status` colouring already speaks the overlay vocabulary
-(managed/foreign/pending). pinhole doesn't yet expose a library, so today `web/app.js`
-is a minimal stand-in painter; it drops out when pinhole ships a painter export.
+behold reuses [pinhole](https://github.com/INTENTIUS/pinhole)'s SVG painter as a
+library — a mature renderer (themes, icons, `_status` drift colouring that already
+speaks the overlay vocabulary managed/foreign/pending). The server lays the IR out
+and paints it with `layoutIr` + `renderSvg` (`src/render.ts`); the SPA inlines the
+SVG and wires click-inspect by `data-node-id` against the IR. pinhole's layout is
+dagre — pure JS, no native dependency.
 
 ## Develop
 
@@ -103,5 +106,6 @@ npm run build  # bundle to dist/cli.js
 - chant **#821** — source-anchored overlay (the linchpin: cross-substrate topology + live status).
 - chant **#822** — diff two historical snapshots (feeds the timeline).
 - chant **#513** — compose separate stacks into one IR.
+- pinhole **#82** — ship the painter as a library (done; behold consumes it).
 - pinhole **#79/#80/#81** — drive `--live`/`--overlay`, first-class drift rendering, morph-over-time.
 - Concept notes: `~/Documents/research/chant-live-control-plane.md`.

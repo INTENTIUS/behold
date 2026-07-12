@@ -26,14 +26,10 @@
       #inspect dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 4px 10px; }
       #inspect dt { color: var(--muted); }
       #inspect dd { margin: 0; word-break: break-all; }
-      .node rect { fill: var(--panel); stroke: var(--line); stroke-width: 1.5; rx: 6; cursor: pointer; }
-      .node text { fill: var(--fg); font-size: 12px; }
-      .node.sel rect { stroke: var(--pending); stroke-width: 2.5; }
-      .node[data-status="managed"] rect { stroke: var(--managed); }
-      .node[data-status="foreign"] rect { stroke: var(--foreign); stroke-dasharray: 4 3; }
-      .node[data-status="pending"] rect { stroke: var(--pending); }
-      .edge { stroke: var(--edge); stroke-width: 1.2; fill: none; }
-      .lex { font-size: 11px; fill: var(--muted); }
+      /* The graph SVG is pinhole's, self-styled (themes, icons, `_status` drift
+         colours). behold only adds a selection highlight on the clicked node. */
+      #graph svg { max-width: none; }
+      .sel rect, .sel path, .sel > rect { stroke: var(--pending) !important; stroke-width: 2.5 !important; }
       .err { padding: 24px; color: var(--foreign); }
     </style>
   </head>
