@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>behold</title>
+    <style>
+      :root {
+        --bg: #0d1117; --panel: #161b22; --line: #30363d; --fg: #e6edf3; --muted: #8b949e;
+        --managed: #3fb950; --foreign: #d29922; --pending: #58a6ff; --edge: #6e7681;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+        font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, sans-serif; }
+      #app { display: grid; grid-template-columns: 1fr 320px; grid-template-rows: auto 1fr;
+        height: 100%; }
+      header { grid-column: 1 / 3; padding: 10px 16px; border-bottom: 1px solid var(--line);
+        display: flex; align-items: baseline; gap: 12px; }
+      header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .3px; }
+      header .meta { color: var(--muted); font-size: 12px; }
+      #graph { overflow: auto; }
+      #inspect { border-left: 1px solid var(--line); background: var(--panel); padding: 14px;
+        overflow: auto; }
+      #inspect h2 { font-size: 13px; margin: 0 0 8px; color: var(--muted); font-weight: 600;
+        text-transform: uppercase; letter-spacing: .5px; }
+      #inspect dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 4px 10px; }
+      #inspect dt { color: var(--muted); }
+      #inspect dd { margin: 0; word-break: break-all; }
+      .node rect { fill: var(--panel); stroke: var(--line); stroke-width: 1.5; rx: 6; cursor: pointer; }
+      .node text { fill: var(--fg); font-size: 12px; }
+      .node.sel rect { stroke: var(--pending); stroke-width: 2.5; }
+      .node[data-status="managed"] rect { stroke: var(--managed); }
+      .node[data-status="foreign"] rect { stroke: var(--foreign); stroke-dasharray: 4 3; }
+      .node[data-status="pending"] rect { stroke: var(--pending); }
+      .edge { stroke: var(--edge); stroke-width: 1.2; fill: none; }
+      .lex { font-size: 11px; fill: var(--muted); }
+      .err { padding: 24px; color: var(--foreign); }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <h1>behold</h1>
+        <span class="meta" id="meta">loading…</span>
+      </header>
+      <div id="graph"></div>
+      <aside id="inspect"><h2>inspect</h2><p style="color:var(--muted)">click a node</p></aside>
+    </div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,42 @@
+{
+  "name": "@intentius/behold",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "behold — a live control plane on chant. See your whole estate (every substrate in one graph), coloured by drift; act through delegated, gated Ops.",
+  "private": true,
+  "bin": {
+    "behold": "./bin/behold.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "web"
+  ],
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "tsc": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/cli.js && chmod +x dist/cli.js",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.0",
+    "@intentius/chant": "file:../chant/packages/core",
+    "hono": "^4.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.28.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.9"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/INTENTIUS/behold.git"
+  },
+  "bugs": {
+    "url": "https://github.com/INTENTIUS/behold/issues"
+  },
+  "homepage": "https://github.com/INTENTIUS/behold#readme"
+}
