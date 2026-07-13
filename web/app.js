@@ -44,11 +44,16 @@ function wire(ir) {
 
 async function load() {
   try {
-    const res = await fetch("/api/graph");
+    // With an environment configured, show the live drift overlay (source-anchored:
+    // declared topology + managed/foreign/pending). Otherwise, the source graph.
+    const health = await fetch("/healthz").then((r) => r.json()).catch(() => ({}));
+    const endpoint = health.env ? "/api/overlay" : "/api/graph";
+    const res = await fetch(endpoint);
     if (!res.ok) throw new Error((await res.json()).error || res.statusText);
     const { ir, svg, meta } = await res.json();
+    const drift = meta.mode === "overlay" ? " · overlay" : "";
     document.getElementById("meta").textContent =
-      `${meta.projectDir}${meta.env ? " · env " + meta.env : ""} · ${ir.nodes.length} nodes · ${ir.edges.length} edges`;
+      `${meta.projectDir}${meta.env ? " · env " + meta.env : ""}${drift} · ${ir.nodes.length} nodes · ${ir.edges.length} edges`;
     document.getElementById("graph").innerHTML = svg;
     wire(ir);
   } catch (err) {

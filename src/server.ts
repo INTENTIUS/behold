@@ -58,15 +58,23 @@ export function createApp(cfg: ServerOptions): Hono {
     }
   });
 
-  // Live / overlay — the drift-coloured graph. Needs chant's source-anchored
-  // overlay (chant #821) to keep cross-substrate edges. Wired as a seam; 501 until
-  // the core primitive exists so the failure is explicit, not a wrong graph.
-  app.get("/api/overlay", (c) =>
-    c.json(
-      { error: "live overlay pending chant #821 (source-anchored overlay). See src/overlay.ts." },
-      501,
-    ),
-  );
+  // Live / overlay — the drift-coloured graph (chant #821, shipped in 0.18.0).
+  // `chant graph --live --overlay` defaults to the source-anchored overlay:
+  // declared edges (the cross-substrate topology) kept, live status joined per
+  // node (managed/foreign/pending). Needs cloud creds + an environment.
+  app.get("/api/overlay", async (c) => {
+    if (!cfg.env) {
+      return c.json({ error: "overlay needs an environment — start behold with --env <name>" }, 400);
+    }
+    try {
+      const opts: GraphOptions = { ...optsFromQuery(new URL(c.req.url)), live: true, overlay: true, env: cfg.env };
+      const ir = await graphIr(cfg.projectDir, opts);
+      const { svg } = renderGraph(ir);
+      return c.json({ ir, svg, meta: { projectDir: cfg.projectDir, env: cfg.env, mode: "overlay" } });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    }
+  });
 
   // Static SPA. Served last so /api and /healthz win.
   const rel = relative(process.cwd(), webRoot) || ".";

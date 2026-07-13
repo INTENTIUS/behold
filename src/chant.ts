@@ -89,7 +89,13 @@ export interface ChantRun {
  * a non-zero exit (only on a spawn failure) — a failing exit is data. */
 export function runChantRaw(args: string[], projectDir?: string): Promise<ChantRun> {
   return new Promise((resolvePromise, reject) => {
-    const proc = spawn(chantBin(projectDir), args, { stdio: ["ignore", "pipe", "pipe"] });
+    // Run in the project dir: `chant graph --live` reads the current working
+    // directory (not the path arg), so the cwd must be the project for the live
+    // and overlay paths to observe the right environment.
+    const proc = spawn(chantBin(projectDir), args, {
+      ...(projectDir ? { cwd: projectDir } : {}),
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     let stdout = "";
     let stderr = "";
     proc.stdout.on("data", (d) => (stdout += d));
