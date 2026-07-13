@@ -3,28 +3,63 @@
 // mature painter (themes, icons, `_status` drift colouring); behold owns the data,
 // the inspect panel, and (later) the lanes + delegated actions.
 
+const STATUS_LABEL = { good: "managed", warn: "foreign", accent: "pending" };
+
+// A declared attribute value may be a cross-resource reference ({$ref:"x.y"}) —
+// the "static infra refs" — rather than a concrete value. Render those readably;
+// concrete values (present once a resource is provisioned) show as-is.
+function fmtValue(v) {
+  if (v && typeof v === "object") {
+    if (typeof v.$ref === "string") return "→ " + v.$ref;
+    return JSON.stringify(v);
+  }
+  return String(v);
+}
+
 function inspect(node) {
   const panel = document.getElementById("inspect");
   panel.innerHTML = "<h2>inspect</h2>";
-  const dl = document.createElement("dl");
-  const add = (k, v) => {
-    const dt = document.createElement("dt");
-    dt.textContent = k;
-    const dd = document.createElement("dd");
-    dd.textContent = v;
-    dl.append(dt, dd);
+  const section = (title) => {
+    const h = document.createElement("h3");
+    h.textContent = title;
+    h.style.cssText = "font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:14px 0 6px";
+    panel.appendChild(h);
+    const dl = document.createElement("dl");
+    panel.appendChild(dl);
+    return (k, v) => {
+      const dt = document.createElement("dt");
+      dt.textContent = k;
+      const dd = document.createElement("dd");
+      dd.textContent = v;
+      dl.append(dt, dd);
+    };
   };
-  add("id", node.id);
-  add("kind", node.kind);
-  add("lexicon", node.lexicon);
+
+  const id = section("identity");
+  id("id", node.id);
+  id("kind", node.kind);
+  id("lexicon", node.lexicon);
   const st = node.attrs && node.attrs._status;
-  if (st) add("status", { good: "managed", warn: "foreign", accent: "pending" }[st] || st);
-  if (node.sourceLoc && node.sourceLoc.file) add("source", node.sourceLoc.file);
-  for (const [k, v] of Object.entries(node.attrs || {})) {
-    if (k.startsWith("_")) continue;
-    add(k, typeof v === "object" ? JSON.stringify(v) : String(v));
+  if (st) id("status", STATUS_LABEL[st] || st);
+  if (node.sourceLoc && node.sourceLoc.file) id("source", node.sourceLoc.file);
+
+  // Live state: what chant observed in the cloud. Only managed (provisioned)
+  // nodes carry it — pending nodes have none because they aren't deployed yet.
+  if (node.physicalId || node.ownership) {
+    const live = section("live");
+    if (node.physicalId) live("physical id", node.physicalId);
+    if (node.ownership) live("ownership", node.ownership);
+  } else if (st === "accent") {
+    const live = section("live");
+    live("", "not provisioned yet (pending) — no live state");
   }
-  panel.appendChild(dl);
+
+  // Declared attributes — the source-of-truth values / cross-resource refs.
+  const attrKeys = Object.keys(node.attrs || {}).filter((k) => !k.startsWith("_"));
+  if (attrKeys.length) {
+    const decl = section("declared");
+    for (const k of attrKeys) decl(k, fmtValue(node.attrs[k]));
+  }
 
   // A foreign node on a live-import substrate can be pulled into typed source:
   // Adopt triggers the ReconcileOp (cloud → code), which opens a reviewable PR.
@@ -74,9 +109,20 @@ async function load() {
     const res = await fetch(`${endpoint}?${q}`);
     if (!res.ok) throw new Error((await res.json()).error || res.statusText);
     const { ir, svg, meta: m } = await res.json();
-    const drift = m.mode === "overlay" ? " · overlay" : "";
+    const overlay = m.mode === "overlay";
+    let tail = ` · ${ir.edges.length} edges`;
+    if (overlay) {
+      // Summarise drift so "everything's blue" reads as "N pending".
+      const c = { good: 0, warn: 0, accent: 0 };
+      for (const n of ir.nodes) {
+        const s = n.attrs && n.attrs._status;
+        if (s in c) c[s]++;
+      }
+      tail = ` · ${c.good} managed · ${c.warn} foreign · ${c.accent} pending`;
+    }
     meta.textContent =
-      `${m.projectDir}${m.env ? " · env " + m.env : ""}${drift} · ${ir.nodes.length} nodes · ${ir.edges.length} edges`;
+      `${m.projectDir}${m.env ? " · env " + m.env : ""}${overlay ? " · overlay" : ""} · ${ir.nodes.length} nodes${tail}`;
+    document.getElementById("legend").style.display = overlay ? "flex" : "none";
     document.getElementById("graph").innerHTML = svg;
     wire(ir);
   } catch (err) {
