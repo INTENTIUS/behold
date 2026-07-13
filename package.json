@@ -21,8 +21,8 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.13.0",
-    "@intentius/chant": "file:../chant/packages/core",
-    "@intentius/pinhole": "file:../pinhole",
+    "@intentius/chant": "^0.18.1",
+    "@intentius/pinhole": "^0.2.0",
     "hono": "^4.6.0"
   },
   "devDependencies": {

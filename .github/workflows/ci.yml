@@ -1,0 +1,32 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: typecheck
+        run: npm run tsc
+      - name: unit tests
+        run: npm test
+      - name: build
+        run: npm run build
+      # End-to-end against the example project. No cloud creds in CI, so run.sh
+      # takes the source-graph path (installs the example's chant, serves behold,
+      # asserts /api/graph). The overlay path is exercised locally with creds.
+      - name: e2e (offline)
+        run: bash e2e/run.sh
