@@ -110,15 +110,16 @@ dagre — pure JS, no native dependency.
 `just` lists everything. The core loop:
 
 ```sh
-just install          # behold's own deps
-just check            # tsc + unit tests + build (the fast gate)
-just example-install  # install the example project's chant + aws lexicon (once)
-just serve            # serve example/ read-only → http://localhost:4600
-just serve-live       # serve example/ with the live overlay (needs AWS creds)
+just install               # behold's own deps
+just check                 # tsc + unit tests + build (the fast gate)
+just example-install       # install the example project's chant + aws lexicon (once)
+just serve                 # serve example/ read-only → http://localhost:4600 (source graph)
+just serve example prod    # same server, live drift overlay (needs AWS creds)
 ```
 
-`just serve` / `serve-live` run via `tsx` (no build step). For the built binary,
-`just build` then `./bin/behold.js serve <project>`.
+One server, one SPA: passing an env turns on the live overlay (`/api/overlay`),
+omitting it shows the source graph (`/api/graph`). `serve` runs via `tsx` (no build
+step); for the built binary, `just build` then `./bin/behold.js serve <project>`.
 
 **Which chant runs.** behold does not bundle chant — it *shells* the chant binary
 resolved from the served project's `node_modules` (falling back to behold's own dep).

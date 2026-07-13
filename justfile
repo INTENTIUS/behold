@@ -27,15 +27,13 @@ check: tsc test build
 example-install:
     npm --prefix example install
 
-# Serve a chant project read-only → http://localhost:4600. Defaults to the bundled
-# example (run `just example-install` first). Source graph only — no creds needed.
-serve project="example":
-    npm run dev -- serve {{project}}
-
-# Serve the example with the live drift overlay → queries CloudFormation, needs
-# AWS credentials in the environment.
-serve-live: example-install
-    npm run dev -- serve example --env prod
+# Serve a chant project read-only → http://localhost:4600. One server, one SPA.
+# Pass an env for the live drift overlay (queries the cloud, needs creds); omit it
+# for the source graph. Defaults to the bundled example (run `example-install` first).
+#   just serve                 # source graph
+#   just serve example prod    # live overlay
+serve project="example" env="":
+    npm run dev -- serve {{project}} {{ if env != "" { "--env " + env } else { "" } }}
 
 # End-to-end: install the example's chant, build behold, serve it, assert the API.
 # Auto-detects AWS creds — exercises /api/overlay when present, /api/graph when not.
