@@ -109,6 +109,9 @@ function render(ir, svg, m) {
       if (s in c) c[s]++;
     }
     tail = ` · ${c.good} managed · ${c.warn} foreign · ${c.accent} pending`;
+    // Nothing observed live in this env — explain the all-blue rather than let it
+    // read as a bug (#32).
+    if (c.good === 0 && c.warn === 0 && c.accent > 0) tail += ` — nothing deployed in ${m.env} yet`;
   }
   document.getElementById("meta").textContent =
     `${m.projectDir}${m.env ? " · env " + m.env : ""}${overlay ? " · overlay" : ""} · ${ir.nodes.length} nodes${tail}`;
@@ -254,6 +257,13 @@ async function initActions() {
   if (apply) {
     bar.appendChild(button("Sync", "", () => runOp(apply.name)));
     if (apply.gate) bar.appendChild(button("Approve", "approve", () => signal(apply.name, apply.gate)));
+  } else {
+    // No ApplyOp → no Sync. Say so, rather than an unexplained missing button (#32).
+    const hint = document.createElement("span");
+    hint.style.cssText = "color:var(--muted);font-size:11px;align-self:center";
+    hint.textContent = ops.length ? "no ApplyOp — Sync unavailable" : "no Ops — add an ApplyOp to enable Sync";
+    hint.title = "Delegated writes trigger a committed *.op.ts (ApplyOp / ReconcileOp) on your executor. Commit one to enable Sync/Adopt.";
+    bar.appendChild(hint);
   }
 }
 initActions();
