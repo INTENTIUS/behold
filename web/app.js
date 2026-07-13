@@ -25,6 +25,19 @@ function inspect(node) {
     add(k, typeof v === "object" ? JSON.stringify(v) : String(v));
   }
   panel.appendChild(dl);
+
+  // A foreign node on a live-import substrate can be pulled into typed source:
+  // Adopt triggers the ReconcileOp (cloud → code), which opens a reviewable PR.
+  // behold never writes source — a human merges. Managed/pending nodes and
+  // substrates with no live-import path show nothing.
+  if (adoptable(node)) {
+    const b = button("Adopt", "", () => runOp(adopt.reconcile.name));
+    b.title = `Reconcile ${node.id} into source via ${adopt.reconcile.name} (opens a PR)`;
+    const wrap = document.createElement("p");
+    wrap.style.marginTop = "12px";
+    wrap.appendChild(b);
+    panel.appendChild(wrap);
+  }
 }
 
 function wire(ir) {
@@ -98,15 +111,47 @@ function signal(name, gate) {
     .then((r) => r.json())
     .then((j) => j.error && nowline("✗ " + j.error));
 }
+// Adopt is a per-node gesture (a *foreign* node → ReconcileOp → PR), so it lives
+// in the inspect panel, not the global bar. Stash the reconcile op + the
+// live-import lexicons the server allows so inspect() can gate the button.
+let adopt = { reconcile: null, lexicons: [] };
+function adoptable(node) {
+  return (
+    adopt.reconcile &&
+    node.attrs &&
+    node.attrs._status === "foreign" &&
+    adopt.lexicons.includes(node.lexicon)
+  );
+}
+
 async function initActions() {
   const bar = document.getElementById("actions");
-  const { ops } = await fetch("/api/ops").then((r) => r.json()).catch(() => ({ ops: [] }));
+  const { ops, adoptLexicons } = await fetch("/api/ops")
+    .then((r) => r.json())
+    .catch(() => ({ ops: [], adoptLexicons: [] }));
   const apply = ops.find((o) => o.kind === "apply");
-  const reconcile = ops.find((o) => o.kind === "reconcile");
+  adopt = { reconcile: ops.find((o) => o.kind === "reconcile") ?? null, lexicons: adoptLexicons ?? [] };
   if (apply) {
     bar.appendChild(button("Sync", "", () => runOp(apply.name)));
     if (apply.gate) bar.appendChild(button("Approve", "approve", () => signal(apply.name, apply.gate)));
   }
-  if (reconcile) bar.appendChild(button("Adopt", "", () => runOp(reconcile.name)));
 }
 initActions();
+
+// The opened PR (chant #841 surfaces it as a ReconcileOp outcome). Link it in the
+// now-line and pin it in the header so the review target is one click away.
+events.addEventListener("pr", (e) => {
+  const url = e.data;
+  nowline("→ opened PR: " + url);
+  let slot = document.getElementById("pr-link");
+  if (!slot) {
+    slot = document.createElement("a");
+    slot.id = "pr-link";
+    slot.target = "_blank";
+    slot.rel = "noopener";
+    slot.style.cssText = "color:var(--managed);text-decoration:none;font-size:12px;align-self:center";
+    document.getElementById("actions").after(slot);
+  }
+  slot.href = url;
+  slot.textContent = "PR opened →";
+});

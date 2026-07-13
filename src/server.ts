@@ -15,6 +15,7 @@ import { dirname, join, relative } from "node:path";
 import { graphIr, runChantStream, runChantRaw, type GraphOptions } from "./chant.ts";
 import { renderGraph } from "./render.ts";
 import { discoverOps } from "./ops.ts";
+import { LIVE_IMPORT_LEXICONS, extractPrUrl } from "./adopt.ts";
 import { Broadcaster, watchSource } from "./events.ts";
 import { startDriftPoll } from "./poll.ts";
 import { FrameBuffer } from "./frames.ts";
@@ -76,7 +77,15 @@ export function createApp(
   // trigger. behold NEVER applies — it runs `chant run <op>` on the executor and
   // streams the phases as the now-line. It holds no apply creds.
   let running: { name: string; op: ReturnType<typeof runChantStream> } | null = null;
-  app.get("/api/ops", (c) => c.json({ ops: discoverOps(cfg.projectDir), running: running?.name ?? null }));
+  app.get("/api/ops", (c) =>
+    c.json({
+      ops: discoverOps(cfg.projectDir),
+      running: running?.name ?? null,
+      // The substrates Adopt is offered on — the SPA gates the per-node button on
+      // this so the "which lexicons live-import" truth stays server-side.
+      adoptLexicons: LIVE_IMPORT_LEXICONS,
+    }),
+  );
 
   app.post("/api/ops/:name/run", (c) => {
     const name = c.req.param("name");
@@ -85,7 +94,13 @@ export function createApp(
     }
     if (running) return c.json({ error: `an Op is already running (${running.name})` }, 409);
     broadcaster.emit("op", `▶ chant run ${name}`);
-    const op = runChantStream(["run", name], cfg.projectDir, (line) => broadcaster.emit("op", line));
+    const op = runChantStream(["run", name], cfg.projectDir, (line) => {
+      broadcaster.emit("op", line);
+      // A ReconcileOp opens a PR and surfaces the URL as an outcome (chant #841);
+      // lift it to a `pr` event so the SPA can link the opened PR.
+      const pr = extractPrUrl(line);
+      if (pr) broadcaster.emit("pr", pr);
+    });
     running = { name, op };
     void op.done.then((code) => {
       broadcaster.emit("op", `■ ${name} exited ${code}`);
