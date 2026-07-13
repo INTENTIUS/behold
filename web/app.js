@@ -63,3 +63,8 @@ async function load() {
 }
 
 load();
+
+// Live updates (#3): re-pull when the server signals the served source changed.
+// EventSource reconnects on its own if the server restarts.
+const events = new EventSource("/api/events");
+events.addEventListener("changed", () => load());

@@ -7,12 +7,14 @@
  * *triggers* them, holding no apply creds. See README "Read-only core".
  */
 import { Hono } from "hono";
+import { streamSSE } from "hono/streaming";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { serve } from "@hono/node-server";
 import { fileURLToPath } from "node:url";
 import { dirname, join, relative } from "node:path";
 import { graphIr, type GraphOptions } from "./chant.ts";
 import { renderGraph } from "./render.ts";
+import { Broadcaster, watchSource } from "./events.ts";
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
 
@@ -38,10 +40,27 @@ function optsFromQuery(url: URL): GraphOptions {
   return opts;
 }
 
-export function createApp(cfg: ServerOptions): Hono {
+export function createApp(cfg: ServerOptions, broadcaster: Broadcaster = new Broadcaster()): Hono {
   const app = new Hono();
 
   app.get("/healthz", (c) => c.json({ ok: true, projectDir: cfg.projectDir, env: cfg.env ?? null }));
+
+  // Live updates (#3): SSE stream the SPA subscribes to. On a "changed" event
+  // (a source edit — see startServer's watcher) the SPA re-pulls the current view.
+  // Keep-alive pings hold the connection open; the browser's EventSource reconnects.
+  app.get("/api/events", (c) =>
+    streamSSE(c, async (stream) => {
+      const unsubscribe = broadcaster.subscribe(() => {
+        void stream.writeSSE({ event: "changed", data: String(Date.now()) });
+      });
+      stream.onAbort(unsubscribe);
+      while (!stream.aborted) {
+        await stream.writeSSE({ event: "ping", data: "" });
+        await stream.sleep(30_000);
+      }
+      unsubscribe();
+    }),
+  );
 
   // The mixed-substrate source graph — works today (cross-lexicon AttrRefs are
   // direct edges). This is behold's read-only core: the whole estate in one graph.
@@ -85,12 +104,20 @@ export function createApp(cfg: ServerOptions): Hono {
 }
 
 export function startServer(cfg: ServerOptions): void {
-  const app = createApp(cfg);
+  const broadcaster = new Broadcaster();
+  const app = createApp(cfg, broadcaster);
+  // Watch the served project's source; a debounced edit fans a "changed" event to
+  // every connected SPA, which re-pulls the graph (or overlay). The dev loop.
+  const stopWatch = watchSource(cfg.projectDir, () => broadcaster.emit("changed"));
+  process.on("SIGINT", () => {
+    stopWatch();
+    process.exit(0);
+  });
   serve({ fetch: app.fetch, port: cfg.port }, (info) => {
     process.stdout.write(
       `behold → http://localhost:${info.port}\n` +
         `  project: ${cfg.projectDir}${cfg.env ? `  env: ${cfg.env}` : ""}\n` +
-        `  read-only. Ctrl-C to stop.\n`,
+        `  read-only, watching for edits. Ctrl-C to stop.\n`,
     );
   });
 }
