@@ -3,10 +3,12 @@
   "private": true,
   "type": "module",
   "description": "A cheap AWS project (one S3 bucket) + Ops, for behold's delegated Sync/Adopt demos.",
-  "scripts": { "build": "chant build src --lexicon aws -o template.json" },
+  "scripts": {
+    "build": "./node_modules/.bin/chant build src --lexicon aws -o template.json"
+  },
   "dependencies": {
-    "@intentius/chant": "^0.18.2",
-    "@intentius/chant-lexicon-aws": "^0.18.2",
-    "@intentius/chant-lexicon-temporal": "^0.18.2"
+    "@intentius/chant": "^0.18.3",
+    "@intentius/chant-lexicon-aws": "^0.18.3",
+    "@intentius/chant-lexicon-temporal": "^0.18.3"
   }
 }

@@ -1,8 +1,7 @@
 import { ApplyOp } from "@intentius/chant-lexicon-temporal";
 
-// code → cloud. behold's Sync button triggers `chant run prod-apply` on your
-// executor; behold holds no apply creds. Gated/durable applies use Temporal
-// (`--temporal` + the generated worker); an additive apply runs on the local
-// executor. delete:"gated" scopes deletes to chant-owned resources behind approval.
-const { op } = ApplyOp({ name: "prod-apply", env: "prod", target: "cloudformation", delete: "gated" });
+// code → cloud. Additive apply (no gate) runs one-shot on the local executor —
+// behold's Sync button shells `chant run prod-apply`. Target cloudformation;
+// output defaults to template.json (matching this project's `build` script).
+const { op } = ApplyOp({ name: "prod-apply", env: "prod", target: "cloudformation" });
 export default op;
