@@ -4,6 +4,8 @@
  * behold leans on chant's MCP for the underlying graph/lifecycle data (see README).
  */
 import { resolve } from "node:path";
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { startServer } from "./server.ts";
 
 const USAGE = `behold — a live control plane on chant (read-only core)
@@ -79,8 +81,19 @@ export async function run(argv: string[]): Promise<void> {
   });
 }
 
-// Allow `tsx src/cli.ts ...` in dev.
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Run when invoked directly (`tsx src/cli.ts …`), not when imported. realpath both
+// sides: through a symlinked path tsx sets import.meta.url to the realpath while
+// argv[1] keeps the symlink, so a raw string compare silently skips run().
+function isMainModule(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+if (isMainModule()) {
   run(process.argv.slice(2)).catch((err) => {
     process.stderr.write(`behold: fatal: ${err?.message ?? err}\n`);
     process.exit(3);
