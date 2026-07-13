@@ -20,29 +20,37 @@ describe("detectProject", () => {
     return d;
   };
 
-  it("reads declared environments and lexicons from a literal config", () => {
+  it("reads declared environments and lexicons from a literal config", async () => {
     const dir = make(
       `export default { lexicons: ["aws", "k8s"], environments: ["prod", "staging"], sourceDir: "src" };`,
     );
-    expect(detectProject(dir)).toEqual({ environments: ["prod", "staging"], lexicons: ["aws", "k8s"] });
+    expect(await detectProject(dir)).toEqual({ environments: ["prod", "staging"], lexicons: ["aws", "k8s"] });
   });
 
-  it("handles multiline / single-quoted arrays", () => {
+  it("handles multiline / single-quoted arrays", async () => {
     const dir = make(`export default {\n  lexicons: ['aws'],\n  environments: [\n    'prod',\n    'dev',\n  ],\n};`);
-    expect(detectProject(dir).environments).toEqual(["prod", "dev"]);
+    expect((await detectProject(dir)).environments).toEqual(["prod", "dev"]);
   });
 
-  it("returns empty arrays when a field is absent", () => {
+  it("reads environments through a defineConfig-style wrapper / satisfies", async () => {
+    // The text parser also catches this, but it proves the shape is handled.
+    const dir = make(
+      `const identity = (c) => c;\nexport default identity({ lexicons: ["gcp"], environments: ["prod"] });`,
+    );
+    expect((await detectProject(dir)).environments).toEqual(["prod"]);
+  });
+
+  it("returns empty arrays when a field is absent", async () => {
     const dir = make(`export default { lexicons: ["aws"] };`);
-    expect(detectProject(dir)).toEqual({ environments: [], lexicons: ["aws"] });
+    expect(await detectProject(dir)).toEqual({ environments: [], lexicons: ["aws"] });
   });
 
-  it("returns empty when the field is computed, not a literal array", () => {
-    const dir = make(`const envs = load(); export default { lexicons: ["aws"], environments: envs };`);
-    expect(detectProject(dir).environments).toEqual([]);
+  it("returns empty when the field is computed, not a literal array", async () => {
+    const dir = make(`const envs = globalThis.__nope__ || []; export default { lexicons: ["aws"], environments: envs };`);
+    expect((await detectProject(dir)).environments).toEqual([]);
   });
 
-  it("returns empty for a project with no config", () => {
-    expect(detectProject(make(null))).toEqual({ environments: [], lexicons: [] });
+  it("returns empty for a project with no config", async () => {
+    expect(await detectProject(make(null))).toEqual({ environments: [], lexicons: [] });
   });
 });
