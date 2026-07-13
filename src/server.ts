@@ -16,6 +16,8 @@ import { graphIr, type GraphOptions } from "./chant.ts";
 import { renderGraph } from "./render.ts";
 import { Broadcaster, watchSource } from "./events.ts";
 import { startDriftPoll } from "./poll.ts";
+import { FrameBuffer } from "./frames.ts";
+import { renderLanes } from "./lanes.ts";
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
 
@@ -43,10 +45,31 @@ function optsFromQuery(url: URL): GraphOptions {
   return opts;
 }
 
-export function createApp(cfg: ServerOptions, broadcaster: Broadcaster = new Broadcaster()): Hono {
+export function createApp(
+  cfg: ServerOptions,
+  broadcaster: Broadcaster = new Broadcaster(),
+  frames: FrameBuffer = new FrameBuffer(),
+): Hono {
   const app = new Hono();
 
-  app.get("/healthz", (c) => c.json({ ok: true, projectDir: cfg.projectDir, env: cfg.env ?? null }));
+  app.get("/healthz", (c) => c.json({ ok: true, projectDir: cfg.projectDir, env: cfg.env ?? null, frames: frames.size }));
+
+  // Deployment lanes (#5): the captured keyframes as a per-substrate filmstrip.
+  app.get("/api/frames", (c) => c.json({ frames: frames.summaries() }));
+
+  // The lanes page: the graph morphing between keyframes (pinhole #81), a playhead
+  // filmstrip below. Needs ≥2 distinct frames — edit the source or wait for a poll.
+  app.get("/lanes", (c) => {
+    const all = frames.all();
+    if (all.length < 2) {
+      return c.html(
+        `<!doctype html><meta charset=utf-8><body style="font:14px system-ui;background:#0d1117;color:#8b949e;padding:2rem">` +
+          `<h3 style="color:#e6edf3">deployment lanes</h3><p>${all.length} frame(s) captured — need at least two. ` +
+          `Edit the served project's source, or run with <code>--poll</code> against a moving environment, then reload.</p></body>`,
+      );
+    }
+    return c.html(renderLanes(all, frames.summaries()));
+  });
 
   // Live updates (#3): SSE stream the SPA subscribes to. On a "changed" event
   // (a source edit — see startServer's watcher) the SPA re-pulls the current view.
@@ -108,21 +131,39 @@ export function createApp(cfg: ServerOptions, broadcaster: Broadcaster = new Bro
 
 export function startServer(cfg: ServerOptions): void {
   const broadcaster = new Broadcaster();
-  const app = createApp(cfg, broadcaster);
-  // Watch the served project's source; a debounced edit fans a "changed" event to
-  // every connected SPA, which re-pulls the graph (or overlay). The dev loop.
-  const stopWatch = watchSource(cfg.projectDir, () => broadcaster.emit("changed"));
-  // Live-drift poll (#4): with an env + --poll, re-query the overlay on an interval
-  // and signal the SPA when drift changes. Same SSE channel as the source watch.
+  const frames = new FrameBuffer();
+  const app = createApp(cfg, broadcaster, frames);
+
+  // Capture the current graph as a keyframe (overlay when an env is set, else the
+  // source graph). Deduped by digest, so only real state changes become frames.
+  const captureFrame = async (): Promise<void> => {
+    try {
+      const ir = await graphIr(cfg.projectDir, cfg.env ? { live: true, overlay: true, env: cfg.env } : {});
+      if (frames.capture(ir)) broadcaster.emit("frames");
+    } catch (err) {
+      process.stderr.write(`frame capture: ${err instanceof Error ? err.message : String(err)}\n`);
+    }
+  };
+  // A change to the estate: re-render the live graph (SPA re-pulls) and capture a
+  // keyframe for the lanes timeline.
+  const onEstateChange = (): void => {
+    broadcaster.emit("changed");
+    void captureFrame();
+  };
+
+  // Watch the served project's source (the dev loop) and, with an env + --poll,
+  // poll live drift (#4). Both feed onEstateChange.
+  const stopWatch = watchSource(cfg.projectDir, onEstateChange);
   const stopPoll =
     cfg.env && cfg.pollSecs
       ? startDriftPoll({
           intervalMs: cfg.pollSecs * 1000,
           query: () => graphIr(cfg.projectDir, { live: true, overlay: true, env: cfg.env }),
-          onChange: () => broadcaster.emit("changed"),
+          onChange: onEstateChange,
           onError: (err) => process.stderr.write(`poll: ${err instanceof Error ? err.message : String(err)}\n`),
         })
       : () => {};
+  void captureFrame(); // baseline keyframe at startup
   process.on("SIGINT", () => {
     stopWatch();
     stopPoll();
@@ -133,7 +174,7 @@ export function startServer(cfg: ServerOptions): void {
     process.stdout.write(
       `behold → http://localhost:${info.port}\n` +
         `  project: ${cfg.projectDir}${cfg.env ? `  env: ${cfg.env}` : ""}\n` +
-        `  read-only, watching for edits${poll}. Ctrl-C to stop.\n`,
+        `  read-only, watching for edits${poll}. lanes: /lanes. Ctrl-C to stop.\n`,
     );
   });
 }
