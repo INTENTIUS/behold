@@ -29,10 +29,22 @@ describe("renderLanes (#5)", () => {
 
   it("injects the lanes filmstrip + playhead wired to applyView", () => {
     expect(html).toContain('id="behold-lanes-canvas"');
-    const FRAMES = JSON.parse(html.match(/const FRAMES = (\[[\s\S]*?\]);/)![1].replace(/\\u003c/g, "<"));
-    expect(FRAMES).toHaveLength(2);
-    expect(FRAMES[0].byLexicon).toEqual({ aws: 2 });
+    const LF = JSON.parse(html.match(/const LF = (\[[\s\S]*?\]);/)![1].replace(/\\u003c/g, "<"));
+    expect(LF).toHaveLength(2);
+    expect(LF[0].byLexicon).toEqual({ aws: 2 });
+    // per-frame node status + substrate maps (for focus + frame-pair diff)
+    expect(LF[0].status).toHaveProperty("sg");
+    expect(LF[1].status).not.toHaveProperty("sg"); // sg gone at t1
+    expect(LF[0].lexicon.sg).toBe("aws");
     expect(html).toContain("window.applyView"); // playhead drives the morph
+  });
+
+  it("wires the #6 coupling: focus, frame-pair diff, graph-inert offset", () => {
+    expect(html).toContain("[data-node-id]"); // graph node → focus (graph→lanes)
+    expect(html).toContain("function showDiff"); // shift-click two frames → delta
+    expect(html).toContain('id="behold-diff"');
+    expect(html).toContain("offset"); // per-lane offset
+    expect(html).toContain("graph shows real time"); // offset is graph-inert marker
   });
 
   it("is one self-contained document", () => {
