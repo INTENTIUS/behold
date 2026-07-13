@@ -53,35 +53,47 @@ human and an agent. See [AGENTS.md](./AGENTS.md).
 
 Bootstrap. `behold serve <project>` renders the **source** mixed-substrate graph
 (cross-lexicon edges are real today — verified in chant core) in a browser, with
-click-to-inspect and source deep-links. The read-only core, first cell.
+click-to-inspect and source deep-links.
 
-Not yet: the live/overlay drift colouring (needs chant #821, source-anchored
-overlay), the deployment-lanes timeline, and the delegated actions. See the concept
+Both read paths work: `/api/graph` (the source mixed-substrate graph) and
+`/api/overlay` (the source-anchored **live drift** graph — declared topology kept,
+nodes coloured managed/foreign/pending; needs chant ≥ 0.18.1 and cloud creds).
+
+Not yet: the deployment-lanes timeline and the delegated actions. See the concept
 notes and the issue set below.
 
 ## Usage
 
 ```sh
 npm install
-npm run dev -- serve ./path/to/chant-project      # dev (tsx)
+npm run dev -- serve ./path/to/chant-project             # source graph (tsx)
+npm run dev -- serve ./path/to/chant-project --env prod  # + live drift overlay
 # or, built:
 npm run build && ./bin/behold.js serve ./path/to/chant-project --port 4600
 ```
 
-Then open http://localhost:4600.
+Then open http://localhost:4600. With `--env`, the SPA shows the live overlay;
+without it, the source graph.
+
+behold shells the **project's own** chant (resolved from the project's
+`node_modules` first), so the project decides the chant version — pin it to
+`@intentius/chant ^0.18.1` or later for the live overlay (`graph --live` observed
+nothing before that fix).
 
 ## Layout
 
 ```
 src/
   cli.ts       serve verb + arg parsing
-  server.ts    Hono read-only API (/api/graph) + static SPA; /api/overlay is a seam
-  chant.ts     shell-out to the chant bin (graph IR) — behold reads, never mutates
+  server.ts    Hono read-only API (/api/graph, /api/overlay) + static SPA
+  chant.ts     shell-out to the chant bin (graph IR, live/overlay) — reads, never mutates
   render.ts    pinhole painter (layoutIr + renderSvg) — IR → SVG
-  overlay.ts   source-anchored-overlay seam (chant #821) + _status → drift semantics
+  overlay.ts   _status → drift semantics (managed/foreign/pending)
 web/
   index.html   SPA shell
   app.js       inlines pinhole's SVG + click-inspect by data-node-id
+example/       a tiny AWS chant project for local dev + e2e
+e2e/run.sh     end-to-end runner (install example chant → serve → assert the API)
 ```
 
 ## The painter
@@ -93,12 +105,48 @@ and paints it with `layoutIr` + `renderSvg` (`src/render.ts`); the SPA inlines t
 SVG and wires click-inspect by `data-node-id` against the IR. pinhole's layout is
 dagre — pure JS, no native dependency.
 
-## Develop
+## Local development
+
+`just` lists everything. The core loop:
 
 ```sh
-npm run tsc    # typecheck
-npm test       # vitest
-npm run build  # bundle to dist/cli.js
+just install          # behold's own deps
+just check            # tsc + unit tests + build (the fast gate)
+just example-install  # install the example project's chant + aws lexicon (once)
+just serve            # serve example/ read-only → http://localhost:4600
+just serve-live       # serve example/ with the live overlay (needs AWS creds)
+```
+
+`just serve` / `serve-live` run via `tsx` (no build step). For the built binary,
+`just build` then `./bin/behold.js serve <project>`.
+
+**Which chant runs.** behold does not bundle chant — it *shells* the chant binary
+resolved from the served project's `node_modules` (falling back to behold's own dep).
+So local testing means installing chant into a project, not into behold. The bundled
+`example/` does exactly that; point `serve` at any real chant project the same way.
+
+## E2E
+
+```sh
+just e2e
+```
+
+`e2e/run.sh` installs the example's chant (the **chant install under test**), builds
+behold, serves the example, and asserts the read-only API against a live server. It
+auto-detects AWS credentials:
+
+- **no creds** → asserts `/api/graph` (the source mixed-substrate graph, offline).
+- **AWS creds** → asserts `/api/overlay` (the source-anchored live overlay — queries
+  CloudFormation and checks every node carries a drift status; all `pending` when
+  nothing is deployed is a valid pass, since the point is the live path).
+
+It's hermetic apart from the chant install and (optionally) the cloud read; the
+server is torn down on exit. `BEHOLD_E2E_PORT` overrides the port.
+
+## Unit tests
+
+```sh
+npm test    # vitest — pure units (graphFlags, _status mapping); no server, no cloud
 ```
 
 ## Related issues

@@ -1,0 +1,10 @@
+{
+  "name": "behold-example",
+  "private": true,
+  "type": "module",
+  "description": "A tiny AWS chant project behold serves in local dev + e2e.",
+  "dependencies": {
+    "@intentius/chant": "^0.18.1",
+    "@intentius/chant-lexicon-aws": "^0.18.1"
+  }
+}
