@@ -68,3 +68,45 @@ load();
 // EventSource reconnects on its own if the server restarts.
 const events = new EventSource("/api/events");
 events.addEventListener("changed", () => load());
+
+// Delegated writes (#7 Sync / #8 Adopt). behold never mutates — these buttons
+// trigger the project's committed Ops on the executor; the now-line streams phases.
+function nowline(line) {
+  const p = document.getElementById("nowline");
+  p.style.display = "block";
+  const d = document.createElement("div");
+  d.textContent = line;
+  p.appendChild(d);
+  p.scrollTop = p.scrollHeight;
+}
+events.addEventListener("op", (e) => nowline(e.data));
+
+function button(label, cls, onClick) {
+  const b = document.createElement("button");
+  b.textContent = label;
+  if (cls) b.className = cls;
+  b.addEventListener("click", onClick);
+  return b;
+}
+function runOp(name) {
+  fetch(`/api/ops/${encodeURIComponent(name)}/run`, { method: "POST" })
+    .then((r) => r.json())
+    .then((j) => j.error && nowline("✗ " + j.error));
+}
+function signal(name, gate) {
+  fetch(`/api/ops/${encodeURIComponent(name)}/signal/${encodeURIComponent(gate)}`, { method: "POST" })
+    .then((r) => r.json())
+    .then((j) => j.error && nowline("✗ " + j.error));
+}
+async function initActions() {
+  const bar = document.getElementById("actions");
+  const { ops } = await fetch("/api/ops").then((r) => r.json()).catch(() => ({ ops: [] }));
+  const apply = ops.find((o) => o.kind === "apply");
+  const reconcile = ops.find((o) => o.kind === "reconcile");
+  if (apply) {
+    bar.appendChild(button("Sync", "", () => runOp(apply.name)));
+    if (apply.gate) bar.appendChild(button("Approve", "approve", () => signal(apply.name, apply.gate)));
+  }
+  if (reconcile) bar.appendChild(button("Adopt", "", () => runOp(reconcile.name)));
+}
+initActions();

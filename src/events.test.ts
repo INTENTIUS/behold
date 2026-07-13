@@ -2,15 +2,16 @@ import { describe, it, expect, vi } from "vitest";
 import { Broadcaster } from "./events.ts";
 
 describe("Broadcaster", () => {
-  it("delivers emitted events to every subscriber", () => {
+  it("delivers typed events (with data) to every subscriber", () => {
     const b = new Broadcaster();
     const a = vi.fn();
     const c = vi.fn();
     b.subscribe(a);
     b.subscribe(c);
     b.emit("changed");
-    expect(a).toHaveBeenCalledWith("changed");
-    expect(c).toHaveBeenCalledWith("changed");
+    expect(a).toHaveBeenCalledWith("changed", "");
+    b.emit("op", "▶ chant run prod-apply");
+    expect(c).toHaveBeenCalledWith("op", "▶ chant run prod-apply");
   });
 
   it("stops delivering after unsubscribe", () => {

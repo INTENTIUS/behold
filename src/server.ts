@@ -12,8 +12,9 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { serve } from "@hono/node-server";
 import { fileURLToPath } from "node:url";
 import { dirname, join, relative } from "node:path";
-import { graphIr, type GraphOptions } from "./chant.ts";
+import { graphIr, runChantStream, runChantRaw, type GraphOptions } from "./chant.ts";
 import { renderGraph } from "./render.ts";
+import { discoverOps } from "./ops.ts";
 import { Broadcaster, watchSource } from "./events.ts";
 import { startDriftPoll } from "./poll.ts";
 import { FrameBuffer } from "./frames.ts";
@@ -71,13 +72,45 @@ export function createApp(
     return c.html(renderLanes(all, frames.summaries()));
   });
 
+  // Delegated writes (#7 Sync / #8 Adopt): the project's committed Ops, and a
+  // trigger. behold NEVER applies — it runs `chant run <op>` on the executor and
+  // streams the phases as the now-line. It holds no apply creds.
+  let running: { name: string; op: ReturnType<typeof runChantStream> } | null = null;
+  app.get("/api/ops", (c) => c.json({ ops: discoverOps(cfg.projectDir), running: running?.name ?? null }));
+
+  app.post("/api/ops/:name/run", (c) => {
+    const name = c.req.param("name");
+    if (!discoverOps(cfg.projectDir).some((o) => o.name === name)) {
+      return c.json({ error: `no Op named "${name}" in the project` }, 404);
+    }
+    if (running) return c.json({ error: `an Op is already running (${running.name})` }, 409);
+    broadcaster.emit("op", `▶ chant run ${name}`);
+    const op = runChantStream(["run", name], cfg.projectDir, (line) => broadcaster.emit("op", line));
+    running = { name, op };
+    void op.done.then((code) => {
+      broadcaster.emit("op", `■ ${name} exited ${code}`);
+      broadcaster.emit("changed"); // the estate may have moved — re-pull the graph
+      running = null;
+    });
+    return c.json({ started: true, name });
+  });
+
+  // Approve a gated apply: signal the Op's wait-for-approval gate.
+  app.post("/api/ops/:name/signal/:gate", async (c) => {
+    const { name, gate } = c.req.param();
+    broadcaster.emit("op", `✎ signal ${name} ${gate}`);
+    const { code, stderr } = await runChantRaw(["run", "signal", name, gate], cfg.projectDir);
+    if (code !== 0) return c.json({ error: stderr.trim() || `signal exited ${code}` }, 500);
+    return c.json({ signalled: true });
+  });
+
   // Live updates (#3): SSE stream the SPA subscribes to. On a "changed" event
   // (a source edit — see startServer's watcher) the SPA re-pulls the current view.
   // Keep-alive pings hold the connection open; the browser's EventSource reconnects.
   app.get("/api/events", (c) =>
     streamSSE(c, async (stream) => {
-      const unsubscribe = broadcaster.subscribe(() => {
-        void stream.writeSSE({ event: "changed", data: String(Date.now()) });
+      const unsubscribe = broadcaster.subscribe((type, data) => {
+        void stream.writeSSE({ event: type, data: data || String(Date.now()) });
       });
       stream.onAbort(unsubscribe);
       while (!stream.aborted) {

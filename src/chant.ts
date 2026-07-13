@@ -10,6 +10,7 @@
  * back to behold's own dependency.
  */
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import type { GraphIR, Layout } from "@intentius/chant";
@@ -111,12 +112,41 @@ async function runChantJson<T>(args: string[], projectDir?: string): Promise<T> 
   return JSON.parse(stdout) as T;
 }
 
+/** A running Op (`chant run <name>`), streaming its output line by line. */
+export interface OpRun {
+  pid: number;
+  kill: () => void;
+  done: Promise<number>;
+}
+
+/** Spawn `chant <args>` in the project and stream stdout+stderr per line to
+ * `onLine` — used for `chant run <op>` (the delegated apply/reconcile), where the
+ * phase output is the now-line. behold triggers; the executor does the work. */
+export function runChantStream(args: string[], projectDir: string, onLine: (line: string) => void): OpRun {
+  const proc = spawn(chantBin(projectDir), args, { cwd: projectDir, stdio: ["ignore", "pipe", "pipe"] });
+  const feed = (buf: Buffer): void => {
+    for (const line of String(buf).split(/\r?\n/)) if (line.trim()) onLine(line);
+  };
+  proc.stdout.on("data", feed);
+  proc.stderr.on("data", feed);
+  const done = new Promise<number>((res) => proc.on("close", (c) => res(c ?? 1)));
+  return { pid: proc.pid ?? -1, kill: () => proc.kill(), done };
+}
+
+/** Graph the project's source. Prefer a `src/` subdir when present (the chant
+ * convention) so sibling `ops/` (*.op.ts) aren't pulled into the infra graph. The
+ * spawn cwd stays the project dir, which is what `--live` reads. */
+function graphPath(projectDir: string): string {
+  const src = join(projectDir, "src");
+  return existsSync(src) ? src : projectDir;
+}
+
 /** The infra graph IR for a project (`chant graph --format ir`). */
 export function graphIr(projectDir: string, opts: GraphOptions = {}): Promise<GraphIR> {
-  return runChantJson<GraphIR>(["graph", projectDir, "--format", "ir", ...graphFlags(opts)], projectDir);
+  return runChantJson<GraphIR>(["graph", graphPath(projectDir), "--format", "ir", ...graphFlags(opts)], projectDir);
 }
 
 /** Node positions for a project (`chant graph --format layout`, dagre — no native dep). */
 export function graphLayout(projectDir: string, opts: GraphOptions = {}): Promise<Layout> {
-  return runChantJson<Layout>(["graph", projectDir, "--format", "layout", ...graphFlags(opts)], projectDir);
+  return runChantJson<Layout>(["graph", graphPath(projectDir), "--format", "layout", ...graphFlags(opts)], projectDir);
 }

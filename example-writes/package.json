@@ -1,0 +1,14 @@
+{
+  "name": "behold-example-writes",
+  "private": true,
+  "type": "module",
+  "description": "A cheap AWS project (one S3 bucket) + Ops, for behold's delegated Sync/Adopt demos.",
+  "scripts": {
+    "build": "./node_modules/.bin/chant build src --lexicon aws -o template.json"
+  },
+  "dependencies": {
+    "@intentius/chant": "^0.18.4",
+    "@intentius/chant-lexicon-aws": "^0.18.4",
+    "@intentius/chant-lexicon-temporal": "^0.18.4"
+  }
+}

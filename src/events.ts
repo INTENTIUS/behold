@@ -7,20 +7,21 @@
 import { watch, existsSync } from "node:fs";
 import { join } from "node:path";
 
-/** Fan-out for server-sent events. Pure — unit-tested. */
+/** Fan-out for server-sent events. Each message is a typed event (`changed`,
+ * `frames`, `op`) with optional data (an op-output line). Pure — unit-tested. */
 export class Broadcaster {
-  private listeners = new Set<(event: string) => void>();
+  private listeners = new Set<(type: string, data: string) => void>();
 
-  subscribe(fn: (event: string) => void): () => void {
+  subscribe(fn: (type: string, data: string) => void): () => void {
     this.listeners.add(fn);
     return () => {
       this.listeners.delete(fn);
     };
   }
 
-  emit(event: string): void {
+  emit(type: string, data = ""): void {
     // Copy first: a listener may unsubscribe during emit.
-    for (const fn of [...this.listeners]) fn(event);
+    for (const fn of [...this.listeners]) fn(type, data);
   }
 
   get size(): number {
