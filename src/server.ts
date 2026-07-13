@@ -16,6 +16,7 @@ import { graphIr, runChantStream, runChantRaw, type GraphOptions } from "./chant
 import { renderGraph } from "./render.ts";
 import { discoverOps } from "./ops.ts";
 import { LIVE_IMPORT_LEXICONS, extractPrUrl } from "./adopt.ts";
+import { detectProject } from "./project.ts";
 import { Broadcaster, watchSource } from "./events.ts";
 import { startDriftPoll } from "./poll.ts";
 import { FrameBuffer } from "./frames.ts";
@@ -140,6 +141,14 @@ export function createApp(
   // direct edges). This is behold's read-only core: the whole estate in one graph.
   // chant provides the IR; pinhole's painter lays it out and renders the SVG. The
   // IR rides along so the SPA can inspect a node (by data-node-id) against its attrs.
+  // Autodetect what the project offers, so the SPA can populate pickers (env,
+  // detail) instead of the env being a launch-only flag. `currentEnv` is the
+  // launch `--env`, the picker's initial selection.
+  app.get("/api/project", (c) => {
+    const { environments, lexicons } = detectProject(cfg.projectDir);
+    return c.json({ projectDir: cfg.projectDir, environments, lexicons, currentEnv: cfg.env ?? null });
+  });
+
   app.get("/api/graph", async (c) => {
     try {
       const opts = optsFromQuery(new URL(c.req.url));
@@ -156,14 +165,18 @@ export function createApp(
   // declared edges (the cross-substrate topology) kept, live status joined per
   // node (managed/foreign/pending). Needs cloud creds + an environment.
   app.get("/api/overlay", async (c) => {
-    if (!cfg.env) {
-      return c.json({ error: "overlay needs an environment — start behold with --env <name>" }, 400);
+    // Env comes from the picker (`?env=`), falling back to the launch `--env`.
+    // Either lets the overlay run without a restart; neither is a 400.
+    const query = optsFromQuery(new URL(c.req.url));
+    const env = query.env ?? cfg.env;
+    if (!env) {
+      return c.json({ error: "overlay needs an environment — pick one, or start behold with --env <name>" }, 400);
     }
     try {
-      const opts: GraphOptions = { ...optsFromQuery(new URL(c.req.url)), live: true, overlay: true, env: cfg.env };
+      const opts: GraphOptions = { ...query, live: true, overlay: true, env };
       const ir = await graphIr(cfg.projectDir, opts);
       const { svg } = renderGraph(ir);
-      return c.json({ ir, svg, meta: { projectDir: cfg.projectDir, env: cfg.env, mode: "overlay" } });
+      return c.json({ ir, svg, meta: { projectDir: cfg.projectDir, env, mode: "overlay" } });
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
     }

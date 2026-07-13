@@ -55,27 +55,69 @@ function wire(ir) {
   }
 }
 
+// View state driven by the header pickers (#17). env=null → the declared source
+// graph; env set → the live overlay for that env (needs cloud creds). detail is
+// chant's --detail tier. Every fetch reads this, so the `changed` SSE re-pull and
+// a picker change go through the same path.
+const view = { env: null, detail: 2 };
+
 async function load() {
+  const meta = document.getElementById("meta");
+  meta.textContent = view.env ? `loading overlay for ${view.env}…` : "loading…";
   try {
-    // With an environment configured, show the live drift overlay (source-anchored:
-    // declared topology + managed/foreign/pending). Otherwise, the source graph.
-    const health = await fetch("/healthz").then((r) => r.json()).catch(() => ({}));
-    const endpoint = health.env ? "/api/overlay" : "/api/graph";
-    const res = await fetch(endpoint);
+    const q = new URLSearchParams({ detail: String(view.detail) });
+    let endpoint = "/api/graph";
+    if (view.env) {
+      endpoint = "/api/overlay";
+      q.set("env", view.env);
+    }
+    const res = await fetch(`${endpoint}?${q}`);
     if (!res.ok) throw new Error((await res.json()).error || res.statusText);
-    const { ir, svg, meta } = await res.json();
-    const drift = meta.mode === "overlay" ? " · overlay" : "";
-    document.getElementById("meta").textContent =
-      `${meta.projectDir}${meta.env ? " · env " + meta.env : ""}${drift} · ${ir.nodes.length} nodes · ${ir.edges.length} edges`;
+    const { ir, svg, meta: m } = await res.json();
+    const drift = m.mode === "overlay" ? " · overlay" : "";
+    meta.textContent =
+      `${m.projectDir}${m.env ? " · env " + m.env : ""}${drift} · ${ir.nodes.length} nodes · ${ir.edges.length} edges`;
     document.getElementById("graph").innerHTML = svg;
     wire(ir);
   } catch (err) {
     document.getElementById("graph").innerHTML = `<div class="err">graph failed: ${err.message}</div>`;
-    document.getElementById("meta").textContent = "error";
+    meta.textContent = "error";
   }
 }
 
-load();
+// Populate the header pickers from the project, then do the first load. The env
+// picker is the headline: (source) + each declared environment. Selecting one
+// switches to that env's live overlay with no restart.
+function picker(label, opts, value, onChange) {
+  const sel = document.createElement("select");
+  sel.title = label;
+  for (const [text, val] of opts) sel.add(new Option(text, val));
+  sel.value = value;
+  sel.addEventListener("change", () => onChange(sel.value));
+  return sel;
+}
+async function initPickers() {
+  const info = await fetch("/api/project")
+    .then((r) => r.json())
+    .catch(() => ({ environments: [], currentEnv: null }));
+  view.env = info.currentEnv || null;
+  const host = document.getElementById("pickers");
+  const envOpts = [["(source)", ""], ...info.environments.map((e) => [`env: ${e}`, e])];
+  host.appendChild(
+    picker("environment", envOpts, view.env || "", (v) => {
+      view.env = v || null;
+      load();
+    }),
+  );
+  host.appendChild(
+    picker("detail tier", [0, 1, 2, 3].map((d) => [`detail ${d}`, String(d)]), String(view.detail), (v) => {
+      view.detail = Number(v);
+      load();
+    }),
+  );
+  load();
+}
+initPickers();
 
 // Live updates (#3): re-pull when the server signals the served source changed.
 // EventSource reconnects on its own if the server restarts.
