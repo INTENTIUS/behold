@@ -12,6 +12,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { serve } from "@hono/node-server";
 import { fileURLToPath } from "node:url";
 import { dirname, join, relative } from "node:path";
+import type { GraphIR } from "@intentius/chant";
 import { graphIr, runChantStream, runChantRaw, type GraphOptions } from "./chant.ts";
 import { renderGraph } from "./render.ts";
 import { discoverOps } from "./ops.ts";
@@ -46,6 +47,30 @@ function optsFromQuery(url: URL): GraphOptions {
   const env = q.get("env");
   if (env) opts.env = env;
   return opts;
+}
+
+/**
+ * Query the current estate (the live overlay when `env` is set, else the source
+ * graph) and capture a lanes keyframe. Deduped by digest — an unchanged estate
+ * stores nothing. Returns the queried IR and whether a new frame was stored, or
+ * null on error. Shared by manual Refresh (#24), post-op capture (#25), and the
+ * startup/watch/poll captures.
+ */
+async function captureFrame(
+  projectDir: string,
+  env: string | undefined,
+  frames: FrameBuffer,
+  broadcaster: Broadcaster,
+): Promise<{ ir: GraphIR; captured: boolean } | null> {
+  try {
+    const ir = await graphIr(projectDir, env ? { live: true, overlay: true, env } : {});
+    const captured = frames.capture(ir) !== null;
+    if (captured) broadcaster.emit("frames");
+    return { ir, captured };
+  } catch (err) {
+    process.stderr.write(`frame capture: ${err instanceof Error ? err.message : String(err)}\n`);
+    return null;
+  }
 }
 
 export function createApp(
@@ -90,7 +115,8 @@ export function createApp(
 
   app.post("/api/ops/:name/run", (c) => {
     const name = c.req.param("name");
-    if (!discoverOps(cfg.projectDir).some((o) => o.name === name)) {
+    const info = discoverOps(cfg.projectDir).find((o) => o.name === name);
+    if (!info) {
       return c.json({ error: `no Op named "${name}" in the project` }, 404);
     }
     if (running) return c.json({ error: `an Op is already running (${running.name})` }, 409);
@@ -103,9 +129,13 @@ export function createApp(
       if (pr) broadcaster.emit("pr", pr);
     });
     running = { name, op };
-    void op.done.then((code) => {
+    void op.done.then(async (code) => {
       broadcaster.emit("op", `■ ${name} exited ${code}`);
-      broadcaster.emit("changed"); // the estate may have moved — re-pull the graph
+      // The op may have moved the estate — capture a keyframe of the result (#25)
+      // for the env it targeted, so a Sync/Adopt lands on the lanes timeline, then
+      // re-pull the graph.
+      await captureFrame(cfg.projectDir, info.env ?? cfg.env, frames, broadcaster);
+      broadcaster.emit("changed");
       running = null;
     });
     return c.json({ started: true, name });
@@ -182,6 +212,24 @@ export function createApp(
     }
   });
 
+  // Manual refresh (#24): re-query the current view *now* and capture a lanes
+  // frame in the same round-trip — re-checks drift on demand and gives the
+  // timeline a datapoint without waiting for a source edit or --poll. Returns the
+  // rendered graph so the caller renders from this one query (no double pull); the
+  // `frames` event (emitted by captureFrame when the estate moved) updates lanes.
+  app.post("/api/refresh", async (c) => {
+    const env = optsFromQuery(new URL(c.req.url)).env ?? cfg.env;
+    const result = await captureFrame(cfg.projectDir, env, frames, broadcaster);
+    if (!result) return c.json({ error: "refresh failed — see server log" }, 500);
+    const { svg } = renderGraph(result.ir);
+    return c.json({
+      ir: result.ir,
+      svg,
+      meta: { projectDir: cfg.projectDir, env: env ?? null, ...(env ? { mode: "overlay" } : {}) },
+      captured: result.captured,
+    });
+  });
+
   // Static SPA. Served last so /api and /healthz win.
   const rel = relative(process.cwd(), webRoot) || ".";
   app.use("/*", serveStatic({ root: rel }));
@@ -196,20 +244,13 @@ export function startServer(cfg: ServerOptions): void {
   const app = createApp(cfg, broadcaster, frames);
 
   // Capture the current graph as a keyframe (overlay when an env is set, else the
-  // source graph). Deduped by digest, so only real state changes become frames.
-  const captureFrame = async (): Promise<void> => {
-    try {
-      const ir = await graphIr(cfg.projectDir, cfg.env ? { live: true, overlay: true, env: cfg.env } : {});
-      if (frames.capture(ir)) broadcaster.emit("frames");
-    } catch (err) {
-      process.stderr.write(`frame capture: ${err instanceof Error ? err.message : String(err)}\n`);
-    }
-  };
+  // source graph). Shares the module helper with Refresh + post-op capture.
+  const capture = (): Promise<unknown> => captureFrame(cfg.projectDir, cfg.env, frames, broadcaster);
   // A change to the estate: re-render the live graph (SPA re-pulls) and capture a
   // keyframe for the lanes timeline.
   const onEstateChange = (): void => {
     broadcaster.emit("changed");
-    void captureFrame();
+    void capture();
   };
 
   // Watch the served project's source (the dev loop) and, with an env + --poll,
@@ -224,7 +265,7 @@ export function startServer(cfg: ServerOptions): void {
           onError: (err) => process.stderr.write(`poll: ${err instanceof Error ? err.message : String(err)}\n`),
         })
       : () => {};
-  void captureFrame(); // baseline keyframe at startup
+  void capture(); // baseline keyframe at startup
   process.on("SIGINT", () => {
     stopWatch();
     stopPoll();

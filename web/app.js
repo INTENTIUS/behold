@@ -96,6 +96,28 @@ function wire(ir) {
 // a picker change go through the same path.
 const view = { env: null, detail: 2 };
 
+// Paint a fetched graph: the SVG, the meta line (with a drift summary in overlay
+// mode), the legend, and click-inspect wiring. Shared by load() and refresh().
+function render(ir, svg, m) {
+  const overlay = m.mode === "overlay";
+  let tail = ` · ${ir.edges.length} edges`;
+  if (overlay) {
+    // Summarise drift so "everything's blue" reads as "N pending".
+    const c = { good: 0, warn: 0, accent: 0 };
+    for (const n of ir.nodes) {
+      const s = n.attrs && n.attrs._status;
+      if (s in c) c[s]++;
+    }
+    tail = ` · ${c.good} managed · ${c.warn} foreign · ${c.accent} pending`;
+  }
+  document.getElementById("meta").textContent =
+    `${m.projectDir}${m.env ? " · env " + m.env : ""}${overlay ? " · overlay" : ""} · ${ir.nodes.length} nodes${tail}`;
+  document.getElementById("legend").style.display = overlay ? "flex" : "none";
+  document.getElementById("graph").innerHTML = svg;
+  wire(ir);
+}
+
+// Fetch the current view (source graph, or the picked env's live overlay).
 async function load() {
   const meta = document.getElementById("meta");
   meta.textContent = view.env ? `loading overlay for ${view.env}…` : "loading…";
@@ -109,25 +131,30 @@ async function load() {
     const res = await fetch(`${endpoint}?${q}`);
     if (!res.ok) throw new Error((await res.json()).error || res.statusText);
     const { ir, svg, meta: m } = await res.json();
-    const overlay = m.mode === "overlay";
-    let tail = ` · ${ir.edges.length} edges`;
-    if (overlay) {
-      // Summarise drift so "everything's blue" reads as "N pending".
-      const c = { good: 0, warn: 0, accent: 0 };
-      for (const n of ir.nodes) {
-        const s = n.attrs && n.attrs._status;
-        if (s in c) c[s]++;
-      }
-      tail = ` · ${c.good} managed · ${c.warn} foreign · ${c.accent} pending`;
-    }
-    meta.textContent =
-      `${m.projectDir}${m.env ? " · env " + m.env : ""}${overlay ? " · overlay" : ""} · ${ir.nodes.length} nodes${tail}`;
-    document.getElementById("legend").style.display = overlay ? "flex" : "none";
-    document.getElementById("graph").innerHTML = svg;
-    wire(ir);
+    render(ir, svg, m);
   } catch (err) {
     document.getElementById("graph").innerHTML = `<div class="err">graph failed: ${err.message}</div>`;
     meta.textContent = "error";
+  }
+}
+
+// Refresh (#24): re-check live drift now and capture a lanes frame, in one
+// round-trip. Renders the returned graph directly (no second pull); the server's
+// `frames` event updates the lanes view.
+async function refresh() {
+  const meta = document.getElementById("meta");
+  const prev = meta.textContent;
+  meta.textContent = "refreshing…";
+  try {
+    const q = view.env ? `?env=${encodeURIComponent(view.env)}` : "";
+    const res = await fetch(`/api/refresh${q}`, { method: "POST" });
+    if (!res.ok) throw new Error((await res.json()).error || res.statusText);
+    const { ir, svg, meta: m, captured } = await res.json();
+    render(ir, svg, m);
+    nowline(captured ? "↻ refreshed — new lanes frame" : "↻ refreshed — no change");
+  } catch (err) {
+    meta.textContent = prev;
+    nowline("✗ refresh: " + err.message);
   }
 }
 
@@ -214,6 +241,11 @@ function adoptable(node) {
 
 async function initActions() {
   const bar = document.getElementById("actions");
+  // Refresh is always available (even for a project with no Ops) — re-check live
+  // drift now and drop a lanes frame.
+  const r = button("↻ Refresh", "", refresh);
+  r.title = "Re-check live drift now and capture a lanes frame";
+  bar.appendChild(r);
   const { ops, adoptLexicons } = await fetch("/api/ops")
     .then((r) => r.json())
     .catch(() => ({ ops: [], adoptLexicons: [] }));
