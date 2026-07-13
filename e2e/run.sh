@@ -29,7 +29,7 @@ else
 fi
 
 echo "→ serve $EX on :$PORT ($MODE)"
-node ./bin/behold.js serve "$EX" --port "$PORT" "${ENV_ARGS[@]}" >/tmp/behold-e2e.log 2>&1 &
+node ./bin/behold.js serve "$EX" --port "$PORT" ${ENV_ARGS[@]+"${ENV_ARGS[@]}"} >/tmp/behold-e2e.log 2>&1 &
 PID=$!
 trap 'kill "$PID" 2>/dev/null || true' EXIT
 
