@@ -92,8 +92,9 @@ export function createApp(
     if (all.length < 2) {
       return c.html(
         `<!doctype html><meta charset=utf-8><body style="font:14px system-ui;background:#0d1117;color:#8b949e;padding:2rem">` +
-          `<h3 style="color:#e6edf3">deployment lanes</h3><p>${all.length} frame(s) captured — need at least two. ` +
-          `Edit the served project's source, or run with <code>--poll</code> against a moving environment, then reload.</p></body>`,
+          `<h3 style="color:#e6edf3">deployment lanes</h3><p>${all.length} frame(s) captured — need at least two to scrub.</p>` +
+          `<p>Frames accrue when the estate moves: hit <b style="color:#e6edf3">↻ Refresh</b> (captures the current live state), run a <b style="color:#e6edf3">Sync</b>/Adopt, edit the source, or serve with <code>--poll</code> against a moving environment. Then reload.</p>` +
+          `<p><a href="/" style="color:#58a6ff;text-decoration:none">← back to the graph</a></p></body>`,
       );
     }
     return c.html(renderLanes(all, frames.summaries()));
