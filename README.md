@@ -75,6 +75,15 @@ npm run build && ./bin/behold.js serve ./path/to/chant-project --port 4600
 Then open http://localhost:4600. With `--env`, the SPA shows the live overlay;
 without it, the source graph.
 
+**Live updates.** The server watches the served project's source and pushes a
+refresh over SSE (`/api/events`) when a `.ts` file changes — edit your infra, the
+graph updates, no reload. Add `--poll <secs>` (with `--env`) to also re-query live
+drift on an interval and push updates when a node's status changes:
+
+```sh
+behold serve ./infra --env prod --poll 30   # watch source + poll drift every 30s
+```
+
 behold shells the **project's own** chant (resolved from the project's
 `node_modules` first), so the project decides the chant version — pin it to
 `@intentius/chant ^0.18.1` or later for the live overlay (`graph --live` observed
