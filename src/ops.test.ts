@@ -26,6 +26,7 @@ describe("discoverOps", () => {
     const apply = ops.find((o) => o.name === "prod-apply")!;
     expect(apply.kind).toBe("apply");
     expect(apply.gate).toBe("approve-prod-apply");
+    expect(apply.env).toBe("prod"); // parsed so a post-op frame captures the right env
     expect(ops.find((o) => o.name === "prod-reconcile")!.kind).toBe("reconcile");
   });
 

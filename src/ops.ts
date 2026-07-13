@@ -15,6 +15,8 @@ export interface OpInfo {
   kind: OpKind;
   /** The gate signal to send when a gated apply is waiting, if the Op declares one. */
   gate?: string;
+  /** The environment the Op targets, if declared — so a post-op frame captures it. */
+  env?: string;
 }
 
 function kindOf(content: string): OpKind {
@@ -40,7 +42,8 @@ export function discoverOps(projectDir: string): OpInfo[] {
       if (!name || seen.has(name)) continue;
       seen.add(name);
       const gate = content.match(/signalName:\s*["'`]([^"'`]+)["'`]/)?.[1];
-      out.push({ name, kind: kindOf(content), ...(gate ? { gate } : {}) });
+      const env = content.match(/\benv:\s*["'`]([^"'`]+)["'`]/)?.[1];
+      out.push({ name, kind: kindOf(content), ...(gate ? { gate } : {}), ...(env ? { env } : {}) });
     }
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
