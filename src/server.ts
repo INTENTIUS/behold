@@ -144,8 +144,8 @@ export function createApp(
   // Autodetect what the project offers, so the SPA can populate pickers (env,
   // detail) instead of the env being a launch-only flag. `currentEnv` is the
   // launch `--env`, the picker's initial selection.
-  app.get("/api/project", (c) => {
-    const { environments, lexicons } = detectProject(cfg.projectDir);
+  app.get("/api/project", async (c) => {
+    const { environments, lexicons } = await detectProject(cfg.projectDir);
     return c.json({ projectDir: cfg.projectDir, environments, lexicons, currentEnv: cfg.env ?? null });
   });
 
@@ -237,5 +237,10 @@ export function startServer(cfg: ServerOptions): void {
         `  project: ${cfg.projectDir}${cfg.env ? `  env: ${cfg.env}` : ""}\n` +
         `  read-only, watching for edits${poll}. lanes: /lanes. Ctrl-C to stop.\n`,
     );
+    // Report what the pickers will offer, so an empty env picker is diagnosable.
+    void detectProject(cfg.projectDir).then(({ environments, lexicons }) => {
+      const envs = environments.length ? environments.join(", ") : "(none declared — env picker shows only source)";
+      process.stdout.write(`  detected: environments [${envs}]  lexicons [${lexicons.join(", ")}]\n`);
+    });
   });
 }
