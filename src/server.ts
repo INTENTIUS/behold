@@ -15,14 +15,17 @@ import { dirname, join, relative } from "node:path";
 import { graphIr, type GraphOptions } from "./chant.ts";
 import { renderGraph } from "./render.ts";
 import { Broadcaster, watchSource } from "./events.ts";
+import { startDriftPoll } from "./poll.ts";
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
 
 export interface ServerOptions {
   /** The chant project directory behold observes. */
   projectDir: string;
-  /** Environment name (for the live/overlay path, once chant #821 lands). */
+  /** Environment name — enables the live/overlay path. */
   env?: string;
+  /** Seconds between live-drift polls (#4). Only with `env`; off when unset. */
+  pollSecs?: number;
   port: number;
 }
 
@@ -109,15 +112,28 @@ export function startServer(cfg: ServerOptions): void {
   // Watch the served project's source; a debounced edit fans a "changed" event to
   // every connected SPA, which re-pulls the graph (or overlay). The dev loop.
   const stopWatch = watchSource(cfg.projectDir, () => broadcaster.emit("changed"));
+  // Live-drift poll (#4): with an env + --poll, re-query the overlay on an interval
+  // and signal the SPA when drift changes. Same SSE channel as the source watch.
+  const stopPoll =
+    cfg.env && cfg.pollSecs
+      ? startDriftPoll({
+          intervalMs: cfg.pollSecs * 1000,
+          query: () => graphIr(cfg.projectDir, { live: true, overlay: true, env: cfg.env }),
+          onChange: () => broadcaster.emit("changed"),
+          onError: (err) => process.stderr.write(`poll: ${err instanceof Error ? err.message : String(err)}\n`),
+        })
+      : () => {};
   process.on("SIGINT", () => {
     stopWatch();
+    stopPoll();
     process.exit(0);
   });
   serve({ fetch: app.fetch, port: cfg.port }, (info) => {
+    const poll = cfg.env && cfg.pollSecs ? `, polling drift every ${cfg.pollSecs}s` : "";
     process.stdout.write(
       `behold → http://localhost:${info.port}\n` +
         `  project: ${cfg.projectDir}${cfg.env ? `  env: ${cfg.env}` : ""}\n` +
-        `  read-only, watching for edits. Ctrl-C to stop.\n`,
+        `  read-only, watching for edits${poll}. Ctrl-C to stop.\n`,
     );
   });
 }

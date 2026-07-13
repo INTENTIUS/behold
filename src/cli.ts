@@ -9,14 +9,15 @@ import { startServer } from "./server.ts";
 const USAGE = `behold — a live control plane on chant (read-only core)
 
 Usage:
-  behold serve <project-dir> [--port <n>] [--env <name>]
+  behold serve <project-dir> [--port <n>] [--env <name>] [--poll <secs>]
 
   serve   Start the server: the mixed-substrate graph of <project-dir> in a
           browser, coloured by drift. Read-only — never mutates.
 
 Options:
   --port <n>     Port (default 4600).
-  --env <name>   Environment name (for the live/overlay path; pending chant #821).
+  --env <name>   Environment name — turns on the live drift overlay.
+  --poll <secs>  Re-query live drift every <secs> and push updates (needs --env).
   -h, --help     This text.
 `;
 
@@ -36,11 +37,13 @@ export async function run(argv: string[]): Promise<void> {
   let projectDir: string | undefined;
   let port = 4600;
   let env: string | undefined;
+  let pollSecs: number | undefined;
 
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     if (a === "--port") port = Number(rest[++i]);
     else if (a === "--env") env = rest[++i];
+    else if (a === "--poll") pollSecs = Number(rest[++i]);
     else if (a === "-h" || a === "--help") {
       process.stdout.write(USAGE);
       return;
@@ -59,8 +62,21 @@ export async function run(argv: string[]): Promise<void> {
     process.stderr.write("behold serve: --port must be a number\n");
     process.exit(2);
   }
+  if (pollSecs !== undefined && (!Number.isFinite(pollSecs) || pollSecs <= 0)) {
+    process.stderr.write("behold serve: --poll must be a positive number of seconds\n");
+    process.exit(2);
+  }
+  if (pollSecs !== undefined && !env) {
+    process.stderr.write("behold serve: --poll needs --env (it polls the live overlay)\n");
+    process.exit(2);
+  }
 
-  startServer({ projectDir: resolve(projectDir), port, ...(env ? { env } : {}) });
+  startServer({
+    projectDir: resolve(projectDir),
+    port,
+    ...(env ? { env } : {}),
+    ...(pollSecs !== undefined ? { pollSecs } : {}),
+  });
 }
 
 // Allow `tsx src/cli.ts ...` in dev.
