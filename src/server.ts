@@ -18,6 +18,7 @@ import { renderGraph } from "./render.ts";
 import { discoverOps } from "./ops.ts";
 import { LIVE_IMPORT_LEXICONS, extractPrUrl } from "./adopt.ts";
 import { detectProject } from "./project.ts";
+import { nodeDiff, type LiveDiffJson } from "./diff.ts";
 import { Broadcaster, watchSource } from "./events.ts";
 import { startDriftPoll } from "./poll.ts";
 import { FrameBuffer } from "./frames.ts";
@@ -229,6 +230,28 @@ export function createApp(
       meta: { projectDir: cfg.projectDir, env: env ?? null, ...(env ? { mode: "overlay" } : {}) },
       captured: result.captured,
     });
+  });
+
+  // Per-node live diff (#27): `chant lifecycle diff <env> --live --json` (chant
+  // #852), sliced to one node. Field-level `changes` appear for a resource that
+  // drifted since a snapshot; otherwise just its presence category. On demand
+  // (a full build + cloud query), so it's a click, not part of the graph pull.
+  app.get("/api/diff/:node", async (c) => {
+    const node = c.req.param("node");
+    const env = optsFromQuery(new URL(c.req.url)).env ?? cfg.env;
+    if (!env) return c.json({ error: "diff needs an environment — pick one, or start with --env" }, 400);
+    const { code, stdout, stderr } = await runChantRaw(
+      ["lifecycle", "diff", env, "--live", "--json"],
+      cfg.projectDir,
+    );
+    if (code !== 0) return c.json({ error: stderr.trim() || `diff exited ${code}` }, 500);
+    let parsed: LiveDiffJson;
+    try {
+      parsed = JSON.parse(stdout) as LiveDiffJson;
+    } catch {
+      return c.json({ error: "diff output was not JSON — chant may predate --live --json (needs 0.18.7+)" }, 500);
+    }
+    return c.json({ node, env, diff: nodeDiff(parsed, node) });
   });
 
   // Static SPA. Served last so /api and /healthz win.
