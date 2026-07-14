@@ -73,6 +73,78 @@ function inspect(node) {
     wrap.appendChild(b);
     panel.appendChild(wrap);
   }
+
+  // Live drift for this node (#27): field-level changes since the last snapshot,
+  // or its presence category. On demand — a live diff is a build + cloud query,
+  // so it's a click, not automatic. Only meaningful with an env (overlay mode).
+  if (view.env && st) {
+    const wrap = document.createElement("p");
+    wrap.style.marginTop = "12px";
+    const b = button("Check drift", "", async () => {
+      b.disabled = true;
+      b.textContent = "checking…";
+      try {
+        const res = await fetch(`/api/diff/${encodeURIComponent(node.id)}?env=${encodeURIComponent(view.env)}`);
+        const j = await res.json();
+        if (!res.ok) throw new Error(j.error || res.statusText);
+        wrap.remove();
+        renderDiff(panel, j.diff);
+      } catch (e) {
+        b.disabled = false;
+        b.textContent = "Check drift";
+        nowline("✗ diff: " + e.message);
+      }
+    });
+    b.title = `Diff ${node.id} against live (chant lifecycle diff --live)`;
+    wrap.appendChild(b);
+    panel.appendChild(wrap);
+  }
+}
+
+const DIFF_LABEL = {
+  drifted: "drifted since snapshot",
+  missing: "declared, not in cloud",
+  orphan: "in cloud, not declared",
+  disappeared: "gone since snapshot",
+  newlyObserved: "live — no snapshot baseline",
+  unchanged: "in sync",
+};
+
+// Render a node's live-diff into the inspect panel (#27).
+function renderDiff(panel, diff) {
+  const h = document.createElement("h3");
+  h.textContent = "drift";
+  h.style.cssText = "font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:14px 0 6px";
+  panel.appendChild(h);
+  if (!diff) {
+    const p = document.createElement("p");
+    p.style.color = "var(--muted)";
+    p.textContent = "not present in the live diff";
+    panel.appendChild(p);
+    return;
+  }
+  const cat = document.createElement("p");
+  cat.textContent = DIFF_LABEL[diff.category] || diff.category;
+  panel.appendChild(cat);
+  if (!diff.changes.length) {
+    const p = document.createElement("p");
+    p.style.color = "var(--muted)";
+    p.textContent =
+      diff.category === "newlyObserved"
+        ? "no field diff yet — take a snapshot (chant lifecycle snapshot) to track changes"
+        : "no field changes";
+    panel.appendChild(p);
+    return;
+  }
+  const dl = document.createElement("dl");
+  for (const ch of diff.changes) {
+    const dt = document.createElement("dt");
+    dt.textContent = ch.path;
+    const dd = document.createElement("dd");
+    dd.textContent = `${JSON.stringify(ch.oldValue)} → ${JSON.stringify(ch.newValue)}`;
+    dl.append(dt, dd);
+  }
+  panel.appendChild(dl);
 }
 
 function wire(ir) {
