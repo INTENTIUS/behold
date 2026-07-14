@@ -19,6 +19,7 @@ import { discoverOps } from "./ops.ts";
 import { LIVE_IMPORT_LEXICONS, extractPrUrl } from "./adopt.ts";
 import { detectProject } from "./project.ts";
 import { nodeDiff, nodeObserved, type LiveDiffJson } from "./diff.ts";
+import { classifyHealth } from "./health.ts";
 import { Broadcaster, watchSource } from "./events.ts";
 import { startDriftPoll } from "./poll.ts";
 import { FrameBuffer } from "./frames.ts";
@@ -251,7 +252,10 @@ export function createApp(
     } catch {
       return c.json({ error: "diff output was not JSON — chant may predate --live --json (needs 0.18.7+)" }, 500);
     }
-    return c.json({ node, env, diff: nodeDiff(parsed, node), observed: nodeObserved(parsed, node) });
+    const observed = nodeObserved(parsed, node);
+    // Health (#26): a verdict derived from the observed status — distinct from
+    // drift (a node can be managed yet degraded).
+    return c.json({ node, env, diff: nodeDiff(parsed, node), observed, health: classifyHealth(observed?.status) });
   });
 
   // Static SPA. Served last so /api and /healthz win.

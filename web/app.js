@@ -88,7 +88,7 @@ function inspect(node) {
         const j = await res.json();
         if (!res.ok) throw new Error(j.error || res.statusText);
         wrap.remove();
-        renderObserved(panel, j.observed); // #30 — observed status/attributes
+        renderObserved(panel, j.observed, j.health); // #30 observed state + #26 health
         renderDiff(panel, j.diff); // #27 — drift since snapshot
       } catch (e) {
         b.disabled = false;
@@ -102,23 +102,34 @@ function inspect(node) {
   }
 }
 
-// Render a node's observed live state (#30) — the cloud's view of the resource.
-function renderObserved(panel, o) {
+const HEALTH_COLOR = {
+  healthy: "var(--managed)",
+  progressing: "var(--pending)",
+  degraded: "var(--degraded)",
+  unknown: "var(--muted)",
+};
+
+// Render a node's observed live state (#30) + health verdict (#26).
+function renderObserved(panel, o, health) {
   if (!o) return; // pending/foreign nodes have no observed record in the diff
   const h = document.createElement("h3");
   h.textContent = "observed";
   h.style.cssText = "font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:14px 0 6px";
   panel.appendChild(h);
   const dl = document.createElement("dl");
-  const add = (k, v) => {
+  const add = (k, v, color) => {
     const dt = document.createElement("dt");
     dt.textContent = k;
     const dd = document.createElement("dd");
     dd.textContent = v;
+    if (color) dd.style.color = color;
     dl.append(dt, dd);
   };
+  // Health first — the "is it well?" verdict, distinct from drift. Absent when
+  // the substrate reports no status (not fabricated).
+  if (health && health !== "unknown") add("health", health, HEALTH_COLOR[health]);
   if (o.type) add("type", o.type);
-  if (o.status) add("status", o.status);
+  if (o.status) add("status", o.status, HEALTH_COLOR[health] || undefined);
   if (o.physicalId) add("physical id", o.physicalId);
   if (o.ownership) add("ownership", o.ownership);
   if (o.lastUpdated) add("last updated", o.lastUpdated);
