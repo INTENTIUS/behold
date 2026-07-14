@@ -7,8 +7,8 @@
     "build": "./node_modules/.bin/chant build src --lexicon aws -o template.json"
   },
   "dependencies": {
-    "@intentius/chant": "^0.18.9",
-    "@intentius/chant-lexicon-aws": "^0.18.9",
-    "@intentius/chant-lexicon-temporal": "^0.18.9"
+    "@intentius/chant": "^0.18.11",
+    "@intentius/chant-lexicon-aws": "^0.18.11",
+    "@intentius/chant-lexicon-temporal": "^0.18.11"
   }
 }
