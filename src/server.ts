@@ -23,6 +23,7 @@ import { classifyHealth } from "./health.ts";
 import { OpRunner } from "./op-runner.ts";
 import { pickAutoSyncOp, type AutoSyncMode } from "./autosync.ts";
 import { sourceCommits } from "./history.ts";
+import { composeEstate } from "./estate.ts";
 import { Broadcaster, watchSource } from "./events.ts";
 import { startDriftPoll } from "./poll.ts";
 import { FrameBuffer } from "./frames.ts";
@@ -31,8 +32,12 @@ import { renderLanes } from "./lanes.ts";
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
 
 export interface ServerOptions {
-  /** The chant project directory behold observes. */
+  /** The chant project directory behold observes. When multiple projects are
+   * served (#31), this is the primary — the one ops/overlay/rollback act on. */
   projectDir: string;
+  /** All served project dirs (#31 multi-estate). Present with length > 1 only when
+   * composing several projects; the source graph then merges them. */
+  projectDirs?: string[];
   /** Environment name — enables the live/overlay path. */
   env?: string;
   /** Seconds between live-drift polls (#4). Only with `env`; off when unset. */
@@ -181,9 +186,20 @@ export function createApp(
   app.get("/api/graph", async (c) => {
     try {
       const opts = optsFromQuery(new URL(c.req.url));
-      const ir = await graphIr(cfg.projectDir, opts);
+      // Multi-estate (#31): graph each project and compose into one IR (namespaced
+      // ids, per-project boundary boxes, cross-stack edges). Single project → as-is.
+      const multi = cfg.projectDirs && cfg.projectDirs.length > 1;
+      const ir = multi ? await composeEstate(cfg.projectDirs!, opts) : await graphIr(cfg.projectDir, opts);
       const { svg } = renderGraph(ir);
-      return c.json({ ir, svg, meta: { projectDir: cfg.projectDir, env: cfg.env ?? null } });
+      return c.json({
+        ir,
+        svg,
+        meta: {
+          projectDir: cfg.projectDir,
+          env: cfg.env ?? null,
+          ...(multi ? { estate: cfg.projectDirs!.length } : {}),
+        },
+      });
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
     }

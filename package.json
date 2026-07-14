@@ -22,7 +22,7 @@
   "dependencies": {
     "@hono/node-server": "^1.13.0",
     "@intentius/chant": "^0.18.4",
-    "@intentius/pinhole": "^0.2.1",
+    "@intentius/pinhole": "^0.2.3",
     "hono": "^4.6.0"
   },
   "devDependencies": {
