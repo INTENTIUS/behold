@@ -3,8 +3,8 @@ import { pickAutoSyncOp, isAutoSyncMode } from "./autosync.ts";
 import type { OpInfo } from "./ops.ts";
 
 const ops: OpInfo[] = [
-  { name: "prod-apply", kind: "apply", env: "prod", gate: "approve-prod-apply" },
-  { name: "prod-reconcile", kind: "reconcile", env: "prod" },
+  { name: "prod-apply", kind: "apply", env: "prod", gate: "approve-prod-apply", dir: "/p" },
+  { name: "prod-reconcile", kind: "reconcile", env: "prod", dir: "/p" },
 ];
 
 describe("pickAutoSyncOp", () => {
@@ -25,8 +25,8 @@ describe("pickAutoSyncOp", () => {
   });
 
   it("picks nothing when the project has no matching Op", () => {
-    expect(pickAutoSyncOp("apply", [{ name: "r", kind: "reconcile" }], null)).toBeNull();
-    expect(pickAutoSyncOp("pull-request", [{ name: "a", kind: "apply" }], null)).toBeNull();
+    expect(pickAutoSyncOp("apply", [{ name: "r", kind: "reconcile", dir: "/p" }], null)).toBeNull();
+    expect(pickAutoSyncOp("pull-request", [{ name: "a", kind: "apply", dir: "/p" }], null)).toBeNull();
   });
 });
 

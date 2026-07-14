@@ -17,6 +17,9 @@ export interface OpInfo {
   gate?: string;
   /** The environment the Op targets, if declared — so a post-op frame captures it. */
   env?: string;
+  /** The project dir the Op lives in — where `chant run` executes it (#31: an Op
+   * belongs to its own project, not necessarily the estate's primary). */
+  dir: string;
 }
 
 function kindOf(content: string): OpKind {
@@ -43,7 +46,22 @@ export function discoverOps(projectDir: string): OpInfo[] {
       seen.add(name);
       const gate = content.match(/signalName:\s*["'`]([^"'`]+)["'`]/)?.[1];
       const env = content.match(/\benv:\s*["'`]([^"'`]+)["'`]/)?.[1];
-      out.push({ name, kind: kindOf(content), ...(gate ? { gate } : {}), ...(env ? { env } : {}) });
+      out.push({ name, kind: kindOf(content), dir: projectDir, ...(gate ? { gate } : {}), ...(env ? { env } : {}) });
+    }
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Discover Ops across every served project (#31 multi-estate), each tagged with
+ * its own `dir`. A name collision across projects keeps the first seen. */
+export function discoverEstateOps(projectDirs: string[]): OpInfo[] {
+  const seen = new Set<string>();
+  const out: OpInfo[] = [];
+  for (const dir of projectDirs) {
+    for (const op of discoverOps(dir)) {
+      if (seen.has(op.name)) continue;
+      seen.add(op.name);
+      out.push(op);
     }
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
