@@ -13,13 +13,15 @@ import { serve } from "@hono/node-server";
 import { fileURLToPath } from "node:url";
 import { dirname, join, relative } from "node:path";
 import type { GraphIR } from "@intentius/chant";
-import { graphIr, runChantStream, runChantRaw, type GraphOptions } from "./chant.ts";
+import { graphIr, runChantRaw, type GraphOptions } from "./chant.ts";
 import { renderGraph } from "./render.ts";
 import { discoverOps } from "./ops.ts";
-import { LIVE_IMPORT_LEXICONS, extractPrUrl } from "./adopt.ts";
+import { LIVE_IMPORT_LEXICONS } from "./adopt.ts";
 import { detectProject } from "./project.ts";
 import { nodeDiff, nodeObserved, type LiveDiffJson } from "./diff.ts";
 import { classifyHealth } from "./health.ts";
+import { OpRunner } from "./op-runner.ts";
+import { pickAutoSyncOp, type AutoSyncMode } from "./autosync.ts";
 import { Broadcaster, watchSource } from "./events.ts";
 import { startDriftPoll } from "./poll.ts";
 import { FrameBuffer } from "./frames.ts";
@@ -34,6 +36,9 @@ export interface ServerOptions {
   env?: string;
   /** Seconds between live-drift polls (#4). Only with `env`; off when unset. */
   pollSecs?: number;
+  /** Auto-sync mode (#29): on a polled drift, trigger the ApplyOp ("apply") or
+   * ReconcileOp ("pull-request"). Off by default; needs `env` + `pollSecs`. */
+  autoSync?: AutoSyncMode;
   port: number;
 }
 
@@ -79,6 +84,11 @@ export function createApp(
   cfg: ServerOptions,
   broadcaster: Broadcaster = new Broadcaster(),
   frames: FrameBuffer = new FrameBuffer(),
+  runner: OpRunner = new OpRunner({
+    projectDir: cfg.projectDir,
+    broadcaster,
+    onDone: (opEnv) => captureFrame(cfg.projectDir, opEnv ?? cfg.env, frames, broadcaster),
+  }),
 ): Hono {
   const app = new Hono();
 
@@ -105,14 +115,15 @@ export function createApp(
   // Delegated writes (#7 Sync / #8 Adopt): the project's committed Ops, and a
   // trigger. behold NEVER applies — it runs `chant run <op>` on the executor and
   // streams the phases as the now-line. It holds no apply creds.
-  let running: { name: string; op: ReturnType<typeof runChantStream> } | null = null;
   app.get("/api/ops", (c) =>
     c.json({
       ops: discoverOps(cfg.projectDir),
-      running: running?.name ?? null,
+      running: runner.running,
       // The substrates Adopt is offered on — the SPA gates the per-node button on
       // this so the "which lexicons live-import" truth stays server-side.
       adoptLexicons: LIVE_IMPORT_LEXICONS,
+      // Auto-sync mode (#29), so the SPA can show the banner.
+      autoSync: cfg.autoSync ?? "off",
     }),
   );
 
@@ -122,25 +133,9 @@ export function createApp(
     if (!info) {
       return c.json({ error: `no Op named "${name}" in the project` }, 404);
     }
-    if (running) return c.json({ error: `an Op is already running (${running.name})` }, 409);
-    broadcaster.emit("op", `▶ chant run ${name}`);
-    const op = runChantStream(["run", name], cfg.projectDir, (line) => {
-      broadcaster.emit("op", line);
-      // A ReconcileOp opens a PR and surfaces the URL as an outcome (chant #841);
-      // lift it to a `pr` event so the SPA can link the opened PR.
-      const pr = extractPrUrl(line);
-      if (pr) broadcaster.emit("pr", pr);
-    });
-    running = { name, op };
-    void op.done.then(async (code) => {
-      broadcaster.emit("op", `■ ${name} exited ${code}`);
-      // The op may have moved the estate — capture a keyframe of the result (#25)
-      // for the env it targeted, so a Sync/Adopt lands on the lanes timeline, then
-      // re-pull the graph.
-      await captureFrame(cfg.projectDir, info.env ?? cfg.env, frames, broadcaster);
-      broadcaster.emit("changed");
-      running = null;
-    });
+    if (!runner.trigger(name, info.env)) {
+      return c.json({ error: `an Op is already running (${runner.running})` }, 409);
+    }
     return c.json({ started: true, name });
   });
 
@@ -269,7 +264,14 @@ export function createApp(
 export function startServer(cfg: ServerOptions): void {
   const broadcaster = new Broadcaster();
   const frames = new FrameBuffer();
-  const app = createApp(cfg, broadcaster, frames);
+  // One runner shared by the HTTP routes and the auto-sync loop (one running-guard).
+  const runner = new OpRunner({
+    projectDir: cfg.projectDir,
+    broadcaster,
+    onDone: (opEnv) => captureFrame(cfg.projectDir, opEnv ?? cfg.env, frames, broadcaster),
+  });
+  const app = createApp(cfg, broadcaster, frames, runner);
+  const autoSync = cfg.autoSync ?? "off";
 
   // Capture the current graph as a keyframe (overlay when an env is set, else the
   // source graph). Shares the module helper with Refresh + post-op capture.
@@ -280,16 +282,28 @@ export function startServer(cfg: ServerOptions): void {
     broadcaster.emit("changed");
     void capture();
   };
+  // A polled *drift* (live moved) — re-render, and if auto-sync is on, trigger the
+  // configured Op to heal/adopt (#29). Source edits (watchSource) don't auto-sync:
+  // a new declaration is new desired state, not drift.
+  const onPollDrift = (): void => {
+    onEstateChange();
+    if (autoSync === "off") return;
+    const op = pickAutoSyncOp(autoSync, discoverOps(cfg.projectDir), runner.running);
+    if (op) {
+      broadcaster.emit("op", `⟳ auto-sync (${autoSync}) → ${op.name}`);
+      runner.trigger(op.name, op.env);
+    }
+  };
 
   // Watch the served project's source (the dev loop) and, with an env + --poll,
-  // poll live drift (#4). Both feed onEstateChange.
+  // poll live drift (#4) — the latter also drives auto-sync.
   const stopWatch = watchSource(cfg.projectDir, onEstateChange);
   const stopPoll =
     cfg.env && cfg.pollSecs
       ? startDriftPoll({
           intervalMs: cfg.pollSecs * 1000,
           query: () => graphIr(cfg.projectDir, { live: true, overlay: true, env: cfg.env }),
-          onChange: onEstateChange,
+          onChange: onPollDrift,
           onError: (err) => process.stderr.write(`poll: ${err instanceof Error ? err.message : String(err)}\n`),
         })
       : () => {};
@@ -301,9 +315,10 @@ export function startServer(cfg: ServerOptions): void {
   });
   serve({ fetch: app.fetch, port: cfg.port }, (info) => {
     const poll = cfg.env && cfg.pollSecs ? `, polling drift every ${cfg.pollSecs}s` : "";
+    const auto = autoSync !== "off" ? `  auto-sync: ${autoSync}` : "";
     process.stdout.write(
       `behold → http://localhost:${info.port}\n` +
-        `  project: ${cfg.projectDir}${cfg.env ? `  env: ${cfg.env}` : ""}\n` +
+        `  project: ${cfg.projectDir}${cfg.env ? `  env: ${cfg.env}` : ""}${auto}\n` +
         `  read-only, watching for edits${poll}. lanes: /lanes. Ctrl-C to stop.\n`,
     );
     // Report what the pickers will offer, so an empty env picker is diagnosable.

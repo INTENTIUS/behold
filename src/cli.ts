@@ -7,6 +7,7 @@ import { resolve } from "node:path";
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { startServer } from "./server.ts";
+import { isAutoSyncMode, type AutoSyncMode } from "./autosync.ts";
 
 const USAGE = `behold — a live control plane on chant (read-only core)
 
@@ -17,10 +18,13 @@ Usage:
           browser, coloured by drift. Read-only — never mutates.
 
 Options:
-  --port <n>     Port (default 4600).
-  --env <name>   Environment name — turns on the live drift overlay.
-  --poll <secs>  Re-query live drift every <secs> and push updates (needs --env).
-  -h, --help     This text.
+  --port <n>          Port (default 4600).
+  --env <name>        Environment name — turns on the live drift overlay.
+  --poll <secs>       Re-query live drift every <secs> and push updates (needs --env).
+  --auto-sync <mode>  On a polled drift, trigger a committed Op (needs --env + --poll).
+                      off (default) | apply (heal via ApplyOp) | pull-request
+                      (adopt via ReconcileOp). Gated applies still wait for Approve.
+  -h, --help          This text.
 `;
 
 export async function run(argv: string[]): Promise<void> {
@@ -40,13 +44,21 @@ export async function run(argv: string[]): Promise<void> {
   let port = 4600;
   let env: string | undefined;
   let pollSecs: number | undefined;
+  let autoSync: AutoSyncMode = "off";
 
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     if (a === "--port") port = Number(rest[++i]);
     else if (a === "--env") env = rest[++i];
     else if (a === "--poll") pollSecs = Number(rest[++i]);
-    else if (a === "-h" || a === "--help") {
+    else if (a === "--auto-sync") {
+      const m = rest[++i];
+      if (!m || !isAutoSyncMode(m)) {
+        process.stderr.write("behold serve: --auto-sync must be off | apply | pull-request\n");
+        process.exit(2);
+      }
+      autoSync = m;
+    } else if (a === "-h" || a === "--help") {
       process.stdout.write(USAGE);
       return;
     } else if (!a.startsWith("-") && projectDir === undefined) projectDir = a;
@@ -72,12 +84,17 @@ export async function run(argv: string[]): Promise<void> {
     process.stderr.write("behold serve: --poll needs --env (it polls the live overlay)\n");
     process.exit(2);
   }
+  if (autoSync !== "off" && (!env || pollSecs === undefined)) {
+    process.stderr.write("behold serve: --auto-sync needs --env and --poll (it acts on polled drift)\n");
+    process.exit(2);
+  }
 
   startServer({
     projectDir: resolve(projectDir),
     port,
     ...(env ? { env } : {}),
     ...(pollSecs !== undefined ? { pollSecs } : {}),
+    ...(autoSync !== "off" ? { autoSync } : {}),
   });
 }
 
