@@ -15,7 +15,7 @@ import { dirname, join, relative } from "node:path";
 import type { GraphIR } from "@intentius/chant";
 import { graphIr, runChantRaw, type GraphOptions } from "./chant.ts";
 import { renderGraph } from "./render.ts";
-import { discoverOps } from "./ops.ts";
+import { discoverEstateOps } from "./ops.ts";
 import { LIVE_IMPORT_LEXICONS } from "./adopt.ts";
 import { detectProject } from "./project.ts";
 import { nodeDiff, nodeObserved, type LiveDiffJson } from "./diff.ts";
@@ -121,9 +121,14 @@ export function createApp(
   // Delegated writes (#7 Sync / #8 Adopt): the project's committed Ops, and a
   // trigger. behold NEVER applies — it runs `chant run <op>` on the executor and
   // streams the phases as the now-line. It holds no apply creds.
+  // Ops are discovered across every served project (#31): an Op lives in its own
+  // project and `chant run` executes it there.
+  const estateDirs = cfg.projectDirs ?? [cfg.projectDir];
+  const estateOps = () => discoverEstateOps(estateDirs);
+
   app.get("/api/ops", (c) =>
     c.json({
-      ops: discoverOps(cfg.projectDir),
+      ops: estateOps(),
       running: runner.running,
       // The substrates Adopt is offered on — the SPA gates the per-node button on
       // this so the "which lexicons live-import" truth stays server-side.
@@ -135,21 +140,22 @@ export function createApp(
 
   app.post("/api/ops/:name/run", (c) => {
     const name = c.req.param("name");
-    const info = discoverOps(cfg.projectDir).find((o) => o.name === name);
+    const info = estateOps().find((o) => o.name === name);
     if (!info) {
-      return c.json({ error: `no Op named "${name}" in the project` }, 404);
+      return c.json({ error: `no Op named "${name}" in the estate` }, 404);
     }
-    if (!runner.trigger(name, info.env)) {
+    if (!runner.trigger(name, info.env, info.dir)) {
       return c.json({ error: `an Op is already running (${runner.running})` }, 409);
     }
     return c.json({ started: true, name });
   });
 
-  // Approve a gated apply: signal the Op's wait-for-approval gate.
+  // Approve a gated apply: signal the Op's wait-for-approval gate, in its own dir.
   app.post("/api/ops/:name/signal/:gate", async (c) => {
     const { name, gate } = c.req.param();
+    const info = estateOps().find((o) => o.name === name);
     broadcaster.emit("op", `✎ signal ${name} ${gate}`);
-    const { code, stderr } = await runChantRaw(["run", "signal", name, gate], cfg.projectDir);
+    const { code, stderr } = await runChantRaw(["run", "signal", name, gate], info?.dir ?? cfg.projectDir);
     if (code !== 0) return c.json({ error: stderr.trim() || `signal exited ${code}` }, 500);
     return c.json({ signalled: true });
   });
@@ -322,10 +328,10 @@ export function startServer(cfg: ServerOptions): void {
   const onPollDrift = (): void => {
     onEstateChange();
     if (autoSync === "off") return;
-    const op = pickAutoSyncOp(autoSync, discoverOps(cfg.projectDir), runner.running);
+    const op = pickAutoSyncOp(autoSync, discoverEstateOps(cfg.projectDirs ?? [cfg.projectDir]), runner.running);
     if (op) {
       broadcaster.emit("op", `⟳ auto-sync (${autoSync}) → ${op.name}`);
-      runner.trigger(op.name, op.env);
+      runner.trigger(op.name, op.env, op.dir);
     }
   };
 

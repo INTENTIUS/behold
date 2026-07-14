@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { discoverOps } from "./ops.ts";
+import { discoverOps, discoverEstateOps } from "./ops.ts";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,6 +18,35 @@ beforeAll(() => {
   );
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+describe("discoverEstateOps (#31)", () => {
+  it("finds Ops across all served projects, each tagged with its own dir", () => {
+    const empty = mkdtempSync(join(tmpdir(), "behold-estate-empty-"));
+    try {
+      // primary (empty) first, the Ops project second — the estate still finds them.
+      const ops = discoverEstateOps([empty, dir]);
+      expect(ops.map((o) => o.name)).toEqual(["prod-apply", "prod-reconcile"]);
+      expect(ops.every((o) => o.dir === dir)).toBe(true);
+    } finally {
+      rmSync(empty, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the first project's Op on a name collision across projects", () => {
+    const other = mkdtempSync(join(tmpdir(), "behold-estate-dup-"));
+    mkdirSync(join(other, "ops"));
+    writeFileSync(
+      join(other, "ops", "a.op.ts"),
+      `import { ApplyOp } from "@intentius/chant-lexicon-temporal";\nconst { op } = ApplyOp({ name: "prod-apply", env: "staging", target: "kubectl" });\nexport default op;\n`,
+    );
+    try {
+      const first = discoverEstateOps([dir, other]).find((o) => o.name === "prod-apply")!;
+      expect(first.dir).toBe(dir); // the earlier project wins
+    } finally {
+      rmSync(other, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("discoverOps", () => {
   it("finds Ops by declared name and classifies apply/reconcile + gate", () => {

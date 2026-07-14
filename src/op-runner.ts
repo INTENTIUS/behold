@@ -27,10 +27,11 @@ export class OpRunner {
 
   /**
    * Start `chant run <name>` unless one is already running (the Sync/Adopt/auto-
-   * sync path). Returns true if it started, false if busy.
+   * sync path). `cwd` is the Op's own project dir (#31 multi-estate); defaults to
+   * the primary. Returns true if it started, false if busy.
    */
-  trigger(name: string, opEnv?: string): boolean {
-    return this.start(["run", name], name, opEnv);
+  trigger(name: string, opEnv?: string, cwd?: string): boolean {
+    return this.start(["run", name], name, opEnv, cwd);
   }
 
   /**
@@ -47,11 +48,11 @@ export class OpRunner {
    * events, lift a PR URL to a `pr` event, and on completion capture a frame and
    * emit `changed`.
    */
-  private start(args: string[], label: string, opEnv?: string): boolean {
+  private start(args: string[], label: string, opEnv?: string, cwd?: string): boolean {
     if (this.current) return false;
     const { projectDir, broadcaster } = this.deps;
     broadcaster.emit("op", `▶ chant ${args.join(" ")}`);
-    const op = runChantStream(args, projectDir, (line) => {
+    const op = runChantStream(args, cwd ?? projectDir, (line) => {
       broadcaster.emit("op", line);
       const pr = extractPrUrl(line);
       if (pr) broadcaster.emit("pr", pr);
