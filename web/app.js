@@ -359,9 +359,18 @@ async function initActions() {
   const r = button("↻ Refresh", "", refresh);
   r.title = "Re-check live drift now and capture a lanes frame";
   bar.appendChild(r);
-  const { ops, adoptLexicons } = await fetch("/api/ops")
+  const { ops, adoptLexicons, autoSync } = await fetch("/api/ops")
     .then((r) => r.json())
     .catch(() => ({ ops: [], adoptLexicons: [] }));
+  // Auto-sync banner (#29) — make an active self-heal loop visible, not silent.
+  if (autoSync && autoSync !== "off") {
+    const pill = document.createElement("span");
+    pill.textContent = `⟳ auto-sync: ${autoSync}`;
+    pill.title = `On polled drift, behold triggers the ${autoSync === "apply" ? "ApplyOp (heal)" : "ReconcileOp (adopt)"}. Gated applies still wait for Approve.`;
+    pill.style.cssText =
+      "align-self:center;font-size:11px;color:var(--pending);border:1px solid var(--pending);border-radius:6px;padding:2px 8px";
+    bar.appendChild(pill);
+  }
   const apply = ops.find((o) => o.kind === "apply");
   adopt = { reconcile: ops.find((o) => o.kind === "reconcile") ?? null, lexicons: adoptLexicons ?? [] };
   if (apply) {
