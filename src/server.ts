@@ -22,6 +22,7 @@ import { nodeDiff, nodeObserved, type LiveDiffJson } from "./diff.ts";
 import { classifyHealth } from "./health.ts";
 import { OpRunner } from "./op-runner.ts";
 import { pickAutoSyncOp, type AutoSyncMode } from "./autosync.ts";
+import { sourceCommits } from "./history.ts";
 import { Broadcaster, watchSource } from "./events.ts";
 import { startDriftPoll } from "./poll.ts";
 import { FrameBuffer } from "./frames.ts";
@@ -251,6 +252,23 @@ export function createApp(
     // Health (#26): a verdict derived from the observed status — distinct from
     // drift (a node can be managed yet degraded).
     return c.json({ node, env, diff: nodeDiff(parsed, node), observed, health: classifyHealth(observed?.status) });
+  });
+
+  // Source history (#28): recent commits, offered as rollback targets.
+  app.get("/api/history", async (c) => c.json({ commits: await sourceCommits(cfg.projectDir) }));
+
+  // Rollback (#28): open a PR restoring source to a chosen revision, via chant's
+  // delegated `lifecycle rollback` (chant #873). Never a direct cloud write — the
+  // PR is reviewed and a gated Sync applies it. Streams like an op; the PR URL
+  // surfaces on the `pr` event.
+  app.post("/api/rollback", (c) => {
+    const to = new URL(c.req.url).searchParams.get("to");
+    if (!to) return c.json({ error: "rollback needs ?to=<git-ref>" }, 400);
+    const args = ["lifecycle", "rollback", ...(cfg.env ? [cfg.env] : []), "--to", to];
+    if (!runner.run(args, `rollback → ${to}`, cfg.env)) {
+      return c.json({ error: `busy — ${runner.running} is running` }, 409);
+    }
+    return c.json({ started: true, to });
   });
 
   // Static SPA. Served last so /api and /healthz win.

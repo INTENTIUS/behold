@@ -352,6 +352,36 @@ function adoptable(node) {
   );
 }
 
+// Rollback (#28): fetch recent source commits, let the user pick one, and trigger
+// the delegated rollback (opens a PR). Replaces the button with a picker + confirm.
+async function openRollback(btn) {
+  const commits = await fetch("/api/history")
+    .then((r) => r.json())
+    .then((j) => j.commits)
+    .catch(() => []);
+  if (!commits.length) {
+    nowline("rollback: no git history found");
+    return;
+  }
+  const wrap = document.createElement("span");
+  wrap.style.cssText = "display:flex;gap:6px;align-self:center";
+  const sel = document.createElement("select");
+  sel.style.cssText =
+    "background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-size:12px;max-width:340px";
+  for (const c of commits) sel.add(new Option(`${c.sha} · ${c.subject} (${c.date})`, c.sha));
+  const go = button("Roll back →", "", () => {
+    const to = sel.value;
+    if (!window.confirm(`Open a rollback PR restoring source to ${to}?\nA human reviews + merges, then Sync applies it.`)) return;
+    fetch(`/api/rollback?to=${encodeURIComponent(to)}`, { method: "POST" })
+      .then((r) => r.json())
+      .then((j) => nowline(j.error ? "✗ " + j.error : `▶ rollback → ${to} (opening PR…)`));
+    wrap.replaceWith(btn);
+  });
+  const cancel = button("✕", "", () => wrap.replaceWith(btn));
+  wrap.append(sel, go, cancel);
+  btn.replaceWith(wrap);
+}
+
 async function initActions() {
   const bar = document.getElementById("actions");
   // Refresh is always available (even for a project with no Ops) — re-check live
@@ -359,6 +389,11 @@ async function initActions() {
   const r = button("↻ Refresh", "", refresh);
   r.title = "Re-check live drift now and capture a lanes frame";
   bar.appendChild(r);
+  // Rollback (#28): pick a prior source revision → open a reviewable PR restoring
+  // it. Never a direct write; a human merges and Syncs to apply.
+  const rb = button("Rollback", "", () => openRollback(rb));
+  rb.title = "Restore source to a prior revision via a reviewable PR";
+  bar.appendChild(rb);
   const { ops, adoptLexicons, autoSync } = await fetch("/api/ops")
     .then((r) => r.json())
     .catch(() => ({ ops: [], adoptLexicons: [] }));
