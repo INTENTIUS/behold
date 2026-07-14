@@ -18,7 +18,7 @@ import { renderGraph } from "./render.ts";
 import { discoverOps } from "./ops.ts";
 import { LIVE_IMPORT_LEXICONS, extractPrUrl } from "./adopt.ts";
 import { detectProject } from "./project.ts";
-import { nodeDiff, type LiveDiffJson } from "./diff.ts";
+import { nodeDiff, nodeObserved, type LiveDiffJson } from "./diff.ts";
 import { Broadcaster, watchSource } from "./events.ts";
 import { startDriftPoll } from "./poll.ts";
 import { FrameBuffer } from "./frames.ts";
@@ -251,7 +251,7 @@ export function createApp(
     } catch {
       return c.json({ error: "diff output was not JSON — chant may predate --live --json (needs 0.18.7+)" }, 500);
     }
-    return c.json({ node, env, diff: nodeDiff(parsed, node) });
+    return c.json({ node, env, diff: nodeDiff(parsed, node), observed: nodeObserved(parsed, node) });
   });
 
   // Static SPA. Served last so /api and /healthz win.
