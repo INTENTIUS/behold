@@ -223,8 +223,10 @@ function render(ir, svg, m) {
     // read as a bug (#32).
     if (c.good === 0 && c.warn === 0 && c.accent > 0) tail += ` — nothing deployed in ${m.env} yet`;
   }
+  // Multi-estate (#31): note the composed project count; the graph draws one box per project.
+  const scope = m.estate ? `estate of ${m.estate} projects` : m.projectDir;
   document.getElementById("meta").textContent =
-    `${m.projectDir}${m.env ? " · env " + m.env : ""}${overlay ? " · overlay" : ""} · ${ir.nodes.length} nodes${tail}`;
+    `${scope}${m.env ? " · env " + m.env : ""}${overlay ? " · overlay" : ""} · ${ir.nodes.length} nodes${tail}`;
   document.getElementById("legend").style.display = overlay ? "flex" : "none";
   document.getElementById("graph").innerHTML = svg;
   wire(ir);

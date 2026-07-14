@@ -12,10 +12,13 @@ import { isAutoSyncMode, type AutoSyncMode } from "./autosync.ts";
 const USAGE = `behold — a live control plane on chant (read-only core)
 
 Usage:
-  behold serve <project-dir> [--port <n>] [--env <name>] [--poll <secs>]
+  behold serve <project-dir…> [--port <n>] [--env <name>] [--poll <secs>]
 
   serve   Start the server: the mixed-substrate graph of <project-dir> in a
-          browser, coloured by drift. Read-only — never mutates.
+          browser, coloured by drift. Read-only — never mutates. Pass several
+          project dirs to compose them into one estate (#31): per-project
+          boundary boxes + cross-stack edges. The first is the primary (ops,
+          overlay, and rollback act on it).
 
 Options:
   --port <n>          Port (default 4600).
@@ -40,7 +43,7 @@ export async function run(argv: string[]): Promise<void> {
     process.exit(2);
   }
 
-  let projectDir: string | undefined;
+  const projectDirs: string[] = [];
   let port = 4600;
   let env: string | undefined;
   let pollSecs: number | undefined;
@@ -61,14 +64,14 @@ export async function run(argv: string[]): Promise<void> {
     } else if (a === "-h" || a === "--help") {
       process.stdout.write(USAGE);
       return;
-    } else if (!a.startsWith("-") && projectDir === undefined) projectDir = a;
+    } else if (!a.startsWith("-")) projectDirs.push(a); // one or more project dirs (#31)
     else {
       process.stderr.write(`behold: unexpected argument '${a}'\n`);
       process.exit(2);
     }
   }
 
-  if (projectDir === undefined) {
+  if (projectDirs.length === 0) {
     process.stderr.write("behold serve: missing <project-dir>\n\n" + USAGE);
     process.exit(2);
   }
@@ -89,8 +92,10 @@ export async function run(argv: string[]): Promise<void> {
     process.exit(2);
   }
 
+  const dirs = projectDirs.map((d) => resolve(d));
   startServer({
-    projectDir: resolve(projectDir),
+    projectDir: dirs[0], // primary — ops/overlay/rollback act on it
+    ...(dirs.length > 1 ? { projectDirs: dirs } : {}),
     port,
     ...(env ? { env } : {}),
     ...(pollSecs !== undefined ? { pollSecs } : {}),
