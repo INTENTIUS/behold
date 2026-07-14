@@ -80,25 +80,52 @@ function inspect(node) {
   if (view.env && st) {
     const wrap = document.createElement("p");
     wrap.style.marginTop = "12px";
-    const b = button("Check drift", "", async () => {
+    const b = button("Load live state", "", async () => {
       b.disabled = true;
-      b.textContent = "checking…";
+      b.textContent = "loading…";
       try {
         const res = await fetch(`/api/diff/${encodeURIComponent(node.id)}?env=${encodeURIComponent(view.env)}`);
         const j = await res.json();
         if (!res.ok) throw new Error(j.error || res.statusText);
         wrap.remove();
-        renderDiff(panel, j.diff);
+        renderObserved(panel, j.observed); // #30 — observed status/attributes
+        renderDiff(panel, j.diff); // #27 — drift since snapshot
       } catch (e) {
         b.disabled = false;
-        b.textContent = "Check drift";
-        nowline("✗ diff: " + e.message);
+        b.textContent = "Load live state";
+        nowline("✗ live: " + e.message);
       }
     });
-    b.title = `Diff ${node.id} against live (chant lifecycle diff --live)`;
+    b.title = `Query ${node.id} live (chant lifecycle diff --live): observed state + drift`;
     wrap.appendChild(b);
     panel.appendChild(wrap);
   }
+}
+
+// Render a node's observed live state (#30) — the cloud's view of the resource.
+function renderObserved(panel, o) {
+  if (!o) return; // pending/foreign nodes have no observed record in the diff
+  const h = document.createElement("h3");
+  h.textContent = "observed";
+  h.style.cssText = "font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:14px 0 6px";
+  panel.appendChild(h);
+  const dl = document.createElement("dl");
+  const add = (k, v) => {
+    const dt = document.createElement("dt");
+    dt.textContent = k;
+    const dd = document.createElement("dd");
+    dd.textContent = v;
+    dl.append(dt, dd);
+  };
+  if (o.type) add("type", o.type);
+  if (o.status) add("status", o.status);
+  if (o.physicalId) add("physical id", o.physicalId);
+  if (o.ownership) add("ownership", o.ownership);
+  if (o.lastUpdated) add("last updated", o.lastUpdated);
+  for (const [k, v] of Object.entries(o.attributes || {})) {
+    add(k, typeof v === "object" ? JSON.stringify(v) : String(v));
+  }
+  panel.appendChild(dl);
 }
 
 const DIFF_LABEL = {

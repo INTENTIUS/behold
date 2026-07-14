@@ -29,10 +29,23 @@ export interface LiveDiffResult {
   unchanged: string[];
 }
 
+/** Observed live state of a resource — chant's ResourceMetadata (#862). */
+export interface ObservedResource {
+  type: string;
+  physicalId?: string;
+  status: string;
+  lastUpdated?: string;
+  attributes?: Record<string, unknown>;
+  ownership?: "owned" | "foreign";
+}
+
 /** Shape of `chant lifecycle diff <env> --live --json`. */
 export interface LiveDiffJson {
   environment: string;
-  lexicons: Record<string, { resources?: LiveDiffResult; artifacts?: unknown }>;
+  lexicons: Record<
+    string,
+    { resources?: LiveDiffResult; observed?: Record<string, ObservedResource>; artifacts?: unknown }
+  >;
 }
 
 export type DiffCategory =
@@ -47,6 +60,15 @@ export interface NodeDiff {
   category: DiffCategory;
   /** Field-level changes — only non-empty for `drifted` (needs a snapshot). */
   changes: AttributeChange[];
+}
+
+/** The observed live state of one node, if the diff captured it (#30). Pure. */
+export function nodeObserved(json: LiveDiffJson, nodeId: string): ObservedResource | null {
+  for (const lex of Object.values(json.lexicons ?? {})) {
+    const o = lex.observed?.[nodeId];
+    if (o) return o;
+  }
+  return null;
 }
 
 /** Find one node's drift within a parsed live-diff. Returns null if the node
