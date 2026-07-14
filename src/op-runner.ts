@@ -26,22 +26,39 @@ export class OpRunner {
   }
 
   /**
-   * Start `chant run <name>` unless one is already running. Returns true if it
-   * started, false if busy. Streams output as `op` events; lifts a PR URL to a
-   * `pr` event; on completion captures a frame and emits `changed`.
+   * Start `chant run <name>` unless one is already running (the Sync/Adopt/auto-
+   * sync path). Returns true if it started, false if busy.
    */
   trigger(name: string, opEnv?: string): boolean {
+    return this.start(["run", name], name, opEnv);
+  }
+
+  /**
+   * Run an arbitrary `chant` invocation through the same guard/stream/PR/capture
+   * path — used by the delegated rollback command (#28), which is a lifecycle
+   * command, not an Op. `label` is the display name (the running-guard key).
+   */
+  run(args: string[], label: string, opEnv?: string): boolean {
+    return this.start(args, label, opEnv);
+  }
+
+  /**
+   * Shared runner: guard on a single in-flight invocation, stream output as `op`
+   * events, lift a PR URL to a `pr` event, and on completion capture a frame and
+   * emit `changed`.
+   */
+  private start(args: string[], label: string, opEnv?: string): boolean {
     if (this.current) return false;
     const { projectDir, broadcaster } = this.deps;
-    broadcaster.emit("op", `▶ chant run ${name}`);
-    const op = runChantStream(["run", name], projectDir, (line) => {
+    broadcaster.emit("op", `▶ chant ${args.join(" ")}`);
+    const op = runChantStream(args, projectDir, (line) => {
       broadcaster.emit("op", line);
       const pr = extractPrUrl(line);
       if (pr) broadcaster.emit("pr", pr);
     });
-    this.current = name;
+    this.current = label;
     void op.done.then(async (code) => {
-      broadcaster.emit("op", `■ ${name} exited ${code}`);
+      broadcaster.emit("op", `■ ${label} exited ${code}`);
       await this.deps.onDone(opEnv);
       broadcaster.emit("changed");
       this.current = null;
