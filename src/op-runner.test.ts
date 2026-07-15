@@ -8,7 +8,7 @@ const streamMock = vi.fn(() => ({
   kill: vi.fn(),
   done: new Promise<number>((res) => { resolveDone = res; }),
 }));
-vi.mock("./chant.ts", () => ({ runChantStream: (...a: unknown[]) => streamMock(...a) }));
+vi.mock("./chant.ts", () => ({ runChantStream: () => streamMock() }));
 
 import { OpRunner } from "./op-runner.ts";
 import { Broadcaster } from "./events.ts";
