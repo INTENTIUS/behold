@@ -15,16 +15,32 @@ chant source ──build/lint──▶ graph IR ──behold──▶ live graph
 
 ## Try it — your first apply
 
+**Local, no cloud account (recommended first).** chant's `local-cloud-trio` deploys
+to a local emulated AWS (Floci) via Docker — the op boots the emulator, applies, and
+tears it down. behold gives every committed Op a **Run** button:
+
 ```sh
-npm install                                  # behold
-npm install --prefix example-writes          # the demo project's chant
-npm run dev -- serve example-writes --env prod
-#   → http://localhost:4600 — click Sync to deploy one S3 bucket
+npm install
+npm install --prefix <path-to>/chant/examples/local-cloud-trio
+npm run dev -- serve <path-to>/chant/examples/local-cloud-trio
+#   → http://localhost:4600 — click "Run aws" (needs Docker; no AWS account, no cost)
 ```
 
-The **Sync** (and **Adopt**) buttons appear only when the served project declares an
-`ApplyOp`/`ReconcileOp` — `example-writes` does; the default `example` doesn't (so it
-shows no Sync, by design). Full walkthrough: **[example-writes/README.md](example-writes/README.md)**.
+**Real AWS.** `example-writes` deploys one S3 bucket via CloudFormation — the **Sync**
+button starts its `ApplyOp`:
+
+```sh
+npm install --prefix example-writes
+npm run dev -- serve example-writes --env prod    # needs AWS credentials
+```
+
+Which buttons appear depends on what the project committed: **Sync** for an `ApplyOp`,
+**Adopt** (per foreign node) for a `ReconcileOp`, **Run** for any other deploy Op. A
+project with no Ops (the default `example`) shows none — by design, not a bug. Full
+walkthrough: **[example-writes/README.md](example-writes/README.md)**.
+
+> Coming next: `behold serve --local` — behold boots the emulator itself, points its
+> live overlay at it, and keeps it up so you can watch drift as you iterate.
 
 ## Read-only core, delegated gated writes (the invariant)
 
