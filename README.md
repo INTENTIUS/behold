@@ -13,34 +13,34 @@ chant source ──build/lint──▶ graph IR ──behold──▶ live graph
               (deterministic)          (server + browser)
 ```
 
-## Try it — your first apply
+## Try it — your first apply, no cloud account
 
-**Local, no cloud account (recommended first).** chant's `local-cloud-trio` deploys
-to a local emulated AWS (Floci) via Docker — the op boots the emulator, applies, and
-tears it down. behold gives every committed Op a **Run** button:
+The bundled `example-writes` is one S3 bucket. `--local` boots a local emulator
+(Floci, via Docker), points behold's live overlay at it, and gives you a **Run
+floci-apply** button that deploys to it — no AWS account, no creds, no cost:
 
 ```sh
 npm install
-npm install --prefix <path-to>/chant/examples/local-cloud-trio
-npm run dev -- serve <path-to>/chant/examples/local-cloud-trio
-#   → http://localhost:4600 — click "Run aws" (needs Docker; no AWS account, no cost)
+npm run demo        # installs example-writes' deps, then serves it with --local
+#   → http://localhost:4600
 ```
 
-**Real AWS.** `example-writes` deploys one S3 bucket via CloudFormation — the **Sync**
-button starts its `ApplyOp`:
+<sub>(or by hand: `npm install --prefix example-writes && npm run dev -- serve example-writes --local --env prod`)</sub>
 
-```sh
-npm install --prefix example-writes
-npm run dev -- serve example-writes --env prod    # needs AWS credentials
-```
+1. The graph shows the bucket + its TLS policy — **blue** (declared, not yet deployed).
+2. Click **Run floci-apply**. The now-line streams Build → Apply → Verify; the bucket
+   is created in the emulator via the CloudFormation API.
+3. The nodes flip **green (managed)** — behold's overlay observes the live emulator.
 
-Which buttons appear depends on what the project committed: **Sync** for an `ApplyOp`,
-**Adopt** (per foreign node) for a `ReconcileOp`, **Run** for any other deploy Op. A
-project with no Ops (the default `example`) shows none — by design, not a bug. Full
-walkthrough: **[example-writes/README.md](example-writes/README.md)**.
+No Docker running? behold still serves the source graph and tells you to start it —
+it never dies on you.
 
-> Coming next: `behold serve --local` — behold boots the emulator itself, points its
-> live overlay at it, and keeps it up so you can watch drift as you iterate.
+**Real AWS.** The same project's **Sync** button starts its `ApplyOp` against a real
+account: `npm run dev -- serve example-writes --env prod` (needs AWS credentials).
+Which buttons appear depends on what the project committed: **Sync** (`ApplyOp`),
+**Adopt** per foreign node (`ReconcileOp`), **Run** (any other Op). A project with no
+Ops (the default `example`) shows none — by design, not a bug. Full walkthrough:
+**[example-writes/README.md](example-writes/README.md)**.
 
 ## Read-only core, delegated gated writes (the invariant)
 

@@ -3,8 +3,8 @@ import { Op, phase, build, awsApply, httpCheck } from "@intentius/chant-lexicon-
 // Deploy the S3 bucket to the local Floci emulator via the CloudFormation API
 // (awsApply — direct create-or-update + poll, no aws CLI, honours the endpoint).
 // `behold serve … --local` boots Floci; this Op's Run button deploys to it. No
-// cloud account, no creds — the creds-free first apply. (The `prod-apply` ApplyOp
-// is the real-AWS path; it shells `aws cloudformation deploy`.)
+// cloud account, no creds — the creds-free first apply. (prod-apply is the
+// real-AWS path; it shells the aws CLI.)
 export default Op({
   name: "floci-apply",
   overview: "S3 bucket → local Floci (CloudFormation API), no cloud account",
