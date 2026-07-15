@@ -11,7 +11,10 @@ export default Op({
   taskQueue: "behold-local",
   phases: [
     phase("Build", [build(".", { script: "build" })]),
-    phase("Apply", [awsApply("template.json", { stackName: "behold-local", endpoint: "http://localhost:4566" })]),
+    // Stack name = the env ("prod"), so `serve --local --env prod`'s overlay —
+    // which queries the CFN stack named after the env — observes this deploy and
+    // flips the node green (chant #926 points the live query at the emulator).
+    phase("Apply", [awsApply("template.json", { stackName: "prod", endpoint: "http://localhost:4566" })]),
     phase("Verify", [httpCheck("http://localhost:4566/behold-floci-demo")]),
   ],
 });
