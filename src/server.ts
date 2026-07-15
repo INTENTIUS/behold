@@ -390,17 +390,25 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
         })
       : () => {};
   void capture(); // baseline keyframe at startup
-  process.on("SIGINT", () => {
+  // Clean shutdown on both Ctrl-C (SIGINT) and `kill` (SIGTERM) — otherwise a
+  // `kill`ed instance leaves its emulator container running, which the next launch
+  // silently reuses (a stale-state trap). Guard against double-fire.
+  let shuttingDown = false;
+  const shutdown = (): void => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     stopWatch();
     stopPoll();
     // Local mode (#46): tear the emulator(s) down so nothing is left running.
     // Best-effort — never block shutdown on a docker error.
-    const shutdown = cfg.local && cfg.emulators && cfg.emulators.length
+    const done = cfg.local && cfg.emulators && cfg.emulators.length
       ? emulatorDown(cfg.projectDir).catch((err) =>
           process.stderr.write(`emulator down: ${err instanceof Error ? err.message : String(err)}\n`))
       : Promise.resolve();
-    void shutdown.finally(() => process.exit(0));
-  });
+    void done.finally(() => process.exit(0));
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
   const server = serve({ fetch: app.fetch, port: cfg.port }, (info) => {
     const poll = cfg.env && cfg.pollSecs ? `, polling drift every ${cfg.pollSecs}s` : "";
     const auto = autoSync !== "off" ? `  auto-sync: ${autoSync}` : "";
@@ -424,6 +432,9 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   // ("No Ops") and blame the new one. Tear down any emulator we just booted.
   server.on("error", (err: NodeJS.ErrnoException) => {
     if (err.code === "EADDRINUSE") {
+      // Deliberately do NOT tear the emulator down here: on a port clash another
+      // behold is already serving and likely sharing this same (idempotently
+      // reused) emulator — tearing it down would break the running instance.
       process.stderr.write(
         `behold: port ${cfg.port} is already in use — another behold is probably running there.\n` +
           `  Stop it (\`lsof -nP -iTCP:${cfg.port} -sTCP:LISTEN\` to find it), or pass --port <n>.\n`,
@@ -431,9 +442,6 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
     } else {
       process.stderr.write(`behold: server error: ${err.message}\n`);
     }
-    const cleanup = cfg.local && cfg.emulators && cfg.emulators.length
-      ? emulatorDown(cfg.projectDir).catch(() => {})
-      : Promise.resolve();
-    void cleanup.finally(() => process.exit(1));
+    process.exit(1);
   });
 }
