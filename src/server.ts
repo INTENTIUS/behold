@@ -319,17 +319,28 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   // via spawn, so observe and deploy both hit the emulator. Do this before the
   // baseline capture so the first overlay already sees local state.
   if (cfg.local) {
-    const emulators = await emulatorUp(cfg.projectDir);
-    cfg.emulators = emulators;
-    if (emulators.length === 0) {
-      process.stderr.write(
-        "behold serve --local: no configured lexicon has a local emulator — serving without one.\n",
-      );
-    } else {
-      Object.assign(process.env, mergedEnv(emulators));
-      for (const e of emulators) {
-        process.stdout.write(`  local: ${e.lexicon} ${e.name} up on ${e.endpoint}\n`);
+    try {
+      const emulators = await emulatorUp(cfg.projectDir);
+      cfg.emulators = emulators;
+      if (emulators.length === 0) {
+        process.stderr.write(
+          "behold serve --local: no configured lexicon has a local emulator — serving without one.\n",
+        );
+      } else {
+        Object.assign(process.env, mergedEnv(emulators));
+        for (const e of emulators) {
+          process.stdout.write(`  local: ${e.lexicon} ${e.name} up on ${e.endpoint}\n`);
+        }
       }
+    } catch (err) {
+      // A viewer must still come up. If the emulator can't boot (Docker down),
+      // warn loudly and serve the source graph anyway — the user starts Docker
+      // and restarts to get the emulator, rather than facing a dead server.
+      cfg.emulators = [];
+      process.stderr.write(
+        `behold serve --local: ${err instanceof Error ? err.message : String(err)}\n` +
+          "  Serving the source graph without the emulator — start Docker and restart to enable local deploys.\n",
+      );
     }
   }
 
@@ -390,7 +401,7 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
       : Promise.resolve();
     void shutdown.finally(() => process.exit(0));
   });
-  serve({ fetch: app.fetch, port: cfg.port }, (info) => {
+  const server = serve({ fetch: app.fetch, port: cfg.port }, (info) => {
     const poll = cfg.env && cfg.pollSecs ? `, polling drift every ${cfg.pollSecs}s` : "";
     const auto = autoSync !== "off" ? `  auto-sync: ${autoSync}` : "";
     const localTag =
@@ -407,5 +418,22 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
       const envs = environments.length ? environments.join(", ") : "(none declared — env picker shows only source)";
       process.stdout.write(`  detected: environments [${envs}]  lexicons [${lexicons.join(", ")}]\n`);
     });
+  });
+  // Fail loudly on a taken port. Otherwise a stale behold squatting on 4600 keeps
+  // answering while your new launch silently no-ops — you stare at the OLD project
+  // ("No Ops") and blame the new one. Tear down any emulator we just booted.
+  server.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE") {
+      process.stderr.write(
+        `behold: port ${cfg.port} is already in use — another behold is probably running there.\n` +
+          `  Stop it (\`lsof -nP -iTCP:${cfg.port} -sTCP:LISTEN\` to find it), or pass --port <n>.\n`,
+      );
+    } else {
+      process.stderr.write(`behold: server error: ${err.message}\n`);
+    }
+    const cleanup = cfg.local && cfg.emulators && cfg.emulators.length
+      ? emulatorDown(cfg.projectDir).catch(() => {})
+      : Promise.resolve();
+    void cleanup.finally(() => process.exit(1));
   });
 }
