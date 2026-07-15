@@ -27,6 +27,9 @@ Options:
   --auto-sync <mode>  On a polled drift, trigger a committed Op (needs --env + --poll).
                       off (default) | apply (heal via ApplyOp) | pull-request
                       (adopt via ReconcileOp). Gated applies still wait for Approve.
+  --local             Boot the project's local emulator(s) (chant #920) and observe
+                      them — the creds-free first apply. Deploys (Run/Sync) hit the
+                      emulator; torn down on exit. Needs Docker.
   -h, --help          This text.
 `;
 
@@ -48,12 +51,14 @@ export async function run(argv: string[]): Promise<void> {
   let env: string | undefined;
   let pollSecs: number | undefined;
   let autoSync: AutoSyncMode = "off";
+  let local = false;
 
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     if (a === "--port") port = Number(rest[++i]);
     else if (a === "--env") env = rest[++i];
     else if (a === "--poll") pollSecs = Number(rest[++i]);
+    else if (a === "--local") local = true;
     else if (a === "--auto-sync") {
       const m = rest[++i];
       if (!m || !isAutoSyncMode(m)) {
@@ -93,13 +98,14 @@ export async function run(argv: string[]): Promise<void> {
   }
 
   const dirs = projectDirs.map((d) => resolve(d));
-  startServer({
+  await startServer({
     projectDir: dirs[0], // primary — ops/overlay/rollback act on it
     ...(dirs.length > 1 ? { projectDirs: dirs } : {}),
     port,
     ...(env ? { env } : {}),
     ...(pollSecs !== undefined ? { pollSecs } : {}),
     ...(autoSync !== "off" ? { autoSync } : {}),
+    ...(local ? { local: true } : {}),
   });
 }
 

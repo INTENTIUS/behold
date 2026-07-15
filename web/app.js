@@ -396,9 +396,23 @@ async function initActions() {
   const rb = button("Rollback", "", () => openRollback(rb));
   rb.title = "Restore source to a prior revision via a reviewable PR";
   bar.appendChild(rb);
-  const { ops, adoptLexicons, autoSync } = await fetch("/api/ops")
+  const { ops, adoptLexicons, autoSync, local } = await fetch("/api/ops")
     .then((r) => r.json())
     .catch(() => ({ ops: [], adoptLexicons: [] }));
+  // Local-mode banner (#46) — the emulator(s) behold booted with --local, so it's
+  // obvious deploys/overlay hit them (no cloud creds), not a real account.
+  if (local && local.emulators && local.emulators.length) {
+    const pill = document.createElement("span");
+    const names = local.emulators.map((e) => e.name).join(", ");
+    pill.textContent = `● local · ${names} up`;
+    pill.title =
+      "Emulator(s) booted by --local: " +
+      local.emulators.map((e) => `${e.lexicon} ${e.name} @ ${e.endpoint}`).join("; ") +
+      ". Deploys and the overlay observe them — no cloud creds.";
+    pill.style.cssText =
+      "align-self:center;font-size:11px;color:var(--managed);border:1px solid var(--managed);border-radius:6px;padding:2px 8px";
+    bar.appendChild(pill);
+  }
   // Auto-sync banner (#29) — make an active self-heal loop visible, not silent.
   if (autoSync && autoSync !== "off") {
     const pill = document.createElement("span");

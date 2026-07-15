@@ -28,6 +28,7 @@ import { Broadcaster, watchSource } from "./events.ts";
 import { startDriftPoll } from "./poll.ts";
 import { FrameBuffer } from "./frames.ts";
 import { renderLanes } from "./lanes.ts";
+import { emulatorUp, emulatorDown, mergedEnv, type EmulatorInfo } from "./emulator.ts";
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
 
@@ -45,6 +46,12 @@ export interface ServerOptions {
   /** Auto-sync mode (#29): on a polled drift, trigger the ApplyOp ("apply") or
    * ReconcileOp ("pull-request"). Off by default; needs `env` + `pollSecs`. */
   autoSync?: AutoSyncMode;
+  /** Local mode (#46): boot the project's emulator(s) on start and observe them.
+   * The creds-free first apply — deploys and overlay hit the emulator. Needs Docker. */
+  local?: boolean;
+  /** The emulators booted for `local` mode, populated at startup. Drives the header
+   * banner (surfaced on /api/ops) so the mode is visible. */
+  emulators?: EmulatorInfo[];
   port: number;
 }
 
@@ -135,6 +142,11 @@ export function createApp(
       adoptLexicons: LIVE_IMPORT_LEXICONS,
       // Auto-sync mode (#29), so the SPA can show the banner.
       autoSync: cfg.autoSync ?? "off",
+      // Local mode (#46): the booted emulators, so the SPA shows a "local · up"
+      // banner. null when not in --local (or nothing to boot).
+      local: cfg.emulators && cfg.emulators.length
+        ? { emulators: cfg.emulators.map((e) => ({ lexicon: e.lexicon, name: e.name, endpoint: e.endpoint })) }
+        : null,
     }),
   );
 
@@ -301,7 +313,26 @@ export function createApp(
   return app;
 }
 
-export function startServer(cfg: ServerOptions): void {
+export async function startServer(cfg: ServerOptions): Promise<void> {
+  // Local mode (#46): boot the project's emulator(s) first, then apply their env
+  // to *this* process — every chant shell-out (graph --live, run <op>) inherits it
+  // via spawn, so observe and deploy both hit the emulator. Do this before the
+  // baseline capture so the first overlay already sees local state.
+  if (cfg.local) {
+    const emulators = await emulatorUp(cfg.projectDir);
+    cfg.emulators = emulators;
+    if (emulators.length === 0) {
+      process.stderr.write(
+        "behold serve --local: no configured lexicon has a local emulator — serving without one.\n",
+      );
+    } else {
+      Object.assign(process.env, mergedEnv(emulators));
+      for (const e of emulators) {
+        process.stdout.write(`  local: ${e.lexicon} ${e.name} up on ${e.endpoint}\n`);
+      }
+    }
+  }
+
   const broadcaster = new Broadcaster();
   const frames = new FrameBuffer();
   // One runner shared by the HTTP routes and the auto-sync loop (one running-guard).
@@ -351,14 +382,24 @@ export function startServer(cfg: ServerOptions): void {
   process.on("SIGINT", () => {
     stopWatch();
     stopPoll();
-    process.exit(0);
+    // Local mode (#46): tear the emulator(s) down so nothing is left running.
+    // Best-effort — never block shutdown on a docker error.
+    const shutdown = cfg.local && cfg.emulators && cfg.emulators.length
+      ? emulatorDown(cfg.projectDir).catch((err) =>
+          process.stderr.write(`emulator down: ${err instanceof Error ? err.message : String(err)}\n`))
+      : Promise.resolve();
+    void shutdown.finally(() => process.exit(0));
   });
   serve({ fetch: app.fetch, port: cfg.port }, (info) => {
     const poll = cfg.env && cfg.pollSecs ? `, polling drift every ${cfg.pollSecs}s` : "";
     const auto = autoSync !== "off" ? `  auto-sync: ${autoSync}` : "";
+    const localTag =
+      cfg.emulators && cfg.emulators.length
+        ? `  local: ${cfg.emulators.map((e) => e.name).join(", ")} up (creds-free — deploys hit the emulator)`
+        : "";
     process.stdout.write(
       `behold → http://localhost:${info.port}\n` +
-        `  project: ${cfg.projectDir}${cfg.env ? `  env: ${cfg.env}` : ""}${auto}\n` +
+        `  project: ${cfg.projectDir}${cfg.env ? `  env: ${cfg.env}` : ""}${auto}${localTag}\n` +
         `  read-only, watching for edits${poll}. lanes: /lanes. Ctrl-C to stop.\n`,
     );
     // Report what the pickers will offer, so an empty env picker is diagnosable.
