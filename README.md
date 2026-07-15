@@ -13,6 +13,19 @@ chant source ──build/lint──▶ graph IR ──behold──▶ live graph
               (deterministic)          (server + browser)
 ```
 
+## Try it — your first apply
+
+```sh
+npm install                                  # behold
+npm install --prefix example-writes          # the demo project's chant
+npm run dev -- serve example-writes --env prod
+#   → http://localhost:4600 — click Sync to deploy one S3 bucket
+```
+
+The **Sync** (and **Adopt**) buttons appear only when the served project declares an
+`ApplyOp`/`ReconcileOp` — `example-writes` does; the default `example` doesn't (so it
+shows no Sync, by design). Full walkthrough: **[example-writes/README.md](example-writes/README.md)**.
+
 ## Read-only core, delegated gated writes (the invariant)
 
 **behold never mutates anything itself.**
