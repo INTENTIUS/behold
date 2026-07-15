@@ -58,11 +58,18 @@ export class OpRunner {
       if (pr) broadcaster.emit("pr", pr);
     });
     this.current = label;
-    void op.done.then(async (code) => {
+    void op.done.then((code) => {
       broadcaster.emit("op", `■ ${label} exited ${code}`);
-      await this.deps.onDone(opEnv);
-      broadcaster.emit("changed");
+      // Release the running-guard the instant the Op PROCESS ends. The post-op
+      // frame capture is a live `chant graph --live` query that can take many
+      // seconds against a slow/flaky emulator; it must NOT keep the guard held
+      // (otherwise a finished Op still reads "an Op is already running") — run it
+      // in the background and emit `changed` when it lands.
       this.current = null;
+      Promise.resolve(this.deps.onDone(opEnv))
+        .then(() => broadcaster.emit("changed"))
+        .catch((err) =>
+          broadcaster.emit("op", `⚠ post-op capture: ${err instanceof Error ? err.message : String(err)}`));
     });
     return true;
   }
