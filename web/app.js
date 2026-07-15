@@ -413,12 +413,22 @@ async function initActions() {
   if (apply) {
     bar.appendChild(button("Sync", "", () => runOp(apply.name)));
     if (apply.gate) bar.appendChild(button("Approve", "approve", () => signal(apply.name, apply.gate)));
-  } else {
-    // No ApplyOp → no Sync. Say so, rather than an unexplained missing button (#32).
+  }
+  // Generic Run — any committed Op that isn't a labelled ApplyOp/ReconcileOp gets a
+  // run button, so a plain deploy Op (e.g. a local Floci one: boot emulator → apply
+  // → teardown) is actually reachable, not just listed. Sync/Adopt stay the named
+  // specialisations. behold still only *triggers* the Op on the executor.
+  for (const op of ops.filter((o) => o.kind === "op" || o.kind === "audit")) {
+    const b = button(`Run ${op.name}`, "", () => runOp(op.name));
+    b.title = `chant run ${op.name}${op.dir ? " — in " + op.dir.split("/").pop() : ""}`;
+    bar.appendChild(b);
+  }
+  // Only complain when there's genuinely nothing to do.
+  if (ops.length === 0) {
     const hint = document.createElement("span");
     hint.style.cssText = "color:var(--muted);font-size:11px;align-self:center";
-    hint.textContent = ops.length ? "no ApplyOp — Sync unavailable" : "no Ops — add an ApplyOp to enable Sync";
-    hint.title = "Delegated writes trigger a committed *.op.ts (ApplyOp / ReconcileOp) on your executor. Commit one to enable Sync/Adopt.";
+    hint.textContent = "no Ops — commit an *.op.ts (ApplyOp / ReconcileOp / any deploy Op) to act";
+    hint.title = "behold triggers committed Ops on your executor. Add one to enable Sync / Adopt / Run.";
     bar.appendChild(hint);
   }
 }
