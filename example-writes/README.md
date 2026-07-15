@@ -6,14 +6,32 @@ they do — behold never applies anything itself, it triggers the `ApplyOp` you
 committed here, running `chant` on your machine.
 
 ```
-src/bucket.ts        one S3 Bucket (the whole "infra")
-ops/apply.op.ts      ApplyOp "prod-apply" — code → cloud (ungated, local executor)
+src/bucket.ts        one S3 Bucket + a TLS-only policy (the whole "infra")
+ops/apply.op.ts      ApplyOp "prod-apply" — code → real AWS (aws cloudformation deploy)
+ops/floci.op.ts      Op "floci-apply" — code → local Floci (CloudFormation API), no account
 ops/reconcile.op.ts  ReconcileOp "prod-reconcile" — cloud → code PR (the Adopt button)
 chant.config.ts      lexicons [aws, temporal], environments [prod]
 ```
 
 The **Sync** button appears because a project declares an `ApplyOp`. A project with
 no `*.op.ts` (like `../example`) shows no Sync — that's expected, not a bug.
+
+## Creds-free: deploy to a local emulator (`--local`)
+
+No AWS account? Serve with `--local` and behold boots a local Floci emulator
+(needs Docker), then the **floci-apply** Op deploys the bucket to it — the same
+delegated-write path, zero cloud creds:
+
+```sh
+# from the behold repo root
+npm run dev -- serve example-writes --local
+#   → boots chant-floci, header shows "● local · chant-floci up"
+```
+
+Click **floci-apply** (or `curl -XPOST localhost:4600/api/ops/floci-apply/run`).
+The now-line streams Build → Apply → Verify; the bucket is created in Floci via
+the CloudFormation API (`awsApply`, no `aws` CLI). The emulator is torn down when
+you Ctrl-C. Everything below uses real AWS instead.
 
 ## Prerequisites
 
