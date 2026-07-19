@@ -75,4 +75,23 @@ describe("resourcesByComponent", () => {
   it("returns {} for an empty node set", () => {
     expect(resourcesByComponent({ nodes: [], edges: [], groups: {} })).toEqual({});
   });
+
+  it("drops non-component src dirs when a known component set is given (no phantom 'examples')", () => {
+    const withExamples: GraphIR = {
+      nodes: [
+        { id: "loom-db-instance", kind: "RdsInstance", lexicon: "aws", attrs: {}, sourceLoc: { file: "src/loom-db/database.ts", line: 1 } },
+        // src/examples/ + src/composites/ are graphed but aren't deployable components.
+        { id: "byo-example", kind: "Thing", lexicon: "aws", attrs: {}, sourceLoc: { file: "src/examples/byo/thing.ts", line: 1 } },
+        { id: "shared-composite", kind: "Thing", lexicon: "aws", attrs: {}, sourceLoc: { file: "src/composites/util.ts", line: 1 } },
+      ],
+      edges: [],
+      groups: {},
+    };
+    // Without the known set: naive grouping surfaces "examples" and "composites".
+    expect(Object.keys(resourcesByComponent(withExamples)).sort()).toEqual(["composites", "examples", "loom-db"]);
+    // With the real component set: only real components survive; the rest are
+    // simply absent (→ summarizePlan counts their entries as uncorrelated).
+    const known = new Set(["loom-db", "loom-backend", "shared-foundation"]);
+    expect(Object.keys(resourcesByComponent(withExamples, known))).toEqual(["loom-db"]);
+  });
 });

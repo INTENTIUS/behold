@@ -104,6 +104,20 @@ function tierTargetOpts(opts: GraphOptions): Pick<GraphOptions, "tier" | "target
   return out;
 }
 
+/** The real deployable component set (`chant graph --components` node ids) for
+ * the current lens, so the reconcile / resources correlation can drop
+ * non-component `src/` dirs (examples, composites, lib) instead of surfacing
+ * them as phantom components. Best-effort: undefined on failure → the
+ * correlation stays unfiltered (no worse than before). */
+async function knownComponents(projectDir: string, opts: GraphOptions): Promise<Set<string> | undefined> {
+  try {
+    const ir = await componentGraphIr(projectDir, { env: opts.env, ...tierTargetOpts(opts) });
+    return new Set(ir.nodes.map((n) => n.id));
+  } catch {
+    return undefined;
+  }
+}
+
 /** A clear, generic note for a graph/facet call that failed while a non-default
  * tier was picked (M2, #54) — e.g. loomster's `full` tier trips chant's lint
  * gate on Floci (needs real-AWS params it doesn't have here). Undefined when
@@ -475,11 +489,14 @@ export function createApp(
     const opts = optsFromQuery(new URL(c.req.url));
     const env = opts.env ?? cfg.env;
     try {
-      const ir = await graphIr(
-        cfg.projectDir,
-        env ? { live: true, overlay: true, env, ...tierTargetOpts(opts) } : tierTargetOpts(opts),
-      );
-      return c.json({ byComponent: resourcesByComponent(ir) });
+      const [ir, known] = await Promise.all([
+        graphIr(
+          cfg.projectDir,
+          env ? { live: true, overlay: true, env, ...tierTargetOpts(opts) } : tierTargetOpts(opts),
+        ),
+        knownComponents(cfg.projectDir, opts),
+      ]);
+      return c.json({ byComponent: resourcesByComponent(ir, known) });
     } catch (err) {
       return errorResponse(c, opts, err);
     }
@@ -502,11 +519,12 @@ export function createApp(
       return c.json({ error: "reconcile needs an environment — pick one, or start behold with --env <name>" }, 400);
     }
     try {
-      const [plan, ir] = await Promise.all([
+      const [plan, ir, known] = await Promise.all([
         lifecyclePlan(cfg.projectDir, env, opts),
         graphIr(cfg.projectDir, { live: true, overlay: true, env, ...tierTargetOpts(opts) }),
+        knownComponents(cfg.projectDir, opts),
       ]);
-      return c.json(summarizePlan(plan, resourcesByComponent(ir)));
+      return c.json(summarizePlan(plan, resourcesByComponent(ir, known)));
     } catch (err) {
       return errorResponse(c, opts, err);
     }

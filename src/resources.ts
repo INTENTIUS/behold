@@ -34,8 +34,15 @@ export interface ComponentResource {
 /** Group an entity-graph IR's nodes by component, via the `src/<component>/`
  * source-location convention. A node whose `sourceLoc.file` isn't nested
  * under a top-level `src/<dir>/` (no file, or a bare `src/<file>` with no
- * subdir) is skipped — a convention match, not a chant-native fact. Pure. */
-export function resourcesByComponent(ir: GraphIR): Record<string, ComponentResource[]> {
+ * subdir) is skipped — a convention match, not a chant-native fact.
+ *
+ * `known`, when given, is the real deployable component set (from `chant graph
+ * --components`). A `src/<dir>/` that isn't a real component — `src/examples/`,
+ * `src/composites/`, `src/lib/`, `src/local/` — is then NOT treated as a
+ * component: its nodes are dropped here, so summarizePlan counts them as
+ * `uncorrelated` (honest — they belong to no deployable component) rather than
+ * inventing a phantom "examples" component with pending changes. Pure. */
+export function resourcesByComponent(ir: GraphIR, known?: Set<string>): Record<string, ComponentResource[]> {
   const byComponent: Record<string, ComponentResource[]> = {};
   for (const n of ir.nodes) {
     const file = n.sourceLoc?.file;
@@ -45,6 +52,7 @@ export function resourcesByComponent(ir: GraphIR): Record<string, ComponentResou
     // wouldn't match; loomster nests every component under its own dir.
     if (parts[0] !== "src" || parts.length < 3) continue;
     const component = parts[1];
+    if (known && !known.has(component)) continue; // a non-component src dir (examples, composites, lib…)
     (byComponent[component] ??= []).push({
       id: n.id,
       kind: n.kind,
