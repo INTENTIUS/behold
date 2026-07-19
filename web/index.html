@@ -19,7 +19,7 @@
         display: flex; align-items: baseline; gap: 12px; }
       header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .3px; }
       header .meta { color: var(--muted); font-size: 12px; }
-      #graph { grid-row: 3; grid-column: 1; overflow: auto; }
+      #graph { grid-row: 3; grid-column: 1; overflow: auto; position: relative; }
       #inspect { grid-row: 3; grid-column: 2; border-left: 1px solid var(--line); background: var(--panel);
         padding: 14px; overflow: auto; }
       #inspect h2 { font-size: 13px; margin: 0 0 8px; color: var(--muted); font-weight: 600;
@@ -28,8 +28,19 @@
       #inspect dt { color: var(--muted); }
       #inspect dd { margin: 0; word-break: break-all; }
       /* The graph SVG is pinhole's, self-styled (themes, icons, `_status` drift
-         colours). behold only adds a selection highlight on the clicked node. */
-      #graph svg { max-width: none; }
+         colours). It ships a fixed pixel width/height (a natural size far larger
+         than a small graph needs), so by default behold FITS it to the pane —
+         render() strips the width/height + sets preserveAspectRatio, and this
+         makes the SVG fill #graph with its viewBox content scaled to fit (whole
+         graph visible, aspect kept). `.zoomed` switches to 100%-width so a big
+         graph renders large and scrolls. behold also adds a selection highlight. */
+      #graph svg { display: block; width: 100%; height: 100%; padding: 12px; }
+      #graph.zoomed svg { height: auto; }
+      /* Fit / zoom toggle, floating top-right of the graph pane. */
+      #zoom-toggle { position: absolute; top: 8px; right: 8px; z-index: 2; background: var(--panel);
+        color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px;
+        font-size: 12px; cursor: pointer; }
+      #zoom-toggle:hover { border-color: var(--pending); color: var(--fg); }
       .sel rect, .sel path, .sel > rect { stroke: var(--pending) !important; stroke-width: 2.5 !important; }
       .err { padding: 24px; color: var(--foreign); }
       /* M2 (#54): a graph/facet failure under a picked (non-default) tier — a

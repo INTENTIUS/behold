@@ -465,6 +465,20 @@ async function loadComponentChoices() {
   return componentChoices;
 }
 
+// "Apply all" from the header (M3): the discoverable equivalent of Sync when a
+// project has no committed ApplyOp — deploy every component. Uses the current
+// env (kept live by the picker); confirms since it's a real write. The dial's
+// structured progress then renders the run.
+function confirmApplyAll() {
+  const env = view.env;
+  if (!env) {
+    nowline("✗ apply all: pick an env first (env drives the target)");
+    return;
+  }
+  if (!window.confirm(`Apply ALL components to ${env}?\nThis is a real write — chant run --components all --env ${env} --progress-json.\nLive progress appears in the dial.`)) return;
+  runApply("all");
+}
+
 function runApply(component) {
   const q = new URLSearchParams({ env: view.env, component });
   fetch(`/api/apply?${q}`, { method: "POST" })
@@ -595,9 +609,39 @@ function render(ir, svg, m) {
     `${scope}${m.env ? " · env " + m.env : ""}${axesTail}${overlay ? " · overlay" : ""}${m.components ? " · components" : ""}${componentStatus ? " · live status" : ""} · ${ir.nodes.length} nodes${tail}`;
   document.getElementById("legend").style.display = overlay ? "flex" : "none";
   document.getElementById("component-legend").style.display = componentStatus ? "flex" : "none";
-  document.getElementById("graph").innerHTML = svg;
+  const g = document.getElementById("graph");
+  g.innerHTML = svg;
+  const svgEl = g.querySelector("svg");
+  if (svgEl) {
+    // Drop pinhole's fixed pixel size so the viewBox drives sizing and the
+    // fit-to-pane CSS scales the whole graph to fit (was rendering at full
+    // natural size — a 7-node graph looked zoomed-in with huge icons).
+    svgEl.removeAttribute("width");
+    svgEl.removeAttribute("height");
+    svgEl.setAttribute("preserveAspectRatio", "xMidYMid meet");
+  }
+  g.classList.toggle("zoomed", zoomed);
+  addZoomToggle(g);
   wire(ir);
   renderDial();
+}
+
+// Fit ⇄ zoom: default fits the whole graph to the pane; toggling shows it at
+// full width (scroll) for a large estate graph where fit makes nodes tiny.
+let zoomed = false;
+function addZoomToggle(host) {
+  let btn = document.getElementById("zoom-toggle");
+  if (!btn) {
+    btn = document.createElement("button");
+    btn.id = "zoom-toggle";
+    btn.addEventListener("click", () => {
+      zoomed = !zoomed;
+      host.classList.toggle("zoomed", zoomed);
+      btn.textContent = zoomed ? "⤢ fit" : "⤢ zoom";
+    });
+    host.appendChild(btn);
+  }
+  btn.textContent = zoomed ? "⤢ fit" : "⤢ zoom";
 }
 
 // A graph/facet failure under a picked tier (M2, #54): the server explains it
@@ -887,6 +931,12 @@ async function initActions() {
   const { ops, adoptLexicons, autoSync, local, applyProgress: apInit } = await fetch("/api/ops")
     .then((r) => r.json())
     .catch(() => ({ ops: [], adoptLexicons: [] }));
+  // The env behold launched with (reliable regardless of picker-init ordering) —
+  // gates the first-class "Apply all" affordance below.
+  const initialEnv = await fetch("/api/project")
+    .then((r) => r.json())
+    .then((p) => p.currentEnv || null)
+    .catch(() => null);
   // M3 (#54): hydrate the dial's apply progress from the server's last known
   // state — a page load (or reload) mid-apply picks up the structured view
   // instead of starting blank; the `apply` SSE listener keeps it live from here.
@@ -920,17 +970,38 @@ async function initActions() {
   const apply = ops.find((o) => o.kind === "apply");
   adopt = { reconcile: ops.find((o) => o.kind === "reconcile") ?? null, lexicons: adoptLexicons ?? [] };
   if (apply) {
-    bar.appendChild(button("Sync", "", () => runOp(apply.name)));
+    // A committed ApplyOp exists → the classic "Sync" (trigger the heal Op).
+    const s = button("Sync", "approve", () => runOp(apply.name));
+    s.title = `Apply the committed state via ${apply.name} (chant run ${apply.name}) — behold triggers, the executor applies.`;
+    bar.appendChild(s);
     if (apply.gate) bar.appendChild(button("Approve", "approve", () => signal(apply.name, apply.gate)));
+  } else if (initialEnv) {
+    // No ApplyOp, but there's an env → the equivalent "apply everything" IS the
+    // component driver's `run --components all` (M3), which otherwise lives only
+    // in the dial. Surface it as a first-class "Apply all" so it's the obvious
+    // deploy action, not something you have to discover in the dial.
+    const a = button("Apply all", "approve", () => confirmApplyAll());
+    a.title = `Deploy every component to ${initialEnv} (chant run --components all --env ${initialEnv} --progress-json). Live progress shows in the dial.`;
+    bar.appendChild(a);
   }
-  // Generic Run — any committed Op that isn't a labelled ApplyOp/ReconcileOp gets a
-  // run button, so a plain deploy Op (e.g. a local Floci one: boot emulator → apply
-  // → teardown) is actually reachable, not just listed. Sync/Adopt stay the named
-  // specialisations. behold still only *triggers* the Op on the executor.
-  for (const op of ops.filter((o) => o.kind === "op" || o.kind === "audit")) {
-    const b = button(`Run ${op.name}`, "", () => runOp(op.name));
-    b.title = `chant run ${op.name}${op.dir ? " — in " + op.dir.split("/").pop() : ""}`;
-    bar.appendChild(b);
+  // Generic Ops (backup, restore, seed, watch, teardown, …) collapse into ONE
+  // "Run ▾" menu instead of a button each — loomster alone has ~9, which flooded
+  // the bar. Sync / Apply all / Rollback stay first-class; everything else is a
+  // pick-and-run dropdown. behold still only *triggers* the Op on the executor.
+  const runnable = ops.filter((o) => o.kind === "op" || o.kind === "audit");
+  if (runnable.length) {
+    const sel = document.createElement("select");
+    sel.title = "Run a committed Op (backup, restore, audit, …) on the executor";
+    sel.style.cssText =
+      "background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer";
+    sel.add(new Option(`Run ▾ (${runnable.length})`, ""));
+    for (const op of runnable) sel.add(new Option(op.name + (op.dir ? " · " + op.dir.split("/").pop() : ""), op.name));
+    sel.addEventListener("change", () => {
+      const name = sel.value;
+      sel.selectedIndex = 0;
+      if (name && window.confirm(`Run Op "${name}"?`)) runOp(name);
+    });
+    bar.appendChild(sel);
   }
   // Only complain when there's genuinely nothing to do.
   if (ops.length === 0) {
