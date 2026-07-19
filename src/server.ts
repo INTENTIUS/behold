@@ -144,11 +144,13 @@ function deployAxes(): { tier?: string; target?: string } {
 /** M2 (#54): the tier picker's options. chant has no "enumerate valid tier
  * values" concept — `LOOM_TIER` is entirely the served project's own
  * convention (deployAxes() above), not something a graph query or
- * `chant.config.ts` declares the way `environments` does. `light`/`full` are
- * loomster's two known values (the project this milestone targets); a served
- * project that never sets `LOOM_TIER` at all just doesn't offer this picker
- * (see `/api/project`, gated on `deployAxes().tier` being set already). */
-const TIER_OPTIONS = ["light", "full"];
+ * `chant.config.ts` declares the way `environments` does. loomster's valid
+ * values are `light`, `production`, `production-ha` (the project this milestone
+ * targets); locally only `light` is deployable on Floci — `production`* need
+ * real-AWS naming params and degrade gracefully (a `tierNote`). A served project
+ * that never sets `LOOM_TIER` just doesn't offer this picker (see `/api/project`,
+ * gated on `deployAxes().tier` being set already). */
+const TIER_OPTIONS = ["light", "production", "production-ha"];
 
 /** M2 (#54): the target picker's options. Modelled as an array — today there
  * is at most one (the process's own `AWS_ENDPOINT_URL`, Floci locally, unset
