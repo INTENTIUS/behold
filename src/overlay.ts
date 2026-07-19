@@ -1,26 +1,31 @@
 /**
  * Source-anchored overlay — the seam behold's spatial view depends on.
  *
- * VERIFIED in chant core (2026-07): cross-substrate edges (an ECS service wired to
- * a GKE workload) are a **source-graph** property — `buildGraphIr` composes all
- * lexicons' AttrRefs into direct edges. But `chant graph --live --overlay` returns
- * the *live* graph's edges (per-substrate islands, reconstructed by identifier
- * value-match) and appends declared "pending" nodes edgeless. So overlay today
- * gives drift status but flattens the cross-substrate topology.
+ * SHIPPED (M4): chant #821 landed in chant core as `sourceOverlayGraphs`
+ * (chant 0.18.31) and is the DEFAULT anchor for `chant graph --live --overlay`
+ * (`--overlay-anchor=live` opts back into the older `overlayGraphs` behaviour).
+ * The declared graph is the canvas, so cross-substrate edges (an ECS service
+ * wired to a GKE workload) survive — that wiring is a source-graph property,
+ * since live reconstruction is per-substrate (identifier value-match) and never
+ * crosses providers. Each declared node is classified against live observation
+ * and tagged `_status` (good=managed / accent=pending); provisioned-but-
+ * undeclared resources are appended as `warn` (foreign), with any live edges
+ * that touch them.
  *
- * behold needs the inverse: **declared edges as the canvas** (keep the cross-
- * substrate wiring) + live status/ownership joined per node by id + foreign live
- * nodes appended. That is chant #821 (a new core function beside `overlayGraphs`).
- *
- * Until #821 lands, behold's server renders the **source** graph (which already
- * carries the mixed-substrate edges — the read-only mixed-graph, provable today).
- * When #821 ships, swap the server's `graphIr` call for the source-anchored
- * overlay and colour nodes by `_status` (good=managed / warn=foreign /
- * accent=pending) — the pinhole painter already reads that tag (pinhole #80).
+ * behold does none of this joining itself — `src/chant.ts`'s `graphIr()` just
+ * passes `--live --overlay` through to the project's own chant, and the join
+ * lives entirely in chant core. This module's only job is reading the `_status`
+ * tag chant paints (below) so pinhole's painter, which already speaks this
+ * vocabulary (pinhole #80), colours the node. Verified end-to-end against
+ * loomster on Floci: `chant graph src --live --overlay --env local --format ir`
+ * returns 132 nodes / 65 edges, `_status` good/accent (no foreign nodes on a
+ * clean deploy) — see docs/roadmap/m1-cli-notes.md for the M1-era state this
+ * superseded (Q2 there predates the #821 core fix and the multi-stack
+ * `describeResources` fix that shipped alongside it in 0.18.31).
  */
-import type { GraphIR } from "@intentius/chant";
 
-/** Overlay status a renderer colours (mirrors chant `overlayGraphs` `_status`). */
+/** Overlay status a renderer colours (mirrors chant `sourceOverlayGraphs`/
+ * `overlayGraphs` `_status`). */
 export type OverlayStatus = "managed" | "foreign" | "pending";
 
 /** Read the overlay status a node carries, if any (from chant's `_status` tag). */
@@ -30,12 +35,4 @@ export function overlayStatus(node: { attrs?: Record<string, unknown> }): Overla
   if (s === "warn") return "foreign";
   if (s === "accent") return "pending";
   return undefined;
-}
-
-/** Placeholder until chant #821. A client-side join of a live IR onto a declared
- * IR — kept declared-anchored so cross-substrate edges survive — is a stopgap the
- * server could use before the core primitive exists. Not implemented yet on
- * purpose: doing it right belongs in core, where both IRs are already in hand. */
-export function sourceAnchoredOverlay(_declared: GraphIR, _live: GraphIR): GraphIR {
-  throw new Error("source-anchored overlay not implemented — tracked as chant #821");
 }

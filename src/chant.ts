@@ -37,8 +37,10 @@ export interface GraphOptions {
    * + provider CLIs on the host (why behold is a Node service, not an edge fn). */
   live?: boolean;
   /** Overlay the declared graph on the provisioned one (managed/foreign/pending).
-   * Note: today's `--overlay` keeps *live* edges — the cross-substrate topology
-   * needs chant's source-anchored overlay (chant #821). See src/overlay.ts. */
+   * Since chant 0.18.31, `--overlay` defaults to the source-anchored overlay
+   * (chant #821, `sourceOverlayGraphs`) — declared edges are the canvas, so
+   * cross-substrate topology survives; live status/ownership join per node by
+   * id. See src/overlay.ts. */
   overlay?: boolean;
   /** The tier lens (M2, #54): overrides `LOOM_TIER` for this shell-out so chant
    * re-evaluates the served project's tier-conditioned source (loomster's
@@ -253,9 +255,11 @@ export function componentStatusArgs(env: string): string[] {
  * resolved internally by chant from each component's own CFN stack
  * (`loom-<env>-<instance>-<component>` on loomster) — behold does not shell
  * `aws` or reconstruct stack names itself. Deliberately NOT the cross-
- * substrate `chant graph --live --overlay` path (`sourceAnchoredOverlay`
- * throws — chant #821; see src/overlay.ts and docs/roadmap/m1-cli-notes.md
- * Q2). The output is a bare JSON array (not wrapped in `{env, rows, ...}`) —
+ * substrate `chant graph --live --overlay` path (the source-anchored overlay,
+ * chant #821, shipped 0.18.31 — see src/overlay.ts) — this stays a distinct,
+ * single-substrate join by design (the epic keeps the component DAG's status
+ * facet AWS-only), not a workaround for a chant gap. The output is a bare
+ * JSON array (not wrapped in `{env, rows, ...}`) —
  * verified against loomster on Floci, chant 0.18.27. `opts` only matters for
  * its `tier`/`target` lens overrides (M2) — the rest of `GraphOptions` (env,
  * detail, lens…) doesn't apply to this command's argv, which takes `env` as

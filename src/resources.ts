@@ -14,11 +14,12 @@
  *
  * What this does NOT do: return the literal CFN stack (name/ARN/status) or
  * claim any live-truth; see docs/roadmap/m1-cli-notes.md Q2/Q3 and
- * src/server.ts's original `/api/resources` comment for the fuller writeup
- * of why (chant's `groups.byStack` is a lexicon partition, not a per-stack
- * grouping, and `describeResources` still assumes one stack named after the
- * env on a multi-stack project — both pre-existing chant gaps, not this
- * module's).
+ * src/server.ts's `/api/resources` comment for the fuller writeup of why
+ * (chant's `groups.byStack` is a lexicon partition, not a per-stack grouping
+ * — a pre-existing chant gap, not this module's; the *other* gap that
+ * comment used to document, `describeResources` assuming one stack named
+ * after the env on a multi-stack project, was fixed in chant 0.18.31
+ * alongside #821 — physicalId/ownership are live today).
  */
 import type { GraphIR } from "@intentius/chant";
 

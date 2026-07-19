@@ -10,9 +10,10 @@
  * call, no I/O, just `ComponentStatusRow[]` + `GraphIR` -> a coloured `GraphIR`.
  *
  * Deliberately single-substrate AWS, not the cross-substrate live overlay —
- * `chant graph --live --overlay` / `sourceAnchoredOverlay` throws (chant
- * #821) and the epic forbids it here. The component DAG stays the spine;
- * status hangs off each node by name.
+ * `chant graph --live --overlay` (the source-anchored overlay, chant #821,
+ * shipped 0.18.31 — see src/overlay.ts) is a distinct entity-level view the
+ * epic keeps separate from this component-level facet. The component DAG
+ * stays the spine; status hangs off each node by name.
  */
 import type { GraphIR, ComponentStatusRow } from "@intentius/chant";
 
