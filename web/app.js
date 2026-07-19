@@ -521,7 +521,7 @@ async function confirmApplyAll() {
     return;
   }
   const brokenNote = rolledBack > 0
-    ? `⚠ ${rolledBack} component(s) are rolled back. Re-applying WON'T recover them on the emulator — their fixed-name resources still exist (Floci #16). Use "reset local" (nukes + re-boots the emulator) then apply for a clean slate.\n\n`
+    ? `⚠ ${rolledBack} component(s) are rolled back. Re-applying WON'T recover them on the emulator — their fixed-name resources still exist (Floci #16). Use the "Reset" button on the Floci substrate pill — it reboots the emulator and redeploys clean (don't apply after).\n\n`
     : "";
   const reapplyNote = deployed > 0
     ? `Note: ${deployed} of ${total} are already deployed and will be re-applied — that can fail on the local emulator (Floci #16).\n\n`
@@ -1069,14 +1069,14 @@ function renderSubstrates(subs) {
 function resetLocal() {
   if (
     !window.confirm(
-      "Reset the local emulator?\nRuns local-down + local-up — every deployed stack is wiped and the emulator reboots empty.\nThen apply to redeploy clean. This is the recovery for rolled-back stacks (Floci #16).\n\nOutput streams in the log below; takes a minute.",
+      "Reset the local emulator?\nRuns local-down + local-up: wipes every stack, reboots the emulator, and redeploys all components clean.\nThis is the recovery for rolled-back stacks (Floci #16) — do NOT apply afterward (that re-apply is what collides).\n\nOutput streams in the log below; takes a few minutes.",
     )
   )
     return;
-  nowline("▶ resetting local emulator (local-down + local-up) …");
+  nowline("▶ resetting local emulator (local-down + local-up, redeploys clean) …");
   fetch("/api/local/reset", { method: "POST" })
     .then((r) => r.json())
-    .then((j) => nowline(j.error ? "✗ " + j.error : `▶ reset: ${j.ran} — apply once it's up for a clean deploy`))
+    .then((j) => nowline(j.error ? "✗ " + j.error : `▶ reset: ${j.ran} — reboots + redeploys; watch the log, no apply needed`))
     .catch((e) => nowline("✗ reset: " + e.message));
 }
 
