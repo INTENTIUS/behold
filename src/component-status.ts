@@ -1,5 +1,7 @@
 /**
- * M1.1 (#57) — join live per-component AWS status onto the component-DAG IR.
+ * M1.1 (#57), palette hardened in M2 (#54) — join live per-component AWS
+ * status onto the component-DAG IR. M2 is the "observe" step of the epic's
+ * observe→reconcile→apply dial: this IS observe, already live since M1.1.
  *
  * The data comes from `chant components status <env> --live --json`
  * (src/chant.ts `componentStatus`), one row per component keyed by component
@@ -20,44 +22,70 @@ import type { GraphIR, ComponentStatusRow } from "@intentius/chant";
  * axis than the entity overlay's managed/foreign/pending: "not deployed"
  * reads as `neutral` (grey) here, not the entity overlay's `accent` (blue,
  * "declared but not yet observed") — the two views intentionally don't share
- * a colour for "nothing there yet", so they don't read as the same claim. */
-export type ComponentStatusColor = "good" | "warn" | "neutral";
+ * a colour for "nothing there yet", so they don't read as the same claim.
+ *
+ * M2 (#54, chant 0.18.29) widens this from 3 values to all 4 pinhole paints —
+ * see `componentStatusColor` for which raw stack status maps to which. */
+export type ComponentStatusColor = "good" | "warn" | "accent" | "neutral";
 
 /**
- * Map a `ComponentStatusRow` to a paint colour. See chant's `reconcileStatus`
- * (lifecycle/status.ts) for how each verdict is derived, and
- * docs/roadmap/m1-cli-notes.md Q2 for the verified loomster/Floci output this
- * was checked against:
+ * Map a `ComponentStatusRow` to a paint colour.
  *
- *  - `reconciled`                        -> good    (recorded + live, consistent)
- *  - `unrecorded`, detail starts "live"   -> good    (deployed outside the release
- *    ledger — still deployed; loomster's 5 infra components publish no image
- *    digest, so they're always unrecorded-but-live, not an error state)
- *  - `unrecorded`, detail doesn't         -> neutral (nothing recorded, nothing
- *    observed — genuinely not deployed)
- *  - `stale`  (recorded, nothing live now)     -> warn (was deployed, now gone)
- *  - `drifted` (recorded, live config changed) -> warn (deployed, but diverged
- *    from the recorded release — a different anomaly than `stale`, painted the
- *    same colour today; the inspect panel's `detail` text disambiguates)
- *  - `unknown` (no live evidence queried)      -> neutral (defensive default —
- *    `componentStatus` always passes `--live`, so a live caller shouldn't see this)
+ * M2 (#54): chant 0.18.29 added machine-readable `live` (boolean) and `stack`
+ * ({name, status, healthy}, from a lexicon's `describeStackStatus` — AWS: the
+ * component's own CFN stack) to the row. This reads those directly instead of
+ * the old `detail.startsWith("live")` sniff — the fragile part chant's own
+ * doc comment on `ComponentStatusRow` flagged as a heuristic that "should
+ * read [`live`] rather than string-matching detail". `reconciliation`/
+ * `detail` (M1.1) stay as the last-resort fallback for a row with no live
+ * evidence at all (a caller that skipped `--live`; `componentStatus` here
+ * always passes it, so real usage shouldn't reach that branch).
+ *
+ * Priority, richest signal first:
+ *
+ *  1. `stack` present (AWS today) — chant's own provider-native read:
+ *     - `stack.healthy`                          -> good    (e.g. CREATE_COMPLETE)
+ *     - present, unhealthy, status ROLLBACK/FAILED -> warn   (pinhole paints
+ *       `warn` red — see its theme tokens `warnFill`/`warnStroke`/`warnBar` —
+ *       not amber, despite the token's name)
+ *     - present, unhealthy, otherwise (e.g. *_IN_PROGRESS, mid-deploy)
+ *                                                  -> accent (pinhole's blue
+ *       "in flux" paint; pinhole has no distinct amber token, and `accent`
+ *       already carries the "not-yet-settled" connotation the entity overlay
+ *       uses it for)
+ *  2. No `stack`, but `live` was reported (a lexicon with no
+ *     `describeStackStatus`, or the component resolved to no stack) ->
+ *     good when live, neutral when not — the coarse but now-machine-real
+ *     presence signal.
+ *  3. Neither `live` nor `stack` present at all — the pre-0.18.29
+ *     reconciliation/detail heuristic, kept only as a defensive fallback:
+ *     `reconciled` -> good; `unrecorded` -> good iff `detail` starts "live";
+ *     `stale`/`drifted` -> warn; `unknown`/default -> neutral.
+ *
+ * docs/roadmap/m1-cli-notes.md Q2 has the verified loomster/Floci output this
+ * was checked against (pre-0.18.29); loom-db's `UPDATE_ROLLBACK_COMPLETE` /
+ * `healthy: false` stack (verified live against the running Floci, M2) is the
+ * proof this palette reads it as `warn` (red), not `good`.
  */
-export function componentStatusColor(row: Pick<ComponentStatusRow, "reconciliation" | "detail">): ComponentStatusColor {
+export function componentStatusColor(
+  row: Pick<ComponentStatusRow, "reconciliation" | "detail" | "live" | "stack">,
+): ComponentStatusColor {
+  if (row.stack) {
+    if (row.stack.healthy) return "good";
+    if (row.stack.status && /ROLLBACK|FAILED/i.test(row.stack.status)) return "warn";
+    return "accent"; // present but not healthy and not a rollback/failure — e.g. *_IN_PROGRESS
+  }
+  if (row.live !== undefined) return row.live ? "good" : "neutral";
   switch (row.reconciliation) {
     case "reconciled":
       return "good";
     case "unrecorded":
-      // `ComponentStatusRow` has no machine-readable `live` boolean (chant
-      // 0.18.27) — `detail` is the only signal for "unrecorded" splitting
-      // into two very different cases. chant's two "unrecorded" detail
-      // strings (lifecycle/status.ts reconcileStatus) are:
+      // Pre-0.18.29 fallback only (see doc comment above) — `detail`'s two
+      // "unrecorded" strings (lifecycle/status.ts reconcileStatus) are:
       //   "live[ and chant-owned], but no release record exists — …"   (live)
       //   "no release record and nothing observed live"                (not live)
-      // Both contain the substring "live" (the second one negates it at the
-      // end), so the discriminator has to anchor on the start of the string,
-      // not just presence of the word. A `live: boolean` field on the row
-      // would make this exact instead of textual — worth requesting upstream
-      // if this heuristic ever needs to survive a chant wording change.
+      // Both contain "live" (the second negates it at the end), so anchor on
+      // the start of the string, not mere presence of the word.
       return row.detail.startsWith("live") ? "good" : "neutral";
     case "stale":
     case "drifted":
@@ -70,10 +98,15 @@ export function componentStatusColor(row: Pick<ComponentStatusRow, "reconciliati
 
 /** The verdict + human-readable reasoning behind a node's `_status` colour —
  * everything the inspect panel needs so the graph never relies on colour
- * alone (#57's accessibility note). */
+ * alone (#57's accessibility note). M2 (#54) adds the raw `live`/`stack`
+ * fields (chant 0.18.29) alongside the M1.1 reconciliation verdict, so the
+ * inspect panel can show the actual stack name/status behind the paint, not
+ * just the ledger-reconciliation story. */
 export interface LiveStatus {
   reconciliation: ComponentStatusRow["reconciliation"];
   detail: string;
+  live?: boolean;
+  stack?: { name: string; status?: string; healthy?: boolean };
 }
 
 /**
@@ -104,7 +137,12 @@ export function joinComponentStatus(ir: GraphIR, rows: ComponentStatusRow[]): Gr
         attrs: {
           ...n.attrs,
           _status: componentStatusColor(row),
-          _liveStatus: { reconciliation: row.reconciliation, detail: row.detail } satisfies LiveStatus,
+          _liveStatus: {
+            reconciliation: row.reconciliation,
+            detail: row.detail,
+            ...(row.live !== undefined ? { live: row.live } : {}),
+            ...(row.stack ? { stack: row.stack } : {}),
+          } satisfies LiveStatus,
         },
       };
     }),

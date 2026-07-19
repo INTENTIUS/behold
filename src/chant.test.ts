@@ -1,6 +1,36 @@
-import { describe, it, expect } from "vitest";
-import { graphFlags, graphArgs, componentStatusArgs, ciPipelineArgs, parseCiPipeline } from "./chant.ts";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { EventEmitter } from "node:events";
+import { spawn as spawnMock } from "node:child_process";
+import {
+  graphFlags,
+  graphArgs,
+  componentStatusArgs,
+  ciPipelineArgs,
+  parseCiPipeline,
+  envOverridesFor,
+  lifecyclePlanArgs,
+  runChantRaw,
+} from "./chant.ts";
 import { overlayStatus } from "./overlay.ts";
+
+// Mocked so `runChantRaw`'s env-override plumbing (M2, #54) can be verified
+// against the actual spawn call, without shelling a real chant binary.
+vi.mock("node:child_process", () => ({ spawn: vi.fn() }));
+
+/** A minimal fake ChildProcess: emits `data` on stdout/stderr, then `close`,
+ * on the next microtask — enough for `runChantRaw`'s listeners. */
+function fakeProc(code: number, stdout = "", stderr = ""): ReturnType<typeof spawnMock> {
+  const proc = new EventEmitter() as unknown as ReturnType<typeof spawnMock>;
+  const out = new EventEmitter();
+  const err = new EventEmitter();
+  Object.assign(proc, { stdout: out, stderr: err });
+  queueMicrotask(() => {
+    if (stdout) out.emit("data", Buffer.from(stdout));
+    if (stderr) err.emit("data", Buffer.from(stderr));
+    proc.emit("close", code);
+  });
+  return proc;
+}
 
 describe("graphFlags", () => {
   it("is empty for no options", () => {
@@ -26,6 +56,36 @@ describe("graphFlags", () => {
       "--live",
       "--overlay",
     ]);
+  });
+
+  it("never emits --tier/--target — the M2 lenses are env overrides, not chant CLI flags (#54)", () => {
+    expect(graphFlags({ tier: "full", target: "http://localhost:4566" })).toEqual([]);
+  });
+});
+
+// M2 (#54): the tier/target lenses. Not chant CLI flags — env overrides for
+// the shell-out (see envOverridesFor + runChantRaw's envOverride param).
+describe("envOverridesFor", () => {
+  it("is undefined for no tier/target — no spawn env override needed", () => {
+    expect(envOverridesFor({})).toBeUndefined();
+    expect(envOverridesFor({ env: "prod", live: true })).toBeUndefined();
+  });
+
+  it("maps tier -> LOOM_TIER", () => {
+    expect(envOverridesFor({ tier: "full" })).toEqual({ LOOM_TIER: "full" });
+  });
+
+  it("maps target -> AWS_ENDPOINT_URL", () => {
+    expect(envOverridesFor({ target: "http://localhost:4566" })).toEqual({
+      AWS_ENDPOINT_URL: "http://localhost:4566",
+    });
+  });
+
+  it("maps both together", () => {
+    expect(envOverridesFor({ tier: "light", target: "http://localhost:4566" })).toEqual({
+      LOOM_TIER: "light",
+      AWS_ENDPOINT_URL: "http://localhost:4566",
+    });
   });
 });
 
@@ -178,5 +238,49 @@ describe("parseCiPipeline", () => {
     expect(frontend.needs).toEqual(["shared-foundation"]);
     // No downstream consumer of loom-frontend's outputs, so no --dump-outputs.
     expect(frontend.script[0]).not.toContain("--dump-outputs");
+  });
+});
+
+describe("lifecyclePlanArgs", () => {
+  it("builds `lifecycle plan <env> --live --json` (M2 reconcile facet, #54)", () => {
+    expect(lifecyclePlanArgs("local")).toEqual(["lifecycle", "plan", "local", "--live", "--json"]);
+  });
+
+  it("threads the env through verbatim", () => {
+    expect(lifecyclePlanArgs("prod")).toEqual(["lifecycle", "plan", "prod", "--live", "--json"]);
+  });
+});
+
+// M2 (#54): the tier/target lenses must reach the actual spawned chant
+// process — not just build a correct `envOverridesFor()` map (tested above).
+// This verifies `runChantRaw` merges that map into the spawn's `env`.
+describe("runChantRaw — env override reaches the spawn", () => {
+  beforeEach(() => vi.mocked(spawnMock).mockReset());
+
+  it("spawns with no explicit `env` option when no override is given — inherits process.env as before", async () => {
+    vi.mocked(spawnMock).mockReturnValue(fakeProc(0, "{}"));
+    await runChantRaw(["graph", "src", "--format", "ir"], "/proj");
+    const opts = vi.mocked(spawnMock).mock.calls[0]![2] as { env?: unknown } | undefined;
+    expect(opts?.env).toBeUndefined();
+  });
+
+  it("merges the env override over process.env for exactly this spawn (M2 tier/target lenses)", async () => {
+    vi.mocked(spawnMock).mockReturnValue(fakeProc(0, "{}"));
+    await runChantRaw(["components", "status", "local", "--live", "--json"], "/proj", { LOOM_TIER: "full" });
+    const opts = vi.mocked(spawnMock).mock.calls[0]![2] as { env?: NodeJS.ProcessEnv } | undefined;
+    expect(opts?.env?.LOOM_TIER).toBe("full");
+    // process.env's own vars are still the base — merged over, not replaced.
+    expect(opts?.env?.PATH).toBe(process.env.PATH);
+  });
+
+  it("merges both tier and target overrides", async () => {
+    vi.mocked(spawnMock).mockReturnValue(fakeProc(0, "{}"));
+    await runChantRaw(["graph", "src", "--format", "ir"], "/proj", {
+      LOOM_TIER: "light",
+      AWS_ENDPOINT_URL: "http://localhost:4566",
+    });
+    const opts = vi.mocked(spawnMock).mock.calls[0]![2] as { env?: NodeJS.ProcessEnv } | undefined;
+    expect(opts?.env?.LOOM_TIER).toBe("light");
+    expect(opts?.env?.AWS_ENDPOINT_URL).toBe("http://localhost:4566");
   });
 });

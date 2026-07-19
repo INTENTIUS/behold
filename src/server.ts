@@ -6,15 +6,25 @@
  * chant Ops (ApplyOp/ReconcileOp) on your executor — the server only ever
  * *triggers* them, holding no apply creds. See README "Read-only core".
  */
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { serve } from "@hono/node-server";
 import { fileURLToPath } from "node:url";
 import { dirname, join, relative } from "node:path";
 import type { GraphIR } from "@intentius/chant";
-import { graphIr, componentGraphIr, componentStatus, ciPipeline, runChantRaw, type GraphOptions } from "./chant.ts";
+import {
+  graphIr,
+  componentGraphIr,
+  componentStatus,
+  ciPipeline,
+  lifecyclePlan,
+  runChantRaw,
+  type GraphOptions,
+} from "./chant.ts";
 import { joinComponentStatus } from "./component-status.ts";
+import { resourcesByComponent } from "./resources.ts";
+import { summarizePlan } from "./reconcile.ts";
 import { renderGraph } from "./render.ts";
 import { discoverEstateOps } from "./ops.ts";
 import { LIVE_IMPORT_LEXICONS } from "./adopt.ts";
@@ -67,7 +77,51 @@ function optsFromQuery(url: URL): GraphOptions {
   if (q.get("down") === "1") opts.down = true;
   const env = q.get("env");
   if (env) opts.env = env;
+  // The tier/target lenses (M2, #54): `?tier=` overrides LOOM_TIER, `?target=`
+  // overrides AWS_ENDPOINT_URL for this request's chant shell-outs (see
+  // chant.ts `envOverridesFor`) — neither is a chant CLI flag.
+  const tier = q.get("tier");
+  if (tier) opts.tier = tier;
+  const target = q.get("target");
+  if (target) opts.target = target;
   return opts;
+}
+
+/** Just the tier/target lens overrides out of a parsed `GraphOptions` — for
+ * threading into a chant call that wants a DIFFERENT env/live/overlay shape
+ * than the query's own (e.g. `/api/resources`, `/api/reconcile`, which force
+ * `live`/`overlay` themselves) but should still honour the picked lens. */
+function tierTargetOpts(opts: GraphOptions): Pick<GraphOptions, "tier" | "target"> {
+  const out: Pick<GraphOptions, "tier" | "target"> = {};
+  if (opts.tier) out.tier = opts.tier;
+  if (opts.target) out.target = opts.target;
+  return out;
+}
+
+/** A clear, generic note for a graph/facet call that failed while a non-default
+ * tier was picked (M2, #54) — e.g. loomster's `full` tier trips chant's lint
+ * gate on Floci (needs real-AWS params it doesn't have here). Undefined when
+ * no tier was picked, so a plain failure still reads as a plain error.
+ * Deliberately substrate-name-free (no "Floci"/"loomster" literal) — behold
+ * has zero per-substrate logic; the note explains the SHAPE of the problem
+ * (a non-default tier can need parameters this environment lacks), not a
+ * specific project's story. */
+function tierErrorNote(tier: string | undefined, message: string): string | undefined {
+  if (!tier) return undefined;
+  return (
+    `chant couldn't evaluate the "${tier}" tier here: ${message}\n` +
+    `A non-default tier (e.g. a production-only one) can need parameters — real ` +
+    `credentials, a different target — this environment doesn't have. Pick a ` +
+    `different tier to see its graph.`
+  );
+}
+
+/** A read route's error response, with a `tierNote` alongside `error` when the
+ * failure happened under a picked (non-default) tier — see `tierErrorNote`. */
+function errorResponse(c: Context, opts: GraphOptions, err: unknown) {
+  const message = err instanceof Error ? err.message : String(err);
+  const tierNote = tierErrorNote(opts.tier, message);
+  return c.json({ error: message, ...(tierNote ? { tierNote } : {}) }, 500);
 }
 
 /** The deploy axes in play (#59 unify, issue scope: "header line showing
@@ -85,6 +139,26 @@ function deployAxes(): { tier?: string; target?: string } {
   if (process.env.LOOM_TIER) axes.tier = process.env.LOOM_TIER;
   if (process.env.AWS_ENDPOINT_URL) axes.target = process.env.AWS_ENDPOINT_URL;
   return axes;
+}
+
+/** M2 (#54): the tier picker's options. chant has no "enumerate valid tier
+ * values" concept — `LOOM_TIER` is entirely the served project's own
+ * convention (deployAxes() above), not something a graph query or
+ * `chant.config.ts` declares the way `environments` does. loomster's valid
+ * values are `light`, `production`, `production-ha` (the project this milestone
+ * targets); locally only `light` is deployable on Floci — `production`* need
+ * real-AWS naming params and degrade gracefully (a `tierNote`). A served project
+ * that never sets `LOOM_TIER` just doesn't offer this picker (see `/api/project`,
+ * gated on `deployAxes().tier` being set already). */
+const TIER_OPTIONS = ["light", "production", "production-ha"];
+
+/** M2 (#54): the target picker's options. Modelled as an array — today there
+ * is at most one (the process's own `AWS_ENDPOINT_URL`, Floci locally, unset
+ * against real AWS) — so M4's estate (several live targets) is a straight
+ * extension of this shape, not a reshape. Empty when the project reports no
+ * target at all, same gating as `deployAxes().target`. */
+function deployTargets(): Array<{ name: string; endpoint: string }> {
+  return process.env.AWS_ENDPOINT_URL ? [{ name: "default", endpoint: process.env.AWS_ENDPOINT_URL }] : [];
 }
 
 /**
@@ -216,13 +290,25 @@ export function createApp(
   // launch `--env`, the picker's initial selection.
   app.get("/api/project", async (c) => {
     const { environments, lexicons } = await detectProject(cfg.projectDir);
-    return c.json({ projectDir: cfg.projectDir, environments, lexicons, currentEnv: cfg.env ?? null, ...deployAxes() });
+    const axes = deployAxes();
+    return c.json({
+      projectDir: cfg.projectDir,
+      environments,
+      lexicons,
+      currentEnv: cfg.env ?? null,
+      // M2 (#54): tier/target lens picker options. Gated the same way `axes`
+      // itself is — offered only when the launch env already showed the axis
+      // is in play for this project (see TIER_OPTIONS / deployTargets()).
+      ...(axes.tier ? { tiers: TIER_OPTIONS } : {}),
+      targets: deployTargets(),
+      ...axes,
+    });
   });
 
   app.get("/api/graph", async (c) => {
+    const url = new URL(c.req.url);
+    const opts = optsFromQuery(url);
     try {
-      const url = new URL(c.req.url);
-      const opts = optsFromQuery(url);
       // Component-DAG mode (M1.0, #56): the SPA's mode toggle. `chant graph
       // --components` projects one node per component (dependsOn edges,
       // groups.byWave) instead of the AWS entity graph — a generic chant CLI
@@ -238,9 +324,18 @@ export function createApp(
       if (multi) {
         ir = await composeEstate(cfg.projectDirs!, opts);
       } else if (components) {
+        // The tier/target lenses (M2, #54): `opts.tier`/`opts.target` (from
+        // ?tier=/?target=) ride along inside `opts` — componentGraphIr threads
+        // them into the chant shell-out's env (chant.ts envOverridesFor), so a
+        // picked tier re-evaluates the tier-conditioned source (loomster's
+        // components branch on `namingParams.tier`) and a picked target
+        // re-points AWS_ENDPOINT_URL. A failure here (e.g. a tier whose source
+        // needs params this environment doesn't have) is caught below and
+        // turned into a `tierNote`, not a broken view.
         ir = await componentGraphIr(cfg.projectDir, opts);
-        // M1.1 (#57): live per-component AWS status, joined by component name
-        // onto the component-DAG nodes. A distinct data path from the entity
+        // M1.1 (#57), palette hardened M2 (#54): live per-component AWS
+        // status, joined by component name onto the component-DAG nodes —
+        // the epic's "observe" step. A distinct data path from the entity
         // overlay below (`chant graph --live --overlay`) — never used for
         // components, since `sourceAnchoredOverlay` throws (chant #821) and
         // the epic forbids the cross-substrate overlay here. `chant components
@@ -249,7 +344,7 @@ export function createApp(
         // with no env this stays the M1.0 source-only component DAG.
         const env = opts.env ?? cfg.env;
         if (env) {
-          const rows = await componentStatus(cfg.projectDir, env);
+          const rows = await componentStatus(cfg.projectDir, env, opts);
           ir = joinComponentStatus(ir, rows);
           mode = "component-status";
           metaEnv = env;
@@ -264,13 +359,18 @@ export function createApp(
         meta: {
           projectDir: cfg.projectDir,
           env: metaEnv,
+          // The picked tier/target (M2, #54), echoed back so the SPA can keep
+          // its header's axes display in sync with what it's actually looking
+          // at, not just the launch-time value. null when neither was picked.
+          tier: opts.tier ?? null,
+          target: opts.target ?? null,
           ...(multi ? { estate: cfg.projectDirs!.length } : {}),
           ...(!multi && components ? { components: true } : {}),
           ...(mode ? { mode } : {}),
         },
       });
     } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+      return errorResponse(c, opts, err);
     }
   });
 
@@ -282,12 +382,13 @@ export function createApp(
   // user clicks. The whole pipeline is small (well under the CLI's 64KB
   // pipe-truncation limit), so fetch it once rather than shelling out per node.
   app.get("/api/ci", async (c) => {
-    const env = optsFromQuery(new URL(c.req.url)).env ?? cfg.env;
+    const opts = optsFromQuery(new URL(c.req.url));
+    const env = opts.env ?? cfg.env;
     try {
-      const { stages, jobs } = await ciPipeline(cfg.projectDir, env ? { env } : {});
+      const { stages, jobs } = await ciPipeline(cfg.projectDir, { ...tierTargetOpts(opts), ...(env ? { env } : {}) });
       return c.json({ stages, jobs });
     } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+      return errorResponse(c, opts, err);
     }
   });
 
@@ -335,29 +436,43 @@ export function createApp(
   // physicalId/ownership fields are wired but will stay empty for loomster
   // until chant's `describeResources` gets the same multi-stack fix.
   app.get("/api/resources", async (c) => {
-    const env = optsFromQuery(new URL(c.req.url)).env ?? cfg.env;
+    const opts = optsFromQuery(new URL(c.req.url));
+    const env = opts.env ?? cfg.env;
     try {
-      const ir = await graphIr(cfg.projectDir, env ? { live: true, overlay: true, env } : {});
-      const byComponent: Record<string, Array<{ id: string; kind: string; lexicon: string; physicalId?: string; ownership?: string }>> = {};
-      for (const n of ir.nodes) {
-        const file = n.sourceLoc?.file;
-        const parts = file?.split("/") ?? [];
-        // "src/<component>/<rest>" — needs a nested file, so a component's own
-        // top-level declaration file (e.g. "src/loom-agents.ts", no subdir)
-        // wouldn't match; loomster nests every component under its own dir.
-        if (parts[0] !== "src" || parts.length < 3) continue;
-        const component = parts[1];
-        (byComponent[component] ??= []).push({
-          id: n.id,
-          kind: n.kind,
-          lexicon: n.lexicon,
-          physicalId: n.physicalId,
-          ownership: n.ownership,
-        });
-      }
-      return c.json({ byComponent });
+      const ir = await graphIr(
+        cfg.projectDir,
+        env ? { live: true, overlay: true, env, ...tierTargetOpts(opts) } : tierTargetOpts(opts),
+      );
+      return c.json({ byComponent: resourcesByComponent(ir) });
     } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+      return errorResponse(c, opts, err);
+    }
+  });
+
+  // Reconcile facet (M2, #54 — the dial's middle step): the pending change set
+  // for the selected target, summarized per component. Read-only, and never
+  // behold's basis for a mutation — that's chant Ops, M3. `chant lifecycle plan
+  // <env> --live --json` is chant's own typed create/update/delete/adopt/noop
+  // classification (src/chant.ts `lifecyclePlan`); this route correlates each
+  // entry to a component (src/reconcile.ts `summarizePlan`, the same
+  // source-location key #59's `/api/resources` uses — src/resources.ts
+  // `resourcesByComponent`) and counts. The entity graph fetched for that
+  // correlation mirrors `/api/resources`'s own call shape (`live:true,
+  // overlay:true`) so both facets see the same source-location map.
+  app.get("/api/reconcile", async (c) => {
+    const opts = optsFromQuery(new URL(c.req.url));
+    const env = opts.env ?? cfg.env;
+    if (!env) {
+      return c.json({ error: "reconcile needs an environment — pick one, or start behold with --env <name>" }, 400);
+    }
+    try {
+      const [plan, ir] = await Promise.all([
+        lifecyclePlan(cfg.projectDir, env, opts),
+        graphIr(cfg.projectDir, { live: true, overlay: true, env, ...tierTargetOpts(opts) }),
+      ]);
+      return c.json(summarizePlan(plan, resourcesByComponent(ir)));
+    } catch (err) {
+      return errorResponse(c, opts, err);
     }
   });
 

@@ -40,6 +40,34 @@ export interface GraphOptions {
    * Note: today's `--overlay` keeps *live* edges — the cross-substrate topology
    * needs chant's source-anchored overlay (chant #821). See src/overlay.ts. */
   overlay?: boolean;
+  /** The tier lens (M2, #54): overrides `LOOM_TIER` for this shell-out so chant
+   * re-evaluates the served project's tier-conditioned source (loomster's
+   * components branch on `namingParams.tier`). NOT a chant CLI flag — chant has
+   * no `--tier` concept; this is the served project's own env convention, the
+   * same one `deployAxes()` (server.ts) already reads statically. Threaded as a
+   * per-request spawn env override (`envOverridesFor`), never a `process.env`
+   * mutation, so concurrent requests on different tiers never race. */
+  tier?: string;
+  /** The target lens (M2, #54): overrides `AWS_ENDPOINT_URL` for this shell-out
+   * — the literal Floci/AWS endpoint tell `deployAxes()` already reads. Not a
+   * chant CLI flag either. Modelled the same way as `tier` even though there is
+   * at most one target today, so M4's estate (several live targets) is a
+   * straightforward extension of this seam, not a reshape. */
+  target?: string;
+}
+
+/** Env overrides for the tier/target lenses (M2, #54): `tier`/`target` above are
+ * NOT chant CLI flags (`graphFlags` never emits them) — they're the served
+ * project's own env conventions (`LOOM_TIER`, `AWS_ENDPOINT_URL`), threaded
+ * straight into the spawned chant process's env so it re-evaluates for the
+ * picked lens. Returns undefined when neither is set, so callers can skip the
+ * spawn's `env` override entirely (equivalent to inheriting `process.env`
+ * as-is). Pure; exported for testing. */
+export function envOverridesFor(opts: GraphOptions): Record<string, string> | undefined {
+  const overrides: Record<string, string> = {};
+  if (opts.tier) overrides.LOOM_TIER = opts.tier;
+  if (opts.target) overrides.AWS_ENDPOINT_URL = opts.target;
+  return Object.keys(overrides).length ? overrides : undefined;
 }
 
 /** Build chant flags for a set of graph options. Pure; exported for testing. */
@@ -97,14 +125,22 @@ export interface ChantRun {
 }
 
 /** Run the chant bin, capturing stdout/stderr and the exit code. Never rejects on
- * a non-zero exit (only on a spawn failure) — a failing exit is data. */
-export function runChantRaw(args: string[], projectDir?: string): Promise<ChantRun> {
+ * a non-zero exit (only on a spawn failure) — a failing exit is data.
+ * `envOverride` (M2, #54: the tier/target lenses' `envOverridesFor`) merges over
+ * `process.env` for this one spawn only — never a global mutation, so a picked
+ * lens on one request can't bleed into a concurrent request on another. */
+export function runChantRaw(
+  args: string[],
+  projectDir?: string,
+  envOverride?: Record<string, string>,
+): Promise<ChantRun> {
   return new Promise((resolvePromise, reject) => {
     // Run in the project dir: `chant graph --live` reads the current working
     // directory (not the path arg), so the cwd must be the project for the live
     // and overlay paths to observe the right environment.
     const proc = spawn(chantBin(projectDir), args, {
       ...(projectDir ? { cwd: projectDir } : {}),
+      ...(envOverride ? { env: { ...process.env, ...envOverride } } : {}),
       stdio: ["ignore", "pipe", "pipe"],
     });
     // Accumulate raw Buffer chunks and decode once at the end. Coercing each
@@ -127,8 +163,8 @@ export function runChantRaw(args: string[], projectDir?: string): Promise<ChantR
   });
 }
 
-async function runChantJson<T>(args: string[], projectDir?: string): Promise<T> {
-  const { code, stdout, stderr } = await runChantRaw(args, projectDir);
+async function runChantJson<T>(args: string[], projectDir?: string, envOverride?: Record<string, string>): Promise<T> {
+  const { code, stdout, stderr } = await runChantRaw(args, projectDir, envOverride);
   if (code !== 0) throw new Error(`chant ${args.join(" ")} exited ${code}: ${stderr.trim()}`);
   return JSON.parse(stdout) as T;
 }
@@ -174,12 +210,12 @@ export function graphArgs(src: string, format: "ir" | "layout", opts: GraphOptio
 /** The infra graph IR for a project (`chant graph --format ir`) — nodes are AWS
  * resources. */
 export function graphIr(projectDir: string, opts: GraphOptions = {}): Promise<GraphIR> {
-  return runChantJson<GraphIR>(graphArgs(graphPath(projectDir), "ir", opts, false), projectDir);
+  return runChantJson<GraphIR>(graphArgs(graphPath(projectDir), "ir", opts, false), projectDir, envOverridesFor(opts));
 }
 
 /** Node positions for a project (`chant graph --format layout`, dagre — no native dep). */
 export function graphLayout(projectDir: string, opts: GraphOptions = {}): Promise<Layout> {
-  return runChantJson<Layout>(graphArgs(graphPath(projectDir), "layout", opts, false), projectDir);
+  return runChantJson<Layout>(graphArgs(graphPath(projectDir), "layout", opts, false), projectDir, envOverridesFor(opts));
 }
 
 /** The component-DAG graph IR (`chant graph --components --format ir`): nodes are
@@ -190,12 +226,12 @@ export function graphLayout(projectDir: string, opts: GraphOptions = {}): Promis
  * "chant changes" #3); behold's own pinned `@intentius/chant` predates it, so
  * this only resolves against a served project's own (newer) chant. */
 export function componentGraphIr(projectDir: string, opts: GraphOptions = {}): Promise<GraphIR> {
-  return runChantJson<GraphIR>(graphArgs(graphPath(projectDir), "ir", opts, true), projectDir);
+  return runChantJson<GraphIR>(graphArgs(graphPath(projectDir), "ir", opts, true), projectDir, envOverridesFor(opts));
 }
 
 /** Node positions for the component DAG (`chant graph --components --format layout`). */
 export function componentGraphLayout(projectDir: string, opts: GraphOptions = {}): Promise<Layout> {
-  return runChantJson<Layout>(graphArgs(graphPath(projectDir), "layout", opts, true), projectDir);
+  return runChantJson<Layout>(graphArgs(graphPath(projectDir), "layout", opts, true), projectDir, envOverridesFor(opts));
 }
 
 /** Build the `chant components status` argv (M1.1 spike, Q2): one row per
@@ -210,16 +246,22 @@ export function componentStatusArgs(env: string): string[] {
 /** Live per-component AWS status (`chant components status <env> --live
  * --json`): one row per component — `component` (the join key onto the
  * component-DAG IR, by name), `reconciliation` (reconciled|unrecorded|stale|
- * drifted|unknown) and a human-readable `detail`. Single-substrate AWS,
+ * drifted|unknown) and a human-readable `detail`. Since chant 0.18.29 also
+ * carries machine-readable `live` (boolean) and `stack` ({name,status,
+ * healthy}, from `describeStackStatus`) — src/component-status.ts's palette
+ * reads those instead of string-matching `detail`. Single-substrate AWS,
  * resolved internally by chant from each component's own CFN stack
  * (`loom-<env>-<instance>-<component>` on loomster) — behold does not shell
  * `aws` or reconstruct stack names itself. Deliberately NOT the cross-
  * substrate `chant graph --live --overlay` path (`sourceAnchoredOverlay`
  * throws — chant #821; see src/overlay.ts and docs/roadmap/m1-cli-notes.md
  * Q2). The output is a bare JSON array (not wrapped in `{env, rows, ...}`) —
- * verified against loomster on Floci, chant 0.18.27. */
-export function componentStatus(projectDir: string, env: string): Promise<ComponentStatusRow[]> {
-  return runChantJson<ComponentStatusRow[]>(componentStatusArgs(env), projectDir);
+ * verified against loomster on Floci, chant 0.18.27. `opts` only matters for
+ * its `tier`/`target` lens overrides (M2) — the rest of `GraphOptions` (env,
+ * detail, lens…) doesn't apply to this command's argv, which takes `env` as
+ * an explicit positional instead. */
+export function componentStatus(projectDir: string, env: string, opts: GraphOptions = {}): Promise<ComponentStatusRow[]> {
+  return runChantJson<ComponentStatusRow[]>(componentStatusArgs(env), projectDir, envOverridesFor(opts));
 }
 
 // ---------------------------------------------------------------------------
@@ -296,8 +338,60 @@ export function parseCiPipeline(stdout: string): CiPipeline {
  * ships well before the M1.0 spike's 0.18.27 pin, so no extra version gate). */
 export function ciPipeline(projectDir: string, opts: GraphOptions = {}): Promise<CiPipeline> {
   const args = ciPipelineArgs(opts);
-  return runChantRaw(args, projectDir).then(({ code, stdout, stderr }) => {
+  return runChantRaw(args, projectDir, envOverridesFor(opts)).then(({ code, stdout, stderr }) => {
     if (code !== 0) throw new Error(`chant ${args.join(" ")} exited ${code}: ${stderr.trim()}`);
     return parseCiPipeline(stdout);
   });
+}
+
+// ---------------------------------------------------------------------------
+// Reconcile facet (M2, epic #54's observe→reconcile→apply dial) — the
+// pending change set for a target, read-only. `chant lifecycle plan <env>
+// --live --json` promotes the live diff to chant's own typed create/update/
+// delete/adopt/noop classification per entity (`ChangeSet`, chant's
+// lifecycle/change-set.ts) — behold does no diffing of its own, just reads
+// and correlates (src/reconcile.ts). `--live` is accepted by chant's global
+// arg parser but inert for `plan` specifically: `lifecycle plan` always
+// queries live (its `describeResources` call IS the live query) — passed
+// anyway to match this milestone's documented command contract.
+// ---------------------------------------------------------------------------
+
+/** One entity-level entry from `chant lifecycle plan` — chant's own
+ * `ChangeSetEntry` (lifecycle/change-set.ts), reproduced here rather than
+ * imported so this module doesn't reach past chant's public `@intentius/chant`
+ * export surface for an internal lifecycle type. `name` is the chant entity
+ * name — the same identifier the entity graph IR's node `id` uses, which is
+ * how src/reconcile.ts correlates an entry to a component. */
+export interface LifecyclePlanEntry {
+  name: string;
+  type?: string;
+  action: "create" | "update" | "delete" | "adopt" | "noop";
+  evidence: { declared: boolean; inSnapshot: boolean; live: boolean };
+  deltas?: Array<{ path: string; oldValue: unknown; newValue: unknown }>;
+  ownership: "owned" | "foreign" | "unknown";
+}
+
+/** `chant lifecycle plan <env> --live --json`'s bare output shape — chant's
+ * `ChangeSet`, `{env, entries}`, verified against loomster (~128 entity-level
+ * entries across its 7 components). */
+export interface LifecyclePlan {
+  env: string;
+  entries: LifecyclePlanEntry[];
+}
+
+/** Build the `chant lifecycle plan <env> --live --json` argv. Pure; exported
+ * for testing. */
+export function lifecyclePlanArgs(env: string): string[] {
+  return ["lifecycle", "plan", env, "--live", "--json"];
+}
+
+/** The pending change set for `env` (M2 reconcile facet, src/reconcile.ts
+ * does the per-component summary): entity-keyed create/update/delete/adopt/
+ * noop entries straight from chant's own classification. Read-only — never
+ * behold's basis for a mutation; that stays chant Ops (M3). `opts.tier`/
+ * `opts.target` (M2 lenses) thread through as env overrides, same as every
+ * other shell-out in this module; the rest of `GraphOptions` doesn't apply
+ * (env is an explicit positional here, like `componentStatus`). */
+export function lifecyclePlan(projectDir: string, env: string, opts: GraphOptions = {}): Promise<LifecyclePlan> {
+  return runChantJson<LifecyclePlan>(lifecyclePlanArgs(env), projectDir, envOverridesFor(opts));
 }
