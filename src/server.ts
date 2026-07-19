@@ -28,7 +28,7 @@ import {
   runChantRaw,
   type GraphOptions,
 } from "./chant.ts";
-import { joinComponentStatus } from "./component-status.ts";
+import { joinComponentStatus, componentStatusColor } from "./component-status.ts";
 import { resourcesByComponent, nonResourceEntities } from "./resources.ts";
 import { summarizePlan } from "./reconcile.ts";
 import { renderGraph } from "./render.ts";
@@ -648,13 +648,41 @@ export function createApp(
   // SSE events (src/apply.ts's NDJSON→state reducer, wired in
   // src/op-runner.ts's `apply()`); raw log lines still reach the existing `op`
   // now-line channel as a fallback for anything progress-json doesn't cover.
-  app.post("/api/apply", (c) => {
+  app.post("/api/apply", async (c) => {
     const url = new URL(c.req.url);
     const env = url.searchParams.get("env") ?? cfg.env;
     if (!env) {
       return c.json({ error: "apply needs an environment — pick one, or start behold with --env <name>" }, 400);
     }
     const component = url.searchParams.get("component") || "all";
+    const force = url.searchParams.get("force") === "1";
+    // Guard against re-applying an already-deployed stack. On a local emulator
+    // that can't re-apply idempotently (Floci #16), a second apply re-creates
+    // fixed-name resources ("... already exists") and rolls the stack back — so
+    // a blind "apply all" over a green deploy silently breaks loom-db/frontend.
+    // A component with any live stack (good/warn/accent — not "neutral") is
+    // already deployed; refuse to (re)apply it and point at Reset, which reboots
+    // + redeploys clean. `?force=1` overrides. Best-effort: a status hiccup
+    // shouldn't block a legitimate fresh apply, so on error we fall through.
+    if (!force) {
+      try {
+        const rows = await componentStatus(cfg.projectDir, env);
+        const deployed = rows.filter((r) => componentStatusColor(r) !== "neutral").map((r) => r.component);
+        const blocked = component === "all" ? deployed : deployed.includes(component) ? [component] : [];
+        if (blocked.length) {
+          const who = component === "all" ? `${blocked.length} component(s) are` : `"${component}" is`;
+          return c.json(
+            {
+              error: `${who} already deployed — re-applying collides on the local emulator (Floci #16, github.com/lex00/floci/issues/16). Use Reset (reboots + redeploys clean), or retry with ?force=1.`,
+              blocked,
+            },
+            409,
+          );
+        }
+      } catch {
+        /* couldn't check live status — don't block a legitimate fresh apply */
+      }
+    }
     if (!runner.apply(component, env)) {
       return c.json({ error: `busy — ${runner.running} is running` }, 409);
     }
