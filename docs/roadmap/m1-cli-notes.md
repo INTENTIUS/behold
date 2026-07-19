@@ -22,8 +22,8 @@ says so and gives the workaround.
 
 | Issue | Command it depends on | Status |
 |---|---|---|
-| **#56** render the DAG | `chant graph src --components --format ir` / `--format layout` | ✅ works **after a chant change** (shipped in this spike; see "chant changes") |
-| **#57** live AWS status | per-component CFN stack status (`loom-<env>-<instance>-<component>`) | ⚠️ works via CFN stack status; chant's `--live` observation does **not** see loomster's multi-stack layout — see Q2 |
+| **#56** render the DAG | `chant graph src --components --format ir` / `--format layout` | ✅ works — **chant 0.18.27** (published; loomster + behold pinned) |
+| **#57** live AWS status | `chant components status <env> --live --json`, keyed by component name | ✅ works — **chant 0.18.27** observes each component's own stack (see Q2) |
 | **#58** CI projection | `chant build --components --generate gitlab` | ✅ works today, unchanged |
 | **#59** unify + e2e | all of the above | join key across all three = **component name** |
 
@@ -139,46 +139,36 @@ behold: `list-stacks` filtered to prefix `loom-<env>-` and map suffix → compon
 
 All 7 stacks read `CREATE_COMPLETE` on a fresh `just local-up`.
 
-### ⚠️ chant's `--live` observation does NOT see loomster's stacks on Floci
-
-Both `chant graph src --live --env local` (**0 nodes**) and
-`chant components status local --live --json` ("nothing observed live" for all 7)
-fail to surface the provisioned resources. Root cause, in
-`@intentius/chant-lexicon-aws/src/plugin.ts` (`describeResources`, ~L496):
-
-```js
-// single-stack convention is the stack named after the environment (#932).
-const stackName = options.stack ?? `${options.environment}`;
-```
-
-The AWS lexicon assumes **one stack named after the env**. loomster is
-**multi-stack, per-component**, so the observer queries a non-existent stack
-`local` and finds nothing. `chant components status --live` therefore reflects
-only the **release ledger** (`chant run --components` auto-records a digest), and
-only the two image-publishing components (`loom-backend`, `loom-frontend`) get a
-record — the other five show `unrecorded`. So neither built-in path gives usable
-per-component live status on this layout today.
-
-### Recommended M1.1 data path (for #57)
-
-Color each component-DAG node by its **CFN stack status**:
+### The M1.1 data path (for #57) — DELIVERED in chant 0.18.27
 
 ```bash
-# per component, or one list-stacks + client-side suffix match
-aws cloudformation describe-stacks --stack-name loom-<env>-<instance>-<component> \
-  --query "Stacks[0].StackStatus"     # CREATE_COMPLETE=green, *_IN_PROGRESS=amber, *_FAILED/ROLLBACK=red
+LOOM_ENV=local AWS_ENDPOINT_URL=http://localhost:4566 \
+AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_REGION=us-east-1 \
+  chant components status local --live --json
 ```
 
-This works on Floci today (verified: all 7 `CREATE_COMPLETE`) and needs no
-overlay. **Open decision for #57 dispatch** (see the epic thread): behold is
-meant to shell chant, not raw `aws`. Options —
-(a) behold shells `aws cloudformation` for stack status (fastest, but not
-"shell chant only"); (b) a third chant change so `chant components status --live`
-resolves per-component stack names from the component→stack naming and observes
-each (correct, larger — an aws-lexicon fix, sibling to the two shipped here);
-(c) `chant graph --live` gains a per-component-stack mode. Recommend (b) as a
-follow-up chant issue; #57 can start against (a) to unblock, keyed by component
-name either way.
+Returns one row per component with a `reconciliation` verdict + `detail`, keyed
+by **component name** — join it straight onto the component-DAG nodes (also keyed
+by component name). Verified against Floci: all 7 components report live —
+`loom-backend`/`loom-frontend` → `reconciled` (recorded + live), the other five →
+`unrecorded` with detail `"live and chant-owned"` (deployed, just not in the
+release ledger — infra components publish no image digest, so that's expected).
+
+**Why it works now (the fix):** earlier the AWS lexicon assumed *one stack named
+after the env* (`describeResources`, `stackName = options.stack ?? environment`),
+so it queried a non-existent stack `local` and saw nothing on loomster's
+multi-stack, per-component layout. 0.18.27 adds an opt-in
+`LexiconPlugin.describeStackStatus` (aws impl) and wires `chant components status
+--live` to observe **each component's own `cfn-deploy` stack**
+(`loom-<env>-<instance>-<component>`). The correlation key is the CFN stack name,
+resolved internally from the component's composition — behold does not shell
+`aws` and does not reconstruct stack names.
+
+For finer per-stack health than the reconciliation verdict (e.g.
+`*_IN_PROGRESS`=amber vs `*_FAILED`/`ROLLBACK`=red vs `CREATE_COMPLETE`=green),
+the underlying signal is `describeStackStatus` (`{present, status, healthy}`); a
+follow-up could surface `status` on the status row if #57 wants a richer palette
+than reconciled/unrecorded/stale/drifted.
 
 **Do not** use `chant graph --live --overlay` / `sourceAnchoredOverlay` — it
 throws (chant #821), and the epic forbids the cross-substrate overlay. Status is
@@ -226,13 +216,10 @@ behold's live path.
 
 ---
 
-## chant changes this spike shipped
+## chant changes this spike shipped — PUBLISHED as chant 0.18.27
 
-These land in `~/checkouts/intentius/chant` (`packages/core`). tsc clean; 970
-tests pass in the touched areas (15+ new). **They are not yet published** —
-loomster/behold consume `@intentius/chant@^0.18.26` from npm. Delivery: publish
-a chant patch (e.g. 0.18.27) and bump both pins; interim for local work is the
-running checkout / a node_modules patch.
+Released as **chant 0.18.27** (all 12 `@intentius/chant*` packages; full suite
+green in publish CI). loomster and behold are pinned to `^0.18.27`. Three changes:
 
 1. **Lint respects `.gitignore`** (`cli/commands/lint.ts`): the file scan drops
    git-ignored paths via `git check-ignore`, so `vendor/`, `dist/`, etc. never
@@ -243,19 +230,35 @@ running checkout / a node_modules patch.
    `lint.overrides` globs relative to the root — so `src/lib/**` applies whether
    you lint `.` or `src`.
 3. **Component-DAG view** (`cli/handlers/graph.ts` `runComponentGraphView`,
-   `graph-ir.ts` `IRGroups.byWave`, `graph-mermaid.ts`, `graph-dot.ts`):
-   `chant graph --components --format ir|layout|mermaid|dot` projects the
-   component DAG (nodes=components, `byWave` groups, dependsOn edges) — the graph
-   behold renders. Lint-gated like the entity view.
+   `graph-ir.ts` `IRGroups.byWave`, `graph-mermaid.ts`, `graph-dot.ts`,
+   `components/cli-support.ts` `files`): `chant graph --components --format
+   ir|layout|mermaid|dot` projects the component DAG (nodes=components, `byWave`
+   groups, dependsOn edges, per-node `sourceLoc` → deep-link). Lint-gated.
+4. **Per-component live observation** (`lexicon.ts` `describeStackStatus`, aws
+   impl, `lifecycle/status.ts` `mergeLiveEvidence`, `cli/handlers/components.ts`):
+   `chant components status --live` now observes each component's own cfn-deploy
+   stack — the multi-stack signal `describeResources` missed (Q2).
 
-Still open (candidate follow-up chant issue): multi-stack per-component **live
-observation** so `chant components status --live` reflects Floci (Q2).
+### Known chant limitation (NOT fixed in 0.18.27) — large piped output truncates
+
+The chant CLI truncates stdout at **64 KB when piped** (not to a TTY): `main.ts`
+calls `process.exit(code)` right after the handler's `console.log`, before the
+async pipe write drains. loomster's full **entity** graph is ~198 KB, so
+`chant graph src --format ir` piped into a consumer is cut at 65536 bytes and its
+JSON won't parse. **Does not affect M1's core** — the component DAG (~14 KB) and
+`components status --json` (7 rows) are well under 64 KB. behold's `runChantRaw`
+was hardened (accumulate bytes, decode once) but can't undo an upstream cut.
+Fast-follow candidate: chant `process.exitCode = code` + drain stdout before exit
+(a 0.18.28), or behold uses `chant … -o <tempfile>` for large reads. Flag for #59
+(e2e) and any entity-graph drill-down.
 
 ---
 
 ## Handoff order
 
-`#55 (this) → #56 → (#57 ∥ #58) → #59`. #56 is unblocked by the chant changes
-above. #57 and #58 are independent once #56 lands; #57 carries the open live-
-status decision (Q2). #59 unifies and proves e2e — the join key throughout is the
-component name.
+`#55 (this) → #56 → (#57 ∥ #58) → #59`. #56 landed (component DAG renders on
+Floci). #57 and #58 are independent and both unblocked: #57 reads `chant
+components status <env> --live --json` (Q2, delivered in 0.18.27), #58 reads
+`chant build --components --generate gitlab`. #59 unifies and proves e2e — the
+join key throughout is the **component name**; watch the 64 KB pipe-truncation
+limit for any entity-graph drill-down.
