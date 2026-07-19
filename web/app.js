@@ -4,11 +4,14 @@
 // the inspect panel, and (later) the lanes + delegated actions.
 
 const STATUS_LABEL = { good: "managed", warn: "foreign", accent: "pending" };
-// M1.1 (#57): the component-DAG live-status join paints the same `_status`
-// vocabulary (good/warn/neutral) but with different meaning — "deployed" vs
-// "managed" — so the inspect panel picks this label set for a node that
-// carries `_liveStatus` (see joinComponentStatus, src/component-status.ts).
-const COMPONENT_STATUS_LABEL = { good: "deployed", warn: "stale / drifted", neutral: "not deployed" };
+// M1.1 (#57), palette hardened M2 (#54): the component-DAG live-status join
+// paints the same `_status` vocabulary (good/warn/accent/neutral) but with
+// different meaning — a stack-health reading, not "managed" — so the inspect
+// panel picks this label set for a node that carries `_liveStatus` (see
+// joinComponentStatus, src/component-status.ts). `accent` (pinhole's blue
+// paint — there's no separate amber token) reads as "in progress" here,
+// distinct from the entity overlay's "pending" meaning for the same colour.
+const COMPONENT_STATUS_LABEL = { good: "healthy", accent: "in progress", warn: "rollback / failed", neutral: "not deployed" };
 
 // A declared attribute value may be a cross-resource reference ({$ref:"x.y"}) —
 // the "static infra refs" — rather than a concrete value. Render those readably;
@@ -63,10 +66,17 @@ function inspect(node) {
     // both out here (never rely on the node's colour alone, #57 accessibility
     // note): reconciliation is the raw `chant components status` verdict
     // (reconciled/unrecorded/stale/drifted/unknown), detail is chant's own
-    // human-readable explanation.
+    // human-readable explanation. M2 (#54, chant 0.18.29): when present, the
+    // raw stack — the actual signal the palette painted from — backs it up
+    // with the provider-native fact (e.g. loom-db's UPDATE_ROLLBACK_COMPLETE).
     const live = section("live status");
     live("reconciliation", liveStatus.reconciliation);
     if (liveStatus.detail) live("detail", liveStatus.detail);
+    if (liveStatus.stack) {
+      live("stack", liveStatus.stack.name);
+      if (liveStatus.stack.status) live("stack status", liveStatus.stack.status);
+      if (liveStatus.stack.healthy !== undefined) live("healthy", String(liveStatus.stack.healthy));
+    }
   } else if (st === "accent") {
     const live = section("live");
     live("", "not provisioned yet (pending) — no live state");
@@ -258,14 +268,28 @@ function wire(ir) {
 // (nodes=components, wave-laned, dependsOn edges) in place of the AWS entity
 // graph. With an env picked too, components mode gets its own live status join
 // (#57, per-component AWS reconciliation) instead of the entity overlay — see
-// load()'s endpoint choice. Every fetch reads this, so the `changed` SSE
-// re-pull and a picker change go through the same path.
-const view = { env: null, detail: 2, components: false };
+// load()'s endpoint choice. tier/target (M2, #54) are the two new lenses: a
+// picked tier overrides LOOM_TIER, a picked target overrides AWS_ENDPOINT_URL,
+// for every chant shell-out this page's fetches trigger (see lensParams()).
+// Every fetch reads this, so the `changed` SSE re-pull and a picker change go
+// through the same path.
+const view = { env: null, detail: 2, components: false, tier: null, target: null };
 
-// The deploy axes in play (#59 unify) — tier/target, read once from
-// /api/project (server-derived from the process env; see deployAxes() in
-// src/server.ts). Static for the life of the page, unlike env/detail/components.
+// The deploy axes as currently displayed in the header (#59 unify, M2 #54
+// lenses) — seeded once from /api/project (server-derived from the process
+// env at launch; see deployAxes() in src/server.ts), then kept in sync with
+// whatever the last /api/graph response actually observed (its `meta.tier`/
+// `meta.target`, since a picked lens can differ from the launch-time default).
 let axes = { tier: null, target: null };
+
+// Query params for the tier/target lenses (M2, #54) — shared by every fetch
+// this page makes, so picking a lens re-parameterizes the component graph,
+// its CI/resources facets, and the reconcile summary all the same way.
+function lensParams(params) {
+  if (view.tier) params.set("tier", view.tier);
+  if (view.target) params.set("target", view.target);
+  return params;
+}
 
 // CI projection facet (M1.2, #58): the component DAG's GitLab CI reading —
 // component name → {jobName, stage, needs, script}, from `/api/ci` (`chant
@@ -276,8 +300,8 @@ let ciByComponent = new Map();
 
 async function loadCi() {
   try {
-    const q = view.env ? `?env=${encodeURIComponent(view.env)}` : "";
-    const res = await fetch(`/api/ci${q}`);
+    const q = lensParams(new URLSearchParams(view.env ? { env: view.env } : {}));
+    const res = await fetch(`/api/ci?${q}`);
     const j = await res.json();
     if (!res.ok) throw new Error(j.error || res.statusText);
     ciByComponent = new Map((j.jobs || []).map((job) => [job.component, job]));
@@ -298,8 +322,8 @@ let resourcesByComponent = {};
 
 async function loadResources() {
   try {
-    const q = view.env ? `?env=${encodeURIComponent(view.env)}` : "";
-    const res = await fetch(`/api/resources${q}`);
+    const q = lensParams(new URLSearchParams(view.env ? { env: view.env } : {}));
+    const res = await fetch(`/api/resources?${q}`);
     const j = await res.json();
     if (!res.ok) throw new Error(j.error || res.statusText);
     resourcesByComponent = j.byComponent || {};
@@ -307,6 +331,97 @@ async function loadResources() {
     // Non-fatal, same rationale as loadCi(): the DAG and its other facets
     // still render without the resources facet.
     resourcesByComponent = {};
+  }
+}
+
+// The observe → reconcile → apply dial (M2, #54): where the selected target
+// sits on the lifecycle progression, per the epic's design. `observe` is
+// always live already — it's the component-status view above (render()'s
+// `componentStatus` branch IS observe); clicking the step just switches into
+// it. `reconcile` is a click-to-fetch summary (`/api/reconcile`, a full build
+// + cloud query — on demand, like #27's live diff), cached until the
+// env/tier/target lens changes. `apply` is disabled — delegated writes land
+// in M3; behold stays read-only here.
+let reconcileCache = null; // last ReconcileSummary for the current env/tier/target, or null
+
+function dialArrow() {
+  const s = document.createElement("span");
+  s.className = "dial-arrow";
+  s.textContent = "→";
+  return s;
+}
+
+function renderDial() {
+  const host = document.getElementById("dial");
+  if (!view.env) {
+    host.style.display = "none";
+    host.innerHTML = "";
+    return;
+  }
+  host.style.display = "flex";
+  host.innerHTML = "";
+
+  const track = document.createElement("div");
+  track.className = "dial-track";
+
+  const observeBtn = button("observe", "dial-step" + (view.components ? " active" : ""), () => {
+    view.components = true;
+    load();
+  });
+  observeBtn.title = `Live per-component status for ${view.env} (chant components status --live) — the palette this graph paints when "components" is on.`;
+  track.appendChild(observeBtn);
+  track.appendChild(dialArrow());
+
+  const reconcileBtn = button(
+    reconcileCache ? `reconcile · ${reconcileCache.total} pending` : "reconcile",
+    "dial-step",
+    loadReconcile,
+  );
+  reconcileBtn.title = `Pending change set for ${view.env} (chant lifecycle plan --live, read-only) — click to load.`;
+  track.appendChild(reconcileBtn);
+  track.appendChild(dialArrow());
+
+  const applyBtn = button("apply", "dial-step disabled", () => {});
+  applyBtn.disabled = true;
+  applyBtn.title = "Delegated writes land in M3 — behold stays read-only here.";
+  track.appendChild(applyBtn);
+
+  host.appendChild(track);
+  if (reconcileCache) host.appendChild(renderReconcileDetail(reconcileCache));
+}
+
+function renderReconcileDetail(r) {
+  const wrap = document.createElement("div");
+  wrap.className = "dial-detail";
+  const rows = Object.entries(r.byComponent).sort((a, b) => b[1] - a[1]);
+  if (!rows.length && !r.uncorrelated) {
+    wrap.textContent = "no pending changes";
+    return wrap;
+  }
+  for (const [component, count] of rows) {
+    const span = document.createElement("span");
+    span.textContent = `${component}: ${count}`;
+    wrap.appendChild(span);
+  }
+  if (r.uncorrelated) {
+    const span = document.createElement("span");
+    span.textContent = `${r.uncorrelated} uncorrelated`;
+    span.title = "Pending changes that couldn't be mapped to a component by source location.";
+    wrap.appendChild(span);
+  }
+  return wrap;
+}
+
+async function loadReconcile() {
+  try {
+    const q = lensParams(new URLSearchParams({ env: view.env }));
+    const res = await fetch(`/api/reconcile?${q}`);
+    const j = await res.json();
+    if (!res.ok) throw new Error(j.tierNote || j.error || res.statusText);
+    reconcileCache = j;
+    renderDial();
+  } catch (e) {
+    nowline("✗ reconcile: " + e.message);
   }
 }
 
@@ -331,18 +446,22 @@ function render(ir, svg, m) {
     // read as a bug (#32).
     if (c.good === 0 && c.warn === 0 && c.accent > 0) tail += ` — nothing deployed in ${m.env} yet`;
   } else if (componentStatus) {
-    const c = { good: 0, warn: 0, neutral: 0 };
+    // M2 (#54): 4 buckets now (good/accent/warn/neutral) — see
+    // COMPONENT_STATUS_LABEL and src/component-status.ts's palette doc comment.
+    const c = { good: 0, accent: 0, warn: 0, neutral: 0 };
     for (const n of ir.nodes) {
       const s = n.attrs && n.attrs._status;
       if (s in c) c[s]++;
     }
-    tail = ` · ${c.good} deployed · ${c.warn} stale/drifted · ${c.neutral} not deployed`;
+    tail = ` · ${c.good} healthy · ${c.accent} in progress · ${c.warn} rollback/failed · ${c.neutral} not deployed`;
   }
   // Multi-estate (#31): note the composed project count; the graph draws one box per project.
   const scope = m.estate ? `estate of ${m.estate} projects` : m.projectDir;
-  // The deploy axes (#59 unify) — tier/target, when the served project reports
-  // them (see `axes`, populated once from /api/project). Absent for a project
-  // that doesn't set LOOM_TIER/AWS_ENDPOINT_URL, rather than a blank label.
+  // The deploy axes (#59 unify, M2 #54 lenses) — tier/target, kept in sync with
+  // what this response actually observed (falls back to the launch-time value
+  // from /api/project when a route doesn't echo them, e.g. /api/overlay).
+  if (m.tier !== undefined) axes.tier = m.tier;
+  if (m.target !== undefined) axes.target = m.target;
   const axesTail = `${axes.tier ? " · tier " + axes.tier : ""}${axes.target ? " · target " + axes.target : ""}`;
   document.getElementById("meta").textContent =
     `${scope}${m.env ? " · env " + m.env : ""}${axesTail}${overlay ? " · overlay" : ""}${m.components ? " · components" : ""}${componentStatus ? " · live status" : ""} · ${ir.nodes.length} nodes${tail}`;
@@ -350,6 +469,22 @@ function render(ir, svg, m) {
   document.getElementById("component-legend").style.display = componentStatus ? "flex" : "none";
   document.getElementById("graph").innerHTML = svg;
   wire(ir);
+  renderDial();
+}
+
+// A graph/facet failure under a picked tier (M2, #54): the server explains it
+// via `tierNote` (src/server.ts `tierErrorNote`) instead of a bare error — a
+// calmer inline note in the graph pane, not the alarming red error box. Built
+// via textContent, not innerHTML — the note embeds chant's own stderr text.
+function renderTierNote(note) {
+  const host = document.getElementById("graph");
+  host.innerHTML = "";
+  const div = document.createElement("div");
+  div.className = "tier-note";
+  div.textContent = note;
+  host.appendChild(div);
+  document.getElementById("legend").style.display = "none";
+  document.getElementById("component-legend").style.display = "none";
 }
 
 // Fetch the current view (source graph, or the picked env's live overlay).
@@ -357,7 +492,7 @@ async function load() {
   const meta = document.getElementById("meta");
   meta.textContent = view.env ? `loading overlay for ${view.env}…` : "loading…";
   try {
-    const q = new URLSearchParams({ detail: String(view.detail) });
+    const q = lensParams(new URLSearchParams({ detail: String(view.detail) }));
     let endpoint = "/api/graph";
     if (view.components) {
       // M1.1 (#57): the component DAG stays on /api/graph even with an env
@@ -381,9 +516,19 @@ async function load() {
       resourcesByComponent = {};
     }
     const res = await fetch(`${endpoint}?${q}`);
-    if (!res.ok) throw new Error((await res.json()).error || res.statusText);
-    const { ir, svg, meta: m } = await res.json();
-    render(ir, svg, m);
+    const body = await res.json();
+    if (!res.ok) {
+      // M2 (#54): a tier-scoped failure gets the calmer inline note instead of
+      // the generic red error box — see renderTierNote().
+      if (body.tierNote) {
+        renderTierNote(body.tierNote);
+        meta.textContent = `tier ${view.tier} unavailable here`;
+        renderDial();
+        return;
+      }
+      throw new Error(body.error || res.statusText);
+    }
+    render(body.ir, body.svg, body.meta);
   } catch (err) {
     document.getElementById("graph").innerHTML = `<div class="err">graph failed: ${err.message}</div>`;
     meta.textContent = "error";
@@ -441,12 +586,15 @@ async function initPickers() {
     .then((r) => r.json())
     .catch(() => ({ environments: [], currentEnv: null }));
   view.env = info.currentEnv || null;
+  view.tier = info.tier || null;
+  view.target = (info.targets && info.targets[0] && info.targets[0].endpoint) || null;
   axes = { tier: info.tier || null, target: info.target || null };
   const host = document.getElementById("pickers");
   const envOpts = [["(source)", ""], ...info.environments.map((e) => [`env: ${e}`, e])];
   host.appendChild(
     picker("environment", envOpts, view.env || "", (v) => {
       view.env = v || null;
+      reconcileCache = null;
       load();
     }),
   );
@@ -467,6 +615,41 @@ async function initPickers() {
       },
     ),
   );
+  // The tier lens (M2, #54): only offered when the served project already
+  // showed LOOM_TIER is in play (info.tier set at launch — same gate
+  // deployAxes() uses server-side). Picking a tier re-evaluates the
+  // tier-conditioned source for every subsequent fetch (lensParams()).
+  if (info.tiers && info.tiers.length) {
+    host.appendChild(
+      picker(
+        "tier",
+        info.tiers.map((t) => [`tier: ${t}`, t]),
+        view.tier || info.tiers[0],
+        (v) => {
+          view.tier = v;
+          reconcileCache = null;
+          load();
+        },
+      ),
+    );
+  }
+  // The target lens (M2, #54): the deploy target/endpoint (Floci locally).
+  // Modelled as a picker even with one option today, so M4's estate (several
+  // live targets) is a straight extension — see deployTargets() server-side.
+  if (info.targets && info.targets.length) {
+    host.appendChild(
+      picker(
+        "target",
+        info.targets.map((t) => [`target: ${t.endpoint}`, t.endpoint]),
+        view.target || info.targets[0].endpoint,
+        (v) => {
+          view.target = v;
+          reconcileCache = null;
+          load();
+        },
+      ),
+    );
+  }
   load();
 }
 initPickers();

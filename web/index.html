@@ -13,15 +13,15 @@
       * { box-sizing: border-box; }
       html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
         font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, sans-serif; }
-      #app { display: grid; grid-template-columns: 1fr 320px; grid-template-rows: auto 1fr;
+      #app { display: grid; grid-template-columns: 1fr 320px; grid-template-rows: auto auto 1fr auto;
         height: 100%; }
-      header { grid-column: 1 / 3; padding: 10px 16px; border-bottom: 1px solid var(--line);
+      header { grid-column: 1 / 3; grid-row: 1; padding: 10px 16px; border-bottom: 1px solid var(--line);
         display: flex; align-items: baseline; gap: 12px; }
       header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .3px; }
       header .meta { color: var(--muted); font-size: 12px; }
-      #graph { overflow: auto; }
-      #inspect { border-left: 1px solid var(--line); background: var(--panel); padding: 14px;
-        overflow: auto; }
+      #graph { grid-row: 3; grid-column: 1; overflow: auto; }
+      #inspect { grid-row: 3; grid-column: 2; border-left: 1px solid var(--line); background: var(--panel);
+        padding: 14px; overflow: auto; }
       #inspect h2 { font-size: 13px; margin: 0 0 8px; color: var(--muted); font-weight: 600;
         text-transform: uppercase; letter-spacing: .5px; }
       #inspect dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 4px 10px; }
@@ -32,6 +32,11 @@
       #graph svg { max-width: none; }
       .sel rect, .sel path, .sel > rect { stroke: var(--pending) !important; stroke-width: 2.5 !important; }
       .err { padding: 24px; color: var(--foreign); }
+      /* M2 (#54): a graph/facet failure under a picked (non-default) tier — a
+         distinct, calmer note (not the alarming red .err) since it's usually
+         expected (e.g. a production-only tier not deployable on a local
+         target), not a bug. */
+      .tier-note { padding: 24px; color: var(--muted); white-space: pre-wrap; max-width: 640px; }
       #actions button, #inspect button { background: var(--panel); color: var(--fg); border: 1px solid var(--line);
         border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
       #actions button:hover, #inspect button:hover { border-color: var(--pending); }
@@ -40,7 +45,20 @@
       #pickers select { background: var(--panel); color: var(--fg); border: 1px solid var(--line);
         border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
       #pickers select:hover { border-color: var(--pending); }
-      #nowline { grid-column: 1 / 3; margin: 0; max-height: 160px; overflow: auto; display: none;
+      /* The observe → reconcile → apply dial (M2, #54): where the selected
+         target sits on the lifecycle progression. Its own row below the
+         header — a target-level control, not a per-node inspect detail. */
+      #dial { grid-column: 1 / 3; grid-row: 2; display: none; align-items: center; gap: 10px;
+        padding: 6px 16px; border-bottom: 1px solid var(--line); font-size: 12px; }
+      .dial-track { display: flex; align-items: center; gap: 8px; }
+      .dial-arrow { color: var(--muted); }
+      .dial-step { background: var(--panel); color: var(--fg); border: 1px solid var(--line);
+        border-radius: 999px; padding: 3px 12px; font-size: 12px; cursor: pointer; }
+      .dial-step:hover:not(:disabled) { border-color: var(--pending); }
+      .dial-step.active { border-color: var(--pending); color: var(--pending); }
+      .dial-step:disabled { opacity: .5; cursor: not-allowed; }
+      .dial-detail { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--muted); }
+      #nowline { grid-column: 1 / 3; grid-row: 4; margin: 0; max-height: 160px; overflow: auto; display: none;
         background: #010409; border-top: 1px solid var(--line); padding: 8px 12px; font: 11px/1.5 ui-monospace, monospace;
         color: var(--fg); white-space: pre-wrap; }
     </style>
@@ -55,19 +73,25 @@
           <span style="color:var(--foreign)">● foreign</span>
           <span style="color:var(--pending)">● pending</span>
         </span>
-        <!-- M1.1 (#57): the component DAG's live per-component AWS status —
-             a different join than the entity overlay above (component name ->
-             CFN stack, not chant's cross-substrate --live --overlay), so it's
-             a separate legend rather than reusing #legend's vocabulary. -->
+        <!-- M1.1 (#57), palette hardened M2 (#54): the component DAG's live
+             per-component AWS status — a different join than the entity
+             overlay above (component name -> CFN stack, not chant's
+             cross-substrate --live --overlay), so it's a separate legend
+             rather than reusing #legend's vocabulary. 4 states now (chant
+             0.18.29's machine-readable live/stack): pinhole has no literal
+             amber token, so "in progress" reuses its blue accent paint —
+             see src/component-status.ts's doc comment for the mapping. -->
         <span id="component-legend" style="display:none;gap:12px;font-size:11px;align-self:center">
-          <span style="color:var(--managed)">● deployed</span>
-          <span style="color:var(--foreign)">● stale / drifted</span>
+          <span style="color:var(--managed)">● healthy</span>
+          <span style="color:var(--pending)">● in progress</span>
+          <span style="color:var(--degraded)">● rollback / failed</span>
           <span style="color:var(--muted)">● not deployed</span>
         </span>
         <span id="pickers" style="margin-left:auto;display:flex;gap:8px"></span>
         <span id="actions" style="display:flex;gap:8px"></span>
         <a href="/lanes" style="color:var(--pending);text-decoration:none;font-size:12px;align-self:center">lanes →</a>
       </header>
+      <div id="dial"></div>
       <div id="graph"></div>
       <aside id="inspect"><h2>inspect</h2><p style="color:var(--muted)">click a node</p></aside>
       <pre id="nowline"></pre>
