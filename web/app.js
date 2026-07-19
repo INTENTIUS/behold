@@ -983,6 +983,9 @@ function bringUpSubstrate(s) {
 }
 
 loadSubstrates();
+// Poll readiness so pills update as things come up on their own (Docker
+// starting, a bring-up provisioning) without needing a `changed` event.
+setInterval(loadSubstrates, 5000);
 
 // Delegated writes (#7 Sync / #8 Adopt). behold never mutates — these buttons
 // trigger the project's committed Ops on the executor; the now-line streams phases.

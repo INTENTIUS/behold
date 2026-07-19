@@ -12,10 +12,11 @@
  * bring-up is only offered when the project actually ships the script for it.
  */
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { platform } from "node:os";
 
-export type SubstrateStatus = "up" | "down" | "on-demand" | "unknown";
+export type SubstrateStatus = "up" | "down" | "on-demand" | "blocked" | "unknown";
 
 export interface Substrate {
   /** Stable id (route key). */
@@ -69,6 +70,20 @@ function scriptBringUp(projectDir: string, relPath: string, label: string): Subs
   return existsSync(join(projectDir, relPath)) ? { label, cmd: "bash", args: [relPath] } : undefined;
 }
 
+/** The lexicons a project declares (from `chant.config.ts` `lexicons: [...]`) —
+ * best-effort text scan, so we only offer substrates the project actually uses
+ * (an aws project shouldn't show a red "k3d down"). Empty when unreadable. */
+function projectLexicons(projectDir: string): string[] {
+  try {
+    const src = readFileSync(join(projectDir, "chant.config.ts"), "utf-8");
+    const m = src.match(/lexicons\s*:\s*\[([^\]]*)\]/);
+    if (!m) return [];
+    return [...m[1].matchAll(/["']([^"']+)["']/g)].map((x) => x[1]);
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Detect the substrates a locally-served project might need. Ordered
  * Floci → k3d → GitLab CI → Forgejo. Cheap probes only (a few `docker`/`k3d`
@@ -76,52 +91,66 @@ function scriptBringUp(projectDir: string, relPath: string, label: string): Subs
  */
 export async function detectSubstrates(projectDir: string): Promise<Substrate[]> {
   const subs: Substrate[] = [];
-
-  // Docker underpins Floci / GitLab CI / Forgejo and their bring-up scripts — if
-  // its daemon is down, surface that as the actionable root cause (behold can't
-  // start Docker Desktop for you) rather than a misleading per-substrate "down".
+  const lexicons = projectLexicons(projectDir);
   const docker = await dockerAvailable();
 
-  // Floci — the persistent AWS-managed-services emulator loomster's local-up
-  // brings up (`docker run --name floci … :4566`). The one true "is the local
-  // cloud up?" signal for an aws-lexicon project.
-  const floci = docker ? await dockerRunning("^floci$") : [];
+  // Docker — the ROOT of the local emulator/runner substrates. When it's down
+  // that's the single actionable thing (start Docker Desktop), so the
+  // docker-dependent substrates below read "blocked" (muted), not four alarming
+  // reds. On macOS behold can start Docker Desktop for you (`open -a Docker`).
   subs.push({
-    name: "floci",
-    label: "Floci",
-    status: floci.length ? "up" : "down",
-    detail: !docker ? "Docker daemon not running — start Docker Desktop first" : floci.length ? "container up on :4566" : "not running",
-    // Only offer the bring-up when Docker can actually run it.
-    bringUp: docker && !floci.length ? scriptBringUp(projectDir, "scripts/local/local-up.sh", "local-up") : undefined,
+    name: "docker",
+    label: "Docker",
+    status: docker ? "up" : "down",
+    detail: docker ? "daemon running" : "daemon not running",
+    bringUp: docker || platform() !== "darwin" ? undefined : { label: "open -a Docker", cmd: "open", args: ["-a", "Docker"] },
   });
 
-  // k3d — a local Kubernetes cluster (k8s-lexicon projects). "unknown" when k3d
-  // isn't installed, so a non-k8s project doesn't show a scary red "down".
-  const k3d = await probe("k3d", ["cluster", "list", "--no-headers"]);
-  const clusters = k3d.code === 0 ? k3d.out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean) : [];
-  subs.push({
-    name: "k3d",
-    label: "k3d",
-    status: k3d.code === 127 ? "unknown" : clusters.length ? "up" : "down",
-    detail: k3d.code === 127 ? "k3d not installed" : clusters.length ? `${clusters.length} cluster(s)` : "no clusters",
-  });
+  // A docker-dependent substrate reads "blocked" (waiting on Docker), not "down",
+  // when the daemon is off — the fix is Docker, not this thing.
+  const dep = (up: boolean, upDetail: string, offDetail: string): { status: SubstrateStatus; detail: string } =>
+    !docker ? { status: "blocked", detail: "waiting on Docker" } : { status: up ? "up" : (offDetail === "on-demand (pipeline run)" ? "on-demand" : "down"), detail: up ? upDetail : offDetail };
 
-  // GitLab CI / Forgejo — loomster runs these on-demand (gitlab-ci-local /
-  // forgejo runtime-e2e spin up an ephemeral pipeline against their own Floci,
-  // then tear down). So absence isn't "down" — it's "on-demand". Bring-up runs
-  // the runtime-e2e (a live pipeline), when the project ships that script.
-  const forges: Array<[string, string, string]> = [
-    ["gitlab-ci", "GitLab CI", "test/gitlab-runtime-e2e.sh"],
-    ["forgejo", "Forgejo", "test/forgejo-runtime-e2e.sh"],
+  // Floci — only for an aws-lexicon project (it emulates AWS managed services).
+  if (lexicons.includes("aws")) {
+    const floci = docker ? await dockerRunning("^floci$") : [];
+    const d = dep(floci.length > 0, "container up on :4566", "not running");
+    subs.push({
+      name: "floci",
+      label: "Floci",
+      ...d,
+      bringUp: docker && !floci.length ? scriptBringUp(projectDir, "scripts/local/local-up.sh", "local-up") : undefined,
+    });
+  }
+
+  // GitLab CI / Forgejo — only when the project actually targets that forge
+  // (ships its generated CI). On-demand pipeline runs (gitlab-ci-local / forgejo
+  // runtime-e2e), so absence is "on-demand", not "down".
+  const forges: Array<[string, string, string, string]> = [
+    ["gitlab-ci", "GitLab CI", ".gitlab", "test/gitlab-runtime-e2e.sh"],
+    ["forgejo", "Forgejo", ".forgejo", "test/forgejo-runtime-e2e.sh"],
   ];
-  for (const [name, label, script] of forges) {
+  for (const [name, label, marker, script] of forges) {
+    if (!existsSync(join(projectDir, marker))) continue; // project doesn't target this forge
     const c = docker ? await dockerRunning(name) : [];
+    const d = dep(c.length > 0, "container up", "on-demand (pipeline run)");
     subs.push({
       name,
       label,
-      status: !docker ? "down" : c.length ? "up" : "on-demand",
-      detail: !docker ? "Docker daemon not running" : c.length ? "container up" : "on-demand (pipeline run)",
+      ...d,
       bringUp: docker ? scriptBringUp(projectDir, script, `run ${label} pipeline`) : undefined,
+    });
+  }
+
+  // k3d — only for a k8s-lexicon project. "unknown" if k3d isn't installed.
+  if (lexicons.includes("k8s")) {
+    const k3d = await probe("k3d", ["cluster", "list", "--no-headers"]);
+    const clusters = k3d.code === 0 ? k3d.out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean) : [];
+    subs.push({
+      name: "k3d",
+      label: "k3d",
+      status: k3d.code === 127 ? "unknown" : clusters.length ? "up" : "down",
+      detail: k3d.code === 127 ? "k3d not installed" : clusters.length ? `${clusters.length} cluster(s)` : "no clusters",
     });
   }
 
