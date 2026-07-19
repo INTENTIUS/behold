@@ -239,18 +239,33 @@ green in publish CI). loomster and behold are pinned to `^0.18.27`. Three change
    `chant components status --live` now observes each component's own cfn-deploy
    stack — the multi-stack signal `describeResources` missed (Q2).
 
-### Known chant limitation (NOT fixed in 0.18.27) — large piped output truncates
+### Large piped output truncation — FIXED in chant 0.18.28
 
-The chant CLI truncates stdout at **64 KB when piped** (not to a TTY): `main.ts`
-calls `process.exit(code)` right after the handler's `console.log`, before the
-async pipe write drains. loomster's full **entity** graph is ~198 KB, so
-`chant graph src --format ir` piped into a consumer is cut at 65536 bytes and its
-JSON won't parse. **Does not affect M1's core** — the component DAG (~14 KB) and
-`components status --json` (7 rows) are well under 64 KB. behold's `runChantRaw`
-was hardened (accumulate bytes, decode once) but can't undo an upstream cut.
-Fast-follow candidate: chant `process.exitCode = code` + drain stdout before exit
-(a 0.18.28), or behold uses `chant … -o <tempfile>` for large reads. Flag for #59
-(e2e) and any entity-graph drill-down.
+Earlier the chant CLI truncated stdout at **64 KB when piped** (`main.ts` called
+`process.exit()` before the async pipe write drained), so loomster's ~198 KB
+*entity* graph (`chant graph src --format ir`) came through a consumer cut at
+65536 bytes and wouldn't parse. **chant 0.18.28** flushes stdout/stderr before
+exiting (verified: the full 198 KB now pipes and parses); loomster + behold are
+pinned to `^0.18.28`. behold's `runChantRaw` was also hardened (accumulate bytes,
+decode once) — still correct, guards against a multi-byte UTF-8 split.
+
+### Two integration findings from #56–58 (for #59 and future behold work)
+
+- **Runtime (non-type-only) imports from `@intentius/chant` need bundling.** The
+  package ships several runtime subpaths (`./yaml`, `./components`) as raw TS with
+  no compiled-JS export condition, so `node dist/cli.js` can't import them while
+  they're `external` to esbuild. #58 changed behold's `build` from
+  `--packages=external` to an explicit external list so `@intentius/chant` bundles
+  in (only its self-contained `yaml` module is actually pulled; everything else is
+  `import type` and erases). Keep that in mind for any new runtime chant import.
+- **`ComponentStatusRow` has no machine-readable `live` boolean.** #57 must
+  string-match chant's human `detail` (`detail.startsWith("live")`) to tell
+  "unrecorded-but-live" from "unrecorded-not-live" — fragile to wording. And the
+  `describeStackStatus` health (`{present,status,healthy}`) isn't surfaced on the
+  status row, so a stack in `UPDATE_ROLLBACK_COMPLETE` still reads green
+  (presence-only). A future chant iteration could add `live` + `status` to the
+  row for a richer red/amber/green palette; M1's blue→green (deployed vs not) is
+  fine on presence.
 
 ---
 
