@@ -916,7 +916,73 @@ initPickers();
 // Live updates (#3): re-pull when the server signals the served source changed.
 // EventSource reconnects on its own if the server restarts.
 const events = new EventSource("/api/events");
-events.addEventListener("changed", () => load());
+events.addEventListener("changed", () => {
+  load();
+  loadSubstrates(); // a bring-up (or any op) finished → re-detect readiness
+});
+
+// Substrate readiness strip (M5, #54): is each substrate the project needs
+// actually up? Poll /api/substrates, render status pills, and offer a one-click
+// "Bring up" (POST /api/substrates/<name>/up) that runs the project's local
+// script through the same guard as apply — its output streams to the now-line,
+// and the post-run `changed` flips the pill.
+async function loadSubstrates() {
+  try {
+    const { substrates } = await fetch("/api/substrates").then((r) => r.json());
+    renderSubstrates(substrates || []);
+  } catch {
+    /* transient — leave whatever's shown */
+  }
+}
+
+function renderSubstrates(subs) {
+  const host = document.getElementById("substrates");
+  if (!subs.length) {
+    host.style.display = "none";
+    return;
+  }
+  host.style.display = "flex";
+  host.innerHTML = "";
+  const lbl = document.createElement("span");
+  lbl.className = "label";
+  lbl.textContent = "substrates:";
+  host.appendChild(lbl);
+  for (const s of subs) {
+    const pill = document.createElement("span");
+    pill.className = `sub ${s.status}`;
+    pill.title = s.detail;
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    pill.appendChild(dot);
+    const name = document.createElement("span");
+    name.textContent = s.label;
+    pill.appendChild(name);
+    if (s.bringUp) {
+      const b = document.createElement("button");
+      b.textContent = "Bring up";
+      b.title = `Run: ${s.bringUp.cmd} ${s.bringUp.args.join(" ")}`;
+      b.addEventListener("click", () => bringUpSubstrate(s));
+      pill.appendChild(b);
+    }
+    host.appendChild(pill);
+  }
+}
+
+function bringUpSubstrate(s) {
+  if (
+    !window.confirm(
+      `Bring up ${s.label}?\nRuns: ${s.bringUp.cmd} ${s.bringUp.args.join(" ")}\nOutput streams in the log below — this can take a minute.`,
+    )
+  )
+    return;
+  nowline(`▶ bringing up ${s.label} …`);
+  fetch(`/api/substrates/${encodeURIComponent(s.name)}/up`, { method: "POST" })
+    .then((r) => r.json())
+    .then((j) => nowline(j.error ? "✗ " + j.error : `▶ ${s.label}: ${j.ran}`))
+    .catch((e) => nowline("✗ bring up: " + e.message));
+}
+
+loadSubstrates();
 
 // Delegated writes (#7 Sync / #8 Adopt). behold never mutates — these buttons
 // trigger the project's committed Ops on the executor; the now-line streams phases.

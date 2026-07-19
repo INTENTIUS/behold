@@ -6,7 +6,7 @@
  * <op>` (or, since M3, `chant run <target> --components --progress-json`) on
  * the executor and streams the phases.
  */
-import { runChantStream, applyArgs } from "./chant.ts";
+import { runChantStream, runCommandStream, applyArgs } from "./chant.ts";
 import { extractPrUrl } from "./adopt.ts";
 import { parseProgressLine, applyProgressReducer, initialApplyProgress, type ApplyProgressState } from "./apply.ts";
 import type { Broadcaster } from "./events.ts";
@@ -92,6 +92,32 @@ export class OpRunner {
       this.deps.broadcaster.emit("apply", JSON.stringify(this.lastApplyProgress));
       return true; // consumed — start() skips the raw "op" broadcast for this line
     });
+  }
+
+  /**
+   * Substrate bring-up (M5, #54): run a project's local bring-up script (e.g.
+   * `bash scripts/local/local-up.sh`, `test/gitlab-runtime-e2e.sh`) through the
+   * SAME running-guard + stream + post-run capture as an Op — behold triggers,
+   * the script does the work, its output streams to the `op` channel, and the
+   * post-run `changed` re-checks the graph (and lets the readiness strip
+   * re-detect). Returns false (→ 409) when something is already running. `cwd`
+   * is the served project's dir.
+   */
+  bringUp(label: string, cmd: string, args: string[], cwd: string): boolean {
+    if (this.current) return false;
+    const { broadcaster } = this.deps;
+    broadcaster.emit("op", `▶ ${cmd} ${args.join(" ")}`);
+    const op = runCommandStream(cmd, args, cwd, (line) => broadcaster.emit("op", line));
+    this.current = label;
+    void op.done.then((code) => {
+      broadcaster.emit("op", `■ ${label} exited ${code}`);
+      this.current = null;
+      Promise.resolve(this.deps.onDone(undefined))
+        .then(() => broadcaster.emit("changed"))
+        .catch((err) =>
+          broadcaster.emit("op", `⚠ post-op capture: ${err instanceof Error ? err.message : String(err)}`));
+    });
+    return true;
   }
 
   /**

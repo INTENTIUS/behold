@@ -37,6 +37,7 @@ import { detectProject } from "./project.ts";
 import { nodeDiff, nodeObserved, type LiveDiffJson } from "./diff.ts";
 import { classifyHealth } from "./health.ts";
 import { OpRunner } from "./op-runner.ts";
+import { detectSubstrates } from "./substrates.ts";
 import { pickAutoSyncOp, type AutoSyncMode } from "./autosync.ts";
 import { sourceCommits } from "./history.ts";
 import { composeEstate } from "./estate.ts";
@@ -263,6 +264,27 @@ export function createApp(
       return c.json({ error: `an Op is already running (${runner.running})` }, 409);
     }
     return c.json({ started: true, name });
+  });
+
+  // Substrate readiness (M5, #54): is each substrate the project needs actually
+  // running (Floci, k3d, GitLab CI, Forgejo)? Read-only detection.
+  app.get("/api/substrates", async (c) => {
+    return c.json({ substrates: await detectSubstrates(cfg.projectDir) });
+  });
+
+  // Bring up a substrate — run its local script (e.g. scripts/local/local-up.sh)
+  // through the shared running-guard, streaming to the `op` channel; the strip
+  // re-detects on the post-run `changed`. behold triggers; the script does it.
+  app.post("/api/substrates/:name/up", async (c) => {
+    const name = c.req.param("name");
+    const sub = (await detectSubstrates(cfg.projectDir)).find((s) => s.name === name);
+    if (!sub) return c.json({ error: `unknown substrate "${name}"` }, 404);
+    if (!sub.bringUp) return c.json({ error: `no bring-up available for "${name}"` }, 400);
+    const { label, cmd, args } = sub.bringUp;
+    if (!runner.bringUp(`bring up ${sub.label}`, cmd, args, cfg.projectDir)) {
+      return c.json({ error: `busy — ${runner.running} is running` }, 409);
+    }
+    return c.json({ started: true, name, ran: label });
   });
 
   // Approve a gated apply: signal the Op's wait-for-approval gate, in its own dir.
