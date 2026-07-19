@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { graphFlags, graphArgs } from "./chant.ts";
+import { graphFlags, graphArgs, componentStatusArgs } from "./chant.ts";
 import { overlayStatus } from "./overlay.ts";
 
 describe("graphFlags", () => {
@@ -56,6 +56,16 @@ describe("graphArgs", () => {
       "--env",
       "local",
     ]);
+  });
+});
+
+describe("componentStatusArgs", () => {
+  it("builds `components status <env> --live --json` (M1.1 spike Q2)", () => {
+    expect(componentStatusArgs("local")).toEqual(["components", "status", "local", "--live", "--json"]);
+  });
+
+  it("threads the env through verbatim", () => {
+    expect(componentStatusArgs("prod")).toEqual(["components", "status", "prod", "--live", "--json"]);
   });
 });
 

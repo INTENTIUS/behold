@@ -13,7 +13,7 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
-import type { GraphIR, Layout } from "@intentius/chant";
+import type { GraphIR, Layout, ComponentStatusRow } from "@intentius/chant";
 
 /** Graph options passed through to chant so IR and layout node sets align. */
 export interface GraphOptions {
@@ -186,4 +186,28 @@ export function componentGraphIr(projectDir: string, opts: GraphOptions = {}): P
 /** Node positions for the component DAG (`chant graph --components --format layout`). */
 export function componentGraphLayout(projectDir: string, opts: GraphOptions = {}): Promise<Layout> {
   return runChantJson<Layout>(graphArgs(graphPath(projectDir), "layout", opts, true), projectDir);
+}
+
+/** Build the `chant components status` argv (M1.1 spike, Q2): one row per
+ * component, reconciling the release ledger against live AWS truth for
+ * `env`. Always `--live --json` — behold has no offline/digest-only use for
+ * this command, and `--json` is the only output this parses. Pure; exported
+ * for testing. */
+export function componentStatusArgs(env: string): string[] {
+  return ["components", "status", env, "--live", "--json"];
+}
+
+/** Live per-component AWS status (`chant components status <env> --live
+ * --json`): one row per component — `component` (the join key onto the
+ * component-DAG IR, by name), `reconciliation` (reconciled|unrecorded|stale|
+ * drifted|unknown) and a human-readable `detail`. Single-substrate AWS,
+ * resolved internally by chant from each component's own CFN stack
+ * (`loom-<env>-<instance>-<component>` on loomster) — behold does not shell
+ * `aws` or reconstruct stack names itself. Deliberately NOT the cross-
+ * substrate `chant graph --live --overlay` path (`sourceAnchoredOverlay`
+ * throws — chant #821; see src/overlay.ts and docs/roadmap/m1-cli-notes.md
+ * Q2). The output is a bare JSON array (not wrapped in `{env, rows, ...}`) —
+ * verified against loomster on Floci, chant 0.18.27. */
+export function componentStatus(projectDir: string, env: string): Promise<ComponentStatusRow[]> {
+  return runChantJson<ComponentStatusRow[]>(componentStatusArgs(env), projectDir);
 }

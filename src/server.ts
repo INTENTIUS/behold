@@ -13,7 +13,8 @@ import { serve } from "@hono/node-server";
 import { fileURLToPath } from "node:url";
 import { dirname, join, relative } from "node:path";
 import type { GraphIR } from "@intentius/chant";
-import { graphIr, componentGraphIr, runChantRaw, type GraphOptions } from "./chant.ts";
+import { graphIr, componentGraphIr, componentStatus, runChantRaw, type GraphOptions } from "./chant.ts";
+import { joinComponentStatus } from "./component-status.ts";
 import { renderGraph } from "./render.ts";
 import { discoverEstateOps } from "./ops.ts";
 import { LIVE_IMPORT_LEXICONS } from "./adopt.ts";
@@ -214,20 +215,41 @@ export function createApp(
       // Multi-estate (#31): graph each project and compose into one IR (namespaced
       // ids, per-project boundary boxes, cross-stack edges). Single project → as-is.
       const multi = cfg.projectDirs && cfg.projectDirs.length > 1;
-      const ir = multi
-        ? await composeEstate(cfg.projectDirs!, opts)
-        : components
-          ? await componentGraphIr(cfg.projectDir, opts)
-          : await graphIr(cfg.projectDir, opts);
+      let ir: GraphIR;
+      let mode: "component-status" | undefined;
+      let metaEnv = cfg.env ?? null;
+      if (multi) {
+        ir = await composeEstate(cfg.projectDirs!, opts);
+      } else if (components) {
+        ir = await componentGraphIr(cfg.projectDir, opts);
+        // M1.1 (#57): live per-component AWS status, joined by component name
+        // onto the component-DAG nodes. A distinct data path from the entity
+        // overlay below (`chant graph --live --overlay`) — never used for
+        // components, since `sourceAnchoredOverlay` throws (chant #821) and
+        // the epic forbids the cross-substrate overlay here. `chant components
+        // status <env> --live --json` observes each component's own CFN stack
+        // (docs/roadmap/m1-cli-notes.md Q2). Only runs when an env is picked —
+        // with no env this stays the M1.0 source-only component DAG.
+        const env = opts.env ?? cfg.env;
+        if (env) {
+          const rows = await componentStatus(cfg.projectDir, env);
+          ir = joinComponentStatus(ir, rows);
+          mode = "component-status";
+          metaEnv = env;
+        }
+      } else {
+        ir = await graphIr(cfg.projectDir, opts);
+      }
       const { svg } = renderGraph(ir);
       return c.json({
         ir,
         svg,
         meta: {
           projectDir: cfg.projectDir,
-          env: cfg.env ?? null,
+          env: metaEnv,
           ...(multi ? { estate: cfg.projectDirs!.length } : {}),
           ...(!multi && components ? { components: true } : {}),
+          ...(mode ? { mode } : {}),
         },
       });
     } catch (err) {

@@ -55,6 +55,15 @@
           <span style="color:var(--foreign)">● foreign</span>
           <span style="color:var(--pending)">● pending</span>
         </span>
+        <!-- M1.1 (#57): the component DAG's live per-component AWS status —
+             a different join than the entity overlay above (component name ->
+             CFN stack, not chant's cross-substrate --live --overlay), so it's
+             a separate legend rather than reusing #legend's vocabulary. -->
+        <span id="component-legend" style="display:none;gap:12px;font-size:11px;align-self:center">
+          <span style="color:var(--managed)">● deployed</span>
+          <span style="color:var(--foreign)">● stale / drifted</span>
+          <span style="color:var(--muted)">● not deployed</span>
+        </span>
         <span id="pickers" style="margin-left:auto;display:flex;gap:8px"></span>
         <span id="actions" style="display:flex;gap:8px"></span>
         <a href="/lanes" style="color:var(--pending);text-decoration:none;font-size:12px;align-self:center">lanes →</a>
