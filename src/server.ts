@@ -29,6 +29,7 @@ import {
   type GraphOptions,
 } from "./chant.ts";
 import { joinComponentStatus, componentStatusColor } from "./component-status.ts";
+import { reclassifyOverlay } from "./overlay.ts";
 import { resourcesByComponent, nonResourceEntities } from "./resources.ts";
 import { summarizePlan } from "./reconcile.ts";
 import { renderGraph } from "./render.ts";
@@ -569,7 +570,10 @@ export function createApp(
     }
     try {
       const opts: GraphOptions = { ...query, live: true, overlay: true, env };
-      const ir = await graphIr(cfg.projectDir, opts);
+      // Reclassify wiring/examples so they don't read as "pending" over a done
+      // deploy (see reclassifyOverlay): Parameters take their deployed
+      // component's status, src/examples/ nodes go neutral + `_byo`.
+      const ir = reclassifyOverlay(await graphIr(cfg.projectDir, opts));
       const { svg } = renderGraph(ir);
       return c.json({ ir, svg, meta: { projectDir: cfg.projectDir, env, mode: "overlay" } });
     } catch (err) {
@@ -586,6 +590,9 @@ export function createApp(
     const env = optsFromQuery(new URL(c.req.url)).env ?? cfg.env;
     const result = await captureFrame(cfg.projectDir, env, frames, broadcaster);
     if (!result) return c.json({ error: "refresh failed — see server log" }, 500);
+    // Same wiring/examples reclassification the /api/overlay view gets, so a
+    // manual refresh of the infra graph reads consistently (env → overlay).
+    if (env) reclassifyOverlay(result.ir);
     const { svg } = renderGraph(result.ir);
     return c.json({
       ir: result.ir,

@@ -36,3 +36,60 @@ export function overlayStatus(node: { attrs?: Record<string, unknown> }): Overla
   if (s === "accent") return "pending";
   return undefined;
 }
+
+interface OverlayNode {
+  id: string;
+  kind: string;
+  sourceLoc?: { file?: string };
+  attrs?: Record<string, unknown>;
+}
+
+/** The `src/<component>/` a node is declared under, or undefined for a bare
+ * `src/<file>`, a non-src path, or `src/examples/…` (examples aren't a
+ * component). Mirrors resources.ts's convention. */
+function componentDir(node: OverlayNode): string | undefined {
+  const parts = node.sourceLoc?.file?.split("/") ?? [];
+  if (parts[0] !== "src" || parts[1] === "examples" || parts.length < 3) return undefined;
+  return parts[1];
+}
+
+/** Fix up an overlay IR's `_status` so the infra graph stops painting deployment
+ * *wiring* and *examples* as "pending" (accent) when the deployment is actually
+ * done — chant's overlay marks any declared node with no matching live resource
+ * as pending, but two kinds of node aren't resources at all:
+ *
+ *   - **CloudFormation Parameters** are cross-stack inputs, resolved at build
+ *     time (loomster seeds them), so they never exist as a live resource — yet
+ *     they ARE part of the deployment, declared under their component
+ *     (`src/<component>/params.ts`). Give a Parameter its component's status:
+ *     if that component has any managed resource, the Parameter is part of a
+ *     deployed stack → managed, not pending.
+ *
+ *   - **`src/examples/` nodes** are byo scaffolding, never deployed here.
+ *     "pending" reads as "about to deploy," which is wrong — tag them `_byo`
+ *     and clear the status so they render neutral (an example, not drift).
+ *
+ * Mutates + returns `ir`. Pure w.r.t. I/O — a display reclassification, not a
+ * re-observation. */
+export function reclassifyOverlay<T extends { nodes: OverlayNode[] }>(ir: T): T {
+  const deployedComponents = new Set<string>();
+  for (const n of ir.nodes) {
+    if (n.attrs?._status === "good") {
+      const c = componentDir(n);
+      if (c) deployedComponents.add(c);
+    }
+  }
+  for (const n of ir.nodes) {
+    const file = n.sourceLoc?.file ?? "";
+    if (file.startsWith("src/examples/")) {
+      n.attrs = { ...n.attrs, _byo: true };
+      delete n.attrs._status; // neutral — an example, not pending drift
+    } else if (n.kind === "AWS::CloudFormation::Parameter") {
+      const c = componentDir(n);
+      if (c && deployedComponents.has(c)) {
+        n.attrs = { ...n.attrs, _status: "good" }; // wiring of a deployed component — part of the deployment
+      }
+    }
+  }
+  return ir;
+}
