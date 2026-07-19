@@ -2,7 +2,7 @@
   "name": "@intentius/behold",
   "version": "0.1.0",
   "type": "module",
-  "description": "behold — a live control plane on chant. See your whole estate (every substrate in one graph), coloured by drift; act through delegated, gated Ops.",
+  "description": "behold \u2014 a live control plane on chant. See your whole estate (every substrate in one graph), coloured by drift; act through delegated, gated Ops.",
   "private": true,
   "bin": {
     "behold": "./bin/behold.js"
@@ -17,13 +17,13 @@
     "demo": "npm --prefix example-writes install && tsx src/cli.ts serve example-writes --local --env prod",
     "tsc": "tsc --noEmit",
     "test": "vitest run",
-    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/cli.js && chmod +x dist/cli.js",
+    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --external:hono --external:@hono/node-server --external:@intentius/pinhole --outfile=dist/cli.js && chmod +x dist/cli.js",
     "prepare": "npm run build",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.0",
-    "@intentius/chant": "^0.18.16",
+    "@intentius/chant": "^0.18.28",
     "@intentius/pinhole": "^0.2.3",
     "hono": "^4.6.0"
   },

@@ -13,7 +13,8 @@ import { serve } from "@hono/node-server";
 import { fileURLToPath } from "node:url";
 import { dirname, join, relative } from "node:path";
 import type { GraphIR } from "@intentius/chant";
-import { graphIr, runChantRaw, type GraphOptions } from "./chant.ts";
+import { graphIr, componentGraphIr, componentStatus, ciPipeline, runChantRaw, type GraphOptions } from "./chant.ts";
+import { joinComponentStatus } from "./component-status.ts";
 import { renderGraph } from "./render.ts";
 import { discoverEstateOps } from "./ops.ts";
 import { LIVE_IMPORT_LEXICONS } from "./adopt.ts";
@@ -67,6 +68,23 @@ function optsFromQuery(url: URL): GraphOptions {
   const env = q.get("env");
   if (env) opts.env = env;
   return opts;
+}
+
+/** The deploy axes in play (#59 unify, issue scope: "header line showing
+ * env=<LOOM_ENV>, tier=<LOOM_TIER>, target=Floci"). `env` is chant's own
+ * concept and already surfaces elsewhere (`cfg.env`/`currentEnv`); `tier` and
+ * `target` here are read straight from the served project's process
+ * environment — loomster's own `LOOM_TIER` convention and the literal
+ * `AWS_ENDPOINT_URL` override (Floci's tell), not something behold defines or
+ * names itself. Deliberately generic and substrate-name-free (behold has zero
+ * per-substrate logic, per the epic): this surfaces the raw endpoint URL, not
+ * a hardcoded "Floci" label, and a project with neither var set (real AWS, or
+ * a project that isn't loomster) reports neither field rather than guessing. */
+function deployAxes(): { tier?: string; target?: string } {
+  const axes: { tier?: string; target?: string } = {};
+  if (process.env.LOOM_TIER) axes.tier = process.env.LOOM_TIER;
+  if (process.env.AWS_ENDPOINT_URL) axes.target = process.env.AWS_ENDPOINT_URL;
+  return axes;
 }
 
 /**
@@ -198,26 +216,146 @@ export function createApp(
   // launch `--env`, the picker's initial selection.
   app.get("/api/project", async (c) => {
     const { environments, lexicons } = await detectProject(cfg.projectDir);
-    return c.json({ projectDir: cfg.projectDir, environments, lexicons, currentEnv: cfg.env ?? null });
+    return c.json({ projectDir: cfg.projectDir, environments, lexicons, currentEnv: cfg.env ?? null, ...deployAxes() });
   });
 
   app.get("/api/graph", async (c) => {
     try {
-      const opts = optsFromQuery(new URL(c.req.url));
+      const url = new URL(c.req.url);
+      const opts = optsFromQuery(url);
+      // Component-DAG mode (M1.0, #56): the SPA's mode toggle. `chant graph
+      // --components` projects one node per component (dependsOn edges,
+      // groups.byWave) instead of the AWS entity graph — a generic chant CLI
+      // switch, not loomster-specific. Multi-estate composition doesn't support
+      // it yet, so it's ignored there.
+      const components = url.searchParams.get("components") === "1";
       // Multi-estate (#31): graph each project and compose into one IR (namespaced
       // ids, per-project boundary boxes, cross-stack edges). Single project → as-is.
       const multi = cfg.projectDirs && cfg.projectDirs.length > 1;
-      const ir = multi ? await composeEstate(cfg.projectDirs!, opts) : await graphIr(cfg.projectDir, opts);
+      let ir: GraphIR;
+      let mode: "component-status" | undefined;
+      let metaEnv = cfg.env ?? null;
+      if (multi) {
+        ir = await composeEstate(cfg.projectDirs!, opts);
+      } else if (components) {
+        ir = await componentGraphIr(cfg.projectDir, opts);
+        // M1.1 (#57): live per-component AWS status, joined by component name
+        // onto the component-DAG nodes. A distinct data path from the entity
+        // overlay below (`chant graph --live --overlay`) — never used for
+        // components, since `sourceAnchoredOverlay` throws (chant #821) and
+        // the epic forbids the cross-substrate overlay here. `chant components
+        // status <env> --live --json` observes each component's own CFN stack
+        // (docs/roadmap/m1-cli-notes.md Q2). Only runs when an env is picked —
+        // with no env this stays the M1.0 source-only component DAG.
+        const env = opts.env ?? cfg.env;
+        if (env) {
+          const rows = await componentStatus(cfg.projectDir, env);
+          ir = joinComponentStatus(ir, rows);
+          mode = "component-status";
+          metaEnv = env;
+        }
+      } else {
+        ir = await graphIr(cfg.projectDir, opts);
+      }
       const { svg } = renderGraph(ir);
       return c.json({
         ir,
         svg,
         meta: {
           projectDir: cfg.projectDir,
-          env: cfg.env ?? null,
+          env: metaEnv,
           ...(multi ? { estate: cfg.projectDirs!.length } : {}),
+          ...(!multi && components ? { components: true } : {}),
+          ...(mode ? { mode } : {}),
         },
       });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    }
+  });
+
+  // CI projection facet (M1.2, #58): loomster's GitLab CI is the SAME
+  // component DAG projected — waves = stages, components = jobs, `dependsOn` =
+  // `needs:`. Read-only, derived from `chant build --components --generate
+  // gitlab`, keyed by component name — the same join key as the component DAG
+  // (#56) and live status (#57) — so the SPA hangs it off whichever node the
+  // user clicks. The whole pipeline is small (well under the CLI's 64KB
+  // pipe-truncation limit), so fetch it once rather than shelling out per node.
+  app.get("/api/ci", async (c) => {
+    const env = optsFromQuery(new URL(c.req.url)).env ?? cfg.env;
+    try {
+      const { stages, jobs } = await ciPipeline(cfg.projectDir, env ? { env } : {});
+      return c.json({ stages, jobs });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    }
+  });
+
+  // Resources facet (#59 unify): a best-effort, honest slice of the DoD's
+  // "its stack, and its resources" clause — see docs/roadmap/m1-cli-notes.md
+  // Q2/Q3 for the fuller writeup of what this does and doesn't cover.
+  //
+  // What it does NOT do: return the literal CFN stack (name/ARN/status).
+  // `chant graph --format ir`'s `groups.byStack` reads like exactly that —
+  // its own doc comment calls it "stackName -> nodeIds" — but verified live
+  // against loomster/Floci (chant 0.18.28) it groups by *lexicon*
+  // (`{ aws: [...], docker: [...] }`), not by CloudFormation stack; chant's
+  // own comment marks true per-stack grouping as future work ("a stack is a
+  // lexicon partition today; #513 phase 2 regroups by nested child-project").
+  // Reconstructing the CFN stack name ourselves from Q2's naming formula
+  // (`<ownership.stack>-<env>-<instance>-<component>`) was considered and
+  // rejected: componentStatus() deliberately avoids exactly this
+  // (src/chant.ts), and shelling `aws cloudformation describe-stack-resources`
+  // directly would break "behold has zero per-substrate logic".
+  //
+  // What it DOES do: the entity graph (source, or `chant graph --live
+  // --overlay` — the same call `/api/overlay` already makes — with `env` set)
+  // carries each resource's declaring file in `sourceLoc.file` (e.g.
+  // "src/loom-agents/agents.ts"). loomster follows a one-directory-per-
+  // component convention — the same one `chant.ts`'s `graphPath()` already
+  // leans on ("prefer a src/ subdir") — so grouping resources by their
+  // top-level `src/<dir>/` segment recovers exactly the per-component
+  // resource set, with no AWS shell-out and no stack-name reconstruction.
+  // It's a convention match, not a chant-native fact — a project that
+  // doesn't lay out one top-level dir per component would get nothing back.
+  //
+  // A second, pre-existing chant gap this inherits (found verifying this
+  // against loomster/Floci, unrelated to the fix above): the `physicalId`/
+  // `ownership` live enrichment this comment promises rarely shows up in
+  // practice. `--live --overlay` classifies every loomster resource `accent`
+  // (pending/unmatched) despite all 7 stacks being live — because the aws
+  // lexicon's `describeResources` (chant-lexicon-aws `plugin.ts`) still does
+  // `stackName = options.stack ?? options.environment`, i.e. it queries CFN
+  // for a stack literally named "local", which doesn't exist on loomster's
+  // one-stack-per-component layout. `chant components status --live` was
+  // fixed for exactly this in 0.18.27 (`describeStackStatus`, Q2) but
+  // `describeResources` — the generic entity-level live path `/api/overlay`
+  // and this route both use — was not. So today this facet reliably returns
+  // the *declared* resource shape (kind/id, always correct); the live
+  // physicalId/ownership fields are wired but will stay empty for loomster
+  // until chant's `describeResources` gets the same multi-stack fix.
+  app.get("/api/resources", async (c) => {
+    const env = optsFromQuery(new URL(c.req.url)).env ?? cfg.env;
+    try {
+      const ir = await graphIr(cfg.projectDir, env ? { live: true, overlay: true, env } : {});
+      const byComponent: Record<string, Array<{ id: string; kind: string; lexicon: string; physicalId?: string; ownership?: string }>> = {};
+      for (const n of ir.nodes) {
+        const file = n.sourceLoc?.file;
+        const parts = file?.split("/") ?? [];
+        // "src/<component>/<rest>" — needs a nested file, so a component's own
+        // top-level declaration file (e.g. "src/loom-agents.ts", no subdir)
+        // wouldn't match; loomster nests every component under its own dir.
+        if (parts[0] !== "src" || parts.length < 3) continue;
+        const component = parts[1];
+        (byComponent[component] ??= []).push({
+          id: n.id,
+          kind: n.kind,
+          lexicon: n.lexicon,
+          physicalId: n.physicalId,
+          ownership: n.ownership,
+        });
+      }
+      return c.json({ byComponent });
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
     }
