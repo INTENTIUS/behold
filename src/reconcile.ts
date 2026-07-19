@@ -32,10 +32,18 @@ export interface ReconcileSummary {
   uncorrelated: number;
 }
 
-/** Summarize a plan's pending (non-noop) entries per component. Pure. */
+/** Summarize a plan's pending (non-noop) entries per component. Pure.
+ *
+ * `nonResource`, when given, is the set of entity names that are stack
+ * interface, not deployable resources — CloudFormation Parameters (see
+ * resources.ts `nonResourceEntities`). loomster resolves those via seeded
+ * outputs at build time, so they're never live and the plan reports them as
+ * perpetual `create`; skipping them keeps the reconcile a count of real
+ * resource changes, not cross-stack wiring. */
 export function summarizePlan(
   plan: LifecyclePlan,
   byComponent: Record<string, ComponentResource[]>,
+  nonResource?: Set<string>,
 ): ReconcileSummary {
   const componentByEntity = new Map<string, string>();
   for (const [component, resources] of Object.entries(byComponent)) {
@@ -46,6 +54,7 @@ export function summarizePlan(
   let total = 0;
   for (const entry of plan.entries) {
     if (entry.action === "noop") continue;
+    if (nonResource?.has(entry.name)) continue; // cross-stack wiring, not a resource
     total++;
     const component = componentByEntity.get(entry.name);
     if (component) counts[component] = (counts[component] ?? 0) + 1;

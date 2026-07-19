@@ -31,6 +31,21 @@ export interface ComponentResource {
   ownership?: string;
 }
 
+/** Entity-graph node kinds that are NOT deployable resources — cross-stack
+ * interface wiring, not things you create/update/delete. A CloudFormation
+ * Parameter is a stack input (loomster resolves it via seeded outputs at build
+ * time, so it never exists as a live resource); a cross-stack import is the same
+ * idea. Excluded from the reconcile so they don't read as perpetual "create". */
+const NON_RESOURCE_KINDS = new Set(["AWS::CloudFormation::Parameter"]);
+
+/** Entity names in the IR that are stack interface (Parameters), not resources —
+ * for the reconcile to skip so they don't count as pending changes forever. */
+export function nonResourceEntities(ir: GraphIR): Set<string> {
+  const out = new Set<string>();
+  for (const n of ir.nodes) if (NON_RESOURCE_KINDS.has(n.kind)) out.add(n.id);
+  return out;
+}
+
 /** Group an entity-graph IR's nodes by component, via the `src/<component>/`
  * source-location convention. A node whose `sourceLoc.file` isn't nested
  * under a top-level `src/<dir>/` (no file, or a bare `src/<file>` with no

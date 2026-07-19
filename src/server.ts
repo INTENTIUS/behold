@@ -28,7 +28,7 @@ import {
   type GraphOptions,
 } from "./chant.ts";
 import { joinComponentStatus } from "./component-status.ts";
-import { resourcesByComponent } from "./resources.ts";
+import { resourcesByComponent, nonResourceEntities } from "./resources.ts";
 import { summarizePlan } from "./reconcile.ts";
 import { renderGraph } from "./render.ts";
 import { discoverEstateOps } from "./ops.ts";
@@ -524,7 +524,7 @@ export function createApp(
         graphIr(cfg.projectDir, { live: true, overlay: true, env, ...tierTargetOpts(opts) }),
         knownComponents(cfg.projectDir, opts),
       ]);
-      return c.json(summarizePlan(plan, resourcesByComponent(ir, known)));
+      return c.json(summarizePlan(plan, resourcesByComponent(ir, known), nonResourceEntities(ir)));
     } catch (err) {
       return errorResponse(c, opts, err);
     }

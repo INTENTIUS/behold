@@ -63,4 +63,24 @@ describe("summarizePlan", () => {
     expect(summary.byComponent).toEqual({});
     expect(summary.uncorrelated).toBe(4); // every non-noop entry
   });
+
+  it("skips non-resource entities (CloudFormation Parameters) entirely — not counted anywhere", () => {
+    // A cross-stack parameter that the plan reports as `create` (never live,
+    // resolved via seeded outputs at build time). It maps to loom-db's dir but
+    // isn't a resource, so it must not inflate loom-db nor `total`.
+    const withParam: LifecyclePlan = {
+      env: "local",
+      entries: [...plan.entries, { name: "pRdsEndpoint", action: "create", evidence: { declared: true, inSnapshot: false, live: false }, ownership: "unknown" }],
+    };
+    const withParamComponents = {
+      ...byComponent,
+      "loom-db": [...byComponent["loom-db"]!, { id: "pRdsEndpoint", kind: "AWS::CloudFormation::Parameter", lexicon: "aws" }],
+    };
+    const nonResource = new Set(["pRdsEndpoint"]);
+    const summary = summarizePlan(withParam, withParamComponents, nonResource);
+    // Same as the plain plan — the parameter is invisible to the reconcile.
+    expect(summary.total).toBe(4);
+    expect(summary.byComponent).toEqual({ "loom-db": 2, "loom-backend": 1 });
+    expect(summary.uncorrelated).toBe(1);
+  });
 });
