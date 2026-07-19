@@ -610,6 +610,9 @@ function render(ir, svg, m) {
     `${scope}${m.env ? " · env " + m.env : ""}${axesTail}${overlay ? " · overlay" : ""}${m.components ? " · components" : ""}${componentStatus ? " · live status" : ""} · ${ir.nodes.length} nodes${tail}`;
   document.getElementById("legend").style.display = overlay ? "flex" : "none";
   document.getElementById("component-legend").style.display = componentStatus ? "flex" : "none";
+  // Keep the view picker in sync when the dial's "observe" flips components mode.
+  const vp = document.getElementById("view-picker");
+  if (vp) vp.value = view.components ? "components" : "infra";
   const g = document.getElementById("graph");
   g.innerHTML = svg;
   const svgEl = g.querySelector("svg");
@@ -863,17 +866,26 @@ async function initPickers() {
       load();
     }),
   );
-  host.appendChild(
-    toggle(
-      "components",
-      "Switch to the component DAG (chant graph --components): one node per component, wave-laned, dependsOn edges. With an env picked, nodes are coloured by live per-component AWS status (chant components status --live). Click a node for its CI job (stage/needs/script) alongside its live status.",
-      view.components,
-      (v) => {
-        view.components = v;
-        load();
-      },
-    ),
+  // Explicit view switch (was an obscure "components" checkbox): component graph
+  // (wave-laned DAG, dependsOn, + live per-component status when an env is
+  // picked) vs the AWS infra/resource graph. The dial's "observe" also drives
+  // this, so we keep the picker's value in sync in render().
+  const viewPicker = picker(
+    "view",
+    [
+      ["view: component graph", "components"],
+      ["view: AWS infra", "infra"],
+    ],
+    view.components ? "components" : "infra",
+    (v) => {
+      view.components = v === "components";
+      load();
+    },
   );
+  viewPicker.id = "view-picker";
+  viewPicker.title =
+    "Component graph: one node per component, wave-laned, dependsOn edges — coloured by live per-component AWS status when an env is picked. AWS infra: the resource-level graph (entity overlay when an env is picked).";
+  host.appendChild(viewPicker);
   // The tier lens (M2, #54): only offered when the served project already
   // showed LOOM_TIER is in play (info.tier set at launch — same gate
   // deployAxes() uses server-side). Picking a tier re-evaluates the
