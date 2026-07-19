@@ -470,13 +470,37 @@ async function loadComponentChoices() {
 // project has no committed ApplyOp — deploy every component. Uses the current
 // env (kept live by the picker); confirms since it's a real write. The dial's
 // structured progress then renders the run.
-function confirmApplyAll() {
+async function confirmApplyAll() {
   const env = view.env;
   if (!env) {
     nowline("✗ apply all: pick an env first (env drives the target)");
     return;
   }
-  if (!window.confirm(`Apply ALL components to ${env}?\nThis is a real write — chant run --components all --env ${env} --progress-json.\nLive progress appears in the dial.`)) return;
+  // Warn when components are already deployed — re-applying an already-green
+  // stack can FAIL on Floci's non-idempotent fixed-name resources (e.g. an RDS
+  // subnet group that collides with itself). Uses the accurate per-component
+  // live status (the stack-status seam), so this is a real "you're re-applying"
+  // heads-up, not a guess.
+  let deployed = 0;
+  let total = 0;
+  try {
+    const j = await fetch(`/api/graph?components=1&env=${encodeURIComponent(env)}`).then((r) => r.json());
+    const nodes = (j.ir && j.ir.nodes) || [];
+    total = nodes.length;
+    deployed = nodes.filter((n) => n.attrs && n.attrs._status === "good").length;
+  } catch {
+    /* couldn't check — fall through to the plain confirm */
+  }
+  const warn =
+    deployed > 0
+      ? `⚠ ${deployed} of ${total} components are already deployed.\nRe-applying an already-deployed stack can FAIL on a local emulator (non-idempotent fixed-name resources) — a full teardown + redeploy is the clean path for a fresh state.\n\n`
+      : "";
+  if (
+    !window.confirm(
+      `${warn}Apply ALL components to ${env}?\nReal write — chant run --components all --env ${env} --progress-json.\nLive progress appears in the dial.`,
+    )
+  )
+    return;
   runApply("all");
 }
 
