@@ -17,7 +17,7 @@
     "demo": "npm --prefix example-writes install && tsx src/cli.ts serve example-writes --local --env prod",
     "tsc": "tsc --noEmit",
     "test": "vitest run",
-    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/cli.js && chmod +x dist/cli.js",
+    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --external:hono --external:@hono/node-server --external:@intentius/pinhole --outfile=dist/cli.js && chmod +x dist/cli.js",
     "prepare": "npm run build",
     "prepublishOnly": "npm run build"
   },
