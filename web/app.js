@@ -61,6 +61,20 @@ function inspect(node) {
     for (const k of attrKeys) decl(k, fmtValue(node.attrs[k]));
   }
 
+  // CI projection facet (M1.2, #56/#58): loomster's GitLab CI is the SAME
+  // component DAG projected — waves = stages, components = jobs, `dependsOn` =
+  // `needs:`. Read one way it's the deployment, read the other it's the
+  // pipeline. A read-only per-node detail hanging off the component by name —
+  // no topology change. Only present for component nodes, and only once the
+  // facet loaded (component-DAG mode; see loadCi()).
+  const job = node.kind === "Component" ? ciByComponent.get(node.id) : undefined;
+  if (job) {
+    const ci = section("CI (GitLab)");
+    ci("stage", job.stage);
+    ci("needs", job.needs.length ? job.needs.join(", ") : "(none)");
+    ci("runs", job.script.length ? job.script.join(" && ") : `chant run --components ${node.id}`);
+  }
+
   // A foreign node on a live-import substrate can be pulled into typed source:
   // Adopt triggers the ReconcileOp (cloud → code), which opens a reviewable PR.
   // behold never writes source — a human merges. Managed/pending nodes and
@@ -209,6 +223,26 @@ function wire(ir) {
 // change go through the same path.
 const view = { env: null, detail: 2, components: false };
 
+// CI projection facet (M1.2, #58): the component DAG's GitLab CI reading —
+// component name → {jobName, stage, needs, script}, from `/api/ci` (`chant
+// build --components --generate gitlab`). Loaded once per components-mode
+// load() and cached here so inspect() (fired per click, not per fetch) reads
+// it synchronously. Component-DAG mode only — cleared otherwise.
+let ciByComponent = new Map();
+
+async function loadCi() {
+  try {
+    const res = await fetch("/api/ci");
+    const j = await res.json();
+    if (!res.ok) throw new Error(j.error || res.statusText);
+    ciByComponent = new Map((j.jobs || []).map((job) => [job.component, job]));
+  } catch {
+    // Non-fatal: the component DAG still renders without the CI facet (e.g. a
+    // served chant predating generate mode) — inspect() just omits the section.
+    ciByComponent = new Map();
+  }
+}
+
 // Paint a fetched graph: the SVG, the meta line (with a drift summary in overlay
 // mode), the legend, and click-inspect wiring. Shared by load() and refresh().
 function render(ir, svg, m) {
@@ -247,6 +281,13 @@ async function load() {
       q.set("env", view.env);
     } else if (view.components) {
       q.set("components", "1");
+    }
+    // The CI facet is a component-DAG-mode-only detail (source graph, not the
+    // live overlay) — see the components (#56) comment above.
+    if (view.components && !view.env) {
+      await loadCi();
+    } else {
+      ciByComponent = new Map();
     }
     const res = await fetch(`${endpoint}?${q}`);
     if (!res.ok) throw new Error((await res.json()).error || res.statusText);

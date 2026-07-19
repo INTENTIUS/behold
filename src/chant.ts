@@ -14,6 +14,16 @@ import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import type { GraphIR, Layout } from "@intentius/chant";
+// Runtime import (not type-only): chant's own hand-rolled YAML parser, reused
+// rather than behold growing a second one or regex-scraping generated YAML
+// (M1.2 spike note, #58). `build`'s esbuild invocation deliberately does NOT
+// externalize `@intentius/chant` (unlike hono/pinhole) so this small,
+// dependency-free module (~9KB, no imports of its own) inlines into
+// dist/cli.js — `@intentius/chant` ships this subpath as raw TypeScript
+// (package.json `exports["./yaml"]` has no compiled-JS condition), which a
+// plain `node dist/cli.js` cannot import unbundled (Node refuses to
+// type-strip files under node_modules).
+import { parseYAML } from "@intentius/chant/yaml";
 
 /** Graph options passed through to chant so IR and layout node sets align. */
 export interface GraphOptions {
@@ -186,4 +196,84 @@ export function componentGraphIr(projectDir: string, opts: GraphOptions = {}): P
 /** Node positions for the component DAG (`chant graph --components --format layout`). */
 export function componentGraphLayout(projectDir: string, opts: GraphOptions = {}): Promise<Layout> {
   return runChantJson<Layout>(graphArgs(graphPath(projectDir), "layout", opts, true), projectDir);
+}
+
+// ---------------------------------------------------------------------------
+// CI projection facet (M1.2, #58) — loomster's GitLab CI is the SAME
+// component DAG projected: waves = stages, components = jobs, `dependsOn` =
+// `needs:`. `chant build --components --generate gitlab` synthesizes that
+// pipeline; behold reads it read-only and hangs it off each component node
+// by name — the same join key as the DAG (#56) and live status (#57). No
+// graph-topology change: this is a per-node detail facet.
+// ---------------------------------------------------------------------------
+
+/** One GitLab CI job for a component. `stage` is the wave it runs in,
+ * `needs` are the job names it waits on (mirrors `dependsOn`), `script` is
+ * the shell line(s) the job runs — the `chant run --components <name> ...`
+ * trigger, plus any `--seed-outputs`/`--dump-outputs` artifact threading
+ * across `needs:` edges. Keyed by `component` (the join key). */
+export interface CiJob {
+  jobName: string;
+  component: string;
+  stage: string;
+  needs: string[];
+  script: string[];
+}
+
+export interface CiPipeline {
+  stages: string[];
+  jobs: CiJob[];
+}
+
+/** The raw shape of `chant build --components --generate gitlab --format
+ * json` (verified against loomster, M1.2 spike): `jobs` carries the graph
+ * shape (stage/needs) per component, but not the script — that lives only in
+ * the embedded, already-generated `yaml` (parsed out below). */
+interface GitlabGenerateJson {
+  stages: string[];
+  jobs: Array<{ jobName: string; component: string; stage: string; needs: string[] }>;
+  yaml: string;
+}
+
+/** Build the `chant build --components --generate gitlab --format json` argv.
+ * `--format json` is the structured read (verified against loomster's chant
+ * `--help`: "build: json (default) or yaml") — preferred over parsing the
+ * plain YAML chant prints by default, which would need line-scraping to find
+ * each job's stage/needs. Pure; exported for testing. */
+export function ciPipelineArgs(opts: GraphOptions = {}): string[] {
+  const args = ["build", "--components", "--generate", "gitlab", "--format", "json"];
+  if (opts.env) args.push("--env", opts.env);
+  return args;
+}
+
+/** Parse `chant build --components --generate gitlab --format json`'s stdout
+ * into per-job CI facets. The structured JSON's `jobs` array already gives
+ * `stage`/`needs` per component with no parsing needed; only `script` (the
+ * exact shell line(s) GitLab would run — the `chant run --components <name>`
+ * trigger plus output-artifact threading) requires reading the embedded
+ * `yaml`, which this does with chant's own YAML parser (not a regex scrape of
+ * generated CI text). Pure; exported for testing against a fixture. */
+export function parseCiPipeline(stdout: string): CiPipeline {
+  const parsed = JSON.parse(stdout) as GitlabGenerateJson;
+  const doc = parseYAML(parsed.yaml) as Record<string, Record<string, unknown>>;
+  const jobs: CiJob[] = parsed.jobs.map((j) => {
+    const props = doc[j.jobName];
+    const script = Array.isArray(props?.script) ? (props.script as unknown[]).map(String) : [];
+    return { ...j, script };
+  });
+  return { stages: parsed.stages, jobs };
+}
+
+/** The CI projection facet for a project's components: shells `chant build
+ * --components --generate gitlab --format json` for the served project and
+ * returns each component's {stage, needs, script} — read-only, joined onto
+ * the component-DAG nodes (#56) by component name. Same shell-out shape as
+ * `componentGraphIr`; requires a chant that ships generate mode (chant #563,
+ * ships well before the M1.0 spike's 0.18.27 pin, so no extra version gate). */
+export function ciPipeline(projectDir: string, opts: GraphOptions = {}): Promise<CiPipeline> {
+  const args = ciPipelineArgs(opts);
+  return runChantRaw(args, projectDir).then(({ code, stdout, stderr }) => {
+    if (code !== 0) throw new Error(`chant ${args.join(" ")} exited ${code}: ${stderr.trim()}`);
+    return parseCiPipeline(stdout);
+  });
 }

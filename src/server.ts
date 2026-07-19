@@ -13,7 +13,7 @@ import { serve } from "@hono/node-server";
 import { fileURLToPath } from "node:url";
 import { dirname, join, relative } from "node:path";
 import type { GraphIR } from "@intentius/chant";
-import { graphIr, componentGraphIr, runChantRaw, type GraphOptions } from "./chant.ts";
+import { graphIr, componentGraphIr, ciPipeline, runChantRaw, type GraphOptions } from "./chant.ts";
 import { renderGraph } from "./render.ts";
 import { discoverEstateOps } from "./ops.ts";
 import { LIVE_IMPORT_LEXICONS } from "./adopt.ts";
@@ -230,6 +230,23 @@ export function createApp(
           ...(!multi && components ? { components: true } : {}),
         },
       });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    }
+  });
+
+  // CI projection facet (M1.2, #58): loomster's GitLab CI is the SAME
+  // component DAG projected — waves = stages, components = jobs, `dependsOn` =
+  // `needs:`. Read-only, derived from `chant build --components --generate
+  // gitlab`, keyed by component name — the same join key as the component DAG
+  // (#56) and live status (#57) — so the SPA hangs it off whichever node the
+  // user clicks. The whole pipeline is small (well under the CLI's 64KB
+  // pipe-truncation limit), so fetch it once rather than shelling out per node.
+  app.get("/api/ci", async (c) => {
+    const env = optsFromQuery(new URL(c.req.url)).env ?? cfg.env;
+    try {
+      const { stages, jobs } = await ciPipeline(cfg.projectDir, env ? { env } : {});
+      return c.json({ stages, jobs });
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
     }
