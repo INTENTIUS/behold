@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { graphFlags } from "./chant.ts";
+import { graphFlags, graphArgs } from "./chant.ts";
 import { overlayStatus } from "./overlay.ts";
 
 describe("graphFlags", () => {
@@ -25,6 +25,36 @@ describe("graphFlags", () => {
       "prod",
       "--live",
       "--overlay",
+    ]);
+  });
+});
+
+describe("graphArgs", () => {
+  it("builds the base view-format command for the entity graph", () => {
+    expect(graphArgs("proj/src", "ir", {}, false)).toEqual(["graph", "proj/src", "--format", "ir"]);
+  });
+
+  it("inserts --components ahead of --format for the component-DAG projection (M1.0)", () => {
+    expect(graphArgs("proj/src", "ir", {}, true)).toEqual(["graph", "proj/src", "--components", "--format", "ir"]);
+  });
+
+  it("still appends graphFlags after --format for either projection", () => {
+    expect(graphArgs("proj/src", "layout", { env: "local" }, true)).toEqual([
+      "graph",
+      "proj/src",
+      "--components",
+      "--format",
+      "layout",
+      "--env",
+      "local",
+    ]);
+    expect(graphArgs("proj/src", "layout", { env: "local" }, false)).toEqual([
+      "graph",
+      "proj/src",
+      "--format",
+      "layout",
+      "--env",
+      "local",
     ]);
   });
 });

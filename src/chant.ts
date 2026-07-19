@@ -97,12 +97,23 @@ export function runChantRaw(args: string[], projectDir?: string): Promise<ChantR
       ...(projectDir ? { cwd: projectDir } : {}),
       stdio: ["ignore", "pipe", "pipe"],
     });
-    let stdout = "";
-    let stderr = "";
-    proc.stdout.on("data", (d) => (stdout += d));
-    proc.stderr.on("data", (d) => (stderr += d));
+    // Accumulate raw Buffer chunks and decode once at the end. Coercing each
+    // chunk to a string as it arrives (`s += d`) corrupts a multi-byte UTF-8
+    // character that straddles a chunk boundary — which for loomster's ~200KB
+    // entity-graph IR reliably mangles the JSON near the 64KB highWaterMark and
+    // makes `JSON.parse` throw. Concatenating bytes first avoids the split.
+    const outChunks: Buffer[] = [];
+    const errChunks: Buffer[] = [];
+    proc.stdout.on("data", (d: Buffer) => outChunks.push(d));
+    proc.stderr.on("data", (d: Buffer) => errChunks.push(d));
     proc.on("error", reject);
-    proc.on("close", (code) => resolvePromise({ code: code ?? 1, stdout, stderr }));
+    proc.on("close", (code) =>
+      resolvePromise({
+        code: code ?? 1,
+        stdout: Buffer.concat(outChunks).toString("utf8"),
+        stderr: Buffer.concat(errChunks).toString("utf8"),
+      }),
+    );
   });
 }
 
@@ -141,12 +152,38 @@ function graphPath(projectDir: string): string {
   return existsSync(src) ? src : projectDir;
 }
 
-/** The infra graph IR for a project (`chant graph --format ir`). */
+/** Build the `chant graph` argv for a view format. `components` switches the
+ * projection from the AWS entity graph (all resources) to the component DAG
+ * (one node per component, `groups.byWave` deploy waves, `dependsOn` edges) —
+ * `--components` ahead of `--format`, matching the CLI contract the M1.0 spike
+ * verified. Pure; exported for testing. */
+export function graphArgs(src: string, format: "ir" | "layout", opts: GraphOptions, components: boolean): string[] {
+  return ["graph", src, ...(components ? ["--components"] : []), "--format", format, ...graphFlags(opts)];
+}
+
+/** The infra graph IR for a project (`chant graph --format ir`) — nodes are AWS
+ * resources. */
 export function graphIr(projectDir: string, opts: GraphOptions = {}): Promise<GraphIR> {
-  return runChantJson<GraphIR>(["graph", graphPath(projectDir), "--format", "ir", ...graphFlags(opts)], projectDir);
+  return runChantJson<GraphIR>(graphArgs(graphPath(projectDir), "ir", opts, false), projectDir);
 }
 
 /** Node positions for a project (`chant graph --format layout`, dagre — no native dep). */
 export function graphLayout(projectDir: string, opts: GraphOptions = {}): Promise<Layout> {
-  return runChantJson<Layout>(["graph", graphPath(projectDir), "--format", "layout", ...graphFlags(opts)], projectDir);
+  return runChantJson<Layout>(graphArgs(graphPath(projectDir), "layout", opts, false), projectDir);
+}
+
+/** The component-DAG graph IR (`chant graph --components --format ir`): nodes are
+ * components (not resources), edges are `dependsOn` (consumer → producer), and
+ * `groups.byWave` are the parallel-safe deploy waves. Same shell-out shape as
+ * `graphIr` — behold has no per-substrate logic; it paints whatever chant
+ * returns. Requires a chant that ships the M1.0 component-DAG view (spike
+ * "chant changes" #3); behold's own pinned `@intentius/chant` predates it, so
+ * this only resolves against a served project's own (newer) chant. */
+export function componentGraphIr(projectDir: string, opts: GraphOptions = {}): Promise<GraphIR> {
+  return runChantJson<GraphIR>(graphArgs(graphPath(projectDir), "ir", opts, true), projectDir);
+}
+
+/** Node positions for the component DAG (`chant graph --components --format layout`). */
+export function componentGraphLayout(projectDir: string, opts: GraphOptions = {}): Promise<Layout> {
+  return runChantJson<Layout>(graphArgs(graphPath(projectDir), "layout", opts, true), projectDir);
 }

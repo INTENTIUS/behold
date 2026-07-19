@@ -202,9 +202,12 @@ function wire(ir) {
 
 // View state driven by the header pickers (#17). env=null → the declared source
 // graph; env set → the live overlay for that env (needs cloud creds). detail is
-// chant's --detail tier. Every fetch reads this, so the `changed` SSE re-pull and
-// a picker change go through the same path.
-const view = { env: null, detail: 2 };
+// chant's --detail tier. components (#56) toggles the component-DAG projection
+// (nodes=components, wave-laned, dependsOn edges) in place of the AWS entity
+// graph — only meaningful in source mode; the live overlay stays entity-level
+// until M1.1. Every fetch reads this, so the `changed` SSE re-pull and a picker
+// change go through the same path.
+const view = { env: null, detail: 2, components: false };
 
 // Paint a fetched graph: the SVG, the meta line (with a drift summary in overlay
 // mode), the legend, and click-inspect wiring. Shared by load() and refresh().
@@ -226,7 +229,7 @@ function render(ir, svg, m) {
   // Multi-estate (#31): note the composed project count; the graph draws one box per project.
   const scope = m.estate ? `estate of ${m.estate} projects` : m.projectDir;
   document.getElementById("meta").textContent =
-    `${scope}${m.env ? " · env " + m.env : ""}${overlay ? " · overlay" : ""} · ${ir.nodes.length} nodes${tail}`;
+    `${scope}${m.env ? " · env " + m.env : ""}${overlay ? " · overlay" : ""}${m.components ? " · components" : ""} · ${ir.nodes.length} nodes${tail}`;
   document.getElementById("legend").style.display = overlay ? "flex" : "none";
   document.getElementById("graph").innerHTML = svg;
   wire(ir);
@@ -242,6 +245,8 @@ async function load() {
     if (view.env) {
       endpoint = "/api/overlay";
       q.set("env", view.env);
+    } else if (view.components) {
+      q.set("components", "1");
     }
     const res = await fetch(`${endpoint}?${q}`);
     if (!res.ok) throw new Error((await res.json()).error || res.statusText);
@@ -284,6 +289,21 @@ function picker(label, opts, value, onChange) {
   sel.addEventListener("change", () => onChange(sel.value));
   return sel;
 }
+
+// Component DAG ↔ resource graph toggle (#56). A plain checkbox, not a select —
+// it's a binary view switch, not a pick-one-of-many like env/detail.
+function toggle(label, title, checked, onChange) {
+  const wrap = document.createElement("label");
+  wrap.title = title;
+  wrap.style.cssText = "display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer";
+  const cb = document.createElement("input");
+  cb.type = "checkbox";
+  cb.checked = checked;
+  cb.addEventListener("change", () => onChange(cb.checked));
+  wrap.append(cb, label);
+  return wrap;
+}
+
 async function initPickers() {
   const info = await fetch("/api/project")
     .then((r) => r.json())
@@ -302,6 +322,17 @@ async function initPickers() {
       view.detail = Number(v);
       load();
     }),
+  );
+  host.appendChild(
+    toggle(
+      "components",
+      "Switch to the component DAG (chant graph --components): one node per component, wave-laned, dependsOn edges. Source view only.",
+      view.components,
+      (v) => {
+        view.components = v;
+        load();
+      },
+    ),
   );
   load();
 }

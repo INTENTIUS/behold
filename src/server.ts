@@ -13,7 +13,7 @@ import { serve } from "@hono/node-server";
 import { fileURLToPath } from "node:url";
 import { dirname, join, relative } from "node:path";
 import type { GraphIR } from "@intentius/chant";
-import { graphIr, runChantRaw, type GraphOptions } from "./chant.ts";
+import { graphIr, componentGraphIr, runChantRaw, type GraphOptions } from "./chant.ts";
 import { renderGraph } from "./render.ts";
 import { discoverEstateOps } from "./ops.ts";
 import { LIVE_IMPORT_LEXICONS } from "./adopt.ts";
@@ -203,11 +203,22 @@ export function createApp(
 
   app.get("/api/graph", async (c) => {
     try {
-      const opts = optsFromQuery(new URL(c.req.url));
+      const url = new URL(c.req.url);
+      const opts = optsFromQuery(url);
+      // Component-DAG mode (M1.0, #56): the SPA's mode toggle. `chant graph
+      // --components` projects one node per component (dependsOn edges,
+      // groups.byWave) instead of the AWS entity graph — a generic chant CLI
+      // switch, not loomster-specific. Multi-estate composition doesn't support
+      // it yet, so it's ignored there.
+      const components = url.searchParams.get("components") === "1";
       // Multi-estate (#31): graph each project and compose into one IR (namespaced
       // ids, per-project boundary boxes, cross-stack edges). Single project → as-is.
       const multi = cfg.projectDirs && cfg.projectDirs.length > 1;
-      const ir = multi ? await composeEstate(cfg.projectDirs!, opts) : await graphIr(cfg.projectDir, opts);
+      const ir = multi
+        ? await composeEstate(cfg.projectDirs!, opts)
+        : components
+          ? await componentGraphIr(cfg.projectDir, opts)
+          : await graphIr(cfg.projectDir, opts);
       const { svg } = renderGraph(ir);
       return c.json({
         ir,
@@ -216,6 +227,7 @@ export function createApp(
           projectDir: cfg.projectDir,
           env: cfg.env ?? null,
           ...(multi ? { estate: cfg.projectDirs!.length } : {}),
+          ...(!multi && components ? { components: true } : {}),
         },
       });
     } catch (err) {
