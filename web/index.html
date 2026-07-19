@@ -38,6 +38,12 @@
         color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px;
         font-size: 12px; cursor: pointer; }
       #zoom-toggle:hover { border-color: var(--pending); color: var(--fg); }
+      /* The way out of waves view, floating top-LEFT so it sits where the eye
+         already is when observe drops you into the wave-laned graph. */
+      #back-to-infra { position: absolute; top: 8px; left: 8px; z-index: 2; background: var(--panel);
+        color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px;
+        font-size: 12px; cursor: pointer; }
+      #back-to-infra:hover { border-color: var(--pending); color: var(--fg); }
       .sel rect, .sel path, .sel > rect { stroke: var(--pending) !important; stroke-width: 2.5 !important; }
       .err { padding: 24px; color: var(--foreign); }
       /* M2 (#54): a graph/facet failure under a picked (non-default) tier — a

@@ -650,8 +650,29 @@ function render(ir, svg, m) {
     setupGraphViewBox(svgEl);
   }
   ensureZoomControls(g);
+  ensureBackToInfra(g);
   wire(ir);
   renderDial();
+}
+
+// When observe (or the picker) drops you into waves/component view, float a
+// "← back to infra" link on the graph itself — the exit where the eye already
+// is, not buried in the toolbar. Shown only in components mode; hidden on infra.
+function ensureBackToInfra(host) {
+  let link = document.getElementById("back-to-infra");
+  if (!link) {
+    link = document.createElement("button");
+    link.id = "back-to-infra";
+    link.textContent = "← back to infra";
+    link.title = "Leave the wave-laned component view for the AWS infra (all-resources) graph.";
+    link.addEventListener("click", (e) => {
+      e.stopPropagation();
+      view.components = false;
+      load();
+    });
+    host.appendChild(link);
+  }
+  link.style.display = view.components ? "" : "none";
 }
 
 // --- Graph zoom/pan, driven by the SVG viewBox (works for a 7-node DAG or a
@@ -897,8 +918,8 @@ async function initPickers() {
   const viewPicker = picker(
     "view",
     [
-      ["view: component graph", "components"],
-      ["view: AWS infra", "infra"],
+      ["view: waves (components)", "components"],
+      ["view: infra (all resources)", "infra"],
     ],
     view.components ? "components" : "infra",
     (v) => {
