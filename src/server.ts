@@ -70,6 +70,23 @@ function optsFromQuery(url: URL): GraphOptions {
   return opts;
 }
 
+/** The deploy axes in play (#59 unify, issue scope: "header line showing
+ * env=<LOOM_ENV>, tier=<LOOM_TIER>, target=Floci"). `env` is chant's own
+ * concept and already surfaces elsewhere (`cfg.env`/`currentEnv`); `tier` and
+ * `target` here are read straight from the served project's process
+ * environment — loomster's own `LOOM_TIER` convention and the literal
+ * `AWS_ENDPOINT_URL` override (Floci's tell), not something behold defines or
+ * names itself. Deliberately generic and substrate-name-free (behold has zero
+ * per-substrate logic, per the epic): this surfaces the raw endpoint URL, not
+ * a hardcoded "Floci" label, and a project with neither var set (real AWS, or
+ * a project that isn't loomster) reports neither field rather than guessing. */
+function deployAxes(): { tier?: string; target?: string } {
+  const axes: { tier?: string; target?: string } = {};
+  if (process.env.LOOM_TIER) axes.tier = process.env.LOOM_TIER;
+  if (process.env.AWS_ENDPOINT_URL) axes.target = process.env.AWS_ENDPOINT_URL;
+  return axes;
+}
+
 /**
  * Query the current estate (the live overlay when `env` is set, else the source
  * graph) and capture a lanes keyframe. Deduped by digest — an unchanged estate
@@ -199,7 +216,7 @@ export function createApp(
   // launch `--env`, the picker's initial selection.
   app.get("/api/project", async (c) => {
     const { environments, lexicons } = await detectProject(cfg.projectDir);
-    return c.json({ projectDir: cfg.projectDir, environments, lexicons, currentEnv: cfg.env ?? null });
+    return c.json({ projectDir: cfg.projectDir, environments, lexicons, currentEnv: cfg.env ?? null, ...deployAxes() });
   });
 
   app.get("/api/graph", async (c) => {
@@ -269,6 +286,76 @@ export function createApp(
     try {
       const { stages, jobs } = await ciPipeline(cfg.projectDir, env ? { env } : {});
       return c.json({ stages, jobs });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    }
+  });
+
+  // Resources facet (#59 unify): a best-effort, honest slice of the DoD's
+  // "its stack, and its resources" clause — see docs/roadmap/m1-cli-notes.md
+  // Q2/Q3 for the fuller writeup of what this does and doesn't cover.
+  //
+  // What it does NOT do: return the literal CFN stack (name/ARN/status).
+  // `chant graph --format ir`'s `groups.byStack` reads like exactly that —
+  // its own doc comment calls it "stackName -> nodeIds" — but verified live
+  // against loomster/Floci (chant 0.18.28) it groups by *lexicon*
+  // (`{ aws: [...], docker: [...] }`), not by CloudFormation stack; chant's
+  // own comment marks true per-stack grouping as future work ("a stack is a
+  // lexicon partition today; #513 phase 2 regroups by nested child-project").
+  // Reconstructing the CFN stack name ourselves from Q2's naming formula
+  // (`<ownership.stack>-<env>-<instance>-<component>`) was considered and
+  // rejected: componentStatus() deliberately avoids exactly this
+  // (src/chant.ts), and shelling `aws cloudformation describe-stack-resources`
+  // directly would break "behold has zero per-substrate logic".
+  //
+  // What it DOES do: the entity graph (source, or `chant graph --live
+  // --overlay` — the same call `/api/overlay` already makes — with `env` set)
+  // carries each resource's declaring file in `sourceLoc.file` (e.g.
+  // "src/loom-agents/agents.ts"). loomster follows a one-directory-per-
+  // component convention — the same one `chant.ts`'s `graphPath()` already
+  // leans on ("prefer a src/ subdir") — so grouping resources by their
+  // top-level `src/<dir>/` segment recovers exactly the per-component
+  // resource set, with no AWS shell-out and no stack-name reconstruction.
+  // It's a convention match, not a chant-native fact — a project that
+  // doesn't lay out one top-level dir per component would get nothing back.
+  //
+  // A second, pre-existing chant gap this inherits (found verifying this
+  // against loomster/Floci, unrelated to the fix above): the `physicalId`/
+  // `ownership` live enrichment this comment promises rarely shows up in
+  // practice. `--live --overlay` classifies every loomster resource `accent`
+  // (pending/unmatched) despite all 7 stacks being live — because the aws
+  // lexicon's `describeResources` (chant-lexicon-aws `plugin.ts`) still does
+  // `stackName = options.stack ?? options.environment`, i.e. it queries CFN
+  // for a stack literally named "local", which doesn't exist on loomster's
+  // one-stack-per-component layout. `chant components status --live` was
+  // fixed for exactly this in 0.18.27 (`describeStackStatus`, Q2) but
+  // `describeResources` — the generic entity-level live path `/api/overlay`
+  // and this route both use — was not. So today this facet reliably returns
+  // the *declared* resource shape (kind/id, always correct); the live
+  // physicalId/ownership fields are wired but will stay empty for loomster
+  // until chant's `describeResources` gets the same multi-stack fix.
+  app.get("/api/resources", async (c) => {
+    const env = optsFromQuery(new URL(c.req.url)).env ?? cfg.env;
+    try {
+      const ir = await graphIr(cfg.projectDir, env ? { live: true, overlay: true, env } : {});
+      const byComponent: Record<string, Array<{ id: string; kind: string; lexicon: string; physicalId?: string; ownership?: string }>> = {};
+      for (const n of ir.nodes) {
+        const file = n.sourceLoc?.file;
+        const parts = file?.split("/") ?? [];
+        // "src/<component>/<rest>" — needs a nested file, so a component's own
+        // top-level declaration file (e.g. "src/loom-agents.ts", no subdir)
+        // wouldn't match; loomster nests every component under its own dir.
+        if (parts[0] !== "src" || parts.length < 3) continue;
+        const component = parts[1];
+        (byComponent[component] ??= []).push({
+          id: n.id,
+          kind: n.kind,
+          lexicon: n.lexicon,
+          physicalId: n.physicalId,
+          ownership: n.ownership,
+        });
+      }
+      return c.json({ byComponent });
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
     }

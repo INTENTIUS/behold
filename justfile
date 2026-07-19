@@ -39,3 +39,10 @@ serve project="example" env="":
 # Auto-detects AWS creds — exercises /api/overlay when present, /api/graph when not.
 e2e:
     bash e2e/run.sh
+
+# End-to-end (#59, epic #54's definition of done): the unified component view
+# (waves + live status + CI + resources) against a real project — loomster on
+# Floci. Needs loomster checked out and its Floci already up (`just local-up`
+# in loomster) — this never boots or installs loomster itself.
+e2e-floci:
+    bash e2e/component-view-floci-e2e.sh

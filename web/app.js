@@ -93,6 +93,26 @@ function inspect(node) {
     ci("runs", job.script.length ? job.script.join(" && ") : `chant run --components ${node.id}`);
   }
 
+  // Resources facet (#59 unify) — a best-effort slice of the DoD's "its
+  // stack, and its resources": the AWS resources declared under this
+  // component's own source directory (see loadResources(); src/server.ts
+  // `/api/resources` documents why this is resources-by-source-location, not
+  // a literal CFN stack lookup, and a pre-existing chant gap — verified
+  // against loomster/Floci — that leaves physicalId/ownership usually empty
+  // even in live mode: kind/id are always the real declared shape; treat
+  // physicalId as a bonus when chant happens to supply it, not a given).
+  const resources = node.kind === "Component" ? resourcesByComponent[node.id] : undefined;
+  if (resources) {
+    const res = section("resources");
+    if (!resources.length) {
+      res("", "(none found under this component's source directory)");
+    } else {
+      for (const r of resources) {
+        res(r.kind, r.physicalId ? `${r.id} (${r.physicalId})` : r.id);
+      }
+    }
+  }
+
   // A foreign node on a live-import substrate can be pulled into typed source:
   // Adopt triggers the ReconcileOp (cloud → code), which opens a reviewable PR.
   // behold never writes source — a human merges. Managed/pending nodes and
@@ -242,6 +262,11 @@ function wire(ir) {
 // re-pull and a picker change go through the same path.
 const view = { env: null, detail: 2, components: false };
 
+// The deploy axes in play (#59 unify) — tier/target, read once from
+// /api/project (server-derived from the process env; see deployAxes() in
+// src/server.ts). Static for the life of the page, unlike env/detail/components.
+let axes = { tier: null, target: null };
+
 // CI projection facet (M1.2, #58): the component DAG's GitLab CI reading —
 // component name → {jobName, stage, needs, script}, from `/api/ci` (`chant
 // build --components --generate gitlab`). Loaded once per components-mode
@@ -260,6 +285,28 @@ async function loadCi() {
     // Non-fatal: the component DAG still renders without the CI facet (e.g. a
     // served chant predating generate mode) — inspect() just omits the section.
     ciByComponent = new Map();
+  }
+}
+
+// Resources facet (#59 unify) — component name -> its AWS resources, from
+// `/api/resources` (src/server.ts documents what this is and isn't: a
+// source-location convention match, not the literal CFN stack — chant's own
+// `groups.byStack` is lexicon-only today, not per-stack). Loaded once per
+// components-mode load(), same caching shape as `ciByComponent`; a click
+// reads it synchronously.
+let resourcesByComponent = {};
+
+async function loadResources() {
+  try {
+    const q = view.env ? `?env=${encodeURIComponent(view.env)}` : "";
+    const res = await fetch(`/api/resources${q}`);
+    const j = await res.json();
+    if (!res.ok) throw new Error(j.error || res.statusText);
+    resourcesByComponent = j.byComponent || {};
+  } catch {
+    // Non-fatal, same rationale as loadCi(): the DAG and its other facets
+    // still render without the resources facet.
+    resourcesByComponent = {};
   }
 }
 
@@ -293,8 +340,12 @@ function render(ir, svg, m) {
   }
   // Multi-estate (#31): note the composed project count; the graph draws one box per project.
   const scope = m.estate ? `estate of ${m.estate} projects` : m.projectDir;
+  // The deploy axes (#59 unify) — tier/target, when the served project reports
+  // them (see `axes`, populated once from /api/project). Absent for a project
+  // that doesn't set LOOM_TIER/AWS_ENDPOINT_URL, rather than a blank label.
+  const axesTail = `${axes.tier ? " · tier " + axes.tier : ""}${axes.target ? " · target " + axes.target : ""}`;
   document.getElementById("meta").textContent =
-    `${scope}${m.env ? " · env " + m.env : ""}${overlay ? " · overlay" : ""}${m.components ? " · components" : ""}${componentStatus ? " · live status" : ""} · ${ir.nodes.length} nodes${tail}`;
+    `${scope}${m.env ? " · env " + m.env : ""}${axesTail}${overlay ? " · overlay" : ""}${m.components ? " · components" : ""}${componentStatus ? " · live status" : ""} · ${ir.nodes.length} nodes${tail}`;
   document.getElementById("legend").style.display = overlay ? "flex" : "none";
   document.getElementById("component-legend").style.display = componentStatus ? "flex" : "none";
   document.getElementById("graph").innerHTML = svg;
@@ -319,14 +370,15 @@ async function load() {
       endpoint = "/api/overlay";
       q.set("env", view.env);
     }
-    // The CI facet is a component-DAG-mode-only detail. Load it whenever
-    // components mode is on, env picked or not — #59 unifies the CI facet
-    // (#58) with the live-status join (#57), so a component node's inspect
-    // panel shows both at once, not one or the other.
+    // The CI + resources facets are component-DAG-mode-only details. Load
+    // both whenever components mode is on, env picked or not — #59 unifies
+    // the CI facet (#58), the live-status join (#57), and resources (#59) so
+    // a component node's inspect panel shows all of them at once, not just one.
     if (view.components) {
-      await loadCi();
+      await Promise.all([loadCi(), loadResources()]);
     } else {
       ciByComponent = new Map();
+      resourcesByComponent = {};
     }
     const res = await fetch(`${endpoint}?${q}`);
     if (!res.ok) throw new Error((await res.json()).error || res.statusText);
@@ -389,6 +441,7 @@ async function initPickers() {
     .then((r) => r.json())
     .catch(() => ({ environments: [], currentEnv: null }));
   view.env = info.currentEnv || null;
+  axes = { tier: info.tier || null, target: info.target || null };
   const host = document.getElementById("pickers");
   const envOpts = [["(source)", ""], ...info.environments.map((e) => [`env: ${e}`, e])];
   host.appendChild(
