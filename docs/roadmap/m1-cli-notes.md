@@ -174,6 +174,14 @@ than reconciled/unrecorded/stale/drifted.
 throws (chant #821), and the epic forbids the cross-substrate overlay. Status is
 single-substrate AWS per component, joined to the node by component name.
 
+> **Superseded by M4.** Chant #821 shipped in chant 0.18.31 — `chant graph
+> --live --overlay` is now the real source-anchored overlay and behold consumes
+> it at `/api/overlay` (`src/overlay.ts` no longer has a throwing placeholder).
+> The "do not use" advice above was M1-era and no longer applies to the entity
+> overlay; `chant components status --live` (this section) remains the right,
+> deliberately separate choice for the *component-level* facet, unaffected by
+> #821 landing.
+
 ---
 
 ## Q3 — the Floci endpoint (single source of truth)

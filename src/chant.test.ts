@@ -137,6 +137,17 @@ describe("overlayStatus", () => {
     expect(overlayStatus({ attrs: { _status: "accent" } })).toBe("pending");
     expect(overlayStatus({ attrs: {} })).toBeUndefined();
   });
+
+  it("M4: the retired sourceAnchoredOverlay placeholder is gone — nothing in the live path can throw", async () => {
+    // chant #821 shipped (chant 0.18.31): behold's `/api/overlay` just passes
+    // `--live --overlay` through to chant (see chant.ts's graphIr/graphFlags)
+    // and reads chant's own `_status` tag (overlayStatus, above). The old
+    // placeholder that threw "not implemented — tracked as chant #821" is
+    // retired, not just unused — assert it's not even exported anymore, so a
+    // stray import of it can't reintroduce a throw into a live route.
+    const mod = await import("./overlay.ts");
+    expect((mod as Record<string, unknown>).sourceAnchoredOverlay).toBeUndefined();
+  });
 });
 
 describe("ciPipelineArgs", () => {

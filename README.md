@@ -190,9 +190,11 @@ npm test    # vitest — pure units (graphFlags, _status mapping); no server, no
 
 ## Related issues
 
-- chant **#821** — source-anchored overlay (the linchpin: cross-substrate topology + live status).
+- chant **#821** — source-anchored overlay (the linchpin: cross-substrate topology + live
+  status) — done, shipped chant 0.18.31; behold adopted it in M4 (see `src/overlay.ts`).
 - chant **#822** — diff two historical snapshots (feeds the timeline).
-- chant **#513** — compose separate stacks into one IR.
+- chant **#513** — compose separate stacks into one IR — done; behold's `composeEstate`
+  (`src/estate.ts`, #31) consumes pinhole's `composeStacks` built on it.
 - pinhole **#82** — ship the painter as a library (done; behold consumes it).
 - pinhole **#79/#80/#81** — drive `--live`/`--overlay`, first-class drift rendering, morph-over-time.
 - Concept notes: `~/Documents/research/chant-live-control-plane.md`.

@@ -347,12 +347,14 @@ export function createApp(
         // M1.1 (#57), palette hardened M2 (#54): live per-component AWS
         // status, joined by component name onto the component-DAG nodes —
         // the epic's "observe" step. A distinct data path from the entity
-        // overlay below (`chant graph --live --overlay`) — never used for
-        // components, since `sourceAnchoredOverlay` throws (chant #821) and
-        // the epic forbids the cross-substrate overlay here. `chant components
-        // status <env> --live --json` observes each component's own CFN stack
-        // (docs/roadmap/m1-cli-notes.md Q2). Only runs when an env is picked —
-        // with no env this stays the M1.0 source-only component DAG.
+        // overlay below (`chant graph --live --overlay`, the source-anchored
+        // overlay — chant #821, shipped 0.18.31) — never used for components,
+        // by design: the epic keeps this component-level facet single-
+        // substrate AWS, distinct from the entity-level overlay. `chant
+        // components status <env> --live --json` observes each component's
+        // own CFN stack (docs/roadmap/m1-cli-notes.md Q2). Only runs when an
+        // env is picked — with no env this stays the M1.0 source-only
+        // component DAG.
         const env = opts.env ?? cfg.env;
         if (env) {
           const rows = await componentStatus(cfg.projectDir, env, opts);
@@ -363,7 +365,11 @@ export function createApp(
       } else {
         ir = await graphIr(cfg.projectDir, opts);
       }
-      const { svg } = renderGraph(ir);
+      // Multi-estate (#31/M4): box each composed project's nodes via `groups.
+      // byStack` (pinhole's composeStacks per-project grouping) — see
+      // render.ts's doc comment for why this is an explicit opt-in rather than
+      // auto-detected the way the component DAG's `byWave` is.
+      const { svg } = renderGraph(ir, multi ? { boxes: "byStack" } : {});
       return c.json({
         ir,
         svg,
@@ -431,21 +437,18 @@ export function createApp(
   // It's a convention match, not a chant-native fact — a project that
   // doesn't lay out one top-level dir per component would get nothing back.
   //
-  // A second, pre-existing chant gap this inherits (found verifying this
-  // against loomster/Floci, unrelated to the fix above): the `physicalId`/
-  // `ownership` live enrichment this comment promises rarely shows up in
-  // practice. `--live --overlay` classifies every loomster resource `accent`
-  // (pending/unmatched) despite all 7 stacks being live — because the aws
-  // lexicon's `describeResources` (chant-lexicon-aws `plugin.ts`) still does
-  // `stackName = options.stack ?? options.environment`, i.e. it queries CFN
-  // for a stack literally named "local", which doesn't exist on loomster's
-  // one-stack-per-component layout. `chant components status --live` was
-  // fixed for exactly this in 0.18.27 (`describeStackStatus`, Q2) but
-  // `describeResources` — the generic entity-level live path `/api/overlay`
-  // and this route both use — was not. So today this facet reliably returns
-  // the *declared* resource shape (kind/id, always correct); the live
-  // physicalId/ownership fields are wired but will stay empty for loomster
-  // until chant's `describeResources` gets the same multi-stack fix.
+  // UPDATE (M4): the multi-stack `describeResources` gap the paragraph above
+  // used to describe is fixed. Earlier the aws lexicon's `describeResources`
+  // queried CFN for one stack literally named after the env ("local"), which
+  // doesn't exist on loomster's one-stack-per-component layout, so every
+  // resource classified `accent` (pending/unmatched) despite being live.
+  // chant 0.18.31 fixed this alongside #821 (the same release this facet's
+  // `--live --overlay` call now gets the real source-anchored overlay from) —
+  // verified against loomster/Floci: `chant graph src --live --overlay --env
+  // local --format ir` now returns 132 nodes / 65 edges, most `good`
+  // (managed) with real `physicalId` values (e.g. a live IAM role's actual
+  // name), not all `accent`. So this facet's `physicalId`/`ownership` fields
+  // are live today, not just wired for a future fix.
   app.get("/api/resources", async (c) => {
     const opts = optsFromQuery(new URL(c.req.url));
     const env = opts.env ?? cfg.env;
@@ -487,10 +490,14 @@ export function createApp(
     }
   });
 
-  // Live / overlay — the drift-coloured graph (chant #821, shipped in 0.18.0).
-  // `chant graph --live --overlay` defaults to the source-anchored overlay:
-  // declared edges (the cross-substrate topology) kept, live status joined per
-  // node (managed/foreign/pending). Needs cloud creds + an environment.
+  // Live / overlay — the drift-coloured graph (chant #821, shipped in chant
+  // 0.18.31). `chant graph --live --overlay` defaults to the source-anchored
+  // overlay: declared edges (the cross-substrate topology) kept, live status
+  // joined per node (managed/foreign/pending). Needs cloud creds + an
+  // environment. This is the ENTITY-level live view (one node per resource) —
+  // distinct from the M1–M3 component view (`/api/graph?components=1`, one
+  // node per component). The SPA's load() routes here whenever an env is
+  // picked and components mode is off (web/app.js).
   app.get("/api/overlay", async (c) => {
     // Env comes from the picker (`?env=`), falling back to the launch `--env`.
     // Either lets the overlay run without a restart; neither is a 400.
