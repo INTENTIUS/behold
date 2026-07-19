@@ -334,15 +334,36 @@ async function loadResources() {
   }
 }
 
-// The observe → reconcile → apply dial (M2, #54): where the selected target
-// sits on the lifecycle progression, per the epic's design. `observe` is
-// always live already — it's the component-status view above (render()'s
-// `componentStatus` branch IS observe); clicking the step just switches into
-// it. `reconcile` is a click-to-fetch summary (`/api/reconcile`, a full build
-// + cloud query — on demand, like #27's live diff), cached until the
-// env/tier/target lens changes. `apply` is disabled — delegated writes land
-// in M3; behold stays read-only here.
+// The observe → reconcile → apply dial (M2 #54 observe/reconcile, M3 #54
+// apply): where the selected target sits on the lifecycle progression, per
+// the epic's design. `observe` is always live already — it's the
+// component-status view above (render()'s `componentStatus` branch IS
+// observe); clicking the step just switches into it. `reconcile` is a
+// click-to-fetch summary (`/api/reconcile`, a full build + cloud query — on
+// demand, like #27's live diff), cached until the env/tier/target lens
+// changes. `apply` (M3) is a REAL delegated write: click opens a small
+// component/all picker, confirm triggers `POST /api/apply`
+// (`chant run <target> --components --env <env> --progress-json` — behold
+// triggers, chant executes), and the structured wave/phase progress it
+// streams back (see applyProgressReducer in src/apply.ts, broadcast as the
+// `apply` SSE event) renders live below the dial — the primary surface for
+// an apply, not the raw now-line.
 let reconcileCache = null; // last ReconcileSummary for the current env/tier/target, or null
+let applyProgress = null; // last ApplyProgressState (src/apply.ts) for the current env, or null — hydrated from /api/ops on load, then kept live by the `apply` SSE event
+let applyPicker = false; // whether the inline "apply <component|all> →" prompt is open
+let componentChoices = []; // component names for the apply picker — loaded lazily (independent of whether the graph pane is currently in components mode)
+
+// Reset the dial's per-target caches (reconcile summary, apply picker/progress,
+// component-name list) when the env/tier/target lens changes — all three are
+// scoped to "whatever target is currently picked", so switching targets must
+// not show a stale reconcile count or a finished apply's progress from a
+// DIFFERENT target as if it were current.
+function resetDialCaches() {
+  reconcileCache = null;
+  applyProgress = null;
+  applyPicker = false;
+  componentChoices = [];
+}
 
 function dialArrow() {
   const s = document.createElement("span");
@@ -381,13 +402,120 @@ function renderDial() {
   track.appendChild(reconcileBtn);
   track.appendChild(dialArrow());
 
-  const applyBtn = button("apply", "dial-step disabled", () => {});
-  applyBtn.disabled = true;
-  applyBtn.title = "Delegated writes land in M3 — behold stays read-only here.";
+  const applying = applyProgress && applyProgress.status === "running";
+  const applyBtn = button(
+    applying ? "apply · running…" : "apply",
+    "dial-step" + (applyPicker || applying ? " active" : ""),
+    () => {
+      if (applying) return; // a run is already in flight — its progress is on screen below
+      applyPicker = !applyPicker;
+      if (applyPicker) loadComponentChoices().then(renderDial);
+      renderDial();
+    },
+  );
+  applyBtn.title = `Delegated write: chant run <component|all> --components --env ${view.env} --progress-json — behold triggers, chant executes.`;
   track.appendChild(applyBtn);
 
   host.appendChild(track);
   if (reconcileCache) host.appendChild(renderReconcileDetail(reconcileCache));
+  if (applyPicker && !applying) host.appendChild(renderApplyPicker());
+  if (applyProgress && applyProgress.waves.length) host.appendChild(renderApplyProgress(applyProgress));
+}
+
+// Apply picker (M3): "which component(s)?" prompt for the dial's apply step —
+// mirrors openRollback's inline select+confirm+cancel shape. Defaults to "all
+// components" (chant's own `run --components all` selector); loadComponentChoices()
+// supplies the individual names regardless of the graph pane's current mode.
+function renderApplyPicker() {
+  const wrap = document.createElement("div");
+  wrap.className = "dial-detail";
+  wrap.style.gap = "6px";
+  const sel = document.createElement("select");
+  sel.style.cssText =
+    "background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:3px 8px;font-size:12px";
+  sel.add(new Option("all components", "all"));
+  for (const name of componentChoices) sel.add(new Option(name, name));
+  const go = button("Apply →", "", () => {
+    const component = sel.value;
+    const what = component === "all" ? "ALL components" : component;
+    if (!window.confirm(`Apply ${what} to ${view.env}?\nThis is a real write — chant run --components --progress-json.`)) return;
+    applyPicker = false;
+    runApply(component);
+  });
+  const cancel = button("✕", "", () => {
+    applyPicker = false;
+    renderDial();
+  });
+  wrap.append(sel, go, cancel);
+  return wrap;
+}
+
+async function loadComponentChoices() {
+  if (componentChoices.length) return componentChoices;
+  try {
+    const q = lensParams(new URLSearchParams({ components: "1", ...(view.env ? { env: view.env } : {}) }));
+    const res = await fetch(`/api/graph?${q}`);
+    const j = await res.json();
+    componentChoices = (j.ir && j.ir.nodes ? j.ir.nodes : [])
+      .filter((n) => n.kind === "Component")
+      .map((n) => n.id);
+  } catch {
+    componentChoices = []; // the picker still offers "all components" — just no per-name list
+  }
+  return componentChoices;
+}
+
+function runApply(component) {
+  const q = new URLSearchParams({ env: view.env, component });
+  fetch(`/api/apply?${q}`, { method: "POST" })
+    .then((r) => r.json())
+    .then((j) => {
+      if (j.error) {
+        nowline("✗ apply: " + j.error);
+      } else {
+        nowline(`▶ apply ${component} → ${view.env}`);
+      }
+      renderDial();
+    });
+}
+
+// Structured wave/phase progress (M3): the primary surface for an apply — an
+// ordered list of waves, each showing its components' current phase/step and
+// status, coloured the same way the rest of the SPA colours health (managed=
+// ok, pending=running, degraded=failed, muted=not-yet-reached). Replaces the
+// raw-log-tail now-line as the thing you actually watch during a deploy; the
+// now-line still gets chant's human summary + any non-progress line as a
+// fallback (src/op-runner.ts's apply() only filters OUT recognized
+// RunProgressEvent lines from that channel).
+const APPLY_STATUS_COLOR = { pending: "var(--muted)", running: "var(--pending)", ok: "var(--managed)", failed: "var(--degraded)" };
+
+function renderApplyProgress(state) {
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "display:flex;flex-direction:column;gap:6px;width:100%;margin-top:4px";
+  const summary = document.createElement("div");
+  summary.style.cssText = `font-size:11px;color:${APPLY_STATUS_COLOR[state.status] || "var(--muted)"}`;
+  summary.textContent = `apply: ${state.status}`;
+  wrap.appendChild(summary);
+  for (const w of state.waves) {
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap";
+    const label = document.createElement("span");
+    label.style.cssText = `font-size:11px;color:${APPLY_STATUS_COLOR[w.status] || "var(--muted)"};min-width:52px`;
+    label.textContent = `wave ${w.wave}`;
+    row.appendChild(label);
+    for (const cname of w.components) {
+      const c = (state.components || []).find((x) => x.component === cname) || { status: "pending" };
+      const color = APPLY_STATUS_COLOR[c.status] || "var(--muted)";
+      const chip = document.createElement("span");
+      chip.style.cssText = `border:1px solid ${color};color:${color};border-radius:6px;padding:2px 8px;font-size:11px`;
+      const detail = [c.phase, c.step].filter(Boolean).join(" · ");
+      chip.textContent = `${cname}${detail ? " · " + detail : ""} (${c.status})`;
+      if (c.error) chip.title = c.error;
+      row.appendChild(chip);
+    }
+    wrap.appendChild(row);
+  }
+  return wrap;
 }
 
 function renderReconcileDetail(r) {
@@ -594,7 +722,7 @@ async function initPickers() {
   host.appendChild(
     picker("environment", envOpts, view.env || "", (v) => {
       view.env = v || null;
-      reconcileCache = null;
+      resetDialCaches();
       load();
     }),
   );
@@ -627,7 +755,7 @@ async function initPickers() {
         view.tier || info.tiers[0],
         (v) => {
           view.tier = v;
-          reconcileCache = null;
+          resetDialCaches();
           load();
         },
       ),
@@ -644,7 +772,7 @@ async function initPickers() {
         view.target || info.targets[0].endpoint,
         (v) => {
           view.target = v;
-          reconcileCache = null;
+          resetDialCaches();
           load();
         },
       ),
@@ -670,6 +798,19 @@ function nowline(line) {
   p.scrollTop = p.scrollHeight;
 }
 events.addEventListener("op", (e) => nowline(e.data));
+
+// Structured apply progress (M3, #54): the server broadcasts the full
+// ApplyProgressState (src/apply.ts) after every recognized RunProgressEvent —
+// see src/op-runner.ts's apply(). Re-render the dial's progress panel each
+// time; renderDial() is cheap (rebuilds a small DOM subtree) so no diffing.
+events.addEventListener("apply", (e) => {
+  try {
+    applyProgress = JSON.parse(e.data);
+  } catch {
+    return;
+  }
+  renderDial();
+});
 
 function button(label, cls, onClick) {
   const b = document.createElement("button");
@@ -743,9 +884,16 @@ async function initActions() {
   const rb = button("Rollback", "", () => openRollback(rb));
   rb.title = "Restore source to a prior revision via a reviewable PR";
   bar.appendChild(rb);
-  const { ops, adoptLexicons, autoSync, local } = await fetch("/api/ops")
+  const { ops, adoptLexicons, autoSync, local, applyProgress: apInit } = await fetch("/api/ops")
     .then((r) => r.json())
     .catch(() => ({ ops: [], adoptLexicons: [] }));
+  // M3 (#54): hydrate the dial's apply progress from the server's last known
+  // state — a page load (or reload) mid-apply picks up the structured view
+  // instead of starting blank; the `apply` SSE listener keeps it live from here.
+  if (apInit && apInit.waves && apInit.waves.length) {
+    applyProgress = apInit;
+    renderDial();
+  }
   // Local-mode banner (#46) — the emulator(s) behold booted with --local, so it's
   // obvious deploys/overlay hit them (no cloud creds), not a real account.
   if (local && local.emulators && local.emulators.length) {

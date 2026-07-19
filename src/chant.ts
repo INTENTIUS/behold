@@ -395,3 +395,24 @@ export function lifecyclePlanArgs(env: string): string[] {
 export function lifecyclePlan(projectDir: string, env: string, opts: GraphOptions = {}): Promise<LifecyclePlan> {
   return runChantJson<LifecyclePlan>(lifecyclePlanArgs(env), projectDir, envOverridesFor(opts));
 }
+
+// ---------------------------------------------------------------------------
+// Apply facet (M3, epic #54's observe→reconcile→apply dial) — behold's first
+// delegated WRITE. `chant run <target> --components --env <env>
+// --progress-json` (chant 0.18.30) deploys the named component (or every
+// component, `target: "all"`) through chant's own interpret driver on the
+// local executor, streaming one NDJSON `RunProgressEvent` per line while it
+// runs (src/apply.ts parses that stream into a structured progress model;
+// src/op-runner.ts's `apply()` runs the command itself, under the same
+// running-guard as Sync/rollback). behold never applies itself — it shells
+// this command and streams what chant reports.
+// ---------------------------------------------------------------------------
+
+/** Build the `chant run <target> --components --env <env> --progress-json`
+ * argv. `target` is a component name or `"all"` — chant's own selector
+ * convention for `run --components` (the generated CI script this same
+ * module already parses, `parseCiPipeline`, runs the single-component form).
+ * Pure; exported for testing. */
+export function applyArgs(target: string, env: string): string[] {
+  return ["run", target, "--components", "--env", env, "--progress-json"];
+}

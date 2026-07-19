@@ -1,10 +1,15 @@
 /**
- * behold server — the read-only data plane.
+ * behold server — a read-mostly control plane, delegated writes on top.
  *
- * Serves the SPA and a small read-only API over chant's graph. It NEVER mutates:
- * every route reads (`chant graph`). Writes, when they land, are delegated to
- * chant Ops (ApplyOp/ReconcileOp) on your executor — the server only ever
- * *triggers* them, holding no apply creds. See README "Read-only core".
+ * Most of the API only reads (`chant graph`, `chant lifecycle plan`, …). Writes
+ * are never done in-process: behold *triggers* them and streams what the
+ * executor reports, holding no apply creds itself — `/api/ops/:name/run` (Sync/
+ * Adopt, your committed `*.op.ts` Ops), `/api/rollback` (a `lifecycle rollback`
+ * PR), and, since M3 (#54), `/api/apply` (`chant run <target> --components
+ * --env <env> --progress-json` — the observe→reconcile→apply dial's write
+ * step). All three share one running-guard (src/op-runner.ts's OpRunner) — at
+ * most one delegated action in flight at a time. See README "Read-only core,
+ * delegated gated writes".
  */
 import { Hono, type Context } from "hono";
 import { streamSSE } from "hono/streaming";
@@ -239,6 +244,12 @@ export function createApp(
       local: cfg.emulators && cfg.emulators.length
         ? { emulators: cfg.emulators.map((e) => ({ lexicon: e.lexicon, name: e.name, endpoint: e.endpoint })) }
         : null,
+      // M3 (#54): the last known apply progress model, so a client that opens
+      // (or reloads) mid-apply hydrates the structured wave/phase view instead
+      // of starting blank — the `apply` SSE event (below) carries every update
+      // after that. `status: "idle"` (initialApplyProgress) when nothing has
+      // applied yet this session.
+      applyProgress: runner.applyProgress,
     }),
   );
 
@@ -556,6 +567,30 @@ export function createApp(
       return c.json({ error: `busy — ${runner.running} is running` }, 409);
     }
     return c.json({ started: true, to });
+  });
+
+  // Apply (M3, #54 — the dial's write step): trigger `chant run <component>
+  // --components --env <env> --progress-json` under the SAME running-guard as
+  // Sync/Adopt/rollback (one delegated write at a time — 409 if something else
+  // is running, exactly like /api/rollback above). This is a REAL write —
+  // behold was read-only through M2; chant's local executor does the actual
+  // deploy, behold only shells the command and streams what it reports.
+  // `?component=` is a component name or `all` (defaults to `all`); `?env=`
+  // falls back to the launch `--env`. Structured progress streams as `apply`
+  // SSE events (src/apply.ts's NDJSON→state reducer, wired in
+  // src/op-runner.ts's `apply()`); raw log lines still reach the existing `op`
+  // now-line channel as a fallback for anything progress-json doesn't cover.
+  app.post("/api/apply", (c) => {
+    const url = new URL(c.req.url);
+    const env = url.searchParams.get("env") ?? cfg.env;
+    if (!env) {
+      return c.json({ error: "apply needs an environment — pick one, or start behold with --env <name>" }, 400);
+    }
+    const component = url.searchParams.get("component") || "all";
+    if (!runner.apply(component, env)) {
+      return c.json({ error: `busy — ${runner.running} is running` }, 409);
+    }
+    return c.json({ started: true, component, env });
   });
 
   // Static SPA. Served last so /api and /healthz win.

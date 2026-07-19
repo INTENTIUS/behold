@@ -9,6 +9,7 @@ import {
   parseCiPipeline,
   envOverridesFor,
   lifecyclePlanArgs,
+  applyArgs,
   runChantRaw,
 } from "./chant.ts";
 import { overlayStatus } from "./overlay.ts";
@@ -248,6 +249,23 @@ describe("lifecyclePlanArgs", () => {
 
   it("threads the env through verbatim", () => {
     expect(lifecyclePlanArgs("prod")).toEqual(["lifecycle", "plan", "prod", "--live", "--json"]);
+  });
+});
+
+describe("applyArgs", () => {
+  it("builds `run <target> --components --env <env> --progress-json` (M3, #54)", () => {
+    expect(applyArgs("all", "local")).toEqual(["run", "all", "--components", "--env", "local", "--progress-json"]);
+  });
+
+  it("threads a single component name through as the target, verbatim", () => {
+    expect(applyArgs("shared-foundation", "prod")).toEqual([
+      "run",
+      "shared-foundation",
+      "--components",
+      "--env",
+      "prod",
+      "--progress-json",
+    ]);
   });
 });
 
