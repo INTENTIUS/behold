@@ -353,6 +353,21 @@ let reconcileCache = null; // last ReconcileSummary for the current env/tier/tar
 let applyProgress = null; // last ApplyProgressState (src/apply.ts) for the current env, or null — hydrated from /api/ops on load, then kept live by the `apply` SSE event
 let applyPicker = false; // whether the inline "apply <component|all> →" prompt is open
 let componentChoices = []; // component names for the apply picker — loaded lazily (independent of whether the graph pane is currently in components mode)
+let componentStatusById = {}; // id -> _status ("good"|"accent"|"warn"|"neutral"), populated alongside componentChoices — lets the picker show which stacks are already applied
+
+// How a component's live status reads in the apply picker (and the apply-all
+// summary): a glyph + words, so "which stacks are applied" is legible at a
+// glance rather than a bare name list. Mirrors COMPONENT_STATUS_LABEL's buckets.
+const APPLY_STATUS_TAG = {
+  good: "✓ deployed",
+  accent: "⋯ in progress",
+  warn: "⚠ rolled back / failed",
+  neutral: "○ not deployed",
+};
+function applyOptionLabel(name) {
+  const tag = APPLY_STATUS_TAG[componentStatusById[name]];
+  return tag ? `${name} — ${tag}` : name;
+}
 
 // Reset the dial's per-target caches (reconcile summary, apply picker/progress,
 // component-name list) when the env/tier/target lens changes — all three are
@@ -364,6 +379,7 @@ function resetDialCaches() {
   applyProgress = null;
   applyPicker = false;
   componentChoices = [];
+  componentStatusById = {};
 }
 
 function dialArrow() {
@@ -435,7 +451,7 @@ function renderApplyPicker() {
   sel.style.cssText =
     "background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:3px 8px;font-size:12px";
   sel.add(new Option("all components", "all"));
-  for (const name of componentChoices) sel.add(new Option(name, name));
+  for (const name of componentChoices) sel.add(new Option(applyOptionLabel(name), name));
   const go = button("Apply →", "", () => {
     const component = sel.value;
     const what = component === "all" ? "ALL components" : component;
@@ -457,11 +473,15 @@ async function loadComponentChoices() {
     const q = lensParams(new URLSearchParams({ components: "1", ...(view.env ? { env: view.env } : {}) }));
     const res = await fetch(`/api/graph?${q}`);
     const j = await res.json();
-    componentChoices = (j.ir && j.ir.nodes ? j.ir.nodes : [])
-      .filter((n) => n.kind === "Component")
-      .map((n) => n.id);
+    const nodes = (j.ir && j.ir.nodes ? j.ir.nodes : []).filter((n) => n.kind === "Component");
+    componentChoices = nodes.map((n) => n.id);
+    // Per-component live status for the picker labels — only present when an env
+    // is picked (the status join needs one); source-only graphs leave it blank.
+    componentStatusById = {};
+    for (const n of nodes) if (n.attrs && n.attrs._status) componentStatusById[n.id] = n.attrs._status;
   } catch {
     componentChoices = []; // the picker still offers "all components" — just no per-name list
+    componentStatusById = {};
   }
   return componentChoices;
 }
@@ -476,28 +496,39 @@ async function confirmApplyAll() {
     nowline("✗ apply all: pick an env first (env drives the target)");
     return;
   }
-  // Warn when components are already deployed — re-applying an already-green
-  // stack can FAIL on Floci's non-idempotent fixed-name resources (e.g. an RDS
-  // subnet group that collides with itself). Uses the accurate per-component
-  // live status (the stack-status seam), so this is a real "you're re-applying"
-  // heads-up, not a guess.
+  // Route around Floci #16 (github.com/lex00/floci/issues/16): re-applying an
+  // already-deployed stack collides on its fixed-name resources ("... already
+  // exists") and rolls the stack back — the emulator can't no-op an unchanged
+  // resource on update. So the honest states, from the accurate per-component
+  // live status (the stack-status seam):
+  //   all healthy      -> nothing to apply; re-apply would only break things.
+  //   some undeployed  -> apply is fine for a fresh emulator.
+  //   some rolled-back -> re-apply won't recover them; a reset is the clean path.
   let deployed = 0;
   let total = 0;
+  let rolledBack = 0;
   try {
     const j = await fetch(`/api/graph?components=1&env=${encodeURIComponent(env)}`).then((r) => r.json());
     const nodes = (j.ir && j.ir.nodes) || [];
     total = nodes.length;
     deployed = nodes.filter((n) => n.attrs && n.attrs._status === "good").length;
+    rolledBack = nodes.filter((n) => n.attrs && n.attrs._status === "warn").length;
   } catch {
     /* couldn't check — fall through to the plain confirm */
   }
-  const warn =
-    deployed > 0
-      ? `⚠ ${deployed} of ${total} components are already deployed.\nRe-applying an already-deployed stack can FAIL on a local emulator (non-idempotent fixed-name resources) — a full teardown + redeploy is the clean path for a fresh state.\n\n`
-      : "";
+  if (total > 0 && deployed === total) {
+    nowline(`✓ nothing to apply — all ${total} components are already deployed & in sync (re-applying would collide on Floci #16)`);
+    return;
+  }
+  const brokenNote = rolledBack > 0
+    ? `⚠ ${rolledBack} component(s) are rolled back. Re-applying WON'T recover them on the emulator — their fixed-name resources still exist (Floci #16). Use "reset local" (nukes + re-boots the emulator) then apply for a clean slate.\n\n`
+    : "";
+  const reapplyNote = deployed > 0
+    ? `Note: ${deployed} of ${total} are already deployed and will be re-applied — that can fail on the local emulator (Floci #16).\n\n`
+    : "";
   if (
     !window.confirm(
-      `${warn}Apply ALL components to ${env}?\nReal write — chant run --components all --env ${env} --progress-json.\nLive progress appears in the dial.`,
+      `${brokenNote}${reapplyNote}Apply ALL components to ${env}?\nReal write — chant run --components all --env ${env} --progress-json.\nLive progress appears in the dial.`,
     )
   )
     return;
@@ -1021,8 +1052,32 @@ function renderSubstrates(subs) {
       b.addEventListener("click", () => bringUpSubstrate(s));
       pill.appendChild(b);
     }
+    // A running Floci that can't idempotently re-apply (Floci #16): offer a
+    // clean reset — nuke + re-boot the emulator — so the next apply lands on an
+    // empty slate. The recovery path for rolled-back stacks.
+    if (s.name === "floci" && s.status === "up") {
+      const r = document.createElement("button");
+      r.textContent = "Reset";
+      r.title = "Tear down + re-boot the emulator (local-down + local-up), then apply for a clean deploy. Recovery for rolled-back stacks (Floci #16).";
+      r.addEventListener("click", resetLocal);
+      pill.appendChild(r);
+    }
     host.appendChild(pill);
   }
+}
+
+function resetLocal() {
+  if (
+    !window.confirm(
+      "Reset the local emulator?\nRuns local-down + local-up — every deployed stack is wiped and the emulator reboots empty.\nThen apply to redeploy clean. This is the recovery for rolled-back stacks (Floci #16).\n\nOutput streams in the log below; takes a minute.",
+    )
+  )
+    return;
+  nowline("▶ resetting local emulator (local-down + local-up) …");
+  fetch("/api/local/reset", { method: "POST" })
+    .then((r) => r.json())
+    .then((j) => nowline(j.error ? "✗ " + j.error : `▶ reset: ${j.ran} — apply once it's up for a clean deploy`))
+    .catch((e) => nowline("✗ reset: " + e.message));
 }
 
 function bringUpSubstrate(s) {

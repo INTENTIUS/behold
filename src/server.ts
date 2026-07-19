@@ -16,6 +16,7 @@ import { streamSSE } from "hono/streaming";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { serve } from "@hono/node-server";
 import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import type { GraphIR } from "@intentius/chant";
 import {
@@ -299,6 +300,26 @@ export function createApp(
       return c.json({ error: `busy — ${runner.running} is running` }, 409);
     }
     return c.json({ started: true, name, ran: label });
+  });
+
+  // Reset the local emulator (Floci #16 recovery): tear it down + boot it clean,
+  // so a subsequent apply lands on an empty emulator (all creates, no fixed-name
+  // collisions) instead of re-applying deployed stacks — which the emulator
+  // can't do idempotently (github.com/lex00/floci/issues/16). Runs the project's
+  // own local-down + local-up through the shared guard; behold triggers, the
+  // scripts do the work. Gated on those scripts existing (a local/Floci project).
+  app.post("/api/local/reset", (c) => {
+    const down = join(cfg.projectDir, "scripts/local/local-down.sh");
+    const up = join(cfg.projectDir, "scripts/local/local-up.sh");
+    if (!existsSync(down) || !existsSync(up)) {
+      return c.json({ error: "no local-down.sh / local-up.sh in scripts/local — reset is only for local emulator projects" }, 400);
+    }
+    // One guarded op: down then up. `&&` — a failed teardown shouldn't leave a
+    // half-booted emulator; the stream shows both scripts' output.
+    if (!runner.bringUp("reset local emulator", "bash", ["-c", "bash scripts/local/local-down.sh && bash scripts/local/local-up.sh"], cfg.projectDir)) {
+      return c.json({ error: `busy — ${runner.running} is running` }, 409);
+    }
+    return c.json({ started: true, ran: "local-down + local-up" });
   });
 
   // Approve a gated apply: signal the Op's wait-for-approval gate, in its own dir.
