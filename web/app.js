@@ -255,6 +255,7 @@ function wire(ir) {
     if (!node) continue;
     g.style.cursor = "pointer";
     g.addEventListener("click", () => {
+      if (panMoved) return; // a drag-pan ended here — don't also select
       host.querySelectorAll(".sel").forEach((n) => n.classList.remove("sel"));
       g.classList.add("sel");
       inspect(node);
@@ -613,35 +614,121 @@ function render(ir, svg, m) {
   g.innerHTML = svg;
   const svgEl = g.querySelector("svg");
   if (svgEl) {
-    // Drop pinhole's fixed pixel size so the viewBox drives sizing and the
-    // fit-to-pane CSS scales the whole graph to fit (was rendering at full
-    // natural size — a 7-node graph looked zoomed-in with huge icons).
+    // Drop pinhole's fixed pixel size so the viewBox drives sizing; behold then
+    // pans/zooms by mutating the viewBox (setupGraphViewBox + the wheel/drag
+    // handlers). Starts fit-to-pane, then pinch / ⌘+scroll zooms, drag pans.
     svgEl.removeAttribute("width");
     svgEl.removeAttribute("height");
     svgEl.setAttribute("preserveAspectRatio", "xMidYMid meet");
+    setupGraphViewBox(svgEl);
   }
-  g.classList.toggle("zoomed", zoomed);
-  addZoomToggle(g);
+  ensureZoomControls(g);
   wire(ir);
   renderDial();
 }
 
-// Fit ⇄ zoom: default fits the whole graph to the pane; toggling shows it at
-// full width (scroll) for a large estate graph where fit makes nodes tiny.
-let zoomed = false;
-function addZoomToggle(host) {
+// --- Graph zoom/pan, driven by the SVG viewBox (works for a 7-node DAG or a
+// 180-node estate alike: fit-to-pane by default, then zoom IN to read). Pinch
+// or ⌘/Ctrl+scroll zooms at the cursor; drag pans; "⤢ fit" resets. ---
+let vb = null; // current viewBox [x,y,w,h]
+let vbInit = null; // the graph's natural viewBox (fit)
+let panMoved = false; // true once a drag moved — suppresses the node click on release
+let zoomWired = false;
+
+function setupGraphViewBox(svg) {
+  const a = (svg.getAttribute("viewBox") || "").split(/\s+/).map(Number);
+  if (a.length === 4 && a.every((n) => !Number.isNaN(n))) {
+    vbInit = a.slice();
+    vb = a.slice();
+  } else {
+    vbInit = vb = null;
+  }
+}
+function currentSvg() {
+  return document.querySelector("#graph svg");
+}
+function applyVB() {
+  const s = currentSvg();
+  if (s && vb) s.setAttribute("viewBox", vb.join(" "));
+}
+function fitGraph() {
+  if (vbInit) {
+    vb = vbInit.slice();
+    applyVB();
+  }
+}
+function ensureZoomControls(host) {
   let btn = document.getElementById("zoom-toggle");
-  if (!btn) {
+  if (!btn || btn.parentElement !== host) {
     btn = document.createElement("button");
     btn.id = "zoom-toggle";
-    btn.addEventListener("click", () => {
-      zoomed = !zoomed;
-      host.classList.toggle("zoomed", zoomed);
-      btn.textContent = zoomed ? "⤢ fit" : "⤢ zoom";
+    btn.textContent = "⤢ fit";
+    btn.title = "Reset to fit. Pinch or ⌘/Ctrl+scroll to zoom at the cursor; drag to pan.";
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      fitGraph();
     });
     host.appendChild(btn);
   }
-  btn.textContent = zoomed ? "⤢ fit" : "⤢ zoom";
+  if (zoomWired) return;
+  zoomWired = true;
+  host.addEventListener(
+    "wheel",
+    (e) => {
+      // Trackpad pinch fires wheel+ctrlKey; ⌘/Ctrl+scroll is the explicit gesture.
+      // Plain scroll is left alone (nothing to scroll when fit).
+      if (!vb || !(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      const s = currentSvg();
+      if (!s) return;
+      const r = s.getBoundingClientRect();
+      const cx = vb[0] + ((e.clientX - r.left) / r.width) * vb[2];
+      const cy = vb[1] + ((e.clientY - r.top) / r.height) * vb[3];
+      const f = Math.exp(e.deltaY * 0.0025); // scroll up → f<1 → zoom in
+      const minW = vbInit[2] / 60;
+      const maxW = vbInit[2] * 3;
+      const nw = Math.min(maxW, Math.max(minW, vb[2] * f));
+      const nh = nw * (vb[3] / vb[2]);
+      vb[0] = cx - ((cx - vb[0]) * nw) / vb[2];
+      vb[1] = cy - ((cy - vb[1]) * nh) / vb[3];
+      vb[2] = nw;
+      vb[3] = nh;
+      applyVB();
+    },
+    { passive: false },
+  );
+  let drag = false;
+  let px = 0;
+  let py = 0;
+  host.addEventListener("mousedown", (e) => {
+    if (!vb) return;
+    drag = true;
+    panMoved = false;
+    px = e.clientX;
+    py = e.clientY;
+  });
+  window.addEventListener("mousemove", (e) => {
+    if (!drag || !vb) return;
+    const s = currentSvg();
+    if (!s) return;
+    const r = s.getBoundingClientRect();
+    const dx = e.clientX - px;
+    const dy = e.clientY - py;
+    if (Math.abs(dx) + Math.abs(dy) > 3) {
+      panMoved = true;
+      s.classList.add("grabbing");
+    }
+    vb[0] -= (dx / r.width) * vb[2];
+    vb[1] -= (dy / r.height) * vb[3];
+    px = e.clientX;
+    py = e.clientY;
+    applyVB();
+  });
+  window.addEventListener("mouseup", () => {
+    drag = false;
+    const s = currentSvg();
+    if (s) s.classList.remove("grabbing");
+  });
 }
 
 // A graph/facet failure under a picked tier (M2, #54): the server explains it
