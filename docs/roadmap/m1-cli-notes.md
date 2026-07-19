@@ -249,7 +249,7 @@ exiting (verified: the full 198 KB now pipes and parses); loomster + behold are
 pinned to `^0.18.28`. behold's `runChantRaw` was also hardened (accumulate bytes,
 decode once) — still correct, guards against a multi-byte UTF-8 split.
 
-### Two integration findings from #56–58 (for #59 and future behold work)
+### Three integration findings from #56–59 (for future behold work)
 
 - **Runtime (non-type-only) imports from `@intentius/chant` need bundling.** The
   package ships several runtime subpaths (`./yaml`, `./components`) as raw TS with
@@ -266,6 +266,17 @@ decode once) — still correct, guards against a multi-byte UTF-8 split.
   (presence-only). A future chant iteration could add `live` + `status` to the
   row for a richer red/amber/green palette; M1's blue→green (deployed vs not) is
   fine on presence.
+- **Entity-level `describeResources` still assumes one stack named after the env**
+  (`chant-lexicon-aws`, `stackName = options.stack ?? environment`). 0.18.27 fixed
+  the *component-status* path (via the `describeStackStatus` seam), but this
+  generic entity path was not touched — so `chant graph --live --overlay` returns
+  0 nodes on loomster's multi-stack layout, and per-component **live** resource
+  enrichment (physicalId/ownership) and the literal CFN stack identity come back
+  empty. #59's "its resources" drill-in therefore uses **source-correlation**
+  (resources grouped to a component by `sourceLoc.file` under `src/<component>/`),
+  which is real and sufficient for M1. Lighting up the live entity overlay is
+  **deferred to M4** by the epic's own scoping (chant #821 + this multi-stack
+  `describeResources` fix are the M4 enablers) — not an M1 gap.
 
 ---
 
