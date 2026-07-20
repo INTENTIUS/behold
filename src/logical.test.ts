@@ -30,9 +30,12 @@ function fixture(): GraphIR {
       n("publicRt", "AWS::EC2::RouteTable", F, { VpcId: ref("vpc.VpcId") }),
       n("defaultRoute", "AWS::EC2::Route", F, { RouteTableId: ref("publicRt.RouteTableId"), GatewayId: ref("igw.InternetGatewayId") }),
       n("pubAssoc", "AWS::EC2::SubnetRouteTableAssociation", F, { SubnetId: ref("publicSubnet.SubnetId"), RouteTableId: ref("publicRt.RouteTableId") }),
-      n("alb", "AWS::ElasticLoadBalancingV2::LoadBalancer", F, { Subnets: [ref("publicSubnet.SubnetId")] }),
+      n("alb", "AWS::ElasticLoadBalancingV2::LoadBalancer", F, { Subnets: [ref("publicSubnet.SubnetId")], SecurityGroups: [ref("albSg.GroupId")] }),
       n("listener", "AWS::ElasticLoadBalancingV2::Listener", F, { LoadBalancerArn: ref("alb.Arn"), TargetGroupArn: ref("tg.Arn") }),
       n("tg", "AWS::ElasticLoadBalancingV2::TargetGroup", F, { VpcId: ref("vpc.VpcId") }),
+      n("albSg", "AWS::EC2::SecurityGroup", F, { VpcId: ref("vpc.VpcId") }),
+      // ecsSg accepts inbound from albSg — the ALB → service traffic edge.
+      n("ecsSg", "AWS::EC2::SecurityGroup", F, { VpcId: ref("vpc.VpcId"), SecurityGroupIngress: [{ FromPort: 8000, SourceSecurityGroupId: ref("albSg.GroupId") }] }),
       n("foundationRole", "AWS::IAM::Role", F, { Arn: "arn:aws:iam::1:role/f" }),
       // backend stack — reaches the foundation only via the import parameters.
       n("svc", "AWS::ECS::Service", B, { NetworkConfiguration: { SecurityGroups: [ref("ecsSgParam")] }, TargetGroup: ref("tgParam"), Role: ref("taskRole.Arn") }),
@@ -51,7 +54,7 @@ function fixture(): GraphIR {
     ],
     groups: {},
     exports: [
-      { name: "oEcsSg", node: "foundationRole" }, // a producer that isn't a VPC-bound node
+      { name: "oEcsSg", node: "ecsSg" }, // the backend's imported SG resolves here (bridged from ecsSgParam's description)
       { name: "oBackendTg", node: "tg", attr: "TargetGroupArn" },
     ],
     imports: [
@@ -104,9 +107,16 @@ describe("projectLogical", () => {
     expect(parentOf(byContainer, "assets")).toBe("regional & global");
   });
 
-  it("contracts a cross-box edge ALB → service through the dropped target group", () => {
-    const has = (a: string, b: string) => ir.edges.some((e) => (e.from === a && e.to === b) || (e.from === b && e.to === a));
-    expect(has("alb", "svc")).toBe(true); // alb→listener→tg←tgParam←svc, all dropped between
-    expect(ir.edges.some((e) => e.from === "taskRole" || e.to === "taskRole")).toBe(false);
+  it("draws ALB → service as a directional security-group-ingress traffic edge", () => {
+    // ecsSg accepts inbound from albSg; alb ∈ albSg, svc ∈ ecsSg (via the bridged
+    // SG parameter) → a directed alb → svc edge, tagged as SG ingress. It wins
+    // over the target-group contraction path (same pair, emitted first).
+    const e = ir.edges.find((x) => (x.from === "alb" && x.to === "svc") || (x.from === "svc" && x.to === "alb"));
+    expect(e).toBeDefined();
+    expect(e!.from).toBe("alb"); // source (initiator) → target (acceptor)
+    expect(e!.to).toBe("svc");
+    expect(e!.viaAttr).toBe("security-group ingress");
+    // never through a property hub
+    expect(ir.edges.some((x) => x.from === "taskRole" || x.to === "taskRole")).toBe(false);
   });
 });

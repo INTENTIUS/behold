@@ -108,6 +108,11 @@ const NO_CONTRACT_KINDS = new Set([
   "AWS::EC2::Route",
   "AWS::EC2::SubnetRouteTableAssociation",
   "AWS::EC2::VPCGatewayAttachment",
+  // security groups — membership isn't traffic (two workloads sharing an SG
+  // don't necessarily talk); the directional ingress rules ARE traffic and are
+  // derived explicitly below, so contraction must not also bridge through them.
+  "AWS::EC2::SecurityGroup",
+  "AWS::EC2::SecurityGroupIngress",
 ]);
 
 const REGION_RE = /\b([a-z]{2}-[a-z]+-\d)\b/;
@@ -345,13 +350,67 @@ export function projectLogical(ir: GraphIR): LogicalProjection {
 
   const edges: IREdge[] = [];
   const seenEdge = new Set<string>();
-  const addEdge = (a: string, b: string) => {
+  const addEdge = (a: string, b: string, via?: string) => {
     if (a === b || !keptSet.has(a) || !keptSet.has(b)) return;
     const key = a < b ? `${a}|${b}` : `${b}|${a}`;
     if (seenEdge.has(key)) return;
     seenEdge.add(key);
-    edges.push({ from: a, to: b, kind: "ref" });
+    edges.push({ from: a, to: b, kind: "ref", ...(via ? { viaAttr: via } : {}) });
   };
+
+  // Security-group ingress — the first-class traffic signal. An ingress rule
+  // whose source is ANOTHER security group means the source SG's resources may
+  // open connections to the target SG's resources: real, directional traffic
+  // (ALB SG → ECS SG; an app SG → a DB SG). Emitted BEFORE contraction so the
+  // pair reads as a directed traffic edge (source → target = initiator →
+  // acceptor) rather than an undirected reference. CIDR-sourced ingress (a DB
+  // open to the VPC range, say) names no specific source resource, so it yields
+  // no edge — that stays containment, not a hairball.
+  const isSg = (id: string) => byId.get(id)?.kind === "AWS::EC2::SecurityGroup";
+  const firstRef = (v: unknown): string | undefined => {
+    const s = new Set<string>();
+    collectRefs(v, s);
+    return [...s].find((id) => byId.has(id));
+  };
+  // Which security groups each headline resource is attached to — resolved
+  // through cross-stack `Parameter` bridges (a service's SG arrives as an import).
+  const sgsOf = (start: string): Set<string> => {
+    const out = new Set<string>();
+    const seen = new Set([start]);
+    let frontier = [...(refOut.get(start) ?? [])];
+    for (let depth = 0; depth < 3 && frontier.length; depth++) {
+      const next: string[] = [];
+      for (const id of frontier) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+        if (isSg(id)) out.add(id);
+        else if (byId.get(id)?.kind === "AWS::CloudFormation::Parameter") for (const r of refOut.get(id) ?? []) next.push(r);
+      }
+      frontier = next;
+    }
+    return out;
+  };
+  const sgMembers = new Map<string, Set<string>>(); // sg id → headline ids in it
+  for (const n of headline) for (const sg of sgsOf(n.id)) (sgMembers.get(sg) ?? sgMembers.set(sg, new Set()).get(sg)!).add(n.id);
+  // Ingress rules → (sourceSg, targetSg): inline on a SecurityGroup, or a
+  // standalone SecurityGroupIngress node (GroupId = target, source = ref).
+  const ingress: Array<[string, string]> = [];
+  for (const n of aws) {
+    if (n.kind === "AWS::EC2::SecurityGroup") {
+      const rules = n.attrs?.SecurityGroupIngress;
+      for (const r of Array.isArray(rules) ? rules : rules ? [rules] : []) {
+        const src = firstRef((r as { SourceSecurityGroupId?: unknown })?.SourceSecurityGroupId);
+        if (src && isSg(src)) ingress.push([src, n.id]);
+      }
+    } else if (n.kind === "AWS::EC2::SecurityGroupIngress") {
+      const src = firstRef(n.attrs?.SourceSecurityGroupId);
+      const tgt = firstRef(n.attrs?.GroupId);
+      if (src && tgt && isSg(src) && isSg(tgt)) ingress.push([src, tgt]);
+    }
+  }
+  for (const [src, tgt] of ingress)
+    for (const rs of sgMembers.get(src) ?? []) for (const rt of sgMembers.get(tgt) ?? []) addEdge(rs, rt, "security-group ingress");
+
   const contractable = (id: string) => !keptSet.has(id) && !NO_CONTRACT_KINDS.has(byId.get(id)?.kind ?? "");
   for (const start of keptSet) {
     // BFS to other headline nodes through contractable (dropped, non-hub) nodes.
