@@ -31,6 +31,7 @@ import {
 import { joinComponentStatus, componentStatusColor } from "./component-status.ts";
 import { reclassifyOverlay, pruneImports } from "./overlay.ts";
 import { addValueMatchEdges } from "./value-match.ts";
+import { addCompositeDeps } from "./composite-deps.ts";
 import { resourcesByComponent, nonResourceEntities } from "./resources.ts";
 import { summarizePlan } from "./reconcile.ts";
 import { renderGraph } from "./render.ts";
@@ -589,6 +590,17 @@ export function createApp(
       // Connect resources wired by a literal name/ARN value (e.g. an RDS
       // instance's DBSubnetGroupName) that the symbolic-ref graph misses.
       ir = addValueMatchEdges(ir);
+      // At COMPOSITES (level 1), composites only wired via import sinks (now
+      // pruned) so they'd all float — overlay the authoritative component
+      // dependsOn graph so they read as a dependency graph (see addCompositeDeps).
+      if (query.detail === 1) {
+        try {
+          const dag = await componentGraphIr(cfg.projectDir, { env, ...tierTargetOpts(query) });
+          ir = addCompositeDeps(ir, dag.edges);
+        } catch {
+          /* component DAG unavailable — leave composites as-is */
+        }
+      }
       const { svg } = renderGraph(ir);
       return c.json({ ir, svg, meta: { projectDir: cfg.projectDir, env, mode: "overlay" } });
     } catch (err) {
