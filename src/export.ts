@@ -10,7 +10,7 @@
  * (reclassify / prune / value-match / composite-deps / radial all included), no
  * logic duplicated.
  */
-import { mkdirSync, writeFileSync, copyFileSync, readFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, copyFileSync, readFileSync, readdirSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createApp, type ServerOptions } from "./server.ts";
@@ -133,7 +133,13 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: { name
     `  <script>window.__BEHOLD_STATIC__ = true;</script>\n  </head>`,
   );
   writeFileSync(join(outDir, "index.html"), html);
-  copyFileSync(join(webDir(), "app.js"), join(outDir, "app.js"));
+  // Copy every sibling web asset, not just app.js: the SPA is unbundled ES modules, so app.js
+  // imports theme.js which imports themes.js. Copying app.js alone 404s the rest of the module
+  // graph and the whole bundle fails to boot. index.html is templated above, so skip it here.
+  for (const f of readdirSync(webDir())) {
+    if (f === "index.html") continue;
+    copyFileSync(join(webDir(), f), join(outDir, f));
+  }
   writeFileSync(join(outDir, "README.md"), BUNDLE_README);
 
   // Deploy-ready: an assets-only Cloudflare Worker config (no server code — the
