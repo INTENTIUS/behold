@@ -44,6 +44,18 @@
         color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px;
         font-size: 12px; cursor: pointer; }
       #back-to-infra:hover { border-color: var(--pending); color: var(--fg); }
+      /* Blocking load scrim: covers everything (clicks can't pass through) while
+         a live view change is in flight. */
+      #loading-overlay { position: fixed; inset: 0; z-index: 100; display: flex;
+        flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+        background: color-mix(in srgb, var(--bg) 72%, transparent); backdrop-filter: blur(1.5px);
+        cursor: progress; }
+      #loading-overlay[hidden] { display: none; }
+      #loading-overlay #loading-msg { font-size: 13px; color: var(--muted); }
+      #loading-overlay .spinner { width: 34px; height: 34px; border-radius: 50%;
+        border: 3px solid var(--line); border-top-color: var(--pending);
+        animation: spin 0.7s linear infinite; }
+      @keyframes spin { to { transform: rotate(360deg); } }
       .sel rect, .sel path, .sel > rect { stroke: var(--pending) !important; stroke-width: 2.5 !important; }
       .err { padding: 24px; color: var(--foreign); }
       /* M2 (#54): a graph/facet failure under a picked (non-default) tier — a
@@ -97,6 +109,10 @@
     </style>
   </head>
   <body>
+    <div id="loading-overlay" hidden>
+      <div class="spinner"></div>
+      <span id="loading-msg">loading…</span>
+    </div>
     <div id="app">
       <header>
         <h1>behold</h1>

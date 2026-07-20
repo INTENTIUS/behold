@@ -274,7 +274,7 @@ function wire(ir) {
 // for every chant shell-out this page's fetches trigger (see lensParams()).
 // Every fetch reads this, so the `changed` SSE re-pull and a picker change go
 // through the same path.
-const view = { env: null, detail: 2, components: false, tier: null, target: null };
+const view = { env: null, detail: 2, components: false, tier: null, target: null, radial: false };
 
 // The unified "zoom" control (one granularity axis, coarse → fine). Underlying
 // state stays (components, detail); zoom is just the single knob the header
@@ -857,6 +857,9 @@ function renderTierNote(note) {
 async function load() {
   const meta = document.getElementById("meta");
   meta.textContent = view.env ? `loading overlay for ${view.env}…` : "loading…";
+  // A view change shells chant live (seconds on a slow box) — cover the UI with a
+  // blocking overlay so clicks can't queue a second pull mid-flight.
+  showLoading(`loading ${zoomValue()}${view.env ? " · " + view.env : ""}…`);
   try {
     const q = lensParams(new URLSearchParams({ detail: String(view.detail) }));
     let endpoint = "/api/graph";
@@ -871,6 +874,8 @@ async function load() {
       endpoint = "/api/overlay";
       q.set("env", view.env);
     }
+    // Radial layout (entity view only) — curl the wide DAG onto concentric rings.
+    if (view.radial && !view.components) q.set("radial", "1");
     // The CI + resources facets are component-DAG-mode-only details. Load
     // both whenever components mode is on, env picked or not — #59 unifies
     // the CI facet (#58), the live-status join (#57), and resources (#59) so
@@ -898,6 +903,8 @@ async function load() {
   } catch (err) {
     document.getElementById("graph").innerHTML = `<div class="err">graph failed: ${err.message}</div>`;
     meta.textContent = "error";
+  } finally {
+    hideLoading();
   }
 }
 
@@ -908,6 +915,7 @@ async function refresh() {
   const meta = document.getElementById("meta");
   const prev = meta.textContent;
   meta.textContent = "refreshing…";
+  showLoading("refreshing live state…");
   try {
     const q = view.env ? `?env=${encodeURIComponent(view.env)}` : "";
     const res = await fetch(`/api/refresh${q}`, { method: "POST" });
@@ -918,6 +926,8 @@ async function refresh() {
   } catch (err) {
     meta.textContent = prev;
     nowline("✗ refresh: " + err.message);
+  } finally {
+    hideLoading();
   }
 }
 
@@ -977,6 +987,20 @@ async function initPickers() {
   zoomPicker.title =
     "Granularity, coarse → fine — components: deployable units, wave-laned, live per-component status (what \"observe\" shows) · composites · resources: every resource (default) · attributes: resources + cross-stack wiring. An env colours components by live status, the rest by drift overlay.";
   host.appendChild(zoomPicker);
+  // Radial layout: curl the wide entity graph onto concentric rings so far more
+  // fits in view (loomster: 13:1 wide → ~1:1). Entity zooms only — the wave-laned
+  // component graph keeps its lanes, so this is a no-op there.
+  const radialToggle = toggle(
+    "radial",
+    "Curl the entity graph onto rings around a centre — far more fits in view than the wide default. Applies to composites/resources/attributes.",
+    view.radial,
+    (checked) => {
+      view.radial = checked;
+      if (!view.components) load();
+    },
+  );
+  radialToggle.id = "radial-toggle";
+  host.appendChild(radialToggle);
   // The tier lens (M2, #54): only offered when the served project already
   // showed LOOM_TIER is in play (info.tier set at launch — same gate
   // deployAxes() uses server-side). Picking a tier re-evaluates the
@@ -1116,6 +1140,25 @@ setInterval(loadSubstrates, 5000);
 
 // Delegated writes (#7 Sync / #8 Adopt). behold never mutates — these buttons
 // trigger the project's committed Ops on the executor; the now-line streams phases.
+// A blocking load overlay (#slow-box): a live view change shells chant and can
+// take seconds. Cover the whole app with a scrim + spinner so a stray click
+// can't fire a second pull while one's in flight. Ref-counted — nested loads
+// (graph + CI + resources) only lift the scrim when the last finishes.
+let loadingDepth = 0;
+function showLoading(msg) {
+  loadingDepth++;
+  const o = document.getElementById("loading-overlay");
+  if (!o) return;
+  document.getElementById("loading-msg").textContent = msg || "loading…";
+  o.hidden = false;
+}
+function hideLoading() {
+  loadingDepth = Math.max(0, loadingDepth - 1);
+  if (loadingDepth > 0) return;
+  const o = document.getElementById("loading-overlay");
+  if (o) o.hidden = true;
+}
+
 function nowline(line) {
   const p = document.getElementById("nowline");
   p.style.display = "block";
