@@ -217,32 +217,49 @@ function inspect(node) {
     panel.appendChild(wrap);
   }
 
-  // Live drift for this node (#27): field-level changes since the last snapshot,
-  // or its presence category. On demand — a live diff is a build + cloud query,
-  // so it's a click, not automatic. Only meaningful with an env (overlay mode).
-  if (view.env && st && !staticMode) {
-    const wrap = document.createElement("p");
-    wrap.style.marginTop = "12px";
-    const b = button("Load live state", "", async () => {
-      b.disabled = true;
-      b.textContent = "loading…";
-      try {
-        const res = await fetch(`/api/diff/${encodeURIComponent(node.id)}?env=${encodeURIComponent(view.env)}`);
-        const j = await res.json();
-        if (!res.ok) throw new Error(j.error || res.statusText);
-        wrap.remove();
-        renderObserved(panel, j.observed, j.health); // #30 observed state + #26 health
-        renderDiff(panel, j.diff); // #27 — drift since snapshot
-      } catch (e) {
-        b.disabled = false;
-        b.textContent = "Load live state";
-        nowline("✗ live: " + e.message);
+  // Live state for this node (#27/#30): a node that's already been observed
+  // (managed=good or foreign=warn — that's why it's coloured) auto-loads its
+  // observed state + drift, so a click shows it without a second click. Cached
+  // per node (loadNodeDiff) so re-clicks are instant. A live diff is a build +
+  // cloud query, so we only fire it for observed nodes, and never in static.
+  const observed = st === "good" || st === "warn";
+  if (view.env && observed && !staticMode) {
+    const forId = node.id;
+    const loading = document.createElement("p");
+    loading.style.cssText = "color:var(--muted);margin-top:12px";
+    loading.textContent = "loading live state…";
+    panel.appendChild(loading);
+    loadNodeDiff(node.id).then((j) => {
+      if (panel.dataset.node !== forId) return; // reselected while loading
+      loading.remove();
+      if (!j) {
+        const p = document.createElement("p");
+        p.style.cssText = "color:var(--muted);margin-top:12px";
+        p.textContent = "live state unavailable";
+        panel.appendChild(p);
+        return;
       }
+      renderObserved(panel, j.observed, j.health); // #30 observed state + #26 health
+      renderDiff(panel, j.diff); // #27 — drift since snapshot
     });
-    b.title = `Query ${node.id} live (chant lifecycle diff --live): observed state + drift`;
-    wrap.appendChild(b);
-    panel.appendChild(wrap);
   }
+}
+
+// Per-node live diff (chant lifecycle diff --live), cached for the session so
+// re-inspecting an observed node is instant. Cleared on an env/lens change and
+// after any op completes (resetDialCaches / the settle) so it can't go stale.
+let nodeDiffCache = new Map();
+async function loadNodeDiff(id) {
+  if (nodeDiffCache.has(id)) return nodeDiffCache.get(id);
+  let j = null;
+  try {
+    const res = await fetch(`/api/diff/${encodeURIComponent(id)}?env=${encodeURIComponent(view.env)}`);
+    if (res.ok) j = await res.json();
+  } catch {
+    /* leave null → "live state unavailable" */
+  }
+  nodeDiffCache.set(id, j);
+  return j;
 }
 
 const HEALTH_COLOR = {
@@ -494,6 +511,7 @@ function resetDialCaches() {
   componentChoices = [];
   componentStatusById = {};
   compositeMembersCache = null;
+  if (typeof nodeDiffCache !== "undefined") nodeDiffCache.clear();
 }
 
 // Composite → member list, for the inspect pane. Derived once from the base
@@ -1232,6 +1250,7 @@ function scheduleSettle() {
   settleTimers = [3000, 8000, 15000].map((ms) => setTimeout(() => load({ quiet: true }), ms));
 }
 events.addEventListener("changed", () => {
+  nodeDiffCache.clear(); // an op ran → per-node live state may have changed
   load();
   loadSubstrates(); // a bring-up (or any op) finished → re-detect readiness
   scheduleSettle();
