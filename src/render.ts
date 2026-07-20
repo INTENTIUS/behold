@@ -44,7 +44,7 @@ export function renderGraph(ir: GraphIR, opts: { theme?: string; boxes?: "byStac
   // per rank — so the graph curls around a centre and far more fits in view. Only
   // for ungrouped graphs (the entity/infra view); the wave-boxed component graph
   // keeps its lanes.
-  if (opts.radial && !boxes) radializeLayout(layout as unknown as RadialLayout);
+  if (opts.radial && !boxes) radializeLayout(layout as unknown as RadialLayout, groupKeyByNode(ir));
   const svg = renderSvg(ir, layout, {
     fit: true,
     hideTitle: true,
@@ -69,42 +69,77 @@ interface RadialLayout {
  * constant when spacing a ring so neighbours don't overlap. */
 const NODE_W = 175;
 
-function radializeLayout(layout: RadialLayout): void {
+/** Group key per node id — the `src/<component>/` a node is declared under, with
+ * `src/examples/…` folded to "examples" and non-src nodes bucketed by lexicon.
+ * This is the grouping the radial layout clusters into wedges. */
+function groupKeyByNode(ir: GraphIR): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const n of ir.nodes) {
+    const parts = (n.sourceLoc?.file ?? "").split("/");
+    let key: string;
+    if (parts[0] === "src" && parts[1] === "examples") key = "examples";
+    else if (parts[0] === "src" && parts.length >= 3) key = parts[1];
+    else key = n.lexicon || "other";
+    out.set(n.id, key);
+  }
+  return out;
+}
+
+/** Re-place a laid-out graph's nodes radially, CLUSTERED BY GROUP: each group
+ * (component) gets a contiguous angular wedge sized to its node count, and
+ * within a wedge nodes sit by dependency depth (dagre rank → radius) fanned
+ * across the wedge's angle. So each pie-slice is a component (real structure,
+ * not the old even/false symmetry), a component's edges stay local to its wedge
+ * (less crossing), and the frontend can label each wedge from node positions.
+ * Mutates node x/y and the layout bounds. */
+function radializeLayout(layout: RadialLayout, groupOf: Map<string, string>): void {
   const nodes = layout.nodes;
   if (!Array.isArray(nodes) || nodes.length < 3) return;
-  // Discrete ranks = distinct y levels (dagre aligns a rank to one y). Cluster
-  // near-equal ys to be robust to sub-pixel drift.
+
+  // Global dagre rank (distinct y levels) → shared radius across every wedge, so
+  // "depth from centre" reads consistently regardless of component.
   const bucket = (y: number) => Math.round(y / 8) * 8;
   const levels = [...new Set(nodes.map((n) => bucket(n.y)))].sort((a, b) => a - b);
   const rankOf = new Map(levels.map((y, i) => [y, i]));
-  const byRank = new Map<number, RadialLayout["nodes"]>();
+  const r0 = 200;
+  const ringStep = 160;
+  const radiusOf = (n: { y: number }) => r0 + (rankOf.get(bucket(n.y)) ?? 0) * ringStep;
+
+  // Nodes by group; wedge order is stable (by key) so the picture doesn't jump.
+  const groups = new Map<string, RadialLayout["nodes"]>();
   for (const n of nodes) {
-    const r = rankOf.get(bucket(n.y)) ?? 0;
-    (byRank.get(r) ?? byRank.set(r, []).get(r)!).push(n);
+    const k = groupOf.get(n.id) ?? "other";
+    (groups.get(k) ?? groups.set(k, []).get(k)!).push(n);
   }
-  const gap = 60;
-  const ringStep = 130;
-  let radius = 0;
-  for (let r = 0; r < levels.length; r++) {
-    const ring = (byRank.get(r) ?? []).sort((a, b) => a.x - b.x); // keep left→right order as angle order
-    const n = ring.length;
-    // Grow the radius by a fixed ring step, but also enough circumference to
-    // seat n nodes without crowding.
-    const byCrowd = n <= 1 ? 0 : ((NODE_W + gap) * n) / (2 * Math.PI);
-    radius = r === 0 && n === 1 ? 0 : Math.max(radius + ringStep, byCrowd);
-    ring.forEach((node, i) => {
-      if (radius === 0) {
-        node.x = 0;
-        node.y = 0;
-        return;
-      }
-      const angle = (i / n) * 2 * Math.PI - Math.PI / 2; // start at top, clockwise
-      node.x = radius * Math.cos(angle);
-      node.y = radius * Math.sin(angle);
-    });
+  const order = [...groups.keys()].sort();
+  const gapAngle = 0.08; // radians between wedges
+  const usable = 2 * Math.PI - gapAngle * order.length;
+
+  let angle = -Math.PI / 2; // first wedge starts at top
+  for (const key of order) {
+    const gnodes = groups.get(key)!;
+    const width = usable * (gnodes.length / nodes.length);
+    const start = angle;
+    // Fan same-rank nodes across the wedge; different ranks sit at different radii.
+    const byRank = new Map<number, RadialLayout["nodes"]>();
+    for (const n of gnodes) {
+      const r = rankOf.get(bucket(n.y)) ?? 0;
+      (byRank.get(r) ?? byRank.set(r, []).get(r)!).push(n);
+    }
+    for (const rnodes of byRank.values()) {
+      rnodes.sort((a, b) => a.x - b.x);
+      const c = rnodes.length;
+      rnodes.forEach((n, i) => {
+        const a = c === 1 ? start + width / 2 : start + width * ((i + 0.5) / c);
+        const radius = radiusOf(n);
+        n.x = radius * Math.cos(a);
+        n.y = radius * Math.sin(a);
+      });
+    }
+    angle = start + width + gapAngle;
   }
-  // Shift to positive coords and reset the bounding box so renderSvg's viewBox
-  // wraps the ring cluster, not the old wide extent.
+
+  // Shift to positive coords + reset bounds so renderSvg's viewBox wraps the disc.
   const xs = nodes.map((n) => n.x);
   const ys = nodes.map((n) => n.y);
   const minX = Math.min(...xs);

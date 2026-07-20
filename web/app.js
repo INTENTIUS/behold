@@ -710,7 +710,66 @@ function render(ir, svg, m) {
   ensureZoomControls(g);
   ensureBackToInfra(g);
   wire(ir);
+  if (view.radial && !view.components) addRadialLabels(ir);
   renderDial();
+}
+
+// The radial layout clusters each component into an angular wedge, but nothing
+// says which wedge is which. Label each: read every node's position from its
+// `data-node-id` transform (SVG/viewBox coords, so labels pan/zoom with the
+// graph), group by component, and drop the component name just outside its
+// wedge at its mean angle. Cue only — pointer-events off so clicks pass through.
+function radialGroupOf(node) {
+  const p = (node.sourceLoc?.file || "").split("/");
+  if (p[0] === "src" && p[1] === "examples") return "examples";
+  if (p[0] === "src" && p.length >= 3) return p[1];
+  return node.lexicon || "other";
+}
+function addRadialLabels(ir) {
+  const svg = document.querySelector("#graph svg");
+  if (!svg) return;
+  const groupOf = new Map(ir.nodes.map((n) => [n.id, radialGroupOf(n)]));
+  const pos = new Map();
+  for (const g of svg.querySelectorAll("[data-node-id]")) {
+    const m = (g.getAttribute("transform") || "").match(/translate\(\s*([-\d.]+)[\s,]+([-\d.]+)/);
+    if (m) pos.set(g.getAttribute("data-node-id"), { x: +m[1], y: +m[2] });
+  }
+  if (pos.size < 2) return;
+  let cx = 0, cy = 0;
+  pos.forEach((p) => { cx += p.x; cy += p.y; });
+  cx /= pos.size; cy /= pos.size;
+  const groups = new Map(); // key -> {sx,sy,n,maxR}
+  pos.forEach((p, id) => {
+    const k = groupOf.get(id);
+    if (!k) return;
+    const dx = p.x - cx, dy = p.y - cy;
+    const g = groups.get(k) || { sx: 0, sy: 0, n: 0, maxR: 0 };
+    g.sx += dx; g.sy += dy; g.n++; g.maxR = Math.max(g.maxR, Math.hypot(dx, dy));
+    groups.set(k, g);
+  });
+  const NS = "http://www.w3.org/2000/svg";
+  const layer = document.createElementNS(NS, "g");
+  layer.setAttribute("id", "radial-labels");
+  layer.setAttribute("pointer-events", "none");
+  const vb = (svg.getAttribute("viewBox") || "0 0 1000 1000").split(/\s+/).map(Number);
+  const fontSize = Math.max(18, Math.round(vb[2] / 60));
+  groups.forEach((g, key) => {
+    const ang = Math.atan2(g.sy, g.sx);
+    const r = g.maxR + fontSize * 2.2;
+    const x = cx + r * Math.cos(ang), y = cy + r * Math.sin(ang);
+    const t = document.createElementNS(NS, "text");
+    t.setAttribute("x", x);
+    t.setAttribute("y", y);
+    t.setAttribute("text-anchor", Math.abs(Math.cos(ang)) < 0.4 ? "middle" : Math.cos(ang) < 0 ? "end" : "start");
+    t.setAttribute("dominant-baseline", "middle");
+    t.setAttribute("fill", "var(--fg)");
+    t.setAttribute("opacity", "0.72");
+    t.setAttribute("font-size", String(fontSize));
+    t.setAttribute("font-weight", "700");
+    t.textContent = key;
+    layer.appendChild(t);
+  });
+  svg.appendChild(layer);
 }
 
 // When observe (or the zoom picker) drops you into the components view, float a
