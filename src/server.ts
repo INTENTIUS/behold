@@ -436,7 +436,8 @@ export function createApp(
       // byStack` (pinhole's composeStacks per-project grouping) — see
       // render.ts's doc comment for why this is an explicit opt-in rather than
       // auto-detected the way the component DAG's `byWave` is.
-      const { svg } = renderGraph(ir, multi ? { boxes: "byStack" } : {});
+      const radial = new URL(c.req.url).searchParams.get("radial") === "1";
+      const { svg } = renderGraph(ir, multi ? { boxes: "byStack" } : { radial });
       return c.json({
         ir,
         svg,
@@ -601,7 +602,7 @@ export function createApp(
           /* component DAG unavailable — leave composites as-is */
         }
       }
-      const { svg } = renderGraph(ir);
+      const { svg } = renderGraph(ir, { radial: new URL(c.req.url).searchParams.get("radial") === "1" });
       return c.json({ ir, svg, meta: { projectDir: cfg.projectDir, env, mode: "overlay" } });
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
