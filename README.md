@@ -13,6 +13,32 @@ chant source ──build/lint──▶ graph IR ──behold──▶ live graph
               (deterministic)          (server + browser)
 ```
 
+## Preview: Loom on a local emulator (v0.1.0)
+
+behold ships a turnkey **preview** — the whole live experience running Loom on a
+local [Floci](https://github.com/lex00/floci) emulator, no cloud account and
+nothing to configure:
+
+```sh
+npm install
+npm run dev -- preview       # → http://localhost:4600
+```
+
+It resolves the Loom project (a path arg, `$BEHOLD_LOOM_DIR`, or a sibling
+`../loomster`), points the live overlay at Loom's Floci, and opens the graph. If
+Floci isn't up, **Bring up** on its substrate pill boots the emulator and deploys
+Loom. Needs Docker.
+
+**What you can do:** explore the graph at every **zoom** (components → composites
+→ resources → attributes, with an optional radial layout), watch live
+per-component status, read the reconcile plan, inspect any node, and **deploy to
+the emulator** — the full observe → reconcile → apply, Apply all, and a one-click
+Reset.
+
+**Not yet** (this is a preview of what's coming): opening your own infra, any real
+cloud, and the git/PR actions (Rollback, Sync, Adopt) — the preview is
+Loom-on-Floci only.
+
 ## Try it — your first apply, no cloud account
 
 The bundled `example-writes` is one S3 bucket. `--local` boots a local emulator
