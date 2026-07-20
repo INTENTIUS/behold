@@ -77,6 +77,30 @@ const HEADLINE_KINDS = new Set([
   "AWS::Cognito::UserPool",
 ]);
 
+// Workloads (compute) and the data stores they depend on — for the
+// data-dependency edge pass. A workload → store link (an app reading a database
+// or a bucket) is real, but in a pre-deploy graph it's carried by config a
+// generic contraction can't see (a DB endpoint injected as an env var, an S3
+// bucket granted by a task role) — so it gets its own pass that reaches through
+// anything but only ever accepts a data-store endpoint (never compute→compute).
+const WORKLOAD_KINDS = new Set([
+  "AWS::ECS::Service",
+  "AWS::EC2::Instance",
+  "AWS::Lambda::Function",
+  "AWS::EKS::Cluster",
+  "AWS::BedrockAgentCore::Runtime",
+]);
+const DATA_STORE_KINDS = new Set([
+  "AWS::RDS::DBInstance",
+  "AWS::RDS::DBCluster",
+  "AWS::S3::Bucket",
+  "AWS::DynamoDB::Table",
+  "AWS::ElastiCache::CacheCluster",
+  "AWS::ElastiCache::ReplicationGroup",
+  "AWS::EFS::FileSystem",
+  "AWS::OpenSearchService::Domain",
+]);
+
 // Never routed THROUGH when contracting edges — bridging across these would wire
 // every workload to every other and produce a hairball. Two families:
 //   - property hubs: a shared IAM role / KMS key / log group is referenced by
@@ -426,6 +450,32 @@ export function projectLogical(ir: GraphIR): LogicalProjection {
           continue; // don't route through another headline node
         }
         if (!contractable(id)) continue;
+        for (const nb of adj.get(id) ?? []) if (!seen.has(nb)) next.push(nb);
+      }
+      frontier = next;
+    }
+  }
+
+  // Data-dependency pass — a workload → a data store it can reach. Unlike the
+  // compute contraction above this DELIBERATELY reaches through the containment
+  // fabric and IAM grants (a DB endpoint injected via config, an S3 bucket
+  // granted by a task role), because that's the only trail those links leave in
+  // a pre-deploy graph. It stays clean because it only ever ACCEPTS a data-store
+  // endpoint — never a compute or gateway node — so it draws "app uses the
+  // database / bucket" without the mesh-to-everything those fabric paths caused.
+  for (const w of headline) {
+    if (!WORKLOAD_KINDS.has(w.kind)) continue;
+    const seen = new Set([w.id]);
+    let frontier = [...(adj.get(w.id) ?? [])];
+    for (let depth = 0; depth < 6 && frontier.length; depth++) {
+      const next: string[] = [];
+      for (const id of frontier) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+        if (keptSet.has(id)) {
+          if (DATA_STORE_KINDS.has(byId.get(id)?.kind ?? "")) addEdge(w.id, id, "data dependency");
+          continue; // never route THROUGH a headline node
+        }
         for (const nb of adj.get(id) ?? []) if (!seen.has(nb)) next.push(nb);
       }
       frontier = next;

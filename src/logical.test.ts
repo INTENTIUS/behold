@@ -39,7 +39,13 @@ function fixture(): GraphIR {
       n("foundationRole", "AWS::IAM::Role", F, { Arn: "arn:aws:iam::1:role/f" }),
       // backend stack — reaches the foundation only via the import parameters.
       n("svc", "AWS::ECS::Service", B, { NetworkConfiguration: { SecurityGroups: [ref("ecsSgParam")] }, TargetGroup: ref("tgParam"), Role: ref("taskRole.Arn") }),
-      n("taskRole", "AWS::IAM::Role", B, { Arn: "arn:aws:iam::1:role/b" }),
+      // taskRole grants the service access to the bucket — the only trail the
+      // app→bucket dependency leaves (an IAM policy, a property hub).
+      n("taskRole", "AWS::IAM::Role", B, { Arn: "arn:aws:iam::1:role/b", Policies: [ref("bucket.Arn")] }),
+      // a database in its own component + SG, in the VPC — the service reaches it
+      // only through the shared VPC fabric (its endpoint arrives via config).
+      n("db", "AWS::RDS::DBInstance", "database/db.ts", { VPCSecurityGroups: [ref("dbSg.GroupId")] }),
+      n("dbSg", "AWS::EC2::SecurityGroup", "database/db.ts", { VpcId: ref("vpc.VpcId") }),
       n("ecsSgParam", "AWS::CloudFormation::Parameter", B, { parameterType: "String", description: "ECS security group id (shared-foundation oEcsSg)" }),
       n("tgParam", "AWS::CloudFormation::Parameter", B, { parameterType: "String", description: "backend target group (shared-foundation oBackendTg)" }),
       // a regional service + an excluded byo example.
@@ -73,9 +79,9 @@ describe("projectLogical", () => {
   const kept = ir.nodes.map((n) => n.id).sort();
 
   it("keeps only headline resources — leaves, wiring, property nodes dropped", () => {
-    // alb + igw (foundation headline), svc (backend), bucket (regional). NOT tg
-    // (target group), listener, roles, params, or the byo example.
-    expect(kept).toEqual(["alb", "bucket", "igw", "svc"].sort());
+    // alb + igw (foundation), svc (backend), db (database), bucket (regional).
+    // NOT tg (target group), listener, security groups, roles, params, byo.
+    expect(kept).toEqual(["alb", "bucket", "db", "igw", "svc"].sort());
   });
 
   it("excludes byo example nodes entirely", () => {
@@ -105,6 +111,14 @@ describe("projectLogical", () => {
 
   it("puts VPC-less regional services in the global lane", () => {
     expect(parentOf(byContainer, "assets")).toBe("regional & global");
+  });
+
+  it("draws data-dependency edges from a workload to the stores it reaches (db via fabric, bucket via IAM grant)", () => {
+    const data = ir.edges.filter((e) => e.viaAttr === "data dependency");
+    const pairs = data.map((e) => `${e.from}->${e.to}`).sort();
+    expect(pairs).toEqual(["svc->bucket", "svc->db"]);
+    // directional: the workload depends on the store, not vice versa.
+    expect(data.every((e) => e.from === "svc")).toBe(true);
   });
 
   it("draws ALB → service as a directional security-group-ingress traffic edge", () => {
