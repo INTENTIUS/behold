@@ -7,13 +7,24 @@ import { resolve, dirname } from "node:path";
 import { realpathSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { startServer } from "./server.ts";
+import { runExport } from "./export.ts";
 import { isAutoSyncMode, type AutoSyncMode } from "./autosync.ts";
 
 const USAGE = `behold — a live control plane on chant (read-only core)
 
 Usage:
   behold preview [loom-dir] [--port <n>]
+  behold export [project-dir] [--out <dir>] [--env <name>]
   behold serve <project-dir…> [--port <n>] [--env <name>] [--poll <secs>]
+
+  export  Capture the live estate into a self-contained, interactive STATIC
+          bundle (default ./behold-export) — every env/tier × zoom × radial,
+          replayable with no backend. Host it anywhere (Cloudflare Pages/Workers,
+          any static server). Read-only: no live observe, no deploy. Defaults the
+          project to Loom (like preview); pass a dir + --env for your own estate.
+          Bring the estate up first (e.g. behold preview, or your creds/env) so
+          the snapshot reflects live state.
+
 
   preview A turnkey, self-contained preview of Loom on the local Floci emulator
           (v0.1.0). Boots the emulator, deploys Loom, and serves the read +
@@ -50,6 +61,11 @@ export async function run(argv: string[]): Promise<void> {
 
   if (cmd === "preview") {
     await runPreview(rest);
+    return;
+  }
+
+  if (cmd === "export") {
+    await runExportCmd(rest);
     return;
   }
 
@@ -164,6 +180,42 @@ async function runPreview(rest: string[]): Promise<void> {
       `  If Floci isn't up yet, use "Bring up" on the Floci substrate pill (boots + deploys Loom).\n`,
   );
   await startServer({ projectDir: loomDir, port, env: "local", previewMode: true });
+}
+
+/** `behold export` — capture the estate into a static interactive bundle.
+ * Defaults the project to Loom (like `preview`, with turnkey local env); pass a
+ * dir + `--env` to export your own estate (bring it up / set creds first). */
+async function runExportCmd(rest: string[]): Promise<void> {
+  let outDir = resolve("behold-export");
+  let env: string | undefined;
+  let dirArg: string | undefined;
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i];
+    if (a === "--out") outDir = resolve(rest[++i]);
+    else if (a === "--env") env = rest[++i];
+    else if (a === "-h" || a === "--help") return void process.stdout.write(USAGE);
+    else if (!a.startsWith("-")) dirArg = a;
+  }
+
+  let projectDir: string;
+  if (dirArg) {
+    projectDir = resolve(dirArg);
+  } else {
+    // No project given → export Loom, same resolution + turnkey local env as `preview`.
+    const beholdRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+    projectDir = resolve(process.env.BEHOLD_LOOM_DIR ?? resolve(beholdRoot, "..", "loomster"));
+    process.env.LOOM_ENV ??= env ?? "local";
+    process.env.AWS_ENDPOINT_URL ??= "http://localhost:4566";
+    process.env.AWS_ACCESS_KEY_ID ??= "test";
+    process.env.AWS_SECRET_ACCESS_KEY ??= "test";
+    process.env.AWS_REGION ??= "us-east-1";
+    env ??= "local";
+  }
+  if (!existsSync(projectDir)) {
+    process.stderr.write(`behold export: project not found at ${projectDir}\n`);
+    process.exit(2);
+  }
+  await runExport({ projectDir, port: 0, ...(env ? { env } : {}) }, outDir);
 }
 
 // Run when invoked directly (`tsx src/cli.ts …`), not when imported. realpath both
