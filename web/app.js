@@ -799,9 +799,33 @@ async function loadReconcile() {
 // things CSS can't: raise the hovered edge to the top of the paint order (SVG has
 // no z-index) so it's not buried, and light up every edge touching a hovered node
 // (the `.edge-hi` class) so hovering a card traces all its connections.
-function wireEdgeHighlight(svgEl) {
+// Human-readable "why does this edge exist" from the IR edge's `viaAttr`
+// (src/logical.ts tags them). Shown as a native SVG <title> tooltip on hover;
+// the value also drives a dashed style for data-dependency links (index.html).
+const EDGE_REASON = {
+  "security-group ingress": "security-group ingress — traffic is allowed here",
+  "data dependency": "data dependency — reads/uses this store",
+};
+function wireEdgeHighlight(svgEl, ir) {
   const edges = [...svgEl.querySelectorAll("g[data-edge-from]")];
   if (!edges.length) return;
+  // Reason per edge, keyed by from|to (and its reverse, since pinhole may paint
+  // an edge in either direction relative to the IR).
+  const viaOf = new Map();
+  for (const e of ir.edges || []) {
+    if (!e.viaAttr) continue;
+    viaOf.set(`${e.from}|${e.to}`, e.viaAttr);
+    viaOf.set(`${e.to}|${e.from}`, e.viaAttr);
+  }
+  for (const g of edges) {
+    const from = g.getAttribute("data-edge-from");
+    const to = g.getAttribute("data-edge-to");
+    const via = viaOf.get(`${from}|${to}`);
+    if (via) g.setAttribute("data-edge-via", via); // drives the dashed style
+    const title = document.createElementNS(SVGNS, "title");
+    title.textContent = `${from} → ${to}${via ? "\n" + (EDGE_REASON[via] || via) : ""}`;
+    g.insertBefore(title, g.firstChild);
+  }
   const raise = (g) => g.parentNode && g.parentNode.appendChild(g);
   // Delegated: raise whichever edge the pointer is over (its hit-path catches it).
   svgEl.addEventListener("mouseover", (e) => {
@@ -920,7 +944,7 @@ function render(ir, svg, m) {
     svgEl.removeAttribute("height");
     svgEl.setAttribute("preserveAspectRatio", "xMidYMid meet");
     setupGraphViewBox(svgEl);
-    wireEdgeHighlight(svgEl);
+    wireEdgeHighlight(svgEl, ir);
     // Mark each wave lane as a GitLab CI stage when the CI projection is loaded
     // (components view only) — waves ARE the pipeline's stages (`chant build
     // --components --generate gitlab`, see loadCi / #58).

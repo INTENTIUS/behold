@@ -56,6 +56,11 @@
       #graph g[data-edge-from] .pin-edge-line { transition: stroke .08s ease, stroke-width .08s ease; }
       #graph g[data-edge-from]:hover .pin-edge-line,
       #graph g[data-edge-from].edge-hi .pin-edge-line { stroke: var(--pending); stroke-width: 3.2; }
+      /* Edge kind by reason (logical view): a data dependency reads as a dashed
+         "logical link", distinct from the solid network-traffic edges; hover
+         either for the full reason (native SVG <title>). */
+      #graph g[data-edge-via="data dependency"] .pin-edge-line { stroke-dasharray: 6 5; }
+      #graph g[data-edge-from][data-edge-via] { cursor: help; }
       /* Fit reset + a zoom hint, floating top-right of the graph pane. */
       #zoom-toggle { position: absolute; top: 8px; right: 8px; z-index: 2; background: var(--panel);
         color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px;
