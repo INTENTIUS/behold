@@ -26,12 +26,12 @@ if (staticMode) {
 
 /** Canonical key for a read URL — path + the lens params (whitelisted, sorted)
  * that select a distinct snapshot. MUST match src/export.ts `canonicalKey`. */
-const LENS_PARAMS = ["components", "detail", "env", "radial", "tier"];
+const LENS_PARAMS = ["components", "detail", "env", "logical", "radial", "tier"];
 function canonicalKey(path, params) {
-  // Components view ignores detail/radial — drop them so it matches the single
-  // captured components snapshot (MUST match src/export.ts).
-  const components = params.get("components") === "1";
-  const q = LENS_PARAMS.filter((k) => params.has(k) && !(components && (k === "detail" || k === "radial")))
+  // Components + logical views ignore detail/radial — drop them so they match
+  // the single captured snapshot (MUST match src/export.ts).
+  const flat = params.get("components") === "1" || params.get("logical") === "1";
+  const q = LENS_PARAMS.filter((k) => params.has(k) && !(flat && (k === "detail" || k === "radial")))
     .map((k) => `${k}=${params.get(k)}`)
     .join("&");
   return q ? `${path}?${q}` : path;
@@ -381,7 +381,7 @@ function wire(ir) {
 // for every chant shell-out this page's fetches trigger (see lensParams()).
 // Every fetch reads this, so the `changed` SSE re-pull and a picker change go
 // through the same path.
-const view = { env: null, detail: 2, components: false, tier: null, target: null, radial: false };
+const view = { env: null, detail: 2, components: false, logical: false, tier: null, target: null, radial: false };
 
 // v0.1.0 preview lock (set from /api/project in initActions): hides the git/PR
 // write ops (Rollback, Sync, Adopt, Run ▾) — the server also 403s them. Local
@@ -393,26 +393,30 @@ let previewMode = false;
 // exposes, mapping "components" → the wave/component view and composites/
 // resources/attributes → the entity graph at detail 1/2/3. (detail 0 / per-
 // lexicon "stacks" is dropped from the UI — niche; the API still accepts it.)
+// "logical" (#63) is a re-projection, not a granularity stop like the others —
+// a traditional AWS architecture diagram: nested VPC/subnet ⊃ component boxes.
+// region/VPC/subnet boxes with topology nodes only — but it rides the same dial
+// as the coarse "infrastructure overview" the way a traditional AWS diagram sits
+// beside the resource views.
 const ZOOM_OPTS = [
   ["zoom: components", "components"],
+  ["zoom: logical", "logical"],
   ["zoom: composites", "composites"],
   ["zoom: resources", "resources"],
   ["zoom: attributes", "attributes"],
 ];
 const ZOOM_DETAIL = { composites: 1, resources: 2, attributes: 3 };
-/** Current zoom value from (components, detail). */
+/** Current zoom value from (components, logical, detail). */
 function zoomValue() {
   if (view.components) return "components";
+  if (view.logical) return "logical";
   return { 1: "composites", 2: "resources", 3: "attributes" }[view.detail] ?? "resources";
 }
-/** Apply a zoom value back onto (components, detail). */
+/** Apply a zoom value back onto (components, logical, detail). */
 function applyZoom(z) {
-  if (z === "components") {
-    view.components = true;
-  } else {
-    view.components = false;
-    view.detail = ZOOM_DETAIL[z] ?? 2;
-  }
+  view.components = z === "components";
+  view.logical = z === "logical";
+  if (z !== "components" && z !== "logical") view.detail = ZOOM_DETAIL[z] ?? 2;
 }
 
 // The deploy axes as currently displayed in the header (#59 unify, M2 #54
@@ -789,16 +793,103 @@ async function loadReconcile() {
   }
 }
 
+// Edge hover-highlight (helps trace one edge through an overlapping bundle — see
+// index.html's `.pin-edge-line` rules). pinhole already paints a fat transparent
+// hit-path per edge, so the CSS `:hover` does the visual work; this adds two
+// things CSS can't: raise the hovered edge to the top of the paint order (SVG has
+// no z-index) so it's not buried, and light up every edge touching a hovered node
+// (the `.edge-hi` class) so hovering a card traces all its connections.
+// Human-readable "why does this edge exist" from the IR edge's `viaAttr`
+// (src/logical.ts tags them). Shown as a native SVG <title> tooltip on hover;
+// the value also drives a dashed style for data-dependency links (index.html).
+const EDGE_REASON = {
+  "security-group ingress": "security-group ingress — traffic is allowed here",
+  "data dependency": "data dependency — reads/uses this store",
+};
+function wireEdgeHighlight(svgEl, ir) {
+  const edges = [...svgEl.querySelectorAll("g[data-edge-from]")];
+  if (!edges.length) return;
+  // Reason per edge, keyed by from|to (and its reverse, since pinhole may paint
+  // an edge in either direction relative to the IR).
+  const viaOf = new Map();
+  for (const e of ir.edges || []) {
+    if (!e.viaAttr) continue;
+    viaOf.set(`${e.from}|${e.to}`, e.viaAttr);
+    viaOf.set(`${e.to}|${e.from}`, e.viaAttr);
+  }
+  for (const g of edges) {
+    const from = g.getAttribute("data-edge-from");
+    const to = g.getAttribute("data-edge-to");
+    const via = viaOf.get(`${from}|${to}`);
+    if (via) g.setAttribute("data-edge-via", via); // drives the dashed style
+    const title = document.createElementNS(SVGNS, "title");
+    title.textContent = `${from} → ${to}${via ? "\n" + (EDGE_REASON[via] || via) : ""}`;
+    g.insertBefore(title, g.firstChild);
+  }
+  const raise = (g) => g.parentNode && g.parentNode.appendChild(g);
+  // Delegated: raise whichever edge the pointer is over (its hit-path catches it).
+  svgEl.addEventListener("mouseover", (e) => {
+    const g = e.target.closest && e.target.closest("g[data-edge-from]");
+    if (g) raise(g);
+  });
+  // Hovering a node lights (and raises) every edge on it.
+  for (const card of svgEl.querySelectorAll("[data-node-id]")) {
+    const id = card.getAttribute("data-node-id");
+    const touching = edges.filter((g) => g.getAttribute("data-edge-from") === id || g.getAttribute("data-edge-to") === id);
+    if (!touching.length) continue;
+    card.addEventListener("mouseenter", () => touching.forEach((g) => (g.classList.add("edge-hi"), raise(g))));
+    card.addEventListener("mouseleave", () => touching.forEach((g) => g.classList.remove("edge-hi")));
+  }
+}
+
+// GitLab's tanuki, one filled silhouette (the widely-used single-path mark),
+// scaled into a small badge. Self-contained (no external URL) so it survives the
+// static export + the CSP.
+const GITLAB_TANUKI =
+  "M23.6004 9.5927l-.0337-.0862L20.3.9814a.851.851 0 00-.3362-.405.8748.8748 0 00-.9997.0539.8748.8748 0 00-.29.4399l-2.2055 6.748H7.5375l-2.2055-6.748a.8573.8573 0 00-.29-.4412.8748.8748 0 00-.9997-.0537.8585.8585 0 00-.3362.405L.4332 9.5065l-.0325.0862a6.0657 6.0657 0 002.0119 7.0105l.0113.0087.03.0213 4.976 3.7264 2.462 1.8633 1.4995 1.1321a1.0085 1.0085 0 001.2197 0l1.4995-1.1321 2.462-1.8633 5.006-3.7489.0125-.01a6.0682 6.0682 0 002.0094-7.003z";
+const SVGNS = "http://www.w3.org/2000/svg";
+
+// Stamp a GitLab tanuki in the top-right corner of each wave lane — a visual cue
+// that the waves ARE the GitLab CI pipeline's stages (job `stage` = `wave-N`).
+// Post-processes the inlined SVG: each wave box is a `<rect>` immediately
+// followed by its `<text>wave-N</text>` title, so the rect gives the corner.
+function addGitlabWaveBadges(svgEl) {
+  const SIZE = 17;
+  for (const text of svgEl.querySelectorAll("text")) {
+    if (!/^wave-/i.test((text.textContent || "").trim())) continue;
+    const rect = text.previousElementSibling;
+    if (!rect || rect.tagName.toLowerCase() !== "rect") continue;
+    const rx = parseFloat(rect.getAttribute("x"));
+    const ry = parseFloat(rect.getAttribute("y"));
+    const rw = parseFloat(rect.getAttribute("width"));
+    const g = document.createElementNS(SVGNS, "g");
+    g.setAttribute("class", "gitlab-wave-badge");
+    g.setAttribute("transform", `translate(${rx + rw - SIZE - 12}, ${ry + 10}) scale(${SIZE / 24})`);
+    const path = document.createElementNS(SVGNS, "path");
+    path.setAttribute("d", GITLAB_TANUKI);
+    path.setAttribute("fill", "#FC6D26"); // GitLab brand orange
+    const title = document.createElementNS(SVGNS, "title");
+    title.textContent = "This wave is a GitLab CI stage (chant → GitLab pipeline)";
+    g.append(title, path);
+    rect.parentNode.insertBefore(g, text);
+  }
+}
+
 // Paint a fetched graph: the SVG, the meta line (with a drift summary in overlay
 // mode), the legend, and click-inspect wiring. Shared by load() and refresh().
 function render(ir, svg, m) {
   const overlay = m.mode === "overlay";
+  // Logical/architecture lens (#63): its own mode, but when an env is picked the
+  // projected nodes still carry the drift `_status`, so it reads as a drift view
+  // (same summary + legend as the entity overlay).
+  const logical = m.mode === "logical";
+  const drift = overlay || (logical && !!m.env);
   // M1.1 (#57): the component DAG's live per-component AWS status — a
   // different join than the entity overlay (see server's /api/graph), so it
   // gets its own summary + legend rather than reusing `overlay`'s.
   const componentStatus = m.mode === "component-status";
   let tail = ` · ${ir.edges.length} edges`;
-  if (overlay) {
+  if (drift) {
     // Summarise drift so "everything's blue" reads as "N pending".
     const c = { good: 0, warn: 0, accent: 0 };
     for (const n of ir.nodes) {
@@ -828,12 +919,20 @@ function render(ir, svg, m) {
   if (m.target !== undefined) axes.target = m.target;
   const axesTail = `${axes.tier ? " · tier " + axes.tier : ""}${axes.target ? " · target " + axes.target : ""}`;
   document.getElementById("meta").textContent =
-    `${scope}${m.env ? " · env " + m.env : ""}${axesTail}${overlay ? " · overlay" : ""}${m.components ? " · components" : ""}${componentStatus ? " · live status" : ""} · ${ir.nodes.length} nodes${tail}`;
-  document.getElementById("legend").style.display = overlay ? "flex" : "none";
+    `${scope}${m.env ? " · env " + m.env : ""}${axesTail}${overlay ? " · overlay" : ""}${logical ? " · logical" : ""}${m.components ? " · components" : ""}${componentStatus ? " · live status" : ""} · ${ir.nodes.length} nodes${tail}`;
+  document.getElementById("legend").style.display = drift ? "flex" : "none";
   document.getElementById("component-legend").style.display = componentStatus ? "flex" : "none";
   // Keep the zoom picker in sync when the dial's "observe" flips to components.
   const zp = document.getElementById("zoom-picker");
   if (zp) zp.value = zoomValue();
+  // Radial applies to the entity zooms only — grey it out in the components and
+  // logical views (both lay themselves out: waves / nested architecture boxes).
+  const rt = document.getElementById("radial-toggle");
+  if (rt) {
+    const off = view.components || view.logical;
+    rt.style.opacity = off ? "0.4" : "";
+    rt.querySelector("input").disabled = off;
+  }
   const g = document.getElementById("graph");
   // Ghostty theming (#62): strip pinhole's baked-in `:root{--pin-*}` defaults from the
   // inlined SVG so its var(--pin-*) fills resolve from behold's live documentElement tokens
@@ -849,11 +948,16 @@ function render(ir, svg, m) {
     svgEl.removeAttribute("height");
     svgEl.setAttribute("preserveAspectRatio", "xMidYMid meet");
     setupGraphViewBox(svgEl);
+    wireEdgeHighlight(svgEl, ir);
+    // Mark each wave lane as a GitLab CI stage when the CI projection is loaded
+    // (components view only) — waves ARE the pipeline's stages (`chant build
+    // --components --generate gitlab`, see loadCi / #58).
+    if (view.components && ciByComponent.size) addGitlabWaveBadges(svgEl);
   }
   ensureZoomControls(g);
   ensureBackToInfra(g);
   wire(ir);
-  if (view.radial && !view.components) addRadialLabels(ir);
+  if (view.radial && !view.components && !view.logical) addRadialLabels(ir);
   renderDial();
 }
 
@@ -1075,12 +1179,21 @@ async function load(opts = {}) {
       // cross-substrate entity overlay, which components never use.
       q.set("components", "1");
       if (view.env) q.set("env", view.env);
+    } else if (view.logical) {
+      // Logical/architecture lens (#63): the server re-projects at detail 3
+      // regardless of the dial, so detail/radial don't apply. With an env it
+      // projects the live overlay (drift colours preserved), else the source.
+      q.set("logical", "1");
+      if (view.env) {
+        endpoint = "/api/overlay";
+        q.set("env", view.env);
+      }
     } else if (view.env) {
       endpoint = "/api/overlay";
       q.set("env", view.env);
     }
     // Radial layout (entity view only) — curl the wide DAG onto concentric rings.
-    if (view.radial && !view.components) q.set("radial", "1");
+    if (view.radial && !view.components && !view.logical) q.set("radial", "1");
     // The CI + resources facets are component-DAG-mode-only details. Load
     // both whenever components mode is on, env picked or not — #59 unifies
     // the CI facet (#58), the live-status join (#57), and resources (#59) so
@@ -1193,7 +1306,7 @@ async function initPickers() {
   });
   zoomPicker.id = "zoom-picker";
   zoomPicker.title =
-    "Granularity, coarse → fine — components: deployable units, wave-laned, live per-component status (what \"observe\" shows) · composites · resources: every resource (default) · attributes: resources + cross-stack wiring. An env colours components by live status, the rest by drift overlay.";
+    "Coarse → fine — components: deployable units, wave-laned, live per-component status (what \"observe\" shows) · logical: a traditional AWS architecture diagram (nested VPC/subnet ⊃ component boxes, CIDRs as labels, one headline resource per composite) · composites · resources: every resource (default) · attributes: resources + cross-stack wiring. An env colours components by live status, the rest by drift overlay.";
   host.appendChild(zoomPicker);
   // Radial layout: curl the wide entity graph onto concentric rings so far more
   // fits in view (loomster: 13:1 wide → ~1:1). Entity zooms only — the wave-laned

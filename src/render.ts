@@ -6,11 +6,39 @@
  * src/overlay.ts. behold owns the live data + the server + (later) the
  * temporal/action layers around this.
  */
-import { layoutIr, renderSvg } from "@intentius/pinhole";
+import { layoutIr, layoutArchitecture, renderSvg } from "@intentius/pinhole";
 import type { GraphIR, IRGroups } from "@intentius/chant";
+import type { ByContainer } from "./logical.ts";
 
 export interface RenderResult {
   svg: string;
+}
+
+/** Paint the logical/architecture view (#63) — pinhole's `layoutArchitecture`
+ * (chant#74) nests the resource cards inside their container boxes (VPC ⊃ subnet
+ * ⊃ component ⊃ resource, per `byContainer`) and routes the surviving edges
+ * between them; `renderSvg` paints the nested boundary boxes. behold's own title
+ * band is suppressed (the SPA header owns it). */
+export function renderArchitecture(ir: GraphIR, byContainer: ByContainer, opts: { theme?: string } = {}): RenderResult {
+  // Spacing nudge by edge density: the projected graph can be nearly complete
+  // (every workload wired to the gateway/each other), so a dense edge set bundles
+  // into overlapping corridors. Spread nodes further apart the tighter the graph
+  // is — `spread` runs 0 (a tree) → 1.5 (very dense) — giving the edges more room
+  // to fan out, rather than a blunt uniform bump. Sparse graphs keep pinhole's
+  // compact defaults (nodesep 48 / ranksep 60).
+  const spread = Math.min(1.5, ir.edges.length / Math.max(ir.nodes.length, 1));
+  const layout = layoutArchitecture(ir, byContainer, {
+    fit: true,
+    nodesep: Math.round(48 + spread * 48),
+    ranksep: Math.round(60 + spread * 56),
+  });
+  const svg = renderSvg(ir, layout, {
+    fit: true,
+    hideTitle: true,
+    groups: layout.groups,
+    ...(opts.theme ? { theme: opts.theme as never } : {}),
+  });
+  return { svg };
 }
 
 /** `groups.byWave` (component DAG, M1.0 spike) and `groups.byStack` (multi-
@@ -45,6 +73,11 @@ export function renderGraph(ir: GraphIR, opts: { theme?: string; boxes?: "byStac
   // for ungrouped graphs (the entity/infra view); the wave-boxed component graph
   // keeps its lanes.
   if (opts.radial && !boxes) radializeLayout(layout as unknown as RadialLayout, groupKeyByNode(ir));
+  // Otherwise, pull disconnected islands in: dagre strings each connected
+  // component out along a row, so a few unconnected composites sprawl far to the
+  // right of the action. Pack the components into compact shelves instead (a
+  // no-op when the graph is a single connected component).
+  else if (!boxes) packComponents(layout as unknown as RadialLayout, ir);
   const svg = renderSvg(ir, layout, {
     fit: true,
     hideTitle: true,
@@ -65,9 +98,82 @@ interface RadialLayout {
   height: number;
 }
 
-/** Typical card width — the layout node carries no per-node size, so use a
- * constant when spacing a ring so neighbours don't overlap. */
+/** Typical card width/height — the layout node carries no per-node size, so use
+ * constants when spacing/packing so neighbours don't overlap. */
 const NODE_W = 175;
+const NODE_H = 104;
+
+/** Pack a laid-out graph's disconnected components into compact shelves, so a few
+ * unconnected islands don't string out far to the right of the main cluster
+ * (dagre lays each connected component along its own row). Connected components
+ * are found by union-find over the IR edges; each keeps its internal dagre layout
+ * and is translated as a rigid block. Components are shelf-packed biggest-first
+ * into a roughly square target width, so the main cluster anchors top-left and
+ * the islands tuck in beside/below it. No-op for a single-component graph.
+ * Mutates node x/y and the layout bounds; edges re-anchor to the new centres. */
+function packComponents(layout: RadialLayout, ir: GraphIR): void {
+  const nodes = layout.nodes;
+  if (!Array.isArray(nodes) || nodes.length < 2) return;
+  const idxOf = new Map(nodes.map((n, i) => [n.id, i]));
+  const parent = nodes.map((_, i) => i);
+  const find = (x: number): number => {
+    while (parent[x] !== x) x = parent[x] = parent[parent[x]];
+    return x;
+  };
+  for (const e of ir.edges) {
+    const a = idxOf.get(e.from);
+    const b = idxOf.get(e.to);
+    if (a != null && b != null) parent[find(a)] = find(b);
+  }
+  const comps = new Map<number, RadialLayout["nodes"]>();
+  nodes.forEach((n, i) => (comps.get(find(i)) ?? comps.set(find(i), []).get(find(i))!).push(n));
+  if (comps.size < 2) return; // a single connected component — dagre is already compact
+
+  // Bounding box per component (card centres padded by half a card each side).
+  const boxes = [...comps.values()].map((ns) => {
+    const xs = ns.map((n) => n.x);
+    const ys = ns.map((n) => n.y);
+    const minX = Math.min(...xs) - NODE_W / 2;
+    const minY = Math.min(...ys) - NODE_H / 2;
+    return { ns, minX, minY, w: Math.max(...xs) + NODE_W / 2 - minX, h: Math.max(...ys) + NODE_H / 2 - minY };
+  });
+  boxes.sort((a, b) => b.w * b.h - a.w * a.h); // biggest cluster first (anchors top-left)
+
+  const gap = 56;
+  const totalArea = boxes.reduce((s, b) => s + (b.w + gap) * (b.h + gap), 0);
+  const targetW = Math.max(boxes[0].w, Math.sqrt(totalArea) * 1.3); // roughly square
+  let shelfX = 0;
+  let shelfY = 0;
+  let shelfH = 0;
+  for (const b of boxes) {
+    if (shelfX > 0 && shelfX + b.w > targetW) {
+      shelfX = 0;
+      shelfY += shelfH + gap;
+      shelfH = 0;
+    }
+    const dx = shelfX - b.minX;
+    const dy = shelfY - b.minY;
+    for (const n of b.ns) {
+      n.x += dx;
+      n.y += dy;
+    }
+    shelfX += b.w + gap;
+    shelfH = Math.max(shelfH, b.h);
+  }
+
+  // Shift to positive coords + reset bounds so renderSvg's viewBox wraps it.
+  const xs = nodes.map((n) => n.x);
+  const ys = nodes.map((n) => n.y);
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  const pad = NODE_W;
+  for (const n of nodes) {
+    n.x = n.x - minX + pad;
+    n.y = n.y - minY + pad;
+  }
+  layout.width = Math.max(...xs) - minX + pad * 2;
+  layout.height = Math.max(...ys) - minY + pad * 2;
+}
 
 /** Group key per node id — the `src/<component>/` a node is declared under, with
  * `src/examples/…` folded to "examples" and non-src nodes bucketed by lexicon.

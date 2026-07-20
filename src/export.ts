@@ -20,13 +20,13 @@ import { createApp, type ServerOptions } from "./server.ts";
  * frontend appends (target/lens/etc. don't vary a static bundle). Sorted, so
  * capture and replay agree regardless of param order. MUST stay identical to the
  * copy in web/app.js (`canonicalKey`). */
-const LENS_PARAMS = ["components", "detail", "env", "radial", "tier"];
+const LENS_PARAMS = ["components", "detail", "env", "logical", "radial", "tier"];
 export function canonicalKey(path: string, params: URLSearchParams): string {
-  // The component-DAG view ignores detail/radial (they're entity-graph knobs),
-  // but the frontend still appends the current detail — drop them here so the
-  // request matches the single captured components snapshot.
-  const components = params.get("components") === "1";
-  const q = LENS_PARAMS.filter((k) => params.has(k) && !(components && (k === "detail" || k === "radial")))
+  // The component-DAG and logical views ignore detail/radial (they're
+  // entity-graph knobs), but the frontend still appends the current detail —
+  // drop them here so the request matches the single captured snapshot.
+  const flat = params.get("components") === "1" || params.get("logical") === "1";
+  const q = LENS_PARAMS.filter((k) => params.has(k) && !(flat && (k === "detail" || k === "radial")))
     .map((k) => `${k}=${params.get(k)}`)
     .join("&");
   return q ? `${path}?${q}` : path;
@@ -63,6 +63,7 @@ export function captureKeys(axes: ExportAxes): string[] {
         return p;
       };
       add("/api/graph", lens({ components: "1" })); // components / waves view
+      add(env ? "/api/overlay" : "/api/graph", lens({ logical: "1" })); // logical/architecture lens (#63)
       add("/api/ci", lens({})); // CI facet — the frontend requests it without `components`
       if (env) {
         add("/api/reconcile", lens({}));

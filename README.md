@@ -29,8 +29,10 @@ It resolves the Loom project (a path arg, `$BEHOLD_LOOM_DIR`, or a sibling
 Floci isn't up, **Bring up** on its substrate pill boots the emulator and deploys
 Loom. Needs Docker.
 
-**What you can do:** explore the graph at every **zoom** (components → composites
-→ resources → attributes, with an optional radial layout), watch live
+**What you can do:** explore the graph at every **zoom** (components → logical →
+composites → resources → attributes, with an optional radial layout — where
+_logical_ is a traditional AWS architecture diagram: nested VPC/subnet ⊃ component
+boxes, CIDRs as labels, one headline resource per composite), watch live
 per-component status, read the reconcile plan, inspect any node, and **deploy to
 the emulator** — the full observe → reconcile → apply, Apply all, and a one-click
 Reset.
@@ -43,7 +45,7 @@ Loom-on-Floci only.
 
 `behold export` freezes whatever estate you're looking at into a **self-contained
 static folder** that any static host can serve — a read-only but fully
-interactive snapshot. Pan/zoom, the zoom dial (components → composites →
+interactive snapshot. Pan/zoom, the zoom dial (components → logical → composites →
 resources → attributes), radial layout, the inspect pane, and the env/tier
 pickers all work client-side; there's no live observe or deploy.
 
