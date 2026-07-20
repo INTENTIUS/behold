@@ -77,11 +77,21 @@ const HEADLINE_KINDS = new Set([
   "AWS::Cognito::UserPool",
 ]);
 
-// Property hubs — never routed THROUGH when contracting edges (a shared IAM role
-// or KMS key would wire every workload to every other). Distinct from ordinary
-// dropped wiring (listeners, target groups, parameters), which IS contracted
-// through so the real traffic path survives.
-const HUB_KINDS = new Set([
+// Never routed THROUGH when contracting edges — bridging across these would wire
+// every workload to every other and produce a hairball. Two families:
+//   - property hubs: a shared IAM role / KMS key / log group is referenced by
+//     half the estate, so contracting through one invents edges between unrelated
+//     resources;
+//   - containment fabric: the VPC, subnets, route tables and gateway attachments
+//     are what *every* resource in the VPC references, so contracting through
+//     them connects everything to everything (and to the internet gateway). That
+//     relationship is CONTAINMENT — already shown by the nested boxes — not
+//     traffic, so it must not become an edge.
+// Ordinary dropped wiring (listeners, target groups, parameters, security-group
+// ingress) is still contracted through, so the real request path survives
+// (ALB → listener → target group → service).
+const NO_CONTRACT_KINDS = new Set([
+  // property hubs
   "AWS::IAM::Role",
   "AWS::IAM::Policy",
   "AWS::IAM::ManagedPolicy",
@@ -91,6 +101,13 @@ const HUB_KINDS = new Set([
   "AWS::Logs::LogGroup",
   "AWS::SecretsManager::Secret",
   "AWS::SSM::Parameter",
+  // containment fabric
+  "AWS::EC2::VPC",
+  "AWS::EC2::Subnet",
+  "AWS::EC2::RouteTable",
+  "AWS::EC2::Route",
+  "AWS::EC2::SubnetRouteTableAssociation",
+  "AWS::EC2::VPCGatewayAttachment",
 ]);
 
 const REGION_RE = /\b([a-z]{2}-[a-z]+-\d)\b/;
@@ -335,7 +352,7 @@ export function projectLogical(ir: GraphIR): LogicalProjection {
     seenEdge.add(key);
     edges.push({ from: a, to: b, kind: "ref" });
   };
-  const contractable = (id: string) => !keptSet.has(id) && !HUB_KINDS.has(byId.get(id)?.kind ?? "");
+  const contractable = (id: string) => !keptSet.has(id) && !NO_CONTRACT_KINDS.has(byId.get(id)?.kind ?? "");
   for (const start of keptSet) {
     // BFS to other headline nodes through contractable (dropped, non-hub) nodes.
     const seen = new Set([start]);

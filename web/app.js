@@ -793,6 +793,64 @@ async function loadReconcile() {
   }
 }
 
+// Edge hover-highlight (helps trace one edge through an overlapping bundle — see
+// index.html's `.pin-edge-line` rules). pinhole already paints a fat transparent
+// hit-path per edge, so the CSS `:hover` does the visual work; this adds two
+// things CSS can't: raise the hovered edge to the top of the paint order (SVG has
+// no z-index) so it's not buried, and light up every edge touching a hovered node
+// (the `.edge-hi` class) so hovering a card traces all its connections.
+function wireEdgeHighlight(svgEl) {
+  const edges = [...svgEl.querySelectorAll("g[data-edge-from]")];
+  if (!edges.length) return;
+  const raise = (g) => g.parentNode && g.parentNode.appendChild(g);
+  // Delegated: raise whichever edge the pointer is over (its hit-path catches it).
+  svgEl.addEventListener("mouseover", (e) => {
+    const g = e.target.closest && e.target.closest("g[data-edge-from]");
+    if (g) raise(g);
+  });
+  // Hovering a node lights (and raises) every edge on it.
+  for (const card of svgEl.querySelectorAll("[data-node-id]")) {
+    const id = card.getAttribute("data-node-id");
+    const touching = edges.filter((g) => g.getAttribute("data-edge-from") === id || g.getAttribute("data-edge-to") === id);
+    if (!touching.length) continue;
+    card.addEventListener("mouseenter", () => touching.forEach((g) => (g.classList.add("edge-hi"), raise(g))));
+    card.addEventListener("mouseleave", () => touching.forEach((g) => g.classList.remove("edge-hi")));
+  }
+}
+
+// GitLab's tanuki, one filled silhouette (the widely-used single-path mark),
+// scaled into a small badge. Self-contained (no external URL) so it survives the
+// static export + the CSP.
+const GITLAB_TANUKI =
+  "M23.6004 9.5927l-.0337-.0862L20.3.9814a.851.851 0 00-.3362-.405.8748.8748 0 00-.9997.0539.8748.8748 0 00-.29.4399l-2.2055 6.748H7.5375l-2.2055-6.748a.8573.8573 0 00-.29-.4412.8748.8748 0 00-.9997-.0537.8585.8585 0 00-.3362.405L.4332 9.5065l-.0325.0862a6.0657 6.0657 0 002.0119 7.0105l.0113.0087.03.0213 4.976 3.7264 2.462 1.8633 1.4995 1.1321a1.0085 1.0085 0 001.2197 0l1.4995-1.1321 2.462-1.8633 5.006-3.7489.0125-.01a6.0682 6.0682 0 002.0094-7.003z";
+const SVGNS = "http://www.w3.org/2000/svg";
+
+// Stamp a GitLab tanuki in the top-right corner of each wave lane — a visual cue
+// that the waves ARE the GitLab CI pipeline's stages (job `stage` = `wave-N`).
+// Post-processes the inlined SVG: each wave box is a `<rect>` immediately
+// followed by its `<text>wave-N</text>` title, so the rect gives the corner.
+function addGitlabWaveBadges(svgEl) {
+  const SIZE = 17;
+  for (const text of svgEl.querySelectorAll("text")) {
+    if (!/^wave-/i.test((text.textContent || "").trim())) continue;
+    const rect = text.previousElementSibling;
+    if (!rect || rect.tagName.toLowerCase() !== "rect") continue;
+    const rx = parseFloat(rect.getAttribute("x"));
+    const ry = parseFloat(rect.getAttribute("y"));
+    const rw = parseFloat(rect.getAttribute("width"));
+    const g = document.createElementNS(SVGNS, "g");
+    g.setAttribute("class", "gitlab-wave-badge");
+    g.setAttribute("transform", `translate(${rx + rw - SIZE - 12}, ${ry + 10}) scale(${SIZE / 24})`);
+    const path = document.createElementNS(SVGNS, "path");
+    path.setAttribute("d", GITLAB_TANUKI);
+    path.setAttribute("fill", "#FC6D26"); // GitLab brand orange
+    const title = document.createElementNS(SVGNS, "title");
+    title.textContent = "This wave is a GitLab CI stage (chant → GitLab pipeline)";
+    g.append(title, path);
+    rect.parentNode.insertBefore(g, text);
+  }
+}
+
 // Paint a fetched graph: the SVG, the meta line (with a drift summary in overlay
 // mode), the legend, and click-inspect wiring. Shared by load() and refresh().
 function render(ir, svg, m) {
@@ -862,6 +920,11 @@ function render(ir, svg, m) {
     svgEl.removeAttribute("height");
     svgEl.setAttribute("preserveAspectRatio", "xMidYMid meet");
     setupGraphViewBox(svgEl);
+    wireEdgeHighlight(svgEl);
+    // Mark each wave lane as a GitLab CI stage when the CI projection is loaded
+    // (components view only) — waves ARE the pipeline's stages (`chant build
+    // --components --generate gitlab`, see loadCi / #58).
+    if (view.components && ciByComponent.size) addGitlabWaveBadges(svgEl);
   }
   ensureZoomControls(g);
   ensureBackToInfra(g);

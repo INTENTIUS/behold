@@ -20,7 +20,18 @@ export interface RenderResult {
  * between them; `renderSvg` paints the nested boundary boxes. behold's own title
  * band is suppressed (the SPA header owns it). */
 export function renderArchitecture(ir: GraphIR, byContainer: ByContainer, opts: { theme?: string } = {}): RenderResult {
-  const layout = layoutArchitecture(ir, byContainer, { fit: true });
+  // Spacing nudge by edge density: the projected graph can be nearly complete
+  // (every workload wired to the gateway/each other), so a dense edge set bundles
+  // into overlapping corridors. Spread nodes further apart the tighter the graph
+  // is — `spread` runs 0 (a tree) → 1.5 (very dense) — giving the edges more room
+  // to fan out, rather than a blunt uniform bump. Sparse graphs keep pinhole's
+  // compact defaults (nodesep 48 / ranksep 60).
+  const spread = Math.min(1.5, ir.edges.length / Math.max(ir.nodes.length, 1));
+  const layout = layoutArchitecture(ir, byContainer, {
+    fit: true,
+    nodesep: Math.round(48 + spread * 48),
+    ranksep: Math.round(60 + spread * 56),
+  });
   const svg = renderSvg(ir, layout, {
     fit: true,
     hideTitle: true,

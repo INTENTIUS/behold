@@ -48,6 +48,14 @@
          the "⤢ fit" button resets. behold also adds a selection highlight. */
       #graph svg { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
       #graph svg.grabbing { cursor: grabbing; }
+      /* Edge hover-highlight — trace a single edge through an overlapping bundle.
+         pinhole already paints a fat transparent hit-path per edge (pointer-events
+         on the stroke), so hovering the edge OR either endpoint node lights the
+         visible line. The hovered edge is also raised to the top in JS so it isn't
+         buried under the bundle. */
+      #graph g[data-edge-from] .pin-edge-line { transition: stroke .08s ease, stroke-width .08s ease; }
+      #graph g[data-edge-from]:hover .pin-edge-line,
+      #graph g[data-edge-from].edge-hi .pin-edge-line { stroke: var(--pending); stroke-width: 3.2; }
       /* Fit reset + a zoom hint, floating top-right of the graph pane. */
       #zoom-toggle { position: absolute; top: 8px; right: 8px; z-index: 2; background: var(--panel);
         color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px;
