@@ -17,6 +17,12 @@ describe("canonicalKey", () => {
   it("returns the bare path when no lens params are present", () => {
     expect(canonicalKey("/api/project", new URLSearchParams())).toBe("/api/project");
   });
+
+  it("drops detail/radial for the components view (the frontend appends them, the DAG ignores them)", () => {
+    // load() always sends the current detail even in the components view.
+    const k = canonicalKey("/api/graph", new URLSearchParams("components=1&detail=3&env=local&radial=1"));
+    expect(k).toBe("/api/graph?components=1&env=local");
+  });
 });
 
 describe("captureKeys", () => {

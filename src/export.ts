@@ -22,8 +22,12 @@ import { createApp, type ServerOptions } from "./server.ts";
  * copy in web/app.js (`canonicalKey`). */
 const LENS_PARAMS = ["components", "detail", "env", "radial", "tier"];
 export function canonicalKey(path: string, params: URLSearchParams): string {
-  const q = LENS_PARAMS.map((k) => (params.has(k) ? `${k}=${params.get(k)}` : null))
-    .filter(Boolean)
+  // The component-DAG view ignores detail/radial (they're entity-graph knobs),
+  // but the frontend still appends the current detail — drop them here so the
+  // request matches the single captured components snapshot.
+  const components = params.get("components") === "1";
+  const q = LENS_PARAMS.filter((k) => params.has(k) && !(components && (k === "detail" || k === "radial")))
+    .map((k) => `${k}=${params.get(k)}`)
     .join("&");
   return q ? `${path}?${q}` : path;
 }
@@ -59,7 +63,7 @@ export function captureKeys(axes: ExportAxes): string[] {
         return p;
       };
       add("/api/graph", lens({ components: "1" })); // components / waves view
-      add("/api/ci", lens({ components: "1" })); // CI facet
+      add("/api/ci", lens({})); // CI facet — the frontend requests it without `components`
       if (env) {
         add("/api/reconcile", lens({}));
         add("/api/resources", lens({}));

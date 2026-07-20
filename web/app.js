@@ -21,7 +21,10 @@ if (staticMode) {
  * that select a distinct snapshot. MUST match src/export.ts `canonicalKey`. */
 const LENS_PARAMS = ["components", "detail", "env", "radial", "tier"];
 function canonicalKey(path, params) {
-  const q = LENS_PARAMS.filter((k) => params.has(k))
+  // Components view ignores detail/radial — drop them so it matches the single
+  // captured components snapshot (MUST match src/export.ts).
+  const components = params.get("components") === "1";
+  const q = LENS_PARAMS.filter((k) => params.has(k) && !(components && (k === "detail" || k === "radial")))
     .map((k) => `${k}=${params.get(k)}`)
     .join("&");
   return q ? `${path}?${q}` : path;
