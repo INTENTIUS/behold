@@ -39,6 +39,28 @@ Reset.
 cloud, and the git/PR actions (Rollback, Sync, Adopt) — the preview is
 Loom-on-Floci only.
 
+## Export & host — a shareable, interactive snapshot
+
+`behold export` freezes whatever estate you're looking at into a **self-contained
+static folder** that any static host can serve — a read-only but fully
+interactive snapshot. Pan/zoom, the zoom dial (components → composites →
+resources → attributes), radial layout, the inspect pane, and the env/tier
+pickers all work client-side; there's no live observe or deploy.
+
+```sh
+npm run dev -- export --out ./behold-export     # defaults to Loom, like preview
+#   or your own estate:
+#   npm run dev -- export <project> --env <name> --out ./behold-export
+npx serve ./behold-export                        # → open it, no backend running
+```
+
+It captures every read endpoint for the whole lens matrix (each env/tier × zoom ×
+radial) in-process — the exact same handlers the live server runs, so a snapshot
+is byte-identical to live. **Host it anywhere** — it's just files: Cloudflare
+Pages (drag the folder in, or `wrangler pages deploy`), Workers Assets, GitHub
+Pages, S3, nginx. (The live app can't run on a Worker — it needs Docker + Floci +
+a chant subprocess — but the export can.)
+
 ## Try it — your first apply, no cloud account
 
 The bundled `example-writes` is one S3 bucket. `--local` boots a local emulator
