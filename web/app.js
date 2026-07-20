@@ -3,6 +3,13 @@
 // mature painter (themes, icons, `_status` drift colouring); behold owns the data,
 // the inspect panel, and (later) the lanes + delegated actions.
 
+// Ghostty colour themes (#62): apply the persisted/default theme's tokens as CSS vars
+// before first paint (so the whole graph + chrome recolour from one source), then mount
+// the theme picker into the header's #pickers slot.
+import { initTheme, mountThemePicker } from "./theme.js";
+initTheme();
+mountThemePicker(document.getElementById("pickers"));
+
 // Static-export mode (`behold export`): the SPA runs off a pre-captured bundle
 // with no backend. Detect the flag the export injects, load its manifest, and
 // replay every read from `snapshots/` — the graph, zoom dial, radial, inspect,
