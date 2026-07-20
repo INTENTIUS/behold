@@ -3,6 +3,41 @@
 // mature painter (themes, icons, `_status` drift colouring); behold owns the data,
 // the inspect panel, and (later) the lanes + delegated actions.
 
+// Static-export mode (`behold export`): the SPA runs off a pre-captured bundle
+// with no backend. Detect the flag the export injects, load its manifest, and
+// replay every read from `snapshots/` — the graph, zoom dial, radial, inspect,
+// and env/tier pickers all work; live observe + all writes are off.
+const staticMode = !!window.__BEHOLD_STATIC__;
+let manifest = null;
+if (staticMode) {
+  try {
+    manifest = await fetch("./manifest.json").then((r) => r.json());
+  } catch {
+    /* no manifest → apiFetch falls back to a not-captured error */
+  }
+}
+
+/** Canonical key for a read URL — path + the lens params (whitelisted, sorted)
+ * that select a distinct snapshot. MUST match src/export.ts `canonicalKey`. */
+const LENS_PARAMS = ["components", "detail", "env", "radial", "tier"];
+function canonicalKey(path, params) {
+  const q = LENS_PARAMS.filter((k) => params.has(k))
+    .map((k) => `${k}=${params.get(k)}`)
+    .join("&");
+  return q ? `${path}?${q}` : path;
+}
+
+/** Fetch a read endpoint — live `fetch` normally; in static mode, resolve the
+ * canonical key against the manifest and load the captured snapshot instead. */
+function apiFetch(url) {
+  if (!staticMode) return fetch(url);
+  const u = new URL(url, location.origin);
+  const key = canonicalKey(u.pathname, u.searchParams);
+  const file = manifest && manifest.keyToFile[key];
+  if (!file) return Promise.resolve(new Response(JSON.stringify({ error: `not in this static export: ${key}` }), { status: 404, headers: { "content-type": "application/json" } }));
+  return fetch("./" + file);
+}
+
 const STATUS_LABEL = { good: "managed", warn: "foreign", accent: "pending" };
 // M1.1 (#57), palette hardened M2 (#54): the component-DAG live-status join
 // paints the same `_status` vocabulary (good/warn/accent/neutral) but with
@@ -182,7 +217,7 @@ function inspect(node) {
   // Live drift for this node (#27): field-level changes since the last snapshot,
   // or its presence category. On demand — a live diff is a build + cloud query,
   // so it's a click, not automatic. Only meaningful with an env (overlay mode).
-  if (view.env && st) {
+  if (view.env && st && !staticMode) {
     const wrap = document.createElement("p");
     wrap.style.marginTop = "12px";
     const b = button("Load live state", "", async () => {
@@ -377,7 +412,7 @@ let ciByComponent = new Map();
 async function loadCi() {
   try {
     const q = lensParams(new URLSearchParams(view.env ? { env: view.env } : {}));
-    const res = await fetch(`/api/ci?${q}`);
+    const res = await apiFetch(`/api/ci?${q}`);
     const j = await res.json();
     if (!res.ok) throw new Error(j.error || res.statusText);
     ciByComponent = new Map((j.jobs || []).map((job) => [job.component, job]));
@@ -399,7 +434,7 @@ let resourcesByComponent = {};
 async function loadResources() {
   try {
     const q = lensParams(new URLSearchParams(view.env ? { env: view.env } : {}));
-    const res = await fetch(`/api/resources?${q}`);
+    const res = await apiFetch(`/api/resources?${q}`);
     const j = await res.json();
     if (!res.ok) throw new Error(j.error || res.statusText);
     resourcesByComponent = j.byComponent || {};
@@ -468,7 +503,7 @@ async function getCompositeMembers(instanceId) {
     compositeMembersCache = {};
     try {
       const q = lensParams(new URLSearchParams({ detail: "3" }));
-      const j = await fetch(`/api/graph?${q}`).then((r) => r.json());
+      const j = await apiFetch(`/api/graph?${q}`).then((r) => r.json());
       for (const n of (j.ir && j.ir.nodes) || []) {
         if (n.compositeInstance) (compositeMembersCache[n.compositeInstance] ||= []).push({ id: n.id, kind: n.kind });
       }
@@ -514,25 +549,29 @@ function renderDial() {
   );
   reconcileBtn.title = `Pending change set for ${view.env} (chant lifecycle plan --live, read-only) — click to load.`;
   track.appendChild(reconcileBtn);
-  track.appendChild(dialArrow());
 
+  // Apply is the write step — omitted in a static export (observe + reconcile
+  // above are reads and stay).
   const applying = applyProgress && applyProgress.status === "running";
-  const applyBtn = button(
-    applying ? "apply · running…" : "apply",
-    "dial-step" + (applyPicker || applying ? " active" : ""),
-    () => {
-      if (applying) return; // a run is already in flight — its progress is on screen below
-      applyPicker = !applyPicker;
-      if (applyPicker) loadComponentChoices().then(renderDial);
-      renderDial();
-    },
-  );
-  applyBtn.title = `Delegated write: chant run <component|all> --components --env ${view.env} --progress-json — behold triggers, chant executes.`;
-  track.appendChild(applyBtn);
+  if (!staticMode) {
+    track.appendChild(dialArrow());
+    const applyBtn = button(
+      applying ? "apply · running…" : "apply",
+      "dial-step" + (applyPicker || applying ? " active" : ""),
+      () => {
+        if (applying) return; // a run is already in flight — its progress is on screen below
+        applyPicker = !applyPicker;
+        if (applyPicker) loadComponentChoices().then(renderDial);
+        renderDial();
+      },
+    );
+    applyBtn.title = `Delegated write: chant run <component|all> --components --env ${view.env} --progress-json — behold triggers, chant executes.`;
+    track.appendChild(applyBtn);
+  }
 
   host.appendChild(track);
   if (reconcileCache) host.appendChild(renderReconcileDetail(reconcileCache));
-  if (applyPicker && !applying) host.appendChild(renderApplyPicker());
+  if (applyPicker && !applying && !staticMode) host.appendChild(renderApplyPicker());
   if (applyProgress && applyProgress.waves.length) host.appendChild(renderApplyProgress(applyProgress));
 }
 
@@ -568,7 +607,7 @@ async function loadComponentChoices() {
   if (componentChoices.length) return componentChoices;
   try {
     const q = lensParams(new URLSearchParams({ components: "1", ...(view.env ? { env: view.env } : {}) }));
-    const res = await fetch(`/api/graph?${q}`);
+    const res = await apiFetch(`/api/graph?${q}`);
     const j = await res.json();
     const nodes = (j.ir && j.ir.nodes ? j.ir.nodes : []).filter((n) => n.kind === "Component");
     componentChoices = nodes.map((n) => n.id);
@@ -605,7 +644,7 @@ async function confirmApplyAll() {
   let total = 0;
   let rolledBack = 0;
   try {
-    const j = await fetch(`/api/graph?components=1&env=${encodeURIComponent(env)}`).then((r) => r.json());
+    const j = await apiFetch(`/api/graph?components=1&env=${encodeURIComponent(env)}`).then((r) => r.json());
     const nodes = (j.ir && j.ir.nodes) || [];
     total = nodes.length;
     deployed = nodes.filter((n) => n.attrs && n.attrs._status === "good").length;
@@ -710,7 +749,7 @@ function renderReconcileDetail(r) {
 async function loadReconcile() {
   try {
     const q = lensParams(new URLSearchParams({ env: view.env }));
-    const res = await fetch(`/api/reconcile?${q}`);
+    const res = await apiFetch(`/api/reconcile?${q}`);
     const j = await res.json();
     if (!res.ok) throw new Error(j.tierNote || j.error || res.statusText);
     reconcileCache = j;
@@ -1015,7 +1054,7 @@ async function load() {
       ciByComponent = new Map();
       resourcesByComponent = {};
     }
-    const res = await fetch(`${endpoint}?${q}`);
+    const res = await apiFetch(`${endpoint}?${q}`);
     const body = await res.json();
     if (!res.ok) {
       // M2 (#54): a tier-scoped failure gets the calmer inline note instead of
@@ -1087,7 +1126,7 @@ function toggle(label, title, checked, onChange) {
 }
 
 async function initPickers() {
-  const info = await fetch("/api/project")
+  const info = await apiFetch("/api/project")
     .then((r) => r.json())
     .catch(() => ({ environments: [], currentEnv: null }));
   view.env = info.currentEnv || null;
@@ -1171,7 +1210,9 @@ initPickers();
 
 // Live updates (#3): re-pull when the server signals the served source changed.
 // EventSource reconnects on its own if the server restarts.
-const events = new EventSource("/api/events");
+// No backend in a static export → no live event stream; a no-op keeps the
+// `events.addEventListener(...)` wiring below harmless.
+const events = staticMode ? { addEventListener() {} } : new EventSource("/api/events");
 events.addEventListener("changed", () => {
   load();
   loadSubstrates(); // a bring-up (or any op) finished → re-detect readiness
@@ -1184,7 +1225,7 @@ events.addEventListener("changed", () => {
 // and the post-run `changed` flips the pill.
 async function loadSubstrates() {
   try {
-    const { substrates } = await fetch("/api/substrates").then((r) => r.json());
+    const { substrates } = await apiFetch("/api/substrates").then((r) => r.json());
     renderSubstrates(substrates || []);
   } catch {
     /* transient — leave whatever's shown */
@@ -1213,7 +1254,7 @@ function renderSubstrates(subs) {
     const name = document.createElement("span");
     name.textContent = s.label;
     pill.appendChild(name);
-    if (s.bringUp) {
+    if (s.bringUp && !staticMode) {
       const b = document.createElement("button");
       b.textContent = "Bring up";
       b.title = `Run: ${s.bringUp.cmd} ${s.bringUp.args.join(" ")}`;
@@ -1223,7 +1264,7 @@ function renderSubstrates(subs) {
     // A running Floci that can't idempotently re-apply (Floci #16): offer a
     // clean reset — nuke + re-boot the emulator — so the next apply lands on an
     // empty slate. The recovery path for rolled-back stacks.
-    if (s.name === "floci" && s.status === "up") {
+    if (s.name === "floci" && s.status === "up" && !staticMode) {
       const r = document.createElement("button");
       r.textContent = "Reset";
       r.title = "Tear down + re-boot the emulator (local-down + local-up), then apply for a clean deploy. Recovery for rolled-back stacks (Floci #16).";
@@ -1373,6 +1414,16 @@ async function openRollback(btn) {
 
 async function initActions() {
   const bar = document.getElementById("actions");
+  if (staticMode) {
+    // A frozen snapshot — no live actions at all. Show when it was captured.
+    const pill = document.createElement("span");
+    pill.textContent = `● static snapshot${manifest && manifest.capturedAt ? " · " + manifest.capturedAt.slice(0, 16).replace("T", " ") : ""}`;
+    pill.title = "An exported, read-only snapshot — no live observe or deploy.";
+    pill.style.cssText = "align-self:center;font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:2px 8px";
+    bar.appendChild(pill);
+    previewMode = true;
+    return; // nothing else in the bar is a read
+  }
   // Re-check live: re-observe drift now + drop a lanes frame. A READ (despite
   // POST /api/refresh) — no infra/repo write. Always available.
   const r = button("↻ Re-check live", "", refresh);
@@ -1381,9 +1432,9 @@ async function initActions() {
   // The env behold launched with (reliable regardless of picker-init ordering) —
   // gates the first-class "Apply all" affordance below; also carries the preview
   // lock that hides the git/PR ops.
-  const project = await fetch("/api/project").then((r) => r.json()).catch(() => ({}));
+  const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
   const initialEnv = project.currentEnv || null;
-  previewMode = !!project.previewMode;
+  previewMode = staticMode || !!project.previewMode; // static ⇒ read-only, no writes at all
   // Rollback (#28): pick a prior source revision → open a reviewable PR. A git/PR
   // write, so hidden in the preview (the server 403s it too).
   if (!previewMode) {
@@ -1391,7 +1442,7 @@ async function initActions() {
     rb.title = "Restore source to a prior revision via a reviewable PR";
     bar.appendChild(rb);
   }
-  const { ops, adoptLexicons, autoSync, local, applyProgress: apInit } = await fetch("/api/ops")
+  const { ops, adoptLexicons, autoSync, local, applyProgress: apInit } = await apiFetch("/api/ops")
     .then((r) => r.json())
     .catch(() => ({ ops: [], adoptLexicons: [] }));
   // M3 (#54): hydrate the dial's apply progress from the server's last known
