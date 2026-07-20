@@ -1025,12 +1025,15 @@ function renderTierNote(note) {
 }
 
 // Fetch the current view (source graph, or the picked env's live overlay).
-async function load() {
+async function load(opts = {}) {
   const meta = document.getElementById("meta");
-  meta.textContent = view.env ? `loading overlay for ${view.env}…` : "loading…";
-  // A view change shells chant live (seconds on a slow box) — cover the UI with a
-  // blocking overlay so clicks can't queue a second pull mid-flight.
-  showLoading(`loading ${zoomValue()}${view.env ? " · " + view.env : ""}…`);
+  // A background settle re-pull (post-apply) shouldn't flash the meta/overlay.
+  if (!opts.quiet) {
+    meta.textContent = view.env ? `loading overlay for ${view.env}…` : "loading…";
+    // A view change shells chant live (seconds on a slow box) — cover the UI with
+    // a blocking overlay so clicks can't queue a second pull mid-flight.
+    showLoading(`loading ${zoomValue()}${view.env ? " · " + view.env : ""}…`);
+  }
   try {
     const q = lensParams(new URLSearchParams({ detail: String(view.detail) }));
     let endpoint = "/api/graph";
@@ -1072,10 +1075,13 @@ async function load() {
     }
     render(body.ir, body.svg, body.meta);
   } catch (err) {
-    document.getElementById("graph").innerHTML = `<div class="err">graph failed: ${err.message}</div>`;
-    meta.textContent = "error";
+    // A background settle poll must not blow away a good graph on a transient error.
+    if (!opts.quiet) {
+      document.getElementById("graph").innerHTML = `<div class="err">graph failed: ${err.message}</div>`;
+      meta.textContent = "error";
+    }
   } finally {
-    hideLoading();
+    if (!opts.quiet) hideLoading();
   }
 }
 
@@ -1216,9 +1222,19 @@ initPickers();
 // No backend in a static export → no live event stream; a no-op keeps the
 // `events.addEventListener(...)` wiring below harmless.
 const events = staticMode ? { addEventListener() {} } : new EventSource("/api/events");
+// Post-op settle re-pull: an apply's CLI can exit while the last stacks are still
+// flipping to *_COMPLETE, so the immediate reload catches a few components mid-
+// deploy ("all done, 3 still pending"). Quietly re-pull a couple more times so
+// the graph lands on the final colours without a manual Re-check live.
+let settleTimers = [];
+function scheduleSettle() {
+  settleTimers.forEach(clearTimeout);
+  settleTimers = [3000, 8000, 15000].map((ms) => setTimeout(() => load({ quiet: true }), ms));
+}
 events.addEventListener("changed", () => {
   load();
   loadSubstrates(); // a bring-up (or any op) finished → re-detect readiness
+  scheduleSettle();
 });
 
 // Substrate readiness strip (M5, #54): is each substrate the project needs
