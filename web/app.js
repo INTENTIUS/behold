@@ -27,6 +27,7 @@ function fmtValue(v) {
 function inspect(node) {
   const panel = document.getElementById("inspect-body");
   panel.innerHTML = "<h2>inspect</h2>";
+  panel.dataset.node = node.id; // so async sections can verify this node is still shown
   const section = (title) => {
     const h = document.createElement("h3");
     h.textContent = title;
@@ -54,6 +55,48 @@ function inspect(node) {
   const liveStatus = node.attrs && node.attrs._liveStatus;
   if (st) id("status", (liveStatus ? COMPONENT_STATUS_LABEL[st] : STATUS_LABEL[st]) || st);
   if (node.sourceLoc && node.sourceLoc.file) id("source", node.sourceLoc.file);
+
+  // Containment hierarchy: a resource shows its parent chain UP (composite →
+  // component); a collapsed composite (detail 1: `attrs.members` is a count)
+  // shows its member list DOWN. The parent chain is on the node itself
+  // (compositeInstance/compositeParent + the src/<component>/ path) — no fetch.
+  const sp = ((node.sourceLoc && node.sourceLoc.file) || "").split("/");
+  const component = sp[0] === "src" && sp[1] === "examples" ? "examples/" + (sp[2] || "") : sp[0] === "src" && sp.length >= 3 ? sp[1] : null;
+  const isComposite = node.attrs && typeof node.attrs.members === "number";
+  if (!isComposite && (node.compositeInstance || (component && node.kind !== "Component"))) {
+    const bt = section("belongs to");
+    if (component) bt("component", component);
+    if (node.compositeInstance) bt("composite", node.compositeParent ? `${node.compositeInstance} · ${node.compositeParent}` : node.compositeInstance);
+  }
+  if (isComposite) {
+    const h = document.createElement("h3");
+    h.textContent = `members · ${node.attrs.members}`;
+    h.style.cssText = "font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:14px 0 6px";
+    panel.appendChild(h);
+    const loading = document.createElement("p");
+    loading.style.color = "var(--muted)";
+    loading.textContent = "loading…";
+    panel.appendChild(loading);
+    const dl = document.createElement("dl");
+    panel.appendChild(dl);
+    const forId = node.id;
+    getCompositeMembers(node.id).then((members) => {
+      if (panel.dataset.node !== forId) return; // selection changed while loading
+      loading.remove();
+      if (!members.length) {
+        loading.textContent = "(no members found)";
+        panel.insertBefore(loading, dl);
+        return;
+      }
+      for (const m of members) {
+        const dt = document.createElement("dt");
+        dt.textContent = m.kind;
+        const dd = document.createElement("dd");
+        dd.textContent = m.id;
+        dl.append(dt, dd);
+      }
+    });
+  }
 
   // Live state: what chant observed in the cloud. Only managed (provisioned)
   // nodes carry it — pending nodes have none because they aren't deployed yet.
@@ -412,6 +455,28 @@ function resetDialCaches() {
   applyPicker = false;
   componentChoices = [];
   componentStatusById = {};
+  compositeMembersCache = null;
+}
+
+// Composite → member list, for the inspect pane. Derived once from the base
+// (attribute-tier) source graph, where every node carries its `compositeInstance`
+// — then a detail-1 composite node lists what it expands to. Cached per lens
+// (reset in resetDialCaches); structural, so no live/env call needed.
+let compositeMembersCache = null;
+async function getCompositeMembers(instanceId) {
+  if (!compositeMembersCache) {
+    compositeMembersCache = {};
+    try {
+      const q = lensParams(new URLSearchParams({ detail: "3" }));
+      const j = await fetch(`/api/graph?${q}`).then((r) => r.json());
+      for (const n of (j.ir && j.ir.nodes) || []) {
+        if (n.compositeInstance) (compositeMembersCache[n.compositeInstance] ||= []).push({ id: n.id, kind: n.kind });
+      }
+    } catch {
+      /* leave the cache empty — the members section shows "(no members found)" */
+    }
+  }
+  return compositeMembersCache[instanceId] || [];
 }
 
 function dialArrow() {
