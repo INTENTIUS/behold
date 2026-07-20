@@ -96,14 +96,14 @@ function radializeLayout(layout: RadialLayout, groupOf: Map<string, string>): vo
   const nodes = layout.nodes;
   if (!Array.isArray(nodes) || nodes.length < 3) return;
 
-  // Global dagre rank (distinct y levels) → shared radius across every wedge, so
-  // "depth from centre" reads consistently regardless of component.
+  // Global dagre rank (distinct y levels) orders nodes inner→outer by dependency
+  // depth; exact radius is decided by the arc-packing below so nothing overlaps.
   const bucket = (y: number) => Math.round(y / 8) * 8;
   const levels = [...new Set(nodes.map((n) => bucket(n.y)))].sort((a, b) => a - b);
   const rankOf = new Map(levels.map((y, i) => [y, i]));
-  const r0 = 200;
-  const ringStep = 160;
-  const radiusOf = (n: { y: number }) => r0 + (rankOf.get(bucket(n.y)) ?? 0) * ringStep;
+  // Inner radius large enough that even the narrowest wedges' innermost nodes
+  // clear each other angularly (r0 · min angular separation ≳ card width).
+  const r0 = 380;
 
   // Nodes by group; wedge order is stable (by key) so the picture doesn't jump.
   const groups = new Map<string, RadialLayout["nodes"]>();
@@ -114,29 +114,89 @@ function radializeLayout(layout: RadialLayout, groupOf: Map<string, string>): vo
   const order = [...groups.keys()].sort();
   const gapAngle = 0.08; // radians between wedges
   const usable = 2 * Math.PI - gapAngle * order.length;
+  // Floor every wedge at a minimum width so a tiny (1–2 node) component still
+  // gets a readable slice and its inner node clears its neighbours; the rest of
+  // the circle is shared out proportionally by node count.
+  const minWidth = Math.min(0.4, (usable / order.length) * 0.7);
+  const flexible = usable - minWidth * order.length;
 
+  // Pack each wedge's nodes into concentric arcs (collision detection): fill an
+  // arc only to the count its circumference can seat — arc length (radius·width)
+  // ≥ (NODE_W+gap) per node — then step outward. So nodes never overlap
+  // angularly (capacity bound) OR radially (rowStep ≥ card height). Nodes are
+  // ordered by dependency depth (rank) then x, so inner arcs read as upstream.
+  const gap = 55;
+  // Radially-adjacent arcs stack at the same angle in a 1-node-wide wedge; their
+  // separation must exceed the card WIDTH (not height) or a horizontally-oriented
+  // wedge overlaps in x. Geometry: rowStep > NODE_W means no angle can put a pair
+  // within both the card's width AND height. (This, not the relaxation, was the
+  // main source of residual overlaps.)
+  const rowStep = 190;
   let angle = -Math.PI / 2; // first wedge starts at top
   for (const key of order) {
-    const gnodes = groups.get(key)!;
-    const width = usable * (gnodes.length / nodes.length);
+    const gnodes = groups
+      .get(key)!
+      .slice()
+      .sort((a, b) => (rankOf.get(bucket(a.y)) ?? 0) - (rankOf.get(bucket(b.y)) ?? 0) || a.x - b.x);
+    const width = minWidth + flexible * (gnodes.length / nodes.length);
     const start = angle;
-    // Fan same-rank nodes across the wedge; different ranks sit at different radii.
-    const byRank = new Map<number, RadialLayout["nodes"]>();
-    for (const n of gnodes) {
-      const r = rankOf.get(bucket(n.y)) ?? 0;
-      (byRank.get(r) ?? byRank.set(r, []).get(r)!).push(n);
-    }
-    for (const rnodes of byRank.values()) {
-      rnodes.sort((a, b) => a.x - b.x);
-      const c = rnodes.length;
-      rnodes.forEach((n, i) => {
-        const a = c === 1 ? start + width / 2 : start + width * ((i + 0.5) / c);
-        const radius = radiusOf(n);
+    let radius = r0;
+    let i = 0;
+    while (i < gnodes.length) {
+      const capacity = Math.max(1, Math.floor((radius * width) / (NODE_W + gap)));
+      const arc = gnodes.slice(i, i + capacity);
+      const c = arc.length;
+      arc.forEach((n, j) => {
+        const a = c === 1 ? start + width / 2 : start + width * ((j + 0.5) / c);
         n.x = radius * Math.cos(a);
         n.y = radius * Math.sin(a);
       });
+      radius += rowStep;
+      i += capacity;
     }
     angle = start + width + gapAngle;
+  }
+
+  // Second pass — box-overlap relaxation. Arc-packing clears intra-wedge crowding
+  // but two cards from neighbouring wedges (or arcs) can still overlap at a seam.
+  // Iteratively separate any pair whose card rectangles intersect, pushing along
+  // the axis of least penetration (the cheapest nudge). Converges fast for the
+  // node counts here; capped so it always terminates.
+  const cardW = NODE_W + 45; // generous target margin so even a jammed pair that
+  const cardH = 104; //         only partly separates still clears the real footprint
+  // Break exact symmetry deterministically (no RNG available) so a node caught
+  // between two neighbours never sits at a frustrated fixed point where opposing
+  // pushes cancel — otherwise separation stalls with a few residual overlaps.
+  nodes.forEach((n, k) => {
+    n.x += (((k * 13) % 7) - 3) * 0.4;
+    n.y += (((k * 7) % 5) - 2) * 0.4;
+  });
+  for (let iter = 0; iter < 2500; iter++) {
+    let overlaps = 0;
+    // In-place (Gauss-Seidel): each resolved pair is seen by the next, which
+    // moves a squeezed middle node instead of leaving it stuck.
+    for (let a = 0; a < nodes.length; a++) {
+      for (let b = a + 1; b < nodes.length; b++) {
+        const dx = nodes[b].x - nodes[a].x;
+        const dy = nodes[b].y - nodes[a].y;
+        const ox = cardW - Math.abs(dx); // >0 ⟺ x-ranges overlap
+        const oy = cardH - Math.abs(dy); // >0 ⟺ y-ranges overlap
+        if (ox <= 0 || oy <= 0) continue; // rectangles clear
+        overlaps++;
+        // Push along the centre-to-centre line by half the penetration. Unlike a
+        // min-axis (MTV) push, this doesn't flip axes and oscillate when a pair
+        // overlaps near a corner (ox ≈ oy) — the case that left residual overlaps.
+        const d = Math.hypot(dx, dy) || 0.01;
+        const push = Math.min(ox, oy) * 0.75 + 2; // over-relax to escape local jams
+        const ux = dx / d;
+        const uy = dy / d;
+        nodes[a].x -= ux * push;
+        nodes[a].y -= uy * push;
+        nodes[b].x += ux * push;
+        nodes[b].y += uy * push;
+      }
+    }
+    if (overlaps === 0) break;
   }
 
   // Shift to positive coords + reset bounds so renderSvg's viewBox wraps the disc.
