@@ -88,13 +88,13 @@ const CSS_VARS = ["bg", "panel", "line", "fg", "muted", "edge", "managed", "fore
 export function pinTokensFor(th) {
   const P = th.palette, fgMix = (t) => mix(th.bg, th.fg, t);
   const good = P[2], warn = P[1], accent = P[4];
-  const panel = fgMix(0.12);                 // node card base — visibly distinct from the bg
-  const fill = (c) => mix(panel, c, 0.22);   // panel tinted toward a status hue
-  const stroke = (c) => mix(th.bg, c, 0.5);
+  const panel = fgMix(0.18);                 // node card base — elevated well off the bg
+  const fill = (c) => mix(panel, c, 0.4);    // panel pulled strongly toward the status hue
+  const stroke = (c) => mix(th.bg, c, 0.62);
   return {
     bg0: th.bg, bg1: fgMix(0.045), dots: fgMix(0.12),
     text: th.fg, textMuted: fgMix(0.5), textFaint: fgMix(0.38), edge: fgMix(0.3),
-    neutralFill: panel, neutralStroke: fgMix(0.26), neutralBar: fgMix(0.45),
+    neutralFill: panel, neutralStroke: fgMix(0.3), neutralBar: fgMix(0.5),
     accentFill: fill(accent), accentStroke: stroke(accent), accentBar: accent,
     goodFill: fill(good), goodStroke: stroke(good), goodBar: good,
     warnFill: fill(warn), warnStroke: stroke(warn), warnBar: warn,
