@@ -106,9 +106,12 @@ const PIN_VARS = ["bg0", "bg1", "dots", "text", "textMuted", "textFaint", "edge"
 function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
 // A substrate/lexicon (aws, k8s, gcp, …) gets one of the theme's categorical hues, perturbed
 // in OKLCH deterministically so families stay distinct past the ~12 slot count (spicypath pattern).
+// The active theme name is folded into the hash (#62): each theme redistributes categories across
+// different palette slots, so switching themes visibly re-maps every node's colour rather than
+// keeping a category anchored to one slot (which stayed e.g. teal in every terminal palette).
 export function colorForCategory(key) {
   const cat = _tokens.cat;
-  const h = hash(String(key));
+  const h = hash((_active ? _active.name : "") + " " + String(key));
   const { L, C, H } = hexToOklch(cat[h % cat.length]);
   const dH = (((h >>> 4) % 31) - 15) * 1.6;
   const dL = (((h >>> 9) % 5) - 2) * 0.035;

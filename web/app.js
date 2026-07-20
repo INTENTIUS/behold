@@ -25,14 +25,25 @@ function recolorNodesByCategory(ir) {
     const kind = kindOf.get(g.getAttribute("data-node-id"));
     if (!kind) continue;
     const cat = colorForCategory(kind), ink = readableOn(cat);
-    // card background → category hue (the rect/foreignObject whose fill is a --pin-*Fill token);
-    // the drift bar (--pin-*Bar) is left untouched.
-    for (const el of g.querySelectorAll("[fill]")) if (/--pin-\w+Fill\b/.test(el.getAttribute("fill") || "")) el.setAttribute("fill", cat);
-    for (const el of g.querySelectorAll("[style]")) { const st = el.getAttribute("style") || ""; if (/--pin-\w+Fill\b/.test(st)) el.setAttribute("style", st.replace(/background:[^;]*/, "background:" + cat)); }
-    // labels + icons that rode on --pin-text* → readable ink on the coloured card
-    for (const el of g.querySelectorAll("[fill],[stroke]")) {
-      if (/--pin-text/.test(el.getAttribute("fill") || "")) el.setAttribute("fill", ink);
-      if (/--pin-text/.test(el.getAttribute("stroke") || "")) el.setAttribute("stroke", ink);
+    // Classify each element ONCE by the pinhole token it rode on (data-cat role), then apply
+    // the role's colour on every pass. This is what makes it recolour on theme switch: after
+    // the first pass the fill is a hex (not a --pin-* var), so we must key off the marker, not
+    // the token. Roles: fill=card background (→ category hue), bg=foreignObject background,
+    // inkf/inks=label/icon (→ readable ink). The drift bar (--pin-*Bar) is never classified.
+    for (const el of g.querySelectorAll("*")) {
+      let role = el.getAttribute("data-cat");
+      if (!role) {
+        const f = el.getAttribute("fill") || "", s = el.getAttribute("stroke") || "", st = el.getAttribute("style") || "";
+        if (/--pin-\w+Fill\b/.test(f)) role = "fill";
+        else if (/--pin-\w+Fill\b/.test(st)) role = "bg";
+        else if (/--pin-text/.test(f)) role = "inkf";
+        else if (/--pin-text/.test(s)) role = "inks";
+        if (role) el.setAttribute("data-cat", role);
+      }
+      if (role === "fill") el.setAttribute("fill", cat);
+      else if (role === "bg") el.setAttribute("style", (el.getAttribute("style") || "").replace(/background:[^;]*/, "background:" + cat));
+      else if (role === "inkf") el.setAttribute("fill", ink);
+      else if (role === "inks") el.setAttribute("stroke", ink);
     }
   }
 }
