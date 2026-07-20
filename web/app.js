@@ -276,6 +276,33 @@ function wire(ir) {
 // through the same path.
 const view = { env: null, detail: 2, components: false, tier: null, target: null };
 
+// The unified "zoom" control (one granularity axis, coarse → fine). Underlying
+// state stays (components, detail); zoom is just the single knob the header
+// exposes, mapping "components" → the wave/component view and composites/
+// resources/attributes → the entity graph at detail 1/2/3. (detail 0 / per-
+// lexicon "stacks" is dropped from the UI — niche; the API still accepts it.)
+const ZOOM_OPTS = [
+  ["zoom: components", "components"],
+  ["zoom: composites", "composites"],
+  ["zoom: resources", "resources"],
+  ["zoom: attributes", "attributes"],
+];
+const ZOOM_DETAIL = { composites: 1, resources: 2, attributes: 3 };
+/** Current zoom value from (components, detail). */
+function zoomValue() {
+  if (view.components) return "components";
+  return { 1: "composites", 2: "resources", 3: "attributes" }[view.detail] ?? "resources";
+}
+/** Apply a zoom value back onto (components, detail). */
+function applyZoom(z) {
+  if (z === "components") {
+    view.components = true;
+  } else {
+    view.components = false;
+    view.detail = ZOOM_DETAIL[z] ?? 2;
+  }
+}
+
 // The deploy axes as currently displayed in the header (#59 unify, M2 #54
 // lenses) — seeded once from /api/project (server-derived from the process
 // env at launch; see deployAxes() in src/server.ts), then kept in sync with
@@ -665,9 +692,9 @@ function render(ir, svg, m) {
     `${scope}${m.env ? " · env " + m.env : ""}${axesTail}${overlay ? " · overlay" : ""}${m.components ? " · components" : ""}${componentStatus ? " · live status" : ""} · ${ir.nodes.length} nodes${tail}`;
   document.getElementById("legend").style.display = overlay ? "flex" : "none";
   document.getElementById("component-legend").style.display = componentStatus ? "flex" : "none";
-  // Keep the view picker in sync when the dial's "observe" flips components mode.
-  const vp = document.getElementById("view-picker");
-  if (vp) vp.value = view.components ? "components" : "infra";
+  // Keep the zoom picker in sync when the dial's "observe" flips to components.
+  const zp = document.getElementById("zoom-picker");
+  if (zp) zp.value = zoomValue();
   const g = document.getElementById("graph");
   g.innerHTML = svg;
   const svgEl = g.querySelector("svg");
@@ -686,19 +713,20 @@ function render(ir, svg, m) {
   renderDial();
 }
 
-// When observe (or the picker) drops you into waves/component view, float a
-// "← back to infra" link on the graph itself — the exit where the eye already
-// is, not buried in the toolbar. Shown only in components mode; hidden on infra.
+// When observe (or the zoom picker) drops you into the components view, float a
+// "zoom in ⤢" link on the graph itself — the exit where the eye already is, not
+// buried in the toolbar. Zooms one step finer (components → resources). Shown
+// only in the components view.
 function ensureBackToInfra(host) {
   let link = document.getElementById("back-to-infra");
   if (!link) {
     link = document.createElement("button");
     link.id = "back-to-infra";
-    link.textContent = "← back to infra";
-    link.title = "Leave the wave-laned component view for the AWS infra (all-resources) graph.";
+    link.textContent = "zoom in ⤢ resources";
+    link.title = "Zoom finer — from components to the resource graph.";
     link.addEventListener("click", (e) => {
       e.stopPropagation();
-      view.components = false;
+      applyZoom("resources");
       load();
     });
     host.appendChild(link);
@@ -936,37 +964,19 @@ async function initPickers() {
       load();
     }),
   );
-  host.appendChild(
-    picker("detail tier", [
-      ["detail: stacks", "0"],
-      ["detail: composites", "1"],
-      ["detail: resources", "2"],
-      ["detail: attributes", "3"],
-    ], String(view.detail), (v) => {
-      view.detail = Number(v);
-      load();
-    }),
-  );
-  // Explicit view switch (was an obscure "components" checkbox): component graph
-  // (wave-laned DAG, dependsOn, + live per-component status when an env is
-  // picked) vs the AWS infra/resource graph. The dial's "observe" also drives
-  // this, so we keep the picker's value in sync in render().
-  const viewPicker = picker(
-    "view",
-    [
-      ["view: waves (components)", "components"],
-      ["view: infra (all resources)", "infra"],
-    ],
-    view.components ? "components" : "infra",
-    (v) => {
-      view.components = v === "components";
-      load();
-    },
-  );
-  viewPicker.id = "view-picker";
-  viewPicker.title =
-    "Component graph: one node per component, wave-laned, dependsOn edges — coloured by live per-component AWS status when an env is picked. AWS infra: the resource-level graph (entity overlay when an env is picked).";
-  host.appendChild(viewPicker);
+  // One "zoom" control, coarse → fine, replacing the old view (waves/infra)
+  // toggle + detail tier — they were two knobs for one axis. "components" is the
+  // wave-laned component graph with live per-component status (what the dial's
+  // "observe" selects); the rest are the entity graph at detail 1/2/3. Kept in
+  // sync in render() since observe also drives it.
+  const zoomPicker = picker("zoom", ZOOM_OPTS, zoomValue(), (v) => {
+    applyZoom(v);
+    load();
+  });
+  zoomPicker.id = "zoom-picker";
+  zoomPicker.title =
+    "Granularity, coarse → fine — components: deployable units, wave-laned, live per-component status (what \"observe\" shows) · composites · resources: every resource (default) · attributes: resources + cross-stack wiring. An env colours components by live status, the rest by drift overlay.";
+  host.appendChild(zoomPicker);
   // The tier lens (M2, #54): only offered when the served project already
   // showed LOOM_TIER is in play (info.tier set at launch — same gate
   // deployAxes() uses server-side). Picking a tier re-evaluates the
