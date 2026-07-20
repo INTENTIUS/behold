@@ -420,7 +420,7 @@ function wire(ir) {
 // for every chant shell-out this page's fetches trigger (see lensParams()).
 // Every fetch reads this, so the `changed` SSE re-pull and a picker change go
 // through the same path.
-const view = { env: null, detail: 2, components: false, logical: false, tier: null, target: null, radial: false };
+const view = { env: null, detail: 2, components: true, logical: false, tier: null, target: null, radial: false };
 
 // v0.1.0 preview lock (set from /api/project in initActions): hides the git/PR
 // write ops (Rollback, Sync, Adopt, Run ▾) — the server also 403s them. Local
