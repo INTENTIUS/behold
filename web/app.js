@@ -835,7 +835,11 @@ function render(ir, svg, m) {
   const zp = document.getElementById("zoom-picker");
   if (zp) zp.value = zoomValue();
   const g = document.getElementById("graph");
-  g.innerHTML = svg;
+  // Ghostty theming (#62): strip pinhole's baked-in `:root{--pin-*}` defaults from the
+  // inlined SVG so its var(--pin-*) fills resolve from behold's live documentElement tokens
+  // (theme.js applyTheme), not the frozen dark palette. Without this, every theme renders
+  // green — the SVG's own :root shadows behold's override within the graph subtree.
+  g.innerHTML = svg.replace(/:root\s*\{[^{}]*--pin-[^{}]*\}/g, "");
   const svgEl = g.querySelector("svg");
   if (svgEl) {
     // Drop pinhole's fixed pixel size so the viewBox drives sizing; behold then
