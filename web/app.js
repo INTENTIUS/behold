@@ -3,6 +3,13 @@
 // mature painter (themes, icons, `_status` drift colouring); behold owns the data,
 // the inspect panel, and (later) the lanes + delegated actions.
 
+// Ghostty colour themes (#62): apply the persisted/default theme's tokens as CSS vars
+// before first paint (so the whole graph + chrome recolour from one source), then mount
+// the theme picker into the header's #pickers slot.
+import { initTheme, mountThemePicker } from "./theme.js";
+initTheme();
+mountThemePicker(document.getElementById("pickers"));
+
 // Static-export mode (`behold export`): the SPA runs off a pre-captured bundle
 // with no backend. Detect the flag the export injects, load its manifest, and
 // replay every read from `snapshots/` — the graph, zoom dial, radial, inspect,
@@ -828,7 +835,11 @@ function render(ir, svg, m) {
   const zp = document.getElementById("zoom-picker");
   if (zp) zp.value = zoomValue();
   const g = document.getElementById("graph");
-  g.innerHTML = svg;
+  // Ghostty theming (#62): strip pinhole's baked-in `:root{--pin-*}` defaults from the
+  // inlined SVG so its var(--pin-*) fills resolve from behold's live documentElement tokens
+  // (theme.js applyTheme), not the frozen dark palette. Without this, every theme renders
+  // green — the SVG's own :root shadows behold's override within the graph subtree.
+  g.innerHTML = svg.replace(/:root\s*\{[^{}]*--pin-[^{}]*\}/g, "");
   const svgEl = g.querySelector("svg");
   if (svgEl) {
     // Drop pinhole's fixed pixel size so the viewBox drives sizing; behold then
