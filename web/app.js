@@ -127,7 +127,7 @@ function inspect(node) {
   // Adopt triggers the ReconcileOp (cloud → code), which opens a reviewable PR.
   // behold never writes source — a human merges. Managed/pending nodes and
   // substrates with no live-import path show nothing.
-  if (adoptable(node)) {
+  if (adoptable(node) && !previewMode) {
     const b = button("Adopt", "", () => runOp(adopt.reconcile.name));
     b.title = `Reconcile ${node.id} into source via ${adopt.reconcile.name} (opens a PR)`;
     const wrap = document.createElement("p");
@@ -275,6 +275,11 @@ function wire(ir) {
 // Every fetch reads this, so the `changed` SSE re-pull and a picker change go
 // through the same path.
 const view = { env: null, detail: 2, components: false, tier: null, target: null, radial: false };
+
+// v0.1.0 preview lock (set from /api/project in initActions): hides the git/PR
+// write ops (Rollback, Sync, Adopt, Run ▾) — the server also 403s them. Local
+// deploy (Apply all / dial), Reset, Bring up, Approve, and reads stay on.
+let previewMode = false;
 
 // The unified "zoom" control (one granularity axis, coarse → fine). Underlying
 // state stays (components, detail); zoom is just the single knob the header
@@ -1303,25 +1308,27 @@ async function openRollback(btn) {
 
 async function initActions() {
   const bar = document.getElementById("actions");
-  // Refresh is always available (even for a project with no Ops) — re-check live
-  // drift now and drop a lanes frame.
-  const r = button("↻ Refresh", "", refresh);
-  r.title = "Re-check live drift now and capture a lanes frame";
+  // Re-check live: re-observe drift now + drop a lanes frame. A READ (despite
+  // POST /api/refresh) — no infra/repo write. Always available.
+  const r = button("↻ Re-check live", "", refresh);
+  r.title = "Re-observe live state now and capture a lanes frame (read-only)";
   bar.appendChild(r);
-  // Rollback (#28): pick a prior source revision → open a reviewable PR restoring
-  // it. Never a direct write; a human merges and Syncs to apply.
-  const rb = button("Rollback", "", () => openRollback(rb));
-  rb.title = "Restore source to a prior revision via a reviewable PR";
-  bar.appendChild(rb);
+  // The env behold launched with (reliable regardless of picker-init ordering) —
+  // gates the first-class "Apply all" affordance below; also carries the preview
+  // lock that hides the git/PR ops.
+  const project = await fetch("/api/project").then((r) => r.json()).catch(() => ({}));
+  const initialEnv = project.currentEnv || null;
+  previewMode = !!project.previewMode;
+  // Rollback (#28): pick a prior source revision → open a reviewable PR. A git/PR
+  // write, so hidden in the preview (the server 403s it too).
+  if (!previewMode) {
+    const rb = button("Rollback", "", () => openRollback(rb));
+    rb.title = "Restore source to a prior revision via a reviewable PR";
+    bar.appendChild(rb);
+  }
   const { ops, adoptLexicons, autoSync, local, applyProgress: apInit } = await fetch("/api/ops")
     .then((r) => r.json())
     .catch(() => ({ ops: [], adoptLexicons: [] }));
-  // The env behold launched with (reliable regardless of picker-init ordering) —
-  // gates the first-class "Apply all" affordance below.
-  const initialEnv = await fetch("/api/project")
-    .then((r) => r.json())
-    .then((p) => p.currentEnv || null)
-    .catch(() => null);
   // M3 (#54): hydrate the dial's apply progress from the server's last known
   // state — a page load (or reload) mid-apply picks up the structured view
   // instead of starting blank; the `apply` SSE listener keeps it live from here.
@@ -1354,8 +1361,9 @@ async function initActions() {
   }
   const apply = ops.find((o) => o.kind === "apply");
   adopt = { reconcile: ops.find((o) => o.kind === "reconcile") ?? null, lexicons: adoptLexicons ?? [] };
-  if (apply) {
-    // A committed ApplyOp exists → the classic "Sync" (trigger the heal Op).
+  if (apply && !previewMode) {
+    // A committed ApplyOp exists → the classic "Sync" (trigger the heal Op). In
+    // the preview we skip it and offer "Apply all" (local deploy) instead.
     const s = button("Sync", "approve", () => runOp(apply.name));
     s.title = `Apply the committed state via ${apply.name} (chant run ${apply.name}) — behold triggers, the executor applies.`;
     bar.appendChild(s);
@@ -1374,7 +1382,7 @@ async function initActions() {
   // the bar. Sync / Apply all / Rollback stay first-class; everything else is a
   // pick-and-run dropdown. behold still only *triggers* the Op on the executor.
   const runnable = ops.filter((o) => o.kind === "op" || o.kind === "audit");
-  if (runnable.length) {
+  if (runnable.length && !previewMode) {
     const sel = document.createElement("select");
     sel.title = "Run a committed Op (backup, restore, audit, …) on the executor";
     sel.style.cssText =
@@ -1388,8 +1396,9 @@ async function initActions() {
     });
     bar.appendChild(sel);
   }
-  // Only complain when there's genuinely nothing to do.
-  if (ops.length === 0) {
+  // Only complain when there's genuinely nothing to do (never in the preview —
+  // its deploy path is Apply all, not committed Ops).
+  if (ops.length === 0 && !previewMode) {
     const hint = document.createElement("span");
     hint.style.cssText = "color:var(--muted);font-size:11px;align-self:center";
     hint.textContent = "no Ops — commit an *.op.ts (ApplyOp / ReconcileOp / any deploy Op) to act";

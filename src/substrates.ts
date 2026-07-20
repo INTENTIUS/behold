@@ -89,7 +89,7 @@ function projectLexicons(projectDir: string): string[] {
  * Floci → k3d → GitLab CI → Forgejo. Cheap probes only (a few `docker`/`k3d`
  * calls); safe to poll.
  */
-export async function detectSubstrates(projectDir: string): Promise<Substrate[]> {
+export async function detectSubstrates(projectDir: string, preview = false): Promise<Substrate[]> {
   const subs: Substrate[] = [];
   const lexicons = projectLexicons(projectDir);
   const docker = await dockerAvailable();
@@ -122,6 +122,10 @@ export async function detectSubstrates(projectDir: string): Promise<Substrate[]>
       bringUp: docker && !floci.length ? scriptBringUp(projectDir, "scripts/local/local-up.sh", "local-up") : undefined,
     });
   }
+
+  // Preview (v0.1.0) stops here: the Loom demo only needs Docker + Floci, so the
+  // CI/forge and k3d substrates are out of scope.
+  if (preview) return subs;
 
   // GitLab CI / Forgejo — only when the project actually targets that forge
   // (ships its generated CI). On-demand pipeline runs (gitlab-ci-local / forgejo

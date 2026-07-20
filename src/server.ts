@@ -73,6 +73,11 @@ export interface ServerOptions {
   /** The emulators booted for `local` mode, populated at startup. Drives the header
    * banner (surfaced on /api/ops) so the mode is visible. */
   emulators?: EmulatorInfo[];
+  /** Preview mode (v0.1.0): a locked-down Loom-on-Floci demo. Hides + gates the
+   * git/PR write ops (rollback, adopt/sync/generic Ops), scopes the substrate
+   * strip to Docker+Floci, and tells the SPA to hide those controls. Local
+   * deploy (apply/reset/bring-up/approve) and all reads stay on. */
+  previewMode?: boolean;
   port: number;
 }
 
@@ -273,6 +278,10 @@ export function createApp(
   );
 
   app.post("/api/ops/:name/run", (c) => {
+    // Preview: committed Ops (Sync/Adopt/generic) are git/PR or unscoped writes —
+    // not part of the locked-down Loom-on-Floci demo. Local deploy goes via
+    // /api/apply instead. (The SPA also hides these controls; this is the guard.)
+    if (cfg.previewMode) return c.json({ error: "disabled in preview mode" }, 403);
     const name = c.req.param("name");
     const info = estateOps().find((o) => o.name === name);
     if (!info) {
@@ -287,7 +296,7 @@ export function createApp(
   // Substrate readiness (M5, #54): is each substrate the project needs actually
   // running (Floci, k3d, GitLab CI, Forgejo)? Read-only detection.
   app.get("/api/substrates", async (c) => {
-    return c.json({ substrates: await detectSubstrates(cfg.projectDir) });
+    return c.json({ substrates: await detectSubstrates(cfg.projectDir, cfg.previewMode) });
   });
 
   // Bring up a substrate — run its local script (e.g. scripts/local/local-up.sh)
@@ -295,7 +304,7 @@ export function createApp(
   // re-detects on the post-run `changed`. behold triggers; the script does it.
   app.post("/api/substrates/:name/up", async (c) => {
     const name = c.req.param("name");
-    const sub = (await detectSubstrates(cfg.projectDir)).find((s) => s.name === name);
+    const sub = (await detectSubstrates(cfg.projectDir, cfg.previewMode)).find((s) => s.name === name);
     if (!sub) return c.json({ error: `unknown substrate "${name}"` }, 404);
     if (!sub.bringUp) return c.json({ error: `no bring-up available for "${name}"` }, 400);
     const { label, cmd, args } = sub.bringUp;
@@ -367,6 +376,8 @@ export function createApp(
       environments,
       lexicons,
       currentEnv: cfg.env ?? null,
+      // v0.1.0 preview: the SPA hides git/PR ops + arbitrary-project affordances.
+      ...(cfg.previewMode ? { previewMode: true } : {}),
       // M2 (#54): tier/target lens picker options. Gated the same way `axes`
       // itself is — offered only when the launch env already showed the axis
       // is in play for this project (see TIER_OPTIONS / deployTargets()).
@@ -666,6 +677,8 @@ export function createApp(
   // PR is reviewed and a gated Sync applies it. Streams like an op; the PR URL
   // surfaces on the `pr` event.
   app.post("/api/rollback", (c) => {
+    // Preview: rollback opens a source-revert PR — no git repo behind the demo.
+    if (cfg.previewMode) return c.json({ error: "disabled in preview mode" }, 403);
     const to = new URL(c.req.url).searchParams.get("to");
     if (!to) return c.json({ error: "rollback needs ?to=<git-ref>" }, 400);
     const args = ["lifecycle", "rollback", ...(cfg.env ? [cfg.env] : []), "--to", to];

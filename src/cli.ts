@@ -3,8 +3,8 @@
  * chant project. Agent-drivable: the same read API the SPA uses is plain JSON, and
  * behold leans on chant's MCP for the underlying graph/lifecycle data (see README).
  */
-import { resolve } from "node:path";
-import { realpathSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { realpathSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { startServer } from "./server.ts";
 import { isAutoSyncMode, type AutoSyncMode } from "./autosync.ts";
@@ -12,7 +12,14 @@ import { isAutoSyncMode, type AutoSyncMode } from "./autosync.ts";
 const USAGE = `behold — a live control plane on chant (read-only core)
 
 Usage:
+  behold preview [loom-dir] [--port <n>]
   behold serve <project-dir…> [--port <n>] [--env <name>] [--poll <secs>]
+
+  preview A turnkey, self-contained preview of Loom on the local Floci emulator
+          (v0.1.0). Boots the emulator, deploys Loom, and serves the read +
+          local-deploy experience — no real cloud, no git/PR ops, no opening
+          your own infra. Defaults the Loom project to $BEHOLD_LOOM_DIR or the
+          sibling ../loomster; pass a path to override. Needs Docker.
 
   serve   Start the server: the mixed-substrate graph of <project-dir> in a
           browser, coloured by drift. Read-only — never mutates. Pass several
@@ -38,6 +45,11 @@ export async function run(argv: string[]): Promise<void> {
 
   if (!cmd || cmd === "-h" || cmd === "--help") {
     process.stdout.write(USAGE);
+    return;
+  }
+
+  if (cmd === "preview") {
+    await runPreview(rest);
     return;
   }
 
@@ -107,6 +119,51 @@ export async function run(argv: string[]): Promise<void> {
     ...(autoSync !== "off" ? { autoSync } : {}),
     ...(local ? { local: true } : {}),
   });
+}
+
+/** `behold preview` — turnkey Loom-on-Floci preview (v0.1.0). Resolves the Loom
+ * project (arg → $BEHOLD_LOOM_DIR → sibling ../loomster), then serves it with the
+ * local emulator booted and previewMode on (git/PR ops hidden + gated, substrate
+ * strip scoped to Docker+Floci, no arbitrary-project switching). */
+async function runPreview(rest: string[]): Promise<void> {
+  let port = 4600;
+  let dirArg: string | undefined;
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i];
+    if (a === "--port") port = Number(rest[++i]);
+    else if (a === "-h" || a === "--help") return void process.stdout.write(USAGE);
+    else if (!a.startsWith("-")) dirArg = a;
+  }
+  if (!Number.isFinite(port)) {
+    process.stderr.write("behold preview: --port must be a number\n");
+    process.exit(2);
+  }
+  const beholdRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+  const loomDir = resolve(dirArg ?? process.env.BEHOLD_LOOM_DIR ?? resolve(beholdRoot, "..", "loomster"));
+  if (!existsSync(loomDir)) {
+    process.stderr.write(
+      `behold preview: Loom project not found at ${loomDir}\n` +
+        "Pass a path (`behold preview <loom-dir>`) or set BEHOLD_LOOM_DIR.\n",
+    );
+    process.exit(2);
+  }
+  // Turnkey env for Loom-on-Floci, without clobbering anything already exported.
+  // LOOM_ENV selects Loom's local (emulator) environment; AWS_ENDPOINT_URL points
+  // at Loom's Floci on :4566; the AWS SDK still needs *some* creds present (Floci
+  // ignores their value). We deliberately DON'T use `--local` (chant's `emulator
+  // up` boots a different `chant-floci`/`floci:latest` that clashes on :4566 with
+  // Loom's own `floci`/agentcore container) — the substrate strip's Floci "Bring
+  // up" runs Loom's `scripts/local/local-up.sh`, which boots Floci AND deploys.
+  process.env.LOOM_ENV ??= "local";
+  process.env.AWS_ENDPOINT_URL ??= "http://localhost:4566";
+  process.env.AWS_ACCESS_KEY_ID ??= "test";
+  process.env.AWS_SECRET_ACCESS_KEY ??= "test";
+  process.env.AWS_REGION ??= "us-east-1";
+  process.stdout.write(
+    `behold preview — Loom on the local Floci emulator (read + local deploy only)\n  project: ${loomDir}\n` +
+      `  If Floci isn't up yet, use "Bring up" on the Floci substrate pill (boots + deploys Loom).\n`,
+  );
+  await startServer({ projectDir: loomDir, port, env: "local", previewMode: true });
 }
 
 // Run when invoked directly (`tsx src/cli.ts …`), not when imported. realpath both
