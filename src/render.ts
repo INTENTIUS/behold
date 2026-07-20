@@ -19,7 +19,7 @@ export interface RenderResult {
  * `@intentius/chant` predates `byWave`; a served project's own (newer) chant
  * still emits it on the IR JSON, this just types the read. Drop `byWave` once
  * behold's chant dependency ships it (spike note: chant 0.18.27+). */
-type ExtraGroups = IRGroups & { byWave?: Record<string, string[]>; byStack?: Record<string, string[]> };
+type ExtraGroups = IRGroups & { byWave?: Record<string, string[]>; byStack?: Record<string, string[]>; byNetwork?: Record<string, string[]> };
 
 /** Paint a graph IR into an SVG document. Title is behold's job (the SPA header),
  * so pinhole's own title band is suppressed.
@@ -34,7 +34,7 @@ type ExtraGroups = IRGroups & { byWave?: Record<string, string[]>; byStack?: Rec
  * src/resources.ts), not a project boundary — auto-boxing it would surprise
  * every M1–M3 view with an unrequested box. A caller that knows it's rendering
  * a composed estate opts in explicitly via `opts.boxes: "byStack"`. */
-export function renderGraph(ir: GraphIR, opts: { theme?: string; boxes?: "byStack"; radial?: boolean } = {}): RenderResult {
+export function renderGraph(ir: GraphIR, opts: { theme?: string; boxes?: "byStack" | "byNetwork"; radial?: boolean } = {}): RenderResult {
   const groups = ir.groups as ExtraGroups;
   const boxKey = groups.byWave ? "byWave" : opts.boxes;
   const boxes = boxKey ? groups[boxKey] : undefined;

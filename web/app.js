@@ -26,12 +26,12 @@ if (staticMode) {
 
 /** Canonical key for a read URL — path + the lens params (whitelisted, sorted)
  * that select a distinct snapshot. MUST match src/export.ts `canonicalKey`. */
-const LENS_PARAMS = ["components", "detail", "env", "radial", "tier"];
+const LENS_PARAMS = ["components", "detail", "env", "network", "radial", "tier"];
 function canonicalKey(path, params) {
-  // Components view ignores detail/radial — drop them so it matches the single
-  // captured components snapshot (MUST match src/export.ts).
-  const components = params.get("components") === "1";
-  const q = LENS_PARAMS.filter((k) => params.has(k) && !(components && (k === "detail" || k === "radial")))
+  // Components + network views ignore detail/radial — drop them so they match
+  // the single captured snapshot (MUST match src/export.ts).
+  const flat = params.get("components") === "1" || params.get("network") === "1";
+  const q = LENS_PARAMS.filter((k) => params.has(k) && !(flat && (k === "detail" || k === "radial")))
     .map((k) => `${k}=${params.get(k)}`)
     .join("&");
   return q ? `${path}?${q}` : path;
@@ -381,7 +381,7 @@ function wire(ir) {
 // for every chant shell-out this page's fetches trigger (see lensParams()).
 // Every fetch reads this, so the `changed` SSE re-pull and a picker change go
 // through the same path.
-const view = { env: null, detail: 2, components: false, tier: null, target: null, radial: false };
+const view = { env: null, detail: 2, components: false, network: false, tier: null, target: null, radial: false };
 
 // v0.1.0 preview lock (set from /api/project in initActions): hides the git/PR
 // write ops (Rollback, Sync, Adopt, Run ▾) — the server also 403s them. Local
@@ -393,26 +393,29 @@ let previewMode = false;
 // exposes, mapping "components" → the wave/component view and composites/
 // resources/attributes → the entity graph at detail 1/2/3. (detail 0 / per-
 // lexicon "stacks" is dropped from the UI — niche; the API still accepts it.)
+// "network" (#63) is a re-projection, not a granularity stop like the others —
+// region/VPC/subnet boxes with topology nodes only — but it rides the same dial
+// as the coarse "infrastructure overview" the way a traditional AWS diagram sits
+// beside the resource views.
 const ZOOM_OPTS = [
   ["zoom: components", "components"],
+  ["zoom: network", "network"],
   ["zoom: composites", "composites"],
   ["zoom: resources", "resources"],
   ["zoom: attributes", "attributes"],
 ];
 const ZOOM_DETAIL = { composites: 1, resources: 2, attributes: 3 };
-/** Current zoom value from (components, detail). */
+/** Current zoom value from (components, network, detail). */
 function zoomValue() {
   if (view.components) return "components";
+  if (view.network) return "network";
   return { 1: "composites", 2: "resources", 3: "attributes" }[view.detail] ?? "resources";
 }
-/** Apply a zoom value back onto (components, detail). */
+/** Apply a zoom value back onto (components, network, detail). */
 function applyZoom(z) {
-  if (z === "components") {
-    view.components = true;
-  } else {
-    view.components = false;
-    view.detail = ZOOM_DETAIL[z] ?? 2;
-  }
+  view.components = z === "components";
+  view.network = z === "network";
+  if (z !== "components" && z !== "network") view.detail = ZOOM_DETAIL[z] ?? 2;
 }
 
 // The deploy axes as currently displayed in the header (#59 unify, M2 #54
@@ -793,12 +796,17 @@ async function loadReconcile() {
 // mode), the legend, and click-inspect wiring. Shared by load() and refresh().
 function render(ir, svg, m) {
   const overlay = m.mode === "overlay";
+  // Network/regional lens (#63): its own mode, but when an env is picked the
+  // projected nodes still carry the drift `_status`, so it reads as a drift view
+  // (same summary + legend as the entity overlay).
+  const network = m.mode === "network";
+  const drift = overlay || (network && !!m.env);
   // M1.1 (#57): the component DAG's live per-component AWS status — a
   // different join than the entity overlay (see server's /api/graph), so it
   // gets its own summary + legend rather than reusing `overlay`'s.
   const componentStatus = m.mode === "component-status";
   let tail = ` · ${ir.edges.length} edges`;
-  if (overlay) {
+  if (drift) {
     // Summarise drift so "everything's blue" reads as "N pending".
     const c = { good: 0, warn: 0, accent: 0 };
     for (const n of ir.nodes) {
@@ -828,12 +836,20 @@ function render(ir, svg, m) {
   if (m.target !== undefined) axes.target = m.target;
   const axesTail = `${axes.tier ? " · tier " + axes.tier : ""}${axes.target ? " · target " + axes.target : ""}`;
   document.getElementById("meta").textContent =
-    `${scope}${m.env ? " · env " + m.env : ""}${axesTail}${overlay ? " · overlay" : ""}${m.components ? " · components" : ""}${componentStatus ? " · live status" : ""} · ${ir.nodes.length} nodes${tail}`;
-  document.getElementById("legend").style.display = overlay ? "flex" : "none";
+    `${scope}${m.env ? " · env " + m.env : ""}${axesTail}${overlay ? " · overlay" : ""}${network ? " · network" : ""}${m.components ? " · components" : ""}${componentStatus ? " · live status" : ""} · ${ir.nodes.length} nodes${tail}`;
+  document.getElementById("legend").style.display = drift ? "flex" : "none";
   document.getElementById("component-legend").style.display = componentStatus ? "flex" : "none";
   // Keep the zoom picker in sync when the dial's "observe" flips to components.
   const zp = document.getElementById("zoom-picker");
   if (zp) zp.value = zoomValue();
+  // Radial applies to the entity zooms only — grey it out in the components and
+  // network views (both lay themselves out: waves / topology boxes).
+  const rt = document.getElementById("radial-toggle");
+  if (rt) {
+    const off = view.components || view.network;
+    rt.style.opacity = off ? "0.4" : "";
+    rt.querySelector("input").disabled = off;
+  }
   const g = document.getElementById("graph");
   g.innerHTML = svg;
   const svgEl = g.querySelector("svg");
@@ -849,7 +865,7 @@ function render(ir, svg, m) {
   ensureZoomControls(g);
   ensureBackToInfra(g);
   wire(ir);
-  if (view.radial && !view.components) addRadialLabels(ir);
+  if (view.radial && !view.components && !view.network) addRadialLabels(ir);
   renderDial();
 }
 
@@ -1071,12 +1087,21 @@ async function load(opts = {}) {
       // cross-substrate entity overlay, which components never use.
       q.set("components", "1");
       if (view.env) q.set("env", view.env);
+    } else if (view.network) {
+      // Network/regional lens (#63): the server re-projects at detail 3
+      // regardless of the dial, so detail/radial don't apply. With an env it
+      // projects the live overlay (drift colours preserved), else the source.
+      q.set("network", "1");
+      if (view.env) {
+        endpoint = "/api/overlay";
+        q.set("env", view.env);
+      }
     } else if (view.env) {
       endpoint = "/api/overlay";
       q.set("env", view.env);
     }
     // Radial layout (entity view only) — curl the wide DAG onto concentric rings.
-    if (view.radial && !view.components) q.set("radial", "1");
+    if (view.radial && !view.components && !view.network) q.set("radial", "1");
     // The CI + resources facets are component-DAG-mode-only details. Load
     // both whenever components mode is on, env picked or not — #59 unifies
     // the CI facet (#58), the live-status join (#57), and resources (#59) so
@@ -1189,7 +1214,7 @@ async function initPickers() {
   });
   zoomPicker.id = "zoom-picker";
   zoomPicker.title =
-    "Granularity, coarse → fine — components: deployable units, wave-laned, live per-component status (what \"observe\" shows) · composites · resources: every resource (default) · attributes: resources + cross-stack wiring. An env colours components by live status, the rest by drift overlay.";
+    "Coarse → fine — components: deployable units, wave-laned, live per-component status (what \"observe\" shows) · network: a traditional AWS diagram (region/VPC/subnet boxes, topology nodes only, CIDRs as labels) · composites · resources: every resource (default) · attributes: resources + cross-stack wiring. An env colours components by live status, the rest by drift overlay.";
   host.appendChild(zoomPicker);
   // Radial layout: curl the wide entity graph onto concentric rings so far more
   // fits in view (loomster: 13:1 wide → ~1:1). Entity zooms only — the wave-laned

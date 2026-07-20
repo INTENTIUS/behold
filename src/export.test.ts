@@ -23,6 +23,11 @@ describe("canonicalKey", () => {
     const k = canonicalKey("/api/graph", new URLSearchParams("components=1&detail=3&env=local&radial=1"));
     expect(k).toBe("/api/graph?components=1&env=local");
   });
+
+  it("drops detail/radial for the network view too (re-projected at detail 3, dial ignored)", () => {
+    const k = canonicalKey("/api/overlay", new URLSearchParams("network=1&detail=3&env=local&radial=1"));
+    expect(k).toBe("/api/overlay?env=local&network=1");
+  });
 });
 
 describe("captureKeys", () => {
@@ -36,6 +41,12 @@ describe("captureKeys", () => {
     expect(keys).toContain("/api/graph?components=1"); // source components
     expect(keys).toContain("/api/graph?components=1&env=local");
     expect(keys).toContain("/api/graph?components=1&env=prod");
+  });
+
+  it("captures the network lens — source graph for no-env, overlay per env (#63)", () => {
+    expect(keys).toContain("/api/graph?network=1"); // source (no env)
+    expect(keys).toContain("/api/overlay?env=local&network=1");
+    expect(keys).toContain("/api/overlay?env=prod&network=1");
   });
 
   it("captures overlay for each env × detail × radial, and source graph for no-env", () => {
