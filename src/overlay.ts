@@ -44,6 +44,26 @@ interface OverlayNode {
   attrs?: Record<string, unknown>;
 }
 
+/** Drop cross-stack import handles (chant's `ir.imports` — CloudFormation
+ * Parameters and the like) from the entity graph below the ATTRIBUTES detail
+ * tier. They're not resources — they're the value plumbing between stacks, and
+ * chant emits one node per import (37+ on loomster), most of them leaves that
+ * float off to the side and balloon the diagram. The detail dial is exactly the
+ * right lever: levels ≤2 (STACKS/COMPOSITES/DECLARABLES) show your resources;
+ * level 3 (ATTRIBUTES) is where cross-stack wiring belongs, so imports resurface
+ * there. Pruning is safe — imports only ever SINK edges (a resource → its
+ * imported value), never source them, so removing them can't orphan a resource.
+ * Mutates + returns `ir`. */
+export function pruneImports<T extends { nodes: OverlayNode[]; edges?: Array<{ from: string; to: string }>; imports?: Array<{ node: string }> }>(
+  ir: T,
+): T {
+  const drop = new Set((ir.imports ?? []).map((i) => i.node));
+  if (drop.size === 0) return ir;
+  ir.nodes = ir.nodes.filter((n) => !drop.has(n.id));
+  if (ir.edges) ir.edges = ir.edges.filter((e) => !drop.has(e.from) && !drop.has(e.to));
+  return ir;
+}
+
 /** The `src/<component>/` a node is declared under, or undefined for a bare
  * `src/<file>`, a non-src path, or `src/examples/…` (examples aren't a
  * component). Mirrors resources.ts's convention. */

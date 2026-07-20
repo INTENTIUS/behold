@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { overlayStatus, reclassifyOverlay } from "./overlay.ts";
+import { overlayStatus, reclassifyOverlay, pruneImports } from "./overlay.ts";
 
 describe("overlayStatus", () => {
   it("maps chant's _status vocabulary to overlay statuses", () => {
@@ -45,5 +45,28 @@ describe("reclassifyOverlay", () => {
   it("leaves a real resource's status untouched", () => {
     const r = reclassifyOverlay(ir());
     expect(overlayStatus(r.nodes[0])).toBe("managed"); // dbRdsInstance
+  });
+});
+
+describe("pruneImports", () => {
+  const ir = () => ({
+    nodes: [
+      { id: "backendService", kind: "AWS::ECS::Service" },
+      { id: "LoomBackendpTargetGroupArn", kind: "AWS::CloudFormation::Parameter" },
+      { id: "floatingImport", kind: "AWS::CloudFormation::Parameter" },
+    ],
+    edges: [{ from: "backendService", to: "LoomBackendpTargetGroupArn" }],
+    imports: [{ node: "LoomBackendpTargetGroupArn" }, { node: "floatingImport" }],
+  });
+
+  it("drops import-handle nodes and any edges touching them", () => {
+    const r = pruneImports(ir());
+    expect(r.nodes.map((n) => n.id)).toEqual(["backendService"]); // resource kept
+    expect(r.edges).toEqual([]); // the resource→import edge went with the import
+  });
+
+  it("is a no-op when there are no imports", () => {
+    const noImports = { nodes: [{ id: "vpc", kind: "AWS::EC2::VPC" }], edges: [], imports: [] };
+    expect(pruneImports(noImports).nodes).toHaveLength(1);
   });
 });

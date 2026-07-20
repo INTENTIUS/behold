@@ -29,7 +29,7 @@ import {
   type GraphOptions,
 } from "./chant.ts";
 import { joinComponentStatus, componentStatusColor } from "./component-status.ts";
-import { reclassifyOverlay } from "./overlay.ts";
+import { reclassifyOverlay, pruneImports } from "./overlay.ts";
 import { resourcesByComponent, nonResourceEntities } from "./resources.ts";
 import { summarizePlan } from "./reconcile.ts";
 import { renderGraph } from "./render.ts";
@@ -422,6 +422,10 @@ export function createApp(
         }
       } else {
         ir = await graphIr(cfg.projectDir, opts);
+        // Entity graph below the ATTRIBUTES tier: hide cross-stack import
+        // handles (value plumbing, not resources — see pruneImports). Component
+        // graphs have no imports, so this only touches the infra view.
+        if ((opts.detail ?? 2) < 3) ir = pruneImports(ir);
       }
       // Multi-estate (#31/M4): box each composed project's nodes via `groups.
       // byStack` (pinhole's composeStacks per-project grouping) — see
@@ -573,7 +577,11 @@ export function createApp(
       // Reclassify wiring/examples so they don't read as "pending" over a done
       // deploy (see reclassifyOverlay): Parameters take their deployed
       // component's status, src/examples/ nodes go neutral + `_byo`.
-      const ir = reclassifyOverlay(await graphIr(cfg.projectDir, opts));
+      let ir = reclassifyOverlay(await graphIr(cfg.projectDir, opts));
+      // Below the ATTRIBUTES tier, hide cross-stack import handles — they're
+      // value plumbing, not resources, and float off to the side (see
+      // pruneImports). They resurface at detail 3.
+      if ((query.detail ?? 2) < 3) ir = pruneImports(ir);
       const { svg } = renderGraph(ir);
       return c.json({ ir, svg, meta: { projectDir: cfg.projectDir, env, mode: "overlay" } });
     } catch (err) {
@@ -593,6 +601,8 @@ export function createApp(
     // Same wiring/examples reclassification the /api/overlay view gets, so a
     // manual refresh of the infra graph reads consistently (env → overlay).
     if (env) reclassifyOverlay(result.ir);
+    // And the same import-handle pruning below ATTRIBUTES tier.
+    if ((optsFromQuery(new URL(c.req.url)).detail ?? 2) < 3) pruneImports(result.ir);
     const { svg } = renderGraph(result.ir);
     return c.json({
       ir: result.ir,
