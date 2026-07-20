@@ -937,7 +937,12 @@ async function initPickers() {
     }),
   );
   host.appendChild(
-    picker("detail tier", [0, 1, 2, 3].map((d) => [`detail ${d}`, String(d)]), String(view.detail), (v) => {
+    picker("detail tier", [
+      ["detail: stacks", "0"],
+      ["detail: composites", "1"],
+      ["detail: resources", "2"],
+      ["detail: attributes", "3"],
+    ], String(view.detail), (v) => {
       view.detail = Number(v);
       load();
     }),
