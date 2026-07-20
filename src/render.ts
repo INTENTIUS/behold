@@ -6,11 +6,28 @@
  * src/overlay.ts. behold owns the live data + the server + (later) the
  * temporal/action layers around this.
  */
-import { layoutIr, renderSvg } from "@intentius/pinhole";
+import { layoutIr, layoutArchitecture, renderSvg } from "@intentius/pinhole";
 import type { GraphIR, IRGroups } from "@intentius/chant";
+import type { ByContainer } from "./logical.ts";
 
 export interface RenderResult {
   svg: string;
+}
+
+/** Paint the logical/architecture view (#63) — pinhole's `layoutArchitecture`
+ * (chant#74) nests the resource cards inside their container boxes (VPC ⊃ subnet
+ * ⊃ component ⊃ resource, per `byContainer`) and routes the surviving edges
+ * between them; `renderSvg` paints the nested boundary boxes. behold's own title
+ * band is suppressed (the SPA header owns it). */
+export function renderArchitecture(ir: GraphIR, byContainer: ByContainer, opts: { theme?: string } = {}): RenderResult {
+  const layout = layoutArchitecture(ir, byContainer, { fit: true });
+  const svg = renderSvg(ir, layout, {
+    fit: true,
+    hideTitle: true,
+    groups: layout.groups,
+    ...(opts.theme ? { theme: opts.theme as never } : {}),
+  });
+  return { svg };
 }
 
 /** `groups.byWave` (component DAG, M1.0 spike) and `groups.byStack` (multi-
@@ -19,7 +36,7 @@ export interface RenderResult {
  * `@intentius/chant` predates `byWave`; a served project's own (newer) chant
  * still emits it on the IR JSON, this just types the read. Drop `byWave` once
  * behold's chant dependency ships it (spike note: chant 0.18.27+). */
-type ExtraGroups = IRGroups & { byWave?: Record<string, string[]>; byStack?: Record<string, string[]>; byNetwork?: Record<string, string[]> };
+type ExtraGroups = IRGroups & { byWave?: Record<string, string[]>; byStack?: Record<string, string[]> };
 
 /** Paint a graph IR into an SVG document. Title is behold's job (the SPA header),
  * so pinhole's own title band is suppressed.
@@ -34,7 +51,7 @@ type ExtraGroups = IRGroups & { byWave?: Record<string, string[]>; byStack?: Rec
  * src/resources.ts), not a project boundary — auto-boxing it would surprise
  * every M1–M3 view with an unrequested box. A caller that knows it's rendering
  * a composed estate opts in explicitly via `opts.boxes: "byStack"`. */
-export function renderGraph(ir: GraphIR, opts: { theme?: string; boxes?: "byStack" | "byNetwork"; radial?: boolean } = {}): RenderResult {
+export function renderGraph(ir: GraphIR, opts: { theme?: string; boxes?: "byStack"; radial?: boolean } = {}): RenderResult {
   const groups = ir.groups as ExtraGroups;
   const boxKey = groups.byWave ? "byWave" : opts.boxes;
   const boxes = boxKey ? groups[boxKey] : undefined;

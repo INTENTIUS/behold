@@ -31,11 +31,11 @@ import {
 import { joinComponentStatus, componentStatusColor } from "./component-status.ts";
 import { reclassifyOverlay, pruneImports } from "./overlay.ts";
 import { addValueMatchEdges } from "./value-match.ts";
-import { projectNetwork } from "./network.ts";
+import { projectLogical } from "./logical.ts";
 import { addCompositeDeps } from "./composite-deps.ts";
 import { resourcesByComponent, nonResourceEntities } from "./resources.ts";
 import { summarizePlan } from "./reconcile.ts";
-import { renderGraph } from "./render.ts";
+import { renderGraph, renderArchitecture } from "./render.ts";
 import { discoverEstateOps } from "./ops.ts";
 import { LIVE_IMPORT_LEXICONS } from "./adopt.ts";
 import { detectProject } from "./project.ts";
@@ -398,12 +398,12 @@ export function createApp(
       // switch, not loomster-specific. Multi-estate composition doesn't support
       // it yet, so it's ignored there.
       const components = url.searchParams.get("components") === "1";
-      // Network/regional lens (#63): re-project the entity graph into a
-      // traditional AWS diagram (region → VPC → subnet boxes, topology nodes
-      // only). A behold-side projection over the rich (detail 3) IR — it needs
-      // the full attrs, so it ignores the detail knob. Entity graph only (not
-      // the component DAG, not multi-estate compose).
-      const network = url.searchParams.get("network") === "1";
+      // Logical/architecture lens (#63): re-project the entity graph into a
+      // traditional AWS diagram — nested region/VPC/subnet ⊃ component boxes,
+      // one headline card per composite. A behold-side projection over the rich
+      // (detail 3) IR — it needs the full attrs, so it ignores the detail knob.
+      // Entity graph only (not the component DAG, not multi-estate compose).
+      const logical = url.searchParams.get("logical") === "1";
       // Multi-estate (#31): graph each project and compose into one IR (namespaced
       // ids, per-project boundary boxes, cross-stack edges). Single project → as-is.
       const multi = cfg.projectDirs && cfg.projectDirs.length > 1;
@@ -440,12 +440,15 @@ export function createApp(
           mode = "component-status";
           metaEnv = env;
         }
-      } else if (network) {
-        // Network lens: pull the rich entity graph (detail 3 — the projection
-        // reads full attrs to resolve VPC/subnet containment), recover value-
-        // wired edges, then re-project into region/VPC/subnet boxes.
-        ir = addValueMatchEdges(await graphIr(cfg.projectDir, { ...opts, detail: 3 }));
-        ir = projectNetwork(ir);
+      } else if (logical) {
+        // Logical lens: pull the rich entity graph (detail 3 — the projection
+        // reads full attrs to resolve VPC/subnet/component containment), recover
+        // value-wired edges, then re-project into nested boxes and paint with
+        // pinhole's architecture layout. Returns here (distinct render path).
+        const base = addValueMatchEdges(await graphIr(cfg.projectDir, { ...opts, detail: 3 }));
+        const { ir: projected, byContainer } = projectLogical(base);
+        const { svg } = renderArchitecture(projected, byContainer);
+        return c.json({ ir: projected, svg, meta: { projectDir: cfg.projectDir, env: metaEnv, tier: opts.tier ?? null, target: opts.target ?? null, mode: "logical" } });
       } else {
         ir = await graphIr(cfg.projectDir, opts);
         // Entity graph below the ATTRIBUTES tier: hide cross-stack import
@@ -461,7 +464,7 @@ export function createApp(
       // render.ts's doc comment for why this is an explicit opt-in rather than
       // auto-detected the way the component DAG's `byWave` is.
       const radial = new URL(c.req.url).searchParams.get("radial") === "1";
-      const { svg } = renderGraph(ir, multi ? { boxes: "byStack" } : network ? { boxes: "byNetwork" } : { radial });
+      const { svg } = renderGraph(ir, multi ? { boxes: "byStack" } : { radial });
       return c.json({
         ir,
         svg,
@@ -475,7 +478,7 @@ export function createApp(
           target: opts.target ?? null,
           ...(multi ? { estate: cfg.projectDirs!.length } : {}),
           ...(!multi && components ? { components: true } : {}),
-          ...(network ? { mode: "network" } : mode ? { mode } : {}),
+          ...(mode ? { mode } : {}),
         },
       });
     } catch (err) {
@@ -602,20 +605,20 @@ export function createApp(
     if (!env) {
       return c.json({ error: "overlay needs an environment — pick one, or start behold with --env <name>" }, 400);
     }
-    const network = new URL(c.req.url).searchParams.get("network") === "1";
+    const logical = new URL(c.req.url).searchParams.get("logical") === "1";
     try {
-      const opts: GraphOptions = { ...query, live: true, overlay: true, env, ...(network ? { detail: 3 } : {}) };
+      const opts: GraphOptions = { ...query, live: true, overlay: true, env, ...(logical ? { detail: 3 } : {}) };
       // Reclassify wiring/examples so they don't read as "pending" over a done
       // deploy (see reclassifyOverlay): Parameters take their deployed
       // component's status, src/examples/ nodes go neutral + `_byo`.
       let ir = reclassifyOverlay(await graphIr(cfg.projectDir, opts));
-      // Network/regional lens (#63): re-project the live overlay into region/VPC/
-      // subnet boxes (topology nodes only), keeping each surviving node's drift
+      // Logical/architecture lens (#63): re-project the live overlay into nested
+      // region/VPC/subnet ⊃ component boxes, keeping each surviving node's drift
       // colour. Short-circuits the detail-tier pruning/composite plumbing below.
-      if (network) {
-        ir = projectNetwork(addValueMatchEdges(ir));
-        const { svg } = renderGraph(ir, { boxes: "byNetwork" });
-        return c.json({ ir, svg, meta: { projectDir: cfg.projectDir, env, mode: "network" } });
+      if (logical) {
+        const { ir: projected, byContainer } = projectLogical(addValueMatchEdges(ir));
+        const { svg } = renderArchitecture(projected, byContainer);
+        return c.json({ ir: projected, svg, meta: { projectDir: cfg.projectDir, env, mode: "logical" } });
       }
       // Below the ATTRIBUTES tier, hide cross-stack import handles — they're
       // value plumbing, not resources, and float off to the side (see
