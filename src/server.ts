@@ -648,6 +648,39 @@ export function createApp(
   // #852), sliced to one node. Field-level `changes` appear for a resource that
   // drifted since a snapshot; otherwise just its presence category. On demand
   // (a full build + cloud query), so it's a click, not part of the graph pull.
+  // Bulk per-node live state (#27/#30): ONE `chant lifecycle diff --live` sliced
+  // for every node, so the inspect pane can show observed state + drift without a
+  // per-node query. The SPA fetches this once (cached), and a static export
+  // captures it once per env (vs one snapshot per node). Same slice functions as
+  // the single-node route below.
+  app.get("/api/diff", async (c) => {
+    const env = optsFromQuery(new URL(c.req.url)).env ?? cfg.env;
+    if (!env) return c.json({ error: "diff needs an environment — pick one, or start with --env" }, 400);
+    const { code, stdout, stderr } = await runChantRaw(["lifecycle", "diff", env, "--live", "--json"], cfg.projectDir);
+    if (code !== 0) return c.json({ error: stderr.trim() || `diff exited ${code}` }, 500);
+    let parsed: LiveDiffJson;
+    try {
+      parsed = JSON.parse(stdout) as LiveDiffJson;
+    } catch {
+      return c.json({ error: "diff output was not JSON — chant may predate --live --json (needs 0.18.7+)" }, 500);
+    }
+    // Every node the diff mentions — observed keys + each category list.
+    const ids = new Set<string>();
+    for (const lex of Object.values(parsed.lexicons ?? {})) {
+      for (const k of Object.keys(lex.observed ?? {})) ids.add(k);
+      const r = lex.resources;
+      if (!r) continue;
+      for (const arr of [r.missing, r.orphan, r.disappeared, r.newlyObserved, r.unchanged]) for (const n of arr ?? []) ids.add(n);
+      for (const d of r.driftedSinceSnapshot ?? []) ids.add(d.name);
+    }
+    const nodes: Record<string, { observed: unknown; diff: unknown; health: string }> = {};
+    for (const id of ids) {
+      const observed = nodeObserved(parsed, id);
+      nodes[id] = { observed, diff: nodeDiff(parsed, id), health: classifyHealth(observed?.status) };
+    }
+    return c.json({ env, nodes });
+  });
+
   app.get("/api/diff/:node", async (c) => {
     const node = c.req.param("node");
     const env = optsFromQuery(new URL(c.req.url)).env ?? cfg.env;

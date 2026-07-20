@@ -223,7 +223,7 @@ function inspect(node) {
   // per node (loadNodeDiff) so re-clicks are instant. A live diff is a build +
   // cloud query, so we only fire it for observed nodes, and never in static.
   const observed = st === "good" || st === "warn";
-  if (view.env && observed && !staticMode) {
+  if (view.env && observed) {
     const forId = node.id;
     const loading = document.createElement("p");
     loading.style.cssText = "color:var(--muted);margin-top:12px";
@@ -245,21 +245,23 @@ function inspect(node) {
   }
 }
 
-// Per-node live diff (chant lifecycle diff --live), cached for the session so
-// re-inspecting an observed node is instant. Cleared on an env/lens change and
-// after any op completes (resetDialCaches / the settle) so it can't go stale.
-let nodeDiffCache = new Map();
+// Bulk per-node live state — ONE `chant lifecycle diff --live` sliced for every
+// node (/api/diff), fetched once per env and cached, so inspecting an observed
+// node is instant (no per-node query). Via apiFetch, so a static export replays
+// the captured snapshot. Cache is per env; cleared on lens change / after an op.
+let bulkDiffCache = null; // { env, nodes: { <id>: { observed, diff, health } } }
 async function loadNodeDiff(id) {
-  if (nodeDiffCache.has(id)) return nodeDiffCache.get(id);
-  let j = null;
-  try {
-    const res = await fetch(`/api/diff/${encodeURIComponent(id)}?env=${encodeURIComponent(view.env)}`);
-    if (res.ok) j = await res.json();
-  } catch {
-    /* leave null → "live state unavailable" */
+  if (!bulkDiffCache || bulkDiffCache.env !== view.env) {
+    bulkDiffCache = null;
+    try {
+      const res = await apiFetch(`/api/diff?env=${encodeURIComponent(view.env)}`);
+      if (res.ok) bulkDiffCache = await res.json();
+    } catch {
+      /* leave null → empty below */
+    }
+    if (!bulkDiffCache || !bulkDiffCache.nodes) bulkDiffCache = { env: view.env, nodes: {} };
   }
-  nodeDiffCache.set(id, j);
-  return j;
+  return bulkDiffCache.nodes[id] || null;
 }
 
 const HEALTH_COLOR = {
@@ -511,7 +513,7 @@ function resetDialCaches() {
   componentChoices = [];
   componentStatusById = {};
   compositeMembersCache = null;
-  if (typeof nodeDiffCache !== "undefined") nodeDiffCache.clear();
+  bulkDiffCache = null;
 }
 
 // Composite → member list, for the inspect pane. Derived once from the base
@@ -1250,7 +1252,7 @@ function scheduleSettle() {
   settleTimers = [3000, 8000, 15000].map((ms) => setTimeout(() => load({ quiet: true }), ms));
 }
 events.addEventListener("changed", () => {
-  nodeDiffCache.clear(); // an op ran → per-node live state may have changed
+  bulkDiffCache = null; // an op ran → per-node live state may have changed
   load();
   loadSubstrates(); // a bring-up (or any op) finished → re-detect readiness
   scheduleSettle();

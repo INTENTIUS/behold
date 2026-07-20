@@ -67,6 +67,7 @@ export function captureKeys(axes: ExportAxes): string[] {
       if (env) {
         add("/api/reconcile", lens({}));
         add("/api/resources", lens({}));
+        add("/api/diff", lens({})); // bulk per-node live state → inspect shows observed state offline
       }
       // Infra graph at each detail tier × radial on/off (overlay when an env is
       // picked, source graph otherwise).

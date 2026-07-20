@@ -48,11 +48,13 @@ describe("captureKeys", () => {
     expect(keys.some((k) => k.startsWith("/api/overlay") && !k.includes("env="))).toBe(false);
   });
 
-  it("captures reconcile + resources only when an env is set", () => {
+  it("captures reconcile + resources + bulk diff only when an env is set", () => {
     expect(keys).toContain("/api/reconcile?env=local");
     expect(keys).toContain("/api/resources?env=local");
-    // no env-less reconcile
+    expect(keys).toContain("/api/diff?env=local"); // bulk per-node live state
+    // no env-less reconcile/diff
     expect(keys).not.toContain("/api/reconcile");
+    expect(keys).not.toContain("/api/diff");
   });
 
   it("has no duplicate keys", () => {
