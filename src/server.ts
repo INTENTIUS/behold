@@ -30,6 +30,7 @@ import {
 } from "./chant.ts";
 import { joinComponentStatus, componentStatusColor } from "./component-status.ts";
 import { reclassifyOverlay, pruneImports } from "./overlay.ts";
+import { addValueMatchEdges } from "./value-match.ts";
 import { resourcesByComponent, nonResourceEntities } from "./resources.ts";
 import { summarizePlan } from "./reconcile.ts";
 import { renderGraph } from "./render.ts";
@@ -426,6 +427,9 @@ export function createApp(
         // handles (value plumbing, not resources — see pruneImports). Component
         // graphs have no imports, so this only touches the infra view.
         if ((opts.detail ?? 2) < 3) ir = pruneImports(ir);
+        // Connect resources wired by a literal name/ARN value the symbolic-ref
+        // graph misses (see addValueMatchEdges).
+        ir = addValueMatchEdges(ir);
       }
       // Multi-estate (#31/M4): box each composed project's nodes via `groups.
       // byStack` (pinhole's composeStacks per-project grouping) — see
@@ -582,6 +586,9 @@ export function createApp(
       // value plumbing, not resources, and float off to the side (see
       // pruneImports). They resurface at detail 3.
       if ((query.detail ?? 2) < 3) ir = pruneImports(ir);
+      // Connect resources wired by a literal name/ARN value (e.g. an RDS
+      // instance's DBSubnetGroupName) that the symbolic-ref graph misses.
+      ir = addValueMatchEdges(ir);
       const { svg } = renderGraph(ir);
       return c.json({ ir, svg, meta: { projectDir: cfg.projectDir, env, mode: "overlay" } });
     } catch (err) {
@@ -601,8 +608,9 @@ export function createApp(
     // Same wiring/examples reclassification the /api/overlay view gets, so a
     // manual refresh of the infra graph reads consistently (env → overlay).
     if (env) reclassifyOverlay(result.ir);
-    // And the same import-handle pruning below ATTRIBUTES tier.
+    // And the same import-handle pruning below ATTRIBUTES tier + value-matched edges.
     if ((optsFromQuery(new URL(c.req.url)).detail ?? 2) < 3) pruneImports(result.ir);
+    addValueMatchEdges(result.ir);
     const { svg } = renderGraph(result.ir);
     return c.json({
       ir: result.ir,
