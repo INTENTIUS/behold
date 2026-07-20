@@ -25,7 +25,7 @@ function fmtValue(v) {
 }
 
 function inspect(node) {
-  const panel = document.getElementById("inspect");
+  const panel = document.getElementById("inspect-body");
   panel.innerHTML = "<h2>inspect</h2>";
   const section = (title) => {
     const h = document.createElement("h3");
@@ -1407,6 +1407,50 @@ async function initActions() {
   }
 }
 initActions();
+initInspectPane();
+
+// Inspect pane chrome (#15): collapse (chevron / edge tab) + drag-to-resize, with
+// the width and collapsed state persisted so the layout survives reloads.
+function initInspectPane() {
+  const app = document.getElementById("app");
+  const pane = document.getElementById("inspect");
+  const MIN = 240, MAX = 720;
+  // Restore persisted width + collapsed state.
+  const savedW = Number(localStorage.getItem("behold.inspectW"));
+  if (savedW >= MIN && savedW <= MAX) document.documentElement.style.setProperty("--inspect-w", savedW + "px");
+  if (localStorage.getItem("behold.inspectCollapsed") === "1") app.classList.add("inspect-collapsed");
+
+  const setCollapsed = (on) => {
+    app.classList.toggle("inspect-collapsed", on);
+    localStorage.setItem("behold.inspectCollapsed", on ? "1" : "0");
+  };
+  document.getElementById("inspect-collapse").addEventListener("click", () => setCollapsed(true));
+  document.getElementById("inspect-reopen").addEventListener("click", () => setCollapsed(false));
+
+  // Drag the left edge to resize; width grows as the handle moves left.
+  const handle = document.getElementById("inspect-resize");
+  handle.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = pane.getBoundingClientRect().width;
+    document.body.style.cursor = "col-resize";
+    const onMove = (ev) => {
+      const w = Math.min(MAX, Math.max(MIN, startW + (startX - ev.clientX)));
+      document.documentElement.style.setProperty("--inspect-w", w + "px");
+    };
+    const onUp = () => {
+      document.body.style.cursor = "";
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      const w = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--inspect-w"));
+      if (w) localStorage.setItem("behold.inspectW", String(w));
+      // Graph viewBox is pane-relative; refit so nothing clips after a resize.
+      if (typeof fitGraph === "function") fitGraph();
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  });
+}
 
 // The opened PR (chant #841 surfaces it as a ReconcileOp outcome). Link it in the
 // now-line and pin it in the header so the review target is one click away.

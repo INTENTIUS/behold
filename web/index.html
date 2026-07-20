@@ -13,20 +13,35 @@
       * { box-sizing: border-box; }
       html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
         font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, sans-serif; }
-      #app { display: grid; grid-template-columns: 1fr 320px; grid-template-rows: auto auto auto 1fr auto;
+      #app { display: grid; grid-template-columns: 1fr var(--inspect-w, 320px); grid-template-rows: auto auto auto 1fr auto;
         height: 100%; }
+      #app.inspect-collapsed { grid-template-columns: 1fr 0; }
+      #app.inspect-collapsed #inspect { display: none; }
       header { grid-column: 1 / 3; grid-row: 1; padding: 10px 16px; border-bottom: 1px solid var(--line);
         display: flex; align-items: baseline; gap: 12px; }
       header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .3px; }
       header .meta { color: var(--muted); font-size: 12px; }
       #graph { grid-row: 4; grid-column: 1; overflow: auto; position: relative; }
       #inspect { grid-row: 4; grid-column: 2; border-left: 1px solid var(--line); background: var(--panel);
-        padding: 14px; overflow: auto; }
+        padding: 14px; overflow: auto; position: relative; }
       #inspect h2 { font-size: 13px; margin: 0 0 8px; color: var(--muted); font-weight: 600;
         text-transform: uppercase; letter-spacing: .5px; }
-      #inspect dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 4px 10px; }
-      #inspect dt { color: var(--muted); }
-      #inspect dd { margin: 0; word-break: break-all; }
+      /* Declared/identity: key ABOVE value, value full-width — long ARNs wrap
+         readably instead of being crushed into a squeezed right column. */
+      #inspect dl { margin: 0; }
+      #inspect dt { color: var(--muted); font-size: 11px; margin-top: 9px; }
+      #inspect dd { margin: 1px 0 0; font-size: 12px; overflow-wrap: anywhere; }
+      /* Drag handle on the pane's left edge → resize; chevron → collapse. */
+      #inspect-resize { position: absolute; left: -3px; top: 0; bottom: 0; width: 7px; cursor: col-resize; z-index: 6; }
+      #inspect-resize:hover { background: var(--pending); opacity: .35; }
+      #inspect-collapse { position: absolute; top: 12px; right: 12px; z-index: 6; background: none;
+        border: none; color: var(--muted); font-size: 15px; cursor: pointer; line-height: 1; padding: 2px; }
+      #inspect-collapse:hover { color: var(--fg); }
+      #inspect-reopen { position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 30; display: none;
+        background: var(--panel); color: var(--muted); border: 1px solid var(--line); border-right: none;
+        border-radius: 6px 0 0 6px; padding: 10px 5px; cursor: pointer; writing-mode: vertical-rl; font-size: 11px; }
+      #inspect-reopen:hover { color: var(--fg); border-color: var(--pending); }
+      #app.inspect-collapsed #inspect-reopen { display: block; }
       /* The graph SVG is pinhole's, self-styled. It fills the pane; behold drives
          zoom/pan by mutating its viewBox (see setupPanZoom in app.js) — pinch or
          ⌘/Ctrl+scroll to zoom at the cursor, drag to pan. It starts fit-to-pane;
@@ -143,7 +158,12 @@
       <div id="substrates"></div>
       <div id="dial"></div>
       <div id="graph"></div>
-      <aside id="inspect"><h2>inspect</h2><p style="color:var(--muted)">click a node</p></aside>
+      <aside id="inspect">
+        <div id="inspect-resize" title="Drag to resize"></div>
+        <button id="inspect-collapse" title="Collapse panel">›</button>
+        <div id="inspect-body"><h2>inspect</h2><p style="color:var(--muted)">click a node</p></div>
+      </aside>
+      <button id="inspect-reopen" title="Show inspect panel">inspect ‹</button>
       <pre id="nowline"></pre>
     </div>
     <script type="module" src="./app.js"></script>
