@@ -6,9 +6,48 @@
 // Ghostty colour themes (#62): apply the persisted/default theme's tokens as CSS vars
 // before first paint (so the whole graph + chrome recolour from one source), then mount
 // the theme picker into the header's #pickers slot.
-import { initTheme, mountThemePicker } from "./theme.js";
+import { initTheme, mountThemePicker, readableOn, colorForCategory, onThemeChange } from "./theme.js";
 initTheme();
 mountThemePicker(document.getElementById("pickers"));
+
+// Colour node fills by category/kind using the theme's FULL palette (spicypath-style, so the
+// graph shows the theme's many colours), while pinhole's drift stays on the bar/stroke. Node
+// labels/icons get readable ink (black/white) on the category fill. Re-runs on theme switch,
+// since the categorical hues come from the active theme's palette.
+let lastGraphIr = null;
+function recolorNodesByCategory(ir) {
+  if (ir) lastGraphIr = ir;
+  const graphIr = ir || lastGraphIr;
+  const svg = document.querySelector("#graph svg");
+  if (!svg || !graphIr) return;
+  const kindOf = new Map(graphIr.nodes.map((n) => [n.id, n.kind || n.lexicon || "node"]));
+  for (const g of svg.querySelectorAll("[data-node-id]")) {
+    const kind = kindOf.get(g.getAttribute("data-node-id"));
+    if (!kind) continue;
+    const cat = colorForCategory(kind), ink = readableOn(cat);
+    // Classify each element ONCE by the pinhole token it rode on (data-cat role), then apply
+    // the role's colour on every pass. This is what makes it recolour on theme switch: after
+    // the first pass the fill is a hex (not a --pin-* var), so we must key off the marker, not
+    // the token. Roles: fill=card background (→ category hue), bg=foreignObject background,
+    // inkf/inks=label/icon (→ readable ink). The drift bar (--pin-*Bar) is never classified.
+    for (const el of g.querySelectorAll("*")) {
+      let role = el.getAttribute("data-cat");
+      if (!role) {
+        const f = el.getAttribute("fill") || "", s = el.getAttribute("stroke") || "", st = el.getAttribute("style") || "";
+        if (/--pin-\w+Fill\b/.test(f)) role = "fill";
+        else if (/--pin-\w+Fill\b/.test(st)) role = "bg";
+        else if (/--pin-text/.test(f)) role = "inkf";
+        else if (/--pin-text/.test(s)) role = "inks";
+        if (role) el.setAttribute("data-cat", role);
+      }
+      if (role === "fill") el.setAttribute("fill", cat);
+      else if (role === "bg") el.setAttribute("style", (el.getAttribute("style") || "").replace(/background:[^;]*/, "background:" + cat));
+      else if (role === "inkf") el.setAttribute("fill", ink);
+      else if (role === "inks") el.setAttribute("stroke", ink);
+    }
+  }
+}
+onThemeChange(() => recolorNodesByCategory());
 
 // Static-export mode (`behold export`): the SPA runs off a pre-captured bundle
 // with no backend. Detect the flag the export injects, load its manifest, and
@@ -939,6 +978,7 @@ function render(ir, svg, m) {
   // (theme.js applyTheme), not the frozen dark palette. Without this, every theme renders
   // green — the SVG's own :root shadows behold's override within the graph subtree.
   g.innerHTML = svg.replace(/:root\s*\{[^{}]*--pin-[^{}]*\}/g, "");
+  recolorNodesByCategory(ir); // #62: category-hued fills from the theme's full palette
   const svgEl = g.querySelector("svg");
   if (svgEl) {
     // Drop pinhole's fixed pixel size so the viewBox drives sizing; behold then

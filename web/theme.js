@@ -82,18 +82,22 @@ const CSS_VARS = ["bg", "panel", "line", "fg", "muted", "edge", "managed", "fore
 // pinhole (the graph painter) reads its OWN vars, `--pin-<token>` (emitted as
 // `var(--pin-token, <baked default>)`). Derive them from the active Ghostty theme so the graph
 // recolours with everything else. Keep pinhole's status intent (good=green, warn=red,
-// accent=blue). Fills are subtle bg-tints, so pinhole's node text (--pin-text = fg) stays
-// readable on them by construction — that's the contrast feature applied to the graph.
+// accent=blue). Node cards are a PANEL clearly distinct from the bg — else neutral nodes
+// blend into the background and look transparent — tinted toward the status hue; node text
+// (--pin-text = fg) stays readable on them.
 export function pinTokensFor(th) {
-  const P = th.palette, tint = (c, t) => mix(th.bg, c, t), fgMix = (t) => mix(th.bg, th.fg, t);
+  const P = th.palette, fgMix = (t) => mix(th.bg, th.fg, t);
   const good = P[2], warn = P[1], accent = P[4];
+  const panel = fgMix(0.18);                 // node card base — elevated well off the bg
+  const fill = (c) => mix(panel, c, 0.4);    // panel pulled strongly toward the status hue
+  const stroke = (c) => mix(th.bg, c, 0.62);
   return {
     bg0: th.bg, bg1: fgMix(0.045), dots: fgMix(0.12),
-    text: th.fg, textMuted: fgMix(0.5), textFaint: fgMix(0.38), edge: fgMix(0.28),
-    neutralFill: fgMix(0.05), neutralStroke: fgMix(0.16), neutralBar: fgMix(0.34),
-    accentFill: tint(accent, 0.12), accentStroke: accent, accentBar: accent,
-    goodFill: tint(good, 0.12), goodStroke: tint(good, 0.42), goodBar: good,
-    warnFill: tint(warn, 0.12), warnStroke: tint(warn, 0.42), warnBar: warn,
+    text: th.fg, textMuted: fgMix(0.5), textFaint: fgMix(0.38), edge: fgMix(0.3),
+    neutralFill: panel, neutralStroke: fgMix(0.3), neutralBar: fgMix(0.5),
+    accentFill: fill(accent), accentStroke: stroke(accent), accentBar: accent,
+    goodFill: fill(good), goodStroke: stroke(good), goodBar: good,
+    warnFill: fill(warn), warnStroke: stroke(warn), warnBar: warn,
     selectedStroke: accent,
   };
 }
@@ -102,9 +106,12 @@ const PIN_VARS = ["bg0", "bg1", "dots", "text", "textMuted", "textFaint", "edge"
 function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
 // A substrate/lexicon (aws, k8s, gcp, …) gets one of the theme's categorical hues, perturbed
 // in OKLCH deterministically so families stay distinct past the ~12 slot count (spicypath pattern).
+// The active theme name is folded into the hash (#62): each theme redistributes categories across
+// different palette slots, so switching themes visibly re-maps every node's colour rather than
+// keeping a category anchored to one slot (which stayed e.g. teal in every terminal palette).
 export function colorForCategory(key) {
   const cat = _tokens.cat;
-  const h = hash(String(key));
+  const h = hash((_active ? _active.name : "") + " " + String(key));
   const { L, C, H } = hexToOklch(cat[h % cat.length]);
   const dH = (((h >>> 4) % 31) - 15) * 1.6;
   const dL = (((h >>> 9) % 5) - 2) * 0.035;
