@@ -56,10 +56,20 @@ npx serve ./behold-export                        # → open it, no backend runni
 
 It captures every read endpoint for the whole lens matrix (each env/tier × zoom ×
 radial) in-process — the exact same handlers the live server runs, so a snapshot
-is byte-identical to live. **Host it anywhere** — it's just files: Cloudflare
-Pages (drag the folder in, or `wrangler pages deploy`), Workers Assets, GitHub
-Pages, S3, nginx. (The live app can't run on a Worker — it needs Docker + Floci +
-a chant subprocess — but the export can.)
+is byte-identical to live. (The live app can't run on a Worker — it needs Docker +
+Floci + a chant subprocess — but the pre-baked export can.)
+
+The bundle is **deploy-ready for Cloudflare** — `behold export` writes an
+assets-only `wrangler.jsonc` (no server code, pure static), so:
+
+```sh
+cd ./behold-export && npx wrangler deploy     # → https://<name>.<account>.workers.dev
+```
+
+Set the Worker name with `--name`, or edit `wrangler.jsonc`. Auth via
+`wrangler login` or `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` (same as any
+Workers deploy). Any other static host works too — GitHub Pages, S3, nginx, or
+Cloudflare Pages (`wrangler pages deploy .`).
 
 ## Try it — your first apply, no cloud account
 

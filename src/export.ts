@@ -11,7 +11,7 @@
  * logic duplicated.
  */
 import { mkdirSync, writeFileSync, copyFileSync, readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createApp, type ServerOptions } from "./server.ts";
 
@@ -87,8 +87,15 @@ function webDir(): string {
   return join(dirname(fileURLToPath(import.meta.url)), "..", "web");
 }
 
+/** A Cloudflare Worker name: lowercase, alnum + hyphens, ≤ 63 chars. */
+function workerName(project: string, override?: string): string {
+  const raw = override ?? `behold-${basename(project)}`;
+  const name = raw.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63);
+  return name || "behold-export";
+}
+
 /** Capture the estate `cfg` observes into a static bundle at `outDir`. */
-export async function runExport(cfg: ServerOptions, outDir: string): Promise<void> {
+export async function runExport(cfg: ServerOptions, outDir: string, opts: { name?: string } = {}): Promise<void> {
   const app = createApp(cfg);
 
   const proj = (await (await app.request("/api/project")).json()) as { environments?: string[]; tiers?: string[] };
@@ -128,9 +135,23 @@ export async function runExport(cfg: ServerOptions, outDir: string): Promise<voi
   copyFileSync(join(webDir(), "app.js"), join(outDir, "app.js"));
   writeFileSync(join(outDir, "README.md"), BUNDLE_README);
 
+  // Deploy-ready: an assets-only Cloudflare Worker config (no server code — the
+  // bundle is pure static), so `cd <out> && wrangler deploy` hosts it on
+  // <name>.workers.dev. Matches the blacklight Worker + Static Assets setup.
+  const name = workerName(cfg.projectDir, opts.name);
+  writeFileSync(
+    join(outDir, "wrangler.jsonc"),
+    JSON.stringify(
+      { $schema: "node_modules/wrangler/config-schema.json", name, compatibility_date: "2025-06-01", assets: { directory: "." } },
+      null,
+      2,
+    ) + "\n",
+  );
+
   process.stdout.write(
     `behold export → ${outDir}\n  ${ok} snapshots${failed ? ` (${failed} endpoint error(s) captured as-is)` : ""}\n` +
-      `  Serve it: npx serve ${outDir}   (or any static host — see ${join(outDir, "README.md")})\n`,
+      `  View:   npx serve ${outDir}\n` +
+      `  Deploy: cd ${outDir} && npx wrangler deploy   → https://${name}.<your-account>.workers.dev\n`,
   );
 }
 
@@ -141,16 +162,27 @@ No server or backend — everything runs client-side from the bundled snapshots.
 Pan/zoom, the zoom dial, radial layout, the inspect pane, and the env/tier
 pickers all work; there's no live observe or deploy.
 
-## Serve it locally
+## View it locally
+It must be served over http (not opened as a \`file://\` — browsers block the
+snapshot fetches on that protocol):
 \`\`\`sh
 npx serve .
 # or
 python3 -m http.server 8000
 \`\`\`
 
-## Host it
-Any static host works — it's just files:
-- **Cloudflare Pages**: drag this folder into a new Pages project (or \`wrangler pages deploy .\`).
-- **Cloudflare Workers**: serve the folder via a static-assets binding.
-- **GitHub Pages / S3 / nginx**: upload the folder as-is.
+## Deploy to Cloudflare (Workers Static Assets)
+This folder is deploy-ready — an assets-only \`wrangler.jsonc\` is included (no
+server code; the bundle is pure static). With [wrangler](https://developers.cloudflare.com/workers/wrangler/)
+installed and Cloudflare auth set:
+\`\`\`sh
+npx wrangler deploy
+# → https://<name>.<your-account>.workers.dev
+\`\`\`
+Auth: run \`npx wrangler login\`, or set \`CLOUDFLARE_API_TOKEN\` +
+\`CLOUDFLARE_ACCOUNT_ID\`. Rename by editing \`"name"\` in \`wrangler.jsonc\`.
+
+## Other static hosts
+It's just files — GitHub Pages, S3, nginx, or Cloudflare Pages
+(\`wrangler pages deploy .\`) all work.
 `;

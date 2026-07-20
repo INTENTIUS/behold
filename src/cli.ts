@@ -14,7 +14,7 @@ const USAGE = `behold — a live control plane on chant (read-only core)
 
 Usage:
   behold preview [loom-dir] [--port <n>]
-  behold export [project-dir] [--out <dir>] [--env <name>]
+  behold export [project-dir] [--out <dir>] [--env <name>] [--name <worker>]
   behold serve <project-dir…> [--port <n>] [--env <name>] [--poll <secs>]
 
   export  Capture the live estate into a self-contained, interactive STATIC
@@ -188,11 +188,13 @@ async function runPreview(rest: string[]): Promise<void> {
 async function runExportCmd(rest: string[]): Promise<void> {
   let outDir = resolve("behold-export");
   let env: string | undefined;
+  let name: string | undefined;
   let dirArg: string | undefined;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     if (a === "--out") outDir = resolve(rest[++i]);
     else if (a === "--env") env = rest[++i];
+    else if (a === "--name") name = rest[++i];
     else if (a === "-h" || a === "--help") return void process.stdout.write(USAGE);
     else if (!a.startsWith("-")) dirArg = a;
   }
@@ -215,7 +217,7 @@ async function runExportCmd(rest: string[]): Promise<void> {
     process.stderr.write(`behold export: project not found at ${projectDir}\n`);
     process.exit(2);
   }
-  await runExport({ projectDir, port: 0, ...(env ? { env } : {}) }, outDir);
+  await runExport({ projectDir, port: 0, ...(env ? { env } : {}) }, outDir, name ? { name } : {});
 }
 
 // Run when invoked directly (`tsx src/cli.ts …`), not when imported. realpath both
