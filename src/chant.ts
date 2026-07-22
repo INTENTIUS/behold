@@ -43,14 +43,23 @@ export interface GraphOptions {
    * cross-substrate topology survives; live status/ownership join per node by
    * id. See src/overlay.ts. */
   overlay?: boolean;
-  /** The tier lens (M2, #54): overrides `LOOM_TIER` for this shell-out so chant
-   * re-evaluates the served project's tier-conditioned source (loomster's
-   * components branch on `namingParams.tier`). NOT a chant CLI flag — chant has
-   * no `--tier` concept; this is the served project's own env convention, the
-   * same one `deployAxes()` (server.ts) already reads statically. Threaded as a
-   * per-request spawn env override (`envOverridesFor`), never a `process.env`
-   * mutation, so concurrent requests on different tiers never race. */
+  /** The tier lens (M2, #54): overrides the served project's own tier env var
+   * for this shell-out so chant re-evaluates its tier-conditioned source
+   * (loomster's components branch on `namingParams.tier`, read from
+   * `LOOM_TIER`). NOT a chant CLI flag — chant has no `--tier` concept; this is
+   * the served project's own env convention, named by `.behold.json`'s
+   * `tiers.envVar` (#70, `tierEnvVar` below — src/project.ts
+   * `loadBeholdConfig`), the same one `deployAxes()` (server.ts) already reads.
+   * Threaded as a per-request spawn env override (`envOverridesFor`), never a
+   * `process.env` mutation, so concurrent requests on different tiers never
+   * race. */
   tier?: string;
+  /** The env var name `tier` above overrides (#70) — sourced from the served
+   * project's `.behold.json` (`tiers.envVar`), never hardcoded. Undefined when
+   * the project declares no tiers, in which case `tier` (if somehow set) is
+   * never threaded into the shell-out's env: there's no var name to set it
+   * under. */
+  tierEnvVar?: string;
   /** The target lens (M2, #54): overrides `AWS_ENDPOINT_URL` for this shell-out
    * — the literal Floci/AWS endpoint tell `deployAxes()` already reads. Not a
    * chant CLI flag either. Modelled the same way as `tier` even though there is
@@ -61,14 +70,17 @@ export interface GraphOptions {
 
 /** Env overrides for the tier/target lenses (M2, #54): `tier`/`target` above are
  * NOT chant CLI flags (`graphFlags` never emits them) — they're the served
- * project's own env conventions (`LOOM_TIER`, `AWS_ENDPOINT_URL`), threaded
- * straight into the spawned chant process's env so it re-evaluates for the
- * picked lens. Returns undefined when neither is set, so callers can skip the
- * spawn's `env` override entirely (equivalent to inheriting `process.env`
- * as-is). Pure; exported for testing. */
+ * project's own env conventions, threaded straight into the spawned chant
+ * process's env so it re-evaluates for the picked lens. `tier`'s var name comes
+ * from `tierEnvVar` (#70, sourced from `.behold.json` — never hardcoded); a
+ * `tier` with no `tierEnvVar` is dropped, since there's no var name to set it
+ * under. `target` still maps to the literal `AWS_ENDPOINT_URL` (Floci/AWS
+ * endpoint tell — out of #70's scope). Returns undefined when neither ends up
+ * set, so callers can skip the spawn's `env` override entirely (equivalent to
+ * inheriting `process.env` as-is). Pure; exported for testing. */
 export function envOverridesFor(opts: GraphOptions): Record<string, string> | undefined {
   const overrides: Record<string, string> = {};
-  if (opts.tier) overrides.LOOM_TIER = opts.tier;
+  if (opts.tier && opts.tierEnvVar) overrides[opts.tierEnvVar] = opts.tier;
   if (opts.target) overrides.AWS_ENDPOINT_URL = opts.target;
   return Object.keys(overrides).length ? overrides : undefined;
 }
