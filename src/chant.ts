@@ -14,6 +14,7 @@ import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import type { GraphIR, Layout, ComponentStatusRow } from "@intentius/chant";
+import { detectProject } from "./project.ts";
 // Runtime import (not type-only): chant's own hand-rolled YAML parser, reused
 // rather than behold growing a second one or regex-scraping generated YAML
 // (M1.2 spike note, #58). `build`'s esbuild invocation deliberately does NOT
@@ -211,12 +212,59 @@ export function runCommandStream(cmd: string, args: string[], cwd: string, onLin
   return { pid: proc.pid ?? -1, kill: () => proc.kill(), done };
 }
 
-/** Graph the project's source. Prefer a `src/` subdir when present (the chant
- * convention) so sibling `ops/` (*.op.ts) aren't pulled into the infra graph. The
- * spawn cwd stays the project dir, which is what `--live` reads. */
-function graphPath(projectDir: string): string {
+/** Legacy heuristic: prefer a `src/` subdir when present (the chant
+ * convention) so sibling `ops/` (*.op.ts) aren't pulled into the infra graph,
+ * else the project root. Used by `graphPath()` only when the project's
+ * `chant.config.ts` doesn't declare a `sourceDir` (or config can't be read at
+ * all) — see `graphPath`. */
+function legacyGraphPath(projectDir: string): string {
   const src = join(projectDir, "src");
   return existsSync(src) ? src : projectDir;
+}
+
+/** Project dirs already warned about an un-rendered `stacks[]` (#76, follow-up
+ * to #71) — so a polled/repeated graph request doesn't spam stderr once per
+ * call. Module-level: fine to leak for the process lifetime (one entry per
+ * distinct served project). */
+const warnedMultiStack = new Set<string>();
+
+/** Graph the project's source (#71): honors `chant.config.ts`'s `sourceDir`
+ * (via `detectProject`, `src/project.ts`) — the project's own declared infra
+ * source dir, relative to the project root — instead of guessing a hardcoded
+ * `src/` convention. Falls back to `legacyGraphPath`'s `src/`-then-root
+ * heuristic when the config can't be read, or doesn't declare `sourceDir`.
+ * loomster sets `sourceDir: "src"` explicitly, so it resolves the same path
+ * either way — unaffected.
+ *
+ * Multi-stack (`stacks[]`) isn't rendered per-stack yet (#76, follow-up to
+ * #71 — a bigger design question than this single-stack fix): when a project
+ * declares `stacks[]`, this still resolves one source (`sourceDir` if also
+ * set, else the legacy heuristic) but warns on stderr rather than silently
+ * picking a stack with no explanation.
+ *
+ * The spawn cwd stays the project dir, which is what `--live` reads.
+ * Exported for testing. */
+export async function graphPath(projectDir: string): Promise<string> {
+  let info: Awaited<ReturnType<typeof detectProject>>;
+  try {
+    info = await detectProject(projectDir);
+  } catch {
+    // Config unreadable (unexpected — detectProject itself already falls
+    // back internally) — use the legacy heuristic outright.
+    return legacyGraphPath(projectDir);
+  }
+
+  if (info.stacks?.length && !warnedMultiStack.has(projectDir)) {
+    warnedMultiStack.add(projectDir);
+    process.stderr.write(
+      `behold: ${projectDir}'s chant.config.ts declares ${info.stacks.length} stack(s) in \`stacks[]\` — ` +
+        "multi-stack graph rendering isn't supported yet (#76, follow-up to #71); " +
+        `rendering ${info.sourceDir ? `sourceDir "${info.sourceDir}"` : "the single-source fallback"} only, not every stack.\n`,
+    );
+  }
+
+  if (info.sourceDir) return resolve(projectDir, info.sourceDir);
+  return legacyGraphPath(projectDir);
 }
 
 /** Build the `chant graph` argv for a view format. `components` switches the
@@ -230,13 +278,15 @@ export function graphArgs(src: string, format: "ir" | "layout", opts: GraphOptio
 
 /** The infra graph IR for a project (`chant graph --format ir`) — nodes are AWS
  * resources. */
-export function graphIr(projectDir: string, opts: GraphOptions = {}): Promise<GraphIR> {
-  return runChantJson<GraphIR>(graphArgs(graphPath(projectDir), "ir", opts, false), projectDir, envOverridesFor(opts));
+export async function graphIr(projectDir: string, opts: GraphOptions = {}): Promise<GraphIR> {
+  const src = await graphPath(projectDir);
+  return runChantJson<GraphIR>(graphArgs(src, "ir", opts, false), projectDir, envOverridesFor(opts));
 }
 
 /** Node positions for a project (`chant graph --format layout`, dagre — no native dep). */
-export function graphLayout(projectDir: string, opts: GraphOptions = {}): Promise<Layout> {
-  return runChantJson<Layout>(graphArgs(graphPath(projectDir), "layout", opts, false), projectDir, envOverridesFor(opts));
+export async function graphLayout(projectDir: string, opts: GraphOptions = {}): Promise<Layout> {
+  const src = await graphPath(projectDir);
+  return runChantJson<Layout>(graphArgs(src, "layout", opts, false), projectDir, envOverridesFor(opts));
 }
 
 /** The component-DAG graph IR (`chant graph --components --format ir`): nodes are
@@ -246,13 +296,15 @@ export function graphLayout(projectDir: string, opts: GraphOptions = {}): Promis
  * returns. Requires a chant that ships the M1.0 component-DAG view (spike
  * "chant changes" #3); behold's own pinned `@intentius/chant` predates it, so
  * this only resolves against a served project's own (newer) chant. */
-export function componentGraphIr(projectDir: string, opts: GraphOptions = {}): Promise<GraphIR> {
-  return runChantJson<GraphIR>(graphArgs(graphPath(projectDir), "ir", opts, true), projectDir, envOverridesFor(opts));
+export async function componentGraphIr(projectDir: string, opts: GraphOptions = {}): Promise<GraphIR> {
+  const src = await graphPath(projectDir);
+  return runChantJson<GraphIR>(graphArgs(src, "ir", opts, true), projectDir, envOverridesFor(opts));
 }
 
 /** Node positions for the component DAG (`chant graph --components --format layout`). */
-export function componentGraphLayout(projectDir: string, opts: GraphOptions = {}): Promise<Layout> {
-  return runChantJson<Layout>(graphArgs(graphPath(projectDir), "layout", opts, true), projectDir, envOverridesFor(opts));
+export async function componentGraphLayout(projectDir: string, opts: GraphOptions = {}): Promise<Layout> {
+  const src = await graphPath(projectDir);
+  return runChantJson<Layout>(graphArgs(src, "layout", opts, true), projectDir, envOverridesFor(opts));
 }
 
 /** Build the `chant components status` argv (M1.1 spike, Q2): one row per

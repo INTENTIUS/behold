@@ -1,9 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { EventEmitter } from "node:events";
 import { spawn as spawnMock } from "node:child_process";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   graphFlags,
   graphArgs,
+  graphPath,
   componentStatusArgs,
   ciPipelineArgs,
   parseCiPipeline,
@@ -117,6 +121,99 @@ describe("graphArgs", () => {
       "--env",
       "local",
     ]);
+  });
+});
+
+// #71: graphPath() honors chant.config.ts's sourceDir/stacks instead of the
+// hardcoded literal `src/` check. Real temp-dir fixtures (not mocks) — same
+// style as project.test.ts's detectProject tests — since graphPath's whole
+// job is reading the filesystem + delegating to detectProject.
+describe("graphPath", () => {
+  let dirs: string[] = [];
+  const make = (files: Record<string, string>): string => {
+    const dir = mkdtempSync(join(tmpdir(), "behold-graphpath-"));
+    dirs.push(dir);
+    for (const [rel, content] of Object.entries(files)) {
+      const p = join(dir, rel);
+      mkdirSync(join(p, ".."), { recursive: true });
+      writeFileSync(p, content);
+    }
+    return dir;
+  };
+  afterEach(() => {
+    dirs.forEach((d) => rmSync(d, { recursive: true, force: true }));
+    dirs = [];
+  });
+
+  it("resolves a configured non-src sourceDir (the positive case, #71)", async () => {
+    const dir = make({ "chant.config.ts": `export default { lexicons: ["aws"], sourceDir: "infra" };` });
+    expect(await graphPath(dir)).toBe(join(dir, "infra"));
+  });
+
+  it("resolves sourceDir even when that dir doesn't exist yet — config is authoritative, not an existsSync guess", async () => {
+    const dir = make({ "chant.config.ts": `export default { lexicons: ["aws"], sourceDir: "not-yet-created" };` });
+    expect(await graphPath(dir)).toBe(join(dir, "not-yet-created"));
+  });
+
+  it("no-regression: a project with sourceDir: \"src\" (loomster's shape) resolves identically to before (src/)", async () => {
+    const dir = make({
+      "chant.config.ts": `export default { lexicons: ["aws"], sourceDir: "src" };`,
+      "src/network.ts": "export {};",
+    });
+    expect(await graphPath(dir)).toBe(join(dir, "src"));
+  });
+
+  it("no-regression: no sourceDir declared, src/ present — falls back to the legacy src/-then-root heuristic", async () => {
+    const dir = make({
+      "chant.config.ts": `export default { lexicons: ["aws"] };`,
+      "src/network.ts": "export {};",
+    });
+    expect(await graphPath(dir)).toBe(join(dir, "src"));
+  });
+
+  it("no-regression: no config at all, src/ present — legacy heuristic unaffected", async () => {
+    const dir = make({ "src/network.ts": "export {};" });
+    expect(await graphPath(dir)).toBe(join(dir, "src"));
+  });
+
+  it("no-regression: no config, no src/ — falls back to the project root", async () => {
+    const dir = make({});
+    expect(await graphPath(dir)).toBe(dir);
+  });
+
+  it("stacks[] (#76 follow-up): doesn't silently pick one stack — warns on stderr and falls back to sourceDir for the single-stack case", async () => {
+    const dir = make({
+      "chant.config.ts":
+        `export default { lexicons: ["aws"], sourceDir: "infra", ` +
+        `stacks: [{ name: "api", src: "stacks/api" }, { name: "web", src: "stacks/web" }] };`,
+    });
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      const result = await graphPath(dir);
+      expect(result).toBe(join(dir, "infra"));
+      expect(stderrSpy).toHaveBeenCalledTimes(1);
+      const warning = String(stderrSpy.mock.calls[0]![0]);
+      expect(warning).toContain("stacks[]");
+      expect(warning).toContain("#76");
+      expect(warning).not.toContain("undefined");
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it("stacks[] warning is emitted once per project dir, not once per call (no poll spam)", async () => {
+    const dir = make({
+      "chant.config.ts": `export default { lexicons: ["aws"], stacks: [{ name: "api", src: "stacks/api" }] };`,
+    });
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      await graphPath(dir);
+      await graphPath(dir);
+      await graphPath(dir);
+      expect(stderrSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      stderrSpy.mockRestore();
+    }
   });
 });
 
