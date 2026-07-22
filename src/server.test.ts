@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { EventEmitter } from "node:events";
+import { spawn as spawnMock } from "node:child_process";
 
 // Route-level guard/409 tests for the delegated-write routes (M3 #54's
 // /api/apply, alongside the pre-existing /api/rollback) — mock the chant
@@ -17,6 +19,47 @@ vi.mock("./chant.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./chant.ts")>();
   return { ...actual, runChantStream: () => streamMock() };
 });
+
+// #72: the precondition-error tests below mock the chant shell-out one layer
+// deeper — `node:child_process`'s `spawn` — the same way chant.test.ts does,
+// so `graphIr`/`runChantJson` run for REAL and produce a REAL `ChantCliError`
+// from a REAL (fake) chant exit, rather than a route's dependency being
+// swapped for a function that hands back a bare `Promise.reject(...)`. A
+// directly-injected rejected promise is honest about the *shape* chant.ts
+// throws but not about *how* — the real code always rejects via an event-
+// emitter `close` callback a tick later, and Node's unhandled-rejection
+// tracking (surfaced through Hono's own internal promise chaining in
+// `app.request`) can flag an eagerly-constructed `Promise.reject` before the
+// route's `try { await graphIr(...) } catch` attaches its handler, even
+// though it always does moments later.
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  return { ...actual, spawn: vi.fn() };
+});
+
+/** A minimal fake ChildProcess: emits `data` on stdout/stderr, then `close`,
+ * on the next microtask — enough for `runChantRaw`'s listeners. Mirrors
+ * chant.test.ts's `fakeProc`. */
+function fakeProc(code: number, stdout = "", stderr = ""): ReturnType<typeof spawnMock> {
+  const proc = new EventEmitter() as unknown as ReturnType<typeof spawnMock>;
+  const out = new EventEmitter();
+  const err = new EventEmitter();
+  Object.assign(proc, { stdout: out, stderr: err });
+  // Emit once the consumer attaches its `close` listener — not on a
+  // construction-time microtask — so the fake is robust to any async work the
+  // caller does before spawning (e.g. graphPath → detectProject, #71).
+  let fired = false;
+  proc.on("newListener", (event) => {
+    if (event !== "close" || fired) return;
+    fired = true;
+    queueMicrotask(() => {
+      if (stdout) out.emit("data", Buffer.from(stdout));
+      if (stderr) err.emit("data", Buffer.from(stderr));
+      proc.emit("close", code);
+    });
+  });
+  return proc;
+}
 
 import { createApp } from "./server.ts";
 import { OpRunner } from "./op-runner.ts";
@@ -173,5 +216,99 @@ describe("GET /api/project — tier axis sourced from .behold.json (#70)", () =>
     const res = await app.request("/api/project");
     const body = (await res.json()) as { tiers?: string[] };
     expect(body.tiers).toEqual(["small", "big"]);
+  });
+});
+
+// #72: a graph/facet route's failure gets a structured {error, code, remedy}
+// body instead of an opaque 500 — errorResponse (src/server.ts) classifying
+// whatever the chant shell-out (mocked at the `spawn` layer above) reported.
+// Exercised through the real HTTP layer, through the real graphIr/
+// runChantJson/ChantCliError chain, so the route wiring itself — which error
+// routes to which endpoint, and how `?tier=` changes the outcome — is
+// covered too, not just errorResponse/tierFailure in isolation.
+describe("GET /api/graph — structured precondition errors (#72)", () => {
+  beforeEach(() => vi.mocked(spawnMock).mockReset());
+
+  it("classifies chant's lint gate as code: lint, with a remedy pointing at `chant lint`", async () => {
+    vi.mocked(spawnMock).mockReturnValue(
+      fakeProc(1, "", "error: Refusing to emit graph: source has lint errors. Run `chant lint` and fix them first."),
+    );
+    const { app } = makeApp(undefined);
+    const res = await app.request("/api/graph");
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string; code: string; remedy: string };
+    expect(body.code).toBe("lint");
+    expect(body.error).toMatch(/lint errors/);
+    expect(body.remedy).toMatch(/chant lint/);
+  });
+
+  it("classifies a missing-dependency failure as code: not-installed, with an npm install + typegen remedy", async () => {
+    vi.mocked(spawnMock).mockReturnValue(
+      fakeProc(1, "", "error: Cannot find package '@intentius/chant-lexicon-aws' imported from x.ts"),
+    );
+    const { app } = makeApp(undefined);
+    const res = await app.request("/api/graph");
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string; code: string; remedy: string };
+    expect(body.code).toBe("not-installed");
+    expect(body.remedy).toMatch(/npm install/);
+    expect(body.remedy).toMatch(/chant typegen/);
+  });
+
+  it("classifies anything else as code: eval — the generic fallback", async () => {
+    vi.mocked(spawnMock).mockReturnValue(fakeProc(1, "", "error: something totally unrelated broke"));
+    const { app } = makeApp(undefined);
+    const res = await app.request("/api/graph");
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string; code: string; remedy: string };
+    expect(body.code).toBe("eval");
+    expect(body.error).toMatch(/something totally unrelated broke/);
+  });
+
+  it("?tier= reports code: tier instead of the underlying chant classification (M2, #54, generalized)", async () => {
+    vi.mocked(spawnMock).mockReturnValue(
+      fakeProc(1, "", "error: Refusing to emit graph: source has lint errors. Run `chant lint` and fix them first."),
+    );
+    const { app } = makeApp(undefined);
+    const res = await app.request("/api/graph?tier=production");
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string; code: string; remedy: string };
+    expect(body.code).toBe("tier");
+    expect(body.error).toContain('"production"');
+    expect(body.remedy).toMatch(/different tier/);
+  });
+
+  it("a not-installed failure keeps its own code even under a picked tier — it isn't a tier problem", async () => {
+    vi.mocked(spawnMock).mockReturnValue(fakeProc(1, "", "error: Cannot find package 'x' imported from y.ts"));
+    const { app } = makeApp(undefined);
+    const res = await app.request("/api/graph?tier=production");
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("not-installed");
+  });
+});
+
+// /api/overlay is where a picked tier's creds gate USUALLY surfaces in
+// practice — the SPA's load() routes an env pick here, not /api/graph (see
+// web/app.js). Same errorResponse under the hood; verify the wiring reaches
+// it too, not just /api/graph's.
+describe("GET /api/overlay — structured precondition errors (#72)", () => {
+  beforeEach(() => vi.mocked(spawnMock).mockReset());
+
+  it("classifies a tier/creds failure the same way as /api/graph", async () => {
+    vi.mocked(spawnMock).mockReturnValue(
+      fakeProc(1, "", "error: Refusing to emit graph: source has lint errors. Run `chant lint` and fix them first."),
+    );
+    const { app } = makeApp(undefined);
+    const res = await app.request("/api/overlay?env=local&tier=production");
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string; code: string; remedy: string };
+    expect(body.code).toBe("tier");
+    expect(body.remedy).toMatch(/different tier/);
+  });
+
+  it("still 400s with no environment available, unaffected by the #72 changes", async () => {
+    const { app } = makeApp(undefined);
+    const res = await app.request("/api/overlay");
+    expect(res.status).toBe(400);
   });
 });

@@ -86,11 +86,16 @@
       @keyframes spin { to { transform: rotate(360deg); } }
       .sel rect, .sel path, .sel > rect { stroke: var(--pending) !important; stroke-width: 2.5 !important; }
       .err { padding: 24px; color: var(--foreign); }
-      /* M2 (#54): a graph/facet failure under a picked (non-default) tier — a
-         distinct, calmer note (not the alarming red .err) since it's usually
-         expected (e.g. a production-only tier not deployable on a local
-         target), not a bug. */
-      .tier-note { padding: 24px; color: var(--muted); white-space: pre-wrap; max-width: 640px; }
+      /* #72: a classified precondition failure (chant's lint gate, a project
+         that isn't installed/typegen'd, a tier that needs credentials) reads
+         as a calm entry/error card — not the alarming red .err, since these
+         are usually expected states on a real (imperfect) project, not bugs.
+         Generalizes the old M2 (#54) tier-only `.tier-note`. */
+      .precondition-error { padding: 24px; max-width: 640px; }
+      .precondition-error-title { color: var(--fg); font-size: 15px; font-weight: 600; margin-bottom: 10px; }
+      .precondition-error-message { color: var(--muted); white-space: pre-wrap; font: 12px/1.5 ui-monospace, monospace; }
+      .precondition-error-remedy { color: var(--pending); margin-top: 14px; }
+      .precondition-error-remedy::before { content: "→ "; }
       #actions button, #inspect button { background: var(--panel); color: var(--fg); border: 1px solid var(--line);
         border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
       #actions button:hover, #inspect button:hover { border-color: var(--pending); }

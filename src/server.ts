@@ -26,7 +26,10 @@ import {
   ciPipeline,
   lifecyclePlan,
   runChantRaw,
+  ChantCliError,
+  classifyChantFailure,
   type GraphOptions,
+  type ChantFailure,
 } from "./chant.ts";
 import { joinComponentStatus, componentStatusColor } from "./component-status.ts";
 import { reclassifyOverlay, pruneImports } from "./overlay.ts";
@@ -139,30 +142,63 @@ async function knownComponents(projectDir: string, opts: GraphOptions): Promise<
   }
 }
 
-/** A clear, generic note for a graph/facet call that failed while a non-default
- * tier was picked (M2, #54) — e.g. loomster's `full` tier trips chant's lint
- * gate on Floci (needs real-AWS params it doesn't have here). Undefined when
- * no tier was picked, so a plain failure still reads as a plain error.
- * Deliberately substrate-name-free (no "Floci"/"loomster" literal) — behold
- * has zero per-substrate logic; the note explains the SHAPE of the problem
- * (a non-default tier can need parameters this environment lacks), not a
- * specific project's story. */
-function tierErrorNote(tier: string | undefined, message: string): string | undefined {
-  if (!tier) return undefined;
-  return (
-    `chant couldn't evaluate the "${tier}" tier here: ${message}\n` +
-    `A non-default tier (e.g. a production-only one) can need parameters — real ` +
-    `credentials, a different target — this environment doesn't have. Pick a ` +
-    `different tier to see its graph.`
-  );
+/** Precondition-failure codes a read route's structured error can carry (#72):
+ * chant.ts's `ChantFailureCode` (lint gate / not-installed / generic eval —
+ * classified from chant's own stderr), plus "tier" — a non-default tier that
+ * needed parameters this host doesn't have, generalized below from what used
+ * to be a one-off `tierErrorNote`/`tierNote` bolted onto a plain error. */
+export type RouteErrorCode = ChantFailure["code"] | "tier";
+
+/** A read route's structured, typed error body (#72): a machine `code`, a
+ * human `error` message, and a suggested `remedy` — what web/app.js's
+ * `renderPreconditionError` turns into the entry/error screen instead of a
+ * blank canvas or a raw stack trace. */
+export interface RouteError {
+  error: string;
+  code: RouteErrorCode;
+  remedy: string;
 }
 
-/** A read route's error response, with a `tierNote` alongside `error` when the
- * failure happened under a picked (non-default) tier — see `tierErrorNote`. */
+/** The "tier" failure (M2, #54, generalizing the old `tierErrorNote`) — a
+ * non-default tier tripped chant's lint/eval gate. A production-only tier
+ * commonly needs real credentials or a different target this host lacks, and
+ * that trips the SAME gate a genuinely broken project would; the remedy here
+ * isn't "edit the source", it's "pick a different tier or supply creds".
+ * Deliberately substrate-name-free (no "Floci"/"loomster" literal) — behold
+ * has zero per-substrate logic; this explains the SHAPE of the problem, not a
+ * specific project's story. Exported for testing. */
+export function tierFailure(tier: string, message: string): RouteError {
+  return {
+    code: "tier",
+    error: `chant couldn't evaluate the "${tier}" tier here: ${message}`,
+    remedy:
+      `A non-default tier (e.g. a production-only one) can need parameters — real ` +
+      `credentials, a different target — this environment doesn't have. Pick a ` +
+      `different tier to see its graph.`,
+  };
+}
+
+/** A read route's structured, typed error response (#72). `ChantCliError`
+ * (chant.ts) already classified a non-zero chant exit — lint gate /
+ * not-installed / generic eval — at throw time (`err.failure`); anything else
+ * that reaches a route's catch (a JSON.parse failure, a rejection that isn't
+ * chant's own) gets the same best-effort classification straight off its
+ * message text (`classifyChantFailure`), so every route that calls this gets
+ * a `code`, not just chant's own failures.
+ *
+ * A picked, non-default tier (M2, #54) always reports as "tier" instead of
+ * whatever chant-side code the underlying failure classified as — see
+ * `tierFailure`. A "not-installed" failure stays itself even under a picked
+ * tier: that failure is about the project not being there at all, which has
+ * nothing to do with which tier was asked for. */
 function errorResponse(c: Context, opts: GraphOptions, err: unknown) {
   const message = err instanceof Error ? err.message : String(err);
-  const tierNote = tierErrorNote(opts.tier, message);
-  return c.json({ error: message, ...(tierNote ? { tierNote } : {}) }, 500);
+  const failure = err instanceof ChantCliError ? err.failure : classifyChantFailure(message);
+  const routeError: RouteError =
+    opts.tier && failure.code !== "not-installed"
+      ? tierFailure(opts.tier, failure.message)
+      : { error: failure.message, code: failure.code, remedy: failure.remedy };
+  return c.json(routeError, 500);
 }
 
 /** The deploy axes in play (#59 unify, issue scope: "header line showing
@@ -657,7 +693,10 @@ export function createApp(
       const { svg } = renderGraph(ir, { radial: new URL(c.req.url).searchParams.get("radial") === "1" });
       return c.json({ ir, svg, meta: { projectDir: cfg.projectDir, env, mode: "overlay" } });
     } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+      // #72: the same structured {error, code, remedy} the other read routes
+      // return — this is in fact where a picked tier's creds gate USUALLY
+      // surfaces (an env pick routes the SPA's load() here, not /api/graph).
+      return errorResponse(c, query, err);
     }
   });
 

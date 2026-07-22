@@ -178,9 +178,100 @@ export function runChantRaw(
   });
 }
 
+// ---------------------------------------------------------------------------
+// Precondition-failure classification (#72) — behold shells the served
+// project's OWN chant, which routinely refuses on a project that isn't
+// perfectly set up yet (the "open your own project" goal's whole premise, per
+// the bundled-Loom-demo era never surfacing this). A non-zero exit used to
+// just become a generic `Error` that /api/graph's `errorResponse` stringified
+// into an opaque 500. This classifies chant's own stderr into the handful of
+// preconditions the CLI itself gates on, so a route can hand back a machine
+// code + a suggested remedy instead of a stack trace.
+// ---------------------------------------------------------------------------
+
+/** The precondition failures behold distinguishes (#72's "at least" list):
+ *   - "lint": `chant graph`'s own lint gate — it refuses to emit a graph for
+ *     source that doesn't pass `chant lint` (see chant's cli/handlers/
+ *     graph.ts, "Refusing to emit graph: source has lint errors").
+ *   - "not-installed": chant can't resolve a package the project's source
+ *     imports (`Cannot find package`/`Cannot find module`) — either the
+ *     project itself was never `npm install`ed, or it's missing generated
+ *     types (`chant typegen`); either way behold's bin resolution
+ *     (`chantBin` above) fell back to its own pinned chant, which has none of
+ *     the served project's own lexicons.
+ *   - "eval": anything else non-zero — a generic evaluation failure. Covers
+ *     the tier/env-needs-creds case (server.ts generalizes this bucket
+ *     further, folding in the picked tier for a friendlier remedy) and any
+ *     other chant-side error this module doesn't special-case.
+ */
+export type ChantFailureCode = "lint" | "not-installed" | "eval";
+
+/** A classified chant failure: the machine `code`, chant's own message
+ * (ANSI-stripped, trimmed), and a suggested next step. */
+export interface ChantFailure {
+  code: ChantFailureCode;
+  message: string;
+  remedy: string;
+}
+
+// chant's own `formatError`/`formatWarning` (cli/format.ts) colour output
+// whenever `!process.env.NO_COLOR && process.stdout.isTTY !== false` — a
+// piped stream's `isTTY` is `undefined`, not `false`, so that check stays
+// true for a spawned, non-interactive chant by default. Strip the escapes so
+// neither the classification regexes nor the JSON/UI surfaced text carry raw
+// control bytes.
+const ANSI_RE = /\x1b\[[0-9;]*m/g;
+
+/** Strip ANSI colour escapes from chant's stderr/stdout. Exported for testing. */
+export function stripAnsi(text: string): string {
+  return text.replace(ANSI_RE, "");
+}
+
+/** Classify a failed chant shell-out's stderr into one of `ChantFailureCode`
+ * (#72). Pattern-matches chant's own wording rather than an exit-code
+ * convention — chant exits 1 for every failure class alike, so the message
+ * text is the only signal. Never throws; a message that matches nothing
+ * specific falls into the generic "eval" bucket. Pure; exported for testing. */
+export function classifyChantFailure(stderr: string): ChantFailure {
+  const clean = stripAnsi(stderr).trim();
+  if (/refusing to emit graph: source has lint errors/i.test(clean)) {
+    return {
+      code: "lint",
+      message: clean || "chant refused to emit the graph: the project has lint errors.",
+      remedy: "Run `chant lint` in the project to see the errors, fix them, then reload.",
+    };
+  }
+  if (/cannot find (package|module)\s+['"]/i.test(clean)) {
+    return {
+      code: "not-installed",
+      message: clean || "chant could not resolve a package the project's source imports.",
+      remedy: "Run `npm install && chant typegen` in the project directory, then reload.",
+    };
+  }
+  return {
+    code: "eval",
+    message: clean || "chant failed to evaluate the project.",
+    remedy: "Check the project's chant source and environment — see the message above for chant's own error.",
+  };
+}
+
+/** Thrown by `runChantJson`/`ciPipeline` on a non-zero chant exit. `message`
+ * stays the same "chant <args> exited <code>: <stderr>" text a plain `Error`
+ * always carried here (so any existing `err instanceof Error ? err.message :
+ * …` caller is unaffected); `failure` is the classification (#72) a route can
+ * read straight off the caught error instead of re-parsing the message. */
+export class ChantCliError extends Error {
+  readonly failure: ChantFailure;
+  constructor(args: string[], code: number, stderr: string) {
+    super(`chant ${args.join(" ")} exited ${code}: ${stderr.trim()}`);
+    this.name = "ChantCliError";
+    this.failure = classifyChantFailure(stderr);
+  }
+}
+
 async function runChantJson<T>(args: string[], projectDir?: string, envOverride?: Record<string, string>): Promise<T> {
   const { code, stdout, stderr } = await runChantRaw(args, projectDir, envOverride);
-  if (code !== 0) throw new Error(`chant ${args.join(" ")} exited ${code}: ${stderr.trim()}`);
+  if (code !== 0) throw new ChantCliError(args, code, stderr);
   return JSON.parse(stdout) as T;
 }
 
@@ -426,7 +517,7 @@ export function parseCiPipeline(stdout: string): CiPipeline {
 export function ciPipeline(projectDir: string, opts: GraphOptions = {}): Promise<CiPipeline> {
   const args = ciPipelineArgs(opts);
   return runChantRaw(args, projectDir, envOverridesFor(opts)).then(({ code, stdout, stderr }) => {
-    if (code !== 0) throw new Error(`chant ${args.join(" ")} exited ${code}: ${stderr.trim()}`);
+    if (code !== 0) throw new ChantCliError(args, code, stderr);
     return parseCiPipeline(stdout);
   });
 }

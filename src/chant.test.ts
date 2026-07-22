@@ -15,6 +15,10 @@ import {
   lifecyclePlanArgs,
   applyArgs,
   runChantRaw,
+  stripAnsi,
+  classifyChantFailure,
+  ChantCliError,
+  graphIr,
 } from "./chant.ts";
 import { overlayStatus } from "./overlay.ts";
 
@@ -29,10 +33,18 @@ function fakeProc(code: number, stdout = "", stderr = ""): ReturnType<typeof spa
   const out = new EventEmitter();
   const err = new EventEmitter();
   Object.assign(proc, { stdout: out, stderr: err });
-  queueMicrotask(() => {
-    if (stdout) out.emit("data", Buffer.from(stdout));
-    if (stderr) err.emit("data", Buffer.from(stderr));
-    proc.emit("close", code);
+  // Emit once the consumer attaches its `close` listener — not on a
+  // construction-time microtask — so the fake is robust to any async work the
+  // caller does before spawning (e.g. graphPath → detectProject, #71).
+  let fired = false;
+  proc.on("newListener", (event) => {
+    if (event !== "close" || fired) return;
+    fired = true;
+    queueMicrotask(() => {
+      if (stdout) out.emit("data", Buffer.from(stdout));
+      if (stderr) err.emit("data", Buffer.from(stderr));
+      proc.emit("close", code);
+    });
   });
   return proc;
 }
@@ -420,5 +432,110 @@ describe("runChantRaw — env override reaches the spawn", () => {
     const opts = vi.mocked(spawnMock).mock.calls[0]![2] as { env?: NodeJS.ProcessEnv } | undefined;
     expect(opts?.env?.LOOM_TIER).toBe("light");
     expect(opts?.env?.AWS_ENDPOINT_URL).toBe("http://localhost:4566");
+  });
+});
+
+describe("stripAnsi", () => {
+  it("removes ANSI colour escapes", () => {
+    expect(stripAnsi("\x1b[31merror\x1b[0m: broken")).toBe("error: broken");
+  });
+
+  it("is a no-op on plain text", () => {
+    expect(stripAnsi("plain text, no escapes")).toBe("plain text, no escapes");
+  });
+});
+
+// #72: classify chant's own stderr into the precondition failures the "open
+// your own project" goal routinely hits — lint gate, not-installed/no-
+// typegen, and a generic eval failure (e.g. a tier that needs credentials).
+// Fixtures below are chant's ACTUAL stderr, captured by shelling
+// `graphIr()`/`chant graph --format ir` (0.18.x) against `example/` — the
+// lint-gate and not-installed strings straight off chant's own
+// cli/handlers/graph.ts ("Refusing to emit graph…") and Node's module
+// resolution ("Cannot find package…"); the generic-failure fixture is chant
+// surfacing a thrown Error from evaluated source the same way.
+describe("classifyChantFailure", () => {
+  it("classifies the lint gate — chant graph.ts's own 'Refusing to emit graph' message", () => {
+    const stderr =
+      "\x1b[31merror\x1b[0m: Refusing to emit graph: source has lint errors. Run `chant lint` and fix them first.";
+    const failure = classifyChantFailure(stderr);
+    expect(failure.code).toBe("lint");
+    expect(failure.message).toBe("error: Refusing to emit graph: source has lint errors. Run `chant lint` and fix them first.");
+    expect(failure.remedy).toMatch(/chant lint/);
+  });
+
+  it("classifies a missing package — Node's ESM resolution error on an unresolvable import", () => {
+    const stderr =
+      "\x1b[31merror\x1b[0m: Cannot find package '@intentius/chant-lexicon-aws' imported from " +
+      "/private/tmp/behold-72/node_modules/@intentius/chant/src/cli/plugins.ts";
+    const failure = classifyChantFailure(stderr);
+    expect(failure.code).toBe("not-installed");
+    expect(failure.message).toContain("Cannot find package '@intentius/chant-lexicon-aws'");
+    expect(failure.remedy).toMatch(/npm install/);
+    expect(failure.remedy).toMatch(/chant typegen/);
+  });
+
+  it("classifies a missing module the same way — 'Cannot find module' (CJS-style resolution errors)", () => {
+    const failure = classifyChantFailure("error: Cannot find module '@intentius/chant'\nRequire stack:\n- /x.js");
+    expect(failure.code).toBe("not-installed");
+  });
+
+  it("falls back to a generic eval failure for anything else — e.g. a thrown Error from evaluated source", () => {
+    const stderr = "\x1b[31merror\x1b[0m: simulated tier eval failure: missing required parameter";
+    const failure = classifyChantFailure(stderr);
+    expect(failure.code).toBe("eval");
+    expect(failure.message).toBe("error: simulated tier eval failure: missing required parameter");
+    expect(failure.remedy).toBeTruthy();
+  });
+
+  it("never throws on empty stderr — falls back to a generic message", () => {
+    const failure = classifyChantFailure("");
+    expect(failure.code).toBe("eval");
+    expect(failure.message).toBeTruthy();
+  });
+
+  it("is case-insensitive on chant's own wording (defensive — matches today's exact casing too)", () => {
+    expect(classifyChantFailure("REFUSING TO EMIT GRAPH: source has lint errors.").code).toBe("lint");
+    expect(classifyChantFailure("cannot find package 'x'").code).toBe("not-installed");
+  });
+});
+
+describe("ChantCliError", () => {
+  it("carries the plain 'chant <args> exited <code>: <stderr>' message unchanged, for callers that just stringify it", () => {
+    const err = new ChantCliError(["graph", "src", "--format", "ir"], 1, "boom");
+    expect(err.message).toBe("chant graph src --format ir exited 1: boom");
+    expect(err).toBeInstanceOf(Error);
+  });
+
+  it("also carries the classified failure alongside the message", () => {
+    const err = new ChantCliError(
+      ["graph", "src", "--format", "ir"],
+      1,
+      "error: Refusing to emit graph: source has lint errors. Run `chant lint` and fix them first.",
+    );
+    expect(err.failure.code).toBe("lint");
+    expect(err.failure.remedy).toMatch(/chant lint/);
+  });
+});
+
+// End-to-end: runChantJson (private, exercised via graphIr) wraps a non-zero
+// exit in a ChantCliError rather than a plain Error — the real signal
+// server.ts's errorResponse (#72) reads off a caught graph/facet failure.
+describe("runChantJson — wraps a non-zero exit in a classified ChantCliError", () => {
+  beforeEach(() => vi.mocked(spawnMock).mockReset());
+
+  it("rejects with a ChantCliError carrying the classified failure", async () => {
+    vi.mocked(spawnMock).mockReturnValue(
+      fakeProc(1, "", "error: Cannot find package '@intentius/chant-lexicon-aws' imported from x.ts"),
+    );
+    await expect(graphIr("/proj")).rejects.toMatchObject({
+      name: "ChantCliError",
+      failure: { code: "not-installed" },
+    });
+  });
+
+  it("still parses stdout as JSON on a zero exit — the happy path is unaffected", async () => {
+    vi.mocked(spawnMock).mockReturnValue(fakeProc(0, JSON.stringify({ nodes: [], edges: [] })));
+    await expect(graphIr("/proj")).resolves.toEqual({ nodes: [], edges: [] });
   });
 });
