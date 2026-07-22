@@ -3,7 +3,8 @@ import { EventEmitter } from "node:events";
 import { spawn as spawnMock } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   graphFlags,
   graphArgs,
@@ -205,39 +206,93 @@ describe("graphPath", () => {
     expect(await graphPath(dir)).toBe(dir);
   });
 
-  it("stacks[] (#76 follow-up): doesn't silently pick one stack — warns on stderr and falls back to sourceDir for the single-stack case", async () => {
-    const dir = make({
-      "chant.config.ts":
-        `export default { lexicons: ["aws"], sourceDir: "infra", ` +
-        `stacks: [{ name: "api", src: "stacks/api" }, { name: "web", src: "stacks/web" }] };`,
+  // #76 (follow-up to #71): real per-stack rendering — the warn-only path
+  // above is retired. A multi-stack project's `stacks[]` is resolved via a
+  // 2nd `opts` arg (`opts.stack`), NOT `sourceDir` — a declared `stacks[]`
+  // always wins over `sourceDir` when both are set (the design: a multi-stack
+  // project's whole point is its independently-deployed stacks).
+  describe("stacks[] (#76): the stack picker's resolution", () => {
+    it("defaults to the FIRST declared stack when no stack is selected (opts omitted entirely — the one-arg call #71's tests rely on keeps working)", async () => {
+      const dir = make({
+        "chant.config.ts":
+          `export default { lexicons: ["aws"], ` +
+          `stacks: [{ name: "api", src: "stacks/api" }, { name: "web", src: "stacks/web" }] };`,
+      });
+      expect(await graphPath(dir)).toBe(join(dir, "stacks/api"));
     });
-    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    try {
-      const result = await graphPath(dir);
-      expect(result).toBe(join(dir, "infra"));
-      expect(stderrSpy).toHaveBeenCalledTimes(1);
-      const warning = String(stderrSpy.mock.calls[0]![0]);
-      expect(warning).toContain("stacks[]");
-      expect(warning).toContain("#76");
-      expect(warning).not.toContain("undefined");
-    } finally {
-      stderrSpy.mockRestore();
-    }
-  });
 
-  it("stacks[] warning is emitted once per project dir, not once per call (no poll spam)", async () => {
-    const dir = make({
-      "chant.config.ts": `export default { lexicons: ["aws"], stacks: [{ name: "api", src: "stacks/api" }] };`,
+    it("defaults to the FIRST declared stack when opts is given but opts.stack is unset", async () => {
+      const dir = make({
+        "chant.config.ts":
+          `export default { lexicons: ["aws"], ` +
+          `stacks: [{ name: "api", src: "stacks/api" }, { name: "web", src: "stacks/web" }] };`,
+      });
+      expect(await graphPath(dir, {})).toBe(join(dir, "stacks/api"));
     });
-    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    try {
-      await graphPath(dir);
-      await graphPath(dir);
-      await graphPath(dir);
-      expect(stderrSpy).toHaveBeenCalledTimes(1);
-    } finally {
-      stderrSpy.mockRestore();
-    }
+
+    it("resolves a selected stack's src when opts.stack names a declared stack", async () => {
+      const dir = make({
+        "chant.config.ts":
+          `export default { lexicons: ["aws"], ` +
+          `stacks: [{ name: "api", src: "stacks/api" }, { name: "web", src: "stacks/web" }] };`,
+      });
+      expect(await graphPath(dir, { stack: "web" })).toBe(join(dir, "stacks/web"));
+      expect(await graphPath(dir, { stack: "api" })).toBe(join(dir, "stacks/api"));
+    });
+
+    it("falls back to the first stack when opts.stack names no declared stack — never throws, never picks nothing", async () => {
+      const dir = make({
+        "chant.config.ts":
+          `export default { lexicons: ["aws"], ` +
+          `stacks: [{ name: "api", src: "stacks/api" }, { name: "web", src: "stacks/web" }] };`,
+      });
+      expect(await graphPath(dir, { stack: "nonexistent" })).toBe(join(dir, "stacks/api"));
+    });
+
+    it("a declared stacks[] wins over sourceDir even when both are set — sourceDir is not consulted", async () => {
+      const dir = make({
+        "chant.config.ts":
+          `export default { lexicons: ["aws"], sourceDir: "infra", ` +
+          `stacks: [{ name: "api", src: "stacks/api" }, { name: "web", src: "stacks/web" }] };`,
+      });
+      expect(await graphPath(dir)).toBe(join(dir, "stacks/api"));
+      expect(await graphPath(dir, { stack: "web" })).toBe(join(dir, "stacks/web"));
+    });
+
+    it("no stderr warning is emitted anymore — the #71 warn-only path is retired, not just silenced", async () => {
+      const dir = make({
+        "chant.config.ts": `export default { lexicons: ["aws"], stacks: [{ name: "api", src: "stacks/api" }] };`,
+      });
+      const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+      try {
+        await graphPath(dir);
+        await graphPath(dir, { stack: "api" });
+        expect(stderrSpy).not.toHaveBeenCalled();
+      } finally {
+        stderrSpy.mockRestore();
+      }
+    });
+
+    it("no-regression: a single-stack/sourceDir project ignores opts.stack entirely — completely unaffected", async () => {
+      const dir = make({ "chant.config.ts": `export default { lexicons: ["aws"], sourceDir: "infra" };` });
+      expect(await graphPath(dir, { stack: "anything" })).toBe(join(dir, "infra"));
+    });
+
+    it("no-regression: a legacy project (no config) ignores opts.stack entirely", async () => {
+      const dir = make({ "src/network.ts": "export {};" });
+      expect(await graphPath(dir, { stack: "anything" })).toBe(join(dir, "src"));
+    });
+
+    // The committed fixture (e2e/fixtures/multi-stack, #76) — a real on-disk
+    // two-stack project, so this feature has one durable, reviewable example
+    // outside the temp-dir unit tests above (which cover every resolution
+    // branch in isolation).
+    it("resolves both of the committed e2e/fixtures/multi-stack fixture's stacks", async () => {
+      const fixture = join(dirname(fileURLToPath(import.meta.url)), "..", "e2e", "fixtures", "multi-stack");
+      expect(await graphPath(fixture)).toBe(join(fixture, "stacks/api"));
+      expect(await graphPath(fixture, { stack: "api" })).toBe(join(fixture, "stacks/api"));
+      expect(await graphPath(fixture, { stack: "web" })).toBe(join(fixture, "stacks/web"));
+    });
   });
 });
 
@@ -537,5 +592,51 @@ describe("runChantJson — wraps a non-zero exit in a classified ChantCliError",
   it("still parses stdout as JSON on a zero exit — the happy path is unaffected", async () => {
     vi.mocked(spawnMock).mockReturnValue(fakeProc(0, JSON.stringify({ nodes: [], edges: [] })));
     await expect(graphIr("/proj")).resolves.toEqual({ nodes: [], edges: [] });
+  });
+});
+
+// #76: the stack lens must reach the ACTUAL spawned `chant graph <src>` call,
+// not just graphPath()'s own return value (tested against real temp
+// directories above) — this verifies graphIr end-to-end, the same way
+// "runChantRaw — env override reaches the spawn" verifies the tier/target
+// lenses reach the spawn's `env`. Real temp-dir project + mocked spawn: the
+// project directory must actually exist on disk (with a real chant.config.ts
+// declaring stacks[]) for graphPath's detectProject to resolve anything —
+// only the chant BINARY itself is faked.
+describe("graphIr — the stack lens (#76) reaches the actual chant graph invocation", () => {
+  let dirs: string[] = [];
+  const make = (config: string): string => {
+    const dir = mkdtempSync(join(tmpdir(), "behold-graphir-stack-"));
+    dirs.push(dir);
+    writeFileSync(join(dir, "chant.config.ts"), config);
+    return dir;
+  };
+  // Reset BEFORE each test too, not just after — a prior describe block's
+  // last test can leave calls recorded on the shared module-level mock, which
+  // would otherwise make `mock.calls[0]` here read a stale call.
+  beforeEach(() => vi.mocked(spawnMock).mockReset());
+  afterEach(() => {
+    dirs.forEach((d) => rmSync(d, { recursive: true, force: true }));
+    dirs = [];
+  });
+
+  const STACKS_CONFIG =
+    `export default { lexicons: ["aws"], ` +
+    `stacks: [{ name: "api", src: "stacks/api" }, { name: "web", src: "stacks/web" }] };`;
+
+  it("shells `chant graph <selected stack's src> --format ir` when opts.stack picks a declared stack", async () => {
+    const dir = make(STACKS_CONFIG);
+    vi.mocked(spawnMock).mockReturnValue(fakeProc(0, JSON.stringify({ nodes: [], edges: [] })));
+    await graphIr(dir, { stack: "web" });
+    const args = vi.mocked(spawnMock).mock.calls[0]![1] as string[];
+    expect(args).toEqual(["graph", join(dir, "stacks/web"), "--format", "ir"]);
+  });
+
+  it("shells `chant graph <first stack's src> --format ir` when no stack is selected — the picker's default", async () => {
+    const dir = make(STACKS_CONFIG);
+    vi.mocked(spawnMock).mockReturnValue(fakeProc(0, JSON.stringify({ nodes: [], edges: [] })));
+    await graphIr(dir);
+    const args = vi.mocked(spawnMock).mock.calls[0]![1] as string[];
+    expect(args).toEqual(["graph", join(dir, "stacks/api"), "--format", "ir"]);
   });
 });

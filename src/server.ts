@@ -102,6 +102,12 @@ function optsFromQuery(url: URL, tierEnvVar?: string): GraphOptions {
   if (q.get("down") === "1") opts.down = true;
   const env = q.get("env");
   if (env) opts.env = env;
+  // The stack picker (#76, follow-up to #71): `?stack=` names one of the
+  // served project's declared `stacks[]` entries — chant.ts's `graphPath`
+  // resolves it to that stack's own source tree, same shape as `?env=`
+  // above. A project declaring no `stacks[]` ignores this entirely.
+  const stack = q.get("stack");
+  if (stack) opts.stack = stack;
   // The tier/target lenses (M2, #54): `?tier=` overrides the project's tier
   // env var (#70), `?target=` overrides AWS_ENDPOINT_URL, for this request's
   // chant shell-outs (see chant.ts `envOverridesFor`) — neither is a chant CLI
@@ -419,7 +425,7 @@ export function createApp(
   // detail) instead of the env being a launch-only flag. `currentEnv` is the
   // launch `--env`, the picker's initial selection.
   app.get("/api/project", async (c) => {
-    const { environments, lexicons } = await detectProject(cfg.projectDir);
+    const { environments, lexicons, stacks } = await detectProject(cfg.projectDir);
     const axes = deployAxes(tierEnvVar);
     return c.json({
       projectDir: cfg.projectDir,
@@ -435,6 +441,13 @@ export function createApp(
       // no `tiers` key) → no `tiers` field → the SPA's picker doesn't render
       // and the graph loads with no tier selected (web/app.js `initPickers`).
       ...(beholdConfig.tiers ? { tiers: beholdConfig.tiers.values } : {}),
+      // The stack picker's options (#76, follow-up to #71): gated exactly like
+      // `tiers` above — only present when `chant.config.ts` declares `stacks[]`
+      // at all, so a single-stack/sourceDir-only/legacy project's SPA renders no
+      // picker (web/app.js `initPickers` mirrors the `info.tiers` gate). Just
+      // the names — `graphPath` (chant.ts) resolves a picked name to its `src`
+      // server-side; the SPA never needs the path.
+      ...(stacks?.length ? { stacks: stacks.map((s) => s.name) } : {}),
       targets: deployTargets(),
       ...axes,
     });

@@ -66,6 +66,16 @@ export interface GraphOptions {
    * at most one target today, so M4's estate (several live targets) is a
    * straightforward extension of this seam, not a reshape. */
   target?: string;
+  /** The stack picker (#76, follow-up to #71): names one of the served
+   * project's declared `stacks[]` entries (`src/project.ts` `StackInfo`) — a
+   * multi-stack project's independently-deployed CloudFormation stacks, each
+   * built from its own source tree. NOT a chant CLI flag — `graphPath` (below)
+   * resolves it to that stack's `src` and passes THAT as `chant graph`'s
+   * source positional, same as it already does for a single-stack project's
+   * `sourceDir`. Undefined (or a name matching no declared stack) resolves to
+   * the first declared stack — the picker's default — rather than erroring;
+   * a project declaring no `stacks[]` at all ignores this option entirely. */
+  stack?: string;
 }
 
 /** Env overrides for the tier/target lenses (M2, #54): `tier`/`target` above are
@@ -325,29 +335,33 @@ function legacyGraphPath(projectDir: string): string {
   return existsSync(src) ? src : projectDir;
 }
 
-/** Project dirs already warned about an un-rendered `stacks[]` (#76, follow-up
- * to #71) — so a polled/repeated graph request doesn't spam stderr once per
- * call. Module-level: fine to leak for the process lifetime (one entry per
- * distinct served project). */
-const warnedMultiStack = new Set<string>();
-
-/** Graph the project's source (#71): honors `chant.config.ts`'s `sourceDir`
- * (via `detectProject`, `src/project.ts`) — the project's own declared infra
- * source dir, relative to the project root — instead of guessing a hardcoded
- * `src/` convention. Falls back to `legacyGraphPath`'s `src/`-then-root
- * heuristic when the config can't be read, or doesn't declare `sourceDir`.
- * loomster sets `sourceDir: "src"` explicitly, so it resolves the same path
- * either way — unaffected.
+/** Graph the project's source (#71, extended #76): honors `chant.config.ts`'s
+ * `sourceDir` (via `detectProject`, `src/project.ts`) — the project's own
+ * declared infra source dir, relative to the project root — instead of
+ * guessing a hardcoded `src/` convention. Falls back to `legacyGraphPath`'s
+ * `src/`-then-root heuristic when the config can't be read, or doesn't
+ * declare `sourceDir`. loomster sets `sourceDir: "src"` explicitly, so it
+ * resolves the same path either way — unaffected.
  *
- * Multi-stack (`stacks[]`) isn't rendered per-stack yet (#76, follow-up to
- * #71 — a bigger design question than this single-stack fix): when a project
- * declares `stacks[]`, this still resolves one source (`sourceDir` if also
- * set, else the legacy heuristic) but warns on stderr rather than silently
- * picking a stack with no explanation.
+ * Multi-stack (`stacks[]`, #76 — the stack picker's backing resolution): when
+ * the project declares `stacks[]`, `sourceDir` is NOT consulted — a
+ * multi-stack project's independently-deployed stacks are the whole point,
+ * so this always resolves to one of THEM. `opts.stack`, when it names a
+ * declared stack (the picker's selection, threaded from `?stack=` — see
+ * `server.ts`'s `optsFromQuery`), resolves that stack's `src`; otherwise (no
+ * selection, or a name matching no declared stack) it defaults to the FIRST
+ * declared stack — the picker's default, same convention as the env/tier
+ * lenses defaulting to "nothing picked yet" rather than erroring. A project
+ * that declares no `stacks[]` at all ignores `opts.stack` entirely and keeps
+ * today's `sourceDir`/legacy resolution — completely unaffected.
+ *
+ * `opts` is optional so `graphPath(dir)` (no lens) keeps working exactly as
+ * before — every caller that doesn't care about the stack lens, and #71's
+ * existing single-arg unit tests.
  *
  * The spawn cwd stays the project dir, which is what `--live` reads.
  * Exported for testing. */
-export async function graphPath(projectDir: string): Promise<string> {
+export async function graphPath(projectDir: string, opts: GraphOptions = {}): Promise<string> {
   let info: Awaited<ReturnType<typeof detectProject>>;
   try {
     info = await detectProject(projectDir);
@@ -357,13 +371,9 @@ export async function graphPath(projectDir: string): Promise<string> {
     return legacyGraphPath(projectDir);
   }
 
-  if (info.stacks?.length && !warnedMultiStack.has(projectDir)) {
-    warnedMultiStack.add(projectDir);
-    process.stderr.write(
-      `behold: ${projectDir}'s chant.config.ts declares ${info.stacks.length} stack(s) in \`stacks[]\` — ` +
-        "multi-stack graph rendering isn't supported yet (#76, follow-up to #71); " +
-        `rendering ${info.sourceDir ? `sourceDir "${info.sourceDir}"` : "the single-source fallback"} only, not every stack.\n`,
-    );
+  if (info.stacks?.length) {
+    const picked = opts.stack ? info.stacks.find((s) => s.name === opts.stack) : undefined;
+    return resolve(projectDir, (picked ?? info.stacks[0]!).src);
   }
 
   if (info.sourceDir) return resolve(projectDir, info.sourceDir);
@@ -380,15 +390,18 @@ export function graphArgs(src: string, format: "ir" | "layout", opts: GraphOptio
 }
 
 /** The infra graph IR for a project (`chant graph --format ir`) — nodes are AWS
- * resources. */
+ * resources. `opts` (including the stack picker, #76) threads through to
+ * `graphPath` so a multi-stack project's picked stack resolves the right
+ * source, same as the tier/target lenses already thread into `graphFlags`/
+ * `envOverridesFor` below. */
 export async function graphIr(projectDir: string, opts: GraphOptions = {}): Promise<GraphIR> {
-  const src = await graphPath(projectDir);
+  const src = await graphPath(projectDir, opts);
   return runChantJson<GraphIR>(graphArgs(src, "ir", opts, false), projectDir, envOverridesFor(opts));
 }
 
 /** Node positions for a project (`chant graph --format layout`, dagre — no native dep). */
 export async function graphLayout(projectDir: string, opts: GraphOptions = {}): Promise<Layout> {
-  const src = await graphPath(projectDir);
+  const src = await graphPath(projectDir, opts);
   return runChantJson<Layout>(graphArgs(src, "layout", opts, false), projectDir, envOverridesFor(opts));
 }
 
@@ -400,13 +413,13 @@ export async function graphLayout(projectDir: string, opts: GraphOptions = {}): 
  * "chant changes" #3); behold's own pinned `@intentius/chant` predates it, so
  * this only resolves against a served project's own (newer) chant. */
 export async function componentGraphIr(projectDir: string, opts: GraphOptions = {}): Promise<GraphIR> {
-  const src = await graphPath(projectDir);
+  const src = await graphPath(projectDir, opts);
   return runChantJson<GraphIR>(graphArgs(src, "ir", opts, true), projectDir, envOverridesFor(opts));
 }
 
 /** Node positions for the component DAG (`chant graph --components --format layout`). */
 export async function componentGraphLayout(projectDir: string, opts: GraphOptions = {}): Promise<Layout> {
-  const src = await graphPath(projectDir);
+  const src = await graphPath(projectDir, opts);
   return runChantJson<Layout>(graphArgs(src, "layout", opts, true), projectDir, envOverridesFor(opts));
 }
 

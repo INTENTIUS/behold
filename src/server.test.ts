@@ -67,7 +67,8 @@ import { Broadcaster } from "./events.ts";
 import { FrameBuffer } from "./frames.ts";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 function makeApp(env?: string) {
   const broadcaster = new Broadcaster();
@@ -216,6 +217,119 @@ describe("GET /api/project — tier axis sourced from .behold.json (#70)", () =>
     const res = await app.request("/api/project");
     const body = (await res.json()) as { tiers?: string[] };
     expect(body.tiers).toEqual(["small", "big"]);
+  });
+});
+
+// #76 (follow-up to #71): the stack picker's options. `/api/project` is where
+// the SPA's stack picker gets its names (web/app.js initPickers gates on
+// `info.stacks` — mirrors the tier axis block above precisely, per #76's
+// design note). A `chant.config.ts` field, unlike tiers' `.behold.json`.
+describe("GET /api/project — stack axis sourced from chant.config.ts (#76)", () => {
+  let dirs: string[] = [];
+  afterEach(() => {
+    dirs.forEach((d) => rmSync(d, { recursive: true, force: true }));
+    dirs = [];
+  });
+  const tmpProjectDir = (chantConfig: string | null) => {
+    const dir = mkdtempSync(join(tmpdir(), "behold-server-stacks-"));
+    if (chantConfig !== null) writeFileSync(join(dir, "chant.config.ts"), chantConfig);
+    dirs.push(dir);
+    return dir;
+  };
+
+  it("no chant.config.ts — no stacks field at all, so the SPA's picker doesn't render", async () => {
+    const app = makeAppFor(tmpProjectDir(null));
+    const res = await app.request("/api/project");
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.stacks).toBeUndefined();
+  });
+
+  it("a chant.config.ts with no stacks[] key — same as absent: no stacks field (single-stack/sourceDir project unaffected)", async () => {
+    const app = makeAppFor(tmpProjectDir(`export default { lexicons: ["aws"], sourceDir: "infra" };`));
+    const res = await app.request("/api/project");
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.stacks).toBeUndefined();
+  });
+
+  it("a declared stacks[] surfaces just the names, in order — the picker's option list", async () => {
+    const dir = tmpProjectDir(
+      `export default { lexicons: ["aws"], stacks: [{ name: "api", src: "stacks/api" }, { name: "web", src: "stacks/web" }] };`,
+    );
+    const app = makeAppFor(dir);
+    const res = await app.request("/api/project");
+    const body = (await res.json()) as { stacks?: string[] };
+    expect(body.stacks).toEqual(["api", "web"]);
+  });
+
+  // The committed fixture (e2e/fixtures/multi-stack, #76) end-to-end through
+  // the real HTTP route, not just detectProject()/graphPath() in isolation.
+  it("the committed e2e/fixtures/multi-stack fixture surfaces both stack names", async () => {
+    const fixture = join(dirname(fileURLToPath(import.meta.url)), "..", "e2e", "fixtures", "multi-stack");
+    const app = makeAppFor(fixture);
+    const res = await app.request("/api/project");
+    const body = (await res.json()) as { stacks?: string[] };
+    expect(body.stacks).toEqual(["api", "web"]);
+  });
+});
+
+// #76: `?stack=` (optsFromQuery) must reach the ACTUAL spawned `chant graph
+// <src>` invocation through the real /api/graph route — the same end-to-end
+// shape as chant.test.ts's "graphIr — the stack lens reaches the actual
+// chant graph invocation", but exercised through the HTTP layer so the
+// route's own opts-threading (not just chant.ts's functions in isolation) is
+// covered too.
+describe("GET /api/graph — the stack lens (#76) reaches the actual chant graph invocation", () => {
+  let dirs: string[] = [];
+  // Reset BEFORE each test too, not just after — a prior describe block's
+  // last test can leave calls recorded on the shared module-level mock, which
+  // would otherwise make `mock.calls[0]` here read a stale call.
+  beforeEach(() => vi.mocked(spawnMock).mockReset());
+  afterEach(() => {
+    dirs.forEach((d) => rmSync(d, { recursive: true, force: true }));
+    dirs = [];
+  });
+  const tmpProjectDir = (chantConfig: string) => {
+    const dir = mkdtempSync(join(tmpdir(), "behold-server-graph-stack-"));
+    writeFileSync(join(dir, "chant.config.ts"), chantConfig);
+    dirs.push(dir);
+    return dir;
+  };
+  const STACKS_CONFIG =
+    `export default { lexicons: ["aws"], ` +
+    `stacks: [{ name: "api", src: "stacks/api" }, { name: "web", src: "stacks/web" }] };`;
+  // `groups` is required on chant's own `GraphIR` type (render.ts's
+  // `renderGraph` reads `ir.groups.byWave`) — an empty object, not an absent
+  // field, is the honest "no groups" shape a real `chant graph` would emit.
+  const EMPTY_GRAPH_IR = JSON.stringify({ nodes: [], edges: [], groups: {} });
+
+  it("?stack=web shells chant graph against the web stack's src, not the default (first) stack", async () => {
+    const dir = tmpProjectDir(STACKS_CONFIG);
+    vi.mocked(spawnMock).mockReturnValue(fakeProc(0, EMPTY_GRAPH_IR));
+    const app = makeAppFor(dir);
+    const res = await app.request("/api/graph?stack=web");
+    expect(res.status).toBe(200);
+    const args = vi.mocked(spawnMock).mock.calls[0]![1] as string[];
+    expect(args).toContain(join(dir, "stacks/web"));
+  });
+
+  it("no ?stack= defaults to the first declared stack — the picker's default", async () => {
+    const dir = tmpProjectDir(STACKS_CONFIG);
+    vi.mocked(spawnMock).mockReturnValue(fakeProc(0, EMPTY_GRAPH_IR));
+    const app = makeAppFor(dir);
+    const res = await app.request("/api/graph");
+    expect(res.status).toBe(200);
+    const args = vi.mocked(spawnMock).mock.calls[0]![1] as string[];
+    expect(args).toContain(join(dir, "stacks/api"));
+  });
+
+  it("a single-stack/sourceDir project ignores ?stack= entirely — no-regression", async () => {
+    const dir = tmpProjectDir(`export default { lexicons: ["aws"], sourceDir: "infra" };`);
+    vi.mocked(spawnMock).mockReturnValue(fakeProc(0, EMPTY_GRAPH_IR));
+    const app = makeAppFor(dir);
+    const res = await app.request("/api/graph?stack=nonexistent");
+    expect(res.status).toBe(200);
+    const args = vi.mocked(spawnMock).mock.calls[0]![1] as string[];
+    expect(args).toContain(join(dir, "infra"));
   });
 });
 

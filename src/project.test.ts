@@ -2,7 +2,8 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { detectProject, loadBeholdConfig } from "./project.ts";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 function tmpProject(config: string | null): string {
   const dir = mkdtempSync(join(tmpdir(), "behold-project-"));
@@ -90,6 +91,17 @@ describe("detectProject", () => {
 
   it("returns empty for a project with no config", async () => {
     expect(await detectProject(make(null))).toEqual({ environments: [], lexicons: [] });
+  });
+
+  // The committed fixture (e2e/fixtures/multi-stack, #76) — a real, durable
+  // two-stack project on disk, distinct from the inline temp-dir configs above.
+  it("reads both stacks from the committed e2e/fixtures/multi-stack fixture", async () => {
+    const fixture = join(dirname(fileURLToPath(import.meta.url)), "..", "e2e", "fixtures", "multi-stack");
+    const info = await detectProject(fixture);
+    expect(info.stacks).toEqual([
+      { name: "api", src: "stacks/api" },
+      { name: "web", src: "stacks/web" },
+    ]);
   });
 });
 
