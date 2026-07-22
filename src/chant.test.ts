@@ -66,14 +66,26 @@ describe("graphFlags", () => {
 
 // M2 (#54): the tier/target lenses. Not chant CLI flags — env overrides for
 // the shell-out (see envOverridesFor + runChantRaw's envOverride param).
+// #70: the tier's env var name is no longer hardcoded to LOOM_TIER — it comes
+// from `opts.tierEnvVar` (sourced from the served project's `.behold.json`,
+// src/project.ts `loadBeholdConfig`), so these tests thread it explicitly,
+// standing in for whatever a project's own `.behold.json` declares.
 describe("envOverridesFor", () => {
   it("is undefined for no tier/target — no spawn env override needed", () => {
     expect(envOverridesFor({})).toBeUndefined();
     expect(envOverridesFor({ env: "prod", live: true })).toBeUndefined();
   });
 
-  it("maps tier -> LOOM_TIER", () => {
-    expect(envOverridesFor({ tier: "full" })).toEqual({ LOOM_TIER: "full" });
+  it("maps tier -> the configured tierEnvVar (loomster convention: LOOM_TIER)", () => {
+    expect(envOverridesFor({ tier: "full", tierEnvVar: "LOOM_TIER" })).toEqual({ LOOM_TIER: "full" });
+  });
+
+  it("maps tier -> whatever env var name a project's .behold.json declares — not hardcoded", () => {
+    expect(envOverridesFor({ tier: "full", tierEnvVar: "DEPLOY_TIER" })).toEqual({ DEPLOY_TIER: "full" });
+  });
+
+  it("drops tier with no tierEnvVar — no var name to set it under (a project declaring no tiers)", () => {
+    expect(envOverridesFor({ tier: "full" })).toBeUndefined();
   });
 
   it("maps target -> AWS_ENDPOINT_URL", () => {
@@ -83,7 +95,7 @@ describe("envOverridesFor", () => {
   });
 
   it("maps both together", () => {
-    expect(envOverridesFor({ tier: "light", target: "http://localhost:4566" })).toEqual({
+    expect(envOverridesFor({ tier: "light", tierEnvVar: "LOOM_TIER", target: "http://localhost:4566" })).toEqual({
       LOOM_TIER: "light",
       AWS_ENDPOINT_URL: "http://localhost:4566",
     });

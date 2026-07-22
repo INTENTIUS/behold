@@ -178,6 +178,34 @@ behold shells the **project's own** chant (resolved from the project's
 `@intentius/chant ^0.18.1` or later for the live overlay (`graph --live` observed
 nothing before that fix).
 
+## Configuration — `.behold.json`
+
+An optional `.behold.json` in the served project's root is **behold's own**
+config — kept separate from `chant.config.ts` so behold's concerns (like the
+tier picker) don't leak into chant's. Today it declares one thing: the
+project's deploy-**tier** axis, a dimension orthogonal to `environment` (chant
+has no native tier concept — it's entirely a project convention, e.g. Loom's
+components branching on an env-conditioned `namingParams.tier`):
+
+```json
+{
+  "tiers": {
+    "envVar": "LOOM_TIER",
+    "values": ["light", "production", "production-ha"]
+  }
+}
+```
+
+- `envVar` — the env var name the project's source branches on; behold sets it
+  for the chant shell-out whenever a tier is picked (`?tier=` → this var, never
+  a chant CLI flag).
+- `values` — the tier picker's options.
+
+**No `.behold.json` (or no `tiers` key) → no tier axis:** the picker doesn't
+render and the graph loads with no tier selected — the default for any project
+that doesn't opt in. There's no other tier config surface (not
+`chant.config.ts`, not an env var behold guesses the name of).
+
 ## Layout
 
 ```

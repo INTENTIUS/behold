@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { detectProject } from "./project.ts";
+import { detectProject, loadBeholdConfig } from "./project.ts";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +7,16 @@ import { join } from "node:path";
 function tmpProject(config: string | null): string {
   const dir = mkdtempSync(join(tmpdir(), "behold-project-"));
   if (config !== null) writeFileSync(join(dir, "chant.config.ts"), config);
+  return dir;
+}
+
+/** A tmp project root with (or without) a `.behold.json` — #70's tier config,
+ * kept separate from `chant.config.ts` (tmpProject, above). `raw`, when given,
+ * is written as-is, so a test can also cover malformed JSON / a malformed
+ * `tiers` shape, not just the happy path. */
+function tmpBeholdConfig(raw: string | null): string {
+  const dir = mkdtempSync(join(tmpdir(), "behold-config-"));
+  if (raw !== null) writeFileSync(join(dir, ".behold.json"), raw);
   return dir;
 }
 
@@ -52,5 +62,56 @@ describe("detectProject", () => {
 
   it("returns empty for a project with no config", async () => {
     expect(await detectProject(make(null))).toEqual({ environments: [], lexicons: [] });
+  });
+});
+
+// #70: tiers are a separate, behold-owned `.behold.json` in the project root
+// — not `chant.config.ts` — so a chant project that never opts in gets no
+// tier axis at all (no picker, graph loads with no tier selected).
+describe("loadBeholdConfig", () => {
+  let dirs: string[] = [];
+  beforeAll(() => (dirs = []));
+  afterAll(() => dirs.forEach((d) => rmSync(d, { recursive: true, force: true })));
+  const make = (raw: string | null) => {
+    const d = tmpBeholdConfig(raw);
+    dirs.push(d);
+    return d;
+  };
+
+  it("reads the pinned schema — envVar + values", () => {
+    const dir = make(
+      JSON.stringify({ tiers: { envVar: "LOOM_TIER", values: ["light", "production", "production-ha"] } }),
+    );
+    expect(loadBeholdConfig(dir)).toEqual({
+      tiers: { envVar: "LOOM_TIER", values: ["light", "production", "production-ha"] },
+    });
+  });
+
+  it("returns {} — no tier axis — when the file is absent", () => {
+    expect(loadBeholdConfig(make(null))).toEqual({});
+  });
+
+  it("returns {} when the file has no tiers key", () => {
+    expect(loadBeholdConfig(make(JSON.stringify({})))).toEqual({});
+  });
+
+  it("returns {} for unparseable JSON — never throws", () => {
+    expect(loadBeholdConfig(make("{ not valid json"))).toEqual({});
+  });
+
+  it("returns {} when envVar is missing or not a string", () => {
+    expect(loadBeholdConfig(make(JSON.stringify({ tiers: { values: ["light"] } })))).toEqual({});
+    expect(loadBeholdConfig(make(JSON.stringify({ tiers: { envVar: 7, values: ["light"] } })))).toEqual({});
+  });
+
+  it("returns {} when values is missing, empty, or not an array", () => {
+    expect(loadBeholdConfig(make(JSON.stringify({ tiers: { envVar: "LOOM_TIER" } })))).toEqual({});
+    expect(loadBeholdConfig(make(JSON.stringify({ tiers: { envVar: "LOOM_TIER", values: [] } })))).toEqual({});
+    expect(loadBeholdConfig(make(JSON.stringify({ tiers: { envVar: "LOOM_TIER", values: "light" } })))).toEqual({});
+  });
+
+  it("drops non-string entries from values, keeping the rest", () => {
+    const dir = make(JSON.stringify({ tiers: { envVar: "LOOM_TIER", values: ["light", 7, "production"] } }));
+    expect(loadBeholdConfig(dir)).toEqual({ tiers: { envVar: "LOOM_TIER", values: ["light", "production"] } });
   });
 });

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Route-level guard/409 tests for the delegated-write routes (M3 #54's
 // /api/apply, alongside the pre-existing /api/rollback) — mock the chant
@@ -22,12 +22,21 @@ import { createApp } from "./server.ts";
 import { OpRunner } from "./op-runner.ts";
 import { Broadcaster } from "./events.ts";
 import { FrameBuffer } from "./frames.ts";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 function makeApp(env?: string) {
   const broadcaster = new Broadcaster();
   const runner = new OpRunner({ projectDir: "/proj", broadcaster, onDone: () => {} });
   const app = createApp({ projectDir: "/proj", env, port: 0 }, broadcaster, new FrameBuffer(), runner);
   return { app, runner };
+}
+
+function makeAppFor(projectDir: string) {
+  const broadcaster = new Broadcaster();
+  const runner = new OpRunner({ projectDir, broadcaster, onDone: () => {} });
+  return createApp({ projectDir, port: 0 }, broadcaster, new FrameBuffer(), runner);
 }
 
 describe("POST /api/apply", () => {
@@ -113,5 +122,56 @@ describe("GET /api/ops — applyProgress + running surface the write state", () 
     const res = await app.request("/api/ops");
     const body = (await res.json()) as { running: string | null };
     expect(body.running).toBe("apply all");
+  });
+});
+
+// #70: tiers come from the served project's own `.behold.json`, not a
+// hardcoded loomster convention. `/api/project` is where the SPA's tier
+// picker gets its options (web/app.js initPickers gates on `info.tiers &&
+// info.tiers.length`) — these assert the two ends of that gate end-to-end.
+describe("GET /api/project — tier axis sourced from .behold.json (#70)", () => {
+  let dirs: string[] = [];
+  afterEach(() => {
+    dirs.forEach((d) => rmSync(d, { recursive: true, force: true }));
+    dirs = [];
+  });
+  const tmpProjectDir = (beholdJson: string | null) => {
+    const dir = mkdtempSync(join(tmpdir(), "behold-server-project-"));
+    if (beholdJson !== null) writeFileSync(join(dir, ".behold.json"), beholdJson);
+    dirs.push(dir);
+    return dir;
+  };
+
+  it("no .behold.json — no tiers field at all, so the SPA's picker doesn't render", async () => {
+    const app = makeAppFor(tmpProjectDir(null));
+    const res = await app.request("/api/project");
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.tiers).toBeUndefined();
+    expect(body.tier).toBeUndefined();
+  });
+
+  it(".behold.json with no tiers key — same as absent: no tiers field", async () => {
+    const app = makeAppFor(tmpProjectDir(JSON.stringify({})));
+    const res = await app.request("/api/project");
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.tiers).toBeUndefined();
+  });
+
+  it("a declared .behold.json surfaces its values verbatim — the loomster parity shape", async () => {
+    const dir = tmpProjectDir(
+      JSON.stringify({ tiers: { envVar: "LOOM_TIER", values: ["light", "production", "production-ha"] } }),
+    );
+    const app = makeAppFor(dir);
+    const res = await app.request("/api/project");
+    const body = (await res.json()) as { tiers?: string[] };
+    expect(body.tiers).toEqual(["light", "production", "production-ha"]);
+  });
+
+  it("a project's own envVar name (not LOOM_TIER) works too — never hardcoded", async () => {
+    const dir = tmpProjectDir(JSON.stringify({ tiers: { envVar: "DEPLOY_TIER", values: ["small", "big"] } }));
+    const app = makeAppFor(dir);
+    const res = await app.request("/api/project");
+    const body = (await res.json()) as { tiers?: string[] };
+    expect(body.tiers).toEqual(["small", "big"]);
   });
 });

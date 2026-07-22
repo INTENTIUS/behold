@@ -38,7 +38,7 @@ import { summarizePlan } from "./reconcile.ts";
 import { renderGraph, renderArchitecture } from "./render.ts";
 import { discoverEstateOps } from "./ops.ts";
 import { LIVE_IMPORT_LEXICONS } from "./adopt.ts";
-import { detectProject } from "./project.ts";
+import { detectProject, loadBeholdConfig } from "./project.ts";
 import { nodeDiff, nodeObserved, type LiveDiffJson } from "./diff.ts";
 import { classifyHealth } from "./health.ts";
 import { OpRunner } from "./op-runner.ts";
@@ -82,7 +82,13 @@ export interface ServerOptions {
   port: number;
 }
 
-function optsFromQuery(url: URL): GraphOptions {
+/** `tierEnvVar` is the served project's `.behold.json`-declared tier env var
+ * name (#70, `loadBeholdConfig` — server.ts computes it once per `createApp`,
+ * see `beholdConfig` below), threaded onto `opts.tierEnvVar` so a picked
+ * `?tier=` can reach `envOverridesFor` (chant.ts) with a real var name to set.
+ * Undefined when the project declares no tiers — `?tier=` is then parsed but
+ * never makes it into a spawn's env (no name to set it under). */
+function optsFromQuery(url: URL, tierEnvVar?: string): GraphOptions {
   const q = url.searchParams;
   const opts: GraphOptions = {};
   const detail = q.get("detail");
@@ -93,11 +99,13 @@ function optsFromQuery(url: URL): GraphOptions {
   if (q.get("down") === "1") opts.down = true;
   const env = q.get("env");
   if (env) opts.env = env;
-  // The tier/target lenses (M2, #54): `?tier=` overrides LOOM_TIER, `?target=`
-  // overrides AWS_ENDPOINT_URL for this request's chant shell-outs (see
-  // chant.ts `envOverridesFor`) — neither is a chant CLI flag.
+  // The tier/target lenses (M2, #54): `?tier=` overrides the project's tier
+  // env var (#70), `?target=` overrides AWS_ENDPOINT_URL, for this request's
+  // chant shell-outs (see chant.ts `envOverridesFor`) — neither is a chant CLI
+  // flag.
   const tier = q.get("tier");
   if (tier) opts.tier = tier;
+  if (tierEnvVar) opts.tierEnvVar = tierEnvVar;
   const target = q.get("target");
   if (target) opts.target = target;
   return opts;
@@ -106,10 +114,13 @@ function optsFromQuery(url: URL): GraphOptions {
 /** Just the tier/target lens overrides out of a parsed `GraphOptions` — for
  * threading into a chant call that wants a DIFFERENT env/live/overlay shape
  * than the query's own (e.g. `/api/resources`, `/api/reconcile`, which force
- * `live`/`overlay` themselves) but should still honour the picked lens. */
-function tierTargetOpts(opts: GraphOptions): Pick<GraphOptions, "tier" | "target"> {
-  const out: Pick<GraphOptions, "tier" | "target"> = {};
+ * `live`/`overlay` themselves) but should still honour the picked lens.
+ * Carries `tierEnvVar` along with `tier` — dropping it here would silently
+ * strip the var name `envOverridesFor` needs to apply the picked tier. */
+function tierTargetOpts(opts: GraphOptions): Pick<GraphOptions, "tier" | "tierEnvVar" | "target"> {
+  const out: Pick<GraphOptions, "tier" | "tierEnvVar" | "target"> = {};
   if (opts.tier) out.tier = opts.tier;
+  if (opts.tierEnvVar) out.tierEnvVar = opts.tierEnvVar;
   if (opts.target) out.target = opts.target;
   return out;
 }
@@ -156,31 +167,21 @@ function errorResponse(c: Context, opts: GraphOptions, err: unknown) {
 
 /** The deploy axes in play (#59 unify, issue scope: "header line showing
  * env=<LOOM_ENV>, tier=<LOOM_TIER>, target=Floci"). `env` is chant's own
- * concept and already surfaces elsewhere (`cfg.env`/`currentEnv`); `tier` and
- * `target` here are read straight from the served project's process
- * environment — loomster's own `LOOM_TIER` convention and the literal
- * `AWS_ENDPOINT_URL` override (Floci's tell), not something behold defines or
- * names itself. Deliberately generic and substrate-name-free (behold has zero
- * per-substrate logic, per the epic): this surfaces the raw endpoint URL, not
- * a hardcoded "Floci" label, and a project with neither var set (real AWS, or
- * a project that isn't loomster) reports neither field rather than guessing. */
-function deployAxes(): { tier?: string; target?: string } {
+ * concept and already surfaces elsewhere (`cfg.env`/`currentEnv`); `target`
+ * here is read straight from the served project's process environment — the
+ * literal `AWS_ENDPOINT_URL` override (Floci's tell), not something behold
+ * defines or names itself. `tier` is read from the *served project's own*
+ * env var, named by `.behold.json`'s `tiers.envVar` (#70) — `tierEnvVar` is
+ * undefined for a project that declares no tiers, so `tier` stays unset
+ * rather than guessing a name. Deliberately generic and substrate-name-free
+ * (behold has zero per-substrate logic, per the epic): this surfaces the raw
+ * endpoint URL, not a hardcoded "Floci" label. */
+function deployAxes(tierEnvVar: string | undefined): { tier?: string; target?: string } {
   const axes: { tier?: string; target?: string } = {};
-  if (process.env.LOOM_TIER) axes.tier = process.env.LOOM_TIER;
+  if (tierEnvVar && process.env[tierEnvVar]) axes.tier = process.env[tierEnvVar];
   if (process.env.AWS_ENDPOINT_URL) axes.target = process.env.AWS_ENDPOINT_URL;
   return axes;
 }
-
-/** M2 (#54): the tier picker's options. chant has no "enumerate valid tier
- * values" concept — `LOOM_TIER` is entirely the served project's own
- * convention (deployAxes() above), not something a graph query or
- * `chant.config.ts` declares the way `environments` does. loomster's valid
- * values are `light`, `production`, `production-ha` (the project this milestone
- * targets); locally only `light` is deployable on Floci — `production`* need
- * real-AWS naming params and degrade gracefully (a `tierNote`). A served project
- * that never sets `LOOM_TIER` just doesn't offer this picker (see `/api/project`,
- * gated on `deployAxes().tier` being set already). */
-const TIER_OPTIONS = ["light", "production", "production-ha"];
 
 /** M2 (#54): the target picker's options. Modelled as an array — today there
  * is at most one (the process's own `AWS_ENDPOINT_URL`, Floci locally, unset
@@ -226,6 +227,18 @@ export function createApp(
   }),
 ): Hono {
   const app = new Hono();
+
+  // behold's own project-root config (#70) — `.behold.json`'s `tiers` block,
+  // if any (src/project.ts `loadBeholdConfig`). Read once at app creation
+  // (like `cfg.projectDir` itself): unlike `chant.config.ts`'s environments/
+  // lexicons (re-read per `/api/project` call so editing them needs no
+  // restart), this is deploy metadata behold treats as static for the life of
+  // the server. Threads `tierEnvVar` into every `optsFromQuery` call below so
+  // a picked `?tier=` reaches `envOverridesFor` (chant.ts) with a real var
+  // name, and gates the `/api/project` tier picker + `deployAxes()`'s current-
+  // tier read.
+  const beholdConfig = loadBeholdConfig(cfg.projectDir);
+  const tierEnvVar = beholdConfig.tiers?.envVar;
 
   app.get("/healthz", (c) => c.json({ ok: true, projectDir: cfg.projectDir, env: cfg.env ?? null, frames: frames.size }));
 
@@ -371,7 +384,7 @@ export function createApp(
   // launch `--env`, the picker's initial selection.
   app.get("/api/project", async (c) => {
     const { environments, lexicons } = await detectProject(cfg.projectDir);
-    const axes = deployAxes();
+    const axes = deployAxes(tierEnvVar);
     return c.json({
       projectDir: cfg.projectDir,
       environments,
@@ -379,10 +392,13 @@ export function createApp(
       currentEnv: cfg.env ?? null,
       // v0.1.0 preview: the SPA hides git/PR ops + arbitrary-project affordances.
       ...(cfg.previewMode ? { previewMode: true } : {}),
-      // M2 (#54): tier/target lens picker options. Gated the same way `axes`
-      // itself is — offered only when the launch env already showed the axis
-      // is in play for this project (see TIER_OPTIONS / deployTargets()).
-      ...(axes.tier ? { tiers: TIER_OPTIONS } : {}),
+      // The tier picker's options (M2 #54, sourced #70): gated on the served
+      // project's `.behold.json` declaring a `tiers` block at all — NOT on
+      // whether its env var happens to be set in behold's own launch env
+      // (that's `axes.tier`, the *current* value, below). No `.behold.json` (or
+      // no `tiers` key) → no `tiers` field → the SPA's picker doesn't render
+      // and the graph loads with no tier selected (web/app.js `initPickers`).
+      ...(beholdConfig.tiers ? { tiers: beholdConfig.tiers.values } : {}),
       targets: deployTargets(),
       ...axes,
     });
@@ -390,7 +406,7 @@ export function createApp(
 
   app.get("/api/graph", async (c) => {
     const url = new URL(c.req.url);
-    const opts = optsFromQuery(url);
+    const opts = optsFromQuery(url, tierEnvVar);
     try {
       // Component-DAG mode (M1.0, #56): the SPA's mode toggle. `chant graph
       // --components` projects one node per component (dependsOn edges,
@@ -494,7 +510,7 @@ export function createApp(
   // user clicks. The whole pipeline is small (well under the CLI's 64KB
   // pipe-truncation limit), so fetch it once rather than shelling out per node.
   app.get("/api/ci", async (c) => {
-    const opts = optsFromQuery(new URL(c.req.url));
+    const opts = optsFromQuery(new URL(c.req.url), tierEnvVar);
     const env = opts.env ?? cfg.env;
     try {
       const { stages, jobs } = await ciPipeline(cfg.projectDir, { ...tierTargetOpts(opts), ...(env ? { env } : {}) });
@@ -545,7 +561,7 @@ export function createApp(
   // name), not all `accent`. So this facet's `physicalId`/`ownership` fields
   // are live today, not just wired for a future fix.
   app.get("/api/resources", async (c) => {
-    const opts = optsFromQuery(new URL(c.req.url));
+    const opts = optsFromQuery(new URL(c.req.url), tierEnvVar);
     const env = opts.env ?? cfg.env;
     try {
       const [ir, known] = await Promise.all([
@@ -572,7 +588,7 @@ export function createApp(
   // correlation mirrors `/api/resources`'s own call shape (`live:true,
   // overlay:true`) so both facets see the same source-location map.
   app.get("/api/reconcile", async (c) => {
-    const opts = optsFromQuery(new URL(c.req.url));
+    const opts = optsFromQuery(new URL(c.req.url), tierEnvVar);
     const env = opts.env ?? cfg.env;
     if (!env) {
       return c.json({ error: "reconcile needs an environment — pick one, or start behold with --env <name>" }, 400);
@@ -600,7 +616,7 @@ export function createApp(
   app.get("/api/overlay", async (c) => {
     // Env comes from the picker (`?env=`), falling back to the launch `--env`.
     // Either lets the overlay run without a restart; neither is a 400.
-    const query = optsFromQuery(new URL(c.req.url));
+    const query = optsFromQuery(new URL(c.req.url), tierEnvVar);
     const env = query.env ?? cfg.env;
     if (!env) {
       return c.json({ error: "overlay needs an environment — pick one, or start behold with --env <name>" }, 400);

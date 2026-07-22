@@ -20,7 +20,25 @@ export interface ProjectInfo {
   lexicons: string[];
 }
 
+/** The deploy-tier axis a project declares (#70) — a dimension orthogonal to
+ * `environment`, entirely the served project's own convention (chant has no
+ * native tier concept). `envVar` is the env var name the project's source
+ * branches on (loomster: `LOOM_TIER`); `values` are its valid settings
+ * (loomster: light/production/production-ha) — the tier picker's options. */
+export interface TierConfig {
+  envVar: string;
+  values: string[];
+}
+
+/** behold's own project-root config (`.behold.json`) — distinct from
+ * `chant.config.ts` (chant's own concerns): today just the optional tier
+ * axis. Absent `tiers` means the project declares none. */
+export interface BeholdConfig {
+  tiers?: TierConfig;
+}
+
 const CONFIG_NAMES = ["chant.config.ts", "chant.config.mts", "chant.config.js", "chant.config.mjs"];
+const BEHOLD_CONFIG_NAME = ".behold.json";
 
 function configPath(projectDir: string): string | undefined {
   for (const name of CONFIG_NAMES) {
@@ -64,4 +82,39 @@ export async function detectProject(projectDir: string): Promise<ProjectInfo> {
     environments: parseStringArray(content, "environments"),
     lexicons: parseStringArray(content, "lexicons"),
   };
+}
+
+/** Validate a parsed `.behold.json`'s `tiers` block, keeping only a
+ * well-formed one — a non-empty `envVar` string alongside a non-empty array
+ * of string `values`. Anything else (missing, wrong shape, empty values)
+ * degrades to "no tiers", the same as an absent file. Pure. */
+function readTiers(cfg: Record<string, unknown> | undefined): TierConfig | undefined {
+  const tiers = cfg?.tiers as Record<string, unknown> | undefined;
+  if (!tiers || typeof tiers.envVar !== "string" || !tiers.envVar) return undefined;
+  const values = Array.isArray(tiers.values) ? tiers.values.filter((v): v is string => typeof v === "string") : [];
+  if (!values.length) return undefined;
+  return { envVar: tiers.envVar, values };
+}
+
+/** Read `.behold.json` from the project root — behold's own config (#70),
+ * kept separate from `chant.config.ts` so behold's concerns (like the tier
+ * picker) don't leak into chant's. No file, unparseable JSON, or a malformed/
+ * absent `tiers` key all degrade to `{}` (no tier axis) rather than throwing —
+ * a project that doesn't opt in just doesn't get the picker. Sync: it's a
+ * plain JSON read, no code to run (unlike `detectProject`'s `chant.config.ts`
+ * import). Shape:
+ * ```json
+ * { "tiers": { "envVar": "LOOM_TIER", "values": ["light", "production", "production-ha"] } }
+ * ```
+ */
+export function loadBeholdConfig(projectDir: string): BeholdConfig {
+  const path = join(projectDir, BEHOLD_CONFIG_NAME);
+  if (!existsSync(path)) return {};
+  try {
+    const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+    const tiers = readTiers(raw);
+    return tiers ? { tiers } : {};
+  } catch {
+    return {};
+  }
 }
