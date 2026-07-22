@@ -20,11 +20,39 @@ describe("detectProject", () => {
     return d;
   };
 
-  it("reads declared environments and lexicons from a literal config", async () => {
+  it("reads declared environments, lexicons, and sourceDir from a literal config", async () => {
     const dir = make(
       `export default { lexicons: ["aws", "k8s"], environments: ["prod", "staging"], sourceDir: "src" };`,
     );
-    expect(await detectProject(dir)).toEqual({ environments: ["prod", "staging"], lexicons: ["aws", "k8s"] });
+    expect(await detectProject(dir)).toEqual({
+      environments: ["prod", "staging"],
+      lexicons: ["aws", "k8s"],
+      sourceDir: "src",
+    });
+  });
+
+  // #71: graphPath() honors a non-`src/` sourceDir — this locks in that
+  // detectProject surfaces it (any legal directory name, not just "src").
+  it("reads a non-src sourceDir from a literal config", async () => {
+    const dir = make(`export default { lexicons: ["aws"], sourceDir: "infra" };`);
+    expect((await detectProject(dir)).sourceDir).toBe("infra");
+  });
+
+  it("reads stacks[] from a literal config", async () => {
+    const dir = make(
+      `export default { lexicons: ["aws"], stacks: [{ name: "api", src: "stacks/api" }, { name: "web", src: "stacks/web" }] };`,
+    );
+    expect((await detectProject(dir)).stacks).toEqual([
+      { name: "api", src: "stacks/api" },
+      { name: "web", src: "stacks/web" },
+    ]);
+  });
+
+  it("falls back to a text-parsed sourceDir when the config can't be imported (e.g. a missing dep)", async () => {
+    const dir = make(
+      `import "a-package-that-does-not-exist";\nexport default { lexicons: ["aws"], sourceDir: "infra" };`,
+    );
+    expect((await detectProject(dir)).sourceDir).toBe("infra");
   });
 
   it("handles multiline / single-quoted arrays", async () => {
