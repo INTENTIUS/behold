@@ -114,8 +114,8 @@
       .dial-detail { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--muted); }
       /* Substrate readiness strip (M5, #54): is each substrate the project needs
          actually up (Floci, k3d, GitLab CI, Forgejo)? A slim row of status pills
-         under the header, each with a "Bring up" when it's down and the project
-         ships a script. */
+         under the header — pure state (#73: the pills' own "Bring up"/"Reset"
+         buttons moved into the ⌘K palette, see paletteCommands() in app.js). */
       #substrates { grid-column: 1 / 3; grid-row: 2; display: none; align-items: center; gap: 8px;
         padding: 5px 16px; border-bottom: 1px solid var(--line); font-size: 12px; }
       #substrates .label { color: var(--muted); margin-right: 2px; }
@@ -128,12 +128,39 @@
       .sub.unknown .dot { background: var(--muted); }
       .sub.blocked { opacity: .6; }
       .sub.blocked .dot { background: var(--muted); }
-      .sub button { background: var(--panel); color: var(--managed); border: 1px solid var(--managed);
-        border-radius: 6px; padding: 1px 8px; font-size: 11px; cursor: pointer; }
-      .sub button:disabled { opacity: .5; cursor: default; border-color: var(--line); color: var(--muted); }
       #nowline { grid-column: 1 / 3; grid-row: 5; margin: 0; max-height: 160px; overflow: auto; display: none;
         background: #010409; border-top: 1px solid var(--line); padding: 8px 12px; font: 11px/1.5 ui-monospace, monospace;
         color: var(--fg); white-space: pre-wrap; }
+      /* Persistent state strip (#73 "hide controls, never state"): current zoom
+         + env + tier stay visible in the header even though the pickers that
+         used to sit here moved into the ⌘K palette — see renderStatusbar() in
+         app.js. #hintk is the palette's always-visible entry point. */
+      #statusbar { color: var(--muted); border: 1px solid var(--line); border-radius: 6px;
+        padding: 2px 10px; font-size: 11px; white-space: nowrap; }
+      #hintk { color: var(--muted); border: 1px solid var(--line); border-radius: 6px;
+        padding: 2px 8px; font-size: 11px; cursor: pointer; white-space: nowrap; }
+      #hintk:hover { border-color: var(--pending); color: var(--fg); }
+      /* Command palette (⌘K / Ctrl+K, #73) — ported from spicypath's FG-036
+         pattern (../spicypath/src/index.html), theme vars mapped onto behold's
+         own: --panel/--line/--fg/--bg already exist; --pending stands in for
+         spicypath's --accent (behold already uses it as the one accent hue);
+         there's no static --on-accent since --pending varies per Ghostty theme —
+         --pal-sel-fg is computed via theme.js's readableOn() instead (see
+         applyPaletteContrast() in app.js) so the selected row stays legible
+         across all 552 themes, light or dark. */
+      #palette { position: fixed; inset: 0; z-index: 110; display: none; align-items: flex-start;
+        justify-content: center; background: rgba(0,0,0,.45); }
+      #palette.on { display: flex; }
+      #palette .box { margin-top: 12vh; width: min(560px, 92vw); background: var(--panel);
+        border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 16px 50px rgba(0,0,0,.55);
+        overflow: hidden; }
+      #pal-input { width: 100%; box-sizing: border-box; background: var(--bg); color: var(--fg);
+        border: 0; border-bottom: 1px solid var(--line); padding: 11px 14px; font: inherit; outline: none; }
+      #pal-list { max-height: 50vh; overflow: auto; padding: 5px; }
+      #pal-list .row { padding: 7px 11px; border-radius: 6px; color: var(--fg); font-size: 13px;
+        cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #pal-list .row.sel { background: var(--pending); color: var(--pal-sel-fg, var(--fg)); }
+      #pal-list .empty { padding: 8px 11px; color: var(--muted); font-size: 12px; }
     </style>
   </head>
   <body>
@@ -164,9 +191,14 @@
           <span style="color:var(--degraded)">● rollback / failed</span>
           <span style="color:var(--muted)">● not deployed</span>
         </span>
-        <span id="pickers" style="margin-left:auto;display:flex;gap:8px"></span>
-        <span id="actions" style="display:flex;gap:8px"></span>
+        <!-- #73 "hide controls, never state": zoom/env/tier stay visible here
+             even though the pickers that used to render into this slot moved
+             into the ⌘K palette below — see renderStatusbar() in app.js. -->
+        <span id="statusbar" style="margin-left:auto;align-self:center" title="current zoom · env · tier — press ⌘K to change"></span>
+        <span id="pickers" style="display:flex;gap:8px;align-self:center"></span>
+        <span id="actions" style="display:flex;gap:8px;align-self:center"></span>
         <a href="/lanes" style="color:var(--pending);text-decoration:none;font-size:12px;align-self:center">lanes →</a>
+        <span id="hintk" title="Command palette — deploy, apply, reset, bring up, lens/zoom, env/tier, export… (⌘K / Ctrl+K)">⌘K</span>
       </header>
       <div id="substrates"></div>
       <div id="dial"></div>
@@ -179,6 +211,10 @@
       <button id="inspect-reopen" title="Show inspect panel">inspect ‹</button>
       <pre id="nowline"></pre>
     </div>
+    <!-- Command palette (⌘K / Ctrl+K, #73) — the spicypath FG-036 shape
+         (../spicypath/src/index.html): input + filtered list, driven entirely
+         by app.js's paletteCommands()/palRender()/openPalette()/closePalette(). -->
+    <div id="palette"><div class="box"><input id="pal-input" placeholder="type a command…   (Esc to close)" autocomplete="off"><div id="pal-list"></div></div></div>
     <script type="module" src="./app.js"></script>
   </body>
 </html>
