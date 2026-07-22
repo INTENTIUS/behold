@@ -824,7 +824,10 @@ async function loadReconcile() {
     const q = lensParams(new URLSearchParams({ env: view.env }));
     const res = await apiFetch(`/api/reconcile?${q}`);
     const j = await res.json();
-    if (!res.ok) throw new Error(j.tierNote || j.error || res.statusText);
+    // #72: the structured {error, code, remedy} src/server.ts's errorResponse
+    // now sends for every classified failure (tier included — `error` already
+    // carries the full tier-scoped message, replacing the old `tierNote`).
+    if (!res.ok) throw new Error(j.error || res.statusText);
     reconcileCache = j;
     renderDial();
   } catch (e) {
@@ -1184,17 +1187,46 @@ function ensureZoomControls(host) {
   });
 }
 
-// A graph/facet failure under a picked tier (M2, #54): the server explains it
-// via `tierNote` (src/server.ts `tierErrorNote`) instead of a bare error — a
-// calmer inline note in the graph pane, not the alarming red error box. Built
-// via textContent, not innerHTML — the note embeds chant's own stderr text.
-function renderTierNote(note) {
+// Precondition-failure codes (#72) → a short, human title for the entry/error
+// screen below. Mirrors every `code` a read route's structured error can
+// carry (src/server.ts RouteErrorCode: chant.ts's lint/not-installed/eval,
+// plus "tier" — a picked tier that needs creds this host lacks, M2 #54).
+const PRECONDITION_TITLE = {
+  lint: "This project doesn't pass chant lint",
+  "not-installed": "This project isn't installed",
+  tier: "This tier needs credentials",
+  eval: "chant couldn't evaluate this project",
+};
+
+// A precondition failure — the lint gate, a not-installed/no-typegen project,
+// or a tier that needs credentials (#72) — gets a readable card with chant's
+// own message and a suggested remedy, not a blank canvas or a raw stack
+// trace. Generalizes what used to be a tier-only `tierNote` (the server now
+// sends the same structured {error, code, remedy} for every classified
+// failure — src/server.ts errorResponse). Text content only (never
+// innerHTML) — `error` embeds chant's own stderr verbatim.
+function renderPreconditionError(body) {
   const host = document.getElementById("graph");
   host.innerHTML = "";
-  const div = document.createElement("div");
-  div.className = "tier-note";
-  div.textContent = note;
-  host.appendChild(div);
+  const card = document.createElement("div");
+  card.className = "precondition-error";
+  const title = document.createElement("div");
+  title.className = "precondition-error-title";
+  title.textContent = PRECONDITION_TITLE[body.code] || "chant couldn't evaluate this project";
+  card.appendChild(title);
+  if (body.error) {
+    const message = document.createElement("div");
+    message.className = "precondition-error-message";
+    message.textContent = body.error;
+    card.appendChild(message);
+  }
+  if (body.remedy) {
+    const remedy = document.createElement("div");
+    remedy.className = "precondition-error-remedy";
+    remedy.textContent = body.remedy;
+    card.appendChild(remedy);
+  }
+  host.appendChild(card);
   document.getElementById("legend").style.display = "none";
   document.getElementById("component-legend").style.display = "none";
 }
@@ -1247,11 +1279,12 @@ async function load(opts = {}) {
     const res = await apiFetch(`${endpoint}?${q}`);
     const body = await res.json();
     if (!res.ok) {
-      // M2 (#54): a tier-scoped failure gets the calmer inline note instead of
-      // the generic red error box — see renderTierNote().
-      if (body.tierNote) {
-        renderTierNote(body.tierNote);
-        meta.textContent = `tier ${view.tier} unavailable here`;
+      // #72: a classified precondition failure (lint gate, not installed, a
+      // tier that needs credentials) gets the calmer entry/error card instead
+      // of the generic red error box — see renderPreconditionError().
+      if (body.code) {
+        renderPreconditionError(body);
+        meta.textContent = body.code === "tier" ? `tier ${view.tier} unavailable here` : "error";
         renderDial();
         return;
       }
