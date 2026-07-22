@@ -419,9 +419,14 @@ function wire(ir) {
 // overlay — see load()'s endpoint choice. tier/target (M2, #54) are the two
 // new lenses: a picked tier overrides LOOM_TIER, a picked target overrides
 // AWS_ENDPOINT_URL, for every chant shell-out this page's fetches trigger (see
-// lensParams()). Every fetch reads this, so the `changed` SSE re-pull and a
-// palette lens change go through the same path.
-const view = { env: null, detail: 2, components: true, logical: false, tier: null, target: null, radial: false };
+// lensParams()). stack (#76, follow-up to #71) is a THIRD kind of lens: a
+// multi-stack project's `chant.config.ts` `stacks[]` names an independently-
+// deployed source tree — picking one re-points the graph at that stack's
+// source (chant.ts's `graphPath`), not an env override like tier/target.
+// null on a project that declares no `stacks[]` at all — the picker (and the
+// status strip's stack tag) then never renders. Every fetch reads this, so
+// the `changed` SSE re-pull and a palette lens change go through the same path.
+const view = { env: null, detail: 2, components: true, logical: false, tier: null, target: null, stack: null, radial: false };
 
 // v0.1.0 preview lock (set from /api/project in initActions): hides the git/PR
 // write ops (Rollback, Sync, Adopt, Run ▾) — the server also 403s them. Local
@@ -463,12 +468,16 @@ function applyZoom(z) {
 // header <select>s; the pickers moved into the ⌘K palette (paletteCommands()
 // below), but the CURRENT value must stay visible without opening it — this
 // is the one place that reads. Called after every render() and once before
-// the first load (initPickers()).
+// the first load (initPickers()). stack (#76) joins the strip the same way —
+// only ever truthy on a project that declares `stacks[]` (initPickers seeds
+// `view.stack` from `info.stacks`; a project with none leaves it null), so a
+// single-stack project's strip is unaffected.
 function renderStatusbar() {
   const el = document.getElementById("statusbar");
   if (!el) return;
   const zoomLabel = (ZOOM_OPTS.find(([, v]) => v === zoomValue()) || ["zoom: " + zoomValue()])[0];
   const parts = [zoomLabel, view.env ? `env: ${view.env}` : "env: (source)"];
+  if (view.stack) parts.push(`stack: ${view.stack}`);
   if (axes.tier) parts.push(`tier: ${axes.tier}`);
   if (view.radial && !view.components && !view.logical) parts.push("radial");
   el.textContent = parts.join(" · ");
@@ -484,9 +493,14 @@ let axes = { tier: null, target: null };
 // Query params for the tier/target lenses (M2, #54) — shared by every fetch
 // this page makes, so picking a lens re-parameterizes the component graph,
 // its CI/resources facets, and the reconcile summary all the same way.
+// stack (#76) rides along too — server.ts's `optsFromQuery` parses `?stack=`
+// the same way, but only `graphPath`'s callers (the graph/overlay fetches in
+// load()) actually consult it; the CI/resources/reconcile facets don't take a
+// source path at all, so they ignore an extra `stack=` harmlessly.
 function lensParams(params) {
   if (view.tier) params.set("tier", view.tier);
   if (view.target) params.set("target", view.target);
+  if (view.stack) params.set("stack", view.stack);
   return params;
 }
 
@@ -1336,13 +1350,15 @@ async function refresh() {
   }
 }
 
-// The env/tier/target lenses (M2 #54) — used to be header <select>s; #73 moved
-// picking them into the ⌘K palette (paletteCommands() reads these lists), so
-// they're module-level now instead of local to the picker-building closure
-// that used to render them. Populated once in initPickers().
+// The env/tier/target/stack lenses (M2 #54; stack #76) — used to be header
+// <select>s; #73 moved picking them into the ⌘K palette (paletteCommands()
+// reads these lists), so they're module-level now instead of local to the
+// picker-building closure that used to render them. Populated once in
+// initPickers().
 let environments = [];
 let tiers = [];
 let targets = [];
+let stacks = [];
 
 // Fetch the project once, seed view/axes + the lens lists above, then do the
 // first load. previously also built the header's env/zoom/radial/tier/target
@@ -1355,6 +1371,14 @@ async function initPickers() {
   view.env = info.currentEnv || null;
   view.tier = info.tier || null;
   view.target = (info.targets && info.targets[0] && info.targets[0].endpoint) || null;
+  // The stack picker's default (#76, design: "default = the FIRST stack when
+  // the project declares stacks[] and none is selected") — mirrors `target`
+  // above, which defaults to its own first option the same way. `info.stacks`
+  // is only present at all when `chant.config.ts` declares `stacks[]` (see
+  // server.ts's `/api/project`, gated on `info.stacks?.length`), so a project
+  // with none leaves `view.stack` (and the picker + status tag) null.
+  stacks = info.stacks || [];
+  view.stack = stacks[0] || null;
   axes = { tier: info.tier || null, target: info.target || null };
   environments = info.environments || [];
   tiers = info.tiers || [];
@@ -1786,10 +1810,20 @@ function paletteCommands() {
     c.push([(view.radial ? "Disable" : "Enable") + " radial layout", () => { view.radial = !view.radial; load(); }]);
   }
 
-  // Env/tier/target selection — replaces the old header pickers.
+  // Env/stack/tier/target selection — replaces the old header pickers.
   c.push(["env: (source)" + (!view.env ? " ✓" : ""), () => { view.env = null; resetDialCaches(); load(); }]);
   for (const e of environments) {
     c.push([`env: ${e}` + (view.env === e ? " ✓" : ""), () => { view.env = e; resetDialCaches(); load(); }]);
+  }
+  // The stack picker (#76, follow-up to #71) — only ever populated (`stacks`,
+  // seeded in initPickers()) when the served project declares `chant.config.
+  // ts`'s `stacks[]`; empty on every single-stack/sourceDir-only/legacy
+  // project, so this loop (and the status strip's `stack:` tag) is a no-op
+  // there. No "stack: (none)" escape hatch like env's "(source)" above —
+  // the design's locked default is always the first declared stack, never "no
+  // stack selected".
+  for (const s of stacks) {
+    c.push([`stack: ${s}` + (view.stack === s ? " ✓" : ""), () => { view.stack = s; resetDialCaches(); load(); }]);
   }
   for (const t of tiers) {
     c.push([`tier: ${t}` + (view.tier === t ? " ✓" : ""), () => { view.tier = t; resetDialCaches(); load(); }]);

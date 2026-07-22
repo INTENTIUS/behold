@@ -137,9 +137,10 @@
         background: #010409; border-top: 1px solid var(--line); padding: 8px 12px; font: 11px/1.5 ui-monospace, monospace;
         color: var(--fg); white-space: pre-wrap; }
       /* Persistent state strip (#73 "hide controls, never state"): current zoom
-         + env + tier stay visible in the header even though the pickers that
-         used to sit here moved into the ⌘K palette — see renderStatusbar() in
-         app.js. #hintk is the palette's always-visible entry point. */
+         + env + stack (#76) + tier stay visible in the header even though the
+         pickers that used to sit here moved into the ⌘K palette — see
+         renderStatusbar() in app.js. #hintk is the palette's always-visible
+         entry point. */
       #statusbar { color: var(--muted); border: 1px solid var(--line); border-radius: 6px;
         padding: 2px 10px; font-size: 11px; white-space: nowrap; }
       #hintk { color: var(--muted); border: 1px solid var(--line); border-radius: 6px;
@@ -196,14 +197,16 @@
           <span style="color:var(--degraded)">● rollback / failed</span>
           <span style="color:var(--muted)">● not deployed</span>
         </span>
-        <!-- #73 "hide controls, never state": zoom/env/tier stay visible here
-             even though the pickers that used to render into this slot moved
-             into the ⌘K palette below — see renderStatusbar() in app.js. -->
-        <span id="statusbar" style="margin-left:auto;align-self:center" title="current zoom · env · tier — press ⌘K to change"></span>
+        <!-- #73 "hide controls, never state": zoom/env/stack/tier stay visible
+             here even though the pickers that used to render into this slot
+             moved into the ⌘K palette below — see renderStatusbar() in app.js.
+             stack (#76) only ever appears for a project that declares
+             chant.config.ts's stacks[]. -->
+        <span id="statusbar" style="margin-left:auto;align-self:center" title="current zoom · env · stack · tier — press ⌘K to change"></span>
         <span id="pickers" style="display:flex;gap:8px;align-self:center"></span>
         <span id="actions" style="display:flex;gap:8px;align-self:center"></span>
         <a href="/lanes" style="color:var(--pending);text-decoration:none;font-size:12px;align-self:center">lanes →</a>
-        <span id="hintk" title="Command palette — deploy, apply, reset, bring up, lens/zoom, env/tier, export… (⌘K / Ctrl+K)">⌘K</span>
+        <span id="hintk" title="Command palette — deploy, apply, reset, bring up, lens/zoom, env/stack/tier, export… (⌘K / Ctrl+K)">⌘K</span>
       </header>
       <div id="substrates"></div>
       <div id="dial"></div>
