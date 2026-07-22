@@ -6,7 +6,7 @@
 // Ghostty colour themes (#62): apply the persisted/default theme's tokens as CSS vars
 // before first paint (so the whole graph + chrome recolour from one source), then mount
 // the theme picker into the header's #pickers slot.
-import { initTheme, mountThemePicker, readableOn, colorForCategory, onThemeChange } from "./theme.js";
+import { initTheme, mountThemePicker, readableOn, colorForCategory, onThemeChange, getTokens } from "./theme.js";
 initTheme();
 mountThemePicker(document.getElementById("pickers"));
 
@@ -409,17 +409,18 @@ function wire(ir) {
   }
 }
 
-// View state driven by the header pickers (#17). env=null → the declared source
-// graph; env set → the live overlay for that env (needs cloud creds). detail is
-// chant's --detail tier. components (#56) toggles the component-DAG projection
-// (nodes=components, wave-laned, dependsOn edges) in place of the AWS entity
-// graph. With an env picked too, components mode gets its own live status join
-// (#57, per-component AWS reconciliation) instead of the entity overlay — see
-// load()'s endpoint choice. tier/target (M2, #54) are the two new lenses: a
-// picked tier overrides LOOM_TIER, a picked target overrides AWS_ENDPOINT_URL,
-// for every chant shell-out this page's fetches trigger (see lensParams()).
-// Every fetch reads this, so the `changed` SSE re-pull and a picker change go
-// through the same path.
+// View state driven by the ⌘K palette's lens commands (#17, moved off the
+// header pickers in #73 — see paletteCommands()). env=null → the declared
+// source graph; env set → the live overlay for that env (needs cloud creds).
+// detail is chant's --detail tier. components (#56) toggles the component-DAG
+// projection (nodes=components, wave-laned, dependsOn edges) in place of the
+// AWS entity graph. With an env picked too, components mode gets its own live
+// status join (#57, per-component AWS reconciliation) instead of the entity
+// overlay — see load()'s endpoint choice. tier/target (M2, #54) are the two
+// new lenses: a picked tier overrides LOOM_TIER, a picked target overrides
+// AWS_ENDPOINT_URL, for every chant shell-out this page's fetches trigger (see
+// lensParams()). Every fetch reads this, so the `changed` SSE re-pull and a
+// palette lens change go through the same path.
 const view = { env: null, detail: 2, components: true, logical: false, tier: null, target: null, radial: false };
 
 // v0.1.0 preview lock (set from /api/project in initActions): hides the git/PR
@@ -456,6 +457,21 @@ function applyZoom(z) {
   view.components = z === "components";
   view.logical = z === "logical";
   if (z !== "components" && z !== "logical") view.detail = ZOOM_DETAIL[z] ?? 2;
+}
+
+// #73 "hide controls, never state": zoom/env/tier/radial used to live in
+// header <select>s; the pickers moved into the ⌘K palette (paletteCommands()
+// below), but the CURRENT value must stay visible without opening it — this
+// is the one place that reads. Called after every render() and once before
+// the first load (initPickers()).
+function renderStatusbar() {
+  const el = document.getElementById("statusbar");
+  if (!el) return;
+  const zoomLabel = (ZOOM_OPTS.find(([, v]) => v === zoomValue()) || ["zoom: " + zoomValue()])[0];
+  const parts = [zoomLabel, view.env ? `env: ${view.env}` : "env: (source)"];
+  if (axes.tier) parts.push(`tier: ${axes.tier}`);
+  if (view.radial && !view.components && !view.logical) parts.push("radial");
+  el.textContent = parts.join(" · ");
 }
 
 // The deploy axes as currently displayed in the header (#59 unify, M2 #54
@@ -964,17 +980,12 @@ function render(ir, svg, m) {
     `${scope}${m.env ? " · env " + m.env : ""}${axesTail}${overlay ? " · overlay" : ""}${logical ? " · logical" : ""}${m.components ? " · components" : ""}${componentStatus ? " · live status" : ""} · ${ir.nodes.length} nodes${tail}`;
   document.getElementById("legend").style.display = drift ? "flex" : "none";
   document.getElementById("component-legend").style.display = componentStatus ? "flex" : "none";
-  // Keep the zoom picker in sync when the dial's "observe" flips to components.
-  const zp = document.getElementById("zoom-picker");
-  if (zp) zp.value = zoomValue();
-  // Radial applies to the entity zooms only — grey it out in the components and
-  // logical views (both lay themselves out: waves / nested architecture boxes).
-  const rt = document.getElementById("radial-toggle");
-  if (rt) {
-    const off = view.components || view.logical;
-    rt.style.opacity = off ? "0.4" : "";
-    rt.querySelector("input").disabled = off;
-  }
+  // Keep the persistent state strip in sync — zoom/env/tier/radial are picked
+  // via the ⌘K palette now (#73), but stay visible here regardless (radial
+  // only applies to the entity zooms; renderStatusbar() drops it for
+  // components/logical, both of which lay themselves out: waves / nested
+  // architecture boxes).
+  renderStatusbar();
   const g = document.getElementById("graph");
   // Ghostty theming (#62): strip pinhole's baked-in `:root{--pin-*}` defaults from the
   // inlined SVG so its var(--pin-*) fills resolve from behold's live documentElement tokens
@@ -1325,32 +1336,18 @@ async function refresh() {
   }
 }
 
-// Populate the header pickers from the project, then do the first load. The env
-// picker is the headline: (source) + each declared environment. Selecting one
-// switches to that env's live overlay with no restart.
-function picker(label, opts, value, onChange) {
-  const sel = document.createElement("select");
-  sel.title = label;
-  for (const [text, val] of opts) sel.add(new Option(text, val));
-  sel.value = value;
-  sel.addEventListener("change", () => onChange(sel.value));
-  return sel;
-}
+// The env/tier/target lenses (M2 #54) — used to be header <select>s; #73 moved
+// picking them into the ⌘K palette (paletteCommands() reads these lists), so
+// they're module-level now instead of local to the picker-building closure
+// that used to render them. Populated once in initPickers().
+let environments = [];
+let tiers = [];
+let targets = [];
 
-// Component DAG ↔ resource graph toggle (#56). A plain checkbox, not a select —
-// it's a binary view switch, not a pick-one-of-many like env/detail.
-function toggle(label, title, checked, onChange) {
-  const wrap = document.createElement("label");
-  wrap.title = title;
-  wrap.style.cssText = "display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer";
-  const cb = document.createElement("input");
-  cb.type = "checkbox";
-  cb.checked = checked;
-  cb.addEventListener("change", () => onChange(cb.checked));
-  wrap.append(cb, label);
-  return wrap;
-}
-
+// Fetch the project once, seed view/axes + the lens lists above, then do the
+// first load. previously also built the header's env/zoom/radial/tier/target
+// controls; those are now ⌘K palette commands (#73) — renderStatusbar() is
+// what keeps their CURRENT value visible without opening the palette.
 async function initPickers() {
   const info = await apiFetch("/api/project")
     .then((r) => r.json())
@@ -1359,77 +1356,10 @@ async function initPickers() {
   view.tier = info.tier || null;
   view.target = (info.targets && info.targets[0] && info.targets[0].endpoint) || null;
   axes = { tier: info.tier || null, target: info.target || null };
-  const host = document.getElementById("pickers");
-  const envOpts = [["(source)", ""], ...info.environments.map((e) => [`env: ${e}`, e])];
-  host.appendChild(
-    picker("environment", envOpts, view.env || "", (v) => {
-      view.env = v || null;
-      resetDialCaches();
-      load();
-    }),
-  );
-  // One "zoom" control, coarse → fine, replacing the old view (waves/infra)
-  // toggle + detail tier — they were two knobs for one axis. "components" is the
-  // wave-laned component graph with live per-component status (what the dial's
-  // "observe" selects); the rest are the entity graph at detail 1/2/3. Kept in
-  // sync in render() since observe also drives it.
-  const zoomPicker = picker("zoom", ZOOM_OPTS, zoomValue(), (v) => {
-    applyZoom(v);
-    load();
-  });
-  zoomPicker.id = "zoom-picker";
-  zoomPicker.title =
-    "Coarse → fine — components: deployable units, wave-laned, live per-component status (what \"observe\" shows) · logical: a traditional AWS architecture diagram (nested VPC/subnet ⊃ component boxes, CIDRs as labels, one headline resource per composite) · composites · resources: every resource (default) · attributes: resources + cross-stack wiring. An env colours components by live status, the rest by drift overlay.";
-  host.appendChild(zoomPicker);
-  // Radial layout: curl the wide entity graph onto concentric rings so far more
-  // fits in view (loomster: 13:1 wide → ~1:1). Entity zooms only — the wave-laned
-  // component graph keeps its lanes, so this is a no-op there.
-  const radialToggle = toggle(
-    "radial",
-    "Curl the entity graph onto rings around a centre — far more fits in view than the wide default. Applies to composites/resources/attributes.",
-    view.radial,
-    (checked) => {
-      view.radial = checked;
-      if (!view.components) load();
-    },
-  );
-  radialToggle.id = "radial-toggle";
-  host.appendChild(radialToggle);
-  // The tier lens (M2, #54): only offered when the served project already
-  // showed LOOM_TIER is in play (info.tier set at launch — same gate
-  // deployAxes() uses server-side). Picking a tier re-evaluates the
-  // tier-conditioned source for every subsequent fetch (lensParams()).
-  if (info.tiers && info.tiers.length) {
-    host.appendChild(
-      picker(
-        "tier",
-        info.tiers.map((t) => [`tier: ${t}`, t]),
-        view.tier || info.tiers[0],
-        (v) => {
-          view.tier = v;
-          resetDialCaches();
-          load();
-        },
-      ),
-    );
-  }
-  // The target lens (M2, #54): the deploy target/endpoint (Floci locally).
-  // Modelled as a picker even with one option today, so M4's estate (several
-  // live targets) is a straight extension — see deployTargets() server-side.
-  if (info.targets && info.targets.length) {
-    host.appendChild(
-      picker(
-        "target",
-        info.targets.map((t) => [`target: ${t.endpoint}`, t.endpoint]),
-        view.target || info.targets[0].endpoint,
-        (v) => {
-          view.target = v;
-          resetDialCaches();
-          load();
-        },
-      ),
-    );
-  }
+  environments = info.environments || [];
+  tiers = info.tiers || [];
+  targets = info.targets || [];
+  renderStatusbar();
   load();
 }
 initPickers();
@@ -1456,10 +1386,9 @@ events.addEventListener("changed", () => {
 });
 
 // Substrate readiness strip (M5, #54): is each substrate the project needs
-// actually up? Poll /api/substrates, render status pills, and offer a one-click
-// "Bring up" (POST /api/substrates/<name>/up) that runs the project's local
-// script through the same guard as apply — its output streams to the now-line,
-// and the post-run `changed` flips the pill.
+// actually up? Poll /api/substrates, render status pills — pure state (#73:
+// the "Bring up" / "Reset" affordances that used to sit inside each pill moved
+// into the ⌘K palette; see paletteCommands()'s use of lastSubstrates below).
 async function loadSubstrates() {
   try {
     const { substrates } = await apiFetch("/api/substrates").then((r) => r.json());
@@ -1469,7 +1398,13 @@ async function loadSubstrates() {
   }
 }
 
+// The last substrates list — read by paletteCommands() to build "Bring up
+// <label>" / "Reset local emulator" entries with the same gating renderSubstrates()
+// used to apply to its now-removed inline buttons.
+let lastSubstrates = [];
+
 function renderSubstrates(subs) {
+  lastSubstrates = subs;
   const host = document.getElementById("substrates");
   if (!subs.length) {
     host.style.display = "none";
@@ -1484,30 +1419,13 @@ function renderSubstrates(subs) {
   for (const s of subs) {
     const pill = document.createElement("span");
     pill.className = `sub ${s.status}`;
-    pill.title = s.detail;
+    pill.title = s.bringUp || s.name === "floci" ? `${s.detail} (⌘K for actions)` : s.detail;
     const dot = document.createElement("span");
     dot.className = "dot";
     pill.appendChild(dot);
     const name = document.createElement("span");
     name.textContent = s.label;
     pill.appendChild(name);
-    if (s.bringUp && !staticMode) {
-      const b = document.createElement("button");
-      b.textContent = "Bring up";
-      b.title = `Run: ${s.bringUp.cmd} ${s.bringUp.args.join(" ")}`;
-      b.addEventListener("click", () => bringUpSubstrate(s));
-      pill.appendChild(b);
-    }
-    // A running Floci that can't idempotently re-apply (Floci #16): offer a
-    // clean reset — nuke + re-boot the emulator — so the next apply lands on an
-    // empty slate. The recovery path for rolled-back stacks.
-    if (s.name === "floci" && s.status === "up" && !staticMode) {
-      const r = document.createElement("button");
-      r.textContent = "Reset";
-      r.title = "Tear down + re-boot the emulator (local-down + local-up), then apply for a clean deploy. Recovery for rolled-back stacks (Floci #16).";
-      r.addEventListener("click", resetLocal);
-      pill.appendChild(r);
-    }
     host.appendChild(pill);
   }
 }
@@ -1642,12 +1560,34 @@ async function openRollback(btn) {
     fetch(`/api/rollback?to=${encodeURIComponent(to)}`, { method: "POST" })
       .then((r) => r.json())
       .then((j) => nowline(j.error ? "✗ " + j.error : `▶ rollback → ${to} (opening PR…)`));
-    wrap.replaceWith(btn);
+    wrap.remove();
   });
-  const cancel = button("✕", "", () => wrap.replaceWith(btn));
+  const cancel = button("✕", "", () => wrap.remove());
   wrap.append(sel, go, cancel);
   btn.replaceWith(wrap);
 }
+
+// #73: Rollback used to be a permanent toolbar button (openRollback(rb) swapped
+// it for the picker, then restored it after). Triggered from the ⌘K palette
+// instead now — there's no permanent button to restore, so this drops a
+// throwaway one into the (now otherwise action-free) actions bar just to host
+// the inline picker; openRollback's own wrap.remove() above cleans it up.
+function paletteRollback() {
+  const bar = document.getElementById("actions");
+  const rb = button("Rollback", "", () => {});
+  bar.appendChild(rb);
+  openRollback(rb);
+}
+
+// Deploy/ops state for the ⌘K palette (#73) — populated once in initActions(),
+// which used to turn each of these straight into a toolbar button. previewMode
+// (declared above, near view) is what the palette gates on: it hides exactly
+// the git/PR write actions the buttons hid (Rollback, Sync, Run <op>) — Apply
+// all, Reset, Bring up, Approve, and every read stay reachable in preview,
+// same as before.
+let opsApply = null; // the committed ApplyOp ({name, gate}), or null
+let opsRunnable = []; // generic Ops (backup/restore/audit/…) for "Run: <name>"
+let opsInitialEnv = null; // env behold launched with — gates "Apply all"
 
 async function initActions() {
   const bar = document.getElementById("actions");
@@ -1661,24 +1601,12 @@ async function initActions() {
     previewMode = true;
     return; // nothing else in the bar is a read
   }
-  // Re-check live: re-observe drift now + drop a lanes frame. A READ (despite
-  // POST /api/refresh) — no infra/repo write. Always available.
-  const r = button("↻ Re-check live", "", refresh);
-  r.title = "Re-observe live state now and capture a lanes frame (read-only)";
-  bar.appendChild(r);
   // The env behold launched with (reliable regardless of picker-init ordering) —
   // gates the first-class "Apply all" affordance below; also carries the preview
   // lock that hides the git/PR ops.
   const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
-  const initialEnv = project.currentEnv || null;
+  opsInitialEnv = project.currentEnv || null;
   previewMode = staticMode || !!project.previewMode; // static ⇒ read-only, no writes at all
-  // Rollback (#28): pick a prior source revision → open a reviewable PR. A git/PR
-  // write, so hidden in the preview (the server 403s it too).
-  if (!previewMode) {
-    const rb = button("Rollback", "", () => openRollback(rb));
-    rb.title = "Restore source to a prior revision via a reviewable PR";
-    bar.appendChild(rb);
-  }
   const { ops, adoptLexicons, autoSync, local, applyProgress: apInit } = await apiFetch("/api/ops")
     .then((r) => r.json())
     .catch(() => ({ ops: [], adoptLexicons: [] }));
@@ -1712,43 +1640,11 @@ async function initActions() {
       "align-self:center;font-size:11px;color:var(--pending);border:1px solid var(--pending);border-radius:6px;padding:2px 8px";
     bar.appendChild(pill);
   }
-  const apply = ops.find((o) => o.kind === "apply");
+  opsApply = ops.find((o) => o.kind === "apply") ?? null;
   adopt = { reconcile: ops.find((o) => o.kind === "reconcile") ?? null, lexicons: adoptLexicons ?? [] };
-  if (apply && !previewMode) {
-    // A committed ApplyOp exists → the classic "Sync" (trigger the heal Op). In
-    // the preview we skip it and offer "Apply all" (local deploy) instead.
-    const s = button("Sync", "approve", () => runOp(apply.name));
-    s.title = `Apply the committed state via ${apply.name} (chant run ${apply.name}) — behold triggers, the executor applies.`;
-    bar.appendChild(s);
-    if (apply.gate) bar.appendChild(button("Approve", "approve", () => signal(apply.name, apply.gate)));
-  } else if (initialEnv) {
-    // No ApplyOp, but there's an env → the equivalent "apply everything" IS the
-    // component driver's `run --components all` (M3), which otherwise lives only
-    // in the dial. Surface it as a first-class "Apply all" so it's the obvious
-    // deploy action, not something you have to discover in the dial.
-    const a = button("Apply all", "approve", () => confirmApplyAll());
-    a.title = `Deploy every component to ${initialEnv} (chant run --components all --env ${initialEnv} --progress-json). Live progress shows in the dial.`;
-    bar.appendChild(a);
-  }
-  // Generic Ops (backup, restore, seed, watch, teardown, …) collapse into ONE
-  // "Run ▾" menu instead of a button each — loomster alone has ~9, which flooded
-  // the bar. Sync / Apply all / Rollback stay first-class; everything else is a
-  // pick-and-run dropdown. behold still only *triggers* the Op on the executor.
-  const runnable = ops.filter((o) => o.kind === "op" || o.kind === "audit");
-  if (runnable.length && !previewMode) {
-    const sel = document.createElement("select");
-    sel.title = "Run a committed Op (backup, restore, audit, …) on the executor";
-    sel.style.cssText =
-      "background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer";
-    sel.add(new Option(`Run ▾ (${runnable.length})`, ""));
-    for (const op of runnable) sel.add(new Option(op.name + (op.dir ? " · " + op.dir.split("/").pop() : ""), op.name));
-    sel.addEventListener("change", () => {
-      const name = sel.value;
-      sel.selectedIndex = 0;
-      if (name && window.confirm(`Run Op "${name}"?`)) runOp(name);
-    });
-    bar.appendChild(sel);
-  }
+  // Generic Ops (backup, restore, seed, watch, teardown, …) — "Run: <name>" in
+  // the palette, same set the old "Run ▾" dropdown offered.
+  opsRunnable = ops.filter((o) => o.kind === "op" || o.kind === "audit");
   // Only complain when there's genuinely nothing to do (never in the preview —
   // its deploy path is Apply all, not committed Ops).
   if (ops.length === 0 && !previewMode) {
@@ -1764,6 +1660,16 @@ initInspectPane();
 
 // Inspect pane chrome (#15): collapse (chevron / edge tab) + drag-to-resize, with
 // the width and collapsed state persisted so the layout survives reloads.
+// setInspectCollapsed/toggleInspect are module-level (not local to initInspectPane)
+// so the ⌘K palette (#73) can drive the same collapse/reopen the chevron does.
+function setInspectCollapsed(on) {
+  document.getElementById("app").classList.toggle("inspect-collapsed", on);
+  localStorage.setItem("behold.inspectCollapsed", on ? "1" : "0");
+}
+function toggleInspect() {
+  setInspectCollapsed(!document.getElementById("app").classList.contains("inspect-collapsed"));
+}
+
 function initInspectPane() {
   const app = document.getElementById("app");
   const pane = document.getElementById("inspect");
@@ -1773,12 +1679,8 @@ function initInspectPane() {
   if (savedW >= MIN && savedW <= MAX) document.documentElement.style.setProperty("--inspect-w", savedW + "px");
   if (localStorage.getItem("behold.inspectCollapsed") === "1") app.classList.add("inspect-collapsed");
 
-  const setCollapsed = (on) => {
-    app.classList.toggle("inspect-collapsed", on);
-    localStorage.setItem("behold.inspectCollapsed", on ? "1" : "0");
-  };
-  document.getElementById("inspect-collapse").addEventListener("click", () => setCollapsed(true));
-  document.getElementById("inspect-reopen").addEventListener("click", () => setCollapsed(false));
+  document.getElementById("inspect-collapse").addEventListener("click", () => setInspectCollapsed(true));
+  document.getElementById("inspect-reopen").addEventListener("click", () => setInspectCollapsed(false));
 
   // Drag the left edge to resize; width grows as the handle moves left.
   const handle = document.getElementById("inspect-resize");
@@ -1822,3 +1724,171 @@ events.addEventListener("pr", (e) => {
   slot.href = url;
   slot.textContent = "PR opened →";
 });
+
+// Export the current graph as a standalone SVG file — the inlined pinhole SVG
+// already IS the full rendered graph (see render()), so this is a pure client-
+// side download, no server round-trip. Works in a static export too.
+function exportSvg() {
+  const svg = currentSvg();
+  if (!svg) {
+    nowline("✗ export: no graph loaded yet");
+    return;
+  }
+  const blob = new Blob([svg.outerHTML], { type: "image/svg+xml" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `behold-${zoomValue()}${view.env ? "-" + view.env : ""}.svg`;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  nowline(`↓ exported ${a.download}`);
+}
+
+// --- Command palette (⌘K / Ctrl+K, #73) -----------------------------------
+// Ported from spicypath's FG-036 pattern (../spicypath/src/index.html: search
+// `#palette`, `paletteCommands`, `openPalette`) — same shape (module-level
+// palCmds/palSel/palCurrent, paletteCommands() rebuilding a fresh {label, run}
+// list from live state on every open, palRender() filtering + repainting,
+// openPalette()/closePalette() toggling the `.on` class), retargeted at
+// behold's own handlers instead of spicypath's. "Hide controls, never state"
+// (spicypath's own design rule, carried over): every action this moves out of
+// the toolbar is still reachable here; zoom/env/tier/drift/substrates stay
+// visible in the header regardless (renderStatusbar(), #substrates pills,
+// #meta) — see index.html's #statusbar comment.
+const palette = document.getElementById("palette");
+const palInput = document.getElementById("pal-input");
+const palList = document.getElementById("pal-list");
+let palCmds = [], palSel = 0, palCurrent = [];
+
+// Builds the live command list fresh on every open, so it always reflects
+// current state (which env is picked, whether the inspect pane is collapsed,
+// what previewMode hides) rather than a snapshot from page load.
+function paletteCommands() {
+  const c = [];
+
+  // Reads — always available, even in a static export or the preview lock.
+  if (!staticMode) c.push(["Re-check live (refresh drift)", () => refresh()]);
+  c.push(["Fit graph to view", () => fitGraph()]);
+  c.push(["Export: current graph as SVG", () => exportSvg()]);
+  const inspectCollapsed = document.getElementById("app").classList.contains("inspect-collapsed");
+  c.push([inspectCollapsed ? "Show inspect panel" : "Hide inspect panel", () => toggleInspect()]);
+
+  // Lens/zoom switches (#56, #63) — replaces the old header zoom picker.
+  for (const [label, v] of ZOOM_OPTS) {
+    c.push([label + (v === zoomValue() ? " ✓" : ""), () => { applyZoom(v); load(); }]);
+  }
+  // Radial toggle — entity zooms only, same gate the removed checkbox had
+  // (components/logical both lay themselves out: waves / nested arch boxes).
+  if (!view.components && !view.logical) {
+    c.push([(view.radial ? "Disable" : "Enable") + " radial layout", () => { view.radial = !view.radial; load(); }]);
+  }
+
+  // Env/tier/target selection — replaces the old header pickers.
+  c.push(["env: (source)" + (!view.env ? " ✓" : ""), () => { view.env = null; resetDialCaches(); load(); }]);
+  for (const e of environments) {
+    c.push([`env: ${e}` + (view.env === e ? " ✓" : ""), () => { view.env = e; resetDialCaches(); load(); }]);
+  }
+  for (const t of tiers) {
+    c.push([`tier: ${t}` + (view.tier === t ? " ✓" : ""), () => { view.tier = t; resetDialCaches(); load(); }]);
+  }
+  for (const t of targets) {
+    c.push([`target: ${t.endpoint}` + (view.target === t.endpoint ? " ✓" : ""), () => { view.target = t.endpoint; resetDialCaches(); load(); }]);
+  }
+
+  if (staticMode) return c.map(([label, run]) => ({ label, run })); // no writes at all in a static export
+
+  // Deploy / write actions — previewMode hides exactly the git/PR write
+  // affordances the toolbar hid (Rollback, Sync, Run <op>); Apply all, Reset,
+  // Bring up, and Approve stay reachable, mirroring initActions()'s and
+  // renderSubstrates()'s previous button-gating precisely.
+  if (!previewMode) {
+    if (opsApply) {
+      c.push([`Deploy: Sync (${opsApply.name})`, () => runOp(opsApply.name)]);
+      if (opsApply.gate) c.push([`Approve ${opsApply.gate}`, () => signal(opsApply.name, opsApply.gate)]);
+    }
+    c.push(["Rollback to a prior revision…", () => paletteRollback()]);
+    for (const op of opsRunnable) {
+      c.push([`Run: ${op.name}`, () => { if (window.confirm(`Run Op "${op.name}"?`)) runOp(op.name); }]);
+    }
+  }
+  // No committed ApplyOp, but there's an env → "Apply all" is the equivalent
+  // deploy action (M3) — stays available in preview (a local write, not git/PR).
+  if (!opsApply && opsInitialEnv) c.push([`Deploy: Apply all → ${opsInitialEnv}`, () => confirmApplyAll()]);
+
+  for (const s of lastSubstrates) {
+    if (s.bringUp) c.push([`Bring up ${s.label}`, () => bringUpSubstrate(s)]);
+    if (s.name === "floci" && s.status === "up") c.push(["Reset local emulator (Floci)", () => resetLocal()]);
+  }
+
+  return c.map(([label, run]) => ({ label, run }));
+}
+
+function palRender() {
+  const q = palInput.value.toLowerCase().trim();
+  palCurrent = q ? palCmds.filter((c) => c.label.toLowerCase().includes(q)) : palCmds;
+  palSel = Math.max(0, Math.min(palSel, palCurrent.length - 1));
+  palList.replaceChildren();
+  if (!palCurrent.length) {
+    const e = document.createElement("div");
+    e.className = "empty";
+    e.textContent = "no matching command";
+    palList.appendChild(e);
+    return;
+  }
+  palCurrent.forEach((c, i) => {
+    const d = document.createElement("div");
+    d.className = "row" + (i === palSel ? " sel" : "");
+    d.textContent = c.label;
+    d.onmousedown = (ev) => {
+      ev.preventDefault();
+      closePalette();
+      c.run();
+    };
+    palList.appendChild(d);
+  });
+}
+function openPalette() {
+  palCmds = paletteCommands();
+  palSel = 0;
+  palInput.value = "";
+  palRender();
+  palette.classList.add("on");
+  palInput.focus();
+}
+function closePalette() {
+  palette.classList.remove("on");
+}
+palInput.oninput = () => { palSel = 0; palRender(); };
+palInput.onkeydown = (e) => {
+  if (e.key === "ArrowDown") { palSel++; palRender(); e.preventDefault(); }
+  else if (e.key === "ArrowUp") { palSel--; palRender(); e.preventDefault(); }
+  else if (e.key === "Enter") { const c = palCurrent[palSel]; closePalette(); if (c) c.run(); e.preventDefault(); }
+  else if (e.key === "Escape") { closePalette(); e.stopPropagation(); e.preventDefault(); }
+};
+palette.onmousedown = (e) => { if (e.target === palette) closePalette(); }; // backdrop click
+document.getElementById("hintk").addEventListener("click", openPalette);
+
+// Global ⌘K / Ctrl+K toggle — fires even while focus is inside another input
+// (e.g. an apply-picker <select>), matching spicypath's own keymap.
+window.addEventListener("keydown", (e) => {
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod && (e.key === "k" || e.key === "K")) {
+    e.preventDefault();
+    palette.classList.contains("on") ? closePalette() : openPalette();
+  }
+});
+
+// Readable text on the accent-filled selected row (spicypath's --on-accent),
+// across all 552 Ghostty themes — behold has no static equivalent since
+// --pending's lightness varies per theme, so this reuses theme.js's own
+// contrast helper (the same one recolorNodesByCategory() uses for node labels)
+// instead of assuming light-on-dark or dark-on-light.
+function applyPaletteContrast() {
+  const t = getTokens();
+  if (t) document.documentElement.style.setProperty("--pal-sel-fg", readableOn(t.pending));
+}
+applyPaletteContrast();
+onThemeChange(applyPaletteContrast);
