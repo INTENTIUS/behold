@@ -14,6 +14,7 @@ const json: LiveDiffJson = {
           { name: "store", changes: [{ path: "attributes.tags.env", oldValue: "dev", newValue: "prod" }] },
         ],
         unchanged: ["stable"],
+        unobserved: [{ name: "crd-thing", type: "SomeCrd", reason: "unsupported-kind" }],
       },
       observed: {
         store: { type: "AWS::S3::Bucket", status: "CREATE_COMPLETE", physicalId: "my-bucket", attributes: { Region: "us-east-1" } },
@@ -40,6 +41,39 @@ describe("nodeDiff", () => {
 
   it("returns null for a node absent from the diff", () => {
     expect(nodeDiff(json, "nope")).toBeNull();
+  });
+
+  // chant#1168 (#1089): a declared entity chant could not read live state
+  // for — its own category, never drift and never a confirmed absence.
+  it("classifies an unobserved entity distinctly, carrying the reason", () => {
+    expect(nodeDiff(json, "crd-thing")).toEqual({
+      category: "unobserved",
+      changes: [],
+      unobservedReason: "unsupported-kind",
+    });
+  });
+
+  it("carries unobservedDetail when chant reports one", () => {
+    const withDetail: LiveDiffJson = {
+      environment: "prod",
+      lexicons: {
+        aws: { resources: { missing: [], orphan: [], disappeared: [], newlyObserved: [], driftedSinceSnapshot: [], unchanged: [], unobserved: [{ name: "x", reason: "read-failed", detail: "describe-stack-resources timed out" }] } },
+      },
+    };
+    expect(nodeDiff(withDetail, "x")).toEqual({
+      category: "unobserved",
+      changes: [],
+      unobservedReason: "read-failed",
+      unobservedDetail: "describe-stack-resources timed out",
+    });
+  });
+
+  it("is backward compatible with a diff from a chant predating #1168 (no `unobserved` key)", () => {
+    const legacy: LiveDiffJson = {
+      environment: "prod",
+      lexicons: { aws: { resources: { missing: ["gone"], orphan: [], disappeared: [], newlyObserved: [], driftedSinceSnapshot: [], unchanged: [] } } },
+    };
+    expect(nodeDiff(legacy, "gone")).toEqual({ category: "missing", changes: [] });
   });
 });
 

@@ -9,6 +9,14 @@ describe("overlayStatus", () => {
     expect(overlayStatus({ attrs: {} })).toBeUndefined();
     expect(overlayStatus({})).toBeUndefined();
   });
+
+  // chant#1168 (#1089): a declared node chant couldn't read live state for —
+  // its own category, distinct from "pending" (which means the provider
+  // confirmed the resource absent).
+  it("maps `neutral` to `unobserved` (chant#1168)", () => {
+    expect(overlayStatus({ attrs: { _status: "neutral" } })).toBe("unobserved");
+    expect(overlayStatus({ attrs: { _status: "neutral", _unobserved: "read-failed" } })).toBe("unobserved");
+  });
 });
 
 describe("reclassifyOverlay", () => {

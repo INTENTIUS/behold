@@ -55,7 +55,15 @@ describe("summarizePlan", () => {
 
   it("returns all zeros for an empty plan", () => {
     const summary = summarizePlan({ env: "local", entries: [] }, byComponent);
-    expect(summary).toEqual({ env: "local", total: 0, byComponent: {}, uncorrelated: 0 });
+    expect(summary).toEqual({
+      env: "local",
+      total: 0,
+      byComponent: {},
+      uncorrelated: 0,
+      unobserved: 0,
+      unobservedByComponent: {},
+      unobservedUncorrelated: 0,
+    });
   });
 
   it("is all-uncorrelated when byComponent has no matching resources", () => {
@@ -82,5 +90,72 @@ describe("summarizePlan", () => {
     expect(summary.total).toBe(4);
     expect(summary.byComponent).toEqual({ "loom-db": 2, "loom-backend": 1 });
     expect(summary.uncorrelated).toBe(1);
+  });
+});
+
+// chant#1168 (#1089): `action: "unobserved"` — chant couldn't read an
+// entity's live state. Its own category: not a pending change, not confirmed
+// in sync. A plan from a chant that predates this fix never has this action,
+// so these fixtures are purely additive to the ones above.
+describe("summarizePlan — unobserved entries (chant#1168)", () => {
+  const planWithUnobserved: LifecyclePlan = {
+    env: "local",
+    entries: [
+      ...plan.entries,
+      {
+        name: "loom-db-parameter-group",
+        action: "unobserved",
+        evidence: { declared: true, inSnapshot: false, live: false, observed: false },
+        ownership: "unknown",
+        unobservedReason: "read-failed",
+        unobservedDetail: "describe-stack-resources: connection timed out",
+      },
+      // An unobserved entity outside any discovered component.
+      { name: "some-crd", action: "unobserved", evidence: { declared: true, inSnapshot: false, live: false, observed: false }, ownership: "unknown", unobservedReason: "unsupported-kind" },
+    ],
+  };
+
+  const byComponentWithGroup: Record<string, ComponentResource[]> = {
+    ...byComponent,
+    "loom-db": [...byComponent["loom-db"]!, { id: "loom-db-parameter-group", kind: "RdsParameterGroup", lexicon: "aws" }],
+  };
+
+  it("counts unobserved entries separately, per component", () => {
+    const summary = summarizePlan(planWithUnobserved, byComponentWithGroup);
+    expect(summary.unobserved).toBe(2);
+    expect(summary.unobservedByComponent).toEqual({ "loom-db": 1 });
+    expect(summary.unobservedUncorrelated).toBe(1);
+  });
+
+  it("never counts an unobserved entry in `total`/`byComponent`/`uncorrelated` — it isn't a pending change", () => {
+    const summary = summarizePlan(planWithUnobserved, byComponentWithGroup);
+    // Same pending counts as the plain plan (2 loom-db + 1 loom-backend + 1 uncorrelated) — unaffected.
+    expect(summary.total).toBe(4);
+    expect(summary.byComponent).toEqual({ "loom-db": 2, "loom-backend": 1 });
+    expect(summary.uncorrelated).toBe(1);
+  });
+
+  it("is 0 for a plan with no unobserved entries (backward compatible with a chant predating #1168)", () => {
+    const summary = summarizePlan(plan, byComponent);
+    expect(summary.unobserved).toBe(0);
+    expect(summary.unobservedByComponent).toEqual({});
+    expect(summary.unobservedUncorrelated).toBe(0);
+  });
+
+  it("skips a non-resource entity's unobserved entry entirely, same as a pending one", () => {
+    const withParam: LifecyclePlan = {
+      env: "local",
+      entries: [
+        ...planWithUnobserved.entries,
+        { name: "pRdsEndpoint", action: "unobserved", evidence: { declared: true, inSnapshot: false, live: false, observed: false }, ownership: "unknown", unobservedReason: "read-failed" },
+      ],
+    };
+    const withParamComponents = {
+      ...byComponentWithGroup,
+      "loom-db": [...byComponentWithGroup["loom-db"]!, { id: "pRdsEndpoint", kind: "AWS::CloudFormation::Parameter", lexicon: "aws" }],
+    };
+    const summary = summarizePlan(withParam, withParamComponents, new Set(["pRdsEndpoint"]));
+    expect(summary.unobserved).toBe(2); // unchanged — the parameter is invisible
+    expect(summary.unobservedByComponent).toEqual({ "loom-db": 1 });
   });
 });

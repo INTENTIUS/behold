@@ -765,6 +765,10 @@ export function createApp(
       if (!r) continue;
       for (const arr of [r.missing, r.orphan, r.disappeared, r.newlyObserved, r.unchanged]) for (const n of arr ?? []) ids.add(n);
       for (const d of r.driftedSinceSnapshot ?? []) ids.add(d.name);
+      // chant#1168 (#1089): declared entities chant couldn't read live state
+      // for — additive and absent from an older chant's diff. Included here
+      // so the inspect panel's bulk fetch (`/api/diff`) carries them too.
+      for (const u of r.unobserved ?? []) ids.add(u.name);
     }
     const nodes: Record<string, { observed: unknown; diff: unknown; health: string }> = {};
     for (const id of ids) {
