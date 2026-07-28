@@ -187,6 +187,11 @@
                pending. Reuses --muted, same convention as the component
                legend's "not deployed" chip below. -->
           <span style="color:var(--muted)">● unobserved</span>
+          <!-- chant#1180 (#1077, #86): a live, undeclared node whose owner
+               chain reaches a declared entity — expected runtime (a Pod its
+               Deployment created), never foreign and never drift. Its own
+               colour (--runtime) so it's never mistaken for foreign/pending. -->
+          <span style="color:var(--runtime)">● runtime</span>
         </span>
         <!-- M1.1 (#57), palette hardened M2 (#54): the component DAG's live
              per-component AWS status — a different join than the entity

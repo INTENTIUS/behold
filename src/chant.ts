@@ -568,11 +568,22 @@ export type UnobservedReason = "read-failed" | "no-credentials" | "no-binding" |
  * `summarizePlan` for how it's kept out of the pending-change count. Likewise
  * `evidence.observed` is additive: absent from an older chant's plan, and
  * `false` only alongside `action: "unobserved"` (a read that never happened,
- * not a confirmed absence). */
+ * not a confirmed absence).
+ *
+ * `action: "runtime"` (chant#1180, #1077) is the same kind of additive
+ * widening: a live, undeclared resource whose owner-reference chain reaches a
+ * declared entity — a Pod a declared Deployment's controller created, for
+ * instance. Not drift, not an adopt/delete candidate: the runtime doing its
+ * job. `runtimeOwner` names the declared entity it belongs to. A chant
+ * predating #1180 never emits this action, so every existing plan is
+ * unaffected; src/reconcile.ts's `summarizePlan` keeps it out of both the
+ * pending-change count and the in-sync (`noop`) one — see chant#1180's own
+ * note that behold's `LifecyclePlanEntry` union needed widening for this,
+ * same as #1168's `"unobserved"` before it. */
 export interface LifecyclePlanEntry {
   name: string;
   type?: string;
-  action: "create" | "update" | "delete" | "adopt" | "noop" | "unobserved";
+  action: "create" | "update" | "delete" | "adopt" | "noop" | "unobserved" | "runtime";
   evidence: { declared: boolean; inSnapshot: boolean; live: boolean; observed?: boolean };
   deltas?: Array<{ path: string; oldValue: unknown; newValue: unknown }>;
   ownership: "owned" | "foreign" | "unknown";
@@ -582,6 +593,9 @@ export interface LifecyclePlanEntry {
   /** Human-readable backing for `unobservedReason` (the failing command, the
    * missing binding key, the unsupported kind). */
   unobservedDetail?: string;
+  /** The declared entity this resource's owner-reference chain resolves to —
+   * set only when `action === "runtime"` (chant#1180, #1077). */
+  runtimeOwner?: string;
 }
 
 /** `chant lifecycle plan <env> --live --json`'s bare output shape — chant's

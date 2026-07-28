@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nodeDiff, nodeObserved, type LiveDiffJson } from "./diff.ts";
+import { nodeDiff, nodeObserved, nodeFieldDrift, type LiveDiffJson } from "./diff.ts";
 
 const json: LiveDiffJson = {
   environment: "prod",
@@ -74,6 +74,110 @@ describe("nodeDiff", () => {
       lexicons: { aws: { resources: { missing: ["gone"], orphan: [], disappeared: [], newlyObserved: [], driftedSinceSnapshot: [], unchanged: [] } } },
     };
     expect(nodeDiff(legacy, "gone")).toEqual({ category: "missing", changes: [] });
+  });
+
+  // chant#1180 (#1077): a live, undeclared resource whose owner chain reaches
+  // a declared entity — its own category, never orphan and never drift.
+  it("classifies a runtime child distinctly, carrying its declared owner", () => {
+    const withRuntime: LiveDiffJson = {
+      environment: "prod",
+      lexicons: {
+        k8s: {
+          resources: {
+            missing: [],
+            orphan: ["stray"],
+            disappeared: [],
+            newlyObserved: [],
+            driftedSinceSnapshot: [],
+            unchanged: [],
+            runtimeChildren: [
+              { name: "appDeployment-pod-1", type: "K8s::Core::Pod", owner: "appDeployment" },
+              // Any kind can be a runtime child, not just Pods (#85/#86) —
+              // e.g. a CRD's own controller-created child.
+              { name: "argoApp-child", type: "ArgoCd::Application::Resource", owner: "argoApp" },
+            ],
+          },
+        },
+      },
+    };
+    expect(nodeDiff(withRuntime, "appDeployment-pod-1")).toEqual({
+      category: "runtime",
+      changes: [],
+      runtimeOwner: "appDeployment",
+    });
+    expect(nodeDiff(withRuntime, "argoApp-child")).toEqual({
+      category: "runtime",
+      changes: [],
+      runtimeOwner: "argoApp",
+    });
+    // A genuine orphan on the same lexicon is unaffected.
+    expect(nodeDiff(withRuntime, "stray")).toEqual({ category: "orphan", changes: [] });
+  });
+
+  it("is backward compatible with a diff from a chant predating #1180 (no `runtimeChildren` key)", () => {
+    const legacy: LiveDiffJson = {
+      environment: "prod",
+      lexicons: { k8s: { resources: { missing: [], orphan: ["stray"], disappeared: [], newlyObserved: [], driftedSinceSnapshot: [], unchanged: [] } } },
+    };
+    expect(nodeDiff(legacy, "stray")).toEqual({ category: "orphan", changes: [] });
+  });
+});
+
+describe("nodeFieldDrift (#87, chant#1076/#1181)", () => {
+  const withDeep: LiveDiffJson = {
+    environment: "prod",
+    lexicons: {
+      k8s: {
+        resources: { missing: [], orphan: [], disappeared: [], newlyObserved: [], driftedSinceSnapshot: [], unchanged: ["worker"] },
+        deep: {
+          drifted: [
+            {
+              name: "worker",
+              type: "K8s::Apps::Deployment",
+              changes: [
+                { path: "metadata.labels.team", kind: "changed", declared: "platform", live: "hand-edited" },
+                { path: "spec.template.spec.containers[0].image", kind: "undeclared", live: "sidecar:latest" },
+              ],
+            },
+          ],
+          accepted: [{ name: "worker", type: "K8s::Apps::Deployment", changes: [{ path: "metadata.annotations.note", kind: "changed", declared: "a", live: "b", baseline: "b" }] }],
+          unchanged: ["web"],
+          unobserved: [],
+          undeclaredEntities: [],
+        },
+      },
+    },
+  };
+
+  it("returns the drifted + accepted field-level changes for an entity", () => {
+    expect(nodeFieldDrift(withDeep, "worker")).toEqual({
+      drifted: [
+        { path: "metadata.labels.team", kind: "changed", declared: "platform", live: "hand-edited" },
+        { path: "spec.template.spec.containers[0].image", kind: "undeclared", live: "sidecar:latest" },
+      ],
+      accepted: [{ path: "metadata.annotations.note", kind: "changed", declared: "a", live: "b", baseline: "b" }],
+    });
+  });
+
+  it("returns empty arrays (not null) for an entity the deep reader found nothing to report on", () => {
+    expect(nodeFieldDrift(withDeep, "web")).toEqual({ drifted: [], accepted: [] });
+  });
+
+  it("returns null when no lexicon in the diff carries a `deep` section at all (#87's fallback criterion)", () => {
+    const noDeep: LiveDiffJson = {
+      environment: "prod",
+      lexicons: { aws: { resources: { missing: [], orphan: [], disappeared: [], newlyObserved: [], driftedSinceSnapshot: [], unchanged: ["bucket"] } } },
+    };
+    expect(nodeFieldDrift(noDeep, "bucket")).toBeNull();
+  });
+
+  it("returns empty arrays, not null, for an entity a deep-carrying diff never mentions at all", () => {
+    // Not in the deep lexicon's drifted/accepted/unchanged lists (e.g. a
+    // different entity type the deep reader never touched) — still gets the
+    // "deep ran, nothing here" empty-array answer, since some lexicon in the
+    // diff DID carry a `deep` section (distinct from the true #87 fallback
+    // case above, where NO lexicon carries one at all).
+    expect(nodeFieldDrift(withDeep, "nope")).toEqual({ drifted: [], accepted: [] });
   });
 });
 

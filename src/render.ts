@@ -61,8 +61,15 @@ type ExtraGroups = IRGroups & { byWave?: Record<string, string[]>; byStack?: Rec
  * `groups.byStack` field, but there it's a lexicon partition (see
  * src/resources.ts), not a project boundary — auto-boxing it would surprise
  * every M1–M3 view with an unrequested box. A caller that knows it's rendering
- * a composed estate opts in explicitly via `opts.boxes: "byStack"`. */
-export function renderGraph(ir: GraphIR, opts: { theme?: string; boxes?: "byStack"; radial?: boolean } = {}): RenderResult {
+ * a composed estate opts in explicitly via `opts.boxes: "byStack"`.
+ *
+ * `opts.boxes: "byContainer"` (#86) is the runtime tier's opt-in, same shape:
+ * `src/overlay.ts`'s `attachRuntimeContainment` populates `groups.byContainer`
+ * (owner entity id → its live, undeclared runtime children, chant#1180/#1077)
+ * on the live-overlay render path, which passes this explicitly — same
+ * "caller knows" discipline as `byStack`, since a source-only or component-DAG
+ * graph never carries a meaningful `byContainer` to box. */
+export function renderGraph(ir: GraphIR, opts: { theme?: string; boxes?: "byStack" | "byContainer"; radial?: boolean } = {}): RenderResult {
   const groups = ir.groups as ExtraGroups;
   const boxKey = groups.byWave ? "byWave" : opts.boxes;
   const boxes = boxKey ? groups[boxKey] : undefined;
