@@ -17,19 +17,39 @@
  * discovered component) is counted separately as `uncorrelated`, never
  * silently dropped or guessed at — the same "don't fabricate a join"
  * discipline `joinComponentStatus` follows for an unmatched node.
+ *
+ * `action: "unobserved"` (chant#1168, #1089) is its own third category,
+ * alongside pending and in-sync (`noop`): chant couldn't read the entity's
+ * live state, so it's neither a proposed change nor confirmed in sync.
+ * Counted separately (`unobserved`/`unobservedByComponent`/
+ * `unobservedUncorrelated`) and excluded from `total`/`byComponent`/
+ * `uncorrelated` — counting it as pending would inflate "N pending" with
+ * holes chant never looked at; folding it into `noop` would make an unread
+ * entity look confirmed in sync, the exact bug #1089 removed. A plan from a
+ * chant that predates #1168 never has this action, so `unobserved` is always
+ * `0` for one — fully backward compatible.
  */
 import type { LifecyclePlan } from "./chant.ts";
 import type { ComponentResource } from "./resources.ts";
 
 export interface ReconcileSummary {
   env: string;
-  /** Non-`noop` entries only — "pending changes" excludes entities already
-   * in sync (declared, live, no drift). */
+  /** Non-`noop`, non-`unobserved` entries only — "pending changes" excludes
+   * entities already in sync (declared, live, no drift) AND entities chant
+   * couldn't read (see `unobserved` below). */
   total: number;
   /** Pending-change count per component, by the source-location correlation. */
   byComponent: Record<string, number>;
   /** Pending entries that couldn't be mapped to a component. */
   uncorrelated: number;
+  /** Declared entities chant could not read live state for (chant#1168,
+   * #1089) — its own category, never counted in `total`. `0` for a plan from
+   * a chant that predates this action. */
+  unobserved: number;
+  /** Unobserved count per component, same source-location correlation as `byComponent`. */
+  unobservedByComponent: Record<string, number>;
+  /** Unobserved entries that couldn't be mapped to a component. */
+  unobservedUncorrelated: number;
 }
 
 /** Summarize a plan's pending (non-noop) entries per component. Pure.
@@ -50,15 +70,35 @@ export function summarizePlan(
     for (const r of resources) componentByEntity.set(r.id, component);
   }
   const counts: Record<string, number> = {};
+  const unobservedCounts: Record<string, number> = {};
   let uncorrelated = 0;
+  let unobservedUncorrelated = 0;
   let total = 0;
+  let unobserved = 0;
   for (const entry of plan.entries) {
     if (entry.action === "noop") continue;
     if (nonResource?.has(entry.name)) continue; // cross-stack wiring, not a resource
-    total++;
     const component = componentByEntity.get(entry.name);
+    if (entry.action === "unobserved") {
+      // Its own category (chant#1168) — not pending, not in-sync. Same
+      // per-component correlation as the pending counts, kept in a separate
+      // bucket so it never inflates `total`.
+      unobserved++;
+      if (component) unobservedCounts[component] = (unobservedCounts[component] ?? 0) + 1;
+      else unobservedUncorrelated++;
+      continue;
+    }
+    total++;
     if (component) counts[component] = (counts[component] ?? 0) + 1;
     else uncorrelated++;
   }
-  return { env: plan.env, total, byComponent: counts, uncorrelated };
+  return {
+    env: plan.env,
+    total,
+    byComponent: counts,
+    uncorrelated,
+    unobserved,
+    unobservedByComponent: unobservedCounts,
+    unobservedUncorrelated,
+  };
 }

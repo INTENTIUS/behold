@@ -22,11 +22,21 @@
  * clean deploy) — see docs/roadmap/m1-cli-notes.md for the M1-era state this
  * superseded (Q2 there predates the #821 core fix and the multi-stack
  * `describeResources` fix that shipped alongside it in 0.18.31).
+ *
+ * chant#1168 (#1089) added a fourth `_status`, `neutral`: a declared node
+ * chant could not read live state for (no reader for the kind, the read
+ * failed, no credentials, no binding) — carried alongside an `_unobserved`
+ * attr naming the reason. Before this fix, an unread node was tagged `accent`
+ * (pending), which read as "not deployed yet" even on a wrong-cluster or
+ * unsupported-kind read where the resource might well exist — the diagram
+ * equivalent of the create-classification bug #1089 fixed in the plan. `good`/
+ * `warn`/`accent` are unaffected: `neutral` is additive, so a chant predating
+ * #1168 never emits it and every node keeps its old status.
  */
 
 /** Overlay status a renderer colours (mirrors chant `sourceOverlayGraphs`/
- * `overlayGraphs` `_status`). */
-export type OverlayStatus = "managed" | "foreign" | "pending";
+ * `overlayGraphs` `_status`). `unobserved` (chant#1168) is additive. */
+export type OverlayStatus = "managed" | "foreign" | "pending" | "unobserved";
 
 /** Read the overlay status a node carries, if any (from chant's `_status` tag). */
 export function overlayStatus(node: { attrs?: Record<string, unknown> }): OverlayStatus | undefined {
@@ -34,6 +44,7 @@ export function overlayStatus(node: { attrs?: Record<string, unknown> }): Overla
   if (s === "good") return "managed";
   if (s === "warn") return "foreign";
   if (s === "accent") return "pending";
+  if (s === "neutral") return "unobserved";
   return undefined;
 }
 

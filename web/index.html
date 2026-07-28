@@ -182,6 +182,11 @@
           <span style="color:var(--managed)">● managed</span>
           <span style="color:var(--foreign)">● foreign</span>
           <span style="color:var(--pending)">● pending</span>
+          <!-- chant#1168 (#1089): a declared node chant couldn't read live
+               state for — its own state, not folded into managed/foreign/
+               pending. Reuses --muted, same convention as the component
+               legend's "not deployed" chip below. -->
+          <span style="color:var(--muted)">● unobserved</span>
         </span>
         <!-- M1.1 (#57), palette hardened M2 (#54): the component DAG's live
              per-component AWS status — a different join than the entity

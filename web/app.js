@@ -87,7 +87,10 @@ function apiFetch(url) {
   return fetch("./" + file);
 }
 
-const STATUS_LABEL = { good: "managed", warn: "foreign", accent: "pending" };
+// `neutral` (chant#1168, #1089): a declared node chant could not read live
+// state for — distinct from `accent`/"pending" (provider confirmed it
+// absent). Additive: a chant predating #1168 never emits `neutral` here.
+const STATUS_LABEL = { good: "managed", warn: "foreign", accent: "pending", neutral: "unobserved" };
 // M1.1 (#57), palette hardened M2 (#54): the component-DAG live-status join
 // paints the same `_status` vocabulary (good/warn/accent/neutral) but with
 // different meaning — a stack-health reading, not "managed" — so the inspect
@@ -138,6 +141,11 @@ function inspect(node) {
   // over the entity overlay's managed/foreign/pending.
   const liveStatus = node.attrs && node.attrs._liveStatus;
   if (st) id("status", (liveStatus ? COMPONENT_STATUS_LABEL[st] : STATUS_LABEL[st]) || st);
+  // chant#1168 (#1089): `_unobserved` carries WHY chant couldn't read this
+  // entity's live state — only ever set alongside the entity overlay's
+  // `_status: "neutral"` (never the component-status join's own, unrelated
+  // `neutral` = "not deployed"), so it's safe to show unconditionally here.
+  if (node.attrs && node.attrs._unobserved) id("unobserved reason", node.attrs._unobserved);
   if (node.sourceLoc && node.sourceLoc.file) id("source", node.sourceLoc.file);
 
   // Containment hierarchy: a resource shows its parent chain UP (composite →
@@ -268,7 +276,14 @@ function inspect(node) {
   // observed state + drift, so a click shows it without a second click. Cached
   // per node (loadNodeDiff) so re-clicks are instant. A live diff is a build +
   // cloud query, so we only fire it for observed nodes, and never in static.
-  const observed = st === "good" || st === "warn";
+  //
+  // chant#1168 (#1089): the entity overlay's `neutral` means "chant couldn't
+  // read this" — worth a diff fetch too, since `/api/diff`'s `unobserved`
+  // entries carry the richer reason/detail this panel can show (see
+  // renderDiff). Guarded to `!liveStatus` so this doesn't also fire for the
+  // component-status join's unrelated `neutral` ("not deployed" — no entity
+  // name for `/api/diff` to match against).
+  const observed = st === "good" || st === "warn" || (st === "neutral" && !liveStatus);
   if (view.env && observed) {
     const forId = node.id;
     const loading = document.createElement("p");
@@ -354,6 +369,9 @@ const DIFF_LABEL = {
   disappeared: "gone since snapshot",
   newlyObserved: "live — no snapshot baseline",
   unchanged: "in sync",
+  // chant#1168 (#1089): its own category — chant couldn't read this entity's
+  // live state at all, so this is neither drift nor a confirmed absence.
+  unobserved: "chant could not read live state",
 };
 
 // Render a node's live-diff into the inspect panel (#27).
@@ -372,6 +390,19 @@ function renderDiff(panel, diff) {
   const cat = document.createElement("p");
   cat.textContent = DIFF_LABEL[diff.category] || diff.category;
   panel.appendChild(cat);
+  // chant#1168 (#1089): show WHY chant couldn't look, instead of the
+  // "no field changes" text below — that phrasing implies a comparison ran
+  // and found nothing, which is exactly the wrong read for a hole in the
+  // observation.
+  if (diff.category === "unobserved") {
+    const p = document.createElement("p");
+    p.style.color = "var(--muted)";
+    p.textContent = diff.unobservedReason
+      ? `reason: ${diff.unobservedReason}${diff.unobservedDetail ? " — " + diff.unobservedDetail : ""}`
+      : "chant did not report why";
+    panel.appendChild(p);
+    return;
+  }
   if (!diff.changes.length) {
     const p = document.createElement("p");
     p.style.color = "var(--muted)";
@@ -645,8 +676,13 @@ function renderDial() {
   track.appendChild(observeBtn);
   track.appendChild(dialArrow());
 
+  // chant#1168 (#1089): `unobserved` is its own count, appended rather than
+  // folded into "pending" — reconcileCache.unobserved is 0 against an older
+  // chant, so this is a no-op suffix until #1168 ships.
   const reconcileBtn = button(
-    reconcileCache ? `reconcile · ${reconcileCache.total} pending` : "reconcile",
+    reconcileCache
+      ? `reconcile · ${reconcileCache.total} pending${reconcileCache.unobserved ? ` · ${reconcileCache.unobserved} unobserved` : ""}`
+      : "reconcile",
     "dial-step",
     loadReconcile,
   );
@@ -831,7 +867,11 @@ function renderReconcileDetail(r) {
   const wrap = document.createElement("div");
   wrap.className = "dial-detail";
   const rows = Object.entries(r.byComponent).sort((a, b) => b[1] - a[1]);
-  if (!rows.length && !r.uncorrelated) {
+  // chant#1168 (#1089): `unobserved` is its own category — a plan that's ALL
+  // unobserved (nothing pending, nothing uncorrelated) must not read as
+  // "no pending changes", which would claim everything's confirmed in sync.
+  const hasUnobserved = !!r.unobserved;
+  if (!rows.length && !r.uncorrelated && !hasUnobserved) {
     wrap.textContent = "no pending changes";
     return wrap;
   }
@@ -844,6 +884,13 @@ function renderReconcileDetail(r) {
     const span = document.createElement("span");
     span.textContent = `${r.uncorrelated} uncorrelated`;
     span.title = "Pending changes that couldn't be mapped to a component by source location.";
+    wrap.appendChild(span);
+  }
+  if (hasUnobserved) {
+    const span = document.createElement("span");
+    span.style.color = "var(--muted)";
+    span.textContent = `${r.unobserved} unobserved`;
+    span.title = "Declared entities chant could not read live state for — not a pending change, not confirmed in sync.";
     wrap.appendChild(span);
   }
   return wrap;
@@ -962,13 +1009,19 @@ function render(ir, svg, m) {
   const componentStatus = m.mode === "component-status";
   let tail = ` · ${ir.edges.length} edges`;
   if (drift) {
-    // Summarise drift so "everything's blue" reads as "N pending".
-    const c = { good: 0, warn: 0, accent: 0 };
+    // Summarise drift so "everything's blue" reads as "N pending". `neutral`
+    // (chant#1168, #1089) is its own bucket — a declared node chant couldn't
+    // read live state for is neither managed, foreign, nor (confirmed)
+    // pending, and folding it into any of those would misreport a hole in
+    // the observation as a verdict. Additive: a chant predating #1168 never
+    // tags a node `neutral` here, so `c.neutral` stays 0 against an older chant.
+    const c = { good: 0, warn: 0, accent: 0, neutral: 0 };
     for (const n of ir.nodes) {
       const s = n.attrs && n.attrs._status;
       if (s in c) c[s]++;
     }
     tail = ` · ${c.good} managed · ${c.warn} foreign · ${c.accent} pending`;
+    if (c.neutral) tail += ` · ${c.neutral} unobserved`;
     // Nothing observed live in this env — explain the all-blue rather than let it
     // read as a bug (#32).
     if (c.good === 0 && c.warn === 0 && c.accent > 0) tail += ` — nothing deployed in ${m.env} yet`;

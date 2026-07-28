@@ -19,7 +19,26 @@ export interface ResourceDrift {
   changes: AttributeChange[];
 }
 
-/** Mirror of chant's LiveDiffResult (per lexicon). */
+/** Why chant could not read live state for a declared entity (chant#1168,
+ * #1089's tri-state observation contract) — reproduced from chant's own
+ * `UnobservedReason` (observation.ts). */
+export type UnobservedReason = "read-failed" | "no-credentials" | "no-binding" | "unsupported-kind" | "filtered";
+
+/** A declared entity chant could not observe, as reported by `lifecycle diff
+ * --live` (chant#1168, #1089) — chant's `UnobservedResource` (live-diff.ts). */
+export interface UnobservedResource {
+  name: string;
+  type?: string;
+  reason: UnobservedReason;
+  detail?: string;
+}
+
+/** Mirror of chant's LiveDiffResult (per lexicon).
+ *
+ * `unobserved` (chant#1168, #1089) is additive: a chant that predates the
+ * fix never emits it, so `missing`/`disappeared` keep meaning "confirmed not
+ * there" either way — see `nodeDiff` below for how a node in this list is
+ * classified as its own category, distinct from drift or absence. */
 export interface LiveDiffResult {
   missing: string[];
   orphan: string[];
@@ -27,6 +46,7 @@ export interface LiveDiffResult {
   newlyObserved: string[];
   driftedSinceSnapshot: ResourceDrift[];
   unchanged: string[];
+  unobserved?: UnobservedResource[];
 }
 
 /** Observed live state of a resource — chant's ResourceMetadata (#862). */
@@ -54,12 +74,17 @@ export type DiffCategory =
   | "disappeared" // in last snapshot, gone now
   | "newlyObserved" // observed + declared, but no snapshot baseline
   | "drifted" // observed both then and now; fields changed
-  | "unchanged";
+  | "unchanged"
+  | "unobserved"; // declared; chant could not read live state (chant#1168, #1089) — never drift, never absence
 
 export interface NodeDiff {
   category: DiffCategory;
   /** Field-level changes — only non-empty for `drifted` (needs a snapshot). */
   changes: AttributeChange[];
+  /** Why chant could not observe this node — set only for `category:
+   * "unobserved"` (chant#1168, #1089). */
+  unobservedReason?: UnobservedReason;
+  unobservedDetail?: string;
 }
 
 /** The observed live state of one node, if the diff captured it (#30). Pure. */
@@ -79,6 +104,19 @@ export function nodeDiff(json: LiveDiffJson, nodeId: string): NodeDiff | null {
     if (!r) continue;
     const drift = r.driftedSinceSnapshot?.find((d) => d.name === nodeId);
     if (drift) return { category: "drifted", changes: drift.changes ?? [] };
+    // chant#1168 (#1089): a hole in the observation, not drift and not
+    // confirmed absence — checked ahead of missing/disappeared below, though
+    // chant's own diffLive already keeps the sets disjoint (an unobserved
+    // entity is never also reported missing/disappeared).
+    const unobserved = r.unobserved?.find((u) => u.name === nodeId);
+    if (unobserved) {
+      return {
+        category: "unobserved",
+        changes: [],
+        unobservedReason: unobserved.reason,
+        ...(unobserved.detail ? { unobservedDetail: unobserved.detail } : {}),
+      };
+    }
     if (r.missing?.includes(nodeId)) return { category: "missing", changes: [] };
     if (r.orphan?.includes(nodeId)) return { category: "orphan", changes: [] };
     if (r.disappeared?.includes(nodeId)) return { category: "disappeared", changes: [] };

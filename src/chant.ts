@@ -547,19 +547,41 @@ export function ciPipeline(projectDir: string, opts: GraphOptions = {}): Promise
 // anyway to match this milestone's documented command contract.
 // ---------------------------------------------------------------------------
 
+/** Why chant could not read live state for a declared entity (chant#1168,
+ * #1089's tri-state observation contract) — reproduced from chant's own
+ * `UnobservedReason` (observation.ts). Total: `unobservedReason` below is
+ * always one of these when set. */
+export type UnobservedReason = "read-failed" | "no-credentials" | "no-binding" | "unsupported-kind" | "filtered";
+
 /** One entity-level entry from `chant lifecycle plan` — chant's own
  * `ChangeSetEntry` (lifecycle/change-set.ts), reproduced here rather than
  * imported so this module doesn't reach past chant's public `@intentius/chant`
  * export surface for an internal lifecycle type. `name` is the chant entity
  * name — the same identifier the entity graph IR's node `id` uses, which is
- * how src/reconcile.ts correlates an entry to a component. */
+ * how src/reconcile.ts correlates an entry to a component.
+ *
+ * `action: "unobserved"` (chant#1168, #1089) is additive — a chant predating
+ * that fix never emits it, so every existing plan (and consumer) is
+ * unaffected. It means chant could not read this declared entity's live
+ * state: neither a proposal to create it nor evidence it's already in sync —
+ * see `unobservedReason`/`unobservedDetail` for why, and src/reconcile.ts's
+ * `summarizePlan` for how it's kept out of the pending-change count. Likewise
+ * `evidence.observed` is additive: absent from an older chant's plan, and
+ * `false` only alongside `action: "unobserved"` (a read that never happened,
+ * not a confirmed absence). */
 export interface LifecyclePlanEntry {
   name: string;
   type?: string;
-  action: "create" | "update" | "delete" | "adopt" | "noop";
-  evidence: { declared: boolean; inSnapshot: boolean; live: boolean };
+  action: "create" | "update" | "delete" | "adopt" | "noop" | "unobserved";
+  evidence: { declared: boolean; inSnapshot: boolean; live: boolean; observed?: boolean };
   deltas?: Array<{ path: string; oldValue: unknown; newValue: unknown }>;
   ownership: "owned" | "foreign" | "unknown";
+  /** Why the entity could not be observed — set only when `action ===
+   * "unobserved"`. */
+  unobservedReason?: UnobservedReason;
+  /** Human-readable backing for `unobservedReason` (the failing command, the
+   * missing binding key, the unsupported kind). */
+  unobservedDetail?: string;
 }
 
 /** `chant lifecycle plan <env> --live --json`'s bare output shape — chant's
