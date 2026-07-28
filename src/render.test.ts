@@ -61,3 +61,35 @@ describe("renderGraph — boundary boxes (#31/M4)", () => {
     expect(svg).not.toContain(">x<");
   });
 });
+
+// #86, chant#1180/#1077: the runtime tier's containment — src/overlay.ts's
+// `attachRuntimeContainment` populates `groups.byContainer` (owner entity id
+// -> its live, undeclared runtime children); `renderGraph`'s `boxes:
+// "byContainer"` opt-in draws it as a titled boundary box, the same
+// grouped/compound layout `byStack`/`byWave` already use.
+const containerIr: GraphIR = {
+  nodes: [
+    { id: "appDeployment", kind: "K8s::Apps::Deployment", lexicon: "k8s", attrs: { _status: "good" } },
+    { id: "appDeployment-pod-1", kind: "K8s::Core::Pod", lexicon: "k8s", attrs: { _status: "runtime" }, runtimeOwner: "appDeployment" },
+  ],
+  edges: [],
+  groups: { byContainer: { appDeployment: ["appDeployment-pod-1"] } },
+};
+
+describe("renderGraph — runtime-tier boundary boxes (#86)", () => {
+  it("does NOT box groups.byContainer by default — same opt-in discipline as byStack", () => {
+    const { svg } = renderGraph(containerIr);
+    expect(svg).not.toContain(BOX_MARKER);
+  });
+
+  it("boxes groups.byContainer when the caller opts in, titled by the declared owner's id", () => {
+    const { svg } = renderGraph(containerIr, { boxes: "byContainer" });
+    expect(svg).toContain(BOX_MARKER);
+    expect(svg).toContain("appDeployment");
+  });
+
+  it("passing boxes: \"byContainer\" is a no-op when the IR carries no groups.byContainer at all", () => {
+    const { svg } = renderGraph(twoProjectIr, { boxes: "byContainer" });
+    expect(svg).not.toContain(BOX_MARKER);
+  });
+});

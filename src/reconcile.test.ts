@@ -63,6 +63,9 @@ describe("summarizePlan", () => {
       unobserved: 0,
       unobservedByComponent: {},
       unobservedUncorrelated: 0,
+      runtime: 0,
+      runtimeByComponent: {},
+      runtimeUncorrelated: 0,
     });
   });
 
@@ -157,5 +160,75 @@ describe("summarizePlan — unobserved entries (chant#1168)", () => {
     const summary = summarizePlan(withParam, withParamComponents, new Set(["pRdsEndpoint"]));
     expect(summary.unobserved).toBe(2); // unchanged — the parameter is invisible
     expect(summary.unobservedByComponent).toEqual({ "loom-db": 1 });
+  });
+});
+
+// chant#1180 (#1077): `action: "runtime"` — a live, undeclared resource whose
+// owner-reference chain reaches a declared entity (a Pod its Deployment's
+// controller created). Its own category: not a pending change, not confirmed
+// in sync. A plan from a chant that predates this fix never has this action,
+// so these fixtures are purely additive to the ones above.
+describe("summarizePlan — runtime entries (chant#1180)", () => {
+  const planWithRuntime: LifecyclePlan = {
+    env: "local",
+    entries: [
+      ...plan.entries,
+      {
+        name: "loom-worker-pod-abc123",
+        action: "runtime",
+        evidence: { declared: false, inSnapshot: false, live: true },
+        ownership: "unknown",
+        runtimeOwner: "loom-backend-service",
+      },
+      // A runtime child with no `src/<component>/` source location at all —
+      // the common case, since it's never declared anywhere.
+      { name: "some-crd-child-pod", action: "runtime", evidence: { declared: false, inSnapshot: false, live: true }, ownership: "unknown", runtimeOwner: "some-crd" },
+    ],
+  };
+
+  it("counts runtime entries separately, per component", () => {
+    const summary = summarizePlan(planWithRuntime, byComponent);
+    expect(summary.runtime).toBe(2);
+    expect(summary.runtimeByComponent).toEqual({});
+    expect(summary.runtimeUncorrelated).toBe(2); // neither maps to a component (no sourceLoc)
+  });
+
+  it("never counts a runtime entry in `total`/`byComponent`/`uncorrelated` — it isn't a pending change", () => {
+    const summary = summarizePlan(planWithRuntime, byComponent);
+    // Same pending counts as the plain plan (2 loom-db + 1 loom-backend + 1 uncorrelated) — unaffected.
+    expect(summary.total).toBe(4);
+    expect(summary.byComponent).toEqual({ "loom-db": 2, "loom-backend": 1 });
+    expect(summary.uncorrelated).toBe(1);
+  });
+
+  it("is 0 for a plan with no runtime entries (backward compatible with a chant predating #1180)", () => {
+    const summary = summarizePlan(plan, byComponent);
+    expect(summary.runtime).toBe(0);
+    expect(summary.runtimeByComponent).toEqual({});
+    expect(summary.runtimeUncorrelated).toBe(0);
+  });
+
+  it("correlates a runtime entry to a component when its name happens to map to one", () => {
+    const byComponentWithRuntimeChild: Record<string, ComponentResource[]> = {
+      ...byComponent,
+      "loom-backend": [...byComponent["loom-backend"]!, { id: "loom-worker-pod-abc123", kind: "K8s::Core::Pod", lexicon: "k8s" }],
+    };
+    const summary = summarizePlan(planWithRuntime, byComponentWithRuntimeChild);
+    expect(summary.runtimeByComponent).toEqual({ "loom-backend": 1 });
+    expect(summary.runtimeUncorrelated).toBe(1);
+  });
+
+  it("unobserved and runtime are independent buckets — a plan can carry both", () => {
+    const both: LifecyclePlan = {
+      env: "local",
+      entries: [
+        ...planWithRuntime.entries,
+        { name: "some-crd", action: "unobserved", evidence: { declared: true, inSnapshot: false, live: false, observed: false }, ownership: "unknown", unobservedReason: "unsupported-kind" },
+      ],
+    };
+    const summary = summarizePlan(both, byComponent);
+    expect(summary.runtime).toBe(2);
+    expect(summary.unobserved).toBe(1);
+    expect(summary.total).toBe(4);
   });
 });

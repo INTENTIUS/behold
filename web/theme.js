@@ -72,12 +72,20 @@ export function tokensFor(th) {
     pending: th.palette[4],   // blue   — accent / pending
     degraded: th.palette[1],  // red    — degraded / failed
     neutral: fgMix(0.45),     // grey   — not deployed / unknown
+    // chant#1180 (#1077, behold#86): a live, undeclared node whose owner
+    // chain reaches a declared entity — expected runtime (a Pod its
+    // Deployment created), never drift and never foreign. Cyan keeps it
+    // clearly apart from foreign (yellow) and degraded (red) — "informational,
+    // not a problem" — while still being its own colour, not a reuse of
+    // managed/pending (which would misreport it as chant-declared or as a
+    // pending change).
+    runtime: th.palette[6],   // cyan   — runtime child (expected, not drift)
     cat: [1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14].map((i) => th.palette[i]),
   };
 }
 
 // CSS custom properties behold's chrome (:root) reads.
-const CSS_VARS = ["bg", "panel", "line", "fg", "muted", "edge", "managed", "foreign", "pending", "degraded", "neutral"];
+const CSS_VARS = ["bg", "panel", "line", "fg", "muted", "edge", "managed", "foreign", "pending", "degraded", "neutral", "runtime"];
 
 // pinhole (the graph painter) reads its OWN vars, `--pin-<token>` (emitted as
 // `var(--pin-token, <baked default>)`). Derive them from the active Ghostty theme so the graph

@@ -32,7 +32,7 @@ import {
   type ChantFailure,
 } from "./chant.ts";
 import { joinComponentStatus, componentStatusColor } from "./component-status.ts";
-import { reclassifyOverlay, pruneImports } from "./overlay.ts";
+import { reclassifyOverlay, pruneImports, attachRuntimeContainment } from "./overlay.ts";
 import { addValueMatchEdges } from "./value-match.ts";
 import { projectLogical } from "./logical.ts";
 import { addCompositeDeps } from "./composite-deps.ts";
@@ -42,7 +42,7 @@ import { renderGraph, renderArchitecture } from "./render.ts";
 import { discoverEstateOps } from "./ops.ts";
 import { LIVE_IMPORT_LEXICONS } from "./adopt.ts";
 import { detectProject, loadBeholdConfig } from "./project.ts";
-import { nodeDiff, nodeObserved, type LiveDiffJson } from "./diff.ts";
+import { nodeDiff, nodeObserved, nodeFieldDrift, type LiveDiffJson } from "./diff.ts";
 import { classifyHealth } from "./health.ts";
 import { OpRunner } from "./op-runner.ts";
 import { detectSubstrates } from "./substrates.ts";
@@ -677,6 +677,12 @@ export function createApp(
       // deploy (see reclassifyOverlay): Parameters take their deployed
       // component's status, src/examples/ nodes go neutral + `_byo`.
       let ir = reclassifyOverlay(await graphIr(cfg.projectDir, opts));
+      // Runtime tier (#86, chant#1180/#1077): nest each live, undeclared,
+      // owner-chain-resolved node (a Pod its Deployment's controller created)
+      // under its declared owner in `groups.byContainer` — a no-op on a
+      // substrate with no owner chain. `renderGraph`'s `boxes: "byContainer"`
+      // opt-in below draws it as a titled boundary box.
+      ir = attachRuntimeContainment(ir);
       // Logical/architecture lens (#63): re-project the live overlay into nested
       // region/VPC/subnet ⊃ component boxes, keeping each surviving node's drift
       // colour. Short-circuits the detail-tier pruning/composite plumbing below.
@@ -703,7 +709,9 @@ export function createApp(
           /* component DAG unavailable — leave composites as-is */
         }
       }
-      const { svg } = renderGraph(ir, { radial: new URL(c.req.url).searchParams.get("radial") === "1" });
+      // `boxes: "byContainer"` (#86) is a no-op unless attachRuntimeContainment
+      // populated it above — same "harmless when absent" contract as byStack.
+      const { svg } = renderGraph(ir, { boxes: "byContainer", radial: new URL(c.req.url).searchParams.get("radial") === "1" });
       return c.json({ ir, svg, meta: { projectDir: cfg.projectDir, env, mode: "overlay" } });
     } catch (err) {
       // #72: the same structured {error, code, remedy} the other read routes
@@ -725,10 +733,13 @@ export function createApp(
     // Same wiring/examples reclassification the /api/overlay view gets, so a
     // manual refresh of the infra graph reads consistently (env → overlay).
     if (env) reclassifyOverlay(result.ir);
+    // Same runtime-tier containment the /api/overlay view gets (#86) — a no-op
+    // on a substrate with no owner chain.
+    if (env) attachRuntimeContainment(result.ir);
     // And the same import-handle pruning below ATTRIBUTES tier + value-matched edges.
     if ((optsFromQuery(new URL(c.req.url)).detail ?? 2) < 3) pruneImports(result.ir);
     addValueMatchEdges(result.ir);
-    const { svg } = renderGraph(result.ir);
+    const { svg } = renderGraph(result.ir, { boxes: "byContainer" });
     return c.json({
       ir: result.ir,
       svg,
@@ -769,11 +780,24 @@ export function createApp(
       // for — additive and absent from an older chant's diff. Included here
       // so the inspect panel's bulk fetch (`/api/diff`) carries them too.
       for (const u of r.unobserved ?? []) ids.add(u.name);
+      // chant#1180 (#1077): runtime children are already covered by the
+      // `lex.observed` keys loop above (chant's `describeResources` reports
+      // them the same as any other resource it found) — this is just the
+      // explicit, self-documenting record of that, matching the style of the
+      // unobserved line above rather than leaving it implicit.
+      for (const rc of r.runtimeChildren ?? []) ids.add(rc.name);
     }
-    const nodes: Record<string, { observed: unknown; diff: unknown; health: string }> = {};
+    const nodes: Record<string, { observed: unknown; diff: unknown; health: string; fieldDrift: unknown }> = {};
     for (const id of ids) {
       const observed = nodeObserved(parsed, id);
-      nodes[id] = { observed, diff: nodeDiff(parsed, id), health: classifyHealth(observed?.status) };
+      nodes[id] = {
+        observed,
+        diff: nodeDiff(parsed, id),
+        health: classifyHealth(observed?.status),
+        // Field-level (per-manager) drift (#87, chant#1181) — null when no
+        // lexicon in this diff carries a `deep` section at all.
+        fieldDrift: nodeFieldDrift(parsed, id),
+      };
     }
     return c.json({ env, nodes });
   });
@@ -796,7 +820,16 @@ export function createApp(
     const observed = nodeObserved(parsed, node);
     // Health (#26): a verdict derived from the observed status — distinct from
     // drift (a node can be managed yet degraded).
-    return c.json({ node, env, diff: nodeDiff(parsed, node), observed, health: classifyHealth(observed?.status) });
+    return c.json({
+      node,
+      env,
+      diff: nodeDiff(parsed, node),
+      observed,
+      health: classifyHealth(observed?.status),
+      // Field-level (per-manager) drift (#87, chant#1181) — null when no
+      // lexicon in this diff carries a `deep` section at all.
+      fieldDrift: nodeFieldDrift(parsed, node),
+    });
   });
 
   // Source history (#28): recent commits, offered as rollback targets.

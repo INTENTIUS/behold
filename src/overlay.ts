@@ -32,11 +32,23 @@
  * equivalent of the create-classification bug #1089 fixed in the plan. `good`/
  * `warn`/`accent` are unaffected: `neutral` is additive, so a chant predating
  * #1168 never emits it and every node keeps its old status.
+ *
+ * chant#1180 (#1077) added a fifth, `runtime`: a live, undeclared node whose
+ * owner-reference chain reaches a declared entity — a Pod a declared
+ * Deployment's controller created, for instance — carried alongside a
+ * top-level `runtimeOwner` naming the declared parent (chant's `IRNode.
+ * runtimeOwner`, NOT an `attrs` tag, since it's a first-class IR field the
+ * same way `ownership`/`physicalId` are). Before this, the SAME node would
+ * have painted `warn` (foreign) — indistinguishable from a genuinely
+ * out-of-band resource, which is exactly the confusion #1077 exists to
+ * remove: expected runtime is not foreign, and must never read as an adopt/
+ * delete candidate. Additive: a chant predating #1180 never emits it.
  */
 
 /** Overlay status a renderer colours (mirrors chant `sourceOverlayGraphs`/
- * `overlayGraphs` `_status`). `unobserved` (chant#1168) is additive. */
-export type OverlayStatus = "managed" | "foreign" | "pending" | "unobserved";
+ * `overlayGraphs` `_status`). `unobserved` (chant#1168) and `runtime`
+ * (chant#1180) are additive. */
+export type OverlayStatus = "managed" | "foreign" | "pending" | "unobserved" | "runtime";
 
 /** Read the overlay status a node carries, if any (from chant's `_status` tag). */
 export function overlayStatus(node: { attrs?: Record<string, unknown> }): OverlayStatus | undefined {
@@ -45,6 +57,7 @@ export function overlayStatus(node: { attrs?: Record<string, unknown> }): Overla
   if (s === "warn") return "foreign";
   if (s === "accent") return "pending";
   if (s === "neutral") return "unobserved";
+  if (s === "runtime") return "runtime";
   return undefined;
 }
 
@@ -53,6 +66,10 @@ interface OverlayNode {
   kind: string;
   sourceLoc?: { file?: string };
   attrs?: Record<string, unknown>;
+  /** Live-only, undeclared node (chant#1180, #1077): the declared entity this
+   * node's owner-reference chain resolves to — chant's `IRNode.runtimeOwner`.
+   * Read by `attachRuntimeContainment` below (#86). */
+  runtimeOwner?: string;
 }
 
 /** Drop cross-stack import handles (chant's `ir.imports` — CloudFormation
@@ -122,5 +139,45 @@ export function reclassifyOverlay<T extends { nodes: OverlayNode[] }>(ir: T): T 
       }
     }
   }
+  return ir;
+}
+
+/**
+ * Runtime tier containment (#86, chant#1077/#1180) — behold's own zoom tier
+ * below the declaration boundary. chant's live overlay already appends a
+ * live, undeclared, owner-chain-resolved node (a Pod a declared Deployment's
+ * controller created) tagged `_status: "runtime"`, carrying `runtimeOwner`
+ * naming its declared parent (see `overlayStatus` above). This is the
+ * rendering half: nest each runtime child under its declared owner in
+ * `ir.groups.byContainer` — the SAME grouping chant's own live-containment
+ * pass (#779, VPC ⊃ subnet) already populates, and the same shape
+ * `renderGraph`'s `boxes: "byContainer"` opt-in (src/render.ts, #86) draws as
+ * a titled boundary box — so a runtime child renders nested inside its
+ * owner's box rather than floating loose beside it as an ordinary node, with
+ * no change needed to pinhole's painter.
+ *
+ * Merges into whatever `byContainer` the IR already carries (chant's own live
+ * containment, when present) rather than replacing it — the two are
+ * independent containment facts about the same graph. A no-op when no node
+ * carries `runtimeOwner`: a substrate with no owner chain (AWS, GCP's Config
+ * Connector today) or a declared-only (non-live) graph — #86's acceptance
+ * criterion that the tier is gracefully unavailable, never broken or blank.
+ * Mutates + returns `ir`. Pure w.r.t. I/O.
+ */
+export function attachRuntimeContainment<T extends { nodes: OverlayNode[]; groups: { byContainer?: Record<string, string[]> } }>(
+  ir: T,
+): T {
+  const byOwner = new Map<string, Set<string>>();
+  for (const n of ir.nodes) {
+    if (!n.runtimeOwner) continue;
+    if (!byOwner.has(n.runtimeOwner)) byOwner.set(n.runtimeOwner, new Set());
+    byOwner.get(n.runtimeOwner)!.add(n.id);
+  }
+  if (byOwner.size === 0) return ir; // no owner chain on this substrate/graph — graceful no-op
+  const byContainer: Record<string, string[]> = { ...(ir.groups.byContainer ?? {}) };
+  for (const [owner, children] of byOwner) {
+    byContainer[owner] = [...new Set([...(byContainer[owner] ?? []), ...children])].sort();
+  }
+  ir.groups.byContainer = byContainer;
   return ir;
 }

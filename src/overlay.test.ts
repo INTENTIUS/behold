@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { overlayStatus, reclassifyOverlay, pruneImports } from "./overlay.ts";
+import { overlayStatus, reclassifyOverlay, pruneImports, attachRuntimeContainment } from "./overlay.ts";
 
 describe("overlayStatus", () => {
   it("maps chant's _status vocabulary to overlay statuses", () => {
@@ -16,6 +16,62 @@ describe("overlayStatus", () => {
   it("maps `neutral` to `unobserved` (chant#1168)", () => {
     expect(overlayStatus({ attrs: { _status: "neutral" } })).toBe("unobserved");
     expect(overlayStatus({ attrs: { _status: "neutral", _unobserved: "read-failed" } })).toBe("unobserved");
+  });
+
+  // chant#1180 (#1077): a live, undeclared node whose owner chain reaches a
+  // declared entity — expected runtime, distinct from "foreign" (which used
+  // to be the only bucket a live-but-undeclared node could land in).
+  it("maps `runtime` to `runtime` (chant#1180)", () => {
+    expect(overlayStatus({ attrs: { _status: "runtime" } })).toBe("runtime");
+  });
+});
+
+// The `groups` shape attachRuntimeContainment reads/writes — annotated
+// explicitly so a fixture's inferred type carries the optional `byContainer`
+// key even when the fixture itself starts with an empty `groups: {}`.
+type Groups = { byContainer?: Record<string, string[]> };
+
+describe("attachRuntimeContainment (#86, chant#1180/#1077)", () => {
+  it("nests a runtime child under its declared owner in groups.byContainer", () => {
+    const ir = {
+      nodes: [
+        { id: "appDeployment", kind: "K8s::Apps::Deployment", attrs: { _status: "good" } },
+        { id: "appDeployment-pod-1", kind: "K8s::Core::Pod", attrs: { _status: "runtime" }, runtimeOwner: "appDeployment" },
+        { id: "appDeployment-pod-2", kind: "K8s::Core::Pod", attrs: { _status: "runtime" }, runtimeOwner: "appDeployment" },
+      ],
+      groups: {} as Groups,
+    };
+    const r = attachRuntimeContainment(ir);
+    expect(r.groups.byContainer).toEqual({ appDeployment: ["appDeployment-pod-1", "appDeployment-pod-2"] });
+  });
+
+  it("is a no-op when no node carries runtimeOwner — graceful on a substrate with no owner chain", () => {
+    const ir = { nodes: [{ id: "bucket", kind: "AWS::S3::Bucket", attrs: { _status: "good" } }], groups: {} as Groups };
+    const r = attachRuntimeContainment(ir);
+    expect(r.groups.byContainer).toBeUndefined();
+  });
+
+  it("merges into an existing groups.byContainer rather than replacing it (chant's own live containment, #779)", () => {
+    const ir = {
+      nodes: [
+        { id: "argoApp-pod-1", kind: "ArgoCd::Application::Pod", attrs: { _status: "runtime" }, runtimeOwner: "argoApp" },
+      ],
+      groups: { byContainer: { vpc1: ["subnetA"] } },
+    };
+    const r = attachRuntimeContainment(ir);
+    expect(r.groups.byContainer).toEqual({ vpc1: ["subnetA"], argoApp: ["argoApp-pod-1"] });
+  });
+
+  it("dedupes and sorts a runtime child's ids, and works for any kind string (a CRD, not just Pods, #85/#86)", () => {
+    const ir = {
+      nodes: [
+        { id: "zPod", kind: "K8s::Core::Pod", attrs: { _status: "runtime" }, runtimeOwner: "owner" },
+        { id: "aCrdChild", kind: "ArgoCd::Application", attrs: { _status: "runtime" }, runtimeOwner: "owner" },
+      ],
+      groups: {} as Groups,
+    };
+    const r = attachRuntimeContainment(ir);
+    expect(r.groups.byContainer).toEqual({ owner: ["aCrdChild", "zPod"] });
   });
 });
 

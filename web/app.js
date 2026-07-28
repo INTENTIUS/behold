@@ -90,7 +90,10 @@ function apiFetch(url) {
 // `neutral` (chant#1168, #1089): a declared node chant could not read live
 // state for — distinct from `accent`/"pending" (provider confirmed it
 // absent). Additive: a chant predating #1168 never emits `neutral` here.
-const STATUS_LABEL = { good: "managed", warn: "foreign", accent: "pending", neutral: "unobserved" };
+// `runtime` (chant#1180, #1077): a live, undeclared node whose owner chain
+// reaches a declared entity — expected runtime (a Pod its Deployment
+// created), never foreign and never drift. Additive the same way.
+const STATUS_LABEL = { good: "managed", warn: "foreign", accent: "pending", neutral: "unobserved", runtime: "runtime child" };
 // M1.1 (#57), palette hardened M2 (#54): the component-DAG live-status join
 // paints the same `_status` vocabulary (good/warn/accent/neutral) but with
 // different meaning — a stack-health reading, not "managed" — so the inspect
@@ -146,6 +149,11 @@ function inspect(node) {
   // `_status: "neutral"` (never the component-status join's own, unrelated
   // `neutral` = "not deployed"), so it's safe to show unconditionally here.
   if (node.attrs && node.attrs._unobserved) id("unobserved reason", node.attrs._unobserved);
+  // chant#1180 (#1077): `runtimeOwner` is a first-class IR field (like
+  // `ownership`/`physicalId`), not an `attrs` tag — the declared entity this
+  // live, undeclared node's owner chain resolves to. Shown immediately from
+  // the graph node itself, no diff fetch needed.
+  if (node.runtimeOwner) id("runtime owner", node.runtimeOwner);
   if (node.sourceLoc && node.sourceLoc.file) id("source", node.sourceLoc.file);
 
   // Containment hierarchy: a resource shows its parent chain UP (composite →
@@ -215,6 +223,12 @@ function inspect(node) {
   } else if (st === "accent") {
     const live = section("live");
     live("", "not provisioned yet (pending) — no live state");
+  } else if (st === "runtime") {
+    // chant#1180 (#1077): a runtime child rarely carries physicalId/ownership
+    // today (it's not chant-owned in the marker sense), so make sure
+    // something explains the node rather than showing an empty "live" gap.
+    const live = section("live");
+    live("", `runtime child — owned by ${node.runtimeOwner || "its declared parent"}, not itself declared`);
   }
 
   // Declared attributes — the source-of-truth values / cross-resource refs.
@@ -283,7 +297,11 @@ function inspect(node) {
   // renderDiff). Guarded to `!liveStatus` so this doesn't also fire for the
   // component-status join's unrelated `neutral` ("not deployed" — no entity
   // name for `/api/diff` to match against).
-  const observed = st === "good" || st === "warn" || (st === "neutral" && !liveStatus);
+  // chant#1180 (#1077): `runtime` is worth a diff fetch too — `/api/diff`'s
+  // `observed` map already carries a runtime child (chant's describeResources
+  // reports it the same as any other resource it found), and its own
+  // `fieldDrift` may apply too on a substrate with per-field ownership.
+  const observed = st === "good" || st === "warn" || st === "runtime" || (st === "neutral" && !liveStatus);
   if (view.env && observed) {
     const forId = node.id;
     const loading = document.createElement("p");
@@ -302,6 +320,7 @@ function inspect(node) {
       }
       renderObserved(panel, j.observed, j.health); // #30 observed state + #26 health
       renderDiff(panel, j.diff); // #27 — drift since snapshot
+      renderFieldDrift(panel, j.fieldDrift); // #87 — field-level (per-manager) drift
     });
   }
 }
@@ -372,6 +391,9 @@ const DIFF_LABEL = {
   // chant#1168 (#1089): its own category — chant couldn't read this entity's
   // live state at all, so this is neither drift nor a confirmed absence.
   unobserved: "chant could not read live state",
+  // chant#1180 (#1077): its own category too — expected runtime, never drift
+  // and never orphan/adopt.
+  runtime: "expected runtime child",
 };
 
 // Render a node's live-diff into the inspect panel (#27).
@@ -403,6 +425,17 @@ function renderDiff(panel, diff) {
     panel.appendChild(p);
     return;
   }
+  // chant#1180 (#1077): never call this "drift" — it's the runtime doing its
+  // job (a Pod its Deployment created); deleting it just gets it recreated.
+  if (diff.category === "runtime") {
+    const p = document.createElement("p");
+    p.style.color = "var(--runtime)";
+    p.textContent = diff.runtimeOwner
+      ? `owned by ${diff.runtimeOwner} — created by its controller, not drift`
+      : "created by its controller, not drift";
+    panel.appendChild(p);
+    return;
+  }
   if (!diff.changes.length) {
     const p = document.createElement("p");
     p.style.color = "var(--muted)";
@@ -419,6 +452,52 @@ function renderDiff(panel, diff) {
     dt.textContent = ch.path;
     const dd = document.createElement("dd");
     dd.textContent = `${JSON.stringify(ch.oldValue)} → ${JSON.stringify(ch.newValue)}`;
+    dl.append(dt, dd);
+  }
+  panel.appendChild(dl);
+}
+
+// Field-level ownership colouring (#87, chant#1076/#1181): per-field drift
+// derived from k8s managed-fields pruning — additive, only present when
+// chant's `lifecycle diff --live --json` carried a `deep` section for this
+// entity's lexicon (src/diff.ts's `nodeFieldDrift`). `null` on a substrate/
+// chant with no deep reader — the whole-object `drift` section above is
+// unaffected, per #87's fallback acceptance criterion.
+//
+// chant's wire contract doesn't carry a field-MANAGER name (which manager
+// currently owns a path) — only whether the path is `changed` (a real
+// deviation from what chant declared, whether purely chant-owned or
+// contested by a foreign manager — chant's own pruning already drops a
+// confidently foreign-owned, undeclared field before this ever runs),
+// `undeclared` (present live, chant's source says nothing about it — the
+// closest available signal to "foreign"), or `absent` (declared, not present
+// live). These three are the closest honest mapping to "chant-owned vs
+// foreign vs contested" the current wire data supports.
+const FIELD_KIND_LABEL = { changed: "drifted", undeclared: "foreign (not declared)", absent: "declared, not present live" };
+const FIELD_KIND_COLOR = { changed: "var(--degraded)", undeclared: "var(--foreign)", absent: "var(--muted)" };
+
+function renderFieldDrift(panel, fieldDrift) {
+  if (!fieldDrift) return; // no lexicon in this diff ran a deep (field-level) read
+  if (!fieldDrift.drifted.length && !fieldDrift.accepted.length) return; // deep ran, nothing to report for this node
+  const h = document.createElement("h3");
+  h.textContent = "field ownership";
+  h.style.cssText = "font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:14px 0 6px";
+  panel.appendChild(h);
+  const dl = document.createElement("dl");
+  for (const ch of fieldDrift.drifted) {
+    const dt = document.createElement("dt");
+    dt.textContent = ch.path;
+    dt.style.color = FIELD_KIND_COLOR[ch.kind] || "";
+    const dd = document.createElement("dd");
+    dd.textContent = `${FIELD_KIND_LABEL[ch.kind] || ch.kind} — declared: ${JSON.stringify(ch.declared)} · live: ${JSON.stringify(ch.live)}`;
+    dl.append(dt, dd);
+  }
+  for (const ch of fieldDrift.accepted) {
+    const dt = document.createElement("dt");
+    dt.textContent = ch.path;
+    dt.style.color = "var(--muted)";
+    const dd = document.createElement("dd");
+    dd.textContent = `accepted deviation — baseline: ${JSON.stringify(ch.baseline)} · live: ${JSON.stringify(ch.live)}`;
     dl.append(dt, dd);
   }
   panel.appendChild(dl);
@@ -679,9 +758,13 @@ function renderDial() {
   // chant#1168 (#1089): `unobserved` is its own count, appended rather than
   // folded into "pending" — reconcileCache.unobserved is 0 against an older
   // chant, so this is a no-op suffix until #1168 ships.
+  // chant#1180 (#1077): `runtime` gets the identical treatment — its own
+  // count, 0 against a chant predating it.
   const reconcileBtn = button(
     reconcileCache
-      ? `reconcile · ${reconcileCache.total} pending${reconcileCache.unobserved ? ` · ${reconcileCache.unobserved} unobserved` : ""}`
+      ? `reconcile · ${reconcileCache.total} pending` +
+        (reconcileCache.unobserved ? ` · ${reconcileCache.unobserved} unobserved` : "") +
+        (reconcileCache.runtime ? ` · ${reconcileCache.runtime} runtime` : "")
       : "reconcile",
     "dial-step",
     loadReconcile,
@@ -871,7 +954,9 @@ function renderReconcileDetail(r) {
   // unobserved (nothing pending, nothing uncorrelated) must not read as
   // "no pending changes", which would claim everything's confirmed in sync.
   const hasUnobserved = !!r.unobserved;
-  if (!rows.length && !r.uncorrelated && !hasUnobserved) {
+  // chant#1180 (#1077): `runtime` gets the identical treatment.
+  const hasRuntime = !!r.runtime;
+  if (!rows.length && !r.uncorrelated && !hasUnobserved && !hasRuntime) {
     wrap.textContent = "no pending changes";
     return wrap;
   }
@@ -891,6 +976,13 @@ function renderReconcileDetail(r) {
     span.style.color = "var(--muted)";
     span.textContent = `${r.unobserved} unobserved`;
     span.title = "Declared entities chant could not read live state for — not a pending change, not confirmed in sync.";
+    wrap.appendChild(span);
+  }
+  if (hasRuntime) {
+    const span = document.createElement("span");
+    span.style.color = "var(--runtime)";
+    span.textContent = `${r.runtime} runtime`;
+    span.title = "Live, undeclared resources whose owner chain reaches a declared entity — expected runtime, not a pending change.";
     wrap.appendChild(span);
   }
   return wrap;
@@ -1015,13 +1107,19 @@ function render(ir, svg, m) {
     // pending, and folding it into any of those would misreport a hole in
     // the observation as a verdict. Additive: a chant predating #1168 never
     // tags a node `neutral` here, so `c.neutral` stays 0 against an older chant.
-    const c = { good: 0, warn: 0, accent: 0, neutral: 0 };
+    // `runtime` (chant#1180, #1077) is its own bucket too — a live,
+    // undeclared node whose owner chain reaches a declared entity is neither
+    // managed, foreign, nor pending; folding it into any of those would
+    // misreport expected runtime as drift or as a proposed create. Additive
+    // the same way — `c.runtime` stays 0 against a chant predating #1180.
+    const c = { good: 0, warn: 0, accent: 0, neutral: 0, runtime: 0 };
     for (const n of ir.nodes) {
       const s = n.attrs && n.attrs._status;
       if (s in c) c[s]++;
     }
     tail = ` · ${c.good} managed · ${c.warn} foreign · ${c.accent} pending`;
     if (c.neutral) tail += ` · ${c.neutral} unobserved`;
+    if (c.runtime) tail += ` · ${c.runtime} runtime`;
     // Nothing observed live in this env — explain the all-blue rather than let it
     // read as a bug (#32).
     if (c.good === 0 && c.warn === 0 && c.accent > 0) tail += ` — nothing deployed in ${m.env} yet`;

@@ -318,6 +318,10 @@ describe("overlayStatus", () => {
     expect(overlayStatus({ attrs: { _status: "neutral" } })).toBe("unobserved");
   });
 
+  it("maps `runtime` to `runtime` (chant#1180, #1077)", () => {
+    expect(overlayStatus({ attrs: { _status: "runtime" } })).toBe("runtime");
+  });
+
   it("M4: the retired sourceAnchoredOverlay placeholder is gone — nothing in the live path can throw", async () => {
     // chant #821 shipped (chant 0.18.31): behold's `/api/overlay` just passes
     // `--live --overlay` through to chant (see chant.ts's graphIr/graphFlags)
