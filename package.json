@@ -15,6 +15,7 @@
   "scripts": {
     "dev": "tsx src/cli.ts",
     "demo": "npm --prefix example-writes install && tsx src/cli.ts serve example-writes --local --env prod",
+    "demo:k8s": "bash example-k8s/scripts/local/local-up.sh; npm --prefix example-k8s install && tsx src/cli.ts serve example-k8s --local --env local; bash example-k8s/scripts/local/local-down.sh",
     "tsc": "tsc --noEmit",
     "test": "vitest run",
     "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --external:hono --external:@hono/node-server --external:@intentius/pinhole --outfile=dist/cli.js && chmod +x dist/cli.js",
