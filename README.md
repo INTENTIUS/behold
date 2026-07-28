@@ -127,6 +127,25 @@ Which buttons appear depends on what the project committed: **Sync** (`ApplyOp`)
 Ops (the default `example`) shows none — by design, not a bug. Full walkthrough:
 **[example-writes/README.md](example-writes/README.md)**.
 
+## The k3d demo — the Kubernetes counterpart to Loom-on-Floci
+
+`npm run demo:k8s` is the k8s analogue of the Floci demo above: it brings up a
+local, single-node [k3d](https://k3d.io) cluster (Docker only, no cloud
+account), then serves the bundled `example-k8s` — an nginx Deployment +
+Service — with `--local`. Same mechanism, same shape: declared-not-deployed
+(blue) → click **Run** on `k3d-apply` → managed (green), server-side applied
+with chant's own field manager. Ctrl-C tears the cluster back down.
+
+Beyond the AWS demo's single flip, this one also demonstrates Kubernetes'
+two additional tiers (epic #84): zoom into the Deployment to see its **Pods**
+as **runtime children** (owned by the cluster, never declared, never drift);
+induce an out-of-band `kubectl scale`/`kubectl label` and refresh to see
+**managed-fields drift** (chant's field manager vs. a competing one); and
+switch away from the bound kubectl context to see an **unobserved** refusal
+(an honest "did not look," never a false "all gone"). Full walkthrough,
+including the exact commands and what each state looks like over the API:
+**[example-k8s/README.md](example-k8s/README.md)**.
+
 ## Read-only core, delegated gated writes (the invariant)
 
 **behold never mutates anything itself.**

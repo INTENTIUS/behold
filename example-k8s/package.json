@@ -1,0 +1,14 @@
+{
+  "name": "behold-example-k8s",
+  "private": true,
+  "type": "module",
+  "description": "A small nginx Deployment+Service on k3d — behold's k3d turnkey demo (#88), the Kubernetes counterpart to Loom-on-Floci.",
+  "scripts": {
+    "build": "./node_modules/.bin/chant build src --lexicon k8s -o app.yaml"
+  },
+  "dependencies": {
+    "@intentius/chant": "^0.32.0",
+    "@intentius/chant-lexicon-k8s": "^0.32.0",
+    "@intentius/chant-lexicon-temporal": "^0.32.0"
+  }
+}

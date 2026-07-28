@@ -147,6 +147,9 @@ export async function detectSubstrates(projectDir: string, preview = false): Pro
   }
 
   // k3d — only for a k8s-lexicon project. "unknown" if k3d isn't installed.
+  // Bring-up (#88, the k3d turnkey demo): the same generic script convention
+  // as Floci's above (scripts/local/local-up.sh) — offered only when Docker is
+  // up, k3d is actually installed, and the project ships the script.
   if (lexicons.includes("k8s")) {
     const k3d = await probe("k3d", ["cluster", "list", "--no-headers"]);
     const clusters = k3d.code === 0 ? k3d.out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean) : [];
@@ -155,6 +158,10 @@ export async function detectSubstrates(projectDir: string, preview = false): Pro
       label: "k3d",
       status: k3d.code === 127 ? "unknown" : clusters.length ? "up" : "down",
       detail: k3d.code === 127 ? "k3d not installed" : clusters.length ? `${clusters.length} cluster(s)` : "no clusters",
+      bringUp:
+        docker && k3d.code !== 127 && !clusters.length
+          ? scriptBringUp(projectDir, "scripts/local/local-up.sh", "local-up")
+          : undefined,
     });
   }
 
