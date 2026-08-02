@@ -33,7 +33,7 @@ export type ComponentStatusColor = "good" | "warn" | "accent" | "neutral";
  * How a component's own resources answered (behold#98, chant#1300).
  *
  * Declared structurally rather than imported from `@intentius/chant` because
- * behold's floor is ^0.18.32 and the field lands in 0.34 — an older chant
+ * behold's floor is ^0.32.0 and the field lands in 0.34 — an older chant
  * simply omits it and the palette falls to the tier below, which is how every
  * other widening in this ladder has behaved. Swap this for the imported type
  * once behold's floor passes 0.34.
