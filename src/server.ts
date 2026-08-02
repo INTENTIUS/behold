@@ -37,7 +37,7 @@ import { joinComponentStatus, componentStatusColor } from "./component-status.ts
 import { reclassifyOverlay, pruneImports, attachRuntimeContainment } from "./overlay.ts";
 import { addValueMatchEdges } from "./value-match.ts";
 import { addClusterAnchorEdges } from "./cluster-anchor.ts";
-import { projectLogical } from "./logical.ts";
+import { projectTopology } from "./logical.ts";
 import { addCompositeDeps } from "./composite-deps.ts";
 import { resourcesByComponent, nonResourceEntities } from "./resources.ts";
 import { summarizePlan } from "./reconcile.ts";
@@ -546,7 +546,10 @@ export function createApp(
         // value-wired edges, then re-project into nested boxes and paint with
         // pinhole's architecture layout. Returns here (distinct render path).
         const base = addValueMatchEdges(await graphIr(cfg.projectDir, { ...opts, detail: 3 }));
-        const { ir: projected, byContainer } = projectLogical(base);
+        // #102: the lens follows the substrate — AWS nests region/VPC/subnet,
+        // Azure nests resource group/VNet/subnet. `metaEnv` names the resource
+        // group on Azure, which ARM never declares as a resource.
+        const { ir: projected, byContainer } = projectTopology(base, metaEnv ?? undefined);
         const { svg } = renderArchitecture(projected, byContainer);
         // `byContainer` rides along (behold#100): the nesting IS the projection's
         // primary output, and until now it was only observable by reading the
@@ -730,7 +733,7 @@ export function createApp(
       // region/VPC/subnet ⊃ component boxes, keeping each surviving node's drift
       // colour. Short-circuits the detail-tier pruning/composite plumbing below.
       if (logical) {
-        const { ir: projected, byContainer } = projectLogical(addValueMatchEdges(ir));
+        const { ir: projected, byContainer } = projectTopology(addValueMatchEdges(ir), env);
         const { svg } = renderArchitecture(projected, byContainer);
         // See /api/graph's logical branch — `byContainer` is carried for the
         // same reason (behold#100).

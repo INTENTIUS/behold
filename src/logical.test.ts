@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { GraphIR } from "@intentius/chant";
-import { projectLogical } from "./logical.ts";
+import { projectLogical, projectTopology } from "./logical.ts";
 
 const ref = (target: string) => ({ $ref: target });
 
@@ -195,5 +195,74 @@ describe("projectLogical — component grouping under a source directory (behold
     } as unknown as GraphIR;
     const { byContainer } = projectLogical(flat);
     expect(parentOf(byContainer, "igw")).toBe("only");
+  });
+});
+
+// #102 — an architecture diagram is substrate-shaped, so the lens follows the
+// graph's own lexicon rather than the caller having to know.
+describe("projectTopology — lens dispatch (#102)", () => {
+  const awsIr = {
+    nodes: [
+      { id: "vpc", kind: "AWS::EC2::VPC", lexicon: "aws", attrs: { CidrBlock: "10.0.0.0/16" }, sourceLoc: { file: "net/n.ts" } },
+      { id: "igw", kind: "AWS::EC2::InternetGateway", lexicon: "aws", attrs: {}, sourceLoc: { file: "net/n.ts" } },
+    ],
+    edges: [],
+    groups: {},
+  } as unknown as GraphIR;
+
+  const azureIr = {
+    nodes: [
+      {
+        id: "virtualNetwork",
+        kind: "Microsoft.Network/virtualNetworks",
+        lexicon: "azure",
+        attrs: { name: "app-vnet", addressSpace: { addressPrefixes: ["10.1.0.0/16"] } },
+        sourceLoc: { file: "src/net/n.ts" },
+      },
+      {
+        id: "vm",
+        kind: "Microsoft.Compute/virtualMachines",
+        lexicon: "azure",
+        attrs: { name: "web-vm" },
+        sourceLoc: { file: "src/app/a.ts" },
+      },
+    ],
+    edges: [],
+    groups: {},
+  } as unknown as GraphIR;
+
+  it("uses the AWS lens for an aws graph", () => {
+    const { ir: out, byContainer } = projectTopology(awsIr, "prod");
+    // The AWS lens keeps an internet gateway as a card; the Azure lens has no
+    // concept of one and would return nothing at all here.
+    expect(out.nodes.map((x) => x.id)).toContain("igw");
+    expect(Object.keys(byContainer).some((k) => /resource group/.test(k))).toBe(false);
+  });
+
+  it("uses the Azure lens for an azure graph, and names the RG from the env", () => {
+    const { byContainer } = projectTopology(azureIr, "prod");
+    expect(Object.keys(byContainer)).toContain("resource group prod");
+    // The VNet box is a MEMBER of the resource group; it only becomes a key
+    // once something nests inside it.
+    expect(byContainer["resource group prod"].some((m) => /^VNet /.test(m))).toBe(true);
+  });
+
+  it("prefers the AWS lens on a mixed graph — the AWS lens owns that shape today", () => {
+    const mixed = { ...awsIr, nodes: [...awsIr.nodes, ...azureIr.nodes] } as unknown as GraphIR;
+    const { ir: out, byContainer } = projectTopology(mixed, "prod");
+    expect(out.nodes.map((x) => x.id)).toContain("igw");
+    expect(out.nodes.map((x) => x.id)).not.toContain("vm");
+    expect(Object.keys(byContainer).some((k) => /resource group/.test(k))).toBe(false);
+  });
+
+  it("returns an empty projection for a graph with neither cloud", () => {
+    const k8sOnly = {
+      nodes: [{ id: "svc", kind: "K8s::Core::Service", lexicon: "k8s", attrs: {} }],
+      edges: [],
+      groups: {},
+    } as unknown as GraphIR;
+    const { ir: out, byContainer } = projectTopology(k8sOnly, "prod");
+    expect(out.nodes).toHaveLength(0);
+    expect(byContainer).toEqual({});
   });
 });
