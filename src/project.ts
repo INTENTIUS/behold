@@ -31,6 +31,11 @@ export interface ProjectInfo {
   environments: string[];
   /** Declared lexicons (the substrates in play — shown, no picker yet). */
   lexicons: string[];
+  /** `k8s.profiles` — environment → bound kubeconfig context (#106). chant's
+   * k8s reader binds `--env <env>` to this and resolves the apiserver from the
+   * kubeconfig; behold reads it only to report which cluster that is, never to
+   * override it (see src/k8s-target.ts). */
+  k8sProfiles?: Record<string, { context?: string }>;
   /** `sourceDir` (#71): the directory (relative to the project root) that holds
    * the chant infra source, honored by `chant.ts`'s `graphPath()` instead of the
    * hardcoded `src/`-then-root guess. Undefined when the config doesn't declare
@@ -86,14 +91,30 @@ function readStacks(v: unknown): StackInfo[] | undefined {
   return stacks.length ? stacks : undefined;
 }
 
+/** Pull `k8s.profiles` — `{ <env>: { context } }` — keeping only entries with a
+ * string context. Absent (not `{}`) when the project declares none, so a caller
+ * can tell "no binding declared" from "declared and empty" (#106). */
+function readK8sProfiles(k8s: unknown): Record<string, { context?: string }> | undefined {
+  const profiles = (k8s as { profiles?: unknown } | undefined)?.profiles;
+  if (!profiles || typeof profiles !== "object" || Array.isArray(profiles)) return undefined;
+  const out: Record<string, { context?: string }> = {};
+  for (const [env, value] of Object.entries(profiles as Record<string, unknown>)) {
+    const context = (value as { context?: unknown } | undefined)?.context;
+    if (typeof context === "string" && context.length > 0) out[env] = { context };
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 /** Pull a config object's `environments`/`lexicons`/`sourceDir`/`stacks`,
  * keeping only well-formed entries (string arrays, a string, `{name,src}[]`). */
 function readInfo(cfg: Record<string, unknown> | undefined): ProjectInfo {
   const arr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
   const stacks = readStacks(cfg?.stacks);
+  const k8sProfiles = readK8sProfiles(cfg?.k8s);
   return {
     environments: arr(cfg?.environments),
     lexicons: arr(cfg?.lexicons),
+    ...(k8sProfiles ? { k8sProfiles } : {}),
     ...(typeof cfg?.sourceDir === "string" ? { sourceDir: cfg.sourceDir } : {}),
     ...(stacks ? { stacks } : {}),
   };

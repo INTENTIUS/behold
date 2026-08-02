@@ -13,6 +13,7 @@
  */
 import { Hono, type Context } from "hono";
 import { resolveSubstrateTargets } from "./targets.ts";
+import { loadKubeconfig, resolveK8sTarget, type K8sTarget } from "./k8s-target.ts";
 import { streamSSE } from "hono/streaming";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { serve } from "@hono/node-server";
@@ -222,10 +223,15 @@ function errorResponse(c: Context, opts: GraphOptions, err: unknown) {
 function deployAxes(
   tierEnvVar: string | undefined,
   lexicons: readonly string[] = [],
+  k8sTarget?: K8sTarget,
 ): { tier?: string; target?: string } {
   const axes: { tier?: string; target?: string } = {};
   if (tierEnvVar && process.env[tierEnvVar]) axes.tier = process.env[tierEnvVar];
-  const targets = resolveSubstrateTargets(lexicons);
+  // The k8s substrate's apiserver rides alongside the endpoint-variable
+  // substrates (#106). It is resolved from the kubeconfig rather than an
+  // ambient variable, and it is REPORTED, not overridable — chant binds it
+  // from `k8s.profiles.<env>.context`, so a picker entry would be a lie.
+  const targets = [...resolveSubstrateTargets(lexicons), ...(k8sTarget ? [k8sTarget] : [])];
   // One substrate reads exactly as it did before — a bare endpoint. Several are
   // labelled, because "target=http://localhost:4566" would name one of them and
   // silently speak for the rest (#99).
@@ -239,10 +245,16 @@ function deployAxes(
  * against real AWS) — so M4's estate (several live targets) is a straight
  * extension of this shape, not a reshape. Empty when the project reports no
  * target at all, same gating as `deployAxes().target`. */
-function deployTargets(lexicons: readonly string[] = []): Array<{ name: string; endpoint: string }> {
+function deployTargets(
+  lexicons: readonly string[] = [],
+  k8sTarget?: K8sTarget,
+): Array<{ name: string; endpoint: string }> {
   // One entry per substrate that has an endpoint, where this used to report a
   // single "default" belonging to whichever substrate owned AWS_ENDPOINT_URL.
-  return resolveSubstrateTargets(lexicons).map((t) => ({ name: t.label, endpoint: t.endpoint }));
+  return [...resolveSubstrateTargets(lexicons), ...(k8sTarget ? [k8sTarget] : [])].map((t) => ({
+    name: t.label,
+    endpoint: t.endpoint,
+  }));
 }
 
 /**
@@ -436,8 +448,15 @@ export function createApp(
   // detail) instead of the env being a launch-only flag. `currentEnv` is the
   // launch `--env`, the picker's initial selection.
   app.get("/api/project", async (c) => {
-    const { environments, lexicons, stacks } = await detectProject(cfg.projectDir);
-    const axes = deployAxes(tierEnvVar, lexicons);
+    const { environments, lexicons, stacks, k8sProfiles } = await detectProject(cfg.projectDir);
+    // #106: the k8s half's apiserver is dynamic (Floci allocates a port per EKS
+    // cluster), so it is resolved from the kubeconfig on each read rather than
+    // assumed. Only for a project that declares the lexicon — no kubectl call
+    // for an aws-only project.
+    const k8sTarget = lexicons.includes("k8s")
+      ? resolveK8sTarget(k8sProfiles, cfg.env, await loadKubeconfig())
+      : undefined;
+    const axes = deployAxes(tierEnvVar, lexicons, k8sTarget);
     return c.json({
       projectDir: cfg.projectDir,
       environments,
@@ -459,7 +478,11 @@ export function createApp(
       // the names — `graphPath` (chant.ts) resolves a picked name to its `src`
       // server-side; the SPA never needs the path.
       ...(stacks?.length ? { stacks: stacks.map((s) => s.name) } : {}),
-      targets: deployTargets(lexicons),
+      targets: deployTargets(lexicons, k8sTarget),
+      // Where the k8s binding came from, so the SPA never implies behold chose
+      // it (#106). Absent for a project with no k8s lexicon or no resolvable
+      // context.
+      ...(k8sTarget ? { k8sBinding: { context: k8sTarget.label, endpoint: k8sTarget.endpoint, source: k8sTarget.source } } : {}),
       ...axes,
     });
   });
