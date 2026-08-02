@@ -35,6 +35,7 @@ import {
 import { joinComponentStatus, componentStatusColor } from "./component-status.ts";
 import { reclassifyOverlay, pruneImports, attachRuntimeContainment } from "./overlay.ts";
 import { addValueMatchEdges } from "./value-match.ts";
+import { addClusterAnchorEdges } from "./cluster-anchor.ts";
 import { projectLogical } from "./logical.ts";
 import { addCompositeDeps } from "./composite-deps.ts";
 import { resourcesByComponent, nonResourceEntities } from "./resources.ts";
@@ -534,6 +535,10 @@ export function createApp(
         // Connect resources wired by a literal name/ARN value the symbolic-ref
         // graph misses (see addValueMatchEdges).
         ir = addValueMatchEdges(ir);
+        // Anchor a mixed-substrate estate (#103): the k8s half carries no
+        // reference to the managed cluster it runs on, so without this it
+        // renders as loose nodes beside the cloud graph rather than one estate.
+        ir = addClusterAnchorEdges(ir);
       }
       // Multi-estate (#31/M4): box each composed project's nodes via `groups.
       // byStack` (pinhole's composeStacks per-project grouping) — see
@@ -709,6 +714,11 @@ export function createApp(
       // Connect resources wired by a literal name/ARN value (e.g. an RDS
       // instance's DBSubnetGroupName) that the symbolic-ref graph misses.
       ir = addValueMatchEdges(ir);
+      // Cross-substrate anchoring (#103) — same pass as the source graph above,
+      // so the live overlay shows the cluster ⊃ namespace ⊃ workload hierarchy
+      // rather than dropping the k8s half into the void. The overlay is
+      // source-anchored, so this is the same derivation, not a live-only one.
+      ir = addClusterAnchorEdges(ir);
       // At COMPOSITES (level 1), composites only wired via import sinks (now
       // pruned) so they'd all float — overlay the authoritative component
       // dependsOn graph so they read as a dependency graph (see addCompositeDeps).
@@ -750,6 +760,7 @@ export function createApp(
     // And the same import-handle pruning below ATTRIBUTES tier + value-matched edges.
     if ((optsFromQuery(new URL(c.req.url)).detail ?? 2) < 3) pruneImports(result.ir);
     addValueMatchEdges(result.ir);
+    addClusterAnchorEdges(result.ir);
     const { svg } = renderGraph(result.ir, { boxes: "byContainer" });
     return c.json({
       ir: result.ir,
