@@ -230,3 +230,83 @@ describe("joinComponentStatus", () => {
     expect(backend.attrs._liveStatus).not.toHaveProperty("stack");
   });
 });
+
+// behold#98 (chant#1300) — the substrate-neutral tier. `stack` only exists
+// where a substrate has a deploy object to read, which is AWS and nowhere
+// else, so before this every floci-az / floci-gcp component fell to the coarse
+// `live` boolean and painted green-or-grey with nothing behind it.
+describe("componentStatusColor — resource rollup (behold#98)", () => {
+  const withRollup = (
+    resources: { total: number; present: number; absent: number; unobserved: number },
+    over: Partial<ComponentStatusRow> = {},
+  ) =>
+    ({
+      component: "az-api",
+      env: "local",
+      reconciliation: "unrecorded" as const,
+      detail: "no release record and nothing observed live",
+      ...over,
+      resources,
+    });
+
+  it("every resource present paints good", () => {
+    expect(componentStatusColor(withRollup({ total: 3, present: 3, absent: 0, unobserved: 0 }))).toBe("good");
+  });
+
+  it("none present paints neutral", () => {
+    expect(componentStatusColor(withRollup({ total: 3, present: 0, absent: 3, unobserved: 0 }))).toBe("neutral");
+  });
+
+  it("partly there paints warn — the boolean rounded this up to live", () => {
+    expect(componentStatusColor(withRollup({ total: 3, present: 2, absent: 1, unobserved: 0 }))).toBe("warn");
+  });
+
+  it("a hole paints accent — never good, never neutral", () => {
+    // chant could not read part of this component, so neither "deployed" nor
+    // "not deployed" is a claim behold holds. This is the #1089 distinction:
+    // painting it grey would render "did not look" as "not there".
+    expect(componentStatusColor(withRollup({ total: 3, present: 2, absent: 0, unobserved: 1 }))).toBe("accent");
+  });
+
+  it("a hole outranks a green majority", () => {
+    expect(componentStatusColor(withRollup({ total: 4, present: 3, absent: 0, unobserved: 1 }))).toBe("accent");
+  });
+
+  it("the rollup outranks the coarse live boolean", () => {
+    // `live: true` because something under the component was seen; the rollup
+    // knows two of its three resources are gone.
+    const row = withRollup({ total: 3, present: 1, absent: 2, unobserved: 0 }, { live: true });
+    expect(componentStatusColor(row)).toBe("warn");
+  });
+
+  it("a stack still wins where a substrate has one — AWS is unchanged", () => {
+    const row = withRollup(
+      { total: 3, present: 0, absent: 3, unobserved: 0 },
+      { live: true, stack: { name: "app-prod", status: "CREATE_COMPLETE", healthy: true } },
+    );
+    expect(componentStatusColor(row)).toBe("good");
+  });
+
+  it("an empty rollup falls through rather than claiming anything", () => {
+    const row = withRollup({ total: 0, present: 0, absent: 0, unobserved: 0 }, { live: true });
+    expect(componentStatusColor(row)).toBe("good"); // the `live` tier
+  });
+
+  it("carries the counts onto the node so the panel can say why", () => {
+    const ir: GraphIR = {
+      nodes: [{ id: "az-api", kind: "component", lexicon: "azure" }],
+      edges: [],
+      groups: {},
+    } as unknown as GraphIR;
+    const rows = [withRollup({ total: 4, present: 3, absent: 0, unobserved: 1 })] as unknown as ComponentStatusRow[];
+    const out = joinComponentStatus(ir, rows);
+    const attrs = out.nodes[0].attrs as Record<string, unknown>;
+    expect(attrs._status).toBe("accent");
+    expect((attrs._liveStatus as { resources?: unknown }).resources).toEqual({
+      total: 4,
+      present: 3,
+      absent: 0,
+      unobserved: 1,
+    });
+  });
+});
