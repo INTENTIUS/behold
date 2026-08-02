@@ -123,6 +123,25 @@ export async function detectSubstrates(projectDir: string, preview = false): Pro
     });
   }
 
+  // floci-az / floci-gcp — the Azure and GCP emulators (behold#99). Same shape
+  // as Floci above: docker-dependent, one container, a fixed port. They were
+  // missing entirely, which is why an azure or gcp project saw no substrate at
+  // all and the target lens had nothing to resolve against.
+  const emulators: Array<[string, string, string, string, number]> = [
+    ["azure", "floci-az", "floci-az", "^chant-floci-az$", 4577],
+    ["gcp", "floci-gcp", "floci-gcp", "^chant-floci-gcp$", 4588],
+  ];
+  for (const [lexicon, name, label, pattern, port] of emulators) {
+    if (!lexicons.includes(lexicon)) continue;
+    const running = docker ? await dockerRunning(pattern) : [];
+    subs.push({
+      name,
+      label,
+      ...dep(running.length > 0, `container up on :${port}`, "not running"),
+      bringUp: docker && !running.length ? scriptBringUp(projectDir, "scripts/local/local-up.sh", "local-up") : undefined,
+    });
+  }
+
   // Preview (v0.1.0) stops here: the Loom demo only needs Docker + Floci, so the
   // CI/forge and k3d substrates are out of scope.
   if (preview) return subs;
