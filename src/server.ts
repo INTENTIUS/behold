@@ -12,6 +12,7 @@
  * delegated gated writes".
  */
 import { Hono, type Context } from "hono";
+import { resolveSubstrateTargets } from "./targets.ts";
 import { streamSSE } from "hono/streaming";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { serve } from "@hono/node-server";
@@ -218,10 +219,18 @@ function errorResponse(c: Context, opts: GraphOptions, err: unknown) {
  * rather than guessing a name. Deliberately generic and substrate-name-free
  * (behold has zero per-substrate logic, per the epic): this surfaces the raw
  * endpoint URL, not a hardcoded "Floci" label. */
-function deployAxes(tierEnvVar: string | undefined): { tier?: string; target?: string } {
+function deployAxes(
+  tierEnvVar: string | undefined,
+  lexicons: readonly string[] = [],
+): { tier?: string; target?: string } {
   const axes: { tier?: string; target?: string } = {};
   if (tierEnvVar && process.env[tierEnvVar]) axes.tier = process.env[tierEnvVar];
-  if (process.env.AWS_ENDPOINT_URL) axes.target = process.env.AWS_ENDPOINT_URL;
+  const targets = resolveSubstrateTargets(lexicons);
+  // One substrate reads exactly as it did before — a bare endpoint. Several are
+  // labelled, because "target=http://localhost:4566" would name one of them and
+  // silently speak for the rest (#99).
+  if (targets.length === 1) axes.target = targets[0].endpoint;
+  else if (targets.length > 1) axes.target = targets.map((t) => `${t.label}=${t.endpoint}`).join(" ");
   return axes;
 }
 
@@ -230,8 +239,10 @@ function deployAxes(tierEnvVar: string | undefined): { tier?: string; target?: s
  * against real AWS) — so M4's estate (several live targets) is a straight
  * extension of this shape, not a reshape. Empty when the project reports no
  * target at all, same gating as `deployAxes().target`. */
-function deployTargets(): Array<{ name: string; endpoint: string }> {
-  return process.env.AWS_ENDPOINT_URL ? [{ name: "default", endpoint: process.env.AWS_ENDPOINT_URL }] : [];
+function deployTargets(lexicons: readonly string[] = []): Array<{ name: string; endpoint: string }> {
+  // One entry per substrate that has an endpoint, where this used to report a
+  // single "default" belonging to whichever substrate owned AWS_ENDPOINT_URL.
+  return resolveSubstrateTargets(lexicons).map((t) => ({ name: t.label, endpoint: t.endpoint }));
 }
 
 /**
@@ -426,7 +437,7 @@ export function createApp(
   // launch `--env`, the picker's initial selection.
   app.get("/api/project", async (c) => {
     const { environments, lexicons, stacks } = await detectProject(cfg.projectDir);
-    const axes = deployAxes(tierEnvVar);
+    const axes = deployAxes(tierEnvVar, lexicons);
     return c.json({
       projectDir: cfg.projectDir,
       environments,
@@ -448,7 +459,7 @@ export function createApp(
       // the names — `graphPath` (chant.ts) resolves a picked name to its `src`
       // server-side; the SPA never needs the path.
       ...(stacks?.length ? { stacks: stacks.map((s) => s.name) } : {}),
-      targets: deployTargets(),
+      targets: deployTargets(lexicons),
       ...axes,
     });
   });

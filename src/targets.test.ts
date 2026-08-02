@@ -65,3 +65,36 @@ describe("targetEnvOverrides (#99)", () => {
     expect(targetEnvOverrides(awsOnly)).toEqual({ AWS_ENDPOINT_URL: "http://localhost:4566" });
   });
 });
+
+describe("envOverridesFor with substrate targets (#99)", () => {
+  it("points each substrate at its own endpoint through a chant shell-out", async () => {
+    const { envOverridesFor } = await import("./chant.ts");
+    const substrateTargets = resolveSubstrateTargets(["aws", "azure"], {
+      AWS_ENDPOINT_URL: "http://localhost:4566",
+      AZURE_ENDPOINT_URL: "http://localhost:4577",
+    });
+    expect(envOverridesFor({ substrateTargets })).toEqual({
+      AWS_ENDPOINT_URL: "http://localhost:4566",
+      AZURE_ENDPOINT_URL: "http://localhost:4577",
+    });
+  });
+
+  it("a chosen target still overrides every substrate", async () => {
+    const { envOverridesFor } = await import("./chant.ts");
+    const substrateTargets = resolveSubstrateTargets(["aws", "azure"], {
+      AWS_ENDPOINT_URL: "http://localhost:4566",
+      AZURE_ENDPOINT_URL: "http://localhost:4577",
+    });
+    expect(envOverridesFor({ substrateTargets, target: "http://elsewhere:9999" })).toEqual({
+      AWS_ENDPOINT_URL: "http://elsewhere:9999",
+      AZURE_ENDPOINT_URL: "http://elsewhere:9999",
+    });
+  });
+
+  it("a caller that resolved no substrates keeps the pre-#99 single variable", async () => {
+    const { envOverridesFor } = await import("./chant.ts");
+    expect(envOverridesFor({ target: "http://localhost:4566" })).toEqual({
+      AWS_ENDPOINT_URL: "http://localhost:4566",
+    });
+  });
+});
