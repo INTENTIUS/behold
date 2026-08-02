@@ -46,3 +46,12 @@ e2e:
 # in loomster) — this never boots or installs loomster itself.
 e2e-floci:
     bash e2e/component-view-floci-e2e.sh
+
+# behold#100 (B·aws, chant epic #1198): the AWS lane's acceptance run — component
+# status painted from the #98 resource rollup (not CFN stack status), the live
+# overlay, and the nested architecture diagram, all against one running estate.
+# Needs a deployed AWS project and its Floci already up; boots neither.
+#   just e2e-aws-logical
+#   BEHOLD_E2E_PROJECT=/path/to/example just e2e-aws-logical
+e2e-aws-logical:
+    bash e2e/aws-logical-floci-e2e.sh

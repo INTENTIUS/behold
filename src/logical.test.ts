@@ -134,3 +134,66 @@ describe("projectLogical", () => {
     expect(ir.edges.some((x) => x.from === "taskRole" || x.to === "taskRole")).toBe(false);
   });
 });
+
+// behold#100 — the component boxes have to survive a project that keeps its
+// infra under a source directory, which is chant's documented layout
+// (`sourceDir`, `chant build src`). behold hands that resolved directory to
+// `chant graph`, and chant reports `sourceLoc.file` project-relative, so every
+// node arrives as `src/<component>/…`.
+describe("projectLogical — component grouping under a source directory (behold#100)", () => {
+  const under = (prefix: string): GraphIR => {
+    const n = (id: string, kind: string, file: string, attrs: Record<string, unknown> = {}) => ({
+      id,
+      kind,
+      lexicon: "aws",
+      attrs,
+      sourceLoc: { file: prefix + file },
+    });
+    const NET = "cc-network/network.ts";
+    const APP = "cc-app/app.ts";
+    return {
+      nodes: [
+        n("vpc", "AWS::EC2::VPC", NET, { CidrBlock: "10.42.0.0/16" }),
+        n("privateSubnet", "AWS::EC2::Subnet", NET, { CidrBlock: "10.42.128.0/24", VpcId: ref("vpc.VpcId") }),
+        n("igw", "AWS::EC2::InternetGateway", NET, {}),
+        n("igwAttach", "AWS::EC2::VPCGatewayAttachment", NET, { VpcId: ref("vpc.VpcId"), InternetGatewayId: ref("igw.InternetGatewayId") }),
+        n("appInstance", "AWS::EC2::Instance", APP, { SubnetId: ref("privateSubnet.SubnetId") }),
+      ],
+      edges: [],
+      groups: {},
+    } as unknown as GraphIR;
+  };
+
+  it("groups by the first DISTINGUISHING directory, not the shared source dir", () => {
+    const { byContainer } = projectLogical(under("src/"));
+    expect(parentOf(byContainer, "appInstance")).toBe("cc-app");
+    expect(parentOf(byContainer, "igw")).toBe("cc-network");
+    // The regression: one box named after the source directory, holding both.
+    expect(Object.keys(byContainer)).not.toContain("src");
+  });
+
+  it("is unchanged for a project already at the repo root", () => {
+    const { byContainer } = projectLogical(under(""));
+    expect(parentOf(byContainer, "appInstance")).toBe("cc-app");
+    expect(parentOf(byContainer, "igw")).toBe("cc-network");
+  });
+
+  it("strips a deeper shared prefix too", () => {
+    const { byContainer } = projectLogical(under("infra/src/"));
+    expect(parentOf(byContainer, "appInstance")).toBe("cc-app");
+    expect(parentOf(byContainer, "igw")).toBe("cc-network");
+  });
+
+  it("falls back to the shared directory itself when nothing below it distinguishes", () => {
+    const flat: GraphIR = {
+      nodes: [
+        { id: "vpc", kind: "AWS::EC2::VPC", lexicon: "aws", attrs: { CidrBlock: "10.0.0.0/16" }, sourceLoc: { file: "src/only/main.ts" } },
+        { id: "igw", kind: "AWS::EC2::InternetGateway", lexicon: "aws", attrs: {}, sourceLoc: { file: "src/only/main.ts" } },
+      ],
+      edges: [],
+      groups: {},
+    } as unknown as GraphIR;
+    const { byContainer } = projectLogical(flat);
+    expect(parentOf(byContainer, "igw")).toBe("only");
+  });
+});

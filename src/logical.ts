@@ -149,12 +149,53 @@ function isExample(node: IRNode): boolean {
   return (node.sourceLoc?.file ?? "").includes("examples/");
 }
 
-/** The component a node belongs to — the first path segment of its declaring
- * file (`shared-foundation/foundation.ts` → `shared-foundation`), the same
- * convention src/resources.ts uses. `other` when there's no usable source loc. */
-function componentOf(node: IRNode): string {
-  const first = (node.sourceLoc?.file ?? "").split("/")[0];
-  return first && first.length ? first : "other";
+/** The directory segments of a node's declaring file (`src/backend/svc.ts` →
+ * `["src", "backend"]`). Empty for a file with no directory. */
+function dirSegments(node: IRNode): string[] {
+  const parts = (node.sourceLoc?.file ?? "").split("/");
+  return parts.slice(0, -1).filter((s) => s.length > 0);
+}
+
+/**
+ * Build the node → component-name function for one graph.
+ *
+ * The component is the first *distinguishing* directory segment of a node's
+ * declaring file, which is the first segment below the directory every node
+ * shares. `shared-foundation/foundation.ts` → `shared-foundation`, the same
+ * convention src/resources.ts uses; `src/backend/svc.ts` → `backend`.
+ *
+ * Taking the first segment outright (what this did before behold#100) only
+ * works for a project that keeps its infra at the repo root. chant's own
+ * documented layout puts it under a source directory — `sourceDir`, and
+ * `chant build src` — and behold passes that resolved directory to `chant
+ * graph`, which reports `sourceLoc.file` project-relative. So every node came
+ * back as `src/<component>/…`, the first segment was `src` for all of them,
+ * and the whole estate collapsed into one box titled "src". Verified against
+ * the CC lane's canonical example on Floci: two components, one box.
+ *
+ * Stripping the shared prefix is layout-agnostic — it needs no knowledge of
+ * what the source directory is called, and a project already at the root has
+ * no shared prefix to strip, so it is unchanged. A project whose nodes all sit
+ * in ONE directory has nothing below the prefix to distinguish them; that
+ * directory's own name is the honest answer, and a single box is correct.
+ */
+function componentNamer(nodes: IRNode[]): (node: IRNode) => string {
+  const all = nodes.map(dirSegments).filter((d) => d.length > 0);
+  let shared = 0;
+  if (all.length > 0) {
+    const first = all[0];
+    outer: for (; shared < first.length; shared++) {
+      for (const d of all) {
+        // Stop before consuming a segment that is not common to every node, and
+        // before consuming a node's last segment — that one IS its component.
+        if (d.length <= shared || d[shared] !== first[shared]) break outer;
+      }
+    }
+  }
+  return (node) => {
+    const dirs = dirSegments(node);
+    return dirs[shared] ?? dirs[dirs.length - 1] ?? "other";
+  };
 }
 
 /** Deep-collect the node ids a value references via `{$ref:"node.attr"}`. */
@@ -259,6 +300,10 @@ function nearestByRef(start: string, want: Set<string>, refOut: Map<string, Set<
  */
 export function projectLogical(ir: GraphIR): LogicalProjection {
   const aws = ir.nodes.filter((n) => n.lexicon === "aws" && !isExample(n));
+  // Derived from every declared node, not just the surviving headline cards, so
+  // the shared prefix reflects the project's real layout rather than wherever
+  // this particular estate's handful of headline kinds happen to live.
+  const componentOf = componentNamer(aws);
   const byId = new Map(aws.map((n) => [n.id, n]));
   const refOut = enrichedRefs(ir, aws, byId);
 
