@@ -30,6 +30,22 @@ import type { GraphIR, ComponentStatusRow } from "@intentius/chant";
 export type ComponentStatusColor = "good" | "warn" | "accent" | "neutral";
 
 /**
+ * How a component's own resources answered (behold#98, chant#1300).
+ *
+ * Declared structurally rather than imported from `@intentius/chant` because
+ * behold's floor is ^0.18.32 and the field lands in 0.34 — an older chant
+ * simply omits it and the palette falls to the tier below, which is how every
+ * other widening in this ladder has behaved. Swap this for the imported type
+ * once behold's floor passes 0.34.
+ */
+export interface ResourceRollup {
+  total: number;
+  present: number;
+  absent: number;
+  unobserved: number;
+}
+
+/**
  * Map a `ComponentStatusRow` to a paint colour.
  *
  * M2 (#54): chant 0.18.29 added machine-readable `live` (boolean) and `stack`
@@ -54,11 +70,22 @@ export type ComponentStatusColor = "good" | "warn" | "accent" | "neutral";
  *       "in flux" paint; pinhole has no distinct amber token, and `accent`
  *       already carries the "not-yet-settled" connotation the entity overlay
  *       uses it for)
- *  2. No `stack`, but `live` was reported (a lexicon with no
- *     `describeStackStatus`, or the component resolved to no stack) ->
- *     good when live, neutral when not — the coarse but now-machine-real
+ *  2. No `stack`, but a `resources` rollup (behold#98, chant#1300) — how the
+ *     component's own resources answered. This is the substrate-neutral tier:
+ *     `stack` only exists where a substrate has a deploy object to read, which
+ *     is AWS and nowhere else, so before this every floci-az / floci-gcp
+ *     component fell to the coarse boolean below.
+ *     - any `unobserved`                          -> accent (a hole: chant
+ *       could not read part of this component, so neither "deployed" nor
+ *       "not deployed" is a claim we hold — never good, never neutral)
+ *     - every resource present                    -> good
+ *     - none present                              -> neutral
+ *     - some present, some absent                 -> warn (partly there;
+ *       the boolean rounded this up to "live")
+ *  3. No `stack` and no rollup, but `live` was reported ->
+ *     good when live, neutral when not — the coarse but machine-real
  *     presence signal.
- *  3. Neither `live` nor `stack` present at all — the pre-0.18.29
+ *  4. None of the above — the pre-0.18.29
  *     reconciliation/detail heuristic, kept only as a defensive fallback:
  *     `reconciled` -> good; `unrecorded` -> good iff `detail` starts "live";
  *     `stale`/`drifted` -> warn; `unknown`/default -> neutral.
@@ -69,12 +96,27 @@ export type ComponentStatusColor = "good" | "warn" | "accent" | "neutral";
  * proof this palette reads it as `warn` (red), not `good`.
  */
 export function componentStatusColor(
-  row: Pick<ComponentStatusRow, "reconciliation" | "detail" | "live" | "stack">,
+  row: Pick<ComponentStatusRow, "reconciliation" | "detail" | "live" | "stack"> & {
+    resources?: ResourceRollup;
+  },
 ): ComponentStatusColor {
   if (row.stack) {
     if (row.stack.healthy) return "good";
     if (row.stack.status && /ROLLBACK|FAILED/i.test(row.stack.status)) return "warn";
     return "accent"; // present but not healthy and not a rollback/failure — e.g. *_IN_PROGRESS
+  }
+  const rollup = row.resources;
+  if (rollup && rollup.total > 0) {
+    // A hole outranks everything below it. `neutral` would assert the component
+    // is not deployed and `good` would assert it is; chant could not read some
+    // of its resources, so neither claim is available. `accent` is the paint
+    // that already means not-settled.
+    if (rollup.unobserved > 0) return "accent";
+    if (rollup.present === rollup.total) return "good";
+    if (rollup.present === 0) return "neutral";
+    // Partly there: something this component owns is gone, which is the case
+    // the coarse `live` boolean rounded up to "live".
+    return "warn";
   }
   if (row.live !== undefined) return row.live ? "good" : "neutral";
   switch (row.reconciliation) {
@@ -108,6 +150,11 @@ export interface LiveStatus {
   detail: string;
   live?: boolean;
   stack?: { name: string; status?: string; healthy?: boolean };
+  /** How the component's own resources answered (behold#98). Carried so the
+   * inspect panel can say *why* a component is amber — "3 of 4 present, 1
+   * could not be read" is the sentence a colour cannot make, and on a
+   * substrate with no deploy object it is the only detail available. */
+  resources?: ResourceRollup;
 }
 
 /**
@@ -143,6 +190,7 @@ export function joinComponentStatus(ir: GraphIR, rows: ComponentStatusRow[]): Gr
             detail: row.detail,
             ...(row.live !== undefined ? { live: row.live } : {}),
             ...(row.stack ? { stack: row.stack } : {}),
+            ...((row as { resources?: ResourceRollup }).resources ? { resources: (row as { resources?: ResourceRollup }).resources } : {}),
           } satisfies LiveStatus,
         },
       };
