@@ -60,21 +60,20 @@ export interface ResourceRollup {
  *
  * Priority, richest signal first:
  *
- *  1. `stack` present (AWS today) — chant's own provider-native read:
- *     - `stack.healthy`                          -> good    (e.g. CREATE_COMPLETE)
- *     - present, unhealthy, status ROLLBACK/FAILED -> warn   (pinhole paints
+ *  1. `stack` present AND unhealthy (AWS today) — chant's own provider-native
+ *     read, and the one thing no rollup can tell you: the deploy operation
+ *     itself failed or is still running.
+ *     - status ROLLBACK/FAILED                    -> warn   (pinhole paints
  *       `warn` red — see its theme tokens `warnFill`/`warnStroke`/`warnBar` —
  *       not amber, despite the token's name)
- *     - present, unhealthy, otherwise (e.g. *_IN_PROGRESS, mid-deploy)
- *                                                  -> accent (pinhole's blue
+ *     - otherwise (e.g. *_IN_PROGRESS, mid-deploy) -> accent (pinhole's blue
  *       "in flux" paint; pinhole has no distinct amber token, and `accent`
  *       already carries the "not-yet-settled" connotation the entity overlay
- *       uses it for)
- *  2. No `stack`, but a `resources` rollup (behold#98, chant#1300) — how the
- *     component's own resources answered. This is the substrate-neutral tier:
- *     `stack` only exists where a substrate has a deploy object to read, which
- *     is AWS and nowhere else, so before this every floci-az / floci-gcp
- *     component fell to the coarse boolean below.
+ *       uses it for). Mid-deploy explains any rollup shape underneath it, so
+ *       it outranks the rollup rather than fighting it.
+ *  2. The `resources` rollup (behold#98, chant#1300) — how the component's own
+ *     resources answered. The substrate-neutral tier, and since behold#100 the
+ *     PRESENCE source on every substrate including AWS:
  *     - any `unobserved`                          -> accent (a hole: chant
  *       could not read part of this component, so neither "deployed" nor
  *       "not deployed" is a claim we hold — never good, never neutral)
@@ -82,13 +81,48 @@ export interface ResourceRollup {
  *     - none present                              -> neutral
  *     - some present, some absent                 -> warn (partly there;
  *       the boolean rounded this up to "live")
- *  3. No `stack` and no rollup, but `live` was reported ->
+ *  3. No rollup (or an empty one), but `live` was reported ->
  *     good when live, neutral when not — the coarse but machine-real
- *     presence signal.
+ *     presence signal. A healthy `stack` with no rollup lands here.
  *  4. None of the above — the pre-0.18.29
  *     reconciliation/detail heuristic, kept only as a defensive fallback:
  *     `reconciled` -> good; `unrecorded` -> good iff `detail` starts "live";
  *     `stale`/`drifted` -> warn; `unknown`/default -> neutral.
+ *
+ * ## Why a HEALTHY stack no longer paints (behold#100)
+ *
+ * Until #100 a present `stack` decided the colour outright, healthy or not,
+ * and returned before the rollup was ever consulted. Since AWS is the only
+ * substrate that HAS a stack, that made CloudFormation the status source on
+ * the one substrate the rollup was supposed to be verified against — and #98's
+ * own stated shape ("keep AWS CFN-stack status as optional enrichment where
+ * present") was not what the code did.
+ *
+ * So the two signals now answer the questions they can actually answer: the
+ * rollup answers "how many of this component's resources came back", the stack
+ * answers "did the deploy operation go wrong". An unhealthy stack still
+ * decides — unchanged from M2, which is why loom-db's
+ * `UPDATE_ROLLBACK_COMPLETE` still reads `warn` — and a healthy one now simply
+ * declines to overrule what the resources said. A partial or unreadable
+ * component is no longer rounded up to green by a stack that only knows its
+ * last operation succeeded.
+ *
+ * ## What this does NOT yet buy on AWS
+ *
+ * Verified against Floci while closing #100, and worth stating so nobody reads
+ * more into the colour than it carries: chant's AWS `describeResources` is the
+ * THIN path (`cloudformation describe-stack-resources`), so the rollup counts
+ * CloudFormation's own per-resource inventory, not independently observed
+ * existence. Terminating a stack's EC2 instance out of band leaves that
+ * resource listed `CREATE_COMPLETE`, and the rollup still reports it present.
+ *
+ * The rollup is therefore finer-grained than the stack, and substrate-neutral,
+ * but on AWS it is not yet a live existence check. Making it one is chant's
+ * per-type reader registry (chant#1269/#1271) applied to the thin path — the
+ * same fix chant#1198 already records as carried for `--owned`. Until then a
+ * green AWS component means "CloudFormation lists all ten and the last
+ * operation succeeded", which is more than the old paint claimed but less than
+ * the word "live" suggests.
  *
  * docs/roadmap/m1-cli-notes.md Q2 has the verified loomster/Floci output this
  * was checked against (pre-0.18.29); loom-db's `UPDATE_ROLLBACK_COMPLETE` /
@@ -100,8 +134,12 @@ export function componentStatusColor(
     resources?: ResourceRollup;
   },
 ): ComponentStatusColor {
-  if (row.stack) {
-    if (row.stack.healthy) return "good";
+  // An UNHEALTHY deploy object decides on its own — a failed or in-flight
+  // CloudFormation operation is a fact about the component that no count of
+  // its resources can express. A HEALTHY one asserts nothing and falls through
+  // to the rollup: it reports that the last operation succeeded, not that the
+  // resources survived since (see the #100 note above).
+  if (row.stack && !row.stack.healthy) {
     if (row.stack.status && /ROLLBACK|FAILED/i.test(row.stack.status)) return "warn";
     return "accent"; // present but not healthy and not a rollback/failure — e.g. *_IN_PROGRESS
   }

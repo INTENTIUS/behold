@@ -524,7 +524,11 @@ export function createApp(
         const base = addValueMatchEdges(await graphIr(cfg.projectDir, { ...opts, detail: 3 }));
         const { ir: projected, byContainer } = projectLogical(base);
         const { svg } = renderArchitecture(projected, byContainer);
-        return c.json({ ir: projected, svg, meta: { projectDir: cfg.projectDir, env: metaEnv, tier: opts.tier ?? null, target: opts.target ?? null, mode: "logical" } });
+        // `byContainer` rides along (behold#100): the nesting IS the projection's
+        // primary output, and until now it was only observable by reading the
+        // rendered SVG, which is not something an acceptance run can assert on.
+        // The SPA ignores it and paints the svg as before.
+        return c.json({ ir: projected, svg, byContainer, meta: { projectDir: cfg.projectDir, env: metaEnv, tier: opts.tier ?? null, target: opts.target ?? null, mode: "logical" } });
       } else {
         ir = await graphIr(cfg.projectDir, opts);
         // Entity graph below the ATTRIBUTES tier: hide cross-stack import
@@ -700,7 +704,9 @@ export function createApp(
       if (logical) {
         const { ir: projected, byContainer } = projectLogical(addValueMatchEdges(ir));
         const { svg } = renderArchitecture(projected, byContainer);
-        return c.json({ ir: projected, svg, meta: { projectDir: cfg.projectDir, env, mode: "logical" } });
+        // See /api/graph's logical branch — `byContainer` is carried for the
+        // same reason (behold#100).
+        return c.json({ ir: projected, svg, byContainer, meta: { projectDir: cfg.projectDir, env, mode: "logical" } });
       }
       // Below the ATTRIBUTES tier, hide cross-stack import handles — they're
       // value plumbing, not resources, and float off to the side (see

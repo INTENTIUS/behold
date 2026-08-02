@@ -279,14 +279,6 @@ describe("componentStatusColor — resource rollup (behold#98)", () => {
     expect(componentStatusColor(row)).toBe("warn");
   });
 
-  it("a stack still wins where a substrate has one — AWS is unchanged", () => {
-    const row = withRollup(
-      { total: 3, present: 0, absent: 3, unobserved: 0 },
-      { live: true, stack: { name: "app-prod", status: "CREATE_COMPLETE", healthy: true } },
-    );
-    expect(componentStatusColor(row)).toBe("good");
-  });
-
   it("an empty rollup falls through rather than claiming anything", () => {
     const row = withRollup({ total: 0, present: 0, absent: 0, unobserved: 0 }, { live: true });
     expect(componentStatusColor(row)).toBe("good"); // the `live` tier
@@ -308,5 +300,78 @@ describe("componentStatusColor — resource rollup (behold#98)", () => {
       absent: 0,
       unobserved: 1,
     });
+  });
+});
+
+// behold#100 — AWS is the reference lane, so it has to actually RUN on the
+// rollup. Until now a present `stack` returned before the rollup was read, and
+// AWS is the only substrate with a stack: the substrate #98 was verified
+// against was the one substrate that never used it. The split now is that the
+// rollup answers "is it there" and the stack answers "did the deploy go wrong",
+// so a HEALTHY stack no longer overrules the resources and an UNHEALTHY one
+// still decides (M2's loom-db case, unchanged).
+describe("componentStatusColor — AWS reads the rollup too (behold#100)", () => {
+  const aws = (
+    resources: { total: number; present: number; absent: number; unobserved: number },
+    stack: { name: string; status?: string; healthy?: boolean },
+  ) =>
+    ({
+      component: "loom-backend",
+      env: "local",
+      reconciliation: "reconciled" as const,
+      detail: "recorded 2026-07-19T03:08:35.076Z (digest sha256:86bf5e3c…), live and consistent",
+      live: true,
+      stack,
+      resources,
+    }) as unknown as ComponentStatusRow;
+
+  const HEALTHY = { name: "loom-local-a-loom-backend", status: "CREATE_COMPLETE", healthy: true };
+  const ROLLBACK = { name: "loom-local-a-loom-db", status: "UPDATE_ROLLBACK_COMPLETE", healthy: false };
+  const IN_PROGRESS = { name: "loom-local-a-loom-frontend", status: "UPDATE_IN_PROGRESS", healthy: false };
+
+  it("healthy stack + every resource present -> good (unchanged)", () => {
+    expect(componentStatusColor(aws({ total: 3, present: 3, absent: 0, unobserved: 0 }, HEALTHY))).toBe("good");
+  });
+
+  it("healthy stack + nothing present -> neutral, NOT good", () => {
+    // A stack whose last operation succeeded but whose resources did not come
+    // back is not a green component. (On AWS today the rollup reads
+    // CloudFormation's own inventory, so the two rarely disagree this hard —
+    // see the #100 note in component-status.ts on what the colour does and
+    // does not claim.)
+    expect(componentStatusColor(aws({ total: 3, present: 0, absent: 3, unobserved: 0 }, HEALTHY))).toBe("neutral");
+  });
+
+  it("healthy stack + partly present -> warn, NOT good", () => {
+    expect(componentStatusColor(aws({ total: 3, present: 2, absent: 1, unobserved: 0 }, HEALTHY))).toBe("warn");
+  });
+
+  it("healthy stack + a hole -> accent, NOT good — chant could not read part of it", () => {
+    expect(componentStatusColor(aws({ total: 3, present: 2, absent: 0, unobserved: 1 }, HEALTHY))).toBe("accent");
+  });
+
+  it("a rollback stack still wins over a fully-present rollup — M2's loom-db proof case survives", () => {
+    expect(componentStatusColor(aws({ total: 3, present: 3, absent: 0, unobserved: 0 }, ROLLBACK))).toBe("warn");
+  });
+
+  it("a mid-deploy stack still wins over a fully-present rollup — in-flight explains any rollup shape under it", () => {
+    expect(componentStatusColor(aws({ total: 3, present: 3, absent: 0, unobserved: 0 }, IN_PROGRESS))).toBe("accent");
+  });
+
+  it("a mid-deploy stack outranks a half-built rollup rather than calling it drift", () => {
+    // Partial presence during a deploy is expected, not a broken component.
+    expect(componentStatusColor(aws({ total: 3, present: 1, absent: 2, unobserved: 0 }, IN_PROGRESS))).toBe("accent");
+  });
+
+  it("a healthy stack with no rollup still paints from the live boolean — an older chant is unaffected", () => {
+    const row = {
+      component: "loom-backend",
+      env: "local",
+      reconciliation: "reconciled" as const,
+      detail: "live and consistent",
+      live: true,
+      stack: HEALTHY,
+    } as unknown as ComponentStatusRow;
+    expect(componentStatusColor(row)).toBe("good");
   });
 });
