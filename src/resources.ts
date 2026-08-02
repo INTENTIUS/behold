@@ -35,8 +35,16 @@ export interface ComponentResource {
  * interface wiring, not things you create/update/delete. A CloudFormation
  * Parameter is a stack input (loomster resolves it via seeded outputs at build
  * time, so it never exists as a live resource); a cross-stack import is the same
- * idea. Excluded from the reconcile so they don't read as perpetual "create". */
-const NON_RESOURCE_KINDS = new Set(["AWS::CloudFormation::Parameter"]);
+ * idea. Excluded from the reconcile so they don't read as perpetual "create".
+ *
+ * `chant:output` is the substrate-neutral half of the same idea and was missing
+ * (#104): chant emits one node per declared stack output on EVERY lexicon, not
+ * just AWS — the mixed AWS example carries 13 of them next to its 3
+ * CloudFormation Parameters. An output is a value the stack publishes, never a
+ * resource anyone creates, so it was inflating the reconcile's pending count on
+ * every substrate. Listing only the AWS kind made this look AWS-shaped; it is
+ * not, which is exactly the sort of assumption this issue asked for. */
+const NON_RESOURCE_KINDS = new Set(["AWS::CloudFormation::Parameter", "chant:output"]);
 
 /** Entity names in the IR that are stack interface (Parameters), not resources —
  * for the reconcile to skip so they don't count as pending changes forever. */

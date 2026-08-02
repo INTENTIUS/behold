@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resourcesByComponent } from "./resources.ts";
+import { resourcesByComponent, nonResourceEntities } from "./resources.ts";
 import type { GraphIR } from "@intentius/chant";
 
 // Fixture mirrors the entity-graph IR shape #59's /api/resources correlates
@@ -93,5 +93,37 @@ describe("resourcesByComponent", () => {
     // simply absent (→ summarizePlan counts their entries as uncorrelated).
     const known = new Set(["loom-db", "loom-backend", "shared-foundation"]);
     expect(Object.keys(resourcesByComponent(withExamples, known))).toEqual(["loom-db"]);
+  });
+});
+
+// #104 — an output is a value a stack publishes, never a resource anyone
+// creates. chant emits `chant:output` on every lexicon (13 of them in the
+// mixed AWS example, alongside 3 CloudFormation Parameters), so listing only
+// the AWS kind left the reconcile counting them as perpetual pending changes
+// on every substrate.
+describe("nonResourceEntities — substrate-neutral interface nodes (#104)", () => {
+  const ir = {
+    nodes: [
+      { id: "domainName", kind: "AWS::CloudFormation::Parameter", lexicon: "aws" },
+      { id: "clusterEndpoint", kind: "chant:output", lexicon: "aws" },
+      { id: "gkeEndpoint", kind: "chant:output", lexicon: "gcp" },
+      { id: "bucket", kind: "AWS::S3::Bucket", lexicon: "aws" },
+      { id: "svc", kind: "K8s::Core::Service", lexicon: "k8s" },
+    ],
+    edges: [],
+    groups: {},
+  } as unknown as GraphIR;
+
+  it("excludes chant:output on any lexicon, not just the AWS parameter kind", () => {
+    const skip = nonResourceEntities(ir);
+    expect(skip.has("clusterEndpoint")).toBe(true);
+    expect(skip.has("gkeEndpoint")).toBe(true);
+    expect(skip.has("domainName")).toBe(true);
+  });
+
+  it("still counts real resources on every substrate", () => {
+    const skip = nonResourceEntities(ir);
+    expect(skip.has("bucket")).toBe(false);
+    expect(skip.has("svc")).toBe(false);
   });
 });
