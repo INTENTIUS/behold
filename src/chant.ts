@@ -10,6 +10,7 @@
  * back to behold's own dependency.
  */
 import { spawn } from "node:child_process";
+import { targetEnvOverrides, type SubstrateTarget } from "./targets.ts";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
@@ -28,6 +29,14 @@ import { parseYAML } from "@intentius/chant/yaml";
 
 /** Graph options passed through to chant so IR and layout node sets align. */
 export interface GraphOptions {
+  /**
+   * The substrates in play and the ambient variable each one's read path
+   * honours (#99). When present, a chosen `target` is applied to every one of
+   * them rather than only to `AWS_ENDPOINT_URL` — which is how a mixed-substrate
+   * project reaches floci-az as well as Floci. Absent for a caller that has not
+   * resolved them, which keeps the pre-#99 single-variable behaviour.
+   */
+  substrateTargets?: readonly SubstrateTarget[];
   detail?: number;
   lens?: string;
   up?: boolean;
@@ -91,7 +100,14 @@ export interface GraphOptions {
 export function envOverridesFor(opts: GraphOptions): Record<string, string> | undefined {
   const overrides: Record<string, string> = {};
   if (opts.tier && opts.tierEnvVar) overrides[opts.tierEnvVar] = opts.tier;
-  if (opts.target) overrides.AWS_ENDPOINT_URL = opts.target;
+  if (opts.substrateTargets?.length) {
+    // Each substrate gets its own endpoint, or all of them get the chosen one:
+    // `target` stays a single global override rather than a control per
+    // substrate (#99), so a single-substrate project behaves exactly as before.
+    Object.assign(overrides, targetEnvOverrides(opts.substrateTargets, opts.target));
+  } else if (opts.target) {
+    overrides.AWS_ENDPOINT_URL = opts.target;
+  }
   return Object.keys(overrides).length ? overrides : undefined;
 }
 
