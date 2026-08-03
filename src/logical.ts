@@ -33,6 +33,7 @@
  */
 import type { GraphIR, IRNode, IREdge } from "@intentius/chant";
 import { projectAzureLogical } from "./logical-azure.ts";
+import { projectGcpLogical } from "./logical-gcp.ts";
 
 /** The container-nesting map pinhole's `layoutArchitecture` consumes:
  * `containerId → memberIds`, where a member may itself be a container id (the
@@ -307,14 +308,18 @@ function nearestByRef(start: string, want: Set<string>, refOut: Map<string, Set<
  * subnet off an environment name and ARM expression strings. One lens cannot be
  * both, which is why this module has always said so in its own header.
  *
- * Dispatch is by which cloud lexicon the graph actually contains. A graph with
- * neither gets the AWS lens, which filters to `aws` nodes and so returns an
- * empty projection — the same nothing it returned before this existed.
+ * Dispatch is by which cloud lexicon the graph actually contains — AWS nests
+ * region/VPC/subnet, Azure resource group/VNet/subnet, GCP project/location
+ * (#101, which has no network containment at all). A graph with none of them
+ * gets the AWS lens, which filters to `aws` nodes and so returns an empty
+ * projection — the same nothing it returned before this existed.
  */
 export function projectTopology(ir: GraphIR, env?: string): LogicalProjection {
   const hasAws = ir.nodes.some((n) => n.lexicon === "aws");
   const hasAzure = ir.nodes.some((n) => n.lexicon === "azure");
+  const hasGcp = ir.nodes.some((n) => n.lexicon === "gcp");
   if (hasAzure && !hasAws) return projectAzureLogical(ir, env);
+  if (hasGcp && !hasAws) return projectGcpLogical(ir, env);
   return projectLogical(ir);
 }
 

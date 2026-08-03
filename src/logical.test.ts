@@ -266,3 +266,32 @@ describe("projectTopology — lens dispatch (#102)", () => {
     expect(byContainer).toEqual({});
   });
 });
+
+// #101 — the third lens. GCP has no network containment, so dispatch has to
+// pick it on lexicon rather than on graph shape.
+describe("projectTopology — GCP dispatch (#101)", () => {
+  const gcpIr = {
+    nodes: [
+      {
+        id: "cluster",
+        kind: "GCP::Container::Cluster",
+        lexicon: "gcp",
+        attrs: { location: "us-central1" },
+        sourceLoc: { file: "src/platform/c.ts" },
+      },
+    ],
+    edges: [],
+    groups: {},
+  } as unknown as GraphIR;
+
+  it("uses the GCP lens for a gcp graph, naming the project from the env", () => {
+    const { byContainer } = projectTopology(gcpIr, "my-project");
+    expect(Object.keys(byContainer)).toContain("project my-project");
+    expect(byContainer["project my-project"]).toContain("location us-central1");
+  });
+
+  it("draws no network boxes for GCP, unlike the other two lenses", () => {
+    const { byContainer } = projectTopology(gcpIr, "my-project");
+    expect(Object.keys(byContainer).some((k) => /VPC|VNet|subnet/i.test(k))).toBe(false);
+  });
+});
