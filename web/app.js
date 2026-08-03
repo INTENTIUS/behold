@@ -489,7 +489,13 @@ function renderFieldDrift(panel, fieldDrift) {
     dt.textContent = ch.path;
     dt.style.color = FIELD_KIND_COLOR[ch.kind] || "";
     const dd = document.createElement("dd");
-    dd.textContent = `${FIELD_KIND_LABEL[ch.kind] || ch.kind} — declared: ${JSON.stringify(ch.declared)} · live: ${JSON.stringify(ch.live)}`;
+    // The owning manager (#87, chant#1189) leads, because it is the part that
+    // decides what to do about the field: `hpa-controller` holding
+    // `spec.replicas` is a controller doing its job; `kubectl-client-side-apply`
+    // holding it is somebody editing around the pipeline. Both are `changed`.
+    // Absent on every substrate but k8s, where the line reads as it always did.
+    const owned = ch.owner ? `owned by ${ch.owner} — ` : "";
+    dd.textContent = `${owned}${FIELD_KIND_LABEL[ch.kind] || ch.kind} — declared: ${JSON.stringify(ch.declared)} · live: ${JSON.stringify(ch.live)}`;
     dl.append(dt, dd);
   }
   for (const ch of fieldDrift.accepted) {
