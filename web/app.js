@@ -375,7 +375,19 @@ function renderObserved(panel, o, health) {
   if (o.physicalId) add("physical id", o.physicalId);
   if (o.ownership) add("ownership", o.ownership);
   if (o.lastUpdated) add("last updated", o.lastUpdated);
+  // What the object's own controller says is wrong with it (#86, chant#1401).
+  // Placed with health and status rather than among the attributes below,
+  // because it is the line that says what to DO: `Unschedulable` is the reason,
+  // "0/3 nodes are available: 1 node(s) had untolerated taint" is the answer.
+  // chant only sends conditions that are NOT in their happy state, so anything
+  // here is worth reading; the field is absent on every substrate that records
+  // none.
+  const conditions = o.attributes?.conditions;
+  if (Array.isArray(conditions)) {
+    for (const c of conditions) add("condition", String(c), "var(--degraded)");
+  }
   for (const [k, v] of Object.entries(o.attributes || {})) {
+    if (k === "conditions") continue; // rendered above, one line each
     add(k, typeof v === "object" ? JSON.stringify(v) : String(v));
   }
   panel.appendChild(dl);
