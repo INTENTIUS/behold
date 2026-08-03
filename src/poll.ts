@@ -11,16 +11,70 @@ import type { GraphIR } from "@intentius/chant";
  * (managed/foreign/pending). Pure — unit-tested. Changes iff a node's presence or
  * drift class changes, so re-renders fire only on real drift, not every poll. */
 export function driftDigest(ir: GraphIR): string {
-  return ir.nodes
+  return digestOf(ir.nodes);
+}
+
+function digestOf(nodes: GraphIR["nodes"]): string {
+  return nodes
     .map((n) => `${n.id}=${(n.attrs as { _status?: string })?._status ?? ""}`)
     .sort()
     .join("\n");
 }
 
+/** The lexicon bucket for a node that declares none. Its own key rather than a
+ * merge into some real substrate, so an unattributed node can never make `aws`
+ * look like it moved. */
+export const UNKNOWN_LEXICON = "";
+
+/**
+ * {@link driftDigest}, but kept per substrate instead of reduced to one string
+ * (#117).
+ *
+ * The estate-wide digest answers *did anything move* and never *what moved*, so
+ * a drifted k8s Service and a drifted security group were the same event — which
+ * is how auto-sync could route k8s drift to the AWS apply. Every IR node already
+ * carries `lexicon`; this stops throwing it away. No new read: the information
+ * is in the overlay behold already pulls every tick.
+ *
+ * Nodes only, never edges — so the cross-substrate anchor edges #103 adds cannot
+ * make one substrate appear to move because it is now connected to another that
+ * did. Pure — unit-tested.
+ */
+export function driftDigestsByLexicon(ir: GraphIR): Record<string, string> {
+  const byLexicon = new Map<string, GraphIR["nodes"]>();
+  for (const n of ir.nodes) {
+    const key = n.lexicon ?? UNKNOWN_LEXICON;
+    const bucket = byLexicon.get(key);
+    if (bucket) bucket.push(n);
+    else byLexicon.set(key, [n]);
+  }
+  const out: Record<string, string> = {};
+  for (const [lexicon, nodes] of byLexicon) out[lexicon] = digestOf(nodes);
+  return out;
+}
+
+/**
+ * Which substrates moved between two ticks — sorted, so a caller's log and
+ * routing are deterministic.
+ *
+ * A substrate counts as moved when its digest changed, when it is newly present
+ * (its first node appeared), or when it vanished entirely (every node gone,
+ * which is drift of the most consequential kind). Pure — unit-tested.
+ */
+export function changedLexicons(prev: Record<string, string>, next: Record<string, string>): string[] {
+  const moved = new Set<string>();
+  for (const key of new Set([...Object.keys(prev), ...Object.keys(next)])) {
+    if (prev[key] !== next[key]) moved.add(key);
+  }
+  return [...moved].sort();
+}
+
 export interface DriftPollOptions {
   intervalMs: number;
   query: () => Promise<GraphIR>;
-  onChange: () => void;
+  /** Fired when the drift moved, with the substrates that moved (#117) — sorted,
+   * and never empty when called. */
+  onChange: (movedLexicons: string[]) => void;
   onError?: (err: unknown) => void;
 }
 
@@ -33,14 +87,17 @@ export interface DriftPollOptions {
  */
 export function startDriftPoll(opts: DriftPollOptions): () => void {
   let stopped = false;
-  let last: string | undefined;
+  let last: Record<string, string> | undefined;
   let timer: ReturnType<typeof setTimeout>;
 
   const tick = async (): Promise<void> => {
     try {
-      const digest = driftDigest(await opts.query());
-      if (last !== undefined && digest !== last) opts.onChange();
-      last = digest;
+      const digests = driftDigestsByLexicon(await opts.query());
+      if (last !== undefined) {
+        const moved = changedLexicons(last, digests);
+        if (moved.length) opts.onChange(moved);
+      }
+      last = digests;
     } catch (err) {
       opts.onError?.(err);
     }

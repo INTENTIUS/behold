@@ -44,6 +44,9 @@ Options:
   --auto-sync <mode>  On a polled drift, trigger a committed Op (needs --env + --poll).
                       off (default) | apply (heal via ApplyOp) | pull-request
                       (adopt via ReconcileOp). Gated applies still wait for Approve.
+                      Routes per substrate (#117): the substrate that drifted
+                      picks the Op declaring that target, and declines out loud
+                      rather than guessing when several match or none does.
                       serve only.
   --local             serve only: boot the *served project's own* local
                       emulator(s) via chant (\`chant emulator up\`, chant #920)

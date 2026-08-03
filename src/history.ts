@@ -42,3 +42,48 @@ export async function sourceCommits(projectDir: string, limit = 20): Promise<Com
     return [];
   }
 }
+
+/**
+ * Branches of an open rollback (#117's interlock).
+ *
+ * `chant lifecycle rollback <env> --to <ref>` (chant#873, behold's /api/rollback)
+ * restores source to a prior revision on a branch named
+ * `chant/rollback-<env>-<ref>` and opens a PR. The branch existing is behold's
+ * read-only tell that a rollback is in flight — no forge API call, no creds,
+ * consistent with behold holding none.
+ *
+ * Scoped to `env` when given, since a rollback of `staging` says nothing about
+ * an auto-sync loop watching `prod`. Pure — unit-tested.
+ */
+export function parseRollbackBranches(stdout: string, env?: string): string[] {
+  const prefix = env ? `chant/rollback-${env}-` : "chant/rollback-";
+  return stdout
+    .split("\n")
+    // `git branch --list` marks the checked-out branch with `* ` and a worktree
+    // branch with `+ `.
+    .map((l) => l.replace(/^[*+]?\s*/, "").trim())
+    .filter((l) => l.startsWith(prefix))
+    .sort();
+}
+
+/** Open rollback branches for `env`, local and remote. Empty on any git error
+ * (not a repo, no branches) — a project behold cannot read git for simply has no
+ * interlock, which is the same position it was in before #117. */
+export async function openRollbackBranches(projectDir: string, env?: string): Promise<string[]> {
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["branch", "--list", "--all", "--format=%(refname:short)"],
+      { cwd: projectDir },
+    );
+    // `--all` prefixes remotes (`origin/chant/rollback-prod-abc`); strip the
+    // remote so a branch that exists both locally and on the forge is one entry.
+    const stripped = stdout
+      .split("\n")
+      .map((l) => l.trim().replace(/^[^/]+\/(?=chant\/rollback-)/, ""))
+      .join("\n");
+    return [...new Set(parseRollbackBranches(stripped, env))];
+  } catch {
+    return [];
+  }
+}
