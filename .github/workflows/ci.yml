@@ -30,3 +30,12 @@ jobs:
       # asserts /api/graph). The overlay path is exercised locally with creds.
       - name: e2e (offline)
         run: bash e2e/run.sh
+
+      # Every step above runs against the LOCKFILE's chant. This one runs against
+      # the floor `package.json` declares, which is what a consumer's plain
+      # `npm install` may resolve to. Without it a wrong floor stays green
+      # forever — see the script's header for the two times that happened
+      # (#108, and the #98/#100 rollup that silently did nothing on ^0.32.0).
+      # Last, and reinstalling chant, so it cannot perturb the steps above.
+      - name: typecheck against the declared chant floor
+        run: bash scripts/typecheck-floor.sh

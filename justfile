@@ -11,6 +11,13 @@ install:
 tsc:
     npm run tsc
 
+# Typecheck against the chant floor package.json DECLARES, not the lockfile's
+# resolution — the check that would have caught #108, and the ^0.32.0 floor that
+# made #98/#100's resource rollup unreachable. Reinstalls chant; run `install`
+# after to get the lockfile's version back.
+tsc-floor:
+    bash scripts/typecheck-floor.sh
+
 # Unit tests.
 test:
     npm test
