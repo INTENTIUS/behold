@@ -79,6 +79,22 @@ describe("classifyHealth — non-AWS substrates (#104)", () => {
     expect(classifyHealth("PRESENT")).toBe("healthy");
   });
 
+  it("reads a Pod the scheduler cannot place as degraded (chant#1397)", () => {
+    // chant used to report this Pod's bare phase, `Pending`, which classifies
+    // as progressing — indistinguishable from one that is about to start.
+    // `Unschedulable` is terminal until a human changes something.
+    expect(classifyHealth("Unschedulable")).toBe("degraded");
+  });
+
+  it("reads a crashlooping Pod as degraded, now that chant reports the reason", () => {
+    // chant#1397: a crashlooping Pod used to observe as `Running`, which this
+    // classified as healthy — a broken workload painting green.
+    expect(classifyHealth("CrashLoopBackOff")).toBe("degraded");
+    expect(classifyHealth("ImagePullBackOff")).toBe("degraded");
+    // And a genuinely running Pod is still healthy.
+    expect(classifyHealth("Running")).toBe("healthy");
+  });
+
   it("leaves the CloudFormation vocabulary exactly as it was", () => {
     expect(classifyHealth("CREATE_COMPLETE")).toBe("healthy");
     expect(classifyHealth("UPDATE_ROLLBACK_COMPLETE")).toBe("degraded");

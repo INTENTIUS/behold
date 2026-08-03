@@ -45,7 +45,9 @@ export type Health = "healthy" | "progressing" | "degraded" | "unknown";
 // "complete", so degraded/progressing are tested before healthy.
 //
 // `cancel` — ARM's `Canceled`, a terminal failure state.
-const DEGRADED = /fail|error|rollback|crash|backoff|degraded|unhealthy|terminat|delete|denied|timeout|evicted|imagepull|cancel/i;
+// `unschedulable` — a Pod the scheduler cannot place (chant#1397 surfaces it;
+// before that a Pod stuck this way reported the bare phase `Pending`).
+const DEGRADED = /fail|error|rollback|crash|backoff|degraded|unhealthy|terminat|delete|denied|timeout|evicted|imagepull|cancel|unschedulable/i;
 // `accepted` — ARM has taken the request and is working on it.
 const PROGRESSING = /in[_-]?progress|pending|creating|updating|provisioning|initializ|deploying|scaling|waiting|containercreating|accepted/i;
 // `present` — gcp/azure's "read back, exists, no richer status" sentinel.
