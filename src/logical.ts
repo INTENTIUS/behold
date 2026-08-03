@@ -32,6 +32,7 @@
  * for k8s or GitHub Actions. Other substrates get their own topology lens later.
  */
 import type { GraphIR, IRNode, IREdge } from "@intentius/chant";
+import { projectAzureLogical } from "./logical-azure.ts";
 
 /** The container-nesting map pinhole's `layoutArchitecture` consumes:
  * `containerId → memberIds`, where a member may itself be a container id (the
@@ -179,7 +180,7 @@ function dirSegments(node: IRNode): string[] {
  * in ONE directory has nothing below the prefix to distinguish them; that
  * directory's own name is the honest answer, and a single box is correct.
  */
-function componentNamer(nodes: IRNode[]): (node: IRNode) => string {
+export function componentNamer(nodes: IRNode[]): (node: IRNode) => string {
   const all = nodes.map(dirSegments).filter((d) => d.length > 0);
   let shared = 0;
   if (all.length > 0) {
@@ -298,6 +299,25 @@ function nearestByRef(start: string, want: Set<string>, refOut: Map<string, Set<
  * IR (headline cards + contracted edges) and the `byContainer` nesting for
  * pinhole's `layoutArchitecture`. Pure; the input IR is untouched.
  */
+/**
+ * Pick the topology lens an estate's substrate calls for (#102).
+ *
+ * An architecture diagram is substrate-shaped: AWS nests region → VPC → subnet
+ * off declared resources and `$ref`s, Azure nests resource group → VNet →
+ * subnet off an environment name and ARM expression strings. One lens cannot be
+ * both, which is why this module has always said so in its own header.
+ *
+ * Dispatch is by which cloud lexicon the graph actually contains. A graph with
+ * neither gets the AWS lens, which filters to `aws` nodes and so returns an
+ * empty projection — the same nothing it returned before this existed.
+ */
+export function projectTopology(ir: GraphIR, env?: string): LogicalProjection {
+  const hasAws = ir.nodes.some((n) => n.lexicon === "aws");
+  const hasAzure = ir.nodes.some((n) => n.lexicon === "azure");
+  if (hasAzure && !hasAws) return projectAzureLogical(ir, env);
+  return projectLogical(ir);
+}
+
 export function projectLogical(ir: GraphIR): LogicalProjection {
   const aws = ir.nodes.filter((n) => n.lexicon === "aws" && !isExample(n));
   // Derived from every declared node, not just the surviving headline cards, so
