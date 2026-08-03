@@ -25,12 +25,17 @@
 #
 # ## Prerequisite that is NOT behold's
 #
-# chant#1431: `FLOCI_GCP_EMULATOR` injects no env, so `chant emulator up
-# --lexicon gcp` boots the emulator and leaves `GCP_ENDPOINT_URL` unset — which
-# points chant's GCP read path at REAL GCP. Until that lands, this script sets
-# the variable itself (behold does the same for its own shell-outs, which is why
-# behold#125 works regardless). If you see live reads failing on credentials,
-# that is the bug, not this script.
+# chant#1431: `FLOCI_GCP_EMULATOR` injected no env, so `chant emulator up
+# --lexicon gcp` booted the emulator and left `GCP_ENDPOINT_URL` unset — which
+# pointed chant's GCP read path at REAL GCP while an emulator sat on :4588.
+# Fixed in chant#1434, merged, but not yet in a published release — so a project
+# on a released chant still needs the variable set for it.
+#
+# This script sets it either way. That stays correct after the release lands
+# (the value is the same one the capability now injects) and matches what behold
+# already does for its own shell-outs, which is why #125 worked regardless. If
+# live reads fail on credentials, check the project's chant version before
+# suspecting this script.
 #
 # Like the Azure run, "is the estate deployed" is derived from behold's own
 # overlay rather than a pre-flight list call — chant's GCP reader does targeted
