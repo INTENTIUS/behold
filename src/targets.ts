@@ -14,10 +14,17 @@
  * environment, lexicons)` takes a lexicon list.
  *
  * Each entry is the ambient variable that lexicon's read path honours. Azure's
- * arrived with chant#1212; gcp's arrives with chant#1209, and until then a gcp
- * project resolves no target here — correctly, because there is nothing on the
- * chant side to point yet. Listing it early would be behold claiming a routing
- * it cannot perform.
+ * arrived with chant#1212 and gcp's with chant#1209 (#125) — the latter's
+ * `7f4e985e` moved GCP observation off Config-Connector-over-kubectl onto the
+ * applier's own direct-REST transport, which reads `GCP_ENDPOINT_URL` in both
+ * `describe-resources.ts` and `deep-observe.ts`.
+ *
+ * This list withholds a lexicon until chant can actually be pointed, rather than
+ * listing one behold cannot route — which is why gcp was absent until #1209
+ * landed. The cost of that discipline is that a landed chant change leaves a
+ * stale omission here until someone notices; #125 was exactly that, and left
+ * behold showing a floci-gcp pill (`detectSubstrates`, :4588) it had no way to
+ * aim the read path at.
  */
 
 /** A lexicon and the ambient variable its read path resolves its endpoint from. */
@@ -40,6 +47,7 @@ export const SUBSTRATE_TARGET_VARS: readonly SubstrateTargetVar[] = [
   { lexicon: "aws", label: "Floci", envVar: "AWS_ENDPOINT_URL" },
   { lexicon: "fly", label: "Fly", envVar: "FLY_FLAPS_BASE_URL" },
   { lexicon: "azure", label: "floci-az", envVar: "AZURE_ENDPOINT_URL" },
+  { lexicon: "gcp", label: "floci-gcp", envVar: "GCP_ENDPOINT_URL" },
 ];
 
 /** One substrate's resolved target. */

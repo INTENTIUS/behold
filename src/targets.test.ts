@@ -13,6 +13,29 @@ describe("resolveSubstrateTargets (#99)", () => {
     ]);
   });
 
+  // #125. chant#1209 moved GCP observation onto the applier's direct-REST
+  // transport, which reads GCP_ENDPOINT_URL — until that landed, listing gcp
+  // here would have been behold claiming a routing chant could not perform.
+  it("resolves a gcp project to floci-gcp", () => {
+    const targets = resolveSubstrateTargets(["gcp"], { GCP_ENDPOINT_URL: "http://localhost:4588" });
+    expect(targets).toEqual([
+      { name: "gcp", label: "floci-gcp", endpoint: "http://localhost:4588", envVar: "GCP_ENDPOINT_URL" },
+    ]);
+  });
+
+  // The shape chant#1211's E·gcp asserts: the GKE cluster and the workload on
+  // it, each substrate pointed at its own emulator.
+  it("resolves a mixed aws+gcp estate to both endpoints", () => {
+    const targets = resolveSubstrateTargets(["aws", "gcp"], {
+      AWS_ENDPOINT_URL: "http://localhost:4566",
+      GCP_ENDPOINT_URL: "http://localhost:4588",
+    });
+    expect(targets.map((t) => [t.name, t.endpoint])).toEqual([
+      ["aws", "http://localhost:4566"],
+      ["gcp", "http://localhost:4588"],
+    ]);
+  });
+
   it("ignores a substrate the project does not declare", () => {
     // The variable being set in the shell says nothing about this project.
     const targets = resolveSubstrateTargets(["azure"], {
@@ -33,10 +56,21 @@ describe("resolveSubstrateTargets (#99)", () => {
     expect(resolveSubstrateTargets(["k8s", "temporal"], { AWS_ENDPOINT_URL: "x" })).toEqual([]);
   });
 
-  it("does not claim a gcp target before chant can honour one", () => {
-    // chant#1209 has not landed; listing gcp here would be behold claiming a
-    // routing it cannot perform.
-    expect(SUBSTRATE_TARGET_VARS.some((v) => v.lexicon === "gcp")).toBe(false);
+  // Replaces "does not claim a gcp target before chant can honour one", whose
+  // premise expired when chant#1209 landed (#125). The rule it was guarding is
+  // the real invariant and still holds: an entry here must name a variable
+  // chant's read path actually honours. gcp now does — `GCP_ENDPOINT_URL`, in
+  // the lexicon's `describe-resources.ts` and `deep-observe.ts`.
+  it("names gcp's endpoint variable, now that chant honours one", () => {
+    expect(SUBSTRATE_TARGET_VARS.find((v) => v.lexicon === "gcp")?.envVar).toBe("GCP_ENDPOINT_URL");
+  });
+
+  // The substrate strip surfaces floci-gcp on :4588 (`detectSubstrates`), so a
+  // missing entry here left behold offering an emulator it could not aim at.
+  it("covers every substrate the strip can bring up", () => {
+    for (const lexicon of ["aws", "azure", "gcp"]) {
+      expect(SUBSTRATE_TARGET_VARS.some((v) => v.lexicon === lexicon)).toBe(true);
+    }
   });
 });
 
