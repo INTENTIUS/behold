@@ -1113,6 +1113,35 @@ function addGitlabWaveBadges(svgEl) {
 
 // Paint a fetched graph: the SVG, the meta line (with a drift summary in overlay
 // mode), the legend, and click-inspect wiring. Shared by load() and refresh().
+/**
+ * The banner a degraded zoom level owes the reader (#131).
+ *
+ * Several levels fall back to another level when they have nothing of their
+ * own to show — COMPOSITES to RESOURCES without a component graph, RUNTIME to
+ * whatever it was given without owner-referenced children, LOGICAL to a near
+ * blank pane on an estate whose kinds it does not nest. Each fallback is
+ * correct. Rendering it indistinguishably from a working view is not: it makes
+ * the picker look broken, which is how this was reported.
+ *
+ * Deliberately a note above the graph, not an error card — nothing has failed.
+ */
+function renderDegraded(notes) {
+  let el = document.getElementById("degraded-note");
+  if (!notes || !notes.length) {
+    if (el) el.remove();
+    return;
+  }
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "degraded-note";
+    el.style.cssText =
+      "padding:6px 12px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--line);background:var(--panel)";
+    const graph = document.getElementById("graph");
+    graph.parentNode.insertBefore(el, graph);
+  }
+  el.textContent = notes.join(" · ");
+}
+
 function render(ir, svg, m) {
   const overlay = m.mode === "overlay";
   // Logical/architecture lens (#63): its own mode, but when an env is picked the
@@ -1170,6 +1199,7 @@ function render(ir, svg, m) {
     `${scope}${m.env ? " · env " + m.env : ""}${axesTail}${overlay ? " · overlay" : ""}${logical ? " · logical" : ""}${m.components ? " · components" : ""}${componentStatus ? " · live status" : ""} · ${ir.nodes.length} nodes${tail}`;
   document.getElementById("legend").style.display = drift ? "flex" : "none";
   document.getElementById("component-legend").style.display = componentStatus ? "flex" : "none";
+  renderDegraded(m.degraded);
   // Keep the persistent state strip in sync — zoom/env/tier/radial are picked
   // via the ⌘K palette now (#73), but stay visible here regardless (radial
   // only applies to the entity zooms; renderStatusbar() drops it for

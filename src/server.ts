@@ -129,6 +129,28 @@ function optsFromQuery(url: URL, tierEnvVar?: string): GraphOptions {
  * `live`/`overlay` themselves) but should still honour the picked lens.
  * Carries `tierEnvVar` along with `tier` — dropping it here would silently
  * strip the var name `envOverridesFor` needs to apply the picked tier. */
+/**
+ * The note the logical lens owes a reader when it projects to almost nothing
+ * (#131).
+ *
+ * The lens is substrate-shaped by design — src/logical.ts nests cloud topology
+ * and its headline kinds are cloud resource types — so a Kubernetes-heavy
+ * estate legitimately projects to a handful of nodes or none. #74 tracks
+ * widening that. What is not defensible is rendering the near-blank result
+ * with the same chrome as a working view, so a reader steps through the zoom
+ * levels, sees one node where there were eleven, and concludes the picker is
+ * broken. It was reported that way.
+ *
+ * Silent when the projection kept most of the graph: a note on every logical
+ * view would be noise, and noise is how a real signal stops being read.
+ */
+function logicalDegraded(before: number, after: number): string | undefined {
+  if (after > 0 && after * 3 >= before) return undefined;
+  return after === 0
+    ? `logical projected nothing from ${before} resources — it is a cloud-topology lens, and this estate declares none of the kinds it nests (behold#74)`
+    : `logical kept ${after} of ${before} resources — it is a cloud-topology lens, and the rest are kinds it does not nest (behold#74)`;
+}
+
 function tierTargetOpts(opts: GraphOptions): Pick<GraphOptions, "tier" | "tierEnvVar" | "target"> {
   const out: Pick<GraphOptions, "tier" | "tierEnvVar" | "target"> = {};
   if (opts.tier) out.tier = opts.tier;
@@ -555,7 +577,12 @@ export function createApp(
         // primary output, and until now it was only observable by reading the
         // rendered SVG, which is not something an acceptance run can assert on.
         // The SPA ignores it and paints the svg as before.
-        return c.json({ ir: projected, svg, byContainer, meta: { projectDir: cfg.projectDir, env: metaEnv, tier: opts.tier ?? null, target: opts.target ?? null, mode: "logical" } });
+        // #131: the logical lens is substrate-shaped (#74) — src/logical.ts's
+        // headline kinds are cloud topology, so a k8s-heavy estate projects to
+        // little or nothing. That is by design and confusing anyway when the
+        // result is an almost-blank pane that looks like every other view.
+        const logicalNote = logicalDegraded(base.nodes.length, projected.nodes.length);
+        return c.json({ ir: projected, svg, byContainer, meta: { projectDir: cfg.projectDir, env: metaEnv, tier: opts.tier ?? null, target: opts.target ?? null, mode: "logical", ...(logicalNote ? { degraded: [logicalNote] } : {}) } });
       } else {
         ir = await graphIr(cfg.projectDir, opts);
         // Entity graph below the ATTRIBUTES tier: hide cross-stack import
@@ -732,18 +759,24 @@ export function createApp(
       // boundary and nests each owner-referenced child under its declared
       // parent. Every other tier stops where your source stops — a Pod is noise
       // in a composites view, and a layer you cannot dial away is not a tier.
-      ir = new URL(c.req.url).searchParams.get("runtime") === "1"
-        ? attachRuntimeContainment(ir)
-        : pruneRuntimeChildren(ir);
+      const wantRuntime = new URL(c.req.url).searchParams.get("runtime") === "1";
+      // Counted rather than inspected for a marker: the tier's whole job is to
+      // bring owner-referenced children in, so "did it add any" is the question,
+      // and it survives however those children come to be tagged (#131).
+      const nodesBeforeRuntime = ir.nodes.length;
+      ir = wantRuntime ? attachRuntimeContainment(ir) : pruneRuntimeChildren(ir);
+      const runtimeAddedNothing = wantRuntime && ir.nodes.length === nodesBeforeRuntime;
       // Logical/architecture lens (#63): re-project the live overlay into nested
       // region/VPC/subnet ⊃ component boxes, keeping each surviving node's drift
       // colour. Short-circuits the detail-tier pruning/composite plumbing below.
       if (logical) {
+        const before = ir.nodes.length;
         const { ir: projected, byContainer } = projectTopology(addValueMatchEdges(ir), env);
         const { svg } = renderArchitecture(projected, byContainer);
         // See /api/graph's logical branch — `byContainer` is carried for the
-        // same reason (behold#100).
-        return c.json({ ir: projected, svg, byContainer, meta: { projectDir: cfg.projectDir, env, mode: "logical" } });
+        // same reason (behold#100), and the same #131 note applies.
+        const logicalNote = logicalDegraded(before, projected.nodes.length);
+        return c.json({ ir: projected, svg, byContainer, meta: { projectDir: cfg.projectDir, env, mode: "logical", ...(logicalNote ? { degraded: [logicalNote] } : {}) } });
       }
       // Below the ATTRIBUTES tier, hide cross-stack import handles — they're
       // value plumbing, not resources, and float off to the side (see
@@ -760,18 +793,33 @@ export function createApp(
       // At COMPOSITES (level 1), composites only wired via import sinks (now
       // pruned) so they'd all float — overlay the authoritative component
       // dependsOn graph so they read as a dependency graph (see addCompositeDeps).
+      // #131: a level that cannot render falls back to the one below it, which
+      // is right — but it used to do so in silence, so COMPOSITES and RESOURCES
+      // came back byte-identical with nothing saying why, and the zoom picker
+      // read as broken. Keep the fallback, report it.
+      const degraded: string[] = [];
       if (query.detail === 1) {
         try {
           const dag = await componentGraphIr(cfg.projectDir, { env, ...tierTargetOpts(query) });
           ir = addCompositeDeps(ir, dag.edges);
+          if (!dag.edges.length) {
+            degraded.push("no component dependencies to overlay — this is the resources graph");
+          }
         } catch {
-          /* component DAG unavailable — leave composites as-is */
+          degraded.push("no component graph for this project — showing resources");
         }
+      }
+      // Runtime (#86) is live-only and legitimately empty for an estate whose
+      // children are not owner-referenced in the cluster — a MicroVM's are in
+      // AWS. Empty is a fine answer; an empty view identical to the previous
+      // one, with nothing said, is not.
+      if (runtimeAddedNothing) {
+        degraded.push("no owner-referenced children observed — this is the resources graph");
       }
       // `boxes: "byContainer"` (#86) is a no-op unless attachRuntimeContainment
       // populated it above — same "harmless when absent" contract as byStack.
       const { svg } = renderGraph(ir, { boxes: "byContainer", radial: new URL(c.req.url).searchParams.get("radial") === "1" });
-      return c.json({ ir, svg, meta: { projectDir: cfg.projectDir, env, mode: "overlay" } });
+      return c.json({ ir, svg, meta: { projectDir: cfg.projectDir, env, mode: "overlay", ...(degraded.length ? { degraded } : {}) } });
     } catch (err) {
       // #72: the same structured {error, code, remedy} the other read routes
       // return — this is in fact where a picked tier's creds gate USUALLY
