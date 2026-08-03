@@ -62,3 +62,25 @@ e2e-floci:
 #   BEHOLD_E2E_PROJECT=/path/to/example just e2e-aws-logical
 e2e-aws-logical:
     bash e2e/aws-logical-floci-e2e.sh
+
+# behold#126 (B·azure, chant epic #1200 / E slot chant#1214): the Azure lane's
+# acceptance run. Same three assertions as e2e-aws-logical, against floci-az —
+# but the rollup clause bites harder here: Azure has no deploy object, so the
+# #98 rollup is the ONLY status source and nothing can mask a defect in it.
+# Needs a deployed azure project and its floci-az already up; boots neither.
+#   just e2e-azure-logical
+#   BEHOLD_E2E_PROJECT=/path/to/example just e2e-azure-logical
+e2e-azure-logical:
+    bash e2e/azure-logical-floci-e2e.sh
+
+# behold#126 (B·gcp, chant epic #1199 / E slot chant#1211): the GCP lane's
+# acceptance run, against floci-gcp. Asserts the project/location diagram and,
+# unlike the other two, asserts network containment is ABSENT — floci-gcp
+# emulates no compute networking, so subnet boxes would stay empty (#101).
+# Needs a deployed gcp project and its floci-gcp already up; boots neither.
+# Note chant#1431: `chant emulator up --lexicon gcp` leaves GCP_ENDPOINT_URL
+# unset, so the script exports it itself.
+#   just e2e-gcp-logical
+#   BEHOLD_E2E_PROJECT=/path/to/example just e2e-gcp-logical
+e2e-gcp-logical:
+    bash e2e/gcp-logical-floci-e2e.sh
