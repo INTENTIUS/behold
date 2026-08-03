@@ -155,3 +155,35 @@ before someone generalizes the wrong thing.
 
 Nothing here needs a chant change. The `lexicon` on every IR node and the
 `target` on every `ApplyOp` are both already there.
+
+## Implemented — #117
+
+Built as specified. `driftDigestsByLexicon` + `changedLexicons` (`poll.ts`),
+`OpInfo.substrate` scraped from `target` (`ops.ts`), `pickAutoSyncOps`
+(`autosync.ts`), and the interlock via `openRollbackBranches` (`history.ts`) +
+`suspendedByRollback`. Two places where the build had to decide something this
+document left open, both recorded here because each narrows a claim above:
+
+**An Op declaring no target is not automatically ambiguous.** Question 2 reads an
+undeclared target as the ambiguity case. Taken literally that disables
+`pull-request` mode everywhere, because chant's `ReconcileOp` accepts no `target`
+at all — it reads the estate and opens a PR, so there is no transport to name,
+and *every* reconcile Op is therefore unscoped. The implemented rule: Ops
+declaring the substrate win; failing that, a *single* unscoped Op covers
+everything that moved. Two or more competing, scoped or not, still declines. One
+unscoped Op is not ambiguous about anything, and that is the single-substrate
+project that has to keep working.
+
+**The rollback interlock suspends the whole estate, not a subset.** Question 3
+anticipates narrowing by the rolled-back `sourceDir`. behold's rollback
+(`/api/rollback` → `chant lifecycle rollback <env> --to <ref>`) takes no
+directory scope, so the rollback it triggers really is whole-project and really
+does touch every substrate. Narrowing would invent a distinction the command does
+not make. `suspendedByRollback` already takes the moved set, so it narrows there
+if rollback ever gains a scope.
+
+One behaviour worth stating because the document does not: a substrate whose Op
+is refused by the one-write-at-a-time guard is **not** retried. The poll advances
+its baseline whether or not a trigger started, so that substrate waits until it
+drifts again. That was equally true of the single-Op loop, which dropped the same
+event silently; the change is that the refusal now reaches the now-line.

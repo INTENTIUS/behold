@@ -49,8 +49,8 @@ import { nodeDiff, nodeObserved, nodeFieldDrift, type LiveDiffJson } from "./dif
 import { classifyHealth } from "./health.ts";
 import { OpRunner } from "./op-runner.ts";
 import { detectSubstrates } from "./substrates.ts";
-import { pickAutoSyncOp, type AutoSyncMode } from "./autosync.ts";
-import { sourceCommits } from "./history.ts";
+import { pickAutoSyncOps, suspendedByRollback, type AutoSyncMode } from "./autosync.ts";
+import { sourceCommits, openRollbackBranches } from "./history.ts";
 import { composeEstate } from "./estate.ts";
 import { Broadcaster, watchSource } from "./events.ts";
 import { startDriftPoll } from "./poll.ts";
@@ -1025,13 +1025,50 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   // A polled *drift* (live moved) — re-render, and if auto-sync is on, trigger the
   // configured Op to heal/adopt (#29). Source edits (watchSource) don't auto-sync:
   // a new declaration is new desired state, not drift.
-  const onPollDrift = (): void => {
+  const onPollDrift = (movedLexicons: string[]): void => {
     onEstateChange();
     if (autoSync === "off") return;
-    const op = pickAutoSyncOp(autoSync, discoverEstateOps(cfg.projectDirs ?? [cfg.projectDir]), runner.running);
-    if (op) {
-      broadcaster.emit("op", `⟳ auto-sync (${autoSync}) → ${op.name}`);
-      runner.trigger(op.name, op.env, op.dir);
+    void routeAutoSync(movedLexicons);
+  };
+
+  // Route a drift event to the Op that owns each substrate that moved (#117).
+  // Async only for the rollback interlock's git read, which is why onPollDrift
+  // fires it and does not await: the re-render above must not wait on git.
+  const routeAutoSync = async (movedLexicons: string[]): Promise<void> => {
+    const suspended =
+      autoSync === "pull-request"
+        ? suspendedByRollback(await openRollbackBranches(cfg.projectDir, cfg.env), movedLexicons)
+        : new Set<string>();
+    const { picks, declined } = pickAutoSyncOps(
+      autoSync,
+      discoverEstateOps(cfg.projectDirs ?? [cfg.projectDir]),
+      runner.running,
+      movedLexicons,
+      suspended,
+    );
+    // Say why nothing happened. A self-heal loop that declines silently is
+    // indistinguishable from one that is broken.
+    for (const d of declined) {
+      broadcaster.emit("op", `⟳ auto-sync (${autoSync}) declined ${d.lexicon}: ${d.reason}`);
+    }
+    // One delegated write at a time — the existing guard, unchanged. Two
+    // substrates drifting in the same tick do not race: the first trigger takes
+    // the runner and the second is refused and says so.
+    //
+    // It is NOT retried on the next tick. `startDriftPoll` advances its baseline
+    // whether or not a trigger started, so a substrate whose Op was refused
+    // waits until it drifts again. That is the loop's pre-existing behaviour —
+    // the single-Op version dropped the same event just as silently, and the
+    // only change here is that it is now visible on the now-line. Making the
+    // refusal re-queue means holding drift state across ticks, which is a
+    // different design than the one #105 specified.
+    for (const { op, lexicons } of picks) {
+      const scope = lexicons.join("+");
+      if (runner.trigger(op.name, op.env, op.dir)) {
+        broadcaster.emit("op", `⟳ auto-sync (${autoSync}) ${scope} → ${op.name}`);
+      } else {
+        broadcaster.emit("op", `⟳ auto-sync (${autoSync}) ${scope} → ${op.name} waiting — ${runner.running} is running`);
+      }
     }
   };
 

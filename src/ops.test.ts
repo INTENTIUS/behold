@@ -65,3 +65,53 @@ describe("discoverOps", () => {
     rmSync(empty, { recursive: true, force: true });
   });
 });
+
+describe("substrate from the declared target (#117)", () => {
+  const withOp = <T>(source: string, fn: (ops: ReturnType<typeof discoverOps>) => T): T => {
+    const d = mkdtempSync(join(tmpdir(), "behold-substrate-"));
+    try {
+      mkdirSync(join(d, "ops"));
+      writeFileSync(join(d, "ops", "x.op.ts"), source);
+      return fn(discoverOps(d));
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
+  };
+
+  it("maps each of chant's three apply targets to its lexicon", () => {
+    const cases: Array<[string, string]> = [
+      ["cloudformation", "aws"],
+      ["kubectl", "k8s"],
+      ["arm", "azure"],
+    ];
+    for (const [target, lexicon] of cases) {
+      const substrate = withOp(
+        `const { op } = ApplyOp({ name: "a", env: "prod", target: "${target}" });\n`,
+        (ops) => ops[0].substrate,
+      );
+      expect(substrate).toBe(lexicon);
+    }
+  });
+
+  it("reads the fixture project's own Ops", () => {
+    const ops = discoverOps(dir);
+    expect(ops.find((o) => o.name === "prod-apply")!.substrate).toBe("aws");
+    // A ReconcileOp declares no target at all — there is no transport to choose.
+    // Unscoped is the norm, which is why pickAutoSyncOps treats a lone unscoped
+    // Op as covering the estate.
+    expect(ops.find((o) => o.name === "prod-reconcile")!.substrate).toBeUndefined();
+  });
+
+  it("leaves an unrecognised target unscoped rather than guessing", () => {
+    const substrate = withOp(
+      `const { op } = ApplyOp({ name: "a", env: "prod", target: "pulumi" });\n`,
+      (ops) => ops[0].substrate,
+    );
+    expect(substrate).toBeUndefined();
+  });
+
+  it("leaves an Op declaring no target unscoped", () => {
+    const substrate = withOp(`const { op } = ApplyOp({ name: "a", env: "prod" });\n`, (ops) => ops[0].substrate);
+    expect(substrate).toBeUndefined();
+  });
+});
