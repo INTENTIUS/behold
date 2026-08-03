@@ -103,6 +103,17 @@ export interface PropertyDrift {
   live?: unknown;
   /** The accepted baseline value, when this path has one. */
   baseline?: unknown;
+  /**
+   * The field manager that owns this path live (chant#1189) — Kubernetes'
+   * `managedFields`, and nowhere else today, so absent on every other
+   * substrate.
+   *
+   * This is the half `kind` cannot carry. `spec.replicas` changed by
+   * `hpa-controller` and by `kubectl-client-side-apply` are both `changed` and
+   * mean opposite things: a controller doing its job, versus somebody editing
+   * around the pipeline. #87 exists because colour alone cannot say which.
+   */
+  owner?: string;
 }
 
 /** Property-level drift for one declared entity — chant's `DeepEntityDrift`

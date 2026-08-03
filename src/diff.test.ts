@@ -201,3 +201,72 @@ describe("nodeObserved", () => {
     expect(nodeDiff({ environment: "prod", lexicons: {} }, "x")).toBeNull();
   });
 });
+
+// #87's last acceptance criterion — the inspect pane shows the per-field
+// manager. It could not until chant#1189 put the name on the wire; behold's
+// mirror has to carry it through untouched.
+describe("nodeFieldDrift — owning field manager (#87, chant#1189)", () => {
+  const withOwners: LiveDiffJson = {
+    environment: "prod",
+    lexicons: {
+      k8s: {
+        deep: {
+          drifted: [
+            {
+              name: "web",
+              type: "K8s::Apps::Deployment",
+              changes: [
+                { path: "spec.replicas", kind: "changed", declared: 2, live: 5, owner: "hpa-controller" },
+                {
+                  path: "spec.template.spec.containers[0].image",
+                  kind: "changed",
+                  declared: "app:1",
+                  live: "app:2",
+                  owner: "kubectl-client-side-apply",
+                },
+              ],
+            },
+          ],
+          accepted: [],
+          unchanged: [],
+          unobserved: [],
+          undeclaredEntities: [],
+        },
+      },
+    },
+  };
+
+  it("carries the manager through for each path", () => {
+    const drift = nodeFieldDrift(withOwners, "web")!;
+    expect(drift.drifted.map((c) => c.owner)).toEqual(["hpa-controller", "kubectl-client-side-apply"]);
+  });
+
+  it("distinguishes two paths of the SAME kind by who owns them", () => {
+    // The reason #87 needs the name at all: both are `changed`, and one is a
+    // controller doing its job while the other is somebody editing around the
+    // pipeline. `kind` cannot separate them.
+    const drift = nodeFieldDrift(withOwners, "web")!;
+    expect(new Set(drift.drifted.map((c) => c.kind))).toEqual(new Set(["changed"]));
+    expect(new Set(drift.drifted.map((c) => c.owner)).size).toBe(2);
+  });
+
+  it("leaves owner undefined on a substrate with no per-field ownership", () => {
+    const noOwners: LiveDiffJson = {
+      environment: "prod",
+      lexicons: {
+        aws: {
+          deep: {
+            drifted: [
+              { name: "bucket", type: "AWS::S3::Bucket", changes: [{ path: "Versioning", kind: "changed", declared: true, live: false }] },
+            ],
+            accepted: [],
+            unchanged: [],
+            unobserved: [],
+            undeclaredEntities: [],
+          },
+        },
+      },
+    };
+    expect(nodeFieldDrift(noOwners, "bucket")!.drifted[0].owner).toBeUndefined();
+  });
+});
