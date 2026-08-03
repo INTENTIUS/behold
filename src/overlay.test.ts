@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { overlayStatus, reclassifyOverlay, pruneImports, attachRuntimeContainment } from "./overlay.ts";
+import { overlayStatus, reclassifyOverlay, pruneImports, attachRuntimeContainment, pruneRuntimeChildren } from "./overlay.ts";
 
 describe("overlayStatus", () => {
   it("maps chant's _status vocabulary to overlay statuses", () => {
@@ -132,5 +132,51 @@ describe("pruneImports", () => {
   it("is a no-op when there are no imports", () => {
     const noImports = { nodes: [{ id: "vpc", kind: "AWS::EC2::VPC" }], edges: [], imports: [] };
     expect(pruneImports(noImports).nodes).toHaveLength(1);
+  });
+});
+
+// #86 — the runtime layer becomes a TIER, which means it has to be possible to
+// not descend. Before this, owner-referenced children were attached at every
+// zoom level, so a composites view carried its Pods.
+describe("pruneRuntimeChildren (#86)", () => {
+  const mixed = () => ({
+    nodes: [
+      { id: "web", kind: "K8s::Apps::Deployment", attrs: { _status: "good" } },
+      { id: "web-abc", kind: "K8s::Core::Pod", attrs: { _status: "runtime" }, runtimeOwner: "web" },
+      { id: "web-def", kind: "K8s::Core::Pod", attrs: { _status: "runtime" }, runtimeOwner: "web" },
+      { id: "svc", kind: "K8s::Core::Service", attrs: { _status: "good" } },
+    ],
+    edges: [
+      { from: "svc", to: "web" },
+      { from: "web-abc", to: "web" },
+    ],
+    groups: {},
+  });
+
+  it("drops runtime children, keeping every declared node", () => {
+    const out = pruneRuntimeChildren(mixed() as unknown as Parameters<typeof pruneRuntimeChildren>[0]);
+    expect(out.nodes.map((n) => n.id).sort()).toEqual(["svc", "web"]);
+  });
+
+  it("drops edges touching a removed node, so nothing dangles", () => {
+    const out = pruneRuntimeChildren(mixed() as unknown as Parameters<typeof pruneRuntimeChildren>[0]);
+    expect(out.edges).toEqual([{ from: "svc", to: "web" }]);
+  });
+
+  it("is a no-op on a graph with no owner chain — AWS and Azure are untouched", () => {
+    const aws = {
+      nodes: [{ id: "vpc", kind: "AWS::EC2::VPC", attrs: { _status: "good" } }],
+      edges: [{ from: "vpc", to: "vpc" }],
+      groups: {},
+    };
+    const before = JSON.stringify(aws);
+    expect(JSON.stringify(pruneRuntimeChildren(aws as unknown as Parameters<typeof pruneRuntimeChildren>[0]))).toBe(before);
+  });
+
+  it("is the inverse of attaching them — the two tiers show different graphs", () => {
+    const attached = attachRuntimeContainment(mixed() as unknown as Parameters<typeof attachRuntimeContainment>[0]);
+    const pruned = pruneRuntimeChildren(mixed() as unknown as Parameters<typeof pruneRuntimeChildren>[0]);
+    expect(attached.nodes.length).toBe(4);
+    expect(pruned.nodes.length).toBe(2);
   });
 });

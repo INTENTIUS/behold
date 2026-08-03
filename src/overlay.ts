@@ -164,6 +164,29 @@ export function reclassifyOverlay<T extends { nodes: OverlayNode[] }>(ir: T): T 
  * criterion that the tier is gracefully unavailable, never broken or blank.
  * Mutates + returns `ir`. Pure w.r.t. I/O.
  */
+/**
+ * Drop live-only runtime children from an overlay (#86).
+ *
+ * chant returns a Pod its Deployment's controller created as a node carrying
+ * `runtimeOwner` (chant#1180). Those nodes were attached at every zoom level,
+ * so a project's `composites` view carried its Pods — which is noise at that
+ * altitude, and meant the runtime layer could be seen but never dialled away.
+ *
+ * Making it a TIER means the other tiers stop where your source stops, which is
+ * what "descend below the declaration boundary" implies: you have to be able to
+ * not descend. Edges touching a dropped node go with it, since an edge to a node
+ * that is not in the graph renders as a dangling stub.
+ */
+export function pruneRuntimeChildren<T extends { nodes: OverlayNode[]; edges: Array<{ from: string; to: string }> }>(
+  ir: T,
+): T {
+  const runtime = new Set(ir.nodes.filter((n) => n.runtimeOwner).map((n) => n.id));
+  if (runtime.size === 0) return ir;
+  ir.nodes = ir.nodes.filter((n) => !runtime.has(n.id));
+  ir.edges = ir.edges.filter((e) => !runtime.has(e.from) && !runtime.has(e.to));
+  return ir;
+}
+
 export function attachRuntimeContainment<T extends { nodes: OverlayNode[]; groups: { byContainer?: Record<string, string[]> } }>(
   ir: T,
 ): T {
