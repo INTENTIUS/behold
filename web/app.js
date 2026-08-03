@@ -65,7 +65,7 @@ if (staticMode) {
 
 /** Canonical key for a read URL — path + the lens params (whitelisted, sorted)
  * that select a distinct snapshot. MUST match src/export.ts `canonicalKey`. */
-const LENS_PARAMS = ["components", "detail", "env", "logical", "radial", "tier"];
+const LENS_PARAMS = ["components", "detail", "env", "logical", "radial", "runtime", "tier"];
 function canonicalKey(path, params) {
   // Components + logical views ignore detail/radial — drop them so they match
   // the single captured snapshot (MUST match src/export.ts).
@@ -542,7 +542,7 @@ function wire(ir) {
 // null on a project that declares no `stacks[]` at all — the picker (and the
 // status strip's stack tag) then never renders. Every fetch reads this, so
 // the `changed` SSE re-pull and a palette lens change go through the same path.
-const view = { env: null, detail: 2, components: true, logical: false, tier: null, target: null, stack: null, radial: false };
+const view = { env: null, detail: 2, components: true, logical: false, runtime: false, tier: null, target: null, stack: null, radial: false };
 
 // v0.1.0 preview lock (set from /api/project in initActions): hides the git/PR
 // write ops (Rollback, Sync, Adopt, Run ▾) — the server also 403s them. Local
@@ -565,18 +565,25 @@ const ZOOM_OPTS = [
   ["zoom: composites", "composites"],
   ["zoom: resources", "resources"],
   ["zoom: attributes", "attributes"],
+  // Below the declaration boundary (#86): the owner-referenced children the
+  // cluster maintains — the Pods under a Deployment. Its own stop rather than a
+  // detail level, because it is a different axis: every tier above shows what
+  // you declared, and this one shows what your declaration produced.
+  ["zoom: runtime", "runtime"],
 ];
-const ZOOM_DETAIL = { composites: 1, resources: 2, attributes: 3 };
+const ZOOM_DETAIL = { composites: 1, resources: 2, attributes: 3, runtime: 3 };
 /** Current zoom value from (components, logical, detail). */
 function zoomValue() {
   if (view.components) return "components";
   if (view.logical) return "logical";
+  if (view.runtime) return "runtime";
   return { 1: "composites", 2: "resources", 3: "attributes" }[view.detail] ?? "resources";
 }
 /** Apply a zoom value back onto (components, logical, detail). */
 function applyZoom(z) {
   view.components = z === "components";
   view.logical = z === "logical";
+  view.runtime = z === "runtime";
   if (z !== "components" && z !== "logical") view.detail = ZOOM_DETAIL[z] ?? 2;
 }
 
@@ -1445,6 +1452,11 @@ async function load(opts = {}) {
     } else if (view.env) {
       endpoint = "/api/overlay";
       q.set("env", view.env);
+      // The runtime tier (#86) descends below the declaration boundary. It is
+      // live-only by nature — owner-referenced children exist in the cluster,
+      // never in your source — so it rides the overlay and means nothing
+      // without an env.
+      if (view.runtime) q.set("runtime", "1");
     }
     // Radial layout (entity view only) — curl the wide DAG onto concentric rings.
     if (view.radial && !view.components && !view.logical) q.set("radial", "1");

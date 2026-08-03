@@ -34,7 +34,7 @@ import {
   type ChantFailure,
 } from "./chant.ts";
 import { joinComponentStatus, componentStatusColor } from "./component-status.ts";
-import { reclassifyOverlay, pruneImports, attachRuntimeContainment } from "./overlay.ts";
+import { reclassifyOverlay, pruneImports, attachRuntimeContainment, pruneRuntimeChildren } from "./overlay.ts";
 import { addValueMatchEdges } from "./value-match.ts";
 import { addClusterAnchorEdges } from "./cluster-anchor.ts";
 import { projectTopology } from "./logical.ts";
@@ -728,7 +728,13 @@ export function createApp(
       // under its declared owner in `groups.byContainer` — a no-op on a
       // substrate with no owner chain. `renderGraph`'s `boxes: "byContainer"`
       // opt-in below draws it as a titled boundary box.
-      ir = attachRuntimeContainment(ir);
+      // The runtime tier (#86): `?runtime=1` descends below the declaration
+      // boundary and nests each owner-referenced child under its declared
+      // parent. Every other tier stops where your source stops — a Pod is noise
+      // in a composites view, and a layer you cannot dial away is not a tier.
+      ir = new URL(c.req.url).searchParams.get("runtime") === "1"
+        ? attachRuntimeContainment(ir)
+        : pruneRuntimeChildren(ir);
       // Logical/architecture lens (#63): re-project the live overlay into nested
       // region/VPC/subnet ⊃ component boxes, keeping each surviving node's drift
       // colour. Short-circuits the detail-tier pruning/composite plumbing below.
