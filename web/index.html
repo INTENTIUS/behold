@@ -101,9 +101,9 @@
       #actions button:hover, #inspect button:hover { border-color: var(--pending); }
       #actions button.approve { border-color: var(--managed); color: var(--managed); }
       #inspect button { border-color: var(--foreign); color: var(--foreign); }
-      #pickers select { background: var(--panel); color: var(--fg); border: 1px solid var(--line);
+      #pickers select, #zoom-slot select { background: var(--panel); color: var(--fg); border: 1px solid var(--line);
         border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
-      #pickers select:hover { border-color: var(--pending); }
+      #pickers select:hover, #zoom-slot select:hover { border-color: var(--pending); }
       /* The observe → reconcile → apply dial (M2, #54): where the selected
          target sits on the lifecycle progression. Its own row below the
          header — a target-level control, not a per-node inspect detail. */
@@ -177,6 +177,13 @@
     <div id="app">
       <header>
         <h1>behold</h1>
+        <!-- Zoom sits here, first after the brand, rather than in #pickers on
+             the far right with the theme select. It is the control you reach
+             for constantly — the one thing worth the chrome #73 otherwise
+             thinned — and in the right-hand cluster it read as chrome and got
+             missed. The ⌘K palette keeps its entry; this is the same action,
+             discoverable without knowing the shortcut exists. -->
+        <span id="zoom-slot" style="display:flex;align-self:center"></span>
         <span class="meta" id="meta">loading…</span>
         <span id="legend" style="display:none;gap:12px;font-size:11px;align-self:center">
           <span style="color:var(--managed)">● managed</span>

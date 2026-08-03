@@ -607,11 +607,78 @@ function applyZoom(z) {
 // only ever truthy on a project that declares `stacks[]` (initPickers seeds
 // `view.stack` from `info.stacks`; a project with none leaves it null), so a
 // single-stack project's strip is unaffected.
+// The zoom picker, back in the header as a control you can see and click.
+//
+// #73 moved the pickers into ⌘K and left the current value on the strip, on the
+// principle "hide controls, never state". That reads well until someone opens
+// behold for the first time: the strip says "zoom: components", it looks like a
+// dropdown because it is a value next to other values, and clicking it does
+// nothing — renderStatusbar() only ever sets textContent. The discoverable path
+// to the single most useful control is a keyboard shortcut hinted by a "⌘K"
+// glyph at the far end of the header.
+//
+// So zoom gets a real <select> and the palette keeps its entry. The other axes
+// stay where #73 put them: zoom is the one you reach for constantly, and one
+// visible control is not the header of selects that issue was about.
+function renderZoomPicker() {
+  // #zoom-slot, top-left after the brand — not #pickers on the far right,
+  // where it sat beside the theme select and read as chrome rather than as the
+  // control. Falls back to #pickers so a static export built from older markup
+  // still gets a picker rather than none.
+  const slot = document.getElementById("zoom-slot") || document.getElementById("pickers");
+  if (!slot) return;
+  let sel = document.getElementById("zoom-picker");
+  if (!sel) {
+    sel = document.createElement("select");
+    sel.id = "zoom-picker";
+    sel.title = "Zoom — components, logical, composites, resources, attributes, runtime (also ⌘K)";
+    sel.addEventListener("change", () => {
+      applyZoom(sel.value);
+      renderStatusbar();
+      load();
+    });
+    // Before the theme picker, which mounts into the same slot at load.
+    slot.insertBefore(sel, slot.firstChild);
+  }
+  const current = zoomValue();
+  // Rebuilt each render because runtime is only meaningful with an env: it
+  // descends below the declaration boundary to owner-referenced children,
+  // which exist in a cluster and never in your source.
+  const opts = ZOOM_OPTS.filter(([, v]) => v !== "runtime" || view.env);
+  const want = opts.map(([label, v]) => `${v}:${label}`).join("|") + "@" + current;
+  if (sel.dataset.built !== want) {
+    sel.innerHTML = "";
+    for (const [label, v] of opts) {
+      const o = document.createElement("option");
+      o.value = v;
+      o.textContent = label;
+      if (v === current) o.selected = true;
+      sel.appendChild(o);
+    }
+    sel.dataset.built = want;
+  }
+  sel.value = current;
+}
+
 function renderStatusbar() {
+  renderZoomPicker();
   const el = document.getElementById("statusbar");
   if (!el) return;
-  const zoomLabel = (ZOOM_OPTS.find(([, v]) => v === zoomValue()) || ["zoom: " + zoomValue()])[0];
-  const parts = [zoomLabel, view.env ? `env: ${view.env}` : "env: (source)"];
+  // The strip looks clickable whether or not it is, so make it act like it:
+  // clicking opens the palette rather than doing nothing. env, stack and tier
+  // live only there, and this is the only affordance pointing at them.
+  if (!el.dataset.clickable) {
+    el.dataset.clickable = "1";
+    el.style.cursor = "pointer";
+    el.title = "env · stack · tier — click, or ⌘K, to change";
+    el.addEventListener("click", () => openPalette());
+  }
+  // No zoom here any more. #73 put the current zoom on the strip because the
+  // control had moved into the palette; with a real picker two slots along,
+  // the same value in both places reads as two pickers, one of which does not
+  // work — which is exactly how it was reported. The strip keeps the axes that
+  // still have no on-screen control.
+  const parts = [view.env ? `env: ${view.env}` : "env: (source)"];
   if (view.stack) parts.push(`stack: ${view.stack}`);
   if (axes.tier) parts.push(`tier: ${axes.tier}`);
   if (view.radial && !view.components && !view.logical) parts.push("radial");
