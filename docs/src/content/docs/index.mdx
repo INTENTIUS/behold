@@ -1,0 +1,72 @@
+---
+title: behold
+description: A live control plane on chant — your whole estate in one graph, coloured by drift.
+template: splash
+hero:
+  tagline: Your whole estate in one graph, coloured by drift. Every substrate — AWS, Kubernetes, GCP, Azure, Fly — in one picture, then act through gated Ops you already committed.
+  actions:
+    - text: Run it in five minutes
+      link: /behold/start/run-it/
+      icon: right-arrow
+    - text: On GitHub
+      link: https://github.com/INTENTIUS/behold
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, Aside, Code } from '@astrojs/starlight/components';
+
+## Start by handing this to an agent
+
+You do not have to read the rest of this site first. Paste this into Claude Code — or any coding agent with a shell — from anywhere:
+
+<div class="agent-prompt">
+
+```text
+Clone https://github.com/INTENTIUS/behold and get me looking at a live
+infrastructure graph in my browser.
+
+I want the version that needs no cloud account and no credentials — the
+bundled demo that runs against a local emulator in Docker. Install what it
+needs, start it, and tell me the URL.
+
+Then walk me through what I am looking at: what the colours mean, and how to
+get a resource to change colour while I watch.
+
+If Docker is not running, say so and show me the source-graph-only version
+instead rather than failing.
+```
+
+</div>
+
+That is the whole onboarding path. It ends with a browser tab showing a real graph, a resource going from blue to green, and someone who can explain why.
+
+<Aside type="tip" title="Why a prompt and not a tutorial">
+If a competent stranger — or their agent — cannot operate the thing on day one from what is written down, the documentation is the problem. The prompt above is the test: it says what to achieve and what to do when the environment does not cooperate, and nothing about which commands to type. If it stops working, that is a bug in behold, not in your reading.
+</Aside>
+
+## What you get
+
+<CardGrid>
+	<Card title="One graph, every substrate" icon="puzzle">
+		Where Argo CD shows one cluster's tree, behold shows the mixed estate: cloud drift on AWS, a Kubernetes workload on the cluster that cloud declared, artifact presence on Helm — each substrate's own kind of truth, joined.
+	</Card>
+	<Card title="Coloured by what is actually there" icon="approve-check">
+		Green is managed, amber is foreign, blue is declared but not yet observed. The colours come from reading the live estate, not from a state file — behold hosts none.
+	</Card>
+	<Card title="Zoom from components to fields" icon="magnifier">
+		Components, a logical architecture diagram, composites, resources, attributes — and on Kubernetes, one tier further: the Pods your Deployment owns, and which field manager wrote each field.
+	</Card>
+	<Card title="Writes stay delegated" icon="seti:lock">
+		behold never mutates anything. Sync starts the `ApplyOp` you committed; Adopt starts your `ReconcileOp`, which opens a PR a human merges. It holds no apply credentials.
+	</Card>
+</CardGrid>
+
+## Where it sits
+
+```
+chant source ──build/lint──▶ graph IR ──behold──▶ live graph + drift + (delegated) actions
+              (deterministic)          (server + browser)
+```
+
+behold reads what [chant](https://github.com/INTENTIUS/chant) compiled and what the cloud reports, and shows you the difference. It is a viewer over a compiler — which is why it can be honest about the parts it could not read, instead of guessing.

@@ -1,0 +1,47 @@
+---
+title: What behold is
+description: A read-only viewer over a compiler, and what that buys.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+behold is a **live control plane** over a [chant](https://github.com/INTENTIUS/chant) estate. chant compiles typed TypeScript into spec-native infrastructure output; behold reads what chant declared, reads what the cloud reports, and shows you the difference.
+
+```
+chant source ──build/lint──▶ graph IR ──behold──▶ live graph + drift + (delegated) actions
+              (deterministic)          (server + browser)
+```
+
+## The mixed estate is the point
+
+Where Argo CD shows one cluster's tree, behold shows the estate that spans substrates: an EKS cluster declared in CloudFormation and the Kubernetes Service running on it, in one graph, with the edge between them intact.
+
+Each substrate has its own kind of truth, and behold keeps them distinct rather than flattening:
+
+| substrate | what "deployed" means there |
+|---|---|
+| AWS | CloudFormation lists the resource, and the last stack operation succeeded |
+| Kubernetes | the object exists, its owned Pods are running, and chant's field manager still owns the fields it wrote |
+| Azure / GCP | the resource answered a read — there is no deploy object to ask |
+
+That last row is why component status reads from a resource rollup rather than a stack: on a substrate with no deployment object, the stack cannot be the source of truth, because there isn't one.
+
+## Read-only core, delegated writes
+
+**behold never mutates anything itself.** This is the invariant, not a current limitation.
+
+- Every view is a read: `chant graph`, snapshots, live describes.
+- **Sync** starts the `ApplyOp` your project committed. **Adopt** starts your `ReconcileOp`, which opens a PR a human merges.
+- behold triggers Ops that run on your executor. It holds no apply credentials, and there is no endpoint in it that writes to a cloud.
+
+Authority stays in your committed source and your worker. If a request would have behold write to a cloud or to source directly, that is a bug.
+
+<Aside type="note" title="Why that matters for an agent">
+An agent driving behold can look at everything and cannot break anything. The dangerous half is behind a gate a human answers, in a workflow you wrote and reviewed. That division is what makes it safe to hand the URL to something that reads fast and does not get tired.
+</Aside>
+
+## What it is not
+
+- **Not a deployer.** It starts your Ops; chant's executor does the work.
+- **Not a state store.** It hosts no state file. Truth lives in the live system, and ownership is read from a marker on the resource.
+- **Not a new abstraction over your cloud.** The graph is your declarations and your resources, at their real names.

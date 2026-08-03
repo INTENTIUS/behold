@@ -1,0 +1,35 @@
+---
+title: Export a snapshot
+description: Freeze the estate into a self-contained static site anyone can open.
+---
+
+`behold export` captures whatever you are looking at into a **static folder** that any host can serve — read-only, but fully interactive.
+
+```sh
+npx behold export --out ./behold-export
+npx serve ./behold-export
+```
+
+Pan and zoom, the zoom dial, the radial layout, the inspect pane, and the env/tier pickers all work client-side. There is no backend and no live observe — it is a snapshot, and it says so.
+
+## What it captures
+
+Every read endpoint for the whole lens matrix — each env/tier × zoom × radial — rendered in-process by **the same handlers the live server runs**. A snapshot is byte-identical to what live would have shown at that moment.
+
+## With a live overlay
+
+```sh
+npx behold export ../my-project --env prod --out ./behold-export
+```
+
+Freezes the drift colours as they were when you exported. Useful for a review, an incident write-up, or showing someone an estate they have no credentials for.
+
+## Hosting it
+
+The bundle is deploy-ready for Cloudflare — `export` writes an assets-only `wrangler.jsonc`:
+
+```sh
+cd ./behold-export && npx wrangler deploy
+```
+
+Any static host works: GitHub Pages, S3, nginx, Cloudflare Pages. The live app needs Docker and a chant subprocess and cannot run on an edge worker; the pre-baked export happily can.

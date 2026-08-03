@@ -1,0 +1,64 @@
+---
+title: Run it in five minutes
+description: Two demos that need no cloud account — one AWS, one Kubernetes — and what to watch for in each.
+---
+
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Both demos below need **Docker** and nothing else. No cloud account, no credentials, no cost. Each ends with a resource changing colour while you watch, which is the thing worth seeing.
+
+<Aside type="tip">
+If you would rather not follow steps, hand [the agent prompt on the front page](/behold/) to a coding agent and let it do this.
+</Aside>
+
+## The AWS demo — your first apply
+
+One S3 bucket, deployed to a local [Floci](https://github.com/lex00/floci) emulator through the CloudFormation API.
+
+<Steps>
+
+1. Start it:
+
+   ```sh
+   git clone https://github.com/INTENTIUS/behold && cd behold
+   npm install
+   npm run demo
+   ```
+
+   That installs the bundled `example-writes` project's own dependencies, boots its emulator, and serves it at **http://localhost:4600**.
+
+2. Look at the graph. The bucket and its TLS policy are **blue** — declared in source, not yet deployed.
+
+3. Click **Run floci-apply**. The now-line streams Build → Apply → Verify as the bucket is created in the emulator.
+
+4. The nodes flip **green**. behold observed the live emulator and found them.
+
+</Steps>
+
+That is the whole loop: declared → applied → observed. Nothing was mocked, and behold did not do the applying — it triggered an Op the project committed.
+
+## The Kubernetes demo — and three things only k8s can show
+
+```sh
+npm run demo:k8s
+```
+
+Brings up a single-node [k3d](https://k3d.io) cluster, serves an nginx Deployment + Service, and tears the cluster back down on Ctrl-C. Same blue → **Run** → green loop, applied server-side with chant's own field manager.
+
+Then three things that exist on no other substrate:
+
+**Runtime children.** Zoom into the Deployment and its **Pods** appear — owned by the cluster through `ownerReferences`, never declared, never drift. "Deployment exists" tells an operator almost nothing; a crashlooping Pod or an EndpointSlice with no ready addresses tells them everything.
+
+**Field-level ownership.** Run `kubectl scale` or `kubectl label` out of band, refresh, and see which fields chant's field manager owns versus the one that just wrote. Foreign-owned reads differently from drifted — a field the HPA legitimately owns is not a problem.
+
+**An honest refusal.** Switch away from the bound kubectl context and behold reports **unobserved** — "I did not look" — rather than a confident, wrong "all gone".
+
+<Aside type="note" title="If Docker is not running">
+behold still serves the source graph and tells you what to start. It never dies on you, and it never paints a resource as absent because it could not read it.
+</Aside>
+
+## Then what
+
+- Point it at [your own project](/behold/start/your-project/).
+- Learn [what the colours and zoom tiers mean](/behold/using/reading-the-graph/).
+- [Freeze a snapshot](/behold/using/export/) into a static site you can share.
