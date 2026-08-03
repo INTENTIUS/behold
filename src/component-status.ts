@@ -15,7 +15,7 @@
  * epic keeps separate from this component-level facet. The component DAG
  * stays the spine; status hangs off each node by name.
  */
-import type { GraphIR, ComponentStatusRow } from "@intentius/chant";
+import type { GraphIR, ComponentStatusRow, ComponentResourceRollup } from "@intentius/chant";
 
 /** The colour behold paints a component node, in pinhole's `_status`
  * vocabulary (neutral/accent/good/warn/selected — src/overlay.ts documents
@@ -32,18 +32,16 @@ export type ComponentStatusColor = "good" | "warn" | "accent" | "neutral";
 /**
  * How a component's own resources answered (behold#98, chant#1300).
  *
- * Declared structurally rather than imported from `@intentius/chant` because
- * behold's floor is ^0.32.0 and the field lands in 0.34 — an older chant
- * simply omits it and the palette falls to the tier below, which is how every
- * other widening in this ladder has behaved. Swap this for the imported type
- * once behold's floor passes 0.34.
+ * Re-exported from `@intentius/chant` rather than declared structurally. It was
+ * a local interface while behold's floor was ^0.32.0 and the field landed in
+ * 0.34: on that floor `resources` could never arrive, so the rollup tier of
+ * `componentStatusColor` was unreachable and every component fell through to
+ * the `live` boolean. AWS hid that (a CloudFormation stack still answered);
+ * GCP and Azure, which have no deploy object, are what #98 was for and had
+ * nothing to paint from. Raising the floor to ^0.38.0 is what made the field
+ * reachable, and the alias now tracks chant's own definition.
  */
-export interface ResourceRollup {
-  total: number;
-  present: number;
-  absent: number;
-  unobserved: number;
-}
+export type ResourceRollup = ComponentResourceRollup;
 
 /**
  * Map a `ComponentStatusRow` to a paint colour.
@@ -130,9 +128,7 @@ export interface ResourceRollup {
  * proof this palette reads it as `warn` (red), not `good`.
  */
 export function componentStatusColor(
-  row: Pick<ComponentStatusRow, "reconciliation" | "detail" | "live" | "stack"> & {
-    resources?: ResourceRollup;
-  },
+  row: Pick<ComponentStatusRow, "reconciliation" | "detail" | "live" | "stack" | "resources">,
 ): ComponentStatusColor {
   // An UNHEALTHY deploy object decides on its own — a failed or in-flight
   // CloudFormation operation is a fact about the component that no count of
@@ -228,7 +224,7 @@ export function joinComponentStatus(ir: GraphIR, rows: ComponentStatusRow[]): Gr
             detail: row.detail,
             ...(row.live !== undefined ? { live: row.live } : {}),
             ...(row.stack ? { stack: row.stack } : {}),
-            ...((row as { resources?: ResourceRollup }).resources ? { resources: (row as { resources?: ResourceRollup }).resources } : {}),
+            ...(row.resources ? { resources: row.resources } : {}),
           } satisfies LiveStatus,
         },
       };
