@@ -1,0 +1,24 @@
+/* The drift palette the graph itself paints with, reused for the docs accent so
+   the site and the product read as one thing. */
+:root {
+	--sl-color-accent-low: #10243e;
+	--sl-color-accent: #2f6fb5;
+	--sl-color-accent-high: #b9d4f2;
+}
+:root[data-theme='light'] {
+	--sl-color-accent-low: #c3d9f2;
+	--sl-color-accent: #1f5691;
+	--sl-color-accent-high: #16324f;
+}
+
+/* The agent prompt on the landing page — a block meant to be copied whole. */
+.agent-prompt {
+	border: 1px solid var(--sl-color-gray-5);
+	border-left: 3px solid var(--sl-color-accent);
+	border-radius: 0.35rem;
+	padding: 1rem 1.25rem;
+	background: var(--sl-color-gray-7, var(--sl-color-black));
+}
+.agent-prompt p:first-child {
+	margin-top: 0;
+}

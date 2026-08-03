@@ -4,6 +4,9 @@
 whole estate — every substrate (AWS, k8s, GCP, Azure, Fly) in one graph, coloured by
 drift — then act through delegated, gated Ops.
 
+📖 **[Documentation](https://intentius.io/behold/)** — starts with an agent prompt that
+gets you to a running graph without reading anything else first.
+
 Where Argo CD shows one cluster's tree, behold shows the mixed-substrate estate:
 cloud drift on AWS, supply-chain drift on GitHub Actions, artifact presence on Helm —
 each substrate's own kind of truth, in one picture.

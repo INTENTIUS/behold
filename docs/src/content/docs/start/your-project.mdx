@@ -1,0 +1,69 @@
+---
+title: Open your own project
+description: Point behold at a chant project you already have — source graph first, live overlay when you want it.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+behold opens any [chant](https://github.com/INTENTIUS/chant) project. There is nothing to add to your project to get the source graph — no config file, no annotations, no plugin.
+
+## The source graph, with nothing set up
+
+```sh
+npx behold preview                  # the current directory
+npx behold preview ../my-project    # somewhere else
+```
+
+That serves your project's declared graph at **http://localhost:4600**. It shells your project's own `chant` binary, so what you see is what your project builds — same version, same lexicons, same result.
+
+<Aside type="note">
+`preview` with no path opens the current directory, so running it from inside your project is the shortest thing that works.
+</Aside>
+
+## Adding the live overlay
+
+To colour the graph by what is actually deployed, name an environment:
+
+```sh
+npx behold serve . --env prod
+```
+
+That needs whatever credentials reading your estate needs — behold uses your ambient environment and holds nothing of its own. Nodes become green (managed), amber (foreign), or blue (declared, not yet observed).
+
+If a read fails, the affected nodes report **unobserved** rather than being painted absent. A resource behold could not look at is never the same claim as a resource that is not there.
+
+## Watching for drift
+
+```sh
+npx behold serve . --env prod --poll 30
+```
+
+Re-queries every 30 seconds and pushes updates to the browser. Add `--auto-sync` to trigger a committed Op when drift appears — `apply` to heal toward source, `pull-request` to open a PR adopting live into source. It is off by default, routes per substrate, and never approves a gate.
+
+## Optional: a tier picker
+
+If your project's source branches on a build parameter — a deployment tier, say — declare it in a `.behold.json` at the project root and behold renders a picker for it:
+
+```json
+{
+  "tiers": {
+    "envVar": "KMV_TIER",
+    "values": ["minimal", "prod", "prod-ha"]
+  }
+}
+```
+
+`envVar` is the variable your source reads; behold sets it for the chant shell-out when a tier is picked. No file, or no `tiers` key, means no picker — which is the default for every project that does not opt in.
+
+This is behold's own config, deliberately separate from `chant.config.ts` so a viewer's concerns stay out of the compiler's.
+
+<Aside type="caution" title="If every tier renders the same graph">
+Your project's chant needs to resolve build parameters in `chant graph`, which landed in chant 0.38.0. A caret on a `0.x` pins the minor, so `^0.37.x` cannot reach it — bump to `^0.38.0`.
+</Aside>
+
+## What behold needs from your project
+
+Nothing, for the source graph. For the rest:
+
+- **Live overlay** — an environment your lexicons can read, and credentials for it.
+- **Action buttons** — Ops you committed. **Sync** appears if the project has an `ApplyOp`, **Adopt** per foreign node if it has a `ReconcileOp`, **Run** for anything else. A project with no Ops shows no buttons, by design.

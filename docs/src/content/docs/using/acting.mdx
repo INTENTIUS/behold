@@ -1,0 +1,47 @@
+---
+title: Acting on it
+description: Sync, Adopt, gates, rollback and auto-sync — all of it delegated to Ops you committed.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Every action below starts something **you** committed, running on **your** executor. behold holds no credentials and performs no cloud write.
+
+## The buttons, and where they come from
+
+| button | starts | direction |
+|---|---|---|
+| **Sync** | your `ApplyOp` | code → cloud |
+| **Adopt** | your `ReconcileOp` | cloud → code, as a PR |
+| **Run** | any other committed Op | whatever you wrote |
+
+Which buttons appear depends on what your project declares. A project with no Ops shows none — by design, not a missing feature.
+
+## Gates
+
+A destructive apply pauses for approval. behold surfaces the gate and the **Approve** signal; the workflow is durable, so the pause survives a restart of anything, including behold.
+
+**Auto-sync never approves a gate.** That is the invariant that makes an automatic loop acceptable at all.
+
+## Auto-sync
+
+Off by default. With `--poll` and `--auto-sync`, a detected drift triggers a committed Op:
+
+```sh
+npx behold serve . --env prod --poll 30 --auto-sync apply
+```
+
+- `apply` — heal the cloud toward source, via your `ApplyOp`.
+- `pull-request` — adopt live into source, via your `ReconcileOp`, as a PR someone merges.
+
+It routes **per substrate**: drift in the Kubernetes half triggers the Op that owns Kubernetes, not whichever Op sorts first. Where several Ops match a substrate, or none does, it declines and says so on the now-line rather than guessing. A self-heal loop that picks the wrong half of an estate to rewrite is worse than one that stops.
+
+While a rollback PR is open, `pull-request` mode suspends — otherwise the loop would re-adopt exactly what the rollback removed, and the two would fight.
+
+<Aside type="caution" title="One write at a time">
+All delegated writes share one guard. If something is already running, a second trigger is refused and says which. It is not queued — the substrate waits until it drifts again.
+</Aside>
+
+## Rollback
+
+Rollback opens a PR restoring source to a prior revision. Merging it moves source; the estate follows on the next apply. behold never force-reverts a cloud.

@@ -1,0 +1,45 @@
+---
+title: Reading the graph
+description: What the colours mean, what each zoom tier shows, and what behold does when it cannot see.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## The colours
+
+| colour | means | reads as |
+|---|---|---|
+| **green** | managed | chant declared it and the estate confirms it |
+| **amber** | foreign | it is there, chant did not put it there |
+| **blue** | pending | declared, not yet observed as deployed |
+| **grey** | neutral | nothing deployed for this component yet |
+
+A node behold could not read is **unobserved** — reported as a hole, never painted as absent. "I did not look" and "it is gone" are different claims, and conflating them is how a viewer talks someone into deleting something.
+
+## The zoom dial
+
+From widest to narrowest:
+
+1. **Components** — the deploy units and the waves they go out in.
+2. **Logical** — an architecture diagram in the shape the substrate actually has. AWS nests `region → VPC → subnet`; Azure nests under the resource group; GCP is `project → location`, with no network containment, because the emulated GCP surface has no VPC to draw.
+3. **Composites** — the higher-level constructs your source declares.
+4. **Resources** — individual resources at their real provider names.
+5. **Attributes** — the properties on one resource.
+
+On Kubernetes there is one tier further down, below anything you declared:
+
+**Runtime** — the Pods, ReplicaSets and EndpointSlices the cluster created and maintains through `ownerReferences`. They are runtime children, not drift: nothing declared them and nothing should. This tier is why a healthy-looking Deployment in front of a dead Service is visible rather than green.
+
+<Aside type="tip" title="Only Kubernetes gets this">
+The cluster maintains an owner chain and per-field ownership records that no other substrate has. behold uses them where they exist and does not pretend they exist elsewhere — an AWS stack at `CREATE_COMPLETE` genuinely is the end of what is knowable there.
+</Aside>
+
+## Field ownership, on Kubernetes
+
+The API server records, per field, which manager last wrote it. chant compiled the manifest, so it knows which fields it authored. Put together, the inspect pane can say *these fields are chant's, `spec.replicas` is the HPA's, and someone edited the image by hand*.
+
+Foreign-owned is shown as a distinct state from drifted. A field the HPA legitimately owns is not a problem, and colouring it like drift would recreate the noise that per-field ownership exists to remove.
+
+## Cross-substrate edges
+
+An estate that spans providers keeps its edges: a managed cluster declared in your cloud lexicon and the workload running on it render connected, in the live view and not only in the source graph.
