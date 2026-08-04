@@ -54,28 +54,53 @@ export function nonResourceEntities(ir: GraphIR): Set<string> {
   return out;
 }
 
-/** Group an entity-graph IR's nodes by component, via the `src/<component>/`
- * source-location convention. A node whose `sourceLoc.file` isn't nested
- * under a top-level `src/<dir>/` (no file, or a bare `src/<file>` with no
- * subdir) is skipped — a convention match, not a chant-native fact.
+/** The directory segment of `sourceLoc.file` that names the component owning a
+ * node, or undefined when no segment does.
+ *
+ * chant emits `sourceLoc.file` relative to the graph root it was handed, and
+ * `graphPath()` (src/chant.ts) hands it the project's `sourceDir` — so a
+ * component's files arrive as `<component>/<rest>` with no `src/` prefix at
+ * all. Both loomster and kubemicrovm-ops declare `sourceDir: "src"` and both
+ * emit `loom-db/database.ts` / `aws-plane/plane.ts`. A project graphed from
+ * its root instead (the `legacyGraphPath` fallback, no `sourceDir` declared)
+ * still carries the prefix, so both shapes have to match.
+ *
+ * `known` is what disambiguates them: with the real component set in hand,
+ * the owning segment is simply the first one that names a component, wherever
+ * it sits in the path. That drops `src/examples/`, `src/composites/`,
+ * `src/lib/` for free — they name no component — so the phantom-component
+ * guard is the same mechanism rather than a second rule.
+ *
+ * Without `known` there is nothing to match against, so the original
+ * `src/<component>/<rest>` convention stands: prefix required, and a nested
+ * file required so a bare `src/<file>` is not read as a component. That path
+ * is only reachable from tests now — both callers in server.ts pass `known`. */
+function componentSegment(parts: string[], known?: Set<string>): string | undefined {
+  if (known) {
+    // Never the last segment: that is the filename, and a file named after a
+    // component is not the component's directory.
+    return parts.slice(0, -1).find((p) => known.has(p));
+  }
+  return parts[0] === "src" && parts.length >= 3 ? parts[1] : undefined;
+}
+
+/** Group an entity-graph IR's nodes by component, via the source-location
+ * convention: a node belongs to the component whose directory its
+ * `sourceLoc.file` sits under. See `componentSegment` for why that directory
+ * is matched by name rather than by position.
  *
  * `known`, when given, is the real deployable component set (from `chant graph
- * --components`). A `src/<dir>/` that isn't a real component — `src/examples/`,
- * `src/composites/`, `src/lib/`, `src/local/` — is then NOT treated as a
- * component: its nodes are dropped here, so summarizePlan counts them as
- * `uncorrelated` (honest — they belong to no deployable component) rather than
- * inventing a phantom "examples" component with pending changes. Pure. */
+ * --components`). A source dir that isn't a real component — `src/examples/`,
+ * `src/composites/`, `src/lib/`, `src/local/` — is then NOT treated as one:
+ * its nodes are dropped here, so summarizePlan counts them as `uncorrelated`
+ * (honest — they belong to no deployable component) rather than inventing a
+ * phantom "examples" component with pending changes. Pure. */
 export function resourcesByComponent(ir: GraphIR, known?: Set<string>): Record<string, ComponentResource[]> {
   const byComponent: Record<string, ComponentResource[]> = {};
   for (const n of ir.nodes) {
-    const file = n.sourceLoc?.file;
-    const parts = file?.split("/") ?? [];
-    // "src/<component>/<rest>" — needs a nested file, so a component's own
-    // top-level declaration file (e.g. "src/loom-agents.ts", no subdir)
-    // wouldn't match; loomster nests every component under its own dir.
-    if (parts[0] !== "src" || parts.length < 3) continue;
-    const component = parts[1];
-    if (known && !known.has(component)) continue; // a non-component src dir (examples, composites, lib…)
+    const parts = n.sourceLoc?.file?.split("/") ?? [];
+    const component = componentSegment(parts, known);
+    if (!component) continue;
     (byComponent[component] ??= []).push({
       id: n.id,
       kind: n.kind,

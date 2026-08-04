@@ -96,6 +96,58 @@ describe("resourcesByComponent", () => {
   });
 });
 
+// The fixture above is the shape this module was written against, and it is
+// not the shape chant emits. chant reports `sourceLoc.file` relative to the
+// graph root it is handed, and `graphPath()` hands it the project's
+// `sourceDir` — so the leading `src/` is already spent and never appears.
+// Verified by running `chant graph src --format ir` against both consumer
+// repos: loomster emits `loom-agents/agents.ts`, kubemicrovm-ops emits
+// `aws-plane/plane.ts`. The prefixed fixture passed while the live join
+// returned {} for every project, which is what /api/reconcile's
+// `byComponent: {}, uncorrelated: 11` was.
+describe("resourcesByComponent — sourceDir-relative paths, as chant actually emits them", () => {
+  const known = new Set(["aws-plane", "workload", "operator", "golden-image"]);
+  const ir: GraphIR = {
+    nodes: [
+      { id: "artifactBucket", kind: "AWS::S3::Bucket", lexicon: "aws", attrs: {}, sourceLoc: { file: "aws-plane/plane.ts", line: 60 } },
+      { id: "buildRole", kind: "AWS::IAM::Role", lexicon: "aws", attrs: {}, sourceLoc: { file: "aws-plane/plane.ts", line: 104 } },
+      { id: "image", kind: "K8s::KubeMicroVM::MicroVMImage", lexicon: "k8s", attrs: {}, sourceLoc: { file: "workload/workload.ts", line: 96 } },
+      // src/lib/ is graphed but names no component — dropped, not a phantom.
+      { id: "helper", kind: "Thing", lexicon: "aws", attrs: {}, sourceLoc: { file: "lib/naming.ts", line: 1 } },
+    ],
+    edges: [],
+    groups: {},
+  };
+
+  it("correlates a node whose path carries no src/ prefix", () => {
+    const byComponent = resourcesByComponent(ir, known);
+    expect(Object.keys(byComponent).sort()).toEqual(["aws-plane", "workload"]);
+    expect(byComponent["aws-plane"]).toHaveLength(2);
+    expect(byComponent["workload"]).toHaveLength(1);
+  });
+
+  it("still correlates the prefixed form, for a project graphed from its root", () => {
+    const prefixed: GraphIR = {
+      nodes: [{ id: "b", kind: "AWS::S3::Bucket", lexicon: "aws", attrs: {}, sourceLoc: { file: "src/aws-plane/plane.ts", line: 60 } }],
+      edges: [],
+      groups: {},
+    };
+    expect(Object.keys(resourcesByComponent(prefixed, known))).toEqual(["aws-plane"]);
+  });
+
+  it("does not read a filename as a component, even when it matches one", () => {
+    // `src/lib/workload.ts` is a helper named after a component, not the
+    // component's own directory. Matching the last segment would invent an
+    // owner for it.
+    const decoy: GraphIR = {
+      nodes: [{ id: "d", kind: "Thing", lexicon: "aws", attrs: {}, sourceLoc: { file: "lib/workload.ts", line: 1 } }],
+      edges: [],
+      groups: {},
+    };
+    expect(resourcesByComponent(decoy, known)).toEqual({});
+  });
+});
+
 // #104 — an output is a value a stack publishes, never a resource anyone
 // creates. chant emits `chant:output` on every lexicon (13 of them in the
 // mixed AWS example, alongside 3 CloudFormation Parameters), so listing only
