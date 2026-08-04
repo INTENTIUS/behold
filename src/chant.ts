@@ -508,13 +508,32 @@ interface GitlabGenerateJson {
   yaml: string;
 }
 
-/** Build the `chant build --components --generate gitlab --format json` argv.
+/** The lexicons that can generate a component pipeline — chant's own list
+ * ("GitLab, GitHub, and Forgejo are supported today", components/cli-support.ts),
+ * and the names a project declares them under in `chant.config.ts`. */
+export const CI_FORGES = ["gitlab", "github", "forgejo"] as const;
+export type CiForge = (typeof CI_FORGES)[number];
+
+/** The forge a project's CI facet should be generated for, or undefined when it
+ * declares none.
+ *
+ * behold used to ask for `gitlab` unconditionally. A project that declares no
+ * forge lexicon has nothing to generate from, so chant refused with `Lexicon
+ * "gitlab" does not support generate mode` — a 500 per lens, for a facet that
+ * simply does not apply. A project on GitHub got asked for GitLab, which is the
+ * same mistake with a worse failure mode: it fails for a project that does have
+ * a pipeline. Pure. */
+export function ciForgeFor(lexicons: readonly string[]): CiForge | undefined {
+  return CI_FORGES.find((forge) => lexicons.includes(forge));
+}
+
+/** Build the `chant build --components --generate <forge> --format json` argv.
  * `--format json` is the structured read (verified against loomster's chant
  * `--help`: "build: json (default) or yaml") — preferred over parsing the
  * plain YAML chant prints by default, which would need line-scraping to find
  * each job's stage/needs. Pure; exported for testing. */
-export function ciPipelineArgs(opts: GraphOptions = {}): string[] {
-  const args = ["build", "--components", "--generate", "gitlab", "--format", "json"];
+export function ciPipelineArgs(opts: GraphOptions = {}, forge: CiForge = "gitlab"): string[] {
+  const args = ["build", "--components", "--generate", forge, "--format", "json"];
   if (opts.env) args.push("--env", opts.env);
   return args;
 }
@@ -543,8 +562,8 @@ export function parseCiPipeline(stdout: string): CiPipeline {
  * the component-DAG nodes (#56) by component name. Same shell-out shape as
  * `componentGraphIr`; requires a chant that ships generate mode (chant #563,
  * ships well before the M1.0 spike's 0.18.27 pin, so no extra version gate). */
-export function ciPipeline(projectDir: string, opts: GraphOptions = {}): Promise<CiPipeline> {
-  const args = ciPipelineArgs(opts);
+export function ciPipeline(projectDir: string, opts: GraphOptions = {}, forge: CiForge = "gitlab"): Promise<CiPipeline> {
+  const args = ciPipelineArgs(opts, forge);
   return runChantRaw(args, projectDir, envOverridesFor(opts)).then(({ code, stdout, stderr }) => {
     if (code !== 0) throw new ChantCliError(args, code, stderr);
     return parseCiPipeline(stdout);

@@ -26,6 +26,7 @@ import {
   componentGraphIr,
   componentStatus,
   ciPipeline,
+  ciForgeFor,
   lifecyclePlan,
   runChantRaw,
   ChantCliError,
@@ -607,9 +608,28 @@ export function createApp(
   app.get("/api/ci", async (c) => {
     const opts = optsFromQuery(new URL(c.req.url), tierEnvVar);
     const env = opts.env ?? cfg.env;
+    // Which forge, if any — behold asked for `gitlab` unconditionally, which is
+    // wrong two ways. A project declaring no forge lexicon has no pipeline to
+    // generate, and chant said so with `Lexicon "gitlab" does not support
+    // generate mode` — a 500 per lens for a facet that does not apply, and one
+    // `errorResponse` then re-attributed to the picked tier, so a
+    // KubeMicroVM estate reported "chant couldn't evaluate the prod-ha tier"
+    // about a CI pipeline it never had. A project on GitHub got asked for
+    // GitLab, which is the same bug where a pipeline does exist.
+    const { lexicons } = await detectProject(cfg.projectDir);
+    const forge = ciForgeFor(lexicons);
+    // Absent, not failed. The SPA reads `j.jobs || []` and omits the CI section
+    // when it is empty, which is exactly right for a project without a forge —
+    // so this is the answer it already knows how to render, arrived at without
+    // a subprocess or an error.
+    if (!forge) return c.json({ stages: [], jobs: [], forge: null });
     try {
-      const { stages, jobs } = await ciPipeline(cfg.projectDir, { ...tierTargetOpts(opts), ...(env ? { env } : {}) });
-      return c.json({ stages, jobs });
+      const { stages, jobs } = await ciPipeline(
+        cfg.projectDir,
+        { ...tierTargetOpts(opts), ...(env ? { env } : {}) },
+        forge,
+      );
+      return c.json({ stages, jobs, forge });
     } catch (err) {
       return errorResponse(c, opts, err);
     }
