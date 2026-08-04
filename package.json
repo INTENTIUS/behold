@@ -2,8 +2,7 @@
   "name": "@intentius/behold",
   "version": "0.2.0",
   "type": "module",
-  "description": "behold — a live control plane on chant. See your whole estate (every substrate in one graph), coloured by drift; act through delegated, gated Ops.",
-  "private": true,
+  "description": "behold \u2014 a live control plane on chant. See your whole estate (every substrate in one graph), coloured by drift; act through delegated, gated Ops.",
   "bin": {
     "behold": "./bin/behold.js"
   },
@@ -12,6 +11,10 @@
     "dist",
     "web"
   ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "dev": "tsx src/cli.ts",
     "demo": "npm --prefix example-writes install && tsx src/cli.ts serve example-writes --local --env prod",

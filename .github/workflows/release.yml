@@ -1,0 +1,98 @@
+name: release
+
+# Tag-driven, and published with npm trusted publishing — OIDC from this
+# workflow rather than a long-lived NPM_TOKEN in repository secrets. npm mints
+# a short-lived credential for this repo + this workflow filename, which means
+# there is no token to leak, rotate, or scope wrongly.
+#
+# Two things have to line up outside this file:
+#   1. npmjs.com → the package → Settings → Trusted Publisher, naming this
+#      repository and `release.yml`. Until that exists the publish step fails
+#      with a 404/403 rather than falling back to anything.
+#   2. `id-token: write` below. Without it there is no OIDC token to exchange
+#      and npm reports missing credentials.
+#
+# Provenance rides along automatically: publishing over OIDC attests what built
+# the tarball, and `publishConfig.provenance` makes that explicit rather than
+# implied.
+on:
+  push:
+    tags: ["v*"]
+  # Rehearse everything that can say no, without publishing.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      # The OIDC token npm exchanges for a publish credential. `contents: read`
+      # is inherited from the top; both are needed and neither is enough alone.
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+          registry-url: 'https://registry.npmjs.org'
+
+      # Trusted publishing needs npm 11.5.1 or newer. Node 24 ships an npm 11,
+      # but the exact patch moves with the runner image, so pin the floor here
+      # rather than discover it on a tag.
+      - name: npm with trusted publishing support
+        run: |
+          npm install -g npm@latest
+          npm --version
+
+      - run: npm ci
+
+      # Everything that can say no runs before the publish, in the order that
+      # fails cheapest first.
+      - name: typecheck
+        run: npm run tsc
+
+      - name: test
+        run: npm test
+
+      - name: build
+        run: npm run build
+
+      # What actually ships, before it ships. `files` is bin + dist + web, and
+      # web is the SPA — a tarball missing it publishes a server with no UI,
+      # which would look fine here and break on install.
+      - name: the tarball carries bin, dist and web
+        run: |
+          npm pack --dry-run --json > /tmp/pack.json
+          node -e '
+            const f = require("/tmp/pack.json")[0].files.map(x => x.path);
+            const want = ["bin/behold.js", "dist/cli.js", "web/index.html", "web/app.js"];
+            const missing = want.filter(w => !f.includes(w));
+            if (missing.length) {
+              console.error("tarball is missing:", missing.join(", "));
+              process.exit(1);
+            }
+            console.log(`tarball: ${f.length} files, all four checked present`);
+          '
+
+      # The tag names the version, so a tag that disagrees with package.json
+      # would publish something nobody asked for.
+      - name: the tag matches the version
+        if: github.ref_type == 'tag'
+        run: |
+          pkg="$(node -p 'require("./package.json").version')"
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$pkg" != "$tag" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match package.json ${pkg}" >&2
+            exit 1
+          fi
+          echo "publishing ${pkg}"
+
+      - name: publish
+        if: github.ref_type == 'tag'
+        run: npm publish
