@@ -11,6 +11,7 @@ import {
   graphPath,
   componentStatusArgs,
   ciPipelineArgs,
+  ciForgeFor,
   parseCiPipeline,
   envOverridesFor,
   lifecyclePlanArgs,
@@ -350,6 +351,42 @@ describe("ciPipelineArgs", () => {
       "--env",
       "local",
     ]);
+  });
+
+  it("generates for the forge it is given, not always gitlab", () => {
+    expect(ciPipelineArgs({}, "github")).toContain("github");
+    expect(ciPipelineArgs({}, "forgejo")).toEqual([
+      "build",
+      "--components",
+      "--generate",
+      "forgejo",
+      "--format",
+      "json",
+    ]);
+  });
+});
+
+// behold asked chant for a `gitlab` pipeline whatever the project declared.
+// For a project with no forge lexicon that is a 500 per lens about a facet
+// that does not apply — and `errorResponse` re-attributes it to the picked
+// tier, so a KubeMicroVM estate reported "chant couldn't evaluate the prod-ha
+// tier" about a CI pipeline it never had. For a GitHub project it is the same
+// bug where a pipeline does exist.
+describe("ciForgeFor", () => {
+  it("finds the forge a project declares", () => {
+    expect(ciForgeFor(["aws", "gitlab"])).toBe("gitlab");
+    expect(ciForgeFor(["github", "docker"])).toBe("github");
+    expect(ciForgeFor(["forgejo"])).toBe("forgejo");
+  });
+
+  it("is undefined for a project that declares none", () => {
+    // kubemicrovm-ops — two planes and an executor, no forge.
+    expect(ciForgeFor(["aws", "k8s", "temporal"])).toBeUndefined();
+    expect(ciForgeFor([])).toBeUndefined();
+  });
+
+  it("picks one deterministically when a project declares several", () => {
+    expect(ciForgeFor(["github", "gitlab"])).toBe(ciForgeFor(["gitlab", "github"]));
   });
 });
 
