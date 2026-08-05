@@ -69,8 +69,12 @@ export function zoomNote(zoom: Zoom, ir: NotableGraph, compositeEdgesAttached?: 
   }
 
   if (zoom === "runtime") {
-    const boxes = Object.keys(ir.groups?.byContainer ?? {}).length;
-    return boxes === 0
+    // Counted from the children themselves, not from byContainer: chant's own
+    // live containment (VPC ⊃ subnet, #779) populates byContainer on a mixed
+    // estate, which used to mask this note exactly where it matters — a cloud
+    // estate whose k8s half has no owner-referenced children (#148).
+    const children = ir.nodes.filter((n) => (n as { runtimeOwner?: string }).runtimeOwner).length;
+    return children === 0
       ? "nothing below the declaration boundary — no owner-referenced children on this substrate"
       : undefined;
   }
