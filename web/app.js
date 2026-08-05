@@ -1820,10 +1820,12 @@ function signal(name, gate) {
 // live-import lexicons the server allows so inspect() can gate the button.
 let adopt = { reconcile: null, lexicons: [] };
 function adoptable(node) {
+  // `warn` is chant's overlay tag for foreign — "foreign" is only ever the
+  // display label (STATUS_LABEL above), never the attr's value (#145).
   return (
     adopt.reconcile &&
     node.attrs &&
-    node.attrs._status === "foreign" &&
+    node.attrs._status === "warn" &&
     adopt.lexicons.includes(node.lexicon)
   );
 }
