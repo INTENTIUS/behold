@@ -247,21 +247,48 @@ describe("projectTopology — lens dispatch (#102)", () => {
     expect(byContainer["resource group prod"].some((m) => /^VNet /.test(m))).toBe(true);
   });
 
-  it("prefers the AWS lens on a mixed graph — the AWS lens owns that shape today", () => {
+  // #74 — this used to assert the opposite, that AWS won and the other
+  // substrate was dropped. That is the behaviour the issue is about: an estate
+  // that is genuinely two substrates had one of them filtered away before
+  // rendering, and for kubemicrovm-ops (an AWS plane and a Kubernetes plane)
+  // the half discarded was the half the estate exists to show.
+  it("projects every substrate on a mixed graph rather than picking one", () => {
     const mixed = { ...awsIr, nodes: [...awsIr.nodes, ...azureIr.nodes] } as unknown as GraphIR;
     const { ir: out, byContainer } = projectTopology(mixed, "prod");
     expect(out.nodes.map((x) => x.id)).toContain("igw");
-    expect(out.nodes.map((x) => x.id)).not.toContain("vm");
-    expect(Object.keys(byContainer).some((k) => /resource group/.test(k))).toBe(false);
+    expect(out.nodes.map((x) => x.id)).toContain("vm");
+    expect(Object.keys(byContainer).some((k) => /resource group/.test(k))).toBe(true);
   });
 
-  it("returns an empty projection for a graph with neither cloud", () => {
+  it("leaves a single-substrate graph exactly as it was, since the other lenses contribute nothing", () => {
+    const { ir: out, byContainer } = projectTopology(awsIr, "prod");
+    expect(out.nodes.map((x) => x.id)).toEqual(["igw"]);
+    expect(Object.keys(byContainer).some((k) => /resource group|project |cluster/.test(k))).toBe(false);
+  });
+
+  // Was "returns an empty projection for a graph with neither cloud" — k8s now
+  // has a lens of its own (#74), so a Service is a card rather than nothing.
+  it("projects a k8s-only graph through the k8s lens", () => {
     const k8sOnly = {
-      nodes: [{ id: "svc", kind: "K8s::Core::Service", lexicon: "k8s", attrs: {} }],
+      nodes: [
+        { id: "svc", kind: "K8s::Core::Service", lexicon: "k8s", attrs: { metadata: { namespace: "web" } } },
+      ],
       edges: [],
       groups: {},
     } as unknown as GraphIR;
     const { ir: out, byContainer } = projectTopology(k8sOnly, "prod");
+    expect(out.nodes.map((x) => x.id)).toEqual(["svc"]);
+    expect(byContainer["cluster prod"]).toContain("namespace web");
+    expect(byContainer["namespace web"]).toContain("svc");
+  });
+
+  it("still returns nothing for a graph no lens recognises", () => {
+    const unknown = {
+      nodes: [{ id: "thing", kind: "Fly::App", lexicon: "fly", attrs: {} }],
+      edges: [],
+      groups: {},
+    } as unknown as GraphIR;
+    const { ir: out, byContainer } = projectTopology(unknown, "prod");
     expect(out.nodes).toHaveLength(0);
     expect(byContainer).toEqual({});
   });

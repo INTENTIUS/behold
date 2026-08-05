@@ -34,6 +34,7 @@
 import type { GraphIR, IRNode, IREdge } from "@intentius/chant";
 import { projectAzureLogical } from "./logical-azure.ts";
 import { projectGcpLogical } from "./logical-gcp.ts";
+import { projectK8sLogical } from "./logical-k8s.ts";
 
 /** The container-nesting map pinhole's `layoutArchitecture` consumes:
  * `containerId → memberIds`, where a member may itself be a container id (the
@@ -301,26 +302,49 @@ function nearestByRef(start: string, want: Set<string>, refOut: Map<string, Set<
  * pinhole's `layoutArchitecture`. Pure; the input IR is untouched.
  */
 /**
- * Pick the topology lens an estate's substrate calls for (#102).
+ * Project the topology of every substrate the estate contains (#102, #74).
  *
  * An architecture diagram is substrate-shaped: AWS nests region → VPC → subnet
  * off declared resources and `$ref`s, Azure nests resource group → VNet →
- * subnet off an environment name and ARM expression strings. One lens cannot be
- * both, which is why this module has always said so in its own header.
+ * subnet off ARM expression strings, GCP project → location off plain
+ * attributes (#101), Kubernetes cluster → namespace off `metadata` (#74). One
+ * lens cannot be all four, which is why each is its own module.
  *
- * Dispatch is by which cloud lexicon the graph actually contains — AWS nests
- * region/VPC/subnet, Azure resource group/VNet/subnet, GCP project/location
- * (#101, which has no network containment at all). A graph with none of them
- * gets the AWS lens, which filters to `aws` nodes and so returns an empty
- * projection — the same nothing it returned before this existed.
+ * What changed in #74 is that this composes them instead of choosing one.
+ *
+ * It used to dispatch — `azure && !aws`, `gcp && !aws`, else AWS — which reads
+ * as "pick the substrate this estate is", and is wrong for an estate that is
+ * genuinely two. kubemicrovm-ops declares an AWS plane and a Kubernetes plane,
+ * so `hasAws` won and the entire Kubernetes half was filtered away before
+ * rendering. It projected to a single node, and the half the estate exists to
+ * show was the half discarded.
+ *
+ * Each lens already filters to its own lexicon and returns an empty projection
+ * for a graph with none of its nodes, so running all four and merging is safe:
+ * a single-substrate estate gets byte-identical output to before, because the
+ * other three contribute nothing. Box titles are per-lens synthetic strings and
+ * node ids are unique across the IR, so there is nothing to collide.
  */
 export function projectTopology(ir: GraphIR, env?: string): LogicalProjection {
-  const hasAws = ir.nodes.some((n) => n.lexicon === "aws");
-  const hasAzure = ir.nodes.some((n) => n.lexicon === "azure");
-  const hasGcp = ir.nodes.some((n) => n.lexicon === "gcp");
-  if (hasAzure && !hasAws) return projectAzureLogical(ir, env);
-  if (hasGcp && !hasAws) return projectGcpLogical(ir, env);
-  return projectLogical(ir);
+  const projections = [
+    projectLogical(ir),
+    projectAzureLogical(ir, env),
+    projectGcpLogical(ir, env),
+    projectK8sLogical(ir, env),
+  ];
+
+  const nodes: IRNode[] = [];
+  const edges: IREdge[] = [];
+  const byContainer: ByContainer = {};
+  for (const p of projections) {
+    nodes.push(...p.ir.nodes);
+    edges.push(...p.ir.edges);
+    for (const [parent, children] of Object.entries(p.byContainer)) {
+      const arr = byContainer[parent] ?? (byContainer[parent] = []);
+      for (const c of children) if (!arr.includes(c)) arr.push(c);
+    }
+  }
+  return { ir: { nodes, edges, groups: {} }, byContainer };
 }
 
 export function projectLogical(ir: GraphIR): LogicalProjection {
