@@ -16,6 +16,12 @@ describe("isOwnNameAttr", () => {
   it("is false for non-name attributes", () => {
     expect(isOwnNameAttr("AWS::RDS::DBInstance", "Engine")).toBe(false);
   });
+  // #147 — Azure kinds are `Provider/type` with a slash, not `A::B::C`.
+  it("reads Azure's slash-form kinds", () => {
+    expect(isOwnNameAttr("Microsoft.Network/virtualNetworks", "virtualNetworkName")).toBe(true);
+    expect(isOwnNameAttr("Microsoft.ContainerService/managedClusters", "name")).toBe(true);
+    expect(isOwnNameAttr("Microsoft.Compute/virtualMachines", "virtualNetworkName")).toBe(false);
+  });
 });
 
 describe("addValueMatchEdges", () => {
@@ -54,6 +60,34 @@ describe("addValueMatchEdges", () => {
     };
     // Ambiguous owner → no phantom edge to either cluster.
     expect(addValueMatchEdges(ir).edges).toHaveLength(0);
+  });
+
+  // #147 — an AKS-shaped pair: the workspace names the cluster by its literal
+  // name. Before the slash-form fix, typeSegment returned the whole kind
+  // string, isOwnNameAttr never matched, and no azure estate got any edge from
+  // this pass (azure IRs carry no symbolic edges at all, so it was their only
+  // in-behold edge source).
+  it("connects Azure resources wired by a literal name", () => {
+    const ir: GraphIR = {
+      nodes: [
+        {
+          id: "cluster",
+          kind: "Microsoft.ContainerService/managedClusters",
+          lexicon: "azure",
+          attrs: { name: "aks-microservice" },
+        },
+        {
+          id: "workspace",
+          kind: "Microsoft.OperationalInsights/workspaces",
+          lexicon: "azure",
+          attrs: { name: "aks-logs", clusterName: "aks-microservice" },
+        },
+      ],
+      edges: [],
+      groups: {},
+    } as unknown as GraphIR;
+    const out = addValueMatchEdges(ir);
+    expect(out.edges).toContainEqual(expect.objectContaining({ from: "workspace", to: "cluster", inferred: true }));
   });
 
   it("ignores short values that would collide", () => {
