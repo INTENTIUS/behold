@@ -154,5 +154,12 @@ export function projectK8sLogical(ir: GraphIR, env?: string): LogicalProjection 
   }
   if (clusterScoped) child(CLUSTER_TITLE, CLUSTER_SCOPED);
 
-  return { ir: { nodes: headline, edges: [], groups: {} }, byContainer };
+  // Edges between two surviving cards pass through (#143). The IR has none of
+  // its own for k8s; what arrives here is what the declared-attribute pass
+  // (src/k8s-edges.ts) derived — selector, ingress backend, scaleTargetRef —
+  // which is exactly the request path an architecture diagram wants.
+  const kept = new Set(headline.map((n) => n.id));
+  const edges = ir.edges.filter((e) => kept.has(e.from) && kept.has(e.to));
+
+  return { ir: { nodes: headline, edges, groups: {} }, byContainer };
 }
