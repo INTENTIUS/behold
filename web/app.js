@@ -46,6 +46,16 @@ function recolorNodesByCategory(ir) {
       else if (role === "inks") el.setAttribute("stroke", ink);
     }
   }
+  // Runtime children get their bar coloured here (#144): pinhole's status
+  // palette has no `runtime` token, so chant's `_status: runtime` falls through
+  // to the neutral bar and a Pod reads exactly like an unobserved node. The bar
+  // is the 4px rect pinhole draws second inside each node group.
+  const statusOf = new Map(graphIr.nodes.map((n) => [n.id, n.attrs && n.attrs._status]));
+  for (const g of svg.querySelectorAll("[data-node-id]")) {
+    if (statusOf.get(g.getAttribute("data-node-id")) !== "runtime") continue;
+    const bar = g.querySelector('rect[width="4"]');
+    if (bar) bar.setAttribute("fill", "var(--runtime)");
+  }
 }
 onThemeChange(() => recolorNodesByCategory());
 
@@ -1603,7 +1613,10 @@ async function refresh() {
   meta.textContent = "refreshing…";
   showLoading("refreshing live state…");
   try {
-    const q = view.env ? `?env=${encodeURIComponent(view.env)}` : "";
+    // Carry the active zoom's runtime flag so a refresh from the resources
+    // tier doesn't come back wearing the runtime tier's Pods (#144).
+    const runtime = zoomValue() === "runtime" ? "&runtime=1" : "";
+    const q = view.env ? `?env=${encodeURIComponent(view.env)}${runtime}` : "";
     const res = await fetch(`/api/refresh${q}`, { method: "POST" });
     if (!res.ok) throw new Error((await res.json()).error || res.statusText);
     const { ir, svg, meta: m, captured } = await res.json();

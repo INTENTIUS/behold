@@ -42,7 +42,9 @@ describe("attachRuntimeContainment (#86, chant#1180/#1077)", () => {
       groups: {} as Groups,
     };
     const r = attachRuntimeContainment(ir);
-    expect(r.groups.byContainer).toEqual({ appDeployment: ["appDeployment-pod-1", "appDeployment-pod-2"] });
+    // The owner is a member of its own group (#144): layoutIr parents only the
+    // listed members, so leaving the owner out drew it beside the box.
+    expect(r.groups.byContainer).toEqual({ appDeployment: ["appDeployment", "appDeployment-pod-1", "appDeployment-pod-2"] });
   });
 
   it("is a no-op when no node carries runtimeOwner — graceful on a substrate with no owner chain", () => {
@@ -59,7 +61,7 @@ describe("attachRuntimeContainment (#86, chant#1180/#1077)", () => {
       groups: { byContainer: { vpc1: ["subnetA"] } },
     };
     const r = attachRuntimeContainment(ir);
-    expect(r.groups.byContainer).toEqual({ vpc1: ["subnetA"], argoApp: ["argoApp-pod-1"] });
+    expect(r.groups.byContainer).toEqual({ vpc1: ["subnetA"], argoApp: ["argoApp", "argoApp-pod-1"] });
   });
 
   it("dedupes and sorts a runtime child's ids, and works for any kind string (a CRD, not just Pods, #85/#86)", () => {
@@ -71,7 +73,7 @@ describe("attachRuntimeContainment (#86, chant#1180/#1077)", () => {
       groups: {} as Groups,
     };
     const r = attachRuntimeContainment(ir);
-    expect(r.groups.byContainer).toEqual({ owner: ["aCrdChild", "zPod"] });
+    expect(r.groups.byContainer).toEqual({ owner: ["aCrdChild", "owner", "zPod"] });
   });
 });
 

@@ -850,9 +850,13 @@ export function createApp(
     // Same wiring/examples reclassification the /api/overlay view gets, so a
     // manual refresh of the infra graph reads consistently (env → overlay).
     if (env) reclassifyOverlay(result.ir);
-    // Same runtime-tier containment the /api/overlay view gets (#86) — a no-op
-    // on a substrate with no owner chain.
-    if (env) attachRuntimeContainment(result.ir);
+    // Same runtime-tier gate the /api/overlay view applies (#86, #144): the
+    // Pods appear only at the runtime zoom, so a Refresh pressed from any other
+    // tier doesn't paint children that tier just excluded.
+    if (env) {
+      if (new URL(c.req.url).searchParams.get("runtime") === "1") attachRuntimeContainment(result.ir);
+      else pruneRuntimeChildren(result.ir);
+    }
     // And the same import-handle pruning below ATTRIBUTES tier + value-matched edges.
     if ((optsFromQuery(new URL(c.req.url)).detail ?? 2) < 3) pruneImports(result.ir);
     addValueMatchEdges(result.ir);

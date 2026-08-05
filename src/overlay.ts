@@ -199,7 +199,11 @@ export function attachRuntimeContainment<T extends { nodes: OverlayNode[]; group
   if (byOwner.size === 0) return ir; // no owner chain on this substrate/graph — graceful no-op
   const byContainer: Record<string, string[]> = { ...(ir.groups.byContainer ?? {}) };
   for (const [owner, children] of byOwner) {
-    byContainer[owner] = [...new Set([...(byContainer[owner] ?? []), ...children])].sort();
+    // The owner belongs INSIDE the box keyed by its own id (#144). layoutIr's
+    // group pass parents only the listed members, so an owner left out of its
+    // own group rendered beside a box titled with its id, Pods inside, itself
+    // out — the opposite of the ownership the box exists to show.
+    byContainer[owner] = [...new Set([owner, ...(byContainer[owner] ?? []), ...children])].sort();
   }
   ir.groups.byContainer = byContainer;
   return ir;
