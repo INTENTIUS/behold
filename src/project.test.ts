@@ -42,6 +42,25 @@ describe("detectProject", () => {
     });
   });
 
+  // An environments entry may be chant's `{ name, endpoint }` object form (the
+  // emulator binding, per chant's Config File docs). cc-aws-canonical declares
+  // exactly that, and served with an empty env picker before this.
+  it("reads the name out of an object-form environments entry", async () => {
+    const dir = make(
+      `export default { lexicons: ["aws", "k8s"], environments: [{ name: "local", endpoint: "http://localhost:4566" }, "prod"] };`,
+    );
+    expect((await detectProject(dir)).environments).toEqual(["local", "prod"]);
+  });
+
+  it("never mistakes an endpoint URL for an environment in the text-parse fallback", async () => {
+    // A config the import path cannot evaluate (top-level await) forces the
+    // regex fallback; the object entry must still yield its name, not its URL.
+    const dir = make(
+      `const x = await Promise.resolve(1);\nexport default { lexicons: ["aws"], environments: [{ name: "local", endpoint: "http://localhost:4566" }] };`,
+    );
+    expect((await detectProject(dir)).environments).toEqual(["local"]);
+  });
+
   // #71: graphPath() honors a non-`src/` sourceDir — this locks in that
   // detectProject surfaces it (any legal directory name, not just "src").
   it("reads a non-src sourceDir from a literal config", async () => {
