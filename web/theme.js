@@ -95,7 +95,7 @@ const CSS_VARS = ["bg", "panel", "line", "fg", "muted", "edge", "managed", "fore
 // (--pin-text = fg) stays readable on them.
 export function pinTokensFor(th) {
   const P = th.palette, fgMix = (t) => mix(th.bg, th.fg, t);
-  const good = P[2], warn = P[1], accent = P[4];
+  const good = P[2], warn = P[1], accent = P[4], runtime = P[6]; // P[6] = the cyan the CSS --runtime var rides
   const panel = fgMix(0.18);                 // node card base — elevated well off the bg
   const fill = (c) => mix(panel, c, 0.4);    // panel pulled strongly toward the status hue
   const stroke = (c) => mix(th.bg, c, 0.62);
@@ -106,10 +106,11 @@ export function pinTokensFor(th) {
     accentFill: fill(accent), accentStroke: stroke(accent), accentBar: accent,
     goodFill: fill(good), goodStroke: stroke(good), goodBar: good,
     warnFill: fill(warn), warnStroke: stroke(warn), warnBar: warn,
+    runtimeFill: fill(runtime), runtimeStroke: stroke(runtime), runtimeBar: runtime,
     selectedStroke: accent,
   };
 }
-const PIN_VARS = ["bg0", "bg1", "dots", "text", "textMuted", "textFaint", "edge", "neutralFill", "neutralStroke", "neutralBar", "accentFill", "accentStroke", "accentBar", "goodFill", "goodStroke", "goodBar", "warnFill", "warnStroke", "warnBar", "selectedStroke"];
+const PIN_VARS = ["bg0", "bg1", "dots", "text", "textMuted", "textFaint", "edge", "neutralFill", "neutralStroke", "neutralBar", "accentFill", "accentStroke", "accentBar", "goodFill", "goodStroke", "goodBar", "warnFill", "warnStroke", "warnBar", "runtimeFill", "runtimeStroke", "runtimeBar", "selectedStroke"];
 
 function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
 // A substrate/lexicon (aws, k8s, gcp, …) gets one of the theme's categorical hues, perturbed
