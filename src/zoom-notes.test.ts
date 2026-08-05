@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { zoomNote, edgelessNote, notesFor, type NotableGraph } from "./zoom-notes.ts";
+import { zoomNote, edgelessNote, logicalKept, notesFor, type NotableGraph } from "./zoom-notes.ts";
 
 const graph = (nodes: number, edges: number, byContainer?: Record<string, string[]>): NotableGraph => ({
   nodes: Array.from({ length: nodes }, (_, i) => ({ id: `n${i}` })),
@@ -97,5 +97,43 @@ describe("notesFor", () => {
     expect(notesFor("logical", graph(0, 0))).toMatch(/AWS projection/);
     expect(notesFor("resources", graph(11, 0))).toMatch(/no edges/);
     expect(notesFor("runtime", graph(15, 0, { dep: ["pod"] }))).toMatch(/no edges/);
+  });
+});
+
+// Ported from #133, which caught a case the version merged in #139 missed: a
+// projection that keeps a few nodes out of many renders a plausible diagram of
+// almost nothing, which reads as "this is your estate" rather than "no data".
+describe("logicalKept", () => {
+  it("names a projection that kept nothing, with what it was given", () => {
+    expect(logicalKept(11, 0)).toMatch(/projected nothing from 11 resources/);
+  });
+
+  it("names a partial projection rather than letting it pass as a diagram", () => {
+    expect(logicalKept(11, 1)).toMatch(/kept 1 of 11 resources/);
+  });
+
+  // #133's threshold, kept as-is: a note on every logical view would be noise.
+  it("stays silent when the lens kept most of the graph", () => {
+    expect(logicalKept(11, 9)).toBeUndefined();
+    expect(logicalKept(3, 1)).toBeUndefined();
+  });
+
+  it("treats exactly a third as kept enough", () => {
+    expect(logicalKept(9, 3)).toBeUndefined();
+    expect(logicalKept(10, 3)).toMatch(/kept 3 of 10/);
+  });
+});
+
+describe("notesFor with a logical input count", () => {
+  it("prefers the kept-count reading when the caller can supply it", () => {
+    expect(notesFor("logical", graph(1, 0), undefined, 11)).toMatch(/kept 1 of 11/);
+  });
+
+  it("falls back to the empty-only check when it cannot", () => {
+    expect(notesFor("logical", graph(0, 0))).toMatch(/AWS projection/);
+  });
+
+  it("stays silent on a logical view that kept most of its input", () => {
+    expect(notesFor("logical", graph(9, 2), undefined, 11)).toBeUndefined();
   });
 });
