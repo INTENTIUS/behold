@@ -26,9 +26,14 @@ interface VNode {
   attrs?: Record<string, unknown>;
 }
 
-/** Last segment of an `AWS::RDS::DBSubnetGroup`-style kind → `DBSubnetGroup`. */
+/** Last segment of a kind, whichever shape the lexicon writes it in:
+ * `AWS::RDS::DBSubnetGroup` → `DBSubnetGroup`, and Azure's slash form
+ * `Microsoft.ContainerService/managedClusters` → `managedClusters` (#147 —
+ * splitting on `::` alone made every Azure kind opaque to this pass, and azure
+ * IRs carry no symbolic edges at all, so this pass was their only in-behold
+ * edge source and it never fired). */
 function typeSegment(kind: string): string {
-  const parts = kind.split("::");
+  const parts = kind.split(kind.includes("::") ? "::" : "/");
   return parts[parts.length - 1] ?? kind;
 }
 
