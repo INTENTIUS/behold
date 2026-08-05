@@ -7,11 +7,20 @@ const graph = (nodes: number, edges: number, byContainer?: Record<string, string
   ...(byContainer ? { groups: { byContainer } } : {}),
 });
 
+/** A graph whose last node is a live runtime child — what the runtime tier
+ * actually keys on (#148: byContainer alone can be chant's own VPC ⊃ subnet
+ * containment, which must not silence the below-the-boundary note). */
+const withRuntimeChild = (nodes: number, byContainer?: Record<string, string[]>): NotableGraph => {
+  const g = graph(nodes, 0, byContainer) as { nodes: Array<{ id: string; runtimeOwner?: string }> };
+  g.nodes[g.nodes.length - 1].runtimeOwner = "n0";
+  return g as NotableGraph;
+};
+
 describe("zoomNote", () => {
   it("says nothing about a level that rendered what it promised", () => {
     expect(zoomNote("components", graph(5, 4))).toBeUndefined();
     expect(zoomNote("logical", graph(9, 3))).toBeUndefined();
-    expect(zoomNote("runtime", graph(15, 0, { dep: ["pod"] }))).toBeUndefined();
+    expect(zoomNote("runtime", withRuntimeChild(15, { dep: ["pod"] }))).toBeUndefined();
   });
 
   it("explains an empty components view rather than leaving it blank", () => {
@@ -44,6 +53,9 @@ describe("zoomNote", () => {
   it("says when the runtime tier found nothing below the declaration boundary", () => {
     expect(zoomNote("runtime", graph(11, 0))).toMatch(/below the declaration boundary/);
     expect(zoomNote("runtime", graph(11, 0, {}))).toMatch(/below the declaration boundary/);
+    // chant's own cloud containment (VPC ⊃ subnet) populating byContainer must
+    // not silence the note when no node is a runtime child (#148).
+    expect(zoomNote("runtime", graph(11, 0, { vpc: ["subnetA"] }))).toMatch(/below the declaration boundary/);
   });
 
   it("has nothing to add about the plain entity levels", () => {
@@ -96,7 +108,7 @@ describe("notesFor", () => {
     expect(notesFor("components", graph(5, 4))).toBeUndefined();
     expect(notesFor("logical", graph(0, 0))).toMatch(/AWS projection/);
     expect(notesFor("resources", graph(11, 0))).toMatch(/no edges/);
-    expect(notesFor("runtime", graph(15, 0, { dep: ["pod"] }))).toMatch(/no edges/);
+    expect(notesFor("runtime", withRuntimeChild(15, { dep: ["pod"] }))).toMatch(/no edges/);
   });
 });
 

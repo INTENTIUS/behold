@@ -84,3 +84,15 @@ e2e-azure-logical:
 #   BEHOLD_E2E_PROJECT=/path/to/example just e2e-gcp-logical
 e2e-gcp-logical:
     bash e2e/gcp-logical-floci-e2e.sh
+
+# behold#148 (the CC join, chant epic #1198's "one graph" bar): the
+# mixed-substrate acceptance run against chant's cc-aws-canonical on Floci.
+# Asserts what the other three logical runs only print — the k8s half nests
+# INSIDE the managed-cluster box (#142), one root, and the runtime tier is
+# honest below the declaration boundary (#144). Needs the estate deployed and
+# its Floci already up (chant test/aws-cc-e2e.sh steps 0-3 are the recipe;
+# export the same AWS_ENDPOINT_URL + KUBECONFIG); boots neither.
+#   just e2e-cc-logical
+#   BEHOLD_E2E_PROJECT=/path/to/deployed/copy just e2e-cc-logical
+e2e-cc-logical:
+    bash e2e/cc-logical-floci-e2e.sh
