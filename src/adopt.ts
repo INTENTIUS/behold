@@ -15,10 +15,15 @@ export const LIVE_IMPORT_LEXICONS = ["aws", "azure", "gcp", "k8s"] as const;
 
 const LIVE = new Set<string>(LIVE_IMPORT_LEXICONS);
 
-/** A node is adoptable when overlay marks it foreign (provisioned, undeclared)
- * and its lexicon has a live-import path. Pure — unit-tested. */
+/** A node is adoptable when the overlay marks it foreign (provisioned,
+ * undeclared) and its lexicon has a live-import path. Pure — unit-tested.
+ *
+ * The check reads chant's own overlay tag, `_status: "warn"` — "foreign" is the
+ * *display* name `overlayStatus()` translates it to, and it never appears in
+ * the attr itself. This gated on the translated word until #145, so the Adopt
+ * affordance could not fire on a real overlay node. */
 export function isAdoptable(node: { lexicon?: string; attrs?: Record<string, unknown> }): boolean {
-  return node.attrs?._status === "foreign" && !!node.lexicon && LIVE.has(node.lexicon);
+  return node.attrs?._status === "warn" && !!node.lexicon && LIVE.has(node.lexicon);
 }
 
 /** Pull a GitHub/GitLab PR (or MR) URL out of an Op output line, if present. The
