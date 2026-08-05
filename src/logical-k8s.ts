@@ -36,9 +36,12 @@
  * declared namespace is a fact about the estate, the same reasoning the GCP lens
  * applies to locations.
  *
- * The cluster is not a declared resource and has no name in the graph. `env`
- * names it when the caller knows one, exactly as Azure's resource group and
- * GCP's project are handled — an unnamed cluster box beats a fabricated id.
+ * The cluster is usually not a declared resource — but on a mixed estate it
+ * can be: a managed EKS/AKS/GKE control plane declared in the cloud half. When
+ * exactly one is declared, its node id becomes the cluster box (see
+ * `projectK8sLogical`'s doc — this is the #142 join). Otherwise `env` names it
+ * when the caller knows one, exactly as Azure's resource group and GCP's
+ * project are handled — an unnamed cluster box beats a fabricated id.
  *
  * ## Edges
  *
@@ -50,6 +53,7 @@
  * containment and leaves edges to whoever can resolve them generically.
  */
 import type { GraphIR, IRNode } from "@intentius/chant";
+import { soleManagedCluster } from "./cluster-anchor.ts";
 import type { ByContainer, LogicalProjection } from "./logical.ts";
 
 /**
@@ -97,14 +101,29 @@ export function declaredNamespaces(nodes: readonly IRNode[]): Set<string> {
 /**
  * Project a Kubernetes entity IR into the logical/architecture view.
  *
- * `env` names the cluster when the caller knows one — see the module note on
- * why it cannot come from the graph. Pure; the input IR is untouched.
+ * The cluster box's identity, in order of preference (#142):
+ *
+ *   1. The estate's own **managed cluster node** (`soleManagedCluster` — the
+ *      EKS/AKS/GKE control plane a cloud lens keeps as a headline card). Using
+ *      that node's *id* as the container key is what joins the two halves into
+ *      one picture: pinhole's `layoutArchitecture` removes a card whose id is
+ *      also a container key and draws it as a box instead, so the namespaces
+ *      nest inside the cluster card, inside whatever component/subnet/VPC box
+ *      the cloud lens placed it in. One root, not two.
+ *   2. `env`, when the caller knows one — the situation before #142, and still
+ *      the answer for a k8s-only estate, where no declared node is the cluster.
+ *   3. A bare `cluster` box — an unnamed box beats a fabricated id.
+ *
+ * Two managed clusters means no attribute says which one this k8s half runs
+ * on, so the join declines and falls back to `env` — the same discipline
+ * `addClusterAnchorEdges` follows. Pure; the input IR is untouched.
  */
 export function projectK8sLogical(ir: GraphIR, env?: string): LogicalProjection {
   const k8s = ir.nodes.filter((n) => n.lexicon === "k8s");
   if (k8s.length === 0) return { ir: { nodes: [], edges: [], groups: {} }, byContainer: {} };
 
-  const CLUSTER_TITLE = env ? `cluster ${env}` : "cluster";
+  const cluster = soleManagedCluster(ir.nodes);
+  const CLUSTER_TITLE = cluster ? cluster.id : env ? `cluster ${env}` : "cluster";
   const CLUSTER_SCOPED = "cluster-scoped";
   const namespaceTitle = (ns: string) => `namespace ${ns}`;
 
