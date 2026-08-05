@@ -37,6 +37,7 @@ import {
 import { joinComponentStatus, componentStatusColor } from "./component-status.ts";
 import { reclassifyOverlay, pruneImports, attachRuntimeContainment, pruneRuntimeChildren } from "./overlay.ts";
 import { addValueMatchEdges } from "./value-match.ts";
+import { addK8sDeclaredEdges } from "./k8s-edges.ts";
 import { addClusterAnchorEdges } from "./cluster-anchor.ts";
 import { projectTopology } from "./logical.ts";
 import { addCompositeDepsCounted } from "./composite-deps.ts";
@@ -547,7 +548,7 @@ export function createApp(
         // reads full attrs to resolve VPC/subnet/component containment), recover
         // value-wired edges, then re-project into nested boxes and paint with
         // pinhole's architecture layout. Returns here (distinct render path).
-        const base = addValueMatchEdges(await graphIr(cfg.projectDir, { ...opts, detail: 3 }));
+        const base = addK8sDeclaredEdges(addValueMatchEdges(await graphIr(cfg.projectDir, { ...opts, detail: 3 })));
         // #102: the lens follows the substrate — AWS nests region/VPC/subnet,
         // Azure nests resource group/VNet/subnet. `metaEnv` names the resource
         // group on Azure, which ARM never declares as a resource.
@@ -568,6 +569,10 @@ export function createApp(
         // Connect resources wired by a literal name/ARN value the symbolic-ref
         // graph misses (see addValueMatchEdges).
         ir = addValueMatchEdges(ir);
+      // Kubernetes declared-attribute joins (#143) — selector / ingress backend /
+      // scaleTargetRef. chant's IR carries no k8s edges at all, so this is the
+      // k8s half's only edge source, exactly as value-match is azure's.
+      ir = addK8sDeclaredEdges(ir);
         // Anchor a mixed-substrate estate (#103): the k8s half carries no
         // reference to the managed cluster it runs on, so without this it
         // renders as loose nodes beside the cloud graph rather than one estate.
@@ -777,7 +782,7 @@ export function createApp(
         // Counted before the projection, so the note can say what was dropped
         // rather than only that the result is empty (#133's reading).
         const logicalBefore = ir.nodes.length;
-        const { ir: projected, byContainer } = projectTopology(addValueMatchEdges(ir), env);
+        const { ir: projected, byContainer } = projectTopology(addK8sDeclaredEdges(addValueMatchEdges(ir)), env);
         const { svg } = renderArchitecture(projected, byContainer);
         // See /api/graph's logical branch — `byContainer` is carried for the
         // same reason (behold#100).
@@ -791,6 +796,10 @@ export function createApp(
       // Connect resources wired by a literal name/ARN value (e.g. an RDS
       // instance's DBSubnetGroupName) that the symbolic-ref graph misses.
       ir = addValueMatchEdges(ir);
+      // Kubernetes declared-attribute joins (#143) — selector / ingress backend /
+      // scaleTargetRef. chant's IR carries no k8s edges at all, so this is the
+      // k8s half's only edge source, exactly as value-match is azure's.
+      ir = addK8sDeclaredEdges(ir);
       // Cross-substrate anchoring (#103) — same pass as the source graph above,
       // so the live overlay shows the cluster ⊃ namespace ⊃ workload hierarchy
       // rather than dropping the k8s half into the void. The overlay is
@@ -856,6 +865,7 @@ export function createApp(
     // And the same import-handle pruning below ATTRIBUTES tier + value-matched edges.
     if ((optsFromQuery(new URL(c.req.url)).detail ?? 2) < 3) pruneImports(result.ir);
     addValueMatchEdges(result.ir);
+    addK8sDeclaredEdges(result.ir);
     addClusterAnchorEdges(result.ir);
     const { svg } = renderGraph(result.ir, { boxes: "byContainer" });
     return c.json({
