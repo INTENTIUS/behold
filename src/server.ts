@@ -557,7 +557,7 @@ export function createApp(
         // primary output, and until now it was only observable by reading the
         // rendered SVG, which is not something an acceptance run can assert on.
         // The SPA ignores it and paints the svg as before.
-        const logicalNote = notesFor("logical", projected);
+        const logicalNote = notesFor("logical", projected, undefined, base.nodes.length);
         return c.json({ ir: projected, svg, byContainer, meta: { projectDir: cfg.projectDir, env: metaEnv, tier: opts.tier ?? null, target: opts.target ?? null, mode: "logical", ...(logicalNote ? { note: logicalNote } : {}) } });
       } else {
         ir = await graphIr(cfg.projectDir, opts);
@@ -774,11 +774,14 @@ export function createApp(
       // region/VPC/subnet ⊃ component boxes, keeping each surviving node's drift
       // colour. Short-circuits the detail-tier pruning/composite plumbing below.
       if (logical) {
+        // Counted before the projection, so the note can say what was dropped
+        // rather than only that the result is empty (#133's reading).
+        const logicalBefore = ir.nodes.length;
         const { ir: projected, byContainer } = projectTopology(addValueMatchEdges(ir), env);
         const { svg } = renderArchitecture(projected, byContainer);
         // See /api/graph's logical branch — `byContainer` is carried for the
         // same reason (behold#100).
-        const logicalNote = notesFor("logical", projected);
+        const logicalNote = notesFor("logical", projected, undefined, logicalBefore);
         return c.json({ ir: projected, svg, byContainer, meta: { projectDir: cfg.projectDir, env, mode: "logical", ...(logicalNote ? { note: logicalNote } : {}) } });
       }
       // Below the ATTRIBUTES tier, hide cross-stack import handles — they're

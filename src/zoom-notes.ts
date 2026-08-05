@@ -51,6 +51,11 @@ export function zoomNote(zoom: Zoom, ir: NotableGraph, compositeEdgesAttached?: 
     // #74: src/logical.ts's headline kinds are literal `AWS::*`, so a project
     // with no AWS resources matches nothing. Correct, and indistinguishable
     // from a broken lens without saying it.
+    //
+    // Empty is the loud case; the quiet one is a projection that kept a
+    // handful of nodes out of many, which looks like a working lens on a tiny
+    // estate. `logicalKept` covers both — see its threshold note. Callers that
+    // cannot count the input fall back to the empty-only check.
     return empty ? "logical is an AWS projection — no AWS resources in this estate" : undefined;
   }
 
@@ -71,6 +76,27 @@ export function zoomNote(zoom: Zoom, ir: NotableGraph, compositeEdgesAttached?: 
   }
 
   return undefined;
+}
+
+/**
+ * The logical lens, judged against what it was given rather than only against
+ * zero (ported from #133, which had this and the version merged in #139 did
+ * not).
+ *
+ * A projection that keeps 1 of 11 nodes renders a plausible-looking diagram of
+ * almost nothing, which is worse than an empty one: empty reads as "no data",
+ * partial reads as "this is your estate". Both get named.
+ *
+ * Silent when the projection kept most of the graph. #133's reasoning, kept
+ * verbatim because it is the right reasoning: a note on every logical view
+ * would be noise, and noise is how a real signal stops being read. The `* 3`
+ * threshold is a judgement call and is better argued with than inherited.
+ */
+export function logicalKept(before: number, after: number): string | undefined {
+  if (after > 0 && after * 3 >= before) return undefined;
+  return after === 0
+    ? `logical projected nothing from ${before} resources — it is a cloud-topology lens, and this estate declares none of the kinds it nests (behold#74)`
+    : `logical kept ${after} of ${before} resources — it is a cloud-topology lens, and the rest are kinds it does not nest (behold#74)`;
 }
 
 /**
@@ -96,9 +122,14 @@ export function notesFor(
   zoom: Zoom,
   ir: NotableGraph,
   compositeEdgesAttached?: number,
+  logicalBefore?: number,
 ): string | undefined {
-  const notes = [zoomNote(zoom, ir, compositeEdgesAttached), edgelessNote(zoom, ir)].filter(
-    (n): n is string => n !== undefined,
-  );
+  // When the caller can say what logical was given, that reading wins: it
+  // catches the partial projection the empty-only check cannot see.
+  const primary =
+    zoom === "logical" && logicalBefore !== undefined
+      ? logicalKept(logicalBefore, ir.nodes.length)
+      : zoomNote(zoom, ir, compositeEdgesAttached);
+  const notes = [primary, edgelessNote(zoom, ir)].filter((n): n is string => n !== undefined);
   return notes.length ? notes.join(" · ") : undefined;
 }
