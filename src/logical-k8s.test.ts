@@ -97,6 +97,54 @@ describe("projectK8sLogical", () => {
     expect(Object.keys(projectK8sLogical(kmvIr, "dev").byContainer)).toContain("cluster dev");
   });
 
+  // #142 — the managed-cluster join. The cluster node's id as the container key
+  // is what makes pinhole draw the cluster card as the box the namespaces nest
+  // in, joining the cloud half and the k8s half into one root.
+  it("keys the cluster box by the sole managed cluster's node id", () => {
+    const mixed = {
+      nodes: [
+        { id: "eksCluster", kind: "AWS::EKS::Cluster", lexicon: "aws", attrs: {} },
+        node("apiService", "K8s::Core::Service", "default"),
+      ],
+      edges: [],
+      groups: {},
+    } as unknown as GraphIR;
+    const { byContainer } = projectK8sLogical(mixed, "local");
+    expect(byContainer["eksCluster"]).toEqual(["namespace default"]);
+    expect(byContainer["namespace default"]).toEqual(["apiService"]);
+    expect(Object.keys(byContainer)).not.toContain("cluster local");
+  });
+
+  it("joins AKS and GKE control planes the same way", () => {
+    for (const kind of ["Microsoft.ContainerService/managedClusters", "GCP::Container::Cluster"]) {
+      const mixed = {
+        nodes: [
+          { id: "managed", kind, lexicon: kind.startsWith("GCP") ? "gcp" : "azure", attrs: {} },
+          node("svc", "K8s::Core::Service", "app"),
+        ],
+        edges: [],
+        groups: {},
+      } as unknown as GraphIR;
+      expect(projectK8sLogical(mixed, "prod").byContainer["managed"]).toEqual(["namespace app"]);
+    }
+  });
+
+  it("declines the join when two managed clusters are declared — env names the box again", () => {
+    const twoClusters = {
+      nodes: [
+        { id: "east", kind: "AWS::EKS::Cluster", lexicon: "aws", attrs: {} },
+        { id: "west", kind: "AWS::EKS::Cluster", lexicon: "aws", attrs: {} },
+        node("svc", "K8s::Core::Service", "app"),
+      ],
+      edges: [],
+      groups: {},
+    } as unknown as GraphIR;
+    const { byContainer } = projectK8sLogical(twoClusters, "prod");
+    expect(byContainer["cluster prod"]).toEqual(["namespace app"]);
+    expect(byContainer["east"]).toBeUndefined();
+    expect(byContainer["west"]).toBeUndefined();
+  });
+
   it("is empty for a graph with no k8s nodes, so composing it costs nothing", () => {
     const aws = {
       nodes: [{ id: "b", kind: "AWS::S3::Bucket", lexicon: "aws", attrs: {} }],

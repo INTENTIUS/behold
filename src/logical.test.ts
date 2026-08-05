@@ -260,6 +260,42 @@ describe("projectTopology — lens dispatch (#102)", () => {
     expect(Object.keys(byContainer).some((k) => /resource group/.test(k))).toBe(true);
   });
 
+  // #142 — the managed-cluster join, at the composed level. The EKS card's id
+  // doubles as the k8s lens's cluster container key, so the merged projection
+  // carries one nesting chain: component ⊃ cluster ⊃ namespace ⊃ Service.
+  // pinhole's layoutArchitecture then draws the card as the box.
+  it("nests the k8s half inside the sole managed cluster on a mixed estate", () => {
+    const cc = {
+      nodes: [
+        {
+          id: "cluster",
+          kind: "AWS::EKS::Cluster",
+          lexicon: "aws",
+          attrs: { Name: "cc-eks" },
+          sourceLoc: { file: "src/cc-cluster/cluster.ts" },
+        },
+        {
+          id: "apiService",
+          kind: "K8s::Core::Service",
+          lexicon: "k8s",
+          attrs: { metadata: { name: "cc-api", namespace: "default" } },
+          sourceLoc: { file: "src/cc-workload/service.ts" },
+        },
+      ],
+      edges: [],
+      groups: {},
+    } as unknown as GraphIR;
+    const { ir: out, byContainer } = projectTopology(cc, "local");
+    // The AWS lens keeps the cluster as a headline node; the k8s lens keys its
+    // boxes by that same id. Both facts together are the join.
+    expect(out.nodes.map((x) => x.id)).toContain("cluster");
+    expect(byContainer["cc-cluster"]).toContain("cluster");
+    expect(byContainer["cluster"]).toEqual(["namespace default"]);
+    expect(byContainer["namespace default"]).toEqual(["apiService"]);
+    // No second root: the env-named box must not exist.
+    expect(byContainer["cluster local"]).toBeUndefined();
+  });
+
   it("leaves a single-substrate graph exactly as it was, since the other lenses contribute nothing", () => {
     const { ir: out, byContainer } = projectTopology(awsIr, "prod");
     expect(out.nodes.map((x) => x.id)).toEqual(["igw"]);
