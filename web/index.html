@@ -143,6 +143,9 @@
          entry point. */
       #statusbar { color: var(--muted); border: 1px solid var(--line); border-radius: 6px;
         padding: 2px 10px; font-size: 11px; white-space: nowrap; }
+      /* #131: why the current zoom rendered what it did. Same muted strip,
+         italic so it reads as a caption on the state rather than more state. */
+      .statusbar-note { font-style: italic; opacity: 0.85; }
       #hintk { color: var(--muted); border: 1px solid var(--line); border-radius: 6px;
         padding: 2px 8px; font-size: 11px; cursor: pointer; white-space: nowrap; }
       #hintk:hover { border-color: var(--pending); color: var(--fg); }

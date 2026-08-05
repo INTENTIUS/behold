@@ -39,7 +39,8 @@ import { reclassifyOverlay, pruneImports, attachRuntimeContainment, pruneRuntime
 import { addValueMatchEdges } from "./value-match.ts";
 import { addClusterAnchorEdges } from "./cluster-anchor.ts";
 import { projectTopology } from "./logical.ts";
-import { addCompositeDeps } from "./composite-deps.ts";
+import { addCompositeDepsCounted } from "./composite-deps.ts";
+import { notesFor, type Zoom } from "./zoom-notes.ts";
 import { resourcesByComponent, nonResourceEntities } from "./resources.ts";
 import { summarizePlan } from "./reconcile.ts";
 import { renderGraph, renderArchitecture } from "./render.ts";
@@ -556,7 +557,8 @@ export function createApp(
         // primary output, and until now it was only observable by reading the
         // rendered SVG, which is not something an acceptance run can assert on.
         // The SPA ignores it and paints the svg as before.
-        return c.json({ ir: projected, svg, byContainer, meta: { projectDir: cfg.projectDir, env: metaEnv, tier: opts.tier ?? null, target: opts.target ?? null, mode: "logical" } });
+        const logicalNote = notesFor("logical", projected);
+        return c.json({ ir: projected, svg, byContainer, meta: { projectDir: cfg.projectDir, env: metaEnv, tier: opts.tier ?? null, target: opts.target ?? null, mode: "logical", ...(logicalNote ? { note: logicalNote } : {}) } });
       } else {
         ir = await graphIr(cfg.projectDir, opts);
         // Entity graph below the ATTRIBUTES tier: hide cross-stack import
@@ -577,12 +579,25 @@ export function createApp(
       // auto-detected the way the component DAG's `byWave` is.
       const radial = new URL(c.req.url).searchParams.get("radial") === "1";
       const { svg } = renderGraph(ir, multi ? { boxes: "byStack" } : { radial });
+      // #131: a level that renders empty, or as the level below, says which.
+      // Multi-estate composition has its own shape and is left alone.
+      const srcZoom: Zoom = components
+        ? "components"
+        : logical
+          ? "logical"
+          : opts.detail === 1
+            ? "composites"
+            : opts.detail === 3
+              ? "attributes"
+              : "resources";
+      const srcNote = multi ? undefined : notesFor(srcZoom, ir);
       return c.json({
         ir,
         svg,
         meta: {
           projectDir: cfg.projectDir,
           env: metaEnv,
+          ...(srcNote ? { note: srcNote } : {}),
           // The picked tier/target (M2, #54), echoed back so the SPA can keep
           // its header's axes display in sync with what it's actually looking
           // at, not just the launch-time value. null when neither was picked.
@@ -763,7 +778,8 @@ export function createApp(
         const { svg } = renderArchitecture(projected, byContainer);
         // See /api/graph's logical branch — `byContainer` is carried for the
         // same reason (behold#100).
-        return c.json({ ir: projected, svg, byContainer, meta: { projectDir: cfg.projectDir, env, mode: "logical" } });
+        const logicalNote = notesFor("logical", projected);
+        return c.json({ ir: projected, svg, byContainer, meta: { projectDir: cfg.projectDir, env, mode: "logical", ...(logicalNote ? { note: logicalNote } : {}) } });
       }
       // Below the ATTRIBUTES tier, hide cross-stack import handles — they're
       // value plumbing, not resources, and float off to the side (see
@@ -780,18 +796,37 @@ export function createApp(
       // At COMPOSITES (level 1), composites only wired via import sinks (now
       // pruned) so they'd all float — overlay the authoritative component
       // dependsOn graph so they read as a dependency graph (see addCompositeDeps).
+      // #131: the catch used to be the whole story — no component DAG meant
+      // this level silently rendered as `resources`, and the picker looked
+      // stuck. It still degrades to the level below, because that is the
+      // honest fallback, but now it says so (see zoomNote below). `attached`
+      // distinguishes "mapped nothing" from "was never asked", which the
+      // finished IR cannot: an estate can have zero edges either way (#84).
+      let compositeEdgesAttached: number | undefined;
       if (query.detail === 1) {
         try {
           const dag = await componentGraphIr(cfg.projectDir, { env, ...tierTargetOpts(query) });
-          ir = addCompositeDeps(ir, dag.edges);
+          const counted = addCompositeDepsCounted(ir, dag.edges);
+          ir = counted.ir;
+          compositeEdgesAttached = counted.attached;
         } catch {
-          /* component DAG unavailable — leave composites as-is */
+          /* component DAG unavailable — leave composites as-is, and say so */
+          compositeEdgesAttached = 0;
         }
       }
       // `boxes: "byContainer"` (#86) is a no-op unless attachRuntimeContainment
       // populated it above — same "harmless when absent" contract as byStack.
       const { svg } = renderGraph(ir, { boxes: "byContainer", radial: new URL(c.req.url).searchParams.get("radial") === "1" });
-      return c.json({ ir, svg, meta: { projectDir: cfg.projectDir, env, mode: "overlay" } });
+      const zoom: Zoom =
+        new URL(c.req.url).searchParams.get("runtime") === "1"
+          ? "runtime"
+          : query.detail === 1
+            ? "composites"
+            : query.detail === 3
+              ? "attributes"
+              : "resources";
+      const note = notesFor(zoom, ir, compositeEdgesAttached);
+      return c.json({ ir, svg, meta: { projectDir: cfg.projectDir, env, mode: "overlay", ...(note ? { note } : {}) } });
     } catch (err) {
       // #72: the same structured {error, code, remedy} the other read routes
       // return — this is in fact where a picked tier's creds gate USUALLY

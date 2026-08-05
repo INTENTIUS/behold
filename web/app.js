@@ -616,7 +616,23 @@ function renderStatusbar() {
   if (axes.tier) parts.push(`tier: ${axes.tier}`);
   if (view.radial && !view.components && !view.logical) parts.push("radial");
   el.textContent = parts.join(" · ");
+  // #131: why this level rendered empty, or as the one below it. The server
+  // decides (src/zoom-notes.ts) — the SPA never infers it, so the note always
+  // describes the graph that actually came back. Appended rather than mixed
+  // into `parts` so it can carry its own emphasis without the zoom/env strip
+  // changing shape when there is nothing to say.
+  if (lastNote) {
+    const note = document.createElement("span");
+    note.className = "statusbar-note";
+    note.textContent = " — " + lastNote;
+    el.appendChild(note);
+  }
 }
+
+// The note from the last /api/graph or /api/overlay response (`meta.note`),
+// or null. Set on every load so a level that stops degrading stops explaining
+// itself.
+let lastNote = null;
 
 // The deploy axes as currently displayed in the header (#59 unify, M2 #54
 // lenses) — seeded once from /api/project (server-derived from the process
@@ -1114,6 +1130,9 @@ function addGitlabWaveBadges(svgEl) {
 // Paint a fetched graph: the SVG, the meta line (with a drift summary in overlay
 // mode), the legend, and click-inspect wiring. Shared by load() and refresh().
 function render(ir, svg, m) {
+  // #131: set before anything can early-return, so a level that stopped
+  // degrading stops explaining itself on the very next render.
+  lastNote = m.note || null;
   const overlay = m.mode === "overlay";
   // Logical/architecture lens (#63): its own mode, but when an env is picked the
   // projected nodes still carry the drift `_status`, so it reads as a drift view

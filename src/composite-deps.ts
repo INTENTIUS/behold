@@ -23,6 +23,19 @@ export function kebabKind(kind: string): string {
   return kind.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
 }
 
+/** How many edges the last `addCompositeDeps` call actually attached.
+ *
+ * The composites tier is *defined* as the resource graph plus these edges, so
+ * zero attached means the view is the resource graph under another name — the
+ * silent collapse #131 is about. The count is what `zoomNote` needs and it is
+ * not recoverable from the finished IR, since an estate can have zero edges
+ * either way (#84). Returned alongside rather than inferred later. */
+export interface CompositeDepsResult {
+  ir: GraphIR;
+  /** Edges added to `ir`. 0 means nothing mapped — see src/zoom-notes.ts. */
+  attached: number;
+}
+
 /** Overlay component→component `dependsOn` edges onto the collapsed composite
  * nodes. `componentEdges` are the component DAG's edges (from/to = component
  * names). Mutates + returns `ir`. */
@@ -49,4 +62,16 @@ export function addCompositeDeps(ir: GraphIR, componentEdges: Pick<IREdge, "from
     ir.edges.push({ from, to, kind: "ref", viaAttr: "dependsOn", inferred: true } as never);
   }
   return ir;
+}
+
+/** `addCompositeDeps`, reporting how many edges it attached (#131). Same
+ * mutation, same return `ir`; the count rides alongside so a caller can say
+ * "nothing mapped" instead of rendering the level below in silence. */
+export function addCompositeDepsCounted(
+  ir: GraphIR,
+  componentEdges: Pick<IREdge, "from" | "to">[],
+): CompositeDepsResult {
+  const before = ir.edges.length;
+  const out = addCompositeDeps(ir, componentEdges);
+  return { ir: out, attached: out.edges.length - before };
 }
