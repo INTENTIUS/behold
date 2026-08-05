@@ -109,10 +109,20 @@ function readK8sProfiles(k8s: unknown): Record<string, { context?: string }> | u
  * keeping only well-formed entries (string arrays, a string, `{name,src}[]`). */
 function readInfo(cfg: Record<string, unknown> | undefined): ProjectInfo {
   const arr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+  // An environments entry is a bare name OR chant's `{ name, endpoint }` form
+  // (the emulator binding — see chant's Config File docs). The object form was
+  // dropped here, so a project like cc-aws-canonical served with an empty env
+  // picker despite declaring `local`.
+  const envNames = (v: unknown): string[] =>
+    Array.isArray(v)
+      ? v
+          .map((x) => (typeof x === "string" ? x : typeof (x as { name?: unknown })?.name === "string" ? (x as { name: string }).name : undefined))
+          .filter((x): x is string => !!x)
+      : [];
   const stacks = readStacks(cfg?.stacks);
   const k8sProfiles = readK8sProfiles(cfg?.k8s);
   return {
-    environments: arr(cfg?.environments),
+    environments: envNames(cfg?.environments),
     lexicons: arr(cfg?.lexicons),
     ...(k8sProfiles ? { k8sProfiles } : {}),
     ...(typeof cfg?.sourceDir === "string" ? { sourceDir: cfg.sourceDir } : {}),
@@ -126,6 +136,20 @@ function parseStringArray(content: string, key: string): string[] {
   const arr = content.match(new RegExp(`\\b${key}\\s*:\\s*\\[([^\\]]*)\\]`));
   if (!arr) return [];
   return [...arr[1].matchAll(/["'`]([^"'`]+)["'`]/g)].map((m) => m[1]);
+}
+
+/** Extract environment NAMES from a literal `environments: [...]` array in
+ * config source — entries are bare strings or chant's `{ name, endpoint }`
+ * objects, and the generic string scan would happily return an endpoint URL as
+ * an environment. Pure. */
+function parseEnvironmentNames(content: string): string[] {
+  const arr = content.match(/\benvironments\s*:\s*\[([^\]]*)\]/);
+  if (!arr) return [];
+  const body = arr[1];
+  if (body.includes("{")) {
+    return [...body.matchAll(/\bname\s*:\s*["'`]([^"'`]+)["'`]/g)].map((m) => m[1]);
+  }
+  return [...body.matchAll(/["'`]([^"'`]+)["'`]/g)].map((m) => m[1]);
 }
 
 /** Extract a `key: "value"` string literal from config source. Only matches a
@@ -155,7 +179,7 @@ export async function detectProject(projectDir: string): Promise<ProjectInfo> {
   const content = readFileSync(path, "utf8");
   const sourceDir = parseStringLiteral(content, "sourceDir");
   return {
-    environments: parseStringArray(content, "environments"),
+    environments: parseEnvironmentNames(content),
     lexicons: parseStringArray(content, "lexicons"),
     ...(sourceDir ? { sourceDir } : {}),
   };
