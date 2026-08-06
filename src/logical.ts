@@ -35,6 +35,7 @@ import type { GraphIR, IRNode, IREdge } from "@intentius/chant";
 import { projectAzureLogical } from "./logical-azure.ts";
 import { projectGcpLogical } from "./logical-gcp.ts";
 import { projectK8sLogical } from "./logical-k8s.ts";
+import { projectHelmLogical } from "./logical-helm.ts";
 
 /** The container-nesting map pinhole's `layoutArchitecture` consumes:
  * `containerId → memberIds`, where a member may itself be a container id (the
@@ -331,6 +332,7 @@ export function projectTopology(ir: GraphIR, env?: string): LogicalProjection {
     projectAzureLogical(ir, env),
     projectGcpLogical(ir, env),
     projectK8sLogical(ir, env),
+    projectHelmLogical(ir),
   ];
 
   const nodes: IRNode[] = [];
@@ -344,7 +346,41 @@ export function projectTopology(ir: GraphIR, env?: string): LogicalProjection {
       for (const c of children) if (!arr.includes(c)) arr.push(c);
     }
   }
+  nestReleaseBoxes(byContainer);
   return { ir: { nodes, edges, groups: {} }, byContainer };
+}
+
+/**
+ * behold#146 — the cross-lens half of the helm lens: a `release <chart>` box
+ * whose claimed objects all sit inside one other box (a k8s `namespace …`
+ * box, on a mixed estate) moves inside that box, and the objects leave the
+ * parent's direct membership — so the picture reads namespace ⊃ release ⊃
+ * objects rather than the same cards claimed twice. A release whose objects
+ * span parents (or sit in none — a helm-only estate) stays where it is: a
+ * root box beats a guessed home.
+ *
+ * In place, release boxes only: the k8s lens claims by `metadata.namespace`
+ * and the helm lens claims by source directory, and this is the one place
+ * both claims are visible at once.
+ */
+export function nestReleaseBoxes(byContainer: ByContainer): void {
+  for (const [box, members] of Object.entries(byContainer)) {
+    if (!box.startsWith("release ")) continue;
+    // The chart card itself is only ever claimed by the release box, so it
+    // contributes no parent — the parent is decided by where the release's
+    // other members (the k8s objects) live.
+    const claimed = members;
+    const parents = new Set<string>();
+    for (const [parent, children] of Object.entries(byContainer)) {
+      if (parent === box) continue;
+      if (claimed.some((m) => children.includes(m))) parents.add(parent);
+    }
+    if (parents.size !== 1) continue;
+    const [parent] = parents;
+    const children = byContainer[parent];
+    byContainer[parent] = children.filter((c) => !claimed.includes(c));
+    if (!byContainer[parent].includes(box)) byContainer[parent].push(box);
+  }
 }
 
 export function projectLogical(ir: GraphIR): LogicalProjection {

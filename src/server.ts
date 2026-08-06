@@ -28,6 +28,7 @@ import {
   ciPipeline,
   ciForgeFor,
   lifecyclePlan,
+  lifecycleDiffLive,
   runChantRaw,
   ChantCliError,
   classifyChantFailure,
@@ -38,6 +39,7 @@ import { joinComponentStatus, componentStatusColor } from "./component-status.ts
 import { reclassifyOverlay, pruneImports, attachRuntimeContainment, pruneRuntimeChildren } from "./overlay.ts";
 import { addValueMatchEdges } from "./value-match.ts";
 import { addK8sDeclaredEdges } from "./k8s-edges.ts";
+import { applyHelmArtifacts } from "./helm-artifacts.ts";
 import { addClusterAnchorEdges } from "./cluster-anchor.ts";
 import { projectTopology } from "./logical.ts";
 import { addCompositeDepsCounted } from "./composite-deps.ts";
@@ -763,6 +765,19 @@ export function createApp(
       // deploy (see reclassifyOverlay): Parameters take their deployed
       // component's status, src/examples/ nodes go neutral + `_byo`.
       let ir = reclassifyOverlay(await graphIr(cfg.projectDir, opts));
+      // behold#146 — artifact presence for the helm half. A release is an
+      // artifact, not a resource, so the overlay's classification never
+      // touches Helm::Chart nodes; the one chant read that observes releases
+      // is `lifecycle diff --live --json` (observedArtifacts, chant#1516).
+      // Joined by declared chart name; a read failure paints neutral
+      // (unobserved ≠ absent), and a release matching no declared chart is
+      // never invented as a node.
+      if (ir.nodes.some((n) => n.lexicon === "helm" && n.kind === "Helm::Chart")) {
+        const observed = await lifecycleDiffLive(cfg.projectDir, env, query)
+          .then((d) => d.lexicons?.helm?.observedArtifacts)
+          .catch(() => undefined);
+        applyHelmArtifacts(ir, observed);
+      }
       // Runtime tier (#86, chant#1180/#1077): nest each live, undeclared,
       // owner-chain-resolved node (a Pod its Deployment's controller created)
       // under its declared owner in `groups.byContainer` — a no-op on a
