@@ -137,3 +137,47 @@ export function notesFor(
   const notes = [primary, edgelessNote(zoom, ir)].filter((n): n is string => n !== undefined);
   return notes.length ? notes.join(" · ") : undefined;
 }
+
+/**
+ * The wrong-tier trap: when the project declares a tier lens and a
+ * substrate's declared resources read half-or-more "declared, not present"
+ * (`accent`) at the current tier, the far likelier story is a mis-picked
+ * tier than a half-deployed estate — declared names embed the tier on these
+ * projects, so every workload of a running estate reads absent at any other
+ * tier, and resources/attributes/runtime collapse into identical near-empty
+ * views with nothing saying why. This says why.
+ *
+ * Only fires when a tier lens exists (`.behold.json` `tiers`), only counts a
+ * lexicon's classified nodes (neutral is unobserved, not absent), and needs
+ * at least two accent nodes so a single genuinely-pending resource on a tiny
+ * estate stays quiet.
+ */
+export function tierMismatchNote(
+  ir: NotableGraph,
+  tiers: { values?: readonly string[] } | undefined,
+  currentTier: string | undefined,
+): string | undefined {
+  const values = tiers?.values ?? [];
+  if (values.length < 2) return undefined;
+
+  const byLexicon = new Map<string, { good: number; accent: number }>();
+  for (const n of ir.nodes) {
+    const status = (n as { attrs?: Record<string, unknown> }).attrs?._status;
+    if (status !== "good" && status !== "accent") continue;
+    const lexicon = (n as { lexicon?: string }).lexicon ?? "?";
+    const c = byLexicon.get(lexicon) ?? { good: 0, accent: 0 };
+    c[status === "good" ? "good" : "accent"]++;
+    byLexicon.set(lexicon, c);
+  }
+
+  for (const [lexicon, { good, accent }] of [...byLexicon].sort()) {
+    if (accent < 2 || accent * 2 < good + accent) continue;
+    const here = currentTier ? `tier "${currentTier}"` : "the default tier";
+    const others = values.filter((v) => v !== currentTier).join(", ");
+    return (
+      `${accent} of ${good + accent} ${lexicon} resources read "declared, not deployed" at ${here} — ` +
+      `if the estate runs another declared tier (${others}), pick it (⌘K → tier)`
+    );
+  }
+  return undefined;
+}
