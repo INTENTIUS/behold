@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { zoomNote, edgelessNote, logicalKept, notesFor, type NotableGraph } from "./zoom-notes.ts";
+import { zoomNote, edgelessNote, logicalKept, notesFor, tierMismatchNote, type NotableGraph } from "./zoom-notes.ts";
 
 const graph = (nodes: number, edges: number, byContainer?: Record<string, string[]>): NotableGraph => ({
   nodes: Array.from({ length: nodes }, (_, i) => ({ id: `n${i}` })),
@@ -147,5 +147,40 @@ describe("notesFor with a logical input count", () => {
 
   it("stays silent on a logical view that kept most of its input", () => {
     expect(notesFor("logical", graph(9, 2), undefined, 11)).toBeUndefined();
+  });
+});
+
+describe("tierMismatchNote (the wrong-tier trap)", () => {
+  const node = (lexicon: string, status: string) => ({ id: Math.random().toString(36).slice(2), kind: "X", lexicon, attrs: { _status: status } });
+  const tiers = { values: ["minimal", "prod", "prod-ha"] };
+
+  it("half-or-more accent in one lexicon at a tier: names the count, the tier, and the other tiers", () => {
+    const ir = { nodes: [node("k8s", "accent"), node("k8s", "accent"), node("k8s", "good"), node("aws", "good")], edges: [] };
+    const note = tierMismatchNote(ir, tiers, "minimal");
+    expect(note).toContain('2 of 3 k8s resources');
+    expect(note).toContain('tier "minimal"');
+    expect(note).toContain("prod, prod-ha");
+  });
+
+  it("no tier lens declared: never fires — there is no picker to point at", () => {
+    const ir = { nodes: [node("k8s", "accent"), node("k8s", "accent")], edges: [] };
+    expect(tierMismatchNote(ir, undefined, undefined)).toBeUndefined();
+  });
+
+  it("a single pending resource stays quiet — one accent is a deploy in progress, not a wrong tier", () => {
+    const ir = { nodes: [node("aws", "accent"), node("aws", "good")], edges: [] };
+    expect(tierMismatchNote(ir, tiers, "prod-ha")).toBeUndefined();
+  });
+
+  it("a mostly-deployed estate stays quiet even with a few genuine drifts", () => {
+    const ir = { nodes: [node("aws", "accent"), node("aws", "accent"), node("aws", "accent"), node("aws", "good"), node("aws", "good"), node("aws", "good"), node("aws", "good")], edges: [] };
+    expect(tierMismatchNote(ir, tiers, "prod-ha")).toBeUndefined();
+  });
+
+  it("neutral (unobserved) never counts toward the ratio — unobserved is not absent", () => {
+    const ir = { nodes: [node("k8s", "neutral"), node("k8s", "neutral"), node("k8s", "accent"), node("k8s", "accent")], edges: [] };
+    const note = tierMismatchNote(ir, tiers, undefined);
+    expect(note).toContain("2 of 2 k8s resources");
+    expect(note).toContain("the default tier");
   });
 });
