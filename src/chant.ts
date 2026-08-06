@@ -659,6 +659,48 @@ export function lifecyclePlan(projectDir: string, env: string, opts: GraphOption
 }
 
 // ---------------------------------------------------------------------------
+// Artifact observation (behold#146) — the helm lens's live half. A Helm
+// release is an artifact in chant's vocabulary, not a resource: it has no
+// declared axis, so it never enters `graph --live --overlay`'s managed/
+// foreign/pending classification. The one chant read that observes it is
+// `lifecycle diff --live --json`, whose `lexicons.<name>.observedArtifacts`
+// (chant#1516) carries what `listArtifacts` actually saw — status, chart,
+// revision. behold joins those onto declared `Helm::Chart` nodes by chart
+// name (src/helm-artifacts.ts) and never invents nodes for releases that
+// match no declared chart.
+// ---------------------------------------------------------------------------
+
+/** One observed artifact from `lifecycle diff --live --json` — chant's own
+ * `ArtifactMetadata` (lexicon.ts), reproduced here rather than imported, same
+ * as `LifecyclePlanEntry` above. */
+export interface LiveArtifactObservation {
+  type?: string;
+  physicalId?: string;
+  status?: string;
+  attributes?: Record<string, unknown>;
+}
+
+/** The slice of `chant lifecycle diff <env> --live --json` behold reads. */
+export interface LifecycleDiffLive {
+  environment?: string;
+  lexicons?: Record<string, { observedArtifacts?: Record<string, LiveArtifactObservation> }>;
+}
+
+/** Build the `chant lifecycle diff <env> --live --json` argv. Pure; exported
+ * for testing. */
+export function lifecycleDiffArgs(env: string): string[] {
+  return ["lifecycle", "diff", env, "--live", "--json"];
+}
+
+/** The live artifact observations for `env`, keyed `release/<ns>/<name>` for
+ * helm. Read-only, like every shell-out here. A chant predating #1516 returns
+ * no `observedArtifacts` — callers treat that as "not observed" (unobserved ≠
+ * absent), never as "no releases". */
+export function lifecycleDiffLive(projectDir: string, env: string, opts: GraphOptions = {}): Promise<LifecycleDiffLive> {
+  return runChantJson<LifecycleDiffLive>(lifecycleDiffArgs(env), projectDir, envOverridesFor(opts));
+}
+
+// ---------------------------------------------------------------------------
 // Apply facet (M3, epic #54's observe→reconcile→apply dial) — behold's first
 // delegated WRITE. `chant run <target> --components --env <env>
 // --progress-json` (chant 0.18.30) deploys the named component (or every

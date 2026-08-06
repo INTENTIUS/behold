@@ -96,3 +96,11 @@ e2e-gcp-logical:
 #   BEHOLD_E2E_PROJECT=/path/to/deployed/copy just e2e-cc-logical
 e2e-cc-logical:
     bash e2e/cc-logical-floci-e2e.sh
+
+# behold#146 (the helm lane): artifact presence + the logical release box,
+# against a chart project on a k3d cluster. Installs (and uninstalls) the
+# release itself; boots nothing else. Needs a chant ≥ #1516
+# (observedArtifacts) and the project's declared kube context reachable.
+#   BEHOLD_E2E_PROJECT=/path BEHOLD_E2E_CHART=./chart BEHOLD_E2E_RELEASE=name just e2e-helm-logical
+e2e-helm-logical:
+    bash e2e/helm-logical-k3d-e2e.sh

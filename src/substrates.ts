@@ -184,5 +184,25 @@ export async function detectSubstrates(projectDir: string, preview = false): Pro
     });
   }
 
+  // Helm (behold#146) — only for a helm-lexicon project. Not a daemon: a
+  // release is installed by a `helm upgrade` run, so presence of the binary
+  // plus a reachable kube context reads "on-demand" (like the forges), never
+  // a false "down". No bring-up — there is nothing to boot.
+  if (lexicons.includes("helm")) {
+    const helm = await probe("helm", ["version", "--short"]);
+    const ctx = helm.code === 0 ? await probe("kubectl", ["config", "current-context"]) : { code: 127, out: "" };
+    subs.push({
+      name: "helm",
+      label: "Helm",
+      status: helm.code === 127 ? "unknown" : ctx.code === 0 && ctx.out.trim() ? "on-demand" : "blocked",
+      detail:
+        helm.code === 127
+          ? "helm not installed"
+          : ctx.code === 0 && ctx.out.trim()
+            ? `${helm.out.trim()} · context ${ctx.out.trim()}`
+            : "no kube context",
+    });
+  }
+
   return subs;
 }

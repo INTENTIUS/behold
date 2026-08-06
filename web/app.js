@@ -112,6 +112,12 @@ const STATUS_LABEL = { good: "managed", warn: "foreign", accent: "pending", neut
 // paint — there's no separate amber token) reads as "in progress" here,
 // distinct from the entity overlay's "pending" meaning for the same colour.
 const COMPONENT_STATUS_LABEL = { good: "healthy", accent: "in progress", warn: "rollback / failed", neutral: "not deployed" };
+// behold#146: the artifact-presence join (src/helm-artifacts.ts) paints
+// Helm::Chart nodes with the same palette but the 2-way ARTIFACT vocabulary —
+// a release is "installed", never "managed": chant's docs are explicit that
+// artifacts have no declared axis to classify against. `_artifact`'s presence
+// (or an artifact-flavoured `_unobserved`) picks this label set.
+const ARTIFACT_STATUS_LABEL = { good: "installed", warn: "installed, not healthy", accent: "not installed", neutral: "unobserved" };
 
 // A declared attribute value may be a cross-resource reference ({$ref:"x.y"}) —
 // the "static infra refs" — rather than a concrete value. Render those readably;
@@ -153,7 +159,18 @@ function inspect(node) {
   // joinComponentStatus, so its presence picks the component-status label set
   // over the entity overlay's managed/foreign/pending.
   const liveStatus = node.attrs && node.attrs._liveStatus;
-  if (st) id("status", (liveStatus ? COMPONENT_STATUS_LABEL[st] : STATUS_LABEL[st]) || st);
+  // behold#146: a Helm chart's status is artifact presence, not management —
+  // the join sets `_artifact` on a match, and every Helm::Chart in an overlay
+  // went through it, so the kind alone is the reliable picker.
+  const isArtifact = node.kind === "Helm::Chart";
+  if (st) id("status", (isArtifact ? ARTIFACT_STATUS_LABEL[st] : liveStatus ? COMPONENT_STATUS_LABEL[st] : STATUS_LABEL[st]) || st);
+  if (node.attrs && node.attrs._artifact) {
+    const a = node.attrs._artifact;
+    if (a.release) id("release", a.release);
+    if (a.status) id("release status", a.status);
+    if (a.revision) id("revision", a.revision);
+    if (a.chart) id("chart", a.chart);
+  }
   // chant#1168 (#1089): `_unobserved` carries WHY chant couldn't read this
   // entity's live state — only ever set alongside the entity overlay's
   // `_status: "neutral"` (never the component-status join's own, unrelated
