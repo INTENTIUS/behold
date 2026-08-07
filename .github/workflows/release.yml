@@ -17,7 +17,10 @@ name: release
 # implied.
 on:
   push:
-    tags: ["v*"]
+    # The repo's release-tag convention is behold-v<version> (behold-v0.1.0,
+    # behold-v0.2.0 — chant's chant-v* shape). The original "v*" matched
+    # neither, so this workflow had never once fired (#172).
+    tags: ["behold-v*"]
   # Rehearse everything that can say no, without publishing.
   workflow_dispatch:
 
@@ -86,7 +89,7 @@ jobs:
         if: github.ref_type == 'tag'
         run: |
           pkg="$(node -p 'require("./package.json").version')"
-          tag="${GITHUB_REF_NAME#v}"
+          tag="${GITHUB_REF_NAME#behold-v}"
           if [ "$pkg" != "$tag" ]; then
             echo "tag ${GITHUB_REF_NAME} does not match package.json ${pkg}" >&2
             exit 1

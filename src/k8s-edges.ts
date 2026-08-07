@@ -11,11 +11,21 @@
  *   Ingress …backend.service.name  = Service.metadata.name
  *   HPA.spec.scaleTargetRef        = { kind, name } of a workload
  *
- * This pass derives those three, and only those three. They are exact joins on
- * declared literals — the same standard the AWS lens's security-group ingress
- * pass meets — so nothing here guesses. A CRD's reference fields stay out of
- * scope: which of its strings are references is per-CRD knowledge this module
- * must not encode.
+ * This pass derives those joins, plus the Flux toolkit's source refs
+ * (behold#171):
+ *
+ *   Kustomization.spec.sourceRef             = { kind, name[, namespace] } of a source
+ *   HelmRelease.spec.chart.spec.sourceRef    = { kind, name[, namespace] } of a source
+ *
+ * All of them are exact joins on declared literals — the same standard the AWS
+ * lens's security-group ingress pass meets — so nothing here guesses. The rule
+ * for a CRD's fields stands, refined: an ARBITRARY CRD's strings stay out of
+ * scope (which of them are references is per-CRD knowledge this module must
+ * not encode — a MicroVM's `imageRef` gets no edge), but a NAMED, versioned,
+ * upstream-stable reference contract is the `scaleTargetRef` standard, and the
+ * Flux toolkit's `sourceRef` is exactly that. Argo's `Application.spec.source.
+ * repoURL` is deliberately NOT here: it's a URL, not a reference to any node
+ * in the graph — if two objects ever share it, that is value-match's job.
  *
  * Namespace scoping uses the platform's own defaulting rule: an object with no
  * declared `metadata.namespace` lives in `default`, so that is what it joins
@@ -86,6 +96,32 @@ function shortKind(kind: string): string {
   return parts[parts.length - 1] ?? kind;
 }
 
+/** The Flux source kinds a `sourceRef` can point at (behold#171). */
+const FLUX_SOURCE_KINDS = new Set([
+  "K8s::Flux::GitRepository",
+  "K8s::Flux::OCIRepository",
+  "K8s::Flux::HelmRepository",
+  "K8s::Flux::HelmChart",
+  "K8s::Flux::Bucket",
+]);
+
+/** A `sourceRef`-shaped `{ kind, name, namespace? }` read off a nested object,
+ * namespace defaulting to the REFERRER'S own (Flux's rule — a sourceRef with
+ * no namespace resolves in the CR's namespace). */
+function sourceRefOf(refObj: unknown, referrer: IRNode): { kind: string; name: string; namespace: string } | undefined {
+  const ref = rec(refObj);
+  const kind = str(ref?.kind);
+  const name = str(ref?.name);
+  if (!kind || !name) return undefined;
+  return { kind, name, namespace: str(ref?.namespace) ?? namespaceOf(referrer) };
+}
+
+/** The `sourceRef` a HelmRelease declares: `spec.chart.spec.sourceRef` — three
+ * levels down, so it gets a name instead of a rec() chain at the call site. */
+function helmReleaseSourceRef(n: IRNode): unknown {
+  return rec(rec(rec(n.attrs?.spec)?.chart)?.spec)?.sourceRef;
+}
+
 /** Service names an Ingress's backends point at: rules[].http.paths[].backend
  * plus defaultBackend. */
 function ingressBackendServices(n: IRNode): string[] {
@@ -124,11 +160,20 @@ export function deriveK8sEdges(nodes: readonly IRNode[]): K8sDeclaredEdge[] {
 
   const workloads = k8s.filter((n) => WORKLOAD_KINDS.has(n.kind));
   const servicesByNsName = new Map<string, IRNode>();
+  // Flux sources by the identity a sourceRef names: short kind + ns + name.
+  const sourcesByKindNsName = new Map<string, IRNode>();
   for (const n of k8s) {
-    if (n.kind !== "K8s::Core::Service") continue;
     const name = nameOf(n);
-    if (name) servicesByNsName.set(`${namespaceOf(n)}/${name}`, n);
+    if (!name) continue;
+    if (n.kind === "K8s::Core::Service") servicesByNsName.set(`${namespaceOf(n)}/${name}`, n);
+    if (FLUX_SOURCE_KINDS.has(n.kind)) sourcesByKindNsName.set(`${shortKind(n.kind)}/${namespaceOf(n)}/${name}`, n);
   }
+  const addSourceRef = (n: IRNode, refObj: unknown, viaAttr: string) => {
+    const ref = sourceRefOf(refObj, n);
+    if (!ref) return;
+    const source = sourcesByKindNsName.get(`${ref.kind}/${ref.namespace}/${ref.name}`);
+    if (source) add(n.id, source.id, viaAttr);
+  };
 
   for (const n of k8s) {
     // Service → workload its selector lands on.
@@ -160,6 +205,16 @@ export function deriveK8sEdges(nodes: readonly IRNode[]): K8sDeclaredEdge[] {
         if (namespaceOf(w) !== namespaceOf(n)) continue;
         if (shortKind(w.kind) === refKind && nameOf(w) === refName) add(n.id, w.id, "scaleTargetRef");
       }
+      continue;
+    }
+    // Flux reconciler → the source its sourceRef names (behold#171): a GitOps
+    // estate reads source → reconciler instead of disconnected cards.
+    if (n.kind === "K8s::Flux::Kustomization") {
+      addSourceRef(n, rec(n.attrs?.spec)?.sourceRef, "sourceRef");
+      continue;
+    }
+    if (n.kind === "K8s::Flux::HelmRelease") {
+      addSourceRef(n, helmReleaseSourceRef(n), "chart sourceRef");
     }
   }
   return out;
