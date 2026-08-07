@@ -35,6 +35,32 @@ describe("projectKustomizeLogical (behold#171)", () => {
     const proj = projectKustomizeLogical(ir, "/proj", exists);
     expect(proj.byContainer[overlayBoxTitle("dev")]).toEqual(["web"]);
   });
+
+  test("the probe base is the graphed root, not the project dir (sourceDir estates)", () => {
+    // `chant graph <sourceDir>` reports sourceLoc.file relative to that root:
+    // an estate with `sourceDir: "src"` yields `overlay/dev/main.ts`, and the
+    // kustomization.yaml lives at `<project>/src/overlay/dev/`. The caller
+    // hands the lens graphPath's resolution ("/proj/src"), so the probe hits;
+    // against the project root it would miss every root and the lens would
+    // stay dark on every sourceDir estate.
+    const ir = irOf([k8s("web", "K8s::Apps::Deployment", "overlay/dev/main.ts", { name: "dev-web", namespace: "kz-web" })]);
+    const exists = (p: string) => p === "/proj/src/overlay/dev/kustomization.yaml";
+    const proj = projectKustomizeLogical(ir, "/proj/src", exists);
+    expect(proj.byContainer[overlayBoxTitle("dev")]).toEqual(["web"]);
+  });
+
+  test("both sourceLoc shapes claim when given both bases (declared vs live overlay)", () => {
+    // The declared path reports root-relative files, the --live overlay path
+    // project-relative ones (it ignores the path positional). The server hands
+    // the lens both bases, so the same estate boxes identically in both views.
+    const exists = (p: string) => p === "/proj/src/overlay/dev/kustomization.yaml";
+    const declared = irOf([k8s("web", "K8s::Apps::Deployment", "overlay/dev/main.ts")]);
+    const live = irOf([k8s("web", "K8s::Apps::Deployment", "src/overlay/dev/main.ts")]);
+    for (const ir of [declared, live]) {
+      const proj = projectKustomizeLogical(ir, ["/proj/src", "/proj"], exists);
+      expect(proj.byContainer[overlayBoxTitle("dev")]).toEqual(["web"]);
+    }
+  });
 });
 
 describe("overlay boxes nest like release boxes (behold#171)", () => {

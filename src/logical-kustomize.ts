@@ -39,13 +39,15 @@ function dirOf(node: { sourceLoc?: { file?: string } }): string {
 }
 
 /** The nearest ancestor dir (self included) carrying a kustomization file,
- * resolved against `projectDir`; undefined when none. Walks at most four
+ * resolved against each base in turn; undefined when none. Walks at most four
  * levels — a kustomization root is near its resources by design. */
-function kustomizationRoot(projectDir: string, dir: string, exists: (p: string) => boolean): string | undefined {
+function kustomizationRoot(bases: string[], dir: string, exists: (p: string) => boolean): string | undefined {
   let current = dir;
   for (let i = 0; i < 4 && current; i++) {
-    if (exists(join(projectDir, current, "kustomization.yaml")) || exists(join(projectDir, current, "kustomization.yml"))) {
-      return current;
+    for (const base of bases) {
+      if (exists(join(base, current, "kustomization.yaml")) || exists(join(base, current, "kustomization.yml"))) {
+        return current;
+      }
     }
     const slash = current.lastIndexOf("/");
     current = slash >= 0 ? current.slice(0, slash) : "";
@@ -53,11 +55,20 @@ function kustomizationRoot(projectDir: string, dir: string, exists: (p: string) 
   return undefined;
 }
 
+/** `sourceRoots`: the directories `sourceLoc.file` may be relative to. chant
+ * reports it relative to the path `chant graph` was invoked on — the resolved
+ * `sourceDir` (`graphPath()`) on the declared path, but the PROJECT root on
+ * the `--live` overlay path (which ignores the path positional and walks the
+ * whole estate). An estate with `sourceDir: "src"` therefore yields
+ * `overlay/dev/main.ts` from one endpoint and `src/overlay/dev/main.ts` from
+ * the other; probing every base keeps the box in both views. The box title is
+ * the root dir's basename either way, so the two shapes agree on the name. */
 export function projectKustomizeLogical(
   ir: GraphIR,
-  projectDir: string,
+  sourceRoots: string | string[],
   exists: (p: string) => boolean = existsSync,
 ): LogicalProjection {
+  const bases = Array.isArray(sourceRoots) ? sourceRoots : [sourceRoots];
   const k8s = ir.nodes.filter((n) => n.lexicon === "k8s");
   if (k8s.length === 0) return { ir: { nodes: [], edges: [], groups: {} }, byContainer: {} };
 
@@ -71,7 +82,7 @@ export function projectKustomizeLogical(
   for (const n of k8s) {
     const dir = dirOf(n);
     if (dir === "") continue;
-    if (!rootCache.has(dir)) rootCache.set(dir, kustomizationRoot(projectDir, dir, exists));
+    if (!rootCache.has(dir)) rootCache.set(dir, kustomizationRoot(bases, dir, exists));
     const root = rootCache.get(dir);
     if (root === undefined) continue;
     const name = root.split("/").pop() || root;

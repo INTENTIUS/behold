@@ -34,6 +34,7 @@ import {
   lifecyclePlan,
   lifecycleDiffLive,
   runChantRaw,
+  graphPath,
   ChantCliError,
   classifyChantFailure,
   type GraphOptions,
@@ -617,7 +618,10 @@ export function createApp(
         // #102: the lens follows the substrate — AWS nests region/VPC/subnet,
         // Azure nests resource group/VNet/subnet. `metaEnv` names the resource
         // group on Azure, which ARM never declares as a resource.
-        const { ir: projected, byContainer } = projectTopology(base, metaEnv ?? undefined, await boundK8sContext(metaEnv ?? undefined), cfg.projectDir);
+        // The kustomize lens probes relative to whatever base sourceLoc was
+        // reported against — root-relative here, project-relative on the live
+        // path — so hand it both (see projectKustomizeLogical's doc).
+        const { ir: projected, byContainer } = projectTopology(base, metaEnv ?? undefined, await boundK8sContext(metaEnv ?? undefined), [await graphPath(cfg.projectDir, opts), cfg.projectDir]);
         const { svg } = renderArchitecture(projected, byContainer);
         // `byContainer` rides along (behold#100): the nesting IS the projection's
         // primary output, and until now it was only observable by reading the
@@ -923,7 +927,9 @@ export function createApp(
         // Counted before the projection, so the note can say what was dropped
         // rather than only that the result is empty (#133's reading).
         const logicalBefore = ir.nodes.length;
-        const { ir: projected, byContainer } = projectTopology(addK8sDeclaredEdges(addValueMatchEdges(ir)), env, boundContext, cfg.projectDir);
+        // Same as /api/graph's logical branch: the kustomize lens probes both
+        // sourceLoc bases (the live path reports project-relative files).
+        const { ir: projected, byContainer } = projectTopology(addK8sDeclaredEdges(addValueMatchEdges(ir)), env, boundContext, [await graphPath(cfg.projectDir, opts), cfg.projectDir]);
         const { svg } = renderArchitecture(projected, byContainer);
         // See /api/graph's logical branch — `byContainer` is carried for the
         // same reason (behold#100). The wrong-tier note (#158) joins here too:
