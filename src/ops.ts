@@ -25,6 +25,12 @@ export type OpKind = "apply" | "reconcile" | "audit" | "op";
 export const APPLY_TARGET_LEXICON: Readonly<Record<string, string>> = {
   cloudformation: "aws",
   kubectl: "k8s",
+  // kustomize renders then applies through the same k8s pipeline
+  // (chant#1548), so it scopes to the same lexicon. Note the auto-sync
+  // wrinkle this creates on purpose: a kustomize Op AND a kubectl Op in one
+  // project both exact-match `k8s`, and two exact matches decline — two Ops
+  // claiming the k8s half genuinely is ambiguous.
+  kustomize: "k8s",
   arm: "azure",
 };
 
