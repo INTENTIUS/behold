@@ -886,6 +886,8 @@ function renderDial() {
     hint.style.cssText = "font-size:11px;color:var(--muted);align-self:center";
     hint.textContent = "observe → reconcile → apply needs an environment — pick one in ⌘K (env: …)";
     host.appendChild(hint);
+    // A pipeline run (#163) is env-less — its progress still belongs here.
+    if (applyProgress && applyProgress.waves.length) host.appendChild(renderApplyProgress(applyProgress));
     return;
   }
   host.style.display = "flex";
@@ -1077,7 +1079,9 @@ function renderApplyProgress(state) {
   wrap.style.cssText = "display:flex;flex-direction:column;gap:6px;width:100%;margin-top:4px";
   const summary = document.createElement("div");
   summary.style.cssText = `font-size:11px;color:${APPLY_STATUS_COLOR[state.status] || "var(--muted)"}`;
-  summary.textContent = `apply: ${state.status}`;
+  // A pipeline run (#163) reuses this whole panel — same shape, different
+  // executor — and says so instead of claiming to be an apply.
+  summary.textContent = `${state.kind || "apply"}: ${state.status}`;
   wrap.appendChild(summary);
   for (const w of state.waves) {
     const row = document.createElement("div");
