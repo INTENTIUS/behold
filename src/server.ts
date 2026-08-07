@@ -18,6 +18,8 @@ import { streamSSE } from "hono/streaming";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { serve } from "@hono/node-server";
 import { fileURLToPath } from "node:url";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { existsSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import type { GraphIR } from "@intentius/chant";
@@ -39,6 +41,7 @@ import {
 } from "./chant.ts";
 import { mergeClusterRoot, runningK3dClusters } from "./cluster-root.ts";
 import { synthesizeHelmReleases, discoverReleaseUnits } from "./helm-releases.ts";
+import { ghReady, pickWorkflow, dispatchAndFollow, joinCiProgress } from "./gh-run.ts";
 import { joinComponentStatus, componentStatusColor } from "./component-status.ts";
 import { reclassifyOverlay, pruneImports, attachRuntimeContainment, pruneRuntimeChildren } from "./overlay.ts";
 import { addValueMatchEdges } from "./value-match.ts";
@@ -68,6 +71,10 @@ import { renderLanes } from "./lanes.ts";
 import { emulatorUp, emulatorDown, mergedEnv, type EmulatorInfo } from "./emulator.ts";
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
+
+/** One captured-stdout exec, for the odd read-only shell-out (git branch). */
+const execFileP = async (cmd: string, args: string[]): Promise<string> =>
+  (await promisify(execFile)(cmd, args, { encoding: "utf8", timeout: 10_000 })).stdout;
 
 export interface ServerOptions {
   /** The chant project directory behold observes. When multiple projects are
@@ -591,6 +598,11 @@ export function createApp(
           mode = "component-status";
           metaEnv = env;
         }
+        // The last pipeline run of this session, on the DAG (#164): a plain
+        // `ci` attr per component (pinhole's default card template prints it —
+        // the chip is free) + `_ciJob` for the inspect panel. No pipeline has
+        // run → no-op.
+        ir = joinCiProgress(ir, runner.applyProgress);
       } else if (logical) {
         // Logical lens: pull the rich entity graph (detail 3 — the projection
         // reads full attrs to resolve VPC/subnet/component containment), recover
@@ -722,6 +734,38 @@ export function createApp(
     } catch (err) {
       return errorResponse(c, opts, err);
     }
+  });
+
+  // Trigger GitHub Actions and follow the run (#164, the second slice of #61).
+  // Delegation, not credentials: the dispatch and every poll run through the
+  // OPERATOR'S own `gh` login — behold refuses honestly when gh is missing or
+  // unauthenticated, before anything is attempted. The dispatched workflow is
+  // chosen by job-id overlap with the generated pipeline and must declare
+  // workflow_dispatch; the follow polls `gh run view --json` (structured — no
+  // log guessing, unlike the local runner's classifier) and renders on the
+  // dial exactly like #163's local pipeline.
+  app.post("/api/ci/dispatch", async (c) => {
+    const ready = await ghReady();
+    if (!ready.ok) return c.json({ error: ready.reason }, 400);
+    const pipeline = await ciPipeline(cfg.projectDir, cfg.env ? { env: cfg.env } : {}, "github").catch(() => undefined);
+    if (!pipeline || pipeline.jobs.length === 0) {
+      return c.json({ error: "no generated GitHub pipeline — `chant build --components --generate github` produced no jobs" }, 400);
+    }
+    const workflow = pickWorkflow(cfg.projectDir, pipeline);
+    if (!workflow) {
+      return c.json({ error: "no committed workflow_dispatch workflow whose jobs match the generated pipeline — commit one (or add `workflow_dispatch:` to its `on:` block)" }, 400);
+    }
+    // The ref the run builds: the project's current branch. Detached/unreadable
+    // falls back to the default-branch convention rather than failing the
+    // gesture over a rev-parse.
+    const ref = await execFileP("git", ["-C", cfg.projectDir, "branch", "--show-current"])
+      .then((out) => out.trim() || "main")
+      .catch(() => "main");
+    const started = runner.track(`GitHub Actions ${workflow.file}`, (io) =>
+      dispatchAndFollow(workflow, pipeline, ref, { onLine: io.line, onProgress: io.progress }),
+    );
+    if (!started) return c.json({ error: `busy — ${runner.running} is running` }, 409);
+    return c.json({ started: true, workflow: workflow.file, ref, jobs: pipeline.jobs.length });
   });
 
   // Resources facet (#59 unify): a best-effort, honest slice of the DoD's
