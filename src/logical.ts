@@ -329,7 +329,7 @@ function nearestByRef(start: string, want: Set<string>, refOut: Map<string, Set<
  * other three contribute nothing. Box titles are per-lens synthetic strings and
  * node ids are unique across the IR, so there is nothing to collide.
  */
-export function projectTopology(ir: GraphIR, env?: string, boundContext?: string, projectDir?: string): LogicalProjection {
+export function projectTopology(ir: GraphIR, env?: string, boundContext?: string, sourceRoots?: string | string[]): LogicalProjection {
   const projections = [
     projectLogical(ir),
     projectAzureLogical(ir, env),
@@ -337,9 +337,11 @@ export function projectTopology(ir: GraphIR, env?: string, boundContext?: string
     projectK8sLogical(ir, env, boundContext),
     projectHelmLogical(ir),
     projectFlyLogical(ir),
-    // The kustomize lens needs the project dir to find kustomization roots;
-    // a caller without one (tests, composition paths) just skips it.
-    ...(projectDir ? [projectKustomizeLogical(ir, projectDir)] : []),
+    // The kustomize lens probes for kustomization roots relative to whatever
+    // base `sourceLoc.file` was reported against — the graphed root on the
+    // declared path, the project dir on the live overlay path (see the lens's
+    // doc); a caller without one (tests, composition paths) just skips it.
+    ...(sourceRoots && (!Array.isArray(sourceRoots) || sourceRoots.length) ? [projectKustomizeLogical(ir, sourceRoots)] : []),
   ];
 
   const nodes: IRNode[] = [];
