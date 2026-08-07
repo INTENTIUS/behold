@@ -53,7 +53,7 @@
  * containment and leaves edges to whoever can resolve them generically.
  */
 import type { GraphIR, IRNode } from "@intentius/chant";
-import { soleManagedCluster } from "./cluster-anchor.ts";
+import { boundManagedCluster } from "./cluster-anchor.ts";
 import type { ByContainer, LogicalProjection } from "./logical.ts";
 
 /**
@@ -114,15 +114,18 @@ export function declaredNamespaces(nodes: readonly IRNode[]): Set<string> {
  *      the answer for a k8s-only estate, where no declared node is the cluster.
  *   3. A bare `cluster` box — an unnamed box beats a fabricated id.
  *
- * Two managed clusters means no attribute says which one this k8s half runs
- * on, so the join declines and falls back to `env` — the same discipline
- * `addClusterAnchorEdges` follows. Pure; the input IR is untouched.
+ * Two managed clusters used to be an unconditional decline; with a bound kube
+ * context to compare (`boundContext` — the context chant binds for the served
+ * env) the cluster that context names wins, which is what makes fountain-ops's
+ * two declared k3d clusters render as one picture instead of falling back to
+ * `env`. No context, or an ambiguous match, still declines — the same
+ * discipline `addClusterAnchorEdges` follows. Pure; the input IR is untouched.
  */
-export function projectK8sLogical(ir: GraphIR, env?: string): LogicalProjection {
+export function projectK8sLogical(ir: GraphIR, env?: string, boundContext?: string): LogicalProjection {
   const k8s = ir.nodes.filter((n) => n.lexicon === "k8s");
   if (k8s.length === 0) return { ir: { nodes: [], edges: [], groups: {} }, byContainer: {} };
 
-  const cluster = soleManagedCluster(ir.nodes);
+  const cluster = boundManagedCluster(ir.nodes, boundContext);
   const CLUSTER_TITLE = cluster ? cluster.id : env ? `cluster ${env}` : "cluster";
   const CLUSTER_SCOPED = "cluster-scoped";
   const namespaceTitle = (ns: string) => `namespace ${ns}`;

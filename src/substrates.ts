@@ -89,7 +89,7 @@ function projectLexicons(projectDir: string): string[] {
  * Floci → k3d → GitLab CI → Forgejo. Cheap probes only (a few `docker`/`k3d`
  * calls); safe to poll.
  */
-export async function detectSubstrates(projectDir: string, preview = false): Promise<Substrate[]> {
+export async function detectSubstrates(projectDir: string, preview = false, boundContext?: string): Promise<Substrate[]> {
   const subs: Substrate[] = [];
   const lexicons = projectLexicons(projectDir);
   const docker = await dockerAvailable();
@@ -112,8 +112,13 @@ export async function detectSubstrates(projectDir: string, preview = false): Pro
     !docker ? { status: "blocked", detail: "waiting on Docker" } : { status: up ? "up" : (offDetail === "on-demand (pipeline run)" ? "on-demand" : "down"), detail: up ? upDetail : offDetail };
 
   // Floci — only for an aws-lexicon project (it emulates AWS managed services).
+  // Two container-name conventions exist: the estates' own local-up scripts run
+  // it as `floci` (kubemicrovm-ops names it that deliberately — its comment
+  // cites this very probe), while `chant emulator up` names its container
+  // `chant-floci` (src/emulator.ts). Probing only the first read the second as
+  // down while it was serving — and offered to bring up what was already up.
   if (lexicons.includes("aws")) {
-    const floci = docker ? await dockerRunning("^floci$") : [];
+    const floci = docker ? await dockerRunning("^floci$|^chant-floci$") : [];
     const d = dep(floci.length > 0, "container up on :4566", "not running");
     subs.push({
       name: "floci",
@@ -188,18 +193,26 @@ export async function detectSubstrates(projectDir: string, preview = false): Pro
   // release is installed by a `helm upgrade` run, so presence of the binary
   // plus a reachable kube context reads "on-demand" (like the forges), never
   // a false "down". No bring-up — there is nothing to boot.
+  //
+  // The context shown is the PROJECT'S binding when the caller resolved one
+  // (`k8s.profiles.<env>.context` — what chant's helm reads actually use,
+  // chant#1488), falling back to the ambient current-context. Probing only
+  // ambient reported whatever cluster the operator's shell last pointed at —
+  // observed live: a kubemicrovm-ops estate bound to `k3d-kubemicrovm-local`
+  // whose pill named a real EKS cluster.
   if (lexicons.includes("helm")) {
     const helm = await probe("helm", ["version", "--short"]);
-    const ctx = helm.code === 0 ? await probe("kubectl", ["config", "current-context"]) : { code: 127, out: "" };
+    const ambient = helm.code === 0 && !boundContext ? await probe("kubectl", ["config", "current-context"]) : { code: 127, out: "" };
+    const ctx = boundContext ?? (ambient.code === 0 ? ambient.out.trim() : "");
     subs.push({
       name: "helm",
       label: "Helm",
-      status: helm.code === 127 ? "unknown" : ctx.code === 0 && ctx.out.trim() ? "on-demand" : "blocked",
+      status: helm.code === 127 ? "unknown" : ctx ? "on-demand" : "blocked",
       detail:
         helm.code === 127
           ? "helm not installed"
-          : ctx.code === 0 && ctx.out.trim()
-            ? `${helm.out.trim()} · context ${ctx.out.trim()}`
+          : ctx
+            ? `${helm.out.trim()} · context ${ctx}${boundContext ? " (bound)" : ""}`
             : "no kube context",
     });
   }
