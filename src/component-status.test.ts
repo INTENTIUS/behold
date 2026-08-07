@@ -375,3 +375,51 @@ describe("componentStatusColor — AWS reads the rollup too (behold#100)", () =>
     expect(componentStatusColor(row)).toBe("good");
   });
 });
+
+// An ABSENT deploy unit comes back as `stack: {name}` alone — no `status`, no
+// `healthy`. That is what chant reports for every kubectl-apply/helm-upgrade
+// unit whose selector matched nothing, and for a CFN stack that does not
+// exist. Absence is not unhealthiness: reading `healthy: undefined` as "in
+// flux" painted five of kubemicrovm-ops's seven components accent on a fully
+// deployed estate, because the accent branch returned before their all-present
+// rollups were ever consulted.
+describe("componentStatusColor — an absent stack ({name} only) asserts nothing", () => {
+  const ABSENT = { name: "kmv-workload" };
+
+  it("absent stack + every resource present -> good, from the rollup (the kubemicrovm workload case)", () => {
+    const row = {
+      component: "workload",
+      env: "dev",
+      reconciliation: "unrecorded" as const,
+      detail: "no release record and nothing observed live",
+      live: false,
+      stack: ABSENT,
+      resources: { total: 6, present: 6, absent: 0, unobserved: 0 },
+    } as unknown as ComponentStatusRow;
+    expect(componentStatusColor(row)).toBe("good");
+  });
+
+  it("absent stack + no rollup -> neutral, from the live boolean (an omitted plane)", () => {
+    const row = {
+      component: "ci-plane",
+      env: "dev",
+      reconciliation: "unrecorded" as const,
+      detail: "no release record and nothing observed live",
+      live: false,
+      stack: ABSENT,
+    } as unknown as ComponentStatusRow;
+    expect(componentStatusColor(row)).toBe("neutral");
+  });
+
+  it("healthy: false still decides even without a status string", () => {
+    const row = {
+      component: "operator",
+      env: "dev",
+      reconciliation: "unrecorded" as const,
+      detail: "release found unhealthy",
+      live: false,
+      stack: { name: "cert-manager", healthy: false },
+    } as unknown as ComponentStatusRow;
+    expect(componentStatusColor(row)).toBe("accent");
+  });
+});

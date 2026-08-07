@@ -36,6 +36,7 @@ import { projectAzureLogical } from "./logical-azure.ts";
 import { projectGcpLogical } from "./logical-gcp.ts";
 import { projectK8sLogical } from "./logical-k8s.ts";
 import { projectHelmLogical } from "./logical-helm.ts";
+import { boundManagedCluster } from "./cluster-anchor.ts";
 
 /** The container-nesting map pinhole's `layoutArchitecture` consumes:
  * `containerId → memberIds`, where a member may itself be a container id (the
@@ -326,12 +327,12 @@ function nearestByRef(start: string, want: Set<string>, refOut: Map<string, Set<
  * other three contribute nothing. Box titles are per-lens synthetic strings and
  * node ids are unique across the IR, so there is nothing to collide.
  */
-export function projectTopology(ir: GraphIR, env?: string): LogicalProjection {
+export function projectTopology(ir: GraphIR, env?: string, boundContext?: string): LogicalProjection {
   const projections = [
     projectLogical(ir),
     projectAzureLogical(ir, env),
     projectGcpLogical(ir, env),
-    projectK8sLogical(ir, env),
+    projectK8sLogical(ir, env, boundContext),
     projectHelmLogical(ir),
   ];
 
@@ -346,8 +347,51 @@ export function projectTopology(ir: GraphIR, env?: string): LogicalProjection {
       for (const c of children) if (!arr.includes(c)) arr.push(c);
     }
   }
+  placeHelmReleases(nodes, byContainer, ir, env, boundContext);
   nestReleaseBoxes(byContainer);
   return { ir: { nodes, edges, groups: {} }, byContainer };
+}
+
+/**
+ * Place synthesized `Helm::Release` cards (src/helm-releases.ts) inside the
+ * cluster picture. Cross-lens on purpose: the release carries a plain
+ * `namespace` attr, the namespace boxes belong to the k8s lens, and the
+ * cluster box title is the k8s lens's preference chain — so the placement can
+ * only happen where all three are visible at once, exactly like
+ * `nestReleaseBoxes` below.
+ *
+ * A release in a namespace the k8s lens already boxed joins that box. One in
+ * a namespace the estate never declared (helm bootstrap in `kube-system`, an
+ * operator's own namespace) gets that namespace box created under the cluster
+ * box — the release was OBSERVED there, and a box for an observed location is
+ * reporting, not inventing. With no cluster box at all (helm-only estate),
+ * the card stays at the root.
+ */
+function placeHelmReleases(
+  nodes: readonly IRNode[],
+  byContainer: ByContainer,
+  ir: GraphIR,
+  env?: string,
+  boundContext?: string,
+): void {
+  const releases = nodes.filter((n) => n.kind === "Helm::Release");
+  if (releases.length === 0) return;
+  const child = (parent: string, c: string) => {
+    const arr = byContainer[parent] ?? (byContainer[parent] = []);
+    if (!arr.includes(c)) arr.push(c);
+  };
+  // The same cluster-box identity chain the k8s lens used (logical-k8s.ts).
+  const cluster = boundManagedCluster(ir.nodes, boundContext);
+  const clusterTitle = cluster ? cluster.id : env ? `cluster ${env}` : "cluster";
+  const clusterBoxExists = byContainer[clusterTitle] !== undefined;
+  for (const r of releases) {
+    const ns = r.attrs?.namespace;
+    if (typeof ns !== "string" || ns.length === 0) continue; // root card
+    const nsBox = `namespace ${ns}`;
+    if (byContainer[nsBox] === undefined && !clusterBoxExists) continue; // no cluster picture — root card
+    if (byContainer[nsBox] === undefined) child(clusterTitle, nsBox);
+    child(nsBox, r.id);
+  }
 }
 
 /**

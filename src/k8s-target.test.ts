@@ -126,6 +126,13 @@ describe("contextBindsCluster", () => {
     expect(contextBindsCluster("arn:aws:eks:us-east-1:0:cluster/prod-replica", "prod")).toBe(false);
   });
 
+  it("recognises k3d's prefix convention — cluster names contain hyphens, so no segment split can see it", () => {
+    expect(contextBindsCluster("k3d-kubemicrovm-local", "kubemicrovm-local")).toBe(true);
+    expect(contextBindsCluster("k3d-fountain-local", "fountain-k8s-stand-in")).toBe(false);
+    // The prefix must be exact — `k3d-fountain-local-2` is a different cluster.
+    expect(contextBindsCluster("k3d-fountain-local-2", "fountain-local")).toBe(false);
+  });
+
   it("has no opinion when there is no cluster to compare against", () => {
     expect(contextBindsCluster(EKS_CONTEXT, undefined)).toBeUndefined();
   });

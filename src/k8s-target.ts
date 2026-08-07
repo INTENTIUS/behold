@@ -167,18 +167,22 @@ export function resolveK8sTarget(
 /**
  * Does a kubeconfig context point at the managed cluster named `clusterName`?
  *
- * Each cloud's credential helper names the context differently, and all three
- * embed the cluster name as a delimited segment:
+ * Each provider's credential helper names the context differently, and each
+ * embeds the cluster name:
  *
  *   EKS  `arn:aws:eks:us-east-1:000000000000:cluster/cc-eks`   (verified on Floci)
  *   GKE  `gke_my-project_us-central1_my-cluster`
  *   AKS  `my-cluster`
+ *   k3d  `k3d-my-cluster`   (a fixed prefix — cluster names contain hyphens,
+ *                            so the segment split can't see this one)
  *
  * Matching on a delimited segment rather than a substring keeps `prod` from
- * matching a context bound to `prod-replica`. Returns `undefined` when there is
- * nothing to compare, so a caller can distinguish "no opinion" from "mismatch".
+ * matching a context bound to `prod-replica`; k3d's convention is a literal
+ * prefix for the same reason. Returns `undefined` when there is nothing to
+ * compare, so a caller can distinguish "no opinion" from "mismatch".
  */
 export function contextBindsCluster(context: string, clusterName: string | undefined): boolean | undefined {
   if (!clusterName) return undefined;
+  if (context === `k3d-${clusterName}`) return true;
   return context.split(/[/_:@]/).includes(clusterName);
 }

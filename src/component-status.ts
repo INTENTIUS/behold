@@ -135,7 +135,15 @@ export function componentStatusColor(
   // its resources can express. A HEALTHY one asserts nothing and falls through
   // to the rollup: it reports that the last operation succeeded, not that the
   // resources survived since (see the #100 note above).
-  if (row.stack && !row.stack.healthy) {
+  //
+  // `healthy` must be literally false to count as unhealthy. An ABSENT deploy
+  // object comes back as `{name}` alone — no `status`, no `healthy` — and that
+  // is a statement about the stack's existence, not its health. Reading
+  // `healthy: undefined` as unhealthy painted five of kubemicrovm-ops's seven
+  // components accent ("mid-deploy") on a green estate, outranking their own
+  // all-present rollups. Absence falls through: the rollup or the `live`
+  // boolean is the claim that remains.
+  if (row.stack && row.stack.healthy === false) {
     if (row.stack.status && /ROLLBACK|FAILED/i.test(row.stack.status)) return "warn";
     return "accent"; // present but not healthy and not a rollback/failure — e.g. *_IN_PROGRESS
   }

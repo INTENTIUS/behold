@@ -23,6 +23,7 @@ import { dirname, join, relative } from "node:path";
 import type { GraphIR } from "@intentius/chant";
 import {
   graphIr,
+  clusterRootGraphIr,
   componentGraphIr,
   componentStatus,
   ciPipeline,
@@ -35,6 +36,8 @@ import {
   type GraphOptions,
   type ChantFailure,
 } from "./chant.ts";
+import { mergeClusterRoot, runningK3dClusters } from "./cluster-root.ts";
+import { synthesizeHelmReleases, discoverReleaseUnits } from "./helm-releases.ts";
 import { joinComponentStatus, componentStatusColor } from "./component-status.ts";
 import { reclassifyOverlay, pruneImports, attachRuntimeContainment, pruneRuntimeChildren } from "./overlay.ts";
 import { addValueMatchEdges } from "./value-match.ts";
@@ -311,6 +314,24 @@ export function createApp(
   const beholdConfig = loadBeholdConfig(cfg.projectDir);
   const tierEnvVar = beholdConfig.tiers?.envVar;
 
+  // The kube context chant binds for an environment (`k8s.profiles.<env>.
+  // context`, falling back to the kubeconfig's current-context — the same
+  // resolution `/api/project` reports as `k8sBinding`). Used as the
+  // multi-cluster tiebreak for anchoring/logical projection (cluster-anchor.ts
+  // `boundManagedCluster`) — read per call because both the profiles and the
+  // kubeconfig can change under a running server. Never throws: no k8s
+  // lexicon, no kubectl, no kubeconfig all resolve to undefined, which every
+  // consumer treats as "no opinion".
+  const boundK8sContext = async (env: string | undefined): Promise<string | undefined> => {
+    try {
+      const { lexicons, k8sProfiles } = await detectProject(cfg.projectDir);
+      if (!lexicons.includes("k8s")) return undefined;
+      return resolveK8sTarget(k8sProfiles, env ?? cfg.env, await loadKubeconfig())?.label;
+    } catch {
+      return undefined;
+    }
+  };
+
   app.get("/healthz", (c) => c.json({ ok: true, projectDir: cfg.projectDir, env: cfg.env ?? null, frames: frames.size }));
 
   // Deployment lanes (#5): the captured keyframes as a per-substrate filmstrip.
@@ -381,7 +402,7 @@ export function createApp(
   // Substrate readiness (M5, #54): is each substrate the project needs actually
   // running (Floci, k3d, GitLab CI, Forgejo)? Read-only detection.
   app.get("/api/substrates", async (c) => {
-    return c.json({ substrates: await detectSubstrates(cfg.projectDir, cfg.previewMode) });
+    return c.json({ substrates: await detectSubstrates(cfg.projectDir, cfg.previewMode, await boundK8sContext(cfg.env)) });
   });
 
   // Bring up a substrate — run its local script (e.g. scripts/local/local-up.sh)
@@ -550,11 +571,16 @@ export function createApp(
         // reads full attrs to resolve VPC/subnet/component containment), recover
         // value-wired edges, then re-project into nested boxes and paint with
         // pinhole's architecture layout. Returns here (distinct render path).
-        const base = addK8sDeclaredEdges(addValueMatchEdges(await graphIr(cfg.projectDir, { ...opts, detail: 3 })));
+        // The `cluster/` build root merges in first (the estates declare their
+        // k3d cluster there, outside sourceDir — see clusterRootGraphIr), so
+        // the cluster box is the declared node, not the `cluster <env>`
+        // fallback.
+        const raw = mergeClusterRoot(await graphIr(cfg.projectDir, { ...opts, detail: 3 }), await clusterRootGraphIr(cfg.projectDir, opts));
+        const base = addK8sDeclaredEdges(addValueMatchEdges(raw));
         // #102: the lens follows the substrate — AWS nests region/VPC/subnet,
         // Azure nests resource group/VNet/subnet. `metaEnv` names the resource
         // group on Azure, which ARM never declares as a resource.
-        const { ir: projected, byContainer } = projectTopology(base, metaEnv ?? undefined);
+        const { ir: projected, byContainer } = projectTopology(base, metaEnv ?? undefined, await boundK8sContext(metaEnv ?? undefined));
         const { svg } = renderArchitecture(projected, byContainer);
         // `byContainer` rides along (behold#100): the nesting IS the projection's
         // primary output, and until now it was only observable by reading the
@@ -563,7 +589,8 @@ export function createApp(
         const logicalNote = notesFor("logical", projected, undefined, base.nodes.length);
         return c.json({ ir: projected, svg, byContainer, meta: { projectDir: cfg.projectDir, env: metaEnv, tier: opts.tier ?? null, target: opts.target ?? null, mode: "logical", ...(logicalNote ? { note: logicalNote } : {}) } });
       } else {
-        ir = await graphIr(cfg.projectDir, opts);
+        // The `cluster/` build root merges in (see the logical branch above).
+        ir = mergeClusterRoot(await graphIr(cfg.projectDir, opts), await clusterRootGraphIr(cfg.projectDir, opts));
         // Entity graph below the ATTRIBUTES tier: hide cross-stack import
         // handles (value plumbing, not resources — see pruneImports). Component
         // graphs have no imports, so this only touches the infra view.
@@ -578,7 +605,7 @@ export function createApp(
         // Anchor a mixed-substrate estate (#103): the k8s half carries no
         // reference to the managed cluster it runs on, so without this it
         // renders as loose nodes beside the cloud graph rather than one estate.
-        ir = addClusterAnchorEdges(ir);
+        ir = addClusterAnchorEdges(ir, await boundK8sContext(metaEnv ?? undefined));
       }
       // Multi-estate (#31/M4): box each composed project's nodes via `groups.
       // byStack` (pinhole's composeStacks per-project grouping) — see
@@ -765,18 +792,33 @@ export function createApp(
       // deploy (see reclassifyOverlay): Parameters take their deployed
       // component's status, src/examples/ nodes go neutral + `_byo`.
       let ir = reclassifyOverlay(await graphIr(cfg.projectDir, opts));
+      const boundContext = await boundK8sContext(env);
+      // The `cluster/` build root merges in — the estates declare their k3d
+      // cluster there, outside sourceDir (see clusterRootGraphIr) — painted
+      // from the k3d probe: running reads `good`, declared-but-absent
+      // `accent`, probe unavailable stays unpainted.
+      ir = mergeClusterRoot(ir, await clusterRootGraphIr(cfg.projectDir, query), await runningK3dClusters());
       // behold#146 — artifact presence for the helm half. A release is an
       // artifact, not a resource, so the overlay's classification never
       // touches Helm::Chart nodes; the one chant read that observes releases
       // is `lifecycle diff --live --json` (observedArtifacts, chant#1516).
       // Joined by declared chart name; a read failure paints neutral
-      // (unobserved ≠ absent), and a release matching no declared chart is
-      // never invented as a node.
-      if (ir.nodes.some((n) => n.lexicon === "helm" && n.kind === "Helm::Chart")) {
+      // (unobserved ≠ absent). A release matching no declared chart used to
+      // be dropped entirely — right for a chart-authoring project, but a
+      // deploy-step estate (kubemicrovm-ops) declares NO chart nodes and
+      // installs its releases as component helm-upgrade units, so its helm
+      // half was invisible on every zoom. Those synthesize as Helm::Release
+      // nodes instead: component-owned ones good/warn by helm status, the
+      // rest warn (foreign) — see src/helm-releases.ts.
+      const declaresHelm = await detectProject(cfg.projectDir)
+        .then((p) => p.lexicons.includes("helm"))
+        .catch(() => false);
+      if (declaresHelm || ir.nodes.some((n) => n.lexicon === "helm" && n.kind === "Helm::Chart")) {
         const observed = await lifecycleDiffLive(cfg.projectDir, env, query)
           .then((d) => d.lexicons?.helm?.observedArtifacts)
           .catch(() => undefined);
         applyHelmArtifacts(ir, observed);
+        synthesizeHelmReleases(ir, observed, discoverReleaseUnits(cfg.projectDir));
       }
       // Runtime tier (#86, chant#1180/#1077): nest each live, undeclared,
       // owner-chain-resolved node (a Pod its Deployment's controller created)
@@ -797,11 +839,14 @@ export function createApp(
         // Counted before the projection, so the note can say what was dropped
         // rather than only that the result is empty (#133's reading).
         const logicalBefore = ir.nodes.length;
-        const { ir: projected, byContainer } = projectTopology(addK8sDeclaredEdges(addValueMatchEdges(ir)), env);
+        const { ir: projected, byContainer } = projectTopology(addK8sDeclaredEdges(addValueMatchEdges(ir)), env, boundContext);
         const { svg } = renderArchitecture(projected, byContainer);
         // See /api/graph's logical branch — `byContainer` is carried for the
-        // same reason (behold#100).
-        const logicalNote = notesFor("logical", projected, undefined, logicalBefore);
+        // same reason (behold#100). The wrong-tier note (#158) joins here too:
+        // the logical view collapses to near-empty at a wrong tier exactly as
+        // the detail tiers do, and until now only they said why.
+        const logicalTierNote = tierMismatchNote(projected, beholdConfig.tiers, query.tier);
+        const logicalNote = [logicalTierNote, notesFor("logical", projected, undefined, logicalBefore)].filter(Boolean).join(" · ");
         return c.json({ ir: projected, svg, byContainer, meta: { projectDir: cfg.projectDir, env, mode: "logical", ...(logicalNote ? { note: logicalNote } : {}) } });
       }
       // Below the ATTRIBUTES tier, hide cross-stack import handles — they're
@@ -819,7 +864,7 @@ export function createApp(
       // so the live overlay shows the cluster ⊃ namespace ⊃ workload hierarchy
       // rather than dropping the k8s half into the void. The overlay is
       // source-anchored, so this is the same derivation, not a live-only one.
-      ir = addClusterAnchorEdges(ir);
+      ir = addClusterAnchorEdges(ir, boundContext);
       // At COMPOSITES (level 1), composites only wired via import sinks (now
       // pruned) so they'd all float — overlay the authoritative component
       // dependsOn graph so they read as a dependency graph (see addCompositeDeps).
@@ -879,6 +924,23 @@ export function createApp(
     // Same wiring/examples reclassification the /api/overlay view gets, so a
     // manual refresh of the infra graph reads consistently (env → overlay).
     if (env) reclassifyOverlay(result.ir);
+    // Same cluster-root merge + helm join the /api/overlay view gets — a
+    // Refresh pressed while looking at the helm half used to silently drop
+    // its artifact status (and the declared k3d cluster) from the picture it
+    // returned.
+    mergeClusterRoot(result.ir, await clusterRootGraphIr(cfg.projectDir), env ? await runningK3dClusters() : undefined);
+    if (env) {
+      const declaresHelm = await detectProject(cfg.projectDir)
+        .then((p) => p.lexicons.includes("helm"))
+        .catch(() => false);
+      if (declaresHelm || result.ir.nodes.some((n) => n.lexicon === "helm" && n.kind === "Helm::Chart")) {
+        const observed = await lifecycleDiffLive(cfg.projectDir, env)
+          .then((d) => d.lexicons?.helm?.observedArtifacts)
+          .catch(() => undefined);
+        applyHelmArtifacts(result.ir, observed);
+        synthesizeHelmReleases(result.ir, observed, discoverReleaseUnits(cfg.projectDir));
+      }
+    }
     // Same runtime-tier gate the /api/overlay view applies (#86, #144): the
     // Pods appear only at the runtime zoom, so a Refresh pressed from any other
     // tier doesn't paint children that tier just excluded.
@@ -890,7 +952,7 @@ export function createApp(
     if ((optsFromQuery(new URL(c.req.url)).detail ?? 2) < 3) pruneImports(result.ir);
     addValueMatchEdges(result.ir);
     addK8sDeclaredEdges(result.ir);
-    addClusterAnchorEdges(result.ir);
+    addClusterAnchorEdges(result.ir, await boundK8sContext(env));
     const { svg } = renderGraph(result.ir, { boxes: "byContainer" });
     return c.json({
       ir: result.ir,
@@ -1030,7 +1092,18 @@ export function createApp(
     // already deployed; refuse to (re)apply it and point at Reset, which reboots
     // + redeploys clean. `?force=1` overrides. Best-effort: a status hiccup
     // shouldn't block a legitimate fresh apply, so on error we fall through.
-    if (!force) {
+    //
+    // The guard exists FOR Floci, so it fires only when applies would actually
+    // hit it: an aws-lexicon project with AWS_ENDPOINT_URL pointed at the
+    // emulator. On a k8s/helm estate a re-apply is the normal sync gesture
+    // (server-side apply and `helm upgrade` are idempotent), and this guard
+    // used to 409 it with an error naming an emulator the project doesn't use.
+    const flociTargeted =
+      !!process.env.AWS_ENDPOINT_URL &&
+      (await detectProject(cfg.projectDir)
+        .then((p) => p.lexicons.includes("aws"))
+        .catch(() => false));
+    if (!force && flociTargeted) {
       try {
         const rows = await componentStatus(cfg.projectDir, env);
         const deployed = rows.filter((r) => componentStatusColor(r) !== "neutral").map((r) => r.component);

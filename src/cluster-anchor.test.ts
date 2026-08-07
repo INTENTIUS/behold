@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { GraphIR } from "@intentius/chant";
-import { addClusterAnchorEdges, soleManagedCluster, ANCHOR_VIA, MANAGED_CLUSTER_KINDS } from "./cluster-anchor.ts";
+import { addClusterAnchorEdges, soleManagedCluster, boundManagedCluster, managedClusterName, ANCHOR_VIA, MANAGED_CLUSTER_KINDS } from "./cluster-anchor.ts";
 
 const cloud = (id: string, kind: string, lexicon: string) => ({ id, kind, lexicon, attrs: {} });
 const k8s = (id: string, kind: string, meta: Record<string, unknown>) => ({
@@ -86,6 +86,40 @@ describe("addClusterAnchorEdges (#103)", () => {
     // Which cluster a Service lands on is the kubeconfig's answer at deploy
     // time (#106), not something any declared attribute states.
     expect(soleManagedCluster(ir.nodes)).toBeUndefined();
+  });
+
+  it("a bound kube context breaks the two-cluster tie (the fountain-ops shape)", () => {
+    const k3dCluster = (id: string, name: string) => ({
+      id,
+      kind: "K3d::Cluster",
+      lexicon: "k3d",
+      attrs: { metadata: { name } },
+    });
+    const nodes = [k3dCluster("local", "fountain-local"), k3dCluster("standIn", "fountain-k8s-stand-in")] as never[];
+    expect(boundManagedCluster(nodes, "k3d-fountain-local")?.id).toBe("local");
+    expect(boundManagedCluster(nodes, "k3d-fountain-k8s-stand-in")?.id).toBe("standIn");
+    // No context, or a context binding neither, still declines.
+    expect(boundManagedCluster(nodes)).toBeUndefined();
+    expect(boundManagedCluster(nodes, "k3d-something-else")).toBeUndefined();
+  });
+
+  it("anchors a k3d estate: the declared K3d::Cluster is the thing the k8s half runs on", () => {
+    expect(MANAGED_CLUSTER_KINDS.has("K3d::Cluster")).toBe(true);
+    const ir = {
+      nodes: [
+        { id: "localCluster", kind: "K3d::Cluster", lexicon: "k3d", attrs: { metadata: { name: "kubemicrovm-local" } } },
+        k8s("m80Deploy", "K8s::Apps::Deployment", { name: "m80", namespace: "kube-microvm" }),
+      ],
+      edges: [],
+      groups: {},
+    } as unknown as GraphIR;
+    expect(parentOf(addClusterAnchorEdges(ir), "m80Deploy")).toBe("localCluster");
+  });
+
+  it("managedClusterName reads metadata.name (k3d), a scalar name attr (cloud), then the id", () => {
+    expect(managedClusterName({ id: "x", kind: "K3d::Cluster", attrs: { metadata: { name: "fountain-local" } } })).toBe("fountain-local");
+    expect(managedClusterName({ id: "x", kind: "AWS::EKS::Cluster", attrs: { name: "cc-eks" } })).toBe("cc-eks");
+    expect(managedClusterName({ id: "clusterCluster", kind: "AWS::EKS::Cluster", attrs: {} })).toBe("clusterCluster");
   });
 
   it("leaves a cloud-only or k8s-only project untouched", () => {

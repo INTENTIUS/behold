@@ -56,16 +56,25 @@
  * A project with no k8s nodes, or no managed cluster, is untouched.
  */
 import type { GraphIR, IRNode } from "@intentius/chant";
+import { contextBindsCluster } from "./k8s-target.ts";
 
 /**
  * Managed-cluster kinds across the three cloud lexicons — the node a k8s
  * workload runs *on*. Deliberately the control-plane resource only: a node
  * group / node pool is capacity, not the thing a Service is scheduled onto.
+ *
+ * `K3d::Cluster` joins them: a declared local k3d cluster is exactly as much
+ * "the thing the k8s half runs on" as an EKS control plane — the
+ * fountain-ops/kubemicrovm-ops estates declare one in their `cluster/` build
+ * root (merged by src/cluster-root.ts), and before this the k8s half rendered
+ * inside a synthetic `cluster <env>` box while the declared cluster floated
+ * beside it as an unrelated card.
  */
 export const MANAGED_CLUSTER_KINDS = new Set([
   "AWS::EKS::Cluster",
   "GCP::Container::Cluster",
   "Microsoft.ContainerService/managedClusters",
+  "K3d::Cluster",
 ]);
 
 /** Edge tag carried by every anchor this module adds, so a viewer can style
@@ -111,14 +120,49 @@ export function soleManagedCluster(nodes: readonly IRNode[]): IRNode | undefined
   return clusters.length === 1 ? clusters[0] : undefined;
 }
 
+/** The cluster name a managed-cluster node declares: `metadata.name` for the
+ * k8s-shaped kinds (k3d), a scalar `name`/`clusterName` attr for the cloud
+ * control planes, else the node id. */
+export function managedClusterName(node: AnchorNode): string {
+  const metaName = metaString(node, "name");
+  if (metaName) return metaName;
+  for (const key of ["name", "clusterName"]) {
+    const v = node.attrs?.[key];
+    if (typeof v === "string" && v.length > 0) return v;
+  }
+  return node.id;
+}
+
+/**
+ * The managed cluster the k8s half runs on, with the kube context as the
+ * tiebreak (#106's `contextBindsCluster`, finally wired).
+ *
+ * One declared cluster answers by itself — the pre-existing rule. Two or more
+ * used to be an unconditional decline, which is honest for the cloud kinds but
+ * wrong for the local-substrate estates: fountain-ops declares TWO k3d
+ * clusters (`fountain-local` plus a deliberately-foreign stand-in), yet the
+ * bound kubeconfig context names exactly which one the reads land on. So with
+ * a context to compare, the candidate it binds wins — and only when it binds
+ * exactly one. No context, or an ambiguous match, still declines.
+ */
+export function boundManagedCluster(nodes: readonly IRNode[], boundContext?: string): IRNode | undefined {
+  const clusters = nodes.filter((n) => MANAGED_CLUSTER_KINDS.has(n.kind));
+  if (clusters.length === 1) return clusters[0];
+  if (clusters.length === 0 || !boundContext) return undefined;
+  const bound = clusters.filter((n) => contextBindsCluster(boundContext, managedClusterName(n)));
+  return bound.length === 1 ? bound[0] : undefined;
+}
+
 /**
  * Add `runs-on` anchor edges: cluster → namespace → namespaced resource, and
  * cluster → cluster-scoped resource. Mutates + returns `ir`, matching
  * `addValueMatchEdges`'s contract so the two compose in the same pipeline.
+ * `boundContext` (the kube context chant binds for the served env) breaks a
+ * multi-cluster tie — see `boundManagedCluster`.
  */
-export function addClusterAnchorEdges(ir: GraphIR): GraphIR {
+export function addClusterAnchorEdges(ir: GraphIR, boundContext?: string): GraphIR {
   const nodes = ir.nodes as AnchorNode[];
-  const cluster = soleManagedCluster(ir.nodes);
+  const cluster = boundManagedCluster(ir.nodes, boundContext);
   if (!cluster) return ir;
   const k8sNodes = nodes.filter(isK8s);
   if (k8sNodes.length === 0) return ir;

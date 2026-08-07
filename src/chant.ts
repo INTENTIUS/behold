@@ -415,6 +415,38 @@ export async function graphIr(projectDir: string, opts: GraphOptions = {}): Prom
   return runChantJson<GraphIR>(graphArgs(src, "ir", opts, false), projectDir, envOverridesFor(opts));
 }
 
+/**
+ * The graph IR of a project's `cluster/` build root, or undefined when the
+ * project has none (or chant can't graph it).
+ *
+ * A k3d/floci-backed estate declares its local cluster as chant source — but
+ * deliberately OUTSIDE `sourceDir`, as its own build root (`chant build
+ * cluster`), so whole-project discovery never walks it (fountain-ops and
+ * kubemicrovm-ops both follow this shape). That kept the cluster out of every
+ * behold view: the k8s half rendered inside a synthetic `cluster <env>` box
+ * while the estate's actual `K3d::Cluster` declaration existed two directories
+ * away. This reads that root the same way the estates' own justfiles do.
+ *
+ * Failure is an ordinary state, not an error: most projects have no cluster
+ * root, and a chant predating the k3d lexicon can't graph one. Both yield
+ * undefined and the caller renders exactly what it rendered before.
+ */
+export async function clusterRootGraphIr(projectDir: string, opts: GraphOptions = {}): Promise<GraphIR | undefined> {
+  if (!existsSync(join(projectDir, "cluster"))) return undefined;
+  // Source graph only, always. `--live` ignores the path positional (verified
+  // on kubemicrovm-ops: `graph cluster --live --overlay` returns the WHOLE
+  // estate's live overlay, k3d node absent), so a live read here would
+  // duplicate the main graph instead of scoping to the root. Status for the
+  // declared cluster is painted by the caller from the k3d probe instead
+  // (src/cluster-root.ts).
+  const { live: _live, overlay: _overlay, env: _env, ...sourceOnly } = opts;
+  try {
+    return await runChantJson<GraphIR>(graphArgs("cluster", "ir", sourceOnly, false), projectDir, envOverridesFor(sourceOnly));
+  } catch {
+    return undefined;
+  }
+}
+
 /** Node positions for a project (`chant graph --format layout`, dagre — no native dep). */
 export async function graphLayout(projectDir: string, opts: GraphOptions = {}): Promise<Layout> {
   const src = await graphPath(projectDir, opts);

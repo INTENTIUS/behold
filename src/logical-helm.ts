@@ -50,7 +50,12 @@ function dirOf(node: { sourceLoc?: { file?: string } }): string {
 
 export function projectHelmLogical(ir: GraphIR): LogicalProjection {
   const charts = ir.nodes.filter((n) => n.lexicon === "helm" && n.kind === "Helm::Chart");
-  if (charts.length === 0) return { ir: { nodes: [], edges: [], groups: {} }, byContainer: {} };
+  // Observed releases synthesized by src/helm-releases.ts (a deploy-step
+  // estate's helm half — no declared chart nodes at all). Cards of this lens;
+  // their namespace placement is cross-lens, so it happens in
+  // `projectTopology`'s composition (`placeHelmReleases`), not here.
+  const releases = ir.nodes.filter((n) => n.lexicon === "helm" && n.kind === "Helm::Release");
+  if (charts.length === 0 && releases.length === 0) return { ir: { nodes: [], edges: [], groups: {} }, byContainer: {} };
 
   const byContainer: ByContainer = {};
   const child = (parent: string, c: string) => {
@@ -72,10 +77,11 @@ export function projectHelmLogical(ir: GraphIR): LogicalProjection {
     }
   }
 
-  // Only the chart cards are this lens's nodes; edges pass through when both
-  // ends survive (none exist for helm today — same posture as the k8s lens
-  // before the declared-attribute pass).
-  const kept = new Set(charts.map((n) => n.id));
+  // The chart + release cards are this lens's nodes; edges pass through when
+  // both ends survive (none exist for helm today — same posture as the k8s
+  // lens before the declared-attribute pass).
+  const cards = [...charts, ...releases];
+  const kept = new Set(cards.map((n) => n.id));
   const edges = ir.edges.filter((e) => kept.has(e.from) && kept.has(e.to));
-  return { ir: { nodes: charts, edges, groups: {} }, byContainer };
+  return { ir: { nodes: cards, edges, groups: {} }, byContainer };
 }
