@@ -78,11 +78,58 @@ describe("deriveK8sEdges (#143)", () => {
     expect(deriveK8sEdges(nodes)).toHaveLength(2);
   });
 
-  it("stays out of matchExpressions and CRD reference fields — no guessing", () => {
+  it("stays out of matchExpressions and ARBITRARY CRD reference fields — named contracts only", () => {
+    // The refined rule (behold#171): a random CRD's strings get no edge (which
+    // of them are references is per-CRD knowledge), while NAMED upstream
+    // contracts like Flux's sourceRef do — asserted separately below.
     const nodes = [
       k8s("svc", "K8s::Core::Service", { ...meta("api"), spec: { selector: { matchExpressions: [{ key: "app" }] } } }),
       k8s("vm", "K8s::KubeMicroVM::MicroVMReplicaSet", { ...meta("vm"), spec: { imageRef: "some-image" } }),
       k8s("dep", "K8s::Apps::Deployment", { ...meta("api"), spec: { template: { metadata: { labels: { app: "api" } } } } }),
+    ];
+    expect(deriveK8sEdges(nodes)).toHaveLength(0);
+  });
+
+  it("joins a Flux Kustomization to the source its sourceRef names (behold#171)", () => {
+    const nodes = [
+      k8s("repo", "K8s::Flux::GitRepository", { ...meta("infra", "flux-system"), spec: { url: "https://example.com/infra.git" } }),
+      k8s("ks", "K8s::Flux::Kustomization", { ...meta("apps", "flux-system"), spec: { sourceRef: { kind: "GitRepository", name: "infra" }, path: "./apps" } }),
+    ];
+    const edges = deriveK8sEdges(nodes);
+    expect(edges).toContainEqual(expect.objectContaining({ from: "ks", to: "repo", viaAttr: "sourceRef" }));
+    expect(edges).toHaveLength(1);
+  });
+
+  it("a sourceRef namespace override wins; no override resolves in the CR's own namespace", () => {
+    const nodes = [
+      k8s("repoA", "K8s::Flux::GitRepository", { ...meta("infra", "team-a"), spec: {} }),
+      k8s("repoShared", "K8s::Flux::GitRepository", { ...meta("infra", "flux-system"), spec: {} }),
+      k8s("ksLocal", "K8s::Flux::Kustomization", { ...meta("local", "team-a"), spec: { sourceRef: { kind: "GitRepository", name: "infra" } } }),
+      k8s("ksCross", "K8s::Flux::Kustomization", { ...meta("cross", "team-a"), spec: { sourceRef: { kind: "GitRepository", name: "infra", namespace: "flux-system" } } }),
+    ];
+    const edges = deriveK8sEdges(nodes);
+    expect(edges).toContainEqual(expect.objectContaining({ from: "ksLocal", to: "repoA" }));
+    expect(edges).toContainEqual(expect.objectContaining({ from: "ksCross", to: "repoShared" }));
+    expect(edges).toHaveLength(2);
+  });
+
+  it("joins a HelmRelease to its chart's source, three levels down (behold#171)", () => {
+    const nodes = [
+      k8s("charts", "K8s::Flux::HelmRepository", { ...meta("bitnami", "flux-system"), spec: {} }),
+      k8s("hr", "K8s::Flux::HelmRelease", {
+        ...meta("db", "flux-system"),
+        spec: { chart: { spec: { chart: "postgresql", sourceRef: { kind: "HelmRepository", name: "bitnami" } } } },
+      }),
+    ];
+    const edges = deriveK8sEdges(nodes);
+    expect(edges).toContainEqual(expect.objectContaining({ from: "hr", to: "charts", viaAttr: "chart sourceRef" }));
+    expect(edges).toHaveLength(1);
+  });
+
+  it("an Argo Application's repoURL gets no edge — a URL is not a node reference", () => {
+    const nodes = [
+      k8s("app", "K8s::Argo::Application", { ...meta("web", "argocd"), spec: { source: { repoURL: "https://example.com/web.git", path: "." } } }),
+      k8s("repo", "K8s::Flux::GitRepository", { ...meta("web", "argocd"), spec: { url: "https://example.com/web.git" } }),
     ];
     expect(deriveK8sEdges(nodes)).toHaveLength(0);
   });
