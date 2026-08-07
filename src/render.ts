@@ -6,7 +6,7 @@
  * src/overlay.ts. behold owns the live data + the server + (later) the
  * temporal/action layers around this.
  */
-import { layoutIr, layoutArchitecture, renderSvg } from "@intentius/pinhole";
+import { layoutIr, layoutArchitecture, renderSvg, cardSizes } from "@intentius/pinhole";
 import type { GraphIR, IRGroups } from "@intentius/chant";
 import type { ByContainer } from "./logical.ts";
 
@@ -79,7 +79,7 @@ export function renderGraph(ir: GraphIR, opts: { theme?: string; boxes?: "byStac
   // per rank — so the graph curls around a centre and far more fits in view. Only
   // for ungrouped graphs (the entity/infra view); the wave-boxed component graph
   // keeps its lanes.
-  if (opts.radial && !boxes) radializeLayout(layout as unknown as RadialLayout, groupKeyByNode(ir));
+  if (opts.radial && !boxes) radializeLayout(layout as unknown as RadialLayout, groupKeyByNode(ir), footprints(ir));
   // Otherwise, pull disconnected islands in: dagre strings each connected
   // component out along a row, so a few unconnected composites sprawl far to the
   // right of the action. Pack the components into compact shelves instead (a
@@ -105,10 +105,21 @@ interface RadialLayout {
   height: number;
 }
 
-/** Typical card width/height — the layout node carries no per-node size, so use
- * constants when spacing/packing so neighbours don't overlap. */
+/** Typical card width/height — fallbacks when a node has no computed footprint
+ * (radial arc capacity still uses the typical width as its packing unit). */
 const NODE_W = 175;
 const NODE_H = 104;
+
+/** Per-node painted footprints for the fit layout — pinhole's own `cardSizes`,
+ * the same source `layoutIr`/`renderSvg` size cards from. The packing passes
+ * used to assume every card was NODE_W wide; with `fit: true` a long-titled
+ * card grows to ~420px (a synthesized `release/<ns>/<name>` card, exactly the
+ * nodes that arrive edgeless and get packed), so islands were shelved by a
+ * width half their painted size and landed on their neighbours. */
+function footprints(ir: GraphIR): Map<string, { w: number; h: number }> {
+  const sizes = cardSizes(ir, { fit: true });
+  return new Map(Object.entries(sizes));
+}
 
 /** Pack a laid-out graph's disconnected components into compact shelves, so a few
  * unconnected islands don't string out far to the right of the main cluster
@@ -136,13 +147,21 @@ function packComponents(layout: RadialLayout, ir: GraphIR): void {
   nodes.forEach((n, i) => (comps.get(find(i)) ?? comps.set(find(i), []).get(find(i))!).push(n));
   if (comps.size < 2) return; // a single connected component — dagre is already compact
 
-  // Bounding box per component (card centres padded by half a card each side).
+  // Bounding box per component — each card centre padded by half its own
+  // PAINTED footprint, not a one-size constant (see `footprints`).
+  const size = footprints(ir);
+  const halfW = (n: { id: string }) => (size.get(n.id)?.w ?? NODE_W) / 2;
+  const halfH = (n: { id: string }) => (size.get(n.id)?.h ?? NODE_H) / 2;
   const boxes = [...comps.values()].map((ns) => {
-    const xs = ns.map((n) => n.x);
-    const ys = ns.map((n) => n.y);
-    const minX = Math.min(...xs) - NODE_W / 2;
-    const minY = Math.min(...ys) - NODE_H / 2;
-    return { ns, minX, minY, w: Math.max(...xs) + NODE_W / 2 - minX, h: Math.max(...ys) + NODE_H / 2 - minY };
+    const minX = Math.min(...ns.map((n) => n.x - halfW(n)));
+    const minY = Math.min(...ns.map((n) => n.y - halfH(n)));
+    return {
+      ns,
+      minX,
+      minY,
+      w: Math.max(...ns.map((n) => n.x + halfW(n))) - minX,
+      h: Math.max(...ns.map((n) => n.y + halfH(n))) - minY,
+    };
   });
   boxes.sort((a, b) => b.w * b.h - a.w * a.h); // biggest cluster first (anchors top-left)
 
@@ -168,18 +187,17 @@ function packComponents(layout: RadialLayout, ir: GraphIR): void {
     shelfH = Math.max(shelfH, b.h);
   }
 
-  // Shift to positive coords + reset bounds so renderSvg's viewBox wraps it.
-  const xs = nodes.map((n) => n.x);
-  const ys = nodes.map((n) => n.y);
-  const minX = Math.min(...xs);
-  const minY = Math.min(...ys);
-  const pad = NODE_W;
+  // Shift to positive coords + reset bounds so renderSvg's viewBox wraps it —
+  // card EDGES, not centres, so a wide fitted card doesn't clip at the border.
+  const minX = Math.min(...nodes.map((n) => n.x - halfW(n)));
+  const minY = Math.min(...nodes.map((n) => n.y - halfH(n)));
+  const pad = 60;
   for (const n of nodes) {
     n.x = n.x - minX + pad;
     n.y = n.y - minY + pad;
   }
-  layout.width = Math.max(...xs) - minX + pad * 2;
-  layout.height = Math.max(...ys) - minY + pad * 2;
+  layout.width = Math.max(...nodes.map((n) => n.x + halfW(n))) + pad;
+  layout.height = Math.max(...nodes.map((n) => n.y + halfH(n))) + pad;
 }
 
 /** Group key per node id — the `src/<component>/` a node is declared under, with
@@ -205,9 +223,11 @@ function groupKeyByNode(ir: GraphIR): Map<string, string> {
  * not the old even/false symmetry), a component's edges stay local to its wedge
  * (less crossing), and the frontend can label each wedge from node positions.
  * Mutates node x/y and the layout bounds. */
-function radializeLayout(layout: RadialLayout, groupOf: Map<string, string>): void {
+function radializeLayout(layout: RadialLayout, groupOf: Map<string, string>, size: Map<string, { w: number; h: number }> = new Map()): void {
   const nodes = layout.nodes;
   if (!Array.isArray(nodes) || nodes.length < 3) return;
+  const wOf = (n: { id: string }) => size.get(n.id)?.w ?? NODE_W;
+  const hOf = (n: { id: string }) => size.get(n.id)?.h ?? NODE_H;
 
   // Global dagre rank (distinct y levels) orders nodes inner→outer by dependency
   // depth; exact radius is decided by the arc-packing below so nothing overlaps.
@@ -274,9 +294,11 @@ function radializeLayout(layout: RadialLayout, groupOf: Map<string, string>): vo
   // but two cards from neighbouring wedges (or arcs) can still overlap at a seam.
   // Iteratively separate any pair whose card rectangles intersect, pushing along
   // the axis of least penetration (the cheapest nudge). Converges fast for the
-  // node counts here; capped so it always terminates.
-  const cardW = NODE_W + 45; // generous target margin so even a jammed pair that
-  const cardH = 104; //         only partly separates still clears the real footprint
+  // node counts here; capped so it always terminates. Pair separation targets
+  // come from the two cards' PAINTED footprints (see `footprints`) plus margin —
+  // a fitted long-title card is more than twice the old constant.
+  const MARGIN_W = 45;
+  const MARGIN_H = 12;
   // Break exact symmetry deterministically (no RNG available) so a node caught
   // between two neighbours never sits at a frustrated fixed point where opposing
   // pushes cancel — otherwise separation stalls with a few residual overlaps.
@@ -292,8 +314,10 @@ function radializeLayout(layout: RadialLayout, groupOf: Map<string, string>): vo
       for (let b = a + 1; b < nodes.length; b++) {
         const dx = nodes[b].x - nodes[a].x;
         const dy = nodes[b].y - nodes[a].y;
-        const ox = cardW - Math.abs(dx); // >0 ⟺ x-ranges overlap
-        const oy = cardH - Math.abs(dy); // >0 ⟺ y-ranges overlap
+        const sepW = (wOf(nodes[a]) + wOf(nodes[b])) / 2 + MARGIN_W;
+        const sepH = (hOf(nodes[a]) + hOf(nodes[b])) / 2 + MARGIN_H;
+        const ox = sepW - Math.abs(dx); // >0 ⟺ x-ranges overlap
+        const oy = sepH - Math.abs(dy); // >0 ⟺ y-ranges overlap
         if (ox <= 0 || oy <= 0) continue; // rectangles clear
         overlaps++;
         // Push along the centre-to-centre line by half the penetration. Unlike a
@@ -312,16 +336,15 @@ function radializeLayout(layout: RadialLayout, groupOf: Map<string, string>): vo
     if (overlaps === 0) break;
   }
 
-  // Shift to positive coords + reset bounds so renderSvg's viewBox wraps the disc.
-  const xs = nodes.map((n) => n.x);
-  const ys = nodes.map((n) => n.y);
-  const minX = Math.min(...xs);
-  const minY = Math.min(...ys);
-  const pad = NODE_W;
+  // Shift to positive coords + reset bounds so renderSvg's viewBox wraps the
+  // disc — card edges, not centres, so a wide fitted card doesn't clip.
+  const minX = Math.min(...nodes.map((n) => n.x - wOf(n) / 2));
+  const minY = Math.min(...nodes.map((n) => n.y - hOf(n) / 2));
+  const pad = 60;
   for (const n of nodes) {
     n.x = n.x - minX + pad;
     n.y = n.y - minY + pad;
   }
-  layout.width = Math.max(...xs) - minX + pad * 2;
-  layout.height = Math.max(...ys) - minY + pad * 2;
+  layout.width = Math.max(...nodes.map((n) => n.x + wOf(n) / 2)) + pad;
+  layout.height = Math.max(...nodes.map((n) => n.y + hOf(n) / 2)) + pad;
 }
