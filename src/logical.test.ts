@@ -319,8 +319,10 @@ describe("projectTopology — lens dispatch (#102)", () => {
   });
 
   it("still returns nothing for a graph no lens recognises", () => {
+    // fly grew a lens of its own (#167), so this needs a genuinely foreign
+    // lexicon to stay the test it claims to be.
     const unknown = {
-      nodes: [{ id: "thing", kind: "Fly::App", lexicon: "fly", attrs: {} }],
+      nodes: [{ id: "thing", kind: "Vercel::Project", lexicon: "vercel", attrs: {} }],
       edges: [],
       groups: {},
     } as unknown as GraphIR;

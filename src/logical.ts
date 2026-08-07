@@ -38,6 +38,7 @@ import { projectK8sLogical } from "./logical-k8s.ts";
 import { projectHelmLogical } from "./logical-helm.ts";
 import { boundManagedCluster } from "./cluster-anchor.ts";
 import { projectKustomizeLogical } from "./logical-kustomize.ts";
+import { projectFlyLogical } from "./logical-fly.ts";
 
 /** The container-nesting map pinhole's `layoutArchitecture` consumes:
  * `containerId → memberIds`, where a member may itself be a container id (the
@@ -323,7 +324,7 @@ function nearestByRef(start: string, want: Set<string>, refOut: Map<string, Set<
  * show was the half discarded.
  *
  * Each lens already filters to its own lexicon and returns an empty projection
- * for a graph with none of its nodes, so running all four and merging is safe:
+ * for a graph with none of its nodes, so running all of them and merging is safe:
  * a single-substrate estate gets byte-identical output to before, because the
  * other three contribute nothing. Box titles are per-lens synthetic strings and
  * node ids are unique across the IR, so there is nothing to collide.
@@ -335,6 +336,7 @@ export function projectTopology(ir: GraphIR, env?: string, boundContext?: string
     projectGcpLogical(ir, env),
     projectK8sLogical(ir, env, boundContext),
     projectHelmLogical(ir),
+    projectFlyLogical(ir),
     // The kustomize lens needs the project dir to find kustomization roots;
     // a caller without one (tests, composition paths) just skips it.
     ...(projectDir ? [projectKustomizeLogical(ir, projectDir)] : []),
