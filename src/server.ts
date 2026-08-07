@@ -56,7 +56,7 @@ import { detectProject, loadBeholdConfig } from "./project.ts";
 import { nodeDiff, nodeObserved, nodeFieldDrift, type LiveDiffJson } from "./diff.ts";
 import { classifyHealth } from "./health.ts";
 import { OpRunner } from "./op-runner.ts";
-import { detectSubstrates } from "./substrates.ts";
+import { detectSubstrates, projectLexicons } from "./substrates.ts";
 import { pickAutoSyncOps, suspendedByRollback, type AutoSyncMode } from "./autosync.ts";
 import { sourceCommits, openRollbackBranches } from "./history.ts";
 import { composeEstate } from "./estate.ts";
@@ -102,7 +102,7 @@ export interface ServerOptions {
  * `?tier=` can reach `envOverridesFor` (chant.ts) with a real var name to set.
  * Undefined when the project declares no tiers — `?tier=` is then parsed but
  * never makes it into a spawn's env (no name to set it under). */
-function optsFromQuery(url: URL, tierEnvVar?: string): GraphOptions {
+function optsFromQuery(url: URL, tierEnvVar?: string, projectDir?: string): GraphOptions {
   const q = url.searchParams;
   const opts: GraphOptions = {};
   const detail = q.get("detail");
@@ -127,7 +127,15 @@ function optsFromQuery(url: URL, tierEnvVar?: string): GraphOptions {
   if (tier) opts.tier = tier;
   if (tierEnvVar) opts.tierEnvVar = tierEnvVar;
   const target = q.get("target");
-  if (target) opts.target = target;
+  if (target) {
+    opts.target = target;
+    // The multi-substrate override table (#99). `envOverridesFor`'s fallback
+    // writes only AWS_ENDPOINT_URL, and nothing ever populated
+    // `substrateTargets` — so a picked `?target=` on an azure/gcp/fly estate
+    // was display-only (#74). With the table present, the chosen endpoint is
+    // applied to EVERY declared substrate's own var, which is #99's design.
+    if (projectDir) opts.substrateTargets = resolveSubstrateTargets(projectLexicons(projectDir));
+  }
   return opts;
 }
 
@@ -516,7 +524,7 @@ export function createApp(
 
   app.get("/api/graph", async (c) => {
     const url = new URL(c.req.url);
-    const opts = optsFromQuery(url, tierEnvVar);
+    const opts = optsFromQuery(url, tierEnvVar, cfg.projectDir);
     try {
       // Component-DAG mode (M1.0, #56): the SPA's mode toggle. `chant graph
       // --components` projects one node per component (dependsOn edges,
@@ -607,6 +615,21 @@ export function createApp(
         // renders as loose nodes beside the cloud graph rather than one estate.
         ir = addClusterAnchorEdges(ir, await boundK8sContext(metaEnv ?? undefined));
       }
+      // COMPOSITES (level 1) on the SOURCE view too (#138): the overlay branch
+      // below has joined the component DAG's dependsOn edges since #84, but a
+      // source-only serve (no env) rendered the tier with no component edges at
+      // all — same join, same honest zero when nothing maps.
+      let srcCompositeEdgesAttached: number | undefined;
+      if (!multi && !components && opts.detail === 1) {
+        try {
+          const dag = await componentGraphIr(cfg.projectDir, tierTargetOpts(opts));
+          const counted = addCompositeDepsCounted(ir, dag);
+          ir = counted.ir;
+          srcCompositeEdgesAttached = counted.attached;
+        } catch {
+          srcCompositeEdgesAttached = 0;
+        }
+      }
       // Multi-estate (#31/M4): box each composed project's nodes via `groups.
       // byStack` (pinhole's composeStacks per-project grouping) — see
       // render.ts's doc comment for why this is an explicit opt-in rather than
@@ -624,7 +647,7 @@ export function createApp(
             : opts.detail === 3
               ? "attributes"
               : "resources";
-      const srcNote = multi ? undefined : notesFor(srcZoom, ir);
+      const srcNote = multi ? undefined : notesFor(srcZoom, ir, srcCompositeEdgesAttached);
       return c.json({
         ir,
         svg,
@@ -655,7 +678,7 @@ export function createApp(
   // user clicks. The whole pipeline is small (well under the CLI's 64KB
   // pipe-truncation limit), so fetch it once rather than shelling out per node.
   app.get("/api/ci", async (c) => {
-    const opts = optsFromQuery(new URL(c.req.url), tierEnvVar);
+    const opts = optsFromQuery(new URL(c.req.url), tierEnvVar, cfg.projectDir);
     const env = opts.env ?? cfg.env;
     // Which forge, if any — behold asked for `gitlab` unconditionally, which is
     // wrong two ways. A project declaring no forge lexicon has no pipeline to
@@ -725,7 +748,7 @@ export function createApp(
   // name), not all `accent`. So this facet's `physicalId`/`ownership` fields
   // are live today, not just wired for a future fix.
   app.get("/api/resources", async (c) => {
-    const opts = optsFromQuery(new URL(c.req.url), tierEnvVar);
+    const opts = optsFromQuery(new URL(c.req.url), tierEnvVar, cfg.projectDir);
     const env = opts.env ?? cfg.env;
     try {
       const [ir, known] = await Promise.all([
@@ -752,7 +775,7 @@ export function createApp(
   // correlation mirrors `/api/resources`'s own call shape (`live:true,
   // overlay:true`) so both facets see the same source-location map.
   app.get("/api/reconcile", async (c) => {
-    const opts = optsFromQuery(new URL(c.req.url), tierEnvVar);
+    const opts = optsFromQuery(new URL(c.req.url), tierEnvVar, cfg.projectDir);
     const env = opts.env ?? cfg.env;
     if (!env) {
       return c.json({ error: "reconcile needs an environment — pick one, or start behold with --env <name>" }, 400);
@@ -780,7 +803,7 @@ export function createApp(
   app.get("/api/overlay", async (c) => {
     // Env comes from the picker (`?env=`), falling back to the launch `--env`.
     // Either lets the overlay run without a restart; neither is a 400.
-    const query = optsFromQuery(new URL(c.req.url), tierEnvVar);
+    const query = optsFromQuery(new URL(c.req.url), tierEnvVar, cfg.projectDir);
     const env = query.env ?? cfg.env;
     if (!env) {
       return c.json({ error: "overlay needs an environment — pick one, or start behold with --env <name>" }, 400);
@@ -878,7 +901,10 @@ export function createApp(
       if (query.detail === 1) {
         try {
           const dag = await componentGraphIr(cfg.projectDir, { env, ...tierTargetOpts(query) });
-          const counted = addCompositeDepsCounted(ir, dag.edges);
+          // The whole DAG, not just its edges (#138): the component nodes'
+          // `liveNames` ownership is what maps a component to its node on a
+          // pure-lexicon estate, where the kebab-kind heuristic maps nothing.
+          const counted = addCompositeDepsCounted(ir, dag);
           ir = counted.ir;
           compositeEdgesAttached = counted.attached;
         } catch {

@@ -72,8 +72,10 @@ function scriptBringUp(projectDir: string, relPath: string, label: string): Subs
 
 /** The lexicons a project declares (from `chant.config.ts` `lexicons: [...]`) —
  * best-effort text scan, so we only offer substrates the project actually uses
- * (an aws project shouldn't show a red "k3d down"). Empty when unreadable. */
-function projectLexicons(projectDir: string): string[] {
+ * (an aws project shouldn't show a red "k3d down"). Empty when unreadable.
+ * Exported for server.ts's target-lens resolution (#74): synchronous and cheap,
+ * where `detectProject` is neither. */
+export function projectLexicons(projectDir: string): string[] {
   try {
     const src = readFileSync(join(projectDir, "chant.config.ts"), "utf-8");
     const m = src.match(/lexicons\s*:\s*\[([^\]]*)\]/);
@@ -186,6 +188,57 @@ export async function detectSubstrates(projectDir: string, preview = false, boun
         docker && k3d.code !== 127 && !clusters.length
           ? scriptBringUp(projectDir, "scripts/local/local-up.sh", "local-up")
           : undefined,
+    });
+  }
+
+  // Fly (#74) — a fly-lexicon project has had a target var (`FLY_FLAPS_BASE_URL`,
+  // src/targets.ts) since #99 but no pill, so the strip showed a target with no
+  // substrate behind it. Not a daemon behold can boot: the var set means the
+  // reads/applies aim at a local Flaps emulator someone runs; unset means the
+  // real Fly API. Read-only either way.
+  if (lexicons.includes("fly")) {
+    const endpoint = process.env.FLY_FLAPS_BASE_URL;
+    subs.push({
+      name: "fly",
+      label: "Fly",
+      status: "on-demand",
+      detail: endpoint ? `targeting ${endpoint}` : "real Fly (FLY_FLAPS_BASE_URL unset)",
+    });
+  }
+
+  // GitHub Actions (#74) — the forge table above covers gitlab/forgejo because
+  // both have a LOCAL runner path; GitHub has none, so a project shipping
+  // generated workflows showed no forge pill at all. Read-only: the workflows
+  // run on push/dispatch at github.com, and #61 is the track that would make
+  // behold trigger them.
+  if (existsSync(join(projectDir, ".github", "workflows"))) {
+    subs.push({
+      name: "github",
+      label: "GitHub Actions",
+      status: "on-demand",
+      detail: "generated workflows committed — runs on push/dispatch",
+    });
+  }
+
+  // Temporal (#74) — chant's Ops execute as Temporal workflows, and `chant run`
+  // refuses outright without a `temporal.profiles` block (the exact failure
+  // observed live: "No temporal.profiles found in chant.config.ts"). A pill
+  // that says so beats every Run/Deploy gesture failing with a chant error.
+  // Best-effort text scan, same posture as `projectLexicons`.
+  if (lexicons.includes("temporal")) {
+    let hasProfiles = false;
+    try {
+      hasProfiles = /temporal\s*:\s*\{[\s\S]{0,400}?profiles\s*:/.test(readFileSync(join(projectDir, "chant.config.ts"), "utf-8"));
+    } catch {
+      /* unreadable config — report the actionable absence below */
+    }
+    subs.push({
+      name: "temporal",
+      label: "Temporal",
+      status: hasProfiles ? "on-demand" : "blocked",
+      detail: hasProfiles
+        ? "profiles declared — Ops run on the bound Temporal"
+        : "no temporal.profiles in chant.config.ts — chant run will refuse",
     });
   }
 
