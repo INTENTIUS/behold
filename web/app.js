@@ -872,8 +872,20 @@ function dialArrow() {
 function renderDial() {
   const host = document.getElementById("dial");
   if (!view.env) {
-    host.style.display = "none";
+    // The dial used to vanish entirely here, with nothing saying why — someone
+    // who launched without --env saw no observe/reconcile/apply path at all.
+    // Say what's missing instead (a static export keeps the old silence: there
+    // is genuinely nothing to offer).
     host.innerHTML = "";
+    if (staticMode || !environments.length) {
+      host.style.display = "none";
+      return;
+    }
+    host.style.display = "flex";
+    const hint = document.createElement("span");
+    hint.style.cssText = "font-size:11px;color:var(--muted);align-self:center";
+    hint.textContent = "observe → reconcile → apply needs an environment — pick one in ⌘K (env: …)";
+    host.appendChild(hint);
     return;
   }
   host.style.display = "flex";
@@ -1009,14 +1021,20 @@ async function confirmApplyAll() {
   } catch {
     /* couldn't check — fall through to the plain confirm */
   }
-  if (total > 0 && deployed === total) {
-    nowline(`✓ nothing to apply — all ${total} components are already deployed & in sync (re-applying would collide on Floci #16)`);
+  // The Floci #16 story (re-apply collides on the emulator's fixed-name
+  // resources) only exists where applies actually hit Floci. On a k8s/helm
+  // estate a re-apply is the normal sync gesture, and warning about an
+  // emulator the project doesn't use was wrong twice over — the server's
+  // /api/apply pre-flight is gated the same way.
+  const onFloci = lastSubstrates.some((s) => s.name === "floci" && s.status === "up");
+  if (onFloci && total > 0 && deployed === total) {
+    showToast(`✓ nothing to apply — all ${total} components are already deployed & in sync (re-applying would collide on Floci #16)`, true);
     return;
   }
-  const brokenNote = rolledBack > 0
+  const brokenNote = onFloci && rolledBack > 0
     ? `⚠ ${rolledBack} component(s) are rolled back. Re-applying WON'T recover them on the emulator — their fixed-name resources still exist (Floci #16). Use the "Reset" button on the Floci substrate pill — it reboots the emulator and redeploys clean (don't apply after).\n\n`
     : "";
-  const reapplyNote = deployed > 0
+  const reapplyNote = onFloci && deployed > 0
     ? `Note: ${deployed} of ${total} are already deployed and will be re-applied — that can fail on the local emulator (Floci #16).\n\n`
     : "";
   if (
@@ -1034,8 +1052,10 @@ function runApply(component) {
     .then((r) => r.json())
     .then((j) => {
       if (j.error) {
+        showToast(`✗ apply: ${j.error}`, false);
         nowline("✗ apply: " + j.error);
       } else {
+        showToast(`▶ applying ${component} → ${view.env} — progress on the dial`, true);
         nowline(`▶ apply ${component} → ${view.env}`);
       }
       renderDial();
@@ -1815,6 +1835,28 @@ function nowline(line) {
 }
 events.addEventListener("op", (e) => nowline(e.data));
 
+// Transient toast for action feedback. The now-line is a bottom log pane that
+// is display:none until something writes to it and may be scrolled out of
+// view — an error that only lands there after the palette closed is an error
+// nobody sees. Errors get BOTH: the toast for now, the now-line for the
+// record. Auto-dismisses; click to dismiss sooner.
+function showToast(msg, ok) {
+  let host = document.getElementById("toasts");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "toasts";
+    host.style.cssText = "position:fixed;top:52px;right:16px;display:flex;flex-direction:column;gap:8px;z-index:60;max-width:420px";
+    document.body.appendChild(host);
+  }
+  const t = document.createElement("div");
+  const color = ok ? "var(--managed)" : "var(--degraded)";
+  t.style.cssText = `background:var(--panel);color:var(--fg);border:1px solid ${color};border-left:4px solid ${color};border-radius:8px;padding:8px 12px;font-size:12px;box-shadow:0 4px 16px rgba(0,0,0,.35);cursor:pointer;white-space:pre-wrap`;
+  t.textContent = msg;
+  t.onclick = () => t.remove();
+  host.appendChild(t);
+  setTimeout(() => t.remove(), ok ? 5000 : 10000);
+}
+
 // Structured apply progress (M3, #54): the server broadcasts the full
 // ApplyProgressState (src/apply.ts) after every recognized RunProgressEvent —
 // see src/op-runner.ts's apply(). Re-render the dial's progress panel each
@@ -1838,12 +1880,26 @@ function button(label, cls, onClick) {
 function runOp(name) {
   fetch(`/api/ops/${encodeURIComponent(name)}/run`, { method: "POST" })
     .then((r) => r.json())
-    .then((j) => j.error && nowline("✗ " + j.error));
+    .then((j) => {
+      if (j.error) {
+        showToast(`✗ ${name}: ${j.error}`, false);
+        nowline("✗ " + j.error);
+      } else {
+        showToast(`▶ running ${name} — output streams in the log below`, true);
+      }
+    });
 }
 function signal(name, gate) {
   fetch(`/api/ops/${encodeURIComponent(name)}/signal/${encodeURIComponent(gate)}`, { method: "POST" })
     .then((r) => r.json())
-    .then((j) => j.error && nowline("✗ " + j.error));
+    .then((j) => {
+      if (j.error) {
+        showToast(`✗ approve ${gate}: ${j.error}`, false);
+        nowline("✗ " + j.error);
+      } else {
+        showToast(`✓ approved ${gate}`, true);
+      }
+    });
 }
 // Adopt is a per-node gesture (a *foreign* node → ReconcileOp → PR), so it lives
 // in the inspect panel, not the global bar. Stash the reconcile op + the
@@ -1968,13 +2024,48 @@ async function initActions() {
   // Generic Ops (backup, restore, seed, watch, teardown, …) — "Run: <name>" in
   // the palette, same set the old "Run ▾" dropdown offered.
   opsRunnable = ops.filter((o) => o.kind === "op" || o.kind === "audit");
+
+  // The one visible deploy affordance (#73 follow-up). Moving every write into
+  // the ⌘K palette left the header with zero action buttons — behold looked
+  // read-only unless you happened to press ⌘K, and the docs' "click Run/Sync"
+  // still described the old toolbar. The PRIMARY deploy gesture gets a real
+  // button back; everything else stays in the palette. One intent, one word:
+  // the button says Deploy whether the project routes it through a committed
+  // ApplyOp or a raw `chant run --components` — the tooltip carries the
+  // mechanism.
+  if (opsApply && !previewMode) {
+    const deploy = button(`▶ Deploy (${opsApply.name})`, "", () => {
+      if (window.confirm(`Run the committed ApplyOp "${opsApply.name}"?\nDelegated write: behold triggers, chant's executor applies.`)) runOp(opsApply.name);
+    });
+    deploy.title = `chant run ${opsApply.name} — the committed ApplyOp (Build → Plan → Apply). Also in ⌘K as "Deploy: Sync".`;
+    bar.appendChild(deploy);
+    if (opsApply.gate) {
+      const approve = button(`Approve ${opsApply.gate}`, "approve", () => signal(opsApply.name, opsApply.gate));
+      approve.title = `chant run signal ${opsApply.name} ${opsApply.gate} — releases the Op's human gate.`;
+      bar.appendChild(approve);
+    }
+  } else if (opsInitialEnv || view.env) {
+    const deploy = button("▶ Deploy…", "", () => {
+      if (!view.env) {
+        showToast("Deploy needs an environment — pick one in ⌘K (env: …)", false);
+        return;
+      }
+      applyPicker = true;
+      loadComponentChoices().then(renderDial);
+      renderDial();
+      document.getElementById("dial").scrollIntoView({ block: "nearest" });
+    });
+    deploy.title = `chant run <component|all> --components --env ${view.env || opsInitialEnv} --progress-json — opens the component picker on the dial. behold triggers, chant executes.`;
+    bar.appendChild(deploy);
+  }
+
   // Only complain when there's genuinely nothing to do (never in the preview —
   // its deploy path is Apply all, not committed Ops).
-  if (ops.length === 0 && !previewMode) {
+  if (ops.length === 0 && !previewMode && !opsInitialEnv) {
     const hint = document.createElement("span");
     hint.style.cssText = "color:var(--muted);font-size:11px;align-self:center";
     hint.textContent = "no Ops — commit an *.op.ts (ApplyOp / ReconcileOp / any deploy Op) to act";
-    hint.title = "behold triggers committed Ops on your executor. Add one to enable Sync / Adopt / Run.";
+    hint.title = "behold triggers committed Ops on your executor. Add one to enable Deploy / Adopt / Run.";
     bar.appendChild(hint);
   }
 }
