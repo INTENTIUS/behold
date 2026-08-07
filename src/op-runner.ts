@@ -7,8 +7,10 @@
  * the executor and streams the phases.
  */
 import { runChantStream, runCommandStream, applyArgs } from "./chant.ts";
+import type { CiPipeline } from "./chant.ts";
 import { extractPrUrl } from "./adopt.ts";
 import { parseProgressLine, applyProgressReducer, initialApplyProgress, type ApplyProgressState } from "./apply.ts";
+import { pipelineProgress, foldPipelineLine, finishPipelineProgress, type PipelineProgressState } from "./ci-run.ts";
 import type { Broadcaster } from "./events.ts";
 
 export interface OpRunnerDeps {
@@ -92,6 +94,46 @@ export class OpRunner {
       this.deps.broadcaster.emit("apply", JSON.stringify(this.lastApplyProgress));
       return true; // consumed — start() skips the raw "op" broadcast for this line
     });
+  }
+
+  /**
+   * A local pipeline run as a first-class action (#163, the first slice of
+   * #61): the same guarded/streamed shell-out as `bringUp`, but the run's
+   * structure is KNOWN — `pipeline` is `/api/ci`'s parsed stages/jobs — so
+   * progress renders on the dial exactly like an apply: stages as waves, jobs
+   * correlated to their components (src/ci-run.ts). Every line still reaches
+   * the `op` now-line (a pipeline log is worth reading raw); the classifier
+   * only decides whether the structured model ALSO moved. The exit code, not
+   * the log, settles the verdict.
+   */
+  pipeline(label: string, cmd: string, args: string[], cwd: string, pipeline: CiPipeline): boolean {
+    if (this.current) return false;
+    const { broadcaster } = this.deps;
+    let state: PipelineProgressState = pipelineProgress(pipeline);
+    this.lastApplyProgress = state;
+    broadcaster.emit("op", `▶ ${cmd} ${args.join(" ")}`);
+    broadcaster.emit("apply", JSON.stringify(state));
+    const op = runCommandStream(cmd, args, cwd, (line) => {
+      broadcaster.emit("op", line);
+      const next = foldPipelineLine(state, line);
+      if (next === state) return;
+      state = next;
+      this.lastApplyProgress = state;
+      broadcaster.emit("apply", JSON.stringify(state));
+    });
+    this.current = label;
+    void op.done.then((code) => {
+      state = finishPipelineProgress(state, code);
+      this.lastApplyProgress = state;
+      broadcaster.emit("apply", JSON.stringify(state));
+      broadcaster.emit("op", `■ ${label} exited ${code}`);
+      this.current = null;
+      Promise.resolve(this.deps.onDone(undefined))
+        .then(() => broadcaster.emit("changed"))
+        .catch((err) =>
+          broadcaster.emit("op", `⚠ post-op capture: ${err instanceof Error ? err.message : String(err)}`));
+    });
+    return true;
   }
 
   /**

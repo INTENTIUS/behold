@@ -28,6 +28,7 @@ import {
   componentStatus,
   ciPipeline,
   ciForgeFor,
+  type CiForge,
   lifecyclePlan,
   lifecycleDiffLive,
   runChantRaw,
@@ -422,6 +423,22 @@ export function createApp(
     if (!sub) return c.json({ error: `unknown substrate "${name}"` }, 404);
     if (!sub.bringUp) return c.json({ error: `no bring-up available for "${name}"` }, 400);
     const { label, cmd, args } = sub.bringUp;
+    // A forge substrate's "bring-up" IS a pipeline run (#163), and behold
+    // knows the pipeline's structure (`/api/ci`'s stages/jobs, each job
+    // correlated to its component) — so it runs with apply-shaped progress on
+    // the dial instead of only a raw log tail. A pipeline that can't be
+    // parsed (generation failed, older chant) degrades to the plain bring-up.
+    const PIPELINE_FORGES: Record<string, CiForge> = { "gitlab-ci": "gitlab", forgejo: "forgejo" };
+    const forge = PIPELINE_FORGES[name];
+    if (forge) {
+      const parsed = await ciPipeline(cfg.projectDir, { env: cfg.env }, forge).catch(() => undefined);
+      if (parsed && parsed.jobs.length > 0) {
+        if (!runner.pipeline(`${sub.label} pipeline`, cmd, args, cfg.projectDir, parsed)) {
+          return c.json({ error: `busy — ${runner.running} is running` }, 409);
+        }
+        return c.json({ started: true, name, ran: label, pipeline: { stages: parsed.stages.length, jobs: parsed.jobs.length } });
+      }
+    }
     if (!runner.bringUp(`bring up ${sub.label}`, cmd, args, cfg.projectDir)) {
       return c.json({ error: `busy — ${runner.running} is running` }, 409);
     }
