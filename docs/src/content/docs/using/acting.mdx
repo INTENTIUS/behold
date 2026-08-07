@@ -7,15 +7,18 @@ import { Aside } from '@astrojs/starlight/components';
 
 Every action below starts something **you** committed, running on **your** executor. behold holds no credentials and performs no cloud write.
 
-## The buttons, and where they come from
+## The actions, and where they come from
 
-| button | starts | direction |
-|---|---|---|
-| **Sync** | your `ApplyOp` | code → cloud |
-| **Adopt** | your `ReconcileOp` | cloud → code, as a PR |
-| **Run** | any other committed Op | whatever you wrote |
+| action | where | starts | direction |
+|---|---|---|---|
+| **▶ Deploy (\<op\>)** | header button, and ⌘K as "Deploy: Sync" | your `ApplyOp` | code → cloud |
+| **▶ Deploy…** | header button (no `ApplyOp`, but an env) | `chant run <component\|all> --components`, via the dial's picker | code → cloud |
+| **Approve \<gate\>** | header button beside Deploy, and ⌘K | the gate signal on your `ApplyOp` | — |
+| **Adopt** | per foreign node, in the inspect panel | your `ReconcileOp` | cloud → code, as a PR |
+| **Run: \<name\>** | ⌘K palette | any other committed Op | whatever you wrote |
+| **Rollback…** | ⌘K palette | a rollback PR to a picked commit | code → code |
 
-Which buttons appear depends on what your project declares. A project with no Ops shows none — by design, not a missing feature.
+One deploy intent, one word: the header carries a single **▶ Deploy** button whether the project routes it through a committed `ApplyOp` or a raw component apply — the tooltip says which. Everything else lives in the **⌘K palette**. A project with no Ops and no environment shows no deploy affordance — by design, not a missing feature.
 
 ## Gates
 

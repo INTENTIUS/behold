@@ -1,9 +1,9 @@
 # The k3d turnkey demo — behold's Kubernetes counterpart to Loom-on-Floci
 
 The smallest real thing on Kubernetes: one `nginx` Deployment + Service (+ a
-PodDisruptionBudget), deployed from the browser by clicking **Run** on
-`k3d-apply`, against a local, single-node [k3d](https://k3d.io) cluster — no
-cloud account, no credentials.
+PodDisruptionBudget), deployed from the browser with the **▶ Deploy
+(k3d-apply)** header button, against a local, single-node
+[k3d](https://k3d.io) cluster — no cloud account, no credentials.
 
 ```
 src/config.ts        static config — app name, pinned image tag
@@ -36,7 +36,8 @@ instead of crashing.
 
 1. Open **http://localhost:4600**. The graph shows the Deployment, Service and
    PodDisruptionBudget — **blue** (declared, not yet deployed).
-2. Click **Run** on `k3d-apply`. The now-line streams Build → Plan (a live
+2. Click **▶ Deploy (k3d-apply)** in the header (or ⌘K → "Deploy: Sync"). The
+   now-line streams Build → Plan (a live
    diff) → Apply: a Kubernetes **server-side apply**, field manager
    `chant:behold-k3d-demo` (chant#1074/#1075) — deletes are **owned-only**, a
    marker-scoped prune that only ever touches what chant itself applied.

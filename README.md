@@ -102,8 +102,8 @@ Cloudflare Pages (`wrangler pages deploy .`).
 The bundled `example-writes` is one S3 bucket. `serve --local` boots *that
 project's own* local emulator (Floci, via Docker, generically through
 `chant emulator up` — chant #920), points behold's live overlay at it, and gives
-you a **Run floci-apply** button that deploys to it — no AWS account, no creds, no
-cost. This is `serve`'s generic mechanism, separate from `preview`/`export`'s
+you a **▶ Deploy (floci-apply)** button in the header that deploys to it — no AWS
+account, no creds, no cost. This is `serve`'s generic mechanism, separate from `preview`/`export`'s
 `--emulator` flag above, which is a Loom-specific turnkey demo path — see
 `behold --help` for how the two relate:
 
@@ -116,18 +116,21 @@ npm run demo        # installs example-writes' deps, then serves it with --local
 <sub>(or by hand: `npm install --prefix example-writes && npm run dev -- serve example-writes --local --env prod`)</sub>
 
 1. The graph shows the bucket + its TLS policy — **blue** (declared, not yet deployed).
-2. Click **Run floci-apply**. The now-line streams Build → Apply → Verify; the bucket
-   is created in the emulator via the CloudFormation API.
+2. Click **▶ Deploy (floci-apply)** in the header (or ⌘K → "Deploy: Sync"). The
+   now-line streams Build → Apply → Verify; the bucket is created in the emulator
+   via the CloudFormation API.
 3. The nodes flip **green (managed)** — behold's overlay observes the live emulator.
 
 No Docker running? behold still serves the source graph and tells you to start it —
 it never dies on you.
 
-**Real AWS.** The same project's **Sync** button starts its `ApplyOp` against a real
-account: `npm run dev -- serve example-writes --env prod` (needs AWS credentials).
-Which buttons appear depends on what the project committed: **Sync** (`ApplyOp`),
-**Adopt** per foreign node (`ReconcileOp`), **Run** (any other Op). A project with no
-Ops (the default `example`) shows none — by design, not a bug. Full walkthrough:
+**Real AWS.** The same project's **▶ Deploy** button starts its `ApplyOp` against a
+real account: `npm run dev -- serve example-writes --env prod` (needs AWS
+credentials). What the header offers depends on what the project committed: a
+committed `ApplyOp` gets the **▶ Deploy (<op>)** button (plus **Approve** when
+gated); a project with only components gets **▶ Deploy…**, which opens the dial's
+component picker; **Adopt** appears per foreign node (`ReconcileOp`); every other
+Op runs from ⌘K (**Run: \<name\>**). Full walkthrough:
 **[example-writes/README.md](example-writes/README.md)**.
 
 ## The k3d demo — the Kubernetes counterpart to Loom-on-Floci

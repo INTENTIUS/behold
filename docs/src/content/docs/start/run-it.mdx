@@ -29,7 +29,7 @@ One S3 bucket, deployed to a local [Floci](https://github.com/lex00/floci) emula
 
 2. Look at the graph. The bucket and its TLS policy are **blue** — declared in source, not yet deployed.
 
-3. Click **Run floci-apply**. The now-line streams Build → Apply → Verify as the bucket is created in the emulator.
+3. Click **▶ Deploy (floci-apply)** in the header. The now-line streams Build → Apply → Verify as the bucket is created in the emulator.
 
 4. The nodes flip **green**. behold observed the live emulator and found them.
 
@@ -43,7 +43,7 @@ That is the whole loop: declared → applied → observed. Nothing was mocked, a
 npm run demo:k8s
 ```
 
-Brings up a single-node [k3d](https://k3d.io) cluster, serves an nginx Deployment + Service, and tears the cluster back down on Ctrl-C. Same blue → **Run** → green loop, applied server-side with chant's own field manager.
+Brings up a single-node [k3d](https://k3d.io) cluster, serves an nginx Deployment + Service, and tears the cluster back down on Ctrl-C. Same blue → **▶ Deploy** → green loop, applied server-side with chant's own field manager.
 
 Then three things that exist on no other substrate:
 
