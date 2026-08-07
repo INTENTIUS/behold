@@ -273,10 +273,15 @@ function inspect(node) {
   // facet loaded (component-DAG mode; see loadCi()).
   const job = node.kind === "Component" ? ciByComponent.get(node.id) : undefined;
   if (job) {
-    const ci = section("CI (GitLab)");
+    // The heading names the forge the pipeline was actually generated for
+    // (#164) — it used to say GitLab whatever the project targeted.
+    const ci = section(`CI (${{ gitlab: "GitLab", github: "GitHub Actions", forgejo: "Forgejo" }[ciForge] || ciForge || "pipeline"})`);
     ci("stage", job.stage);
     ci("needs", job.needs.length ? job.needs.join(", ") : "(none)");
     ci("runs", job.script.length ? job.script.join(" && ") : `chant run --components ${node.id}`);
+    // The last pipeline run of this session, when one touched this component
+    // (#164) — the server joins it as `_ciJob`/`ci` on the node.
+    if (node.attrs && node.attrs._ciJob) ci("last run", `${node.attrs._ciJob}: ${node.attrs.ci}`);
   }
 
   // Resources facet (#59 unify) — a best-effort slice of the DoD's "its
@@ -755,6 +760,7 @@ function lensParams(params) {
 // load() and cached here so inspect() (fired per click, not per fetch) reads
 // it synchronously. Component-DAG mode only — cleared otherwise.
 let ciByComponent = new Map();
+let ciForge = null; // the forge the pipeline was generated for (#164) — heads the inspect section
 
 async function loadCi() {
   try {
@@ -763,10 +769,12 @@ async function loadCi() {
     const j = await res.json();
     if (!res.ok) throw new Error(j.error || res.statusText);
     ciByComponent = new Map((j.jobs || []).map((job) => [job.component, job]));
+    ciForge = j.forge || null;
   } catch {
     // Non-fatal: the component DAG still renders without the CI facet (e.g. a
     // served chant predating generate mode) — inspect() just omits the section.
     ciByComponent = new Map();
+    ciForge = null;
   }
 }
 
@@ -2249,6 +2257,28 @@ function paletteCommands() {
   for (const s of lastSubstrates) {
     if (s.bringUp) c.push([`Bring up ${s.label}`, () => bringUpSubstrate(s)]);
     if (s.name === "floci" && s.status === "up") c.push(["Reset local emulator (Floci)", () => resetLocal()]);
+    // Dispatch a GitHub Actions run (#164) — through the operator's own `gh`
+    // login. Offered whenever the pill exists; the server refuses honestly
+    // (no gh, unauthenticated, no matching workflow_dispatch workflow) and
+    // the reason lands as a toast.
+    if (s.name === "github" && !previewMode) {
+      c.push([
+        "Run pipeline: GitHub Actions",
+        () => {
+          if (!window.confirm("Dispatch the GitHub Actions pipeline?\nRuns via YOUR gh login (gh workflow run); behold follows the run on the dial.")) return;
+          fetch("/api/ci/dispatch", { method: "POST" })
+            .then((r) => r.json())
+            .then((j) => {
+              if (j.error) {
+                showToast(`✗ dispatch: ${j.error}`, false);
+                nowline("✗ dispatch: " + j.error);
+              } else {
+                showToast(`▶ dispatched ${j.workflow} @ ${j.ref} (${j.jobs} jobs) — following on the dial`, true);
+              }
+            });
+        },
+      ]);
+    }
   }
 
   return c.map(([label, run]) => ({ label, run }));

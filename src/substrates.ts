@@ -208,15 +208,23 @@ export async function detectSubstrates(projectDir: string, preview = false, boun
 
   // GitHub Actions (#74) — the forge table above covers gitlab/forgejo because
   // both have a LOCAL runner path; GitHub has none, so a project shipping
-  // generated workflows showed no forge pill at all. Read-only: the workflows
-  // run on push/dispatch at github.com, and #61 is the track that would make
-  // behold trigger them.
+  // generated workflows showed no forge pill at all. Since #164 behold can
+  // DISPATCH a run — through the operator's own `gh` login, never a stored
+  // token — so the pill carries whether that trigger is available: `gh`
+  // present and authenticated reads on-demand, anything else is blocked with
+  // the reason the dispatch would have refused with.
   if (existsSync(join(projectDir, ".github", "workflows"))) {
+    const gh = await probe("gh", ["auth", "status"]);
+    const ready = gh.code === 0;
     subs.push({
       name: "github",
       label: "GitHub Actions",
-      status: "on-demand",
-      detail: "generated workflows committed — runs on push/dispatch",
+      status: ready ? "on-demand" : "blocked",
+      detail: ready
+        ? "workflows committed — dispatch via your gh login (⌘K)"
+        : gh.code === 127
+          ? "gh not installed — the dispatch runs through YOUR gh login"
+          : "gh not authenticated — run `gh auth login`",
     });
   }
 

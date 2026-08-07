@@ -137,6 +137,45 @@ export class OpRunner {
   }
 
   /**
+   * A tracked async action (#164): holds the same single-writer guard while a
+   * code-driven loop (not a child process) does the work — the GitHub Actions
+   * dispatch-and-follow, whose "stream" is polled structured JSON rather than
+   * a process's stdout. The task reports lines for the now-line and
+   * apply-shaped progress for the dial, and resolves to an exit code. The
+   * guard releases the moment the task settles; a thrown task reads exit 1.
+   */
+  track(
+    label: string,
+    task: (io: { line: (s: string) => void; progress: (s: ApplyProgressState) => void }) => Promise<number>,
+  ): boolean {
+    if (this.current) return false;
+    const { broadcaster } = this.deps;
+    this.current = label;
+    this.lastApplyProgress = initialApplyProgress;
+    const io = {
+      line: (s: string) => broadcaster.emit("op", s),
+      progress: (s: ApplyProgressState) => {
+        this.lastApplyProgress = s;
+        broadcaster.emit("apply", JSON.stringify(s));
+      },
+    };
+    void task(io)
+      .catch((err) => {
+        io.line(`✗ ${label}: ${err instanceof Error ? err.message : String(err)}`);
+        return 1;
+      })
+      .then((code) => {
+        broadcaster.emit("op", `■ ${label} exited ${code}`);
+        this.current = null;
+        Promise.resolve(this.deps.onDone(undefined))
+          .then(() => broadcaster.emit("changed"))
+          .catch((err) =>
+            broadcaster.emit("op", `⚠ post-op capture: ${err instanceof Error ? err.message : String(err)}`));
+      });
+    return true;
+  }
+
+  /**
    * Substrate bring-up (M5, #54): run a project's local bring-up script (e.g.
    * `bash scripts/local/local-up.sh`, `test/gitlab-runtime-e2e.sh`) through the
    * SAME running-guard + stream + post-run capture as an Op — behold triggers,
