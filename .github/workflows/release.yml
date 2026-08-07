@@ -70,10 +70,15 @@ jobs:
       # web is the SPA — a tarball missing it publishes a server with no UI,
       # which would look fine here and break on install.
       - name: the tarball carries bin, dist and web
+        # A REAL tarball listed with tar, not `pack --dry-run --json` parsed
+        # with node — the JSON's `files` field is npm-version-dependent (absent
+        # on the runner's npm 10, present on 11), which is how the first-ever
+        # run of this workflow crashed with `undefined.files` (#172).
         run: |
-          npm pack --dry-run --json > /tmp/pack.json
+          tarball="$(npm pack --silent | tail -1)"
+          tar -tzf "$tarball" | sed 's|^package/||' > /tmp/pack-files
           node -e '
-            const f = require("/tmp/pack.json")[0].files.map(x => x.path);
+            const f = require("fs").readFileSync("/tmp/pack-files", "utf8").split("\n");
             const want = ["bin/behold.js", "dist/cli.js", "web/index.html", "web/app.js"];
             const missing = want.filter(w => !f.includes(w));
             if (missing.length) {
