@@ -37,6 +37,7 @@ import { projectGcpLogical } from "./logical-gcp.ts";
 import { projectK8sLogical } from "./logical-k8s.ts";
 import { projectHelmLogical } from "./logical-helm.ts";
 import { boundManagedCluster } from "./cluster-anchor.ts";
+import { projectKustomizeLogical } from "./logical-kustomize.ts";
 
 /** The container-nesting map pinhole's `layoutArchitecture` consumes:
  * `containerId → memberIds`, where a member may itself be a container id (the
@@ -327,13 +328,16 @@ function nearestByRef(start: string, want: Set<string>, refOut: Map<string, Set<
  * other three contribute nothing. Box titles are per-lens synthetic strings and
  * node ids are unique across the IR, so there is nothing to collide.
  */
-export function projectTopology(ir: GraphIR, env?: string, boundContext?: string): LogicalProjection {
+export function projectTopology(ir: GraphIR, env?: string, boundContext?: string, projectDir?: string): LogicalProjection {
   const projections = [
     projectLogical(ir),
     projectAzureLogical(ir, env),
     projectGcpLogical(ir, env),
     projectK8sLogical(ir, env, boundContext),
     projectHelmLogical(ir),
+    // The kustomize lens needs the project dir to find kustomization roots;
+    // a caller without one (tests, composition paths) just skips it.
+    ...(projectDir ? [projectKustomizeLogical(ir, projectDir)] : []),
   ];
 
   const nodes: IRNode[] = [];
@@ -409,7 +413,10 @@ function placeHelmReleases(
  */
 export function nestReleaseBoxes(byContainer: ByContainer): void {
   for (const [box, members] of Object.entries(byContainer)) {
-    if (!box.startsWith("release ")) continue;
+    // `overlay <name>` boxes (behold#171) nest by the same single-parent rule
+    // — a kustomize overlay whose objects all sit in one namespace moves
+    // inside it, exactly as a helm release does.
+    if (!box.startsWith("release ") && !box.startsWith("overlay ")) continue;
     // The chart card itself is only ever claimed by the release box, so it
     // contributes no parent — the parent is decided by where the release's
     // other members (the k8s objects) live.
