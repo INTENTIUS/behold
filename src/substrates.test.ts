@@ -48,12 +48,22 @@ describe("fly pill (#74)", () => {
 });
 
 describe("github pill (#74)", () => {
-  it("appears when generated workflows are committed, read-only", async () => {
+  it("appears when generated workflows are committed, read-only, status by the HOST's gh auth", async () => {
     config(["aws", "github"]);
     mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
     const gh = await byName("github");
-    expect(gh?.status).toBe("on-demand");
+    expect(gh).toBeDefined();
     expect(gh?.bringUp).toBeUndefined();
+    // Since #164 the pill reports whether the DISPATCH is available, which is
+    // a fact about the host's `gh` login — authenticated here, absent on a CI
+    // runner. Assert the coherent pairing, not one machine's answer (this
+    // exact assertion was 'on-demand' and failed on CI's unauthenticated gh).
+    if (gh?.status === "on-demand") {
+      expect(gh.detail).toContain("dispatch via your gh login");
+    } else {
+      expect(gh?.status).toBe("blocked");
+      expect(gh?.detail).toMatch(/gh not (installed|authenticated)/);
+    }
   });
 
   it("absent without .github/workflows — the lexicon alone commits nothing", async () => {
