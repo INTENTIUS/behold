@@ -105,6 +105,17 @@ jobs:
           fi
           echo "publishing ${pkg}"
 
+      # Skip-if-published (pinhole's guard): a re-run of an already-published
+      # tag goes green instead of dying on "cannot publish over" — the 0.2.2
+      # first publish went out manually, and without this the tag's run can
+      # never be green.
       - name: publish
         if: github.ref_type == 'tag'
-        run: npm publish
+        run: |
+          V="$(node -p 'require("./package.json").version')"
+          P="$(npm view "$(node -p 'require("./package.json").name')" version 2>/dev/null || echo none)"
+          if [ "$V" = "$P" ]; then
+            echo "@intentius/behold@$V already published, skipping"
+          else
+            npm publish
+          fi

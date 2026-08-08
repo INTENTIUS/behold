@@ -1,6 +1,6 @@
 {
   "name": "@intentius/behold",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "type": "module",
   "description": "behold — a live control plane on chant. See your whole estate (every substrate in one graph), coloured by drift; act through delegated, gated Ops.",
   "bin": {
