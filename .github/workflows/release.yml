@@ -39,11 +39,15 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
+      # No registry-url on purpose (pinhole's publish.yml learned this): with
+      # it, setup-node writes an .npmrc pointing auth at NODE_AUTH_TOKEN — a
+      # placeholder that overrides OIDC and 404s every publish even when the
+      # trusted-publisher record exists. Without it, npm publish exchanges the
+      # id-token via the package's trusted-publisher record.
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: npm
-          registry-url: 'https://registry.npmjs.org'
 
       # Trusted publishing needs npm 11.5.1 or newer. Node 24 ships an npm 11,
       # but the exact patch moves with the runner image, so pin the floor here
