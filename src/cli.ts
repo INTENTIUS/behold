@@ -306,7 +306,10 @@ async function runDemo(rest: string[]): Promise<void> {
     }
   }
   process.stdout.write(`behold demo ${entry.name} → serving. Blue = declared; Deploy turns it green.\n`);
-  const serveArgs = ["serve", target, "--port", String(port)];
+  // #211: an estate demo serves several member projects composed; the first
+  // listed is the primary, same as `behold serve a b c…`.
+  const serveDirs = entry.serve.dirs?.length ? entry.serve.dirs.map((d) => join(target, d)) : [target];
+  const serveArgs = ["serve", ...serveDirs, "--port", String(port)];
   if (entry.serve.local) serveArgs.push("--local");
   if (entry.serve.env) serveArgs.push("--env", entry.serve.env);
   await run(serveArgs);
