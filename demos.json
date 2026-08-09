@@ -16,6 +16,15 @@
       "requires": ["docker", "k3d", "kubectl"],
       "setup": "bash scripts/local/local-up.sh",
       "serve": { "local": true, "env": "local" }
+    },
+    {
+      "name": "fountain",
+      "description": "The mature estate: self-hosted fountain (a real app) on a throwaway k3d cluster — tiers (try the ha tier picker), seams, drift, runtime Pods. Clones INTENTIUS/fountain-ops; ~5 minutes, mostly image pulls. `just down` in the clone removes the cluster.",
+      "source": "git",
+      "repo": "https://github.com/INTENTIUS/fountain-ops",
+      "requires": ["docker", "k3d", "kubectl", "jq", "just"],
+      "setup": "just up",
+      "serve": { "env": "local" }
     }
   ]
 }
