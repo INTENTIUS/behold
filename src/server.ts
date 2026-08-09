@@ -705,6 +705,19 @@ export function createApp(
       let metaEnv = cfg.env ?? null;
       if (multi) {
         ir = await composeEstate(cfg.projectDirs!, opts);
+        // #188: the edge-derivation passes are the k8s half's ONLY edge
+        // source (chant's IR carries no k8s edges at all — src/k8s-edges.ts),
+        // and they ran only on the single-project branch below — so an
+        // 11-project k8s estate composed to a node cloud with FEWER edges
+        // than serving any one project alone. All three passes join on
+        // attribute values (namespace/name, literal value equality) — never
+        // on node ids — so composeStacks' stack-prefixed ids pass through
+        // them unchanged, and a join that spans two composed projects is
+        // exactly the cross-stack edge a GitOps estate needs (a control-plane
+        // Kustomization sourceRef-ing an app project's GitRepository).
+        ir = addValueMatchEdges(ir);
+        ir = addK8sDeclaredEdges(ir);
+        ir = addClusterAnchorEdges(ir, await boundK8sContext(metaEnv ?? undefined));
       } else if (components) {
         // The tier/target lenses (M2, #54): `opts.tier`/`opts.target` (from
         // ?tier=/?target=) ride along inside `opts` — componentGraphIr threads

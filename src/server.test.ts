@@ -517,6 +517,72 @@ describe("POST /api/project/open + /api/project/reveal (#195)", () => {
   });
 });
 
+// #188: estate composition (`serve a b …`) skipped every edge-derivation pass
+// — the single-project branch's only k8s edge source — so a composed k8s
+// estate rendered as a node cloud (146 nodes, 0 edges on the reporting
+// estate, fewer edges than serving one project alone). The passes join on
+// namespace/name attributes, never node ids, so they run cleanly after
+// composeStacks' id prefixing — and a ns/name match spanning two projects
+// becomes exactly the cross-stack edge the estate view promises.
+describe("GET /api/graph — estate composition runs the edge passes (#188)", () => {
+  let dirs: string[] = [];
+  beforeEach(() => vi.mocked(spawnMock).mockReset());
+  afterEach(() => {
+    dirs.forEach((d) => rmSync(d, { recursive: true, force: true }));
+    dirs = [];
+  });
+  const tmpProj = (name: string) => {
+    const dir = mkdtempSync(join(tmpdir(), `behold-estate-${name}-`));
+    writeFileSync(join(dir, "chant.config.ts"), `export default { lexicons: ["k8s"] };`);
+    dirs.push(dir);
+    return dir;
+  };
+  const k8sNode = (id: string, kind: string, attrs: Record<string, unknown>) => ({ id, kind, lexicon: "k8s", attrs });
+
+  it("a Service in one project joins its workload in another — the cross-stack selector edge", async () => {
+    const a = tmpProj("svc");
+    const b = tmpProj("dep");
+    const IR_A = JSON.stringify({
+      nodes: [
+        k8sNode("svc", "K8s::Core::Service", {
+          metadata: { name: "api", namespace: "app" },
+          spec: { selector: { app: "api" } },
+        }),
+      ],
+      edges: [],
+      groups: {},
+    });
+    const IR_B = JSON.stringify({
+      nodes: [
+        k8sNode("dep", "K8s::Apps::Deployment", {
+          metadata: { name: "api", namespace: "app" },
+          spec: { template: { metadata: { labels: { app: "api" } } } },
+        }),
+      ],
+      edges: [],
+      groups: {},
+    });
+    // Dispatch on the project path in the spawn args — Promise.all may
+    // interleave the two graph calls, so a call-order queue would be flaky.
+    vi.mocked(spawnMock).mockImplementation(((_cmd: unknown, args: unknown) =>
+      fakeProc(0, String(args).includes(a) ? IR_A : IR_B)) as never);
+    const broadcaster = new Broadcaster();
+    const runner = new OpRunner({ projectDir: a, broadcaster, onDone: () => {} });
+    const app = createApp({ projectDir: a, projectDirs: [a, b], port: 0 }, broadcaster, new FrameBuffer(), runner);
+    const res = await app.request("/api/graph");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      ir: { edges: { from: string; to: string; viaAttr?: string }[] };
+      meta: { estate?: number };
+    };
+    expect(body.meta.estate).toBe(2);
+    const edge = body.ir.edges.find((e) => e.viaAttr === "selector");
+    expect(edge).toBeDefined();
+    expect(edge!.from.endsWith("/svc")).toBe(true);
+    expect(edge!.to.endsWith("/dep")).toBe(true);
+  });
+});
+
 // /api/overlay is where a picked tier's creds gate USUALLY surfaces in
 // practice — the SPA's load() routes an env pick here, not /api/graph (see
 // web/app.js). Same errorResponse under the hood; verify the wiring reaches
