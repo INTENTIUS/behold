@@ -21,7 +21,8 @@ import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
+import { listRecents, addRecent } from "./recents.ts";
 import type { GraphIR } from "@intentius/chant";
 import {
   graphIr,
@@ -102,6 +103,11 @@ export interface ServerOptions {
    * strip to Docker+Floci, and tells the SPA to hide those controls. Local
    * deploy (apply/reset/bring-up/approve) and all reads stay on. */
   previewMode?: boolean;
+  /** #195: called by POST /api/project/open after the cfg has been re-pointed
+   * at a switched project — startServer uses it to re-aim the source watcher,
+   * stop the (launch-scoped) drift poll, and capture a fresh baseline frame.
+   * Absent in contexts with no long-lived side machinery (tests, export). */
+  onProjectSwitch?: (dir: string) => void;
   port: number;
 }
 
@@ -357,8 +363,10 @@ export function createApp(
   // a picked `?tier=` reaches `envOverridesFor` (chant.ts) with a real var
   // name, and gates the `/api/project` tier picker + `deployAxes()`'s current-
   // tier read.
-  const beholdConfig = loadBeholdConfig(cfg.projectDir);
-  const tierEnvVar = beholdConfig.tiers?.envVar;
+  // `let`, not `const` (#195): a project switch re-reads the new project's
+  // .behold.json — its tier axis is per-project state like everything else.
+  let beholdConfig = loadBeholdConfig(cfg.projectDir);
+  let tierEnvVar = beholdConfig.tiers?.envVar;
 
   // The kube context chant binds for an environment (`k8s.profiles.<env>.
   // context`, falling back to the kubeconfig's current-context — the same
@@ -548,6 +556,12 @@ export function createApp(
     const axes = deployAxes(tierEnvVar, lexicons, k8sTarget);
     return c.json({
       projectDir: cfg.projectDir,
+      // #195: the full estate composition (multi-project serves) and the
+      // switcher's recents, so the SPA's project section can show what's
+      // loaded and offer where to go. Recents exclude nothing here — the SPA
+      // filters out the currently-loaded dir itself.
+      ...(cfg.projectDirs && cfg.projectDirs.length > 1 ? { projectDirs: cfg.projectDirs } : {}),
+      recents: listRecents().map((r) => r.dir),
       environments,
       lexicons,
       currentEnv: cfg.env ?? null,
@@ -576,6 +590,53 @@ export function createApp(
     });
   });
 
+  // #195: switch the served project in place. Everything per-project the
+  // routes read lives on `cfg` (read at request time), the runner (retarget),
+  // or the two `let`s above — the long-lived machinery (source watcher, drift
+  // poll, baseline frame) re-aims through cfg.onProjectSwitch, which
+  // startServer installs. The SPA reloads itself after a switch, so every
+  // client-side cache starts clean. Locked in preview mode — the demo's
+  // "no arbitrary-project switching" contract. The JSON body (not a query
+  // param) is deliberate: cross-origin JSON POSTs preflight, so a hostile
+  // page can't blind-fire a switch at localhost.
+  app.post("/api/project/open", async (c) => {
+    if (cfg.previewMode) return c.json({ error: "switching projects is locked in preview mode" }, 403);
+    const body = (await c.req.json().catch(() => ({}))) as { dir?: string };
+    const dir = typeof body.dir === "string" && body.dir.trim() ? resolve(body.dir.trim()) : "";
+    if (!dir || !existsSync(dir)) return c.json({ error: `no such directory: ${dir || "(no dir given)"}` }, 400);
+    if (!existsSync(join(dir, "chant.config.ts"))) {
+      return c.json({ error: `${dir} doesn't look like a chant project — no chant.config.ts` }, 400);
+    }
+    addRecent(cfg.projectDir); // the project being left stays reachable
+    cfg.projectDir = dir;
+    cfg.projectDirs = undefined; // a switch targets one project, not an estate
+    cfg.env = undefined; // the new project's envs differ — the SPA re-seeds from /api/project
+    beholdConfig = loadBeholdConfig(dir);
+    tierEnvVar = beholdConfig.tiers?.envVar;
+    runner.retarget(dir);
+    addRecent(dir);
+    cfg.onProjectSwitch?.(dir);
+    broadcaster.emit("changed");
+    return c.json({ ok: true, projectDir: dir });
+  });
+
+  // #195: pop the OS file manager at a project's directory — the "where IS
+  // this?" affordance beside the project name. Allowlisted to the served
+  // estate + validated recents; never an arbitrary path from the browser.
+  app.post("/api/project/reveal", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { dir?: string };
+    const dir = typeof body.dir === "string" && body.dir.trim() ? resolve(body.dir.trim()) : cfg.projectDir;
+    const known = new Set([cfg.projectDir, ...(cfg.projectDirs ?? []), ...listRecents().map((r) => r.dir)]);
+    if (!known.has(dir)) return c.json({ error: "not a served or recent project directory" }, 400);
+    const opener = process.platform === "darwin" ? "open" : process.platform === "win32" ? "explorer" : "xdg-open";
+    try {
+      await execFileP(opener, [dir]);
+      return c.json({ ok: true });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    }
+  });
+
   // #193: the API's front door, for agents. Everything the SPA can see is
   // plain JSON over these routes — this index makes them discoverable without
   // reading source. Shapes and the read/act loop: AGENTS.md (shipped in the
@@ -587,7 +648,9 @@ export function createApp(
       agentsGuide: "https://github.com/INTENTIUS/behold/blob/main/AGENTS.md",
       routes: [
         { method: "GET", path: "/api", desc: "this index" },
-        { method: "GET", path: "/api/project", desc: "project info: environments, tiers, targets, stacks, preview lock" },
+        { method: "GET", path: "/api/project", desc: "project info: dir, recents, environments, tiers, targets, stacks, preview lock" },
+        { method: "POST", path: "/api/project/open", desc: "switch the served project: JSON body {dir} (validated; preview-locked)" },
+        { method: "POST", path: "/api/project/reveal", desc: "open the OS file manager at a served/recent project dir: JSON body {dir?}" },
         { method: "GET", path: "/api/graph", desc: "the graph {ir, svg, meta} — params: detail=0..3, components=1, logical=1, env, stack, tier, target, lens, up=1, down=1, radial=1" },
         { method: "GET", path: "/api/overlay", desc: "live drift overlay for ?env= — same shape/params as /api/graph, plus runtime=1" },
         { method: "GET", path: "/api/diff", desc: "per-node live diff for ?env= — {env, nodes: {<id>: {observed, diff, health, fieldDrift}}}" },
@@ -1405,9 +1468,10 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   };
 
   // Watch the served project's source (the dev loop) and, with an env + --poll,
-  // poll live drift (#4) — the latter also drives auto-sync.
-  const stopWatch = watchSource(cfg.projectDir, onEstateChange);
-  const stopPoll =
+  // poll live drift (#4) — the latter also drives auto-sync. `let` (#195): a
+  // project switch re-aims the watcher and stops the poll.
+  let stopWatch = watchSource(cfg.projectDir, onEstateChange);
+  let stopPoll =
     cfg.env && cfg.pollSecs
       ? startDriftPoll({
           intervalMs: cfg.pollSecs * 1000,
@@ -1416,6 +1480,18 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
           onError: (err) => process.stderr.write(`poll: ${err instanceof Error ? err.message : String(err)}\n`),
         })
       : () => {};
+  // #195: POST /api/project/open re-pointed cfg/runner/tier state; this is the
+  // long-lived machinery's half. The drift poll is launch-scoped (its --env
+  // belongs to the launched project) so it stops rather than re-aims — a
+  // fresh `behold serve --env --poll` is the way to poll the new project.
+  cfg.onProjectSwitch = (dir) => {
+    stopWatch();
+    stopWatch = watchSource(dir, onEstateChange);
+    stopPoll();
+    stopPoll = () => {};
+    process.stdout.write(`  switched → ${dir}\n`);
+    void capture(); // baseline keyframe for the new project
+  };
   void capture(); // baseline keyframe at startup
   // Clean shutdown on both Ctrl-C (SIGINT) and `kill` (SIGTERM) — otherwise a
   // `kill`ed instance leaves its emulator container running, which the next launch

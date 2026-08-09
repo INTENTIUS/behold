@@ -33,6 +33,12 @@ export class OpRunner {
 
   constructor(private deps: OpRunnerDeps) {}
 
+  /** #195: re-point delegated writes at a switched project. The runner reads
+   * `deps.projectDir` at trigger time, so this is the whole retarget. */
+  retarget(projectDir: string): void {
+    this.deps.projectDir = projectDir;
+  }
+
   /** Name of the running op, or null. */
   get running(): string | null {
     return this.current;

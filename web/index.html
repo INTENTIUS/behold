@@ -154,6 +154,9 @@
       #panel button.act { background: var(--bg); color: var(--fg); border: 1px solid var(--line);
         border-radius: 6px; padding: 3px 10px; font-size: 11px; cursor: pointer; }
       #panel button.act:hover { border-color: var(--pending); }
+      #panel input.panel-input { flex: 1; min-width: 0; background: var(--bg); color: var(--fg);
+        border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; font-size: 11px; }
+      #panel input.panel-input:focus { border-color: var(--pending); outline: none; }
       /* Model tab rows: legend counts (static) and clickable node rows. */
       #panel .count-row, #panel .node-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
       #panel .node-row { cursor: pointer; border-radius: 6px; padding: 3px 6px; }
