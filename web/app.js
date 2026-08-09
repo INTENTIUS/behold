@@ -592,6 +592,14 @@ function wire(ir) {
 // the `changed` SSE re-pull and a palette lens change go through the same path.
 const view = { env: null, detail: 2, components: true, logical: false, runtime: false, tier: null, target: null, stack: null, radial: false };
 
+// #182: `components` is the boot default, but a project that declares no
+// components renders it as ZERO nodes — the first screen was a blank graph
+// pane with only a statusbar note explaining. True exactly once, consumed by
+// load(): an empty first components fetch falls back to the resources zoom
+// before anything is painted. An explicit later pick of "components" (panel
+// or ⌘K) still shows the honest empty view + the server's note.
+let autoZoomFallback = true;
+
 // v0.1.0 preview lock (set from /api/project in initActions): hides the git/PR
 // write ops (Rollback, Sync, Adopt, Run ▾) — the server also 403s them. Local
 // deploy (Apply all / dial), Reset, Bring up, Approve, and reads stay on.
@@ -1845,6 +1853,17 @@ async function load(opts = {}) {
       }
       throw new Error(body.error || res.statusText);
     }
+    // #182: an empty first components view → re-load at the resources zoom
+    // instead of painting a blank pane. Checked before render() so the blank
+    // graph never flashes; the loading scrim stays up across the second fetch
+    // (showLoading is ref-counted).
+    if (autoZoomFallback && view.components && !((body.ir && body.ir.nodes) || []).length) {
+      autoZoomFallback = false;
+      applyZoom("resources");
+      renderStatusbar();
+      return load(opts);
+    }
+    autoZoomFallback = false;
     render(body.ir, body.svg, body.meta);
   } catch (err) {
     // A background settle poll must not blow away a good graph on a transient error.
