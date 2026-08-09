@@ -13,16 +13,15 @@
       * { box-sizing: border-box; }
       html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
         font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, sans-serif; }
-      #app { display: grid; grid-template-columns: 1fr var(--inspect-w, 320px); grid-template-rows: auto 1fr auto;
+      /* #186: no header row at all — the graph runs full-bleed; every piece
+         of state the header used to carry (meta line, statusbar) lives in the
+         floating panel's footer instead. */
+      #app { display: grid; grid-template-columns: 1fr var(--inspect-w, 320px); grid-template-rows: 1fr auto;
         height: 100%; }
       #app.inspect-collapsed { grid-template-columns: 1fr 0; }
       #app.inspect-collapsed #inspect { display: none; }
-      header { grid-column: 1 / 3; grid-row: 1; padding: 10px 16px; border-bottom: 1px solid var(--line);
-        display: flex; align-items: baseline; gap: 12px; }
-      header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .3px; }
-      header .meta { color: var(--muted); font-size: 12px; }
-      #graph { grid-row: 2; grid-column: 1; overflow: auto; position: relative; }
-      #inspect { grid-row: 2; grid-column: 2; border-left: 1px solid var(--line); background: var(--panel);
+      #graph { grid-row: 1; grid-column: 1; overflow: auto; position: relative; }
+      #inspect { grid-row: 1; grid-column: 2; border-left: 1px solid var(--line); background: var(--panel);
         padding: 14px; overflow: auto; position: relative; }
       #inspect h2 { font-size: 13px; margin: 0 0 8px; color: var(--muted); font-weight: 600;
         text-transform: uppercase; letter-spacing: .5px; }
@@ -192,16 +191,18 @@
       .dial-step:disabled { opacity: .5; cursor: not-allowed; }
       .dial-detail { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--muted); }
 
-      #nowline { grid-column: 1 / 3; grid-row: 3; margin: 0; max-height: 160px; overflow: auto; display: none;
+      #nowline { grid-column: 1 / 3; grid-row: 2; margin: 0; max-height: 160px; overflow: auto; display: none;
         background: #010409; border-top: 1px solid var(--line); padding: 8px 12px; font: 11px/1.5 ui-monospace, monospace;
         color: var(--fg); white-space: pre-wrap; }
-      /* Persistent state strip (#73 "hide controls, never state"): the current
-         zoom + env + stack (#76) + tier stay visible in the header even though
-         every picker now lives on the floating panel (and in ⌘K) — see
-         renderStatusbar() in app.js. #hintk is the palette's always-visible
-         entry point. */
-      #statusbar { color: var(--muted); border: 1px solid var(--line); border-radius: 6px;
-        padding: 2px 10px; font-size: 11px; white-space: nowrap; }
+      /* #186: the panel's footer — the state the removed header carried. The
+         statusbar (#73 "hide controls, never state": current zoom + env +
+         stack + tier, see renderStatusbar() in app.js) and the meta line.
+         Hidden when the panel collapses, like the body. */
+      #panel-foot { border-top: 1px solid var(--line); padding: 6px 12px;
+        display: flex; flex-direction: column; gap: 2px; }
+      #panel.collapsed #panel-foot { display: none; }
+      #panel-foot .meta { color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
+      #statusbar { color: var(--muted); font-size: 10.5px; cursor: pointer; }
       /* #131: why the current zoom rendered what it did. Same muted strip,
          italic so it reads as a caption on the state rather than more state. */
       .statusbar-note { font-style: italic; opacity: 0.85; }
@@ -237,14 +238,6 @@
       <span id="loading-msg">loading…</span>
     </div>
     <div id="app">
-      <header>
-        <h1>behold</h1>
-        <span class="meta" id="meta">loading…</span>
-        <!-- #73 "hide controls, never state": the header keeps only state (meta,
-             this strip). Every control — including the lanes link and the ⌘K
-             entry pill — moved onto the floating panel below; see #panel. -->
-        <span id="statusbar" style="margin-left:auto;align-self:center" title="current zoom · env · stack · tier — change on the panel, or ⌘K"></span>
-      </header>
       <div id="graph"></div>
       <aside id="inspect">
         <div id="inspect-resize" title="Drag to resize"></div>
@@ -287,6 +280,12 @@
           <div id="actions"></div>
           <div id="dial"></div>
         </section>
+      </div>
+      <!-- #186: the state the removed app header carried — the zoom/env strip
+           and the meta line. Clicking the strip opens ⌘K (renderStatusbar). -->
+      <div id="panel-foot">
+        <span id="statusbar" title="current zoom · env · stack · tier — change on the tabs above, or ⌘K"></span>
+        <span class="meta" id="meta">loading…</span>
       </div>
     </div>
     <!-- Command palette (⌘K / Ctrl+K, #73) — the spicypath FG-036 shape

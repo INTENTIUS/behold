@@ -1,5 +1,5 @@
 // Floating control panel chrome — the Adobe-style palette that replaced the
-// header strips. This module owns ONLY the chrome: drag by the title bar,
+// header strips. This module owns ONLY the chrome: drag by the tab strip,
 // magnetic snap to viewport edges and corners, collapse to the bar (button or
 // double-click), tab switching, and persistence. app.js renders what's inside
 // the tabs (renderPanel* plus the #substrates/#dial/#actions hosts). Plain
@@ -31,10 +31,9 @@ function saveState() {
   }
 }
 
-// The header is fixed chrome — a top-snapped panel docks under it, not over it.
+// #186: no fixed chrome above the graph any more — top snap is the plain margin.
 function topEdge() {
-  const h = document.querySelector("header");
-  return (h ? h.getBoundingClientRect().bottom : 0) + MARGIN;
+  return MARGIN;
 }
 
 function applyPosition() {
