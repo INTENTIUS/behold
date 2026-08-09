@@ -4,11 +4,15 @@
 // the inspect panel, and (later) the lanes + delegated actions.
 
 // Ghostty colour themes (#62): apply the persisted/default theme's tokens as CSS vars
-// before first paint (so the whole graph + chrome recolour from one source), then mount
-// the theme picker into the header's #pickers slot.
+// before first paint (so the whole graph + chrome recolour from one source). Then the
+// floating control panel's chrome (panel.js — drag/snap/collapse/tabs, persisted
+// position), and the theme picker into the panel's View-tab slot (a stable element
+// renderPanelView never rewrites, so the select mounts once and survives re-renders).
 import { initTheme, mountThemePicker, readableOn, colorForCategory, onThemeChange, getTokens } from "./theme.js";
+import { initPanel, setPanelTab, togglePanelCollapsed, isPanelCollapsed } from "./panel.js";
 initTheme();
-mountThemePicker(document.getElementById("pickers"));
+initPanel();
+mountThemePicker(document.getElementById("panel-theme"));
 
 // Colour node fills by category/kind using the theme's FULL palette (spicypath-style, so the
 // graph shows the theme's many colours), while pinhole's drift stays on the bar/stroke. Node
@@ -631,86 +635,284 @@ function applyZoom(z) {
   if (z !== "components" && z !== "logical") view.detail = ZOOM_DETAIL[z] ?? 2;
 }
 
-// #73 "hide controls, never state": zoom/env/tier/radial used to live in
-// header <select>s; the pickers moved into the ⌘K palette (paletteCommands()
-// below), but the CURRENT value must stay visible without opening it — this
-// is the one place that reads. Called after every render() and once before
-// the first load (initPickers()). stack (#76) joins the strip the same way —
-// only ever truthy on a project that declares `stacks[]` (initPickers seeds
-// `view.stack` from `info.stacks`; a project with none leaves it null), so a
-// single-stack project's strip is unaffected.
-// The zoom picker, back in the header as a control you can see and click.
-//
-// #73 moved the pickers into ⌘K and left the current value on the strip, on the
-// principle "hide controls, never state". That reads well until someone opens
-// behold for the first time: the strip says "zoom: components", it looks like a
-// dropdown because it is a value next to other values, and clicking it does
-// nothing — renderStatusbar() only ever sets textContent. The discoverable path
-// to the single most useful control is a keyboard shortcut hinted by a "⌘K"
-// glyph at the far end of the header.
-//
-// So zoom gets a real <select> and the palette keeps its entry. The other axes
-// stay where #73 put them: zoom is the one you reach for constantly, and one
-// visible control is not the header of selects that issue was about.
-function renderZoomPicker() {
-  // #zoom-slot, top-left after the brand — not #pickers on the far right,
-  // where it sat beside the theme select and read as chrome rather than as the
-  // control. Falls back to #pickers so a static export built from older markup
-  // still gets a picker rather than none.
-  const slot = document.getElementById("zoom-slot") || document.getElementById("pickers");
-  if (!slot) return;
-  let sel = document.getElementById("zoom-picker");
-  if (!sel) {
-    sel = document.createElement("select");
-    sel.id = "zoom-picker";
-    sel.title = "Zoom — components, logical, composites, resources, attributes, runtime (also ⌘K)";
+// --- Floating control panel content ---------------------------------------
+// panel.js owns the chrome (drag, snap to edges/corners, collapse, tabs);
+// these functions own what's IN the tabs, re-rendered from renderStatusbar()
+// — which already runs on every load/lens change — so the panel always
+// reflects current state. The Substrates and Deploy tabs are populated
+// separately (renderSubstrates / initActions / renderDial): their host
+// elements simply live inside the panel now. Every control here keeps its ⌘K
+// twin (paletteCommands()) — the panel is the discoverable surface, the
+// palette the fast one.
+function panelHeading(text) {
+  const h = document.createElement("h3");
+  h.textContent = text;
+  return h;
+}
+function panelMuted(text) {
+  const p = document.createElement("p");
+  p.className = "panel-muted";
+  p.textContent = text;
+  return p;
+}
+function panelOpt(label, active, onClick, title) {
+  const b = button(label, "opt" + (active ? " active" : ""), onClick);
+  if (title) b.title = title;
+  return b;
+}
+function actButton(label, onClick, title) {
+  const b = button(label, "act", onClick);
+  if (title) b.title = title;
+  return b;
+}
+
+// View tab: the zoom stops (the one granularity axis, coarse → fine), the
+// radial toggle (entity zooms only), and the graph tools. The theme picker
+// mounts once into #panel-theme at boot and is never rewritten here.
+function renderPanelView() {
+  const zoom = document.getElementById("panel-zoom");
+  if (!zoom) return;
+  zoom.innerHTML = "";
+  zoom.appendChild(panelHeading("zoom"));
+  const current = zoomValue();
+  // runtime is only meaningful with an env: it descends below the declaration
+  // boundary to owner-referenced children, which exist in a cluster and never
+  // in your source.
+  for (const [label, v] of ZOOM_OPTS.filter(([, z]) => z !== "runtime" || view.env)) {
+    zoom.appendChild(
+      panelOpt(label.replace(/^zoom: /, ""), v === current, () => {
+        applyZoom(v);
+        renderStatusbar();
+        load();
+      }),
+    );
+  }
+  // Radial toggle — entity zooms only, same gate the ⌘K entry has
+  // (components/logical both lay themselves out: waves / nested arch boxes).
+  if (!view.components && !view.logical) {
+    zoom.appendChild(panelHeading("layout"));
+    zoom.appendChild(
+      panelOpt("radial", view.radial, () => {
+        view.radial = !view.radial;
+        load();
+      }, "Curl the wide DAG onto concentric rings"),
+    );
+  }
+  const tools = document.getElementById("panel-viewtools");
+  tools.innerHTML = "";
+  tools.appendChild(panelHeading("graph"));
+  const row = document.createElement("div");
+  row.className = "prow";
+  row.appendChild(actButton("⤢ fit", () => fitGraph(), "Reset zoom/pan to fit. Pinch or ⌘/Ctrl+scroll zooms at the cursor; drag pans."));
+  row.appendChild(actButton("↓ SVG", () => exportSvg(), "Export the current graph as a standalone SVG file"));
+  const collapsed = document.getElementById("app").classList.contains("inspect-collapsed");
+  row.appendChild(
+    actButton(collapsed ? "show inspect" : "hide inspect", () => {
+      toggleInspect();
+      renderPanelView();
+    }),
+  );
+  const lanes = document.createElement("a");
+  lanes.href = "/lanes";
+  lanes.textContent = "lanes →";
+  lanes.title = "The time-lanes view — captured frames of this graph over time";
+  lanes.style.cssText = "color:var(--pending);text-decoration:none;font-size:12px";
+  row.appendChild(lanes);
+  tools.appendChild(row);
+}
+
+// Scope tab: which world the graph reads — env (source vs live overlay),
+// stack (#76), tier and target (M2 #54). The same lenses ⌘K offers, but
+// visible: this tab is the answer to "what can I even do in behold?".
+function renderPanelScope() {
+  const host = document.getElementById("tab-scope");
+  if (!host) return;
+  host.innerHTML = "";
+  host.appendChild(panelHeading("environment"));
+  host.appendChild(
+    panelOpt("(source)", !view.env, () => {
+      view.env = null;
+      resetDialCaches();
+      renderStatusbar();
+      load();
+    }, "The declared source graph — no live overlay"),
+  );
+  for (const e of environments) {
+    host.appendChild(
+      panelOpt(e, view.env === e, () => {
+        view.env = e;
+        resetDialCaches();
+        renderStatusbar();
+        load();
+      }, `Live overlay for ${e}`),
+    );
+  }
+  if (!environments.length) host.appendChild(panelMuted("no environments declared"));
+  if (stacks.length) {
+    host.appendChild(panelHeading("stack"));
+    for (const s of stacks) {
+      host.appendChild(
+        panelOpt(s, view.stack === s, () => {
+          view.stack = s;
+          resetDialCaches();
+          renderStatusbar();
+          load();
+        }),
+      );
+    }
+  }
+  if (tiers.length) {
+    host.appendChild(panelHeading("tier"));
+    for (const t of tiers) {
+      host.appendChild(
+        panelOpt(t, view.tier === t, () => {
+          view.tier = t;
+          resetDialCaches();
+          renderStatusbar();
+          load();
+        }),
+      );
+    }
+  }
+  if (targets.length) {
+    host.appendChild(panelHeading("target"));
+    const sel = document.createElement("select");
+    for (const t of targets) sel.add(new Option(t.endpoint, t.endpoint, false, view.target === t.endpoint));
     sel.addEventListener("change", () => {
-      applyZoom(sel.value);
+      view.target = sel.value;
+      resetDialCaches();
       renderStatusbar();
       load();
     });
-    // Before the theme picker, which mounts into the same slot at load.
-    slot.insertBefore(sel, slot.firstChild);
+    host.appendChild(sel);
   }
-  const current = zoomValue();
-  // Rebuilt each render because runtime is only meaningful with an env: it
-  // descends below the declaration boundary to owner-referenced children,
-  // which exist in a cluster and never in your source.
-  const opts = ZOOM_OPTS.filter(([, v]) => v !== "runtime" || view.env);
-  const want = opts.map(([label, v]) => `${v}:${label}`).join("|") + "@" + current;
-  if (sel.dataset.built !== want) {
-    sel.innerHTML = "";
-    for (const [label, v] of opts) {
-      const o = document.createElement("option");
-      o.value = v;
-      o.textContent = label;
-      if (v === current) o.selected = true;
-      sel.appendChild(o);
+}
+
+// Model tab: how the current graph's nodes stand against reality — the drift
+// overlay's managed/foreign/pending or the component DAG's applied/unapplied
+// (deployed / in progress / rolled back / not deployed). Replaces the two old
+// header legends, with live counts; component/attention rows click through to
+// the node's inspect panel.
+const DRIFT_STATUS_VAR = { good: "var(--managed)", warn: "var(--foreign)", accent: "var(--pending)", neutral: "var(--muted)", runtime: "var(--runtime)" };
+const COMPONENT_STATUS_VAR = { good: "var(--managed)", accent: "var(--pending)", warn: "var(--degraded)", neutral: "var(--muted)" };
+
+function panelDotRow(color, main, tag, onClick) {
+  const row = document.createElement("div");
+  row.className = onClick ? "node-row" : "count-row";
+  const dot = document.createElement("span");
+  dot.className = "dot";
+  dot.style.background = color;
+  const name = document.createElement("span");
+  name.className = "grow";
+  name.textContent = main;
+  name.title = main;
+  row.append(dot, name);
+  if (tag) {
+    const t = document.createElement("span");
+    t.className = "tag";
+    t.textContent = tag;
+    row.appendChild(t);
+  }
+  if (onClick) row.addEventListener("click", onClick);
+  return row;
+}
+
+// Select a node from a panel row the same way a graph click would: highlight
+// its card (when it's in the current SVG) and open its inspect panel.
+function selectNode(id) {
+  const node = lastGraphIr && lastGraphIr.nodes.find((n) => n.id === id);
+  if (!node) return;
+  const host = document.getElementById("graph");
+  host.querySelectorAll(".sel").forEach((n) => n.classList.remove("sel"));
+  const g = host.querySelector(`[data-node-id="${CSS.escape(id)}"]`);
+  if (g) g.classList.add("sel");
+  inspect(node);
+}
+
+function renderPanelModel() {
+  const host = document.getElementById("tab-model");
+  if (!host) return;
+  host.innerHTML = "";
+  const ir = lastGraphIr;
+  const m = lastMeta;
+  if (!ir || !m) {
+    host.appendChild(panelMuted("no graph loaded yet"));
+    return;
+  }
+  const drift = m.mode === "overlay" || (m.mode === "logical" && !!m.env);
+  const componentStatus = m.mode === "component-status";
+  const count = (statuses) => {
+    const c = Object.fromEntries(Object.keys(statuses).map((k) => [k, 0]));
+    for (const n of ir.nodes) {
+      const s = n.attrs && n.attrs._status;
+      if (s in c) c[s]++;
     }
-    sel.dataset.built = want;
+    return c;
+  };
+  if (componentStatus) {
+    host.appendChild(panelHeading(`live status · ${m.env}`));
+    const c = count(COMPONENT_STATUS_LABEL);
+    for (const [k, label] of Object.entries(COMPONENT_STATUS_LABEL)) {
+      host.appendChild(panelDotRow(COMPONENT_STATUS_VAR[k], label, String(c[k])));
+    }
+    host.appendChild(panelHeading("components"));
+    for (const n of ir.nodes.filter((n) => n.kind === "Component")) {
+      const s = n.attrs && n.attrs._status;
+      host.appendChild(panelDotRow(COMPONENT_STATUS_VAR[s] || "var(--muted)", n.id, APPLY_STATUS_TAG[s] || "", () => selectNode(n.id)));
+    }
+  } else if (drift) {
+    host.appendChild(panelHeading(`drift · ${m.env}`));
+    const c = count(STATUS_LABEL);
+    for (const [k, label] of Object.entries(STATUS_LABEL)) {
+      // The additive buckets (chant#1168 unobserved, chant#1180 runtime) stay
+      // hidden until a chant actually emits them — same as the old legend.
+      if ((k === "neutral" || k === "runtime") && !c[k]) continue;
+      host.appendChild(panelDotRow(DRIFT_STATUS_VAR[k], label, String(c[k])));
+    }
+    // The actionable nodes — foreign (adoptable) and pending (not applied yet).
+    const attention = ir.nodes.filter((n) => {
+      const s = n.attrs && n.attrs._status;
+      return s === "warn" || s === "accent";
+    });
+    if (attention.length) {
+      host.appendChild(panelHeading("needs attention"));
+      for (const n of attention.slice(0, 40)) {
+        const s = n.attrs._status;
+        host.appendChild(panelDotRow(DRIFT_STATUS_VAR[s], n.id, STATUS_LABEL[s], () => selectNode(n.id)));
+      }
+      if (attention.length > 40) host.appendChild(panelMuted(`+ ${attention.length - 40} more — click nodes in the graph`));
+    }
+  } else {
+    host.appendChild(panelHeading("model"));
+    host.appendChild(panelMuted(`declared source graph — ${ir.nodes.length} nodes, ${ir.edges.length} edges.`));
+    if (environments.length && !staticMode) {
+      host.appendChild(panelMuted("pick an environment on the Scope tab to see live status: applied / drift / health."));
+      host.appendChild(actButton("→ Scope", () => setPanelTab("scope")));
+    }
   }
-  sel.value = current;
+}
+
+function renderPanel() {
+  renderPanelView();
+  renderPanelScope();
+  renderPanelModel();
 }
 
 function renderStatusbar() {
-  renderZoomPicker();
+  renderPanel();
   const el = document.getElementById("statusbar");
   if (!el) return;
   // The strip looks clickable whether or not it is, so make it act like it:
-  // clicking opens the palette rather than doing nothing. env, stack and tier
-  // live only there, and this is the only affordance pointing at them.
+  // clicking opens the palette rather than doing nothing.
   if (!el.dataset.clickable) {
     el.dataset.clickable = "1";
     el.style.cursor = "pointer";
-    el.title = "env · stack · tier — click, or ⌘K, to change";
+    el.title = "zoom · env · stack · tier — change on the panel, or ⌘K";
     el.addEventListener("click", () => openPalette());
   }
-  // No zoom here any more. #73 put the current zoom on the strip because the
-  // control had moved into the palette; with a real picker two slots along,
-  // the same value in both places reads as two pickers, one of which does not
-  // work — which is exactly how it was reported. The strip keeps the axes that
-  // still have no on-screen control.
-  const parts = [view.env ? `env: ${view.env}` : "env: (source)"];
+  // Pure state — the strip echoes the axes whose controls live on the floating
+  // panel and in ⌘K, so the current view stays legible with the panel collapsed.
+  const parts = [`zoom: ${zoomValue()}`, view.env ? `env: ${view.env}` : "env: (source)"];
   if (view.stack) parts.push(`stack: ${view.stack}`);
   if (axes.tier) parts.push(`tier: ${axes.tier}`);
   if (view.radial && !view.components && !view.logical) parts.push("radial");
@@ -732,6 +934,10 @@ function renderStatusbar() {
 // or null. Set on every load so a level that stops degrading stops explaining
 // itself.
 let lastNote = null;
+
+// The `meta` of the last rendered graph — the panel's Model tab reads its
+// mode/env to pick the status vocabulary (drift vs component live status).
+let lastMeta = null;
 
 // The deploy axes as currently displayed in the header (#59 unify, M2 #54
 // lenses) — seeded once from /api/project (server-derived from the process
@@ -1259,6 +1465,11 @@ function render(ir, svg, m) {
   // #131: set before anything can early-return, so a level that stopped
   // degrading stops explaining itself on the very next render.
   lastNote = m.note || null;
+  // The panel's Model tab reads both of these via renderStatusbar() →
+  // renderPanel() below — set them first so it renders THIS graph, not the
+  // previous one (recolorNodesByCategory also sets lastGraphIr; harmless).
+  lastMeta = m;
+  lastGraphIr = ir;
   const overlay = m.mode === "overlay";
   // Logical/architecture lens (#63): its own mode, but when an env is picked the
   // projected nodes still carry the drift `_status`, so it reads as a drift view
@@ -1313,13 +1524,8 @@ function render(ir, svg, m) {
   const axesTail = `${axes.tier ? " · tier " + axes.tier : ""}${axes.target ? " · target " + axes.target : ""}`;
   document.getElementById("meta").textContent =
     `${scope}${m.env ? " · env " + m.env : ""}${axesTail}${overlay ? " · overlay" : ""}${logical ? " · logical" : ""}${m.components ? " · components" : ""}${componentStatus ? " · live status" : ""} · ${ir.nodes.length} nodes${tail}`;
-  document.getElementById("legend").style.display = drift ? "flex" : "none";
-  document.getElementById("component-legend").style.display = componentStatus ? "flex" : "none";
-  // Keep the persistent state strip in sync — zoom/env/tier/radial are picked
-  // via the ⌘K palette now (#73), but stay visible here regardless (radial
-  // only applies to the entity zooms; renderStatusbar() drops it for
-  // components/logical, both of which lay themselves out: waves / nested
-  // architecture boxes).
+  // Keep the persistent state strip + the floating panel in sync (the panel's
+  // Model tab is what replaced the two old header legends).
   renderStatusbar();
   const g = document.getElementById("graph");
   // Ghostty theming (#62): strip pinhole's baked-in `:root{--pin-*}` defaults from the
@@ -1573,8 +1779,6 @@ function renderPreconditionError(body) {
     card.appendChild(remedy);
   }
   host.appendChild(card);
-  document.getElementById("legend").style.display = "none";
-  document.getElementById("component-legend").style.display = "none";
 }
 
 // Fetch the current view (source graph, or the picked env's live overlay).
@@ -1738,10 +1942,10 @@ events.addEventListener("changed", () => {
   scheduleSettle();
 });
 
-// Substrate readiness strip (M5, #54): is each substrate the project needs
-// actually up? Poll /api/substrates, render status pills — pure state (#73:
-// the "Bring up" / "Reset" affordances that used to sit inside each pill moved
-// into the ⌘K palette; see paletteCommands()'s use of lastSubstrates below).
+// Substrate readiness (M5, #54): is each substrate the project needs actually
+// up? Poll /api/substrates and render rows on the panel's Substrates tab —
+// status dot + name + state, with the bring-up/reset/pipeline actions inline
+// again (#73 moved those into ⌘K; they remain there too, via lastSubstrates).
 async function loadSubstrates() {
   try {
     const { substrates } = await apiFetch("/api/substrates").then((r) => r.json());
@@ -1759,27 +1963,40 @@ let lastSubstrates = [];
 function renderSubstrates(subs) {
   lastSubstrates = subs;
   const host = document.getElementById("substrates");
+  if (!host) return;
+  // Rebuilt only when the data changes — this runs on a 5s poll, and wiping
+  // identical rows would yank a button out from under the cursor.
+  const sig = JSON.stringify(subs) + `|${staticMode}|${previewMode}`;
+  if (host.dataset.sig === sig) return;
+  host.dataset.sig = sig;
+  host.innerHTML = "";
   if (!subs.length) {
-    host.style.display = "none";
+    host.appendChild(panelMuted("no substrates detected for this project"));
     return;
   }
-  host.style.display = "flex";
-  host.innerHTML = "";
-  const lbl = document.createElement("span");
-  lbl.className = "label";
-  lbl.textContent = "substrates:";
-  host.appendChild(lbl);
   for (const s of subs) {
-    const pill = document.createElement("span");
-    pill.className = `sub ${s.status}`;
-    pill.title = s.bringUp || s.name === "floci" ? `${s.detail} (⌘K for actions)` : s.detail;
+    const row = document.createElement("div");
+    row.className = `sub ${s.status}`;
+    row.title = s.detail || "";
     const dot = document.createElement("span");
     dot.className = "dot";
-    pill.appendChild(dot);
     const name = document.createElement("span");
+    name.className = "grow";
     name.textContent = s.label;
-    pill.appendChild(name);
-    host.appendChild(pill);
+    const status = document.createElement("span");
+    status.className = "tag";
+    status.textContent = s.status;
+    row.append(dot, name, status);
+    // Writes — none in a static export; the GitHub dispatch also respects the
+    // preview lock, mirroring paletteCommands()'s gating exactly.
+    if (!staticMode) {
+      if (s.bringUp) row.appendChild(actButton("bring up", () => bringUpSubstrate(s)));
+      if (s.name === "floci" && s.status === "up")
+        row.appendChild(actButton("reset", () => resetLocal(), "Reset the local emulator — wipes every stack, reboots, redeploys clean"));
+      if (s.name === "github" && !previewMode)
+        row.appendChild(actButton("run", () => dispatchPipeline(), "Dispatch the GitHub Actions pipeline via your gh login"));
+    }
+    host.appendChild(row);
   }
 }
 
@@ -1809,6 +2026,24 @@ function bringUpSubstrate(s) {
     .then((r) => r.json())
     .then((j) => nowline(j.error ? "✗ " + j.error : `▶ ${s.label}: ${j.ran}`))
     .catch((e) => nowline("✗ bring up: " + e.message));
+}
+
+// Dispatch a GitHub Actions run (#164) — through the operator's own `gh`
+// login. The server refuses honestly (no gh, unauthenticated, no matching
+// workflow_dispatch workflow) and the reason lands as a toast. Shared by the
+// Substrates tab's button and the ⌘K entry.
+function dispatchPipeline() {
+  if (!window.confirm("Dispatch the GitHub Actions pipeline?\nRuns via YOUR gh login (gh workflow run); behold follows the run on the dial.")) return;
+  fetch("/api/ci/dispatch", { method: "POST" })
+    .then((r) => r.json())
+    .then((j) => {
+      if (j.error) {
+        showToast(`✗ dispatch: ${j.error}`, false);
+        nowline("✗ dispatch: " + j.error);
+      } else {
+        showToast(`▶ dispatched ${j.workflow} @ ${j.ref} (${j.jobs} jobs) — following on the dial`, true);
+      }
+    });
 }
 
 loadSubstrates();
@@ -2065,7 +2300,7 @@ async function initActions() {
       applyPicker = true;
       loadComponentChoices().then(renderDial);
       renderDial();
-      document.getElementById("dial").scrollIntoView({ block: "nearest" });
+      setPanelTab("deploy"); // the dial lives on the panel's Deploy tab
     });
     deploy.title = `chant run <component|all> --components --env ${view.env || opsInitialEnv} --progress-json — opens the component picker on the dial. behold triggers, chant executes.`;
     bar.appendChild(deploy);
@@ -2180,10 +2415,10 @@ function exportSvg() {
 // list from live state on every open, palRender() filtering + repainting,
 // openPalette()/closePalette() toggling the `.on` class), retargeted at
 // behold's own handlers instead of spicypath's. "Hide controls, never state"
-// (spicypath's own design rule, carried over): every action this moves out of
-// the toolbar is still reachable here; zoom/env/tier/drift/substrates stay
-// visible in the header regardless (renderStatusbar(), #substrates pills,
-// #meta) — see index.html's #statusbar comment.
+// (spicypath's own design rule, carried over): every control here also lives
+// on the floating panel now, and the current values stay visible in the
+// header (renderStatusbar(), #meta) — the palette is the fast surface, the
+// panel the discoverable one.
 const palette = document.getElementById("palette");
 const palInput = document.getElementById("pal-input");
 const palList = document.getElementById("pal-list");
@@ -2201,6 +2436,11 @@ function paletteCommands() {
   c.push(["Export: current graph as SVG", () => exportSvg()]);
   const inspectCollapsed = document.getElementById("app").classList.contains("inspect-collapsed");
   c.push([inspectCollapsed ? "Show inspect panel" : "Hide inspect panel", () => toggleInspect()]);
+  // The floating control panel (panel.js): collapse/expand + jump to a tab.
+  c.push([isPanelCollapsed() ? "Expand control panel" : "Collapse control panel", () => togglePanelCollapsed()]);
+  for (const b of document.querySelectorAll("#panel-tabs button")) {
+    c.push([`Panel: ${b.textContent}`, () => setPanelTab(b.dataset.tab)]);
+  }
 
   // Lens/zoom switches (#56, #63) — replaces the old header zoom picker.
   for (const [label, v] of ZOOM_OPTS) {
@@ -2262,22 +2502,7 @@ function paletteCommands() {
     // (no gh, unauthenticated, no matching workflow_dispatch workflow) and
     // the reason lands as a toast.
     if (s.name === "github" && !previewMode) {
-      c.push([
-        "Run pipeline: GitHub Actions",
-        () => {
-          if (!window.confirm("Dispatch the GitHub Actions pipeline?\nRuns via YOUR gh login (gh workflow run); behold follows the run on the dial.")) return;
-          fetch("/api/ci/dispatch", { method: "POST" })
-            .then((r) => r.json())
-            .then((j) => {
-              if (j.error) {
-                showToast(`✗ dispatch: ${j.error}`, false);
-                nowline("✗ dispatch: " + j.error);
-              } else {
-                showToast(`▶ dispatched ${j.workflow} @ ${j.ref} (${j.jobs} jobs) — following on the dial`, true);
-              }
-            });
-        },
-      ]);
+      c.push(["Run pipeline: GitHub Actions", () => dispatchPipeline()]);
     }
   }
 

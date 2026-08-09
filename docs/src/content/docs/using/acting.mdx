@@ -11,14 +11,14 @@ Every action below starts something **you** committed, running on **your** execu
 
 | action | where | starts | direction |
 |---|---|---|---|
-| **▶ Deploy (\<op\>)** | header button, and ⌘K as "Deploy: Sync" | your `ApplyOp` | code → cloud |
-| **▶ Deploy…** | header button (no `ApplyOp`, but an env) | `chant run <component\|all> --components`, via the dial's picker | code → cloud |
-| **Approve \<gate\>** | header button beside Deploy, and ⌘K | the gate signal on your `ApplyOp` | — |
+| **▶ Deploy (\<op\>)** | the control panel's Deploy tab, and ⌘K as "Deploy: Sync" | your `ApplyOp` | code → cloud |
+| **▶ Deploy…** | Deploy tab (no `ApplyOp`, but an env) | `chant run <component\|all> --components`, via the dial's picker | code → cloud |
+| **Approve \<gate\>** | Deploy tab beside Deploy, and ⌘K | the gate signal on your `ApplyOp` | — |
 | **Adopt** | per foreign node, in the inspect panel | your `ReconcileOp` | cloud → code, as a PR |
 | **Run: \<name\>** | ⌘K palette | any other committed Op | whatever you wrote |
 | **Rollback…** | ⌘K palette | a rollback PR to a picked commit | code → code |
 
-One deploy intent, one word: the header carries a single **▶ Deploy** button whether the project routes it through a committed `ApplyOp` or a raw component apply — the tooltip says which. Everything else lives in the **⌘K palette**. A project with no Ops and no environment shows no deploy affordance — by design, not a missing feature.
+One deploy intent, one word: the floating control panel's **Deploy** tab carries a single **▶ Deploy** button whether the project routes it through a committed `ApplyOp` or a raw component apply — the tooltip says which. Every action is also in the **⌘K palette**. A project with no Ops and no environment shows no deploy affordance — by design, not a missing feature.
 
 ## Gates
 
