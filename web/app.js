@@ -2457,7 +2457,7 @@ function paletteCommands() {
   c.push([inspectCollapsed ? "Show inspect panel" : "Hide inspect panel", () => toggleInspect()]);
   // The floating control panel (panel.js): collapse/expand + jump to a tab.
   c.push([isPanelCollapsed() ? "Expand control panel" : "Collapse control panel", () => togglePanelCollapsed()]);
-  for (const b of document.querySelectorAll("#panel-tabs button")) {
+  for (const b of document.querySelectorAll("#panel-tabs button[data-tab]")) {
     c.push([`Panel: ${b.textContent}`, () => setPanelTab(b.dataset.tab)]);
   }
 

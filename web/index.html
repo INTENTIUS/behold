@@ -106,8 +106,8 @@
          An Adobe-style palette holding the controls that used to line the
          header and its strips: zoom, scope lenses, substrate pills, the model
          legends, deploy buttons and the dial. panel.js owns the chrome — drag
-         by the title bar, magnetic snap to viewport edges/corners, collapse to
-         the bar (button or double-click), tabs, persisted position — and
+         by the tab strip, magnetic snap to viewport edges/corners, collapse to
+         the strip (chevron or double-click), tabs, persisted position — and
          app.js renders the tab contents (renderPanel*, renderSubstrates,
          renderDial, initActions: their host elements simply live inside the
          tabs now). Every control here stays reachable in ⌘K too — the panel
@@ -118,22 +118,22 @@
         border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column;
         box-shadow: 0 10px 34px rgba(0,0,0,.45); user-select: none; }
       #panel.dragging { opacity: .95; }
-      #panel-titlebar { display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: grab;
-        border-bottom: 1px solid var(--line); }
-      #panel.dragging #panel-titlebar { cursor: grabbing; }
-      #panel.collapsed #panel-titlebar { border-bottom: none; }
-      #panel-titlebar .grip { color: var(--muted); font-size: 11px; }
-      #panel-titlebar .panel-title { flex: 1; font-size: 11px; font-weight: 600; color: var(--muted);
-        text-transform: uppercase; letter-spacing: .6px; }
-      #panel-collapse { background: none; border: none; color: var(--muted); font-size: 12px;
-        cursor: pointer; line-height: 1; padding: 2px; }
+      /* #184: tabs-only — the strip doubles as the drag handle and carries the
+         ⌘K pill + collapse chevron. Collapsing hides only the body, so the
+         panel collapses TO the strip. */
+      #panel-tabs { display: flex; align-items: stretch; border-bottom: 1px solid var(--line);
+        cursor: grab; padding-right: 4px; }
+      #panel.dragging #panel-tabs { cursor: grabbing; }
+      #panel.collapsed #panel-tabs { border-bottom: none; }
+      #panel.collapsed #panel-body { display: none; }
+      #panel-tabs button[data-tab] { flex: 1; background: none; border: none; border-bottom: 2px solid transparent;
+        color: var(--muted); font-size: 10.5px; padding: 7px 0; cursor: pointer; }
+      #panel-tabs button[data-tab]:hover { color: var(--fg); }
+      #panel-tabs button[data-tab].active { color: var(--fg); border-bottom-color: var(--pending); }
+      #panel-tabs #hintk { flex: none; align-self: center; font-size: 10px; padding: 1px 6px; margin-left: 2px; }
+      #panel-collapse { flex: none; align-self: center; background: none; border: none; color: var(--muted);
+        font-size: 12px; cursor: pointer; line-height: 1; padding: 2px 4px; }
       #panel-collapse:hover { color: var(--fg); }
-      #panel.collapsed #panel-tabs, #panel.collapsed #panel-body { display: none; }
-      #panel-tabs { display: flex; border-bottom: 1px solid var(--line); }
-      #panel-tabs button { flex: 1; background: none; border: none; border-bottom: 2px solid transparent;
-        color: var(--muted); font-size: 10.5px; padding: 6px 0; cursor: pointer; }
-      #panel-tabs button:hover { color: var(--fg); }
-      #panel-tabs button.active { color: var(--fg); border-bottom-color: var(--pending); }
       #panel-body { overflow-y: auto; max-height: min(62vh, 540px); padding: 10px 12px;
         font-size: 12px; user-select: text; }
       #panel-body section { display: none; }
@@ -260,18 +260,18 @@
          Substrates and Deploy host the long-standing #substrates/#dial/#actions
          elements, whose render functions in app.js are unchanged in spirit. -->
     <div id="panel">
-      <div id="panel-titlebar" title="Drag to move — snaps to edges and corners. Double-click to collapse.">
-        <span class="grip">⠿</span>
-        <span class="panel-title">controls</span>
-        <span id="hintk" title="Command palette — deploy, apply, reset, bring up, lens/zoom, env/stack/tier, export… (⌘K / Ctrl+K)">⌘K</span>
-        <button id="panel-collapse" title="Collapse">▾</button>
-      </div>
-      <div id="panel-tabs">
+      <!-- #184: tabs-only, no title bar — the tab strip IS the drag surface
+           (drag anywhere on it, a still click switches tabs), and it hosts
+           the ⌘K pill + collapse chevron. Collapse hides only the body: the
+           panel collapses TO the strip. -->
+      <div id="panel-tabs" title="Drag to move — snaps to edges and corners. Double-click to collapse.">
         <button data-tab="view" class="active">View</button>
         <button data-tab="scope">Scope</button>
         <button data-tab="substrates">Substrates</button>
         <button data-tab="model">Model</button>
         <button data-tab="deploy">Deploy</button>
+        <span id="hintk" title="Command palette — deploy, apply, reset, bring up, lens/zoom, env/stack/tier, export… (⌘K / Ctrl+K)">⌘K</span>
+        <button id="panel-collapse" title="Collapse">▾</button>
       </div>
       <div id="panel-body">
         <section data-tab="view" class="active">
