@@ -53,3 +53,31 @@ describe("renderLanes (#5)", () => {
     expect(html).not.toContain("src=");
   });
 });
+
+// #198: lanes rides the same theme tokens as the SPA — CSS vars in the strip
+// styles, the theme engine booted from /theme.js, canvas colors read per draw.
+describe("renderLanes — themed (#198)", () => {
+  const html = renderLanes(frames, summaries);
+
+  it("styles the strip from the shared CSS custom properties, not hexes", () => {
+    expect(html).toContain("var(--bg,");
+    expect(html).toContain("var(--panel,");
+    expect(html).toContain("var(--managed,");
+  });
+
+  it("boots the SPA's theme engine and repaints the canvas on a theme change", () => {
+    expect(html).toContain('from "/theme.js"');
+    expect(html).toContain("initTheme()");
+    expect(html).toContain('addEventListener("behold-theme", draw)');
+  });
+
+  it("reads canvas colors from the live tokens with the old hexes as fallbacks", () => {
+    expect(html).toContain('css("--managed", "#3fb950")');
+    expect(html).toContain('css("--pending", "#58a6ff")');
+  });
+
+  it("links back to the graph and mounts the theme picker", () => {
+    expect(html).toContain('<a href="/">← graph</a>');
+    expect(html).toContain('id="behold-lanes-pickers"');
+  });
+});
