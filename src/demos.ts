@@ -14,6 +14,9 @@ export interface DemoServe {
   local?: boolean;
   /** Serve with --env <name> (the live overlay). */
   env?: string;
+  /** #211: serve these subdirectories of the target as a composed estate
+   * (`serve a b c…`) instead of the target itself. First is the primary. */
+  dirs?: string[];
 }
 
 export interface DemoEntry {
@@ -55,6 +58,8 @@ export function loadDemoRegistry(pkgRoot: string): DemoEntry[] {
     }
     if (!Array.isArray(d.requires) || d.requires.some((r) => typeof r !== "string")) return false;
     if (!d.serve || typeof d.serve !== "object") return false;
+    if (d.serve.dirs !== undefined && (!Array.isArray(d.serve.dirs) || d.serve.dirs.some((x) => typeof x !== "string") || !d.serve.dirs.length))
+      return false;
     return true;
   });
 }

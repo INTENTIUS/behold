@@ -1,0 +1,13 @@
+{
+  "name": "behold-example-flux-control-plane",
+  "private": true,
+  "type": "module",
+  "description": "The estate's control plane: the Flux CRs (GitRepository + Kustomizations) that deploy the app projects.",
+  "scripts": {
+    "build": "chant build src -o dist/control-plane.yaml --format yaml"
+  },
+  "dependencies": {
+    "@intentius/chant": "^0.41.20",
+    "@intentius/chant-lexicon-k8s": "^0.41.20"
+  }
+}

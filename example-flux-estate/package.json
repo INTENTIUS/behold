@@ -1,0 +1,10 @@
+{
+  "name": "behold-example-flux-estate",
+  "private": true,
+  "description": "A GitOps estate for behold's flux-estate demo: a Flux control plane + two app projects, served composed.",
+  "workspaces": [
+    "control-plane",
+    "app-a",
+    "app-b"
+  ]
+}

@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-a
+  namespace: app-a
+  labels:
+    app.kubernetes.io/managed-by: chant
+    chant.intentius.io/stack: app-a
+    chant.intentius.io/env: local
+    app: app-a
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app-a
+  template:
+    metadata:
+      labels:
+        app: app-a
+    spec:
+      containers:
+        - name: web
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          ports:
+            - containerPort: 8080
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 101
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: '25m'
+              memory: '32Mi'
+            limits:
+              cpu: '100m'
+              memory: '64Mi'
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-a
+  namespace: app-a
+  labels:
+    app.kubernetes.io/managed-by: chant
+    chant.intentius.io/stack: app-a
+    chant.intentius.io/env: local
+spec:
+  selector:
+    app: app-a
+  ports:
+    - port: 80
+      targetPort: 8080
