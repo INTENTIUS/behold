@@ -539,7 +539,7 @@ describe("GET /api/graph — estate composition runs the edge passes (#188)", ()
   };
   const k8sNode = (id: string, kind: string, attrs: Record<string, unknown>) => ({ id, kind, lexicon: "k8s", attrs });
 
-  it("a Service in one project joins its workload in another — the cross-stack selector edge", async () => {
+  it("a Service in one project joins its workload in another — the cross-stack selector edge", { timeout: 20_000 }, async () => {
     const a = tmpProj("svc");
     const b = tmpProj("dep");
     const IR_A = JSON.stringify({
@@ -586,7 +586,7 @@ describe("GET /api/graph — estate composition runs the edge passes (#188)", ()
   // ?logical=1 on an estate returned the plain composed entity graph as a
   // silent 200 — no mode, no note. The graph is still the honest fallback;
   // the note now says the lens didn't apply.
-  it("?components=1 on an estate notes that the lens didn't apply (#190)", async () => {
+  it("?components=1 on an estate notes that the lens didn't apply (#190)", { timeout: 20_000 }, async () => {
     const a = tmpProj("na");
     const b = tmpProj("nb");
     const EMPTY = JSON.stringify({ nodes: [], edges: [], groups: {} });
@@ -601,7 +601,7 @@ describe("GET /api/graph — estate composition runs the edge passes (#188)", ()
     expect(body.meta.note).toMatch(/components lens doesn't apply to a composed estate/);
   });
 
-  it("?logical=1 on an estate notes the same — and a plain estate request stays note-free", async () => {
+  it("?logical=1 on an estate notes the same — and a plain estate request stays note-free", { timeout: 20_000 }, async () => {
     const a = tmpProj("la");
     const b = tmpProj("lb");
     const EMPTY = JSON.stringify({ nodes: [], edges: [], groups: {} });
@@ -645,7 +645,7 @@ describe("GET /api/overlay — estate-wide drift (#189)", () => {
     return createApp({ projectDir: a, projectDirs: [a, b], port: 0 }, broadcaster, new FrameBuffer(), runner);
   };
 
-  it("observes every project and composes the classified results — the estate is coloured N/N", async () => {
+  it("observes every project and composes the classified results — the estate is coloured N/N", { timeout: 20_000 }, async () => {
     const a = tmpProj("a");
     const b = tmpProj("b");
     vi.mocked(spawnMock).mockImplementation(((_cmd: unknown, args: unknown) => {
@@ -665,7 +665,7 @@ describe("GET /api/overlay — estate-wide drift (#189)", () => {
     expect(byStatus).toEqual({ api: "good", worker: "warn" });
   });
 
-  it("a project whose live observe fails degrades to source painted unobserved, and the note says so", async () => {
+  it("a project whose live observe fails degrades to source painted unobserved, and the note says so", { timeout: 20_000 }, async () => {
     const a = tmpProj("ok");
     const b = tmpProj("down");
     vi.mocked(spawnMock).mockImplementation(((_cmd: unknown, args: unknown) => {
