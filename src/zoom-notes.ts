@@ -121,6 +121,50 @@ export function edgelessNote(zoom: Zoom, ir: NotableGraph): string | undefined {
   return "no edges — nothing in this estate references anything else";
 }
 
+/** The slice of a node the namespace-mismatch check reads (#192). */
+interface NsNoteNode {
+  lexicon?: string;
+  kind?: string;
+  attrs?: { _status?: string; metadata?: { namespace?: unknown } };
+}
+
+/** k8s kinds that are cluster-scoped by definition — no namespace to get
+ * wrong, so they carry no evidence either way for the mismatch check. */
+const CLUSTER_SCOPED = new Set([
+  "K8s::Core::Namespace",
+  "K8s::Rbac::ClusterRole",
+  "K8s::Rbac::ClusterRoleBinding",
+  "K8s::Storage::StorageClass",
+  "K8s::Apiextensions::CustomResourceDefinition",
+]);
+
+/**
+ * #192: the namespace-mismatch signature. A Flux estate commonly declares no
+ * `metadata.namespace` on its objects — `Kustomization.spec.targetNamespace`
+ * stamps it at apply time — so chant's live read looks in `default`, finds
+ * nothing, and honestly reports absence. The overlay then paints weeks-old
+ * running infrastructure `pending` ("declared, not deployed yet" — an
+ * invitation to hit Deploy), while cluster-scoped objects, which have no
+ * namespace to get wrong, resolve fine. That split is mechanically
+ * detectable: several namespaced-kind k8s nodes read `accent` AND none of
+ * them declares a namespace, while something else k8s resolved `good`
+ * (proving the read reached the right cluster). A pending node that DOES
+ * declare its namespace is genuine absence — one of those and the note stays
+ * silent, because then the read looked exactly where the source said.
+ */
+export function namespaceMismatchNote(nodes: readonly unknown[]): string | undefined {
+  const k8s = (nodes as NsNoteNode[]).filter((n) => n?.lexicon === "k8s");
+  if (k8s.length === 0) return undefined;
+  const pending = k8s.filter((n) => n.attrs?._status === "accent" && !CLUSTER_SCOPED.has(n.kind ?? ""));
+  if (pending.length < 3) return undefined;
+  if (pending.some((n) => typeof n.attrs?.metadata?.namespace === "string" && n.attrs.metadata.namespace)) return undefined;
+  if (!k8s.some((n) => n.attrs?._status === "good")) return undefined;
+  return (
+    `${pending.length} pending k8s objects declare no metadata.namespace — if a controller stamps it at ` +
+    `apply time (e.g. Flux's targetNamespace), the live read looked in "default", not where they run`
+  );
+}
+
 /** Both notes for a view, in reading order, joined for a one-line statusbar. */
 export function notesFor(
   zoom: Zoom,

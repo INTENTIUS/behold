@@ -52,7 +52,7 @@ import { applyHelmArtifacts } from "./helm-artifacts.ts";
 import { addClusterAnchorEdges } from "./cluster-anchor.ts";
 import { projectTopology } from "./logical.ts";
 import { addCompositeDepsCounted } from "./composite-deps.ts";
-import { notesFor, tierMismatchNote, type Zoom } from "./zoom-notes.ts";
+import { notesFor, tierMismatchNote, namespaceMismatchNote, type Zoom } from "./zoom-notes.ts";
 import { resourcesByComponent, nonResourceEntities } from "./resources.ts";
 import { summarizePlan } from "./reconcile.ts";
 import { renderGraph, renderArchitecture } from "./render.ts";
@@ -1151,8 +1151,13 @@ export function createApp(
       // note so "you may be viewing the wrong tier" outranks "this tier is
       // empty" — the first explains the second.
       const tierNote = tierMismatchNote(ir, beholdConfig.tiers, query.tier);
+      // #192: the namespace-mismatch signature — all-pending namespaced k8s
+      // objects over a resolving cluster read the OPPOSITE of the truth
+      // without this aside. Ahead of the zoom notes: it explains the colours,
+      // which outranks describing the shape.
+      const nsNote = namespaceMismatchNote(ir.nodes);
       const zoomNotes = notesFor(zoom, ir, compositeEdgesAttached);
-      const note = [tierNote, zoomNotes].filter(Boolean).join(" · ");
+      const note = [tierNote, nsNote, zoomNotes].filter(Boolean).join(" · ");
       return c.json({ ir, svg, meta: { projectDir: cfg.projectDir, env, mode: "overlay", ...(note ? { note } : {}) } });
     } catch (err) {
       // #72: the same structured {error, code, remedy} the other read routes
