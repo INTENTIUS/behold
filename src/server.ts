@@ -1477,6 +1477,15 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
     }
   }
 
+  // #209: every served chant project registers as a recent at boot — the
+  // panel's switcher (and the demo catalog's "switch between loaded demos"
+  // story) fills itself from actual use, not just from explicit switches.
+  // startServer only (never createApp): tests build apps without touching
+  // the operator's real ~/.behold/recents.json.
+  for (const dir of cfg.projectDirs ?? [cfg.projectDir]) {
+    if (existsSync(join(dir, "chant.config.ts"))) addRecent(dir);
+  }
+
   const broadcaster = new Broadcaster();
   const frames = new FrameBuffer();
   // One runner shared by the HTTP routes and the auto-sync loop (one running-guard).

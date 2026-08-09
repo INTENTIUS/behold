@@ -11,6 +11,8 @@
     "dist",
     "web",
     "example-writes",
+    "example-k8s",
+    "demos.json",
     "AGENTS.md"
   ],
   "publishConfig": {

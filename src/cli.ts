@@ -8,23 +8,27 @@ import { realpathSync, existsSync, cpSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { startServer, beholdVersion } from "./server.ts";
+import { loadDemoRegistry, missingRequirements } from "./demos.ts";
 import { runExport } from "./export.ts";
 import { isAutoSyncMode, type AutoSyncMode } from "./autosync.ts";
 
 const USAGE = `behold — a live control plane on chant (read-only core)
 
 Usage:
-  behold demo [target-dir] [--port <n>]
+  behold demo [name] [target-dir] [--port <n>] [--list]
   behold preview [project-dir] [--port <n>] [--emulator]
   behold export [project-dir] [--out <dir>] [--env <name>] [--name <worker>] [--emulator]
   behold serve <project-dir…> [--port <n>] [--env <name>] [--poll <secs>] [--local]
 
-  demo    The five-minute path from npm — no chant project needed. Copies the
-          bundled example (an S3 bucket + policy) into ./behold-demo (or
-          [target-dir]), installs its dependencies, and serves it against a
-          local emulator: blue = declared, click Deploy, watch it turn green.
-          Needs Docker. The copy is yours — edit its source and watch the
-          graph change live.
+  demo    The five-minute path from npm — no chant project needed. A catalog
+          of demo estates (behold demo --list): bundled ones copy out of the
+          package into a directory that's yours to edit; git ones shallow-
+          clone a public estate. Bare \`behold demo\` is the AWS example — an
+          S3 bucket + policy on a local emulator: blue = declared, click
+          Deploy, watch it turn green. \`behold demo k8s\` stands a workload
+          up on a throwaway k3d cluster instead. Needs Docker (and per-demo
+          tools --list names). Loaded demos land in the panel's recents, so
+          switching between them is the Scope tab.
 
   export  Capture the live estate into a self-contained, interactive STATIC
           bundle (default ./behold-export) — every env/tier × zoom × radial,
@@ -197,19 +201,43 @@ function warnIfNotChantProject(dir: string): void {
  * `npm install @intentius/behold` and has no chant project: copy the bundled
  * example-writes into a directory THEY own (so editing its source and
  * watching the graph react is part of the demo), install its deps, and serve
- * it exactly the way the repo's own `npm run demo` does — `serve <dir>
- * --local --env prod`. Idempotent: an existing target is reused (and an
- * already-installed one skips npm install), so a second `behold demo` is
- * just "start the demo again". */
+ * it. #209 grew this into a CATALOG (demos.json, shipped in the package):
+ * `--list` prints it with per-demo requirement checks; `demo <name>` loads a
+ * bundled (tarball copy) or git (shallow clone) entry. Idempotent: an
+ * existing target is reused (and an already-installed one skips npm
+ * install), so a second `behold demo` is just "start the demo again". */
 async function runDemo(rest: string[]): Promise<void> {
+  const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const registry = loadDemoRegistry(pkgRoot);
   let port = 4600;
+  let name: string | undefined;
   let dirArg: string | undefined;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     if (a === "--port") port = Number(rest[++i]);
-    else if (a === "-h" || a === "--help") return void process.stdout.write(USAGE);
-    else if (!a.startsWith("-")) dirArg = a;
-    else {
+    else if (a === "--list") {
+      if (!registry.length) {
+        process.stdout.write("behold demo: no catalog in this install (demos.json missing)\n");
+        return;
+      }
+      for (const e of registry) {
+        const missing = missingRequirements(e);
+        const ready = missing.length ? `needs ${missing.join(", ")}` : "ready";
+        process.stdout.write(`  ${e.name.padEnd(14)} ${ready.padEnd(20)} ${e.description}\n`);
+      }
+      process.stdout.write("\nRun one: behold demo <name>   (bare `behold demo` = writes)\n");
+      return;
+    } else if (a === "-h" || a === "--help") return void process.stdout.write(USAGE);
+    else if (!a.startsWith("-")) {
+      // `demo <name> [target-dir]`, with back-compat for `demo <target-dir>`:
+      // a bare arg is a catalog name when it matches one, else the target.
+      if (!name && registry.some((e) => e.name === a)) name = a;
+      else if (!dirArg) dirArg = a;
+      else {
+        process.stderr.write(`behold demo: unexpected argument '${a}'\n`);
+        process.exit(2);
+      }
+    } else {
       process.stderr.write(`behold demo: unexpected argument '${a}'\n`);
       process.exit(2);
     }
@@ -218,37 +246,70 @@ async function runDemo(rest: string[]): Promise<void> {
     process.stderr.write("behold demo: --port must be a number\n");
     process.exit(2);
   }
-  // The bundled example ships in the npm package (package.json `files`),
-  // beside dist/ — same relative resolution as beholdVersion()'s.
-  const bundled = join(dirname(fileURLToPath(import.meta.url)), "..", "example-writes");
-  if (!existsSync(bundled)) {
-    process.stderr.write("behold demo: this install has no bundled example project (example-writes)\n");
+  const entry = registry.find((e) => e.name === (name ?? "writes"));
+  if (!entry) {
+    process.stderr.write(`behold demo: no "${name ?? "writes"}" in this install's catalog — behold demo --list\n`);
     process.exit(2);
   }
-  const target = resolve(dirArg ?? "behold-demo");
-  if (!existsSync(target)) {
-    process.stdout.write(`behold demo → copying the example project to ${target} (it's yours — edit it)\n`);
-    // Skip only node_modules INSIDE the example. The filter must test the
-    // path relative to the bundled root: in an npm install the example
-    // itself lives under node_modules/@intentius/behold/, so a bare
-    // `src.includes("node_modules")` matched every file and copied nothing.
-    cpSync(bundled, target, {
-      recursive: true,
-      filter: (src) => !relative(bundled, src).split(sep).includes("node_modules"),
-    });
-  } else {
-    process.stdout.write(`behold demo → reusing ${target}\n`);
+  const missing = missingRequirements(entry);
+  if (missing.length) {
+    process.stderr.write(`behold demo ${entry.name}: missing ${missing.join(", ")} — install and re-run.\n`);
+    process.exit(2);
   }
-  if (!existsSync(join(target, "node_modules"))) {
-    process.stdout.write("behold demo → npm install (the example's own chant + lexicons)…\n");
+  // The legacy default target (./behold-demo, pre-catalog #193) is reused for
+  // the writes demo so an existing copy keeps working; everything else lands
+  // under ./behold-demos/<name>.
+  const target = resolve(
+    dirArg ?? (entry.name === "writes" && existsSync("behold-demo") ? "behold-demo" : join("behold-demos", entry.name)),
+  );
+  if (!existsSync(target)) {
+    if (entry.source === "bundled") {
+      const bundled = join(pkgRoot, entry.dir!);
+      if (!existsSync(bundled)) {
+        process.stderr.write(`behold demo ${entry.name}: this install has no bundled ${entry.dir}\n`);
+        process.exit(2);
+      }
+      process.stdout.write(`behold demo ${entry.name} → copying to ${target} (it's yours — edit it)\n`);
+      // Skip only node_modules INSIDE the example. The filter must test the
+      // path relative to the bundled root: in an npm install the example
+      // itself lives under node_modules/@intentius/behold/, so a bare
+      // `src.includes("node_modules")` matched every file and copied nothing.
+      cpSync(bundled, target, {
+        recursive: true,
+        filter: (src) => !relative(bundled, src).split(sep).includes("node_modules"),
+      });
+    } else {
+      process.stdout.write(`behold demo ${entry.name} → cloning ${entry.repo} to ${target}\n`);
+      const r = spawnSync("git", ["clone", "--depth", "1", entry.repo!, target], { stdio: "inherit" });
+      if (r.status !== 0) {
+        process.stderr.write(`behold demo ${entry.name}: clone failed\n`);
+        process.exit(r.status ?? 1);
+      }
+    }
+  } else {
+    process.stdout.write(`behold demo ${entry.name} → reusing ${target}\n`);
+  }
+  if (existsSync(join(target, "package.json")) && !existsSync(join(target, "node_modules"))) {
+    process.stdout.write(`behold demo ${entry.name} → npm install…\n`);
     const r = spawnSync("npm", ["install"], { cwd: target, stdio: "inherit", shell: process.platform === "win32" });
     if (r.status !== 0) {
       process.stderr.write(`behold demo: npm install failed in ${target}${r.error ? ` (${r.error.message})` : ""}\n`);
       process.exit(r.status ?? 1);
     }
   }
-  process.stdout.write("behold demo → serving with a local emulator (Docker). Blue = declared; Deploy turns it green.\n");
-  await run(["serve", target, "--local", "--env", "prod", "--port", String(port)]);
+  if (entry.setup) {
+    process.stdout.write(`behold demo ${entry.name} → ${entry.setup}\n`);
+    const r = spawnSync(entry.setup, { cwd: target, stdio: "inherit", shell: true });
+    if (r.status !== 0) {
+      process.stderr.write(`behold demo ${entry.name}: setup failed (${entry.setup})\n`);
+      process.exit(r.status ?? 1);
+    }
+  }
+  process.stdout.write(`behold demo ${entry.name} → serving. Blue = declared; Deploy turns it green.\n`);
+  const serveArgs = ["serve", target, "--port", String(port)];
+  if (entry.serve.local) serveArgs.push("--local");
+  if (entry.serve.env) serveArgs.push("--env", entry.serve.env);
+  await run(serveArgs);
 }
 
 /** Turnkey Loom-on-Floci env (#69): the AWS SDK creds Floci ignores the value of,
