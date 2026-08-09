@@ -838,13 +838,16 @@ function renderPanelScope() {
     }, "The declared source graph — no live overlay"),
   );
   for (const e of environments) {
+    // #191: a k8s env shows the cluster it's bound to (`home → home-cloud`),
+    // so a wrong-cluster pick is visible before the read, not after.
+    const ctx = projectInfo && projectInfo.k8sContexts && projectInfo.k8sContexts[e];
     host.appendChild(
-      panelOpt(e, view.env === e, () => {
+      panelOpt(ctx ? `${e} → ${ctx}` : e, view.env === e, () => {
         view.env = e;
         resetDialCaches();
         renderStatusbar();
         load();
-      }, `Live overlay for ${e}`),
+      }, ctx ? `Live overlay for ${e} — bound to kubeconfig context ${ctx}` : `Live overlay for ${e}`),
     );
   }
   if (!environments.length) host.appendChild(panelMuted("no environments declared"));

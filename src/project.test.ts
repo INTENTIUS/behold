@@ -98,6 +98,40 @@ describe("detectProject", () => {
     expect((await detectProject(dir)).environments).toEqual(["prod"]);
   });
 
+  // #191: a pure-k8s project binds clusters through k8s.profiles and declares
+  // no environments array at all — the profile keys are the env list.
+  it("infers environments from k8s.profiles keys when environments is absent (importable config)", async () => {
+    const dir = make(
+      `export default { lexicons: ["k8s"], k8s: { profiles: { home: { context: "home-cloud" }, prod: { context: "prod-cloud" } } } };`,
+    );
+    const info = await detectProject(dir);
+    expect(info.environments).toEqual(["home", "prod"]);
+    expect(info.k8sProfiles).toEqual({ home: { context: "home-cloud" }, prod: { context: "prod-cloud" } });
+  });
+
+  it("an explicit environments list always wins over profile inference", async () => {
+    const dir = make(
+      `export default { lexicons: ["k8s"], environments: ["staging"], k8s: { profiles: { home: { context: "home-cloud" } } } };`,
+    );
+    expect((await detectProject(dir)).environments).toEqual(["staging"]);
+  });
+
+  it("infers profile-key environments in the text-parse fallback too (unimportable config)", async () => {
+    // `satisfies ChantConfig` + the import make this config unimportable in a
+    // project with no deps installed — the real shape #191 reported, verbatim.
+    const dir = make(
+      `import type { ChantConfig, K8sChantConfig } from "@intentius/chant";\n` +
+        `export default {\n` +
+        `  lexicons: ["k8s"],\n` +
+        `  ownership: { stack: "ntfy" },\n` +
+        `  k8s: { profiles: { home: { context: "home-cloud" } } } satisfies K8sChantConfig,\n` +
+        `} satisfies ChantConfig;`,
+    );
+    const info = await detectProject(dir);
+    expect(info.environments).toEqual(["home"]);
+    expect(info.lexicons).toEqual(["k8s"]);
+  });
+
   it("returns empty arrays when a field is absent", async () => {
     const dir = make(`export default { lexicons: ["aws"] };`);
     expect(await detectProject(dir)).toEqual({ environments: [], lexicons: ["aws"] });

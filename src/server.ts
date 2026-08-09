@@ -563,6 +563,13 @@ export function createApp(
       ...(cfg.projectDirs && cfg.projectDirs.length > 1 ? { projectDirs: cfg.projectDirs } : {}),
       recents: listRecents().map((r) => r.dir),
       environments,
+      // #191: the cluster each k8s env is bound to (`k8s.profiles.<env>.
+      // context`) — the SPA's env picker shows it (`home → home-cloud`) so a
+      // wrong-cluster pick is visible BEFORE the read, not after (the failure
+      // chant#1100 exists to prevent, and the one behind #192's red herring).
+      ...(k8sProfiles
+        ? { k8sContexts: Object.fromEntries(Object.entries(k8sProfiles).flatMap(([e, p]) => (p.context ? [[e, p.context]] : []))) }
+        : {}),
       lexicons,
       currentEnv: cfg.env ?? null,
       // v0.1.0 preview: the SPA hides git/PR ops + arbitrary-project affordances.
