@@ -24,18 +24,30 @@ interface LaneFrame {
   lexicon: Record<string, string>;
 }
 
+// #198: lanes was the last pre-theme surface — hand-hexed to one dark
+// palette while the SPA re-derives 552 Ghostty themes. Same tokens now
+// (initTheme() below sets the same --bg/--panel/… custom properties the SPA
+// uses, from the same persisted behold.theme); the hexes remain only as
+// fallbacks for the instant before the module script runs.
 const LANES_CSS = `
-#behold-lanes { position: fixed; left: 0; right: 0; bottom: 0; background: #0d1117;
-  border-top: 1px solid #30363d; padding: 8px 12px 10px; font: 12px ui-sans-serif, system-ui, sans-serif; color: #8b949e; }
+body { background: var(--bg, #0d1117); color: var(--fg, #e6edf3); padding-bottom: 150px; }
+#behold-lanes { position: fixed; left: 0; right: 0; bottom: 0; background: var(--bg, #0d1117);
+  border-top: 1px solid var(--line, #30363d); padding: 8px 12px 10px; font: 12px ui-sans-serif, system-ui, sans-serif; color: var(--muted, #8b949e); }
 #behold-lanes .hd { display: flex; gap: 14px; align-items: baseline; margin-bottom: 4px; }
-#behold-lanes .hd .rt { color: #d29922; }
+#behold-lanes .hd .rt { color: var(--foreign, #d29922); }
+#behold-lanes .hd a { color: var(--pending, #58a6ff); text-decoration: none; margin-left: auto; }
 #behold-lanes canvas { display: block; width: 100%; cursor: pointer; }
 #behold-diff { position: fixed; right: 12px; bottom: 156px; width: 260px; max-height: 40vh; overflow: auto;
-  background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 10px 12px; font: 12px ui-sans-serif, system-ui, sans-serif;
-  color: #e6edf3; display: none; }
-#behold-diff h4 { margin: 0 0 6px; font-size: 12px; color: #8b949e; }
-#behold-diff .a { color: #3fb950; } #behold-diff .r { color: #f85149; } #behold-diff .c { color: #d29922; }
-body { padding-bottom: 150px; }`;
+  background: var(--panel, #161b22); border: 1px solid var(--line, #30363d); border-radius: 6px; padding: 10px 12px; font: 12px ui-sans-serif, system-ui, sans-serif;
+  color: var(--fg, #e6edf3); display: none; }
+#behold-diff h4 { margin: 0 0 6px; font-size: 12px; color: var(--muted, #8b949e); }
+#behold-diff .a { color: var(--managed, #3fb950); } #behold-diff .r { color: var(--degraded, #f85149); } #behold-diff .c { color: var(--foreign, #d29922); }`;
+
+/** #198: boot the SPA's own theme engine on this server-rendered page — the
+ * persisted behold.theme applies as CSS custom properties on :root (inline
+ * styles, so they win over pinhole's baked :root stylesheet block), and the
+ * canvas reads them per draw. Same-origin: /theme.js is the SPA's module. */
+const THEME_BOOT = `<script type="module">import { initTheme, onThemeChange, mountThemePicker } from "/theme.js"; initTheme(); mountThemePicker(document.getElementById("behold-lanes-pickers")); onThemeChange(() => window.dispatchEvent(new Event("behold-theme")));</script>`;
 
 function laneStripScript(frames: LaneFrame[]): string {
   return `<script>
@@ -47,6 +59,7 @@ const LF = ${safeJson(frames)};
   const rowH = 22, padL = 96, padR = 16, padT = 6;
   const H = padT + subs.length * rowH + 24;
   const t0 = LF[0].t, tN = LF[LF.length - 1].t, span = Math.max(1, tN - t0);
+  const css = (n, fb) => (getComputedStyle(document.documentElement).getPropertyValue(n).trim() || fb);
   const offset = {}; // per-substrate time offset (graph-inert)
   let cur = LF.length - 1, focus = null, pair = null;
 
@@ -60,7 +73,7 @@ const LF = ${safeJson(frames)};
     const inNow = now !== undefined, inPrev = prev !== undefined;
     return inNow !== inPrev || (inNow && inPrev && now !== prev);
   }
-  const color = s => s === "good" ? "#3fb950" : s === "warn" ? "#d29922" : s === "accent" ? "#58a6ff" : "#6e7681";
+  const color = s => s === "good" ? css("--managed", "#3fb950") : s === "warn" ? css("--foreign", "#d29922") : s === "accent" ? css("--pending", "#58a6ff") : css("--edge", "#6e7681");
 
   function draw() {
     const dpr = window.devicePixelRatio || 1;
@@ -69,22 +82,22 @@ const LF = ${safeJson(frames)};
     c.clearRect(0, 0, host.clientWidth, H); c.font = "12px ui-sans-serif, system-ui, sans-serif";
     subs.forEach((s, r) => {
       const y = padT + r * rowH + rowH / 2;
-      c.fillStyle = offset[s] ? "#d29922" : "#8b949e"; c.textAlign = "left"; c.fillText(s, 8, y + 4);
-      c.strokeStyle = "#21262d"; c.beginPath(); c.moveTo(padL, y); c.lineTo(host.clientWidth - padR, y); c.stroke();
+      c.fillStyle = offset[s] ? css("--foreign", "#d29922") : css("--muted", "#8b949e"); c.textAlign = "left"; c.fillText(s, 8, y + 4);
+      c.strokeStyle = css("--line", "#21262d"); c.beginPath(); c.moveTo(padL, y); c.lineTo(host.clientWidth - padR, y); c.stroke();
       LF.forEach((f, i) => {
         if (!f.byLexicon[s]) return;
         // dot per substrate; brighter when a node in this substrate changed at i
         const changed = Object.keys(f.status).some(id => f.lexicon[id] === s && changedAt(id, i));
         const hi = focus && f.lexicon[focus] === s && changedAt(focus, i);
-        c.fillStyle = hi ? "#f0f6fc" : changed ? color(mode(f, s)) : "#30363d";
+        c.fillStyle = hi ? css("--fg", "#f0f6fc") : changed ? color(mode(f, s)) : css("--line", "#30363d");
         c.beginPath(); c.arc(xOf(i, s), y, i === cur ? 5 : hi ? 4.5 : 3.5, 0, 7); c.fill();
       });
     });
-    const px = baseX(cur); c.strokeStyle = "#58a6ff"; c.lineWidth = 1.5;
+    const px = baseX(cur); c.strokeStyle = css("--pending", "#58a6ff"); c.lineWidth = 1.5;
     c.beginPath(); c.moveTo(px, padT - 2); c.lineTo(px, padT + subs.length * rowH); c.stroke();
-    if (pair != null) { const qx = baseX(pair); c.strokeStyle = "#d29922"; c.setLineDash([3,3]);
+    if (pair != null) { const qx = baseX(pair); c.strokeStyle = css("--foreign", "#d29922"); c.setLineDash([3,3]);
       c.beginPath(); c.moveTo(qx, padT - 2); c.lineTo(qx, padT + subs.length * rowH); c.stroke(); c.setLineDash([]); }
-    c.fillStyle = "#e6edf3"; c.textAlign = "center"; c.fillText(LF[cur].name, px, padT + subs.length * rowH + 16);
+    c.fillStyle = css("--fg", "#e6edf3"); c.textAlign = "center"; c.fillText(LF[cur].name, px, padT + subs.length * rowH + 16);
     document.getElementById("behold-lanes-meta").textContent =
       LF.length + " frames · frame " + (cur + 1) + "/" + LF.length + (focus ? " · focus " + focus : "");
     document.getElementById("behold-lanes-rt").style.display = anyOffset() ? "inline" : "none";
@@ -125,6 +138,7 @@ const LF = ${safeJson(frames)};
   window.addEventListener("keydown", (e) => { if (e.key === "ArrowLeft") go(cur - 1); if (e.key === "ArrowRight") go(cur + 1);
     if (e.key === "Escape") { focus = null; pair = null; showDiff(); draw(); } });
   window.addEventListener("resize", draw);
+  window.addEventListener("behold-theme", draw); // #198: theme flip repaints the strip
 
   // focus cursor: click a graph node → highlight where it changed (graph → lanes)
   function wireNodes() { document.querySelectorAll("[data-node-id]").forEach(el => {
@@ -156,9 +170,11 @@ export function renderLanes(frames: Frame[], summaries: FrameSummary[]): string 
 
   const strip =
     `<style>${LANES_CSS}</style>` +
+    THEME_BOOT +
     `<div id="behold-diff"></div>` +
     `<div id="behold-lanes"><div class="hd"><span>deployment lanes</span>` +
-    `<span id="behold-lanes-meta"></span><span class="rt" id="behold-lanes-rt" style="display:none">offset — graph shows real time</span></div>` +
+    `<span id="behold-lanes-meta"></span><span class="rt" id="behold-lanes-rt" style="display:none">offset — graph shows real time</span>` +
+    `<a href="/">← graph</a><span id="behold-lanes-pickers"></span></div>` +
     `<canvas id="behold-lanes-canvas"></canvas></div>` +
     laneStripScript(laneFrames);
   return doc.includes("</body>") ? doc.replace("</body>", `${strip}</body>`) : doc + strip;
