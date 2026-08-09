@@ -20,7 +20,7 @@ import { serve } from "@hono/node-server";
 import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import type { GraphIR } from "@intentius/chant";
 import {
@@ -181,7 +181,7 @@ async function knownComponents(projectDir: string, opts: GraphOptions): Promise<
  * classified from chant's own stderr), plus "tier" — a non-default tier that
  * needed parameters this host doesn't have, generalized below from what used
  * to be a one-off `tierErrorNote`/`tierNote` bolted onto a plain error. */
-export type RouteErrorCode = ChantFailure["code"] | "tier";
+export type RouteErrorCode = ChantFailure["code"] | "tier" | "no-project";
 
 /** A read route's structured, typed error body (#72): a machine `code`, a
  * human `error` message, and a suggested `remedy` — what web/app.js's
@@ -225,6 +225,35 @@ export function tierFailure(tier: string, message: string): RouteError {
  * `tierFailure`. A "not-installed" failure stays itself even under a picked
  * tier: that failure is about the project not being there at all, which has
  * nothing to do with which tier was asked for. */
+/** The package version, read from package.json beside dist/ (or src/ in dev).
+ * "unknown" rather than a throw if the file is somehow unreadable — a version
+ * string is never worth failing a route over. */
+export function beholdVersion(): string {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    return (JSON.parse(readFileSync(join(here, "..", "package.json"), "utf8")) as { version?: string }).version ?? "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+/** #193: the first-contact dead end. `behold preview` in a directory that
+ * isn't a chant project at all used to serve a blank graph with zero
+ * explanation — chant happily emits an empty graph for an empty directory.
+ * When the base entity graph comes back with no nodes AND the project has no
+ * chant.config.ts, say what's actually wrong instead of drawing nothing.
+ * A chant.config.ts project whose graph is legitimately empty is NOT an
+ * error — it renders (with the #131 note), same as always. */
+function noProjectError(projectDir: string): RouteError {
+  return {
+    code: "no-project",
+    error: `${projectDir} doesn't look like a chant project — no chant.config.ts here, and the graph came back empty.`,
+    remedy:
+      "Run behold from inside a chant project (or pass its path: behold preview <dir>). " +
+      "No project yet? `behold demo` serves a bundled working example against a local emulator (needs Docker).",
+  };
+}
+
 function errorResponse(c: Context, opts: GraphOptions, err: unknown) {
   const message = err instanceof Error ? err.message : String(err);
   const failure = err instanceof ChantCliError ? err.failure : classifyChantFailure(message);
@@ -547,6 +576,41 @@ export function createApp(
     });
   });
 
+  // #193: the API's front door, for agents. Everything the SPA can see is
+  // plain JSON over these routes — this index makes them discoverable without
+  // reading source. Shapes and the read/act loop: AGENTS.md (shipped in the
+  // npm package, linked from the docs).
+  app.get("/api", (c) =>
+    c.json({
+      name: "behold",
+      version: beholdVersion(),
+      agentsGuide: "https://github.com/INTENTIUS/behold/blob/main/AGENTS.md",
+      routes: [
+        { method: "GET", path: "/api", desc: "this index" },
+        { method: "GET", path: "/api/project", desc: "project info: environments, tiers, targets, stacks, preview lock" },
+        { method: "GET", path: "/api/graph", desc: "the graph {ir, svg, meta} — params: detail=0..3, components=1, logical=1, env, stack, tier, target, lens, up=1, down=1, radial=1" },
+        { method: "GET", path: "/api/overlay", desc: "live drift overlay for ?env= — same shape/params as /api/graph, plus runtime=1" },
+        { method: "GET", path: "/api/diff", desc: "per-node live diff for ?env= — {env, nodes: {<id>: {observed, diff, health, fieldDrift}}}" },
+        { method: "GET", path: "/api/reconcile", desc: "pending-change summary for ?env=" },
+        { method: "GET", path: "/api/resources", desc: "component → declared resources" },
+        { method: "GET", path: "/api/ci", desc: "generated CI pipeline projection {stages, jobs, forge}" },
+        { method: "GET", path: "/api/substrates", desc: "substrate readiness {substrates: [{name, label, status, detail, bringUp?}]}" },
+        { method: "GET", path: "/api/ops", desc: "committed Ops + adopt lexicons + apply progress" },
+        { method: "GET", path: "/api/history", desc: "recent source commits (rollback targets)" },
+        { method: "GET", path: "/api/frames", desc: "captured lanes frames" },
+        { method: "GET", path: "/api/events", desc: "SSE: changed / op / apply / pr" },
+        { method: "POST", path: "/api/refresh", desc: "re-observe live now (?env=) — returns the fresh graph" },
+        { method: "POST", path: "/api/apply", desc: "delegated apply: ?env=&component=<name|all> (guarded, preview-locked)" },
+        { method: "POST", path: "/api/ops/:name/run", desc: "run a committed Op (delegated write)" },
+        { method: "POST", path: "/api/ops/:name/signal/:gate", desc: "approve an Op's gate" },
+        { method: "POST", path: "/api/rollback", desc: "open a rollback PR: ?to=<sha>" },
+        { method: "POST", path: "/api/substrates/:name/up", desc: "bring a substrate up" },
+        { method: "POST", path: "/api/local/reset", desc: "reset the local emulator" },
+        { method: "POST", path: "/api/ci/dispatch", desc: "dispatch the GitHub Actions pipeline via the operator's gh" },
+      ],
+    }),
+  );
+
   app.get("/api/graph", async (c) => {
     const url = new URL(c.req.url);
     const opts = optsFromQuery(url, tierEnvVar, cfg.projectDir);
@@ -662,6 +726,16 @@ export function createApp(
         } catch {
           srcCompositeEdgesAttached = 0;
         }
+      }
+      // #193: an empty base entity graph from a directory with no
+      // chant.config.ts is the "you pointed behold at nothing" shape — a
+      // structured error (rendered as the SPA's precondition card), never a
+      // silent blank canvas. Guarded to the plain single-project entity graph:
+      // components/logical emptiness has its own client handling (#182), a
+      // lens can legitimately filter to nothing, and a chant.config.ts
+      // project that declares no entities yet renders empty honestly.
+      if (!multi && !components && !logical && !opts.lens && ir.nodes.length === 0 && !existsSync(join(cfg.projectDir, "chant.config.ts"))) {
+        return c.json(noProjectError(cfg.projectDir), 404);
       }
       // Multi-estate (#31/M4): box each composed project's nodes via `groups.
       // byStack` (pinhole's composeStacks per-project grouping) — see

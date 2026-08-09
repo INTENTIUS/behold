@@ -1,0 +1,30 @@
+---
+title: Driving it from an agent
+description: Every pane of the UI is plain JSON over HTTP — the read loop, the act loop, and where the contract lives.
+---
+
+The SPA has no private channel: everything it shows rides plain JSON over HTTP, so an agent or a script can drive the same server headless. Start one and curl it:
+
+```sh
+npx @intentius/behold serve <chant-project-dir>   # or preview / demo
+curl -s http://localhost:4600/api | jq
+```
+
+`GET /api` is the front door — it lists every route with a one-line description, the server's version, and a link to the full contract.
+
+## The read loop
+
+1. **observe** — `GET /api/graph` returns `{ ir, svg, meta }`. Every node in `ir.nodes` carries `id`, `kind`, `lexicon`, `attrs`, and `sourceLoc`. Drift status, when present, is `attrs._status`: `good` = managed, `warn` = foreign, `accent` = pending, `neutral` = unobserved, `runtime` = runtime child.
+2. **focus** — narrow with query params: `?detail=0..3`, `?components=1`, `?logical=1`, `?lens=blast:<id>&down=1`, `?lens=lexicon:aws`, plus the `env` / `stack` / `tier` / `target` axes the UI's Scope tab exposes.
+3. **go deeper** — with an `?env=`: `/api/overlay` is the live entity overlay, `/api/diff` slices per-node observed state / drift / field ownership, `/api/reconcile` summarizes the pending change set. `/api/substrates` reports substrate readiness, and `/api/events` (SSE) pushes `changed` / `op` / `apply` / `pr` so you re-pull only when something moved.
+4. **inspect** — a node's `sourceLoc.file` is the typed source that declared it. To change the estate, edit there: chant is the source of truth, not behold.
+
+A directory that is not a chant project gets a structured `{code: "no-project", error, remedy}` from `/api/graph` — the same machine-readable shape as every other precondition failure (`lint`, `not-installed`, `tier`, `eval`), so an agent can branch on `code` instead of parsing prose.
+
+## The act loop — delegated, never direct
+
+behold performs no cloud write of its own. The mutating endpoints trigger Ops the project committed: `POST /api/apply?env=&component=`, `POST /api/ops/:name/run`, `POST /api/ops/:name/signal/:gate`, `POST /api/rollback?to=`. All are guarded (one write at a time), gated where the Op declares a gate, and locked out entirely in preview and static modes. For richer control — build, lint, lifecycle diff, op status — prefer chant's own MCP tools over shelling.
+
+## The contract
+
+The canonical version of this guide ships inside the npm package and lives at [AGENTS.md](https://github.com/INTENTIUS/behold/blob/main/AGENTS.md) — hand it to your agent verbatim.

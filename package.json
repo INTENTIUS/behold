@@ -9,7 +9,9 @@
   "files": [
     "bin",
     "dist",
-    "web"
+    "web",
+    "example-writes",
+    "AGENTS.md"
   ],
   "publishConfig": {
     "access": "public",

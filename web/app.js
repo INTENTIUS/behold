@@ -1762,6 +1762,9 @@ const PRECONDITION_TITLE = {
   "not-installed": "This project isn't installed",
   tier: "This tier needs credentials",
   eval: "chant couldn't evaluate this project",
+  // #193: behold was pointed at a directory that isn't a chant project at all
+  // — the first screen must say so, not draw a blank graph.
+  "no-project": "This isn't a chant project",
 };
 
 // A precondition failure — the lint gate, a not-installed/no-typegen project,
