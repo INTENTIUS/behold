@@ -121,8 +121,13 @@ function readInfo(cfg: Record<string, unknown> | undefined): ProjectInfo {
       : [];
   const stacks = readStacks(cfg?.stacks);
   const k8sProfiles = readK8sProfiles(cfg?.k8s);
+  // #191: a pure-k8s project binds its clusters through `k8s.profiles`, not a
+  // top-level `environments` array — the profile keys ARE the environment
+  // names (the same list `--env` validates against downstream). Inferred only
+  // when `environments` is absent/empty, so an explicit list always wins.
+  const environments = envNames(cfg?.environments);
   return {
-    environments: envNames(cfg?.environments),
+    environments: environments.length ? environments : Object.keys(k8sProfiles ?? {}),
     lexicons: arr(cfg?.lexicons),
     ...(k8sProfiles ? { k8sProfiles } : {}),
     ...(typeof cfg?.sourceDir === "string" ? { sourceDir: cfg.sourceDir } : {}),
@@ -152,6 +157,43 @@ function parseEnvironmentNames(content: string): string[] {
   return [...body.matchAll(/["'`]([^"'`]+)["'`]/g)].map((m) => m[1]);
 }
 
+/** #191: environment names from a literal `k8s: { profiles: { <env>: {…} } }`
+ * block in config source — the text-parse counterpart of `readInfo`'s
+ * profile-key inference, for a config that can't be imported (a `satisfies
+ * ChantConfig` on a project whose deps aren't installed is the common case).
+ * Brace-balanced scan of the profiles object; the keys at its top level are
+ * the env names. Pure. */
+function parseK8sProfileNames(content: string): string[] {
+  const m = content.match(/\bprofiles\s*:\s*\{/);
+  if (!m || m.index === undefined) return [];
+  const start = m.index + m[0].length;
+  let depth = 1;
+  let end = start;
+  for (; end < content.length && depth > 0; end++) {
+    if (content[end] === "{") depth++;
+    else if (content[end] === "}") depth--;
+  }
+  const body = content.slice(start, end - 1);
+  const names: string[] = [];
+  let d = 0;
+  let segment = "";
+  for (const ch of body) {
+    if (ch === "{") {
+      if (d === 0) {
+        const key = segment.match(/(["'`]?)([\w.-]+)\1\s*:\s*$/);
+        if (key) names.push(key[2]);
+        segment = "";
+      }
+      d++;
+    } else if (ch === "}") {
+      d--;
+    } else if (d === 0) {
+      segment += ch;
+    }
+  }
+  return names;
+}
+
 /** Extract a `key: "value"` string literal from config source. Only matches a
  * literal string — a computed value (e.g. `process.env.X`) yields undefined.
  * Pure. Used for `sourceDir` (#71) in the text-parse fallback; `stacks[]` (an
@@ -178,8 +220,11 @@ export async function detectProject(projectDir: string): Promise<ProjectInfo> {
 
   const content = readFileSync(path, "utf8");
   const sourceDir = parseStringLiteral(content, "sourceDir");
+  // #191: same inference as readInfo — profile keys stand in for an
+  // absent/empty environments array.
+  const environments = parseEnvironmentNames(content);
   return {
-    environments: parseEnvironmentNames(content),
+    environments: environments.length ? environments : parseK8sProfileNames(content),
     lexicons: parseStringArray(content, "lexicons"),
     ...(sourceDir ? { sourceDir } : {}),
   };
