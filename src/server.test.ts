@@ -457,6 +457,66 @@ describe("GET /api — the route index (#193)", () => {
   });
 });
 
+// #195: runtime project switching + reveal-in-file-manager. The switch
+// mutates the shared cfg the routes read at request time; recents go through
+// BEHOLD_RECENTS_FILE so tests never touch the real ~/.behold/recents.json.
+describe("POST /api/project/open + /api/project/reveal (#195)", () => {
+  let dirs: string[] = [];
+  beforeEach(() => {
+    vi.mocked(spawnMock).mockReset();
+    const store = mkdtempSync(join(tmpdir(), "behold-recents-store-"));
+    dirs.push(store);
+    process.env.BEHOLD_RECENTS_FILE = join(store, "recents.json");
+  });
+  afterEach(() => {
+    delete process.env.BEHOLD_RECENTS_FILE;
+    dirs.forEach((d) => rmSync(d, { recursive: true, force: true }));
+    dirs = [];
+  });
+  const tmpProject = (withConfig: boolean) => {
+    const dir = mkdtempSync(join(tmpdir(), "behold-server-switch-"));
+    if (withConfig) writeFileSync(join(dir, "chant.config.ts"), `export default { lexicons: ["aws"] };`);
+    dirs.push(dir);
+    return dir;
+  };
+  const jsonPost = (app: ReturnType<typeof makeAppFor>, path: string, body: unknown) =>
+    app.request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+
+  it("403s in preview mode — the demo's no-arbitrary-project-switching contract", async () => {
+    const broadcaster = new Broadcaster();
+    const runner = new OpRunner({ projectDir: "/proj", broadcaster, onDone: () => {} });
+    const app = createApp({ projectDir: "/proj", port: 0, previewMode: true }, broadcaster, new FrameBuffer(), runner);
+    const res = await jsonPost(app, "/api/project/open", { dir: tmpProject(true) });
+    expect(res.status).toBe(403);
+  });
+
+  it("400s a directory that isn't a chant project — same honesty as the no-project graph error", async () => {
+    const app = makeAppFor(tmpProject(true));
+    const res = await jsonPost(app, "/api/project/open", { dir: tmpProject(false) });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/chant\.config\.ts/);
+  });
+
+  it("switches in place: /api/project reports the new dir, and the left project lands in recents", async () => {
+    const a = tmpProject(true);
+    const b = tmpProject(true);
+    const app = makeAppFor(a);
+    const res = await jsonPost(app, "/api/project/open", { dir: b });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { projectDir: string }).projectDir).toBe(b);
+    const info = (await (await app.request("/api/project")).json()) as { projectDir: string; recents: string[] };
+    expect(info.projectDir).toBe(b);
+    expect(info.recents).toContain(a);
+  });
+
+  it("reveal 400s a directory outside the served + recents allowlist — no arbitrary paths from the browser", async () => {
+    const app = makeAppFor(tmpProject(true));
+    const res = await jsonPost(app, "/api/project/reveal", { dir: "/somewhere/else" });
+    expect(res.status).toBe(400);
+  });
+});
+
 // /api/overlay is where a picked tier's creds gate USUALLY surfaces in
 // practice — the SPA's load() routes an env pick here, not /api/graph (see
 // web/app.js). Same errorResponse under the hood; verify the wiring reaches

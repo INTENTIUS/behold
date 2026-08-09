@@ -732,10 +732,102 @@ function renderPanelView() {
 // Scope tab: which world the graph reads — env (source vs live overlay),
 // stack (#76), tier and target (M2 #54). The same lenses ⌘K offers, but
 // visible: this tab is the answer to "what can I even do in behold?".
+// #195: filesystem basename, for showing a project by name with the full
+// path demoted to a tooltip / muted line.
+function pathBasename(p) {
+  return String(p || "").replace(/\/+$/, "").split("/").pop() || String(p || "");
+}
+
+// #195: pop the OS file manager (Finder on macOS) at a project directory —
+// the server allowlists to served + recent projects.
+async function revealProject(dir) {
+  try {
+    const r = await fetch("/api/project/reveal", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(dir ? { dir } : {}),
+    });
+    const j = await r.json();
+    if (j.error) showToast("✗ reveal: " + j.error, false);
+  } catch (e) {
+    showToast("✗ reveal: " + e.message, false);
+  }
+}
+
+// #195: switch the served project. On success the page reloads — every
+// client-side list and cache is project-scoped, so a clean boot is the honest
+// way to re-seed all of it.
+async function switchProject(dir) {
+  showLoading(`switching to ${pathBasename(dir)}…`);
+  try {
+    const r = await fetch("/api/project/open", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ dir }),
+    });
+    const j = await r.json();
+    if (!r.ok || j.error) {
+      hideLoading();
+      showToast("✗ switch: " + (j.error || r.statusText), false);
+      return;
+    }
+    location.reload();
+  } catch (e) {
+    hideLoading();
+    showToast("✗ switch: " + e.message, false);
+  }
+}
+
 function renderPanelScope() {
   const host = document.getElementById("tab-scope");
   if (!host) return;
   host.innerHTML = "";
+  // #195: which project is loaded — the first thing this tab answers. Name
+  // bold, full path as a muted line, every estate member listed when several
+  // projects are composed, and a reveal button to pop the folder in the OS
+  // file manager.
+  host.appendChild(panelHeading("project"));
+  const info = projectInfo || {};
+  const estateDirs = info.projectDirs && info.projectDirs.length > 1 ? info.projectDirs : info.projectDir ? [info.projectDir] : [];
+  for (const dir of estateDirs) {
+    const row = document.createElement("div");
+    row.className = "prow";
+    const name = document.createElement("span");
+    name.className = "grow";
+    name.style.fontWeight = "600";
+    name.textContent = pathBasename(dir) + (estateDirs.length > 1 && dir === info.projectDir ? " · primary" : "");
+    name.title = dir;
+    row.appendChild(name);
+    if (!staticMode) row.appendChild(actButton("⌖ reveal", () => revealProject(dir), "Open this project's folder in your file manager"));
+    host.appendChild(row);
+    host.appendChild(panelMuted(dir));
+  }
+  if (!estateDirs.length) host.appendChild(panelMuted("no project loaded yet"));
+  // #195: switching — recents first (server-persisted, validated), then a
+  // free path input. Locked in preview mode (the demo's contract) and
+  // meaningless in a static export.
+  if (!staticMode && !previewMode) {
+    host.appendChild(panelHeading("switch project"));
+    const recents = (info.recents || []).filter((d) => d !== info.projectDir);
+    for (const d of recents.slice(0, 8)) {
+      host.appendChild(panelOpt(pathBasename(d), false, () => switchProject(d), d));
+    }
+    if (!recents.length) host.appendChild(panelMuted("projects you open appear here"));
+    const row = document.createElement("div");
+    row.className = "prow";
+    const input = document.createElement("input");
+    input.className = "panel-input";
+    input.placeholder = "/path/to/chant-project";
+    input.title = "Absolute path to a chant project (a directory with a chant.config.ts)";
+    const go = actButton("open →", () => {
+      if (input.value.trim()) switchProject(input.value.trim());
+    });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") go.click();
+    });
+    row.append(input, go);
+    host.appendChild(row);
+  }
   host.appendChild(panelHeading("environment"));
   host.appendChild(
     panelOpt("(source)", !view.env, () => {
@@ -1536,6 +1628,10 @@ function render(ir, svg, m) {
   const axesTail = `${axes.tier ? " · tier " + axes.tier : ""}${axes.target ? " · target " + axes.target : ""}`;
   const metaEl = document.getElementById("meta");
   metaEl.title = m.projectDir || "";
+  // #195: the browser tab names the loaded project — with the header gone
+  // (#186) the title bar is free chrome, and it's what shows in cmd-tab /
+  // tab-hover when several behold instances are up.
+  document.title = `behold — ${scope}`;
   metaEl.textContent =
     `${scope}${m.env ? " · env " + m.env : ""}${axesTail}${overlay ? " · overlay" : ""}${logical ? " · logical" : ""}${m.components ? " · components" : ""}${componentStatus ? " · live status" : ""} · ${ir.nodes.length} nodes${tail}`;
   // Keep the persistent state strip + the floating panel in sync (the panel's
@@ -1920,6 +2016,9 @@ let environments = [];
 let tiers = [];
 let targets = [];
 let stacks = [];
+// #195: the last /api/project payload — the Scope tab's project section reads
+// projectDir/projectDirs/recents from it.
+let projectInfo = null;
 
 // Fetch the project once, seed view/axes + the lens lists above, then do the
 // first load. previously also built the header's env/zoom/radial/tier/target
@@ -1929,6 +2028,7 @@ async function initPickers() {
   const info = await apiFetch("/api/project")
     .then((r) => r.json())
     .catch(() => ({ environments: [], currentEnv: null }));
+  projectInfo = info;
   view.env = info.currentEnv || null;
   view.tier = info.tier || null;
   view.target = (info.targets && info.targets[0] && info.targets[0].endpoint) || null;
