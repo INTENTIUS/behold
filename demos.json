@@ -1,0 +1,21 @@
+{
+  "demos": [
+    {
+      "name": "writes",
+      "description": "One S3 bucket + policy on a local Floci emulator — blue to green in five minutes. The default.",
+      "source": "bundled",
+      "dir": "example-writes",
+      "requires": ["docker"],
+      "serve": { "local": true, "env": "prod" }
+    },
+    {
+      "name": "k8s",
+      "description": "An nginx Deployment + Service on a throwaway k3d cluster — runtime children (Pods), field ownership, honest unobserved. Cluster persists across runs; scripts/local/local-down.sh removes it.",
+      "source": "bundled",
+      "dir": "example-k8s",
+      "requires": ["docker", "k3d", "kubectl"],
+      "setup": "bash scripts/local/local-up.sh",
+      "serve": { "local": true, "env": "local" }
+    }
+  ]
+}
