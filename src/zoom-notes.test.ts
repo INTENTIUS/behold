@@ -219,8 +219,13 @@ describe("namespaceMismatchNote (#192)", () => {
     expect(namespaceMismatchNote(Array.from({ length: 5 }, () => k8s("accent")))).toBeUndefined();
   });
 
-  it("stays quiet below three pending — small counts are a deploy in progress", () => {
+  it("fires at two pending — a real GitOps app project is often just Deployment + Service (#211)", () => {
     const nodes = [k8s("accent"), k8s("accent"), k8s("good", { kind: "K8s::Core::Namespace" })];
+    expect(namespaceMismatchNote(nodes)).toContain("2 pending k8s objects");
+  });
+
+  it("stays quiet at one pending — a lone accent is a deploy in progress", () => {
+    const nodes = [k8s("accent"), k8s("good", { kind: "K8s::Core::Namespace" })];
     expect(namespaceMismatchNote(nodes)).toBeUndefined();
   });
 

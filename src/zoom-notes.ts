@@ -155,8 +155,12 @@ const CLUSTER_SCOPED = new Set([
 export function namespaceMismatchNote(nodes: readonly unknown[]): string | undefined {
   const k8s = (nodes as NsNoteNode[]).filter((n) => n?.lexicon === "k8s");
   if (k8s.length === 0) return undefined;
+  // Two, not three (#211): the flux-estate demo's app-b — a 2-object project
+  // that is 100% pending with zero declared namespaces while everything else
+  // resolves — is exactly the signature, and a real GitOps app project is
+  // often this small. One lone pending object stays below the bar.
   const pending = k8s.filter((n) => n.attrs?._status === "accent" && !CLUSTER_SCOPED.has(n.kind ?? ""));
-  if (pending.length < 3) return undefined;
+  if (pending.length < 2) return undefined;
   if (pending.some((n) => typeof n.attrs?.metadata?.namespace === "string" && n.attrs.metadata.namespace)) return undefined;
   if (!k8s.some((n) => n.attrs?._status === "good")) return undefined;
   return (
