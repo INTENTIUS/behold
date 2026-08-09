@@ -2,6 +2,9 @@ node_modules
 dist
 *.log
 
+# UI smoke screenshots (#199)
+smoke/shots/
+
 # Claude Code agent worktrees / local state
 .claude/
 

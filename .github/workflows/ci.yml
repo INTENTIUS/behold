@@ -25,6 +25,13 @@ jobs:
         run: npm test
       - name: build
         run: npm run build
+
+      # #199: the SPA's regression net — web/ has no unit tests, so this is
+      # what notices a broken panel/tab/palette. Drives the real SPA against
+      # smoke/stub.mjs in the runner's preinstalled Chrome (no playwright
+      # browser download).
+      - name: UI smoke
+        run: npm run smoke:ui
       # End-to-end against the example project. No cloud creds in CI, so run.sh
       # takes the source-graph path (installs the example's chant, serves behold,
       # asserts /api/graph). The overlay path is exercised locally with creds.
