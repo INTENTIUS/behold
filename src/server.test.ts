@@ -616,6 +616,78 @@ describe("GET /api/graph — estate composition runs the edge passes (#188)", ()
   });
 });
 
+// #189: the estate-wide overlay — every project observed and composed, with
+// per-project failure isolation: a project whose live observe fails degrades
+// to its source graph painted unobserved (never dropped silently, never
+// blanking the estate), and the note reports coverage.
+describe("GET /api/overlay — estate-wide drift (#189)", () => {
+  let dirs: string[] = [];
+  beforeEach(() => vi.mocked(spawnMock).mockReset());
+  afterEach(() => {
+    dirs.forEach((d) => rmSync(d, { recursive: true, force: true }));
+    dirs = [];
+  });
+  const tmpProj = (name: string) => {
+    const dir = mkdtempSync(join(tmpdir(), `behold-estate-ov-${name}-`));
+    writeFileSync(join(dir, "chant.config.ts"), `export default { lexicons: ["k8s"] };`);
+    dirs.push(dir);
+    return dir;
+  };
+  const irOf = (id: string, status?: string) =>
+    JSON.stringify({
+      nodes: [{ id, kind: "K8s::Apps::Deployment", lexicon: "k8s", attrs: { metadata: { name: id, namespace: "app" }, ...(status ? { _status: status } : {}) } }],
+      edges: [],
+      groups: {},
+    });
+  const estateApp = (a: string, b: string) => {
+    const broadcaster = new Broadcaster();
+    const runner = new OpRunner({ projectDir: a, broadcaster, onDone: () => {} });
+    return createApp({ projectDir: a, projectDirs: [a, b], port: 0 }, broadcaster, new FrameBuffer(), runner);
+  };
+
+  it("observes every project and composes the classified results — the estate is coloured N/N", async () => {
+    const a = tmpProj("a");
+    const b = tmpProj("b");
+    vi.mocked(spawnMock).mockImplementation(((_cmd: unknown, args: unknown) => {
+      const s = String(args);
+      return fakeProc(0, s.includes(a) ? irOf("api", "good") : irOf("worker", "warn"));
+    }) as never);
+    const res = await estateApp(a, b).request("/api/overlay?env=prod");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      ir: { nodes: { id: string; attrs: { _status?: string } }[] };
+      meta: { mode: string; estate?: number; note?: string };
+    };
+    expect(body.meta.mode).toBe("overlay");
+    expect(body.meta.estate).toBe(2);
+    expect(body.meta.note).toBeUndefined(); // full coverage → nothing to confess
+    const byStatus = Object.fromEntries(body.ir.nodes.map((n) => [n.id.split("/").pop(), n.attrs._status]));
+    expect(byStatus).toEqual({ api: "good", worker: "warn" });
+  });
+
+  it("a project whose live observe fails degrades to source painted unobserved, and the note says so", async () => {
+    const a = tmpProj("ok");
+    const b = tmpProj("down");
+    vi.mocked(spawnMock).mockImplementation(((_cmd: unknown, args: unknown) => {
+      const s = String(args);
+      if (s.includes(b) && s.includes("--live")) return fakeProc(1, "", "error: cluster unreachable");
+      if (s.includes(b)) return fakeProc(0, irOf("worker"));
+      return fakeProc(0, irOf("api", "good"));
+    }) as never);
+    const res = await estateApp(a, b).request("/api/overlay?env=prod");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      ir: { nodes: { id: string; attrs: { _status?: string; _unobserved?: string } }[] };
+      meta: { note?: string };
+    };
+    const worker = body.ir.nodes.find((n) => n.id.endsWith("/worker"))!;
+    expect(worker.attrs._status).toBe("neutral");
+    expect(worker.attrs._unobserved).toMatch(/cluster unreachable/);
+    expect(body.meta.note).toMatch(/covered 1 of 2 projects/);
+    expect(body.meta.note).toMatch(/painted unobserved/);
+  });
+});
+
 // /api/overlay is where a picked tier's creds gate USUALLY surfaces in
 // practice — the SPA's load() routes an env pick here, not /api/graph (see
 // web/app.js). Same errorResponse under the hood; verify the wiring reaches

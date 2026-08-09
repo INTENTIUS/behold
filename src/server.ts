@@ -65,7 +65,7 @@ import { OpRunner } from "./op-runner.ts";
 import { detectSubstrates, projectLexicons } from "./substrates.ts";
 import { pickAutoSyncOps, suspendedByRollback, type AutoSyncMode } from "./autosync.ts";
 import { sourceCommits, openRollbackBranches } from "./history.ts";
-import { composeEstate } from "./estate.ts";
+import { composeEstate, composeEstateOverlay } from "./estate.ts";
 import { Broadcaster, watchSource } from "./events.ts";
 import { startDriftPoll } from "./poll.ts";
 import { FrameBuffer } from "./frames.ts";
@@ -1041,6 +1041,48 @@ export function createApp(
     }
     const logical = new URL(c.req.url).searchParams.get("logical") === "1";
     try {
+      // #189: the estate-wide overlay. The single-project pipeline below only
+      // ever observed the primary, so an N-project estate was coloured 1/N —
+      // the pitch ("your whole estate, coloured by drift") minus the estate.
+      // Overlay each project concurrently and compose: a project whose live
+      // observe fails degrades to its source graph painted unobserved (#1089
+      // tri-state — never silently dropped, never blanking the estate), and
+      // the note reports coverage. First slice deliberately skips the
+      // single-project extras (helm artifacts, cluster-root merge, runtime
+      // containment, logical projection) — the lens notes say so when asked.
+      if (cfg.projectDirs && cfg.projectDirs.length > 1) {
+        const runtime = new URL(c.req.url).searchParams.get("runtime") === "1";
+        const est = await composeEstateOverlay(cfg.projectDirs, { ...tierTargetOpts(query), detail: query.detail, env }, reclassifyOverlay);
+        if (est.dropped.length === est.total) {
+          return c.json({ error: `no project in the estate could be graphed — ${est.dropped.map((d) => `${d.name}: ${d.reason}`).join("; ")}` }, 500);
+        }
+        let ir = pruneRuntimeChildren(est.ir);
+        if ((query.detail ?? 2) < 3) ir = pruneImports(ir);
+        // Same passes as /api/graph's estate branch (#188) — the k8s half's
+        // only edge source, and the cross-stack joins the estate exists for.
+        ir = addValueMatchEdges(ir);
+        ir = addK8sDeclaredEdges(ir);
+        ir = addClusterAnchorEdges(ir, await boundK8sContext(env));
+        const { svg } = renderGraph(ir, { boxes: "byStack" });
+        const lensNote =
+          logical || runtime
+            ? `the ${logical ? "logical" : "runtime"} lens doesn't apply to a composed estate yet — showing the composed entity overlay`
+            : undefined;
+        const coverNote =
+          est.unobserved.length || est.dropped.length
+            ? `live observe covered ${est.observed} of ${est.total} projects — ` +
+              [
+                ...est.unobserved.map((u) => `${u.name}: ${u.reason} (painted unobserved)`),
+                ...est.dropped.map((d) => `${d.name}: dropped (${d.reason})`),
+              ].join("; ")
+            : undefined;
+        const note = [lensNote, coverNote, namespaceMismatchNote(ir.nodes)].filter(Boolean).join(" · ");
+        return c.json({
+          ir,
+          svg,
+          meta: { projectDir: cfg.projectDir, env, mode: "overlay", estate: est.total, ...(note ? { note } : {}) },
+        });
+      }
       const opts: GraphOptions = { ...query, live: true, overlay: true, env, ...(logical ? { detail: 3 } : {}) };
       // Reclassify wiring/examples so they don't read as "pending" over a done
       // deploy (see reclassifyOverlay): Parameters take their deployed
