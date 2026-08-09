@@ -1523,14 +1523,20 @@ function render(ir, svg, m) {
     tail = ` · ${c.good} healthy · ${c.accent} in progress · ${c.warn} rollback/failed · ${c.neutral} not deployed`;
   }
   // Multi-estate (#31): note the composed project count; the graph draws one box per project.
-  const scope = m.estate ? `estate of ${m.estate} projects` : m.projectDir;
+  // #186: the meta line lives in the panel's 272px footer now — the directory
+  // basename reads better than an absolute path (full path in the tooltip).
+  const scope = m.estate
+    ? `estate of ${m.estate} projects`
+    : String(m.projectDir || "").replace(/\/+$/, "").split("/").pop() || m.projectDir;
   // The deploy axes (#59 unify, M2 #54 lenses) — tier/target, kept in sync with
   // what this response actually observed (falls back to the launch-time value
   // from /api/project when a route doesn't echo them, e.g. /api/overlay).
   if (m.tier !== undefined) axes.tier = m.tier;
   if (m.target !== undefined) axes.target = m.target;
   const axesTail = `${axes.tier ? " · tier " + axes.tier : ""}${axes.target ? " · target " + axes.target : ""}`;
-  document.getElementById("meta").textContent =
+  const metaEl = document.getElementById("meta");
+  metaEl.title = m.projectDir || "";
+  metaEl.textContent =
     `${scope}${m.env ? " · env " + m.env : ""}${axesTail}${overlay ? " · overlay" : ""}${logical ? " · logical" : ""}${m.components ? " · components" : ""}${componentStatus ? " · live status" : ""} · ${ir.nodes.length} nodes${tail}`;
   // Keep the persistent state strip + the floating panel in sync (the panel's
   // Model tab is what replaced the two old header legends).
@@ -2111,7 +2117,7 @@ function showToast(msg, ok) {
   if (!host) {
     host = document.createElement("div");
     host.id = "toasts";
-    host.style.cssText = "position:fixed;top:52px;right:16px;display:flex;flex-direction:column;gap:8px;z-index:60;max-width:420px";
+    host.style.cssText = "position:fixed;top:12px;right:16px;display:flex;flex-direction:column;gap:8px;z-index:60;max-width:420px";
     document.body.appendChild(host);
   }
   const t = document.createElement("div");
