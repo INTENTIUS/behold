@@ -13,7 +13,7 @@
       * { box-sizing: border-box; }
       html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
         font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, sans-serif; }
-      #app { display: grid; grid-template-columns: 1fr var(--inspect-w, 320px); grid-template-rows: auto auto auto 1fr auto;
+      #app { display: grid; grid-template-columns: 1fr var(--inspect-w, 320px); grid-template-rows: auto 1fr auto;
         height: 100%; }
       #app.inspect-collapsed { grid-template-columns: 1fr 0; }
       #app.inspect-collapsed #inspect { display: none; }
@@ -21,8 +21,8 @@
         display: flex; align-items: baseline; gap: 12px; }
       header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .3px; }
       header .meta { color: var(--muted); font-size: 12px; }
-      #graph { grid-row: 4; grid-column: 1; overflow: auto; position: relative; }
-      #inspect { grid-row: 4; grid-column: 2; border-left: 1px solid var(--line); background: var(--panel);
+      #graph { grid-row: 2; grid-column: 1; overflow: auto; position: relative; }
+      #inspect { grid-row: 2; grid-column: 2; border-left: 1px solid var(--line); background: var(--panel);
         padding: 14px; overflow: auto; position: relative; }
       #inspect h2 { font-size: 13px; margin: 0 0 8px; color: var(--muted); font-weight: 600;
         text-transform: uppercase; letter-spacing: .5px; }
@@ -101,44 +101,103 @@
       #actions button:hover, #inspect button:hover { border-color: var(--pending); }
       #actions button.approve { border-color: var(--managed); color: var(--managed); }
       #inspect button { border-color: var(--foreign); color: var(--foreign); }
-      #pickers select, #zoom-slot select { background: var(--panel); color: var(--fg); border: 1px solid var(--line);
+
+      /* ---- Floating control panel ------------------------------------------
+         An Adobe-style palette holding the controls that used to line the
+         header and its strips: zoom, scope lenses, substrate pills, the model
+         legends, deploy buttons and the dial. panel.js owns the chrome — drag
+         by the title bar, magnetic snap to viewport edges/corners, collapse to
+         the bar (button or double-click), tabs, persisted position — and
+         app.js renders the tab contents (renderPanel*, renderSubstrates,
+         renderDial, initActions: their host elements simply live inside the
+         tabs now). Every control here stays reachable in ⌘K too — the panel
+         is the discoverable surface, the palette the fast one. Sits above the
+         graph's own floating buttons (z 2) and below toasts (60) / the load
+         scrim (100) / ⌘K (110). */
+      #panel { position: fixed; width: 272px; z-index: 40; background: var(--panel);
+        border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column;
+        box-shadow: 0 10px 34px rgba(0,0,0,.45); user-select: none; }
+      #panel.dragging { opacity: .95; }
+      #panel-titlebar { display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: grab;
+        border-bottom: 1px solid var(--line); }
+      #panel.dragging #panel-titlebar { cursor: grabbing; }
+      #panel.collapsed #panel-titlebar { border-bottom: none; }
+      #panel-titlebar .grip { color: var(--muted); font-size: 11px; }
+      #panel-titlebar .panel-title { flex: 1; font-size: 11px; font-weight: 600; color: var(--muted);
+        text-transform: uppercase; letter-spacing: .6px; }
+      #panel-collapse { background: none; border: none; color: var(--muted); font-size: 12px;
+        cursor: pointer; line-height: 1; padding: 2px; }
+      #panel-collapse:hover { color: var(--fg); }
+      #panel.collapsed #panel-tabs, #panel.collapsed #panel-body { display: none; }
+      #panel-tabs { display: flex; border-bottom: 1px solid var(--line); }
+      #panel-tabs button { flex: 1; background: none; border: none; border-bottom: 2px solid transparent;
+        color: var(--muted); font-size: 10.5px; padding: 6px 0; cursor: pointer; }
+      #panel-tabs button:hover { color: var(--fg); }
+      #panel-tabs button.active { color: var(--fg); border-bottom-color: var(--pending); }
+      #panel-body { overflow-y: auto; max-height: min(62vh, 540px); padding: 10px 12px;
+        font-size: 12px; user-select: text; }
+      #panel-body section { display: none; }
+      #panel-body section.active { display: block; }
+      #panel h3 { margin: 14px 0 6px; font-size: 10px; text-transform: uppercase; letter-spacing: .5px;
+        color: var(--muted); font-weight: 600; }
+      #panel h3:first-child { margin-top: 0; }
+      #panel .panel-muted { color: var(--muted); font-size: 11px; margin: 4px 0; }
+      #panel .prow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 2px 0; }
+      /* A radio-like option row: the current value carries the accent border. */
+      #panel .opt { display: block; width: 100%; text-align: left; background: none;
+        border: 1px solid transparent; border-radius: 6px; color: var(--fg); font-size: 12px;
+        padding: 4px 8px; cursor: pointer; }
+      #panel .opt:hover { border-color: var(--line); }
+      #panel .opt.active { border-color: var(--pending); color: var(--pending); }
+      #panel select { width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
         border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
-      #pickers select:hover, #zoom-slot select:hover { border-color: var(--pending); }
-      /* The observe → reconcile → apply dial (M2, #54): where the selected
-         target sits on the lifecycle progression. Its own row below the
-         header — a target-level control, not a per-node inspect detail. */
-      #dial { grid-column: 1 / 3; grid-row: 3; display: none; align-items: center; gap: 10px;
-        padding: 6px 16px; border-bottom: 1px solid var(--line); font-size: 12px; }
-      .dial-track { display: flex; align-items: center; gap: 8px; }
-      .dial-arrow { color: var(--muted); }
-      .dial-step { background: var(--panel); color: var(--fg); border: 1px solid var(--line);
-        border-radius: 999px; padding: 3px 12px; font-size: 12px; cursor: pointer; }
-      .dial-step:hover:not(:disabled) { border-color: var(--pending); }
-      .dial-step.active { border-color: var(--pending); color: var(--pending); }
-      .dial-step:disabled { opacity: .5; cursor: not-allowed; }
-      .dial-detail { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--muted); }
-      /* Substrate readiness strip (M5, #54): is each substrate the project needs
-         actually up (Floci, k3d, GitLab CI, Forgejo)? A slim row of status pills
-         under the header — pure state (#73: the pills' own "Bring up"/"Reset"
-         buttons moved into the ⌘K palette, see paletteCommands() in app.js). */
-      #substrates { grid-column: 1 / 3; grid-row: 2; display: none; align-items: center; gap: 8px;
-        padding: 5px 16px; border-bottom: 1px solid var(--line); font-size: 12px; }
-      #substrates .label { color: var(--muted); margin-right: 2px; }
-      .sub { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line);
-        border-radius: 999px; padding: 2px 10px; }
-      .sub .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+      #panel select:hover { border-color: var(--pending); }
+      #panel button.act { background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+        border-radius: 6px; padding: 3px 10px; font-size: 11px; cursor: pointer; }
+      #panel button.act:hover { border-color: var(--pending); }
+      /* Model tab rows: legend counts (static) and clickable node rows. */
+      #panel .count-row, #panel .node-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+      #panel .node-row { cursor: pointer; border-radius: 6px; padding: 3px 6px; }
+      #panel .node-row:hover { background: var(--bg); }
+      #panel .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
+      #panel .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #panel .tag { color: var(--muted); font-size: 11px; white-space: nowrap; }
+
+      /* Substrate readiness (M5, #54) — one row per substrate on the panel's
+         Substrates tab: status dot + name + state, with its actions (bring up /
+         reset / run pipeline) visible inline again. #73 moved those into ⌘K;
+         they remain there too — same actions, two surfaces. */
+      #substrates { display: flex; flex-direction: column; gap: 2px; }
+      .sub { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+      .sub .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
       .sub.up .dot { background: var(--managed); }
       .sub.down .dot { background: var(--degraded); }
       .sub.on-demand .dot { background: var(--pending); }
       .sub.unknown .dot { background: var(--muted); }
       .sub.blocked { opacity: .6; }
       .sub.blocked .dot { background: var(--muted); }
-      #nowline { grid-column: 1 / 3; grid-row: 5; margin: 0; max-height: 160px; overflow: auto; display: none;
+
+      /* The observe → reconcile → apply dial (M2, #54): where the selected
+         target sits on the lifecycle progression. Lives on the panel's Deploy
+         tab now, stacked vertically under the deploy actions. */
+      #actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+      #dial { display: none; flex-direction: column; align-items: stretch; gap: 8px;
+        font-size: 12px; margin-top: 10px; }
+      .dial-track { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+      .dial-arrow { color: var(--muted); }
+      .dial-step { background: var(--panel); color: var(--fg); border: 1px solid var(--line);
+        border-radius: 999px; padding: 3px 12px; font-size: 12px; cursor: pointer; }
+      .dial-step:hover:not(:disabled) { border-color: var(--pending); }
+      .dial-step.active { border-color: var(--pending); color: var(--pending); }
+      .dial-step:disabled { opacity: .5; cursor: not-allowed; }
+      .dial-detail { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--muted); }
+
+      #nowline { grid-column: 1 / 3; grid-row: 3; margin: 0; max-height: 160px; overflow: auto; display: none;
         background: #010409; border-top: 1px solid var(--line); padding: 8px 12px; font: 11px/1.5 ui-monospace, monospace;
         color: var(--fg); white-space: pre-wrap; }
-      /* Persistent state strip (#73 "hide controls, never state"): current zoom
-         + env + stack (#76) + tier stay visible in the header even though the
-         pickers that used to sit here moved into the ⌘K palette — see
+      /* Persistent state strip (#73 "hide controls, never state"): the current
+         zoom + env + stack (#76) + tier stay visible in the header even though
+         every picker now lives on the floating panel (and in ⌘K) — see
          renderStatusbar() in app.js. #hintk is the palette's always-visible
          entry point. */
       #statusbar { color: var(--muted); border: 1px solid var(--line); border-radius: 6px;
@@ -180,56 +239,12 @@
     <div id="app">
       <header>
         <h1>behold</h1>
-        <!-- Zoom sits here, first after the brand, rather than in #pickers on
-             the far right with the theme select. It is the control you reach
-             for constantly — the one thing worth the chrome #73 otherwise
-             thinned — and in the right-hand cluster it read as chrome and got
-             missed. The ⌘K palette keeps its entry; this is the same action,
-             discoverable without knowing the shortcut exists. -->
-        <span id="zoom-slot" style="display:flex;align-self:center"></span>
         <span class="meta" id="meta">loading…</span>
-        <span id="legend" style="display:none;gap:12px;font-size:11px;align-self:center">
-          <span style="color:var(--managed)">● managed</span>
-          <span style="color:var(--foreign)">● foreign</span>
-          <span style="color:var(--pending)">● pending</span>
-          <!-- chant#1168 (#1089): a declared node chant couldn't read live
-               state for — its own state, not folded into managed/foreign/
-               pending. Reuses --muted, same convention as the component
-               legend's "not deployed" chip below. -->
-          <span style="color:var(--muted)">● unobserved</span>
-          <!-- chant#1180 (#1077, #86): a live, undeclared node whose owner
-               chain reaches a declared entity — expected runtime (a Pod its
-               Deployment created), never foreign and never drift. Its own
-               colour (--runtime) so it's never mistaken for foreign/pending. -->
-          <span style="color:var(--runtime)">● runtime</span>
-        </span>
-        <!-- M1.1 (#57), palette hardened M2 (#54): the component DAG's live
-             per-component AWS status — a different join than the entity
-             overlay above (component name -> CFN stack, not chant's
-             cross-substrate --live --overlay), so it's a separate legend
-             rather than reusing #legend's vocabulary. 4 states now (chant
-             0.18.29's machine-readable live/stack): pinhole has no literal
-             amber token, so "in progress" reuses its blue accent paint —
-             see src/component-status.ts's doc comment for the mapping. -->
-        <span id="component-legend" style="display:none;gap:12px;font-size:11px;align-self:center">
-          <span style="color:var(--managed)">● healthy</span>
-          <span style="color:var(--pending)">● in progress</span>
-          <span style="color:var(--degraded)">● rollback / failed</span>
-          <span style="color:var(--muted)">● not deployed</span>
-        </span>
-        <!-- #73 "hide controls, never state": zoom/env/stack/tier stay visible
-             here even though the pickers that used to render into this slot
-             moved into the ⌘K palette below — see renderStatusbar() in app.js.
-             stack (#76) only ever appears for a project that declares
-             chant.config.ts's stacks[]. -->
-        <span id="statusbar" style="margin-left:auto;align-self:center" title="current zoom · env · stack · tier — press ⌘K to change"></span>
-        <span id="pickers" style="display:flex;gap:8px;align-self:center"></span>
-        <span id="actions" style="display:flex;gap:8px;align-self:center"></span>
-        <a href="/lanes" style="color:var(--pending);text-decoration:none;font-size:12px;align-self:center">lanes →</a>
-        <span id="hintk" title="Command palette — deploy, apply, reset, bring up, lens/zoom, env/stack/tier, export… (⌘K / Ctrl+K)">⌘K</span>
+        <!-- #73 "hide controls, never state": the header keeps only state (meta,
+             this strip). Every control — including the lanes link and the ⌘K
+             entry pill — moved onto the floating panel below; see #panel. -->
+        <span id="statusbar" style="margin-left:auto;align-self:center" title="current zoom · env · stack · tier — change on the panel, or ⌘K"></span>
       </header>
-      <div id="substrates"></div>
-      <div id="dial"></div>
       <div id="graph"></div>
       <aside id="inspect">
         <div id="inspect-resize" title="Drag to resize"></div>
@@ -238,6 +253,41 @@
       </aside>
       <button id="inspect-reopen" title="Show inspect panel">inspect ‹</button>
       <pre id="nowline"></pre>
+    </div>
+    <!-- The floating control panel (see the #panel CSS comment above). The
+         View tab keeps stable slots (#panel-zoom / #panel-viewtools /
+         #panel-theme) so the theme picker mounts once and survives re-renders;
+         Substrates and Deploy host the long-standing #substrates/#dial/#actions
+         elements, whose render functions in app.js are unchanged in spirit. -->
+    <div id="panel">
+      <div id="panel-titlebar" title="Drag to move — snaps to edges and corners. Double-click to collapse.">
+        <span class="grip">⠿</span>
+        <span class="panel-title">controls</span>
+        <span id="hintk" title="Command palette — deploy, apply, reset, bring up, lens/zoom, env/stack/tier, export… (⌘K / Ctrl+K)">⌘K</span>
+        <button id="panel-collapse" title="Collapse">▾</button>
+      </div>
+      <div id="panel-tabs">
+        <button data-tab="view" class="active">View</button>
+        <button data-tab="scope">Scope</button>
+        <button data-tab="substrates">Substrates</button>
+        <button data-tab="model">Model</button>
+        <button data-tab="deploy">Deploy</button>
+      </div>
+      <div id="panel-body">
+        <section data-tab="view" class="active">
+          <div id="panel-zoom"></div>
+          <div id="panel-viewtools"></div>
+          <h3>theme</h3>
+          <div id="panel-theme"></div>
+        </section>
+        <section data-tab="scope" id="tab-scope"></section>
+        <section data-tab="substrates"><div id="substrates"></div></section>
+        <section data-tab="model" id="tab-model"></section>
+        <section data-tab="deploy">
+          <div id="actions"></div>
+          <div id="dial"></div>
+        </section>
+      </div>
     </div>
     <!-- Command palette (⌘K / Ctrl+K, #73) — the spicypath FG-036 shape
          (../spicypath/src/index.html): input + filtered list, driven entirely
