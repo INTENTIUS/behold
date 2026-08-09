@@ -16,11 +16,35 @@ chant source ──build/lint──▶ graph IR ──behold──▶ live graph
               (deterministic)          (server + browser)
 ```
 
+## Quick start (npm)
+
+No chant project yet? The bundled demo is the five-minute path — an S3 bucket +
+policy served against a local emulator, no cloud account, no credentials
+(needs Docker):
+
+```sh
+npx @intentius/behold demo            # copies the example to ./behold-demo, installs, serves
+# → http://localhost:4600 — blue = declared; click Deploy, watch it turn green
+```
+
+The copied project is yours: edit its source and watch the graph change live.
+
+Already have a chant project?
+
+```sh
+cd my-chant-project
+npx @intentius/behold preview         # → http://localhost:4600, this project's graph
+npx @intentius/behold serve . --env prod --poll 30   # live drift overlay
+```
+
+Driving it from an agent or script? `GET /api` lists every JSON route;
+[AGENTS.md](./AGENTS.md) (shipped in the package) is the read/act contract.
+
 ## Preview: your project, or the Loom-on-Floci demo (v0.1.0)
 
 `behold preview` is the quick way to look at a chant project's graph in a
 browser at one port. Plain, it just opens the project you point it at — no env,
-no emulator:
+no emulator. From a repo checkout the same commands run through `npm run dev`:
 
 ```sh
 npm install

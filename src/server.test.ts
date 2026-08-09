@@ -401,6 +401,62 @@ describe("GET /api/graph — structured precondition errors (#72)", () => {
   });
 });
 
+// #193: the first-contact dead end. behold pointed at a directory that isn't
+// a chant project used to serve a blank graph — chant happily emits an empty
+// graph for an empty directory. The base entity route 404s with a structured
+// no-project error instead. A chant.config.ts project whose graph is
+// legitimately empty keeps its 200 — asserted by the stack-lens tests above,
+// whose fixtures all write a chant.config.ts and expect 200 on EMPTY_GRAPH_IR.
+describe("GET /api/graph — no-project on an empty graph from a non-project dir (#193)", () => {
+  let dirs: string[] = [];
+  beforeEach(() => vi.mocked(spawnMock).mockReset());
+  afterEach(() => {
+    dirs.forEach((d) => rmSync(d, { recursive: true, force: true }));
+    dirs = [];
+  });
+  const EMPTY_GRAPH_IR = JSON.stringify({ nodes: [], edges: [], groups: {} });
+  const tmpBareDir = () => {
+    const dir = mkdtempSync(join(tmpdir(), "behold-server-noproject-"));
+    dirs.push(dir);
+    return dir;
+  };
+
+  it("empty graph + no chant.config.ts → 404 {code: no-project} with a `behold demo` remedy", async () => {
+    vi.mocked(spawnMock).mockReturnValue(fakeProc(0, EMPTY_GRAPH_IR));
+    const app = makeAppFor(tmpBareDir());
+    const res = await app.request("/api/graph");
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { code: string; error: string; remedy: string };
+    expect(body.code).toBe("no-project");
+    expect(body.error).toMatch(/chant\.config\.ts/);
+    expect(body.remedy).toMatch(/behold demo/);
+  });
+
+  it("a lens that filters to nothing is NOT a no-project — the lens did that", async () => {
+    vi.mocked(spawnMock).mockReturnValue(fakeProc(0, EMPTY_GRAPH_IR));
+    const app = makeAppFor(tmpBareDir());
+    const res = await app.request("/api/graph?lens=lexicon:aws");
+    expect(res.status).toBe(200);
+  });
+});
+
+// #193: the API's front door for agents — GET /api enumerates the routes so
+// nothing has to be discovered by reading source.
+describe("GET /api — the route index (#193)", () => {
+  it("lists the routes, the version, and the agents guide", async () => {
+    const { app } = makeApp(undefined);
+    const res = await app.request("/api");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { version: string; agentsGuide: string; routes: { path: string }[] };
+    expect(body.version).toMatch(/^\d+\.\d+\.\d+/);
+    expect(body.agentsGuide).toMatch(/AGENTS\.md/);
+    const paths = body.routes.map((r) => r.path);
+    expect(paths).toContain("/api/graph");
+    expect(paths).toContain("/api/events");
+    expect(paths).toContain("/api/apply");
+  });
+});
+
 // /api/overlay is where a picked tier's creds gate USUALLY surfaces in
 // practice — the SPA's load() routes an env pick here, not /api/graph (see
 // web/app.js). Same errorResponse under the hood; verify the wiring reaches

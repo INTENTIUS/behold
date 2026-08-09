@@ -14,14 +14,32 @@ apply creds.
   - Actions (delegated writes): `op-run` (start an `ApplyOp`/`ReconcileOp`),
     `op-signal` (approve a gate), `op-status` / `op-report` (watch it).
 
+## Getting a server
+
+```sh
+npx @intentius/behold serve <chant-project-dir> --port 4600   # or: preview / demo
+```
+
+`behold demo` needs no project at all — it copies the bundled example and serves
+it against a local emulator (Docker). A directory that is not a chant project
+gets a structured `{code: "no-project"}` error from `/api/graph`, not a blank
+graph.
+
 ## The read loop
 
-1. **observe** — GET `/api/graph` (JSON: `{ ir, layout, meta }`). The mixed graph
+0. **discover** — GET `/api` lists every route with a one-line description,
+   plus the server's version and a link back to this guide.
+1. **observe** — GET `/api/graph` (JSON: `{ ir, svg, meta }`). The mixed graph
    of the project, every node with `id`/`kind`/`lexicon`/`attrs`/`sourceLoc`. Drift
    status, when present, is `attrs._status` (`good`=managed, `warn`=foreign,
-   `accent`=pending).
+   `accent`=pending, `neutral`=unobserved, `runtime`=runtime child). With
+   `?env=`, `/api/overlay` is the live entity overlay; `/api/diff?env=` slices
+   per-node observed state, drift and field ownership; `/api/reconcile?env=`
+   summarizes the pending change set; `/api/substrates` reports substrate
+   readiness; `/api/events` (SSE) pushes `changed`/`op`/`apply`/`pr`.
 2. **focus** — narrow with chant graph options as query params: `?detail=0..3`,
-   `?lens=blast:<id>&down=1`, `?lens=lexicon:aws`.
+   `?components=1`, `?logical=1`, `?lens=blast:<id>&down=1`, `?lens=lexicon:aws`,
+   `?env=`, `?stack=`, `?tier=`, `?target=`.
 3. **inspect** — a node's `sourceLoc.file` is the typed source that declared it;
    edit there to change the estate (chant is the source of truth, not behold).
 

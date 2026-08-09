@@ -3,19 +3,28 @@
  * chant project. Agent-drivable: the same read API the SPA uses is plain JSON, and
  * behold leans on chant's MCP for the underlying graph/lifecycle data (see README).
  */
-import { resolve } from "node:path";
-import { realpathSync, existsSync } from "node:fs";
+import { resolve, dirname, join, relative, sep } from "node:path";
+import { realpathSync, existsSync, cpSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { startServer } from "./server.ts";
+import { startServer, beholdVersion } from "./server.ts";
 import { runExport } from "./export.ts";
 import { isAutoSyncMode, type AutoSyncMode } from "./autosync.ts";
 
 const USAGE = `behold — a live control plane on chant (read-only core)
 
 Usage:
+  behold demo [target-dir] [--port <n>]
   behold preview [project-dir] [--port <n>] [--emulator]
   behold export [project-dir] [--out <dir>] [--env <name>] [--name <worker>] [--emulator]
   behold serve <project-dir…> [--port <n>] [--env <name>] [--poll <secs>] [--local]
+
+  demo    The five-minute path from npm — no chant project needed. Copies the
+          bundled example (an S3 bucket + policy) into ./behold-demo (or
+          [target-dir]), installs its dependencies, and serves it against a
+          local emulator: blue = declared, click Deploy, watch it turn green.
+          Needs Docker. The copy is yours — edit its source and watch the
+          graph change live.
 
   export  Capture the live estate into a self-contained, interactive STATIC
           bundle (default ./behold-export) — every env/tier × zoom × radial,
@@ -71,6 +80,7 @@ Options:
   --name <worker>     export only: Cloudflare Worker name in the generated
                       wrangler.jsonc.
   -h, --help          This text.
+  -v, --version       Print the behold version.
 `;
 
 export async function run(argv: string[]): Promise<void> {
@@ -78,6 +88,16 @@ export async function run(argv: string[]): Promise<void> {
 
   if (!cmd || cmd === "-h" || cmd === "--help") {
     process.stdout.write(USAGE);
+    return;
+  }
+
+  if (cmd === "-v" || cmd === "--version") {
+    process.stdout.write(beholdVersion() + "\n");
+    return;
+  }
+
+  if (cmd === "demo") {
+    await runDemo(rest);
     return;
   }
 
@@ -148,6 +168,7 @@ export async function run(argv: string[]): Promise<void> {
   }
 
   const dirs = projectDirs.map((d) => resolve(d));
+  for (const d of dirs) warnIfNotChantProject(d);
   await startServer({
     projectDir: dirs[0], // primary — ops/overlay/rollback act on it
     ...(dirs.length > 1 ? { projectDirs: dirs } : {}),
@@ -157,6 +178,77 @@ export async function run(argv: string[]): Promise<void> {
     ...(autoSync !== "off" ? { autoSync } : {}),
     ...(local ? { local: true } : {}),
   });
+}
+
+/** #193: point out a not-a-chant-project directory at startup, in the same
+ * breath as the URL — the server's /api/graph 404s with the structured
+ * no-project card, and this is the terminal-side half of the same honesty.
+ * A warning, not an exit: serving anyway is right (the card explains, and
+ * the directory may be about to become a project). */
+function warnIfNotChantProject(dir: string): void {
+  if (existsSync(join(dir, "chant.config.ts"))) return;
+  process.stderr.write(
+    `behold: warning — ${dir} has no chant.config.ts; this doesn't look like a chant project.\n` +
+      `        No project yet? \`behold demo\` serves a bundled working example (needs Docker).\n`,
+  );
+}
+
+/** `behold demo` (#193) — the five-minute path for someone who just ran
+ * `npm install @intentius/behold` and has no chant project: copy the bundled
+ * example-writes into a directory THEY own (so editing its source and
+ * watching the graph react is part of the demo), install its deps, and serve
+ * it exactly the way the repo's own `npm run demo` does — `serve <dir>
+ * --local --env prod`. Idempotent: an existing target is reused (and an
+ * already-installed one skips npm install), so a second `behold demo` is
+ * just "start the demo again". */
+async function runDemo(rest: string[]): Promise<void> {
+  let port = 4600;
+  let dirArg: string | undefined;
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i];
+    if (a === "--port") port = Number(rest[++i]);
+    else if (a === "-h" || a === "--help") return void process.stdout.write(USAGE);
+    else if (!a.startsWith("-")) dirArg = a;
+    else {
+      process.stderr.write(`behold demo: unexpected argument '${a}'\n`);
+      process.exit(2);
+    }
+  }
+  if (!Number.isFinite(port)) {
+    process.stderr.write("behold demo: --port must be a number\n");
+    process.exit(2);
+  }
+  // The bundled example ships in the npm package (package.json `files`),
+  // beside dist/ — same relative resolution as beholdVersion()'s.
+  const bundled = join(dirname(fileURLToPath(import.meta.url)), "..", "example-writes");
+  if (!existsSync(bundled)) {
+    process.stderr.write("behold demo: this install has no bundled example project (example-writes)\n");
+    process.exit(2);
+  }
+  const target = resolve(dirArg ?? "behold-demo");
+  if (!existsSync(target)) {
+    process.stdout.write(`behold demo → copying the example project to ${target} (it's yours — edit it)\n`);
+    // Skip only node_modules INSIDE the example. The filter must test the
+    // path relative to the bundled root: in an npm install the example
+    // itself lives under node_modules/@intentius/behold/, so a bare
+    // `src.includes("node_modules")` matched every file and copied nothing.
+    cpSync(bundled, target, {
+      recursive: true,
+      filter: (src) => !relative(bundled, src).split(sep).includes("node_modules"),
+    });
+  } else {
+    process.stdout.write(`behold demo → reusing ${target}\n`);
+  }
+  if (!existsSync(join(target, "node_modules"))) {
+    process.stdout.write("behold demo → npm install (the example's own chant + lexicons)…\n");
+    const r = spawnSync("npm", ["install"], { cwd: target, stdio: "inherit", shell: process.platform === "win32" });
+    if (r.status !== 0) {
+      process.stderr.write(`behold demo: npm install failed in ${target}${r.error ? ` (${r.error.message})` : ""}\n`);
+      process.exit(r.status ?? 1);
+    }
+  }
+  process.stdout.write("behold demo → serving with a local emulator (Docker). Blue = declared; Deploy turns it green.\n");
+  await run(["serve", target, "--local", "--env", "prod", "--port", String(port)]);
 }
 
 /** Turnkey Loom-on-Floci env (#69): the AWS SDK creds Floci ignores the value of,
@@ -200,6 +292,7 @@ async function runPreview(rest: string[]): Promise<void> {
     process.exit(2);
   }
   if (!emulator) {
+    warnIfNotChantProject(projectDir);
     await startServer({ projectDir, port });
     return;
   }

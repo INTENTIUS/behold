@@ -27,6 +27,8 @@ One S3 bucket, deployed to a local [Floci](https://github.com/lex00/floci) emula
 
    That installs the bundled `example-writes` project's own dependencies, boots its emulator, and serves it at **http://localhost:4600**.
 
+   No checkout? `npx @intentius/behold demo` runs the same demo from npm — it copies the example project to `./behold-demo` (yours to edit) and serves it the same way.
+
 2. Look at the graph. The bucket and its TLS policy are **blue** — declared in source, not yet deployed.
 
 3. Click **▶ Deploy (floci-apply)** on the floating control panel's **Deploy** tab. The now-line streams Build → Apply → Verify as the bucket is created in the emulator.
