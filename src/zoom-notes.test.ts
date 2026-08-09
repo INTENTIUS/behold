@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { zoomNote, edgelessNote, logicalKept, notesFor, tierMismatchNote, type NotableGraph } from "./zoom-notes.ts";
+import { zoomNote, edgelessNote, logicalKept, notesFor, tierMismatchNote, namespaceMismatchNote, type NotableGraph } from "./zoom-notes.ts";
 
 const graph = (nodes: number, edges: number, byContainer?: Record<string, string[]>): NotableGraph => ({
   nodes: Array.from({ length: nodes }, (_, i) => ({ id: `n${i}` })),
@@ -182,5 +182,60 @@ describe("tierMismatchNote (the wrong-tier trap)", () => {
     const note = tierMismatchNote(ir, tiers, undefined);
     expect(note).toContain("2 of 2 k8s resources");
     expect(note).toContain("the default tier");
+  });
+});
+
+// #192: the namespace-mismatch signature — all-pending namespaced k8s objects
+// over a resolving cluster is the shape of a wrong-namespace read (Flux
+// targetNamespace stamped at apply time), not of undeployed infrastructure.
+describe("namespaceMismatchNote (#192)", () => {
+  const k8s = (status: string, opts: { kind?: string; namespace?: string } = {}) => ({
+    lexicon: "k8s",
+    kind: opts.kind ?? "K8s::Apps::Deployment",
+    attrs: { _status: status, metadata: { name: "x", ...(opts.namespace ? { namespace: opts.namespace } : {}) } },
+  });
+
+  it("fires on the reported shape: 9 namespaced pending without a declared namespace, the Namespace itself good", () => {
+    const nodes = [
+      ...Array.from({ length: 9 }, () => k8s("accent")),
+      k8s("good", { kind: "K8s::Core::Namespace" }),
+    ];
+    const note = namespaceMismatchNote(nodes);
+    expect(note).toContain("9 pending k8s objects");
+    expect(note).toContain("targetNamespace");
+  });
+
+  it("stays quiet when a pending object DOES declare its namespace — that read looked in the right place", () => {
+    const nodes = [
+      k8s("accent"),
+      k8s("accent"),
+      k8s("accent", { namespace: "app" }),
+      k8s("good", { kind: "K8s::Core::Namespace" }),
+    ];
+    expect(namespaceMismatchNote(nodes)).toBeUndefined();
+  });
+
+  it("stays quiet when nothing resolved good — that's a creds/cluster problem, not a namespace one", () => {
+    expect(namespaceMismatchNote(Array.from({ length: 5 }, () => k8s("accent")))).toBeUndefined();
+  });
+
+  it("stays quiet below three pending — small counts are a deploy in progress", () => {
+    const nodes = [k8s("accent"), k8s("accent"), k8s("good", { kind: "K8s::Core::Namespace" })];
+    expect(namespaceMismatchNote(nodes)).toBeUndefined();
+  });
+
+  it("cluster-scoped pending kinds never count — they have no namespace to get wrong", () => {
+    const nodes = [
+      k8s("accent", { kind: "K8s::Core::Namespace" }),
+      k8s("accent", { kind: "K8s::Rbac::ClusterRole" }),
+      k8s("accent", { kind: "K8s::Storage::StorageClass" }),
+      k8s("good"),
+    ];
+    expect(namespaceMismatchNote(nodes)).toBeUndefined();
+  });
+
+  it("ignores non-k8s estates entirely", () => {
+    const nodes = Array.from({ length: 5 }, () => ({ lexicon: "aws", attrs: { _status: "accent" } }));
+    expect(namespaceMismatchNote([...nodes, { lexicon: "aws", attrs: { _status: "good" } }])).toBeUndefined();
   });
 });
