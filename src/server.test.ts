@@ -581,6 +581,39 @@ describe("GET /api/graph — estate composition runs the edge passes (#188)", ()
     expect(edge!.from.endsWith("/svc")).toBe(true);
     expect(edge!.to.endsWith("/dep")).toBe(true);
   });
+
+  // #190: the multi branch wins the if/else chain, so ?components=1 /
+  // ?logical=1 on an estate returned the plain composed entity graph as a
+  // silent 200 — no mode, no note. The graph is still the honest fallback;
+  // the note now says the lens didn't apply.
+  it("?components=1 on an estate notes that the lens didn't apply (#190)", async () => {
+    const a = tmpProj("na");
+    const b = tmpProj("nb");
+    const EMPTY = JSON.stringify({ nodes: [], edges: [], groups: {} });
+    vi.mocked(spawnMock).mockImplementation((() => fakeProc(0, EMPTY)) as never);
+    const broadcaster = new Broadcaster();
+    const runner = new OpRunner({ projectDir: a, broadcaster, onDone: () => {} });
+    const app = createApp({ projectDir: a, projectDirs: [a, b], port: 0 }, broadcaster, new FrameBuffer(), runner);
+    const res = await app.request("/api/graph?components=1");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { meta: { note?: string; mode?: string } };
+    expect(body.meta.mode).toBeUndefined();
+    expect(body.meta.note).toMatch(/components lens doesn't apply to a composed estate/);
+  });
+
+  it("?logical=1 on an estate notes the same — and a plain estate request stays note-free", async () => {
+    const a = tmpProj("la");
+    const b = tmpProj("lb");
+    const EMPTY = JSON.stringify({ nodes: [], edges: [], groups: {} });
+    vi.mocked(spawnMock).mockImplementation((() => fakeProc(0, EMPTY)) as never);
+    const broadcaster = new Broadcaster();
+    const runner = new OpRunner({ projectDir: a, broadcaster, onDone: () => {} });
+    const app = createApp({ projectDir: a, projectDirs: [a, b], port: 0 }, broadcaster, new FrameBuffer(), runner);
+    const logical = (await (await app.request("/api/graph?logical=1")).json()) as { meta: { note?: string } };
+    expect(logical.meta.note).toMatch(/logical lens doesn't apply to a composed estate/);
+    const plain = (await (await app.request("/api/graph")).json()) as { meta: { note?: string } };
+    expect(plain.meta.note).toBeUndefined();
+  });
 });
 
 // /api/overlay is where a picked tier's creds gate USUALLY surfaces in

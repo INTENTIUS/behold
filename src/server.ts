@@ -837,7 +837,16 @@ export function createApp(
             : opts.detail === 3
               ? "attributes"
               : "resources";
-      const srcNote = multi ? undefined : notesFor(srcZoom, ir, srcCompositeEdgesAttached);
+      // #190: a lens the estate branch can't apply must say so — the multi
+      // branch wins the if/else chain, so ?components=1 / ?logical=1 used to
+      // return the plain composed entity graph as a silent 200 (no mode, no
+      // note): the picker looked applied and wasn't. Honest note until the
+      // lenses learn estates; the SPA's statusbar renders it (#131).
+      const estateLensNote =
+        multi && (components || logical)
+          ? `the ${components ? "components" : "logical"} lens doesn't apply to a composed estate yet — showing the composed entity graph`
+          : undefined;
+      const srcNote = multi ? estateLensNote : notesFor(srcZoom, ir, srcCompositeEdgesAttached);
       return c.json({
         ir,
         svg,
