@@ -30,7 +30,9 @@
 #                            prune what it cannot compute), and behold's verdict
 #                            follows it off the cluster, naming BOTH halves it
 #                            read (`health=Healthy, sync=Unknown`) rather than
-#                            guessing which one chant's collapsed word meant.
+#                            guessing which one chant's collapsed word meant —
+#                            AND joining the ComparisonError's own message,
+#                            which chant carries since 0.44.8 (chant#1644).
 #   6. the queried line     — with the comparison broken, app-b's Deployment is
 #      (#192)                 deleted: Argo cannot self-heal a target state it
 #                            cannot generate, so the read genuinely misses, and
@@ -312,6 +314,13 @@ api "/api/overlay?runtime=1&env=local" | node -e '
       for (const kid of kids) {
         if (byId[kid].attrs._status !== "runtime") { console.error("✗", kid, "is not painted runtime"); process.exit(1); }
       }
+      // chant#1643 (fixed in 0.44.8): the sweep keys carry the kind, so the
+      // same-named Deployment/Service/Endpoints no longer collide into one row
+      // and the box must hold the WORKLOAD — before the fix, whichever kind
+      // swept first (usually Endpoints) was the only survivor.
+      if (!kids.some((k) => byId[k].kind === "K8s::Apps::Deployment")) {
+        console.error("✗ no Deployment inside", owner, "(chant#1643) — kinds:", kids.map((k) => byId[k].kind).join(", ")); process.exit(1);
+      }
       console.log(`  ✓ ${owner} ⊃ ${kids.map((k) => `${byId[k].kind.replace(/^K8s::/, "")} ${k}`).join(", ")}`);
     }
   });
@@ -361,17 +370,17 @@ verdict() { api "/api/diff?env=local" | node -e '
 # the detail names BOTH halves it read (`health=Healthy, sync=Unknown`), not
 # just the one chant's collapsed word happens to carry.
 #
-# It does NOT carry Argo's own ComparisonError message ("app path does not
-# exist") — proven absent below, not just unasserted. Argo's
-# `ApplicationCondition` has no `status` field at all, so chant's
-# `unhappyConditions()` (which requires one) drops it before it ever reaches
-# behold; `classifyObservedHealth` joins that message when it IS present
-# (src/health.test.ts), ready for the day chant's k8s lexicon stops filtering
-# it out.
-unknown() { verdict | grep -q '^unknown|health=Healthy, sync=Unknown|'; }
+# It ALSO carries Argo's own ComparisonError message ("app path does not
+# exist"). Argo's `ApplicationCondition` has no `status` field at all, and
+# chant's `unhappyConditions()` used to require one and dropped it — fixed in
+# chant 0.44.8 (chant#1644), so the one diagnostic line the controller writes
+# now reaches behold and `classifyObservedHealth` joins it onto the pair
+# (src/health.test.ts). This assertion was the absence-proof until then.
+unknown() { verdict | grep -q '^unknown|health=Healthy, sync=Unknown'; }
 wait_for "appB to read unknown" 180 unknown
 echo "  ✓ appB: $(verdict | tr '|' ' ')"
-verdict | grep -q ': ' && { echo "✗ healthDetail carries a joined message — chant now sends the condition; update this e2e's expectations (and its comment above)"; exit 1; }
+verdict | grep -q 'app path does not exist' || { echo "✗ healthDetail does not join Argo's ComparisonError message (chant#1644): $(verdict)"; exit 1; }
+echo "  ✓ healthDetail joins the ComparisonError message — the one line Argo writes"
 verdict | grep -q 'spec.source.path$' || { echo "✗ the drift does not name spec.source.path: $(verdict)"; exit 1; }
 echo "  ✓ the field drift names spec.source.path — declared vs the broken live value"
 

@@ -205,12 +205,22 @@ const ARGO_SYNC: Record<string, Health> = {
  */
 const ARGO_ERROR_CONDITION = /Error$/;
 
-/** The message off the first error-type condition in a raw `status.conditions`
- * array, if one is there to read. */
+/** The message off the first error-type condition in a `conditions` array.
+ * Two shapes reach here: a raw `status.conditions` entry (`{type, message}`),
+ * and what chant's describe-resources actually sends — `unhappyConditions()`'s
+ * flattened `Type[=Reason]: message` string (chant#1644 is what put Argo's
+ * status-less conditions on that wire at all). */
+const ARGO_ERROR_STRING = /^([A-Za-z]*Error)(?:=[^:]*)?: (.+)$/;
+
 function argoErrorMessage(tree: Record<string, unknown> | undefined): string | undefined {
   const conditions = tree?.conditions;
   if (!Array.isArray(conditions)) return undefined;
   for (const c of conditions) {
+    if (typeof c === "string") {
+      const m = ARGO_ERROR_STRING.exec(c);
+      if (m) return m[2];
+      continue;
+    }
     const type = str(rec(c)?.type);
     if (!type || !ARGO_ERROR_CONDITION.test(type)) continue;
     const message = str(rec(c)?.message);
