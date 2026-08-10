@@ -10,9 +10,12 @@ Three chant projects served as one composed estate:
   every object: the fully-resolved half.
 - **app-b/** — the same workload with **no** namespace anywhere: the control
   plane's `targetNamespace` stamps it at apply time. Idiomatic Flux, and the
-  deliberate exhibit of behold's namespace-mismatch note (behold#192) — a
-  plain live read scopes to `default`, finds nothing, and behold explains the
-  all-pending paint instead of letting it read as "not deployed".
+  deliberate exhibit of the estate namespace join (behold#221). Served alone,
+  app-b's live read scopes to `default`, finds nothing, and behold explains
+  the all-pending paint with the namespace-mismatch note (behold#192) instead
+  of letting it read as "not deployed". Served composed, the estate reads the
+  binding off the control plane's own `Kustomization` and scopes app-b's read
+  to `app-b` — the answer neither project holds by itself.
 
 ```sh
 npx @intentius/behold demo flux-estate
@@ -27,7 +30,9 @@ this repo, and serves the three projects composed. What to look at:
   Kustomization → GitRepository across stacks, and the `dependsOn` edge from
   app-b's Kustomization to app-a's — the estate's reconcile ordering.
 - The **overlay** (env `local`): app-a green, the control plane's CRs green,
-  app-b pending **with the note explaining why**.
+  and app-b green too — read in the namespace the control plane binds it to,
+  with a note naming where it looked. Serve `app-b` on its own to see the
+  same objects go pending, which is what the join is worth.
 - The **runtime tier** (zoom: runtime), on the estate itself since behold#224:
   the workloads Flux deployed, attributed back to the declaring Kustomization
   via its labels (chant#1549) and boxed under it.

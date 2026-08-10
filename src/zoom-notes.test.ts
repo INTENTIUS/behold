@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { zoomNote, edgelessNote, logicalKept, notesFor, tierMismatchNote, namespaceMismatchNote, type NotableGraph } from "./zoom-notes.ts";
+import {
+  zoomNote,
+  edgelessNote,
+  logicalKept,
+  notesFor,
+  tierMismatchNote,
+  namespaceMismatchNote,
+  namespaceJoinNote,
+  type NotableGraph,
+} from "./zoom-notes.ts";
 
 const graph = (nodes: number, edges: number, byContainer?: Record<string, string[]>): NotableGraph => ({
   nodes: Array.from({ length: nodes }, (_, i) => ({ id: `n${i}` })),
@@ -278,5 +287,26 @@ describe("namespaceMismatchNote (#192)", () => {
   it("ignores non-k8s estates entirely", () => {
     const nodes = Array.from({ length: 5 }, () => ({ lexicon: "aws", attrs: { _status: "accent" } }));
     expect(namespaceMismatchNote([...nodes, { lexicon: "aws", attrs: { _status: "good" } }])).toBeUndefined();
+  });
+});
+
+describe("namespaceJoinNote (#221)", () => {
+  it("names each member and the namespace the estate's own binding read it in", () => {
+    const note = namespaceJoinNote([{ name: "app-b", namespace: "app-b" }]);
+    expect(note).toContain('read app-b in "app-b"');
+    expect(note).toContain("targetNamespace");
+  });
+
+  it("lists several joined members in one line", () => {
+    expect(
+      namespaceJoinNote([
+        { name: "app-b", namespace: "app-b" },
+        { name: "app-c", namespace: "team-c" },
+      ]),
+    ).toContain('read app-b in "app-b", app-c in "team-c"');
+  });
+
+  it("says nothing on an estate that needed no join", () => {
+    expect(namespaceJoinNote([])).toBeUndefined();
   });
 });

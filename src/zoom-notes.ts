@@ -144,8 +144,10 @@ interface NsNoteNode {
 }
 
 /** k8s kinds that are cluster-scoped by definition — no namespace to get
- * wrong, so they carry no evidence either way for the mismatch check. */
-const CLUSTER_SCOPED = new Set([
+ * wrong, so they carry no evidence either way for the mismatch check. Shared
+ * with the estate namespace join (src/estate.ts, #221), which asks the same
+ * question of a member project's declarations. */
+export const CLUSTER_SCOPED = new Set([
   "K8s::Core::Namespace",
   "K8s::Rbac::ClusterRole",
   "K8s::Rbac::ClusterRoleBinding",
@@ -182,6 +184,24 @@ export function namespaceMismatchNote(nodes: readonly unknown[]): string | undef
     `${pending.length} pending k8s objects declare no metadata.namespace — if a controller stamps it at ` +
     `apply time (e.g. Flux's targetNamespace), the live read looked in "default", not where they run`
   );
+}
+
+/**
+ * #221: the other side of the note above. Where the estate itself carries the
+ * binding — one member declares `Kustomization.spec.targetNamespace`, another
+ * declares the bare objects — the overlay joins the two and reads each app
+ * project in the namespace it actually runs in (src/estate.ts's
+ * `estateNamespaceScopes`). Saying so is the point: a green app-b with no
+ * caption looks like luck, and the reader has no way to tell that the address
+ * came from a sibling project's declaration rather than from the app's own.
+ *
+ * Undefined when nothing joined, so the join line simply doesn't appear on an
+ * estate that never needed one.
+ */
+export function namespaceJoinNote(joined: readonly { name: string; namespace: string }[]): string | undefined {
+  if (joined.length === 0) return undefined;
+  const each = joined.map((j) => `${j.name} in "${j.namespace}"`).join(", ");
+  return `read ${each} — the namespace the estate's own Kustomization targetNamespace binds, not the app project's own declaration`;
 }
 
 /** Both notes for a view, in reading order, joined for a one-line statusbar. */
