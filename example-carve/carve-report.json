@@ -1,4 +1,5 @@
 {
+  "version": 1,
   "from": "example-carve/legacy-tf",
   "advisory": "read-only — emits nothing, patches nothing, touches no live resource",
   "count": 12,
@@ -27,6 +28,10 @@
           "dynamic": 0,
           "instances": 0
         }
+      },
+      "boundary": {
+        "inbound": [],
+        "outbound": []
       }
     },
     {
@@ -48,6 +53,24 @@
           "dynamic": 0,
           "instances": 0
         }
+      },
+      "boundary": {
+        "inbound": [
+          {
+            "direction": "inbound",
+            "survivor": "aws_lambda_function.api",
+            "carved": "aws_s3_bucket.assets",
+            "attrs": [
+              "bucket"
+            ],
+            "via": [
+              "environment"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          }
+        ],
+        "outbound": []
       }
     },
     {
@@ -68,6 +91,24 @@
           "dynamic": -10,
           "instances": 0
         }
+      },
+      "boundary": {
+        "inbound": [],
+        "outbound": [
+          {
+            "direction": "outbound",
+            "survivor": "random_pet.suffix",
+            "carved": "module.cdn",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "name_suffix"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          }
+        ]
       }
     },
     {
@@ -89,6 +130,38 @@
           "dynamic": 0,
           "instances": 0
         }
+      },
+      "boundary": {
+        "inbound": [
+          {
+            "direction": "inbound",
+            "survivor": "aws_lambda_function.api",
+            "carved": "aws_iam_role.api",
+            "attrs": [
+              "arn"
+            ],
+            "via": [
+              "role"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          }
+        ],
+        "outbound": [
+          {
+            "direction": "outbound",
+            "survivor": "random_pet.suffix",
+            "carved": "aws_iam_role.api",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "name"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          }
+        ]
       }
     },
     {
@@ -110,6 +183,63 @@
           "dynamic": 0,
           "instances": 0
         }
+      },
+      "boundary": {
+        "inbound": [],
+        "outbound": [
+          {
+            "direction": "outbound",
+            "survivor": "aws_security_group.lambda",
+            "carved": "aws_vpc_endpoint.ssm",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "security_group_ids"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          },
+          {
+            "direction": "outbound",
+            "survivor": "aws_subnet.private_a",
+            "carved": "aws_vpc_endpoint.ssm",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "subnet_ids"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          },
+          {
+            "direction": "outbound",
+            "survivor": "aws_subnet.private_b",
+            "carved": "aws_vpc_endpoint.ssm",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "subnet_ids"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          },
+          {
+            "direction": "outbound",
+            "survivor": "aws_vpc.main",
+            "carved": "aws_vpc_endpoint.ssm",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "vpc_id"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          }
+        ]
       }
     },
     {
@@ -131,6 +261,76 @@
           "dynamic": 0,
           "instances": 0
         }
+      },
+      "boundary": {
+        "inbound": [],
+        "outbound": [
+          {
+            "direction": "outbound",
+            "survivor": "aws_iam_role.api",
+            "carved": "aws_lambda_function.api",
+            "attrs": [
+              "arn"
+            ],
+            "via": [
+              "role"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          },
+          {
+            "direction": "outbound",
+            "survivor": "aws_s3_bucket.assets",
+            "carved": "aws_lambda_function.api",
+            "attrs": [
+              "bucket"
+            ],
+            "via": [
+              "environment"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          },
+          {
+            "direction": "outbound",
+            "survivor": "aws_security_group.lambda",
+            "carved": "aws_lambda_function.api",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "vpc_config"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          },
+          {
+            "direction": "outbound",
+            "survivor": "aws_subnet.private_a",
+            "carved": "aws_lambda_function.api",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "vpc_config"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          },
+          {
+            "direction": "outbound",
+            "survivor": "aws_subnet.private_b",
+            "carved": "aws_lambda_function.api",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "vpc_config"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          }
+        ]
       }
     },
     {
@@ -152,6 +352,77 @@
           "dynamic": -10,
           "instances": 0
         }
+      },
+      "boundary": {
+        "inbound": [
+          {
+            "direction": "inbound",
+            "survivor": "aws_lambda_function.api",
+            "carved": "aws_subnet.private_a",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "vpc_config"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          },
+          {
+            "direction": "inbound",
+            "survivor": "aws_network_acl.private",
+            "carved": "aws_subnet.private_a",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "subnet_ids"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          },
+          {
+            "direction": "inbound",
+            "survivor": "aws_vpc_endpoint.ssm",
+            "carved": "aws_subnet.private_a",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "subnet_ids"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          }
+        ],
+        "outbound": [
+          {
+            "direction": "outbound",
+            "survivor": "aws_vpc.main",
+            "carved": "aws_subnet.private_a",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "vpc_id"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          },
+          {
+            "direction": "outbound",
+            "survivor": "random_pet.suffix",
+            "carved": "aws_subnet.private_a",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "tags"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          }
+        ]
       }
     },
     {
@@ -173,6 +444,77 @@
           "dynamic": -10,
           "instances": 0
         }
+      },
+      "boundary": {
+        "inbound": [
+          {
+            "direction": "inbound",
+            "survivor": "aws_lambda_function.api",
+            "carved": "aws_subnet.private_b",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "vpc_config"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          },
+          {
+            "direction": "inbound",
+            "survivor": "aws_network_acl.private",
+            "carved": "aws_subnet.private_b",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "subnet_ids"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          },
+          {
+            "direction": "inbound",
+            "survivor": "aws_vpc_endpoint.ssm",
+            "carved": "aws_subnet.private_b",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "subnet_ids"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          }
+        ],
+        "outbound": [
+          {
+            "direction": "outbound",
+            "survivor": "aws_vpc.main",
+            "carved": "aws_subnet.private_b",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "vpc_id"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          },
+          {
+            "direction": "outbound",
+            "survivor": "random_pet.suffix",
+            "carved": "aws_subnet.private_b",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "tags"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          }
+        ]
       }
     },
     {
@@ -194,6 +536,64 @@
           "dynamic": -10,
           "instances": 0
         }
+      },
+      "boundary": {
+        "inbound": [
+          {
+            "direction": "inbound",
+            "survivor": "aws_lambda_function.api",
+            "carved": "aws_security_group.lambda",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "vpc_config"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          },
+          {
+            "direction": "inbound",
+            "survivor": "aws_vpc_endpoint.ssm",
+            "carved": "aws_security_group.lambda",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "security_group_ids"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          }
+        ],
+        "outbound": [
+          {
+            "direction": "outbound",
+            "survivor": "aws_vpc.main",
+            "carved": "aws_security_group.lambda",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "vpc_id"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          },
+          {
+            "direction": "outbound",
+            "survivor": "random_pet.suffix",
+            "carved": "aws_security_group.lambda",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "name"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          }
+        ]
       }
     },
     {
@@ -215,6 +615,90 @@
           "dynamic": 0,
           "instances": 0
         }
+      },
+      "boundary": {
+        "inbound": [
+          {
+            "direction": "inbound",
+            "survivor": "aws_network_acl.private",
+            "carved": "aws_vpc.main",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "vpc_id"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          },
+          {
+            "direction": "inbound",
+            "survivor": "aws_security_group.lambda",
+            "carved": "aws_vpc.main",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "vpc_id"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          },
+          {
+            "direction": "inbound",
+            "survivor": "aws_subnet.private_a",
+            "carved": "aws_vpc.main",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "vpc_id"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          },
+          {
+            "direction": "inbound",
+            "survivor": "aws_subnet.private_b",
+            "carved": "aws_vpc.main",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "vpc_id"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          },
+          {
+            "direction": "inbound",
+            "survivor": "aws_vpc_endpoint.ssm",
+            "carved": "aws_vpc.main",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "vpc_id"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          }
+        ],
+        "outbound": [
+          {
+            "direction": "outbound",
+            "survivor": "random_pet.suffix",
+            "carved": "aws_vpc.main",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "tags"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          }
+        ]
       }
     },
     {
@@ -235,6 +719,50 @@
           "dynamic": 0,
           "instances": 0
         }
+      },
+      "boundary": {
+        "inbound": [],
+        "outbound": [
+          {
+            "direction": "outbound",
+            "survivor": "aws_subnet.private_a",
+            "carved": "aws_network_acl.private",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "subnet_ids"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          },
+          {
+            "direction": "outbound",
+            "survivor": "aws_subnet.private_b",
+            "carved": "aws_network_acl.private",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "subnet_ids"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          },
+          {
+            "direction": "outbound",
+            "survivor": "aws_vpc.main",
+            "carved": "aws_network_acl.private",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "vpc_id"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          }
+        ]
       }
     },
     {
@@ -255,6 +783,89 @@
           "dynamic": 0,
           "instances": 0
         }
+      },
+      "boundary": {
+        "inbound": [
+          {
+            "direction": "inbound",
+            "survivor": "aws_iam_role.api",
+            "carved": "random_pet.suffix",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "name"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          },
+          {
+            "direction": "inbound",
+            "survivor": "aws_security_group.lambda",
+            "carved": "random_pet.suffix",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "name"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          },
+          {
+            "direction": "inbound",
+            "survivor": "aws_subnet.private_a",
+            "carved": "random_pet.suffix",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "tags"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          },
+          {
+            "direction": "inbound",
+            "survivor": "aws_subnet.private_b",
+            "carved": "random_pet.suffix",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "tags"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          },
+          {
+            "direction": "inbound",
+            "survivor": "aws_vpc.main",
+            "carved": "random_pet.suffix",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "tags"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          },
+          {
+            "direction": "inbound",
+            "survivor": "module.cdn",
+            "carved": "random_pet.suffix",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "name_suffix"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          }
+        ],
+        "outbound": []
       }
     }
   ]
