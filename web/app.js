@@ -31,6 +31,10 @@ import {
   straightEdge,
   writeLayout,
 } from "./layout-store.js";
+// #259: every JSON value this page shows goes through one renderer — pretty
+// printed, collapsible, copyable per subtree. `valueCell`/`pairCell` below are
+// the call-site shorthands: a container becomes the tree, a scalar stays text.
+import { isContainer, jsonCell, renderJson, scalarText } from "./json-view.js";
 initTheme();
 initPanel();
 mountThemePicker(document.getElementById("panel-theme"));
@@ -180,12 +184,68 @@ const ARTIFACT_STATUS_LABEL = { good: "installed", warn: "installed, not healthy
 // A declared attribute value may be a cross-resource reference ({$ref:"x.y"}) —
 // the "static infra refs" — rather than a concrete value. Render those readably;
 // concrete values (present once a resource is provisioned) show as-is.
+// #259: everything else that isn't a scalar becomes the collapsible tree rather
+// than a flat one-line JSON.stringify — a declared `spec` used to wrap six times
+// and say nothing about its shape.
 function fmtValue(v) {
-  if (v && typeof v === "object") {
-    if (typeof v.$ref === "string") return "→ " + v.$ref;
-    return JSON.stringify(v);
+  if (v && typeof v === "object" && typeof v.$ref === "string") return "→ " + v.$ref;
+  return valueCell(v);
+}
+
+/**
+ * A `<dd>` body for one value: an object or an array becomes the collapsible
+ * tree, a scalar keeps the pane's plain voice — `deploy/api`, not
+ * `"deploy/api"`. Quoting is JSON's punctuation and belongs inside a tree, not
+ * beside a label, so this is NOT json-view's own `jsonCell` (which quotes; the
+ * value PAIRS below want that, since they always did).
+ */
+function valueCell(v) {
+  return isContainer(v) ? renderJson(v) : String(v);
+}
+
+/** Put a value into a `<dd>`: a rendered JSON tree is appended, a scalar's text
+ * is set. Every `add`/`section` setter in this pane funnels through here (#259). */
+function setCell(dd, v) {
+  if (v instanceof Node) dd.appendChild(v);
+  else dd.textContent = v;
+}
+
+/**
+ * The pane shows values in PAIRS as often as alone — old → new (drift),
+ * declared · live (field ownership), baseline · live (accepted deviation).
+ * Two scalars keep the one-line form the pane always had. If either side is an
+ * object or an array it becomes a collapsible tree, and an arrow wedged between
+ * two trees reads as neither — so the pair stacks into labelled rows instead
+ * (#259). `lead` is the sentence that precedes a field-drift pair ("owned by
+ * hpa-controller — drifted"); it keeps its own line in the stacked form.
+ * Returns a Node or a string, for setCell.
+ */
+function pairCell(aLabel, a, bLabel, b, opts = {}) {
+  const { lead = "", arrow = false } = opts;
+  if (!isContainer(a) && !isContainer(b)) {
+    const one = arrow ? `${scalarText(a)} → ${scalarText(b)}` : `${aLabel}: ${scalarText(a)} · ${bLabel}: ${scalarText(b)}`;
+    return lead ? `${lead} — ${one}` : one;
   }
-  return String(v);
+  const wrap = document.createElement("div");
+  if (lead) {
+    const p = document.createElement("div");
+    p.textContent = lead;
+    wrap.appendChild(p);
+  }
+  for (const [label, v] of [
+    [aLabel, a],
+    [bLabel, b],
+  ]) {
+    const row = document.createElement("div");
+    row.className = "pair-row";
+    const tag = document.createElement("span");
+    tag.className = "pair-label";
+    tag.textContent = label;
+    row.appendChild(tag);
+    setCell(row, jsonCell(v));
+    wrap.appendChild(row);
+  }
+  return wrap;
 }
 
 function inspect(node) {
@@ -202,7 +262,7 @@ function inspect(node) {
       const dt = document.createElement("dt");
       dt.textContent = k;
       const dd = document.createElement("dd");
-      dd.textContent = v;
+      setCell(dd, v);
       dl.append(dt, dd);
     };
   };
@@ -450,7 +510,7 @@ function renderObserved(panel, o, health, healthDetail) {
     const dt = document.createElement("dt");
     dt.textContent = k;
     const dd = document.createElement("dd");
-    dd.textContent = v;
+    setCell(dd, v);
     if (color) dd.style.color = color;
     dl.append(dt, dd);
   };
@@ -478,11 +538,16 @@ function renderObserved(panel, o, health, healthDetail) {
   // none.
   const conditions = o.attributes?.conditions;
   if (Array.isArray(conditions)) {
-    for (const c of conditions) add("condition", String(c), "var(--degraded)");
+    // Usually chant sends these pre-rendered as sentences; a substrate that
+    // sends the raw condition object gets the tree instead of `[object Object]`.
+    for (const c of conditions) add("condition", valueCell(c), "var(--degraded)");
   }
+  // #259: an observed attribute is whatever the substrate reported — a k8s
+  // `spec`, a nested `loadBalancer`, an array of ports. All of it collapsible
+  // now, instead of one flat JSON.stringify line per key.
   for (const [k, v] of Object.entries(o.attributes || {})) {
     if (k === "conditions") continue; // rendered above, one line each
-    add(k, typeof v === "object" ? JSON.stringify(v) : String(v));
+    add(k, valueCell(v));
   }
   panel.appendChild(dl);
 }
@@ -566,7 +631,9 @@ function renderDiff(panel, diff) {
     const dt = document.createElement("dt");
     dt.textContent = ch.path;
     const dd = document.createElement("dd");
-    dd.textContent = `${JSON.stringify(ch.oldValue)} → ${JSON.stringify(ch.newValue)}`;
+    // #259: a drifted `spec` used to be two flat JSON blobs either side of an
+    // arrow; now each side is its own collapsible tree with its own copy.
+    setCell(dd, pairCell("was", ch.oldValue, "now", ch.newValue, { arrow: true }));
     dl.append(dt, dd);
   }
   panel.appendChild(dl);
@@ -609,7 +676,7 @@ function renderFieldDrift(panel, fieldDrift) {
     // holding it is somebody editing around the pipeline. Both are `changed`.
     // Absent on every substrate but k8s, where the line reads as it always did.
     const owned = ch.owner ? `owned by ${ch.owner} — ` : "";
-    dd.textContent = `${owned}${FIELD_KIND_LABEL[ch.kind] || ch.kind} — declared: ${JSON.stringify(ch.declared)} · live: ${JSON.stringify(ch.live)}`;
+    setCell(dd, pairCell("declared", ch.declared, "live", ch.live, { lead: `${owned}${FIELD_KIND_LABEL[ch.kind] || ch.kind}` }));
     dl.append(dt, dd);
   }
   for (const ch of fieldDrift.accepted) {
@@ -617,7 +684,7 @@ function renderFieldDrift(panel, fieldDrift) {
     dt.textContent = ch.path;
     dt.style.color = "var(--muted)";
     const dd = document.createElement("dd");
-    dd.textContent = `accepted deviation — baseline: ${JSON.stringify(ch.baseline)} · live: ${JSON.stringify(ch.live)}`;
+    setCell(dd, pairCell("baseline", ch.baseline, "live", ch.live, { lead: "accepted deviation" }));
     dl.append(dt, dd);
   }
   panel.appendChild(dl);
@@ -2304,6 +2371,18 @@ function renderPreconditionError(body) {
     remedy.textContent = body.remedy;
     card.appendChild(remedy);
   }
+  // #259: the rest of the /api error payload. The card above is the human
+  // reading — code, error, remedy — but the server sends more than those three
+  // (chant's argv, exit code, the endpoint it queried), and until now that
+  // detail was simply dropped on the floor. Collapsed by default so the calm
+  // card stays calm, copyable in one gesture for a bug report.
+  const raw = document.createElement("div");
+  raw.className = "precondition-error-raw";
+  const label = document.createElement("div");
+  label.className = "precondition-error-rawlabel";
+  label.textContent = "response payload";
+  raw.append(label, renderJson(body, { openDepth: -1 }));
+  card.appendChild(raw);
   host.appendChild(card);
 }
 
@@ -2386,7 +2465,15 @@ async function load(opts = {}) {
   } catch (err) {
     // A background settle poll must not blow away a good graph on a transient error.
     if (!opts.quiet) {
-      document.getElementById("graph").innerHTML = `<div class="err">graph failed: ${err.message}</div>`;
+      // Text, never innerHTML — `err.message` embeds chant's own stderr, which
+      // is not ours to interpolate as markup (the sibling precondition card has
+      // said so since #72; this branch had been left behind).
+      const graph = document.getElementById("graph");
+      graph.innerHTML = "";
+      const box = document.createElement("div");
+      box.className = "err";
+      box.textContent = `graph failed: ${err.message}`;
+      graph.appendChild(box);
       meta.textContent = "error";
     }
   } finally {
@@ -2613,11 +2700,28 @@ function hideLoading() {
   if (o) o.hidden = true;
 }
 
+// #259: the op stream is chant's own stdout, and an Op that reports as JSON
+// (a plan summary, a run report, an unrecognized `--progress-json` line that
+// src/op-runner.ts didn't filter out) used to land here as one unbroken line.
+// Parse it; if it IS a JSON object or array, show the collapsible tree instead.
+// Anything else — every ordinary human log line — is untouched text.
+function asJsonPayload(line) {
+  const s = String(line).trim();
+  if (!(s.startsWith("{") || s.startsWith("["))) return null;
+  try {
+    const v = JSON.parse(s);
+    return isContainer(v) ? v : null;
+  } catch {
+    return null;
+  }
+}
+
 function nowline(line) {
   const p = document.getElementById("nowline");
   p.style.display = "block";
-  const d = document.createElement("div");
-  d.textContent = line;
+  const payload = asJsonPayload(line);
+  const d = payload ? renderJson(payload) : document.createElement("div");
+  if (!payload) d.textContent = line;
   p.appendChild(d);
   p.scrollTop = p.scrollHeight;
 }

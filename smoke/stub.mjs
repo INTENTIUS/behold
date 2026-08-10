@@ -60,13 +60,58 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 240" width
   ${nodeSvg("frontend", 420, "neutral", "frontend")}
 </svg>`;
 
+// #259: `api` carries a DECLARED object attribute, so the inspect pane's
+// "declared" section has a real nested value to render as a tree (it used to be
+// one flat JSON.stringify line). Present in the source graph and the overlay
+// alike, so the check doesn't depend on which lens the smoke is on.
+const declaredSpec = {
+  image: "ghcr.io/acme/api:1.4.2",
+  ports: [80, 443],
+  resources: { limits: { cpu: "500m", memory: "512Mi" } },
+};
+
 const ir = {
   nodes: [
-    { id: "api", kind: "Component", lexicon: "aws", attrs: { _status: "good" } },
+    { id: "api", kind: "Component", lexicon: "aws", attrs: { _status: "good", spec: declaredSpec } },
     { id: "worker", kind: "Component", lexicon: "aws", attrs: { _status: "accent" } },
     { id: "frontend", kind: "Component", lexicon: "aws", attrs: { _status: "neutral" } },
   ],
   edges: [{ from: "api", to: "worker" }],
+};
+
+// #259: the observed/drift payload the inspect pane renders for `api` — the
+// shape `/api/diff` really returns, with the three things the JSON view exists
+// for: a subtree deep enough to start collapsed (`spec.template.metadata`), a
+// string long enough to truncate, and a drift pair whose sides are objects
+// rather than scalars. `smoke/ui-smoke.mjs` asserts against these exact values.
+const DEEP_LABELS = { app: "api", tier: "web", "app.kubernetes.io/managed-by": "chant" };
+const LONG_STRING = "kubectl.kubernetes.io/last-applied-configuration=" + "x".repeat(400);
+const observedSpec = {
+  replicas: 3,
+  lastApplied: LONG_STRING,
+  template: { metadata: { labels: DEEP_LABELS, annotations: { "chant.dev/owner": "estate" } } },
+};
+const diffNodes = {
+  api: {
+    observed: {
+      type: "k8s::Deployment",
+      status: "Running",
+      physicalId: "deploy/api",
+      attributes: { spec: observedSpec, endpoints: ["10.0.0.4:8080", "10.0.0.5:8080"] },
+    },
+    health: "healthy",
+    diff: {
+      category: "drifted",
+      changes: [
+        { path: "spec.replicas", oldValue: 3, newValue: 5 },
+        { path: "spec.resources", oldValue: { cpu: "500m" }, newValue: { cpu: "1", memory: "1Gi" } },
+      ],
+    },
+    fieldDrift: {
+      drifted: [{ path: "spec.replicas", kind: "changed", owner: "hpa-controller", declared: 3, live: 5 }],
+      accepted: [],
+    },
+  },
 };
 
 // #229: the live overlay reports `worker` as deployed — same node ids, one
@@ -100,8 +145,11 @@ const JSON_ROUTES = {
   "/api/ci": { jobs: [], forge: "github" },
   "/api/resources": { byComponent: {} },
   "/api/reconcile": { total: 2, byComponent: { worker: 2 }, uncorrelated: 0 },
-  "/api/diff": { env: "local", nodes: {} },
+  "/api/diff": { env: "local", nodes: diffNodes },
 };
+
+// What the smoke expects to find inside the rendered trees / copied payloads.
+export const JSON_FIXTURE = { declaredSpec, observedSpec, deepLabels: DEEP_LABELS, longString: LONG_STRING };
 
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml" };
 

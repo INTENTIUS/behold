@@ -363,6 +363,16 @@ an absolute position — keyed by `behold.layout.<project>.<lens>`
 top of it is yours. `↺ layout` sits beside `⤢ fit` and shows up only once
 something on the current lens is hand-placed.
 
+Every JSON value the UI shows goes through one renderer (`web/json-view.js`):
+2-space pretty printed, objects and arrays collapsible (the first tier open,
+anything deeper or wider than a dozen entries folded), long strings truncated
+with an expander, and a `copy` on every node that yields that subtree's raw
+JSON. Enter or Space toggles the focused node. It paints with `--fg` and
+`--muted` and nothing else, so all 552 palettes keep it readable. That covers
+the inspect pane's declared attributes, observed live state, drift pairs and
+field ownership, the op log's JSON lines, and the payload behind an `/api`
+error card.
+
 Type splits by purpose: mono (system stacks — ui-monospace, SF Mono,
 Cascadia, JetBrains, IBM Plex) carries node ids, ARNs, statuses and counts;
 sans carries labels only. Colour comes from 552 Ghostty terminal palettes run

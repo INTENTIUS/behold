@@ -11,7 +11,7 @@ import { chromium } from "playwright";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { startStub } from "./stub.mjs";
+import { startStub, JSON_FIXTURE } from "./stub.mjs";
 import { THEMES, DEFAULT_THEME } from "../web/themes.js";
 import { tokensFor, pinTokensFor, colorForCategory, setTheme, hexToOklch, contrast } from "../web/theme.js";
 import { helmIconFor, PLATE_FILL } from "../src/icon-packs.ts";
@@ -129,6 +129,14 @@ async function launch() {
 const server = await startStub(PORT);
 const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+// #259: the JSON view's copy control writes to the system clipboard. Grant it,
+// so the write resolves instead of logging a permissions-policy error into the
+// "no page errors" check — and so the smoke can read the result back.
+try {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: `http://localhost:${PORT}` });
+} catch {
+  /* older channel without the permission names — the copy check falls back below */
+}
 const pageErrors = [];
 page.on("pageerror", (e) => pageErrors.push(String(e)));
 page.on("console", (m) => {
@@ -216,6 +224,84 @@ try {
   await page.click('#panel-tabs button[data-tab="view"]');
   await page.waitForTimeout(150);
   check("tab click expands", await page.locator("#panel-body").isVisible());
+
+  // ---- #259: JSON in the pane is a tree, not a blob ------------------------
+  // `api` is the stub's rich node: a declared object attribute, an observed
+  // payload deep enough to fold, a string long enough to truncate, and a drift
+  // pair whose two sides are objects. Everything below is read off the rendered
+  // DOM — the same surface a static export ships, since it inlines this JS.
+  await page.click('#graph [data-node-id="api"]');
+  await page.waitForSelector('#inspect .jsonv-node[data-key="metadata"]', { timeout: 10000 });
+  const jsonNode = (key) => page.locator(`#inspect .jsonv-node[data-key="${key}"]`).first();
+  const openState = (key) => jsonNode(key).getAttribute("data-open");
+
+  const paneText = await page.locator("#inspect").innerText();
+  check("no flat JSON.stringify blob survives in the pane", !paneText.includes('{"') && !paneText.includes('["'));
+  check("the declared object became a tree", (await page.locator("#inspect .jsonv").count()) >= 2);
+  check("the drift pair stacked into labelled halves instead of an arrow between two blobs", (await page.locator("#inspect .pair-label").count()) >= 2);
+
+  // Depth-1 open, deeper folded — and a folded subtree costs no DOM at all.
+  check("the depth-1 tier is open", (await openState("template")) === "1");
+  check("a deep subtree renders collapsed", (await openState("metadata")) === "0");
+  check("a collapsed subtree builds no children", (await jsonNode("metadata").locator(".jsonv-children > *").count()) === 0);
+  check("the collapsed line says what it is hiding", (await jsonNode("metadata").locator(".jsonv-summary").first().innerText()).includes("2 keys"));
+
+  // Keyboard: Enter and Space both toggle the focused node (#259's a11y clause).
+  await jsonNode("metadata").locator(".jsonv-head").first().focus();
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(60);
+  check("Enter on a focused node expands it", (await openState("metadata")) === "1");
+  check("expanding builds the children", (await jsonNode("metadata").locator('.jsonv-node[data-key="labels"]').count()) === 1);
+  await page.keyboard.press(" ");
+  await page.waitForTimeout(60);
+  check("Space toggles it back", (await openState("metadata")) === "0");
+  await jsonNode("metadata").locator(".jsonv-head").first().click();
+  await page.waitForTimeout(60);
+  check("a click toggles it too", (await openState("metadata")) === "1");
+
+  // A long string truncates, and gives the rest back on demand.
+  const longNode = jsonNode("lastApplied");
+  check("a long string is truncated", (await longNode.innerText()).includes("…") && !(await longNode.innerText()).includes(JSON_FIXTURE.longString));
+  await longNode.locator(".jsonv-more").click();
+  await page.waitForTimeout(60);
+  check("expanding a long string reveals all of it", (await longNode.innerText()).includes(JSON_FIXTURE.longString));
+  check("…and the expander retires", (await longNode.locator(".jsonv-more").count()) === 0);
+
+  // Copy: what the control writes is this subtree's raw JSON, and it parses.
+  const copyCtl = jsonNode("metadata").locator("> .jsonv-line > .jsonv-copy");
+  const payload = await copyCtl.evaluate((el) => el.__jsonPayload());
+  let copied = null;
+  try {
+    copied = JSON.parse(payload);
+  } catch {
+    /* left null → the check below fails with the raw text in hand */
+  }
+  check("per-subtree copy yields valid JSON", copied !== null);
+  check("…and it is the SUBTREE, not the whole payload", JSON.stringify(copied) === JSON.stringify({ labels: JSON_FIXTURE.deepLabels, annotations: { "chant.dev/owner": "estate" } }));
+  check("…2-space pretty printed", payload.split("\n").length > 3 && payload.includes('\n  "labels": {'));
+  await copyCtl.click();
+  await page.waitForTimeout(80);
+  check("clicking copy reports back on the control", (await copyCtl.getAttribute("data-copied")) !== null);
+  let clipboardText = null;
+  try {
+    clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+  } catch {
+    /* no readable clipboard in this browser — the payload above is the assertion */
+  }
+  if (clipboardText === null) console.log("    (clipboard not readable here — the copy payload was asserted off the control)");
+  else check("the clipboard holds exactly that payload", clipboardText === payload);
+
+  // Tokens only (#229/#253): the tree borrows the pane's own two inks and paints
+  // nothing of its own, so all 552 palettes keep it legible for free.
+  const colorOf = (sel) => page.locator(sel).first().evaluate((el) => getComputedStyle(el).color);
+  check("tree keys take the pane's value ink (--fg)", (await colorOf("#inspect .jsonv-key")) === (await colorOf("#inspect dd")));
+  check("tree punctuation takes the pane's label ink (--muted)", (await colorOf("#inspect .jsonv-punct")) === (await colorOf("#inspect dt")));
+  check("tree text is mono", /mono/i.test(await fontOf("#inspect .jsonv")));
+  check(
+    "nothing in the tree hardcodes a colour",
+    await page.locator("#inspect .jsonv").first().evaluate((root) => ![...root.querySelectorAll("[style]"), root].some((el) => /#[0-9a-f]{3}|rgb\(/i.test(el.getAttribute("style") || ""))),
+  );
+  await page.screenshot({ path: join(SHOTS, "1c-json.png") });
 
   // ⌘K from the strip pill: opens, filters, closes.
   await page.click("#hintk");
