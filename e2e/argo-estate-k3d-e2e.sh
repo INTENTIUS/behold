@@ -25,11 +25,12 @@
 #                            pair, while the AppProject — which reports neither
 #                            — keeps the regex fallback with nothing added.
 #   5. health, unhappy      — app-b's live Application is pointed at a path that
-#                            does not exist. Argo writes a `ComparisonError`
+#      (#275)                 does not exist. Argo writes a `ComparisonError`
 #                            condition and holds `sync: Unknown` (it will not
 #                            prune what it cannot compute), and behold's verdict
-#                            follows it off the cluster, naming the one field
-#                            that moved.
+#                            follows it off the cluster, naming BOTH halves it
+#                            read (`health=Healthy, sync=Unknown`) rather than
+#                            guessing which one chant's collapsed word meant.
 #   6. the queried line     — with the comparison broken, app-b's Deployment is
 #      (#192)                 deleted: Argo cannot self-heal a target state it
 #                            cannot generate, so the read genuinely misses, and
@@ -356,10 +357,21 @@ verdict() { api "/api/diff?env=local" | node -e '
 '; }
 # Argo will not prune what it cannot compute, so the WORKLOAD stays Healthy and
 # the unhappy half is the sync: `Unknown`, which is the rung behold paints when
-# the controller has stopped being able to compare live against source.
-unknown() { verdict | grep -q '^unknown|health=Unknown|'; }
+# the controller has stopped being able to compare live against source. #275:
+# the detail names BOTH halves it read (`health=Healthy, sync=Unknown`), not
+# just the one chant's collapsed word happens to carry.
+#
+# It does NOT carry Argo's own ComparisonError message ("app path does not
+# exist") — proven absent below, not just unasserted. Argo's
+# `ApplicationCondition` has no `status` field at all, so chant's
+# `unhappyConditions()` (which requires one) drops it before it ever reaches
+# behold; `classifyObservedHealth` joins that message when it IS present
+# (src/health.test.ts), ready for the day chant's k8s lexicon stops filtering
+# it out.
+unknown() { verdict | grep -q '^unknown|health=Healthy, sync=Unknown|'; }
 wait_for "appB to read unknown" 180 unknown
 echo "  ✓ appB: $(verdict | tr '|' ' ')"
+verdict | grep -q ': ' && { echo "✗ healthDetail carries a joined message — chant now sends the condition; update this e2e's expectations (and its comment above)"; exit 1; }
 verdict | grep -q 'spec.source.path$' || { echo "✗ the drift does not name spec.source.path: $(verdict)"; exit 1; }
 echo "  ✓ the field drift names spec.source.path — declared vs the broken live value"
 

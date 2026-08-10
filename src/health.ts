@@ -193,6 +193,32 @@ const ARGO_SYNC: Record<string, Health> = {
   Unknown: "unknown",
 };
 
+/** An Argo `Application` condition naming an error the controller hit while
+ * reconciling — `ComparisonError` (the repo path is wrong, the manifest
+ * won't render), `InvalidSpecError`, `SyncError`. Unlike a standard k8s
+ * condition (or Flux's `Ready`), Argo's own `ApplicationCondition` carries no
+ * `status` field at all — `{ type, message, lastTransitionTime }` is the
+ * whole shape — so there is no True/False to gate on and its mere presence
+ * IS the unhappy signal (#275). `*Warning` conditions (`SharedResourceWarning`
+ * and friends) are excluded: Argo pointing at something odd, not reporting
+ * damage.
+ */
+const ARGO_ERROR_CONDITION = /Error$/;
+
+/** The message off the first error-type condition in a raw `status.conditions`
+ * array, if one is there to read. */
+function argoErrorMessage(tree: Record<string, unknown> | undefined): string | undefined {
+  const conditions = tree?.conditions;
+  if (!Array.isArray(conditions)) return undefined;
+  for (const c of conditions) {
+    const type = str(rec(c)?.type);
+    if (!type || !ARGO_ERROR_CONDITION.test(type)) continue;
+    const message = str(rec(c)?.message);
+    if (message) return message;
+  }
+  return undefined;
+}
+
 function argoVerdict(o: ObservedForHealth): HealthVerdict | undefined {
   if (o.type !== "K8s::Argo::Application") return undefined;
   const tree = statusTree(o);
@@ -200,13 +226,22 @@ function argoVerdict(o: ObservedForHealth): HealthVerdict | undefined {
   let sync = str(rec(tree?.sync)?.status);
   if (!health && !sync) {
     // chant collapses the pair into one word (describe-resources'
-    // `argoStatusWord`): the unhappy half wins, and `READY` is the happy pair.
+    // `argoStatusWord`): the unhappy half wins, and `READY` is the happy
+    // pair. Its own priority checks health first, but that means the word it
+    // sends only ever comes from the SYNC half once health already read
+    // Healthy (or was unset) — so a word this reader recognises as a sync
+    // value names sync, with health implied Healthy, rather than being
+    // guessed as health's the way #275 found it: `Unknown` sits in both
+    // vocabularies, and reading it as health left a Healthy app whose
+    // COMPARISON had broken reporting `health=Unknown` — the wrong half.
     const word = str(o.status);
     if (word === "READY") {
       health = "Healthy";
       sync = "Synced";
+    } else if (word && word in ARGO_SYNC) {
+      sync = word;
+      health = "Healthy";
     } else if (word && word in ARGO_HEALTH) health = word;
-    else if (word && word in ARGO_SYNC) sync = word;
   }
   const verdicts = [health ? ARGO_HEALTH[health] : undefined, sync ? ARGO_SYNC[sync] : undefined].filter(
     (v): v is Health => v !== undefined,
@@ -214,7 +249,12 @@ function argoVerdict(o: ObservedForHealth): HealthVerdict | undefined {
   // A word in neither vocabulary is not an Argo status we can read (`PRESENT`,
   // an Application the controller has not touched) — the fallback keeps it.
   if (verdicts.length === 0) return undefined;
-  const detail = [health ? `health=${health}` : undefined, sync ? `sync=${sync}` : undefined].filter(Boolean).join(", ");
+  const pair = [health ? `health=${health}` : undefined, sync ? `sync=${sync}` : undefined].filter(Boolean).join(", ");
+  // The one diagnostic line Argo itself writes about what to do (#275) — a
+  // Flux object has a `reason` on `Ready` for this; an Argo Application has
+  // no such field, so the message is what carries it.
+  const message = argoErrorMessage(tree);
+  const detail = message ? `${pair}: ${message}` : pair;
   // Worst-first, so a Degraded app stays degraded whatever its sync says and a
   // Healthy-but-OutOfSync one reads as not-converged rather than fine.
   for (const rung of ["degraded", "progressing", "unknown"] as const) {
