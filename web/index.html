@@ -174,11 +174,60 @@
       .precondition-error-message { color: var(--muted); white-space: pre-wrap; font: var(--t-body)/1.55 var(--font-mono); }
       .precondition-error-remedy { color: var(--pending); margin-top: 14px; font: var(--t-body)/1.5 var(--font-mono); }
       .precondition-error-remedy::before { content: "→ "; }
+      /* #259: the raw /api payload behind the card, collapsed. */
+      .precondition-error-raw { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 10px; }
+      .precondition-error-rawlabel { color: var(--muted); font-size: var(--t-caption); text-transform: uppercase;
+        letter-spacing: var(--t-caps); margin-bottom: 5px; }
       #actions button, #inspect button { background: var(--panel); color: var(--fg); border: 1px solid var(--rule);
         border-radius: var(--r-ctl); padding: 4px 12px; font-size: var(--t-body); cursor: pointer; }
       #actions button:hover, #inspect button:hover { border-color: var(--focus); }
       #actions button.approve { border-color: var(--managed); color: var(--managed); }
       #inspect button { border-color: var(--foreign); color: var(--foreign); }
+
+      /* ---- Collapsible JSON (#259) -----------------------------------------
+         web/json-view.js builds this; nothing else styles it. Two colours and
+         one font: keys and scalars are --fg (the data), every bracket, comma,
+         chevron, count and affordance is --muted (the punctuation around it).
+         The status hues are deliberately NOT used — they carry meaning in this
+         pane, and unlike --fg/--muted they clear no contrast floor across the
+         552 palettes (#240), so a "strings are green" scheme would be
+         unreadable on some of them.
+         Indent is 2ch — the same two spaces the copied text carries — with a
+         --line rule down it so a deep tree still tracks by eye. */
+      .jsonv { font: var(--t-body)/1.5 var(--font-mono); color: var(--fg); overflow-wrap: anywhere; }
+      .jsonv-children { padding-left: 2ch; border-left: 1px solid var(--line); }
+      .jsonv-node[data-open="0"] > .jsonv-children,
+      .jsonv-node[data-open="0"] > .jsonv-tail { display: none; }
+      .jsonv-node[data-open="1"] > .jsonv-line .jsonv-summary,
+      .jsonv-node[data-open="1"] > .jsonv-line .jsonv-close-inline { display: none; }
+      .jsonv-key { color: var(--fg); }
+      .jsonv-punct, .jsonv-summary, .jsonv-toggle, .jsonv-null { color: var(--muted); }
+      .jsonv-head { cursor: pointer; border-radius: var(--r-ctl); }
+      .jsonv-head:hover .jsonv-toggle { color: var(--fg); }
+      .jsonv-toggle { display: inline-block; width: 1.2ch; user-select: none; }
+      /* The two affordances stay quiet until the row is under the pointer or a
+         keyboard focus is inside it — a tree of visible "copy" links reads as
+         chrome, not as data. */
+      .jsonv-copy, .jsonv-more { color: var(--muted); font-size: var(--t-caption); cursor: pointer;
+        margin-left: 8px; user-select: none; }
+      .jsonv-copy { opacity: 0; }
+      .jsonv-line:hover > .jsonv-copy, .jsonv-copy:focus-visible, .jsonv-copy[data-copied] { opacity: 1; }
+      .jsonv-copy:hover, .jsonv-more:hover { color: var(--fg); }
+      .jsonv-copy[data-copied="1"] { color: var(--managed); }
+      .jsonv-copy[data-copied="0"] { color: var(--degraded); }
+      .jsonv-head:focus-visible, .jsonv-copy:focus-visible, .jsonv-more:focus-visible {
+        outline: 1px solid var(--focus); outline-offset: 1px; }
+      /* In the inspect pane the tree replaces a <dd>'s text, so it inherits the
+         pane's own mono scale and needs no extra gap. */
+      #inspect dd > .jsonv { margin-top: 1px; }
+      /* A value PAIR (was/now, declared/live, baseline/live) whose sides are
+         trees rather than scalars — see pairCell() in app.js. */
+      #inspect .pair-row { display: flex; align-items: baseline; gap: 6px; margin-top: 3px; }
+      #inspect .pair-row > .jsonv { flex: 1; min-width: 0; }
+      #inspect .pair-label { color: var(--muted); font-size: var(--t-caption); flex: none; }
+      /* The op log's JSON lines (#259): a report chant emitted as an object
+         reads as a tree in the now-line, not as one 900-column line. */
+      #nowline .jsonv { white-space: normal; margin: 2px 0; }
 
       /* ---- Floating control panel ------------------------------------------
          An Adobe-style palette holding the controls that used to line the
