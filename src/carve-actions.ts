@@ -24,11 +24,14 @@
  * anyone's chant source. The demo copy is the user's own scratch directory, and
  * a carve emits into it exactly the way the CLI would.
  *
- * Emit shows `chant lint`, never `chant build` — chant#1637: the emitted bucket
- * folds its versioning/public-access-block sub-resources into the carve set but
- * does not yet carry them as native props, so `build` fails two AWS policy rules
- * on source the advisor called clean. `lint` is the honest gate today, and
- * example-carve/README.md carries the full statement of it.
+ * Emit shows `chant lint`, never `chant build` — chant#1637's fold is applied
+ * now (chant 0.44.7, chant PR #1640): the emitted bucket carries its folded
+ * versioning/public-access-block sub-resources as native props, so `build`
+ * fails only WAW042, a TLS-deny bucket policy the source Terraform genuinely
+ * never declared. That is real drift the estate inherited, not a carve gap —
+ * `lint` stays the gate shown because `build` still fails, just for a reason
+ * worth reading rather than a tooling shortfall. example-carve/README.md
+ * carries the full statement of it.
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -118,12 +121,13 @@ const refuse = (code: CarveActionRefusal["code"], error: string, remedy: string)
   refusal: { error, code, remedy },
 });
 
-/** chant#1637, stated once. */
+/** chant#1637's fold, applied at chant 0.44.7 (chant PR #1640) — stated once. */
 export const BUILD_CAVEAT =
-  "The gate shown is `chant lint`, not `chant build`. `carve emit` folds the bucket's versioning and " +
-  "public-access-block sub-resources into the carve set but does not yet carry them as native props, so " +
-  "`chant build` fails two AWS policy rules on source the advisor scored 88 (chant#1637). " +
-  "example-carve/README.md, \"Known rough edge in emit\", has the full statement.";
+  "The gate shown is `chant lint`, not `chant build`. chant#1637's fold is applied now: the bucket's " +
+  "versioning and public-access-block sub-resources come out as native props, not just folded-in mentions. " +
+  "`chant build` still fails, but on one rule only — WAW042, a TLS-deny bucket policy the source Terraform " +
+  "never declared. That's real drift the estate inherited, not a gap in the carve. " +
+  "example-carve/README.md, \"Why build still fails\", has the full statement.";
 
 /** Is `p` inside `root`? Lexical containment on resolved paths — both come from
  * this process (the demo copy and a path built from it), so there is no symlink

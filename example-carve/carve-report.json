@@ -18,12 +18,14 @@
       "breakdown": {
         "inbound": 0,
         "outbound": 0,
+        "outputs": 0,
         "tier": 1,
         "hasDynamic": false,
         "instances": 1,
         "penalties": {
           "inbound": 0,
           "outbound": 0,
+          "outputs": 0,
           "tier": 0,
           "dynamic": 0,
           "instances": 0
@@ -37,18 +39,20 @@
     {
       "address": "aws_s3_bucket.assets",
       "kind": "resource",
-      "score": 88,
+      "score": 84,
       "band": "clean leaf",
       "mapsTo": "AWS::S3::Bucket",
       "breakdown": {
         "inbound": 1,
         "outbound": 0,
+        "outputs": 1,
         "tier": 1,
         "hasDynamic": false,
         "instances": 1,
         "penalties": {
           "inbound": -12,
           "outbound": 0,
+          "outputs": -4,
           "tier": 0,
           "dynamic": 0,
           "instances": 0
@@ -68,6 +72,19 @@
             ],
             "bridge": "tf-data-source",
             "required": "immediately"
+          },
+          {
+            "direction": "inbound",
+            "survivor": "output.assets_bucket",
+            "carved": "aws_s3_bucket.assets",
+            "attrs": [
+              "bucket"
+            ],
+            "via": [
+              "value"
+            ],
+            "bridge": "tf-output-rewrite",
+            "required": "immediately"
           }
         ],
         "outbound": []
@@ -81,12 +98,14 @@
       "breakdown": {
         "inbound": 0,
         "outbound": 1,
+        "outputs": 0,
         "tier": 2,
         "hasDynamic": true,
         "instances": 1,
         "penalties": {
           "inbound": 0,
           "outbound": -4,
+          "outputs": 0,
           "tier": -15,
           "dynamic": -10,
           "instances": 0
@@ -120,12 +139,14 @@
       "breakdown": {
         "inbound": 1,
         "outbound": 1,
+        "outputs": 0,
         "tier": 2,
         "hasDynamic": false,
         "instances": 1,
         "penalties": {
           "inbound": -12,
           "outbound": -4,
+          "outputs": 0,
           "tier": -15,
           "dynamic": 0,
           "instances": 0
@@ -173,12 +194,14 @@
       "breakdown": {
         "inbound": 0,
         "outbound": 4,
+        "outputs": 0,
         "tier": 2,
         "hasDynamic": false,
         "instances": 1,
         "penalties": {
           "inbound": 0,
           "outbound": -16,
+          "outputs": 0,
           "tier": -15,
           "dynamic": 0,
           "instances": 0
@@ -245,25 +268,41 @@
     {
       "address": "aws_lambda_function.api",
       "kind": "resource",
-      "score": 65,
+      "score": 61,
       "band": "carvable w/ edits",
       "mapsTo": "AWS::Lambda::Function",
       "breakdown": {
         "inbound": 0,
         "outbound": 5,
+        "outputs": 1,
         "tier": 2,
         "hasDynamic": false,
         "instances": 1,
         "penalties": {
           "inbound": 0,
           "outbound": -20,
+          "outputs": -4,
           "tier": -15,
           "dynamic": 0,
           "instances": 0
         }
       },
       "boundary": {
-        "inbound": [],
+        "inbound": [
+          {
+            "direction": "inbound",
+            "survivor": "output.api_function_name",
+            "carved": "aws_lambda_function.api",
+            "attrs": [
+              "function_name"
+            ],
+            "via": [
+              "value"
+            ],
+            "bridge": "tf-output-rewrite",
+            "required": "immediately"
+          }
+        ],
         "outbound": [
           {
             "direction": "outbound",
@@ -334,190 +373,6 @@
       }
     },
     {
-      "address": "aws_subnet.private_a",
-      "kind": "resource",
-      "score": 46,
-      "band": "leave in Terraform",
-      "mapsTo": "AWS::EC2::Subnet",
-      "breakdown": {
-        "inbound": 3,
-        "outbound": 2,
-        "tier": 1,
-        "hasDynamic": true,
-        "instances": 1,
-        "penalties": {
-          "inbound": -36,
-          "outbound": -8,
-          "tier": 0,
-          "dynamic": -10,
-          "instances": 0
-        }
-      },
-      "boundary": {
-        "inbound": [
-          {
-            "direction": "inbound",
-            "survivor": "aws_lambda_function.api",
-            "carved": "aws_subnet.private_a",
-            "attrs": [
-              "id"
-            ],
-            "via": [
-              "vpc_config"
-            ],
-            "bridge": "tf-data-source",
-            "required": "immediately"
-          },
-          {
-            "direction": "inbound",
-            "survivor": "aws_network_acl.private",
-            "carved": "aws_subnet.private_a",
-            "attrs": [
-              "id"
-            ],
-            "via": [
-              "subnet_ids"
-            ],
-            "bridge": "tf-data-source",
-            "required": "immediately"
-          },
-          {
-            "direction": "inbound",
-            "survivor": "aws_vpc_endpoint.ssm",
-            "carved": "aws_subnet.private_a",
-            "attrs": [
-              "id"
-            ],
-            "via": [
-              "subnet_ids"
-            ],
-            "bridge": "tf-data-source",
-            "required": "immediately"
-          }
-        ],
-        "outbound": [
-          {
-            "direction": "outbound",
-            "survivor": "aws_vpc.main",
-            "carved": "aws_subnet.private_a",
-            "attrs": [
-              "id"
-            ],
-            "via": [
-              "vpc_id"
-            ],
-            "bridge": "deferred-input",
-            "required": "at-apply"
-          },
-          {
-            "direction": "outbound",
-            "survivor": "random_pet.suffix",
-            "carved": "aws_subnet.private_a",
-            "attrs": [
-              "id"
-            ],
-            "via": [
-              "tags"
-            ],
-            "bridge": "deferred-input",
-            "required": "at-apply"
-          }
-        ]
-      }
-    },
-    {
-      "address": "aws_subnet.private_b",
-      "kind": "resource",
-      "score": 46,
-      "band": "leave in Terraform",
-      "mapsTo": "AWS::EC2::Subnet",
-      "breakdown": {
-        "inbound": 3,
-        "outbound": 2,
-        "tier": 1,
-        "hasDynamic": true,
-        "instances": 1,
-        "penalties": {
-          "inbound": -36,
-          "outbound": -8,
-          "tier": 0,
-          "dynamic": -10,
-          "instances": 0
-        }
-      },
-      "boundary": {
-        "inbound": [
-          {
-            "direction": "inbound",
-            "survivor": "aws_lambda_function.api",
-            "carved": "aws_subnet.private_b",
-            "attrs": [
-              "id"
-            ],
-            "via": [
-              "vpc_config"
-            ],
-            "bridge": "tf-data-source",
-            "required": "immediately"
-          },
-          {
-            "direction": "inbound",
-            "survivor": "aws_network_acl.private",
-            "carved": "aws_subnet.private_b",
-            "attrs": [
-              "id"
-            ],
-            "via": [
-              "subnet_ids"
-            ],
-            "bridge": "tf-data-source",
-            "required": "immediately"
-          },
-          {
-            "direction": "inbound",
-            "survivor": "aws_vpc_endpoint.ssm",
-            "carved": "aws_subnet.private_b",
-            "attrs": [
-              "id"
-            ],
-            "via": [
-              "subnet_ids"
-            ],
-            "bridge": "tf-data-source",
-            "required": "immediately"
-          }
-        ],
-        "outbound": [
-          {
-            "direction": "outbound",
-            "survivor": "aws_vpc.main",
-            "carved": "aws_subnet.private_b",
-            "attrs": [
-              "id"
-            ],
-            "via": [
-              "vpc_id"
-            ],
-            "bridge": "deferred-input",
-            "required": "at-apply"
-          },
-          {
-            "direction": "outbound",
-            "survivor": "random_pet.suffix",
-            "carved": "aws_subnet.private_b",
-            "attrs": [
-              "id"
-            ],
-            "via": [
-              "tags"
-            ],
-            "bridge": "deferred-input",
-            "required": "at-apply"
-          }
-        ]
-      }
-    },
-    {
       "address": "aws_security_group.lambda",
       "kind": "resource",
       "score": 43,
@@ -526,12 +381,14 @@
       "breakdown": {
         "inbound": 2,
         "outbound": 2,
+        "outputs": 0,
         "tier": 2,
         "hasDynamic": true,
         "instances": 1,
         "penalties": {
           "inbound": -24,
           "outbound": -8,
+          "outputs": 0,
           "tier": -15,
           "dynamic": -10,
           "instances": 0
@@ -597,20 +454,236 @@
       }
     },
     {
+      "address": "aws_subnet.private_a",
+      "kind": "resource",
+      "score": 42,
+      "band": "leave in Terraform",
+      "mapsTo": "AWS::EC2::Subnet",
+      "breakdown": {
+        "inbound": 3,
+        "outbound": 2,
+        "outputs": 1,
+        "tier": 1,
+        "hasDynamic": true,
+        "instances": 1,
+        "penalties": {
+          "inbound": -36,
+          "outbound": -8,
+          "outputs": -4,
+          "tier": 0,
+          "dynamic": -10,
+          "instances": 0
+        }
+      },
+      "boundary": {
+        "inbound": [
+          {
+            "direction": "inbound",
+            "survivor": "aws_lambda_function.api",
+            "carved": "aws_subnet.private_a",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "vpc_config"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          },
+          {
+            "direction": "inbound",
+            "survivor": "aws_network_acl.private",
+            "carved": "aws_subnet.private_a",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "subnet_ids"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          },
+          {
+            "direction": "inbound",
+            "survivor": "aws_vpc_endpoint.ssm",
+            "carved": "aws_subnet.private_a",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "subnet_ids"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          },
+          {
+            "direction": "inbound",
+            "survivor": "output.private_subnet_ids",
+            "carved": "aws_subnet.private_a",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "value"
+            ],
+            "bridge": "tf-output-rewrite",
+            "required": "immediately"
+          }
+        ],
+        "outbound": [
+          {
+            "direction": "outbound",
+            "survivor": "aws_vpc.main",
+            "carved": "aws_subnet.private_a",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "vpc_id"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          },
+          {
+            "direction": "outbound",
+            "survivor": "random_pet.suffix",
+            "carved": "aws_subnet.private_a",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "tags"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          }
+        ]
+      }
+    },
+    {
+      "address": "aws_subnet.private_b",
+      "kind": "resource",
+      "score": 42,
+      "band": "leave in Terraform",
+      "mapsTo": "AWS::EC2::Subnet",
+      "breakdown": {
+        "inbound": 3,
+        "outbound": 2,
+        "outputs": 1,
+        "tier": 1,
+        "hasDynamic": true,
+        "instances": 1,
+        "penalties": {
+          "inbound": -36,
+          "outbound": -8,
+          "outputs": -4,
+          "tier": 0,
+          "dynamic": -10,
+          "instances": 0
+        }
+      },
+      "boundary": {
+        "inbound": [
+          {
+            "direction": "inbound",
+            "survivor": "aws_lambda_function.api",
+            "carved": "aws_subnet.private_b",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "vpc_config"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          },
+          {
+            "direction": "inbound",
+            "survivor": "aws_network_acl.private",
+            "carved": "aws_subnet.private_b",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "subnet_ids"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          },
+          {
+            "direction": "inbound",
+            "survivor": "aws_vpc_endpoint.ssm",
+            "carved": "aws_subnet.private_b",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "subnet_ids"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          },
+          {
+            "direction": "inbound",
+            "survivor": "output.private_subnet_ids",
+            "carved": "aws_subnet.private_b",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "value"
+            ],
+            "bridge": "tf-output-rewrite",
+            "required": "immediately"
+          }
+        ],
+        "outbound": [
+          {
+            "direction": "outbound",
+            "survivor": "aws_vpc.main",
+            "carved": "aws_subnet.private_b",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "vpc_id"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          },
+          {
+            "direction": "outbound",
+            "survivor": "random_pet.suffix",
+            "carved": "aws_subnet.private_b",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "tags"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          }
+        ]
+      }
+    },
+    {
       "address": "aws_vpc.main",
       "kind": "resource",
-      "score": 36,
+      "score": 32,
       "band": "leave in Terraform",
       "mapsTo": "AWS::EC2::VPC",
       "breakdown": {
         "inbound": 5,
         "outbound": 1,
+        "outputs": 1,
         "tier": 1,
         "hasDynamic": false,
         "instances": 1,
         "penalties": {
           "inbound": -60,
           "outbound": -4,
+          "outputs": -4,
           "tier": 0,
           "dynamic": 0,
           "instances": 0
@@ -682,6 +755,19 @@
             ],
             "bridge": "tf-data-source",
             "required": "immediately"
+          },
+          {
+            "direction": "inbound",
+            "survivor": "output.vpc_id",
+            "carved": "aws_vpc.main",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "value"
+            ],
+            "bridge": "tf-output-rewrite",
+            "required": "immediately"
           }
         ],
         "outbound": [
@@ -709,12 +795,14 @@
       "breakdown": {
         "inbound": 0,
         "outbound": 3,
+        "outputs": 0,
         "tier": null,
         "hasDynamic": false,
         "instances": 1,
         "penalties": {
           "inbound": 0,
           "outbound": 0,
+          "outputs": 0,
           "tier": 0,
           "dynamic": 0,
           "instances": 0
@@ -773,12 +861,14 @@
       "breakdown": {
         "inbound": 6,
         "outbound": 0,
+        "outputs": 0,
         "tier": null,
         "hasDynamic": false,
         "instances": 1,
         "penalties": {
           "inbound": 0,
           "outbound": 0,
+          "outputs": 0,
           "tier": 0,
           "dynamic": 0,
           "instances": 0

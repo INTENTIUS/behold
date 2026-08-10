@@ -67,6 +67,8 @@ export interface CarveBoundaryEdge {
 export interface CarvePenalties {
   inbound?: number;
   outbound?: number;
+  /** Output blocks reading this resource — chant#1638. */
+  outputs?: number;
   tier?: number;
   dynamic?: number;
   instances?: number;
@@ -78,6 +80,10 @@ export interface CarveBreakdown {
   inbound?: number;
   /** Survivors this depends on — a deferred deploy-time input each. */
   outbound?: number;
+  /** `output` blocks reading this resource — a one-line output rewrite each
+   * (chant#1638, chant 0.44.7). Absent on a report from before that release,
+   * which is why every read below is `?? 0` rather than assumed present. */
+  outputs?: number;
   /** Native-spec map difficulty: 1 clean, 2 reshaping, 3 hard, null unmappable. */
   tier?: 1 | 2 | 3 | null;
   /** `count` / `for_each` / a `data` source is present. */
@@ -287,6 +293,7 @@ export function scoreArithmetic(r: CarveResource): string {
   const terms: string[] = [];
   if (p.inbound) terms.push(`- 12x${b.inbound ?? 0} inbound`);
   if (p.outbound) terms.push(`- 4x${b.outbound ?? 0} outbound`);
+  if (p.outputs) terms.push(`- 4x${b.outputs ?? 0} output`);
   if (p.tier) terms.push(`- 15x${(b.tier ?? 1) - 1} tier${b.tier}`);
   if (p.dynamic) terms.push(`- 10 dynamic`);
   if (p.instances) terms.push(`- 3x${(b.instances ?? 1) - 1} instances`);
@@ -305,6 +312,7 @@ export function boundaryWorkOf(r: CarveResource): string {
   const parts: string[] = [];
   if (b.inbound) parts.push(`${b.inbound} inbound (a data-source patch each)`);
   if (b.outbound) parts.push(`${b.outbound} outbound (a deferred input each)`);
+  if (b.outputs) parts.push(`${b.outputs} output block(s) reading it (a one-line rewrite each)`);
   if ((b.tier ?? 1) > 1) parts.push(`tier ${b.tier} map`);
   if (b.hasDynamic) parts.push("count/for_each/data present");
   if ((b.instances ?? 1) > 1) parts.push(`${b.instances} instances`);
@@ -361,6 +369,7 @@ export function carveReportToIr(report: CarveReport): GraphIR {
         tier: b.tier === null || b.tier === undefined ? "none" : b.tier,
         inbound: b.inbound ?? 0,
         outbound: b.outbound ?? 0,
+        outputs: b.outputs ?? 0,
         instances: b.instances ?? 1,
         dynamic: b.hasDynamic ?? false,
         // The predicted diff, when the report carries the edge lists: who needs
