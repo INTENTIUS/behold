@@ -65,6 +65,7 @@ import { createApp } from "./server.ts";
 import { OpRunner } from "./op-runner.ts";
 import { Broadcaster } from "./events.ts";
 import { FrameBuffer } from "./frames.ts";
+import { shortStackNames } from "@intentius/pinhole";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -601,7 +602,10 @@ describe("GET /api/graph — estate composition runs the edge passes (#188)", ()
     expect(body.meta.note).toMatch(/components lens doesn't apply to a composed estate/);
   });
 
-  it("?logical=1 on an estate notes the same — and a plain estate request stays note-free", { timeout: 20_000 }, async () => {
+  // #224 turned that note off for `logical`, which now runs (see the block
+  // below); the lens that still genuinely has nothing to run keeps it, and a
+  // plain estate request stays note-free.
+  it("?logical=1 on an estate no longer claims the lens didn't apply — and a plain estate request stays note-free", { timeout: 20_000 }, async () => {
     const a = tmpProj("la");
     const b = tmpProj("lb");
     const EMPTY = JSON.stringify({ nodes: [], edges: [], groups: {} });
@@ -609,10 +613,177 @@ describe("GET /api/graph — estate composition runs the edge passes (#188)", ()
     const broadcaster = new Broadcaster();
     const runner = new OpRunner({ projectDir: a, broadcaster, onDone: () => {} });
     const app = createApp({ projectDir: a, projectDirs: [a, b], port: 0 }, broadcaster, new FrameBuffer(), runner);
-    const logical = (await (await app.request("/api/graph?logical=1")).json()) as { meta: { note?: string } };
-    expect(logical.meta.note).toMatch(/logical lens doesn't apply to a composed estate/);
+    const logical = (await (await app.request("/api/graph?logical=1")).json()) as { meta: { note?: string; mode?: string } };
+    expect(logical.meta.mode).toBe("logical");
+    expect(logical.meta.note ?? "").not.toMatch(/doesn't apply to a composed estate/);
     const plain = (await (await app.request("/api/graph")).json()) as { meta: { note?: string } };
     expect(plain.meta.note).toBeUndefined();
+  });
+});
+
+// #224: the composed estate applies the runtime and logical lenses instead of
+// apologizing for them. The fixtures are the flux-estate demo's declared shape
+// (example-flux-estate): a control plane declaring the app namespaces, the
+// GitRepository and one Kustomization per app; app-a's objects carrying
+// `metadata.namespace`; app-b's carrying none (Flux's targetNamespace stamps
+// it at apply time). The point of the estate is that the namespaces are
+// declared in ONE project and filled from the others — no single-project view
+// can draw that picture.
+describe("estate lenses — the composed IR gets the runtime and logical passes (#224)", () => {
+  let dirs: string[] = [];
+  beforeEach(() => vi.mocked(spawnMock).mockReset());
+  afterEach(() => {
+    dirs.forEach((d) => rmSync(d, { recursive: true, force: true }));
+    dirs = [];
+  });
+  const tmpProj = (name: string) => {
+    const dir = mkdtempSync(join(tmpdir(), `behold-estate-lens-${name}-`));
+    writeFileSync(join(dir, "chant.config.ts"), `export default { lexicons: ["k8s"] };`);
+    dirs.push(dir);
+    return dir;
+  };
+  const node = (id: string, kind: string, attrs: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
+    id,
+    kind,
+    lexicon: "k8s",
+    attrs,
+    ...extra,
+  });
+  const CONTROL_PLANE = {
+    nodes: [
+      node("nsAppA", "K8s::Core::Namespace", { metadata: { name: "app-a" }, _status: "good" }),
+      node("nsAppB", "K8s::Core::Namespace", { metadata: { name: "app-b" }, _status: "good" }),
+      node("source", "K8s::Flux::GitRepository", { metadata: { name: "behold", namespace: "flux-system" }, _status: "good" }),
+      node("appA", "K8s::Flux::Kustomization", {
+        metadata: { name: "app-a", namespace: "flux-system" },
+        spec: { targetNamespace: "app-a", sourceRef: { kind: "GitRepository", name: "behold" } },
+        _status: "good",
+      }),
+      node("appB", "K8s::Flux::Kustomization", {
+        metadata: { name: "app-b", namespace: "flux-system" },
+        spec: { targetNamespace: "app-b", sourceRef: { kind: "GitRepository", name: "behold" }, dependsOn: [{ name: "app-a" }] },
+        _status: "good",
+      }),
+    ],
+    edges: [],
+    groups: {},
+  };
+  // What `--live --overlay` adds: a workload Flux applied, attributed back to
+  // the Kustomization that declared it (chant#1549's owner chain). Only the
+  // live read carries these — the declared graph stops at the source.
+  const CONTROL_PLANE_LIVE = {
+    ...CONTROL_PLANE,
+    nodes: [
+      ...CONTROL_PLANE.nodes,
+      node("appAPod", "K8s::Core::Pod", { metadata: { name: "app-a-7c9", namespace: "app-a" }, _status: "runtime" }, { runtimeOwner: "appA" }),
+    ],
+  };
+  const APP_A = {
+    nodes: [
+      node("deployment", "K8s::Apps::Deployment", { metadata: { name: "app-a", namespace: "app-a" }, _status: "good" }),
+      node("service", "K8s::Core::Service", { metadata: { name: "app-a", namespace: "app-a" }, _status: "good" }),
+    ],
+    edges: [],
+    groups: {},
+  };
+  const APP_B = {
+    nodes: [
+      node("deployment", "K8s::Apps::Deployment", { metadata: { name: "app-b" }, _status: "accent" }),
+      node("service", "K8s::Core::Service", { metadata: { name: "app-b" }, _status: "accent" }),
+    ],
+    edges: [],
+    groups: {},
+  };
+  /** Serve the three demo projects as one estate, dispatching chant's output
+   * on the project path in the spawn args (Promise.all interleaves them).
+   * Returns the composed per-project id prefixes too — the same
+   * `shortStackNames` the route's composition uses. */
+  const fluxEstate = () => {
+    const cp = tmpProj("cp");
+    const a = tmpProj("a");
+    const b = tmpProj("b");
+    vi.mocked(spawnMock).mockImplementation(((_cmd: unknown, args: unknown) => {
+      const s = String(args);
+      const ir = s.includes(cp) ? (s.includes("--live") ? CONTROL_PLANE_LIVE : CONTROL_PLANE) : s.includes(a) ? APP_A : APP_B;
+      return fakeProc(0, JSON.stringify(ir));
+    }) as never);
+    const broadcaster = new Broadcaster();
+    const runner = new OpRunner({ projectDir: cp, broadcaster, onDone: () => {} });
+    const app = createApp({ projectDir: cp, projectDirs: [cp, a, b], env: "local", port: 0 }, broadcaster, new FrameBuffer(), runner);
+    const [cpName, aName, bName] = shortStackNames([cp, a, b]);
+    return { app, cp: cpName, a: aName, b: bName };
+  };
+  type LogicalBody = {
+    ir: { nodes: { id: string; attrs?: { _status?: string } }[]; edges: { from: string; to: string; viaAttr?: string }[] };
+    byContainer: Record<string, string[]>;
+    meta: { mode?: string; note?: string; estate?: number };
+  };
+  const sorted = (ids: string[] | undefined) => [...(ids ?? [])].sort();
+
+  it("the declared estate's logical lens draws cluster ⊃ namespace ⊃ the apps' objects", { timeout: 20_000 }, async () => {
+    const est = fluxEstate();
+    const body = (await (await est.app.request("/api/graph?logical=1")).json()) as LogicalBody;
+    expect(body.meta.mode).toBe("logical");
+    expect(body.meta.estate).toBe(3);
+
+    // One cluster box, named from the served env (no managed cluster node is
+    // declared on a k8s-only estate — logical-k8s.ts's preference chain).
+    const cluster = body.byContainer["cluster local"];
+    expect(cluster).toBeDefined();
+    expect([...cluster].sort()).toEqual(["cluster-scoped", "namespace app-a", "namespace app-b", "namespace flux-system"]);
+
+    // app-a's objects sit in the namespace the CONTROL PLANE declared — the
+    // cross-project containment that only the composed IR can show.
+    expect(sorted(body.byContainer["namespace app-a"])).toEqual([`${est.a}/deployment`, `${est.a}/service`].sort());
+    // The control plane's own Flux objects live in flux-system.
+    expect(sorted(body.byContainer["namespace flux-system"])).toEqual(
+      [`${est.cp}/appA`, `${est.cp}/appB`, `${est.cp}/source`].sort(),
+    );
+    // app-b declares no namespace, so its objects are honestly cluster-scoped
+    // here rather than filed under a namespace nothing in the source names.
+    expect(sorted(body.byContainer["cluster-scoped"])).toEqual([`${est.b}/deployment`, `${est.b}/service`].sort());
+    // Namespaces are boxes, not cards (K8S_PLUMBING_KINDS).
+    expect(body.ir.nodes.some((n) => n.id.endsWith("/nsAppA"))).toBe(false);
+    // The cross-stack sourceRef edges survive the projection (#171/#188).
+    expect(body.ir.edges.some((e) => e.viaAttr === "sourceRef" && e.to.endsWith("/source"))).toBe(true);
+  });
+
+  it("the live estate's logical lens keeps each card's drift colour inside its namespace box", { timeout: 20_000 }, async () => {
+    const est = fluxEstate();
+    const body = (await (await est.app.request("/api/overlay?env=local&logical=1")).json()) as LogicalBody;
+    expect(body.meta.mode).toBe("logical");
+    expect(body.byContainer["cluster local"]).toContain("namespace app-a");
+    expect(sorted(body.byContainer["namespace app-a"])).toEqual([`${est.a}/deployment`, `${est.a}/service`].sort());
+    const byStatus = Object.fromEntries(body.ir.nodes.map((n) => [n.id.split("/").pop(), n.attrs?._status]));
+    expect(byStatus.appA).toBe("good");
+    expect(byStatus.deployment).toBe("accent"); // app-b's, the pending half
+    expect(body.meta.note ?? "").not.toMatch(/doesn't apply to a composed estate/);
+    // The runtime child is not in a logical view — no ?runtime=1 was asked for.
+    expect(body.ir.nodes.some((n) => n.id.endsWith("/appAPod"))).toBe(false);
+  });
+
+  it("?runtime=1 on the estate overlay keeps the runtime children and boxes them under their Kustomization", { timeout: 20_000 }, async () => {
+    const res = await fluxEstate().app.request("/api/overlay?env=local&runtime=1");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      ir: { nodes: { id: string }[]; groups: { byContainer?: Record<string, string[]> } };
+      meta: { mode?: string; note?: string };
+    };
+    const pod = body.ir.nodes.find((n) => n.id.endsWith("/appAPod"));
+    expect(pod).toBeDefined();
+    // The containment box is keyed by the owner's COMPOSED id and holds the
+    // owner as well as the child (#144, via estate.ts's runtimeOwner remap).
+    const owner = body.ir.nodes.find((n) => n.id.endsWith("/appA"))!.id;
+    expect(body.ir.groups.byContainer?.[owner]).toEqual([owner, pod!.id].sort());
+    expect(body.meta.note ?? "").not.toMatch(/doesn't apply to a composed estate/);
+  });
+
+  it("without ?runtime=1 the estate overlay prunes the runtime children, exactly as before", { timeout: 20_000 }, async () => {
+    const body = (await (await fluxEstate().app.request("/api/overlay?env=local")).json()) as {
+      ir: { nodes: { id: string }[]; groups: { byContainer?: Record<string, string[]> } };
+    };
+    expect(body.ir.nodes.some((n) => n.id.endsWith("/appAPod"))).toBe(false);
+    expect(body.ir.groups.byContainer).toBeUndefined();
   });
 });
 
