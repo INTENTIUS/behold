@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { renderGraph, renderBanded } from "./render.ts";
+import { renderGraph, renderBanded, renderCarveEstate } from "./render.ts";
 import type { GraphIR } from "@intentius/chant";
 
 // M4: renderGraph gained an explicit `boxes: "byStack"` opt-in for the
@@ -209,5 +209,47 @@ describe("renderBanded — the banded ranking layout (#252)", () => {
     const [w, h] = viewBox(renderBanded({ nodes: [], edges: [], groups: {} }).svg);
     expect(w).toBeGreaterThan(0);
     expect(h).toBeGreaterThan(0);
+  });
+});
+
+// #254: the estate frame — the banded ranking inside a Terraform member box,
+// the demo's chant project boxed beside it. These pin the composition rules:
+// TF addresses keep their ids (the morph's identity continuity), app ids are
+// namespaced, and nothing either side owns is dropped.
+describe("renderCarveEstate — the carve estate frame (#254)", () => {
+  const viewBox = (svg: string) => (svg.match(/viewBox="0 0 (\d+) (\d+)"/) ?? []).slice(1).map(Number);
+  const appIr: GraphIR = {
+    nodes: [
+      { id: "apiLogs", kind: "LogGroup", lexicon: "aws", attrs: {} },
+      { id: "assetsCdnDomain", kind: "SsmParameter", lexicon: "aws", attrs: {} },
+    ],
+    edges: [],
+    groups: { byStack: { aws: ["apiLogs", "assetsCdnDomain"] } },
+  };
+  const estate = () => renderCarveEstate(bandedIr, appIr, { tfTitle: "legacy-tf — terraform", appTitle: "app — chant" });
+
+  it("boxes both members and keeps the band panels inside the TF side", () => {
+    const svg = estate().svg;
+    expect(svg).toContain("legacy-tf — terraform");
+    expect(svg).toContain("app — chant");
+    expect(svg).toContain("carve now");
+    expect(svg).toContain("leave in Terraform");
+  });
+
+  it("keeps TF ids untouched and namespaces app ids past collision reach", () => {
+    const { svg, ir } = estate();
+    for (const n of bandedIr.nodes) expect(svg).toContain(`data-node-id="${n.id}"`);
+    expect(svg).toContain('data-node-id="app/apiLogs"');
+    expect(svg).toContain('data-node-id="app/assetsCdnDomain"');
+    const byStack = ir.groups.byStack as Record<string, string[]>;
+    expect(byStack["app — chant"]).toEqual(["app/apiLogs", "app/assetsCdnDomain"]);
+    expect(byStack["carve now"]).toHaveLength(20);
+  });
+
+  it("stays near a screen's shape with both members side by side", () => {
+    const [w, h] = viewBox(estate().svg);
+    expect(w).toBeGreaterThan(0);
+    expect(h).toBeGreaterThan(0);
+    expect(w / h).toBeLessThan(4);
   });
 });

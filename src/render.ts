@@ -143,7 +143,42 @@ export function renderGraph(ir: GraphIR, opts: { theme?: string; boxes?: "byStac
  * panel rather than vanishing.
  */
 export function renderBanded(ir: GraphIR, opts: { theme?: string } = {}): RenderResult {
-  const bands = (ir.groups.byStack ?? {}) as Record<string, string[]>;
+  const plan = bandedPlan(ir, (ir.groups.byStack ?? {}) as Record<string, string[]>);
+  const height = plan.height;
+  const layout: Layout = {
+    width: plan.width,
+    height,
+    nodes: plan.placed.map((p) => ({ id: p.id, x: p.x, y: height - p.y })),
+  };
+  const svg = renderSvg(ir, layout, {
+    fit: true,
+    hideTitle: true,
+    groups: plan.boxes.map((b) => ({ ...b, y: height - b.y })),
+    ...(opts.theme ? { theme: opts.theme as never } : {}),
+  });
+  return { svg };
+}
+
+// Shared metrics for the banded grid and the estate frame that wraps it.
+const GAP = 28; // between cards
+const PAD = 24; // panel inner padding
+const TITLE = 34; // panel title band (pinhole draws its title at y + 23)
+const BAND_GAP = 26; // between panels
+const MEMBER_GAP = 48; // between the estate's member boxes
+
+/** The banded grid, before it becomes a picture: positions and panel boxes in
+ * y-DOWN coordinates (first band on top, the way the ranking reads) with a
+ * local (0,0) origin, so a caller can either flip and paint it as-is
+ * (`renderBanded`) or offset it into a larger composition first
+ * (`renderCarveEstate`). */
+interface BandedPlan {
+  placed: Array<{ id: string; x: number; y: number }>;
+  boxes: GroupBox[];
+  width: number;
+  height: number;
+}
+
+function bandedPlan(ir: GraphIR, bands: Record<string, string[]>): BandedPlan {
   const size = footprints(ir);
   const dims = (id: string) => size.get(id) ?? { w: NODE_W, h: NODE_H };
 
@@ -152,10 +187,6 @@ export function renderBanded(ir: GraphIR, opts: { theme?: string } = {}): Render
   const ids = ir.nodes.map((n) => n.id);
   const cellW = Math.max(NODE_W, ...ids.map((id) => dims(id).w));
   const cellH = Math.max(NODE_H, ...ids.map((id) => dims(id).h));
-  const GAP = 28; // between cards
-  const PAD = 24; // panel inner padding
-  const TITLE = 34; // panel title band (pinhole draws its title at y + 23)
-  const BAND_GAP = 26; // between panels
   // Aim at a landscape picture rather than a square one — the graph pane is
   // wider than it is tall once the side panel takes its share.
   const cols = Math.max(1, Math.round(Math.sqrt((ids.length * (cellH + GAP) * 2) / (cellW + GAP))));
@@ -172,8 +203,6 @@ export function renderBanded(ir: GraphIR, opts: { theme?: string } = {}): Render
   ].filter(([, members]) => members.length > 0);
 
   const statusOf = new Map(ir.nodes.map((n) => [n.id, n.attrs?._status as Status | undefined]));
-  // Positions are computed y-DOWN (first band on top, the way it reads), then
-  // flipped once at the end: renderSvg consumes a y-up plane.
   const placed: Array<{ id: string; x: number; y: number }> = [];
   const boxes: GroupBox[] = [];
   let top = 0;
@@ -194,12 +223,74 @@ export function renderBanded(ir: GraphIR, opts: { theme?: string } = {}): Render
     boxes.push({ title, x: panelW / 2, y: top + panelH / 2, w: panelW, h: panelH, ...(status ? { status } : {}) });
     top += panelH + BAND_GAP;
   }
-  const height = Math.max(1, top - BAND_GAP);
+  return { placed, boxes, width: panelW, height: Math.max(1, top - BAND_GAP) };
+}
 
+/** The carve estate frame (#254): the banded peelability ranking inside a
+ * titled Terraform member box, with the served demo's chant project in its own
+ * box beside it — the estate view opens on a migration already half-done, and
+ * the morph at the end of the walkthrough has somewhere to land.
+ *
+ * The composed IR is returned alongside the SVG because the caller serves it
+ * to the SPA: app-side node ids are namespaced `<member>/<id>` (composeStacks'
+ * convention) so they can never collide with a Terraform address, while the
+ * ranked TF addresses keep their ids untouched — the morph's identity
+ * continuity (#230 M2b) depends on the carved card keeping its id across
+ * views. `groups.byStack` on the composed IR carries the bands plus the app
+ * member, so the client's box matcher sees every box it is shown. */
+export function renderCarveEstate(
+  tfIr: GraphIR,
+  appIr: GraphIR,
+  opts: { tfTitle: string; appTitle: string; theme?: string },
+): RenderResult & { ir: GraphIR } {
+  const prefix = `${opts.appTitle.split(" ")[0]}/`;
+  const appId = (id: string) => `${prefix}${id}`;
+  const appNodes = appIr.nodes.map((n) => ({ ...n, id: appId(n.id) }));
+  const appEdges = appIr.edges.map((e) => ({ ...e, from: appId(e.from), to: appId(e.to) }));
+  const namespacedApp: GraphIR = { ...appIr, nodes: appNodes, edges: appEdges, groups: {} };
+
+  const tfPlan = bandedPlan(tfIr, (tfIr.groups.byStack ?? {}) as Record<string, string[]>);
+  // The app side reuses the banded grid as a single panel: same cell metrics
+  // discipline, and the panel title says what these cards have in common.
+  const appPlan = bandedPlan(namespacedApp, { "carved so far": appNodes.map((n) => n.id) });
+
+  // Two member boxes, top-aligned, TF on the left where the ranking's weight
+  // is. Content sits inside each member at (PAD, TITLE + PAD).
+  const memberH = (plan: BandedPlan) => TITLE + PAD + plan.height + PAD;
+  const memberW = (plan: BandedPlan) => plan.width + PAD * 2;
+  const appX0 = memberW(tfPlan) + MEMBER_GAP;
+  const width = appX0 + memberW(appPlan);
+  const height = Math.max(memberH(tfPlan), memberH(appPlan));
+
+  const offset = (plan: BandedPlan, x0: number) => ({
+    placed: plan.placed.map((p) => ({ id: p.id, x: x0 + PAD + p.x, y: TITLE + PAD + p.y })),
+    boxes: plan.boxes.map((b) => ({ ...b, x: x0 + PAD + b.x, y: TITLE + PAD + b.y })),
+  });
+  const tf = offset(tfPlan, 0);
+  const app = offset(appPlan, appX0);
+
+  // Member boxes first so the inner band panels draw on top of them.
+  const boxes: GroupBox[] = [
+    { title: opts.tfTitle, x: memberW(tfPlan) / 2, y: memberH(tfPlan) / 2, w: memberW(tfPlan), h: memberH(tfPlan) },
+    { title: opts.appTitle, x: appX0 + memberW(appPlan) / 2, y: memberH(appPlan) / 2, w: memberW(appPlan), h: memberH(appPlan) },
+    ...tf.boxes,
+    ...app.boxes,
+  ];
+
+  const ir: GraphIR = {
+    nodes: [...tfIr.nodes, ...appNodes],
+    edges: [...tfIr.edges, ...appEdges],
+    groups: {
+      byStack: {
+        ...((tfIr.groups.byStack ?? {}) as Record<string, string[]>),
+        [opts.appTitle]: appNodes.map((n) => n.id),
+      },
+    },
+  };
   const layout: Layout = {
-    width: panelW,
+    width,
     height,
-    nodes: placed.map((p) => ({ id: p.id, x: p.x, y: height - p.y })),
+    nodes: [...tf.placed, ...app.placed].map((p) => ({ id: p.id, x: p.x, y: height - p.y })),
   };
   const svg = renderSvg(ir, layout, {
     fit: true,
@@ -207,7 +298,7 @@ export function renderBanded(ir: GraphIR, opts: { theme?: string } = {}): Render
     groups: boxes.map((b) => ({ ...b, y: height - b.y })),
     ...(opts.theme ? { theme: opts.theme as never } : {}),
   });
-  return { svg };
+  return { svg, ir };
 }
 
 /** Re-place a laid-out graph's nodes on concentric rings by dagre rank (the
