@@ -2266,7 +2266,9 @@ function ensureZoomControls(host) {
 //     corner, which is the one corner a resize never moves, and a box move
 //     translates the whole wrapper group the title is already inside.
 //   * the server bakes {dx,dy} into an exported SVG but not a box's {dw,dh} —
-//     pinhole's containment boxes carry no id to bake against (src/layout.ts).
+//     only pinhole's ARCHITECTURE boxes carry an id to bake against, and a bake
+//     that worked on some lenses and not others would be worse than none
+//     (src/layout.ts says the same at more length).
 let layoutIndex = null; // {nodes,boxes,edges} for the SVG currently on screen
 let layoutDeltas = {}; // the deltas in force for the current key
 let layoutDrag = null; // the gesture in flight
@@ -2291,26 +2293,52 @@ function currentLensKey() {
  * Wrap each containment box in a `<g data-layout-box>` and give it a corner
  * handle, once per rendered SVG.
  *
- * FRAGILE BY CONSTRUCTION, and knowingly so: pinhole's `Canvas.groupBox` emits
- * a bare `<rect rx=…>` immediately followed by its title `<text>`, as a direct
- * child of the `<svg>` — no group, no `data-group-id` to match on. So behold
- * matches the structure, exactly the way addGitlabWaveBadges already has to.
- * The discriminators: a positive `rx` (the two page-background rects have
- * none), a `<text>` as the next non-badge sibling, and svg-root parentage (a
- * card's rect lives inside `[data-node-id]`, an edge-label's inside its own
- * `<g>`). The real fix is upstream — a `data-group-id` on the box — and until
- * pinhole stamps one, prefer the attribute here the moment it exists.
+ * TWO WAYS TO FIND A BOX, in that order (#250):
+ *
+ * 1. `rect[data-group-id]` — pinhole stamps the container key on an
+ *    architecture group box from 0.3.3 (pinhole#103/#104), the same hook
+ *    `data-node-id` gives a card. That key is also what the box's delta is
+ *    stored under, so a box keeps its size when its title changes and two
+ *    boxes that happen to read alike stay separate placements.
+ * 2. The structural match #245 shipped, kept for one release as a fallback and
+ *    then deleted. It is still load-bearing, not dead weight: `layoutArchitecture`
+ *    is the only pinhole layout that sets `GroupBox.id`, so the wave/stack/
+ *    container boxes `renderGraph` draws (src/render.ts) arrive with a title
+ *    and nothing else. FRAGILE BY CONSTRUCTION and knowingly so — the
+ *    discriminators are a positive `rx` (the two page-background rects have
+ *    none), a `<text>` as the next non-badge sibling, and svg-root parentage
+ *    (a card's rect lives inside `[data-node-id]`, an edge-label's inside its
+ *    own `<g>`), exactly the way addGitlabWaveBadges still has to.
+ *
+ * Identification runs over a DOM nothing has moved yet and the wrapping happens
+ * after: both paths read `nextElementSibling`, and inserting a wrapper mid-walk
+ * would put one box's `<g>` in the middle of the next box's member run.
+ *
+ * MIGRATION, said plainly: a box that gains an id changes storage key —
+ * `layoutArchitecture` titles a box `<id>  ·  <kind>`, so `box:vpc  ·  VPC`
+ * becomes `box:vpc` — and `applicable` drops the old key on the next render.
+ * That is a deliberate one-time loss of hand-set box sizes on the logical
+ * views, taken rather than carrying a key-rewriting migration for a delta that
+ * is cosmetic and one drag to redo. Node placements are untouched: they were
+ * always keyed by `data-node-id`.
  */
 function wrapContainmentBoxes(svgEl) {
   const boxes = new Map();
   const handleSize = Math.max(12, Math.round((vbInit ? vbInit[2] : 1000) / 90));
+  const found = [];
+  const claimed = new Set();
   for (const rect of [...svgEl.children]) {
     if (rect.tagName.toLowerCase() !== "rect") continue;
+    const groupId = (rect.getAttribute("data-group-id") || "").trim();
     const x = parseFloat(rect.getAttribute("x"));
     const y = parseFloat(rect.getAttribute("y"));
     const w = parseFloat(rect.getAttribute("width"));
     const h = parseFloat(rect.getAttribute("height"));
-    if (!(parseFloat(rect.getAttribute("rx")) > 0) || !(w > 0) || !(h > 0) || Number.isNaN(x) || Number.isNaN(y)) continue;
+    if (!(w > 0) || !(h > 0) || Number.isNaN(x) || Number.isNaN(y)) continue;
+    // The `rx` sniff is the fallback's discriminator only. An id'd rect has
+    // already said what it is, and hardening a shape pinhole never promised
+    // would be the same mistake this issue exists to undo.
+    if (!groupId && !(parseFloat(rect.getAttribute("rx")) > 0)) continue;
     // Collect rect → title, stepping over anything already stamped between
     // them (the GitLab wave badge), and bail at the next box or card.
     const members = [rect];
@@ -2324,17 +2352,28 @@ function wrapContainmentBoxes(svgEl) {
         break;
       }
     }
-    if (!title) continue;
-    const id = `box:${(title.textContent || "").trim() || boxes.size}`;
-    if (boxes.has(id)) continue;
+    // An untitled box is only knowable by its attribute — the structural path
+    // has literally nothing else to go on, and a titleless id'd box keeps its
+    // resize handle and simply has no drag-by-title. It also keeps nothing but
+    // its own rect: the walk above only stops at a title, so without one it has
+    // swept up whatever pinhole painted next, which is not this box's to move.
+    if (!title && !groupId) continue;
+    const id = `box:${groupId || (title.textContent || "").trim() || found.length}`;
+    if (claimed.has(id)) continue;
+    claimed.add(id);
+    found.push({ id, rect, members: title ? members : [rect], title, x, y, w, h });
+  }
+  for (const { id, rect, members, title, x, y, w, h } of found) {
     const g = document.createElementNS(SVGNS, "g");
     g.setAttribute("data-layout-box", id);
     rect.parentNode.insertBefore(g, rect);
     members.forEach((m) => g.appendChild(m));
     // The title doubles as the box's move handle — the interior stays pan
     // territory, which on a logical view is most of the canvas.
-    title.setAttribute("data-layout-move", id);
-    title.setAttribute("cursor", "move");
+    if (title) {
+      title.setAttribute("data-layout-move", id);
+      title.setAttribute("cursor", "move");
+    }
     const handle = document.createElementNS(SVGNS, "g");
     handle.setAttribute("data-layout-resize", id);
     handle.setAttribute("cursor", "nwse-resize");
@@ -2418,9 +2457,10 @@ function userRect(el, toUser) {
  * wireEdgeHighlight's `raise()` re-appends a hovered edge group to the end of
  * the SVG, so the sibling link is gone the instant a pointer crosses an edge.
  *
- * The real fix is upstream, and it is the same ask wrapContainmentBoxes already
- * has open for boxes: stamp the chip with the edge it belongs to. The moment
- * pinhole emits a `data-edge-*` pairing on the label group, prefer it here.
+ * The real fix is upstream, and it is the same ask boxes made and won in
+ * pinhole 0.3.3 (`data-group-id`, #250): stamp the chip with the edge it
+ * belongs to. The moment pinhole emits a `data-edge-*` pairing on the label
+ * group, prefer it here the way wrapContainmentBoxes now prefers the attribute.
  */
 function edgeLabelOf(g) {
   const via = (g.getAttribute("data-edge-via") || "").trim();

@@ -157,7 +157,8 @@ export function straightEdge(anchors, from, to) {
 // "I need more room" means grow the box first (#245 already resizes them).
 //
 // No twin in src/layout.ts, unlike the three functions above: the server-side
-// bake cannot see a containment box at all (they carry no id — see
+// bake does not reconstruct containment boxes (only pinhole's architecture
+// layout stamps them with a `data-group-id`, and not every lens uses it — see
 // wrapContainmentBoxes in web/app.js), so it has nothing to clamp against and
 // deliberately does not try.
 

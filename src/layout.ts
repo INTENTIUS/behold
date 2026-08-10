@@ -278,12 +278,14 @@ function groupEnd(svg: string, from: number): number {
  *
  * Deliberately the SAME transform the client applies (`nodeTransform`), and
  * deliberately NOT everything the client does:
- *   * `{dw,dh}` box resizes are skipped. pinhole's containment boxes carry no
- *     identity at all (a bare `<rect rx=…>` + its title `<text>` — see
- *     wrapContainmentBoxes in web/app.js), so the client's `box:<title>` ids
- *     are synthesized from live DOM structure. Reconstructing that by string
- *     surgery would be guessing; when pinhole stamps a `data-group-id`, this
- *     is where boxes join.
+ *   * `{dw,dh}` box resizes are skipped, still. pinhole 0.3.3 stamps
+ *     `data-group-id` on the boxes `layoutArchitecture` places (#250), so the
+ *     logical lenses could now be baked — but `layoutIr`'s wave/stack/container
+ *     boxes set no `GroupBox.id`, and the client synthesizes `box:<title>` ids
+ *     from live DOM structure for those (see wrapContainmentBoxes in
+ *     web/app.js). Baking one lens's boxes and not another's would make an
+ *     export's fidelity depend on which view produced it, which is worse than
+ *     the honest, uniform skip. Boxes join here when every layout carries ids.
  *   * edge labels keep their original midpoints. The CLIENT stopped doing that
  *     in #267 — it moves the chip to the re-anchored line's midpoint — but it
  *     can only find the chip at all because it holds a live DOM reference taken
