@@ -294,6 +294,34 @@ render and the graph loads with no tier selected — the default for any project
 that doesn't opt in. There's no other tier config surface (not
 `chant.config.ts`, not an env var behold guesses the name of).
 
+### The hand-layout sidecar — `.behold/layout.json`
+
+dagre places your nodes; you can move them. Drag a card, resize a containment
+box, and the offsets are remembered per project + lens — in `localStorage`
+first, and (when the served project is writable) in a `.behold/layout.json`
+sidecar beside it, so a layout is shareable, reviewable in a diff, and honoured
+by `behold export`:
+
+```json
+{ "version": 1, "lenses": { "components": { "src/api#Component": { "dx": 40, "dy": -25 } } } }
+```
+
+This is the **only** file behold writes inside a served project. It stores
+deltas, never absolute positions — the graph stays chant's and your layout sits
+on top of it — and a delta whose node has left the estate is dropped silently.
+`POST /api/layout` refuses politely in preview mode, during a static-export
+capture, on a read-only directory, and above its size caps. `↺ layout` in the
+graph clears the current lens on both tiers.
+
+**Gitignore it.** `.behold.json` (above) is config and belongs in the repo;
+`.behold/` is per-user state — one person's arrangement of the picture — so add
+it to the served project's `.gitignore` unless you actually want to share and
+review a layout:
+
+```gitignore
+.behold/
+```
+
 ## Layout
 
 ```

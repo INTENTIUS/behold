@@ -13,7 +13,24 @@ import { initPanel, setPanelTab, togglePanelCollapsed, isPanelCollapsed } from "
 // #228: the hand-layout delta store — everything about WHAT gets remembered and
 // under which key. The pointer work and the SVG surgery stay here (see the
 // "Hand layout" section below).
-import { applicable, clearLayout, isEmpty, layoutKey, lensKeyOf, projectKeyOf, readLayout, setDelta, writeLayout } from "./layout-store.js";
+import {
+  applicable,
+  clearLayout,
+  debounce,
+  fetchServerLayout,
+  isEmpty,
+  layoutKey,
+  lensKeyOf,
+  mergeLayouts,
+  nodeTransform,
+  pathAnchors,
+  postServerLayout,
+  projectKeyOf,
+  readLayout,
+  setDelta,
+  straightEdge,
+  writeLayout,
+} from "./layout-store.js";
 initTheme();
 initPanel();
 mountThemePicker(document.getElementById("panel-theme"));
@@ -1916,6 +1933,14 @@ function ensureZoomControls(host) {
 // the end of every render(), so the graph underneath stays chant's and a
 // delta for a node that left the estate is simply not applied.
 //
+// Two tiers now (#228's second half): localStorage, and the project's own
+// `.behold/layout.json` behind GET/POST /api/layout. On load the server's map
+// merges UNDER the local one (`mergeLayouts` — the drag you can see always
+// wins); on a finished gesture the current lens is POSTed, debounced. A server
+// that refuses — a static export, preview mode, a read-only project, an older
+// behold with no such route — leaves the localStorage tier working exactly as
+// it did before, and says nothing.
+//
 // What this does NOT do, said plainly rather than faked:
 //   * a resized box does not reflow its children — that is dagre's job on the
 //     next layout, and the reset control's tooltip says so;
@@ -1923,25 +1948,26 @@ function ensureZoomControls(host) {
 //     its original anchor points, each shifted by its own node's delta. #228
 //     accepts the straight-line fallback; spline re-routing is pinhole's job.
 //     An edge with both ends where dagre put them keeps its bezier untouched.
-//   * nothing is written to the server. The second tier of #228 (a
-//     `.behold/layout.json` sidecar behind POST /api/layout, so a server-side
-//     export honours the same deltas) is the follow-up half.
+//   * the server bakes {dx,dy} into an exported SVG but not a box's {dw,dh} —
+//     pinhole's containment boxes carry no id to bake against (src/layout.ts).
 let layoutIndex = null; // {nodes,boxes,edges} for the SVG currently on screen
 let layoutDeltas = {}; // the deltas in force for the current key
 let layoutDrag = null; // the gesture in flight
 let layoutWired = false;
+// The sidecar tier, cached per lens: one GET when a lens is first shown, not
+// one per render (render() runs on every SSE nudge and every settle poll).
+let layoutServer = { lens: null, deltas: {}, writable: false };
 
 /** The storage key for the project + lens on screen; null before /api/project lands. */
 function currentLayoutKey() {
   if (!projectInfo) return null;
-  return layoutKey(projectKeyOf(projectInfo), lensKeyOf({ zoom: zoomValue(), radial: view.radial, stack: view.stack }));
+  return layoutKey(projectKeyOf(projectInfo), currentLensKey());
 }
 
-/** First and last coordinate pair of a path `d` — pinhole's own edge anchors. */
-function pathAnchors(d) {
-  const n = String(d || "").match(/-?\d*\.?\d+(?:e[-+]?\d+)?/gi);
-  if (!n || n.length < 4) return null;
-  return { sx: +n[0], sy: +n[1], ex: +n[n.length - 2], ey: +n[n.length - 1] };
+/** The lens half of the key — also what /api/layout is keyed by (the project
+ * half is implicit there: the sidecar lives inside the project). */
+function currentLensKey() {
+  return lensKeyOf({ zoom: zoomValue(), radial: view.radial, stack: view.stack });
 }
 
 /**
@@ -2036,8 +2062,7 @@ function indexLayout(svgEl) {
 function renderLayout() {
   if (!layoutIndex) return;
   for (const [id, n] of layoutIndex.nodes) {
-    const d = layoutDeltas[id];
-    const t = d && (d.dx || d.dy) ? `translate(${d.dx || 0}, ${d.dy || 0}) ${n.base}`.trim() : n.base;
+    const t = nodeTransform(n.base, layoutDeltas[id] || {});
     if (t) n.el.setAttribute("transform", t);
     else n.el.removeAttribute("transform");
   }
@@ -2058,8 +2083,7 @@ function renderLayout() {
       if (e.paths[0].getAttribute("d") !== e.d0) e.paths.forEach((p) => p.setAttribute("d", e.d0));
       continue;
     }
-    const { sx, sy, ex, ey } = e.anchors;
-    const d = `M ${sx + ((a && a.dx) || 0)} ${sy + ((a && a.dy) || 0)} L ${ex + ((z && z.dx) || 0)} ${ey + ((z && z.dy) || 0)}`;
+    const d = straightEdge(e.anchors, a, z);
     e.paths.forEach((p) => p.setAttribute("d", d));
   }
 }
@@ -2070,15 +2094,54 @@ function applyLayout() {
   const host = document.getElementById("graph");
   if (!svgEl || !host) return;
   indexLayout(svgEl);
+  reloadLayoutDeltas();
+  ensureLayoutReset(host);
+  ensureLayoutDrag(host);
+  const lens = currentLensKey();
+  if (currentLayoutKey() && layoutServer.lens !== lens) pullServerLayout(lens);
+}
+
+/** Recompute both tiers onto the SVG already indexed, and repaint. Separate
+ * from applyLayout() because it must NOT re-index: renderLayout paints from
+ * each node's ORIGINAL transform, so re-indexing an already-painted SVG would
+ * take the displaced transform as the new base and apply the delta twice. */
+function reloadLayoutDeltas() {
+  if (!layoutIndex) return;
   const key = currentLayoutKey();
+  const lens = currentLensKey();
   // Stale ids are dropped on apply, not on write: a lens the user hasn't
   // opened in a while shouldn't have its deltas quietly deleted because this
   // render happened to be a different projection of the same estate.
-  layoutDeltas = key ? applicable(readLayout(localStorage, key), [...layoutIndex.nodes.keys(), ...layoutIndex.boxes.keys()]) : {};
+  const merged = key ? mergeLayouts(readLayout(localStorage, key), layoutServer.lens === lens ? layoutServer.deltas : {}) : {};
+  layoutDeltas = applicable(merged, [...layoutIndex.nodes.keys(), ...layoutIndex.boxes.keys()]);
   renderLayout();
-  ensureLayoutReset(host);
-  ensureLayoutDrag(host);
 }
+
+/** One GET per lens. Whatever comes back is merged UNDER the local tier and
+ * repainted; a refusal is cached as an empty, unwritable answer, so a serve
+ * with no sidecar (or no server at all) costs exactly one request per lens. */
+async function pullServerLayout(lens) {
+  layoutServer = { lens, deltas: {}, writable: false }; // claim it first — no request storm
+  const got = await fetchServerLayout(apiFetch, lens);
+  if (layoutServer.lens !== lens) return; // the view moved on while we waited
+  layoutServer = { lens, ...got };
+  if (!Object.keys(got.deltas).length || currentLensKey() !== lens) return;
+  reloadLayoutDeltas();
+  ensureLayoutReset(document.getElementById("graph"));
+}
+
+/** Push the current lens to the sidecar, once the hand has stopped moving.
+ * Nothing here is load-bearing: `writable` false (static export, preview mode,
+ * read-only project, older behold) simply never pushes, and a failed push is
+ * not reported — the localStorage tier already has it. */
+const pushServerLayout = debounce((lens, deltas) => {
+  if (staticMode || !layoutServer.writable || layoutServer.lens !== lens) return;
+  postServerLayout((url, init) => fetch(url, init), lens, deltas);
+}, 600);
+// A reload (or a tab closing) within the debounce window would otherwise drop
+// the last placement on the floor — localStorage has it, the sidecar wouldn't.
+// The push rides `keepalive`, so it survives the document.
+window.addEventListener("pagehide", () => pushServerLayout.flush());
 
 /** The grabbable thing at or above `el`, if any. */
 function layoutTargetIn(el) {
@@ -2161,6 +2224,10 @@ function ensureLayoutDrag(host) {
     if (!moved) return;
     const key = currentLayoutKey();
     if (key) writeLayout(localStorage, key, layoutDeltas);
+    // The sidecar gets the WHOLE lens map, not the one id that moved: it is a
+    // per-lens document, and the local tier is the authority the user is
+    // looking at. Debounced, so a drag is one write and not sixty.
+    if (key) pushServerLayout(currentLensKey(), layoutDeltas);
     ensureLayoutReset(document.getElementById("graph"));
   });
 }
@@ -2180,6 +2247,11 @@ function ensureLayoutReset(host) {
       e.stopPropagation();
       const key = currentLayoutKey();
       if (key) clearLayout(localStorage, key);
+      // Both tiers, or it isn't a reset: clearing only localStorage would let
+      // the next merge pull the sidecar's deltas straight back in.
+      const lens = currentLensKey();
+      layoutServer = { lens, deltas: {}, writable: layoutServer.lens === lens && layoutServer.writable };
+      pushServerLayout(lens, {});
       layoutDeltas = {};
       renderLayout();
       ensureLayoutReset(host);

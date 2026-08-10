@@ -9,10 +9,13 @@
 // dropped without a word (`applicable`).
 //
 // No DOM in here on purpose — this is the testable half of #228 (see
-// web/layout-store.test.js). app.js owns the pointer work and the SVG. The
-// second tier of the issue (a `.behold/layout.json` sidecar behind
-// `POST /api/layout`, so exports and snapshots honour the same deltas) is the
-// follow-up; this is the shape it will serialize.
+// web/layout-store.test.js). app.js owns the pointer work and the SVG.
+//
+// Two tiers, and the second one lands here too: `localStorage` (free, per
+// browser) and the `.behold/layout.json` sidecar behind `GET/POST /api/layout`
+// (shareable, versionable, and what a server-side export bakes in — see
+// src/layout.ts). `mergeLayouts` decides who wins when both have an opinion,
+// and every server call degrades to localStorage-only without a word.
 
 const PREFIX = "behold.layout";
 const NUM = ["dx", "dy", "dw", "dh"];
@@ -115,4 +118,116 @@ export function applicable(deltas, liveIds) {
   const out = {};
   for (const [id, d] of Object.entries(normalize(deltas))) if (live.has(id)) out[id] = d;
   return out;
+}
+
+// --- The delta → SVG math ---------------------------------------------------
+// MUST stay identical to the copies in src/layout.ts, which is what bakes a
+// layout into a server-rendered export. web/layout-store.test.js imports both
+// modules and asserts they agree across a table of cases, so a drift fails a
+// test instead of quietly making an export disagree with the screen it came
+// from. (Same discipline as `canonicalKey`, mirrored in app.js and export.ts.)
+
+/** A node group's transform with its delta ridden on top of dagre's own. */
+export function nodeTransform(base, d) {
+  const dx = (d && d.dx) || 0;
+  const dy = (d && d.dy) || 0;
+  if (!dx && !dy) return base;
+  return `translate(${dx}, ${dy}) ${base}`.trim();
+}
+
+/** First and last coordinate pair of a path `d` — pinhole's own edge anchors. */
+export function pathAnchors(d) {
+  const n = String(d || "").match(/-?\d*\.?\d+(?:e[-+]?\d+)?/gi);
+  if (!n || n.length < 4) return null;
+  return { sx: +n[0], sy: +n[1], ex: +n[n.length - 2], ey: +n[n.length - 1] };
+}
+
+/** An edge whose ends moved: a straight line between the original anchors,
+ * each shifted by ITS OWN end's delta. #228 accepts the straight-line fallback
+ * explicitly; spline re-routing stays pinhole's job. */
+export function straightEdge(anchors, from, to) {
+  const { sx, sy, ex, ey } = anchors;
+  return `M ${sx + ((from && from.dx) || 0)} ${sy + ((from && from.dy) || 0)} L ${ex + ((to && to.dx) || 0)} ${ey + ((to && to.dy) || 0)}`;
+}
+
+// --- The server tier --------------------------------------------------------
+
+/**
+ * The two tiers, merged for display. **Local wins where both have an id.**
+ *
+ * You are looking at this browser's picture: the drag you just did is in
+ * localStorage and must not be argued with by a sidecar someone else committed
+ * (or that you yourself pushed from another machine). An id only the server has
+ * still comes through — that is what makes a shared layout worth having — so
+ * the merge adds without ever overwriting. The reverse ordering would mean a
+ * `git pull` silently undoing a placement you can see on your screen.
+ *
+ * The stale-id rule is unchanged and applies after: `applicable` drops whatever
+ * is no longer in the graph, whichever tier it came from.
+ */
+export function mergeLayouts(local, server) {
+  return { ...normalize(server), ...normalize(local) };
+}
+
+/** The lens's deltas as the server has them (`{}` on any refusal), plus whether
+ * it would accept a write. No server, a static export, preview mode, a
+ * read-only project, a 404 from an older behold — all the same answer: this is
+ * a localStorage-only session, and nothing says so out loud. */
+export async function fetchServerLayout(fetchFn, lens) {
+  try {
+    const res = await fetchFn(`/api/layout?lens=${encodeURIComponent(lens)}`);
+    if (!res || !res.ok) return { deltas: {}, writable: false };
+    const body = await res.json();
+    return { deltas: normalize(body && body.deltas), writable: !!(body && body.writable) };
+  } catch {
+    return { deltas: {}, writable: false };
+  }
+}
+
+/** Push one lens's map to the sidecar. Resolves true iff it was stored.
+ * `keepalive` so a push flushed on the way out of the page (see `debounce`'s
+ * `flush`) still completes after the document is gone. */
+export async function postServerLayout(fetchFn, lens, deltas) {
+  try {
+    const res = await fetchFn("/api/layout", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ lens, deltas: normalize(deltas) }),
+      keepalive: true,
+    });
+    return !!(res && res.ok);
+  } catch {
+    return false;
+  }
+}
+
+/** A trailing-edge debouncer for the POST above: a drag emits a pointer-move
+ * storm and ends on the one write that matters. `flush()` runs a pending call
+ * now — what a page leaving mid-debounce needs, or the sidecar would miss the
+ * last placement the localStorage tier already has. Exported so the test can
+ * drive it with a fake clock rather than sleeping. */
+// The default timers are wrappers, not bare references: a detached
+// `setTimeout` is called with no `this` and Chrome answers that with an
+// "Illegal invocation" TypeError.
+export function debounce(fn, ms, setTimer = (cb, t) => setTimeout(cb, t), clearTimer = (id) => clearTimeout(id)) {
+  let t = null;
+  let last = null;
+  const run = (...args) => {
+    if (t !== null) clearTimer(t);
+    last = args;
+    t = setTimer(() => {
+      t = null;
+      last = null;
+      fn(...args);
+    }, ms);
+  };
+  run.flush = () => {
+    if (t === null) return;
+    clearTimer(t);
+    t = null;
+    const args = last || [];
+    last = null;
+    fn(...args);
+  };
+  return run;
 }

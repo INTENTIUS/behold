@@ -92,9 +92,30 @@ const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css
 
 /** Start the stub on `port`; resolves to the http.Server (close() to stop). */
 export function startStub(port) {
+  // #228: the hand-layout sidecar, in memory instead of `.behold/layout.json`
+  // — the SAME wire contract src/server.ts serves (lens-keyed deltas, a
+  // `writable` flag on the read), so the smoke drives the client's whole sync
+  // layer without a project on disk. `server.layout` lets the test read and
+  // seed it as if it were the file.
+  const layout = new Map();
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://x");
     const path = url.pathname;
+    if (path === "/api/layout") {
+      res.writeHead(200, { "content-type": "application/json" });
+      if (req.method === "POST") {
+        const body = JSON.parse(await new Promise((r) => {
+          let s = "";
+          req.on("data", (c) => (s += c));
+          req.on("end", () => r(s || "{}"));
+        }));
+        if (Object.keys(body.deltas || {}).length) layout.set(body.lens, body.deltas);
+        else layout.delete(body.lens);
+        return res.end(JSON.stringify({ ok: true, lens: body.lens, deltas: body.deltas || {} }));
+      }
+      const lens = url.searchParams.get("lens");
+      return res.end(JSON.stringify({ lens, writable: true, deltas: layout.get(lens) || {} }));
+    }
     if (path === "/api/events") {
       res.writeHead(200, { "content-type": "text/event-stream" });
       return; // held open — the SPA's EventSource stays quiet
@@ -130,5 +151,6 @@ export function startStub(port) {
       res.end("not found: " + path);
     }
   });
+  server.layout = layout; // the sidecar, for the smoke to read and seed (#228)
   return new Promise((resolve) => server.listen(port, () => resolve(server)));
 }
