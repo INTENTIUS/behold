@@ -104,3 +104,16 @@ e2e-cc-logical:
 #   BEHOLD_E2E_PROJECT=/path BEHOLD_E2E_CHART=./chart BEHOLD_E2E_RELEASE=name just e2e-helm-logical
 e2e-helm-logical:
     bash e2e/helm-logical-k3d-e2e.sh
+
+# behold#256 (the GitOps lane): the flux-estate demo driven headless against a
+# REAL Flux — the estate lenses (#241) and the health verdicts (#238) asserted
+# where the interesting states actually exist. Unlike every other e2e-* recipe
+# this one BOOTS its substrate: a scratch k3d cluster named behold-flux-e2e,
+# Flux from the pinned release manifest (no flux CLI), the control plane built
+# by its own chant. One trap deletes the cluster on any exit, and it refuses to
+# start if that name is already taken — no existing cluster is ever touched.
+# Needs docker + k3d + kubectl and a reachable github.com (the estate's
+# GitRepository is a real remote); SKIPs with exit 0 if any is missing.
+#   just e2e-flux-estate
+e2e-flux-estate:
+    bash e2e/flux-estate-k3d-e2e.sh
