@@ -869,7 +869,19 @@ describe("estate lenses — the composed IR gets the runtime and logical passes 
     vi.mocked(spawnMock).mockImplementation(((_cmd: unknown, args: unknown) => {
       const s = String(args);
       const ir = s.includes(cp) ? (s.includes("--live") ? CONTROL_PLANE_LIVE : CONTROL_PLANE) : s.includes(a) ? APP_A : APP_B;
-      return fakeProc(0, JSON.stringify(ir));
+      // #261: chant only carries an object's full `spec` (where sourceRef and
+      // dependsOn live) at detail 3 — below that there is nothing for
+      // addK8sDeclaredEdges to derive from. The fixture above doesn't vary by
+      // detail on its own, so mirror chant's real behaviour here: strip
+      // `spec` off the control plane's Kustomizations unless the request
+      // actually asked for detail 3. Without this, a route test could pass
+      // the #261 regression for free, from a fixture that always hands back
+      // the rich attrs regardless of what was requested.
+      const shaped =
+        s.includes(cp) && !s.includes("--detail,3")
+          ? { ...ir, nodes: ir.nodes.map((n) => (n.kind === "K8s::Flux::Kustomization" ? { ...n, attrs: { ...n.attrs, spec: undefined } } : n)) }
+          : ir;
+      return fakeProc(0, JSON.stringify(shaped));
     }) as never);
     const broadcaster = new Broadcaster();
     const runner = new OpRunner({ projectDir: cp, broadcaster, onDone: () => {} });
@@ -930,7 +942,7 @@ describe("estate lenses — the composed IR gets the runtime and logical passes 
     const res = await fluxEstate().app.request("/api/overlay?env=local&runtime=1");
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      ir: { nodes: { id: string }[]; groups: { byContainer?: Record<string, string[]> } };
+      ir: { nodes: { id: string }[]; edges: { from: string; to: string; viaAttr?: string }[]; groups: { byContainer?: Record<string, string[]> } };
       meta: { mode?: string; note?: string };
     };
     const pod = body.ir.nodes.find((n) => n.id.endsWith("/appAPod"));
@@ -948,6 +960,26 @@ describe("estate lenses — the composed IR gets the runtime and logical passes 
     };
     expect(body.ir.nodes.some((n) => n.id.endsWith("/appAPod"))).toBe(false);
     expect(body.ir.groups.byContainer).toBeUndefined();
+  });
+
+  // #261, found by the #256 live e2e: `?runtime=1` on a composed estate used
+  // to compose at chant's default detail 2, where `spec` (and so
+  // sourceRef/dependsOn) isn't in the IR at all — addK8sDeclaredEdges had
+  // nothing to derive the reconcile-ordering edges from, the view rendered
+  // edgeless, and edgelessNote then asserted that edgelessness as a fact
+  // about the estate ("nothing in this estate references anything else")
+  // rather than a detail-tier artifact.
+  it("?runtime=1 on the estate overlay carries the sourceRef/dependsOn edges, and drops no note about it (#261)", { timeout: 20_000 }, async () => {
+    const body = (await (await fluxEstate().app.request("/api/overlay?env=local&runtime=1")).json()) as {
+      ir: { edges: { from: string; to: string; viaAttr?: string }[] };
+      meta: { note?: string };
+    };
+    // The same three edges /api/graph?detail=3 draws (see the issue): appA
+    // and appB's sourceRef onto the shared GitRepository, plus appB's
+    // dependsOn gating it on appA.
+    expect(body.ir.edges.filter((e) => e.viaAttr === "sourceRef")).toHaveLength(2);
+    expect(body.ir.edges.some((e) => e.viaAttr === "dependsOn")).toBe(true);
+    expect(body.meta.note ?? "").not.toMatch(/no edges/);
   });
 });
 

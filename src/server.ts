@@ -1323,6 +1323,11 @@ export function createApp(
       return c.json({ error: "overlay needs an environment — pick one, or start behold with --env <name>" }, 400);
     }
     const logical = new URL(c.req.url).searchParams.get("logical") === "1";
+    // #261: hoisted so both the estate and single-project branches below share
+    // one reading of the flag — the estate branch used to re-derive it inline
+    // and the single-project branch didn't read it until after its `graphIr`
+    // call had already gone out at the wrong detail.
+    const runtime = new URL(c.req.url).searchParams.get("runtime") === "1";
     try {
       // #189: the estate-wide overlay. The single-project pipeline below only
       // ever observed the primary, so an N-project estate was coloured 1/N —
@@ -1335,10 +1340,15 @@ export function createApp(
       // helm artifact join and the cluster-root merge are still primary-only —
       // both are per-project reads, not passes over the composed IR).
       if (cfg.projectDirs && cfg.projectDirs.length > 1) {
-        const runtime = new URL(c.req.url).searchParams.get("runtime") === "1";
         // The logical lens needs the rich attrs, exactly as on the
-        // single-project path below (`logical ? { detail: 3 }`).
-        const detail = logical ? 3 : query.detail;
+        // single-project path below (`logical ? { detail: 3 }`). The runtime
+        // tier needs them too (#261): its whole subject is the Flux
+        // sourceRef/dependsOn reconcile-ordering edges `addK8sDeclaredEdges`
+        // derives below from `spec`, and chant only carries `spec` at detail
+        // 3 — an unqualified `?runtime=1` used to compose at chant's default
+        // detail 2, where the derivation had nothing to read and the view
+        // rendered edgeless.
+        const detail = logical || runtime ? 3 : query.detail;
         const est = await composeEstateOverlay(cfg.projectDirs, { ...tierTargetOpts(query), detail, env }, reclassifyOverlay);
         if (est.dropped.length === est.total) {
           return c.json({ error: `no project in the estate could be graphed — ${est.dropped.map((d) => `${d.name}: ${d.reason}`).join("; ")}` }, 500);
@@ -1397,7 +1407,7 @@ export function createApp(
         // point of asking for the tier. Every other estate view keeps
         // `byStack`.
         const { svg } = renderGraph(ir, { boxes: runtime ? "byContainer" : "byStack" });
-        const note = [coverNote, namespaceMismatchNote(ir.nodes), runtime ? notesFor("runtime", ir) : undefined]
+        const note = [coverNote, namespaceMismatchNote(ir.nodes), runtime ? notesFor("runtime", ir, undefined, undefined, detail) : undefined]
           .filter(Boolean)
           .join(" · ");
         return c.json({
@@ -1406,7 +1416,12 @@ export function createApp(
           meta: { projectDir: cfg.projectDir, env, mode: "overlay", estate: est.total, ...(note ? { note } : {}) },
         });
       }
-      const opts: GraphOptions = { ...query, live: true, overlay: true, env, ...(logical ? { detail: 3 } : {}) };
+      // #261: `runtime` forces detail 3 exactly as `logical` does, and for the
+      // same reason — see the estate branch above's comment. Before this, the
+      // single-project runtime view had the identical bug: `?runtime=1` alone
+      // composed at chant's default detail 2, so a GitOps project's own
+      // sourceRef/dependsOn edges never made it into the IR either.
+      const opts: GraphOptions = { ...query, live: true, overlay: true, env, ...(logical || runtime ? { detail: 3 } : {}) };
       // Reclassify wiring/examples so they don't read as "pending" over a done
       // deploy (see reclassifyOverlay): Parameters take their deployed
       // component's status, src/examples/ nodes go neutral + `_byo`.
@@ -1448,9 +1463,7 @@ export function createApp(
       // boundary and nests each owner-referenced child under its declared
       // parent. Every other tier stops where your source stops — a Pod is noise
       // in a composites view, and a layer you cannot dial away is not a tier.
-      ir = new URL(c.req.url).searchParams.get("runtime") === "1"
-        ? attachRuntimeContainment(ir)
-        : pruneRuntimeChildren(ir);
+      ir = runtime ? attachRuntimeContainment(ir) : pruneRuntimeChildren(ir);
       // Logical/architecture lens (#63): re-project the live overlay into nested
       // region/VPC/subnet ⊃ component boxes, keeping each surviving node's drift
       // colour. Short-circuits the detail-tier pruning/composite plumbing below.
@@ -1513,14 +1526,13 @@ export function createApp(
       // `boxes: "byContainer"` (#86) is a no-op unless attachRuntimeContainment
       // populated it above — same "harmless when absent" contract as byStack.
       const { svg } = renderGraph(ir, { boxes: "byContainer", radial: new URL(c.req.url).searchParams.get("radial") === "1" });
-      const zoom: Zoom =
-        new URL(c.req.url).searchParams.get("runtime") === "1"
-          ? "runtime"
-          : query.detail === 1
-            ? "composites"
-            : query.detail === 3
-              ? "attributes"
-              : "resources";
+      const zoom: Zoom = runtime
+        ? "runtime"
+        : query.detail === 1
+          ? "composites"
+          : query.detail === 3
+            ? "attributes"
+            : "resources";
       // The wrong-tier trap (see tierMismatchNote): joined ahead of the zoom
       // note so "you may be viewing the wrong tier" outranks "this tier is
       // empty" — the first explains the second.
@@ -1530,7 +1542,12 @@ export function createApp(
       // without this aside. Ahead of the zoom notes: it explains the colours,
       // which outranks describing the shape.
       const nsNote = namespaceMismatchNote(ir.nodes);
-      const zoomNotes = notesFor(zoom, ir, compositeEdgesAttached);
+      // #261: the effective detail this view actually fetched at (opts.detail
+      // — 3 whenever runtime/logical forced it, else whatever the query
+      // asked for, chant's own default of 2 when neither said anything) —
+      // so edgelessNote can tell a real edgeless estate from a detail tier
+      // that never had the attrs to derive edges from in the first place.
+      const zoomNotes = notesFor(zoom, ir, compositeEdgesAttached, undefined, opts.detail ?? 2);
       const note = [tierNote, nsNote, zoomNotes].filter(Boolean).join(" · ");
       return c.json({ ir, svg, meta: { projectDir: cfg.projectDir, env, mode: "overlay", ...(note ? { note } : {}) } });
     } catch (err) {
