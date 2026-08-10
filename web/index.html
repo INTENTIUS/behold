@@ -86,7 +86,8 @@
          zoom/pan by mutating its viewBox (see setupPanZoom in app.js) — pinch or
          ⌘/Ctrl+scroll to zoom at the cursor, drag to pan. It starts fit-to-pane;
          the "⤢ fit" button resets. behold also adds a selection highlight. */
-      #graph svg { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+      #graph svg { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none;
+        user-select: none; -webkit-user-select: none; }
       #graph svg.grabbing { cursor: grabbing; }
       /* Edge hover-highlight — trace a single edge through an overlapping bundle.
          pinhole already paints a fat transparent hit-path per edge (pointer-events
@@ -114,6 +115,7 @@
       @media (prefers-reduced-motion: reduce) {
         #graph svg, #graph [data-node-id].status-changed { animation: none; }
         #graph g[data-edge-from] .pin-edge-line { transition: none; }
+        #graph [data-layout-resize] { transition: none; }
       }
       #graph g[data-edge-from]:hover .pin-edge-line,
       #graph g[data-edge-from].edge-hi .pin-edge-line { stroke: var(--pending); stroke-width: 3.2; }
@@ -127,6 +129,18 @@
         color: var(--muted); border: 1px solid var(--rule); border-radius: var(--r-ctl); padding: 4px 10px;
         font: var(--t-caption)/1.3 var(--font-mono); cursor: pointer; }
       #zoom-toggle:hover { border-color: var(--focus); color: var(--fg); }
+      /* Hand layout (#228): the escape hatch, beside ⤢ fit. Hidden by app.js
+         until something on this lens is actually hand-placed — it is both the
+         reset and the only indication that dagre isn't the whole story here. */
+      #layout-reset { position: absolute; top: 8px; right: 66px; z-index: 2; background: var(--panel);
+        color: var(--muted); border: 1px solid var(--rule); border-radius: var(--r-ctl); padding: 4px 10px;
+        font: var(--t-caption)/1.3 var(--font-mono); cursor: pointer; }
+      #layout-reset:hover { border-color: var(--focus); color: var(--fg); }
+      /* A containment box's title moves it and its corner handle resizes it.
+         The handle carries opacity="0" as a presentation attribute so a static
+         export never shows it — this rule outranks the attribute. */
+      #graph [data-layout-resize] { opacity: 0; transition: opacity .1s ease; }
+      #graph [data-layout-box]:hover [data-layout-resize] { opacity: .85; }
       /* The way out of waves view, floating top-LEFT so it sits where the eye
          already is when observe drops you into the wave-laned graph. */
       #back-to-infra { position: absolute; top: 8px; left: 8px; z-index: 2; background: var(--panel);

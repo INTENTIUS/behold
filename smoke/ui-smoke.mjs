@@ -205,6 +205,126 @@ try {
   for (const k of CHROME_TOKENS) check(`--${k} re-derives on theme switch`, /^#[0-9a-f]{6}$/i.test(after["--" + k]) && after["--" + k] !== before["--" + k]);
   await page.screenshot({ path: join(SHOTS, "6-light.png") });
 
+  // ---- #228: hand layout — drag, resize, persist, reset -------------------
+  // dagre places, you re-place. Everything below is driven through real pointer
+  // input so the pan/click latch (`panMoved`) is exercised the way a hand does
+  // it, not by poking the module's state.
+  const LAYOUT_PREFIX = "behold.layout.";
+  const layoutKeys = () => page.evaluate((p) => Object.keys(localStorage).filter((k) => k.startsWith(p)), LAYOUT_PREFIX);
+  const storedDeltas = async () => {
+    const [k] = await layoutKeys();
+    return k ? JSON.parse(await page.evaluate((key) => localStorage.getItem(key), k)) : {};
+  };
+  const transformOf = (sel) => page.locator(sel).evaluate((el) => el.getAttribute("transform") || "");
+  const edgePath = () => page.locator('#graph g[data-edge-from="api"] path.pin-edge-line').getAttribute("d");
+  const boxWidth = async () => Number(await page.locator("#graph [data-layout-box] > rect").getAttribute("width"));
+  const viewBox = () => page.locator("#graph svg").getAttribute("viewBox");
+  const dragBy = async (box, dx, dy) => {
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + dx, box.y + box.height / 2 + dy, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForTimeout(120);
+  };
+
+  check("nothing is hand-placed on a fresh boot", (await layoutKeys()).length === 0);
+  check("the reset control hides until it has something to reset", !(await page.locator("#layout-reset").isVisible()));
+
+  // Screen pixels → viewBox units: the drag must land where the pointer went,
+  // whatever the current zoom is.
+  const scale = await page.evaluate(() => document.querySelector("#graph svg").getScreenCTM().a);
+  const wantDx = 120 / scale;
+  const wantDy = 70 / scale;
+  const vbBeforeDrag = await viewBox();
+  await dragBy(await page.locator('#graph [data-node-id="api"]').boundingBox(), 120, 70);
+
+  const cardTf = await transformOf('#graph [data-node-id="api"]');
+  const [gotDx, gotDy] = (cardTf.match(/translate\(\s*(-?[\d.]+)[\s,]+(-?[\d.]+)/) || ["", "0", "0"]).slice(1).map(Number);
+  check("dragging a card translates its group by the pointer delta, in viewBox units", Math.abs(gotDx - wantDx) < 2 && Math.abs(gotDy - wantDy) < 2);
+  check("the delta rides ON TOP of the layout's own transform", /translate\([^)]*\)\s*translate\(\s*40/.test(cardTf));
+  check("a drag on a card never pans the graph", (await viewBox()) === vbBeforeDrag);
+  check("a drag is never also a click — the card is not selected", (await page.locator('#graph [data-node-id="api"].sel').count()) === 0);
+
+  // Edge re-anchoring: the touched end moves with its node, the other stays on
+  // pinhole's own anchor, and the bezier degrades to a straight line (#228
+  // accepts the fallback explicitly).
+  const anchored = await edgePath();
+  const anchorNums = anchored.match(/-?[\d.]+/g).map(Number);
+  check("the edge re-anchors as a straight line", /^M\s[-\d.]+\s[-\d.]+\sL\s[-\d.]+\s[-\d.]+$/.test(anchored));
+  check("the displaced end carries its node's delta", Math.abs(anchorNums[0] - (115 + wantDx)) < 2 && Math.abs(anchorNums[1] - (112 + wantDy)) < 2);
+  check("the untouched end stays exactly where pinhole put it", anchorNums[2] === 305 && anchorNums[3] === 112);
+
+  const [key] = await layoutKeys();
+  check("the layout is stored as behold.layout.<project>.<lens>", key === "behold.layout.estates-stub-estate.components");
+  const afterCard = await storedDeltas();
+  check("the delta is keyed by node id", Math.abs(afterCard.api.dx - wantDx) < 2 && Math.abs(afterCard.api.dy - wantDy) < 2);
+  check("the reset control appears once something is hand-placed", await page.locator("#layout-reset").isVisible());
+
+  // The containment box: a corner handle resizes it (children do NOT reflow).
+  const boxW0 = await boxWidth();
+  await dragBy(await page.locator("#graph [data-layout-resize]").boundingBox(), -80, 40);
+  const boxW1 = await boxWidth();
+  check("the corner handle resizes the containment box", Math.abs(boxW1 - (boxW0 - 80 / scale)) < 2);
+  const afterBox = await storedDeltas();
+  check("a box stores {dw,dh} under its own id", afterBox["box:wave-1"] && Math.abs(afterBox["box:wave-1"].dw + 80 / scale) < 2);
+  await page.screenshot({ path: join(SHOTS, "7-layout.png") });
+
+  // exportSvg() blobs `#graph svg`'s own outerHTML (no server round-trip), so
+  // the displaced positions come along by construction — and the resize handles
+  // do not, because their `opacity="0"` is an attribute, not a CSS rule.
+  const serialized = await page.locator("#graph svg").evaluate((el) => el.outerHTML);
+  check("an export carries the displaced card", serialized.includes(cardTf));
+  check("an export carries the re-anchored edge", serialized.includes(anchored));
+  check("an export does not carry a visible resize handle", /data-layout-resize="[^"]*"[^>]*opacity="0"/.test(serialized));
+
+  // Reload: the layout is still there, applied onto a freshly fetched SVG.
+  await page.reload();
+  await page.waitForSelector("#graph svg [data-node-id]", { timeout: 20000 });
+  await page.waitForTimeout(300);
+  check("the card's placement survives a reload", (await transformOf('#graph [data-node-id="api"]')) === cardTf);
+  check("the box's size survives a reload", Math.abs((await boxWidth()) - boxW1) < 0.5);
+  check("the re-anchored edge is re-applied to the new SVG", (await edgePath()) === anchored);
+
+  // A delta for a node that left the estate is dropped without a word (#228).
+  await page.evaluate(
+    ([k]) => {
+      const d = JSON.parse(localStorage.getItem(k));
+      d["a-node-that-no-longer-exists"] = { dx: 40, dy: 40 };
+      localStorage.setItem(k, JSON.stringify(d));
+    },
+    [key],
+  );
+  await page.reload();
+  await page.waitForSelector("#graph svg [data-node-id]", { timeout: 20000 });
+  await page.waitForTimeout(300);
+  check(
+    "a delta for a node that left the estate is ignored, without error",
+    (await page.locator("#graph [data-node-id]").count()) === 3 && (await transformOf('#graph [data-node-id="api"]')) === cardTf,
+  );
+
+  // Reset: back to dagre's placement, and the key goes with it.
+  await page.click("#layout-reset");
+  await page.waitForTimeout(150);
+  check("reset restores the card", (await transformOf('#graph [data-node-id="api"]')) === "translate(40, 80)");
+  check("reset restores the box", (await boxWidth()) === boxW0);
+  check("reset restores the edge's original curve", (await edgePath()) === "M 115 112 C 115 112, 305 112, 305 112");
+  check("reset clears this lens's key", (await layoutKeys()).length === 0);
+  check("reset hides itself again", !(await page.locator("#layout-reset").isVisible()));
+
+  // …and the two gestures that were there before still are.
+  await page.click('#graph [data-node-id="api"]');
+  await page.waitForTimeout(100);
+  check("click-inspect still selects after a layout gesture", (await page.locator('#graph [data-node-id="api"].sel').count()) === 1);
+  const vbBeforePan = await viewBox();
+  await page.mouse.move(600, 780);
+  await page.mouse.down();
+  await page.mouse.move(680, 810, { steps: 5 });
+  await page.mouse.up();
+  check("pan still owns the empty ground", (await viewBox()) !== vbBeforePan);
+  await page.click("#zoom-toggle");
+  await page.waitForTimeout(100);
+  check("⤢ fit still resets the view", (await viewBox()) === vbBeforePan);
+
   check("no page errors", pageErrors.length === 0);
   if (pageErrors.length) console.error("page errors:", pageErrors);
 } finally {
