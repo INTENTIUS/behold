@@ -6,7 +6,17 @@
  * src/overlay.ts. behold owns the live data + the server + (later) the
  * temporal/action layers around this.
  */
-import { layoutIr, layoutArchitecture, renderSvg, cardSizes, registerPack, type GroupBox, type Status } from "@intentius/pinhole";
+import {
+  layoutIr,
+  layoutArchitecture,
+  renderSvg,
+  renderMorphHtml,
+  cardSizes,
+  registerPack,
+  type GroupBox,
+  type MorphView,
+  type Status,
+} from "@intentius/pinhole";
 import type { GraphIR, IRGroups, Layout } from "@intentius/chant";
 import type { ByContainer } from "./logical.ts";
 import { k8sIconFor, helmIconFor } from "./icon-packs.ts";
@@ -243,16 +253,45 @@ export function renderCarveEstate(
   appIr: GraphIR,
   opts: { tfTitle: string; appTitle: string; theme?: string },
 ): RenderResult & { ir: GraphIR } {
-  const prefix = `${opts.appTitle.split(" ")[0]}/`;
-  const appId = (id: string) => `${prefix}${id}`;
-  const appNodes = appIr.nodes.map((n) => ({ ...n, id: appId(n.id) }));
-  const appEdges = appIr.edges.map((e) => ({ ...e, from: appId(e.from), to: appId(e.to) }));
-  const namespacedApp: GraphIR = { ...appIr, nodes: appNodes, edges: appEdges, groups: {} };
+  const comp = composeCarveEstate(tfIr, namespaceAppIr(appIr, opts.appTitle), opts);
+  const svg = renderSvg(comp.ir, comp.layout, {
+    fit: true,
+    hideTitle: true,
+    groups: comp.boxes,
+    ...(opts.theme ? { theme: opts.theme as never } : {}),
+  });
+  return { svg, ir: comp.ir };
+}
 
+/** App-side node ids get the member prefix (`app/<id>`, composeStacks'
+ * convention) so they can never collide with a Terraform address. The carved
+ * nodes the morph moves INTO the app box deliberately skip this — they keep
+ * their TF address, which is what makes the card glide instead of swap. */
+function namespaceAppIr(appIr: GraphIR, appTitle: string): GraphIR {
+  const prefix = `${appTitle.split(" ")[0]}/`;
+  const appId = (id: string) => `${prefix}${id}`;
+  return {
+    ...appIr,
+    nodes: appIr.nodes.map((n) => ({ ...n, id: appId(n.id) })),
+    edges: appIr.edges.map((e) => ({ ...e, from: appId(e.from), to: appId(e.to) })),
+    groups: {},
+  };
+}
+
+/** One composed estate frame, render-ready: layout and boxes in renderSvg's
+ * y-up plane — the same plane pinhole's `MorphView` reads, so a composition
+ * serves both the static SVG and one morph view. */
+interface EstateComposition {
+  ir: GraphIR;
+  layout: Layout;
+  boxes: GroupBox[];
+}
+
+function composeCarveEstate(tfIr: GraphIR, appNs: GraphIR, opts: { tfTitle: string; appTitle: string }): EstateComposition {
   const tfPlan = bandedPlan(tfIr, (tfIr.groups.byStack ?? {}) as Record<string, string[]>);
   // The app side reuses the banded grid as a single panel: same cell metrics
   // discipline, and the panel title says what these cards have in common.
-  const appPlan = bandedPlan(namespacedApp, { "carved so far": appNodes.map((n) => n.id) });
+  const appPlan = bandedPlan(appNs, { "carved so far": appNs.nodes.map((n) => n.id) });
 
   // Two member boxes, top-aligned, TF on the left where the ranking's weight
   // is. Content sits inside each member at (PAD, TITLE + PAD).
@@ -278,27 +317,70 @@ export function renderCarveEstate(
   ];
 
   const ir: GraphIR = {
-    nodes: [...tfIr.nodes, ...appNodes],
-    edges: [...tfIr.edges, ...appEdges],
+    nodes: [...tfIr.nodes, ...appNs.nodes],
+    edges: [...tfIr.edges, ...appNs.edges],
     groups: {
       byStack: {
         ...((tfIr.groups.byStack ?? {}) as Record<string, string[]>),
-        [opts.appTitle]: appNodes.map((n) => n.id),
+        [opts.appTitle]: appNs.nodes.map((n) => n.id),
       },
     },
   };
-  const layout: Layout = {
-    width,
-    height,
-    nodes: [...tf.placed, ...app.placed].map((p) => ({ id: p.id, x: p.x, y: height - p.y })),
+  return {
+    ir,
+    layout: {
+      width,
+      height,
+      nodes: [...tf.placed, ...app.placed].map((p) => ({ id: p.id, x: p.x, y: height - p.y })),
+    },
+    boxes: boxes.map((b) => ({ ...b, y: height - b.y })),
   };
-  const svg = renderSvg(ir, layout, {
-    fit: true,
-    hideTitle: true,
-    groups: boxes.map((b) => ({ ...b, y: height - b.y })),
-    ...(opts.theme ? { theme: opts.theme as never } : {}),
+}
+
+/** The carve morph (#230 M2b): two estate frames — Terraform owns the carved
+ * resource / chant owns it — as one self-contained morph artifact. The carved
+ * card keeps its TF address in both views, so pinhole's FLIP glides it out of
+ * its band and into the chant box while the boxes resize around it; the band
+ * panels and both member boxes share titles across views, so they morph too.
+ * (Morph badges are pinhole's neutral fill by design (#107), so the after view
+ * marks ownership in the carved node's attrs — the inspector shows
+ * `carved → chant` — rather than in the badge colour.) */
+export function renderCarveMorph(
+  tfIr: GraphIR,
+  appIr: GraphIR,
+  carved: string[],
+  opts: { tfTitle: string; appTitle: string; title?: string },
+): string {
+  const appNs = namespaceAppIr(appIr, opts.appTitle);
+  const before = composeCarveEstate(tfIr, appNs, opts);
+
+  const gone = new Set(carved);
+  const bands = (tfIr.groups.byStack ?? {}) as Record<string, string[]>;
+  const bandsAfter: Record<string, string[]> = {};
+  for (const [band, members] of Object.entries(bands)) {
+    const left = members.filter((id) => !gone.has(id));
+    if (left.length) bandsAfter[band] = left;
+  }
+  const tfAfter: GraphIR = {
+    nodes: tfIr.nodes.filter((n) => !gone.has(n.id)),
+    edges: tfIr.edges.filter((e) => !gone.has(e.from) && !gone.has(e.to)),
+    groups: { byStack: bandsAfter },
+  };
+  const carvedNodes = tfIr.nodes
+    .filter((n) => gone.has(n.id))
+    .map((n) => ({ ...n, attrs: { ...n.attrs, _status: "good", carve: "carved → chant" } }));
+  const appAfter: GraphIR = { ...appNs, nodes: [...appNs.nodes, ...carvedNodes] };
+  const after = composeCarveEstate(tfAfter, appAfter, opts);
+
+  const view = (name: string, comp: EstateComposition): MorphView => ({
+    name,
+    ir: comp.ir,
+    layout: comp.layout,
+    groups: comp.boxes,
   });
-  return { svg, ir };
+  return renderMorphHtml([view("Terraform owns it", before), view("chant owns it", after)], {
+    title: opts.title ?? `carve morph — ${carved.join(", ")}`,
+  });
 }
 
 /** Re-place a laid-out graph's nodes on concentric rings by dagre rank (the

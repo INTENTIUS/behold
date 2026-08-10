@@ -809,7 +809,13 @@ try {
     check("acknowledging the handoff lands on Done", (await bodyStep()) === "done");
     const done = await carveText();
     check("the end card is #254's line", done.includes("chant-owned, observe position") && done.includes("terraform import"));
-    check("the follow-up is named, not implied", done.includes("SLIDE") && done.includes("--live"));
+    check("the follow-up is named, not implied", done.includes("--live"));
+    const morphLink = carvePage.locator("#tab-carve a.carve-morph-link");
+    check("the morph is a link, not a promise", (await morphLink.count()) === 1);
+    check(
+      "…and it names the picked resource",
+      ((await morphLink.getAttribute("href")) || "").includes("/carve/morph?select=aws_s3_bucket.assets"),
+    );
     const marker = carvePage.locator('#graph [data-node-id="aws_s3_bucket.assets"] [data-carved="1"]');
     check("the carved card carries a marker", (await marker.count()) === 1);
     check("…inside the card's own box, not at the group's origin", await marker.evaluate((t) => Number(t.getAttribute("x")) > 0 && Number(t.getAttribute("y")) > 0));
