@@ -11,7 +11,7 @@ import { chromium } from "playwright";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { startStub, JSON_FIXTURE } from "./stub.mjs";
+import { startStub, JSON_FIXTURE, BOX, EDGE_VIA } from "./stub.mjs";
 import { THEMES, DEFAULT_THEME } from "../web/themes.js";
 import { tokensFor, pinTokensFor, colorForCategory, setTheme, hexToOklch, contrast } from "../web/theme.js";
 import { helmIconFor, PLATE_FILL } from "../src/icon-packs.ts";
@@ -431,8 +431,43 @@ try {
   };
   const transformOf = (sel) => page.locator(sel).evaluate((el) => el.getAttribute("transform") || "");
   const edgePath = () => page.locator('#graph g[data-edge-from="api"] path.pin-edge-line').getAttribute("d");
+  const hitPath = () => page.locator('#graph g[data-edge-from="api"] path:not(.pin-edge-line)').getAttribute("d");
   const boxWidth = async () => Number(await page.locator("#graph [data-layout-box] > rect").getAttribute("width"));
   const viewBox = () => page.locator("#graph svg").getAttribute("viewBox");
+  // #267: geometry in the SVG's OWN units, measured the way the clamp measures
+  // it — so a check reads as "the card rect is inside the box rect", which is
+  // the actual invariant, and not as "the transform string says what I expected".
+  // `via` (when given) picks the edge-label chip by its text instead: the chip
+  // carries no id of any kind, which is the whole fragility under test here.
+  const userRect = (sel, via) =>
+    page.evaluate(
+      ([s, v]) => {
+        const svg = document.querySelector("#graph svg");
+        const el = v
+          ? ([...svg.querySelectorAll("text")].find((t) => (t.textContent || "").trim() === v) || { parentNode: null }).parentNode
+          : svg.querySelector(s);
+        const target = el && v ? el.querySelector("rect") : el;
+        if (!target) return null;
+        const r = target.getBoundingClientRect();
+        const inv = svg.getScreenCTM().inverse();
+        const at = (x, y) => {
+          const p = svg.createSVGPoint();
+          p.x = x;
+          p.y = y;
+          return p.matrixTransform(inv);
+        };
+        const a = at(r.left, r.top);
+        const b = at(r.right, r.bottom);
+        return { x: a.x, y: a.y, w: b.x - a.x, h: b.y - a.y, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 };
+      },
+      [sel, via],
+    );
+  const cardRect = (id) => userRect(`[data-node-id="${id}"]`);
+  const boxRect = () => userRect("[data-layout-box] > rect");
+  // The chip's <rect> is centred on the edge's midpoint to the digit (pinhole's
+  // own edgeLabel geometry), so its centre is directly comparable with the
+  // midpoint of the re-anchored path.
+  const labelAt = () => userRect(null, EDGE_VIA);
   const dragBy = async (box, dx, dy) => {
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.down();
@@ -450,6 +485,8 @@ try {
   const wantDx = 120 / scale;
   const wantDy = 70 / scale;
   const vbBeforeDrag = await viewBox();
+  const labelBefore = await labelAt();
+  check("the labelled edge's chip starts on pinhole's own midpoint", labelBefore && Math.abs(labelBefore.cx - 210) < 1 && Math.abs(labelBefore.cy - 112) < 1);
   await dragBy(await page.locator('#graph [data-node-id="api"]').boundingBox(), 120, 70);
 
   const cardTf = await transformOf('#graph [data-node-id="api"]');
@@ -467,6 +504,16 @@ try {
   check("the edge re-anchors as a straight line", /^M\s[-\d.]+\s[-\d.]+\sL\s[-\d.]+\s[-\d.]+$/.test(anchored));
   check("the displaced end carries its node's delta", Math.abs(anchorNums[0] - (115 + wantDx)) < 2 && Math.abs(anchorNums[1] - (112 + wantDy)) < 2);
   check("the untouched end stays exactly where pinhole put it", anchorNums[2] === 305 && anchorNums[3] === 112);
+  check("the transparent hit-path re-anchors with the line it stands in for", (await hitPath()) === anchored);
+
+  // #267: and the words go with the line. The chip pinhole paints for the
+  // edge's `viaAttr` used to sit where the bezier used to be, which is nowhere
+  // in particular once an end moves.
+  const labelAfter = await labelAt();
+  const midX = (anchorNums[0] + anchorNums[2]) / 2;
+  const midY = (anchorNums[1] + anchorNums[3]) / 2;
+  check("the edge label moves when its line is re-anchored", labelAfter && (Math.abs(labelAfter.cx - labelBefore.cx) > 1 || Math.abs(labelAfter.cy - labelBefore.cy) > 1));
+  check("…and lands on the re-anchored line's midpoint", labelAfter && Math.abs(labelAfter.cx - midX) < 1.5 && Math.abs(labelAfter.cy - midY) < 1.5);
 
   const [key] = await layoutKeys();
   check("the layout is stored as behold.layout.<project>.<lens>", key === "behold.layout.estates-stub-estate.components");
@@ -505,6 +552,10 @@ try {
   check("the card's placement survives a reload", (await transformOf('#graph [data-node-id="api"]')) === cardTf);
   check("the box's size survives a reload", Math.abs((await boxWidth()) - boxW1) < 0.5);
   check("the re-anchored edge is re-applied to the new SVG", (await edgePath()) === anchored);
+  // The label ride is not a drag-time effect bolted onto the pointer handler —
+  // it is part of painting a delta, so a stored one puts the chip back too.
+  const labelReloaded = await labelAt();
+  check("the label is re-placed from the stored delta, not just during the drag", labelReloaded && Math.abs(labelReloaded.cx - midX) < 1.5 && Math.abs(labelReloaded.cy - midY) < 1.5);
 
   // A delta for a node that left the estate is dropped without a word (#228).
   await page.evaluate(
@@ -551,10 +602,56 @@ try {
   check("reset restores the card", (await transformOf('#graph [data-node-id="api"]')) === "translate(40, 80)");
   check("reset restores the box", (await boxWidth()) === boxW0);
   check("reset restores the edge's original curve", (await edgePath()) === "M 115 112 C 115 112, 305 112, 305 112");
+  const labelReset = await labelAt();
+  check("reset puts the label back where pinhole painted it", labelReset && Math.abs(labelReset.cx - 210) < 1 && Math.abs(labelReset.cy - 112) < 1);
   check("reset clears this lens's key", (await layoutKeys()).length === 0);
   check("reset hides itself again", !(await page.locator("#layout-reset").isVisible()));
   await page.waitForTimeout(800);
   check("reset clears the sidecar too — or the next merge would pull it back", !server.layout.has("components"));
+
+  // ---- #267: a card cannot leave the box that draws around it -------------
+  // The box does not grow to fit — that's a gesture of its own — so a drag that
+  // keeps going after the wall simply stops at the padding. Everything below is
+  // measured in viewBox units against the box's real rect, because "inside the
+  // box" is the claim, not "the transform holds a particular number".
+  const PAD = 8; // CLAMP_PAD in web/layout-store.js
+  const wall0 = await boxRect();
+  check("the fixture's box is where the stub painted it", Math.abs(wall0.x - BOX.x) < 1 && Math.abs(wall0.h - BOX.h) < 1);
+  const apiBefore = await cardRect("api");
+  await dragBy(await page.locator('#graph [data-node-id="api"]').boundingBox(), 0, 300); // far past the floor
+  const apiWalled = await cardRect("api");
+  check("a drag into the box's wall stops at the padding", Math.abs(apiWalled.y + apiWalled.h - (wall0.y + wall0.h - PAD)) < 1.5);
+  check("…and it did move — the clamp stops the drag, it doesn't cancel it", apiWalled.y - apiBefore.y > 1);
+  const walled = await storedDeltas();
+  check("what's stored is the clamped delta, not the pointer's", Math.abs(walled.api.dy - (apiWalled.y - apiBefore.y)) < 1.5);
+
+  // Grow the box and the same drag goes further — the affordance the clamp
+  // points at ("need more room? the box is resizable") actually works.
+  await dragBy(await page.locator("#graph [data-layout-resize]").boundingBox(), 0, 120);
+  const wall1 = await boxRect();
+  check("the corner handle grew the box downward", wall1.h - wall0.h > 20);
+  await dragBy(await page.locator('#graph [data-node-id="api"]').boundingBox(), 0, 220);
+  const apiLower = await cardRect("api");
+  check("a bigger box lets the card go further", apiLower.y - apiWalled.y > 20);
+  check("…and it stops at the NEW wall", Math.abs(apiLower.y + apiLower.h - (wall1.y + wall1.h - PAD)) < 1.5);
+
+  // A delta stored before any of this existed (or against a box since shrunk)
+  // is brought back inside on apply — clamped, never discarded (#267).
+  await page.evaluate(([k]) => localStorage.setItem(k, JSON.stringify({ api: { dx: 4000, dy: 4000 } })), [key]);
+  await page.reload();
+  await page.waitForSelector("#graph svg [data-node-id]", { timeout: 20000 });
+  await page.waitForTimeout(400);
+  const wall2 = await boxRect();
+  const rescued = await cardRect("api");
+  check(
+    "an out-of-bounds stored delta is clamped on apply, not dropped",
+    Math.abs(rescued.x + rescued.w - (wall2.x + wall2.w - PAD)) < 1.5 &&
+      Math.abs(rescued.y + rescued.h - (wall2.y + wall2.h - PAD)) < 1.5,
+  );
+  check("…and it really was applied, not ignored", rescued.x > apiBefore.x + 20);
+  await page.screenshot({ path: join(SHOTS, "8-clamp.png") });
+  await page.click("#layout-reset");
+  await page.waitForTimeout(150);
 
   // …and the two gestures that were there before still are.
   await page.click('#graph [data-node-id="api"]');

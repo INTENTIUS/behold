@@ -284,7 +284,17 @@ function groupEnd(svg: string, from: number): number {
  *     are synthesized from live DOM structure. Reconstructing that by string
  *     surgery would be guessing; when pinhole stamps a `data-group-id`, this
  *     is where boxes join.
- *   * edge labels keep their original midpoints, exactly as on the client.
+ *   * edge labels keep their original midpoints. The CLIENT stopped doing that
+ *     in #267 — it moves the chip to the re-anchored line's midpoint — but it
+ *     can only find the chip at all because it holds a live DOM reference taken
+ *     before anything reorders (see edgeLabelOf in web/app.js), and the pairing
+ *     it relies on is document order plus matching text, which is a weaker
+ *     thing to do by string surgery on a whole document. So a server-side bake
+ *     leaves labels where the painter put them; the browser's own export
+ *     (exportSvg serialises the live SVG) carries the moved ones. Joins here
+ *     with the boxes, the day pinhole stamps the chip with its edge.
+ *   * the #267 containment clamp is skipped for the same reason the boxes are:
+ *     no box identity means nothing to clamp against.
  *
  * This is a string pass, not a DOM one: no XML parser rides in the server
  * bundle, and the painter's output is machine-generated and regular. A node id
