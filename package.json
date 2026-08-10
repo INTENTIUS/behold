@@ -29,13 +29,14 @@
     "smoke:ui": "tsx smoke/ui-smoke.mjs",
     "tsc": "tsc --noEmit",
     "test": "vitest run",
-    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --external:hono --external:@hono/node-server --external:@intentius/pinhole --outfile=dist/cli.js && chmod +x dist/cli.js",
+    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --external:hono --external:@hono/node-server --external:@intentius/pinhole --external:@kubernetes/client-node --outfile=dist/cli.js && chmod +x dist/cli.js",
     "prepare": "npm run build",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.5",
     "@intentius/chant": "^0.38.0",
+    "@intentius/chant-k8s-client": "^0.44.5",
     "@intentius/pinhole": "^0.3.1",
     "hono": "^4.12.34"
   },

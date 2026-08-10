@@ -19,6 +19,7 @@ import { CARVE_STEPS, blockedReason, initialCarveState, renderCarvePanel } from 
 // "Hand layout" section below).
 import {
   applicable,
+  clampDelta,
   clearLayout,
   debounce,
   fetchServerLayout,
@@ -39,6 +40,9 @@ import {
 // printed, collapsible, copyable per subtree. `valueCell`/`pairCell` below are
 // the call-site shorthands: a container becomes the tree, a scalar stays text.
 import { isContainer, jsonCell, renderJson, scalarText } from "./json-view.js";
+// #268: the demo catalog's presentation — what a catalog row's button says
+// about it (disabled + reason, or the fetch it would do).
+import { fetchDemos, demoLabel, demoTitle, demoProgress } from "./demos.js";
 initTheme();
 initPanel();
 mountThemePicker(document.getElementById("panel-theme"));
@@ -899,24 +903,52 @@ async function revealProject(dir) {
 // client-side list and cache is project-scoped, so a clean boot is the honest
 // way to re-seed all of it.
 async function switchProject(dir) {
-  showLoading(`switching to ${pathBasename(dir)}…`);
+  return postSwitch("/api/project/open", { dir }, `switching to ${pathBasename(dir)}…`, "switch");
+}
+
+// #268: load a bundled demo and serve it. Same treatment as a project switch —
+// it IS one, after a copy/clone + install the server runs on the click. The
+// body carries the catalog NAME; the server never takes a path here.
+async function openDemo(demo) {
+  if (!demo.satisfiable) return;
+  return postSwitch("/api/demos/open", { name: demo.name }, demoProgress(demo), "demo");
+}
+
+// The switch itself: a JSON POST behind the loading scrim, then a reload on
+// success. Shared by the recents/path switch and the demo catalog above.
+async function postSwitch(url, body, message, what) {
+  showLoading(message);
   try {
-    const r = await fetch("/api/project/open", {
+    const r = await fetch(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ dir }),
+      body: JSON.stringify(body),
     });
     const j = await r.json();
     if (!r.ok || j.error) {
       hideLoading();
-      showToast("✗ switch: " + (j.error || r.statusText), false);
+      showToast(`✗ ${what}: ` + (j.error || r.statusText), false);
       return;
     }
     location.reload();
   } catch (e) {
     hideLoading();
-    showToast("✗ switch: " + e.message, false);
+    showToast(`✗ ${what}: ` + e.message, false);
   }
+}
+
+// #268: the bundled catalog, fetched once per page. `null` until it lands (the
+// first Scope render kicks it off and re-renders when it does), then a list —
+// empty on a server that doesn't serve the route, which renders no group.
+let demoCatalog = null;
+let demoCatalogPending = false;
+function primeDemoCatalog() {
+  if (demoCatalogPending) return;
+  demoCatalogPending = true;
+  fetchDemos().then((demos) => {
+    demoCatalog = demos;
+    renderPanelScope();
+  });
 }
 
 function renderPanelScope() {
@@ -968,6 +1000,19 @@ function renderPanelScope() {
     });
     row.append(input, go);
     host.appendChild(row);
+    // #268: the bundled demo catalog, under recents — every demo `behold demo
+    // --list` names, one click from wherever you are. An entry whose
+    // prerequisites are missing renders disabled with the reason on it, and one
+    // that would clone from the network says so before it runs.
+    if (demoCatalog === null) primeDemoCatalog();
+    else if (demoCatalog.length) {
+      host.appendChild(panelHeading("demos"));
+      for (const d of demoCatalog) {
+        const b = panelOpt(demoLabel(d), false, () => openDemo(d), demoTitle(d));
+        if (!d.satisfiable || d.switchable === false) b.disabled = true;
+        host.appendChild(b);
+      }
+    }
   }
   host.appendChild(panelHeading("environment"));
   host.appendChild(
@@ -2214,6 +2259,12 @@ function ensureZoomControls(host) {
 //     its original anchor points, each shifted by its own node's delta. #228
 //     accepts the straight-line fallback; spline re-routing is pinhole's job.
 //     An edge with both ends where dagre put them keeps its bezier untouched.
+//     Everything anchored TO that edge rides with it (#267): both paths in the
+//     group — the visible line and pinhole's fat transparent hit-path — and the
+//     `viaAttr` chip, which lands on the new midpoint (see edgeLabelOf).
+//     A box's title needs nothing: pinhole paints it at the rect's top-left
+//     corner, which is the one corner a resize never moves, and a box move
+//     translates the whole wrapper group the title is already inside.
 //   * the server bakes {dx,dy} into an exported SVG but not a box's {dw,dh} —
 //     pinhole's containment boxes carry no id to bake against (src/layout.ts).
 let layoutIndex = null; // {nodes,boxes,edges} for the SVG currently on screen
@@ -2307,21 +2358,159 @@ function positionBoxHandle(b, w, h) {
   b.handle.setAttribute("transform", `translate(${b.x + w - b.size - 3}, ${b.y + h - b.size - 3})`);
 }
 
+/** A box's rect as it stands right now: pinhole's, plus whatever the hand did to
+ * it. One definition for the painter and for the clamp, so growing a box really
+ * does buy its children room (#267) and cannot drift from what you can see. */
+function boxRect(b, d) {
+  return {
+    x: b.x + ((d && d.dx) || 0),
+    y: b.y + ((d && d.dy) || 0),
+    w: Math.max(b.size * 3, b.w0 + ((d && d.dw) || 0)),
+    h: Math.max(b.size * 3, b.h0 + ((d && d.dh) || 0)),
+  };
+}
+
+/** Screen pixels → this SVG's own user units, as a function. Null when the SVG
+ * isn't laid out (a hidden pane, a detached document) — and a null mapper means
+ * no measured geometry, which the clamp reads as "don't clamp". */
+function userSpaceMapper(svgEl) {
+  const m = svgEl.getScreenCTM && svgEl.getScreenCTM();
+  if (!m || typeof svgEl.createSVGPoint !== "function") return null;
+  const inv = m.inverse();
+  const pt = svgEl.createSVGPoint();
+  return (x, y) => {
+    pt.x = x;
+    pt.y = y;
+    return pt.matrixTransform(inv);
+  };
+}
+
+/** An element's box in SVG user units. MEASURED, not parsed off attributes:
+ * pinhole's cards carry absolute coordinates and no transform, the smoke stub's
+ * carry a `translate()`, and a measurement holds either without this code
+ * knowing which. Only ever taken on a freshly rendered SVG, before any delta is
+ * painted — it is the dagre-placed rect the clamp reasons about. */
+function userRect(el, toUser) {
+  if (!toUser || typeof el.getBoundingClientRect !== "function") return null;
+  const r = el.getBoundingClientRect();
+  if (!(r.width > 0) || !(r.height > 0)) return null;
+  const a = toUser(r.left, r.top);
+  const b = toUser(r.right, r.bottom);
+  return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) };
+}
+
+/**
+ * The chip pinhole paints on a labelled edge (`project`, `sourceRef`,
+ * `selector` — the IR edge's `viaAttr`), or null if this edge has none.
+ *
+ * HOW THE TWO ARE ASSOCIATED, and why it is what it is: `renderSvg` emits
+ * `Canvas.edge(...)` and then, for a labelled edge, `Canvas.edgeLabel(...)` —
+ * an ANONYMOUS `<g><rect rx="9"/><text>…</text></g>` carrying no edge identity
+ * whatsoever. There is no id, no data attribute, no shared class. What is left
+ * is document order (the chip is the edge group's next element sibling) and the
+ * one piece of content the two provably share: the chip's text IS the edge
+ * group's `data-edge-via` value. Behold requires BOTH before it will move
+ * anything, so a pinhole that stops emitting chips, reorders them, or slips
+ * something between the pair leaves the label untouched rather than dragging an
+ * unrelated group around the canvas.
+ *
+ * Read at index time and kept as an element reference, never re-derived:
+ * wireEdgeHighlight's `raise()` re-appends a hovered edge group to the end of
+ * the SVG, so the sibling link is gone the instant a pointer crosses an edge.
+ *
+ * The real fix is upstream, and it is the same ask wrapContainmentBoxes already
+ * has open for boxes: stamp the chip with the edge it belongs to. The moment
+ * pinhole emits a `data-edge-*` pairing on the label group, prefer it here.
+ */
+function edgeLabelOf(g) {
+  const via = (g.getAttribute("data-edge-via") || "").trim();
+  if (!via) return null;
+  const next = g.nextElementSibling;
+  if (!next || next.tagName.toLowerCase() !== "g") return null;
+  if (next.hasAttribute("data-node-id") || next.hasAttribute("data-edge-from")) return null;
+  const text = next.querySelector("text");
+  if (!text || (text.textContent || "").trim() !== via) return null;
+  return next;
+}
+
 /** Index the freshly rendered SVG: node groups, containment boxes, edge paths. */
 function indexLayout(svgEl) {
+  const toUser = userSpaceMapper(svgEl);
   const nodes = new Map();
   for (const el of svgEl.querySelectorAll("[data-node-id]")) {
     const id = el.getAttribute("data-node-id");
-    if (!nodes.has(id)) nodes.set(id, { el, base: el.getAttribute("transform") || "" });
+    if (!nodes.has(id)) nodes.set(id, { el, base: el.getAttribute("transform") || "", rect: userRect(el, toUser) });
   }
   const edges = [];
   for (const g of svgEl.querySelectorAll("g[data-edge-from]")) {
     const paths = [...g.querySelectorAll("path")];
     if (!paths.length) continue;
     const d0 = paths[0].getAttribute("d");
-    edges.push({ from: g.getAttribute("data-edge-from"), to: g.getAttribute("data-edge-to"), paths, d0, anchors: pathAnchors(d0) });
+    const label = edgeLabelOf(g);
+    edges.push({
+      from: g.getAttribute("data-edge-from"),
+      to: g.getAttribute("data-edge-to"),
+      paths,
+      d0,
+      anchors: pathAnchors(d0),
+      label,
+      labelBase: label ? label.getAttribute("transform") || "" : "",
+    });
   }
   layoutIndex = { nodes, boxes: wrapContainmentBoxes(svgEl), edges };
+}
+
+/**
+ * The box a card sits in, geometrically — the containment is visual and nothing
+ * in the DOM says which card belongs to which box. The SMALLEST box whose
+ * CURRENT rect covers the card's original centre wins, so a card in a namespace
+ * nested inside a cluster clamps to the namespace, not the cluster.
+ *
+ * `current` is the load-bearing word: growing a box is the sanctioned way to
+ * make room, so the wall a drag stops at has to be the box as it is now.
+ */
+function containerOf(rect) {
+  if (!layoutIndex || !rect) return null;
+  const cx = rect.x + rect.w / 2;
+  const cy = rect.y + rect.h / 2;
+  let best = null;
+  for (const [id, b] of layoutIndex.boxes) {
+    const r = boxRect(b, layoutDeltas[id]);
+    if (cx < r.x || cx > r.x + r.w || cy < r.y || cy > r.y + r.h) continue;
+    if (!best || r.w * r.h < best.w * best.h) best = r;
+  }
+  return best;
+}
+
+/** A node's delta, clamped to whatever contains it: its box, or failing that
+ * the canvas pinhole drew (`vbInit` — the graph's own extent, NOT the panned
+ * and zoomed `vb`, which is just where you happen to be looking).
+ *
+ * Nodes only. A box's own gesture is the escape hatch, so clamping a box would
+ * put the only way to make room behind the wall it enforces. And an id with no
+ * measured rect is returned untouched — see clampDelta on failing open. */
+function clampNodeDelta(id, delta) {
+  const n = layoutIndex && layoutIndex.nodes.get(id);
+  if (!n || !n.rect) return delta;
+  const canvas = vbInit ? { x: vbInit[0], y: vbInit[1], w: vbInit[2], h: vbInit[3] } : null;
+  const bounds = containerOf(n.rect) || canvas;
+  return bounds ? clampDelta(delta, n.rect, bounds) : delta;
+}
+
+/** Bring every stored node delta back inside its container. Clamped, never
+ * discarded (#267): a placement made before this rule existed — or against a
+ * box someone has since shrunk — keeps everything about it except the part that
+ * escaped. Box deltas are read as-is, which is why this runs after they land. */
+function clampStoredDeltas(deltas) {
+  if (!layoutIndex) return deltas;
+  let out = deltas;
+  for (const id of layoutIndex.nodes.keys()) {
+    const d = out[id];
+    if (!d || (!d.dx && !d.dy)) continue;
+    const c = clampNodeDelta(id, d);
+    if (c.dx !== (d.dx || 0) || c.dy !== (d.dy || 0)) out = setDelta(out, id, { ...d, dx: c.dx, dy: c.dy });
+  }
+  return out;
 }
 
 /** Paint `layoutDeltas` onto the indexed SVG. Idempotent: always from the original. */
@@ -2334,10 +2523,12 @@ function renderLayout() {
   }
   for (const [id, b] of layoutIndex.boxes) {
     const d = layoutDeltas[id] || {};
-    const w = Math.max(b.size * 3, b.w0 + (d.dw || 0));
-    const h = Math.max(b.size * 3, b.h0 + (d.dh || 0));
+    const { w, h } = boxRect(b, d);
     b.rect.setAttribute("width", String(w));
     b.rect.setAttribute("height", String(h));
+    // The title rides inside this same group, and pinhole anchors it to the
+    // rect's top-left — the one corner a resize leaves alone — so a box's
+    // caption never detaches from its box (#267 asked; nothing to fix).
     if (d.dx || d.dy) b.g.setAttribute("transform", `translate(${d.dx || 0}, ${d.dy || 0})`);
     else b.g.removeAttribute("transform");
     positionBoxHandle(b, w, h);
@@ -2347,11 +2538,30 @@ function renderLayout() {
     const z = layoutDeltas[e.to];
     if ((!a && !z) || !e.anchors) {
       if (e.paths[0].getAttribute("d") !== e.d0) e.paths.forEach((p) => p.setAttribute("d", e.d0));
+      placeEdgeLabel(e, 0, 0);
       continue;
     }
     const d = straightEdge(e.anchors, a, z);
+    // EVERY path in the group: the visible line and pinhole's 14-wide
+    // transparent hit-path both, so the edge you can grab stays under the edge
+    // you can see.
     e.paths.forEach((p) => p.setAttribute("d", d));
+    // The chip was painted at the midpoint of the two anchors, so the midpoint
+    // of the re-anchored line is that point plus the MEAN of the two ends'
+    // deltas. No re-reading of the chip's own coordinates, and no assumption
+    // about how pinhole spelled them.
+    placeEdgeLabel(e, (((a && a.dx) || 0) + ((z && z.dx) || 0)) / 2, (((a && a.dy) || 0) + ((z && z.dy) || 0)) / 2);
   }
+}
+
+/** Shift an edge's label chip by `(sx,sy)`, from its painted position. Composed
+ * onto whatever transform it was painted with (none, today) and removed when
+ * the shift is zero — so this is idempotent, like the rest of renderLayout. */
+function placeEdgeLabel(e, sx, sy) {
+  if (!e.label) return;
+  const t = nodeTransform(e.labelBase, { dx: sx, dy: sy });
+  if (t) e.label.setAttribute("transform", t);
+  else e.label.removeAttribute("transform");
 }
 
 /** Re-index the SVG, load this lens's deltas, paint them. Called from render(). */
@@ -2380,6 +2590,7 @@ function reloadLayoutDeltas() {
   // render happened to be a different projection of the same estate.
   const merged = key ? mergeLayouts(readLayout(localStorage, key), layoutServer.lens === lens ? layoutServer.deltas : {}) : {};
   layoutDeltas = applicable(merged, [...layoutIndex.nodes.keys(), ...layoutIndex.boxes.keys()]);
+  layoutDeltas = clampStoredDeltas(layoutDeltas);
   renderLayout();
 }
 
@@ -2480,7 +2691,11 @@ function ensureLayoutDrag(host) {
       layoutDrag.kind === "resize"
         ? { dx: b.dx || 0, dy: b.dy || 0, dw: (b.dw || 0) + dx, dh: (b.dh || 0) + dy }
         : { dx: (b.dx || 0) + dx, dy: (b.dy || 0) + dy, dw: b.dw || 0, dh: b.dh || 0 };
-    layoutDeltas = setDelta(layoutDeltas, layoutDrag.id, next);
+    // #267: the card stops at its box's wall while the pointer keeps going. A
+    // no-op for a box id and for a resize, and the box's CURRENT size is what
+    // is read — so widening a box mid-session immediately buys its children the
+    // room, no re-render needed.
+    layoutDeltas = setDelta(layoutDeltas, layoutDrag.id, clampNodeDelta(layoutDrag.id, next));
     renderLayout();
   });
   window.addEventListener("pointerup", () => {

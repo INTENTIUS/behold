@@ -45,10 +45,7 @@
  * assumed, which is the "no hardcoded k8s port" the acceptance criterion is
  * after — on the reporting side, since the reading side already had it.
  */
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-const run = promisify(execFile);
+import type { KubeconfigView } from "@intentius/chant-k8s-client";
 
 /** A project's `k8s.profiles` — environment name → bound kubeconfig context. */
 export type K8sProfiles = Record<string, { context?: string } | undefined>;
@@ -76,68 +73,103 @@ export interface Kubeconfig {
 
 const EMPTY: Kubeconfig = { contexts: new Map(), servers: new Map() };
 
-function str(v: unknown): string | undefined {
-  return typeof v === "string" && v.length > 0 ? v : undefined;
+/** Which kubeconfig to read. Omit both and the ambient default is used —
+ * `KUBECONFIG`, then `~/.kube/config`, then in-cluster credentials. */
+export interface KubeconfigOptions {
+  /** Literal kubeconfig YAML. Wins over everything else. */
+  kubeconfig?: string;
+  /** Path to a single kubeconfig file. Wins over the ambient default. */
+  kubeconfigPath?: string;
 }
 
-/** Shape of `kubectl config view --raw -o json`, reduced to what this reads. */
-interface KubectlConfigJson {
-  contexts?: Array<{ name?: unknown; context?: { cluster?: unknown } }>;
-  clusters?: Array<{ name?: unknown; cluster?: { server?: unknown } }>;
-  "current-context"?: unknown;
-}
-
-/** Build the context → cluster → server chain from kubectl's own JSON view. */
-export function readKubeconfigJson(json: KubectlConfigJson): Kubeconfig {
+/** Fold the client's context-joined view into the two maps this module reads. */
+export function kubeconfigFromView(view: KubeconfigView): Kubeconfig {
   const contexts = new Map<string, string>();
-  for (const entry of json.contexts ?? []) {
-    const name = str(entry?.name);
-    const cluster = str(entry?.context?.cluster);
-    if (name && cluster) contexts.set(name, cluster);
-  }
   const servers = new Map<string, string>();
-  for (const entry of json.clusters ?? []) {
-    const name = str(entry?.name);
-    const server = str(entry?.cluster?.server);
-    if (name && server) servers.set(name, server);
+  for (const entry of view.contexts) {
+    if (entry.name && entry.cluster) contexts.set(entry.name, entry.cluster);
+    if (entry.cluster && entry.server) servers.set(entry.cluster, entry.server);
   }
-  const current = str(json["current-context"]);
-  return { contexts, servers, ...(current ? { currentContext: current } : {}) };
+  return { contexts, servers, ...(view.currentContext ? { currentContext: view.currentContext } : {}) };
 }
 
 /**
- * Load the kubeconfig by asking kubectl for it, rather than parsing YAML here.
+ * Load the kubeconfig through `@intentius/chant-k8s-client`'s
+ * `readKubeconfigView`, rather than shelling kubectl or parsing YAML here.
  *
- * Two reasons, and the second is not a preference:
+ * Three reasons, and only the first has changed since #106:
  *
- * 1. kubectl owns the merge. `KUBECONFIG` is a path LIST with first-wins
- *    precedence per name; reimplementing that is a way to resolve a different
- *    context than the one chant will actually bind, which would make this
- *    report confidently wrong.
+ * 1. The client owns the merge, and owns it on kubectl's rules (chant #1630).
+ *    `KUBECONFIG` is a path LIST: names are first-wins across the list and
+ *    `current-context` comes from the first file that sets one — which is not
+ *    what `@kubernetes/client-node` does on its own (it throws on a duplicate
+ *    name and takes the LAST current-context), so the package merges the
+ *    multi-file case itself. Reimplementing that here is a way to resolve a
+ *    different context than the one chant will actually bind, which would make
+ *    this report confidently wrong. Going through the same package chant's own
+ *    k8s reads go through is the only version of this that stays true.
  * 2. chant's own `parseYAML` (`@intentius/chant/yaml`) cannot read a
  *    kubeconfig. A list item whose FIRST key is a nested mapping loses every
  *    sibling key after it — `- context:\n    cluster: c1\n  name: n1` parses
  *    to `{context:{cluster:"c1"}}` with no `name`, while the same keys in the
  *    other order parse fine. kubectl writes contexts and clusters in exactly
  *    the losing order, so every entry came back nameless and unjoinable.
- *    Reported separately; routing around it here rather than blocking #106 on
- *    a parser fix.
+ * 3. Reading a kubeconfig is not talking to a cluster. `readKubeconfigView`
+ *    touches no credential, runs no exec plugin and issues no request, so a
+ *    cluster behind an auth plugin outside chant's exec allowlist still
+ *    reports its address here — the address is sitting in the file, and a
+ *    lens that refused to name it would be reporting a policy as an absence.
  *
- * No kubectl on PATH, or no kubeconfig, yields an empty result — an ordinary
- * state for an aws-only project, and never a reason to fail the target lens.
+ * No kubeconfig — or no `@intentius/chant-k8s-client` resolvable at all, which
+ * a dynamic import keeps survivable — yields an empty result. That is an
+ * ordinary state for an aws-only project, and never a reason to fail the
+ * target lens. kubectl is no longer involved either way (#231): a machine that
+ * has never installed it still resolves targets.
  */
-export async function loadKubeconfig(exec: (cmd: string, args: string[]) => Promise<string> = defaultExec): Promise<Kubeconfig> {
-  try {
-    const stdout = await exec("kubectl", ["config", "view", "--raw", "-o", "json"]);
-    return readKubeconfigJson(JSON.parse(stdout) as KubectlConfigJson);
-  } catch {
-    return EMPTY;
-  }
+export async function loadKubeconfig(options: KubeconfigOptions = {}): Promise<Kubeconfig> {
+  const client = await k8sClient();
+  if (!client) return EMPTY;
+  return kubeconfigFromView(await client.readKubeconfigView(options));
 }
 
-async function defaultExec(cmd: string, args: string[]): Promise<string> {
-  const { stdout } = await run(cmd, args, { encoding: "utf8", timeout: 10_000 });
-  return stdout;
+/**
+ * The kubeconfig's own current-context, without joining it to anything.
+ *
+ * Separate from {@link loadKubeconfig} because the callers differ: the Helm
+ * pill wants the label an operator would see in their shell, not a resolvable
+ * target, and the client answers that even when the context resolves to no
+ * usable cluster.
+ */
+export async function ambientContext(options: KubeconfigOptions = {}): Promise<string | undefined> {
+  const client = await k8sClient();
+  return client ? await client.readAmbientContext(options) : undefined;
+}
+
+/**
+ * `@intentius/chant-k8s-client`, or `undefined` when it cannot be loaded.
+ *
+ * A regular dependency, so it is normally there — but it is imported
+ * dynamically rather than statically for two reasons that outlive the
+ * dependency line: behold serves plenty of projects with no k8s in them and
+ * should not pull `@kubernetes/client-node` into memory for those, and an
+ * install whose optional transitive deps did not build should degrade to an
+ * empty kubeconfig rather than take the whole server down at import time.
+ *
+ * Two build facts hold this up, and they pull in opposite directions.
+ * `@intentius/chant-k8s-client` ships as raw TypeScript (its `exports` has no
+ * compiled-JS condition, same as `@intentius/chant/yaml`), so it must be
+ * BUNDLED into dist/cli.js — a plain `node dist/cli.js` cannot import it
+ * otherwise. `@kubernetes/client-node` underneath it must NOT be: bundling it
+ * took dist/cli.js from 260KB to 15MB, and it ships ordinary ESM that resolves
+ * from node_modules at runtime. So `build` externalizes exactly that one, and
+ * its absence arrives here as the import failure this catch is for.
+ */
+async function k8sClient(): Promise<typeof import("@intentius/chant-k8s-client") | undefined> {
+  try {
+    return await import("@intentius/chant-k8s-client");
+  } catch {
+    return undefined;
+  }
 }
 
 /**

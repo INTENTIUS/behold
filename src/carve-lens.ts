@@ -5,10 +5,11 @@
  * behold never parses Terraform. `chant carve advise --json` already ranks each
  * resource/module by how cheaply it could be carved into native chant source,
  * and that report IS the contract: addresses, scores, bands, the penalty
- * arithmetic behind each score, and (once chant#1636 lands the edge lists) the
- * boundary edges a carve would cut. This module converts that JSON into a
- * `GraphIR` the existing painter and SPA already know how to draw — no new
- * frontend, no Terraform tooling in behold's dependency tree.
+ * arithmetic behind each score, a `version`, and the per-resource `boundary`
+ * edge lists (chant#1636, chant PR #1639) naming the boundary edges a carve
+ * would cut. This module converts that JSON into a `GraphIR` the existing
+ * painter and SPA already know how to draw — no new frontend, no Terraform
+ * tooling in behold's dependency tree.
  *
  * What the picture says:
  *  - one card per ranked resource/module, `kind` = the Terraform type
@@ -34,13 +35,16 @@ export type CarveStatus = "good" | "warn" | "neutral";
  * One dependency edge a carve would cut, as chant's own `boundaryReport`
  * classifies it (packages/core/src/terraform/carve.ts `BoundaryEdge`).
  *
- * NOT in today's `carve advise --json` — that report carries only per-resource
- * inbound/outbound COUNTS (see `CarveBreakdown`), so there is no pairing to
- * draw from and this lens emits no edges for it. chant#1636 is the ask to
- * publish the lists; the shape below is chant's existing one, so when they
- * arrive the edges draw with no further work here. Every field is optional
- * except the two endpoints — a renderer should never harden a contract it
- * doesn't own more than it must.
+ * A chant that predates chant#1636 publishes only per-resource inbound/outbound
+ * COUNTS (see `CarveBreakdown`) with no `boundary` field at all — there is no
+ * pairing to draw from, and this lens emits no edges for that report (see
+ * `carveNote`'s caveat). A chant with #1636 (chant PR #1639) publishes this
+ * shape per resource, and every cut is reported from BOTH endpoints: once as
+ * an `inbound` edge on the depended-on resource, once as an `outbound` edge on
+ * the resource that depends on it — `carveReportToIr` dedups the two views of
+ * one cut into a single edge. Every field is optional except the two
+ * endpoints — a renderer should never harden a contract it doesn't own more
+ * than it must.
  */
 export interface CarveBoundaryEdge {
   /** `inbound` = a survivor depends on the carve set; `outbound` = the reverse. */
@@ -381,7 +385,12 @@ export function carveReportToIr(report: CarveReport): GraphIR {
       const from = direction === "inbound" ? e.survivor : e.carved;
       const to = direction === "inbound" ? e.carved : e.survivor;
       if (!known.has(from) || !known.has(to)) continue;
-      const key = `${from}|${to}|${direction}`;
+      // `from`/`to` are already computed in dependency direction, so both
+      // views of one cut (the depended-on's `inbound` entry and the
+      // depender's `outbound` entry) produce the identical pair here even
+      // though `direction` itself differs between them. Key on the pair
+      // alone — including `direction` would let the same cut draw twice.
+      const key = `${from}|${to}`;
       if (seen.has(key)) continue;
       seen.add(key);
       edges.push({

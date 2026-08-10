@@ -52,13 +52,33 @@ const nodeSvg = (id, x, tone, label, mark = "") => `
 // #228: an edge shaped the way pinhole's `Canvas.edge` emits one — a bezier
 // between the two card centres plus a fat transparent hit-path, both in a
 // `g[data-edge-*]`. It is what the layout drag re-anchors when either end moves.
-const EDGE_D = "M 115 112 C 115 112, 305 112, 305 112";
-const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 240" width="620" height="240">
+const EDGE_A = [115, 112];
+const EDGE_Z = [305, 112];
+const EDGE_D = `M ${EDGE_A[0]} ${EDGE_A[1]} C ${EDGE_A[0]} ${EDGE_A[1]}, ${EDGE_Z[0]} ${EDGE_Z[1]}, ${EDGE_Z[0]} ${EDGE_Z[1]}`;
+
+// #267: and the chip pinhole paints on a LABELLED edge — reproduced to the
+// digit from `Canvas.edgeLabel`, because the thing under test is exactly how
+// weakly the two are joined. The chip is an anonymous `<g>` immediately after
+// the edge group, with no id on it; all that links them is document order and
+// the fact that its text is the edge's own `data-edge-via`. Its rect is
+// centred on the edge's midpoint, which is what the smoke measures.
+export const EDGE_VIA = "project";
+const LX = (EDGE_A[0] + EDGE_Z[0]) / 2;
+const LY = (EDGE_A[1] + EDGE_Z[1]) / 2;
+const LW = EDGE_VIA.length * 5.7 + 14;
+const edgeLabel = `<g><rect x="${(LX - LW / 2).toFixed(1)}" y="${LY - 9}" width="${LW.toFixed(1)}" height="18" rx="9" fill="var(--pin-bg0, #0d1117)" stroke="var(--pin-neutralStroke, #345)" stroke-width="1"/><text x="${LX.toFixed(1)}" y="${LY + 3.5}" text-anchor="middle" fill="var(--pin-textMuted, #8b949e)" font-size="10.5">${EDGE_VIA}</text></g>`;
+
+// The containment box. Deliberately roomier than the cards need (#267): the
+// clamp only earns its keep if the smoke can drag INTO a wall on purpose, and
+// every drag that isn't about the wall has to stay clear of one.
+export const BOX = { x: 20, y: 40, w: 580, h: 220 };
+const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 300" width="620" height="300">
   <style>:root{--pin-bg0:#0d1117;--pin-text:#e6edf3}</style>
-  <rect x="0" y="0" width="620" height="240" fill="var(--pin-bg0, #0d1117)"/>
-  <rect x="20" y="40" width="580" height="140" rx="10" fill="none" stroke="var(--pin-edge, #444)"/>
+  <rect x="0" y="0" width="620" height="300" fill="var(--pin-bg0, #0d1117)"/>
+  <rect x="${BOX.x}" y="${BOX.y}" width="${BOX.w}" height="${BOX.h}" rx="10" fill="none" stroke="var(--pin-edge, #444)"/>
   <text x="30" y="30" font-size="12" fill="var(--pin-textMuted, #999)">wave-1</text>
-  <g data-edge-from="api" data-edge-to="worker"><path class="pin-edge-line" d="${EDGE_D}" fill="none" stroke="var(--pin-edge, #444)" stroke-width="1.4"/><path d="${EDGE_D}" fill="none" stroke="transparent" stroke-width="14" pointer-events="stroke"/></g>
+  <g data-edge-from="api" data-edge-to="worker" data-edge-via="${EDGE_VIA}"><path class="pin-edge-line" d="${EDGE_D}" fill="none" stroke="var(--pin-edge, #444)" stroke-width="1.4"/><path d="${EDGE_D}" fill="none" stroke="transparent" stroke-width="14" pointer-events="stroke"/></g>
+  ${edgeLabel}
   ${nodeSvg("api", 40, "good", "api", coloredMark)}
   ${nodeSvg("worker", 230, "accent", "worker", helmMark)}
   ${nodeSvg("frontend", 420, "neutral", "frontend")}
@@ -143,6 +163,17 @@ const JSON_ROUTES = {
       { name: "floci", label: "Floci", status: "up", detail: "emulator @ localhost:4566" },
       { name: "k3d", label: "k3d", status: "on-demand", detail: "cluster not created yet", bringUp: { cmd: "k3d", args: ["cluster", "create", "demo"] } },
       { name: "github", label: "GitHub Actions", status: "unknown", detail: "gh CLI available" },
+    ],
+  },
+  // #268: the demo catalog the switcher renders — one runnable entry, one
+  // blocked by a missing prerequisite (which must render disabled with its
+  // reason, not vanish), and one that clones from the network (which must say
+  // so on the button before it is clicked).
+  "/api/demos": {
+    demos: [
+      { name: "argo-estate", description: "Declared-only Argo CD estate.", requires: [], source: "bundled", fetches: false, target: "/tmp/behold-demos/argo-estate", loaded: false, satisfiable: true },
+      { name: "k8s", description: "nginx on a throwaway k3d cluster.", requires: ["docker", "k3d"], source: "bundled", fetches: false, target: "/tmp/behold-demos/k8s", loaded: false, satisfiable: false, reason: "needs k3d on PATH" },
+      { name: "fountain", description: "The mature estate, cloned.", requires: [], source: "git", repo: "https://github.com/INTENTIUS/fountain-ops", fetches: true, target: "/tmp/behold-demos/fountain", loaded: false, satisfiable: true },
     ],
   },
   "/api/ops": { ops: [], adoptLexicons: [], autoSync: "off" },

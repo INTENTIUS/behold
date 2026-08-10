@@ -3,12 +3,11 @@
  * chant project. Agent-drivable: the same read API the SPA uses is plain JSON, and
  * behold leans on chant's MCP for the underlying graph/lifecycle data (see README).
  */
-import { resolve, dirname, join, relative, sep } from "node:path";
-import { realpathSync, existsSync, cpSync, readFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { resolve, dirname, join } from "node:path";
+import { realpathSync, existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { startServer, beholdVersion } from "./server.ts";
-import { loadDemoRegistry, missingRequirements, type DemoCarve } from "./demos.ts";
+import { loadDemoRegistry, missingRequirements, demoTargetDir, loadDemo, type DemoCarve } from "./demos.ts";
 import { resolveChant } from "./chant.ts";
 import { runExport } from "./export.ts";
 import { diagnose, formatReport } from "./doctor.ts";
@@ -54,7 +53,8 @@ Usage:
           Terraform/chant estate plus the six-step carve walkthrough on the
           panel's Carve tab. Needs Docker (and per-demo tools --list names).
           Loaded demos land in the panel's recents, so switching between them
-          is the Scope tab.
+          is the Scope tab — which lists this whole catalog too (#268), one
+          click from any served project.
 
   export  Capture the live estate into a self-contained, interactive STATIC
           bundle (default ./behold-export) — every env/tier × zoom × radial,
@@ -383,54 +383,14 @@ async function runDemo(rest: string[]): Promise<void> {
     process.stderr.write(`behold demo ${entry.name}: missing ${missing.join(", ")} — install and re-run.\n`);
     process.exit(2);
   }
-  // The legacy default target (./behold-demo, pre-catalog #193) is reused for
-  // the writes demo so an existing copy keeps working; everything else lands
-  // under ./behold-demos/<name>.
-  const target = resolve(
-    dirArg ?? (entry.name === "writes" && existsSync("behold-demo") ? "behold-demo" : join("behold-demos", entry.name)),
-  );
-  if (!existsSync(target)) {
-    if (entry.source === "bundled") {
-      const bundled = join(pkgRoot, entry.dir!);
-      if (!existsSync(bundled)) {
-        process.stderr.write(`behold demo ${entry.name}: this install has no bundled ${entry.dir}\n`);
-        process.exit(2);
-      }
-      process.stdout.write(`behold demo ${entry.name} → copying to ${target} (it's yours — edit it)\n`);
-      // Skip only node_modules INSIDE the example. The filter must test the
-      // path relative to the bundled root: in an npm install the example
-      // itself lives under node_modules/@intentius/behold/, so a bare
-      // `src.includes("node_modules")` matched every file and copied nothing.
-      cpSync(bundled, target, {
-        recursive: true,
-        filter: (src) => !relative(bundled, src).split(sep).includes("node_modules"),
-      });
-    } else {
-      process.stdout.write(`behold demo ${entry.name} → cloning ${entry.repo} to ${target}\n`);
-      const r = spawnSync("git", ["clone", "--depth", "1", entry.repo!, target], { stdio: "inherit" });
-      if (r.status !== 0) {
-        process.stderr.write(`behold demo ${entry.name}: clone failed\n`);
-        process.exit(r.status ?? 1);
-      }
-    }
-  } else {
-    process.stdout.write(`behold demo ${entry.name} → reusing ${target}\n`);
-  }
-  if (existsSync(join(target, "package.json")) && !existsSync(join(target, "node_modules"))) {
-    process.stdout.write(`behold demo ${entry.name} → npm install…\n`);
-    const r = spawnSync("npm", ["install"], { cwd: target, stdio: "inherit", shell: process.platform === "win32" });
-    if (r.status !== 0) {
-      process.stderr.write(`behold demo: npm install failed in ${target}${r.error ? ` (${r.error.message})` : ""}\n`);
-      process.exit(r.status ?? 1);
-    }
-  }
-  if (entry.setup) {
-    process.stdout.write(`behold demo ${entry.name} → ${entry.setup}\n`);
-    const r = spawnSync(entry.setup, { cwd: target, stdio: "inherit", shell: true });
-    if (r.status !== 0) {
-      process.stderr.write(`behold demo ${entry.name}: setup failed (${entry.setup})\n`);
-      process.exit(r.status ?? 1);
-    }
+  // The copy/clone → install → setup half lives in demos.ts (#268), because
+  // the panel's demo catalog (POST /api/demos/open) loads a demo through the
+  // very same function — one path, whichever surface starts it.
+  const target = dirArg ? resolve(dirArg) : demoTargetDir(entry);
+  const loaded = await loadDemo(entry, { pkgRoot, target, log: (line) => process.stdout.write(line + "\n") });
+  if (!loaded.ok) {
+    process.stderr.write(`behold demo ${entry.name}: ${loaded.error}\n`);
+    process.exit(1);
   }
   // #254: a carve demo isn't a project serve at all — it boots the advisor and
   // hands the walkthrough its estate context.
@@ -439,10 +399,7 @@ async function runDemo(rest: string[]): Promise<void> {
     return;
   }
   process.stdout.write(`behold demo ${entry.name} → serving. Blue = declared; Deploy turns it green.\n`);
-  // #211: an estate demo serves several member projects composed; the first
-  // listed is the primary, same as `behold serve a b c…`.
-  const serveDirs = entry.serve.dirs?.length ? entry.serve.dirs.map((d) => join(target, d)) : [target];
-  const serveArgs = ["serve", ...serveDirs, "--port", String(port)];
+  const serveArgs = ["serve", ...loaded.serveDirs, "--port", String(port)];
   if (entry.serve.local) serveArgs.push("--local");
   if (entry.serve.env) serveArgs.push("--env", entry.serve.env);
   await run(serveArgs);

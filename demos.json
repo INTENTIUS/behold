@@ -19,7 +19,7 @@
     },
     {
       "name": "flux-estate",
-      "description": "A GitOps estate: a Flux control plane (GitRepository + Kustomizations) plus two app projects, served as one composed estate — cross-stack sourceRef edges, estate-wide drift, and the namespace-mismatch note on purpose (app-b uses targetNamespace). k3d + Flux, no cloud. scripts/estate-down.sh removes the cluster.",
+      "description": "A GitOps estate: a Flux control plane (GitRepository + Kustomizations) plus two app projects, served as one composed estate — cross-stack sourceRef edges, estate-wide drift, and the namespace join that reads app-b where the control plane's targetNamespace puts it. k3d + Flux, no cloud. scripts/estate-down.sh removes the cluster.",
       "source": "bundled",
       "dir": "example-flux-estate",
       "requires": ["docker", "k3d", "kubectl"],

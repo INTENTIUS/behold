@@ -20,10 +20,12 @@ const FIXTURE = join(HERE, "__fixtures__", "carve-sample-estate.json");
 /**
  * The fixture is a REAL report: `chant carve advise --from sample-estate --json`
  * run against chant's own `packages/core/src/terraform/__fixtures__/sample-estate`
- * (copied to a scratch dir so nothing in the chant checkout was touched). It is
- * the contract as chant emits it today — no `version` field, and per-resource
- * boundary COUNTS with no edge lists. Both facts are asserted below, so this
- * test tells us the day chant#1636 changes either one.
+ * (copied to a scratch dir so nothing in the chant checkout was touched), on a
+ * chant that carries chant#1636 (chant PR #1639): a top-level `version: 1` and
+ * per-resource `boundary: {inbound, outbound}` edge lists. Every cut in the
+ * estate is reported twice across the file — once as an `inbound` edge on the
+ * depended-on resource, once as an `outbound` edge on the resource that depends
+ * on it — which is why `carveReportToIr`'s dedup below matters.
  */
 const report = JSON.parse(readFileSync(FIXTURE, "utf8")) as CarveReport;
 
@@ -36,18 +38,22 @@ describe("the real chant carve advise --json fixture", () => {
     expect(report.bands).toEqual({ "clean leaf": 6, "carvable w/ edits": 1, "leave in Terraform": 1 });
   });
 
-  it("carries no schema version yet (chant#1636) — which the lens accepts", () => {
-    expect(report.version).toBeUndefined();
+  it("declares schema version 1 (chant#1636) — which the lens accepts", () => {
+    expect(report.version).toBe(1);
     expect(parseCarveReport(report).ok).toBe(true);
   });
 
-  it("carries boundary COUNTS but no boundary edge LISTS — the gap chant#1636 closes", () => {
+  it("carries boundary edge LISTS whose lengths equal the breakdown COUNTS (chant#1636)", () => {
     for (const r of report.resources) {
       expect(typeof r.breakdown?.inbound).toBe("number");
       expect(typeof r.breakdown?.outbound).toBe("number");
-      expect(r.boundary).toBeUndefined();
+      expect(r.boundary).toBeDefined();
+      const b = r.boundary as { inbound?: unknown[]; outbound?: unknown[] };
+      expect(b.inbound).toHaveLength(r.breakdown?.inbound ?? 0);
+      expect(b.outbound).toHaveLength(r.breakdown?.outbound ?? 0);
     }
-    // The counts are real work: 4 inbound and 4 outbound across the estate.
+    // The counts are real work: 4 inbound and 4 outbound list entries across
+    // the estate — reporting the SAME 4 cuts from both endpoints, not 8 cuts.
     const inbound = report.resources.reduce((s, r) => s + (r.breakdown?.inbound ?? 0), 0);
     const outbound = report.resources.reduce((s, r) => s + (r.breakdown?.outbound ?? 0), 0);
     expect([inbound, outbound]).toEqual([4, 4]);
@@ -113,27 +119,60 @@ describe("carveReportToIr — the sample estate", () => {
     });
   });
 
-  it("draws no boundary edges from a report that carries none — no phantom pairings", () => {
-    // The counts alone cannot be paired into edges (4 inbound and 4 outbound
-    // admit several matchings), and inventing one would be a lie about which
-    // survivors need patching. Nothing drawn is the honest answer until
-    // chant#1636 publishes the lists.
-    expect(ir.edges).toEqual([]);
+  it("draws the 4 real cuts once each, not 8 — the dedup chant#1636 required", () => {
+    // The sample estate has 4 real cuts (3 subnets -> the VPC, the lambda ->
+    // the bucket), each reported twice in the file (once inbound, once
+    // outbound). `carveReportToIr` must collapse both views of one cut into a
+    // single edge; keying the dedup on `direction` (the pre-fix behaviour)
+    // would draw all 8 list entries as 8 separate edges instead.
+    expect(ir.edges).toHaveLength(4);
+    expect(ir.edges).toEqual([
+      { from: "aws_subnet.a", to: "aws_vpc.main", kind: "ref", viaAttr: "outbound", toAttr: "id" },
+      { from: "aws_subnet.b", to: "aws_vpc.main", kind: "ref", viaAttr: "outbound", toAttr: "id" },
+      { from: "aws_subnet.c", to: "aws_vpc.main", kind: "ref", viaAttr: "outbound", toAttr: "id" },
+      { from: "aws_lambda_function.api", to: "aws_s3_bucket.assets", kind: "ref", viaAttr: "inbound", toAttr: "arn, bucket" },
+    ]);
+    // The star bucket's cut — the one the example-carve walkthrough narrates —
+    // appears exactly once, not once per endpoint.
+    const bucketCuts = ir.edges.filter((e) => e.from === "aws_s3_bucket.assets" || e.to === "aws_s3_bucket.assets");
+    expect(bucketCuts).toHaveLength(1);
   });
 
-  it("says so on the note, rather than leaving an edgeless graph unexplained", () => {
+  it("names the predicted diff on every resource with a boundary list", () => {
+    const vpc = ir.nodes.find((n) => n.id === "aws_vpc.main")!;
+    expect(vpc.attrs.patchOnCarve).toBe("aws_subnet.a, aws_subnet.b, aws_subnet.c");
+    expect(vpc.attrs.deferredInputs).toBeUndefined();
+
+    const bucket = ir.nodes.find((n) => n.id === "aws_s3_bucket.assets")!;
+    expect(bucket.attrs.patchOnCarve).toBe("aws_lambda_function.api");
+    expect(bucket.attrs.deferredInputs).toBeUndefined();
+
+    const lambda = ir.nodes.find((n) => n.id === "aws_lambda_function.api")!;
+    expect(lambda.attrs.deferredInputs).toBe("aws_s3_bucket.assets");
+    expect(lambda.attrs.patchOnCarve).toBeUndefined();
+
+    // A resource whose boundary lists are both empty gets neither key — "no
+    // boundary work" and "not reported" stay distinguishable claims.
+    const logs = ir.nodes.find((n) => n.id === "aws_cloudwatch_log_group.api")!;
+    expect(logs.attrs.patchOnCarve).toBeUndefined();
+    expect(logs.attrs.deferredInputs).toBeUndefined();
+  });
+
+  it("drops the chant#1636 caveat from the note now the fixture carries edge lists", () => {
     const note = carveNote(report, ir);
     expect(note).toContain("6 clean leaf");
     expect(note).toContain("sample-estate");
-    expect(note).toContain("chant#1636");
+    expect(note).not.toContain("chant#1636");
+    expect(note).toContain("Read-only: nothing is emitted, patched, or applied.");
   });
 });
 
-describe("carveReportToIr — boundary edges, once chant publishes them (#1636)", () => {
+describe("carveReportToIr — boundary edges, synthetic shapes (#1636)", () => {
   // chant's own `BoundaryEdge` shape (packages/core/src/terraform/carve.ts),
-  // attached per resource. This is the forward half of the contract: the lens
-  // must already draw it, so the day chant emits the lists behold needs no
-  // change to light them up.
+  // attached per resource. The real fixture above already exercises this on a
+  // real report; these synthetic cases pin the edge cases a real estate may
+  // never hit in one place: the flat-list shape alongside the split shape, an
+  // edge whose other end isn't a ranked node, and a directionless edge.
   const withEdges: CarveReport = {
     version: 1,
     from: "sample-estate",

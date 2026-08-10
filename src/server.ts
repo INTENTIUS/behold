@@ -52,7 +52,7 @@ import { applyHelmArtifacts } from "./helm-artifacts.ts";
 import { addClusterAnchorEdges } from "./cluster-anchor.ts";
 import { projectTopology } from "./logical.ts";
 import { addCompositeDepsCounted } from "./composite-deps.ts";
-import { notesFor, tierMismatchNote, namespaceMismatchNote, type Zoom } from "./zoom-notes.ts";
+import { notesFor, tierMismatchNote, namespaceMismatchNote, namespaceJoinNote, type Zoom } from "./zoom-notes.ts";
 import { resourcesByComponent, nonResourceEntities } from "./resources.ts";
 import { summarizePlan } from "./reconcile.ts";
 import { renderGraph, renderArchitecture, renderBanded } from "./render.ts";
@@ -74,7 +74,7 @@ import { OpRunner } from "./op-runner.ts";
 import { detectSubstrates, projectLexicons } from "./substrates.ts";
 import { pickAutoSyncOps, suspendedByRollback, type AutoSyncMode } from "./autosync.ts";
 import { sourceCommits, openRollbackBranches } from "./history.ts";
-import { composeEstate, composeEstateOverlay } from "./estate.ts";
+import { composeEstate, composeEstateOverlay, withoutJoinedMembers } from "./estate.ts";
 import { Broadcaster, watchSource } from "./events.ts";
 import { startDriftPoll } from "./poll.ts";
 import { FrameBuffer } from "./frames.ts";
@@ -92,8 +92,12 @@ import {
   unwritableReason,
 } from "./layout.ts";
 import { emulatorUp, emulatorDown, mergedEnv, type EmulatorInfo } from "./emulator.ts";
+import { loadDemoRegistry, missingRequirements, fetchesFromNetwork, demoTargetDir, loadDemo, type DemoEntry } from "./demos.ts";
 
-const webRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
+/** The installed behold package root — `demos.json` and the bundled examples
+ * sit beside `dist/` in the tarball, and beside `src/` in the repo. */
+const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+const webRoot = join(pkgRoot, "web");
 
 /** One captured-stdout exec, for the odd read-only shell-out (git branch). */
 const execFileP = async (cmd: string, args: string[]): Promise<string> =>
@@ -583,8 +587,8 @@ export function createApp(
   // multi-cluster tiebreak for anchoring/logical projection (cluster-anchor.ts
   // `boundManagedCluster`) — read per call because both the profiles and the
   // kubeconfig can change under a running server. Never throws: no k8s
-  // lexicon, no kubectl, no kubeconfig all resolve to undefined, which every
-  // consumer treats as "no opinion".
+  // lexicon, no kubeconfig, no readable kubeconfig at all resolve to
+  // undefined, which every consumer treats as "no opinion".
   const boundK8sContext = async (env: string | undefined): Promise<string | undefined> => {
     try {
       const { lexicons, k8sProfiles } = await detectProject(cfg.projectDir);
@@ -781,8 +785,8 @@ export function createApp(
     const { environments, lexicons, stacks, k8sProfiles } = await detectProject(cfg.projectDir);
     // #106: the k8s half's apiserver is dynamic (Floci allocates a port per EKS
     // cluster), so it is resolved from the kubeconfig on each read rather than
-    // assumed. Only for a project that declares the lexicon — no kubectl call
-    // for an aws-only project.
+    // assumed. Only for a project that declares the lexicon — an aws-only
+    // project never touches a kubeconfig.
     const k8sTarget = lexicons.includes("k8s")
       ? resolveK8sTarget(k8sProfiles, cfg.env, await loadKubeconfig())
       : undefined;
@@ -847,18 +851,30 @@ export function createApp(
     if (!existsSync(join(dir, "chant.config.ts"))) {
       return c.json({ error: `${dir} doesn't look like a chant project — no chant.config.ts` }, 400);
     }
-    addRecent(cfg.projectDir); // the project being left stays reachable
-    cfg.projectDir = dir;
-    cfg.projectDirs = undefined; // a switch targets one project, not an estate
-    cfg.env = undefined; // the new project's envs differ — the SPA re-seeds from /api/project
-    beholdConfig = loadBeholdConfig(dir);
-    tierEnvVar = beholdConfig.tiers?.envVar;
-    runner.retarget(dir);
-    addRecent(dir);
-    cfg.onProjectSwitch?.(dir);
-    broadcaster.emit("changed");
+    switchServedProject([dir]);
     return c.json({ ok: true, projectDir: dir });
   });
+
+  /** Re-point everything per-project at `dirs` (primary first). Everything the
+   * routes read lives on `cfg` (read at request time), the runner, or the two
+   * `let`s above; the long-lived machinery re-aims through onProjectSwitch. The
+   * project being left stays reachable through recents. Shared by
+   * /api/project/open and the demo catalog's loader (#268) — one switch, so a
+   * demo lands in exactly the state a hand-typed path would. */
+  const switchServedProject = (dirs: string[], env?: string): void => {
+    addRecent(cfg.projectDir);
+    cfg.projectDir = dirs[0];
+    cfg.projectDirs = dirs.length > 1 ? dirs : undefined;
+    // The new project's envs differ — the SPA re-seeds from /api/project. A
+    // demo names its own serve env, which becomes the initial selection.
+    cfg.env = env;
+    beholdConfig = loadBeholdConfig(dirs[0]);
+    tierEnvVar = beholdConfig.tiers?.envVar;
+    runner.retarget(dirs[0]);
+    for (const d of dirs) addRecent(d);
+    cfg.onProjectSwitch?.(dirs[0]);
+    broadcaster.emit("changed");
+  };
 
   // #195: pop the OS file manager at a project's directory — the "where IS
   // this?" affordance beside the project name. Allowlisted to the served
@@ -874,6 +890,110 @@ export function createApp(
       return c.json({ ok: true });
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    }
+  });
+
+  // --- The demo catalog in the switcher (#268) -----------------------------
+  // `behold demo --list` was terminal-only: a demo appeared in the panel only
+  // after someone had served it from a shell. These two routes put the same
+  // bundled catalog (demos.json, #209) one click from any served project.
+  //
+  // The boundary is the whole design: POST takes a catalog NAME, matched
+  // exactly against the entries this install ships, and the directory it loads
+  // into comes from `demoTargetDir` — no path from the browser reaches the
+  // filesystem, so the route cannot be aimed at anything outside the catalog.
+  // Everything after that is the CLI's own code path (demos.ts `loadDemo`) and
+  // the existing in-place switch, which is what makes this the same class of
+  // local, reversible action as /api/project/open rather than a new power.
+
+  /** One catalog entry as the panel sees it: what it is, whether it can run
+   * here, and whether starting it reaches the network. */
+  const demoRow = (e: DemoEntry): Record<string, unknown> => {
+    const missing = missingRequirements(e);
+    const target = demoTargetDir(e);
+    return {
+      name: e.name,
+      description: e.description,
+      requires: e.requires,
+      source: e.source,
+      // #268's consent half: a git entry is cloned from a public repo, so the
+      // button says so (and names the repo) BEFORE anything is fetched.
+      fetches: fetchesFromNetwork(e),
+      ...(e.repo ? { repo: e.repo } : {}),
+      target,
+      loaded: existsSync(target),
+      satisfiable: missing.length === 0,
+      // #254: the carve walkthrough runs fine here — it just isn't a project
+      // to switch INTO. Carve mode claims `/api/graph` and `/api/project` at
+      // app creation (see carveRoutes), so a running server cannot become one;
+      // the row stays in the catalog, disabled, saying what to run instead.
+      ...(e.serve.carve ? { switchable: false } : {}),
+      ...(missing.length
+        ? { reason: `needs ${missing.join(", ")} on PATH` }
+        : e.serve.carve
+          ? { reason: `serves a carve report, not a project — run \`behold demo ${e.name}\`` }
+          : {}),
+    };
+  };
+
+  app.get("/api/demos", (c) =>
+    c.json({
+      demos: loadDemoRegistry(pkgRoot).map(demoRow),
+      ...(cfg.previewMode ? { locked: "loading a demo is locked in preview mode" } : {}),
+    }),
+  );
+
+  // One demo load at a time — `npm install` + a `setup` that stands a k3d
+  // cluster up are minutes long, and two of them racing into the same target
+  // directory is not a state worth having.
+  let loadingDemo: string | null = null;
+
+  app.post("/api/demos/open", async (c) => {
+    if (cfg.previewMode) return c.json({ error: "loading a demo is locked in preview mode" }, 403);
+    const body = (await c.req.json().catch(() => ({}))) as { name?: string };
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    // NAME, never a path: an entry from this install's own catalog or nothing.
+    const entry = loadDemoRegistry(pkgRoot).find((e) => e.name === name);
+    if (!entry) {
+      return c.json({ error: `no "${name || "(no name given)"}" in this install's demo catalog` }, 400);
+    }
+    const missing = missingRequirements(entry);
+    if (missing.length) return c.json({ error: `${entry.name} needs ${missing.join(", ")} on PATH` }, 400);
+    // Refused BEFORE the copy + install, not after: a carve demo would load
+    // fine and then have nowhere to go, since this server was built without
+    // carve mode's routes. Say so in the tenth of a second it takes to know.
+    if (entry.serve.carve) {
+      return c.json(
+        {
+          error: `${entry.name} serves a carve report, not a chant project — a running server can't switch into carve mode.`,
+          remedy: `Run \`behold demo ${entry.name}\` in a terminal.`,
+        },
+        400,
+      );
+    }
+    if (loadingDemo) return c.json({ error: `${loadingDemo} is still loading` }, 409);
+    loadingDemo = entry.name;
+    try {
+      const target = demoTargetDir(entry);
+      const loaded = await loadDemo(entry, { pkgRoot, target, log: (line) => process.stdout.write(line + "\n") });
+      if (!loaded.ok) return c.json({ error: loaded.error }, 500);
+      const dirs = loaded.serveDirs;
+      if (!existsSync(join(dirs[0], "chant.config.ts"))) {
+        return c.json({ error: `${entry.name} loaded to ${target} but ${dirs[0]} has no chant.config.ts` }, 500);
+      }
+      // The demo's own `--local` (#46): boot its emulators and redirect this
+      // process at them, exactly as `behold demo <name>` does through
+      // `serve --local` — otherwise the demo's Deploy would aim at a real
+      // cloud instead of the emulator it was written for.
+      if (entry.serve.local) {
+        if (cfg.emulators?.length) await emulatorDown(cfg.projectDir).catch(() => {});
+        cfg.local = true;
+        cfg.emulators = await bootLocalEmulators(dirs[0], `behold demo ${entry.name} --local`);
+      }
+      switchServedProject(dirs, entry.serve.env);
+      return c.json({ ok: true, demo: entry.name, projectDir: dirs[0], projectDirs: dirs, env: entry.serve.env ?? null });
+    } finally {
+      loadingDemo = null;
     }
   });
 
@@ -1003,6 +1123,12 @@ export function createApp(
         { method: "GET", path: "/api/project", desc: "project info: dir, recents, environments, tiers, targets, stacks, preview lock" },
         { method: "POST", path: "/api/project/open", desc: "switch the served project: JSON body {dir} (validated; preview-locked)" },
         { method: "POST", path: "/api/project/reveal", desc: "open the OS file manager at a served/recent project dir: JSON body {dir?}" },
+        { method: "GET", path: "/api/demos", desc: "the bundled demo catalog: [{name, description, requires, satisfiable, reason?, fetches, repo?, target, loaded}]" },
+        {
+          method: "POST",
+          path: "/api/demos/open",
+          desc: "load a demo and serve it: JSON body {name} (a catalog name, never a path) — copies/clones, installs, runs its setup, then switches (preview-locked)",
+        },
         { method: "GET", path: "/api/graph", desc: "the graph {ir, svg, meta} — params: detail=0..3, components=1, logical=1, env, stack, tier, target, lens, up=1, down=1, radial=1, layout=1" },
         ...(cfg.carveReport
           ? [
@@ -1501,7 +1627,12 @@ export function createApp(
           const logicalBefore = ir.nodes.length;
           const { ir: projected, byContainer } = projectTopology(ir, env, boundContext, await estateSourceRoots(query));
           const { svg } = renderArchitecture(projected, byContainer);
-          const note = [notesFor("logical", projected, undefined, logicalBefore), coverNote, namespaceMismatchNote(projected.nodes)]
+          const note = [
+            notesFor("logical", projected, undefined, logicalBefore),
+            coverNote,
+            namespaceJoinNote(est.joined),
+            namespaceMismatchNote(withoutJoinedMembers(projected.nodes, est.joined)),
+          ]
             .filter(Boolean)
             .join(" · ");
           return c.json({
@@ -1518,7 +1649,16 @@ export function createApp(
         // point of asking for the tier. Every other estate view keeps
         // `byStack`.
         const { svg } = renderGraph(ir, { boxes: runtime ? "byContainer" : "byStack" });
-        const note = [coverNote, namespaceMismatchNote(ir.nodes), runtime ? notesFor("runtime", ir, undefined, undefined, detail) : undefined]
+        // #221: the join line says which members were read where the ESTATE
+        // says they run; #192's note then speaks only for the members the join
+        // did not reach — for the joined ones the read no longer looked in
+        // "default", so the sentence would be false.
+        const note = [
+          coverNote,
+          namespaceJoinNote(est.joined),
+          namespaceMismatchNote(withoutJoinedMembers(ir.nodes, est.joined)),
+          runtime ? notesFor("runtime", ir, undefined, undefined, detail) : undefined,
+        ]
           .filter(Boolean)
           .join(" · ");
         return c.json({
@@ -1905,36 +2045,39 @@ export function createApp(
   return app;
 }
 
-export async function startServer(cfg: ServerOptions): Promise<void> {
-  // Local mode (#46): boot the project's emulator(s) first, then apply their env
-  // to *this* process — every chant shell-out (graph --live, run <op>) inherits it
-  // via spawn, so observe and deploy both hit the emulator. Do this before the
-  // baseline capture so the first overlay already sees local state.
-  if (cfg.local) {
-    try {
-      const emulators = await emulatorUp(cfg.projectDir);
-      cfg.emulators = emulators;
-      if (emulators.length === 0) {
-        process.stderr.write(
-          "behold serve --local: no configured lexicon has a local emulator — serving without one.\n",
-        );
-      } else {
-        Object.assign(process.env, mergedEnv(emulators));
-        for (const e of emulators) {
-          process.stdout.write(`  local: ${e.lexicon} ${e.name} up on ${e.endpoint}\n`);
-        }
-      }
-    } catch (err) {
-      // A viewer must still come up. If the emulator can't boot (Docker down),
-      // warn loudly and serve the source graph anyway — the user starts Docker
-      // and restarts to get the emulator, rather than facing a dead server.
-      cfg.emulators = [];
-      process.stderr.write(
-        `behold serve --local: ${err instanceof Error ? err.message : String(err)}\n` +
-          "  Serving the source graph without the emulator — start Docker and restart to enable local deploys.\n",
-      );
+/** Local mode (#46): boot a project's emulator(s) and apply their env to *this*
+ * process — every chant shell-out (graph --live, run <op>) inherits it via
+ * spawn, so observe and deploy both hit the emulator. Never throws: a viewer
+ * must still come up. If the emulator can't boot (Docker down), it warns loudly
+ * and the source graph is served anyway, rather than facing a dead server.
+ *
+ * Shared by `serve --local` at startup and by the demo catalog's loader (#268),
+ * which boots the emulators a demo declares when it's loaded from the panel. */
+async function bootLocalEmulators(dir: string, who: string): Promise<EmulatorInfo[]> {
+  try {
+    const emulators = await emulatorUp(dir);
+    if (emulators.length === 0) {
+      process.stderr.write(`${who}: no configured lexicon has a local emulator — serving without one.\n`);
+      return [];
     }
+    Object.assign(process.env, mergedEnv(emulators));
+    for (const e of emulators) {
+      process.stdout.write(`  local: ${e.lexicon} ${e.name} up on ${e.endpoint}\n`);
+    }
+    return emulators;
+  } catch (err) {
+    process.stderr.write(
+      `${who}: ${err instanceof Error ? err.message : String(err)}\n` +
+        "  Serving the source graph without the emulator — start Docker and restart to enable local deploys.\n",
+    );
+    return [];
   }
+}
+
+export async function startServer(cfg: ServerOptions): Promise<void> {
+  // Boot the emulators before the baseline capture, so the first overlay
+  // already sees local state.
+  if (cfg.local) cfg.emulators = await bootLocalEmulators(cfg.projectDir, "behold serve --local");
 
   // #209: every served chant project registers as a recent at boot — the
   // panel's switcher (and the demo catalog's "switch between loaded demos"

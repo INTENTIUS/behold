@@ -150,6 +150,50 @@ export function straightEdge(anchors, from, to) {
   return `M ${sx + ((from && from.dx) || 0)} ${sy + ((from && from.dy) || 0)} L ${ex + ((to && to.dx) || 0)} ${ey + ((to && to.dy) || 0)}`;
 }
 
+// --- The containment clamp (#267) -------------------------------------------
+// A card may not leave the box that draws around it. The box is a claim the
+// estate makes — this namespace, this overlay — and a card floating outside one
+// reads as a claim chant never made. So a drag stops at the wall instead, and
+// "I need more room" means grow the box first (#245 already resizes them).
+//
+// No twin in src/layout.ts, unlike the three functions above: the server-side
+// bake cannot see a containment box at all (they carry no id — see
+// wrapContainmentBoxes in web/app.js), so it has nothing to clamp against and
+// deliberately does not try.
+
+/** How far a card keeps off its container's edge, in viewBox units. */
+export const CLAMP_PAD = 8;
+
+/**
+ * `delta` clamped so `rect` — the node's ORIGINAL, un-displaced box — lands
+ * inside `bounds` minus `pad`. `{dw,dh}` ride through untouched; a clamp is
+ * about position.
+ *
+ * Missing or degenerate geometry returns the delta unchanged. That is the
+ * fail-open the DOM side needs: a graph pane that hasn't laid out yet measures
+ * nothing, and "no measurement" must mean "no clamp", not "everything snaps to
+ * the origin".
+ *
+ * A container with no room for the card (a box dragged smaller than its child)
+ * has an empty range; the card centres on that axis rather than being pinned to
+ * an arbitrary end of it.
+ */
+export function clampDelta(delta, rect, bounds, pad = CLAMP_PAD) {
+  const d = { ...(delta || {}) };
+  if (!rect || !bounds || !(rect.w >= 0) || !(rect.h >= 0) || !(bounds.w > 0) || !(bounds.h > 0)) return d;
+  d.dx = clampAxis(d.dx || 0, rect.x, rect.w, bounds.x, bounds.w, pad);
+  d.dy = clampAxis(d.dy || 0, rect.y, rect.h, bounds.y, bounds.h, pad);
+  return d;
+}
+
+function clampAxis(v, start, len, boundStart, boundLen, pad) {
+  const lo = boundStart + pad - start;
+  const hi = boundStart + boundLen - pad - (start + len);
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || !Number.isFinite(v)) return v;
+  if (hi < lo) return (lo + hi) / 2; // no room at all — centre, don't pick a wall
+  return Math.min(hi, Math.max(lo, v));
+}
+
 // --- The server tier --------------------------------------------------------
 
 /**

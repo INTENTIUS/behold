@@ -18,8 +18,11 @@
  * project; that per-project targeting isn't wired into the HTTP API yet — see
  * the M4 report for what a proper "many live instances" estate would need.
  */
+import { statSync } from "node:fs";
+import { join, resolve, sep } from "node:path";
 import { composeStacks, shortStackNames, type GraphIR } from "@intentius/pinhole";
-import { graphIr, type GraphOptions } from "./chant.ts";
+import { graphIr, meetsFloor, resolveChant, type GraphOptions } from "./chant.ts";
+import { CLUSTER_SCOPED } from "./zoom-notes.ts";
 
 /** Graph each project's source and compose them into one estate IR. */
 export async function composeEstate(projectDirs: string[], opts: GraphOptions = {}): Promise<GraphIR> {
@@ -42,6 +45,10 @@ export interface EstateOverlayResult {
   unobserved: { name: string; reason: string }[];
   /** Even the source graph failed — the project is absent from `ir`. */
   dropped: { name: string; reason: string }[];
+  /** #221: the members whose live read was scoped to a namespace the ESTATE
+   * declared rather than the member itself — see `estateNamespaceScopes`.
+   * Sorted by name; empty on an estate with no such binding. */
+  joined: { name: string; namespace: string }[];
 }
 
 /** A short human reason from a failure. ChantCliError's message leads with
@@ -78,6 +85,229 @@ export function namespaceRuntimeOwners(name: string, ir: GraphIR): GraphIR {
   return ir;
 }
 
+// ---------------------------------------------------------------------------
+// The GitOps namespace join (#221) — the estate reading its app projects where
+// they actually run.
+//
+// A GitOps estate splits one fact across two projects: the control plane
+// declares `Kustomization.spec.targetNamespace`, the app project declares bare
+// objects the controller stamps at apply time. Neither project alone knows
+// where its workloads live, so an app project's live read fell through to the
+// substrate default, found nothing, and the overlay painted weeks-old running
+// infrastructure `pending` — honestly (nothing WAS in `default`) and
+// uselessly. #192 shipped the note that explains it; this joins the halves so
+// there is nothing to explain.
+//
+// The join only exists in composition: it is the one question a single project
+// cannot answer and an estate can, which is the whole argument for reading N
+// projects together. chant#1629's `--namespace <ns>` is the seam on the other
+// side — a per-READ default, so nothing about the declared source is rewritten
+// and an object naming its own namespace is untouched.
+// ---------------------------------------------------------------------------
+
+/** The chant that ships `graph --live --namespace <ns>` (chant#1629). Below
+ * this the flag is not merely ignored: chant#1127 made an unrecognised `--`
+ * flag a hard error, so a member on an older chant is left unjoined rather
+ * than sent an invocation its own CLI will refuse — which would turn today's
+ * "pending, with the note" into "unobserved", a strictly worse picture. */
+export const NAMESPACE_JOIN_FLOOR = "0.44.5";
+
+type Rec = Record<string, unknown>;
+const rec = (v: unknown): Rec | undefined => (v && typeof v === "object" && !Array.isArray(v) ? (v as Rec) : undefined);
+const str = (v: unknown): string | undefined => (typeof v === "string" && v.length > 0 ? v : undefined);
+
+const realIsDir = (p: string): boolean => {
+  try {
+    return statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+};
+
+/** Every `{ path, namespace }` a member's source declares through a Flux
+ * `Kustomization` — the estate's own statement of where a directory of
+ * manifests gets applied. Both halves required: a Kustomization with no
+ * `targetNamespace` binds nothing, and one whose `path` chant left as an
+ * unresolved AttrRef (not a string) names no directory this can match.
+ *
+ * Flux only, deliberately. Argo's `Application` carries the same shape
+ * (`spec.source.path` + `spec.destination.namespace`) and would slot in here
+ * unchanged, but the argo-estate demo's app projects declare their own
+ * namespaces, so adding it now would ship a join no estate exercises. */
+export function declaredNamespaceBindings(ir: GraphIR): { path: string; namespace: string }[] {
+  const out: { path: string; namespace: string }[] = [];
+  for (const n of ir.nodes) {
+    if (n.kind !== "K8s::Flux::Kustomization") continue;
+    const spec = rec(n.attrs?.spec);
+    const namespace = str(spec?.targetNamespace);
+    const path = str(spec?.path);
+    if (namespace && path) out.push({ path, namespace });
+  }
+  return out;
+}
+
+/** Does this member declare k8s objects that name no namespace of their own —
+ * the shape something stamps at apply time?
+ *
+ * Cluster-scoped kinds are ignored (nothing to stamp, so no evidence either
+ * way — the same reading `namespaceMismatchNote` takes, off the same set). One
+ * object naming its own namespace is enough to answer no: that project already
+ * says where it lives, chant's `--namespace` would leave it alone anyway, and
+ * a default nobody needs is a default that can only be wrong. */
+export function awaitsNamespaceBinding(ir: GraphIR): boolean {
+  const namespaced = ir.nodes.filter((n) => n.lexicon === "k8s" && !CLUSTER_SCOPED.has(n.kind ?? ""));
+  if (namespaced.length === 0) return false;
+  return namespaced.every((n) => !str(rec(n.attrs?.metadata)?.namespace));
+}
+
+/** A declared `spec.path` split into segments, or undefined when it is not a
+ * repo-relative path this can reason about. Absolute paths and `..` escapes
+ * are out: matching either would mean guessing at a repository root nobody in
+ * the estate named. */
+function declaredSegments(path: string): string[] | undefined {
+  if (path.startsWith("/")) return undefined;
+  const segs = path.split("/").filter((s) => s !== "" && s !== ".");
+  if (segs.length === 0 || segs.includes("..")) return undefined;
+  return segs;
+}
+
+/**
+ * How specifically a declared `spec.path` points at the member project rooted
+ * at `dir` — 0 for no match, else the number of leading path segments that
+ * matched, which doubles as the specificity score when several bindings claim
+ * the same member.
+ *
+ * The rule: a Flux `spec.path` is relative to the SOURCE's root, and behold
+ * knows a member by its checkout path, not by where a GitRepository would put
+ * it — so the two are aligned by overlap. The declared path's leading segments
+ * must equal the member directory's trailing segments (`example-flux-estate/
+ * app-b` against `…/behold/example-flux-estate/app-b`), and whatever remains
+ * of the declared path must then exist as a real directory under the member
+ * (`manifests`). Anchoring at the member's own tail is what keeps a
+ * Kustomization aimed at a PARENT directory from claiming everything beneath
+ * it, and the on-disk check is what keeps a coincidental name overlap from
+ * counting as a match.
+ *
+ * Exported for testing; `isDir` is injected for the same reason. */
+export function pathAlignment(declared: string, dir: string, isDir: (p: string) => boolean = realIsDir): number {
+  const want = declaredSegments(declared);
+  if (!want) return 0;
+  const root = resolve(dir);
+  const have = root.split(sep).filter(Boolean);
+  // Longest overlap first: the most specific reading of the path wins.
+  for (let k = Math.min(want.length, have.length); k >= 1; k--) {
+    if (!have.slice(-k).every((s, i) => s === want[i])) continue;
+    if (!isDir(join(root, ...want.slice(k)))) continue;
+    return k;
+  }
+  return 0;
+}
+
+/** One member's live read scoped by another member's declaration. */
+export interface NamespaceJoin {
+  /** The member being scoped, by project dir. */
+  dir: string;
+  namespace: string;
+  /** The `spec.path` that matched, and the member dir that declared it. */
+  path: string;
+  declaredBy: string;
+}
+
+/**
+ * Match each declared binding to the member project its path points at, for
+ * members that declare no namespace of their own. Pure (given `isDir`).
+ *
+ * Conservative at both ends. A binding is dropped when two candidate members
+ * match its path equally well, and a member is dropped when two bindings claim
+ * it for DIFFERENT namespaces — an estate that says two things says nothing,
+ * and no join leaves exactly today's behaviour (pending, plus #192's note)
+ * rather than a confident read of the wrong namespace. A binding never scopes
+ * the member that declared it: the split across projects is the premise.
+ */
+export function joinNamespaceBindings(
+  members: readonly { dir: string; ir: GraphIR | undefined }[],
+  isDir: (p: string) => boolean = realIsDir,
+): NamespaceJoin[] {
+  const bindings = members.flatMap((m) =>
+    m.ir ? declaredNamespaceBindings(m.ir).map((b) => ({ ...b, declaredBy: m.dir })) : [],
+  );
+  if (bindings.length === 0) return [];
+  const awaiting = members.filter((m) => m.ir && awaitsNamespaceBinding(m.ir));
+  if (awaiting.length === 0) return [];
+
+  const best = new Map<string, { score: number; join: NamespaceJoin } | "ambiguous">();
+  for (const b of bindings) {
+    let winner: { dir: string; score: number } | undefined;
+    let tied = false;
+    for (const m of awaiting) {
+      if (m.dir === b.declaredBy) continue;
+      const score = pathAlignment(b.path, m.dir, isDir);
+      if (score === 0) continue;
+      if (!winner || score > winner.score) {
+        winner = { dir: m.dir, score };
+        tied = false;
+      } else if (score === winner.score) {
+        tied = true;
+      }
+    }
+    if (!winner || tied) continue;
+    const prev = best.get(winner.dir);
+    if (prev === "ambiguous") continue;
+    const join: NamespaceJoin = { dir: winner.dir, namespace: b.namespace, path: b.path, declaredBy: b.declaredBy };
+    if (!prev) best.set(winner.dir, { score: winner.score, join });
+    else if (prev.join.namespace !== b.namespace) best.set(winner.dir, "ambiguous");
+    else if (winner.score > prev.score) best.set(winner.dir, { score: winner.score, join });
+  }
+  return [...best.values()].filter((v): v is { score: number; join: NamespaceJoin } => v !== "ambiguous").map((v) => v.join);
+}
+
+/**
+ * The namespace each member's live read should be scoped to, keyed by project
+ * dir — the join above, resolved against the estate's real source.
+ *
+ * This costs one extra chant invocation per member, source-only. It has to:
+ * the namespace is an INPUT to the live read, so it cannot be recovered from
+ * the read's own output, and the declaration lives in a project other than the
+ * one being scoped. Detail 3 because `spec` is the attributes tier (the same
+ * reason the runtime tier forces it — see server.ts's estate branch), `env`
+ * kept because a targetNamespace can be env-conditioned source and the
+ * question is what the estate declares FOR THIS ENVIRONMENT, `live`/`overlay`
+ * dropped because reading the cluster to decide where to read the cluster is
+ * circular. Every failure is silent and means no join: an estate that can't be
+ * graphed for its bindings gets exactly the picture it got before.
+ */
+export async function estateNamespaceScopes(
+  projectDirs: readonly string[],
+  opts: GraphOptions,
+  isDir: (p: string) => boolean = realIsDir,
+): Promise<Map<string, string>> {
+  // A one-project "estate" has no other member to carry the binding.
+  if (projectDirs.length < 2) return new Map();
+  const { live: _live, overlay: _overlay, namespace: _namespace, ...src } = opts;
+  const irs = await Promise.all(projectDirs.map((dir) => graphIr(dir, { ...src, detail: 3 }).catch(() => undefined)));
+  const scopes = new Map<string, string>();
+  for (const j of joinNamespaceBindings(projectDirs.map((dir, i) => ({ dir, ir: irs[i] })), isDir)) {
+    // chant#1629's flag or nothing — see NAMESPACE_JOIN_FLOOR.
+    if (!meetsFloor(resolveChant(j.dir).version, NAMESPACE_JOIN_FLOOR)) continue;
+    scopes.set(j.dir, j.namespace);
+  }
+  return scopes;
+}
+
+/** The composed nodes that do NOT belong to a joined member. `composeStacks`
+ * namespaces every id `<member>/<id>`, so a member's slice of the composed IR
+ * is exactly that prefix — which lets #192's namespace-mismatch note keep
+ * speaking for the members the join did not reach while going quiet about the
+ * ones it did, where "the live read looked in default" is simply no longer
+ * true. */
+export function withoutJoinedMembers<T extends { id: string }>(
+  nodes: readonly T[],
+  joined: readonly { name: string }[],
+): T[] {
+  if (joined.length === 0) return [...nodes];
+  return nodes.filter((n) => !joined.some((j) => n.id.startsWith(`${j.name}/`)));
+}
+
 /**
  * The estate-wide live overlay (#189): overlay each project and compose the
  * results, rather than composing sources and overlaying only the primary —
@@ -91,6 +321,9 @@ export function namespaceRuntimeOwners(name: string, ir: GraphIR): GraphIR {
  *
  * `classify` is the per-project post-pass (the caller's reclassifyOverlay) —
  * a parameter so this module stays composition-only.
+ *
+ * #221: each member's read is scoped first by `estateNamespaceScopes` — the
+ * one thing composition can tell a member that the member cannot tell itself.
  */
 export async function composeEstateOverlay(
   projectDirs: string[],
@@ -100,12 +333,21 @@ export async function composeEstateOverlay(
   const names = shortStackNames(projectDirs);
   const unobserved: { name: string; reason: string }[] = [];
   const dropped: { name: string; reason: string }[] = [];
+  const joined: { name: string; namespace: string }[] = [];
   const stacks: ({ name: string; ir: GraphIR } | undefined)[] = new Array(projectDirs.length);
+  // #221: where the estate itself says a member's objects run. Resolved before
+  // the live pass because it is an argument TO that pass.
+  const scopes = await estateNamespaceScopes(projectDirs, opts);
   await Promise.all(
     projectDirs.map(async (dir, i) => {
       const name = names[i];
+      const namespace = scopes.get(dir);
       try {
-        stacks[i] = { name, ir: namespaceRuntimeOwners(name, classify(await graphIr(dir, { ...opts, live: true, overlay: true }))) };
+        const live = { ...opts, live: true, overlay: true, ...(namespace ? { namespace } : {}) };
+        stacks[i] = { name, ir: namespaceRuntimeOwners(name, classify(await graphIr(dir, live))) };
+        // Reported only for a read that actually happened — an unobserved
+        // member was not read anywhere, joined namespace or not.
+        if (namespace) joined.push({ name, namespace });
       } catch (err) {
         const reason = firstLine(err);
         try {
@@ -129,5 +371,8 @@ export async function composeEstateOverlay(
     total: projectDirs.length,
     unobserved,
     dropped,
+    // Concurrent reads finish in whatever order the clusters answer; the note
+    // this feeds should read the same twice.
+    joined: joined.sort((a, b) => a.name.localeCompare(b.name)),
   };
 }

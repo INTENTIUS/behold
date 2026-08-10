@@ -1,4 +1,5 @@
 {
+  "version": 1,
   "from": "sample-estate",
   "advisory": "read-only — emits nothing, patches nothing, touches no live resource",
   "count": 8,
@@ -27,6 +28,10 @@
           "dynamic": 0,
           "instances": 0
         }
+      },
+      "boundary": {
+        "inbound": [],
+        "outbound": []
       }
     },
     {
@@ -48,6 +53,24 @@
           "dynamic": 0,
           "instances": 0
         }
+      },
+      "boundary": {
+        "inbound": [],
+        "outbound": [
+          {
+            "direction": "outbound",
+            "survivor": "aws_vpc.main",
+            "carved": "aws_subnet.a",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "vpc_id"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          }
+        ]
       }
     },
     {
@@ -69,6 +92,24 @@
           "dynamic": 0,
           "instances": 0
         }
+      },
+      "boundary": {
+        "inbound": [],
+        "outbound": [
+          {
+            "direction": "outbound",
+            "survivor": "aws_vpc.main",
+            "carved": "aws_subnet.b",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "vpc_id"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          }
+        ]
       }
     },
     {
@@ -90,6 +131,24 @@
           "dynamic": 0,
           "instances": 0
         }
+      },
+      "boundary": {
+        "inbound": [],
+        "outbound": [
+          {
+            "direction": "outbound",
+            "survivor": "aws_vpc.main",
+            "carved": "aws_subnet.c",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "vpc_id"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          }
+        ]
       }
     },
     {
@@ -111,6 +170,25 @@
           "dynamic": 0,
           "instances": 0
         }
+      },
+      "boundary": {
+        "inbound": [
+          {
+            "direction": "inbound",
+            "survivor": "aws_lambda_function.api",
+            "carved": "aws_s3_bucket.assets",
+            "attrs": [
+              "arn",
+              "bucket"
+            ],
+            "via": [
+              "environment"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          }
+        ],
+        "outbound": []
       }
     },
     {
@@ -132,6 +210,25 @@
           "dynamic": 0,
           "instances": 0
         }
+      },
+      "boundary": {
+        "inbound": [],
+        "outbound": [
+          {
+            "direction": "outbound",
+            "survivor": "aws_s3_bucket.assets",
+            "carved": "aws_lambda_function.api",
+            "attrs": [
+              "arn",
+              "bucket"
+            ],
+            "via": [
+              "environment"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          }
+        ]
       }
     },
     {
@@ -153,6 +250,50 @@
           "dynamic": 0,
           "instances": 0
         }
+      },
+      "boundary": {
+        "inbound": [
+          {
+            "direction": "inbound",
+            "survivor": "aws_subnet.a",
+            "carved": "aws_vpc.main",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "vpc_id"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          },
+          {
+            "direction": "inbound",
+            "survivor": "aws_subnet.b",
+            "carved": "aws_vpc.main",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "vpc_id"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          },
+          {
+            "direction": "inbound",
+            "survivor": "aws_subnet.c",
+            "carved": "aws_vpc.main",
+            "attrs": [
+              "id"
+            ],
+            "via": [
+              "vpc_id"
+            ],
+            "bridge": "tf-data-source",
+            "required": "immediately"
+          }
+        ],
+        "outbound": []
       }
     },
     {
@@ -173,6 +314,10 @@
           "dynamic": 0,
           "instances": 0
         }
+      },
+      "boundary": {
+        "inbound": [],
+        "outbound": []
       }
     }
   ]

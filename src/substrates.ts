@@ -15,6 +15,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { platform } from "node:os";
+import { ambientContext } from "./k8s-target.ts";
 
 export type SubstrateStatus = "up" | "down" | "on-demand" | "blocked" | "unknown";
 
@@ -261,10 +262,14 @@ export async function detectSubstrates(projectDir: string, preview = false, boun
   // ambient reported whatever cluster the operator's shell last pointed at —
   // observed live: a kubemicrovm-ops estate bound to `k3d-kubemicrovm-local`
   // whose pill named a real EKS cluster.
+  //
+  // The ambient read is a kubeconfig read, not a shell-out (#231): helm being
+  // installed no longer implies kubectl is, and the pill should not go blank
+  // on a machine that only ever installed helm.
   if (lexicons.includes("helm")) {
     const helm = await probe("helm", ["version", "--short"]);
-    const ambient = helm.code === 0 && !boundContext ? await probe("kubectl", ["config", "current-context"]) : { code: 127, out: "" };
-    const ctx = boundContext ?? (ambient.code === 0 ? ambient.out.trim() : "");
+    const ambient = helm.code === 0 && !boundContext ? await ambientContext() : undefined;
+    const ctx = boundContext ?? ambient ?? "";
     subs.push({
       name: "helm",
       label: "Helm",

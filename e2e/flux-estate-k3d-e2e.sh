@@ -11,9 +11,12 @@
 #                            (Kustomization → GitRepository, across stacks) and
 #                            app-b's `dependsOn` gate on app-a.
 #   2. logical lens (#241)  — /api/overlay?logical=1 answers mode "logical" with
-#                            cluster ⊃ namespace boxes, app-a's objects inside
+#      + the join (#221)      cluster ⊃ namespace boxes, app-a's objects inside
 #                            the namespace the CONTROL PLANE declares, and each
-#                            card keeping its live drift colour.
+#                            card keeping its live drift colour — app-b's
+#                            included, which is green only because the estate
+#                            joined the control plane's `targetNamespace` into
+#                            app-b's own live read.
 #   3. runtime tier (#241)  — /api/overlay?runtime=1 boxes the objects Flux
 #                            deployed under the declaring Kustomization, via the
 #                            composed-id `runtimeOwner` re-pointing.
@@ -24,10 +27,12 @@
 #                            that does not exist; the verdict turns `degraded`
 #                            carrying the controller's own reason, then follows
 #                            it back to healthy when the path is restored.
-#   6. the queried line     — app-b's diff carries the resolved address the
-#      (#192)                 failed live read was issued against: namespace
-#                            `default`, not `app-b`. The one-glance diagnosis
-#                            for the demo's deliberate all-pending half.
+#   6. the queried line     — app-b served ALONE (no estate, so no binding to
+#      (#192)                 join) carries the resolved address its failed
+#                            live read was issued against: namespace
+#                            `default`, not `app-b`. The control case for
+#                            step 2 — the same objects, the same cluster, and
+#                            the composed read is the only one that finds them.
 #
 # ## The choices this run makes
 #
@@ -234,17 +239,20 @@ api "/api/overlay?logical=1&env=local" | node -e '
     for (const id of ["control-plane/appA", "control-plane/appB", "control-plane/source"]) {
       if (!holds("namespace flux-system", id)) { console.error("✗", id, "is not inside namespace flux-system"); process.exit(1); }
     }
-    // Live colours survive the projection: the reconciled half green, the
-    // targetNamespace half pending, and the note saying why.
+    // Live colours survive the projection — and since #221 that includes
+    // app-b, whose objects declare no namespace at all. Green here means the
+    // estate joined targetNamespace off the control plane into the live read
+    // issued for app-b. Step 6 serves app-b alone and gets the other answer.
     const st = Object.fromEntries(j.ir.nodes.map((n) => [n.id, n.attrs && n.attrs._status]));
-    for (const id of ["control-plane/appA", "control-plane/appB", "control-plane/source", "app-a/deployment", "app-a/service"]) {
+    for (const id of ["control-plane/appA", "control-plane/appB", "control-plane/source", "app-a/deployment", "app-a/service", "app-b/deployment", "app-b/service"]) {
       if (st[id] !== "good") { console.error("✗", id, "reads", st[id], "— expected good on a converged estate"); process.exit(1); }
     }
-    for (const id of ["app-b/deployment", "app-b/service"]) {
-      if (st[id] !== "accent") { console.error("✗", id, "reads", st[id], "— expected accent (targetNamespace, #192)"); process.exit(1); }
+    if (!/read app-b in "app-b"/.test(j.meta.note ?? "")) {
+      console.error("✗ no namespace-join line on the estate overlay:", j.meta.note); process.exit(1);
     }
-    if (!/declare no metadata\.namespace/.test(j.meta.note ?? "")) {
-      console.error("✗ no namespace-mismatch note on the estate overlay:", j.meta.note); process.exit(1);
+    // The #192 note explains an all-pending half. There is no longer one.
+    if (/declare no metadata\.namespace/.test(j.meta.note ?? "")) {
+      console.error("✗ the namespace-mismatch note survived the join:", j.meta.note); process.exit(1);
     }
     console.log("  ✓ boxes:", Object.keys(bc).join(" / "));
     console.log("  ✓ note:", j.meta.note);
@@ -317,10 +325,12 @@ healthy() { [ "$(verdict)" = "healthy|Ready=True" ]; }
 wait_for "appB back to healthy" 180 healthy
 echo "  ✓ appB: healthy (Ready=True) — the verdict follows the controller both ways"
 
-echo "→ (6/6) the queried line (#192) — where the failed live read looked"
+echo "→ (6/6) the queried line (#192) — where an UNJOINED read looks"
 # /api/diff slices the PRIMARY project, and the primary here is the
 # control plane (whose objects all resolve). app-b — the half whose namespace
 # Flux stamps at apply time — is served on its own to read its addresses.
+# Alone it has no sibling declaring the binding, so the #221 join cannot
+# apply: this is the control case that makes step 2's green mean something.
 node ./bin/behold.js serve "$ESTATE/app-b" --env local --port "$PORT_B" >"$TMP/serve-b.log" 2>&1 &
 SRV_B=$!
 up_b() { curl -sf "http://localhost:$PORT_B/healthz" >/dev/null 2>&1; }

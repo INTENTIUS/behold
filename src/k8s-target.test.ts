@@ -1,77 +1,169 @@
-import { describe, it, expect } from "vitest";
-import { readKubeconfigJson, loadKubeconfig, resolveK8sTarget, contextBindsCluster } from "./k8s-target.ts";
+/**
+ * The k8s target lens, read straight out of kubeconfig files (#231).
+ *
+ * Every case here writes its own kubeconfig into a temp directory and points
+ * `KUBECONFIG` at it, which is `@intentius/chant-k8s-client`'s own test style
+ * and the only honest seam left now that nothing is being shelled: the code
+ * under test is a file read, so the fixture is a file. Nothing reads the
+ * developer's real `~/.kube/config` — the no-kubeconfig case names two paths
+ * that do not exist rather than unsetting the variable — and nothing contacts
+ * a cluster.
+ */
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
+import { fakeKubeconfig } from "@intentius/chant-k8s-client/testing";
+import { kubeconfigFromView, loadKubeconfig, ambientContext, resolveK8sTarget, contextBindsCluster } from "./k8s-target.ts";
 
-// Verbatim shape of `kubectl config view --raw -o json` for the Floci-backed
-// EKS cluster this was verified against: `aws eks update-kubeconfig --name
-// cc-eks` names the context by cluster ARN, and Floci allocated :6500 at
-// cluster creation — a different port next time, which is the whole point.
-const EKS_JSON = {
-  contexts: [
-    {
-      name: "arn:aws:eks:us-east-1:000000000000:cluster/cc-eks",
-      context: { cluster: "arn:aws:eks:us-east-1:000000000000:cluster/cc-eks" },
-    },
-  ],
-  clusters: [
-    {
-      name: "arn:aws:eks:us-east-1:000000000000:cluster/cc-eks",
-      cluster: { server: "https://localhost:6500" },
-    },
-  ],
-  "current-context": "arn:aws:eks:us-east-1:000000000000:cluster/cc-eks",
-};
+// The Floci-backed EKS cluster this lens was verified against: `aws eks
+// update-kubeconfig --name cc-eks` names the context by cluster ARN, and Floci
+// allocated :6500 at cluster creation — a different port next time, which is
+// the whole point.
 const EKS_CONTEXT = "arn:aws:eks:us-east-1:000000000000:cluster/cc-eks";
+const EKS_VIEW = {
+  contexts: [{ name: EKS_CONTEXT, cluster: EKS_CONTEXT, user: "eks-user", server: "https://localhost:6500" }],
+  currentContext: EKS_CONTEXT,
+};
 
-describe("readKubeconfigJson", () => {
+let dir: string;
+let savedKubeconfig: string | undefined;
+let savedPath: string | undefined;
+
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), "behold-k8s-target-"));
+  savedKubeconfig = process.env.KUBECONFIG;
+  savedPath = process.env.PATH;
+});
+
+afterEach(() => {
+  if (savedKubeconfig === undefined) delete process.env.KUBECONFIG;
+  else process.env.KUBECONFIG = savedKubeconfig;
+  if (savedPath !== undefined) process.env.PATH = savedPath;
+  rmSync(dir, { recursive: true, force: true });
+});
+
+function write(name: string, content: string): string {
+  const path = join(dir, name);
+  writeFileSync(path, content);
+  return path;
+}
+
+/** A one-cluster, one-context kubeconfig with a chosen apiserver — the material
+ * the merge cases are reproduced with. */
+function configYaml(opts: { cluster: string; server: string; context: string }): string {
+  return fakeKubeconfig({
+    contexts: [{ name: opts.context, cluster: opts.cluster, user: `user-${opts.context}` }],
+    currentContext: opts.context,
+    server: opts.server,
+  });
+}
+
+describe("kubeconfigFromView", () => {
   it("builds the context → cluster → server chain", () => {
-    const kc = readKubeconfigJson(EKS_JSON);
+    const kc = kubeconfigFromView(EKS_VIEW);
     expect(kc.contexts.get(EKS_CONTEXT)).toBe(EKS_CONTEXT);
     expect(kc.servers.get(EKS_CONTEXT)).toBe("https://localhost:6500");
     expect(kc.currentContext).toBe(EKS_CONTEXT);
   });
 
-  it("skips entries missing a name or a server rather than half-building them", () => {
-    const kc = readKubeconfigJson({
-      contexts: [{ context: { cluster: "c" } }, { name: "ok", context: { cluster: "c" } }],
-      clusters: [{ name: "c" }, { name: "c2", cluster: { server: "https://h:1" } }],
-    });
-    expect([...kc.contexts.keys()]).toEqual(["ok"]);
-    expect([...kc.servers.keys()]).toEqual(["c2"]);
+  it("keeps a context whose cluster has no address, but records no server for it", () => {
+    // The client reports a dangling context rather than failing, and the two
+    // maps have to survive that: `contexts` knows the name, `servers` has
+    // nothing to say, and resolveK8sTarget then reports no target.
+    const kc = kubeconfigFromView({ contexts: [{ name: "dangling", cluster: "gone" }], currentContext: "dangling" });
+    expect(kc.contexts.get("dangling")).toBe("gone");
+    expect(kc.servers.size).toBe(0);
+    expect(resolveK8sTarget(undefined, "local", kc)).toBeUndefined();
   });
 
-  it("survives an empty or fieldless config", () => {
-    const kc = readKubeconfigJson({});
+  it("survives an empty view", () => {
+    const kc = kubeconfigFromView({ contexts: [] });
     expect(kc.contexts.size).toBe(0);
     expect(kc.currentContext).toBeUndefined();
   });
 });
 
-describe("loadKubeconfig", () => {
-  it("asks kubectl for the merged view", async () => {
-    const calls: Array<[string, string[]]> = [];
-    const kc = await loadKubeconfig(async (cmd, args) => {
-      calls.push([cmd, args]);
-      return JSON.stringify(EKS_JSON);
-    });
-    expect(calls).toEqual([["kubectl", ["config", "view", "--raw", "-o", "json"]]]);
+describe("loadKubeconfig (#231)", () => {
+  it("reads the merged view from the KUBECONFIG the operator has set", async () => {
+    process.env.KUBECONFIG = write("eks.yaml", configYaml({ cluster: EKS_CONTEXT, server: "https://localhost:6500", context: EKS_CONTEXT }));
+
+    const kc = await loadKubeconfig();
     expect(kc.currentContext).toBe(EKS_CONTEXT);
+    expect(kc.contexts.get(EKS_CONTEXT)).toBe(EKS_CONTEXT);
+    expect(kc.servers.get(EKS_CONTEXT)).toBe("https://localhost:6500");
   });
 
-  it("returns empty when kubectl is absent — an aws-only project must not break the target lens", async () => {
-    const kc = await loadKubeconfig(async () => {
-      throw Object.assign(new Error("spawn kubectl ENOENT"), { code: "ENOENT" });
-    });
+  it("takes current-context from the FIRST file of a KUBECONFIG list, as kubectl does", async () => {
+    // `@kubernetes/client-node` on its own takes the LAST — the opposite of
+    // every `kubectl get` the operator ran to check. chant#1630 is why this
+    // now agrees.
+    const a = write("a.yaml", configYaml({ cluster: "cluster-a", server: "https://from-a:6443", context: "ctx-a" }));
+    const c = write("c.yaml", configYaml({ cluster: "cluster-c", server: "https://from-c:6443", context: "ctx-c" }));
+    process.env.KUBECONFIG = [a, c].join(delimiter);
+
+    expect((await loadKubeconfig()).currentContext).toBe("ctx-a");
+    await expect(ambientContext()).resolves.toBe("ctx-a");
+  });
+
+  it("keeps the FIRST definition of a duplicated name across the list", async () => {
+    // A team-wide file plus a personal one both naming a cluster is ordinary.
+    // client-node throws `Duplicate cluster: shared` on it, which used to read
+    // as "no kubeconfig at all"; kubectl keeps the first and lists both
+    // contexts, and so does this.
+    const a = write("a.yaml", configYaml({ cluster: "shared", server: "https://from-a:6443", context: "ctx-a" }));
+    const b = write("b.yaml", configYaml({ cluster: "shared", server: "https://from-b:6443", context: "ctx-b" }));
+    process.env.KUBECONFIG = [a, b].join(delimiter);
+
+    const kc = await loadKubeconfig();
+    expect([...kc.contexts.keys()]).toEqual(["ctx-a", "ctx-b"]);
+    expect(kc.servers.get("shared")).toBe("https://from-a:6443");
+    // Both contexts name `shared`, so both resolve to the first file's server.
+    expect(resolveK8sTarget({ local: { context: "ctx-b" } }, "local", kc)?.endpoint).toBe("https://from-a:6443");
+  });
+
+  it("returns empty with no kubeconfig — an aws-only project must not break the target lens", async () => {
+    process.env.KUBECONFIG = [join(dir, "nope-a.yaml"), join(dir, "nope-b.yaml")].join(delimiter);
+
+    const kc = await loadKubeconfig();
     expect(kc.contexts.size).toBe(0);
     expect(kc.servers.size).toBe(0);
+    expect(kc.currentContext).toBeUndefined();
+    await expect(ambientContext()).resolves.toBeUndefined();
   });
 
-  it("returns empty on unparseable output rather than throwing", async () => {
-    expect((await loadKubeconfig(async () => "not json")).contexts.size).toBe(0);
+  it("honours an explicitly named kubeconfig over the ambient list", async () => {
+    process.env.KUBECONFIG = write("ambient.yaml", configYaml({ cluster: "cluster-a", server: "https://from-a:6443", context: "ctx-a" }));
+    const explicit = write("explicit.yaml", configYaml({ cluster: "cluster-x", server: "https://from-x:6443", context: "ctx-x" }));
+
+    expect((await loadKubeconfig({ kubeconfigPath: explicit })).currentContext).toBe("ctx-x");
+    await expect(ambientContext({ kubeconfigPath: explicit })).resolves.toBe("ctx-x");
+  });
+
+  it("resolves the target with no kubectl on PATH — #231's acceptance criterion", async () => {
+    // The npx audience (#193): behold is pointed at a project the operator did
+    // not set up, on a machine that has never installed kubectl. PATH is
+    // emptied to a directory with nothing in it, so any shell-out that crept
+    // back in would fail — and the target still resolves, because reading a
+    // kubeconfig was never a job for a binary.
+    const emptyBin = join(dir, "empty-bin");
+    mkdirSync(emptyBin);
+    process.env.PATH = emptyBin;
+    process.env.KUBECONFIG = write("eks.yaml", configYaml({ cluster: EKS_CONTEXT, server: "https://localhost:6500", context: EKS_CONTEXT }));
+
+    const kc = await loadKubeconfig();
+    expect(resolveK8sTarget({ local: { context: EKS_CONTEXT } }, "local", kc)).toEqual({
+      name: "k8s",
+      label: EKS_CONTEXT,
+      endpoint: "https://localhost:6500",
+      source: "profile",
+    });
+    await expect(ambientContext()).resolves.toBe(EKS_CONTEXT);
   });
 });
 
 describe("resolveK8sTarget (#106)", () => {
-  const kc = readKubeconfigJson(EKS_JSON);
+  const kc = kubeconfigFromView(EKS_VIEW);
 
   it("resolves the declared profile context to the apiserver the kubeconfig names", () => {
     const t = resolveK8sTarget({ local: { context: EKS_CONTEXT } }, "local", kc);
@@ -81,7 +173,10 @@ describe("resolveK8sTarget (#106)", () => {
   it("reads the port from the kubeconfig rather than assuming one — the acceptance criterion", () => {
     // Floci allocates the apiserver port per cluster, so nothing may hardcode
     // it. Same cluster, different port, and the target follows.
-    const moved = readKubeconfigJson({ ...EKS_JSON, clusters: [{ name: EKS_CONTEXT, cluster: { server: "https://localhost:7311" } }] });
+    const moved = kubeconfigFromView({
+      contexts: [{ name: EKS_CONTEXT, cluster: EKS_CONTEXT, server: "https://localhost:7311" }],
+      currentContext: EKS_CONTEXT,
+    });
     expect(resolveK8sTarget({ local: { context: EKS_CONTEXT } }, "local", moved)?.endpoint).toBe("https://localhost:7311");
   });
 
@@ -96,7 +191,7 @@ describe("resolveK8sTarget (#106)", () => {
   });
 
   it("reports nothing when the kubeconfig is empty — no context, no current-context, nothing to name", () => {
-    const bare = readKubeconfigJson({});
+    const bare = kubeconfigFromView({ contexts: [] });
     expect(resolveK8sTarget(undefined, "local", bare)).toBeUndefined();
     expect(resolveK8sTarget({ local: { context: EKS_CONTEXT } }, "local", bare)).toBeUndefined();
   });

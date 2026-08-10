@@ -35,6 +35,11 @@ Argo CD estate, declared only, so it runs where Docker doesn't; `behold demo
 carve` is the Terraform peel walkthrough, below). Every loaded demo lands in
 the panel's recents, so switching between them is the Scope tab.
 
+The catalog is in the panel too (#268): the Scope tab's switcher lists every
+bundled demo under your recents, one click to copy, install and serve it —
+demos whose prerequisites are missing stay visible, disabled, saying what to
+install, and one that would clone from the network says so on the button.
+
 Already have a chant project?
 
 ```sh

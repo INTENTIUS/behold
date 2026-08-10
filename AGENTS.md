@@ -25,6 +25,16 @@ it against a local emulator (Docker). A directory that is not a chant project
 gets a structured `{code: "no-project"}` error from `/api/graph`, not a blank
 graph.
 
+A running server offers the same catalog over HTTP (#268): `GET /api/demos`
+lists every bundled demo with `{name, description, requires, satisfiable,
+reason?, fetches, repo?, target, loaded}` — `satisfiable` is doctor's PATH probe
+for that demo's `requires`, and `fetches` marks the one kind of entry that
+reaches the network (a git demo is cloned). `POST /api/demos/open` with
+`{name}` loads it and switches the served project to it: the same copy/clone →
+install → setup the CLI runs, then an in-place switch. It takes a catalog
+**name** and never a path, so it cannot be aimed outside the install; it is
+preview-locked, and one load runs at a time (409 otherwise).
+
 ## The read loop
 
 0. **discover** — GET `/api` lists every route with a one-line description,
