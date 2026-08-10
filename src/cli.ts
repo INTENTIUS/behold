@@ -10,15 +10,26 @@ import { fileURLToPath } from "node:url";
 import { startServer, beholdVersion } from "./server.ts";
 import { loadDemoRegistry, missingRequirements } from "./demos.ts";
 import { runExport } from "./export.ts";
+import { diagnose, formatReport } from "./doctor.ts";
 import { isAutoSyncMode, type AutoSyncMode } from "./autosync.ts";
+import { detectProjectShape } from "./project.ts";
 
 const USAGE = `behold — a live control plane on chant (read-only core)
 
 Usage:
   behold demo [name] [target-dir] [--port <n>] [--list]
+  behold doctor [project-dir] [--json]
   behold preview [project-dir] [--port <n>] [--emulator]
   behold export [project-dir] [--out <dir>] [--env <name>] [--name <worker>] [--emulator]
   behold serve <project-dir…> [--port <n>] [--env <name>] [--poll <secs>] [--local]
+
+  doctor  Why won't this project serve well? A read-only diagnosis of
+          everything behold needs — the project's kind, its own chant install
+          and version, declared lexicons, the envs the picker will infer, the
+          kube context chant binds versus the ambient one, substrate
+          readiness, committed Ops — each line pass/warn/fail with a one-line
+          fix. Defaults to the current directory. Exits 0 iff nothing failed;
+          --json for machines. Starts no server and changes nothing.
 
   demo    The five-minute path from npm — no chant project needed. A catalog
           of demo estates (behold demo --list): bundled ones copy out of the
@@ -80,6 +91,8 @@ Options:
                       names, unlike --local; kept separate because Loom's own
                       \`scripts/local/local-up.sh\` Floci setup clashes on :4566
                       with chant's generic \`chant emulator up\`.
+  --json              doctor only: the report as JSON (stable keys) instead of
+                      the console lines — the AGENTS.md audience.
   --out <dir>         export only: output directory (default ./behold-export).
   --name <worker>     export only: Cloudflare Worker name in the generated
                       wrangler.jsonc.
@@ -102,6 +115,11 @@ export async function run(argv: string[]): Promise<void> {
 
   if (cmd === "demo") {
     await runDemo(rest);
+    return;
+  }
+
+  if (cmd === "doctor") {
+    await runDoctor(rest);
     return;
   }
 
@@ -188,13 +206,52 @@ export async function run(argv: string[]): Promise<void> {
  * breath as the URL — the server's /api/graph 404s with the structured
  * no-project card, and this is the terminal-side half of the same honesty.
  * A warning, not an exit: serving anyway is right (the card explains, and
- * the directory may be about to become a project). */
+ * the directory may be about to become a project).
+ *
+ * Shares `detectProjectShape` (#236) with `behold doctor`, so both agree on
+ * what a directory is — including the estate-root case, where the right
+ * advice is the member list rather than "no chant.config.ts". */
 function warnIfNotChantProject(dir: string): void {
-  if (existsSync(join(dir, "chant.config.ts"))) return;
+  const shape = detectProjectShape(dir);
+  if (shape.kind === "project") return;
+  if (shape.kind === "estate") {
+    process.stderr.write(
+      `behold: warning — ${dir} is an estate root, not a chant project itself.\n` +
+        `        Serve its members composed: behold serve ${shape.members!.map((m) => join(dir, m)).join(" ")}\n`,
+    );
+    return;
+  }
   process.stderr.write(
     `behold: warning — ${dir} has no chant.config.ts; this doesn't look like a chant project.\n` +
-      `        No project yet? \`behold demo\` serves a bundled working example (needs Docker).\n`,
+      `        \`behold doctor ${dir}\` says what's missing. No project yet? \`behold demo\` serves a bundled working example (needs Docker).\n`,
   );
+}
+
+/** `behold doctor` (#236) — the read-only first-touch diagnosis. Composes the
+ * probes the server already uses (src/doctor.ts) into one console report;
+ * starts nothing, writes nothing. Exit 1 (via `process.exitCode`, so stdout
+ * flushes) when any line failed, 0 otherwise — a CI-usable gate on "can behold
+ * serve this project well". */
+async function runDoctor(rest: string[]): Promise<void> {
+  let json = false;
+  let dirArg: string | undefined;
+  for (const a of rest) {
+    if (a === "--json") json = true;
+    else if (a === "-h" || a === "--help") return void process.stdout.write(USAGE);
+    else if (!a.startsWith("-")) dirArg = a;
+    else {
+      process.stderr.write(`behold doctor: unexpected argument '${a}'\n`);
+      process.exit(2);
+    }
+  }
+  const dir = dirArg ?? ".";
+  if (!existsSync(resolve(dir))) {
+    process.stderr.write(`behold doctor: no such directory: ${resolve(dir)}\n`);
+    process.exit(2);
+  }
+  const report = await diagnose(dir);
+  process.stdout.write(json ? JSON.stringify(report, null, 2) + "\n" : formatReport(report));
+  if (!report.ok) process.exitCode = 1;
 }
 
 /** `behold demo` (#193) — the five-minute path for someone who just ran

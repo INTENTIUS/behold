@@ -20,6 +20,27 @@ That serves your project's declared graph at **http://localhost:4600**. It shell
 `preview` with no path opens the current directory, so running it from inside your project is the shortest thing that works.
 </Aside>
 
+## If it doesn't look right: `behold doctor`
+
+```sh
+npx behold doctor                   # the current directory
+npx behold doctor ../my-project --json
+```
+
+A read-only diagnosis of everything behold needs to serve the project well —
+one line each for the project's kind, its own `chant` install and version,
+declared lexicons, the environments the picker will infer, the kube context
+chant binds versus your ambient one, substrate readiness, and committed Ops.
+Each is pass, warn or fail with a one-line fix; the exit code is non-zero only
+when something failed, so CI can gate on it. It starts no server and changes
+nothing.
+
+The distinction it draws is the useful one: a **fail** is something that stops
+behold serving the project (no `chant` in the project's `node_modules` is the
+common first-touch one — behold shells your project's chant, so it has to be
+installed). A **warn** costs you the live half, not the graph: no environment
+declared, no cluster binding, an emulator that isn't up.
+
 ## Adding the live overlay
 
 To colour the graph by what is actually deployed, name an environment:
