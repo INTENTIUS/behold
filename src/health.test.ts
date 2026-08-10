@@ -214,6 +214,37 @@ describe("classifyObservedHealth — Argo (#226)", () => {
     );
   });
 
+  // What the wire ACTUALLY carries: chant's describe-resources flattens the
+  // condition into `unhappyConditions()`'s `Type: message` string under
+  // `attributes.conditions` — there is no raw `status` tree. The fixture above
+  // (raw shape) predates chant#1644 and never occurred live; this one is the
+  // argo e2e's step 5, verbatim.
+  it("joins the message off chant's flattened condition string (chant#1644)", () => {
+    const v = classifyObservedHealth({
+      type: "K8s::Argo::Application",
+      status: "Unknown",
+      attributes: {
+        namespace: "argocd",
+        conditions: [
+          "ComparisonError: Failed to load target state: rpc error: code = Unknown desc = example-argo-estate/app-b/behold-e2e-does-not-exist: app path does not exist",
+        ],
+      },
+    });
+    expect(v.health).toBe("unknown");
+    expect(v.detail).toBe(
+      "health=Healthy, sync=Unknown: Failed to load target state: rpc error: code = Unknown desc = example-argo-estate/app-b/behold-e2e-does-not-exist: app path does not exist",
+    );
+  });
+
+  it("a *Warning condition string joins nothing — odd, not damage", () => {
+    const v = classifyObservedHealth({
+      type: "K8s::Argo::Application",
+      status: "Unknown",
+      attributes: { namespace: "argocd", conditions: ["SharedResourceWarning: Service web is also managed by app other"] },
+    });
+    expect(v.detail).toBe("health=Healthy, sync=Unknown");
+  });
+
   it("does not join a *Warning condition's message — only an *Error one is damage", () => {
     const v = classifyObservedHealth({
       type: "K8s::Argo::Application",
