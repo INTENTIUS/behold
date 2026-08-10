@@ -617,8 +617,15 @@ try {
     check("a graph click IS the Pick step", (await bodyStep()) === "pick");
     const pick = await carveText();
     check("Pick shows the score arithmetic", pick.includes("100 - 12x1 inbound = 88"));
-    check("Pick names the cut from the breakdown's counts", pick.includes("1 inbound"));
-    check("…and says plainly that the survivors aren't in this report (chant#1636)", pick.includes("chant#1636"));
+    // Read off the elements, not off the panel's innerText: the arithmetic line
+    // ("100 - 12x1 inbound = 88") contains "1 inbound" too, so a substring test
+    // over the whole tab would pass whether or not the cut summary rendered at
+    // all — which is exactly the confusion that hid a failure here once.
+    const cutText = (await carvePage.locator("#tab-carve .carve-cut").allTextContents()).join("\n");
+    const honestyText = (await carvePage.locator("#tab-carve .carve-honesty").allTextContents()).join("\n");
+    check("Pick names the cut from the breakdown's counts", cutText.includes("1 inbound"));
+    check("…and says plainly that the survivors aren't in this report (chant#1636)", honestyText.includes("chant#1636"));
+    if (!honestyText.includes("chant#1636")) console.error("  cut:", JSON.stringify(cutText), "honesty:", JSON.stringify(honestyText));
     check("the inspect pane opened on the same node", (await carvePage.locator("#inspect").innerText()).includes("aws_s3_bucket.assets"));
     check("emit unblocks once something is picked", (await stepState("emit")) !== "blocked");
     check("bridge stays blocked until emit has run", (await stepState("bridge")) === "blocked");
