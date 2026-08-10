@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { fakeKubeconfig } from "@intentius/chant-k8s-client/testing";
-import { detectSubstrates, projectLexicons } from "./substrates.ts";
+import { detectSubstrates, projectLexicons, type SubstrateProbes } from "./substrates.ts";
 
 // Hermetic where it matters: the fly/github/temporal pills (#74) read only the
 // project dir + env, never docker/k3d — the probe-backed pills are asserted by
@@ -31,6 +31,23 @@ function config(lexicons: string[], extra = ""): void {
 }
 
 const byName = async (name: string) => (await detectSubstrates(dir)).find((s) => s.name === name);
+
+/** `docker info` reads down; nothing else should even get shelled out to (a
+ * docker-dependent row must read "blocked" off the docker probe alone, never
+ * running its own — behold#280). Any other command failing loudly here would
+ * mean a row tried to probe past the docker-down read. */
+const dockerDownProbe: SubstrateProbes["probe"] = async (cmd, args) => {
+  if (cmd === "docker" && args[0] === "info") return { code: 1, out: "Cannot connect to the Docker daemon" };
+  throw new Error(`unexpected probe past docker-down: ${cmd} ${args.join(" ")}`);
+};
+
+/** Docker's up, but `k3d cluster list` genuinely comes back empty — the
+ * pre-#280 case that must keep reading "down — no clusters" unchanged. */
+const dockerUpNoClustersProbe: SubstrateProbes["probe"] = async (cmd, args) => {
+  if (cmd === "docker" && args[0] === "info") return { code: 0, out: "27.0.0" };
+  if (cmd === "k3d") return { code: 0, out: "" };
+  return { code: 1, out: "" };
+};
 
 describe("projectLexicons", () => {
   it("scans the declared lexicon list, empty when unreadable", () => {
@@ -140,5 +157,51 @@ describe("temporal pill (#74)", () => {
   it("on-demand when profiles are declared", { timeout: 20_000 }, async () => {
     config(["k8s", "temporal"], `  temporal: {\n    profiles: { local: { address: "localhost:7233" } },\n  },`);
     expect((await byName("temporal"))?.status).toBe("on-demand");
+  });
+});
+
+describe("docker-down blocks its dependents instead of their own confused detail (#280)", () => {
+  // Live bug: Docker Desktop not running read the docker row correctly
+  // ("down — daemon not running", bring-up offered) but k3d read its OWN CLI's
+  // confused "down — no clusters" — k3d can't tell "no docker socket" from
+  // "docker's up but nothing's running" from the outside. These fixtures inject
+  // the raw probe (never a real docker/k3d binary) so the scenario is hermetic.
+
+  it("k3d reads blocked with the shared docker-down detail and offers no bring-up of its own", async () => {
+    config(["k8s"]);
+    const k3d = (await detectSubstrates(dir, false, undefined, { probe: dockerDownProbe })).find((s) => s.name === "k3d");
+    expect(k3d?.status).toBe("blocked");
+    expect(k3d?.detail).toBe("docker is down");
+    expect(k3d?.bringUp).toBeUndefined();
+  });
+
+  it("an emulator row (floci-az, azure lexicon) gets the same treatment as k3d", async () => {
+    config(["azure"]);
+    const flociAz = (await detectSubstrates(dir, false, undefined, { probe: dockerDownProbe })).find((s) => s.name === "floci-az");
+    expect(flociAz?.status).toBe("blocked");
+    expect(flociAz?.detail).toBe("docker is down");
+    expect(flociAz?.bringUp).toBeUndefined();
+  });
+
+  it("the plain Floci row (aws lexicon) gets the same treatment", async () => {
+    config(["aws"]);
+    const floci = (await detectSubstrates(dir, false, undefined, { probe: dockerDownProbe })).find((s) => s.name === "floci");
+    expect(floci?.status).toBe("blocked");
+    expect(floci?.detail).toBe("docker is down");
+    expect(floci?.bringUp).toBeUndefined();
+  });
+
+  it("docker's own row still reads its own down detail, unaffected", async () => {
+    config(["k8s"]);
+    const docker = (await detectSubstrates(dir, false, undefined, { probe: dockerDownProbe })).find((s) => s.name === "docker");
+    expect(docker?.status).toBe("down");
+    expect(docker?.detail).toBe("daemon not running");
+  });
+
+  it("docker up + genuinely no clusters still reads today's 'no clusters', unchanged", async () => {
+    config(["k8s"]);
+    const k3d = (await detectSubstrates(dir, false, undefined, { probe: dockerUpNoClustersProbe })).find((s) => s.name === "k3d");
+    expect(k3d?.status).toBe("down");
+    expect(k3d?.detail).toBe("no clusters");
   });
 });

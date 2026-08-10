@@ -19,6 +19,12 @@ import { ambientContext } from "./k8s-target.ts";
 
 export type SubstrateStatus = "up" | "down" | "on-demand" | "blocked" | "unknown";
 
+/** The one detail every docker-dependent substrate reports when the daemon
+ * probe already failed — a single root-cause message instead of each row's
+ * own confused reading of a socket it can't reach (behold#280: k3d said "down
+ * — no clusters" when the real cause was Docker Desktop not running). */
+const DOCKER_DOWN_DETAIL = "docker is down";
+
 export interface Substrate {
   /** Stable id (route key). */
   name: string;
@@ -51,17 +57,26 @@ function probe(cmd: string, args: string[]): Promise<{ code: number; out: string
   });
 }
 
+/** The raw probe, injectable so a docker-down (or k3d-down) fixture is
+ * testable without a real Docker daemon or `k3d` binary on the machine
+ * running the tests (behold#280). Default is the real spawn-based one above —
+ * every probe in this module (docker, k3d, gh, helm, forge containers) goes
+ * through whichever one the caller passed in. */
+export interface SubstrateProbes {
+  probe?: (cmd: string, args: string[]) => Promise<{ code: number; out: string }>;
+}
+
 /** Is the Docker daemon reachable? Every container-backed substrate (and their
  * bring-up scripts) needs it, so when it's down we say so once rather than
  * offering futile per-substrate bring-ups. */
-async function dockerAvailable(): Promise<boolean> {
-  const { code } = await probe("docker", ["info", "--format", "{{.ServerVersion}}"]);
+async function dockerAvailable(run: typeof probe): Promise<boolean> {
+  const { code } = await run("docker", ["info", "--format", "{{.ServerVersion}}"]);
   return code === 0;
 }
 
 /** Names of running docker containers matching a `docker ps --filter name=` value. */
-async function dockerRunning(nameFilter: string): Promise<string[]> {
-  const { code, out } = await probe("docker", ["ps", "--filter", `name=${nameFilter}`, "--format", "{{.Names}}"]);
+async function dockerRunning(run: typeof probe, nameFilter: string): Promise<string[]> {
+  const { code, out } = await run("docker", ["ps", "--filter", `name=${nameFilter}`, "--format", "{{.Names}}"]);
   if (code !== 0) return [];
   return out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
 }
@@ -92,10 +107,16 @@ export function projectLexicons(projectDir: string): string[] {
  * Floci → k3d → GitLab CI → Forgejo. Cheap probes only (a few `docker`/`k3d`
  * calls); safe to poll.
  */
-export async function detectSubstrates(projectDir: string, preview = false, boundContext?: string): Promise<Substrate[]> {
+export async function detectSubstrates(
+  projectDir: string,
+  preview = false,
+  boundContext?: string,
+  probes: SubstrateProbes = {},
+): Promise<Substrate[]> {
+  const run = probes.probe ?? probe;
   const subs: Substrate[] = [];
   const lexicons = projectLexicons(projectDir);
-  const docker = await dockerAvailable();
+  const docker = await dockerAvailable(run);
 
   // Docker — the ROOT of the local emulator/runner substrates. When it's down
   // that's the single actionable thing (start Docker Desktop), so the
@@ -109,10 +130,15 @@ export async function detectSubstrates(projectDir: string, preview = false, boun
     bringUp: docker || platform() !== "darwin" ? undefined : { label: "open -a Docker", cmd: "open", args: ["-a", "Docker"] },
   });
 
-  // A docker-dependent substrate reads "blocked" (waiting on Docker), not "down",
-  // when the daemon is off — the fix is Docker, not this thing.
+  // A docker-dependent substrate reads "blocked" (waiting on Docker), not "down"
+  // (or its own confused reading of a socket it can't reach — behold#280), when
+  // the daemon is off. One root cause, one object — DOCKER_BLOCKED, below — is
+  // what every docker-dependent row (Floci, the emulators, the forge runners,
+  // k3d) reports instead of probing further, with no bring-up of its own: the
+  // fix is Docker, not this thing.
+  const DOCKER_BLOCKED: { status: SubstrateStatus; detail: string } = { status: "blocked", detail: DOCKER_DOWN_DETAIL };
   const dep = (up: boolean, upDetail: string, offDetail: string): { status: SubstrateStatus; detail: string } =>
-    !docker ? { status: "blocked", detail: "waiting on Docker" } : { status: up ? "up" : (offDetail === "on-demand (pipeline run)" ? "on-demand" : "down"), detail: up ? upDetail : offDetail };
+    !docker ? DOCKER_BLOCKED : { status: up ? "up" : (offDetail === "on-demand (pipeline run)" ? "on-demand" : "down"), detail: up ? upDetail : offDetail };
 
   // Floci — only for an aws-lexicon project (it emulates AWS managed services).
   // Two container-name conventions exist: the estates' own local-up scripts run
@@ -121,7 +147,7 @@ export async function detectSubstrates(projectDir: string, preview = false, boun
   // `chant-floci` (src/emulator.ts). Probing only the first read the second as
   // down while it was serving — and offered to bring up what was already up.
   if (lexicons.includes("aws")) {
-    const floci = docker ? await dockerRunning("^floci$|^chant-floci$") : [];
+    const floci = docker ? await dockerRunning(run, "^floci$|^chant-floci$") : [];
     const d = dep(floci.length > 0, "container up on :4566", "not running");
     subs.push({
       name: "floci",
@@ -141,7 +167,7 @@ export async function detectSubstrates(projectDir: string, preview = false, boun
   ];
   for (const [lexicon, name, label, pattern, port] of emulators) {
     if (!lexicons.includes(lexicon)) continue;
-    const running = docker ? await dockerRunning(pattern) : [];
+    const running = docker ? await dockerRunning(run, pattern) : [];
     subs.push({
       name,
       label,
@@ -163,7 +189,7 @@ export async function detectSubstrates(projectDir: string, preview = false, boun
   ];
   for (const [name, label, marker, script] of forges) {
     if (!existsSync(join(projectDir, marker))) continue; // project doesn't target this forge
-    const c = docker ? await dockerRunning(name) : [];
+    const c = docker ? await dockerRunning(run, name) : [];
     const d = dep(c.length > 0, "container up", "on-demand (pipeline run)");
     subs.push({
       name,
@@ -173,23 +199,33 @@ export async function detectSubstrates(projectDir: string, preview = false, boun
     });
   }
 
-  // k3d — only for a k8s-lexicon project. "unknown" if k3d isn't installed.
+  // k3d — only for a k8s-lexicon project. k3d rides the docker socket (its CLI
+  // itself reports "no clusters" when it can't reach docker at all — the two
+  // failures look identical from the outside), so a docker-down probe here
+  // reads "blocked" via `dep` like Floci/the emulators/the forges above,
+  // rather than running `k3d cluster list` and reporting whatever confused
+  // thing it says back (behold#280). "unknown" (k3d not installed) is only
+  // knowable once Docker is confirmed up and the CLI actually runs.
   // Bring-up (#88, the k3d turnkey demo): the same generic script convention
   // as Floci's above (scripts/local/local-up.sh) — offered only when Docker is
   // up, k3d is actually installed, and the project ships the script.
   if (lexicons.includes("k8s")) {
-    const k3d = await probe("k3d", ["cluster", "list", "--no-headers"]);
-    const clusters = k3d.code === 0 ? k3d.out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean) : [];
-    subs.push({
-      name: "k3d",
-      label: "k3d",
-      status: k3d.code === 127 ? "unknown" : clusters.length ? "up" : "down",
-      detail: k3d.code === 127 ? "k3d not installed" : clusters.length ? `${clusters.length} cluster(s)` : "no clusters",
-      bringUp:
-        docker && k3d.code !== 127 && !clusters.length
-          ? scriptBringUp(projectDir, "scripts/local/local-up.sh", "local-up")
-          : undefined,
-    });
+    if (!docker) {
+      subs.push({ name: "k3d", label: "k3d", ...DOCKER_BLOCKED });
+    } else {
+      const k3d = await run("k3d", ["cluster", "list", "--no-headers"]);
+      const clusters = k3d.code === 0 ? k3d.out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean) : [];
+      subs.push({
+        name: "k3d",
+        label: "k3d",
+        status: k3d.code === 127 ? "unknown" : clusters.length ? "up" : "down",
+        detail: k3d.code === 127 ? "k3d not installed" : clusters.length ? `${clusters.length} cluster(s)` : "no clusters",
+        bringUp:
+          k3d.code !== 127 && !clusters.length
+            ? scriptBringUp(projectDir, "scripts/local/local-up.sh", "local-up")
+            : undefined,
+      });
+    }
   }
 
   // Fly (#74) — a fly-lexicon project has had a target var (`FLY_FLAPS_BASE_URL`,
@@ -215,7 +251,7 @@ export async function detectSubstrates(projectDir: string, preview = false, boun
   // present and authenticated reads on-demand, anything else is blocked with
   // the reason the dispatch would have refused with.
   if (existsSync(join(projectDir, ".github", "workflows"))) {
-    const gh = await probe("gh", ["auth", "status"]);
+    const gh = await run("gh", ["auth", "status"]);
     const ready = gh.code === 0;
     subs.push({
       name: "github",
@@ -267,7 +303,7 @@ export async function detectSubstrates(projectDir: string, preview = false, boun
   // installed no longer implies kubectl is, and the pill should not go blank
   // on a machine that only ever installed helm.
   if (lexicons.includes("helm")) {
-    const helm = await probe("helm", ["version", "--short"]);
+    const helm = await run("helm", ["version", "--short"]);
     const ambient = helm.code === 0 && !boundContext ? await ambientContext() : undefined;
     const ctx = boundContext ?? ambient ?? "";
     subs.push({
