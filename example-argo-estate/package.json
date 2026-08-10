@@ -1,0 +1,10 @@
+{
+  "name": "behold-example-argo-estate",
+  "private": true,
+  "description": "A GitOps estate for behold's argo-estate demo: an Argo CD control plane + two app projects, served composed.",
+  "workspaces": [
+    "control-plane",
+    "app-a",
+    "app-b"
+  ]
+}

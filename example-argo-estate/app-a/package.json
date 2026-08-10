@@ -1,0 +1,13 @@
+{
+  "name": "behold-example-argo-app-a",
+  "private": true,
+  "type": "module",
+  "description": "App project A: a small web workload in namespace app-a, synced by the control plane's Argo Application.",
+  "scripts": {
+    "build": "chant build src -o manifests/app.yaml --format yaml"
+  },
+  "dependencies": {
+    "@intentius/chant": "^0.44.3",
+    "@intentius/chant-lexicon-k8s": "^0.44.3"
+  }
+}
