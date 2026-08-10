@@ -6,6 +6,7 @@
 import { resolve, dirname, join } from "node:path";
 import { realpathSync, existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { spawn } from "node:child_process";
 import { startServer, beholdVersion } from "./server.ts";
 import { loadDemoRegistry, missingRequirements, demoTargetDir, loadDemo, type DemoCarve } from "./demos.ts";
 import { resolveChant } from "./chant.ts";
@@ -405,6 +406,18 @@ async function runDemo(rest: string[]): Promise<void> {
   await run(serveArgs);
 }
 
+/** One child step of the carve boot, output inherited so npm and chant narrate
+ * themselves into behold's own terminal. Async (not `spawnSync`) to match the
+ * shape demos.ts moved to in #268; a spawn error comes back as -1, never a
+ * rejection. */
+function spawnStep(cmd: string, args: string[], cwd: string): Promise<number> {
+  return new Promise((res) => {
+    const child = spawn(cmd, args, { stdio: "inherit", cwd, shell: process.platform === "win32" });
+    child.on("error", () => res(-1));
+    child.on("close", (code) => res(code ?? 1));
+  });
+}
+
 /**
  * `behold demo carve`'s boot (#254, M1.5 of #230) — the offline tier.
  *
@@ -441,36 +454,30 @@ async function serveCarveDemo(target: string, carve: DemoCarve, port: number): P
 
   if (existsSync(join(project, "package.json")) && !existsSync(join(project, "node_modules"))) {
     process.stdout.write(`behold demo carve → npm install in ${carve.project}/ (the chant this walkthrough shells)…\n`);
-    const r = spawnSync("npm", ["install"], { cwd: project, stdio: "inherit", shell: process.platform === "win32" });
-    if (r.status !== 0) {
-      process.stderr.write(`behold demo carve: npm install failed in ${project}${r.error ? ` (${r.error.message})` : ""}\n`);
-      process.exit(r.status ?? 1);
+    const code = await spawnStep("npm", ["install"], project);
+    if (code !== 0) {
+      process.stderr.write(`behold demo carve: npm install failed in ${project}\n`);
+      process.exit(code || 1);
     }
   }
 
   let degraded: string | undefined;
   if (!existsSync(join(target, "node_modules", "@cdktf", "hcl2json"))) {
     process.stdout.write("behold demo carve → npm install @cdktf/hcl2json (chant's HCL parser, ~2MB, once)…\n");
-    const r = spawnSync("npm", ["install", "--no-save", "--no-package-lock", "@cdktf/hcl2json"], {
-      cwd: target,
-      stdio: "inherit",
-      shell: process.platform === "win32",
-    });
-    if (r.status !== 0) {
-      degraded = "couldn't install @cdktf/hcl2json (chant's HCL parser) — no network?";
-    }
+    const code = await spawnStep("npm", ["install", "--no-save", "--no-package-lock", "@cdktf/hcl2json"], target);
+    if (code !== 0) degraded = "couldn't install @cdktf/hcl2json (chant's HCL parser) — no network?";
   }
 
   const report = at("carve-report.json");
   if (!degraded) {
     const bin = resolveChant(project).bin;
     process.stdout.write("behold demo carve → chant carve advise (read-only; emits nothing)…\n");
-    const r = spawnSync(
+    const code = await spawnStep(
       bin,
       ["carve", "advise", "--from", carve.from, ...(carve.state ? ["--state", carve.state] : []), "--report", report],
-      { cwd: target, stdio: "inherit" },
+      target,
     );
-    if (r.status !== 0) degraded = `chant carve advise exited ${r.status ?? "on a spawn error"}`;
+    if (code !== 0) degraded = `chant carve advise exited ${code}`;
   }
   // Fall back to the committed report rather than to nothing — the walkthrough's
   // first frame is the banded graph, and a blank one teaches the viewer that

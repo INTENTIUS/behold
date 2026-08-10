@@ -48,6 +48,16 @@ describe("the demo button's face", () => {
     expect(demoTitle(row())).toContain("Copies the bundled example to /w/behold-demos/k8s");
   });
 
+  it("a runnable demo that isn't a project switch says which command IS (#254)", () => {
+    const carve = row({ name: "carve", switchable: false, reason: "serves a carve report, not a project — run `behold demo carve`" });
+    expect(demoLabel(carve)).toBe("carve · serves a carve report, not a project — run `behold demo carve`");
+    expect(demoTitle(carve)).toContain("Not a project switch");
+    // Still satisfiable — the row is disabled for a different reason, and
+    // conflating the two would tell someone to install something they have.
+    expect(demoTitle(carve)).not.toContain("Can't run here");
+    expect(demoNote(row({ switchable: false }))).toBe("run it from a terminal");
+  });
+
   it("shortRepo drops the scheme and the .git suffix", () => {
     expect(shortRepo("https://github.com/INTENTIUS/fountain-ops.git")).toBe("github.com/INTENTIUS/fountain-ops");
     expect(shortRepo(undefined)).toBe("");
