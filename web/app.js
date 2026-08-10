@@ -354,7 +354,7 @@ function inspect(node) {
         panel.appendChild(p);
         return;
       }
-      renderObserved(panel, j.observed, j.health); // #30 observed state + #26 health
+      renderObserved(panel, j.observed, j.health, j.healthDetail); // #30 observed state + #26/#226 health
       renderDiff(panel, j.diff); // #27 — drift since snapshot
       renderFieldDrift(panel, j.fieldDrift); // #87 — field-level (per-manager) drift
     });
@@ -388,7 +388,7 @@ const HEALTH_COLOR = {
 };
 
 // Render a node's observed live state (#30) + health verdict (#26).
-function renderObserved(panel, o, health) {
+function renderObserved(panel, o, health, healthDetail) {
   if (!o) return; // pending/foreign nodes have no observed record in the diff
   const h = document.createElement("h3");
   h.textContent = "observed";
@@ -405,7 +405,14 @@ function renderObserved(panel, o, health) {
   };
   // Health first — the "is it well?" verdict, distinct from drift. Absent when
   // the substrate reports no status (not fabricated).
-  if (health && health !== "unknown") add("health", health, HEALTH_COLOR[health]);
+  // #226: for an Argo Application or a Flux object the verdict comes from the
+  // controller's own conditions, and `healthDetail` is the sentence it read
+  // there — `Ready=False (BuildFailed)`, `health=Degraded, sync=OutOfSync`.
+  // Appended to the verdict rather than given its own row, because it is the
+  // same claim said precisely.
+  if (health && health !== "unknown") {
+    add("health", healthDetail ? `${health} — ${healthDetail}` : health, HEALTH_COLOR[health]);
+  }
   if (o.type) add("type", o.type);
   if (o.status) add("status", o.status, HEALTH_COLOR[health] || undefined);
   if (o.physicalId) add("physical id", o.physicalId);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classifyHealth } from "./health.ts";
+import { classifyHealth, classifyObservedHealth } from "./health.ts";
 
 describe("classifyHealth", () => {
   it("maps healthy terminal states", () => {
@@ -100,5 +100,270 @@ describe("classifyHealth — non-AWS substrates (#104)", () => {
     expect(classifyHealth("UPDATE_ROLLBACK_COMPLETE")).toBe("degraded");
     expect(classifyHealth("CREATE_IN_PROGRESS")).toBe("progressing");
     expect(classifyHealth("DELETE_FAILED")).toBe("degraded");
+  });
+});
+
+// #226 — the two GitOps controllers, whose verdicts the status-string
+// heuristic could only reach by luck. Every fixture below is the shape the
+// controller actually writes: Argo's `status.health`/`status.sync` pair, and
+// the Flux toolkit's `Ready` condition — plus chant's string rendering of that
+// condition (`Type=Reason: message`), which is what reaches behold today.
+describe("classifyObservedHealth — Argo (#226)", () => {
+  const app = (status: unknown, word = "PRESENT") => ({
+    type: "K8s::Argo::Application",
+    status: word,
+    attributes: { namespace: "argocd", resourceVersion: "40122", status },
+  });
+
+  it("reads a Degraded Application as degraded — an Application writes no Ready condition", () => {
+    // The case #226 opens with: the summarized status carries no failing
+    // string, and `status.health.status` is the only place the truth lives.
+    const v = classifyObservedHealth(
+      app({
+        health: { status: "Degraded", message: "Deployment has minimum availability" },
+        sync: { status: "Synced", revision: "9f2b1c0d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b" },
+      }),
+    );
+    expect(v.health).toBe("degraded");
+    expect(v.detail).toBe("health=Degraded, sync=Synced");
+  });
+
+  it("reads a healthy-but-OutOfSync Application as not-converged, not broken", () => {
+    // Drift, not damage — behold's pending paint, the colour a node that has
+    // not converged wears on the drift axis. `degraded` (red) would call a
+    // perfectly running app that is one commit behind broken.
+    const v = classifyObservedHealth(
+      app({
+        health: { status: "Healthy" },
+        sync: { status: "OutOfSync", revision: "9f2b1c0d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b" },
+      }),
+    );
+    expect(v.health).toBe("progressing");
+    expect(v.detail).toBe("health=Healthy, sync=OutOfSync");
+  });
+
+  it("maps the rest of the Argo vocabulary", () => {
+    expect(classifyObservedHealth(app({ health: { status: "Healthy" }, sync: { status: "Synced" } })).health).toBe("healthy");
+    expect(classifyObservedHealth(app({ health: { status: "Progressing" } })).health).toBe("progressing");
+    expect(classifyObservedHealth(app({ health: { status: "Suspended" } })).health).toBe("progressing");
+    expect(classifyObservedHealth(app({ health: { status: "Missing" } })).health).toBe("progressing");
+    expect(classifyObservedHealth(app({ health: { status: "Unknown" } })).health).toBe("unknown");
+  });
+
+  it("reads the pair back out of chant's collapsed status word", () => {
+    // chant's `argoStatusWord` sends the unhappy half as the status string and
+    // `READY` for Healthy+Synced — all behold gets over the wire today.
+    expect(classifyObservedHealth({ type: "K8s::Argo::Application", status: "Degraded" }).health).toBe("degraded");
+    // The one the regex missed outright: `OutOfSync` matches no pattern in it
+    // ("synced" is not a substring of "outofsync"), so it used to be unknown.
+    expect(classifyHealth("OutOfSync")).toBe("unknown");
+    expect(classifyObservedHealth({ type: "K8s::Argo::Application", status: "OutOfSync" }).health).toBe("progressing");
+    expect(classifyObservedHealth({ type: "K8s::Argo::Application", status: "READY" }).health).toBe("healthy");
+  });
+
+  it("falls back for an Application the controller has not written a status onto", () => {
+    // `PRESENT` is chant's "read it back, nothing richer" sentinel — no
+    // health, no sync, nothing to be kind-aware about.
+    const v = classifyObservedHealth({ type: "K8s::Argo::Application", status: "PRESENT" });
+    expect(v.health).toBe(classifyHealth("PRESENT"));
+    expect(v.detail).toBeUndefined();
+  });
+});
+
+describe("classifyObservedHealth — Flux (#226)", () => {
+  const kustomization = (status: unknown, word: string) => ({
+    type: "K8s::Flux::Kustomization",
+    status: word,
+    attributes: { namespace: "flux-system", status },
+  });
+
+  it("reads Ready=False with its reason as degraded, and carries the reason", () => {
+    const v = classifyObservedHealth(
+      kustomization(
+        {
+          observedGeneration: 3,
+          lastAttemptedRevision: "main@sha1:5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d",
+          conditions: [
+            {
+              type: "Ready",
+              status: "False",
+              reason: "BuildFailed",
+              message: "kustomize build failed: accumulating resources: accumulation err='accumulating resources from apps: no such file or directory'",
+              lastTransitionTime: "2026-08-09T10:14:02Z",
+            },
+            { type: "Reconciling", status: "True", reason: "ProgressingWithRetry", message: "Reconciliation in progress" },
+          ],
+        },
+        "BuildFailed",
+      ),
+    );
+    expect(v.health).toBe("degraded");
+    expect(v.detail).toBe("Ready=False (BuildFailed)");
+  });
+
+  it("reads a mid-reconcile Kustomization as pending — the case that painted green", () => {
+    // Ready=Unknown gives chant's `statusFromObject` nothing to say, so the
+    // word on the wire is `PRESENT`, which the fallback reads as healthy.
+    expect(classifyHealth("PRESENT")).toBe("healthy");
+    const v = classifyObservedHealth(
+      kustomization(
+        {
+          observedGeneration: 2,
+          lastAppliedRevision: "main@sha1:1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
+          conditions: [
+            {
+              type: "Ready",
+              status: "Unknown",
+              reason: "Progressing",
+              message: "Reconciliation in progress",
+              lastTransitionTime: "2026-08-09T10:15:31Z",
+            },
+            { type: "Reconciling", status: "True", reason: "Progressing", message: "Reconciliation in progress" },
+          ],
+        },
+        "PRESENT",
+      ),
+    );
+    expect(v.health).toBe("progressing");
+    expect(v.detail).toBe("Ready=Unknown (Progressing)");
+  });
+
+  it("recovers the same two verdicts from chant's string conditions alone", () => {
+    // What actually reaches behold over the wire (chant#1401): the UNHAPPY
+    // conditions, rendered `Type=Reason: message`. The True/False/Unknown is
+    // gone, and the reason is what separates a failure from a reconcile.
+    const failing = classifyObservedHealth({
+      type: "K8s::Flux::HelmRelease",
+      status: "UpgradeFailed",
+      attributes: {
+        namespace: "flux-system",
+        conditions: ["Ready=UpgradeFailed: Helm upgrade failed for release podinfo/podinfo"],
+      },
+    });
+    expect(failing.health).toBe("degraded");
+    expect(failing.detail).toBe("Ready=False (UpgradeFailed)");
+
+    const reconciling = classifyObservedHealth({
+      type: "K8s::Flux::Kustomization",
+      status: "PRESENT",
+      attributes: { namespace: "flux-system", conditions: ["Ready=Progressing: Reconciliation in progress"] },
+    });
+    expect(reconciling.health).toBe("progressing");
+    expect(reconciling.detail).toBe("Ready=Unknown (Progressing)");
+  });
+
+  it("reads Ready=True as healthy across the toolkit's kinds", () => {
+    for (const type of [
+      "K8s::Flux::GitRepository",
+      "K8s::Flux::OCIRepository",
+      "K8s::Flux::HelmChart",
+      "K8s::Flux::Bucket",
+      "K8s::Flux::HelmRepository",
+      "K8s::Flux::ImagePolicy",
+      "K8s::Flux::Alert",
+    ]) {
+      const v = classifyObservedHealth({
+        type,
+        status: "READY",
+        attributes: {
+          namespace: "flux-system",
+          status: {
+            artifact: {
+              revision: "main@sha1:1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
+              path: "gitrepository/flux-system/infra.tar.gz",
+            },
+            conditions: [
+              { type: "Ready", status: "True", reason: "Succeeded", message: "stored artifact for revision 'main@sha1:1a2b3c'" },
+            ],
+          },
+        },
+      });
+      expect(v.health).toBe("healthy");
+    }
+  });
+
+  it("reads a Flux object with no conditions at all as pending, not healthy", () => {
+    // Just applied; the controller has not picked it up yet. `PRESENT` again,
+    // and green again under the fallback.
+    const v = classifyObservedHealth({
+      type: "K8s::Flux::Kustomization",
+      status: "PRESENT",
+      attributes: { namespace: "flux-system" },
+    });
+    expect(v.health).toBe("progressing");
+    expect(v.detail).toBe("no Ready condition yet");
+  });
+
+  it("reads the revision half of Flux's own convergence test off one object", () => {
+    // Ready still reports the last SUCCESS; the revision Flux is attempting is
+    // a newer one, so the object is not converged on the source it points at.
+    // (The full join — lastAppliedRevision against the SOURCE's
+    // status.artifact.revision — needs both objects and stays out of here.)
+    const v = classifyObservedHealth(
+      kustomization(
+        {
+          lastAppliedRevision: "main@sha1:1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
+          lastAttemptedRevision: "main@sha1:5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d",
+          conditions: [
+            { type: "Ready", status: "True", reason: "ReconciliationSucceeded", message: "Applied revision: main@sha1:1a2b3c" },
+          ],
+        },
+        "READY",
+      ),
+    );
+    expect(v.health).toBe("progressing");
+    expect(v.detail).toBe(
+      "applied main@sha1:1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b, attempted main@sha1:5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d",
+    );
+  });
+
+  it("stays healthy when applied and attempted agree", () => {
+    const rev = "main@sha1:1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b";
+    const v = classifyObservedHealth(
+      kustomization(
+        {
+          lastAppliedRevision: rev,
+          lastAttemptedRevision: rev,
+          conditions: [{ type: "Ready", status: "True", reason: "ReconciliationSucceeded", message: `Applied revision: ${rev}` }],
+        },
+        "READY",
+      ),
+    );
+    expect(v.health).toBe("healthy");
+  });
+});
+
+describe("classifyObservedHealth — everything else is the fallback, unchanged (#226)", () => {
+  it("classifies an unknown kind exactly as classifyHealth does", () => {
+    for (const [type, status] of [
+      ["AWS::S3::Bucket", "CREATE_COMPLETE"],
+      ["AWS::CloudFormation::Stack", "UPDATE_ROLLBACK_COMPLETE"],
+      ["K8s::Core::Pod", "CrashLoopBackOff"],
+      ["K8s::Apps::Deployment", "PROGRESSING(1/3)"],
+      ["GCP::Storage::Bucket", "NOT_READY"],
+      ["Azure::Web::Site", "Accepted"],
+      ["Vendor::Thing::Widget", "SomeVendorSpecificState"],
+    ]) {
+      const v = classifyObservedHealth({ type, status });
+      expect(v.health).toBe(classifyHealth(status));
+      expect(v.detail).toBeUndefined();
+    }
+  });
+
+  it("is unknown for a node with no observed record at all", () => {
+    expect(classifyObservedHealth(null)).toEqual({ health: "unknown" });
+    expect(classifyObservedHealth(undefined)).toEqual({ health: "unknown" });
+  });
+
+  it("does not let another k8s object's conditions reach the Flux reader", () => {
+    // The Ready-condition rule is scoped to the kinds whose contract behold has
+    // read; a Pod carrying an unhappy `Ready` still classifies off its word.
+    const v = classifyObservedHealth({
+      type: "K8s::Core::Pod",
+      status: "ImagePullBackOff",
+      attributes: { namespace: "web", conditions: ["Ready=ContainersNotReady: containers with unready status: [api]"] },
+    });
+    expect(v.health).toBe("degraded");
+    expect(v.detail).toBeUndefined();
   });
 });
