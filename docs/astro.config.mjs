@@ -28,6 +28,7 @@ export default defineConfig({
 						{ label: 'Reading the graph', slug: 'using/reading-the-graph' },
 						{ label: 'Acting on it', slug: 'using/acting' },
 						{ label: 'Export a snapshot', slug: 'using/export' },
+						{ label: 'Look at a Terraform carve-out', slug: 'using/carve' },
 						{ label: 'Driving it from an agent', slug: 'using/agents' },
 					],
 				},

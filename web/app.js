@@ -2274,6 +2274,10 @@ const PRECONDITION_TITLE = {
   // #193: behold was pointed at a directory that isn't a chant project at all
   // — the first screen must say so, not draw a blank graph.
   "no-project": "This isn't a chant project",
+  // #252: carve mode is served a `chant carve advise --json` report, not a
+  // project — so a bad file is a bad REPORT, and the card must not blame chant
+  // for failing to evaluate a project that was never involved.
+  "carve-report": "This isn't a carve report",
 };
 
 // A precondition failure — the lint gate, a not-installed/no-typegen project,

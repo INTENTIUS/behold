@@ -1,0 +1,179 @@
+{
+  "from": "sample-estate",
+  "advisory": "read-only — emits nothing, patches nothing, touches no live resource",
+  "count": 8,
+  "bands": {
+    "clean leaf": 6,
+    "carvable w/ edits": 1,
+    "leave in Terraform": 1
+  },
+  "resources": [
+    {
+      "address": "aws_cloudwatch_log_group.api",
+      "kind": "resource",
+      "score": 100,
+      "band": "clean leaf",
+      "mapsTo": "AWS::Logs::LogGroup",
+      "breakdown": {
+        "inbound": 0,
+        "outbound": 0,
+        "tier": 1,
+        "hasDynamic": false,
+        "instances": 1,
+        "penalties": {
+          "inbound": 0,
+          "outbound": 0,
+          "tier": 0,
+          "dynamic": 0,
+          "instances": 0
+        }
+      }
+    },
+    {
+      "address": "aws_subnet.a",
+      "kind": "resource",
+      "score": 96,
+      "band": "clean leaf",
+      "mapsTo": "AWS::EC2::Subnet",
+      "breakdown": {
+        "inbound": 0,
+        "outbound": 1,
+        "tier": 1,
+        "hasDynamic": false,
+        "instances": 1,
+        "penalties": {
+          "inbound": 0,
+          "outbound": -4,
+          "tier": 0,
+          "dynamic": 0,
+          "instances": 0
+        }
+      }
+    },
+    {
+      "address": "aws_subnet.b",
+      "kind": "resource",
+      "score": 96,
+      "band": "clean leaf",
+      "mapsTo": "AWS::EC2::Subnet",
+      "breakdown": {
+        "inbound": 0,
+        "outbound": 1,
+        "tier": 1,
+        "hasDynamic": false,
+        "instances": 1,
+        "penalties": {
+          "inbound": 0,
+          "outbound": -4,
+          "tier": 0,
+          "dynamic": 0,
+          "instances": 0
+        }
+      }
+    },
+    {
+      "address": "aws_subnet.c",
+      "kind": "resource",
+      "score": 96,
+      "band": "clean leaf",
+      "mapsTo": "AWS::EC2::Subnet",
+      "breakdown": {
+        "inbound": 0,
+        "outbound": 1,
+        "tier": 1,
+        "hasDynamic": false,
+        "instances": 1,
+        "penalties": {
+          "inbound": 0,
+          "outbound": -4,
+          "tier": 0,
+          "dynamic": 0,
+          "instances": 0
+        }
+      }
+    },
+    {
+      "address": "aws_s3_bucket.assets",
+      "kind": "resource",
+      "score": 88,
+      "band": "clean leaf",
+      "mapsTo": "AWS::S3::Bucket",
+      "breakdown": {
+        "inbound": 1,
+        "outbound": 0,
+        "tier": 1,
+        "hasDynamic": false,
+        "instances": 1,
+        "penalties": {
+          "inbound": -12,
+          "outbound": 0,
+          "tier": 0,
+          "dynamic": 0,
+          "instances": 0
+        }
+      }
+    },
+    {
+      "address": "aws_lambda_function.api",
+      "kind": "resource",
+      "score": 81,
+      "band": "clean leaf",
+      "mapsTo": "AWS::Lambda::Function",
+      "breakdown": {
+        "inbound": 0,
+        "outbound": 1,
+        "tier": 2,
+        "hasDynamic": false,
+        "instances": 1,
+        "penalties": {
+          "inbound": 0,
+          "outbound": -4,
+          "tier": -15,
+          "dynamic": 0,
+          "instances": 0
+        }
+      }
+    },
+    {
+      "address": "aws_vpc.main",
+      "kind": "resource",
+      "score": 64,
+      "band": "carvable w/ edits",
+      "mapsTo": "AWS::EC2::VPC",
+      "breakdown": {
+        "inbound": 3,
+        "outbound": 0,
+        "tier": 1,
+        "hasDynamic": false,
+        "instances": 1,
+        "penalties": {
+          "inbound": -36,
+          "outbound": 0,
+          "tier": 0,
+          "dynamic": 0,
+          "instances": 0
+        }
+      }
+    },
+    {
+      "address": "random_pet.suffix",
+      "kind": "resource",
+      "score": 0,
+      "band": "leave in Terraform",
+      "breakdown": {
+        "inbound": 0,
+        "outbound": 0,
+        "tier": null,
+        "hasDynamic": false,
+        "instances": 1,
+        "penalties": {
+          "inbound": 0,
+          "outbound": 0,
+          "tier": 0,
+          "dynamic": 0,
+          "instances": 0
+        }
+      }
+    }
+  ]
+}

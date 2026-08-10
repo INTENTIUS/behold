@@ -50,6 +50,20 @@ graph.
 3. **inspect** — a node's `sourceLoc.file` is the typed source that declared it;
    edit there to change the estate (chant is the source of truth, not behold).
 
+## The carve loop (Terraform → chant, #230)
+
+`behold carve <report.json>` serves a `chant carve advise --json` peelability
+report instead of a chant project. Same SPA, same `/api/graph` shape; `attrs.
+_status` carries the band (`good` = carve now, `warn` = has boundary work,
+`neutral` = leave in Terraform) and `attrs` carries the score arithmetic
+(`score`, `arithmetic`, `inbound`, `outbound`, `tier`, `mapsTo`).
+`GET /api/carve` returns the raw report verbatim.
+
+To move a resource: confirm its band on `/api/carve`, then run chant's own
+`carve emit --state` and `carve bridge` in the project. `terraform state rm` and
+applying the generated survivor rewrites stay a human gate — behold has no
+endpoint that writes Terraform, and adding one would break the invariant below.
+
 ## The act loop (delegated, never direct)
 
 behold does not apply. To change the estate:
