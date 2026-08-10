@@ -66,7 +66,7 @@ import { OpRunner } from "./op-runner.ts";
 import { Broadcaster } from "./events.ts";
 import { FrameBuffer } from "./frames.ts";
 import { shortStackNames } from "@intentius/pinhole";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, readFileSync, readdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -455,6 +455,170 @@ describe("GET /api — the route index (#193)", () => {
     expect(paths).toContain("/api/graph");
     expect(paths).toContain("/api/events");
     expect(paths).toContain("/api/apply");
+  });
+});
+
+// #228: the hand-layout sidecar — behold's first (and only) write into a
+// served project. What may be written, what must be refused, and that a stored
+// delta reaches the SVG a `behold export` would capture.
+describe("GET/POST /api/layout — the hand-layout sidecar (#228)", () => {
+  let dirs: string[] = [];
+  beforeEach(() => vi.mocked(spawnMock).mockReset());
+  afterEach(() => {
+    dirs.forEach((d) => rmSync(d, { recursive: true, force: true }));
+    dirs = [];
+  });
+  const tmpProject = () => {
+    const dir = mkdtempSync(join(tmpdir(), "behold-layout-route-"));
+    writeFileSync(join(dir, "chant.config.ts"), `export default { lexicons: ["aws"] };`);
+    dirs.push(dir);
+    return dir;
+  };
+  const appFor = (cfg: Parameters<typeof createApp>[0]) => {
+    const broadcaster = new Broadcaster();
+    const runner = new OpRunner({ projectDir: cfg.projectDir, broadcaster, onDone: () => {} });
+    return createApp(cfg, broadcaster, new FrameBuffer(), runner);
+  };
+  const post = (app: ReturnType<typeof makeAppFor>, body: unknown, headers: Record<string, string> = { "content-type": "application/json" }) =>
+    app.request("/api/layout", { method: "POST", headers, body: typeof body === "string" ? body : JSON.stringify(body) });
+
+  it("writes one lens and reads it back — through the file, not memory", async () => {
+    const dir = tmpProject();
+    const app = appFor({ projectDir: dir, port: 0 });
+    const wrote = await post(app, { lens: "components", deltas: { api: { dx: 12, dy: -4 }, ghost: { dx: 0 } } });
+    expect(wrote.status).toBe(200);
+    expect(await wrote.json()).toMatchObject({ ok: true, lens: "components", count: 1, deltas: { api: { dx: 12, dy: -4 } } });
+
+    // On disk, at the one path behold is allowed to write.
+    expect(JSON.parse(readFileSync(join(dir, ".behold", "layout.json"), "utf8"))).toEqual({
+      version: 1,
+      lenses: { components: { api: { dx: 12, dy: -4 } } },
+    });
+
+    // A FRESH app (nothing cached) reads the same thing back.
+    const read = await appFor({ projectDir: dir, port: 0 }).request("/api/layout?lens=components");
+    expect(await read.json()).toMatchObject({ lens: "components", writable: true, deltas: { api: { dx: 12, dy: -4 } } });
+  });
+
+  it("keeps lenses independent, and lists them all with no ?lens=", async () => {
+    const app = appFor({ projectDir: tmpProject(), port: 0 });
+    await post(app, { lens: "components", deltas: { api: { dx: 1 } } });
+    await post(app, { lens: "logical", deltas: { api: { dy: 2 } } });
+    const all = (await (await app.request("/api/layout")).json()) as { lenses: Record<string, unknown> };
+    expect(all.lenses).toEqual({ components: { api: { dx: 1 } }, logical: { api: { dy: 2 } } });
+    expect(((await (await app.request("/api/layout?lens=components")).json()) as { deltas: unknown }).deltas).toEqual({ api: { dx: 1 } });
+  });
+
+  it("an empty map is the reset — the lens goes, and with the last lens the file", async () => {
+    const dir = tmpProject();
+    const app = appFor({ projectDir: dir, port: 0 });
+    await post(app, { lens: "components", deltas: { api: { dx: 1 } } });
+    const res = await post(app, { lens: "components", deltas: {} });
+    expect(res.status).toBe(200);
+    expect(existsSync(join(dir, ".behold", "layout.json"))).toBe(false);
+  });
+
+  it("touches nothing else in the project", async () => {
+    const dir = tmpProject();
+    writeFileSync(join(dir, ".behold.json"), JSON.stringify({ tiers: { envVar: "T", values: ["a"] } }));
+    const before = readdirSync(dir).sort();
+    await post(appFor({ projectDir: dir, port: 0 }), { lens: "components", deltas: { api: { dx: 1 } } });
+    expect(readdirSync(dir).sort()).toEqual([...before, ".behold"].sort());
+    // …and the config it sits beside is untouched (`.behold.json` is tracked
+    // config; `.behold/` is per-user state — two different things, #228).
+    expect(JSON.parse(readFileSync(join(dir, ".behold.json"), "utf8"))).toEqual({ tiers: { envVar: "T", values: ["a"] } });
+  });
+
+  it("403s in preview mode, and says so — reads still answer", async () => {
+    const dir = tmpProject();
+    const app = appFor({ projectDir: dir, port: 0, previewMode: true });
+    const res = await post(app, { lens: "components", deltas: { api: { dx: 1 } } });
+    expect(res.status).toBe(403);
+    expect((await res.json()) as { error: string; code: string }).toMatchObject({ code: "read-only" });
+    expect(existsSync(join(dir, ".behold"))).toBe(false);
+    const read = (await (await app.request("/api/layout?lens=components")).json()) as { writable: boolean; reason: string };
+    expect(read.writable).toBe(false);
+    expect(read.reason).toMatch(/preview mode/);
+  });
+
+  it("403s during a static-export capture — a snapshot reads the project, never writes it", async () => {
+    const dir = tmpProject();
+    const app = appFor({ projectDir: dir, port: 0, layoutWrites: false });
+    expect((await post(app, { lens: "components", deltas: { api: { dx: 1 } } })).status).toBe(403);
+    const read = (await (await app.request("/api/layout?lens=components")).json()) as { writable: boolean; reason: string };
+    expect(read.reason).toMatch(/static export/);
+  });
+
+  it("403s a project directory that isn't there", async () => {
+    const app = appFor({ projectDir: join(tmpdir(), "behold-not-a-dir-228"), port: 0 });
+    const res = await post(app, { lens: "components", deltas: { api: { dx: 1 } } });
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: string }).error).toMatch(/no such project directory/);
+  });
+
+  it("rejects an oversized body before parsing it", async () => {
+    const dir = tmpProject();
+    const app = appFor({ projectDir: dir, port: 0 });
+    const deltas: Record<string, { dx: number }> = {};
+    for (let i = 0; i < 5000; i++) deltas[`node-${"x".repeat(40)}-${i}`] = { dx: i };
+    const res = await post(app, { lens: "components", deltas });
+    expect(res.status).toBe(413);
+    expect(((await res.json()) as { code: string }).code).toBe("too-large");
+    expect(existsSync(join(dir, ".behold"))).toBe(false);
+  });
+
+  it("400s a body that isn't a layout, and 415s one that isn't JSON at all", async () => {
+    const app = appFor({ projectDir: tmpProject(), port: 0 });
+    expect((await post(app, "{not json")).status).toBe(400);
+    expect((await post(app, { deltas: {} })).status).toBe(400); // no lens
+    expect((await post(app, { lens: "///", deltas: {} })).status).toBe(400); // not a lens key
+    expect((await post(app, { lens: "components" })).status).toBe(400); // no deltas
+    expect((await post(app, { lens: "components", deltas: [1, 2] })).status).toBe(400);
+    // A JSON content-type is the CSRF guard (cross-origin JSON POSTs preflight).
+    expect((await post(app, { lens: "components", deltas: {} }, { "content-type": "text/plain" })).status).toBe(415);
+    expect((await app.request("/api/layout?lens=%2F%2F%2F")).status).toBe(400);
+  });
+
+  it("a stored delta lands in the SVG a `behold export` captures (?layout=1)", { timeout: 20_000 }, async () => {
+    const dir = tmpProject();
+    const app = appFor({ projectDir: dir, port: 0 });
+    await post(app, { lens: "components", deltas: { api: { dx: 40, dy: -25 } } });
+    const IR = JSON.stringify({
+      nodes: [
+        { id: "api", kind: "Component", lexicon: "aws", attrs: {} },
+        { id: "worker", kind: "Component", lexicon: "aws", attrs: {} },
+      ],
+      edges: [{ from: "api", to: "worker" }],
+      groups: {},
+    });
+    vi.mocked(spawnMock).mockImplementation((() => fakeProc(0, IR)) as never);
+
+    const plain = (await (await app.request("/api/graph?components=1")).json()) as { svg: string; meta: { layout?: unknown } };
+    const baked = (await (await app.request("/api/graph?components=1&layout=1")).json()) as { svg: string; meta: { layout?: { applied: number; lens: string } } };
+
+    // The interactive SPA never asks, and gets dagre's own coordinates.
+    expect(plain.meta.layout).toBeUndefined();
+    expect(plain.svg).not.toContain("translate(40, -25)");
+    // An export asks, and the card carries the delta. (pinhole positions cards
+    // by absolute child coordinates, so a real card group usually has no
+    // transform of its own for the delta to ride on — both cases are covered
+    // in src/layout.test.ts against a fabricated SVG.)
+    expect(baked.meta.layout).toEqual({ lens: "components", applied: 1 });
+    expect(baked.svg).toContain(`<g data-node-id="api" transform="translate(40, -25)">`);
+    expect(baked.svg).toContain(`<g data-node-id="worker">`); // the node that didn't move is untouched
+    // …and the edge between them re-anchors: the moved end shifts by the
+    // node's own delta, the other stays exactly where pinhole put it.
+    const anchors = /<path class="pin-edge-line" d="M ([-\d.]+) ([-\d.]+) L ([-\d.]+) ([-\d.]+)"/.exec(baked.svg);
+    const before = /<path class="pin-edge-line" d="M ([-\d.]+) ([-\d.]+)[^"]*?([-\d.]+) ([-\d.]+)"/.exec(plain.svg);
+    expect(anchors).not.toBeNull();
+    expect(Number(anchors![1]) - Number(before![1])).toBe(40);
+    expect(Number(anchors![2]) - Number(before![2])).toBe(-25);
+    expect(anchors![3]).toBe(before![3]);
+    expect(anchors![4]).toBe(before![4]);
+
+    // A different lens's request is untouched by this lens's deltas.
+    const other = (await (await app.request("/api/graph?detail=2&layout=1")).json()) as { meta: { layout?: unknown } };
+    expect(other.meta.layout).toBeUndefined();
   });
 });
 

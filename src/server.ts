@@ -11,7 +11,7 @@
  * most one delegated action in flight at a time. See README "Read-only core,
  * delegated gated writes".
  */
-import { Hono, type Context } from "hono";
+import { Hono, type Context, type Next } from "hono";
 import { resolveSubstrateTargets } from "./targets.ts";
 import { loadKubeconfig, resolveK8sTarget, type K8sTarget } from "./k8s-target.ts";
 import { streamSSE } from "hono/streaming";
@@ -70,6 +70,18 @@ import { Broadcaster, watchSource } from "./events.ts";
 import { startDriftPoll } from "./poll.ts";
 import { FrameBuffer } from "./frames.ts";
 import { renderLanes } from "./lanes.ts";
+import {
+  applyLayoutToSvg,
+  layoutPath,
+  lensFromQuery,
+  normalizeLens,
+  readLayoutFile,
+  readLens,
+  writeLens,
+  LayoutTooLarge,
+  MAX_BODY_BYTES,
+  unwritableReason,
+} from "./layout.ts";
 import { emulatorUp, emulatorDown, mergedEnv, type EmulatorInfo } from "./emulator.ts";
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
@@ -103,6 +115,13 @@ export interface ServerOptions {
    * strip to Docker+Floci, and tells the SPA to hide those controls. Local
    * deploy (apply/reset/bring-up/approve) and all reads stay on. */
   previewMode?: boolean;
+  /** #228: may this server write the hand-layout sidecar (`.behold/layout.json`
+   * in the served project)? Default true for a live `serve`. `runExport` sets
+   * it false: a static capture reads the sidecar (to bake it into the snapshot
+   * SVGs) and must never write one — the bundle it produces has no backend at
+   * all. The other two "no" answers are computed, not configured: preview mode,
+   * and a project directory that isn't writable. */
+  layoutWrites?: boolean;
   /** #195: called by POST /api/project/open after the cfg has been re-pointed
    * at a switched project — startServer uses it to re-aim the source watcher,
    * stop the (launch-scoped) drift poll, and capture a fresh baseline frame.
@@ -668,6 +687,113 @@ export function createApp(
     }
   });
 
+  // --- The hand-layout sidecar (#228) -------------------------------------
+  // behold's FIRST write into a served project, and the boundary is drawn
+  // tightly on purpose (src/layout.ts carries the full statement of it):
+  //
+  //   * ONE file, `<projectDir>/.behold/layout.json`, path built from
+  //     `cfg.projectDir` + two constants. No path, prefix or segment from the
+  //     request reaches the filesystem — a lens key off the wire is slugged and
+  //     used only as a JSON object key.
+  //   * The invariant is untouched. behold still never mutates the cloud and
+  //     never mutates your chant source; authority stays in the committed
+  //     source and the executor (AGENTS.md). A layout sidecar is workspace
+  //     metadata about how you want the picture arranged — per-user state, the
+  //     category `.behold.json` (config, tracked) is deliberately NOT in.
+  //   * Four ways to be told no, all polite: preview mode, an export capture,
+  //     a project directory that isn't writable, and the size caps.
+  //
+  // The client keeps its own localStorage tier and merges local OVER server
+  // (web/layout-store.js `mergeLayouts`), so this is share-and-export, never a
+  // remote authority over the browser you're looking at.
+  const layoutWriteBlock = (): string | null => {
+    if (cfg.previewMode) return "the layout sidecar is read-only in preview mode";
+    if (cfg.layoutWrites === false) return "a static export captures a snapshot — it doesn't write to the project";
+    return unwritableReason(cfg.projectDir);
+  };
+
+  app.get("/api/layout", (c) => {
+    const block = layoutWriteBlock();
+    const shared = { path: layoutPath(cfg.projectDir), writable: !block, ...(block ? { reason: block } : {}) };
+    const raw = new URL(c.req.url).searchParams.get("lens");
+    // No `?lens=` → the whole file, which is how you'd inspect or diff one.
+    if (raw === null) return c.json({ ...shared, lenses: readLayoutFile(cfg.projectDir).lenses });
+    const lens = normalizeLens(raw);
+    if (!lens) return c.json({ error: `not a lens key: ${raw}`, code: "bad-layout" }, 400);
+    return c.json({ ...shared, lens, deltas: readLens(cfg.projectDir, lens) });
+  });
+
+  app.post("/api/layout", async (c) => {
+    const block = layoutWriteBlock();
+    if (block) return c.json({ error: block, code: "read-only" }, 403);
+    // A JSON body, not a form or a query param — cross-origin JSON POSTs
+    // preflight, so a hostile page can't blind-fire a write at localhost. Same
+    // reasoning as /api/project/open.
+    if (!(c.req.header("content-type") ?? "").includes("application/json")) {
+      return c.json({ error: "send application/json", code: "bad-layout" }, 415);
+    }
+    const declared = Number(c.req.header("content-length") ?? 0);
+    if (declared > MAX_BODY_BYTES) return c.json({ error: `a layout body is capped at ${MAX_BODY_BYTES} bytes`, code: "too-large" }, 413);
+    const text = await c.req.text().catch(() => "");
+    if (text.length > MAX_BODY_BYTES) return c.json({ error: `a layout body is capped at ${MAX_BODY_BYTES} bytes`, code: "too-large" }, 413);
+    let body: { lens?: unknown; deltas?: unknown };
+    try {
+      body = JSON.parse(text || "null") as { lens?: unknown; deltas?: unknown };
+    } catch {
+      return c.json({ error: "body must be JSON", code: "bad-layout" }, 400);
+    }
+    const lens = normalizeLens(body?.lens);
+    if (!lens) return c.json({ error: "body needs a `lens` key (the zoom stop, plus +radial / +stack-<name>)", code: "bad-layout" }, 400);
+    if (!body?.deltas || typeof body.deltas !== "object" || Array.isArray(body.deltas)) {
+      return c.json({ error: "body needs `deltas`: {<node id>: {dx,dy,dw,dh}}", code: "bad-layout" }, 400);
+    }
+    try {
+      // Echoes what was STORED, not what was sent: zeroes and junk are pruned
+      // on the way in, and the client should see the truth on disk.
+      const stored = writeLens(cfg.projectDir, lens, body.deltas);
+      return c.json({ ok: true, lens: stored.lens, deltas: stored.deltas, count: Object.keys(stored.deltas).length, path: layoutPath(cfg.projectDir) });
+    } catch (err) {
+      if (err instanceof LayoutTooLarge) return c.json({ error: err.message, code: "too-large" }, 413);
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    }
+  });
+
+  // `?layout=1` on a graph/overlay read bakes the sidecar's translate deltas
+  // into the SVG before it goes out (src/layout.ts `applyLayoutToSvg`) — that
+  // is what makes `behold export` and a static snapshot honour a hand layout.
+  //
+  // Opt-IN rather than always-on, which is the one design decision here worth
+  // stating: the live SPA owns the interactive layer and needs dagre's own
+  // coordinates as the base its drags are deltas FROM. Bake by default and the
+  // client's own pass would land the same offset a second time. So the SPA
+  // never asks, `runExport` always does, and a scripted `curl` decides.
+  //
+  // Registered as middleware ahead of both routes so the six render paths that
+  // return an `svg` (source, components, logical, estate, overlay, runtime)
+  // don't each grow a branch.
+  const bakeHandLayout = async (c: Context, next: Next): Promise<void> => {
+    await next();
+    const url = new URL(c.req.url);
+    if (url.searchParams.get("layout") !== "1") return;
+    const res = c.res;
+    if (!res || res.status !== 200 || !(res.headers.get("content-type") ?? "").includes("json")) return;
+    const lens = lensFromQuery(url.searchParams);
+    const deltas = readLens(cfg.projectDir, lens);
+    if (!Object.keys(deltas).length) return;
+    let body: { svg?: unknown; meta?: Record<string, unknown> };
+    try {
+      body = (await res.clone().json()) as { svg?: unknown; meta?: Record<string, unknown> };
+    } catch {
+      return; // not a body we understand — leave it exactly as the route wrote it
+    }
+    if (typeof body.svg !== "string") return;
+    const { svg, applied } = applyLayoutToSvg(body.svg, deltas);
+    if (!applied) return;
+    c.res = c.json({ ...body, svg, meta: { ...(body.meta ?? {}), layout: { lens, applied } } });
+  };
+  app.use("/api/graph", bakeHandLayout);
+  app.use("/api/overlay", bakeHandLayout);
+
   // #193: the API's front door, for agents. Everything the SPA can see is
   // plain JSON over these routes — this index makes them discoverable without
   // reading source. Shapes and the read/act loop: AGENTS.md (shipped in the
@@ -682,8 +808,10 @@ export function createApp(
         { method: "GET", path: "/api/project", desc: "project info: dir, recents, environments, tiers, targets, stacks, preview lock" },
         { method: "POST", path: "/api/project/open", desc: "switch the served project: JSON body {dir} (validated; preview-locked)" },
         { method: "POST", path: "/api/project/reveal", desc: "open the OS file manager at a served/recent project dir: JSON body {dir?}" },
-        { method: "GET", path: "/api/graph", desc: "the graph {ir, svg, meta} — params: detail=0..3, components=1, logical=1, env, stack, tier, target, lens, up=1, down=1, radial=1" },
+        { method: "GET", path: "/api/graph", desc: "the graph {ir, svg, meta} — params: detail=0..3, components=1, logical=1, env, stack, tier, target, lens, up=1, down=1, radial=1, layout=1" },
         { method: "GET", path: "/api/overlay", desc: "live drift overlay for ?env= — same shape/params as /api/graph, plus runtime=1" },
+        { method: "GET", path: "/api/layout", desc: "hand-layout sidecar (.behold/layout.json): ?lens=<key> → {lens, deltas, writable}; no lens → every lens" },
+        { method: "POST", path: "/api/layout", desc: "store one lens's deltas: JSON body {lens, deltas: {<node id>: {dx,dy,dw,dh}}} (the only file behold writes in your project)" },
         { method: "GET", path: "/api/diff", desc: "per-node live diff for ?env= — {env, nodes: {<id>: {observed, diff, health, fieldDrift}}}" },
         { method: "GET", path: "/api/reconcile", desc: "pending-change summary for ?env=" },
         { method: "GET", path: "/api/resources", desc: "component → declared resources" },

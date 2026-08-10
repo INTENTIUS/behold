@@ -97,7 +97,11 @@ function workerName(project: string, override?: string): string {
 
 /** Capture the estate `cfg` observes into a static bundle at `outDir`. */
 export async function runExport(cfg: ServerOptions, outDir: string, opts: { name?: string } = {}): Promise<void> {
-  const app = createApp(cfg);
+  // A capture reads the project; it never writes to it (#228). The layout
+  // sidecar is the one thing behold can write, and an export is exactly the
+  // wrong moment for it — so the app built here refuses that write outright
+  // rather than relying on nothing happening to call it.
+  const app = createApp({ ...cfg, layoutWrites: false });
 
   const proj = (await (await app.request("/api/project")).json()) as { environments?: string[]; tiers?: string[] };
   const axes: ExportAxes = { environments: proj.environments ?? [], tiers: proj.tiers ?? [] };
@@ -109,7 +113,12 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: { name
   let ok = 0;
   let failed = 0;
   for (const key of captureKeys(axes)) {
-    const res = await app.request(key); // key is already `path?sortedLensParams`
+    // `layout=1` asks the graph/overlay routes to bake the hand-layout sidecar's
+    // deltas into the SVG (#228), so a bundle shows the estate arranged the way
+    // it was arranged by hand. It is NOT a lens param — `canonicalKey` whitelists
+    // the six that select a distinct snapshot and drops everything else — so the
+    // captured key stays exactly what the frontend will ask for.
+    const res = await app.request(`${key}${key.includes("?") ? "&" : "?"}layout=1`); // key is already `path?sortedLensParams`
     const body = await res.text();
     const file = slug(key);
     writeFileSync(join(snapDir, file), body);

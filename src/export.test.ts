@@ -18,6 +18,15 @@ describe("canonicalKey", () => {
     expect(canonicalKey("/api/project", new URLSearchParams())).toBe("/api/project");
   });
 
+  // #228: runExport appends `layout=1` to every capture request so the graph
+  // routes bake the hand-layout sidecar into the snapshot SVGs. It is not a
+  // lens (it doesn't select a distinct snapshot — it's how the ONE snapshot is
+  // rendered), so it must not reach the key the frontend will look up.
+  it("drops layout=1 — the bake changes the SVG, not which snapshot you want", () => {
+    expect(canonicalKey("/api/graph", new URLSearchParams("components=1&layout=1"))).toBe("/api/graph?components=1");
+    expect(canonicalKey("/api/project", new URLSearchParams("layout=1"))).toBe("/api/project");
+  });
+
   it("drops detail/radial for the components view (the frontend appends them, the DAG ignores them)", () => {
     // load() always sends the current detail even in the components view.
     const k = canonicalKey("/api/graph", new URLSearchParams("components=1&detail=3&env=local&radial=1"));

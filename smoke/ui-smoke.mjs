@@ -132,8 +132,10 @@ const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
 const pageErrors = [];
 page.on("pageerror", (e) => pageErrors.push(String(e)));
 page.on("console", (m) => {
+  if (process.env.SMOKE_DEBUG) console.log("CONSOLE", m.type(), m.text());
   if (m.type() === "error") pageErrors.push(m.text());
 });
+if (process.env.SMOKE_DEBUG) page.on("request", (r) => r.url().includes("/api/layout") && console.log("REQ", r.method(), r.url(), r.postData()));
 
 try {
   await page.goto(`http://localhost:${PORT}/`);
@@ -395,6 +397,13 @@ try {
   check("a box stores {dw,dh} under its own id", afterBox["box:wave-1"] && Math.abs(afterBox["box:wave-1"].dw + 80 / scale) < 2);
   await page.screenshot({ path: join(SHOTS, "7-layout.png") });
 
+  // …and both went to the sidecar too (the stub holds it in memory; the real
+  // server writes `.behold/layout.json`). Debounced, so a drag is one write.
+  const sidecar = () => server.layout.get("components") || {};
+  await page.waitForTimeout(800);
+  check("the finished drag reached the sidecar", Math.abs((sidecar().api || {}).dx - wantDx) < 2);
+  check("the box's resize reached it too", Math.abs((sidecar()["box:wave-1"] || {}).dw + 80 / scale) < 2);
+
   // exportSvg() blobs `#graph svg`'s own outerHTML (no server round-trip), so
   // the displaced positions come along by construction — and the resize handles
   // do not, because their `opacity="0"` is an attribute, not a CSS rule.
@@ -428,6 +437,28 @@ try {
     (await page.locator("#graph [data-node-id]").count()) === 3 && (await transformOf('#graph [data-node-id="api"]')) === cardTf,
   );
 
+  // ---- #228, the server tier: the sidecar the SPA shares a layout through ---
+  // THE acceptance for this half: wipe this browser's tier entirely, reload,
+  // and the placement is still there — it came off the server.
+  await page.evaluate((p) => Object.keys(localStorage).filter((k) => k.startsWith(p)).forEach((k) => localStorage.removeItem(k)), LAYOUT_PREFIX);
+  await page.reload();
+  await page.waitForSelector("#graph svg [data-node-id]", { timeout: 20000 });
+  await page.waitForFunction((want) => document.querySelector('#graph [data-node-id="api"]').getAttribute("transform") === want, cardTf, { timeout: 10000 });
+  check("with localStorage cleared, the position comes from the server", (await transformOf('#graph [data-node-id="api"]')) === cardTf);
+  check("so does the box's size", Math.abs((await boxWidth()) - boxW1) < 0.5);
+  check("nothing was written back to localStorage just by reading the server", (await layoutKeys()).length === 0);
+
+  // Merge: local wins where both have an id, the server fills in the rest.
+  // (Someone else committed a layout that moves `worker`; you have your own
+  // idea about `api`.)
+  server.layout.set("components", { ...sidecar(), api: { dx: -300, dy: -300 }, worker: { dx: 15, dy: 25 } });
+  await page.evaluate(([k]) => localStorage.setItem(k, JSON.stringify({ api: { dx: 60, dy: 30 } })), [key]);
+  await page.reload();
+  await page.waitForSelector("#graph svg [data-node-id]", { timeout: 20000 });
+  await page.waitForFunction(() => document.querySelector('#graph [data-node-id="worker"]').getAttribute("transform") !== "translate(230, 80)", null, { timeout: 10000 });
+  check("a conflicting id takes the LOCAL delta, not the server's", /translate\(\s*60,\s*30\)/.test(await transformOf('#graph [data-node-id="api"]')));
+  check("an id only the server has is applied", /translate\(\s*15,\s*25\)/.test(await transformOf('#graph [data-node-id="worker"]')));
+
   // Reset: back to dagre's placement, and the key goes with it.
   await page.click("#layout-reset");
   await page.waitForTimeout(150);
@@ -436,6 +467,8 @@ try {
   check("reset restores the edge's original curve", (await edgePath()) === "M 115 112 C 115 112, 305 112, 305 112");
   check("reset clears this lens's key", (await layoutKeys()).length === 0);
   check("reset hides itself again", !(await page.locator("#layout-reset").isVisible()));
+  await page.waitForTimeout(800);
+  check("reset clears the sidecar too — or the next merge would pull it back", !server.layout.has("components"));
 
   // …and the two gestures that were there before still are.
   await page.click('#graph [data-node-id="api"]');

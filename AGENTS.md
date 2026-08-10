@@ -69,3 +69,25 @@ and saga rollback. There is no behold endpoint that mutates the cloud.
 If a request would have behold write to a cloud or to source directly, it's wrong.
 behold shows truth and triggers Ops. Authority stays in the committed source and the
 executor.
+
+### The one exception, and its exact size
+
+`POST /api/layout` (#228) writes **one** file in the served project:
+`.behold/layout.json` — the hand-layout sidecar, `{version, lenses: {<lens>:
+{<node id>: {dx,dy,dw,dh}}}}`. That is the whole of behold's write surface
+inside a project, and it does not weaken the invariant above:
+
+- It is **workspace metadata**, not estate truth. Deltas describe how *you* want
+  the picture arranged on top of dagre's layout; the graph underneath stays
+  chant's, and a delta for a node that left the estate is dropped on read.
+- It **never touches the cloud and never touches your source**. No `.ts`, no
+  `chant.config.ts`, no `.behold.json`. The path is `cfg.projectDir` + two
+  constants — nothing from the request reaches the filesystem.
+- It refuses politely when it shouldn't write: preview mode, a static-export
+  capture, a read-only project directory, an oversized or malformed body.
+- It is **per-user state**, unlike `.behold.json` (config, meant to be tracked).
+  Projects should gitignore `.behold/`.
+
+`GET /api/layout` reads it back; `GET /api/graph?layout=1` (and `/api/overlay`)
+render with the deltas baked into the SVG, which is how `behold export` and
+static snapshots honour a hand layout.

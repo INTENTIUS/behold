@@ -1,20 +1,32 @@
 // #228: the hand-layout delta store, checked without a browser. The pointer
 // work and the SVG live in app.js and are covered by smoke/ui-smoke.mjs; every
 // rule that decides WHAT gets stored and under which key lives here.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   applicable,
   clearLayout,
+  debounce,
+  fetchServerLayout,
   isEmpty,
   layoutKey,
   lensKeyOf,
+  mergeLayouts,
+  nodeTransform,
   normalize,
+  pathAnchors,
+  postServerLayout,
   projectKeyOf,
   readLayout,
   setDelta,
   slug,
+  straightEdge,
   writeLayout,
 } from "./layout-store.js";
+// The server half of #228 — imported here on purpose: this is the one file
+// that can hold both copies of the delta→SVG math at once (tsconfig excludes
+// web/, so a src/*.test.ts couldn't import the browser module), and the
+// parity block at the bottom is what keeps them from drifting.
+import * as server from "../src/layout.ts";
 
 /** A localStorage stand-in; `fail` makes every operation throw (private mode). */
 function fakeStorage(seed = {}, fail = false) {
@@ -159,5 +171,167 @@ describe("storage", () => {
     clearLayout(s, layoutKey("/e", "components"));
     expect(readLayout(s, layoutKey("/e", "components"))).toEqual({});
     expect(readLayout(s, layoutKey("/e", "logical"))).toEqual({ a: { dy: 2 } });
+  });
+});
+
+// --- The server tier (#228, second half) ------------------------------------
+
+describe("mergeLayouts", () => {
+  it("local wins where both tiers have the same id", () => {
+    expect(mergeLayouts({ api: { dx: 10 } }, { api: { dx: -99 } })).toEqual({ api: { dx: 10 } });
+  });
+
+  it("an id only the sidecar has still comes through — that's the point of sharing", () => {
+    expect(mergeLayouts({ api: { dx: 10 } }, { worker: { dy: 4 } })).toEqual({ api: { dx: 10 }, worker: { dy: 4 } });
+  });
+
+  it("is the whole server layout when nothing is local (a fresh browser)", () => {
+    expect(mergeLayouts({}, { api: { dx: 1 } })).toEqual({ api: { dx: 1 } });
+  });
+
+  it("normalizes both sides, so junk from either can't reach the SVG", () => {
+    expect(mergeLayouts({ a: { dx: 0 } }, { b: "nope", c: { dy: 3 } })).toEqual({ c: { dy: 3 } });
+  });
+});
+
+describe("fetchServerLayout", () => {
+  const res = (body, ok = true) => ({ ok, json: async () => body });
+
+  it("asks for one lens and normalizes what comes back", async () => {
+    const fetchFn = vi.fn(async () => res({ lens: "components", deltas: { api: { dx: "5" }, junk: { dx: 0 } }, writable: true }));
+    expect(await fetchServerLayout(fetchFn, "components")).toEqual({ deltas: { api: { dx: 5 } }, writable: true });
+    expect(fetchFn).toHaveBeenCalledWith("/api/layout?lens=components");
+  });
+
+  it("encodes the lens key (a stack name can be anything)", async () => {
+    const fetchFn = vi.fn(async () => res({ deltas: {}, writable: false }));
+    await fetchServerLayout(fetchFn, "resources+stack-edge");
+    expect(fetchFn).toHaveBeenCalledWith("/api/layout?lens=resources%2Bstack-edge");
+  });
+
+  it("a refusal is an empty, unwritable answer — never a throw", async () => {
+    expect(await fetchServerLayout(async () => res({ error: "read-only" }, false), "components")).toEqual({ deltas: {}, writable: false });
+    expect(await fetchServerLayout(async () => {
+      throw new Error("offline");
+    }, "components")).toEqual({ deltas: {}, writable: false });
+  });
+});
+
+describe("postServerLayout", () => {
+  it("posts the normalized lens map as JSON", async () => {
+    const fetchFn = vi.fn(async () => ({ ok: true }));
+    expect(await postServerLayout(fetchFn, "components", { api: { dx: 3, dy: 0 } })).toBe(true);
+    const [url, init] = fetchFn.mock.calls[0];
+    expect(url).toBe("/api/layout");
+    expect(init.method).toBe("POST");
+    expect(init.headers["content-type"]).toBe("application/json");
+    expect(init.keepalive).toBe(true); // survives a flush on the way out of the page
+    expect(JSON.parse(init.body)).toEqual({ lens: "components", deltas: { api: { dx: 3 } } });
+  });
+
+  it("a rejection is false, not an exception (offline is fine — localStorage has it)", async () => {
+    expect(await postServerLayout(async () => ({ ok: false }), "components", {})).toBe(false);
+    expect(
+      await postServerLayout(async () => {
+        throw new Error("offline");
+      }, "components", {}),
+    ).toBe(false);
+  });
+});
+
+describe("debounce", () => {
+  const fakeTimers = () => {
+    const timers = [];
+    return { timers, set: (cb) => timers.push(cb) - 1, clear: (i) => (timers[i] = null), run: () => timers.forEach((cb) => cb && cb()) };
+  };
+
+  it("fires once, with the last arguments — a drag is one write, not sixty", () => {
+    const t = fakeTimers();
+    const fn = vi.fn();
+    const d = debounce(fn, 100, t.set, t.clear);
+    d("a");
+    d("b");
+    d("c");
+    t.run();
+    expect(fn.mock.calls).toEqual([["c"]]);
+  });
+
+  it("flush runs a pending call now — what a page leaving mid-debounce needs", () => {
+    const t = fakeTimers();
+    const fn = vi.fn();
+    const d = debounce(fn, 100, t.set, t.clear);
+    d("a");
+    d.flush();
+    expect(fn.mock.calls).toEqual([["a"]]);
+    t.run(); // the cancelled timer must not fire it a second time
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it("flush with nothing pending does nothing", () => {
+    const t = fakeTimers();
+    const fn = vi.fn();
+    debounce(fn, 100, t.set, t.clear).flush();
+    expect(fn).not.toHaveBeenCalled();
+  });
+});
+
+// --- Parity with src/layout.ts ----------------------------------------------
+// The client paints the deltas in the browser; the server bakes the same ones
+// into an exported SVG. If these two ever disagree, an export stops matching
+// the screen it was taken from — silently. So they are checked against each
+// other here, on the same table.
+describe("the delta→SVG math matches the server's copy", () => {
+  const CASES = [
+    ["translate(40, 80)", { dx: 12, dy: -4 }],
+    ["translate(40, 80) scale(0.9)", { dx: 0.5, dy: 0 }],
+    ["", { dx: 3, dy: 4 }],
+    ["translate(1, 2)", { dx: 0, dy: 0 }],
+    ["translate(1, 2)", { dw: 20, dh: 10 }],
+    ["translate(1, 2)", {}],
+  ];
+  it("nodeTransform", () => {
+    for (const [base, d] of CASES) expect(nodeTransform(base, d)).toBe(server.nodeTransform(base, d));
+    expect(nodeTransform("translate(40, 80)", { dx: 12, dy: -4 })).toBe("translate(12, -4) translate(40, 80)");
+    expect(nodeTransform("translate(1, 2)", { dw: 5 })).toBe("translate(1, 2)");
+  });
+
+  it("pathAnchors", () => {
+    const DS = ["M 115 112 C 115 112, 305 112, 305 112", "M1 2L3 4", "M 1e2 -3.5 L 7 8", "M 1 2", "", null];
+    for (const d of DS) expect(pathAnchors(d)).toEqual(server.pathAnchors(d));
+    expect(pathAnchors("M 115 112 C 115 112, 305 112, 305 112")).toEqual({ sx: 115, sy: 112, ex: 305, ey: 112 });
+  });
+
+  it("straightEdge", () => {
+    const a = { sx: 115, sy: 112, ex: 305, ey: 112 };
+    for (const [from, to] of [
+      [{ dx: 10, dy: 5 }, undefined],
+      [undefined, { dx: -2.5, dy: 0 }],
+      [{ dx: 1 }, { dy: 2 }],
+      [undefined, undefined],
+    ]) {
+      expect(straightEdge(a, from, to)).toBe(server.straightEdge(a, from, to));
+    }
+    expect(straightEdge(a, { dx: 10, dy: 5 }, undefined)).toBe("M 125 117 L 305 112");
+  });
+
+  it("slug and normalize agree, so a key written by one is read by the other", () => {
+    for (const s of ["/estates/stub-estate", "Resources+Radial", "///", "", "stack-edge"]) expect(slug(s)).toBe(server.slug(s));
+    for (const raw of [{ a: { dx: 1, dy: 0 } }, { a: { dx: "12.5" } }, { a: 5 }, null, "nope", { a: { dx: NaN } }]) {
+      expect(normalize(raw)).toEqual(server.normalizeDeltas(raw));
+    }
+  });
+
+  it("the lens key the client stores under is the one the server derives from a request", () => {
+    const q = (s) => new URLSearchParams(s);
+    expect(server.lensFromQuery(q("components=1"))).toBe(lensKeyOf({ zoom: "components" }));
+    expect(server.lensFromQuery(q("logical=1"))).toBe(lensKeyOf({ zoom: "logical" }));
+    expect(server.lensFromQuery(q("env=prod&runtime=1&detail=3"))).toBe(lensKeyOf({ zoom: "runtime" }));
+    expect(server.lensFromQuery(q("detail=1"))).toBe(lensKeyOf({ zoom: "composites" }));
+    expect(server.lensFromQuery(q("detail=3"))).toBe(lensKeyOf({ zoom: "attributes" }));
+    expect(server.lensFromQuery(q(""))).toBe(lensKeyOf({ zoom: "resources" }));
+    expect(server.lensFromQuery(q("detail=2&radial=1"))).toBe(lensKeyOf({ zoom: "resources", radial: true }));
+    expect(server.lensFromQuery(q("detail=2&stack=edge"))).toBe(lensKeyOf({ zoom: "resources", stack: "edge" }));
+    // The env is in neither — an overlay recolours the same nodes (#228).
+    expect(server.lensFromQuery(q("components=1&env=prod&tier=dev"))).toBe(server.lensFromQuery(q("components=1")));
   });
 });
