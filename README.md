@@ -37,9 +37,18 @@ Already have a chant project?
 
 ```sh
 cd my-chant-project
+npx @intentius/behold doctor          # will this project serve well? (read-only)
 npx @intentius/behold preview         # → http://localhost:4600, this project's graph
 npx @intentius/behold serve . --env prod --poll 30   # live drift overlay
 ```
+
+`behold doctor` is the first thing to run on a project behold hasn't seen: one
+line each for the project's kind, its own chant install and version, declared
+lexicons, the envs the picker will infer, the kube context chant binds versus
+your ambient one, substrate readiness and committed Ops — pass/warn/fail with
+a one-line fix. It starts nothing and changes nothing; it exits non-zero only
+when something would actually stop behold serving the project well, so CI can
+gate on it. `--json` for scripts and agents.
 
 Driving it from an agent or script? `GET /api` lists every JSON route;
 [AGENTS.md](./AGENTS.md) (shipped in the package) is the read/act contract.
