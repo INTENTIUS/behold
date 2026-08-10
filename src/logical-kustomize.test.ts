@@ -63,6 +63,52 @@ describe("projectKustomizeLogical (behold#171)", () => {
   });
 });
 
+// chant#1612 (behold#217): the stamped kustomize-root provenance annotation is
+// authoritative — preferred over the directory walk, and working where the
+// walk cannot: applied objects with no sourceLoc and no kustomization file
+// anywhere on disk.
+describe("projectKustomizeLogical — the provenance annotation (behold#217)", () => {
+  const annotated = (id: string, root: string) =>
+    ({
+      id,
+      kind: "K8s::Apps::Deployment",
+      lexicon: "k8s",
+      attrs: { metadata: { name: id, annotations: { "chant.intentius.io/kustomize-root": root } } },
+    }) as never;
+
+  test("the annotation wins over the directory walk when both would claim", () => {
+    const ir = irOf([
+      { ...(k8s("web", "K8s::Apps::Deployment", "overlays/dev/web.ts", { name: "web" }) as object),
+        attrs: { metadata: { name: "web", annotations: { "chant.intentius.io/kustomize-root": "overlays/prod" } } } } as never,
+    ]);
+    const exists = (p: string) => p === "/proj/overlays/dev/kustomization.yaml";
+    const proj = projectKustomizeLogical(ir, "/proj", exists);
+    expect(proj.byContainer[overlayBoxTitle("prod")]).toEqual(["web"]);
+    expect(proj.byContainer[overlayBoxTitle("dev")]).toBeUndefined();
+  });
+
+  test("an applied object — no sourceLoc, no kustomization file on disk — boxes by annotation alone", () => {
+    const ir = irOf([annotated("web", "example/overlays/dev"), annotated("svc", "example/overlays/dev")]);
+    const proj = projectKustomizeLogical(ir, "/proj", () => false);
+    expect(proj.byContainer[overlayBoxTitle("dev")]).toEqual(["web", "svc"]);
+  });
+
+  test("a trailing slash on the annotated root still names the box by basename", () => {
+    const ir = irOf([annotated("web", "overlays/staging/")]);
+    const proj = projectKustomizeLogical(ir, "/proj", () => false);
+    expect(proj.byContainer[overlayBoxTitle("staging")]).toEqual(["web"]);
+  });
+
+  test("a non-string annotation value is ignored — the walk (or nothing) decides", () => {
+    const ir = irOf([
+      { id: "web", kind: "K8s::Apps::Deployment", lexicon: "k8s",
+        attrs: { metadata: { name: "web", annotations: { "chant.intentius.io/kustomize-root": 7 } } } } as never,
+    ]);
+    const proj = projectKustomizeLogical(ir, "/proj", () => false);
+    expect(proj.byContainer).toEqual({});
+  });
+});
+
 describe("overlay boxes nest like release boxes (behold#171)", () => {
   test("an overlay whose members all sit in one namespace box moves inside it", () => {
     const byContainer = {

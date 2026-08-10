@@ -30,6 +30,20 @@ export function overlayBoxTitle(name: string): string {
   return `overlay ${name}`;
 }
 
+/** chant#1612 (chant 0.44.1, behold#217): the authoritative provenance —
+ * chant's kustomize build roots stamp every emitted object with the root it
+ * was built from. Preferred over the directory walk whenever present (the
+ * upgrade behold#171's kustomize bullet reserved for exactly this attr), and
+ * strictly more capable: it needs no sourceLoc and no kustomization file on
+ * disk, so kustomize-APPLIED objects (deploy-step estates, the case the
+ * module doc above defers) get their overlay box too. */
+const ROOT_ANNOTATION = "chant.intentius.io/kustomize-root";
+function annotatedRoot(node: { attrs?: Record<string, unknown> }): string | undefined {
+  const metadata = node.attrs?.metadata as { annotations?: Record<string, unknown> } | undefined;
+  const v = metadata?.annotations?.[ROOT_ANNOTATION];
+  return typeof v === "string" && v ? v : undefined;
+}
+
 /** Directory of a node's declaring file, "" when unknown. */
 function dirOf(node: { sourceLoc?: { file?: string } }): string {
   const file = node.sourceLoc?.file;
@@ -80,12 +94,17 @@ export function projectKustomizeLogical(
 
   const rootCache = new Map<string, string | undefined>();
   for (const n of k8s) {
-    const dir = dirOf(n);
-    if (dir === "") continue;
-    if (!rootCache.has(dir)) rootCache.set(dir, kustomizationRoot(bases, dir, exists));
-    const root = rootCache.get(dir);
+    // The stamped provenance wins (#217); the directory walk remains for
+    // typed-source estates built by a chant predating #1612.
+    let root = annotatedRoot(n);
+    if (root === undefined) {
+      const dir = dirOf(n);
+      if (dir === "") continue;
+      if (!rootCache.has(dir)) rootCache.set(dir, kustomizationRoot(bases, dir, exists));
+      root = rootCache.get(dir);
+    }
     if (root === undefined) continue;
-    const name = root.split("/").pop() || root;
+    const name = root.replace(/\/+$/, "").split("/").pop() || root;
     child(overlayBoxTitle(name), n.id);
   }
 
