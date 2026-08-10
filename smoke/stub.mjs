@@ -141,6 +141,17 @@ const JSON_ROUTES = {
       { name: "github", label: "GitHub Actions", status: "unknown", detail: "gh CLI available" },
     ],
   },
+  // #268: the demo catalog the switcher renders — one runnable entry, one
+  // blocked by a missing prerequisite (which must render disabled with its
+  // reason, not vanish), and one that clones from the network (which must say
+  // so on the button before it is clicked).
+  "/api/demos": {
+    demos: [
+      { name: "argo-estate", description: "Declared-only Argo CD estate.", requires: [], source: "bundled", fetches: false, target: "/tmp/behold-demos/argo-estate", loaded: false, satisfiable: true },
+      { name: "k8s", description: "nginx on a throwaway k3d cluster.", requires: ["docker", "k3d"], source: "bundled", fetches: false, target: "/tmp/behold-demos/k8s", loaded: false, satisfiable: false, reason: "needs k3d on PATH" },
+      { name: "fountain", description: "The mature estate, cloned.", requires: [], source: "git", repo: "https://github.com/INTENTIUS/fountain-ops", fetches: true, target: "/tmp/behold-demos/fountain", loaded: false, satisfiable: true },
+    ],
+  },
   "/api/ops": { ops: [], adoptLexicons: [], autoSync: "off" },
   "/api/ci": { jobs: [], forge: "github" },
   "/api/resources": { byComponent: {} },

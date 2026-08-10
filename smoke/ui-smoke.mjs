@@ -201,6 +201,21 @@ try {
   await page.click('#panel-tabs button[data-tab="scope"]');
   check("scope shows the loaded project", (await page.locator("#tab-scope").innerText()).includes("stub-estate"));
   check("scope shows the k8s cluster binding", (await page.locator("#tab-scope").innerText()).includes("stub-cluster"));
+
+  // #268: the demo catalog renders as its own group under the switcher, and a
+  // demo that can't run here stays visible — disabled, with its reason on it.
+  // The catalog is fetched after the first Scope render, so wait for the group.
+  await page.locator('#tab-scope h3:has-text("demos")').waitFor({ timeout: 2000 }).catch(() => {});
+  const scopeText = await page.locator("#tab-scope").innerText();
+  // innerText reflects the heading's uppercasing, hence the case-insensitive match.
+  check("scope renders the demos group", /\bdemos\b/i.test(scopeText));
+  check("a runnable demo is offered by name", scopeText.includes("argo-estate"));
+  const blocked = page.locator('#tab-scope .opt:has-text("k8s · needs k3d on PATH")');
+  check("an unsatisfiable demo renders with its reason", (await blocked.count()) === 1);
+  check("…and is disabled rather than hidden", await blocked.first().isDisabled());
+  const fetching = page.locator('#tab-scope .opt:has-text("fountain")');
+  check("a network-fetching demo says so before it runs", (await fetching.first().innerText()).includes("clones github.com/INTENTIUS/fountain-ops"));
+  check("…and is clickable", !(await fetching.first().isDisabled()));
   await page.screenshot({ path: join(SHOTS, "2-scope.png") });
 
   // Drag from a tab button: moves the panel, docks to the corner, does NOT
