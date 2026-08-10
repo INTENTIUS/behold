@@ -71,9 +71,13 @@ describe("renderLanes — themed (#198)", () => {
     expect(html).toContain('addEventListener("behold-theme", draw)');
   });
 
-  it("reads canvas colors from the live tokens with the old hexes as fallbacks", () => {
-    expect(html).toContain('css("--managed", "#3fb950")');
-    expect(html).toContain('css("--pending", "#58a6ff")');
+  // #229: the fallbacks are the DEFAULT theme's own derivation (Catppuccin
+  // Mocha through tokensFor), so the instant before /theme.js runs matches what
+  // it lands on — they are not a second, GitHub-flavoured palette any more.
+  it("reads canvas colors from the live tokens, falling back to the default theme", () => {
+    expect(html).toContain('css("--managed", "#a6e3a1")');
+    expect(html).toContain('css("--pending", "#89b4fa")');
+    expect(html).not.toContain("#3fb950"); // no Primer left on this surface
   });
 
   it("links back to the graph and mounts the theme picker", () => {

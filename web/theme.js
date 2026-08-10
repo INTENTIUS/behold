@@ -53,20 +53,69 @@ export function oklchToHex({ L, C, H }) {
     l2s(-0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s));
 }
 
+// Drop a colour's chroma without touching its lightness — the chrome's one
+// "quieter" step (#229). Used on the tokens that SURROUND the drift hues, never
+// on the drift hues themselves.
+export function desaturate(hex, k) {
+  const { L, C, H } = hexToOklch(hex);
+  return oklchToHex({ L, C: C * k, H });
+}
+
 // --- behold's semantic tokens derived from a theme -----------------------
 // Drift states are ANCHORED to palette slots so "coloured by drift" stays meaningful across
 // every theme (green=managed … red=degraded); only the shades change. Chrome is derived from
 // bg/fg mixes. `cat` are the chromatic slots that colorForCategory cycles for substrates.
+//
+// #229: the chrome tokens (line/muted/rule/focus/active/well/shadow) are one
+// step quieter than the palette that feeds them — the status hues are behold's
+// actual message, so everything around them gives up chroma to let them land.
+// Every one of them is still DERIVED: no chrome constant is a fixed colour, and
+// all 552 palettes have to come out of here legible.
 export function tokensFor(th) {
   const fgMix = (t) => mix(th.bg, th.fg, t);
+  const P = th.palette;
+  const panel = fgMix(0.09);
+  // The active-control fill (tab strip, the picked option) — the panel pulled
+  // toward the accent, then pushed AWAY from the panel's own lightness so the
+  // fill is visible even on a palette whose blue slot happens to sit exactly at
+  // the panel's lightness (Red Sands, CGA). It stays within one step of the
+  // panel, so `--fg` reads on the fill exactly as it reads on the panel — no
+  // second ink token to keep legible across the corpus.
+  const panelL = hexToOklch(panel).L;
+  const rawActive = hexToOklch(mix(panel, P[4], 0.17));
+  const active = oklchToHex({
+    ...rawActive,
+    L: clamp(panelL + (th.dark ? 1 : -1) * clamp(Math.abs(rawActive.L - panelL), 0.055, 0.1), 0.05, 0.95),
+  });
   return {
     dark: th.dark,
     bg: th.bg,
-    panel: fgMix(0.09),
-    line: fgMix(0.16),
+    panel,
+    line: desaturate(fgMix(0.16), 0.75),
     fg: th.fg,
-    muted: fgMix(0.5),
+    muted: desaturate(fgMix(0.5), 0.75),
     edge: fgMix(0.32),
+    // The structural border — the panel shell, the pane edge, the footer rule.
+    // Tinted by the palette's OWN bright-black slot instead of being one more
+    // fg/bg mix, but anchored to a guaranteed-visible mix so a theme whose
+    // slot 8 sits on the panel's lightness still draws an edge.
+    rule: mix(fgMix(0.22), P[8], 0.45),
+    // Interaction chrome (hover/focus borders, the load spinner): the accent
+    // with most of its chroma taken off, so hover doesn't compete with a
+    // pending node for the same blue.
+    focus: desaturate(P[4], 0.4),
+    active,
+    // The recessed ground — the nowline log, the ⌘K input. One perceptual step
+    // off the background (down, or UP on the near-black palettes where there is
+    // no "darker" left), keeping the bg's own hue so it never reads as a patch
+    // of a different theme.
+    well: (() => {
+      const b = hexToOklch(th.bg);
+      return oklchToHex({ ...b, L: clamp(b.L + (b.L < 0.16 ? 0.06 : -0.06), 0, 1) });
+    })(),
+    // Shadow/scrim base, used through color-mix() at the call site — a light
+    // theme's drop shadow must not be the same slab of black a dark one wants.
+    shadow: mix(th.bg, "#000000", th.dark ? 0.85 : 0.6),
     managed: th.palette[2],   // green  — good / managed
     foreign: th.palette[3],   // yellow — warn / foreign
     pending: th.palette[4],   // blue   — accent / pending
@@ -84,8 +133,10 @@ export function tokensFor(th) {
   };
 }
 
-// CSS custom properties behold's chrome (:root) reads.
-const CSS_VARS = ["bg", "panel", "line", "fg", "muted", "edge", "managed", "foreign", "pending", "degraded", "neutral", "runtime"];
+// CSS custom properties behold's chrome (:root) reads. The pre-paint fallback
+// block in index.html mirrors these for the DEFAULT theme — smoke/ui-smoke.mjs
+// recomputes it from here and fails if the two ever drift apart.
+const CSS_VARS = ["bg", "panel", "line", "fg", "muted", "edge", "managed", "foreign", "pending", "degraded", "neutral", "runtime", "rule", "focus", "active", "well", "shadow"];
 
 // pinhole (the graph painter) reads its OWN vars, `--pin-<token>` (emitted as
 // `var(--pin-token, <baked default>)`). Derive them from the active Ghostty theme so the graph
@@ -171,7 +222,8 @@ export function mountThemePicker(container) {
   const sel = document.createElement("select");
   sel.setAttribute("aria-label", "Color theme");
   sel.title = "Color theme";
-  sel.style.cssText = "background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:3px 8px;font-size:12px;max-width:220px";
+  sel.style.cssText =
+    "background:var(--well);color:var(--fg);border:1px solid var(--line);border-radius:var(--r-ctl);padding:4px 8px;font:var(--t-body)/1.3 var(--font-ui);max-width:220px";
   const groups = { Dark: document.createElement("optgroup"), Light: document.createElement("optgroup") };
   groups.Dark.label = "Dark"; groups.Light.label = "Light";
   for (const name of listThemes()) {

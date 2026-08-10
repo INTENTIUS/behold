@@ -63,6 +63,39 @@ function recolorNodesByCategory(ir) {
 }
 onThemeChange(() => recolorNodesByCategory());
 
+// #229, the one motion signature behold spends on data: a node whose drift
+// `_status` CHANGED between two renders pulses once in the colour it just
+// became. Node ids are stable across renders, so the diff is a single map
+// compare — no extra fetch, no per-node bookkeeping. The first render seeds the
+// map and pulses nothing (everything would "change"), and a lens switch that
+// swaps the id set pulses nothing either, since only ids present in BOTH
+// renders can have changed. The CSS keyframes + the reduced-motion guard live
+// in index.html.
+let lastStatusById = new Map();
+function markStatusChanges(ir, statusVar) {
+  const prev = lastStatusById;
+  const next = new Map();
+  for (const n of ir.nodes) {
+    const s = n.attrs && n.attrs._status;
+    if (s) next.set(n.id, s);
+  }
+  lastStatusById = next;
+  if (!prev.size) return;
+  const svg = document.querySelector("#graph svg");
+  if (!svg) return;
+  for (const g of svg.querySelectorAll("[data-node-id]")) {
+    const id = g.getAttribute("data-node-id");
+    const now = next.get(id);
+    if (!now || prev.get(id) === undefined || prev.get(id) === now) continue;
+    // The pulse wears the NEW status's hue, read through whichever vocabulary
+    // this graph is painted in — a node going foreign glows yellow in the drift
+    // overlay; a component that rolled back glows red in the component view,
+    // where the same `warn` means something else entirely.
+    g.style.setProperty("--pulse", statusVar[now] || "var(--pending)");
+    g.classList.add("status-changed");
+  }
+}
+
 // Static-export mode (`behold export`): the SPA runs off a pre-captured bundle
 // with no backend. Detect the flag the export injects, load its manifest, and
 // replay every read from `snapshots/` — the graph, zoom dial, radial, inspect,
@@ -141,7 +174,6 @@ function inspect(node) {
   const section = (title) => {
     const h = document.createElement("h3");
     h.textContent = title;
-    h.style.cssText = "font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:14px 0 6px";
     panel.appendChild(h);
     const dl = document.createElement("dl");
     panel.appendChild(dl);
@@ -202,7 +234,6 @@ function inspect(node) {
   if (isComposite) {
     const h = document.createElement("h3");
     h.textContent = `members · ${node.attrs.members}`;
-    h.style.cssText = "font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:14px 0 6px";
     panel.appendChild(h);
     const loading = document.createElement("p");
     loading.style.color = "var(--muted)";
@@ -392,7 +423,6 @@ function renderObserved(panel, o, health) {
   if (!o) return; // pending/foreign nodes have no observed record in the diff
   const h = document.createElement("h3");
   h.textContent = "observed";
-  h.style.cssText = "font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:14px 0 6px";
   panel.appendChild(h);
   const dl = document.createElement("dl");
   const add = (k, v, color) => {
@@ -448,7 +478,6 @@ const DIFF_LABEL = {
 function renderDiff(panel, diff) {
   const h = document.createElement("h3");
   h.textContent = "drift";
-  h.style.cssText = "font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:14px 0 6px";
   panel.appendChild(h);
   if (!diff) {
     const p = document.createElement("p");
@@ -466,7 +495,7 @@ function renderDiff(panel, diff) {
   // this address makes that visible). Monospace so a request path scans.
   if (diff.queried) {
     const q = document.createElement("p");
-    q.style.cssText = "color:var(--muted);font:11px/1.4 ui-monospace,monospace;overflow-wrap:anywhere;margin-top:2px";
+    q.className = "queried"; // mono + muted, styled with the rest of the pane's scale
     q.textContent = `queried: ${diff.queried} → ${diff.category === "missing" ? "not found" : "read failed"}`;
     panel.appendChild(q);
   }
@@ -539,7 +568,6 @@ function renderFieldDrift(panel, fieldDrift) {
   if (!fieldDrift.drifted.length && !fieldDrift.accepted.length) return; // deep ran, nothing to report for this node
   const h = document.createElement("h3");
   h.textContent = "field ownership";
-  h.style.cssText = "font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:14px 0 6px";
   panel.appendChild(h);
   const dl = document.createElement("dl");
   for (const ch of fieldDrift.drifted) {
@@ -734,7 +762,7 @@ function renderPanelView() {
   lanes.href = "/lanes";
   lanes.textContent = "lanes →";
   lanes.title = "The time-lanes view — captured frames of this graph over time";
-  lanes.style.cssText = "color:var(--pending);text-decoration:none;font-size:12px";
+  lanes.style.cssText = "color:var(--pending);text-decoration:none;font-size:var(--t-body)";
   row.appendChild(lanes);
   tools.appendChild(row);
 }
@@ -1210,7 +1238,7 @@ function renderDial() {
     }
     host.style.display = "flex";
     const hint = document.createElement("span");
-    hint.style.cssText = "font-size:11px;color:var(--muted);align-self:center";
+    hint.style.cssText = "font-size:var(--t-caption);color:var(--muted);align-self:center";
     hint.textContent = "observe → reconcile → apply needs an environment — pick one in ⌘K (env: …)";
     host.appendChild(hint);
     // A pipeline run (#163) is env-less — its progress still belongs here.
@@ -1283,7 +1311,7 @@ function renderApplyPicker() {
   wrap.style.gap = "6px";
   const sel = document.createElement("select");
   sel.style.cssText =
-    "background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:3px 8px;font-size:12px";
+    "background:var(--well);color:var(--fg);border:1px solid var(--line);border-radius:var(--r-ctl);padding:3px 8px;font-size:var(--t-body)";
   sel.add(new Option("all components", "all"));
   for (const name of componentChoices) sel.add(new Option(applyOptionLabel(name), name));
   const go = button("Apply →", "", () => {
@@ -1405,7 +1433,7 @@ function renderApplyProgress(state) {
   const wrap = document.createElement("div");
   wrap.style.cssText = "display:flex;flex-direction:column;gap:6px;width:100%;margin-top:4px";
   const summary = document.createElement("div");
-  summary.style.cssText = `font-size:11px;color:${APPLY_STATUS_COLOR[state.status] || "var(--muted)"}`;
+  summary.style.cssText = `font-size:var(--t-caption);color:${APPLY_STATUS_COLOR[state.status] || "var(--muted)"}`;
   // A pipeline run (#163) reuses this whole panel — same shape, different
   // executor — and says so instead of claiming to be an apply.
   summary.textContent = `${state.kind || "apply"}: ${state.status}`;
@@ -1414,14 +1442,14 @@ function renderApplyProgress(state) {
     const row = document.createElement("div");
     row.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap";
     const label = document.createElement("span");
-    label.style.cssText = `font-size:11px;color:${APPLY_STATUS_COLOR[w.status] || "var(--muted)"};min-width:52px`;
+    label.style.cssText = `font-size:var(--t-caption);color:${APPLY_STATUS_COLOR[w.status] || "var(--muted)"};min-width:52px`;
     label.textContent = `wave ${w.wave}`;
     row.appendChild(label);
     for (const cname of w.components) {
       const c = (state.components || []).find((x) => x.component === cname) || { status: "pending" };
       const color = APPLY_STATUS_COLOR[c.status] || "var(--muted)";
       const chip = document.createElement("span");
-      chip.style.cssText = `border:1px solid ${color};color:${color};border-radius:6px;padding:2px 8px;font-size:11px`;
+      chip.style.cssText = `border:1px solid ${color};color:${color};border-radius:var(--r-ctl);padding:2px 8px;font-size:var(--t-caption)`;
       const detail = [c.phase, c.step].filter(Boolean).join(" · ");
       chip.textContent = `${cname}${detail ? " · " + detail : ""} (${c.status})`;
       if (c.error) chip.title = c.error;
@@ -1657,6 +1685,7 @@ function render(ir, svg, m) {
   // green — the SVG's own :root shadows behold's override within the graph subtree.
   g.innerHTML = svg.replace(/:root\s*\{[^{}]*--pin-[^{}]*\}/g, "");
   recolorNodesByCategory(ir); // #62: category-hued fills from the theme's full palette
+  markStatusChanges(ir, componentStatus ? COMPONENT_STATUS_VAR : DRIFT_STATUS_VAR); // #229
   const svgEl = g.querySelector("svg");
   if (svgEl) {
     // Drop pinhole's fixed pixel size so the viewBox drives sizing; behold then
@@ -2238,7 +2267,7 @@ function showToast(msg, ok) {
   }
   const t = document.createElement("div");
   const color = ok ? "var(--managed)" : "var(--degraded)";
-  t.style.cssText = `background:var(--panel);color:var(--fg);border:1px solid ${color};border-left:4px solid ${color};border-radius:8px;padding:8px 12px;font-size:12px;box-shadow:0 4px 16px rgba(0,0,0,.35);cursor:pointer;white-space:pre-wrap`;
+  t.style.cssText = `background:var(--panel);color:var(--fg);border:1px solid ${color};border-left:4px solid ${color};border-radius:var(--r-ctl);padding:8px 12px;font-size:var(--t-body);box-shadow:0 6px 18px color-mix(in srgb, var(--shadow) 50%, transparent);cursor:pointer;white-space:pre-wrap`;
   t.textContent = msg;
   t.onclick = () => t.remove();
   host.appendChild(t);
@@ -2319,7 +2348,7 @@ async function openRollback(btn) {
   wrap.style.cssText = "display:flex;gap:6px;align-self:center";
   const sel = document.createElement("select");
   sel.style.cssText =
-    "background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-size:12px;max-width:340px";
+    "background:var(--well);color:var(--fg);border:1px solid var(--line);border-radius:var(--r-ctl);padding:4px 8px;font-size:var(--t-body);max-width:340px";
   for (const c of commits) sel.add(new Option(`${c.sha} · ${c.subject} (${c.date})`, c.sha));
   const go = button("Roll back →", "", () => {
     const to = sel.value;
@@ -2363,7 +2392,7 @@ async function initActions() {
     const pill = document.createElement("span");
     pill.textContent = `● static snapshot${manifest && manifest.capturedAt ? " · " + manifest.capturedAt.slice(0, 16).replace("T", " ") : ""}`;
     pill.title = "An exported, read-only snapshot — no live observe or deploy.";
-    pill.style.cssText = "align-self:center;font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:2px 8px";
+    pill.style.cssText = "align-self:center;font:var(--t-caption)/1.4 var(--font-mono);color:var(--muted);border:1px solid var(--line);border-radius:var(--r-ctl);padding:2px 8px";
     bar.appendChild(pill);
     previewMode = true;
     return; // nothing else in the bar is a read
@@ -2395,7 +2424,7 @@ async function initActions() {
       local.emulators.map((e) => `${e.lexicon} ${e.name} @ ${e.endpoint}`).join("; ") +
       ". Deploys and the overlay observe them — no cloud creds.";
     pill.style.cssText =
-      "align-self:center;font-size:11px;color:var(--managed);border:1px solid var(--managed);border-radius:6px;padding:2px 8px";
+      "align-self:center;font:var(--t-caption)/1.4 var(--font-mono);color:var(--managed);border:1px solid var(--managed);border-radius:var(--r-ctl);padding:2px 8px";
     bar.appendChild(pill);
   }
   // Auto-sync banner (#29) — make an active self-heal loop visible, not silent.
@@ -2404,7 +2433,7 @@ async function initActions() {
     pill.textContent = `⟳ auto-sync: ${autoSync}`;
     pill.title = `On polled drift, behold triggers the ${autoSync === "apply" ? "ApplyOp (heal)" : "ReconcileOp (adopt)"}. Gated applies still wait for Approve.`;
     pill.style.cssText =
-      "align-self:center;font-size:11px;color:var(--pending);border:1px solid var(--pending);border-radius:6px;padding:2px 8px";
+      "align-self:center;font:var(--t-caption)/1.4 var(--font-mono);color:var(--pending);border:1px solid var(--pending);border-radius:var(--r-ctl);padding:2px 8px";
     bar.appendChild(pill);
   }
   opsApply = ops.find((o) => o.kind === "apply") ?? null;
@@ -2451,7 +2480,7 @@ async function initActions() {
   // its deploy path is Apply all, not committed Ops).
   if (ops.length === 0 && !previewMode && !opsInitialEnv) {
     const hint = document.createElement("span");
-    hint.style.cssText = "color:var(--muted);font-size:11px;align-self:center";
+    hint.style.cssText = "color:var(--muted);font-size:var(--t-caption);align-self:center";
     hint.textContent = "no Ops — commit an *.op.ts (ApplyOp / ReconcileOp / any deploy Op) to act";
     hint.title = "behold triggers committed Ops on your executor. Add one to enable Deploy / Adopt / Run.";
     bar.appendChild(hint);
@@ -2520,7 +2549,7 @@ events.addEventListener("pr", (e) => {
     slot.id = "pr-link";
     slot.target = "_blank";
     slot.rel = "noopener";
-    slot.style.cssText = "color:var(--managed);text-decoration:none;font-size:12px;align-self:center";
+    slot.style.cssText = "color:var(--managed);text-decoration:none;font-size:var(--t-body);align-self:center";
     document.getElementById("actions").after(slot);
   }
   slot.href = url;

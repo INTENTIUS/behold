@@ -401,9 +401,9 @@ export function createApp(
       return c.html(
         `<!doctype html><meta charset=utf-8>` +
           `<script type="module">import { initTheme } from "/theme.js"; initTheme();</script>` +
-          `<body style="font:14px system-ui;background:var(--bg,#0d1117);color:var(--muted,#8b949e);padding:2rem">` +
-          `<h3 style="color:var(--fg,#e6edf3)">deployment lanes</h3><p>${all.length} frame(s) captured — need at least two to scrub.</p>` +
-          `<p>Frames accrue when the estate moves: hit <b style="color:var(--fg,#e6edf3)">↻ Refresh</b> (captures the current live state), run a <b style="color:var(--fg,#e6edf3)">Sync</b>/Adopt, edit the source, or serve with <code>--poll</code> against a moving environment. Then reload.</p>` +
+          `<body style="font:14px system-ui;background:var(--bg,#1e1e2e);color:var(--muted,#777a8c);padding:2rem">` +
+          `<h3 style="color:var(--fg,#cdd6f4)">deployment lanes</h3><p>${all.length} frame(s) captured — need at least two to scrub.</p>` +
+          `<p>Frames accrue when the estate moves: hit <b style="color:var(--fg,#cdd6f4)">↻ Refresh</b> (captures the current live state), run a <b style="color:var(--fg,#cdd6f4)">Sync</b>/Adopt, edit the source, or serve with <code>--poll</code> against a moving environment. Then reload.</p>` +
           `<p><a href="/" style="color:var(--pending,#58a6ff);text-decoration:none">← back to the graph</a></p></body>`,
       );
     }

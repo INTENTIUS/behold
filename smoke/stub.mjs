@@ -37,6 +37,12 @@ const ir = {
   edges: [{ from: "api", to: "worker" }],
 };
 
+// #229: the live overlay reports `worker` as deployed — same node ids, one
+// changed `_status`. That's exactly the input the render-diff pulse keys on, so
+// picking an env in the smoke drives the motion signature end to end.
+const irFor = (env) =>
+  env ? { ...ir, nodes: ir.nodes.map((n) => (n.id === "worker" ? { ...n, attrs: { ...n.attrs, _status: "good" } } : n)) } : ir;
+
 const JSON_ROUTES = {
   "/api/project": {
     projectDir: "/estates/stub-estate",
@@ -87,7 +93,7 @@ export function startStub(port) {
         target: "http://localhost:4566",
       };
       res.writeHead(200, { "content-type": "application/json" });
-      return res.end(JSON.stringify({ ir, svg, meta }));
+      return res.end(JSON.stringify({ ir: irFor(meta.env), svg, meta }));
     }
     if (JSON_ROUTES[path]) {
       res.writeHead(200, { "content-type": "application/json" });
