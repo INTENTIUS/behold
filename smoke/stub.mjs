@@ -10,12 +10,24 @@ import { fileURLToPath } from "node:url";
 
 const WEB = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
 
-const nodeSvg = (id, x, tone, label) => `
+// #227: a lexicon-native mark, shaped exactly as pinhole 0.3.0 emits a pack's
+// `colored` glyph — a bare transform group whose children carry their own
+// paint and ride no `--pin-*` token. Both authoring styles the vendored corpus
+// uses are here: the Kubernetes set fills via `style`, the CNCF marks via the
+// `fill` attribute. recolorNodesByCategory must classify neither, which is what
+// ui-smoke.mjs asserts across a theme flip.
+const coloredMark = `
+    <g transform="translate(120 20) scale(0.9)">
+      <path data-mark="badge" style="fill:#326ce5;fill-opacity:1;stroke:none" d="M12 1 3 6v11l9 5 9-5V6z"/>
+      <path data-mark="detail" fill="#ffffff" d="M9 8h6v8H9z"/>
+    </g>`;
+
+const nodeSvg = (id, x, tone, label, mark = "") => `
   <g data-node-id="${id}" transform="translate(${x}, 80)">
     <rect x="0" y="0" width="150" height="64" rx="8" fill="var(--pin-${tone}Fill, #1c2431)" stroke="var(--pin-${tone}Stroke, #345)"/>
     <rect x="0" y="0" width="4" height="64" fill="var(--pin-${tone}Bar, #3fb950)"/>
     <text x="16" y="30" font-size="13" fill="var(--pin-text, #e6edf3)">${label}</text>
-    <text x="16" y="50" font-size="10" fill="var(--pin-textMuted, #8b949e)">Component</text>
+    <text x="16" y="50" font-size="10" fill="var(--pin-textMuted, #8b949e)">Component</text>${mark}
   </g>`;
 
 // #228: an edge shaped the way pinhole's `Canvas.edge` emits one — a bezier
@@ -28,7 +40,7 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 240" width
   <rect x="20" y="40" width="580" height="140" rx="10" fill="none" stroke="var(--pin-edge, #444)"/>
   <text x="30" y="30" font-size="12" fill="var(--pin-textMuted, #999)">wave-1</text>
   <g data-edge-from="api" data-edge-to="worker"><path class="pin-edge-line" d="${EDGE_D}" fill="none" stroke="var(--pin-edge, #444)" stroke-width="1.4"/><path d="${EDGE_D}" fill="none" stroke="transparent" stroke-width="14" pointer-events="stroke"/></g>
-  ${nodeSvg("api", 40, "good", "api")}
+  ${nodeSvg("api", 40, "good", "api", coloredMark)}
   ${nodeSvg("worker", 230, "accent", "worker")}
   ${nodeSvg("frontend", 420, "neutral", "frontend")}
 </svg>`;

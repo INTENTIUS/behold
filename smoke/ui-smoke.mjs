@@ -194,6 +194,31 @@ try {
   );
   await page.screenshot({ path: join(SHOTS, "5-pulse.png") });
 
+  // #227: the lexicon-native marks. pinhole paints a pack's `colored` glyph as
+  // authored — its paint rides no `--pin-*` token — so recolorNodesByCategory,
+  // which classifies elements by the token they came in on, must never claim
+  // one. Read the mark's paint either side of the theme flip below: the boot
+  // pass and the theme pass both walk every child of every [data-node-id].
+  const markPaint = () =>
+    page.evaluate(() => {
+      const badge = document.querySelector('#graph [data-node-id="api"] [data-mark="badge"]');
+      const detail = document.querySelector('#graph [data-node-id="api"] [data-mark="detail"]');
+      const label = document.querySelector('#graph [data-node-id="api"] text');
+      return {
+        found: !!badge && !!detail,
+        badge: badge && badge.getAttribute("style"),
+        detail: detail && detail.getAttribute("fill"),
+        // The role marker app.js stamps on the elements it DID claim — proof
+        // the recolour pass ran at all, so "untouched" means something.
+        badgeRole: badge && badge.getAttribute("data-cat"),
+        labelRole: label && label.getAttribute("data-cat"),
+      };
+    });
+  const markBefore = await markPaint();
+  check("colored mark is in the DOM", markBefore.found);
+  check("recolour pass ran (a --pin-text label got claimed)", markBefore.labelRole === "inkf");
+  check("recolour leaves the colored mark unclassified", markBefore.badgeRole === null);
+
   // Theme flip: a light Ghostty theme re-derives the tokens without errors —
   // including #229's chrome tokens, which must all move with it.
   await page.click('#panel-tabs button[data-tab="view"]'); // the picker lives here
@@ -204,6 +229,12 @@ try {
   check("light theme applies", after["--bg"] !== "" && after["--bg"] !== before["--bg"]);
   for (const k of CHROME_TOKENS) check(`--${k} re-derives on theme switch`, /^#[0-9a-f]{6}$/i.test(after["--" + k]) && after["--" + k] !== before["--" + k]);
   await page.screenshot({ path: join(SHOTS, "6-light.png") });
+
+  // …and the colored mark rode the flip out unchanged (#227), both authoring
+  // styles the vendored corpus uses.
+  const markAfter = await markPaint();
+  check("colored mark keeps its authored style fill across a theme switch", markAfter.badge === markBefore.badge && /fill:#326ce5/.test(markAfter.badge || ""));
+  check("colored mark keeps its authored fill attribute across a theme switch", markAfter.detail === "#ffffff");
 
   // ---- #228: hand layout — drag, resize, persist, reset -------------------
   // dagre places, you re-place. Everything below is driven through real pointer

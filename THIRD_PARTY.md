@@ -36,6 +36,12 @@ into one document cannot collide. No geometry is touched; every path is byte-ide
 upstream. [`scripts/vendor-icons.mjs`](./scripts/vendor-icons.mjs) re-fetches the corpus at
 the pinned revision, and `--check` asserts the working tree still matches it.
 
+At render time one further step happens to the copy in memory, never to the file on disk:
+[`src/icon-packs.ts`](./src/icon-packs.ts) splices each body into the graph SVG without its
+root `<svg>`, so the remaining `inkscape:`/`sodipodi:` attributes — which that root declared
+the namespaces for — are dropped and `xlink:href` becomes the plain SVG 2 `href`. Editor
+state only; nothing that paints.
+
 ## Flux, Argo and Helm project marks (`web/icons/cncf/`)
 
 The three marks in [`web/icons/cncf/`](./web/icons/cncf) are the color icon variants from
