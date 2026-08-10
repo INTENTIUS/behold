@@ -605,13 +605,20 @@ function renderDone(body, state, ctx, actions) {
   if (!state.handoff) {
     body.appendChild(el("p", "panel-muted", "The handoff commands haven't been marked as run — this is the shape of the ending, not a claim about your estate."));
   }
+  if (state.pick) {
+    const watch = el("a", "act carve-morph-link", "▶ watch it move");
+    watch.href = "/carve/morph?select=" + encodeURIComponent(state.pick.node.id);
+    watch.target = "_blank";
+    watch.rel = "noopener";
+    watch.title = "The estate frame, morphing: the card slides out of the Terraform box and into the chant project box beside last month's carves.";
+    body.appendChild(watch);
+  }
   body.appendChild(
     el(
       "p",
       "panel-muted carve-honesty",
-      "Deferred to the follow-up: the card doesn't yet SLIDE out of the Terraform box and into the chant project " +
-        "beside last month's carves — it is marked in place. The Floci `--live` tier (a real terraform apply, a real " +
-        "plan showing no destroy) is the other half of that follow-up.",
+      "Deferred to the follow-up: the Floci `--live` tier — a real terraform apply into a scratch emulator, " +
+        "a real plan showing no destroy.",
     ),
   );
   const again = el("button", "act", "↺ start over");

@@ -55,7 +55,7 @@ import { addCompositeDepsCounted } from "./composite-deps.ts";
 import { notesFor, tierMismatchNote, namespaceMismatchNote, namespaceJoinNote, type Zoom } from "./zoom-notes.ts";
 import { resourcesByComponent, nonResourceEntities } from "./resources.ts";
 import { summarizePlan } from "./reconcile.ts";
-import { renderGraph, renderArchitecture, renderBanded, renderCarveEstate } from "./render.ts";
+import { renderGraph, renderArchitecture, renderBanded, renderCarveEstate, renderCarveMorph } from "./render.ts";
 import { readCarveReport, carveReportToIr, carveNote } from "./carve-lens.ts";
 import {
   carveWriteBlock,
@@ -481,6 +481,49 @@ function carveRoutes(app: Hono, reportPath: string, demo?: CarveDemo): void {
         note: carveNote(parsed.report, tfIr) + (demo?.degraded ? ` Degraded: ${demo.degraded}` : ""),
       },
     });
+  });
+
+  // The carve morph (#230 M2b): the estate frame twice — Terraform owns the
+  // carved resource / chant owns it — as pinhole's self-contained morph
+  // artifact, the card gliding out of its band into the chant box. A page, not
+  // an API: the Done step links here in a new tab, same posture as /lanes.
+  // Read-only (it renders a hypothetical from the report; nothing is written),
+  // so unlike emit/bridge it works for any ranked address, demo or not — but
+  // it does need the app graph, so a bare `behold carve report.json` gets the
+  // honest refusal instead of a picture missing its destination.
+  app.get("/carve/morph", async (c) => {
+    const parsed = load();
+    if (!parsed.ok) return c.json(parsed.refusal, 422);
+    const select = c.req.query("select") ?? "";
+    const ranked = (parsed.report.resources ?? []).some((r) => r.address === select);
+    if (!ranked) {
+      return c.json(
+        {
+          error: `"${select}" is not a ranked address in this report`,
+          code: "carve_bad_select",
+          remedy: "pass ?select=<address> naming a resource the report ranks — GET /api/carve lists them",
+        },
+        400,
+      );
+    }
+    const appSide = await appGraphOnce();
+    if (!appSide) {
+      return c.json(
+        {
+          error: "the morph needs the demo estate's chant project, and this server isn't serving a demo copy",
+          code: "carve_no_demo",
+          remedy: "run `behold demo carve` — the bundled estate has the chant box the card moves into",
+        },
+        404,
+      );
+    }
+    const tfIr = carveReportToIr(parsed.report);
+    const html = renderCarveMorph(tfIr, appSide.ir, [select], {
+      tfTitle: `${relative(demo!.root, demo!.from).split(sep).join("/")} — terraform`,
+      appTitle: `${appSide.label} — chant`,
+      title: `carve — ${select}`,
+    });
+    return c.html(html);
   });
 
   app.get("/api/project", (c) => {

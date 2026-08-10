@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { renderGraph, renderBanded, renderCarveEstate } from "./render.ts";
+import { renderGraph, renderBanded, renderCarveEstate, renderCarveMorph } from "./render.ts";
 import type { GraphIR } from "@intentius/chant";
 
 // M4: renderGraph gained an explicit `boxes: "byStack"` opt-in for the
@@ -251,5 +251,42 @@ describe("renderCarveEstate — the carve estate frame (#254)", () => {
     expect(w).toBeGreaterThan(0);
     expect(h).toBeGreaterThan(0);
     expect(w / h).toBeLessThan(4);
+  });
+
+  // #230 M2b: the morph — two estate frames, the carved card gliding between
+  // them. Identity continuity is the whole trick: same id in both views.
+  describe("renderCarveMorph", () => {
+    const parseViews = (html: string) => JSON.parse(html.match(/const VIEWS = (\[[\s\S]*?\]);\n/)![1].replace(/\\u003c/g, "<"));
+    const morph = () =>
+      renderCarveMorph(bandedIr, appIr, ["aws_s3_bucket.b0"], { tfTitle: "legacy-tf — terraform", appTitle: "app — chant" });
+
+    it("keeps the carved card's id in both views — one badge, two positions", () => {
+      const html = morph();
+      const VIEWS = parseViews(html);
+      expect(VIEWS).toHaveLength(2);
+      expect(Object.keys(VIEWS[0].pos)).toContain("aws_s3_bucket.b0");
+      expect(Object.keys(VIEWS[1].pos)).toContain("aws_s3_bucket.b0");
+      expect((html.match(/data-node-id="aws_s3_bucket\.b0"/g) || []).length).toBe(1);
+    });
+
+    it("moves the carved card into the chant member box in the after view", () => {
+      const VIEWS = parseViews(morph());
+      const appBox = VIEWS[1].boxes.find((b: { key: string }) => b.key === "app — chant");
+      const before = VIEWS[0].pos["aws_s3_bucket.b0"];
+      const after = VIEWS[1].pos["aws_s3_bucket.b0"];
+      expect(appBox).toBeDefined();
+      expect(after.x).toBeGreaterThan(appBox.x);
+      expect(after.x).toBeGreaterThan(before.x);
+    });
+
+    it("carries both member boxes and the band panels in both views", () => {
+      const VIEWS = parseViews(morph());
+      for (const view of VIEWS) {
+        const keys = view.boxes.map((b: { key: string }) => b.key);
+        expect(keys).toContain("legacy-tf — terraform");
+        expect(keys).toContain("app — chant");
+        expect(keys).toContain("carve now");
+      }
+    });
   });
 });
