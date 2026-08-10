@@ -2,12 +2,12 @@
   "name": "behold-example-flux-app-b",
   "private": true,
   "type": "module",
-  "description": "App project B: declares NO metadata.namespace — Flux's targetNamespace stamps it at apply time (the behold#192 shape).",
+  "description": "App project B: declares NO metadata.namespace \u2014 Flux's targetNamespace stamps it at apply time (the behold#192 shape).",
   "scripts": {
     "build": "chant build src -o manifests/app.yaml --format yaml"
   },
   "dependencies": {
-    "@intentius/chant": "^0.41.20",
-    "@intentius/chant-lexicon-k8s": "^0.41.20"
+    "@intentius/chant": "^0.44.2",
+    "@intentius/chant-lexicon-k8s": "^0.44.2"
   }
 }

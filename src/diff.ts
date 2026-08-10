@@ -31,6 +31,9 @@ export interface UnobservedResource {
   type?: string;
   reason: UnobservedReason;
   detail?: string;
+  /** The resolved address the failed read was issued against (chant#1620,
+   * behold#192) — for k8s the request path. Purely diagnostic. */
+  queried?: string;
 }
 
 /** A live, undeclared resource whose owner-reference chain reaches a declared
@@ -64,6 +67,14 @@ export interface LiveDiffResult {
   unchanged: string[];
   unobserved?: UnobservedResource[];
   runtimeChildren?: RuntimeChildResource[];
+  /** chant#1620 (behold#192): the resolved query address per entity name —
+   * what the provider was actually asked, whatever the verdict. This map is
+   * the only place a `missing` (absent-verdict) entry can carry its address:
+   * `missing` is a bare name list, and `queried[name]` says which address
+   * answered 404 — a declared k8s object with no namespace reads from the
+   * DEFAULTED namespace, and only this makes that visible. Additive; never
+   * consulted for classification. */
+  queried?: Record<string, string>;
 }
 
 /** How one property differs between the declared and live trees — chant's
@@ -187,6 +198,11 @@ export interface NodeDiff {
   /** The declared entity this node's owner chain resolves to — set only for
    * `category: "runtime"` (chant#1180, #1077). */
   runtimeOwner?: string;
+  /** The resolved address the live read was issued against (chant#1620,
+   * behold#192) — set for `missing` (the address that answered 404) and
+   * `unobserved` (where the failed read looked). The line that turns an
+   * all-pending mystery into a one-glance diagnosis. */
+  queried?: string;
 }
 
 /** The observed live state of one node, if the diff captured it (#30). Pure. */
@@ -212,11 +228,15 @@ export function nodeDiff(json: LiveDiffJson, nodeId: string): NodeDiff | null {
     // entity is never also reported missing/disappeared).
     const unobserved = r.unobserved?.find((u) => u.name === nodeId);
     if (unobserved) {
+      // chant#1620: the inline address on the row wins; the per-lexicon map
+      // is the fallback (chant joins them, but stay liberal in what we accept).
+      const queried = unobserved.queried ?? r.queried?.[nodeId];
       return {
         category: "unobserved",
         changes: [],
         unobservedReason: unobserved.reason,
         ...(unobserved.detail ? { unobservedDetail: unobserved.detail } : {}),
+        ...(queried ? { queried } : {}),
       };
     }
     // chant#1180 (#1077): a live, undeclared resource whose owner chain
@@ -225,7 +245,8 @@ export function nodeDiff(json: LiveDiffJson, nodeId: string): NodeDiff | null {
     // check first regardless, same defensive posture as `unobserved` above.
     const runtimeChild = r.runtimeChildren?.find((rc) => rc.name === nodeId);
     if (runtimeChild) return { category: "runtime", changes: [], runtimeOwner: runtimeChild.owner };
-    if (r.missing?.includes(nodeId)) return { category: "missing", changes: [] };
+    if (r.missing?.includes(nodeId))
+      return { category: "missing", changes: [], ...(r.queried?.[nodeId] ? { queried: r.queried[nodeId] } : {}) };
     if (r.orphan?.includes(nodeId)) return { category: "orphan", changes: [] };
     if (r.disappeared?.includes(nodeId)) return { category: "disappeared", changes: [] };
     if (r.newlyObserved?.includes(nodeId)) return { category: "newlyObserved", changes: [] };
