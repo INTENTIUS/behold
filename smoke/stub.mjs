@@ -57,16 +57,16 @@ const EDGE_Z = [305, 112];
 const EDGE_D = `M ${EDGE_A[0]} ${EDGE_A[1]} C ${EDGE_A[0]} ${EDGE_A[1]}, ${EDGE_Z[0]} ${EDGE_Z[1]}, ${EDGE_Z[0]} ${EDGE_Z[1]}`;
 
 // #267: and the chip pinhole paints on a LABELLED edge — reproduced to the
-// digit from `Canvas.edgeLabel`, because the thing under test is exactly how
-// weakly the two are joined. The chip is an anonymous `<g>` immediately after
-// the edge group, with no id on it; all that links them is document order and
-// the fact that its text is the edge's own `data-edge-via`. Its rect is
-// centred on the edge's midpoint, which is what the smoke measures.
+// digit from `Canvas.edgeLabel`, pinhole 0.3.5 shape (pinhole#110): the chip
+// group carries its edge's own `data-edge-from`/`data-edge-to`/`data-edge-via`
+// and holds no path, which is exactly how behold's attribute-based pairing
+// finds it. Its rect is centred on the edge's midpoint, which is what the
+// smoke measures.
 export const EDGE_VIA = "project";
 const LX = (EDGE_A[0] + EDGE_Z[0]) / 2;
 const LY = (EDGE_A[1] + EDGE_Z[1]) / 2;
 const LW = EDGE_VIA.length * 5.7 + 14;
-const edgeLabel = `<g><rect x="${(LX - LW / 2).toFixed(1)}" y="${LY - 9}" width="${LW.toFixed(1)}" height="18" rx="9" fill="var(--pin-bg0, #0d1117)" stroke="var(--pin-neutralStroke, #345)" stroke-width="1"/><text x="${LX.toFixed(1)}" y="${LY + 3.5}" text-anchor="middle" fill="var(--pin-textMuted, #8b949e)" font-size="10.5">${EDGE_VIA}</text></g>`;
+const edgeLabel = `<g data-edge-from="api" data-edge-to="worker" data-edge-via="${EDGE_VIA}"><rect x="${(LX - LW / 2).toFixed(1)}" y="${LY - 9}" width="${LW.toFixed(1)}" height="18" rx="9" fill="var(--pin-bg0, #0d1117)" stroke="var(--pin-neutralStroke, #345)" stroke-width="1"/><text x="${LX.toFixed(1)}" y="${LY + 3.5}" text-anchor="middle" fill="var(--pin-textMuted, #8b949e)" font-size="10.5">${EDGE_VIA}</text></g>`;
 
 // The containment box. Deliberately roomier than the cards need (#267): the
 // clamp only earns its keep if the smoke can drag INTO a wall on purpose, and

@@ -37,7 +37,7 @@
     "@hono/node-server": "^2.0.5",
     "@intentius/chant": "^0.38.0",
     "@intentius/chant-k8s-client": "^0.44.5",
-    "@intentius/pinhole": "^0.3.4",
+    "@intentius/pinhole": "^0.3.5",
     "hono": "^4.12.34"
   },
   "devDependencies": {

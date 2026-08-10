@@ -157,10 +157,10 @@ export function straightEdge(anchors, from, to) {
 // "I need more room" means grow the box first (#245 already resizes them).
 //
 // No twin in src/layout.ts, unlike the three functions above: the server-side
-// bake does not reconstruct containment boxes (only pinhole's architecture
-// layout stamps them with a `data-group-id`, and not every lens uses it — see
-// wrapContainmentBoxes in web/app.js), so it has nothing to clamp against and
-// deliberately does not try.
+// bake does not reconstruct containment boxes (pinhole stamps every layout's
+// boxes with `data-group-id` since 0.3.5, but the bake still parses no box
+// geometry — see wrapContainmentBoxes in web/app.js), so it has nothing to
+// clamp against and deliberately does not try.
 
 /** How far a card keeps off its container's edge, in viewBox units. */
 export const CLAMP_PAD = 8;

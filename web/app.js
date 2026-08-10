@@ -2319,26 +2319,19 @@ function currentLensKey() {
  * Wrap each containment box in a `<g data-layout-box>` and give it a corner
  * handle, once per rendered SVG.
  *
- * TWO WAYS TO FIND A BOX, in that order (#250):
- *
- * 1. `rect[data-group-id]` — pinhole stamps the container key on an
- *    architecture group box from 0.3.3 (pinhole#103/#104), the same hook
- *    `data-node-id` gives a card. That key is also what the box's delta is
- *    stored under, so a box keeps its size when its title changes and two
- *    boxes that happen to read alike stay separate placements.
- * 2. The structural match #245 shipped, kept for one release as a fallback and
- *    then deleted. It is still load-bearing, not dead weight: `layoutArchitecture`
- *    is the only pinhole layout that sets `GroupBox.id`, so the wave/stack/
- *    container boxes `renderGraph` draws (src/render.ts) arrive with a title
- *    and nothing else. FRAGILE BY CONSTRUCTION and knowingly so — the
- *    discriminators are a positive `rx` (the two page-background rects have
- *    none), a `<text>` as the next non-badge sibling, and svg-root parentage
- *    (a card's rect lives inside `[data-node-id]`, an edge-label's inside its
- *    own `<g>`), exactly the way addGitlabWaveBadges still has to.
+ * ONE WAY TO FIND A BOX (#250, closed): `rect[data-group-id]` — pinhole stamps
+ * the group key on every layout's boxes from 0.3.5 (layoutArchitecture since
+ * 0.3.3, pinhole#103/#104; layoutIr's wave/stack/container boxes via
+ * pinhole#111), the same hook `data-node-id` gives a card. That key is also
+ * what the box's delta is stored under, so a box keeps its size when its title
+ * changes and two boxes that happen to read alike stay separate placements.
+ * The structural match #245 shipped (rx sniff + next-sibling text + svg-root
+ * parentage, marked fragile by construction) served its one fallback release
+ * and is deleted — the ^0.3.5 floor guarantees the attribute.
  *
  * Identification runs over a DOM nothing has moved yet and the wrapping happens
- * after: both paths read `nextElementSibling`, and inserting a wrapper mid-walk
- * would put one box's `<g>` in the middle of the next box's member run.
+ * after: the title walk reads `nextElementSibling`, and inserting a wrapper
+ * mid-walk would put one box's `<g>` in the middle of the next box's member run.
  *
  * MIGRATION, said plainly: a box that gains an id changes storage key —
  * `layoutArchitecture` titles a box `<id>  ·  <kind>`, so `box:vpc  ·  VPC`
@@ -2361,10 +2354,9 @@ function wrapContainmentBoxes(svgEl) {
     const w = parseFloat(rect.getAttribute("width"));
     const h = parseFloat(rect.getAttribute("height"));
     if (!(w > 0) || !(h > 0) || Number.isNaN(x) || Number.isNaN(y)) continue;
-    // The `rx` sniff is the fallback's discriminator only. An id'd rect has
-    // already said what it is, and hardening a shape pinhole never promised
-    // would be the same mistake this issue exists to undo.
-    if (!groupId && !(parseFloat(rect.getAttribute("rx")) > 0)) continue;
+    // An unstamped rect is not a group box — the page-background rects and any
+    // decoration pinhole paints at the root stay untouched.
+    if (!groupId) continue;
     // Collect rect → title, stepping over anything already stamped between
     // them (the GitLab wave badge), and bail at the next box or card.
     const members = [rect];
@@ -2378,13 +2370,11 @@ function wrapContainmentBoxes(svgEl) {
         break;
       }
     }
-    // An untitled box is only knowable by its attribute — the structural path
-    // has literally nothing else to go on, and a titleless id'd box keeps its
-    // resize handle and simply has no drag-by-title. It also keeps nothing but
-    // its own rect: the walk above only stops at a title, so without one it has
-    // swept up whatever pinhole painted next, which is not this box's to move.
-    if (!title && !groupId) continue;
-    const id = `box:${groupId || (title.textContent || "").trim() || found.length}`;
+    // A titleless box keeps its resize handle and simply has no drag-by-title.
+    // It also keeps nothing but its own rect: the walk above only stops at a
+    // title, so without one it has swept up whatever pinhole painted next,
+    // which is not this box's to move.
+    const id = `box:${groupId}`;
     if (claimed.has(id)) continue;
     claimed.add(id);
     found.push({ id, rect, members: title ? members : [rect], title, x, y, w, h });
@@ -2468,35 +2458,28 @@ function userRect(el, toUser) {
  * The chip pinhole paints on a labelled edge (`project`, `sourceRef`,
  * `selector` — the IR edge's `viaAttr`), or null if this edge has none.
  *
- * HOW THE TWO ARE ASSOCIATED, and why it is what it is: `renderSvg` emits
- * `Canvas.edge(...)` and then, for a labelled edge, `Canvas.edgeLabel(...)` —
- * an ANONYMOUS `<g><rect rx="9"/><text>…</text></g>` carrying no edge identity
- * whatsoever. There is no id, no data attribute, no shared class. What is left
- * is document order (the chip is the edge group's next element sibling) and the
- * one piece of content the two provably share: the chip's text IS the edge
- * group's `data-edge-via` value. Behold requires BOTH before it will move
- * anything, so a pinhole that stops emitting chips, reorders them, or slips
- * something between the pair leaves the label untouched rather than dragging an
- * unrelated group around the canvas.
+ * HOW THE TWO ARE ASSOCIATED: pinhole stamps the chip group with its edge's
+ * own `data-edge-from`/`data-edge-to` (pinhole#110, 0.3.5 — the same ask boxes
+ * made and won with `data-group-id`), so the pair is an attribute match. The
+ * chip is the stamped sibling that holds no `path` — the line group always
+ * carries one. The sibling-order + text-sniffing inference this replaces
+ * (#267/#271) went with the ^0.3.5 floor.
  *
- * Read at index time and kept as an element reference, never re-derived:
- * wireEdgeHighlight's `raise()` re-appends a hovered edge group to the end of
- * the SVG, so the sibling link is gone the instant a pointer crosses an edge.
- *
- * The real fix is upstream, and it is the same ask boxes made and won in
- * pinhole 0.3.3 (`data-group-id`, #250): stamp the chip with the edge it
- * belongs to. The moment pinhole emits a `data-edge-*` pairing on the label
- * group, prefer it here the way wrapContainmentBoxes now prefers the attribute.
+ * Still read at index time and kept as an element reference, never re-derived:
+ * wireEdgeHighlight's `raise()` re-appends hovered groups, so document order is
+ * unstable even though identity now isn't.
  */
 function edgeLabelOf(g) {
-  const via = (g.getAttribute("data-edge-via") || "").trim();
-  if (!via) return null;
-  const next = g.nextElementSibling;
-  if (!next || next.tagName.toLowerCase() !== "g") return null;
-  if (next.hasAttribute("data-node-id") || next.hasAttribute("data-edge-from")) return null;
-  const text = next.querySelector("text");
-  if (!text || (text.textContent || "").trim() !== via) return null;
-  return next;
+  if (!(g.getAttribute("data-edge-via") || "").trim()) return null;
+  const from = g.getAttribute("data-edge-from");
+  const to = g.getAttribute("data-edge-to");
+  for (const cand of g.parentNode ? g.parentNode.children : []) {
+    if (cand === g || cand.tagName.toLowerCase() !== "g") continue;
+    if (cand.getAttribute("data-edge-from") !== from || cand.getAttribute("data-edge-to") !== to) continue;
+    if (cand.hasAttribute("data-node-id") || cand.querySelector("path")) continue;
+    return cand;
+  }
+  return null;
 }
 
 /** Index the freshly rendered SVG: node groups, containment boxes, edge paths. */
