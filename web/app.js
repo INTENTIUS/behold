@@ -36,6 +36,9 @@ import {
 // printed, collapsible, copyable per subtree. `valueCell`/`pairCell` below are
 // the call-site shorthands: a container becomes the tree, a scalar stays text.
 import { isContainer, jsonCell, renderJson, scalarText } from "./json-view.js";
+// #268: the demo catalog's presentation — what a catalog row's button says
+// about it (disabled + reason, or the fetch it would do).
+import { fetchDemos, demoLabel, demoTitle, demoProgress } from "./demos.js";
 initTheme();
 initPanel();
 mountThemePicker(document.getElementById("panel-theme"));
@@ -892,24 +895,52 @@ async function revealProject(dir) {
 // client-side list and cache is project-scoped, so a clean boot is the honest
 // way to re-seed all of it.
 async function switchProject(dir) {
-  showLoading(`switching to ${pathBasename(dir)}…`);
+  return postSwitch("/api/project/open", { dir }, `switching to ${pathBasename(dir)}…`, "switch");
+}
+
+// #268: load a bundled demo and serve it. Same treatment as a project switch —
+// it IS one, after a copy/clone + install the server runs on the click. The
+// body carries the catalog NAME; the server never takes a path here.
+async function openDemo(demo) {
+  if (!demo.satisfiable) return;
+  return postSwitch("/api/demos/open", { name: demo.name }, demoProgress(demo), "demo");
+}
+
+// The switch itself: a JSON POST behind the loading scrim, then a reload on
+// success. Shared by the recents/path switch and the demo catalog above.
+async function postSwitch(url, body, message, what) {
+  showLoading(message);
   try {
-    const r = await fetch("/api/project/open", {
+    const r = await fetch(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ dir }),
+      body: JSON.stringify(body),
     });
     const j = await r.json();
     if (!r.ok || j.error) {
       hideLoading();
-      showToast("✗ switch: " + (j.error || r.statusText), false);
+      showToast(`✗ ${what}: ` + (j.error || r.statusText), false);
       return;
     }
     location.reload();
   } catch (e) {
     hideLoading();
-    showToast("✗ switch: " + e.message, false);
+    showToast(`✗ ${what}: ` + e.message, false);
   }
+}
+
+// #268: the bundled catalog, fetched once per page. `null` until it lands (the
+// first Scope render kicks it off and re-renders when it does), then a list —
+// empty on a server that doesn't serve the route, which renders no group.
+let demoCatalog = null;
+let demoCatalogPending = false;
+function primeDemoCatalog() {
+  if (demoCatalogPending) return;
+  demoCatalogPending = true;
+  fetchDemos().then((demos) => {
+    demoCatalog = demos;
+    renderPanelScope();
+  });
 }
 
 function renderPanelScope() {
@@ -961,6 +992,19 @@ function renderPanelScope() {
     });
     row.append(input, go);
     host.appendChild(row);
+    // #268: the bundled demo catalog, under recents — every demo `behold demo
+    // --list` names, one click from wherever you are. An entry whose
+    // prerequisites are missing renders disabled with the reason on it, and one
+    // that would clone from the network says so before it runs.
+    if (demoCatalog === null) primeDemoCatalog();
+    else if (demoCatalog.length) {
+      host.appendChild(panelHeading("demos"));
+      for (const d of demoCatalog) {
+        const b = panelOpt(demoLabel(d), false, () => openDemo(d), demoTitle(d));
+        if (!d.satisfiable) b.disabled = true;
+        host.appendChild(b);
+      }
+    }
   }
   host.appendChild(panelHeading("environment"));
   host.appendChild(

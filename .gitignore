@@ -5,6 +5,10 @@ dist
 # UI smoke screenshots (#199)
 smoke/shots/
 
+# Demos loaded into this checkout by `behold demo` / the panel's catalog (#268)
+behold-demo/
+behold-demos/
+
 # Claude Code agent worktrees / local state
 .claude/
 

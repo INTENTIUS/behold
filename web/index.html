@@ -287,7 +287,10 @@
       #panel .opt { display: block; width: 100%; text-align: left; background: none;
         border: 1px solid transparent; border-radius: var(--r-ctl); color: var(--fg);
         font-size: var(--t-body); padding: 4px 8px; cursor: pointer; }
-      #panel .opt:hover { border-color: var(--line); }
+      #panel .opt:hover:not(:disabled) { border-color: var(--line); }
+      /* #268: a demo whose prerequisites are missing stays visible and says why
+         — dimmed and unclickable, not removed from the catalog. */
+      #panel .opt:disabled { opacity: .5; cursor: not-allowed; }
       #panel .opt.active { background: var(--active); border-color: var(--rule); color: var(--fg);
         box-shadow: inset 2px 0 0 var(--pending); }
       #panel select { width: 100%; background: var(--well); color: var(--fg); border: 1px solid var(--line);
