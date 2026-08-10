@@ -6,8 +6,10 @@
 import { resolve, dirname, join } from "node:path";
 import { realpathSync, existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { spawn } from "node:child_process";
 import { startServer, beholdVersion } from "./server.ts";
-import { loadDemoRegistry, missingRequirements, demoTargetDir, loadDemo } from "./demos.ts";
+import { loadDemoRegistry, missingRequirements, demoTargetDir, loadDemo, type DemoCarve } from "./demos.ts";
+import { resolveChant } from "./chant.ts";
 import { runExport } from "./export.ts";
 import { diagnose, formatReport } from "./doctor.ts";
 import { isAutoSyncMode, type AutoSyncMode } from "./autosync.ts";
@@ -47,10 +49,13 @@ Usage:
           clone a public estate. Bare \`behold demo\` is the AWS example — an
           S3 bucket + policy on a local emulator: blue = declared, click
           Deploy, watch it turn green. \`behold demo k8s\` stands a workload
-          up on a throwaway k3d cluster instead. Needs Docker (and per-demo
-          tools --list names). Loaded demos land in the panel's recents, so
-          switching between them is the Scope tab — which lists this whole
-          catalog too (#268), one click from any served project.
+          up on a throwaway k3d cluster instead. \`behold demo carve\` is the
+          odd one out: no cluster, no Docker, no cloud — a half-migrated
+          Terraform/chant estate plus the six-step carve walkthrough on the
+          panel's Carve tab. Needs Docker (and per-demo tools --list names).
+          Loaded demos land in the panel's recents, so switching between them
+          is the Scope tab — which lists this whole catalog too (#268), one
+          click from any served project.
 
   export  Capture the live estate into a self-contained, interactive STATIC
           bundle (default ./behold-export) — every env/tier × zoom × radial,
@@ -388,11 +393,123 @@ async function runDemo(rest: string[]): Promise<void> {
     process.stderr.write(`behold demo ${entry.name}: ${loaded.error}\n`);
     process.exit(1);
   }
+  // #254: a carve demo isn't a project serve at all — it boots the advisor and
+  // hands the walkthrough its estate context.
+  if (entry.serve.carve) {
+    await serveCarveDemo(target, entry.serve.carve, port);
+    return;
+  }
   process.stdout.write(`behold demo ${entry.name} → serving. Blue = declared; Deploy turns it green.\n`);
   const serveArgs = ["serve", ...loaded.serveDirs, "--port", String(port)];
   if (entry.serve.local) serveArgs.push("--local");
   if (entry.serve.env) serveArgs.push("--env", entry.serve.env);
   await run(serveArgs);
+}
+
+/** One child step of the carve boot, output inherited so npm and chant narrate
+ * themselves into behold's own terminal. Async (not `spawnSync`) to match the
+ * shape demos.ts moved to in #268; a spawn error comes back as -1, never a
+ * rejection. */
+function spawnStep(cmd: string, args: string[], cwd: string): Promise<number> {
+  return new Promise((res) => {
+    const child = spawn(cmd, args, { stdio: "inherit", cwd, shell: process.platform === "win32" });
+    child.on("error", () => res(-1));
+    child.on("close", (code) => res(code ?? 1));
+  });
+}
+
+/**
+ * `behold demo carve`'s boot (#254, M1.5 of #230) — the offline tier.
+ *
+ * Three things happen before a port opens, and each is allowed to fail into
+ * something visible rather than into a blank page:
+ *
+ *  1. `npm install` in the copy's chant project (`app/`). Its chant is the one
+ *     every step of the walkthrough shells — the project decides the version,
+ *     same rule as every other behold shell-out.
+ *  2. `@cdktf/hcl2json` into the copy's ROOT `node_modules`. chant lazy-loads
+ *     the HCL parser with a bare `import`, resolved from chant's OWN install
+ *     upward — `<copy>/app/node_modules/@intentius/chant/…` reaches
+ *     `<copy>/node_modules`, which is why the parser goes there and not into
+ *     the Terraform directory beside the `.tf` files. `--no-save
+ *     --no-package-lock` so the copy never grows a package.json it didn't ship
+ *     with.
+ *  3. `chant carve advise --report` over the copy's own Terraform, so the
+ *     picture is generated on the spot rather than replayed. If it fails —
+ *     no network for the parser, a chant too old, a broken install — the
+ *     committed `carve-report.json` is served instead and the reason rides all
+ *     the way to the UI (`CarveDemo.degraded`). The one thing that must never
+ *     happen is an empty graph with no explanation.
+ *
+ * The Floci `--live` tier (the issue's second comment) is a follow-up: real
+ * `terraform apply` into a scratch emulator, live observe beats, a real
+ * `terraform plan` on camera. Nothing here reaches for Docker or terraform.
+ */
+async function serveCarveDemo(target: string, carve: DemoCarve, port: number): Promise<void> {
+  const at = (rel: string): string => resolve(target, rel);
+  const project = at(carve.project);
+  const from = at(carve.from);
+  const state = carve.state ? at(carve.state) : undefined;
+  const committed = at(carve.report);
+
+  if (existsSync(join(project, "package.json")) && !existsSync(join(project, "node_modules"))) {
+    process.stdout.write(`behold demo carve → npm install in ${carve.project}/ (the chant this walkthrough shells)…\n`);
+    const code = await spawnStep("npm", ["install"], project);
+    if (code !== 0) {
+      process.stderr.write(`behold demo carve: npm install failed in ${project}\n`);
+      process.exit(code || 1);
+    }
+  }
+
+  let degraded: string | undefined;
+  if (!existsSync(join(target, "node_modules", "@cdktf", "hcl2json"))) {
+    process.stdout.write("behold demo carve → npm install @cdktf/hcl2json (chant's HCL parser, ~2MB, once)…\n");
+    const code = await spawnStep("npm", ["install", "--no-save", "--no-package-lock", "@cdktf/hcl2json"], target);
+    if (code !== 0) degraded = "couldn't install @cdktf/hcl2json (chant's HCL parser) — no network?";
+  }
+
+  const report = at("carve-report.json");
+  if (!degraded) {
+    const bin = resolveChant(project).bin;
+    process.stdout.write("behold demo carve → chant carve advise (read-only; emits nothing)…\n");
+    const code = await spawnStep(
+      bin,
+      ["carve", "advise", "--from", carve.from, ...(carve.state ? ["--state", carve.state] : []), "--report", report],
+      target,
+    );
+    if (code !== 0) degraded = `chant carve advise exited ${code}`;
+  }
+  // Fall back to the committed report rather than to nothing — the walkthrough's
+  // first frame is the banded graph, and a blank one teaches the viewer that
+  // behold breaks. Say so on screen; don't paper over it.
+  const serving = !degraded && existsSync(report) ? report : committed;
+  if (degraded) {
+    process.stderr.write(
+      `behold demo carve: ${degraded}\n` +
+        `        Serving the committed report (${carve.report}) instead — the bands are real, just not regenerated here.\n`,
+    );
+  }
+  if (!existsSync(serving)) {
+    process.stderr.write(`behold demo carve: no carve report at ${serving}\n`);
+    process.exit(2);
+  }
+
+  process.stdout.write(
+    "behold demo carve → serving the walkthrough. Green = carve now; the Carve tab walks the six steps.\n",
+  );
+  await startServer({
+    projectDir: target,
+    carveReport: serving,
+    carveDemo: {
+      root: target,
+      from,
+      ...(state ? { state } : {}),
+      project,
+      out: at(carve.out),
+      ...(degraded ? { degraded: `${degraded} — showing the committed report shipped with the demo.` } : {}),
+    },
+    port,
+  });
 }
 
 /** Turnkey Loom-on-Floci env (#69): the AWS SDK creds Floci ignores the value of,

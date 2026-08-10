@@ -138,6 +138,21 @@ describe("GET /api/demos — the catalog, with per-entry satisfiability (#268)",
     const body = (await (await makeApp({ previewMode: true }).request("/api/demos")).json()) as { locked?: string };
     expect(body.locked).toMatch(/preview mode/);
   });
+
+  // #254: the carve walkthrough runs fine on any machine, but it serves a
+  // report rather than a project — and carve mode claims /api/graph and
+  // /api/project at app creation, so a running server cannot become one. It
+  // stays in the catalog, marked unswitchable, naming the command that works.
+  it("marks the carve walkthrough runnable but not switchable", async () => {
+    const { demos } = (await (await makeApp().request("/api/demos")).json()) as { demos: Array<DemoRow & { switchable?: boolean }> };
+    const carve = demos.find((d) => d.name === "carve")!;
+    expect(carve).toBeTruthy();
+    expect(carve.satisfiable).toBe(true);
+    expect(carve.switchable).toBe(false);
+    expect(carve.reason).toMatch(/behold demo carve/);
+    // The flag is absent on everything else, not false.
+    expect(demos.filter((d) => d.switchable === false).map((d) => d.name)).toEqual(["carve"]);
+  });
 });
 
 describe("POST /api/demos/open — a catalog name, never a path (#268)", () => {
@@ -184,6 +199,17 @@ describe("POST /api/demos/open — a catalog name, never a path (#268)", () => {
     const res = await post(makeApp(), { name: "k8s" });
     expect(res.status).toBe(400);
     expect(((await res.json()) as { error: string }).error).toMatch(/needs docker, k3d, kubectl on PATH/);
+    expect(loadDemoMock).not.toHaveBeenCalled();
+  });
+
+  it("400s the carve walkthrough BEFORE copying anything (#254)", async () => {
+    const res = await post(makeApp(), { name: "carve" });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; remedy: string };
+    expect(body.error).toMatch(/carve report, not a chant project/);
+    expect(body.remedy).toMatch(/behold demo carve/);
+    // The point of refusing early: no copy, no npm install, no minutes spent
+    // on a load that had nowhere to go.
     expect(loadDemoMock).not.toHaveBeenCalled();
   });
 

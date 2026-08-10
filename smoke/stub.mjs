@@ -5,6 +5,7 @@
 // g[data-node-id] groups, var(--pin-*) fills, a status-bar rect per node.
 import http from "node:http";
 import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { join, extname, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 // #246: the REAL Helm mark, straight out of the pack behold registers with
@@ -12,6 +13,9 @@ import { fileURLToPath } from "node:url";
 // this one is not, because the check it feeds is about that exact artwork.
 // (`npm run smoke:ui` runs under tsx, which is what lets a .mjs reach a .ts.)
 import { helmIconFor } from "../src/icon-packs.ts";
+// #254: the carve lens itself, so carve mode's stub graph is the real
+// conversion of the real committed report — see the carve block below.
+import { carveReportToIr } from "../src/carve-lens.ts";
 
 const WEB = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
 
@@ -184,25 +188,179 @@ export const JSON_FIXTURE = { declaredSpec, observedSpec, deepLabels: DEEP_LABEL
 
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml" };
 
-/** Start the stub on `port`; resolves to the http.Server (close() to stop). */
-export function startStub(port) {
+// ---------------------------------------------------------------------------
+// #254: carve mode, for the walkthrough half of the smoke.
+//
+// The report is the REAL committed one (example-carve/carve-report.json) run
+// through the REAL lens (src/carve-lens.ts) — so the smoke drives the same IR a
+// `behold demo carve` serves, bands and all, rather than a hand-cut stand-in.
+// The two POST steps answer canned results shaped exactly like
+// src/carve-actions.ts's, which is what makes the six-step walk deterministic:
+// no chant, no @cdktf/hcl2json, no npm install in CI.
+// ---------------------------------------------------------------------------
+const CARVE_REPORT = JSON.parse(readFileSync(join(WEB, "..", "example-carve", "carve-report.json"), "utf8"));
+const carveIr = carveReportToIr(CARVE_REPORT);
+const carveSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 ${80 + carveIr.nodes.length * 70}" width="900" height="${80 + carveIr.nodes.length * 70}">
+  <rect x="0" y="0" width="900" height="${80 + carveIr.nodes.length * 70}" fill="var(--pin-bg0, #0d1117)"/>
+  ${carveIr.nodes
+    .map((n, i) => {
+      const tone = { good: "good", warn: "warn", neutral: "neutral" }[n.attrs._status] || "neutral";
+      return `<g data-node-id="${n.id}" transform="translate(40, ${40 + i * 70})">
+    <rect x="0" y="0" width="360" height="56" rx="8" fill="var(--pin-${tone}Fill, #1c2431)" stroke="var(--pin-${tone}Stroke, #345)"/>
+    <rect x="0" y="0" width="4" height="56" fill="var(--pin-${tone}Bar, #3fb950)"/>
+    <text x="16" y="24" font-size="13" fill="var(--pin-text, #e6edf3)">${n.id}</text>
+    <text x="16" y="44" font-size="10" fill="var(--pin-textMuted, #8b949e)">score: ${n.attrs.score} · ${n.attrs.carve}</text>
+  </g>`;
+    })
+    .join("\n  ")}
+</svg>`;
+
+const CARVE_DEMO = {
+  root: "/demos/carve",
+  from: "/demos/carve/legacy-tf",
+  state: "/demos/carve/legacy-tf/terraform.tfstate",
+  project: "/demos/carve/app",
+  out: "/demos/carve/app/carveout",
+  outLabel: "app/carveout",
+  fromLabel: "legacy-tf",
+  runnable: true,
+  buildCaveat: "The gate shown is `chant lint`, not `chant build` (chant#1637).",
+};
+
+/** What POST /api/carve/emit answers — src/carve-actions.ts's CarveEmitResult. */
+export const CARVE_EMIT = {
+  ok: true,
+  select: "aws_s3_bucket.assets",
+  command:
+    "chant carve emit --from legacy-tf --state legacy-tf/terraform.tfstate --select aws_s3_bucket.assets --output app/carveout",
+  output: "Carved aws_s3_bucket.assets (peelability 88) — observe position, reversible.\n  Emitted: app/carveout/src/assets.ts",
+  artifacts: [
+    {
+      path: "app/carveout/src/assets.ts",
+      kind: "ts",
+      bytes: 142,
+      truncated: false,
+      text: 'import { Bucket } from "@intentius/chant-lexicon-aws";\n\nexport const assets = new Bucket({\n  BucketName: "acme-platform-assets-prod",\n});\n',
+    },
+  ],
+  boundary: {
+    target: "aws_s3_bucket.assets",
+    inbound: [
+      { direction: "inbound", survivor: "aws_lambda_function.api", carved: "aws_s3_bucket.assets", attrs: ["bucket"], bridge: "tf-data-source" },
+    ],
+    outbound: [],
+  },
+  lint: { ok: true, code: 0, command: "chant lint carveout/src", output: "  5:1  warning  never referenced  COR004\n\n⚠ 3 warnings" },
+  buildCaveat: CARVE_DEMO.buildCaveat,
+};
+
+/** What POST /api/carve/bridge answers — CarveBridgeResult. */
+export const CARVE_BRIDGE = {
+  ok: true,
+  select: "aws_s3_bucket.assets",
+  command: "chant carve bridge --from legacy-tf --select aws_s3_bucket.assets --output app/carveout",
+  output: "Wrote proposals to app/carveout/ — review, then apply. Nothing in your Terraform changed.",
+  runbook: {
+    path: "app/carveout/aws_s3_bucket-assets-runbook.md",
+    kind: "md",
+    bytes: 210,
+    truncated: false,
+    text:
+      "# Carve-out: aws_s3_bucket.assets → chant\n\n" +
+      "## 2. Stop Terraform managing the resource (does NOT destroy it)\n" +
+      "    terraform state rm aws_s3_bucket.assets\n\n" +
+      "## 3. Confirm no destroy, then patch the survivors\n" +
+      "    terraform plan   # expect 0 to destroy\n" +
+      "    terraform apply\n",
+  },
+  proposals: [
+    {
+      path: "app/carveout/aws_s3_bucket-assets-datasources.tf",
+      kind: "tf",
+      bytes: 64,
+      truncated: false,
+      text: 'data "aws_s3_bucket" "assets" {\n  bucket = "acme-platform-assets-prod"\n}\n',
+    },
+  ],
+};
+
+/**
+ * Start the stub on `port`; resolves to the http.Server (close() to stop).
+ *
+ * `{ carve: true }` serves the #254 walkthrough instead of the project estate:
+ * the carve graph, `/api/carve`, and the two POST steps. `server.carvePosts`
+ * records what the page sent, so the smoke can assert the wire contract
+ * (a JSON body carrying the picked address) and not just the pixels.
+ */
+export function startStub(port, { carve = false } = {}) {
   // #228: the hand-layout sidecar, in memory instead of `.behold/layout.json`
   // — the SAME wire contract src/server.ts serves (lens-keyed deltas, a
   // `writable` flag on the read), so the smoke drives the client's whole sync
   // layer without a project on disk. `server.layout` lets the test read and
   // seed it as if it were the file.
   const layout = new Map();
+  const carvePosts = [];
+  const readBody = (req) =>
+    new Promise((r) => {
+      let s = "";
+      req.on("data", (c) => (s += c));
+      req.on("end", () => r(s || "{}"));
+    });
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://x");
     const path = url.pathname;
+    if (carve) {
+      const json = (body, code = 200) => {
+        res.writeHead(code, { "content-type": "application/json" });
+        res.end(JSON.stringify(body));
+      };
+      if (path === "/api/carve") return json(CARVE_REPORT);
+      if (path === "/api/carve/emit" || path === "/api/carve/bridge") {
+        const body = JSON.parse(await readBody(req));
+        carvePosts.push({ path, method: req.method, contentType: req.headers["content-type"], body });
+        // Same refusal shape src/server.ts sends for a select the report
+        // doesn't rank, so the client's error path is exercisable too.
+        if (!CARVE_REPORT.resources.some((r) => r.address === body.select)) {
+          return json({ error: `\`select\` must name a resource this report ranks — ${JSON.stringify(body.select)} isn't one.`, code: "carve-select", remedy: "Pick a card in the graph." }, 400);
+        }
+        return json(path.endsWith("emit") ? CARVE_EMIT : CARVE_BRIDGE);
+      }
+      if (path === "/api/project") {
+        return json({
+          projectDir: "/demos/carve/carve-report.json",
+          recents: [],
+          environments: [],
+          lexicons: ["terraform"],
+          currentEnv: null,
+          targets: [],
+          carve: {
+            report: "/demos/carve/carve-report.json",
+            from: CARVE_REPORT.from,
+            count: CARVE_REPORT.count,
+            bands: CARVE_REPORT.bands,
+            advisory: CARVE_REPORT.advisory,
+            demo: CARVE_DEMO,
+          },
+        });
+      }
+      if (path === "/api/graph") {
+        return json({
+          ir: carveIr,
+          svg: carveSvg,
+          meta: { projectDir: "/demos/carve/carve-report.json", env: null, tier: null, target: null, carve: true, note: "chant carve advisory for legacy-tf" },
+        });
+      }
+      if (path === "/api/substrates") return json({ substrates: [] });
+      if (path === "/api/history") return json({ commits: [] });
+      if (path === "/api/resources") return json({ byComponent: {} });
+      if (path === "/api/ci") return json({ stages: [], jobs: [], forge: null });
+      if (path === "/api/ops") return json({ ops: [], adoptLexicons: [], autoSync: "off" });
+      if (path === "/api/layout") return json({ lens: url.searchParams.get("lens"), writable: false, reason: "a carve report isn't a project", deltas: {} });
+    }
     if (path === "/api/layout") {
       res.writeHead(200, { "content-type": "application/json" });
       if (req.method === "POST") {
-        const body = JSON.parse(await new Promise((r) => {
-          let s = "";
-          req.on("data", (c) => (s += c));
-          req.on("end", () => r(s || "{}"));
-        }));
+        const body = JSON.parse(await readBody(req));
         if (Object.keys(body.deltas || {}).length) layout.set(body.lens, body.deltas);
         else layout.delete(body.lens);
         return res.end(JSON.stringify({ ok: true, lens: body.lens, deltas: body.deltas || {} }));
@@ -246,5 +404,6 @@ export function startStub(port) {
     }
   });
   server.layout = layout; // the sidecar, for the smoke to read and seed (#228)
+  server.carvePosts = carvePosts; // what the stepper actually sent (#254)
   return new Promise((resolve) => server.listen(port, () => resolve(server)));
 }

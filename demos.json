@@ -35,6 +35,22 @@
       "serve": { "dirs": ["control-plane", "app-a", "app-b"] }
     },
     {
+      "name": "carve",
+      "description": "The peel walkthrough: a half-migrated estate — a chant project beside a Terraform one — scored by `chant carve advise`, then a six-step stepper that carves one S3 bucket across the line on camera (advise, pick, emit, bridge, handoff, done). Emit and bridge really run, into the demo copy; the destructive terraform commands stay yours to paste. No cloud, no Docker, no terraform binary.",
+      "source": "bundled",
+      "dir": "example-carve",
+      "requires": [],
+      "serve": {
+        "carve": {
+          "report": "carve-report.json",
+          "from": "legacy-tf",
+          "state": "legacy-tf/terraform.tfstate",
+          "project": "app",
+          "out": "app/carveout"
+        }
+      }
+    },
+    {
       "name": "fountain",
       "description": "The mature estate: self-hosted fountain (a real app) on a throwaway k3d cluster — tiers (try the ha tier picker), seams, drift, runtime Pods. Clones INTENTIUS/fountain-ops; ~5 minutes, mostly image pulls. `just down` in the clone removes the cluster.",
       "source": "git",

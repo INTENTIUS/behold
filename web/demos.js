@@ -34,6 +34,10 @@ export function shortRepo(repo) {
  * run, that starting it clones from the network, or that it's already on disk. */
 export function demoNote(demo) {
   if (!demo.satisfiable) return demo.reason || "unavailable here";
+  // #254: runnable, but not as an in-place switch — the carve walkthrough
+  // serves a report rather than a project, and a running server can't change
+  // into carve mode. Listed, disabled, with the command that does work.
+  if (demo.switchable === false) return demo.reason || "run it from a terminal";
   if (demo.fetches) return demo.repo ? `clones ${shortRepo(demo.repo)}` : "clones from the network";
   if (demo.loaded) return "loaded";
   return "";
@@ -49,6 +53,9 @@ export function demoLabel(demo) {
 export function demoTitle(demo) {
   if (!demo.satisfiable) {
     return `${demo.description}\n\nCan't run here — ${demo.reason || "a prerequisite is missing"}. Install it and reopen behold.`;
+  }
+  if (demo.switchable === false) {
+    return `${demo.description}\n\nNot a project switch — ${demo.reason || "run it from a terminal"}.`;
   }
   const source = demo.fetches
     ? `Clones ${demo.repo || "a public repo"} into ${demo.target}`

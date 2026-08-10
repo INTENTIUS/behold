@@ -122,6 +122,34 @@ export function setPanelTab(tab, { expand = true } = {}) {
   }
 }
 
+/**
+ * #254: add a tab the markup doesn't ship — the Carve walkthrough, which only
+ * exists when the server is serving one. Mounted at runtime rather than hidden
+ * in index.html so no other project grows a dead tab (and so a persisted
+ * `tab: "carve"` can never strand someone on an empty section: the tab isn't
+ * there to be restored). Returns the section element to render into; calling it
+ * twice is a no-op that returns the same one.
+ */
+export function addPanelTab(id, label, title) {
+  if (!panel) return null;
+  const existing = panel.querySelector(`#panel-body section[data-tab="${id}"]`);
+  if (existing) return existing;
+  const b = document.createElement("button");
+  b.dataset.tab = id;
+  b.textContent = label;
+  if (title) b.title = title;
+  b.addEventListener("click", () => setPanelTab(id));
+  // Before the ⌘K pill + collapse chevron, which are not tabs.
+  document.getElementById("panel-tabs").insertBefore(b, document.getElementById("hintk"));
+  const section = document.createElement("section");
+  section.dataset.tab = id;
+  document.getElementById("panel-body").appendChild(section);
+  // The new button starts inactive; the section starts hidden. Re-applying the
+  // current tab keeps the two in step whatever it happens to be.
+  setPanelTab(state.tab, { expand: false });
+  return section;
+}
+
 function setCollapsed(on) {
   state.collapsed = !!on;
   panel.classList.toggle("collapsed", state.collapsed);

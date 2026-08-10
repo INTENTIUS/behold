@@ -27,6 +27,27 @@ describe("demos.json — the committed catalog (#209)", () => {
     }
     expect(files).toContain("demos.json");
   });
+
+  // #254: the walkthrough is a catalog entry like any other, and every path it
+  // names has to exist in the directory that gets copied — a typo here is a
+  // demo that boots to an Emit button with nowhere to write.
+  it("the carve entry names four real paths inside the bundled estate", () => {
+    const carve = registry.find((e) => e.name === "carve");
+    expect(carve, "no carve entry in demos.json").toBeTruthy();
+    expect(carve!.requires).toEqual([]); // offline tier: no Docker, no terraform
+    const c = carve!.serve.carve!;
+    expect(c).toBeTruthy();
+    for (const p of [c.report, c.from, c.state!, c.project, c.out]) {
+      expect(p.startsWith("/"), `${p} must be relative to the copy`).toBe(false);
+    }
+    for (const p of [c.report, c.from, c.state!, c.project]) {
+      expect(existsSync(join(REPO, carve!.dir!, p)), `${p} missing from ${carve!.dir}`).toBe(true);
+    }
+    // The emitted source imports the project's lexicon and Node resolves that
+    // from the file's own directory upward — an output dir outside the project
+    // would never lint. `out` is generated, so it is not expected to exist yet.
+    expect(`${c.out}/`.startsWith(`${c.project}/`)).toBe(true);
+  });
 });
 
 describe("loadDemoRegistry — malformed input degrades, never throws", () => {
@@ -60,6 +81,24 @@ describe("loadDemoRegistry — malformed input degrades, never throws", () => {
       }),
     );
     expect(loadDemoRegistry(dir).map((e) => e.name)).toEqual(["ok", "git-ok"]);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("a half-wired carve entry drops rather than serving a walkthrough that can't act (#254)", () => {
+    const carve = (c: unknown) => ({ name: "c", description: "d", source: "bundled", dir: "x", requires: [], serve: { carve: c } });
+    const good = { report: "r.json", from: "tf", state: "tf/s.tfstate", project: "app", out: "app/carveout" };
+    const dir = tmpRoot(
+      JSON.stringify({
+        demos: [
+          { ...carve(good), name: "good" },
+          { ...carve({ ...good, out: undefined }), name: "no-out" },
+          { ...carve({ ...good, from: "/etc" }), name: "absolute" },
+          { ...carve({ ...good, report: "../../secrets.json" }), name: "escapes" },
+          { ...carve({ ...good, out: "elsewhere/carveout" }), name: "out-outside-project" },
+        ],
+      }),
+    );
+    expect(loadDemoRegistry(dir).map((e) => e.name)).toEqual(["good"]);
     rmSync(dir, { recursive: true, force: true });
   });
 });

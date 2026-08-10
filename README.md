@@ -31,8 +31,9 @@ The copied project is yours: edit its source and watch the graph change live.
 There's a whole catalog — `behold demo --list` names the rest (`behold demo
 k8s` stands the same loop up on a throwaway k3d cluster: runtime Pods, field
 ownership; `behold demo argo-estate` needs nothing at all — a three-project
-Argo CD estate, declared only, so it runs where Docker doesn't). Every loaded
-demo lands in the panel's recents, so switching between them is the Scope tab.
+Argo CD estate, declared only, so it runs where Docker doesn't; `behold demo
+carve` is the Terraform peel walkthrough, below). Every loaded demo lands in
+the panel's recents, so switching between them is the Scope tab.
 
 The catalog is in the panel too (#268): the Scope tab's switcher lists every
 bundled demo under your recents, one click to copy, install and serve it —
@@ -290,6 +291,39 @@ contract. A file that isn't a peelability report is refused with a structured
 `{error, code: "carve-report", remedy}` — in the terminal, and from the routes —
 never a blank graph. See `docs/using/carve` and issue #230 for the roadmap
 (the post-emit diff, then Terraform as an estate member).
+
+### The walkthrough: `behold demo carve`
+
+```sh
+npx @intentius/behold demo carve      # no Docker, no cloud, no terraform binary
+```
+
+Copies a half-migrated estate — a small chant project beside a Terraform one,
+both describing the same AWS account — installs the chant it will shell, runs
+`chant carve advise` over the copy, and opens the banded graph with a six-step
+stepper on the panel's **Carve** tab:
+
+1. **Advise** — the bands, with what each one means.
+2. **Pick** — click a green card. The inspect pane shows the score arithmetic;
+   the step names the boundary the cut crosses.
+3. **Emit** — runs `chant carve emit --state --select <addr>` into
+   `app/carveout/` in the copy, then shows the emitted chant source and the
+   `chant lint` result.
+4. **Bridge** — runs `chant carve bridge` (never `--apply-rewrites`) and renders
+   the proposed data source, the rewired survivors and the patch.
+5. **Handoff** — the runbook's commands with copy buttons, and **not** a button:
+   `terraform state rm` and `terraform apply` change who owns a live resource,
+   so they stay yours to run. The panel says so.
+6. **Done** — the card is marked chant-owned at the observe position;
+   `terraform import` reverses all of it.
+
+The Emit step reports `chant lint`, not `chant build`: chant#1637 means `build`
+fails on the emitted bucket even though the advisor scored it 88, and the panel
+links the reason. `example-carve/README.md` has the estate's full story, the
+band table, and the offline/`--live` split.
+
+behold writes only into the demo copy it made — `app/carveout/`, and nothing
+else. Your Terraform is never edited; see AGENTS.md, "Invariant".
 
 ## Configuration — `.behold.json`
 

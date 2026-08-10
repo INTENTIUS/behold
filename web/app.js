@@ -9,7 +9,11 @@
 // position), and the theme picker into the panel's View-tab slot (a stable element
 // renderPanelView never rewrites, so the select mounts once and survives re-renders).
 import { initTheme, mountThemePicker, readableOn, colorForCategory, onThemeChange, getTokens } from "./theme.js";
-import { initPanel, setPanelTab, togglePanelCollapsed, isPanelCollapsed } from "./panel.js";
+import { addPanelTab, initPanel, setPanelTab, togglePanelCollapsed, isPanelCollapsed } from "./panel.js";
+// #254: the carve walkthrough's stepper — everything it DECIDES is a pure
+// function in there; this file owns the fetches, the graph selection, and the
+// "carved" marker the last step leaves on a card.
+import { CARVE_STEPS, blockedReason, initialCarveState, renderCarvePanel } from "./carve-steps.js";
 // #228: the hand-layout delta store — everything about WHAT gets remembered and
 // under which key. The pointer work and the SVG surgery stay here (see the
 // "Hand layout" section below).
@@ -706,6 +710,10 @@ function wire(ir) {
       host.querySelectorAll(".sel").forEach((n) => n.classList.remove("sel"));
       g.classList.add("sel");
       inspect(node);
+      // #254: in carve mode a click is also the walkthrough's Pick step — the
+      // inspect pane already shows the score arithmetic the lens spelled out,
+      // and the stepper picks up the same node.
+      carvePick(node);
     });
   }
 }
@@ -1001,7 +1009,7 @@ function renderPanelScope() {
       host.appendChild(panelHeading("demos"));
       for (const d of demoCatalog) {
         const b = panelOpt(demoLabel(d), false, () => openDemo(d), demoTitle(d));
-        if (!d.satisfiable) b.disabled = true;
+        if (!d.satisfiable || d.switchable === false) b.disabled = true;
         host.appendChild(b);
       }
     }
@@ -1108,6 +1116,7 @@ function selectNode(id) {
   const g = host.querySelector(`[data-node-id="${CSS.escape(id)}"]`);
   if (g) g.classList.add("sel");
   inspect(node);
+  carvePick(node);
 }
 
 function renderPanelModel() {
@@ -1173,10 +1182,199 @@ function renderPanelModel() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The carve walkthrough (#254, M1.5 of #230)
+//
+// A Carve tab appears only when /api/project says this server is in carve mode,
+// and its two ACTION steps light up only when it also says a demo copy is
+// behind it (`carve.demo.runnable`) — a plain `behold carve report.json` gets
+// the same six steps with the runs honestly greyed out, rather than buttons
+// that 403.
+//
+// The walkthrough's state lives here and nowhere else: no session on the
+// server, exactly as #254 asks. Reload and you're back at Advise, with whatever
+// the previous run wrote still sitting in the demo copy.
+// ---------------------------------------------------------------------------
+let carveInfo = null; // /api/project's `carve` block (report meta + demo, or null)
+let carveReport = null; // the raw report off /api/carve — the boundary lists live here
+let carveState = initialCarveState();
+let carveHost = null; // the panel section, mounted on first sight of carve mode
+const carvedIds = new Set(); // addresses the walkthrough has taken all the way through
+
+function carveMode() {
+  return !!carveInfo;
+}
+
+/** The stepper's wiring. Everything that talks to the network or the graph. */
+const carveActions = {
+  go(index) {
+    const id = CARVE_STEPS[index] && CARVE_STEPS[index].id;
+    if (!id) return;
+    if (blockedReason(carveState, id)) return;
+    carveState.step = index;
+    carveState.error = null;
+    renderPanelCarve();
+  },
+  select(address) {
+    selectNode(address); // the same path a graph click takes — inspect included
+  },
+  reset() {
+    carveState = initialCarveState();
+    renderPanelCarve();
+  },
+  markHandoff() {
+    carveState.handoff = true;
+    if (carveState.pick) {
+      carvedIds.add(carveState.pick.node.id);
+      markCarvedCards();
+    }
+    carveState.step = CARVE_STEPS.findIndex((s) => s.id === "done");
+    renderPanelCarve();
+  },
+  runEmit: () => runCarveStep("emit"),
+  runBridge: () => runCarveStep("bridge"),
+  copy(text, el) {
+    const done = () => {
+      el.dataset.copied = "1";
+      const was = el.textContent;
+      el.textContent = "copied ✓";
+      setTimeout(() => {
+        el.textContent = was;
+      }, 1200);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, done);
+    else done();
+  },
+};
+
+/** Run one of the two safe steps. Both are POSTs with a `{select}` body; both
+ * answer either their result or #193's `{error, code, remedy}`. */
+async function runCarveStep(which) {
+  if (carveState.busy || !carveState.pick) return;
+  carveState.busy = which;
+  carveState.error = null;
+  renderPanelCarve();
+  try {
+    const res = await fetch(`/api/carve/${which}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ select: carveState.pick.node.id }),
+    });
+    const body = await res.json().catch(() => ({ error: `${which} returned an unreadable body`, remedy: "" }));
+    if (!res.ok || body.error) {
+      carveState.error = { step: which, ...body };
+      showToast(`✗ carve ${which}: ${body.error || res.status}`, false);
+    } else {
+      carveState[which] = body;
+      // Deliberately does NOT advance. The result IS the step — the emitted
+      // source and the lint verdict, the proposed patch — and skipping past it
+      // to the next button would hide the thing the run was for. The "next"
+      // control unlocks; pressing it stays the viewer's move.
+      showToast(`✓ carve ${which} — wrote into ${(carveInfo.demo && carveInfo.demo.outLabel) || "the demo copy"}`, true);
+    }
+  } catch (err) {
+    carveState.error = { step: which, error: String((err && err.message) || err), remedy: "Is the behold server still running?" };
+  } finally {
+    carveState.busy = null;
+    renderPanelCarve();
+  }
+}
+
+/** A picked card becomes the walkthrough's subject. Called from the graph's
+ * click handler and from selectNode(), so the panel rows and the cards agree. */
+function carvePick(node) {
+  if (!carveMode()) return;
+  const resource = (carveReport && carveReport.resources ? carveReport.resources : []).find((r) => r.address === node.id) || null;
+  const pickStep = CARVE_STEPS.findIndex((s) => s.id === "pick");
+  // A NEW pick invalidates the runs that were about the old one — showing one
+  // resource's emitted source under another's name is the one way this panel
+  // could actively lie — and drops the walkthrough back to Pick, wherever it
+  // had got to. Re-clicking the SAME card is just a re-select and moves
+  // nothing, so reading a card mid-walkthrough costs no progress.
+  if (!carveState.pick || carveState.pick.node.id !== node.id) {
+    carveState.emit = null;
+    carveState.bridge = null;
+    carveState.handoff = false;
+    carveState.error = null;
+    carveState.step = pickStep;
+  } else if (carveState.step < pickStep) {
+    carveState.step = pickStep;
+  }
+  carveState.pick = { node, resource };
+  renderPanelCarve();
+}
+
+/** The "carved" marker the last step leaves on the card — a class the CSS
+ * paints plus a small label. Re-applied after every render, because the SVG is
+ * replaced wholesale on each load. The full morph (the box sliding out of the
+ * Terraform boundary and into the chant project beside last month's carves) is
+ * the follow-up; this is the honest still frame of it. */
+function markCarvedCards() {
+  const svg = document.querySelector("#graph svg");
+  if (!svg || !carvedIds.size) return;
+  for (const g of svg.querySelectorAll("[data-node-id]")) {
+    const id = g.getAttribute("data-node-id");
+    if (!carvedIds.has(id) || g.querySelector('[data-carved="1"]')) continue;
+    g.classList.add("carved");
+    // Measured, not read off attributes: pinhole sizes the card from its
+    // content and doesn't always stamp width/height, and a missing attribute
+    // read as 0 parks the label at the group's origin — which is off the card
+    // entirely (seen in the browser before this was measured instead).
+    const rect = g.querySelector("rect");
+    const box = rect && rect.getBBox ? rect.getBBox() : null;
+    const tag = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    tag.setAttribute("data-carved", "1");
+    // Inside the card's own box, bottom-right — the one corner the terraform
+    // presentation pack leaves empty.
+    tag.setAttribute("x", String((box ? box.x + box.width : 150) - 10));
+    tag.setAttribute("y", String((box ? box.y + box.height : 60) - 9));
+    tag.setAttribute("text-anchor", "end");
+    tag.setAttribute("font-size", "11");
+    tag.setAttribute("font-weight", "600");
+    tag.setAttribute("fill", "var(--managed)");
+    tag.textContent = "✓ carved → chant";
+    g.appendChild(tag);
+  }
+}
+
+function renderPanelCarve() {
+  if (!carveMode()) return;
+  if (!carveHost) {
+    carveHost = addPanelTab("carve", "Carve", "The peel walkthrough: advise → pick → emit → bridge → handoff → done.");
+    if (!carveHost) return;
+    carveHost.id = "tab-carve";
+  }
+  renderCarvePanel(
+    carveHost,
+    carveState,
+    { carve: carveInfo, demo: carveInfo && carveInfo.demo, report: carveReport, renderJson },
+    carveActions,
+  );
+}
+
+/** Carve mode's one extra fetch: the raw report, for the per-resource boundary
+ * lists the graph IR deliberately doesn't carry. Best-effort — the stepper
+ * degrades to the counts in the IR's own attrs. */
+async function loadCarveReport() {
+  if (!carveMode()) return;
+  try {
+    carveReport = await apiFetch("/api/carve").then((r) => r.json());
+  } catch {
+    carveReport = null;
+  }
+  renderPanelCarve();
+  // A readiness marker, so a test can wait for the extra fetch instead of
+  // racing it. The panel itself never waits: `cutSummary` falls back to the
+  // counts the IR node already carries, which is what the report would have
+  // told it anyway on a chant that publishes no edge lists.
+  if (carveHost) carveHost.dataset.report = carveReport ? "1" : "0";
+}
+
 function renderPanel() {
   renderPanelView();
   renderPanelScope();
   renderPanelModel();
+  if (carveMode()) renderPanelCarve();
 }
 
 function renderStatusbar() {
@@ -1845,6 +2043,7 @@ function render(ir, svg, m) {
   ensureBackToInfra(g);
   wire(ir);
   if (view.radial && !view.components && !view.logical) addRadialLabels(ir);
+  markCarvedCards(); // #254: the SVG is replaced per render — re-stamp the marker
   applyLayout(); // #228: last, so the hand-placed deltas ride on top of every other pass
   renderDial();
 }
@@ -2759,6 +2958,13 @@ async function initPickers() {
   // with none leaves `view.stack` (and the picker + status tag) null.
   stacks = info.stacks || [];
   view.stack = stacks[0] || null;
+  // #254: carve mode declares itself here. The Carve tab is mounted at runtime
+  // (panel.js's addPanelTab), so nothing else grows a dead tab.
+  carveInfo = info.carve || null;
+  if (carveMode()) {
+    renderPanelCarve();
+    loadCarveReport();
+  }
   axes = { tier: info.tier || null, target: info.target || null };
   environments = info.environments || [];
   tiers = info.tiers || [];
@@ -3304,6 +3510,22 @@ function paletteCommands() {
   c.push([isPanelCollapsed() ? "Expand control panel" : "Collapse control panel", () => togglePanelCollapsed()]);
   for (const b of document.querySelectorAll("#panel-tabs button[data-tab]")) {
     c.push([`Panel: ${b.textContent}`, () => setPanelTab(b.dataset.tab)]);
+  }
+  // #254: the walkthrough's steps get palette twins like every other control.
+  // Blocked steps are listed with their reason rather than hidden — "why can't
+  // I do that yet" is the question the palette should be able to answer.
+  if (carveMode()) {
+    CARVE_STEPS.forEach((s, i) => {
+      const why = blockedReason(carveState, s.id);
+      c.push([
+        `Carve: ${i + 1}. ${s.label}${why ? ` — ${why}` : ""}`,
+        () => {
+          if (why) return showToast(why, false);
+          setPanelTab("carve");
+          carveActions.go(i);
+        },
+      ]);
+    });
   }
 
   // Lens/zoom switches (#56, #63) — replaces the old header zoom picker.

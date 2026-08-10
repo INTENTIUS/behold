@@ -347,6 +347,46 @@
       .dial-detail { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--muted);
         font: var(--t-caption)/1.6 var(--font-mono); }
 
+      /* The carve walkthrough (#254) — the panel's Carve tab. Six steps on the
+         same track the deploy dial uses, so "where am I in this" reads the same
+         way in both places; below it, the step's own panel. Every colour here is
+         a shared token, so all 552 palettes get it for free. */
+      #tab-carve { display: flex; flex-direction: column; gap: 10px; }
+      #tab-carve .dial-track { gap: 4px; }
+      .carve-step { padding: 3px 8px; font-size: var(--t-caption); }
+      .carve-step.done { color: var(--managed); border-color: color-mix(in srgb, var(--managed) 45%, var(--rule)); }
+      .carve-step.blocked { opacity: .55; }
+      .carve-body { display: flex; flex-direction: column; gap: 6px; }
+      /* Data — chant's output, a file, a command — is mono and boxed; prose
+         about it stays in the panel's own voice. */
+      .carve-pre { margin: 0; background: var(--well); border: 1px solid var(--line);
+        border-radius: var(--r-ctl); padding: 6px 8px; max-height: 240px; overflow: auto;
+        font: var(--t-caption)/1.5 var(--font-mono); color: var(--fg); white-space: pre-wrap;
+        overflow-wrap: anywhere; }
+      .carve-pre.carve-cmd { color: var(--muted); }
+      .carve-artifact { display: flex; flex-direction: column; gap: 3px; }
+      .carve-path { font: var(--t-caption)/1.5 var(--font-mono); overflow-wrap: anywhere; }
+      .carve-cut, .carve-honesty { margin: 2px 0; }
+      /* The one thing the walkthrough will not do for you, and the refusals it
+         hands back — same card, because they are the same kind of statement. */
+      .carve-refusal { border: 1px solid var(--degraded); border-left: 3px solid var(--degraded);
+        border-radius: var(--r-ctl); padding: 6px 8px; background: var(--well); }
+      .carve-refusal.carve-human { border-color: var(--pending); border-left-color: var(--pending); }
+      .carve-refusal-title { font-size: var(--t-body); margin-bottom: 2px; }
+      .carve-cmd-row { align-items: center; gap: 6px; }
+      .carve-cmd-text { font: var(--t-caption)/1.6 var(--font-mono); background: var(--well);
+        border: 1px solid var(--line); border-radius: var(--r-ctl); padding: 3px 6px;
+        overflow-wrap: anywhere; }
+      .carve-cmd-note, .carve-section { margin: 2px 0; }
+      .carve-endcard { border: 1px solid var(--managed); border-left: 3px solid var(--managed);
+        border-radius: var(--r-ctl); padding: 6px 8px; background: var(--well); }
+      .carve-endcard-title { font-size: var(--t-body); margin-bottom: 2px; }
+      .carve-caveat > summary { cursor: pointer; color: var(--muted);
+        font: var(--t-caption)/1.6 var(--font-mono); }
+      /* The still frame of the morph the follow-up animates: a carved card
+         wears the managed edge its new owner paints everything with. */
+      #graph [data-node-id].carved rect:first-of-type { stroke: var(--managed); stroke-width: 2; }
+
       #nowline { grid-column: 1 / 3; grid-row: 2; margin: 0; max-height: 160px; overflow: auto; display: none;
         background: var(--well); border-top: 1px solid var(--rule); padding: 8px 12px;
         font: var(--t-caption)/1.6 var(--font-mono); color: var(--fg); white-space: pre-wrap; }
