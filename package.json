@@ -25,7 +25,7 @@
     "dev": "tsx src/cli.ts",
     "demo": "npm --prefix example-writes install && tsx src/cli.ts serve example-writes --local --env prod",
     "demo:k8s": "bash example-k8s/scripts/local/local-up.sh; npm --prefix example-k8s install && tsx src/cli.ts serve example-k8s --local --env local; bash example-k8s/scripts/local/local-down.sh",
-    "smoke:ui": "node smoke/ui-smoke.mjs",
+    "smoke:ui": "tsx smoke/ui-smoke.mjs",
     "tsc": "tsc --noEmit",
     "test": "vitest run",
     "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --external:hono --external:@hono/node-server --external:@intentius/pinhole --outfile=dist/cli.js && chmod +x dist/cli.js",
@@ -33,10 +33,10 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@hono/node-server": "^1.13.0",
+    "@hono/node-server": "^2.0.5",
     "@intentius/chant": "^0.38.0",
     "@intentius/pinhole": "^0.3.1",
-    "hono": "^4.6.0"
+    "hono": "^4.12.34"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

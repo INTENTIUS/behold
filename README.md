@@ -314,6 +314,34 @@ render and the graph loads with no tier selected — the default for any project
 that doesn't opt in. There's no other tier config surface (not
 `chant.config.ts`, not an env var behold guesses the name of).
 
+### The hand-layout sidecar — `.behold/layout.json`
+
+dagre places your nodes; you can move them. Drag a card, resize a containment
+box, and the offsets are remembered per project + lens — in `localStorage`
+first, and (when the served project is writable) in a `.behold/layout.json`
+sidecar beside it, so a layout is shareable, reviewable in a diff, and honoured
+by `behold export`:
+
+```json
+{ "version": 1, "lenses": { "components": { "src/api#Component": { "dx": 40, "dy": -25 } } } }
+```
+
+This is the **only** file behold writes inside a served project. It stores
+deltas, never absolute positions — the graph stays chant's and your layout sits
+on top of it — and a delta whose node has left the estate is dropped silently.
+`POST /api/layout` refuses politely in preview mode, during a static-export
+capture, on a read-only directory, and above its size caps. `↺ layout` in the
+graph clears the current lens on both tiers.
+
+**Gitignore it.** `.behold.json` (above) is config and belongs in the repo;
+`.behold/` is per-user state — one person's arrangement of the picture — so add
+it to the served project's `.gitignore` unless you actually want to share and
+review a layout:
+
+```gitignore
+.behold/
+```
+
 ## Layout
 
 ```
@@ -338,6 +366,30 @@ speaks the overlay vocabulary managed/foreign/pending). The server lays the IR o
 and paints it with `layoutIr` + `renderSvg` (`src/render.ts`); the SPA inlines the
 SVG and wires click-inspect by `data-node-id` against the IR. pinhole's layout is
 dagre — pure JS, no native dependency.
+
+Where an official mark exists, a node paints it instead of a generic glyph — a
+Deployment gets the Kubernetes wheel-and-helm heptagon, a Kustomization the
+Flux mark, a `Helm::Release` the Helm wheel. The corpus is vendored under
+`web/icons/` (30 kubernetes/community SVGs, 3 cncf/artwork marks for
+Flux/Argo/Helm, licensing in `THIRD_PARTY.md`) and mapped kind by kind in
+`src/icon-packs.ts`; a kind with no official icon falls through to pinhole's
+keyword heuristic rather than a wrong picture.
+
+dagre's layout is a good first draft, not a final one: drag a card to move
+it, grab a containment box's corner to resize it, and both survive a reload.
+What persists is a delta — `{dx,dy}` for a card, `{dw,dh}` for a box, never
+an absolute position — keyed by `behold.layout.<project>.<lens>`
+(`web/layout-store.js`), so the graph stays chant's and the arrangement on
+top of it is yours. `↺ layout` sits beside `⤢ fit` and shows up only once
+something on the current lens is hand-placed.
+
+Type splits by purpose: mono (system stacks — ui-monospace, SF Mono,
+Cascadia, JetBrains, IBM Plex) carries node ids, ARNs, statuses and counts;
+sans carries labels only. Colour comes from 552 Ghostty terminal palettes run
+through an OKLCH-derived token pipeline (`src/theme.ts`), so a theme switch
+re-derives the whole chrome, not just the graph — and a node whose drift
+status just changed pulses once in the colour it became, off under
+`prefers-reduced-motion`.
 
 ## Local development
 

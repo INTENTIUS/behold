@@ -131,10 +131,25 @@ describe("GET /api/project — carve mode", () => {
   });
 });
 
-describe("carve mode probes nothing", () => {
+describe("carve mode probes nothing and writes nothing", () => {
   it("answers substrates and history empty rather than running Docker and git for a static file", async () => {
     const app = carveApp(FIXTURE);
     expect(await (await app.request("/api/substrates")).json()).toEqual({ substrates: [] });
     expect(await (await app.request("/api/history")).json()).toEqual({ commits: [] });
+  });
+
+  it("refuses the hand-layout sidecar (#228) — the report's directory is not a project to write into", async () => {
+    const app = carveApp(FIXTURE);
+    const read = (await (await app.request("/api/layout")).json()) as { writable: boolean; reason: string };
+    expect(read.writable).toBe(false);
+    expect(read.reason).toContain("isn't a project");
+
+    const write = await app.request("/api/layout", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ lens: "resources", deltas: { "aws_vpc.main": { dx: 10, dy: 10 } } }),
+    });
+    expect(write.status).toBe(403);
+    expect(((await write.json()) as { code: string }).code).toBe("read-only");
   });
 });

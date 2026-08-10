@@ -78,6 +78,12 @@ If your project's source branches on a build parameter — a deployment tier, sa
 
 This is behold's own config, deliberately separate from `chant.config.ts` so a viewer's concerns stay out of the compiler's.
 
+## Optional: a shared hand layout
+
+Drag a card or resize a containment box and behold remembers the offset — in your browser, and (if the project directory is writable) in a `.behold/layout.json` sidecar next to it, per lens. That sidecar is the one file behold writes inside your project, it stores offsets rather than positions so the graph underneath stays chant's, and `behold export` bakes it into the exported SVGs.
+
+Add `.behold/` to the project's `.gitignore`: unlike `.behold.json` above, which is config worth tracking, a layout is per-user state. Commit it only if you actually want everyone looking at the same arrangement.
+
 <Aside type="caution" title="If every tier renders the same graph">
 Your project's chant needs to resolve build parameters in `chant graph`, which landed in chant 0.38.0. A caret on a `0.x` pins the minor, so `^0.37.x` cannot reach it — bump to `^0.38.0`.
 </Aside>

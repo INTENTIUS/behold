@@ -125,6 +125,17 @@ describe("renderGraph — lexicon-native icons (#227)", () => {
     expect(renderGraph(iconIr).svg).toContain("cncf-helm-");
   });
 
+  // #246: the plate reaches the painted document, and it reaches it BEHIND the
+  // mark — a ground painted after its ink is not a ground. The exported SVG is
+  // where this matters most: no recolour pass runs on it, so the card under the
+  // mark is pinhole's own near-black `--pin-<status>Fill`.
+  it("paints the Helm mark on its own ground, before the ink", () => {
+    const svg = renderGraph(iconIr).svg;
+    const plate = svg.indexOf(`<rect x="0" y="0" width="500" height="500" rx="90" fill="#ffffff"/>`);
+    expect(plate).toBeGreaterThan(-1);
+    expect(svg.indexOf("cncf-helm-cls-1")).toBeGreaterThan(plate);
+  });
+
   it("leaves an unmapped lexicon to pinhole's own chain — no pack geometry, no crash", () => {
     const svg = renderGraph(iconIr).svg;
     expect(svg).toContain('data-node-id="vm"');
