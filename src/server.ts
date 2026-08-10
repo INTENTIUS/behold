@@ -55,7 +55,7 @@ import { addCompositeDepsCounted } from "./composite-deps.ts";
 import { notesFor, tierMismatchNote, namespaceMismatchNote, namespaceJoinNote, type Zoom } from "./zoom-notes.ts";
 import { resourcesByComponent, nonResourceEntities } from "./resources.ts";
 import { summarizePlan } from "./reconcile.ts";
-import { renderGraph, renderArchitecture, renderBanded } from "./render.ts";
+import { renderGraph, renderArchitecture, renderBanded, renderCarveEstate } from "./render.ts";
 import { readCarveReport, carveReportToIr, carveNote } from "./carve-lens.ts";
 import {
   carveWriteBlock,
@@ -437,14 +437,36 @@ function carveRoutes(app: Hono, reportPath: string, demo?: CarveDemo): void {
     return parsed.ok ? c.json(parsed.report) : c.json(parsed.refusal, 422);
   });
 
-  app.get("/api/graph", (c) => {
+  // The estate frame (#254): a demo copy carries a real chant project (`app/`,
+  // the pieces "carved last month"), so the graph opens on a chant box beside
+  // the Terraform box instead of the ranking alone. The app graph is one
+  // `chant graph` shell-out, cached for the server's lifetime — the demo copy's
+  // source doesn't change under a running walkthrough, and a reload shouldn't
+  // pay the shell-out again. Failure degrades to the single-view ranking: a
+  // bare `behold carve report.json` has no project at all and lands here too.
+  let appGraph: Promise<{ ir: GraphIR; label: string } | null> | undefined;
+  const appGraphOnce = () => {
+    if (!demo) return Promise.resolve(null);
+    appGraph ??= graphIr(demo.project)
+      .then((ir) => (ir.nodes.length ? { ir, label: relative(demo.root, demo.project).split(sep).join("/") } : null))
+      .catch(() => null);
+    return appGraph;
+  };
+
+  app.get("/api/graph", async (c) => {
     const parsed = load();
     if (!parsed.ok) return c.json(parsed.refusal, 422);
-    const ir = carveReportToIr(parsed.report);
+    const tfIr = carveReportToIr(parsed.report);
     // A ranking, not a topology — `renderBanded` stacks the bands and grid-wraps
     // each one, because dagre lays an edgeless graph out along a single row (see
     // its doc comment for the numbers).
-    const { svg } = renderBanded(ir);
+    const appSide = await appGraphOnce();
+    const { svg, ir } = appSide
+      ? renderCarveEstate(tfIr, appSide.ir, {
+          tfTitle: `${relative(demo!.root, demo!.from).split(sep).join("/")} — terraform`,
+          appTitle: `${appSide.label} — chant`,
+        })
+      : { ...renderBanded(tfIr), ir: tfIr };
     return c.json({
       ir,
       svg,
@@ -456,7 +478,7 @@ function carveRoutes(app: Hono, reportPath: string, demo?: CarveDemo): void {
         carve: true,
         // A demo whose own advisor run failed says so on the statusbar, not
         // only in the terminal the viewer isn't looking at.
-        note: carveNote(parsed.report, ir) + (demo?.degraded ? ` Degraded: ${demo.degraded}` : ""),
+        note: carveNote(parsed.report, tfIr) + (demo?.degraded ? ` Degraded: ${demo.degraded}` : ""),
       },
     });
   });
