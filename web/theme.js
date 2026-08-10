@@ -32,6 +32,18 @@ export function readableOn(bg) { return isDark(bg) ? "#ffffff" : "#000000"; }
 // --- OKLCH (perceptual hue rotation for category counts > palette slots) --
 const s2l = (c) => ((c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
 const l2s = (c) => { const v = c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055; return clamp(v, 0, 1) * 255; };
+// A real WCAG contrast ratio (#240) — sRGB→linear via s2l (the same EOTF step
+// hexToOklch already does below), unlike the quick luminance() above, which
+// skips gamma correction and is only good enough for a light/dark coin-flip
+// (isDark/readableOn). The floor --muted has to clear is a real accessibility
+// number, and luminance()'s shortcut proved too far off it on the exact
+// palette that opened this issue (Darkermatrix: quick metric said 3.03,
+// actual WCAG was 2.13) to be worth the savings.
+function relLuminance(hex) { const [r, g, b] = hexToRgb(hex).map(s2l); return 0.2126 * r + 0.7152 * g + 0.0722 * b; }
+export function contrast(a, b) {
+  const A = relLuminance(a), B = relLuminance(b);
+  return (Math.max(A, B) + 0.05) / (Math.min(A, B) + 0.05);
+}
 export function hexToOklch(hex) {
   const [R, G, B] = hexToRgb(hex).map(s2l);
   const l = Math.cbrt(0.4122214708 * R + 0.5363325363 * G + 0.0514459929 * B);
@@ -59,6 +71,46 @@ export function oklchToHex({ L, C, H }) {
 export function desaturate(hex, k) {
   const { L, C, H } = hexToOklch(hex);
   return oklchToHex({ L, C: C * k, H });
+}
+
+// #240: the same guaranteed-visible trick #229 used for --active (push OKLCH
+// L away from a reference until it clears a bar), generalised from a fixed L
+// delta to an actual contrast() floor — because unlike --active's "just don't
+// land on the same fill", secondary text has a real legibility target.
+//
+// Tries `dark`'s intended direction first (lighter text on a dark theme,
+// darker on a light one — the direction a person would actually pick, and
+// the one #229's --active push uses). luminance() isn't gamma-corrected, so
+// its contrast() ratio is asymmetric in a way real perceived contrast isn't
+// — it overstates how much headroom the near-black end has. Chasing that
+// headroom blindly is how a dark theme's muted text ends up pushed to
+// near-black-on-dark-panel, technically clearing the ratio while reading as
+// invisible. So the "chase more headroom" fallback only fires if the
+// intended direction's own gamut-limited walk can't reach the floor at all
+// (a saturated, nominally-dark bg like Hot Dog Stand's red, whose panel ends
+// up mid-bright once mixed toward fg) — never as a first choice. Chroma
+// eases toward 0 as L walks away so a saturated start doesn't clip out of
+// gamut and stall short of the target.
+function pushForContrast(hex, against, floor, dark) {
+  if (contrast(hex, against) >= floor) return hex;
+  const tok = hexToOklch(hex);
+  const walk = (dir) => {
+    let best = hex, bestRatio = contrast(hex, against);
+    for (let step = 1; step <= 100; step++) {
+      const t = step / 100;
+      const L = clamp(tok.L + dir * step * 0.01, 0, 1);
+      const out = oklchToHex({ L, C: tok.C * (1 - t * 0.6), H: tok.H });
+      const ratio = contrast(out, against);
+      if (ratio > bestRatio) { bestRatio = ratio; best = out; }
+      if (ratio >= floor) return { hex: out, ratio, reached: true };
+      if (L === 0 || L === 1) break;
+    }
+    return { hex: best, ratio: bestRatio, reached: false };
+  };
+  const primary = walk(dark ? 1 : -1);
+  if (primary.reached) return primary.hex;
+  const fallback = walk(dark ? -1 : 1);
+  return fallback.ratio > primary.ratio ? fallback.hex : primary.hex;
 }
 
 // --- behold's semantic tokens derived from a theme -----------------------
@@ -93,7 +145,11 @@ export function tokensFor(th) {
     panel,
     line: desaturate(fgMix(0.16), 0.75),
     fg: th.fg,
-    muted: desaturate(fgMix(0.5), 0.75),
+    // #240: secondary text needs an actual floor, not just "quieter than
+    // fg" — a handful of low-range palettes (Darkermatrix and friends) mix
+    // fg/panel close enough that the quieted 0.5 mix reads at ~1.25:1.
+    // Push its OKLCH L away from --panel's until it clears 3:1.
+    muted: pushForContrast(desaturate(fgMix(0.5), 0.75), panel, 3, th.dark),
     edge: fgMix(0.32),
     // The structural border — the panel shell, the pane edge, the footer rule.
     // Tinted by the palette's OWN bright-black slot instead of being one more
