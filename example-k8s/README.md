@@ -6,12 +6,26 @@ PodDisruptionBudget), deployed from the browser with the **▶ Deploy
 [k3d](https://k3d.io) cluster — no cloud account, no credentials.
 
 ```
-src/config.ts        static config — app name, pinned image tag
+src/config.ts         static config — app name, pinned image tag
 src/web.ts            WebApp composite → Deployment + Service + PodDisruptionBudget
 ops/k3d-apply.op.ts   ApplyOp "k3d-apply" — code → local k3d, server-side apply
-chant.config.ts       lexicons [k8s, temporal], k8s.profiles.local bound to k3d-behold-k3d-demo
+base/                 a plain Deployment + Service, core kinds only
+overlays/dev/         kustomize overlay over base/ — namePrefix "dev-" + a replica patch
+chant.config.ts       lexicons [k8s, temporal], k8s.profiles.local bound to k3d-behold-k3d-demo,
+                       k8s.kustomize.roots: ["overlays/dev"]
 scripts/local/        local-up.sh / local-down.sh — the k3d cluster's own lifecycle
 ```
+
+`overlays/dev` is a real kustomize build root (chant#1626, chant 0.44.3): chant
+renders it (`kustomize build`, `kubectl kustomize` fallback) at build time and
+joins the two rendered objects (`dev-echo` Deployment + Service) to the graph,
+each stamped with a `chant.intentius.io/kustomize-root: overlays/dev`
+annotation. behold's kustomize lens (behold#171/#217) reads that stamp and
+boxes them as `overlay dev` in the graph — the same lens a hand-rolled
+`kustomization.yaml` next to typed source triggers via its directory walk, but
+here from chant's own provenance rather than file location. Kept to core/apps
+kinds on purpose: chant#1628 still mistypes a Flux/Argo/cert-manager CR
+rendered through a kustomize root.
 
 ## Run it
 

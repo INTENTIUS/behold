@@ -109,6 +109,48 @@ describe("projectKustomizeLogical — the provenance annotation (behold#217)", (
   });
 });
 
+// behold#225: the example-k8s demo's own kustomize root (overlays/dev, a
+// namePrefix + replica patch over base/), shaped exactly as chant 0.44.3
+// stamps it (`chant graph src --format ir --detail 3` against the demo) —
+// node ids namespaced under the root dir, a bare (no leading slash, no
+// trailing slash) root value equal to the config's `k8s.kustomize.roots`
+// entry.
+describe("projectKustomizeLogical — the example-k8s demo's kustomize root (behold#225)", () => {
+  test("the demo's rendered Deployment + Service claim into the overlay dev box by annotation alone", () => {
+    const rendered = (id: string, kind: string) =>
+      ({
+        id,
+        kind,
+        lexicon: "k8s",
+        attrs: {
+          apiVersion: kind === "K8s::Apps::Deployment" ? "apps/v1" : "v1",
+          kind: kind === "K8s::Apps::Deployment" ? "Deployment" : "Service",
+          metadata: {
+            name: "dev-echo",
+            labels: { app: "echo" },
+            annotations: { "chant.intentius.io/kustomize-root": "overlays/dev" },
+          },
+        },
+      }) as never;
+
+    const ir = irOf([
+      rendered("overlays/dev/deploymentDevEcho", "K8s::Apps::Deployment"),
+      rendered("overlays/dev/serviceDevEcho", "K8s::Core::Service"),
+      k8s("deployment", "K8s::Apps::Deployment", "web.ts"), // the demo's other, unrelated WebApp node
+    ]);
+
+    // No sourceLoc-derived kustomization.yaml probe hits here (there is none
+    // for these ids) — the annotation alone must carry the claim, same as it
+    // does against the real demo.
+    const proj = projectKustomizeLogical(ir, "/proj/src", () => false);
+    expect(proj.byContainer[overlayBoxTitle("dev")]).toEqual([
+      "overlays/dev/deploymentDevEcho",
+      "overlays/dev/serviceDevEcho",
+    ]);
+    expect(proj.byContainer[overlayBoxTitle("dev")]).not.toContain("deployment");
+  });
+});
+
 describe("overlay boxes nest like release boxes (behold#171)", () => {
   test("an overlay whose members all sit in one namespace box moves inside it", () => {
     const byContainer = {
