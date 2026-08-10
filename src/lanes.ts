@@ -29,19 +29,26 @@ interface LaneFrame {
 // (initTheme() below sets the same --bg/--panel/… custom properties the SPA
 // uses, from the same persisted behold.theme); the hexes remain only as
 // fallbacks for the instant before the module script runs.
+// #229: those fallbacks are the DEFAULT theme's derivation (Catppuccin Mocha
+// through theme.js's tokensFor), not GitHub Primer, and the strip takes the
+// SPA's type/radius discipline — frame names and substrate labels are data, so
+// they're mono. This page is a standalone document, so the scale is spelled out
+// here rather than read from index.html's token block.
+const LANES_MONO = `ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Code", "JetBrains Mono", "IBM Plex Mono", Menlo, Consolas, monospace`;
 const LANES_CSS = `
-body { background: var(--bg, #0d1117); color: var(--fg, #e6edf3); padding-bottom: 150px; }
-#behold-lanes { position: fixed; left: 0; right: 0; bottom: 0; background: var(--bg, #0d1117);
-  border-top: 1px solid var(--line, #30363d); padding: 8px 12px 10px; font: 12px ui-sans-serif, system-ui, sans-serif; color: var(--muted, #8b949e); }
+body { background: var(--bg, #1e1e2e); color: var(--fg, #cdd6f4); padding-bottom: 150px; }
+#behold-lanes { position: fixed; left: 0; right: 0; bottom: 0; background: var(--bg, #1e1e2e);
+  border-top: 1px solid var(--line, #3b3c4a); padding: 8px 12px 10px; font: 11px/1.5 ${LANES_MONO}; color: var(--muted, #777a8c); }
 #behold-lanes .hd { display: flex; gap: 14px; align-items: baseline; margin-bottom: 4px; }
-#behold-lanes .hd .rt { color: var(--foreign, #d29922); }
-#behold-lanes .hd a { color: var(--pending, #58a6ff); text-decoration: none; margin-left: auto; }
+#behold-lanes .hd .rt { color: var(--foreign, #f9e2af); }
+#behold-lanes .hd a { color: var(--pending, #89b4fa); text-decoration: none; margin-left: auto; }
 #behold-lanes canvas { display: block; width: 100%; cursor: pointer; }
 #behold-diff { position: fixed; right: 12px; bottom: 156px; width: 260px; max-height: 40vh; overflow: auto;
-  background: var(--panel, #161b22); border: 1px solid var(--line, #30363d); border-radius: 6px; padding: 10px 12px; font: 12px ui-sans-serif, system-ui, sans-serif;
-  color: var(--fg, #e6edf3); display: none; }
-#behold-diff h4 { margin: 0 0 6px; font-size: 12px; color: var(--muted, #8b949e); }
-#behold-diff .a { color: var(--managed, #3fb950); } #behold-diff .r { color: var(--degraded, #f85149); } #behold-diff .c { color: var(--foreign, #d29922); }`;
+  background: var(--panel, #2e2f40); border: 1px solid var(--rule, #4e4f64); border-radius: 3px; padding: 10px 12px; font: 11px/1.5 ${LANES_MONO};
+  color: var(--fg, #cdd6f4); display: none; }
+#behold-diff h4 { margin: 0 0 6px; font: 600 10.5px/1.4 ui-sans-serif, system-ui, sans-serif;
+  text-transform: uppercase; letter-spacing: .07em; color: var(--muted, #777a8c); }
+#behold-diff .a { color: var(--managed, #a6e3a1); } #behold-diff .r { color: var(--degraded, #f38ba8); } #behold-diff .c { color: var(--foreign, #f9e2af); }`;
 
 /** #198: boot the SPA's own theme engine on this server-rendered page — the
  * persisted behold.theme applies as CSS custom properties on :root (inline
@@ -73,7 +80,7 @@ const LF = ${safeJson(frames)};
     const inNow = now !== undefined, inPrev = prev !== undefined;
     return inNow !== inPrev || (inNow && inPrev && now !== prev);
   }
-  const color = s => s === "good" ? css("--managed", "#3fb950") : s === "warn" ? css("--foreign", "#d29922") : s === "accent" ? css("--pending", "#58a6ff") : css("--edge", "#6e7681");
+  const color = s => s === "good" ? css("--managed", "#a6e3a1") : s === "warn" ? css("--foreign", "#f9e2af") : s === "accent" ? css("--pending", "#89b4fa") : css("--edge", "#56596d");
 
   function draw() {
     const dpr = window.devicePixelRatio || 1;
@@ -82,22 +89,22 @@ const LF = ${safeJson(frames)};
     c.clearRect(0, 0, host.clientWidth, H); c.font = "12px ui-sans-serif, system-ui, sans-serif";
     subs.forEach((s, r) => {
       const y = padT + r * rowH + rowH / 2;
-      c.fillStyle = offset[s] ? css("--foreign", "#d29922") : css("--muted", "#8b949e"); c.textAlign = "left"; c.fillText(s, 8, y + 4);
-      c.strokeStyle = css("--line", "#21262d"); c.beginPath(); c.moveTo(padL, y); c.lineTo(host.clientWidth - padR, y); c.stroke();
+      c.fillStyle = offset[s] ? css("--foreign", "#f9e2af") : css("--muted", "#777a8c"); c.textAlign = "left"; c.fillText(s, 8, y + 4);
+      c.strokeStyle = css("--line", "#3b3c4a"); c.beginPath(); c.moveTo(padL, y); c.lineTo(host.clientWidth - padR, y); c.stroke();
       LF.forEach((f, i) => {
         if (!f.byLexicon[s]) return;
         // dot per substrate; brighter when a node in this substrate changed at i
         const changed = Object.keys(f.status).some(id => f.lexicon[id] === s && changedAt(id, i));
         const hi = focus && f.lexicon[focus] === s && changedAt(focus, i);
-        c.fillStyle = hi ? css("--fg", "#f0f6fc") : changed ? color(mode(f, s)) : css("--line", "#30363d");
+        c.fillStyle = hi ? css("--fg", "#cdd6f4") : changed ? color(mode(f, s)) : css("--line", "#3b3c4a");
         c.beginPath(); c.arc(xOf(i, s), y, i === cur ? 5 : hi ? 4.5 : 3.5, 0, 7); c.fill();
       });
     });
-    const px = baseX(cur); c.strokeStyle = css("--pending", "#58a6ff"); c.lineWidth = 1.5;
+    const px = baseX(cur); c.strokeStyle = css("--pending", "#89b4fa"); c.lineWidth = 1.5;
     c.beginPath(); c.moveTo(px, padT - 2); c.lineTo(px, padT + subs.length * rowH); c.stroke();
-    if (pair != null) { const qx = baseX(pair); c.strokeStyle = css("--foreign", "#d29922"); c.setLineDash([3,3]);
+    if (pair != null) { const qx = baseX(pair); c.strokeStyle = css("--foreign", "#f9e2af"); c.setLineDash([3,3]);
       c.beginPath(); c.moveTo(qx, padT - 2); c.lineTo(qx, padT + subs.length * rowH); c.stroke(); c.setLineDash([]); }
-    c.fillStyle = css("--fg", "#e6edf3"); c.textAlign = "center"; c.fillText(LF[cur].name, px, padT + subs.length * rowH + 16);
+    c.fillStyle = css("--fg", "#cdd6f4"); c.textAlign = "center"; c.fillText(LF[cur].name, px, padT + subs.length * rowH + 16);
     document.getElementById("behold-lanes-meta").textContent =
       LF.length + " frames · frame " + (cur + 1) + "/" + LF.length + (focus ? " · focus " + focus : "");
     document.getElementById("behold-lanes-rt").style.display = anyOffset() ? "inline" : "none";
