@@ -13,7 +13,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startStub } from "./stub.mjs";
 import { THEMES, DEFAULT_THEME } from "../web/themes.js";
-import { tokensFor, pinTokensFor, colorForCategory, setTheme, hexToRgb, hexToOklch } from "../web/theme.js";
+import { tokensFor, pinTokensFor, colorForCategory, setTheme, hexToOklch, contrast } from "../web/theme.js";
 import { helmIconFor, PLATE_FILL } from "../src/icon-packs.ts";
 
 const PORT = 4689;
@@ -32,17 +32,10 @@ const check = (name, ok) => {
 // asserting are (a) the pre-paint fallback IS the default theme's derivation,
 // and (b) every one of the 552 palettes still derives chrome you can see.
 const CHROME_TOKENS = ["rule", "focus", "active", "well", "shadow"];
-const relLum = (hex) => {
-  const [r, g, b] = hexToRgb(hex).map((v) => {
-    v /= 255;
-    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-};
-const contrast = (a, b) => {
-  const A = relLum(a), B = relLum(b);
-  return (Math.max(A, B) + 0.05) / (Math.min(A, B) + 0.05);
-};
+// contrast() is theme.js's own WCAG ratio (#240) — imported rather than
+// reimplemented here, so the acceptance harness checks the exact metric
+// tokensFor()'s --muted floor is derived against, not a second approximation
+// of it.
 const dL = (a, b) => Math.abs(hexToOklch(a).L - hexToOklch(b).L);
 
 {
@@ -65,6 +58,9 @@ const dL = (a, b) => Math.abs(hexToOklch(a).L - hexToOklch(b).L);
     "--focus reads against the panel": (t) => dL(t.focus, t.panel) >= 0.05,
     "--well is distinguishable from the background": (t, th) => dL(t.well, th.bg) >= 0.02,
     "--fg stays legible on the --active fill": (t) => contrast(t.fg, t.active) >= contrast(t.fg, t.panel) * 0.6,
+    // #240: secondary text (--muted on --panel) clears a real 3:1 WCAG floor
+    // — surfaced by this exact sweep as Darkermatrix landing at 1.25:1.
+    "--muted clears the 3:1 floor on --panel": (t) => contrast(t.muted, t.panel) >= 3,
   };
   const n = Object.keys(THEMES).length;
   for (const [name, rule] of Object.entries(RULES)) {
