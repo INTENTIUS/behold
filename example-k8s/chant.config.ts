@@ -17,5 +17,15 @@ export default {
     profiles: {
       local: { context: "k3d-behold-k3d-demo" },
     },
+    // chant#1626 (chant 0.44.3, behold#225): a real kustomize build root —
+    // `overlays/dev` layers a namePrefix and a replica patch onto `base/`.
+    // Rendered at build time and stamped with the
+    // `chant.intentius.io/kustomize-root` provenance annotation, which
+    // behold's kustomize lens (src/logical-kustomize.ts, #217) prefers over
+    // its directory-walk heuristic — the `overlay dev` box in the demo graph
+    // comes from this, not source-file location. Core/apps kinds only inside
+    // the root: chant#1628 still mistypes Flux/Argo/cert-manager CRs
+    // rendered through a kustomize build.
+    kustomize: { roots: ["overlays/dev"] },
   } satisfies K8sChantConfig,
 } satisfies ChantConfig;
