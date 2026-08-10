@@ -140,7 +140,18 @@ export function edgeLine(e) {
       ? `${e.survivor} reads ${attrs || "this resource"}`
       : `this resource reads ${attrs || "something"} from ${e.survivor}`;
   const where = via ? ` (in its ${via})` : "";
-  const fix = e.bridge === "deferred-input" ? "becomes a deploy-time input" : "becomes a Terraform data source";
+  // Three bridge shapes chant hands back, not two: a survivor's own reference
+  // becomes a data source (`tf-data-source`) or a deploy-time input
+  // (`deferred-input`); an `output` block reading the carved resource becomes
+  // a one-line rewrite instead (`tf-output-rewrite`, chant#1638) — it is
+  // neither of the other two, and defaulting it to "data source" would name
+  // the wrong fix for a line that was never a data block to begin with.
+  const fix =
+    e.bridge === "deferred-input"
+      ? "becomes a deploy-time input"
+      : e.bridge === "tf-output-rewrite"
+        ? "becomes a one-line output rewrite"
+        : "becomes a Terraform data source";
   const when = e.required === "at-apply" ? ", deferred until apply" : e.required === "immediately" ? ", needed immediately" : "";
   return `${dir} — ${head}${where} → ${fix}${when}`;
 }

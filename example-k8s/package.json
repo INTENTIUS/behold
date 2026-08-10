@@ -7,8 +7,8 @@
     "build": "./node_modules/.bin/chant build src --lexicon k8s -o app.yaml"
   },
   "dependencies": {
-    "@intentius/chant": "^0.44.6",
-    "@intentius/chant-lexicon-k8s": "^0.44.6",
-    "@intentius/chant-lexicon-temporal": "^0.44.6"
+    "@intentius/chant": "^0.44.7",
+    "@intentius/chant-lexicon-k8s": "^0.44.7",
+    "@intentius/chant-lexicon-temporal": "^0.44.7"
   }
 }

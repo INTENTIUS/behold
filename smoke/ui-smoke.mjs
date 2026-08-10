@@ -732,9 +732,9 @@ try {
     await carvePage.waitForTimeout(200);
     check("a graph click IS the Pick step", (await bodyStep()) === "pick");
     const pick = await carveText();
-    check("Pick shows the score arithmetic", pick.includes("100 - 12x1 inbound = 88"));
+    check("Pick shows the score arithmetic", pick.includes("100 - 12x1 inbound - 4x1 output = 84"));
     // Read off the elements, not off the panel's innerText: the arithmetic line
-    // ("100 - 12x1 inbound = 88") contains "1 inbound" too, so a substring test
+    // ("100 - 12x1 inbound - 4x1 output = 84") contains "1 inbound" too, so a substring test
     // over the whole tab would pass whether or not the cut summary rendered at
     // all — which is exactly the confusion that hid a failure here once.
     //

@@ -149,6 +149,21 @@ describe("edgeLine", () => {
     expect(edgeLine({ direction: "outbound", survivor: "vpc", carved: "sg", attrs: ["id"] })).toContain("from vpc");
     expect(edgeLine({ direction: "outbound", survivor: "vpc", carved: "sg", bridge: "deferred-input" })).toContain("deploy-time input");
   });
+
+  it("names an output block's fix as a rewrite, not a data source (chant#1638)", () => {
+    const line = edgeLine({
+      direction: "inbound",
+      survivor: "output.assets_bucket",
+      carved: "aws_s3_bucket.assets",
+      attrs: ["bucket"],
+      via: ["value"],
+      bridge: "tf-output-rewrite",
+      required: "immediately",
+    });
+    expect(line).toContain("output.assets_bucket reads bucket");
+    expect(line).toContain("output rewrite");
+    expect(line).not.toContain("data source");
+  });
 });
 
 describe("pickFacts / carveable", () => {

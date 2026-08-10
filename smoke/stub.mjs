@@ -232,7 +232,7 @@ const CARVE_DEMO = {
   outLabel: "app/carveout",
   fromLabel: "legacy-tf",
   runnable: true,
-  buildCaveat: "The gate shown is `chant lint`, not `chant build` (chant#1637).",
+  buildCaveat: "The gate shown is `chant lint`, not `chant build` — `build` fails only WAW042 now, real drift the Terraform never declared (chant#1637).",
 };
 
 /** What POST /api/carve/emit answers — src/carve-actions.ts's CarveEmitResult. */
@@ -241,7 +241,7 @@ export const CARVE_EMIT = {
   select: "aws_s3_bucket.assets",
   command:
     "chant carve emit --from legacy-tf --state legacy-tf/terraform.tfstate --select aws_s3_bucket.assets --output app/carveout",
-  output: "Carved aws_s3_bucket.assets (peelability 88) — observe position, reversible.\n  Emitted: app/carveout/src/assets.ts",
+  output: "Carved aws_s3_bucket.assets (peelability 84) — observe position, reversible.\n  Emitted: app/carveout/src/assets.ts",
   artifacts: [
     {
       path: "app/carveout/src/assets.ts",

@@ -317,10 +317,11 @@ stepper on the panel's **Carve** tab:
 6. **Done** — the card is marked chant-owned at the observe position;
    `terraform import` reverses all of it.
 
-The Emit step reports `chant lint`, not `chant build`: chant#1637 means `build`
-fails on the emitted bucket even though the advisor scored it 88, and the panel
-links the reason. `example-carve/README.md` has the estate's full story, the
-band table, and the offline/`--live` split.
+The Emit step reports `chant lint`, not `chant build`: `build` fails on the
+emitted bucket (scored 84 by the advisor) on one rule — WAW042, a TLS-deny
+bucket policy the source Terraform never declared — and the panel links the
+reason. `example-carve/README.md` has the estate's full story, the band table,
+and the offline/`--live` split.
 
 behold writes only into the demo copy it made — `app/carveout/`, and nothing
 else. Your Terraform is never edited; see AGENTS.md, "Invariant".
