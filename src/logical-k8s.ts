@@ -34,7 +34,8 @@
  *
  * A namespace the estate declares but puts nothing in still gets a box: a
  * declared namespace is a fact about the estate, the same reasoning the GCP lens
- * applies to locations.
+ * applies to locations. An Argo Application's `spec.destination.namespace` is
+ * named the same way (#222) — see `destinationNamespace`.
  *
  * The cluster is usually not a declared resource — but on a mixed estate it
  * can be: a managed EKS/AKS/GKE control plane declared in the cloud half. When
@@ -83,7 +84,28 @@ function metaStr(node: IRNode, key: "name" | "namespace"): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 
-/** Every namespace the estate names — declared as one, or referenced by an object in it. */
+/**
+ * The namespace an Argo Application *deploys into* (#222). An Application lives
+ * in `argocd` and names a different namespace in `spec.destination.namespace` —
+ * one the estate is committed to, since Argo will own objects there. That makes
+ * it a namespace the estate names, so it gets a box like any other.
+ *
+ * This is the containment half of the destination join, and the whole of it:
+ * `k8s-edges.ts` joins card to card, and a namespace box is a container key
+ * rather than a node, so there is nothing for an edge to point at. Reading the
+ * Application's own card inside `argocd` next to the box it fills is what the
+ * picture can honestly say.
+ */
+function destinationNamespace(n: IRNode): string | undefined {
+  if (n.kind !== "K8s::Argo::Application") return undefined;
+  const spec = n.attrs?.spec as Record<string, unknown> | undefined;
+  const dest = spec?.destination as Record<string, unknown> | undefined;
+  const ns = dest?.namespace;
+  return typeof ns === "string" && ns.length > 0 ? ns : undefined;
+}
+
+/** Every namespace the estate names — declared as one, referenced by an object
+ * in it, or named as an Argo Application's deploy destination. */
 export function declaredNamespaces(nodes: readonly IRNode[]): Set<string> {
   const out = new Set<string>();
   for (const n of nodes) {
@@ -94,6 +116,8 @@ export function declaredNamespaces(nodes: readonly IRNode[]): Set<string> {
     }
     const ns = metaStr(n, "namespace");
     if (ns) out.add(ns);
+    const dest = destinationNamespace(n);
+    if (dest) out.add(dest);
   }
   return out;
 }

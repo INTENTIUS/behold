@@ -25,9 +25,27 @@ const kmvIr = {
   groups: {},
 } as unknown as GraphIR;
 
+/** An Argo Application: lives in `argocd`, deploys into `web`. */
+const argoApp = (id: string, destination?: string) =>
+  ({
+    id,
+    kind: "K8s::Argo::Application",
+    lexicon: "k8s",
+    attrs: {
+      metadata: { name: id, namespace: "argocd" },
+      spec: { project: "platform", ...(destination ? { destination: { namespace: destination } } : {}) },
+    },
+  }) as never;
+
 describe("declaredNamespaces", () => {
   it("finds a namespace from its own object and from anything living in it", () => {
     expect([...declaredNamespaces(kmvIr.nodes)].sort()).toEqual(["kube-microvm", "microvm-demo"]);
+  });
+
+  it("counts an Argo Application's deploy destination as a namespace the estate names (#222)", () => {
+    expect([...declaredNamespaces([argoApp("web", "web")])].sort()).toEqual(["argocd", "web"]);
+    // No destination declared, nothing invented.
+    expect([...declaredNamespaces([argoApp("web")])]).toEqual(["argocd"]);
   });
 });
 
@@ -65,6 +83,15 @@ describe("projectK8sLogical", () => {
     const { byContainer } = projectK8sLogical(kmvIr, "dev");
     expect(byContainer["cluster dev"]).toContain("namespace kube-microvm");
     expect(byContainer["namespace kube-microvm"]).toBeUndefined();
+  });
+
+  it("draws the namespace box an Argo Application deploys into (#222)", () => {
+    const ir = { nodes: [argoApp("web", "web")], edges: [], groups: {} } as unknown as GraphIR;
+    const { byContainer } = projectK8sLogical(ir, "dev");
+    expect(byContainer["cluster dev"]).toEqual(["namespace argocd", "namespace web"]);
+    // The Application itself is a card in argocd, where it actually lives.
+    expect(byContainer["namespace argocd"]).toEqual(["web"]);
+    expect(byContainer["namespace web"]).toBeUndefined();
   });
 
   it("drops support objects", () => {
