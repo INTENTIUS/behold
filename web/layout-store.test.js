@@ -4,7 +4,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   applicable,
+  clampDelta,
   clearLayout,
+  CLAMP_PAD,
   debounce,
   fetchServerLayout,
   isEmpty,
@@ -236,6 +238,55 @@ describe("postServerLayout", () => {
         throw new Error("offline");
       }, "components", {}),
     ).toBe(false);
+  });
+});
+
+describe("clampDelta — a card stays inside the box drawn around it (#267)", () => {
+  // The smoke stub's own geometry: a 150×64 card at (40,80) in a 580×220 box
+  // at (20,40). Same numbers as smoke/stub.mjs, so a failure here and a failure
+  // there are the same failure.
+  const card = { x: 40, y: 80, w: 150, h: 64 };
+  const box = { x: 20, y: 40, w: 580, h: 220 };
+
+  it("leaves a delta that keeps the card inside alone", () => {
+    expect(clampDelta({ dx: 50, dy: 30 }, card, box)).toEqual({ dx: 50, dy: 30 });
+  });
+
+  it("stops at the wall minus the padding, on every side", () => {
+    expect(clampDelta({ dx: -900, dy: -900 }, card, box)).toEqual({ dx: 20 + CLAMP_PAD - 40, dy: 40 + CLAMP_PAD - 80 });
+    expect(clampDelta({ dx: 900, dy: 900 }, card, box)).toEqual({ dx: 600 - CLAMP_PAD - 190, dy: 260 - CLAMP_PAD - 144 });
+  });
+
+  it("clamps one axis without touching the other", () => {
+    expect(clampDelta({ dx: 900, dy: 10 }, card, box)).toEqual({ dx: 402, dy: 10 });
+  });
+
+  it("carries {dw,dh} through — a clamp is about position", () => {
+    expect(clampDelta({ dx: 900, dy: 0, dw: 5, dh: 6 }, card, box)).toEqual({ dx: 402, dy: 0, dw: 5, dh: 6 });
+  });
+
+  it("centres the card when the container has no room for it at all", () => {
+    const tiny = { x: 100, y: 100, w: 50, h: 20 };
+    const got = clampDelta({ dx: 900, dy: -900 }, card, tiny);
+    expect(got.dx + card.x + card.w / 2).toBeCloseTo(tiny.x + tiny.w / 2);
+    expect(got.dy + card.y + card.h / 2).toBeCloseTo(tiny.y + tiny.h / 2);
+  });
+
+  it("fails OPEN on missing geometry — no measurement means no clamp", () => {
+    expect(clampDelta({ dx: 900, dy: 900 }, null, box)).toEqual({ dx: 900, dy: 900 });
+    expect(clampDelta({ dx: 900, dy: 900 }, card, null)).toEqual({ dx: 900, dy: 900 });
+    expect(clampDelta({ dx: 900, dy: 900 }, card, { x: 0, y: 0, w: 0, h: 0 })).toEqual({ dx: 900, dy: 900 });
+  });
+
+  it("a growing box loosens the clamp; a shrinking one tightens it", () => {
+    const grown = { ...box, w: box.w + 100 };
+    expect(clampDelta({ dx: 900, dy: 0 }, card, grown).dx).toBe(clampDelta({ dx: 900, dy: 0 }, card, box).dx + 100);
+  });
+
+  it("normalizes away to nothing when the clamp lands on zero", () => {
+    // setDelta is what the drag actually calls; a clamped-to-origin delta must
+    // prune like any other no-op, not persist as `{dx: 0, dy: 0}`.
+    expect(setDelta({}, "api", clampDelta({ dx: 0, dy: 0 }, card, box))).toEqual({});
   });
 });
 
