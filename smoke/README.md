@@ -11,6 +11,10 @@ palette, a Ghostty theme flip.
 npm run smoke:ui
 ```
 
+It runs under `tsx`, not bare `node` (#246). The Helm-mark checks are about the
+exact artwork the server registers with pinhole, where a hand-cut stand-in would
+prove nothing, so the stub imports `src/icon-packs.ts` and paints the real glyph.
+
 No chant, no Docker, no estate. Failures exit 1 and name the check;
 screenshots land in `smoke/shots/` (gitignored) for eyeballing.
 

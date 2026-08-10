@@ -13,7 +13,8 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startStub } from "./stub.mjs";
 import { THEMES, DEFAULT_THEME } from "../web/themes.js";
-import { tokensFor, hexToRgb, hexToOklch } from "../web/theme.js";
+import { tokensFor, pinTokensFor, colorForCategory, setTheme, hexToRgb, hexToOklch } from "../web/theme.js";
+import { helmIconFor, PLATE_FILL } from "../src/icon-packs.ts";
 
 const PORT = 4689;
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -71,6 +72,54 @@ const dL = (a, b) => Math.abs(hexToOklch(a).L - hexToOklch(b).L);
     check(`${n} themes: ${name}`, bad.length === 0);
     if (bad.length) console.error("  offenders:", bad.slice(0, 8).join(", "), bad.length > 8 ? `… (${bad.length})` : "");
   }
+}
+
+// ---- #246: the Helm mark's ground, swept the same way ---------------------
+// The mark is navy line art on transparent, so whatever is under it in the card
+// is what it reads against — and there are two such grounds, neither of which
+// the pack can know. In an exported SVG or a static snapshot it is pinhole's
+// own `--pin-<status>Fill`; in the SPA `recolorNodesByCategory` has already
+// replaced that with a per-kind hue out of the active palette. Sweep both, in
+// both polarities, and the answer is the same shape as #229's: the fix cannot
+// be conditional on anything, because the failure is not conditional either.
+const HELM_INK = "#0f1689";
+{
+  const glyph = helmIconFor("Helm::Release");
+  const inks = [...new Set([...glyph.body.matchAll(/#[0-9a-f]{6}\b/gi)].map((m) => m[0].toLowerCase()))].filter((c) => c !== PLATE_FILL);
+  check("the Helm mark's only ink is the navy this sweep measures", inks.length === 1 && inks[0] === HELM_INK);
+
+  const STATUS_FILLS = ["managedFill", "foreignFill", "pendingFill", "neutralFill", "goodFill", "warnFill", "badFill", "accentFill"];
+  const grounds = [];
+  for (const th of Object.values(THEMES)) {
+    setTheme(th, { persist: false });
+    const pin = pinTokensFor(th);
+    for (const kind of ["Helm::Release", "Helm::Chart"]) grounds.push({ dark: th.dark, fill: colorForCategory(kind), where: "spa" });
+    for (const k of STATUS_FILLS) if (pin[k]) grounds.push({ dark: th.dark, fill: pin[k], where: "export" });
+  }
+  const failing = (xs) => xs.filter((g) => contrast(HELM_INK, g.fill) < 3);
+  const n = Object.keys(THEMES).length;
+
+  // Bare, the mark fails on real grounds in BOTH polarities. This is the check
+  // that rules out "swap in cncf/artwork's icon/white on dark themes": a
+  // treatment keyed on the theme's polarity cannot fix a failure that happens
+  // in both, and the white variant would newly fail every ground the navy
+  // currently clears.
+  const darkFails = failing(grounds.filter((g) => g.dark));
+  const lightFails = failing(grounds.filter((g) => !g.dark));
+  check(`${n} themes: the bare Helm navy falls under 3:1 on dark grounds`, darkFails.length > 0);
+  check(`${n} themes: …and on light ones too, so polarity is the wrong axis`, lightFails.length > 0);
+  check(`${n} themes: the bare Helm navy also fails on SPA category fills, not just exports`, failing(grounds.filter((g) => g.where === "spa")).length > 0);
+  console.log(
+    `    bare mark under 3:1 on ${failing(grounds).length}/${grounds.length} grounds ` +
+      `(dark ${darkFails.length}, light ${lightFails.length}); plated: ${contrast(HELM_INK, PLATE_FILL).toFixed(2)}:1 on all of them`,
+  );
+
+  // Plated, the ground is the plate — one number, every theme, every status,
+  // every category hue, and every consumer that never runs the recolour pass.
+  check("the plate is painted before the ink, so it is the ground", new RegExp(`^<rect [^>]*fill="${PLATE_FILL}"/>`).test(glyph.body));
+  check("the Helm ink clears 7:1 on the plate", contrast(HELM_INK, PLATE_FILL) >= 7);
+  check("the plate declares no transparency, so no ground reaches the ink", !/opacity/.test(glyph.body.slice(0, glyph.body.indexOf("/>") + 2)));
+  setTheme(THEMES[DEFAULT_THEME], { persist: false });
 }
 
 async function launch() {
@@ -218,6 +267,56 @@ try {
   check("colored mark is in the DOM", markBefore.found);
   check("recolour pass ran (a --pin-text label got claimed)", markBefore.labelRole === "inkf");
   check("recolour leaves the colored mark unclassified", markBefore.badgeRole === null);
+
+  // #246: the Helm mark, measured in the live page rather than argued about.
+  // The stub paints the REAL glyph off the pack, at the 22px card slot, on the
+  // boot theme — which is dark. "Visible by construction" means two things and
+  // both are read off the rendered DOM: the plate geometrically covers the ink
+  // (so the ink's background IS the plate, whatever the card became), and the
+  // two colours clear 7:1 against each other.
+  const helmPaint = () =>
+    page.evaluate(() => {
+      const g = document.querySelector('#graph [data-node-id="worker"] [data-mark="helm"]');
+      if (!g) return { found: false };
+      const plate = g.querySelector("rect");
+      const ink = [...g.querySelectorAll("path")];
+      const card = document.querySelector('#graph [data-node-id="worker"] rect');
+      const box = (el) => { const b = el.getBBox(); return { x: b.x, y: b.y, w: b.width, h: b.height }; };
+      const paint = (el) => getComputedStyle(el).fill;
+      const inkBox = ink.map(box).reduce((a, b) => ({
+        x: Math.min(a.x, b.x), y: Math.min(a.y, b.y),
+        w: Math.max(a.x + a.w, b.x + b.w) - Math.min(a.x, b.x),
+        h: Math.max(a.y + a.h, b.y + b.h) - Math.min(a.y, b.y),
+      }));
+      return {
+        found: true,
+        plate: paint(plate),
+        plateOpacity: getComputedStyle(plate).fillOpacity,
+        ink: paint(ink[0]),
+        card: paint(card),
+        plateRole: plate.getAttribute("data-cat"),
+        plateBox: box(plate),
+        inkBox,
+      };
+    });
+  const rgbHex = (s) => {
+    const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(s);
+    return m ? "#" + m.slice(1).map((v) => Number(v).toString(16).padStart(2, "0")).join("") : s;
+  };
+  const helm = await helmPaint();
+  check("the real Helm mark reaches the card slot", helm.found);
+  check("the boot theme is dark, so this is the dark-mode reading", THEMES[DEFAULT_THEME].dark === true);
+  check("the plate is opaque", helm.plateOpacity === "1");
+  check(
+    "the plate covers the ink — the card is not the mark's background any more",
+    helm.plateBox.x <= helm.inkBox.x && helm.plateBox.y <= helm.inkBox.y &&
+      helm.plateBox.x + helm.plateBox.w >= helm.inkBox.x + helm.inkBox.w &&
+      helm.plateBox.y + helm.plateBox.h >= helm.inkBox.y + helm.inkBox.h,
+  );
+  const helmOnPlate = contrast(rgbHex(helm.ink), rgbHex(helm.plate));
+  check(`the Helm ink clears 7:1 on its own ground in dark mode (${helmOnPlate.toFixed(2)}:1)`, helmOnPlate >= 7);
+  check("the recolour pass leaves the plate alone, like every other authored paint", helm.plateRole === null);
+  console.log(`    ink ${rgbHex(helm.ink)} on plate ${rgbHex(helm.plate)} = ${helmOnPlate.toFixed(2)}:1; the card it sits on is ${rgbHex(helm.card)}`);
 
   // Theme flip: a light Ghostty theme re-derives the tokens without errors —
   // including #229's chrome tokens, which must all move with it.

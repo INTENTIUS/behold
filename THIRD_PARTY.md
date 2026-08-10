@@ -62,5 +62,14 @@ What is modified: the same light minification and per-file namespacing as the Ku
 described above. No geometry, no color and no proportion is altered, which is what the usage
 guidelines require.
 
+At render time the Helm mark alone is given a background, never the file on disk (#246). The
+`icon/color` variants are drawn for a light ground, and the Helm one is the only mark in the
+set that is line art on transparent rather than a filled badge — so at the 22px card slot it
+would read against whatever the graph card happens to be, which on a dark theme is near-black.
+[`src/icon-packs.ts`](./src/icon-packs.ts) therefore paints an opaque white square behind it
+and scales the mark uniformly to sit inside, with clear space on all four sides. The mark's
+geometry, its color and its proportions are untouched; it is placed on the ground it was
+drawn for.
+
 See [`CREDITS.md`](./CREDITS.md) for prior-art acknowledgements, including the theme engine this
 one is adopted from.

@@ -18,6 +18,8 @@
  * SVG behold paints. A kind with no official icon returns `undefined` on
  * purpose: pinhole's chain then falls through to the keyword heuristic, which is
  * a better answer than a wrong picture.
+ *
+ * One mark also carries a contrast plate (#246) — see {@link PLATE_FILL}.
  */
 
 import { readFileSync } from "node:fs";
@@ -60,6 +62,81 @@ function unprefix(body: string): string {
     .replace(/\sxlink:href\s*=/g, " href=");
 }
 
+/**
+ * The opaque ground painted under a plated mark (#246).
+ *
+ * White because that is the ground CNCF's `icon/color` variants are drawn for,
+ * and because it is the one ground that needs no knowledge of anything else in
+ * the picture: the Helm navy `#0f1689` clears 14:1 on it, always.
+ */
+export const PLATE_FILL = "#ffffff";
+
+/** Fraction of the slot given to the plate's margin on each side. */
+const PLATE_INSET = 0.1;
+
+/**
+ * Marks that carry no light ink of their own, and so get {@link PLATE_FILL}.
+ *
+ * A colored mark is painted as authored into a 22px slot on a card, and the
+ * card is its background. What that background will be is not knowable from
+ * here: on an exported SVG or a static snapshot it is pinhole's
+ * `--pin-<status>Fill`, near-black under a dark theme; in the SPA
+ * `recolorNodesByCategory` has already replaced it with a per-kind hue drawn
+ * out of the active palette — any of 552, in either polarity. Nor is the
+ * light/dark axis a proxy for it: the measured worst grounds for the Helm navy
+ * include light themes (Xcode Light hc lands the mark on `#141090`, 1.01:1),
+ * because a light theme's ANSI palette produces plenty of dark category fills.
+ *
+ * What separates the marks that survive an unknown ground from the one that
+ * doesn't is whether the artwork spans any luminance at all. Measured over the
+ * whole vendored corpus (`icon-packs.test.ts` sweeps it): every Kubernetes icon
+ * and the Flux and Argo marks carry a light ink as well as a dark one —
+ * relative luminance up to 1.0 for the 32 that use white, 0.64 for the Flux
+ * mark's pale blue — so something in them reads whichever way the ground goes.
+ * The Helm wheel is the single exception: one ink, `#0f1689`, luminance 0.025,
+ * nothing else. Its ink IS the whole mark, so the ground decides it entirely.
+ *
+ * Hence the rule, and hence its narrowness: give a ground only to the marks
+ * that have no light value to fall back on. See #246 for the screenshot
+ * comparison against the two alternatives (lift the card fill under a mark;
+ * swap in cncf/artwork's `icon/white` variant on dark themes — which the same
+ * measurement rules out, since it would vanish on exactly the pale category
+ * fills a dark theme's palette produces).
+ */
+const PLATED = new Set(["cncf/helm"]);
+
+/** Every mark {@link PLATED} covers — the tests' and the smoke's enumeration. */
+export function platedMarks(): string[] {
+  return [...PLATED];
+}
+
+/**
+ * Put an opaque square plate under a mark and inset the mark inside it.
+ *
+ * Both halves stay inside the glyph's own viewBox, so the painted footprint is
+ * exactly what it was — pinhole scales a glyph by `size / max(vbW, vbH)` and
+ * centres it, so a square of side `max(vbW, vbH)` centred on the viewBox is
+ * precisely the slot pinhole will paint into, no more. Nothing about the
+ * painter changes, and nothing needs to know the theme.
+ *
+ * The mark scales uniformly about the plate's centre, so its proportions are
+ * untouched (which is what the trademark guidelines ask for); the plate is the
+ * clear space around it.
+ */
+function plate(glyph: PackGlyph): PackGlyph {
+  const [minX, minY, w, h] = glyph.viewBox.trim().split(/[\s,]+/).map(Number);
+  const side = Math.max(w, h);
+  const cx = minX + w / 2;
+  const cy = minY + h / 2;
+  const k = 1 - 2 * PLATE_INSET;
+  const round = (n: number) => Math.round(n * 1e4) / 1e4;
+  const ground =
+    `<rect x="${round(cx - side / 2)}" y="${round(cy - side / 2)}" width="${round(side)}" height="${round(side)}"` +
+    ` rx="${round(side * 0.18)}" fill="${PLATE_FILL}"/>`;
+  const inset = `translate(${round(cx * (1 - k))} ${round(cy * (1 - k))}) scale(${k})`;
+  return { ...glyph, body: `${ground}<g transform="${inset}">${glyph.body}</g>` };
+}
+
 /** Read a vendored SVG and split it into its viewBox and its inner markup. */
 function loadIcon(rel: string): PackGlyph {
   const hit = cache.get(rel);
@@ -74,7 +151,8 @@ function loadIcon(rel: string): PackGlyph {
   const viewBox = /\bviewBox\s*=\s*(["'])(.*?)\1/.exec(raw.slice(open, openEnd))?.[2];
   if (!viewBox) throw new Error(`vendored icon has no viewBox: ${rel}.svg`);
 
-  const glyph: PackGlyph = { body: unprefix(raw.slice(openEnd + 1, close).trim()), colored: true, viewBox };
+  const bare: PackGlyph = { body: unprefix(raw.slice(openEnd + 1, close).trim()), colored: true, viewBox };
+  const glyph = PLATED.has(rel) ? plate(bare) : bare;
   cache.set(rel, glyph);
   return glyph;
 }
