@@ -17,7 +17,7 @@ apply creds.
 ## Getting a server
 
 ```sh
-npx @intentius/behold serve <chant-project-dir> --port 4600   # or: preview / demo
+npx @intentius/behold serve <chant-project-dir> --port 4600   # or: preview / demo / doctor
 ```
 
 `behold demo` needs no project at all — it copies the bundled example and serves
@@ -28,7 +28,14 @@ graph.
 ## The read loop
 
 0. **discover** — GET `/api` lists every route with a one-line description,
-   plus the server's version and a link back to this guide.
+   plus the server's version and a link back to this guide. Before the server
+   exists (or when a route answers with an error you'd have to guess at), run
+   `npx @intentius/behold doctor <dir> --json`: a read-only diagnosis of the
+   project's kind, its own chant install and version, declared lexicons, the
+   envs the picker will infer, the bound kube context versus the ambient one,
+   substrate readiness and committed Ops. Each check is
+   `{name, status: pass|warn|fail, detail, fix}`; the process exits non-zero
+   iff something failed. It starts no server and changes nothing.
 1. **observe** — GET `/api/graph` (JSON: `{ ir, svg, meta }`). The mixed graph
    of the project, every node with `id`/`kind`/`lexicon`/`attrs`/`sourceLoc`. Drift
    status, when present, is `attrs._status` (`good`=managed, `warn`=foreign,

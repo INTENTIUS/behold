@@ -21,6 +21,10 @@ import {
   classifyChantFailure,
   ChantCliError,
   graphIr,
+  meetsFloor,
+  chantFloor,
+  resolveChant,
+  resolveLexicons,
 } from "./chant.ts";
 import { overlayStatus } from "./overlay.ts";
 
@@ -683,5 +687,74 @@ describe("graphIr — the stack lens (#76) reaches the actual chant graph invoca
     await graphIr(dir);
     const args = vi.mocked(spawnMock).mock.calls[0]![1] as string[];
     expect(args).toEqual(["graph", join(dir, "stacks/api"), "--format", "ir"]);
+  });
+});
+
+// #236: the chant install behold will actually shell for a project, its
+// version against behold's own floor, and the project's lexicon installs —
+// what `behold doctor` reports and what the graph routes act on.
+describe("meetsFloor", () => {
+  it("compares dotted versions numerically, not lexically (0.9.0 beats 0.38.0 only if you compare strings)", () => {
+    expect(meetsFloor("0.44.2", "0.38.0")).toBe(true);
+    expect(meetsFloor("0.9.0", "0.38.0")).toBe(false);
+    expect(meetsFloor("0.38.0", "0.38.0")).toBe(true);
+    expect(meetsFloor("1.0.0", "0.38.0")).toBe(true);
+  });
+
+  it("treats a prerelease of the floor as meeting it", () => {
+    expect(meetsFloor("0.38.0-rc.1", "0.38.0")).toBe(true);
+  });
+
+  it("never claims a version is stale on missing or unparseable input — unknown is not old", () => {
+    expect(meetsFloor(undefined, "0.38.0")).toBe(true);
+    expect(meetsFloor("0.44.2", undefined)).toBe(true);
+    expect(meetsFloor("workspace:*", "0.38.0")).toBe(true);
+  });
+
+  it("reads behold's own declared floor as a bare version", () => {
+    expect(chantFloor()).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+});
+
+describe("resolveChant / resolveLexicons", () => {
+  let dirs: string[] = [];
+  afterEach(() => {
+    dirs.forEach((d) => rmSync(d, { recursive: true, force: true }));
+    dirs = [];
+  });
+  const make = (files: Record<string, string>): string => {
+    const dir = mkdtempSync(join(tmpdir(), "behold-resolve-"));
+    dirs.push(dir);
+    for (const [rel, content] of Object.entries(files)) {
+      mkdirSync(dirname(join(dir, rel)), { recursive: true });
+      writeFileSync(join(dir, rel), content);
+    }
+    return dir;
+  };
+  const pkg = (name: string, version: string): Record<string, string> => ({
+    [`node_modules/${name}/package.json`]: JSON.stringify({ name, version, main: "index.js", bin: { chant: "bin/chant" } }),
+    [`node_modules/${name}/index.js`]: "",
+  });
+
+  it("prefers the project's own chant, and reports its version", () => {
+    const dir = make(pkg("@intentius/chant", "0.44.2"));
+    const res = resolveChant(dir);
+    expect(res.source).toBe("project");
+    expect(res.version).toBe("0.44.2");
+    // endsWith, not equality: the resolver returns a realpath, and macOS's
+    // tmpdir is a symlink (/var/folders -> /private/var/folders).
+    expect(res.bin.endsWith(join("node_modules/@intentius/chant/bin/chant"))).toBe(true);
+  });
+
+  it("reports behold's own install as the fallback, not as the project's — a tmp dir has no chant of its own", () => {
+    expect(resolveChant(make({ "chant.config.ts": "export default {};" })).source).toBe("behold");
+  });
+
+  it("resolves each declared lexicon to its package, installed or not", () => {
+    const dir = make(pkg("@intentius/chant-lexicon-aws", "0.44.2"));
+    expect(resolveLexicons(dir, ["aws", "k8s"])).toEqual([
+      { lexicon: "aws", pkg: "@intentius/chant-lexicon-aws", installed: true, version: "0.44.2" },
+      { lexicon: "k8s", pkg: "@intentius/chant-lexicon-k8s", installed: false },
+    ]);
   });
 });

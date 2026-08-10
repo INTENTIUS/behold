@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { detectProject, loadBeholdConfig } from "./project.ts";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { detectProject, detectProjectShape, loadBeholdConfig } from "./project.ts";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -206,5 +206,61 @@ describe("loadBeholdConfig", () => {
   it("drops non-string entries from values, keeping the rest", () => {
     const dir = make(JSON.stringify({ tiers: { envVar: "LOOM_TIER", values: ["light", 7, "production"] } }));
     expect(loadBeholdConfig(dir)).toEqual({ tiers: { envVar: "LOOM_TIER", values: ["light", "production"] } });
+  });
+
+  it("reads estate members (#236) alongside tiers, and keeps only string entries", () => {
+    expect(loadBeholdConfig(make(JSON.stringify({ members: ["a", 7, "b"] })))).toEqual({ members: ["a", "b"] });
+    expect(loadBeholdConfig(make(JSON.stringify({ members: [] })))).toEqual({});
+  });
+});
+
+/** #236: the shape the doctor's first line and the CLI's startup warning both
+ * read. Sync, so these build their own fixture dirs. */
+describe("detectProjectShape", () => {
+  const dirs: string[] = [];
+  afterAll(() => dirs.forEach((d) => rmSync(d, { recursive: true, force: true })));
+  const make = (files: Record<string, string>): string => {
+    const dir = mkdtempSync(join(tmpdir(), "behold-shape-"));
+    dirs.push(dir);
+    for (const [rel, content] of Object.entries(files)) {
+      mkdirSync(dirname(join(dir, rel)), { recursive: true });
+      writeFileSync(join(dir, rel), content);
+    }
+    return dir;
+  };
+
+  it("is a project when a chant config is present, whatever else the directory holds", () => {
+    const dir = make({ "chant.config.ts": "export default {};", "package.json": JSON.stringify({ workspaces: ["a"] }) });
+    expect(detectProjectShape(dir)).toEqual({ kind: "project", configFile: join(dir, "chant.config.ts") });
+  });
+
+  it("reads the other config filenames chant accepts", () => {
+    expect(detectProjectShape(make({ "chant.config.mjs": "export default {};" })).kind).toBe("project");
+  });
+
+  it("is an estate when .behold.json names member projects", () => {
+    const dir = make({
+      ".behold.json": JSON.stringify({ members: ["a", "b"] }),
+      "a/chant.config.ts": "export default {};",
+      "b/chant.config.ts": "export default {};",
+    });
+    expect(detectProjectShape(dir)).toEqual({ kind: "estate", members: ["a", "b"], membersFrom: "behold-config" });
+  });
+
+  it("falls back to npm workspaces, keeping only the members that are chant projects", () => {
+    const dir = make({
+      "package.json": JSON.stringify({ workspaces: ["cp", "tooling"] }),
+      "cp/chant.config.ts": "export default {};",
+      "tooling/package.json": "{}",
+    });
+    expect(detectProjectShape(dir)).toEqual({ kind: "estate", members: ["cp"], membersFrom: "workspaces" });
+  });
+
+  it("is none for a directory that is neither — #193's dead end", () => {
+    expect(detectProjectShape(make({ "notes.txt": "" }))).toEqual({ kind: "none" });
+    // A workspaces root whose members are not chant projects is not an estate.
+    expect(detectProjectShape(make({ "package.json": JSON.stringify({ workspaces: ["x"] }), "x/package.json": "{}" }))).toEqual({
+      kind: "none",
+    });
   });
 });

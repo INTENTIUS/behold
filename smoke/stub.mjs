@@ -30,11 +30,16 @@ const nodeSvg = (id, x, tone, label, mark = "") => `
     <text x="16" y="50" font-size="10" fill="var(--pin-textMuted, #8b949e)">Component</text>${mark}
   </g>`;
 
+// #228: an edge shaped the way pinhole's `Canvas.edge` emits one — a bezier
+// between the two card centres plus a fat transparent hit-path, both in a
+// `g[data-edge-*]`. It is what the layout drag re-anchors when either end moves.
+const EDGE_D = "M 115 112 C 115 112, 305 112, 305 112";
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 240" width="620" height="240">
   <style>:root{--pin-bg0:#0d1117;--pin-text:#e6edf3}</style>
   <rect x="0" y="0" width="620" height="240" fill="var(--pin-bg0, #0d1117)"/>
   <rect x="20" y="40" width="580" height="140" rx="10" fill="none" stroke="var(--pin-edge, #444)"/>
   <text x="30" y="30" font-size="12" fill="var(--pin-textMuted, #999)">wave-1</text>
+  <g data-edge-from="api" data-edge-to="worker"><path class="pin-edge-line" d="${EDGE_D}" fill="none" stroke="var(--pin-edge, #444)" stroke-width="1.4"/><path d="${EDGE_D}" fill="none" stroke="transparent" stroke-width="14" pointer-events="stroke"/></g>
   ${nodeSvg("api", 40, "good", "api", coloredMark)}
   ${nodeSvg("worker", 230, "accent", "worker")}
   ${nodeSvg("frontend", 420, "neutral", "frontend")}
@@ -48,6 +53,12 @@ const ir = {
   ],
   edges: [{ from: "api", to: "worker" }],
 };
+
+// #229: the live overlay reports `worker` as deployed — same node ids, one
+// changed `_status`. That's exactly the input the render-diff pulse keys on, so
+// picking an env in the smoke drives the motion signature end to end.
+const irFor = (env) =>
+  env ? { ...ir, nodes: ir.nodes.map((n) => (n.id === "worker" ? { ...n, attrs: { ...n.attrs, _status: "good" } } : n)) } : ir;
 
 const JSON_ROUTES = {
   "/api/project": {
@@ -99,7 +110,7 @@ export function startStub(port) {
         target: "http://localhost:4566",
       };
       res.writeHead(200, { "content-type": "application/json" });
-      return res.end(JSON.stringify({ ir, svg, meta }));
+      return res.end(JSON.stringify({ ir: irFor(meta.env), svg, meta }));
     }
     if (JSON_ROUTES[path]) {
       res.writeHead(200, { "content-type": "application/json" });

@@ -13,6 +13,7 @@
     "example-writes",
     "example-k8s",
     "example-flux-estate",
+    "example-argo-estate",
     "demos.json",
     "AGENTS.md"
   ],

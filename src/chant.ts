@@ -11,8 +11,9 @@
  */
 import { spawn } from "node:child_process";
 import { targetEnvOverrides, type SubstrateTarget } from "./targets.ts";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import type { GraphIR, Layout, ComponentStatusRow } from "@intentius/chant";
 import { detectProject } from "./project.ts";
@@ -124,21 +125,39 @@ export function graphFlags(opts: GraphOptions): string[] {
   return flags;
 }
 
-/** Resolve `@intentius/chant`'s bin path as seen from `req`, walking up from the
- * resolved entry to the package root. Returns undefined if unresolvable. */
-export function chantBinFrom(req: ReturnType<typeof createRequire>): string | undefined {
+/** A resolved `@intentius/chant` install: where it lives, its bin, its declared
+ * version (undefined when the manifest carries none). */
+export interface ChantPackage {
+  /** The package root — the directory holding its package.json. */
+  root: string;
+  /** Absolute path to the `chant` bin. */
+  bin: string;
+  version?: string;
+}
+
+/** Resolve a package as seen from `req` and walk up from the resolved entry to
+ * its root, returning the manifest. Undefined when the package doesn't resolve.
+ *
+ * The walk is not decoration: chant and its lexicons ship raw TypeScript with
+ * an `exports` map whose `./*` subpath rewrites to `./src/*.ts`, so
+ * `resolve("<pkg>/package.json")` resolves to a file that doesn't exist. The
+ * entry point is the only subpath that reliably resolves; the manifest has to
+ * be found by walking to it. */
+function packageManifestFrom(
+  req: ReturnType<typeof createRequire>,
+  name: string,
+): { root: string; manifest: { name?: string; version?: string; bin?: { chant?: string } } } | undefined {
   let entry: string;
   try {
-    entry = req.resolve("@intentius/chant");
+    entry = req.resolve(name);
   } catch {
     return undefined;
   }
   let dir = dirname(entry);
   for (;;) {
-    const manifest = join(dir, "package.json");
     try {
-      const pkg = createRequire(import.meta.url)(manifest) as { name?: string; bin?: { chant?: string } };
-      if (pkg.name === "@intentius/chant") return join(dir, pkg.bin?.chant ?? "bin/chant");
+      const pkg = createRequire(import.meta.url)(join(dir, "package.json")) as { name?: string };
+      if (pkg.name === name) return { root: dir, manifest: pkg };
     } catch {
       // keep walking up
     }
@@ -149,14 +168,113 @@ export function chantBinFrom(req: ReturnType<typeof createRequire>): string | un
   return undefined;
 }
 
-function chantBin(projectDir?: string): string {
+/** Resolve the `@intentius/chant` package as seen from `req`, walking up from
+ * the resolved entry to the package root. Returns undefined if unresolvable. */
+export function chantPackageFrom(req: ReturnType<typeof createRequire>): ChantPackage | undefined {
+  const found = packageManifestFrom(req, "@intentius/chant");
+  if (!found) return undefined;
+  const { root, manifest } = found;
+  return { root, bin: join(root, manifest.bin?.chant ?? "bin/chant"), ...(manifest.version ? { version: manifest.version } : {}) };
+}
+
+/** One declared lexicon and whether the project can actually load it. `pkg` is
+ * the npm package a chant lexicon name maps to — `k8s` →
+ * `@intentius/chant-lexicon-k8s`, the convention every lexicon follows. */
+export interface LexiconResolution {
+  lexicon: string;
+  pkg: string;
+  installed: boolean;
+  version?: string;
+}
+
+/** The install state of a project's declared lexicons (#236), resolved from
+ * the project the same way chant itself will resolve them at graph time — a
+ * missing one is exactly what `classifyChantFailure` later reports as
+ * "not-installed", said before a graph route has to. */
+export function resolveLexicons(projectDir: string, lexicons: readonly string[]): LexiconResolution[] {
+  const req = createRequire(join(resolve(projectDir), "noop.js"));
+  return lexicons.map((lexicon) => {
+    const pkg = `@intentius/chant-lexicon-${lexicon}`;
+    const found = packageManifestFrom(req, pkg);
+    return { lexicon, pkg, installed: !!found, ...(found?.manifest.version ? { version: found.manifest.version } : {}) };
+  });
+}
+
+/** Resolve `@intentius/chant`'s bin path as seen from `req`. Returns undefined
+ * if unresolvable. */
+export function chantBinFrom(req: ReturnType<typeof createRequire>): string | undefined {
+  return chantPackageFrom(req)?.bin;
+}
+
+/** Where the chant behold would shell for a project came from. `project` is the
+ * intended case (the project decides its chant version); `behold` means the
+ * project's own install is missing and behold fell back to its bundled chant,
+ * which has none of the project's lexicons — the #1 first-touch failure (#236,
+ * and `classifyChantFailure`'s "not-installed" arriving later, in a graph
+ * route, is the symptom); `path` means neither resolved and the bare `chant`
+ * on PATH (if any) is all that's left. */
+export type ChantSource = "project" | "behold" | "path";
+
+export interface ChantResolution extends Partial<ChantPackage> {
+  source: ChantSource;
+  bin: string;
+}
+
+/** The chant behold will actually shell for `projectDir` — the project's own
+ * install first, then behold's bundled one, then a bare `chant` on PATH. The
+ * resolution `runChantRaw` uses, exposed so `behold doctor` reports the same
+ * answer the server acts on rather than probing separately (#236). */
+export function resolveChant(projectDir?: string): ChantResolution {
+  const own = chantPackageFrom(createRequire(import.meta.url));
   if (projectDir) {
-    const fromProject = chantBinFrom(createRequire(join(resolve(projectDir), "noop.js")));
-    if (fromProject) return fromProject;
+    const fromProject = chantPackageFrom(createRequire(join(resolve(projectDir), "noop.js")));
+    // Landing on behold's OWN install is the fallback, however it was reached.
+    // Node resolution walks up parent directories, so a project nested under
+    // behold's checkout (every bundled example is) resolves behold's chant
+    // without having one of its own — reporting that as "the project's" would
+    // make `behold doctor` confidently miss the missing install it exists to
+    // catch. Comparing package roots, not requires, is what distinguishes them.
+    if (fromProject) return { source: fromProject.root === own?.root ? "behold" : "project", ...fromProject };
   }
-  const own = chantBinFrom(createRequire(import.meta.url));
-  if (own) return own;
-  return "chant";
+  if (own) return { source: "behold", ...own };
+  return { source: "path", bin: "chant" };
+}
+
+/** behold's declared `@intentius/chant` floor — the caret range in its own
+ * package.json reduced to the literal version (`^0.38.0` → `0.38.0`), the same
+ * reading `scripts/typecheck-floor.sh` typechecks against. Undefined when the
+ * manifest can't be read. */
+export function chantFloor(): string | undefined {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const pkg = JSON.parse(readFileSync(join(here, "..", "package.json"), "utf8")) as {
+      dependencies?: Record<string, string>;
+    };
+    return pkg.dependencies?.["@intentius/chant"]?.replace(/^[^0-9]*/, "") || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Does `version` meet `floor`? Numeric dotted compare, prerelease suffix
+ * dropped (`0.44.3-rc.1` compares as `0.44.3` — an rc of the floor is close
+ * enough to not warn about). Unparseable input answers `true`: an unknown
+ * version is not evidence of an old one. Pure; exported for testing. */
+export function meetsFloor(version: string | undefined, floor: string | undefined): boolean {
+  if (!version || !floor) return true;
+  const parts = (v: string): number[] => v.split("-")[0].split(".").map((n) => Number.parseInt(n, 10));
+  const a = parts(version);
+  const b = parts(floor);
+  if (a.some(Number.isNaN) || b.some(Number.isNaN)) return true;
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const d = (a[i] ?? 0) - (b[i] ?? 0);
+    if (d !== 0) return d > 0;
+  }
+  return true;
+}
+
+function chantBin(projectDir?: string): string {
+  return resolveChant(projectDir).bin;
 }
 
 export interface ChantRun {

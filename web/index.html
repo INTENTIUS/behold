@@ -5,14 +5,42 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>behold</title>
     <style>
+      /* Pre-paint fallback (#229). These are the DEFAULT theme's tokens —
+         Catppuccin Mocha run through theme.js's tokensFor() — not a palette of
+         their own, so the first frame is already the frame initTheme() lands
+         on and there is no flash of a different app. (It used to be GitHub
+         Primer dark, which is why behold's first paint read as every other
+         generated tool.) The ONLY hardcoded colours in the whole stylesheet
+         live in this block; smoke/ui-smoke.mjs recomputes them from theme.js
+         and fails if the two drift apart. */
       :root {
-        --bg: #0d1117; --panel: #161b22; --line: #30363d; --fg: #e6edf3; --muted: #8b949e;
-        --managed: #3fb950; --foreign: #d29922; --pending: #58a6ff; --edge: #6e7681;
-        --degraded: #f85149;
+        --bg: #1e1e2e; --panel: #2e2f40; --line: #3b3c4a; --fg: #cdd6f4; --muted: #777a8c;
+        --edge: #56596d; --managed: #a6e3a1; --foreign: #f9e2af; --pending: #89b4fa;
+        --degraded: #f38ba8; --neutral: #6d7187; --runtime: #94e2d5;
+        --rule: #4e4f64; --focus: #a3b4d0; --active: #3d4660; --well: #11101f; --shadow: #050507;
+      }
+      /* The non-colour half of the identity: type and radii. These can't derive
+         from a colour theme, so they're the one static token block — but they
+         ARE tokens, and nothing below hardcodes a size or a radius.
+         Type: a terminal-adjacent control plane, so mono does what mono is for —
+         ids, addresses, statuses, counts, the diagnosis lines — and the sans
+         carries labels only. Three sizes, not five near-identical ones.
+         (No vendored typeface: behold ships no binaries. A licensed .woff2 via
+         a release asset is the follow-up if the system stacks aren't enough.)
+         Radii: sharp on controls, soft on the shells they sit in. */
+      :root {
+        --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        --font-mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Code", "JetBrains Mono", "IBM Plex Mono", Menlo, Consolas, monospace;
+        --t-display: 15px;
+        --t-body: 12.5px;
+        --t-caption: 10.5px;
+        --t-caps: .07em;
+        --r-ctl: 3px;
+        --r-shell: 10px;
       }
       * { box-sizing: border-box; }
       html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
-        font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, sans-serif; }
+        font: var(--t-body)/1.45 var(--font-ui); }
       /* #186: no header row at all — the graph runs full-bleed; every piece
          of state the header used to carry (meta line, statusbar) lives in the
          floating panel's footer instead. */
@@ -21,31 +49,45 @@
       #app.inspect-collapsed { grid-template-columns: 1fr 0; }
       #app.inspect-collapsed #inspect { display: none; }
       #graph { grid-row: 1; grid-column: 1; overflow: auto; position: relative; }
-      #inspect { grid-row: 1; grid-column: 2; border-left: 1px solid var(--line); background: var(--panel);
+      #inspect { grid-row: 1; grid-column: 2; border-left: 1px solid var(--rule); background: var(--panel);
         padding: 14px; overflow: auto; position: relative; }
-      #inspect h2 { font-size: 13px; margin: 0 0 8px; color: var(--muted); font-weight: 600;
-        text-transform: uppercase; letter-spacing: .5px; }
+      /* Section labels are the sans voice: small caps, tracked, muted. Every
+         heading in this pane (identity, live, drift, field ownership — app.js
+         appends them) is styled here rather than inline, so the scale stays in
+         one place. */
+      #inspect h2, #inspect h3 { color: var(--muted); font-size: var(--t-caption); font-weight: 600;
+        text-transform: uppercase; letter-spacing: var(--t-caps); }
+      #inspect h2 { margin: 0 0 10px; }
+      #inspect h3 { margin: 16px 0 6px; }
       /* Declared/identity: key ABOVE value, value full-width — long ARNs wrap
-         readably instead of being crushed into a squeezed right column. */
+         readably instead of being crushed into a squeezed right column. The
+         VALUE is data — an id, an ARN, a physical id, a status — so it's mono;
+         the key stays sans. */
       #inspect dl { margin: 0; }
-      #inspect dt { color: var(--muted); font-size: 11px; margin-top: 9px; }
-      #inspect dd { margin: 1px 0 0; font-size: 12px; overflow-wrap: anywhere; }
+      #inspect dt { color: var(--muted); font-size: var(--t-caption); margin-top: 9px; }
+      #inspect dd { margin: 2px 0 0; font: var(--t-body)/1.45 var(--font-mono); overflow-wrap: anywhere; }
+      #inspect p { font-size: var(--t-body); }
+      /* #192: the queried-address diagnosis line — a request path, so mono. */
+      #inspect p.queried { color: var(--muted); font: var(--t-caption)/1.45 var(--font-mono);
+        overflow-wrap: anywhere; margin-top: 2px; }
       /* Drag handle on the pane's left edge → resize; chevron → collapse. */
       #inspect-resize { position: absolute; left: -3px; top: 0; bottom: 0; width: 7px; cursor: col-resize; z-index: 6; }
-      #inspect-resize:hover { background: var(--pending); opacity: .35; }
+      #inspect-resize:hover { background: var(--focus); opacity: .5; }
       #inspect-collapse { position: absolute; top: 12px; right: 12px; z-index: 6; background: none;
-        border: none; color: var(--muted); font-size: 15px; cursor: pointer; line-height: 1; padding: 2px; }
+        border: none; color: var(--muted); font-size: var(--t-display); cursor: pointer; line-height: 1; padding: 2px; }
       #inspect-collapse:hover { color: var(--fg); }
       #inspect-reopen { position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 30; display: none;
-        background: var(--panel); color: var(--muted); border: 1px solid var(--line); border-right: none;
-        border-radius: 6px 0 0 6px; padding: 10px 5px; cursor: pointer; writing-mode: vertical-rl; font-size: 11px; }
-      #inspect-reopen:hover { color: var(--fg); border-color: var(--pending); }
+        background: var(--panel); color: var(--muted); border: 1px solid var(--rule); border-right: none;
+        border-radius: var(--r-ctl) 0 0 var(--r-ctl); padding: 10px 5px; cursor: pointer;
+        writing-mode: vertical-rl; font-size: var(--t-caption); letter-spacing: var(--t-caps); }
+      #inspect-reopen:hover { color: var(--fg); border-color: var(--focus); }
       #app.inspect-collapsed #inspect-reopen { display: block; }
       /* The graph SVG is pinhole's, self-styled. It fills the pane; behold drives
          zoom/pan by mutating its viewBox (see setupPanZoom in app.js) — pinch or
          ⌘/Ctrl+scroll to zoom at the cursor, drag to pan. It starts fit-to-pane;
          the "⤢ fit" button resets. behold also adds a selection highlight. */
-      #graph svg { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+      #graph svg { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none;
+        user-select: none; -webkit-user-select: none; }
       #graph svg.grabbing { cursor: grabbing; }
       /* Edge hover-highlight — trace a single edge through an overlapping bundle.
          pinhole already paints a fat transparent hit-path per edge (pointer-events
@@ -53,6 +95,28 @@
          visible line. The hovered edge is also raised to the top in JS so it isn't
          buried under the bundle. */
       #graph g[data-edge-from] .pin-edge-line { transition: stroke .08s ease, stroke-width .08s ease; }
+      /* ---- Motion (#229) ---------------------------------------------------
+         behold spends motion exactly twice, and never for decoration:
+         1. the graph fades through on every re-render, so a refresh reads as a
+            new frame instead of a flicker (the SVG element is replaced whole,
+            so the animation fires once per render by construction);
+         2. a node whose drift `_status` CHANGED since the last render glows
+            once in its new status colour — the diff is a module-level
+            id → _status map in app.js (markStatusChanges), and `--pulse` is
+            set per node to the status hue it just became.
+         Both are off entirely under prefers-reduced-motion. */
+      #graph svg { animation: graph-fade-through .18s ease-out; }
+      @keyframes graph-fade-through { from { opacity: 0; } to { opacity: 1; } }
+      #graph [data-node-id].status-changed { animation: status-pulse .85s ease-out 2; }
+      @keyframes status-pulse {
+        0%, 100% { filter: drop-shadow(0 0 0 var(--pulse, var(--pending))); }
+        45% { filter: drop-shadow(0 0 7px var(--pulse, var(--pending))); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #graph svg, #graph [data-node-id].status-changed { animation: none; }
+        #graph g[data-edge-from] .pin-edge-line { transition: none; }
+        #graph [data-layout-resize] { transition: none; }
+      }
       #graph g[data-edge-from]:hover .pin-edge-line,
       #graph g[data-edge-from].edge-hi .pin-edge-line { stroke: var(--pending); stroke-width: 3.2; }
       /* Edge kind by reason (logical view): a data dependency reads as a dashed
@@ -62,15 +126,27 @@
       #graph g[data-edge-from][data-edge-via] { cursor: help; }
       /* Fit reset + a zoom hint, floating top-right of the graph pane. */
       #zoom-toggle { position: absolute; top: 8px; right: 8px; z-index: 2; background: var(--panel);
-        color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px;
-        font-size: 12px; cursor: pointer; }
-      #zoom-toggle:hover { border-color: var(--pending); color: var(--fg); }
+        color: var(--muted); border: 1px solid var(--rule); border-radius: var(--r-ctl); padding: 4px 10px;
+        font: var(--t-caption)/1.3 var(--font-mono); cursor: pointer; }
+      #zoom-toggle:hover { border-color: var(--focus); color: var(--fg); }
+      /* Hand layout (#228): the escape hatch, beside ⤢ fit. Hidden by app.js
+         until something on this lens is actually hand-placed — it is both the
+         reset and the only indication that dagre isn't the whole story here. */
+      #layout-reset { position: absolute; top: 8px; right: 66px; z-index: 2; background: var(--panel);
+        color: var(--muted); border: 1px solid var(--rule); border-radius: var(--r-ctl); padding: 4px 10px;
+        font: var(--t-caption)/1.3 var(--font-mono); cursor: pointer; }
+      #layout-reset:hover { border-color: var(--focus); color: var(--fg); }
+      /* A containment box's title moves it and its corner handle resizes it.
+         The handle carries opacity="0" as a presentation attribute so a static
+         export never shows it — this rule outranks the attribute. */
+      #graph [data-layout-resize] { opacity: 0; transition: opacity .1s ease; }
+      #graph [data-layout-box]:hover [data-layout-resize] { opacity: .85; }
       /* The way out of waves view, floating top-LEFT so it sits where the eye
          already is when observe drops you into the wave-laned graph. */
       #back-to-infra { position: absolute; top: 8px; left: 8px; z-index: 2; background: var(--panel);
-        color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px;
-        font-size: 12px; cursor: pointer; }
-      #back-to-infra:hover { border-color: var(--pending); color: var(--fg); }
+        color: var(--muted); border: 1px solid var(--rule); border-radius: var(--r-ctl); padding: 4px 10px;
+        font: var(--t-caption)/1.3 var(--font-mono); cursor: pointer; }
+      #back-to-infra:hover { border-color: var(--focus); color: var(--fg); }
       /* Blocking load scrim: covers everything (clicks can't pass through) while
          a live view change is in flight. */
       #loading-overlay { position: fixed; inset: 0; z-index: 100; display: flex;
@@ -78,11 +154,14 @@
         background: color-mix(in srgb, var(--bg) 72%, transparent); backdrop-filter: blur(1.5px);
         cursor: progress; }
       #loading-overlay[hidden] { display: none; }
-      #loading-overlay #loading-msg { font-size: 13px; color: var(--muted); }
+      #loading-overlay #loading-msg { font: var(--t-body)/1.4 var(--font-mono); color: var(--muted); }
       #loading-overlay .spinner { width: 34px; height: 34px; border-radius: 50%;
-        border: 3px solid var(--line); border-top-color: var(--pending);
+        border: 3px solid var(--line); border-top-color: var(--focus);
         animation: spin 0.7s linear infinite; }
       @keyframes spin { to { transform: rotate(360deg); } }
+      /* Selection is one of the few places the FULL accent still shows — the
+         drift hues own saturation now, and "which node am I looking at" earns
+         one of them. */
       .sel rect, .sel path, .sel > rect { stroke: var(--pending) !important; stroke-width: 2.5 !important; }
       .err { padding: 24px; color: var(--foreign); }
       /* #72: a classified precondition failure (chant's lint gate, a project
@@ -91,13 +170,13 @@
          are usually expected states on a real (imperfect) project, not bugs.
          Generalizes the old M2 (#54) tier-only `.tier-note`. */
       .precondition-error { padding: 24px; max-width: 640px; }
-      .precondition-error-title { color: var(--fg); font-size: 15px; font-weight: 600; margin-bottom: 10px; }
-      .precondition-error-message { color: var(--muted); white-space: pre-wrap; font: 12px/1.5 ui-monospace, monospace; }
-      .precondition-error-remedy { color: var(--pending); margin-top: 14px; }
+      .precondition-error-title { color: var(--fg); font-size: var(--t-display); font-weight: 600; margin-bottom: 10px; }
+      .precondition-error-message { color: var(--muted); white-space: pre-wrap; font: var(--t-body)/1.55 var(--font-mono); }
+      .precondition-error-remedy { color: var(--pending); margin-top: 14px; font: var(--t-body)/1.5 var(--font-mono); }
       .precondition-error-remedy::before { content: "→ "; }
-      #actions button, #inspect button { background: var(--panel); color: var(--fg); border: 1px solid var(--line);
-        border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
-      #actions button:hover, #inspect button:hover { border-color: var(--pending); }
+      #actions button, #inspect button { background: var(--panel); color: var(--fg); border: 1px solid var(--rule);
+        border-radius: var(--r-ctl); padding: 4px 12px; font-size: var(--t-body); cursor: pointer; }
+      #actions button:hover, #inspect button:hover { border-color: var(--focus); }
       #actions button.approve { border-color: var(--managed); color: var(--managed); }
       #inspect button { border-color: var(--foreign); color: var(--foreign); }
 
@@ -113,64 +192,82 @@
          is the discoverable surface, the palette the fast one. Sits above the
          graph's own floating buttons (z 2) and below toasts (60) / the load
          scrim (100) / ⌘K (110). */
+      /* #229: the shell is the soft thing (10px, a real drop shadow derived
+         from the theme, a palette-tinted --rule border); everything INSIDE it
+         is sharp (3px). That contrast is what makes it read as a tool palette
+         rather than a card of stacked pills. */
       #panel { position: fixed; width: 272px; z-index: 40; background: var(--panel);
-        border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column;
-        box-shadow: 0 10px 34px rgba(0,0,0,.45); user-select: none; }
+        border: 1px solid var(--rule); border-radius: var(--r-shell); display: flex; flex-direction: column;
+        box-shadow: 0 10px 30px color-mix(in srgb, var(--shadow) 55%, transparent); user-select: none; }
       #panel.dragging { opacity: .95; }
       /* #184: tabs-only — the strip doubles as the drag handle and carries the
          ⌘K pill + collapse chevron. Collapsing hides only the body, so the
-         panel collapses TO the strip. */
+         panel collapses TO the strip.
+         #229: the strip is slightly recessed off the body, and the active tab
+         is a FILL, not an underline — an underlined tab is the single most
+         generated-looking control on the web. */
       #panel-tabs { display: flex; align-items: stretch; border-bottom: 1px solid var(--line);
-        cursor: grab; padding-right: 4px; }
+        background: color-mix(in srgb, var(--well) 45%, var(--panel));
+        border-radius: calc(var(--r-shell) - 1px) calc(var(--r-shell) - 1px) 0 0;
+        cursor: grab; padding: 3px 4px 3px 3px; gap: 2px; }
       #panel.dragging #panel-tabs { cursor: grabbing; }
-      #panel.collapsed #panel-tabs { border-bottom: none; }
+      #panel.collapsed #panel-tabs { border-bottom: none; border-radius: calc(var(--r-shell) - 1px); }
       #panel.collapsed #panel-body { display: none; }
-      #panel-tabs button[data-tab] { flex: 1; background: none; border: none; border-bottom: 2px solid transparent;
-        color: var(--muted); font-size: 10.5px; padding: 7px 0; cursor: pointer; }
+      #panel-tabs button[data-tab] { flex: 1; background: none; border: none; border-radius: var(--r-ctl);
+        color: var(--muted); font: var(--t-caption)/1 var(--font-ui); padding: 6px 0; cursor: pointer; }
       #panel-tabs button[data-tab]:hover { color: var(--fg); }
-      #panel-tabs button[data-tab].active { color: var(--fg); border-bottom-color: var(--pending); }
-      #panel-tabs #hintk { flex: none; align-self: center; font-size: 10px; padding: 1px 6px; margin-left: 2px; }
+      #panel-tabs button[data-tab].active { color: var(--fg); background: var(--active); font-weight: 600; }
+      #panel-tabs #hintk { flex: none; align-self: center; padding: 2px 6px; margin-left: 2px; }
       #panel-collapse { flex: none; align-self: center; background: none; border: none; color: var(--muted);
-        font-size: 12px; cursor: pointer; line-height: 1; padding: 2px 4px; }
+        font-size: var(--t-body); cursor: pointer; line-height: 1; padding: 2px 4px; }
       #panel-collapse:hover { color: var(--fg); }
       #panel-body { overflow-y: auto; max-height: min(62vh, 540px); padding: 10px 12px;
-        font-size: 12px; user-select: text; }
+        font-size: var(--t-body); user-select: text; }
       #panel-body section { display: none; }
       #panel-body section.active { display: block; }
-      #panel h3 { margin: 14px 0 6px; font-size: 10px; text-transform: uppercase; letter-spacing: .5px;
-        color: var(--muted); font-weight: 600; }
+      #panel h3 { margin: 14px 0 6px; font-size: var(--t-caption); text-transform: uppercase;
+        letter-spacing: var(--t-caps); color: var(--muted); font-weight: 600; }
       #panel h3:first-child { margin-top: 0; }
-      #panel .panel-muted { color: var(--muted); font-size: 11px; margin: 4px 0; }
+      #panel .panel-muted { color: var(--muted); font: var(--t-caption)/1.5 var(--font-mono);
+        margin: 4px 0; overflow-wrap: anywhere; }
       #panel .prow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 2px 0; }
-      /* A radio-like option row: the current value carries the accent border. */
+      /* A radio-like option row: the current value is FILLED, with a hairline of
+         the full accent down its leading edge — the one saturated mark in the
+         chrome, so the eye finds the current lens without the whole row
+         shouting in accent-coloured text. */
       #panel .opt { display: block; width: 100%; text-align: left; background: none;
-        border: 1px solid transparent; border-radius: 6px; color: var(--fg); font-size: 12px;
-        padding: 4px 8px; cursor: pointer; }
+        border: 1px solid transparent; border-radius: var(--r-ctl); color: var(--fg);
+        font-size: var(--t-body); padding: 4px 8px; cursor: pointer; }
       #panel .opt:hover { border-color: var(--line); }
-      #panel .opt.active { border-color: var(--pending); color: var(--pending); }
-      #panel select { width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
-        border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
-      #panel select:hover { border-color: var(--pending); }
-      #panel button.act { background: var(--bg); color: var(--fg); border: 1px solid var(--line);
-        border-radius: 6px; padding: 3px 10px; font-size: 11px; cursor: pointer; }
-      #panel button.act:hover { border-color: var(--pending); }
-      #panel input.panel-input { flex: 1; min-width: 0; background: var(--bg); color: var(--fg);
-        border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; font-size: 11px; }
-      #panel input.panel-input:focus { border-color: var(--pending); outline: none; }
-      /* Model tab rows: legend counts (static) and clickable node rows. */
+      #panel .opt.active { background: var(--active); border-color: var(--rule); color: var(--fg);
+        box-shadow: inset 2px 0 0 var(--pending); }
+      #panel select { width: 100%; background: var(--well); color: var(--fg); border: 1px solid var(--line);
+        border-radius: var(--r-ctl); padding: 4px 8px; font-size: var(--t-body); cursor: pointer; }
+      #panel select:hover { border-color: var(--focus); }
+      #panel button.act { background: var(--well); color: var(--fg); border: 1px solid var(--rule);
+        border-radius: var(--r-ctl); padding: 3px 10px; font-size: var(--t-caption); cursor: pointer; }
+      #panel button.act:hover { border-color: var(--focus); }
+      #panel input.panel-input { flex: 1; min-width: 0; background: var(--well); color: var(--fg);
+        border: 1px solid var(--line); border-radius: var(--r-ctl); padding: 4px 8px;
+        font: var(--t-caption)/1.4 var(--font-mono); }
+      #panel input.panel-input:focus { border-color: var(--focus); outline: none; }
+      /* Model tab rows: legend counts (static) and clickable node rows. Node
+         ids are data — mono, so they align and scan like a terminal listing. */
       #panel .count-row, #panel .node-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
-      #panel .node-row { cursor: pointer; border-radius: 6px; padding: 3px 6px; }
-      #panel .node-row:hover { background: var(--bg); }
+      #panel .node-row { cursor: pointer; border-radius: var(--r-ctl); padding: 3px 6px;
+        font: var(--t-caption)/1.5 var(--font-mono); }
+      #panel .node-row:hover { background: var(--well); }
       #panel .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
       #panel .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      #panel .tag { color: var(--muted); font-size: 11px; white-space: nowrap; }
+      #panel .tag { color: var(--muted); font: var(--t-caption)/1.5 var(--font-mono); white-space: nowrap; }
 
       /* Substrate readiness (M5, #54) — one row per substrate on the panel's
          Substrates tab: status dot + name + state, with its actions (bring up /
          reset / run pipeline) visible inline again. #73 moved those into ⌘K;
          they remain there too — same actions, two surfaces. */
       #substrates { display: flex; flex-direction: column; gap: 2px; }
-      .sub { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+      .sub { display: flex; align-items: center; gap: 8px; padding: 3px 0;
+        font: var(--t-caption)/1.6 var(--font-mono); }
       .sub .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
       .sub.up .dot { background: var(--managed); }
       .sub.down .dot { background: var(--degraded); }
@@ -184,34 +281,41 @@
          tab now, stacked vertically under the deploy actions. */
       #actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
       #dial { display: none; flex-direction: column; align-items: stretch; gap: 8px;
-        font-size: 12px; margin-top: 10px; }
+        font-size: var(--t-body); margin-top: 10px; }
       .dial-track { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
       .dial-arrow { color: var(--muted); }
-      .dial-step { background: var(--panel); color: var(--fg); border: 1px solid var(--line);
-        border-radius: 999px; padding: 3px 12px; font-size: 12px; cursor: pointer; }
-      .dial-step:hover:not(:disabled) { border-color: var(--pending); }
-      .dial-step.active { border-color: var(--pending); color: var(--pending); }
+      /* The lifecycle steps are controls, so they take the control radius too —
+         the pill shape was the last soft edge left inside the shell. */
+      .dial-step { background: var(--well); color: var(--fg); border: 1px solid var(--rule);
+        border-radius: var(--r-ctl); padding: 3px 12px; font-size: var(--t-body); cursor: pointer; }
+      .dial-step:hover:not(:disabled) { border-color: var(--focus); }
+      .dial-step.active { background: var(--active); border-color: var(--rule); color: var(--fg);
+        box-shadow: inset 2px 0 0 var(--pending); }
       .dial-step:disabled { opacity: .5; cursor: not-allowed; }
-      .dial-detail { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--muted); }
+      .dial-detail { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--muted);
+        font: var(--t-caption)/1.6 var(--font-mono); }
 
       #nowline { grid-column: 1 / 3; grid-row: 2; margin: 0; max-height: 160px; overflow: auto; display: none;
-        background: #010409; border-top: 1px solid var(--line); padding: 8px 12px; font: 11px/1.5 ui-monospace, monospace;
-        color: var(--fg); white-space: pre-wrap; }
+        background: var(--well); border-top: 1px solid var(--rule); padding: 8px 12px;
+        font: var(--t-caption)/1.6 var(--font-mono); color: var(--fg); white-space: pre-wrap; }
       /* #186: the panel's footer — the state the removed header carried. The
          statusbar (#73 "hide controls, never state": current zoom + env +
          stack + tier, see renderStatusbar() in app.js) and the meta line.
          Hidden when the panel collapses, like the body. */
-      #panel-foot { border-top: 1px solid var(--line); padding: 6px 12px;
-        display: flex; flex-direction: column; gap: 2px; }
+      /* Counts, env, zoom, tier — all of it is state read at a glance, so the
+         whole footer is mono. */
+      #panel-foot { border-top: 1px solid var(--line); padding: 7px 12px;
+        display: flex; flex-direction: column; gap: 3px;
+        font: var(--t-caption)/1.5 var(--font-mono); }
       #panel.collapsed #panel-foot { display: none; }
-      #panel-foot .meta { color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
-      #statusbar { color: var(--muted); font-size: 10.5px; cursor: pointer; }
+      #panel-foot .meta { color: var(--muted); overflow-wrap: anywhere; }
+      #statusbar { color: var(--muted); cursor: pointer; }
       /* #131: why the current zoom rendered what it did. Same muted strip,
          italic so it reads as a caption on the state rather than more state. */
       .statusbar-note { font-style: italic; opacity: 0.85; }
-      #hintk { color: var(--muted); border: 1px solid var(--line); border-radius: 6px;
-        padding: 2px 8px; font-size: 11px; cursor: pointer; white-space: nowrap; }
-      #hintk:hover { border-color: var(--pending); color: var(--fg); }
+      #hintk { color: var(--muted); border: 1px solid var(--rule); border-radius: var(--r-ctl);
+        padding: 2px 8px; font: var(--t-caption)/1.4 var(--font-mono); cursor: pointer; white-space: nowrap; }
+      #hintk:hover { border-color: var(--focus); color: var(--fg); }
       /* Command palette (⌘K / Ctrl+K, #73) — ported from spicypath's FG-036
          pattern (../spicypath/src/index.html), theme vars mapped onto behold's
          own: --panel/--line/--fg/--bg already exist; --pending stands in for
@@ -221,18 +325,22 @@
          applyPaletteContrast() in app.js) so the selected row stays legible
          across all 552 themes, light or dark. */
       #palette { position: fixed; inset: 0; z-index: 110; display: none; align-items: flex-start;
-        justify-content: center; background: rgba(0,0,0,.45); }
+        justify-content: center; background: color-mix(in srgb, var(--shadow) 62%, transparent); }
       #palette.on { display: flex; }
       #palette .box { margin-top: 12vh; width: min(560px, 92vw); background: var(--panel);
-        border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 16px 50px rgba(0,0,0,.55);
-        overflow: hidden; }
-      #pal-input { width: 100%; box-sizing: border-box; background: var(--bg); color: var(--fg);
-        border: 0; border-bottom: 1px solid var(--line); padding: 11px 14px; font: inherit; outline: none; }
+        border: 1px solid var(--rule); border-radius: var(--r-shell);
+        box-shadow: 0 16px 44px color-mix(in srgb, var(--shadow) 62%, transparent); overflow: hidden; }
+      /* You type commands here — mono, at the one display size, is the whole
+         point of the surface. */
+      #pal-input { width: 100%; box-sizing: border-box; background: var(--well); color: var(--fg);
+        border: 0; border-bottom: 1px solid var(--rule); padding: 12px 14px;
+        font: var(--t-display)/1.3 var(--font-mono); outline: none; }
       #pal-list { max-height: 50vh; overflow: auto; padding: 5px; }
-      #pal-list .row { padding: 7px 11px; border-radius: 6px; color: var(--fg); font-size: 13px;
+      #pal-list .row { padding: 7px 11px; border-radius: var(--r-ctl); color: var(--fg);
+        font: var(--t-body)/1.5 var(--font-mono);
         cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       #pal-list .row.sel { background: var(--pending); color: var(--pal-sel-fg, var(--fg)); }
-      #pal-list .empty { padding: 8px 11px; color: var(--muted); font-size: 12px; }
+      #pal-list .empty { padding: 8px 11px; color: var(--muted); font-size: var(--t-body); }
     </style>
   </head>
   <body>

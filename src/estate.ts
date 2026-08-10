@@ -54,6 +54,31 @@ const firstLine = (e: unknown): string => {
 };
 
 /**
+ * pinhole's `composeStacks` namespaces node ids (`<stack>/<id>`) and
+ * `compositeInstance`, but not `runtimeOwner` — chant#1180's first-class IR
+ * field postdates composition, so it passes through the spread verbatim.
+ * Left alone, a composed estate's runtime child (a Pod its Deployment created,
+ * a workload Flux's Kustomization applied) points at a bare `appA` while the
+ * owner it names is now `control-plane/appA`, and
+ * `attachRuntimeContainment` (src/overlay.ts, #86) keys a containment box on
+ * an id no node has: a box with the children inside and the owner nowhere,
+ * which is precisely the shape #144 fixed one estate ago.
+ *
+ * So namespace it here, on the member's own IR before composition, using
+ * composeStacks' own `<stack>/<id>` convention — and only when the owner is
+ * one of this member's nodes, since chant resolves the owner chain within a
+ * project and an unresolvable name is better left untouched than rewritten
+ * into a different lie. Mutates + returns `ir`.
+ */
+export function namespaceRuntimeOwners(name: string, ir: GraphIR): GraphIR {
+  const own = new Set(ir.nodes.map((n) => n.id));
+  for (const n of ir.nodes as Array<{ runtimeOwner?: string }>) {
+    if (n.runtimeOwner && own.has(n.runtimeOwner)) n.runtimeOwner = `${name}/${n.runtimeOwner}`;
+  }
+  return ir;
+}
+
+/**
  * The estate-wide live overlay (#189): overlay each project and compose the
  * results, rather than composing sources and overlaying only the primary —
  * "behold your whole estate, coloured by drift" was 1/N projects true before
@@ -80,7 +105,7 @@ export async function composeEstateOverlay(
     projectDirs.map(async (dir, i) => {
       const name = names[i];
       try {
-        stacks[i] = { name, ir: classify(await graphIr(dir, { ...opts, live: true, overlay: true })) };
+        stacks[i] = { name, ir: namespaceRuntimeOwners(name, classify(await graphIr(dir, { ...opts, live: true, overlay: true }))) };
       } catch (err) {
         const reason = firstLine(err);
         try {

@@ -66,12 +66,22 @@ export interface TierConfig {
  * axis. Absent `tiers` means the project declares none. */
 export interface BeholdConfig {
   tiers?: TierConfig;
+  /** Estate members (#236): the member project directories, relative to the
+   * root that declares them. An estate root is not itself a chant project —
+   * it's the directory you'd run `behold serve a b c` from — so this is how a
+   * root says which projects compose it without behold guessing. Absent when
+   * the file declares none (see `detectProjectShape`, which then falls back to
+   * npm `workspaces`). */
+  members?: string[];
 }
 
 const CONFIG_NAMES = ["chant.config.ts", "chant.config.mts", "chant.config.js", "chant.config.mjs"];
 const BEHOLD_CONFIG_NAME = ".behold.json";
 
-function configPath(projectDir: string): string | undefined {
+/** The project's chant config file, or undefined when the directory has none —
+ * the single "is this a chant project" test, shared by `detectProject`,
+ * `detectProjectShape` and the CLI's startup warning so all three agree. */
+export function chantConfigPath(projectDir: string): string | undefined {
   for (const name of CONFIG_NAMES) {
     const p = join(projectDir, name);
     if (existsSync(p)) return p;
@@ -205,7 +215,7 @@ function parseStringLiteral(content: string, key: string): string | undefined {
 
 /** Detect what the project offers. Async: it may import the project's config. */
 export async function detectProject(projectDir: string): Promise<ProjectInfo> {
-  const path = configPath(projectDir);
+  const path = chantConfigPath(projectDir);
   if (!path) return { environments: [], lexicons: [] };
 
   // Authoritative: run the real config.
@@ -259,8 +269,58 @@ export function loadBeholdConfig(projectDir: string): BeholdConfig {
   try {
     const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
     const tiers = readTiers(raw);
-    return tiers ? { tiers } : {};
+    const members = Array.isArray(raw.members) ? raw.members.filter((m): m is string => typeof m === "string" && !!m) : [];
+    return { ...(tiers ? { tiers } : {}), ...(members.length ? { members } : {}) };
   } catch {
     return {};
   }
+}
+
+/** What kind of thing a directory is, as far as behold is concerned (#236):
+ *  - `project` — a chant project: it has a `chant.config.*`.
+ *  - `estate`  — not itself a project, but it names member projects that are:
+ *                `.behold.json`'s `members`, else npm `workspaces`. This is the
+ *                `behold serve a b c` shape (#31) with the member list written
+ *                down — `behold demo flux-estate` is one.
+ *  - `none`    — neither, which is #193's structured dead end. */
+export type ProjectKind = "project" | "estate" | "none";
+
+export interface ProjectShape {
+  kind: ProjectKind;
+  /** The `chant.config.*` path, for `kind: "project"`. */
+  configFile?: string;
+  /** Member directories relative to `dir`, for `kind: "estate"` — only those
+   * that are themselves chant projects, in declared order. */
+  members?: string[];
+  /** Where the member list came from, so a report never implies behold chose it. */
+  membersFrom?: "behold-config" | "workspaces";
+}
+
+/** Read npm `workspaces` from a root package.json — the array form only (the
+ * `{ packages: [...] }` object form too). Globs are not expanded: a member
+ * entry has to name a directory, which is what an estate root writes. */
+function readWorkspaces(projectDir: string): string[] {
+  try {
+    const raw = JSON.parse(readFileSync(join(projectDir, "package.json"), "utf8")) as {
+      workspaces?: unknown;
+    };
+    const ws = Array.isArray(raw.workspaces) ? raw.workspaces : (raw.workspaces as { packages?: unknown })?.packages;
+    return Array.isArray(ws) ? ws.filter((w): w is string => typeof w === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Classify a directory (#236's first doctor line, and the CLI's startup
+ * warning): a chant project, an estate root naming member projects, or
+ * neither. Sync and read-only — `existsSync` plus two JSON reads, no config
+ * import (that's `detectProject`, which needs the members resolved first). */
+export function detectProjectShape(projectDir: string): ProjectShape {
+  const configFile = chantConfigPath(projectDir);
+  if (configFile) return { kind: "project", configFile };
+  const declared = loadBeholdConfig(projectDir).members;
+  const from: ProjectShape["membersFrom"] = declared ? "behold-config" : "workspaces";
+  const members = (declared ?? readWorkspaces(projectDir)).filter((m) => !!chantConfigPath(join(projectDir, m)));
+  if (members.length) return { kind: "estate", members, membersFrom: from };
+  return { kind: "none" };
 }

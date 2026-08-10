@@ -30,16 +30,26 @@ npx @intentius/behold demo            # copies the example to ./behold-demo, ins
 The copied project is yours: edit its source and watch the graph change live.
 There's a whole catalog — `behold demo --list` names the rest (`behold demo
 k8s` stands the same loop up on a throwaway k3d cluster: runtime Pods, field
-ownership). Every loaded demo lands in the panel's recents, so switching
-between them is the Scope tab.
+ownership; `behold demo argo-estate` needs nothing at all — a three-project
+Argo CD estate, declared only, so it runs where Docker doesn't). Every loaded
+demo lands in the panel's recents, so switching between them is the Scope tab.
 
 Already have a chant project?
 
 ```sh
 cd my-chant-project
+npx @intentius/behold doctor          # will this project serve well? (read-only)
 npx @intentius/behold preview         # → http://localhost:4600, this project's graph
 npx @intentius/behold serve . --env prod --poll 30   # live drift overlay
 ```
+
+`behold doctor` is the first thing to run on a project behold hasn't seen: one
+line each for the project's kind, its own chant install and version, declared
+lexicons, the envs the picker will infer, the kube context chant binds versus
+your ambient one, substrate readiness and committed Ops — pass/warn/fail with
+a one-line fix. It starts nothing and changes nothing; it exits non-zero only
+when something would actually stop behold serving the project well, so CI can
+gate on it. `--json` for scripts and agents.
 
 Driving it from an agent or script? `GET /api` lists every JSON route;
 [AGENTS.md](./AGENTS.md) (shipped in the package) is the read/act contract.
