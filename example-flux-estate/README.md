@@ -28,10 +28,13 @@ this repo, and serves the three projects composed. What to look at:
   app-b's Kustomization to app-a's — the estate's reconcile ordering.
 - The **overlay** (env `local`): app-a green, the control plane's CRs green,
   app-b pending **with the note explaining why**.
-- The **runtime tier** on the control plane alone
-  (`behold serve control-plane --env local`, zoom: runtime): the workloads
-  Flux deployed, attributed back to the declaring Kustomization via its
-  labels (chant#1549).
+- The **runtime tier** (zoom: runtime), on the estate itself since behold#224:
+  the workloads Flux deployed, attributed back to the declaring Kustomization
+  via its labels (chant#1549) and boxed under it.
+- The **logical lens** (zoom: logical): cluster ⊃ namespace boxes, with each
+  app's objects inside the namespace the control plane declared for them —
+  the view that only exists once the three projects are composed, since the
+  namespaces are declared in one project and filled from the others.
 
 The app `manifests/` are committed `chant build` output — Flux syncs them
 from GitHub `main`, so changes to an app's source need a rebuild

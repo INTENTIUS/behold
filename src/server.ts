@@ -386,6 +386,26 @@ export function createApp(
     }
   };
 
+  // The bases an estate's `sourceLoc.file` can be relative to (#224). chant
+  // reports each member's files against that member's own graph root, so the
+  // kustomize lens (src/logical-kustomize.ts — it probes for a kustomization
+  // file on disk) needs every member's graph path AND project root, not just
+  // the primary's. Probing a base that belongs to a different member is
+  // harmless: a miss is a directory that isn't there.
+  //
+  // The kube binding is the other half of that threading, and it is
+  // deliberately NOT per-member: `boundK8sContext` resolves the PRIMARY
+  // project's `k8s.profiles.<env>.context` and every estate consumer
+  // (addClusterAnchorEdges since #103, the logical lens's cluster-box
+  // tiebreak) gets that one answer. An estate is served against one cluster —
+  // that is what makes it an estate rather than three projects — and a
+  // per-member binding would mint one cluster box per member and split the
+  // very picture composition exists to join. A member bound elsewhere is a
+  // real case, and the honest place to fix it is per-project env targeting
+  // (the M4 report's open question), not a fan-out here.
+  const estateSourceRoots = async (opts: GraphOptions): Promise<string[]> =>
+    (await Promise.all((cfg.projectDirs ?? []).map(async (dir) => [await graphPath(dir, opts), dir]))).flat();
+
   app.get("/healthz", (c) => c.json({ ok: true, projectDir: cfg.projectDir, env: cfg.env ?? null, frames: frames.size }));
 
   // Deployment lanes (#5): the captured keyframes as a per-substrate filmstrip.
@@ -708,7 +728,10 @@ export function createApp(
       let mode: "component-status" | undefined;
       let metaEnv = cfg.env ?? null;
       if (multi) {
-        ir = await composeEstate(cfg.projectDirs!, opts);
+        // The logical lens reads full attrs (metadata.namespace, spec fields),
+        // so an estate asked for it composes at detail 3 — the same thing the
+        // single-project logical branch does with its own graphIr call (#224).
+        ir = await composeEstate(cfg.projectDirs!, logical ? { ...opts, detail: 3 } : opts);
         // #188: the edge-derivation passes are the k8s half's ONLY edge
         // source (chant's IR carries no k8s edges at all — src/k8s-edges.ts),
         // and they ran only on the single-project branch below — so an
@@ -721,7 +744,34 @@ export function createApp(
         // Kustomization sourceRef-ing an app project's GitRepository).
         ir = addValueMatchEdges(ir);
         ir = addK8sDeclaredEdges(ir);
-        ir = addClusterAnchorEdges(ir, await boundK8sContext(metaEnv ?? undefined));
+        const estateContext = await boundK8sContext(metaEnv ?? undefined);
+        ir = addClusterAnchorEdges(ir, estateContext);
+        // #224: the logical lens over the COMPOSED IR. Every projection joins
+        // on attribute values, never node ids, so composeStacks' prefixed ids
+        // pass through exactly as the edge passes above do — and the k8s lens
+        // is the one an estate needs most, since a GitOps estate splits the
+        // namespace declarations (control-plane) from the objects that live in
+        // them (the app projects), and only the composed picture has both.
+        if (logical) {
+          const logicalBefore = ir.nodes.length;
+          const { ir: projected, byContainer } = projectTopology(ir, metaEnv ?? undefined, estateContext, await estateSourceRoots(opts));
+          const { svg } = renderArchitecture(projected, byContainer);
+          const logicalNote = notesFor("logical", projected, undefined, logicalBefore);
+          return c.json({
+            ir: projected,
+            svg,
+            byContainer,
+            meta: {
+              projectDir: cfg.projectDir,
+              env: metaEnv,
+              tier: opts.tier ?? null,
+              target: opts.target ?? null,
+              mode: "logical",
+              estate: cfg.projectDirs!.length,
+              ...(logicalNote ? { note: logicalNote } : {}),
+            },
+          });
+        }
       } else if (components) {
         // The tier/target lenses (M2, #54): `opts.tier`/`opts.target` (from
         // ?tier=/?target=) ride along inside `opts` — componentGraphIr threads
@@ -842,14 +892,16 @@ export function createApp(
               ? "attributes"
               : "resources";
       // #190: a lens the estate branch can't apply must say so — the multi
-      // branch wins the if/else chain, so ?components=1 / ?logical=1 used to
-      // return the plain composed entity graph as a silent 200 (no mode, no
-      // note): the picker looked applied and wasn't. Honest note until the
-      // lenses learn estates; the SPA's statusbar renders it (#131).
-      const estateLensNote =
-        multi && (components || logical)
-          ? `the ${components ? "components" : "logical"} lens doesn't apply to a composed estate yet — showing the composed entity graph`
-          : undefined;
+      // branch wins the if/else chain, so ?components=1 used to return the
+      // plain composed entity graph as a silent 200 (no mode, no note): the
+      // picker looked applied and wasn't. The SPA's statusbar renders it
+      // (#131). #224 taught the estate the logical lens (it returns above,
+      // with mode: "logical"), so this is down to `components` — which is a
+      // chant projection of one project's own component DAG, not a pass over
+      // the composed IR, and genuinely has nothing to run here.
+      const estateLensNote = multi && components
+        ? "the components lens doesn't apply to a composed estate yet — showing the composed entity graph"
+        : undefined;
       const srcNote = multi ? estateLensNote : notesFor(srcZoom, ir, srcCompositeEdgesAttached);
       return c.json({
         ir,
@@ -1051,27 +1103,39 @@ export function createApp(
       // Overlay each project concurrently and compose: a project whose live
       // observe fails degrades to its source graph painted unobserved (#1089
       // tri-state — never silently dropped, never blanking the estate), and
-      // the note reports coverage. First slice deliberately skips the
-      // single-project extras (helm artifacts, cluster-root merge, runtime
-      // containment, logical projection) — the lens notes say so when asked.
+      // the note reports coverage. The first slice skipped the single-project
+      // extras; #224 brought the runtime tier and the logical lens across (the
+      // helm artifact join and the cluster-root merge are still primary-only —
+      // both are per-project reads, not passes over the composed IR).
       if (cfg.projectDirs && cfg.projectDirs.length > 1) {
         const runtime = new URL(c.req.url).searchParams.get("runtime") === "1";
-        const est = await composeEstateOverlay(cfg.projectDirs, { ...tierTargetOpts(query), detail: query.detail, env }, reclassifyOverlay);
+        // The logical lens needs the rich attrs, exactly as on the
+        // single-project path below (`logical ? { detail: 3 }`).
+        const detail = logical ? 3 : query.detail;
+        const est = await composeEstateOverlay(cfg.projectDirs, { ...tierTargetOpts(query), detail, env }, reclassifyOverlay);
         if (est.dropped.length === est.total) {
           return c.json({ error: `no project in the estate could be graphed — ${est.dropped.map((d) => `${d.name}: ${d.reason}`).join("; ")}` }, 500);
         }
-        let ir = pruneRuntimeChildren(est.ir);
-        if ((query.detail ?? 2) < 3) ir = pruneImports(ir);
+        // The runtime tier (#86) on an estate (#224): the same two calls the
+        // single-project branch below makes. `attachRuntimeContainment` reads
+        // each node's `runtimeOwner` (chant#1180) and nests it under its
+        // declared owner — composition keeps that intact because
+        // `namespaceRuntimeOwners` (src/estate.ts) re-points the field at the
+        // owner's composed id first. Without `?runtime=1` the children are
+        // pruned as before: a tier you cannot dial away is not a tier.
+        //
+        // `est.ir` is pinhole's `GraphIR` (composeStacks' return) — the same
+        // IR chant's type describes, minus the index signature on `groups`
+        // that these passes read through, so it is named as chant's here.
+        const composed = est.ir as GraphIR;
+        let ir = runtime ? attachRuntimeContainment(composed) : pruneRuntimeChildren(composed);
+        if ((detail ?? 2) < 3) ir = pruneImports(ir);
         // Same passes as /api/graph's estate branch (#188) — the k8s half's
         // only edge source, and the cross-stack joins the estate exists for.
         ir = addValueMatchEdges(ir);
         ir = addK8sDeclaredEdges(ir);
-        ir = addClusterAnchorEdges(ir, await boundK8sContext(env));
-        const { svg } = renderGraph(ir, { boxes: "byStack" });
-        const lensNote =
-          logical || runtime
-            ? `the ${logical ? "logical" : "runtime"} lens doesn't apply to a composed estate yet — showing the composed entity overlay`
-            : undefined;
+        const boundContext = await boundK8sContext(env);
+        ir = addClusterAnchorEdges(ir, boundContext);
         const coverNote =
           est.unobserved.length || est.dropped.length
             ? `live observe covered ${est.observed} of ${est.total} projects — ` +
@@ -1080,7 +1144,35 @@ export function createApp(
                 ...est.dropped.map((d) => `${d.name}: dropped (${d.reason})`),
               ].join("; ")
             : undefined;
-        const note = [lensNote, coverNote, namespaceMismatchNote(ir.nodes)].filter(Boolean).join(" · ");
+        // The logical lens over the composed, drift-coloured IR (#224) — same
+        // projection and same render path as the single-project branch below,
+        // so each surviving card keeps its overlay colour inside its namespace
+        // box. See /api/graph's estate branch for why the composed ids are
+        // safe here and estateSourceRoots for the env/binding choice.
+        if (logical) {
+          const logicalBefore = ir.nodes.length;
+          const { ir: projected, byContainer } = projectTopology(ir, env, boundContext, await estateSourceRoots(query));
+          const { svg } = renderArchitecture(projected, byContainer);
+          const note = [notesFor("logical", projected, undefined, logicalBefore), coverNote, namespaceMismatchNote(projected.nodes)]
+            .filter(Boolean)
+            .join(" · ");
+          return c.json({
+            ir: projected,
+            svg,
+            byContainer,
+            meta: { projectDir: cfg.projectDir, env, mode: "logical", estate: est.total, ...(note ? { note } : {}) },
+          });
+        }
+        // One box per node: pinhole's `layoutIr` parents a node to a single
+        // group (concept.d.ts), so the runtime tier trades the per-project
+        // boundary boxes for the owner-containment ones it was asked for —
+        // the same boxes the single-project runtime view draws, which is the
+        // point of asking for the tier. Every other estate view keeps
+        // `byStack`.
+        const { svg } = renderGraph(ir, { boxes: runtime ? "byContainer" : "byStack" });
+        const note = [coverNote, namespaceMismatchNote(ir.nodes), runtime ? notesFor("runtime", ir) : undefined]
+          .filter(Boolean)
+          .join(" · ");
         return c.json({
           ir,
           svg,
