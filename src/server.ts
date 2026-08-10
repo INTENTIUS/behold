@@ -484,8 +484,8 @@ export function createApp(
   // multi-cluster tiebreak for anchoring/logical projection (cluster-anchor.ts
   // `boundManagedCluster`) — read per call because both the profiles and the
   // kubeconfig can change under a running server. Never throws: no k8s
-  // lexicon, no kubectl, no kubeconfig all resolve to undefined, which every
-  // consumer treats as "no opinion".
+  // lexicon, no kubeconfig, no readable kubeconfig at all resolve to
+  // undefined, which every consumer treats as "no opinion".
   const boundK8sContext = async (env: string | undefined): Promise<string | undefined> => {
     try {
       const { lexicons, k8sProfiles } = await detectProject(cfg.projectDir);
@@ -682,8 +682,8 @@ export function createApp(
     const { environments, lexicons, stacks, k8sProfiles } = await detectProject(cfg.projectDir);
     // #106: the k8s half's apiserver is dynamic (Floci allocates a port per EKS
     // cluster), so it is resolved from the kubeconfig on each read rather than
-    // assumed. Only for a project that declares the lexicon — no kubectl call
-    // for an aws-only project.
+    // assumed. Only for a project that declares the lexicon — an aws-only
+    // project never touches a kubeconfig.
     const k8sTarget = lexicons.includes("k8s")
       ? resolveK8sTarget(k8sProfiles, cfg.env, await loadKubeconfig())
       : undefined;

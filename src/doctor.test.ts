@@ -124,7 +124,11 @@ describe("diagnose", () => {
     expect(report.ok).toBe(true);
     expect(by(report, "kube").status).toBe("warn");
     expect(by(report, "kube").detail).toContain("no kubeconfig readable");
-    expect(by(report, "kube").fix).toContain("kubectl");
+    // Since #231 the fix names the kubeconfig, not kubectl — behold reads the
+    // file itself now, so "install kubectl" was advice for a problem it no
+    // longer has.
+    expect(by(report, "kube").fix).toContain("KUBECONFIG");
+    expect(by(report, "kube").fix).not.toContain("kubectl");
   });
 
   it("reports the bound context and its apiserver when the kubeconfig carries it", async () => {
