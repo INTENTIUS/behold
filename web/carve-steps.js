@@ -63,7 +63,10 @@ export function initialCarveState() {
     bridge: null,
     /** Set when the user says they ran the handoff commands. */
     handoff: false,
-    /** Which step is mid-run ("emit" | "bridge" | null) — the dial's progress. */
+    /** POST /api/carve/plan's answer (live tier only). Estate-wide, so a new
+     * pick keeps it — the plan is about the armed Terraform, not the pick. */
+    plan: null,
+    /** Which step is mid-run ("emit" | "bridge" | "plan" | null). */
     busy: null,
     /** The last structured refusal, keyed by step id. */
     error: null,
@@ -378,7 +381,7 @@ export function renderCarvePanel(host, state, ctx, actions) {
     pick: () => renderPick(body, state, ctx, actions),
     emit: () => renderEmit(body, state, ctx, actions),
     bridge: () => renderBridge(body, state, ctx, actions),
-    handoff: () => renderHandoff(body, state, actions),
+    handoff: () => renderHandoff(body, state, ctx, actions),
     done: () => renderDone(body, state, ctx, actions),
   };
   renderers[step.id]();
@@ -426,6 +429,17 @@ function renderAdvise(body, ctx) {
         `Terraform read from ${ctx.demo.fromLabel}/ in your demo copy. Emit and bridge write only into ${ctx.demo.outLabel}/.`,
       ),
     );
+    if (ctx.demo.live) {
+      body.appendChild(
+        el(
+          "p",
+          "panel-muted carve-live-note",
+          `Live tier: the starred resources are REALLY applied into a scratch Floci (${ctx.demo.live.endpoint}, ` +
+            "deleted when this server exits) and the tfstate the advisor read was written by terraform, not shipped. " +
+            "The observe beat — chant reading the bucket live while Terraform still owns it — waits on chant#1647.",
+        ),
+      );
+    }
   }
 }
 
@@ -544,11 +558,37 @@ function renderBridge(body, state, ctx, actions) {
   for (const a of b.proposals || []) body.appendChild(artifactBlock(a, actions));
 }
 
-function renderHandoff(body, state, actions) {
+function renderHandoff(body, state, ctx, actions) {
   const runbook = state.bridge && state.bridge.runbook;
   if (!runbook) {
     body.appendChild(el("p", "panel-muted", blockedReason(state, "handoff") || "no runbook yet"));
     return;
+  }
+
+  // The live tier's read-only beat (#254): a REAL `terraform plan`. Before the
+  // operator pastes `state rm` it shows a no-op; after, the carved resource is
+  // simply absent from Terraform's world — not destroyed. That verdict line is
+  // the reason the tier exists.
+  if (ctx.demo && ctx.demo.live) {
+    const planBtn = el("button", "act carve-plan", state.busy === "plan" ? "planning…" : "▶ terraform plan (read-only)");
+    planBtn.disabled = !!state.busy;
+    planBtn.title = "Runs terraform plan in the demo copy against the scratch Floci. Reads everything, changes nothing.";
+    planBtn.addEventListener("click", actions.runPlan);
+    body.appendChild(planBtn);
+    if (state.plan) {
+      const verdict = el("div", "carve-plan-verdict");
+      verdict.appendChild(el("code", null, state.plan.planLine));
+      verdict.appendChild(
+        el(
+          "p",
+          "panel-muted",
+          state.plan.noDestroy
+            ? "0 to destroy — the resource never blinked."
+            : "The plan wants to destroy something. Stop and read it before touching the estate.",
+        ),
+      );
+      body.appendChild(verdict);
+    }
   }
   // The one place the walkthrough refuses to be a button, stated out loud.
   const why = el("div", "carve-refusal carve-human");

@@ -1233,6 +1233,32 @@ const carveActions = {
   },
   runEmit: () => runCarveStep("emit"),
   runBridge: () => runCarveStep("bridge"),
+  async runPlan() {
+    if (carveState.busy) return;
+    carveState.busy = "plan";
+    carveState.error = null;
+    renderPanelCarve();
+    try {
+      const res = await fetch("/api/carve/plan", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+      const body = await res.json().catch(() => ({ error: "plan returned an unreadable body", remedy: "" }));
+      if (!res.ok || body.error) {
+        carveState.error = { step: "handoff", ...body };
+        showToast(`✗ terraform plan: ${body.error || res.status}`, false);
+      } else {
+        carveState.plan = body;
+        showToast(body.noDestroy ? "✓ plan: nothing to destroy" : "✗ plan wants to destroy something", body.noDestroy);
+      }
+    } catch (err) {
+      carveState.error = { step: "handoff", error: String((err && err.message) || err), remedy: "Is the behold server still running?" };
+    } finally {
+      carveState.busy = null;
+      renderPanelCarve();
+    }
+  },
   copy(text, el) {
     const done = () => {
       el.dataset.copied = "1";
