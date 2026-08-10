@@ -14,6 +14,7 @@
     "example-k8s",
     "example-flux-estate",
     "example-argo-estate",
+    "example-carve",
     "demos.json",
     "AGENTS.md"
   ],

@@ -570,6 +570,145 @@ try {
   await page.waitForTimeout(100);
   check("⤢ fit still resets the view", (await viewBox()) === vbBeforePan);
 
+  // ---- #254: the carve walkthrough, driven end to end -----------------------
+  // A second stub in carve mode (smoke/stub.mjs `{carve: true}`) serving the
+  // REAL committed report through the REAL lens, and the two POST steps canned
+  // — so the six steps are deterministic in CI with no chant, no HCL parser and
+  // no npm install. What's asserted is the walkthrough's own contract: the tab
+  // exists only here, the gates hold in order, a run posts the picked address,
+  // Emit shows lint and never build, Handoff is copy buttons rather than a run
+  // button, and Done leaves a marker on the card.
+  const carveServer = await startStub(PORT + 1, { carve: true });
+  const carvePage = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+  carvePage.on("pageerror", (e) => pageErrors.push("carve: " + String(e)));
+  carvePage.on("console", (m) => {
+    if (m.type() === "error" && !/favicon/i.test(m.text())) pageErrors.push("carve: " + m.text());
+  });
+  try {
+    check("the Carve tab is absent on an ordinary project", (await page.locator('#panel-tabs button[data-tab="carve"]').count()) === 0);
+
+    await carvePage.goto(`http://localhost:${PORT + 1}/`);
+    await carvePage.waitForSelector("#graph svg [data-node-id]", { timeout: 20000 });
+    await carvePage.waitForSelector('#panel-tabs button[data-tab="carve"]', { timeout: 10000 });
+    check("carve mode mounts the Carve tab", (await carvePage.locator('#panel-tabs button[data-tab="carve"]').count()) === 1);
+    await carvePage.click('#panel-tabs button[data-tab="carve"]');
+    await carvePage.waitForTimeout(150);
+
+    const step = (id) => carvePage.locator(`#tab-carve .carve-step[data-step="${id}"]`);
+    const stepState = (id) => step(id).getAttribute("data-status");
+    const bodyStep = () => carvePage.locator("#tab-carve .carve-body").getAttribute("data-step");
+    const carveText = () => carvePage.locator("#tab-carve").innerText();
+
+    // 1. Advise — the band legend, with the real report's counts.
+    check("six steps on the track", (await carvePage.locator("#tab-carve .carve-step").count()) === 6);
+    check("boots on Advise", (await bodyStep()) === "advise");
+    const advise = await carveText();
+    check("Advise shows the band legend with real counts", advise.includes("carve now") && advise.includes("boundary work") && /\b6\b/.test(advise));
+    check("Advise names where the runs will write", advise.includes("app/carveout"));
+    check("emit is blocked before anything is picked", (await stepState("emit")) === "blocked");
+    check("…and the blocked step says why", (await step("emit").getAttribute("title")).includes("Pick a resource first"));
+
+    // 2. Pick — a click on the green star, and the honest cut summary.
+    await carvePage.click('#graph [data-node-id="aws_s3_bucket.assets"]');
+    await carvePage.waitForTimeout(200);
+    check("a graph click IS the Pick step", (await bodyStep()) === "pick");
+    const pick = await carveText();
+    check("Pick shows the score arithmetic", pick.includes("100 - 12x1 inbound = 88"));
+    check("Pick names the cut from the breakdown's counts", pick.includes("1 inbound"));
+    check("…and says plainly that the survivors aren't in this report (chant#1636)", pick.includes("chant#1636"));
+    check("the inspect pane opened on the same node", (await carvePage.locator("#inspect").innerText()).includes("aws_s3_bucket.assets"));
+    check("emit unblocks once something is picked", (await stepState("emit")) !== "blocked");
+    check("bridge stays blocked until emit has run", (await stepState("bridge")) === "blocked");
+
+    // 3. Emit — a real POST, then the emitted source and the lint verdict.
+    await step("emit").click();
+    await carvePage.click("#tab-carve button.carve-run");
+    await carvePage.waitForSelector('#tab-carve .carve-body[data-step="emit"] .carve-artifact', { timeout: 15000 });
+    const emitPost = carveServer.carvePosts.find((p) => p.path === "/api/carve/emit");
+    check("Emit posted the picked address as JSON", !!emitPost && emitPost.body.select === "aws_s3_bucket.assets");
+    check("…as an application/json body (so a cross-origin page preflights)", !!emitPost && emitPost.contentType.includes("application/json"));
+    const emit = await carveText();
+    check("Emit shows the emitted source file", emit.includes("app/carveout/src/assets.ts") && emit.includes("new Bucket"));
+    check("Emit shows the chant lint verdict", emit.includes("chant lint: passes"));
+    check("Emit counts warnings off chant's summary line, not a column number", emit.includes("3 warning(s)"));
+    check("Emit never claims a chant build", !/chant build/.test(emit) || emit.includes("not `chant build`"));
+    check("Emit links the build caveat (chant#1637)", (await carvePage.locator("#tab-carve .carve-caveat").innerText()).includes("why lint and not build"));
+    check("the boundary report renders as a JSON tree, not a blob", (await carvePage.locator("#tab-carve .jsonv").count()) >= 1);
+    check("a finished run does NOT skip past its own result", (await bodyStep()) === "emit");
+    check("bridge unblocks once emit has run", (await stepState("bridge")) !== "blocked");
+    await carvePage.screenshot({ path: join(SHOTS, "8-carve-emit.png"), fullPage: true });
+
+    // 4. Bridge — proposals only, never --apply-rewrites.
+    await step("bridge").click();
+    await carvePage.click("#tab-carve button.carve-run");
+    await carvePage.waitForSelector('#tab-carve .carve-body[data-step="bridge"] .carve-artifact', { timeout: 15000 });
+    const bridge = await carveText();
+    check("Bridge posted the same address", carveServer.carvePosts.some((p) => p.path === "/api/carve/bridge" && p.body.select === "aws_s3_bucket.assets"));
+    check("Bridge renders the proposed data source", bridge.includes("aws_s3_bucket-assets-datasources.tf") && bridge.includes('data "aws_s3_bucket"'));
+    check("Bridge says your Terraform wasn't touched", bridge.includes("Nothing in your Terraform changed"));
+
+    // 5. Handoff — copy buttons, and the refusal to be a button.
+    await step("handoff").click();
+    await carvePage.waitForTimeout(150);
+    const handoff = await carveText();
+    check("Handoff renders the runbook's commands", handoff.includes("terraform state rm aws_s3_bucket.assets"));
+    check("…deduped (the runbook prints `terraform plan` twice)", (handoff.match(/terraform plan/g) || []).length === 1);
+    check("Handoff has a copy button per command", (await carvePage.locator("#tab-carve .carve-cmd-row .carve-copy").count()) === 3);
+    check("Handoff has NO run button — the destructive middle stays human", (await carvePage.locator("#tab-carve button.carve-run").count()) === 0);
+    check("…and the UI says why", handoff.includes("not buttons, on purpose") && handoff.includes("terraform state rm"));
+    const copyCtl = carvePage.locator("#tab-carve .carve-cmd-row .carve-copy").first();
+    await copyCtl.click();
+    await carvePage.waitForTimeout(120);
+    check("clicking copy reports back on the control", (await copyCtl.getAttribute("data-copied")) === "1");
+    let carveClip = null;
+    try {
+      await carvePage.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: `http://localhost:${PORT + 1}` });
+      carveClip = await carvePage.evaluate(() => navigator.clipboard.readText());
+    } catch {
+      /* no readable clipboard here — the control's own report is the assertion */
+    }
+    if (carveClip !== null) check("the clipboard holds the command verbatim", carveClip.startsWith("terraform state rm"));
+    await carvePage.screenshot({ path: join(SHOTS, "9-carve-handoff.png"), fullPage: true });
+
+    // 6. Done — the marker on the card, and the end card.
+    await carvePage.click("#tab-carve button.carve-ran");
+    await carvePage.waitForTimeout(200);
+    check("acknowledging the handoff lands on Done", (await bodyStep()) === "done");
+    const done = await carveText();
+    check("the end card is #254's line", done.includes("chant-owned, observe position") && done.includes("terraform import"));
+    check("the follow-up is named, not implied", done.includes("SLIDE") && done.includes("--live"));
+    const marker = carvePage.locator('#graph [data-node-id="aws_s3_bucket.assets"] [data-carved="1"]');
+    check("the carved card carries a marker", (await marker.count()) === 1);
+    check("…inside the card's own box, not at the group's origin", await marker.evaluate((t) => Number(t.getAttribute("x")) > 0 && Number(t.getAttribute("y")) > 0));
+    check("every step now reads done", (await carvePage.locator('#tab-carve .carve-step[data-status="done"]').count()) === 5);
+    await carvePage.screenshot({ path: join(SHOTS, "10-carve-done.png"), fullPage: true });
+
+    // Picking a different resource invalidates the runs that were about the old
+    // one — showing one resource's emitted source under another's name is the
+    // one way this panel could actively lie.
+    await carvePage.click('#graph [data-node-id="aws_cloudwatch_log_group.worker"]');
+    await carvePage.waitForTimeout(200);
+    check("a new pick drops the previous runs", (await bodyStep()) === "pick" && (await stepState("bridge")) === "blocked");
+
+    // A resource with no native mapping is refused here, not after a round trip
+    // to chant — the advisor already scored it 0 and said why.
+    await carvePage.click('#graph [data-node-id="random_pet.suffix"]');
+    await carvePage.waitForTimeout(200);
+    check("an unmappable resource says so at Pick time", (await carveText()).includes("no known native mapping"));
+    await step("emit").click();
+    await carvePage.waitForTimeout(100);
+    check("…and its Emit button is disabled rather than dead-ending in chant's error", await carvePage.locator("#tab-carve button.carve-run").isDisabled());
+
+    // The track is a state machine, not six tabs: a blocked step refuses the
+    // click rather than showing an empty panel.
+    await step("done").click();
+    await carvePage.waitForTimeout(100);
+    check("a blocked step refuses navigation", (await bodyStep()) === "emit");
+  } finally {
+    await carvePage.close();
+    carveServer.close();
+  }
+
   check("no page errors", pageErrors.length === 0);
   if (pageErrors.length) console.error("page errors:", pageErrors);
 } finally {

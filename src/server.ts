@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { listRecents, addRecent } from "./recents.ts";
 import type { GraphIR } from "@intentius/chant";
 import {
@@ -57,6 +57,14 @@ import { resourcesByComponent, nonResourceEntities } from "./resources.ts";
 import { summarizePlan } from "./reconcile.ts";
 import { renderGraph, renderArchitecture, renderBanded } from "./render.ts";
 import { readCarveReport, carveReportToIr, carveNote } from "./carve-lens.ts";
+import {
+  carveWriteBlock,
+  runCarveBridge,
+  runCarveEmit,
+  selectFromReport,
+  BUILD_CAVEAT,
+  type CarveDemo,
+} from "./carve-actions.ts";
 import { discoverEstateOps } from "./ops.ts";
 import { LIVE_IMPORT_LEXICONS } from "./adopt.ts";
 import { detectProject, loadBeholdConfig } from "./project.ts";
@@ -122,6 +130,11 @@ export interface ServerOptions {
    * is shelled, no source is watched and no live state exists. See
    * `carveRoutes` below. */
   carveReport?: string;
+  /** #254: the `behold demo carve` copy this server booted, when it did. The
+   * ONLY context in which the two carve write actions exist — built by
+   * `runDemo` from the directory it just copied, never from a request. See
+   * src/carve-actions.ts for the whole write boundary. */
+  carveDemo?: CarveDemo;
   /** #228: may this server write the hand-layout sidecar (`.behold/layout.json`
    * in the served project)? Default true for a live `serve`. `runExport` sets
    * it false: a static capture reads the sidecar (to bake it into the snapshot
@@ -386,8 +399,32 @@ async function captureFrame(
  * blank graph. `behold carve` also validates once up front, so a bad path is
  * refused in the terminal before a server ever starts.
  */
-function carveRoutes(app: Hono, reportPath: string): void {
+function carveRoutes(app: Hono, reportPath: string, demo?: CarveDemo): void {
   const load = () => readCarveReport(reportPath, (p) => readFileSync(p, "utf8"));
+
+  // #254's stepper needs to know, before it draws a button, whether this server
+  // can actually run a step — a `behold carve report.json` looks identical
+  // otherwise, and offering an Emit button that always 403s would be a lie in
+  // the shape of a control.
+  const demoBlock = () => carveWriteBlock(demo);
+  const demoInfo = (): Record<string, unknown> | null => {
+    if (!demo) return null;
+    const block = demoBlock();
+    return {
+      root: demo.root,
+      from: demo.from,
+      state: demo.state ?? null,
+      project: demo.project,
+      out: demo.out,
+      // Paths the UI can print without leaking the operator's whole home dir.
+      outLabel: relative(demo.root, demo.out).split(sep).join("/"),
+      fromLabel: relative(demo.root, demo.from).split(sep).join("/"),
+      runnable: !block,
+      ...(block ? { reason: block } : {}),
+      ...(demo.degraded ? { degraded: demo.degraded } : {}),
+      buildCaveat: BUILD_CAVEAT,
+    };
+  };
 
   // The raw report, for agents (#230's M4 workflow reads this to confirm a
   // band before running `carve emit`). Verbatim — behold adds nothing to it.
@@ -413,7 +450,9 @@ function carveRoutes(app: Hono, reportPath: string): void {
         tier: null,
         target: null,
         carve: true,
-        note: carveNote(parsed.report, ir),
+        // A demo whose own advisor run failed says so on the statusbar, not
+        // only in the terminal the viewer isn't looking at.
+        note: carveNote(parsed.report, ir) + (demo?.degraded ? ` Degraded: ${demo.degraded}` : ""),
       },
     });
   });
@@ -436,16 +475,76 @@ function carveRoutes(app: Hono, reportPath: string): void {
             from: parsed.report.from ?? null,
             count: parsed.report.count ?? parsed.report.resources.length,
             bands: parsed.report.bands ?? {},
+            advisory: parsed.report.advisory ?? null,
+            demo: demoInfo(),
           }
-        : { report: reportPath },
+        : { report: reportPath, demo: demoInfo() },
     });
   });
+
+  // --- The walkthrough's two local actions (#254) -------------------------
+  // Registered only in carve mode, and they refuse unless this server booted a
+  // demo copy (`carveWriteBlock`). src/carve-actions.ts states the boundary in
+  // full; the shape here is #228's: a JSON body (so a hostile page preflights
+  // rather than blind-fires), a capped read, a polite structured refusal, and
+  // an echo of what actually happened rather than of what was asked for.
+  const runStep = async (
+    c: Context,
+    run: (demo: CarveDemo, select: string) => Promise<{ ok: true } | { ok: false; refusal: { error: string; code: string; remedy: string } }>,
+  ): Promise<Response> => {
+    const block = demoBlock();
+    if (block) {
+      return c.json(
+        {
+          error: block,
+          code: "read-only",
+          remedy: "The carve steps run inside a demo copy — start the walkthrough with `behold demo carve`.",
+        },
+        403,
+      );
+    }
+    if (!(c.req.header("content-type") ?? "").includes("application/json")) {
+      return c.json({ error: "send application/json", code: "carve-select", remedy: 'POST {"select": "<terraform address>"}' }, 415);
+    }
+    const text = await c.req.text().catch(() => "");
+    if (text.length > 4096) return c.json({ error: "a carve step body is capped at 4096 bytes", code: "carve-select", remedy: 'POST {"select": "…"}' }, 413);
+    let body: { select?: unknown };
+    try {
+      body = JSON.parse(text || "null") as { select?: unknown };
+    } catch {
+      return c.json({ error: "body must be JSON", code: "carve-select", remedy: 'POST {"select": "<terraform address>"}' }, 400);
+    }
+    const parsed = load();
+    const select = selectFromReport(parsed.ok ? parsed.report : undefined, body?.select);
+    if (!select) {
+      return c.json(
+        {
+          error: `\`select\` must name a resource this report ranks — ${JSON.stringify(body?.select ?? null)} isn't one of them.`,
+          code: "carve-select",
+          remedy: "Pick a card in the graph, or read the addresses off GET /api/carve.",
+        },
+        400,
+      );
+    }
+    const result = await run(demo!, select);
+    return result.ok ? c.json(result) : c.json(result.refusal, 422);
+  };
+
+  app.post("/api/carve/emit", (c) => runStep(c, runCarveEmit));
+  app.post("/api/carve/bridge", (c) => runStep(c, runCarveBridge));
 
   // A static report has no substrates to probe and no git history that means
   // anything (the file may sit anywhere). Answer empty instead of running a
   // Docker probe and a `git log` for a picture that cannot use either.
   app.get("/api/substrates", (c) => c.json({ substrates: [] }));
   app.get("/api/history", (c) => c.json({ commits: [] }));
+  // …and neither does it have a chant project to build a resource rollup or a
+  // CI projection from. The SPA asks for both on every load; without these the
+  // project-shaped handlers shell chant at a directory that was never a chant
+  // project and hand back a 500 the page then logs (#254 — surfaced by driving
+  // the walkthrough in a browser, where `/api/resources` 500'd on every boot).
+  app.get("/api/resources", (c) => c.json({ byComponent: {} }));
+  app.get("/api/ci", (c) => c.json({ stages: [], jobs: [], forge: null }));
 }
 
 export function createApp(
@@ -462,7 +561,7 @@ export function createApp(
 
   // Carve mode (#252) claims /api/graph, /api/project and friends before the
   // project-shaped handlers are registered — see carveRoutes.
-  if (cfg.carveReport) carveRoutes(app, cfg.carveReport);
+  if (cfg.carveReport) carveRoutes(app, cfg.carveReport, cfg.carveDemo);
 
   // behold's own project-root config (#70) — `.behold.json`'s `tiers` block,
   // if any (src/project.ts `loadBeholdConfig`). Read once at app creation
@@ -906,7 +1005,19 @@ export function createApp(
         { method: "POST", path: "/api/project/reveal", desc: "open the OS file manager at a served/recent project dir: JSON body {dir?}" },
         { method: "GET", path: "/api/graph", desc: "the graph {ir, svg, meta} — params: detail=0..3, components=1, logical=1, env, stack, tier, target, lens, up=1, down=1, radial=1, layout=1" },
         ...(cfg.carveReport
-          ? [{ method: "GET", path: "/api/carve", desc: "carve mode: the raw `chant carve advise --json` peelability report this server is rendering" }]
+          ? [
+              { method: "GET", path: "/api/carve", desc: "carve mode: the raw `chant carve advise --json` peelability report this server is rendering" },
+              {
+                method: "POST",
+                path: "/api/carve/emit",
+                desc: "carve demo only (#254): run `chant carve emit --state --select <addr>` into the demo copy — JSON body {select}; answers {artifacts, boundary, lint}",
+              },
+              {
+                method: "POST",
+                path: "/api/carve/bridge",
+                desc: "carve demo only (#254): run `chant carve bridge` (never --apply-rewrites) — JSON body {select}; answers {runbook, proposals}",
+              },
+            ]
           : []),
         { method: "GET", path: "/api/overlay", desc: "live drift overlay for ?env= — same shape/params as /api/graph, plus runtime=1" },
         { method: "GET", path: "/api/layout", desc: "hand-layout sidecar (.behold/layout.json): ?lens=<key> → {lens, deltas, writable}; no lens → every lens" },
@@ -1959,7 +2070,11 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
         `behold → http://localhost:${info.port}\n` +
           `  carve report: ${cfg.carveReport}\n` +
           `  green = carve now, amber = boundary work, grey = leave in Terraform.\n` +
-          `  Read-only advisory: behold emits nothing and touches no Terraform. Ctrl-C to stop.\n`,
+          (cfg.carveDemo
+            ? `  walkthrough: the panel's Carve tab — advise → pick → emit → bridge → handoff → done.\n` +
+              `  Emit and bridge write only into ${cfg.carveDemo.out}; your Terraform is never edited.\n` +
+              (cfg.carveDemo.degraded ? `  degraded: ${cfg.carveDemo.degraded}\n` : "")
+            : `  Read-only advisory: behold emits nothing and touches no Terraform. Ctrl-C to stop.\n`),
       );
       return;
     }

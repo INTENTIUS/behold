@@ -28,12 +28,35 @@ Click a card. The inspect pane shows the score spelled out — `100 - 12x3 inbou
 
 Terraform sub-resources that inline into a parent — `aws_s3_bucket_versioning` into its bucket — are not ranked separately. They carve with the parent, so they never appear as their own card.
 
+## The walkthrough: `behold demo carve`
+
+`npx behold demo carve` copies a bundled half-migrated estate — a small chant project beside a Terraform one, both describing the same AWS account — installs the chant it will shell, runs the advisor over the copy, and opens the banded graph with a six-step stepper on the panel's **Carve** tab. No Docker, no cloud account, no `terraform` binary.
+
+1. **Advise** — the bands, with what each one means and how many landed in it.
+2. **Pick** — click a green card. The inspect pane shows the score arithmetic; the step names the boundary the cut crosses (and says plainly when the report carries counts rather than edge lists).
+3. **Emit** — runs `chant carve emit --state --select <address>` into `app/carveout/` in the copy, then shows the emitted chant source, chant's own boundary report for the carve, and the `chant lint` result.
+4. **Bridge** — runs `chant carve bridge`, never with `--apply-rewrites`. The proposed data source, the rewired survivors and a git-applyable patch land beside the runbook; the demo's own `.tf` files are not edited.
+5. **Handoff** — the runbook's commands, each with a copy button, and deliberately **not** a run button. `terraform state rm` releases Terraform's claim on a live resource and `terraform apply` writes to your cloud; behold triggers delegated work, it does not decide when an estate changes hands. The panel says exactly that.
+6. **Done** — the card is marked chant-owned at the observe position. `terraform import` reverses all of it.
+
+The Emit step reports **`chant lint`, not `chant build`**. chant#1637: `carve emit` folds the bucket's versioning and public-access-block sub-resources into the carve set but does not yet carry them as native props, so `build` fails two AWS policy rules on source the advisor scored 88. The step links the reason rather than letting a lint pass read as a build pass.
+
+behold writes only into the copy it just made, and only into `app/carveout/` inside it. Both steps refuse outside a demo copy; a plain `behold carve report.json` shows the same six steps with the runs greyed out and a reason.
+
+Deferred to a follow-up: the Floci `--live` tier (`terraform apply` into a scratch emulator, live observe beats, a real `terraform plan` showing no destroy) and the morph animation that slides the carved card out of the Terraform boundary and into the chant project.
+
 ## For agents
 
 ```sh
 curl localhost:4600/api/carve      # the raw report, verbatim
 curl localhost:4600/api/graph      # the same thing as {ir, svg, meta}
+
+# demo only (behold demo carve): the walkthrough's two safe steps
+curl -X POST localhost:4600/api/carve/emit   -H 'content-type: application/json' -d '{"select":"aws_s3_bucket.assets"}'
+curl -X POST localhost:4600/api/carve/bridge -H 'content-type: application/json' -d '{"select":"aws_s3_bucket.assets"}'
 ```
+
+`select` must name a resource the served report ranks; anything else is a 400. Outside a demo copy both POSTs answer 403 `{code: "read-only"}`, and on an ordinary project serve they aren't registered at all. `GET /api/project`'s `carve.demo.runnable` is how a client knows which it is.
 
 A file that isn't a peelability report gets a structured `{error, code: "carve-report", remedy}` — in the terminal before the server starts, and from the routes if it goes bad later. It never renders as a blank graph.
 

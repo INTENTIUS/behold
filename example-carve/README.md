@@ -4,18 +4,37 @@ A migration caught half-done. `app/` is chant; `legacy-tf/` is Terraform; both
 describe one AWS account, and the walkthrough carves one more resource across
 the line while the camera is running.
 
-This directory is the fixture only. The stepper, the server wiring and the
-`demos.json` entry land with the walkthrough PR (behold #254 part 2).
+Run it:
+
+```sh
+behold demo carve          # copies this directory, installs, advises, serves
+```
+
+The boot does three things before a port opens: `npm install` in `app/` (whose
+chant every step of the walkthrough shells), `@cdktf/hcl2json` into the copy's
+root `node_modules` (chant lazy-loads the HCL parser from its own install
+upward, so `<copy>/node_modules` is where it resolves — not beside the `.tf`
+files), and `chant carve advise --report` over the copy's own Terraform. If any
+of that fails, the committed `carve-report.json` is served instead and the
+reason is on screen; a blank graph is the one outcome that's never allowed.
 
 ```
 example-carve/
   app/                     a small chant project — the pieces already carved
+    carveout/              where Emit and Bridge write, in a copy (gitignored)
   legacy-tf/               the Terraform half, still Terraform-owned
     terraform.tfstate      synthetic state (fake account, fake ARNs)
     floci-override.tf.disabled   provider endpoints for the --live tier, inert
     modules/cdn/           a local module, so module.cdn resolves offline
   carve-report.json        the committed `carve advise` output
 ```
+
+`carveout/` sits INSIDE `app/` rather than beside it, and that is load-bearing:
+the emitted source imports `@intentius/chant-lexicon-aws`, and Node resolves
+that from the file's own directory upward. From `app/carveout/src/assets.ts` it
+reaches `app/node_modules`; from a sibling `carveout/` it would reach nothing,
+and the Emit step's `chant lint` would fail on an install problem rather than
+on the source.
 
 ## The estate is mixed from the first frame
 
@@ -92,6 +111,9 @@ from the repository root, so the `from` field stays a relative path.
 
 ## The six beats
 
+These are the six steps on the panel's Carve tab. behold runs beats 4 and 5
+itself, into `app/carveout/` in the copy; beat 6 is copy buttons, on purpose.
+
 1. **The green star.** The estate view, banded. Two resources are green; the
    100 is a log group nobody will miss, so the eye lands on the 88 next to it.
 2. **The arithmetic.** Open `aws_s3_bucket.assets`: 100 minus 12 for one
@@ -150,8 +172,10 @@ passes with warnings, but `chant build` fails on two AWS policy rules
 (`PublicAccessBlockConfiguration` missing, no TLS-deny bucket policy) even
 though the Terraform declared the first of those.
 
-Verified against chant 0.44.4. The walkthrough's Emit beat should show `lint`,
-not `build`, until the fold is applied as well as reported.
+Verified against chant 0.44.4. The walkthrough's Emit beat shows `lint`, not
+`build`, until the fold is applied as well as reported — the step's "why lint
+and not build?" note says the same thing on screen, so nobody reads a lint pass
+as a build pass. That is chant#1637.
 
 ## Values
 

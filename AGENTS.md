@@ -64,6 +64,35 @@ To move a resource: confirm its band on `/api/carve`, then run chant's own
 applying the generated survivor rewrites stay a human gate — behold has no
 endpoint that writes Terraform, and adding one would break the invariant below.
 
+### The walkthrough (`behold demo carve`, #254)
+
+`behold demo carve` copies a bundled half-migrated estate (a chant project
+beside a Terraform one), runs the advisor over the copy, and serves the same
+carve view plus a six-step stepper on the panel's Carve tab: advise → pick →
+emit → bridge → handoff → done.
+
+Two of those steps are POST routes, and they exist **only** in a demo copy:
+
+- `POST /api/carve/emit` — body `{select}`; runs `chant carve emit --state
+  --select <addr> --output <copy>/app/carveout` and then `chant lint` on the
+  result. Answers `{select, command, output, artifacts[], boundary, lint,
+  buildCaveat}`.
+- `POST /api/carve/bridge` — body `{select}`; runs `chant carve bridge`
+  **without** `--apply-rewrites`. Answers `{select, command, output, runbook,
+  proposals[]}`.
+
+`GET /api/project`'s `carve.demo` says whether they can act (`runnable`, plus a
+`reason` when not). `select` must name a resource the served report ranks;
+anything else is a 400. Outside a demo copy both routes answer 403
+`{code: "read-only"}`, and on an ordinary project serve they don't exist at all.
+
+The gate the Emit step reports is `chant lint`, not `chant build` — chant#1637
+means `build` fails on the emitted bucket. Don't read a lint pass as a build
+pass.
+
+There is still **no** endpoint that runs `terraform`. The handoff step hands
+back the runbook's commands as text.
+
 ## The act loop (delegated, never direct)
 
 behold does not apply. To change the estate:
@@ -84,7 +113,7 @@ If a request would have behold write to a cloud or to source directly, it's wron
 behold shows truth and triggers Ops. Authority stays in the committed source and the
 executor.
 
-### The one exception, and its exact size
+### The exceptions, and their exact size
 
 `POST /api/layout` (#228) writes **one** file in the served project:
 `.behold/layout.json` — the hand-layout sidecar, `{version, lenses: {<lens>:
@@ -105,3 +134,13 @@ inside a project, and it does not weaken the invariant above:
 `GET /api/layout` reads it back; `GET /api/graph?layout=1` (and `/api/overlay`)
 render with the deltas baked into the SVG, which is how `behold export` and
 static snapshots honour a hand layout.
+
+The second exception is the carve walkthrough's two steps above (#254), and it
+is narrower still: they exist only when behold booted a `behold demo carve`
+copy, they write only into `<copy>/app/carveout/`, and the directory they write
+into is a scratch dir behold created inside a directory it copied for you a
+minute earlier. `carve bridge` runs without `--apply-rewrites`, so the demo's
+own Terraform is not edited either. The only request-derived value is `select`,
+and it must be an address the served report already ranks — the value that
+reaches the spawn's argv comes from a closed set read off disk. No cloud write,
+no Terraform mutation, no edit to anyone's chant source.
