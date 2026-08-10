@@ -152,13 +152,82 @@ describe("classifyObservedHealth — Argo (#226)", () => {
 
   it("reads the pair back out of chant's collapsed status word", () => {
     // chant's `argoStatusWord` sends the unhappy half as the status string and
-    // `READY` for Healthy+Synced — all behold gets over the wire today.
-    expect(classifyObservedHealth({ type: "K8s::Argo::Application", status: "Degraded" }).health).toBe("degraded");
+    // `READY` for Healthy+Synced — all behold gets over the wire today. A word
+    // only the HEALTH vocabulary recognises names health, sync stays unread —
+    // chant dropped it and this reader does not guess it.
+    const degraded = classifyObservedHealth({ type: "K8s::Argo::Application", status: "Degraded" });
+    expect(degraded.health).toBe("degraded");
+    expect(degraded.detail).toBe("health=Degraded");
     // The one the regex missed outright: `OutOfSync` matches no pattern in it
     // ("synced" is not a substring of "outofsync"), so it used to be unknown.
     expect(classifyHealth("OutOfSync")).toBe("unknown");
-    expect(classifyObservedHealth({ type: "K8s::Argo::Application", status: "OutOfSync" }).health).toBe("progressing");
-    expect(classifyObservedHealth({ type: "K8s::Argo::Application", status: "READY" }).health).toBe("healthy");
+    // `OutOfSync` only exists in the SYNC vocabulary — chant's own collapse
+    // (health checked first) only reaches this branch once health already
+    // read Healthy, so this reader names both halves rather than just sync's.
+    const outOfSync = classifyObservedHealth({ type: "K8s::Argo::Application", status: "OutOfSync" });
+    expect(outOfSync.health).toBe("progressing");
+    expect(outOfSync.detail).toBe("health=Healthy, sync=OutOfSync");
+    const ready = classifyObservedHealth({ type: "K8s::Argo::Application", status: "READY" });
+    expect(ready.health).toBe("healthy");
+    expect(ready.detail).toBe("health=Healthy, sync=Synced");
+  });
+
+  // #275 — found live by the #269 e2e: a ComparisonError leaves health.status
+  // Healthy and sync.status Unknown, and chant's collapse sends the bare word
+  // `Unknown`, which sits in BOTH vocabularies. Reading it as health (the old
+  // behaviour) reported `health=Unknown` for an app whose workload was fine —
+  // the wrong half. `Unknown` is read as sync's now, matching the more common
+  // real cause (a broken comparison, not an unassessable workload).
+  it("reads a bare `Unknown` as the sync half, not health's (#275)", () => {
+    const v = classifyObservedHealth({ type: "K8s::Argo::Application", status: "Unknown" });
+    expect(v.health).toBe("unknown");
+    expect(v.detail).toBe("health=Healthy, sync=Unknown");
+  });
+
+  // #275 — Argo's own `ApplicationCondition` carries no `status` field
+  // (`{ type, message, lastTransitionTime }` is the whole shape), so a
+  // ComparisonError's message is the one diagnostic line the controller
+  // writes, and it has nowhere else to surface.
+  it("joins an error-type condition's message onto the pair (#275)", () => {
+    const v = classifyObservedHealth({
+      type: "K8s::Argo::Application",
+      status: "Unknown",
+      attributes: {
+        namespace: "argocd",
+        status: {
+          health: { status: "Healthy" },
+          sync: { status: "Unknown" },
+          conditions: [
+            {
+              type: "ComparisonError",
+              message:
+                "Failed to load target state: failed to generate manifest for source 1 of 1: rpc error: code = Unknown desc = example-argo-estate/app-b/behold-e2e-does-not-exist: app path does not exist",
+              lastTransitionTime: "2026-08-09T10:14:02Z",
+            },
+          ],
+        },
+      },
+    });
+    expect(v.health).toBe("unknown");
+    expect(v.detail).toBe(
+      "health=Healthy, sync=Unknown: Failed to load target state: failed to generate manifest for source 1 of 1: rpc error: code = Unknown desc = example-argo-estate/app-b/behold-e2e-does-not-exist: app path does not exist",
+    );
+  });
+
+  it("does not join a *Warning condition's message — only an *Error one is damage", () => {
+    const v = classifyObservedHealth({
+      type: "K8s::Argo::Application",
+      attributes: {
+        namespace: "argocd",
+        status: {
+          health: { status: "Healthy" },
+          sync: { status: "Synced" },
+          conditions: [{ type: "SharedResourceWarning", message: "resource is part of applications app-a and app-b" }],
+        },
+      },
+    });
+    expect(v.health).toBe("healthy");
+    expect(v.detail).toBe("health=Healthy, sync=Synced");
   });
 
   it("falls back for an Application the controller has not written a status onto", () => {
