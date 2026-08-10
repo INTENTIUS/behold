@@ -155,14 +155,19 @@ export function edgeLine(e) {
  * rather than inventing them. "None" and "not reported" are different claims,
  * and a walkthrough that blurs them teaches the wrong thing about the tool.
  */
-export function cutSummary(resource) {
+export function cutSummary(resource, node) {
   const edges = boundaryEdgesOf(resource);
   if (edges.length) {
     return { known: true, items: edges.map(edgeLine), note: null };
   }
+  // The counts come off the raw report when it's in hand and off the IR node's
+  // own attrs otherwise — the lens puts `inbound`/`outbound` on every card, so
+  // the step never has to wait for the extra `/api/carve` fetch to say
+  // something true. (`??`, not `||`: a real 0 is an answer.)
+  const attrs = (node && node.attrs) || {};
   const b = (resource && resource.breakdown) || {};
-  const inbound = b.inbound || 0;
-  const outbound = b.outbound || 0;
+  const inbound = b.inbound ?? attrs.inbound ?? 0;
+  const outbound = b.outbound ?? attrs.outbound ?? 0;
   const items = [];
   if (inbound) items.push(`${inbound} inbound — a survivor reads this; each needs a Terraform data-source patch, immediately.`);
   if (outbound) items.push(`${outbound} outbound — this reads a survivor; each becomes a deferred deploy-time input.`);
@@ -431,7 +436,7 @@ function renderPick(body, state, ctx, actions) {
   body.appendChild(el("h3", null, "the arithmetic"));
   body.appendChild(factRows(pickFacts(node, resource)));
 
-  const cut = cutSummary(resource);
+  const cut = cutSummary(resource, node);
   body.appendChild(el("h3", null, cut.known ? "the edges this cut severs" : "the boundary this cut crosses"));
   for (const item of cut.items) body.appendChild(el("p", "panel-muted carve-cut", item));
   if (cut.note) body.appendChild(el("p", "panel-muted carve-honesty", cut.note));

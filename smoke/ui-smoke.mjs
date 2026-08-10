@@ -592,7 +592,10 @@ try {
     await carvePage.waitForSelector('#panel-tabs button[data-tab="carve"]', { timeout: 10000 });
     check("carve mode mounts the Carve tab", (await carvePage.locator('#panel-tabs button[data-tab="carve"]').count()) === 1);
     await carvePage.click('#panel-tabs button[data-tab="carve"]');
-    await carvePage.waitForTimeout(150);
+    // The raw report is a second fetch (`/api/carve`, for the boundary lists);
+    // wait for it rather than racing it, so what follows tests the panel and
+    // not the network. The panel renders without it either way.
+    await carvePage.waitForSelector('#tab-carve[data-report="1"]', { timeout: 10000 });
 
     const step = (id) => carvePage.locator(`#tab-carve .carve-step[data-step="${id}"]`);
     const stepState = (id) => step(id).getAttribute("data-status");

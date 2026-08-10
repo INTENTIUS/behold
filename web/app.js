@@ -1318,6 +1318,11 @@ async function loadCarveReport() {
     carveReport = null;
   }
   renderPanelCarve();
+  // A readiness marker, so a test can wait for the extra fetch instead of
+  // racing it. The panel itself never waits: `cutSummary` falls back to the
+  // counts the IR node already carries, which is what the report would have
+  // told it anyway on a chant that publishes no edge lists.
+  if (carveHost) carveHost.dataset.report = carveReport ? "1" : "0";
 }
 
 function renderPanel() {

@@ -126,6 +126,21 @@ describe("cutSummary — counts and edge lists are different claims", () => {
     const flat = cutSummary({ ...BUCKET, boundary: [{ survivor: "a", carved: "b", direction: "outbound" }] });
     expect(flat.known).toBe(true);
   });
+
+  it("falls back to the IR node's own counts when the raw report isn't in hand", () => {
+    // The lens puts inbound/outbound on every card, so a pick made before the
+    // extra /api/carve fetch lands still says something true — rather than
+    // claiming "no boundary edges at all", which would be a different (and
+    // wrong) statement about the same resource.
+    const cut = cutSummary(null, { id: "aws_s3_bucket.assets", attrs: { inbound: 1, outbound: 0 } });
+    expect(cut.items[0]).toContain("1 inbound");
+    expect(cut.note).toContain("chant#1636");
+  });
+
+  it("still reads a genuine zero as zero, not as missing", () => {
+    const cut = cutSummary(null, { id: "x", attrs: { inbound: 0, outbound: 0 } });
+    expect(cut.items[0]).toContain("No boundary edges at all");
+  });
 });
 
 describe("edgeLine", () => {
