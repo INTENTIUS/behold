@@ -71,12 +71,20 @@ const edgeLabel = `<g><rect x="${(LX - LW / 2).toFixed(1)}" y="${LY - 9}" width=
 // The containment box. Deliberately roomier than the cards need (#267): the
 // clamp only earns its keep if the smoke can drag INTO a wall on purpose, and
 // every drag that isn't about the wall has to stay clear of one.
+//
+// #250: shaped the way pinhole 0.3.3 emits an ARCHITECTURE group box — a
+// `data-group-id` carrying the container key, and a title `<text>` that is
+// NOT that key (`layoutArchitecture` titles a box `<id>  ·  <kind>`). The two
+// disagreeing on purpose is the assertion: a delta stored under `box:wave-1`
+// proves the key came off the attribute, and not off the title text the old
+// structural matcher had to read.
 export const BOX = { x: 20, y: 40, w: 580, h: 220 };
+export const BOX_ID = "wave-1";
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 300" width="620" height="300">
   <style>:root{--pin-bg0:#0d1117;--pin-text:#e6edf3}</style>
   <rect x="0" y="0" width="620" height="300" fill="var(--pin-bg0, #0d1117)"/>
-  <rect x="${BOX.x}" y="${BOX.y}" width="${BOX.w}" height="${BOX.h}" rx="10" fill="none" stroke="var(--pin-edge, #444)"/>
-  <text x="30" y="30" font-size="12" fill="var(--pin-textMuted, #999)">wave-1</text>
+  <rect data-group-id="${BOX_ID}" x="${BOX.x}" y="${BOX.y}" width="${BOX.w}" height="${BOX.h}" rx="10" fill="none" stroke="var(--pin-edge, #444)"/>
+  <text x="30" y="30" font-size="12" fill="var(--pin-textMuted, #999)">${BOX_ID}  ·  Wave</text>
   <g data-edge-from="api" data-edge-to="worker" data-edge-via="${EDGE_VIA}"><path class="pin-edge-line" d="${EDGE_D}" fill="none" stroke="var(--pin-edge, #444)" stroke-width="1.4"/><path d="${EDGE_D}" fill="none" stroke="transparent" stroke-width="14" pointer-events="stroke"/></g>
   ${edgeLabel}
   ${nodeSvg("api", 40, "good", "api", coloredMark)}

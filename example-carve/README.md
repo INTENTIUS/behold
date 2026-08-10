@@ -49,7 +49,7 @@ end of the walkthrough has somewhere to land.
 
 ## Bands
 
-Real output, from `chant carve advise` at chant 0.44.4. Reproduce it with:
+Real output, from `chant carve advise` at chant 0.44.6. Reproduce it with:
 
 ```sh
 npm install -D @cdktf/hcl2json          # once, anywhere on your PATH resolution
@@ -108,6 +108,15 @@ chant carve advise --from example-carve/legacy-tf \
 ```
 
 from the repository root, so the `from` field stays a relative path.
+
+`app/` pins chant ^0.44.6 and that floor is load-bearing, not housekeeping: the
+advisor only publishes a top-level `version: 1` and per-resource `boundary` edge
+lists from 0.44.6 (chant#1636). Run the same command on 0.44.4 and every score
+is identical but no resource carries a `boundary` field at all, so the Pick step
+falls back to naming inbound/outbound COUNTS instead of highlighting the one
+`aws_lambda_function.api` edge the carve severs. The committed report above is
+byte-identical to what 0.44.6 regenerates, which is why the demo's fallback path
+and its fresh-run path show the same picture.
 
 ## The six beats
 
@@ -172,7 +181,7 @@ passes with warnings, but `chant build` fails on two AWS policy rules
 (`PublicAccessBlockConfiguration` missing, no TLS-deny bucket policy) even
 though the Terraform declared the first of those.
 
-Verified against chant 0.44.4. The walkthrough's Emit beat shows `lint`, not
+Verified against chant 0.44.6. The walkthrough's Emit beat shows `lint`, not
 `build`, until the fold is applied as well as reported — the step's "why lint
 and not build?" note says the same thing on screen, so nobody reads a lint pass
 as a build pass. That is chant#1637.

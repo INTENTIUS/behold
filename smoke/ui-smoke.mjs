@@ -542,7 +542,11 @@ try {
   const boxW1 = await boxWidth();
   check("the corner handle resizes the containment box", Math.abs(boxW1 - (boxW0 - 80 / scale)) < 2);
   const afterBox = await storedDeltas();
-  check("a box stores {dw,dh} under its own id", afterBox["box:wave-1"] && Math.abs(afterBox["box:wave-1"].dw + 80 / scale) < 2);
+  // #250: the stub's box is titled "wave-1  ·  Wave" and carries
+  // `data-group-id="wave-1"`, so a delta under `box:wave-1` can only have come
+  // off the attribute — the structural matcher would have keyed it by the title.
+  check("a box stores {dw,dh} under its container key, not its title text", afterBox["box:wave-1"] && Math.abs(afterBox["box:wave-1"].dw + 80 / scale) < 2);
+  check("no box is keyed by the title text any more", !Object.keys(afterBox).some((k) => k.startsWith("box:") && k !== "box:wave-1"));
   await page.screenshot({ path: join(SHOTS, "7-layout.png") });
 
   // …and both went to the sidecar too (the stub holds it in memory; the real
