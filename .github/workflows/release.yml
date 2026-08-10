@@ -31,6 +31,11 @@ jobs:
   release:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Gates the OIDC exchange behind an environment, so protection rules
+    # (required reviewers, wait timers) can be attached in repo settings
+    # without touching this file. The npm trusted-publisher record can also
+    # name this environment to reject publishes from outside it.
+    environment: release
     permissions:
       # The OIDC token npm exchanges for a publish credential. `contents: read`
       # is inherited from the top; both are needed and neither is enough alone.
