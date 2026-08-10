@@ -89,6 +89,35 @@ describe("edgelessNote", () => {
     expect(edgelessNote("components", graph(5, 0))).toBeUndefined();
     expect(edgelessNote("logical", graph(9, 0))).toBeUndefined();
   });
+
+  // #261: sourceRef/dependsOn (and any other attrs-derived edge) only exist
+  // in the IR at detail 3 — a view graphed below that tier can read edgeless
+  // for that reason alone, which is a detail-tier artifact, not a fact about
+  // the estate. The note must not assert the estate-fact wording there.
+  describe("below detail 3 (#261)", () => {
+    it("names the detail tier instead of asserting the estate has no relationships", () => {
+      const note = edgelessNote("runtime", graph(15, 0), 2);
+      expect(note).toMatch(/no edges at this detail/);
+      expect(note).not.toMatch(/nothing in this estate references anything else/);
+    });
+
+    it("does it for every edge-judged level, not just runtime", () => {
+      expect(edgelessNote("resources", graph(11, 0), 2)).toMatch(/no edges at this detail/);
+      expect(edgelessNote("composites", graph(11, 0), 1)).toMatch(/no edges at this detail/);
+    });
+
+    it("keeps the plain estate-fact wording at detail 3", () => {
+      expect(edgelessNote("runtime", graph(15, 0), 3)).toBe("no edges — nothing in this estate references anything else");
+    });
+
+    it("keeps the plain estate-fact wording when the caller cannot say what detail it fetched at", () => {
+      expect(edgelessNote("runtime", graph(15, 0))).toBe("no edges — nothing in this estate references anything else");
+    });
+
+    it("says nothing about a below-detail-3 view that does have edges", () => {
+      expect(edgelessNote("resources", graph(11, 3), 2)).toBeUndefined();
+    });
+  });
 });
 
 describe("notesFor", () => {
@@ -109,6 +138,13 @@ describe("notesFor", () => {
     expect(notesFor("logical", graph(0, 0))).toMatch(/AWS projection/);
     expect(notesFor("resources", graph(11, 0))).toMatch(/no edges/);
     expect(notesFor("runtime", withRuntimeChild(15, { dep: ["pod"] }))).toMatch(/no edges/);
+  });
+
+  // #261: notesFor threads its optional fifth argument straight through to
+  // edgelessNote, so a caller that knows the fetch detail gets the
+  // detail-tier wording rather than the estate-fact one.
+  it("threads the detail tier through to edgelessNote", () => {
+    expect(notesFor("runtime", withRuntimeChild(15, { dep: ["pod"] }), undefined, undefined, 2)).toMatch(/no edges at this detail/);
   });
 });
 

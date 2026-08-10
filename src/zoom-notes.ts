@@ -114,10 +114,25 @@ export function logicalKept(before: number, after: number): string | undefined {
  *
  * `components` and `logical` are exempt: the first draws its own DAG and the
  * second lays itself out as nested boxes, so neither is judged on edge count.
+ *
+ * `detail`, when the caller can supply it, is the tier the graph was actually
+ * fetched at (#261) — `addK8sDeclaredEdges`'s sourceRef/dependsOn derivation
+ * (and any other join that reads full attrs) only has something to read at
+ * detail 3, so a view graphed below that tier can read edgeless for that
+ * reason alone. That is a detail-tier artifact, not a fact about the estate,
+ * and the note said the wrong one: it claimed nothing in the estate
+ * references anything else when the honest claim is narrower — nothing
+ * *visible at this tier* does. Compare `tierMismatchNote` (#158), which
+ * names the tier rather than asserting the collapse. `detail` left
+ * `undefined` keeps the plain estate-fact wording, since a caller that
+ * cannot say what tier it fetched at has no narrower claim to make.
  */
-export function edgelessNote(zoom: Zoom, ir: NotableGraph): string | undefined {
+export function edgelessNote(zoom: Zoom, ir: NotableGraph, detail?: number): string | undefined {
   if (zoom === "components" || zoom === "logical") return undefined;
   if (ir.nodes.length === 0 || ir.edges.length > 0) return undefined;
+  if (detail !== undefined && detail < 3) {
+    return "no edges at this detail — sourceRef/dependsOn and other attrs-derived references only appear at detail 3 (⌘K → attributes, or add &detail=3)";
+  }
   return "no edges — nothing in this estate references anything else";
 }
 
@@ -175,6 +190,7 @@ export function notesFor(
   ir: NotableGraph,
   compositeEdgesAttached?: number,
   logicalBefore?: number,
+  detail?: number,
 ): string | undefined {
   // When the caller can say what logical was given, that reading wins: it
   // catches the partial projection the empty-only check cannot see.
@@ -182,7 +198,7 @@ export function notesFor(
     zoom === "logical" && logicalBefore !== undefined
       ? logicalKept(logicalBefore, ir.nodes.length)
       : zoomNote(zoom, ir, compositeEdgesAttached);
-  const notes = [primary, edgelessNote(zoom, ir)].filter((n): n is string => n !== undefined);
+  const notes = [primary, edgelessNote(zoom, ir, detail)].filter((n): n is string => n !== undefined);
   return notes.length ? notes.join(" · ") : undefined;
 }
 
