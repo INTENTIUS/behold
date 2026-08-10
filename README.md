@@ -266,6 +266,26 @@ behold shells the **project's own** chant (resolved from the project's
 `@intentius/chant ^0.18.1` or later for the live overlay (`graph --live` observed
 nothing before that fix).
 
+## Terraform carve-out: `behold carve <report.json>`
+
+`chant carve advise` ranks a Terraform estate by **peelability** — how cleanly
+each resource could be carved into native chant source. `behold carve` draws
+that ranking: one card per resource, three panels (carve now / boundary work /
+leave in Terraform) on the same `attrs._status` drift palette every other view
+uses, and the score arithmetic behind each rank in the inspect pane.
+
+```sh
+chant carve advise --from ./terraform --report carve.json
+behold carve carve.json                      # → http://localhost:4600
+curl localhost:4600/api/carve                # the raw report, for agents
+```
+
+behold parses no HCL and needs no Terraform tooling: the report **is** the
+contract. A file that isn't a peelability report is refused with a structured
+`{error, code: "carve-report", remedy}` — in the terminal, and from the routes —
+never a blank graph. See `docs/using/carve` and issue #230 for the roadmap
+(the post-emit diff, then Terraform as an estate member).
+
 ## Configuration — `.behold.json`
 
 An optional `.behold.json` in the served project's root is **behold's own**

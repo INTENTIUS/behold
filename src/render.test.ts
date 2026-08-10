@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { renderGraph } from "./render.ts";
+import { renderGraph, renderBanded } from "./render.ts";
 import type { GraphIR } from "@intentius/chant";
 
 // M4: renderGraph gained an explicit `boxes: "byStack"` opt-in for the
@@ -139,5 +139,64 @@ describe("renderGraph — lexicon-native icons (#227)", () => {
     // every `image/svg+xml` consumer — the SPA's `↓ SVG` download, a snapshot
     // opened directly — would fail to parse the file.
     expect(svg).not.toMatch(/\s(?:inkscape|sodipodi|xlink):/);
+  });
+});
+
+// #252: the carve lens paints a RANKING, not a topology, so it gets its own
+// layout. These pin the reason renderBanded exists (dagre lays an edgeless
+// graph out along a single row) and the invariants the carve view depends on.
+const bandedIr: GraphIR = {
+  nodes: Array.from({ length: 30 }, (_, i) => ({
+    id: `aws_s3_bucket.b${i}`,
+    kind: "aws_s3_bucket",
+    lexicon: "terraform",
+    attrs: { _status: i < 20 ? "good" : "neutral", score: 100 - i, carve: i < 20 ? "carve now" : "leave in Terraform" },
+  })),
+  edges: [],
+  groups: {
+    byStack: {
+      "carve now": Array.from({ length: 20 }, (_, i) => `aws_s3_bucket.b${i}`),
+      "leave in Terraform": Array.from({ length: 10 }, (_, i) => `aws_s3_bucket.b${i + 20}`),
+    },
+  },
+};
+
+describe("renderBanded — the banded ranking layout (#252)", () => {
+  const viewBox = (svg: string) => (svg.match(/viewBox="0 0 (\d+) (\d+)"/) ?? []).slice(1).map(Number);
+
+  it("grid-wraps instead of stringing an edgeless graph out along one row", () => {
+    const [wide] = viewBox(renderGraph(bandedIr, { boxes: "byStack" }).svg);
+    const [w, h] = viewBox(renderBanded(bandedIr).svg);
+    // dagre puts all 30 cards in rank 0 — one very long row.
+    expect(wide).toBeGreaterThan(6000);
+    expect(w).toBeLessThan(2000);
+    // Near a screen's shape, not a strip: no worse than 3:1 either way.
+    expect(w / h).toBeLessThan(3);
+    expect(h / w).toBeLessThan(3);
+  });
+
+  it("titles a panel per band and tints it with the status its members agree on", () => {
+    const svg = renderBanded(bandedIr).svg;
+    expect(svg).toContain(BOX_MARKER);
+    expect(svg).toContain("carve now");
+    expect(svg).toContain("leave in Terraform");
+    expect(svg).toContain("goodStroke"); // the carve-now panel's own border
+  });
+
+  it("draws every node, including one no band claims", () => {
+    const orphaned: GraphIR = {
+      ...bandedIr,
+      nodes: [...bandedIr.nodes, { id: "aws_vpc.stray", kind: "aws_vpc", lexicon: "terraform", attrs: {} }],
+    };
+    const svg = renderBanded(orphaned).svg;
+    expect(svg).toContain('data-node-id="aws_vpc.stray"');
+    expect(svg).toContain("unbanded");
+    for (const n of bandedIr.nodes) expect(svg).toContain(`data-node-id="${n.id}"`);
+  });
+
+  it("survives an empty graph without a degenerate canvas", () => {
+    const [w, h] = viewBox(renderBanded({ nodes: [], edges: [], groups: {} }).svg);
+    expect(w).toBeGreaterThan(0);
+    expect(h).toBeGreaterThan(0);
   });
 });

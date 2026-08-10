@@ -4,7 +4,7 @@
  * behold leans on chant's MCP for the underlying graph/lifecycle data (see README).
  */
 import { resolve, dirname, join, relative, sep } from "node:path";
-import { realpathSync, existsSync, cpSync } from "node:fs";
+import { realpathSync, existsSync, cpSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { startServer, beholdVersion } from "./server.ts";
@@ -13,6 +13,7 @@ import { runExport } from "./export.ts";
 import { diagnose, formatReport } from "./doctor.ts";
 import { isAutoSyncMode, type AutoSyncMode } from "./autosync.ts";
 import { detectProjectShape } from "./project.ts";
+import { readCarveReport } from "./carve-lens.ts";
 
 const USAGE = `behold — a live control plane on chant (read-only core)
 
@@ -22,6 +23,16 @@ Usage:
   behold preview [project-dir] [--port <n>] [--emulator]
   behold export [project-dir] [--out <dir>] [--env <name>] [--name <worker>] [--emulator]
   behold serve <project-dir…> [--port <n>] [--env <name>] [--poll <secs>] [--local]
+  behold carve <report.json> [--port <n>]
+
+  carve   Render a chant Terraform peelability report — the JSON from
+          \`chant carve advise --from <tf-dir> --json\` — as a graph. One card
+          per ranked resource, coloured by band: green = carve now, amber =
+          has boundary work, grey = leave in Terraform. Click a card for the
+          score arithmetic behind its rank. Read-only twice over: chant's
+          advisor emits nothing, and behold only draws what it says.
+          \`GET /api/carve\` serves the raw report to agents. behold parses no
+          Terraform and needs no Terraform tooling — the report is the contract.
 
   doctor  Why won't this project serve well? A read-only diagnosis of
           everything behold needs — the project's kind, its own chant install
@@ -60,7 +71,7 @@ Usage:
           overlay, and rollback act on it).
 
 Options:
-  --port <n>          Port (default 4600). preview/serve.
+  --port <n>          Port (default 4600). preview/serve/carve.
   --env <name>        Environment name — turns on the live drift overlay.
                       export/serve.
   --poll <secs>       Re-query live drift every <secs> and push updates (needs --env).
@@ -130,6 +141,11 @@ export async function run(argv: string[]): Promise<void> {
 
   if (cmd === "export") {
     await runExportCmd(rest);
+    return;
+  }
+
+  if (cmd === "carve") {
+    await runCarve(rest);
     return;
   }
 
@@ -225,6 +241,56 @@ function warnIfNotChantProject(dir: string): void {
     `behold: warning — ${dir} has no chant.config.ts; this doesn't look like a chant project.\n` +
       `        \`behold doctor ${dir}\` says what's missing. No project yet? \`behold demo\` serves a bundled working example (needs Docker).\n`,
   );
+}
+
+/** `behold carve <report.json>` (#252, M1 of #230) — render a chant Terraform
+ * peelability report.
+ *
+ * A separate verb rather than a `--carve-report` flag on serve, because it
+ * shares none of serve's arguments: there is no project, no env, no poll and no
+ * emulator behind a static analysis of foreign Terraform. The only thing the
+ * two have in common is a port and the SPA, and both come free from
+ * `startServer`.
+ *
+ * The report is validated HERE as well as per-request in the server, so a typo'd
+ * path or a JSON file that isn't a carve report is refused in the terminal
+ * (exit 2) rather than becoming a server that only fails once you open it.
+ */
+async function runCarve(rest: string[]): Promise<void> {
+  let port = 4600;
+  let fileArg: string | undefined;
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i];
+    if (a === "--port") port = Number(rest[++i]);
+    else if (a === "-h" || a === "--help") return void process.stdout.write(USAGE);
+    else if (!a.startsWith("-")) fileArg = a;
+    else {
+      process.stderr.write(`behold carve: unexpected argument '${a}'\n`);
+      process.exit(2);
+    }
+  }
+  if (!Number.isFinite(port)) {
+    process.stderr.write("behold carve: --port must be a number\n");
+    process.exit(2);
+  }
+  if (!fileArg) {
+    process.stderr.write(
+      "behold carve: missing <report.json>\n" +
+        "  Generate one: chant carve advise --from <terraform-dir> --report report.json\n",
+    );
+    process.exit(2);
+  }
+  const reportPath = resolve(fileArg);
+  const parsed = readCarveReport(reportPath, (p) => readFileSync(p, "utf8"));
+  if (!parsed.ok) {
+    process.stderr.write(`behold carve: ${parsed.refusal.error}\n  ${parsed.refusal.remedy}\n`);
+    process.exit(2);
+  }
+  process.stdout.write(
+    `behold carve — ${parsed.report.resources.length} resource(s)/module(s) ranked` +
+      `${parsed.report.from ? ` from ${parsed.report.from}` : ""}\n`,
+  );
+  await startServer({ projectDir: dirname(reportPath), carveReport: reportPath, port });
 }
 
 /** `behold doctor` (#236) — the read-only first-touch diagnosis. Composes the

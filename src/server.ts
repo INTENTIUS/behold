@@ -55,7 +55,8 @@ import { addCompositeDepsCounted } from "./composite-deps.ts";
 import { notesFor, tierMismatchNote, namespaceMismatchNote, type Zoom } from "./zoom-notes.ts";
 import { resourcesByComponent, nonResourceEntities } from "./resources.ts";
 import { summarizePlan } from "./reconcile.ts";
-import { renderGraph, renderArchitecture } from "./render.ts";
+import { renderGraph, renderArchitecture, renderBanded } from "./render.ts";
+import { readCarveReport, carveReportToIr, carveNote } from "./carve-lens.ts";
 import { discoverEstateOps } from "./ops.ts";
 import { LIVE_IMPORT_LEXICONS } from "./adopt.ts";
 import { detectProject, loadBeholdConfig } from "./project.ts";
@@ -103,6 +104,12 @@ export interface ServerOptions {
    * strip to Docker+Floci, and tells the SPA to hide those controls. Local
    * deploy (apply/reset/bring-up/approve) and all reads stay on. */
   previewMode?: boolean;
+  /** Carve mode (#252, M1 of #230): the path of a `chant carve advise --json`
+   * peelability report to render instead of a chant project. Mutually exclusive
+   * with everything project-shaped — the report IS the estate here, so no chant
+   * is shelled, no source is watched and no live state exists. See
+   * `carveRoutes` below. */
+  carveReport?: string;
   /** #195: called by POST /api/project/open after the cfg has been re-pointed
    * at a switched project — startServer uses it to re-aim the source watcher,
    * stop the (launch-scoped) drift poll, and capture a fresh baseline frame.
@@ -187,7 +194,7 @@ async function knownComponents(projectDir: string, opts: GraphOptions): Promise<
  * classified from chant's own stderr), plus "tier" — a non-default tier that
  * needed parameters this host doesn't have, generalized below from what used
  * to be a one-off `tierErrorNote`/`tierNote` bolted onto a plain error. */
-export type RouteErrorCode = ChantFailure["code"] | "tier" | "no-project";
+export type RouteErrorCode = ChantFailure["code"] | "tier" | "no-project" | "carve-report";
 
 /** A read route's structured, typed error body (#72): a machine `code`, a
  * human `error` message, and a suggested `remedy` — what web/app.js's
@@ -342,6 +349,86 @@ async function captureFrame(
   }
 }
 
+/**
+ * Carve mode's routes (#252, M1 of #230) — behold pointed at a `chant carve
+ * advise --json` peelability report instead of at a chant project.
+ *
+ * The report is the whole estate: there is no source to watch, no environment
+ * to observe, no chant to shell. These are registered FIRST, so Hono's
+ * in-order matching gives them `/api/graph` and `/api/project` ahead of the
+ * project-shaped handlers below — which is the entire trick that lets the
+ * existing SPA render a carve graph with (almost) no client change: it asks
+ * `/api/graph` for `{ir, svg, meta}` and gets exactly that, bands riding
+ * `attrs._status` on the drift palette it already paints everywhere.
+ *
+ * The file is re-read per request rather than parsed once at boot, so a
+ * regenerated report shows up on reload — and so a report that goes bad
+ * answers with #193's structured `{error, code, remedy}` (422) instead of a
+ * blank graph. `behold carve` also validates once up front, so a bad path is
+ * refused in the terminal before a server ever starts.
+ */
+function carveRoutes(app: Hono, reportPath: string): void {
+  const load = () => readCarveReport(reportPath, (p) => readFileSync(p, "utf8"));
+
+  // The raw report, for agents (#230's M4 workflow reads this to confirm a
+  // band before running `carve emit`). Verbatim — behold adds nothing to it.
+  app.get("/api/carve", (c) => {
+    const parsed = load();
+    return parsed.ok ? c.json(parsed.report) : c.json(parsed.refusal, 422);
+  });
+
+  app.get("/api/graph", (c) => {
+    const parsed = load();
+    if (!parsed.ok) return c.json(parsed.refusal, 422);
+    const ir = carveReportToIr(parsed.report);
+    // A ranking, not a topology — `renderBanded` stacks the bands and grid-wraps
+    // each one, because dagre lays an edgeless graph out along a single row (see
+    // its doc comment for the numbers).
+    const { svg } = renderBanded(ir);
+    return c.json({
+      ir,
+      svg,
+      meta: {
+        projectDir: reportPath,
+        env: null,
+        tier: null,
+        target: null,
+        carve: true,
+        note: carveNote(parsed.report, ir),
+      },
+    });
+  });
+
+  app.get("/api/project", (c) => {
+    const parsed = load();
+    return c.json({
+      projectDir: reportPath,
+      recents: [],
+      // No envs, tiers, stacks or targets: a peelability report is a static
+      // analysis of foreign Terraform, so every picker that would imply a live
+      // axis stays empty and the SPA renders none of them.
+      environments: [],
+      lexicons: ["terraform"],
+      currentEnv: null,
+      targets: [],
+      carve: parsed.ok
+        ? {
+            report: reportPath,
+            from: parsed.report.from ?? null,
+            count: parsed.report.count ?? parsed.report.resources.length,
+            bands: parsed.report.bands ?? {},
+          }
+        : { report: reportPath },
+    });
+  });
+
+  // A static report has no substrates to probe and no git history that means
+  // anything (the file may sit anywhere). Answer empty instead of running a
+  // Docker probe and a `git log` for a picture that cannot use either.
+  app.get("/api/substrates", (c) => c.json({ substrates: [] }));
+  app.get("/api/history", (c) => c.json({ commits: [] }));
+}
+
 export function createApp(
   cfg: ServerOptions,
   broadcaster: Broadcaster = new Broadcaster(),
@@ -353,6 +440,10 @@ export function createApp(
   }),
 ): Hono {
   const app = new Hono();
+
+  // Carve mode (#252) claims /api/graph, /api/project and friends before the
+  // project-shaped handlers are registered — see carveRoutes.
+  if (cfg.carveReport) carveRoutes(app, cfg.carveReport);
 
   // behold's own project-root config (#70) — `.behold.json`'s `tiers` block,
   // if any (src/project.ts `loadBeholdConfig`). Read once at app creation
@@ -683,6 +774,9 @@ export function createApp(
         { method: "POST", path: "/api/project/open", desc: "switch the served project: JSON body {dir} (validated; preview-locked)" },
         { method: "POST", path: "/api/project/reveal", desc: "open the OS file manager at a served/recent project dir: JSON body {dir?}" },
         { method: "GET", path: "/api/graph", desc: "the graph {ir, svg, meta} — params: detail=0..3, components=1, logical=1, env, stack, tier, target, lens, up=1, down=1, radial=1" },
+        ...(cfg.carveReport
+          ? [{ method: "GET", path: "/api/carve", desc: "carve mode: the raw `chant carve advise --json` peelability report this server is rendering" }]
+          : []),
         { method: "GET", path: "/api/overlay", desc: "live drift overlay for ?env= — same shape/params as /api/graph, plus runtime=1" },
         { method: "GET", path: "/api/diff", desc: "per-node live diff for ?env= — {env, nodes: {<id>: {observed, diff, health, fieldDrift}}}" },
         { method: "GET", path: "/api/reconcile", desc: "pending-change summary for ?env=" },
@@ -1663,9 +1757,13 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   // Watch the served project's source (the dev loop) and, with an env + --poll,
   // poll live drift (#4) — the latter also drives auto-sync. `let` (#195): a
   // project switch re-aims the watcher and stops the poll.
-  let stopWatch = watchSource(cfg.projectDir, onEstateChange);
+  // Carve mode (#252) has no chant project behind it: nothing to watch, nothing
+  // to poll, and no baseline frame to capture (`captureFrame` shells `chant
+  // graph`, which would fail once a second on a directory that isn't a project).
+  const carve = !!cfg.carveReport;
+  let stopWatch = carve ? () => {} : watchSource(cfg.projectDir, onEstateChange);
   let stopPoll =
-    cfg.env && cfg.pollSecs
+    !carve && cfg.env && cfg.pollSecs
       ? startDriftPoll({
           intervalMs: cfg.pollSecs * 1000,
           query: () => graphIr(cfg.projectDir, { live: true, overlay: true, env: cfg.env }),
@@ -1685,7 +1783,7 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
     process.stdout.write(`  switched → ${dir}\n`);
     void capture(); // baseline keyframe for the new project
   };
-  void capture(); // baseline keyframe at startup
+  if (!carve) void capture(); // baseline keyframe at startup
   // Clean shutdown on both Ctrl-C (SIGINT) and `kill` (SIGTERM) — otherwise a
   // `kill`ed instance leaves its emulator container running, which the next launch
   // silently reuses (a stale-state trap). Guard against double-fire.
@@ -1706,6 +1804,15 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
   const server = serve({ fetch: app.fetch, port: cfg.port }, (info) => {
+    if (carve) {
+      process.stdout.write(
+        `behold → http://localhost:${info.port}\n` +
+          `  carve report: ${cfg.carveReport}\n` +
+          `  green = carve now, amber = boundary work, grey = leave in Terraform.\n` +
+          `  Read-only advisory: behold emits nothing and touches no Terraform. Ctrl-C to stop.\n`,
+      );
+      return;
+    }
     const poll = cfg.env && cfg.pollSecs ? `, polling drift every ${cfg.pollSecs}s` : "";
     const auto = autoSync !== "off" ? `  auto-sync: ${autoSync}` : "";
     const localTag =

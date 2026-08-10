@@ -6,10 +6,11 @@
  * src/overlay.ts. behold owns the live data + the server + (later) the
  * temporal/action layers around this.
  */
-import { layoutIr, layoutArchitecture, renderSvg, cardSizes, registerPack } from "@intentius/pinhole";
-import type { GraphIR, IRGroups } from "@intentius/chant";
+import { layoutIr, layoutArchitecture, renderSvg, cardSizes, registerPack, type GroupBox, type Status } from "@intentius/pinhole";
+import type { GraphIR, IRGroups, Layout } from "@intentius/chant";
 import type { ByContainer } from "./logical.ts";
 import { k8sIconFor, helmIconFor } from "./icon-packs.ts";
+import { carveCardFields } from "./carve-lens.ts";
 
 // Lexicon-native icons (#227), step 2 of 2. pinhole resolves a node's glyph
 // through a chain — per-node override → lexicon pack → keyword heuristic →
@@ -26,6 +27,16 @@ import { k8sIconFor, helmIconFor } from "./icon-packs.ts";
 // heuristic is a better answer than a wrong picture.
 registerPack({ lexicon: "k8s", iconFor: k8sIconFor });
 registerPack({ lexicon: "helm", iconFor: helmIconFor });
+
+// The carve lens (#252) registers a pack for its `terraform` lexicon to pin the
+// two fields a peelability card shows — the score and the verdict. Without it
+// pinhole's default template picks the first two short scalar attrs in
+// ALPHABETICAL order, which on a carve node is "band" then "dynamic": true, and
+// the number the whole report exists to communicate never reaches the card. No
+// `iconFor` opinion: the keyword heuristic already resolves aws_s3_bucket,
+// aws_vpc, aws_subnet and aws_lambda_function to sensible glyphs, and guessing
+// per Terraform type here would be a worse picture than the one it produces.
+registerPack({ lexicon: "terraform", iconFor: () => undefined, fields: carveCardFields });
 
 export interface RenderResult {
   svg: string;
@@ -106,6 +117,94 @@ export function renderGraph(ir: GraphIR, opts: { theme?: string; boxes?: "byStac
     fit: true,
     hideTitle: true,
     ...(boxes ? { groups: layout.groups } : {}),
+    ...(opts.theme ? { theme: opts.theme as never } : {}),
+  });
+  return { svg };
+}
+
+/**
+ * Paint a BANDED graph — a ranking, not a topology — as stacked, titled panels
+ * with their members in a grid. The carve lens (#252) is the case: a peelability
+ * report is a ranked list in three bands, and (until chant#1636 publishes the
+ * boundary edge lists) it arrives with no edges at all.
+ *
+ * It needs its own layout because dagre has nothing to work with here. Every
+ * node is its own connected component, so they all land in rank 0 and stretch
+ * out along a single row: the eight-resource sample estate laid out 2433px wide
+ * and 316 tall, and a 150-resource estate 40680 x 316 — a picture no viewport
+ * can show. Grid-wrapping inside each band keeps the whole thing near a screen's
+ * aspect at any size, and stacking the bands top-to-bottom makes the graph read
+ * in the same order the report's own console output does.
+ *
+ * Groups come from `ir.groups.byStack` in insertion order, so the caller decides
+ * the band order. Each panel is tinted with its members' shared `attrs._status`
+ * when they agree, which is how the band colour reaches the panel border and its
+ * title as well as the cards. Any node no group claims lands in a trailing
+ * panel rather than vanishing.
+ */
+export function renderBanded(ir: GraphIR, opts: { theme?: string } = {}): RenderResult {
+  const bands = (ir.groups.byStack ?? {}) as Record<string, string[]>;
+  const size = footprints(ir);
+  const dims = (id: string) => size.get(id) ?? { w: NODE_W, h: NODE_H };
+
+  // A uniform cell keeps the grid a grid (cards centre in their cell), and a
+  // uniform panel width stacks the bands as an aligned column.
+  const ids = ir.nodes.map((n) => n.id);
+  const cellW = Math.max(NODE_W, ...ids.map((id) => dims(id).w));
+  const cellH = Math.max(NODE_H, ...ids.map((id) => dims(id).h));
+  const GAP = 28; // between cards
+  const PAD = 24; // panel inner padding
+  const TITLE = 34; // panel title band (pinhole draws its title at y + 23)
+  const BAND_GAP = 26; // between panels
+  // Aim at a landscape picture rather than a square one — the graph pane is
+  // wider than it is tall once the side panel takes its share.
+  const cols = Math.max(1, Math.round(Math.sqrt((ids.length * (cellH + GAP) * 2) / (cellW + GAP))));
+  const contentW = cols * cellW + (cols - 1) * GAP;
+  const panelW = contentW + PAD * 2;
+
+  // Nodes no band claims still get drawn — a renderer that silently drops a node
+  // is worse than one that shows an unlabelled panel.
+  const claimed = new Set(Object.values(bands).flat());
+  const orphans = ids.filter((id) => !claimed.has(id));
+  const panels: Array<[string, string[]]> = [
+    ...Object.entries(bands).map(([title, members]) => [title, members.filter((id) => size.has(id))] as [string, string[]]),
+    ...(orphans.length ? ([["unbanded", orphans]] as Array<[string, string[]]>) : []),
+  ].filter(([, members]) => members.length > 0);
+
+  const statusOf = new Map(ir.nodes.map((n) => [n.id, n.attrs?._status as Status | undefined]));
+  // Positions are computed y-DOWN (first band on top, the way it reads), then
+  // flipped once at the end: renderSvg consumes a y-up plane.
+  const placed: Array<{ id: string; x: number; y: number }> = [];
+  const boxes: GroupBox[] = [];
+  let top = 0;
+  for (const [title, members] of panels) {
+    const rows = Math.ceil(members.length / cols);
+    const panelH = TITLE + PAD + rows * cellH + (rows - 1) * GAP + PAD;
+    members.forEach((id, i) => {
+      placed.push({
+        id,
+        x: PAD + (i % cols) * (cellW + GAP) + cellW / 2,
+        y: top + TITLE + PAD + Math.floor(i / cols) * (cellH + GAP) + cellH / 2,
+      });
+    });
+    // Tint only when the band speaks with one voice — a mixed panel gets the
+    // plain border rather than one member's colour standing for all of them.
+    const statuses = new Set(members.map((id) => statusOf.get(id)));
+    const status = statuses.size === 1 ? [...statuses][0] : undefined;
+    boxes.push({ title, x: panelW / 2, y: top + panelH / 2, w: panelW, h: panelH, ...(status ? { status } : {}) });
+    top += panelH + BAND_GAP;
+  }
+  const height = Math.max(1, top - BAND_GAP);
+
+  const layout: Layout = {
+    width: panelW,
+    height,
+    nodes: placed.map((p) => ({ id: p.id, x: p.x, y: height - p.y })),
+  };
+  const svg = renderSvg(ir, layout, {
+    fit: true,
+    hideTitle: true,
+    groups: boxes.map((b) => ({ ...b, y: height - b.y })),
     ...(opts.theme ? { theme: opts.theme as never } : {}),
   });
   return { svg };
