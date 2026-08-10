@@ -15,3 +15,13 @@ collection bundled by the **[Ghostty](https://ghostty.org)** terminal. Theme fam
 (Catppuccin, Dracula, Nord, Gruvbox, Tokyo Night, and others) are the work of their respective
 authors and carry their own licenses; the attribution model and bundled license are detailed
 in [`THIRD_PARTY.md`](./THIRD_PARTY.md).
+
+## Lexicon icons
+
+The resource icons behold paints on k8s nodes (issue #227) are the official set from the
+**[Kubernetes community](https://github.com/kubernetes/community/tree/master/icons)** repo,
+used under Apache-2.0. The Flux, Argo and Helm marks are each project's own artwork from
+**[cncf/artwork](https://github.com/cncf/artwork)**, used nominatively to identify that
+project's resources. Both are vendored at pinned revisions with their licenses retained
+verbatim under [`licenses/`](./licenses); see [`THIRD_PARTY.md`](./THIRD_PARTY.md) for the
+revisions, the trademark notices, and exactly what the vendoring changes.
