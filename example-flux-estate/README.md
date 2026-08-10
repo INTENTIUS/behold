@@ -3,8 +3,9 @@
 Three chant projects served as one composed estate:
 
 - **control-plane/** — the Flux machinery: a `GitRepository` pointing at
-  behold's own public repo and one `Kustomization` per app. The reconcilers
-  deploy the apps; this project never applies a workload itself.
+  behold's own public repo and one `Kustomization` per app, app-b's gated on
+  app-a's with `dependsOn` (behold#223). The reconcilers deploy the apps; this
+  project never applies a workload itself.
 - **app-a/** — a small web workload with explicit `metadata.namespace` on
   every object: the fully-resolved half.
 - **app-b/** — the same workload with **no** namespace anywhere: the control
@@ -22,8 +23,9 @@ controllers straight from the pinned release manifest (no `flux` CLI needed),
 applies the control plane, waits for the reconcilers to deploy both apps from
 this repo, and serves the three projects composed. What to look at:
 
-- The **estate**: per-project boundary boxes, and the `sourceRef` edges wiring
-  Kustomization → GitRepository across stacks.
+- The **estate**: per-project boundary boxes, the `sourceRef` edges wiring
+  Kustomization → GitRepository across stacks, and the `dependsOn` edge from
+  app-b's Kustomization to app-a's — the estate's reconcile ordering.
 - The **overlay** (env `local`): app-a green, the control plane's CRs green,
   app-b pending **with the note explaining why**.
 - The **runtime tier** on the control plane alone

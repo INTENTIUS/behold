@@ -39,6 +39,11 @@ export const appA = new Kustomization({
   },
 });
 
+// app-b is the estate's second layer: Flux holds it back until app-a has
+// applied cleanly. Nothing in app-b talks to app-a at runtime — the gate is
+// here because a layered estate's ordering is its most load-bearing structure
+// and the demo should show one (behold#223). Same field a real estate uses to
+// put its platform layer ahead of its apps.
 export const appB = new Kustomization({
   metadata: { name: "app-b", namespace: "flux-system" },
   spec: {
@@ -47,5 +52,6 @@ export const appB = new Kustomization({
     targetNamespace: "app-b",
     sourceRef: { kind: "GitRepository", name: "behold" },
     path: "./example-flux-estate/app-b/manifests",
+    dependsOn: [{ name: "app-a" }],
   },
 });

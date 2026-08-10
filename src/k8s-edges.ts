@@ -11,11 +11,17 @@
  *   Ingress …backend.service.name  = Service.metadata.name
  *   HPA.spec.scaleTargetRef        = { kind, name } of a workload
  *
- * This pass derives those joins, plus the Flux toolkit's source refs
- * (behold#171):
+ * This pass derives those joins, plus the Flux toolkit's reference contracts
+ * (behold#171, #223) and Argo's project join (behold#222):
  *
  *   Kustomization.spec.sourceRef             = { kind, name[, namespace] } of a source
  *   HelmRelease.spec.chart.spec.sourceRef    = { kind, name[, namespace] } of a source
+ *   Kustomization.spec.dependsOn[]           = { name[, namespace] } of a Kustomization
+ *   ImagePolicy.spec.imageRepositoryRef      = { name[, namespace] } of an ImageRepository
+ *   ImageUpdateAutomation.spec.sourceRef     = { kind, name[, namespace] } of a GitRepository
+ *   Alert.spec.providerRef                   = { name[, namespace] } of a Provider
+ *   Alert.spec.eventSources[]                = { kind, name[, namespace] } of a Flux object
+ *   Application.spec.project                 = metadata.name of an AppProject
  *
  * All of them are exact joins on declared literals — the same standard the AWS
  * lens's security-group ingress pass meets — so nothing here guesses. The rule
@@ -23,9 +29,13 @@
  * scope (which of them are references is per-CRD knowledge this module must
  * not encode — a MicroVM's `imageRef` gets no edge), but a NAMED, versioned,
  * upstream-stable reference contract is the `scaleTargetRef` standard, and the
- * Flux toolkit's `sourceRef` is exactly that. Argo's `Application.spec.source.
- * repoURL` is deliberately NOT here: it's a URL, not a reference to any node
- * in the graph — if two objects ever share it, that is value-match's job.
+ * Flux toolkit's refs and Argo's `spec.project` are exactly that. Argo's
+ * `Application.spec.source.repoURL` is deliberately NOT here: it's a URL, not a
+ * reference to any node in the graph — if two objects ever share it, that is
+ * value-match's job. An Application's `spec.destination.namespace` names a
+ * namespace, and a namespace is a box rather than a card, so there is nothing
+ * for an edge to land on: `logical-k8s.ts` counts it as a namespace the estate
+ * names, which is what draws the box the Application deploys into.
  *
  * Namespace scoping uses the platform's own defaulting rule: an object with no
  * declared `metadata.namespace` lives in `default`, so that is what it joins
@@ -107,13 +117,35 @@ const FLUX_SOURCE_KINDS = new Set([
 
 /** A `sourceRef`-shaped `{ kind, name, namespace? }` read off a nested object,
  * namespace defaulting to the REFERRER'S own (Flux's rule — a sourceRef with
- * no namespace resolves in the CR's namespace). */
-function sourceRefOf(refObj: unknown, referrer: IRNode): { kind: string; name: string; namespace: string } | undefined {
+ * no namespace resolves in the CR's namespace). `defaultKind` stands in for a
+ * kind the CRD itself defaults (ImageUpdateAutomation's sourceRef is a
+ * GitRepository when the field is omitted), which is the apiserver's own rule,
+ * not a guess. */
+function sourceRefOf(
+  refObj: unknown,
+  referrer: IRNode,
+  defaultKind?: string,
+): { kind: string; name: string; namespace: string } | undefined {
   const ref = rec(refObj);
-  const kind = str(ref?.kind);
+  const kind = str(ref?.kind) ?? defaultKind;
   const name = str(ref?.name);
   if (!kind || !name) return undefined;
   return { kind, name, namespace: str(ref?.namespace) ?? namespaceOf(referrer) };
+}
+
+/** A `{ name, namespace? }` reference — Flux's NamespacedObjectReference, the
+ * shape `dependsOn`, `imageRepositoryRef` and `providerRef` all use. Namespace
+ * defaults to the referrer's own, exactly as sourceRefOf's does. */
+function namedRefOf(refObj: unknown, referrer: IRNode): { name: string; namespace: string } | undefined {
+  const ref = rec(refObj);
+  const name = str(ref?.name);
+  if (!name) return undefined;
+  return { name, namespace: str(ref?.namespace) ?? namespaceOf(referrer) };
+}
+
+/** A declared list field, or an empty one. */
+function list(v: unknown): unknown[] {
+  return Array.isArray(v) ? v : [];
 }
 
 /** The `sourceRef` a HelmRelease declares: `spec.chart.spec.sourceRef` — three
@@ -149,7 +181,8 @@ export interface K8sDeclaredEdge {
   inferred: true;
 }
 
-/** Derive the three declared-attribute joins over a graph's k8s nodes. Pure. */
+/** Derive the declared-attribute joins listed at the top of this file over a
+ * graph's k8s nodes. An edge exists only when both ends are declared here. Pure. */
 export function deriveK8sEdges(nodes: readonly IRNode[]): K8sDeclaredEdge[] {
   const k8s = nodes.filter((n) => n.lexicon === "k8s");
   if (k8s.length === 0) return [];
@@ -159,20 +192,56 @@ export function deriveK8sEdges(nodes: readonly IRNode[]): K8sDeclaredEdge[] {
   };
 
   const workloads = k8s.filter((n) => WORKLOAD_KINDS.has(n.kind));
-  const servicesByNsName = new Map<string, IRNode>();
-  // Flux sources by the identity a sourceRef names: short kind + ns + name.
-  const sourcesByKindNsName = new Map<string, IRNode>();
+  // Every object by the identity a reference names: kind + namespace + name.
+  const byKindNsName = new Map<string, IRNode>();
+  // AppProjects by name alone — see addProject on why the namespace is not part
+  // of Argo's join.
+  const appProjectsByName = new Map<string, IRNode[]>();
   for (const n of k8s) {
     const name = nameOf(n);
     if (!name) continue;
-    if (n.kind === "K8s::Core::Service") servicesByNsName.set(`${namespaceOf(n)}/${name}`, n);
-    if (FLUX_SOURCE_KINDS.has(n.kind)) sourcesByKindNsName.set(`${shortKind(n.kind)}/${namespaceOf(n)}/${name}`, n);
+    byKindNsName.set(`${n.kind}\0${namespaceOf(n)}\0${name}`, n);
+    if (n.kind === "K8s::Argo::AppProject") {
+      const same = appProjectsByName.get(name) ?? [];
+      same.push(n);
+      appProjectsByName.set(name, same);
+    }
   }
-  const addSourceRef = (n: IRNode, refObj: unknown, viaAttr: string) => {
-    const ref = sourceRefOf(refObj, n);
+  const lookup = (kind: string, namespace: string, name: string) => byKindNsName.get(`${kind}\0${namespace}\0${name}`);
+
+  /** Join a `{ kind, name, namespace? }` ref onto a Flux object, where `kind` is
+   * the short spelling the CR carries (`GitRepository`) and the node's is the
+   * lexicon's (`K8s::Flux::GitRepository`). `allowed`, when given, is the set of
+   * kinds the field's contract permits. */
+  const addFluxRef = (n: IRNode, refObj: unknown, viaAttr: string, allowed?: Set<string>, defaultKind?: string) => {
+    const ref = sourceRefOf(refObj, n, defaultKind);
+    // `*` is Alert's wildcard — it names every object of a kind, not one node.
+    if (!ref || ref.name === "*") return;
+    const kind = `K8s::Flux::${ref.kind}`;
+    if (allowed && !allowed.has(kind)) return;
+    const target = lookup(kind, ref.namespace, ref.name);
+    if (target) add(n.id, target.id, viaAttr);
+  };
+  const addSourceRef = (n: IRNode, refObj: unknown, viaAttr: string, defaultKind?: string) =>
+    addFluxRef(n, refObj, viaAttr, FLUX_SOURCE_KINDS, defaultKind);
+
+  /** Join a `{ name, namespace? }` ref onto the one kind that field can name. */
+  const addNamedRef = (n: IRNode, refObj: unknown, kind: string, viaAttr: string) => {
+    const ref = namedRefOf(refObj, n);
     if (!ref) return;
-    const source = sourcesByKindNsName.get(`${ref.kind}/${ref.namespace}/${ref.name}`);
-    if (source) add(n.id, source.id, viaAttr);
+    const target = lookup(kind, ref.namespace, ref.name);
+    if (target) add(n.id, target.id, viaAttr);
+  };
+
+  /** Argo's `spec.project` names an AppProject the *controller* resolves in its
+   * own namespace, which need not be the Application's (apps-in-any-namespace
+   * puts them elsewhere), so the join is on name. When several namespaces
+   * declare that name the referrer's own wins; a name that stays ambiguous gets
+   * no edge, the same discipline the cluster anchor follows. */
+  const addProject = (n: IRNode, project: string | undefined, viaAttr: string) => {
+    const candidates = project ? (appProjectsByName.get(project) ?? []) : [];
+    const target = candidates.length === 1 ? candidates[0] : candidates.find((p) => namespaceOf(p) === namespaceOf(n));
+    if (target) add(n.id, target.id, viaAttr);
   };
 
   for (const n of k8s) {
@@ -190,7 +259,7 @@ export function deriveK8sEdges(nodes: readonly IRNode[]): K8sDeclaredEdge[] {
     // Ingress → Service its backends name.
     if (n.kind === "K8s::Networking::Ingress") {
       for (const svcName of ingressBackendServices(n)) {
-        const svc = servicesByNsName.get(`${namespaceOf(n)}/${svcName}`);
+        const svc = lookup("K8s::Core::Service", namespaceOf(n), svcName);
         if (svc) add(n.id, svc.id, "ingress backend");
       }
       continue;
@@ -211,10 +280,45 @@ export function deriveK8sEdges(nodes: readonly IRNode[]): K8sDeclaredEdge[] {
     // estate reads source → reconciler instead of disconnected cards.
     if (n.kind === "K8s::Flux::Kustomization") {
       addSourceRef(n, rec(n.attrs?.spec)?.sourceRef, "sourceRef");
+      // Reconcile ordering (#223): dependsOn gates this Kustomization on
+      // sibling ones — the layered estate's most load-bearing structure, and
+      // what chant lints as FLUX003.
+      for (const dep of list(rec(n.attrs?.spec)?.dependsOn)) {
+        addNamedRef(n, dep, "K8s::Flux::Kustomization", "dependsOn");
+      }
       continue;
     }
     if (n.kind === "K8s::Flux::HelmRelease") {
       addSourceRef(n, helmReleaseSourceRef(n), "chart sourceRef");
+      continue;
+    }
+    // Image automation (#223): a policy reads one repository's tags, and the
+    // automation writes back to the git source it reconciles from.
+    if (n.kind === "K8s::Flux::ImagePolicy") {
+      addNamedRef(n, rec(n.attrs?.spec)?.imageRepositoryRef, "K8s::Flux::ImageRepository", "imageRepositoryRef");
+      continue;
+    }
+    if (n.kind === "K8s::Flux::ImageUpdateAutomation") {
+      addSourceRef(n, rec(n.attrs?.spec)?.sourceRef, "sourceRef", "GitRepository");
+      continue;
+    }
+    // Notification (#223): an Alert points at the Provider it dispatches
+    // through, and at every object whose events it forwards.
+    if (n.kind === "K8s::Flux::Alert") {
+      addNamedRef(n, rec(n.attrs?.spec)?.providerRef, "K8s::Flux::Provider", "providerRef");
+      for (const src of list(rec(n.attrs?.spec)?.eventSources)) {
+        addFluxRef(n, src, "eventSource");
+      }
+      continue;
+    }
+    // Argo (#222): the project join chant lints as ARGO002, so an estate whose
+    // lint passes cannot be drawn wrong by deriving it.
+    if (n.kind === "K8s::Argo::Application") {
+      addProject(n, str(rec(n.attrs?.spec)?.project), "project");
+      continue;
+    }
+    if (n.kind === "K8s::Argo::ApplicationSet") {
+      addProject(n, str(rec(rec(rec(n.attrs?.spec)?.template)?.spec)?.project), "template project");
     }
   }
   return out;

@@ -126,6 +126,157 @@ describe("deriveK8sEdges (#143)", () => {
     expect(edges).toHaveLength(1);
   });
 
+  it("joins a Kustomization to the siblings its dependsOn names (#223)", () => {
+    const nodes = [
+      k8s("base", "K8s::Flux::Kustomization", { ...meta("infra", "flux-system"), spec: {} }),
+      k8s("apps", "K8s::Flux::Kustomization", {
+        ...meta("apps", "flux-system"),
+        spec: { dependsOn: [{ name: "infra" }] },
+      }),
+      k8s("tenant", "K8s::Flux::Kustomization", {
+        ...meta("tenant", "team-a"),
+        // The declaring object's namespace is the default; the second entry
+        // crosses namespaces explicitly.
+        spec: { dependsOn: [{ name: "infra", namespace: "flux-system" }] },
+      }),
+    ];
+    const edges = deriveK8sEdges(nodes);
+    expect(edges).toContainEqual(expect.objectContaining({ from: "apps", to: "base", viaAttr: "dependsOn" }));
+    expect(edges).toContainEqual(expect.objectContaining({ from: "tenant", to: "base", viaAttr: "dependsOn" }));
+    expect(edges).toHaveLength(2);
+  });
+
+  it("a dependsOn naming a Kustomization nobody declared gets no edge", () => {
+    const nodes = [
+      k8s("apps", "K8s::Flux::Kustomization", { ...meta("apps", "flux-system"), spec: { dependsOn: [{ name: "infra" }] } }),
+      // Right name, wrong namespace — dependsOn defaults to the declarer's.
+      k8s("elsewhere", "K8s::Flux::Kustomization", { ...meta("infra", "other"), spec: {} }),
+    ];
+    expect(deriveK8sEdges(nodes)).toHaveLength(0);
+  });
+
+  it("joins an ImagePolicy to the ImageRepository its imageRepositoryRef names (#223)", () => {
+    const nodes = [
+      k8s("repo", "K8s::Flux::ImageRepository", { ...meta("api", "flux-system"), spec: { image: "ghcr.io/acme/api" } }),
+      k8s("policy", "K8s::Flux::ImagePolicy", {
+        ...meta("api", "flux-system"),
+        spec: { imageRepositoryRef: { name: "api" }, policy: { semver: { range: "1.x" } } },
+      }),
+    ];
+    const edges = deriveK8sEdges(nodes);
+    expect(edges).toContainEqual(expect.objectContaining({ from: "policy", to: "repo", viaAttr: "imageRepositoryRef" }));
+    expect(edges).toHaveLength(1);
+  });
+
+  it("an imageRepositoryRef naming an undeclared repository gets no edge", () => {
+    const nodes = [
+      k8s("policy", "K8s::Flux::ImagePolicy", { ...meta("api", "flux-system"), spec: { imageRepositoryRef: { name: "api" } } }),
+    ];
+    expect(deriveK8sEdges(nodes)).toHaveLength(0);
+  });
+
+  it("joins an ImageUpdateAutomation to its GitRepository, kind declared or CRD-defaulted (#223)", () => {
+    const nodes = [
+      k8s("git", "K8s::Flux::GitRepository", { ...meta("infra", "flux-system"), spec: {} }),
+      k8s("explicit", "K8s::Flux::ImageUpdateAutomation", {
+        ...meta("write-back", "flux-system"),
+        spec: { sourceRef: { kind: "GitRepository", name: "infra" }, interval: "5m" },
+      }),
+      // The CRD defaults sourceRef.kind to GitRepository — the apiserver's rule.
+      k8s("defaulted", "K8s::Flux::ImageUpdateAutomation", {
+        ...meta("write-back-2", "flux-system"),
+        spec: { sourceRef: { name: "infra" } },
+      }),
+    ];
+    const edges = deriveK8sEdges(nodes);
+    expect(edges).toContainEqual(expect.objectContaining({ from: "explicit", to: "git", viaAttr: "sourceRef" }));
+    expect(edges).toContainEqual(expect.objectContaining({ from: "defaulted", to: "git", viaAttr: "sourceRef" }));
+    expect(edges).toHaveLength(2);
+  });
+
+  it("an ImageUpdateAutomation whose source is undeclared gets no edge", () => {
+    const nodes = [
+      k8s("auto", "K8s::Flux::ImageUpdateAutomation", { ...meta("write-back", "flux-system"), spec: { sourceRef: { name: "infra" } } }),
+    ];
+    expect(deriveK8sEdges(nodes)).toHaveLength(0);
+  });
+
+  it("joins an Alert to its Provider and to every event source it forwards (#223)", () => {
+    const nodes = [
+      k8s("slack", "K8s::Flux::Provider", { ...meta("slack", "flux-system"), spec: { type: "slack" } }),
+      k8s("ks", "K8s::Flux::Kustomization", { ...meta("apps", "flux-system"), spec: {} }),
+      k8s("hr", "K8s::Flux::HelmRelease", { ...meta("db", "flux-system"), spec: {} }),
+      k8s("alert", "K8s::Flux::Alert", {
+        ...meta("on-call", "flux-system"),
+        spec: {
+          providerRef: { name: "slack" },
+          eventSources: [
+            { kind: "Kustomization", name: "apps" },
+            { kind: "HelmRelease", name: "db" },
+            // A wildcard names every object of a kind, not one node.
+            { kind: "GitRepository", name: "*" },
+          ],
+        },
+      }),
+    ];
+    const edges = deriveK8sEdges(nodes);
+    expect(edges).toContainEqual(expect.objectContaining({ from: "alert", to: "slack", viaAttr: "providerRef" }));
+    expect(edges).toContainEqual(expect.objectContaining({ from: "alert", to: "ks", viaAttr: "eventSource" }));
+    expect(edges).toContainEqual(expect.objectContaining({ from: "alert", to: "hr", viaAttr: "eventSource" }));
+    expect(edges).toHaveLength(3);
+  });
+
+  it("an Alert whose provider and event source are undeclared gets no edges", () => {
+    const nodes = [
+      k8s("alert", "K8s::Flux::Alert", {
+        ...meta("on-call", "flux-system"),
+        spec: { providerRef: { name: "slack" }, eventSources: [{ kind: "Kustomization", name: "apps" }] },
+      }),
+      // Same names, another namespace — an eventSource resolves in the Alert's.
+      k8s("slack", "K8s::Flux::Provider", { ...meta("slack", "other"), spec: {} }),
+      k8s("ks", "K8s::Flux::Kustomization", { ...meta("apps", "other"), spec: {} }),
+    ];
+    expect(deriveK8sEdges(nodes)).toHaveLength(0);
+  });
+
+  it("joins an Argo Application and ApplicationSet to the AppProject they name (#222)", () => {
+    const nodes = [
+      k8s("project", "K8s::Argo::AppProject", { ...meta("platform", "argocd"), spec: { destinations: [{ namespace: "web" }] } }),
+      k8s("app", "K8s::Argo::Application", {
+        ...meta("web", "argocd"),
+        spec: { project: "platform", destination: { namespace: "web" }, source: { repoURL: "https://example.com/web.git" } },
+      }),
+      // apps-in-any-namespace: the Application need not sit beside its project.
+      k8s("tenantApp", "K8s::Argo::Application", { ...meta("api", "team-a"), spec: { project: "platform" } }),
+      k8s("set", "K8s::Argo::ApplicationSet", {
+        ...meta("tenants", "argocd"),
+        spec: { generators: [{ list: { elements: [] } }], template: { spec: { project: "platform" } } },
+      }),
+    ];
+    const edges = deriveK8sEdges(nodes);
+    expect(edges).toContainEqual(expect.objectContaining({ from: "app", to: "project", viaAttr: "project" }));
+    expect(edges).toContainEqual(expect.objectContaining({ from: "tenantApp", to: "project", viaAttr: "project" }));
+    expect(edges).toContainEqual(expect.objectContaining({ from: "set", to: "project", viaAttr: "template project" }));
+    expect(edges).toHaveLength(3);
+  });
+
+  it("an Application naming an undeclared project gets no edge, and an ambiguous name is declined", () => {
+    expect(
+      deriveK8sEdges([
+        k8s("app", "K8s::Argo::Application", { ...meta("web", "argocd"), spec: { project: "platform" } }),
+      ]),
+    ).toHaveLength(0);
+    // Two AppProjects share the name and neither is the Application's own
+    // namespace — nothing here can say which one Argo resolves.
+    expect(
+      deriveK8sEdges([
+        k8s("p1", "K8s::Argo::AppProject", { ...meta("platform", "argocd"), spec: {} }),
+        k8s("p2", "K8s::Argo::AppProject", { ...meta("platform", "argocd-2"), spec: {} }),
+        k8s("app", "K8s::Argo::Application", { ...meta("web", "team-a"), spec: { project: "platform" } }),
+      ]),
+    ).toHaveLength(0);
+  });
+
   it("an Argo Application's repoURL gets no edge — a URL is not a node reference", () => {
     const nodes = [
       k8s("app", "K8s::Argo::Application", { ...meta("web", "argocd"), spec: { source: { repoURL: "https://example.com/web.git", path: "." } } }),
