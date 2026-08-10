@@ -27,6 +27,14 @@
       "serve": { "env": "local", "dirs": ["control-plane", "app-a", "app-b"] }
     },
     {
+      "name": "argo-estate",
+      "description": "The Argo CD mirror of flux-estate, declared only: an AppProject plus one Application per app project, served with the two apps as one composed estate — project edges from each Application to the AppProject it names, and each Application's destination namespace drawn as a box holding that app's objects. No cluster, no Argo install, no Docker.",
+      "source": "bundled",
+      "dir": "example-argo-estate",
+      "requires": [],
+      "serve": { "dirs": ["control-plane", "app-a", "app-b"] }
+    },
+    {
       "name": "fountain",
       "description": "The mature estate: self-hosted fountain (a real app) on a throwaway k3d cluster — tiers (try the ha tier picker), seams, drift, runtime Pods. Clones INTENTIUS/fountain-ops; ~5 minutes, mostly image pulls. `just down` in the clone removes the cluster.",
       "source": "git",

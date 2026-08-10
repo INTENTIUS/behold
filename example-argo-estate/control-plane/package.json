@@ -1,0 +1,13 @@
+{
+  "name": "behold-example-argo-control-plane",
+  "private": true,
+  "type": "module",
+  "description": "The estate's control plane: the Argo CD CRs (an AppProject + one Application per app project).",
+  "scripts": {
+    "build": "chant build src -o dist/control-plane.yaml --format yaml"
+  },
+  "dependencies": {
+    "@intentius/chant": "^0.44.3",
+    "@intentius/chant-lexicon-k8s": "^0.44.3"
+  }
+}

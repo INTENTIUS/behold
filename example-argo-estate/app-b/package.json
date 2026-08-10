@@ -1,0 +1,13 @@
+{
+  "name": "behold-example-argo-app-b",
+  "private": true,
+  "type": "module",
+  "description": "App project B: the same workload in namespace app-b, synced one wave later.",
+  "scripts": {
+    "build": "chant build src -o manifests/app.yaml --format yaml"
+  },
+  "dependencies": {
+    "@intentius/chant": "^0.44.3",
+    "@intentius/chant-lexicon-k8s": "^0.44.3"
+  }
+}

@@ -30,8 +30,9 @@ npx @intentius/behold demo            # copies the example to ./behold-demo, ins
 The copied project is yours: edit its source and watch the graph change live.
 There's a whole catalog — `behold demo --list` names the rest (`behold demo
 k8s` stands the same loop up on a throwaway k3d cluster: runtime Pods, field
-ownership). Every loaded demo lands in the panel's recents, so switching
-between them is the Scope tab.
+ownership; `behold demo argo-estate` needs nothing at all — a three-project
+Argo CD estate, declared only, so it runs where Docker doesn't). Every loaded
+demo lands in the panel's recents, so switching between them is the Scope tab.
 
 Already have a chant project?
 
