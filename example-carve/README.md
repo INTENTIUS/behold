@@ -170,14 +170,21 @@ no AWS account and no network. The only dependency beyond this directory is
 `@cdktf/hcl2json`, which chant lazy-loads and names in its error if absent. This
 tier guarantees the first thirty seconds of the video.
 
-**`--live` is the full video.** Boot a scratch Floci, arm
-`legacy-tf/floci-override.tf.disabled` (see its header), and `terraform apply`
-the estate into it, so the state is one terraform really wrote. Then the observe
-beats become footage rather than caption: after Emit, `chant lifecycle diff
---live` reads the bucket out of Floci, clean, while Terraform still owns it; the
-handoff runs a real `terraform plan` showing no destroy; and behold's overlay
-flips the bucket green afterwards. The line it exists for is "Terraform forgot
-it, chant adopted it, and it never blinked."
+**`--live` is the full video.** `behold demo carve --live` boots a scratch
+Floci (`behold-carve-floci`, its own port, deleted on exit), arms
+`legacy-tf/floci-override.tf.disabled` (see its header) into the demo copy, and
+`terraform apply -target`s the starred resources into it — so the tfstate the
+advisor reads is one terraform really wrote. At Handoff the stepper gains a
+read-only **terraform plan** button: before `state rm` it shows a no-op, after
+it the carved bucket is simply gone from Terraform's world — `0 to destroy`.
+The line the tier exists for is "Terraform forgot it, chant adopted it, and it
+never blinked."
+
+One beat stays caption rather than footage for now: `chant lifecycle diff
+--live` reading the bucket clean while Terraform still owns it. chant's AWS
+observe is CFN-stack-scoped by logical id, so a Terraform-owned resource reads
+confirmed-missing regardless of its existence — chant#1647 tracks the
+physical-identity read path that unlocks it.
 
 The live tier needs `docker` and `terraform` on PATH, boots its own throwaway
 Floci and deletes it after, and never touches an existing `floci*` container.

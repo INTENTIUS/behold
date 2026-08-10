@@ -38,6 +38,7 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { runChantRaw, stripAnsi } from "./chant.ts";
 import { unwritableReason } from "./layout.ts";
 import type { CarveReport } from "./carve-lens.ts";
+import { runLivePlan, type CarveLiveInfo } from "./carve-live.ts";
 
 /**
  * A booted `behold demo carve` copy — the only context in which the carve
@@ -55,9 +56,49 @@ export interface CarveDemo {
   project: string;
   /** Where emitted source, proposals and the runbook land (`app/carveout/`). */
   out: string;
+  /** The Floci `--live` tier (src/carve-live.ts): present iff this boot really
+   * applied the estate into a scratch emulator — the tfstate is terraform's
+   * own, and the plan action below is armed. */
+  live?: CarveLiveInfo;
   /** Set when the boot's own `carve advise` failed and the committed report is
    * being served instead — surfaced in the UI rather than swallowed. */
   degraded?: string;
+}
+
+export interface CarvePlanResult {
+  ok: true;
+  command: string;
+  /** Terraform's own verdict line (`Plan: …` / `No changes.`). */
+  planLine: string;
+  /** `-detailed-exitcode`: false = a clean no-op plan. */
+  changes: boolean;
+  /** The tier's one claim: nothing gets destroyed. */
+  noDestroy: boolean;
+}
+
+/** The handoff beat's `terraform plan`, live tier only (#254): read-only
+ * against both the estate and the emulator — before the operator pastes
+ * `terraform state rm` it shows a no-op, after it it shows the carved
+ * resource simply absent from Terraform's world, not destroyed. */
+export async function runCarvePlan(demo: CarveDemo | undefined): Promise<CarveActionResult<CarvePlanResult>> {
+  if (!demo?.live) {
+    return refuse(
+      "carve-action",
+      "terraform plan is the live tier's beat, and this server isn't serving one",
+      "run `behold demo carve --live` (needs docker + terraform)",
+    );
+  }
+  const r = await runLivePlan(demo.from);
+  if ("error" in r) {
+    return refuse("carve-action", r.error, "Is the scratch Floci still up? `docker ps` should list " + demo.live.container + ".");
+  }
+  return {
+    ok: true,
+    command: "terraform plan -detailed-exitcode (targeted, in the demo copy)",
+    planLine: r.planLine,
+    changes: r.changes,
+    noDestroy: r.noDestroy,
+  };
 }
 
 /** Caps on what comes back through the wire. A carve emits one source file and

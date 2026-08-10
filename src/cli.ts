@@ -4,9 +4,9 @@
  * behold leans on chant's MCP for the underlying graph/lifecycle data (see README).
  */
 import { resolve, dirname, join } from "node:path";
-import { realpathSync, existsSync, readFileSync } from "node:fs";
+import { realpathSync, existsSync, readFileSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { startServer, beholdVersion } from "./server.ts";
 import { loadDemoRegistry, missingRequirements, demoTargetDir, loadDemo, type DemoCarve } from "./demos.ts";
 import { resolveChant } from "./chant.ts";
@@ -15,11 +15,21 @@ import { diagnose, formatReport } from "./doctor.ts";
 import { isAutoSyncMode, type AutoSyncMode } from "./autosync.ts";
 import { detectProjectShape } from "./project.ts";
 import { readCarveReport } from "./carve-lens.ts";
+import {
+  bootScratchFloci,
+  teardownScratchFloci,
+  applyIntoFloci,
+  LIVE_CONTAINER,
+  LIVE_PORT,
+  LIVE_TARGETS,
+  type CarveLiveInfo,
+} from "./carve-live.ts";
 
 const USAGE = `behold — a live control plane on chant (read-only core)
 
 Usage:
   behold demo [name] [target-dir] [--port <n>] [--list]
+  behold demo carve [--live] [--port <n>]
   behold doctor [project-dir] [--json]
   behold preview [project-dir] [--port <n>] [--emulator]
   behold export [project-dir] [--out <dir>] [--env <name>] [--name <worker>] [--emulator]
@@ -52,7 +62,10 @@ Usage:
           up on a throwaway k3d cluster instead. \`behold demo carve\` is the
           odd one out: no cluster, no Docker, no cloud — a half-migrated
           Terraform/chant estate plus the six-step carve walkthrough on the
-          panel's Carve tab. Needs Docker (and per-demo tools --list names).
+          panel's Carve tab. Its \`--live\` tier flips that: docker + terraform
+          on PATH, a scratch Floci booted and deleted on exit, the starred
+          resources REALLY applied, and a real \`terraform plan\` button at
+          Handoff. Needs Docker (and per-demo tools --list names).
           Loaded demos land in the panel's recents, so switching between them
           is the Scope tab — which lists this whole catalog too (#268), one
           click from any served project.
@@ -338,11 +351,13 @@ async function runDemo(rest: string[]): Promise<void> {
   const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
   const registry = loadDemoRegistry(pkgRoot);
   let port = 4600;
+  let live = false;
   let name: string | undefined;
   let dirArg: string | undefined;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     if (a === "--port") port = Number(rest[++i]);
+    else if (a === "--live") live = true;
     else if (a === "--list") {
       if (!registry.length) {
         process.stdout.write("behold demo: no catalog in this install (demos.json missing)\n");
@@ -396,8 +411,12 @@ async function runDemo(rest: string[]): Promise<void> {
   // #254: a carve demo isn't a project serve at all — it boots the advisor and
   // hands the walkthrough its estate context.
   if (entry.serve.carve) {
-    await serveCarveDemo(target, entry.serve.carve, port);
+    await serveCarveDemo(target, entry.serve.carve, port, live);
     return;
+  }
+  if (live) {
+    process.stderr.write(`behold demo ${entry.name}: --live is the carve demo's tier — only \`behold demo carve --live\` takes it.\n`);
+    process.exit(2);
   }
   process.stdout.write(`behold demo ${entry.name} → serving. Blue = declared; Deploy turns it green.\n`);
   const serveArgs = ["serve", ...loaded.serveDirs, "--port", String(port)];
@@ -441,16 +460,54 @@ function spawnStep(cmd: string, args: string[], cwd: string): Promise<number> {
  *     the way to the UI (`CarveDemo.degraded`). The one thing that must never
  *     happen is an empty graph with no explanation.
  *
- * The Floci `--live` tier (the issue's second comment) is a follow-up: real
- * `terraform apply` into a scratch emulator, live observe beats, a real
- * `terraform plan` on camera. Nothing here reaches for Docker or terraform.
+ * The Floci `--live` tier (the issue's second comment, src/carve-live.ts) runs
+ * BEFORE all that: scratch Floci in Docker, the copy's Terraform really
+ * applied into it, so the tfstate the advisor reads was written by terraform.
+ * Live fails fast rather than degrading — a "live" walkthrough silently
+ * serving synthetic state would be the demo lying about its one claim. The
+ * observe beat stays deferred on chant#1647.
  */
-async function serveCarveDemo(target: string, carve: DemoCarve, port: number): Promise<void> {
+async function serveCarveDemo(target: string, carve: DemoCarve, port: number, live = false): Promise<void> {
   const at = (rel: string): string => resolve(target, rel);
   const project = at(carve.project);
   const from = at(carve.from);
   const state = carve.state ? at(carve.state) : undefined;
   const committed = at(carve.report);
+
+  let liveInfo: CarveLiveInfo | undefined;
+  if (live) {
+    for (const bin of ["docker", "terraform"]) {
+      const probe = spawnSync(process.platform === "win32" ? "where" : "which", [bin], { stdio: "ignore" });
+      if (probe.status !== 0) {
+        process.stderr.write(`behold demo carve --live: needs ${bin} on PATH (the offline tier doesn't — drop --live).\n`);
+        process.exit(2);
+      }
+    }
+    process.stdout.write(`behold demo carve --live → scratch Floci (${LIVE_CONTAINER}, :${LIVE_PORT}, deleted on exit)…\n`);
+    const bootErr = await bootScratchFloci();
+    if (bootErr) {
+      process.stderr.write(`behold demo carve --live: ${bootErr}\n`);
+      process.exit(1);
+    }
+    // From here the server owns the container: startServer's shutdown hook
+    // tears it down on SIGINT/SIGTERM. This function only cleans up on the
+    // failure paths between boot and serve.
+    process.stdout.write("behold demo carve --live → terraform init + apply (the starred resources, into the scratch Floci)…\n");
+    if (state) rmSync(state, { force: true }); // the synthetic tfstate — terraform writes the real one
+    const applyErr = await applyIntoFloci(from, spawnStep);
+    if (applyErr) {
+      await teardownScratchFloci();
+      process.stderr.write(`behold demo carve --live: ${applyErr}\n`);
+      process.exit(1);
+    }
+    liveInfo = {
+      container: LIVE_CONTAINER,
+      port: LIVE_PORT,
+      endpoint: `http://localhost:${LIVE_PORT}`,
+      applied: LIVE_TARGETS,
+    };
+    process.stdout.write("behold demo carve --live → the tfstate is real now; the advisor reads what terraform wrote.\n");
+  }
 
   if (existsSync(join(project, "package.json")) && !existsSync(join(project, "node_modules"))) {
     process.stdout.write(`behold demo carve → npm install in ${carve.project}/ (the chant this walkthrough shells)…\n`);
@@ -506,6 +563,7 @@ async function serveCarveDemo(target: string, carve: DemoCarve, port: number): P
       ...(state ? { state } : {}),
       project,
       out: at(carve.out),
+      ...(liveInfo ? { live: liveInfo } : {}),
       ...(degraded ? { degraded: `${degraded} — showing the committed report shipped with the demo.` } : {}),
     },
     port,

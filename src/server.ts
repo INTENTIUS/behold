@@ -61,10 +61,12 @@ import {
   carveWriteBlock,
   runCarveBridge,
   runCarveEmit,
+  runCarvePlan,
   selectFromReport,
   BUILD_CAVEAT,
   type CarveDemo,
 } from "./carve-actions.ts";
+import { teardownScratchFloci } from "./carve-live.ts";
 import { discoverEstateOps } from "./ops.ts";
 import { LIVE_IMPORT_LEXICONS } from "./adopt.ts";
 import { detectProject, loadBeholdConfig } from "./project.ts";
@@ -425,6 +427,9 @@ function carveRoutes(app: Hono, reportPath: string, demo?: CarveDemo): void {
       fromLabel: relative(demo.root, demo.from).split(sep).join("/"),
       runnable: !block,
       ...(block ? { reason: block } : {}),
+      // The live tier, when this boot armed it: the scratch endpoint the
+      // stepper names, and the fact the plan button exists at all.
+      ...(demo.live ? { live: { endpoint: demo.live.endpoint, container: demo.live.container, applied: demo.live.applied } } : {}),
       ...(demo.degraded ? { degraded: demo.degraded } : {}),
       buildCaveat: BUILD_CAVEAT,
     };
@@ -601,6 +606,23 @@ function carveRoutes(app: Hono, reportPath: string, demo?: CarveDemo): void {
 
   app.post("/api/carve/emit", (c) => runStep(c, runCarveEmit));
   app.post("/api/carve/bridge", (c) => runStep(c, runCarveBridge));
+
+  // The live tier's third action (#254): `terraform plan`, read-only against
+  // both the estate and the emulator. Same guard posture as emit/bridge (JSON
+  // body so a hostile page preflights; the body itself is empty `{}`), but no
+  // `select` — the plan speaks for the whole armed estate, and its verdict
+  // line is the beat: no destroy. Refuses on a non-live boot (runCarvePlan).
+  app.post("/api/carve/plan", async (c) => {
+    const block = demoBlock();
+    if (block) {
+      return c.json({ error: block, code: "read-only", remedy: "The live plan runs inside a demo copy — `behold demo carve --live`." }, 403);
+    }
+    if (!(c.req.header("content-type") ?? "").includes("application/json")) {
+      return c.json({ error: "send application/json", code: "carve-action", remedy: "POST {} with content-type application/json" }, 415);
+    }
+    const result = await runCarvePlan(demo);
+    return result.ok ? c.json(result) : c.json(result.refusal, 422);
+  });
 
   // A static report has no substrates to probe and no git history that means
   // anything (the file may sit anywhere). Answer empty instead of running a
@@ -2263,12 +2285,18 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
     stopWatch();
     stopPoll();
     // Local mode (#46): tear the emulator(s) down so nothing is left running.
-    // Best-effort — never block shutdown on a docker error.
-    const done = cfg.local && cfg.emulators && cfg.emulators.length
-      ? emulatorDown(cfg.projectDir).catch((err) =>
-          process.stderr.write(`emulator down: ${err instanceof Error ? err.message : String(err)}\n`))
-      : Promise.resolve();
-    void done.finally(() => process.exit(0));
+    // Best-effort — never block shutdown on a docker error. The carve live
+    // tier's scratch Floci rides the same hook (#254): the server is the
+    // process that outlives the boot, so the server owns the teardown.
+    const downs: Array<Promise<unknown>> = [];
+    if (cfg.local && cfg.emulators && cfg.emulators.length) {
+      downs.push(
+        emulatorDown(cfg.projectDir).catch((err) =>
+          process.stderr.write(`emulator down: ${err instanceof Error ? err.message : String(err)}\n`)),
+      );
+    }
+    if (cfg.carveDemo?.live) downs.push(teardownScratchFloci().catch(() => undefined));
+    void Promise.all(downs).finally(() => process.exit(0));
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
@@ -2281,6 +2309,7 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
           (cfg.carveDemo
             ? `  walkthrough: the panel's Carve tab — advise → pick → emit → bridge → handoff → done.\n` +
               `  Emit and bridge write only into ${cfg.carveDemo.out}; your Terraform is never edited.\n` +
+              (cfg.carveDemo.live ? `  live: scratch Floci at ${cfg.carveDemo.live.endpoint} — deleted on Ctrl-C.\n` : "") +
               (cfg.carveDemo.degraded ? `  degraded: ${cfg.carveDemo.degraded}\n` : "")
             : `  Read-only advisory: behold emits nothing and touches no Terraform. Ctrl-C to stop.\n`),
       );
