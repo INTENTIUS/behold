@@ -86,6 +86,19 @@ export interface GraphOptions {
    * the first declared stack — the picker's default — rather than erroring;
    * a project declaring no `stacks[]` at all ignores this option entirely. */
   stack?: string;
+  /** Where to READ entities that declare no `metadata.namespace` — chant's
+   * `--namespace <ns>` (chant#1629, chant 0.44.5). A DEFAULT, not a rewrite:
+   * an object declaring its own namespace is still read from the one it
+   * declares, and a lexicon with no namespace-like scope ignores it.
+   *
+   * Never parsed off a request (`optsFromQuery` has no `?namespace=`) — a
+   * viewer picking where to look would just be guessing. It is DERIVED, per
+   * member project, from the estate's own declared
+   * `Kustomization.spec.targetNamespace`: see src/estate.ts's
+   * `estateNamespaceScopes` (#221). A chant predating the flag rejects it
+   * outright ("Unknown flag", chant#1127), which is why that join gates on the
+   * member's own resolved chant version rather than sending it hopefully. */
+  namespace?: string;
 }
 
 /** Env overrides for the tier/target lenses (M2, #54): `tier`/`target` above are
@@ -122,6 +135,9 @@ export function graphFlags(opts: GraphOptions): string[] {
   if (opts.env) flags.push("--env", opts.env);
   if (opts.live) flags.push("--live");
   if (opts.overlay) flags.push("--overlay");
+  // #221 / chant#1629 — only meaningful alongside `--live` (it scopes the
+  // read, not the build), and only ever set by the estate namespace join.
+  if (opts.namespace) flags.push("--namespace", opts.namespace);
   return flags;
 }
 

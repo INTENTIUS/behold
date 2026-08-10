@@ -84,6 +84,17 @@ describe("graphFlags", () => {
   it("never emits --tier/--target — the M2 lenses are env overrides, not chant CLI flags (#54)", () => {
     expect(graphFlags({ tier: "full", target: "http://localhost:4566" })).toEqual([]);
   });
+
+  it("adds --namespace for the estate's GitOps namespace join (#221, chant#1629)", () => {
+    expect(graphFlags({ live: true, overlay: true, env: "local", namespace: "app-b" })).toEqual([
+      "--env",
+      "local",
+      "--live",
+      "--overlay",
+      "--namespace",
+      "app-b",
+    ]);
+  });
 });
 
 // M2 (#54): the tier/target lenses. Not chant CLI flags — env overrides for

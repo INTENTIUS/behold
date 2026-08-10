@@ -52,7 +52,7 @@ import { applyHelmArtifacts } from "./helm-artifacts.ts";
 import { addClusterAnchorEdges } from "./cluster-anchor.ts";
 import { projectTopology } from "./logical.ts";
 import { addCompositeDepsCounted } from "./composite-deps.ts";
-import { notesFor, tierMismatchNote, namespaceMismatchNote, type Zoom } from "./zoom-notes.ts";
+import { notesFor, tierMismatchNote, namespaceMismatchNote, namespaceJoinNote, type Zoom } from "./zoom-notes.ts";
 import { resourcesByComponent, nonResourceEntities } from "./resources.ts";
 import { summarizePlan } from "./reconcile.ts";
 import { renderGraph, renderArchitecture, renderBanded } from "./render.ts";
@@ -66,7 +66,7 @@ import { OpRunner } from "./op-runner.ts";
 import { detectSubstrates, projectLexicons } from "./substrates.ts";
 import { pickAutoSyncOps, suspendedByRollback, type AutoSyncMode } from "./autosync.ts";
 import { sourceCommits, openRollbackBranches } from "./history.ts";
-import { composeEstate, composeEstateOverlay } from "./estate.ts";
+import { composeEstate, composeEstateOverlay, withoutJoinedMembers } from "./estate.ts";
 import { Broadcaster, watchSource } from "./events.ts";
 import { startDriftPoll } from "./poll.ts";
 import { FrameBuffer } from "./frames.ts";
@@ -1390,7 +1390,12 @@ export function createApp(
           const logicalBefore = ir.nodes.length;
           const { ir: projected, byContainer } = projectTopology(ir, env, boundContext, await estateSourceRoots(query));
           const { svg } = renderArchitecture(projected, byContainer);
-          const note = [notesFor("logical", projected, undefined, logicalBefore), coverNote, namespaceMismatchNote(projected.nodes)]
+          const note = [
+            notesFor("logical", projected, undefined, logicalBefore),
+            coverNote,
+            namespaceJoinNote(est.joined),
+            namespaceMismatchNote(withoutJoinedMembers(projected.nodes, est.joined)),
+          ]
             .filter(Boolean)
             .join(" · ");
           return c.json({
@@ -1407,7 +1412,16 @@ export function createApp(
         // point of asking for the tier. Every other estate view keeps
         // `byStack`.
         const { svg } = renderGraph(ir, { boxes: runtime ? "byContainer" : "byStack" });
-        const note = [coverNote, namespaceMismatchNote(ir.nodes), runtime ? notesFor("runtime", ir, undefined, undefined, detail) : undefined]
+        // #221: the join line says which members were read where the ESTATE
+        // says they run; #192's note then speaks only for the members the join
+        // did not reach — for the joined ones the read no longer looked in
+        // "default", so the sentence would be false.
+        const note = [
+          coverNote,
+          namespaceJoinNote(est.joined),
+          namespaceMismatchNote(withoutJoinedMembers(ir.nodes, est.joined)),
+          runtime ? notesFor("runtime", ir, undefined, undefined, detail) : undefined,
+        ]
           .filter(Boolean)
           .join(" · ");
         return c.json({

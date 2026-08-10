@@ -3,8 +3,10 @@
 // Kustomization applies one app project's committed manifests into that app's
 // namespace via targetNamespace — which is why app-b's objects declare no
 // metadata.namespace (see ../../app-b/src/app.ts): Flux stamps it at apply
-// time. That is the normal Flux estate shape, and exactly the shape behold's
-// namespace-mismatch note (behold#192) exists to explain.
+// time. That is the normal Flux estate shape — the one behold#192's note
+// explains for a project served alone, and the one behold#221's estate join
+// resolves outright by reading `targetNamespace` off the Kustomizations
+// below and scoping app-b's live read to it.
 //
 // scripts/estate-up.sh applies the BUILT form of this project (chant build →
 // dist/control-plane.yaml) once, after installing Flux; from then on the
