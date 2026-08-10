@@ -1,0 +1,13 @@
+{
+  "name": "behold-example-carve-app",
+  "private": true,
+  "type": "module",
+  "description": "The chant half of behold's carve demo estate — the pieces already peeled out of ../legacy-tf.",
+  "scripts": {
+    "build": "./node_modules/.bin/chant build src --lexicon aws -o template.json"
+  },
+  "dependencies": {
+    "@intentius/chant": "^0.44.4",
+    "@intentius/chant-lexicon-aws": "^0.44.4"
+  }
+}

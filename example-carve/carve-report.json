@@ -1,0 +1,261 @@
+{
+  "from": "example-carve/legacy-tf",
+  "advisory": "read-only — emits nothing, patches nothing, touches no live resource",
+  "count": 12,
+  "bands": {
+    "clean leaf": 2,
+    "carvable w/ edits": 4,
+    "leave in Terraform": 6
+  },
+  "resources": [
+    {
+      "address": "aws_cloudwatch_log_group.worker",
+      "kind": "resource",
+      "score": 100,
+      "band": "clean leaf",
+      "mapsTo": "AWS::Logs::LogGroup",
+      "breakdown": {
+        "inbound": 0,
+        "outbound": 0,
+        "tier": 1,
+        "hasDynamic": false,
+        "instances": 1,
+        "penalties": {
+          "inbound": 0,
+          "outbound": 0,
+          "tier": 0,
+          "dynamic": 0,
+          "instances": 0
+        }
+      }
+    },
+    {
+      "address": "aws_s3_bucket.assets",
+      "kind": "resource",
+      "score": 88,
+      "band": "clean leaf",
+      "mapsTo": "AWS::S3::Bucket",
+      "breakdown": {
+        "inbound": 1,
+        "outbound": 0,
+        "tier": 1,
+        "hasDynamic": false,
+        "instances": 1,
+        "penalties": {
+          "inbound": -12,
+          "outbound": 0,
+          "tier": 0,
+          "dynamic": 0,
+          "instances": 0
+        }
+      }
+    },
+    {
+      "address": "module.cdn",
+      "kind": "module",
+      "score": 71,
+      "band": "carvable w/ edits",
+      "breakdown": {
+        "inbound": 0,
+        "outbound": 1,
+        "tier": 2,
+        "hasDynamic": true,
+        "instances": 1,
+        "penalties": {
+          "inbound": 0,
+          "outbound": -4,
+          "tier": -15,
+          "dynamic": -10,
+          "instances": 0
+        }
+      }
+    },
+    {
+      "address": "aws_iam_role.api",
+      "kind": "resource",
+      "score": 69,
+      "band": "carvable w/ edits",
+      "mapsTo": "AWS::IAM::Role",
+      "breakdown": {
+        "inbound": 1,
+        "outbound": 1,
+        "tier": 2,
+        "hasDynamic": false,
+        "instances": 1,
+        "penalties": {
+          "inbound": -12,
+          "outbound": -4,
+          "tier": -15,
+          "dynamic": 0,
+          "instances": 0
+        }
+      }
+    },
+    {
+      "address": "aws_vpc_endpoint.ssm",
+      "kind": "resource",
+      "score": 69,
+      "band": "carvable w/ edits",
+      "mapsTo": "AWS::EC2::VPCEndpoint",
+      "breakdown": {
+        "inbound": 0,
+        "outbound": 4,
+        "tier": 2,
+        "hasDynamic": false,
+        "instances": 1,
+        "penalties": {
+          "inbound": 0,
+          "outbound": -16,
+          "tier": -15,
+          "dynamic": 0,
+          "instances": 0
+        }
+      }
+    },
+    {
+      "address": "aws_lambda_function.api",
+      "kind": "resource",
+      "score": 65,
+      "band": "carvable w/ edits",
+      "mapsTo": "AWS::Lambda::Function",
+      "breakdown": {
+        "inbound": 0,
+        "outbound": 5,
+        "tier": 2,
+        "hasDynamic": false,
+        "instances": 1,
+        "penalties": {
+          "inbound": 0,
+          "outbound": -20,
+          "tier": -15,
+          "dynamic": 0,
+          "instances": 0
+        }
+      }
+    },
+    {
+      "address": "aws_subnet.private_a",
+      "kind": "resource",
+      "score": 46,
+      "band": "leave in Terraform",
+      "mapsTo": "AWS::EC2::Subnet",
+      "breakdown": {
+        "inbound": 3,
+        "outbound": 2,
+        "tier": 1,
+        "hasDynamic": true,
+        "instances": 1,
+        "penalties": {
+          "inbound": -36,
+          "outbound": -8,
+          "tier": 0,
+          "dynamic": -10,
+          "instances": 0
+        }
+      }
+    },
+    {
+      "address": "aws_subnet.private_b",
+      "kind": "resource",
+      "score": 46,
+      "band": "leave in Terraform",
+      "mapsTo": "AWS::EC2::Subnet",
+      "breakdown": {
+        "inbound": 3,
+        "outbound": 2,
+        "tier": 1,
+        "hasDynamic": true,
+        "instances": 1,
+        "penalties": {
+          "inbound": -36,
+          "outbound": -8,
+          "tier": 0,
+          "dynamic": -10,
+          "instances": 0
+        }
+      }
+    },
+    {
+      "address": "aws_security_group.lambda",
+      "kind": "resource",
+      "score": 43,
+      "band": "leave in Terraform",
+      "mapsTo": "AWS::EC2::SecurityGroup",
+      "breakdown": {
+        "inbound": 2,
+        "outbound": 2,
+        "tier": 2,
+        "hasDynamic": true,
+        "instances": 1,
+        "penalties": {
+          "inbound": -24,
+          "outbound": -8,
+          "tier": -15,
+          "dynamic": -10,
+          "instances": 0
+        }
+      }
+    },
+    {
+      "address": "aws_vpc.main",
+      "kind": "resource",
+      "score": 36,
+      "band": "leave in Terraform",
+      "mapsTo": "AWS::EC2::VPC",
+      "breakdown": {
+        "inbound": 5,
+        "outbound": 1,
+        "tier": 1,
+        "hasDynamic": false,
+        "instances": 1,
+        "penalties": {
+          "inbound": -60,
+          "outbound": -4,
+          "tier": 0,
+          "dynamic": 0,
+          "instances": 0
+        }
+      }
+    },
+    {
+      "address": "aws_network_acl.private",
+      "kind": "resource",
+      "score": 0,
+      "band": "leave in Terraform",
+      "breakdown": {
+        "inbound": 0,
+        "outbound": 3,
+        "tier": null,
+        "hasDynamic": false,
+        "instances": 1,
+        "penalties": {
+          "inbound": 0,
+          "outbound": 0,
+          "tier": 0,
+          "dynamic": 0,
+          "instances": 0
+        }
+      }
+    },
+    {
+      "address": "random_pet.suffix",
+      "kind": "resource",
+      "score": 0,
+      "band": "leave in Terraform",
+      "breakdown": {
+        "inbound": 6,
+        "outbound": 0,
+        "tier": null,
+        "hasDynamic": false,
+        "instances": 1,
+        "penalties": {
+          "inbound": 0,
+          "outbound": 0,
+          "tier": 0,
+          "dynamic": 0,
+          "instances": 0
+        }
+      }
+    }
+  ]
+}
