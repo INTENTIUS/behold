@@ -117,3 +117,17 @@ e2e-helm-logical:
 #   just e2e-flux-estate
 e2e-flux-estate:
     bash e2e/flux-estate-k3d-e2e.sh
+
+# behold#269 (the GitOps lane, Argo half): the argo-estate demo driven headless
+# against a REAL Argo CD — the Argo joins (#222/#235), the estate lenses (#241)
+# and #238's health/sync mapping asserted in front of an application controller
+# instead of fixtures. Boots its own substrate: a scratch k3d cluster named
+# behold-argo-e2e, Argo from the pinned core-install manifest (the reconciler
+# only — no argocd CLI, no UI), the control plane built by its own chant. One
+# trap deletes the cluster on any exit, and it refuses to start if that name is
+# already taken — no existing cluster is ever touched. Needs docker + k3d +
+# kubectl and a reachable github.com (both Applications sync a real remote);
+# SKIPs with exit 0 if any is missing.
+#   just e2e-argo-estate
+e2e-argo-estate:
+    bash e2e/argo-estate-k3d-e2e.sh
