@@ -223,6 +223,28 @@ describe("carveReportToIr — boundary edges, once chant publishes them (#1636)"
   it("drops the chant#1636 caveat from the note once edges are actually drawn", () => {
     expect(carveNote(withEdges, ir)).not.toContain("chant#1636");
   });
+
+  it("reads a directionless edge as inbound — the same way in the edge and in the attrs", () => {
+    // Nothing in the edge itself distinguishes the two directions (both name
+    // the same carve-set side), so the conservative reading wins: a survivor
+    // that needs an immediate data-source patch. The graph and the inspect
+    // pane must not disagree about which it chose.
+    const bare = carveReportToIr({
+      resources: [
+        {
+          address: "aws_vpc.main",
+          score: 64,
+          band: "carvable w/ edits",
+          boundary: [{ survivor: "aws_subnet.a", carved: "aws_vpc.main" }],
+        },
+        { address: "aws_subnet.a", score: 96, band: "clean leaf" },
+      ],
+    });
+    expect(bare.edges).toEqual([{ from: "aws_subnet.a", to: "aws_vpc.main", kind: "ref", viaAttr: "inbound" }]);
+    const vpc = bare.nodes.find((n) => n.id === "aws_vpc.main")!;
+    expect(vpc.attrs.patchOnCarve).toBe("aws_subnet.a");
+    expect(vpc.attrs.deferredInputs).toBeUndefined();
+  });
 });
 
 describe("polite refusal on an unrecognized shape (#193's standard)", () => {

@@ -250,6 +250,18 @@ export function tfTypeOf(address: string, kind?: string): string {
   return dot > 0 ? address.slice(0, dot) : address;
 }
 
+/**
+ * An edge's direction, defaulting to `inbound` when the producer omitted it.
+ *
+ * The default is not a guess dressed up as a fact: a resource's boundary list
+ * carries both directions and every entry names the same carve-set side, so
+ * there is nothing in the edge itself to infer from. `inbound` is the
+ * conservative read — it claims the survivor needs an immediate data-source
+ * patch, which is the reading that gets someone to look rather than the one
+ * that lets a cut slip past as "deferred until apply".
+ */
+const directionOf = (e: CarveBoundaryEdge): "inbound" | "outbound" => e.direction ?? "inbound";
+
 /** Every boundary edge a resource declares, whichever of the two shapes it uses. */
 function boundaryEdgesOf(r: CarveResource): CarveBoundaryEdge[] {
   const b = r.boundary;
@@ -326,8 +338,8 @@ export function carveReportToIr(report: CarveReport): GraphIR {
     const status = statusForBand(r.band, r.score);
     const b = r.breakdown ?? {};
     const edges = boundaryEdgesOf(r);
-    const patches = edges.filter((e) => e.carved === r.address && (e.direction ?? "inbound") === "inbound").map((e) => e.survivor);
-    const inputs = edges.filter((e) => e.carved === r.address && e.direction === "outbound").map((e) => e.survivor);
+    const patches = edges.filter((e) => e.carved === r.address && directionOf(e) === "inbound").map((e) => e.survivor);
+    const inputs = edges.filter((e) => e.carved === r.address && directionOf(e) === "outbound").map((e) => e.survivor);
     return {
       id: r.address,
       kind: tfTypeOf(r.address, r.kind),
@@ -363,7 +375,7 @@ export function carveReportToIr(report: CarveReport): GraphIR {
   const edges: IREdge[] = [];
   for (const r of resources) {
     for (const e of boundaryEdgesOf(r)) {
-      const direction = e.direction ?? (e.carved === r.address ? "inbound" : "outbound");
+      const direction = directionOf(e);
       // `from` references `to` — an inbound edge is a survivor reaching into
       // the carve set, an outbound edge is the carve set reaching out.
       const from = direction === "inbound" ? e.survivor : e.carved;
