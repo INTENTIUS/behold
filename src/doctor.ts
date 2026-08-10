@@ -10,7 +10,8 @@
  * here comes from the module the server already reads it from — `project.ts`
  * for the shape and the config, `chant.ts` for the bin/version/lexicon
  * resolution behold will actually shell, `k8s-target.ts` for the cluster
- * binding (the same kubectl-owned merge, never a parallel kubeconfig parser),
+ * binding (the merge `@intentius/chant-k8s-client` performs on kubectl's
+ * rules, never a parallel kubeconfig parser),
  * `substrates.ts` for readiness, `ops.ts` for committed Ops. Where a check
  * needed logic the server didn't have (estate shape, chant version vs floor,
  * lexicon install state), that logic went into the shared module and the
@@ -166,8 +167,8 @@ function envCheck(envs: string[], serveArg: string): DoctorCheck {
  * ambient context agrees with it.
  *
  * Never a fail. A project whose cluster is unreachable still has a declared
- * graph worth serving, and kubectl's absence is an ordinary state for a
- * project served source-only. The mismatch case is a warn rather than silence
+ * graph worth serving, and having no kubeconfig at all is an ordinary state
+ * for a project served source-only. The mismatch case is a warn rather than silence
  * because chant refuses a live read outright when the ambient context differs
  * from the declared binding (chant#1100) — an opaque "unobserved" downstream.
  */
@@ -180,8 +181,8 @@ function kubeCheck(lexicons: string[], profiles: K8sProfiles, envs: string[], ku
     return {
       name: "kube",
       status: "warn",
-      detail: "no kubeconfig readable (kubectl absent, or it has no contexts) — the declared graph still serves",
-      fix: "Install kubectl and point KUBECONFIG at your cluster, or run `behold demo k8s` for a throwaway k3d one.",
+      detail: "no kubeconfig readable (none on this machine, or it has no contexts) — the declared graph still serves",
+      fix: "Point KUBECONFIG at your cluster's kubeconfig (or put one at ~/.kube/config), or run `behold demo k8s` for a throwaway k3d one.",
     };
   }
   const bound = envs.filter((e) => profiles[e]?.context);

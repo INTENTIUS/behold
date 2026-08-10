@@ -1,19 +1,29 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
+import { fakeKubeconfig } from "@intentius/chant-k8s-client/testing";
 import { detectSubstrates, projectLexicons } from "./substrates.ts";
 
 // Hermetic where it matters: the fly/github/temporal pills (#74) read only the
 // project dir + env, never docker/k3d — the probe-backed pills are asserted by
 // presence-shape only, since their status depends on the host.
+//
+// The helm pill's ambient context is a kubeconfig read since #231, so those
+// cases point KUBECONFIG at a fixture file: the developer's real cluster is
+// never read and nothing is contacted. KUBECONFIG is restored either way, since
+// leaving it set would leak into every later case in the run.
 let dir: string;
+let savedKubeconfig: string | undefined;
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "behold-substrates-"));
+  savedKubeconfig = process.env.KUBECONFIG;
 });
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
   delete process.env.FLY_FLAPS_BASE_URL;
+  if (savedKubeconfig === undefined) delete process.env.KUBECONFIG;
+  else process.env.KUBECONFIG = savedKubeconfig;
 });
 
 function config(lexicons: string[], extra = ""): void {
@@ -69,6 +79,52 @@ describe("github pill (#74)", () => {
   it("absent without .github/workflows — the lexicon alone commits nothing", { timeout: 20_000 }, async () => {
     config(["aws", "github"]);
     expect(await byName("github")).toBeUndefined();
+  });
+});
+
+describe("helm pill's ambient context (#146, #231)", () => {
+  /** Write a kubeconfig naming one context and point KUBECONFIG at it. */
+  function kubeconfig(context: string): void {
+    const path = join(dir, `${context}.yaml`);
+    writeFileSync(path, fakeKubeconfig({ contexts: [{ name: context }], currentContext: context }));
+    process.env.KUBECONFIG = path;
+  }
+
+  it("names the kubeconfig's current-context, read from the file rather than shelled out", { timeout: 20_000 }, async () => {
+    config(["helm"]);
+    kubeconfig("k3d-demo");
+    const pill = await byName("helm");
+    // helm itself is still a binary probe, and CI runners without it report
+    // `unknown` — assert the coherent pairing, not one machine's answer.
+    if (pill?.status === "unknown") expect(pill.detail).toBe("helm not installed");
+    else {
+      expect(pill?.status).toBe("on-demand");
+      expect(pill?.detail).toContain("context k3d-demo");
+    }
+  });
+
+  it("prefers the project's bound context over the ambient one", { timeout: 20_000 }, async () => {
+    // The kubemicrovm-ops regression: probing only ambient named whatever
+    // cluster the operator's shell last pointed at.
+    config(["helm"]);
+    kubeconfig("prod-eks");
+    const pill = (await detectSubstrates(dir, false, "k3d-kubemicrovm-local")).find((s) => s.name === "helm");
+    if (pill?.status !== "unknown") {
+      expect(pill?.detail).toContain("context k3d-kubemicrovm-local (bound)");
+      expect(pill?.detail).not.toContain("prod-eks");
+    }
+  });
+
+  it("says so when there is no kube context at all — no kubeconfig is not a crash", { timeout: 20_000 }, async () => {
+    config(["helm"]);
+    // Two paths that do not exist: the client's multi-file path, so nothing
+    // falls back to the developer's ~/.kube/config.
+    process.env.KUBECONFIG = [join(dir, "nope-a.yaml"), join(dir, "nope-b.yaml")].join(delimiter);
+    const pill = await byName("helm");
+    if (pill?.status !== "unknown") {
+      expect(pill?.status).toBe("blocked");
+      expect(pill?.detail).toBe("no kube context");
+    }
   });
 });
 
