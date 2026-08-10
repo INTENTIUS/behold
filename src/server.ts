@@ -60,7 +60,7 @@ import { discoverEstateOps } from "./ops.ts";
 import { LIVE_IMPORT_LEXICONS } from "./adopt.ts";
 import { detectProject, loadBeholdConfig } from "./project.ts";
 import { nodeDiff, nodeObserved, nodeFieldDrift, type LiveDiffJson } from "./diff.ts";
-import { classifyHealth } from "./health.ts";
+import { classifyObservedHealth } from "./health.ts";
 import { OpRunner } from "./op-runner.ts";
 import { detectSubstrates, projectLexicons } from "./substrates.ts";
 import { pickAutoSyncOps, suspendedByRollback, type AutoSyncMode } from "./autosync.ts";
@@ -1311,13 +1311,20 @@ export function createApp(
       // unobserved line above rather than leaving it implicit.
       for (const rc of r.runtimeChildren ?? []) ids.add(rc.name);
     }
-    const nodes: Record<string, { observed: unknown; diff: unknown; health: string; fieldDrift: unknown }> = {};
+    const nodes: Record<
+      string,
+      { observed: unknown; diff: unknown; health: string; healthDetail?: string; fieldDrift: unknown }
+    > = {};
     for (const id of ids) {
       const observed = nodeObserved(parsed, id);
+      // #226: kind-aware for the GitOps controllers (the Argo health/sync pair,
+      // the Flux `Ready` condition), the status-string heuristic for the rest.
+      const verdict = classifyObservedHealth(observed);
       nodes[id] = {
         observed,
         diff: nodeDiff(parsed, id),
-        health: classifyHealth(observed?.status),
+        health: verdict.health,
+        ...(verdict.detail ? { healthDetail: verdict.detail } : {}),
         // Field-level (per-manager) drift (#87, chant#1181) — null when no
         // lexicon in this diff carries a `deep` section at all.
         fieldDrift: nodeFieldDrift(parsed, id),
@@ -1343,13 +1350,18 @@ export function createApp(
     }
     const observed = nodeObserved(parsed, node);
     // Health (#26): a verdict derived from the observed status — distinct from
-    // drift (a node can be managed yet degraded).
+    // drift (a node can be managed yet degraded). #226: read off the
+    // controller's own conditions for the Argo/Flux kinds, whose verdict the
+    // status-string heuristic could only get right by luck; `healthDetail`
+    // carries the reason it read (`Ready=False (BuildFailed)`).
+    const verdict = classifyObservedHealth(observed);
     return c.json({
       node,
       env,
       diff: nodeDiff(parsed, node),
       observed,
-      health: classifyHealth(observed?.status),
+      health: verdict.health,
+      ...(verdict.detail ? { healthDetail: verdict.detail } : {}),
       // Field-level (per-manager) drift (#87, chant#1181) — null when no
       // lexicon in this diff carries a `deep` section at all.
       fieldDrift: nodeFieldDrift(parsed, node),
