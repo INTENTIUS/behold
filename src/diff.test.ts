@@ -68,6 +68,50 @@ describe("nodeDiff", () => {
     });
   });
 
+  // chant#1620 (behold#192): the resolved query address rides the diff — the
+  // per-lexicon map is a missing entry's only carrier; unobserved rows carry
+  // it inline (map as fallback).
+  it("a missing entry carries its queried address from the per-lexicon map", () => {
+    const j = {
+      environment: "local",
+      lexicons: {
+        k8s: {
+          resources: {
+            missing: ["web"], orphan: [], disappeared: [], newlyObserved: [], driftedSinceSnapshot: [], unchanged: [],
+            queried: { web: "/apis/apps/v1/namespaces/default/deployments/web" },
+          },
+        },
+      },
+    };
+    expect(nodeDiff(j as never, "web")).toEqual({
+      category: "missing",
+      changes: [],
+      queried: "/apis/apps/v1/namespaces/default/deployments/web",
+    });
+  });
+
+  it("an unobserved row's inline queried wins; the map is the fallback", () => {
+    const base = { missing: [], orphan: [], disappeared: [], newlyObserved: [], driftedSinceSnapshot: [], unchanged: [] };
+    const inline = {
+      environment: "local",
+      lexicons: { k8s: { resources: { ...base, unobserved: [{ name: "x", reason: "read-failed", queried: "/inline" }], queried: { x: "/map" } } } },
+    };
+    expect(nodeDiff(inline as never, "x")).toMatchObject({ category: "unobserved", queried: "/inline" });
+    const mapOnly = {
+      environment: "local",
+      lexicons: { k8s: { resources: { ...base, unobserved: [{ name: "x", reason: "read-failed" }], queried: { x: "/map" } } } },
+    };
+    expect(nodeDiff(mapOnly as never, "x")).toMatchObject({ category: "unobserved", queried: "/map" });
+  });
+
+  it("no queried anywhere (a pre-#1620 chant) — the field is simply absent", () => {
+    const j = {
+      environment: "local",
+      lexicons: { k8s: { resources: { missing: ["web"], orphan: [], disappeared: [], newlyObserved: [], driftedSinceSnapshot: [], unchanged: [] } } },
+    };
+    expect(nodeDiff(j as never, "web")).toEqual({ category: "missing", changes: [] });
+  });
+
   it("is backward compatible with a diff from a chant predating #1168 (no `unobserved` key)", () => {
     const legacy: LiveDiffJson = {
       environment: "prod",

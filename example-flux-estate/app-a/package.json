@@ -2,12 +2,12 @@
   "name": "behold-example-flux-app-a",
   "private": true,
   "type": "module",
-  "description": "App project A: declares its workload WITH explicit namespaces — the fully-resolved half of the estate.",
+  "description": "App project A: declares its workload WITH explicit namespaces \u2014 the fully-resolved half of the estate.",
   "scripts": {
     "build": "chant build src -o manifests/app.yaml --format yaml"
   },
   "dependencies": {
-    "@intentius/chant": "^0.41.20",
-    "@intentius/chant-lexicon-k8s": "^0.41.20"
+    "@intentius/chant": "^0.44.2",
+    "@intentius/chant-lexicon-k8s": "^0.44.2"
   }
 }

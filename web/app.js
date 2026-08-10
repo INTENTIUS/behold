@@ -460,6 +460,16 @@ function renderDiff(panel, diff) {
   const cat = document.createElement("p");
   cat.textContent = DIFF_LABEL[diff.category] || diff.category;
   panel.appendChild(cat);
+  // chant#1620 (#192): where the live read actually looked — the line that
+  // separates "not there" from "looked in the wrong place" (a declared k8s
+  // object with no namespace reads from the DEFAULTED namespace, and only
+  // this address makes that visible). Monospace so a request path scans.
+  if (diff.queried) {
+    const q = document.createElement("p");
+    q.style.cssText = "color:var(--muted);font:11px/1.4 ui-monospace,monospace;overflow-wrap:anywhere;margin-top:2px";
+    q.textContent = `queried: ${diff.queried} → ${diff.category === "missing" ? "not found" : "read failed"}`;
+    panel.appendChild(q);
+  }
   // chant#1168 (#1089): show WHY chant couldn't look, instead of the
   // "no field changes" text below — that phrasing implies a comparison ran
   // and found nothing, which is exactly the wrong read for a hole in the
