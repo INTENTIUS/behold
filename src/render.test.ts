@@ -93,3 +93,51 @@ describe("renderGraph — runtime-tier boundary boxes (#86)", () => {
     expect(svg).not.toContain(BOX_MARKER);
   });
 });
+
+// #227: src/render.ts registers the icon packs with pinhole at module load, so
+// importing renderGraph is all it takes for a k8s/helm node to paint its real
+// mark. These assert the server-side flow end to end — pack registration,
+// pinhole's resolution chain, and the painter emitting a `colored` glyph — by
+// looking for the per-file id/class prefix scripts/vendor-icons.mjs stamps into
+// every vendored body. That prefix is the one thing only the vendored artwork
+// can put in the document.
+const iconIr: GraphIR = {
+  nodes: [
+    { id: "web", kind: "K8s::Core::Pod", lexicon: "k8s", attrs: {} },
+    { id: "gitops", kind: "K8s::Flux::Kustomization", lexicon: "k8s", attrs: {} },
+    { id: "chart", kind: "Helm::Release", lexicon: "helm", attrs: {} },
+    { id: "vm", kind: "Floci::MicroVMReplicaSet", lexicon: "floci", attrs: {} },
+  ],
+  edges: [],
+  groups: {},
+};
+
+describe("renderGraph — lexicon-native icons (#227)", () => {
+  it("paints the Kubernetes community mark for a k8s kind the pack maps", () => {
+    expect(renderGraph(iconIr).svg).toContain("k8s-pod-");
+  });
+
+  it("paints the project mark for a whole kind family — every K8s::Flux::* gets the Flux logo", () => {
+    expect(renderGraph(iconIr).svg).toContain("cncf-flux-");
+  });
+
+  it("paints the Helm mark for the helm lexicon, which has no k8s icon to borrow", () => {
+    expect(renderGraph(iconIr).svg).toContain("cncf-helm-");
+  });
+
+  it("leaves an unmapped lexicon to pinhole's own chain — no pack geometry, no crash", () => {
+    const svg = renderGraph(iconIr).svg;
+    expect(svg).toContain('data-node-id="vm"');
+    expect(svg).not.toContain("floci-");
+  });
+
+  it("emits well-formed XML — the vendored bodies' editor namespaces are dropped, so an exported .svg still parses", () => {
+    const svg = renderGraph(iconIr).svg;
+    // `xmlns:inkscape` and friends are declared on each vendored file's root
+    // <svg>, which never survives into the painted document (src/icon-packs.ts
+    // `unprefix`). A surviving `inkscape:label` would be an unbound prefix and
+    // every `image/svg+xml` consumer — the SPA's `↓ SVG` download, a snapshot
+    // opened directly — would fail to parse the file.
+    expect(svg).not.toMatch(/\s(?:inkscape|sodipodi|xlink):/);
+  });
+});

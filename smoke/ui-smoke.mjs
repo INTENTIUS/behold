@@ -103,11 +103,40 @@ try {
   await page.keyboard.press("Escape");
   check("palette closes", (await page.locator("#palette.on").count()) === 0);
 
+  // #227: the lexicon-native marks. pinhole paints a pack's `colored` glyph as
+  // authored — its paint rides no `--pin-*` token — so recolorNodesByCategory,
+  // which classifies elements by the token they came in on, must never claim
+  // one. Read the mark's paint before and after a theme flip: the boot pass and
+  // the theme pass both walk every child of every [data-node-id].
+  const markPaint = () =>
+    page.evaluate(() => {
+      const badge = document.querySelector('#graph [data-node-id="api"] [data-mark="badge"]');
+      const detail = document.querySelector('#graph [data-node-id="api"] [data-mark="detail"]');
+      const label = document.querySelector('#graph [data-node-id="api"] text');
+      return {
+        found: !!badge && !!detail,
+        badge: badge && badge.getAttribute("style"),
+        detail: detail && detail.getAttribute("fill"),
+        // The role marker app.js stamps on the elements it DID claim — proof
+        // the recolour pass ran at all, so "untouched" means something.
+        badgeRole: badge && badge.getAttribute("data-cat"),
+        labelRole: label && label.getAttribute("data-cat"),
+      };
+    });
+  const before = await markPaint();
+  check("colored mark is in the DOM", before.found);
+  check("recolour pass ran (a --pin-text label got claimed)", before.labelRole === "inkf");
+  check("recolour leaves the colored mark unclassified", before.badgeRole === null);
+
   // Theme flip: a light Ghostty theme re-derives the tokens without errors.
   await page.selectOption("#panel-theme select", "Atom One Light");
   await page.waitForTimeout(300);
   const bg = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--bg").trim());
   check("light theme applies", bg !== "" && bg !== "#0d1117");
+
+  const after = await markPaint();
+  check("colored mark keeps its authored style fill across a theme switch", after.badge === before.badge && /fill:#326ce5/.test(after.badge || ""));
+  check("colored mark keeps its authored fill attribute across a theme switch", after.detail === "#ffffff");
   await page.screenshot({ path: join(SHOTS, "5-light.png") });
 
   check("no page errors", pageErrors.length === 0);

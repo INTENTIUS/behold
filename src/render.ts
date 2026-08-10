@@ -6,9 +6,26 @@
  * src/overlay.ts. behold owns the live data + the server + (later) the
  * temporal/action layers around this.
  */
-import { layoutIr, layoutArchitecture, renderSvg, cardSizes } from "@intentius/pinhole";
+import { layoutIr, layoutArchitecture, renderSvg, cardSizes, registerPack } from "@intentius/pinhole";
 import type { GraphIR, IRGroups } from "@intentius/chant";
 import type { ByContainer } from "./logical.ts";
+import { k8sIconFor, helmIconFor } from "./icon-packs.ts";
+
+// Lexicon-native icons (#227), step 2 of 2. pinhole resolves a node's glyph
+// through a chain — per-node override → lexicon pack → keyword heuristic →
+// generic — and 0.3.0 lets a pack answer with its own geometry (`{ body,
+// colored, viewBox }`) instead of naming one of the 21 built-in line glyphs.
+// src/icon-packs.ts holds the kind → vendored-mark mapping; this is where it
+// meets the painter. Every SVG behold emits goes through this module, so
+// registering here covers the graph, the architecture view, the overlay,
+// `behold export` and the static snapshots in one move.
+//
+// The registry is process-global and keyed by lexicon, so this runs ONCE at
+// module load, before any renderSvg call. A kind neither pack answers for
+// returns undefined and falls through pinhole's chain untouched — the keyword
+// heuristic is a better answer than a wrong picture.
+registerPack({ lexicon: "k8s", iconFor: k8sIconFor });
+registerPack({ lexicon: "helm", iconFor: helmIconFor });
 
 export interface RenderResult {
   svg: string;

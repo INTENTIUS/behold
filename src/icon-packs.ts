@@ -1,5 +1,5 @@
 /**
- * Lexicon-native icons (#227), step 1 of 2: the kind → vendored-mark mapping.
+ * Lexicon-native icons (#227): the kind → vendored-mark mapping.
  *
  * Today every k8s kind survives on pinhole's keyword heuristic — `Deployment`
  * lands on a container, `Kustomization` and `MicroVMReplicaSet` land on the same
@@ -13,9 +13,9 @@
  * Provenance, licences and the pinned upstream revisions are in THIRD_PARTY.md;
  * `scripts/vendor-icons.mjs` re-fetches the corpus.
  *
- * Nothing registers these yet — `src/render.ts` wiring lands with pinhole's
- * geometry-capable pack API, which is why the return shape is declared here
- * rather than imported. A kind with no official icon returns `undefined` on
+ * `src/render.ts` registers these two functions as pinhole presentation packs
+ * (`registerPack`, pinhole 0.3.0 #95), which is what puts the marks on every
+ * SVG behold paints. A kind with no official icon returns `undefined` on
  * purpose: pinhole's chain then falls through to the keyword heuristic, which is
  * a better answer than a wrong picture.
  */
@@ -40,6 +40,26 @@ const ICON_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "web", "ic
 
 const cache = new Map<string, PackGlyph>();
 
+/**
+ * Drop the namespace prefixes the body can no longer resolve. A vendored file
+ * declares `xmlns:inkscape`/`xmlns:sodipodi`/`xmlns:xlink` on its root `<svg>`,
+ * and that root is exactly what {@link loadIcon} throws away — so every
+ * surviving `inkscape:*` attribute becomes an unbound prefix in the document
+ * pinhole splices the body into, and the whole SVG stops being well-formed XML.
+ * The browser's HTML parser shrugs; an `image/svg+xml` consumer (a downloaded
+ * `↓ SVG` export, a snapshot opened directly) does not.
+ *
+ * `inkscape:*`/`sodipodi:*` are editor state — Inkscape's own parametrics live
+ * alongside the real `d`, so dropping them is lossless. `xlink:href` is a live
+ * reference (the Argo mark's `<use>`), rewritten to the plain SVG 2 `href`
+ * every current browser resolves.
+ */
+function unprefix(body: string): string {
+  return body
+    .replace(/\s(?:inkscape|sodipodi):[\w-]+\s*=\s*(["'])[\s\S]*?\1/g, "")
+    .replace(/\sxlink:href\s*=/g, " href=");
+}
+
 /** Read a vendored SVG and split it into its viewBox and its inner markup. */
 function loadIcon(rel: string): PackGlyph {
   const hit = cache.get(rel);
@@ -54,7 +74,7 @@ function loadIcon(rel: string): PackGlyph {
   const viewBox = /\bviewBox\s*=\s*(["'])(.*?)\1/.exec(raw.slice(open, openEnd))?.[2];
   if (!viewBox) throw new Error(`vendored icon has no viewBox: ${rel}.svg`);
 
-  const glyph: PackGlyph = { body: raw.slice(openEnd + 1, close).trim(), colored: true, viewBox };
+  const glyph: PackGlyph = { body: unprefix(raw.slice(openEnd + 1, close).trim()), colored: true, viewBox };
   cache.set(rel, glyph);
   return glyph;
 }
