@@ -1,0 +1,61 @@
+# Floci endpoints for the `--live` tier of the carve walkthrough (#254).
+#
+# INERT BY DEFAULT, and deliberately so. Terraform only loads files ending in
+# `.tf`, and `chant carve advise` only parses `.tf` files directly under the
+# estate directory — so as long as this file keeps its `.disabled` suffix it is
+# a text file and nothing more. The offline tier (synthetic terraform.tfstate,
+# zero dependencies beyond this directory) is unaffected by its presence.
+#
+# To arm it for the live tier, copy it into place next to the other .tf files:
+#
+#   cp floci-override.tf.disabled floci_override.tf
+#
+# Terraform merges any `*_override.tf` file over the base configuration, so the
+# `provider "aws"` block below replaces the one in versions.tf without editing
+# versions.tf. Remove `floci_override.tf` and the estate is offline again.
+#
+# WARNING: with this armed, `terraform apply` writes a real state file over
+# terraform.tfstate. Work on a copy of this directory, not the committed one —
+# the synthetic state is a fixture the offline tier depends on.
+#
+# The `--live` tier is bounded by what Floci emulates. S3 and CloudWatch Logs —
+# the two types the walkthrough actually carves — are covered (chant's
+# `just carve-emit-e2e` is the prior art). The VPC, lambda and CloudFront half
+# of this estate is scenery for the advisor's grey band; expect to apply the
+# carve targets with `-target` rather than the whole estate in one go, and see
+# ../README.md for which beats the live tier turns into footage.
+
+provider "aws" {
+  region = "us-east-2"
+
+  access_key = "test"
+  secret_key = "test"
+
+  skip_credentials_validation = true
+  skip_metadata_api_check     = true
+  skip_requesting_account_id  = true
+  skip_region_validation      = true
+  s3_use_path_style           = true
+
+  default_tags {
+    tags = {
+      Environment = "prod"
+      ManagedBy   = "terraform"
+      Team        = "platform"
+    }
+  }
+
+  # Scratch Floci, booted by the demo and deleted after — never an existing
+  # `floci*` container. Port 4566 is the same endpoint behold's writes demo
+  # and chant's carve-emit e2e use.
+  endpoints {
+    cloudfront = "http://localhost:4566"
+    ec2        = "http://localhost:4566"
+    iam        = "http://localhost:4566"
+    lambda     = "http://localhost:4566"
+    logs       = "http://localhost:4566"
+    s3         = "http://localhost:4566"
+    ssm        = "http://localhost:4566"
+    sts        = "http://localhost:4566"
+  }
+}
