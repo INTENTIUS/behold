@@ -4,7 +4,7 @@
   "type": "module",
   "description": "A tiny AWS chant project behold serves in local dev + e2e.",
   "dependencies": {
-    "@intentius/chant": "^0.32.0",
-    "@intentius/chant-lexicon-aws": "^0.32.0"
+    "@intentius/chant": "^0.44.12",
+    "@intentius/chant-lexicon-aws": "^0.44.12"
   }
 }
