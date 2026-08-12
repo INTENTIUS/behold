@@ -467,3 +467,76 @@ describe("classifyObservedHealth — everything else is the fallback, unchanged 
     expect(v.detail).toBeUndefined();
   });
 });
+
+describe("classifyObservedHealth — Deployment rollouts", () => {
+  const deploy = (conditions?: unknown, extra?: Record<string, unknown>) => ({
+    type: "K8s::Apps::Deployment",
+    status: "PRESENT",
+    attributes: { namespace: "default", resourceVersion: "956", ...(conditions ? { conditions } : {}), ...extra },
+  });
+
+  it("reads a stuck rollout as degraded — the crashlooping-workload case", () => {
+    // The gap this reader closes: a single-replica Deployment whose only pod
+    // crashloops collapses to the status word `PRESENT` (healthy through the
+    // fallback), while the controller's own verdict sits in the unhappy
+    // conditions chant forwards.
+    const v = classifyObservedHealth(
+      deploy([
+        "Available=MinimumReplicasUnavailable: Deployment does not have minimum availability.",
+        'Progressing=ProgressDeadlineExceeded: ReplicaSet "db-6498455ff4" has timed out progressing.',
+      ]),
+    );
+    expect(v.health).toBe("degraded");
+    expect(v.detail).toBe('Progressing=ProgressDeadlineExceeded: ReplicaSet "db-6498455ff4" has timed out progressing.');
+  });
+
+  it("reads ReplicaFailure as degraded even while the deadline still covers the rollout", () => {
+    const v = classifyObservedHealth(
+      deploy(["ReplicaFailure=FailedCreate: pods \"db-0\" is forbidden: exceeded quota."]),
+    );
+    expect(v.health).toBe("degraded");
+    expect(v.detail).toMatch(/^ReplicaFailure=FailedCreate/);
+  });
+
+  it("reads Available-only unhappiness as progressing — a rollout inside its deadline", () => {
+    // `Progressing` is never False for a rollout merely in flight, so its
+    // absence from the unhappy list is the controller saying the deadline
+    // still covers this; red would overstate a healthy rolling update.
+    const v = classifyObservedHealth(
+      deploy(["Available=MinimumReplicasUnavailable: Deployment does not have minimum availability."]),
+    );
+    expect(v.health).toBe("progressing");
+    expect(v.detail).toMatch(/^Available=MinimumReplicasUnavailable/);
+  });
+
+  it("reads raw condition objects, unhappy states only", () => {
+    // A richer wire (or fixture) carrying the full status subtree: happy
+    // conditions must not count as unhappy just for being present.
+    const raw = deploy(undefined, {
+      status: {
+        conditions: [
+          { type: "Available", status: "False", reason: "MinimumReplicasUnavailable", message: "Deployment does not have minimum availability." },
+          { type: "Progressing", status: "False", reason: "ProgressDeadlineExceeded", message: "ReplicaSet has timed out progressing." },
+        ],
+      },
+    });
+    expect(classifyObservedHealth(raw).health).toBe("degraded");
+    const happy = deploy(undefined, {
+      status: {
+        conditions: [
+          { type: "Available", status: "True", reason: "MinimumReplicasAvailable" },
+          { type: "Progressing", status: "True", reason: "NewReplicaSetAvailable" },
+        ],
+      },
+    });
+    expect(classifyObservedHealth(happy).health).toBe("healthy");
+  });
+
+  it("falls through for a Deployment with no unhappy conditions", () => {
+    // chant sends only unhappy conditions, so their absence is the happy path —
+    // the collapsed word (`PRESENT` here) classifies through the fallback.
+    const v = classifyObservedHealth(deploy());
+    expect(v.health).toBe("healthy");
+    expect(v.detail).toBeUndefined();
+  });
+});

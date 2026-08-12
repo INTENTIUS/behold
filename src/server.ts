@@ -771,7 +771,7 @@ export function createApp(
     if (!info) {
       return c.json({ error: `no Op named "${name}" in the estate` }, 404);
     }
-    if (!runner.trigger(name, info.env, info.dir)) {
+    if (!runner.trigger(name, info.env, info.dir, Boolean(info.gate))) {
       return c.json({ error: `an Op is already running (${runner.running})` }, 409);
     }
     return c.json({ started: true, name });
@@ -839,7 +839,9 @@ export function createApp(
     const { name, gate } = c.req.param();
     const info = estateOps().find((o) => o.name === name);
     broadcaster.emit("op", `✎ signal ${name} ${gate}`);
-    const { code, stderr } = await runChantRaw(["run", "signal", name, gate], info?.dir ?? cfg.projectDir);
+    // Always durable: a gate only exists on a Temporal run (chant refuses gated
+    // Ops in local mode), so the signal that approves one is Temporal-only too.
+    const { code, stderr } = await runChantRaw(["run", "signal", name, gate, "--temporal"], info?.dir ?? cfg.projectDir);
     if (code !== 0) return c.json({ error: stderr.trim() || `signal exited ${code}` }, 500);
     return c.json({ signalled: true });
   });
@@ -2237,7 +2239,7 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
     // different design than the one #105 specified.
     for (const { op, lexicons } of picks) {
       const scope = lexicons.join("+");
-      if (runner.trigger(op.name, op.env, op.dir)) {
+      if (runner.trigger(op.name, op.env, op.dir, Boolean(op.gate))) {
         broadcaster.emit("op", `⟳ auto-sync (${autoSync}) ${scope} → ${op.name}`);
       } else {
         broadcaster.emit("op", `⟳ auto-sync (${autoSync}) ${scope} → ${op.name} waiting — ${runner.running} is running`);

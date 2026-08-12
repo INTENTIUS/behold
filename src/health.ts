@@ -382,15 +382,83 @@ function fluxVerdict(o: ObservedForHealth): HealthVerdict | undefined {
   return undefined;
 }
 
+// ── Deployment rollouts ────────────────────────────────────
+
+/**
+ * The one core-workload kind with a written rollout contract. A Deployment
+ * maintains exactly three condition types (apps/v1 API docs): `Available`
+ * (enough replicas for at least minAvailability), `Progressing` (False only
+ * when a rollout has exceeded its progressDeadline — the controller never
+ * writes False for a rollout merely in flight), and `ReplicaFailure` (True
+ * when pod creation is failing, surfaced from the ReplicaSet).
+ *
+ * chant's wire (chant#1401) sends only the conditions NOT in their happy
+ * state, as `Type=Reason: message` strings — so presence is the signal, and
+ * which types are present separates a stuck rollout from one still inside its
+ * deadline: `Progressing` or `ReplicaFailure` unhappy is damage (the
+ * controller has given up, or pods cannot even be created), `Available`
+ * unhappy alone is a rollout the deadline still covers. Without this reader a
+ * crashlooping single-replica Deployment classified healthy: its collapsed
+ * status word is `PRESENT`, the unhappy conditions sat unread in
+ * `attributes.conditions`, and only the runtime Pod children painted red.
+ *
+ * StatefulSet and DaemonSet are deliberately absent: neither writes these
+ * conditions (a StatefulSet's `conditions` is empty in practice), so there is
+ * no contract to read — the denylist philosophy above applies.
+ */
+const DEPLOYMENT_TYPE = "K8s::Apps::Deployment";
+
+/** A condition in its unhappy state, off either wire shape: chant's
+ * `Type=Reason: message` string, or a raw `status.conditions` object (where
+ * unhappy means `status` False for Available/Progressing and True for
+ * ReplicaFailure). Returns the one line that says what is wrong. */
+function unhappyCondition(o: ObservedForHealth, type: string): string | undefined {
+  const fromStrings = rec(o.attributes)?.conditions;
+  if (Array.isArray(fromStrings)) {
+    for (const c of fromStrings) {
+      if (typeof c === "string" && c.startsWith(type)) return c;
+    }
+  }
+  const tree = statusTree(o);
+  const raw = tree?.conditions;
+  if (Array.isArray(raw)) {
+    for (const c of raw) {
+      const cond = rec(c);
+      if (!cond || cond.type !== type) continue;
+      const status = str(cond.status);
+      const unhappy = type === "ReplicaFailure" ? status === "True" : status === "False";
+      if (!unhappy) continue;
+      const reason = str(cond.reason);
+      const message = str(cond.message);
+      return `${type}${reason ? `=${reason}` : ""}${message ? `: ${message}` : ""}`;
+    }
+  }
+  return undefined;
+}
+
+function deploymentVerdict(o: ObservedForHealth): HealthVerdict | undefined {
+  if (o.type !== DEPLOYMENT_TYPE) return undefined;
+  const damage = unhappyCondition(o, "ReplicaFailure") ?? unhappyCondition(o, "Progressing");
+  if (damage) return { health: "degraded", detail: damage };
+  const available = unhappyCondition(o, "Available");
+  if (available) return { health: "progressing", detail: available };
+  return undefined;
+}
+
 /**
  * Classify an observed resource into a health verdict (#226).
  *
- * Kind-aware for the two GitOps controllers whose conditions behold has read
- * the contract for, and `classifyHealth` over the status string for everything
- * else — unchanged, including for an Argo/Flux object whose status says
- * nothing either reader recognises. Pure — unit-tested.
+ * Kind-aware for the kinds whose conditions behold has read the contract for —
+ * the two GitOps controllers, and Deployment rollouts — and `classifyHealth`
+ * over the status string for everything else — unchanged, including for an
+ * Argo/Flux object whose status says nothing either reader recognises. Pure —
+ * unit-tested.
  */
 export function classifyObservedHealth(observed: ObservedForHealth | null | undefined): HealthVerdict {
   if (!observed) return { health: "unknown" };
-  return argoVerdict(observed) ?? fluxVerdict(observed) ?? { health: classifyHealth(observed.status) };
+  return (
+    argoVerdict(observed) ??
+    fluxVerdict(observed) ??
+    deploymentVerdict(observed) ?? { health: classifyHealth(observed.status) }
+  );
 }

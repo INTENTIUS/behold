@@ -54,9 +54,14 @@ export class OpRunner {
    * Start `chant run <name>` unless one is already running (the Sync/Adopt/auto-
    * sync path). `cwd` is the Op's own project dir (#31 multi-estate); defaults to
    * the primary. Returns true if it started, false if busy.
+   *
+   * `temporal` — pass `--temporal` so the run gets the durable runtime. Callers
+   * set it from the Op's declared gate: chant refuses a gated Op outright in
+   * local mode ("gates and schedules need a durable runtime"), so without the
+   * flag a gated Op could never run from behold at all.
    */
-  trigger(name: string, opEnv?: string, cwd?: string): boolean {
-    return this.start(["run", name], name, opEnv, cwd);
+  trigger(name: string, opEnv?: string, cwd?: string, temporal?: boolean): boolean {
+    return this.start(temporal ? ["run", name, "--temporal"] : ["run", name], name, opEnv, cwd);
   }
 
   /**
