@@ -162,6 +162,17 @@ function statusTree(o: ObservedForHealth): Record<string, unknown> | undefined {
   return rec(attrs.status) ?? attrs;
 }
 
+/** The raw k8s `spec` subtree, by the same convention: nested under
+ * `attributes.spec`, or flattened into `attributes` itself. The same guard
+ * applies — only named keys are read off the result, and chant's own
+ * attribute set (namespace/labels/resourceVersion/conditions, the flattened
+ * revisions) carries none of them. */
+function specTree(o: ObservedForHealth): Record<string, unknown> | undefined {
+  const attrs = rec(o.attributes);
+  if (!attrs) return undefined;
+  return rec(attrs.spec) ?? attrs;
+}
+
 /**
  * Argo `Application` health and sync (argoproj.io/Application), the pair chant's
  * readiness registry overrides `Ready` with — an Application never writes a
@@ -356,6 +367,17 @@ function revisionVerdict(tree: Record<string, unknown> | undefined): HealthVerdi
  * go stale. */
 const FLUX_TYPE_PREFIX = "K8s::Flux::";
 
+/** The one Flux kind whose status can be empty BY DESIGN (#298). A
+ * HelmRepository with `spec.type: oci` is a plain reference — the URL
+ * helm-controller resolves chart names against at release time.
+ * source-controller's reconciler returns before fetching anything for it and
+ * never writes a condition (kubectl's READY column stays blank for life), so
+ * the absence of a `Ready` is this object's terminal, healthy state — not a
+ * reconcile that has yet to start. Checked only after the condition reads:
+ * a HelmRepository that DOES carry conditions is read like any other Flux
+ * object. */
+const FLUX_HELMREPOSITORY_TYPE = "K8s::Flux::HelmRepository";
+
 function fluxVerdict(o: ObservedForHealth): HealthVerdict | undefined {
   if (!o.type?.startsWith(FLUX_TYPE_PREFIX)) return undefined;
   const tree = statusTree(o);
@@ -363,6 +385,9 @@ function fluxVerdict(o: ObservedForHealth): HealthVerdict | undefined {
   if (ready?.status === "False") return { health: "degraded", detail: describeReady(ready) };
   if (ready?.status === "Unknown") return { health: "progressing", detail: describeReady(ready) };
   if (ready?.status === "True") return revisionVerdict(tree) ?? { health: "healthy", detail: describeReady(ready) };
+  if (o.type === FLUX_HELMREPOSITORY_TYPE && str(specTree(o)?.type) === "oci") {
+    return { health: "healthy", detail: "spec.type=oci (nothing to reconcile)" };
+  }
   // No `Ready` at all. A Flux object the controller has written a `Reconciling`
   // onto is mid-first-reconcile; one with no conditions whatsoever has not been
   // picked up yet. Neither is healthy, and `PRESENT` — what chant emits for
