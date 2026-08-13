@@ -69,37 +69,58 @@ export function changedLexicons(prev: Record<string, string>, next: Record<strin
   return [...moved].sort();
 }
 
+/** One estate member the poll covers: its project dir (the attribution key every
+ * event carries) and the query that reads its live overlay. */
+export interface DriftPollMember {
+  dir: string;
+  query: () => Promise<GraphIR>;
+}
+
 export interface DriftPollOptions {
   intervalMs: number;
-  query: () => Promise<GraphIR>;
-  /** Fired when the drift moved, with the substrates that moved (#117) — sorted,
-   * and never empty when called. */
-  onChange: (movedLexicons: string[]) => void;
-  onError?: (err: unknown) => void;
+  /** Every estate member, primary first (#297). One entry on a single-project
+   * serve — the estate case is not a different mode, just a longer list. */
+  members: DriftPollMember[];
+  /** Fired per member whose drift moved, with that member's dir and the
+   * substrates that moved (#117) — sorted, and never empty when called. */
+  onChange: (dir: string, movedLexicons: string[]) => void;
+  onError?: (dir: string, err: unknown) => void;
 }
 
 /**
- * Self-scheduling poll. Each tick runs the query, and only schedules the next tick
- * *after* it settles — so a slow describe never stacks up (the overlap guard is
- * structural). The first successful poll sets the baseline without firing (the
- * page's initial load already reflects it); later ticks fire on a digest change.
- * Returns a stop function.
+ * Self-scheduling poll. Each tick queries every member — sequentially, never in
+ * parallel (#297): a member read can take seconds (#295), and N members
+ * describing at once is exactly the stampede a single self-scheduling poll
+ * exists to prevent. A slow estate stretches the tick; it never stacks it,
+ * because the next tick is only scheduled *after* the whole sweep settles (the
+ * overlap guard is structural).
+ *
+ * Baselines are per member: a member's first successful read sets its baseline
+ * without firing (the page's initial load already reflects it); later ticks fire
+ * on that member's digest change. One member failing reaches `onError` with its
+ * dir and neither aborts the sweep nor disturbs anyone's baseline — including
+ * its own, so a flaky read can't fake drift when it recovers. Returns a stop
+ * function.
  */
 export function startDriftPoll(opts: DriftPollOptions): () => void {
   let stopped = false;
-  let last: Record<string, string> | undefined;
+  const last = new Map<string, Record<string, string>>();
   let timer: ReturnType<typeof setTimeout>;
 
   const tick = async (): Promise<void> => {
-    try {
-      const digests = driftDigestsByLexicon(await opts.query());
-      if (last !== undefined) {
-        const moved = changedLexicons(last, digests);
-        if (moved.length) opts.onChange(moved);
+    for (const member of opts.members) {
+      if (stopped) return;
+      try {
+        const digests = driftDigestsByLexicon(await member.query());
+        const prev = last.get(member.dir);
+        if (prev !== undefined) {
+          const moved = changedLexicons(prev, digests);
+          if (moved.length) opts.onChange(member.dir, moved);
+        }
+        last.set(member.dir, digests);
+      } catch (err) {
+        opts.onError?.(member.dir, err);
       }
-      last = digests;
-    } catch (err) {
-      opts.onError?.(err);
     }
     if (!stopped) timer = setTimeout(tick, opts.intervalMs);
   };
