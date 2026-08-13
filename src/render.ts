@@ -123,6 +123,10 @@ export function renderGraph(ir: GraphIR, opts: { theme?: string; boxes?: "byStac
   // right of the action. Pack the components into compact shelves instead (a
   // no-op when the graph is a single connected component).
   else if (!boxes) packComponents(layout as unknown as RadialLayout, ir);
+  // A composed estate's member boxes get the same treatment (#296): dagre lays
+  // the member clusters out along one horizontal band, so an 11-member estate
+  // rendered ~45k units wide and 316 tall. Wrap the boxes into rows instead.
+  else if (boxKey === "byStack" && boxes) packMemberBoxes(layout, ir, boxes);
   const svg = renderSvg(ir, layout, {
     fit: true,
     hideTitle: true,
@@ -487,6 +491,130 @@ function packComponents(layout: RadialLayout, ir: GraphIR): void {
   }
   layout.width = Math.max(...nodes.map((n) => n.x + halfW(n))) + pad;
   layout.height = Math.max(...nodes.map((n) => n.y + halfH(n))) + pad;
+}
+
+/** Wrap a composed estate's member boxes into rows (#296). Dagre's compound
+ * layout strings the (mostly disjoint) member clusters out along one horizontal
+ * band, so an 11-member estate came back `viewBox="0 0 45631 316"` — an
+ * unreadable ribbon. Each member box plus its nodes moves as a rigid block:
+ * blocks keep the composed order (composeStacks' insertion order, the order the
+ * caller chose) and wrap into shelves aimed at a roughly square canvas — the
+ * same target-width idiom as `packComponents`, minus its biggest-first sort,
+ * because here the reading order IS the order. Nodes no member claims
+ * (estate.ts's unjoined runtime nodes) pack after the members, one block per
+ * connected component. Fewer than four members stay one band: a pair of boxes
+ * side by side is already readable, and the pre-#296 pictures shouldn't move.
+ * Mutates node/box x/y and the layout bounds; renderSvg routes edges from node
+ * centres, so cross-member edges re-anchor on their own. */
+function packMemberBoxes(layout: RadialLayout & { groups?: GroupBox[] }, ir: GraphIR, members: Record<string, string[]>): void {
+  const boxes = layout.groups ?? [];
+  if (boxes.length < 4) return;
+  const nodes = layout.nodes;
+  const size = footprints(ir);
+  const halfW = (n: { id: string }) => (size.get(n.id)?.w ?? NODE_W) / 2;
+  const halfH = (n: { id: string }) => (size.get(n.id)?.h ?? NODE_H) / 2;
+
+  // Work in screen space (y-down) so the shelves read top-to-bottom once
+  // renderSvg flips y; flipped back against the NEW height at the end.
+  for (const n of nodes) n.y = layout.height - n.y;
+  for (const b of boxes) b.y = layout.height - b.y;
+
+  // One rigid block per member box: the box rect unioned with its members'
+  // painted card rects (they should already sit inside, but a card that leaks
+  // must not land on a neighbour).
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const claimed = new Set<string>();
+  interface Block {
+    ns: RadialLayout["nodes"];
+    box?: GroupBox;
+    minX: number;
+    minY: number;
+    w: number;
+    h: number;
+  }
+  const blocks: Block[] = boxes.map((box) => {
+    const ns = (members[box.id ?? box.title] ?? members[box.title] ?? []).flatMap((id) => byId.get(id) ?? []);
+    for (const n of ns) claimed.add(n.id);
+    let minX = box.x - box.w / 2;
+    let maxX = box.x + box.w / 2;
+    let minY = box.y - box.h / 2;
+    let maxY = box.y + box.h / 2;
+    for (const n of ns) {
+      minX = Math.min(minX, n.x - halfW(n));
+      maxX = Math.max(maxX, n.x + halfW(n));
+      minY = Math.min(minY, n.y - halfH(n));
+      maxY = Math.max(maxY, n.y + halfH(n));
+    }
+    return { ns, box, minX, minY, w: maxX - minX, h: maxY - minY };
+  });
+
+  // Unjoined nodes: connected components among themselves (same union-find as
+  // packComponents), appended after the members in first-appearance order.
+  const rest = nodes.filter((n) => !claimed.has(n.id));
+  if (rest.length) {
+    const idxOf = new Map(rest.map((n, i) => [n.id, i]));
+    const parent = rest.map((_, i) => i);
+    const find = (x: number): number => {
+      while (parent[x] !== x) x = parent[x] = parent[parent[x]];
+      return x;
+    };
+    for (const e of ir.edges) {
+      const a = idxOf.get(e.from);
+      const b = idxOf.get(e.to);
+      if (a != null && b != null) parent[find(a)] = find(b);
+    }
+    const comps = new Map<number, RadialLayout["nodes"]>();
+    rest.forEach((n, i) => (comps.get(find(i)) ?? comps.set(find(i), []).get(find(i))!).push(n));
+    for (const ns of comps.values()) {
+      const minX = Math.min(...ns.map((n) => n.x - halfW(n)));
+      const minY = Math.min(...ns.map((n) => n.y - halfH(n)));
+      blocks.push({
+        ns,
+        minX,
+        minY,
+        w: Math.max(...ns.map((n) => n.x + halfW(n))) - minX,
+        h: Math.max(...ns.map((n) => n.y + halfH(n))) - minY,
+      });
+    }
+  }
+
+  // Shelf-pack in order, wrapping at a roughly square target width (never
+  // narrower than the widest member — a single box can't wrap).
+  const totalArea = blocks.reduce((s, b) => s + (b.w + MEMBER_GAP) * (b.h + MEMBER_GAP), 0);
+  const targetW = Math.max(Math.max(...blocks.map((b) => b.w)), Math.sqrt(totalArea) * 1.3);
+  let shelfX = 0;
+  let shelfY = 0;
+  let shelfH = 0;
+  let maxX = 0;
+  let maxY = 0;
+  for (const b of blocks) {
+    if (shelfX > 0 && shelfX + b.w > targetW) {
+      shelfX = 0;
+      shelfY += shelfH + MEMBER_GAP;
+      shelfH = 0;
+    }
+    const dx = shelfX - b.minX;
+    const dy = shelfY - b.minY;
+    for (const n of b.ns) {
+      n.x += dx;
+      n.y += dy;
+    }
+    if (b.box) {
+      b.box.x += dx;
+      b.box.y += dy;
+    }
+    maxX = Math.max(maxX, shelfX + b.w);
+    maxY = Math.max(maxY, shelfY + b.h);
+    shelfX += b.w + MEMBER_GAP;
+    shelfH = Math.max(shelfH, b.h);
+  }
+
+  // The packed bounds become the canvas, and everything flips back to the
+  // y-up plane renderSvg expects.
+  layout.width = maxX;
+  layout.height = maxY;
+  for (const n of nodes) n.y = maxY - n.y;
+  for (const b of boxes) b.y = maxY - b.y;
 }
 
 /** Group key per node id — the `src/<component>/` a node is declared under, with

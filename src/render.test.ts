@@ -94,6 +94,90 @@ describe("renderGraph — runtime-tier boundary boxes (#86)", () => {
   });
 });
 
+// #296: dagre's compound layout strings a composed estate's member boxes out
+// along one horizontal band — the 11-member estate that motivated the fix came
+// back `viewBox="0 0 45631 316"`, an unreadable ribbon. renderGraph's byStack
+// path now shelf-packs the member boxes into rows (rigid blocks, composed
+// order preserved) once the estate has more than three members. The synthetic
+// fixture mirrors composeStacks' shape: `<member>/<id>` node ids, one byStack
+// entry per member, each member its own connected fan.
+function syntheticEstate(count: number, nodesPer: (m: number) => number = () => 13): GraphIR {
+  const nodes: GraphIR["nodes"] = [];
+  const edges: GraphIR["edges"] = [];
+  const byStack: Record<string, string[]> = {};
+  for (let m = 0; m < count; m++) {
+    const name = `member-${String(m).padStart(2, "0")}`;
+    byStack[name] = [];
+    for (let i = 0; i < nodesPer(m); i++) {
+      const id = `${name}/n${i}`;
+      nodes.push({ id, kind: "K8s::Apps::Deployment", lexicon: "k8s", title: `workload ${i}`, attrs: {} });
+      byStack[name].push(id);
+      if (i > 0) edges.push({ from: `${name}/n0`, to: id });
+    }
+  }
+  return { nodes, edges, groups: { byStack } };
+}
+
+describe("renderGraph — estate member packing (#296)", () => {
+  const viewBox = (svg: string) => (svg.match(/viewBox="0 0 (\d+) (\d+)"/) ?? []).slice(1).map(Number);
+  // pinhole stamps each member box's rect with `data-group-id` (pinhole#103),
+  // so the boxes can be read back out of the document with their geometry.
+  const boxRects = (svg: string) =>
+    [...svg.matchAll(/<rect\b[^>]*\bdata-group-id="([^"]+)"[^>]*/g)].map((m) => {
+      const attr = (n: string) => Number((new RegExp(`\\b${n}="([-\\d.]+)"`).exec(m[0]) ?? [])[1]);
+      return { id: m[1], x: attr("x"), y: attr("y"), w: attr("width"), h: attr("height") };
+    });
+
+  it("leaves a small (2-member) estate as the single band it always was", () => {
+    const [w, h] = viewBox(renderGraph(syntheticEstate(2), { boxes: "byStack" }).svg);
+    // dagre's own side-by-side placement, untouched: two ~3k-wide members in
+    // one 408-tall band (the pre-#296 numbers, pinned so a pack that starts
+    // firing early shows up as a failure here).
+    expect(w).toBe(6316);
+    expect(h).toBe(408);
+  });
+
+  it("wraps an 11-member estate into rows near a screen's shape instead of a 34k-unit strip", () => {
+    const { svg } = renderGraph(syntheticEstate(11), { boxes: "byStack" });
+    const [w, h] = viewBox(svg);
+    // Unpacked, the same fixture lays out 34108 x 408 (aspect 84:1).
+    expect(w).toBeLessThan(6000);
+    expect(w / h).toBeLessThan(3);
+    expect(h / w).toBeLessThan(3);
+    for (let m = 0; m < 11; m++) expect(svg).toContain(`data-group-id="member-${String(m).padStart(2, "0")}"`);
+  });
+
+  it("never lands one member box on another, even with wildly uneven members", () => {
+    const sizes = [3, 5, 2, 8, 4, 1, 6, 13, 2, 9, 5];
+    const rects = boxRects(renderGraph(syntheticEstate(11, (m) => sizes[m]), { boxes: "byStack" }).svg);
+    expect(rects).toHaveLength(11);
+    for (let a = 0; a < rects.length; a++)
+      for (let b = a + 1; b < rects.length; b++) {
+        const A = rects[a];
+        const B = rects[b];
+        const apart = A.x + A.w <= B.x || B.x + B.w <= A.x || A.y + A.h <= B.y || B.y + B.h <= A.y;
+        expect(apart, `${A.id} overlaps ${B.id}`).toBe(true);
+      }
+  });
+
+  it("keeps the composed order — boxes read left-to-right, top-to-bottom — and repeats it byte for byte", () => {
+    const ir = syntheticEstate(11, (m) => [3, 5, 2, 8, 4, 1, 6, 13, 2, 9, 5][m]);
+    const first = renderGraph(ir, { boxes: "byStack" }).svg;
+    const reading = boxRects(first)
+      .sort((a, b) => a.y - b.y || a.x - b.x)
+      .map((r) => r.id);
+    expect(reading).toEqual(Array.from({ length: 11 }, (_, m) => `member-${String(m).padStart(2, "0")}`));
+    expect(renderGraph(ir, { boxes: "byStack" }).svg).toBe(first);
+  });
+
+  it("still draws a node no member claims — estate.ts's unjoined nodes pack in after the boxes", () => {
+    const ir = syntheticEstate(5);
+    ir.nodes.push({ id: "stray-runtime-pod", kind: "K8s::Core::Pod", lexicon: "k8s", attrs: {} });
+    const { svg } = renderGraph(ir, { boxes: "byStack" });
+    expect(svg).toContain('data-node-id="stray-runtime-pod"');
+  });
+});
+
 // #227: src/render.ts registers the icon packs with pinhole at module load, so
 // importing renderGraph is all it takes for a k8s/helm node to paint its real
 // mark. These assert the server-side flow end to end — pack registration,
