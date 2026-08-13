@@ -51,3 +51,21 @@ export function watchSource(projectDir: string, onChange: () => void, debounceMs
     watcher.close();
   };
 }
+
+/**
+ * {@link watchSource} across every estate member (#297). Before this, `serve a b
+ * c` watched only the primary's src/ — an edit in any other member never fired.
+ * One watcher (and one debounce timer) per member, so a burst of edits in one
+ * member can't swallow another's event, and `onChange` carries the member dir
+ * that actually changed. Returns one stop function covering them all.
+ */
+export function watchSources(
+  projectDirs: readonly string[],
+  onChange: (dir: string) => void,
+  debounceMs = 200,
+): () => void {
+  const stops = projectDirs.map((dir) => watchSource(dir, () => onChange(dir), debounceMs));
+  return () => {
+    for (const stop of stops) stop();
+  };
+}

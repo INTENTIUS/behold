@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { listRecents, addRecent } from "./recents.ts";
 import type { GraphIR } from "@intentius/chant";
 import {
@@ -77,7 +77,7 @@ import { detectSubstrates, projectLexicons } from "./substrates.ts";
 import { pickAutoSyncOps, suspendedByRollback, type AutoSyncMode } from "./autosync.ts";
 import { sourceCommits, openRollbackBranches } from "./history.ts";
 import { composeEstate, composeEstateOverlay, withoutJoinedMembers } from "./estate.ts";
-import { Broadcaster, watchSource } from "./events.ts";
+import { Broadcaster, watchSources } from "./events.ts";
 import { startDriftPoll } from "./poll.ts";
 import { FrameBuffer } from "./frames.ts";
 import { renderLanes } from "./lanes.ts";
@@ -2192,27 +2192,38 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   // source graph). Shares the module helper with Refresh + post-op capture.
   const capture = (): Promise<unknown> => captureFrame(cfg.projectDir, cfg.env, frames, broadcaster);
   // A change to the estate: re-render the live graph (SPA re-pulls) and capture a
-  // keyframe for the lanes timeline.
-  const onEstateChange = (): void => {
-    broadcaster.emit("changed");
+  // keyframe for the lanes timeline. `memberDir` (#297) rides the SSE event's
+  // data field so the event says WHICH member moved — the SPA's listener ignores
+  // data today, but the channel already carries it for `op`/`apply`.
+  const onEstateChange = (memberDir?: string): void => {
+    broadcaster.emit("changed", memberDir ?? "");
     void capture();
   };
+  // On an estate, tag now-line entries with the member the event belongs to —
+  // on a single-project serve the tag is noise, so it's empty.
+  const memberTag = (dir: string): string => ((cfg.projectDirs?.length ?? 0) > 1 ? ` [${basename(dir)}]` : "");
   // A polled *drift* (live moved) — re-render, and if auto-sync is on, trigger the
-  // configured Op to heal/adopt (#29). Source edits (watchSource) don't auto-sync:
-  // a new declaration is new desired state, not drift.
-  const onPollDrift = (movedLexicons: string[]): void => {
-    onEstateChange();
+  // configured Op to heal/adopt (#29). Source edits (watchSources) don't auto-sync:
+  // a new declaration is new desired state, not drift. `dir` is the estate member
+  // whose overlay moved (#297) — attribution flows through to the now-line and
+  // the rollback interlock.
+  const onPollDrift = (dir: string, movedLexicons: string[]): void => {
+    onEstateChange(dir);
     if (autoSync === "off") return;
-    void routeAutoSync(movedLexicons);
+    void routeAutoSync(dir, movedLexicons);
   };
 
   // Route a drift event to the Op that owns each substrate that moved (#117).
   // Async only for the rollback interlock's git read, which is why onPollDrift
   // fires it and does not await: the re-render above must not wait on git.
-  const routeAutoSync = async (movedLexicons: string[]): Promise<void> => {
+  // `dir` is the member that drifted (#297): its git is where the rollback
+  // interlock looks, and its name tags the now-line. Op discovery stays
+  // estate-wide — a control-plane member commonly owns the Ops that heal its
+  // app members, and #117's substrate matching already picks the right one.
+  const routeAutoSync = async (dir: string, movedLexicons: string[]): Promise<void> => {
     const suspended =
       autoSync === "pull-request"
-        ? suspendedByRollback(await openRollbackBranches(cfg.projectDir, cfg.env), movedLexicons)
+        ? suspendedByRollback(await openRollbackBranches(dir, cfg.env), movedLexicons)
         : new Set<string>();
     const { picks, declined } = pickAutoSyncOps(
       autoSync,
@@ -2224,7 +2235,7 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
     // Say why nothing happened. A self-heal loop that declines silently is
     // indistinguishable from one that is broken.
     for (const d of declined) {
-      broadcaster.emit("op", `⟳ auto-sync (${autoSync}) declined ${d.lexicon}: ${d.reason}`);
+      broadcaster.emit("op", `⟳ auto-sync (${autoSync})${memberTag(dir)} declined ${d.lexicon}: ${d.reason}`);
     }
     // One delegated write at a time — the existing guard, unchanged. Two
     // substrates drifting in the same tick do not race: the first trigger takes
@@ -2240,28 +2251,38 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
     for (const { op, lexicons } of picks) {
       const scope = lexicons.join("+");
       if (runner.trigger(op.name, op.env, op.dir, Boolean(op.gate))) {
-        broadcaster.emit("op", `⟳ auto-sync (${autoSync}) ${scope} → ${op.name}`);
+        broadcaster.emit("op", `⟳ auto-sync (${autoSync})${memberTag(dir)} ${scope} → ${op.name}`);
       } else {
-        broadcaster.emit("op", `⟳ auto-sync (${autoSync}) ${scope} → ${op.name} waiting — ${runner.running} is running`);
+        broadcaster.emit("op", `⟳ auto-sync (${autoSync})${memberTag(dir)} ${scope} → ${op.name} waiting — ${runner.running} is running`);
       }
     }
   };
 
-  // Watch the served project's source (the dev loop) and, with an env + --poll,
-  // poll live drift (#4) — the latter also drives auto-sync. `let` (#195): a
-  // project switch re-aims the watcher and stops the poll.
+  // Watch every estate member's source (the dev loop) and, with an env + --poll,
+  // poll live drift (#4) — the latter also drives auto-sync. Both cover the WHOLE
+  // estate (#297): before, only `cfg.projectDir` was watched and polled, so on an
+  // 11-member estate 10/11 of it could drift or be edited without a single
+  // changed/refresh event. `let` (#195): a project switch re-aims the watcher and
+  // stops the poll.
   // Carve mode (#252) has no chant project behind it: nothing to watch, nothing
   // to poll, and no baseline frame to capture (`captureFrame` shells `chant
   // graph`, which would fail once a second on a directory that isn't a project).
   const carve = !!cfg.carveReport;
-  let stopWatch = carve ? () => {} : watchSource(cfg.projectDir, onEstateChange);
+  let stopWatch = carve ? () => {} : watchSources(cfg.projectDirs ?? [cfg.projectDir], onEstateChange);
   let stopPoll =
     !carve && cfg.env && cfg.pollSecs
       ? startDriftPoll({
           intervalMs: cfg.pollSecs * 1000,
-          query: () => graphIr(cfg.projectDir, { live: true, overlay: true, env: cfg.env }),
+          // Per-member queries, swept sequentially inside the poll (#297): a
+          // member read can take seconds (#295), so an estate-wide tick must
+          // stretch, not stampede N describes at once.
+          members: (cfg.projectDirs ?? [cfg.projectDir]).map((dir) => ({
+            dir,
+            query: () => graphIr(dir, { live: true, overlay: true, env: cfg.env }),
+          })),
           onChange: onPollDrift,
-          onError: (err) => process.stderr.write(`poll: ${err instanceof Error ? err.message : String(err)}\n`),
+          onError: (dir, err) =>
+            process.stderr.write(`poll${memberTag(dir)}: ${err instanceof Error ? err.message : String(err)}\n`),
         })
       : () => {};
   // #195: POST /api/project/open re-pointed cfg/runner/tier state; this is the
@@ -2270,7 +2291,9 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   // fresh `behold serve --env --poll` is the way to poll the new project.
   cfg.onProjectSwitch = (dir) => {
     stopWatch();
-    stopWatch = watchSource(dir, onEstateChange);
+    // `switchServedProject` sets cfg.projectDirs before firing this, so a switch
+    // to an estate (a demo estate, say) re-aims at every member (#297).
+    stopWatch = watchSources(cfg.projectDirs ?? [dir], onEstateChange);
     stopPoll();
     stopPoll = () => {};
     process.stdout.write(`  switched → ${dir}\n`);

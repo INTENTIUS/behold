@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { driftDigest, driftDigestsByLexicon, changedLexicons, UNKNOWN_LEXICON } from "./poll.ts";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { driftDigest, driftDigestsByLexicon, changedLexicons, startDriftPoll, UNKNOWN_LEXICON } from "./poll.ts";
 import type { GraphIR } from "@intentius/chant";
 
 const ir = (nodes: Array<{ id: string; status?: string; lexicon?: string }>): GraphIR =>
@@ -71,6 +71,100 @@ describe("driftDigestsByLexicon", () => {
       groups: {},
     } as unknown as GraphIR;
     expect(Object.keys(driftDigestsByLexicon(orphan))).toEqual([UNKNOWN_LEXICON]);
+  });
+});
+
+// #297: the poll used to query only the primary member — on an 11-member estate
+// 10/11 of it never fired a changed event. These pin the estate-wide sweep.
+describe("startDriftPoll", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  /** A member whose query returns the queued IRs in order (the last repeats). */
+  const member = (dir: string, irs: GraphIR[]) => {
+    let i = 0;
+    return { dir, query: vi.fn(async () => irs[Math.min(i++, irs.length - 1)]) };
+  };
+
+  it("polls every member and attributes drift to the member that moved", async () => {
+    const steady = member("/estate/a", [ir([{ id: "vpc", status: "good" }])]);
+    const mover = member("/estate/b", [
+      ir([{ id: "svc", status: "good", lexicon: "k8s" }]),
+      ir([{ id: "svc", status: "warn", lexicon: "k8s" }]),
+    ]);
+    const onChange = vi.fn();
+    const stop = startDriftPoll({ intervalMs: 1000, members: [steady, mover], onChange });
+
+    await vi.advanceTimersByTimeAsync(1000); // first sweep: baselines only
+    expect(onChange).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1000); // second sweep: b moved, a did not
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith("/estate/b", ["k8s"]);
+    expect(steady.query).toHaveBeenCalledTimes(2); // a WAS polled, it just didn't move
+    stop();
+  });
+
+  it("sweeps members sequentially — a slow read never stampedes the next member", async () => {
+    let release!: (ir: GraphIR) => void;
+    const slow = { dir: "/estate/a", query: vi.fn(() => new Promise<GraphIR>((res) => (release = res))) };
+    const next = member("/estate/b", [ir([{ id: "svc", status: "good" }])]);
+    const stop = startDriftPoll({ intervalMs: 1000, members: [slow, next], onChange: vi.fn() });
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(slow.query).toHaveBeenCalledTimes(1);
+    expect(next.query).not.toHaveBeenCalled(); // waiting on a, not describing in parallel
+
+    release(ir([{ id: "vpc", status: "good" }]));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(next.query).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it("isolates one member's failure: onError carries its dir, the sweep goes on", async () => {
+    const broken = { dir: "/estate/a", query: vi.fn(async () => Promise.reject(new Error("describe timed out"))) };
+    const mover = member("/estate/b", [
+      ir([{ id: "svc", status: "good", lexicon: "k8s" }]),
+      ir([{ id: "svc", status: "warn", lexicon: "k8s" }]),
+    ]);
+    const onChange = vi.fn();
+    const onError = vi.fn();
+    const stop = startDriftPoll({ intervalMs: 1000, members: [broken, mover], onChange, onError });
+
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(onError).toHaveBeenCalledWith("/estate/a", expect.any(Error));
+    expect(onChange).toHaveBeenCalledWith("/estate/b", ["k8s"]); // b still swept and fired
+    stop();
+  });
+
+  it("a member that fails then recovers unchanged does not fake drift", async () => {
+    const same = ir([{ id: "vpc", status: "good" }]);
+    let calls = 0;
+    const flaky = {
+      dir: "/estate/a",
+      query: vi.fn(async () => {
+        calls += 1;
+        if (calls === 2) throw new Error("blip");
+        return same;
+      }),
+    };
+    const onChange = vi.fn();
+    const stop = startDriftPoll({ intervalMs: 1000, members: [flaky], onChange, onError: vi.fn() });
+
+    await vi.advanceTimersByTimeAsync(3000); // baseline, blip, recovery
+    expect(flaky.query).toHaveBeenCalledTimes(3);
+    expect(onChange).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it("stop cancels future sweeps", async () => {
+    const m = member("/estate/a", [ir([{ id: "vpc", status: "good" }])]);
+    const stop = startDriftPoll({ intervalMs: 1000, members: [m], onChange: vi.fn() });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(m.query).toHaveBeenCalledTimes(1);
+    stop();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(m.query).toHaveBeenCalledTimes(1);
   });
 });
 
