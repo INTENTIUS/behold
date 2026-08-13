@@ -382,6 +382,51 @@ describe("classifyObservedHealth — Flux (#226)", () => {
     }
   });
 
+  it("reads an OCI HelmRepository with no conditions as healthy — empty status is its design (#298)", () => {
+    // Flux gives `spec.type: oci` HelmRepositories no status at all:
+    // source-controller doesn't fetch artifacts for them, they're the URL
+    // helm-controller resolves charts against. kubectl's READY column is
+    // blank for life, and chant's collapsed word is `PRESENT` — which the
+    // no-conditions rule below read as a reconcile that never starts.
+    const v = classifyObservedHealth({
+      type: "K8s::Flux::HelmRepository",
+      status: "PRESENT",
+      attributes: { namespace: "buzz", spec: { type: "oci", url: "oci://ghcr.io/block/buzz/charts" } },
+    });
+    expect(v.health).toBe("healthy");
+    expect(v.detail).toBe("spec.type=oci (nothing to reconcile)");
+  });
+
+  it("still reads a default HelmRepository with no conditions as pending", () => {
+    // Without `spec.type: oci` the controller DOES owe this object a fetch
+    // and a `Ready` — no conditions means it has not been picked up yet.
+    const v = classifyObservedHealth({
+      type: "K8s::Flux::HelmRepository",
+      status: "PRESENT",
+      attributes: { namespace: "flux-system", spec: { url: "https://charts.bitnami.com/bitnami" } },
+    });
+    expect(v.health).toBe("progressing");
+    expect(v.detail).toBe("no Ready condition yet");
+  });
+
+  it("still reads a conditioned HelmRepository off its conditions", () => {
+    const v = classifyObservedHealth({
+      type: "K8s::Flux::HelmRepository",
+      status: "FetchFailed",
+      attributes: {
+        namespace: "flux-system",
+        spec: { url: "https://charts.example.com" },
+        status: {
+          conditions: [
+            { type: "Ready", status: "False", reason: "FetchFailed", message: "failed to fetch Helm repository index" },
+          ],
+        },
+      },
+    });
+    expect(v.health).toBe("degraded");
+    expect(v.detail).toBe("Ready=False (FetchFailed)");
+  });
+
   it("reads a Flux object with no conditions at all as pending, not healthy", () => {
     // Just applied; the controller has not picked it up yet. `PRESENT` again,
     // and green again under the fallback.
