@@ -19,17 +19,65 @@
  * the M4 report for what a proper "many live instances" estate would need.
  */
 import { statSync } from "node:fs";
+import { availableParallelism } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { composeStacks, shortStackNames, type GraphIR } from "@intentius/pinhole";
 import { graphIr, meetsFloor, resolveChant, type GraphOptions } from "./chant.ts";
 import { CLUSTER_SCOPED } from "./zoom-notes.ts";
 
+// ---------------------------------------------------------------------------
+// Bounded member reads (#295). Every estate read below fans out one `chant
+// graph` process per member, and each of those is a whole Node process doing
+// a full TypeScript evaluation of that member's source — seconds of CPU
+// each, before the live half even talks to a cluster. The fan-outs used to
+// be unbounded `Promise.all`s, which on an 11-member estate meant 11 chant
+// processes landing on the host at once; on the modest boxes estates
+// actually get served from, that oversubscription degrades toward serial
+// (~60s per /api/overlay on the #295 estate — worse than one member at a
+// time, because they thrash instead of pipelining). A small pool keeps the
+// host busy without drowning it.
+// ---------------------------------------------------------------------------
+
+/** How many member chant processes one estate read runs at once: the host's
+ * parallelism capped at 4 (each spawn wants a core-plus for its TS eval),
+ * never more lanes than members. `BEHOLD_ESTATE_CONCURRENCY` overrides the
+ * cap for tuning a live estate; anything unparseable or < 1 is ignored
+ * rather than honoured into a stall. Exported for testing. */
+export function estateReadPool(members: number, env: Record<string, string | undefined> = process.env): number {
+  const override = Number.parseInt(env.BEHOLD_ESTATE_CONCURRENCY ?? "", 10);
+  const cap = Number.isInteger(override) && override >= 1 ? override : Math.min(4, availableParallelism());
+  return Math.max(1, Math.min(cap, members));
+}
+
+/** `Promise.all(items.map(fn))` with at most `width` calls in flight.
+ * Results land at their item's own index, so per-member attribution is
+ * position-stable no matter what order the reads finish in. A rejection
+ * rejects the whole map, exactly as `Promise.all` did — callers that want a
+ * member's failure contained (`composeEstateOverlay`) catch inside `fn`,
+ * same as before. Exported for testing. */
+export async function mapPool<T, R>(
+  items: readonly T[],
+  width: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    for (let i = next++; i < items.length; i = next++) {
+      results[i] = await fn(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(width, items.length)) }, () => worker()));
+  return results;
+}
+
 /** Graph each project's source and compose them into one estate IR. */
 export async function composeEstate(projectDirs: string[], opts: GraphOptions = {}): Promise<GraphIR> {
   const names = shortStackNames(projectDirs); // readable per-project labels (common prefix stripped)
-  const stacks = await Promise.all(
-    projectDirs.map(async (dir, i) => ({ name: names[i], ir: await graphIr(dir, opts) })),
-  );
+  const stacks = await mapPool(projectDirs, estateReadPool(projectDirs.length), async (dir, i) => ({
+    name: names[i],
+    ir: await graphIr(dir, opts),
+  }));
   return composeStacks(stacks);
 }
 
@@ -284,7 +332,9 @@ export async function estateNamespaceScopes(
   // A one-project "estate" has no other member to carry the binding.
   if (projectDirs.length < 2) return new Map();
   const { live: _live, overlay: _overlay, namespace: _namespace, ...src } = opts;
-  const irs = await Promise.all(projectDirs.map((dir) => graphIr(dir, { ...src, detail: 3 }).catch(() => undefined)));
+  const irs = await mapPool(projectDirs, estateReadPool(projectDirs.length), (dir) =>
+    graphIr(dir, { ...src, detail: 3 }).catch(() => undefined),
+  );
   const scopes = new Map<string, string>();
   for (const j of joinNamespaceBindings(projectDirs.map((dir, i) => ({ dir, ir: irs[i] })), isDir)) {
     // chant#1629's flag or nothing — see NAMESPACE_JOIN_FLOOR.
@@ -314,10 +364,11 @@ export function withoutJoinedMembers<T extends { id: string }>(
  * "behold your whole estate, coloured by drift" was 1/N projects true before
  * this. One `env` name reaches every composed project's own chant (the same
  * threading `composeEstate` does; per-project env mapping is a future
- * decision the issue records). Reads run concurrently with per-project
- * failure isolation: one unreachable cluster degrades that project to its
- * source graph painted `unobserved`, never blanks the estate; a project
- * whose source can't even be graphed is dropped and reported.
+ * decision the issue records). Reads run concurrently — through the bounded
+ * pool above (#295), so a big estate pipelines instead of thrashing — with
+ * per-project failure isolation: one unreachable cluster degrades that
+ * project to its source graph painted `unobserved`, never blanks the estate;
+ * a project whose source can't even be graphed is dropped and reported.
  *
  * `classify` is the per-project post-pass (the caller's reclassifyOverlay) —
  * a parameter so this module stays composition-only.
@@ -338,32 +389,30 @@ export async function composeEstateOverlay(
   // #221: where the estate itself says a member's objects run. Resolved before
   // the live pass because it is an argument TO that pass.
   const scopes = await estateNamespaceScopes(projectDirs, opts);
-  await Promise.all(
-    projectDirs.map(async (dir, i) => {
-      const name = names[i];
-      const namespace = scopes.get(dir);
+  await mapPool(projectDirs, estateReadPool(projectDirs.length), async (dir, i) => {
+    const name = names[i];
+    const namespace = scopes.get(dir);
+    try {
+      const live = { ...opts, live: true, overlay: true, ...(namespace ? { namespace } : {}) };
+      stacks[i] = { name, ir: namespaceRuntimeOwners(name, classify(await graphIr(dir, live))) };
+      // Reported only for a read that actually happened — an unobserved
+      // member was not read anywhere, joined namespace or not.
+      if (namespace) joined.push({ name, namespace });
+    } catch (err) {
+      const reason = firstLine(err);
       try {
-        const live = { ...opts, live: true, overlay: true, ...(namespace ? { namespace } : {}) };
-        stacks[i] = { name, ir: namespaceRuntimeOwners(name, classify(await graphIr(dir, live))) };
-        // Reported only for a read that actually happened — an unobserved
-        // member was not read anywhere, joined namespace or not.
-        if (namespace) joined.push({ name, namespace });
-      } catch (err) {
-        const reason = firstLine(err);
-        try {
-          // Source fallback WITHOUT env/live: the declared shape, honestly
-          // tagged as not-looked-at rather than absent.
-          const { env: _env, live: _live, overlay: _overlay, ...srcOpts } = opts;
-          const src = await graphIr(dir, srcOpts);
-          for (const n of src.nodes) n.attrs = { ...n.attrs, _status: "neutral", _unobserved: reason };
-          stacks[i] = { name, ir: src };
-          unobserved.push({ name, reason });
-        } catch (err2) {
-          dropped.push({ name, reason: firstLine(err2) });
-        }
+        // Source fallback WITHOUT env/live: the declared shape, honestly
+        // tagged as not-looked-at rather than absent.
+        const { env: _env, live: _live, overlay: _overlay, ...srcOpts } = opts;
+        const src = await graphIr(dir, srcOpts);
+        for (const n of src.nodes) n.attrs = { ...n.attrs, _status: "neutral", _unobserved: reason };
+        stacks[i] = { name, ir: src };
+        unobserved.push({ name, reason });
+      } catch (err2) {
+        dropped.push({ name, reason: firstLine(err2) });
       }
-    }),
-  );
+    }
+  });
   const present = stacks.filter((s): s is { name: string; ir: GraphIR } => !!s);
   return {
     ir: composeStacks(present),
