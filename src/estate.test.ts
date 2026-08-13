@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterAll } from "vitest";
+import { describe, it, expect, vi, afterAll, afterEach } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -17,7 +17,9 @@ import {
   awaitsNamespaceBinding,
   composeEstate,
   composeEstateOverlay,
+  estateReadPool,
   joinNamespaceBindings,
+  mapPool,
   pathAlignment,
   withoutJoinedMembers,
 } from "./estate.ts";
@@ -310,6 +312,169 @@ describe("composeEstateOverlay — threading the joined namespace into the live 
       expect(o as GraphOptions).toMatchObject({ detail: 3, env: "local" });
       expect(o as GraphOptions).not.toHaveProperty("overlay");
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #295 — estate reads through a bounded pool. An 11-member estate used to
+// launch every member's chant process at once (unbounded Promise.all); each
+// spawn is a whole Node + TS-eval process, so the host thrashed toward serial
+// (~60s a read on the reporting estate). These prove the pool's contracts:
+// bounded width, position-stable per-member attribution however the reads
+// finish, and failure semantics identical to Promise.all's.
+// ---------------------------------------------------------------------------
+
+/** A promise resolved by hand, so a test drives completion order. */
+function gate<T>(): { promise: Promise<T>; resolve: (v: T) => void; reject: (e: unknown) => void } {
+  let resolve!: (v: T) => void;
+  let reject!: (e: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+/** Drain the microtask queue far enough for settled reads to hand their pool
+ * lane to the next member. No timers anywhere in the pool, so this is all the
+ * scheduling there is. */
+const flush = async (): Promise<void> => {
+  for (let i = 0; i < 25; i++) await Promise.resolve();
+};
+
+describe("estateReadPool (#295)", () => {
+  it("caps the lanes at 4 and never opens more lanes than members", () => {
+    expect(estateReadPool(11, {})).toBeGreaterThanOrEqual(1);
+    expect(estateReadPool(11, {})).toBeLessThanOrEqual(4);
+    expect(estateReadPool(2, { BEHOLD_ESTATE_CONCURRENCY: "8" })).toBe(2);
+  });
+
+  it("honours BEHOLD_ESTATE_CONCURRENCY, ignoring a value that would stall the read", () => {
+    expect(estateReadPool(11, { BEHOLD_ESTATE_CONCURRENCY: "2" })).toBe(2);
+    expect(estateReadPool(11, { BEHOLD_ESTATE_CONCURRENCY: "8" })).toBe(8);
+    expect(estateReadPool(11, { BEHOLD_ESTATE_CONCURRENCY: "0" })).toBe(estateReadPool(11, {}));
+    expect(estateReadPool(11, { BEHOLD_ESTATE_CONCURRENCY: "many" })).toBe(estateReadPool(11, {}));
+  });
+});
+
+describe("mapPool (#295)", () => {
+  it("keeps every result at its item's own index when the tasks finish in reverse", async () => {
+    const gates = [gate<string>(), gate<string>(), gate<string>()];
+    const p = mapPool([0, 1, 2], 3, (i) => gates[i].promise);
+    gates[2].resolve("c");
+    gates[1].resolve("b");
+    gates[0].resolve("a");
+    expect(await p).toEqual(["a", "b", "c"]);
+  });
+
+  it("runs at most `width` tasks at once, handing a finished task's lane to the next item", async () => {
+    const gates = Array.from({ length: 5 }, () => gate<number>());
+    const started: number[] = [];
+    const p = mapPool([0, 1, 2, 3, 4], 2, (i) => {
+      started.push(i);
+      return gates[i].promise;
+    });
+    await flush();
+    expect(started).toEqual([0, 1]); // the bound: items 2-4 have not launched
+    gates[1].resolve(1);
+    await flush();
+    expect(started).toEqual([0, 1, 2]); // one finished, exactly one more started
+    gates[0].resolve(0);
+    gates[2].resolve(2);
+    await flush();
+    expect(started).toEqual([0, 1, 2, 3, 4]);
+    gates[3].resolve(3);
+    gates[4].resolve(4);
+    expect(await p).toEqual([0, 1, 2, 3, 4]); // input order, not completion order
+  });
+
+  it("rejects the whole map on a task failure — Promise.all's contract, which the estate route's 500 relies on", async () => {
+    await expect(
+      mapPool([0, 1], 2, async (i) => {
+        if (i === 1) throw new Error("boom");
+        return i;
+      }),
+    ).rejects.toThrow("boom");
+  });
+});
+
+describe("estate reads are pooled, not fanned out unbounded (#295)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("composeEstate launches only `pool` member reads at once and still composes in member order", async () => {
+    vi.stubEnv("BEHOLD_ESTATE_CONCURRENCY", "2");
+    const gates = new Map<string, ReturnType<typeof gate<unknown>>>();
+    vi.mocked(graphIr).mockReset();
+    vi.mocked(graphIr).mockImplementation(((dir: string) => {
+      const g = gate<unknown>();
+      gates.set(dir, g);
+      return g.promise;
+    }) as never);
+
+    const p = composeEstate(["/work/est/alpha", "/work/est/beta", "/work/est/gamma"]);
+    await flush();
+    // Two lanes: the third member's chant has not been spawned yet.
+    expect([...gates.keys()]).toEqual(["/work/est/alpha", "/work/est/beta"]);
+    gates.get("/work/est/beta")!.resolve(stack("b"));
+    await flush();
+    expect(gates.has("/work/est/gamma")).toBe(true);
+    gates.get("/work/est/gamma")!.resolve(stack("c"));
+    gates.get("/work/est/alpha")!.resolve(stack("a"));
+    const ir = await p;
+    expect(ir.nodes.map((n) => n.id).sort()).toEqual(["alpha/a", "beta/b", "gamma/c"]);
+  });
+
+  it("composeEstateOverlay pools the live reads, keeps each member's nodes its own however the clusters answer, and degrades a failing member exactly as before", async () => {
+    vi.stubEnv("BEHOLD_ESTATE_CONCURRENCY", "2");
+    const dirs = ["/work/est/alpha", "/work/est/beta", "/work/est/gamma"];
+    // The member's own name as its node id, so composed attribution is checkable.
+    const srcIr = (dir: string) => ({
+      nodes: [{ id: `${dir.split("/").pop()}-src`, kind: "X", lexicon: "aws", attrs: {} }],
+      edges: [],
+      groups: {},
+    });
+    const gates = new Map<string, ReturnType<typeof gate<unknown>>>();
+    let inFlight = 0;
+    let maxInFlight = 0;
+    vi.mocked(graphIr).mockReset();
+    vi.mocked(graphIr).mockImplementation(((dir: string, o?: GraphOptions) => {
+      // The #221 scopes pass and the unobserved source fallback answer at once;
+      // only the live reads are gated, so the test drives THEIR order.
+      if (!o?.live) return Promise.resolve(srcIr(dir) as never);
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      const g = gate<unknown>();
+      gates.set(dir, g);
+      return g.promise.finally(() => inFlight--);
+    }) as never);
+
+    const p = composeEstateOverlay(dirs, { env: "e" }, (ir) => ir);
+    await flush();
+    // Width 2, and the first two really were in flight TOGETHER — the overlap
+    // the fix exists for, not just a bound.
+    expect([...gates.keys()]).toEqual(["/work/est/alpha", "/work/est/beta"]);
+    expect(maxInFlight).toBe(2);
+
+    // alpha fails FIRST (reverse of member order): its lane runs the source
+    // fallback and frees for gamma, which then finishes before beta.
+    gates.get("/work/est/alpha")!.reject(new Error("cluster unreachable"));
+    await flush();
+    expect(gates.has("/work/est/gamma")).toBe(true);
+    gates.get("/work/est/gamma")!.resolve(stack("c-live"));
+    await flush();
+    gates.get("/work/est/beta")!.resolve(stack("b-live"));
+
+    const est = await p;
+    // Attribution survived the completion order: each node under ITS member.
+    expect(est.ir.nodes.map((n) => n.id).sort()).toEqual(["alpha/alpha-src", "beta/b-live", "gamma/c-live"]);
+    // The failing member degraded exactly as it did unpooled — painted
+    // unobserved on its source graph, never dropped, never blanking the rest.
+    expect(est.unobserved).toEqual([{ name: "alpha", reason: "cluster unreachable" }]);
+    expect(est.dropped).toEqual([]);
+    expect(est.observed).toBe(2);
+    const fallen = est.ir.nodes.find((n) => n.id === "alpha/alpha-src")!;
+    expect((fallen.attrs as { _unobserved?: string })._unobserved).toBe("cluster unreachable");
+    expect(maxInFlight).toBe(2);
   });
 });
 
