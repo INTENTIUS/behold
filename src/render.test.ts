@@ -110,9 +110,9 @@ function syntheticEstate(count: number, nodesPer: (m: number) => number = () => 
     byStack[name] = [];
     for (let i = 0; i < nodesPer(m); i++) {
       const id = `${name}/n${i}`;
-      nodes.push({ id, kind: "K8s::Apps::Deployment", lexicon: "k8s", title: `workload ${i}`, attrs: {} });
+      nodes.push({ id, kind: "K8s::Apps::Deployment", lexicon: "k8s", attrs: {} });
       byStack[name].push(id);
-      if (i > 0) edges.push({ from: `${name}/n0`, to: id });
+      if (i > 0) edges.push({ from: `${name}/n0`, to: id, kind: "ref" });
     }
   }
   return { nodes, edges, groups: { byStack } };
