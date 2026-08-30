@@ -23,6 +23,7 @@ import { availableParallelism } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { composeStacks, shortStackNames, type GraphIR } from "@intentius/pinhole";
 import { graphIr, meetsFloor, resolveChant, type GraphOptions } from "./chant.ts";
+import { memberIr } from "./member-ir.ts";
 import { CLUSTER_SCOPED } from "./zoom-notes.ts";
 
 // ---------------------------------------------------------------------------
@@ -71,12 +72,20 @@ export async function mapPool<T, R>(
   return results;
 }
 
+// #307: the pool bounded the fan-out and left the latency alone — the total
+// work is still one whole chant process per member per read, ~85% of which is
+// spawn + chant's own module load. Every SOURCE read below therefore goes
+// through `memberIr` (src/member-ir.ts), which serves a member whose source,
+// chant and options are all unchanged without spawning anything; the live pass
+// still spawns per member, every read, because a cluster moves with nothing on
+// disk to notice. The invalidation rule lives in that module's header.
+
 /** Graph each project's source and compose them into one estate IR. */
 export async function composeEstate(projectDirs: string[], opts: GraphOptions = {}): Promise<GraphIR> {
   const names = shortStackNames(projectDirs); // readable per-project labels (common prefix stripped)
   const stacks = await mapPool(projectDirs, estateReadPool(projectDirs.length), async (dir, i) => ({
     name: names[i],
-    ir: await graphIr(dir, opts),
+    ir: await memberIr(dir, opts),
   }));
   return composeStacks(stacks);
 }
@@ -332,8 +341,12 @@ export async function estateNamespaceScopes(
   // A one-project "estate" has no other member to carry the binding.
   if (projectDirs.length < 2) return new Map();
   const { live: _live, overlay: _overlay, namespace: _namespace, ...src } = opts;
+  // Cached per member (#307): source-only by construction (the `live`/`overlay`
+  // strip above is the whole point of this pass), so on an estate whose source
+  // has not moved this costs no processes at all — it is half of
+  // `composeEstateOverlay`'s spawns, and the half that never needed the cluster.
   const irs = await mapPool(projectDirs, estateReadPool(projectDirs.length), (dir) =>
-    graphIr(dir, { ...src, detail: 3 }).catch(() => undefined),
+    memberIr(dir, { ...src, detail: 3 }).catch(() => undefined),
   );
   const scopes = new Map<string, string>();
   for (const j of joinNamespaceBindings(projectDirs.map((dir, i) => ({ dir, ir: irs[i] })), isDir)) {
@@ -404,7 +417,7 @@ export async function composeEstateOverlay(
         // Source fallback WITHOUT env/live: the declared shape, honestly
         // tagged as not-looked-at rather than absent.
         const { env: _env, live: _live, overlay: _overlay, ...srcOpts } = opts;
-        const src = await graphIr(dir, srcOpts);
+        const src = await memberIr(dir, srcOpts);
         for (const n of src.nodes) n.attrs = { ...n.attrs, _status: "neutral", _unobserved: reason };
         stacks[i] = { name, ir: src };
         unobserved.push({ name, reason });

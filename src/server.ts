@@ -78,6 +78,7 @@ import { detectSubstrates, projectLexicons } from "./substrates.ts";
 import { pickAutoSyncOps, suspendedByRollback, type AutoSyncMode } from "./autosync.ts";
 import { sourceCommits, openRollbackBranches } from "./history.ts";
 import { composeEstate, composeEstateOverlay, withoutJoinedMembers } from "./estate.ts";
+import { invalidateMember } from "./member-ir.ts";
 import { Broadcaster, watchSources } from "./events.ts";
 import { startDriftPoll } from "./poll.ts";
 import { FrameBuffer } from "./frames.ts";
@@ -2205,6 +2206,15 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
     broadcaster.emit("changed", memberDir ?? "");
     void capture();
   };
+  // A member's SOURCE moved (the watcher, #297) — distinct from a drift event,
+  // which moves the cluster and leaves the source alone. #307: the source IR
+  // cache keys off this signal rather than growing a change-detector of its own,
+  // and this is the one thing its own mtime stamp cannot see — a filesystem
+  // whose clock granularity hides an edit inside the tick that cached the read.
+  const onMemberSourceChange = (memberDir: string): void => {
+    invalidateMember(memberDir);
+    onEstateChange(memberDir);
+  };
   // On an estate, tag now-line entries with the member the event belongs to —
   // on a single-project serve the tag is noise, so it's empty.
   const memberTag = (dir: string): string => ((cfg.projectDirs?.length ?? 0) > 1 ? ` [${basename(dir)}]` : "");
@@ -2274,7 +2284,7 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   // to poll, and no baseline frame to capture (`captureFrame` shells `chant
   // graph`, which would fail once a second on a directory that isn't a project).
   const carve = !!cfg.carveReport;
-  let stopWatch = carve ? () => {} : watchSources(cfg.projectDirs ?? [cfg.projectDir], onEstateChange);
+  let stopWatch = carve ? () => {} : watchSources(cfg.projectDirs ?? [cfg.projectDir], onMemberSourceChange);
   let stopPoll =
     !carve && cfg.env && cfg.pollSecs
       ? startDriftPoll({
@@ -2299,7 +2309,7 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
     stopWatch();
     // `switchServedProject` sets cfg.projectDirs before firing this, so a switch
     // to an estate (a demo estate, say) re-aims at every member (#297).
-    stopWatch = watchSources(cfg.projectDirs ?? [dir], onEstateChange);
+    stopWatch = watchSources(cfg.projectDirs ?? [dir], onMemberSourceChange);
     stopPoll();
     stopPoll = () => {};
     process.stdout.write(`  switched → ${dir}\n`);
