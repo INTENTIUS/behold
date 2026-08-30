@@ -328,6 +328,10 @@ function nearestByRef(start: string, want: Set<string>, refOut: Map<string, Set<
  * a single-substrate estate gets byte-identical output to before, because the
  * other three contribute nothing. Box titles are per-lens synthetic strings and
  * node ids are unique across the IR, so there is nothing to collide.
+ *
+ * What merging alone could not do is keep an edge that spans two lenses, since
+ * each filter sees only half of it — see `retainCrossLensEdges` (#321), the pass
+ * that runs once the projections have joined.
  */
 export function projectTopology(ir: GraphIR, env?: string, boundContext?: string, sourceRoots?: string | string[]): LogicalProjection {
   const projections = [
@@ -357,7 +361,92 @@ export function projectTopology(ir: GraphIR, env?: string, boundContext?: string
   }
   placeHelmReleases(nodes, byContainer, ir, env, boundContext);
   nestReleaseBoxes(byContainer);
+  retainCrossLensEdges(ir, projections, nodes, edges, byContainer);
   return { ir: { nodes, edges, groups: {} }, byContainer };
+}
+
+/**
+ * Retain a derived edge that fell through every lens's filter (#321, measured
+ * in #166).
+ *
+ * Each lens filters the IR's edges to its own surviving cards — the AWS lens's
+ * contraction only ever calls `addEdge` on two headline AWS ids
+ * (`projectLogical`), the k8s lens filters on `kept` (`projectK8sLogical`), and
+ * the others do the same. That filter is right for what a lens can see: an edge
+ * to a node the lens does not render is an edge it cannot draw.
+ *
+ * The gap is the edge whose two endpoints are rendered by two DIFFERENT lenses.
+ * A k8s Deployment reading an S3 bucket's name through a `$ref` is one edge over
+ * one AWS card and one k8s card: the AWS lens rejects it because the Deployment
+ * is not an AWS node, the k8s lens rejects it because the bucket is not a k8s
+ * node, and `projectTopology` concatenated the two results without ever asking
+ * whether the edge had survived as a whole. On a mixed estate that deleted the
+ * only cross-provider edge there was — the one place behold dropped an edge it
+ * had itself derived.
+ *
+ * So the retention happens where the projections join, and only for an edge no
+ * single lens could have claimed. A lens that rendered BOTH endpoints has
+ * already ruled on the edge and its ruling stands, including where it
+ * deliberately declined to draw one (fly's app-membership refs, the AWS lens's
+ * containment fabric). A single-lexicon estate has no cross-lens edge at all, so
+ * its projection comes out unchanged.
+ *
+ * Two further rules keep this a retention rather than a new derivation:
+ *
+ *   - both endpoints must survive as CARDS. A `runs-on` anchor into a Namespace
+ *     does not qualify — the k8s lens draws that namespace as a *box*, and a box
+ *     is how this projection states containment.
+ *   - an edge the nesting already states — one endpoint containing the other,
+ *     however deeply — stays containment. Drawing `cluster → every object inside
+ *     it` on top of the boxes is exactly the spoke-star src/cluster-anchor.ts's
+ *     note warns is "connected but not a picture of anything".
+ *
+ * Deduped undirected against what the lenses already drew, so a pair two of them
+ * could both claim is never doubled. Mutates `edges`; the input IR is untouched.
+ */
+function retainCrossLensEdges(
+  ir: GraphIR,
+  projections: readonly LogicalProjection[],
+  nodes: readonly IRNode[],
+  edges: IREdge[],
+  byContainer: ByContainer,
+): void {
+  const cards = new Set(nodes.map((n) => n.id));
+  const perLens = projections.map((p) => new Set(p.ir.nodes.map((n) => n.id)));
+  const pairKey = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+  const drawn = new Set(edges.map((e) => pairKey(e.from, e.to)));
+
+  // Box membership read upwards, so "does the nesting already say this" is one
+  // walk. A card's id can itself be a container key (the managed-cluster join,
+  // #142), so the walk carries a visited set.
+  const parentsOf = new Map<string, string[]>();
+  for (const [parent, children] of Object.entries(byContainer))
+    for (const c of children) (parentsOf.get(c) ?? parentsOf.set(c, []).get(c)!).push(parent);
+  const nests = (outer: string, inner: string): boolean => {
+    const seen = new Set([inner]);
+    let frontier = [...(parentsOf.get(inner) ?? [])];
+    while (frontier.length) {
+      const next: string[] = [];
+      for (const p of frontier) {
+        if (seen.has(p)) continue;
+        seen.add(p);
+        if (p === outer) return true;
+        for (const up of parentsOf.get(p) ?? []) if (!seen.has(up)) next.push(up);
+      }
+      frontier = next;
+    }
+    return false;
+  };
+
+  for (const e of ir.edges) {
+    if (e.from === e.to || !cards.has(e.from) || !cards.has(e.to)) continue;
+    if (perLens.some((ids) => ids.has(e.from) && ids.has(e.to))) continue; // one lens's call to make
+    const key = pairKey(e.from, e.to);
+    if (drawn.has(key)) continue;
+    if (nests(e.from, e.to) || nests(e.to, e.from)) continue; // the boxes already say it
+    drawn.add(key);
+    edges.push(e);
+  }
 }
 
 /**
