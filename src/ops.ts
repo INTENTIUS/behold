@@ -56,6 +56,11 @@ export interface OpInfo {
   /** The project dir the Op lives in — where `chant run` executes it (#31: an Op
    * belongs to its own project, not necessarily the estate's primary). */
   dir: string;
+  /** The emitted `dist/ops/<name>/op.json` (chant >= 0.50, chant#1289), when the
+   * project has been built. Absent on an unbuilt project or an older chant —
+   * the ops lens (#284, src/ops-lens.ts) is the only reader, and it simply
+   * doesn't offer itself then. */
+  irPath?: string;
 }
 
 function kindOf(content: string): OpKind {
@@ -87,6 +92,7 @@ export function discoverOps(projectDir: string): OpInfo[] {
       // than to a guess (#117).
       const target = content.match(/\btarget:\s*["'`]([^"'`]+)["'`]/)?.[1];
       const substrate = target ? APPLY_TARGET_LEXICON[target] : undefined;
+      const irPath = opIrPath(projectDir, name);
       out.push({
         name,
         kind: kindOf(content),
@@ -94,7 +100,59 @@ export function discoverOps(projectDir: string): OpInfo[] {
         ...(gate ? { gate } : {}),
         ...(env ? { env } : {}),
         ...(substrate ? { substrate } : {}),
+        ...(existsSync(irPath) ? { irPath } : {}),
       });
+    }
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Where a built project keeps one Op's portable IR (chant >= 0.50, chant#1289).
+ *
+ * `dist/ops/<name>/` is the fixed location `chant build` writes and `chant run
+ * --temporal` reads, independent of `--output` — so it is a path behold can
+ * compute rather than discover. behold only ever reads it.
+ */
+export function opIrPath(projectDir: string, name: string): string {
+  return join(projectDir, "dist", "ops", name, "op.json");
+}
+
+/** One emitted `op.json`, ready to read. */
+export interface OpIrFile {
+  /** The Op's name — the emitting directory, which is `OpConfig.name`. */
+  name: string;
+  /** The project that emitted it (#31: an Op belongs to its own project). */
+  dir: string;
+  path: string;
+}
+
+/**
+ * Every emitted `op.json` across the served projects, in name order.
+ *
+ * Keyed on the emitted DIRECTORY rather than on {@link discoverOps}'s scrape of
+ * `*.op.ts`: the whole point of the IR is that it is the declaration without
+ * the TypeScript, and an Op whose source the scrape misses (a `name` built from
+ * a const, a file outside `ops/`/`src/`/the root) still emits under its own
+ * name. The scrape stays the source of an Op's kind/gate/env — `OpInfo.irPath`
+ * joins the two the other way, for the delegated-write surface that already
+ * reads it.
+ *
+ * A name collision across projects keeps the first seen, exactly as
+ * {@link discoverEstateOps} does.
+ */
+export function discoverOpIrs(projectDirs: string[]): OpIrFile[] {
+  const seen = new Set<string>();
+  const out: OpIrFile[] = [];
+  for (const dir of projectDirs) {
+    const root = join(dir, "dist", "ops");
+    if (!existsSync(root)) continue;
+    for (const name of readdirSync(root)) {
+      if (seen.has(name)) continue;
+      const path = opIrPath(dir, name);
+      if (!existsSync(path)) continue;
+      seen.add(name);
+      out.push({ name, dir, path });
     }
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));

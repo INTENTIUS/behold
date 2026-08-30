@@ -68,7 +68,8 @@ import {
   type CarveDemo,
 } from "./carve-actions.ts";
 import { teardownScratchFloci } from "./carve-live.ts";
-import { discoverEstateOps } from "./ops.ts";
+import { discoverEstateOps, discoverOpIrs } from "./ops.ts";
+import { readOpIr, opsToIr, opsNote, HOW_TO_EMIT, type OpIr } from "./ops-lens.ts";
 import { LIVE_IMPORT_LEXICONS } from "./adopt.ts";
 import { detectProject, loadBeholdConfig } from "./project.ts";
 import { nodeDiff, nodeObserved, nodeFieldDrift, type LiveDiffJson } from "./diff.ts";
@@ -887,6 +888,10 @@ export function createApp(
       ? resolveK8sTarget(k8sProfiles, cfg.env, await loadKubeconfig())
       : undefined;
     const axes = deployAxes(tierEnvVar, lexicons, k8sTarget);
+    // Read at request time, like everything else here: a project built while
+    // the tab is open grows the ops stop on the next /api/project, without a
+    // restart.
+    const emittedOps = discoverOpIrs(estateDirs).length;
     return c.json({
       projectDir: cfg.projectDir,
       // #195: the full estate composition (multi-project serves) and the
@@ -921,6 +926,12 @@ export function createApp(
       // the names — `graphPath` (chant.ts) resolves a picked name to its `src`
       // server-side; the SPA never needs the path.
       ...(stacks?.length ? { stacks: stacks.map((s) => s.name) } : {}),
+      // The ops lens stop (#284), gated exactly like `tiers`/`stacks` above:
+      // present only when the estate has actually emitted Ops, so a project on
+      // a chant < 0.50, or one that has never been built, grows no dead zoom
+      // stop and no dead ⌘K entry. The count, not a bare flag — the SPA shows
+      // it, and "ops: 0" is not a thing this can ever say.
+      ...(emittedOps ? { ops: emittedOps } : {}),
       targets: deployTargets(lexicons, k8sTarget),
       // Where the k8s binding came from, so the SPA never implies behold chose
       // it (#106). Absent for a project with no k8s lexicon or no resolvable
@@ -1225,7 +1236,7 @@ export function createApp(
           path: "/api/demos/open",
           desc: "load a demo and serve it: JSON body {name} (a catalog name, never a path) — copies/clones, installs, runs its setup, then switches (preview-locked)",
         },
-        { method: "GET", path: "/api/graph", desc: "the graph {ir, svg, meta} — params: detail=0..3, components=1, logical=1, env, stack, tier, target, lens, up=1, down=1, radial=1, layout=1" },
+        { method: "GET", path: "/api/graph", desc: "the graph {ir, svg, meta} — params: detail=0..3, components=1, logical=1, ops=1, env, stack, tier, target, lens, up=1, down=1, radial=1, layout=1" },
         ...(cfg.carveReport
           ? [
               { method: "GET", path: "/api/carve", desc: "carve mode: the raw `chant carve advise --json` peelability report this server is rendering" },
@@ -1269,6 +1280,57 @@ export function createApp(
     const url = new URL(c.req.url);
     const opts = optsFromQuery(url, tierEnvVar, cfg.projectDir);
     try {
+      // The ops lens (#284 item 1): the project's DECLARED Ops, read from the
+      // `dist/ops/<name>/op.json` each `chant build` (>= 0.50, chant#1289)
+      // wrote. First in the chain and returning here, because it reads none of
+      // the entity graph — no chant subprocess, no env, no detail tier — so a
+      // composed estate (whose Ops are discovered across every member, #31)
+      // takes exactly the same path a single project does. The SPA only offers
+      // the stop when `/api/project` reported ops (below), so reaching here
+      // with none is either a hand-built URL or a project rebuilt out from
+      // under an open tab: #193's structured error, not a blank canvas.
+      if (url.searchParams.get("ops") === "1") {
+        const files = discoverOpIrs(estateDirs);
+        if (!files.length) {
+          return c.json(
+            {
+              error: "this project has no emitted Ops — nothing under dist/ops/<name>/op.json",
+              code: "op-ir",
+              remedy: HOW_TO_EMIT,
+            },
+            422,
+          );
+        }
+        const parsedOps: OpIr[] = [];
+        for (const f of files) {
+          const parsed = readOpIr(f.path, (p) => readFileSync(p, "utf8"));
+          // One unreadable op.json refuses the whole view rather than silently
+          // rendering the rest: a track missing an Op is a picture that lies
+          // about what the project declares, and the `depends` edges into the
+          // missing Op would vanish with it.
+          if (!parsed.ok) return c.json(parsed.refusal, 422);
+          parsedOps.push(parsed.ir);
+        }
+        const opsIr = opsToIr(parsedOps);
+        // `boxes: "byStack"` is the same explicit opt-in the composed estate
+        // makes (see renderGraph's doc): one box per `<op> · <phase>`, so the
+        // graph reads as the ordered phase track, and the step chain gives
+        // dagre a real DAG to rank.
+        const { svg } = renderGraph(opsIr, { boxes: "byStack" });
+        return c.json({
+          ir: opsIr,
+          svg,
+          meta: {
+            projectDir: cfg.projectDir,
+            env: cfg.env ?? null,
+            tier: null,
+            target: null,
+            mode: "ops",
+            ops: parsedOps.length,
+            note: opsNote(parsedOps, opsIr),
+          },
+        });
+      }
       // Component-DAG mode (M1.0, #56): the SPA's mode toggle. `chant graph
       // --components` projects one node per component (dependsOn edges,
       // groups.byWave) instead of the AWS entity graph — a generic chant CLI

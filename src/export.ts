@@ -20,12 +20,13 @@ import { createApp, type ServerOptions } from "./server.ts";
  * frontend appends (target/lens/etc. don't vary a static bundle). Sorted, so
  * capture and replay agree regardless of param order. MUST stay identical to the
  * copy in web/app.js (`canonicalKey`). */
-const LENS_PARAMS = ["components", "detail", "env", "logical", "radial", "tier"];
+const LENS_PARAMS = ["components", "detail", "env", "logical", "ops", "radial", "tier"];
 export function canonicalKey(path: string, params: URLSearchParams): string {
-  // The component-DAG and logical views ignore detail/radial (they're
+  // The component-DAG, logical and ops views ignore detail/radial (they're
   // entity-graph knobs), but the frontend still appends the current detail —
   // drop them here so the request matches the single captured snapshot.
-  const flat = params.get("components") === "1" || params.get("logical") === "1";
+  const flat =
+    params.get("components") === "1" || params.get("logical") === "1" || params.get("ops") === "1";
   const q = LENS_PARAMS.filter((k) => params.has(k) && !(flat && (k === "detail" || k === "radial")))
     .map((k) => `${k}=${params.get(k)}`)
     .join("&");
@@ -41,6 +42,10 @@ function slug(key: string): string {
 export interface ExportAxes {
   environments: string[];
   tiers?: string[];
+  /** How many Ops the estate has emitted (#284) — the ops lens stop exists only
+   * when this is non-zero, exactly as the SPA gates it on `/api/project`'s
+   * `ops`. Absent/0 means no stop, so nothing to capture. */
+  ops?: number;
 }
 
 /** The read URLs to capture for the given axes. */
@@ -51,6 +56,12 @@ export function captureKeys(axes: ExportAxes): string[] {
   add("/api/project", {});
   add("/api/substrates", {});
   add("/api/ops", {});
+  // The ops lens (#284): ONE snapshot, outside the env/tier loops — the view
+  // reads no live state and no tier, so every lens combination would capture
+  // the same bytes. Only when the estate has emitted Ops, so a bundle never
+  // offers a stop it has nothing behind (the SPA gates the stop on the same
+  // number, out of the captured /api/project).
+  if (axes.ops) add("/api/graph", { ops: "1" });
 
   const tiers = axes.tiers && axes.tiers.length ? axes.tiers : [""];
   const envs = ["", ...axes.environments]; // "" = the declared-source view
@@ -103,8 +114,8 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: { name
   // rather than relying on nothing happening to call it.
   const app = createApp({ ...cfg, layoutWrites: false });
 
-  const proj = (await (await app.request("/api/project")).json()) as { environments?: string[]; tiers?: string[] };
-  const axes: ExportAxes = { environments: proj.environments ?? [], tiers: proj.tiers ?? [] };
+  const proj = (await (await app.request("/api/project")).json()) as { environments?: string[]; tiers?: string[]; ops?: number };
+  const axes: ExportAxes = { environments: proj.environments ?? [], tiers: proj.tiers ?? [], ...(proj.ops ? { ops: proj.ops } : {}) };
 
   const snapDir = join(outDir, "snapshots");
   mkdirSync(snapDir, { recursive: true });
