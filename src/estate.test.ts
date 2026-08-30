@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterAll, afterEach } from "vitest";
+import { describe, it, expect, vi, afterAll, afterEach, beforeEach } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -23,6 +23,7 @@ import {
   pathAlignment,
   withoutJoinedMembers,
 } from "./estate.ts";
+import { resetMemberIrCache } from "./member-ir.ts";
 import { attachRuntimeContainment } from "./overlay.ts";
 import type { GraphIR as ChantGraphIR } from "@intentius/chant";
 
@@ -102,6 +103,10 @@ const made: string[] = [];
 afterAll(() => {
   for (const d of made) rmSync(d, { recursive: true, force: true });
 });
+
+// #307 put a per-member source-IR cache behind these reads; it is process-wide,
+// so one test's warm members must not be another's.
+beforeEach(() => resetMemberIrCache());
 
 /** A miniature of the flux-estate demo on disk: a control plane and an app
  * project under one repo root, the app's `manifests/` really there, and a
@@ -475,6 +480,68 @@ describe("estate reads are pooled, not fanned out unbounded (#295)", () => {
     const fallen = est.ir.nodes.find((n) => n.id === "alpha/alpha-src")!;
     expect((fallen.attrs as { _unobserved?: string })._unobserved).toBe("cluster unreachable");
     expect(maxInFlight).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #307 — the warm estate read. #295 bounded the fan-out and left the latency
+// alone: the total work was still one whole chant process per member per read,
+// and ~85% of each is spawn plus chant's own module load. Source reads now go
+// through `memberIr` (src/member-ir.ts); the live pass deliberately does not.
+// These prove that split at the estate level — the unit-level invalidation rule
+// is covered in member-ir.test.ts.
+// ---------------------------------------------------------------------------
+
+describe("estate reads reuse an unchanged member's source IR (#307)", () => {
+  it("composeEstate shells nothing on a second read of source that did not move", async () => {
+    const { controlPlane, appB } = fixtureEstate();
+    vi.mocked(graphIr).mockReset();
+    vi.mocked(graphIr).mockImplementation((async (dir: string) => stack(dir === appB ? "b" : "cp")) as never);
+
+    const first = await composeEstate([controlPlane, appB]);
+    expect(graphIr).toHaveBeenCalledTimes(2);
+    const second = await composeEstate([controlPlane, appB]);
+    expect(graphIr).toHaveBeenCalledTimes(2);
+    expect(second.nodes.map((n) => n.id).sort()).toEqual(first.nodes.map((n) => n.id).sort());
+  });
+
+  it("composeEstateOverlay re-reads the cluster every time and the #221 bindings only once — half its spawns were never about the cluster", async () => {
+    const { controlPlane, appB } = fixtureEstate();
+    const source: Record<string, unknown> = {
+      [controlPlane]: controlPlaneIr(kustomization("./example-flux-estate/app-b/manifests", "app-b")),
+      [appB]: appBIr(),
+    };
+    vi.mocked(graphIr).mockReset();
+    vi.mocked(graphIr).mockImplementation((async (dir: string) => JSON.parse(JSON.stringify(source[dir]))) as never);
+
+    const liveCalls = (): number =>
+      vi.mocked(graphIr).mock.calls.filter(([, o]) => (o as GraphOptions | undefined)?.live).length;
+    const srcCalls = (): number =>
+      vi.mocked(graphIr).mock.calls.filter(([, o]) => !(o as GraphOptions | undefined)?.live).length;
+
+    const first = await composeEstateOverlay([controlPlane, appB], { env: "local" }, (ir) => ir);
+    expect([srcCalls(), liveCalls()]).toEqual([2, 2]);
+
+    const second = await composeEstateOverlay([controlPlane, appB], { env: "local" }, (ir) => ir);
+    // The bindings pass is source-only and the source has not moved: no new
+    // process. The live pass is a cluster read and always is one.
+    expect([srcCalls(), liveCalls()]).toEqual([2, 4]);
+    // Same picture, and the same join — a cached binding is still a binding.
+    expect(second.ir.nodes.map((n) => n.id).sort()).toEqual(first.ir.nodes.map((n) => n.id).sort());
+    expect(second.joined).toEqual([{ name: "app-b", namespace: "app-b" }]);
+  });
+
+  it("re-reads the member whose source moved and no other", async () => {
+    const { controlPlane, appB } = fixtureEstate();
+    vi.mocked(graphIr).mockReset();
+    vi.mocked(graphIr).mockImplementation((async (dir: string) => stack(dir === appB ? "b" : "cp")) as never);
+
+    await composeEstate([controlPlane, appB]);
+    expect(graphIr).toHaveBeenCalledTimes(2);
+    writeFileSync(join(appB, "src", "app.ts"), "export const edited = true;\n");
+    await composeEstate([controlPlane, appB]);
+    expect(vi.mocked(graphIr).mock.calls.filter(([dir]) => dir === appB)).toHaveLength(2);
+    expect(vi.mocked(graphIr).mock.calls.filter(([dir]) => dir === controlPlane)).toHaveLength(1);
   });
 });
 
