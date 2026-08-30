@@ -710,6 +710,45 @@ try {
   await page.waitForTimeout(100);
   check("⤢ fit still resets the view", (await viewBox()) === vbBeforePan);
 
+  // ---- #284 item 2: the run playhead panel + the pending gate card ----------
+  // The stub's /api/ops hands back a RunState with two settled steps and a
+  // pending gate (smoke/stub.mjs), which is what the SPA hydrates from on load
+  // — the "behold restarted while a gate was still waiting" case. What's
+  // asserted is the panel's contract: an honest verdict, the settled steps, and
+  // the gate as a first-class card whose Approve is the EXISTING delegated
+  // op-signal write.
+  await page.click('#panel-tabs button[data-tab="deploy"]');
+  await page.waitForTimeout(150);
+  const playhead = page.locator(".run-playhead");
+  check("the playhead panel renders from the hydrated run state", (await playhead.count()) === 1);
+  const verdict = await page.locator(".run-verdict").innerText();
+  check("…and doesn't claim to have watched a run it didn't start", verdict.includes("didn't start the run"));
+  check("the settled steps are listed, with their durations", (await page.locator(".run-step").count()) === 2);
+  check("…and a step reads as what it did", (await page.locator(".run-step").first().innerText()).includes("Plan · lifecycleDiff"));
+
+  const gateCardEl = page.locator(".run-gate");
+  check("a pending gate renders as its own card", (await gateCardEl.count()) === 1);
+  const gateText = await gateCardEl.innerText();
+  check("…naming the signal", gateText.includes("approve-promote"));
+  check("…its description", gateText.includes("Approve the prod promotion"));
+  check("…and since when it has been waiting", gateText.includes("2026-08-29T18:00:12.000Z"));
+  const approveBtn = page.locator(".run-gate button.approve");
+  check("the card offers Approve", (await approveBtn.count()) === 1);
+  check(
+    "…and says out loud that it is a delegated signal, not behold acting",
+    (await approveBtn.getAttribute("title")).includes("behold never approves on its own"),
+  );
+  await page.screenshot({ path: join(SHOTS, "9-playhead.png") });
+
+  await approveBtn.click();
+  await page.waitForTimeout(400);
+  check(
+    "Approve posts the EXISTING op-signal route",
+    server.signalPosts.some((p) => p.method === "POST" && p.path === "/api/ops/prod-promote/signal/approve-promote"),
+  );
+  check("…and the card clears once the gate is no longer pending", (await page.locator(".run-gate").count()) === 0);
+  check("…while the settled steps stay on screen", (await page.locator(".run-step").count()) === 2);
+
   // ---- #254: the carve walkthrough, driven end to end -----------------------
   // A second stub in carve mode (smoke/stub.mjs `{carve: true}`) serving the
   // REAL committed report through the REAL lens, and the two POST steps canned

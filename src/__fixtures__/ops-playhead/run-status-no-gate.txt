@@ -1,0 +1,8 @@
+[1mOp: prod-promote[0m
+  Workflow ID : chant-op-prod-promote
+  Run ID      : 0198f2c1-6c2a-7a41-9d55-3f0a1b2c3d4e
+  Status      : COMPLETED
+  Task Queue  : behold-writes
+  Started     : 2026-08-29T18:00:00.000Z
+  Closed      : 2026-08-29T18:04:31.000Z
+  Activities  : 3/3 completed

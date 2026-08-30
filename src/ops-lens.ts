@@ -297,6 +297,35 @@ function placeSteps(op: OpIr): Placed[] {
   return out;
 }
 
+/**
+ * One step as the lens places it — the node id its card carries, and where the
+ * step sits in the Op.
+ *
+ * Exported so the run playhead (#284 item 2, src/run-playhead.ts) joins a run's
+ * StepRecords to the very ids this lens draws instead of recomputing the id
+ * rule and drifting from it. `phase` is flattened to its name (the run records
+ * carry a phase NAME, not the phase object) and `parallel` rides along, because
+ * a parallel phase's steps settle in no guaranteed order.
+ */
+export interface PlacedStep {
+  id: string;
+  step: OpIrStep;
+  phase: string;
+  parallel: boolean;
+  when: "phases" | "onFailure";
+}
+
+/** {@link placeSteps}, flattened for readers outside this module. */
+export function opPlacedSteps(op: OpIr): PlacedStep[] {
+  return placeSteps(op).map((p) => ({
+    id: p.id,
+    step: p.step,
+    phase: p.phase.name,
+    parallel: Boolean(p.phase.parallel),
+    when: p.when,
+  }));
+}
+
 function nodeFor(op: OpIr, placed: Placed, guards: string | undefined): IRNode {
   const { step, phase, when } = placed;
   const common = {
@@ -452,23 +481,29 @@ export function opsToIr(ops: OpIr[]): GraphIR {
 export function opCardFields(node: { attrs: Record<string, unknown> }): Array<{ label: string; value: string }> | undefined {
   const step = node.attrs._step;
   const phase = typeof node.attrs.phase === "string" ? node.attrs.phase : undefined;
-  if (step === "gate") {
-    return [
-      { label: "gate", value: String(node.attrs.gate ?? "") },
-      { label: "timeout", value: String(node.attrs.timeout ?? "") },
-    ];
-  }
-  if (step === "effect") {
-    return [
-      { label: "effect", value: String(node.attrs.effect ?? "") },
-      ...(phase ? [{ label: "phase", value: phase }] : []),
-    ];
-  }
-  if (step !== "activity") return undefined;
-  return [
-    ...(phase ? [{ label: "phase", value: phase }] : []),
-    ...(typeof node.attrs.profile === "string" ? [{ label: "profile", value: node.attrs.profile }] : []),
-  ];
+  const declared =
+    step === "gate"
+      ? [
+          { label: "gate", value: String(node.attrs.gate ?? "") },
+          { label: "timeout", value: String(node.attrs.timeout ?? "") },
+        ]
+      : step === "effect"
+        ? [
+            { label: "effect", value: String(node.attrs.effect ?? "") },
+            ...(phase ? [{ label: "phase", value: phase }] : []),
+          ]
+        : step === "activity"
+          ? [
+              ...(phase ? [{ label: "phase", value: phase }] : []),
+              ...(typeof node.attrs.profile === "string" ? [{ label: "profile", value: node.attrs.profile }] : []),
+            ]
+          : undefined;
+  if (!declared) return undefined;
+  // The playhead (#284 item 2, src/run-playhead.ts) leads when there IS run
+  // state: once a step has settled, what it did outranks what it was declared
+  // as. Nothing paints `run` on an unrun track, so this is purely additive.
+  const run = typeof node.attrs.run === "string" ? node.attrs.run : undefined;
+  return run ? [{ label: "run", value: run }, ...declared.slice(0, 1)] : declared;
 }
 
 /**

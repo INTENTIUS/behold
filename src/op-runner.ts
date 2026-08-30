@@ -11,6 +11,17 @@ import type { CiPipeline } from "./chant.ts";
 import { extractPrUrl } from "./adopt.ts";
 import { parseProgressLine, applyProgressReducer, initialApplyProgress, type ApplyProgressState } from "./apply.ts";
 import { pipelineProgress, foldPipelineLine, finishPipelineProgress, type PipelineProgressState } from "./ci-run.ts";
+import {
+  parseRunProgressLine,
+  recordLine,
+  initialRunState,
+  runStarted,
+  runRecord,
+  runEnded,
+  runGate,
+  type RunState,
+  type RunStatusResult,
+} from "./run-playhead.ts";
 import type { Broadcaster } from "./events.ts";
 
 export interface OpRunnerDeps {
@@ -30,6 +41,14 @@ export class OpRunner {
    * before the first event lands so a reload between trigger and first event
    * doesn't show the PREVIOUS run's stale terminal state). */
   private lastApplyProgress: ApplyProgressState = initialApplyProgress;
+  /** The run playhead (#284 item 2): the settled StepRecords of the last Op
+   * `trigger()` started, plus the last `gateState` answer. Kept after the run
+   * ends and across renders for the same reason `lastApplyProgress` is — a
+   * client opening the ops lens mid-run (or after a reload) hydrates the
+   * playhead instead of starting blank. In-process only: a run started
+   * elsewhere is invisible here, and `chant run status` (src/server.ts's
+   * `/api/ops/:name/status`) is what answers for one. */
+  private lastRunState: RunState = initialRunState;
 
   constructor(private deps: OpRunnerDeps) {}
 
@@ -50,6 +69,37 @@ export class OpRunner {
     return this.lastApplyProgress;
   }
 
+  /** The run playhead's model (#284 item 2) — `initialRunState` until an Op has
+   * been triggered this session. */
+  get runState(): RunState {
+    return this.lastRunState;
+  }
+
+  /**
+   * Fold a `chant run status <name>` read (src/run-playhead.ts's
+   * `readRunStatus`) into the playhead, and broadcast it.
+   *
+   * The gate is a workflow QUERY, not part of the record stream, so it can only
+   * arrive this way. A read for an Op other than the one being watched is
+   * returned to the caller but not folded — one playhead, one Op, and silently
+   * re-pointing it at whatever was last polled would make the picture lie about
+   * which run it shows. A read arriving before anything has run this session
+   * adopts the Op: a gate pending on a run behold didn't start is exactly the
+   * case the pending card exists for.
+   */
+  noteGate(op: string, result: RunStatusResult): RunState {
+    if (this.lastRunState.op !== null && this.lastRunState.op !== op) return this.lastRunState;
+    const base = this.lastRunState.op === op ? this.lastRunState : { ...initialRunState, op, mode: "temporal" as const };
+    const next = runGate(base, result);
+    // Broadcast only a CHANGED answer. A client asks when it opens the ops lens,
+    // and the broadcast is what makes it re-pull that lens — so an unchanged
+    // answer that still broadcast would have the two chasing each other.
+    const changed = JSON.stringify(next) !== JSON.stringify(this.lastRunState);
+    this.lastRunState = next;
+    if (changed) this.emitRun();
+    return this.lastRunState;
+  }
+
   /**
    * Start `chant run <name>` unless one is already running (the Sync/Adopt/auto-
    * sync path). `cwd` is the Op's own project dir (#31 multi-estate); defaults to
@@ -59,9 +109,45 @@ export class OpRunner {
    * set it from the Op's declared gate: chant refuses a gated Op outright in
    * local mode ("gates and schedules need a durable runtime"), so without the
    * flag a gated Op could never run from behold at all.
+   *
+   * Either way the run is asked for structured per-step records (#284 item 2,
+   * chant#1676) — `--progress-json` streams one NDJSON `StepRecord` per settled
+   * step on the durable path; `--json` prints the whole `OpRunResult` at the end
+   * on the local one. Same record shape, which is what lets one playhead render
+   * both. `--json` replaces chant's own human per-step summary on the local
+   * path, so each parsed record is re-emitted to the `op` now-line
+   * ({@link recordLine}) and the operator loses no narration.
    */
   trigger(name: string, opEnv?: string, cwd?: string, temporal?: boolean): boolean {
-    return this.start(temporal ? ["run", name, "--temporal"] : ["run", name], name, opEnv, cwd);
+    if (this.current) return false;
+    const mode = temporal ? "temporal" : "local";
+    const args = temporal ? ["run", name, "--temporal", "--progress-json"] : ["run", name, "--json"];
+    this.lastRunState = runStarted(name, mode, new Date().toISOString());
+    this.emitRun();
+    return this.start(
+      args,
+      name,
+      opEnv,
+      cwd,
+      (line) => {
+        const records = parseRunProgressLine(line);
+        if (!records) return false; // not progress — start() broadcasts it as a raw "op" line
+        for (const record of records) {
+          this.lastRunState = runRecord(this.lastRunState, record);
+          this.deps.broadcaster.emit("op", recordLine(record));
+        }
+        this.emitRun();
+        return true; // consumed — start() skips the raw "op" broadcast for this line
+      },
+      (code) => {
+        this.lastRunState = runEnded(this.lastRunState, code, new Date().toISOString());
+        this.emitRun();
+      },
+    );
+  }
+
+  private emitRun(): void {
+    this.deps.broadcaster.emit("run", JSON.stringify(this.lastRunState));
   }
 
   /**
@@ -219,6 +305,10 @@ export class OpRunner {
    * fully handled that line (apply()'s progress-JSON parsing) — `start()` then
    * skips its own `op`/`pr` broadcast for that one line, leaving every other
    * line's raw-log fallback untouched.
+   *
+   * `onExit` (the run playhead, #284 item 2) sees the exit code the moment the
+   * process ends — the only signal that separates "the run finished" from "the
+   * stream stopped", and the reason the playhead never has to infer completion.
    */
   private start(
     args: string[],
@@ -226,6 +316,7 @@ export class OpRunner {
     opEnv?: string,
     cwd?: string,
     onLine?: (line: string) => boolean,
+    onExit?: (code: number) => void,
   ): boolean {
     if (this.current) return false;
     const { projectDir, broadcaster } = this.deps;
@@ -239,6 +330,7 @@ export class OpRunner {
     this.current = label;
     void op.done.then((code) => {
       broadcaster.emit("op", `■ ${label} exited ${code}`);
+      onExit?.(code);
       // Release the running-guard the instant the Op PROCESS ends. The post-op
       // frame capture is a live `chant graph --live` query that can take many
       // seconds against a slow/flaky emulator; it must NOT keep the guard held

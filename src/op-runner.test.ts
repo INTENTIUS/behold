@@ -177,3 +177,119 @@ describe("OpRunner.apply", () => {
     expect(runner.applyProgress).toEqual({ status: "idle", waves: [], components: [] });
   });
 });
+
+// #284 item 2 — the run playhead: trigger() asks chant for structured per-step
+// records, folds them, and broadcasts a `run` event on the existing
+// Broadcaster (the same channel `apply` already rides). No parallel plumbing.
+describe("OpRunner.trigger — the run playhead", () => {
+  beforeEach(() => {
+    streamMock.mockClear();
+    lastArgs = [];
+    lastOnLine = undefined;
+  });
+
+  it("asks the durable path to stream StepRecords, and the local one to print them", () => {
+    const runner = makeRunner(() => {});
+    runner.trigger("prod-promote", "prod", "/proj", true);
+    expect(lastArgs).toEqual(["run", "prod-promote", "--temporal", "--progress-json"]);
+    resolveDone(0);
+
+    const other = makeRunner(() => {});
+    other.trigger("floci-apply");
+    expect(lastArgs).toEqual(["run", "floci-apply", "--json"]);
+  });
+
+  it("folds one NDJSON StepRecord and broadcasts the whole playhead as a `run` event", () => {
+    const broadcaster = new Broadcaster();
+    const runner = new OpRunner({ projectDir: "/proj", broadcaster, onDone: () => {} });
+    const seen: Array<{ type: string; data: string }> = [];
+    broadcaster.subscribe((type, data) => seen.push({ type, data }));
+
+    runner.trigger("playhead-probe", undefined, undefined, true);
+    lastOnLine!('{"phase":"Build","fn":"chantBuild","status":"ok","durationMs":1000}');
+
+    expect(runner.runState.records).toEqual([{ phase: "Build", fn: "chantBuild", status: "ok", durationMs: 1000 }]);
+    const runEvents = seen.filter((e) => e.type === "run");
+    // One at trigger (so a client reloading mid-run sees "running" at once),
+    // one per record.
+    expect(runEvents).toHaveLength(2);
+    expect(JSON.parse(runEvents[1]!.data)).toEqual(runner.runState);
+  });
+
+  it("re-narrates each settled record on the now-line, so --json costs no output", () => {
+    const broadcaster = new Broadcaster();
+    const runner = new OpRunner({ projectDir: "/proj", broadcaster, onDone: () => {} });
+    const seen: string[] = [];
+    broadcaster.subscribe((type, data) => {
+      if (type === "op") seen.push(data);
+    });
+
+    runner.trigger("playhead-probe", undefined, undefined, true);
+    lastOnLine!('{"phase":"Deploy","fn":"shellCmd","status":"ok","durationMs":5}');
+    expect(seen).toContain("✓ Deploy · shellCmd — 5ms");
+    // ...and the raw JSON line itself never reaches the now-line.
+    expect(seen.some((l) => l.includes('"durationMs"'))).toBe(false);
+  });
+
+  it("still relays a non-record line to the `op` channel — an activity's own stdout", () => {
+    const broadcaster = new Broadcaster();
+    const runner = new OpRunner({ projectDir: "/proj", broadcaster, onDone: () => {} });
+    const seen: string[] = [];
+    broadcaster.subscribe((type, data) => {
+      if (type === "op") seen.push(data);
+    });
+
+    runner.trigger("floci-apply");
+    lastOnLine!("> chant build src --lexicon aws");
+    expect(seen).toContain("> chant build src --lexicon aws");
+    expect(runner.runState.records).toEqual([]);
+  });
+
+  it("a clean exit reads as completion; a verdictless one reads as a lost stream", async () => {
+    const runner = makeRunner(() => {});
+    runner.trigger("playhead-probe", undefined, undefined, true);
+    lastOnLine!('{"phase":"Build","fn":"chantBuild","status":"ok","durationMs":1000}');
+    resolveDone(0);
+    await Promise.resolve();
+    expect(runner.runState.status).toBe("ok");
+
+    const lost = makeRunner(() => {});
+    lost.trigger("playhead-probe", undefined, undefined, true);
+    lastOnLine!('{"phase":"Build","fn":"chantBuild","status":"ok","durationMs":1000}');
+    resolveDone(137);
+    await Promise.resolve();
+    expect(lost.runState.status).toBe("lost");
+    expect(lost.runState.records).toHaveLength(1); // frozen at last-settled
+  });
+
+  it("a rejected trigger (guard busy) leaves the playhead on screen untouched", () => {
+    const runner = makeRunner(() => {});
+    runner.trigger("playhead-probe", undefined, undefined, true);
+    lastOnLine!('{"phase":"Build","fn":"chantBuild","status":"ok","durationMs":1000}');
+    expect(runner.trigger("other")).toBe(false);
+    expect(runner.runState.op).toBe("playhead-probe");
+    expect(runner.runState.records).toHaveLength(1);
+  });
+
+  it("folds a gateState read, and adopts an Op nothing has run this session", () => {
+    const runner = makeRunner(() => {});
+    const gate = { signalName: "approve-promote", since: "2026-08-29T18:00:12.000Z" };
+    const state = runner.noteGate("prod-promote", { ok: true, read: { op: "prod-promote", gate } });
+    expect(state).toMatchObject({ op: "prod-promote", mode: "temporal", gate });
+
+    // A read for a DIFFERENT Op doesn't re-point the playhead at it.
+    runner.noteGate("other-op", { ok: true, read: { op: "other-op", gate: null } });
+    expect(runner.runState.op).toBe("prod-promote");
+    expect(runner.runState.gate).toEqual(gate);
+  });
+
+  it("a gate refusal clears the gate and keeps its reason — never a silent 'nothing pending'", () => {
+    const runner = makeRunner(() => {});
+    runner.noteGate("prod-promote", {
+      ok: false,
+      refusal: { error: 'No Temporal run state for "prod-promote" — nope', code: "no-temporal", remedy: "r" },
+    });
+    expect(runner.runState.gate).toBeNull();
+    expect(runner.runState.gateNote).toContain("No Temporal run state");
+  });
+});

@@ -1,0 +1,199 @@
+{
+  "formatVersion": "1.0",
+  "name": "playhead-probe",
+  "overview": "Harmless build/echo/httpCheck Op — a real StepRecord stream for behold's playhead fixtures",
+  "taskQueue": "behold-writes",
+  "depends": [],
+  "searchAttributes": {},
+  "phases": [
+    {
+      "name": "Build",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "chantBuild",
+          "args": {
+            "path": ".",
+            "script": "build"
+          },
+          "profile": "fastIdempotent"
+        }
+      ]
+    },
+    {
+      "name": "Deploy",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "shellCmd",
+          "args": {
+            "cmd": "echo deploy-a"
+          },
+          "profile": "fastIdempotent"
+        },
+        {
+          "kind": "activity",
+          "fn": "shellCmd",
+          "args": {
+            "cmd": "echo deploy-b"
+          },
+          "profile": "fastIdempotent"
+        }
+      ]
+    },
+    {
+      "name": "Fanout",
+      "parallel": true,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "shellCmd",
+          "args": {
+            "cmd": "echo left"
+          },
+          "profile": "fastIdempotent"
+        },
+        {
+          "kind": "activity",
+          "fn": "shellCmd",
+          "args": {
+            "cmd": "echo right"
+          },
+          "profile": "fastIdempotent"
+        }
+      ]
+    },
+    {
+      "name": "Verify",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "httpCheck",
+          "args": {
+            "url": "http://127.0.0.1:1/",
+            "retries": 1,
+            "intervalMs": 50
+          },
+          "profile": "fastIdempotent"
+        }
+      ]
+    },
+    {
+      "name": "Never",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "httpCheck",
+          "args": {
+            "url": "http://127.0.0.1:1/never",
+            "retries": 1,
+            "intervalMs": 50
+          },
+          "profile": "fastIdempotent"
+        }
+      ]
+    }
+  ],
+  "onFailure": [
+    {
+      "name": "Rollback",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "shellCmd",
+          "args": {
+            "cmd": "echo rollback"
+          },
+          "profile": "fastIdempotent"
+        }
+      ]
+    }
+  ],
+  "activityProfiles": {
+    "fastIdempotent": {
+      "startToCloseTimeout": "5m",
+      "retry": {
+        "maximumAttempts": 3,
+        "initialInterval": "5s",
+        "backoffCoefficient": 2
+      }
+    }
+  },
+  "activityContracts": {
+    "httpCheck": {
+      "args": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "status": {
+            "type": "number"
+          },
+          "contains": {
+            "type": "string"
+          },
+          "retries": {
+            "type": "number"
+          },
+          "intervalMs": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false
+      },
+      "returns": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "shellCmd": {
+      "args": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "cmd": {
+            "type": "string"
+          },
+          "env": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cmd"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}
