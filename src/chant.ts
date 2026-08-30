@@ -759,6 +759,25 @@ export type UnobservedReason = "read-failed" | "no-credentials" | "no-binding" |
  * above. Total: `effectReason` below is always one of these when set. */
 export type EffectFireReason = "receipt-absent" | "receipt-stale" | "unresolved-input";
 
+/** How much applying one pending change hurts (chant#1665, shipped chant 0.51)
+ * — reproduced from chant's own `Disruption` (lifecycle/disruption.ts), same
+ * as the two reasons above. Total: `disruption` below is always one of these
+ * when set.
+ *
+ * - `in-place` — the provider mutates the existing resource. No new identity.
+ * - `rolling` — the resource survives, its workload is replaced incrementally
+ *   (a Deployment's pod template changing).
+ * - `replace` — a new resource is built and the old one removed; the physical
+ *   id changes.
+ * - `destroy` — replacement that removes the old resource FIRST, so there is a
+ *   window with nothing in it.
+ * - `unknown` — nobody could say. chant's default and its ONLY fallback: no
+ *   classifier, a classifier that stayed silent, threw, or answered off-
+ *   vocabulary all land here, which is why there is no path to an accidental
+ *   `in-place`. Read it as "unclassified", never as "probably fine" — behold
+ *   must never paint it the way it paints `in-place`. */
+export type Disruption = "in-place" | "rolling" | "replace" | "destroy" | "unknown";
+
 /** One entity-level entry from `chant lifecycle plan` — chant's own
  * `ChangeSetEntry` (lifecycle/change-set.ts), reproduced here rather than
  * imported so this module doesn't reach past chant's public `@intentius/chant`
@@ -800,7 +819,16 @@ export type EffectFireReason = "receipt-absent" | "receipt-stale" | "unresolved-
  * chant's own `ACTION_ORDER` (it sorts `effect` with create/update/delete, not
  * with the inert noop/runtime/unobserved tail). chant excludes it from the
  * GitLab MR widget only because that widget has three columns and no fourth to
- * put it in — not because a fire is a non-change. */
+ * put it in — not because a fire is a non-change.
+ *
+ * `disruption` (chant#1665, chant 0.51) is additive in the other direction: a
+ * new FIELD rather than a new action, and only on `update` entries — every
+ * other action carries its blast radius in the action itself. A chant
+ * predating it never sets it, so an older plan reads exactly as it did
+ * before. That backward compatibility is also the trap: absence means the
+ * plan was never classified, NOT that the change is safe, so nothing
+ * downstream may treat a missing `disruption` as `in-place` (src/reconcile.ts
+ * counts only entries that carry a verdict; web/app.js tints only those). */
 export interface LifecyclePlanEntry {
   name: string;
   type?: string;
@@ -834,6 +862,16 @@ export interface LifecyclePlanEntry {
   /** Human-readable backing for `effectReason` (the digests that differ, the
    * unresolved path). */
   effectDetail?: string;
+  /** What applying this change costs (chant#1665) — set only when `action ===
+   * "update"`, and only by a chant that classifies. The verdict is the
+   * owning lexicon's, never chant core's and never behold's. */
+  disruption?: Disruption;
+  /** The attribute paths that forced `disruption` — the create-only property
+   * behind a `replace`, say. A subset of `deltas`' `path`s. */
+  disruptionBecause?: string[];
+  /** Human-readable backing for `disruption`: the spec knowledge behind the
+   * call, or why there is none (an `unknown` says which). */
+  disruptionDetail?: string;
 }
 
 /** `chant lifecycle plan <env> --live --json`'s bare output shape — chant's

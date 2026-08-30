@@ -328,6 +328,30 @@ try {
   await page.keyboard.press("Escape");
   check("palette closes", (await page.locator("#palette.on").count()) === 0);
 
+  // #284 / chant#1665: the reconcile step's disruption severity. The stub's
+  // plan has two pending changes in `worker`, one of which replaces the
+  // resource. Both halves are asserted, because the point is that neither
+  // carries the meaning alone: the WORD is on the badge and the row (a
+  // screen reader, a monochrome terminal theme, and a colour-blind reader all
+  // get it), and the tone only reinforces it.
+  await page.click('#panel-tabs button[data-tab="deploy"]');
+  await page.click('#dial .dial-step:has-text("reconcile")');
+  await page.waitForSelector("#dial .dial-detail", { timeout: 10000 });
+  const dialText = await page.locator("#dial").innerText();
+  check("the dial badge re-cuts pending by disruption", /2 pending .*1 replace/.test(dialText));
+  check("the row names the worst verdict as a word", /worker: 2 · replace/.test(dialText));
+  const rowInk = await page.locator('#dial .dial-detail span:has-text("worker")').first().evaluate((el) => getComputedStyle(el).color);
+  const degraded = await page.evaluate(() => {
+    const probe = document.createElement("span");
+    probe.style.color = "var(--degraded)";
+    document.body.appendChild(probe);
+    const c = getComputedStyle(probe).color;
+    probe.remove();
+    return c;
+  });
+  check("a replacing row takes the palette's strong tone, not a colour of its own", rowInk === degraded);
+  await page.screenshot({ path: join(SHOTS, "4b-disruption.png") });
+
   // Motion signature 2 (#229): behold boots on the `local` overlay, where the
   // stub reports `worker` deployed; dropping to the source graph flips it back
   // to pending. The one node whose status changed pulses — in the colour it

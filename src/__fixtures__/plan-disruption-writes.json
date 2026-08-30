@@ -1,0 +1,140 @@
+{
+  "env": "prod",
+  "entries": [
+    {
+      "name": "sgApp",
+      "type": "AWS::EC2::SecurityGroup",
+      "lexicon": "aws",
+      "physicalId": "sg-e77a1d32adfabc27e",
+      "action": "update",
+      "evidence": {
+        "declared": true,
+        "inSnapshot": true,
+        "live": true,
+        "observed": true
+      },
+      "deltas": [
+        {
+          "path": "physicalId",
+          "oldValue": "sg-5ebd4939412dfeb84",
+          "newValue": "sg-e77a1d32adfabc27e"
+        },
+        {
+          "path": "lastUpdated",
+          "oldValue": "2026-08-30T03:44:44.384948258Z",
+          "newValue": "2026-08-30T03:44:56.254452388Z"
+        },
+        {
+          "path": "attributes.Description",
+          "oldValue": "behold app tier",
+          "newValue": "behold app tier (rev 2)"
+        },
+        {
+          "path": "attributes.GroupId",
+          "oldValue": "sg-5ebd4939412dfeb84",
+          "newValue": "sg-e77a1d32adfabc27e"
+        }
+      ],
+      "ownership": "foreign",
+      "disruption": "in-place",
+      "disruptionDetail": "no create-only property of AWS::EC2::SecurityGroup changed"
+    },
+    {
+      "name": "sgWeb",
+      "type": "AWS::EC2::SecurityGroup",
+      "lexicon": "aws",
+      "physicalId": "sg-377317e03fa240e58",
+      "action": "update",
+      "evidence": {
+        "declared": true,
+        "inSnapshot": true,
+        "live": true,
+        "observed": true
+      },
+      "deltas": [
+        {
+          "path": "physicalId",
+          "oldValue": "sg-15f88e5a7e77ca662",
+          "newValue": "sg-377317e03fa240e58"
+        },
+        {
+          "path": "lastUpdated",
+          "oldValue": "2026-08-30T03:44:44.384973299Z",
+          "newValue": "2026-08-30T03:44:56.254484472Z"
+        },
+        {
+          "path": "attributes.GroupId",
+          "oldValue": "sg-15f88e5a7e77ca662",
+          "newValue": "sg-377317e03fa240e58"
+        },
+        {
+          "path": "attributes.GroupName",
+          "oldValue": "behold-web-sg",
+          "newValue": "behold-web-sg-v2"
+        }
+      ],
+      "ownership": "foreign",
+      "disruption": "replace",
+      "disruptionBecause": [
+        "attributes.GroupName"
+      ],
+      "disruptionDetail": "GroupName is create-only — CloudFormation builds a new AWS::EC2::SecurityGroup and removes the old one"
+    },
+    {
+      "name": "store",
+      "type": "AWS::S3::Bucket",
+      "lexicon": "aws",
+      "physicalId": "behold-floci-demo-v2",
+      "action": "update",
+      "evidence": {
+        "declared": true,
+        "inSnapshot": true,
+        "live": true,
+        "observed": true
+      },
+      "deltas": [
+        {
+          "path": "physicalId",
+          "oldValue": "behold-floci-demo",
+          "newValue": "behold-floci-demo-v2"
+        },
+        {
+          "path": "lastUpdated",
+          "oldValue": "2026-08-30T03:44:44.384985883Z",
+          "newValue": "2026-08-30T03:44:56.254495888Z"
+        }
+      ],
+      "ownership": "foreign",
+      "disruption": "in-place",
+      "disruptionDetail": "no configured property differs — only status, identity, or read-only attributes changed"
+    },
+    {
+      "name": "storePolicy",
+      "type": "AWS::S3::BucketPolicy",
+      "lexicon": "aws",
+      "physicalId": "bucket-policy-396fedab",
+      "action": "update",
+      "evidence": {
+        "declared": true,
+        "inSnapshot": true,
+        "live": true,
+        "observed": true
+      },
+      "deltas": [
+        {
+          "path": "physicalId",
+          "oldValue": "bucket-policy-92b20509",
+          "newValue": "bucket-policy-396fedab"
+        },
+        {
+          "path": "lastUpdated",
+          "oldValue": "2026-08-30T03:44:44.385049383Z",
+          "newValue": "2026-08-30T03:44:56.254569930Z"
+        }
+      ],
+      "ownership": "foreign",
+      "disruption": "in-place",
+      "disruptionDetail": "no configured property differs — only status, identity, or read-only attributes changed"
+    }
+  ]
+}

@@ -1683,6 +1683,12 @@ export function createApp(
   // `resourcesByComponent`) and counts. The entity graph fetched for that
   // correlation mirrors `/api/resources`'s own call shape (`live:true,
   // overlay:true`) so both facets see the same source-location map.
+  //
+  // chant#1665 (#284) adds severity to that count without adding a bucket: an
+  // `update` carrying `disruption: "replace"` is still one pending change, and
+  // `summarizePlan` re-cuts the same pending set by level so the dial's badge
+  // and rows can say which of the N rebuild the resource. Zeros against a
+  // chant that doesn't classify — the route's shape is otherwise unchanged.
   app.get("/api/reconcile", async (c) => {
     const opts = optsFromQuery(new URL(c.req.url), tierEnvVar, cfg.projectDir);
     const env = opts.env ?? cfg.env;

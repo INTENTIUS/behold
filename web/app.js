@@ -1593,6 +1593,53 @@ function applyOptionLabel(name) {
   return tag ? `${name} — ${tag}` : name;
 }
 
+// Disruption severity (chant#1665, #284) → an existing palette token. No new
+// colours: the drift palette's own two "look at this" tones do the work, which
+// keeps a reconcile row reading the same as the overlay a user just came from.
+// --foreign is the mild one (the yellow an adoptable node wears — go look);
+// --degraded is the strong one (the tone the component dial already spends on
+// a failure). `in-place` gets NO tint: a pending row whose update mutates in
+// place must read exactly as every pending row read before this landed.
+//
+// `unknown` takes the mild tone rather than none. chant's contract is that
+// `unknown` is the default and the ONLY fallback — a silent, broken, or absent
+// classifier all land there — so it means "nobody could say", and painting it
+// like `in-place` would turn "unclassified" into "safe", which is the one
+// reading #1665 exists to prevent.
+const DISRUPTION_VAR = {
+  "in-place": "",
+  rolling: "var(--foreign)",
+  replace: "var(--degraded)",
+  destroy: "var(--degraded)",
+  unknown: "var(--foreign)",
+};
+
+// The word is the carrier; the tone only reinforces it (accessible-ops: colour
+// is never the only thing saying this row is expensive — the same reason the
+// drift panel's dot rows always ship a label beside the dot). These lines are
+// the row tooltip's second half.
+const DISRUPTION_WHY = {
+  "in-place": "the provider mutates the existing resource — no new identity, no window where it is absent",
+  rolling: "the resource survives, but its workload is replaced incrementally — disruptive to what is running",
+  replace: "a new resource is built and the old one removed — the physical id changes",
+  destroy: "the old resource is deleted FIRST, then rebuilt — there is a window with nothing in it",
+  unknown: "no lexicon could classify this change. Unknown is not \"in place\" — go read it",
+};
+
+// The levels worth putting on the dial badge, loudest last. `in-place` is
+// omitted on purpose: it is the "nothing new to say" verdict, and listing it
+// would lengthen the badge without changing what anyone does about it. It is
+// still named in full on any row where it IS the worst verdict, because
+// "classified in-place" and "never classified" have to look different.
+const DISRUPTION_BADGE_LEVELS = ["rolling", "unknown", "replace", "destroy"];
+
+/** The dial button's disruption suffix, e.g. " · 1 replace". Empty against a
+ * chant that doesn't classify (every count 0), so the badge is unchanged. */
+function disruptionBadge(d) {
+  if (!d) return "";
+  return DISRUPTION_BADGE_LEVELS.filter((l) => d[l]).map((l) => ` · ${d[l]} ${l}`).join("");
+}
+
 // Reset the dial's per-target caches (reconcile summary, apply picker/progress,
 // component-name list) when the env/tier/target lens changes — all three are
 // scoped to "whatever target is currently picked", so switching targets must
@@ -1676,9 +1723,14 @@ function renderDial() {
   // chant, so this is a no-op suffix until #1168 ships.
   // chant#1180 (#1077): `runtime` gets the identical treatment — its own
   // count, 0 against a chant predating it.
+  // chant#1665 (#284): the disruption suffix is NOT a fourth count — it's a
+  // re-cut of the `pending` number by what applying it costs, so "4 pending ·
+  // 1 replace" means one of those four rebuilds the resource. Empty against a
+  // chant that doesn't classify, same no-op suffix discipline as the two above.
   const reconcileBtn = button(
     reconcileCache
       ? `reconcile · ${reconcileCache.total} pending` +
+        disruptionBadge(reconcileCache.disruption) +
         (reconcileCache.unobserved ? ` · ${reconcileCache.unobserved} unobserved` : "") +
         (reconcileCache.runtime ? ` · ${reconcileCache.runtime} runtime` : "")
       : "reconcile",
@@ -1886,15 +1938,31 @@ function renderReconcileDetail(r) {
     wrap.textContent = "no pending changes";
     return wrap;
   }
+  // chant#1665 (#284): a row carries the loudest verdict among its pending
+  // changes, as a WORD plus a tone — an update that rebuilds the resource is a
+  // materially different pending item from one that flips a tag, and until now
+  // both read as "worker: 1". A component whose entries carry no verdict (an
+  // older chant, or no `update` among them) gets neither, which is the same row
+  // it drew before — absence is not `in-place`.
+  const severity = (span, level) => {
+    if (!level) return;
+    const tint = DISRUPTION_VAR[level];
+    if (tint) span.style.color = tint;
+    span.textContent += ` · ${level}`;
+    const why = `Worst pending change here: ${level} — ${DISRUPTION_WHY[level]}.`;
+    span.title = span.title ? `${span.title}\n${why}` : why;
+  };
   for (const [component, count] of rows) {
     const span = document.createElement("span");
     span.textContent = `${component}: ${count}`;
+    severity(span, r.disruptionByComponent && r.disruptionByComponent[component]);
     wrap.appendChild(span);
   }
   if (r.uncorrelated) {
     const span = document.createElement("span");
     span.textContent = `${r.uncorrelated} uncorrelated`;
     span.title = "Pending changes that couldn't be mapped to a component by source location.";
+    severity(span, r.disruptionUncorrelated);
     wrap.appendChild(span);
   }
   if (hasUnobserved) {
