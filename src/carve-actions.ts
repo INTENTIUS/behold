@@ -24,6 +24,17 @@
  * anyone's chant source. The demo copy is the user's own scratch directory, and
  * a carve emits into it exactly the way the CLI would.
  *
+ * NO `runCarveApply` LIVES HERE, and one should not be added (#230 M3). Every
+ * guard above would hold for it — a demo copy, a closed-set `--select`, one
+ * output directory — which is exactly why the refusal has to be written down
+ * next to the functions it would sit beside rather than left to be inferred
+ * from its absence. `chant carve apply` resolves the ownership marker that
+ * makes chant the owner of a live resource; the boundary is not that behold
+ * can't run it, it is that behold won't decide when an estate changes hands.
+ * behold renders what the carve manifest RECORDS about an apply
+ * (src/carve-manifest.ts) and echoes the command for a person to retype, the
+ * same posture the Handoff step already takes with `terraform state rm`.
+ *
  * Emit shows `chant lint`, never `chant build` — chant#1637's fold is applied
  * now (chant 0.44.7, chant PR #1640): the emitted bucket carries its folded
  * versioning/public-access-block sub-resources as native props, so `build`

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -128,6 +128,172 @@ describe("GET /api/project — carve mode", () => {
     expect(body.tiers).toBeUndefined();
     expect(body.stacks).toBeUndefined();
     expect(body.carve).toMatchObject({ from: "sample-estate", count: 8 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #230 M3 — the manifest-driven strangler-fig, over the route.
+// ---------------------------------------------------------------------------
+
+/** The sample report plus carve manifests, in one throwaway output dir. The
+ * applied manifest is the REAL one (src/__fixtures__/carve-manifests, whose
+ * provenance src/carve-manifest.test.ts states); `aws_s3_bucket.assets` is an
+ * address both it and the sample estate carry, which is what lets the two
+ * fixtures compose. The second is written here at the emitted stage, because
+ * no real manifest exists for an address this particular report ranks. */
+function servedWithManifests(): ReturnType<typeof carveApp> {
+  const dir = mkdtempSync(join(tmpdir(), "behold-carve-state-"));
+  const report = join(dir, "carve-report.json");
+  writeFileSync(report, readFileSync(FIXTURE, "utf8"));
+  writeFileSync(
+    join(dir, "aws_s3_bucket-assets.carve.json"),
+    readFileSync(join(HERE, "__fixtures__", "carve-manifests", "aws_s3_bucket-assets.carve.json"), "utf8"),
+  );
+  writeFileSync(
+    join(dir, "aws_lambda_function-api.carve.json"),
+    JSON.stringify({
+      version: 1,
+      target: "aws_lambda_function.api",
+      from: "/tmp/carve-fixture/legacy-tf",
+      boundary: {},
+      emit: { source: "tfstate", files: ["/tmp/carve-fixture/out/src/api.ts"], at: "2026-08-30T04:12:44.246Z" },
+    }),
+  );
+  return carveApp(report);
+}
+
+describe("the carve state manifests drive the picture (#230 M3)", () => {
+  it("draws a graduated address in its own band, out of the ranking", async () => {
+    const body = (await (await servedWithManifests().request("/api/graph")).json()) as {
+      ir: GraphIR;
+      svg: string;
+      meta: Record<string, unknown>;
+    };
+    const bands = body.ir.groups.byStack as Record<string, string[]>;
+    expect(Object.keys(bands)[0]).toBe("carved → chant");
+    expect(bands["carved → chant"]).toEqual(["aws_s3_bucket.assets"]);
+    expect(bands["carve now"]).not.toContain("aws_s3_bucket.assets");
+    const carved = body.ir.nodes.find((n) => n.id === "aws_s3_bucket.assets")!;
+    expect(carved.attrs._status).toBe("good");
+    expect(carved.attrs.carve).toBe("carved → chant");
+    expect(carved.attrs.ownedStack).toBe("assets");
+    // Actually drawn, not merely in the IR.
+    expect(body.svg).toContain("carved → chant");
+  });
+
+  it("leaves a partial carve in its band, repainted with the stage's word", async () => {
+    const body = (await (await servedWithManifests().request("/api/graph")).json()) as { ir: GraphIR };
+    const bands = body.ir.groups.byStack as Record<string, string[]>;
+    const partial = body.ir.nodes.find((n) => n.id === "aws_lambda_function.api")!;
+    expect(partial.attrs._status).toBe("accent");
+    expect(partial.attrs.carve).toBe("emitted — not bridged");
+    expect(Object.values(bands).flat()).toContain("aws_lambda_function.api");
+    expect(bands["carved → chant"]).not.toContain("aws_lambda_function.api");
+  });
+
+  it("puts the progress read on the statusbar note, saying where the claim comes from", async () => {
+    const body = (await (await servedWithManifests().request("/api/graph")).json()) as { meta: { note: string } };
+    expect(body.meta.note).toContain("1 of 8 carved");
+    expect(body.meta.note).toContain("2 manifests");
+    expect(body.meta.note).toContain("1 emitted");
+  });
+
+  it("publishes the state on /api/project, with the apply boundary on the wire", async () => {
+    const body = (await (await servedWithManifests().request("/api/project")).json()) as {
+      carve: {
+        state: {
+          manifests: number;
+          progress: { label: string; applied: number; inFlight: number };
+          states: Array<{ target: string; stage: string; graduated: boolean; applyCommand: string }>;
+          apply: { human: boolean; note: string };
+        };
+      };
+    };
+    const state = body.carve.state;
+    expect(state.manifests).toBe(2);
+    expect(state.progress).toMatchObject({ label: "1 of 8 carved", applied: 1, inFlight: 1 });
+    expect(state.states.map((s) => s.stage)).toEqual(["emitted", "applied"]);
+    expect(state.states[0].applyCommand).toContain("chant carve apply");
+    expect(state.states[0].applyCommand).not.toContain("--select");
+    expect(state.apply.human).toBe(true);
+  });
+
+  it("has no apply endpoint — the graduation step is a person, not a POST", async () => {
+    const app = servedWithManifests();
+    for (const path of ["/api/carve/apply", "/api/carve/graduate"]) {
+      const res = await app.request(path, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+      expect(res.status, path).toBe(404);
+    }
+    // …and it isn't advertised either.
+    const api = (await (await app.request("/api")).json()) as { routes: Array<{ path: string }> };
+    expect(api.routes.some((r) => r.path.includes("apply") && r.path.includes("carve"))).toBe(false);
+  });
+
+  it("says nothing about carve state when no manifest exists — the #252 view, unchanged", async () => {
+    const body = (await (await carveApp(FIXTURE).request("/api/graph")).json()) as { ir: GraphIR; meta: { note: string } };
+    expect(Object.keys(body.ir.groups.byStack as Record<string, string[]>)).not.toContain("carved → chant");
+    expect(body.meta.note).not.toContain("Carve state");
+    const project = (await (await carveApp(FIXTURE).request("/api/project")).json()) as {
+      carve: { state: { manifests: number } };
+    };
+    expect(project.carve.state.manifests).toBe(0);
+  });
+});
+
+describe("a real project serve surfaces its carve state without the demo scaffolding (#230 M3)", () => {
+  /** A chant project with a carveout inside it, the way `chant carve emit
+   * --output ./carveout` leaves one. No report, no demo, no stepper. */
+  function carvedProject(): string {
+    const dir = mkdtempSync(join(tmpdir(), "behold-carved-project-"));
+    writeFileSync(join(dir, "chant.config.ts"), 'export default { lexicons: ["aws"] };\n');
+    mkdirSync(join(dir, "carveout"), { recursive: true });
+    for (const f of ["aws_s3_bucket-assets.carve.json", "aws_iam_role-api.carve.json"]) {
+      writeFileSync(join(dir, "carveout", f), readFileSync(join(HERE, "__fixtures__", "carve-manifests", f), "utf8"));
+    }
+    return dir;
+  }
+
+  function projectApp(dir: string) {
+    const broadcaster = new Broadcaster();
+    return createApp(
+      { projectDir: dir, port: 0 },
+      broadcaster,
+      new FrameBuffer(),
+      new OpRunner({ projectDir: dir, broadcaster, onDone: () => {} }),
+    );
+  }
+
+  it("finds the manifests in the project's carveout and publishes what they record", async () => {
+    const dir = carvedProject();
+    try {
+      const body = (await (await projectApp(dir).request("/api/project")).json()) as {
+        carve?: { state: { manifests: number; progress: { label: string }; states: Array<{ target: string; stage: string }> } };
+      };
+      expect(body.carve?.state.manifests).toBe(2);
+      // No report, so there is no denominator to invent.
+      expect(body.carve?.state.progress.label).toBe("1 carved");
+      expect(body.carve?.state.states.map((s) => `${s.target}:${s.stage}`)).toEqual([
+        "aws_iam_role.api:emitted",
+        "aws_s3_bucket.assets:applied",
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("omits `carve` entirely for a project that was never carved — no dead panel", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "behold-uncarved-project-"));
+    writeFileSync(join(dir, "chant.config.ts"), 'export default { lexicons: ["aws"] };\n');
+    try {
+      const body = (await (await projectApp(dir).request("/api/project")).json()) as Record<string, unknown>;
+      expect("carve" in body).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

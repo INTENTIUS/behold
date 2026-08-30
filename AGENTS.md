@@ -78,6 +78,32 @@ To move a resource: confirm its band on `/api/carve`, then run chant's own
 applying the generated survivor rewrites stay a human gate — behold has no
 endpoint that writes Terraform, and adding one would break the invariant below.
 
+### Carve state, from chant's manifests (#230 M3)
+
+chant ≥ 0.52.2 writes `<address>.carve.json` into `carve emit --output`; `carve
+bridge` and `carve apply` add their own records to the same file. behold reads
+those and never writes one, so the progression is on disk rather than in a
+session.
+
+`GET /api/project`'s `carve.state` publishes it: `{manifests, progress:
+{applied, bridged, emitted, inFlight, total, label, detail}, states[], apply:
+{human, note}}`. Each entry carries `target`, `stage`
+(`emitted`/`bridged`/`applied`), `graduated`, `note` and a retypeable
+`applyCommand`. The same field appears on an ordinary `behold serve` whose
+project directory carries a carveout — no report and no demo needed — and is
+absent entirely when nothing has been carved.
+
+In the graph, an `applied` address draws inside the chant member box (keeping
+its Terraform address as its node id) instead of in a band; `emitted` and
+`bridged` stay banded with `attrs._status: "accent"` and the stage in
+`attrs.carve`. Only `applied` means ownership moved.
+
+**There is no `/api/carve/apply`.** `chant carve apply` graduates ownership;
+behold renders what the manifest records and echoes the command. Do not add the
+endpoint — src/carve-manifest.ts `APPLY_IS_HUMAN` is the statement of it, and
+src/carve-actions.ts and src/server.ts both carry the refusal where the route
+would go.
+
 ### The walkthrough (`behold demo carve`, #254)
 
 `behold demo carve` copies a bundled half-migrated estate (a chant project

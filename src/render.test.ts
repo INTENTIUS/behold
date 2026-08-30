@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { renderGraph, renderBanded, renderCarveEstate, renderCarveMorph } from "./render.ts";
+import { carveStateOf } from "./carve-manifest.ts";
 import type { GraphIR } from "@intentius/chant";
 
 // M4: renderGraph gained an explicit `boxes: "byStack"` opt-in for the
@@ -335,6 +336,78 @@ describe("renderCarveEstate — the carve estate frame (#254)", () => {
     expect(w).toBeGreaterThan(0);
     expect(h).toBeGreaterThan(0);
     expect(w / h).toBeLessThan(4);
+  });
+
+  // #230 M3: the same frame, driven by the carve state manifests. The
+  // manifest reader itself is covered in src/carve-manifest.test.ts against
+  // real chant output; these pin what the PICTURE does with it.
+  describe("the manifest-driven strangler-fig (#230 M3)", () => {
+    const state = (target: string, stage: "emitted" | "bridged" | "applied") =>
+      carveStateOf(
+        {
+          version: 1,
+          target,
+          emit: { files: [`/out/src/${target}.ts`], at: "t" },
+          ...(stage !== "emitted" ? { bridge: { at: "t" } } : {}),
+          ...(stage === "applied" ? { apply: { marker: { stack: "s", env: "e" }, at: "t" } } : {}),
+        },
+        "/out/x.carve.json",
+      );
+    const carvedEstate = (states: Map<string, ReturnType<typeof state>>) =>
+      renderCarveEstate(bandedIr, appIr, { tfTitle: "legacy-tf — terraform", appTitle: "app — chant", carved: states });
+
+    it("draws a graduated resource inside the chant box, keeping its Terraform address", () => {
+      const target = bandedIr.nodes[0].id;
+      const { svg, ir } = carvedEstate(new Map([[target, state(target, "applied")]]));
+      const byStack = ir.groups.byStack as Record<string, string[]>;
+      expect(byStack["app — chant"]).toContain(target);
+      expect(byStack["carve now"]).not.toContain(target);
+      // One card, one id — the morph's continuity, and what a restart shows.
+      expect((svg.match(new RegExp(`data-node-id="${target.replace(".", "\\.")}"`, "g")) || []).length).toBe(1);
+    });
+
+    it("puts the progress read on the chant panel's title, where the estate summarizes it", () => {
+      const target = bandedIr.nodes[0].id;
+      const { svg } = carvedEstate(new Map([[target, state(target, "applied")]]));
+      expect(svg).toContain(`carved so far — 1 of ${bandedIr.nodes.length} carved`);
+    });
+
+    it("leaves a partial carve in its band, repainted with the stage's word", () => {
+      const target = bandedIr.nodes[0].id;
+      const { ir } = carvedEstate(new Map([[target, state(target, "bridged")]]));
+      const byStack = ir.groups.byStack as Record<string, string[]>;
+      expect(byStack["carve now"]).toContain(target);
+      expect(byStack["app — chant"]).not.toContain(target);
+      const node = ir.nodes.find((n) => n.id === target)!;
+      expect(node.attrs._status).toBe("accent");
+      expect(node.attrs.carve).toBe("bridged — apply is yours");
+    });
+
+    it("is the #254 frame exactly when no manifest exists", () => {
+      const plain = estate();
+      const empty = carvedEstate(new Map());
+      expect(empty.ir.groups).toEqual(plain.ir.groups);
+      expect(empty.svg).toContain("carved so far");
+      expect(empty.svg).not.toContain("carved so far —");
+    });
+
+    it("opens the morph with an already-graduated card in the chant box", () => {
+      const parseViews = (html: string) => JSON.parse(html.match(/const VIEWS = (\[[\s\S]*?\]);\n/)![1].replace(/\\u003c/g, "<"));
+      const already = bandedIr.nodes[1].id;
+      const VIEWS = parseViews(
+        renderCarveMorph(bandedIr, appIr, ["aws_s3_bucket.b0"], {
+          tfTitle: "legacy-tf — terraform",
+          appTitle: "app — chant",
+          carved: new Map([[already, state(already, "applied")]]),
+        }),
+      );
+      const appBox = (v: { boxes: Array<{ key: string; x: number }> }) => v.boxes.find((b) => b.key === "app — chant")!;
+      // In the BEFORE frame already — the morph is about the one card moving.
+      expect(VIEWS[0].pos[already].x).toBeGreaterThan(appBox(VIEWS[0]).x);
+      expect(VIEWS[1].pos[already].x).toBeGreaterThan(appBox(VIEWS[1]).x);
+      // Both views keep the plain panel title, so the box morphs instead of swapping.
+      for (const v of VIEWS) expect(v.boxes.map((b: { key: string }) => b.key)).toContain("carved so far");
+    });
   });
 
   // #230 M2b: the morph — two estate frames, the carved card gliding between
