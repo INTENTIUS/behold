@@ -59,12 +59,23 @@ import { summarizePlan } from "./reconcile.ts";
 import { renderGraph, renderArchitecture, renderBanded, renderCarveEstate, renderCarveMorph } from "./render.ts";
 import { readCarveReport, carveReportToIr, carveNote } from "./carve-lens.ts";
 import {
+  bandGraduated,
+  carveProgress,
+  carveStateNote,
+  carveStatePayload,
+  nodeCarveIo,
+  readCarveStates,
+  splitCarveState,
+  type CarveState,
+} from "./carve-manifest.ts";
+import {
   carveWriteBlock,
   runCarveBridge,
   runCarveEmit,
   runCarveObserve,
   runCarvePlan,
   selectFromReport,
+  shortenIn,
   BUILD_CAVEAT,
   type CarveDemo,
 } from "./carve-actions.ts";
@@ -422,6 +433,18 @@ async function captureFrame(
 function carveRoutes(app: Hono, reportPath: string, demo?: CarveDemo): void {
   const load = () => readCarveReport(reportPath, (p) => readFileSync(p, "utf8"));
 
+  // The carve state manifests (#230 M3, chant#998) — read fresh per request,
+  // exactly like the report above, because emit and bridge write one while the
+  // walkthrough is open and a cached read would show a stale strangler-fig.
+  //
+  // Both scanned FLAT (depth 0), because both are output dirs rather than
+  // project roots: chant writes the manifest into `--output`, a demo's runs are
+  // handed `--output <demo.out>`, and `behold carve out/report.json` names the
+  // directory the report was written into. Read-only — behold never writes a
+  // manifest; see src/carve-manifest.ts.
+  const carveDirs = [dirname(reportPath), ...(demo ? [demo.out] : [])];
+  const carveStates = (): Map<string, CarveState> => readCarveStates(carveDirs, nodeCarveIo, 0);
+
   // #254's stepper needs to know, before it draws a button, whether this server
   // can actually run a step — a `behold carve report.json` looks identical
   // otherwise, and offering an Emit button that always 403s would be a lie in
@@ -480,12 +503,30 @@ function carveRoutes(app: Hono, reportPath: string, demo?: CarveDemo): void {
     // each one, because dagre lays an edgeless graph out along a single row (see
     // its doc comment for the numbers).
     const appSide = await appGraphOnce();
+    // #230 M3: the manifests decide which side of the estate each ranked
+    // address draws on, so the picture survives a restart — a resource that
+    // graduated last session opens in the chant box, not back in its band.
+    const states = carveStates();
+    // With no chant box to move a graduated card into (a bare `behold carve
+    // report.json`), it gets its own band above the ranking — `bandGraduated`.
+    // The emitted source path reaches the card; a demo trims it to the copy the
+    // way every echoed command in the walkthrough is trimmed.
+    const shorten = demo ? (p: string) => shortenIn(p, demo.root) : (p: string) => p;
+    const single = () => {
+      const split = splitCarveState(tfIr, states, { shorten });
+      return bandGraduated(split.tf, split.graduated);
+    };
     const { svg, ir } = appSide
       ? renderCarveEstate(tfIr, appSide.ir, {
           tfTitle: `${relative(demo!.root, demo!.from).split(sep).join("/")} — terraform`,
           appTitle: `${appSide.label} — chant`,
+          carved: states,
+          shorten,
         })
-      : { ...renderBanded(tfIr), ir: tfIr };
+      : (() => {
+          const banded = single();
+          return { ...renderBanded(banded), ir: banded };
+        })();
     return c.json({
       ir,
       svg,
@@ -497,7 +538,10 @@ function carveRoutes(app: Hono, reportPath: string, demo?: CarveDemo): void {
         carve: true,
         // A demo whose own advisor run failed says so on the statusbar, not
         // only in the terminal the viewer isn't looking at.
-        note: carveNote(parsed.report, tfIr) + (demo?.degraded ? ` Degraded: ${demo.degraded}` : ""),
+        note:
+          carveNote(parsed.report, tfIr) +
+          carveStateNote(carveProgress(states.values(), tfIr.nodes.length), states) +
+          (demo?.degraded ? ` Degraded: ${demo.degraded}` : ""),
       },
     });
   });
@@ -541,12 +585,22 @@ function carveRoutes(app: Hono, reportPath: string, demo?: CarveDemo): void {
       tfTitle: `${relative(demo!.root, demo!.from).split(sep).join("/")} — terraform`,
       appTitle: `${appSide.label} — chant`,
       title: `carve — ${select}`,
+      carved: carveStates(),
+      shorten: (p: string) => shortenIn(p, demo!.root),
     });
     return c.html(html);
   });
 
   app.get("/api/project", (c) => {
     const parsed = load();
+    const total = parsed.ok ? (parsed.report.count ?? parsed.report.resources.length) : null;
+    // #230 M3: the manifest-backed state, in the same shape an ordinary project
+    // serve publishes (see `carveStateForDirs` below). Paths are echoed
+    // relative to the demo copy — nobody learns anything from the length of the
+    // operator's tmpdir.
+    const state = carveStatePayload(carveStates(), total, () =>
+      demo ? { from: shortenIn(demo.from, demo.root), out: shortenIn(demo.out, demo.root) } : {},
+    );
     return c.json({
       projectDir: reportPath,
       recents: [],
@@ -561,12 +615,13 @@ function carveRoutes(app: Hono, reportPath: string, demo?: CarveDemo): void {
         ? {
             report: reportPath,
             from: parsed.report.from ?? null,
-            count: parsed.report.count ?? parsed.report.resources.length,
+            count: total,
             bands: parsed.report.bands ?? {},
             advisory: parsed.report.advisory ?? null,
             demo: demoInfo(),
+            state,
           }
-        : { report: reportPath, demo: demoInfo() },
+        : { report: reportPath, demo: demoInfo(), state },
     });
   });
 
@@ -620,6 +675,16 @@ function carveRoutes(app: Hono, reportPath: string, demo?: CarveDemo): void {
 
   app.post("/api/carve/emit", (c) => runStep(c, runCarveEmit));
   app.post("/api/carve/bridge", (c) => runStep(c, runCarveBridge));
+  // There is no `/api/carve/apply`, and adding one is not a follow-up (#230 M3).
+  // `chant carve apply` graduates ownership — it resolves the marker that makes
+  // chant the owner of a live resource. `runStep` above would take it in four
+  // lines and every guard already written would still hold, which is exactly
+  // why the refusal has to be stated here rather than assumed: the boundary is
+  // not "behold can't", it is "behold won't". What the manifest records about
+  // an apply is rendered (carveStatePayload above) and the command is echoed
+  // for a person to retype; the trigger stays a human in a terminal, the same
+  // posture the Handoff step takes with `terraform state rm`. See
+  // src/carve-manifest.ts `APPLY_IS_HUMAN`.
   // The observe beat (#254, chant#1647): chant reads the carved resource live
   // from the carveout, endpoint pointed at the scratch Floci. Same select
   // discipline as emit/bridge (membership in the report), refuses on a
@@ -1018,8 +1083,22 @@ export function createApp(
     // the tab is open grows the ops stop on the next /api/project, without a
     // restart.
     const emittedOps = discoverOpIrs(estateDirs).length;
+    // #230 M3 (item 4): a real project whose directory carries `*.carve.json`
+    // manifests surfaces its carve state with none of the demo scaffolding —
+    // no report, no stepper, no write actions, just what chant recorded. Read
+    // at request time like `emittedOps` above, and gated on there being
+    // manifests at all, so a project that was never carved grows no dead panel.
+    //
+    // Deliberately NOT joined onto the graph. The manifest keys on a TERRAFORM
+    // address; these nodes key on chant entity names. Matching the two is the
+    // dedupe question #230's tier grading called unsolved, and getting it wrong
+    // means claiming two things are one resource. So this publishes what the
+    // manifest actually says — which Terraform addresses graduated, and how far
+    // the others got — beside the estate rather than painted onto it.
+    const carveState = carveStatePayload(readCarveStates(estateDirs));
     return c.json({
       projectDir: cfg.projectDir,
+      ...(carveState.manifests ? { carve: { state: carveState } } : {}),
       // #195: the full estate composition (multi-project serves) and the
       // switcher's recents, so the SPA's project section can show what's
       // loaded and offer where to go. Recents exclude nothing here — the SPA

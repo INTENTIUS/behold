@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "target": "aws_s3_bucket.assets",
+  "tfType": "aws_s3_bucket",
+  "from": "/tmp/carve-fixture/legacy-tf",
+  "statePath": "/tmp/carve-fixture/legacy-tf/terraform.tfstate",
+  "boundary": {
+    "target": "aws_s3_bucket.assets",
+    "carveSet": [
+      {
+        "address": "aws_s3_bucket.assets",
+        "type": "aws_s3_bucket"
+      },
+      {
+        "address": "aws_s3_bucket_public_access_block.assets",
+        "type": "aws_s3_bucket_public_access_block",
+        "foldedInto": "aws_s3_bucket.assets"
+      },
+      {
+        "address": "aws_s3_bucket_versioning.assets",
+        "type": "aws_s3_bucket_versioning",
+        "foldedInto": "aws_s3_bucket.assets"
+      }
+    ],
+    "peelability": 84,
+    "inbound": [
+      {
+        "direction": "inbound",
+        "survivor": "aws_lambda_function.api",
+        "carved": "aws_s3_bucket.assets",
+        "attrs": [
+          "bucket"
+        ],
+        "via": [
+          "environment"
+        ],
+        "bridge": "tf-data-source",
+        "required": "immediately"
+      },
+      {
+        "direction": "inbound",
+        "survivor": "output.assets_bucket",
+        "carved": "aws_s3_bucket.assets",
+        "attrs": [
+          "bucket"
+        ],
+        "via": [
+          "value"
+        ],
+        "bridge": "tf-output-rewrite",
+        "required": "immediately"
+      }
+    ],
+    "outbound": [],
+    "reversible": true,
+    "diagnostics": []
+  },
+  "emit": {
+    "source": "tfstate",
+    "files": [
+      "/tmp/carve-fixture/app/carveout/src/assets.ts"
+    ],
+    "at": "2026-08-30T04:12:44.246Z"
+  },
+  "bridge": {
+    "written": [
+      "/tmp/carve-fixture/app/carveout/aws_s3_bucket-assets-runbook.md",
+      "/tmp/carve-fixture/app/carveout/aws_s3_bucket-assets-datasources.tf",
+      "/tmp/carve-fixture/app/carveout/compute.tf",
+      "/tmp/carve-fixture/app/carveout/outputs.tf",
+      "/tmp/carve-fixture/app/carveout/storage.tf",
+      "/tmp/carve-fixture/app/carveout/aws_s3_bucket-assets-bridge.patch"
+    ],
+    "appliedInPlace": false,
+    "patch": "/tmp/carve-fixture/app/carveout/aws_s3_bucket-assets-bridge.patch",
+    "excised": [
+      "aws_s3_bucket.assets",
+      "aws_s3_bucket_versioning.assets",
+      "aws_s3_bucket_public_access_block.assets"
+    ],
+    "at": "2026-08-30T04:13:05.804Z"
+  },
+  "apply": {
+    "marker": {
+      "stack": "assets",
+      "env": "prod"
+    },
+    "ownershipTags": {
+      "chant:managed-by": "chant",
+      "chant:stack": "assets",
+      "chant:env": "prod"
+    },
+    "stampedFiles": [
+      "/tmp/carve-fixture/app/carveout/src/assets.ts"
+    ],
+    "at": "2026-08-30T04:13:10.754Z"
+  }
+}

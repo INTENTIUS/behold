@@ -45,6 +45,30 @@ The Emit step reports **`chant lint`, not `chant build`**. chant#1637: `carve em
 
 behold writes only into the copy it just made, and only into `app/carveout/` inside it. Both steps refuse outside a demo copy; a plain `behold carve report.json` shows the same six steps with the runs greyed out and a reason.
 
+## The strangler fig: what has actually graduated
+
+`chant carve emit` (chant ≥ 0.52.2) writes a state manifest beside the source it emits — `<address>.carve.json` in the `--output` directory. `carve bridge` adds its record to the same file, and `carve apply` adds the ownership marker. behold reads those manifests and never writes one, which is what makes the picture survive a restart: the progression lives on disk, in chant's file, not in a behold session.
+
+Three stages, and only the last of them is a graduation:
+
+- **emitted** — typed chant source exists; the surviving Terraform still reads the resource directly. The card stays in its band, repainted in the in-flight blue with the words `emitted — not bridged`.
+- **bridged** — the survivor patch is proposed. Still banded, still Terraform's: `bridged — apply is yours`.
+- **applied** — `carve apply` recorded the ownership marker. The card leaves the Terraform bands and draws inside the chant project box, keeping its Terraform address, with `carved → chant` on it.
+
+The chant box's panel carries the count — `carved so far — 1 of 12 carved` — and the panel's **project** section lists each carved address with its stage. A resource that graduated in a previous session opens in the chant box; a partly-carved one opens back in its band, repainted, saying exactly how far it got. Nothing is inferred from what you did in this tab.
+
+Point `behold carve` at a report in a directory that also holds manifests and you get the same reading with no demo at all — the graduated pile becomes its own band above the ranking, since there is no chant member box to move a card into. An ordinary `behold serve <project>` whose directory carries a carveout surfaces the state in the same panel section, off `/api/project`.
+
+### `carve apply` is not a button
+
+`carve apply` graduates ownership. behold renders what the manifest records about it and echoes the command — no `--select`, because the manifest in the output directory already names the target:
+
+```sh
+chant carve apply --from legacy-tf --output app/carveout --env prod --stack assets --write-source
+```
+
+There is no `/api/carve/apply` endpoint and no apply button anywhere in the UI. That is the same line the Handoff step draws around `terraform state rm`: behold triggers delegated work, it does not decide when an estate changes hands.
+
 ### The `--live` tier
 
 `npx behold demo carve --live` (docker + terraform on PATH) boots a scratch Floci — its own container name and port, refused if taken, deleted on exit — arms the estate's provider override into the demo copy, and really applies the starred resources into it. The advisor then reads a tfstate terraform wrote, and the Handoff step gains a read-only **terraform plan** button: run it after pasting `terraform state rm` and the carved resource is simply absent from the plan — `0 to destroy`, nothing blinked. The Emit step gains the observe beat: **watch chant read it live** runs `chant lifecycle diff --live` in the carveout against the scratch Floci, and the carved resource reads observed — `EXTERNAL`, ownership `foreign` — while Terraform still owns it (chant#1647's identity read path, chant ≥ 0.44.12).

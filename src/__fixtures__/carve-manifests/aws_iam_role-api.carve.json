@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "target": "aws_iam_role.api",
+  "tfType": "aws_iam_role",
+  "from": "/tmp/carve-fixture/legacy-tf",
+  "statePath": "/tmp/carve-fixture/legacy-tf/terraform.tfstate",
+  "boundary": {
+    "target": "aws_iam_role.api",
+    "carveSet": [
+      {
+        "address": "aws_iam_role.api",
+        "type": "aws_iam_role"
+      }
+    ],
+    "peelability": 69,
+    "inbound": [
+      {
+        "direction": "inbound",
+        "survivor": "aws_lambda_function.api",
+        "carved": "aws_iam_role.api",
+        "attrs": [
+          "arn"
+        ],
+        "via": [
+          "role"
+        ],
+        "bridge": "tf-data-source",
+        "required": "immediately"
+      }
+    ],
+    "outbound": [
+      {
+        "direction": "outbound",
+        "survivor": "random_pet.suffix",
+        "carved": "aws_iam_role.api",
+        "attrs": [
+          "id"
+        ],
+        "via": [
+          "name"
+        ],
+        "bridge": "deferred-input",
+        "required": "at-apply"
+      }
+    ],
+    "reversible": true,
+    "diagnostics": []
+  },
+  "emit": {
+    "source": "tfstate",
+    "files": [
+      "/tmp/carve-fixture/app/carveout/src/api.ts"
+    ],
+    "params": {
+      "name": {
+        "tfAttr": "name",
+        "survivor": "random_pet.suffix",
+        "attrs": [
+          "id"
+        ],
+        "default": "acme-platform-api-gently-mutt"
+      }
+    },
+    "at": "2026-08-30T04:13:37.282Z"
+  }
+}

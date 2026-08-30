@@ -57,7 +57,12 @@ preview-locked, and one load runs at a time (409 otherwise).
    `?ops=1` is the ops lens — the project's declared Ops as a phase track, read
    from each emitted `dist/ops/<name>/op.json`, with the current run painted
    over it (`meta.run`, `meta.gate`); `/api/ops/<name>/status` reads that Op's
-   durable run status and pending gate (`chant run status --temporal`).
+   durable run status and pending gate (`chant run status --temporal`). A
+   `ConvergeOp` also gets one card per rule from its `convergeTick` step's
+   `args.rules` (`attrs._step: "rule"`), carrying `when` (chant's JSON predicate,
+   rendered as the condition it states), `then`, and the `why` chant requires of
+   every rule, verbatim. `then: run(<op>)` is an edge to that Op's first step
+   when the Op is in the rendered set, and `attrs.dangling` when it isn't.
    `meta.operator` on that same lens names the ConvergeOps the project declares
    (chant's own `searchAttributes.Converge === "true"`, read from op.json — no
    subprocess), and `/api/operator/status` fills the strip in from
@@ -81,6 +86,32 @@ To move a resource: confirm its band on `/api/carve`, then run chant's own
 `carve emit --state` and `carve bridge` in the project. `terraform state rm` and
 applying the generated survivor rewrites stay a human gate — behold has no
 endpoint that writes Terraform, and adding one would break the invariant below.
+
+### Carve state, from chant's manifests (#230 M3)
+
+chant ≥ 0.52.2 writes `<address>.carve.json` into `carve emit --output`; `carve
+bridge` and `carve apply` add their own records to the same file. behold reads
+those and never writes one, so the progression is on disk rather than in a
+session.
+
+`GET /api/project`'s `carve.state` publishes it: `{manifests, progress:
+{applied, bridged, emitted, inFlight, total, label, detail}, states[], apply:
+{human, note}}`. Each entry carries `target`, `stage`
+(`emitted`/`bridged`/`applied`), `graduated`, `note` and a retypeable
+`applyCommand`. The same field appears on an ordinary `behold serve` whose
+project directory carries a carveout — no report and no demo needed — and is
+absent entirely when nothing has been carved.
+
+In the graph, an `applied` address draws inside the chant member box (keeping
+its Terraform address as its node id) instead of in a band; `emitted` and
+`bridged` stay banded with `attrs._status: "accent"` and the stage in
+`attrs.carve`. Only `applied` means ownership moved.
+
+**There is no `/api/carve/apply`.** `chant carve apply` graduates ownership;
+behold renders what the manifest records and echoes the command. Do not add the
+endpoint — src/carve-manifest.ts `APPLY_IS_HUMAN` is the statement of it, and
+src/carve-actions.ts and src/server.ts both carry the refusal where the route
+would go.
 
 ### The walkthrough (`behold demo carve`, #254)
 

@@ -197,6 +197,22 @@ const COMPONENT_STATUS_LABEL = { good: "healthy", accent: "in progress", warn: "
 // artifacts have no declared axis to classify against. `_artifact`'s presence
 // (or an artifact-flavoured `_unobserved`) picks this label set.
 const ARTIFACT_STATUS_LABEL = { good: "installed", warn: "installed, not healthy", accent: "not installed", neutral: "unobserved" };
+// The ops lens (#284) and its converge rule table (#234) paint the same four
+// colours about a DECLARED Op, where none of the entity vocabulary applies: a
+// gate is not "foreign" and a rule that may dispatch is not "pending". The word
+// carries the meaning here (accessible-ops: never rely on the colour alone), so
+// it is picked from what the card actually is — `_step` — and not from the
+// colour alone, which in this lens says four different things per step kind.
+const OP_STATUS_LABEL = {
+  gate: { warn: "stops here for a human", good: "approved", accent: "waiting", neutral: "declared" },
+  effect: { accent: "conditional — skipped when the receipt already matches", good: "fired", warn: "failed", neutral: "skipped" },
+  rule: { accent: "may dispatch on a matching tick", warn: "dispatch target not in this graph", neutral: "reports only, never mutates" },
+  activity: { good: "ran ok", warn: "failed", accent: "reached, not settled", neutral: "declared, not run" },
+};
+function opStatusLabel(node) {
+  const set = OP_STATUS_LABEL[node.attrs && node.attrs._step];
+  return set && set[node.attrs._status];
+}
 // The render-drift axis (#146's deferred half, chant#1249/#1250 via
 // src/helm-drift.ts). A chart carrying `_renderDrift` has had its PINNED
 // render diffed against the live cluster, so `warn` on it means "drifted",
@@ -379,6 +395,7 @@ function inspect(node) {
     id(
       "status",
       driftLabel ||
+        (node.lexicon === "op" ? opStatusLabel(node) : undefined) ||
         (isArtifact ? ARTIFACT_STATUS_LABEL[st] : liveStatus ? COMPONENT_STATUS_LABEL[st] : STATUS_LABEL[st]) ||
         st,
     );
@@ -481,7 +498,12 @@ function inspect(node) {
       if (liveStatus.stack.status) live("stack status", liveStatus.stack.status);
       if (liveStatus.stack.healthy !== undefined) live("healthy", String(liveStatus.stack.healthy));
     }
-  } else if (st === "accent") {
+  } else if (st === "accent" && node.lexicon !== "op") {
+    // The `op` lexicon is excluded because nothing in the ops lens (#284) is an
+    // estate entity: `accent` there means "may not fire at all" — an effect step
+    // whose receipt already matches, a converge rule that dispatches only on a
+    // tick that matches it (#234) — and "not provisioned yet" would be an answer
+    // to a question the card never asked.
     const live = section("live");
     live("", "not provisioned yet (pending) — no live state");
   } else if (st === "runtime") {
@@ -1079,6 +1101,55 @@ function primeDemoCatalog() {
   });
 }
 
+/**
+ * The manifest-backed carve state (#230 M3), as the scope panel shows it: the
+ * progress read, then one row per carved address with its stage.
+ *
+ * Stage is carried by the WORD, with the tone reinforcing it — green for
+ * graduated, the pending blue for a carve still in flight (the same blue
+ * pinhole paints `accent` cards with, so the panel row and the card agree).
+ * A no-op when the served estate carries no manifests: a project that was
+ * never carved grows no dead section.
+ *
+ * `chant carve apply` is echoed per row and never offered as a button — see
+ * src/carve-manifest.ts APPLY_IS_HUMAN, which `state.apply.note` carries here
+ * verbatim.
+ */
+function renderCarveState(host, state) {
+  if (!state || !state.manifests) return;
+  host.appendChild(panelHeading("carved out of terraform"));
+  const head = document.createElement("div");
+  head.className = "count-row";
+  const label = document.createElement("span");
+  label.className = "grow";
+  label.textContent = state.progress.label;
+  const tag = document.createElement("span");
+  tag.className = "tag";
+  tag.textContent = state.manifests + (state.manifests === 1 ? " manifest" : " manifests");
+  tag.title = "chant's own *.carve.json state manifests — behold reads them and never writes one.";
+  head.append(label, tag);
+  host.appendChild(head);
+  if (state.progress.detail) host.appendChild(panelMuted(state.progress.detail));
+  for (const s of state.states) {
+    const row = document.createElement("div");
+    row.className = "count-row";
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    dot.style.background = s.graduated ? "var(--managed)" : "var(--pending)";
+    const name = document.createElement("span");
+    name.className = "grow";
+    name.textContent = s.target;
+    name.title = s.note;
+    const stage = document.createElement("span");
+    stage.className = "tag";
+    stage.textContent = s.stage;
+    row.append(dot, name, stage);
+    host.appendChild(row);
+    if (!s.graduated) host.appendChild(panelMuted(s.applyCommand));
+  }
+  host.appendChild(panelMuted(state.apply.note));
+}
+
 function renderPanelScope() {
   const host = document.getElementById("tab-scope");
   if (!host) return;
@@ -1104,6 +1175,12 @@ function renderPanelScope() {
     host.appendChild(panelMuted(dir));
   }
   if (!estateDirs.length) host.appendChild(panelMuted("no project loaded yet"));
+  // #230 M3: the strangler-fig progress, right where the panel already
+  // summarizes this estate's members. It reads off chant's own `*.carve.json`
+  // manifests (chant#998), so it says the same thing after a restart as before
+  // one — and it renders identically in carve mode and on an ordinary project
+  // serve, because /api/project publishes one shape for both.
+  renderCarveState(host, info.carve && info.carve.state);
   // #195: switching — recents first (server-persisted, validated), then a
   // free path input. Locked in preview mode (the demo's contract) and
   // meaningless in a static export.
@@ -1432,6 +1509,27 @@ const carveActions = {
 
 /** Run one of the two safe steps. Both are POSTs with a `{select}` body; both
  * answer either their result or #193's `{error, code, remedy}`. */
+/**
+ * Re-read the manifest-backed carve state (#230 M3) after a step wrote one.
+ *
+ * One `/api/project` plus a graph reload: the panel's "carved so far" and the
+ * repainted card both come off the manifests on disk, so an in-session update
+ * and a post-restart read are the same read. A failed refresh leaves what was
+ * already shown alone — stale is better than a state change nobody made.
+ */
+async function refreshCarveState() {
+  try {
+    const info = await apiFetch("/api/project").then((r) => r.json());
+    projectInfo = info;
+    carveInfo = info.carve || null;
+  } catch {
+    return;
+  }
+  renderPanelScope();
+  renderPanelCarve();
+  await load();
+}
+
 async function runCarveStep(which) {
   if (carveState.busy || !carveState.pick) return;
   carveState.busy = which;
@@ -1454,6 +1552,11 @@ async function runCarveStep(which) {
       // to the next button would hide the thing the run was for. The "next"
       // control unlocks; pressing it stays the viewer's move.
       showToast(`✓ carve ${which} — wrote into ${(carveInfo.demo && carveInfo.demo.outLabel) || "the demo copy"}`, true);
+      // #230 M3: the step just wrote a carve manifest. Re-read it rather than
+      // inferring the new state from the response — the file on disk is what
+      // the panel and the card claim to be showing, and after a reload it is
+      // the only thing left.
+      await refreshCarveState();
     }
   } catch (err) {
     carveState.error = { step: which, error: String((err && err.message) || err), remedy: "Is the behold server still running?" };

@@ -16,6 +16,9 @@ import { helmIconFor } from "../src/icon-packs.ts";
 // #254: the carve lens itself, so carve mode's stub graph is the real
 // conversion of the real committed report — see the carve block below.
 import { carveReportToIr } from "../src/carve-lens.ts";
+// #230 M3: the same reader the server uses, so the stub's carve state is the
+// real shape rather than a hand-cut echo of it.
+import { carveStateOf, carveStatePayload } from "../src/carve-manifest.ts";
 
 const WEB = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
 
@@ -404,6 +407,14 @@ export function startStub(port, { carve = false } = {}) {
    * approve can answer with the gate gone — chant would drop it from
    * `pendingGates` once a resolution newer than the gated tick exists. */
   let operator = operatorState();
+  // #230 M3: the carve state manifests, in memory instead of on disk — the
+  // stub records what a step WOULD have written the way chant's `carve emit`
+  // and `carve bridge` write their sections, and `/api/project` reads them back
+  // through the real `carveStatePayload`. So the smoke exercises the actual
+  // reader, and the panel updating mid-walkthrough is the same code path a demo
+  // copy takes. Nothing here fakes an `apply`: that stage only ever arrives
+  // from a person running the command.
+  const carveManifests = new Map();
   const readBody = (req) =>
     new Promise((r) => {
       let s = "";
@@ -427,6 +438,15 @@ export function startStub(port, { carve = false } = {}) {
         if (!CARVE_REPORT.resources.some((r) => r.address === body.select)) {
           return json({ error: `\`select\` must name a resource this report ranks — ${JSON.stringify(body.select)} isn't one.`, code: "carve-select", remedy: "Pick a card in the graph." }, 400);
         }
+        const held = carveManifests.get(body.select) ?? {
+          version: 1,
+          target: body.select,
+          from: CARVE_DEMO.from,
+          boundary: {},
+        };
+        if (path.endsWith("emit")) held.emit = { source: "tfstate", files: [`${CARVE_DEMO.out}/src/assets.ts`], at: new Date().toISOString() };
+        else held.bridge = { written: [], appliedInPlace: false, excised: [body.select], at: new Date().toISOString() };
+        carveManifests.set(body.select, held);
         return json(path.endsWith("emit") ? CARVE_EMIT : CARVE_BRIDGE);
       }
       if (path === "/api/project") {
@@ -444,6 +464,16 @@ export function startStub(port, { carve = false } = {}) {
             bands: CARVE_REPORT.bands,
             advisory: CARVE_REPORT.advisory,
             demo: CARVE_DEMO,
+            state: carveStatePayload(
+              new Map(
+                [...carveManifests].map(([target, m]) => [
+                  target,
+                  carveStateOf(m, `${CARVE_DEMO.out}/${target.replace(/[^A-Za-z0-9_]+/g, "-")}.carve.json`),
+                ]),
+              ),
+              CARVE_REPORT.count,
+              () => ({ from: CARVE_DEMO.fromLabel, out: CARVE_DEMO.outLabel }),
+            ),
           },
         });
       }

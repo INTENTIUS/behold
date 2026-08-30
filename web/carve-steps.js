@@ -281,6 +281,30 @@ export function lintVerdict(lint) {
 }
 
 /**
+ * The carve state manifest for one address, off `/api/project`'s
+ * `carve.state` (#230 M3). Null when nothing has been carved for it — which is
+ * the honest reading before Emit runs, and the reading a fresh clone gives.
+ */
+export function manifestStateFor(carveState, address) {
+  const states = (carveState && carveState.states) || [];
+  return states.find((s) => s.target === address) || null;
+}
+
+/**
+ * A carve's recorded stage as one line + a tone.
+ *
+ * `applied` is the only green: it is the only stage at which ownership has
+ * actually moved. `emitted` and `bridged` are real progress and read as such
+ * (the pending blue, the same tone the card carries), but they are work in
+ * flight, not a graduation — and the line says which, in words, because tone
+ * alone was never allowed to carry a state here.
+ */
+export function manifestStageLine(state) {
+  if (!state) return null;
+  return { tone: state.graduated ? "good" : "pending", text: `${state.target}: ${state.note}` };
+}
+
+/**
  * The observe verdict as one line + a tone (chant#1647). `observed` with
  * EXTERNAL/foreign IS the beat: live, outside every stack, still Terraform's —
  * and chant read it clean anyway. `unobserved` repeats chant's own hole
@@ -372,6 +396,18 @@ function artifactBlock(a, actions) {
   return wrap;
 }
 
+/** A dot + a line, tone reinforcing the words (never replacing them). `good` is
+ * the managed green, `pending` the in-flight blue pinhole paints `accent` cards
+ * with, anything else the degraded red. */
+function toneRow(tone, text, tag) {
+  const row = el("div", "count-row");
+  const dot = el("span", "dot");
+  dot.style.background = tone === "good" ? "var(--managed)" : tone === "pending" ? "var(--pending)" : "var(--degraded)";
+  row.append(dot, el("span", "grow", text));
+  if (tag) row.appendChild(el("span", "tag", tag));
+  return row;
+}
+
 function refusalBlock(err) {
   const wrap = el("div", "carve-refusal");
   wrap.appendChild(el("div", "carve-refusal-title", err.error || "that step didn't run"));
@@ -449,6 +485,16 @@ function renderAdvise(body, ctx) {
     dot.style.background = color;
     row.append(dot, el("span", "grow", meaning), el("span", "tag", String(bands[band] ?? 0)));
     body.appendChild(row);
+  }
+  // #230 M3: what the estate has ALREADY carved, off chant's own state
+  // manifests rather than off this session. Reload the page mid-walkthrough and
+  // this is unchanged, because the manifests on disk are unchanged.
+  const carveState = ctx.carve && ctx.carve.state;
+  if (carveState && carveState.manifests) {
+    body.appendChild(el("h3", null, "carved so far"));
+    body.appendChild(toneRow("good", carveState.progress.label, `${carveState.manifests} manifest(s)`));
+    for (const s of carveState.states) body.appendChild(toneRow(s.graduated ? "good" : "pending", s.target, s.stage));
+    if (carveState.progress.detail) body.appendChild(el("p", "panel-muted", carveState.progress.detail));
   }
   if (ctx.carve && ctx.carve.advisory) body.appendChild(el("p", "panel-muted", ctx.carve.advisory));
   if (ctx.demo) {
@@ -669,6 +715,32 @@ function renderHandoff(body, state, ctx, actions) {
     if (c.note) body.appendChild(el("p", "panel-muted carve-cmd-note", c.note));
   }
 
+  // The graduation step (#230 M3). `chant carve apply` resolves the ownership
+  // marker that makes chant the owner of a live resource, and it composes off
+  // the carve manifest — no --select needed, the emit left the target there.
+  //
+  // It is echoed here for the same reason `terraform state rm` is: this is
+  // where the temptation to add a button lives. There is no apply endpoint on
+  // the server and no apply button here, and neither is a gap waiting to be
+  // filled — behold triggers delegated work, it does not decide when an estate
+  // changes hands. What the manifest RECORDS about an apply is rendered (the
+  // Done step, and the Advise step's "carved so far"); the trigger is a person.
+  const applyState = manifestStateFor(ctx.carve && ctx.carve.state, state.pick && state.pick.node.id);
+  if (applyState) {
+    body.appendChild(el("h3", null, "graduation"));
+    const line = manifestStageLine(applyState);
+    body.appendChild(toneRow(line.tone, line.text));
+    if (!applyState.graduated) {
+      // Its own class, not the runbook's: this row is chant's command, not one
+      // of the runbook's terraform lines, and the two are counted separately.
+      const row = el("div", "prow carve-cmd-row carve-apply-row");
+      row.appendChild(el("code", "grow carve-cmd-text", applyState.applyCommand));
+      row.appendChild(copyButton("copy", applyState.applyCommand, actions));
+      body.appendChild(row);
+      body.appendChild(el("p", "panel-muted carve-cmd-note", (ctx.carve.state.apply && ctx.carve.state.apply.note) || ""));
+    }
+  }
+
   const ran = el("button", "act carve-ran", state.handoff ? "✓ marked as run" : "I ran these →");
   ran.title = "Marks the handoff done in this walkthrough. behold has not checked — it can't, and won't pretend to.";
   ran.addEventListener("click", actions.markHandoff);
@@ -692,6 +764,13 @@ function renderDone(body, state, ctx, actions) {
     ),
   );
   body.appendChild(card);
+
+  // #230 M3: the durable half of the ending. The card above is the shape of the
+  // walkthrough; this is what chant's manifest actually records — and it is
+  // still here after a restart, when everything in `state` is gone.
+  const recorded = manifestStateFor(ctx.carve && ctx.carve.state, state.pick && state.pick.node.id);
+  const line = manifestStageLine(recorded);
+  if (line) body.appendChild(toneRow(line.tone, line.text, recorded.stage));
 
   if (!state.handoff) {
     body.appendChild(el("p", "panel-muted", "The handoff commands haven't been marked as run — this is the shape of the ending, not a claim about your estate."));

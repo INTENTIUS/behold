@@ -899,6 +899,20 @@ try {
     check("the boundary report renders as a JSON tree, not a blob", (await carvePage.locator("#tab-carve .jsonv").count()) >= 1);
     check("a finished run does NOT skip past its own result", (await bodyStep()) === "emit");
     check("bridge unblocks once emit has run", (await stepState("bridge")) !== "blocked");
+    // #230 M3: the emit wrote a carve manifest, so the estate's own progress
+    // read moves — and it reads it back off /api/project rather than off what
+    // the POST happened to answer.
+    await step("advise").click();
+    await carvePage.waitForTimeout(200);
+    const advised = await carveText();
+    // `#panel h3` is uppercased in CSS, and innerText renders it — match the
+    // heading case-insensitively rather than against the styling.
+    check("Advise now shows the manifest-backed progress", /carved so far/i.test(advised) && advised.includes("0 of 12 carved"));
+    check("…naming the carve and its stage", advised.includes("aws_s3_bucket.assets") && advised.includes("emitted"));
+    check("…and does NOT call an emit a graduation", !advised.includes("1 of 12 carved"));
+    check("the scope panel carries the same read", /carved out of terraform/i.test(await carvePage.locator("#tab-scope").innerText()));
+    await step("emit").click();
+    await carvePage.waitForTimeout(150);
     await carvePage.screenshot({ path: join(SHOTS, "8-carve-emit.png"), fullPage: true });
 
     // 4. Bridge — proposals only, never --apply-rewrites.
@@ -916,9 +930,17 @@ try {
     const handoff = await carveText();
     check("Handoff renders the runbook's commands", handoff.includes("terraform state rm aws_s3_bucket.assets"));
     check("…deduped (the runbook prints `terraform plan` twice)", (handoff.match(/terraform plan/g) || []).length === 1);
-    check("Handoff has a copy button per command", (await carvePage.locator("#tab-carve .carve-cmd-row .carve-copy").count()) === 3);
+    check("Handoff has a copy button per command", (await carvePage.locator("#tab-carve .carve-cmd-row:not(.carve-apply-row) .carve-copy").count()) === 3);
     check("Handoff has NO run button — the destructive middle stays human", (await carvePage.locator("#tab-carve button.carve-run").count()) === 0);
     check("…and the UI says why", handoff.includes("not buttons, on purpose") && handoff.includes("terraform state rm"));
+    // #230 M3: `carve apply` is echoed on the same terms — a command with a
+    // copy button, and no control that runs it. The stage comes off the carve
+    // manifest the two steps wrote, not off this session's memory of them.
+    check("Handoff echoes the graduation command off the manifest", handoff.includes("chant carve apply --from legacy-tf --output app/carveout"));
+    check("…composed from the manifest, so no --select", !/carve apply[^\n]*--select/.test(handoff));
+    check("…and it says the trigger is a person, not an endpoint", handoff.includes("no apply endpoint and no apply button"));
+    check("the manifest says bridged, and does not call that carved", handoff.includes("bridged") && !handoff.includes("chant owns it"));
+    check("still no run button anywhere on the step", (await carvePage.locator("#tab-carve button.carve-run").count()) === 0);
     const copyCtl = carvePage.locator("#tab-carve .carve-cmd-row .carve-copy").first();
     await copyCtl.click();
     await carvePage.waitForTimeout(120);

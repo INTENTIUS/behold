@@ -28,6 +28,46 @@
  *    nothing rather than minting a phantom card
  *  - a gate is its own card, `_status: "warn"`, carrying the step it guards —
  *    the pause is a mark in the track, not a badge hidden on a neighbour
+ *  - a ConvergeOp's rule table is one card per RULE, each carrying its `why`
+ *    verbatim — see below
+ *
+ * ## The converge rule table (#234 join 4)
+ *
+ * A `ConvergeOp` (chant's temporal lexicon, `composites/converge-op.ts`) is an
+ * ordinary Op whose Converge phase holds a single `convergeTick` activity, and
+ * the composite bakes the whole rule table into that step's args. `op.json`
+ * passes activity args through verbatim (`OpIRActivityStep.args`), so the table
+ * arrives here as data, in the file this lens already reads — no new chant
+ * surface, no subprocess.
+ *
+ * Each `ConvergeRule` is `{id, when, then, why, flapThreshold?}`, and chant
+ * refuses at BUILD time a rule whose `id` or `why` is blank (`when()` throws,
+ * and `ConvergeOp` re-checks). So "every rule carries its why" is a guarantee,
+ * not a hope, and this lens can put the rationale on the card unconditionally:
+ * that is the accessible-ops promise — "git blame answers why did it do that" —
+ * with a UI. The text is shown VERBATIM. behold never paraphrases it.
+ *
+ * `when` is chant's JSON predicate language, not a closure: field comparisons
+ * and truthiness checks over one `ConvergeSymptom`, composed with `all-of` /
+ * `any-of`. {@link predicateText} renders it as the condition it states —
+ * `status = "drifted" and deleteCount > 0` — reading the operator names chant
+ * ships rather than inventing a query DSL behold would then have to defend.
+ *
+ * ## The one legitimate cross-link
+ *
+ * `then` is `{kind: "run", op}` or `{kind: "report", reason}`, and `RunAction.op`
+ * names a DECLARED Op by name — chant's own TMP014 post-synth check refuses a
+ * `run()` naming an Op the project doesn't declare. That makes rule → op the
+ * first join in this lens that chant actually states, so a `run` rule draws an
+ * edge to that Op's first step (`viaAttr: "run"`).
+ *
+ * It is still drawn only when the named Op is in the set being rendered. behold
+ * composes op.json across every served project (#31, `discoverOpIrs`) and keeps
+ * the first of a colliding name, so a converge Op can perfectly well be rendered
+ * beside a set that doesn't hold its dispatch target — an unbuilt sibling, a
+ * project this behold isn't serving. Then the rule says so on its own card
+ * (`dangling`, painted `warn`) and no edge is drawn. Same rule `depends` already
+ * follows: a reference behold can't resolve is stated, never guessed.
  *
  * ## No estate cross-links, and why this doesn't guess one
  *
@@ -83,6 +123,71 @@ export interface OpIrEffectStep {
 }
 
 export type OpIrStep = OpIrActivityStep | OpIrGateStep | OpIrEffectStep;
+
+// ── A ConvergeOp's rule table, as it rides in `convergeTick`'s args ──────────
+//
+// chant's `ConvergeRule` / `SymptomPredicate` / `RuleAction`
+// (`packages/core/src/op/converge-rule.ts`) mirrored structurally, on the same
+// terms as the step shapes above: read leniently, and never re-derive a fact
+// chant already states. `field` is `keyof ConvergeSymptom` upstream; here it is
+// a string, because behold renders whatever field the rule names rather than
+// keeping a copy of chant's symptom shape in step with it.
+
+/** `field <op> value` — chant's `FieldComparisonPredicate`. */
+export interface OpIrFieldComparison {
+  kind: "field-comparison";
+  field: string;
+  op: "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
+  value: string | number | boolean;
+}
+
+/** `field is truthy|falsy` — chant's `FieldTruthinessPredicate`, no value. */
+export interface OpIrFieldTruthiness {
+  kind: "field-truthiness";
+  field: string;
+  op: "truthy" | "falsy";
+}
+
+export interface OpIrAllOf {
+  kind: "all-of";
+  predicates: OpIrPredicate[];
+}
+
+export interface OpIrAnyOf {
+  kind: "any-of";
+  predicates: OpIrPredicate[];
+}
+
+/** A rule's `when` — chant's whole evaluable subset. There is deliberately no
+ * escape hatch to an arbitrary expression upstream, so there is none here. */
+export type OpIrPredicate = OpIrFieldComparison | OpIrFieldTruthiness | OpIrAllOf | OpIrAnyOf;
+
+/** A rule's `then` — dispatch a declared Op, or report and stop. */
+export type OpIrRuleAction = { kind: "run"; op: string } | { kind: "report"; reason: string };
+
+/** One row of a ConvergeOp's rule table. `id` and `why` are required upstream —
+ * chant refuses a blank one at build — so this lens treats both as present. */
+export interface OpIrConvergeRule {
+  id: string;
+  when: OpIrPredicate;
+  then: OpIrRuleAction;
+  why: string;
+  flapThreshold?: number;
+}
+
+/** A ConvergeOp's `convergeTick` args, as much of them as this lens reads. */
+export interface ConvergeTable {
+  /** The `convergeTick` step's own node id — what the rule cards hang off. */
+  tickStepId: string;
+  /** The phase the tick sits in, so the rule cards can name it. */
+  phase: string;
+  rules: OpIrConvergeRule[];
+  /** How far the loop is allowed to go: `observe` | `reconcile` | `apply`. */
+  dial?: string;
+  /** How many dispatches one tick may make. */
+  budget?: number;
+  env?: string;
+}
 
 export interface OpIrPhase {
   name: string;
@@ -326,6 +431,173 @@ export function opPlacedSteps(op: OpIr): PlacedStep[] {
   }));
 }
 
+// ── The converge rule table ───────────────────────────────────────────────────
+
+const RULE_BOX = (opName: string): string => `${opName} · rule table`;
+
+/** A rule's own node id. `id` is chant's stable, unique-per-table identifier
+ * (flap counters key on it, and `ConvergeOp` refuses duplicates at build), so it
+ * needs no de-duplication pass the way a repeated step label does. */
+const ruleId = (opName: string, rule: OpIrConvergeRule): string => `${opName}/rules/${rule.id}`;
+
+const isPredicate = (v: unknown): v is OpIrPredicate => isRecord(v) && typeof v.kind === "string";
+
+/** Is this value a rule chant would have emitted? `id`/`why`/`then` are all
+ * required upstream and refused blank at build, so anything missing one is not a
+ * rule table this lens should be drawing cards from. */
+function isConvergeRule(v: unknown): v is OpIrConvergeRule {
+  if (!isRecord(v)) return false;
+  if (typeof v.id !== "string" || !v.id) return false;
+  if (typeof v.why !== "string" || !v.why) return false;
+  if (!isPredicate(v.when)) return false;
+  const then = v.then;
+  if (!isRecord(then)) return false;
+  return (then.kind === "run" && typeof then.op === "string") || (then.kind === "report" && typeof then.reason === "string");
+}
+
+/**
+ * The rule table one Op declares, or undefined for an Op that isn't a
+ * ConvergeOp — which is every Op in a project that declares none, so this is
+ * also what makes the whole feature cost nothing on such a project.
+ *
+ * Found by the `convergeTick` activity `fn`, which is how chant's own TMP014
+ * check reads a rule table back off an Op: there is no dedicated `OpConfig`
+ * field for it, the table travels as that step's args. `searchAttributes.Converge`
+ * is the composite's marker but not a requirement here — a hand-written Op that
+ * calls `convergeTick` runs the same activity against the same table, and
+ * refusing to draw its rules because a search attribute is missing would hide a
+ * real rule table behind a label.
+ */
+export function convergeTable(op: OpIr): ConvergeTable | undefined {
+  for (const placed of placeSteps(op)) {
+    const { step } = placed;
+    if (step.kind !== "activity" || step.fn !== "convergeTick") continue;
+    const rules = step.args?.rules;
+    if (!Array.isArray(rules)) return undefined;
+    const kept = rules.filter(isConvergeRule);
+    if (!kept.length) return undefined;
+    return {
+      tickStepId: placed.id,
+      phase: placed.phase.name,
+      rules: kept,
+      ...(typeof step.args?.dial === "string" ? { dial: step.args.dial } : {}),
+      ...(typeof step.args?.budget === "number" ? { budget: step.args.budget } : {}),
+      ...(typeof step.args?.env === "string" ? { env: step.args.env } : {}),
+    };
+  }
+  return undefined;
+}
+
+/** How a comparison operator reads in the condition line. chant's own operator
+ * names (`eq`, `gte`) are builder function names, not a rendering — the symbols
+ * are what the predicate SAYS. */
+const COMPARISON_TEXT: Readonly<Record<OpIrFieldComparison["op"], string>> = {
+  eq: "=",
+  neq: "!=",
+  gt: ">",
+  gte: ">=",
+  lt: "<",
+  lte: "<=",
+};
+
+/**
+ * One predicate as the condition it states — `status = "drifted" and
+ * deleteCount > 0`.
+ *
+ * Rendered from the JSON, never re-parsed from the authoring source: the source
+ * is TypeScript this lens never sees, and the JSON is the thing the tick will
+ * actually evaluate. A string value keeps its quotes (a value, not a field
+ * name); a number or boolean doesn't. A composite nested inside another is
+ * parenthesised, because `a and b or c` states an order chant's tree does not.
+ *
+ * An EMPTY `all-of` / `any-of` is rendered as what `evaluatePredicate` does with
+ * it — every() over nothing is true, some() over nothing is false — rather than
+ * as a blank condition. Anything outside chant's four kinds says so plainly:
+ * this lens does not guess at a predicate language it doesn't know.
+ */
+export function predicateText(predicate: OpIrPredicate): string {
+  switch (predicate.kind) {
+    case "field-comparison": {
+      const op = COMPARISON_TEXT[predicate.op];
+      if (!op) return `(unreadable comparison on ${predicate.field})`;
+      const value = typeof predicate.value === "string" ? JSON.stringify(predicate.value) : String(predicate.value);
+      return `${predicate.field} ${op} ${value}`;
+    }
+    case "field-truthiness":
+      return `${predicate.field} is ${predicate.op}`;
+    case "all-of":
+    case "any-of": {
+      const joiner = predicate.kind === "all-of" ? " and " : " or ";
+      const parts = (predicate.predicates ?? []).filter(isPredicate);
+      if (!parts.length) return predicate.kind === "all-of" ? "(always)" : "(never)";
+      return parts
+        .map((p) => (p.kind === "all-of" || p.kind === "any-of" ? `(${predicateText(p)})` : predicateText(p)))
+        .join(joiner);
+    }
+    default:
+      return "(predicate outside the kinds behold reads)";
+  }
+}
+
+/** One action as the line the card shows. `report`'s reason is chant's own
+ * text and rides verbatim, the same way `why` does. */
+export function actionText(action: OpIrRuleAction): string {
+  return action.kind === "run" ? `run(${action.op})` : `report: ${action.reason}`;
+}
+
+/**
+ * How a rule paints.
+ *
+ * Nothing here has run — this is the declared table, not a tick — so no rule is
+ * `good`. `accent` on a dispatching rule is the effect step's semantics exactly:
+ * it MAY fire, and on a quiet tick fires not at all. A reporting rule never
+ * mutates anything, so it stays `neutral`. `warn` is reserved for the rule whose
+ * `then` names an Op that isn't here to draw an edge to — a dangling reference
+ * is the one thing on this card a reader has to act on.
+ */
+export function ruleStatus(rule: OpIrConvergeRule, declared: ReadonlySet<string>): "neutral" | "warn" | "accent" {
+  if (rule.then.kind !== "run") return "neutral";
+  return declared.has(rule.then.op) ? "accent" : "warn";
+}
+
+function ruleNode(op: OpIr, table: ConvergeTable, rule: OpIrConvergeRule, declared: ReadonlySet<string>): IRNode {
+  const dispatches = rule.then.kind === "run" && declared.has(rule.then.op) ? rule.then.op : undefined;
+  const dangling = rule.then.kind === "run" && !declared.has(rule.then.op) ? rule.then.op : undefined;
+  return {
+    id: ruleId(op.name, rule),
+    // The card's kind, as an activity's is its `fn`: a converge rule is what
+    // this is, and the whole table reads as one kind of thing in the track.
+    kind: "ConvergeRule",
+    lexicon: "op",
+    attrs: {
+      _status: ruleStatus(rule, declared),
+      _step: "rule",
+      rule: rule.id,
+      op: op.name,
+      phase: table.phase,
+      // The condition, the action, and the rationale — the three columns a rule
+      // table has. `why` is chant's required field, verbatim: the accessible-ops
+      // promise is that the answer to "why did it do that" is already written
+      // down, so behold's job is to show it, not to summarise it.
+      when: predicateText(rule.when),
+      then: actionText(rule.then),
+      why: rule.why,
+      ...(dispatches ? { dispatches } : {}),
+      // A `then` naming an Op that isn't in this set: stated, not guessed at.
+      // chant's TMP014 refuses a run() naming an Op the PROJECT doesn't declare,
+      // so this is behold's own composition boundary showing through, and saying
+      // which one it is beats an edge into nowhere.
+      ...(dangling
+        ? { dangling: `${dangling} — not among the Ops rendered here, so no edge is drawn` }
+        : {}),
+      // `flapThreshold` absent means chant's own default applies. Named the way
+      // a gate's unset timeout is, rather than restating a number chant owns.
+      flap: rule.flapThreshold !== undefined ? `${rule.flapThreshold} consecutive ticks` : "(chant default)",
+      ...(table.dial ? { dial: table.dial } : {}),
+    },
+  };
+}
+
 function nodeFor(op: OpIr, placed: Placed, guards: string | undefined): IRNode {
   const { step, phase, when } = placed;
   const common = {
@@ -427,6 +699,13 @@ export function opsToIr(ops: OpIr[]): GraphIR {
   const byStack: Record<string, string[]> = {};
   /** Op name -> its main track's first/last steps, for the `depends` pass. */
   const endpoints = new Map<string, { first: string[]; last: string[] }>();
+  /** Every Op name in THIS set — what a converge rule's `run` resolves against.
+   * Known up front so a rule card can paint a dangling reference correctly on
+   * the first pass, whatever order the Ops arrived in. */
+  const declared = new Set(ops.map((o) => o.name));
+  /** Rule card -> the Op its `then` dispatches, resolved with `depends` below,
+   * once every Op's first step is known. */
+  const dispatches: Array<{ from: string; op: string }> = [];
 
   for (const op of ops) {
     const placed = placeSteps(op);
@@ -454,6 +733,23 @@ export function opsToIr(ops: OpIr[]): GraphIR {
         endpoints.set(op.name, { first: track[0].heads, last: track[track.length - 1].tails });
       }
     }
+
+    // A ConvergeOp's rule table (#234 join 4). One card per rule, in declared
+    // order, in its own box beside the track — the rules are what the tick
+    // evaluates, not steps the run walks through, and boxing them with the
+    // phase would claim an ordering the tick doesn't have. An Op declaring no
+    // rule table adds nothing: no node, no edge, no box.
+    const table = convergeTable(op);
+    if (!table) continue;
+    for (const rule of table.rules) {
+      const node = ruleNode(op, table, rule, declared);
+      nodes.push(node);
+      (byStack[RULE_BOX(op.name)] ??= []).push(node.id);
+      // The table hangs off the step that carries it, so a reader follows the
+      // Op's own track into its rules rather than finding them floating.
+      edges.push({ from: table.tickStepId, to: node.id, kind: "ref", viaAttr: "rule" });
+      if (rule.then.kind === "run") dispatches.push({ from: node.id, op: rule.then.op });
+    }
   }
 
   // op → op `depends` — the only edge an OpConfig states explicitly. Drawn last
@@ -469,6 +765,17 @@ export function opsToIr(ops: OpIr[]): GraphIR {
         for (const to of mine.first) edges.push({ from, to, kind: "ref", viaAttr: "depends" });
       }
     }
+  }
+
+  // rule → op `then: run(<op>)` — the ops view's one legitimate cross-link, and
+  // the only edge in this lens that leaves the Op it was declared in for a
+  // reason chant states rather than one behold inferred. Drawn to the dispatched
+  // Op's FIRST step, because that is what `chant run <op>` starts. Dropped when
+  // the Op isn't in this set; the rule card already says so (`dangling`).
+  for (const { from, op } of dispatches) {
+    const target = endpoints.get(op);
+    if (!target) continue;
+    for (const to of target.first) edges.push({ from, to, kind: "ref", viaAttr: "run" });
   }
 
   return { nodes, edges, groups: { byStack } };
@@ -497,7 +804,16 @@ export function opCardFields(node: { attrs: Record<string, unknown> }): Array<{ 
               ...(phase ? [{ label: "phase", value: phase }] : []),
               ...(typeof node.attrs.profile === "string" ? [{ label: "profile", value: node.attrs.profile }] : []),
             ]
-          : undefined;
+          : // A converge rule card leads with the two columns that make it a
+            // rule — the condition and what it does about it. `why` is the long
+            // one and belongs in the inspect pane, where it reads in full
+            // rather than being cut to fit a card.
+            step === "rule"
+            ? [
+                { label: "when", value: String(node.attrs.when ?? "") },
+                { label: "then", value: String(node.attrs.then ?? "") },
+              ]
+            : undefined;
   if (!declared) return undefined;
   // The playhead (#284 item 2, src/run-playhead.ts) leads when there IS run
   // state: once a step has settled, what it did outranks what it was declared
@@ -512,13 +828,27 @@ export function opCardFields(node: { attrs: Record<string, unknown> }): Array<{ 
  */
 export function opsNote(ops: OpIr[], ir: GraphIR): string {
   const gates = ir.nodes.filter((n) => n.attrs._step === "gate").length;
+  const rules = ir.nodes.filter((n) => n.attrs._step === "rule");
+  // Rule cards are not steps — count them apart, so a project that declares a
+  // ConvergeOp doesn't report its rule table as extra track.
+  const steps = ir.nodes.length - rules.length;
+  const dangling = rules.filter((n) => n.attrs.dangling !== undefined).length;
   const counts = [
     `${ops.length} declared Op${ops.length === 1 ? "" : "s"}`,
-    `${ir.nodes.length} step${ir.nodes.length === 1 ? "" : "s"}`,
+    `${steps} step${steps === 1 ? "" : "s"}`,
     ...(gates ? [`${gates} gate${gates === 1 ? "" : "s"}`] : []),
+    ...(rules.length ? [`${rules.length} converge rule${rules.length === 1 ? "" : "s"}`] : []),
   ].join(" · ");
+  // The rule table's own sentence, present only for a project that declares one
+  // — an estate with no ConvergeOp reads exactly the note it read before.
+  const ruleNote = rules.length
+    ? ` Each converge rule carries the why chant requires of it, verbatim, and a rule whose then is run(<op>) is drawn as an edge to that Op's first step.` +
+      (dangling
+        ? ` ${dangling} rule${dangling === 1 ? " names an Op" : "s name Ops"} not in this set — stated on the card, not drawn.`
+        : "")
+    : "";
   return (
-    `${counts}, from each Op's emitted dist/ops/<name>/op.json. ` +
+    `${counts}, from each Op's emitted dist/ops/<name>/op.json.${ruleNote} ` +
     `No estate cross-links: op.json names an Op's env and stack but never an estate entity id, ` +
     `so nothing here is joined to the graph's nodes (chant ask). ` +
     `Read-only: this renders the declared Op — nothing is started, signalled, or applied.`

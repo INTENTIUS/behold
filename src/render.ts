@@ -21,6 +21,7 @@ import type { GraphIR, IRGroups, Layout } from "@intentius/chant";
 import type { ByContainer } from "./logical.ts";
 import { k8sIconFor, helmIconFor } from "./icon-packs.ts";
 import { carveCardFields } from "./carve-lens.ts";
+import { carveProgress, splitCarveState, type CarveState } from "./carve-manifest.ts";
 import { opCardFields } from "./ops-lens.ts";
 
 // Lexicon-native icons (#227), step 2 of 2. pinhole resolves a node's glyph
@@ -260,13 +261,26 @@ function bandedPlan(ir: GraphIR, bands: Record<string, string[]>): BandedPlan {
  * ranked TF addresses keep their ids untouched — the morph's identity
  * continuity (#230 M2b) depends on the carved card keeping its id across
  * views. `groups.byStack` on the composed IR carries the bands plus the app
- * member, so the client's box matcher sees every box it is shown. */
+ * member, so the client's box matcher sees every box it is shown.
+ *
+ * `carved` (#230 M3) is the carve state manifests chant persisted — the
+ * strangler-fig's memory. It decides which side of the estate a ranked address
+ * draws on, so the picture is the same after a restart as it was before one;
+ * see src/carve-manifest.ts. Absent (or empty) it is a no-op and this renders
+ * exactly the #254 frame. */
 export function renderCarveEstate(
   tfIr: GraphIR,
   appIr: GraphIR,
-  opts: { tfTitle: string; appTitle: string; theme?: string },
+  opts: {
+    tfTitle: string;
+    appTitle: string;
+    theme?: string;
+    carved?: Map<string, CarveState>;
+    shorten?: (path: string) => string;
+  },
 ): RenderResult & { ir: GraphIR } {
-  const comp = composeCarveEstate(tfIr, namespaceAppIr(appIr, opts.appTitle), opts);
+  const staged = withCarveState(tfIr, appIr, opts);
+  const comp = composeCarveEstate(staged.tf, staged.appNs, { ...opts, carvedTitle: staged.carvedTitle });
   const svg = renderSvg(comp.ir, comp.layout, {
     fit: true,
     hideTitle: true,
@@ -274,6 +288,37 @@ export function renderCarveEstate(
     ...(opts.theme ? { theme: opts.theme as never } : {}),
   });
   return { svg, ir: comp.ir };
+}
+
+/**
+ * The manifest overlay, applied to both halves of the estate at once (#230 M3).
+ *
+ * Graduated addresses come out of the TF ranking and go into the chant box
+ * keeping their Terraform address as their id — the same identity continuity
+ * the morph relies on, which is what makes a restart show the card ALREADY in
+ * the chant box rather than a different card in a similar place. Partial
+ * carves stay in their band, repainted (src/carve-manifest.ts `splitCarveState`).
+ *
+ * The chant panel's title carries the progress read, because the panel is where
+ * the estate already summarizes this member's contents. The denominator is the
+ * ranking's own size BEFORE the split: a graduated resource left the ranking,
+ * and counting it out of both halves would make the progress bar shrink as it
+ * filled.
+ */
+function withCarveState(
+  tfIr: GraphIR,
+  appIr: GraphIR,
+  opts: { appTitle: string; carved?: Map<string, CarveState>; shorten?: (path: string) => string },
+): { tf: GraphIR; appNs: GraphIR; carvedTitle: string } {
+  const states = opts.carved ?? new Map<string, CarveState>();
+  const { tf, graduated } = splitCarveState(tfIr, states, { ...(opts.shorten ? { shorten: opts.shorten } : {}) });
+  const ns = namespaceAppIr(appIr, opts.appTitle);
+  const progress = carveProgress(states.values(), tfIr.nodes.length);
+  return {
+    tf,
+    appNs: { ...ns, nodes: [...ns.nodes, ...graduated] },
+    carvedTitle: states.size ? `carved so far — ${progress.label}` : "carved so far",
+  };
 }
 
 /** App-side node ids get the member prefix (`app/<id>`, composeStacks'
@@ -300,11 +345,16 @@ interface EstateComposition {
   boxes: GroupBox[];
 }
 
-function composeCarveEstate(tfIr: GraphIR, appNs: GraphIR, opts: { tfTitle: string; appTitle: string }): EstateComposition {
+function composeCarveEstate(
+  tfIr: GraphIR,
+  appNs: GraphIR,
+  opts: { tfTitle: string; appTitle: string; carvedTitle?: string },
+): EstateComposition {
   const tfPlan = bandedPlan(tfIr, (tfIr.groups.byStack ?? {}) as Record<string, string[]>);
   // The app side reuses the banded grid as a single panel: same cell metrics
-  // discipline, and the panel title says what these cards have in common.
-  const appPlan = bandedPlan(appNs, { "carved so far": appNs.nodes.map((n) => n.id) });
+  // discipline, and the panel title says what these cards have in common —
+  // plus the manifest-backed progress read when there is one (#230 M3).
+  const appPlan = bandedPlan(appNs, { [opts.carvedTitle ?? "carved so far"]: appNs.nodes.map((n) => n.id) });
 
   // Two member boxes, top-aligned, TF on the left where the ranking's weight
   // is. Content sits inside each member at (PAD, TITLE + PAD).
@@ -362,28 +412,45 @@ export function renderCarveMorph(
   tfIr: GraphIR,
   appIr: GraphIR,
   carved: string[],
-  opts: { tfTitle: string; appTitle: string; title?: string },
+  opts: {
+    tfTitle: string;
+    appTitle: string;
+    title?: string;
+    carved?: Map<string, CarveState>;
+    shorten?: (path: string) => string;
+  },
 ): string {
-  const appNs = namespaceAppIr(appIr, opts.appTitle);
-  const before = composeCarveEstate(tfIr, appNs, opts);
+  // The BEFORE frame is the estate as it stands, manifests included (#230 M3):
+  // a resource that graduated in a previous session is already in the chant box
+  // when the morph opens, so the one card that moves is the one this morph is
+  // about. Selecting an address that has already graduated is therefore a
+  // no-movement morph — which is the truth, not a bug.
+  const staged = withCarveState(tfIr, appIr, opts);
+  const appNs = staged.appNs;
+  // Both views keep the PLAIN panel title, not the progress one the estate
+  // frame uses: a box morphs to the box with the same title, and a title that
+  // counted the cards would read "N of M" in a frame showing N+1 of them and
+  // break the FLIP into a swap. The progress read lives on the estate view.
+  const morphOpts = { ...opts, carvedTitle: "carved so far" };
+  const before = composeCarveEstate(staged.tf, appNs, morphOpts);
 
   const gone = new Set(carved);
-  const bands = (tfIr.groups.byStack ?? {}) as Record<string, string[]>;
+  const bands = (staged.tf.groups.byStack ?? {}) as Record<string, string[]>;
   const bandsAfter: Record<string, string[]> = {};
   for (const [band, members] of Object.entries(bands)) {
     const left = members.filter((id) => !gone.has(id));
     if (left.length) bandsAfter[band] = left;
   }
   const tfAfter: GraphIR = {
-    nodes: tfIr.nodes.filter((n) => !gone.has(n.id)),
-    edges: tfIr.edges.filter((e) => !gone.has(e.from) && !gone.has(e.to)),
+    nodes: staged.tf.nodes.filter((n) => !gone.has(n.id)),
+    edges: staged.tf.edges.filter((e) => !gone.has(e.from) && !gone.has(e.to)),
     groups: { byStack: bandsAfter },
   };
-  const carvedNodes = tfIr.nodes
+  const carvedNodes = staged.tf.nodes
     .filter((n) => gone.has(n.id))
     .map((n) => ({ ...n, attrs: { ...n.attrs, _status: "good", carve: "carved → chant" } }));
   const appAfter: GraphIR = { ...appNs, nodes: [...appNs.nodes, ...carvedNodes] };
-  const after = composeCarveEstate(tfAfter, appAfter, opts);
+  const after = composeCarveEstate(tfAfter, appAfter, morphOpts);
 
   const view = (name: string, comp: EstateComposition): MorphView => ({
     name,
