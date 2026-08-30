@@ -66,7 +66,7 @@ import { OpRunner } from "./op-runner.ts";
 import { Broadcaster } from "./events.ts";
 import { FrameBuffer } from "./frames.ts";
 import { shortStackNames } from "@intentius/pinhole";
-import { mkdtempSync, writeFileSync, rmSync, readFileSync, readdirSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, readdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1078,5 +1078,94 @@ describe("GET /api/overlay — structured precondition errors (#72)", () => {
     const { app } = makeApp(undefined);
     const res = await app.request("/api/overlay");
     expect(res.status).toBe(400);
+  });
+});
+
+// #166: the cross-member estate edge, through the routes. The measurement
+// found ZERO edges crossing a member boundary in either bundled estate, at
+// every detail tier — the Kustomization/Application that declares the
+// directory a member holds had nothing joining it to that member's cards.
+//
+// The estate on disk here is the flux-estate demo's shape under a real root
+// (`<tmp>/estate/{control-plane,app-a}`, app-a's `manifests/` really there),
+// because the join's whole defence is an on-disk check: the declared path's
+// leading segments must match a member's trailing ones AND its remainder must
+// exist under that member. The two requests below assert the SAME edge on
+// /api/graph and /api/overlay — a live read colours the estate, it does not
+// give it a different topology.
+describe("the cross-member estate edge on both paths (#166)", () => {
+  let root: string | undefined;
+  beforeEach(() => vi.mocked(spawnMock).mockReset());
+  afterEach(() => {
+    if (root) rmSync(root, { recursive: true, force: true });
+    root = undefined;
+  });
+
+  const CONTROL_PLANE = {
+    nodes: [
+      {
+        id: "appA",
+        kind: "K8s::Flux::Kustomization",
+        lexicon: "k8s",
+        attrs: {
+          metadata: { name: "app-a", namespace: "flux-system" },
+          spec: { targetNamespace: "app-a", path: "./estate/app-a/manifests", sourceRef: { kind: "GitRepository", name: "behold" } },
+          _status: "good",
+        },
+      },
+    ],
+    edges: [],
+    groups: {},
+  };
+  const APP_A = {
+    nodes: [
+      { id: "deployment", kind: "K8s::Apps::Deployment", lexicon: "k8s", attrs: { metadata: { name: "app-a", namespace: "app-a", labels: { app: "app-a" } }, spec: { template: { metadata: { labels: { app: "app-a" } } } }, _status: "good" } },
+      { id: "service", kind: "K8s::Core::Service", lexicon: "k8s", attrs: { metadata: { name: "app-a", namespace: "app-a" }, spec: { selector: { app: "app-a" } }, _status: "good" } },
+    ],
+    edges: [],
+    groups: {},
+  };
+
+  /** The two members on disk under one root, with app-a's manifests directory
+   * actually present — what `pathAlignment` verifies. */
+  const estateApp = () => {
+    root = mkdtempSync(join(tmpdir(), "behold-166-"));
+    const member = (name: string, ...subdirs: string[]) => {
+      const dir = join(root!, "estate", name);
+      mkdirSync(dir, { recursive: true });
+      for (const s of subdirs) mkdirSync(join(dir, s), { recursive: true });
+      writeFileSync(join(dir, "chant.config.ts"), `export default { lexicons: ["k8s"] };`);
+      return dir;
+    };
+    const cp = member("control-plane");
+    const a = member("app-a", "manifests");
+    vi.mocked(spawnMock).mockImplementation(((_cmd: unknown, args: unknown) =>
+      fakeProc(0, JSON.stringify(String(args).includes(cp) ? CONTROL_PLANE : APP_A))) as never);
+    const broadcaster = new Broadcaster();
+    const runner = new OpRunner({ projectDir: cp, broadcaster, onDone: () => {} });
+    const app = createApp({ projectDir: cp, projectDirs: [cp, a], env: "local", port: 0 }, broadcaster, new FrameBuffer(), runner);
+    const [cpName, aName] = shortStackNames([cp, a]);
+    return { app, cp: cpName, a: aName };
+  };
+
+  type Body = { ir: { edges: { from: string; to: string; viaAttr?: string; inferred?: boolean }[] } };
+
+  it("the source graph draws the Kustomization onto the member it reconciles", { timeout: 20_000 }, async () => {
+    const est = estateApp();
+    const body = (await (await est.app.request("/api/graph?detail=3")).json()) as Body;
+    expect(body.ir.edges).toContainEqual(
+      expect.objectContaining({ from: `${est.cp}/appA`, to: `${est.a}/service`, viaAttr: "reconciles", inferred: true }),
+    );
+    // Landing on the member's ENTRY node only: the Deployment is already the
+    // Service's selector target, so the boundary is crossed once.
+    expect(body.ir.edges.filter((e) => e.viaAttr === "reconciles")).toHaveLength(1);
+  });
+
+  it("the live overlay draws exactly the same edge", { timeout: 20_000 }, async () => {
+    const est = estateApp();
+    const body = (await (await est.app.request("/api/overlay?env=local&detail=3")).json()) as Body;
+    expect(body.ir.edges).toContainEqual(
+      expect.objectContaining({ from: `${est.cp}/appA`, to: `${est.a}/service`, viaAttr: "reconciles", inferred: true }),
+    );
   });
 });

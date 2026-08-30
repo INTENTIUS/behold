@@ -100,7 +100,8 @@ import { OpRunner } from "./op-runner.ts";
 import { detectSubstrates, projectLexicons } from "./substrates.ts";
 import { pickAutoSyncOps, suspendedByRollback, type AutoSyncMode } from "./autosync.ts";
 import { sourceCommits, openRollbackBranches } from "./history.ts";
-import { composeEstate, composeEstateOverlay, withoutJoinedMembers } from "./estate.ts";
+import { composeEstate, composeEstateOverlay, estateMembers, withoutJoinedMembers } from "./estate.ts";
+import { addEstateMemberEdges } from "./estate-edges.ts";
 import { invalidateMember } from "./member-ir.ts";
 import { Broadcaster, watchSources } from "./events.ts";
 import { startDriftPoll } from "./poll.ts";
@@ -1610,6 +1611,12 @@ export function createApp(
         // not `spec.sourceRef.name` — and value-match fills what is left.
         ir = addK8sDeclaredEdges(ir);
         ir = addValueMatchEdges(ir);
+        // The estate's own edge (#166): a control-plane member's Kustomization /
+        // Application declares the directory it applies, and behold knows each
+        // member by its checkout — so the join a single project cannot make is
+        // exactly the one composition exists for. After the two passes above,
+        // which is what tells it where a member's interior already starts.
+        ir = addEstateMemberEdges(ir, estateMembers(cfg.projectDirs!));
         // #234's free rider: an `OperatorStack` renders as an ordinary namespace
         // of CronJobs, so the estate already draws the operating loop — just
         // anonymously. This names it, from chant's own labels. Additive paint;
@@ -2028,6 +2035,7 @@ export function createApp(
         // colour, never a different topology.
         ir = addK8sDeclaredEdges(ir);
         ir = addValueMatchEdges(ir);
+        ir = addEstateMemberEdges(ir, estateMembers(cfg.projectDirs));
         // #234's free rider — see /api/graph's estate branch.
         ir = markOperatorHome(ir);
         const boundContext = await boundK8sContext(env);

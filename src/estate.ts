@@ -80,6 +80,16 @@ export async function mapPool<T, R>(
 // still spawns per member, every read, because a cluster moves with nothing on
 // disk to notice. The invalidation rule lives in that module's header.
 
+/** Each member paired with the name `composeStacks` namespaces its ids under —
+ * the one fact a composed IR does not carry, and what `src/estate-edges.ts`
+ * needs to join a declared `spec.path` back to the member it points at (#166).
+ * One reading of `shortStackNames`, so the names here and the ids in the
+ * composed IR cannot drift apart. */
+export function estateMembers(projectDirs: readonly string[]): { name: string; dir: string }[] {
+  const names = shortStackNames([...projectDirs]);
+  return projectDirs.map((dir, i) => ({ name: names[i], dir }));
+}
+
 /** Graph each project's source and compose them into one estate IR. */
 export async function composeEstate(projectDirs: string[], opts: GraphOptions = {}): Promise<GraphIR> {
   const names = shortStackNames(projectDirs); // readable per-project labels (common prefix stripped)
