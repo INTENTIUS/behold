@@ -157,15 +157,28 @@ export async function runCarveObserve(demo: CarveDemo, select: string): Promise<
       "Is the scratch Floci still up? `docker ps` should list " + demo.live.container + ".",
     );
   }
-  let aws: {
+  type AwsLexicon = {
     resources?: { missing?: string[]; unobserved?: Array<{ name: string; reason?: string; detail?: string }>; queried?: Record<string, string> };
     observed?: Record<string, { status?: string; ownership?: string; physicalId?: string }>;
   };
+  let parsed: { lexicons?: Record<string, AwsLexicon>; stacks?: Record<string, unknown> };
   try {
-    aws = (JSON.parse(run.stdout) as { lexicons?: Record<string, typeof aws> }).lexicons?.aws ?? {};
+    parsed = JSON.parse(run.stdout);
   } catch {
     return refuse("carve-action", "chant lifecycle diff answered something that isn't JSON", "re-run — a partial read is not a verdict");
   }
+  if (parsed.stacks && !parsed.lexicons) {
+    // #311: a stacked target answers {environment, stacks}, not {environment,
+    // lexicons} — reading it as the stack-less shape would find no
+    // lexicons.aws and every entity would silently report "missing". A wrong
+    // shape is not a verdict.
+    return refuse(
+      "carve-action",
+      "chant lifecycle diff answered a stacked shape ({stacks}) — observe only reads the stack-less {lexicons} shape",
+      "point the target at a stack-less carveout, or file a shape-read gap against observe for the stacked case",
+    );
+  }
+  const aws: AwsLexicon = parsed.lexicons?.aws ?? {};
   const entity = select.split(".").pop() ?? select;
   const command = `AWS_ENDPOINT_URL=${demo.live.endpoint} chant ${args.join(" ")}  # in ${shortenIn(demo.out, demo.root)}`;
   const queried = aws.resources?.queried?.[entity];
