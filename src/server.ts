@@ -1770,7 +1770,12 @@ export function createApp(
       const estateLensNote = multi && components
         ? "the components lens doesn't apply to a composed estate yet — showing the composed entity graph"
         : undefined;
-      const srcNote = multi ? estateLensNote : notesFor(srcZoom, ir, srcCompositeEdgesAttached);
+      // #322: the 5th `detail` argument, so `edgelessNote` can tell a real
+      // edgeless project from one graphed below the tier that has its edges
+      // (see /api/overlay's single-project branch, which already passed this)
+      // — without it, example-k8s's `/api/graph` asserted "nothing in this
+      // estate references anything else" at detail 2 while detail 3 has 2.
+      const srcNote = multi ? estateLensNote : notesFor(srcZoom, ir, srcCompositeEdgesAttached, undefined, opts.detail ?? 2);
       return c.json({
         ir,
         svg,
@@ -2065,11 +2070,17 @@ export function createApp(
         // says they run; #192's note then speaks only for the members the join
         // did not reach — for the joined ones the read no longer looked in
         // "default", so the sentence would be false.
+        // #322: the same zoom/detail-aware note the single-project overlay
+        // branch below already gives (`zoom` there) — before this, an estate
+        // overlay said nothing at all outside the runtime tier, so a
+        // three-member GitOps estate could open on 0 of 5 edges with no line
+        // saying why (a wrong-tier detail cliff, not an edgeless estate).
+        const zoom: Zoom = runtime ? "runtime" : detail === 1 ? "composites" : detail === 3 ? "attributes" : "resources";
         const note = [
           coverNote,
           namespaceJoinNote(est.joined),
           namespaceMismatchNote(withoutJoinedMembers(ir.nodes, est.joined)),
-          runtime ? notesFor("runtime", ir, undefined, undefined, detail) : undefined,
+          notesFor(zoom, ir, undefined, undefined, detail ?? 2),
         ]
           .filter(Boolean)
           .join(" · ");
