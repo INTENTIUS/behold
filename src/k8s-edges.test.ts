@@ -333,3 +333,107 @@ describe("projectK8sLogical passes derived edges through (#143)", () => {
     expect(out.edges).toHaveLength(3);
   });
 });
+
+// ---------------------------------------------------------------------------
+// #166 — the selector join beyond Service.
+//
+// Provenance: `example-k8s`'s own `WebApp` composite emits a Deployment, a
+// Service and a PodDisruptionBudget over one label set (see
+// example-k8s/src/infra.ts: `web.deployment`, `web.service`, `web.pdb`). The
+// PDB's `spec.selector.matchLabels` is exactly the Deployment's pod-template
+// labels, and it was an orphan card in every view — the #166 measurement's
+// item 4.
+// ---------------------------------------------------------------------------
+
+/** The example-k8s trio, as chant emits it at detail 3. */
+function webApp(): IRNode[] {
+  const labels = { app: "web" };
+  return [
+    k8s("deployment", "K8s::Apps::Deployment", {
+      ...meta("web", "default", labels),
+      spec: { replicas: 2, selector: { matchLabels: labels }, template: { metadata: { labels } } },
+    }),
+    k8s("service", "K8s::Core::Service", { ...meta("web", "default"), spec: { selector: labels, ports: [{ port: 80 }] } }),
+    k8s("pdb", "K8s::Policy::PodDisruptionBudget", {
+      ...meta("web", "default"),
+      spec: { minAvailable: 1, selector: { matchLabels: labels } },
+    }),
+  ];
+}
+
+describe("the selector join, generalised past Service (#166)", () => {
+  it("joins a PodDisruptionBudget to the workload its selector lands on", () => {
+    const edges = deriveK8sEdges(webApp());
+    expect(edges).toContainEqual(expect.objectContaining({ from: "pdb", to: "deployment", viaAttr: "selector", inferred: true }));
+    // The Service's own join is unchanged — the PDB is the edge that was missing.
+    expect(edges).toContainEqual(expect.objectContaining({ from: "service", to: "deployment", viaAttr: "selector" }));
+    expect(edges).toHaveLength(2);
+  });
+
+  it("joins a NetworkPolicy by its podSelector", () => {
+    const nodes = [
+      ...webApp(),
+      k8s("netpol", "K8s::Networking::NetworkPolicy", {
+        ...meta("web", "default"),
+        spec: { podSelector: { matchLabels: { app: "web" } }, policyTypes: ["Ingress"] },
+      }),
+    ];
+    expect(deriveK8sEdges(nodes)).toContainEqual(
+      expect.objectContaining({ from: "netpol", to: "deployment", viaAttr: "podSelector" }),
+    );
+  });
+
+  it("scopes the new carriers by namespace, exactly as the Service join is", () => {
+    const nodes = [
+      k8s("deployment", "K8s::Apps::Deployment", { ...meta("web", "prod"), spec: { template: { metadata: { labels: { app: "web" } } } } }),
+      k8s("pdb", "K8s::Policy::PodDisruptionBudget", { ...meta("web", "staging"), spec: { selector: { matchLabels: { app: "web" } } } }),
+    ];
+    expect(deriveK8sEdges(nodes)).toHaveLength(0);
+  });
+
+  it("refuses a selector it cannot evaluate, and one that selects everything", () => {
+    // matchExpressions is ANDed with matchLabels — matching on the labels half
+    // alone would over-select, so the whole selector is refused.
+    const expressions = [
+      k8s("deployment", "K8s::Apps::Deployment", { ...meta("web", "default"), spec: { template: { metadata: { labels: { app: "web" } } } } }),
+      k8s("pdb", "K8s::Policy::PodDisruptionBudget", {
+        ...meta("web", "default"),
+        spec: { selector: { matchLabels: { app: "web" }, matchExpressions: [{ key: "tier", operator: "In", values: ["web"] }] } },
+      }),
+    ];
+    expect(deriveK8sEdges(expressions)).toHaveLength(0);
+    // An empty podSelector is "every pod in this namespace" — a statement about
+    // the namespace, not a reference to a workload.
+    const everything = [
+      k8s("deployment", "K8s::Apps::Deployment", { ...meta("web", "default"), spec: { template: { metadata: { labels: { app: "web" } } } } }),
+      k8s("netpol", "K8s::Networking::NetworkPolicy", { ...meta("deny-all", "default"), spec: { podSelector: {}, policyTypes: ["Ingress"] } }),
+    ];
+    expect(deriveK8sEdges(everything)).toHaveLength(0);
+  });
+
+  it("draws no edge from a NetworkPolicy's PEER selectors", () => {
+    // A peer is scoped by the namespaceSelector beside it — a selector over
+    // Namespace labels this pass does not index. Left undrawn rather than wrong.
+    const nodes = [
+      ...webApp(),
+      k8s("netpol", "K8s::Networking::NetworkPolicy", {
+        ...meta("web", "default"),
+        spec: {
+          podSelector: { matchLabels: { app: "nothing-here" } },
+          ingress: [{ from: [{ podSelector: { matchLabels: { app: "web" } }, namespaceSelector: {} }] }],
+        },
+      }),
+    ];
+    expect(deriveK8sEdges(nodes).some((e) => e.from === "netpol")).toBe(false);
+  });
+
+  it("does not turn a workload's OWN selector into a reference", () => {
+    // Two Deployments sharing `app: web` in one namespace: each `spec.selector`
+    // names its own pods, so neither may point at the other.
+    const nodes = [
+      k8s("a", "K8s::Apps::Deployment", { ...meta("a", "default"), spec: { selector: { matchLabels: { app: "web" } }, template: { metadata: { labels: { app: "web" } } } } }),
+      k8s("b", "K8s::Apps::Deployment", { ...meta("b", "default"), spec: { selector: { matchLabels: { app: "web" } }, template: { metadata: { labels: { app: "web" } } } } }),
+    ];
+    expect(deriveK8sEdges(nodes)).toHaveLength(0);
+  });
+});
