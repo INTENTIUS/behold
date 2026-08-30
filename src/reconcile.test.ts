@@ -1,8 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { summarizePlan, worstDisruption } from "./reconcile.ts";
 import type { LifecyclePlan } from "./chant.ts";
 import type { ComponentResource } from "./resources.ts";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 // Fixture mirrors `chant lifecycle plan local --live --json`'s shape
 // (chant.ts's `LifecyclePlan`) — a handful of entity-level entries across two
@@ -349,6 +353,84 @@ describe("summarizePlan — disruption (chant#1665)", () => {
     const summary = summarizePlan(withParam, byComponent, new Set(["pRdsEndpoint"]));
     expect(summary.disruption.destroy).toBe(0);
     expect(summary.disruptionUncorrelated).toBeUndefined();
+  });
+});
+
+/**
+ * The fixture is a REAL plan: `chant lifecycle plan prod --live --json` on
+ * chant 0.52.1 (chant-lexicon-aws 0.52.1), captured from a scratch copy of
+ * this repo's own `example-writes` deployed to a throwaway Floci emulator on a
+ * port and container of its own, so nothing in the checkout or any other
+ * emulator was touched. Two `AWS::EC2::SecurityGroup`s were added alongside
+ * the bucket, the stack applied, `lifecycle snapshot prod` taken as the
+ * baseline, then `GroupName` changed on one group (create-only per the
+ * CloudFormation registry schema) and `GroupDescription` on the other (not),
+ * and the stack re-applied before re-planning.
+ *
+ * Two things about the capture worth knowing before regenerating it:
+ *
+ * - The drift was induced by delete + recreate of the stack, not by an
+ *   update-in-place. Floci's CloudFormation `update-stack` recreates a
+ *   security group rather than mutating it, which fails on the name already
+ *   existing and rolls back. That is an emulator limitation, and it is why
+ *   every entry reads `ownership: "foreign"` — the raw `create-stack` path
+ *   doesn't promote chant's ownership marker to stack tags.
+ * - The obvious candidate, renaming the S3 bucket, does NOT produce a
+ *   `replace`. The aws classifier only weighs deltas under `attributes.`, and
+ *   the lexicon enriches observed attributes for four EC2 kinds only, so a
+ *   bucket rename surfaces as a bare `physicalId` delta and honestly reads
+ *   `in-place`. Security groups are the cheapest type that carries a real
+ *   create-only property into the plan.
+ *
+ * So the verdicts here are the aws lexicon's own, read off the compiled
+ * registry — not values written by hand to match behold's type. That is what
+ * makes it worth keeping: `disruptionBecause` naming `attributes.GroupName`
+ * out of four deltas, and the `physicalId`/`lastUpdated` deltas that chant
+ * deliberately does NOT count as configuration, are shapes nobody would have
+ * invented.
+ *
+ * `rolling` and `destroy` are absent by design. Nothing in the registry schema
+ * expresses a workload roll, so aws never returns `rolling` (chant's own docs
+ * say so), and the 65 types whose `replacementStrategy` is `delete_then_create`
+ * are all kinds this lexicon has no property describer for. The synthetic
+ * fixtures above cover both levels.
+ */
+describe("summarizePlan — a real chant 0.52 plan (chant#1665)", () => {
+  const real = JSON.parse(readFileSync(join(HERE, "__fixtures__", "plan-disruption-writes.json"), "utf8")) as LifecyclePlan;
+  // The example project has no `src/<component>/` layout, so the correlation
+  // is supplied here the way `resourcesByComponent` would have derived it.
+  const writesComponents: Record<string, ComponentResource[]> = {
+    net: [
+      { id: "sgWeb", kind: "AWS::EC2::SecurityGroup", lexicon: "aws" },
+      { id: "sgApp", kind: "AWS::EC2::SecurityGroup", lexicon: "aws" },
+    ],
+    bucket: [
+      { id: "store", kind: "AWS::S3::Bucket", lexicon: "aws" },
+      { id: "storePolicy", kind: "AWS::S3::BucketPolicy", lexicon: "aws" },
+    ],
+  };
+
+  it("reads the verdicts chant actually emitted", () => {
+    const summary = summarizePlan(real, writesComponents);
+    expect(summary.env).toBe("prod");
+    expect(summary.total).toBe(4);
+    expect(summary.disruption).toEqual({ "in-place": 3, rolling: 0, replace: 1, destroy: 0, unknown: 0 });
+  });
+
+  it("gives the component holding the create-only change the loud verdict, and the other the quiet one", () => {
+    const summary = summarizePlan(real, writesComponents);
+    // `net` holds both groups — one in-place, one replace — so the row must
+    // say replace. `bucket`'s two entries are both in-place.
+    expect(summary.disruptionByComponent).toEqual({ net: "replace", bucket: "in-place" });
+  });
+
+  it("the loud entry is the one whose create-only property moved", () => {
+    const replaced = real.entries.filter((e) => e.disruption === "replace");
+    expect(replaced.map((e) => e.name)).toEqual(["sgWeb"]);
+    // chant names WHICH of the four deltas forced it — the other three are
+    // identity and timestamps, which say nothing about configuration.
+    expect(replaced[0]!.disruptionBecause).toEqual(["attributes.GroupName"]);
+    expect(replaced[0]!.disruptionDetail).toContain("create-only");
   });
 });
 
