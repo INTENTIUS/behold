@@ -942,6 +942,163 @@ export function lifecycleDiffLive(projectDir: string, env: string, opts: GraphOp
 }
 
 // ---------------------------------------------------------------------------
+// Helm render diff (#146's deferred half) — the release's DRIFT axis.
+//
+// #146 shipped the helm lens as artifact presence only, and said so: at the
+// time `listArtifacts` was helm's only lifecycle hook, so "is this release
+// installed" was the whole reachable verdict. chant 0.49 (chant#1249 offline,
+// chant#1250 live; epic chant#1228 Phase 6) added a second hook, and 0.52.1 —
+// what behold's root now pins — carries it:
+//
+//   chant helm renders --json
+//     -> { records: HelmRenderRecord[], stability }
+//        every HelmRender the project declares. `contentDigest` is present
+//        ONLY on a pinned render (one with a declared capabilityProfile);
+//        an unpinned render's bytes are a function of the local helm
+//        binary's defaulted capabilities, so it has no content identity.
+//
+//   chant helm diff <content-digest> <env> --live --json
+//     -> { contentDigest, environment, manifest, diff }
+//        `manifest` is the stored RenderManifest (the provenance record:
+//        inputDigest/valuesDigest/contentDigest, capabilityProfile, helmVersion,
+//        chantVersion, renderedAt, sourceRef); `diff` is core's own
+//        DeepDiffResult — the SAME shape and vocabulary the k8s deep drift
+//        read produces, property by property.
+//        Exits 1 with a stderr line when the store has never seen the digest,
+//        rather than reporting a false clean diff.
+//
+// Both are ordinary shell-outs to the project-local chant, like every other
+// read here — behold links no chant library and holds no cluster credentials.
+// The command group is mounted by the helm lexicon's own plugin, so a project
+// that does not install `@intentius/chant-lexicon-helm` has no `chant helm`
+// at all: that read fails, and the lens stays exactly where #146 left it.
+//
+// The offline half (`chant helm diff <from> <to> --json`, render-to-render) is
+// NOT wired here — see src/helm-drift.ts's header for why.
+// ---------------------------------------------------------------------------
+
+/** One `HelmRender` the project declares, as `chant helm renders --json`
+ * reports it — chant's own `HelmRenderRecord` (lexicons/helm/src/render.ts),
+ * reproduced rather than imported, same as `LiveArtifactObservation` above.
+ * `contentDigest`/`inputDigest` are present only on a PINNED render. */
+export interface HelmRenderRecord {
+  /** The render's logical name — also the helm release name baked into the bytes. */
+  name: string;
+  chart: string;
+  version?: string;
+  capabilityProfile?: { name?: string; kubeVersion?: string; apiVersions?: string[] };
+  inputDigest?: string;
+  contentDigest?: string;
+  coalescedValuesDigest?: string;
+}
+
+/** The `chant helm renders --json` payload. `stability` is the lexicon's own
+ * render-stability report; behold reads only `records`, but the field is
+ * carried so the shape stays honest about what the command returns. */
+export interface HelmRendersReport {
+  records?: HelmRenderRecord[];
+  stability?: unknown;
+}
+
+/** Build the `chant helm renders --json` argv. Pure; exported for testing. */
+export function helmRendersArgs(): string[] {
+  return ["helm", "renders", "--json"];
+}
+
+/** The HelmRender declarations of the project at `projectDir`. Rejects with a
+ * `ChantCliError` when the project has no `chant helm` command group (the
+ * helm lexicon is not installed) — callers treat that as "no render axis
+ * here", never as "no renders". */
+export function helmRenders(projectDir: string, opts: GraphOptions = {}): Promise<HelmRendersReport> {
+  return runChantJson<HelmRendersReport>(helmRendersArgs(), projectDir, envOverridesFor(opts));
+}
+
+/** The stored `RenderManifest` for a pinned render — chant's own shape
+ * (lexicons/helm/src/render-store.ts). Everything below `contentDigest` is
+ * the provenance record: what was rendered, from which inputs, by which helm
+ * and chant, against which cluster profile. */
+export interface HelmRenderManifest {
+  version?: number;
+  chart: string;
+  chartVersion: string | null;
+  repo: string | null;
+  releaseName: string;
+  namespace: string | null;
+  valuesDigest: string;
+  inputDigest: string;
+  capabilityProfile: { cluster: string; kubeVersion: string; apiVersions: string[] };
+  contentDigest: string;
+  /** Documents in the canonical stream, including any the index could not identify. */
+  docCount: number;
+  documents: { kind: string; apiVersion?: string; name: string; namespace: string | null; source?: string | null; digest: string }[];
+  renderedAt: string;
+  /** The helm binary that produced the bytes — what explains a digest mismatch between two machines. */
+  helmVersion: string;
+  chantVersion: string;
+  /** Source ref/commit, when the render's caller supplied one. Never fabricated. */
+  sourceRef: string | null;
+  coalescedValuesDigest?: string | null;
+}
+
+/** One property difference between the pinned render and live. Core's own
+ * `PropertyDrift` — the same rows the k8s deep-drift read produces, which is
+ * why the UI can render them with the field-drift vocabulary it already has. */
+export interface HelmPropertyDrift {
+  path: string;
+  kind: "changed" | "undeclared" | "absent";
+  declared?: unknown;
+  live?: unknown;
+  owner?: string;
+}
+
+/** Core's `DeepDiffResult`, as `chant helm diff --live --json` carries it. */
+export interface HelmRenderDiff {
+  drifted: { name: string; type: string; changes: HelmPropertyDrift[] }[];
+  accepted: { name: string; type: string; changes: HelmPropertyDrift[] }[];
+  unchanged: string[];
+  unobserved: { name: string; reason: string; detail?: string }[];
+  undeclaredEntities: string[];
+}
+
+/** The `chant helm diff <digest> <env> --live --json` payload. */
+export interface HelmRenderLiveDiff {
+  contentDigest: string;
+  environment: string;
+  manifest: HelmRenderManifest;
+  diff: HelmRenderDiff;
+}
+
+/** Build the `chant helm diff <content-digest> <env> --live --json` argv.
+ * Pure; exported for testing. */
+export function helmRenderDiffArgs(contentDigest: string, env: string): string[] {
+  return ["helm", "diff", contentDigest, env, "--live", "--json"];
+}
+
+/** Diff one pinned render against the live cluster `env` binds to.
+ *
+ * Resolves `undefined` — never throws, never a partial object — on any
+ * non-zero exit. The load-bearing case is chant's own refusal: a digest the
+ * render store has never seen exits 1 rather than reporting a clean diff,
+ * because an unpinned render was never persisted and has no stable bytes to
+ * compare. `undefined` therefore means "not compared", and src/helm-drift.ts
+ * must never let that reach the graph as "in sync". */
+export async function helmRenderDiffLive(
+  projectDir: string,
+  contentDigest: string,
+  env: string,
+  opts: GraphOptions = {},
+): Promise<HelmRenderLiveDiff | undefined> {
+  const args = helmRenderDiffArgs(contentDigest, env);
+  const { code, stdout } = await runChantRaw(args, projectDir, envOverridesFor(opts));
+  if (code !== 0) return undefined;
+  try {
+    return JSON.parse(stdout) as HelmRenderLiveDiff;
+  } catch {
+    return undefined;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Apply facet (M3, epic #54's observe→reconcile→apply dial) — behold's first
 // delegated WRITE. `chant run <target> --components --env <env>
 // --progress-json` (chant 0.18.30) deploys the named component (or every

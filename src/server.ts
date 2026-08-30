@@ -49,6 +49,7 @@ import { reclassifyOverlay, pruneImports, attachRuntimeContainment, pruneRuntime
 import { addValueMatchEdges } from "./value-match.ts";
 import { addK8sDeclaredEdges } from "./k8s-edges.ts";
 import { applyHelmArtifacts } from "./helm-artifacts.ts";
+import { applyHelmRenderDrift, readHelmRenderDrift } from "./helm-drift.ts";
 import { addClusterAnchorEdges } from "./cluster-anchor.ts";
 import { projectTopology } from "./logical.ts";
 import { addCompositeDepsCounted } from "./composite-deps.ts";
@@ -1868,6 +1869,12 @@ export function createApp(
           .catch(() => undefined);
         applyHelmArtifacts(ir, observed);
         synthesizeHelmReleases(ir, observed, discoverReleaseUnits(cfg.projectDir));
+        // The drift half #146 deferred (chant#1249/#1250, shipped 0.49): each
+        // PINNED render diffed against the live cluster, property by property.
+        // Refines the presence verdict above — drift repaints a chart `warn`,
+        // an in-sync or unreadable render leaves the colour alone. A project
+        // with no `chant helm` command group reports nothing and stays at #146.
+        applyHelmRenderDrift(ir, await readHelmRenderDrift(cfg.projectDir, env, query));
       }
       // Runtime tier (#86, chant#1180/#1077): nest each live, undeclared,
       // owner-chain-resolved node (a Pod its Deployment's controller created)
@@ -2000,6 +2007,7 @@ export function createApp(
           .catch(() => undefined);
         applyHelmArtifacts(result.ir, observed);
         synthesizeHelmReleases(result.ir, observed, discoverReleaseUnits(cfg.projectDir));
+        applyHelmRenderDrift(result.ir, await readHelmRenderDrift(cfg.projectDir, env));
       }
     }
     // Same runtime-tier gate the /api/overlay view applies (#86, #144): the

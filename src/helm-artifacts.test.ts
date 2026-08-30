@@ -82,4 +82,22 @@ describe("applyHelmArtifacts (behold#146)", () => {
     applyHelmArtifacts(ir, deployed);
     expect(aws.attrs!._status).toBe("good");
   });
+
+  test("an observed release carries no render identity — the join #146 and the drift lens both had to guess", () => {
+    // chant's `listArtifacts` (lexicons/helm/src/list-artifacts.ts) is a
+    // `helm list -o json` parse, and this is the whole attribute set it emits.
+    // Notably absent: the `helmInputDigest` chant#1243 has the release ledger
+    // record on deploy. Without it, an OBSERVED release cannot be joined to
+    // the PINNED render that produced it, so both this module and
+    // src/helm-drift.ts fall back to matching on the chart name — and #234's
+    // "is prod running what staging tested" has no digest to compare, because
+    // a consumer can only obtain a digest for a render it can re-render
+    // locally, never for a release it can only observe.
+    //
+    // Filed as chant#2031. The day it lands this assertion fails, and it
+    // fails pointing straight at the join that got better.
+    expect(Object.keys(deployed["release/prod/web"].attributes!).sort()).toEqual(["chart", "revision"]);
+    expect(deployed["release/prod/web"].attributes).not.toHaveProperty("inputDigest");
+    expect(deployed["release/prod/web"].attributes).not.toHaveProperty("contentDigest");
+  });
 });
