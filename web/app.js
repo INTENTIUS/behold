@@ -1064,6 +1064,55 @@ function primeDemoCatalog() {
   });
 }
 
+/**
+ * The manifest-backed carve state (#230 M3), as the scope panel shows it: the
+ * progress read, then one row per carved address with its stage.
+ *
+ * Stage is carried by the WORD, with the tone reinforcing it — green for
+ * graduated, the pending blue for a carve still in flight (the same blue
+ * pinhole paints `accent` cards with, so the panel row and the card agree).
+ * A no-op when the served estate carries no manifests: a project that was
+ * never carved grows no dead section.
+ *
+ * `chant carve apply` is echoed per row and never offered as a button — see
+ * src/carve-manifest.ts APPLY_IS_HUMAN, which `state.apply.note` carries here
+ * verbatim.
+ */
+function renderCarveState(host, state) {
+  if (!state || !state.manifests) return;
+  host.appendChild(panelHeading("carved out of terraform"));
+  const head = document.createElement("div");
+  head.className = "count-row";
+  const label = document.createElement("span");
+  label.className = "grow";
+  label.textContent = state.progress.label;
+  const tag = document.createElement("span");
+  tag.className = "tag";
+  tag.textContent = state.manifests + (state.manifests === 1 ? " manifest" : " manifests");
+  tag.title = "chant's own *.carve.json state manifests — behold reads them and never writes one.";
+  head.append(label, tag);
+  host.appendChild(head);
+  if (state.progress.detail) host.appendChild(panelMuted(state.progress.detail));
+  for (const s of state.states) {
+    const row = document.createElement("div");
+    row.className = "count-row";
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    dot.style.background = s.graduated ? "var(--managed)" : "var(--pending)";
+    const name = document.createElement("span");
+    name.className = "grow";
+    name.textContent = s.target;
+    name.title = s.note;
+    const stage = document.createElement("span");
+    stage.className = "tag";
+    stage.textContent = s.stage;
+    row.append(dot, name, stage);
+    host.appendChild(row);
+    if (!s.graduated) host.appendChild(panelMuted(s.applyCommand));
+  }
+  host.appendChild(panelMuted(state.apply.note));
+}
+
 function renderPanelScope() {
   const host = document.getElementById("tab-scope");
   if (!host) return;
@@ -1089,6 +1138,12 @@ function renderPanelScope() {
     host.appendChild(panelMuted(dir));
   }
   if (!estateDirs.length) host.appendChild(panelMuted("no project loaded yet"));
+  // #230 M3: the strangler-fig progress, right where the panel already
+  // summarizes this estate's members. It reads off chant's own `*.carve.json`
+  // manifests (chant#998), so it says the same thing after a restart as before
+  // one — and it renders identically in carve mode and on an ordinary project
+  // serve, because /api/project publishes one shape for both.
+  renderCarveState(host, info.carve && info.carve.state);
   // #195: switching — recents first (server-persisted, validated), then a
   // free path input. Locked in preview mode (the demo's contract) and
   // meaningless in a static export.
@@ -1417,6 +1472,27 @@ const carveActions = {
 
 /** Run one of the two safe steps. Both are POSTs with a `{select}` body; both
  * answer either their result or #193's `{error, code, remedy}`. */
+/**
+ * Re-read the manifest-backed carve state (#230 M3) after a step wrote one.
+ *
+ * One `/api/project` plus a graph reload: the panel's "carved so far" and the
+ * repainted card both come off the manifests on disk, so an in-session update
+ * and a post-restart read are the same read. A failed refresh leaves what was
+ * already shown alone — stale is better than a state change nobody made.
+ */
+async function refreshCarveState() {
+  try {
+    const info = await apiFetch("/api/project").then((r) => r.json());
+    projectInfo = info;
+    carveInfo = info.carve || null;
+  } catch {
+    return;
+  }
+  renderPanelScope();
+  renderPanelCarve();
+  await load();
+}
+
 async function runCarveStep(which) {
   if (carveState.busy || !carveState.pick) return;
   carveState.busy = which;
@@ -1439,6 +1515,11 @@ async function runCarveStep(which) {
       // to the next button would hide the thing the run was for. The "next"
       // control unlocks; pressing it stays the viewer's move.
       showToast(`✓ carve ${which} — wrote into ${(carveInfo.demo && carveInfo.demo.outLabel) || "the demo copy"}`, true);
+      // #230 M3: the step just wrote a carve manifest. Re-read it rather than
+      // inferring the new state from the response — the file on disk is what
+      // the panel and the card claim to be showing, and after a reload it is
+      // the only thing left.
+      await refreshCarveState();
     }
   } catch (err) {
     carveState.error = { step: which, error: String((err && err.message) || err), remedy: "Is the behold server still running?" };

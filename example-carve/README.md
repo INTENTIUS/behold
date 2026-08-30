@@ -163,6 +163,26 @@ Then the box slides out of the Terraform half and into `app/`, beside the log
 group and the SSM parameter that made the same trip last month. Around two
 minutes end to end.
 
+## What the copy remembers
+
+Every beat above writes to `app/carveout/aws_s3_bucket-assets.carve.json` —
+chant's carve state manifest (chant ≥ 0.52.2). `carve emit` creates it, `carve
+bridge` adds its record, `carve apply` adds the ownership marker, and behold
+reads it back on every request without ever writing to it.
+
+That is why the walkthrough survives a reload. After Emit, the bucket's card
+stays in its band but repaints in the in-flight blue and reads `emitted — not
+bridged`; after Bridge, `bridged — apply is yours`. Restart the server and it
+still says so. Run `chant carve apply` yourself in the copy and the card leaves
+the Terraform bands for the `app — chant` box, keeping its Terraform address,
+and the panel counts `carved so far — 1 of 12 carved`.
+
+`carve apply` is the one beat that has no button — not in the stepper, not on
+the API. It resolves the marker that makes chant the owner of a live resource,
+which is a decision that stays with the person at the terminal. The Handoff
+step echoes the command beside the two `terraform` ones, for the same reason
+and in the same shape.
+
 ## Two tiers
 
 **Offline is the default.** The synthetic `terraform.tfstate` is committed, so

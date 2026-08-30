@@ -15,6 +15,8 @@ import {
   edgeLine,
   initialCarveState,
   lintVerdict,
+  manifestStageLine,
+  manifestStateFor,
   observeSummary,
   pickFacts,
   runbookCommands,
@@ -275,5 +277,70 @@ describe("observeSummary", () => {
 
   it("is null with no lint at all — nothing to claim", () => {
     expect(lintVerdict(null)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #230 M3 — the manifest-backed state the panel reads off /api/project.
+// ---------------------------------------------------------------------------
+
+const CARVE_STATE = {
+  manifests: 2,
+  progress: {
+    applied: 1,
+    bridged: 0,
+    emitted: 1,
+    inFlight: 1,
+    total: 12,
+    label: "1 of 12 carved",
+    detail: "1 emitted — apply is yours",
+  },
+  states: [
+    {
+      target: "aws_iam_role.api",
+      stage: "emitted",
+      graduated: false,
+      note: "emitted — typed chant source exists, and the surviving Terraform still reads the resource directly. `carve bridge` is next.",
+      applyCommand: "chant carve apply --from legacy-tf --output app/carveout --env <env> --stack <stack> --write-source",
+    },
+    {
+      target: "aws_s3_bucket.assets",
+      stage: "applied",
+      graduated: true,
+      note: "graduated — `carve apply` recorded the ownership marker (stack assets, env prod). chant owns it.",
+      applyCommand: "chant carve apply --from legacy-tf --output app/carveout --env prod --stack assets --write-source",
+    },
+  ],
+  apply: { human: true, note: "behold has no apply endpoint and no apply button, by design." },
+};
+
+describe("manifestStateFor", () => {
+  it("finds the carve recorded for an address", () => {
+    expect(manifestStateFor(CARVE_STATE, "aws_s3_bucket.assets").stage).toBe("applied");
+  });
+
+  it("is null for an address nothing has been carved for — the honest read before Emit", () => {
+    expect(manifestStateFor(CARVE_STATE, "aws_vpc.main")).toBeNull();
+    expect(manifestStateFor(null, "aws_s3_bucket.assets")).toBeNull();
+    expect(manifestStateFor(CARVE_STATE, null)).toBeNull();
+  });
+});
+
+describe("manifestStageLine", () => {
+  it("greens only the graduated one — the only stage at which ownership moved", () => {
+    const line = manifestStageLine(manifestStateFor(CARVE_STATE, "aws_s3_bucket.assets"));
+    expect(line.tone).toBe("good");
+    expect(line.text).toContain("chant owns it");
+  });
+
+  it("paints a partial carve as in flight, and says which stage in words", () => {
+    const line = manifestStageLine(manifestStateFor(CARVE_STATE, "aws_iam_role.api"));
+    expect(line.tone).toBe("pending");
+    expect(line.text).toContain("aws_iam_role.api");
+    expect(line.text).toContain("still reads the resource directly");
+  });
+
+  it("is null with nothing recorded — no manifest, no claim", () => {
+    expect(manifestStageLine(null)).toBeNull();
   });
 });

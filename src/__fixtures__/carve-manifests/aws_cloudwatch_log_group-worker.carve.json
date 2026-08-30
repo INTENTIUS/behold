@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "target": "aws_cloudwatch_log_group.worker",
+  "tfType": "aws_cloudwatch_log_group",
+  "from": "/tmp/carve-fixture/legacy-tf",
+  "statePath": "/tmp/carve-fixture/legacy-tf/terraform.tfstate",
+  "boundary": {
+    "target": "aws_cloudwatch_log_group.worker",
+    "carveSet": [
+      {
+        "address": "aws_cloudwatch_log_group.worker",
+        "type": "aws_cloudwatch_log_group"
+      }
+    ],
+    "peelability": 100,
+    "inbound": [],
+    "outbound": [],
+    "reversible": true,
+    "diagnostics": []
+  },
+  "emit": {
+    "source": "tfstate",
+    "files": [
+      "/tmp/carve-fixture/app/carveout/src/worker.ts"
+    ],
+    "at": "2026-08-30T04:13:19.378Z"
+  },
+  "bridge": {
+    "written": [
+      "/tmp/carve-fixture/app/carveout/aws_cloudwatch_log_group-worker-runbook.md",
+      "/tmp/carve-fixture/app/carveout/observability.tf",
+      "/tmp/carve-fixture/app/carveout/aws_cloudwatch_log_group-worker-bridge.patch"
+    ],
+    "appliedInPlace": false,
+    "patch": "/tmp/carve-fixture/app/carveout/aws_cloudwatch_log_group-worker-bridge.patch",
+    "excised": [
+      "aws_cloudwatch_log_group.worker"
+    ],
+    "at": "2026-08-30T04:13:36.376Z"
+  }
+}
