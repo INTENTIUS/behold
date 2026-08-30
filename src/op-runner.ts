@@ -22,6 +22,13 @@ import {
   type RunState,
   type RunStatusResult,
 } from "./run-playhead.ts";
+import {
+  initialOperatorState,
+  operatorRead,
+  type DeclaredConvergeOp,
+  type OperatorState,
+  type OperatorStatusResult,
+} from "./operator.ts";
 import type { Broadcaster } from "./events.ts";
 
 export interface OpRunnerDeps {
@@ -49,6 +56,11 @@ export class OpRunner {
    * elsewhere is invisible here, and `chant run status` (src/server.ts's
    * `/api/ops/:name/status`) is what answers for one. */
   private lastRunState: RunState = initialRunState;
+  /** The operator strip (#234 join 3): the last `chant operator status --json`
+   * read, plus the ConvergeOps the built project declares. Held here for the
+   * reason `lastRunState` is — it is a durable status read, not a run, and a
+   * client opening the ops lens hydrates from it instead of starting blank. */
+  private lastOperatorState: OperatorState = initialOperatorState;
 
   constructor(private deps: OpRunnerDeps) {}
 
@@ -148,6 +160,44 @@ export class OpRunner {
 
   private emitRun(): void {
     this.deps.broadcaster.emit("run", JSON.stringify(this.lastRunState));
+  }
+
+  /** The operator strip's model (#234 join 3) — `initialOperatorState` until the
+   * ops lens has been opened once. */
+  get operatorState(): OperatorState {
+    return this.lastOperatorState;
+  }
+
+  /**
+   * Record which ConvergeOps the built project declares, read from the emitted
+   * op.json (src/operator.ts's `declaredConvergeOps`) — no subprocess, and the
+   * thing that gates the strip. Broadcast on a change so a project rebuilt (or
+   * switched, #195) under an open tab grows or loses its strip without a reload.
+   */
+  noteDeclaredConvergeOps(declared: DeclaredConvergeOp[]): OperatorState {
+    return this.foldOperator({ ...this.lastOperatorState, declared });
+  }
+
+  /**
+   * Fold a `chant operator status --json` read (src/operator.ts's
+   * `readOperatorStatus`) into the strip, and broadcast it.
+   *
+   * Broadcast only a CHANGED answer, for `noteGate`'s reason: a client asks when
+   * it opens the ops lens and re-pulls the lens on the broadcast, so an
+   * unchanged answer that still broadcast would have the two chasing each other.
+   */
+  noteOperator(result: OperatorStatusResult, at = new Date().toISOString()): OperatorState {
+    return this.foldOperator(operatorRead(this.lastOperatorState, result, at));
+  }
+
+  /** Compare-and-broadcast, ignoring `readAt` — the instant behold asked changes
+   * on every poll and is not itself news; broadcasting on it would make the
+   * interval a repaint loop. */
+  private foldOperator(next: OperatorState): OperatorState {
+    const same = JSON.stringify({ ...next, readAt: null }) === JSON.stringify({ ...this.lastOperatorState, readAt: null });
+    this.lastOperatorState = next;
+    if (!same) this.deps.broadcaster.emit("operator", JSON.stringify(next));
+    return this.lastOperatorState;
   }
 
   /**

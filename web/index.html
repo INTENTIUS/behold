@@ -375,6 +375,33 @@
       .run-gate button.approve { margin-top: 3px; background: var(--well); color: var(--managed);
         border: 1px solid var(--managed); border-radius: var(--r-ctl); padding: 3px 12px;
         font-size: var(--t-body); cursor: pointer; }
+      /* The operator strip (#234 join 3) — one honestly-dated tick per
+         ConvergeOp, its lease, its pending gates. Sits above the run playhead in
+         the same tokens: both are "what is happening to this project's Ops", and
+         the loop is the one that never stopped. */
+      .operator-strip { display: flex; flex-direction: column; gap: 6px; width: 100%; margin-top: 6px; }
+      .operator-title { font-size: var(--t-caption); color: var(--pending); }
+      .operator-rows { display: flex; flex-direction: column; gap: 4px; }
+      .operator-row { display: flex; align-items: flex-start; gap: 6px; }
+      .operator-op { font-size: var(--t-body); color: var(--fg); }
+      /* chant's own tick line, verbatim — mono, because it is a log line. */
+      .operator-log { font: var(--t-caption)/1.5 var(--font-mono); color: var(--fg);
+        overflow-wrap: anywhere; }
+      .operator-meta { font: var(--t-caption)/1.5 var(--font-mono); color: var(--muted);
+        overflow-wrap: anywhere; }
+      .operator-gates { font: var(--t-caption)/1.6 var(--font-mono); color: var(--pending); flex: none; }
+      /* Why one line is all there is (chant#2029). A statement, not an alarm —
+         the same voice .run-lost uses for what behold does not know. */
+      .operator-caveat { font-size: var(--t-caption); color: var(--muted); }
+      /* The converge gate's own two lines, inside the shared .run-gate card:
+         which loop this is, and what approving actually does. */
+      .operator-loop { font: var(--t-caption)/1.5 var(--font-mono); color: var(--foreign); }
+      .operator-semantics { font-size: var(--t-caption); color: var(--fg); }
+      /* #234 free rider: the operating loop's home on the graph — the same
+         --pending edge the run gate wears, because both say "a loop is running
+         here", not "something is wrong". */
+      #graph [data-node-id].operator-home rect:first-of-type { stroke: var(--pending); stroke-width: 2; }
+
       /* The step the playhead sits on, on the graph itself — the ops lens marks
          it `_playhead` and the card wears a dashed edge, so "here" reads
          differently from "this one is done". */

@@ -1,0 +1,67 @@
+[
+  {
+    "op": "staging-converge",
+    "env": "staging",
+    "lastTick": {
+      "version": 1,
+      "op": "staging-converge",
+      "env": "staging",
+      "timestamp": "2026-01-01T00:00:00.000Z",
+      "firedRuleIds": ["drift-apply"],
+      "outcomes": [
+        {
+          "ruleId": "drift-apply",
+          "action": "gated",
+          "op": "fountain-apply",
+          "gateName": "rollout-gate",
+          "reason": "fountain-apply declares gate \"rollout-gate\"; the local executor refuses a gated dispatch"
+        }
+      ],
+      "summary": {
+        "drifted": 1,
+        "remediated": 0,
+        "reported": 0,
+        "skippedBudget": 0,
+        "skippedFlap": 0,
+        "unobserved": 0,
+        "adopted": 0,
+        "gated": 1
+      },
+      "log": "converge(staging): drifted=1 remediated=0 reported=0 skipped-budget=0 skipped-flap=0 gated=1 unobserved=0 adopted=0"
+    },
+    "pendingGates": [
+      { "rule": "drift-apply", "op": "fountain-apply", "gate": "rollout-gate" }
+    ],
+    "lease": { "holder": "op-a", "expiresAt": "2026-01-01T00:00:30.000Z" }
+  },
+  {
+    "op": "prod-observe",
+    "env": "prod",
+    "lastTick": {
+      "version": 1,
+      "op": "prod-observe",
+      "env": "prod",
+      "timestamp": "2026-01-01T00:04:00.000Z",
+      "firedRuleIds": ["drift-report"],
+      "outcomes": [
+        {
+          "ruleId": "drift-report",
+          "action": "reported",
+          "reason": "dial is observe — reported, never dispatched"
+        }
+      ],
+      "summary": {
+        "drifted": 2,
+        "remediated": 0,
+        "reported": 1,
+        "skippedBudget": 0,
+        "skippedFlap": 0,
+        "unobserved": 2,
+        "adopted": 0,
+        "gated": 0
+      },
+      "log": "converge(prod): drifted=2 remediated=0 reported=1 skipped-budget=0 skipped-flap=0 gated=0 unobserved=2 adopted=0"
+    },
+    "pendingGates": []
+  }
+]

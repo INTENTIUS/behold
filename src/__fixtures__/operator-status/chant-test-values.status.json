@@ -1,0 +1,36 @@
+[
+  {
+    "op": "staging-converge",
+    "env": "staging",
+    "lastTick": {
+      "version": 1,
+      "op": "staging-converge",
+      "env": "staging",
+      "timestamp": "2026-01-01T00:00:00.000Z",
+      "firedRuleIds": ["drift-apply"],
+      "outcomes": [
+        {
+          "ruleId": "drift-apply",
+          "action": "gated",
+          "op": "fountain-apply",
+          "gateName": "rollout-gate"
+        }
+      ],
+      "summary": {
+        "drifted": 1,
+        "remediated": 0,
+        "reported": 0,
+        "skippedBudget": 0,
+        "skippedFlap": 0,
+        "unobserved": 0,
+        "adopted": 0,
+        "gated": 1
+      },
+      "log": "converge(staging): drifted=1 remediated=0 reported=0 skipped-budget=0 skipped-flap=0 gated=1 unobserved=0 adopted=0"
+    },
+    "pendingGates": [
+      { "rule": "drift-apply", "op": "fountain-apply", "gate": "rollout-gate" }
+    ],
+    "lease": { "holder": "op-a", "expiresAt": "y" }
+  }
+]
