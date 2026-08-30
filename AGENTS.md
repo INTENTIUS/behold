@@ -57,7 +57,12 @@ preview-locked, and one load runs at a time (409 otherwise).
    `?ops=1` is the ops lens — the project's declared Ops as a phase track, read
    from each emitted `dist/ops/<name>/op.json`, with the current run painted
    over it (`meta.run`, `meta.gate`); `/api/ops/<name>/status` reads that Op's
-   durable run status and pending gate (`chant run status --temporal`).
+   durable run status and pending gate (`chant run status --temporal`). A
+   `ConvergeOp` also gets one card per rule from its `convergeTick` step's
+   `args.rules` (`attrs._step: "rule"`), carrying `when` (chant's JSON predicate,
+   rendered as the condition it states), `then`, and the `why` chant requires of
+   every rule, verbatim. `then: run(<op>)` is an edge to that Op's first step
+   when the Op is in the rendered set, and `attrs.dangling` when it isn't.
 2. **focus** — narrow with chant graph options as query params: `?detail=0..3`,
    `?components=1`, `?logical=1`, `?lens=blast:<id>&down=1`, `?lens=lexicon:aws`,
    `?env=`, `?stack=`, `?tier=`, `?target=`.

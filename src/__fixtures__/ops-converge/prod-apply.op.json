@@ -1,0 +1,124 @@
+{
+  "formatVersion": "1.0",
+  "name": "prod-apply",
+  "overview": "Apply declared source to the prod environment (code → cloud)",
+  "taskQueue": "prod-apply",
+  "depends": [],
+  "searchAttributes": {
+    "Apply": "true",
+    "Env": "prod"
+  },
+  "phases": [
+    {
+      "name": "Build",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "chantBuild",
+          "args": {
+            "path": "."
+          },
+          "profile": "fastIdempotent"
+        }
+      ]
+    },
+    {
+      "name": "Plan",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "lifecycleDiff",
+          "args": {
+            "env": "prod",
+            "live": true
+          },
+          "profile": "fastIdempotent",
+          "outcomeAttribute": {
+            "name": "Drift",
+            "from": "drifted"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Apply",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "nativeApply",
+          "args": {
+            "target": "cloudformation",
+            "env": "prod",
+            "output": "template.json",
+            "deleteMode": "never"
+          },
+          "profile": "longInfra"
+        }
+      ]
+    }
+  ],
+  "onFailure": [],
+  "activityProfiles": {
+    "fastIdempotent": {
+      "startToCloseTimeout": "5m",
+      "retry": {
+        "maximumAttempts": 3,
+        "initialInterval": "5s",
+        "backoffCoefficient": 2
+      }
+    },
+    "longInfra": {
+      "startToCloseTimeout": "20m",
+      "heartbeatTimeout": "60s",
+      "retry": {
+        "maximumAttempts": 3,
+        "initialInterval": "30s",
+        "backoffCoefficient": 2
+      }
+    }
+  },
+  "activityContracts": {
+    "lifecycleDiff": {
+      "args": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "env": {
+            "type": "string"
+          },
+          "live": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "env"
+        ],
+        "additionalProperties": false
+      },
+      "returns": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "output": {
+            "type": "string"
+          },
+          "exitCode": {
+            "type": "number"
+          },
+          "drifted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "output",
+          "exitCode",
+          "drifted"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}

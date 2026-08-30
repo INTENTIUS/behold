@@ -192,6 +192,22 @@ const COMPONENT_STATUS_LABEL = { good: "healthy", accent: "in progress", warn: "
 // artifacts have no declared axis to classify against. `_artifact`'s presence
 // (or an artifact-flavoured `_unobserved`) picks this label set.
 const ARTIFACT_STATUS_LABEL = { good: "installed", warn: "installed, not healthy", accent: "not installed", neutral: "unobserved" };
+// The ops lens (#284) and its converge rule table (#234) paint the same four
+// colours about a DECLARED Op, where none of the entity vocabulary applies: a
+// gate is not "foreign" and a rule that may dispatch is not "pending". The word
+// carries the meaning here (accessible-ops: never rely on the colour alone), so
+// it is picked from what the card actually is — `_step` — and not from the
+// colour alone, which in this lens says four different things per step kind.
+const OP_STATUS_LABEL = {
+  gate: { warn: "stops here for a human", good: "approved", accent: "waiting", neutral: "declared" },
+  effect: { accent: "conditional — skipped when the receipt already matches", good: "fired", warn: "failed", neutral: "skipped" },
+  rule: { accent: "may dispatch on a matching tick", warn: "dispatch target not in this graph", neutral: "reports only, never mutates" },
+  activity: { good: "ran ok", warn: "failed", accent: "reached, not settled", neutral: "declared, not run" },
+};
+function opStatusLabel(node) {
+  const set = OP_STATUS_LABEL[node.attrs && node.attrs._step];
+  return set && set[node.attrs._status];
+}
 // The render-drift axis (#146's deferred half, chant#1249/#1250 via
 // src/helm-drift.ts). A chart carrying `_renderDrift` has had its PINNED
 // render diffed against the live cluster, so `warn` on it means "drifted",
@@ -374,6 +390,7 @@ function inspect(node) {
     id(
       "status",
       driftLabel ||
+        (node.lexicon === "op" ? opStatusLabel(node) : undefined) ||
         (isArtifact ? ARTIFACT_STATUS_LABEL[st] : liveStatus ? COMPONENT_STATUS_LABEL[st] : STATUS_LABEL[st]) ||
         st,
     );
@@ -466,7 +483,12 @@ function inspect(node) {
       if (liveStatus.stack.status) live("stack status", liveStatus.stack.status);
       if (liveStatus.stack.healthy !== undefined) live("healthy", String(liveStatus.stack.healthy));
     }
-  } else if (st === "accent") {
+  } else if (st === "accent" && node.lexicon !== "op") {
+    // The `op` lexicon is excluded because nothing in the ops lens (#284) is an
+    // estate entity: `accent` there means "may not fire at all" — an effect step
+    // whose receipt already matches, a converge rule that dispatches only on a
+    // tick that matches it (#234) — and "not provisioned yet" would be an answer
+    // to a question the card never asked.
     const live = section("live");
     live("", "not provisioned yet (pending) — no live state");
   } else if (st === "runtime") {

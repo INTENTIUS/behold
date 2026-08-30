@@ -11,11 +11,17 @@ import {
   stepKind,
   stepStatus,
   opCardFields,
+  convergeTable,
+  predicateText,
+  actionText,
+  ruleStatus,
   type OpIr,
+  type OpIrConvergeRule,
 } from "./ops-lens.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(HERE, "__fixtures__", "ops-example-writes");
+const CONVERGE_FIXTURES = join(HERE, "__fixtures__", "ops-converge");
 
 /**
  * The fixtures are REAL emitted IR: this repo's own `example-writes` copied to
@@ -340,5 +346,328 @@ describe("parseOpIr / readOpIr — refusals (#193)", () => {
     const p = readOpIr(join(FIXTURES, "prod-promote.op.json"), (f) => readFileSync(f, "utf8"));
     expect(p.ok).toBe(true);
     if (p.ok) expect(p.ir.depends).toEqual(["prod-apply"]);
+  });
+});
+
+// ── The converge rule table (#234 join 4) ─────────────────────────────────────
+
+/**
+ * Also REAL emitted IR, from a second scratch build. chant ships no example
+ * declaring a `ConvergeOp` — `ConvergeOp(` appears only in the composite, its
+ * own test and the operator internals — so there is no sanctioned golden
+ * op.json to fixture against, and behold authored its own project.
+ *
+ * The composite IS published, so this is a real chant build rather than a
+ * hand-written approximation: this repo's `example-writes` copied to a scratch
+ * dir, `npm install @intentius/chant@0.52.2 @intentius/chant-lexicon-aws@0.52.2
+ * @intentius/chant-lexicon-temporal@0.52.2`, one added `ops/converge.op.ts`
+ * declaring `ConvergeOp({name: "prod-converge", env: "prod", dial: "apply",
+ * budget: 2, rules: [...]})` with its rules built through chant's own
+ * `when()`/`eq`/`gt`/`lt`/`allOf`/`anyOf`/`truthy`/`run`/`report`, exactly as
+ * `converge-op.test.ts` builds them, then `chant build --lexicon temporal`.
+ *
+ * That the build PASSED is itself part of the provenance: chant's TMP014
+ * post-synth check refuses a rule with a blank `why`, a predicate outside the
+ * evaluable subset, or a `run()` naming an Op the project doesn't declare — so
+ * this is a table chant considers well-formed, not merely one that parses.
+ *
+ * The seven rules cover every predicate form chant has (field comparison with
+ * eq/gt/lt, truthiness, all-of, any-of), both actions, and `flapThreshold`
+ * present and absent. `prod-apply` and `floci-apply` are the two Ops the run
+ * rules dispatch, emitted by the same build, so the cross-link is drawn against
+ * real targets.
+ */
+const convergeOps: OpIr[] = readdirSync(CONVERGE_FIXTURES)
+  .filter((f) => f.endsWith(".op.json"))
+  .sort()
+  .map((f) => JSON.parse(readFileSync(join(CONVERGE_FIXTURES, f), "utf8")) as OpIr);
+
+const converge = convergeOps.find((o) => o.name === "prod-converge")!;
+
+describe("the real chant-emitted ConvergeOp fixture", () => {
+  it("is an ordinary Op whose Converge phase carries one convergeTick step", () => {
+    expect(convergeOps.map((o) => o.name)).toEqual(["floci-apply", "prod-apply", "prod-converge"]);
+    expect(parseOpIr(converge).ok).toBe(true);
+    expect(converge.formatVersion).toBe("1.0");
+    expect(converge.phases.map((p) => p.name)).toEqual(["Observe", "Converge"]);
+    expect(converge.searchAttributes).toEqual({ Converge: "true", Env: "prod", Dial: "apply" });
+    expect(converge.phases[1].steps[0]).toMatchObject({ kind: "activity", fn: "convergeTick", profile: "longInfra" });
+  });
+
+  it("pins convergeTick's arg-key union, so an upstream shape change fails loudly", () => {
+    // The same guard as the estate-entity-id test above, aimed at the other
+    // shape this lens now depends on: `rules` is the table, the rest is the
+    // dial and budget the rules run under.
+    const tick = converge.phases[1].steps[0] as { args?: Record<string, unknown> };
+    expect(Object.keys(tick.args ?? {}).sort()).toEqual(["budget", "dial", "env", "opName", "preflightDrift", "rules"]);
+  });
+
+  it("pins the rule-object key union, and the predicate and action kinds", () => {
+    // `ConvergeRule` is {id, when, then, why, flapThreshold?}, with `id` and
+    // `why` required and refused blank at build. If chant ever adds, renames or
+    // drops a field, this says so before a card quietly loses it.
+    const table = convergeTable(converge)!;
+    const keys = new Set<string>();
+    for (const rule of table.rules) for (const k of Object.keys(rule)) keys.add(k);
+    expect([...keys].sort()).toEqual(["flapThreshold", "id", "then", "when", "why"]);
+
+    const predicateKinds = new Set<string>();
+    const walk = (p: { kind: string; predicates?: unknown[] }): void => {
+      predicateKinds.add(p.kind);
+      for (const child of p.predicates ?? []) walk(child as { kind: string; predicates?: unknown[] });
+    };
+    for (const rule of table.rules) walk(rule.when as unknown as { kind: string; predicates?: unknown[] });
+    expect([...predicateKinds].sort()).toEqual(["all-of", "any-of", "field-comparison", "field-truthiness"]);
+    expect([...new Set(table.rules.map((r) => r.then.kind))].sort()).toEqual(["report", "run"]);
+  });
+
+  it("reads the table off the step, with the dial and budget beside it", () => {
+    const table = convergeTable(converge)!;
+    expect(table.tickStepId).toBe("prod-converge/Converge/convergeTick");
+    expect(table.phase).toBe("Converge");
+    expect(table.dial).toBe("apply");
+    expect(table.budget).toBe(2);
+    expect(table.env).toBe("prod");
+    expect(table.rules.map((r) => r.id)).toEqual([
+      "unknown-never-remediates",
+      "adopt-is-reported",
+      "deletes-stop-the-loop",
+      "small-drift-local-apply",
+      "drift-apply",
+      "stale-record-report",
+      "unobserved-is-visible",
+    ]);
+    // chant makes `why` required and refuses a blank one at build — which is
+    // exactly what lets a card show it unconditionally.
+    expect(table.rules.every((r) => r.why.trim().length > 0)).toBe(true);
+  });
+
+  it("finds no table on an Op that declares none — the zero-cost case", () => {
+    for (const op of ops) expect(convergeTable(op)).toBeUndefined();
+    for (const op of convergeOps.filter((o) => o.name !== "prod-converge")) expect(convergeTable(op)).toBeUndefined();
+  });
+});
+
+describe("predicateText — the JSON predicate as the condition it states", () => {
+  it("renders a field comparison with the value's own type", () => {
+    expect(predicateText({ kind: "field-comparison", field: "status", op: "eq", value: "drifted" })).toBe('status = "drifted"');
+    expect(predicateText({ kind: "field-comparison", field: "status", op: "neq", value: "reconciled" })).toBe('status != "reconciled"');
+    expect(predicateText({ kind: "field-comparison", field: "deleteCount", op: "gt", value: 0 })).toBe("deleteCount > 0");
+    expect(predicateText({ kind: "field-comparison", field: "totalCount", op: "gte", value: 3 })).toBe("totalCount >= 3");
+    expect(predicateText({ kind: "field-comparison", field: "totalCount", op: "lt", value: 3 })).toBe("totalCount < 3");
+    expect(predicateText({ kind: "field-comparison", field: "totalCount", op: "lte", value: 3 })).toBe("totalCount <= 3");
+    expect(predicateText({ kind: "field-comparison", field: "live", op: "eq", value: true })).toBe("live = true");
+  });
+
+  it("renders truthiness with chant's own operator word", () => {
+    expect(predicateText({ kind: "field-truthiness", field: "unobservedCount", op: "truthy" })).toBe("unobservedCount is truthy");
+    expect(predicateText({ kind: "field-truthiness", field: "adoptCount", op: "falsy" })).toBe("adoptCount is falsy");
+  });
+
+  it("joins all-of with and, any-of with or, and parenthesises a nested composite", () => {
+    const nested = predicateText({
+      kind: "all-of",
+      predicates: [
+        { kind: "field-comparison", field: "status", op: "eq", value: "drifted" },
+        {
+          kind: "any-of",
+          predicates: [
+            { kind: "field-comparison", field: "createCount", op: "gt", value: 0 },
+            { kind: "field-comparison", field: "updateCount", op: "gt", value: 0 },
+          ],
+        },
+      ],
+    });
+    expect(nested).toBe('status = "drifted" and (createCount > 0 or updateCount > 0)');
+  });
+
+  it("states what an empty composite actually evaluates to, rather than nothing", () => {
+    // chant's evaluatePredicate: every() over nothing is true, some() is false.
+    expect(predicateText({ kind: "all-of", predicates: [] })).toBe("(always)");
+    expect(predicateText({ kind: "any-of", predicates: [] })).toBe("(never)");
+  });
+
+  it("says so rather than guessing when the predicate is outside chant's kinds", () => {
+    expect(predicateText({ kind: "regex-match" } as never)).toBe("(predicate outside the kinds behold reads)");
+    expect(predicateText({ kind: "field-comparison", field: "x", op: "matches", value: "y" } as never)).toBe("(unreadable comparison on x)");
+  });
+});
+
+describe("actionText and ruleStatus", () => {
+  const declared = new Set(["prod-apply"]);
+  const ruleWith = (then: OpIrConvergeRule["then"]): OpIrConvergeRule => ({
+    id: "r",
+    when: { kind: "field-truthiness", field: "totalCount", op: "truthy" },
+    then,
+    why: "because",
+  });
+
+  it("names the dispatched Op, and carries a report's reason verbatim", () => {
+    expect(actionText({ kind: "run", op: "prod-apply" })).toBe("run(prod-apply)");
+    expect(actionText({ kind: "report", reason: "Adopt is reported, never claimed." })).toBe("report: Adopt is reported, never claimed.");
+  });
+
+  it("paints a dispatching rule accent, a reporting rule neutral, a dangling one warn", () => {
+    // Nothing here has ticked, so no rule is `good`. `accent` is the effect
+    // step's semantics — may fire, may not.
+    expect(ruleStatus(ruleWith({ kind: "run", op: "prod-apply" }), declared)).toBe("accent");
+    expect(ruleStatus(ruleWith({ kind: "report", reason: "x" }), declared)).toBe("neutral");
+    expect(ruleStatus(ruleWith({ kind: "run", op: "elsewhere" }), declared)).toBe("warn");
+  });
+});
+
+describe("opsToIr — the rule table drawn", () => {
+  const ir = opsToIr(convergeOps);
+  const at = (id: string) => ir.nodes.find((n) => n.id === id)!;
+  const ruleNodes = ir.nodes.filter((n) => n.attrs._step === "rule");
+
+  it("makes one card per rule, in declared order, in the Op's own rule box", () => {
+    expect(ruleNodes).toHaveLength(7);
+    expect(ir.groups.byStack!["prod-converge · rule table"]).toEqual([
+      "prod-converge/rules/unknown-never-remediates",
+      "prod-converge/rules/adopt-is-reported",
+      "prod-converge/rules/deletes-stop-the-loop",
+      "prod-converge/rules/small-drift-local-apply",
+      "prod-converge/rules/drift-apply",
+      "prod-converge/rules/stale-record-report",
+      "prod-converge/rules/unobserved-is-visible",
+    ]);
+    expect(ruleNodes.every((n) => n.kind === "ConvergeRule" && n.lexicon === "op")).toBe(true);
+  });
+
+  it("hangs the table off the convergeTick step that carries it", () => {
+    const hung = ir.edges.filter((e) => e.viaAttr === "rule");
+    expect(hung).toHaveLength(7);
+    expect(hung.every((e) => e.from === "prod-converge/Converge/convergeTick")).toBe(true);
+    expect(new Set(hung.map((e) => e.to))).toEqual(new Set(ruleNodes.map((n) => n.id)));
+  });
+
+  it("renders the when predicate readably and the why verbatim", () => {
+    const deletes = at("prod-converge/rules/deletes-stop-the-loop");
+    expect(deletes.attrs.when).toBe('status = "drifted" and deleteCount > 0');
+    expect(deletes.attrs.then).toBe("report: Drift whose remediation would delete a resource stops for a human.");
+    // Verbatim, character for character — behold never paraphrases the why.
+    expect(deletes.attrs.why).toBe(convergeTable(converge)!.rules.find((r) => r.id === "deletes-stop-the-loop")!.why);
+    expect(deletes.attrs.why).toBe(
+      "A re-apply that removes live resources is not convergence, it is a rollback — the loop refuses to make that call unattended.",
+    );
+    expect(deletes.attrs.flap).toBe("1 consecutive ticks");
+    expect(deletes.attrs._status).toBe("neutral");
+
+    const stale = at("prod-converge/rules/stale-record-report");
+    expect(stale.attrs.when).toBe('status = "stale" or status = "unrecorded"');
+    // No flapThreshold declared — chant's default applies, and behold names it
+    // rather than restating a number chant owns.
+    expect(stale.attrs.flap).toBe("(chant default)");
+
+    expect(at("prod-converge/rules/unobserved-is-visible").attrs.when).toBe("unobservedCount is truthy");
+    expect(at("prod-converge/rules/adopt-is-reported").attrs.when).toBe("adoptCount > 0");
+    expect(at("prod-converge/rules/small-drift-local-apply").attrs.when).toBe('status = "drifted" and totalCount < 3');
+  });
+
+  it("draws then: run(<op>) as an edge to that Op's first step", () => {
+    const run = ir.edges.filter((e) => e.viaAttr === "run");
+    expect(run).toEqual([
+      { from: "prod-converge/rules/small-drift-local-apply", to: "floci-apply/Build/chantBuild", kind: "ref", viaAttr: "run" },
+      { from: "prod-converge/rules/drift-apply", to: "prod-apply/Build/chantBuild", kind: "ref", viaAttr: "run" },
+    ]);
+    const drift = at("prod-converge/rules/drift-apply");
+    expect(drift.attrs.then).toBe("run(prod-apply)");
+    expect(drift.attrs.dispatches).toBe("prod-apply");
+    expect(drift.attrs.dangling).toBeUndefined();
+    // A rule that may dispatch reads as "may fire", the same as an effect step.
+    expect(drift.attrs._status).toBe("accent");
+    // The first edge in this lens that leaves the Op it was declared in for a
+    // reason chant states rather than one behold inferred.
+    expect(run.every((e) => e.from.split("/")[0] !== e.to.split("/")[0])).toBe(true);
+  });
+
+  it("puts the dial on every rule card, since it bounds what any of them may do", () => {
+    expect(ruleNodes.every((n) => n.attrs.dial === "apply")).toBe(true);
+    expect(ruleNodes.every((n) => n.attrs.op === "prod-converge" && n.attrs.phase === "Converge")).toBe(true);
+  });
+
+  it("counts the table apart from the track, and says what the rules join to", () => {
+    const note = opsNote(convergeOps, ir);
+    // 3 + 3 + 3 steps — the seven rule cards are not steps.
+    expect(note).toContain("3 declared Ops · 9 steps · 7 converge rules");
+    expect(note).toContain("carries the why chant requires of it, verbatim");
+    expect(note).toContain("run(<op>) is drawn as an edge to that Op's first step");
+    expect(note).not.toContain("not in this set");
+  });
+
+  it("leads a rule card with its condition and its action", () => {
+    expect(opCardFields(at("prod-converge/rules/drift-apply"))).toEqual([
+      { label: "when", value: 'status = "drifted"' },
+      { label: "then", value: "run(prod-apply)" },
+    ]);
+  });
+});
+
+describe("opsToIr — a then naming an Op that isn't here", () => {
+  // Rendering the ConvergeOp ALONE is a real case, not a contrived one: behold
+  // composes op.json across every served project (#31) and keeps the first of a
+  // colliding name, so a converge Op can be drawn beside a set that doesn't
+  // hold its dispatch target. chant's TMP014 guarantees the target is declared
+  // in the Op's own PROJECT; it guarantees nothing about behold's rendered set.
+  const ir = opsToIr([converge]);
+  const at = (id: string) => ir.nodes.find((n) => n.id === id)!;
+
+  it("states the dangling reference on the card and draws no edge", () => {
+    expect(ir.edges.filter((e) => e.viaAttr === "run")).toEqual([]);
+    const drift = at("prod-converge/rules/drift-apply");
+    expect(drift.attrs.then).toBe("run(prod-apply)");
+    expect(drift.attrs.dispatches).toBeUndefined();
+    expect(drift.attrs.dangling).toBe("prod-apply — not among the Ops rendered here, so no edge is drawn");
+    expect(drift.attrs._status).toBe("warn");
+  });
+
+  it("mints no phantom card for the Op it couldn't resolve", () => {
+    expect(ir.nodes.every((n) => n.id.startsWith("prod-converge/"))).toBe(true);
+    const ids = new Set(ir.nodes.map((n) => n.id));
+    expect(ir.edges.every((e) => ids.has(e.from) && ids.has(e.to))).toBe(true);
+  });
+
+  it("says on the statusbar how many rules dangle", () => {
+    expect(opsNote([converge], ir)).toContain("2 rules name Ops not in this set — stated on the card, not drawn.");
+  });
+});
+
+describe("opsToIr — an estate with no ConvergeOp costs nothing", () => {
+  it("renders the example-writes estate exactly as it did before", () => {
+    const ir = opsToIr(ops);
+    expect(ir.nodes.filter((n) => n.attrs._step === "rule")).toHaveLength(0);
+    expect(ir.edges.filter((e) => e.viaAttr === "rule" || e.viaAttr === "run")).toHaveLength(0);
+    expect(Object.keys(ir.groups.byStack!).some((b) => b.endsWith("· rule table"))).toBe(false);
+    expect(opsNote(ops, ir)).not.toContain("converge rule");
+  });
+
+  it("draws nothing from a convergeTick whose rules aren't a table chant would emit", () => {
+    // Every rule field is required upstream and refused blank at build, so a
+    // rule missing one didn't come from chant. Dropping it beats drawing a card
+    // whose why is empty, which is the one thing this join promises.
+    const bogus: OpIr = {
+      name: "half-built",
+      phases: [
+        {
+          name: "Converge",
+          steps: [
+            {
+              kind: "activity",
+              fn: "convergeTick",
+              args: {
+                rules: [{ id: "no-why", when: { kind: "field-truthiness", field: "totalCount", op: "truthy" }, then: { kind: "report", reason: "x" } }],
+              },
+            },
+          ],
+        },
+      ],
+    };
+    expect(convergeTable(bogus)).toBeUndefined();
+    expect(opsToIr([bogus]).nodes.filter((n) => n.attrs._step === "rule")).toHaveLength(0);
+    // And a convergeTick with no rules arg at all is simply an activity step.
+    const noArgs: OpIr = { name: "bare", phases: [{ name: "Converge", steps: [{ kind: "activity", fn: "convergeTick" }] }] };
+    expect(convergeTable(noArgs)).toBeUndefined();
+    expect(opsToIr([noArgs]).nodes).toHaveLength(1);
   });
 });
