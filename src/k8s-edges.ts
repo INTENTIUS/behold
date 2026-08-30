@@ -8,6 +8,8 @@
  * exact literals the Kubernetes API itself joins on:
  *
  *   Service.spec.selector          ⊆ workload.spec.template.metadata.labels
+ *   PDB.spec.selector.matchLabels  ⊆ workload.spec.template.metadata.labels
+ *   NetworkPolicy.spec.podSelector ⊆ workload.spec.template.metadata.labels
  *   Ingress …backend.service.name  = Service.metadata.name
  *   HPA.spec.scaleTargetRef        = { kind, name } of a workload
  *
@@ -58,6 +60,41 @@ const WORKLOAD_KINDS = new Set([
   "K8s::Apps::ReplicaSet",
 ]);
 
+/**
+ * The kinds whose declared selector points at SOMEBODY ELSE'S pods, and where
+ * that selector sits (#166).
+ *
+ * This join was Service-only, so a PodDisruptionBudget selecting exactly the
+ * Deployment's pod-template labels — the shape `example-k8s`'s own `WebApp`
+ * composite emits — was an orphan card in every view, offline and live. The
+ * selector is the same declared literal the apiserver joins on whichever object
+ * carries it, so the rule generalises without loosening: `spec.selector` on a
+ * Service is a bare label map, `spec.selector` on a PDB and `spec.podSelector`
+ * on a NetworkPolicy are `LabelSelector`s whose `matchLabels` half is that same
+ * map.
+ *
+ * Deliberately NOT here:
+ *  - a WORKLOAD's own `spec.selector` — it names the pods that workload itself
+ *    owns, which is containment the card already states, not a reference (and
+ *    two Deployments sharing `app: web` would draw an edge between them);
+ *  - an HPA's `scaleTargetRef` — a name reference, not a selector; it has its
+ *    own join below;
+ *  - a NetworkPolicy's PEER selectors (`spec.ingress[].from[].podSelector`,
+ *    `egress[].to[]`): a peer is scoped by the `namespaceSelector` beside it, so
+ *    resolving one means evaluating a selector over Namespace labels this pass
+ *    does not index — and a peer with no namespaceSelector means "this
+ *    namespace", which is a different join again. Left undrawn rather than
+ *    drawn wrong;
+ *  - `matchExpressions` — set-based operators this pass does not evaluate. A
+ *    selector carrying one is refused whole, since matching on `matchLabels`
+ *    alone would over-select (the two halves are ANDed).
+ */
+const SELECTOR_CARRIERS: { kind: string; read: (spec: Rec | undefined) => unknown; viaAttr: string }[] = [
+  { kind: "K8s::Core::Service", read: (spec) => spec?.selector, viaAttr: "selector" },
+  { kind: "K8s::Policy::PodDisruptionBudget", read: (spec) => labelSelector(spec?.selector), viaAttr: "selector" },
+  { kind: "K8s::Networking::NetworkPolicy", read: (spec) => labelSelector(spec?.podSelector), viaAttr: "podSelector" },
+];
+
 type Rec = Record<string, unknown>;
 
 function rec(v: unknown): Rec | undefined {
@@ -87,6 +124,18 @@ function labelRecord(v: unknown): Record<string, string> | undefined {
     out[k] = val;
   }
   return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** The bare label map inside a `LabelSelector` (`{ matchLabels, matchExpressions
+ * }`) — `matchLabels`, or undefined when the selector carries a
+ * `matchExpressions` this pass cannot evaluate (see SELECTOR_CARRIERS on why
+ * that refuses the whole selector rather than half of it). */
+function labelSelector(v: unknown): unknown {
+  const sel = rec(v);
+  if (!sel) return undefined;
+  const expressions = sel.matchExpressions;
+  if (Array.isArray(expressions) && expressions.length > 0) return undefined;
+  return sel.matchLabels;
 }
 
 /** Every selector pair present, with the same value, in `labels`. */
@@ -244,16 +293,25 @@ export function deriveK8sEdges(nodes: readonly IRNode[]): K8sDeclaredEdge[] {
     if (target) add(n.id, target.id, viaAttr);
   };
 
+  /** Selector carrier → every workload in its namespace whose pod-template
+   * labels the selector lands on. Two workloads matching one selector both get
+   * an edge — the match is just as real on the cluster. */
+  const addSelector = (n: IRNode, raw: unknown, viaAttr: string) => {
+    const selector = labelRecord(raw);
+    if (!selector) return;
+    for (const w of workloads) {
+      if (namespaceOf(w) !== namespaceOf(n)) continue;
+      const labels = templateLabels(w);
+      if (labels && selects(selector, labels)) add(n.id, w.id, viaAttr);
+    }
+  };
+
   for (const n of k8s) {
-    // Service → workload its selector lands on.
-    if (n.kind === "K8s::Core::Service") {
-      const selector = labelRecord(rec(n.attrs?.spec)?.selector);
-      if (!selector) continue;
-      for (const w of workloads) {
-        if (namespaceOf(w) !== namespaceOf(n)) continue;
-        const labels = templateLabels(w);
-        if (labels && selects(selector, labels)) add(n.id, w.id, "selector");
-      }
+    // Service / PDB / NetworkPolicy → the workloads their selector lands on
+    // (#166 generalised this from Service-only — see SELECTOR_CARRIERS).
+    const carrier = SELECTOR_CARRIERS.find((c) => c.kind === n.kind);
+    if (carrier) {
+      addSelector(n, carrier.read(rec(n.attrs?.spec)), carrier.viaAttr);
       continue;
     }
     // Ingress → Service its backends name.

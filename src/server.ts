@@ -100,7 +100,8 @@ import { OpRunner } from "./op-runner.ts";
 import { detectSubstrates, projectLexicons } from "./substrates.ts";
 import { pickAutoSyncOps, suspendedByRollback, type AutoSyncMode } from "./autosync.ts";
 import { sourceCommits, openRollbackBranches } from "./history.ts";
-import { composeEstate, composeEstateOverlay, withoutJoinedMembers } from "./estate.ts";
+import { composeEstate, composeEstateOverlay, estateMembers, withoutJoinedMembers } from "./estate.ts";
+import { addEstateMemberEdges } from "./estate-edges.ts";
 import { invalidateMember } from "./member-ir.ts";
 import { Broadcaster, watchSources } from "./events.ts";
 import { startDriftPoll } from "./poll.ts";
@@ -1601,8 +1602,21 @@ export function createApp(
         // them unchanged, and a join that spans two composed projects is
         // exactly the cross-stack edge a GitOps estate needs (a control-plane
         // Kustomization sourceRef-ing an app project's GitRepository).
-        ir = addValueMatchEdges(ir);
+        //
+        // #166 put the declared-contract pass FIRST at every site the two run
+        // together: value-match now walks nested attrs, so it can reach a
+        // `spec.sourceRef.name` that `addK8sDeclaredEdges` joins properly, and
+        // whichever runs first claims the pair (both dedup against existing
+        // edges). Declared contracts should name their own field — `sourceRef`,
+        // not `spec.sourceRef.name` — and value-match fills what is left.
         ir = addK8sDeclaredEdges(ir);
+        ir = addValueMatchEdges(ir);
+        // The estate's own edge (#166): a control-plane member's Kustomization /
+        // Application declares the directory it applies, and behold knows each
+        // member by its checkout — so the join a single project cannot make is
+        // exactly the one composition exists for. After the two passes above,
+        // which is what tells it where a member's interior already starts.
+        ir = addEstateMemberEdges(ir, estateMembers(cfg.projectDirs!));
         // #234's free rider: an `OperatorStack` renders as an ordinary namespace
         // of CronJobs, so the estate already draws the operating loop — just
         // anonymously. This names it, from chant's own labels. Additive paint;
@@ -1681,7 +1695,7 @@ export function createApp(
         // the cluster box is the declared node, not the `cluster <env>`
         // fallback.
         const raw = mergeClusterRoot(await graphIr(cfg.projectDir, { ...opts, detail: 3 }), await clusterRootGraphIr(cfg.projectDir, opts));
-        const base = addK8sDeclaredEdges(addValueMatchEdges(raw));
+        const base = addValueMatchEdges(addK8sDeclaredEdges(raw));
         // #102: the lens follows the substrate — AWS nests region/VPC/subnet,
         // Azure nests resource group/VNet/subnet. `metaEnv` names the resource
         // group on Azure, which ARM never declares as a resource.
@@ -1703,13 +1717,14 @@ export function createApp(
         // handles (value plumbing, not resources — see pruneImports). Component
         // graphs have no imports, so this only touches the infra view.
         if ((opts.detail ?? 2) < 3) ir = pruneImports(ir);
+        // Kubernetes declared-attribute joins (#143) — selector / ingress
+        // backend / scaleTargetRef. chant's IR carries no k8s edges at all, so
+        // this is the k8s half's only edge source, exactly as value-match is
+        // azure's. First of the two since #166 — see the estate branch above.
+        ir = addK8sDeclaredEdges(ir);
         // Connect resources wired by a literal name/ARN value the symbolic-ref
         // graph misses (see addValueMatchEdges).
         ir = addValueMatchEdges(ir);
-      // Kubernetes declared-attribute joins (#143) — selector / ingress backend /
-      // scaleTargetRef. chant's IR carries no k8s edges at all, so this is the
-      // k8s half's only edge source, exactly as value-match is azure's.
-      ir = addK8sDeclaredEdges(ir);
         // #234's free rider — see the estate branch above.
         ir = markOperatorHome(ir);
         // Anchor a mixed-substrate estate (#103): the k8s half carries no
@@ -2019,10 +2034,13 @@ export function createApp(
         const composed = est.ir as GraphIR;
         let ir = runtime ? attachRuntimeContainment(composed) : pruneRuntimeChildren(composed);
         if ((detail ?? 2) < 3) ir = pruneImports(ir);
-        // Same passes as /api/graph's estate branch (#188) — the k8s half's
-        // only edge source, and the cross-stack joins the estate exists for.
-        ir = addValueMatchEdges(ir);
+        // Same passes, in the same order, as /api/graph's estate branch (#188,
+        // #166) — the k8s half's only edge source, and the cross-stack joins the
+        // estate exists for. Both paths derive identically: a live overlay adds
+        // colour, never a different topology.
         ir = addK8sDeclaredEdges(ir);
+        ir = addValueMatchEdges(ir);
+        ir = addEstateMemberEdges(ir, estateMembers(cfg.projectDirs));
         // #234's free rider — see /api/graph's estate branch.
         ir = markOperatorHome(ir);
         const boundContext = await boundK8sContext(env);
@@ -2153,7 +2171,7 @@ export function createApp(
         const logicalBefore = ir.nodes.length;
         // Same as /api/graph's logical branch: the kustomize lens probes both
         // sourceLoc bases (the live path reports project-relative files).
-        const { ir: projected, byContainer } = projectTopology(addK8sDeclaredEdges(addValueMatchEdges(ir)), env, boundContext, [await graphPath(cfg.projectDir, opts), cfg.projectDir]);
+        const { ir: projected, byContainer } = projectTopology(addValueMatchEdges(addK8sDeclaredEdges(ir)), env, boundContext, [await graphPath(cfg.projectDir, opts), cfg.projectDir]);
         const { svg } = renderArchitecture(projected, byContainer);
         // See /api/graph's logical branch — `byContainer` is carried for the
         // same reason (behold#100). The wrong-tier note (#158) joins here too:
@@ -2167,13 +2185,14 @@ export function createApp(
       // value plumbing, not resources, and float off to the side (see
       // pruneImports). They resurface at detail 3.
       if ((query.detail ?? 2) < 3) ir = pruneImports(ir);
+      // Kubernetes declared-attribute joins (#143) — selector / ingress backend /
+      // scaleTargetRef. chant's IR carries no k8s edges at all, so this is the
+      // k8s half's only edge source, exactly as value-match is azure's. First of
+      // the two since #166 — see /api/graph's estate branch.
+      ir = addK8sDeclaredEdges(ir);
       // Connect resources wired by a literal name/ARN value (e.g. an RDS
       // instance's DBSubnetGroupName) that the symbolic-ref graph misses.
       ir = addValueMatchEdges(ir);
-      // Kubernetes declared-attribute joins (#143) — selector / ingress backend /
-      // scaleTargetRef. chant's IR carries no k8s edges at all, so this is the
-      // k8s half's only edge source, exactly as value-match is azure's.
-      ir = addK8sDeclaredEdges(ir);
       // #234's free rider — see /api/graph's estate branch. The overlay is
       // source-anchored, so the OperatorStack's declared labels are here too.
       ir = markOperatorHome(ir);
@@ -2280,8 +2299,8 @@ export function createApp(
     }
     // And the same import-handle pruning below ATTRIBUTES tier + value-matched edges.
     if ((optsFromQuery(new URL(c.req.url)).detail ?? 2) < 3) pruneImports(result.ir);
-    addValueMatchEdges(result.ir);
     addK8sDeclaredEdges(result.ir);
+    addValueMatchEdges(result.ir);
     addClusterAnchorEdges(result.ir, await boundK8sContext(env));
     const { svg } = renderGraph(result.ir, { boxes: "byContainer" });
     return c.json({

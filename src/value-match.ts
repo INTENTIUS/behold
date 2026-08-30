@@ -17,6 +17,25 @@
  * meaningful length, a single unambiguous owner per value, and dedup against
  * declared edges. Inferred edges are tagged `inferred: true` so a viewer can
  * style them apart from declared refs.
+ *
+ * ## Nested attributes (#166)
+ *
+ * Both halves used to read `Object.entries(attrs)` and `continue` on anything
+ * that wasn't a string — which is every attribute a k8s node has. The #166
+ * measurement put a number on it: on a mixed aws+k8s fixture whose Deployment
+ * sets `ASSET_BUCKET` to a Bucket's literal `BucketName`, with the bucket
+ * already in the owner index, this pass drew nothing, because the value lives
+ * at `spec.template.spec.containers[].env[].value`. So the CONSUMER half now
+ * walks to string leaves through objects and arrays, and `viaAttr` carries the
+ * dotted path it found them at (`spec.…​.env.value`) — identical to today's bare
+ * key for a top-level attr.
+ *
+ * The OWNER half stays shallow on purpose: an own-name key one level down is
+ * still identity (`metadata.name` is what k8s calls a resource), but the same
+ * key deeper down is not (`spec.template.spec.containers[].name` is a
+ * CONTAINER's name, and indexing it would let a Deployment "own" the string
+ * `web-frontend`). So the owner index reads top-level keys plus `metadata.*`,
+ * and nothing else.
  */
 import type { GraphIR } from "@intentius/chant";
 
@@ -53,19 +72,109 @@ export function isOwnNameAttr(kind: string, key: string): boolean {
  * treat a bare string equality as a real reference. */
 const MIN_NAME_LEN = 6;
 
+/** Above this a string stops being a name and starts being a payload — a
+ * rendered manifest in an annotation, a script, a certificate. Nothing that
+ * long is a resource's own name, and equality against one is coincidence. */
+const MAX_NAME_LEN = 200;
+
+/** How deep the consumer walk goes before it stops, counting an array as a step
+ * of its own. Twelve is the deepest place a real k8s reference sits —
+ * `spec.template.spec.containers[].env[].valueFrom.secretKeyRef.name` is ten —
+ * with headroom, and short of turning a CRD's arbitrary payload into an
+ * unbounded scan. */
+const MAX_DEPTH = 12;
+
+/** Subtrees the walk does not enter, because a match inside them is not
+ * evidence of wiring:
+ *  - `status` is OBSERVED state (and where behold's own overlay paint lands),
+ *    not a declaration;
+ *  - `annotations` carries rendered blobs — `kubectl.kubernetes.io/last-applied
+ *    -configuration` is the whole object as one string, which would match every
+ *    name in it at once;
+ *  - `labels`/`matchLabels` are the SELECTOR lexicon, and joining on them is
+ *    `src/k8s-edges.ts`'s job (it evaluates the selector properly, rather than
+ *    calling a shared label value a reference);
+ *  - `managedFields`, `ownerReferences` and the apiserver's identity bookkeeping
+ *    are runtime metadata — `ownerReferences` in particular is containment the
+ *    runtime tier already draws from `runtimeOwner`.
+ * Keys starting with `_` are behold's own injected attrs (`_status`,
+ * `_unobserved`, …), never the project's declarations. */
+const SKIP_KEYS = new Set([
+  "status",
+  "annotations",
+  "labels",
+  "matchLabels",
+  "managedFields",
+  "ownerReferences",
+  "creationTimestamp",
+  "resourceVersion",
+  "uid",
+  "selfLink",
+  "generation",
+  "finalizers",
+]);
+
+/** Is this string one a bare equality may be read as a reference? Applied to
+ * both halves, so an owner whose name is a paragraph is not indexed either. A
+ * name has no whitespace: anything that does is prose, a command line or a
+ * rendered document. */
+function joinable(v: string): boolean {
+  return v.length >= MIN_NAME_LEN && v.length <= MAX_NAME_LEN && !/\s/.test(v);
+}
+
+/** Every string leaf under `attrs`, with the dotted path it was found at (array
+ * indices elided — `containers[2].env[0].value` reads `containers.env.value`,
+ * which is what an edge label wants) and its own leaf key. Bounded by
+ * `MAX_DEPTH`, `SKIP_KEYS` and a seen-set, so a self-referential attr bag
+ * terminates. Exported for testing. */
+export function stringLeaves(attrs: Record<string, unknown> | undefined): { path: string; key: string; value: string }[] {
+  const out: { path: string; key: string; value: string }[] = [];
+  // Cycle guard on the CURRENT path, not a global seen-set: an attr bag built
+  // in memory (behold's own fixtures, a lexicon reusing one literal) shares
+  // sibling objects legitimately, and a global set would silently drop the
+  // second sighting.
+  const onPath = new Set<object>();
+  const step = (v: unknown, key: string, path: string, depth: number): void => {
+    if (typeof v === "string") {
+      out.push({ path, key, value: v });
+      return;
+    }
+    if (depth >= MAX_DEPTH || !v || typeof v !== "object") return;
+    if (onPath.has(v)) return;
+    onPath.add(v);
+    if (Array.isArray(v)) {
+      // An array element sits at its array's path — the index is noise in a label.
+      for (const item of v) step(item, key, path, depth + 1);
+    } else {
+      for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+        if (k.startsWith("_") || SKIP_KEYS.has(k)) continue;
+        step(val, k, path ? `${path}.${k}` : k, depth + 1);
+      }
+    }
+    onPath.delete(v);
+  };
+  for (const [k, v] of Object.entries(attrs ?? {})) {
+    if (k.startsWith("_") || SKIP_KEYS.has(k)) continue;
+    step(v, k, k, 0);
+  }
+  return out;
+}
+
 /** Add inferred edges for resources wired by a literal name value. Mutates +
  * returns `ir`. */
 export function addValueMatchEdges(ir: GraphIR): GraphIR {
   const nodes = ir.nodes as VNode[];
 
   // 1. Index each node's own-name value → owning node id. A value claimed by
-  //    more than one owner is ambiguous (null) and never matched.
+  //    more than one owner is ambiguous (null) and never matched. Top-level
+  //    keys and `metadata.*` only — see the module doc on why identity stops
+  //    one level down.
   const owner = new Map<string, string | null>();
   for (const n of nodes) {
-    for (const [k, v] of Object.entries(n.attrs ?? {})) {
-      if (typeof v !== "string" || v.length < MIN_NAME_LEN) continue;
-      if (!isOwnNameAttr(n.kind, k)) continue;
-      owner.set(v, owner.has(v) ? null : n.id);
+    for (const { path, key, value } of stringLeaves(n.attrs)) {
+      if (path !== key && path !== `metadata.${key}`) continue;
+      if (!joinable(value) || !isOwnNameAttr(n.kind, key)) continue;
+      owner.set(value, owner.has(value) ? null : n.id);
     }
   }
   if (owner.size === 0) return ir;
@@ -74,18 +183,19 @@ export function addValueMatchEdges(ir: GraphIR): GraphIR {
   const declared = new Set<string>();
   for (const e of ir.edges) declared.add(`${e.from}\0${e.to}`);
 
-  // 3. Scan every node's string attr values for a match to some other node's
-  //    own name → inferred edge (consumer → named resource).
+  // 3. Scan every node's string attr values — at any depth (#166) — for a match
+  //    to some other node's own name → inferred edge (consumer → named
+  //    resource). One edge per pair: the first path that matched names it.
   const added = new Set<string>();
   for (const a of nodes) {
-    for (const [k, v] of Object.entries(a.attrs ?? {})) {
-      if (typeof v !== "string" || v.length < MIN_NAME_LEN) continue;
-      const b = owner.get(v);
+    for (const { path, value } of stringLeaves(a.attrs)) {
+      if (!joinable(value)) continue;
+      const b = owner.get(value);
       if (!b || b === a.id) continue; // unknown, ambiguous, or self
       const key = `${a.id}\0${b}`;
       if (declared.has(key) || added.has(key)) continue;
       added.add(key);
-      ir.edges.push({ from: a.id, to: b, kind: "ref", viaAttr: k, inferred: true } as never);
+      ir.edges.push({ from: a.id, to: b, kind: "ref", viaAttr: path, inferred: true } as never);
     }
   }
   return ir;

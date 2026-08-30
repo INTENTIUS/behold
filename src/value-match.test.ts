@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { addValueMatchEdges, isOwnNameAttr } from "./value-match.ts";
+import { addValueMatchEdges, isOwnNameAttr, stringLeaves } from "./value-match.ts";
 import type { GraphIR } from "@intentius/chant";
 
 describe("isOwnNameAttr", () => {
@@ -100,5 +100,142 @@ describe("addValueMatchEdges", () => {
       groups: {},
     };
     expect(addValueMatchEdges(ir).edges).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #166 — nested attributes. The measurement's own fixture: a Deployment naming
+// a Bucket by its literal BucketName, which this pass could not see because
+// every k8s attr is a nested object and both halves read `attrs` one level
+// deep. Provenance: the mixed aws+k8s project the #166 comment describes
+// (`ASSET_BUCKET=behold166-mixed-assets` in the container env, the Bucket's own
+// `BucketName` the same string), transcribed at detail 3 minus the attrs no
+// pass reads.
+// ---------------------------------------------------------------------------
+
+const BUCKET = "behold166-mixed-assets";
+
+const mixed = (env: Record<string, unknown>[]): GraphIR =>
+  ({
+    nodes: [
+      { id: "assets", kind: "AWS::S3::Bucket", lexicon: "aws", attrs: { BucketName: BUCKET } },
+      {
+        id: "web",
+        kind: "K8s::Apps::Deployment",
+        lexicon: "k8s",
+        attrs: {
+          metadata: { name: "web", namespace: "shop" },
+          spec: {
+            template: {
+              metadata: { labels: { app: "web" } },
+              spec: { containers: [{ name: "web", image: "nginxinc/nginx-unprivileged:1.27-alpine", env }] },
+            },
+          },
+        },
+      },
+    ],
+    edges: [],
+    groups: {},
+  }) as unknown as GraphIR;
+
+describe("stringLeaves (#166)", () => {
+  it("walks objects and arrays to their string leaves, eliding array indices", () => {
+    const leaves = stringLeaves({ spec: { containers: [{ env: [{ name: "A", value: "one" }, { name: "B", value: "two" }] }] } });
+    expect(leaves).toEqual([
+      { path: "spec.containers.env.name", key: "name", value: "A" },
+      { path: "spec.containers.env.value", key: "value", value: "one" },
+      { path: "spec.containers.env.name", key: "name", value: "B" },
+      { path: "spec.containers.env.value", key: "value", value: "two" },
+    ]);
+  });
+
+  it("does not enter observed state, rendered blobs, the selector lexicon, or behold's own paint", () => {
+    const leaves = stringLeaves({
+      status: { phase: "Running-and-observed" },
+      metadata: {
+        name: "keep-this-one",
+        labels: { app: "shopfront-web" },
+        annotations: { "kubectl.kubernetes.io/last-applied-configuration": "{…the whole object…}" },
+        managedFields: [{ manager: "kubectl-client-side-apply" }],
+      },
+      _status: "neutral",
+    });
+    expect(leaves).toEqual([{ path: "metadata.name", key: "name", value: "keep-this-one" }]);
+  });
+
+  it("terminates on a cycle, and keeps a shared sibling object", () => {
+    const shared = { ref: "shared-value-here" };
+    const cyclic: Record<string, unknown> = { spec: { shared, also: shared } };
+    (cyclic.spec as Record<string, unknown>).self = cyclic;
+    expect(stringLeaves(cyclic).map((l) => l.value)).toEqual(["shared-value-here", "shared-value-here"]);
+  });
+});
+
+describe("addValueMatchEdges over nested attrs (#166)", () => {
+  it("connects a k8s workload to the aws resource its container env names", () => {
+    const out = addValueMatchEdges(mixed([{ name: "ASSET_BUCKET", value: BUCKET }]));
+    expect(out.edges).toEqual([
+      { from: "web", to: "assets", kind: "ref", viaAttr: "spec.template.spec.containers.env.value", inferred: true },
+    ]);
+  });
+
+  it("draws one edge per pair however many nested places name it", () => {
+    const out = addValueMatchEdges(
+      mixed([
+        { name: "ASSET_BUCKET", value: BUCKET },
+        { name: "ASSET_BUCKET_MIRROR", value: BUCKET },
+      ]),
+    );
+    expect(out.edges).toHaveLength(1);
+  });
+
+  it("keeps the length guard on a nested leaf", () => {
+    const out = addValueMatchEdges(mixed([{ name: "PORT", value: "8080" }]));
+    expect(out.edges).toEqual([]);
+  });
+
+  it("refuses a value that is prose or a rendered document, not a name", () => {
+    const ir: GraphIR = {
+      nodes: [
+        { id: "bucket", kind: "AWS::S3::Bucket", lexicon: "aws", attrs: { BucketName: "assets for the shop" } },
+        { id: "web", kind: "K8s::Apps::Deployment", lexicon: "k8s", attrs: { spec: { note: "assets for the shop" } } },
+      ],
+      edges: [],
+      groups: {},
+    } as unknown as GraphIR;
+    expect(addValueMatchEdges(ir).edges).toEqual([]);
+  });
+
+  it("does not let a CONTAINER's name make its workload the owner of that value", () => {
+    // `spec.template.spec.containers[].name` is an own-name key by spelling but
+    // names a container, not the Deployment — so nothing may join to it.
+    const ir: GraphIR = {
+      nodes: [
+        {
+          id: "web",
+          kind: "K8s::Apps::Deployment",
+          lexicon: "k8s",
+          attrs: { metadata: { name: "web" }, spec: { template: { spec: { containers: [{ name: "sidecar-proxy" }] } } } },
+        },
+        { id: "other", kind: "AWS::ECS::Service", lexicon: "aws", attrs: { Cluster: "sidecar-proxy" } },
+      ],
+      edges: [],
+      groups: {},
+    } as unknown as GraphIR;
+    expect(addValueMatchEdges(ir).edges).toEqual([]);
+  });
+
+  it("indexes a k8s object's own metadata.name as an owner", () => {
+    const ir: GraphIR = {
+      nodes: [
+        { id: "ns", kind: "K8s::Core::Namespace", lexicon: "k8s", attrs: { metadata: { name: "shopfront" } } },
+        { id: "role", kind: "AWS::IAM::Role", lexicon: "aws", attrs: { Tags: [{ Key: "k8s-namespace", Value: "shopfront" }] } },
+      ],
+      edges: [],
+      groups: {},
+    } as unknown as GraphIR;
+    expect(addValueMatchEdges(ir).edges).toEqual([
+      { from: "role", to: "ns", kind: "ref", viaAttr: "Tags.Value", inferred: true },
+    ]);
   });
 });
