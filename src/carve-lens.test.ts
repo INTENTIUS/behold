@@ -174,6 +174,97 @@ describe("carveReportToIr — the sample estate", () => {
   });
 });
 
+/**
+ * CDK compat (#230, chant#2019): `chant carve advise --from ./cdk.out` ranks
+ * CDK constructs through the same scoring model, bands and report shape the
+ * Terraform path uses — a `source: "cdk"` discriminator plus per-resource
+ * `notes`/`members` and `crossStack` on a boundary edge are the only new
+ * fields, all additive within schema version 1.
+ *
+ * Fixture provenance: `src/__fixtures__/carve-cdk-sample.json` is the real
+ * `carveJson()` payload chant#2019's own `packages/core/src/cdk/advise.test.ts`
+ * asserts against (the `AppStack`/`DataStack` cloud-assembly fixture),
+ * captured by running chant's test suite against commit 103cbb04
+ * (`feat(carve): CDK cloud-assembly carve advisor (read-only) (#2019)`) on
+ * chant main and writing the payload chant already builds internally —
+ * unreleased at time of writing (merged after the 0.52.2 version commit; no
+ * npm dependency bump). This is not a synthetic shape drawn from reading the
+ * code — it is chant's own advisor output, verbatim.
+ */
+describe("carveReportToIr — a real CDK report (chant#2019, unreleased)", () => {
+  const cdkFixture = join(HERE, "__fixtures__", "carve-cdk-sample.json");
+  const cdkReport = JSON.parse(readFileSync(cdkFixture, "utf8")) as CarveReport;
+
+  it("is the same report shape the lens already reads — version 1, an untouched `resources` contract", () => {
+    const parsed = parseCarveReport(cdkReport);
+    expect(parsed.ok).toBe(true);
+    expect(cdkReport.version).toBe(1);
+    expect(cdkReport.count).toBe(6);
+    expect(cdkReport.resources).toHaveLength(6);
+    expect(cdkReport.bands).toEqual({ "clean leaf": 3, "carvable w/ edits": 2, "leave in Terraform": 1 });
+  });
+
+  it("the CDK-only additions (source, notes, members, crossStack) are additive — the lens never keys on them", () => {
+    // `source` is new at the top level; every field the lens's shallow
+    // validator checks (address/score/band) is untouched.
+    expect((cdkReport as unknown as { source: string }).source).toBe("cdk");
+    const handler = cdkReport.resources.find((r) => r.address === "AppStack/Handler")!;
+    expect((handler as unknown as { notes: string[] }).notes.join(" ")).toContain("Asset-backed");
+    expect((handler as unknown as { members: unknown[] }).members).toHaveLength(3);
+    const crossStackEdge = (handler.boundary as unknown as { outbound: Array<Record<string, unknown>> }).outbound.find(
+      (e) => e.crossStack,
+    );
+    expect(crossStackEdge?.survivor).toBe("DataStack/Assets");
+  });
+
+  const ir = carveReportToIr(cdkReport);
+
+  it("renders unchanged: one card per construct, kinded from the address the same way a Terraform address is", () => {
+    expect(ir.nodes).toHaveLength(6);
+    const byId = new Map(ir.nodes.map((n) => [n.id, n]));
+    // A construct path has no dot, so tfTypeOf's split falls through to the
+    // whole address — same behavior as any other opaque address the lens
+    // doesn't recognize the internal shape of.
+    expect(byId.get("AppStack/Handler")!.kind).toBe("AppStack/Handler");
+    expect(byId.get("AppStack/Handler")!.attrs.mapsTo).toBe("AWS::Lambda::Function");
+  });
+
+  it("a `kind: \"module\"` construct (the L3 subtree) paints and reads exactly like a Terraform module", () => {
+    const api = ir.nodes.find((n) => n.id === "AppStack/Api")!;
+    expect(api.attrs.mapsTo).toBeUndefined();
+    expect(api.attrs._status).toBe("warn"); // 69, carvable w/ edits
+    expect(api.attrs.arithmetic).toBe("100 - 12x1 inbound - 4x1 output - 15x1 tier2 = 69");
+  });
+
+  it("draws the cross-stack boundary edge like any other — crossStack rides along unread, not required", () => {
+    // DataStack/Assets reports this cut as `inbound` and is processed first
+    // (it precedes AppStack/Handler in `resources`), so the dedup keeps that
+    // view; Handler's `outbound` mirror of the same cut is the one dropped.
+    // `crossStack` itself never has to be read for the edge to draw right.
+    expect(ir.edges).toContainEqual({
+      from: "AppStack/Handler",
+      to: "DataStack/Assets",
+      kind: "ref",
+      viaAttr: "inbound",
+      toAttr: "Export",
+    });
+  });
+
+  it("boxes the ranking by band, carve-now first — the same grouping a Terraform report gets", () => {
+    expect(ir.groups.byStack).toEqual({
+      "carve now": ["AppStack/Legacy", "DataStack/Assets", "DataStack/Table"],
+      "boundary work": ["AppStack/Api", "AppStack/Handler"],
+      "leave in Terraform": ["AppStack/Reports.NestedStack"],
+    });
+  });
+
+  it("the note reads as a normal advisory — no chant#1636 caveat, since the edge lists are present", () => {
+    const note = carveNote(cdkReport, ir);
+    expect(note).toContain("3 clean leaf");
+    expect(note).not.toContain("chant#1636");
+  });
+});
+
 describe("carveReportToIr — boundary edges, synthetic shapes (#1636)", () => {
   // chant's own `BoundaryEdge` shape (packages/core/src/terraform/carve.ts),
   // attached per resource. The real fixture above already exercises this on a

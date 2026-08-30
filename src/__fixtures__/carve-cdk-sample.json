@@ -1,0 +1,351 @@
+{
+  "version": 1,
+  "from": "/Users/alex/Documents/checkouts/intentius/chant/packages/core/src/cdk/__fixtures__/cdk.out",
+  "source": "cdk",
+  "advisory": "read-only — emits nothing, patches nothing, touches no live resource",
+  "count": 6,
+  "bands": {
+    "clean leaf": 3,
+    "carvable w/ edits": 2,
+    "leave in Terraform": 1
+  },
+  "resources": [
+    {
+      "address": "AppStack/Legacy",
+      "kind": "resource",
+      "score": 90,
+      "band": "clean leaf",
+      "mapsTo": "AWS::S3::Bucket",
+      "breakdown": {
+        "inbound": 0,
+        "outbound": 0,
+        "outputs": 0,
+        "tier": 1,
+        "hasDynamic": true,
+        "instances": 1,
+        "penalties": {
+          "inbound": 0,
+          "outbound": 0,
+          "outputs": 0,
+          "tier": 0,
+          "dynamic": -10,
+          "instances": 0
+        }
+      },
+      "members": [
+        {
+          "id": "LegacyBucket",
+          "type": "AWS::S3::Bucket",
+          "stack": "AppStack",
+          "path": "AppStack/Legacy"
+        }
+      ],
+      "boundary": {
+        "inbound": [],
+        "outbound": []
+      }
+    },
+    {
+      "address": "DataStack/Assets",
+      "kind": "resource",
+      "score": 88,
+      "band": "clean leaf",
+      "mapsTo": "AWS::S3::Bucket",
+      "breakdown": {
+        "inbound": 1,
+        "outbound": 0,
+        "outputs": 0,
+        "tier": 1,
+        "hasDynamic": false,
+        "instances": 1,
+        "penalties": {
+          "inbound": -12,
+          "outbound": 0,
+          "outputs": 0,
+          "tier": 0,
+          "dynamic": 0,
+          "instances": 0
+        }
+      },
+      "notes": [
+        "2 CloudFormation resources fold into this construct."
+      ],
+      "members": [
+        {
+          "id": "Assets675B7A57",
+          "type": "AWS::S3::Bucket",
+          "stack": "DataStack",
+          "path": "DataStack/Assets/Resource"
+        },
+        {
+          "id": "AssetsPolicyE8B0F1C2",
+          "type": "AWS::S3::BucketPolicy",
+          "stack": "DataStack",
+          "path": "DataStack/Assets/Policy/Resource"
+        }
+      ],
+      "boundary": {
+        "inbound": [
+          {
+            "direction": "inbound",
+            "survivor": "AppStack/Handler",
+            "carved": "DataStack/Assets",
+            "attrs": [
+              "Export"
+            ],
+            "via": [
+              "PolicyDocument"
+            ],
+            "bridge": "cdk-import",
+            "required": "immediately",
+            "crossStack": true
+          }
+        ],
+        "outbound": []
+      }
+    },
+    {
+      "address": "DataStack/Table",
+      "kind": "resource",
+      "score": 81,
+      "band": "clean leaf",
+      "mapsTo": "AWS::DynamoDB::Table",
+      "breakdown": {
+        "inbound": 0,
+        "outbound": 0,
+        "outputs": 1,
+        "tier": 2,
+        "hasDynamic": false,
+        "instances": 1,
+        "penalties": {
+          "inbound": 0,
+          "outbound": 0,
+          "outputs": -4,
+          "tier": -15,
+          "dynamic": 0,
+          "instances": 0
+        }
+      },
+      "members": [
+        {
+          "id": "Table778B6D2C",
+          "type": "AWS::DynamoDB::Table",
+          "stack": "DataStack",
+          "path": "DataStack/Table/Resource"
+        }
+      ],
+      "boundary": {
+        "inbound": [
+          {
+            "direction": "inbound",
+            "survivor": "output.DataStack.TableName",
+            "carved": "DataStack/Table",
+            "attrs": [
+              "Ref"
+            ],
+            "via": [
+              "Value"
+            ],
+            "bridge": "cfn-output-rewrite",
+            "required": "immediately"
+          }
+        ],
+        "outbound": []
+      }
+    },
+    {
+      "address": "AppStack/Api",
+      "kind": "module",
+      "score": 69,
+      "band": "carvable w/ edits",
+      "breakdown": {
+        "inbound": 1,
+        "outbound": 0,
+        "outputs": 1,
+        "tier": 2,
+        "hasDynamic": false,
+        "instances": 1,
+        "penalties": {
+          "inbound": -12,
+          "outbound": 0,
+          "outputs": -4,
+          "tier": -15,
+          "dynamic": 0,
+          "instances": 0
+        }
+      },
+      "notes": [
+        "L3 construct subtree — a Composite candidate (#1000). Its leaves rank here as one unit rather than separately.",
+        "3 CloudFormation resources fold into this construct."
+      ],
+      "members": [
+        {
+          "id": "ApiQueue4A6E9832",
+          "type": "AWS::SQS::Queue",
+          "stack": "AppStack",
+          "path": "AppStack/Api/Queue/Resource"
+        },
+        {
+          "id": "ApiTopic1B2C3D4E",
+          "type": "AWS::SNS::Topic",
+          "stack": "AppStack",
+          "path": "AppStack/Api/Topic/Resource"
+        },
+        {
+          "id": "ApiTopicQueueSubscriptionAA11BB22",
+          "type": "AWS::SNS::Subscription",
+          "stack": "AppStack",
+          "path": "AppStack/Api/Topic/QueueSubscription/Resource"
+        }
+      ],
+      "boundary": {
+        "inbound": [
+          {
+            "direction": "inbound",
+            "survivor": "AppStack/Handler",
+            "carved": "AppStack/Api",
+            "attrs": [
+              "Ref"
+            ],
+            "via": [
+              "Environment"
+            ],
+            "bridge": "cdk-import",
+            "required": "immediately"
+          },
+          {
+            "direction": "inbound",
+            "survivor": "output.AppStack.QueueUrl",
+            "carved": "AppStack/Api",
+            "attrs": [
+              "Ref"
+            ],
+            "via": [
+              "Value"
+            ],
+            "bridge": "cfn-output-rewrite",
+            "required": "immediately"
+          }
+        ],
+        "outbound": []
+      }
+    },
+    {
+      "address": "AppStack/Handler",
+      "kind": "resource",
+      "score": 67,
+      "band": "carvable w/ edits",
+      "mapsTo": "AWS::Lambda::Function",
+      "breakdown": {
+        "inbound": 0,
+        "outbound": 2,
+        "outputs": 0,
+        "tier": 2,
+        "hasDynamic": false,
+        "instances": 1,
+        "penalties": {
+          "inbound": 0,
+          "outbound": -8,
+          "outputs": 0,
+          "tier": -15,
+          "dynamic": 0,
+          "instances": 0,
+          "asset": -10
+        }
+      },
+      "notes": [
+        "Asset-backed (Code) — carving it moves the CDK bundling too, not just the resource.",
+        "3 CloudFormation resources fold into this construct."
+      ],
+      "members": [
+        {
+          "id": "Handler886CB40B",
+          "type": "AWS::Lambda::Function",
+          "stack": "AppStack",
+          "path": "AppStack/Handler/Resource"
+        },
+        {
+          "id": "HandlerServiceRoleDefaultPolicy4C43A1F9",
+          "type": "AWS::IAM::Policy",
+          "stack": "AppStack",
+          "path": "AppStack/Handler/ServiceRole/DefaultPolicy/Resource"
+        },
+        {
+          "id": "HandlerServiceRoleFCDC14AE",
+          "type": "AWS::IAM::Role",
+          "stack": "AppStack",
+          "path": "AppStack/Handler/ServiceRole/Resource"
+        }
+      ],
+      "boundary": {
+        "inbound": [],
+        "outbound": [
+          {
+            "direction": "outbound",
+            "survivor": "AppStack/Api",
+            "carved": "AppStack/Handler",
+            "attrs": [
+              "Ref"
+            ],
+            "via": [
+              "Environment"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply"
+          },
+          {
+            "direction": "outbound",
+            "survivor": "DataStack/Assets",
+            "carved": "AppStack/Handler",
+            "attrs": [
+              "Export"
+            ],
+            "via": [
+              "PolicyDocument"
+            ],
+            "bridge": "deferred-input",
+            "required": "at-apply",
+            "crossStack": true
+          }
+        ]
+      }
+    },
+    {
+      "address": "AppStack/Reports.NestedStack",
+      "kind": "resource",
+      "score": 0,
+      "band": "leave in Terraform",
+      "breakdown": {
+        "inbound": 0,
+        "outbound": 0,
+        "outputs": 0,
+        "tier": null,
+        "hasDynamic": false,
+        "instances": 1,
+        "penalties": {
+          "inbound": 0,
+          "outbound": 0,
+          "outputs": 0,
+          "tier": 0,
+          "dynamic": 0,
+          "instances": 0
+        }
+      },
+      "members": [
+        {
+          "id": "ReportsNestedStackReportsNestedStackResource7B21D4C6",
+          "type": "AWS::CloudFormation::Stack",
+          "stack": "AppStack",
+          "path": "AppStack/Reports.NestedStack/Reports.NestedStackResource"
+        }
+      ],
+      "notes": [
+        "Nested stack — its resources live in a template this advisor does not descend into, so carving it means carving that whole template. Advise the nested assembly on its own."
+      ],
+      "boundary": {
+        "inbound": [],
+        "outbound": []
+      }
+    }
+  ]
+}
