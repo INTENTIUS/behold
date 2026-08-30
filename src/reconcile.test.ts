@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { summarizePlan } from "./reconcile.ts";
+import { readFileSync } from "node:fs";
+import { summarizePlan, worstDisruption } from "./reconcile.ts";
 import type { LifecyclePlan } from "./chant.ts";
 import type { ComponentResource } from "./resources.ts";
 
@@ -66,6 +67,8 @@ describe("summarizePlan", () => {
       runtime: 0,
       runtimeByComponent: {},
       runtimeUncorrelated: 0,
+      disruption: { "in-place": 0, rolling: 0, replace: 0, destroy: 0, unknown: 0 },
+      disruptionByComponent: {},
     });
   });
 
@@ -230,5 +233,149 @@ describe("summarizePlan — runtime entries (chant#1180)", () => {
     expect(summary.runtime).toBe(2);
     expect(summary.unobserved).toBe(1);
     expect(summary.total).toBe(4);
+  });
+});
+
+// chant#1665 (#284): `disruption` on an `update` entry — what applying the
+// change costs. Unlike the two blocks above this is a new FIELD, not a new
+// action, so it changes no count: it re-cuts the pending set by severity so a
+// badge can say WHICH of the N pending changes rebuilds the resource.
+describe("summarizePlan — disruption (chant#1665)", () => {
+  // Two updates in the same component with different verdicts, one loud update
+  // in another, and a `create` — which chant never classifies, because its
+  // blast radius is already in the action.
+  const classified: LifecyclePlan = {
+    env: "local",
+    entries: [
+      {
+        name: "loom-db-instance",
+        action: "update",
+        evidence: { declared: true, inSnapshot: true, live: true },
+        ownership: "owned",
+        deltas: [{ path: "attributes.DBInstanceIdentifier", oldValue: "loom", newValue: "loom-2" }],
+        disruption: "replace",
+        disruptionBecause: ["attributes.DBInstanceIdentifier"],
+        disruptionDetail: "DBInstanceIdentifier is create-only — CloudFormation builds a new AWS::RDS::DBInstance and removes the old one",
+      },
+      {
+        name: "loom-db-secret",
+        action: "update",
+        evidence: { declared: true, inSnapshot: true, live: true },
+        ownership: "owned",
+        deltas: [{ path: "attributes.Description", oldValue: "a", newValue: "b" }],
+        disruption: "in-place",
+        disruptionDetail: "no create-only property of AWS::SecretsManager::Secret changed",
+      },
+      {
+        name: "loom-backend-service",
+        action: "update",
+        evidence: { declared: true, inSnapshot: true, live: true },
+        ownership: "owned",
+        disruption: "rolling",
+      },
+      { name: "loom-backend-task-def", action: "create", evidence: { declared: true, inSnapshot: false, live: false }, ownership: "unknown" },
+    ],
+  };
+
+  it("counts pending entries per level", () => {
+    const summary = summarizePlan(classified, byComponent);
+    expect(summary.disruption).toEqual({ "in-place": 1, rolling: 1, replace: 1, destroy: 0, unknown: 0 });
+  });
+
+  it("changes no count — the same entries are still exactly N pending", () => {
+    const summary = summarizePlan(classified, byComponent);
+    expect(summary.total).toBe(4);
+    expect(summary.byComponent).toEqual({ "loom-db": 2, "loom-backend": 2 });
+    // The levels re-cut the pending set; an unclassified entry (the `create`)
+    // is in none of them, so the levels sum to at most `total`, never past it.
+    const levelSum = Object.values(summary.disruption).reduce((a, b) => a + b, 0);
+    expect(levelSum).toBe(3);
+    expect(levelSum).toBeLessThanOrEqual(summary.total);
+  });
+
+  it("gives a component the loudest verdict among its pending entries", () => {
+    const summary = summarizePlan(classified, byComponent);
+    // loom-db has both an in-place and a replace — the row must say replace.
+    expect(summary.disruptionByComponent).toEqual({ "loom-db": "replace", "loom-backend": "rolling" });
+  });
+
+  it("carries the verdict for entries that mapped to no component", () => {
+    const withOrphan: LifecyclePlan = {
+      env: "local",
+      entries: [...classified.entries, { name: "some-unrelated-bucket", action: "update", evidence: { declared: true, inSnapshot: true, live: true }, ownership: "owned", disruption: "destroy" }],
+    };
+    const summary = summarizePlan(withOrphan, byComponent);
+    expect(summary.disruptionUncorrelated).toBe("destroy");
+    expect(summary.disruption.destroy).toBe(1);
+  });
+
+  it("leaves every level at 0 for a plan from a chant predating #1665 — and claims nothing about it", () => {
+    // `plan` above has an `update` entry with no verdict. It must NOT be
+    // counted as in-place: absence means unclassified, not safe.
+    const summary = summarizePlan(plan, byComponent);
+    expect(summary.disruption).toEqual({ "in-place": 0, rolling: 0, replace: 0, destroy: 0, unknown: 0 });
+    expect(summary.disruptionByComponent).toEqual({});
+    expect(summary.disruptionUncorrelated).toBeUndefined();
+  });
+
+  it("counts `unknown` as its own level rather than folding it into in-place", () => {
+    const withUnknown: LifecyclePlan = {
+      env: "local",
+      entries: [
+        { name: "loom-db-instance", action: "update", evidence: { declared: true, inSnapshot: true, live: true }, ownership: "owned", disruption: "unknown", disruptionDetail: "the aws lexicon marks Engine conditionally create-only" },
+      ],
+    };
+    const summary = summarizePlan(withUnknown, byComponent);
+    expect(summary.disruption.unknown).toBe(1);
+    expect(summary.disruption["in-place"]).toBe(0);
+    expect(summary.disruptionByComponent).toEqual({ "loom-db": "unknown" });
+  });
+
+  it("ignores a level outside the vocabulary rather than painting it", () => {
+    const bogus = {
+      env: "local",
+      entries: [{ name: "loom-db-instance", action: "update", evidence: { declared: true, inSnapshot: true, live: true }, ownership: "owned", disruption: "catastrophic" }],
+    } as unknown as LifecyclePlan;
+    const summary = summarizePlan(bogus, byComponent);
+    expect(summary.total).toBe(1); // still a pending change
+    expect(summary.disruptionByComponent).toEqual({}); // …with no verdict behold knows how to render
+  });
+
+  it("skips a non-resource entity's verdict along with its count", () => {
+    const withParam: LifecyclePlan = {
+      env: "local",
+      entries: [...classified.entries, { name: "pRdsEndpoint", action: "update", evidence: { declared: true, inSnapshot: false, live: false }, ownership: "unknown", disruption: "destroy" }],
+    };
+    const summary = summarizePlan(withParam, byComponent, new Set(["pRdsEndpoint"]));
+    expect(summary.disruption.destroy).toBe(0);
+    expect(summary.disruptionUncorrelated).toBeUndefined();
+  });
+});
+
+describe("worstDisruption", () => {
+  it("prefers the louder verdict", () => {
+    expect(worstDisruption("in-place", "replace")).toBe("replace");
+    expect(worstDisruption("replace", "in-place")).toBe("replace");
+    expect(worstDisruption("replace", "destroy")).toBe("destroy");
+    expect(worstDisruption("rolling", "in-place")).toBe("rolling");
+  });
+
+  it("never lets `unknown` read as the quiet one", () => {
+    expect(worstDisruption("in-place", "unknown")).toBe("unknown");
+    expect(worstDisruption("unknown", "in-place")).toBe("unknown");
+  });
+
+  it("sorts `unknown` BELOW a confident replace — deliberately unlike chant's own rank", () => {
+    // chant sorts `unknown` above everything so its plan header can't claim
+    // confidence. A badge answers a different question — how loud is this row —
+    // and a confirmed rebuild outranks "nobody could say".
+    expect(worstDisruption("unknown", "replace")).toBe("replace");
+    expect(worstDisruption("unknown", "destroy")).toBe("destroy");
+  });
+
+  it("treats an absent verdict as no claim at all", () => {
+    expect(worstDisruption(undefined, "in-place")).toBe("in-place");
+    expect(worstDisruption("in-place", undefined)).toBe("in-place");
+    expect(worstDisruption(undefined, undefined)).toBeUndefined();
   });
 });

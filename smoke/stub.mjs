@@ -187,7 +187,16 @@ const JSON_ROUTES = {
   "/api/ops": { ops: [], adoptLexicons: [], autoSync: "off" },
   "/api/ci": { jobs: [], forge: "github" },
   "/api/resources": { byComponent: {} },
-  "/api/reconcile": { total: 2, byComponent: { worker: 2 }, uncorrelated: 0 },
+  // #284 / chant#1665: two pending changes in `worker`, one of which replaces
+  // the resource — so the smoke can assert the badge and the row say WHICH,
+  // not just how many.
+  "/api/reconcile": {
+    total: 2,
+    byComponent: { worker: 2 },
+    uncorrelated: 0,
+    disruption: { "in-place": 1, rolling: 0, replace: 1, destroy: 0, unknown: 0 },
+    disruptionByComponent: { worker: "replace" },
+  },
   "/api/diff": { env: "local", nodes: diffNodes },
 };
 

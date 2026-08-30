@@ -38,9 +38,51 @@
  * (`runtime`/`runtimeByComponent`/`runtimeUncorrelated`), excluded from
  * `total`/`byComponent`/`uncorrelated` for the same reason `unobserved` is.
  * `0` for a plan from a chant predating #1180.
+ *
+ * Disruption (chant#1665, chant 0.51) is the one thing here that is NOT a new
+ * bucket: an `update` carrying `disruption: "replace"` is still exactly one
+ * pending change, counted where it always was. What it adds is severity — an
+ * update that rebuilds a database is a materially different pending item from
+ * one that flips a tag, and until now both read as "1 pending". So the counts
+ * above are unchanged and `disruption`/`disruptionByComponent` ride alongside
+ * them, for the badge and the row to say WHICH.
+ *
+ * Only entries that actually carry a verdict are counted. A plan from a chant
+ * predating #1665 leaves every level at `0` and `disruptionByComponent` empty
+ * — which the UI renders exactly as it rendered before this landed. That is
+ * the whole contract: no verdict is not a verdict of `in-place`.
  */
-import type { LifecyclePlan } from "./chant.ts";
+import type { Disruption, LifecyclePlan } from "./chant.ts";
 import type { ComponentResource } from "./resources.ts";
+
+/** Loudest-last ordering for "the worst pending change in this set".
+ *
+ * Deliberately NOT chant's own `DISRUPTION_RANK`, which sorts `unknown` above
+ * `destroy` so its plan header can't claim a confidence it doesn't have. The
+ * question a badge answers is different — "how loud should this row be" — and
+ * an unclassified change is a caution to go read, not a louder alarm than a
+ * confirmed delete-then-create. `unknown` still sorts above `in-place`, which
+ * is the invariant that matters: nothing here can make it read as safe. */
+const DISRUPTION_SEVERITY: Record<Disruption, number> = {
+  "in-place": 0,
+  rolling: 1,
+  unknown: 1,
+  replace: 2,
+  destroy: 3,
+};
+
+/** Every level chant defines, in chant's own `DISRUPTION_LEVELS` order.
+ * Exported so the count record has one spelling of its keys, and so a level
+ * behold doesn't recognise can be rejected rather than rendered. */
+export const DISRUPTION_LEVELS: readonly Disruption[] = ["in-place", "rolling", "replace", "destroy", "unknown"];
+
+/** The louder of two verdicts by {@link DISRUPTION_SEVERITY}. `undefined`
+ * means "nothing classified yet" and loses to any real verdict. Pure. */
+export function worstDisruption(a: Disruption | undefined, b: Disruption | undefined): Disruption | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  return DISRUPTION_SEVERITY[b] > DISRUPTION_SEVERITY[a] ? b : a;
+}
 
 export interface ReconcileSummary {
   env: string;
@@ -69,6 +111,18 @@ export interface ReconcileSummary {
   /** Runtime-child entries that couldn't be mapped to a component (the common
    * case — a Pod has no `src/<component>/` source location at all). */
   runtimeUncorrelated: number;
+  /** Pending entries per disruption level (chant#1665). Counts the SAME
+   * entries `total` counts — a re-cut of the pending set by severity, never an
+   * extra bucket. Every level is `0` against a chant that doesn't classify,
+   * and an entry with no verdict is counted in none of them. */
+  disruption: Record<Disruption, number>;
+  /** The loudest verdict among a component's pending entries, for the row's
+   * severity. Absent for a component whose pending entries carry no verdict at
+   * all — which renders as it did before #1665, not as `in-place`. */
+  disruptionByComponent: Record<string, Disruption>;
+  /** Same, for the pending entries that mapped to no component. Absent when
+   * none of them carried a verdict. */
+  disruptionUncorrelated?: Disruption;
 }
 
 /** Summarize a plan's pending (non-noop) entries per component. Pure.
@@ -91,6 +145,9 @@ export function summarizePlan(
   const counts: Record<string, number> = {};
   const unobservedCounts: Record<string, number> = {};
   const runtimeCounts: Record<string, number> = {};
+  const disruption = Object.fromEntries(DISRUPTION_LEVELS.map((l) => [l, 0])) as Record<Disruption, number>;
+  const disruptionByComponent: Record<string, Disruption> = {};
+  let disruptionUncorrelated: Disruption | undefined;
   let uncorrelated = 0;
   let unobservedUncorrelated = 0;
   let runtimeUncorrelated = 0;
@@ -123,6 +180,16 @@ export function summarizePlan(
     total++;
     if (component) counts[component] = (counts[component] ?? 0) + 1;
     else uncorrelated++;
+    // Severity rides along on the pending entry that already got counted —
+    // never its own bucket. chant only classifies `update`s, and only a chant
+    // that ships #1665 sets the field at all, so this is inert on both older
+    // plans and every other action.
+    const level = entry.disruption;
+    if (!level) continue;
+    if (!DISRUPTION_LEVELS.includes(level)) continue; // a level behold doesn't know is not a level it may paint
+    disruption[level]++;
+    if (component) disruptionByComponent[component] = worstDisruption(disruptionByComponent[component], level)!;
+    else disruptionUncorrelated = worstDisruption(disruptionUncorrelated, level);
   }
   return {
     env: plan.env,
@@ -135,5 +202,8 @@ export function summarizePlan(
     runtime,
     runtimeByComponent: runtimeCounts,
     runtimeUncorrelated,
+    disruption,
+    disruptionByComponent,
+    ...(disruptionUncorrelated ? { disruptionUncorrelated } : {}),
   };
 }
