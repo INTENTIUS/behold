@@ -1,0 +1,62 @@
+{
+  "formatVersion": "1.0",
+  "name": "staging-converge",
+  "overview": "Converge the staging environment toward its declaration (dial: apply)",
+  "taskQueue": "chant-ops",
+  "depends": [],
+  "searchAttributes": {
+    "Converge": "true",
+    "Env": "staging",
+    "Dial": "apply"
+  },
+  "phases": [
+    {
+      "name": "Observe",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "lifecycleSnapshot",
+          "args": { "env": "staging" },
+          "profile": "fastIdempotent"
+        },
+        {
+          "kind": "activity",
+          "fn": "lifecycleDiff",
+          "args": { "env": "staging", "live": true },
+          "profile": "fastIdempotent",
+          "outcomeAttribute": { "name": "Drift", "from": "drifted" }
+        }
+      ]
+    },
+    {
+      "name": "Converge",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "convergeTick",
+          "args": {
+            "opName": "staging-converge",
+            "env": "staging",
+            "dial": "apply",
+            "budget": 3,
+            "rules": [
+              {
+                "id": "drift-apply",
+                "when": { "kind": "field-comparison", "field": "updateCount", "op": "gt", "value": 0 },
+                "then": { "kind": "run", "op": "fountain-apply" },
+                "why": "staging drift is remediated automatically; prod is not"
+              }
+            ]
+          },
+          "profile": "longInfra",
+          "outcomeAttribute": { "name": "Remediated", "from": "remediated" }
+        }
+      ]
+    }
+  ],
+  "onFailure": [],
+  "activityProfiles": {},
+  "activityContracts": {}
+}

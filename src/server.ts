@@ -72,6 +72,15 @@ import { teardownScratchFloci } from "./carve-live.ts";
 import { discoverEstateOps, discoverOpIrs } from "./ops.ts";
 import { readOpIr, opsToIr, opsNote, HOW_TO_EMIT, type OpIr } from "./ops-lens.ts";
 import { readRunStatus, joinRun, paintPlayhead, playheadNote, pendingGateCard } from "./run-playhead.ts";
+import {
+  readOperatorStatus,
+  declaredConvergeOps,
+  markOperatorHome,
+  operatorNote,
+  APPROVE_SEMANTICS,
+  HOW_TO_DECLARE,
+  type OpStatusLine,
+} from "./operator.ts";
 import { LIVE_IMPORT_LEXICONS } from "./adopt.ts";
 import { detectProject, loadBeholdConfig } from "./project.ts";
 import { nodeDiff, nodeObserved, nodeFieldDrift, type LiveDiffJson } from "./diff.ts";
@@ -773,6 +782,11 @@ export function createApp(
       // hydrates the playhead instead of starting blank — the `run` SSE event
       // carries every update after that. `status: "idle"` when nothing has run.
       runState: runner.runState,
+      // #234 join 3: the operator strip's last known model, so a client that
+      // opens (or reloads) hydrates the strip instead of starting blank — same
+      // reason `runState` is here. `declared: []` until the ops lens has been
+      // opened once, since that is where the op.json read happens.
+      operatorState: runner.operatorState,
     }),
   );
 
@@ -871,6 +885,87 @@ export function createApp(
     const runState = runner.noteGate(name, result);
     if (!result.ok) return c.json({ ...result.refusal, runState }, 422);
     return c.json({ ...result.read, runState });
+  });
+
+  // ── The operating loop (#234 joins 1 + 3) ─────────────────────────────────
+  //
+  // Which served projects actually declare a ConvergeOp, read from the emitted
+  // op.json alone (chant's own `searchAttributes.Converge === "true"` predicate)
+  // — so the strip is gated on a DECLARATION, found in a file the ops lens
+  // already parses, and behold never shells `chant operator status` at a project
+  // that has no operating loop to report on.
+  const convergeDirs = (): { dirs: string[]; declared: ReturnType<typeof declaredConvergeOps> } => {
+    const dirs: string[] = [];
+    const declared: ReturnType<typeof declaredConvergeOps> = [];
+    for (const f of discoverOpIrs(estateDirs)) {
+      const parsed = readOpIr(f.path, (p) => readFileSync(p, "utf8"));
+      if (!parsed.ok) continue; // the lens itself refuses on an unreadable op.json; this read only counts loops
+      const mine = declaredConvergeOps([parsed.ir]);
+      if (!mine.length) continue;
+      declared.push(...mine);
+      if (!dirs.includes(f.dir)) dirs.push(f.dir);
+    }
+    return { dirs, declared };
+  };
+
+  // The operator strip's read (#234 join 3, chant#1485). Pull rather than push,
+  // exactly like the run playhead's gate read above: behold asks while a client
+  // is looking at the ops lens, instead of holding a background poll for a loop
+  // nobody is watching, and the runner broadcasts only a CHANGED answer.
+  //
+  // What comes back is ONE tick per ConvergeOp — `chant operator status` keeps
+  // `records.at(-1)` and drops the rest, and no CLI exposes the history
+  // (chant#2029). So this can only ever feed a strip, never a lane, and
+  // `operatorNote` says so out loud rather than leaving a reader to assume the
+  // one line is the newest of many behold chose to show.
+  app.get("/api/operator/status", async (c) => {
+    const { dirs, declared } = convergeDirs();
+    runner.noteDeclaredConvergeOps(declared);
+    if (!dirs.length) {
+      const state = runner.noteOperator({
+        ok: false,
+        refusal: {
+          error: "This project declares no operating loop — no emitted Op carries chant's `Converge` search attribute.",
+          code: "no-operator",
+          remedy: HOW_TO_DECLARE,
+        },
+      });
+      return c.json({ ...state, operator: state }, 200);
+    }
+    // A ConvergeOp lives in its own project (#31 multi-estate), so ask each dir
+    // that declares one — usually exactly one — and concatenate. A refusal from
+    // any of them refuses the whole strip: a partial strip is a picture that
+    // undercounts how many loops are running.
+    const rows: OpStatusLine[] = [];
+    for (const dir of dirs) {
+      const run = await runChantRaw(["operator", "status", "--json"], dir);
+      const result = readOperatorStatus(run);
+      if (!result.ok) return c.json({ ...result.refusal, operator: runner.noteOperator(result) }, 422);
+      rows.push(...result.rows);
+    }
+    const state = runner.noteOperator({ ok: true, rows });
+    return c.json({ ...state, operator: state });
+  });
+
+  // Record a converge gate's resolution (#234 join 1). Same delegated-write
+  // discipline as the op-signal route below — one `runChantRaw` on the project's
+  // own chant, the now-line narrating it, chant's stderr returned verbatim on a
+  // non-zero exit — and DIFFERENT semantics, which the card states rather than
+  // this route silently implying: per chant's own `lifecycle/gate-ledger.ts`,
+  // `chant approve` writes a fact and "is not itself the unblock". The next tick
+  // reads it. behold never approves on its own initiative; this is a button.
+  app.post("/api/operator/approve/:op/:gate", async (c) => {
+    const { op, gate } = c.req.param();
+    // The gate belongs to the DISPATCHED op (chant's gate ledger is keyed by op
+    // name for exactly that reason), so run in that op's own project dir — the
+    // same lookup the signal route makes.
+    const info = estateOps().find((o) => o.name === op);
+    broadcaster.emit("op", `✎ approve ${op} ${gate} — records a fact; the next tick acts on it`);
+    const { code, stderr, stdout } = await runChantRaw(["approve", op, gate], info?.dir ?? cfg.projectDir);
+    if (code !== 0) {
+      return c.json({ error: stderr.trim() || stdout.trim() || `approve exited ${code}`, code: "approve" }, 500);
+    }
+    return c.json({ recorded: true, op, gate, semantics: APPROVE_SEMANTICS });
   });
 
   // Approve a gated apply: signal the Op's wait-for-approval gate, in its own dir.
@@ -1293,13 +1388,15 @@ export function createApp(
         { method: "GET", path: "/api/substrates", desc: "substrate readiness {substrates: [{name, label, status, detail, bringUp?}]}" },
         { method: "GET", path: "/api/ops", desc: "committed Ops + adopt lexicons + apply progress + run playhead" },
         { method: "GET", path: "/api/ops/:name/status", desc: "an Op's durable run status + pending gate (chant run status)" },
+        { method: "GET", path: "/api/operator/status", desc: "the operating loop's strip: last tick per ConvergeOp + lease + pending converge gates" },
         { method: "GET", path: "/api/history", desc: "recent source commits (rollback targets)" },
         { method: "GET", path: "/api/frames", desc: "captured lanes frames" },
         { method: "GET", path: "/api/events", desc: "SSE: changed / op / apply / run / pr" },
         { method: "POST", path: "/api/refresh", desc: "re-observe live now (?env=) — returns the fresh graph" },
         { method: "POST", path: "/api/apply", desc: "delegated apply: ?env=&component=<name|all> (guarded, preview-locked)" },
         { method: "POST", path: "/api/ops/:name/run", desc: "run a committed Op (delegated write)" },
-        { method: "POST", path: "/api/ops/:name/signal/:gate", desc: "approve an Op's gate" },
+        { method: "POST", path: "/api/ops/:name/signal/:gate", desc: "approve an Op's gate (releases the waiting run)" },
+        { method: "POST", path: "/api/operator/approve/:op/:gate", desc: "record a converge gate's resolution (chant approve — a fact for the next tick, not an unblock)" },
         { method: "POST", path: "/api/rollback", desc: "open a rollback PR: ?to=<sha>" },
         { method: "POST", path: "/api/substrates/:name/up", desc: "bring a substrate up" },
         { method: "POST", path: "/api/local/reset", desc: "reset the local emulator" },
@@ -1358,6 +1455,12 @@ export function createApp(
         // graph reads as the ordered phase track, and the step chain gives
         // dagre a real DAG to rank.
         const { svg } = renderGraph(opsIr, { boxes: "byStack" });
+        // The operator strip (#234 join 3). Only the DECLARATION is computed
+        // here — from `searchAttributes.Converge` on the op.json this route just
+        // parsed, which keeps this branch's promise of no chant subprocess. The
+        // strip's content comes from `/api/operator/status`, which the SPA asks
+        // for on lens load exactly as it asks for the run's gate state.
+        const operator = runner.noteDeclaredConvergeOps(declaredConvergeOps(parsedOps));
         return c.json({
           ir: opsIr,
           svg,
@@ -1368,7 +1471,12 @@ export function createApp(
             target: null,
             mode: "ops",
             ops: parsedOps.length,
-            note: `${opsNote(parsedOps, opsIr)} ${playheadNote(runState, join)}`,
+            note: `${opsNote(parsedOps, opsIr)} ${playheadNote(runState, join)} ${operatorNote(operator)}`,
+            // The operator strip's own model: the ConvergeOps this project
+            // declares, plus whatever the last status read said. `declared`
+            // without a `strip` is the honest starting state — a loop exists and
+            // behold hasn't asked about it yet.
+            operator,
             // The playhead's own model, so the SPA renders the pending card and
             // the run legend from the same answer that painted the graph.
             run: runState,
@@ -1416,6 +1524,13 @@ export function createApp(
         // Kustomization sourceRef-ing an app project's GitRepository).
         ir = addValueMatchEdges(ir);
         ir = addK8sDeclaredEdges(ir);
+        // #234's free rider: an `OperatorStack` renders as an ordinary namespace
+        // of CronJobs, so the estate already draws the operating loop — just
+        // anonymously. This names it, from chant's own labels. Additive paint;
+        // an estate with no OperatorStack gets the identical IR back. Joins on
+        // label values, never ids, so composed stack-prefixed ids pass through
+        // exactly as the edge passes above do.
+        ir = markOperatorHome(ir);
         const estateContext = await boundK8sContext(metaEnv ?? undefined);
         ir = addClusterAnchorEdges(ir, estateContext);
         // #224: the logical lens over the COMPOSED IR. Every projection joins
@@ -1516,6 +1631,8 @@ export function createApp(
       // scaleTargetRef. chant's IR carries no k8s edges at all, so this is the
       // k8s half's only edge source, exactly as value-match is azure's.
       ir = addK8sDeclaredEdges(ir);
+        // #234's free rider — see the estate branch above.
+        ir = markOperatorHome(ir);
         // Anchor a mixed-substrate estate (#103): the k8s half carries no
         // reference to the managed cluster it runs on, so without this it
         // renders as loose nodes beside the cloud graph rather than one estate.
@@ -1822,6 +1939,8 @@ export function createApp(
         // only edge source, and the cross-stack joins the estate exists for.
         ir = addValueMatchEdges(ir);
         ir = addK8sDeclaredEdges(ir);
+        // #234's free rider — see /api/graph's estate branch.
+        ir = markOperatorHome(ir);
         const boundContext = await boundK8sContext(env);
         ir = addClusterAnchorEdges(ir, boundContext);
         const coverNote =
@@ -1965,6 +2084,9 @@ export function createApp(
       // scaleTargetRef. chant's IR carries no k8s edges at all, so this is the
       // k8s half's only edge source, exactly as value-match is azure's.
       ir = addK8sDeclaredEdges(ir);
+      // #234's free rider — see /api/graph's estate branch. The overlay is
+      // source-anchored, so the OperatorStack's declared labels are here too.
+      ir = markOperatorHome(ir);
       // Cross-substrate anchoring (#103) — same pass as the source graph above,
       // so the live overlay shows the cluster ⊃ namespace ⊃ workload hierarchy
       // rather than dropping the k8s half into the void. The overlay is

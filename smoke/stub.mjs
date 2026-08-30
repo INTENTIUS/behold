@@ -152,6 +152,54 @@ const diffNodes = {
 const irFor = (env) =>
   env ? { ...ir, nodes: ir.nodes.map((n) => (n.id === "worker" ? { ...n, attrs: { ...n.attrs, _status: "good" } } : n)) } : ir;
 
+// #234 joins 3 + 1: the operating loop's state, exactly as src/operator.ts
+// builds it. Every value traces to chant's own operator tests via the committed
+// fixture (src/__fixtures__/operator-status/chant-test-values.status.json) — the
+// tick's log line verbatim, its instant, the gated outcome naming
+// `fountain-apply`/`rollout-gate`. A fresh object per call so the re-poll after
+// an approve can hand back a version with the gate resolved.
+const operatorState = (gated = true) => ({
+  declared: [{ name: "staging-converge", env: "staging", dial: "apply" }],
+  strip: {
+    rows: [
+      {
+        op: "staging-converge",
+        env: "staging",
+        log: "converge(staging): drifted=1 remediated=0 reported=0 skipped-budget=0 skipped-flap=0 gated=1 unobserved=0 adopted=0",
+        at: "2026-01-01T00:00:00.000Z",
+        lease: "held",
+        leaseHolder: "op-a",
+        leaseExpiresAt: "2099-01-01T00:00:00.000Z",
+        pendingGates: gated ? 1 : 0,
+      },
+    ],
+    pendingGates: gated ? 1 : 0,
+  },
+  gates: gated
+    ? [
+        {
+          loop: "converge",
+          rule: "drift-apply",
+          op: "fountain-apply",
+          gate: "rollout-gate",
+          convergeOp: "staging-converge",
+          env: "staging",
+          since: "2026-01-01T00:00:00.000Z",
+          semantics:
+            "Approving records a fact in the gate ledger; it does not unblock the dispatch. The next tick reads it.",
+          approve: {
+            method: "POST",
+            path: "/api/operator/approve/fountain-apply/rollout-gate",
+            command: "chant approve fountain-apply rollout-gate",
+          },
+        },
+      ]
+    : [],
+  note: null,
+  code: null,
+  readAt: "2026-01-01T00:02:00.000Z",
+});
+
 const JSON_ROUTES = {
   "/api/project": {
     projectDir: "/estates/stub-estate",
@@ -164,6 +212,10 @@ const JSON_ROUTES = {
     targets: [{ endpoint: "http://localhost:4566" }],
     tier: "dev",
     target: "http://localhost:4566",
+    // #284: the ops zoom stop only exists once the estate has emitted Ops. The
+    // count is what opens it — and it is also what the operator strip (#234)
+    // needs on screen, since the strip lives on that lens.
+    ops: 2,
   },
   "/api/substrates": {
     substrates: [
@@ -344,6 +396,14 @@ export function startStub(port, { carve = false } = {}) {
    * so the smoke asserts the wire contract (the EXISTING op-signal route), not
    * just that a button existed. */
   const signalPosts = [];
+  /** #234 join 1: what the converge gate card's "Record approval" button sent —
+   * a DIFFERENT route and a different act from the op-signal above, which is
+   * exactly what the smoke has to be able to tell apart. */
+  const approvePosts = [];
+  /** #234 join 3: the operator strip's state, mutable so the re-poll after an
+   * approve can answer with the gate gone — chant would drop it from
+   * `pendingGates` once a resolution newer than the gated tick exists. */
+  let operator = operatorState();
   const readBody = (req) =>
     new Promise((r) => {
       let s = "";
@@ -426,13 +486,67 @@ export function startStub(port, { carve = false } = {}) {
       return res.end(JSON.stringify({ signalled: true }));
     }
     if (path.startsWith("/api/ops/") && path.endsWith("/status")) {
+      // The gate stays pending until it has actually been signalled — chant's
+      // `gateState` query answers "still waiting" for as long as the workflow
+      // is. Answering `null` unconditionally would have made the card vanish on
+      // any status read at all, including the one the ops lens does on load,
+      // which is not what a gate query does (#234 needs both gate cards on
+      // screen together, and that only happens if this one is honest).
+      const gate = signalPosts.length ? null : JSON_ROUTES["/api/ops"].runState.gate;
       res.writeHead(200, { "content-type": "application/json" });
       return res.end(
         JSON.stringify({
           op: "prod-promote",
           status: "RUNNING",
-          gate: null,
-          runState: { ...JSON_ROUTES["/api/ops"].runState, gate: null, gateNote: null },
+          gate,
+          runState: { ...JSON_ROUTES["/api/ops"].runState, gate, gateNote: null },
+        }),
+      );
+    }
+    // #234 join 3 — the operator strip's read. `operator` is the whole state the
+    // real route answers with (src/operator.ts's OperatorState), and it mutates
+    // when the approve below lands, so the re-poll shows the gate gone.
+    if (path === "/api/operator/status") {
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ ...operator, operator }));
+    }
+    // #234 join 1 — the delegated `chant approve`. A DIFFERENT route and a
+    // different act from the op-signal above: this records a fact, and the next
+    // tick is what acts on it. The stub drops the gate from `pendingGates` the
+    // way chant would once a resolution newer than the gated tick exists.
+    if (path.startsWith("/api/operator/approve/")) {
+      approvePosts.push({ path, method: req.method });
+      operator = operatorState(false);
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(
+        JSON.stringify({
+          recorded: true,
+          semantics:
+            "Approving records a fact in the gate ledger; it does not unblock the dispatch. The next tick reads it.",
+        }),
+      );
+    }
+    if (path === "/api/graph" && url.searchParams.get("ops") === "1") {
+      res.writeHead(200, { "content-type": "application/json" });
+      // The graph itself is the canned one every other lens serves — the ops
+      // stop's own checks here are about the operator strip beside the track,
+      // not about the phase boxes (src/ops-route.test.ts covers those).
+      return res.end(
+        JSON.stringify({
+          ir,
+          svg,
+          meta: {
+            projectDir: "/estates/stub-estate",
+            env: null,
+            tier: null,
+            target: null,
+            mode: "ops",
+            ops: 2,
+            note: "The declared Ops, read from each emitted op.json.",
+            run: null,
+            gate: null,
+            operator,
+          },
         }),
       );
     }
@@ -470,5 +584,6 @@ export function startStub(port, { carve = false } = {}) {
   server.layout = layout; // the sidecar, for the smoke to read and seed (#228)
   server.carvePosts = carvePosts; // what the stepper actually sent (#254)
   server.signalPosts = signalPosts; // what the pending gate card sent (#284 item 2)
+  server.approvePosts = approvePosts; // what the converge gate card sent (#234 join 1)
   return new Promise((resolve) => server.listen(port, () => resolve(server)));
 }

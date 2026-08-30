@@ -58,6 +58,10 @@ preview-locked, and one load runs at a time (409 otherwise).
    from each emitted `dist/ops/<name>/op.json`, with the current run painted
    over it (`meta.run`, `meta.gate`); `/api/ops/<name>/status` reads that Op's
    durable run status and pending gate (`chant run status --temporal`).
+   `meta.operator` on that same lens names the ConvergeOps the project declares
+   (chant's own `searchAttributes.Converge === "true"`, read from op.json — no
+   subprocess), and `/api/operator/status` fills the strip in from
+   `chant operator status --json`.
 2. **focus** — narrow with chant graph options as query params: `?detail=0..3`,
    `?components=1`, `?logical=1`, `?lens=blast:<id>&down=1`, `?lens=lexicon:aws`,
    `?env=`, `?stack=`, `?tier=`, `?target=`.
@@ -128,6 +132,34 @@ with an Approve button. That button is `op-signal` — the same delegated write 
 and nothing else about the run is behold's to decide: a stream that dies leaves
 the playhead at the last settled step and says so, and a gate paints as pending
 only when chant's `gateState` query named it.
+
+## The operating loop (a strip, and a gate that is not the run gate)
+
+A project that declares a `ConvergeOp` gets an operator strip on the ops lens:
+per loop, the last tick's own log line (verbatim, with its instant), the lease,
+and how many gates are pending. **One** tick — `chant operator status` keeps only
+`records.at(-1)` and no CLI exposes the history (chant#2029), so this is a strip
+and never a timeline; the statusbar says so rather than leaving you to assume.
+
+Two gate cards exist and they are **different acts**:
+
+- The **run gate** — `POST /api/ops/:name/signal/:gate` → `chant run signal`.
+  Releases the waiting Temporal workflow.
+- The **converge gate** — `POST /api/operator/approve/:op/:gate` →
+  `chant approve <op> <gate>`. **Records a fact and unblocks nothing.** chant's
+  gate ledger says it outright: the local executor still refuses a gated op,
+  resolution or not. The next tick reads the fact. The card says this in its
+  body, and the toast after the click says "recorded; the next tick acts on it".
+
+A pending gate fact carries no URL (chant#2028), so the card renders no link and
+no placeholder for one. A gate someone already resolved simply leaves
+`pendingGates` — the status read carries no `resolvedBy`/`when` — so behold shows
+no resolved-by line rather than attributing an approval to nobody.
+
+An `OperatorStack` (chant#1940) declares the loop as a k8s estate, so it already
+appears in the entity graph. behold names it there — the Namespace as the loop's
+home, each CronJob as a converge tick — off chant's own
+`app.kubernetes.io/component: converge-tick` labels, never a naming convention.
 
 ## Invariant
 

@@ -740,6 +740,73 @@ try {
   );
   await page.screenshot({ path: join(SHOTS, "9-playhead.png") });
 
+  // ---- #234 joins 3 + 1: the operator strip and the converge gate card ------
+  // The strip lives on the ops lens, so switch the zoom there (the stop exists
+  // because /api/project reports emitted Ops). The run gate above is still
+  // pending at this point, deliberately: the two gate cards can be on screen at
+  // once, and the whole point of #234's join 1 is that they are DIFFERENT acts —
+  // `chant run signal` releases a waiting workflow, `chant approve` records a
+  // fact the next tick reads. Each card has to say which loop it belongs to.
+  await page.click('#panel-tabs button[data-tab="view"]');
+  await page.waitForTimeout(100);
+  await page.locator("#panel-zoom button", { hasText: /^ops$/ }).click();
+  await page.waitForTimeout(400);
+  await page.click('#panel-tabs button[data-tab="deploy"]');
+  await page.waitForTimeout(400);
+
+  const strip = page.locator(".operator-strip");
+  check("the operator strip renders on the ops lens", (await strip.count()) === 1);
+  const stripText = await strip.innerText();
+  check("…naming the loop and its environment", stripText.includes("staging-converge (staging)"));
+  check(
+    "…printing chant's own tick line verbatim",
+    stripText.includes("converge(staging): drifted=1 remediated=0 reported=0 skipped-budget=0 skipped-flap=0 gated=1 unobserved=0 adopted=0"),
+  );
+  check("…dated with the instant, not just an age", stripText.includes("2026-01-01T00:00:00.000Z"));
+  check("…and saying who holds the lease", stripText.includes("lease held by op-a"));
+  check(
+    "the strip says it is not a timeline, and why",
+    stripText.includes("chant#2029") && stripText.includes("strip, not a timeline"),
+  );
+
+  check("both gate cards are on screen at once", (await page.locator(".run-gate").count()) === 2);
+  const convergeCard = page.locator(".run-gate.operator-gate");
+  const convergeText = await convergeCard.innerText();
+  check("the converge card names its loop", convergeText.includes("converge loop"));
+  check("…and says it is NOT the Temporal run gate", convergeText.includes("not the Temporal run gate"));
+  check("…naming the rule and the op the gate belongs to", convergeText.includes("rule drift-apply → fountain-apply"));
+  check(
+    "…and stating that approving records a fact rather than unblocking the dispatch",
+    convergeText.includes("records a fact") && convergeText.includes("does not unblock the dispatch") && convergeText.includes("next tick reads it"),
+  );
+  check("the converge card offers no link — a gate fact has no URL (chant#2028)", (await convergeCard.locator("a").count()) === 0);
+  const recordBtn = convergeCard.locator("button.approve");
+  check("the button is Record approval, not Approve", (await recordBtn.innerText()).trim() === "Record approval");
+  check(
+    "…and its title names the delegated command",
+    (await recordBtn.getAttribute("title")).includes("chant approve fountain-apply rollout-gate"),
+  );
+  await page.screenshot({ path: join(SHOTS, "10-operator-strip.png") });
+
+  await recordBtn.click();
+  await page.waitForTimeout(400);
+  check(
+    "Record approval posts the converge route, never the op-signal one",
+    server.approvePosts.some((p) => p.method === "POST" && p.path === "/api/operator/approve/fountain-apply/rollout-gate") &&
+      !server.signalPosts.length,
+  );
+  check("…and the re-poll clears the converge card once nothing is pending", (await page.locator(".run-gate.operator-gate").count()) === 0);
+  check("…while the run gate, a different loop, is untouched", (await page.locator(".run-gate").count()) === 1);
+
+  // Back off the ops lens: the strip belongs to it and goes with it.
+  await page.click('#panel-tabs button[data-tab="view"]');
+  await page.waitForTimeout(100);
+  await page.locator("#panel-zoom button", { hasText: /^resources$/ }).click();
+  await page.waitForTimeout(400);
+  await page.click('#panel-tabs button[data-tab="deploy"]');
+  await page.waitForTimeout(200);
+  check("the strip leaves with the ops lens", (await page.locator(".operator-strip").count()) === 0);
+
   await approveBtn.click();
   await page.waitForTimeout(400);
   check(

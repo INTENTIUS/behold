@@ -47,6 +47,11 @@ import { fetchDemos, demoLabel, demoTitle, demoProgress } from "./demos.js";
 // card and the settled-step rows. Everything it DECIDES is pure in there; the
 // fetches, the SSE subscription and the graph re-pull stay here.
 import { hasPlayhead, renderPlayhead } from "./run-playhead.js";
+// #234 joins 3 + 1: the operator strip (one honestly-dated tick per ConvergeOp,
+// the lease, the pending gate count) and the converge gate card, whose Approve
+// records a fact for the next tick rather than releasing anything. Same split as
+// the playhead — the decisions are pure in there, the fetches stay here.
+import { hasOperator, renderOperator, APPROVED_SEMANTICS } from "./operator.js";
 initTheme();
 initPanel();
 mountThemePicker(document.getElementById("panel-theme"));
@@ -389,6 +394,16 @@ function inspect(node) {
   // `_status: "neutral"` (never the component-status join's own, unrelated
   // `neutral` = "not deployed"), so it's safe to show unconditionally here.
   if (node.attrs && node.attrs._unobserved) id("unobserved reason", node.attrs._unobserved);
+  // #234's free rider: an OperatorStack's Namespace/CronJob, named. The server
+  // reads this off chant's own `app.kubernetes.io/*` labels (src/operator.ts) —
+  // it is a declared fact, not a naming convention behold inferred.
+  if (node.attrs && node.attrs._operator) {
+    const o = node.attrs._operator;
+    id("operating loop", o.role === "home" ? `home · namespace ${o.namespace}` : `converge tick · ${o.op}`);
+    if (o.stack) id("operator stack", o.stack);
+    if (o.schedule) id("tick schedule", o.schedule);
+    if (o.ticks && o.ticks.length) id("hosted ConvergeOps", o.ticks.join(", "));
+  }
   // chant#1180 (#1077): `runtimeOwner` is a first-class IR field (like
   // `ownership`/`physicalId`), not an `attrs` tag — the declared entity this
   // live, undeclared node's owner chain resolves to. Shown immediately from
@@ -1523,6 +1538,50 @@ function markPlayhead(ir) {
   if (g) g.classList.add("playhead");
 }
 
+/**
+ * #234's free rider: name the operating loop's home in the estate graph.
+ *
+ * An `OperatorStack` (chant#1940) renders as an ordinary namespace of CronJobs,
+ * so the loop was already on the picture — anonymously. The server marks the
+ * Namespace and its tick CronJobs from chant's own labels (`_operator`, see
+ * src/operator.ts); this is the paint, in the same after-the-render stamp shape
+ * markCarvedCards() uses, and for the same reason: the SVG is replaced wholesale
+ * on every render.
+ */
+const OPERATOR_MARK_LABEL = { home: "⟳ operating loop", tick: "⟳ converge tick" };
+function markOperatorCards(ir) {
+  const svg = document.querySelector("#graph svg");
+  if (!svg) return;
+  for (const n of ir.nodes || []) {
+    const mark = n.attrs && n.attrs._operator;
+    if (!mark || !OPERATOR_MARK_LABEL[mark.role]) continue;
+    const g = svg.querySelector('[data-node-id="' + CSS.escape(n.id) + '"]');
+    if (!g || g.querySelector('[data-operator="1"]')) continue;
+    g.classList.add("operator-home");
+    // Measured, not read off attributes — markCarvedCards()'s note applies here
+    // verbatim (pinhole sizes a card from its content).
+    const rect = g.querySelector("rect");
+    const box = rect && rect.getBBox ? rect.getBBox() : null;
+    const tag = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    tag.setAttribute("data-operator", "1");
+    tag.setAttribute("x", String((box ? box.x + box.width : 150) - 10));
+    tag.setAttribute("y", String((box ? box.y + box.height : 60) - 9));
+    tag.setAttribute("text-anchor", "end");
+    tag.setAttribute("font-size", "11");
+    tag.setAttribute("font-weight", "600");
+    tag.setAttribute("fill", "var(--pending)");
+    tag.textContent = OPERATOR_MARK_LABEL[mark.role];
+    const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    title.textContent =
+      mark.role === "home"
+        ? `The operating loop's home: namespace ${mark.namespace}${mark.stack ? ` (OperatorStack ${mark.stack})` : ""}` +
+          `${mark.ticks && mark.ticks.length ? ` — ticks ${mark.ticks.join(", ")}` : ""}`
+        : `Ticks the ConvergeOp ${mark.op}${mark.schedule ? ` on ${mark.schedule}` : ""}`;
+    g.appendChild(title);
+    g.appendChild(tag);
+  }
+}
+
 function renderPanelCarve() {
   if (!carveMode()) return;
   if (!carveHost) {
@@ -1698,6 +1757,13 @@ let applyPicker = false; // whether the inline "apply <component|all> →" promp
 let runState = null;
 let gateCard = null;
 let runStatusInFlight = false;
+// #234 joins 3 + 1 — the operating loop. src/operator.ts's OperatorState:
+// `declared` (the ConvergeOps the built project declares, from op.json) arrives
+// with the ops lens, the rest from `/api/operator/status`; kept live by the
+// `operator` SSE event. Deliberately NOT reset by resetDialCaches(), for the
+// playhead's reason: a loop belongs to its project, not to a picked env/tier.
+let operatorState = null;
+let operatorInFlight = false;
 let componentChoices = []; // component names for the apply picker — loaded lazily (independent of whether the graph pane is currently in components mode)
 let componentStatusById = {}; // id -> _status ("good"|"accent"|"warn"|"neutral"), populated alongside componentChoices — lets the picker show which stacks are already applied
 
@@ -1886,7 +1952,20 @@ function renderDial() {
   if (reconcileCache) host.appendChild(renderReconcileDetail(reconcileCache));
   if (applyPicker && !applying && !staticMode) host.appendChild(renderApplyPicker());
   if (applyProgress && applyProgress.waves.length) host.appendChild(renderApplyProgress(applyProgress));
+  mountOperator(host);
   mountPlayhead(host);
+}
+
+// #234 joins 3 + 1 — the operator strip. Only on the ops lens: the operating
+// loop is a fact about the project's declared Ops, and it belongs beside the
+// track they draw rather than on top of whichever env the dial is pointed at.
+// Gated on a DECLARED ConvergeOp, so an estate that runs no loop grows nothing.
+function mountOperator(host) {
+  if (!view.ops || !hasOperator(operatorState)) return;
+  const box = document.createElement("div");
+  box.className = "operator-strip";
+  renderOperator(box, operatorState, { approve: (op, gate) => approveConvergeGate(op, gate) });
+  host.appendChild(box);
 }
 
 // #284 item 2 — the run playhead panel: the run's honest verdict, the pending
@@ -2235,6 +2314,10 @@ function render(ir, svg, m) {
   if (m.mode === "ops") {
     if (m.run) runState = m.run;
     gateCard = m.gate || null;
+    // #234 join 3: the lens's answer carries which ConvergeOps the project
+    // DECLARES (read from the same op.json it just parsed — no subprocess). The
+    // strip's content arrives from the poll below.
+    if (m.operator) operatorState = m.operator;
   }
   const overlay = m.mode === "overlay";
   // Logical/architecture lens (#63): its own mode, but when an env is picked the
@@ -2332,6 +2415,7 @@ function render(ir, svg, m) {
   if (view.radial && !view.components && !view.logical && !view.ops) addRadialLabels(ir);
   markCarvedCards(); // #254: the SVG is replaced per render — re-stamp the marker
   markPlayhead(ir); // #284 item 2: same, for the step the run is sitting on
+  markOperatorCards(ir); // #234 free rider: same, for the operating loop's home
   applyLayout(); // #228: last, so the hand-placed deltas ride on top of every other pass
   renderDial();
 }
@@ -3149,6 +3233,9 @@ async function load(opts = {}) {
       // in-flight run has its own tick above. The server only broadcasts a
       // CHANGED answer, so this can't chase its own re-pull.
       pollRunStatus();
+      // #234 join 3: same pull-not-push discipline for the operating loop — ask
+      // once per lens load, and only from the lens the strip lives on.
+      pollOperatorStatus();
     } else if (view.logical) {
       // Logical/architecture lens (#63): the server re-projects at detail 3
       // regardless of the dial, so detail/radial don't apply. With an env it
@@ -3440,6 +3527,16 @@ setInterval(loadSubstrates, 5000);
 setInterval(() => {
   if (runState && runState.status === "running" && runState.mode === "temporal") pollRunStatus();
 }, 5000);
+// #234 join 3: the operating loop ticks on its own schedule (chant's operator
+// defaults to a 60s round, a CronJob to whatever it declares), so the strip goes
+// stale without anyone clicking. Same discipline as the gate tick above rather
+// than a second pattern: an interval only while it is RELEVANT — the ops lens is
+// what the strip lives on, and a project with no declared ConvergeOp shells
+// nothing, ever. The server broadcasts only a CHANGED answer, so a quiet loop
+// costs one read and no repaint.
+setInterval(() => {
+  if (view.ops && hasOperator(operatorState)) pollOperatorStatus();
+}, 15000);
 
 // Delegated writes (#7 Sync / #8 Adopt). behold never mutates — these buttons
 // trigger the project's committed Ops on the executor; the now-line streams phases.
@@ -3540,6 +3637,21 @@ events.addEventListener("run", (e) => {
   if (view.ops) load({ quiet: true });
 });
 
+// #234 join 3 — the operator strip. Same channel and shape as `run` above: the
+// server broadcasts the whole OperatorState after every CHANGED status read, so
+// a client that (re)subscribes renders correctly from the next event. Repaint
+// the dial only: the strip paints nothing onto the graph, so there is no re-pull
+// to make here (which is also what stops the poll and the broadcast chasing each
+// other).
+events.addEventListener("operator", (e) => {
+  try {
+    operatorState = JSON.parse(e.data);
+  } catch {
+    return;
+  }
+  renderDial();
+});
+
 /**
  * Ask the server for the Op's durable run status — the ONLY way to learn
  * gateState (chant#1676 made it a workflow query, not part of the record
@@ -3574,6 +3686,54 @@ function pollRunStatus() {
     .catch(() => {})
     .finally(() => {
       runStatusInFlight = false;
+    });
+}
+
+/**
+ * Ask the server for the operating loop's status (#234 join 3).
+ *
+ * Pull, not push, exactly like `pollRunStatus`: one shell-out per ask, and only
+ * for a project that DECLARES a ConvergeOp. A refusal (no loop, a chant older
+ * than 0.52, an answer behold can't read) comes back on the state as `note` +
+ * `code` and the strip states it — what must never happen is a silently empty
+ * strip standing in for "behold couldn't ask".
+ */
+function pollOperatorStatus() {
+  if (staticMode || operatorInFlight) return;
+  operatorInFlight = true;
+  apiFetch("/api/operator/status")
+    .then((r) => r.json())
+    .then((j) => {
+      if (j && j.operator) operatorState = j.operator;
+      renderDial();
+    })
+    .catch(() => {})
+    .finally(() => {
+      operatorInFlight = false;
+    });
+}
+
+/**
+ * Record a converge gate's resolution — `chant approve <op> <gate>`, delegated
+ * exactly as the run gate's signal is.
+ *
+ * It is NOT the same act, and the toast says so: chant's gate ledger writes a
+ * fact, and the local executor still refuses the gated dispatch. The next tick
+ * is what reads the fact. Re-poll once either way — on success the gate should
+ * have left `pendingGates` (a card that lingered would read as if a human were
+ * still owed something), and on failure it should still be there.
+ */
+function approveConvergeGate(op, gate) {
+  fetch(`/api/operator/approve/${encodeURIComponent(op)}/${encodeURIComponent(gate)}`, { method: "POST" })
+    .then((r) => r.json())
+    .then((j) => {
+      if (j.error) {
+        showToast(`✗ approve ${gate}: ${j.error}`, false);
+        nowline("✗ " + j.error);
+      } else {
+        showToast(`✓ ${gate} — ${APPROVED_SEMANTICS}`, true);
+      }
+      pollOperatorStatus();
     });
 }
 
@@ -3697,7 +3857,7 @@ async function initActions() {
   const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
   opsInitialEnv = project.currentEnv || null;
   previewMode = staticMode || !!project.previewMode; // static ⇒ read-only, no writes at all
-  const { ops, adoptLexicons, autoSync, local, applyProgress: apInit, runState: runInit } = await apiFetch("/api/ops")
+  const { ops, adoptLexicons, autoSync, local, applyProgress: apInit, runState: runInit, operatorState: opInit } = await apiFetch("/api/ops")
     .then((r) => r.json())
     .catch(() => ({ ops: [], adoptLexicons: [] }));
   // M3 (#54): hydrate the dial's apply progress from the server's last known
@@ -3711,6 +3871,13 @@ async function initActions() {
   // picks up the settled steps and any pending gate instead of starting blank.
   if (runInit && runInit.op) {
     runState = runInit;
+    renderDial();
+  }
+  // #234 join 3: and the same for the operator strip — a reload with the ops
+  // lens open picks up the last status read rather than showing an empty strip
+  // until the next poll comes back.
+  if (opInit && opInit.declared && opInit.declared.length) {
+    operatorState = opInit;
     renderDial();
   }
   // Local-mode banner (#46) — the emulator(s) behold booted with --local, so it's
