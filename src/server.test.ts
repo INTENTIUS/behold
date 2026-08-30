@@ -334,6 +334,73 @@ describe("GET /api/graph — the stack lens (#76) reaches the actual chant graph
   });
 });
 
+// #322 (measured by #166's final comment): a view graphed below the detail
+// tier that has its edges used to say the WRONG thing — `notesFor`'s 5th
+// `detail` argument was missing from this route's call, so `edgelessNote`
+// (src/zoom-notes.ts) took its "no edges — nothing in this estate references
+// anything else" branch instead of the narrower "no edges at this detail…"
+// one, on a project that genuinely has edges one tier up. example-k8s's own
+// `/api/graph` (0 edges at chant's default detail, 2 at detail 3) was the
+// case the measurement caught.
+describe("GET /api/graph — a project below the detail tier that has its edges says so, not that it has none (#322)", () => {
+  let dirs: string[] = [];
+  beforeEach(() => vi.mocked(spawnMock).mockReset());
+  afterEach(() => {
+    dirs.forEach((d) => rmSync(d, { recursive: true, force: true }));
+    dirs = [];
+  });
+  const tmpProjectDir = (prefix: string) => {
+    const dir = mkdtempSync(join(tmpdir(), `behold-server-detail-note-${prefix}-`));
+    writeFileSync(join(dir, "chant.config.ts"), `export default { lexicons: ["k8s"] };`);
+    dirs.push(dir);
+    return dir;
+  };
+  const NODES = [
+    { id: "a", kind: "K8s::Apps::Deployment", lexicon: "k8s", attrs: {} },
+    { id: "b", kind: "K8s::Core::Service", lexicon: "k8s", attrs: {} },
+  ];
+  // Mirrors chant's real shape (#261's control-plane fixture does the same):
+  // the edge only appears in the fake `chant graph` output when the request
+  // actually asked for detail 3 — a stand-in for an attrs-derived join
+  // (sourceRef, selector, …) that only has something to read at that tier.
+  const mockDetailSensitive = () =>
+    vi.mocked(spawnMock).mockImplementation(((_cmd: unknown, args: unknown) => {
+      const atDetail3 = String(args).includes("--detail,3");
+      const edges = atDetail3 ? [{ from: "a", to: "b", kind: "ref" as const }] : [];
+      return fakeProc(0, JSON.stringify({ nodes: NODES, edges, groups: {} }));
+    }) as never);
+
+  it("no ?detail= (chant's default tier, below the one with edges): the false 'no edges — nothing references anything else' claim is gone", async () => {
+    mockDetailSensitive();
+    const app = makeAppFor(tmpProjectDir("low"));
+    const body = (await (await app.request("/api/graph")).json()) as { ir: { edges: unknown[] }; meta: { note?: string } };
+    expect(body.ir.edges).toHaveLength(0);
+    expect(body.meta.note ?? "").not.toMatch(/no edges — nothing in this estate references anything else/);
+  });
+
+  it("no ?detail=: the note names detail 3 as the tier that has the edges", async () => {
+    mockDetailSensitive();
+    const app = makeAppFor(tmpProjectDir("names-tier"));
+    const body = (await (await app.request("/api/graph")).json()) as { meta: { note?: string } };
+    expect(body.meta.note ?? "").toMatch(/detail 3/);
+  });
+
+  it("?detail=3 (the tier that has them): no edgeless note at all", async () => {
+    mockDetailSensitive();
+    const app = makeAppFor(tmpProjectDir("high"));
+    const body = (await (await app.request("/api/graph?detail=3")).json()) as { ir: { edges: unknown[] }; meta: { note?: string } };
+    expect(body.ir.edges).toHaveLength(1);
+    expect(body.meta.note ?? "").not.toMatch(/no edges/);
+  });
+
+  it("a genuinely edge-free project (no edges at any detail) still gets the honest no-edges sentence", async () => {
+    vi.mocked(spawnMock).mockReturnValue(fakeProc(0, JSON.stringify({ nodes: NODES, edges: [], groups: {} })));
+    const app = makeAppFor(tmpProjectDir("edge-free"));
+    const body = (await (await app.request("/api/graph?detail=3")).json()) as { meta: { note?: string } };
+    expect(body.meta.note).toMatch(/no edges — nothing in this estate references anything else/);
+  });
+});
+
 // #72: a graph/facet route's failure gets a structured {error, code, remedy}
 // body instead of an opaque 500 — errorResponse (src/server.ts) classifying
 // whatever the chant shell-out (mocked at the `spawn` layer above) reported.
@@ -981,6 +1048,22 @@ describe("estate lenses — the composed IR gets the runtime and logical passes 
     expect(body.ir.edges.some((e) => e.viaAttr === "dependsOn")).toBe(true);
     expect(body.meta.note ?? "").not.toMatch(/no edges/);
   });
+
+  // #322: without `?runtime=1` (or `?logical=1`), the estate overlay composed
+  // at chant's default detail — same tier gap as #261 above, but this branch
+  // used to build its note from `runtime ? notesFor(...) : undefined` and so
+  // said NOTHING at all below that tier, rather than asserting the wrong
+  // thing. A three-member GitOps estate opened on 0 of its edges with no line
+  // saying why.
+  it("without ?runtime=1, below the tier that has the sourceRef/dependsOn edges: the note names detail 3, not silence", { timeout: 20_000 }, async () => {
+    const body = (await (await fluxEstate().app.request("/api/overlay?env=local")).json()) as {
+      ir: { edges: unknown[] };
+      meta: { note?: string };
+    };
+    expect(body.ir.edges).toHaveLength(0);
+    expect(body.meta.note ?? "").toMatch(/detail 3/);
+    expect(body.meta.note ?? "").not.toMatch(/no edges — nothing in this estate references anything else/);
+  });
 });
 
 // #189: the estate-wide overlay — every project observed and composed, with
@@ -1027,7 +1110,11 @@ describe("GET /api/overlay — estate-wide drift (#189)", () => {
     };
     expect(body.meta.mode).toBe("overlay");
     expect(body.meta.estate).toBe(2);
-    expect(body.meta.note).toBeUndefined(); // full coverage → nothing to confess
+    // Full coverage → no coverage line to confess, but #322: the estate
+    // overlay composes at chant's default (below-3) detail here, and this
+    // one-node-per-project fixture has no edges to find — same detail-tier
+    // hedge the single-project overlay already gives, not silence.
+    expect(body.meta.note ?? "").toMatch(/no edges at this detail/);
     const byStatus = Object.fromEntries(body.ir.nodes.map((n) => [n.id.split("/").pop(), n.attrs._status]));
     expect(byStatus).toEqual({ api: "good", worker: "warn" });
   });
