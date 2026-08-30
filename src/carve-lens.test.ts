@@ -26,6 +26,13 @@ const FIXTURE = join(HERE, "__fixtures__", "carve-sample-estate.json");
  * estate is reported twice across the file — once as an `inbound` edge on the
  * depended-on resource, once as an `outbound` edge on the resource that depends
  * on it — which is why `carveReportToIr`'s dedup below matters.
+ *
+ * Regenerated on chant 0.52.1, which added chant#1638's `breakdown.outputs`
+ * and `breakdown.penalties.outputs` (inbound edges from `output` blocks). The
+ * fixture had gone stale on that field alone. Both read 0 for every resource
+ * here — sample-estate declares no `output` blocks — so this exercises the
+ * shape, not the penalty; `carveReportToIr` reads it defensively (`?? 0`)
+ * either way.
  */
 const report = JSON.parse(readFileSync(FIXTURE, "utf8")) as CarveReport;
 

@@ -49,7 +49,8 @@ end of the walkthrough has somewhere to land.
 
 ## Bands
 
-Real output, from `chant carve advise` at chant 0.44.7. Reproduce it with:
+Real output, from `chant carve advise` (first cut at chant 0.44.7, verified
+identical at 0.52.1). Reproduce it with:
 
 ```sh
 npm install -D @cdktf/hcl2json          # once, anywhere on your PATH resolution
@@ -119,8 +120,8 @@ chant carve advise --from example-carve/legacy-tf \
 
 from the repository root, so the `from` field stays a relative path.
 
-`app/` pins chant ^0.44.7 and that floor is load-bearing, not housekeeping, in
-two layers. The advisor only publishes a top-level `version: 1` and
+`app/` pins chant ^0.52.1, and the 0.44.7 floor it grew from was load-bearing,
+not housekeeping, in two layers. The advisor only publishes a top-level `version: 1` and
 per-resource `boundary` edge lists from 0.44.6 (chant#1636) — run the same
 command on 0.44.4 and every score is identical but no resource carries a
 `boundary` field at all, so the Pick step falls back to naming inbound/outbound
@@ -131,8 +132,8 @@ bucket scores 84 instead of 88 and the report's `patchOnCarve` list names
 fold is applied, not just reported (chant#1637), so the emitted bucket actually
 carries `VersioningConfiguration` and `PublicAccessBlockConfiguration` instead
 of leaving them in an "unmapped attributes" comment. The committed report above
-is byte-identical to what 0.44.7 regenerates, which is why the demo's fallback
-path and its fresh-run path show the same picture.
+is byte-identical to what 0.44.7 regenerates — re-verified at 0.52.1 — which is
+why the demo's fallback path and its fresh-run path show the same picture.
 
 ## The six beats
 

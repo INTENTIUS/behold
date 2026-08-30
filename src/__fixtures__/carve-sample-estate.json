@@ -18,12 +18,14 @@
       "breakdown": {
         "inbound": 0,
         "outbound": 0,
+        "outputs": 0,
         "tier": 1,
         "hasDynamic": false,
         "instances": 1,
         "penalties": {
           "inbound": 0,
           "outbound": 0,
+          "outputs": 0,
           "tier": 0,
           "dynamic": 0,
           "instances": 0
@@ -43,12 +45,14 @@
       "breakdown": {
         "inbound": 0,
         "outbound": 1,
+        "outputs": 0,
         "tier": 1,
         "hasDynamic": false,
         "instances": 1,
         "penalties": {
           "inbound": 0,
           "outbound": -4,
+          "outputs": 0,
           "tier": 0,
           "dynamic": 0,
           "instances": 0
@@ -82,12 +86,14 @@
       "breakdown": {
         "inbound": 0,
         "outbound": 1,
+        "outputs": 0,
         "tier": 1,
         "hasDynamic": false,
         "instances": 1,
         "penalties": {
           "inbound": 0,
           "outbound": -4,
+          "outputs": 0,
           "tier": 0,
           "dynamic": 0,
           "instances": 0
@@ -121,12 +127,14 @@
       "breakdown": {
         "inbound": 0,
         "outbound": 1,
+        "outputs": 0,
         "tier": 1,
         "hasDynamic": false,
         "instances": 1,
         "penalties": {
           "inbound": 0,
           "outbound": -4,
+          "outputs": 0,
           "tier": 0,
           "dynamic": 0,
           "instances": 0
@@ -160,12 +168,14 @@
       "breakdown": {
         "inbound": 1,
         "outbound": 0,
+        "outputs": 0,
         "tier": 1,
         "hasDynamic": false,
         "instances": 1,
         "penalties": {
           "inbound": -12,
           "outbound": 0,
+          "outputs": 0,
           "tier": 0,
           "dynamic": 0,
           "instances": 0
@@ -200,12 +210,14 @@
       "breakdown": {
         "inbound": 0,
         "outbound": 1,
+        "outputs": 0,
         "tier": 2,
         "hasDynamic": false,
         "instances": 1,
         "penalties": {
           "inbound": 0,
           "outbound": -4,
+          "outputs": 0,
           "tier": -15,
           "dynamic": 0,
           "instances": 0
@@ -240,12 +252,14 @@
       "breakdown": {
         "inbound": 3,
         "outbound": 0,
+        "outputs": 0,
         "tier": 1,
         "hasDynamic": false,
         "instances": 1,
         "penalties": {
           "inbound": -36,
           "outbound": 0,
+          "outputs": 0,
           "tier": 0,
           "dynamic": 0,
           "instances": 0
@@ -304,12 +318,14 @@
       "breakdown": {
         "inbound": 0,
         "outbound": 0,
+        "outputs": 0,
         "tier": null,
         "hasDynamic": false,
         "instances": 1,
         "penalties": {
           "inbound": 0,
           "outbound": 0,
+          "outputs": 0,
           "tier": 0,
           "dynamic": 0,
           "instances": 0

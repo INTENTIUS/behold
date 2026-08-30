@@ -40,7 +40,7 @@ function installed(name: string, version: string, bin?: string): Record<string, 
   };
 }
 
-const CHANT = installed("@intentius/chant", "0.44.12", "bin/chant");
+const CHANT = installed("@intentius/chant", "0.52.1", "bin/chant");
 
 const kubeconfig = (over: Partial<Kubeconfig> = {}): Kubeconfig => ({
   contexts: new Map(),
@@ -65,11 +65,11 @@ describe("diagnose", () => {
   it("passes every line for a healthy project — installed chant + lexicon, an env, committed Ops", async () => {
     const dir = fixture({
       "chant.config.ts": `export default { lexicons: ["aws"], environments: ["prod"], sourceDir: "src" };`,
-      "package.json": JSON.stringify({ name: "healthy", dependencies: { "@intentius/chant": "^0.44.12" } }),
+      "package.json": JSON.stringify({ name: "healthy", dependencies: { "@intentius/chant": "^0.52.1" } }),
       "src/main.ts": "",
       "ops/deploy.op.ts": `export const op = { name: "prod-apply", kind: ApplyOp };`,
       ...CHANT,
-      ...installed("@intentius/chant-lexicon-aws", "0.44.12"),
+      ...installed("@intentius/chant-lexicon-aws", "0.52.1"),
     });
 
     const report = await diagnose(dir, probes({ detectSubstrates: async () => up }));
@@ -77,8 +77,8 @@ describe("diagnose", () => {
     expect(report.ok).toBe(true);
     expect(report.kind).toBe("project");
     expect(report.checks.map((c) => c.status)).toEqual(["pass", "pass", "pass", "pass", "pass", "pass", "pass"]);
-    expect(by(report, "chant").detail).toContain("chant 0.44.12");
-    expect(by(report, "lexicons").detail).toContain("aws 0.44.12");
+    expect(by(report, "chant").detail).toContain("chant 0.52.1");
+    expect(by(report, "lexicons").detail).toContain("aws 0.52.1");
     expect(by(report, "envs").detail).toContain("prod");
     expect(by(report, "ops").detail).toContain("prod-apply (apply)");
     expect(report.checks.every((c) => c.fix === undefined)).toBe(true);
@@ -97,7 +97,7 @@ describe("diagnose", () => {
   it("fails, naming npm install, when the project's own chant and lexicons aren't installed", async () => {
     const dir = fixture({
       "chant.config.ts": `export default { lexicons: ["aws"], environments: ["prod"] };`,
-      "package.json": JSON.stringify({ name: "uninstalled", dependencies: { "@intentius/chant": "^0.44.12" } }),
+      "package.json": JSON.stringify({ name: "uninstalled", dependencies: { "@intentius/chant": "^0.52.1" } }),
     });
 
     const report = await diagnose(dir, probes());
@@ -116,7 +116,7 @@ describe("diagnose", () => {
     const dir = fixture({
       "chant.config.ts": `export default { lexicons: ["k8s"], k8s: { profiles: { local: { context: "k3d-demo" } } } };`,
       ...CHANT,
-      ...installed("@intentius/chant-lexicon-k8s", "0.44.12"),
+      ...installed("@intentius/chant-lexicon-k8s", "0.52.1"),
     });
 
     const report = await diagnose(dir, probes());
@@ -135,7 +135,7 @@ describe("diagnose", () => {
     const dir = fixture({
       "chant.config.ts": `export default { lexicons: ["k8s"], k8s: { profiles: { local: { context: "k3d-demo" } } } };`,
       ...CHANT,
-      ...installed("@intentius/chant-lexicon-k8s", "0.44.12"),
+      ...installed("@intentius/chant-lexicon-k8s", "0.52.1"),
     });
     const kc = kubeconfig({
       contexts: new Map([["k3d-demo", "k3d-demo-cluster"]]),
@@ -156,7 +156,7 @@ describe("diagnose", () => {
     const dir = fixture({
       "chant.config.ts": `export default { lexicons: ["k8s"], k8s: { profiles: { local: { context: "k3d-demo" } } } };`,
       ...CHANT,
-      ...installed("@intentius/chant-lexicon-k8s", "0.44.12"),
+      ...installed("@intentius/chant-lexicon-k8s", "0.52.1"),
     });
     const kc = kubeconfig({
       contexts: new Map([
@@ -182,7 +182,7 @@ describe("diagnose", () => {
     const dir = fixture({
       "chant.config.ts": `export default { lexicons: ["aws"], environments: ["prod"] };`,
       ...CHANT,
-      ...installed("@intentius/chant-lexicon-aws", "0.44.12"),
+      ...installed("@intentius/chant-lexicon-aws", "0.52.1"),
     });
     const down: Substrate[] = [
       { name: "docker", label: "Docker", status: "up", detail: "daemon running" },
@@ -223,14 +223,14 @@ describe("diagnose", () => {
       "a/ops/apply.op.ts": `export const op = { name: "a-apply", kind: ApplyOp };`,
       "b/chant.config.ts": `export default { lexicons: ["aws"], environments: ["staging"] };`,
       ...CHANT,
-      ...installed("@intentius/chant-lexicon-aws", "0.44.12"),
+      ...installed("@intentius/chant-lexicon-aws", "0.52.1"),
     });
 
     const report = await diagnose(dir, probes({ detectSubstrates: async () => up }));
 
     expect(report.kind).toBe("estate");
     expect(by(report, "project").detail).toContain(".behold.json members): a, b");
-    expect(by(report, "chant").detail).toBe("a: chant 0.44.12, b: chant 0.44.12 (behold's floor 0.44.12)");
+    expect(by(report, "chant").detail).toBe("a: chant 0.52.1, b: chant 0.52.1 (behold's floor 0.52.1)");
     expect(by(report, "envs").detail).toContain(`behold serve ${dir}/a ${dir}/b --env prod`);
     expect(by(report, "ops").detail).toContain("a: a-apply (apply)");
   });
@@ -257,7 +257,7 @@ describe("--json", () => {
       "chant.config.ts": `export default { lexicons: ["aws"], environments: ["prod"] };`,
       "ops/apply.op.ts": `export const op = { name: "prod-apply", kind: ApplyOp };`,
       ...CHANT,
-      ...installed("@intentius/chant-lexicon-aws", "0.44.12"),
+      ...installed("@intentius/chant-lexicon-aws", "0.52.1"),
     });
 
     const report = await diagnose(dir, probes({ detectSubstrates: async () => up }));

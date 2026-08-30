@@ -7,7 +7,7 @@
     "build": "chant build src -o dist/control-plane.yaml --format yaml"
   },
   "dependencies": {
-    "@intentius/chant": "^0.44.8",
-    "@intentius/chant-lexicon-k8s": "^0.44.8"
+    "@intentius/chant": "^0.52.1",
+    "@intentius/chant-lexicon-k8s": "^0.52.1"
   }
 }

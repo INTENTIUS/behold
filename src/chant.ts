@@ -754,12 +754,22 @@ export function ciPipeline(projectDir: string, opts: GraphOptions = {}, forge: C
  * always one of these when set. */
 export type UnobservedReason = "read-failed" | "no-credentials" | "no-binding" | "unsupported-kind" | "filtered";
 
+/** Why an effect proposes a fire (chant#1832) — reproduced from chant's own
+ * `EffectFireReason` (lifecycle/change-set.ts), same as `UnobservedReason`
+ * above. Total: `effectReason` below is always one of these when set. */
+export type EffectFireReason = "receipt-absent" | "receipt-stale" | "unresolved-input";
+
 /** One entity-level entry from `chant lifecycle plan` — chant's own
  * `ChangeSetEntry` (lifecycle/change-set.ts), reproduced here rather than
  * imported so this module doesn't reach past chant's public `@intentius/chant`
  * export surface for an internal lifecycle type. `name` is the chant entity
  * name — the same identifier the entity graph IR's node `id` uses, which is
- * how src/reconcile.ts correlates an entry to a component.
+ * how src/reconcile.ts correlates an entry to a component. That holds for a
+ * DECLARED entity only: chant#1674 spelled out that on an undeclared live
+ * resource (`adopt`, `delete`, `runtime`) `name` is the lexicon's live key and
+ * joins to no IR node, so those rows land in `summarizePlan`'s uncorrelated
+ * count by design. `physicalId` (also chant#1674) is the provider id for them
+ * if behold ever wants to name them in the UI.
  *
  * `action: "unobserved"` (chant#1168, #1089) is additive — a chant predating
  * that fix never emits it, so every existing plan (and consumer) is
@@ -780,11 +790,29 @@ export type UnobservedReason = "read-failed" | "no-credentials" | "no-binding" |
  * unaffected; src/reconcile.ts's `summarizePlan` keeps it out of both the
  * pending-change count and the in-sync (`noop`) one — see chant#1180's own
  * note that behold's `LifecyclePlanEntry` union needed widening for this,
- * same as #1168's `"unobserved"` before it. */
+ * same as #1168's `"unobserved"` before it.
+ *
+ * `action: "effect"` (chant#1832) is the third such widening — an effect whose
+ * receipt is absent, stale, or whose inputs could not resolve at plan time, so
+ * the next apply fires it. Unlike `"unobserved"` and `"runtime"`, this one IS
+ * pending work: applying the plan runs something. So `summarizePlan` leaves it
+ * in the ordinary pending count rather than giving it a bucket, which matches
+ * chant's own `ACTION_ORDER` (it sorts `effect` with create/update/delete, not
+ * with the inert noop/runtime/unobserved tail). chant excludes it from the
+ * GitLab MR widget only because that widget has three columns and no fourth to
+ * put it in — not because a fire is a non-change. */
 export interface LifecyclePlanEntry {
   name: string;
   type?: string;
-  action: "create" | "update" | "delete" | "adopt" | "noop" | "unobserved" | "runtime";
+  /** The lexicon whose observation produced this entry (chant#1674) — the
+   * attribution that survives `lifecycle plan`'s merge of every lexicon's
+   * change set into one `entries[]`. */
+  lexicon?: string;
+  /** Provider-assigned physical id (ARN, resource id, pod name) from the live
+   * observation (chant#1674). The only stable handle on an `adopt`/`delete`/
+   * `runtime` row, whose `name` joins to no IR node — see above. */
+  physicalId?: string;
+  action: "create" | "update" | "delete" | "adopt" | "noop" | "unobserved" | "runtime" | "effect";
   evidence: { declared: boolean; inSnapshot: boolean; live: boolean; observed?: boolean };
   deltas?: Array<{ path: string; oldValue: unknown; newValue: unknown }>;
   ownership: "owned" | "foreign" | "unknown";
@@ -797,6 +825,15 @@ export interface LifecyclePlanEntry {
   /** The declared entity this resource's owner-reference chain resolves to —
    * set only when `action === "runtime"` (chant#1180, #1077). */
   runtimeOwner?: string;
+  /** The effect a receipt witnesses (chant#1832) — names what will fire on
+   * `action === "effect"`, and keeps the attribution on a receipt's
+   * `noop`/`unobserved` rows. */
+  effect?: string;
+  /** Why the effect fires — set only when `action === "effect"`. */
+  effectReason?: EffectFireReason;
+  /** Human-readable backing for `effectReason` (the digests that differ, the
+   * unresolved path). */
+  effectDetail?: string;
 }
 
 /** `chant lifecycle plan <env> --live --json`'s bare output shape — chant's
