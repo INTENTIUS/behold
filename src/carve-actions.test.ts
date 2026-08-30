@@ -301,6 +301,19 @@ describe("runCarveObserve — the observe beat (#254, chant#1647)", () => {
     expect(r.verdict).toBe("missing");
     expect(r.queried).toContain("AWS::S3::Bucket");
   });
+
+  it("#311: a stacked target's {stacks} shape refuses — it never reads as a missing verdict", async () => {
+    writeFileSync(
+      join(d.root, "diff-answer.json"),
+      JSON.stringify({ environment: "prod", stacks: { network: { lexicons: { aws: { resources: {}, observed: {} } } } } }),
+    );
+    const r = await runCarveObserve({ ...d.demo, live }, "aws_s3_bucket.assets");
+    expect("ok" in r && r.ok).toBe(false);
+    if ("ok" in r && !r.ok) {
+      expect(r.refusal.error).toContain("stacks");
+      expect(r.refusal.error).not.toContain("missing");
+    }
+  });
 });
 
 describe("runCarveBridge — against a fake project-local chant", () => {
