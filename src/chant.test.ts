@@ -25,6 +25,8 @@ import {
   chantFloor,
   resolveChant,
   resolveLexicons,
+  helmRendersArgs,
+  helmRenderDiffArgs,
 } from "./chant.ts";
 import { overlayStatus } from "./overlay.ts";
 
@@ -319,6 +321,26 @@ describe("componentStatusArgs", () => {
 
   it("threads the env through verbatim", () => {
     expect(componentStatusArgs("prod")).toEqual(["components", "status", "prod", "--live", "--json"]);
+  });
+});
+
+describe("the helm render-diff argv (#146's deferred half, chant#1249/#1250)", () => {
+  it("builds `helm renders --json` — the declared renders, digests included", () => {
+    expect(helmRendersArgs()).toEqual(["helm", "renders", "--json"]);
+  });
+
+  it("builds `helm diff <content-digest> <env> --live --json`", () => {
+    // The digest positional is a render's `contentDigest`, and `--live` is
+    // what selects the render-to-live verb over the two-digest offline one —
+    // chant's `diffHandler` dispatches on exactly that flag.
+    expect(helmRenderDiffArgs("sha256:abc", "prod")).toEqual([
+      "helm",
+      "diff",
+      "sha256:abc",
+      "prod",
+      "--live",
+      "--json",
+    ]);
   });
 });
 

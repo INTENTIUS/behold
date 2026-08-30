@@ -188,6 +188,25 @@ const COMPONENT_STATUS_LABEL = { good: "healthy", accent: "in progress", warn: "
 // artifacts have no declared axis to classify against. `_artifact`'s presence
 // (or an artifact-flavoured `_unobserved`) picks this label set.
 const ARTIFACT_STATUS_LABEL = { good: "installed", warn: "installed, not healthy", accent: "not installed", neutral: "unobserved" };
+// The render-drift axis (#146's deferred half, chant#1249/#1250 via
+// src/helm-drift.ts). A chart carrying `_renderDrift` has had its PINNED
+// render diffed against the live cluster, so `warn` on it means "drifted",
+// not "installed, not healthy" — same word the field-drift and entity-diff
+// vocabularies already use for the same fact. `in-sync`/`unobserved` never
+// repaint the node, so this only overrides the artifact label on drift.
+const RENDER_VERDICT_LABEL = {
+  drifted: "drifted from its pinned render",
+  "in-sync": "matches its pinned render",
+  unobserved: "not compared to its pinned render",
+};
+// Why nothing was compared. Every one of these is a hole, never a clean bill —
+// see src/helm-drift.ts's header.
+const RENDER_UNOBSERVED_LABEL = {
+  unpinned: "render is unpinned (no capability profile) — no content identity to diff",
+  "no-stored-render": "chant's render store has never seen this digest",
+  "nothing-observed": "the live read returned no documents at all",
+  "partly-observed": "some documents matched, others could not be read",
+};
 
 // A declared attribute value may be a cross-resource reference ({$ref:"x.y"}) —
 // the "static infra refs" — rather than a concrete value. Render those readably;
@@ -256,6 +275,60 @@ function pairCell(aLabel, a, bLabel, b, opts = {}) {
   return wrap;
 }
 
+/** Shorten a `sha256:<64 hex>` to the 12 hex digits chant's own reports print. */
+function shortDigest(d) {
+  return typeof d === "string" && d.startsWith("sha256:") ? d.slice(7, 19) : d;
+}
+
+/**
+ * The `render diff` inspect section (#146's deferred half). `r` is the
+ * `_renderDrift` report src/helm-drift.ts put on the chart node.
+ *
+ * Reports the verdict in words first, then the counts behind it, then — on
+ * drift — every document that moved, path by path, in the same
+ * declared → live form the field-drift section uses for a k8s resource.
+ * Provenance comes last: which bytes were compared, and where they came from.
+ */
+function renderDriftSection(section, r) {
+  const rd = section("render diff");
+  rd("verdict", RENDER_VERDICT_LABEL[r.verdict] || r.verdict);
+  if (r.reason) rd("reason", RENDER_UNOBSERVED_LABEL[r.reason] || r.reason);
+  if (r.counts) {
+    const c = r.counts;
+    rd(
+      "documents",
+      `${c.drifted} drifted (${c.changes} propert${c.changes === 1 ? "y" : "ies"}) · ${c.unchanged} matching` +
+        (c.unobserved ? ` · ${c.unobserved} unread` : "") +
+        (c.undeclared ? ` · ${c.undeclared} not in the render` : ""),
+    );
+  }
+  for (const doc of r.drifted || []) {
+    const d = section(doc.name);
+    for (const ch of doc.changes) {
+      // Same declared → live form the k8s field-drift section uses, so a
+      // release's drift reads exactly like a resource's.
+      d(ch.path, `${JSON.stringify(ch.declared)} → ${JSON.stringify(ch.live)}`);
+    }
+  }
+  const p = r.provenance;
+  if (!p) return;
+  // chant#1228's pinned-render record: what was rendered, from which inputs,
+  // by which helm and chant, against which cluster profile. #234's "is prod
+  // running what staging tested" is answered by comparing these across two
+  // environments — behold renders one at a time, so it shows the facts and
+  // leaves the comparison to a cross-environment surface.
+  const pr = section("render provenance");
+  pr("content digest", shortDigest(p.contentDigest));
+  pr("input digest", shortDigest(p.inputDigest));
+  pr("values digest", shortDigest(p.valuesDigest));
+  pr("chart", p.chartVersion ? `${p.chart} ${p.chartVersion}` : p.chart);
+  if (p.repo) pr("repo", p.repo);
+  pr("release", p.namespace ? `${p.namespace}/${p.releaseName}` : p.releaseName);
+  if (p.profile) pr("pinned against", p.kubeVersion ? `${p.profile} (k8s ${p.kubeVersion})` : p.profile);
+  if (p.sourceRef) pr("source ref", p.sourceRef);
+  pr("rendered", `${p.renderedAt} · helm ${p.helmVersion} · chant ${p.chantVersion}`);
+}
+
 function inspect(node) {
   const panel = document.getElementById("inspect-body");
   panel.innerHTML = "<h2>inspect</h2>";
@@ -288,7 +361,18 @@ function inspect(node) {
   // the join sets `_artifact` on a match, and every Helm::Chart in an overlay
   // went through it, so the kind alone is the reliable picker.
   const isArtifact = node.kind === "Helm::Chart";
-  if (st) id("status", (isArtifact ? ARTIFACT_STATUS_LABEL[st] : liveStatus ? COMPONENT_STATUS_LABEL[st] : STATUS_LABEL[st]) || st);
+  // The render-drift axis only ever repaints on drift (src/helm-drift.ts), so
+  // a `warn` chart carrying a drifted verdict is drifted, not unhealthy — the
+  // artifact vocabulary would say the wrong thing about the right colour.
+  const renderDrift = node.attrs && node.attrs._renderDrift;
+  const driftLabel = renderDrift && renderDrift.verdict === "drifted" ? RENDER_VERDICT_LABEL.drifted : undefined;
+  if (st)
+    id(
+      "status",
+      driftLabel ||
+        (isArtifact ? ARTIFACT_STATUS_LABEL[st] : liveStatus ? COMPONENT_STATUS_LABEL[st] : STATUS_LABEL[st]) ||
+        st,
+    );
   if (node.attrs && node.attrs._artifact) {
     const a = node.attrs._artifact;
     if (a.release) id("release", a.release);
@@ -348,6 +432,13 @@ function inspect(node) {
       }
     });
   }
+
+  // Render diff (#146's deferred half): what `chant helm diff <digest> <env>
+  // --live --json` said about this chart's PINNED render. Never rely on the
+  // colour alone (#57's accessibility note) — and here that matters twice
+  // over, because `in-sync` and `unobserved` don't move the colour at all, so
+  // this section is the only place they're reported.
+  if (renderDrift) renderDriftSection(section, renderDrift);
 
   // Live state: what chant observed in the cloud. Only managed (provisioned)
   // nodes carry it — pending nodes have none because they aren't deployed yet.

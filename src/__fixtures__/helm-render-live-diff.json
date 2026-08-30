@@ -1,0 +1,273 @@
+{
+  "drifted": {
+    "contentDigest": "sha256:abdee0cf6ed5f8f2ecc2108d4a92c632169a5dbeb7208b5863102d1475510a3b",
+    "environment": "prod",
+    "manifest": {
+      "version": 1,
+      "chart": "tiny",
+      "chartVersion": "0.1.0",
+      "repo": null,
+      "releaseName": "web",
+      "namespace": "shop",
+      "valuesDigest": "sha256:7b4456ea76c660d4e1ccd69c604537e1513bdffb51ce4e0f447e0e377379a4e5",
+      "inputDigest": "sha256:e05321e74d2222e94aa754ddb4a26a24915008f946d8a003063b6e84890dc385",
+      "capabilityProfile": {
+        "cluster": "prod-1-33",
+        "kubeVersion": "1.33.0",
+        "apiVersions": []
+      },
+      "contentDigest": "sha256:abdee0cf6ed5f8f2ecc2108d4a92c632169a5dbeb7208b5863102d1475510a3b",
+      "docCount": 4,
+      "documents": [
+        {
+          "kind": "ConfigMap",
+          "apiVersion": "v1",
+          "name": "web-config",
+          "namespace": null,
+          "source": "tiny/templates/config.yaml",
+          "start": 4,
+          "length": 116,
+          "digest": "sha256:dc47c28c12a8e161a69a112baea3d91a445d501ff7fc612de9d7714907c20772"
+        },
+        {
+          "kind": "ClusterRole",
+          "apiVersion": "rbac.authorization.k8s.io/v1",
+          "name": "web-reader",
+          "namespace": null,
+          "source": "tiny/templates/clusterrole.yaml",
+          "start": 124,
+          "length": 140,
+          "digest": "sha256:3bb6d443c924c334dfba8d9d58ae3c17c93fa76adfec34d48dd620b6d9ed5b5a"
+        },
+        {
+          "kind": "Deployment",
+          "apiVersion": "apps/v1",
+          "name": "web",
+          "namespace": "shop",
+          "source": "tiny/templates/deployment.yaml",
+          "start": 268,
+          "length": 223,
+          "digest": "sha256:9afa8148d601327ae898082095dc9412742d3c8449380d16f8f7da327391e0e6"
+        },
+        {
+          "kind": "Job",
+          "apiVersion": "batch/v1",
+          "name": "web-migrate",
+          "namespace": null,
+          "source": "tiny/templates/migrate-job.yaml",
+          "start": 495,
+          "length": 247,
+          "digest": "sha256:2c1595bfaf7b59795eb7443b68dd10106dd5c2d10c817654ffe397e46ab58d07"
+        }
+      ],
+      "renderedAt": "2026-08-30T04:17:17.026Z",
+      "helmVersion": "v4.1.1",
+      "chantVersion": "0.52.2",
+      "sourceRef": "a2710ad",
+      "coalescedValuesDigest": null,
+      "valueSources": null
+    },
+    "diff": {
+      "drifted": [
+        {
+          "name": "Deployment/shop/web",
+          "type": "K8s::Apps::Deployment",
+          "changes": [
+            {
+              "path": "spec.replicas",
+              "kind": "changed",
+              "declared": 2,
+              "live": 3
+            },
+            {
+              "path": "spec.template.spec.containers[#web].image",
+              "kind": "changed",
+              "declared": "web:1.0",
+              "live": "web:1.1"
+            }
+          ]
+        },
+        {
+          "name": "Job/shop/web-migrate",
+          "type": "K8s::Batch::Job",
+          "changes": [
+            {
+              "path": "spec.template.spec.containers[#migrate].image",
+              "kind": "changed",
+              "declared": "migrate:1.0",
+              "live": "migrate:2.0"
+            }
+          ]
+        }
+      ],
+      "accepted": [],
+      "unchanged": [
+        "ConfigMap/shop/web-config",
+        "cluster:ClusterRole/web-reader"
+      ],
+      "unobserved": [],
+      "undeclaredEntities": []
+    }
+  },
+  "clean": {
+    "contentDigest": "sha256:abdee0cf6ed5f8f2ecc2108d4a92c632169a5dbeb7208b5863102d1475510a3b",
+    "environment": "prod",
+    "manifest": {
+      "version": 1,
+      "chart": "tiny",
+      "chartVersion": "0.1.0",
+      "repo": null,
+      "releaseName": "web",
+      "namespace": "shop",
+      "valuesDigest": "sha256:7b4456ea76c660d4e1ccd69c604537e1513bdffb51ce4e0f447e0e377379a4e5",
+      "inputDigest": "sha256:e05321e74d2222e94aa754ddb4a26a24915008f946d8a003063b6e84890dc385",
+      "capabilityProfile": {
+        "cluster": "prod-1-33",
+        "kubeVersion": "1.33.0",
+        "apiVersions": []
+      },
+      "contentDigest": "sha256:abdee0cf6ed5f8f2ecc2108d4a92c632169a5dbeb7208b5863102d1475510a3b",
+      "docCount": 4,
+      "documents": [
+        {
+          "kind": "ConfigMap",
+          "apiVersion": "v1",
+          "name": "web-config",
+          "namespace": null,
+          "source": "tiny/templates/config.yaml",
+          "start": 4,
+          "length": 116,
+          "digest": "sha256:dc47c28c12a8e161a69a112baea3d91a445d501ff7fc612de9d7714907c20772"
+        },
+        {
+          "kind": "ClusterRole",
+          "apiVersion": "rbac.authorization.k8s.io/v1",
+          "name": "web-reader",
+          "namespace": null,
+          "source": "tiny/templates/clusterrole.yaml",
+          "start": 124,
+          "length": 140,
+          "digest": "sha256:3bb6d443c924c334dfba8d9d58ae3c17c93fa76adfec34d48dd620b6d9ed5b5a"
+        },
+        {
+          "kind": "Deployment",
+          "apiVersion": "apps/v1",
+          "name": "web",
+          "namespace": "shop",
+          "source": "tiny/templates/deployment.yaml",
+          "start": 268,
+          "length": 223,
+          "digest": "sha256:9afa8148d601327ae898082095dc9412742d3c8449380d16f8f7da327391e0e6"
+        },
+        {
+          "kind": "Job",
+          "apiVersion": "batch/v1",
+          "name": "web-migrate",
+          "namespace": null,
+          "source": "tiny/templates/migrate-job.yaml",
+          "start": 495,
+          "length": 247,
+          "digest": "sha256:2c1595bfaf7b59795eb7443b68dd10106dd5c2d10c817654ffe397e46ab58d07"
+        }
+      ],
+      "renderedAt": "2026-08-30T04:17:17.026Z",
+      "helmVersion": "v4.1.1",
+      "chantVersion": "0.52.2",
+      "sourceRef": "a2710ad",
+      "coalescedValuesDigest": null,
+      "valueSources": null
+    },
+    "diff": {
+      "drifted": [],
+      "accepted": [],
+      "unchanged": [
+        "ConfigMap/shop/web-config",
+        "Deployment/shop/web",
+        "Job/shop/web-migrate",
+        "cluster:ClusterRole/web-reader"
+      ],
+      "unobserved": [],
+      "undeclaredEntities": []
+    }
+  },
+  "empty": {
+    "contentDigest": "sha256:abdee0cf6ed5f8f2ecc2108d4a92c632169a5dbeb7208b5863102d1475510a3b",
+    "environment": "prod",
+    "manifest": {
+      "version": 1,
+      "chart": "tiny",
+      "chartVersion": "0.1.0",
+      "repo": null,
+      "releaseName": "web",
+      "namespace": "shop",
+      "valuesDigest": "sha256:7b4456ea76c660d4e1ccd69c604537e1513bdffb51ce4e0f447e0e377379a4e5",
+      "inputDigest": "sha256:e05321e74d2222e94aa754ddb4a26a24915008f946d8a003063b6e84890dc385",
+      "capabilityProfile": {
+        "cluster": "prod-1-33",
+        "kubeVersion": "1.33.0",
+        "apiVersions": []
+      },
+      "contentDigest": "sha256:abdee0cf6ed5f8f2ecc2108d4a92c632169a5dbeb7208b5863102d1475510a3b",
+      "docCount": 4,
+      "documents": [
+        {
+          "kind": "ConfigMap",
+          "apiVersion": "v1",
+          "name": "web-config",
+          "namespace": null,
+          "source": "tiny/templates/config.yaml",
+          "start": 4,
+          "length": 116,
+          "digest": "sha256:dc47c28c12a8e161a69a112baea3d91a445d501ff7fc612de9d7714907c20772"
+        },
+        {
+          "kind": "ClusterRole",
+          "apiVersion": "rbac.authorization.k8s.io/v1",
+          "name": "web-reader",
+          "namespace": null,
+          "source": "tiny/templates/clusterrole.yaml",
+          "start": 124,
+          "length": 140,
+          "digest": "sha256:3bb6d443c924c334dfba8d9d58ae3c17c93fa76adfec34d48dd620b6d9ed5b5a"
+        },
+        {
+          "kind": "Deployment",
+          "apiVersion": "apps/v1",
+          "name": "web",
+          "namespace": "shop",
+          "source": "tiny/templates/deployment.yaml",
+          "start": 268,
+          "length": 223,
+          "digest": "sha256:9afa8148d601327ae898082095dc9412742d3c8449380d16f8f7da327391e0e6"
+        },
+        {
+          "kind": "Job",
+          "apiVersion": "batch/v1",
+          "name": "web-migrate",
+          "namespace": null,
+          "source": "tiny/templates/migrate-job.yaml",
+          "start": 495,
+          "length": 247,
+          "digest": "sha256:2c1595bfaf7b59795eb7443b68dd10106dd5c2d10c817654ffe397e46ab58d07"
+        }
+      ],
+      "renderedAt": "2026-08-30T04:17:17.026Z",
+      "helmVersion": "v4.1.1",
+      "chantVersion": "0.52.2",
+      "sourceRef": "a2710ad",
+      "coalescedValuesDigest": null,
+      "valueSources": null
+    },
+    "diff": {
+      "drifted": [],
+      "accepted": [],
+      "unchanged": [],
+      "unobserved": [],
+      "undeclaredEntities": []
+    }
+  },
+  "missing": {
+    "found": false,
+    "contentDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}
