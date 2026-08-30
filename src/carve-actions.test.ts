@@ -23,6 +23,7 @@ import {
   readArtifacts,
   runCarveBridge,
   runCarveEmit,
+  runCarveObserve,
   selectFromReport,
   shortenIn,
   type CarveDemo,
@@ -64,7 +65,7 @@ function fakeDemo(): { demo: CarveDemo; argv: () => string[][]; root: string } {
   writeFileSync(
     bin,
     `#!/usr/bin/env node
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 const argv = process.argv.slice(2);
 appendFileSync(${JSON.stringify(join(root, "argv.log"))}, JSON.stringify(argv) + "\\n");
@@ -97,6 +98,13 @@ if (argv[0] === "carve" && argv[1] === "bridge") {
 if (argv[0] === "lint") {
   console.log("  5:1  warning  Exported declarable 'assets' is never referenced.  COR004");
   console.log("\\u26a0 1 warnings");
+  process.exit(0);
+}
+if (argv[0] === "lifecycle" && argv[1] === "diff") {
+  // The observe beat's read (#254, chant#1647): record the endpoint the spawn
+  // was handed, then answer with whatever the test canned.
+  writeFileSync(${JSON.stringify(join(root, "env.log"))}, process.env.AWS_ENDPOINT_URL || "");
+  console.log(readFileSync(${JSON.stringify(join(root, "diff-answer.json"))}, "utf8"));
   process.exit(0);
 }
 console.error("fake chant: unexpected " + argv.join(" "));
@@ -224,6 +232,74 @@ describe("runCarveEmit — against a fake project-local chant", () => {
     // Emitted source sorts above the scaffolding.
     expect(result.artifacts[0].path).toBe("app/carveout/src/assets.ts");
     expect((result.boundary as { target: string }).target).toBe("aws_s3_bucket.assets");
+  });
+});
+
+describe("runCarveObserve — the observe beat (#254, chant#1647)", () => {
+  let d: ReturnType<typeof fakeDemo>;
+  const live = { container: "behold-carve-floci", port: 4602, endpoint: "http://localhost:4602", applied: [] };
+  beforeAll(() => {
+    d = fakeDemo();
+  });
+  afterAll(() => rmSync(d.root, { recursive: true, force: true }));
+
+  it("refuses on a non-live boot — there is no live to read", async () => {
+    const r = await runCarveObserve(d.demo, "aws_s3_bucket.assets");
+    expect("ok" in r && r.ok).toBe(false);
+    if ("ok" in r && !r.ok) expect(r.refusal.remedy).toContain("--live");
+  });
+
+  it("refuses before Emit — observe reads the carveout emit writes", async () => {
+    const r = await runCarveObserve({ ...d.demo, live }, "aws_s3_bucket.assets");
+    expect("ok" in r && r.ok).toBe(false);
+    if ("ok" in r && !r.ok) expect(r.refusal.remedy).toContain("Emit");
+  });
+
+  it("reads the carveout with the endpoint pointed at the scratch Floci, and reports the observed verdict", async () => {
+    await runCarveEmit(d.demo, "aws_s3_bucket.assets");
+    writeFileSync(
+      join(d.root, "diff-answer.json"),
+      JSON.stringify({
+        environment: "prod",
+        lexicons: {
+          aws: {
+            resources: { missing: [], orphan: [], unchanged: [], unobserved: [], queried: { assets: "cloudcontrol:GetResource:AWS::S3::Bucket:acme-platform-assets-prod" } },
+            observed: { assets: { type: "AWS::S3::Bucket", physicalId: "acme-platform-assets-prod", status: "EXTERNAL", ownership: "foreign" } },
+          },
+        },
+      }),
+    );
+    const r = await runCarveObserve({ ...d.demo, live }, "aws_s3_bucket.assets");
+    expect("ok" in r && r.ok).toBe(true);
+    if (!("ok" in r) || !r.ok) return;
+    expect(r).toMatchObject({
+      entity: "assets",
+      verdict: "observed",
+      status: "EXTERNAL",
+      ownership: "foreign",
+      physicalId: "acme-platform-assets-prod",
+      queried: "cloudcontrol:GetResource:AWS::S3::Bucket:acme-platform-assets-prod",
+    });
+    // The argv is the diff, the spawn got the scratch endpoint, and the echoed
+    // command is retypeable without the host's tmpdir in it.
+    const diffArgv = d.argv().find((a) => a[0] === "lifecycle");
+    expect(diffArgv).toEqual(["lifecycle", "diff", "prod", "--live", "--json"]);
+    expect(readFileSync(join(d.root, "env.log"), "utf8")).toBe(live.endpoint);
+    expect(r.command).toContain(live.endpoint);
+    expect(r.command).toContain("app/carveout");
+    expect(r.command).not.toContain(d.root);
+  });
+
+  it("a miss stays a miss — the verdict is chant's, never invented here", async () => {
+    writeFileSync(
+      join(d.root, "diff-answer.json"),
+      JSON.stringify({ environment: "prod", lexicons: { aws: { resources: { missing: ["assets"], queried: { assets: "cloudcontrol:GetResource:AWS::S3::Bucket:acme-platform-assets-prod" } }, observed: {} } } }),
+    );
+    const r = await runCarveObserve({ ...d.demo, live }, "aws_s3_bucket.assets");
+    expect("ok" in r && r.ok).toBe(true);
+    if (!("ok" in r) || !r.ok) return;
+    expect(r.verdict).toBe("missing");
+    expect(r.queried).toContain("AWS::S3::Bucket");
   });
 });
 

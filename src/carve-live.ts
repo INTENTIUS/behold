@@ -4,11 +4,10 @@
  * The offline tier proves the mechanics against a synthetic tfstate; this tier
  * turns "the resource stays live through the carve" from a caption into
  * something the viewer can poke: a scratch Floci in Docker, the demo copy's
- * Terraform REALLY applied into it, and a real `terraform plan` at handoff
- * showing no destroy. The observe beat — chant reading the bucket live while
- * Terraform still owns it — stays deferred on chant#1647 (AWS live observe is
- * CFN-stack-scoped by logical id; a Terraform-owned resource reads
- * confirmed-missing today).
+ * Terraform REALLY applied into it, a real `terraform plan` at handoff showing
+ * no destroy, and the observe beat after Emit — chant reading the carved
+ * resource live from the carveout while Terraform still owns it (chant#1647's
+ * identity read path, chant ≥ 0.44.12; runCarveObserve in carve-actions.ts).
  *
  * Scratch discipline (HANDOFF standing constraint): our own container name,
  * refuse-if-exists, teardown on exit — never an existing `floci*` or

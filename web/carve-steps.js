@@ -66,7 +66,11 @@ export function initialCarveState() {
     /** POST /api/carve/plan's answer (live tier only). Estate-wide, so a new
      * pick keeps it — the plan is about the armed Terraform, not the pick. */
     plan: null,
-    /** Which step is mid-run ("emit" | "bridge" | "plan" | null). */
+    /** POST /api/carve/observe's answer (live tier only) — chant reading the
+     * carved resource live while Terraform still owns it (chant#1647). About
+     * THIS pick's carveout, so a new pick drops it with emit/bridge. */
+    observe: null,
+    /** Which step is mid-run ("emit" | "bridge" | "plan" | "observe" | null). */
     busy: null,
     /** The last structured refusal, keyed by step id. */
     error: null,
@@ -276,6 +280,32 @@ export function lintVerdict(lint) {
   return { tone: "bad", text: `chant lint exited ${lint.code} — the emitted source doesn't pass yet` };
 }
 
+/**
+ * The observe verdict as one line + a tone (chant#1647). `observed` with
+ * EXTERNAL/foreign IS the beat: live, outside every stack, still Terraform's —
+ * and chant read it clean anyway. `unobserved` repeats chant's own hole
+ * ("not a verdict about the resource" is #1089's rule said small). `missing`
+ * names the one honest local cause: a demo-copy chant that predates the
+ * identity read path.
+ */
+export function observeSummary(o) {
+  if (!o) return null;
+  if (o.verdict === "observed") {
+    const how = [o.status, o.ownership ? `ownership ${o.ownership}` : null].filter(Boolean).join(", ");
+    return {
+      tone: "good",
+      text: `${o.entity}: observed${how ? ` (${how})` : ""} — Terraform still owns it, and chant read it clean. Nothing blinked.`,
+    };
+  }
+  if (o.verdict === "unobserved") {
+    return { tone: "warn", text: `${o.entity}: the read itself had a hole — ${o.detail || "unobserved"}. Not a verdict about the resource.` };
+  }
+  return {
+    tone: "warn",
+    text: `${o.entity}: read MISSING. The demo copy's chant predates the identity read path (chant#1647, fixed in chant ≥ 0.44.12) — npm install in the copy's app/ and re-run.`,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // The DOM half. Plain browser JS, no build step, themed entirely by the shared
 // CSS vars — same rules as app.js. `actions` is the host's wiring:
@@ -436,7 +466,7 @@ function renderAdvise(body, ctx) {
           "panel-muted carve-live-note",
           `Live tier: the starred resources are REALLY applied into a scratch Floci (${ctx.demo.live.endpoint}, ` +
             "deleted when this server exits) and the tfstate the advisor read was written by terraform, not shipped. " +
-            "The observe beat — chant reading the bucket live while Terraform still owns it — waits on chant#1647.",
+            "After Emit, the observe beat reads the carved resource live while Terraform still owns it (chant#1647).",
         ),
       );
     }
@@ -518,6 +548,27 @@ function renderEmit(body, state, ctx, actions) {
   caveat.appendChild(el("summary", null, "why lint and not build?"));
   caveat.appendChild(el("p", "panel-muted", e.buildCaveat || (ctx.demo && ctx.demo.buildCaveat) || ""));
   body.appendChild(caveat);
+
+  // The observe beat (#254, chant#1647): chant reads the carved resource live
+  // FROM THE CARVEOUT, against the scratch Floci, while Terraform still owns
+  // it. Live tier only — offline has no live to read.
+  if (ctx.demo && ctx.demo.live) {
+    const obsBtn = el("button", "act carve-observe", state.busy === "observe" ? "observing…" : "▶ watch chant read it live");
+    obsBtn.disabled = !!state.busy;
+    obsBtn.title = "Runs chant lifecycle diff --live in the carveout against the scratch Floci. Reads everything, changes nothing.";
+    obsBtn.addEventListener("click", actions.runObserve);
+    body.appendChild(obsBtn);
+    const summary = observeSummary(state.observe);
+    if (summary) {
+      const row = el("div", "count-row");
+      const dot = el("span", "dot");
+      dot.style.background = summary.tone === "good" ? "var(--managed)" : "var(--degraded)";
+      row.append(dot, el("span", "grow", summary.text));
+      body.appendChild(row);
+      if (state.observe.queried) body.appendChild(pre(state.observe.command + "\n→ queried " + state.observe.queried, "carve-cmd"));
+      else body.appendChild(pre(state.observe.command, "carve-cmd"));
+    }
+  }
 
   body.appendChild(el("h3", null, "emitted"));
   for (const a of e.artifacts || []) body.appendChild(artifactBlock(a, actions));

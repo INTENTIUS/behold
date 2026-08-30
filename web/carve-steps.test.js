@@ -15,6 +15,7 @@ import {
   edgeLine,
   initialCarveState,
   lintVerdict,
+  observeSummary,
   pickFacts,
   runbookCommands,
   stepStatus,
@@ -240,6 +241,36 @@ describe("lintVerdict", () => {
     const bad = lintVerdict({ ok: false, code: 1, output: "✖ 2 errors" });
     expect(bad.tone).toBe("bad");
     expect(bad.text).toContain("exited 1");
+  });
+});
+
+// The observe beat's one-line verdicts (#254, chant#1647). `observed` is the
+// claim the whole tier films; the other two must stay distinguishable — a hole
+// in the read is not a verdict about the resource (#1089), and MISSING has
+// exactly one honest local cause worth naming.
+describe("observeSummary", () => {
+  it("is null before any observe ran", () => {
+    expect(observeSummary(null)).toBeNull();
+  });
+
+  it("observed: names the how and claims the beat", () => {
+    const s = observeSummary({ entity: "assets", verdict: "observed", status: "EXTERNAL", ownership: "foreign" });
+    expect(s.tone).toBe("good");
+    expect(s.text).toContain("assets: observed (EXTERNAL, ownership foreign)");
+    expect(s.text).toContain("Nothing blinked");
+  });
+
+  it("unobserved: repeats chant's own hole and refuses to call it a verdict", () => {
+    const s = observeSummary({ entity: "assets", verdict: "unobserved", detail: "read-failed: connection refused" });
+    expect(s.tone).toBe("warn");
+    expect(s.text).toContain("read-failed: connection refused");
+    expect(s.text).toContain("Not a verdict about the resource");
+  });
+
+  it("missing: names the one honest local cause", () => {
+    const s = observeSummary({ entity: "assets", verdict: "missing" });
+    expect(s.tone).toBe("warn");
+    expect(s.text).toContain("chant#1647");
   });
 
   it("is null with no lint at all — nothing to claim", () => {
