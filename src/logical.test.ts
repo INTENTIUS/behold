@@ -360,3 +360,123 @@ describe("projectTopology — GCP dispatch (#101)", () => {
     expect(Object.keys(byContainer).some((k) => /VPC|VNet|subnet/i.test(k))).toBe(false);
   });
 });
+
+// #321 (measured in #166) — the one place behold used to delete an edge it had
+// derived. Every lens filters the IR's edges to its own surviving cards, so an
+// edge whose two endpoints belong to two DIFFERENT lenses satisfied neither
+// predicate and `projectTopology` concatenated the halves without noticing.
+//
+// The fixture is the shape #166's measurement built by hand, since none of the
+// bundled examples puts two substrates in one graph: an S3 bucket and an EKS
+// control plane on the AWS side, a Namespace + Deployment + Service on the k8s
+// side, run through the same three derivation passes the server's graph route
+// runs (`addValueMatchEdges` → `addK8sDeclaredEdges` → `addClusterAnchorEdges`).
+// The measurement's own fixture wired the Deployment to the bucket with a
+// literal string, which `addValueMatchEdges` cannot see through k8s' nested
+// attrs (recorded there as a separate gap); this one uses the `$ref` a chant
+// project writes for the same wiring, which chant emits as a real k8s → aws
+// edge — so the cross-provider edge is present in the IR and the projection's
+// handling of it is what is under test.
+describe("projectTopology — cross-lens edges (#321, #166)", () => {
+  /** The mixed aws+k8s graph, with the derived edges the server's pipeline
+   * would have attached by the time the logical lens runs. */
+  function mixedIr(): GraphIR {
+    return {
+      nodes: [
+        { id: "assets", kind: "AWS::S3::Bucket", lexicon: "aws", attrs: { BucketName: "mixed-assets" }, sourceLoc: { file: "src/store/assets.ts" } },
+        { id: "cluster", kind: "AWS::EKS::Cluster", lexicon: "aws", attrs: { Name: "mixed" }, sourceLoc: { file: "src/platform/eks.ts" } },
+        { id: "shopNs", kind: "K8s::Core::Namespace", lexicon: "k8s", attrs: { metadata: { name: "shop" } }, sourceLoc: { file: "src/shop/ns.ts" } },
+        {
+          id: "api",
+          kind: "K8s::Apps::Deployment",
+          lexicon: "k8s",
+          attrs: { metadata: { name: "api", namespace: "shop" }, spec: { template: { spec: { containers: [{ env: [{ name: "ASSET_BUCKET", value: ref("assets.BucketName") }] }] } } } },
+          sourceLoc: { file: "src/shop/api.ts" },
+        },
+        {
+          id: "apiSvc",
+          kind: "K8s::Core::Service",
+          lexicon: "k8s",
+          attrs: { metadata: { name: "api", namespace: "shop" }, spec: { selector: { app: "api" } } },
+          sourceLoc: { file: "src/shop/api.ts" },
+        },
+      ],
+      edges: [
+        // chant's own IR edge for the `$ref` above — the only cross-provider edge.
+        { from: "api", to: "assets", kind: "ref", viaAttr: "ASSET_BUCKET" },
+        // src/k8s-edges.ts: the Service's selector matches the Deployment.
+        { from: "apiSvc", to: "api", kind: "ref", viaAttr: "selector", inferred: true },
+        // src/cluster-anchor.ts: cluster → namespace → object, all `runs-on`.
+        { from: "cluster", to: "shopNs", kind: "ref", viaAttr: "runs-on", inferred: true },
+        { from: "shopNs", to: "api", kind: "ref", viaAttr: "runs-on", inferred: true },
+        { from: "shopNs", to: "apiSvc", kind: "ref", viaAttr: "runs-on", inferred: true },
+      ],
+      groups: {},
+    } as unknown as GraphIR;
+  }
+
+  it("keeps the cross-provider edge whose endpoints two different lenses drew", () => {
+    const { ir: out } = projectTopology(mixedIr(), "local");
+    // Both endpoints are cards: the bucket through the AWS lens, the Deployment
+    // through the k8s one. Before #321 this pair was dropped by both.
+    expect(out.nodes.map((n) => n.id).sort()).toEqual(["api", "apiSvc", "assets", "cluster"]);
+    expect(out.edges.map((e) => `${e.from}→${e.to}`)).toContain("api→assets");
+    // Retained, not re-derived: the edge arrives with the attribute it flows
+    // through intact.
+    expect(out.edges.find((e) => e.from === "api" && e.to === "assets")?.viaAttr).toBe("ASSET_BUCKET");
+  });
+
+  it("draws each surviving edge once and invents none", () => {
+    const { ir: out } = projectTopology(mixedIr(), "local");
+    const pairs = out.edges.map((e) => [e.from, e.to].sort().join("|"));
+    expect(new Set(pairs).size).toBe(pairs.length);
+    // 5 edges in; 2 out. The k8s lens's selector edge, plus the retained
+    // cross-provider one. The three `runs-on` anchors are containment: two of
+    // them end on the Namespace, which this lens renders as a BOX rather than a
+    // card, and the third (cluster → namespace) is the box's own nesting.
+    expect(out.edges).toHaveLength(2);
+    expect(out.edges.some((e) => e.viaAttr === "runs-on")).toBe(false);
+  });
+
+  it("states the cluster → namespace anchor as nesting, the way it always did", () => {
+    const { byContainer } = projectTopology(mixedIr(), "local");
+    expect(byContainer["platform"]).toEqual(["cluster"]);
+    expect(byContainer["cluster"]).toEqual(["namespace shop"]);
+    expect(byContainer["namespace shop"]).toEqual(["api", "apiSvc"]);
+  });
+
+  // A cluster-scoped object anchors straight to the cluster, so BOTH endpoints
+  // of that `runs-on` edge are cards and the pair spans two lenses. It still
+  // must not become an edge: the nesting already puts the object inside the
+  // cluster, and repeating containment as a line is the spoke-star
+  // src/cluster-anchor.ts declines to draw.
+  it("does not repeat containment as an edge for a cluster-scoped object", () => {
+    const ir = mixedIr();
+    ir.nodes.push({ id: "fastSsd", kind: "K8s::Storage::StorageClass", lexicon: "k8s", attrs: { metadata: { name: "fast-ssd" } }, sourceLoc: { file: "src/platform/sc.ts" } } as never);
+    ir.edges.push({ from: "cluster", to: "fastSsd", kind: "ref", viaAttr: "runs-on", inferred: true } as never);
+    const { ir: out, byContainer } = projectTopology(ir, "local");
+    expect(out.nodes.map((n) => n.id)).toContain("fastSsd");
+    expect(byContainer["cluster-scoped"]).toEqual(["fastSsd"]);
+    expect(byContainer["cluster"]).toContain("cluster-scoped");
+    expect(out.edges.map((e) => `${e.from}→${e.to}`)).not.toContain("cluster→fastSsd");
+  });
+
+  // The retention only ever looks at an edge NO single lens rendered both ends
+  // of, so a lens that declined to draw an edge between two of its own cards
+  // still gets its way — and a single-lexicon estate is untouched.
+  it("leaves a single-lexicon projection exactly as it was", () => {
+    const mixed = mixedIr();
+    const k8sOnly = {
+      ...mixed,
+      nodes: mixed.nodes.filter((n) => n.lexicon === "k8s"),
+      edges: mixed.edges.filter((e) => e.from !== "assets" && e.to !== "assets" && e.from !== "cluster" && e.to !== "cluster"),
+    } as unknown as GraphIR;
+    const awsOnly = {
+      ...mixed,
+      nodes: mixed.nodes.filter((n) => n.lexicon === "aws"),
+      edges: [],
+    } as unknown as GraphIR;
+    expect(projectTopology(k8sOnly, "local").ir.edges).toEqual([{ from: "apiSvc", to: "api", kind: "ref", viaAttr: "selector", inferred: true }]);
+    expect(projectTopology(awsOnly, "local").ir.edges).toEqual([]);
+  });
+});
