@@ -1233,6 +1233,35 @@ const carveActions = {
   },
   runEmit: () => runCarveStep("emit"),
   runBridge: () => runCarveStep("bridge"),
+  // The observe beat (#254, chant#1647). Not runCarveStep: the refusal has to
+  // land on the Emit step (where the button lives), and "observe" is a live-
+  // tier action on that step, not a step of its own.
+  async runObserve() {
+    if (carveState.busy || !carveState.pick) return;
+    carveState.busy = "observe";
+    carveState.error = null;
+    renderPanelCarve();
+    try {
+      const res = await fetch("/api/carve/observe", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ select: carveState.pick.node.id }),
+      });
+      const body = await res.json().catch(() => ({ error: "observe returned an unreadable body", remedy: "" }));
+      if (!res.ok || body.error) {
+        carveState.error = { step: "emit", ...body };
+        showToast(`✗ observe: ${body.error || res.status}`, false);
+      } else {
+        carveState.observe = body;
+        showToast(body.verdict === "observed" ? "✓ chant read it live — nothing blinked" : `✗ observe: ${body.verdict}`, body.verdict === "observed");
+      }
+    } catch (err) {
+      carveState.error = { step: "emit", error: String((err && err.message) || err), remedy: "Is the behold server still running?" };
+    } finally {
+      carveState.busy = null;
+      renderPanelCarve();
+    }
+  },
   async runPlan() {
     if (carveState.busy) return;
     carveState.busy = "plan";
@@ -1321,6 +1350,7 @@ function carvePick(node) {
     carveState.emit = null;
     carveState.bridge = null;
     carveState.handoff = false;
+    carveState.observe = null;
     carveState.error = null;
     carveState.step = pickStep;
   } else if (carveState.step < pickStep) {

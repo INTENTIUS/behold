@@ -180,11 +180,13 @@ it the carved bucket is simply gone from Terraform's world — `0 to destroy`.
 The line the tier exists for is "Terraform forgot it, chant adopted it, and it
 never blinked."
 
-One beat stays caption rather than footage for now: `chant lifecycle diff
---live` reading the bucket clean while Terraform still owns it. chant's AWS
-observe is CFN-stack-scoped by logical id, so a Terraform-owned resource reads
-confirmed-missing regardless of its existence — chant#1647 tracks the
-physical-identity read path that unlocks it.
+The observe beat is footage now, not caption: after Emit, "▶ watch chant read
+it live" runs `chant lifecycle diff prod --live` in the carveout with the
+endpoint pointed at the scratch Floci, and the bucket reads OBSERVED —
+`EXTERNAL`, ownership `foreign` — while Terraform still owns it. That is
+chant#1647's physical-identity read path (chant ≥ 0.44.12): stack-absent no
+longer means confirmed-absent when the declared `BucketName` names the
+resource precisely.
 
 The live tier needs `docker` and `terraform` on PATH, boots its own throwaway
 Floci and deletes it after, and never touches an existing `floci*` container.

@@ -465,7 +465,9 @@ function spawnStep(cmd: string, args: string[], cwd: string): Promise<number> {
  * applied into it, so the tfstate the advisor reads was written by terraform.
  * Live fails fast rather than degrading — a "live" walkthrough silently
  * serving synthetic state would be the demo lying about its one claim. The
- * observe beat stays deferred on chant#1647.
+ * observe beat rides it (chant#1647, fixed at chant ≥ 0.44.12): after Emit,
+ * chant reads the carved resource live from the carveout while Terraform
+ * still owns it.
  */
 async function serveCarveDemo(target: string, carve: DemoCarve, port: number, live = false): Promise<void> {
   const at = (rel: string): string => resolve(target, rel);

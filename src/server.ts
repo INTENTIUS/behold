@@ -61,6 +61,7 @@ import {
   carveWriteBlock,
   runCarveBridge,
   runCarveEmit,
+  runCarveObserve,
   runCarvePlan,
   selectFromReport,
   BUILD_CAVEAT,
@@ -606,6 +607,11 @@ function carveRoutes(app: Hono, reportPath: string, demo?: CarveDemo): void {
 
   app.post("/api/carve/emit", (c) => runStep(c, runCarveEmit));
   app.post("/api/carve/bridge", (c) => runStep(c, runCarveBridge));
+  // The observe beat (#254, chant#1647): chant reads the carved resource live
+  // from the carveout, endpoint pointed at the scratch Floci. Same select
+  // discipline as emit/bridge (membership in the report), refuses on a
+  // non-live boot or before Emit (runCarveObserve). Read-only.
+  app.post("/api/carve/observe", (c) => runStep(c, runCarveObserve));
 
   // The live tier's third action (#254): `terraform plan`, read-only against
   // both the estate and the emulator. Same guard posture as emit/bridge (JSON

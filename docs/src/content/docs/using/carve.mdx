@@ -47,7 +47,7 @@ behold writes only into the copy it just made, and only into `app/carveout/` ins
 
 ### The `--live` tier
 
-`npx behold demo carve --live` (docker + terraform on PATH) boots a scratch Floci — its own container name and port, refused if taken, deleted on exit — arms the estate's provider override into the demo copy, and really applies the starred resources into it. The advisor then reads a tfstate terraform wrote, and the Handoff step gains a read-only **terraform plan** button: run it after pasting `terraform state rm` and the carved resource is simply absent from the plan — `0 to destroy`, nothing blinked. The one beat still deferred is chant reading the bucket live while Terraform owns it (chant#1647: AWS live observe is CFN-stack-scoped today).
+`npx behold demo carve --live` (docker + terraform on PATH) boots a scratch Floci — its own container name and port, refused if taken, deleted on exit — arms the estate's provider override into the demo copy, and really applies the starred resources into it. The advisor then reads a tfstate terraform wrote, and the Handoff step gains a read-only **terraform plan** button: run it after pasting `terraform state rm` and the carved resource is simply absent from the plan — `0 to destroy`, nothing blinked. The Emit step gains the observe beat: **watch chant read it live** runs `chant lifecycle diff --live` in the carveout against the scratch Floci, and the carved resource reads observed — `EXTERNAL`, ownership `foreign` — while Terraform still owns it (chant#1647's identity read path, chant ≥ 0.44.12).
 
 ## For agents
 

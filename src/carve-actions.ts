@@ -101,6 +101,103 @@ export async function runCarvePlan(demo: CarveDemo | undefined): Promise<CarveAc
   };
 }
 
+export interface CarveObserveResult {
+  ok: true;
+  select: string;
+  /** The retypeable command line, endpoint included. */
+  command: string;
+  /** The carved entity's chant name (the tf address's name part). */
+  entity: string;
+  verdict: "observed" | "missing" | "unobserved";
+  /** Present on `observed`. `EXTERNAL` + `foreign` is the whole point: live,
+   * outside every stack, owned by something that isn't chant — Terraform. */
+  status?: string;
+  ownership?: string;
+  physicalId?: string;
+  /** The address the read was issued against (chant#1620) — present whenever
+   * chant recorded one, whatever the verdict. */
+  queried?: string;
+  /** The unobserved reason/detail, when the read itself had a hole. */
+  detail?: string;
+}
+
+/**
+ * The observe beat (#254, chant#1647→#1684/#1695): after Emit, chant reads the
+ * carved resource live FROM THE CARVEOUT — while Terraform still owns it.
+ * That is the walkthrough's claim ("Terraform forgot it, chant adopted it, and
+ * it never blinked") made checkable: `lifecycle diff prod --live --json` runs
+ * in `<demo.out>` (emit writes a full mini-project there), with
+ * `AWS_ENDPOINT_URL` pointed at the scratch Floci for this one spawn. Live
+ * tier only, read-only — a diff observes, it never applies.
+ *
+ * `prod` is the demo estate's one environment (example-carve/app's config);
+ * the carveout inherits the walkthrough's shape, not a general project's.
+ */
+export async function runCarveObserve(demo: CarveDemo, select: string): Promise<CarveActionResult<CarveObserveResult>> {
+  if (!demo.live) {
+    return refuse(
+      "carve-action",
+      "the observe beat reads the scratch Floci, and this server isn't serving one",
+      "run `behold demo carve --live` (needs docker + terraform)",
+    );
+  }
+  if (!existsSync(join(demo.out, "src"))) {
+    return refuse("carve-action", "nothing has been emitted yet", "run Emit first — observe reads the carveout emit writes");
+  }
+  const args = ["lifecycle", "diff", "prod", "--live", "--json"];
+  const run = await runChantRaw(args, demo.out, { AWS_ENDPOINT_URL: demo.live.endpoint }).catch((err: unknown) => ({
+    code: 127,
+    stdout: "",
+    stderr: err instanceof Error ? err.message : String(err),
+  }));
+  if (run.code !== 0) {
+    return refuse(
+      "carve-action",
+      `chant lifecycle diff exited ${run.code}: ${merge(run, demo.root) || "(no output)"}`,
+      "Is the scratch Floci still up? `docker ps` should list " + demo.live.container + ".",
+    );
+  }
+  let aws: {
+    resources?: { missing?: string[]; unobserved?: Array<{ name: string; reason?: string; detail?: string }>; queried?: Record<string, string> };
+    observed?: Record<string, { status?: string; ownership?: string; physicalId?: string }>;
+  };
+  try {
+    aws = (JSON.parse(run.stdout) as { lexicons?: Record<string, typeof aws> }).lexicons?.aws ?? {};
+  } catch {
+    return refuse("carve-action", "chant lifecycle diff answered something that isn't JSON", "re-run — a partial read is not a verdict");
+  }
+  const entity = select.split(".").pop() ?? select;
+  const command = `AWS_ENDPOINT_URL=${demo.live.endpoint} chant ${args.join(" ")}  # in ${shortenIn(demo.out, demo.root)}`;
+  const queried = aws.resources?.queried?.[entity];
+  const meta = aws.observed?.[entity];
+  if (meta) {
+    return {
+      ok: true,
+      select,
+      command,
+      entity,
+      verdict: "observed",
+      ...(meta.status ? { status: meta.status } : {}),
+      ...(meta.ownership ? { ownership: meta.ownership } : {}),
+      ...(meta.physicalId ? { physicalId: meta.physicalId } : {}),
+      ...(queried ? { queried } : {}),
+    };
+  }
+  const hole = aws.resources?.unobserved?.find((u) => u.name === entity);
+  if (hole) {
+    return {
+      ok: true,
+      select,
+      command,
+      entity,
+      verdict: "unobserved",
+      ...(hole.detail || hole.reason ? { detail: [hole.reason, hole.detail].filter(Boolean).join(": ") } : {}),
+      ...(queried ? { queried } : {}),
+    };
+  }
+  return { ok: true, select, command, entity, verdict: "missing", ...(queried ? { queried } : {}) };
+}
+
 /** Caps on what comes back through the wire. A carve emits one source file and
  * a handful of proposals; anything past these is a mistake, and the answer is a
  * truncated read, never an unbounded one. */
