@@ -1,0 +1,278 @@
+{
+  "formatVersion": "1.0",
+  "name": "prod-converge",
+  "overview": "Converge the prod environment toward its declaration (dial: apply)",
+  "taskQueue": "prod-converge",
+  "depends": [],
+  "searchAttributes": {
+    "Converge": "true",
+    "Env": "prod",
+    "Dial": "apply"
+  },
+  "phases": [
+    {
+      "name": "Observe",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "lifecycleSnapshot",
+          "args": {
+            "env": "prod"
+          },
+          "profile": "fastIdempotent"
+        },
+        {
+          "kind": "activity",
+          "fn": "lifecycleDiff",
+          "args": {
+            "env": "prod",
+            "live": true
+          },
+          "profile": "fastIdempotent",
+          "outcomeAttribute": {
+            "name": "Drift",
+            "from": "drifted"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Converge",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "convergeTick",
+          "args": {
+            "opName": "prod-converge",
+            "env": "prod",
+            "dial": "apply",
+            "budget": 2,
+            "rules": [
+              {
+                "id": "unknown-never-remediates",
+                "when": {
+                  "kind": "field-comparison",
+                  "field": "status",
+                  "op": "eq",
+                  "value": "unknown"
+                },
+                "then": {
+                  "kind": "report",
+                  "reason": "The environment could not be fully observed; a rule may not act on a partial picture."
+                },
+                "why": "An unobserved component makes the whole tick's verdict unknown, and unknown never remediates — acting on a partial picture is how an operator deletes what it could not see."
+              },
+              {
+                "id": "adopt-is-reported",
+                "when": {
+                  "kind": "field-comparison",
+                  "field": "adoptCount",
+                  "op": "gt",
+                  "value": 0
+                },
+                "then": {
+                  "kind": "report",
+                  "reason": "Live but undeclared resources are reported, never claimed."
+                },
+                "why": "Adoption changes who owns a resource, so it stays a human decision — the loop reports the candidates and stops."
+              },
+              {
+                "id": "deletes-stop-the-loop",
+                "when": {
+                  "kind": "all-of",
+                  "predicates": [
+                    {
+                      "kind": "field-comparison",
+                      "field": "status",
+                      "op": "eq",
+                      "value": "drifted"
+                    },
+                    {
+                      "kind": "field-comparison",
+                      "field": "deleteCount",
+                      "op": "gt",
+                      "value": 0
+                    }
+                  ]
+                },
+                "then": {
+                  "kind": "report",
+                  "reason": "Drift whose remediation would delete a resource stops for a human."
+                },
+                "why": "A re-apply that removes live resources is not convergence, it is a rollback — the loop refuses to make that call unattended.",
+                "flapThreshold": 1
+              },
+              {
+                "id": "small-drift-local-apply",
+                "when": {
+                  "kind": "all-of",
+                  "predicates": [
+                    {
+                      "kind": "field-comparison",
+                      "field": "status",
+                      "op": "eq",
+                      "value": "drifted"
+                    },
+                    {
+                      "kind": "field-comparison",
+                      "field": "totalCount",
+                      "op": "lt",
+                      "value": 3
+                    }
+                  ]
+                },
+                "then": {
+                  "kind": "run",
+                  "op": "floci-apply"
+                },
+                "why": "A drift touching fewer than three resources is the emulator-sized case; re-apply it through the local path first so a bad render is caught off prod.",
+                "flapThreshold": 2
+              },
+              {
+                "id": "drift-apply",
+                "when": {
+                  "kind": "field-comparison",
+                  "field": "status",
+                  "op": "eq",
+                  "value": "drifted"
+                },
+                "then": {
+                  "kind": "run",
+                  "op": "prod-apply"
+                },
+                "why": "Live config drifted from the declared source; re-applying the declaration is what converges it back.",
+                "flapThreshold": 5
+              },
+              {
+                "id": "stale-record-report",
+                "when": {
+                  "kind": "any-of",
+                  "predicates": [
+                    {
+                      "kind": "field-comparison",
+                      "field": "status",
+                      "op": "eq",
+                      "value": "stale"
+                    },
+                    {
+                      "kind": "field-comparison",
+                      "field": "status",
+                      "op": "eq",
+                      "value": "unrecorded"
+                    }
+                  ]
+                },
+                "then": {
+                  "kind": "report",
+                  "reason": "The environment's record is behind its declaration; a fresh apply record is needed before a rule may act."
+                },
+                "why": "A stale or unrecorded environment has no trustworthy baseline to diff against, so the loop asks for a recorded apply instead of guessing."
+              },
+              {
+                "id": "unobserved-is-visible",
+                "when": {
+                  "kind": "field-truthiness",
+                  "field": "unobservedCount",
+                  "op": "truthy"
+                },
+                "then": {
+                  "kind": "report",
+                  "reason": "Some declared resources were not observable this tick."
+                },
+                "why": "An unobservable resource is a gap in the picture the operator is acting on, and a gap should be stated on every tick rather than surfacing only when it changes the verdict."
+              }
+            ],
+            "preflightDrift": {
+              "kind": "step-output-ref",
+              "step": "diff",
+              "path": "drifted"
+            }
+          },
+          "profile": "longInfra",
+          "outcomeAttribute": {
+            "name": "Remediated",
+            "from": "remediated"
+          }
+        }
+      ]
+    }
+  ],
+  "onFailure": [],
+  "activityProfiles": {
+    "fastIdempotent": {
+      "startToCloseTimeout": "5m",
+      "retry": {
+        "maximumAttempts": 3,
+        "initialInterval": "5s",
+        "backoffCoefficient": 2
+      }
+    },
+    "longInfra": {
+      "startToCloseTimeout": "20m",
+      "heartbeatTimeout": "60s",
+      "retry": {
+        "maximumAttempts": 3,
+        "initialInterval": "30s",
+        "backoffCoefficient": 2
+      }
+    }
+  },
+  "activityContracts": {
+    "lifecycleDiff": {
+      "args": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "env": {
+            "type": "string"
+          },
+          "live": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "env"
+        ],
+        "additionalProperties": false
+      },
+      "returns": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "output": {
+            "type": "string"
+          },
+          "exitCode": {
+            "type": "number"
+          },
+          "drifted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "output",
+          "exitCode",
+          "drifted"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "lifecycleSnapshot": {
+      "args": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "env": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "env"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}

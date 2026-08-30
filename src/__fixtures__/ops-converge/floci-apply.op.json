@@ -1,0 +1,120 @@
+{
+  "formatVersion": "1.0",
+  "name": "floci-apply",
+  "overview": "S3 bucket → local Floci (CloudFormation API), no cloud account",
+  "taskQueue": "behold-local",
+  "depends": [],
+  "searchAttributes": {},
+  "phases": [
+    {
+      "name": "Build",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "chantBuild",
+          "args": {
+            "path": ".",
+            "script": "build"
+          },
+          "profile": "fastIdempotent"
+        }
+      ]
+    },
+    {
+      "name": "Apply",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "awsApply",
+          "args": {
+            "templatePath": "template.json",
+            "stackName": "prod",
+            "endpoint": "http://localhost:4566"
+          },
+          "profile": "longInfra"
+        }
+      ]
+    },
+    {
+      "name": "Verify",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "httpCheck",
+          "args": {
+            "url": "http://localhost:4566/behold-floci-demo"
+          },
+          "profile": "fastIdempotent"
+        }
+      ]
+    }
+  ],
+  "onFailure": [],
+  "activityProfiles": {
+    "fastIdempotent": {
+      "startToCloseTimeout": "5m",
+      "retry": {
+        "maximumAttempts": 3,
+        "initialInterval": "5s",
+        "backoffCoefficient": 2
+      }
+    },
+    "longInfra": {
+      "startToCloseTimeout": "20m",
+      "heartbeatTimeout": "60s",
+      "retry": {
+        "maximumAttempts": 3,
+        "initialInterval": "30s",
+        "backoffCoefficient": 2
+      }
+    }
+  },
+  "activityContracts": {
+    "httpCheck": {
+      "args": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "status": {
+            "type": "number"
+          },
+          "contains": {
+            "type": "string"
+          },
+          "retries": {
+            "type": "number"
+          },
+          "intervalMs": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false
+      },
+      "returns": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}
