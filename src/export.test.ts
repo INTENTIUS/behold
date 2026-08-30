@@ -87,3 +87,24 @@ describe("captureKeys", () => {
     expect(withTiers).toContain("/api/overlay?detail=2&env=local&tier=full");
   });
 });
+
+// The ops lens (#284): a static bundle must not offer a stop it never
+// captured. The SPA gates the stop on /api/project's `ops`, and the capture
+// gates the snapshot on the same number.
+describe("the ops lens in a static bundle (#284)", () => {
+  it("drops detail/radial from an ops key, like components and logical", () => {
+    const k = canonicalKey("/api/graph", new URLSearchParams("ops=1&detail=3&radial=1&layout=1"));
+    expect(k).toBe("/api/graph?ops=1");
+  });
+
+  it("captures the ops view exactly once, outside the env/tier matrix", () => {
+    const keys = captureKeys({ environments: ["local", "prod"], tiers: ["light", "full"], ops: 4 });
+    expect(keys.filter((k) => k.includes("ops=1"))).toEqual(["/api/graph?ops=1"]);
+  });
+
+  it("captures nothing for an estate that has emitted no Ops", () => {
+    const keys = captureKeys({ environments: ["local"], tiers: [] });
+    expect(keys.some((k) => k.includes("ops=1"))).toBe(false);
+    expect(captureKeys({ environments: ["local"], tiers: [], ops: 0 }).some((k) => k.includes("ops=1"))).toBe(false);
+  });
+});

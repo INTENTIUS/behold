@@ -1,0 +1,133 @@
+{
+  "formatVersion": "1.0",
+  "name": "prod-reconcile",
+  "overview": "Reconcile the prod environment into source (cloud → code)",
+  "taskQueue": "prod-reconcile",
+  "depends": [],
+  "searchAttributes": {
+    "Reconcile": "true",
+    "Env": "prod"
+  },
+  "phases": [
+    {
+      "name": "Snapshot",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "lifecycleSnapshot",
+          "args": {
+            "env": "prod"
+          },
+          "profile": "fastIdempotent"
+        }
+      ]
+    },
+    {
+      "name": "Plan",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "lifecycleDiff",
+          "args": {
+            "env": "prod",
+            "live": true
+          },
+          "profile": "fastIdempotent",
+          "outcomeAttribute": {
+            "name": "Drift",
+            "from": "drifted"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reconcile",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "reconcilePr",
+          "args": {
+            "env": "prod",
+            "mode": "pull-request",
+            "owned": true
+          },
+          "profile": "fastIdempotent",
+          "outcomeAttribute": {
+            "name": "PR",
+            "from": "prUrl"
+          }
+        }
+      ]
+    }
+  ],
+  "onFailure": [],
+  "activityProfiles": {
+    "fastIdempotent": {
+      "startToCloseTimeout": "5m",
+      "retry": {
+        "maximumAttempts": 3,
+        "initialInterval": "5s",
+        "backoffCoefficient": 2
+      }
+    }
+  },
+  "activityContracts": {
+    "lifecycleDiff": {
+      "args": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "env": {
+            "type": "string"
+          },
+          "live": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "env"
+        ],
+        "additionalProperties": false
+      },
+      "returns": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "output": {
+            "type": "string"
+          },
+          "exitCode": {
+            "type": "number"
+          },
+          "drifted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "output",
+          "exitCode",
+          "drifted"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "lifecycleSnapshot": {
+      "args": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "env": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "env"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}

@@ -145,11 +145,11 @@ if (staticMode) {
 
 /** Canonical key for a read URL — path + the lens params (whitelisted, sorted)
  * that select a distinct snapshot. MUST match src/export.ts `canonicalKey`. */
-const LENS_PARAMS = ["components", "detail", "env", "logical", "radial", "runtime", "tier"];
+const LENS_PARAMS = ["components", "detail", "env", "logical", "ops", "radial", "runtime", "tier"];
 function canonicalKey(path, params) {
-  // Components + logical views ignore detail/radial — drop them so they match
-  // the single captured snapshot (MUST match src/export.ts).
-  const flat = params.get("components") === "1" || params.get("logical") === "1";
+  // Components + logical + ops views ignore detail/radial — drop them so they
+  // match the single captured snapshot (MUST match src/export.ts).
+  const flat = params.get("components") === "1" || params.get("logical") === "1" || params.get("ops") === "1";
   const q = LENS_PARAMS.filter((k) => params.has(k) && !(flat && (k === "detail" || k === "radial")))
     .map((k) => `${k}=${params.get(k)}`)
     .join("&");
@@ -735,7 +735,7 @@ function wire(ir) {
 // null on a project that declares no `stacks[]` at all — the picker (and the
 // status strip's stack tag) then never renders. Every fetch reads this, so
 // the `changed` SSE re-pull and a palette lens change go through the same path.
-const view = { env: null, detail: 2, components: true, logical: false, runtime: false, tier: null, target: null, stack: null, radial: false };
+const view = { env: null, detail: 2, components: true, logical: false, runtime: false, ops: false, tier: null, target: null, stack: null, radial: false };
 
 // #182: `components` is the boot default, but a project that declares no
 // components renders it as ZERO nodes — the first screen was a blank graph
@@ -771,21 +771,38 @@ const ZOOM_OPTS = [
   // detail level, because it is a different axis: every tier above shows what
   // you declared, and this one shows what your declaration produced.
   ["zoom: runtime", "runtime"],
+  // The ops lens (#284): the project's declared Ops — the phase track of each
+  // `dist/ops/<name>/op.json`. Off the granularity axis entirely (an Op is
+  // neither coarser nor finer than a resource; it's a different artifact of the
+  // same chant source), so it sits last, and only appears when the served
+  // estate has actually emitted Ops — `opsAvailable`, from /api/project.
+  ["zoom: ops", "ops"],
 ];
 const ZOOM_DETAIL = { composites: 1, resources: 2, attributes: 3, runtime: 3 };
-/** Current zoom value from (components, logical, detail). */
+/** How many emitted Ops the served estate has (0 = the stop doesn't exist).
+ * Seeded from /api/project in initPickers(). */
+let opsAvailable = 0;
+/** The zoom stops this project can actually offer — `runtime` needs an env,
+ * `ops` needs emitted op.json files. Both the panel and ⌘K read this, so a stop
+ * never appears in one surface and not the other. */
+function availableZooms() {
+  return ZOOM_OPTS.filter(([, z]) => (z === "runtime" ? Boolean(view.env) : z === "ops" ? opsAvailable > 0 : true));
+}
+/** Current zoom value from (components, logical, ops, detail). */
 function zoomValue() {
   if (view.components) return "components";
   if (view.logical) return "logical";
+  if (view.ops) return "ops";
   if (view.runtime) return "runtime";
   return { 1: "composites", 2: "resources", 3: "attributes" }[view.detail] ?? "resources";
 }
-/** Apply a zoom value back onto (components, logical, detail). */
+/** Apply a zoom value back onto (components, logical, ops, detail). */
 function applyZoom(z) {
   view.components = z === "components";
   view.logical = z === "logical";
+  view.ops = z === "ops";
   view.runtime = z === "runtime";
-  if (z !== "components" && z !== "logical") view.detail = ZOOM_DETAIL[z] ?? 2;
+  if (z !== "components" && z !== "logical" && z !== "ops") view.detail = ZOOM_DETAIL[z] ?? 2;
 }
 
 // --- Floating control panel content ---------------------------------------
@@ -830,8 +847,8 @@ function renderPanelView() {
   const current = zoomValue();
   // runtime is only meaningful with an env: it descends below the declaration
   // boundary to owner-referenced children, which exist in a cluster and never
-  // in your source.
-  for (const [label, v] of ZOOM_OPTS.filter(([, z]) => z !== "runtime" || view.env)) {
+  // in your source. ops only exists once the project has emitted op.json.
+  for (const [label, v] of availableZooms()) {
     zoom.appendChild(
       panelOpt(label.replace(/^zoom: /, ""), v === current, () => {
         applyZoom(v);
@@ -841,8 +858,9 @@ function renderPanelView() {
     );
   }
   // Radial toggle — entity zooms only, same gate the ⌘K entry has
-  // (components/logical both lay themselves out: waves / nested arch boxes).
-  if (!view.components && !view.logical) {
+  // (components/logical/ops all lay themselves out: waves / nested arch boxes /
+  // phase boxes).
+  if (!view.components && !view.logical && !view.ops) {
     zoom.appendChild(panelHeading("layout"));
     zoom.appendChild(
       panelOpt("radial", view.radial, () => {
@@ -1450,7 +1468,7 @@ function renderStatusbar() {
   const parts = [`zoom: ${zoomValue()}`, view.env ? `env: ${view.env}` : "env: (source)"];
   if (view.stack) parts.push(`stack: ${view.stack}`);
   if (axes.tier) parts.push(`tier: ${axes.tier}`);
-  if (view.radial && !view.components && !view.logical) parts.push("radial");
+  if (view.radial && !view.components && !view.logical && !view.ops) parts.push("radial");
   el.textContent = parts.join(" · ");
   // #131: why this level rendered empty, or as the one below it. The server
   // decides (src/zoom-notes.ts) — the SPA never infers it, so the note always
@@ -2098,7 +2116,7 @@ function render(ir, svg, m) {
   ensureZoomControls(g);
   ensureBackToInfra(g);
   wire(ir);
-  if (view.radial && !view.components && !view.logical) addRadialLabels(ir);
+  if (view.radial && !view.components && !view.logical && !view.ops) addRadialLabels(ir);
   markCarvedCards(); // #254: the SVG is replaced per render — re-stamp the marker
   applyLayout(); // #228: last, so the hand-placed deltas ride on top of every other pass
   renderDial();
@@ -2894,7 +2912,7 @@ async function load(opts = {}) {
     showLoading(`loading ${zoomValue()}${view.env ? " · " + view.env : ""}…`);
   }
   try {
-    const q = lensParams(new URLSearchParams({ detail: String(view.detail) }));
+    let q = lensParams(new URLSearchParams({ detail: String(view.detail) }));
     let endpoint = "/api/graph";
     if (view.components) {
       // M1.1 (#57): the component DAG stays on /api/graph even with an env
@@ -2903,6 +2921,14 @@ async function load(opts = {}) {
       // cross-substrate entity overlay, which components never use.
       q.set("components", "1");
       if (view.env) q.set("env", view.env);
+    } else if (view.ops) {
+      // The ops lens (#284): the declared Ops, read from each Op's emitted
+      // op.json. Built fresh rather than layered onto the entity lenses,
+      // because this view reads NONE of them — no env, no detail, no radial,
+      // and no tier (a tier re-evaluates tier-conditioned source, and an Op's
+      // IR was already resolved at build). Sending them anyway would also give
+      // a static export a different key per tier for one identical snapshot.
+      q = new URLSearchParams({ ops: "1" });
     } else if (view.logical) {
       // Logical/architecture lens (#63): the server re-projects at detail 3
       // regardless of the dial, so detail/radial don't apply. With an env it
@@ -2922,7 +2948,7 @@ async function load(opts = {}) {
       if (view.runtime) q.set("runtime", "1");
     }
     // Radial layout (entity view only) — curl the wide DAG onto concentric rings.
-    if (view.radial && !view.components && !view.logical) q.set("radial", "1");
+    if (view.radial && !view.components && !view.logical && !view.ops) q.set("radial", "1");
     // The CI + resources facets are component-DAG-mode-only details. Load
     // both whenever components mode is on, env picked or not — #59 unifies
     // the CI facet (#58), the live-status join (#57), and resources (#59) so
@@ -3037,6 +3063,11 @@ async function initPickers() {
   // with none leaves `view.stack` (and the picker + status tag) null.
   stacks = info.stacks || [];
   view.stack = stacks[0] || null;
+  // #284: the ops stop exists only for an estate that has emitted op.json —
+  // `info.ops` is the count, absent when there are none (server.ts gates it the
+  // way it gates `tiers`/`stacks`), so an unbuilt project or a chant < 0.50
+  // never grows a stop that would refuse.
+  opsAvailable = info.ops || 0;
   // #254: carve mode declares itself here. The Carve tab is mounted at runtime
   // (panel.js's addPanelTab), so nothing else grows a dead tab.
   carveInfo = info.carve || null;
@@ -3608,12 +3639,13 @@ function paletteCommands() {
   }
 
   // Lens/zoom switches (#56, #63) — replaces the old header zoom picker.
-  for (const [label, v] of ZOOM_OPTS) {
+  for (const [label, v] of availableZooms()) {
     c.push([label + (v === zoomValue() ? " ✓" : ""), () => { applyZoom(v); load(); }]);
   }
   // Radial toggle — entity zooms only, same gate the removed checkbox had
-  // (components/logical both lay themselves out: waves / nested arch boxes).
-  if (!view.components && !view.logical) {
+  // (components/logical/ops all lay themselves out: waves / nested arch boxes /
+  // phase boxes).
+  if (!view.components && !view.logical && !view.ops) {
     c.push([(view.radial ? "Disable" : "Enable") + " radial layout", () => { view.radial = !view.radial; load(); }]);
   }
 

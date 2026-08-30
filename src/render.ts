@@ -21,6 +21,7 @@ import type { GraphIR, IRGroups, Layout } from "@intentius/chant";
 import type { ByContainer } from "./logical.ts";
 import { k8sIconFor, helmIconFor } from "./icon-packs.ts";
 import { carveCardFields } from "./carve-lens.ts";
+import { opCardFields } from "./ops-lens.ts";
 
 // Lexicon-native icons (#227), step 2 of 2. pinhole resolves a node's glyph
 // through a chain — per-node override → lexicon pack → keyword heuristic →
@@ -47,6 +48,14 @@ registerPack({ lexicon: "helm", iconFor: helmIconFor });
 // aws_vpc, aws_subnet and aws_lambda_function to sensible glyphs, and guessing
 // per Terraform type here would be a worse picture than the one it produces.
 registerPack({ lexicon: "terraform", iconFor: () => undefined, fields: carveCardFields });
+
+// The ops lens (#284) registers its own `op` lexicon for the same reason: a step
+// card must lead with the phase it sits in and the retry profile it runs under,
+// and alphabetical order would lead with `args`. No `iconFor` opinion either —
+// a step's kind IS the activity's function name (`awsApply`, `httpCheck`,
+// `chantBuild`), which pinhole's keyword heuristic already reads better than a
+// per-activity table behold would have to keep in step with every lexicon.
+registerPack({ lexicon: "op", iconFor: () => undefined, fields: opCardFields });
 
 export interface RenderResult {
   svg: string;

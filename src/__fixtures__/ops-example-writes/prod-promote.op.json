@@ -1,0 +1,172 @@
+{
+  "formatVersion": "1.0",
+  "name": "prod-promote",
+  "overview": "Promote the built template to prod behind an approval gate",
+  "taskQueue": "behold-writes",
+  "depends": [
+    "prod-apply"
+  ],
+  "searchAttributes": {},
+  "phases": [
+    {
+      "name": "Plan",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "lifecycleDiff",
+          "args": {
+            "env": "prod",
+            "live": true
+          },
+          "profile": "fastIdempotent"
+        }
+      ]
+    },
+    {
+      "name": "Approve",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "gate",
+          "signalName": "approve-promote",
+          "timeout": "24h",
+          "description": "Approve the prod promotion"
+        }
+      ]
+    },
+    {
+      "name": "Apply",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "awsApply",
+          "args": {
+            "templatePath": "template.json",
+            "stackName": "prod"
+          },
+          "profile": "longInfra"
+        }
+      ]
+    },
+    {
+      "name": "Verify",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "httpCheck",
+          "args": {
+            "url": "https://behold-floci-demo.s3.amazonaws.com/"
+          },
+          "profile": "fastIdempotent"
+        }
+      ]
+    }
+  ],
+  "onFailure": [],
+  "activityProfiles": {
+    "fastIdempotent": {
+      "startToCloseTimeout": "5m",
+      "retry": {
+        "maximumAttempts": 3,
+        "initialInterval": "5s",
+        "backoffCoefficient": 2
+      }
+    },
+    "longInfra": {
+      "startToCloseTimeout": "20m",
+      "heartbeatTimeout": "60s",
+      "retry": {
+        "maximumAttempts": 3,
+        "initialInterval": "30s",
+        "backoffCoefficient": 2
+      }
+    }
+  },
+  "activityContracts": {
+    "httpCheck": {
+      "args": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "status": {
+            "type": "number"
+          },
+          "contains": {
+            "type": "string"
+          },
+          "retries": {
+            "type": "number"
+          },
+          "intervalMs": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false
+      },
+      "returns": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "lifecycleDiff": {
+      "args": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "env": {
+            "type": "string"
+          },
+          "live": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "env"
+        ],
+        "additionalProperties": false
+      },
+      "returns": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "output": {
+            "type": "string"
+          },
+          "exitCode": {
+            "type": "number"
+          },
+          "drifted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "output",
+          "exitCode",
+          "drifted"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}
