@@ -1,6 +1,13 @@
 node_modules
 dist
 *.log
+.DS_Store
+
+# The estate examples' member apps are installed by the demos/e2es; their
+# locks are churn, deliberately untracked (the estates' top-level locks and
+# example-carve/app's stay tracked).
+example-argo-estate/*/package-lock.json
+example-flux-estate/*/package-lock.json
 
 # UI smoke screenshots (#199)
 smoke/shots/
