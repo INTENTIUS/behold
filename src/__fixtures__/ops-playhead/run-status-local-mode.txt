@@ -1,0 +1,2 @@
+[31merror[0m: `chant run status` is not available in local mode
+  [90mpass --temporal or configure a profile[0m

@@ -53,7 +53,11 @@ preview-locked, and one load runs at a time (409 otherwise).
    `?env=`, `/api/overlay` is the live entity overlay; `/api/diff?env=` slices
    per-node observed state, drift and field ownership; `/api/reconcile?env=`
    summarizes the pending change set; `/api/substrates` reports substrate
-   readiness; `/api/events` (SSE) pushes `changed`/`op`/`apply`/`pr`.
+   readiness; `/api/events` (SSE) pushes `changed`/`op`/`apply`/`run`/`pr`.
+   `?ops=1` is the ops lens — the project's declared Ops as a phase track, read
+   from each emitted `dist/ops/<name>/op.json`, with the current run painted
+   over it (`meta.run`, `meta.gate`); `/api/ops/<name>/status` reads that Op's
+   durable run status and pending gate (`chant run status --temporal`).
 2. **focus** — narrow with chant graph options as query params: `?detail=0..3`,
    `?components=1`, `?logical=1`, `?lens=blast:<id>&down=1`, `?lens=lexicon:aws`,
    `?env=`, `?stack=`, `?tier=`, `?target=`.
@@ -116,6 +120,14 @@ behold does not apply. To change the estate:
 
 Every mutation is a gated, durable Temporal workflow with a human-confirmable gate
 and saga rollback. There is no behold endpoint that mutates the cloud.
+
+A run behold triggered is asked for structured per-step records (chant#1676:
+`--progress-json` on the durable path, `--json` on the local one), so the ops
+lens paints the run over the declared track and a pending gate renders as a card
+with an Approve button. That button is `op-signal` — the same delegated write —
+and nothing else about the run is behold's to decide: a stream that dies leaves
+the playhead at the last settled step and says so, and a gate paints as pending
+only when chant's `gateState` query named it.
 
 ## Invariant
 

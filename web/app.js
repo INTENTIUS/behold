@@ -43,6 +43,10 @@ import { isContainer, jsonCell, renderJson, scalarText } from "./json-view.js";
 // #268: the demo catalog's presentation — what a catalog row's button says
 // about it (disabled + reason, or the fetch it would do).
 import { fetchDemos, demoLabel, demoTitle, demoProgress } from "./demos.js";
+// #284 item 2: the run playhead's panel — the verdict wording, the pending gate
+// card and the settled-step rows. Everything it DECIDES is pure in there; the
+// fetches, the SSE subscription and the graph re-pull stay here.
+import { hasPlayhead, renderPlayhead } from "./run-playhead.js";
 initTheme();
 initPanel();
 mountThemePicker(document.getElementById("panel-theme"));
@@ -1411,6 +1415,23 @@ function markCarvedCards() {
   }
 }
 
+/**
+ * #284 item 2: mark the step the playhead sits on, on the graph itself.
+ *
+ * The card's tone already moved (the server paints `_status`), but "here" and
+ * "done" must not read the same, so the position also wears a dashed edge —
+ * the same after-the-render SVG stamp markCarvedCards() uses, for the same
+ * reason: the SVG is replaced wholesale on every render.
+ */
+function markPlayhead(ir) {
+  const svg = document.querySelector("#graph svg");
+  if (!svg) return;
+  const here = (ir.nodes || []).find((n) => n.attrs && n.attrs._playhead);
+  if (!here) return;
+  const g = svg.querySelector('[data-node-id="' + CSS.escape(here.id) + '"]');
+  if (g) g.classList.add("playhead");
+}
+
 function renderPanelCarve() {
   if (!carveMode()) return;
   if (!carveHost) {
@@ -1576,6 +1597,16 @@ async function loadResources() {
 let reconcileCache = null; // last ReconcileSummary for the current env/tier/target, or null
 let applyProgress = null; // last ApplyProgressState (src/apply.ts) for the current env, or null — hydrated from /api/ops on load, then kept live by the `apply` SSE event
 let applyPicker = false; // whether the inline "apply <component|all> →" prompt is open
+// #284 item 2 — the run playhead. `runState` is src/run-playhead.ts's RunState:
+// hydrated from /api/ops on load (so a reload mid-run doesn't start blank) and
+// kept live by the `run` SSE event. `gateCard` is the graph's own richer answer
+// (meta.gate — it knows which declared step the gate holds back), used when the
+// ops lens has been loaded; the panel falls back to deriving one from runState.
+// Deliberately NOT reset by resetDialCaches(): a run belongs to an Op, not to
+// whichever env/tier lens happens to be picked.
+let runState = null;
+let gateCard = null;
+let runStatusInFlight = false;
 let componentChoices = []; // component names for the apply picker — loaded lazily (independent of whether the graph pane is currently in components mode)
 let componentStatusById = {}; // id -> _status ("good"|"accent"|"warn"|"neutral"), populated alongside componentChoices — lets the picker show which stacks are already applied
 
@@ -1655,6 +1686,7 @@ function renderDial() {
     host.appendChild(hint);
     // A pipeline run (#163) is env-less — its progress still belongs here.
     if (applyProgress && applyProgress.waves.length) host.appendChild(renderApplyProgress(applyProgress));
+    mountPlayhead(host);
     return;
   }
   host.style.display = "flex";
@@ -1711,6 +1743,19 @@ function renderDial() {
   if (reconcileCache) host.appendChild(renderReconcileDetail(reconcileCache));
   if (applyPicker && !applying && !staticMode) host.appendChild(renderApplyPicker());
   if (applyProgress && applyProgress.waves.length) host.appendChild(renderApplyProgress(applyProgress));
+  mountPlayhead(host);
+}
+
+// #284 item 2 — the run playhead panel: the run's honest verdict, the pending
+// gate as a first-class card (#234) with its delegated approve, and the steps
+// that have actually settled. Env-less on purpose, like a pipeline run: an Op
+// belongs to its project, not to whichever env the dial is pointed at.
+function mountPlayhead(host) {
+  if (!hasPlayhead(runState)) return;
+  const box = document.createElement("div");
+  box.className = "run-playhead";
+  renderPlayhead(box, runState, gateCard, { approve: (op, gate) => signal(op, gate) });
+  host.appendChild(box);
 }
 
 // Apply picker (M3): "which component(s)?" prompt for the dial's apply step —
@@ -2023,6 +2068,15 @@ function render(ir, svg, m) {
   // previous one (recolorNodesByCategory also sets lastGraphIr; harmless).
   lastMeta = m;
   lastGraphIr = ir;
+  // #284 item 2: the ops lens answers with the run state it painted with and
+  // the pending gate card it built (which knows the declared step the gate
+  // holds back — the SPA can't derive that from runState alone). Only the ops
+  // lens carries them; every other lens leaves the playhead exactly as it was.
+  // (render() ends with renderDial(), so the panel picks these up there.)
+  if (m.mode === "ops") {
+    if (m.run) runState = m.run;
+    gateCard = m.gate || null;
+  }
   const overlay = m.mode === "overlay";
   // Logical/architecture lens (#63): its own mode, but when an env is picked the
   // projected nodes still carry the drift `_status`, so it reads as a drift view
@@ -2118,6 +2172,7 @@ function render(ir, svg, m) {
   wire(ir);
   if (view.radial && !view.components && !view.logical && !view.ops) addRadialLabels(ir);
   markCarvedCards(); // #254: the SVG is replaced per render — re-stamp the marker
+  markPlayhead(ir); // #284 item 2: same, for the step the run is sitting on
   applyLayout(); // #228: last, so the hand-placed deltas ride on top of every other pass
   renderDial();
 }
@@ -2929,6 +2984,12 @@ async function load(opts = {}) {
       // IR was already resolved at build). Sending them anyway would also give
       // a static export a different key per tier for one identical snapshot.
       q = new URLSearchParams({ ops: "1" });
+      // #284 item 2: this is the view run state paints over, so this is when
+      // it's worth shelling chant for the one thing the record stream can't
+      // carry — whether a gate is pending. Asked once per lens load; the
+      // in-flight run has its own tick above. The server only broadcasts a
+      // CHANGED answer, so this can't chase its own re-pull.
+      pollRunStatus();
     } else if (view.logical) {
       // Logical/architecture lens (#63): the server re-projects at detail 3
       // regardless of the dial, so detail/radial don't apply. With an env it
@@ -3213,6 +3274,13 @@ loadSubstrates();
 // Poll readiness so pills update as things come up on their own (Docker
 // starting, a bring-up provisioning) without needing a `changed` event.
 setInterval(loadSubstrates, 5000);
+// #284 item 2: while a DURABLE run is in flight, a gate can open at any moment
+// — and the record stream falls silent exactly when it does, so a stalled
+// playhead is not evidence of anything. Ask. Only while a run is actually
+// running, so an idle behold shells nothing.
+setInterval(() => {
+  if (runState && runState.status === "running" && runState.mode === "temporal") pollRunStatus();
+}, 5000);
 
 // Delegated writes (#7 Sync / #8 Adopt). behold never mutates — these buttons
 // trigger the project's committed Ops on the executor; the now-line streams phases.
@@ -3297,6 +3365,59 @@ events.addEventListener("apply", (e) => {
   renderDial();
 });
 
+// #284 item 2 — the run playhead. Same channel and same shape as `apply` above:
+// the server broadcasts the whole RunState (src/run-playhead.ts) after every
+// settled StepRecord and every gateState read, so a client that (re)subscribes
+// mid-run renders correctly from the very next event. Repaint the dial always;
+// re-pull the graph only when the ops lens is what's on screen, since that's
+// the view the run state paints over.
+events.addEventListener("run", (e) => {
+  try {
+    runState = JSON.parse(e.data);
+  } catch {
+    return;
+  }
+  renderDial();
+  if (view.ops) load({ quiet: true });
+});
+
+/**
+ * Ask the server for the Op's durable run status — the ONLY way to learn
+ * gateState (chant#1676 made it a workflow query, not part of the record
+ * stream). Pull, not push: one shell-out per ask, and only while there is a
+ * durable run to ask about, rather than a background poll against Temporal for
+ * an Op nobody is watching.
+ *
+ * A refusal (no Temporal, no run, an older chant) is not an error to shout
+ * about — the server folds its reason into `runState.gateNote` and the panel
+ * states it. What must never happen is a silent fallback to "no gate pending".
+ */
+function runStatusTarget() {
+  if (runState && runState.op) return runState.op;
+  // Nothing has run this session: the one Op whose gate the Approve button
+  // already targets is the honest thing to ask about.
+  return opsApply && opsApply.gate ? opsApply.name : null;
+}
+function pollRunStatus() {
+  if (staticMode || runStatusInFlight) return;
+  const name = runStatusTarget();
+  if (!name) return;
+  // Only a durable run has gate state at all. A local run's playhead is
+  // complete without it, so don't shell chant to be told so.
+  if (runState && runState.mode === "local") return;
+  runStatusInFlight = true;
+  apiFetch(`/api/ops/${encodeURIComponent(name)}/status`)
+    .then((r) => r.json())
+    .then((j) => {
+      if (j && j.runState) runState = j.runState;
+      renderDial();
+    })
+    .catch(() => {})
+    .finally(() => {
+      runStatusInFlight = false;
+    });
+}
+
 function button(label, cls, onClick) {
   const b = document.createElement("button");
   b.textContent = label;
@@ -3326,6 +3447,10 @@ function signal(name, gate) {
       } else {
         showToast(`✓ approved ${gate}`, true);
       }
+      // #284 item 2: re-ask gateState either way. On success the gate should be
+      // gone (the pending card must not linger as if a human were still owed);
+      // on failure it should still be there, and the card is what says so.
+      pollRunStatus();
     });
 }
 // Adopt is a per-node gesture (a *foreign* node → ReconcileOp → PR), so it lives
@@ -3413,7 +3538,7 @@ async function initActions() {
   const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
   opsInitialEnv = project.currentEnv || null;
   previewMode = staticMode || !!project.previewMode; // static ⇒ read-only, no writes at all
-  const { ops, adoptLexicons, autoSync, local, applyProgress: apInit } = await apiFetch("/api/ops")
+  const { ops, adoptLexicons, autoSync, local, applyProgress: apInit, runState: runInit } = await apiFetch("/api/ops")
     .then((r) => r.json())
     .catch(() => ({ ops: [], adoptLexicons: [] }));
   // M3 (#54): hydrate the dial's apply progress from the server's last known
@@ -3421,6 +3546,12 @@ async function initActions() {
   // instead of starting blank; the `apply` SSE listener keeps it live from here.
   if (apInit && apInit.waves && apInit.waves.length) {
     applyProgress = apInit;
+    renderDial();
+  }
+  // #284 item 2: the same hydration for the run playhead — a reload mid-run
+  // picks up the settled steps and any pending gate instead of starting blank.
+  if (runInit && runInit.op) {
+    runState = runInit;
     renderDial();
   }
   // Local-mode banner (#46) — the emulator(s) behold booted with --local, so it's

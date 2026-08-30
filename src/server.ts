@@ -70,6 +70,7 @@ import {
 import { teardownScratchFloci } from "./carve-live.ts";
 import { discoverEstateOps, discoverOpIrs } from "./ops.ts";
 import { readOpIr, opsToIr, opsNote, HOW_TO_EMIT, type OpIr } from "./ops-lens.ts";
+import { readRunStatus, joinRun, paintPlayhead, playheadNote, pendingGateCard } from "./run-playhead.ts";
 import { LIVE_IMPORT_LEXICONS } from "./adopt.ts";
 import { detectProject, loadBeholdConfig } from "./project.ts";
 import { nodeDiff, nodeObserved, nodeFieldDrift, type LiveDiffJson } from "./diff.ts";
@@ -766,6 +767,11 @@ export function createApp(
       // after that. `status: "idle"` (initialApplyProgress) when nothing has
       // applied yet this session.
       applyProgress: runner.applyProgress,
+      // The run playhead (#284 item 2): the settled StepRecords of the Op this
+      // session last triggered, so a client opening (or reloading) mid-run
+      // hydrates the playhead instead of starting blank — the `run` SSE event
+      // carries every update after that. `status: "idle"` when nothing has run.
+      runState: runner.runState,
     }),
   );
 
@@ -840,6 +846,30 @@ export function createApp(
       return c.json({ error: `busy — ${runner.running} is running` }, 409);
     }
     return c.json({ started: true, ran: "local-down + local-up" });
+  });
+
+  // The run playhead's gate read (#284 item 2, chant#1676). `gateState` is a
+  // workflow QUERY, not part of the `--progress-json` record stream, so it can
+  // only be reached by asking: `chant run status <name> --temporal` prints the
+  // pending gate's signal name, description and since-when. Always durable, for
+  // the same reason the signal below is — a gate only exists on a Temporal run.
+  //
+  // Read-only, and pull rather than push: behold asks when a client is looking
+  // at the ops lens, instead of holding a background poll against Temporal for
+  // an Op nobody is watching. A refusal (no Temporal, no run, an older chant)
+  // comes back as #193's `{error, code, remedy}` and is stated plainly — the
+  // one thing this must never do is answer "no gate pending" when it simply
+  // couldn't ask, which would paint an un-signalled gate as progress.
+  app.get("/api/ops/:name/status", async (c) => {
+    const name = c.req.param("name");
+    const info = estateOps().find((o) => o.name === name);
+    const run = await runChantRaw(["run", "status", name, "--temporal"], info?.dir ?? cfg.projectDir);
+    const result = readRunStatus(name, run);
+    // Fold it into the playhead so the graph and the pending card agree, and so
+    // every subscribed client sees the same answer (the `run` SSE event).
+    const runState = runner.noteGate(name, result);
+    if (!result.ok) return c.json({ ...result.refusal, runState }, 422);
+    return c.json({ ...result.read, runState });
   });
 
   // Approve a gated apply: signal the Op's wait-for-approval gate, in its own dir.
@@ -1260,10 +1290,11 @@ export function createApp(
         { method: "GET", path: "/api/resources", desc: "component → declared resources" },
         { method: "GET", path: "/api/ci", desc: "generated CI pipeline projection {stages, jobs, forge}" },
         { method: "GET", path: "/api/substrates", desc: "substrate readiness {substrates: [{name, label, status, detail, bringUp?}]}" },
-        { method: "GET", path: "/api/ops", desc: "committed Ops + adopt lexicons + apply progress" },
+        { method: "GET", path: "/api/ops", desc: "committed Ops + adopt lexicons + apply progress + run playhead" },
+        { method: "GET", path: "/api/ops/:name/status", desc: "an Op's durable run status + pending gate (chant run status)" },
         { method: "GET", path: "/api/history", desc: "recent source commits (rollback targets)" },
         { method: "GET", path: "/api/frames", desc: "captured lanes frames" },
-        { method: "GET", path: "/api/events", desc: "SSE: changed / op / apply / pr" },
+        { method: "GET", path: "/api/events", desc: "SSE: changed / op / apply / run / pr" },
         { method: "POST", path: "/api/refresh", desc: "re-observe live now (?env=) — returns the fresh graph" },
         { method: "POST", path: "/api/apply", desc: "delegated apply: ?env=&component=<name|all> (guarded, preview-locked)" },
         { method: "POST", path: "/api/ops/:name/run", desc: "run a committed Op (delegated write)" },
@@ -1311,7 +1342,16 @@ export function createApp(
           if (!parsed.ok) return c.json(parsed.refusal, 422);
           parsedOps.push(parsed.ir);
         }
-        const opsIr = opsToIr(parsedOps);
+        const declaredIr = opsToIr(parsedOps);
+        // The run playhead (#284 item 2): live run state painted OVER the
+        // declared track, never instead of it. `paintPlayhead` returns the
+        // input IR untouched when there is nothing to say, so an estate that
+        // has never run an Op renders exactly what item 1 shipped — run state
+        // is strictly additive paint.
+        const runState = runner.runState;
+        const ranOp = runState.op ? parsedOps.find((o) => o.name === runState.op) : undefined;
+        const join = ranOp ? joinRun(ranOp, runState.records, runState.gate) : null;
+        const opsIr = join ? paintPlayhead(declaredIr, join, runState.gate) : declaredIr;
         // `boxes: "byStack"` is the same explicit opt-in the composed estate
         // makes (see renderGraph's doc): one box per `<op> · <phase>`, so the
         // graph reads as the ordered phase track, and the step chain gives
@@ -1327,7 +1367,16 @@ export function createApp(
             target: null,
             mode: "ops",
             ops: parsedOps.length,
-            note: opsNote(parsedOps, opsIr),
+            note: `${opsNote(parsedOps, opsIr)} ${playheadNote(runState, join)}`,
+            // The playhead's own model, so the SPA renders the pending card and
+            // the run legend from the same answer that painted the graph.
+            run: runState,
+            // #234's pending-approval card, whole: the gate, when it started
+            // waiting, the step it holds back, and the delegated write its
+            // approve button performs. Present only when `gateState` NAMED a
+            // pending gate — never inferred from a stalled track.
+            gate:
+              runState.gate && runState.op ? pendingGateCard(runState.op, runState.gate, opsIr) : null,
           },
         });
       }

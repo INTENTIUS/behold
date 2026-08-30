@@ -1,0 +1,8 @@
+{"phase":"Build","fn":"chantBuild","status":"ok","durationMs":1000}
+{"phase":"Deploy","fn":"shellCmd","status":"ok","durationMs":1000}
+{"phase":"Deploy","fn":"shellCmd","status":"ok","durationMs":1000}
+{"phase":"Fanout","fn":"shellCmd","status":"ok","durationMs":2000}
+{"phase":"Fanout","fn":"shellCmd","status":"ok","durationMs":2000}
+{"phase":"Verify","fn":"httpCheck","status":"fail","durationMs":15000,"error":"Command failed: exit 1\n"}
+{"phase":"Rollback","fn":"shellCmd","status":"ok","durationMs":1000}
+{"phase":"Rollback","fn":"shellCmd","status":"ok","durationMs":1000}

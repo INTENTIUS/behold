@@ -184,7 +184,30 @@ const JSON_ROUTES = {
       { name: "fountain", description: "The mature estate, cloned.", requires: [], source: "git", repo: "https://github.com/INTENTIUS/fountain-ops", fetches: true, target: "/tmp/behold-demos/fountain", loaded: false, satisfiable: true },
     ],
   },
-  "/api/ops": { ops: [], adoptLexicons: [], autoSync: "off" },
+  // #284 item 2: a run playhead the SPA hydrates on load. `status: "idle"` with
+  // an Op named is the real "behold restarted while a gate was still pending"
+  // case — the gate query answered, no per-step records were streamed to THIS
+  // session — so the smoke drives the pending card without needing a live
+  // Temporal run. The two records are the shape chant#1676 emits.
+  "/api/ops": {
+    ops: [],
+    adoptLexicons: [],
+    autoSync: "off",
+    runState: {
+      op: "prod-promote",
+      mode: "temporal",
+      status: "idle",
+      records: [
+        { phase: "Plan", fn: "lifecycleDiff", status: "ok", durationMs: 1400 },
+        { phase: "Build", fn: "chantBuild", status: "ok", durationMs: 900 },
+      ],
+      gate: { signalName: "approve-promote", description: "Approve the prod promotion", since: "2026-08-29T18:00:12.000Z" },
+      gateNote: null,
+      startedAt: null,
+      endedAt: null,
+      lost: null,
+    },
+  },
   "/api/ci": { jobs: [], forge: "github" },
   "/api/resources": { byComponent: {} },
   "/api/reconcile": { total: 2, byComponent: { worker: 2 }, uncorrelated: 0 },
@@ -308,6 +331,10 @@ export function startStub(port, { carve = false } = {}) {
   // seed it as if it were the file.
   const layout = new Map();
   const carvePosts = [];
+  /** #284 item 2: what the pending gate card's Approve button actually sent —
+   * so the smoke asserts the wire contract (the EXISTING op-signal route), not
+   * just that a button existed. */
+  const signalPosts = [];
   const readBody = (req) =>
     new Promise((r) => {
       let s = "";
@@ -380,6 +407,26 @@ export function startStub(port, { carve = false } = {}) {
       res.writeHead(200, { "content-type": "text/event-stream" });
       return; // held open — the SPA's EventSource stays quiet
     }
+    // #284 item 2 — the delegated gate signal the pending card's Approve button
+    // performs, and the gateState re-read it does straight after. The re-read
+    // answers "no gate pending", which is what makes the card disappear: a
+    // signalled gate must not linger as if a human were still owed.
+    if (path.startsWith("/api/ops/") && path.includes("/signal/")) {
+      signalPosts.push({ path, method: req.method });
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ signalled: true }));
+    }
+    if (path.startsWith("/api/ops/") && path.endsWith("/status")) {
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(
+        JSON.stringify({
+          op: "prod-promote",
+          status: "RUNNING",
+          gate: null,
+          runState: { ...JSON_ROUTES["/api/ops"].runState, gate: null, gateNote: null },
+        }),
+      );
+    }
     if (path === "/api/graph" || path === "/api/overlay") {
       const components = url.searchParams.get("components") === "1";
       const meta = {
@@ -413,5 +460,6 @@ export function startStub(port, { carve = false } = {}) {
   });
   server.layout = layout; // the sidecar, for the smoke to read and seed (#228)
   server.carvePosts = carvePosts; // what the stepper actually sent (#254)
+  server.signalPosts = signalPosts; // what the pending gate card sent (#284 item 2)
   return new Promise((resolve) => server.listen(port, () => resolve(server)));
 }
