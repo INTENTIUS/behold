@@ -9,21 +9,35 @@
  * that back — `chant operator status --json` — and this module is the parse and
  * the two models it feeds.
  *
- * ## A strip, not a lane, and why
+ * ## A strip at a glance, a timeline on demand
  *
- * `readConvergeLedger(env)` (chant's `lifecycle/converge-ledger.ts`) returns
- * EVERY tick record, oldest first. Its one CLI caller keeps `ownRecords.at(-1)`
- * and throws the rest away (`cli/handlers/operator.ts:125`), so
- * `operator status --json` answers with exactly one tick per ConvergeOp. There
- * is no `chant operator log`, no `--history`. The history exists — append-only,
- * on the project's own `chant/lifecycle` orphan branch — but reaching it would
- * pin behold to that branch's name, its path convention and an encoding nobody
- * promised. Filed as chant#2029.
+ * `operator status --json` still answers with exactly one tick per ConvergeOp:
+ * `statusFor` keeps `ownRecords.at(-1)` and throws the rest away. So the STRIP
+ * — one line, honestly dated, per ConvergeOp — is still what that read can feed,
+ * and nothing on this side of the module ever produces more than one tick's
+ * worth of anything: a two-element array of ticks is not a shape
+ * {@link operatorStrip} can build.
  *
- * So this renders a STRIP: one line, honestly dated, per ConvergeOp. Not a
- * timeline. {@link operatorNote} says so on the statusbar, and nothing here ever
- * produces more than one tick's worth of anything — a two-element array of ticks
- * is not a shape this module can build.
+ * The history is now its own read. chant 0.53.1 ships `chant operator log
+ * [--env] [--op] [--since] [--limit] [--json]` (chant#2029) — the tick records
+ * and the gate resolutions against them, merged into one timestamp-ordered
+ * timeline, oldest first, out of the same `chant/lifecycle` orphan branch. That
+ * is the surface behold was waiting for: reading the ledger directly would have
+ * pinned it to the branch's name, the `<env>/converge.jsonl` path convention and
+ * an on-disk encoding nobody promised. {@link readOperatorLog} parses it and
+ * {@link operatorTimeline} is the model the ops view's history panel paints.
+ *
+ * Two disciplines it keeps, both stated here because both are easy to lose:
+ *
+ *  - **Bounded.** behold asks for a WINDOW — {@link OPERATOR_LOG_LIMIT} entries
+ *    by default, {@link OPERATOR_LOG_MAX_LIMIT} at most, with an optional
+ *    `--since` — never the whole ledger. An append-only file that grows one line
+ *    per tick forever is not something to pull into a browser by default, and
+ *    the answer carries the window it actually asked for so the reader can see
+ *    the bound rather than mistake a full window for the end of history.
+ *  - **Pull, not poll.** The strip has an interval because it is on screen; the
+ *    timeline is fetched when a human opens it and never on a timer. A history
+ *    nobody is reading costs no processes.
  *
  * ## The converge gate is not the run gate
  *
@@ -45,19 +59,27 @@
  * rather than hiding it in a tooltip. An Approve button that implied an unblock
  * would be the picture lying about what the click did.
  *
- * ## What the status read does NOT carry
+ * ## The gate's address, and what the status read still does NOT carry
  *
- *  - **No URL.** chant#1485 argued gate-as-fact partly for "a URL, a review
- *    surface, and CODEOWNERS as the authorization model". What shipped puts an
- *    optional PR link in the *resolution* record's free-text `note`, after the
- *    fact. The PENDING gate — the one a human acts on — has no address at all.
- *    Filed as chant#2028. behold renders no link and no placeholder for one.
- *  - **No resolution.** `pendingGates` is computed by cross-reading
- *    `readGateResolutions` against the gated tick's timestamp
- *    (`latestResolutionSince`), and a RESOLVED gate is simply absent from the
- *    array. `resolvedBy`/`timestamp` never reach the JSON. So behold shows no
- *    resolved-by line — there is nothing to show, and synthesizing one from
- *    "the gate stopped being listed" would attribute an approval to nobody.
+ * chant#1485 argued gate-as-fact partly for "a URL, a review surface, and
+ * CODEOWNERS as the authorization model", and chant 0.53.1 delivers the address
+ * (chant#2028): `ConvergeRuleOutcome.url` on the PENDING half — the one a human
+ * has to act on — and `GateResolutionRecord.url` on the resolved one. Both
+ * optional, both CI-derived (`resolveApprovalUrl`: a GitHub Actions
+ * `pull_request` job, a GitLab MR pipeline) or set explicitly by `chant approve
+ * --url`, and NEVER synthesized. behold's rule follows from that: a card renders
+ * `approve at:` as a link exactly when the fact carries one, and renders nothing
+ * at all when it doesn't — a placeholder would invent a review surface.
+ *
+ * What the status read still does not carry is the RESOLUTION. `pendingGates` is
+ * computed by cross-reading `readGateResolutions` against the gated tick's
+ * timestamp (`latestResolutionSince`), and a resolved gate is simply absent from
+ * the array — `resolvedBy`/`timestamp` never reach that JSON. So the strip shows
+ * no resolved-by line; synthesizing one from "the gate stopped being listed"
+ * would attribute an approval to nobody. The resolutions ARE in the timeline,
+ * where they are records rather than an inference — `chant operator log` merges
+ * them in as `gate-resolution` entries, and that is the only place behold names
+ * who approved what.
  *
  * ## What it started carrying in chant 0.53.1 (chant#2027)
  *
@@ -86,12 +108,13 @@ import type { GlyphSpec } from "@intentius/pinhole";
 
 // ── chant's shapes, mirrored ─────────────────────────────────────────────────
 //
-// `OpStatusLine` is a local interface in chant's `cli/handlers/operator.ts` and
-// is not exported at all; `ConvergeTickRecord` and `GateResolutionRecord` live
-// under `lifecycle/` and aren't on `@intentius/chant`'s public index either.
-// Mirrored here field-for-field on src/run-playhead.ts's precedent for
-// `StepRecord`: don't reach past a package's declared public export surface for
-// an internal type. Verified against chant `8f280b7e`.
+// `OpStatusLine` and `OperatorLogEntry` are local to chant's
+// `cli/handlers/operator.ts` (the first isn't exported at all);
+// `ConvergeTickRecord` and `GateResolutionRecord` live under `lifecycle/` and
+// aren't on `@intentius/chant`'s public index either. Mirrored here
+// field-for-field on src/run-playhead.ts's precedent for `StepRecord`: don't
+// reach past a package's declared public export surface for an internal type.
+// Verified against chant `d8a0dd35` (chant-v0.53.1).
 
 /** One rule's outcome within a tick — chant's `ConvergeRuleOutcome`. */
 export interface ConvergeRuleOutcome {
@@ -101,6 +124,11 @@ export interface ConvergeRuleOutcome {
   op?: string;
   /** The gate's signal name, for `action: "gated"`. */
   gateName?: string;
+  /** Where this gate's approval happens (chant#2028), for `action: "gated"` —
+   * the PR/MR carrying the change, when the tick ran somewhere that genuinely
+   * knew one. Absent otherwise; chant never synthesizes it, and neither does
+   * anything here. */
+  url?: string;
   reason?: string;
 }
 
@@ -158,6 +186,31 @@ export interface ConvergeTickRecord {
   log: string;
 }
 
+/** One immutable gate-resolution record — chant's `GateResolutionRecord`
+ * (`lifecycle/gate-ledger.ts`), as `operator log --json` carries it. */
+export interface GateResolutionRecord {
+  version: 1;
+  /** The DISPATCHED op the gate belongs to — the gate ledger's own key. */
+  op: string;
+  gate: string;
+  resolvedBy: string;
+  timestamp: string;
+  /** Free-text prose. Before chant#2028 a PR link went here by convention; the
+   * link is `url` now and this is for everything that isn't the link. */
+  note?: string;
+  /** Where the resolution happened (chant#2028) — an absolute http/https URL,
+   * from `chant approve --url` or the PR/MR job the approval ran inside. */
+  url?: string;
+}
+
+/** One entry of the merged tick/gate timeline `chant operator log --json`
+ * prints — chant's `OperatorLogEntry`. Oldest first; a resolution landing in the
+ * same instant as a tick sorts after it, since the tick is what made the gate
+ * pending. */
+export type OperatorLogEntry =
+  | { kind: "tick"; timestamp: string; record: ConvergeTickRecord }
+  | { kind: "gate-resolution"; timestamp: string; record: GateResolutionRecord };
+
 /** One still-unresolved gate, as `operator status --json` emits it. `op` is the
  * DISPATCHED op the gate belongs to (a converge rule's `run()` target), not the
  * ConvergeOp — chant's gate ledger is keyed by op name for exactly that reason. */
@@ -165,6 +218,10 @@ export interface OperatorPendingGate {
   rule: string;
   op?: string;
   gate: string;
+  /** The gate's approval surface (chant#2028), when the tick that recorded it
+   * knew one — what a card points its `approve at:` link at instead of having
+   * only a shell command to print. */
+  url?: string;
 }
 
 /** One row of `chant operator status --json` — chant's `OpStatusLine`. */
@@ -188,8 +245,12 @@ export interface OperatorRefusal {
    * - `no-operator-cli` — this chant predates `chant operator` (< 0.52).
    * - `operator-status` — the command ran and behold could not read the answer,
    *   or it failed for a reason behold won't guess at.
+   * - `no-operator-log-cli` — this chant predates `chant operator log`
+   *   (< {@link OPERATOR_LOG_FLOOR}). The strip still reads; only the history
+   *   is out of reach.
+   * - `operator-log` — `operator log` ran and behold could not read the answer.
    */
-  code: "no-operator" | "no-operator-cli" | "operator-status";
+  code: "no-operator" | "no-operator-cli" | "operator-status" | "no-operator-log-cli" | "operator-log";
   remedy: string;
 }
 
@@ -224,7 +285,16 @@ function readRow(value: unknown): OpStatusLine | null {
   const gates: OperatorPendingGate[] = [];
   for (const g of value.pendingGates) {
     if (!isRecord(g) || typeof g.rule !== "string" || typeof g.gate !== "string") return null;
-    gates.push({ rule: g.rule, gate: g.gate, ...(typeof g.op === "string" ? { op: g.op } : {}) });
+    gates.push({
+      rule: g.rule,
+      gate: g.gate,
+      ...(typeof g.op === "string" ? { op: g.op } : {}),
+      // chant#2028's address, carried through verbatim and only when chant sent
+      // one. The scheme check happens where the link is MINTED
+      // ({@link approvalLink}), not here, so a row whose url behold won't link
+      // still parses rather than refusing the whole strip.
+      ...(typeof g.url === "string" && g.url ? { url: g.url } : {}),
+    });
   }
   const tick = isRecord(value.lastTick) ? value.lastTick : undefined;
   // A tick without a timestamp or a log line can't be put on the strip at all —
@@ -864,6 +934,36 @@ export const APPROVE_SEMANTICS =
 /** The past-tense half, for the moment after the click. */
 export const APPROVED_SEMANTICS = "recorded; the next tick acts on it";
 
+/**
+ * The words a gate's address is offered under — chant's own, verbatim.
+ *
+ * `chant operator status`'s human render prints `approve at: <url>` beneath the
+ * pending gate (`cli/handlers/operator.ts`), so behold's card labels the same
+ * fact the same way. A reader who has seen one has read the other.
+ */
+export const APPROVE_AT = "approve at:";
+
+/**
+ * The gate's address, if it is one behold will put behind an `<a href>`.
+ *
+ * chant refuses anything that isn't an absolute http/https URL at the `chant
+ * approve --url` boundary (`isApprovalUrl` in its gate ledger), but the PENDING
+ * half's url comes from `resolveApprovalUrl` reading CI env vars, and either
+ * ledger can be hand-edited — so behold applies the same test at the boundary
+ * where the string becomes clickable rather than trusting the record. Anything
+ * else reads as "no address": the card renders exactly as it did before
+ * chant#2028, which is the honest fallback and never a `javascript:` link.
+ */
+export function approvalLink(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? url : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** A pending converge gate, as the card renders it. */
 export interface ConvergeGateCard {
   /** Always {@link CONVERGE_GATE_LOOP} — this is not the Temporal run gate. */
@@ -884,6 +984,15 @@ export interface ConvergeGateCard {
   semantics: typeof APPROVE_SEMANTICS;
   /** The delegated write the button performs. Stated, not implied. */
   approve: { method: "POST"; path: string; command: string };
+  /**
+   * Where approval happens (chant#2028) — the PR/MR the gated tick knew about,
+   * rendered as {@link APPROVE_AT}. ABSENT, not null and not empty, when the
+   * fact carries no address or carries one behold won't link
+   * ({@link approvalLink}): the card then renders exactly as it did before the
+   * field existed, because a placeholder link would invent a review surface
+   * chant never claimed.
+   */
+  url?: string;
 }
 
 /**
@@ -894,6 +1003,11 @@ export interface ConvergeGateCard {
  * pressed correctly. chant only ever emits a pending gate WITH an op (its
  * `statusFor` skips an outcome missing either field), so this is a guard against
  * a hand-edited ledger, not an expected shape.
+ *
+ * `url` (chant#2028) rides onto the card when the pending fact carries an
+ * address behold will link, and is absent otherwise — the card is identical to
+ * the pre-#2028 one in that case, by construction rather than by a null check
+ * downstream.
  */
 export function convergeGateCards(rows: readonly OpStatusLine[]): ConvergeGateCard[] {
   const out: ConvergeGateCard[] = [];
@@ -914,10 +1028,358 @@ export function convergeGateCards(rows: readonly OpStatusLine[]): ConvergeGateCa
           path: `/api/operator/approve/${encodeURIComponent(g.op)}/${encodeURIComponent(g.gate)}`,
           command: `chant approve ${g.op} ${g.gate}`,
         },
+        ...(approvalLink(g.url) ? { url: g.url } : {}),
       });
     }
   }
   return out;
+}
+
+// ── The timeline: reading `chant operator log --json` ────────────────────────
+
+/**
+ * The chant that ships `chant operator log` (chant#2029) — 0.53.1.
+ *
+ * This gate is not politeness about an unsupported flag. chant's
+ * `resolveCommand` tries the compound name (`"operator log"`) and then falls
+ * back to the SIMPLE one, so on a chant without the subcommand `chant operator
+ * log` resolves to `chant operator` — the tick daemon, which on `runOperatorForever`
+ * never returns and, at a dial of `apply`, dispatches real remediation. behold
+ * shelling that to read a history would be a background operator nobody asked
+ * for. So the version is checked BEFORE the spawn, not after the answer.
+ *
+ * (An older chant would in fact refuse `--limit` at parse time — chant#1127 made
+ * an unrecognized `--` flag a hard error, and `--limit` landed with the
+ * subcommand. That is a happy accident of flag ordering, not a guarantee, and it
+ * is not what behold relies on.)
+ */
+export const OPERATOR_LOG_FLOOR = "0.53.1";
+
+/** How many timeline entries behold asks for when nothing says otherwise. */
+export const OPERATOR_LOG_LIMIT = 50;
+
+/**
+ * The most behold will ask for in one read, whatever the caller says.
+ *
+ * The converge ledger is append-only and grows one line per tick forever — a
+ * loop on chant's default 60s round writes ~1,440 records a day. "The whole
+ * history" is not a thing to hand a browser, and an unbounded `--limit` would
+ * also make one HTTP request's cost a function of how long the loop has been
+ * running. The window is the contract; {@link OperatorHistory.window} reports
+ * the one actually used so a clamp is visible rather than silent.
+ */
+export const OPERATOR_LOG_MAX_LIMIT = 200;
+
+/** Unreadable ledger lines behind one answer, per ledger — chant's own count,
+ * carried through rather than hidden. A short timeline is never silently short. */
+export interface OperatorLogMalformed {
+  converge: number;
+  gates: number;
+}
+
+export type OperatorLogResult =
+  | { ok: true; entries: OperatorLogEntry[]; malformed: OperatorLogMalformed }
+  | { ok: false; refusal: OperatorRefusal };
+
+/** The bounded window one `operator log` read asks for. */
+export interface OperatorLogWindow {
+  /** Newest n entries, 1…{@link OPERATOR_LOG_MAX_LIMIT}. */
+  limit: number;
+  /** Inclusive ISO-8601 instant, when the caller asked for one. */
+  since?: string;
+}
+
+/**
+ * Read a client's asked-for window, refusing what chant would refuse — before
+ * any spawn, exactly as chant validates `--since`/`--limit` before any read.
+ *
+ * A limit past the ceiling CLAMPS rather than refuses: asking for more history
+ * than behold will fetch is a reasonable thing for a client to do, and the
+ * answer says which window it got. An unparseable limit or instant is a
+ * different thing — behold does not guess at what was meant.
+ */
+export function operatorLogWindow(raw: { limit?: string | null; since?: string | null }): OperatorLogWindow | { error: string } {
+  let limit = OPERATOR_LOG_LIMIT;
+  if (raw.limit !== undefined && raw.limit !== null && raw.limit !== "") {
+    const n = Number(raw.limit);
+    if (!Number.isInteger(n) || n < 1) return { error: `limit must be a positive integer (got "${raw.limit}")` };
+    limit = Math.min(n, OPERATOR_LOG_MAX_LIMIT);
+  }
+  if (raw.since !== undefined && raw.since !== null && raw.since !== "") {
+    if (Number.isNaN(new Date(raw.since).getTime())) {
+      return { error: `since must be an ISO-8601 timestamp (got "${raw.since}")` };
+    }
+    return { limit, since: raw.since };
+  }
+  return { limit };
+}
+
+/** The argv one window becomes. `--json` always, `--limit` always — behold has
+ * no invocation that asks for the whole ledger. */
+export function operatorLogArgs(window: OperatorLogWindow): string[] {
+  return [
+    "operator",
+    "log",
+    "--json",
+    "--limit",
+    String(window.limit),
+    ...(window.since ? ["--since", window.since] : []),
+  ];
+}
+
+/** Is this a tick record behold can put on a timeline? Same lenience as
+ * `readRow`: demand only what a row paints, let additive fields ride along. */
+function readTickRecord(value: unknown): ConvergeTickRecord | null {
+  if (!isRecord(value)) return null;
+  if (typeof value.op !== "string" || typeof value.timestamp !== "string" || typeof value.log !== "string") return null;
+  return value as unknown as ConvergeTickRecord;
+}
+
+function readResolutionRecord(value: unknown): GateResolutionRecord | null {
+  if (!isRecord(value)) return null;
+  const needed = ["op", "gate", "resolvedBy", "timestamp"];
+  if (needed.some((k) => typeof value[k] !== "string")) return null;
+  return value as unknown as GateResolutionRecord;
+}
+
+/**
+ * Read one `chant operator log --json` invocation.
+ *
+ * Same guard posture as {@link readOperatorStatus}, refusal for refusal: a
+ * non-zero exit whose message is chant's own "Unknown command"/"Unknown flag" is
+ * a chant too old for this surface and says so; exit 0 with nothing on stdout is
+ * `no-operator` (chant warns on stderr and exits 0 when it discovers no
+ * ConvergeOp), never an empty timeline; anything else non-zero is stated with
+ * chant's first line.
+ *
+ * One entry behold can't read refuses the whole answer, for `readOperatorStatus`'s
+ * reason: a timeline silently missing an entry is a picture that lies about what
+ * the loop did, and unlike chant's own `malformed` count there would be nothing
+ * on screen to say so.
+ */
+export function readOperatorLog(run: { code: number; stdout: string; stderr: string }): OperatorLogResult {
+  const err = strip(run.stderr);
+  const out = strip(run.stdout).trim();
+
+  if (run.code !== 0) {
+    const message = err.trim() || out || `chant operator log exited ${run.code}`;
+    const first = message.split("\n")[0].replace(/^error:\s*/i, "");
+    if (/Unknown command|Unknown operator subcommand|Unknown flag/i.test(message)) {
+      return {
+        ok: false,
+        refusal: {
+          error: `This chant has no \`operator log\` — ${first}`,
+          code: "no-operator-log-cli",
+          remedy: `The converge tick history landed in chant ${OPERATOR_LOG_FLOOR} (chant#2029). Upgrade chant to read it; the strip above needs only 0.52.`,
+        },
+      };
+    }
+    return {
+      ok: false,
+      refusal: {
+        error: `chant operator log failed: ${first}`,
+        code: "operator-log",
+        remedy: "Run `chant operator log --json` in the project to see the whole error.",
+      },
+    };
+  }
+
+  if (!out) {
+    return {
+      ok: false,
+      refusal: {
+        error: "This project declares no operating loop — chant found no ConvergeOp.",
+        code: "no-operator",
+        remedy: HOW_TO_DECLARE,
+      },
+    };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(out);
+  } catch (e) {
+    return {
+      ok: false,
+      refusal: {
+        error: `chant operator log --json didn't print JSON: ${e instanceof Error ? e.message : String(e)}`,
+        code: "operator-log",
+        remedy: "Run `chant operator log --json` in the project and check what it printed.",
+      },
+    };
+  }
+
+  const unreadable = (why: string): OperatorLogResult => ({
+    ok: false,
+    refusal: {
+      error: `chant operator log --json answered with something behold couldn't read: ${why}`,
+      code: "operator-log",
+      remedy: "behold reads `{entries: [{kind, timestamp, record}], malformed: {converge, gates}}`.",
+    },
+  });
+
+  if (!isRecord(parsed) || !Array.isArray(parsed.entries)) return unreadable("no `entries` array");
+
+  const entries: OperatorLogEntry[] = [];
+  for (const value of parsed.entries) {
+    if (!isRecord(value) || typeof value.timestamp !== "string") return unreadable("an entry with no timestamp");
+    if (value.kind === "tick") {
+      const record = readTickRecord(value.record);
+      if (!record) return unreadable("a tick entry with no `op`/`timestamp`/`log`");
+      entries.push({ kind: "tick", timestamp: value.timestamp, record });
+    } else if (value.kind === "gate-resolution") {
+      const record = readResolutionRecord(value.record);
+      if (!record) return unreadable("a gate-resolution entry with no `op`/`gate`/`resolvedBy`/`timestamp`");
+      entries.push({ kind: "gate-resolution", timestamp: value.timestamp, record });
+    } else {
+      // A kind behold has never heard of. Refusing beats dropping it: a future
+      // chant entry type silently vanishing from the timeline is exactly the
+      // "picture that lies" case, and the refusal names the kind to file.
+      return unreadable(`an entry of an unknown kind "${String(value.kind)}"`);
+    }
+  }
+
+  const counts = isRecord(parsed.malformed) ? parsed.malformed : {};
+  const count = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0);
+  return { ok: true, entries, malformed: { converge: count(counts.converge), gates: count(counts.gates) } };
+}
+
+// ── The timeline model ───────────────────────────────────────────────────────
+
+/** A gate a tick recorded, on that tick's timeline row. */
+export interface OperatorTimelineGate {
+  rule: string;
+  /** The DISPATCHED op, when the outcome named one. */
+  op: string | null;
+  gate: string;
+  /** chant#2028's approval address, when the tick knew one and behold will link
+   * it ({@link approvalLink}). Null otherwise — never a placeholder. */
+  url: string | null;
+}
+
+/**
+ * One row of the timeline. A discriminated union rather than one wide row with
+ * half its fields null: a tick and a gate resolution are different facts from
+ * different ledgers, and the renderer has to tell them apart anyway.
+ */
+export type OperatorTimelineRow =
+  | {
+      kind: "tick";
+      at: string;
+      /** The ConvergeOp that ticked. */
+      op: string;
+      env: string | null;
+      /** chant#2027's tick id, or null on a record written before it. */
+      id: string | null;
+      /** chant's own log line for this tick, verbatim. */
+      log: string;
+      /** The gates this tick recorded — pending at the time, whatever became of them. */
+      gated: OperatorTimelineGate[];
+    }
+  | {
+      kind: "gate-resolution";
+      at: string;
+      /** The DISPATCHED op the gate belongs to. */
+      op: string;
+      gate: string;
+      resolvedBy: string;
+      note: string | null;
+      /** Where the resolution happened (chant#2028). Null when it carried no
+       * address — a human at a terminal, no PR. */
+      url: string | null;
+    };
+
+/**
+ * Fold the log entries into rows.
+ *
+ * ORDER IS CHANT'S. `collectOperatorLog` already merges the two ledgers oldest
+ * first and puts a resolution after the tick that made its gate pending; behold
+ * re-sorting would be behold inventing an order for facts it did not record. A
+ * timeline reads forward in time, which is also how #234's lanes read.
+ */
+export function operatorTimeline(entries: readonly OperatorLogEntry[]): OperatorTimelineRow[] {
+  return entries.map((entry) => {
+    if (entry.kind === "gate-resolution") {
+      const r = entry.record;
+      return {
+        kind: "gate-resolution" as const,
+        at: r.timestamp,
+        op: r.op,
+        gate: r.gate,
+        resolvedBy: r.resolvedBy,
+        note: r.note ?? null,
+        url: approvalLink(r.url) ?? null,
+      };
+    }
+    const t = entry.record;
+    return {
+      kind: "tick" as const,
+      at: t.timestamp,
+      op: t.op,
+      env: typeof t.env === "string" ? t.env : null,
+      id: typeof t.id === "string" && t.id ? t.id : null,
+      log: t.log,
+      gated: (Array.isArray(t.outcomes) ? t.outcomes : [])
+        .filter((o) => o && o.action === "gated" && typeof o.gateName === "string")
+        .map((o) => ({
+          rule: o.ruleId,
+          op: typeof o.op === "string" ? o.op : null,
+          gate: o.gateName as string,
+          url: approvalLink(o.url) ?? null,
+        })),
+    };
+  });
+}
+
+/**
+ * What one `/api/operator/log` read answers with.
+ *
+ * Not part of {@link OperatorState}: the strip is broadcast because it is on
+ * screen and goes stale on its own, while this is fetched when a human opens the
+ * history and belongs to that one client's ask. Pushing it would turn a
+ * pull-on-demand read into a poll by another name.
+ */
+export interface OperatorHistory {
+  entries: OperatorTimelineRow[];
+  malformed: OperatorLogMalformed;
+  /** The window actually read — including a clamped limit, so the bound is visible. */
+  window: { limit: number; since: string | null };
+  /** The window came back full, so there is older history behind it. Not
+   * "there is more" as a certainty: exactly `limit` entries existing is
+   * indistinguishable from more, and overstating is the safer of the two. */
+  more: boolean;
+  readAt: string;
+}
+
+/**
+ * Merge the answers from every project dir that declares a loop into one
+ * timeline, keeping the newest `limit`.
+ *
+ * A multi-estate (#31) has a ConvergeOp per member project, each with its own
+ * chant and its own ledger, so behold gets one `operator log` answer per dir.
+ * Interleaving them by timestamp is behold's own join across independent
+ * ledgers, not a re-ordering of anything chant sorted — chant's own tie rule is
+ * kept (a tick before a resolution at the same instant), and the `--limit` each
+ * dir already applied is re-applied across the merge so the window means the
+ * same thing whether one project answered or four.
+ */
+export function mergeOperatorLogs(
+  answers: readonly { entries: OperatorLogEntry[]; malformed: OperatorLogMalformed }[],
+  limit: number,
+): { entries: OperatorLogEntry[]; malformed: OperatorLogMalformed } {
+  const malformed = answers.reduce(
+    (acc, a) => ({ converge: acc.converge + a.malformed.converge, gates: acc.gates + a.malformed.gates }),
+    { converge: 0, gates: 0 },
+  );
+  if (answers.length === 1) {
+    const only = answers[0].entries;
+    return { entries: only.length > limit ? only.slice(-limit) : only, malformed };
+  }
+  const all = answers.flatMap((a) => a.entries).sort((a, b) => {
+    const delta = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+    return delta !== 0 ? delta : a.kind === b.kind ? 0 : a.kind === "tick" ? -1 : 1;
+  });
+  return { entries: all.length > limit ? all.slice(-limit) : all, malformed };
 }
 
 // ── The model the server holds and broadcasts ────────────────────────────────
@@ -1010,7 +1472,7 @@ export function operatorNote(state: OperatorState, now: number = Date.now()): st
   const ticked = state.strip.rows.filter((r) => r.at).length;
   bits.push(
     ticked
-      ? `last tick only — chant's status surface exposes one tick per loop, not the history (chant#2029), so this is a strip and not a timeline`
+      ? `last tick per loop — the status surface answers with one tick each, and the history is its own read (chant#2029) reached from the strip`
       : `no tick recorded yet on any loop`,
   );
   // The per-component verdicts (chant#2027), and — the half that matters — how
@@ -1032,10 +1494,15 @@ export function operatorNote(state: OperatorState, now: number = Date.now()): st
   const expired = state.strip.rows.filter((r) => r.lease === "expired").length;
   if (expired) bits.push(`${expired} lease${expired === 1 ? "" : "s"} expired — the next round reclaims it`);
   if (state.strip.pendingGates) {
+    // How many of those gates name where approval happens (chant#2028). Said as
+    // a count rather than a blanket claim either way: the address is optional by
+    // design — a local tick with no PR behind it genuinely has none — so "3
+    // pending, 1 with an approval address" is the only honest summary.
+    const addressed = state.gates.filter((g) => g.url).length;
     bits.push(
       `${state.strip.pendingGates} converge gate${state.strip.pendingGates === 1 ? "" : "s"} pending — ` +
-        `approving one records a fact for the next tick, it does not release a workflow (that is the run gate, a different card), ` +
-        `and a gate fact carries no URL yet (chant#2028)`,
+        `approving one records a fact for the next tick, it does not release a workflow (that is the run gate, a different card)` +
+        (addressed ? `, and ${addressed} name${addressed === 1 ? "s" : ""} where approval happens (chant#2028)` : ""),
     );
   }
   return `Operating loop: ${loops} — ${bits.join("; ")}.`;

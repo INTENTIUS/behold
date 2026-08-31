@@ -164,13 +164,23 @@ and nothing else about the run is behold's to decide: a stream that dies leaves
 the playhead at the last settled step and says so, and a gate paints as pending
 only when chant's `gateState` query named it.
 
-## The operating loop (a strip, and a gate that is not the run gate)
+## The operating loop (a strip, a timeline, and a gate that is not the run gate)
 
 A project that declares a `ConvergeOp` gets an operator strip on the ops lens:
 per loop, the last tick's own log line (verbatim, with its instant), the lease,
 and how many gates are pending. **One** tick — `chant operator status` keeps only
-`records.at(-1)` and no CLI exposes the history (chant#2029), so this is a strip
-and never a timeline; the statusbar says so rather than leaving you to assume.
+`records.at(-1)` — so the strip is never a timeline, and it says so.
+
+The timeline is its own read: `GET /api/operator/log` → `chant operator log
+--json` (chant#2029), the tick records and the gate resolutions against them
+merged oldest-first. It lives in a panel that grows from the strip, and two rules
+hold it there. It is **pulled**, on the click that opens it and never on a timer.
+And it is **bounded** — `--limit` on every invocation, 50 by default and 200 at
+most, `--since` when asked — because the ledger grows one line per tick forever;
+the answer reports the window it used, so a full one can't read as the end of
+history. The route checks the project's chant version *before* it spawns: below
+0.53.1, `chant operator log` resolves to `chant operator`, the tick daemon, and
+behold reading a history must never become behold running an operator.
 
 Since chant 0.53.1 (chant#2027) a tick record carries an `id` and the
 per-component verdicts it derived, and both ride through to
@@ -194,10 +204,16 @@ Two gate cards exist and they are **different acts**:
   resolution or not. The next tick reads the fact. The card says this in its
   body, and the toast after the click says "recorded; the next tick acts on it".
 
-A pending gate fact carries no URL (chant#2028), so the card renders no link and
-no placeholder for one. A gate someone already resolved simply leaves
-`pendingGates` — the status read carries no `resolvedBy`/`when` — so behold shows
-no resolved-by line rather than attributing an approval to nobody.
+A gate fact carries its address since chant#2028, on both halves, and the card
+links it under chant's own words — `approve at: <url>`. The field is optional by
+design (a local tick with no PR behind it has none) and never synthesized, so a
+fact without one renders no link and no placeholder for one, and a url behold
+would not put behind an `href` reads as no address at all.
+
+A gate someone already resolved simply leaves `pendingGates` — the status read
+carries no `resolvedBy`/`when` — so the strip shows no resolved-by line rather
+than attributing an approval to nobody. The timeline is where resolutions are
+named, because there they are records rather than an inference.
 
 An `OperatorStack` (chant#1940) declares the loop as a k8s estate, so it already
 appears in the entity graph. behold names it there — the Namespace as the loop's

@@ -1,0 +1,71 @@
+{
+  "entries": [
+    {
+      "kind": "tick",
+      "timestamp": "2026-01-01T00:00:00.000Z",
+      "record": {
+        "version": 1,
+        "id": "t1",
+        "op": "staging-converge",
+        "env": "staging",
+        "timestamp": "2026-01-01T00:00:00.000Z",
+        "firedRuleIds": [],
+        "outcomes": [
+          {
+            "ruleId": "drift-apply",
+            "action": "gated",
+            "op": "fountain-apply",
+            "gateName": "rollout-gate",
+            "url": "https://pr.example/1"
+          }
+        ],
+        "summary": {
+          "drifted": 0,
+          "remediated": 0,
+          "reported": 0,
+          "skippedBudget": 0,
+          "skippedFlap": 0,
+          "unobserved": 0,
+          "adopted": 0
+        },
+        "log": "converge(staging): drifted=0"
+      }
+    },
+    {
+      "kind": "gate-resolution",
+      "timestamp": "2026-01-02T00:00:00.000Z",
+      "record": {
+        "version": 1,
+        "op": "fountain-apply",
+        "gate": "rollout-gate",
+        "resolvedBy": "alex",
+        "timestamp": "2026-01-02T00:00:00.000Z",
+        "url": "https://pr.example/1"
+      }
+    },
+    {
+      "kind": "tick",
+      "timestamp": "2026-01-03T00:00:00.000Z",
+      "record": {
+        "version": 1,
+        "id": "t2",
+        "op": "staging-converge",
+        "env": "staging",
+        "timestamp": "2026-01-03T00:00:00.000Z",
+        "firedRuleIds": [],
+        "outcomes": [],
+        "summary": {
+          "drifted": 0,
+          "remediated": 0,
+          "reported": 0,
+          "skippedBudget": 0,
+          "skippedFlap": 0,
+          "unobserved": 0,
+          "adopted": 0
+        },
+        "log": "converge(staging): drifted=0"
+      }
+    }
+  ],
+  "malformed": { "converge": 0, "gates": 0 }
+}
