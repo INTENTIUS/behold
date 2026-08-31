@@ -35,6 +35,8 @@ import {
   lifecyclePlan,
   lifecycleDiffLive,
   runChantRaw,
+  resolveChant,
+  meetsFloor,
   graphPath,
   ChantCliError,
   classifyChantFailure,
@@ -85,14 +87,23 @@ import { readOpIr, opsToIr, opsNote, HOW_TO_EMIT, type OpIr } from "./ops-lens.t
 import { readRunStatus, joinRun, paintPlayhead, playheadNote, pendingGateCard } from "./run-playhead.ts";
 import {
   readOperatorStatus,
+  readOperatorLog,
   declaredConvergeOps,
   markOperatorHome,
   operatorHomeBoxMarks,
   operatorNote,
   verdictsForEnv,
+  operatorLogWindow,
+  operatorLogArgs,
+  operatorTimeline,
+  mergeOperatorLogs,
   APPROVE_SEMANTICS,
   HOW_TO_DECLARE,
+  OPERATOR_LOG_FLOOR,
   type OpStatusLine,
+  type OperatorHistory,
+  type OperatorLogEntry,
+  type OperatorLogMalformed,
 } from "./operator.ts";
 import { LIVE_IMPORT_LEXICONS } from "./adopt.ts";
 import { detectProject, loadBeholdConfig } from "./project.ts";
@@ -982,10 +993,11 @@ export function createApp(
   // nobody is watching, and the runner broadcasts only a CHANGED answer.
   //
   // What comes back is ONE tick per ConvergeOp — `chant operator status` keeps
-  // `records.at(-1)` and drops the rest, and no CLI exposes the history
-  // (chant#2029). So this can only ever feed a strip, never a lane, and
-  // `operatorNote` says so out loud rather than leaving a reader to assume the
-  // one line is the newest of many behold chose to show.
+  // `records.at(-1)` and drops the rest. So this read can only ever feed a
+  // strip, and `operatorNote` says so out loud rather than leaving a reader to
+  // assume the one line is the newest of many behold chose to show. The history
+  // is the `/api/operator/log` read below (chant#2029), which the strip points
+  // at instead of pretending it does not exist.
   app.get("/api/operator/status", async (c) => {
     const { dirs, declared } = convergeDirs();
     runner.noteDeclaredConvergeOps(declared);
@@ -1013,6 +1025,80 @@ export function createApp(
     }
     const state = runner.noteOperator({ ok: true, rows });
     return c.json({ ...state, operator: state });
+  });
+
+  // The operating loop's HISTORY (#234, chant#2029). `chant operator log --json`
+  // merges the tick records and the gate resolutions against them into one
+  // timestamp-ordered timeline; this is the read behind the history panel that
+  // grows from the strip.
+  //
+  // Three things this route does that the status route above does not:
+  //
+  //  1. **It checks the version before it spawns.** chant's `resolveCommand`
+  //     falls back from `"operator log"` to `"operator"`, so on a chant without
+  //     the subcommand this invocation would start the TICK DAEMON — which never
+  //     returns and, at a dial of `apply`, dispatches remediation. behold reading
+  //     a history must never become behold running an operator. See
+  //     OPERATOR_LOG_FLOOR.
+  //  2. **It asks for a window, never the ledger.** `--limit` always, `--since`
+  //     when the client asks; the answer carries the window it used.
+  //  3. **It does not broadcast.** The strip is pushed because it is on screen
+  //     and goes stale by itself; the history belongs to whoever opened it. No
+  //     SSE event, no interval — a history nobody is reading costs nothing.
+  app.get("/api/operator/log", async (c) => {
+    // Only the dirs. The DECLARATION is deliberately not noted from here: doing
+    // so would broadcast an `operator` event and make every other client repaint
+    // a strip because one of them opened a history. The ops lens and the status
+    // route are what keep `declared` fresh.
+    const { dirs } = convergeDirs();
+    if (!dirs.length) {
+      return c.json(
+        {
+          error: "This project declares no operating loop — no emitted Op carries chant's `Converge` search attribute.",
+          code: "no-operator",
+          remedy: HOW_TO_DECLARE,
+          history: null,
+        },
+        200,
+      );
+    }
+
+    const window = operatorLogWindow({ limit: c.req.query("limit") ?? null, since: c.req.query("since") ?? null });
+    if ("error" in window) {
+      return c.json({ error: window.error, code: "operator-log", remedy: "Ask for a bounded window: `?limit=50&since=<iso>`.", history: null }, 400);
+    }
+
+    const answers: { entries: OperatorLogEntry[]; malformed: OperatorLogMalformed }[] = [];
+    for (const dir of dirs) {
+      const version = resolveChant(dir).version;
+      if (!meetsFloor(version, OPERATOR_LOG_FLOOR)) {
+        return c.json(
+          {
+            error: `This chant has no \`operator log\` — ${version ? `the project resolves chant ${version}` : "the project's chant"}, and the tick history landed in ${OPERATOR_LOG_FLOOR}.`,
+            code: "no-operator-log-cli",
+            remedy: `Upgrade the project's chant to ${OPERATOR_LOG_FLOOR} or newer (chant#2029). The strip itself needs only 0.52, so it keeps reading.`,
+            history: null,
+          },
+          422,
+        );
+      }
+      const result = readOperatorLog(await runChantRaw(operatorLogArgs(window), dir));
+      // A refusal from any member refuses the whole timeline, for the status
+      // route's reason: a timeline missing one loop's ticks is a picture that
+      // lies about what the estate's loops did.
+      if (!result.ok) return c.json({ ...result.refusal, history: null }, result.refusal.code === "no-operator" ? 200 : 422);
+      answers.push({ entries: result.entries, malformed: result.malformed });
+    }
+
+    const merged = mergeOperatorLogs(answers, window.limit);
+    const history: OperatorHistory = {
+      entries: operatorTimeline(merged.entries),
+      malformed: merged.malformed,
+      window: { limit: window.limit, since: window.since ?? null },
+      more: merged.entries.length >= window.limit,
+      readAt: new Date().toISOString(),
+    };
+    return c.json({ history });
   });
 
   // Record a converge gate's resolution (#234 join 1). Same delegated-write
@@ -1471,6 +1557,7 @@ export function createApp(
         { method: "GET", path: "/api/ops", desc: "committed Ops + adopt lexicons + apply progress + run playhead" },
         { method: "GET", path: "/api/ops/:name/status", desc: "an Op's durable run status + pending gate (chant run status)" },
         { method: "GET", path: "/api/operator/status", desc: "the operating loop's strip: last tick per ConvergeOp + lease + pending converge gates" },
+        { method: "GET", path: "/api/operator/log", desc: "the operating loop's timeline: converge ticks + gate resolutions, newest ?limit=n (max 200) from ?since=<iso>" },
         { method: "GET", path: "/api/history", desc: "recent source commits (rollback targets)" },
         { method: "GET", path: "/api/frames", desc: "captured lanes frames" },
         { method: "GET", path: "/api/events", desc: "SSE: changed / op / apply / run / pr" },

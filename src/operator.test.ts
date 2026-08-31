@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { GraphIR } from "@intentius/chant";
 import {
   readOperatorStatus,
+  readOperatorLog,
   declaredConvergeOps,
   operatorStrip,
   tickComponentVerdicts,
@@ -12,6 +13,16 @@ import {
   tickFreshness,
   TICK_VERDICT_TTL_MS,
   convergeGateCards,
+  operatorTimeline,
+  operatorLogWindow,
+  operatorLogArgs,
+  mergeOperatorLogs,
+  approvalLink,
+  APPROVE_AT,
+  OPERATOR_LOG_LIMIT,
+  OPERATOR_LOG_MAX_LIMIT,
+  OPERATOR_LOG_FLOOR,
+  type OperatorLogEntry,
   operatorHomes,
   markOperatorHome,
   operatorHomeBoxMarks,
@@ -89,6 +100,28 @@ const read = (name: string): string => readFileSync(join(FIXTURES, name), "utf8"
  * are what a chant older than 0.53.1 emits, with no `components` and no `id`,
  * which is the absence path every reader here has to keep handling.
  *
+ * **`gate-url.status.json`** is chant's own
+ * `packages/core/src/cli/handlers/operator.test.ts` ("a gated outcome's approval
+ * url rides onto the pending-gate row", chant PR #2043 / chant#2028 at
+ * `2dd9f809`), verbatim: the gated outcome carrying
+ * `url: "https://github.com/INTENTIUS/chant/pull/2028"`, and the
+ * `pendingGates` row that test asserts chant emits with it. The one substitution
+ * is the same one made above — chant's test elides the log line as
+ * `"converge(staging): ..."`, and the fixture carries the line `renderLog`
+ * actually produces for those counts, since the strip prints it verbatim.
+ *
+ * **`timeline.log.json`** is one `chant operator log --json` document, from
+ * chant's "gate resolutions are merged into the timeline, in timestamp order
+ * after the tick that gated" test (chant PR #2044 / chant#2029 at `0ec67657`):
+ * its `tick()` helper's record shape, the two ticks it overrides to `t1`/`t2`,
+ * the gated outcome naming `fountain-apply`/`rollout-gate` with
+ * `url: "https://pr.example/1"`, and the resolution `{op: "fountain-apply",
+ * gate: "rollout-gate", resolvedBy: "alex", timestamp: "2026-01-02...", url}`
+ * that test hands `readGateResolutions`. Wrapped in the `{entries, malformed}`
+ * envelope `runOperatorLog` prints, with the `kind`/`timestamp` entry fields
+ * `collectOperatorLog` adds and in the order that test asserts
+ * (`["tick", "gate-resolution", "tick"]`).
+ *
  * **`staging-converge.op.json`** is a ConvergeOp's emitted IR. chant ships no
  * example that declares a ConvergeOp (the issue's own inventory says so, and
  * `lexicons/k8s/examples/operator-stack` declares converge *hosts*, not a rule
@@ -105,12 +138,19 @@ const read = (name: string): string => readFileSync(join(FIXTURES, name), "utf8"
 const chantTestValues = read("chant-test-values.status.json");
 const twoLoops = read("two-loops.status.json");
 const verdictsFixture = read("verdicts.status.json");
+const gateUrl = read("gate-url.status.json");
+const timelineLog = read("timeline.log.json");
 
 const ok = (stdout: string) => ({ code: 0, stdout, stderr: "" });
 const rows = (stdout: string): OpStatusLine[] => {
   const result = readOperatorStatus(ok(stdout));
   if (!result.ok) throw new Error(`fixture didn't parse: ${result.refusal.error}`);
   return result.rows;
+};
+const logEntries = (stdout: string): OperatorLogEntry[] => {
+  const result = readOperatorLog(ok(stdout));
+  if (!result.ok) throw new Error(`fixture didn't parse: ${result.refusal.error}`);
+  return result.entries;
 };
 
 describe("the chant-derived operator status fixtures", () => {
@@ -159,10 +199,12 @@ describe("the chant-derived operator status fixtures", () => {
     }
   });
 
-  it("carry ONE tick per loop — there is no history in this surface (chant#2029)", () => {
+  it("carry ONE tick per loop — the history is a different read (chant#2029)", () => {
     // Not a stylistic assertion: `lastTick` is a single object in chant's own
     // `OpStatusLine`, and if that ever becomes an array behold must notice here
     // rather than silently rendering the first of many as if it were the only.
+    // chant#2029 shipping `operator log` did NOT change this — `statusFor` still
+    // keeps `records.at(-1)` — so the pin stays exactly where it was.
     for (const row of [...rows(chantTestValues), ...rows(twoLoops)]) {
       expect(Array.isArray(row.lastTick)).toBe(false);
     }
@@ -458,10 +500,40 @@ describe("convergeGateCards", () => {
     expect(APPROVE_SEMANTICS).toMatch(/next tick/);
   });
 
-  it("carries no URL — a pending gate fact has no address (chant#2028)", () => {
+  // chant#2028 shipped the address the pending fact never had, so this pin
+  // flipped: it used to assert no card could carry a URL. It asserts BOTH ways
+  // now, because the field is optional by design — a local tick with no PR
+  // behind it genuinely has no address — and the absent case must keep rendering
+  // exactly as it did before, with no placeholder standing in for a review
+  // surface chant never claimed.
+  it("carries the gate's address when the fact has one (chant#2028)", () => {
+    const [card] = convergeGateCards(rows(gateUrl));
+    expect(card.url).toBe("https://github.com/INTENTIUS/chant/pull/2028");
+  });
+
+  it("…and no url key at all when it doesn't — never a placeholder link", () => {
     const [card] = convergeGateCards(rows(chantTestValues));
     expect(Object.keys(card)).not.toContain("url");
     expect(JSON.stringify(card)).not.toMatch(/https?:/);
+  });
+
+  it("refuses an address it would not link — a ledger is not a trusted href", () => {
+    // chant's own `isApprovalUrl` refuses this at `chant approve --url`, but the
+    // PENDING half's url comes from CI env vars and either ledger can be
+    // hand-edited. A card that can't link it renders as one with no address.
+    const parsed = JSON.parse(gateUrl);
+    for (const bad of ["javascript:alert(1)", "org/repo/pull/1", "file:///etc/passwd"]) {
+      parsed[0].pendingGates[0].url = bad;
+      const [card] = convergeGateCards(rows(JSON.stringify(parsed)));
+      expect(card.url).toBeUndefined();
+      expect(approvalLink(bad)).toBeUndefined();
+    }
+  });
+
+  it("offers the address under chant's own words", () => {
+    // `chant operator status`'s human render prints `approve at: <url>` beneath
+    // the pending gate. A reader who has seen one has read the other.
+    expect(APPROVE_AT).toBe("approve at:");
   });
 
   it("renders no resolved gate — a resolved one leaves pendingGates entirely", () => {
@@ -476,6 +548,208 @@ describe("convergeGateCards", () => {
 
   it("drops a gate with no op — chant approve takes <op> <gate> positionally", () => {
     expect(convergeGateCards([{ op: "c", env: "e", pendingGates: [{ rule: "r", gate: "g" }] }])).toEqual([]);
+  });
+});
+
+// ── The timeline: `chant operator log --json` (chant#2029) ───────────────────
+
+describe("readOperatorLog", () => {
+  it("reads the merged tick/resolution timeline chant prints", () => {
+    const entries = logEntries(timelineLog);
+    // chant's own test asserts exactly this order: the resolution lands after
+    // the tick that made its gate pending, and before the next tick.
+    expect(entries.map((e) => e.kind)).toEqual(["tick", "gate-resolution", "tick"]);
+    expect(entries.map((e) => e.timestamp)).toEqual([
+      "2026-01-01T00:00:00.000Z",
+      "2026-01-02T00:00:00.000Z",
+      "2026-01-03T00:00:00.000Z",
+    ]);
+  });
+
+  it("carries the malformed count rather than rendering a silently short timeline", () => {
+    // chant skips an unreadable ledger line and counts it instead of throwing,
+    // so a corrupted ledger answers with a SHORTER history. Without the count on
+    // screen a reader takes that gap for a quiet loop.
+    const parsed = JSON.parse(timelineLog);
+    parsed.malformed = { converge: 3, gates: 1 };
+    const result = readOperatorLog(ok(JSON.stringify(parsed)));
+    expect(result.ok && result.malformed).toEqual({ converge: 3, gates: 1 });
+  });
+
+  it("refuses a chant with no `operator log`, naming the version that has one", () => {
+    // Both shapes an older chant answers with: the unknown compound command,
+    // and — since `--limit` landed with the subcommand — chant#1127's hard error
+    // on an unrecognized flag.
+    for (const stderr of ["error: Unknown command: operator log\n", "error: Unknown flag: --limit\n"]) {
+      const result = readOperatorLog({ code: 1, stdout: "", stderr });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.refusal.code).toBe("no-operator-log-cli");
+      expect(result.refusal.remedy).toContain(OPERATOR_LOG_FLOOR);
+    }
+  });
+
+  it("refuses an empty stdout as `no operator`, not as an empty history", () => {
+    // Same trap the status reader has: chant warns on stderr and still exits 0
+    // with nothing on stdout when it discovers no ConvergeOp.
+    const result = readOperatorLog({ code: 0, stdout: "", stderr: "No ConvergeOp declarations found\n" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.refusal.code).toBe("no-operator");
+  });
+
+  it("refuses the whole timeline on one entry it can't read", () => {
+    // A dropped entry is an invisible gap — worse than chant's own malformed
+    // count, which at least says a line was lost.
+    for (const broken of [
+      { kind: "tick", timestamp: "2026-01-01T00:00:00.000Z", record: { op: "x" } },
+      { kind: "gate-resolution", timestamp: "2026-01-01T00:00:00.000Z", record: { op: "x", gate: "g" } },
+      { kind: "remediation", timestamp: "2026-01-01T00:00:00.000Z", record: {} },
+    ]) {
+      const parsed = JSON.parse(timelineLog);
+      parsed.entries.push(broken);
+      const result = readOperatorLog(ok(JSON.stringify(parsed)));
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.refusal.code).toBe("operator-log");
+    }
+  });
+
+  it("refuses an answer that isn't the {entries, malformed} document", () => {
+    for (const stdout of ["[]", '{"ticks": []}', "not json"]) {
+      expect(readOperatorLog(ok(stdout)).ok).toBe(false);
+    }
+  });
+});
+
+describe("operatorTimeline", () => {
+  it("keeps chant's order and chant's words", () => {
+    const timeline = operatorTimeline(logEntries(timelineLog));
+    expect(timeline.map((r) => r.at)).toEqual([
+      "2026-01-01T00:00:00.000Z",
+      "2026-01-02T00:00:00.000Z",
+      "2026-01-03T00:00:00.000Z",
+    ]);
+    const [first] = timeline;
+    expect(first).toEqual({
+      kind: "tick",
+      at: "2026-01-01T00:00:00.000Z",
+      op: "staging-converge",
+      env: "staging",
+      id: "t1",
+      // chant's own log line, verbatim — the strip's rule, on every row.
+      log: "converge(staging): drifted=0",
+      gated: [{ rule: "drift-apply", op: "fountain-apply", gate: "rollout-gate", url: "https://pr.example/1" }],
+    });
+  });
+
+  it("names who resolved a gate, and where — the one place behold says so", () => {
+    // The status read can't: it computes pendingGates by cross-reading the gate
+    // ledger and a resolved gate simply leaves the array, so `resolvedBy` never
+    // reaches that JSON. Here it is a record, not an inference.
+    const [, resolution] = operatorTimeline(logEntries(timelineLog));
+    expect(resolution).toEqual({
+      kind: "gate-resolution",
+      at: "2026-01-02T00:00:00.000Z",
+      op: "fountain-apply",
+      gate: "rollout-gate",
+      resolvedBy: "alex",
+      note: null,
+      url: "https://pr.example/1",
+    });
+  });
+
+  it("nulls an address it would not link, on either half", () => {
+    const parsed = JSON.parse(timelineLog);
+    parsed.entries[0].record.outcomes[0].url = "javascript:alert(1)";
+    parsed.entries[1].record.url = "not a url";
+    const [tick, resolution] = operatorTimeline(logEntries(JSON.stringify(parsed)));
+    expect(tick.kind === "tick" && tick.gated[0].url).toBeNull();
+    expect(resolution.kind === "gate-resolution" && resolution.url).toBeNull();
+  });
+
+  it("prints an id only when the record has one — chant#2027 is younger than the ledger", () => {
+    const parsed = JSON.parse(timelineLog);
+    delete parsed.entries[0].record.id;
+    const [tick] = operatorTimeline(logEntries(JSON.stringify(parsed)));
+    expect(tick.kind === "tick" && tick.id).toBeNull();
+  });
+});
+
+describe("the window behold asks for", () => {
+  it("is bounded by default — never the whole ledger", () => {
+    expect(operatorLogWindow({})).toEqual({ limit: OPERATOR_LOG_LIMIT });
+    // The ledger grows one line per tick forever; a 60s round writes ~1,440 a
+    // day. `--limit` is on every invocation behold makes.
+    expect(operatorLogArgs({ limit: OPERATOR_LOG_LIMIT })).toEqual([
+      "operator",
+      "log",
+      "--json",
+      "--limit",
+      String(OPERATOR_LOG_LIMIT),
+    ]);
+  });
+
+  it("passes --since through when the caller asks for one", () => {
+    expect(operatorLogArgs({ limit: 10, since: "2026-01-02T00:00:00.000Z" })).toEqual([
+      "operator",
+      "log",
+      "--json",
+      "--limit",
+      "10",
+      "--since",
+      "2026-01-02T00:00:00.000Z",
+    ]);
+  });
+
+  it("clamps a limit past the ceiling rather than refusing it", () => {
+    // Asking for more history than behold will fetch is reasonable; the answer
+    // reports the window it used, so the clamp is visible rather than silent.
+    expect(operatorLogWindow({ limit: "5000" })).toEqual({ limit: OPERATOR_LOG_MAX_LIMIT });
+  });
+
+  it("refuses what chant would refuse, before anything is spawned", () => {
+    for (const limit of ["0", "-3", "1.5", "lots"]) {
+      expect(operatorLogWindow({ limit })).toHaveProperty("error");
+    }
+    expect(operatorLogWindow({ since: "last tuesday" })).toHaveProperty("error");
+  });
+});
+
+describe("mergeOperatorLogs", () => {
+  const entries = logEntries(timelineLog);
+  const one = { entries, malformed: { converge: 1, gates: 0 } };
+
+  it("keeps the newest n across every member's ledger, still oldest-first", () => {
+    // A multi-estate (#31) has a ConvergeOp per member project, each with its
+    // own chant and its own ledger, so the window has to mean the same thing
+    // whether one project answered or four.
+    const other: OperatorLogEntry[] = [
+      { kind: "tick", timestamp: "2026-01-02T12:00:00.000Z", record: { ...entries[0].record, id: "o1" } as never },
+    ];
+    const merged = mergeOperatorLogs([one, { entries: other, malformed: { converge: 0, gates: 2 } }], 3);
+    expect(merged.entries.map((e) => e.timestamp)).toEqual([
+      "2026-01-02T00:00:00.000Z",
+      "2026-01-02T12:00:00.000Z",
+      "2026-01-03T00:00:00.000Z",
+    ]);
+    // …and every member's unreadable lines are counted, not the first one's.
+    expect(merged.malformed).toEqual({ converge: 1, gates: 2 });
+  });
+
+  it("leaves a single member's answer in chant's own order, untouched", () => {
+    expect(mergeOperatorLogs([one], 50).entries).toBe(entries);
+  });
+
+  it("keeps chant's tie rule: a resolution reads after the tick that gated", () => {
+    const tick = entries[0];
+    const resolution = { ...entries[1], timestamp: tick.timestamp };
+    const merged = mergeOperatorLogs(
+      [
+        { entries: [resolution as OperatorLogEntry], malformed: { converge: 0, gates: 0 } },
+        { entries: [tick], malformed: { converge: 0, gates: 0 } },
+      ],
+      10,
+    );
+    expect(merged.entries.map((e) => e.kind)).toEqual(["tick", "gate-resolution"]);
   });
 });
 
@@ -648,12 +922,14 @@ describe("operatorRead / operatorNote", () => {
     expect(operatorNote(state)).toMatch(/status unavailable/);
   });
 
-  it("says out loud that one tick is all chant exposes", () => {
+  it("says out loud that one tick is all the STATUS read exposes, and where the rest is", () => {
     const state = operatorRead({ ...initialOperatorState, declared }, readOperatorStatus(ok(chantTestValues)), AT, NOW);
     const note = operatorNote(state);
-    expect(note).toMatch(/last tick only/);
+    expect(note).toMatch(/last tick per loop/);
+    // The history exists now (chant#2029), so the sentence points at it rather
+    // than stopping at "this is not a timeline".
     expect(note).toMatch(/chant#2029/);
-    expect(note).toMatch(/strip and not a timeline/);
+    expect(note).toMatch(/its own read/);
   });
 
   it("holds the tick's verdicts on the state, time-independently (chant#2027)", () => {
@@ -702,7 +978,17 @@ describe("operatorRead / operatorNote", () => {
     expect(note).toMatch(/1 converge gate pending/);
     expect(note).toMatch(/records a fact for the next tick/);
     expect(note).toMatch(/does not release a workflow/);
-    expect(note).toMatch(/chant#2028/);
+  });
+
+  it("counts the gates that name where approval happens, and stays quiet when none do", () => {
+    // chant#2028's address is optional by design — a local tick with no PR
+    // behind it genuinely has none — so a blanket claim either way would be
+    // wrong on some estate. The count is the honest summary.
+    const addressed = operatorRead({ ...initialOperatorState, declared }, readOperatorStatus(ok(gateUrl)), AT, NOW);
+    expect(operatorNote(addressed)).toMatch(/1 names where approval happens \(chant#2028\)/);
+    const none = operatorRead({ ...initialOperatorState, declared }, readOperatorStatus(ok(chantTestValues)), AT, NOW);
+    expect(operatorNote(none)).not.toMatch(/chant#2028/);
+    expect(operatorNote(none)).toMatch(/1 converge gate pending/);
   });
 
   it("names an expired lease so a reader knows the next round reclaims it", () => {

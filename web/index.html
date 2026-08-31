@@ -390,9 +390,31 @@
       .operator-meta { font: var(--t-caption)/1.5 var(--font-mono); color: var(--muted);
         overflow-wrap: anywhere; }
       .operator-gates { font: var(--t-caption)/1.6 var(--font-mono); color: var(--pending); flex: none; }
-      /* Why one line is all there is (chant#2029). A statement, not an alarm —
-         the same voice .run-lost uses for what behold does not know. */
+      /* Why one line is all the strip has, and where the rest is (chant#2029).
+         A statement, not an alarm — the same voice .run-lost uses for what
+         behold does not know. */
       .operator-caveat { font-size: var(--t-caption); color: var(--muted); }
+      /* The converge history (chant#2029) — the timeline the strip is NOT,
+         reached from it. Closed by default and read on the click that opens it,
+         so this whole block is inert until a human asks for it. */
+      .operator-history { display: flex; flex-direction: column; gap: 4px; }
+      .operator-history-toggle { align-self: flex-start; background: none; color: var(--pending);
+        border: none; padding: 0; font-size: var(--t-caption); cursor: pointer; }
+      .operator-history-head { font: var(--t-caption)/1.5 var(--font-mono); color: var(--muted); }
+      /* Ticks and gate resolutions, oldest first — chant's own order. The rule
+         down the left is the lane: one column of time, read forward. */
+      .operator-timeline { display: flex; flex-direction: column; gap: 6px;
+        border-left: 1px solid var(--rule); padding-left: 8px; max-height: 320px; overflow-y: auto; }
+      .operator-entry { display: flex; flex-direction: column; gap: 1px; }
+      /* A resolution is the human's half of the loop, so it wears the gate's own
+         colour rather than the tick's. */
+      .operator-entry-gate-resolution .operator-meta { color: var(--managed); }
+      .operator-gated { font: var(--t-caption)/1.5 var(--font-mono); color: var(--foreign);
+        overflow-wrap: anywhere; }
+      /* chant#2028's address. A link only ever appears where a fact carried one
+         — there is no placeholder state for this rule to style. */
+      .operator-url { display: block; font: var(--t-caption)/1.5 var(--font-mono); color: var(--pending);
+        overflow-wrap: anywhere; }
       /* The converge gate's own two lines, inside the shared .run-gate card:
          which loop this is, and what approving actually does. */
       .operator-loop { font: var(--t-caption)/1.5 var(--font-mono); color: var(--foreign); }

@@ -1895,6 +1895,11 @@ let runStatusInFlight = false;
 // playhead's reason: a loop belongs to its project, not to a picked env/tier.
 let operatorState = null;
 let operatorInFlight = false;
+// #234, chant#2029 — the converge timeline behind the strip. Closed until a
+// human opens it, read once when they do, and never on a timer: the strip is the
+// at-a-glance line that ages by itself, the history is a ledger's past and does
+// not change while you read it. `data` is src/operator.ts's OperatorHistory.
+let operatorHistory = { open: false, loading: false, error: null, data: null };
 let componentChoices = []; // component names for the apply picker — loaded lazily (independent of whether the graph pane is currently in components mode)
 let componentStatusById = {}; // id -> _status ("good"|"accent"|"warn"|"neutral"), populated alongside componentChoices — lets the picker show which stacks are already applied
 
@@ -2095,7 +2100,17 @@ function mountOperator(host) {
   if (!view.ops || !hasOperator(operatorState)) return;
   const box = document.createElement("div");
   box.className = "operator-strip";
-  renderOperator(box, operatorState, { approve: (op, gate) => approveConvergeGate(op, gate) });
+  renderOperator(
+    box,
+    operatorState,
+    {
+      approve: (op, gate) => approveConvergeGate(op, gate),
+      // A static export has no server to ask, so it gets no history affordance
+      // at all rather than a button that can only fail.
+      ...(staticMode ? {} : { history: () => toggleOperatorHistory() }),
+    },
+    operatorHistory,
+  );
   host.appendChild(box);
 }
 
@@ -3845,6 +3860,48 @@ function pollOperatorStatus() {
 }
 
 /**
+ * Open or close the converge history (#234, chant#2029), reading it the first
+ * time it is opened.
+ *
+ * This is the whole poll discipline for the timeline: a click. `chant operator
+ * log` walks the project's `chant/lifecycle` ledger, and an interval against it
+ * would spend a process per tick of the clock to be handed a past that hasn't
+ * moved. Re-opening re-reads, so a human who wants the newest ticks closes and
+ * opens — an explicit ask, which is what this surface is.
+ */
+function toggleOperatorHistory() {
+  operatorHistory = { ...operatorHistory, open: !operatorHistory.open };
+  if (operatorHistory.open) loadOperatorHistory();
+  renderDial();
+}
+
+/**
+ * Read one bounded window of the converge timeline.
+ *
+ * The server clamps and reports the window it used (src/operator.ts's
+ * OPERATOR_LOG_MAX_LIMIT), so the panel states the bound rather than implying it
+ * is showing everything. A refusal — a chant older than the `operator log`
+ * subcommand, an unreadable answer — lands on the panel as its own sentence: an
+ * empty timeline must never stand in for "behold couldn't ask".
+ */
+function loadOperatorHistory() {
+  if (staticMode || operatorHistory.loading) return;
+  operatorHistory = { ...operatorHistory, loading: true, error: null };
+  apiFetch("/api/operator/log")
+    .then((r) => r.json())
+    .then((j) => {
+      operatorHistory = j && j.history
+        ? { open: true, loading: false, error: null, data: j.history }
+        : { open: true, loading: false, error: (j && j.error) || "the server answered with no timeline", data: null };
+      renderDial();
+    })
+    .catch((e) => {
+      operatorHistory = { open: true, loading: false, error: String(e), data: null };
+      renderDial();
+    });
+}
+
+/**
  * Record a converge gate's resolution — `chant approve <op> <gate>`, delegated
  * exactly as the run gate's signal is.
  *
@@ -3865,6 +3922,9 @@ function approveConvergeGate(op, gate) {
         showToast(`✓ ${gate} — ${APPROVED_SEMANTICS}`, true);
       }
       pollOperatorStatus();
+      // A resolution just became a ledger record. Re-read the timeline only if
+      // it is already open — still a human's ask, not a background refresh.
+      if (operatorHistory.open) loadOperatorHistory();
     });
 }
 

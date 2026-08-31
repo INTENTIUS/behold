@@ -195,12 +195,56 @@ const operatorState = (gated = true) => ({
             path: "/api/operator/approve/fountain-apply/rollout-gate",
             command: "chant approve fountain-apply rollout-gate",
           },
+          // chant#2028: where approval happens, as the gated tick recorded it.
+          // chant's own #2043 test uses this address.
+          url: "https://github.com/INTENTIUS/chant/pull/2028",
         },
       ]
     : [],
   note: null,
   code: null,
   readAt: "2026-01-01T00:02:00.000Z",
+});
+
+// #234, chant#2029: the converge timeline `/api/operator/log` answers with —
+// src/operator.ts's OperatorHistory, from the same committed fixture the unit
+// tests read (src/__fixtures__/operator-status/timeline.log.json, itself chant's
+// own `operator log` test values). A bounded window, stated: the smoke has to be
+// able to see that behold asked for the newest n rather than the whole ledger.
+const operatorHistory = () => ({
+  entries: [
+    {
+      kind: "tick",
+      at: "2026-01-01T00:00:00.000Z",
+      op: "staging-converge",
+      env: "staging",
+      id: "t1",
+      log: "converge(staging): drifted=0",
+      gated: [{ rule: "drift-apply", op: "fountain-apply", gate: "rollout-gate", url: "https://pr.example/1" }],
+    },
+    {
+      kind: "gate-resolution",
+      at: "2026-01-02T00:00:00.000Z",
+      op: "fountain-apply",
+      gate: "rollout-gate",
+      resolvedBy: "alex",
+      note: null,
+      url: "https://pr.example/1",
+    },
+    {
+      kind: "tick",
+      at: "2026-01-03T00:00:00.000Z",
+      op: "staging-converge",
+      env: "staging",
+      id: "t2",
+      log: "converge(staging): drifted=0",
+      gated: [],
+    },
+  ],
+  malformed: { converge: 0, gates: 0 },
+  window: { limit: 50, since: null },
+  more: false,
+  readAt: "2026-01-04T00:00:00.000Z",
 });
 
 const JSON_ROUTES = {
@@ -403,6 +447,10 @@ export function startStub(port, { carve = false } = {}) {
    * a DIFFERENT route and a different act from the op-signal above, which is
    * exactly what the smoke has to be able to tell apart. */
   const approvePosts = [];
+  /** #234, chant#2029: every `/api/operator/log` read, with its query — the
+   * history is pull-on-demand, so "how many times was this asked for, and with
+   * what window" is exactly what the smoke needs to be able to check. */
+  const logGets = [];
   /** #234 join 3: the operator strip's state, mutable so the re-poll after an
    * approve can answer with the gate gone — chant would drop it from
    * `pendingGates` once a resolution newer than the gated tick exists. */
@@ -540,6 +588,14 @@ export function startStub(port, { carve = false } = {}) {
       res.writeHead(200, { "content-type": "application/json" });
       return res.end(JSON.stringify({ ...operator, operator }));
     }
+    // #234, chant#2029 — the converge history. Every request is recorded, so the
+    // smoke can assert the one thing this surface promises about cost: it is
+    // read when a human opens it, and never before.
+    if (path === "/api/operator/log") {
+      logGets.push(url.search || "");
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ history: operatorHistory() }));
+    }
     // #234 join 1 — the delegated `chant approve`. A DIFFERENT route and a
     // different act from the op-signal above: this records a fact, and the next
     // tick is what acts on it. The stub drops the gate from `pendingGates` the
@@ -615,5 +671,6 @@ export function startStub(port, { carve = false } = {}) {
   server.carvePosts = carvePosts; // what the stepper actually sent (#254)
   server.signalPosts = signalPosts; // what the pending gate card sent (#284 item 2)
   server.approvePosts = approvePosts; // what the converge gate card sent (#234 join 1)
+  server.logGets = logGets; // when the converge history was read (#234, chant#2029)
   return new Promise((resolve) => server.listen(port, () => resolve(server)));
 }

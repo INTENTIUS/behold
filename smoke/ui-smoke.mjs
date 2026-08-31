@@ -765,9 +765,12 @@ try {
   check("…dated with the instant, not just an age", stripText.includes("2026-01-01T00:00:00.000Z"));
   check("…and saying who holds the lease", stripText.includes("lease held by op-a"));
   check(
-    "the strip says it is not a timeline, and why",
-    stripText.includes("chant#2029") && stripText.includes("strip, not a timeline"),
+    "the strip says one tick is all the status read has, and where the rest is",
+    stripText.includes("chant#2029") && stripText.includes("open the history below"),
   );
+  // chant#2029's whole discipline on this surface: the timeline is read when a
+  // human opens it. Nothing has been opened yet, so nothing has been read.
+  check("the history has not been read — nobody has opened it", server.logGets.length === 0);
 
   check("both gate cards are on screen at once", (await page.locator(".run-gate").count()) === 2);
   const convergeCard = page.locator(".run-gate.operator-gate");
@@ -779,7 +782,17 @@ try {
     "…and stating that approving records a fact rather than unblocking the dispatch",
     convergeText.includes("records a fact") && convergeText.includes("does not unblock the dispatch") && convergeText.includes("next tick reads it"),
   );
-  check("the converge card offers no link — a gate fact has no URL (chant#2028)", (await convergeCard.locator("a").count()) === 0);
+  // chant#2028: the pending fact carries its address now, so the card links it
+  // — under chant's own `approve at:` words — instead of having only a shell
+  // command to offer. A fact with no address still renders no link at all,
+  // which web/operator.test.js pins.
+  const approveAt = convergeCard.locator("a.operator-url");
+  check("the converge card links where approval happens (chant#2028)", (await approveAt.count()) === 1);
+  check("…under chant's own words", (await approveAt.innerText()).startsWith("approve at:"));
+  check(
+    "…pointing at the gate fact's own address, not one behold invented",
+    (await approveAt.getAttribute("href")) === "https://github.com/INTENTIUS/chant/pull/2028",
+  );
   const recordBtn = convergeCard.locator("button.approve");
   check("the button is Record approval, not Approve", (await recordBtn.innerText()).trim() === "Record approval");
   check(
@@ -788,8 +801,49 @@ try {
   );
   await page.screenshot({ path: join(SHOTS, "10-operator-strip.png") });
 
+  // ---- #234 + chant#2029: the converge history the strip grows from ---------
+  // The strip is the at-a-glance line; the timeline is the thing you go and
+  // look at. It is fetched on this click and on no timer at all.
+  const historyToggle = strip.locator("button.operator-history-toggle");
+  check("the strip offers the converge history", (await historyToggle.count()) === 1);
+  await historyToggle.click();
+  await page.waitForTimeout(400);
+  check("opening it reads the ledger — once", server.logGets.length === 1);
+
+  const timeline = strip.locator(".operator-timeline");
+  check("the timeline renders", (await timeline.count()) === 1);
+  const timelineText = await timeline.innerText();
+  check("…with chant's own tick line, verbatim", timelineText.includes("converge(staging): drifted=0"));
+  check("…the tick's id, so a tick can be referred to (chant#2027)", timelineText.includes("[t1]"));
+  check(
+    "…the gate the tick recorded, in chant's own words",
+    timelineText.includes('gated drift-apply → fountain-apply gate "rollout-gate"'),
+  );
+  // The one place behold names an approver: the status read can't say who
+  // resolved a gate, because a resolved gate simply leaves pendingGates.
+  check("…and the resolution, naming who made it", timelineText.includes("gate resolved · fountain-apply/rollout-gate by alex"));
+  check(
+    "the window is stated, so a full one can't read as the end of history",
+    (await strip.locator(".operator-history-head").innerText()).includes("newest 50"),
+  );
+  // Both halves of chant#2028 on one timeline: the tick's gate offers where to
+  // approve, the resolution records where it happened — same field, different
+  // tense, and neither is a link behold minted.
+  check(
+    "a pending gate on the timeline links where to approve",
+    (await timeline.locator(".operator-gated a.operator-url").innerText()).startsWith("approve at:"),
+  );
+  check(
+    "a resolution links where it happened, in the past tense (chant#2028)",
+    (await timeline.locator(".operator-entry-gate-resolution a.operator-url").innerText()).startsWith("resolved at:"),
+  );
+  await page.screenshot({ path: join(SHOTS, "11-operator-history.png") });
+
   await recordBtn.click();
   await page.waitForTimeout(400);
+  // An approve writes a resolution to the ledger, so an OPEN history re-reads —
+  // a human's own act, not a background refresh. Closed, it would not have.
+  check("recording an approval re-reads the open history", server.logGets.length === 2);
   check(
     "Record approval posts the converge route, never the op-signal one",
     server.approvePosts.some((p) => p.method === "POST" && p.path === "/api/operator/approve/fountain-apply/rollout-gate") &&

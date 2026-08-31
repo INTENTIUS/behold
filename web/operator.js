@@ -9,13 +9,20 @@
  *
  * What it renders, from the `operator` state the server broadcasts:
  *  - one line per ConvergeOp: the last tick's own log line, verbatim, honestly
- *    dated; the lease; the pending-gate count. ONE line, because chant's status
- *    surface exposes one tick and no history (chant#2029) — this is a strip, and
- *    there is deliberately no code path here that can render a second tick.
+ *    dated; the lease; the pending-gate count. ONE line, because that is what
+ *    `chant operator status` answers with — there is deliberately no code path
+ *    here that can render a second tick onto the strip.
  *  - each pending converge gate as a card whose Approve button says what
  *    approving actually does: it records a fact, and the next tick acts on it.
  *    It does not release anything. That is the run gate, painted by the playhead
  *    panel next door, and the card names its loop so the two can't be confused.
+ *    When the gate fact names where approval happens (chant#2028) the card links
+ *    it, under chant's own words — `approve at:`. When it doesn't, the card is
+ *    exactly the card it was before that field existed.
+ *  - the history, when a human opens it: the converge timeline chant#2029's
+ *    `operator log` reads, ticks and gate resolutions interleaved. It grows from
+ *    the strip and is fetched on the click, never on a timer — the strip is the
+ *    at-a-glance line, the timeline is the thing you go and look at.
  */
 import { waitingFor } from "./run-playhead.js";
 
@@ -45,6 +52,35 @@ export const APPROVE_SEMANTICS =
 
 /** The past-tense half, for the toast right after the click. */
 export const APPROVED_SEMANTICS = "recorded; the next tick acts on it";
+
+/** The words a gate's address is offered under — chant's own. `chant operator
+ * status`'s human render prints `approve at: <url>` beneath the pending gate, so
+ * the card labels the same fact the same way. */
+export const APPROVE_AT = "approve at:";
+
+/** The resolved half's label. Same field, chant#2028's other end
+ * (`GateResolutionRecord.url`): where the approval DID happen, so the tense
+ * changes — a resolution's link is a record, not an invitation. */
+export const RESOLVED_AT = "resolved at:";
+
+/**
+ * The address behold will put behind an `href`, or null.
+ *
+ * Re-checked here rather than only trusted from the server, exactly as
+ * APPROVE_SEMANTICS is re-stated above: an absolute http/https URL becomes a
+ * link, anything else reads as no address at all and the card renders without
+ * one. A `javascript:` string that reached a ledger must not become a link
+ * because a server was older than this file.
+ */
+export function approvalLink(url) {
+  if (!url || typeof url !== "string") return null;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? url : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Which loop a card belongs to, spelled out. behold draws two gate cards and
  * they resolve through different commands with different effects. */
@@ -154,17 +190,93 @@ export function operatorHeadline(state) {
 /**
  * The one-tick caveat, said every time there is a tick to say it about.
  *
- * A reader must never take this strip for a shortened timeline: chant's
- * `operator status` keeps only the last ledger record and no CLI exposes the
- * rest (chant#2029), so one line is all there is, not one line behold chose.
+ * A reader must never take this strip for a shortened timeline: `chant operator
+ * status` keeps only the last ledger record per loop, so one line is all this
+ * read has, not one line behold chose. The rest of the history is a different
+ * command (chant#2029) and a different click — which the caveat now points at,
+ * because "this is not a timeline" without saying where the timeline IS would be
+ * the strip keeping a secret.
  */
 export const ONE_TICK_CAVEAT =
-  "One tick per loop — chant's status surface exposes only the last one (chant#2029), so this is a strip, not a timeline.";
+  "One tick per loop — `chant operator status` answers with only the last one. The rest is its own read (chant#2029): open the history below.";
+
+/** What the history disclosure is called, closed and open. */
+export const HISTORY_LABEL = "converge history";
 
 /** The converge gate cards, from the same state. Each already carries the
  * delegated write it performs; nothing here is derived from a graph. */
 export function convergeGates(state) {
   return (state && state.gates) || [];
+}
+
+// ── the timeline (chant#2029) ────────────────────────────────────────────────
+
+/** The rows of a loaded history, or [] for one that hasn't been read. */
+export function timelineRows(history) {
+  return (history && history.data && history.data.entries) || [];
+}
+
+/**
+ * The history's own headline: how much of the ledger this is, and whether there
+ * is more behind it.
+ *
+ * The window is stated on screen rather than implied. behold asks for the newest
+ * n (never the whole ledger — it grows one line per tick forever), so a full
+ * window means "and older ticks before these", and a reader who isn't told that
+ * would read the oldest row as the beginning of history.
+ */
+export function historyHeadline(history) {
+  const data = history && history.data;
+  if (!data) return null;
+  const n = data.entries.length;
+  const head = `${n} ${n === 1 ? "entry" : "entries"}`;
+  const window = data.window || {};
+  const bits = [`newest ${window.limit}`];
+  if (window.since) bits.push(`since ${window.since}`);
+  if (data.more) bits.push("older ticks before these");
+  return `${head} · ${bits.join(" · ")}`;
+}
+
+/**
+ * The unreadable-line count, in words, or null when every line read.
+ *
+ * chant counts the ledger lines it could not parse rather than throwing, so a
+ * corrupted ledger renders a SHORTER timeline. Surfacing the count is the
+ * difference between "3 lines of this ledger are unreadable" and a quiet gap the
+ * reader takes for a quiet loop.
+ */
+export function historyMalformedNote(history) {
+  const m = (history && history.data && history.data.malformed) || null;
+  if (!m) return null;
+  const total = (m.converge || 0) + (m.gates || 0);
+  if (!total) return null;
+  return (
+    `${total} ledger line${total === 1 ? "" : "s"} were unreadable and are missing from this timeline ` +
+    `(converge: ${m.converge || 0}, gates: ${m.gates || 0}).`
+  );
+}
+
+/**
+ * One timeline row, in words — chant's own `operator log` render is the model.
+ *
+ * A tick reads as its op, its id and the log line chant wrote, verbatim; a
+ * resolution reads as who resolved which gate. Nothing here rewords a fact:
+ * behold's job on this surface is ordering and legibility, not narration.
+ */
+export function timelineText(row) {
+  if (!row) return "";
+  if (row.kind === "gate-resolution") {
+    return `gate resolved · ${row.op}/${row.gate} by ${row.resolvedBy}`;
+  }
+  // Bracketed, the way chant's own `operator log` render prints it, and cut by
+  // the strip's own {@link shortTickId} so one tick reads the same in both.
+  const id = shortTickId(row.id) ? ` [${shortTickId(row.id)}]` : "";
+  return `${row.op}${row.env ? `@${row.env}` : ""}${id}`;
+}
+
+/** One gated outcome within a tick, in chant's own `operator log` words. */
+export function gatedText(gate) {
+  return `gated ${gate.rule} → ${gate.op || "?"} gate "${gate.gate}"`;
 }
 
 // ── the DOM half ─────────────────────────────────────────────────────────────
@@ -176,13 +288,33 @@ function el(tag, cls, text) {
   return n;
 }
 
+/** An `approve at: <url>` link, or null for a fact carrying no address behold
+ * will link. Never a placeholder: the absent case renders nothing at all. */
+function approveAtLink(url, label = APPROVE_AT) {
+  const href = approvalLink(url);
+  if (!href) return null;
+  const a = el("a", "operator-url", `${label} ${href}`);
+  a.href = href;
+  a.target = "_blank";
+  a.rel = "noreferrer noopener";
+  a.title = `${href} — the address the gate fact itself records (chant#2028). behold never invents this link.`;
+  return a;
+}
+
 /**
  * Render the operator strip into `host` (cleared first — the whole subtree is
  * rebuilt per event, exactly as renderPlayhead does).
  *
- * `actions.approve(op, gate)` performs the delegated `chant approve`.
+ * `actions.approve(op, gate)` performs the delegated `chant approve`;
+ * `actions.history()` toggles the timeline below the strip and is what triggers
+ * its one read. Omit it (a static export has no server to ask) and no history
+ * affordance is drawn at all.
+ *
+ * `history` is the caller's own `{open, loading, error, data}` — this module
+ * decides what the panel SAYS, app.js owns the fetch and the open/closed bit,
+ * the same split every other panel here keeps.
  */
-export function renderOperator(host, state, actions = {}) {
+export function renderOperator(host, state, actions = {}, history = null) {
   host.textContent = "";
   if (!hasOperator(state)) return host;
 
@@ -221,9 +353,74 @@ export function renderOperator(host, state, actions = {}) {
   host.appendChild(list);
 
   if (rows.some((r) => r.at)) host.appendChild(el("div", "operator-caveat", ONE_TICK_CAVEAT));
+  if (actions.history) host.appendChild(renderHistory(history, actions));
 
   for (const gate of convergeGates(state)) host.appendChild(renderConvergeGateCard(gate, actions));
   return host;
+}
+
+/**
+ * The history disclosure and, when it is open, the timeline.
+ *
+ * Closed is the default and costs nothing: the read happens on the click that
+ * opens it, and there is no interval anywhere on this path. The strip above ages
+ * on its own — a tick lands whether or not anyone is looking — but a ledger's
+ * past does not change while you read it, so re-fetching it on a timer would be
+ * spending a chant process per interval to be told the same thing.
+ */
+function renderHistory(history, actions) {
+  const box = el("div", "operator-history");
+  const open = !!(history && history.open);
+  const toggle = el("button", "operator-history-toggle", `${open ? "▾" : "▸"} ${HISTORY_LABEL}`);
+  toggle.title =
+    "The converge timeline: ticks and gate resolutions from the chant/lifecycle ledger " +
+    "(chant operator log, chant#2029). Read when you open it — behold never polls the history.";
+  toggle.addEventListener("click", () => actions.history());
+  box.appendChild(toggle);
+  if (!open) return box;
+
+  if (history.error) {
+    box.appendChild(el("div", "run-lost", `Converge history unavailable — ${history.error}`));
+    return box;
+  }
+  if (history.loading || !history.data) {
+    box.appendChild(el("div", "operator-meta", "reading the converge ledger…"));
+    return box;
+  }
+
+  box.appendChild(el("div", "operator-history-head", historyHeadline(history)));
+  const malformed = historyMalformedNote(history);
+  if (malformed) box.appendChild(el("div", "run-lost", malformed));
+
+  const rows = timelineRows(history);
+  if (!rows.length) {
+    box.appendChild(el("div", "operator-meta", "No converge ticks recorded in this window."));
+    return box;
+  }
+
+  const list = el("div", "operator-timeline");
+  for (const row of rows) {
+    // Oldest first, exactly as chant merged them — a timeline reads forward.
+    const entry = el("div", `operator-entry operator-entry-${row.kind}`);
+    entry.appendChild(el("div", "operator-meta", `${row.at} · ${timelineText(row)}`));
+    if (row.kind === "tick") {
+      // chant's own log line, verbatim — the strip's rule, on every row.
+      entry.appendChild(el("div", "operator-log", row.log));
+      for (const gate of row.gated) {
+        const line = el("div", "operator-gated", gatedText(gate));
+        const link = approveAtLink(gate.url);
+        if (link) line.appendChild(link);
+        entry.appendChild(line);
+      }
+    } else {
+      if (row.note) entry.appendChild(el("div", "operator-log", row.note));
+      const link = approveAtLink(row.url, RESOLVED_AT);
+      if (link) entry.appendChild(link);
+    }
+    list.appendChild(entry);
+  }
+  box.appendChild(list);
+  return box;
 }
 
 /**
@@ -236,9 +433,12 @@ export function renderOperator(host, state, actions = {}) {
  *    own gate-ledger doc, and what `chant approve` itself prints;
  *  - the exact command the button delegates to.
  *
- * And one thing it deliberately does not render: a link. A pending gate fact
- * carries no URL (chant#2028), and a placeholder link would invent a review
- * surface that does not exist.
+ * And the fourth, since chant#2028: where approval happens, when the gate fact
+ * says so. `approve at: <url>` — chant's own words from `operator status`'s
+ * human render — linking the PR/MR the gated tick knew about. A fact with no
+ * address renders no link and no placeholder for one: the url is optional by
+ * design (a local tick with no PR behind it genuinely has none), and inventing a
+ * review surface would be worse than the shell command it replaces.
  */
 export function renderConvergeGateCard(gate, actions = {}) {
   const box = el("div", "run-gate operator-gate");
@@ -255,6 +455,8 @@ export function renderConvergeGateCard(gate, actions = {}) {
     ),
   );
   box.appendChild(el("div", "operator-semantics", gate.semantics || APPROVE_SEMANTICS));
+  const at = approveAtLink(gate.url);
+  if (at) box.appendChild(at);
 
   const command = (gate.approve && gate.approve.command) || `chant approve ${gate.op} ${gate.gate}`;
   const approve = el("button", "approve", "Record approval");

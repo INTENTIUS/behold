@@ -45,7 +45,7 @@ import { createApp } from "./server.ts";
 import { Broadcaster } from "./events.ts";
 import { FrameBuffer } from "./frames.ts";
 import { OpRunner } from "./op-runner.ts";
-import type { OperatorState } from "./operator.ts";
+import type { OperatorState, OperatorHistory } from "./operator.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OPS = join(HERE, "__fixtures__", "ops-example-writes");
@@ -55,17 +55,36 @@ const statusJson = readFileSync(join(OPERATOR, "chant-test-values.status.json"),
  * provenance note. Its ConvergeOp is `fountain-converge`, so the fixture below
  * re-labels it to the one this project declares. */
 const verdictsJson = readFileSync(join(OPERATOR, "verdicts.status.json"), "utf8").replace(/fountain-converge/g, "staging-converge");
+const gateUrlJson = readFileSync(join(OPERATOR, "gate-url.status.json"), "utf8");
+const timelineJson = readFileSync(join(OPERATOR, "timeline.log.json"), "utf8");
 
 /** A project dir with the given emitted op.json files laid out where chant
  * writes them. `staging-converge` is the ConvergeOp fixture; the rest come from
- * the ops lens's own real-emitted set. */
-function project(names: string[]): string {
+ * the ops lens's own real-emitted set.
+ *
+ * `chantVersion` installs a stand-in `@intentius/chant` in the project's own
+ * node_modules, so `resolveChant(dir).version` answers with a version this test
+ * pins rather than whatever the checkout happens to have installed. The log
+ * route gates on it (chant#2029 landed in 0.53.1), and that gate is the one
+ * thing here that must not depend on the machine it runs on. Nothing is ever
+ * executed from it — every spawn in this file is mocked. */
+function project(names: string[], chantVersion?: string): string {
   const dir = mkdtempSync(join(tmpdir(), "behold-operator-route-"));
   writeFileSync(join(dir, "chant.config.ts"), 'export default { lexicons: ["aws", "temporal"] };\n');
   for (const name of names) {
     mkdirSync(join(dir, "dist", "ops", name), { recursive: true });
     const from = name === "staging-converge" ? join(OPERATOR, `${name}.op.json`) : join(OPS, `${name}.op.json`);
     cpSync(from, join(dir, "dist", "ops", name, "op.json"));
+  }
+  if (chantVersion) {
+    const pkg = join(dir, "node_modules", "@intentius", "chant");
+    mkdirSync(join(pkg, "bin"), { recursive: true });
+    writeFileSync(
+      join(pkg, "package.json"),
+      JSON.stringify({ name: "@intentius/chant", version: chantVersion, main: "index.js", bin: { chant: "bin/chant" } }),
+    );
+    writeFileSync(join(pkg, "index.js"), "module.exports = {};\n");
+    writeFileSync(join(pkg, "bin", "chant"), "#!/usr/bin/env node\n");
   }
   return dir;
 }
@@ -84,12 +103,15 @@ const calls = (): string[][] => spawned.mock.calls.map((c) => c[1] as string[]);
 
 let withLoop: string;
 let noLoop: string;
+/** A loop whose project resolves a chant older than `operator log` (chant#2029). */
+let oldChant: string;
 beforeAll(() => {
-  withLoop = project(["staging-converge", "prod-apply"]);
+  withLoop = project(["staging-converge", "prod-apply"], "0.53.1");
   noLoop = project(["prod-apply"]);
+  oldChant = project(["staging-converge"], "0.52.2");
 });
 afterAll(() => {
-  for (const dir of [withLoop, noLoop]) rmSync(dir, { recursive: true, force: true });
+  for (const dir of [withLoop, noLoop, oldChant]) rmSync(dir, { recursive: true, force: true });
 });
 beforeEach(() => spawned.mockReset());
 
@@ -163,6 +185,13 @@ describe("GET /api/operator/status (#234 join 3)", () => {
     expect(body.operator.strip?.rows[0].tickId).toBeNull();
   });
 
+  it("carries the pending gate's approval address to the card (chant#2028)", async () => {
+    spawned.mockImplementation(() => fakeProc(0, gateUrlJson));
+    const { app } = appFor(withLoop);
+    const body = (await (await app.request("/api/operator/status")).json()) as { operator: OperatorState };
+    expect(body.operator.gates[0].url).toBe("https://github.com/INTENTIUS/chant/pull/2028");
+  });
+
   it("422s a chant with no `operator status`, keeping the declaration", async () => {
     spawned.mockReturnValue(fakeProc(1, "", "error: Unknown command: operator\n"));
     const { app } = appFor(withLoop);
@@ -195,6 +224,94 @@ describe("GET /api/operator/status (#234 join 3)", () => {
     expect(after).toBeGreaterThan(0);
     await app.request("/api/operator/status");
     expect(events.filter((e) => e.type === "operator")).toHaveLength(after);
+  });
+});
+
+describe("GET /api/operator/log (#234, chant#2029)", () => {
+  it("asks for a BOUNDED window and answers with the timeline", async () => {
+    spawned.mockImplementation(() => fakeProc(0, timelineJson));
+    const { app } = appFor(withLoop);
+    const res = await app.request("/api/operator/log");
+    expect(res.status).toBe(200);
+    const { history } = (await res.json()) as { history: OperatorHistory };
+
+    // Never the whole ledger: `--limit` is on every invocation behold makes.
+    expect(calls()).toEqual([["operator", "log", "--json", "--limit", "50"]]);
+    expect(history.window).toEqual({ limit: 50, since: null });
+    expect(history.entries.map((e) => e.kind)).toEqual(["tick", "gate-resolution", "tick"]);
+    expect(history.malformed).toEqual({ converge: 0, gates: 0 });
+    expect(history.more).toBe(false);
+  });
+
+  it("passes a caller's window through, clamped to behold's ceiling", async () => {
+    spawned.mockImplementation(() => fakeProc(0, timelineJson));
+    const { app } = appFor(withLoop);
+    const res = await app.request("/api/operator/log?limit=9999&since=2026-01-02T00:00:00.000Z");
+    const { history } = (await res.json()) as { history: OperatorHistory };
+    expect(calls()).toEqual([["operator", "log", "--json", "--limit", "200", "--since", "2026-01-02T00:00:00.000Z"]]);
+    // The clamp is reported, not silent — a full window would otherwise read as
+    // the end of history.
+    expect(history.window).toEqual({ limit: 200, since: "2026-01-02T00:00:00.000Z" });
+  });
+
+  it("400s a window chant itself would refuse, without spawning anything", async () => {
+    const { app } = appFor(withLoop);
+    for (const q of ["?limit=0", "?limit=1.5", "?since=last%20tuesday"]) {
+      const res = await app.request(`/api/operator/log${q}`);
+      expect(res.status).toBe(400);
+    }
+    expect(spawned).not.toHaveBeenCalled();
+  });
+
+  it("refuses a chant too old for `operator log` BEFORE spawning it", async () => {
+    // The load-bearing one. chant's `resolveCommand` falls back from the
+    // compound "operator log" to the simple "operator", so on an older chant
+    // this invocation is the TICK DAEMON — which never returns and, at a dial of
+    // apply, dispatches remediation. behold reading a history must never become
+    // behold running an operator.
+    const { app } = appFor(oldChant);
+    const res = await app.request("/api/operator/log");
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { code: string; error: string; history: null };
+    expect(body.code).toBe("no-operator-log-cli");
+    expect(body.error).toMatch(/0\.52\.2/);
+    expect(body.history).toBeNull();
+    expect(spawned).not.toHaveBeenCalled();
+  });
+
+  it("never shells chant at a project that declares no ConvergeOp", async () => {
+    const { app } = appFor(noLoop);
+    const res = await app.request("/api/operator/log");
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { code: string }).code).toBe("no-operator");
+    expect(spawned).not.toHaveBeenCalled();
+  });
+
+  it("422s an answer it can't read rather than rendering an empty timeline", async () => {
+    spawned.mockReturnValue(fakeProc(0, "chant operator log: 3 ticks\n"));
+    const { app } = appFor(withLoop);
+    const res = await app.request("/api/operator/log");
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as { code: string }).code).toBe("operator-log");
+  });
+
+  it("surfaces the unreadable-line count instead of a silently short timeline", async () => {
+    const parsed = JSON.parse(timelineJson) as { malformed: unknown };
+    parsed.malformed = { converge: 3, gates: 1 };
+    spawned.mockImplementation(() => fakeProc(0, JSON.stringify(parsed)));
+    const { app } = appFor(withLoop);
+    const { history } = (await (await app.request("/api/operator/log")).json()) as { history: OperatorHistory };
+    expect(history.malformed).toEqual({ converge: 3, gates: 1 });
+  });
+
+  it("broadcasts nothing — the history is pulled by whoever opened it", async () => {
+    // The strip is pushed because it is on screen and goes stale by itself. A
+    // timeline event would make every other client repaint a panel none of them
+    // asked for, and would turn a pull-on-demand read into a poll by proxy.
+    spawned.mockImplementation(() => fakeProc(0, timelineJson));
+    const { app, events } = appFor(withLoop);
+    await app.request("/api/operator/log");
+    expect(events.filter((e) => e.type === "operator")).toHaveLength(0);
   });
 });
 
