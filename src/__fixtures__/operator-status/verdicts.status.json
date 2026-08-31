@@ -1,0 +1,41 @@
+[
+  {
+    "op": "fountain-converge",
+    "env": "staging",
+    "lastTick": {
+      "version": 1,
+      "id": "9f1c7a52-3b64-4d0e-8a71-2e5c6d90b4af",
+      "op": "fountain-converge",
+      "env": "staging",
+      "timestamp": "2026-01-01T00:00:00.000Z",
+      "firedRuleIds": [],
+      "outcomes": [],
+      "components": [
+        {
+          "component": "api",
+          "reconciliation": "drifted",
+          "detail": "live digest differs",
+          "live": true
+        },
+        {
+          "component": "worker",
+          "reconciliation": "unknown",
+          "detail": "unreadable",
+          "unobserved": { "reason": "no-credentials" }
+        }
+      ],
+      "summary": {
+        "drifted": 1,
+        "remediated": 0,
+        "reported": 1,
+        "skippedBudget": 0,
+        "skippedFlap": 0,
+        "unobserved": 1,
+        "adopted": 0,
+        "gated": 0
+      },
+      "log": "converge(staging): drifted=1 remediated=0 reported=1 skipped-budget=0 skipped-flap=0 gated=0 unobserved=1 adopted=0"
+    },
+    "pendingGates": []
+  }
+]

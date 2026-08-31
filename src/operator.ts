@@ -58,9 +58,30 @@
  *    array. `resolvedBy`/`timestamp` never reach the JSON. So behold shows no
  *    resolved-by line — there is nothing to show, and synthesizing one from
  *    "the gate stopped being listed" would attribute an approval to nobody.
+ *
+ * ## What it started carrying in chant 0.53.1 (chant#2027)
+ *
+ * The tick record grew two optional fields, and `statusFor` hands the whole
+ * record through untouched (`cli/handlers/operator.ts`: `lastTick =
+ * ownRecords.at(-1)`, spread onto the row as-is), so both arrive verbatim at
+ * `chant operator status --json`'s `[].lastTick`:
+ *
+ *  - `[].lastTick.components[]` — the per-component verdicts the tick already
+ *    derived, `{component, reconciliation, detail, live?, unobserved?}`, keyed
+ *    by COMPONENT NAME. That is the same key `chant components status --live
+ *    --json` emits and the same one src/component-status.ts's
+ *    `joinComponentStatus` already joins onto component-DAG node ids, so the
+ *    verdicts join to behold's IR without inventing a mapping — see
+ *    {@link tickComponentVerdicts} and `joinTickVerdicts`.
+ *  - `[].lastTick.id` — a stable tick id, so a tick is something a reader can
+ *    point at rather than an `(op, env, timestamp)` triple.
+ *
+ * Both are optional on the record, and a `version: 1` ledger written before
+ * 0.53.1 has neither. Absent is not "no components" and not "no id": every
+ * path here reads absence as "this chant didn't say", never as a claim.
  */
 
-import type { GraphIR, IRNode } from "@intentius/chant";
+import type { GraphIR, IRNode, ComponentStatusRow } from "@intentius/chant";
 import type { GlyphSpec } from "@intentius/pinhole";
 
 // ── chant's shapes, mirrored ─────────────────────────────────────────────────
@@ -83,14 +104,45 @@ export interface ConvergeRuleOutcome {
   reason?: string;
 }
 
+/**
+ * One component's verdict as a tick observed it — chant's
+ * `ConvergeComponentVerdict` (chant#2027, shipped 0.53.1), field for field.
+ *
+ * A deliberate subset of `ComponentStatusRow`: chant's `componentVerdicts`
+ * projects a status row down to these five and drops `recorded`, `build` and
+ * `componentBom`, because a tick record is one line of JSON appended forever.
+ * `reconciliation` is typed off chant's own row rather than restated, so the
+ * union stays the one src/component-status.ts paints from — the #234 inventory's
+ * point that the tick's symptom vocabulary IS `ComponentStatusRow`'s.
+ */
+export interface ConvergeComponentVerdict {
+  component: string;
+  reconciliation: ComponentStatusRow["reconciliation"];
+  /** chant's own detail behind the verdict, already capped to one line by its
+   * `sanitizeLedgerText`. */
+  detail: string;
+  /** "Observed live". Absent means "did not look" or "could not look" — see `unobserved`. */
+  live?: boolean;
+  /** Why live state could not be read (chant#1089) — the row that tripped the
+   * tick's aggregate `unknown`. */
+  unobserved?: { reason: string; detail?: string };
+}
+
 /** One immutable converge-tick record — chant's `ConvergeTickRecord`. */
 export interface ConvergeTickRecord {
   version: 1;
+  /** A stable tick id (chant#2027, minted in `appendConvergeRecord`). Absent on
+   * a record written by a chant older than 0.53.1. */
+  id?: string;
   op: string;
   env: string;
   timestamp: string;
   firedRuleIds: string[];
   outcomes: ConvergeRuleOutcome[];
+  /** The per-component verdicts behind `summary`'s counts (chant#2027). Absent
+   * on a record written by a chant older than 0.53.1 — which is not the same
+   * statement as "this tick observed no components". */
+  components?: ConvergeComponentVerdict[];
   summary: {
     drifted: number;
     remediated: number;
@@ -554,6 +606,12 @@ export interface OperatorStripRow {
   log: string | null;
   /** That tick's ISO timestamp. Null for the same reason. */
   at: string | null;
+  /** That tick's own id (chant#2027) — what makes a tick a thing a reader can
+   * point at rather than an `(op, env, timestamp)` triple. Null when no tick has
+   * been recorded, AND when the tick predates chant 0.53.1 and carries none: the
+   * strip must not mint an identity chant didn't write. Carried whole here; the
+   * renderer truncates it (web/operator.js's `shortTickId`). */
+  tickId: string | null;
   lease: LeaseState;
   leaseHolder: string | null;
   leaseExpiresAt: string | null;
@@ -586,6 +644,7 @@ export function operatorStrip(rows: readonly OpStatusLine[], now: number = Date.
       env: r.env,
       log: r.lastTick?.log ?? null,
       at: r.lastTick?.timestamp ?? null,
+      tickId: typeof r.lastTick?.id === "string" && r.lastTick.id ? r.lastTick.id : null,
       lease,
       leaseHolder: r.lease?.holder ?? null,
       leaseExpiresAt: r.lease?.expiresAt ?? null,
@@ -593,6 +652,195 @@ export function operatorStrip(rows: readonly OpStatusLine[], now: number = Date.
     };
   });
   return { rows: out, pendingGates: out.reduce((n, r) => n + r.pendingGates, 0) };
+}
+
+// ── The tick's per-component verdicts (chant#2027) ───────────────────────────
+//
+// ## The join key, verified rather than guessed
+//
+// chant#2022's lesson was that a field which doesn't join is a field you render
+// where it arrived and file an issue about — you do not invent the mapping. So
+// this one was checked before anything was built:
+//
+//   `ConvergeComponentVerdict.component` is `ComponentStatusRow.component`,
+//   copied straight through by chant's `componentVerdicts(rows)` from the very
+//   `statusRows` its `convergeTick` already had
+//   (`lexicons/temporal/src/op/activities/converge.ts`: `components:
+//   componentVerdicts(statusRows)`, where `statusRows = observeStatusRows(env)`).
+//
+// And `ComponentStatusRow.component` is EXACTLY the key
+// src/component-status.ts's `joinComponentStatus` already joins onto
+// component-DAG node ids (`node.id === row.component`, M1.0/#56). Same
+// namespace, same producer, same key. The tick's verdicts therefore reach
+// behold's IR through the join that already exists — nothing new to map, and
+// no issue to file.
+//
+// ## Why they can only ever feed the LAST tier
+//
+// A verdict is what the operator saw at `lastTick.timestamp`, which is a moment
+// in the past — possibly a long one, since a loop that stopped ticking leaves
+// its final record on the branch forever. The live component-status read is
+// what chant sees NOW. So the tick is never allowed to outrank it: it paints
+// only where the live join painted nothing, and only its `reconciliation`, the
+// last-resort tier under stack / rollup / `live` (see
+// `componentStatusColor`'s doc). The tick's own `live` boolean rides onto the
+// node for the panel to state, and is deliberately NOT painted from — tier-3
+// evidence from an old moment competing with tier-3 evidence from this one is
+// the exact confusion the tiering exists to prevent.
+
+/** chant's own operator cadence — `DEFAULT_OPERATOR_INTERVAL_MS`
+ * (`packages/core/src/op/operator.ts`), mirrored because it is not on
+ * `@intentius/chant`'s public export surface, same rule the types above follow.
+ * Verified against chant `52ca6c82` (0.53.1). */
+export const OPERATOR_INTERVAL_MS = 60_000;
+
+/**
+ * How old a tick's verdicts may be and still be painted.
+ *
+ * Fifteen of chant's own default rounds. A loop running at that cadence has
+ * written fifteen records inside this window, so a newest record older than it
+ * does not mean "nothing changed" — it means nobody is ticking, and the verdict
+ * is history. History is still shown (the panel names the tick and how old it
+ * is); it is not shown as a colour, because a colour on the graph reads as the
+ * current state of the estate and there is no way to caveat a fill.
+ */
+export const TICK_VERDICT_TTL_MS = 15 * OPERATOR_INTERVAL_MS;
+
+/** How old a tick is, and whether that is still paintable. */
+export interface TickFreshness {
+  /** Milliseconds between the tick and `now`. Null when the timestamp doesn't
+   * parse, or when the tick is dated in the future (a clock behold can't
+   * reconcile is not an age it will report). */
+  ageMs: number | null;
+  fresh: boolean;
+}
+
+/**
+ * Read a tick's age against {@link TICK_VERDICT_TTL_MS}.
+ *
+ * `now` is injected for `operatorStrip`'s reason: a test pins the verdict
+ * instead of racing the clock. An undatable or future-dated timestamp is NOT
+ * fresh — the strip's lease verdict makes the same call in the other direction
+ * (an unparseable expiry stays `held`) and for the same reason: when behold
+ * can't date a fact, it declines to claim the fact is current.
+ */
+export function tickFreshness(at: string | null | undefined, now: number = Date.now()): TickFreshness {
+  const t = at ? Date.parse(at) : NaN;
+  if (!Number.isFinite(t)) return { ageMs: null, fresh: false };
+  const age = now - t;
+  if (age < 0) return { ageMs: null, fresh: false };
+  return { ageMs: age, fresh: age <= TICK_VERDICT_TTL_MS };
+}
+
+/**
+ * One ConvergeOp's last tick, reduced to what a graph join needs.
+ *
+ * Deliberately carries no freshness: this is the time-INDEPENDENT half, so it
+ * can sit on the broadcast `OperatorState` without changing on every poll (which
+ * would make src/op-runner.ts's compare-and-broadcast a repaint loop). Freshness
+ * is computed at join time from `at`, by {@link tickFreshness}.
+ */
+export interface TickComponentVerdicts {
+  /** The ConvergeOp that recorded the tick. */
+  op: string;
+  /** The environment it converges — the verdicts are about THAT env's components. */
+  env: string;
+  /** The tick's ISO timestamp: how fresh every verdict below is, exactly. */
+  at: string;
+  /** The tick's id, when this chant wrote one (chant#2027). */
+  tickId: string | null;
+  verdicts: ConvergeComponentVerdict[];
+}
+
+/** chant's `reconciliation` union — the one src/component-status.ts paints, and
+ * the one the #234 inventory established the tick's symptom vocabulary IS. */
+const RECONCILIATIONS = new Set(["reconciled", "unrecorded", "stale", "drifted", "unknown"]);
+
+/** Structural read of one `lastTick.components[]` entry, `readRow`'s discipline
+ * applied one level down: demand only what a paint needs (`component`, a
+ * `reconciliation` from chant's own union), let anything additive ride along
+ * untouched. */
+function readVerdict(value: unknown): ConvergeComponentVerdict | null {
+  if (!isRecord(value)) return null;
+  if (typeof value.component !== "string" || !value.component) return null;
+  if (typeof value.reconciliation !== "string" || !RECONCILIATIONS.has(value.reconciliation)) return null;
+  const unobserved = isRecord(value.unobserved) && typeof value.unobserved.reason === "string" ? value.unobserved : undefined;
+  return {
+    component: value.component,
+    reconciliation: value.reconciliation as ConvergeComponentVerdict["reconciliation"],
+    detail: typeof value.detail === "string" ? value.detail : "",
+    ...(typeof value.live === "boolean" ? { live: value.live } : {}),
+    ...(unobserved
+      ? {
+          unobserved: {
+            reason: unobserved.reason as string,
+            ...(typeof unobserved.detail === "string" ? { detail: unobserved.detail } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
+/**
+ * The per-component verdicts each status row's last tick carries.
+ *
+ * A row whose tick has no `components` (every chant before 0.53.1) contributes
+ * nothing — no entry at all, rather than an entry with an empty list, so a
+ * consumer can't mistake "this chant doesn't say" for "this tick saw no
+ * components". A tick whose `components` IS an empty array does produce an
+ * entry with no verdicts: that is chant saying it observed nothing, which is a
+ * different fact and paints nothing either way.
+ *
+ * An individual entry behold can't read is dropped rather than refusing the
+ * whole strip — unlike an unreadable status ROW, which refuses (a strip missing
+ * a loop undercounts the loops running). A dropped verdict costs one node its
+ * colour, which is exactly what a pre-0.53.1 chant costs every node, so it
+ * degrades to a shape behold already renders honestly.
+ */
+export function tickComponentVerdicts(rows: readonly OpStatusLine[]): TickComponentVerdicts[] {
+  const out: TickComponentVerdicts[] = [];
+  for (const row of rows) {
+    const tick = row.lastTick;
+    if (!tick || !Array.isArray(tick.components)) continue;
+    const verdicts: ConvergeComponentVerdict[] = [];
+    for (const value of tick.components) {
+      const verdict = readVerdict(value);
+      if (verdict) verdicts.push(verdict);
+    }
+    out.push({
+      op: row.op,
+      env: tick.env || row.env,
+      at: tick.timestamp,
+      tickId: typeof tick.id === "string" && tick.id ? tick.id : null,
+      verdicts,
+    });
+  }
+  return out;
+}
+
+/**
+ * The verdicts that speak for `env`, or null.
+ *
+ * Matched on the tick's OWN env, never on which loop happens to be first: a
+ * staging loop's verdicts painted onto a prod component DAG would be a picture
+ * lying about which cloud it is describing. Two ConvergeOps converging the same
+ * env is legal (chant discovers ops, not one-per-env), so the NEWEST tick wins
+ * — the same `at(-1)` rule chant's own `statusFor` applies within one ledger.
+ */
+export function verdictsForEnv(all: readonly TickComponentVerdicts[], env: string): TickComponentVerdicts | null {
+  // An undatable tick sorts oldest rather than throwing the comparison: it can
+  // still be the only candidate (and paints nothing, `tickFreshness` refusing to
+  // call it fresh), but it never displaces one behold can actually date.
+  const when = (t: TickComponentVerdicts): number => {
+    const ms = Date.parse(t.at);
+    return Number.isFinite(ms) ? ms : -Infinity;
+  };
+  let best: TickComponentVerdicts | null = null;
+  for (const t of all) {
+    if (t.env !== env) continue;
+    if (!best || when(t) > when(best)) best = t;
+  }
+  return best;
 }
 
 // ── The converge gate card ───────────────────────────────────────────────────
@@ -690,6 +938,12 @@ export interface OperatorState {
   strip: OperatorStrip | null;
   /** The pending converge gates from that same read. */
   gates: ConvergeGateCard[];
+  /** The per-component verdicts each loop's last tick carried (chant#2027), one
+   * entry per ticked loop whose chant is new enough to say. Empty on every
+   * older chant, which is why the graph join is strictly additive. Held
+   * time-independently so `op-runner`'s compare-and-broadcast doesn't see the
+   * clock move and repaint. */
+  verdicts: TickComponentVerdicts[];
   /** Why there is no strip, when there isn't one to be had — a refusal's own
    * `error` text. Null when the last read succeeded. */
   note: string | null;
@@ -704,6 +958,7 @@ export const initialOperatorState: OperatorState = {
   declared: [],
   strip: null,
   gates: [],
+  verdicts: [],
   note: null,
   code: null,
   readAt: null,
@@ -717,12 +972,15 @@ export function operatorRead(
   now: number = Date.now(),
 ): OperatorState {
   if (!result.ok) {
-    return { ...state, strip: null, gates: [], note: result.refusal.error, code: result.refusal.code, readAt: at };
+    // The verdicts go with the strip: they are what the LAST read said, and a
+    // read that refused leaves behold with no current claim about any component.
+    return { ...state, strip: null, gates: [], verdicts: [], note: result.refusal.error, code: result.refusal.code, readAt: at };
   }
   return {
     ...state,
     strip: operatorStrip(result.rows, now),
     gates: convergeGateCards(result.rows),
+    verdicts: tickComponentVerdicts(result.rows),
     note: null,
     code: null,
     readAt: at,
@@ -738,7 +996,7 @@ export function operatorRead(
  * time there is a tick to state it about — a reader must never take the strip
  * for a shortened timeline.
  */
-export function operatorNote(state: OperatorState): string {
+export function operatorNote(state: OperatorState, now: number = Date.now()): string {
   if (!state.declared.length) {
     return "No operating loop: this project declares no ConvergeOp, so there is no operator strip.";
   }
@@ -755,6 +1013,20 @@ export function operatorNote(state: OperatorState): string {
       ? `last tick only — chant's status surface exposes one tick per loop, not the history (chant#2029), so this is a strip and not a timeline`
       : `no tick recorded yet on any loop`,
   );
+  // The per-component verdicts (chant#2027), and — the half that matters — how
+  // old they are. A reader must never take a painted component for a live read.
+  const named = state.verdicts.reduce((n, t) => n + t.verdicts.length, 0);
+  if (named) {
+    const stale = state.verdicts.filter((t) => t.verdicts.length && !tickFreshness(t.at, now).fresh);
+    const painted = named - stale.reduce((n, t) => n + t.verdicts.length, 0);
+    bits.push(
+      painted
+        ? `${painted} component verdict${painted === 1 ? "" : "s"} from that tick — joined onto the component DAG by component name, ` +
+            `under the live read (never over it) and only while the tick is younger than ${Math.round(TICK_VERDICT_TTL_MS / 60_000)}m`
+        : `${named} component verdict${named === 1 ? "" : "s"} from that tick, all older than ${Math.round(TICK_VERDICT_TTL_MS / 60_000)}m — ` +
+            `named on the node, not painted: a colour would read as the estate's state now`,
+    );
+  }
   const held = state.strip.rows.filter((r) => r.lease === "held").length;
   if (held) bits.push(`${held} lease${held === 1 ? "" : "s"} held`);
   const expired = state.strip.rows.filter((r) => r.lease === "expired").length;

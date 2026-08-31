@@ -51,6 +51,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const OPS = join(HERE, "__fixtures__", "ops-example-writes");
 const OPERATOR = join(HERE, "__fixtures__", "operator-status");
 const statusJson = readFileSync(join(OPERATOR, "chant-test-values.status.json"), "utf8");
+/** The chant 0.53.1 record shape (chant#2027) — see src/operator.test.ts's
+ * provenance note. Its ConvergeOp is `fountain-converge`, so the fixture below
+ * re-labels it to the one this project declares. */
+const verdictsJson = readFileSync(join(OPERATOR, "verdicts.status.json"), "utf8").replace(/fountain-converge/g, "staging-converge");
 
 /** A project dir with the given emitted op.json files laid out where chant
  * writes them. `staging-converge` is the ConvergeOp fixture; the rest come from
@@ -126,6 +130,37 @@ describe("GET /api/operator/status (#234 join 3)", () => {
       gate: "rollout-gate",
       approve: { method: "POST", path: "/api/operator/approve/fountain-apply/rollout-gate" },
     });
+  });
+
+  it("carries the tick's id and its per-component verdicts through to the client (chant#2027)", async () => {
+    spawned.mockImplementation(() => fakeProc(0, verdictsJson));
+    const { app, runner } = appFor(withLoop);
+    const body = (await (await app.request("/api/operator/status")).json()) as { operator: OperatorState };
+
+    expect(body.operator.strip?.rows[0].tickId).toBe("9f1c7a52-3b64-4d0e-8a71-2e5c6d90b4af");
+    expect(body.operator.verdicts).toEqual([
+      {
+        op: "staging-converge",
+        env: "staging",
+        at: "2026-01-01T00:00:00.000Z",
+        tickId: "9f1c7a52-3b64-4d0e-8a71-2e5c6d90b4af",
+        verdicts: [
+          { component: "api", reconciliation: "drifted", detail: "live digest differs", live: true },
+          { component: "worker", reconciliation: "unknown", detail: "unreadable", unobserved: { reason: "no-credentials" } },
+        ],
+      },
+    ]);
+    // This state is exactly what the component-DAG graph route reads to join
+    // the verdicts onto the picked env's nodes — no second subprocess.
+    expect(runner.operatorState.verdicts).toEqual(body.operator.verdicts);
+  });
+
+  it("holds no verdicts and no tick id for a pre-0.53.1 chant", async () => {
+    spawned.mockImplementation(() => fakeProc(0, statusJson));
+    const { app } = appFor(withLoop);
+    const body = (await (await app.request("/api/operator/status")).json()) as { operator: OperatorState };
+    expect(body.operator.verdicts).toEqual([]);
+    expect(body.operator.strip?.rows[0].tickId).toBeNull();
   });
 
   it("422s a chant with no `operator status`, keeping the declaration", async () => {

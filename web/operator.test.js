@@ -16,6 +16,8 @@ import {
   CONVERGE_LOOP_LINE,
   ONE_TICK_CAVEAT,
   LEASE_LABEL,
+  shortTickId,
+  TICK_ID_CHARS,
 } from "./operator.js";
 
 /** src/operator.ts's OperatorState, as the server broadcasts it. Values trace to
@@ -29,6 +31,9 @@ const stripRow = {
   lease: "held",
   leaseHolder: "op-a",
   leaseExpiresAt: "2026-01-01T00:05:00.000Z",
+  // chant#2027's tick id, as src/operator.ts's `operatorStrip` carries it —
+  // whole, for the renderer to truncate.
+  tickId: "9f1c7a52-3b64-4d0e-8a71-2e5c6d90b4af",
   pendingGates: 1,
 };
 const gate = {
@@ -95,6 +100,44 @@ describe("operatorRows", () => {
   it("says a declared loop has not been read yet before the first ask", () => {
     const [row] = operatorRows({ ...state, strip: null, gates: [] }, NOW);
     expect(row.leaseText).toBe("not read yet");
+  });
+
+  it("carries the tick id whole and truncated (chant#2027)", () => {
+    const [row] = operatorRows(state, NOW);
+    expect(row.tickId).toBe("9f1c7a52-3b64-4d0e-8a71-2e5c6d90b4af");
+    expect(row.tick).toBe("9f1c7a52");
+  });
+
+  it("says nothing about a tick id a pre-0.53.1 chant never wrote", () => {
+    // The row must read exactly as it did before the field existed — a
+    // placeholder would show an identity that does not exist.
+    const older = { ...stripRow, tickId: null };
+    const [row] = operatorRows({ ...state, strip: { rows: [older], pendingGates: 1 } }, NOW);
+    expect(row.tickId).toBeNull();
+    expect(row.tick).toBeNull();
+  });
+
+  it("says nothing about a tick id on a loop the last read didn't mention", () => {
+    const rows = operatorRows({ ...state, declared: [...declared, { name: "prod-observe", env: "prod" }] }, NOW);
+    expect(rows[1]).toMatchObject({ tickId: null, tick: null });
+  });
+});
+
+describe("shortTickId", () => {
+  it("keeps the first block of chant's randomUUID mint", () => {
+    expect(shortTickId("9f1c7a52-3b64-4d0e-8a71-2e5c6d90b4af")).toBe("9f1c7a52");
+    expect(TICK_ID_CHARS).toBe(8);
+  });
+
+  it("shows a shorter id whole rather than padding one chant didn't write", () => {
+    expect(shortTickId("tick-fix")).toBe("tick-fix");
+    expect(shortTickId("abc")).toBe("abc");
+  });
+
+  it("is null in, null out — an absent id is not an id to shorten", () => {
+    expect(shortTickId(null)).toBeNull();
+    expect(shortTickId(undefined)).toBeNull();
+    expect(shortTickId("")).toBeNull();
   });
 });
 

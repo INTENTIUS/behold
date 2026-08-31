@@ -44,7 +44,7 @@ import {
 import { mergeClusterRoot, runningK3dClusters } from "./cluster-root.ts";
 import { synthesizeHelmReleases, discoverReleaseUnits } from "./helm-releases.ts";
 import { ghReady, pickWorkflow, dispatchAndFollow, joinCiProgress } from "./gh-run.ts";
-import { joinComponentStatus, componentStatusColor } from "./component-status.ts";
+import { joinComponentStatus, joinTickVerdicts, componentStatusColor } from "./component-status.ts";
 import { reclassifyOverlay, pruneImports, attachRuntimeContainment, pruneRuntimeChildren } from "./overlay.ts";
 import { addValueMatchEdges } from "./value-match.ts";
 import { addK8sDeclaredEdges } from "./k8s-edges.ts";
@@ -89,6 +89,7 @@ import {
   markOperatorHome,
   operatorHomeBoxMarks,
   operatorNote,
+  verdictsForEnv,
   APPROVE_SEMANTICS,
   HOW_TO_DECLARE,
   type OpStatusLine,
@@ -1682,6 +1683,21 @@ export function createApp(
         if (env) {
           const rows = await componentStatus(cfg.projectDir, env, opts);
           ir = joinComponentStatus(ir, rows);
+          // #234 join 3 / chant#2027: the operating loop's last tick for THIS
+          // env kept its own per-component verdicts, keyed by the same
+          // component name the live read above is keyed by. They join under
+          // that read — the tick's reconciliation verdict is the last tier and
+          // only reaches a node the live read left unpainted, and a tick past
+          // its freshness window is named on the node but never coloured
+          // (src/component-status.ts's `joinTickVerdicts`).
+          //
+          // Read off the strip's last answer rather than shelling `chant
+          // operator status` here: that read is the ops lens's, pulled when a
+          // client is looking, and a graph request must not grow a second
+          // subprocess. An unopened lens (or any chant older than 0.53.1)
+          // leaves `verdicts` empty and this a no-op — which is why it can sit
+          // in the hot path at all.
+          ir = joinTickVerdicts(ir, verdictsForEnv(runner.operatorState.verdicts, env));
           mode = "component-status";
           metaEnv = env;
         }
