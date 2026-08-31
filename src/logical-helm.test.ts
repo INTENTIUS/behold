@@ -1,6 +1,7 @@
 import { describe, test, expect } from "vitest";
 import { projectHelmLogical, releaseBoxTitle } from "./logical-helm.ts";
-import { projectTopology, nestReleaseBoxes, type ByContainer } from "./logical.ts";
+import { projectTopology, nestReleaseBoxes, placeHelmReleases, type ByContainer, type ClusterBoxes } from "./logical.ts";
+import { namespaceBoxKey } from "./logical-k8s.ts";
 import type { GraphIR, IRNode } from "@intentius/chant";
 
 const chart = (id: string, name: string, file: string): IRNode => ({
@@ -102,5 +103,86 @@ describe("projectTopology composes the helm lens", () => {
     // No duplicate cards in the union.
     const ids = p.ir.nodes.map((n) => n.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+// behold#328 / pinhole#119 — the title re-parse debt. `placeHelmReleases` used
+// to find the namespace box a release belongs in by re-minting the display
+// string `namespace <ns>`, which made every box title load-bearing: pinhole#119
+// asks for a mark channel on GroupBox precisely because behold could not
+// decorate a namespace title without silently unparenting the releases inside
+// it. The lens that drew the box now hands over its container KEY.
+describe("placeHelmReleases parents by container key, not by box title (#328, pinhole#119)", () => {
+  const release = (id: string, ns?: string): IRNode => ({
+    id,
+    kind: "Helm::Release",
+    lexicon: "helm",
+    attrs: ns ? { name: id, namespace: ns } : { name: id },
+  });
+  /** The k8s lens's own report for a cluster with one `prod` namespace box. */
+  const cluster = (): { byContainer: ByContainer; boxes: ClusterBoxes } => ({
+    byContainer: { "cluster local": [namespaceBoxKey("prod")], [namespaceBoxKey("prod")]: ["webDeploy"] },
+    boxes: { cluster: "cluster local", namespaces: { prod: namespaceBoxKey("prod") } },
+  });
+
+  test("a release joins the namespace box the k8s lens already drew", () => {
+    const { byContainer, boxes } = cluster();
+    placeHelmReleases([release("shop/api", "prod")], byContainer, boxes);
+    expect(byContainer[namespaceBoxKey("prod")]).toEqual(["webDeploy", "shop/api"]);
+  });
+
+  // The test that would have caught the coupling: same estate, same release,
+  // only the box's TITLE decorated. The key travels, so the placement is
+  // unchanged — no second box, nothing stranded at the root.
+  test("a DECORATED namespace title still parents its releases — the key travels, the title is presentation", () => {
+    const decorated = `${namespaceBoxKey("prod")} ⚙`;
+    const byContainer: ByContainer = { "cluster local": [decorated], [decorated]: ["webDeploy"] };
+    placeHelmReleases([release("shop/api", "prod")], byContainer, {
+      cluster: "cluster local",
+      namespaces: { prod: decorated },
+    });
+    expect(byContainer[decorated]).toEqual(["webDeploy", "shop/api"]);
+    expect(byContainer[namespaceBoxKey("prod")]).toBeUndefined();
+    expect(byContainer["cluster local"]).toEqual([decorated]);
+  });
+
+  test("a namespace the estate never declared gets its box under the cluster — reporting where the release was observed", () => {
+    const { byContainer, boxes } = cluster();
+    placeHelmReleases([release("bootstrap", "kube-system")], byContainer, boxes);
+    expect(byContainer["cluster local"]).toEqual([namespaceBoxKey("prod"), namespaceBoxKey("kube-system")]);
+    expect(byContainer[namespaceBoxKey("kube-system")]).toEqual(["bootstrap"]);
+  });
+
+  test("no cluster picture, or no namespace on the release: the card stays at the root", () => {
+    const helmOnly: ByContainer = { "release web": ["chartCard"] };
+    placeHelmReleases([release("shop/api", "prod")], helmOnly, { namespaces: {} });
+    expect(helmOnly).toEqual({ "release web": ["chartCard"] });
+
+    const { byContainer, boxes } = cluster();
+    const before = structuredClone(byContainer);
+    placeHelmReleases([release("nsless")], byContainer, boxes);
+    expect(byContainer).toEqual(before);
+  });
+});
+
+// The pin: the placement a real estate gets through the whole composition,
+// asserted end to end so the re-parenting refactor above stays behaviour-free.
+describe("projectTopology places an observed release in its namespace box (#328 pin)", () => {
+  /** A deploy-step estate: the k8s half declares the namespace and a workload,
+   * the helm half is an observed release synthesized by src/helm-releases.ts
+   * (no declared chart node). */
+  const estate = (): GraphIR =>
+    irOf([
+      { id: "prodNs", kind: "K8s::Core::Namespace", lexicon: "k8s", attrs: { metadata: { name: "prod" } } },
+      k8s("webDeploy", "K8s::Apps::Deployment", "src/app.ts", "prod"),
+      { id: "prod/ingress-nginx", kind: "Helm::Release", lexicon: "helm", attrs: { name: "ingress-nginx", namespace: "prod" } },
+      { id: "kube-system/metrics", kind: "Helm::Release", lexicon: "helm", attrs: { name: "metrics", namespace: "kube-system" } },
+    ]);
+
+  test("declared namespace claims its release; an undeclared one is boxed under the cluster", () => {
+    const { byContainer } = projectTopology(estate(), "local");
+    expect(byContainer["cluster local"]).toEqual(expect.arrayContaining(["namespace prod", "namespace kube-system"]));
+    expect(byContainer["namespace prod"]).toEqual(["webDeploy", "prod/ingress-nginx"]);
+    expect(byContainer["namespace kube-system"]).toEqual(["kube-system/metrics"]);
   });
 });

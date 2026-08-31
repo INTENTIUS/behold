@@ -77,6 +77,24 @@ export const K8S_PLUMBING_KINDS = new Set([
   "K8s::Rbac::ClusterRoleBinding",
 ]);
 
+/**
+ * The container key a namespace's box is filed under — minted in exactly one
+ * place (pinhole#119, behold#328), the way `releaseBoxTitle` mints the helm
+ * lens's.
+ *
+ * `byContainer` keys double as box titles today, which is why this used to be
+ * re-derived verbatim by `placeHelmReleases` (src/logical.ts) to find the box a
+ * helm release belongs in. That made the displayed string load-bearing: a
+ * decorated title — pinhole#119's mark channel, the operator-home glyph #324
+ * wanted — would have silently unparented every release. Callers now carry the
+ * KEY (`LogicalProjection.namespaceBoxes`) instead of re-deriving it, so this
+ * function is the only thing that knows the format and nothing downstream
+ * parses what it returns.
+ */
+export function namespaceBoxKey(ns: string): string {
+  return `namespace ${ns}`;
+}
+
 /** A nested `metadata.<key>` string, which is where k8s puts identity. */
 function metaStr(node: IRNode, key: "name" | "namespace"): string | undefined {
   const meta = node.attrs?.metadata as Record<string, unknown> | undefined;
@@ -152,7 +170,6 @@ export function projectK8sLogical(ir: GraphIR, env?: string, boundContext?: stri
   const cluster = boundManagedCluster(ir.nodes, boundContext);
   const CLUSTER_TITLE = cluster ? cluster.id : env ? `cluster ${env}` : "cluster";
   const CLUSTER_SCOPED = "cluster-scoped";
-  const namespaceTitle = (ns: string) => `namespace ${ns}`;
 
   const byContainer: ByContainer = {};
   const child = (parent: string, c: string) => {
@@ -160,8 +177,13 @@ export function projectK8sLogical(ir: GraphIR, env?: string, boundContext?: stri
     if (!arr.includes(c)) arr.push(c);
   };
 
-  // A box per namespace the estate names, including ones holding no card.
-  for (const ns of [...declaredNamespaces(k8s)].sort()) child(CLUSTER_TITLE, namespaceTitle(ns));
+  // A box per namespace the estate names, including ones holding no card. The
+  // key each namespace was filed under is carried out on the projection
+  // (`namespaceBoxes`) so a cross-lens pass re-parents by that key rather than
+  // by re-minting the box's display string — see `namespaceBoxKey`.
+  const namespaceBoxes: Record<string, string> = {};
+  const boxFor = (ns: string) => (namespaceBoxes[ns] ??= namespaceBoxKey(ns));
+  for (const ns of [...declaredNamespaces(k8s)].sort()) child(CLUSTER_TITLE, boxFor(ns));
 
   // Everything that is not support plumbing. See the module note on why this is
   // a denylist where the other lenses use an allowlist.
@@ -171,7 +193,7 @@ export function projectK8sLogical(ir: GraphIR, env?: string, boundContext?: stri
   for (const n of headline) {
     const ns = metaStr(n, "namespace");
     if (ns) {
-      child(namespaceTitle(ns), n.id);
+      child(boxFor(ns), n.id);
     } else {
       // A cluster-scoped object is not homeless — it genuinely lives outside
       // any namespace, and gets its own lane rather than being forced into one.
@@ -188,5 +210,5 @@ export function projectK8sLogical(ir: GraphIR, env?: string, boundContext?: stri
   const kept = new Set(headline.map((n) => n.id));
   const edges = ir.edges.filter((e) => kept.has(e.from) && kept.has(e.to));
 
-  return { ir: { nodes: headline, edges, groups: {} }, byContainer };
+  return { ir: { nodes: headline, edges, groups: {} }, byContainer, clusterBox: CLUSTER_TITLE, namespaceBoxes };
 }
