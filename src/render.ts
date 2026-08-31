@@ -13,6 +13,7 @@ import {
   renderMorphHtml,
   cardSizes,
   registerPack,
+  type GlyphSpec,
   type GroupBox,
   type MorphView,
   type Status,
@@ -67,7 +68,19 @@ export interface RenderResult {
  * ⊃ component ⊃ resource, per `byContainer`) and routes the surviving edges
  * between them; `renderSvg` paints the nested boundary boxes. behold's own title
  * band is suppressed (the SPA header owns it). */
-export function renderArchitecture(ir: GraphIR, byContainer: ByContainer, opts: { theme?: string } = {}): RenderResult {
+export function renderArchitecture(
+  ir: GraphIR,
+  byContainer: ByContainer,
+  opts: {
+    theme?: string;
+    /** Box KEY → mark (pinhole#119's `GroupBox.mark`, #331's structural keys)
+     * — e.g. `operatorHomeBoxMarks` (src/operator.ts). Applied after layout,
+     * matched on `GroupBox.id` (the same `byContainer` key, pinhole#103), so a
+     * caller never has to know a box's rendered title. Absent = every box
+     * renders exactly as before this option existed. */
+    groupMarks?: Readonly<Record<string, string | GlyphSpec>>;
+  } = {},
+): RenderResult {
   // Spacing nudge by edge density: the projected graph can be nearly complete
   // (every workload wired to the gateway/each other), so a dense edge set bundles
   // into overlapping corridors. Spread nodes further apart the tighter the graph
@@ -80,6 +93,12 @@ export function renderArchitecture(ir: GraphIR, byContainer: ByContainer, opts: 
     nodesep: Math.round(48 + spread * 48),
     ranksep: Math.round(60 + spread * 56),
   });
+  if (opts.groupMarks) {
+    for (const box of layout.groups ?? []) {
+      const mark = box.id !== undefined ? opts.groupMarks[box.id] : undefined;
+      if (mark !== undefined) box.mark = mark;
+    }
+  }
   const svg = renderSvg(ir, layout, {
     fit: true,
     hideTitle: true,

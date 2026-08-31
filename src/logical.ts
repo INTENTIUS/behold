@@ -381,7 +381,11 @@ export function projectTopology(ir: GraphIR, env?: string, boundContext?: string
   placeHelmReleases(nodes, byContainer, boxes);
   nestReleaseBoxes(byContainer);
   retainCrossLensEdges(ir, projections, nodes, edges, byContainer);
-  return { ir: { nodes, edges, groups: {} }, byContainer };
+  // Carried out for the same reason the k8s lens carries it in
+  // (behold#328/#331, pinhole#119): a namespace box is addressed by this KEY,
+  // never by its title, and `operatorHomeBoxMarks` (src/operator.ts) is the
+  // first cross-lens caller that needs it out here on the joined projection.
+  return { ir: { nodes, edges, groups: {} }, byContainer, namespaceBoxes: boxes.namespaces };
 }
 
 /**

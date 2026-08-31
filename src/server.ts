@@ -87,6 +87,7 @@ import {
   readOperatorStatus,
   declaredConvergeOps,
   markOperatorHome,
+  operatorHomeBoxMarks,
   operatorNote,
   APPROVE_SEMANTICS,
   HOW_TO_DECLARE,
@@ -1634,8 +1635,12 @@ export function createApp(
         // them (the app projects), and only the composed picture has both.
         if (logical) {
           const logicalBefore = ir.nodes.length;
-          const { ir: projected, byContainer } = projectTopology(ir, metaEnv ?? undefined, estateContext, await estateSourceRoots(opts));
-          const { svg } = renderArchitecture(projected, byContainer);
+          const { ir: projected, byContainer, namespaceBoxes } = projectTopology(ir, metaEnv ?? undefined, estateContext, await estateSourceRoots(opts));
+          // #234's free rider, the logical lens's half (pinhole#119): the same
+          // detector as `markOperatorHome` above, run again against the box
+          // KEYS the projection just minted — see src/operator.ts's
+          // `operatorHomeBoxMarks`.
+          const { svg } = renderArchitecture(projected, byContainer, { groupMarks: operatorHomeBoxMarks(ir, namespaceBoxes ?? {}) });
           const logicalNote = notesFor("logical", projected, undefined, logicalBefore);
           return c.json({
             ir: projected,
@@ -1712,8 +1717,12 @@ export function createApp(
         // The kustomize lens probes relative to whatever base sourceLoc was
         // reported against — root-relative here, project-relative on the live
         // path — so hand it both (see projectKustomizeLogical's doc).
-        const { ir: projected, byContainer } = projectTopology(base, metaEnv ?? undefined, logicalContext, [await graphPath(cfg.projectDir, opts), cfg.projectDir]);
-        const { svg } = renderArchitecture(projected, byContainer);
+        const { ir: projected, byContainer, namespaceBoxes } = projectTopology(base, metaEnv ?? undefined, logicalContext, [await graphPath(cfg.projectDir, opts), cfg.projectDir]);
+        // #234's free rider, the logical lens's half (pinhole#119): this route
+        // never calls `markOperatorHome` on `base` (it returns before the
+        // entity branch below would), so the box mark is derived straight from
+        // `operatorHomes` — the same detector, not a second one.
+        const { svg } = renderArchitecture(projected, byContainer, { groupMarks: operatorHomeBoxMarks(base, namespaceBoxes ?? {}) });
         // `byContainer` rides along (behold#100): the nesting IS the projection's
         // primary output, and until now it was only observable by reading the
         // rendered SVG, which is not something an acceptance run can assert on.
@@ -2070,8 +2079,10 @@ export function createApp(
         // safe here and estateSourceRoots for the env/binding choice.
         if (logical) {
           const logicalBefore = ir.nodes.length;
-          const { ir: projected, byContainer } = projectTopology(ir, env, boundContext, await estateSourceRoots(query));
-          const { svg } = renderArchitecture(projected, byContainer);
+          const { ir: projected, byContainer, namespaceBoxes } = projectTopology(ir, env, boundContext, await estateSourceRoots(query));
+          // #234's free rider, the logical lens's half (pinhole#119) — see
+          // /api/graph's estate branch.
+          const { svg } = renderArchitecture(projected, byContainer, { groupMarks: operatorHomeBoxMarks(ir, namespaceBoxes ?? {}) });
           const note = [
             notesFor("logical", projected, undefined, logicalBefore),
             coverNote,
@@ -2185,8 +2196,14 @@ export function createApp(
         // overlay's logical lens was missing it for exactly the same reason
         // /api/graph's was (see that branch), and the overlay is
         // source-anchored, so this is the same derivation on both.
-        const { ir: projected, byContainer } = projectTopology(addClusterAnchorEdges(addValueMatchEdges(addK8sDeclaredEdges(ir)), boundContext), env, boundContext, [await graphPath(cfg.projectDir, opts), cfg.projectDir]);
-        const { svg } = renderArchitecture(projected, byContainer);
+        const projectionInput = addClusterAnchorEdges(addValueMatchEdges(addK8sDeclaredEdges(ir)), boundContext);
+        const { ir: projected, byContainer, namespaceBoxes } = projectTopology(projectionInput, env, boundContext, [await graphPath(cfg.projectDir, opts), cfg.projectDir]);
+        // #234's free rider, the logical lens's half (pinhole#119): this route
+        // never calls `markOperatorHome` (it returns before the non-logical
+        // continuation below would), so the box mark is derived straight from
+        // `operatorHomes` on the same pre-projection IR — the same detector,
+        // not a second one.
+        const { svg } = renderArchitecture(projected, byContainer, { groupMarks: operatorHomeBoxMarks(projectionInput, namespaceBoxes ?? {}) });
         // See /api/graph's logical branch — `byContainer` is carried for the
         // same reason (behold#100). The wrong-tier note (#158) joins here too:
         // the logical view collapses to near-empty at a wrong tier exactly as
