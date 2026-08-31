@@ -6,25 +6,33 @@
 # application controller. This is that run.
 #
 #   1. estate composition  — /api/graph?detail=3 carries the `project` edges
-#                            joining both Applications to the AppProject, and
+#                            joining both Applications to the AppProject, the
+#                            `delivers` edge #329 derives from each
+#                            `spec.source.path` across the member boundary, and
 #                            NOTHING for the sync-wave ordering: Argo's ordering
 #                            is an annotation, not a reference (contrast Flux's
-#                            `dependsOn`, #223). Four edges, exactly.
-#   2. logical lens (#241)  — /api/overlay?logical=1 boxes each Application's
+#                            `dependsOn`, #223). Six edges, exactly.
+#   2. the detail cliff     — /api/overlay at chant's default detail is edgeless
+#      (#322/#326)            (every join above reads full attrs), and says so in
+#                            those words instead of claiming the estate
+#                            references nothing. At detail 3 the claim is gone
+#                            and the cross-member edge is in the LIVE overlay,
+#                            not only in the source graph.
+#   3. logical lens (#241)  — /api/overlay?logical=1 boxes each Application's
 #                            `spec.destination.namespace` and fills it with that
 #                            app's live cards, though the estate declares no
 #                            `Namespace` object anywhere: Argo creates them from
 #                            `CreateNamespace=true`, so the box exists on the
 #                            strength of the destination alone (#224).
-#   3. runtime tier (#241)  — /api/overlay?runtime=1 boxes live objects under
+#   4. runtime tier (#241)  — /api/overlay?runtime=1 boxes live objects under
 #                            the Application that deployed them, resolved from
 #                            Argo's `app.kubernetes.io/instance` label
 #                            (chant#1549's Argo channel, live for the first
 #                            time here).
-#   4. health, happy (#238) — /api/diff reads each Application's health/sync
+#   5. health, happy (#238) — /api/diff reads each Application's health/sync
 #                            pair, while the AppProject — which reports neither
 #                            — keeps the regex fallback with nothing added.
-#   5. health, unhappy      — app-b's live Application is pointed at a path that
+#   6. health, unhappy      — app-b's live Application is pointed at a path that
 #      (#275)                 does not exist. Argo writes a `ComparisonError`
 #                            condition and holds `sync: Unknown` (it will not
 #                            prune what it cannot compute), and behold's verdict
@@ -33,7 +41,7 @@
 #                            guessing which one chant's collapsed word meant —
 #                            AND joining the ComparisonError's own message,
 #                            which chant carries since 0.44.8 (chant#1644).
-#   6. the queried line     — with the comparison broken, app-b's Deployment is
+#   7. the queried line     — with the comparison broken, app-b's Deployment is
 #      (#192)                 deleted: Argo cannot self-heal a target state it
 #                            cannot generate, so the read genuinely misses, and
 #                            the diff carries the address it was issued
@@ -92,7 +100,7 @@ ARGO_MANIFEST="https://raw.githubusercontent.com/argoproj/argo-cd/${ARGO_VERSION
 # The condition a controller writes about a spec it rejects outright — an
 # unknown project, a destination the AppProject forbids. Deliberately NOT here:
 # `ComparisonError`, which appears transiently while the repo is first cloned,
-# and is the exact state step 5 induces on purpose.
+# and is the exact state step 6 induces on purpose.
 TERMINAL_CONDITIONS='InvalidSpecError'
 # `InvalidSpecError` is terminal only once it has SURVIVED this window. The
 # estate is one multi-doc apply, kubectl applies it top to bottom, and the
@@ -195,7 +203,7 @@ api() { curl -sf --max-time 300 "http://localhost:$PORT$1"; }
 
 START="$(date +%s)"
 
-echo "→ (0/6) build behold + install the estate's own chant"
+echo "→ (0/7) build behold + install the estate's own chant"
 npm run build --silent
 npm --prefix "$ESTATE" install --no-audit --no-fund --silent
 echo "  chant: $(node -e "process.stdout.write(require('./$ESTATE/node_modules/@intentius/chant/package.json').version)")"
@@ -234,7 +242,7 @@ SRV=$!
 up() { curl -sf "http://localhost:$PORT/healthz" >/dev/null 2>&1; }
 wait_for "behold" 90 up || { sed -n '1,40p' "$TMP/serve.log"; exit 1; }
 
-echo "→ (1/6) estate composition — project edges, and no edge for the sync waves"
+echo "→ (1/7) estate composition — project + delivers edges, and none for the sync waves"
 api "/api/graph?detail=3" | node -e '
   let d = ""; process.stdin.on("data", (c) => (d += c)).on("end", () => {
     const j = JSON.parse(d);
@@ -244,23 +252,76 @@ api "/api/graph?detail=3" | node -e '
     const want = [
       ["control-plane/appA", "control-plane/project", "project"],
       ["control-plane/appB", "control-plane/project", "project"],
+      // #329, the Argo half of the edge #166 measured missing. The verb comes
+      // from the controller: Flux `reconciles` a Kustomization path, Argo
+      // `delivers` an Application source path — one derivation, two words,
+      // because the two reconcilers do not do the same thing to a directory.
+      ["control-plane/appA", "app-a/service", "delivers"],
+      ["control-plane/appB", "app-b/service", "delivers"],
+      // The crossing lands on the member ENTRY node; these carry the interior.
+      ["app-a/service", "app-a/deployment", "selector"],
+      ["app-b/service", "app-b/deployment", "selector"],
     ];
     for (const [f, t, v] of want) {
       if (!has(f, t, v)) { console.error("✗ missing", v, "edge", f, "->", t); process.exit(1); }
       console.log(`  ✓ ${f} -${v}-> ${t}`);
     }
-    // The apps own selector joins, and nothing else: the sync-wave annotations
-    // that order this estate are not references, so there is no edge to draw
-    // (the Flux contrast, #223).
-    if (j.ir.edges.length !== 4) {
-      console.error("✗", j.ir.edges.length, "edges — expected 4:", j.ir.edges.map((e) => `${e.from}-${e.viaAttr}->${e.to}`).join(", "));
+    // Those six and nothing else: the sync-wave annotations that order this
+    // estate are not references, so there is no edge to draw (the Flux
+    // contrast, #223). One crossing per member boundary, never one per card.
+    if (j.ir.edges.length !== 6) {
+      console.error("✗", j.ir.edges.length, "edges — expected 6:", j.ir.edges.map((e) => `${e.from}-${e.viaAttr}->${e.to}`).join(", "));
       process.exit(1);
     }
-    console.log("  ✓ 4 edges total — the sync-wave ordering draws none");
+    for (const owner of ["control-plane/appA", "control-plane/appB"]) {
+      const crossings = j.ir.edges.filter((e) => e.from === owner && e.viaAttr === "delivers");
+      if (crossings.length !== 1) {
+        console.error("✗", owner, "draws", crossings.length, "delivers edges —", crossings.map((e) => e.to).join(", "));
+        process.exit(1);
+      }
+      if (!crossings[0].inferred) { console.error("✗", owner, "delivers edge is not tagged inferred"); process.exit(1); }
+    }
+    console.log("  ✓ 6 edges total — the sync-wave ordering draws none, and each member is crossed once");
   });
 '
 
-echo "→ (2/6) the logical lens on the estate (#241) — destination namespaces, live"
+echo "→ (2/7) the detail cliff the estate opens on (#322/#326)"
+# Every join that draws an edge here reads full attrs, so at chant's default
+# detail the composed estate is genuinely edgeless — and the note used to assert
+# the wrong reason for it ("nothing in this estate references anything else"),
+# which is false of an estate that has 6 edges one tier up. #326 made the
+# non-lens estate overlay pass its detail through to `edgelessNote`; this is that
+# sentence, read off a live three-member estate rather than a fixture.
+api "/api/overlay?env=local" | node -e '
+  let d = ""; process.stdin.on("data", (c) => (d += c)).on("end", () => {
+    const j = JSON.parse(d);
+    if (j.error) { console.error("✗ api error:", j.error); process.exit(1); }
+    if (j.ir.edges.length !== 0) { console.error("✗", j.ir.edges.length, "edges at the default detail — the cliff this note explains is gone"); process.exit(1); }
+    const note = j.meta.note ?? "";
+    if (!/no edges at this detail/.test(note)) { console.error("✗ the edgeless estate says nothing about the tier:", JSON.stringify(note)); process.exit(1); }
+    if (/nothing in this estate references anything else/.test(note)) {
+      console.error("✗ the note still claims the estate is edgeless in fact, not at this tier:", note); process.exit(1);
+    }
+    console.log("  ✓ default detail:", note);
+  });
+'
+# One tier up the claim has to be gone — and the cross-member edge has to be in
+# the LIVE overlay, not only in the source graph step 1 read.
+api "/api/overlay?detail=3&env=local" | node -e '
+  let d = ""; process.stdin.on("data", (c) => (d += c)).on("end", () => {
+    const j = JSON.parse(d);
+    if (j.error) { console.error("✗ api error:", j.error); process.exit(1); }
+    const crossings = j.ir.edges.filter((e) => e.viaAttr === "delivers");
+    if (crossings.length !== 2) {
+      console.error("✗", crossings.length, "delivers edges on the live overlay — expected 2:", j.ir.edges.map((e) => `${e.from}-${e.viaAttr}->${e.to}`).join(", "));
+      process.exit(1);
+    }
+    if (/no edges/.test(j.meta.note ?? "")) { console.error("✗ detail 3 still claims no edges:", j.meta.note); process.exit(1); }
+    console.log(`  ✓ detail 3: ${crossings.map((e) => `${e.from} -delivers-> ${e.to}`).join(", ")}, no edgeless claim`);
+  });
+'
+
+echo "→ (3/7) the logical lens on the estate (#241) — destination namespaces, live"
 api "/api/overlay?logical=1&env=local" | node -e '
   let d = ""; process.stdin.on("data", (c) => (d += c)).on("end", () => {
     const j = JSON.parse(d);
@@ -298,7 +359,7 @@ api "/api/overlay?logical=1&env=local" | node -e '
   });
 '
 
-echo "→ (3/6) the runtime tier on the estate (#241) — Argo instance-label attribution"
+echo "→ (4/7) the runtime tier on the estate (#241) — Argo instance-label attribution"
 api "/api/overlay?runtime=1&env=local" | node -e '
   let d = ""; process.stdin.on("data", (c) => (d += c)).on("end", () => {
     const j = JSON.parse(d);
@@ -326,7 +387,7 @@ api "/api/overlay?runtime=1&env=local" | node -e '
   });
 '
 
-echo "→ (4/6) health verdicts read off the Application health/sync pair (#238)"
+echo "→ (5/7) health verdicts read off the Application health/sync pair (#238)"
 api "/api/diff?env=local" | node -e '
   let d = ""; process.stdin.on("data", (c) => (d += c)).on("end", () => {
     const j = JSON.parse(d);
@@ -350,7 +411,7 @@ api "/api/diff?env=local" | node -e '
   });
 '
 
-echo "→ (5/6) the unhappy arm — the app-b Application pointed at a missing path"
+echo "→ (6/7) the unhappy arm — the app-b Application pointed at a missing path"
 k -n argocd patch application app-b --type merge \
   -p '{"spec":{"source":{"path":"example-argo-estate/app-b/behold-e2e-does-not-exist"}}}' >/dev/null
 comparison_error() { printf '%s' "$(app_conditions app-b)" | grep -q '^ComparisonError:'; }
@@ -384,7 +445,7 @@ echo "  ✓ healthDetail joins the ComparisonError message — the one line Argo
 verdict | grep -q 'spec.source.path$' || { echo "✗ the drift does not name spec.source.path: $(verdict)"; exit 1; }
 echo "  ✓ the field drift names spec.source.path — declared vs the broken live value"
 
-echo "→ (6/6) the queried line (#192) — where the failed live read looked"
+echo "→ (7/7) the queried line (#192) — where the failed live read looked"
 # With the comparison broken Argo cannot regenerate the target state, so selfHeal
 # cannot put back what is deleted: a genuinely absent object, on purpose.
 k -n app-b delete deploy app-b --wait=true >/dev/null
