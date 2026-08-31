@@ -8,30 +8,40 @@
 # exist for real instead of as fixtures.
 #
 #   1. estate composition  — /api/graph?detail=3 carries both `sourceRef` edges
-#                            (Kustomization → GitRepository, across stacks) and
-#                            app-b's `dependsOn` gate on app-a.
-#   2. logical lens (#241)  — /api/overlay?logical=1 answers mode "logical" with
+#                            (Kustomization → GitRepository, across stacks),
+#                            app-b's `dependsOn` gate on app-a, and — since
+#                            #329 — the `reconciles` edge that crosses a member
+#                            boundary: the control plane's Kustomization joined
+#                            to the app member its `spec.path` names, landing on
+#                            that member's ENTRY node and nowhere else.
+#   2. the detail cliff     — /api/overlay at chant's default detail is edgeless
+#      (#322/#326)            (every join above reads full attrs), and says so in
+#                            those words instead of claiming the estate
+#                            references nothing. At detail 3 the claim is gone
+#                            and the cross-member edge is in the LIVE overlay,
+#                            not only in the source graph.
+#   3. logical lens (#241)  — /api/overlay?logical=1 answers mode "logical" with
 #      + the join (#221)      cluster ⊃ namespace boxes, app-a's objects inside
 #                            the namespace the CONTROL PLANE declares, and each
 #                            card keeping its live drift colour — app-b's
 #                            included, which is green only because the estate
 #                            joined the control plane's `targetNamespace` into
 #                            app-b's own live read.
-#   3. runtime tier (#241)  — /api/overlay?runtime=1 boxes the objects Flux
+#   4. runtime tier (#241)  — /api/overlay?runtime=1 boxes the objects Flux
 #                            deployed under the declaring Kustomization, via the
 #                            composed-id `runtimeOwner` re-pointing.
-#   4. health, happy (#238) — /api/diff reads each Flux CR's own `Ready`
+#   5. health, happy (#238) — /api/diff reads each Flux CR's own `Ready`
 #                            condition (`Ready=True`), while a plain Namespace
 #                            keeps the regex fallback with nothing added.
-#   5. health, unhappy      — app-b's live Kustomization is pointed at a path
+#   6. health, unhappy      — app-b's live Kustomization is pointed at a path
 #                            that does not exist; the verdict turns `degraded`
 #                            carrying the controller's own reason, then follows
 #                            it back to healthy when the path is restored.
-#   6. the queried line     — app-b served ALONE (no estate, so no binding to
+#   7. the queried line     — app-b served ALONE (no estate, so no binding to
 #      (#192)                 join) carries the resolved address its failed
 #                            live read was issued against: namespace
 #                            `default`, not `app-b`. The control case for
-#                            step 2 — the same objects, the same cluster, and
+#                            step 3 — the same objects, the same cluster, and
 #                            the composed read is the only one that finds them.
 #
 # ## The choices this run makes
@@ -163,7 +173,7 @@ api() { curl -sf --max-time 120 "http://localhost:$PORT$1"; }
 
 START="$(date +%s)"
 
-echo "→ (0/6) build behold + install the estate's own chant"
+echo "→ (0/7) build behold + install the estate's own chant"
 npm run build --silent
 npm --prefix "$ESTATE" install --no-audit --no-fund --silent
 echo "  chant: $(node -e "process.stdout.write(require('./$ESTATE/node_modules/@intentius/chant/package.json').version)")"
@@ -201,7 +211,7 @@ SRV=$!
 up() { curl -sf "http://localhost:$PORT/healthz" >/dev/null 2>&1; }
 wait_for "behold" 90 up || { sed -n '1,40p' "$TMP/serve.log"; exit 1; }
 
-echo "→ (1/6) estate composition — sourceRef across stacks, dependsOn ordering"
+echo "→ (1/7) estate composition — sourceRef, dependsOn, and the cross-member reconciles"
 api "/api/graph?detail=3" | node -e '
   let d = ""; process.stdin.on("data", (c) => (d += c)).on("end", () => {
     const j = JSON.parse(d);
@@ -212,15 +222,74 @@ api "/api/graph?detail=3" | node -e '
       ["control-plane/appA", "control-plane/source", "sourceRef"],
       ["control-plane/appB", "control-plane/source", "sourceRef"],
       ["control-plane/appB", "control-plane/appA", "dependsOn"],
+      // #329, the edge #166 measured missing: the Kustomization declares
+      // `spec.path: ./example-flux-estate/app-a/manifests`, and behold knows
+      // app-a by the checkout it was pointed at, so the two join across the
+      // member boundary. Nothing in `src/k8s-edges.ts` can make this join —
+      // every one of those keys on kind/namespace/name, and a path is none.
+      ["control-plane/appA", "app-a/service", "reconciles"],
+      ["control-plane/appB", "app-b/service", "reconciles"],
+      // The member is a box of cards and Flux applies all of them, so the
+      // crossing lands on the member ENTRY node — the one nothing inside the
+      // member already points at — and the edges inside carry the rest.
+      ["app-a/service", "app-a/deployment", "selector"],
+      ["app-b/service", "app-b/deployment", "selector"],
     ];
     for (const [f, t, v] of want) {
       if (!has(f, t, v)) { console.error("✗ missing", v, "edge", f, "->", t); process.exit(1); }
       console.log(`  ✓ ${f} -${v}-> ${t}`);
     }
+    // ...and ONLY on the entry node. A second arrow into the Deployment would
+    // restate what the box already says, which is the hairball #329 refused.
+    for (const owner of ["control-plane/appA", "control-plane/appB"]) {
+      const crossings = j.ir.edges.filter((e) => e.from === owner && e.viaAttr === "reconciles");
+      if (crossings.length !== 1) {
+        console.error("✗", owner, "draws", crossings.length, "reconciles edges —", crossings.map((e) => e.to).join(", "), "— expected one crossing per boundary");
+        process.exit(1);
+      }
+      if (!crossings[0].inferred) { console.error("✗", owner, "reconciles edge is not tagged inferred"); process.exit(1); }
+    }
+    console.log("  ✓ one reconciles crossing per member, tagged inferred — the box interior unchanged");
   });
 '
 
-echo "→ (2/6) the logical lens on the estate (#241)"
+echo "→ (2/7) the detail cliff the estate opens on (#322/#326)"
+# Every join that draws an edge here reads full attrs, so at chant's default
+# detail the composed estate is genuinely edgeless — and the note used to assert
+# the wrong reason for it ("nothing in this estate references anything else"),
+# which is false of an estate that has 7 edges one tier up. #326 made the
+# non-lens estate overlay pass its detail through to `edgelessNote`; this is that
+# sentence, read off a live three-member estate rather than a fixture.
+api "/api/overlay?env=local" | node -e '
+  let d = ""; process.stdin.on("data", (c) => (d += c)).on("end", () => {
+    const j = JSON.parse(d);
+    if (j.error) { console.error("✗ api error:", j.error); process.exit(1); }
+    if (j.ir.edges.length !== 0) { console.error("✗", j.ir.edges.length, "edges at the default detail — the cliff this note explains is gone"); process.exit(1); }
+    const note = j.meta.note ?? "";
+    if (!/no edges at this detail/.test(note)) { console.error("✗ the edgeless estate says nothing about the tier:", JSON.stringify(note)); process.exit(1); }
+    if (/nothing in this estate references anything else/.test(note)) {
+      console.error("✗ the note still claims the estate is edgeless in fact, not at this tier:", note); process.exit(1);
+    }
+    console.log("  ✓ default detail:", note);
+  });
+'
+# One tier up the claim has to be gone — and the cross-member edge has to be in
+# the LIVE overlay, not only in the source graph step 1 read.
+api "/api/overlay?detail=3&env=local" | node -e '
+  let d = ""; process.stdin.on("data", (c) => (d += c)).on("end", () => {
+    const j = JSON.parse(d);
+    if (j.error) { console.error("✗ api error:", j.error); process.exit(1); }
+    const crossings = j.ir.edges.filter((e) => e.viaAttr === "reconciles");
+    if (crossings.length !== 2) {
+      console.error("✗", crossings.length, "reconciles edges on the live overlay — expected 2:", j.ir.edges.map((e) => `${e.from}-${e.viaAttr}->${e.to}`).join(", "));
+      process.exit(1);
+    }
+    if (/no edges/.test(j.meta.note ?? "")) { console.error("✗ detail 3 still claims no edges:", j.meta.note); process.exit(1); }
+    console.log(`  ✓ detail 3: ${crossings.map((e) => `${e.from} -reconciles-> ${e.to}`).join(", ")}, no edgeless claim`);
+  });
+'
+
+echo "→ (3/7) the logical lens on the estate (#241)"
 api "/api/overlay?logical=1&env=local" | node -e '
   let d = ""; process.stdin.on("data", (c) => (d += c)).on("end", () => {
     const j = JSON.parse(d);
@@ -242,7 +311,7 @@ api "/api/overlay?logical=1&env=local" | node -e '
     // Live colours survive the projection — and since #221 that includes
     // app-b, whose objects declare no namespace at all. Green here means the
     // estate joined targetNamespace off the control plane into the live read
-    // issued for app-b. Step 6 serves app-b alone and gets the other answer.
+    // issued for app-b. Step 7 serves app-b alone and gets the other answer.
     const st = Object.fromEntries(j.ir.nodes.map((n) => [n.id, n.attrs && n.attrs._status]));
     for (const id of ["control-plane/appA", "control-plane/appB", "control-plane/source", "app-a/deployment", "app-a/service", "app-b/deployment", "app-b/service"]) {
       if (st[id] !== "good") { console.error("✗", id, "reads", st[id], "— expected good on a converged estate"); process.exit(1); }
@@ -259,7 +328,7 @@ api "/api/overlay?logical=1&env=local" | node -e '
   });
 '
 
-echo "→ (3/6) the runtime tier on the estate (#241) — Kustomization containment"
+echo "→ (4/7) the runtime tier on the estate (#241) — Kustomization containment"
 api "/api/overlay?runtime=1&env=local" | node -e '
   let d = ""; process.stdin.on("data", (c) => (d += c)).on("end", () => {
     const j = JSON.parse(d);
@@ -280,7 +349,7 @@ api "/api/overlay?runtime=1&env=local" | node -e '
   });
 '
 
-echo "→ (4/6) health verdicts read off the controller conditions (#238)"
+echo "→ (5/7) health verdicts read off the controller conditions (#238)"
 api "/api/diff?env=local" | node -e '
   let d = ""; process.stdin.on("data", (c) => (d += c)).on("end", () => {
     const j = JSON.parse(d);
@@ -303,7 +372,7 @@ api "/api/diff?env=local" | node -e '
   });
 '
 
-echo "→ (5/6) the unhappy arm — the app-b Kustomization pointed at a missing path"
+echo "→ (6/7) the unhappy arm — the app-b Kustomization pointed at a missing path"
 k -n flux-system patch kustomization app-b --type merge \
   -p '{"spec":{"path":"./example-flux-estate/app-b/behold-e2e-does-not-exist"}}' >/dev/null
 k -n flux-system annotate --overwrite kustomization app-b reconcile.fluxcd.io/requestedAt="e2e-break" >/dev/null
@@ -325,12 +394,12 @@ healthy() { [ "$(verdict)" = "healthy|Ready=True" ]; }
 wait_for "appB back to healthy" 180 healthy
 echo "  ✓ appB: healthy (Ready=True) — the verdict follows the controller both ways"
 
-echo "→ (6/6) the queried line (#192) — where an UNJOINED read looks"
+echo "→ (7/7) the queried line (#192) — where an UNJOINED read looks"
 # /api/diff slices the PRIMARY project, and the primary here is the
 # control plane (whose objects all resolve). app-b — the half whose namespace
 # Flux stamps at apply time — is served on its own to read its addresses.
 # Alone it has no sibling declaring the binding, so the #221 join cannot
-# apply: this is the control case that makes step 2's green mean something.
+# apply: this is the control case that makes step 3's green mean something.
 node ./bin/behold.js serve "$ESTATE/app-b" --env local --port "$PORT_B" >"$TMP/serve-b.log" 2>&1 &
 SRV_B=$!
 up_b() { curl -sf "http://localhost:$PORT_B/healthz" >/dev/null 2>&1; }
