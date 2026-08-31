@@ -1695,14 +1695,24 @@ export function createApp(
         // the cluster box is the declared node, not the `cluster <env>`
         // fallback.
         const raw = mergeClusterRoot(await graphIr(cfg.projectDir, { ...opts, detail: 3 }), await clusterRootGraphIr(cfg.projectDir, opts));
-        const base = addValueMatchEdges(addK8sDeclaredEdges(raw));
+        const logicalContext = await boundK8sContext(metaEnv ?? undefined);
+        // #328: the same three derivation passes the estate branch above and
+        // the entity branch below run, in the same order. Anchoring (#103) was
+        // the one this route never had, and the history says why rather than
+        // that anyone chose it: when #103 landed (257b0cc) the logical lens was
+        // AWS-only, so a pass that emits k8s edges had nothing to give it. The
+        // Kubernetes lens arrived three days later (b3ef188, #141/#74) without
+        // touching server.ts at all, and #143 (ec5e444) then carried
+        // `addK8sDeclaredEdges` into both logical branches but not this. No
+        // commit message, comment or test ever recorded the omission.
+        const base = addClusterAnchorEdges(addValueMatchEdges(addK8sDeclaredEdges(raw)), logicalContext);
         // #102: the lens follows the substrate — AWS nests region/VPC/subnet,
         // Azure nests resource group/VNet/subnet. `metaEnv` names the resource
         // group on Azure, which ARM never declares as a resource.
         // The kustomize lens probes relative to whatever base sourceLoc was
         // reported against — root-relative here, project-relative on the live
         // path — so hand it both (see projectKustomizeLogical's doc).
-        const { ir: projected, byContainer } = projectTopology(base, metaEnv ?? undefined, await boundK8sContext(metaEnv ?? undefined), [await graphPath(cfg.projectDir, opts), cfg.projectDir]);
+        const { ir: projected, byContainer } = projectTopology(base, metaEnv ?? undefined, logicalContext, [await graphPath(cfg.projectDir, opts), cfg.projectDir]);
         const { svg } = renderArchitecture(projected, byContainer);
         // `byContainer` rides along (behold#100): the nesting IS the projection's
         // primary output, and until now it was only observable by reading the
@@ -2171,7 +2181,11 @@ export function createApp(
         const logicalBefore = ir.nodes.length;
         // Same as /api/graph's logical branch: the kustomize lens probes both
         // sourceLoc bases (the live path reports project-relative files).
-        const { ir: projected, byContainer } = projectTopology(addValueMatchEdges(addK8sDeclaredEdges(ir)), env, boundContext, [await graphPath(cfg.projectDir, opts), cfg.projectDir]);
+        // #328: anchoring joins the other two passes here too — the live
+        // overlay's logical lens was missing it for exactly the same reason
+        // /api/graph's was (see that branch), and the overlay is
+        // source-anchored, so this is the same derivation on both.
+        const { ir: projected, byContainer } = projectTopology(addClusterAnchorEdges(addValueMatchEdges(addK8sDeclaredEdges(ir)), boundContext), env, boundContext, [await graphPath(cfg.projectDir, opts), cfg.projectDir]);
         const { svg } = renderArchitecture(projected, byContainer);
         // See /api/graph's logical branch — `byContainer` is carried for the
         // same reason (behold#100). The wrong-tier note (#158) joins here too:

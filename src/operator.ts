@@ -342,12 +342,13 @@ export function declaredConvergeOps(
 // Scope, stated: this marks the ENTITY graph, where a `Namespace` is a card
 // (`/api/graph`, `/api/overlay`). The logical lens turns a namespace into a
 // *box* instead (src/logical-k8s.ts's `K8S_PLUMBING_KINDS` drops the card and
-// `namespaceTitle` mints `namespace <ns>`), and a `GroupBox` carries only a
-// title, a drift `status` and an id — no mark channel. Suffixing the title would
-// be the obvious move and is wrong: src/logical.ts:398 re-derives that exact
-// string to re-parent helm releases, so a decorated title would silently
-// unparent them. Giving a box its own mark needs a pinhole-side field; not
-// invented here.
+// `namespaceBoxKey` mints `namespace <ns>`), and a `GroupBox` carries only a
+// title, a drift `status` and an id — no mark channel, which is pinhole#119.
+// Suffixing the title used to be doubly wrong: src/logical.ts re-derived that
+// exact string to re-parent helm releases, so a decorated title would have
+// silently unparented them. #328 removed that half — the re-parenting carries
+// the box's container KEY now — so what is left is the pinhole-side field
+// itself. Still not invented here.
 
 /** k8s's own well-known labels, as OperatorStack sets them. */
 const MANAGED_BY = "app.kubernetes.io/managed-by";

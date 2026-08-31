@@ -34,9 +34,8 @@
 import type { GraphIR, IRNode, IREdge } from "@intentius/chant";
 import { projectAzureLogical } from "./logical-azure.ts";
 import { projectGcpLogical } from "./logical-gcp.ts";
-import { projectK8sLogical } from "./logical-k8s.ts";
+import { projectK8sLogical, namespaceBoxKey } from "./logical-k8s.ts";
 import { projectHelmLogical } from "./logical-helm.ts";
-import { boundManagedCluster } from "./cluster-anchor.ts";
 import { projectKustomizeLogical } from "./logical-kustomize.ts";
 import { projectFlyLogical } from "./logical-fly.ts";
 
@@ -48,6 +47,20 @@ export type ByContainer = Record<string, string[]>;
 export interface LogicalProjection {
   ir: GraphIR;
   byContainer: ByContainer;
+  /** The container key this lens filed its cluster box under, when it drew one.
+   * Carried, not re-derived — see `namespaceBoxes`. */
+  clusterBox?: string;
+  /** Namespace name → the container key that namespace's box is filed under
+   * (behold#328, pinhole#119).
+   *
+   * `byContainer` keys double as box TITLES, and a cross-lens pass that needs
+   * to put a card in an existing box used to find it by re-minting the title
+   * string. That made the display string load-bearing: decorate a namespace box
+   * (pinhole#119's mark channel, the operator-home glyph #324 asked for) and
+   * every helm release in it would silently unparent. The lens that created the
+   * box hands its key over instead, so the title is presentation and only
+   * `namespaceBoxKey` (src/logical-k8s.ts) knows its shape. */
+  namespaceBoxes?: Record<string, string>;
 }
 
 // Headline kinds — the resources an architecture diagram actually shows. Roughly
@@ -351,6 +364,10 @@ export function projectTopology(ir: GraphIR, env?: string, boundContext?: string
   const nodes: IRNode[] = [];
   const edges: IREdge[] = [];
   const byContainer: ByContainer = {};
+  // The box keys the lenses minted, carried across the join so a cross-lens
+  // pass re-parents by key rather than by re-deriving a box's display string
+  // (behold#328, pinhole#119). Only the k8s lens names places today.
+  const boxes: ClusterBoxes = { namespaces: {} };
   for (const p of projections) {
     nodes.push(...p.ir.nodes);
     edges.push(...p.ir.edges);
@@ -358,8 +375,10 @@ export function projectTopology(ir: GraphIR, env?: string, boundContext?: string
       const arr = byContainer[parent] ?? (byContainer[parent] = []);
       for (const c of children) if (!arr.includes(c)) arr.push(c);
     }
+    if (p.clusterBox) boxes.cluster = p.clusterBox;
+    Object.assign(boxes.namespaces, p.namespaceBoxes);
   }
-  placeHelmReleases(nodes, byContainer, ir, env, boundContext);
+  placeHelmReleases(nodes, byContainer, boxes);
   nestReleaseBoxes(byContainer);
   retainCrossLensEdges(ir, projections, nodes, edges, byContainer);
   return { ir: { nodes, edges, groups: {} }, byContainer };
@@ -449,13 +468,19 @@ function retainCrossLensEdges(
   }
 }
 
+/** The cluster picture's box KEYS, as the lens that drew them reported them —
+ * `cluster` absent when no lens drew a cluster box at all. */
+export interface ClusterBoxes {
+  cluster?: string;
+  namespaces: Record<string, string>;
+}
+
 /**
  * Place synthesized `Helm::Release` cards (src/helm-releases.ts) inside the
  * cluster picture. Cross-lens on purpose: the release carries a plain
- * `namespace` attr, the namespace boxes belong to the k8s lens, and the
- * cluster box title is the k8s lens's preference chain — so the placement can
- * only happen where all three are visible at once, exactly like
- * `nestReleaseBoxes` below.
+ * `namespace` attr while the namespace and cluster boxes belong to the k8s
+ * lens, so the placement can only happen where both are visible at once,
+ * exactly like `nestReleaseBoxes` below.
  *
  * A release in a namespace the k8s lens already boxed joins that box. One in
  * a namespace the estate never declared (helm bootstrap in `kube-system`, an
@@ -463,31 +488,35 @@ function retainCrossLensEdges(
  * box — the release was OBSERVED there, and a box for an observed location is
  * reporting, not inventing. With no cluster box at all (helm-only estate),
  * the card stays at the root.
+ *
+ * behold#328 / pinhole#119: `boxes` carries the k8s lens's own container keys.
+ * This used to re-derive `namespace <ns>` and the cluster-box preference chain
+ * for itself, which is re-parenting by a box's DISPLAY string — so decorating a
+ * namespace title would have unparented every release inside it. The only
+ * string minted here now is for a namespace box this function creates, whose
+ * key it therefore owns end to end (`namespaceBoxKey`, the one place the format
+ * lives).
  */
-function placeHelmReleases(
-  nodes: readonly IRNode[],
-  byContainer: ByContainer,
-  ir: GraphIR,
-  env?: string,
-  boundContext?: string,
-): void {
+export function placeHelmReleases(nodes: readonly IRNode[], byContainer: ByContainer, boxes: ClusterBoxes): void {
   const releases = nodes.filter((n) => n.kind === "Helm::Release");
   if (releases.length === 0) return;
   const child = (parent: string, c: string) => {
     const arr = byContainer[parent] ?? (byContainer[parent] = []);
     if (!arr.includes(c)) arr.push(c);
   };
-  // The same cluster-box identity chain the k8s lens used (logical-k8s.ts).
-  const cluster = boundManagedCluster(ir.nodes, boundContext);
-  const clusterTitle = cluster ? cluster.id : env ? `cluster ${env}` : "cluster";
-  const clusterBoxExists = byContainer[clusterTitle] !== undefined;
+  const clusterBox = boxes.cluster !== undefined && byContainer[boxes.cluster] !== undefined ? boxes.cluster : undefined;
   for (const r of releases) {
     const ns = r.attrs?.namespace;
     if (typeof ns !== "string" || ns.length === 0) continue; // root card
-    const nsBox = `namespace ${ns}`;
-    if (byContainer[nsBox] === undefined && !clusterBoxExists) continue; // no cluster picture — root card
-    if (byContainer[nsBox] === undefined) child(clusterTitle, nsBox);
-    child(nsBox, r.id);
+    const nsBox = boxes.namespaces[ns];
+    if (nsBox !== undefined && byContainer[nsBox] !== undefined) {
+      child(nsBox, r.id); // the box the k8s lens already drew, whatever it is titled
+      continue;
+    }
+    if (clusterBox === undefined) continue; // no cluster picture — root card
+    const observed = nsBox ?? namespaceBoxKey(ns);
+    child(clusterBox, observed);
+    child(observed, r.id);
   }
 }
 
