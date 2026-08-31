@@ -1,0 +1,8 @@
+{"phase":"Build","fn":"chantBuild","status":"ok","durationMs":1062}
+{"phase":"Deploy","fn":"shellCmd","status":"ok","durationMs":5}
+{"phase":"Deploy","fn":"shellCmd","status":"ok","durationMs":3}
+{"phase":"Fanout","fn":"shellCmd","status":"ok","durationMs":4}
+{"phase":"Fanout","fn":"shellCmd","status":"ok","durationMs":4}
+{"phase":"Verify","fn":"httpCheck","status":"fail","durationMs":15164,"error":"httpCheck failed for http://127.0.0.1:1/: fetch failed"}
+{"phase":"Rollback","fn":"shellCmd","status":"ok","durationMs":4}
+{"phase":"Never","fn":"httpCheck","status":"skipped","durationMs":0}
