@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { componentStatusColor, joinComponentStatus } from "./component-status.ts";
+import { componentStatusColor, joinComponentStatus, joinTickVerdicts } from "./component-status.ts";
+import { TICK_VERDICT_TTL_MS, type TickComponentVerdicts } from "./operator.ts";
 import type { GraphIR, ComponentStatusRow } from "@intentius/chant";
 
 // Fixture rows mirror the actual `chant components status local --live --json`
@@ -421,5 +422,136 @@ describe("componentStatusColor — an absent stack ({name} only) asserts nothing
       stack: { name: "cert-manager", healthy: false },
     } as unknown as ComponentStatusRow;
     expect(componentStatusColor(row)).toBe("accent");
+  });
+});
+
+// ── The converge tick as a second source for the last tier (chant#2027) ──────
+//
+// The verdicts here are chant's own, from chant PR #2042's
+// `packages/core/src/lifecycle/converge-ledger.test.ts` ("round-trips on a
+// record, naming the component that tripped the tick's aggregate unknown") —
+// the same values src/__fixtures__/operator-status/verdicts.status.json carries
+// and src/operator.test.ts pins the wire shape of. The `op`/`env`/`at` frame is
+// that same file's `makeInput()`.
+
+describe("joinTickVerdicts (chant#2027)", () => {
+  const AT = "2026-01-01T00:00:00.000Z";
+  const T = Date.parse(AT);
+  const FRESH = T + 60_000;
+  const STALE_NOW = T + TICK_VERDICT_TTL_MS + 1;
+
+  const TICK: TickComponentVerdicts = {
+    op: "fountain-converge",
+    env: "staging",
+    at: AT,
+    tickId: "9f1c7a52-3b64-4d0e-8a71-2e5c6d90b4af",
+    verdicts: [
+      { component: "api", reconciliation: "drifted", detail: "live digest differs", live: true },
+      { component: "worker", reconciliation: "unknown", detail: "unreadable", unobserved: { reason: "no-credentials" } },
+    ],
+  };
+
+  const dag = (): GraphIR => ({
+    nodes: [
+      { id: "api", kind: "Component", lexicon: "chant", attrs: { wave: 1 } },
+      { id: "worker", kind: "Component", lexicon: "chant", attrs: { wave: 2 } },
+      { id: "web", kind: "Component", lexicon: "chant", attrs: { wave: 3 } },
+    ],
+    edges: [],
+    groups: {},
+  });
+
+  it("joins by component name — the same key joinComponentStatus uses", () => {
+    const out = joinTickVerdicts(dag(), TICK, FRESH);
+    const api = out.nodes.find((n) => n.id === "api")!;
+    // `drifted` is componentStatusColor's reconciliation tier, and `warn` is
+    // what that tier paints it — the tick reaches the same function, not a new
+    // palette of its own.
+    expect(api.attrs._status).toBe("warn");
+    expect(api.attrs._tickStatus).toEqual({
+      reconciliation: "drifted",
+      detail: "live digest differs",
+      live: true,
+      op: "fountain-converge",
+      env: "staging",
+      at: AT,
+      tickId: "9f1c7a52-3b64-4d0e-8a71-2e5c6d90b4af",
+      stale: false,
+    });
+    expect(api.attrs.wave).toBe(1);
+  });
+
+  it("paints the unobserved component neutral and names why", () => {
+    const worker = joinTickVerdicts(dag(), TICK, FRESH).nodes.find((n) => n.id === "worker")!;
+    expect(worker.attrs._status).toBe("neutral");
+    expect(worker.attrs._tickStatus).toMatchObject({ unobserved: { reason: "no-credentials" } });
+  });
+
+  it("NEVER overrides a live read — a node the live join already painted keeps its colour", () => {
+    // The whole tiering: a stack, a rollup or a `live` boolean is what chant
+    // sees now; a tick is what the operator saw at a stated instant.
+    const painted = joinComponentStatus(dag(), [
+      { component: "api", env: "staging", reconciliation: "reconciled", detail: "consistent", live: true } as ComponentStatusRow,
+    ]);
+    const api = joinTickVerdicts(painted, TICK, FRESH).nodes.find((n) => n.id === "api")!;
+    expect(api.attrs._status).toBe("good"); // the live read's verdict, not the tick's `warn`
+    // …and the tick is still carried, so the panel can show that the two differ.
+    expect(api.attrs._tickStatus).toMatchObject({ reconciliation: "drifted", stale: false });
+    expect(api.attrs._liveStatus).toMatchObject({ reconciliation: "reconciled" });
+  });
+
+  it("reaches only the reconciliation tier — the tick's own `live` boolean paints nothing", () => {
+    // `api`'s verdict carries `live: true`, which as a live-read row would be
+    // tier 3 and paint `good`. Through the tick it must land on `drifted`'s
+    // `warn` instead.
+    expect(joinTickVerdicts(dag(), TICK, FRESH).nodes.find((n) => n.id === "api")!.attrs._status).toBe("warn");
+  });
+
+  it("paints NOTHING once the tick is stale, but still names the verdict and its date", () => {
+    const api = joinTickVerdicts(dag(), TICK, STALE_NOW).nodes.find((n) => n.id === "api")!;
+    expect(api.attrs._status).toBeUndefined();
+    expect(api.attrs._tickStatus).toMatchObject({ reconciliation: "drifted", at: AT, stale: true });
+  });
+
+  it("calls an undatable tick stale rather than painting from it", () => {
+    const api = joinTickVerdicts(dag(), { ...TICK, at: "not-a-date" }, FRESH).nodes.find((n) => n.id === "api")!;
+    expect(api.attrs._status).toBeUndefined();
+    expect(api.attrs._tickStatus).toMatchObject({ stale: true });
+  });
+
+  it("leaves a component the tick didn't name untouched", () => {
+    expect(joinTickVerdicts(dag(), TICK, FRESH).nodes.find((n) => n.id === "web")!.attrs).toEqual({ wave: 3 });
+  });
+
+  it("drops a verdict naming an entity this IR doesn't have — no invented node", () => {
+    const tick = { ...TICK, verdicts: [{ component: "not-in-this-dag", reconciliation: "drifted" as const, detail: "d" }] };
+    const out = joinTickVerdicts(dag(), tick, FRESH);
+    expect(out.nodes.map((n) => n.id)).toEqual(["api", "worker", "web"]);
+    for (const n of out.nodes) expect(n.attrs._tickStatus).toBeUndefined();
+  });
+
+  it("returns the input IR untouched when there is nothing to join", () => {
+    const ir = dag();
+    expect(joinTickVerdicts(ir, null, FRESH)).toBe(ir);
+    expect(joinTickVerdicts(ir, undefined, FRESH)).toBe(ir);
+    expect(joinTickVerdicts(ir, { ...TICK, verdicts: [] }, FRESH)).toBe(ir);
+    expect(joinTickVerdicts(ir, { ...TICK, verdicts: [{ component: "nope", reconciliation: "drifted", detail: "d" }] }, FRESH)).toBe(ir);
+  });
+
+  it("omits the tick id when this chant recorded none (pre-0.53.1)", () => {
+    const api = joinTickVerdicts(dag(), { ...TICK, tickId: null }, FRESH).nodes.find((n) => n.id === "api")!;
+    expect(api.attrs._tickStatus).not.toHaveProperty("tickId");
+  });
+
+  it("is pure — does not mutate the input IR", () => {
+    const ir = dag();
+    const before = JSON.stringify(ir);
+    joinTickVerdicts(ir, TICK, FRESH);
+    expect(JSON.stringify(ir)).toBe(before);
+  });
+
+  it("carries edges and other IR fields through unchanged", () => {
+    const withEdges: GraphIR = { ...dag(), edges: [{ from: "api", to: "worker", kind: "ref" }] };
+    expect(joinTickVerdicts(withEdges, TICK, FRESH).edges).toEqual(withEdges.edges);
   });
 });

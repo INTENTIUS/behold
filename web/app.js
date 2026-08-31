@@ -46,7 +46,7 @@ import { fetchDemos, demoLabel, demoTitle, demoProgress } from "./demos.js";
 // #284 item 2: the run playhead's panel — the verdict wording, the pending gate
 // card and the settled-step rows. Everything it DECIDES is pure in there; the
 // fetches, the SSE subscription and the graph re-pull stay here.
-import { hasPlayhead, renderPlayhead } from "./run-playhead.js";
+import { hasPlayhead, renderPlayhead, waitingFor } from "./run-playhead.js";
 // #234 joins 3 + 1: the operator strip (one honestly-dated tick per ConvergeOp,
 // the lease, the pending gate count) and the converge gate card, whose Approve
 // records a fact for the next tick rather than releasing anything. Same split as
@@ -382,6 +382,11 @@ function inspect(node) {
   // joinComponentStatus, so its presence picks the component-status label set
   // over the entity overlay's managed/foreign/pending.
   const liveStatus = node.attrs && node.attrs._liveStatus;
+  // chant#2027: what the operating loop's last tick said about this component
+  // (src/component-status.ts's joinTickVerdicts). Same component-status
+  // vocabulary as `_liveStatus`, one tier lower and dated — so it picks the same
+  // label set, and it may sit alongside a live verdict rather than replacing it.
+  const tickStatus = node.attrs && node.attrs._tickStatus;
   // behold#146: a Helm chart's status is artifact presence, not management —
   // the join sets `_artifact` on a match, and every Helm::Chart in an overlay
   // went through it, so the kind alone is the reliable picker.
@@ -396,7 +401,7 @@ function inspect(node) {
       "status",
       driftLabel ||
         (node.lexicon === "op" ? opStatusLabel(node) : undefined) ||
-        (isArtifact ? ARTIFACT_STATUS_LABEL[st] : liveStatus ? COMPONENT_STATUS_LABEL[st] : STATUS_LABEL[st]) ||
+        (isArtifact ? ARTIFACT_STATUS_LABEL[st] : liveStatus || tickStatus ? COMPONENT_STATUS_LABEL[st] : STATUS_LABEL[st]) ||
         st,
     );
   if (node.attrs && node.attrs._artifact) {
@@ -514,6 +519,29 @@ function inspect(node) {
     live("", `runtime child — owned by ${node.runtimeOwner || "its declared parent"}, not itself declared`);
   }
 
+  // What the operating loop's last tick said about this component (chant#2027).
+  // Its own section, never folded into "live status": a tick is dated, and the
+  // date is the point. Shown alongside a live verdict when there is one — the
+  // two can disagree, and which is newer is the reader's to see, not behold's to
+  // resolve. The heading itself carries the age, and a tick too old to have
+  // painted says so in words rather than leaving its verdict to be read as now.
+  if (tickStatus) {
+    const ago = tickStatus.at ? waitingFor(tickStatus.at) : null;
+    const tick = section(`converge tick${ago ? ` · ${ago} ago` : ""}${tickStatus.stale ? " · not painted" : ""}`);
+    tick("reconciliation", tickStatus.reconciliation);
+    if (tickStatus.detail) tick("detail", tickStatus.detail);
+    if (tickStatus.live !== undefined) tick("observed live", String(tickStatus.live));
+    if (tickStatus.unobserved) {
+      tick("unobserved", tickStatus.unobserved.detail ? `${tickStatus.unobserved.reason} — ${tickStatus.unobserved.detail}` : tickStatus.unobserved.reason);
+    }
+    tick("recorded by", tickStatus.env ? `${tickStatus.op} (${tickStatus.env})` : tickStatus.op);
+    tick("at", tickStatus.at);
+    if (tickStatus.tickId) tick("tick", tickStatus.tickId);
+    if (tickStatus.stale) {
+      tick("", "older than the operator's own cadence allows for — this verdict is history, so no colour was taken from it");
+    }
+  }
+
   // Declared attributes — the source-of-truth values / cross-resource refs.
   const attrKeys = Object.keys(node.attrs || {}).filter((k) => !k.startsWith("_"));
   if (attrKeys.length) {
@@ -589,7 +617,7 @@ function inspect(node) {
   // `observed` map already carries a runtime child (chant's describeResources
   // reports it the same as any other resource it found), and its own
   // `fieldDrift` may apply too on a substrate with per-field ownership.
-  const observed = st === "good" || st === "warn" || st === "runtime" || (st === "neutral" && !liveStatus);
+  const observed = st === "good" || st === "warn" || st === "runtime" || (st === "neutral" && !liveStatus && !tickStatus);
   if (view.env && observed) {
     const forId = node.id;
     const loading = document.createElement("p");

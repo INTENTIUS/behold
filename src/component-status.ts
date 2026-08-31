@@ -9,6 +9,16 @@
  * docs/roadmap/m1-cli-notes.md Q2). This module is the pure join: no chant
  * call, no I/O, just `ComponentStatusRow[]` + `GraphIR` -> a coloured `GraphIR`.
  *
+ * Since chant 0.53.1 there is a SECOND source for the same join, and it is
+ * strictly subordinate: the converge tick record now keeps the per-component
+ * verdicts it derived (`lastTick.components`, chant#2027), keyed by the same
+ * component name because chant projects them off the very `ComponentStatusRow[]`
+ * this module already reads. {@link joinTickVerdicts} joins those onto the same
+ * nodes, feeding only `componentStatusColor`'s LAST tier and only on a node the
+ * live read left unpainted, and only while the tick is fresh. The live read is
+ * what chant sees now; a tick is what the operator saw at a stated instant, and
+ * the two are never allowed to speak with the same authority.
+ *
  * Deliberately single-substrate AWS, not the cross-substrate live overlay —
  * `chant graph --live --overlay` (the source-anchored overlay, chant #821,
  * shipped 0.18.31 — see src/overlay.ts) is a distinct entity-level view the
@@ -16,6 +26,7 @@
  * stays the spine; status hangs off each node by name.
  */
 import type { GraphIR, ComponentStatusRow, ComponentResourceRollup } from "@intentius/chant";
+import { tickFreshness, type ConvergeComponentVerdict, type TickComponentVerdicts } from "./operator.ts";
 
 /** The colour behold paints a component node, in pinhole's `_status`
  * vocabulary (neutral/accent/good/warn/selected — src/overlay.ts documents
@@ -238,4 +249,106 @@ export function joinComponentStatus(ir: GraphIR, rows: ComponentStatusRow[]): Gr
       };
     }),
   };
+}
+
+// ── The converge tick, as one more source for the last tier (chant#2027) ─────
+
+/**
+ * What the operating loop's last tick said about this component — the node attr
+ * `joinTickVerdicts` leaves behind, read by the SPA's inspect panel.
+ *
+ * Always carries `at` and `stale`, never just the verdict: the whole difference
+ * between this and `_liveStatus` is that this one is dated, and a reader who
+ * can't see the date can't tell an observation from a memory.
+ */
+export interface TickStatus {
+  reconciliation: ComponentStatusRow["reconciliation"];
+  detail: string;
+  live?: boolean;
+  unobserved?: { reason: string; detail?: string };
+  /** The ConvergeOp that recorded the tick, and the env it converges. */
+  op: string;
+  env: string;
+  /** The tick's own ISO timestamp — how old this verdict is, exactly. */
+  at: string;
+  /** The tick's id (chant#2027), when this chant wrote one. */
+  tickId?: string;
+  /** True once the tick is past `TICK_VERDICT_TTL_MS`. A stale verdict is still
+   * carried — it is the only thing behold knows about a component the live read
+   * skipped — but it is never painted. */
+  stale: boolean;
+}
+
+/**
+ * Join the last converge tick's per-component verdicts onto the component DAG.
+ *
+ * Same join key as {@link joinComponentStatus}: `node.id === verdict.component`.
+ * That is not a guess — chant's `componentVerdicts` copies `component` straight
+ * off the `ComponentStatusRow[]` the tick already observed, so the tick's key
+ * and the live read's key are the same string produced by the same code (see
+ * src/operator.ts's "join key, verified rather than guessed" note).
+ *
+ * Two rules, both mechanical rather than advisory:
+ *
+ *  1. **It never outranks a live read.** `_status` is set only on a node that
+ *     doesn't already have one, so every tier `componentStatusColor` implements
+ *     — an unhealthy stack, the resource rollup, the `live` boolean — wins by
+ *     construction. What the tick contributes is the LAST tier, the
+ *     reconciliation verdict, on components the live read said nothing about.
+ *     The tick's own `live` boolean is carried onto the node and deliberately
+ *     not painted from: it is tier-3 evidence from an older moment, and letting
+ *     it compete with tier-3 evidence from this one is what the tiering exists
+ *     to prevent.
+ *  2. **A stale tick paints nothing.** Past `TICK_VERDICT_TTL_MS` the verdict
+ *     is recorded on the node (`stale: true`, with its timestamp) and no colour
+ *     is set. A graph fill has nowhere to put "as of an hour ago", so an old
+ *     verdict that painted would read as the estate's state now — which is the
+ *     one thing the picture must not say.
+ *
+ * `now` is injected exactly as `operatorStrip`'s is, so a test pins the verdict
+ * rather than racing the clock. Pure; returns the same IR object untouched when
+ * nothing joined.
+ */
+export function joinTickVerdicts(
+  ir: GraphIR,
+  tick: TickComponentVerdicts | null | undefined,
+  now: number = Date.now(),
+): GraphIR {
+  if (!tick || !tick.verdicts.length) return ir;
+  const { fresh } = tickFreshness(tick.at, now);
+  const byComponent = new Map<string, ConvergeComponentVerdict>(tick.verdicts.map((v) => [v.component, v]));
+  let joined = false;
+  const nodes = ir.nodes.map((n) => {
+    const v = byComponent.get(n.id);
+    // A verdict naming a component this IR doesn't have joins to nothing and is
+    // dropped — `joinComponentStatus`'s own discipline for the mirror case, and
+    // the honest one: the tick observed an env whose DAG is not what is on
+    // screen, and inventing a node for it would be behold making up an estate.
+    if (!v) return n;
+    joined = true;
+    const status: TickStatus = {
+      reconciliation: v.reconciliation,
+      detail: v.detail,
+      ...(v.live !== undefined ? { live: v.live } : {}),
+      ...(v.unobserved ? { unobserved: v.unobserved } : {}),
+      op: tick.op,
+      env: tick.env,
+      at: tick.at,
+      ...(tick.tickId ? { tickId: tick.tickId } : {}),
+      stale: !fresh,
+    };
+    const paint = fresh && n.attrs?._status === undefined;
+    return {
+      ...n,
+      attrs: {
+        ...n.attrs,
+        // The reconciliation tier and nothing else — `live`/`stack`/`resources`
+        // are deliberately not passed, so this can only ever reach
+        // `componentStatusColor`'s last branch.
+        ...(paint ? { _status: componentStatusColor({ reconciliation: v.reconciliation, detail: v.detail }) } : {}),
+        _tickStatus: status,
+      },
+    };
+  });
+  return joined ? { ...ir, nodes } : ir;
 }

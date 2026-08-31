@@ -86,6 +86,8 @@ export function operatorRows(state, now = Date.now()) {
         log: null,
         at: null,
         ago: null,
+        tickId: null,
+        tick: null,
         lease: "free",
         leaseText: state.strip ? "not in the last status read" : "not read yet",
         pendingGates: 0,
@@ -98,11 +100,36 @@ export function operatorRows(state, now = Date.now()) {
       log: r.log,
       at: r.at,
       ago: r.at ? waitingFor(r.at, now) : null,
+      // chant#2027's tick id: whole (so the hover can quote it in full) and
+      // truncated (so the line stays a line). Both null on a chant that
+      // recorded none, and the row then reads exactly as it did before the
+      // field existed.
+      tickId: r.tickId || null,
+      tick: shortTickId(r.tickId),
       lease: r.lease,
       leaseText: leaseText(r),
       pendingGates: r.pendingGates,
     };
   });
+}
+
+/**
+ * How much of a tick id to show.
+ *
+ * chant mints one with `randomUUID()` (chant#2027), so the first block of a
+ * canonical UUID is already the part a human reads out and the part that
+ * distinguishes two ticks in the same ISO second — which is the whole reason
+ * the field exists. Anything shorter than the cut is shown whole rather than
+ * padded: behold never invents characters chant didn't write.
+ */
+export const TICK_ID_CHARS = 8;
+
+/** A tick id, short enough to sit on a strip line. Null in, null out — a chant
+ * older than 0.53.1 recorded no id, and the strip says nothing rather than
+ * showing a placeholder for an identity that doesn't exist. */
+export function shortTickId(id) {
+  if (typeof id !== "string" || !id) return null;
+  return id.length > TICK_ID_CHARS ? id.slice(0, TICK_ID_CHARS) : id;
 }
 
 /** The lease, in words. The holder is always named when there is one — "held"
@@ -178,8 +205,12 @@ export function renderOperator(host, state, actions = {}) {
     body.appendChild(head);
     // chant's own log line, verbatim — behold re-words nothing about a tick.
     body.appendChild(el("div", "operator-log", r.log || "no tick recorded yet"));
-    const when = r.at ? `last tick ${r.at}${r.ago ? ` (${r.ago} ago)` : ""}` : "never ticked";
-    body.appendChild(el("div", "operator-meta", `${when} · ${r.leaseText}`));
+    // `· tick <id>` only when chant wrote one (chant#2027) — a tick becomes a
+    // thing you can point at, and an older chant's line is unchanged.
+    const when = r.at ? `last tick ${r.at}${r.ago ? ` (${r.ago} ago)` : ""}${r.tick ? ` · tick ${r.tick}` : ""}` : "never ticked";
+    const meta = el("div", "operator-meta", `${when} · ${r.leaseText}`);
+    if (r.tick) meta.title = `tick id ${r.tickId || r.tick}`;
+    body.appendChild(meta);
     row.appendChild(body);
 
     if (r.pendingGates) {

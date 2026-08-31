@@ -7,6 +7,10 @@ import {
   readOperatorStatus,
   declaredConvergeOps,
   operatorStrip,
+  tickComponentVerdicts,
+  verdictsForEnv,
+  tickFreshness,
+  TICK_VERDICT_TTL_MS,
   convergeGateCards,
   operatorHomes,
   markOperatorHome,
@@ -56,6 +60,35 @@ const read = (name: string): string => readFileSync(join(FIXTURES, name), "utf8"
  * `reason` strings are chant's own gate/dial refusal wordings
  * (`converge.ts:287-386`).
  *
+ * **`verdicts.status.json`** is the chant 0.53.1 record shape (chant#2027,
+ * merged as chant PR #2042, commit `52ca6c82`), and every value in its
+ * `lastTick` is derived from that PR's own tests in
+ * `packages/core/src/lifecycle/converge-ledger.test.ts`:
+ *
+ *  - the record's frame (`op: "fountain-converge"`, `env`/`timestamp`, empty
+ *    `firedRuleIds`/`outcomes`) is that file's `makeInput()` (lines 30-41);
+ *  - `components` is exactly what its "round-trips on a record, naming the
+ *    component that tripped the tick's aggregate unknown" test writes —
+ *    `componentVerdicts()` applied to an `api` row (`drifted`, "live digest
+ *    differs", `live: true`) and a `worker` row (`unknown`, "unreadable",
+ *    `unobserved: {reason: "no-credentials"}`) — and its `summary` is that
+ *    test's own `{drifted: 1, reported: 1, unobserved: 1, …}`;
+ *  - `id` is a `randomUUID()`-shaped value, the mint `appendConvergeRecord` now
+ *    performs. chant's tests assert the SHAPE (`/^[0-9a-f-]{36}$/`) rather than
+ *    a value, since a mint has none to pin, so this fixture picks one that
+ *    matches and behold pins the same shape rather than the string.
+ *
+ * Two substitutions, both for the reason the fixture above states: chant's
+ * ledger test predates #1485's `gated` count, so `summary.gated` is carried at
+ * 0 (`convergeTick` writes it on every tick), and the log line is `renderLog`
+ * (`lexicons/temporal/src/op/activities/converge.ts:341`) applied to this
+ * record's own counts rather than the ledger test's placeholder — the strip
+ * prints it verbatim, so an inconsistent one would pin nothing.
+ *
+ * The two fixtures above are deliberately NOT updated to the new shape: they
+ * are what a chant older than 0.53.1 emits, with no `components` and no `id`,
+ * which is the absence path every reader here has to keep handling.
+ *
  * **`staging-converge.op.json`** is a ConvergeOp's emitted IR. chant ships no
  * example that declares a ConvergeOp (the issue's own inventory says so, and
  * `lexicons/k8s/examples/operator-stack` declares converge *hosts*, not a rule
@@ -71,6 +104,7 @@ const read = (name: string): string => readFileSync(join(FIXTURES, name), "utf8"
  */
 const chantTestValues = read("chant-test-values.status.json");
 const twoLoops = read("two-loops.status.json");
+const verdictsFixture = read("verdicts.status.json");
 
 const ok = (stdout: string) => ({ code: 0, stdout, stderr: "" });
 const rows = (stdout: string): OpStatusLine[] => {
@@ -91,6 +125,38 @@ describe("the chant-derived operator status fixtures", () => {
     expect(row.lease).toEqual({ holder: "op-a", expiresAt: "y" });
     expect(row.lastTick?.timestamp).toBe("2026-01-01T00:00:00.000Z");
     expect(row.lastTick?.summary.gated).toBe(1);
+  });
+
+  // The #324-time pin was "a tick is `{timestamp, log, summary, outcomes}` and
+  // nothing behold can colour a node with". chant 0.53.1 (#2027) made that
+  // false, so the pin is now the join it enables: the field path the record
+  // arrives on, and the key it joins by.
+  it("carry the tick's per-component verdicts and its id at `[].lastTick` (chant#2027)", () => {
+    // The path, stated: `statusFor` spreads `ownRecords.at(-1)` onto the row
+    // untouched, so a field added to `ConvergeTickRecord` arrives here verbatim.
+    const [row] = rows(verdictsFixture);
+    expect(row.lastTick?.id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(row.lastTick?.components).toEqual([
+      { component: "api", reconciliation: "drifted", detail: "live digest differs", live: true },
+      { component: "worker", reconciliation: "unknown", detail: "unreadable", unobserved: { reason: "no-credentials" } },
+    ]);
+    // The join key, pinned as a key and not as prose: a verdict names a
+    // COMPONENT, and that is the same string `chant components status --live
+    // --json` puts in `ComponentStatusRow.component` — which is what
+    // src/component-status.ts joins onto a component-DAG node id. If chant ever
+    // re-keys these by entity id instead, this is where behold finds out.
+    expect(row.lastTick?.components?.map((c) => c.component)).toEqual(["api", "worker"]);
+    // …and the count says "1 unobserved" while the verdicts say which one, the
+    // whole point of chant#2027.
+    expect(row.lastTick?.summary.unobserved).toBe(1);
+    expect(row.lastTick?.components?.filter((c) => c.unobserved).map((c) => c.component)).toEqual(["worker"]);
+  });
+
+  it("keep reading a pre-0.53.1 tick, which carries neither field", () => {
+    for (const row of [...rows(chantTestValues), ...rows(twoLoops)]) {
+      expect(row.lastTick?.id).toBeUndefined();
+      expect(row.lastTick?.components).toBeUndefined();
+    }
   });
 
   it("carry ONE tick per loop — there is no history in this surface (chant#2029)", () => {
@@ -234,6 +300,133 @@ describe("operatorStrip", () => {
   it("says a never-ticked loop has no line rather than inventing one", () => {
     const strip = operatorStrip([{ op: "fresh", env: "dev", pendingGates: [] }], NOW);
     expect(strip.rows[0]).toMatchObject({ log: null, at: null, lease: "free" });
+  });
+
+  it("carries the tick's id so a tick is something to point at (chant#2027)", () => {
+    const strip = operatorStrip(rows(verdictsFixture), NOW);
+    expect(strip.rows[0].tickId).toBe("9f1c7a52-3b64-4d0e-8a71-2e5c6d90b4af");
+  });
+
+  it("carries a null tick id on a pre-0.53.1 tick — never a minted one", () => {
+    // behold must not synthesize an identity chant didn't write: two ticks in
+    // the same ISO second are exactly what the field exists to separate, and a
+    // behold-side id would separate nothing while looking like it did.
+    expect(operatorStrip(rows(twoLoops), NOW).rows.map((r) => r.tickId)).toEqual([null, null]);
+    expect(operatorStrip([{ op: "fresh", env: "dev", pendingGates: [] }], NOW).rows[0].tickId).toBeNull();
+  });
+});
+
+// ── The tick's per-component verdicts (chant#2027) ───────────────────────────
+
+describe("tickComponentVerdicts", () => {
+  it("projects the last tick's verdicts, keyed by component name", () => {
+    expect(tickComponentVerdicts(rows(verdictsFixture))).toEqual([
+      {
+        op: "fountain-converge",
+        env: "staging",
+        at: "2026-01-01T00:00:00.000Z",
+        tickId: "9f1c7a52-3b64-4d0e-8a71-2e5c6d90b4af",
+        verdicts: [
+          { component: "api", reconciliation: "drifted", detail: "live digest differs", live: true },
+          { component: "worker", reconciliation: "unknown", detail: "unreadable", unobserved: { reason: "no-credentials" } },
+        ],
+      },
+    ]);
+  });
+
+  it("contributes NOTHING for a tick with no components field — absent is not 'no components'", () => {
+    // Every chant before 0.53.1. An entry with an empty list would let a
+    // consumer read "this chant doesn't say" as "this tick saw nothing".
+    expect(tickComponentVerdicts(rows(chantTestValues))).toEqual([]);
+    expect(tickComponentVerdicts(rows(twoLoops))).toEqual([]);
+  });
+
+  it("contributes an EMPTY entry for a tick whose components is an empty array", () => {
+    // A different fact: chant said it observed no components. It paints nothing
+    // either way, but it is chant's statement rather than chant's silence.
+    const parsed = JSON.parse(verdictsFixture);
+    parsed[0].lastTick.components = [];
+    const [tick] = tickComponentVerdicts(rows(JSON.stringify(parsed)));
+    expect(tick.verdicts).toEqual([]);
+    expect(tick.at).toBe("2026-01-01T00:00:00.000Z");
+  });
+
+  it("contributes nothing for a loop that has never ticked", () => {
+    expect(tickComponentVerdicts([{ op: "fresh", env: "dev", pendingGates: [] }])).toEqual([]);
+  });
+
+  it("drops a verdict behold can't read, and keeps the rest of the tick", () => {
+    // One unreadable ROW refuses the whole strip (a strip missing a loop
+    // undercounts them); one unreadable VERDICT costs a single node its colour,
+    // which is exactly what a pre-0.53.1 chant costs every node.
+    const parsed = JSON.parse(verdictsFixture);
+    parsed[0].lastTick.components = [
+      { reconciliation: "drifted", detail: "no component name" },
+      { component: "api", reconciliation: "not-a-verdict", detail: "outside chant's union" },
+      { component: "worker", reconciliation: "reconciled", detail: "fine" },
+    ];
+    const [tick] = tickComponentVerdicts(rows(JSON.stringify(parsed)));
+    expect(tick.verdicts).toEqual([{ component: "worker", reconciliation: "reconciled", detail: "fine" }]);
+  });
+
+  it("takes the tick id as null when this chant recorded none", () => {
+    const parsed = JSON.parse(verdictsFixture);
+    delete parsed[0].lastTick.id;
+    expect(tickComponentVerdicts(rows(JSON.stringify(parsed)))[0].tickId).toBeNull();
+  });
+});
+
+describe("verdictsForEnv", () => {
+  const tick = (env: string, at: string, component: string) => ({
+    op: `${env}-converge`,
+    env,
+    at,
+    tickId: null,
+    verdicts: [{ component, reconciliation: "drifted" as const, detail: "d" }],
+  });
+
+  it("matches on the tick's own env — a staging verdict never paints a prod DAG", () => {
+    const all = [tick("staging", "2026-01-01T00:00:00.000Z", "api"), tick("prod", "2026-01-01T00:01:00.000Z", "api")];
+    expect(verdictsForEnv(all, "staging")?.op).toBe("staging-converge");
+    expect(verdictsForEnv(all, "dev")).toBeNull();
+  });
+
+  it("takes the newest tick when two loops converge the same env", () => {
+    const all = [tick("staging", "2026-01-01T00:00:00.000Z", "api"), tick("staging", "2026-01-01T00:04:00.000Z", "worker")];
+    expect(verdictsForEnv(all, "staging")?.at).toBe("2026-01-01T00:04:00.000Z");
+  });
+
+  it("never lets an undatable tick displace one behold can date", () => {
+    const all = [tick("staging", "2026-01-01T00:00:00.000Z", "api"), tick("staging", "not-a-date", "worker")];
+    expect(verdictsForEnv(all, "staging")?.at).toBe("2026-01-01T00:00:00.000Z");
+  });
+});
+
+describe("tickFreshness", () => {
+  const AT = "2026-01-01T00:00:00.000Z";
+  const T = Date.parse(AT);
+
+  it("dates a tick inside the window fresh", () => {
+    expect(tickFreshness(AT, T + 60_000)).toEqual({ ageMs: 60_000, fresh: true });
+    expect(tickFreshness(AT, T + TICK_VERDICT_TTL_MS)).toEqual({ ageMs: TICK_VERDICT_TTL_MS, fresh: true });
+  });
+
+  it("calls a tick past the window stale, while still reporting its age", () => {
+    const past = tickFreshness(AT, T + TICK_VERDICT_TTL_MS + 1);
+    expect(past.fresh).toBe(false);
+    expect(past.ageMs).toBe(TICK_VERDICT_TTL_MS + 1);
+  });
+
+  it("refuses to call an undatable or future-dated tick fresh", () => {
+    // The strip's lease verdict makes the same call in the other direction: when
+    // behold can't date a fact, it declines to claim the fact is current.
+    expect(tickFreshness("not-a-date", T)).toEqual({ ageMs: null, fresh: false });
+    expect(tickFreshness(null, T)).toEqual({ ageMs: null, fresh: false });
+    expect(tickFreshness(AT, T - 1000)).toEqual({ ageMs: null, fresh: false });
+  });
+
+  it("is fifteen of chant's own default operator rounds", () => {
+    expect(TICK_VERDICT_TTL_MS).toBe(15 * 60_000);
   });
 });
 
@@ -461,6 +654,46 @@ describe("operatorRead / operatorNote", () => {
     expect(note).toMatch(/last tick only/);
     expect(note).toMatch(/chant#2029/);
     expect(note).toMatch(/strip and not a timeline/);
+  });
+
+  it("holds the tick's verdicts on the state, time-independently (chant#2027)", () => {
+    // Time-independent on purpose: src/op-runner.ts compares the whole state to
+    // decide whether to broadcast, so a freshness flag computed here would make
+    // the clock itself look like news and turn the poll into a repaint loop.
+    const state = operatorRead({ ...initialOperatorState, declared }, readOperatorStatus(ok(verdictsFixture)), AT, NOW);
+    expect(state.verdicts).toEqual(tickComponentVerdicts(rows(verdictsFixture)));
+    expect(JSON.stringify(state.verdicts)).not.toMatch(/fresh|ageMs/);
+  });
+
+  it("drops the verdicts when a read refuses — a refusal leaves no current claim", () => {
+    const read = operatorRead({ ...initialOperatorState, declared }, readOperatorStatus(ok(verdictsFixture)), AT, NOW);
+    const refused = operatorRead(read, readOperatorStatus({ code: 1, stdout: "", stderr: "error: nope" }), AT, NOW);
+    expect(refused.verdicts).toEqual([]);
+  });
+
+  it("holds no verdicts from a pre-0.53.1 chant, so the join is a no-op there", () => {
+    const state = operatorRead({ ...initialOperatorState, declared }, readOperatorStatus(ok(twoLoops)), AT, NOW);
+    expect(state.verdicts).toEqual([]);
+  });
+
+  it("says how many component verdicts the tick carried, and that they sit under the live read", () => {
+    const state = operatorRead({ ...initialOperatorState, declared }, readOperatorStatus(ok(verdictsFixture)), AT, NOW);
+    const note = operatorNote(state, NOW);
+    expect(note).toMatch(/2 component verdicts from that tick/);
+    expect(note).toMatch(/joined onto the component DAG by component name/);
+    expect(note).toMatch(/under the live read \(never over it\)/);
+  });
+
+  it("says a stale tick's verdicts are named but not painted", () => {
+    const state = operatorRead({ ...initialOperatorState, declared }, readOperatorStatus(ok(verdictsFixture)), AT, NOW);
+    const note = operatorNote(state, NOW + TICK_VERDICT_TTL_MS + 1);
+    expect(note).toMatch(/all older than 15m/);
+    expect(note).toMatch(/named on the node, not painted/);
+  });
+
+  it("says nothing about verdicts when the tick carried none", () => {
+    const state = operatorRead({ ...initialOperatorState, declared }, readOperatorStatus(ok(chantTestValues)), AT, NOW);
+    expect(operatorNote(state, NOW)).not.toMatch(/component verdict/);
   });
 
   it("distinguishes the converge gate from the run gate in the sentence", () => {

@@ -172,6 +172,18 @@ and how many gates are pending. **One** tick — `chant operator status` keeps o
 `records.at(-1)` and no CLI exposes the history (chant#2029), so this is a strip
 and never a timeline; the statusbar says so rather than leaving you to assume.
 
+Since chant 0.53.1 (chant#2027) a tick record carries an `id` and the
+per-component verdicts it derived, and both ride through to
+`[].lastTick.{id,components}`. The strip line names the tick (truncated), and
+the verdicts join onto the component DAG by component name — the same key the
+live `chant components status` read is joined by. They join **under** that read:
+a tick only ever feeds the last tier of `componentStatusColor` (the
+reconciliation verdict), only on a node the live read left unpainted, and only
+while the tick is younger than fifteen of chant's own operator rounds. Past
+that it is named on the node, dated, and painted nothing — a graph fill has
+nowhere to put "as of an hour ago". A chant older than 0.53.1 sends neither
+field and every one of these paths is a no-op.
+
 Two gate cards exist and they are **different acts**:
 
 - The **run gate** — `POST /api/ops/:name/signal/:gate` → `chant run signal`.
