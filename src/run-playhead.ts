@@ -340,8 +340,8 @@ export function runStarted(op: string, mode: "temporal" | "local", at: string): 
 }
 
 /** Fold one settled step in. Records are appended in arrival order; the join to
- * cards ({@link joinRun}) is positional, so a stream that repeats a record
- * can't shift the whole track. */
+ * cards ({@link joinRun}) is positional, so a stream that repeats a record —
+ * whatever emitted it — can't shift the whole track. */
 export function runRecord(state: RunState, record: StepRecord): RunState {
   return { ...state, records: [...state.records, record] };
 }
@@ -457,9 +457,16 @@ function mergeRun(prev: StepRun | undefined, record: StepRecord): StepRun {
  * build the records in the first place (its per-fn FIFO queue over scheduled
  * events), so the two agree by construction. A record for a (phase, fn) whose
  * slots are already used lands in `unplaced` rather than shifting the track:
- * chant's own poll-loop watermark can repeat a record when a `skipped` one is
- * inserted mid-list on the terminal pass, and a blind append would then paint
- * every later step one position early.
+ * defense-in-depth against any emitter repeating a record, not a workaround
+ * for a live bug. chant 0.52.1's `--progress-json` did repeat one this way —
+ * its poll-loop watermark counted emitted records, and the terminal pass
+ * inserting a `skipped` record mid-list shifted what the count pointed at
+ * (chant#2032) — fixed in chant 0.53.1 (chant PR #2041, declared-step
+ * identity, not a count). The join still refuses to let a
+ * repeat shift the track, because a blind append would paint every later
+ * step one position early and a stream is an external input whatever
+ * produces it; src/run-playhead.test.ts keeps the pre-fix chant#2032 stream
+ * as the fixture that exercises this.
  */
 export function joinRun(op: OpIr, records: StepRecord[], gate: GateState | null): RunJoin {
   const placed = opPlacedSteps(op);
