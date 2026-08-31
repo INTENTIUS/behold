@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { renderGraph, renderBanded, renderCarveEstate, renderCarveMorph } from "./render.ts";
+import { renderGraph, renderBanded, renderCarveEstate, renderCarveMorph, renderArchitecture } from "./render.ts";
 import { carveStateOf } from "./carve-manifest.ts";
+import { OPERATOR_HOME_GLYPH } from "./operator.ts";
 import type { GraphIR } from "@intentius/chant";
 
 // M4: renderGraph gained an explicit `boxes: "byStack"` opt-in for the
@@ -445,5 +446,39 @@ describe("renderCarveEstate — the carve estate frame (#254)", () => {
         expect(keys).toContain("carve now");
       }
     });
+  });
+});
+
+// #234's free rider, the logical lens's half (pinhole#119, behold#331):
+// `renderArchitecture`'s own `groupMarks` plumbing, tested independent of the
+// server routes and src/operator.ts's detector — just "does a box get its
+// mark when its container KEY is in the map, and is everything else
+// untouched". pinhole strokes a `GlyphSpec.body` into the box's mark `<g>`
+// verbatim (its own render.d.ts.map notes: no `<svg>` wrapper, no escaping),
+// so the raw path string is an unambiguous marker of "this box got marked".
+describe("renderArchitecture — group marks (pinhole#119, behold#331)", () => {
+  const archIr: GraphIR = {
+    nodes: [{ id: "web", kind: "K8s::Apps::Deployment", lexicon: "k8s", attrs: {} }],
+    edges: [],
+    groups: {},
+  };
+  const byContainer = { "namespace prod": ["web"] };
+  const GLYPH_MARKER = OPERATOR_HOME_GLYPH.body;
+
+  it("marks the box whose container KEY is in groupMarks", () => {
+    const { svg } = renderArchitecture(archIr, byContainer, { groupMarks: { "namespace prod": OPERATOR_HOME_GLYPH } });
+    expect(svg).toContain(GLYPH_MARKER);
+  });
+
+  it("a box addressed by the wrong key stays unmarked — matched on the structural id, never the title", () => {
+    const { svg } = renderArchitecture(archIr, byContainer, { groupMarks: { "namespace other": OPERATOR_HOME_GLYPH } });
+    expect(svg).not.toContain(GLYPH_MARKER);
+  });
+
+  it("no groupMarks option renders byte-identical to before the option existed", () => {
+    const withEmptyOpts = renderArchitecture(archIr, byContainer, {}).svg;
+    const withNoOpts = renderArchitecture(archIr, byContainer).svg;
+    expect(withEmptyOpts).toBe(withNoOpts);
+    expect(withNoOpts).not.toContain(GLYPH_MARKER);
   });
 });

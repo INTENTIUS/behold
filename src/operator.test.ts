@@ -10,6 +10,8 @@ import {
   convergeGateCards,
   operatorHomes,
   markOperatorHome,
+  operatorHomeBoxMarks,
+  OPERATOR_HOME_GLYPH,
   operatorRead,
   operatorNote,
   initialOperatorState,
@@ -394,6 +396,35 @@ describe("markOperatorHome", () => {
     const [home] = operatorHomes({ ...ir, nodes } as GraphIR);
     expect(home.stack).toBeUndefined();
     expect(home.ticks.map((t) => t.op)).toEqual(["dev-converge", "prod-converge", "staging-converge"]);
+  });
+});
+
+// ── The free rider's other half: the logical lens's namespace box ───────────
+// (#234, pinhole#119, behold#331). Same detector (`operatorHomes`), a
+// different destination — a `GroupBox` addressed by the projection's own
+// `namespaceBoxes` key, never by title.
+describe("operatorHomeBoxMarks", () => {
+  it("marks the operator's namespace box, by its structural key", () => {
+    const namespaceBoxes = { "chant-operator": "namespace chant-operator", apps: "namespace apps" };
+    expect(operatorHomeBoxMarks(operatorEstate(), namespaceBoxes)).toEqual({
+      "namespace chant-operator": OPERATOR_HOME_GLYPH,
+    });
+  });
+
+  it("a non-operator namespace's box is absent from the result, not marked with anything", () => {
+    const namespaceBoxes = { "chant-operator": "namespace chant-operator", apps: "namespace apps" };
+    const marks = operatorHomeBoxMarks(operatorEstate(), namespaceBoxes);
+    expect(marks["namespace apps"]).toBeUndefined();
+    expect(Object.keys(marks)).toEqual(["namespace chant-operator"]);
+  });
+
+  it("a project with no operator marks nothing — byte-identical to before this field existed", () => {
+    const plain = { nodes: [{ id: "a", kind: "K8s::Batch::CronJob", lexicon: "k8s", attrs: {} }], edges: [], groups: {} } as unknown as GraphIR;
+    expect(operatorHomeBoxMarks(plain, { default: "namespace default" })).toEqual({});
+  });
+
+  it("a home whose namespace the projection never boxed marks nothing — no box to invent one on", () => {
+    expect(operatorHomeBoxMarks(operatorEstate(), {})).toEqual({});
   });
 });
 

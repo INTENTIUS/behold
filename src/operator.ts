@@ -61,6 +61,7 @@
  */
 
 import type { GraphIR, IRNode } from "@intentius/chant";
+import type { GlyphSpec } from "@intentius/pinhole";
 
 // ── chant's shapes, mirrored ─────────────────────────────────────────────────
 //
@@ -342,13 +343,16 @@ export function declaredConvergeOps(
 // Scope, stated: this marks the ENTITY graph, where a `Namespace` is a card
 // (`/api/graph`, `/api/overlay`). The logical lens turns a namespace into a
 // *box* instead (src/logical-k8s.ts's `K8S_PLUMBING_KINDS` drops the card and
-// `namespaceBoxKey` mints `namespace <ns>`), and a `GroupBox` carries only a
-// title, a drift `status` and an id — no mark channel, which is pinhole#119.
-// Suffixing the title used to be doubly wrong: src/logical.ts re-derived that
-// exact string to re-parent helm releases, so a decorated title would have
-// silently unparented them. #328 removed that half — the re-parenting carries
-// the box's container KEY now — so what is left is the pinhole-side field
-// itself. Still not invented here.
+// `namespaceBoxKey` mints `namespace <ns>`), and until pinhole 0.3.7 a
+// `GroupBox` carried only a title, a drift `status` and an id — no mark
+// channel, which was pinhole#119. Suffixing the title used to be doubly wrong:
+// src/logical.ts re-derived that exact string to re-parent helm releases, so a
+// decorated title would have silently unparented them. #328 removed that half
+// — the re-parenting carries the box's container KEY now. pinhole#119 shipped
+// in 0.3.7 (`GroupBox.mark`), so the box gets the same glyph identity below —
+// {@link OPERATOR_HOME_GLYPH} — addressed by that same key
+// (`LogicalProjection.namespaceBoxes`), never by title. See
+// {@link operatorHomeBoxMarks}.
 
 /** k8s's own well-known labels, as OperatorStack sets them. */
 const MANAGED_BY = "app.kubernetes.io/managed-by";
@@ -487,6 +491,51 @@ export function markOperatorHome(ir: GraphIR): GraphIR {
       return mark ? { ...n, attrs: { ...n.attrs, _operator: mark } } : n;
     }),
   };
+}
+
+// ── The logical lens's namespace box (pinhole#119) ───────────────────────────
+
+/**
+ * The operator home's glyph identity, in pinhole's node mark vocabulary
+ * (pinhole#95): monochrome geometry, stroked with the box's title colour
+ * (pinhole#119's `GroupBox.mark` contract), a two-arc cycle — the same
+ * "operating loop" reading web/app.js's `OPERATOR_MARK_LABEL` paints as "⟳" on
+ * the entity graph's own home card. Authored fresh rather than a
+ * `GENERIC_GLYPHS` key: nothing in that fixed vocabulary (compute, storage,
+ * queue, …) names a converge loop, and the whole point is picking ONE
+ * identity so the operator's home reads the same in both views.
+ */
+export const OPERATOR_HOME_GLYPH: GlyphSpec = {
+  body: '<path d="M16.5 6.63A7 7 0 1 1 6.64 7.5"/><path d="M16.5 6.63 14.3 5.9M16.5 6.63 15.9 8.1"/>',
+};
+
+/**
+ * Which namespace `GroupBox` (the logical lens's, pinhole#119) is the
+ * operating loop's home — box KEY → {@link OPERATOR_HOME_GLYPH}, ready to
+ * splice onto `layoutArchitecture`'s boxes before `renderSvg` paints them.
+ *
+ * Same detector as {@link markOperatorHome} — `operatorHomes(ir)`, chant's own
+ * `app.kubernetes.io/*` labels — run again here rather than read off the
+ * entity mark {@link markOperatorHome} leaves on the IR: the logical
+ * projection drops the Namespace node as a card entirely (it becomes the box),
+ * so there is no `_operator`-marked node left to read once `projectTopology`
+ * has run. `ir` is the same pre-projection entity graph `projectTopology` was
+ * given; `namespaceBoxes` is that call's own return
+ * (`LogicalProjection.namespaceBoxes`, behold#328/#331) — the box's KEY, never
+ * its title, exactly as `placeHelmReleases` addresses it.
+ *
+ * A home with no box in `namespaceBoxes` (the projection drew no box for that
+ * namespace — nothing in it survived the headline filter, and it was never
+ * separately declared) marks nothing rather than inventing one; the entity
+ * graph still names the loop's home in that case.
+ */
+export function operatorHomeBoxMarks(ir: GraphIR, namespaceBoxes: Readonly<Record<string, string>>): Record<string, GlyphSpec> {
+  const out: Record<string, GlyphSpec> = {};
+  for (const home of operatorHomes(ir)) {
+    const box = namespaceBoxes[home.namespace];
+    if (box) out[box] = OPERATOR_HOME_GLYPH;
+  }
+  return out;
 }
 
 // ── The strip ────────────────────────────────────────────────────────────────
