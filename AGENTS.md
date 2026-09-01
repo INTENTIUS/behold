@@ -257,3 +257,39 @@ own Terraform is not edited either. The only request-derived value is `select`,
 and it must be an address the served report already ranks — the value that
 reaches the spawn's argv comes from a closed set read off disk. No cloud write,
 no Terraform mutation, no edit to anyone's chant source.
+
+## Changing behold (for agents working on this repo)
+
+The sections above are about driving a running behold. This one is about
+changing it — the working rules that used to live in a handoff note and now
+live here, with the enforceable ones enforced.
+
+- **Branches and merges.** Work on a branch off `main` (an isolated worktree
+  when more than one agent is active). `main` is protected by a ruleset: every
+  change arrives as a PR, and the `check` job in `ci.yml` must be green before
+  it merges. A check that has merely settled is not a pass — read the lines.
+  No `gh pr merge --auto`; merge one PR at a time, in order, and rebase the
+  next onto what landed.
+- **The local gate** is `just check` (tsc, tests, build). `just test` keeps
+  the reporter's full output in `vitest.log`, because #334's one-shot
+  first-run failures kept losing the failing file's name — if the suite fails
+  once and passes on rerun, the log from the first run is the evidence; attach
+  it to #334.
+- **Releasing** is `just release`, after the version-bump PR merged: it tags
+  `behold-v<version>`, pushes the tag (which is what runs `release.yml`), and
+  waits for npm to show the version. It refuses in every state where a tag
+  push would be wrong. Never re-push a `behold-v*` tag by hand — a tag push
+  re-fires publish. Tags absent from origin (behold-v0.10.0, 0.10.1) stay
+  absent for that reason.
+- **Scratch infrastructure** is governed by `src/scratch.ts`, asserted by
+  `scratch.test.ts` across every boot site: anything behold boots is named
+  `behold-*`, refuses if the name is taken, tears down only what it created,
+  and never binds the shared emulator ports. The protected names — `floci*`,
+  `chant-floci*`, the kubemicrovm and fountain k3d clusters, :4566 — are
+  listed there, not in prose. A new boot site calls `assertScratch` before
+  its spawn and gets a row in the test.
+- **The write boundary** is the Invariant section above. Apply is never a
+  button; `/api/carve/apply` does not exist and the route test asserts it
+  stays that way.
+- **chant's working rules** (its single-lane checkout, its release path) are
+  chant's and live in chant's repo, not here.

@@ -9,15 +9,16 @@
  * resource live from the carveout while Terraform still owns it (chant#1647's
  * identity read path, chant ≥ 0.44.12; runCarveObserve in carve-actions.ts).
  *
- * Scratch discipline (HANDOFF standing constraint): our own container name,
- * refuse-if-exists, teardown on exit — never an existing `floci*` or
- * `chant-floci*`, never their :4566. The port moves too, so a shared Floci on
- * the conventional port is never spoken to by accident: the committed
- * override template names :4566 and `armOverride` rewrites it.
+ * Scratch discipline (src/scratch.ts, asserted in scratch.test.ts): our own
+ * container name, refuse-if-exists, teardown on exit — never an existing
+ * `floci*` or `chant-floci*`, never their :4566. The port moves too, so a
+ * shared Floci on the conventional port is never spoken to by accident: the
+ * committed override template names :4566 and `armOverride` rewrites it.
  */
 import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { assertScratch } from "./scratch.js";
 
 export interface CarveLiveInfo {
   container: string;
@@ -90,6 +91,7 @@ function capture(cmd: string, args: string[], cwd: string): Promise<{ code: numb
  * health endpoint to list cloudformation. Returns an error string instead of
  * throwing — the caller turns it into a refusal with a remedy. */
 export async function bootScratchFloci(): Promise<string | undefined> {
+  assertScratch(LIVE_CONTAINER, LIVE_PORT);
   const ps = await capture("docker", ["ps", "-a", "--format", "{{.Names}}"], process.cwd());
   if (ps.code !== 0) return "docker isn't answering — is the daemon up?";
   if (ps.stdout.split("\n").includes(LIVE_CONTAINER)) {
