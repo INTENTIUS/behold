@@ -23,7 +23,7 @@ import { promisify } from "node:util";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { listRecents, addRecent } from "./recents.ts";
-import type { GraphIR } from "@intentius/chant";
+import type { GraphIR, IRNode } from "@intentius/chant";
 import {
   graphIr,
   clusterRootGraphIr,
@@ -65,6 +65,8 @@ import {
   carveProgress,
   carveStateNote,
   carveStatePayload,
+  joinCarvedSources,
+  emittedNodesFor,
   nodeCarveIo,
   readCarveStates,
   splitCarveState,
@@ -116,6 +118,7 @@ import { sourceCommits, openRollbackBranches } from "./history.ts";
 import { composeEstate, composeEstateOverlay, estateMembers, withoutJoinedMembers } from "./estate.ts";
 import { addEstateMemberEdges } from "./estate-edges.ts";
 import { invalidateMember, memberIr } from "./member-ir.ts";
+import { carveStatesFor, carveStatesUnder } from "./carve-discovery.ts";
 import { Broadcaster, watchSources } from "./events.ts";
 import { startDriftPoll } from "./poll.ts";
 import { FrameBuffer } from "./frames.ts";
@@ -458,6 +461,16 @@ function carveRoutes(app: Hono, reportPath: string, demo?: CarveDemo): void {
   // manifest; see src/carve-manifest.ts.
   const carveDirs = [dirname(reportPath), ...(demo ? [demo.out] : [])];
   const carveStates = (): Map<string, CarveState> => readCarveStates(carveDirs, nodeCarveIo, 0);
+  // chant#2040: the carveout is a chant project of its own once emit has run,
+  // and its graph is what names the entity each carve became. Read through the
+  // #312 cache, so an emit (new files → new stamp) re-reads and a reload does
+  // not; a carveout that can't be graphed yet (nothing emitted) is simply no
+  // enrichment.
+  const emittedNodes = async (states: Map<string, CarveState>): Promise<Map<string, IRNode>> => {
+    if (!demo || states.size === 0) return new Map();
+    const outIr = await memberIr(demo.out).catch(() => undefined);
+    return emittedNodesFor(outIr, states.values(), demo.out);
+  };
 
   // #254's stepper needs to know, before it draws a button, whether this server
   // can actually run a step — a `behold carve report.json` looks identical
@@ -521,13 +534,14 @@ function carveRoutes(app: Hono, reportPath: string, demo?: CarveDemo): void {
     // address draws on, so the picture survives a restart — a resource that
     // graduated last session opens in the chant box, not back in its band.
     const states = carveStates();
+    const emitted = await emittedNodes(states);
     // With no chant box to move a graduated card into (a bare `behold carve
     // report.json`), it gets its own band above the ranking — `bandGraduated`.
     // The emitted source path reaches the card; a demo trims it to the copy the
     // way every echoed command in the walkthrough is trimmed.
     const shorten = demo ? (p: string) => shortenIn(p, demo.root) : (p: string) => p;
     const single = () => {
-      const split = splitCarveState(tfIr, states, { shorten });
+      const split = splitCarveState(tfIr, states, { shorten, emitted });
       return bandGraduated(split.tf, split.graduated);
     };
     const { svg, ir } = appSide
@@ -536,6 +550,7 @@ function carveRoutes(app: Hono, reportPath: string, demo?: CarveDemo): void {
           appTitle: `${appSide.label} — chant`,
           carved: states,
           shorten,
+          emitted,
         })
       : (() => {
           const banded = single();
@@ -605,7 +620,7 @@ function carveRoutes(app: Hono, reportPath: string, demo?: CarveDemo): void {
     return c.html(html);
   });
 
-  app.get("/api/project", (c) => {
+  app.get("/api/project", async (c) => {
     const parsed = load();
     const total = parsed.ok ? (parsed.report.count ?? parsed.report.resources.length) : null;
     // #230 M3: the manifest-backed state, in the same shape an ordinary project
@@ -1184,7 +1199,7 @@ export function createApp(
     // means claiming two things are one resource. So this publishes what the
     // manifest actually says — which Terraform addresses graduated, and how far
     // the others got — beside the estate rather than painted onto it.
-    const carveState = carveStatePayload(readCarveStates(estateDirs));
+    const carveState = carveStatePayload(await carveStatesUnder(estateDirs));
     return c.json({
       projectDir: cfg.projectDir,
       ...(carveState.manifests ? { carve: { state: carveState } } : {}),
@@ -1851,6 +1866,10 @@ export function createApp(
       } else {
         // The `cluster/` build root merges in (see the logical branch above).
         ir = mergeClusterRoot(await graphIr(cfg.projectDir, opts), await clusterRootGraphIr(cfg.projectDir, opts));
+        // chant#2040: a manifest this project holds names the file a carved
+        // entity was emitted into — the composed-estate path does the same
+        // per member (src/estate.ts).
+        ir = joinCarvedSources(ir, (await carveStatesFor(cfg.projectDir)).values(), cfg.projectDir).ir;
         // Entity graph below the ATTRIBUTES tier: hide cross-stack import
         // handles (value plumbing, not resources — see pruneImports). Component
         // graphs have no imports, so this only touches the infra view.
@@ -2257,7 +2276,7 @@ export function createApp(
       // Reclassify wiring/examples so they don't read as "pending" over a done
       // deploy (see reclassifyOverlay): Parameters take their deployed
       // component's status, src/examples/ nodes go neutral + `_byo`.
-      let ir = reclassifyOverlay(await graphIr(cfg.projectDir, opts));
+      let ir = joinCarvedSources(reclassifyOverlay(await graphIr(cfg.projectDir, opts)), (await carveStatesFor(cfg.projectDir)).values(), cfg.projectDir).ir;
       const boundContext = await boundK8sContext(env);
       // The `cluster/` build root merges in — the estates declare their k3d
       // cluster there, outside sourceDir (see clusterRootGraphIr) — painted

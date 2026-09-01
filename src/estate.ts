@@ -18,6 +18,8 @@
  * project; that per-project targeting isn't wired into the HTTP API yet — see
  * the M4 report for what a proper "many live instances" estate would need.
  */
+import { joinCarvedSources } from "./carve-manifest.ts";
+import { carveStatesFor } from "./carve-discovery.ts";
 import { statSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { join, resolve, sep } from "node:path";
@@ -95,7 +97,10 @@ export async function composeEstate(projectDirs: string[], opts: GraphOptions = 
   const names = shortStackNames(projectDirs); // readable per-project labels (common prefix stripped)
   const stacks = await mapPool(projectDirs, estateReadPool(projectDirs.length), async (dir, i) => ({
     name: names[i],
-    ir: await memberIr(dir, opts),
+    // chant#2040: the manifests a member holds name the files its carved
+    // entities were emitted into — joined here, where the member's root is
+    // known, onto a COPY (the member IR is the #312 cache's own object).
+    ir: joinCarvedSources(await memberIr(dir, opts), (await carveStatesFor(dir)).values(), dir).ir,
   }));
   return composeStacks(stacks);
 }
@@ -427,7 +432,7 @@ export async function composeEstateOverlay(
         // Source fallback WITHOUT env/live: the declared shape, honestly
         // tagged as not-looked-at rather than absent.
         const { env: _env, live: _live, overlay: _overlay, ...srcOpts } = opts;
-        const src = await memberIr(dir, srcOpts);
+        const src = joinCarvedSources(await memberIr(dir, srcOpts), (await carveStatesFor(dir)).values(), dir).ir;
         for (const n of src.nodes) n.attrs = { ...n.attrs, _status: "neutral", _unobserved: reason };
         stacks[i] = { name, ir: src };
         unobserved.push({ name, reason });

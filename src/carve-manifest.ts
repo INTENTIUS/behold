@@ -32,7 +32,7 @@
  * `carve apply` is a HUMAN step here, always — see {@link APPLY_IS_HUMAN}.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { GraphIR, IRNode } from "@intentius/chant";
 
 /** chant's own suffix (`CARVE_MANIFEST_SUFFIX` in its manifest.ts). */
@@ -112,8 +112,13 @@ export interface CarveState {
   graduated: boolean;
   /** When the LAST recorded step ran (ISO 8601), when chant stamped one. */
   at?: string;
-  /** Emitted chant source files, as the manifest records them. */
+  /** Emitted chant source files, as the manifest records them — absolute in a
+   * V1 manifest, relative to the manifest's own directory since chant 0.54.0
+   * (chant#2039). */
   files: string[];
+  /** The same files, resolved absolute against the manifest's directory — the
+   * side of the chant#2040 join a graph node's `sourceLoc.file` is compared to. */
+  sourceFiles: string[];
   /** Terraform blocks the bridge patch would remove. */
   excised: string[];
   /** Deferred deploy-time inputs the emit recorded, `<param> ← <survivor>`. */
@@ -219,6 +224,7 @@ export function carveStateOf(m: CarveManifest, path: string): CarveState {
     // of the carve.
     ...(m.apply?.at || m.bridge?.at || m.emit?.at ? { at: m.apply?.at ?? m.bridge?.at ?? m.emit?.at } : {}),
     files: strings(m.emit?.files),
+    sourceFiles: strings(m.emit?.files).map((f) => (isAbsolute(f) ? f : resolve(dirname(path), f))),
     excised: strings(m.bridge?.excised),
     deferredInputs: deferred,
     ...(m.apply
@@ -314,18 +320,161 @@ export function readCarveStates(
   io: CarveManifestIo = nodeCarveIo,
   depth = MANIFEST_SCAN_DEPTH,
 ): Map<string, CarveState> {
+  const byTarget = new Map<string, CarveState>();
+  for (const dir of dirs) mergeCarveStates(byTarget, listCarveManifests(dir, io, depth), io);
+  return byTarget;
+}
+
+/** Read each manifest path into `byTarget`, keeping the further-along stage
+ * for a duplicated target (see `readCarveStates`). */
+function mergeCarveStates(byTarget: Map<string, CarveState>, paths: readonly string[], io: CarveManifestIo): void {
   const rank: Record<CarveStage, number> = { emitted: 0, bridged: 1, applied: 2 };
+  for (const path of paths) {
+    const manifest = readCarveManifest(path, io.readFile);
+    if (!manifest) continue;
+    const state = carveStateOf(manifest, path);
+    const held = byTarget.get(state.target);
+    if (!held || rank[state.stage] > rank[held.stage]) byTarget.set(state.target, state);
+  }
+}
+
+// ── Discovery through chant (chant#2038, chant ≥ 0.54.0) ─────────────────────
+
+/** The chant that first answers `chant carve status`. */
+export const CARVE_STATUS_FLOOR = "0.54.0";
+
+/** One row of `chant carve status --from <dir> --json` — chant's own
+ * `CarveStatusRow` (cli/commands/carve-status.ts), reproduced rather than
+ * imported, the way every CLI shape behold reads is. */
+export interface CarveStatusRow {
+  /** Manifest path, relative to the walk root. */
+  path: string;
+  target: string;
+  tfType?: string;
+  stage: "planned" | "emitted" | "bridged" | "applied";
+  at?: { emit?: string; bridge?: string; apply?: string };
+  /** Emitted chant source paths, exactly as the manifest records them. */
+  emittedFiles?: string[];
+}
+
+/** The `--json` payload: the resolved walk root, one row per readable
+ * manifest, and the suffixed files that did not read as one. */
+export interface CarveStatusJson {
+  from?: string;
+  carves?: CarveStatusRow[];
+  unreadable?: string[];
+}
+
+/** Build the `chant carve status --from <dir> --json` argv. Pure. */
+export function carveStatusArgs(from: string): string[] {
+  return ["carve", "status", "--from", from, "--json"];
+}
+
+/**
+ * Every carve state under `dirs`, discovered by chant where it can be and by
+ * the bounded local walk where it cannot.
+ *
+ * `read` is the `chant carve status` call for one root — it answers undefined
+ * for a chant below {@link CARVE_STATUS_FLOOR} or a failed read, and then the
+ * walk `listCarveManifests` has always done takes over for that root, at
+ * `depth`. When chant answers, ITS walk decides which manifests exist (the
+ * point of chant#2038: a renderer stops guessing how deep a carveout sits),
+ * and behold still reads each manifest itself, because a status row carries
+ * the stage and the emitted files but not the excisions, deferred inputs or
+ * ownership marker the views render. Same further-along-wins merge as
+ * `readCarveStates`.
+ */
+export async function discoverCarveStates(
+  dirs: readonly string[],
+  read: (dir: string) => Promise<CarveStatusJson | undefined>,
+  io: CarveManifestIo = nodeCarveIo,
+  depth = MANIFEST_SCAN_DEPTH,
+): Promise<Map<string, CarveState>> {
   const byTarget = new Map<string, CarveState>();
   for (const dir of dirs) {
-    for (const path of listCarveManifests(dir, io, depth)) {
-      const manifest = readCarveManifest(path, io.readFile);
-      if (!manifest) continue;
-      const state = carveStateOf(manifest, path);
-      const held = byTarget.get(state.target);
-      if (!held || rank[state.stage] > rank[held.stage]) byTarget.set(state.target, state);
-    }
+    const status = await read(dir).catch(() => undefined);
+    const paths = status?.carves
+      ? status.carves.map((row) => resolve(status.from ?? dir, row.path))
+      : listCarveManifests(dir, io, depth);
+    mergeCarveStates(byTarget, paths, io);
   }
   return byTarget;
+}
+
+// ── The graph join (chant#2040) ───────────────────────────────────────────────
+
+/** What a chant node carries once a carve manifest names the file that
+ * declares it — the `_carve` attr the inspect pane reads. */
+export interface CarvedFrom {
+  /** The Terraform address this entity was carved out of. */
+  target: string;
+  tfType?: string;
+  stage: CarveStage;
+  graduated: boolean;
+  at?: string;
+  /** The Terraform estate it came from, as the manifest recorded it. */
+  from?: string;
+  /** The emitted file, member-relative — the join key that matched. */
+  file: string;
+}
+
+/**
+ * Join carve manifests onto the chant nodes their emitted files declare.
+ *
+ * chant#2040's join, by byte comparison: a manifest's `emit.files` are relative
+ * to the manifest's own directory (chant#2039), that directory is the emitted
+ * project's root, and `chant graph` reports every node's `sourceLoc.file`
+ * relative to the same root — so a node whose declaring file is one of a
+ * state's `sourceFiles` (resolved against `memberDir`, the project root this
+ * IR was graphed from) was carved out of that state's `target`. The node gains
+ * `carved` (the address, printed on the card) and `_carve` (the record). Its
+ * `_status` is untouched: whether the entity drifts is the overlay's axis, and
+ * being carved is provenance, not health.
+ *
+ * Pure — returns a new IR (nodes shallow-copied) and the count joined, so a
+ * cached member IR is never written into. V1 manifests' absolute paths join
+ * the same way, since `sourceFiles` is absolute either way.
+ */
+export function joinCarvedSources(
+  ir: GraphIR,
+  states: Iterable<CarveState>,
+  memberDir: string,
+): { ir: GraphIR; joined: number } {
+  const byFile = new Map<string, CarveState>();
+  for (const s of states) for (const f of s.sourceFiles) byFile.set(resolve(f), s);
+  if (byFile.size === 0) return { ir, joined: 0 };
+  let joined = 0;
+  const nodes = ir.nodes.map((n) => {
+    const file = n.sourceLoc?.file;
+    if (!file) return n;
+    const abs = resolve(memberDir, file);
+    const state = byFile.get(abs);
+    if (!state) return n;
+    joined++;
+    const carve: CarvedFrom = {
+      target: state.target,
+      ...(state.tfType ? { tfType: state.tfType } : {}),
+      stage: state.stage,
+      graduated: state.graduated,
+      ...(state.at ? { at: state.at } : {}),
+      ...(state.from ? { from: state.from } : {}),
+      file: relative(memberDir, abs).split("\\").join("/"),
+    };
+    return { ...n, attrs: { ...n.attrs, carved: state.target, _carve: carve } };
+  });
+  return { ir: joined ? { ...ir, nodes } : ir, joined };
+}
+
+/** The real chant node each carve state emitted, keyed by Terraform address —
+ * what the carve lens uses to give a graduated card the identity it became. */
+export function emittedNodesFor(ir: GraphIR | undefined, states: Iterable<CarveState>, memberDir: string): Map<string, IRNode> {
+  const out = new Map<string, IRNode>();
+  if (!ir) return out;
+  for (const n of joinCarvedSources(ir, states, memberDir).ir.nodes) {
+    const carve = n.attrs._carve as CarvedFrom | undefined;
+    if (carve && !out.has(carve.target)) out.set(carve.target, n);
+  }
+  return out;
 }
 
 /** The strangler-fig progress read. `total` is the ranked-resource count from
@@ -445,10 +594,19 @@ export function splitCarveState(
   // `app/carveout/src/assets.ts` rather than the length of an operator's
   // tmpdir. Identity, not redaction: the same presentation choice
   // src/carve-actions.ts makes for every command it echoes.
-  opts: { shorten?: (path: string) => string } = {},
+  opts: { shorten?: (path: string) => string; emitted?: Map<string, IRNode> } = {},
 ): { tf: GraphIR; graduated: IRNode[] } {
   if (states.size === 0) return { tf: tfIr, graduated: [] };
   const shorten = opts.shorten ?? ((p: string) => p);
+  // chant#2040: the chant node the carve actually emitted, when the emitted
+  // project could be graphed. A graduated card keeps its Terraform address as
+  // its id (the morph's identity continuity) and takes on the entity it
+  // became — kind, lexicon, declared attrs, source location — so the card in
+  // the chant box reads as chant source, not as a Terraform address wearing a
+  // green fill. A partial carve only names the entity; nothing changed hands.
+  const emitted = opts.emitted ?? new Map<string, IRNode>();
+  const declaredAttrs = (n: IRNode): Record<string, unknown> =>
+    Object.fromEntries(Object.entries(n.attrs ?? {}).filter(([k]) => !k.startsWith("_") && k !== "carved"));
   const source = (files: string[]): string => files.map(shorten).join(", ");
   const gone = new Set<string>();
   const graduated: IRNode[] = [];
@@ -460,12 +618,15 @@ export function splitCarveState(
       nodes.push(node);
       continue;
     }
+    const became = emitted.get(node.id);
     if (state.graduated) {
       gone.add(node.id);
       graduated.push({
         ...node,
+        ...(became ? { kind: became.kind, lexicon: became.lexicon, ...(became.sourceLoc ? { sourceLoc: became.sourceLoc } : {}) } : {}),
         attrs: {
           ...node.attrs,
+          ...(became ? { ...declaredAttrs(became), chantEntity: `${became.kind} ${became.id}` } : {}),
           _status: "good",
           carve: carveWordFor(state.stage),
           carveState: state.stage,
@@ -484,6 +645,7 @@ export function splitCarveState(
         _status: carveToneFor(state.stage),
         carve: carveWordFor(state.stage),
         carveState: state.stage,
+        ...(became ? { chantEntity: `${became.kind} ${became.id}` } : {}),
         ...(state.at ? { carvedAt: state.at } : {}),
         ...(state.files.length ? { chantSource: source(state.files) } : {}),
         ...(state.excised.length ? { excisesOnApply: state.excised.join(", ") } : {}),

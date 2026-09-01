@@ -3,6 +3,10 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  carveStatusArgs,
+  emittedNodesFor,
+  joinCarvedSources,
+  discoverCarveStates,
   APPLY_IS_HUMAN,
   applyCommandFor,
   carveProgress,
@@ -24,6 +28,7 @@ import {
   type CarveState,
 } from "./carve-manifest.ts";
 import { carveReportToIr, type CarveReport } from "./carve-lens.ts";
+import type { GraphIR, IRNode } from "@intentius/chant";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(HERE, "__fixtures__", "carve-manifests");
@@ -426,5 +431,153 @@ describe("splitCarveState", () => {
     const { tf, graduated } = splitCarveState(ir, new Map([["aws_s3_bucket.not_here", stateFor("aws_s3_bucket.not_here", "applied")]]));
     expect(graduated).toEqual([]);
     expect(tf.nodes).toHaveLength(ir.nodes.length);
+  });
+});
+
+
+// ── Discovery through chant (chant#2038) and the graph join (chant#2040) ────
+
+const statusIo = (files: Record<string, string>): CarveManifestIo => ({
+  readdir: (dir) => {
+    const out = new Set<string>();
+    for (const f of Object.keys(files)) {
+      if (!f.startsWith(dir + "/")) continue;
+      out.add(f.slice(dir.length + 1).split("/")[0]);
+    }
+    if (!out.size) throw new Error("ENOENT");
+    return [...out];
+  },
+  isDirectory: (p) => Object.keys(files).some((f) => f.startsWith(p + "/")),
+  readFile: (p) => {
+    if (!(p in files)) throw new Error("ENOENT");
+    return files[p];
+  },
+});
+
+/** A V2 manifest (chant ≥ 0.54.0): emitted files relative to its own directory. */
+const v2 = (target: string, file: string): string =>
+  JSON.stringify({ version: 1, target, tfType: target.split(".")[0], from: "/estate/legacy-tf", emit: { source: "tfstate", files: [file], at: "2026-09-01T10:00:00Z" } });
+
+describe("discoverCarveStates — chant's walk first, the local walk below the floor", () => {
+  const files = {
+    "/proj/carveout/aws_s3_bucket-assets.carve.json": v2("aws_s3_bucket.assets", "src/assets.ts"),
+    "/proj/deep/er/than/two/aws_iam_role-api.carve.json": v2("aws_iam_role.api", "src/api.ts"),
+  };
+
+  it("builds the argv chant answers", () => {
+    expect(carveStatusArgs("/proj")).toEqual(["carve", "status", "--from", "/proj", "--json"]);
+  });
+
+  it("reads exactly the manifests chant reported, wherever they sit, resolved against chant's root", async () => {
+    const read = async () => ({
+      from: "/proj",
+      carves: [
+        { path: "carveout/aws_s3_bucket-assets.carve.json", target: "aws_s3_bucket.assets", stage: "emitted" as const },
+        { path: "deep/er/than/two/aws_iam_role-api.carve.json", target: "aws_iam_role.api", stage: "emitted" as const },
+      ],
+    });
+    const states = await discoverCarveStates(["/proj"], read, statusIo(files));
+    expect([...states.keys()].sort()).toEqual(["aws_iam_role.api", "aws_s3_bucket.assets"]);
+    // Four levels down — past the local walk's guess, which is the point.
+    expect(states.get("aws_iam_role.api")!.path).toBe("/proj/deep/er/than/two/aws_iam_role-api.carve.json");
+  });
+
+  it("falls back to the bounded local walk when chant cannot answer — and then finds only what the walk finds", async () => {
+    const states = await discoverCarveStates(["/proj"], async () => undefined, statusIo(files));
+    expect([...states.keys()]).toEqual(["aws_s3_bucket.assets"]);
+    const thrown = await discoverCarveStates(["/proj"], async () => Promise.reject(new Error("exit 1")), statusIo(files));
+    expect([...thrown.keys()]).toEqual(["aws_s3_bucket.assets"]);
+  });
+
+  it("resolves a V2 manifest's relative emitted files against its own directory, and keeps a V1's absolute ones", async () => {
+    const states = await discoverCarveStates(["/proj"], async () => undefined, statusIo(files));
+    expect(states.get("aws_s3_bucket.assets")!.files).toEqual(["src/assets.ts"]);
+    expect(states.get("aws_s3_bucket.assets")!.sourceFiles).toEqual(["/proj/carveout/src/assets.ts"]);
+    const v1 = carveStateOf(read(APPLIED), manifestPath(APPLIED));
+    expect(v1.sourceFiles).toEqual(["/tmp/carve-fixture/app/carveout/src/assets.ts"]);
+  });
+});
+
+describe("joinCarvedSources — the chant#2040 join by declaring file", () => {
+  const states = () => {
+    const m = new Map<string, CarveState>();
+    const s = carveStateOf(JSON.parse(v2("aws_s3_bucket.assets", "src/assets.ts")) as CarveManifest, "/proj/carveout/aws_s3_bucket-assets.carve.json");
+    m.set(s.target, s);
+    return m;
+  };
+  const ir: GraphIR = {
+    nodes: [
+      { id: "assets", kind: "AWS::S3::Bucket", lexicon: "aws", attrs: { bucketName: "assets-prod", _status: "good" }, sourceLoc: { file: "src/assets.ts" } },
+      { id: "api", kind: "AWS::Lambda::Function", lexicon: "aws", attrs: {}, sourceLoc: { file: "src/api.ts" } },
+      { id: "nowhere", kind: "AWS::EC2::VPC", lexicon: "aws", attrs: {} },
+    ],
+    edges: [],
+    groups: {},
+  };
+
+  it("joins the node whose member-relative declaring file a manifest emitted — and leaves status alone", () => {
+    const { ir: out, joined } = joinCarvedSources(ir, states().values(), "/proj/carveout");
+    expect(joined).toBe(1);
+    const assets = out.nodes.find((n) => n.id === "assets")!;
+    expect(assets.attrs.carved).toBe("aws_s3_bucket.assets");
+    expect(assets.attrs._carve).toEqual({
+      target: "aws_s3_bucket.assets",
+      tfType: "aws_s3_bucket",
+      stage: "emitted",
+      graduated: false,
+      at: "2026-09-01T10:00:00Z",
+      from: "/estate/legacy-tf",
+      file: "src/assets.ts",
+    });
+    expect(assets.attrs._status).toBe("good");
+    expect(out.nodes.find((n) => n.id === "api")!.attrs._carve).toBeUndefined();
+  });
+
+  it("is a byte comparison against THIS member's root — the same file under another root joins nothing", () => {
+    expect(joinCarvedSources(ir, states().values(), "/proj/other").joined).toBe(0);
+  });
+
+  it("is pure: the input IR (a cached member IR) is never written into, and no states means the same object back", () => {
+    const before = JSON.stringify(ir);
+    const { ir: out } = joinCarvedSources(ir, states().values(), "/proj/carveout");
+    expect(JSON.stringify(ir)).toBe(before);
+    expect(out).not.toBe(ir);
+    expect(joinCarvedSources(ir, [], "/proj/carveout").ir).toBe(ir);
+  });
+
+  it("emittedNodesFor keys the real chant node by the address it was carved from", () => {
+    const emitted = emittedNodesFor(ir, states().values(), "/proj/carveout");
+    expect([...emitted.keys()]).toEqual(["aws_s3_bucket.assets"]);
+    expect(emitted.get("aws_s3_bucket.assets")!.kind).toBe("AWS::S3::Bucket");
+    expect(emittedNodesFor(undefined, states().values(), "/proj/carveout").size).toBe(0);
+  });
+});
+
+describe("splitCarveState — a graduated card takes on the entity it became (chant#2040)", () => {
+  const tfIr = carveReportToIr(REPORT);
+  const applied = carveStateOf(read(APPLIED), manifestPath(APPLIED));
+  const emittedNode: IRNode = { id: "assets", kind: "AWS::S3::Bucket", lexicon: "aws", attrs: { bucketName: "assets-prod", _status: "good", carved: "x" }, sourceLoc: { file: "src/assets.ts" } };
+
+  it("keeps the Terraform address as its id and gains kind, lexicon, source location and declared attrs", () => {
+    const { graduated } = splitCarveState(tfIr, new Map([[applied.target, applied]]), { emitted: new Map([[applied.target, emittedNode]]) });
+    expect(graduated).toHaveLength(1);
+    const card = graduated[0];
+    expect(card.id).toBe("aws_s3_bucket.assets");
+    expect(card.kind).toBe("AWS::S3::Bucket");
+    expect(card.lexicon).toBe("aws");
+    expect(card.sourceLoc).toEqual({ file: "src/assets.ts" });
+    expect(card.attrs.bucketName).toBe("assets-prod");
+    expect(card.attrs.chantEntity).toBe("AWS::S3::Bucket assets");
+    // The emitted node's own paint and chip do not leak onto the card.
+    expect(card.attrs._status).toBe("good");
+    expect(card.attrs.carved).toBeUndefined();
+    expect(card.attrs.carve).toBe(carveWordFor("applied"));
+  });
+
+  it("without an emitted node the graduated card is exactly what M3 drew", () => {
+    const a = splitCarveState(tfIr, new Map([[applied.target, applied]]));
+    const b = splitCarveState(tfIr, new Map([[applied.target, applied]]), { emitted: new Map() });
+    expect(a.graduated).toEqual(b.graduated);
+    expect(a.graduated[0].kind).not.toBe("AWS::S3::Bucket");
   });
 });
