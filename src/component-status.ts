@@ -25,7 +25,7 @@
  * epic keeps separate from this component-level facet. The component DAG
  * stays the spine; status hangs off each node by name.
  */
-import type { GraphIR, ComponentStatusRow, ComponentResourceRollup } from "@intentius/chant";
+import type { GraphIR, ComponentStatusRow, ComponentResourceRollup, ReleaseRecord } from "@intentius/chant";
 import { tickFreshness, type ConvergeComponentVerdict, type TickComponentVerdicts } from "./operator.ts";
 
 /** The colour behold paints a component node, in pinhole's `_status`
@@ -210,11 +210,130 @@ export interface LiveStatus {
   resources?: ResourceRollup;
 }
 
+// ── The recorded release, on the card (#165 / #61's second clause) ──────────
+
+/**
+ * Which id space a release record's `runId` lives in, and how to reach it.
+ *
+ * chant#2045 landed this on chant main (`RunOrigin`, lifecycle/release-ledger.ts)
+ * after 0.53.1, so on behold's ^0.53.1 floor the type is not yet exported and
+ * this local twin stands in — structurally identical, read off the record with
+ * a cast. The key-union pin in component-status.test.ts fails typecheck the day
+ * the floor's `ReleaseRecord` grows `runOrigin`; that is the cue to delete this
+ * and import chant's.
+ */
+export interface RunOrigin {
+  /** `github` (also Forgejo Actions, same env contract), `gitlab`, `op` (an
+   * orchestrator run), or `local` (minted on the deploying machine, resolvable
+   * nowhere). */
+  forge: "github" | "gitlab" | "op" | "local";
+  /** Repo/project slug on the forge, when the environment named one. */
+  repo?: string;
+  /** Resolved link to the run, when the environment provided enough to build one. */
+  url?: string;
+}
+
+/**
+ * What the card and the inspect pane say about the run that put a component
+ * here — the `_release` attr `joinComponentStatus` leaves behind. Every field is
+ * copied off the ledger record except `forge`/`originSource`, which say HOW the
+ * id space is known, because the difference between a fact the record states
+ * and one behold inferred from the id's spelling is the whole of chant#2045.
+ */
+export interface ReleaseStatus {
+  runId: string;
+  /** The id space, or `unknown` when the record predates chant#2045 and the id
+   * is neither `local-` spelled nor accompanied by an origin. */
+  forge: RunOrigin["forge"] | "unknown";
+  /** `record` — the release record itself carries `runOrigin` (chant#2045).
+   * `inferred` — behold read the id's spelling (`local-` → local) or could
+   * read nothing (`unknown`). An inferred origin never yields a link. */
+  originSource: "record" | "inferred";
+  repo?: string;
+  /** Present only when the record carries an absolute http(s) URL. Never built
+   * by behold from a bare id: the ledger has three incompatible id spaces and a
+   * link into the wrong one is worse than none. */
+  url?: string;
+  gitSha: string;
+  digest: string;
+  timestamp: string;
+  actor: string;
+  /** Who cleared the durable approval gate, when the change was gated. Absent
+   * means ungated, not unknown — chant omits it exactly then. */
+  approver?: string;
+}
+
+/** The absolute http(s) URL, or undefined — the same rule web/operator.js's
+ * `approvalLink` applies to a gate fact's address, applied server-side too so a
+ * `javascript:` string that reached a ledger never becomes an href. */
+function httpUrl(url: unknown): string | undefined {
+  if (typeof url !== "string" || !url) return undefined;
+  try {
+    const p = new URL(url);
+    return p.protocol === "http:" || p.protocol === "https:" ? url : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Resolve a record's id space and address. Pure. */
+export function releaseOrigin(rec: ReleaseRecord): Pick<ReleaseStatus, "forge" | "originSource" | "repo" | "url"> {
+  const origin = (rec as ReleaseRecord & { runOrigin?: RunOrigin }).runOrigin;
+  if (origin && typeof origin.forge === "string") {
+    const url = httpUrl(origin.url);
+    return {
+      forge: origin.forge,
+      originSource: "record",
+      ...(origin.repo ? { repo: origin.repo } : {}),
+      ...(url ? { url } : {}),
+    };
+  }
+  // Pre-chant#2045: the only thing the id's spelling promises is the `local-`
+  // mint (cli/handlers/components.ts's fallback). A bare id is a GitHub run id,
+  // a GitLab pipeline id or an Op run id, and nothing in the record says which.
+  return { forge: rec.runId.startsWith("local-") ? "local" : "unknown", originSource: "inferred" };
+}
+
+/** The forge word the chip and the pane use — `laptop` for a local mint, so the
+ * card never reads "via local" as if local were a place. */
+export const FORGE_WORD: Record<ReleaseStatus["forge"], string> = {
+  github: "github",
+  gitlab: "gitlab",
+  op: "op",
+  local: "laptop",
+  unknown: "?",
+};
+
+/**
+ * The card chip: `<sha7> via <forge>`, at most 22 characters so pinhole's
+ * default card template prints it (`MAX_VALUE_LEN` in its labels.ts; the `ci`
+ * attr's own precedent, src/gh-run.ts). Answers "which commit, through what"
+ * in one glance; the run id and everything else are the pane's.
+ */
+export function releaseChip(status: Pick<ReleaseStatus, "gitSha" | "forge">): string {
+  return `${status.gitSha.slice(0, 7)} via ${FORGE_WORD[status.forge]}`;
+}
+
+/** The `_release` attr for a row that recorded a release, or undefined. */
+export function releaseStatus(rec: ReleaseRecord | undefined): ReleaseStatus | undefined {
+  if (!rec) return undefined;
+  return {
+    runId: rec.runId,
+    ...releaseOrigin(rec),
+    gitSha: rec.gitSha,
+    digest: rec.digest,
+    timestamp: rec.timestamp,
+    actor: rec.actor,
+    ...(rec.approver ? { approver: rec.approver } : {}),
+  };
+}
+
 /**
  * Join `rows` onto `ir`'s nodes by `node.id === row.component`, tagging each
  * matched node with `_status` (the paint colour pinhole reads) and
  * `_liveStatus` (the verdict + detail, read by the SPA's inspect panel; see
- * web/app.js). `_liveStatus` is deliberately an object, not two more scalar
+ * web/app.js) — and, when the row carries a release record, `release` (the
+ * card chip) + `_release` (the pane's {@link ReleaseStatus}; #165). `_liveStatus` is deliberately an object, not two more scalar
  * attrs: pinhole's default node-card renderer picks up to 2 short scalar
  * attrs (alphabetically) to print directly on the card (`isScalar` in
  * pinhole's src/labels.ts) — flat `_reconciliation`/`_statusDetail` strings
@@ -233,10 +352,16 @@ export function joinComponentStatus(ir: GraphIR, rows: ComponentStatusRow[]): Gr
     nodes: ir.nodes.map((n) => {
       const row = byComponent.get(n.id);
       if (!row) return n;
+      // #165: the recorded release rides the same row (`recorded`, read past
+      // since M1.1). `release` is the one short scalar the card prints;
+      // `_release` is the pane's. A row with no record sets neither — an
+      // `unrecorded` component has nothing to say about which run put it there.
+      const release = releaseStatus(row.recorded);
       return {
         ...n,
         attrs: {
           ...n.attrs,
+          ...(release ? { release: releaseChip(release), _release: release } : {}),
           _status: componentStatusColor(row),
           _liveStatus: {
             reconciliation: row.reconciliation,

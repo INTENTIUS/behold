@@ -54,6 +54,13 @@ preview-locked, and one load runs at a time (409 otherwise).
    per-node observed state, drift and field ownership; `/api/reconcile?env=`
    summarizes the pending change set; `/api/substrates` reports substrate
    readiness; `/api/events` (SSE) pushes `changed`/`op`/`apply`/`run`/`pr`.
+   With `?components=1&env=`, each component node carries `_liveStatus` (the
+   `chant components status` verdict) and, when the release ledger recorded
+   one, `_release` — `{runId, forge, originSource, url?, gitSha, digest,
+   timestamp, actor, approver?}` (#165). `url` is present only when the record
+   itself carries an address (chant#2045); `originSource: "inferred"` means
+   behold read the id's spelling and nothing more, and a `forge: "unknown"` id
+   is never resolved to a link on behold's guess.
    `?ops=1` is the ops lens — the project's declared Ops as a phase track, read
    from each emitted `dist/ops/<name>/op.json`, with the current run painted
    over it (`meta.run`, `meta.gate`); `/api/ops/<name>/status` reads that Op's

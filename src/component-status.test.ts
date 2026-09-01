@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { componentStatusColor, joinComponentStatus, joinTickVerdicts } from "./component-status.ts";
+import { componentStatusColor, joinComponentStatus, joinTickVerdicts, releaseStatus, releaseChip, releaseOrigin } from "./component-status.ts";
 import { TICK_VERDICT_TTL_MS, type TickComponentVerdicts } from "./operator.ts";
-import type { GraphIR, ComponentStatusRow } from "@intentius/chant";
+import type { ReleaseRecord, GraphIR, ComponentStatusRow } from "@intentius/chant";
 
 // Fixture rows mirror the actual `chant components status local --live --json`
 // output verified against loomster on Floci (chant 0.18.27, M1.1 spike Q2) —
@@ -553,5 +553,131 @@ describe("joinTickVerdicts (chant#2027)", () => {
   it("carries edges and other IR fields through unchanged", () => {
     const withEdges: GraphIR = { ...dag(), edges: [{ from: "api", to: "worker", kind: "ref" }] };
     expect(joinTickVerdicts(withEdges, TICK, FRESH).edges).toEqual(withEdges.edges);
+  });
+});
+
+
+// ── #165: the recorded release on the card ───────────────────────────────────
+
+const GH_RECORD: ReleaseRecord & { runOrigin?: unknown } = {
+  version: 1,
+  component: "loom-backend",
+  env: "prod",
+  digest: "sha256:86bf5e3c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b",
+  gitSha: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+  runId: "18234771902",
+  timestamp: "2026-09-01T11:30:00Z",
+  actor: "github-actions[bot]",
+  approver: "alex",
+  // chant#2045's field, as chant main writes it — not on the 0.53.1 type yet.
+  runOrigin: { forge: "github", repo: "INTENTIUS/loomster", url: "https://github.com/INTENTIUS/loomster/actions/runs/18234771902" },
+};
+const LOCAL_RECORD: ReleaseRecord = { ...GH_RECORD, runId: "local-1756726200000", actor: "alex", runOrigin: undefined } as ReleaseRecord;
+delete (LOCAL_RECORD as { runOrigin?: unknown }).runOrigin;
+delete (LOCAL_RECORD as { approver?: string }).approver;
+const BARE_RECORD: ReleaseRecord = { ...LOCAL_RECORD, runId: "18234771902" };
+
+describe("releaseOrigin / releaseStatus (#165, chant#2045)", () => {
+  it("reads runOrigin off the record when chant wrote one — forge, repo and link come from the ledger, not from behold", () => {
+    expect(releaseOrigin(GH_RECORD)).toEqual({
+      forge: "github",
+      originSource: "record",
+      repo: "INTENTIUS/loomster",
+      url: "https://github.com/INTENTIUS/loomster/actions/runs/18234771902",
+    });
+  });
+
+  it("infers only what the id's spelling promises: local- is a laptop, anything else is unknown — never a guessed forge", () => {
+    expect(releaseOrigin(LOCAL_RECORD)).toEqual({ forge: "local", originSource: "inferred" });
+    expect(releaseOrigin(BARE_RECORD)).toEqual({ forge: "unknown", originSource: "inferred" });
+  });
+
+  it("drops a url that is not absolute http(s) — the gate card's rule, applied server-side", () => {
+    const bad = { ...GH_RECORD, runOrigin: { forge: "github", url: "javascript:alert(1)" } };
+    expect(releaseOrigin(bad as ReleaseRecord)).toEqual({ forge: "github", originSource: "record" });
+  });
+
+  it("copies the record's provenance fields and carries approver only when the change was gated", () => {
+    const gated = releaseStatus(GH_RECORD)!;
+    expect(gated.approver).toBe("alex");
+    expect(gated.gitSha).toBe(GH_RECORD.gitSha);
+    expect(gated.digest).toBe(GH_RECORD.digest);
+    expect(gated.timestamp).toBe(GH_RECORD.timestamp);
+    expect(gated.actor).toBe(GH_RECORD.actor);
+    expect("approver" in releaseStatus(LOCAL_RECORD)!).toBe(false);
+    expect(releaseStatus(undefined)).toBeUndefined();
+  });
+});
+
+describe("releaseChip — the card's 22 characters", () => {
+  it("is `<sha7> via <forge>`, and `laptop` for a local mint", () => {
+    expect(releaseChip(releaseStatus(GH_RECORD)!)).toBe("a1b2c3d via github");
+    expect(releaseChip(releaseStatus(LOCAL_RECORD)!)).toBe("a1b2c3d via laptop");
+    expect(releaseChip(releaseStatus(BARE_RECORD)!)).toBe("a1b2c3d via ?");
+  });
+
+  it("never exceeds pinhole's MAX_VALUE_LEN (22) — past it the card silently drops the field", () => {
+    for (const forge of ["github", "gitlab", "op", "local", "unknown"] as const) {
+      expect(releaseChip({ gitSha: GH_RECORD.gitSha, forge }).length).toBeLessThanOrEqual(22);
+    }
+  });
+});
+
+describe("joinComponentStatus — the release rides the row (#165)", () => {
+  const ir: GraphIR = {
+    nodes: [
+      { id: "loom-backend", kind: "Component", lexicon: "chant", attrs: { wave: 3 } },
+      { id: "shared-foundation", kind: "Component", lexicon: "chant", attrs: { wave: 1 } },
+    ],
+    edges: [],
+    groups: {},
+  };
+
+  it("a recorded row gets the `release` chip (scalar, so pinhole prints it) and `_release` (object, for the pane)", () => {
+    const out = joinComponentStatus(ir, [{ ...RECONCILED, recorded: GH_RECORD }]);
+    const backend = out.nodes.find((n) => n.id === "loom-backend")!;
+    expect(backend.attrs.release).toBe("a1b2c3d via github");
+    expect(backend.attrs._release).toMatchObject({ runId: "18234771902", forge: "github", originSource: "record", approver: "alex" });
+    // The chip and `wave` are both scalars: pinhole's default card prints two,
+    // alphabetically, so a recorded component reads `release` + `wave` — and
+    // once a CI run paints `ci` too, `wave` yields exactly as it does today.
+    expect(typeof backend.attrs.release).toBe("string");
+  });
+
+  it("an unrecorded row sets neither — nothing put it there that the ledger knows of", () => {
+    const out = joinComponentStatus(ir, [UNRECORDED_LIVE]);
+    const foundation = out.nodes.find((n) => n.id === "shared-foundation")!;
+    expect(foundation.attrs.release).toBeUndefined();
+    expect(foundation.attrs._release).toBeUndefined();
+    expect(foundation.attrs._status).toBe("good");
+  });
+});
+
+describe("pins chant's ReleaseRecord key union (chant#2045)", () => {
+  // Fails TYPECHECK, not just this test, the day behold's chant floor carries a
+  // key this object lacks — `runOrigin` is the one expected (landed on chant
+  // main 2026-09-01, unreleased at 0.53.1). When it does: delete the local
+  // `RunOrigin` in src/component-status.ts, import chant's, drop the cast in
+  // `releaseOrigin`, and add the key here.
+  const KEYS = {
+    version: true,
+    component: true,
+    env: true,
+    digest: true,
+    gitSha: true,
+    runId: true,
+    timestamp: true,
+    actor: true,
+    approver: true,
+    manifestDigest: true,
+    profileOverride: true,
+    inputDigest: true,
+  } satisfies Record<keyof ReleaseRecord, true>;
+
+  it("the floor's ReleaseRecord has exactly these keys — runOrigin is still read through a cast", () => {
+    expect(Object.keys(KEYS).sort()).toEqual([
+      "actor", "approver", "component", "digest", "env", "gitSha", "inputDigest", "manifestDigest", "profileOverride", "runId", "timestamp", "version",
+    ]);
+    expect("runOrigin" in KEYS).toBe(false);
   });
 });
