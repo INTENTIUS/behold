@@ -559,7 +559,7 @@ describe("joinTickVerdicts (chant#2027)", () => {
 
 // ── #165: the recorded release on the card ───────────────────────────────────
 
-const GH_RECORD: ReleaseRecord & { runOrigin?: unknown } = {
+const GH_RECORD: ReleaseRecord = {
   version: 1,
   component: "loom-backend",
   env: "prod",
@@ -569,12 +569,12 @@ const GH_RECORD: ReleaseRecord & { runOrigin?: unknown } = {
   timestamp: "2026-09-01T11:30:00Z",
   actor: "github-actions[bot]",
   approver: "alex",
-  // chant#2045's field, as chant main writes it — not on the 0.53.1 type yet.
+  // chant#2045's field, as chant ≥ 0.54.0 writes it.
   runOrigin: { forge: "github", repo: "INTENTIUS/loomster", url: "https://github.com/INTENTIUS/loomster/actions/runs/18234771902" },
 };
-const LOCAL_RECORD: ReleaseRecord = { ...GH_RECORD, runId: "local-1756726200000", actor: "alex", runOrigin: undefined } as ReleaseRecord;
-delete (LOCAL_RECORD as { runOrigin?: unknown }).runOrigin;
-delete (LOCAL_RECORD as { approver?: string }).approver;
+const LOCAL_RECORD: ReleaseRecord = { ...GH_RECORD, runId: "local-1756726200000", actor: "alex" };
+delete LOCAL_RECORD.runOrigin;
+delete LOCAL_RECORD.approver;
 const BARE_RECORD: ReleaseRecord = { ...LOCAL_RECORD, runId: "18234771902" };
 
 describe("releaseOrigin / releaseStatus (#165, chant#2045)", () => {
@@ -593,8 +593,8 @@ describe("releaseOrigin / releaseStatus (#165, chant#2045)", () => {
   });
 
   it("drops a url that is not absolute http(s) — the gate card's rule, applied server-side", () => {
-    const bad = { ...GH_RECORD, runOrigin: { forge: "github", url: "javascript:alert(1)" } };
-    expect(releaseOrigin(bad as ReleaseRecord)).toEqual({ forge: "github", originSource: "record" });
+    const bad: ReleaseRecord = { ...GH_RECORD, runOrigin: { forge: "github", url: "javascript:alert(1)" } };
+    expect(releaseOrigin(bad)).toEqual({ forge: "github", originSource: "record" });
   });
 
   it("copies the record's provenance fields and carries approver only when the change was gated", () => {
@@ -655,10 +655,9 @@ describe("joinComponentStatus — the release rides the row (#165)", () => {
 
 describe("pins chant's ReleaseRecord key union (chant#2045)", () => {
   // Fails TYPECHECK, not just this test, the day behold's chant floor carries a
-  // key this object lacks — `runOrigin` is the one expected (landed on chant
-  // main 2026-09-01, unreleased at 0.53.1). When it does: delete the local
-  // `RunOrigin` in src/component-status.ts, import chant's, drop the cast in
-  // `releaseOrigin`, and add the key here.
+  // key this object lacks. It tripped once already, on the ^0.54.0 bump that
+  // brought `runOrigin` (chant#2045) — and retired the local twin that had read
+  // the field through a cast. The next trip is the next field.
   const KEYS = {
     version: true,
     component: true,
@@ -666,6 +665,7 @@ describe("pins chant's ReleaseRecord key union (chant#2045)", () => {
     digest: true,
     gitSha: true,
     runId: true,
+    runOrigin: true,
     timestamp: true,
     actor: true,
     approver: true,
@@ -674,10 +674,9 @@ describe("pins chant's ReleaseRecord key union (chant#2045)", () => {
     inputDigest: true,
   } satisfies Record<keyof ReleaseRecord, true>;
 
-  it("the floor's ReleaseRecord has exactly these keys — runOrigin is still read through a cast", () => {
+  it("the floor's ReleaseRecord has exactly these keys — runOrigin is read as chant's own type", () => {
     expect(Object.keys(KEYS).sort()).toEqual([
-      "actor", "approver", "component", "digest", "env", "gitSha", "inputDigest", "manifestDigest", "profileOverride", "runId", "timestamp", "version",
+      "actor", "approver", "component", "digest", "env", "gitSha", "inputDigest", "manifestDigest", "profileOverride", "runId", "runOrigin", "timestamp", "version",
     ]);
-    expect("runOrigin" in KEYS).toBe(false);
   });
 });

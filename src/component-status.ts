@@ -25,7 +25,7 @@
  * epic keeps separate from this component-level facet. The component DAG
  * stays the spine; status hangs off each node by name.
  */
-import type { GraphIR, ComponentStatusRow, ComponentResourceRollup, ReleaseRecord } from "@intentius/chant";
+import type { GraphIR, ComponentStatusRow, ComponentResourceRollup, ReleaseRecord, RunOrigin } from "@intentius/chant";
 import { tickFreshness, type ConvergeComponentVerdict, type TickComponentVerdicts } from "./operator.ts";
 
 /** The colour behold paints a component node, in pinhole's `_status`
@@ -212,26 +212,12 @@ export interface LiveStatus {
 
 // ── The recorded release, on the card (#165 / #61's second clause) ──────────
 
-/**
- * Which id space a release record's `runId` lives in, and how to reach it.
- *
- * chant#2045 landed this on chant main (`RunOrigin`, lifecycle/release-ledger.ts)
- * after 0.53.1, so on behold's ^0.53.1 floor the type is not yet exported and
- * this local twin stands in — structurally identical, read off the record with
- * a cast. The key-union pin in component-status.test.ts fails typecheck the day
- * the floor's `ReleaseRecord` grows `runOrigin`; that is the cue to delete this
- * and import chant's.
+/*
+ * `RunOrigin` — which id space a release record's `runId` lives in, and how to
+ * reach it — is chant's own type since 0.54.0 (chant#2045). Between 0.53.1 and
+ * the floor bump a local twin stood in here, read through a cast; the key-union
+ * pin in component-status.test.ts tripped on the bump and retired it.
  */
-export interface RunOrigin {
-  /** `github` (also Forgejo Actions, same env contract), `gitlab`, `op` (an
-   * orchestrator run), or `local` (minted on the deploying machine, resolvable
-   * nowhere). */
-  forge: "github" | "gitlab" | "op" | "local";
-  /** Repo/project slug on the forge, when the environment named one. */
-  repo?: string;
-  /** Resolved link to the run, when the environment provided enough to build one. */
-  url?: string;
-}
 
 /**
  * What the card and the inspect pane say about the run that put a component
@@ -278,7 +264,7 @@ function httpUrl(url: unknown): string | undefined {
 
 /** Resolve a record's id space and address. Pure. */
 export function releaseOrigin(rec: ReleaseRecord): Pick<ReleaseStatus, "forge" | "originSource" | "repo" | "url"> {
-  const origin = (rec as ReleaseRecord & { runOrigin?: RunOrigin }).runOrigin;
+  const origin: RunOrigin | undefined = rec.runOrigin;
   if (origin && typeof origin.forge === "string") {
     const url = httpUrl(origin.url);
     return {
