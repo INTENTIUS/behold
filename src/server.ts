@@ -83,7 +83,7 @@ import {
 } from "./carve-actions.ts";
 import { teardownScratchFloci } from "./carve-live.ts";
 import { discoverEstateOps, discoverOpIrs } from "./ops.ts";
-import { readOpIr, opsToIr, opsNote, HOW_TO_EMIT, type OpIr } from "./ops-lens.ts";
+import { readOpIr, opsToIr, opsNote, joinStepEntities, HOW_TO_EMIT, type OpIr } from "./ops-lens.ts";
 import { readRunStatus, joinRun, paintPlayhead, playheadNote, pendingGateCard } from "./run-playhead.ts";
 import {
   readOperatorStatus,
@@ -115,7 +115,7 @@ import { pickAutoSyncOps, suspendedByRollback, type AutoSyncMode } from "./autos
 import { sourceCommits, openRollbackBranches } from "./history.ts";
 import { composeEstate, composeEstateOverlay, estateMembers, withoutJoinedMembers } from "./estate.ts";
 import { addEstateMemberEdges } from "./estate-edges.ts";
-import { invalidateMember } from "./member-ir.ts";
+import { invalidateMember, memberIr } from "./member-ir.ts";
 import { Broadcaster, watchSources } from "./events.ts";
 import { startDriftPoll } from "./poll.ts";
 import { FrameBuffer } from "./frames.ts";
@@ -1530,7 +1530,7 @@ export function createApp(
           path: "/api/demos/open",
           desc: "load a demo and serve it: JSON body {name} (a catalog name, never a path) — copies/clones, installs, runs its setup, then switches (preview-locked)",
         },
-        { method: "GET", path: "/api/graph", desc: "the graph {ir, svg, meta} — params: detail=0..3, components=1, logical=1, ops=1, env, stack, tier, target, lens, up=1, down=1, radial=1, layout=1" },
+        { method: "GET", path: "/api/graph", desc: "the graph {ir, svg, meta} — params: detail=0..3, components=1, logical=1, ops=1 (+entities=1 to link steps to the estate), env, stack, tier, target, lens, up=1, down=1, radial=1, layout=1" },
         ...(cfg.carveReport
           ? [
               { method: "GET", path: "/api/carve", desc: "carve mode: the raw `chant carve advise --json` peelability report this server is rendering" },
@@ -1610,6 +1610,22 @@ export function createApp(
           parsedOps.push(parsed.ir);
         }
         const declaredIr = opsToIr(parsedOps);
+        // chant#2022: the estate nodes each step's `entities` name, joined by
+        // exact match against the member IR of every project that emitted an
+        // Op. Opt-in (`entities=1`, which the SPA sends for the lens) because
+        // it is the one thing on this branch that may spawn: the member IR
+        // comes through the #312 cache — warm after the graph the SPA loaded
+        // first, one spawn per member per source change otherwise — and a bare
+        // `ops=1` keeps the branch's promise of no chant subprocess. A member
+        // that cannot be graphed here (no chant of its own, a failed build)
+        // degrades to "unresolved" rather than refusing: the track is chant's
+        // declaration and stands on its own.
+        if (url.searchParams.get("entities") === "1") {
+          const memberDirs = [...new Set(files.map((f) => f.dir))];
+          const memberReads = await Promise.allSettled(memberDirs.map((dir) => memberIr(dir)));
+          const estateNodes = memberReads.flatMap((r) => (r.status === "fulfilled" ? r.value.nodes : []));
+          joinStepEntities(declaredIr, estateNodes.length ? { nodes: estateNodes, edges: [], groups: {} } : undefined);
+        }
         // The run playhead (#284 item 2): live run state painted OVER the
         // declared track, never instead of it. `paintPlayhead` returns the
         // input IR untouched when there is nothing to say, so an estate that

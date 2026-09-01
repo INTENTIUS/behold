@@ -47,7 +47,10 @@
           "args": {
             "url": "http://localhost:4566/behold-floci-demo"
           },
-          "profile": "fastIdempotent"
+          "profile": "fastIdempotent",
+          "entities": [
+            "http://localhost:4566/behold-floci-demo"
+          ]
         }
       ]
     }
@@ -114,7 +117,10 @@
           "status"
         ],
         "additionalProperties": false
-      }
+      },
+      "entities": [
+        "url"
+      ]
     }
   }
 }

@@ -60,7 +60,10 @@
           "args": {
             "url": "https://behold-floci-demo.s3.amazonaws.com/"
           },
-          "profile": "fastIdempotent"
+          "profile": "fastIdempotent",
+          "entities": [
+            "https://behold-floci-demo.s3.amazonaws.com/"
+          ]
         }
       ]
     }
@@ -127,7 +130,10 @@
           "status"
         ],
         "additionalProperties": false
-      }
+      },
+      "entities": [
+        "url"
+      ]
     },
     "lifecycleDiff": {
       "args": {
