@@ -18,9 +18,13 @@ tsc:
 tsc-floor:
     bash scripts/typecheck-floor.sh
 
-# Unit tests.
+# Unit tests, with the reporter's full output kept in vitest.log (gitignored).
+# #334's one-shot first-run failures kept losing the failing file's name to
+# the terminal buffer; the log is what names it. The exit code is vitest's.
 test:
-    npm test
+    #!/usr/bin/env bash
+    set -o pipefail
+    npm test 2>&1 | tee vitest.log
 
 # Build the CLI bundle (dist/cli.js).
 build:
@@ -28,6 +32,15 @@ build:
 
 # tsc + tests + build — the fast local gate.
 check: tsc test build
+
+# Release the version main already carries: tag behold-v<version>, push the
+# tag (release.yml publishes over npm trusted publishing), wait until npm
+# shows it. Refuses off main, on a dirty or stale tree, when the tag already
+# exists anywhere (a behold-v* push re-fires publish — a tag is pushed exactly
+# once), or when npm already has the version. The version-bump PR comes first,
+# through the same gate as every other PR.
+release:
+    bash scripts/release.sh
 
 # Install the example project's chant + aws lexicon (behold shells the project's
 # own chant, so this decides the chant version under test).
