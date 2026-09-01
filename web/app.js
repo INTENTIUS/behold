@@ -52,6 +52,10 @@ import { hasPlayhead, renderPlayhead, waitingFor } from "./run-playhead.js";
 // records a fact for the next tick rather than releasing anything. Same split as
 // the playhead — the decisions are pure in there, the fetches stay here.
 import { hasOperator, renderOperator, APPROVED_SEMANTICS } from "./operator.js";
+// #165: the recorded release on a component — which run put it here, from
+// which commit, approved by whom — and, when the ledger's run id cannot be
+// followed, the reason in words rather than a guessed link.
+import { releaseRows } from "./release.js";
 initTheme();
 initPanel();
 mountThemePicker(document.getElementById("panel-theme"));
@@ -542,8 +546,35 @@ function inspect(node) {
     }
   }
 
+  // The recorded release (#165, #61's second clause): the ledger row behold
+  // reads on `chant components status` and, until now, read past. Its own
+  // section beside "live status", because the two answer different questions
+  // — what is running versus what was recorded putting it there — and the
+  // reconciliation verdict above is exactly their comparison. The run is a link
+  // only when the record itself carries an address (chant#2045); a bare id
+  // gets its reason, never a guessed forge (web/release.js).
+  const release = node.attrs && node.attrs._release;
+  if (release) {
+    const rel = section("release");
+    for (const [k, v] of releaseRows(release)) {
+      if (v && typeof v === "object" && v.href) {
+        const a = document.createElement("a");
+        a.href = v.href;
+        a.textContent = v.text;
+        a.target = "_blank";
+        a.rel = "noreferrer noopener";
+        a.title = `${v.href} — the address the release record itself carries (chant#2045). behold never invents this link.`;
+        rel(k, a);
+      } else {
+        rel(k, v);
+      }
+    }
+  }
+
   // Declared attributes — the source-of-truth values / cross-resource refs.
-  const attrKeys = Object.keys(node.attrs || {}).filter((k) => !k.startsWith("_"));
+  // The `release` chip is the card's abbreviation of the section above, not a
+  // declared value, so it stays out of this list when the section rendered.
+  const attrKeys = Object.keys(node.attrs || {}).filter((k) => !k.startsWith("_") && !(k === "release" && release));
   if (attrKeys.length) {
     const decl = section("declared");
     for (const k of attrKeys) decl(k, fmtValue(node.attrs[k]));
