@@ -318,10 +318,36 @@ function shortDigest(d) {
  * declared → live form the field-drift section uses for a k8s resource.
  * Provenance comes last: which bytes were compared, and where they came from.
  */
+/** The identity axis (chant#2031) in one sentence — what the observed release
+ * was deployed from, compared to what this project renders. */
+function renderIdentityText(i) {
+  const o = i.observed || {};
+  const d = i.declared || {};
+  switch (i.match) {
+    case "content":
+      return `this render, byte for byte — content ${shortDigest(o.contentDigest)} matches`;
+    case "input":
+      return `this render's inputs — input digest ${shortDigest(o.inputDigest)} matches (bytes may differ per cluster)`;
+    case "mismatch":
+      return o.contentDigest && d.contentDigest
+        ? `a different render — the release records content ${shortDigest(o.contentDigest)}, this project renders ${shortDigest(d.contentDigest)}`
+        : `different inputs — the release records input ${shortDigest(o.inputDigest)}, this project renders ${shortDigest(d.inputDigest)}`;
+    case "unrecorded":
+      return "unknown — no release record names this deploy's render (deployed outside the recorded path, or the ledger could not be read)";
+    case "unpinned":
+      return "not comparable — this render is unpinned, so it has no identity to compare";
+    default:
+      return i.match;
+  }
+}
+
 function renderDriftSection(section, r) {
   const rd = section("render diff");
   rd("verdict", RENDER_VERDICT_LABEL[r.verdict] || r.verdict);
   if (r.reason) rd("reason", RENDER_UNOBSERVED_LABEL[r.reason] || r.reason);
+  // chant#2031: whether what runs was deployed from this render at all — the
+  // question the live diff cannot ask, answered from two recorded digests.
+  if (r.identity) rd("deployed from", renderIdentityText(r.identity));
   if (r.counts) {
     const c = r.counts;
     rd(
@@ -414,6 +440,10 @@ function inspect(node) {
     if (a.status) id("release status", a.status);
     if (a.revision) id("revision", a.revision);
     if (a.chart) id("chart", a.chart);
+    // The deploy's recorded render identity, read back off the ledger
+    // (chant#2031, chant ≥ 0.54.0). Absent for a release no record names.
+    if (a.inputDigest) id("input digest", shortDigest(a.inputDigest));
+    if (a.contentDigest) id("content digest", shortDigest(a.contentDigest));
   }
   // chant#1168 (#1089): `_unobserved` carries WHY chant couldn't read this
   // entity's live state — only ever set alongside the entity overlay's

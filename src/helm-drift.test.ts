@@ -3,8 +3,9 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { GraphIR, IRNode } from "@intentius/chant";
-import { applyHelmRenderDrift, helmRenderReport } from "./helm-drift.ts";
+import { applyHelmRenderDrift, helmRenderReport, renderIdentity, observedReleaseFor } from "./helm-drift.ts";
 import type { HelmRenderRecord, HelmRenderLiveDiff } from "./chant.ts";
+import type { LiveArtifactObservation } from "./chant.ts";
 
 /**
  * The helm render-drift axis (#146's deferred half; chant#1249/#1250, epic
@@ -243,5 +244,118 @@ describe("applyHelmRenderDrift — the paint", () => {
       expect(n.attrs!._status).toBe("good");
       expect(n.attrs!._renderDrift).toBeUndefined();
     }
+  });
+});
+
+
+// ── The identity axis (chant#2031, chant ≥ 0.54.0) ───────────────────────────
+
+const release = (attributes: Record<string, unknown>, status = "deployed"): LiveArtifactObservation => ({
+  type: "Helm::Release",
+  status,
+  attributes: { chart: "tiny-0.1.0", revision: "2", ...attributes },
+});
+
+describe("renderIdentity — was the running release deployed from this render", () => {
+  const CONTENT = pinned.contentDigest!;
+  const INPUT = pinned.inputDigest!;
+
+  test("pinned deploy of this render: content digests equal — byte for byte", () => {
+    const obs = { key: "release/shop/web", observation: release({ inputDigest: INPUT, contentDigest: CONTENT }) };
+    expect(renderIdentity(pinned, obs)).toEqual({
+      match: "content",
+      declared: { inputDigest: INPUT, contentDigest: CONTENT },
+      observed: { release: "shop/web", inputDigest: INPUT, contentDigest: CONTENT },
+    });
+  });
+
+  test("unpinned deploy of the same inputs: input digests equal — the same chart, values and profile", () => {
+    const obs = { key: "release/shop/web", observation: release({ inputDigest: INPUT }) };
+    expect(renderIdentity(pinned, obs).match).toBe("input");
+  });
+
+  test("a release deployed from something else is a mismatch, on whichever digest kind both sides have", () => {
+    expect(renderIdentity(pinned, { key: "release/shop/web", observation: release({ inputDigest: INPUT, contentDigest: "sha256:elsewhere" }) }).match).toBe("mismatch");
+    expect(renderIdentity(pinned, { key: "release/shop/web", observation: release({ inputDigest: "sha256:elsewhere" }) }).match).toBe("mismatch");
+  });
+
+  test("a release no ledger record names is unrecorded, never a mismatch — absence is not disagreement", () => {
+    const i = renderIdentity(pinned, { key: "release/shop/web", observation: release({}) });
+    expect(i.match).toBe("unrecorded");
+    expect(i.observed).toEqual({ release: "shop/web" });
+    expect(renderIdentity(pinned, undefined).match).toBe("unrecorded");
+  });
+
+  test("an unpinned declared render has nothing to compare, whatever the release records", () => {
+    const i = renderIdentity(unpinned, { key: "release/shop/web", observation: release({ inputDigest: INPUT }) });
+    expect(i.match).toBe("unpinned");
+    expect(i.declared).toEqual({});
+  });
+});
+
+describe("observedReleaseFor — the release a render produced", () => {
+  const map = {
+    "release/shop/web": release({ inputDigest: "sha256:shop" }),
+    "release/staging/web": release({ inputDigest: "sha256:staging" }),
+    "release/shop/other": release({}),
+  };
+
+  test("matches on the release name, narrowed by the manifest's namespace when given", () => {
+    expect(observedReleaseFor(pinned, map, "staging")?.key).toBe("release/staging/web");
+    expect(observedReleaseFor(pinned, map, "shop")?.key).toBe("release/shop/web");
+  });
+
+  test("with no namespace the first candidate wins; a name nothing matches is undefined; no map is undefined", () => {
+    expect(observedReleaseFor(pinned, map)?.key).toBe("release/shop/web");
+    expect(observedReleaseFor({ ...pinned, name: "api" }, map)).toBeUndefined();
+    expect(observedReleaseFor(pinned, undefined)).toBeUndefined();
+  });
+});
+
+describe("the identity axis on the report and the paint", () => {
+  const observedMismatch = { "release/shop/web": release({ inputDigest: "sha256:elsewhere", contentDigest: "sha256:elsewhere" }) };
+  const observedMatch = { "release/shop/web": release({ inputDigest: pinned.inputDigest!, contentDigest: pinned.contentDigest! }) };
+
+  test("the report carries identity only when an observation map was given — no map, no invented verdict", () => {
+    expect(helmRenderReport(pinned, FIXTURE.clean).identity).toBeUndefined();
+    const r = helmRenderReport(pinned, FIXTURE.clean, observedMatch);
+    expect(r.verdict).toBe("in-sync");
+    expect(r.identity?.match).toBe("content");
+  });
+
+  test("the namespace the resolved manifest names picks the release when the map has several", () => {
+    const two = { "release/other/web": release({ inputDigest: "sha256:x" }), ...observedMatch };
+    // FIXTURE.clean's manifest names namespace "shop".
+    expect(helmRenderReport(pinned, FIXTURE.clean, two).identity?.observed.release).toBe("shop/web");
+  });
+
+  test("a mismatch repaints the chart warn even when the live diff is clean — what runs was not deployed from this render", () => {
+    const ir = irOf([chartNode("c", "tiny", "good")]);
+    const r = helmRenderReport(pinned, FIXTURE.clean, observedMismatch);
+    expect(r.verdict).toBe("in-sync");
+    const out = applyHelmRenderDrift(ir, [r]);
+    expect(out).toEqual({ charts: 1, drifted: 1 });
+    expect(ir.nodes[0].attrs!._status).toBe("warn");
+  });
+
+  test("a match never repaints — identity agreeing does not heal anything", () => {
+    const ir = irOf([chartNode("c", "tiny", "warn")]);
+    applyHelmRenderDrift(ir, [helmRenderReport(pinned, FIXTURE.clean, observedMatch)]);
+    expect(ir.nodes[0].attrs!._status).toBe("warn");
+    const ir2 = irOf([chartNode("c", "tiny", "good")]);
+    applyHelmRenderDrift(ir2, [helmRenderReport(pinned, FIXTURE.clean, observedMatch)]);
+    expect(ir2.nodes[0].attrs!._status).toBe("good");
+  });
+
+  test("worst-of across two renders: a mismatch outranks a hole, and drift outranks a mismatch", () => {
+    const hole = helmRenderReport({ ...pinned, name: "web-b" }, undefined, observedMatch);
+    const mismatch = helmRenderReport(pinned, FIXTURE.clean, observedMismatch);
+    const drifted = helmRenderReport({ ...pinned, name: "web-c" }, FIXTURE.drifted, observedMatch);
+    const ir = irOf([chartNode("c", "tiny", "good")]);
+    applyHelmRenderDrift(ir, [hole, mismatch]);
+    expect((ir.nodes[0].attrs!._renderDrift as { identity?: { match: string } }).identity?.match).toBe("mismatch");
+    const ir2 = irOf([chartNode("c", "tiny", "good")]);
+    applyHelmRenderDrift(ir2, [mismatch, drifted]);
+    expect((ir2.nodes[0].attrs!._renderDrift as { verdict: string }).verdict).toBe("drifted");
   });
 });

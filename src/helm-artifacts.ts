@@ -17,6 +17,13 @@
  * is "installed", never "managed", and a live release matching no declared
  * chart is NOT invented as a node — it stays in the diff/inspect surface
  * where chant reports it.
+ *
+ * Since chant 0.54.0 (chant#2031) an observed release also carries the render
+ * identity its deploy recorded — `inputDigest`, and `contentDigest` for a
+ * pinned deploy — read back from the env's release ledger. Presence still
+ * joins by chart name (a chart is installed or it is not, whichever bytes were
+ * deployed); the digests are carried onto the match so the inspect pane can
+ * show them, and src/helm-drift.ts compares them to the declared render.
  */
 import type { GraphIR } from "@intentius/chant";
 import type { LiveArtifactObservation } from "./chant.ts";
@@ -27,6 +34,10 @@ export interface HelmArtifactMatch {
   status?: string;
   revision?: string;
   chart?: string;
+  /** The deploy's recorded render identity (chant#2031, chant ≥ 0.54.0) —
+   * absent when the ledger had no record for this release. */
+  inputDigest?: string;
+  contentDigest?: string;
 }
 
 /** The chart name a `Helm::Chart` node declares (its Chart.yaml `name`). */
@@ -89,6 +100,8 @@ export function applyHelmArtifacts(
       ...(o.status ? { status: o.status } : {}),
       ...(typeof o.attributes?.revision === "string" ? { revision: o.attributes.revision } : {}),
       ...(typeof o.attributes?.chart === "string" ? { chart: o.attributes.chart } : {}),
+      ...(typeof o.attributes?.inputDigest === "string" ? { inputDigest: o.attributes.inputDigest } : {}),
+      ...(typeof o.attributes?.contentDigest === "string" ? { contentDigest: o.attributes.contentDigest } : {}),
     };
     attrs._artifact = match;
     attrs._status = o.status === "deployed" ? "good" : "warn";

@@ -83,7 +83,7 @@ describe("applyHelmArtifacts (behold#146)", () => {
     expect(aws.attrs!._status).toBe("good");
   });
 
-  test("an observed release carries its render identity since chant 0.54.0 — and this join does not read it yet", () => {
+  test("an observed release carries its render identity since chant 0.54.0 — and the match carries it too", () => {
     // chant's `listArtifacts` (lexicons/helm/src/list-artifacts.ts) is a
     // `helm list -o json` parse. Until 0.53.1 `{chart, revision}` was the whole
     // attribute set, so an OBSERVED release could not be joined to the PINNED
@@ -94,9 +94,9 @@ describe("applyHelmArtifacts (behold#146)", () => {
     // the deploy's recorded `inputDigest` (chant#1243) — and `contentDigest`
     // when the deploy was a pinned render (chant#1242) — on the observation.
     //
-    // This pins the gap that remains on behold's side: the join still matches
-    // by chart name and carries neither digest onto `_artifact`. The PR that
-    // joins by digest turns these last two assertions around.
+    // Presence still joins by chart name — installed is installed whichever
+    // bytes were deployed — and the digests ride onto `_artifact` for the
+    // pane; src/helm-drift.ts's identity axis is what compares them.
     const observed: LiveArtifactObservation = {
       type: "Helm::Release",
       status: "deployed",
@@ -106,7 +106,6 @@ describe("applyHelmArtifacts (behold#146)", () => {
     const ir = irOf([chartNode("webChart", "web-app")]);
     applyHelmArtifacts(ir, { "release/prod/web": observed });
     expect(ir.nodes[0].attrs!._status).toBe("good");
-    expect(ir.nodes[0].attrs!._artifact).not.toHaveProperty("inputDigest");
-    expect(ir.nodes[0].attrs!._artifact).not.toHaveProperty("contentDigest");
+    expect(ir.nodes[0].attrs!._artifact).toMatchObject({ inputDigest: "sha256:input", contentDigest: "sha256:content" });
   });
 });

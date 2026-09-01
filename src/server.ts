@@ -2274,7 +2274,7 @@ export function createApp(
         // Refines the presence verdict above — drift repaints a chart `warn`,
         // an in-sync or unreadable render leaves the colour alone. A project
         // with no `chant helm` command group reports nothing and stays at #146.
-        applyHelmRenderDrift(ir, await readHelmRenderDrift(cfg.projectDir, env, query));
+        applyHelmRenderDrift(ir, await readHelmRenderDrift(cfg.projectDir, env, query, observed));
       }
       // Runtime tier (#86, chant#1180/#1077): nest each live, undeclared,
       // owner-chain-resolved node (a Pod its Deployment's controller created)
@@ -2421,7 +2421,7 @@ export function createApp(
           .catch(() => undefined);
         applyHelmArtifacts(result.ir, observed);
         synthesizeHelmReleases(result.ir, observed, discoverReleaseUnits(cfg.projectDir));
-        applyHelmRenderDrift(result.ir, await readHelmRenderDrift(cfg.projectDir, env));
+        applyHelmRenderDrift(result.ir, await readHelmRenderDrift(cfg.projectDir, env, {}, observed));
       }
     }
     // Same runtime-tier gate the /api/overlay view applies (#86, #144): the
