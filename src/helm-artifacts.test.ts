@@ -83,21 +83,30 @@ describe("applyHelmArtifacts (behold#146)", () => {
     expect(aws.attrs!._status).toBe("good");
   });
 
-  test("an observed release carries no render identity — the join #146 and the drift lens both had to guess", () => {
+  test("an observed release carries its render identity since chant 0.54.0 — and this join does not read it yet", () => {
     // chant's `listArtifacts` (lexicons/helm/src/list-artifacts.ts) is a
-    // `helm list -o json` parse, and this is the whole attribute set it emits.
-    // Notably absent: the `helmInputDigest` chant#1243 has the release ledger
-    // record on deploy. Without it, an OBSERVED release cannot be joined to
-    // the PINNED render that produced it, so both this module and
-    // src/helm-drift.ts fall back to matching on the chart name — and #234's
-    // "is prod running what staging tested" has no digest to compare, because
-    // a consumer can only obtain a digest for a render it can re-render
-    // locally, never for a release it can only observe.
+    // `helm list -o json` parse. Until 0.53.1 `{chart, revision}` was the whole
+    // attribute set, so an OBSERVED release could not be joined to the PINNED
+    // render that produced it, and both this module and src/helm-drift.ts
+    // matched on the chart name — #234's "is prod running what staging tested"
+    // had no digest to compare. That was filed as chant#2031, and 0.54.0
+    // answers it: `listArtifacts` reads the env's release ledger and hangs
+    // the deploy's recorded `inputDigest` (chant#1243) — and `contentDigest`
+    // when the deploy was a pinned render (chant#1242) — on the observation.
     //
-    // Filed as chant#2031. The day it lands this assertion fails, and it
-    // fails pointing straight at the join that got better.
-    expect(Object.keys(deployed["release/prod/web"].attributes!).sort()).toEqual(["chart", "revision"]);
-    expect(deployed["release/prod/web"].attributes).not.toHaveProperty("inputDigest");
-    expect(deployed["release/prod/web"].attributes).not.toHaveProperty("contentDigest");
+    // This pins the gap that remains on behold's side: the join still matches
+    // by chart name and carries neither digest onto `_artifact`. The PR that
+    // joins by digest turns these last two assertions around.
+    const observed: LiveArtifactObservation = {
+      type: "Helm::Release",
+      status: "deployed",
+      attributes: { chart: "web-app-1.2.3", revision: "3", inputDigest: "sha256:input", contentDigest: "sha256:content" },
+    };
+    expect(Object.keys(observed.attributes!).sort()).toEqual(["chart", "contentDigest", "inputDigest", "revision"]);
+    const ir = irOf([chartNode("webChart", "web-app")]);
+    applyHelmArtifacts(ir, { "release/prod/web": observed });
+    expect(ir.nodes[0].attrs!._status).toBe("good");
+    expect(ir.nodes[0].attrs!._artifact).not.toHaveProperty("inputDigest");
+    expect(ir.nodes[0].attrs!._artifact).not.toHaveProperty("contentDigest");
   });
 });
