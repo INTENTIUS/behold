@@ -58,24 +58,45 @@
  * the helm lexicon) produces no reports at all and leaves the lens exactly
  * where #146 left it.
  *
+ * ## The identity axis (chant#2031, chant ≥ 0.54.0)
+ *
+ * The live diff above answers "have the objects moved since the deploy". It
+ * cannot answer the question that comes BEFORE it: was the release the cluster
+ * is running deployed from this project's render at all? Until 0.53.1 the
+ * observed release reported no render identity, so the only join was the
+ * chart name and that question had no digest on the observed side. 0.54.0's
+ * `listArtifacts` reads the env's release ledger and hangs the deploy's
+ * recorded `inputDigest` — and `contentDigest` for a pinned deploy — on the
+ * observation. `renderIdentity` compares those to the declared render's:
+ *
+ *   both content digests present, equal   -> "content": the exact bytes
+ *   else both input digests present, equal -> "input": the same chart, version,
+ *                                             values and profile (bytes may
+ *                                             legitimately differ per cluster)
+ *   a common kind present, unequal         -> "mismatch": what runs was deployed
+ *                                             from something other than what
+ *                                             this project declares
+ *   the release carries no identity        -> "unrecorded": no ledger record
+ *                                             names it (deployed outside the
+ *                                             recorded path, or the ledger
+ *                                             could not be read)
+ *   the declared render carries none       -> "unpinned": nothing to compare to
+ *
+ * Only `mismatch` paints, and like drift it only ever downgrades: a release
+ * running someone else's render is bad news whatever its status. The other
+ * four are recorded on the node and shown in words.
+ *
  * ## What is deliberately NOT wired
  *
- * The offline half, `chant helm diff <from-digest> <to-digest> --json`, is the
- * provenance comparison #234 asked for ("is prod running what staging
- * tested"). It is reachable and its JSON is good, but it takes TWO digests and
- * a consumer can only obtain a digest for a render it can DECLARE — the live
- * read reports no render identity at all, so there is no digest for "what prod
- * is actually running" to pass as the other side. That is chant#2031, filed
- * out of this work; src/helm-artifacts.test.ts pins the current attribute set
- * so the day it lands, the test fails at the join.
- *
- * The per-render provenance record such a comparison would read (`inputDigest`,
- * `valuesDigest`, `contentDigest`, `capabilityProfile`, `helmVersion`,
- * `chantVersion`, `renderedAt`, `sourceRef`) IS carried through to the panel
- * below, so the build-side half of the answer is on the node today.
+ * The offline half, `chant helm diff <from-digest> <to-digest> --json`, the
+ * render-to-render comparison across two environments ("is prod running what
+ * staging tested"). Both sides of that now have digests — the observed release
+ * carries its own — but behold renders one environment at a time, so the
+ * cross-environment surface is its own view. The identity axis answers the
+ * one-environment half: is THIS env running what THIS project renders.
  */
 import type { GraphIR } from "@intentius/chant";
-import type { GraphOptions, HelmRenderLiveDiff, HelmRenderRecord, HelmPropertyDrift } from "./chant.ts";
+import type { GraphOptions, HelmRenderLiveDiff, HelmRenderRecord, HelmPropertyDrift, LiveArtifactObservation } from "./chant.ts";
 import { helmRenderDiffLive, helmRenders } from "./chant.ts";
 import { estateReadPool, mapPool } from "./estate.ts";
 
@@ -134,6 +155,74 @@ export interface HelmRenderReport {
   drifted?: HelmDriftedDocument[];
   /** Only when a stored render was resolved. */
   provenance?: HelmRenderProvenance;
+  /** Whether the observed release was deployed from this declared render
+   * (chant#2031). Present whenever the observation map was available. */
+  identity?: HelmRenderIdentity;
+}
+
+/** How the observed release's recorded render identity compares to the
+ * declared render's — see the module header for what each word claims. */
+export type HelmRenderIdentityMatch = "content" | "input" | "mismatch" | "unrecorded" | "unpinned";
+
+export interface HelmRenderIdentity {
+  match: HelmRenderIdentityMatch;
+  /** The declared render's digests, from `chant helm renders`. */
+  declared: { inputDigest?: string; contentDigest?: string };
+  /** The observed release's recorded digests, off the ledger via
+   * `listArtifacts`, and which release they were read from. */
+  observed: { release?: string; inputDigest?: string; contentDigest?: string };
+}
+
+/** One observed release, with the `release/<ns>/<name>` key it was found under. */
+export interface ObservedRelease {
+  key: string;
+  observation: LiveArtifactObservation;
+}
+
+/** Compare a declared render's identity to the observed release's. Pure. */
+export function renderIdentity(record: HelmRenderRecord, observed: ObservedRelease | undefined): HelmRenderIdentity {
+  const declared = {
+    ...(record.inputDigest ? { inputDigest: record.inputDigest } : {}),
+    ...(record.contentDigest ? { contentDigest: record.contentDigest } : {}),
+  };
+  const a = observed?.observation.attributes ?? {};
+  const obs = {
+    ...(observed ? { release: observed.key.replace(/^release\//, "") } : {}),
+    ...(typeof a.inputDigest === "string" ? { inputDigest: a.inputDigest } : {}),
+    ...(typeof a.contentDigest === "string" ? { contentDigest: a.contentDigest } : {}),
+  };
+  const base = { declared, observed: obs };
+  if (!declared.inputDigest && !declared.contentDigest) return { match: "unpinned", ...base };
+  if (!obs.inputDigest && !obs.contentDigest) return { match: "unrecorded", ...base };
+  if (declared.contentDigest && obs.contentDigest) {
+    return { match: declared.contentDigest === obs.contentDigest ? "content" : "mismatch", ...base };
+  }
+  if (declared.inputDigest && obs.inputDigest) {
+    return { match: declared.inputDigest === obs.inputDigest ? "input" : "mismatch", ...base };
+  }
+  // Each side has identity of a kind the other lacks. chant's writer never
+  // produces this (a pinned record carries both; a deploy record always has
+  // an input digest), so it is reported as unrecorded rather than guessed at.
+  return { match: "unrecorded", ...base };
+}
+
+/**
+ * The observed release a declared render produced, out of the
+ * `observedArtifacts` map: the entry whose release name is the render's
+ * (chant bakes the render name in as the release name), narrowed by namespace
+ * when the resolved render manifest names one and the map has several.
+ */
+export function observedReleaseFor(
+  record: HelmRenderRecord,
+  observed: Record<string, LiveArtifactObservation> | undefined,
+  namespace?: string | null,
+): ObservedRelease | undefined {
+  if (!observed) return undefined;
+  const candidates = Object.entries(observed).filter(([key]) => key.startsWith("release/") && key.split("/").pop() === record.name);
+  if (candidates.length === 0) return undefined;
+  const scoped = namespace ? candidates.find(([key]) => key === `release/${namespace}/${record.name}`) : undefined;
+  const [key, observation] = scoped ?? candidates[0];
+  return { key, observation };
 }
 
 /** Total property changes across every drifted document. */
@@ -172,8 +261,18 @@ function provenanceOf(live: HelmRenderLiveDiff): HelmRenderProvenance {
  *
  * Pure; exported for testing.
  */
-export function helmRenderReport(record: HelmRenderRecord, live: HelmRenderLiveDiff | undefined): HelmRenderReport {
-  const base = { render: record.name, chart: record.chart };
+export function helmRenderReport(
+  record: HelmRenderRecord,
+  live: HelmRenderLiveDiff | undefined,
+  observed?: Record<string, LiveArtifactObservation>,
+): HelmRenderReport {
+  // The identity axis needs no live diff — it compares two recorded digests —
+  // so it is decided from the observation map alone, and only when the caller
+  // had one: with no map there is no observed side, and no verdict is invented.
+  const identity = observed
+    ? { identity: renderIdentity(record, observedReleaseFor(record, observed, live?.manifest.namespace)) }
+    : {};
+  const base = { render: record.name, chart: record.chart, ...identity };
 
   if (!live) {
     // An unpinned render never reached the store, so chant had nothing to
@@ -231,15 +330,16 @@ export async function readHelmRenderDrift(
   projectDir: string,
   env: string,
   opts: GraphOptions = {},
+  observed?: Record<string, LiveArtifactObservation>,
 ): Promise<HelmRenderReport[]> {
   const report = await helmRenders(projectDir, opts).catch(() => undefined);
   const records = report?.records ?? [];
   if (records.length === 0) return [];
 
   return mapPool(records, estateReadPool(records.length), async (record) => {
-    if (!record.contentDigest) return helmRenderReport(record, undefined);
+    if (!record.contentDigest) return helmRenderReport(record, undefined, observed);
     const live = await helmRenderDiffLive(projectDir, record.contentDigest, env, opts).catch(() => undefined);
-    return helmRenderReport(record, live);
+    return helmRenderReport(record, live, observed);
   });
 }
 
@@ -251,11 +351,15 @@ function chartNameOf(node: { attrs?: Record<string, unknown> }): string | undefi
 }
 
 /**
- * Rank the verdicts so a chart rendered more than once reports its worst
- * news, not its last: any drift makes the chart drifted; otherwise any hole
- * makes it unobserved; only an all-clean set reads in-sync.
+ * Rank the reports so a chart rendered more than once reports its worst
+ * news, not its last: any drift makes the chart drifted; otherwise an
+ * identity mismatch; otherwise any hole makes it unobserved; only an
+ * all-clean set reads in-sync.
  */
-const SEVERITY: Record<HelmRenderVerdict, number> = { drifted: 2, unobserved: 1, "in-sync": 0 };
+const SEVERITY: Record<HelmRenderVerdict, number> = { drifted: 3, unobserved: 1, "in-sync": 0 };
+function severityOf(r: HelmRenderReport): number {
+  return Math.max(SEVERITY[r.verdict], r.identity?.match === "mismatch" ? 2 : 0);
+}
 
 /**
  * Paint the render-drift axis onto every `Helm::Chart` node in `ir`, in place.
@@ -291,15 +395,16 @@ export function applyHelmRenderDrift(
     const matched = chartName ? byChart.get(chartName) : undefined;
     if (!matched || matched.length === 0) continue;
 
-    const worst = matched.reduce((a, b) => (SEVERITY[b.verdict] > SEVERITY[a.verdict] ? b : a));
+    const worst = matched.reduce((a, b) => (severityOf(b) > severityOf(a) ? b : a));
     const attrs = (node.attrs ??= {});
     attrs._renderDrift = matched.length === 1 ? worst : { ...worst, renders: matched };
     charts++;
 
-    if (worst.verdict === "drifted") {
+    if (worst.verdict === "drifted" || matched.some((r) => r.identity?.match === "mismatch")) {
       // The same colour src/component-status.ts gives a drifted component, and
       // the same one the entity overlay gives a resource that disagrees with
-      // its declaration. Presence may have said `good`; live has moved.
+      // its declaration. Presence may have said `good`; live has moved — or
+      // (chant#2031) what runs was never deployed from this render at all.
       attrs._status = "warn";
       drifted++;
     }
