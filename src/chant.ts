@@ -27,6 +27,7 @@ import { detectProject } from "./project.ts";
 // plain `node dist/cli.js` cannot import unbundled (Node refuses to
 // type-strip files under node_modules).
 import { parseYAML } from "@intentius/chant/yaml";
+import { carveStatusArgs, type CarveStatusJson } from "./carve-manifest.ts";
 
 /** Graph options passed through to chant so IR and layout node sets align. */
 export interface GraphOptions {
@@ -998,6 +999,14 @@ export interface HelmRenderRecord {
 export interface HelmRendersReport {
   records?: HelmRenderRecord[];
   stability?: unknown;
+}
+
+/** `chant carve status --from <dir> --json` (chant#2038, chant ≥ 0.54.0): every
+ * carve manifest under `from`, found by chant's own walk. A core command, so
+ * any chant at the floor answers it — the project's own when it has one,
+ * behold's bundled one otherwise. Shape: src/carve-manifest.ts `CarveStatusJson`. */
+export function carveStatus(from: string, projectDir?: string): Promise<CarveStatusJson> {
+  return runChantJson<CarveStatusJson>(carveStatusArgs(from), projectDir);
 }
 
 /** Build the `chant helm renders --json` argv. Pure; exported for testing. */

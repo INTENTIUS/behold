@@ -576,6 +576,19 @@ function inspect(node) {
     }
   }
 
+  // chant#2040: the Terraform address this chant entity was carved out of —
+  // the manifest names the file, `chant graph` names the file, and the join is
+  // a byte comparison (src/carve-manifest.ts `joinCarvedSources`).
+  const carve = node.attrs && node.attrs._carve;
+  if (carve) {
+    const cf = section("carved from");
+    cf("terraform", carve.tfType ? `${carve.target} (${carve.tfType})` : carve.target);
+    cf("stage", carve.graduated ? "graduated — chant owns it" : `${carve.stage} — Terraform still owns it`);
+    if (carve.at) cf("at", carve.at);
+    if (carve.from) cf("estate", carve.from);
+    cf("emitted as", carve.file);
+  }
+
   // chant#2022: what an Op step touches in the estate, as the op.json states it
   // and as the lens resolved it — a resolved value names the card it joined
   // to; an unresolved one is stated as such, never guessed at (src/ops-lens.ts
@@ -1705,10 +1718,16 @@ function carvePick(node) {
  * the follow-up; this is the honest still frame of it. */
 function markCarvedCards() {
   const svg = document.querySelector("#graph svg");
-  if (!svg || !carvedIds.size) return;
+  if (!svg) return;
+  // chant#2040: a chant node whose declaring file a carve manifest names is
+  // carved out of Terraform — the server joins it as `_carve` on the entity
+  // graph and the overlay, so the same still frame the walkthrough draws also
+  // appears on an ordinary estate that holds manifests.
+  const joined = new Set((lastGraphIr && lastGraphIr.nodes ? lastGraphIr.nodes : []).filter((n) => n.attrs && n.attrs._carve).map((n) => n.id));
+  if (!carvedIds.size && !joined.size) return;
   for (const g of svg.querySelectorAll("[data-node-id]")) {
     const id = g.getAttribute("data-node-id");
-    if (!carvedIds.has(id) || g.querySelector('[data-carved="1"]')) continue;
+    if ((!carvedIds.has(id) && !joined.has(id)) || g.querySelector('[data-carved="1"]')) continue;
     g.classList.add("carved");
     // Measured, not read off attributes: pinhole sizes the card from its
     // content and doesn't always stamp width/height, and a missing attribute

@@ -18,7 +18,7 @@ import {
   type MorphView,
   type Status,
 } from "@intentius/pinhole";
-import type { GraphIR, IRGroups, Layout } from "@intentius/chant";
+import type { GraphIR, IRGroups, IRNode, Layout } from "@intentius/chant";
 import type { ByContainer } from "./logical.ts";
 import { k8sIconFor, helmIconFor } from "./icon-packs.ts";
 import { carveCardFields } from "./carve-lens.ts";
@@ -296,6 +296,8 @@ export function renderCarveEstate(
     theme?: string;
     carved?: Map<string, CarveState>;
     shorten?: (path: string) => string;
+    /** chant#2040: the real chant node each carve emitted, by Terraform address. */
+    emitted?: Map<string, IRNode>;
   },
 ): RenderResult & { ir: GraphIR } {
   const staged = withCarveState(tfIr, appIr, opts);
@@ -327,10 +329,13 @@ export function renderCarveEstate(
 function withCarveState(
   tfIr: GraphIR,
   appIr: GraphIR,
-  opts: { appTitle: string; carved?: Map<string, CarveState>; shorten?: (path: string) => string },
+  opts: { appTitle: string; carved?: Map<string, CarveState>; shorten?: (path: string) => string; emitted?: Map<string, IRNode> },
 ): { tf: GraphIR; appNs: GraphIR; carvedTitle: string } {
   const states = opts.carved ?? new Map<string, CarveState>();
-  const { tf, graduated } = splitCarveState(tfIr, states, { ...(opts.shorten ? { shorten: opts.shorten } : {}) });
+  const { tf, graduated } = splitCarveState(tfIr, states, {
+    ...(opts.shorten ? { shorten: opts.shorten } : {}),
+    ...(opts.emitted ? { emitted: opts.emitted } : {}),
+  });
   const ns = namespaceAppIr(appIr, opts.appTitle);
   const progress = carveProgress(states.values(), tfIr.nodes.length);
   return {
