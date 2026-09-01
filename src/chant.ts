@@ -663,6 +663,18 @@ export interface CiJob {
 export interface CiPipeline {
   stages: string[];
   jobs: CiJob[];
+  /** The environment the pipeline deploys — on the generated JSON since chant
+   * 0.54.0 (chant#2046), where the workflow is also named for it
+   * ({@link ciWorkflowName}). Absent from an older chant's output, in which
+   * case two envs' pipelines are indistinguishable to any reader. */
+  env?: string;
+}
+
+/** The `name:` chant 0.54.0 writes on a generated GitHub/Forgejo workflow —
+ * `chant-components-<env>` — the identity behold's picker matches on
+ * (chant#2046). Pure. */
+export function ciWorkflowName(env: string): string {
+  return `chant-components-${env}`;
 }
 
 /** The raw shape of `chant build --components --generate gitlab --format
@@ -673,6 +685,8 @@ interface GitlabGenerateJson {
   stages: string[];
   jobs: Array<{ jobName: string; component: string; stage: string; needs: string[] }>;
   yaml: string;
+  /** chant ≥ 0.54.0 (chant#2046). */
+  env?: string;
 }
 
 /** The lexicons that can generate a component pipeline — chant's own list
@@ -720,7 +734,7 @@ export function parseCiPipeline(stdout: string): CiPipeline {
     const script = Array.isArray(props?.script) ? (props.script as unknown[]).map(String) : [];
     return { ...j, script };
   });
-  return { stages: parsed.stages, jobs };
+  return { stages: parsed.stages, jobs, ...(typeof parsed.env === "string" && parsed.env ? { env: parsed.env } : {}) };
 }
 
 /** The CI projection facet for a project's components: shells `chant build

@@ -2361,6 +2361,19 @@ function renderApplyProgress(state) {
   // executor — and says so instead of claiming to be an apply.
   summary.textContent = `${state.kind || "apply"}: ${state.status}`;
   wrap.appendChild(summary);
+  // #165: a dispatched run's own page — the one place an environment
+  // protection rule's approval can be granted. A link, never a button: behold
+  // holds no identity that could clear a forge gate, and must not acquire one.
+  if (state.kind === "pipeline" && state.url) {
+    const a = document.createElement("a");
+    a.href = state.url;
+    a.target = "_blank";
+    a.rel = "noreferrer noopener";
+    a.textContent = `run on the forge — approval, if required, is granted there`;
+    a.style.cssText = "font-size:var(--t-caption)";
+    a.title = state.url;
+    wrap.appendChild(a);
+  }
   for (const w of state.waves) {
     const row = document.createElement("div");
     row.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap";
@@ -3750,9 +3763,10 @@ function bringUpSubstrate(s) {
 // login. The server refuses honestly (no gh, unauthenticated, no matching
 // workflow_dispatch workflow) and the reason lands as a toast. Shared by the
 // Substrates tab's button and the ⌘K entry.
-function dispatchPipeline() {
-  if (!window.confirm("Dispatch the GitHub Actions pipeline?\nRuns via YOUR gh login (gh workflow run); behold follows the run on the dial.")) return;
-  fetch("/api/ci/dispatch", { method: "POST" })
+function dispatchPipeline(env) {
+  const target = env || view.env || opsInitialEnv;
+  if (!window.confirm(`Dispatch the GitHub Actions pipeline${target ? ` for ${target}` : ""}?\nRuns via YOUR gh login (gh workflow run); behold follows the run on the dial.`)) return;
+  fetch(`/api/ci/dispatch${target ? `?env=${encodeURIComponent(target)}` : ""}`, { method: "POST" })
     .then((r) => r.json())
     .then((j) => {
       if (j.error) {
@@ -4122,6 +4136,14 @@ function paletteRollback() {
   openRollback(rb);
 }
 
+// #165: per-env executor designations, off /api/project. A designated env's
+// Deploy dispatches the forge workflow instead of running chant here; a
+// designation behold cannot honour disables Deploy with its reason.
+let executorInfo = {};
+function designatedFor(env) {
+  return env && executorInfo && executorInfo[env] ? executorInfo[env] : null;
+}
+
 // Deploy/ops state for the ⌘K palette (#73) — populated once in initActions(),
 // which used to turn each of these straight into a toolbar button. previewMode
 // (declared above, near view) is what the palette gates on: it hides exactly
@@ -4149,6 +4171,9 @@ async function initActions() {
   // lock that hides the git/PR ops.
   const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
   opsInitialEnv = project.currentEnv || null;
+  // #165: which envs deploy through a forge, and whether Deploy can dispatch
+  // them right now (`/api/project`'s executor block).
+  executorInfo = project.executor || {};
   previewMode = staticMode || !!project.previewMode; // static ⇒ read-only, no writes at all
   const { ops, adoptLexicons, autoSync, local, applyProgress: apInit, runState: runInit, operatorState: opInit } = await apiFetch("/api/ops")
     .then((r) => r.json())
@@ -4210,7 +4235,27 @@ async function initActions() {
   // the button says Deploy whether the project routes it through a committed
   // ApplyOp or a raw `chant run --components` — the tooltip carries the
   // mechanism.
-  if (opsApply && !previewMode) {
+  const deployEnv = view.env || opsInitialEnv;
+  const designated = designatedFor(deployEnv);
+  if (designated && !previewMode) {
+    // #165: the env deploys through a forge. One button, the forge's name on
+    // it, dispatching the DESIGNATED workflow through the operator's own gh —
+    // and disabled, with the reason, when the designation cannot be honoured.
+    // Never the local button: falling back is what the contract forbids.
+    const forge = { github: "GitHub Actions", gitlab: "GitLab CI", forgejo: "Forgejo" }[designated.forge] || designated.forge || "the forge";
+    const deploy = button(`▶ Deploy via ${forge}`, "", () => dispatchPipeline(deployEnv));
+    if (!designated.ok) {
+      deploy.disabled = true;
+      deploy.title = `Deploy is disabled for ${deployEnv}: ${designated.reason}`;
+    } else {
+      deploy.title = `gh workflow run ${designated.workflow} — ${deployEnv} deploys through ${forge} per .behold.json. behold dispatches through YOUR gh and follows the run on the dial; any approval the workflow's environment requires is granted on the forge, not here.`;
+    }
+    bar.appendChild(deploy);
+    const note = document.createElement("span");
+    note.style.cssText = "color:var(--muted);font-size:var(--t-caption);align-self:center";
+    note.textContent = designated.ok ? `${deployEnv}: approval, if any, lives on ${forge}` : `${deployEnv}: ${designated.reason}`;
+    bar.appendChild(note);
+  } else if (opsApply && !previewMode) {
     const deploy = button(`▶ Deploy (${opsApply.name})`, "", () => {
       if (window.confirm(`Run the committed ApplyOp "${opsApply.name}"?\nDelegated write: behold triggers, chant's executor applies.`)) runOp(opsApply.name);
     });
@@ -4429,17 +4474,25 @@ function paletteCommands() {
   // renderSubstrates()'s previous button-gating precisely.
   if (!previewMode) {
     if (opsApply) {
-      c.push([`Deploy: Sync (${opsApply.name})`, () => runOp(opsApply.name)]);
+      // #165: not for a designated env — its ApplyOp is refused server-side too.
+      if (!designatedFor(view.env || opsInitialEnv)) c.push([`Deploy: Sync (${opsApply.name})`, () => runOp(opsApply.name)]);
       if (opsApply.gate) c.push([`Approve ${opsApply.gate}`, () => signal(opsApply.name, opsApply.gate)]);
     }
-    c.push(["Rollback to a prior revision…", () => paletteRollback()]);
+    // #165: a designated env's applies happen on the forge, so a rollback PR
+    // opened from here would have nothing local to land — hidden, as designed.
+    if (!designatedFor(view.env || opsInitialEnv)) c.push(["Rollback to a prior revision…", () => paletteRollback()]);
     for (const op of opsRunnable) {
       c.push([`Run: ${op.name}`, () => { if (window.confirm(`Run Op "${op.name}"?`)) runOp(op.name); }]);
     }
   }
   // No committed ApplyOp, but there's an env → "Apply all" is the equivalent
   // deploy action (M3) — stays available in preview (a local write, not git/PR).
-  if (!opsApply && opsInitialEnv) c.push([`Deploy: Apply all → ${opsInitialEnv}`, () => confirmApplyAll()]);
+  if (!opsApply && opsInitialEnv && !designatedFor(opsInitialEnv)) c.push([`Deploy: Apply all → ${opsInitialEnv}`, () => confirmApplyAll()]);
+  // #165: a designated env deploys through its forge, from the palette too.
+  if (designatedFor(view.env || opsInitialEnv) && !previewMode) {
+    const d = designatedFor(view.env || opsInitialEnv);
+    if (d.ok) c.push([`Deploy via ${d.forge} → ${view.env || opsInitialEnv}`, () => dispatchPipeline(view.env || opsInitialEnv)]);
+  }
 
   for (const s of lastSubstrates) {
     if (s.bringUp) c.push([`Bring up ${s.label}`, () => bringUpSubstrate(s)]);

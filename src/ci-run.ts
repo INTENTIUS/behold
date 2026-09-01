@@ -29,7 +29,12 @@ import type { ApplyProgressState, ApplyStatus } from "./apply.ts";
 
 /** `ApplyProgressState` plus the label the SPA's summary line shows — an
  * apply-shaped state that says "pipeline", not "apply". */
-export type PipelineProgressState = ApplyProgressState & { kind: "pipeline" };
+export type PipelineProgressState = ApplyProgressState & {
+  kind: "pipeline";
+  /** The run's page on the forge, once a dispatched run reports one (#165):
+   * the address of any approval the run waits on. */
+  url?: string;
+};
 
 /** The initial running state for a known pipeline: stages as waves, jobs as
  * entries (keyed by job name — see the module doc), components in `phase`. */

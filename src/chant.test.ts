@@ -13,6 +13,7 @@ import {
   ciPipelineArgs,
   ciForgeFor,
   parseCiPipeline,
+  ciWorkflowName,
   envOverridesFor,
   lifecyclePlanArgs,
   applyArgs,
@@ -466,6 +467,12 @@ const LOOMSTER_CI_JSON = JSON.stringify({
 });
 
 describe("parseCiPipeline", () => {
+  it("carries the env chant 0.54.0 puts on the generated pipeline (chant#2046), and nothing for an older emit", () => {
+    const older = JSON.parse(LOOMSTER_CI_JSON) as Record<string, unknown>;
+    expect(parseCiPipeline(LOOMSTER_CI_JSON).env).toBeUndefined();
+    expect(parseCiPipeline(JSON.stringify({ ...older, env: "production" })).env).toBe("production");
+  });
+
   it("carries stages and one job per component straight from the structured JSON", () => {
     const { stages, jobs } = parseCiPipeline(LOOMSTER_CI_JSON);
     expect(stages).toEqual(["wave-1", "wave-2", "wave-3", "wave-4"]);
@@ -789,5 +796,11 @@ describe("resolveChant / resolveLexicons", () => {
       { lexicon: "aws", pkg: "@intentius/chant-lexicon-aws", installed: true, version: "0.44.2" },
       { lexicon: "k8s", pkg: "@intentius/chant-lexicon-k8s", installed: false },
     ]);
+  });
+});
+
+describe("ciWorkflowName", () => {
+  it("is chant's own naming — chant-components-<env>", () => {
+    expect(ciWorkflowName("prod")).toBe("chant-components-prod");
   });
 });

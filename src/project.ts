@@ -64,8 +64,25 @@ export interface TierConfig {
 /** behold's own project-root config (`.behold.json`) — distinct from
  * `chant.config.ts` (chant's own concerns): today just the optional tier
  * axis. Absent `tiers` means the project declares none. */
+/**
+ * Which forge deploys an environment (#165, #61): `.behold.json`'s
+ * `executor` block designates the committed WORKFLOW, not just the forge —
+ * `{"executor": {"prod": {"forge": "github", "workflow": "deploy-prod.yml"}}}`.
+ * Designating the file is what retires the job-overlap picker for that env:
+ * two envs' generated pipelines carry identical job ids, so a picker cannot
+ * tell them apart, and a contract that names prod must not sit on a guess.
+ *
+ * Fail-closed: an entry behold cannot honour is kept, with the reason, rather
+ * than dropped — a dropped entry would fall Deploy back to the laptop, which
+ * is the one thing a designation exists to prevent.
+ */
+export type ExecutorDesignation = { forge: string; workflow: string } | { invalid: string };
+
 export interface BeholdConfig {
   tiers?: TierConfig;
+  /** Per-environment executor designations (#165). Absent means every env
+   * deploys the way it always has (`chant run` on this machine). */
+  executor?: Record<string, ExecutorDesignation>;
   /** Estate members (#236): the member project directories, relative to the
    * root that declares them. An estate root is not itself a chant project —
    * it's the directory you'd run `behold serve a b c` from — so this is how a
@@ -252,6 +269,38 @@ function readTiers(cfg: Record<string, unknown> | undefined): TierConfig | undef
   return { envVar: tiers.envVar, values };
 }
 
+/** The forges a designation may name. Only `github` has a trigger in behold
+ * today (the operator's `gh`); the other two are recognised so a designation
+ * disables local Deploy for the env, and say why nothing dispatches. */
+export const EXECUTOR_FORGES = ["github", "gitlab", "forgejo"] as const;
+
+/** Validate a parsed `.behold.json`'s `executor` block. Every key is kept —
+ * a malformed value becomes `{invalid}` with the reason (fail-closed, see
+ * {@link ExecutorDesignation}); a block that isn't an object is no block. Pure. */
+export function readExecutor(cfg: Record<string, unknown> | undefined): Record<string, ExecutorDesignation> | undefined {
+  const raw = cfg?.executor;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const out: Record<string, ExecutorDesignation> = {};
+  for (const [env, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!env) continue;
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      out[env] = { invalid: `executor.${env} must be {forge, workflow}, got ${JSON.stringify(value)}` };
+      continue;
+    }
+    const v = value as Record<string, unknown>;
+    if (typeof v.forge !== "string" || !(EXECUTOR_FORGES as readonly string[]).includes(v.forge)) {
+      out[env] = { invalid: `executor.${env}.forge must be one of ${EXECUTOR_FORGES.join(", ")}, got ${JSON.stringify(v.forge)}` };
+      continue;
+    }
+    if (typeof v.workflow !== "string" || !/^[^/\\]+\.ya?ml$/.test(v.workflow)) {
+      out[env] = { invalid: `executor.${env}.workflow must name a file in .github/workflows (e.g. deploy-${env}.yml), got ${JSON.stringify(v.workflow)}` };
+      continue;
+    }
+    out[env] = { forge: v.forge, workflow: v.workflow };
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 /** Read `.behold.json` from the project root — behold's own config (#70),
  * kept separate from `chant.config.ts` so behold's concerns (like the tier
  * picker) don't leak into chant's. No file, unparseable JSON, or a malformed/
@@ -270,7 +319,8 @@ export function loadBeholdConfig(projectDir: string): BeholdConfig {
     const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
     const tiers = readTiers(raw);
     const members = Array.isArray(raw.members) ? raw.members.filter((m): m is string => typeof m === "string" && !!m) : [];
-    return { ...(tiers ? { tiers } : {}), ...(members.length ? { members } : {}) };
+    const executor = readExecutor(raw);
+    return { ...(tiers ? { tiers } : {}), ...(members.length ? { members } : {}), ...(executor ? { executor } : {}) };
   } catch {
     return {};
   }

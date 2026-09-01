@@ -171,6 +171,33 @@ and nothing else about the run is behold's to decide: a stream that dies leaves
 the playhead at the last settled step and says so, and a gate paints as pending
 only when chant's `gateState` query named it.
 
+### The executor contract (#165, #61)
+
+`.behold.json` may designate which forge deploys an environment:
+
+```json
+{ "executor": { "prod": { "forge": "github", "workflow": "deploy-prod.yml" } } }
+```
+
+It designates the committed WORKFLOW, not just the forge: two environments'
+generated pipelines carry identical job ids, so a picker cannot tell them
+apart, and a contract that names prod must not sit on a guess. For a
+designated env, `POST /api/apply` and a committed ApplyOp's `/api/ops/:name/run`
+answer `409 {code: "executor-forge"}`, auto-sync declines out loud, and the
+only deploy is `POST /api/ci/dispatch?env=<env>`, which runs the designated
+workflow through the operator's own `gh` and follows it on the dial. Any
+approval the workflow's environment requires is granted on the forge by a
+GitHub identity behold does not have; the dial links the run's page and offers
+nothing else. Fail-closed: a designation behold cannot honour (a typo'd forge,
+a missing or non-dispatchable workflow, a forge with no trigger here) disables
+Deploy for that env with the reason on `/api/project`'s `executor` block, and
+never falls back to running it here. `/api/project` reports `{forge, workflow,
+ok, reason?}` per designated env.
+
+Without a designation, dispatch picks the committed workflow named for the env
+(`chant-components-<env>`, chant ≥ 0.54.0) and refuses a tie on the older
+job-overlap match rather than letting directory order choose.
+
 ## The operating loop (a strip, a timeline, and a gate that is not the run gate)
 
 A project that declares a `ConvergeOp` gets an operator strip on the ops lens:

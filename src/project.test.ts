@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { detectProject, detectProjectShape, loadBeholdConfig } from "./project.ts";
+import { detectProject, detectProjectShape, loadBeholdConfig, readExecutor } from "./project.ts";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -262,5 +262,39 @@ describe("detectProjectShape", () => {
     expect(detectProjectShape(make({ "package.json": JSON.stringify({ workspaces: ["x"] }), "x/package.json": "{}" }))).toEqual({
       kind: "none",
     });
+  });
+});
+
+
+// #165: the executor contract — designate the WORKFLOW, fail closed on anything else.
+describe("readExecutor", () => {
+  it("keeps a well-formed designation per env", () => {
+    expect(readExecutor({ executor: { prod: { forge: "github", workflow: "deploy-prod.yml" } } })).toEqual({
+      prod: { forge: "github", workflow: "deploy-prod.yml" },
+    });
+  });
+
+  it("keeps a malformed designation as invalid, with the reason — never drops it (a dropped entry would fall Deploy back to the laptop)", () => {
+    const out = readExecutor({ executor: { prod: { forge: "gitub", workflow: "deploy.yml" }, staging: "github", dev: { forge: "github", workflow: "../x.yml" } } })!;
+    expect(out.prod).toEqual({ invalid: expect.stringMatching(/executor\.prod\.forge must be one of github, gitlab, forgejo/) });
+    expect(out.staging).toEqual({ invalid: expect.stringMatching(/executor\.staging must be \{forge, workflow\}/) });
+    expect(out.dev).toEqual({ invalid: expect.stringMatching(/executor\.dev\.workflow must name a file/) });
+  });
+
+  it("recognises gitlab and forgejo as forges (behold has no trigger for them, but the env is still designated away from the laptop)", () => {
+    expect(readExecutor({ executor: { prod: { forge: "gitlab", workflow: "deploy.yml" } } })).toEqual({ prod: { forge: "gitlab", workflow: "deploy.yml" } });
+  });
+
+  it("is undefined for no block, or a block that isn't an object", () => {
+    expect(readExecutor({})).toBeUndefined();
+    expect(readExecutor({ executor: "github" })).toBeUndefined();
+    expect(readExecutor({ executor: [] })).toBeUndefined();
+    expect(readExecutor(undefined)).toBeUndefined();
+  });
+
+  it("rides on loadBeholdConfig beside tiers and members", () => {
+    const d = tmpBeholdConfig(JSON.stringify({ executor: { prod: { forge: "github", workflow: "deploy-prod.yml" } } }));
+    expect(loadBeholdConfig(d)).toEqual({ executor: { prod: { forge: "github", workflow: "deploy-prod.yml" } } });
+    rmSync(d, { recursive: true, force: true });
   });
 });
