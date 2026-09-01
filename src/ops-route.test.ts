@@ -76,6 +76,27 @@ describe("GET /api/graph?ops=1 (#284)", () => {
     expect(String(body.meta.note)).toContain("No estate cross-links");
   });
 
+  it("keeps a step's entities on the card and degrades the estate link to unresolved when no member can be graphed here (chant#2022)", async () => {
+    // The fixture project has no chant of its own, so the member IR read fails;
+    // the track still renders, the httpCheck card still says what it touches,
+    // and the reference is stated as unresolved rather than the view refusing.
+    const res = await appFor([built]).request("/api/graph?ops=1&entities=1");
+    expect(res.status).toBe(200);
+    const { ir, meta } = (await res.json()) as { ir: GraphIR; meta: { note: string } };
+    const check = ir.nodes.find((n) => n.id === "floci-apply/Verify/httpCheck")!;
+    expect(check.attrs.entities).toBe("http://localhost:4566/behold-floci-demo");
+    expect(check.attrs._entityLinks).toEqual({ resolved: [], unresolved: ["http://localhost:4566/behold-floci-demo"] });
+    expect(ir.nodes.every((n) => n.lexicon === "op")).toBe(true);
+    expect(meta.note).toContain("2 entity refs, 0 linked");
+    // Without the flag the branch shells nothing and attempts no link: the
+    // card still names what the step touches, and the note counts it unlinked.
+    const plain = (await (await appFor([built]).request("/api/graph?ops=1")).json()) as { ir: GraphIR; meta: { note: string } };
+    const plainCheck = plain.ir.nodes.find((n) => n.id === "floci-apply/Verify/httpCheck")!;
+    expect(plainCheck.attrs.entities).toBe("http://localhost:4566/behold-floci-demo");
+    expect(plainCheck.attrs._entityLinks).toBeUndefined();
+    expect(plain.meta.note).toContain("2 entity refs, 0 linked");
+  });
+
   it("ignores the entity lenses the SPA sends along — an Op is source, not a tier of it", async () => {
     const res = await appFor([built]).request("/api/graph?ops=1&detail=3&components=1&logical=1&radial=1&tier=prod-ha");
     expect(res.status).toBe(200);

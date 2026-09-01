@@ -61,7 +61,10 @@ export function captureKeys(axes: ExportAxes): string[] {
   // the same bytes. Only when the estate has emitted Ops, so a bundle never
   // offers a stop it has nothing behind (the SPA gates the stop on the same
   // number, out of the captured /api/project).
-  if (axes.ops) add("/api/graph", { ops: "1" });
+  // `entities=1` (chant#2022) is what the SPA sends, so the snapshot carries
+  // the step→estate links; the canonical key ignores it, so the SPA's lookup
+  // still matches.
+  if (axes.ops) add("/api/graph", { ops: "1", entities: "1" });
 
   const tiers = axes.tiers && axes.tiers.length ? axes.tiers : [""];
   const envs = ["", ...axes.environments]; // "" = the declared-source view

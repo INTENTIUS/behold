@@ -69,22 +69,29 @@
  * (`dangling`, painted `warn`) and no edge is drawn. Same rule `depends` already
  * follows: a reference behold can't resolve is stated, never guessed.
  *
- * ## No estate cross-links, and why this doesn't guess one
+ * ## Estate cross-links (chant#2022, chant ≥ 0.54.0)
  *
  * #284's inventory asked for "linking back to the estate nodes each phase
- * touches". op.json cannot support it yet. Across every Op example-writes
- * declares, the union of activity args is `env`, `stackName`, `templatePath`,
- * `target`, `output`, `path`, `script`, `deleteMode`, `mode`, `owned`, `live`,
- * `endpoint`, `url` — and the union of registered contract args adds only
- * `method`, `status`, `contains`, `retries`, `intervalMs`. Not one of them is a
- * chant IR node id. A step says which ENVIRONMENT and which STACK it acts on;
- * it never says which entity. Joining `stackName: "prod"` to the bucket the
- * stack happens to contain would be behold inventing an edge chant never
- * stated — the same mistake #234 records — so this lens draws none, surfaces
- * the scope facts it does have as attrs, and {@link opsNote} says so on the
- * statusbar. The remedy is a chant-side ask, not a heuristic here.
+ * touches", and until 0.53.1 op.json could not support it: a step's args named
+ * an ENVIRONMENT and a STACK, never an entity, and joining `stackName: "prod"`
+ * to whatever the stack contained would have been behold inventing an edge
+ * chant never stated. 0.54.0 answers the ask at the contract: an activity's
+ * `ActivityContract.entities` names which of its args identify what the step
+ * touches, and op.json resolves those args' literal string values into the
+ * step's `entities` (`httpCheck` declares `url`; more contracts follow as the
+ * lexicons declare them).
+ *
+ * `joinStepEntities` turns those into edges by exact match only: an entity
+ * value that IS an estate node id, or that equals a string leaf of some node's
+ * declared attrs (the same leaves src/value-match.ts joins on). Nothing is
+ * parsed — a URL is not decomposed into a bucket name — so a value no node
+ * carries verbatim stays on the card as an unresolved reference, stated, and
+ * the note counts how many resolved. A resolved node is copied into the lens
+ * in its own `estate` box so the dashed edge (pinhole draws a `viaAttr` edge
+ * dashed) lands on the real card with its real glyph.
  */
 import type { GraphIR, IRNode, IREdge } from "@intentius/chant";
+import { stringLeaves } from "./value-match.ts";
 
 // ── The op.json shape, as much of it as this lens reads ───────────────────────
 //
@@ -100,6 +107,11 @@ export interface OpIrActivityStep {
   args?: Record<string, unknown>;
   profile?: string;
   outcomeAttribute?: { name: string; from?: string };
+  /** What this step touches in the estate (chant#2022): the literal string
+   * values of the args its contract declares entity-identifying. Absent on a
+   * pre-0.54 op.json, on an activity with no contract, or when the arg is a
+   * step-output ref that resolves only at run time. */
+  entities?: string[];
 }
 
 /** A human gate — `timeout` already resolved to its effective value. */
@@ -657,9 +669,12 @@ function nodeFor(op: OpIr, placed: Placed, guards: string | undefined): IRNode {
       ...(profile ? { profile } : {}),
       ...(policy ? { policy } : {}),
       // The resolved args, verbatim from the IR. They carry the Op's SCOPE
-      // (env, stack, template path) and never an estate entity id — see the
-      // module doc on why no edge is drawn from them.
+      // (env, stack, template path); which of them identify an ENTITY is the
+      // contract's to say, and 0.54's op.json says it in `entities` below.
       ...(args ? { args } : {}),
+      // chant#2022: what the step touches, verbatim. `entities` prints on the
+      // card; `_entities` is what `joinStepEntities` resolves.
+      ...(step.entities?.length ? { entities: step.entities.join(", "), _entities: step.entities } : {}),
       ...(step.outcomeAttribute
         ? { outcome: step.outcomeAttribute.from ? `${step.outcomeAttribute.name} ← ${step.outcomeAttribute.from}` : step.outcomeAttribute.name }
         : {}),
@@ -829,15 +844,19 @@ export function opCardFields(node: { attrs: Record<string, unknown> }): Array<{ 
 export function opsNote(ops: OpIr[], ir: GraphIR): string {
   const gates = ir.nodes.filter((n) => n.attrs._step === "gate").length;
   const rules = ir.nodes.filter((n) => n.attrs._step === "rule");
+  // Estate nodes a step's entities resolved to (chant#2022) sit in the lens
+  // but are not steps either.
+  const estate = ir.nodes.filter((n) => n.lexicon !== "op").length;
   // Rule cards are not steps — count them apart, so a project that declares a
   // ConvergeOp doesn't report its rule table as extra track.
-  const steps = ir.nodes.length - rules.length;
+  const steps = ir.nodes.length - rules.length - estate;
   const dangling = rules.filter((n) => n.attrs.dangling !== undefined).length;
   const counts = [
     `${ops.length} declared Op${ops.length === 1 ? "" : "s"}`,
     `${steps} step${steps === 1 ? "" : "s"}`,
     ...(gates ? [`${gates} gate${gates === 1 ? "" : "s"}`] : []),
     ...(rules.length ? [`${rules.length} converge rule${rules.length === 1 ? "" : "s"}`] : []),
+    ...entityCountClause(ir),
   ].join(" · ");
   // The rule table's own sentence, present only for a project that declares one
   // — an estate with no ConvergeOp reads exactly the note it read before.
@@ -853,4 +872,96 @@ export function opsNote(ops: OpIr[], ir: GraphIR): string {
     `so nothing here is joined to the graph's nodes (chant ask). ` +
     `Read-only: this renders the declared Op — nothing is started, signalled, or applied.`
   );
+}
+
+// ── Estate cross-links (chant#2022) ──────────────────────────────────────────
+
+export const ESTATE_BOX = "estate";
+
+/** What a step's entity references resolved to — the `_entityLinks` attr the
+ * inspect pane reads. Every declared value lands in exactly one list. */
+export interface EntityLinks {
+  resolved: Array<{ value: string; node: string; via: "id" | "attr" }>;
+  unresolved: string[];
+}
+
+/**
+ * Join each step's `_entities` onto `estate`'s nodes, in place, and return how
+ * many references there were and how many resolved.
+ *
+ * The rule is exact match and nothing looser: a value that is a node id, or
+ * that equals one of a node's declared string leaves. A value several nodes
+ * carry joins to all of them — that is what the value says. A value nothing
+ * carries is kept on the step as unresolved, never guessed at. With no estate
+ * (`undefined` — the read was unavailable) every reference is unresolved and
+ * the lens is exactly what it was.
+ */
+export function joinStepEntities(ir: GraphIR, estate: GraphIR | undefined): { refs: number; resolved: number } {
+  const steps = ir.nodes.filter((n) => Array.isArray(n.attrs._entities));
+  if (steps.length === 0) return { refs: 0, resolved: 0 };
+
+  const byId = new Map<string, IRNode>();
+  const byLeaf = new Map<string, IRNode[]>();
+  for (const n of estate?.nodes ?? []) {
+    byId.set(n.id, n);
+    for (const leaf of stringLeaves(n.attrs)) {
+      const list = byLeaf.get(leaf.value);
+      if (list) {
+        if (!list.includes(n)) list.push(n);
+      } else byLeaf.set(leaf.value, [n]);
+    }
+  }
+
+  const present = new Set(ir.nodes.map((n) => n.id));
+  let refs = 0;
+  let resolvedCount = 0;
+  for (const step of steps) {
+    const links: EntityLinks = { resolved: [], unresolved: [] };
+    for (const value of step.attrs._entities as string[]) {
+      refs++;
+      const targets: Array<{ node: IRNode; via: "id" | "attr" }> = [];
+      const idHit = byId.get(value);
+      if (idHit) targets.push({ node: idHit, via: "id" });
+      for (const n of byLeaf.get(value) ?? []) if (n !== idHit) targets.push({ node: n, via: "attr" });
+      if (targets.length === 0) {
+        links.unresolved.push(value);
+        continue;
+      }
+      resolvedCount++;
+      for (const { node, via } of targets) {
+        links.resolved.push({ value, node: node.id, via });
+        if (!present.has(node.id)) {
+          present.add(node.id);
+          // The estate card itself, copied whole so it renders with its own
+          // glyph and attrs — plus who touches it, for the pane.
+          ir.nodes.push({ ...node, attrs: { ...node.attrs, _touchedBy: [step.id] } });
+          (ir.groups.byStack ??= {})[ESTATE_BOX] = [...(ir.groups.byStack[ESTATE_BOX] ?? []), node.id];
+        } else {
+          const held = ir.nodes.find((n) => n.id === node.id)!;
+          const touched = (held.attrs._touchedBy as string[] | undefined) ?? [];
+          if (!touched.includes(step.id)) held.attrs._touchedBy = [...touched, step.id];
+        }
+        ir.edges.push({ from: step.id, to: node.id, kind: "ref", viaAttr: "entities" });
+      }
+    }
+    step.attrs._entityLinks = links;
+  }
+  return { refs, resolved: resolvedCount };
+}
+
+/** The note's clause for entity references, or nothing when no step declares any. */
+function entityCountClause(ir: GraphIR): string[] {
+  let refs = 0;
+  let resolved = 0;
+  for (const n of ir.nodes) {
+    const links = n.attrs._entityLinks as EntityLinks | undefined;
+    if (links) {
+      refs += links.resolved.length + links.unresolved.length;
+      resolved += links.resolved.length;
+    } else if (Array.isArray(n.attrs._entities)) {
+      refs += (n.attrs._entities as string[]).length;
+    }
+  }
+  if (refs === 0) return [];
+  return [`${refs} entity ref${refs === 1 ? "" : "s"}, ${resolved} linked`];
 }

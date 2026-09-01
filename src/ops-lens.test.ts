@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { GraphIR } from "@intentius/chant";
 import {
   parseOpIr,
   readOpIr,
@@ -15,6 +16,8 @@ import {
   predicateText,
   actionText,
   ruleStatus,
+  joinStepEntities,
+  ESTATE_BOX,
   type OpIr,
   type OpIrConvergeRule,
 } from "./ops-lens.ts";
@@ -48,10 +51,16 @@ const CONVERGE_FIXTURES = join(HERE, "__fixtures__", "ops-converge");
  *       ],
  *     });
  *
- * Note what NO fixture carries, because it is the point of the cross-link test
- * below: an estate entity id. The union of every step's args across all four is
- * env / stackName / templatePath / target / output / path / script / deleteMode
- * / mode / owned / live / endpoint / url — scope, never identity.
+ * The union of every step's args across all four is env / stackName /
+ * templatePath / target / output / path / script / deleteMode / mode / owned /
+ * live / endpoint / url — scope, never an estate entity id. Which of those
+ * identify an entity is the CONTRACT's to say, and chant 0.54.0 (chant#2022)
+ * says it: `httpCheck` declares `url`, so op.json resolves each httpCheck's
+ * literal url into the step's `entities`. `floci-apply.op.json` was
+ * regenerated verbatim from example-writes on chant 0.54.0 (the diff against
+ * the 0.52.1 emit is exactly the two `entities` additions — step and contract
+ * — and nothing else); `prod-promote`, the scratch-only Op, carries the same
+ * two additions applied by hand to the same shape.
  */
 const ops: OpIr[] = readdirSync(FIXTURES)
   .filter((f) => f.endsWith(".op.json"))
@@ -85,30 +94,21 @@ describe("the real chant-emitted op.json fixtures", () => {
     });
   });
 
-  it("carry no estate entity id on any step — the reason this lens draws no cross-links", () => {
-    const argKeys = new Set<string>();
+  it("carry an estate entity only where a contract declares one: the two httpCheck urls (chant#2022)", () => {
+    const declared: Array<[string, string[]]> = [];
     for (const op of ops) {
       for (const phase of [...op.phases, ...(op.onFailure ?? [])]) {
         for (const step of phase.steps) {
-          if (step.kind === "activity") for (const k of Object.keys(step.args ?? {})) argKeys.add(k);
+          if (step.kind === "activity" && step.entities) declared.push([`${op.name}/${step.fn}`, step.entities]);
         }
       }
     }
-    expect([...argKeys].sort()).toEqual([
-      "deleteMode",
-      "endpoint",
-      "env",
-      "live",
-      "mode",
-      "output",
-      "owned",
-      "path",
-      "script",
-      "stackName",
-      "target",
-      "templatePath",
-      "url",
+    expect(declared).toEqual([
+      ["floci-apply/httpCheck", ["http://localhost:4566/behold-floci-demo"]],
+      ["prod-promote/httpCheck", ["https://behold-floci-demo.s3.amazonaws.com/"]],
     ]);
+    // And the contract says why: `url` is the entity-identifying arg.
+    expect(byName.get("floci-apply")!.activityContracts?.httpCheck).toMatchObject({ entities: ["url"] });
   });
 });
 
@@ -177,13 +177,16 @@ describe("opsToIr — the declared track", () => {
     expect(plan.attrs.contract).toContain("declared");
   });
 
-  it("joins nothing to the estate — no node id, no edge out of the op lexicon (#284)", () => {
-    // The cross-link #284 asks for is unbuildable on this input: every node is
-    // an op step, every edge runs between two of them. If chant ever names an
-    // entity in an op.json, this is the test that has to change.
+  it("draws no cross-link on its own — every edge runs between two steps until an estate is joined (#284)", () => {
+    // `opsToIr` is the declaration alone. The httpCheck steps carry their
+    // entities on the card; the edge into the estate is `joinStepEntities`'s,
+    // and it needs an estate to join to.
     expect(ir.nodes.every((n) => n.lexicon === "op")).toBe(true);
     const ids = new Set(ir.nodes.map((n) => n.id));
     expect(ir.edges.every((e) => ids.has(e.from) && ids.has(e.to))).toBe(true);
+    const check = ir.nodes.find((n) => n.id === "floci-apply/Verify/httpCheck")!;
+    expect(check.attrs.entities).toBe("http://localhost:4566/behold-floci-demo");
+    expect(check.attrs._entities).toEqual(["http://localhost:4566/behold-floci-demo"]);
   });
 });
 
@@ -669,5 +672,86 @@ describe("opsToIr — an estate with no ConvergeOp costs nothing", () => {
     const noArgs: OpIr = { name: "bare", phases: [{ name: "Converge", steps: [{ kind: "activity", fn: "convergeTick" }] }] };
     expect(convergeTable(noArgs)).toBeUndefined();
     expect(opsToIr([noArgs]).nodes).toHaveLength(1);
+  });
+});
+
+
+describe("joinStepEntities — the estate cross-link (chant#2022)", () => {
+  const FLOCI_URL = "http://localhost:4566/behold-floci-demo";
+  const PROD_URL = "https://behold-floci-demo.s3.amazonaws.com/";
+  const estate: GraphIR = {
+    nodes: [
+      // An id match: the value IS a node id.
+      { id: PROD_URL, kind: "AWS::S3::Bucket", lexicon: "aws", attrs: { bucketName: "behold-floci-demo" } },
+      // An attribute match: the value equals a string leaf, nested.
+      // (Not under `annotations`/`labels` — src/value-match.ts skips k8s metadata noise.)
+      { id: "healthProbe", kind: "K8s::Core::Service", lexicon: "k8s", attrs: { spec: { probe: { endpoint: FLOCI_URL } } } },
+      { id: "bystander", kind: "AWS::EC2::VPC", lexicon: "aws", attrs: { cidr: "10.0.0.0/16" } },
+    ],
+    edges: [],
+    groups: {},
+  };
+  const fresh = () => opsToIr(ops);
+
+  it("resolves by exact node id and by exact string leaf, copies the card into an `estate` box, and draws the dashed edge", () => {
+    const lens = fresh();
+    expect(joinStepEntities(lens, estate)).toEqual({ refs: 2, resolved: 2 });
+    const bucket = lens.nodes.find((n) => n.id === PROD_URL)!;
+    const probe = lens.nodes.find((n) => n.id === "healthProbe")!;
+    expect(bucket.lexicon).toBe("aws");
+    expect(bucket.attrs._touchedBy).toEqual(["prod-promote/Verify/httpCheck"]);
+    expect(probe.attrs._touchedBy).toEqual(["floci-apply/Verify/httpCheck"]);
+    expect(lens.nodes.find((n) => n.id === "bystander")).toBeUndefined();
+    expect(lens.groups.byStack?.[ESTATE_BOX]).toEqual(expect.arrayContaining([PROD_URL, "healthProbe"]));
+    // `viaAttr` is what pinhole renders dashed with a tooltip.
+    expect(lens.edges).toEqual(
+      expect.arrayContaining([
+        { from: "prod-promote/Verify/httpCheck", to: PROD_URL, kind: "ref", viaAttr: "entities" },
+        { from: "floci-apply/Verify/httpCheck", to: "healthProbe", kind: "ref", viaAttr: "entities" },
+      ]),
+    );
+    const links = lens.nodes.find((n) => n.id === "prod-promote/Verify/httpCheck")!.attrs._entityLinks as { resolved: unknown[]; unresolved: string[] };
+    expect(links).toEqual({ resolved: [{ value: PROD_URL, node: PROD_URL, via: "id" }], unresolved: [] });
+  });
+
+  it("a value no node carries stays on the step as unresolved — nothing is parsed or guessed", () => {
+    const lens = fresh();
+    const only = { ...estate, nodes: estate.nodes.filter((n) => n.id === "bystander") };
+    expect(joinStepEntities(lens, only)).toEqual({ refs: 2, resolved: 0 });
+    expect(lens.nodes.every((n) => n.lexicon === "op")).toBe(true);
+    expect(lens.edges.some((e) => e.viaAttr === "entities")).toBe(false);
+    const links = lens.nodes.find((n) => n.id === "floci-apply/Verify/httpCheck")!.attrs._entityLinks as { unresolved: string[] };
+    expect(links.unresolved).toEqual([FLOCI_URL]);
+  });
+
+  it("no estate at all: every reference is unresolved and the lens is untouched", () => {
+    const lens = fresh();
+    const before = JSON.stringify({ nodes: lens.nodes.map((n) => n.id), edges: lens.edges });
+    expect(joinStepEntities(lens, undefined)).toEqual({ refs: 2, resolved: 0 });
+    expect(JSON.stringify({ nodes: lens.nodes.map((n) => n.id), edges: lens.edges })).toBe(before);
+  });
+
+  it("a value several nodes carry joins to all of them, and a node touched twice is copied once", () => {
+    const lens = fresh();
+    const twice: GraphIR = {
+      nodes: [
+        { id: "a", kind: "AWS::S3::Bucket", lexicon: "aws", attrs: { url: PROD_URL } },
+        { id: "b", kind: "AWS::CloudFront::Distribution", lexicon: "aws", attrs: { origin: PROD_URL, probe: FLOCI_URL } },
+      ],
+      edges: [],
+      groups: {},
+    };
+    expect(joinStepEntities(lens, twice)).toEqual({ refs: 2, resolved: 2 });
+    expect(lens.nodes.filter((n) => n.id === "b")).toHaveLength(1);
+    expect((lens.nodes.find((n) => n.id === "b")!.attrs._touchedBy as string[]).sort()).toEqual(["floci-apply/Verify/httpCheck", "prod-promote/Verify/httpCheck"]);
+    expect(lens.edges.filter((e) => e.viaAttr === "entities")).toHaveLength(3);
+  });
+
+  it("the note counts the references and how many linked", () => {
+    const lens = fresh();
+    joinStepEntities(lens, estate);
+    expect(opsNote(ops, lens)).toContain("2 entity refs, 2 linked");
+    const bare = fresh();
+    expect(opsNote(ops, bare)).toContain("2 entity refs, 0 linked");
   });
 });

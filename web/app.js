@@ -576,6 +576,24 @@ function inspect(node) {
     }
   }
 
+  // chant#2022: what an Op step touches in the estate, as the op.json states it
+  // and as the lens resolved it — a resolved value names the card it joined
+  // to; an unresolved one is stated as such, never guessed at (src/ops-lens.ts
+  // `joinStepEntities`).
+  const entityLinks = node.attrs && node.attrs._entityLinks;
+  if (entityLinks) {
+    const touches = section("touches");
+    for (const r of entityLinks.resolved || []) touches(r.value, `${r.node} (${r.via === "id" ? "by id" : "by attribute value"})`);
+    for (const v of entityLinks.unresolved || []) touches(v, "no estate node carries this value — not linked");
+  }
+  // The other end of the same edge: an estate card copied into the ops lens
+  // because a step names it.
+  const touchedBy = node.attrs && node.attrs._touchedBy;
+  if (Array.isArray(touchedBy) && touchedBy.length) {
+    const by = section("touched by");
+    for (const step of touchedBy) by("step", step);
+  }
+
   // The recorded release (#165, #61's second clause): the ledger row behold
   // reads on `chant components status` and, until now, read past. Its own
   // section beside "live status", because the two answer different questions
@@ -3433,7 +3451,11 @@ async function load(opts = {}) {
       // and no tier (a tier re-evaluates tier-conditioned source, and an Op's
       // IR was already resolved at build). Sending them anyway would also give
       // a static export a different key per tier for one identical snapshot.
-      q = new URLSearchParams({ ops: "1" });
+      // `entities=1` (chant#2022): link each step to the estate cards its
+      // contract-declared entity args name. It is the one thing on the ops
+      // branch that may read a member IR (through the cache the graph above
+      // already warmed), so it is asked for explicitly rather than implied.
+      q = new URLSearchParams({ ops: "1", entities: "1" });
       // #284 item 2: this is the view run state paints over, so this is when
       // it's worth shelling chant for the one thing the record stream can't
       // carry — whether a gate is pending. Asked once per lens load; the
