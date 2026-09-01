@@ -30,6 +30,7 @@ import {
   componentGraphIr,
   componentStatus,
   ciPipeline,
+  type CiPipeline,
   ciForgeFor,
   type CiForge,
   lifecyclePlan,
@@ -45,7 +46,7 @@ import {
 } from "./chant.ts";
 import { mergeClusterRoot, runningK3dClusters } from "./cluster-root.ts";
 import { synthesizeHelmReleases, discoverReleaseUnits } from "./helm-releases.ts";
-import { ghReady, pickWorkflow, dispatchAndFollow, joinCiProgress } from "./gh-run.ts";
+import { ghReady, resolveWorkflow, dispatchAndFollow, joinCiProgress } from "./gh-run.ts";
 import { joinComponentStatus, joinTickVerdicts, componentStatusColor } from "./component-status.ts";
 import { reclassifyOverlay, pruneImports, attachRuntimeContainment, pruneRuntimeChildren } from "./overlay.ts";
 import { addValueMatchEdges } from "./value-match.ts";
@@ -108,7 +109,17 @@ import {
   type OperatorLogMalformed,
 } from "./operator.ts";
 import { LIVE_IMPORT_LEXICONS } from "./adopt.ts";
-import { detectProject, loadBeholdConfig } from "./project.ts";
+import { detectProject, loadBeholdConfig, type ExecutorDesignation } from "./project.ts";
+
+/** What `/api/project` says about a designated env (#165): whether Deploy can
+ * dispatch it right now, and if not, why — the SPA renders the reason on a
+ * disabled control rather than a control that fails. */
+export interface ExecutorStatus {
+  forge?: string;
+  workflow?: string;
+  ok: boolean;
+  reason?: string;
+}
 import { nodeDiff, nodeObserved, nodeFieldDrift, type LiveDiffJson } from "./diff.ts";
 import { classifyObservedHealth } from "./health.ts";
 import { OpRunner } from "./op-runner.ts";
@@ -780,6 +791,30 @@ export function createApp(
   // .behold.json — its tier axis is per-project state like everything else.
   let beholdConfig = loadBeholdConfig(cfg.projectDir);
   let tierEnvVar = beholdConfig.tiers?.envVar;
+  // The executor contract (#165, #61): which envs deploy through a forge, per
+  // `.behold.json`. A designated env never deploys from this machine — not via
+  // Deploy, not via a committed ApplyOp, not via auto-sync — and the only
+  // approval affordance it gets is the run's own address on the forge, because
+  // a GitHub environment protection rule is cleared by a GitHub identity behold
+  // does not have and must not acquire. Fail-closed: an entry behold cannot
+  // honour still disables local Deploy for its env, and says why.
+  const executorFor = (env: string | undefined): ExecutorDesignation | undefined =>
+    env ? beholdConfig.executor?.[env] : undefined;
+  /** What Deploy can do for a designated env right now, for the SPA and the
+   * dispatch route: dispatchable through gh, or disabled with the reason. */
+  const executorStatus = (env: string, d: ExecutorDesignation, pipeline?: CiPipeline): ExecutorStatus => {
+    if ("invalid" in d) return { ok: false, reason: d.invalid };
+    if (d.forge !== "github") {
+      return { forge: d.forge, workflow: d.workflow, ok: false, reason: `env ${env} deploys through ${d.forge} per .behold.json, and behold has no ${d.forge} trigger (only GitHub Actions, via your gh) — Deploy stays disabled here; run the pipeline on the forge` };
+    }
+    const r = resolveWorkflow(cfg.projectDir, pipeline ?? { stages: [], jobs: [] }, d.workflow);
+    return "workflow" in r ? { forge: d.forge, workflow: d.workflow, ok: true } : { forge: d.forge, workflow: d.workflow, ok: false, reason: r.reason };
+  };
+  const forgeRefusal = (env: string, d: ExecutorDesignation, what: string) => ({
+    error: `${what} is refused: env ${env} deploys through ${"invalid" in d ? "a forge" : `${d.forge} (${d.workflow})`} per .behold.json's executor block — behold never runs it from this machine`,
+    code: "executor-forge",
+    remedy: "invalid" in d ? `Fix .behold.json: ${d.invalid}` : `Use Deploy (POST /api/ci/dispatch?env=${env}), which dispatches the designated workflow through your gh login.`,
+  });
 
   // The kube context chant binds for an environment (`k8s.profiles.<env>.
   // context`, falling back to the kubeconfig's current-context — the same
@@ -894,6 +929,10 @@ export function createApp(
     if (!info) {
       return c.json({ error: `no Op named "${name}" in the estate` }, 404);
     }
+    // A committed ApplyOp targeting a designated env is the same local apply
+    // in a different coat (#165): refused the same way, for the same reason.
+    const designatedEnv = info.kind === "apply" ? executorFor(info.env) : undefined;
+    if (designatedEnv && info.env) return c.json(forgeRefusal(info.env, designatedEnv, `running ${name}`), 409);
     if (!runner.trigger(name, info.env, info.dir, Boolean(info.gate))) {
       return c.json({ error: `an Op is already running (${runner.running})` }, 409);
     }
@@ -1228,6 +1267,12 @@ export function createApp(
       // no `tiers` key) → no `tiers` field → the SPA's picker doesn't render
       // and the graph loads with no tier selected (web/app.js `initPickers`).
       ...(beholdConfig.tiers ? { tiers: beholdConfig.tiers.values } : {}),
+      // The executor contract (#165): per designated env, whether Deploy can
+      // dispatch right now and, if not, why — so the SPA disables the gesture
+      // with the reason rather than offering a control that 4xxs.
+      ...(beholdConfig.executor
+        ? { executor: Object.fromEntries(Object.entries(beholdConfig.executor).map(([env, d]) => [env, executorStatus(env, d)])) }
+        : {}),
       // The stack picker's options (#76, follow-up to #71): gated exactly like
       // `tiers` above — only present when `chant.config.ts` declares `stacks[]`
       // at all, so a single-stack/sourceDir-only/legacy project's SPA renders no
@@ -1584,7 +1629,7 @@ export function createApp(
         { method: "POST", path: "/api/rollback", desc: "open a rollback PR: ?to=<sha>" },
         { method: "POST", path: "/api/substrates/:name/up", desc: "bring a substrate up" },
         { method: "POST", path: "/api/local/reset", desc: "reset the local emulator" },
-        { method: "POST", path: "/api/ci/dispatch", desc: "dispatch the GitHub Actions pipeline via the operator's gh" },
+        { method: "POST", path: "/api/ci/dispatch", desc: "dispatch the GitHub Actions pipeline for ?env= via the operator's gh — the designated workflow when .behold.json names one" },
       ],
     }),
   );
@@ -2016,16 +2061,25 @@ export function createApp(
   // log guessing, unlike the local runner's classifier) and renders on the
   // dial exactly like #163's local pipeline.
   app.post("/api/ci/dispatch", async (c) => {
+    // The env decides everything below: which pipeline chant generates (its
+    // job run-lines freeze the env in, chant#2046), which committed workflow
+    // runs it, and whether `.behold.json` designated one. Since chant 0.54.0
+    // the generated workflow is named for its env, so the picker can see it.
+    const env = new URL(c.req.url).searchParams.get("env") ?? cfg.env;
+    const designated = executorFor(env);
+    if (designated && "invalid" in designated) return c.json({ error: designated.invalid, code: "executor-forge", remedy: "Fix .behold.json's executor block." }, 400);
+    if (designated && designated.forge !== "github") {
+      return c.json({ error: executorStatus(env!, designated).reason, code: "executor-forge" }, 400);
+    }
     const ready = await ghReady();
     if (!ready.ok) return c.json({ error: ready.reason }, 400);
-    const pipeline = await ciPipeline(cfg.projectDir, cfg.env ? { env: cfg.env } : {}, "github").catch(() => undefined);
+    const pipeline = await ciPipeline(cfg.projectDir, env ? { env } : {}, "github").catch(() => undefined);
     if (!pipeline || pipeline.jobs.length === 0) {
       return c.json({ error: "no generated GitHub pipeline — `chant build --components --generate github` produced no jobs" }, 400);
     }
-    const workflow = pickWorkflow(cfg.projectDir, pipeline);
-    if (!workflow) {
-      return c.json({ error: "no committed workflow_dispatch workflow whose jobs match the generated pipeline — commit one (or add `workflow_dispatch:` to its `on:` block)" }, 400);
-    }
+    const resolved = resolveWorkflow(cfg.projectDir, pipeline, designated?.workflow);
+    if ("reason" in resolved) return c.json({ error: resolved.reason, ...(designated ? { code: "executor-forge" } : {}) }, 400);
+    const workflow = resolved.workflow;
     // The ref the run builds: the project's current branch. Detached/unreadable
     // falls back to the default-branch convention rather than failing the
     // gesture over a rev-parse.
@@ -2036,7 +2090,7 @@ export function createApp(
       dispatchAndFollow(workflow, pipeline, ref, { onLine: io.line, onProgress: io.progress }),
     );
     if (!started) return c.json({ error: `busy — ${runner.running} is running` }, 409);
-    return c.json({ started: true, workflow: workflow.file, ref, jobs: pipeline.jobs.length });
+    return c.json({ started: true, workflow: workflow.file, ref, jobs: pipeline.jobs.length, ...(env ? { env } : {}), designated: Boolean(designated) });
   });
 
   // Resources facet (#59 unify): a best-effort, honest slice of the DoD's
@@ -2614,6 +2668,11 @@ export function createApp(
     }
     const component = url.searchParams.get("component") || "all";
     const force = url.searchParams.get("force") === "1";
+    // A designated env is never applied from here — before any other guard,
+    // so a typo in the designation cannot route a prod deploy back to the
+    // laptop by falling through (#165 §4).
+    const designated = executorFor(env);
+    if (designated) return c.json(forgeRefusal(env, designated, "apply"), 409);
     // Guard against re-applying an already-deployed stack. On a local emulator
     // that can't re-apply idempotently (Floci #16), a second apply re-creates
     // fixed-name resources ("... already exists") and rolls the stack back — so
@@ -2761,14 +2820,26 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   // interlock looks, and its name tags the now-line. Op discovery stays
   // estate-wide — a control-plane member commonly owns the Ops that heal its
   // app members, and #117's substrate matching already picks the right one.
+  // The executor contract as auto-sync sees it (#165): read once at boot from
+  // the primary's `.behold.json`, the same file `createApp` gates Deploy on.
+  const executorDesignations = loadBeholdConfig(cfg.projectDir).executor ?? {};
+  const executorFor = (env: string | undefined): ExecutorDesignation | undefined => (env ? executorDesignations[env] : undefined);
   const routeAutoSync = async (dir: string, movedLexicons: string[]): Promise<void> => {
     const suspended =
       autoSync === "pull-request"
         ? suspendedByRollback(await openRollbackBranches(dir, cfg.env), movedLexicons)
         : new Set<string>();
+    // An ApplyOp for a designated env is not a candidate (#165): auto-sync
+    // declines it out loud rather than healing prod from the laptop.
+    const allOps = discoverEstateOps(cfg.projectDirs ?? [cfg.projectDir]);
+    const routed = allOps.filter((o) => o.kind === "apply" && o.env && executorFor(o.env));
+    for (const o of routed) {
+      const d = executorFor(o.env)!;
+      broadcaster.emit("op", `⟳ auto-sync (${autoSync})${memberTag(dir)} declined ${o.name}: env ${o.env} deploys through ${"invalid" in d ? "a forge" : d.forge} per .behold.json — never applied from here`);
+    }
     const { picks, declined } = pickAutoSyncOps(
       autoSync,
-      discoverEstateOps(cfg.projectDirs ?? [cfg.projectDir]),
+      allOps.filter((o) => !routed.includes(o)),
       runner.running,
       movedLexicons,
       suspended,

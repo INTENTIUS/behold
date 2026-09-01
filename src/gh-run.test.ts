@@ -6,6 +6,7 @@ import {
   ghReady,
   parseWorkflow,
   pickWorkflow,
+  resolveWorkflow,
   ghJobStatus,
   runViewToProgress,
   dispatchAndFollow,
@@ -72,6 +73,60 @@ describe("parseWorkflow / pickWorkflow", () => {
   it("a matching workflow WITHOUT workflow_dispatch is never picked — behold won't force a run", () => {
     wf("deploy.yml", "on:\n  push:\njobs:\n  shared-foundation:\n    runs-on: x\n  loom-backend:\n    runs-on: x\n");
     expect(pickWorkflow(dir, pipeline)).toBeUndefined();
+  });
+
+  // #165 §4 / chant#2046: the picker sees the env, and refuses what it cannot tell apart.
+  const twoEnvs = () => {
+    wf("deploy-staging.yml", "name: chant-components-staging\non:\n  workflow_dispatch:\njobs:\n  shared-foundation:\n    runs-on: x\n  loom-backend:\n    runs-on: x\n");
+    wf("deploy-prod.yml", "name: chant-components-prod\non:\n  workflow_dispatch:\njobs:\n  shared-foundation:\n    runs-on: x\n  loom-backend:\n    runs-on: x\n");
+  };
+
+  it("reads the workflow's name — chant 0.54.0 names a generated workflow for its env", () => {
+    expect(parseWorkflow("d.yml", "name: chant-components-prod\non:\n  workflow_dispatch:\njobs: {}\n").name).toBe("chant-components-prod");
+  });
+
+  it("two envs' workflows carry identical job ids: with no env on the pipeline the tie is a refusal, not a directory-order pick", () => {
+    twoEnvs();
+    const r = resolveWorkflow(dir, pipeline);
+    expect("reason" in r && r.reason).toMatch(/match the pipeline equally.*deploy-prod\.yml.*deploy-staging\.yml|deploy-staging\.yml.*deploy-prod\.yml/);
+    expect(pickWorkflow(dir, pipeline)).toBeUndefined();
+  });
+
+  it("a pipeline that knows its env picks the workflow NAMED for it, whatever the overlap says", () => {
+    twoEnvs();
+    expect(resolveWorkflow(dir, { ...pipeline, env: "prod" })).toEqual({ workflow: expect.objectContaining({ file: "deploy-prod.yml", name: "chant-components-prod" }) });
+    expect(resolveWorkflow(dir, { ...pipeline, env: "staging" })).toEqual({ workflow: expect.objectContaining({ file: "deploy-prod.yml".replace("prod", "staging") }) });
+  });
+
+  it("two workflows named for the same env is a refusal naming both", () => {
+    twoEnvs();
+    wf("deploy-prod-copy.yml", "name: chant-components-prod\non:\n  workflow_dispatch:\njobs:\n  shared-foundation:\n    runs-on: x\n");
+    const r = resolveWorkflow(dir, { ...pipeline, env: "prod" });
+    expect("reason" in r && r.reason).toMatch(/2 committed workflows are named chant-components-prod/);
+  });
+
+  it("a designated file is the answer — and a missing or non-dispatchable one is a refusal that never falls back", () => {
+    twoEnvs();
+    wf("release.yml", "on:\n  push:\njobs:\n  shared-foundation:\n    runs-on: x\n");
+    expect(resolveWorkflow(dir, { ...pipeline, env: "prod" }, "deploy-staging.yml")).toEqual({ workflow: expect.objectContaining({ file: "deploy-staging.yml" }) });
+    const missing = resolveWorkflow(dir, { ...pipeline, env: "prod" }, "nope.yml");
+    expect("reason" in missing && missing.reason).toMatch(/nope\.yml is not committed/);
+    const undispatchable = resolveWorkflow(dir, { ...pipeline, env: "prod" }, "release.yml");
+    expect("reason" in undispatchable && undispatchable.reason).toMatch(/declares no workflow_dispatch/);
+  });
+
+  it("no candidate at all is the old refusal, unchanged", () => {
+    wf("ci.yml", "on:\n  pull_request:\njobs:\n  check:\n    runs-on: x\n");
+    const r = resolveWorkflow(dir, pipeline);
+    expect("reason" in r && r.reason).toMatch(/no committed workflow_dispatch workflow/);
+  });
+});
+
+describe("the run's own address (#165)", () => {
+  it("rides from `gh run view --json url` onto the pipeline progress state", () => {
+    const state = runViewToProgress(pipeline, { status: "in_progress", url: "https://github.com/o/r/actions/runs/42", jobs: [] });
+    expect(state.url).toBe("https://github.com/o/r/actions/runs/42");
+    expect(runViewToProgress(pipeline, { status: "in_progress", jobs: [] }).url).toBeUndefined();
   });
 });
 

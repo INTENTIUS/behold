@@ -26,7 +26,7 @@ import { spawn } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseYAML } from "@intentius/chant/yaml";
-import type { CiPipeline } from "./chant.ts";
+import { ciWorkflowName, type CiPipeline } from "./chant.ts";
 import { pipelineProgress, type PipelineProgressState } from "./ci-run.ts";
 import type { ApplyStatus } from "./apply.ts";
 
@@ -62,6 +62,9 @@ export interface WorkflowInfo {
   file: string;
   jobIds: string[];
   dispatchable: boolean;
+  /** The workflow's `name:`, when it declares one — chant 0.54.0 writes
+   * `chant-components-<env>` (chant#2046), the identity the picker matches. */
+  name?: string;
 }
 
 /** Parse one workflow file's job ids + whether it declares workflow_dispatch.
@@ -84,37 +87,88 @@ export function parseWorkflow(file: string, text: string): WorkflowInfo {
     (Array.isArray(on) && on.includes("workflow_dispatch")) ||
     (!!on && typeof on === "object" && "workflow_dispatch" in (on as object)) ||
     /^\s{2,}workflow_dispatch\s*:?\s*$/m.test(text);
-  return { file, jobIds: jobs, dispatchable };
+  return { file, jobIds: jobs, dispatchable, ...(typeof d.name === "string" && d.name ? { name: d.name } : {}) };
 }
 
-/**
- * The committed workflow that RUNS the generated pipeline: the dispatchable
- * one whose job ids overlap the pipeline's job names the most. No overlap, or
- * nothing dispatchable → undefined, and the caller refuses with the reason.
- */
-export function pickWorkflow(projectDir: string, pipeline: CiPipeline): WorkflowInfo | undefined {
+/** Every committed workflow under `.github/workflows`, parsed; [] when the
+ * directory is absent. */
+function committedWorkflows(projectDir: string): WorkflowInfo[] {
   const dir = join(projectDir, ".github", "workflows");
   let files: string[];
   try {
     files = readdirSync(dir).filter((f) => f.endsWith(".yml") || f.endsWith(".yaml"));
   } catch {
-    return undefined;
+    return [];
+  }
+  const out: WorkflowInfo[] = [];
+  for (const f of files) {
+    try {
+      out.push(parseWorkflow(f, readFileSync(join(dir, f), "utf8")));
+    } catch {
+      /* unreadable: not a candidate */
+    }
+  }
+  return out;
+}
+
+/**
+ * The committed workflow that RUNS the generated pipeline, or the reason
+ * there is none — never a guess where a guess could deploy the wrong env.
+ *
+ * Three rules, in order, each honest about what it knows (#165 §4):
+ *
+ *  1. A DESIGNATED file (`.behold.json` `executor.<env>.workflow`) is the
+ *     answer or a refusal: missing, or without `workflow_dispatch`, disables
+ *     the gesture with the reason. It never falls through to a picker, and
+ *     never to the laptop.
+ *  2. With no designation but a pipeline that knows its env (chant ≥ 0.54.0,
+ *     chant#2046), the workflow NAMED for that env — `chant-components-<env>`
+ *     — is the identity match. Exactly one dispatchable file with that name
+ *     is the answer; several is a refusal naming them.
+ *  3. Otherwise the pre-0.54 heuristic: the dispatchable workflow whose job
+ *     ids overlap the pipeline's job names the most — and a TIE is a refusal.
+ *     Two envs' pipelines carry identical job ids, so a tie is exactly the
+ *     case where `readdirSync` order used to decide which environment got
+ *     deployed; it now says so instead.
+ */
+export function resolveWorkflow(
+  projectDir: string,
+  pipeline: CiPipeline,
+  designated?: string,
+): { workflow: WorkflowInfo } | { reason: string } {
+  const all = committedWorkflows(projectDir);
+  if (designated) {
+    const hit = all.find((w) => w.file === designated);
+    if (!hit) return { reason: `the designated workflow .github/workflows/${designated} is not committed — Deploy is disabled for this env until it is (behold never falls back to a guess, or to running it here)` };
+    if (!hit.dispatchable) return { reason: `the designated workflow ${designated} declares no workflow_dispatch — add it to its \`on:\` block; until then Deploy is disabled for this env` };
+    return { workflow: hit };
+  }
+  const dispatchable = all.filter((w) => w.dispatchable);
+  if (pipeline.env) {
+    const named = dispatchable.filter((w) => w.name === ciWorkflowName(pipeline.env!));
+    if (named.length === 1) return { workflow: named[0] };
+    if (named.length > 1) return { reason: `${named.length} committed workflows are named ${ciWorkflowName(pipeline.env)} (${named.map((w) => w.file).join(", ")}) — designate one in .behold.json's executor block` };
   }
   const wanted = new Set(pipeline.jobs.map((j) => j.jobName));
-  let best: { info: WorkflowInfo; overlap: number } | undefined;
-  for (const f of files) {
-    let text: string;
-    try {
-      text = readFileSync(join(dir, f), "utf8");
-    } catch {
-      continue;
-    }
-    const info = parseWorkflow(f, text);
-    if (!info.dispatchable) continue;
-    const overlap = info.jobIds.filter((id) => wanted.has(id)).length;
-    if (overlap > 0 && (!best || overlap > best.overlap)) best = { info, overlap };
+  const scored = dispatchable
+    .map((w) => ({ w, overlap: w.jobIds.filter((id) => wanted.has(id)).length }))
+    .filter((x) => x.overlap > 0)
+    .sort((a, b) => b.overlap - a.overlap);
+  if (scored.length === 0) {
+    return { reason: "no committed workflow_dispatch workflow whose jobs match the generated pipeline — commit one (or add `workflow_dispatch:` to its `on:` block)" };
   }
-  return best?.info;
+  if (scored.length > 1 && scored[1].overlap === scored[0].overlap) {
+    const tied = scored.filter((x) => x.overlap === scored[0].overlap).map((x) => x.w.file);
+    return { reason: `${tied.length} committed workflows match the pipeline equally (${tied.join(", ")}) — the generated job ids are the same for every env, so behold cannot tell which one deploys ${pipeline.env ?? "this env"}; designate it in .behold.json's executor block` };
+  }
+  return { workflow: scored[0].w };
+}
+
+/** {@link resolveWorkflow}'s pick alone, for callers that only need the file;
+ * a refusal reads as undefined here. */
+export function pickWorkflow(projectDir: string, pipeline: CiPipeline): WorkflowInfo | undefined {
+  const r = resolveWorkflow(projectDir, pipeline);
+  return "workflow" in r ? r.workflow : undefined;
 }
 
 /** `gh run list` reduced to the newest run's id for one workflow file. */
@@ -134,6 +188,9 @@ export interface GhRunView {
   status?: string; // queued | in_progress | completed
   conclusion?: string; // success | failure | cancelled | ...
   jobs?: Array<{ name?: string; status?: string; conclusion?: string }>;
+  /** The run's page on the forge — where an environment protection rule's
+   * approval lives, and the only affordance behold offers for it (#165 §4). */
+  url?: string;
 }
 
 /** GitHub's per-job status/conclusion → the dial's vocabulary. */
@@ -172,6 +229,7 @@ export function runViewToProgress(pipeline: CiPipeline, view: GhRunView): Pipeli
       return { ...w, status };
     }),
   };
+  if (view.url) state = { ...state, url: view.url };
   if (view.status === "completed") {
     return { ...state, status: view.conclusion === "success" ? "ok" : "failed" };
   }
@@ -233,9 +291,10 @@ export async function dispatchAndFollow(
     return 1;
   }
   deps.onLine(`● run ${runId} started — following`);
+  let urlSaid = false;
 
   for (;;) {
-    const { code, out } = await exec(["run", "view", String(runId), "--json", "status,conclusion,jobs"]);
+    const { code, out } = await exec(["run", "view", String(runId), "--json", "status,conclusion,jobs,url"]);
     if (code === 0) {
       let view: GhRunView | undefined;
       try {
@@ -244,6 +303,10 @@ export async function dispatchAndFollow(
         view = undefined;
       }
       if (view) {
+        if (view.url && !urlSaid) {
+          urlSaid = true;
+          deps.onLine(`● ${view.url} — if the workflow's environment requires an approval, it is granted there, by a GitHub identity; behold holds none that could`);
+        }
         deps.onProgress(runViewToProgress(pipeline, view));
         if (view.status === "completed") {
           deps.onLine(`■ run ${runId} ${view.conclusion ?? "completed"}`);
