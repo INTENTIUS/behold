@@ -29,6 +29,7 @@ import {
   clusterRootGraphIr,
   componentGraphIr,
   componentStatus,
+  compareEnvs,
   ciPipeline,
   type CiPipeline,
   ciForgeFor,
@@ -1671,6 +1672,7 @@ export function createApp(
         { method: "GET", path: "/api/diff", desc: "per-node live diff for ?env= — {env, nodes: {<id>: {observed, diff, health, fieldDrift}}}" },
         { method: "GET", path: "/api/reconcile", desc: "pending-change summary for ?env=" },
         { method: "GET", path: "/api/resources", desc: "component → declared resources" },
+        { method: "GET", path: "/api/components/compare", desc: "cross-env digest comparison: ?env=&to= — is one env running what the other tested (ledger-only)" },
         { method: "GET", path: "/api/ci", desc: "generated CI pipeline projection {stages, jobs, forge}" },
         { method: "GET", path: "/api/substrates", desc: "substrate readiness {substrates: [{name, label, status, detail, bringUp?}]}" },
         { method: "GET", path: "/api/ops", desc: "committed Ops + adopt lexicons + apply progress + run playhead" },
@@ -2230,6 +2232,27 @@ export function createApp(
   // local --format ir` now returns 132 nodes / 65 edges, most `good`
   // (managed) with real `physicalId` values (e.g. a live IAM role's actual
   // name), not all `accent`. So this facet's `physicalId`/`ownership` fields
+  // #234's last remainder — the cross-environment half of "is prod running
+  // what staging tested". Ledger-only (`chant components status <env>
+  // --compare-to <other> --json`, no --live, no cloud call): the question is
+  // about what was RECORDED deploying; the per-env drift overlay answers
+  // what's running. `same` is decided on the comparable identity
+  // (inputDigest ?? digest — a pinned helm deploy's bytes legitimately
+  // differ per cluster), and `comparedOn` says so when the input side spoke.
+  app.get("/api/components/compare", async (c) => {
+    const url = new URL(c.req.url);
+    const env = url.searchParams.get("env");
+    const to = url.searchParams.get("to");
+    if (!env || !to) return c.json({ error: "both ?env= and ?to= are required" }, 400);
+    if (env === to) return c.json({ error: "comparing an environment with itself says nothing" }, 400);
+    try {
+      const { comparisons } = await compareEnvs(cfg.projectDir, env, to);
+      return c.json({ env, to, comparisons });
+    } catch (err) {
+      return errorResponse(c, optsFromQuery(url, tierEnvVar, cfg.projectDir), err);
+    }
+  });
+
   // are live today, not just wired for a future fix.
   app.get("/api/resources", async (c) => {
     const opts = optsFromQuery(new URL(c.req.url), tierEnvVar, cfg.projectDir);
