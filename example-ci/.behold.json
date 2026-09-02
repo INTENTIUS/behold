@@ -1,5 +1,12 @@
 {
   "executor": {
-    "prod": { "forge": "github", "workflow": "behold-e2e-dispatch.yml" }
+    "prod": {
+      "forge": "github",
+      "workflow": "behold-e2e-dispatch.yml"
+    },
+    "gated": {
+      "forge": "github",
+      "workflow": "behold-e2e-gated.yml"
+    }
   }
 }

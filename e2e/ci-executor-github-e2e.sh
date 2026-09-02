@@ -14,9 +14,13 @@
 #      jobs to GitHub's own verdict, and its record persisted with the url.
 #   3. a dead stream: with a 1ms follow deadline the next dispatch is LOST, the
 #      record says so, and the run's page is kept.
-#   4. re-adoption: POST /api/ci/readopt follows the lost run by its saved id
-#      to a real verdict; then the same through a restart — dispatch, kill
-#      behold once adopted, boot again, the boot re-adopts.
+#   4. re-adoption: the boot re-follows the lost run by its saved id to a
+#      real verdict; then the same through a restart — dispatch, kill behold
+#      once adopted, boot again, the boot re-adopts.
+#   5. the approval that lives on the forge: `gated` dispatches a workflow
+#      bound to an environment with a required reviewer; the run stops at
+#      `waiting`, the dial says so and links it, nobody approves, the run is
+#      cancelled through gh, and the cancellation lands as failed — never ok.
 #
 # Scratch discipline: nothing is created on the forge but workflow runs of a
 # workflow that sleeps; nothing is applied anywhere. SKIPs (exit 0) without
@@ -152,4 +156,26 @@ match "boot re-adopted the unconcluded run" "$(grep -a "re-adopting run $adopted
 verdict="$(settle 90)"
 check "…and followed it to GitHub's verdict" "$verdict" "ok"
 check "the record's id survived the restart" "$(api /api/ci/run | json run.runId)" "$adopted"
+echo "→ (5/5) the approval that lives on the forge — waiting, linked, never a button"
+GATED="behold-e2e-gated.yml"
+gh workflow view "$GATED" >/dev/null 2>&1 || { echo "  · $GATED is not on the default branch yet — the gate beat is skipped"; echo "✓ ci-executor acceptance passed (gate beat skipped)"; exit 0; }
+check "gated is designated and dispatchable" "$(api /api/project | json executor.gated.ok)" "true"
+d="$(api '/api/ci/dispatch?env=gated' -X POST)"
+check "dispatch started" "$(echo "$d" | json started)" "true"
+waiting=""
+for _ in $(seq 1 40); do
+  if [ "$(api /api/ops | json applyProgress.waiting)" = "true" ]; then waiting="1"; break; fi
+  sleep 4
+done
+[ -n "$waiting" ] || { echo "  ✗ the gated run never reached waiting"; grep -a "^data:" "$EVENTS" | tail -6; exit 1; }
+echo "  ✓ the run is held at waiting — GitHub wants a deployment review"
+match "the dial links the run's page" "$(api /api/ops | json applyProgress.url)" "^https://github.com/.*/actions/runs/[0-9]+$"
+match "the now-line says the approval is granted on the forge, and offers only the link" "$(grep -a "waiting for a deployment review" "$EVENTS" | tail -1)" "approve at https://github.com/.*behold holds no identity"
+check "the held jobs read pending, not running" "$(api /api/ops | json applyProgress.components.0.status)" "pending"
+gated_id="$(api /api/ci/run | json run.runId)"
+echo "  · cancelling run $gated_id through gh — nobody approves"
+gh run cancel "$gated_id" >/dev/null 2>&1 || true
+verdict="$(settle 60)"
+check "a cancelled review lands as failed, never ok" "$verdict" "failed"
+check "the record says failed" "$(api /api/ci/run | json run.concluded.verdict)" "failed"
 echo "✓ ci-executor acceptance passed"

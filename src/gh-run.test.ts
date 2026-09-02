@@ -147,6 +147,34 @@ describe("parseWorkflow / pickWorkflow", () => {
   });
 });
 
+describe("a run held for a deployment review (#165)", () => {
+  it("reads GitHub's `waiting` as pending jobs and a waiting run — never as running", () => {
+    const state = runViewToProgress(pipeline, { status: "waiting", url: "https://github.com/o/r/actions/runs/9", jobs: [{ name: "shared-foundation", status: "waiting" }] });
+    expect(state.waiting).toBe(true);
+    expect(state.status).toBe("running");
+    expect(state.components.find((c) => c.component === "shared-foundation")!.status).toBe("pending");
+    expect(runViewToProgress(pipeline, { status: "in_progress", jobs: [] }).waiting).toBeUndefined();
+  });
+
+  it("followRun says the wait once, with the address, and a cancelled review lands as failed — never ok", async () => {
+    const waiting: GhRunView = { status: "waiting", url: "https://github.com/o/r/actions/runs/9", jobs: [{ name: "shared-foundation", status: "waiting" }] };
+    const cancelled: GhRunView = { status: "completed", conclusion: "cancelled", url: "https://github.com/o/r/actions/runs/9", jobs: [{ name: "shared-foundation", status: "completed", conclusion: "cancelled" }] };
+    const { exec } = scriptedGh([
+      { match: ["run", "view", "9"], out: JSON.stringify(waiting) },
+      { match: ["run", "view", "9"], out: JSON.stringify(waiting) },
+      { match: ["run", "view", "9"], out: JSON.stringify(cancelled) },
+    ]);
+    const lines: string[] = [];
+    const concluded: string[] = [];
+    const code = await followRun(9, pipeline, { exec, pollMs: 1, sleep: async () => {}, onLine: (l) => lines.push(l), onProgress: () => {}, onConcluded: (o) => concluded.push(o.verdict) });
+    expect(code).toBe(1);
+    expect(concluded).toEqual(["failed"]);
+    const waits = lines.filter((l) => l.includes("waiting for a deployment review"));
+    expect(waits).toHaveLength(1);
+    expect(waits[0]).toContain("approve at https://github.com/o/r/actions/runs/9");
+  });
+});
+
 describe("the run's own address (#165)", () => {
   it("rides from `gh run view --json url` onto the pipeline progress state", () => {
     const state = runViewToProgress(pipeline, { status: "in_progress", url: "https://github.com/o/r/actions/runs/42", jobs: [] });

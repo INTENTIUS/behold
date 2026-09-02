@@ -201,7 +201,10 @@ for another env never stands in. `just e2e-ci-github` proves the contract
 against the real forge (example-ci + `.github/workflows/behold-e2e-dispatch.yml`),
 including the `lost` verdict, which `BEHOLD_CI_FOLLOW_TIMEOUT_MS` and
 `BEHOLD_CI_POLL_FAIL_BUDGET` let a run force on purpose; a lost run is the one
-`POST /api/ci/readopt` re-follows.
+`POST /api/ci/readopt` re-follows. The same e2e dispatches into an environment
+with a required reviewer (`behold-e2e-gated`): the run holds at `waiting`, the
+progress state carries `waiting: true` and the run's `url`, the now-line says
+the approval is granted on the forge, and a cancellation lands as `failed`.
 
 A dispatched run is followed honestly (#165 §6, PR #350): only GitHub's own
 `completed` + conclusion paints `ok`/`failed`; a poll-failure budget or the
