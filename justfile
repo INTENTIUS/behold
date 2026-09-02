@@ -144,3 +144,13 @@ e2e-flux-estate:
 #   just e2e-argo-estate
 e2e-argo-estate:
     bash e2e/argo-estate-k3d-e2e.sh
+
+# behold#165 (the executor contract): the REAL forge. Serves example-ci, whose
+# .behold.json designates prod to .github/workflows/behold-e2e-dispatch.yml,
+# and drives dispatch → follow → lost → re-adopt (by request and through a
+# restart) against GitHub through YOUR gh login. Creates nothing on the forge
+# but runs of a workflow that sleeps; applies nothing anywhere. SKIPs with
+# exit 0 without gh/login, or until the workflow is on the default branch.
+#   just e2e-ci-github
+e2e-ci-github:
+    bash e2e/ci-executor-github-e2e.sh

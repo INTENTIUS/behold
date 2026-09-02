@@ -14,6 +14,7 @@ import {
   ciForgeFor,
   parseCiPipeline,
   ciWorkflowName,
+  pipelineEnvFromYaml,
   envOverridesFor,
   lifecyclePlanArgs,
   applyArgs,
@@ -471,6 +472,16 @@ describe("parseCiPipeline", () => {
     const older = JSON.parse(LOOMSTER_CI_JSON) as Record<string, unknown>;
     expect(parseCiPipeline(LOOMSTER_CI_JSON).env).toBeUndefined();
     expect(parseCiPipeline(JSON.stringify({ ...older, env: "production" })).env).toBe("production");
+  });
+
+  it("reads the env off the YAML when the JSON has none — chant's --format json printer drops the generator's env", () => {
+    const older = JSON.parse(LOOMSTER_CI_JSON) as { yaml: string };
+    const named = { ...older, yaml: "name: chant-components-prod\n" + older.yaml };
+    expect(parseCiPipeline(JSON.stringify(named)).env).toBe("prod");
+    const viaEnv = { ...older, yaml: "env:\n  CHANT_ENV: staging\n" + older.yaml };
+    expect(parseCiPipeline(JSON.stringify(viaEnv)).env).toBe("staging");
+    expect(pipelineEnvFromYaml({ name: "deploy" })).toBeUndefined();
+    expect(pipelineEnvFromYaml(undefined)).toBeUndefined();
   });
 
   it("carries stages and one job per component straight from the structured JSON", () => {

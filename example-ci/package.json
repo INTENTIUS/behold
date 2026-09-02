@@ -1,0 +1,11 @@
+{
+  "name": "behold-example-ci",
+  "version": "0.0.1",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@intentius/chant": "^0.54.0",
+    "@intentius/chant-lexicon-aws": "^0.54.0",
+    "@intentius/chant-lexicon-github": "^0.54.0"
+  }
+}

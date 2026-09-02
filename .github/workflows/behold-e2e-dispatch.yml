@@ -1,0 +1,29 @@
+# The executor contract's real-forge fixture (#165, e2e/ci-executor-github-e2e.sh).
+#
+# Named the way chant 0.54 names a generated component pipeline for `prod`
+# (`chant-components-<env>`, chant#2046), with one job per component of
+# example-ci (`web`, then `api`), so behold's follow paints the dial by job
+# name exactly as it would for a chant-generated workflow. The jobs deploy
+# nothing — they sleep long enough for the follow to observe them running —
+# and the workflow has no secrets, no environment, and only read permission.
+# Dispatched ONLY by the e2e through the operator's own gh; never on push.
+name: chant-components-prod
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: echo "web — nothing to deploy" && sleep 25
+  api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [web]
+    steps:
+      - run: echo "api — nothing to deploy" && sleep 10
