@@ -41,11 +41,11 @@
     "hono": "^4.12.34"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^26.4.1",
     "esbuild": "^0.28.0",
     "playwright": "^1.62.1",
     "tsx": "^4.19.0",
-    "typescript": "^5.9.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.9"
   },
   "repository": {
