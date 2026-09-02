@@ -1,0 +1,45 @@
+# The executor contract, proven nightly against the real forge (#165).
+#
+# Runs e2e/ci-executor-github-e2e.sh — the same script `just e2e-ci-github`
+# runs from a laptop — inside GitHub Actions, dispatching the two sleeping
+# fixture workflows (behold-e2e-dispatch.yml, behold-e2e-gated.yml) through
+# the runner's own GITHUB_TOKEN. `gh` reads it from GH_TOKEN; `actions: write`
+# is what a workflow_dispatch and a run cancel need, and workflow_dispatch is
+# one of the two events GitHub lets a GITHUB_TOKEN trigger. Nothing is
+# applied anywhere: the fixture workflows sleep, and behold's guards refuse
+# every local apply for the designated envs.
+#
+# Nightly, so a chant or gh release that moves the contract's ground is
+# caught the next morning rather than the next time someone remembers to run
+# it; and on demand, for a change to the contract itself. One at a time — two
+# concurrent runs would each adopt the other's dispatches by watermark.
+name: e2e-forge
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: e2e-forge
+  cancel-in-progress: false
+
+jobs:
+  forge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: the executor contract against GitHub
+        run: bash e2e/ci-executor-github-e2e.sh
