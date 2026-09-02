@@ -27,7 +27,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseYAML } from "@intentius/chant/yaml";
 import { ciWorkflowName, type CiPipeline } from "./chant.ts";
-import { pipelineProgress, type PipelineProgressState } from "./ci-run.ts";
+import { pipelineProgress, losePipelineProgress, type PipelineProgressState } from "./ci-run.ts";
 import type { ApplyStatus } from "./apply.ts";
 
 /** One `gh <args>` invocation. Injectable; the default spawns the real CLI. */
@@ -242,12 +242,36 @@ export interface DispatchDeps {
   pollMs?: number;
   /** Give up waiting for the dispatched run to APPEAR after this long. */
   appearTimeoutMs?: number;
+  /**
+   * Overall follow deadline (#165 §6). The old loop was `for (;;)` — a run
+   * stuck queued behind a forge approval for a weekend would be polled
+   * forever. Past the deadline the follow stops and the run promotes to
+   * `lost` (the stream is what died; the run may still be live at `url`).
+   * Default 6h — generously above any honest deploy, including a granted-
+   * on-Monday approval within a working day.
+   */
+  followTimeoutMs?: number;
+  /**
+   * Consecutive failed polls before the stream is declared dead (#165 §6).
+   * The old loop printed `⚠ … retrying` forever on a gh that had stopped
+   * answering (network gone, token revoked, `gh` removed). One flaky poll is
+   * still not a failed run; this many IN A ROW is a dead stream → `lost`.
+   * Default 24 (~2 minutes at the default cadence).
+   */
+  pollFailBudget?: number;
+  /** The dispatched run was adopted by watermark: the persistence hook (#165 §6) — save the id so a restarted behold still has a reader. */
+  onAdopted?: (run: { runId: number; url?: string }) => void;
+  /** The follow ended, with its honest verdict — `ok`/`failed` from GitHub's own conclusion, `lost` when the stream died without one. */
+  onConcluded?: (outcome: { verdict: "ok" | "failed" | "lost" }) => void;
   /** Raw progress lines for the now-line. */
   onLine: (line: string) => void;
   /** Structured progress for the dial (the `apply` SSE channel). */
   onProgress: (state: PipelineProgressState) => void;
   sleep?: (ms: number) => Promise<void>;
 }
+
+/** Exit code `dispatchAndFollow`/`followRun` return for a lost stream — distinct from a failed run (1) and from dispatch failures. EX_TEMPFAIL: the truth is temporarily unreadable, not bad. */
+export const LOST_EXIT = 75;
 
 /**
  * Dispatch the workflow and follow the run to completion. Returns an exit
@@ -291,11 +315,51 @@ export async function dispatchAndFollow(
     return 1;
   }
   deps.onLine(`● run ${runId} started — following`);
+  deps.onAdopted?.({ runId });
+
+  return followRun(runId, pipeline, deps);
+}
+
+/**
+ * Follow an already-known run to completion — extracted from
+ * {@link dispatchAndFollow} so a restarted behold can re-adopt a persisted
+ * run id (#165 §6): `gh run view <id>` is the durable status read the
+ * Temporal path has in `chant run status`, and with the id saved, a live
+ * prod run has a reader again after a restart instead of nothing at all.
+ *
+ * The two §6 honesty rules the old `for (;;)` broke, kept here:
+ *  - a dead stream is never completion — `pollFailBudget` consecutive
+ *    failed polls, or the overall `followTimeoutMs` deadline, end the loop
+ *    with the run promoted to `lost` (chips frozen at last-observed, the
+ *    run possibly still live at its own page);
+ *  - only GitHub's own `status: completed` + conclusion paints a verdict.
+ */
+export async function followRun(
+  runId: number,
+  pipeline: CiPipeline,
+  deps: DispatchDeps,
+): Promise<number> {
+  const exec = deps.exec ?? defaultGhExec;
+  const pollMs = deps.pollMs ?? 5000;
+  const sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+  const pollFailBudget = deps.pollFailBudget ?? 24;
+  const followDeadline = Date.now() + (deps.followTimeoutMs ?? 6 * 60 * 60 * 1000);
+
   let urlSaid = false;
+  let state = pipelineProgress(pipeline);
+  let consecutiveFailures = 0;
+
+  const lose = (why: string): number => {
+    deps.onLine(`✗ run ${runId}: ${why} — behold stopped following; the run itself may still be live${state.url ? ` at ${state.url}` : " on the forge"} (restart behold, or POST /api/ci/readopt, to re-adopt it)`);
+    deps.onProgress(losePipelineProgress(state));
+    deps.onConcluded?.({ verdict: "lost" });
+    return LOST_EXIT;
+  };
 
   for (;;) {
     const { code, out } = await exec(["run", "view", String(runId), "--json", "status,conclusion,jobs,url"]);
     if (code === 0) {
+      consecutiveFailures = 0;
       let view: GhRunView | undefined;
       try {
         view = JSON.parse(out) as GhRunView;
@@ -305,17 +369,29 @@ export async function dispatchAndFollow(
       if (view) {
         if (view.url && !urlSaid) {
           urlSaid = true;
+          deps.onAdopted?.({ runId, url: view.url });
           deps.onLine(`● ${view.url} — if the workflow's environment requires an approval, it is granted there, by a GitHub identity; behold holds none that could`);
         }
-        deps.onProgress(runViewToProgress(pipeline, view));
+        state = runViewToProgress(pipeline, view);
+        deps.onProgress(state);
         if (view.status === "completed") {
           deps.onLine(`■ run ${runId} ${view.conclusion ?? "completed"}`);
-          return view.conclusion === "success" ? 0 : 1;
+          const ok = view.conclusion === "success";
+          deps.onConcluded?.({ verdict: ok ? "ok" : "failed" });
+          return ok ? 0 : 1;
         }
       }
     } else {
-      // A flaky poll is not a failed run — say so once per miss and keep going.
-      deps.onLine(`⚠ gh run view ${runId} failed (exit ${code}) — retrying`);
+      // A flaky poll is not a failed run — say so once per miss and keep going,
+      // up to the budget: this many in a row is a dead stream, not flake (§6).
+      consecutiveFailures++;
+      deps.onLine(`⚠ gh run view ${runId} failed (exit ${code}) — retrying (${consecutiveFailures}/${pollFailBudget})`);
+      if (consecutiveFailures >= pollFailBudget) {
+        return lose(`${pollFailBudget} consecutive polls failed — the stream is dead, not flaky`);
+      }
+    }
+    if (Date.now() >= followDeadline) {
+      return lose("the follow deadline passed");
     }
     await sleep(pollMs);
   }

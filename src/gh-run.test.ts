@@ -10,6 +10,8 @@ import {
   ghJobStatus,
   runViewToProgress,
   dispatchAndFollow,
+  followRun,
+  LOST_EXIT,
   joinCiProgress,
   type GhExec,
   type GhRunView,
@@ -218,6 +220,115 @@ describe("dispatchAndFollow (hermetic — a scripted gh, no GitHub)", () => {
     });
     expect(code).toBe(1);
     expect(lines.join("\n")).toContain("never appeared");
+  });
+
+  it("adoption fires onAdopted with the run id, and the url once a poll reports one — the persistence hooks (#165 §6)", async () => {
+    const done: GhRunView = { status: "completed", conclusion: "success", url: "https://github.com/o/r/actions/runs/42", jobs: [] };
+    const { exec } = scriptedGh([
+      { match: ["run", "list"], out: JSON.stringify([{ databaseId: 41 }]) },
+      { match: ["workflow", "run"] },
+      { match: ["run", "list"], out: JSON.stringify([{ databaseId: 42 }]) },
+      { match: ["run", "view", "42"], out: JSON.stringify(done) },
+    ]);
+    const adopted: Array<{ runId: number; url?: string }> = [];
+    const concluded: string[] = [];
+    const code = await dispatchAndFollow(workflow, pipeline, "main", {
+      exec,
+      pollMs: 1,
+      onLine: () => {},
+      onProgress: () => {},
+      onAdopted: (r) => adopted.push(r),
+      onConcluded: (o) => concluded.push(o.verdict),
+      sleep: noSleep,
+    });
+    expect(code).toBe(0);
+    expect(adopted[0]).toEqual({ runId: 42 });
+    expect(adopted[1]).toEqual({ runId: 42, url: "https://github.com/o/r/actions/runs/42" });
+    expect(concluded).toEqual(["ok"]);
+  });
+});
+
+describe("followRun — the §6 honesty rules (a dead stream is never completion)", () => {
+  const noSleep = async () => {};
+
+  it("this many failed polls IN A ROW is a dead stream: lost, frozen chips, LOST_EXIT — never ok, never failed", async () => {
+    const dead: GhExec = async () => ({ code: 1, out: "connect: network is unreachable" });
+    const lines: string[] = [];
+    const progress: Array<{ status: string }> = [];
+    const concluded: string[] = [];
+    const code = await followRun(42, pipeline, {
+      exec: dead,
+      pollMs: 1,
+      pollFailBudget: 3,
+      onLine: (l) => lines.push(l),
+      onProgress: (s) => progress.push(s),
+      onConcluded: (o) => concluded.push(o.verdict),
+      sleep: noSleep,
+    });
+    expect(code).toBe(LOST_EXIT);
+    expect(progress.at(-1)?.status).toBe("lost");
+    expect(concluded).toEqual(["lost"]);
+    expect(lines.join("\n")).toContain("stopped following");
+    expect(lines.join("\n")).toContain("may still be live");
+  });
+
+  it("one flaky poll among good ones resets the budget and never loses the run", async () => {
+    const running: GhRunView = { status: "in_progress", jobs: [] };
+    const done: GhRunView = { status: "completed", conclusion: "success", jobs: [] };
+    let call = 0;
+    const flaky: GhExec = async () => {
+      call++;
+      if (call === 2) return { code: 1, out: "flake" }; // one miss between two good polls
+      return { code: 0, out: JSON.stringify(call >= 3 ? done : running) };
+    };
+    const code = await followRun(42, pipeline, {
+      exec: flaky,
+      pollMs: 1,
+      pollFailBudget: 2,
+      onLine: () => {},
+      onProgress: () => {},
+      sleep: noSleep,
+    });
+    expect(code).toBe(0);
+  });
+
+  it("the overall follow deadline ends a live-but-unfinished follow as lost — the old for(;;) had no such bound", async () => {
+    const running: GhRunView = { status: "in_progress", url: "https://github.com/o/r/actions/runs/42", jobs: [] };
+    const alive: GhExec = async () => ({ code: 0, out: JSON.stringify(running) });
+    const lines: string[] = [];
+    const progress: Array<{ status: string; url?: string }> = [];
+    const code = await followRun(42, pipeline, {
+      exec: alive,
+      pollMs: 1,
+      followTimeoutMs: 0, // expires after the first poll
+      onLine: (l) => lines.push(l),
+      onProgress: (s) => progress.push(s),
+      sleep: noSleep,
+    });
+    expect(code).toBe(LOST_EXIT);
+    const last = progress.at(-1);
+    expect(last?.status).toBe("lost");
+    // The run's own page survives on the lost state — the truth continues there.
+    expect(last?.url).toContain("/runs/42");
+    expect(lines.join("\n")).toContain("readopt");
+  });
+
+  it("a re-adopted follow (no dispatch) reaches a verdict and reports the url via onAdopted — the restart reader", async () => {
+    const done: GhRunView = { status: "completed", conclusion: "failure", url: "https://github.com/o/r/actions/runs/7", jobs: [] };
+    const adopted: Array<{ runId: number; url?: string }> = [];
+    const concluded: string[] = [];
+    const code = await followRun(7, pipeline, {
+      exec: async () => ({ code: 0, out: JSON.stringify(done) }),
+      pollMs: 1,
+      onLine: () => {},
+      onProgress: () => {},
+      onAdopted: (r) => adopted.push(r),
+      onConcluded: (o) => concluded.push(o.verdict),
+      sleep: noSleep,
+    });
+    expect(code).toBe(1);
+    expect(adopted).toEqual([{ runId: 7, url: "https://github.com/o/r/actions/runs/7" }]);
+    expect(concluded).toEqual(["failed"]);
   });
 });
 
