@@ -2,6 +2,9 @@ node_modules
 dist
 *.log
 .DS_Store
+# Every vitest run's machine-readable result (#334) — names the failing file
+# when the terminal's default reporter truncates it.
+.vitest-last.json
 
 # The estate examples' member apps are installed by the demos/e2es; their
 # locks are churn, deliberately untracked (the estates' top-level locks and
