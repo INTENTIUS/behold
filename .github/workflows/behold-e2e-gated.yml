@@ -1,0 +1,29 @@
+# The executor contract's GATED fixture (#165, e2e/ci-executor-github-e2e.sh
+# step 5): the same sleeping shape as behold-e2e-dispatch.yml, bound to the
+# `behold-e2e-gated` environment whose protection rule requires a reviewer.
+# A dispatched run stops at `waiting` until someone approves on GitHub —
+# which is exactly the state behold must show as a link and never as a
+# button. The e2e asserts the wait and the link, then CANCELS the run
+# through gh; nobody approves, and a cancelled run must land as failed,
+# never ok. Dispatch-only, read-only, no secrets.
+name: chant-components-gated
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: behold-e2e-gated
+    steps:
+      - run: echo "web — gated, nothing to deploy" && sleep 5
+  api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [web]
+    steps:
+      - run: echo "api — nothing to deploy" && sleep 5

@@ -229,7 +229,10 @@ export interface GhRunView {
 
 /** GitHub's per-job status/conclusion → the dial's vocabulary. */
 export function ghJobStatus(job: { status?: string; conclusion?: string }): ApplyStatus {
-  if (job.status !== "completed") return job.status === "queued" || job.status === undefined ? "pending" : "running";
+  // `waiting` is a job held by an environment protection rule (a deployment
+  // review): nothing is running, so it reads pending — not running, which
+  // would claim progress the forge is explicitly withholding.
+  if (job.status !== "completed") return job.status === "queued" || job.status === "waiting" || job.status === undefined ? "pending" : "running";
   return job.conclusion === "success" ? "ok" : "failed";
 }
 
@@ -264,6 +267,11 @@ export function runViewToProgress(pipeline: CiPipeline, view: GhRunView): Pipeli
     }),
   };
   if (view.url) state = { ...state, url: view.url };
+  // The run-level `waiting` (or any job at `waiting`): GitHub is holding it
+  // for a deployment review. Carried as its own flag so the dial can say so
+  // rather than showing a run that appears to have stalled.
+  const waiting = view.status === "waiting" || (view.jobs ?? []).some((j) => j.status === "waiting");
+  if (waiting) state = { ...state, waiting: true };
   if (view.status === "completed") {
     return { ...state, status: view.conclusion === "success" ? "ok" : "failed" };
   }
@@ -380,6 +388,7 @@ export async function followRun(
   const followDeadline = Date.now() + (deps.followTimeoutMs ?? 6 * 60 * 60 * 1000);
 
   let urlSaid = false;
+  let waitingSaid = false;
   let state = pipelineProgress(pipeline);
   let consecutiveFailures = 0;
 
@@ -407,6 +416,10 @@ export async function followRun(
           deps.onLine(`● ${view.url} — if the workflow's environment requires an approval, it is granted there, by a GitHub identity; behold holds none that could`);
         }
         state = runViewToProgress(pipeline, view);
+        if (state.waiting && !waitingSaid) {
+          waitingSaid = true;
+          deps.onLine(`⏸ run ${runId} is waiting for a deployment review on the forge${state.url ? ` — approve at ${state.url}` : ""}; behold holds no identity that could, and offers nothing but the link`);
+        }
         deps.onProgress(state);
         if (view.status === "completed") {
           deps.onLine(`■ run ${runId} ${view.conclusion ?? "completed"}`);

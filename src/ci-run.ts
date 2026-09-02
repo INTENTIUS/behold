@@ -34,6 +34,10 @@ export type PipelineProgressState = ApplyProgressState & {
   /** The run's page on the forge, once a dispatched run reports one (#165):
    * the address of any approval the run waits on. */
   url?: string;
+  /** True while GitHub holds the run at `waiting` — a deployment review on an
+   * environment protection rule. The approval is granted there, by a GitHub
+   * identity; behold's only affordance is `url`. */
+  waiting?: boolean;
 };
 
 /** The initial running state for a known pipeline: stages as waves, jobs as
