@@ -32,7 +32,7 @@
  * `carve apply` is a HUMAN step here, always — see {@link APPLY_IS_HUMAN}.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { GraphIR, IRNode } from "@intentius/chant";
 
 /** chant's own suffix (`CARVE_MANIFEST_SUFFIX` in its manifest.ts). */
@@ -59,7 +59,10 @@ export const APPLY_IS_HUMAN =
  * and `target` is optional here even where chant's own type requires it — a
  * reader should never harden a contract it does not own more than it must. */
 export interface CarveManifest {
-  version: 1;
+  /** 1: every recorded path absolute. 2 (chant ≥ 0.54.0, chant#2039): every
+   * recorded path relative to the manifest's own directory. Same sections
+   * either way; `carveStateOf` resolves the one path the views join on. */
+  version: 1 | 2;
   /** Terraform address of the carved resource, e.g. `aws_s3_bucket.assets`. */
   target: string;
   tfType?: string;
@@ -141,13 +144,17 @@ const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is
  * A parsed manifest, or null when the value is not a v1 carve manifest.
  *
  * Same shallow discipline as `parseCarveReport`: the fields the renderer reads
- * are checked, the rest is passed through. `version !== 1` is a refusal rather
- * than a best-effort read — a future major would mean something else by these
- * sections, and half-reading it would put a wrong stage on a card.
+ * are checked, the rest is passed through. A version this reader does not know
+ * is a refusal rather than a best-effort read — a future major would mean
+ * something else by these sections, and half-reading it would put a wrong
+ * stage on a card. Versions 1 and 2 differ only in how paths are recorded
+ * (chant#2039), which `carveStateOf` normalizes — the same pair chant's own
+ * `readCarveManifest` accepts. (Refusing 2 here is what made behold 0.16.0
+ * read every fresh 0.54 carve as nothing carved; the live walkthrough caught it.)
  */
 export function parseCarveManifest(value: unknown): CarveManifest | null {
   if (!isRecord(value)) return null;
-  if (value.version !== 1) return null;
+  if (value.version !== 1 && value.version !== 2) return null;
   if (typeof value.target !== "string" || !value.target) return null;
   return value as unknown as CarveManifest;
 }
@@ -440,17 +447,25 @@ export function joinCarvedSources(
   states: Iterable<CarveState>,
   memberDir: string,
 ): { ir: GraphIR; joined: number } {
-  const byFile = new Map<string, CarveState>();
-  for (const s of states) for (const f of s.sourceFiles) byFile.set(resolve(f), s);
-  if (byFile.size === 0) return { ir, joined: 0 };
+  const root = resolve(memberDir);
+  // Only this member's emitted files are candidates; a state from elsewhere
+  // can never name a file this IR was graphed from.
+  const candidates: Array<{ abs: string; state: CarveState }> = [];
+  for (const s of states) {
+    for (const f of s.sourceFiles) {
+      const abs = resolve(f);
+      if (abs === root || abs.startsWith(root + sep)) candidates.push({ abs, state: s });
+    }
+  }
+  if (candidates.length === 0) return { ir, joined: 0 };
   let joined = 0;
   const nodes = ir.nodes.map((n) => {
     const file = n.sourceLoc?.file;
     if (!file) return n;
-    const abs = resolve(memberDir, file);
-    const state = byFile.get(abs);
-    if (!state) return n;
+    const hit = emittedFileFor(file, root, candidates);
+    if (!hit) return n;
     joined++;
+    const { state, abs } = hit;
     const carve: CarvedFrom = {
       target: state.target,
       ...(state.tfType ? { tfType: state.tfType } : {}),
@@ -458,11 +473,40 @@ export function joinCarvedSources(
       graduated: state.graduated,
       ...(state.at ? { at: state.at } : {}),
       ...(state.from ? { from: state.from } : {}),
-      file: relative(memberDir, abs).split("\\").join("/"),
+      file: relative(root, abs).split(sep).join("/"),
     };
     return { ...n, attrs: { ...n.attrs, carved: state.target, _carve: carve } };
   });
   return { ir: joined ? { ...ir, nodes } : ir, joined };
+}
+
+/**
+ * Which emitted file a node's `sourceLoc.file` names, if exactly one.
+ *
+ * chant reports `sourceLoc.file` relative to the directory it was asked to
+ * graph — the project root for `chant graph .`, but behold graphs a member
+ * from its source dir (`graphPath` prefers `src/`), so the same node reads
+ * `assets.ts` here and `src/assets.ts` there. Rather than guess which root was
+ * used, the join is a path-segment suffix match under the member: an absolute
+ * emitted file matches when it IS `<root>/<file>` or ends in `/<file>`. A
+ * `file` that several emitted files end in is ambiguous and joins nothing —
+ * stated in the count, never resolved by picking one.
+ */
+function emittedFileFor(
+  file: string,
+  root: string,
+  candidates: ReadonlyArray<{ abs: string; state: CarveState }>,
+): { abs: string; state: CarveState } | undefined {
+  const rel = file.split("\\").join("/").replace(/^\.\//, "");
+  if (isAbsolute(rel)) {
+    const abs = resolve(rel);
+    return candidates.find((c) => c.abs === abs);
+  }
+  const exact = resolve(root, rel);
+  const direct = candidates.find((c) => c.abs === exact);
+  if (direct) return direct;
+  const suffix = candidates.filter((c) => c.abs.split(sep).join("/").endsWith("/" + rel));
+  return suffix.length === 1 ? suffix[0] : undefined;
 }
 
 /** The real chant node each carve state emitted, keyed by Terraform address —

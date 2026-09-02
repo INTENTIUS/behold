@@ -32,6 +32,10 @@ import type { GraphIR, IRNode } from "@intentius/chant";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(HERE, "__fixtures__", "carve-manifests");
+/** A version-2 manifest (chant 0.54.0, chant#2039): captured verbatim from
+ * `behold demo carve` after Emit + Bridge on 2026-09-01 — the one that behold
+ * 0.16.0 refused to read. Its paths are relative to its own directory. */
+const FIXTURES_V2 = join(HERE, "__fixtures__", "carve-manifests-v2");
 
 /**
  * The fixtures are REAL manifests. This repo's own `example-carve` was copied
@@ -121,7 +125,7 @@ describe("the real chant carve manifests", () => {
 });
 
 describe("parseCarveManifest", () => {
-  it("refuses anything that isn't a v1 manifest", () => {
+  it("refuses anything that isn't a manifest version it knows (1 or 2)", () => {
     expect(parseCarveManifest(null)).toBeNull();
     expect(parseCarveManifest([])).toBeNull();
     expect(parseCarveManifest({})).toBeNull();
@@ -129,7 +133,7 @@ describe("parseCarveManifest", () => {
     expect(parseCarveManifest({ version: 1, target: "" })).toBeNull();
     // A future major means something else by these sections; half-reading it
     // would put a wrong stage on a card.
-    expect(parseCarveManifest({ version: 2, target: "aws_s3_bucket.assets" })).toBeNull();
+    expect(parseCarveManifest({ version: 3, target: "aws_s3_bucket.assets" })).toBeNull();
   });
 
   it("accepts a minimal one — the fields the renderer reads, not every field chant emits", () => {
@@ -533,8 +537,30 @@ describe("joinCarvedSources — the chant#2040 join by declaring file", () => {
     expect(out.nodes.find((n) => n.id === "api")!.attrs._carve).toBeUndefined();
   });
 
-  it("is a byte comparison against THIS member's root — the same file under another root joins nothing", () => {
+  it("only this member's emitted files are candidates — the same file under another root joins nothing", () => {
     expect(joinCarvedSources(ir, states().values(), "/proj/other").joined).toBe(0);
+  });
+
+  it("matches a source-dir-relative sourceLoc — behold graphs a member from src/, so chant reports `assets.ts`, not `src/assets.ts`", () => {
+    // The live carve walkthrough caught this: the carveout's emitted node read
+    // `assets.ts`, and a byte comparison against the member root missed it.
+    const fromSrc: GraphIR = { ...ir, nodes: ir.nodes.map((n) => (n.id === "assets" ? { ...n, sourceLoc: { file: "assets.ts" } } : n)) };
+    const { ir: out, joined } = joinCarvedSources(fromSrc, states().values(), "/proj/carveout");
+    expect(joined).toBe(1);
+    expect((out.nodes.find((n) => n.id === "assets")!.attrs._carve as { file: string }).file).toBe("src/assets.ts");
+  });
+
+  it("an ambiguous suffix — two emitted files ending in the same relative path — joins nothing rather than picking one", () => {
+    const m = new Map<string, CarveState>();
+    for (const [target, file] of [["aws_s3_bucket.a", "a/assets.ts"], ["aws_s3_bucket.b", "b/assets.ts"]] as const) {
+      const st = carveStateOf(JSON.parse(v2(target, file)) as CarveManifest, `/proj/carveout/${target}.carve.json`);
+      m.set(target, st);
+    }
+    const fromSrc: GraphIR = { ...ir, nodes: [{ id: "assets", kind: "AWS::S3::Bucket", lexicon: "aws", attrs: {}, sourceLoc: { file: "assets.ts" } }] };
+    expect(joinCarvedSources(fromSrc, m.values(), "/proj/carveout").joined).toBe(0);
+    // But a root-relative sourceLoc still resolves exactly.
+    const exact: GraphIR = { ...fromSrc, nodes: [{ ...fromSrc.nodes[0], sourceLoc: { file: "a/assets.ts" } }] };
+    expect(joinCarvedSources(exact, m.values(), "/proj/carveout").joined).toBe(1);
   });
 
   it("is pure: the input IR (a cached member IR) is never written into, and no states means the same object back", () => {
@@ -579,5 +605,37 @@ describe("splitCarveState — a graduated card takes on the entity it became (ch
     const b = splitCarveState(tfIr, new Map([[applied.target, applied]]), { emitted: new Map() });
     expect(a.graduated).toEqual(b.graduated);
     expect(a.graduated[0].kind).not.toBe("AWS::S3::Bucket");
+  });
+});
+
+
+describe("version-2 manifests (chant 0.54.0, chant#2039)", () => {
+  const V2 = "aws_s3_bucket-assets.carve.json";
+  const readV2 = () => JSON.parse(readFileSync(join(FIXTURES_V2, V2), "utf8")) as CarveManifest;
+
+  it("parses — the version behold 0.16.0 refused, so a fresh carve read as nothing carved", () => {
+    const m = parseCarveManifest(readV2());
+    expect(m).not.toBeNull();
+    expect(m!.version).toBe(2);
+    expect(m!.target).toBe("aws_s3_bucket.assets");
+  });
+
+  it("still refuses a version it does not know", () => {
+    expect(parseCarveManifest({ ...readV2(), version: 3 })).toBeNull();
+  });
+
+  it("stages off the same sections, and resolves the relative emitted file against its own directory", () => {
+    const state = carveStateOf(readV2(), join(FIXTURES_V2, V2));
+    expect(state.stage).toBe("bridged");
+    expect(state.files).toEqual(["src/assets.ts"]);
+    expect(state.sourceFiles).toEqual([join(FIXTURES_V2, "src", "assets.ts")]);
+    expect(state.excised).toContain("aws_s3_bucket.assets");
+    expect(state.outDir).toBe(FIXTURES_V2);
+  });
+
+  it("is discovered by the local walk like any other", () => {
+    const states = readCarveStates([FIXTURES_V2]);
+    expect([...states.keys()]).toEqual(["aws_s3_bucket.assets"]);
+    expect(states.get("aws_s3_bucket.assets")!.stage).toBe("bridged");
   });
 });

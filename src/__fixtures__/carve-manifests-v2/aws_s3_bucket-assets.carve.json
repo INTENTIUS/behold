@@ -1,0 +1,83 @@
+{
+  "version": 2,
+  "target": "aws_s3_bucket.assets",
+  "tfType": "aws_s3_bucket",
+  "from": "/Users/alex/Documents/checkouts/intentius/behold/behold-demos/carve/legacy-tf",
+  "statePath": "/Users/alex/Documents/checkouts/intentius/behold/behold-demos/carve/legacy-tf/terraform.tfstate",
+  "boundary": {
+    "target": "aws_s3_bucket.assets",
+    "carveSet": [
+      {
+        "address": "aws_s3_bucket.assets",
+        "type": "aws_s3_bucket"
+      },
+      {
+        "address": "aws_s3_bucket_public_access_block.assets",
+        "type": "aws_s3_bucket_public_access_block",
+        "foldedInto": "aws_s3_bucket.assets"
+      },
+      {
+        "address": "aws_s3_bucket_versioning.assets",
+        "type": "aws_s3_bucket_versioning",
+        "foldedInto": "aws_s3_bucket.assets"
+      }
+    ],
+    "peelability": 84,
+    "inbound": [
+      {
+        "direction": "inbound",
+        "survivor": "aws_lambda_function.api",
+        "carved": "aws_s3_bucket.assets",
+        "attrs": [
+          "bucket"
+        ],
+        "via": [
+          "environment"
+        ],
+        "bridge": "tf-data-source",
+        "required": "immediately"
+      },
+      {
+        "direction": "inbound",
+        "survivor": "output.assets_bucket",
+        "carved": "aws_s3_bucket.assets",
+        "attrs": [
+          "bucket"
+        ],
+        "via": [
+          "value"
+        ],
+        "bridge": "tf-output-rewrite",
+        "required": "immediately"
+      }
+    ],
+    "outbound": [],
+    "reversible": true,
+    "diagnostics": []
+  },
+  "emit": {
+    "source": "tfstate",
+    "files": [
+      "src/assets.ts"
+    ],
+    "at": "2026-09-02T01:08:23.040Z"
+  },
+  "bridge": {
+    "written": [
+      "aws_s3_bucket-assets-runbook.md",
+      "aws_s3_bucket-assets-datasources.tf",
+      "compute.tf",
+      "outputs.tf",
+      "storage.tf",
+      "aws_s3_bucket-assets-bridge.patch"
+    ],
+    "appliedInPlace": false,
+    "patch": "aws_s3_bucket-assets-bridge.patch",
+    "excised": [
+      "aws_s3_bucket.assets",
+      "aws_s3_bucket_versioning.assets",
+      "aws_s3_bucket_public_access_block.assets"
+    ],
+    "at": "2026-09-02T01:08:24.809Z"
+  }
+}

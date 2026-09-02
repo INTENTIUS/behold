@@ -151,12 +151,15 @@ function servedWithManifests(): ReturnType<typeof carveApp> {
   );
   writeFileSync(
     join(dir, "aws_lambda_function-api.carve.json"),
+    // A VERSION-2 manifest (chant ≥ 0.54.0, chant#2039): paths relative to its
+    // own directory — the shape behold 0.16.0 refused, which read every fresh
+    // carve as nothing carved until the live walkthrough caught it.
     JSON.stringify({
-      version: 1,
+      version: 2,
       target: "aws_lambda_function.api",
       from: "/tmp/carve-fixture/legacy-tf",
       boundary: {},
-      emit: { source: "tfstate", files: ["/tmp/carve-fixture/out/src/api.ts"], at: "2026-08-30T04:12:44.246Z" },
+      emit: { source: "tfstate", files: ["src/api.ts"], at: "2026-08-30T04:12:44.246Z" },
     }),
   );
   return carveApp(report);
