@@ -22,7 +22,7 @@
  * verified by live-dispatching an estate's committed workflows, whose real-ci
  * lanes deploy to real clouds.
  */
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseYAML } from "@intentius/chant/yaml";
@@ -90,10 +90,30 @@ export function parseWorkflow(file: string, text: string): WorkflowInfo {
   return { file, jobIds: jobs, dispatchable, ...(typeof d.name === "string" && d.name ? { name: d.name } : {}) };
 }
 
-/** Every committed workflow under `.github/workflows`, parsed; [] when the
- * directory is absent. */
+/**
+ * Where a project's workflows are committed: the `.github/workflows` of the
+ * repository the project belongs to — its git toplevel — not of the project
+ * directory itself. A chant project is very often one directory of a larger
+ * repository (every example in this repo is), and GitHub reads workflows from
+ * the repository root only; `gh workflow run` targets that same repository
+ * from the project's cwd. A project that is not inside a git repository (the
+ * hermetic tests' temp dirs) falls back to its own directory. Exported for
+ * testing.
+ */
+export function workflowsDir(projectDir: string): string {
+  let root = projectDir;
+  try {
+    root = execFileSync("git", ["-C", projectDir, "rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || projectDir;
+  } catch {
+    /* not a repository: the project dir is the root */
+  }
+  return join(root, ".github", "workflows");
+}
+
+/** Every committed workflow under the repository's `.github/workflows`,
+ * parsed; [] when the directory is absent. */
 function committedWorkflows(projectDir: string): WorkflowInfo[] {
-  const dir = join(projectDir, ".github", "workflows");
+  const dir = workflowsDir(projectDir);
   let files: string[];
   try {
     files = readdirSync(dir).filter((f) => f.endsWith(".yml") || f.endsWith(".yaml"));

@@ -1,5 +1,6 @@
+import { execFileSync } from "node:child_process";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -7,6 +8,7 @@ import {
   parseWorkflow,
   pickWorkflow,
   resolveWorkflow,
+  workflowsDir,
   ghJobStatus,
   runViewToProgress,
   dispatchAndFollow,
@@ -124,6 +126,18 @@ describe("parseWorkflow / pickWorkflow", () => {
     expect("reason" in r && r.reason).toMatch(/deploy-prod\.yml \(chant-components-prod\) is named for another env/);
     // Without an env on the pipeline (pre-0.54) the overlap match still applies.
     expect(resolveWorkflow(dir, pipeline)).toEqual({ workflow: expect.objectContaining({ file: "deploy-prod.yml" }) });
+  });
+
+  it("reads the workflows of the REPOSITORY the project belongs to — a project nested in a monorepo has none of its own", () => {
+    // example-ci's shape: the project is one directory of a repository whose
+    // .github/workflows sits at the root. The first real-forge run failed here.
+    execFileSync("git", ["init", "-q", dir]);
+    mkdirSync(join(dir, "packages", "app"), { recursive: true });
+    wf("deploy-prod.yml", "name: chant-components-prod\non:\n  workflow_dispatch:\njobs:\n  shared-foundation:\n    runs-on: x\n");
+    const nested = join(dir, "packages", "app");
+    // realpath both: macOS's tmpdir is a symlink (/var → /private/var), and git reports the real path.
+    expect(realpathSync(workflowsDir(nested))).toBe(realpathSync(join(dir, ".github", "workflows")));
+    expect(resolveWorkflow(nested, { ...pipeline, env: "prod" }, "deploy-prod.yml")).toEqual({ workflow: expect.objectContaining({ file: "deploy-prod.yml" }) });
   });
 
   it("no candidate at all is the old refusal, unchanged", () => {

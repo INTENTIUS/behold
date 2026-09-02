@@ -30,12 +30,18 @@ WF="behold-e2e-dispatch.yml"
 LOG="${TMPDIR:-/tmp}/behold-ci-e2e.log"
 STORE="$(mktemp -d "${TMPDIR:-/tmp}/behold-ci-e2e-store.XXXXXX")"
 export BEHOLD_CI_RUN_DIR="$STORE"
+rm -f "${TMPDIR:-/tmp}/behold-ci-e2e-events.log"
 
 skip() { echo "SKIP: $*"; exit 0; }
 command -v gh >/dev/null || skip "gh not installed"
 gh auth status >/dev/null 2>&1 || skip "gh not logged in"
 git remote get-url origin 2>/dev/null | grep -q github.com || skip "origin is not a github.com repo"
 gh workflow view "$WF" >/dev/null 2>&1 || skip "$WF is not on the default branch yet — merge it first (workflow_dispatch needs it there)"
+# The dispatch runs on the CURRENT branch (behold passes `--ref <branch>`), and
+# GitHub refuses a ref it has never seen: an unpushed branch answers "No ref
+# found" — asynchronously, on the now-line, after `started: true`. Say it here.
+BRANCH="$(git branch --show-current)"
+git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1 || skip "branch $BRANCH is not on origin — push it first (the dispatch runs on it)"
 
 echo "→ install $EX deps"
 npm --prefix "$EX" install --no-audit --no-fund --silent
@@ -43,28 +49,37 @@ echo "→ build behold"
 npm run build --silent
 
 PID=""
+EVENTS="${TMPDIR:-/tmp}/behold-ci-e2e-events.log"
+EVPID=""
 boot() {
   node ./bin/behold.js serve "$EX" --env prod --port "$PORT" >"$LOG" 2>&1 &
   PID=$!
+  # The now-line (`gh workflow run …`, `● run N started`, the lost line) is an
+  # SSE stream, not the server's stdout — capture it, so a failure can be read.
+  ( for _ in $(seq 1 45); do curl -sf "http://localhost:$PORT/healthz" >/dev/null 2>&1 && break; sleep 1; done; curl -sN "http://localhost:$PORT/api/events" >>"$EVENTS" 2>/dev/null ) &
+  EVPID=$!
   for _ in $(seq 1 45); do
     curl -sf "http://localhost:$PORT/healthz" >/dev/null 2>&1 && return 0
     sleep 1
   done
   echo "✗ behold did not come up"; sed -n '1,40p' "$LOG"; exit 1
 }
-stop() { [ -n "$PID" ] && { kill "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; }; PID=""; }
-cleanup() { stop; rm -rf "$STORE"; }
+stop() { [ -n "$EVPID" ] && { kill "$EVPID" 2>/dev/null || true; }; EVPID=""; [ -n "$PID" ] && { kill "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; }; PID=""; }
+cleanup() { stop; rm -rf "$STORE"; rm -f "$EVENTS"; }
 trap cleanup EXIT INT TERM
 
 api() { curl -s "http://localhost:$PORT$1" "${@:2}"; }
 json() { node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);const v=process.argv[1].split(".").reduce((o,k)=>o==null?o:o[k],j);console.log(typeof v==="string"?v:JSON.stringify(v??null))})' "$1"; }
-check() { if [ "$2" = "$3" ]; then echo "  ✓ $1"; else echo "  ✗ $1 — expected $3, got $2"; exit 1; fi; }
+check() { if [ "$2" = "$3" ]; then echo "  ✓ $1"; else echo "  ✗ $1 — expected $3, got $2"; echo "  now-line:"; grep -a "^data:" "$EVENTS" 2>/dev/null | tail -12 | sed 's/^/    /'; exit 1; fi; }
 match() { if echo "$2" | grep -Eq "$3"; then echo "  ✓ $1"; else echo "  ✗ $1 — got: $2"; exit 1; fi; }
 # Wait for the dial's pipeline state to settle (ok/failed/lost), printing it.
 settle() {
   for _ in $(seq 1 "${1:-90}"); do
     st="$(api /api/ops | json applyProgress.status)"
     case "$st" in ok|failed|lost) echo "$st"; return 0;; esac
+    # The follow task ended without a verdict (a failed dispatch, a thrown task):
+    # its exit line is on the now-line — stop waiting and let the caller show it.
+    if [ "$(api /api/ops | json running)" = "null" ] && grep -aq "exited [0-9]" "$EVENTS" 2>/dev/null; then echo "ended:$st"; return 0; fi
     sleep 4
   done
   echo "timeout"
@@ -72,7 +87,8 @@ settle() {
 
 echo "→ (1/4) the contract at the routes"
 boot
-check "prod is designated and dispatchable" "$(api /api/project | json executor.prod.ok)" "true"
+prod="$(api /api/project | json executor.prod)"
+check "prod is designated and dispatchable ($prod)" "$(echo "$prod" | json ok)" "true"
 check "…through the designated file" "$(api /api/project | json executor.prod.workflow)" "$WF"
 check "POST /api/apply?env=prod is refused" "$(api '/api/apply?env=prod' -X POST -o /dev/null -w '%{http_code}')" "409"
 check "…with the executor-forge code" "$(api '/api/apply?env=prod' -X POST | json code)" "executor-forge"
@@ -103,17 +119,21 @@ rec="$(api /api/ci/run)"
 check "the record says lost" "$(echo "$rec" | json run.concluded.verdict)" "lost"
 lost_id="$(echo "$rec" | json run.runId)"
 [ "$lost_id" != "$first_id" ] && echo "  ✓ a new run ($lost_id), not the first ($first_id)"
-match "the lost line names the re-adoption" "$(grep -E "stopped following" "$LOG" | tail -1)" "readopt"
+match "the lost line names the re-adoption" "$(grep -a "stopped following" "$EVENTS" | tail -1)" "readopt"
 
-echo "→ (4/4) re-adoption: by request, then through a restart"
+echo "→ (4/4) re-adoption: at boot, then through a restart"
 stop
 boot
-r="$(api /api/ci/readopt -X POST)"
-check "the lost run is re-adopted by its saved id" "$(echo "$r" | json outcome)" "readopted"
-check "…the same run" "$(echo "$r" | json run.runId)" "$lost_id"
+# A LOST run is re-adopted by the boot itself (the record says lost, the run is
+# still live on the forge); an explicit readopt while that follow runs is
+# refused as busy, and once GitHub's verdict is in, there is nothing to re-adopt.
+sleep 4
+match "boot re-adopted the lost run by its saved id" "$(grep -a "re-adopting run $lost_id" "$EVENTS" | tail -1)" "re-adopting run $lost_id"
+check "an explicit readopt meanwhile is refused as busy" "$(api /api/ci/readopt -X POST -o /dev/null -w '%{http_code}')" "409"
 verdict="$(settle 90)"
 check "…followed to GitHub's verdict" "$verdict" "ok"
 check "the record now concludes ok" "$(api /api/ci/run | json run.concluded.verdict)" "ok"
+check "a concluded run has nothing to re-adopt" "$(api /api/ci/readopt -X POST -o /dev/null -w '%{http_code}')" "404"
 # Through a restart: dispatch, wait for adoption (the record appears), kill, boot.
 d="$(api '/api/ci/dispatch?env=prod' -X POST)"
 check "dispatch started" "$(echo "$d" | json started)" "true"
@@ -127,7 +147,8 @@ done
 echo "  ✓ run $adopted adopted; killing behold mid-follow"
 stop
 boot
-check "boot re-adopted the unconcluded run" "$(grep -c "re-adopting run $adopted" "$LOG")" "1"
+sleep 3
+match "boot re-adopted the unconcluded run" "$(grep -a "re-adopting run $adopted" "$EVENTS" | tail -1)" "re-adopting run $adopted"
 verdict="$(settle 90)"
 check "…and followed it to GitHub's verdict" "$verdict" "ok"
 check "the record's id survived the restart" "$(api /api/ci/run | json run.runId)" "$adopted"
