@@ -75,12 +75,35 @@ echo "→ (2/4) helm install $RELEASE"
 helm upgrade --install "$RELEASE" "$PROJECT/$CHART" --wait >/dev/null
 echo "  ✓ release deployed"
 
+# chant#2031 (chant ≥ 0.54.0): an observed release carries the render identity
+# its deploy RECORDED — read back off the project's release ledger by release
+# name. Record one for this release the way a deploy would (a probe digest;
+# the point is the join, not the bytes), and assert it reaches the card. Only
+# when the project is a git repo (the ledger is an orphan branch of it) and
+# its chant answers `components release`; otherwise this beat is skipped and
+# says so — the presence assertions above and below stand on their own.
+LEDGER=""
+if git -C "$PROJECT" rev-parse --show-toplevel >/dev/null 2>&1; then
+  if (cd "$PROJECT" && npx chant components release "$ENV" --component "$RELEASE" --digest "sha256:$(printf 'behold-e2e-%s' "$RELEASE" | shasum -a 256 | cut -c1-64)" --actor behold-e2e >/dev/null 2>&1); then
+    LEDGER="1"
+    echo "  ✓ recorded a release for $RELEASE in the project's ledger (chant#2031's join)"
+  else
+    echo "  · this chant records no release ledger here — the identity beat is skipped"
+  fi
+else
+  echo "  · $PROJECT is not a git repo — no ledger, the identity beat is skipped"
+fi
+
 echo "→ (3/4) overlay after install — installed, with the release carried"
 AFTER="$(chart_status)"
 echo "$AFTER" | sed 's/^/  /'
 echo "$AFTER" | grep -q " good " || { echo "✗ no chart flipped to installed"; exit 1; }
 echo "$AFTER" | grep -q "\"release\":" || { echo "✗ the match carries no release for inspect"; exit 1; }
 echo "  ✓ accent -> good across a real helm install"
+if [ -n "$LEDGER" ]; then
+  echo "$AFTER" | grep -q "\"inputDigest\":\"sha256:" || { echo "✗ the observed release carries no inputDigest — chant#2031's ledger join did not reach the card"; exit 1; }
+  echo "  ✓ the deploy's recorded render identity reached the card (_artifact.inputDigest)"
+fi
 
 echo "→ (4/4) logical zoom — the release box"
 curl -sf "http://localhost:$PORT/api/overlay?logical=1&env=$ENV" | node -e '
