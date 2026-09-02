@@ -643,6 +643,48 @@ export function componentStatus(projectDir: string, env: string, opts: GraphOpti
   return runChantJson<ComponentStatusRow[]>(componentStatusArgs(env), projectDir, envOverridesFor(opts));
 }
 
+/**
+ * One cross-environment digest comparison (`chant components status <env>
+ * --compare-to <other> --json`, chant#568) — "is prod running what staging
+ * tested", per component. Mirrored from chant's `CrossEnvComparison`
+ * (`lifecycle/status.ts`), which isn't re-exported from the public index —
+ * src/apply.ts's precedent: don't reach past a package's declared export
+ * surface for an internal type. `same` is decided on the COMPARABLE identity
+ * (`inputDigest ?? digest` per side, chant#1243's contract, honoured since
+ * the #234 follow-up): a pinned helm deploy's bytes legitimately differ per
+ * cluster, so matching inputs with differing digests is `same: true` and
+ * `comparedOn` says what the verdict was decided on.
+ */
+export interface CrossEnvComparison {
+  component: string;
+  envA: string;
+  envB: string;
+  digestA?: string;
+  digestB?: string;
+  same: boolean;
+  comparedOn?: { a: string; b: string };
+}
+
+export function compareEnvsArgs(env: string, to: string): string[] {
+  return ["components", "status", env, "--compare-to", to, "--json"];
+}
+
+/**
+ * The two-env comparison read (#234's last remainder). Ledger-only — no
+ * `--live`, no cloud call: the release ledger on `chant/lifecycle` is the
+ * record being compared, and the question is about what was RECORDED
+ * deploying, not what is running right now (the drift overlay answers that,
+ * per env). With `--compare-to` the CLI wraps its output as
+ * `{rows, comparisons}` rather than the bare rows array.
+ */
+export function compareEnvs(
+  projectDir: string,
+  env: string,
+  to: string,
+): Promise<{ rows: ComponentStatusRow[]; comparisons: CrossEnvComparison[] }> {
+  return runChantJson<{ rows: ComponentStatusRow[]; comparisons: CrossEnvComparison[] }>(compareEnvsArgs(env, to), projectDir);
+}
+
 // ---------------------------------------------------------------------------
 // CI projection facet (M1.2, #58) — loomster's GitLab CI is the SAME
 // component DAG projected: waves = stages, components = jobs, `dependsOn` =

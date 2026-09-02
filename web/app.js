@@ -56,6 +56,7 @@ import { hasOperator, renderOperator, APPROVED_SEMANTICS } from "./operator.js";
 // which commit, approved by whom — and, when the ledger's run id cannot be
 // followed, the reason in words rather than a guessed link.
 import { releaseRows } from "./release.js";
+import { comparisonRow, comparisonSummary } from "./cross-env.js";
 initTheme();
 initPanel();
 mountThemePicker(document.getElementById("panel-theme"));
@@ -987,7 +988,7 @@ function wire(ir) {
 // null on a project that declares no `stacks[]` at all — the picker (and the
 // status strip's stack tag) then never renders. Every fetch reads this, so
 // the `changed` SSE re-pull and a palette lens change go through the same path.
-const view = { env: null, detail: 2, components: true, logical: false, runtime: false, ops: false, tier: null, target: null, stack: null, radial: false };
+const view = { env: null, detail: 2, components: true, logical: false, runtime: false, ops: false, tier: null, target: null, stack: null, radial: false, compareTo: null };
 
 // #182: `components` is the boot default, but a project that declares no
 // components renders it as ZERO nodes — the first screen was a blank graph
@@ -1362,6 +1363,57 @@ function renderPanelScope() {
     );
   }
   if (!environments.length) host.appendChild(panelMuted("no environments declared"));
+
+  // #234's last remainder — "is prod running what staging tested". Only when
+  // an env is picked and there is another to compare against; ledger-only, so
+  // it never adds a cloud read to opening the panel (fetch happens on pick).
+  if (view.env && environments.length > 1 && !staticMode) {
+    if (view.compareTo === view.env) view.compareTo = null; // env re-picked onto the compared one
+    host.appendChild(panelHeading("compare releases"));
+    const sel = document.createElement("select");
+    sel.add(new Option("(off)", "", view.compareTo == null, view.compareTo == null));
+    for (const e of environments) {
+      if (e === view.env) continue;
+      sel.add(new Option(`vs ${e}`, e, false, view.compareTo === e));
+    }
+    sel.title = "Compare this environment's recorded releases with another's — per component, on the comparable identity (inputs for pinned deploys)";
+    const result = document.createElement("div");
+    const render = (payload) => {
+      result.replaceChildren();
+      const s = comparisonSummary(payload);
+      const line = document.createElement("div");
+      line.style.cssText = `font-size:var(--t-caption);color:${COMPONENT_STATUS_VAR[s.tone === "warn" ? "warn" : s.tone === "good" ? "good" : "neutral"]};margin:4px 0`;
+      line.textContent = s.text;
+      result.appendChild(line);
+      for (const c of payload.comparisons || []) {
+        const r = comparisonRow(c);
+        const row = panelDotRow(COMPONENT_STATUS_VAR[r.tone === "warn" ? "warn" : r.tone === "good" ? "good" : "neutral"], r.component, r.verdict, () => selectNode(r.component));
+        row.title = r.detail;
+        result.appendChild(row);
+      }
+    };
+    sel.addEventListener("change", () => {
+      view.compareTo = sel.value || null;
+      result.replaceChildren();
+      if (!view.compareTo) return;
+      result.appendChild(panelMuted("comparing…"));
+      fetch(`/api/components/compare?env=${encodeURIComponent(view.env)}&to=${encodeURIComponent(view.compareTo)}`)
+        .then((r) => r.json())
+        .then((payload) => {
+          if (view.compareTo !== sel.value) return; // re-picked while loading
+          if (payload.error) {
+            result.replaceChildren(panelMuted(payload.error));
+            return;
+          }
+          render(payload);
+        })
+        .catch((err) => result.replaceChildren(panelMuted(`compare failed: ${err && err.message ? err.message : err}`)));
+    });
+    host.appendChild(sel);
+    host.appendChild(result);
+    // Restore an active comparison across panel re-renders.
+    if (view.compareTo) sel.dispatchEvent(new Event("change"));
+  }
   if (stacks.length) {
     host.appendChild(panelHeading("stack"));
     for (const s of stacks) {
