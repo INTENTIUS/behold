@@ -28,6 +28,7 @@ import { detectProject } from "./project.ts";
 // type-strip files under node_modules).
 import { parseYAML } from "@intentius/chant/yaml";
 import { carveStatusArgs, type CarveStatusJson } from "./carve-manifest.ts";
+import { dropForeignDeclarations } from "./foreign.ts";
 
 /** Graph options passed through to chant so IR and layout node sets align. */
 export interface GraphOptions {
@@ -547,7 +548,11 @@ export function graphArgs(src: string, format: "ir" | "layout", opts: GraphOptio
  * `envOverridesFor` below. */
 export async function graphIr(projectDir: string, opts: GraphOptions = {}): Promise<GraphIR> {
   const src = await graphPath(projectDir, opts);
-  return runChantJson<GraphIR>(graphArgs(src, "ir", opts, false), projectDir, envOverridesFor(opts));
+  const ir = await runChantJson<GraphIR>(graphArgs(src, "ir", opts, false), projectDir, envOverridesFor(opts));
+  // chant#2058: chant joins Ops from the git root, so a project sharing a
+  // repository with other chant projects graphs their Ops too. Dropped here,
+  // at the one read every entity graph goes through, and named on the note.
+  return dropForeignDeclarations(ir, projectDir);
 }
 
 /**
