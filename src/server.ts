@@ -46,7 +46,8 @@ import {
 } from "./chant.ts";
 import { mergeClusterRoot, runningK3dClusters } from "./cluster-root.ts";
 import { synthesizeHelmReleases, discoverReleaseUnits } from "./helm-releases.ts";
-import { ghReady, resolveWorkflow, dispatchAndFollow, joinCiProgress } from "./gh-run.ts";
+import { ghReady, resolveWorkflow, dispatchAndFollow, followRun, joinCiProgress } from "./gh-run.ts";
+import { saveDispatchedRun, readDispatchedRun, concludeDispatchedRun, type DispatchedRun } from "./ci-run-store.ts";
 import { joinComponentStatus, joinTickVerdicts, componentStatusColor } from "./component-status.ts";
 import { reclassifyOverlay, pruneImports, attachRuntimeContainment, pruneRuntimeChildren } from "./overlay.ts";
 import { addValueMatchEdges } from "./value-match.ts";
@@ -760,6 +761,42 @@ function carveRoutes(app: Hono, reportPath: string, demo?: CarveDemo): void {
   // the walkthrough in a browser, where `/api/resources` 500'd on every boot).
   app.get("/api/resources", (c) => c.json({ byComponent: {} }));
   app.get("/api/ci", (c) => c.json({ stages: [], jobs: [], forge: null }));
+}
+
+/**
+ * Re-adopt a persisted, unconcluded dispatched run (#165 §6): regenerate the
+ * pipeline the run was dispatched for and follow it by its saved id — the
+ * reader a restarted behold owed a live prod run. Shared by the boot path
+ * (called once, best-effort, after `behold serve` starts) and the explicit
+ * `POST /api/ci/readopt`. Returns what happened, as a word the caller can
+ * print or serve: `readopted` (the follow started), `none` (nothing
+ * persisted, or it already concluded), or a refusal with its reason (gh not
+ * ready, pipeline gone, runner busy) — a refusal leaves the record alone, so
+ * the next attempt still has it.
+ */
+async function readoptDispatchedRun(
+  cfg: ServerOptions,
+  runner: OpRunner,
+): Promise<{ outcome: "readopted"; run: DispatchedRun } | { outcome: "none" } | { outcome: "refused"; reason: string; run: DispatchedRun }> {
+  const run = readDispatchedRun(cfg.projectDir);
+  if (!run || run.concluded) return { outcome: "none" };
+  const ready = await ghReady();
+  if (!ready.ok) return { outcome: "refused", reason: ready.reason ?? "gh is not ready", run };
+  const pipeline = await ciPipeline(cfg.projectDir, run.env ? { env: run.env } : {}, "github").catch(() => undefined);
+  if (!pipeline || pipeline.jobs.length === 0) {
+    return { outcome: "refused", reason: "no generated GitHub pipeline to paint the run onto — `chant build --components --generate github` first", run };
+  }
+  const started = runner.track(`GitHub Actions ${run.workflow} (re-adopted run ${run.runId})`, (io) => {
+    io.line(`● re-adopting run ${run.runId} (${run.workflow}, dispatched ${run.dispatchedAt}) — \`gh run view\` is the durable read`);
+    return followRun(run.runId, pipeline, {
+      onLine: io.line,
+      onProgress: io.progress,
+      onAdopted: ({ runId, url }) => saveDispatchedRun({ ...run, runId, ...(url ? { url } : {}) }),
+      onConcluded: ({ verdict }) => concludeDispatchedRun(cfg.projectDir, run.runId, verdict),
+    });
+  });
+  if (!started) return { outcome: "refused", reason: `busy — ${runner.running} is running`, run };
+  return { outcome: "readopted", run };
 }
 
 export function createApp(
@@ -1630,6 +1667,8 @@ export function createApp(
         { method: "POST", path: "/api/substrates/:name/up", desc: "bring a substrate up" },
         { method: "POST", path: "/api/local/reset", desc: "reset the local emulator" },
         { method: "POST", path: "/api/ci/dispatch", desc: "dispatch the GitHub Actions pipeline for ?env= via the operator's gh — the designated workflow when .behold.json names one" },
+        { method: "GET", path: "/api/ci/run", desc: "the persisted dispatched-run record (id, verdict) — what survives a behold restart" },
+        { method: "POST", path: "/api/ci/readopt", desc: "re-adopt the persisted unconcluded run: follow it by its saved id (also attempted automatically at boot)" },
       ],
     }),
   );
@@ -2086,11 +2125,47 @@ export function createApp(
     const ref = await execFileP("git", ["-C", cfg.projectDir, "branch", "--show-current"])
       .then((out) => out.trim() || "main")
       .catch(() => "main");
+    // #165 §6: persist the adopted run id, so a behold restarted mid-deploy
+    // still has a reader (`gh run view <id>` — re-adopted at boot or via
+    // POST /api/ci/readopt), and record the follow's honest verdict —
+    // ok/failed from GitHub's own conclusion, lost when the stream died.
+    const base = { projectDir: cfg.projectDir, ...(env ? { env } : {}), workflow: workflow.file, ref, dispatchedAt: new Date().toISOString() };
+    let adoptedId: number | undefined;
     const started = runner.track(`GitHub Actions ${workflow.file}`, (io) =>
-      dispatchAndFollow(workflow, pipeline, ref, { onLine: io.line, onProgress: io.progress }),
+      dispatchAndFollow(workflow, pipeline, ref, {
+        onLine: io.line,
+        onProgress: io.progress,
+        onAdopted: ({ runId, url }) => {
+          adoptedId = runId;
+          saveDispatchedRun({ ...base, runId, ...(url ? { url } : {}) });
+        },
+        onConcluded: ({ verdict }) => {
+          if (adoptedId !== undefined) concludeDispatchedRun(cfg.projectDir, adoptedId, verdict);
+        },
+      }),
     );
     if (!started) return c.json({ error: `busy — ${runner.running} is running` }, 409);
     return c.json({ started: true, workflow: workflow.file, ref, jobs: pipeline.jobs.length, ...(env ? { env } : {}), designated: Boolean(designated) });
+  });
+
+  // The persisted dispatched-run record (#165 §6) — what a restarted behold
+  // knows about the last run it triggered. Read-only; `gh run view <id>` is
+  // the live truth and the SSE dial is the live paint; this answers "was
+  // there a run, and did the follow conclude" even when neither is up.
+  app.get("/api/ci/run", (c) => {
+    const run = readDispatchedRun(cfg.projectDir);
+    return c.json({ run: run ?? null });
+  });
+
+  // Re-adopt the persisted, unconcluded run (#165 §6): start following it by
+  // its saved id, painting the dial exactly like the original dispatch. The
+  // boot path does this automatically; the route is the explicit gesture for
+  // a follow that was lost mid-session (deadline, dead gh since recovered).
+  app.post("/api/ci/readopt", async (c) => {
+    const result = await readoptDispatchedRun(cfg, runner);
+    if (result.outcome === "none") return c.json({ error: "no unconcluded dispatched run is persisted for this project" }, 404);
+    if (result.outcome === "refused") return c.json({ error: result.reason, run: result.run }, 409);
+    return c.json({ readopted: true, runId: result.run.runId, workflow: result.run.workflow });
   });
 
   // Resources facet (#59 unify): a best-effort, honest slice of the DoD's
@@ -2778,6 +2853,21 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   });
   const app = createApp(cfg, broadcaster, frames, runner);
   const autoSync = cfg.autoSync ?? "off";
+
+  // #165 §6: a behold restarted mid-deploy owes the live run a reader. If an
+  // unconcluded dispatched run is persisted for this project, re-adopt it by
+  // its saved id — best-effort and out loud: a refusal (gh gone, pipeline
+  // gone) prints its reason and leaves the record for the next attempt or an
+  // explicit POST /api/ci/readopt. Never in carve mode (no project to paint).
+  if (!cfg.carveReport) {
+    void readoptDispatchedRun(cfg, runner).then((result) => {
+      if (result.outcome === "readopted") {
+        process.stdout.write(`  re-adopted dispatched run ${result.run.runId} (${result.run.workflow}) — following via gh\n`);
+      } else if (result.outcome === "refused") {
+        process.stdout.write(`  a dispatched run (${result.run.runId}, ${result.run.workflow}) is persisted but not re-adopted: ${result.reason}\n`);
+      }
+    }).catch(() => undefined);
+  }
 
   // Capture the current graph as a keyframe (overlay when an env is set, else the
   // source graph). Shares the module helper with Refresh + post-op capture.

@@ -2350,7 +2350,9 @@ function runApply(component) {
 // now-line still gets chant's human summary + any non-progress line as a
 // fallback (src/op-runner.ts's apply() only filters OUT recognized
 // RunProgressEvent lines from that channel).
-const APPLY_STATUS_COLOR = { pending: "var(--muted)", running: "var(--pending)", ok: "var(--managed)", failed: "var(--degraded)" };
+// `lost` (#165 §6): the CI follow stream died without a verdict — same tone
+// as the run playhead's lost (RUN_STATUS_COLOR), because it is the same fact.
+const APPLY_STATUS_COLOR = { pending: "var(--muted)", running: "var(--pending)", ok: "var(--managed)", failed: "var(--degraded)", lost: "var(--foreign)" };
 
 function renderApplyProgress(state) {
   const wrap = document.createElement("div");

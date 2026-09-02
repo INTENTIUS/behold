@@ -96,6 +96,20 @@ export function foldPipelineLine(state: PipelineProgressState, line: string): Pi
   return out;
 }
 
+/**
+ * The follow stream died without a verdict (#165 §6): behold stopped being
+ * able to ask GitHub about the run — a dead `gh`, or the follow loop's own
+ * deadline. This is NOT completion and must not paint like one: every chip
+ * keeps its last-observed status verbatim (settled stays settled, running
+ * stays running — that is what was last true), and only the run-level status
+ * says `lost`, the run playhead's own vocabulary for a dead stream. The run
+ * itself may still be live on the forge; `url` (kept) is where the truth
+ * continues.
+ */
+export function losePipelineProgress(state: PipelineProgressState): PipelineProgressState {
+  return { ...state, status: "lost" };
+}
+
 /** The process ended: the exit code is the verdict. A job the log never
  * finished reads from the code too — failed on non-zero, ok on zero (the
  * runner completed; the log just never said so legibly). */

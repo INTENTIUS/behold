@@ -150,8 +150,15 @@ export interface ApplyWaveState {
 
 export interface ApplyProgressState {
   /** "idle": no `run-start` seen yet (the initial/reset state) — distinct
-   * from a component/wave's own "pending" (declared, not yet reached). */
-  status: "idle" | "running" | RunProgressStatus;
+   * from a component/wave's own "pending" (declared, not yet reached).
+   * "lost": the follow stream ended without a verdict (#165 §6 — the CI
+   * path's `dispatchAndFollow` stopped polling, on a dead `gh` or its own
+   * deadline). The run itself may still be live on the forge; the chips
+   * freeze at last-observed and the summary says the stream was lost — the
+   * same honesty rule the run playhead's `runEnded` keeps. The local apply
+   * path never produces it: a local child process either exits or is ours
+   * to wait on. */
+  status: "idle" | "running" | "lost" | RunProgressStatus;
   waves: ApplyWaveState[];
   components: ApplyComponentState[];
 }
