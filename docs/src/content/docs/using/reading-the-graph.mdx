@@ -43,3 +43,16 @@ Foreign-owned is shown as a distinct state from drifted. A field the HPA legitim
 ## Cross-substrate edges
 
 An estate that spans providers keeps its edges: a managed cluster declared in your cloud lexicon and the workload running on it render connected, in the live view and not only in the source graph.
+
+
+## What was deployed, from where
+
+Three cards carry provenance beside their status, so "is this what we meant to deploy" has an answer on the card rather than in a CI log.
+
+- **A component** that the release ledger recorded shows `<sha> via <forge>` — the commit and the id space of the run that deployed it — and the inspect pane's **release** section carries the run id, commit, digest, actor and approver. The run is a link only when the record itself carries an address (chant ≥ 0.54); a bare id from an older chant is stated as unlinked rather than guessed at, and a laptop run says it has nowhere to go.
+- **A Helm chart** whose observed release records its render identity (chant ≥ 0.54) gets a **deployed from** row in the render-diff section: the release was deployed from this project's render byte for byte, from the same inputs, or from something else — a mismatch repaints the card the drift colour, since a release running someone else's render is bad news whatever its status. A release no ledger record names reads as unrecorded, never as a mismatch.
+- **A chant entity carved out of Terraform** carries `carved: <address>` and a `carved → chant` mark on the entity graph and the overlay: the carve manifest names the file it emitted, `chant graph` names the file that declared the entity, and the join is a byte comparison. The inspect pane's **carved from** section gives the Terraform address, stage and estate.
+
+## Ops that touch the estate
+
+On the ops lens, a step whose contract declares which of its arguments identify an estate entity (`httpCheck` and its `url`, chant ≥ 0.54) links to the card it touches: the card is drawn beside the track in an `estate` box with a dashed edge from the step, and the pane lists the value on both ends. The join is exact — a node id, or a declared attribute value equal to the step's — and a value nothing carries stays on the step as unresolved, stated rather than guessed. The status line counts how many references linked.
