@@ -88,6 +88,10 @@ curl -X POST localhost:4600/api/carve/bridge -H 'content-type: application/json'
 
 A file that isn't a peelability report gets a structured `{error, code: "carve-report", remedy}` — in the terminal before the server starts, and from the routes if it goes bad later. It never renders as a blank graph.
 
+## The carved entity, on the chant side
+
+Since chant 0.54 a carve manifest records its emitted files relative to its own directory, and `chant carve status --from <root> --json` is chant's own read over a project's manifests — behold uses it (the local walk stands in below that chant) and joins each manifest's emitted file to the chant entity that file declares. On the entity graph and the overlay that entity carries `carved: <address>` and the `carved → chant` mark; in the carve lens a graduated card takes on the kind, lexicon and declared attributes of the entity it became, while keeping its Terraform address as its id so the morph still glides.
+
 ## What is not here yet
 
-Today's `carve advise --json` reports per-resource boundary **counts**, not the edge lists behind them, so no boundary edges are drawn and the graph says so on its status line. chant#1636 is the ask to publish the lists; behold already draws them (labelled `inbound`/`outbound`, with the survivors that would need a data-source patch named in the inspect pane) the moment a report carries them.
+Boundary edges draw from the lists a chant ≥ 0.52 report carries (chant#1636); a report from an older chant has counts only, and the graph says so on its status line. The cross-environment question — is prod running the render staging tested — now has digests on both sides but no two-environment surface to ask it on.

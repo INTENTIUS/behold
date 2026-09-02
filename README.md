@@ -8,8 +8,8 @@ drift — then act through delegated, gated Ops.
 gets you to a running graph without reading anything else first.
 
 Where Argo CD shows one cluster's tree, behold shows the mixed-substrate estate:
-cloud drift on AWS, supply-chain drift on GitHub Actions, artifact presence on Helm —
-each substrate's own kind of truth, in one picture.
+cloud drift on AWS, supply-chain drift on GitHub Actions, artifact presence and
+render provenance on Helm — each substrate's own kind of truth, in one picture.
 
 ```
 chant source ──build/lint──▶ graph IR ──behold──▶ live graph + drift + (delegated) actions
@@ -353,6 +353,38 @@ components branching on an env-conditioned `namingParams.tier`):
 render and the graph loads with no tier selected — the default for any project
 that doesn't opt in. There's no other tier config surface (not
 `chant.config.ts`, not an env var behold guesses the name of).
+
+### Deploy executors — `executor`
+
+The same file can designate which forge deploys an environment (#165):
+
+```json
+{
+  "executor": {
+    "prod": { "forge": "github", "workflow": "deploy-prod.yml" }
+  }
+}
+```
+
+It names the committed **workflow**, not just the forge, because two
+environments' generated pipelines carry identical job ids and a picker cannot
+tell them apart. For a designated environment the Deploy button dispatches that
+workflow through your own `gh` login and follows the run on the dial; a local
+apply, a committed ApplyOp for that environment, and auto-sync are all refused
+(`409 executor-forge`), and rollback is withheld. Any approval the workflow's
+GitHub environment requires is granted on GitHub, by your identity there — the
+dial links the run's page and offers nothing else, because behold holds no
+identity that could clear a forge gate. A designation behold cannot honour (a
+typo'd forge, a missing workflow, one without `workflow_dispatch`) disables
+Deploy for that environment with the reason, and never falls back to running
+it on your machine. The workflow is read from the `.github/workflows` of the
+repository the project belongs to, so a project that is one directory of a
+monorepo works as-is.
+
+A dispatched run's id is kept under `~/.behold/ci-runs/` — the operator's own
+state, outside the project — so a behold restarted mid-deploy re-adopts the run
+and keeps following it. A follow whose stream dies is reported as `lost`, never
+as a verdict; `just e2e-ci-github` proves the whole contract against GitHub.
 
 ### The hand-layout sidecar — `.behold/layout.json`
 
