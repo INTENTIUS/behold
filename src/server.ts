@@ -131,6 +131,7 @@ import { composeEstate, composeEstateOverlay, estateMembers, withoutJoinedMember
 import { addEstateMemberEdges } from "./estate-edges.ts";
 import { invalidateMember, memberIr } from "./member-ir.ts";
 import { carveStatesFor, carveStatesUnder } from "./carve-discovery.ts";
+import { foreignNote, type GraphIRWithForeign } from "./foreign.ts";
 import { Broadcaster, watchSources } from "./events.ts";
 import { startDriftPoll } from "./poll.ts";
 import { FrameBuffer } from "./frames.ts";
@@ -582,7 +583,10 @@ function carveRoutes(app: Hono, reportPath: string, demo?: CarveDemo): void {
         note:
           carveNote(parsed.report, tfIr) +
           carveStateNote(carveProgress(states.values(), tfIr.nodes.length), states) +
-          (demo?.degraded ? ` Degraded: ${demo.degraded}` : ""),
+          (demo?.degraded ? ` Degraded: ${demo.degraded}` : "") +
+          // chant#2058: the app box shows only the app's own declarations;
+          // what the git-root Op discovery added from elsewhere is named.
+          (appSide && foreignNote(appSide.ir as GraphIRWithForeign) ? ` ${foreignNote(appSide.ir as GraphIRWithForeign)}.` : ""),
       },
     });
   });
