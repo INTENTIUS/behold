@@ -739,7 +739,28 @@ export function parseCiPipeline(stdout: string): CiPipeline {
     const script = Array.isArray(props?.script) ? (props.script as unknown[]).map(String) : [];
     return { ...j, script };
   });
-  return { stages: parsed.stages, jobs, ...(typeof parsed.env === "string" && parsed.env ? { env: parsed.env } : {}) };
+  // chant#2046 put `env` on the generator's result; the CLI's `--format json`
+  // printer drops it (only stages/jobs/yaml reach stdout — filed upstream), so
+  // the env is read off the YAML chant 0.54 also writes it into: the
+  // workflow's `name: chant-components-<env>`, or its `env.CHANT_ENV`.
+  const fromJson = typeof parsed.env === "string" && parsed.env ? parsed.env : undefined;
+  const env = fromJson ?? pipelineEnvFromYaml(doc);
+  return { stages: parsed.stages, jobs, ...(env ? { env } : {}) };
+}
+
+/** The env a generated workflow document names (chant ≥ 0.54.0): the
+ * `chant-components-<env>` name first, `env.CHANT_ENV` second. Pure. */
+export function pipelineEnvFromYaml(doc: Record<string, unknown> | undefined): string | undefined {
+  const name = doc?.name;
+  if (typeof name === "string") {
+    const m = /^chant-components-(.+)$/.exec(name);
+    if (m) return m[1];
+  }
+  const env = doc?.env;
+  if (env && typeof env === "object" && typeof (env as Record<string, unknown>).CHANT_ENV === "string") {
+    return (env as Record<string, string>).CHANT_ENV;
+  }
+  return undefined;
 }
 
 /** The CI projection facet for a project's components: shells `chant build

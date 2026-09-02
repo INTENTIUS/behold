@@ -778,12 +778,29 @@ function carveRoutes(app: Hono, reportPath: string, demo?: CarveDemo): void {
  * ready, pipeline gone, runner busy) — a refusal leaves the record alone, so
  * the next attempt still has it.
  */
+/** The follow's honesty limits (#165 §6), overridable from the environment so
+ * an acceptance run can make a dead stream happen on purpose:
+ * `BEHOLD_CI_FOLLOW_TIMEOUT_MS` (default 6h) and `BEHOLD_CI_POLL_FAIL_BUDGET`
+ * (default 24 consecutive failed polls). Unparseable values are ignored. */
+function followLimits(env: Record<string, string | undefined> = process.env): { followTimeoutMs?: number; pollFailBudget?: number } {
+  const timeout = Number.parseInt(env.BEHOLD_CI_FOLLOW_TIMEOUT_MS ?? "", 10);
+  const budget = Number.parseInt(env.BEHOLD_CI_POLL_FAIL_BUDGET ?? "", 10);
+  return {
+    ...(Number.isInteger(timeout) && timeout >= 0 ? { followTimeoutMs: timeout } : {}),
+    ...(Number.isInteger(budget) && budget > 0 ? { pollFailBudget: budget } : {}),
+  };
+}
+
 async function readoptDispatchedRun(
   cfg: ServerOptions,
   runner: OpRunner,
 ): Promise<{ outcome: "readopted"; run: DispatchedRun } | { outcome: "none" } | { outcome: "refused"; reason: string; run: DispatchedRun }> {
   const run = readDispatchedRun(cfg.projectDir);
-  if (!run || run.concluded) return { outcome: "none" };
+  // A LOST run is exactly the one worth re-adopting: the stream died, the run
+  // itself may still be live on the forge, and `gh run view <id>` reads it as
+  // well after a restart as before. ok/failed are GitHub's own verdicts and
+  // final; those stay concluded.
+  if (!run || (run.concluded && run.concluded.verdict !== "lost")) return { outcome: "none" };
   const ready = await ghReady();
   if (!ready.ok) return { outcome: "refused", reason: ready.reason ?? "gh is not ready", run };
   const pipeline = await ciPipeline(cfg.projectDir, run.env ? { env: run.env } : {}, "github").catch(() => undefined);
@@ -793,6 +810,7 @@ async function readoptDispatchedRun(
   const started = runner.track(`GitHub Actions ${run.workflow} (re-adopted run ${run.runId})`, (io) => {
     io.line(`● re-adopting run ${run.runId} (${run.workflow}, dispatched ${run.dispatchedAt}) — \`gh run view\` is the durable read`);
     return followRun(run.runId, pipeline, {
+      ...followLimits(),
       onLine: io.line,
       onProgress: io.progress,
       onAdopted: ({ runId, url }) => saveDispatchedRun({ ...run, runId, ...(url ? { url } : {}) }),
@@ -2137,6 +2155,7 @@ export function createApp(
     let adoptedId: number | undefined;
     const started = runner.track(`GitHub Actions ${workflow.file}`, (io) =>
       dispatchAndFollow(workflow, pipeline, ref, {
+        ...followLimits(),
         onLine: io.line,
         onProgress: io.progress,
         onAdopted: ({ runId, url }) => {

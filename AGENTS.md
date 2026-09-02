@@ -195,8 +195,13 @@ never falls back to running it here. `/api/project` reports `{forge, workflow,
 ok, reason?}` per designated env.
 
 Without a designation, dispatch picks the committed workflow named for the env
-(`chant-components-<env>`, chant ≥ 0.54.0) and refuses a tie on the older
-job-overlap match rather than letting directory order choose.
+(`chant-components-<env>`, chant ≥ 0.54.0); on the older job-overlap match it
+refuses a tie rather than letting directory order choose, and a workflow named
+for another env never stands in. `just e2e-ci-github` proves the contract
+against the real forge (example-ci + `.github/workflows/behold-e2e-dispatch.yml`),
+including the `lost` verdict, which `BEHOLD_CI_FOLLOW_TIMEOUT_MS` and
+`BEHOLD_CI_POLL_FAIL_BUDGET` let a run force on purpose; a lost run is the one
+`POST /api/ci/readopt` re-follows.
 
 A dispatched run is followed honestly (#165 §6, PR #350): only GitHub's own
 `completed` + conclusion paints `ok`/`failed`; a poll-failure budget or the

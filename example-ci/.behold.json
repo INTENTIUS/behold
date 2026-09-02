@@ -1,0 +1,5 @@
+{
+  "executor": {
+    "prod": { "forge": "github", "workflow": "behold-e2e-dispatch.yml" }
+  }
+}

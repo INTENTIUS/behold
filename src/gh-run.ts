@@ -150,12 +150,26 @@ export function resolveWorkflow(
     if (named.length > 1) return { reason: `${named.length} committed workflows are named ${ciWorkflowName(pipeline.env)} (${named.map((w) => w.file).join(", ")}) — designate one in .behold.json's executor block` };
   }
   const wanted = new Set(pipeline.jobs.map((j) => j.jobName));
+  // A workflow named for ANOTHER env is that env's, whatever its job ids
+  // overlap — two envs' generated pipelines carry identical ids, which is the
+  // whole §4 hazard. It is never a fallback candidate once the pipeline knows
+  // which env it is for.
+  const otherEnv = (w: WorkflowInfo): boolean => {
+    const m = w.name ? /^chant-components-(.+)$/.exec(w.name) : null;
+    return !!m && !!pipeline.env && m[1] !== pipeline.env;
+  };
   const scored = dispatchable
+    .filter((w) => !otherEnv(w))
     .map((w) => ({ w, overlap: w.jobIds.filter((id) => wanted.has(id)).length }))
     .filter((x) => x.overlap > 0)
     .sort((a, b) => b.overlap - a.overlap);
   if (scored.length === 0) {
-    return { reason: "no committed workflow_dispatch workflow whose jobs match the generated pipeline — commit one (or add `workflow_dispatch:` to its `on:` block)" };
+    const excluded = dispatchable.filter(otherEnv).map((w) => `${w.file} (${w.name})`);
+    return {
+      reason:
+        "no committed workflow_dispatch workflow whose jobs match the generated pipeline — commit one (or add `workflow_dispatch:` to its `on:` block)" +
+        (excluded.length ? `; ${excluded.join(", ")} ${excluded.length === 1 ? "is" : "are"} named for another env and never stand in` : ""),
+    };
   }
   if (scored.length > 1 && scored[1].overlap === scored[0].overlap) {
     const tied = scored.filter((x) => x.overlap === scored[0].overlap).map((x) => x.w.file);

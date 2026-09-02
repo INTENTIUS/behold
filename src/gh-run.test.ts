@@ -117,6 +117,15 @@ describe("parseWorkflow / pickWorkflow", () => {
     expect("reason" in undispatchable && undispatchable.reason).toMatch(/declares no workflow_dispatch/);
   });
 
+  it("a workflow named for ANOTHER env never stands in on the overlap fallback — and the refusal says so", () => {
+    // Only prod's workflow is committed; a staging pipeline must not dispatch it.
+    wf("deploy-prod.yml", "name: chant-components-prod\non:\n  workflow_dispatch:\njobs:\n  shared-foundation:\n    runs-on: x\n  loom-backend:\n    runs-on: x\n");
+    const r = resolveWorkflow(dir, { ...pipeline, env: "staging" });
+    expect("reason" in r && r.reason).toMatch(/deploy-prod\.yml \(chant-components-prod\) is named for another env/);
+    // Without an env on the pipeline (pre-0.54) the overlap match still applies.
+    expect(resolveWorkflow(dir, pipeline)).toEqual({ workflow: expect.objectContaining({ file: "deploy-prod.yml" }) });
+  });
+
   it("no candidate at all is the old refusal, unchanged", () => {
     wf("ci.yml", "on:\n  pull_request:\njobs:\n  check:\n    runs-on: x\n");
     const r = resolveWorkflow(dir, pipeline);
