@@ -198,6 +198,17 @@ Without a designation, dispatch picks the committed workflow named for the env
 (`chant-components-<env>`, chant ≥ 0.54.0) and refuses a tie on the older
 job-overlap match rather than letting directory order choose.
 
+A dispatched run is followed honestly (#165 §6, PR #350): only GitHub's own
+`completed` + conclusion paints `ok`/`failed`; a poll-failure budget or the
+follow deadline promotes the run to `lost` (chips frozen at last-observed,
+the run possibly still live at its own page), never to a verdict. The adopted
+run id is persisted as one JSON per project under `~/.behold/ci-runs/` — the
+operator's machine-state, outside the project tree, so the Invariant below
+still names the whole in-project write surface. `GET /api/ci/run` reads the
+record; `POST /api/ci/readopt` (also attempted once at boot) re-follows an
+unconcluded run by its saved id, so a restart mid-deploy leaves the run a
+reader instead of nothing.
+
 ## The operating loop (a strip, a timeline, and a gate that is not the run gate)
 
 A project that declares a `ConvergeOp` gets an operator strip on the ops lens:
@@ -304,11 +315,13 @@ live here, with the enforceable ones enforced.
   it merges. A check that has merely settled is not a pass — read the lines.
   No `gh pr merge --auto`; merge one PR at a time, in order, and rebase the
   next onto what landed.
-- **The local gate** is `just check` (tsc, tests, build). `just test` keeps
-  the reporter's full output in `vitest.log`, because #334's one-shot
-  first-run failures kept losing the failing file's name — if the suite fails
-  once and passes on rerun, the log from the first run is the evidence; attach
-  it to #334.
+- **The local gate** is `just check` (tsc, tests, build). Every vitest run
+  also writes `.vitest-last.json` (the json reporter, PR #351), and `just
+  test` keeps the reporter's full output in `vitest.log` — both gitignored —
+  because #334's one-shot first-run failures kept losing the failing file's
+  name. If the suite fails once and passes on rerun, those two files from the
+  first run are the evidence; attach them to #334 (`jq '.testResults[] |
+  select(.status != "passed") | .name' .vitest-last.json` names the file).
 - **Releasing** is `just release`, after the version-bump PR merged: it tags
   `behold-v<version>`, pushes the tag (which is what runs `release.yml`), and
   waits for npm to show the version. It refuses in every state where a tag
