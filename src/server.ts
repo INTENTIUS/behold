@@ -111,7 +111,7 @@ import {
   type OperatorLogMalformed,
 } from "./operator.ts";
 import { LIVE_IMPORT_LEXICONS } from "./adopt.ts";
-import { detectProject, loadBeholdConfig, type ExecutorDesignation } from "./project.ts";
+import { detectProject, loadBeholdConfig, executorDesignation, type ExecutorDesignation } from "./project.ts";
 
 /** What `/api/project` says about a designated env (#165): whether Deploy can
  * dispatch it right now, and if not, why — the SPA renders the reason on a
@@ -126,7 +126,7 @@ import { nodeDiff, nodeObserved, nodeFieldDrift, type LiveDiffJson } from "./dif
 import { classifyObservedHealth } from "./health.ts";
 import { OpRunner } from "./op-runner.ts";
 import { detectSubstrates, projectLexicons } from "./substrates.ts";
-import { pickAutoSyncOps, suspendedByRollback, type AutoSyncMode } from "./autosync.ts";
+import { pickAutoSyncOps, splitForgeRouted, suspendedByRollback, type AutoSyncMode } from "./autosync.ts";
 import { sourceCommits, openRollbackBranches } from "./history.ts";
 import { composeEstate, composeEstateOverlay, estateMembers, withoutJoinedMembers } from "./estate.ts";
 import { addEstateMemberEdges } from "./estate-edges.ts";
@@ -991,7 +991,9 @@ export function createApp(
     }
     // A committed ApplyOp targeting a designated env is the same local apply
     // in a different coat (#165): refused the same way, for the same reason.
-    const designatedEnv = info.kind === "apply" ? executorFor(info.env) : undefined;
+    // Asked of the Op's OWN member — a composed estate's member designates in
+    // its own `.behold.json`, and the primary's says nothing about it.
+    const designatedEnv = info.kind === "apply" ? executorDesignation(info.dir, info.env) : undefined;
     if (designatedEnv && info.env) return c.json(forgeRefusal(info.env, designatedEnv, `running ${name}`), 409);
     if (!runner.trigger(name, info.env, info.dir, Boolean(info.gate))) {
       return c.json({ error: `an Op is already running (${runner.running})` }, 409);
@@ -2956,26 +2958,21 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   // interlock looks, and its name tags the now-line. Op discovery stays
   // estate-wide — a control-plane member commonly owns the Ops that heal its
   // app members, and #117's substrate matching already picks the right one.
-  // The executor contract as auto-sync sees it (#165): read once at boot from
-  // the primary's `.behold.json`, the same file `createApp` gates Deploy on.
-  const executorDesignations = loadBeholdConfig(cfg.projectDir).executor ?? {};
-  const executorFor = (env: string | undefined): ExecutorDesignation | undefined => (env ? executorDesignations[env] : undefined);
   const routeAutoSync = async (dir: string, movedLexicons: string[]): Promise<void> => {
     const suspended =
       autoSync === "pull-request"
         ? suspendedByRollback(await openRollbackBranches(dir, cfg.env), movedLexicons)
         : new Set<string>();
     // An ApplyOp for a designated env is not a candidate (#165): auto-sync
-    // declines it out loud rather than healing prod from the laptop.
-    const allOps = discoverEstateOps(cfg.projectDirs ?? [cfg.projectDir]);
-    const routed = allOps.filter((o) => o.kind === "apply" && o.env && executorFor(o.env));
-    for (const o of routed) {
-      const d = executorFor(o.env)!;
-      broadcaster.emit("op", `⟳ auto-sync (${autoSync})${memberTag(dir)} declined ${o.name}: env ${o.env} deploys through ${"invalid" in d ? "a forge" : d.forge} per .behold.json — never applied from here`);
+    // declines it out loud rather than healing prod from the laptop. The
+    // designation is the Op's own member's (`.behold.json` beside it).
+    const { routed, local } = splitForgeRouted(discoverEstateOps(cfg.projectDirs ?? [cfg.projectDir]), executorDesignation);
+    for (const { op: o, designation: d } of routed) {
+      broadcaster.emit("op", `⟳ auto-sync (${autoSync})${memberTag(dir)} declined ${o.name}: env ${o.env} deploys through ${"invalid" in d ? "a forge" : d.forge} per ${basename(o.dir)}/.behold.json — never applied from here`);
     }
     const { picks, declined } = pickAutoSyncOps(
       autoSync,
-      allOps.filter((o) => !routed.includes(o)),
+      local,
       runner.running,
       movedLexicons,
       suspended,

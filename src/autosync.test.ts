@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { pickAutoSyncOps, suspendedByRollback, isAutoSyncMode } from "./autosync.ts";
+import { pickAutoSyncOps, suspendedByRollback, isAutoSyncMode, splitForgeRouted } from "./autosync.ts";
 import type { OpInfo } from "./ops.ts";
 
 /** A single-substrate project: one ApplyOp, one ReconcileOp, neither declaring a
@@ -164,5 +164,30 @@ describe("isAutoSyncMode", () => {
     expect(isAutoSyncMode("pull-request")).toBe(true);
     expect(isAutoSyncMode("off")).toBe(true);
     expect(isAutoSyncMode("nonsense")).toBe(false);
+  });
+});
+
+
+// #165: an ApplyOp whose env its OWN member designates to a forge is never a
+// candidate, and the designation asked of is the member's, not the primary's.
+describe("splitForgeRouted", () => {
+  const ops = [
+    { name: "prod-apply", kind: "apply" as const, env: "prod", dir: "/estate/member" },
+    { name: "prod-apply-here", kind: "apply" as const, env: "prod", dir: "/estate/primary" },
+    { name: "dev-apply", kind: "apply" as const, env: "dev", dir: "/estate/member" },
+    { name: "prod-reconcile", kind: "reconcile" as const, env: "prod", dir: "/estate/member" },
+  ];
+  const designation = (dir: string, env: string | undefined) => (dir === "/estate/member" && env === "prod" ? { forge: "github", workflow: "deploy.yml" } : undefined);
+
+  it("routes only the member's designated ApplyOp; the primary's same-env Op and a ReconcileOp stay local", () => {
+    const { routed, local } = splitForgeRouted(ops, designation);
+    expect(routed.map((r) => r.op.name)).toEqual(["prod-apply"]);
+    expect(routed[0].designation).toEqual({ forge: "github", workflow: "deploy.yml" });
+    expect(local.map((o) => o.name)).toEqual(["prod-apply-here", "dev-apply", "prod-reconcile"]);
+  });
+
+  it("an Op with no env cannot be designated", () => {
+    const { routed } = splitForgeRouted([{ name: "x", kind: "apply", dir: "/estate/member" }], () => ({ forge: "github", workflow: "d.yml" }));
+    expect(routed).toEqual([]);
   });
 });

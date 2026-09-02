@@ -148,3 +148,25 @@ export function pickAutoSyncOps(
 
   return { picks: [...byOp.values()], declined };
 }
+
+
+/**
+ * The ApplyOps auto-sync must never trigger because their env deploys through
+ * a forge (#165): split them off before routing, each with the designation
+ * that routes it, keyed on the Op's OWN member — a composed estate's member
+ * carries its own `.behold.json`. Pure; `designation` is injected so the
+ * routing stays testable without a filesystem.
+ */
+export function splitForgeRouted<D>(
+  ops: OpInfo[],
+  designation: (dir: string, env: string | undefined) => D | undefined,
+): { routed: Array<{ op: OpInfo; designation: D }>; local: OpInfo[] } {
+  const routed: Array<{ op: OpInfo; designation: D }> = [];
+  const local: OpInfo[] = [];
+  for (const op of ops) {
+    const d = op.kind === "apply" && op.env ? designation(op.dir, op.env) : undefined;
+    if (d !== undefined) routed.push({ op, designation: d });
+    else local.push(op);
+  }
+  return { routed, local };
+}

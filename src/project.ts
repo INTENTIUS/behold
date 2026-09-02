@@ -374,3 +374,25 @@ export function detectProjectShape(projectDir: string): ProjectShape {
   if (members.length) return { kind: "estate", members, membersFrom: from };
   return { kind: "none" };
 }
+
+
+/**
+ * A member's executor designation for one env (#165), read from THAT member's
+ * `.behold.json` — not the primary's. An Op belongs to the project directory
+ * that declares it (`OpInfo.dir`, src/ops.ts), so the guard that keeps a
+ * designated env off this machine has to ask the same directory. Cached per
+ * directory for the process: the file is config a boot reads, like the
+ * primary's, not state that moves under a running server.
+ */
+const executorByDir = new Map<string, Record<string, ExecutorDesignation> | undefined>();
+export function executorDesignation(projectDir: string, env: string | undefined): ExecutorDesignation | undefined {
+  if (!env) return undefined;
+  if (!executorByDir.has(projectDir)) executorByDir.set(projectDir, loadBeholdConfig(projectDir).executor);
+  return executorByDir.get(projectDir)?.[env];
+}
+
+/** Drop the per-directory executor cache — a test that rewrites `.behold.json`, or a served-project switch. */
+export function resetExecutorCache(dir?: string): void {
+  if (dir === undefined) executorByDir.clear();
+  else executorByDir.delete(dir);
+}

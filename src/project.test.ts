@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { detectProject, detectProjectShape, loadBeholdConfig, readExecutor } from "./project.ts";
+import { detectProject, detectProjectShape, loadBeholdConfig, readExecutor, executorDesignation, resetExecutorCache } from "./project.ts";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -296,5 +296,25 @@ describe("readExecutor", () => {
     const d = tmpBeholdConfig(JSON.stringify({ executor: { prod: { forge: "github", workflow: "deploy-prod.yml" } } }));
     expect(loadBeholdConfig(d)).toEqual({ executor: { prod: { forge: "github", workflow: "deploy-prod.yml" } } });
     rmSync(d, { recursive: true, force: true });
+  });
+});
+
+
+describe("executorDesignation — per member, not per primary (#165)", () => {
+  it("answers from the directory asked, and caches per directory", () => {
+    const member = tmpBeholdConfig(JSON.stringify({ executor: { prod: { forge: "github", workflow: "deploy-prod.yml" } } }));
+    const primary = tmpBeholdConfig(JSON.stringify({}));
+    resetExecutorCache();
+    expect(executorDesignation(member, "prod")).toEqual({ forge: "github", workflow: "deploy-prod.yml" });
+    expect(executorDesignation(member, "staging")).toBeUndefined();
+    expect(executorDesignation(primary, "prod")).toBeUndefined();
+    expect(executorDesignation(member, undefined)).toBeUndefined();
+    // Cached: rewriting the file does not change the answer until reset.
+    writeFileSync(join(member, ".behold.json"), JSON.stringify({}));
+    expect(executorDesignation(member, "prod")).toBeDefined();
+    resetExecutorCache(member);
+    expect(executorDesignation(member, "prod")).toBeUndefined();
+    rmSync(member, { recursive: true, force: true });
+    rmSync(primary, { recursive: true, force: true });
   });
 });
