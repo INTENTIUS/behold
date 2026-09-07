@@ -55,17 +55,12 @@
  * with the process.
  * ---------------------------------------------------------------------------
  */
-import { createHash } from "node:crypto";
-import { readdirSync, statSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { resolve } from "node:path";
+import { memberSourceStamp } from "./member-source.ts";
+export { memberSourceStamp } from "./member-source.ts";
+import { invalidateReadGeneration } from "./read-scheduler.ts";
 import type { GraphIR } from "@intentius/chant";
 import { graphIr, resolveChant, type GraphOptions } from "./chant.ts";
-
-/** Directories a member's source stamp never walks: build output and installed
- * packages are not the member's declared source, and a `node_modules` sweep is
- * exactly the walk that would make stamping cost more than the spawn it saves
- * (the same set `watchSource` ignores, src/events.ts). */
-const SKIP = new Set(["node_modules", "dist", ".git"]);
 
 /** How many entries the cache holds before the least recently used are dropped.
  * A bound, not a tuning knob: #306 fixed an OOM and this must not reintroduce
@@ -76,47 +71,6 @@ const SKIP = new Set(["node_modules", "dist", ".git"]);
 export function memberIrCacheSize(env: Record<string, string | undefined> = process.env): number {
   const override = Number.parseInt(env.BEHOLD_ESTATE_IR_CACHE ?? "", 10);
   return Number.isInteger(override) && override >= 0 ? override : 64;
-}
-
-/**
- * A fingerprint of everything a member declares on disk: each file's
- * member-relative path, mtime and size, hashed. Undefined when the member
- * cannot be walked at all — an unstampable member is never cached, which is the
- * safe direction (a spawn, not a guess).
- *
- * The whole member root, not just the resolved graph source dir: `chant.config.ts`
- * decides what the source dir even is, a multi-stack member graphs from several
- * of them, and a member's `cluster/` build root is source too. Over-broad by
- * design — a stray edit under the member costs one spawn, and the alternative
- * (walking only what this read happens to graph) is a stamp that can miss the
- * file that changed the answer. Exported for testing.
- */
-export function memberSourceStamp(dir: string): string | undefined {
-  const root = resolve(dir);
-  const h = createHash("sha1");
-  let any = false;
-  const walk = (at: string): void => {
-    // Sorted, so the same tree stamps the same however the filesystem enumerates it.
-    const entries = readdirSync(at, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1));
-    for (const e of entries) {
-      if (SKIP.has(e.name)) continue;
-      const path = join(at, e.name);
-      if (e.isDirectory()) {
-        walk(path);
-        continue;
-      }
-      if (!e.isFile()) continue; // sockets, fifos, dangling symlinks: nothing to stamp
-      const st = statSync(path);
-      h.update(`${relative(root, path)}\0${st.mtimeMs}\0${st.size}\n`);
-      any = true;
-    }
-  };
-  try {
-    walk(root);
-  } catch {
-    return undefined;
-  }
-  return any ? h.digest("hex") : undefined;
 }
 
 /** How a member is read (#368): the tool that answers for it, as the version
@@ -172,6 +126,7 @@ export function memberIrCacheStats(): { hits: number; misses: number; entries: n
 /** Drop `dir`'s entries (every option shape), or the whole cache when called
  * with nothing. Wired to the estate source watcher — see rule 5 above. */
 export function invalidateMember(dir?: string): void {
+  invalidateReadGeneration();
   if (dir === undefined) {
     cache.clear();
     return;

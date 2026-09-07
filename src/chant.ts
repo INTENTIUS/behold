@@ -28,6 +28,9 @@ import { stripAnsi } from "./ansi.ts";
 // (package.json `exports["./yaml"]` has no compiled-JS condition), which a
 // plain `node dist/cli.js` cannot import unbundled (Node refuses to
 // type-strip files under node_modules).
+import { createHash } from "node:crypto";
+import { memberSourceStamp } from "./member-source.ts";
+import { ReadScheduler, currentReadSignal, readGeneration } from "./read-scheduler.ts";
 import { parseYAML } from "@intentius/chant/yaml";
 import { carveStatusArgs, type CarveStatusJson } from "./carve-manifest.ts";
 import { dropForeignDeclarations } from "./foreign.ts";
@@ -297,41 +300,94 @@ export interface ChantRun {
 }
 
 /** Run the chant bin, capturing stdout/stderr and the exit code. Never rejects on
- * a non-zero exit (only on a spawn failure) — a failing exit is data.
+ * a non-zero exit — a failing exit is data. Scheduled reads can also reject
+ * on queue saturation, cancellation, or deadline expiry.
  * `envOverride` (M2, #54: the tier/target lenses' `envOverridesFor`) merges over
  * `process.env` for this one spawn only — never a global mutation, so a picked
  * lens on one request can't bleed into a concurrent request on another. */
+// Positive read allowlist: delegated mutations (including build/carve emit) must
+// never be coalesced or canceled by the observation scheduler.
+export function isScheduledRead(args: string[]): boolean {
+  return args[0] === "graph" ||
+    (args[0] === "components" && args[1] === "status") ||
+    (args[0] === "lifecycle" && ["diff", "plan"].includes(args[1])) ||
+    (args[0] === "helm" && ["renders", "diff"].includes(args[1])) ||
+    (args[0] === "run" && args[1] === "status") ||
+    (args[0] === "operator" && ["status", "log"].includes(args[1]));
+}
+const reads = new ReadScheduler<ChantRun>();
+let unstampableRead = 0;
+
 export function runChantRaw(
   args: string[],
   projectDir?: string,
   envOverride?: Record<string, string>,
 ): Promise<ChantRun> {
+  const chant = resolveChant(projectDir);
+  if (!isScheduledRead(args)) return spawnChant(chant.bin, args, projectDir, envOverride);
+  const dir = resolve(projectDir ?? process.cwd());
+  const stamp = memberSourceStamp(dir);
+  const effectiveEnv = { ...process.env, ...envOverride };
+  const environment = Object.entries(effectiveEnv).sort(([a], [b]) => a.localeCompare(b));
+  // Include the resolved compiler, exact argv (namespace/lens/env included),
+  // source identity and effective environment. Unreadable source cannot share.
+  const key = createHash("sha256").update(JSON.stringify([
+    dir, chant.bin, chant.version, args, environment, readGeneration(), stamp ?? ++unstampableRead,
+  ])).digest("hex");
+  return reads.read(key, (signal) => spawnChant(chant.bin, args, projectDir, effectiveEnv, signal), currentReadSignal())
+    .then((result) => ({ ...result })); // callers own their result; JSON is parsed separately
+}
+
+function spawnChant(
+  bin: string,
+  args: string[],
+  projectDir?: string,
+  envOverride?: NodeJS.ProcessEnv,
+  signal?: AbortSignal,
+): Promise<ChantRun> {
+  if (signal?.aborted) return Promise.reject(signal.reason);
   return new Promise((resolvePromise, reject) => {
-    // Run in the project dir: `chant graph --live` reads the current working
-    // directory (not the path arg), so the cwd must be the project for the live
-    // and overlay paths to observe the right environment.
-    const proc = spawn(chantBin(projectDir), args, {
+    // Read workers own a process group: killing only npx leaves tsx/Node alive.
+    // Writes retain their existing lifetime and process behavior.
+    const grouped = !!signal && process.platform !== "win32";
+    const proc = spawn(bin, args, {
       ...(projectDir ? { cwd: projectDir } : {}),
-      ...(envOverride ? { env: { ...process.env, ...envOverride } } : {}),
+      ...(envOverride ? { env: signal ? envOverride : { ...process.env, ...envOverride } } : {}),
+      ...(grouped ? { detached: true } : {}),
       stdio: ["ignore", "pipe", "pipe"],
     });
-    // Accumulate raw Buffer chunks and decode once at the end. Coercing each
-    // chunk to a string as it arrives (`s += d`) corrupts a multi-byte UTF-8
-    // character that straddles a chunk boundary — which for loomster's ~200KB
-    // entity-graph IR reliably mangles the JSON near the 64KB highWaterMark and
-    // makes `JSON.parse` throw. Concatenating bytes first avoids the split.
     const outChunks: Buffer[] = [];
     const errChunks: Buffer[] = [];
+    let escalation: ReturnType<typeof setTimeout> | undefined;
+    const kill = (name: NodeJS.Signals): void => {
+      try {
+        if (grouped && proc.pid) process.kill(-proc.pid, name);
+        else proc.kill(name);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ESRCH") proc.kill(name);
+      }
+    };
+    const abort = (): void => {
+      kill("SIGTERM");
+      escalation = setTimeout(() => kill("SIGKILL"), 1000);
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    const cleanup = (): void => {
+      signal?.removeEventListener("abort", abort);
+      clearTimeout(escalation);
+      // A wrapper can exit before a descendant that ignores TERM. Finish the
+      // group before releasing its budget, even if its pipes already closed.
+      if (signal?.aborted && grouped) kill("SIGKILL");
+    };
+    // Decode once: a UTF-8 character can straddle stdout chunks.
     proc.stdout.on("data", (d: Buffer) => outChunks.push(d));
     proc.stderr.on("data", (d: Buffer) => errChunks.push(d));
-    proc.on("error", reject);
-    proc.on("close", (code) =>
-      resolvePromise({
-        code: code ?? 1,
-        stdout: Buffer.concat(outChunks).toString("utf8"),
-        stderr: Buffer.concat(errChunks).toString("utf8"),
-      }),
-    );
+    proc.on("error", (error) => { cleanup(); reject(error); });
+    proc.on("close", (code) => {
+      cleanup();
+      if (signal?.aborted) { reject(signal.reason); return; }
+      resolvePromise({ code: code ?? 1, stdout: Buffer.concat(outChunks).toString("utf8"), stderr: Buffer.concat(errChunks).toString("utf8") });
+    });
   });
 }
 

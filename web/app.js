@@ -8,6 +8,7 @@
 // floating control panel's chrome (panel.js — drag/snap/collapse/tabs, persisted
 // position), and the theme picker into the panel's View-tab slot (a stable element
 // renderPanelView never rewrites, so the select mounts once and survives re-renders).
+import { createRefreshQueue } from "./refresh-queue.js";
 import { initTheme, mountThemePicker, readableOn, colorForCategory, onThemeChange, getTokens, getTheme, pinTokensFor } from "./theme.js";
 // #399 M2 / #401 M4 of #397: the colour-by modes' arithmetic and the
 // provenance badge's wording — every decision the behaviour overlay makes,
@@ -4420,7 +4421,8 @@ function renderPreconditionError(body) {
 }
 
 // Fetch the current view (source graph, or the picked env's live overlay).
-async function load(opts = {}) {
+const load = createRefreshQueue(loadOnce);
+async function loadOnce(opts = {}, isCurrent = () => true) {
   const meta = document.getElementById("meta");
   // A background settle re-pull (post-apply) shouldn't flash the meta/overlay.
   if (!opts.quiet) {
@@ -4503,6 +4505,7 @@ async function load(opts = {}) {
     }
     const res = await apiFetch(`${endpoint}?${q}`);
     const body = await res.json();
+    if (!isCurrent()) return; // a newer view/event is pending; do not paint the old result
     if (!res.ok) {
       // #72: a classified precondition failure (lint gate, not installed, a
       // tier that needs credentials) gets the calmer entry/error card instead
@@ -4523,13 +4526,13 @@ async function load(opts = {}) {
       autoZoomFallback = false;
       applyZoom("resources");
       renderStatusbar();
-      return load(opts);
+      return loadOnce(opts, isCurrent);
     }
     autoZoomFallback = false;
     render(body.ir, body.svg, body.meta);
   } catch (err) {
     // A background settle poll must not blow away a good graph on a transient error.
-    if (!opts.quiet) {
+    if (!opts.quiet && isCurrent()) {
       // Text, never innerHTML — `err.message` embeds chant's own stderr, which
       // is not ours to interpolate as markup (the sibling precondition card has
       // said so since #72; this branch had been left behind).
@@ -4669,20 +4672,12 @@ initPickers();
 // No backend in a static export → no live event stream; a no-op keeps the
 // `events.addEventListener(...)` wiring below harmless.
 const events = staticMode ? { addEventListener() {} } : new EventSource("/api/events");
-// Post-op settle re-pull: an apply's CLI can exit while the last stacks are still
-// flipping to *_COMPLETE, so the immediate reload catches a few components mid-
-// deploy ("all done, 3 still pending"). Quietly re-pull a couple more times so
-// the graph lands on the final colours without a manual Re-check live.
-let settleTimers = [];
-function scheduleSettle() {
-  settleTimers.forEach(clearTimeout);
-  settleTimers = [3000, 8000, 15000].map((ms) => setTimeout(() => load({ quiet: true }), ms));
-}
+// One notification requests one refresh. Further notifications during a slow
+// read collapse to one follow-up; no wall-clock timers multiply estate scans.
 events.addEventListener("changed", () => {
   bulkDiffCache = null; // an op ran → per-node live state may have changed
   load();
   loadSubstrates(); // a bring-up (or any op) finished → re-detect readiness
-  scheduleSettle();
 });
 
 // Substrate readiness (M5, #54): is each substrate the project needs actually

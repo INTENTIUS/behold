@@ -12,6 +12,7 @@
  * delegated gated writes".
  */
 import { Hono, type Context, type Next } from "hono";
+import { withReadSignal } from "./read-scheduler.ts";
 import { resolveSubstrateTargets } from "./targets.ts";
 import { loadKubeconfig, resolveK8sTarget, type K8sTarget } from "./k8s-target.ts";
 import { streamSSE } from "hono/streaming";
@@ -130,7 +131,7 @@ import { OpRunner } from "./op-runner.ts";
 import { detectSubstrates, projectLexicons } from "./substrates.ts";
 import { pickAutoSyncOps, splitForgeRouted, suspendedByRollback, type AutoSyncMode } from "./autosync.ts";
 import { sourceCommits, openRollbackBranches } from "./history.ts";
-import { composeEstate, composeEstateOverlay, estateMembers, withoutJoinedMembers } from "./estate.ts";
+import { composeEstate, composeEstateOverlay, estateNamespaceScopes, estateMembers, withoutJoinedMembers } from "./estate.ts";
 import { statusVocabulary } from "./status-vocabulary.ts";
 import { attachBehaviour, type BehaviourMember } from "./behaviour.ts";
 import { addEstateMemberEdges } from "./estate-edges.ts";
@@ -925,6 +926,10 @@ export function createApp(
   // (src/choudoufu-member.ts `setChoudoufuRunner`); undefined in production.
   setChoudoufuRunner(cfg.choudoufu?.run);
   setEstateLexiconRead(cfg.choudoufu ? (cfg.choudoufu.lexicon ?? null) : undefined);
+  app.use("/api/*", async (c, next) => {
+    if (c.req.method === "GET") return withReadSignal(c.req.raw.signal, next);
+    await next();
+  });
 
   // Carve mode (#252) claims /api/graph, /api/project and friends before the
   // project-shaped handlers are registered — see carveRoutes.
@@ -3514,7 +3519,7 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   // whose overlay moved (#297) — attribution flows through to the now-line and
   // the rollback interlock.
   const onPollDrift = (dir: string, movedLexicons: string[]): void => {
-    onEstateChange(dir);
+    broadcaster.emit("changed", dir);
     if (autoSync === "off") return;
     void routeAutoSync(dir, movedLexicons);
   };
@@ -3582,16 +3587,25 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   // graph`, which would fail once a second on a directory that isn't a project).
   const carve = !!cfg.carveReport;
   let stopWatch = carve ? () => {} : watchSources(cfg.projectDirs ?? [cfg.projectDir], onMemberSourceChange);
+  let pollScopes = new Map<string, string>();
   let stopPoll =
     !carve && cfg.env && cfg.pollSecs
       ? startDriftPoll({
           intervalMs: cfg.pollSecs * 1000,
+          beforeSweep: async () => {
+            pollScopes = await estateNamespaceScopes(cfg.projectDirs ?? [cfg.projectDir], { env: cfg.env });
+          },
+          onRead: (dir, ir) => {
+            // Lanes currently records the primary only. Reuse its actual poll
+            // result, including the baseline, without an extra live invocation.
+            if (dir === cfg.projectDir && frames.capture(ir) !== null) broadcaster.emit("frames");
+          },
           // Per-member queries, swept sequentially inside the poll (#297): a
           // member read can take seconds (#295), so an estate-wide tick must
           // stretch, not stampede N describes at once.
           members: (cfg.projectDirs ?? [cfg.projectDir]).map((dir) => ({
             dir,
-            query: () => graphIr(dir, { live: true, overlay: true, env: cfg.env }),
+            query: () => graphIr(dir, { live: true, overlay: true, env: cfg.env, ...(pollScopes.has(dir) ? { namespace: pollScopes.get(dir) } : {}) }),
           })),
           onChange: onPollDrift,
           onError: (dir, err) =>

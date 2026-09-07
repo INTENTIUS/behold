@@ -284,8 +284,31 @@ graph updates, no reload. Add `--poll <secs>` (with `--env`) to also re-query li
 drift on an interval and push updates when a node's status changes:
 
 ```sh
-behold serve ./infra --env prod --poll 30   # watch source + poll drift every 30s
+behold serve ./infra --env prod --poll 30   # wait 30s between completed drift sweeps
 ```
+
+**Read budget.** HTTP observations, background polling, and frame captures share
+one Chant subprocess budget: two reads at once by default (one on a one-CPU
+host). `BEHOLD_ESTATE_CONCURRENCY` overrides that process-wide limit. Up to 64
+distinct reads can wait; excess reads fail explicitly rather than growing an
+unbounded queue. Identical in-flight reads share work only when the project,
+resolved Chant, source stamp, argv, and effective environment match. Completed
+live results are not cached. Source watcher invalidation also separates new
+requests from work begun before an edit.
+
+A running read has a 180-second deadline, configurable with
+`BEHOLD_READ_TIMEOUT_MS`. A disconnected GET releases its subscription; when no
+callers remain, the read is canceled. On Unix, cancellation stops the whole
+npm/tsx/Node process group, escalating from TERM to KILL after one second. On
+Windows only the direct child is terminated. Delegated writes retain their
+existing lifecycle and are never deduplicated as reads.
+
+The browser runs one refresh at a time and collapses intervening notifications
+into one follow-up. It no longer starts additional reads at 3/8/15-second offsets.
+Polling uses the same estate namespace bindings as the HTTP overlay and reuses
+the primary member's observation for lanes capture. Slow sweeps extend the poll
+period; they do not overlap the next sweep. These bounds control duplicate work;
+they do not eliminate Chant's underlying live discovery cost.
 
 behold shells the **project's own** chant (resolved from the project's
 `node_modules` first), so the project decides the chant version — pin it to

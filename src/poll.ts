@@ -5,6 +5,7 @@
  * `--live` is describe calls, not a cloud watch — the cadence is the drift
  * resolution. Off unless `--poll` is set.
  */
+import { withReadSignal } from "./read-scheduler.ts";
 import type { GraphIR } from "@intentius/chant";
 
 /** A stable fingerprint of the drift state: each node's id + its `_status`
@@ -84,6 +85,10 @@ export interface DriftPollOptions {
   /** Fired per member whose drift moved, with that member's dir and the
    * substrates that moved (#117) — sorted, and never empty when called. */
   onChange: (dir: string, movedLexicons: string[]) => void;
+  /** Refresh estate namespace bindings once before a sweep. */
+  beforeSweep?: () => Promise<void>;
+  /** Reuse the observation for frame capture instead of describing again. */
+  onRead?: (dir: string, ir: GraphIR) => void;
   onError?: (dir: string, err: unknown) => void;
 }
 
@@ -104,14 +109,24 @@ export interface DriftPollOptions {
  */
 export function startDriftPoll(opts: DriftPollOptions): () => void {
   let stopped = false;
+  const controller = new AbortController();
   const last = new Map<string, Record<string, string>>();
   let timer: ReturnType<typeof setTimeout>;
 
   const tick = async (): Promise<void> => {
+    try { await withReadSignal(controller.signal, () => opts.beforeSweep?.()); }
+    catch (err) {
+      opts.onError?.(opts.members[0]?.dir ?? "", err);
+      if (!stopped) timer = setTimeout(tick, opts.intervalMs);
+      return;
+    }
     for (const member of opts.members) {
       if (stopped) return;
       try {
-        const digests = driftDigestsByLexicon(await member.query());
+        const ir = await withReadSignal(controller.signal, member.query);
+        if (stopped) return;
+        opts.onRead?.(member.dir, ir);
+        const digests = driftDigestsByLexicon(ir);
         const prev = last.get(member.dir);
         if (prev !== undefined) {
           const moved = changedLexicons(prev, digests);
@@ -129,5 +144,6 @@ export function startDriftPoll(opts: DriftPollOptions): () => void {
   return () => {
     stopped = true;
     clearTimeout(timer);
+    controller.abort(new Error("Drift poll stopped"));
   };
 }
