@@ -16,6 +16,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { isMemberKind, memberKindOf, memberKindSpec, registeredMemberKinds, type MemberKind } from "./member-kind.ts";
 
 /** A `chant.config.ts` `stacks[]` entry: a multi-stack project's independently-
  * deployed CloudFormation stack, built from its own source directory. */
@@ -78,18 +79,46 @@ export interface TierConfig {
  */
 export type ExecutorDesignation = { forge: string; workflow: string } | { invalid: string };
 
+/**
+ * One declared estate member (#368): a directory relative to the root that
+ * declares it, and what kind of member it is. `.behold.json` accepts a bare
+ * string (`"app"`, which is `{ "dir": "app", "kind": "chant" }` — every file
+ * written before kinds existed keeps meaning what it meant) or the object
+ * form (`{ "dir": "estates/network", "kind": "choudoufu" }`). A kind behold
+ * does not know is kept with the reason, like an executor designation it
+ * cannot honour: dropping it would silently read a non-chant member as chant,
+ * which is the failure kinds exist to end.
+ */
+export type MemberDecl = { dir: string; kind: MemberKind } | { dir: string; invalid: string };
+
 export interface BeholdConfig {
   tiers?: TierConfig;
   /** Per-environment executor designations (#165). Absent means every env
    * deploys the way it always has (`chant run` on this machine). */
   executor?: Record<string, ExecutorDesignation>;
-  /** Estate members (#236): the member project directories, relative to the
-   * root that declares them. An estate root is not itself a chant project —
-   * it's the directory you'd run `behold serve a b c` from — so this is how a
-   * root says which projects compose it without behold guessing. Absent when
-   * the file declares none (see `detectProjectShape`, which then falls back to
-   * npm `workspaces`). */
-  members?: string[];
+  /** Estate members (#236, #368): the member directories, relative to the
+   * root that declares them, each with its kind. An estate root is not itself
+   * a chant project — it's the directory you'd run `behold serve a b c` from —
+   * so this is how a root says which projects compose it without behold
+   * guessing. Absent when the file declares none (see `detectProjectShape`,
+   * which then falls back to npm `workspaces`). */
+  members?: MemberDecl[];
+}
+
+/** Parse one `members[]` entry; undefined for an entry that is not a member
+ * declaration at all (a number, an object with no `dir`) — those are dropped
+ * as they always were. A recognisable declaration with a bad kind is kept as
+ * invalid, with the words `behold doctor` prints. */
+function readMember(v: unknown): MemberDecl | undefined {
+  if (typeof v === "string") return v ? { dir: v, kind: "chant" } : undefined;
+  if (!v || typeof v !== "object") return undefined;
+  const { dir, kind } = v as { dir?: unknown; kind?: unknown };
+  if (typeof dir !== "string" || !dir) return undefined;
+  if (kind === undefined) return { dir, kind: "chant" };
+  const known = registeredMemberKinds();
+  if (!isMemberKind(kind)) return { dir, invalid: `unknown member kind ${JSON.stringify(kind)} (kinds are: ${known.join(", ")})` };
+  if (!memberKindSpec(kind)) return { dir, invalid: `member kind "${kind}" is declared, but this behold has no reader for it (kinds are: ${known.join(", ")})` };
+  return { dir, kind };
 }
 
 const CONFIG_NAMES = ["chant.config.ts", "chant.config.mts", "chant.config.js", "chant.config.mjs"];
@@ -318,7 +347,7 @@ export function loadBeholdConfig(projectDir: string): BeholdConfig {
   try {
     const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
     const tiers = readTiers(raw);
-    const members = Array.isArray(raw.members) ? raw.members.filter((m): m is string => typeof m === "string" && !!m) : [];
+    const members = Array.isArray(raw.members) ? raw.members.map(readMember).filter((m): m is MemberDecl => !!m) : [];
     const executor = readExecutor(raw);
     return { ...(tiers ? { tiers } : {}), ...(members.length ? { members } : {}), ...(executor ? { executor } : {}) };
   } catch {
@@ -339,11 +368,18 @@ export interface ProjectShape {
   kind: ProjectKind;
   /** The `chant.config.*` path, for `kind: "project"`. */
   configFile?: string;
-  /** Member directories relative to `dir`, for `kind: "estate"` — only those
-   * that are themselves chant projects, in declared order. */
-  members?: string[];
+  /** Members relative to `dir`, for `kind: "estate"` — only those whose
+   * kind's probe accepts them, in declared order, each with its kind (#368). */
+  members?: { dir: string; kind: MemberKind }[];
   /** Where the member list came from, so a report never implies behold chose it. */
   membersFrom?: "behold-config" | "workspaces";
+  /** Declared members behold cannot serve, with the reason (#368): a kind it
+   * does not know, or a directory that fails its declared kind's probe. Set
+   * only for `.behold.json` declarations — a workspaces entry that is not a
+   * member was never a declaration, so it is skipped, not reported. Present
+   * on a `none` shape too, so doctor can say why a root with only invalid
+   * members is not an estate. */
+  invalidMembers?: { dir: string; invalid: string }[];
 }
 
 /** Read npm `workspaces` from a root package.json — the array form only (the
@@ -370,9 +406,37 @@ export function detectProjectShape(projectDir: string): ProjectShape {
   if (configFile) return { kind: "project", configFile };
   const declared = loadBeholdConfig(projectDir).members;
   const from: ProjectShape["membersFrom"] = declared ? "behold-config" : "workspaces";
-  const members = (declared ?? readWorkspaces(projectDir)).filter((m) => !!chantConfigPath(join(projectDir, m)));
-  if (members.length) return { kind: "estate", members, membersFrom: from };
-  return { kind: "none" };
+  const members: { dir: string; kind: MemberKind }[] = [];
+  const invalid: { dir: string; invalid: string }[] = [];
+  if (declared) {
+    // A declaration is a claim behold checks: the named kind's own probe, and
+    // nothing else, decides. Failing it is reported, not silently dropped —
+    // a `.behold.json` that names a member is the one place "this directory
+    // is an estate member" was written down.
+    for (const m of declared) {
+      if ("invalid" in m) {
+        invalid.push(m);
+        continue;
+      }
+      const spec = memberKindSpec(m.kind);
+      if (!spec) {
+        invalid.push({ dir: m.dir, invalid: `member kind "${m.kind}" has no reader in this behold` });
+        continue;
+      }
+      if (spec.probe(join(projectDir, m.dir))) members.push(m);
+      else invalid.push({ dir: m.dir, invalid: `declared as ${m.kind}, but ${m.dir} has no ${spec.expects}` });
+    }
+  } else {
+    // npm workspaces name packages, not members; the ones some kind claims
+    // are members, the rest (a tooling package) are simply not.
+    for (const dir of readWorkspaces(projectDir)) {
+      const kind = memberKindOf(join(projectDir, dir));
+      if (kind) members.push({ dir, kind });
+    }
+  }
+  const invalidMembers = invalid.length ? { invalidMembers: invalid } : {};
+  if (members.length) return { kind: "estate", members, membersFrom: from, ...invalidMembers };
+  return { kind: "none", ...invalidMembers };
 }
 
 

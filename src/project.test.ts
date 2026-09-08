@@ -208,9 +208,36 @@ describe("loadBeholdConfig", () => {
     expect(loadBeholdConfig(dir)).toEqual({ tiers: { envVar: "LOOM_TIER", values: ["light", "production"] } });
   });
 
-  it("reads estate members (#236) alongside tiers, and keeps only string entries", () => {
-    expect(loadBeholdConfig(make(JSON.stringify({ members: ["a", 7, "b"] })))).toEqual({ members: ["a", "b"] });
+  it("reads estate members (#236) alongside tiers, and keeps only member-shaped entries", () => {
+    expect(loadBeholdConfig(make(JSON.stringify({ members: ["a", 7, "b"] })))).toEqual({
+      members: [
+        { dir: "a", kind: "chant" },
+        { dir: "b", kind: "chant" },
+      ],
+    });
     expect(loadBeholdConfig(make(JSON.stringify({ members: [] })))).toEqual({});
+  });
+
+  // #368: the object form, beside the string form.
+  it("a bare string and {dir} and {dir, kind: chant} are one declaration", () => {
+    const one = loadBeholdConfig(make(JSON.stringify({ members: ["a", { dir: "b" }, { dir: "c", kind: "chant" }] })));
+    expect(one).toEqual({
+      members: [
+        { dir: "a", kind: "chant" },
+        { dir: "b", kind: "chant" },
+        { dir: "c", kind: "chant" },
+      ],
+    });
+  });
+
+  it("keeps a member whose kind it cannot read, with the reason — never silently as chant", () => {
+    const cfg = loadBeholdConfig(make(JSON.stringify({ members: [{ dir: "x", kind: "terraform" }, { dir: "y", kind: "choudoufu" }, { kind: "chant" }, { dir: "" }] })));
+    expect(cfg.members).toHaveLength(2); // an entry with no dir is not a declaration
+    expect(cfg.members![0]).toEqual({ dir: "x", invalid: expect.stringContaining('unknown member kind "terraform"') });
+    expect(cfg.members![0]).toEqual({ dir: "x", invalid: expect.stringContaining("kinds are: chant") });
+    // A word the vocabulary knows but this behold has no reader for is a
+    // different sentence from a word nobody knows.
+    expect(cfg.members![1]).toEqual({ dir: "y", invalid: expect.stringContaining("no reader for it") });
   });
 });
 
@@ -244,16 +271,52 @@ describe("detectProjectShape", () => {
       "a/chant.config.ts": "export default {};",
       "b/chant.config.ts": "export default {};",
     });
-    expect(detectProjectShape(dir)).toEqual({ kind: "estate", members: ["a", "b"], membersFrom: "behold-config" });
+    expect(detectProjectShape(dir)).toEqual({
+      kind: "estate",
+      members: [
+        { dir: "a", kind: "chant" },
+        { dir: "b", kind: "chant" },
+      ],
+      membersFrom: "behold-config",
+    });
   });
 
-  it("falls back to npm workspaces, keeping only the members that are chant projects", () => {
+  it("falls back to npm workspaces, keeping only the members some kind claims", () => {
     const dir = make({
       "package.json": JSON.stringify({ workspaces: ["cp", "tooling"] }),
       "cp/chant.config.ts": "export default {};",
       "tooling/package.json": "{}",
     });
-    expect(detectProjectShape(dir)).toEqual({ kind: "estate", members: ["cp"], membersFrom: "workspaces" });
+    // A workspace no kind claims was never a declaration: skipped, not reported.
+    expect(detectProjectShape(dir)).toEqual({ kind: "estate", members: [{ dir: "cp", kind: "chant" }], membersFrom: "workspaces" });
+  });
+
+  // #368: a declaration is a claim behold checks, and a failed claim is
+  // reported rather than dropped — the silent drop is what a choudoufu
+  // member used to disappear into.
+  it("reports a declared member that fails its kind's probe, and one whose kind it does not know", () => {
+    const dir = make({
+      ".behold.json": JSON.stringify({ members: ["a", { dir: "b", kind: "chant" }, { dir: "c", kind: "terraform" }] }),
+      "a/chant.config.ts": "export default {};",
+      "b/README.md": "not a chant project",
+    });
+    expect(detectProjectShape(dir)).toEqual({
+      kind: "estate",
+      members: [{ dir: "a", kind: "chant" }],
+      membersFrom: "behold-config",
+      invalidMembers: [
+        { dir: "b", invalid: "declared as chant, but b has no a chant.config.* file" },
+        { dir: "c", invalid: expect.stringContaining('unknown member kind "terraform"') },
+      ],
+    });
+  });
+
+  it("is none, with the reasons, when every declared member is invalid", () => {
+    const dir = make({ ".behold.json": JSON.stringify({ members: [{ dir: "b", kind: "chant" }] }), "b/README.md": "" });
+    expect(detectProjectShape(dir)).toEqual({
+      kind: "none",
+      invalidMembers: [{ dir: "b", invalid: expect.stringContaining("declared as chant") }],
+    });
   });
 
   it("is none for a directory that is neither — #193's dead end", () => {

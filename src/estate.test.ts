@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterAll, afterEach, beforeEach } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -17,6 +17,7 @@ import {
   awaitsNamespaceBinding,
   composeEstate,
   composeEstateOverlay,
+  estateMembers,
   estateReadPool,
   joinNamespaceBindings,
   mapPool,
@@ -24,6 +25,7 @@ import {
   withoutJoinedMembers,
 } from "./estate.ts";
 import { resetMemberIrCache } from "./member-ir.ts";
+import { registerMemberKind } from "./member-kind.ts";
 import { attachRuntimeContainment } from "./overlay.ts";
 import type { GraphIR as ChantGraphIR } from "@intentius/chant";
 
@@ -542,6 +544,91 @@ describe("estate reads reuse an unchanged member's source IR (#307)", () => {
     await composeEstate([controlPlane, appB]);
     expect(vi.mocked(graphIr).mock.calls.filter(([dir]) => dir === appB)).toHaveLength(2);
     expect(vi.mocked(graphIr).mock.calls.filter(([dir]) => dir === controlPlane)).toHaveLength(1);
+  });
+});
+
+// #368: every estate read dispatches on the member's kind. A fake second kind
+// registered beside chant proves the seam: its members are read by its own
+// reader, cached under its own tool stamp, and chant members go through
+// exactly the calls they always did.
+describe("estate reads dispatch on member kind (#368)", () => {
+  const fakeRead = vi.fn();
+  const fakeTool = vi.fn(() => "fake\0v1");
+
+  beforeEach(() => {
+    resetMemberIrCache();
+    vi.mocked(graphIr).mockReset();
+    fakeRead.mockReset();
+    fakeTool.mockClear();
+    registerMemberKind({
+      kind: "choudoufu",
+      probe: (dir) => existsSync(join(dir, "member.fake")),
+      expects: "a member.fake file",
+      via: { tool: fakeTool, read: fakeRead as never },
+    });
+  });
+
+  /** A chant member and a fake-kind member under one root. */
+  const twoKinds = (): { chantDir: string; fakeDir: string } => {
+    const root = mkdtempSync(join(tmpdir(), "behold-kinds-"));
+    made.push(root);
+    mkdirSync(join(root, "app"), { recursive: true });
+    writeFileSync(join(root, "app", "chant.config.ts"), "export default {};\n");
+    mkdirSync(join(root, "net"), { recursive: true });
+    writeFileSync(join(root, "net", "member.fake"), "");
+    return { chantDir: join(root, "app"), fakeDir: join(root, "net") };
+  };
+
+  it("composeEstate reads each member by its own kind, and composes them as one estate", async () => {
+    const { chantDir, fakeDir } = twoKinds();
+    vi.mocked(graphIr).mockImplementation((async () => stack("vpc")) as never);
+    fakeRead.mockImplementation(async () => stack("subnet", "choudoufu"));
+
+    const ir = await composeEstate([chantDir, fakeDir]);
+
+    expect(vi.mocked(graphIr).mock.calls.map(([dir]) => dir)).toEqual([chantDir]);
+    expect(fakeRead.mock.calls.map(([dir]) => dir)).toEqual([fakeDir]);
+    expect(ir.nodes.map((n) => n.id).sort()).toEqual(["app/vpc", "net/subnet"]);
+    expect(estateMembers([chantDir, fakeDir]).map((m) => m.kind)).toEqual(["chant", "choudoufu"]);
+  });
+
+  it("caches a fake-kind member's source under its own tool stamp, never chant's", async () => {
+    const { fakeDir } = twoKinds();
+    fakeRead.mockImplementation(async () => stack("subnet", "choudoufu"));
+
+    await composeEstate([fakeDir]);
+    await composeEstate([fakeDir]);
+
+    expect(fakeRead).toHaveBeenCalledTimes(1);
+    expect(fakeTool).toHaveBeenCalled();
+    expect(graphIr).not.toHaveBeenCalled();
+  });
+
+  it("composeEstateOverlay reads the fake member live through its kind, and falls back to its kind's source when the live read fails", async () => {
+    const { chantDir, fakeDir } = twoKinds();
+    vi.mocked(graphIr).mockImplementation((async () => stack("vpc")) as never);
+    fakeRead.mockImplementation(async (_dir: string, o?: GraphOptions) => {
+      if (o?.live) throw new Error("choudoufu live-ls exited 1: no credentials");
+      return stack("subnet", "choudoufu");
+    });
+
+    const res = await composeEstateOverlay([chantDir, fakeDir], { env: "local" }, (ir) => ir);
+
+    const fakeLive = fakeRead.mock.calls.filter(([, o]) => (o as GraphOptions | undefined)?.live);
+    expect(fakeLive.map(([dir]) => dir)).toEqual([fakeDir]);
+    expect(vi.mocked(graphIr).mock.calls.filter(([, o]) => (o as GraphOptions | undefined)?.live).map(([dir]) => dir)).toEqual([chantDir]);
+    expect(res.unobserved).toEqual([{ name: "net", reason: "no credentials" }]);
+    const subnet = res.ir.nodes.find((n) => n.id === "net/subnet")!;
+    expect(subnet.attrs._status).toBe("neutral");
+  });
+
+  it("a directory no kind claims still reads as chant — the failure it always produced, from the same place", async () => {
+    const root = mkdtempSync(join(tmpdir(), "behold-kinds-"));
+    made.push(root);
+    vi.mocked(graphIr).mockImplementation((async () => stack("x")) as never);
+    await composeEstate([root]);
+    expect(vi.mocked(graphIr).mock.calls.map(([dir]) => dir)).toEqual([root]);
+    expect(fakeRead).not.toHaveBeenCalled();
   });
 });
 

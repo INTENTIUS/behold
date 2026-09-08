@@ -24,8 +24,9 @@ import { statSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { composeStacks, shortStackNames, type GraphIR } from "@intentius/pinhole";
-import { graphIr, meetsFloor, resolveChant, type GraphOptions } from "./chant.ts";
-import { memberIr } from "./member-ir.ts";
+import { meetsFloor, resolveChant, type GraphOptions } from "./chant.ts";
+import { chantVia, memberIr, type MemberVia } from "./member-ir.ts";
+import { memberKindOf, memberKindSpec, type MemberKind } from "./member-kind.ts";
 import { CLUSTER_SCOPED } from "./zoom-notes.ts";
 
 // ---------------------------------------------------------------------------
@@ -87,10 +88,26 @@ export async function mapPool<T, R>(
  * needs to join a declared `spec.path` back to the member it points at (#166).
  * One reading of `shortStackNames`, so the names here and the ids in the
  * composed IR cannot drift apart. */
-export function estateMembers(projectDirs: readonly string[]): { name: string; dir: string }[] {
+export function estateMembers(projectDirs: readonly string[]): { name: string; dir: string; kind: MemberKind }[] {
   const names = shortStackNames([...projectDirs]);
-  return projectDirs.map((dir, i) => ({ name: names[i], dir }));
+  return projectDirs.map((dir, i) => ({ name: names[i], dir, kind: memberKindOf(dir) ?? "chant" }));
 }
+
+// #368: every member read below dispatches on the member's kind through
+// `memberViaFor` — the one table (src/member-kind.ts) that says what a member
+// can be, with chant as the reader for the chant kind and for a directory no
+// kind claims. A chant member reads exactly as it did before kinds existed
+// (`memberIr` over `graphIr`), and an unclaimed directory produces the failure
+// it always did, from the same place.
+
+/** How `dir` is read: its kind's own `via`, else chant's. */
+const memberViaFor = (dir: string): MemberVia => memberKindSpec(memberKindOf(dir) ?? "chant")?.via ?? chantVia;
+
+/** A member's source IR: cached (#307), read by the member's own kind. */
+const memberSource = (dir: string, opts: GraphOptions): Promise<GraphIR> => memberIr(dir, opts, memberViaFor(dir));
+
+/** A member's live read: never cached, by the member's own kind. */
+const memberLive = (dir: string, opts: GraphOptions): Promise<GraphIR> => memberViaFor(dir).read(dir, opts);
 
 /** Graph each project's source and compose them into one estate IR. */
 export async function composeEstate(projectDirs: string[], opts: GraphOptions = {}): Promise<GraphIR> {
@@ -100,7 +117,7 @@ export async function composeEstate(projectDirs: string[], opts: GraphOptions = 
     // chant#2040: the manifests a member holds name the files its carved
     // entities were emitted into — joined here, where the member's root is
     // known, onto a COPY (the member IR is the #312 cache's own object).
-    ir: joinCarvedSources(await memberIr(dir, opts), (await carveStatesFor(dir)).values(), dir).ir,
+    ir: joinCarvedSources(await memberSource(dir, opts), (await carveStatesFor(dir)).values(), dir).ir,
   }));
   return composeStacks(stacks);
 }
@@ -361,7 +378,7 @@ export async function estateNamespaceScopes(
   // has not moved this costs no processes at all — it is half of
   // `composeEstateOverlay`'s spawns, and the half that never needed the cluster.
   const irs = await mapPool(projectDirs, estateReadPool(projectDirs.length), (dir) =>
-    memberIr(dir, { ...src, detail: 3 }).catch(() => undefined),
+    memberSource(dir, { ...src, detail: 3 }).catch(() => undefined),
   );
   const scopes = new Map<string, string>();
   for (const j of joinNamespaceBindings(projectDirs.map((dir, i) => ({ dir, ir: irs[i] })), isDir)) {
@@ -422,7 +439,7 @@ export async function composeEstateOverlay(
     const namespace = scopes.get(dir);
     try {
       const live = { ...opts, live: true, overlay: true, ...(namespace ? { namespace } : {}) };
-      stacks[i] = { name, ir: namespaceRuntimeOwners(name, classify(await graphIr(dir, live))) };
+      stacks[i] = { name, ir: namespaceRuntimeOwners(name, classify(await memberLive(dir, live))) };
       // Reported only for a read that actually happened — an unobserved
       // member was not read anywhere, joined namespace or not.
       if (namespace) joined.push({ name, namespace });
@@ -432,7 +449,7 @@ export async function composeEstateOverlay(
         // Source fallback WITHOUT env/live: the declared shape, honestly
         // tagged as not-looked-at rather than absent.
         const { env: _env, live: _live, overlay: _overlay, ...srcOpts } = opts;
-        const src = joinCarvedSources(await memberIr(dir, srcOpts), (await carveStatesFor(dir)).values(), dir).ir;
+        const src = joinCarvedSources(await memberSource(dir, srcOpts), (await carveStatesFor(dir)).values(), dir).ir;
         for (const n of src.nodes) n.attrs = { ...n.attrs, _status: "neutral", _unobserved: reason };
         stacks[i] = { name, ir: src };
         unobserved.push({ name, reason });

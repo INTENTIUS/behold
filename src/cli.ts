@@ -251,7 +251,7 @@ function warnIfNotChantProject(dir: string): void {
   if (shape.kind === "estate") {
     process.stderr.write(
       `behold: warning — ${dir} is an estate root, not a chant project itself.\n` +
-        `        Serve its members composed: behold serve ${shape.members!.map((m) => join(dir, m)).join(" ")}\n`,
+        `        Serve its members composed: behold serve ${shape.members!.map((m) => join(dir, m.dir)).join(" ")}\n`,
     );
     return;
   }
