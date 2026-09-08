@@ -229,7 +229,7 @@ describe("diagnose", () => {
     const report = await diagnose(dir, probes({ detectSubstrates: async () => up }));
 
     expect(report.kind).toBe("estate");
-    expect(by(report, "project").detail).toContain(".behold.json members): a, b");
+    expect(by(report, "project").detail).toContain(".behold.json members): a (chant), b (chant)");
     expect(by(report, "chant").detail).toBe("a: chant 0.54.0, b: chant 0.54.0 (behold's floor 0.54.0)");
     expect(by(report, "envs").detail).toContain(`behold serve ${dir}/a ${dir}/b --env prod`);
     expect(by(report, "ops").detail).toContain("a: a-apply (apply)");
@@ -247,7 +247,37 @@ describe("diagnose", () => {
 
     expect(report.kind).toBe("estate");
     // A workspace that isn't a chant project is not a member.
-    expect(by(report, "project").detail).toBe("estate of 1 projects (npm workspaces): control-plane");
+    expect(by(report, "project").detail).toBe("estate of 1 members (npm workspaces): control-plane (chant)");
+  });
+
+  // #368: a declared member behold cannot serve fails the project line with
+  // the reason and the kinds this behold reads — the one place a typo in
+  // `.behold.json` is said out loud before the estate serves without it.
+  it("fails the project line on a declared member with an unknown kind, naming the kinds it reads", async () => {
+    const dir = fixture({
+      ".behold.json": JSON.stringify({ members: ["a", { dir: "b", kind: "terraform" }] }),
+      "a/chant.config.ts": `export default { lexicons: [], environments: ["local"] };`,
+      "b/main.tf": "",
+      ...CHANT,
+    });
+
+    const report = await diagnose(dir, probes());
+
+    expect(report.kind).toBe("estate");
+    expect(report.ok).toBe(false);
+    const project = by(report, "project");
+    expect(project.status).toBe("fail");
+    expect(project.detail).toContain("a (chant); invalid: b — unknown member kind \"terraform\"");
+    expect(project.fix).toContain("Member kinds this behold reads: chant");
+    // The chant line asks only the chant members.
+    expect(by(report, "chant").detail).toBe("a: chant 0.54.0 (behold's floor 0.54.0)");
+  });
+
+  it("is none, and says why, when the only declared member fails its kind's probe", async () => {
+    const dir = fixture({ ".behold.json": JSON.stringify({ members: [{ dir: "b", kind: "chant" }] }), "b/README.md": "" });
+    const report = await diagnose(dir, probes());
+    expect(report.kind).toBe("none");
+    expect(by(report, "project").detail).toContain("every declared member is invalid: b — declared as chant");
   });
 });
 

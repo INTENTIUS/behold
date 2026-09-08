@@ -348,3 +348,40 @@ live here, with the enforceable ones enforced.
   stays that way.
 - **chant's working rules** (its single-lane checkout, its release path) are
   chant's and live in chant's repo, not here.
+
+### Adding a member kind
+
+An estate member has a kind (#368): what a directory has to look like, what
+tool answers reads for it, and how it becomes a `GraphIR`. `src/member-kind.ts`
+is the one table; `chant` is the first row and every member was that row
+until the table existed. A new kind is:
+
+1. A `registerMemberKind({ kind, probe, expects, via })` call in
+   `src/member-kind.ts` — the `probe` is sync, read-only and runs no code (a
+   file's presence, a regex over a root file); `via.tool` stamps the binary and
+   version that would answer, which is the version half of `memberIr`'s
+   cache key; `via.read` is the one uncached read, source or live per `opts`.
+   The module imports nothing from the read path at runtime (src/chant.ts
+   imports src/project.ts, which imports it); a kind's `via` closes over its
+   own tool module.
+   Add the word to `MEMBER_KINDS`. A word in the vocabulary that no row
+   registers is a doctor fail with the reason, never silently chant.
+2. Nothing in `src/estate.ts`: `composeEstate`, `composeEstateOverlay` and
+   `estateNamespaceScopes` already dispatch through `memberKindOf(dir)`.
+   The two routes that render an estate — `/api/graph`'s estate branch and
+   `/api/overlay`'s — run the same passes in the same order and must not
+   fork per kind; a kind's differences live inside its `read`.
+3. A `registerPack({ lexicon, iconFor, fields })` in `src/render.ts`, or the
+   kind's cards lead with the alphabetically first two short attrs.
+4. A `DoctorCheck` line when the kind needs a tool on PATH or a per-member
+   precondition (a version floor checked before the spawn, the way
+   `carveStatusReader` does; a PATH probe the way `src/demos.ts` does).
+5. Tests: the probe and the object form in `src/project.test.ts`; dispatch
+   in `src/estate.test.ts`'s "#368" block, which registers a fake kind and
+   asserts chant members still go through exactly the calls they did; the
+   kind's own reader off recorded documents in `src/__fixtures__/`, with
+   provenance in prose above the load.
+
+`.behold.json` names a kind as `{ "dir": "x", "kind": "<kind>" }`; a bare
+string is `chant`. Anything behold boots for a kind goes through
+`assertScratch` first.

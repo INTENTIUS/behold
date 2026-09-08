@@ -34,6 +34,7 @@ import {
   resolveLexicons,
   type ChantResolution,
 } from "./chant.ts";
+import { registeredMemberKinds } from "./member-kind.ts";
 import { detectProject, detectProjectShape, type ProjectKind } from "./project.ts";
 import { loadKubeconfig, resolveK8sTarget, type K8sProfiles, type Kubeconfig } from "./k8s-target.ts";
 import { detectSubstrates, type Substrate } from "./substrates.ts";
@@ -274,6 +275,13 @@ export async function diagnose(dir: string, probes: DoctorProbes = {}): Promise<
   const shape = detectProjectShape(root);
   const behold = beholdVersion();
 
+  // #368: a declared member behold cannot serve — a kind it does not know, or
+  // a directory that fails its declared kind's probe — is a fail with the
+  // reason, never a member silently missing from the list below.
+  const invalid = shape.invalidMembers ?? [];
+  const invalidDetail = invalid.map((m) => `${m.dir} — ${m.invalid}`);
+  const kindsFix = `Member kinds this behold reads: ${registeredMemberKinds().join(", ")}. Fix or remove the entry in .behold.json \`members\`.`;
+
   if (shape.kind === "none") {
     return {
       behold,
@@ -281,34 +289,47 @@ export async function diagnose(dir: string, probes: DoctorProbes = {}): Promise<
       kind: "none",
       ok: false,
       checks: [
-        {
-          name: "project",
-          status: "fail",
-          detail: `no chant.config.ts here, and no estate members declared (.behold.json \`members\`, or npm workspaces)`,
-          fix: "Point behold at a chant project (`behold doctor <dir>`), or run `behold demo` for a bundled working example.",
-        },
+        invalid.length
+          ? {
+              name: "project",
+              status: "fail",
+              detail: `no chant.config.ts here, and no servable estate member — every declared member is invalid: ${list(invalidDetail)}`,
+              fix: kindsFix,
+            }
+          : {
+              name: "project",
+              status: "fail",
+              detail: `no chant.config.ts here, and no estate members declared (.behold.json \`members\`, or npm workspaces)`,
+              fix: "Point behold at a chant project (`behold doctor <dir>`), or run `behold demo` for a bundled working example.",
+            },
       ],
     };
   }
 
   const estate = shape.kind === "estate";
-  const members = (shape.members ?? []).map((m) => resolve(root, m));
-  const targets = estate ? members : [root];
+  const members = (shape.members ?? []).map((m) => ({ ...m, abs: resolve(root, m.dir) }));
+  const targets = estate ? members.map((m) => m.abs) : [root];
   const primary = targets[0]!;
+  // The chant-shaped lines (the chant install, the lexicons, the envs) ask
+  // only the members that are chant projects; another kind has its own line.
+  const chantTargets = estate ? members.filter((m) => m.kind === "chant").map((m) => m.abs) : [root];
 
+  const memberList = list(members.map((m) => `${m.dir} (${m.kind})`));
+  const membersFrom = shape.membersFrom === "behold-config" ? ".behold.json members" : "npm workspaces";
   const projectCheck: DoctorCheck = estate
-    ? {
-        name: "project",
-        status: "pass",
-        detail: `estate of ${members.length} projects (${shape.membersFrom === "behold-config" ? ".behold.json members" : "npm workspaces"}): ${list(
-          members.map((m) => relative(root, m)),
-        )}`,
-      }
+    ? invalid.length
+      ? {
+          name: "project",
+          status: "fail",
+          detail: `estate of ${members.length} members (${membersFrom}): ${memberList}; invalid: ${list(invalidDetail)}`,
+          fix: kindsFix,
+        }
+      : { name: "project", status: "pass", detail: `estate of ${members.length} members (${membersFrom}): ${memberList}` }
     : { name: "project", status: "pass", detail: `chant project (${relative(root, shape.configFile!)})` };
 
-  // One config read per target, shared by the lexicon/env/kube lines — the
-  // same `detectProject` the server's pickers are built from.
-  const infos = await Promise.all(targets.map(async (t) => ({ target: t, info: await detectProject(t) })));
+  // One config read per chant target, shared by the lexicon/env/kube lines —
+  // the same `detectProject` the server's pickers are built from.
+  const infos = await Promise.all(chantTargets.map(async (t) => ({ target: t, info: await detectProject(t) })));
   const declared = new Map(infos.map(({ target, info }) => [target, info.lexicons] as const));
   const lexicons = [...new Set(infos.flatMap(({ info }) => info.lexicons))];
   const envs = [...new Set(infos.flatMap(({ info }) => info.environments))];
@@ -325,12 +346,12 @@ export async function diagnose(dir: string, probes: DoctorProbes = {}): Promise<
 
   const checks: DoctorCheck[] = [
     projectCheck,
-    chantCheck(root, targets, estate),
+    chantCheck(root, chantTargets, estate),
     lexiconCheck(root, declared, estate),
     // An estate root is not itself servable — the hint has to name its members
     // (`behold serve a b c`, #31), which is what a stranger would otherwise
     // discover by having the root serve nothing.
-    envCheck(envs, estate ? shape.members!.map((m) => `${dir.replace(/\/$/, "")}/${m}`).join(" ") : dir),
+    envCheck(envs, estate ? shape.members!.map((m) => `${dir.replace(/\/$/, "")}/${m.dir}`).join(" ") : dir),
     kube,
     substrateCheck(substrates),
     opsCheck(root, discoverEstateOps(targets), resolveChant(primary).source, estate),

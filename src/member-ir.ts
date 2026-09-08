@@ -119,13 +119,35 @@ export function memberSourceStamp(dir: string): string | undefined {
   return any ? h.digest("hex") : undefined;
 }
 
-/** The identity of one cached read: the member, the chant that would answer it,
+/** How a member is read (#368): the tool that answers for it, as the version
+ * half of the cache key, and the one uncached read. Every member was a chant
+ * project until member kinds existed, so `chantVia` is the default and the
+ * only one this module defines; src/member-kind.ts registers the others. */
+export interface MemberVia {
+  /** A stamp of the tool that would answer a read for `dir` — its path and
+   * version — so an upgraded tool is a different cache key, not a stale hit. */
+  tool(dir: string): string;
+  /** The uncached read: the member as a `GraphIR`, source or live per `opts`. */
+  read(dir: string, opts: GraphOptions): Promise<GraphIR>;
+}
+
+/** The chant member: the member's OWN chant (`resolveChant`) answers, through
+ * `graphIr`. Members pin different chant versions, which is why the stamp is
+ * per member rather than behold's bundled one. */
+export const chantVia: MemberVia = {
+  tool: (dir) => {
+    const chant = resolveChant(dir);
+    return `${chant.bin}\0${chant.version ?? ""}`;
+  },
+  read: (dir, opts) => graphIr(dir, opts),
+};
+
+/** The identity of one cached read: the member, the tool that would answer it,
  * and every graph option that reaches the invocation. `GraphOptions` keys are
  * sorted so two equal option sets built in different orders are one key. */
-function cacheKey(dir: string, opts: GraphOptions): string {
-  const chant = resolveChant(dir);
+function cacheKey(dir: string, opts: GraphOptions, via: MemberVia): string {
   const canonical = JSON.stringify(opts, Object.keys(opts).sort());
-  return `${resolve(dir)}\0${chant.bin}\0${chant.version ?? ""}\0${canonical}`;
+  return `${resolve(dir)}\0${via.tool(dir)}\0${canonical}`;
 }
 
 interface Entry {
@@ -178,14 +200,14 @@ export function resetMemberIrCache(): void {
  * truth. Measured at 0.7ms for a 280-node, 92KB IR — a whole #307-sized estate
  * in one member — against the ~750ms spawn it replaces.
  */
-export async function memberIr(dir: string, opts: GraphOptions = {}): Promise<GraphIR> {
+export async function memberIr(dir: string, opts: GraphOptions = {}, via: MemberVia = chantVia): Promise<GraphIR> {
   // Rule 1: a live/overlay read observes the cluster. Never cached, and never
   // even stamped — the walk would be pure cost on a read that cannot be served.
   const size = memberIrCacheSize();
-  if (opts.live || opts.overlay || size === 0) return graphIr(dir, opts);
+  if (opts.live || opts.overlay || size === 0) return via.read(dir, opts);
 
   const stamp = memberSourceStamp(dir);
-  const key = cacheKey(dir, opts);
+  const key = cacheKey(dir, opts, via);
   const hit = stamp !== undefined ? cache.get(key) : undefined;
   if (hit && hit.stamp === stamp) {
     hits++;
@@ -194,7 +216,7 @@ export async function memberIr(dir: string, opts: GraphOptions = {}): Promise<Gr
     return structuredClone(hit.ir);
   }
   misses++;
-  const ir = await graphIr(dir, opts);
+  const ir = await via.read(dir, opts);
   // Re-stamp: an edit that landed WHILE chant was reading would otherwise be
   // cached as the stamp taken before it, and every later read would serve an IR
   // of source that no longer exists. A moved stamp caches nothing — the next
