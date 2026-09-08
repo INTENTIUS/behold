@@ -131,6 +131,14 @@ import { sourceCommits, openRollbackBranches } from "./history.ts";
 import { composeEstate, composeEstateOverlay, estateMembers, withoutJoinedMembers } from "./estate.ts";
 import { addEstateMemberEdges } from "./estate-edges.ts";
 import { addChoudoufuReferenceEdges, liveCheckToIr, readLiveCheck, setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
+import {
+  filterTerraformCards,
+  groupTerraformByRoot,
+  hasTerraformEntities,
+  normalizeTerraformNodes,
+  terraformElisionNote,
+  type TerraformElision,
+} from "./terraform-lens.ts";
 import { choudoufuDiffNodes, readChoudoufuLive, type Runner as ChoudoufuRunner } from "./choudoufu-live.ts";
 import { discoverCarvePlans, moveMembers, moveReceipt, movesPayload, readCarvePlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
 import { memberKindOf } from "./member-kind.ts";
@@ -831,6 +839,21 @@ async function readoptDispatchedRun(
   });
   if (!started) return { outcome: "refused", reason: `busy — ${runner.running} is running`, run };
   return { outcome: "readopted", run };
+}
+
+/**
+ * The three Terraform passes (#379, #380, #382), in the one order they make
+ * sense: name the cards, box them by root, then drop what is not estate at this
+ * detail. Returns what the filter elided so the view can say so.
+ *
+ * Guarded on the IR carrying terraform entities at all, so every chant, k8s and
+ * choudoufu estate gets the identical object back — the same discipline
+ * `addChoudoufuReferenceEdges` follows.
+ */
+function applyTerraformPasses(ir: GraphIR, detail: number | undefined): TerraformElision {
+  if (!hasTerraformEntities(ir)) return { dropped: {}, total: 0 };
+  groupTerraformByRoot(normalizeTerraformNodes(ir));
+  return filterTerraformCards(ir, detail);
 }
 
 export function createApp(
@@ -1852,6 +1875,8 @@ export function createApp(
       // Multi-estate (#31): graph each project and compose into one IR (namespaced
       // ids, per-project boundary boxes, cross-stack edges). Single project → as-is.
       const multi = cfg.projectDirs && cfg.projectDirs.length > 1;
+      // #382: what the Terraform zoom filter elided, when the estate branch ran it.
+      let estateTfElision: TerraformElision = { dropped: {}, total: 0 };
       let ir: GraphIR;
       let mode: "component-status" | undefined;
       let metaEnv = cfg.env ?? null;
@@ -1897,6 +1922,9 @@ export function createApp(
         ir = markOperatorHome(ir);
         const estateContext = await boundK8sContext(metaEnv ?? undefined);
         ir = addClusterAnchorEdges(ir, estateContext);
+        // #379/#380/#382 — see the single-project branch below. An estate whose
+        // members are Terraform roots gets the same three passes.
+        estateTfElision = applyTerraformPasses(ir, opts.detail);
         // #224: the logical lens over the COMPOSED IR. Every projection joins
         // on attribute values, never node ids, so composeStacks' prefixed ids
         // pass through exactly as the edge passes above do — and the k8s lens
@@ -1996,6 +2024,9 @@ export function createApp(
         // `addK8sDeclaredEdges` into both logical branches but not this. No
         // commit message, comment or test ever recorded the omission.
         const base = addClusterAnchorEdges(addValueMatchEdges(addK8sDeclaredEdges(raw)), logicalContext);
+        // #379/#380/#382: name and box the Terraform cards before the lens
+        // projects them, so its own boxes hold cards rather than block classes.
+        applyTerraformPasses(base, opts.detail);
         // #102: the lens follows the substrate — AWS nests region/VPC/subnet,
         // Azure nests resource group/VNet/subnet. `metaEnv` names the resource
         // group on Azure, which ARM never declares as a resource.
@@ -2040,6 +2071,15 @@ export function createApp(
         // renders as loose nodes beside the cloud graph rather than one estate.
         ir = addClusterAnchorEdges(ir, await boundK8sContext(metaEnv ?? undefined));
       }
+      // #379/#380/#382: a Terraform estate chant read. The type moves into
+      // `kind` so a card is titled and iconed by what it is, the roots become
+      // the boxes, and the blocks that are settings rather than estate leave
+      // the canvas at this detail. A no-op on every other estate.
+      //
+      // The estate branch above already ran them — it has to, because its
+      // logical path returns before this line — so this is the single-project
+      // half of the same one call per request.
+      const tfElision = multi ? estateTfElision : applyTerraformPasses(ir, opts.detail);
       // COMPOSITES (level 1) on the SOURCE view too (#138): the overlay branch
       // below has joined the component DAG's dependsOn edges since #84, but a
       // source-only serve (no env) rendered the tier with no component edges at
@@ -2098,7 +2138,9 @@ export function createApp(
       // (see /api/overlay's single-project branch, which already passed this)
       // — without it, example-k8s's `/api/graph` asserted "nothing in this
       // estate references anything else" at detail 2 while detail 3 has 2.
-      const srcNote = multi ? estateLensNote : notesFor(srcZoom, ir, srcCompositeEdgesAttached, undefined, opts.detail ?? 2);
+      const srcNote =
+        terraformElisionNote(tfElision, opts.detail) ??
+        (multi ? estateLensNote : notesFor(srcZoom, ir, srcCompositeEdgesAttached, undefined, opts.detail ?? 2));
       return c.json({
         ir,
         svg,
@@ -2421,6 +2463,9 @@ export function createApp(
         ir = markOperatorHome(ir);
         const boundContext = await boundK8sContext(env);
         ir = addClusterAnchorEdges(ir, boundContext);
+        // #379/#380/#382 — the same three, in the same order, as /api/graph's
+        // estate branch. A live overlay adds colour, never a different picture.
+        applyTerraformPasses(ir, detail);
         const coverNote =
           est.unobserved.length || est.dropped.length
             ? `live observe covered ${est.observed} of ${est.total} projects — ` +
@@ -2554,6 +2599,8 @@ export function createApp(
         // /api/graph's was (see that branch), and the overlay is
         // source-anchored, so this is the same derivation on both.
         const projectionInput = addClusterAnchorEdges(addValueMatchEdges(addK8sDeclaredEdges(ir)), boundContext);
+        // #379/#380/#382 — as on the source logical path.
+        applyTerraformPasses(projectionInput, opts.detail);
         const { ir: projected, byContainer, namespaceBoxes } = projectTopology(projectionInput, env, boundContext, [await graphPath(cfg.projectDir, opts), cfg.projectDir]);
         // #234's free rider, the logical lens's half (pinhole#119): this route
         // never calls `markOperatorHome` (it returns before the non-logical
@@ -2589,6 +2636,8 @@ export function createApp(
       // rather than dropping the k8s half into the void. The overlay is
       // source-anchored, so this is the same derivation, not a live-only one.
       ir = addClusterAnchorEdges(ir, boundContext);
+      // #379/#380/#382 — as on the source path.
+      applyTerraformPasses(ir, opts.detail);
       // At COMPOSITES (level 1), composites only wired via import sinks (now
       // pruned) so they'd all float — overlay the authoritative component
       // dependsOn graph so they read as a dependency graph (see addCompositeDeps).

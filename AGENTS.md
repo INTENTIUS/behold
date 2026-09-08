@@ -395,3 +395,43 @@ until the table existed. A new kind is:
 `.behold.json` names a kind as `{ "dir": "x", "kind": "<kind>" }`; a bare
 string is `chant`. Anything behold boots for a kind goes through
 `assertScratch` first.
+
+### Rendering a Terraform estate
+
+A Terraform estate reaches behold through chant, not through a member kind.
+`@intentius/chant-lexicon-terraform` reads the HCL an estate already has and
+emits one entity per block, so **a Terraform estate is a chant project whose
+only lexicon is a reader** and `chant graph --format ir` serves it like any
+other. behold parses no HCL and ships no HCL parser — the same posture
+`src/carve-lens.ts` states for the carve report (#378).
+
+Three passes turn what arrives into a picture (`src/terraform-lens.ts`), in this
+order, guarded on the IR carrying terraform entities so every other estate gets
+the identical object back:
+
+1. **`normalizeTerraformNodes`** — a node's `kind` arrives as the entity class
+   (`Terraform::Resource`), not the resource type, so every card would be titled
+   and iconed the same. The type moves out of `attrs.address` into `kind` and
+   the block class lands in `attrs.block`. That is the shape a carve node
+   already has, which is why one presentation pack serves both.
+2. **`groupTerraformByRoot`** — roots are a Terraform project's only grouping.
+   It retires itself when chant#2266 groups upstream.
+3. **`filterTerraformCards`** — what is a card, below.
+
+**What is a card (#382).** Measured on a real estate: 247 nodes for 43
+resources, four fifths of it not infrastructure.
+
+| tier | blocks | why |
+|---|---|---|
+| default (detail 0-2) | `resource`, `data`, `module` | the estate: what is declared, what it reads, what it composes |
+| attributes (detail 3) | + `output`, `variable` | its interface — real, but a second question |
+| never | `terraform`, `provider`, `locals` | settings, not estate |
+
+Nothing is dropped silently: `terraformElisionNote` says what is not drawn and
+where to see it, the way `edgelessNote` says why a view has no edges.
+
+**Do not invent edges.** A stock Terraform estate has none until chant#2265
+resolves a block's `"${…}"` references. The one relationship that looked
+derivable — a cross-root read by name — was measured and refused (#381): both
+ends carry the same unresolved interpolation, so a match would be a coincidence
+of variable naming. A data source says what it reads as a row instead.

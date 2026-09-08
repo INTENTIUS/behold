@@ -1,0 +1,731 @@
+{
+  "nodes": [
+    {
+      "id": "baseline/aws_iam_policy.boundary",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_iam_policy.boundary",
+        "body": {
+          "count": "${var.sandbox ? 0 : 1}",
+          "description": "The estate boundary. Every role water park emits sits inside it. It denies all IAM write, Organizations, Identity Center, the guardrail-path resources by name and boundary detachment, and it allows the service surface an app team plausibly needs. Changing it is a platform PR (decision 36).",
+          "name": "${var.boundary_name}",
+          "policy": "${jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        # The ceiling. A role inside the estate may be granted access to\n        # these services by its own policy and to nothing else.\n        Sid      = \"ServiceSurface\"\n        Effect   = \"Allow\"\n        Action   = local.service_surface\n        Resource = \"*\"\n      },\n      {\n        # Permissions management always goes through the repo, so no identity\n        # inside the estate edits an identity, its own included. This is the\n        # deny that makes delegation safe, because a satellite that creates a\n        # role inside this boundary cannot make it more powerful than this.\n        Sid      = \"NoIdentityWrite\"\n        Effect   = \"Deny\"\n        Action   = local.forbidden_actions\n        Resource = \"*\"\n      },\n      {\n        # Detaching the cap would make every other deny pointless, so it is\n        # denied on its own. The apply role carries this same boundary, which\n        # is how water park cannot escalate water park (decision 12).\n        Sid      = \"NoBoundaryDetachment\"\n        Effect   = \"Deny\"\n        Action   = local.boundary_detachment_actions\n        Resource = \"*\"\n      },\n      {\n        # The guardrail path by name. The boundary policy itself, the apply\n        # role and the state bucket. These decide what the estate may be, so\n        # nothing inside the estate touches them.\n        Sid      = \"NoGuardrailPath\"\n        Effect   = \"Deny\"\n        Action   = \"*\"\n        Resource = local.guardrail_resources\n      },\n    ]\n  })}",
+          "tags": {
+            "guardrail": "boundary",
+            "owner": "${var.owner}"
+          }
+        },
+        "file": "iam_policy.boundary.tf",
+        "root": "baseline",
+        "source": "# One boundary for the whole estate (decision 36). A boundary caps what an\n# identity-based policy can grant, because effective permissions are the\n# intersection of the two, so this file is the ceiling every workload role in\n# the estate sits under. Splitting it per OU waits until an OU needs it.\n#\n# The description below is on the policy in the account, so the why travels\n# with the artifact rather than staying in the repo. Property III.\nresource \"aws_iam_policy\" \"boundary\" {\n  count = var.sandbox ? 0 : 1\n\n  name        = var.boundary_name\n  description = \"The estate boundary. Every role water park emits sits inside it. It denies all IAM write, Organizations, Identity Center, the guardrail-path resources by name and boundary detachment, and it allows the service surface an app team plausibly needs. Changing it is a platform PR (decision 36).\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        # The ceiling. A role inside the estate may be granted access to\n        # these services by its own policy and to nothing else.\n        Sid      = \"ServiceSurface\"\n        Effect   = \"Allow\"\n        Action   = local.service_surface\n        Resource = \"*\"\n      },\n      {\n        # Permissions management always goes through the repo, so no identity\n        # inside the estate edits an identity, its own included. This is the\n        # deny that makes delegation safe, because a satellite that creates a\n        # role inside this boundary cannot make it more powerful than this.\n        Sid      = \"NoIdentityWrite\"\n        Effect   = \"Deny\"\n        Action   = local.forbidden_actions\n        Resource = \"*\"\n      },\n      {\n        # Detaching the cap would make every other deny pointless, so it is\n        # denied on its own. The apply role carries this same boundary, which\n        # is how water park cannot escalate water park (decision 12).\n        Sid      = \"NoBoundaryDetachment\"\n        Effect   = \"Deny\"\n        Action   = local.boundary_detachment_actions\n        Resource = \"*\"\n      },\n      {\n        # The guardrail path by name. The boundary policy itself, the apply\n        # role and the state bucket. These decide what the estate may be, so\n        # nothing inside the estate touches them.\n        Sid      = \"NoGuardrailPath\"\n        Effect   = \"Deny\"\n        Action   = \"*\"\n        Resource = local.guardrail_resources\n      },\n    ]\n  })\n\n  tags = {\n    owner = var.owner\n\n    # The rule pack skips a boundary on no-wildcard-action, because a\n    # boundary is a ceiling rather than a grant and a wildcard here narrows\n    # nothing. This tag is what marks it.\n    guardrail = \"boundary\"\n  }\n}\n",
+        "line": 8,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "baseline/locals",
+      "kind": "Terraform::Locals",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "locals",
+        "body": {
+          "boundary_detachment_actions": [
+            "iam:DeleteRolePermissionsBoundary",
+            "iam:DeleteUserPermissionsBoundary",
+            "iam:PutRolePermissionsBoundary",
+            "iam:PutUserPermissionsBoundary"
+          ],
+          "break_glass_max_ttl_hours": 2,
+          "forbidden_actions": [
+            "iam:Add*",
+            "iam:Attach*",
+            "iam:Create*",
+            "iam:Delete*",
+            "iam:Detach*",
+            "iam:Put*",
+            "iam:Remove*",
+            "iam:Set*",
+            "iam:Tag*",
+            "iam:Untag*",
+            "iam:Update*",
+            "iam:Upload*",
+            "organizations:*",
+            "sso:*",
+            "sso-directory:*",
+            "identitystore:*"
+          ],
+          "guardrail_resources": [
+            "arn:aws:iam::*:policy/${var.boundary_name}",
+            "arn:aws:iam::*:role/${var.apply_role_name}",
+            "arn:aws:s3:::${var.state_bucket}",
+            "arn:aws:s3:::${var.state_bucket}/*"
+          ],
+          "service_surface": [
+            "s3:*",
+            "logs:*",
+            "cloudwatch:*",
+            "ecr:*",
+            "sqs:*",
+            "sns:*",
+            "dynamodb:*",
+            "ssm:GetParameter",
+            "ssm:GetParameters",
+            "ssm:GetParametersByPath",
+            "secretsmanager:GetSecretValue",
+            "secretsmanager:DescribeSecret",
+            "kms:Decrypt",
+            "kms:Encrypt",
+            "kms:GenerateDataKey",
+            "sts:AssumeRole",
+            "sts:GetCallerIdentity",
+            "sts:TagSession"
+          ],
+          "watcher_max_open_prs": 5
+        },
+        "file": "locals.tf",
+        "root": "baseline",
+        "source": "locals {\n  # The constants later lessons read from here rather than from a page.\n  #\n  # Break-glass carries a cloud-side expiry and the maximum is two hours, and\n  # a check refuses a longer one (decision 37). The watcher holds at most five\n  # open PRs, and the PR job counts them so the cap holds when the prompt is\n  # ignored (decision 40). Both live here so a student can change one number\n  # in one place and watch the checks move with it.\n  break_glass_max_ttl_hours = 2\n  watcher_max_open_prs      = 5\n\n  # Everything the boundary denies, as one list the I6 proof checks consume.\n  # These are the actions no role inside the estate may hold, whatever its\n  # own policy says.\n  forbidden_actions = [\n    # All IAM write. Permissions management goes through the repo, so an\n    # identity inside the estate never edits an identity.\n    \"iam:Add*\",\n    \"iam:Attach*\",\n    \"iam:Create*\",\n    \"iam:Delete*\",\n    \"iam:Detach*\",\n    \"iam:Put*\",\n    \"iam:Remove*\",\n    \"iam:Set*\",\n    \"iam:Tag*\",\n    \"iam:Untag*\",\n    \"iam:Update*\",\n    \"iam:Upload*\",\n\n    # The org layer. Accounts are vended elsewhere and policies are the\n    # management account's (decision 11).\n    \"organizations:*\",\n\n    # Identity Center and the identity store behind it. Human access is\n    # central without exception, because a permission set's blast radius is\n    # every account it is assigned into.\n    \"sso:*\",\n    \"sso-directory:*\",\n    \"identitystore:*\",\n  ]\n\n  # Detaching the cap is the one move that would make every other deny\n  # pointless, so it gets its own statement rather than hiding in the list.\n  boundary_detachment_actions = [\n    \"iam:DeleteRolePermissionsBoundary\",\n    \"iam:DeleteUserPermissionsBoundary\",\n    \"iam:PutRolePermissionsBoundary\",\n    \"iam:PutUserPermissionsBoundary\",\n  ]\n\n  # The service surface an app team plausibly needs. A boundary is a ceiling\n  # rather than a grant, so these are the services a role may be given access\n  # to by its own policy, not access it holds.\n  service_surface = [\n    \"s3:*\",\n    \"logs:*\",\n    \"cloudwatch:*\",\n    \"ecr:*\",\n    \"sqs:*\",\n    \"sns:*\",\n    \"dynamodb:*\",\n    \"ssm:GetParameter\",\n    \"ssm:GetParameters\",\n    \"ssm:GetParametersByPath\",\n    \"secretsmanager:GetSecretValue\",\n    \"secretsmanager:DescribeSecret\",\n    \"kms:Decrypt\",\n    \"kms:Encrypt\",\n    \"kms:GenerateDataKey\",\n    \"sts:AssumeRole\",\n    \"sts:GetCallerIdentity\",\n    \"sts:TagSession\",\n  ]\n\n  # The guardrail path, by name. The boundary policy itself, the state bucket\n  # and the apply role. Nothing inside the estate touches the things that\n  # decide what the estate may be.\n  guardrail_resources = [\n    \"arn:aws:iam::*:policy/${var.boundary_name}\",\n    \"arn:aws:iam::*:role/${var.apply_role_name}\",\n    \"arn:aws:s3:::${var.state_bucket}\",\n    \"arn:aws:s3:::${var.state_bucket}/*\",\n  ]\n}\n",
+        "line": 1,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "baseline/output.boundary_arn",
+      "kind": "Terraform::Output",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "output.boundary_arn",
+        "body": {
+          "description": "The estate boundary, for every role the persona module makes. Null in a sandbox, which carries no boundary at all (decision 36).",
+          "value": "${var.sandbox ? null : aws_iam_policy.boundary[0].arn}"
+        },
+        "file": "outputs.tf",
+        "root": "baseline",
+        "source": "output \"boundary_arn\" {\n  description = \"The estate boundary, for every role the persona module makes. Null in a sandbox, which carries no boundary at all (decision 36).\"\n  value       = var.sandbox ? null : aws_iam_policy.boundary[0].arn\n}\n\noutput \"boundary_name\" {\n  description = \"The deterministic boundary name, so another stack can reference it without a hardcoded ARN.\"\n  value       = var.boundary_name\n}\n\noutput \"forbidden_actions\" {\n  description = \"What the boundary denies. The lesson 6 proof checks read this list rather than re-stating it.\"\n  value       = local.forbidden_actions\n}\n\noutput \"break_glass_max_ttl_hours\" {\n  description = \"The longest a break-glass grant may last. Two hours, enforced cloud-side by an aws:CurrentTime condition (decision 37).\"\n  value       = local.break_glass_max_ttl_hours\n}\n\noutput \"watcher_max_open_prs\" {\n  description = \"How many open PRs the watcher may hold at once. Five, counted by the PR job so the cap holds when the prompt is ignored (decision 40).\"\n  value       = local.watcher_max_open_prs\n}\n",
+        "line": 1,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "baseline/output.boundary_name",
+      "kind": "Terraform::Output",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "output.boundary_name",
+        "body": {
+          "description": "The deterministic boundary name, so another stack can reference it without a hardcoded ARN.",
+          "value": "${var.boundary_name}"
+        },
+        "file": "outputs.tf",
+        "root": "baseline",
+        "source": "output \"boundary_arn\" {\n  description = \"The estate boundary, for every role the persona module makes. Null in a sandbox, which carries no boundary at all (decision 36).\"\n  value       = var.sandbox ? null : aws_iam_policy.boundary[0].arn\n}\n\noutput \"boundary_name\" {\n  description = \"The deterministic boundary name, so another stack can reference it without a hardcoded ARN.\"\n  value       = var.boundary_name\n}\n\noutput \"forbidden_actions\" {\n  description = \"What the boundary denies. The lesson 6 proof checks read this list rather than re-stating it.\"\n  value       = local.forbidden_actions\n}\n\noutput \"break_glass_max_ttl_hours\" {\n  description = \"The longest a break-glass grant may last. Two hours, enforced cloud-side by an aws:CurrentTime condition (decision 37).\"\n  value       = local.break_glass_max_ttl_hours\n}\n\noutput \"watcher_max_open_prs\" {\n  description = \"How many open PRs the watcher may hold at once. Five, counted by the PR job so the cap holds when the prompt is ignored (decision 40).\"\n  value       = local.watcher_max_open_prs\n}\n",
+        "line": 6,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "baseline/output.break_glass_max_ttl_hours",
+      "kind": "Terraform::Output",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "output.break_glass_max_ttl_hours",
+        "body": {
+          "description": "The longest a break-glass grant may last. Two hours, enforced cloud-side by an aws:CurrentTime condition (decision 37).",
+          "value": "${local.break_glass_max_ttl_hours}"
+        },
+        "file": "outputs.tf",
+        "root": "baseline",
+        "source": "output \"boundary_arn\" {\n  description = \"The estate boundary, for every role the persona module makes. Null in a sandbox, which carries no boundary at all (decision 36).\"\n  value       = var.sandbox ? null : aws_iam_policy.boundary[0].arn\n}\n\noutput \"boundary_name\" {\n  description = \"The deterministic boundary name, so another stack can reference it without a hardcoded ARN.\"\n  value       = var.boundary_name\n}\n\noutput \"forbidden_actions\" {\n  description = \"What the boundary denies. The lesson 6 proof checks read this list rather than re-stating it.\"\n  value       = local.forbidden_actions\n}\n\noutput \"break_glass_max_ttl_hours\" {\n  description = \"The longest a break-glass grant may last. Two hours, enforced cloud-side by an aws:CurrentTime condition (decision 37).\"\n  value       = local.break_glass_max_ttl_hours\n}\n\noutput \"watcher_max_open_prs\" {\n  description = \"How many open PRs the watcher may hold at once. Five, counted by the PR job so the cap holds when the prompt is ignored (decision 40).\"\n  value       = local.watcher_max_open_prs\n}\n",
+        "line": 16,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "baseline/output.forbidden_actions",
+      "kind": "Terraform::Output",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "output.forbidden_actions",
+        "body": {
+          "description": "What the boundary denies. The lesson 6 proof checks read this list rather than re-stating it.",
+          "value": "${local.forbidden_actions}"
+        },
+        "file": "outputs.tf",
+        "root": "baseline",
+        "source": "output \"boundary_arn\" {\n  description = \"The estate boundary, for every role the persona module makes. Null in a sandbox, which carries no boundary at all (decision 36).\"\n  value       = var.sandbox ? null : aws_iam_policy.boundary[0].arn\n}\n\noutput \"boundary_name\" {\n  description = \"The deterministic boundary name, so another stack can reference it without a hardcoded ARN.\"\n  value       = var.boundary_name\n}\n\noutput \"forbidden_actions\" {\n  description = \"What the boundary denies. The lesson 6 proof checks read this list rather than re-stating it.\"\n  value       = local.forbidden_actions\n}\n\noutput \"break_glass_max_ttl_hours\" {\n  description = \"The longest a break-glass grant may last. Two hours, enforced cloud-side by an aws:CurrentTime condition (decision 37).\"\n  value       = local.break_glass_max_ttl_hours\n}\n\noutput \"watcher_max_open_prs\" {\n  description = \"How many open PRs the watcher may hold at once. Five, counted by the PR job so the cap holds when the prompt is ignored (decision 40).\"\n  value       = local.watcher_max_open_prs\n}\n",
+        "line": 11,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "baseline/output.watcher_max_open_prs",
+      "kind": "Terraform::Output",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "output.watcher_max_open_prs",
+        "body": {
+          "description": "How many open PRs the watcher may hold at once. Five, counted by the PR job so the cap holds when the prompt is ignored (decision 40).",
+          "value": "${local.watcher_max_open_prs}"
+        },
+        "file": "outputs.tf",
+        "root": "baseline",
+        "source": "output \"boundary_arn\" {\n  description = \"The estate boundary, for every role the persona module makes. Null in a sandbox, which carries no boundary at all (decision 36).\"\n  value       = var.sandbox ? null : aws_iam_policy.boundary[0].arn\n}\n\noutput \"boundary_name\" {\n  description = \"The deterministic boundary name, so another stack can reference it without a hardcoded ARN.\"\n  value       = var.boundary_name\n}\n\noutput \"forbidden_actions\" {\n  description = \"What the boundary denies. The lesson 6 proof checks read this list rather than re-stating it.\"\n  value       = local.forbidden_actions\n}\n\noutput \"break_glass_max_ttl_hours\" {\n  description = \"The longest a break-glass grant may last. Two hours, enforced cloud-side by an aws:CurrentTime condition (decision 37).\"\n  value       = local.break_glass_max_ttl_hours\n}\n\noutput \"watcher_max_open_prs\" {\n  description = \"How many open PRs the watcher may hold at once. Five, counted by the PR job so the cap holds when the prompt is ignored (decision 40).\"\n  value       = local.watcher_max_open_prs\n}\n",
+        "line": 21,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "baseline/terraform",
+      "kind": "Terraform::Terraform",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "terraform",
+        "body": {
+          "required_providers": [
+            {
+              "aws": {
+                "source": "hashicorp/aws",
+                "version": "~> 6.0"
+              }
+            }
+          ],
+          "required_version": ">= 1.9.0"
+        },
+        "file": "versions.tf",
+        "root": "baseline",
+        "source": "terraform {\n  required_version = \">= 1.9.0\"\n\n  required_providers {\n    aws = {\n      source  = \"hashicorp/aws\"\n      version = \"~> 6.0\"\n    }\n  }\n}\n",
+        "line": 1,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "baseline/var.apply_role_name",
+      "kind": "Terraform::Variable",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "var.apply_role_name",
+        "body": {
+          "default": "waterpark-apply",
+          "description": "The role the apply job assumes. On the guardrail path, so the boundary denies touching it. water park must not be able to escalate water park (decision 12).",
+          "type": "${string}"
+        },
+        "file": "variables.tf",
+        "root": "baseline",
+        "source": "variable \"boundary_name\" {\n  description = \"The deterministic name of the estate boundary. Deterministic so every stack references it by name and nothing hardcodes an ARN.\"\n  type        = string\n  default     = \"waterpark-estate-boundary\"\n}\n\nvariable \"sandbox\" {\n  description = \"Whether this environment is in the Sandbox OU. A sandbox carries no boundary at all, because sandboxes exist to be broken and the live session guide has the room break things there (decision 36). Set this true and the module emits no policy and hands back a null ARN.\"\n  type        = bool\n  default     = false\n}\n\nvariable \"owner\" {\n  description = \"Who to ask about the baseline. The guardrail path is platform's by rule.\"\n  type        = string\n  default     = \"platform\"\n}\n\nvariable \"state_bucket\" {\n  description = \"The Terraform state bucket in waterpark-security. On the guardrail path, so the boundary denies touching it.\"\n  type        = string\n  default     = \"waterpark-terraform-state\"\n}\n\nvariable \"apply_role_name\" {\n  description = \"The role the apply job assumes. On the guardrail path, so the boundary denies touching it. water park must not be able to escalate water park (decision 12).\"\n  type        = string\n  default     = \"waterpark-apply\"\n}\n",
+        "line": 25,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "baseline/var.boundary_name",
+      "kind": "Terraform::Variable",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "var.boundary_name",
+        "body": {
+          "default": "waterpark-estate-boundary",
+          "description": "The deterministic name of the estate boundary. Deterministic so every stack references it by name and nothing hardcodes an ARN.",
+          "type": "${string}"
+        },
+        "file": "variables.tf",
+        "root": "baseline",
+        "source": "variable \"boundary_name\" {\n  description = \"The deterministic name of the estate boundary. Deterministic so every stack references it by name and nothing hardcodes an ARN.\"\n  type        = string\n  default     = \"waterpark-estate-boundary\"\n}\n\nvariable \"sandbox\" {\n  description = \"Whether this environment is in the Sandbox OU. A sandbox carries no boundary at all, because sandboxes exist to be broken and the live session guide has the room break things there (decision 36). Set this true and the module emits no policy and hands back a null ARN.\"\n  type        = bool\n  default     = false\n}\n\nvariable \"owner\" {\n  description = \"Who to ask about the baseline. The guardrail path is platform's by rule.\"\n  type        = string\n  default     = \"platform\"\n}\n\nvariable \"state_bucket\" {\n  description = \"The Terraform state bucket in waterpark-security. On the guardrail path, so the boundary denies touching it.\"\n  type        = string\n  default     = \"waterpark-terraform-state\"\n}\n\nvariable \"apply_role_name\" {\n  description = \"The role the apply job assumes. On the guardrail path, so the boundary denies touching it. water park must not be able to escalate water park (decision 12).\"\n  type        = string\n  default     = \"waterpark-apply\"\n}\n",
+        "line": 1,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "baseline/var.owner",
+      "kind": "Terraform::Variable",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "var.owner",
+        "body": {
+          "default": "platform",
+          "description": "Who to ask about the baseline. The guardrail path is platform's by rule.",
+          "type": "${string}"
+        },
+        "file": "variables.tf",
+        "root": "baseline",
+        "source": "variable \"boundary_name\" {\n  description = \"The deterministic name of the estate boundary. Deterministic so every stack references it by name and nothing hardcodes an ARN.\"\n  type        = string\n  default     = \"waterpark-estate-boundary\"\n}\n\nvariable \"sandbox\" {\n  description = \"Whether this environment is in the Sandbox OU. A sandbox carries no boundary at all, because sandboxes exist to be broken and the live session guide has the room break things there (decision 36). Set this true and the module emits no policy and hands back a null ARN.\"\n  type        = bool\n  default     = false\n}\n\nvariable \"owner\" {\n  description = \"Who to ask about the baseline. The guardrail path is platform's by rule.\"\n  type        = string\n  default     = \"platform\"\n}\n\nvariable \"state_bucket\" {\n  description = \"The Terraform state bucket in waterpark-security. On the guardrail path, so the boundary denies touching it.\"\n  type        = string\n  default     = \"waterpark-terraform-state\"\n}\n\nvariable \"apply_role_name\" {\n  description = \"The role the apply job assumes. On the guardrail path, so the boundary denies touching it. water park must not be able to escalate water park (decision 12).\"\n  type        = string\n  default     = \"waterpark-apply\"\n}\n",
+        "line": 13,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "baseline/var.sandbox",
+      "kind": "Terraform::Variable",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "var.sandbox",
+        "body": {
+          "default": false,
+          "description": "Whether this environment is in the Sandbox OU. A sandbox carries no boundary at all, because sandboxes exist to be broken and the live session guide has the room break things there (decision 36). Set this true and the module emits no policy and hands back a null ARN.",
+          "type": "${bool}"
+        },
+        "file": "variables.tf",
+        "root": "baseline",
+        "source": "variable \"boundary_name\" {\n  description = \"The deterministic name of the estate boundary. Deterministic so every stack references it by name and nothing hardcodes an ARN.\"\n  type        = string\n  default     = \"waterpark-estate-boundary\"\n}\n\nvariable \"sandbox\" {\n  description = \"Whether this environment is in the Sandbox OU. A sandbox carries no boundary at all, because sandboxes exist to be broken and the live session guide has the room break things there (decision 36). Set this true and the module emits no policy and hands back a null ARN.\"\n  type        = bool\n  default     = false\n}\n\nvariable \"owner\" {\n  description = \"Who to ask about the baseline. The guardrail path is platform's by rule.\"\n  type        = string\n  default     = \"platform\"\n}\n\nvariable \"state_bucket\" {\n  description = \"The Terraform state bucket in waterpark-security. On the guardrail path, so the boundary denies touching it.\"\n  type        = string\n  default     = \"waterpark-terraform-state\"\n}\n\nvariable \"apply_role_name\" {\n  description = \"The role the apply job assumes. On the guardrail path, so the boundary denies touching it. water park must not be able to escalate water park (decision 12).\"\n  type        = string\n  default     = \"waterpark-apply\"\n}\n",
+        "line": 7,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "baseline/var.state_bucket",
+      "kind": "Terraform::Variable",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "var.state_bucket",
+        "body": {
+          "default": "waterpark-terraform-state",
+          "description": "The Terraform state bucket in waterpark-security. On the guardrail path, so the boundary denies touching it.",
+          "type": "${string}"
+        },
+        "file": "variables.tf",
+        "root": "baseline",
+        "source": "variable \"boundary_name\" {\n  description = \"The deterministic name of the estate boundary. Deterministic so every stack references it by name and nothing hardcodes an ARN.\"\n  type        = string\n  default     = \"waterpark-estate-boundary\"\n}\n\nvariable \"sandbox\" {\n  description = \"Whether this environment is in the Sandbox OU. A sandbox carries no boundary at all, because sandboxes exist to be broken and the live session guide has the room break things there (decision 36). Set this true and the module emits no policy and hands back a null ARN.\"\n  type        = bool\n  default     = false\n}\n\nvariable \"owner\" {\n  description = \"Who to ask about the baseline. The guardrail path is platform's by rule.\"\n  type        = string\n  default     = \"platform\"\n}\n\nvariable \"state_bucket\" {\n  description = \"The Terraform state bucket in waterpark-security. On the guardrail path, so the boundary denies touching it.\"\n  type        = string\n  default     = \"waterpark-terraform-state\"\n}\n\nvariable \"apply_role_name\" {\n  description = \"The role the apply job assumes. On the guardrail path, so the boundary denies touching it. water park must not be able to escalate water park (decision 12).\"\n  type        = string\n  default     = \"waterpark-apply\"\n}\n",
+        "line": 19,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "runner/aws_ecr_repository.waterpark_runner",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_ecr_repository.waterpark_runner",
+        "body": {
+          "image_tag_mutability": "IMMUTABLE",
+          "name": "waterpark-runner",
+          "tags": {
+            "owner": "${local.owner}",
+            "role": "the registry the sandbox runner image is pushed to"
+          }
+        },
+        "file": "ecr_repository.waterpark_runner.tf",
+        "root": "runner",
+        "source": "# The registry the sandbox runner image is pushed to. A satellite declares its\n# own resources, which is the half of delegation nobody argues about.\nresource \"aws_ecr_repository\" \"waterpark_runner\" {\n  name = \"waterpark-runner\"\n\n  # An image tag that can be moved is an artifact that cannot be trusted, and\n  # every deploy this registry feeds is a deploy of whatever the tag points at\n  # today.\n  image_tag_mutability = \"IMMUTABLE\"\n\n  tags = {\n    owner = local.owner\n    role  = \"the registry the sandbox runner image is pushed to\"\n  }\n}\n",
+        "line": 3,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "runner/data.aws_iam_policy.boundary",
+      "kind": "Terraform::Data",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "data.aws_iam_policy.boundary",
+        "body": {
+          "name": "${var.boundary_name}"
+        },
+        "file": "data.tf",
+        "root": "runner",
+        "source": "# How a satellite consumes a central identifier (decision 50). By name, read\n# live, never through terraform_remote_state.\n#\n# The boundary name is deterministic (decision 36), so the satellite needs one\n# string rather than an ARN somebody copied. Reading it live means the\n# satellite gets the boundary that actually exists rather than the one a file\n# claims exists, and it means a satellite that plans before central has\n# applied the boundary fails loudly rather than creating an unbounded role.\n#\n# terraform_remote_state was the alternative and it is refused. It would hand\n# a satellite read access to the central state file, which is bookkeeping and\n# never the system of record (decision 32), and it would make every satellite\n# a reader of central's internals.\ndata \"aws_iam_policy\" \"boundary\" {\n  name = var.boundary_name\n}\n",
+        "line": 14,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "runner/locals",
+      "kind": "Terraform::Locals",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "locals",
+        "body": {
+          "owner": "runner"
+        },
+        "file": "locals.tf",
+        "root": "runner",
+        "source": "locals {\n  # The satellite owns itself. Nobody in platform is in this file, and that is\n  # the point of the lesson.\n  owner = \"runner\"\n}\n",
+        "line": 1,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "runner/module.runner_builder",
+      "kind": "Terraform::Module",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "module.runner_builder",
+        "body": {
+          "description": "Builds the sandbox runner image and pushes it to the waterpark-runner registry.",
+          "grants": [
+            {
+              "access": "push",
+              "reason": "Publishes the runner image to the registry this root declares.",
+              "resource": "${aws_ecr_repository.waterpark_runner.name}"
+            },
+            {
+              "access": "write",
+              "reason": "Publishes the build artifacts that go with the image.",
+              "resource": "waterpark-artifacts"
+            },
+            {
+              "access": "list",
+              "reason": "Reads what it already published before pushing again.",
+              "resource": "waterpark-artifacts"
+            }
+          ],
+          "name": "runner-builder",
+          "owner": "${local.owner}",
+          "permissions_boundary": "${data.aws_iam_policy.boundary.arn}",
+          "persona": "service",
+          "source": "../../modules/persona",
+          "teams": [
+            "runner"
+          ]
+        },
+        "file": "iam_role.runner_builder.tf",
+        "root": "runner",
+        "source": "# The whole satellite leaf file. A persona, a boundary and a list of grants.\n#\n# Nobody from platform is involved in this file. The satellite creates the\n# role that pushes to the registry it declares, and the boundary is what makes\n# that safe (decision 20). The role can be given anything inside the estate\n# boundary and nothing outside it, whatever this file says, because effective\n# permissions are the intersection of the two.\n#\n# The module source. In this repo the satellite is a sibling root under\n# access/ (decision 49), so the source is the local path and every command in\n# the lesson works from a fresh clone with no network. A satellite in its own\n# repository consumes the same module as a git source pinned to a tag\n# (decision 50), which is\n#\n#   source = \"git::https://github.com/INTENTIUS/waterpark.git//access/modules/persona?ref=checkpoint/i8\"\n#\n# and access/scripts/satellite-source swaps between the two. The local path is\n# committed because a checkout has to be green on its own and the tag is cut\n# after these commits land.\nmodule \"runner_builder\" {\n  source = \"../../modules/persona\"\n\n  persona     = \"service\"\n  name        = \"runner-builder\"\n  description = \"Builds the sandbox runner image and pushes it to the waterpark-runner registry.\"\n  owner       = local.owner\n  teams       = [\"runner\"]\n\n  # The line the whole lesson turns on. Take it out and the rule pack refuses\n  # the build, and the deploy credential is refused by IAM at apply, and\n  # neither refusal knows about the other.\n  permissions_boundary = data.aws_iam_policy.boundary.arn\n\n  grants = [\n    {\n      resource = aws_ecr_repository.waterpark_runner.name\n      access   = \"push\"\n      reason   = \"Publishes the runner image to the registry this root declares.\"\n    },\n    {\n      resource = \"waterpark-artifacts\"\n      access   = \"write\"\n      reason   = \"Publishes the build artifacts that go with the image.\"\n    },\n    {\n      resource = \"waterpark-artifacts\"\n      access   = \"list\"\n      reason   = \"Reads what it already published before pushing again.\"\n    },\n  ]\n}\n",
+        "line": 20,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "runner/output.boundary_arn",
+      "kind": "Terraform::Output",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "output.boundary_arn",
+        "body": {
+          "description": "The central boundary this satellite consumed, read live by name. A live read of the role should return exactly this.",
+          "value": "${data.aws_iam_policy.boundary.arn}"
+        },
+        "file": "outputs.tf",
+        "root": "runner",
+        "source": "output \"registry_url\" {\n  description = \"Where the runner image is pushed.\"\n  value       = aws_ecr_repository.waterpark_runner.repository_url\n}\n\noutput \"roles\" {\n  description = \"The workload roles this satellite declares, by principal name.\"\n  value = {\n    (module.runner_builder.role_name) = module.runner_builder.role_arn\n  }\n}\n\noutput \"grants\" {\n  description = \"Every grant this satellite declares. The drift watch reads the expiry from here, the same way it does for envs/prod.\"\n  value = {\n    runner-builder = module.runner_builder.grants\n  }\n}\n\noutput \"boundary_arn\" {\n  description = \"The central boundary this satellite consumed, read live by name. A live read of the role should return exactly this.\"\n  value       = data.aws_iam_policy.boundary.arn\n}\n",
+        "line": 20,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "runner/output.grants",
+      "kind": "Terraform::Output",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "output.grants",
+        "body": {
+          "description": "Every grant this satellite declares. The drift watch reads the expiry from here, the same way it does for envs/prod.",
+          "value": {
+            "runner-builder": "${module.runner_builder.grants}"
+          }
+        },
+        "file": "outputs.tf",
+        "root": "runner",
+        "source": "output \"registry_url\" {\n  description = \"Where the runner image is pushed.\"\n  value       = aws_ecr_repository.waterpark_runner.repository_url\n}\n\noutput \"roles\" {\n  description = \"The workload roles this satellite declares, by principal name.\"\n  value = {\n    (module.runner_builder.role_name) = module.runner_builder.role_arn\n  }\n}\n\noutput \"grants\" {\n  description = \"Every grant this satellite declares. The drift watch reads the expiry from here, the same way it does for envs/prod.\"\n  value = {\n    runner-builder = module.runner_builder.grants\n  }\n}\n\noutput \"boundary_arn\" {\n  description = \"The central boundary this satellite consumed, read live by name. A live read of the role should return exactly this.\"\n  value       = data.aws_iam_policy.boundary.arn\n}\n",
+        "line": 13,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "runner/output.registry_url",
+      "kind": "Terraform::Output",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "output.registry_url",
+        "body": {
+          "description": "Where the runner image is pushed.",
+          "value": "${aws_ecr_repository.waterpark_runner.repository_url}"
+        },
+        "file": "outputs.tf",
+        "root": "runner",
+        "source": "output \"registry_url\" {\n  description = \"Where the runner image is pushed.\"\n  value       = aws_ecr_repository.waterpark_runner.repository_url\n}\n\noutput \"roles\" {\n  description = \"The workload roles this satellite declares, by principal name.\"\n  value = {\n    (module.runner_builder.role_name) = module.runner_builder.role_arn\n  }\n}\n\noutput \"grants\" {\n  description = \"Every grant this satellite declares. The drift watch reads the expiry from here, the same way it does for envs/prod.\"\n  value = {\n    runner-builder = module.runner_builder.grants\n  }\n}\n\noutput \"boundary_arn\" {\n  description = \"The central boundary this satellite consumed, read live by name. A live read of the role should return exactly this.\"\n  value       = data.aws_iam_policy.boundary.arn\n}\n",
+        "line": 1,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "runner/output.roles",
+      "kind": "Terraform::Output",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "output.roles",
+        "body": {
+          "description": "The workload roles this satellite declares, by principal name.",
+          "value": {
+            "${(module.runner_builder.role_name)}": "${module.runner_builder.role_arn}"
+          }
+        },
+        "file": "outputs.tf",
+        "root": "runner",
+        "source": "output \"registry_url\" {\n  description = \"Where the runner image is pushed.\"\n  value       = aws_ecr_repository.waterpark_runner.repository_url\n}\n\noutput \"roles\" {\n  description = \"The workload roles this satellite declares, by principal name.\"\n  value = {\n    (module.runner_builder.role_name) = module.runner_builder.role_arn\n  }\n}\n\noutput \"grants\" {\n  description = \"Every grant this satellite declares. The drift watch reads the expiry from here, the same way it does for envs/prod.\"\n  value = {\n    runner-builder = module.runner_builder.grants\n  }\n}\n\noutput \"boundary_arn\" {\n  description = \"The central boundary this satellite consumed, read live by name. A live read of the role should return exactly this.\"\n  value       = data.aws_iam_policy.boundary.arn\n}\n",
+        "line": 6,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "runner/provider.aws",
+      "kind": "Terraform::Provider",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "provider.aws",
+        "body": {
+          "access_key": "${var.floci && !var.credentials_from_env ? \"test\" : null}",
+          "default_tags": [
+            {
+              "tags": {
+                "env": "${var.env}",
+                "managed_by": "terraform",
+                "repo": "INTENTIUS/waterpark",
+                "satellite": "waterpark-runner"
+              }
+            }
+          ],
+          "dynamic": {
+            "endpoints": [
+              {
+                "content": [
+                  {
+                    "ecr": "${endpoints.value}",
+                    "iam": "${endpoints.value}",
+                    "s3": "${endpoints.value}",
+                    "sts": "${endpoints.value}"
+                  }
+                ],
+                "for_each": "${var.floci ? [var.floci_endpoint] : []}"
+              }
+            ]
+          },
+          "region": "${var.region}",
+          "s3_use_path_style": "${var.floci}",
+          "secret_key": "${var.floci && !var.credentials_from_env ? \"test\" : null}",
+          "skip_credentials_validation": "${var.floci}",
+          "skip_metadata_api_check": "${var.floci}",
+          "skip_requesting_account_id": "${var.floci}"
+        },
+        "file": "provider.tf",
+        "root": "runner",
+        "source": "# The same two targets as envs/prod, plus ecr, because this root declares a\n# registry. Floci implements ecr and the patched build applies an\n# aws_ecr_repository and reads it back with its tags, so the registry is\n# declared here rather than deferred (which is what decision 48 left open).\nprovider \"aws\" {\n  region = var.region\n\n  # The throwaway pair on the solo path, so a fresh clone plans with no\n  # credential of any kind. A satellite in the world deploys as its own\n  # credential rather than as the account root, and credentials_from_env is\n  # how this root is pointed at one. access/scripts/double-refusal uses it,\n  # because a refusal is only a refusal if the caller is the satellite.\n  access_key = var.floci && !var.credentials_from_env ? \"test\" : null\n  secret_key = var.floci && !var.credentials_from_env ? \"test\" : null\n\n  skip_credentials_validation = var.floci\n  skip_requesting_account_id  = var.floci\n  skip_metadata_api_check     = var.floci\n  s3_use_path_style           = var.floci\n\n  dynamic \"endpoints\" {\n    for_each = var.floci ? [var.floci_endpoint] : []\n\n    content {\n      iam = endpoints.value\n      sts = endpoints.value\n      s3  = endpoints.value\n      ecr = endpoints.value\n    }\n  }\n\n  # A satellite marks what it creates, so central reconcile can see that a\n  # resource is foreign and leave it to the repo that owns it.\n  default_tags {\n    tags = {\n      managed_by = \"terraform\"\n      repo       = \"INTENTIUS/waterpark\"\n      env        = var.env\n      satellite  = \"waterpark-runner\"\n    }\n  }\n}\n",
+        "line": 5,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "runner/terraform",
+      "kind": "Terraform::Terraform",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "terraform",
+        "body": {
+          "backend": {
+            "local": [
+              {
+                "path": "terraform.tfstate"
+              }
+            ]
+          }
+        },
+        "file": "backend.local.tf",
+        "root": "runner",
+        "source": "# The solo path keeps state in this directory, so a fresh clone can run\n# terraform init with no AWS account and no credentials.\n#\n# The live path replaces this file with access/backends/backend.s3.tf, which\n# puts state in the waterpark-security account with locking. Swap it with\n# access/scripts/backend. See access/README.md, \"State and the two backends\".\nterraform {\n  backend \"local\" {\n    path = \"terraform.tfstate\"\n  }\n}\n",
+        "line": 7,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "runner/terraform~2",
+      "kind": "Terraform::Terraform",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "terraform",
+        "body": {
+          "required_providers": [
+            {
+              "aws": {
+                "source": "hashicorp/aws",
+                "version": "~> 6.0"
+              }
+            }
+          ],
+          "required_version": ">= 1.9.0"
+        },
+        "file": "versions.tf",
+        "root": "runner",
+        "source": "terraform {\n  required_version = \">= 1.9.0\"\n\n  required_providers {\n    aws = {\n      source  = \"hashicorp/aws\"\n      version = \"~> 6.0\"\n    }\n  }\n}\n",
+        "line": 1,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "runner/var.boundary_name",
+      "kind": "Terraform::Variable",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "var.boundary_name",
+        "body": {
+          "default": "waterpark-estate-boundary",
+          "description": "The estate boundary, by name. The satellite reads it live rather than being handed an ARN, because the name is deterministic (decision 36) and an ARN in a satellite file is a copy that can go stale. If central has not applied the boundary yet, this root refuses to plan, which is the correct order.",
+          "type": "${string}"
+        },
+        "file": "variables.tf",
+        "root": "runner",
+        "source": "variable \"floci\" {\n  description = \"Point the AWS provider at a local Floci emulator instead of a real account. The solo path leaves this true. The live path passes -var floci=false.\"\n  type        = bool\n  default     = true\n}\n\nvariable \"floci_endpoint\" {\n  description = \"Where Floci answers. Used only when floci is true.\"\n  type        = string\n  default     = \"http://localhost:4566\"\n}\n\nvariable \"region\" {\n  description = \"The region the registry lives in.\"\n  type        = string\n  default     = \"us-east-1\"\n}\n\nvariable \"env\" {\n  description = \"The environment this satellite deploys into.\"\n  type        = string\n  default     = \"prod\"\n}\n\nvariable \"credentials_from_env\" {\n  description = \"Take the AWS credentials from the environment instead of the throwaway test pair. A satellite deploys as its own credential rather than as the account root, and access/scripts/double-refusal sets this so the IAM refusal is a refusal of the satellite. The solo path leaves it false.\"\n  type        = bool\n  default     = false\n}\n\nvariable \"boundary_name\" {\n  description = \"The estate boundary, by name. The satellite reads it live rather than being handed an ARN, because the name is deterministic (decision 36) and an ARN in a satellite file is a copy that can go stale. If central has not applied the boundary yet, this root refuses to plan, which is the correct order.\"\n  type        = string\n  default     = \"waterpark-estate-boundary\"\n}\n",
+        "line": 31,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "runner/var.credentials_from_env",
+      "kind": "Terraform::Variable",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "var.credentials_from_env",
+        "body": {
+          "default": false,
+          "description": "Take the AWS credentials from the environment instead of the throwaway test pair. A satellite deploys as its own credential rather than as the account root, and access/scripts/double-refusal sets this so the IAM refusal is a refusal of the satellite. The solo path leaves it false.",
+          "type": "${bool}"
+        },
+        "file": "variables.tf",
+        "root": "runner",
+        "source": "variable \"floci\" {\n  description = \"Point the AWS provider at a local Floci emulator instead of a real account. The solo path leaves this true. The live path passes -var floci=false.\"\n  type        = bool\n  default     = true\n}\n\nvariable \"floci_endpoint\" {\n  description = \"Where Floci answers. Used only when floci is true.\"\n  type        = string\n  default     = \"http://localhost:4566\"\n}\n\nvariable \"region\" {\n  description = \"The region the registry lives in.\"\n  type        = string\n  default     = \"us-east-1\"\n}\n\nvariable \"env\" {\n  description = \"The environment this satellite deploys into.\"\n  type        = string\n  default     = \"prod\"\n}\n\nvariable \"credentials_from_env\" {\n  description = \"Take the AWS credentials from the environment instead of the throwaway test pair. A satellite deploys as its own credential rather than as the account root, and access/scripts/double-refusal sets this so the IAM refusal is a refusal of the satellite. The solo path leaves it false.\"\n  type        = bool\n  default     = false\n}\n\nvariable \"boundary_name\" {\n  description = \"The estate boundary, by name. The satellite reads it live rather than being handed an ARN, because the name is deterministic (decision 36) and an ARN in a satellite file is a copy that can go stale. If central has not applied the boundary yet, this root refuses to plan, which is the correct order.\"\n  type        = string\n  default     = \"waterpark-estate-boundary\"\n}\n",
+        "line": 25,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "runner/var.env",
+      "kind": "Terraform::Variable",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "var.env",
+        "body": {
+          "default": "prod",
+          "description": "The environment this satellite deploys into.",
+          "type": "${string}"
+        },
+        "file": "variables.tf",
+        "root": "runner",
+        "source": "variable \"floci\" {\n  description = \"Point the AWS provider at a local Floci emulator instead of a real account. The solo path leaves this true. The live path passes -var floci=false.\"\n  type        = bool\n  default     = true\n}\n\nvariable \"floci_endpoint\" {\n  description = \"Where Floci answers. Used only when floci is true.\"\n  type        = string\n  default     = \"http://localhost:4566\"\n}\n\nvariable \"region\" {\n  description = \"The region the registry lives in.\"\n  type        = string\n  default     = \"us-east-1\"\n}\n\nvariable \"env\" {\n  description = \"The environment this satellite deploys into.\"\n  type        = string\n  default     = \"prod\"\n}\n\nvariable \"credentials_from_env\" {\n  description = \"Take the AWS credentials from the environment instead of the throwaway test pair. A satellite deploys as its own credential rather than as the account root, and access/scripts/double-refusal sets this so the IAM refusal is a refusal of the satellite. The solo path leaves it false.\"\n  type        = bool\n  default     = false\n}\n\nvariable \"boundary_name\" {\n  description = \"The estate boundary, by name. The satellite reads it live rather than being handed an ARN, because the name is deterministic (decision 36) and an ARN in a satellite file is a copy that can go stale. If central has not applied the boundary yet, this root refuses to plan, which is the correct order.\"\n  type        = string\n  default     = \"waterpark-estate-boundary\"\n}\n",
+        "line": 19,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "runner/var.floci",
+      "kind": "Terraform::Variable",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "var.floci",
+        "body": {
+          "default": true,
+          "description": "Point the AWS provider at a local Floci emulator instead of a real account. The solo path leaves this true. The live path passes -var floci=false.",
+          "type": "${bool}"
+        },
+        "file": "variables.tf",
+        "root": "runner",
+        "source": "variable \"floci\" {\n  description = \"Point the AWS provider at a local Floci emulator instead of a real account. The solo path leaves this true. The live path passes -var floci=false.\"\n  type        = bool\n  default     = true\n}\n\nvariable \"floci_endpoint\" {\n  description = \"Where Floci answers. Used only when floci is true.\"\n  type        = string\n  default     = \"http://localhost:4566\"\n}\n\nvariable \"region\" {\n  description = \"The region the registry lives in.\"\n  type        = string\n  default     = \"us-east-1\"\n}\n\nvariable \"env\" {\n  description = \"The environment this satellite deploys into.\"\n  type        = string\n  default     = \"prod\"\n}\n\nvariable \"credentials_from_env\" {\n  description = \"Take the AWS credentials from the environment instead of the throwaway test pair. A satellite deploys as its own credential rather than as the account root, and access/scripts/double-refusal sets this so the IAM refusal is a refusal of the satellite. The solo path leaves it false.\"\n  type        = bool\n  default     = false\n}\n\nvariable \"boundary_name\" {\n  description = \"The estate boundary, by name. The satellite reads it live rather than being handed an ARN, because the name is deterministic (decision 36) and an ARN in a satellite file is a copy that can go stale. If central has not applied the boundary yet, this root refuses to plan, which is the correct order.\"\n  type        = string\n  default     = \"waterpark-estate-boundary\"\n}\n",
+        "line": 1,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "runner/var.floci_endpoint",
+      "kind": "Terraform::Variable",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "var.floci_endpoint",
+        "body": {
+          "default": "http://localhost:4566",
+          "description": "Where Floci answers. Used only when floci is true.",
+          "type": "${string}"
+        },
+        "file": "variables.tf",
+        "root": "runner",
+        "source": "variable \"floci\" {\n  description = \"Point the AWS provider at a local Floci emulator instead of a real account. The solo path leaves this true. The live path passes -var floci=false.\"\n  type        = bool\n  default     = true\n}\n\nvariable \"floci_endpoint\" {\n  description = \"Where Floci answers. Used only when floci is true.\"\n  type        = string\n  default     = \"http://localhost:4566\"\n}\n\nvariable \"region\" {\n  description = \"The region the registry lives in.\"\n  type        = string\n  default     = \"us-east-1\"\n}\n\nvariable \"env\" {\n  description = \"The environment this satellite deploys into.\"\n  type        = string\n  default     = \"prod\"\n}\n\nvariable \"credentials_from_env\" {\n  description = \"Take the AWS credentials from the environment instead of the throwaway test pair. A satellite deploys as its own credential rather than as the account root, and access/scripts/double-refusal sets this so the IAM refusal is a refusal of the satellite. The solo path leaves it false.\"\n  type        = bool\n  default     = false\n}\n\nvariable \"boundary_name\" {\n  description = \"The estate boundary, by name. The satellite reads it live rather than being handed an ARN, because the name is deterministic (decision 36) and an ARN in a satellite file is a copy that can go stale. If central has not applied the boundary yet, this root refuses to plan, which is the correct order.\"\n  type        = string\n  default     = \"waterpark-estate-boundary\"\n}\n",
+        "line": 7,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "runner/var.region",
+      "kind": "Terraform::Variable",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "var.region",
+        "body": {
+          "default": "us-east-1",
+          "description": "The region the registry lives in.",
+          "type": "${string}"
+        },
+        "file": "variables.tf",
+        "root": "runner",
+        "source": "variable \"floci\" {\n  description = \"Point the AWS provider at a local Floci emulator instead of a real account. The solo path leaves this true. The live path passes -var floci=false.\"\n  type        = bool\n  default     = true\n}\n\nvariable \"floci_endpoint\" {\n  description = \"Where Floci answers. Used only when floci is true.\"\n  type        = string\n  default     = \"http://localhost:4566\"\n}\n\nvariable \"region\" {\n  description = \"The region the registry lives in.\"\n  type        = string\n  default     = \"us-east-1\"\n}\n\nvariable \"env\" {\n  description = \"The environment this satellite deploys into.\"\n  type        = string\n  default     = \"prod\"\n}\n\nvariable \"credentials_from_env\" {\n  description = \"Take the AWS credentials from the environment instead of the throwaway test pair. A satellite deploys as its own credential rather than as the account root, and access/scripts/double-refusal sets this so the IAM refusal is a refusal of the satellite. The solo path leaves it false.\"\n  type        = bool\n  default     = false\n}\n\nvariable \"boundary_name\" {\n  description = \"The estate boundary, by name. The satellite reads it live rather than being handed an ARN, because the name is deterministic (decision 36) and an ARN in a satellite file is a copy that can go stale. If central has not applied the boundary yet, this root refuses to plan, which is the correct order.\"\n  type        = string\n  default     = \"waterpark-estate-boundary\"\n}\n",
+        "line": 13,
+        "mode": "state"
+      }
+    }
+  ],
+  "edges": [],
+  "groups": {
+    "byLexicon": {
+      "terraform": [
+        "baseline/aws_iam_policy.boundary",
+        "baseline/locals",
+        "baseline/output.boundary_arn",
+        "baseline/output.boundary_name",
+        "baseline/output.break_glass_max_ttl_hours",
+        "baseline/output.forbidden_actions",
+        "baseline/output.watcher_max_open_prs",
+        "baseline/terraform",
+        "baseline/var.apply_role_name",
+        "baseline/var.boundary_name",
+        "baseline/var.owner",
+        "baseline/var.sandbox",
+        "baseline/var.state_bucket",
+        "runner/aws_ecr_repository.waterpark_runner",
+        "runner/data.aws_iam_policy.boundary",
+        "runner/locals",
+        "runner/module.runner_builder",
+        "runner/output.boundary_arn",
+        "runner/output.grants",
+        "runner/output.registry_url",
+        "runner/output.roles",
+        "runner/provider.aws",
+        "runner/terraform",
+        "runner/terraform~2",
+        "runner/var.boundary_name",
+        "runner/var.credentials_from_env",
+        "runner/var.env",
+        "runner/var.floci",
+        "runner/var.floci_endpoint",
+        "runner/var.region"
+      ]
+    },
+    "byStack": {
+      "terraform": [
+        "baseline/aws_iam_policy.boundary",
+        "baseline/locals",
+        "baseline/output.boundary_arn",
+        "baseline/output.boundary_name",
+        "baseline/output.break_glass_max_ttl_hours",
+        "baseline/output.forbidden_actions",
+        "baseline/output.watcher_max_open_prs",
+        "baseline/terraform",
+        "baseline/var.apply_role_name",
+        "baseline/var.boundary_name",
+        "baseline/var.owner",
+        "baseline/var.sandbox",
+        "baseline/var.state_bucket",
+        "runner/aws_ecr_repository.waterpark_runner",
+        "runner/data.aws_iam_policy.boundary",
+        "runner/locals",
+        "runner/module.runner_builder",
+        "runner/output.boundary_arn",
+        "runner/output.grants",
+        "runner/output.registry_url",
+        "runner/output.roles",
+        "runner/provider.aws",
+        "runner/terraform",
+        "runner/terraform~2",
+        "runner/var.boundary_name",
+        "runner/var.credentials_from_env",
+        "runner/var.env",
+        "runner/var.floci",
+        "runner/var.floci_endpoint",
+        "runner/var.region"
+      ]
+    }
+  }
+}

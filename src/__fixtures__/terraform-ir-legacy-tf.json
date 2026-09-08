@@ -1,0 +1,450 @@
+{
+  "nodes": [
+    {
+      "id": "app/aws_cloudwatch_log_group.worker",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_cloudwatch_log_group.worker",
+        "file": "observability.tf",
+        "root": "app",
+        "source": "# The free first move. Nothing references it and it references nothing, so the\n# advisor scores it 100 — a clean tier-1 map with an empty boundary. The\n# walkthrough names it and then carves the bucket instead: there is always a\n# zero-cost resource to start with, and starting there proves nothing more than\n# that the machinery runs.\n#\n# (The API lambda's own log group is not here any more — it was carved into\n# ../app/src/carved.ts last month.)\n\nresource \"aws_cloudwatch_log_group\" \"worker\" {\n  name              = \"/acme/platform/worker\"\n  retention_in_days = 30\n\n  tags = {\n    Name      = \"acme-platform-worker\"\n    Component = \"worker\"\n  }\n}\n",
+        "line": 10,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/aws_iam_role.api",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_iam_role.api",
+        "file": "compute.tf",
+        "root": "app",
+        "source": "# The \"next month\" candidates.\n#\n# The lambda is a tier-2 map with five outbound references — the role, the\n# bucket, both subnets and the security group. None of them block a carve\n# (outbound edges become deferred deploy-time inputs, not immediate patches),\n# but five of them is real work, so it lands in the middle band honestly.\n#\n# The role is the mirror image: one inbound edge, from the lambda. That is what\n# an inbound edge costs, and it is why the role scores lower than the bucket\n# despite being just as small.\n\nresource \"aws_iam_role\" \"api\" {\n  name = \"acme-platform-api-${random_pet.suffix.id}\"\n\n  assume_role_policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = \"sts:AssumeRole\"\n        Principal = {\n          Service = \"lambda.amazonaws.com\"\n        }\n      }\n    ]\n  })\n\n  managed_policy_arns = [\n    \"arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole\",\n    \"arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole\",\n  ]\n\n  tags = {\n    Component = \"api\"\n  }\n}\n\nresource \"aws_lambda_function\" \"api\" {\n  function_name = \"acme-platform-api\"\n  role          = aws_iam_role.api.arn\n  handler       = \"index.handler\"\n  runtime       = \"nodejs22.x\"\n  filename      = \"build/api.zip\"\n  memory_size   = 512\n  timeout       = 15\n\n  environment {\n    variables = {\n      # The one edge into the bucket, and the only patch the carve needs.\n      ASSETS_BUCKET = aws_s3_bucket.assets.bucket\n      LOG_LEVEL     = \"info\"\n    }\n  }\n\n  vpc_config {\n    subnet_ids         = [aws_subnet.private_a.id, aws_subnet.private_b.id]\n    security_group_ids = [aws_security_group.lambda.id]\n  }\n\n  tags = {\n    Component = \"api\"\n  }\n}\n",
+        "line": 12,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/aws_lambda_function.api",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_lambda_function.api",
+        "file": "compute.tf",
+        "root": "app",
+        "source": "# The \"next month\" candidates.\n#\n# The lambda is a tier-2 map with five outbound references — the role, the\n# bucket, both subnets and the security group. None of them block a carve\n# (outbound edges become deferred deploy-time inputs, not immediate patches),\n# but five of them is real work, so it lands in the middle band honestly.\n#\n# The role is the mirror image: one inbound edge, from the lambda. That is what\n# an inbound edge costs, and it is why the role scores lower than the bucket\n# despite being just as small.\n\nresource \"aws_iam_role\" \"api\" {\n  name = \"acme-platform-api-${random_pet.suffix.id}\"\n\n  assume_role_policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = \"sts:AssumeRole\"\n        Principal = {\n          Service = \"lambda.amazonaws.com\"\n        }\n      }\n    ]\n  })\n\n  managed_policy_arns = [\n    \"arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole\",\n    \"arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole\",\n  ]\n\n  tags = {\n    Component = \"api\"\n  }\n}\n\nresource \"aws_lambda_function\" \"api\" {\n  function_name = \"acme-platform-api\"\n  role          = aws_iam_role.api.arn\n  handler       = \"index.handler\"\n  runtime       = \"nodejs22.x\"\n  filename      = \"build/api.zip\"\n  memory_size   = 512\n  timeout       = 15\n\n  environment {\n    variables = {\n      # The one edge into the bucket, and the only patch the carve needs.\n      ASSETS_BUCKET = aws_s3_bucket.assets.bucket\n      LOG_LEVEL     = \"info\"\n    }\n  }\n\n  vpc_config {\n    subnet_ids         = [aws_subnet.private_a.id, aws_subnet.private_b.id]\n    security_group_ids = [aws_security_group.lambda.id]\n  }\n\n  tags = {\n    Component = \"api\"\n  }\n}\n",
+        "line": 38,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/aws_network_acl.private",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_network_acl.private",
+        "file": "network.tf",
+        "root": "app",
+        "source": "# The grey anchor.\n#\n# Five surviving resources point at the VPC, so carving it would mean patching\n# five references in one go — the advisor bands it \"leave in Terraform\" and it\n# is right. The subnets and the security group sit just under the line for the\n# same reason, plus a data-source lookup each. This block stays in Terraform,\n# and that is the correct answer, not a failure of the tool.\n\nresource \"aws_vpc\" \"main\" {\n  cidr_block           = \"10.42.0.0/16\"\n  enable_dns_support   = true\n  enable_dns_hostnames = true\n\n  tags = {\n    Name = \"acme-platform-${random_pet.suffix.id}\"\n  }\n}\n\ndata \"aws_availability_zones\" \"available\" {\n  state = \"available\"\n}\n\nresource \"aws_subnet\" \"private_a\" {\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = \"10.42.1.0/24\"\n  availability_zone = data.aws_availability_zones.available.names[0]\n\n  tags = {\n    Name = \"acme-platform-private-a-${random_pet.suffix.id}\"\n    Tier = \"private\"\n  }\n}\n\nresource \"aws_subnet\" \"private_b\" {\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = \"10.42.2.0/24\"\n  availability_zone = data.aws_availability_zones.available.names[1]\n\n  tags = {\n    Name = \"acme-platform-private-b-${random_pet.suffix.id}\"\n    Tier = \"private\"\n  }\n}\n\n# The managed prefix list for S3 in this region — how the lambda reaches the\n# assets bucket without leaving the VPC.\ndata \"aws_prefix_list\" \"s3\" {\n  name = \"com.amazonaws.us-east-2.s3\"\n}\n\nresource \"aws_security_group\" \"lambda\" {\n  name        = \"acme-platform-lambda-${random_pet.suffix.id}\"\n  description = \"Egress-only group for the acme-platform API lambda\"\n  vpc_id      = aws_vpc.main.id\n\n  egress {\n    description     = \"S3 via the regional gateway prefix list\"\n    from_port       = 443\n    to_port         = 443\n    protocol        = \"tcp\"\n    prefix_list_ids = [data.aws_prefix_list.s3.id]\n  }\n\n  egress {\n    description = \"SSM interface endpoint, inside the VPC\"\n    from_port   = 443\n    to_port     = 443\n    protocol    = \"tcp\"\n    cidr_blocks = [\"10.42.0.0/16\"]\n  }\n\n  tags = {\n    Name = \"acme-platform-lambda\"\n  }\n}\n\n# The API lambda reads /acme/platform/prod/* out of Parameter Store over this\n# endpoint rather than the public SSM API.\nresource \"aws_vpc_endpoint\" \"ssm\" {\n  vpc_id              = aws_vpc.main.id\n  service_name        = \"com.amazonaws.us-east-2.ssm\"\n  vpc_endpoint_type   = \"Interface\"\n  subnet_ids          = [aws_subnet.private_a.id, aws_subnet.private_b.id]\n  security_group_ids  = [aws_security_group.lambda.id]\n  private_dns_enabled = true\n\n  tags = {\n    Name = \"acme-platform-ssm\"\n  }\n}\n\n# No native mapping at all — the advisor scores it 0 and says so rather than\n# guessing. The second half of the long tail, next to random_pet below.\nresource \"aws_network_acl\" \"private\" {\n  vpc_id     = aws_vpc.main.id\n  subnet_ids = [aws_subnet.private_a.id, aws_subnet.private_b.id]\n\n  ingress {\n    protocol   = \"tcp\"\n    rule_no    = 100\n    action     = \"allow\"\n    cidr_block = \"10.42.0.0/16\"\n    from_port  = 0\n    to_port    = 65535\n  }\n\n  egress {\n    protocol   = \"-1\"\n    rule_no    = 100\n    action     = \"allow\"\n    cidr_block = \"0.0.0.0/0\"\n    from_port  = 0\n    to_port    = 0\n  }\n\n  tags = {\n    Name = \"acme-platform-private\"\n  }\n}\n",
+        "line": 94,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/aws_s3_bucket_public_access_block.assets",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_s3_bucket_public_access_block.assets",
+        "file": "storage.tf",
+        "root": "app",
+        "source": "# The star of the walkthrough.\n#\n# One inbound edge: the API lambda reads the bucket name out of its environment.\n# That single reference is the whole cut — one `data \"aws_s3_bucket\"` block in\n# the surviving Terraform and the carve is bridged. The two sub-resources below\n# share the bucket's name, so the advisor folds them into its carve set and\n# inlines them rather than counting them as boundary work.\n\nresource \"aws_s3_bucket\" \"assets\" {\n  bucket = \"acme-platform-assets-prod\"\n\n  tags = {\n    Name    = \"acme-platform-assets\"\n    Purpose = \"static-assets\"\n  }\n}\n\nresource \"aws_s3_bucket_versioning\" \"assets\" {\n  bucket = aws_s3_bucket.assets.id\n\n  versioning_configuration {\n    status = \"Enabled\"\n  }\n}\n\nresource \"aws_s3_bucket_public_access_block\" \"assets\" {\n  bucket = aws_s3_bucket.assets.id\n\n  block_public_acls       = true\n  block_public_policy     = true\n  ignore_public_acls      = true\n  restrict_public_buckets = true\n}\n",
+        "line": 26,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/aws_s3_bucket_versioning.assets",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_s3_bucket_versioning.assets",
+        "file": "storage.tf",
+        "root": "app",
+        "source": "# The star of the walkthrough.\n#\n# One inbound edge: the API lambda reads the bucket name out of its environment.\n# That single reference is the whole cut — one `data \"aws_s3_bucket\"` block in\n# the surviving Terraform and the carve is bridged. The two sub-resources below\n# share the bucket's name, so the advisor folds them into its carve set and\n# inlines them rather than counting them as boundary work.\n\nresource \"aws_s3_bucket\" \"assets\" {\n  bucket = \"acme-platform-assets-prod\"\n\n  tags = {\n    Name    = \"acme-platform-assets\"\n    Purpose = \"static-assets\"\n  }\n}\n\nresource \"aws_s3_bucket_versioning\" \"assets\" {\n  bucket = aws_s3_bucket.assets.id\n\n  versioning_configuration {\n    status = \"Enabled\"\n  }\n}\n\nresource \"aws_s3_bucket_public_access_block\" \"assets\" {\n  bucket = aws_s3_bucket.assets.id\n\n  block_public_acls       = true\n  block_public_policy     = true\n  ignore_public_acls      = true\n  restrict_public_buckets = true\n}\n",
+        "line": 18,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/aws_s3_bucket.assets",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_s3_bucket.assets",
+        "file": "storage.tf",
+        "root": "app",
+        "source": "# The star of the walkthrough.\n#\n# One inbound edge: the API lambda reads the bucket name out of its environment.\n# That single reference is the whole cut — one `data \"aws_s3_bucket\"` block in\n# the surviving Terraform and the carve is bridged. The two sub-resources below\n# share the bucket's name, so the advisor folds them into its carve set and\n# inlines them rather than counting them as boundary work.\n\nresource \"aws_s3_bucket\" \"assets\" {\n  bucket = \"acme-platform-assets-prod\"\n\n  tags = {\n    Name    = \"acme-platform-assets\"\n    Purpose = \"static-assets\"\n  }\n}\n\nresource \"aws_s3_bucket_versioning\" \"assets\" {\n  bucket = aws_s3_bucket.assets.id\n\n  versioning_configuration {\n    status = \"Enabled\"\n  }\n}\n\nresource \"aws_s3_bucket_public_access_block\" \"assets\" {\n  bucket = aws_s3_bucket.assets.id\n\n  block_public_acls       = true\n  block_public_policy     = true\n  ignore_public_acls      = true\n  restrict_public_buckets = true\n}\n",
+        "line": 9,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/aws_security_group.lambda",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_security_group.lambda",
+        "file": "network.tf",
+        "root": "app",
+        "source": "# The grey anchor.\n#\n# Five surviving resources point at the VPC, so carving it would mean patching\n# five references in one go — the advisor bands it \"leave in Terraform\" and it\n# is right. The subnets and the security group sit just under the line for the\n# same reason, plus a data-source lookup each. This block stays in Terraform,\n# and that is the correct answer, not a failure of the tool.\n\nresource \"aws_vpc\" \"main\" {\n  cidr_block           = \"10.42.0.0/16\"\n  enable_dns_support   = true\n  enable_dns_hostnames = true\n\n  tags = {\n    Name = \"acme-platform-${random_pet.suffix.id}\"\n  }\n}\n\ndata \"aws_availability_zones\" \"available\" {\n  state = \"available\"\n}\n\nresource \"aws_subnet\" \"private_a\" {\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = \"10.42.1.0/24\"\n  availability_zone = data.aws_availability_zones.available.names[0]\n\n  tags = {\n    Name = \"acme-platform-private-a-${random_pet.suffix.id}\"\n    Tier = \"private\"\n  }\n}\n\nresource \"aws_subnet\" \"private_b\" {\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = \"10.42.2.0/24\"\n  availability_zone = data.aws_availability_zones.available.names[1]\n\n  tags = {\n    Name = \"acme-platform-private-b-${random_pet.suffix.id}\"\n    Tier = \"private\"\n  }\n}\n\n# The managed prefix list for S3 in this region — how the lambda reaches the\n# assets bucket without leaving the VPC.\ndata \"aws_prefix_list\" \"s3\" {\n  name = \"com.amazonaws.us-east-2.s3\"\n}\n\nresource \"aws_security_group\" \"lambda\" {\n  name        = \"acme-platform-lambda-${random_pet.suffix.id}\"\n  description = \"Egress-only group for the acme-platform API lambda\"\n  vpc_id      = aws_vpc.main.id\n\n  egress {\n    description     = \"S3 via the regional gateway prefix list\"\n    from_port       = 443\n    to_port         = 443\n    protocol        = \"tcp\"\n    prefix_list_ids = [data.aws_prefix_list.s3.id]\n  }\n\n  egress {\n    description = \"SSM interface endpoint, inside the VPC\"\n    from_port   = 443\n    to_port     = 443\n    protocol    = \"tcp\"\n    cidr_blocks = [\"10.42.0.0/16\"]\n  }\n\n  tags = {\n    Name = \"acme-platform-lambda\"\n  }\n}\n\n# The API lambda reads /acme/platform/prod/* out of Parameter Store over this\n# endpoint rather than the public SSM API.\nresource \"aws_vpc_endpoint\" \"ssm\" {\n  vpc_id              = aws_vpc.main.id\n  service_name        = \"com.amazonaws.us-east-2.ssm\"\n  vpc_endpoint_type   = \"Interface\"\n  subnet_ids          = [aws_subnet.private_a.id, aws_subnet.private_b.id]\n  security_group_ids  = [aws_security_group.lambda.id]\n  private_dns_enabled = true\n\n  tags = {\n    Name = \"acme-platform-ssm\"\n  }\n}\n\n# No native mapping at all — the advisor scores it 0 and says so rather than\n# guessing. The second half of the long tail, next to random_pet below.\nresource \"aws_network_acl\" \"private\" {\n  vpc_id     = aws_vpc.main.id\n  subnet_ids = [aws_subnet.private_a.id, aws_subnet.private_b.id]\n\n  ingress {\n    protocol   = \"tcp\"\n    rule_no    = 100\n    action     = \"allow\"\n    cidr_block = \"10.42.0.0/16\"\n    from_port  = 0\n    to_port    = 65535\n  }\n\n  egress {\n    protocol   = \"-1\"\n    rule_no    = 100\n    action     = \"allow\"\n    cidr_block = \"0.0.0.0/0\"\n    from_port  = 0\n    to_port    = 0\n  }\n\n  tags = {\n    Name = \"acme-platform-private\"\n  }\n}\n",
+        "line": 51,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/aws_subnet.private_a",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_subnet.private_a",
+        "file": "network.tf",
+        "root": "app",
+        "source": "# The grey anchor.\n#\n# Five surviving resources point at the VPC, so carving it would mean patching\n# five references in one go — the advisor bands it \"leave in Terraform\" and it\n# is right. The subnets and the security group sit just under the line for the\n# same reason, plus a data-source lookup each. This block stays in Terraform,\n# and that is the correct answer, not a failure of the tool.\n\nresource \"aws_vpc\" \"main\" {\n  cidr_block           = \"10.42.0.0/16\"\n  enable_dns_support   = true\n  enable_dns_hostnames = true\n\n  tags = {\n    Name = \"acme-platform-${random_pet.suffix.id}\"\n  }\n}\n\ndata \"aws_availability_zones\" \"available\" {\n  state = \"available\"\n}\n\nresource \"aws_subnet\" \"private_a\" {\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = \"10.42.1.0/24\"\n  availability_zone = data.aws_availability_zones.available.names[0]\n\n  tags = {\n    Name = \"acme-platform-private-a-${random_pet.suffix.id}\"\n    Tier = \"private\"\n  }\n}\n\nresource \"aws_subnet\" \"private_b\" {\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = \"10.42.2.0/24\"\n  availability_zone = data.aws_availability_zones.available.names[1]\n\n  tags = {\n    Name = \"acme-platform-private-b-${random_pet.suffix.id}\"\n    Tier = \"private\"\n  }\n}\n\n# The managed prefix list for S3 in this region — how the lambda reaches the\n# assets bucket without leaving the VPC.\ndata \"aws_prefix_list\" \"s3\" {\n  name = \"com.amazonaws.us-east-2.s3\"\n}\n\nresource \"aws_security_group\" \"lambda\" {\n  name        = \"acme-platform-lambda-${random_pet.suffix.id}\"\n  description = \"Egress-only group for the acme-platform API lambda\"\n  vpc_id      = aws_vpc.main.id\n\n  egress {\n    description     = \"S3 via the regional gateway prefix list\"\n    from_port       = 443\n    to_port         = 443\n    protocol        = \"tcp\"\n    prefix_list_ids = [data.aws_prefix_list.s3.id]\n  }\n\n  egress {\n    description = \"SSM interface endpoint, inside the VPC\"\n    from_port   = 443\n    to_port     = 443\n    protocol    = \"tcp\"\n    cidr_blocks = [\"10.42.0.0/16\"]\n  }\n\n  tags = {\n    Name = \"acme-platform-lambda\"\n  }\n}\n\n# The API lambda reads /acme/platform/prod/* out of Parameter Store over this\n# endpoint rather than the public SSM API.\nresource \"aws_vpc_endpoint\" \"ssm\" {\n  vpc_id              = aws_vpc.main.id\n  service_name        = \"com.amazonaws.us-east-2.ssm\"\n  vpc_endpoint_type   = \"Interface\"\n  subnet_ids          = [aws_subnet.private_a.id, aws_subnet.private_b.id]\n  security_group_ids  = [aws_security_group.lambda.id]\n  private_dns_enabled = true\n\n  tags = {\n    Name = \"acme-platform-ssm\"\n  }\n}\n\n# No native mapping at all — the advisor scores it 0 and says so rather than\n# guessing. The second half of the long tail, next to random_pet below.\nresource \"aws_network_acl\" \"private\" {\n  vpc_id     = aws_vpc.main.id\n  subnet_ids = [aws_subnet.private_a.id, aws_subnet.private_b.id]\n\n  ingress {\n    protocol   = \"tcp\"\n    rule_no    = 100\n    action     = \"allow\"\n    cidr_block = \"10.42.0.0/16\"\n    from_port  = 0\n    to_port    = 65535\n  }\n\n  egress {\n    protocol   = \"-1\"\n    rule_no    = 100\n    action     = \"allow\"\n    cidr_block = \"0.0.0.0/0\"\n    from_port  = 0\n    to_port    = 0\n  }\n\n  tags = {\n    Name = \"acme-platform-private\"\n  }\n}\n",
+        "line": 23,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/aws_subnet.private_b",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_subnet.private_b",
+        "file": "network.tf",
+        "root": "app",
+        "source": "# The grey anchor.\n#\n# Five surviving resources point at the VPC, so carving it would mean patching\n# five references in one go — the advisor bands it \"leave in Terraform\" and it\n# is right. The subnets and the security group sit just under the line for the\n# same reason, plus a data-source lookup each. This block stays in Terraform,\n# and that is the correct answer, not a failure of the tool.\n\nresource \"aws_vpc\" \"main\" {\n  cidr_block           = \"10.42.0.0/16\"\n  enable_dns_support   = true\n  enable_dns_hostnames = true\n\n  tags = {\n    Name = \"acme-platform-${random_pet.suffix.id}\"\n  }\n}\n\ndata \"aws_availability_zones\" \"available\" {\n  state = \"available\"\n}\n\nresource \"aws_subnet\" \"private_a\" {\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = \"10.42.1.0/24\"\n  availability_zone = data.aws_availability_zones.available.names[0]\n\n  tags = {\n    Name = \"acme-platform-private-a-${random_pet.suffix.id}\"\n    Tier = \"private\"\n  }\n}\n\nresource \"aws_subnet\" \"private_b\" {\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = \"10.42.2.0/24\"\n  availability_zone = data.aws_availability_zones.available.names[1]\n\n  tags = {\n    Name = \"acme-platform-private-b-${random_pet.suffix.id}\"\n    Tier = \"private\"\n  }\n}\n\n# The managed prefix list for S3 in this region — how the lambda reaches the\n# assets bucket without leaving the VPC.\ndata \"aws_prefix_list\" \"s3\" {\n  name = \"com.amazonaws.us-east-2.s3\"\n}\n\nresource \"aws_security_group\" \"lambda\" {\n  name        = \"acme-platform-lambda-${random_pet.suffix.id}\"\n  description = \"Egress-only group for the acme-platform API lambda\"\n  vpc_id      = aws_vpc.main.id\n\n  egress {\n    description     = \"S3 via the regional gateway prefix list\"\n    from_port       = 443\n    to_port         = 443\n    protocol        = \"tcp\"\n    prefix_list_ids = [data.aws_prefix_list.s3.id]\n  }\n\n  egress {\n    description = \"SSM interface endpoint, inside the VPC\"\n    from_port   = 443\n    to_port     = 443\n    protocol    = \"tcp\"\n    cidr_blocks = [\"10.42.0.0/16\"]\n  }\n\n  tags = {\n    Name = \"acme-platform-lambda\"\n  }\n}\n\n# The API lambda reads /acme/platform/prod/* out of Parameter Store over this\n# endpoint rather than the public SSM API.\nresource \"aws_vpc_endpoint\" \"ssm\" {\n  vpc_id              = aws_vpc.main.id\n  service_name        = \"com.amazonaws.us-east-2.ssm\"\n  vpc_endpoint_type   = \"Interface\"\n  subnet_ids          = [aws_subnet.private_a.id, aws_subnet.private_b.id]\n  security_group_ids  = [aws_security_group.lambda.id]\n  private_dns_enabled = true\n\n  tags = {\n    Name = \"acme-platform-ssm\"\n  }\n}\n\n# No native mapping at all — the advisor scores it 0 and says so rather than\n# guessing. The second half of the long tail, next to random_pet below.\nresource \"aws_network_acl\" \"private\" {\n  vpc_id     = aws_vpc.main.id\n  subnet_ids = [aws_subnet.private_a.id, aws_subnet.private_b.id]\n\n  ingress {\n    protocol   = \"tcp\"\n    rule_no    = 100\n    action     = \"allow\"\n    cidr_block = \"10.42.0.0/16\"\n    from_port  = 0\n    to_port    = 65535\n  }\n\n  egress {\n    protocol   = \"-1\"\n    rule_no    = 100\n    action     = \"allow\"\n    cidr_block = \"0.0.0.0/0\"\n    from_port  = 0\n    to_port    = 0\n  }\n\n  tags = {\n    Name = \"acme-platform-private\"\n  }\n}\n",
+        "line": 34,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/aws_vpc_endpoint.ssm",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_vpc_endpoint.ssm",
+        "file": "network.tf",
+        "root": "app",
+        "source": "# The grey anchor.\n#\n# Five surviving resources point at the VPC, so carving it would mean patching\n# five references in one go — the advisor bands it \"leave in Terraform\" and it\n# is right. The subnets and the security group sit just under the line for the\n# same reason, plus a data-source lookup each. This block stays in Terraform,\n# and that is the correct answer, not a failure of the tool.\n\nresource \"aws_vpc\" \"main\" {\n  cidr_block           = \"10.42.0.0/16\"\n  enable_dns_support   = true\n  enable_dns_hostnames = true\n\n  tags = {\n    Name = \"acme-platform-${random_pet.suffix.id}\"\n  }\n}\n\ndata \"aws_availability_zones\" \"available\" {\n  state = \"available\"\n}\n\nresource \"aws_subnet\" \"private_a\" {\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = \"10.42.1.0/24\"\n  availability_zone = data.aws_availability_zones.available.names[0]\n\n  tags = {\n    Name = \"acme-platform-private-a-${random_pet.suffix.id}\"\n    Tier = \"private\"\n  }\n}\n\nresource \"aws_subnet\" \"private_b\" {\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = \"10.42.2.0/24\"\n  availability_zone = data.aws_availability_zones.available.names[1]\n\n  tags = {\n    Name = \"acme-platform-private-b-${random_pet.suffix.id}\"\n    Tier = \"private\"\n  }\n}\n\n# The managed prefix list for S3 in this region — how the lambda reaches the\n# assets bucket without leaving the VPC.\ndata \"aws_prefix_list\" \"s3\" {\n  name = \"com.amazonaws.us-east-2.s3\"\n}\n\nresource \"aws_security_group\" \"lambda\" {\n  name        = \"acme-platform-lambda-${random_pet.suffix.id}\"\n  description = \"Egress-only group for the acme-platform API lambda\"\n  vpc_id      = aws_vpc.main.id\n\n  egress {\n    description     = \"S3 via the regional gateway prefix list\"\n    from_port       = 443\n    to_port         = 443\n    protocol        = \"tcp\"\n    prefix_list_ids = [data.aws_prefix_list.s3.id]\n  }\n\n  egress {\n    description = \"SSM interface endpoint, inside the VPC\"\n    from_port   = 443\n    to_port     = 443\n    protocol    = \"tcp\"\n    cidr_blocks = [\"10.42.0.0/16\"]\n  }\n\n  tags = {\n    Name = \"acme-platform-lambda\"\n  }\n}\n\n# The API lambda reads /acme/platform/prod/* out of Parameter Store over this\n# endpoint rather than the public SSM API.\nresource \"aws_vpc_endpoint\" \"ssm\" {\n  vpc_id              = aws_vpc.main.id\n  service_name        = \"com.amazonaws.us-east-2.ssm\"\n  vpc_endpoint_type   = \"Interface\"\n  subnet_ids          = [aws_subnet.private_a.id, aws_subnet.private_b.id]\n  security_group_ids  = [aws_security_group.lambda.id]\n  private_dns_enabled = true\n\n  tags = {\n    Name = \"acme-platform-ssm\"\n  }\n}\n\n# No native mapping at all — the advisor scores it 0 and says so rather than\n# guessing. The second half of the long tail, next to random_pet below.\nresource \"aws_network_acl\" \"private\" {\n  vpc_id     = aws_vpc.main.id\n  subnet_ids = [aws_subnet.private_a.id, aws_subnet.private_b.id]\n\n  ingress {\n    protocol   = \"tcp\"\n    rule_no    = 100\n    action     = \"allow\"\n    cidr_block = \"10.42.0.0/16\"\n    from_port  = 0\n    to_port    = 65535\n  }\n\n  egress {\n    protocol   = \"-1\"\n    rule_no    = 100\n    action     = \"allow\"\n    cidr_block = \"0.0.0.0/0\"\n    from_port  = 0\n    to_port    = 0\n  }\n\n  tags = {\n    Name = \"acme-platform-private\"\n  }\n}\n",
+        "line": 79,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/aws_vpc.main",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_vpc.main",
+        "file": "network.tf",
+        "root": "app",
+        "source": "# The grey anchor.\n#\n# Five surviving resources point at the VPC, so carving it would mean patching\n# five references in one go — the advisor bands it \"leave in Terraform\" and it\n# is right. The subnets and the security group sit just under the line for the\n# same reason, plus a data-source lookup each. This block stays in Terraform,\n# and that is the correct answer, not a failure of the tool.\n\nresource \"aws_vpc\" \"main\" {\n  cidr_block           = \"10.42.0.0/16\"\n  enable_dns_support   = true\n  enable_dns_hostnames = true\n\n  tags = {\n    Name = \"acme-platform-${random_pet.suffix.id}\"\n  }\n}\n\ndata \"aws_availability_zones\" \"available\" {\n  state = \"available\"\n}\n\nresource \"aws_subnet\" \"private_a\" {\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = \"10.42.1.0/24\"\n  availability_zone = data.aws_availability_zones.available.names[0]\n\n  tags = {\n    Name = \"acme-platform-private-a-${random_pet.suffix.id}\"\n    Tier = \"private\"\n  }\n}\n\nresource \"aws_subnet\" \"private_b\" {\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = \"10.42.2.0/24\"\n  availability_zone = data.aws_availability_zones.available.names[1]\n\n  tags = {\n    Name = \"acme-platform-private-b-${random_pet.suffix.id}\"\n    Tier = \"private\"\n  }\n}\n\n# The managed prefix list for S3 in this region — how the lambda reaches the\n# assets bucket without leaving the VPC.\ndata \"aws_prefix_list\" \"s3\" {\n  name = \"com.amazonaws.us-east-2.s3\"\n}\n\nresource \"aws_security_group\" \"lambda\" {\n  name        = \"acme-platform-lambda-${random_pet.suffix.id}\"\n  description = \"Egress-only group for the acme-platform API lambda\"\n  vpc_id      = aws_vpc.main.id\n\n  egress {\n    description     = \"S3 via the regional gateway prefix list\"\n    from_port       = 443\n    to_port         = 443\n    protocol        = \"tcp\"\n    prefix_list_ids = [data.aws_prefix_list.s3.id]\n  }\n\n  egress {\n    description = \"SSM interface endpoint, inside the VPC\"\n    from_port   = 443\n    to_port     = 443\n    protocol    = \"tcp\"\n    cidr_blocks = [\"10.42.0.0/16\"]\n  }\n\n  tags = {\n    Name = \"acme-platform-lambda\"\n  }\n}\n\n# The API lambda reads /acme/platform/prod/* out of Parameter Store over this\n# endpoint rather than the public SSM API.\nresource \"aws_vpc_endpoint\" \"ssm\" {\n  vpc_id              = aws_vpc.main.id\n  service_name        = \"com.amazonaws.us-east-2.ssm\"\n  vpc_endpoint_type   = \"Interface\"\n  subnet_ids          = [aws_subnet.private_a.id, aws_subnet.private_b.id]\n  security_group_ids  = [aws_security_group.lambda.id]\n  private_dns_enabled = true\n\n  tags = {\n    Name = \"acme-platform-ssm\"\n  }\n}\n\n# No native mapping at all — the advisor scores it 0 and says so rather than\n# guessing. The second half of the long tail, next to random_pet below.\nresource \"aws_network_acl\" \"private\" {\n  vpc_id     = aws_vpc.main.id\n  subnet_ids = [aws_subnet.private_a.id, aws_subnet.private_b.id]\n\n  ingress {\n    protocol   = \"tcp\"\n    rule_no    = 100\n    action     = \"allow\"\n    cidr_block = \"10.42.0.0/16\"\n    from_port  = 0\n    to_port    = 65535\n  }\n\n  egress {\n    protocol   = \"-1\"\n    rule_no    = 100\n    action     = \"allow\"\n    cidr_block = \"0.0.0.0/0\"\n    from_port  = 0\n    to_port    = 0\n  }\n\n  tags = {\n    Name = \"acme-platform-private\"\n  }\n}\n",
+        "line": 9,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/data.aws_availability_zones.available",
+      "kind": "Terraform::Data",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "data.aws_availability_zones.available",
+        "file": "network.tf",
+        "root": "app",
+        "source": "# The grey anchor.\n#\n# Five surviving resources point at the VPC, so carving it would mean patching\n# five references in one go — the advisor bands it \"leave in Terraform\" and it\n# is right. The subnets and the security group sit just under the line for the\n# same reason, plus a data-source lookup each. This block stays in Terraform,\n# and that is the correct answer, not a failure of the tool.\n\nresource \"aws_vpc\" \"main\" {\n  cidr_block           = \"10.42.0.0/16\"\n  enable_dns_support   = true\n  enable_dns_hostnames = true\n\n  tags = {\n    Name = \"acme-platform-${random_pet.suffix.id}\"\n  }\n}\n\ndata \"aws_availability_zones\" \"available\" {\n  state = \"available\"\n}\n\nresource \"aws_subnet\" \"private_a\" {\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = \"10.42.1.0/24\"\n  availability_zone = data.aws_availability_zones.available.names[0]\n\n  tags = {\n    Name = \"acme-platform-private-a-${random_pet.suffix.id}\"\n    Tier = \"private\"\n  }\n}\n\nresource \"aws_subnet\" \"private_b\" {\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = \"10.42.2.0/24\"\n  availability_zone = data.aws_availability_zones.available.names[1]\n\n  tags = {\n    Name = \"acme-platform-private-b-${random_pet.suffix.id}\"\n    Tier = \"private\"\n  }\n}\n\n# The managed prefix list for S3 in this region — how the lambda reaches the\n# assets bucket without leaving the VPC.\ndata \"aws_prefix_list\" \"s3\" {\n  name = \"com.amazonaws.us-east-2.s3\"\n}\n\nresource \"aws_security_group\" \"lambda\" {\n  name        = \"acme-platform-lambda-${random_pet.suffix.id}\"\n  description = \"Egress-only group for the acme-platform API lambda\"\n  vpc_id      = aws_vpc.main.id\n\n  egress {\n    description     = \"S3 via the regional gateway prefix list\"\n    from_port       = 443\n    to_port         = 443\n    protocol        = \"tcp\"\n    prefix_list_ids = [data.aws_prefix_list.s3.id]\n  }\n\n  egress {\n    description = \"SSM interface endpoint, inside the VPC\"\n    from_port   = 443\n    to_port     = 443\n    protocol    = \"tcp\"\n    cidr_blocks = [\"10.42.0.0/16\"]\n  }\n\n  tags = {\n    Name = \"acme-platform-lambda\"\n  }\n}\n\n# The API lambda reads /acme/platform/prod/* out of Parameter Store over this\n# endpoint rather than the public SSM API.\nresource \"aws_vpc_endpoint\" \"ssm\" {\n  vpc_id              = aws_vpc.main.id\n  service_name        = \"com.amazonaws.us-east-2.ssm\"\n  vpc_endpoint_type   = \"Interface\"\n  subnet_ids          = [aws_subnet.private_a.id, aws_subnet.private_b.id]\n  security_group_ids  = [aws_security_group.lambda.id]\n  private_dns_enabled = true\n\n  tags = {\n    Name = \"acme-platform-ssm\"\n  }\n}\n\n# No native mapping at all — the advisor scores it 0 and says so rather than\n# guessing. The second half of the long tail, next to random_pet below.\nresource \"aws_network_acl\" \"private\" {\n  vpc_id     = aws_vpc.main.id\n  subnet_ids = [aws_subnet.private_a.id, aws_subnet.private_b.id]\n\n  ingress {\n    protocol   = \"tcp\"\n    rule_no    = 100\n    action     = \"allow\"\n    cidr_block = \"10.42.0.0/16\"\n    from_port  = 0\n    to_port    = 65535\n  }\n\n  egress {\n    protocol   = \"-1\"\n    rule_no    = 100\n    action     = \"allow\"\n    cidr_block = \"0.0.0.0/0\"\n    from_port  = 0\n    to_port    = 0\n  }\n\n  tags = {\n    Name = \"acme-platform-private\"\n  }\n}\n",
+        "line": 19,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/data.aws_prefix_list.s3",
+      "kind": "Terraform::Data",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "data.aws_prefix_list.s3",
+        "file": "network.tf",
+        "root": "app",
+        "source": "# The grey anchor.\n#\n# Five surviving resources point at the VPC, so carving it would mean patching\n# five references in one go — the advisor bands it \"leave in Terraform\" and it\n# is right. The subnets and the security group sit just under the line for the\n# same reason, plus a data-source lookup each. This block stays in Terraform,\n# and that is the correct answer, not a failure of the tool.\n\nresource \"aws_vpc\" \"main\" {\n  cidr_block           = \"10.42.0.0/16\"\n  enable_dns_support   = true\n  enable_dns_hostnames = true\n\n  tags = {\n    Name = \"acme-platform-${random_pet.suffix.id}\"\n  }\n}\n\ndata \"aws_availability_zones\" \"available\" {\n  state = \"available\"\n}\n\nresource \"aws_subnet\" \"private_a\" {\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = \"10.42.1.0/24\"\n  availability_zone = data.aws_availability_zones.available.names[0]\n\n  tags = {\n    Name = \"acme-platform-private-a-${random_pet.suffix.id}\"\n    Tier = \"private\"\n  }\n}\n\nresource \"aws_subnet\" \"private_b\" {\n  vpc_id            = aws_vpc.main.id\n  cidr_block        = \"10.42.2.0/24\"\n  availability_zone = data.aws_availability_zones.available.names[1]\n\n  tags = {\n    Name = \"acme-platform-private-b-${random_pet.suffix.id}\"\n    Tier = \"private\"\n  }\n}\n\n# The managed prefix list for S3 in this region — how the lambda reaches the\n# assets bucket without leaving the VPC.\ndata \"aws_prefix_list\" \"s3\" {\n  name = \"com.amazonaws.us-east-2.s3\"\n}\n\nresource \"aws_security_group\" \"lambda\" {\n  name        = \"acme-platform-lambda-${random_pet.suffix.id}\"\n  description = \"Egress-only group for the acme-platform API lambda\"\n  vpc_id      = aws_vpc.main.id\n\n  egress {\n    description     = \"S3 via the regional gateway prefix list\"\n    from_port       = 443\n    to_port         = 443\n    protocol        = \"tcp\"\n    prefix_list_ids = [data.aws_prefix_list.s3.id]\n  }\n\n  egress {\n    description = \"SSM interface endpoint, inside the VPC\"\n    from_port   = 443\n    to_port     = 443\n    protocol    = \"tcp\"\n    cidr_blocks = [\"10.42.0.0/16\"]\n  }\n\n  tags = {\n    Name = \"acme-platform-lambda\"\n  }\n}\n\n# The API lambda reads /acme/platform/prod/* out of Parameter Store over this\n# endpoint rather than the public SSM API.\nresource \"aws_vpc_endpoint\" \"ssm\" {\n  vpc_id              = aws_vpc.main.id\n  service_name        = \"com.amazonaws.us-east-2.ssm\"\n  vpc_endpoint_type   = \"Interface\"\n  subnet_ids          = [aws_subnet.private_a.id, aws_subnet.private_b.id]\n  security_group_ids  = [aws_security_group.lambda.id]\n  private_dns_enabled = true\n\n  tags = {\n    Name = \"acme-platform-ssm\"\n  }\n}\n\n# No native mapping at all — the advisor scores it 0 and says so rather than\n# guessing. The second half of the long tail, next to random_pet below.\nresource \"aws_network_acl\" \"private\" {\n  vpc_id     = aws_vpc.main.id\n  subnet_ids = [aws_subnet.private_a.id, aws_subnet.private_b.id]\n\n  ingress {\n    protocol   = \"tcp\"\n    rule_no    = 100\n    action     = \"allow\"\n    cidr_block = \"10.42.0.0/16\"\n    from_port  = 0\n    to_port    = 65535\n  }\n\n  egress {\n    protocol   = \"-1\"\n    rule_no    = 100\n    action     = \"allow\"\n    cidr_block = \"0.0.0.0/0\"\n    from_port  = 0\n    to_port    = 0\n  }\n\n  tags = {\n    Name = \"acme-platform-private\"\n  }\n}\n",
+        "line": 47,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/data.aws_ssm_parameter.assets_cdn_domain",
+      "kind": "Terraform::Data",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "data.aws_ssm_parameter.assets_cdn_domain",
+        "file": "cdn.tf",
+        "root": "app",
+        "source": "# The one module in the estate, so module scoring shows up on camera. A module\n# is opaque to the advisor: it is one node, ranked as a tier-2 composite, and\n# its internals (modules/cdn/) are never descended into.\n#\n# The `aliases` line is the bridge patch left over from last month's carve. That\n# hostname used to come from `aws_ssm_parameter.assets_cdn_domain` in this\n# directory; chant owns the parameter now (../app/src/carved.ts), and the\n# surviving Terraform reads it back through a data source. This is exactly the\n# rewrite `carve bridge` generates for every inbound edge a carve cuts, sitting\n# in the estate a month later and working.\n\ndata \"aws_ssm_parameter\" \"assets_cdn_domain\" {\n  name = \"/acme/platform/prod/assets-cdn-domain\"\n}\n\nmodule \"cdn\" {\n  source = \"./modules/cdn\"\n\n  name_suffix        = random_pet.suffix.id\n  origin_domain_name = \"assets.acme-platform.example.com\"\n  aliases            = [data.aws_ssm_parameter.assets_cdn_domain.value]\n  price_class        = \"PriceClass_100\"\n}\n",
+        "line": 12,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/module.cdn",
+      "kind": "Terraform::Module",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "module.cdn",
+        "file": "cdn.tf",
+        "root": "app",
+        "source": "# The one module in the estate, so module scoring shows up on camera. A module\n# is opaque to the advisor: it is one node, ranked as a tier-2 composite, and\n# its internals (modules/cdn/) are never descended into.\n#\n# The `aliases` line is the bridge patch left over from last month's carve. That\n# hostname used to come from `aws_ssm_parameter.assets_cdn_domain` in this\n# directory; chant owns the parameter now (../app/src/carved.ts), and the\n# surviving Terraform reads it back through a data source. This is exactly the\n# rewrite `carve bridge` generates for every inbound edge a carve cuts, sitting\n# in the estate a month later and working.\n\ndata \"aws_ssm_parameter\" \"assets_cdn_domain\" {\n  name = \"/acme/platform/prod/assets-cdn-domain\"\n}\n\nmodule \"cdn\" {\n  source = \"./modules/cdn\"\n\n  name_suffix        = random_pet.suffix.id\n  origin_domain_name = \"assets.acme-platform.example.com\"\n  aliases            = [data.aws_ssm_parameter.assets_cdn_domain.value]\n  price_class        = \"PriceClass_100\"\n}\n",
+        "line": 16,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/module.cdn/aws_cloudfront_distribution.this",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_cloudfront_distribution.this",
+        "file": "main.tf",
+        "root": "app",
+        "source": "# A deliberately small local module, so `module.cdn` resolves without a registry\n# download and `terraform init` works offline. The advisor never reads this file:\n# `carve advise --from ../..` lists only the `.tf` files directly under the\n# estate directory, which is the same scoping Terraform itself uses for a module.\n\nvariable \"name_suffix\" {\n  type        = string\n  description = \"Shared random suffix, so the distribution comment matches the rest of the estate.\"\n}\n\nvariable \"origin_domain_name\" {\n  type        = string\n  description = \"Hostname the distribution pulls assets from.\"\n}\n\nvariable \"aliases\" {\n  type        = list(string)\n  description = \"Public hostnames the distribution answers on.\"\n}\n\nvariable \"price_class\" {\n  type    = string\n  default = \"PriceClass_100\"\n}\n\nresource \"aws_cloudfront_distribution\" \"this\" {\n  enabled     = true\n  comment     = \"acme-platform-assets-${var.name_suffix}\"\n  aliases     = var.aliases\n  price_class = var.price_class\n\n  origin {\n    origin_id   = \"assets\"\n    domain_name = var.origin_domain_name\n\n    custom_origin_config {\n      http_port              = 80\n      https_port             = 443\n      origin_protocol_policy = \"https-only\"\n      origin_ssl_protocols   = [\"TLSv1.2\"]\n    }\n  }\n\n  default_cache_behavior {\n    target_origin_id       = \"assets\"\n    viewer_protocol_policy = \"redirect-to-https\"\n    allowed_methods        = [\"GET\", \"HEAD\"]\n    cached_methods         = [\"GET\", \"HEAD\"]\n\n    forwarded_values {\n      query_string = false\n\n      cookies {\n        forward = \"none\"\n      }\n    }\n  }\n\n  restrictions {\n    geo_restriction {\n      restriction_type = \"none\"\n    }\n  }\n\n  viewer_certificate {\n    cloudfront_default_certificate = true\n  }\n}\n\noutput \"domain_name\" {\n  value = aws_cloudfront_distribution.this.domain_name\n}\n",
+        "line": 26,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/module.cdn/output.domain_name",
+      "kind": "Terraform::Output",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "output.domain_name",
+        "file": "main.tf",
+        "root": "app",
+        "source": "# A deliberately small local module, so `module.cdn` resolves without a registry\n# download and `terraform init` works offline. The advisor never reads this file:\n# `carve advise --from ../..` lists only the `.tf` files directly under the\n# estate directory, which is the same scoping Terraform itself uses for a module.\n\nvariable \"name_suffix\" {\n  type        = string\n  description = \"Shared random suffix, so the distribution comment matches the rest of the estate.\"\n}\n\nvariable \"origin_domain_name\" {\n  type        = string\n  description = \"Hostname the distribution pulls assets from.\"\n}\n\nvariable \"aliases\" {\n  type        = list(string)\n  description = \"Public hostnames the distribution answers on.\"\n}\n\nvariable \"price_class\" {\n  type    = string\n  default = \"PriceClass_100\"\n}\n\nresource \"aws_cloudfront_distribution\" \"this\" {\n  enabled     = true\n  comment     = \"acme-platform-assets-${var.name_suffix}\"\n  aliases     = var.aliases\n  price_class = var.price_class\n\n  origin {\n    origin_id   = \"assets\"\n    domain_name = var.origin_domain_name\n\n    custom_origin_config {\n      http_port              = 80\n      https_port             = 443\n      origin_protocol_policy = \"https-only\"\n      origin_ssl_protocols   = [\"TLSv1.2\"]\n    }\n  }\n\n  default_cache_behavior {\n    target_origin_id       = \"assets\"\n    viewer_protocol_policy = \"redirect-to-https\"\n    allowed_methods        = [\"GET\", \"HEAD\"]\n    cached_methods         = [\"GET\", \"HEAD\"]\n\n    forwarded_values {\n      query_string = false\n\n      cookies {\n        forward = \"none\"\n      }\n    }\n  }\n\n  restrictions {\n    geo_restriction {\n      restriction_type = \"none\"\n    }\n  }\n\n  viewer_certificate {\n    cloudfront_default_certificate = true\n  }\n}\n\noutput \"domain_name\" {\n  value = aws_cloudfront_distribution.this.domain_name\n}\n",
+        "line": 70,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/module.cdn/var.aliases",
+      "kind": "Terraform::Variable",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "var.aliases",
+        "file": "main.tf",
+        "root": "app",
+        "source": "# A deliberately small local module, so `module.cdn` resolves without a registry\n# download and `terraform init` works offline. The advisor never reads this file:\n# `carve advise --from ../..` lists only the `.tf` files directly under the\n# estate directory, which is the same scoping Terraform itself uses for a module.\n\nvariable \"name_suffix\" {\n  type        = string\n  description = \"Shared random suffix, so the distribution comment matches the rest of the estate.\"\n}\n\nvariable \"origin_domain_name\" {\n  type        = string\n  description = \"Hostname the distribution pulls assets from.\"\n}\n\nvariable \"aliases\" {\n  type        = list(string)\n  description = \"Public hostnames the distribution answers on.\"\n}\n\nvariable \"price_class\" {\n  type    = string\n  default = \"PriceClass_100\"\n}\n\nresource \"aws_cloudfront_distribution\" \"this\" {\n  enabled     = true\n  comment     = \"acme-platform-assets-${var.name_suffix}\"\n  aliases     = var.aliases\n  price_class = var.price_class\n\n  origin {\n    origin_id   = \"assets\"\n    domain_name = var.origin_domain_name\n\n    custom_origin_config {\n      http_port              = 80\n      https_port             = 443\n      origin_protocol_policy = \"https-only\"\n      origin_ssl_protocols   = [\"TLSv1.2\"]\n    }\n  }\n\n  default_cache_behavior {\n    target_origin_id       = \"assets\"\n    viewer_protocol_policy = \"redirect-to-https\"\n    allowed_methods        = [\"GET\", \"HEAD\"]\n    cached_methods         = [\"GET\", \"HEAD\"]\n\n    forwarded_values {\n      query_string = false\n\n      cookies {\n        forward = \"none\"\n      }\n    }\n  }\n\n  restrictions {\n    geo_restriction {\n      restriction_type = \"none\"\n    }\n  }\n\n  viewer_certificate {\n    cloudfront_default_certificate = true\n  }\n}\n\noutput \"domain_name\" {\n  value = aws_cloudfront_distribution.this.domain_name\n}\n",
+        "line": 16,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/module.cdn/var.name_suffix",
+      "kind": "Terraform::Variable",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "var.name_suffix",
+        "file": "main.tf",
+        "root": "app",
+        "source": "# A deliberately small local module, so `module.cdn` resolves without a registry\n# download and `terraform init` works offline. The advisor never reads this file:\n# `carve advise --from ../..` lists only the `.tf` files directly under the\n# estate directory, which is the same scoping Terraform itself uses for a module.\n\nvariable \"name_suffix\" {\n  type        = string\n  description = \"Shared random suffix, so the distribution comment matches the rest of the estate.\"\n}\n\nvariable \"origin_domain_name\" {\n  type        = string\n  description = \"Hostname the distribution pulls assets from.\"\n}\n\nvariable \"aliases\" {\n  type        = list(string)\n  description = \"Public hostnames the distribution answers on.\"\n}\n\nvariable \"price_class\" {\n  type    = string\n  default = \"PriceClass_100\"\n}\n\nresource \"aws_cloudfront_distribution\" \"this\" {\n  enabled     = true\n  comment     = \"acme-platform-assets-${var.name_suffix}\"\n  aliases     = var.aliases\n  price_class = var.price_class\n\n  origin {\n    origin_id   = \"assets\"\n    domain_name = var.origin_domain_name\n\n    custom_origin_config {\n      http_port              = 80\n      https_port             = 443\n      origin_protocol_policy = \"https-only\"\n      origin_ssl_protocols   = [\"TLSv1.2\"]\n    }\n  }\n\n  default_cache_behavior {\n    target_origin_id       = \"assets\"\n    viewer_protocol_policy = \"redirect-to-https\"\n    allowed_methods        = [\"GET\", \"HEAD\"]\n    cached_methods         = [\"GET\", \"HEAD\"]\n\n    forwarded_values {\n      query_string = false\n\n      cookies {\n        forward = \"none\"\n      }\n    }\n  }\n\n  restrictions {\n    geo_restriction {\n      restriction_type = \"none\"\n    }\n  }\n\n  viewer_certificate {\n    cloudfront_default_certificate = true\n  }\n}\n\noutput \"domain_name\" {\n  value = aws_cloudfront_distribution.this.domain_name\n}\n",
+        "line": 6,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/module.cdn/var.origin_domain_name",
+      "kind": "Terraform::Variable",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "var.origin_domain_name",
+        "file": "main.tf",
+        "root": "app",
+        "source": "# A deliberately small local module, so `module.cdn` resolves without a registry\n# download and `terraform init` works offline. The advisor never reads this file:\n# `carve advise --from ../..` lists only the `.tf` files directly under the\n# estate directory, which is the same scoping Terraform itself uses for a module.\n\nvariable \"name_suffix\" {\n  type        = string\n  description = \"Shared random suffix, so the distribution comment matches the rest of the estate.\"\n}\n\nvariable \"origin_domain_name\" {\n  type        = string\n  description = \"Hostname the distribution pulls assets from.\"\n}\n\nvariable \"aliases\" {\n  type        = list(string)\n  description = \"Public hostnames the distribution answers on.\"\n}\n\nvariable \"price_class\" {\n  type    = string\n  default = \"PriceClass_100\"\n}\n\nresource \"aws_cloudfront_distribution\" \"this\" {\n  enabled     = true\n  comment     = \"acme-platform-assets-${var.name_suffix}\"\n  aliases     = var.aliases\n  price_class = var.price_class\n\n  origin {\n    origin_id   = \"assets\"\n    domain_name = var.origin_domain_name\n\n    custom_origin_config {\n      http_port              = 80\n      https_port             = 443\n      origin_protocol_policy = \"https-only\"\n      origin_ssl_protocols   = [\"TLSv1.2\"]\n    }\n  }\n\n  default_cache_behavior {\n    target_origin_id       = \"assets\"\n    viewer_protocol_policy = \"redirect-to-https\"\n    allowed_methods        = [\"GET\", \"HEAD\"]\n    cached_methods         = [\"GET\", \"HEAD\"]\n\n    forwarded_values {\n      query_string = false\n\n      cookies {\n        forward = \"none\"\n      }\n    }\n  }\n\n  restrictions {\n    geo_restriction {\n      restriction_type = \"none\"\n    }\n  }\n\n  viewer_certificate {\n    cloudfront_default_certificate = true\n  }\n}\n\noutput \"domain_name\" {\n  value = aws_cloudfront_distribution.this.domain_name\n}\n",
+        "line": 11,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/module.cdn/var.price_class",
+      "kind": "Terraform::Variable",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "var.price_class",
+        "file": "main.tf",
+        "root": "app",
+        "source": "# A deliberately small local module, so `module.cdn` resolves without a registry\n# download and `terraform init` works offline. The advisor never reads this file:\n# `carve advise --from ../..` lists only the `.tf` files directly under the\n# estate directory, which is the same scoping Terraform itself uses for a module.\n\nvariable \"name_suffix\" {\n  type        = string\n  description = \"Shared random suffix, so the distribution comment matches the rest of the estate.\"\n}\n\nvariable \"origin_domain_name\" {\n  type        = string\n  description = \"Hostname the distribution pulls assets from.\"\n}\n\nvariable \"aliases\" {\n  type        = list(string)\n  description = \"Public hostnames the distribution answers on.\"\n}\n\nvariable \"price_class\" {\n  type    = string\n  default = \"PriceClass_100\"\n}\n\nresource \"aws_cloudfront_distribution\" \"this\" {\n  enabled     = true\n  comment     = \"acme-platform-assets-${var.name_suffix}\"\n  aliases     = var.aliases\n  price_class = var.price_class\n\n  origin {\n    origin_id   = \"assets\"\n    domain_name = var.origin_domain_name\n\n    custom_origin_config {\n      http_port              = 80\n      https_port             = 443\n      origin_protocol_policy = \"https-only\"\n      origin_ssl_protocols   = [\"TLSv1.2\"]\n    }\n  }\n\n  default_cache_behavior {\n    target_origin_id       = \"assets\"\n    viewer_protocol_policy = \"redirect-to-https\"\n    allowed_methods        = [\"GET\", \"HEAD\"]\n    cached_methods         = [\"GET\", \"HEAD\"]\n\n    forwarded_values {\n      query_string = false\n\n      cookies {\n        forward = \"none\"\n      }\n    }\n  }\n\n  restrictions {\n    geo_restriction {\n      restriction_type = \"none\"\n    }\n  }\n\n  viewer_certificate {\n    cloudfront_default_certificate = true\n  }\n}\n\noutput \"domain_name\" {\n  value = aws_cloudfront_distribution.this.domain_name\n}\n",
+        "line": 21,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/output.api_function_name",
+      "kind": "Terraform::Output",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "output.api_function_name",
+        "file": "outputs.tf",
+        "root": "app",
+        "source": "# Outputs are boundary edges now (chant#1638): `chant carve advise` reads\n# `output` blocks and scores each one a survivor reads across the cut, at -4,\n# `bridge: \"tf-output-rewrite\"`. `assets_bucket` is deliberate — a downstream\n# consumer of this state reads the bucket name today, so the carve has to\n# rewrite that output the same way it rewrites `cdn.tf`'s data source.\n\noutput \"assets_bucket\" {\n  value = aws_s3_bucket.assets.bucket\n}\n\noutput \"api_function_name\" {\n  value = aws_lambda_function.api.function_name\n}\n\noutput \"vpc_id\" {\n  value = aws_vpc.main.id\n}\n\noutput \"private_subnet_ids\" {\n  value = [aws_subnet.private_a.id, aws_subnet.private_b.id]\n}\n",
+        "line": 11,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/output.assets_bucket",
+      "kind": "Terraform::Output",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "output.assets_bucket",
+        "file": "outputs.tf",
+        "root": "app",
+        "source": "# Outputs are boundary edges now (chant#1638): `chant carve advise` reads\n# `output` blocks and scores each one a survivor reads across the cut, at -4,\n# `bridge: \"tf-output-rewrite\"`. `assets_bucket` is deliberate — a downstream\n# consumer of this state reads the bucket name today, so the carve has to\n# rewrite that output the same way it rewrites `cdn.tf`'s data source.\n\noutput \"assets_bucket\" {\n  value = aws_s3_bucket.assets.bucket\n}\n\noutput \"api_function_name\" {\n  value = aws_lambda_function.api.function_name\n}\n\noutput \"vpc_id\" {\n  value = aws_vpc.main.id\n}\n\noutput \"private_subnet_ids\" {\n  value = [aws_subnet.private_a.id, aws_subnet.private_b.id]\n}\n",
+        "line": 7,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/output.private_subnet_ids",
+      "kind": "Terraform::Output",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "output.private_subnet_ids",
+        "file": "outputs.tf",
+        "root": "app",
+        "source": "# Outputs are boundary edges now (chant#1638): `chant carve advise` reads\n# `output` blocks and scores each one a survivor reads across the cut, at -4,\n# `bridge: \"tf-output-rewrite\"`. `assets_bucket` is deliberate — a downstream\n# consumer of this state reads the bucket name today, so the carve has to\n# rewrite that output the same way it rewrites `cdn.tf`'s data source.\n\noutput \"assets_bucket\" {\n  value = aws_s3_bucket.assets.bucket\n}\n\noutput \"api_function_name\" {\n  value = aws_lambda_function.api.function_name\n}\n\noutput \"vpc_id\" {\n  value = aws_vpc.main.id\n}\n\noutput \"private_subnet_ids\" {\n  value = [aws_subnet.private_a.id, aws_subnet.private_b.id]\n}\n",
+        "line": 19,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/output.vpc_id",
+      "kind": "Terraform::Output",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "output.vpc_id",
+        "file": "outputs.tf",
+        "root": "app",
+        "source": "# Outputs are boundary edges now (chant#1638): `chant carve advise` reads\n# `output` blocks and scores each one a survivor reads across the cut, at -4,\n# `bridge: \"tf-output-rewrite\"`. `assets_bucket` is deliberate — a downstream\n# consumer of this state reads the bucket name today, so the carve has to\n# rewrite that output the same way it rewrites `cdn.tf`'s data source.\n\noutput \"assets_bucket\" {\n  value = aws_s3_bucket.assets.bucket\n}\n\noutput \"api_function_name\" {\n  value = aws_lambda_function.api.function_name\n}\n\noutput \"vpc_id\" {\n  value = aws_vpc.main.id\n}\n\noutput \"private_subnet_ids\" {\n  value = [aws_subnet.private_a.id, aws_subnet.private_b.id]\n}\n",
+        "line": 15,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/provider.aws",
+      "kind": "Terraform::Provider",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "provider.aws",
+        "file": "versions.tf",
+        "root": "app",
+        "source": "# The Terraform half of behold's carve demo estate (#254).\n#\n# Everything in this directory is still Terraform-owned. The chant half lives in\n# ../app — the log group and the SSM parameter that came out of here last month.\n#\n# Nothing here has ever been applied to a real AWS account. The committed\n# terraform.tfstate is synthetic (see its `_fixture_note` output and README.md),\n# the account id in it is 000000000000, and every ARN is fake. Values are\n# boring-realistic on purpose: the walkthrough video pauses on the inspect pane.\n#\n# `chant carve advise` parses these files with @cdktf/hcl2json — no terraform\n# binary, no provider download, no network. See ../README.md for the scores this\n# estate is tuned to produce and why each one lands where it does.\n\nterraform {\n  required_version = \">= 1.6\"\n\n  required_providers {\n    aws = {\n      source  = \"hashicorp/aws\"\n      version = \"~> 5.0\"\n    }\n    random = {\n      source  = \"hashicorp/random\"\n      version = \"~> 3.6\"\n    }\n  }\n}\n\nprovider \"aws\" {\n  region = \"us-east-2\"\n\n  default_tags {\n    tags = {\n      Environment = \"prod\"\n      ManagedBy   = \"terraform\"\n      Team        = \"platform\"\n    }\n  }\n}\n",
+        "line": 30,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/random_pet.suffix",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "random_pet.suffix",
+        "file": "naming.tf",
+        "root": "app",
+        "source": "# The long tail. `random_pet` is not an AWS resource at all, so there is nothing\n# for it to map to and the advisor scores it 0 without inventing a story. Half\n# the estate's names hang off it, which is the honest punchline of the demo:\n# some Terraform stays Terraform indefinitely, and a migration that cannot say\n# that out loud is selling something.\n\nresource \"random_pet\" \"suffix\" {\n  length    = 2\n  separator = \"-\"\n}\n",
+        "line": 7,
+        "mode": "state"
+      }
+    },
+    {
+      "id": "app/terraform",
+      "kind": "Terraform::Terraform",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "terraform",
+        "file": "versions.tf",
+        "root": "app",
+        "source": "# The Terraform half of behold's carve demo estate (#254).\n#\n# Everything in this directory is still Terraform-owned. The chant half lives in\n# ../app — the log group and the SSM parameter that came out of here last month.\n#\n# Nothing here has ever been applied to a real AWS account. The committed\n# terraform.tfstate is synthetic (see its `_fixture_note` output and README.md),\n# the account id in it is 000000000000, and every ARN is fake. Values are\n# boring-realistic on purpose: the walkthrough video pauses on the inspect pane.\n#\n# `chant carve advise` parses these files with @cdktf/hcl2json — no terraform\n# binary, no provider download, no network. See ../README.md for the scores this\n# estate is tuned to produce and why each one lands where it does.\n\nterraform {\n  required_version = \">= 1.6\"\n\n  required_providers {\n    aws = {\n      source  = \"hashicorp/aws\"\n      version = \"~> 5.0\"\n    }\n    random = {\n      source  = \"hashicorp/random\"\n      version = \"~> 3.6\"\n    }\n  }\n}\n\nprovider \"aws\" {\n  region = \"us-east-2\"\n\n  default_tags {\n    tags = {\n      Environment = \"prod\"\n      ManagedBy   = \"terraform\"\n      Team        = \"platform\"\n    }\n  }\n}\n",
+        "line": 15,
+        "mode": "state"
+      }
+    }
+  ],
+  "edges": [],
+  "groups": {
+    "byLexicon": {
+      "terraform": [
+        "app/aws_cloudwatch_log_group.worker",
+        "app/aws_iam_role.api",
+        "app/aws_lambda_function.api",
+        "app/aws_network_acl.private",
+        "app/aws_s3_bucket.assets",
+        "app/aws_s3_bucket_public_access_block.assets",
+        "app/aws_s3_bucket_versioning.assets",
+        "app/aws_security_group.lambda",
+        "app/aws_subnet.private_a",
+        "app/aws_subnet.private_b",
+        "app/aws_vpc.main",
+        "app/aws_vpc_endpoint.ssm",
+        "app/data.aws_availability_zones.available",
+        "app/data.aws_prefix_list.s3",
+        "app/data.aws_ssm_parameter.assets_cdn_domain",
+        "app/module.cdn",
+        "app/module.cdn/aws_cloudfront_distribution.this",
+        "app/module.cdn/output.domain_name",
+        "app/module.cdn/var.aliases",
+        "app/module.cdn/var.name_suffix",
+        "app/module.cdn/var.origin_domain_name",
+        "app/module.cdn/var.price_class",
+        "app/output.api_function_name",
+        "app/output.assets_bucket",
+        "app/output.private_subnet_ids",
+        "app/output.vpc_id",
+        "app/provider.aws",
+        "app/random_pet.suffix",
+        "app/terraform"
+      ]
+    },
+    "byStack": {
+      "terraform": [
+        "app/aws_cloudwatch_log_group.worker",
+        "app/aws_iam_role.api",
+        "app/aws_lambda_function.api",
+        "app/aws_network_acl.private",
+        "app/aws_s3_bucket.assets",
+        "app/aws_s3_bucket_public_access_block.assets",
+        "app/aws_s3_bucket_versioning.assets",
+        "app/aws_security_group.lambda",
+        "app/aws_subnet.private_a",
+        "app/aws_subnet.private_b",
+        "app/aws_vpc.main",
+        "app/aws_vpc_endpoint.ssm",
+        "app/data.aws_availability_zones.available",
+        "app/data.aws_prefix_list.s3",
+        "app/data.aws_ssm_parameter.assets_cdn_domain",
+        "app/module.cdn",
+        "app/module.cdn/aws_cloudfront_distribution.this",
+        "app/module.cdn/output.domain_name",
+        "app/module.cdn/var.aliases",
+        "app/module.cdn/var.name_suffix",
+        "app/module.cdn/var.origin_domain_name",
+        "app/module.cdn/var.price_class",
+        "app/output.api_function_name",
+        "app/output.assets_bucket",
+        "app/output.private_subnet_ids",
+        "app/output.vpc_id",
+        "app/provider.aws",
+        "app/random_pet.suffix",
+        "app/terraform"
+      ]
+    }
+  }
+}

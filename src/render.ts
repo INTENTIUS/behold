@@ -23,6 +23,7 @@ import type { ByContainer } from "./logical.ts";
 import { k8sIconFor, helmIconFor } from "./icon-packs.ts";
 import { carveCardFields } from "./carve-lens.ts";
 import { CHOUDOUFU_LEXICON, choudoufuCardFields } from "./choudoufu-member.ts";
+import { terraformCardFields } from "./terraform-lens.ts";
 import { carveProgress, splitCarveState, type CarveState } from "./carve-manifest.ts";
 import { opCardFields } from "./ops-lens.ts";
 
@@ -50,7 +51,19 @@ registerPack({ lexicon: "helm", iconFor: helmIconFor });
 // `iconFor` opinion: the keyword heuristic already resolves aws_s3_bucket,
 // aws_vpc, aws_subnet and aws_lambda_function to sensible glyphs, and guessing
 // per Terraform type here would be a worse picture than the one it produces.
-registerPack({ lexicon: "terraform", iconFor: () => undefined, fields: carveCardFields });
+// Two producers share the `terraform` lexicon and must not disagree about what
+// lexicon they are: the carve report's scored resources (#252) and the blocks
+// chant's terraform lexicon reads out of an estate's own HCL (#379). One pack,
+// dispatching on what the node carries — a carve node has a `score`, a read
+// block has an `attrs.block` — so a card is titled by its resource type either
+// way and the keyword icon heuristic resolves aws_s3_bucket, aws_vpc and
+// friends for both. `normalizeTerraformNodes` (src/terraform-lens.ts) is what
+// puts the type in `kind` for the second producer; the first has always had it.
+registerPack({
+  lexicon: "terraform",
+  iconFor: () => undefined,
+  fields: (node) => carveCardFields(node) ?? terraformCardFields(node),
+});
 
 // The ops lens (#284) registers its own `op` lexicon for the same reason: a step
 // card must lead with the phase it sits in and the retry profile it runs under,
