@@ -1,0 +1,30 @@
+{
+  "resource": {
+    "type": "aws_iam_role",
+    "live_id": "tlmig-sample-team-a-role"
+  },
+  "from": {
+    "estate": "tlmig-sample-monolith",
+    "address": "aws_iam_role.team_a",
+    "marker": "aws_iam_role.team_a"
+  },
+  "to": {
+    "estate": "tlmig-sample-team-a",
+    "address": "aws_iam_role.team_a",
+    "marker": "aws_iam_role.team_a"
+  },
+  "followers": [
+    {
+      "address": "aws_iam_role_policy.team_a_inline",
+      "type": "aws_iam_role_policy"
+    },
+    {
+      "address": "aws_iam_role_policy_attachment.team_a",
+      "type": "aws_iam_role_policy_attachment"
+    }
+  ],
+  "dry_run": false,
+  "written": true,
+  "verified": true,
+  "found_by": "IDENTITY"
+}

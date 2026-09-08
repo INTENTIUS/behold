@@ -1,0 +1,35 @@
+{
+  "estate": "tlmig-sample-team-a",
+  "consistent": true,
+  "stabilized": true,
+  "attempts": 2,
+  "config_dir": ".",
+  "schemas": "provider",
+  "items": [
+    {
+      "id": "arn:aws:iam::000000000000:role/tlmig-sample-team-a-role",
+      "type": "aws_iam_role",
+      "address": "aws_iam_role.team_a",
+      "declared": true,
+      "source": "tagging",
+      "tags": {
+        "tofu-address": "aws_iam_role.team_a",
+        "tofu-estate": "tlmig-sample-team-a"
+      }
+    }
+  ],
+  "gaps": [
+    {
+      "address": "aws_iam_role_policy.team_a_inline",
+      "type": "aws_iam_role_policy",
+      "rung": "declaration-carried",
+      "detail": "aws_iam_role_policy has no settable tags argument, so no ownership marker was ever written for it - live/MARKERS.md's tier definitions (#417) name this the declaration-carried tier. Its identity comes entirely from configuration."
+    },
+    {
+      "address": "aws_iam_role_policy_attachment.team_a",
+      "type": "aws_iam_role_policy_attachment",
+      "rung": "declaration-carried",
+      "detail": "aws_iam_role_policy_attachment has no settable tags argument, so no ownership marker was ever written for it - live/MARKERS.md's tier definitions (#417) name this the declaration-carried tier. Its identity comes entirely from configuration."
+    }
+  ]
+}

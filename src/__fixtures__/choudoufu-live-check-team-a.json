@@ -1,0 +1,57 @@
+{
+  "dir": ".",
+  "estate": "tlmig-sample-team-a",
+  "blocked": false,
+  "exit_code": 0,
+  "schemas": "provider",
+  "instances": [
+    {
+      "address": "aws_cloudwatch_log_group.team_a_0",
+      "type": "aws_cloudwatch_log_group",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_cloudwatch_log_group.team_a_1",
+      "type": "aws_cloudwatch_log_group",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_cloudwatch_log_group.team_a_2",
+      "type": "aws_cloudwatch_log_group",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_iam_policy.team_a",
+      "type": "aws_iam_policy",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_iam_role.team_a",
+      "type": "aws_iam_role",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_iam_role_policy.team_a_inline",
+      "type": "aws_iam_role_policy",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "aws_iam_role_policy_attachment.team_a",
+      "type": "aws_iam_role_policy_attachment",
+      "rung": "declaration-carried"
+    }
+  ],
+  "references": [],
+  "checked": [
+    "lint",
+    "identity",
+    "dataread",
+    "stamp"
+  ],
+  "partial": [
+    "projection (2 of 47 refusals; the rest need a cloud)"
+  ],
+  "unchecked": [
+    "discovery"
+  ]
+}
