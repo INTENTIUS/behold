@@ -1,0 +1,35 @@
+{
+  "dir": "/Users/alex/Documents/checkouts/intentius/choudoufu/live/e2e/estate-references",
+  "blocked": false,
+  "exit_code": 0,
+  "schemas": "builtin",
+  "instances": [
+    {
+      "address": "aws_subnet.app",
+      "type": "aws_subnet",
+      "rung": "declaration-carried"
+    }
+  ],
+  "references": [
+    {
+      "from": "data.aws_vpc.network",
+      "estate": "estate-references-network",
+      "address": "aws_vpc.main",
+      "read_by": [
+        "aws_subnet.app"
+      ]
+    }
+  ],
+  "checked": [
+    "lint",
+    "identity",
+    "dataread",
+    "stamp"
+  ],
+  "partial": [
+    "projection (1 of 47 refusals; the rest need a cloud)"
+  ],
+  "unchecked": [
+    "discovery"
+  ]
+}

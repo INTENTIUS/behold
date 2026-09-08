@@ -22,6 +22,7 @@ import type { GraphIR, IRGroups, IRNode, Layout } from "@intentius/chant";
 import type { ByContainer } from "./logical.ts";
 import { k8sIconFor, helmIconFor } from "./icon-packs.ts";
 import { carveCardFields } from "./carve-lens.ts";
+import { CHOUDOUFU_LEXICON, choudoufuCardFields } from "./choudoufu-member.ts";
 import { carveProgress, splitCarveState, type CarveState } from "./carve-manifest.ts";
 import { opCardFields } from "./ops-lens.ts";
 
@@ -58,6 +59,13 @@ registerPack({ lexicon: "terraform", iconFor: () => undefined, fields: carveCard
 // `chantBuild`), which pinhole's keyword heuristic already reads better than a
 // per-activity table behold would have to keep in step with every lexicon.
 registerPack({ lexicon: "op", iconFor: () => undefined, fields: opCardFields });
+
+// The choudoufu member (#369) registers its lexicon so a card leads with the
+// rung and the estate (an instance) or the producer it reads (a data source),
+// rather than the alphabetically first two short attrs. No `iconFor` opinion:
+// a node's kind is the Terraform type (`aws_subnet`, `aws_iam_role`), which
+// the keyword heuristic already resolves the way it does for the carve lens.
+registerPack({ lexicon: CHOUDOUFU_LEXICON, iconFor: () => undefined, fields: choudoufuCardFields });
 
 export interface RenderResult {
   svg: string;

@@ -35,6 +35,7 @@ import {
   type ChantResolution,
 } from "./chant.ts";
 import { registeredMemberKinds } from "./member-kind.ts";
+import { CHOUDOUFU_FLOOR, choudoufuMeetsFloor, choudoufuVersion, readLiveCheck, type ChoudoufuVersion, type LiveCheckParse } from "./choudoufu-member.ts";
 import { detectProject, detectProjectShape, type ProjectKind } from "./project.ts";
 import { loadKubeconfig, resolveK8sTarget, type K8sProfiles, type Kubeconfig } from "./k8s-target.ts";
 import { detectSubstrates, type Substrate } from "./substrates.ts";
@@ -47,7 +48,7 @@ export type CheckStatus = "pass" | "warn" | "fail";
  * on it); `detail` is what behold found; `fix` is the single next step, set
  * whenever the status isn't a pass. */
 export interface DoctorCheck {
-  name: "project" | "chant" | "lexicons" | "envs" | "kube" | "substrates" | "ops";
+  name: "project" | "chant" | "lexicons" | "envs" | "kube" | "substrates" | "ops" | "choudoufu";
   status: CheckStatus;
   detail: string;
   fix?: string;
@@ -70,6 +71,12 @@ export interface DoctorReport {
 export interface DoctorProbes {
   loadKubeconfig?: () => Promise<Kubeconfig>;
   detectSubstrates?: (projectDir: string, preview?: boolean, boundContext?: string) => Promise<Substrate[]>;
+  /** The choudoufu binary and its offline read (#369), injectable for the
+   * same reason: a test should not need a choudoufu on PATH. */
+  choudoufu?: {
+    version: () => ChoudoufuVersion | undefined;
+    liveCheck: (dir: string) => Promise<LiveCheckParse>;
+  };
 }
 
 const list = (xs: readonly string[]): string => xs.join(", ");
@@ -97,6 +104,9 @@ function labelFor(root: string, target: string, estate: boolean): string {
  * chant, which carries none of the project's lexicons, and the failure surfaces
  * much later as an opaque graph error. */
 function chantCheck(root: string, targets: string[], estate: boolean): DoctorCheck {
+  // #369: an estate of only non-chant members has no chant to shell, and a
+  // pass over an empty list would read as one.
+  if (!targets.length) return { name: "chant", status: "pass", detail: "no chant members — nothing for behold to shell" };
   const floor = chantFloor();
   const resolutions = targets.map((t) => ({ target: t, res: resolveChant(t) }));
   const missing = resolutions.filter(({ res }) => res.source !== "project");
@@ -265,6 +275,59 @@ function opsCheck(root: string, ops: OpInfo[], chantSource: ChantResolution["sou
 }
 
 /**
+ * The choudoufu line (#369), only on an estate with a choudoufu member: the
+ * binary on PATH and at the floor — checked by the FIELD `version -json`
+ * carries, since the floor's fields landed on choudoufu main before a release
+ * did — then each member's own `live-check -json`, offline, for whether its
+ * rungs came from provider schemas or from choudoufu's built-in table. The
+ * second is a warn with the `init` remedy: the estate serves either way, the
+ * cards say which table answered, and behold does not run `init` in a
+ * served project.
+ */
+async function choudoufuCheck(root: string, members: { dir: string; abs: string }[], probe: NonNullable<DoctorProbes["choudoufu"]>): Promise<DoctorCheck> {
+  const v = probe.version();
+  if (!v) {
+    return {
+      name: "choudoufu",
+      status: "fail",
+      detail: `${members.length} choudoufu member${members.length === 1 ? "" : "s"} (${list(members.map((m) => m.dir))}), and no choudoufu on PATH`,
+      fix: `Install choudoufu ${CHOUDOUFU_FLOOR} or newer (https://github.com/INTENTIUS/choudoufu) and put it on PATH.`,
+    };
+  }
+  if (!choudoufuMeetsFloor(v)) {
+    const said = v.forkField ? `choudoufu ${v.version}` : `a choudoufu whose \`version -json\` carries no \`choudoufu_version\` (v0.15.0 or older)`;
+    return {
+      name: "choudoufu",
+      status: "fail",
+      detail: `${said} at ${v.bin} — below behold's floor ${CHOUDOUFU_FLOOR}, whose \`-json\` documents carry the fields behold reads (schemas, identity, choudoufu_version)`,
+      fix: `Upgrade choudoufu to ${CHOUDOUFU_FLOOR} or newer (a build from main after 2026-09-08 also carries them).`,
+    };
+  }
+  const reads = await Promise.all(members.map(async (m) => ({ m, parsed: await probe.liveCheck(m.abs) })));
+  const failed = reads.filter((r) => !r.parsed.ok);
+  const which = `choudoufu ${v.version || "dev build"}${v.upstream ? ` (on OpenTofu ${v.upstream})` : ""}`;
+  if (failed.length) {
+    return {
+      name: "choudoufu",
+      status: "fail",
+      detail: `${which}; ${list(failed.map((r) => `${r.m.dir}: ${(r.parsed as { ok: false; refusal: { error: string } }).refusal.error}`))}`,
+      fix: (failed[0]!.parsed as { ok: false; refusal: { remedy: string } }).refusal.remedy,
+    };
+  }
+  const builtin = reads.filter((r) => r.parsed.ok && r.parsed.doc.schemas === "builtin");
+  const perMember = list(reads.map((r) => `${r.m.dir}: schemas ${r.parsed.ok ? r.parsed.doc.schemas : "?"}`));
+  if (builtin.length) {
+    return {
+      name: "choudoufu",
+      status: "warn",
+      detail: `${which}; ${perMember} — a member without provider schemas gets its rungs from choudoufu's built-in table, which reads every taggable type as declaration-carried`,
+      fix: `Run \`choudoufu init -input=false\` in ${list(builtin.map((r) => r.m.dir))} (behold does not run it for you).`,
+    };
+  }
+  return { name: "choudoufu", status: "pass", detail: `${which}; ${perMember}` };
+}
+
+/**
  * Diagnose a directory. Read-only; resolves every fact through the module the
  * server reads it from. A directory that is neither a chant project nor an
  * estate root returns the single `project` fail — every later line would be a
@@ -356,6 +419,10 @@ export async function diagnose(dir: string, probes: DoctorProbes = {}): Promise<
     substrateCheck(substrates),
     opsCheck(root, discoverEstateOps(targets), resolveChant(primary).source, estate),
   ];
+  const choudoufuMembers = members.filter((m) => m.kind === "choudoufu");
+  if (choudoufuMembers.length) {
+    checks.push(await choudoufuCheck(root, choudoufuMembers, probes.choudoufu ?? { version: () => choudoufuVersion(), liveCheck: (d) => readLiveCheck(d) }));
+  }
 
   return { behold, dir: root, kind: shape.kind, ok: !checks.some((c) => c.status === "fail"), checks };
 }

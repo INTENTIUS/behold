@@ -1,0 +1,42 @@
+{
+  "dir": ".",
+  "estate": "spike-app",
+  "blocked": false,
+  "exit_code": 0,
+  "schemas": "provider",
+  "instances": [
+    {
+      "address": "aws_subnet.app",
+      "type": "aws_subnet",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_subnet.app2",
+      "type": "aws_subnet",
+      "rung": "tag-governable"
+    }
+  ],
+  "references": [
+    {
+      "from": "data.aws_vpc.network",
+      "estate": "spike-net",
+      "address": "aws_vpc.main",
+      "read_by": [
+        "aws_subnet.app",
+        "aws_subnet.app2"
+      ]
+    }
+  ],
+  "checked": [
+    "lint",
+    "identity",
+    "dataread",
+    "stamp"
+  ],
+  "partial": [
+    "projection (2 of 47 refusals; the rest need a cloud)"
+  ],
+  "unchecked": [
+    "discovery"
+  ]
+}
