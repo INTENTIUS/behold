@@ -130,7 +130,7 @@ import { pickAutoSyncOps, splitForgeRouted, suspendedByRollback, type AutoSyncMo
 import { sourceCommits, openRollbackBranches } from "./history.ts";
 import { composeEstate, composeEstateOverlay, estateMembers, withoutJoinedMembers } from "./estate.ts";
 import { addEstateMemberEdges } from "./estate-edges.ts";
-import { addChoudoufuReferenceEdges, liveCheckToIr, readLiveCheck } from "./choudoufu-member.ts";
+import { addChoudoufuReferenceEdges, liveCheckToIr, readLiveCheck, setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
 import { choudoufuDiffNodes, readChoudoufuLive, type Runner as ChoudoufuRunner } from "./choudoufu-live.ts";
 import { discoverCarvePlans, moveMembers, moveReceipt, movesPayload, readCarvePlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
 import { memberKindOf } from "./member-kind.ts";
@@ -1410,10 +1410,14 @@ export function createApp(
    * project being left stays reachable through recents. Shared by
    * /api/project/open and the demo catalog's loader (#268) — one switch, so a
    * demo lands in exactly the state a hand-typed path would. */
-  const switchServedProject = (dirs: string[], env?: string): void => {
+  const switchServedProject = (dirs: string[], env?: string, spawnEnv?: Record<string, string>): void => {
     addRecent(cfg.projectDir);
     cfg.projectDir = dirs[0];
     cfg.projectDirs = dirs.length > 1 ? dirs : undefined;
+    // #372: a demo's scratch emulator reaches its choudoufu spawns through
+    // this seam; a switch to anything else drops it, so no later project
+    // inherits an endpoint meant for a demo.
+    setChoudoufuSpawnEnv(spawnEnv);
     // The new project's envs differ — the SPA re-seeds from /api/project. A
     // demo names its own serve env, which becomes the initial selection.
     cfg.env = env;
@@ -1527,8 +1531,10 @@ export function createApp(
       const loaded = await loadDemo(entry, { pkgRoot, target, log: (line) => process.stdout.write(line + "\n") });
       if (!loaded.ok) return c.json({ error: loaded.error }, 500);
       const dirs = loaded.serveDirs;
-      if (!existsSync(join(dirs[0], "chant.config.ts"))) {
-        return c.json({ error: `${entry.name} loaded to ${target} but ${dirs[0]} has no chant.config.ts` }, 500);
+      // #368/#372: the primary has to be a member some kind claims — a chant
+      // project, or (#369) a choudoufu estate — not a chant project only.
+      if (!memberKindOf(dirs[0])) {
+        return c.json({ error: `${entry.name} loaded to ${target} but ${dirs[0]} is neither a chant project nor a choudoufu estate` }, 500);
       }
       // The demo's own `--local` (#46): boot its emulators and redirect this
       // process at them, exactly as `behold demo <name>` does through
@@ -1539,7 +1545,7 @@ export function createApp(
         cfg.local = true;
         cfg.emulators = await bootLocalEmulators(dirs[0], `behold demo ${entry.name} --local`);
       }
-      switchServedProject(dirs, entry.serve.env);
+      switchServedProject(dirs, entry.serve.env, entry.serve.spawnEnv);
       return c.json({ ok: true, demo: entry.name, projectDir: dirs[0], projectDirs: dirs, env: entry.serve.env ?? null });
     } finally {
       loadingDemo = null;

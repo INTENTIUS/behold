@@ -22,6 +22,7 @@ import {
   type LiveCheckDocument,
 } from "./choudoufu-member.ts";
 import { choudoufuSpec } from "./choudoufu-live.ts";
+import { choudoufuSpawnEnv, setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
 
 // Fixture provenance (#369). Every document below was printed by
 // `choudoufu live-check -json` from a choudoufu built from main at
@@ -239,6 +240,22 @@ describe("choudoufuCardFields — the presentation pack (#369)", () => {
     ]);
     expect(choudoufuCardFields({ attrs: { estate: "app", producer: { estate: "net", address: "aws_vpc.main" } } })).toEqual([{ label: "reads", value: "net aws_vpc.main" }]);
     expect(choudoufuCardFields({ attrs: { score: 3 } })).toBeUndefined();
+  });
+});
+
+// #372: the demo's scratch emulator reaches the spawns through a seam, never
+// through process.env, and a switch away drops it.
+describe("the spawn environment seam (#372)", () => {
+  it("layers the override on the process environment, colour off, and clears on undefined", () => {
+    const base = { PATH: "/usr/bin", AWS_ENDPOINT_URL: "https://real" };
+    expect(choudoufuSpawnEnv(base)).toEqual({ PATH: "/usr/bin", AWS_ENDPOINT_URL: "https://real", NO_COLOR: "1" });
+    setChoudoufuSpawnEnv({ AWS_ENDPOINT_URL: "http://127.0.0.1:4650", AWS_ACCESS_KEY_ID: "test" });
+    expect(choudoufuSpawnEnv(base)).toEqual({ PATH: "/usr/bin", AWS_ENDPOINT_URL: "http://127.0.0.1:4650", AWS_ACCESS_KEY_ID: "test", NO_COLOR: "1" });
+    expect(base).not.toHaveProperty("AWS_ACCESS_KEY_ID"); // the base is never mutated
+    setChoudoufuSpawnEnv(undefined);
+    expect(choudoufuSpawnEnv(base).AWS_ENDPOINT_URL).toBe("https://real");
+    setChoudoufuSpawnEnv({});
+    expect(choudoufuSpawnEnv(base).AWS_ENDPOINT_URL).toBe("https://real");
   });
 });
 

@@ -1,0 +1,8 @@
+{
+  "members": [
+    { "dir": "monolith", "kind": "choudoufu" },
+    { "dir": "team-a", "kind": "choudoufu" },
+    { "dir": "team-b", "kind": "choudoufu" },
+    { "dir": "team-c", "kind": "choudoufu" }
+  ]
+}

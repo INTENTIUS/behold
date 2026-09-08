@@ -404,6 +404,22 @@ export function resetChoudoufuVersionCache(): void {
   versionCache.clear();
 }
 
+/** #372: the environment a demo hands its choudoufu spawns — the scratch
+ * emulator's endpoint and the dummy credentials it accepts — kept here rather
+ * than written into `process.env`, so a served project switch can drop it and
+ * nothing else in the process inherits it. Undefined outside a demo. */
+let spawnEnvOverride: Record<string, string> | undefined;
+
+export function setChoudoufuSpawnEnv(env: Record<string, string> | undefined): void {
+  spawnEnvOverride = env && Object.keys(env).length ? { ...env } : undefined;
+}
+
+/** The environment a choudoufu spawn gets: the process's, the demo override
+ * on top, colour off. Exported for testing. */
+export function choudoufuSpawnEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return { ...base, ...(spawnEnvOverride ?? {}), NO_COLOR: "1" };
+}
+
 /** Spawn choudoufu and capture both streams whole. Raw `Buffer` chunks decoded
  * once at close, as `runChantRaw` does — coercing per chunk corrupts a
  * multi-byte character straddling the 64KB highWaterMark. Never rejects: a
@@ -414,7 +430,7 @@ export function captureChoudoufu(args: string[], cwd: string, bin = "choudoufu")
     const err: Buffer[] = [];
     let proc;
     try {
-      proc = spawn(bin, args, { cwd, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, NO_COLOR: "1" } });
+      proc = spawn(bin, args, { cwd, stdio: ["ignore", "pipe", "pipe"], env: choudoufuSpawnEnv() });
     } catch (e) {
       resolvePromise({ code: 127, stdout: "", stderr: e instanceof Error ? e.message : String(e) });
       return;
