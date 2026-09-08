@@ -40,6 +40,10 @@ export interface DemoServe {
   dirs?: string[];
   /** #254: serve the carve walkthrough instead of a project graph. */
   carve?: DemoCarve;
+  /** #372: environment the served estate's choudoufu spawns get — the scratch
+   * emulator the demo's setup booted, and the dummy credentials it accepts.
+   * Applied through `setChoudoufuSpawnEnv`, never `process.env`. */
+  spawnEnv?: Record<string, string>;
 }
 
 export interface DemoEntry {
@@ -82,6 +86,12 @@ export function loadDemoRegistry(pkgRoot: string): DemoEntry[] {
     if (!Array.isArray(d.requires) || d.requires.some((r) => typeof r !== "string")) return false;
     if (!d.serve || typeof d.serve !== "object") return false;
     if (d.serve.dirs !== undefined && (!Array.isArray(d.serve.dirs) || d.serve.dirs.some((x) => typeof x !== "string") || !d.serve.dirs.length))
+      return false;
+    // #372: a spawn environment is a flat string map or nothing.
+    if (
+      d.serve.spawnEnv !== undefined &&
+      (typeof d.serve.spawnEnv !== "object" || d.serve.spawnEnv === null || Array.isArray(d.serve.spawnEnv) || Object.values(d.serve.spawnEnv).some((v) => typeof v !== "string"))
+    )
       return false;
     // #254: a carve entry names four relative paths, and a missing one would
     // mean a walkthrough whose Emit step has nowhere to write — drop the entry

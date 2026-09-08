@@ -84,6 +84,25 @@ describe("loadDemoRegistry — malformed input degrades, never throws", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  // #372: a demo's spawn environment is a flat string map, or nothing; the
+  // committed choudoufu-estate entry names the scratch emulator through it.
+  it("a spawnEnv that is not a string map drops the entry; a well-formed one is carried", () => {
+    const entry = (spawnEnv: unknown, name: string) => ({ name, description: "d", source: "bundled", dir: "x", requires: [], serve: { env: "live", spawnEnv } });
+    const dir = tmpRoot(
+      JSON.stringify({
+        demos: [entry({ AWS_ENDPOINT_URL: "http://127.0.0.1:4650" }, "good"), entry(["AWS_ENDPOINT_URL=x"], "array"), entry({ PORT: 4650 }, "number"), entry("x", "string"), entry(undefined, "none")],
+      }),
+    );
+    const got = loadDemoRegistry(dir);
+    expect(got.map((e) => e.name)).toEqual(["good", "none"]);
+    expect(got[0]!.serve.spawnEnv).toEqual({ AWS_ENDPOINT_URL: "http://127.0.0.1:4650" });
+    rmSync(dir, { recursive: true, force: true });
+    const shipped = loadDemoRegistry(REPO).find((e) => e.name === "choudoufu-estate")!;
+    expect(shipped.requires).toEqual(["docker", "choudoufu"]);
+    expect(shipped.serve).toMatchObject({ env: "live", dirs: ["monolith", "team-a", "team-b", "team-c"], spawnEnv: { AWS_ENDPOINT_URL: "http://127.0.0.1:4650" } });
+    for (const d of shipped.serve.dirs!) expect(existsSync(join(REPO, shipped.dir!, d, "main.tf")), d).toBe(true);
+  });
+
   it("a half-wired carve entry drops rather than serving a walkthrough that can't act (#254)", () => {
     const carve = (c: unknown) => ({ name: "c", description: "d", source: "bundled", dir: "x", requires: [], serve: { carve: c } });
     const good = { report: "r.json", from: "tf", state: "tf/s.tfstate", project: "app", out: "app/carveout" };

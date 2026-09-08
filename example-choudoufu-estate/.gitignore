@@ -1,0 +1,5 @@
+.terraform/
+.terraform.lock.hcl
+.tofu-records/
+terraform.tfstate*
+approved.tfplan

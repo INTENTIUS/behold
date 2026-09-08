@@ -2,41 +2,70 @@
   "demos": [
     {
       "name": "writes",
-      "description": "One S3 bucket + policy on a local Floci emulator — blue to green in five minutes. The default.",
+      "description": "One S3 bucket + policy on a local Floci emulator \u2014 blue to green in five minutes. The default.",
       "source": "bundled",
       "dir": "example-writes",
-      "requires": ["docker"],
-      "serve": { "local": true, "env": "prod" }
+      "requires": [
+        "docker"
+      ],
+      "serve": {
+        "local": true,
+        "env": "prod"
+      }
     },
     {
       "name": "k8s",
-      "description": "An nginx Deployment + Service on a throwaway k3d cluster — runtime children (Pods), field ownership, honest unobserved. Cluster persists across runs; scripts/local/local-down.sh removes it.",
+      "description": "An nginx Deployment + Service on a throwaway k3d cluster \u2014 runtime children (Pods), field ownership, honest unobserved. Cluster persists across runs; scripts/local/local-down.sh removes it.",
       "source": "bundled",
       "dir": "example-k8s",
-      "requires": ["docker", "k3d", "kubectl"],
+      "requires": [
+        "docker",
+        "k3d",
+        "kubectl"
+      ],
       "setup": "bash scripts/local/local-up.sh",
-      "serve": { "local": true, "env": "local" }
+      "serve": {
+        "local": true,
+        "env": "local"
+      }
     },
     {
       "name": "flux-estate",
-      "description": "A GitOps estate: a Flux control plane (GitRepository + Kustomizations) plus two app projects, served as one composed estate — cross-stack sourceRef edges, estate-wide drift, and the namespace join that reads app-b where the control plane's targetNamespace puts it. k3d + Flux, no cloud. scripts/estate-down.sh removes the cluster.",
+      "description": "A GitOps estate: a Flux control plane (GitRepository + Kustomizations) plus two app projects, served as one composed estate \u2014 cross-stack sourceRef edges, estate-wide drift, and the namespace join that reads app-b where the control plane's targetNamespace puts it. k3d + Flux, no cloud. scripts/estate-down.sh removes the cluster.",
       "source": "bundled",
       "dir": "example-flux-estate",
-      "requires": ["docker", "k3d", "kubectl"],
+      "requires": [
+        "docker",
+        "k3d",
+        "kubectl"
+      ],
       "setup": "bash scripts/estate-up.sh",
-      "serve": { "env": "local", "dirs": ["control-plane", "app-a", "app-b"] }
+      "serve": {
+        "env": "local",
+        "dirs": [
+          "control-plane",
+          "app-a",
+          "app-b"
+        ]
+      }
     },
     {
       "name": "argo-estate",
-      "description": "The Argo CD mirror of flux-estate, declared only: an AppProject plus one Application per app project, served with the two apps as one composed estate — project edges from each Application to the AppProject it names, and each Application's destination namespace drawn as a box holding that app's objects. No cluster, no Argo install, no Docker.",
+      "description": "The Argo CD mirror of flux-estate, declared only: an AppProject plus one Application per app project, served with the two apps as one composed estate \u2014 project edges from each Application to the AppProject it names, and each Application's destination namespace drawn as a box holding that app's objects. No cluster, no Argo install, no Docker.",
       "source": "bundled",
       "dir": "example-argo-estate",
       "requires": [],
-      "serve": { "dirs": ["control-plane", "app-a", "app-b"] }
+      "serve": {
+        "dirs": [
+          "control-plane",
+          "app-a",
+          "app-b"
+        ]
+      }
     },
     {
       "name": "carve",
-      "description": "The peel walkthrough: a half-migrated estate — a chant project beside a Terraform one — scored by `chant carve advise`, then a six-step stepper that carves one S3 bucket across the line on camera (advise, pick, emit, bridge, handoff, done). Emit and bridge really run, into the demo copy; the destructive terraform commands stay yours to paste. No cloud, no Docker, no terraform binary.",
+      "description": "The peel walkthrough: a half-migrated estate \u2014 a chant project beside a Terraform one \u2014 scored by `chant carve advise`, then a six-step stepper that carves one S3 bucket across the line on camera (advise, pick, emit, bridge, handoff, done). Emit and bridge really run, into the demo copy; the destructive terraform commands stay yours to paste. No cloud, no Docker, no terraform binary.",
       "source": "bundled",
       "dir": "example-carve",
       "requires": [],
@@ -51,13 +80,47 @@
       }
     },
     {
+      "name": "choudoufu-estate",
+      "description": "A tag-owned estate: four choudoufu estates (an OpenTofu fork whose ownership is two AWS tags) served composed \u2014 the terralith applied to a scratch floci, three team estates whose declared resources are the monolith's (every card `owned by` it, dashed to its card), a cross-estate data-source edge, and a move plan whose `live-mv` lines you run by hand while behold previews with -dry-run and reads the receipt. Docker + choudoufu (0.16.0+, or a build from main) on PATH; provider download on first init. scripts/choudoufu-down.sh removes the container.",
+      "source": "bundled",
+      "dir": "example-choudoufu-estate",
+      "requires": [
+        "docker",
+        "choudoufu"
+      ],
+      "setup": "bash scripts/choudoufu-up.sh",
+      "serve": {
+        "env": "live",
+        "dirs": [
+          "monolith",
+          "team-a",
+          "team-b",
+          "team-c"
+        ],
+        "spawnEnv": {
+          "AWS_ENDPOINT_URL": "http://127.0.0.1:4650",
+          "AWS_ACCESS_KEY_ID": "test",
+          "AWS_SECRET_ACCESS_KEY": "test",
+          "AWS_REGION": "us-east-1"
+        }
+      }
+    },
+    {
       "name": "fountain",
-      "description": "The mature estate: self-hosted fountain (a real app) on a throwaway k3d cluster — tiers (try the ha tier picker), seams, drift, runtime Pods. Clones INTENTIUS/fountain-ops; ~5 minutes, mostly image pulls. `just down` in the clone removes the cluster.",
+      "description": "The mature estate: self-hosted fountain (a real app) on a throwaway k3d cluster \u2014 tiers (try the ha tier picker), seams, drift, runtime Pods. Clones INTENTIUS/fountain-ops; ~5 minutes, mostly image pulls. `just down` in the clone removes the cluster.",
       "source": "git",
       "repo": "https://github.com/INTENTIUS/fountain-ops",
-      "requires": ["docker", "k3d", "kubectl", "jq", "just"],
+      "requires": [
+        "docker",
+        "k3d",
+        "kubectl",
+        "jq",
+        "just"
+      ],
       "setup": "just up",
-      "serve": { "env": "local" }
+      "serve": {
+        "env": "local"
+      }
     }
   ]
 }

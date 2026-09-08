@@ -14,6 +14,7 @@ import { runExport } from "./export.ts";
 import { diagnose, formatReport } from "./doctor.ts";
 import { isAutoSyncMode, type AutoSyncMode } from "./autosync.ts";
 import { detectProjectShape } from "./project.ts";
+import { setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
 import { readCarveReport } from "./carve-lens.ts";
 import {
   bootScratchFloci,
@@ -422,6 +423,9 @@ async function runDemo(rest: string[]): Promise<void> {
   const serveArgs = ["serve", ...loaded.serveDirs, "--port", String(port)];
   if (entry.serve.local) serveArgs.push("--local");
   if (entry.serve.env) serveArgs.push("--env", entry.serve.env);
+  // #372: the demo's scratch emulator reaches the estate's choudoufu spawns
+  // through this seam, in this process, which `serve` below shares.
+  setChoudoufuSpawnEnv(entry.serve.spawnEnv);
   await run(serveArgs);
 }
 
