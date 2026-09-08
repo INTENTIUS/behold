@@ -38,8 +38,6 @@ import type { GraphIR } from "@intentius/chant";
 import { stripAnsi } from "./ansi.ts";
 import type { GraphOptions } from "./chant.ts";
 import { meetsFloor } from "./floor.ts";
-import type { MemberVia } from "./member-ir.ts";
-import type { MemberKindSpec } from "./member-kind.ts";
 
 /** The lexicon every node this member emits carries — the presentation pack
  * (src/render.ts) and the inspect pane key on it. */
@@ -149,14 +147,20 @@ export interface Captured {
  * directory that will not parse, because a document with an empty roster
  * would read as "zero instances declared", which is a worse lie — and that is
  * a different refusal from a document that says `blocked: true`. */
+/** choudoufu's stderr as bare lines: colour stripped, the box-drawing gutter
+ * its diagnostics wear removed, blank and rule-only lines dropped. */
+export function stripAnsiLines(stderr: string): string[] {
+  return stripAnsi(stderr)
+    .split("\n")
+    .map((l) => l.replace(/^[│╷╵\s]+/, "").trim())
+    .filter((l) => l && !/^[─╷╵│]+$/.test(l));
+}
+
 export function parseLiveCheckOutput(run: Captured, dir: string): LiveCheckParse {
   if (run.code === 127) return refuse(`choudoufu is not on PATH (${stripAnsi(run.stderr).trim() || "spawn failed"}).`, INSTALL);
   const text = run.stdout.trim();
   if (!text) {
-    const said = stripAnsi(run.stderr)
-      .split("\n")
-      .map((l) => l.replace(/^[│╷╵\s]+/, "").trim())
-      .filter((l) => l && !/^[─╷╵│]+$/.test(l));
+    const said = stripAnsiLines(run.stderr);
     const why = said.find((l) => /^Error:/.test(l)) ?? said[0] ?? `exit ${run.code}`;
     return refuse(`choudoufu could not read ${dir}: ${why}`, "Fix the configuration until `choudoufu live-check` prints a document, then reload.");
   }
@@ -274,15 +278,32 @@ export function addChoudoufuReferenceEdges(ir: GraphIR): GraphIR {
     }
   }
   const have = new Set(ir.edges.map((e) => `${e.from}|${e.to}`));
+  const link = (from: string, to: string, viaAttr: string): void => {
+    if (have.has(`${from}|${to}`)) return;
+    have.add(`${from}|${to}`);
+    ir.edges.push({ from, to, kind: "ref", viaAttr, inferred: true } as never);
+  };
   for (const n of ir.nodes) {
     if (n.lexicon !== CHOUDOUFU_LEXICON) continue;
+    // #370: a live object at this address is owned by ANOTHER estate
+    // (`unowned[].tofu_estate`). When that estate is a sibling member that
+    // declares the same address, the card the object really belongs to is on
+    // the picture — a dashed edge says so; the moved-but-block-not-yet-removed
+    // state after a `live-mv` split looks exactly like this.
+    const ownedBy = n.attrs.ownedBy;
+    if (typeof ownedBy === "string") {
+      const member = memberOfEstate.get(ownedBy);
+      const address = n.id.slice(n.id.indexOf("/") + 1);
+      const target = member ? `${member}/${address}` : undefined;
+      if (target && target !== n.id && byId.has(target)) link(n.id, target, "owned-by");
+    }
     const producer = n.attrs.producer as { estate?: unknown; address?: unknown } | undefined;
     if (!isRecord(producer) || typeof producer.estate !== "string") continue;
     const member = memberOfEstate.get(producer.estate);
     const target = member && typeof producer.address === "string" ? `${member}/${producer.address}` : undefined;
     if (target && byId.has(target)) {
       n.attrs = { ...n.attrs, reads: target };
-      if (!have.has(`${n.id}|${target}`)) ir.edges.push({ from: n.id, to: target, kind: "ref", viaAttr: "tofu-estate", inferred: true } as never);
+      link(n.id, target, "tofu-estate");
       continue;
     }
     n.attrs = {
@@ -420,28 +441,5 @@ export class ChoudoufuReadError extends Error {
   }
 }
 
-/** How a choudoufu member is read (the `via` of its kind). */
-export const choudoufuVia: MemberVia = {
-  tool: () => {
-    const v = choudoufuVersion();
-    return `choudoufu\0${v ? v.version || "dev" : "absent"}`;
-  },
-  read: async (dir: string, opts: GraphOptions): Promise<GraphIR> => {
-    // M1 has no live half. Refusing here, rather than returning the declared
-    // graph painted by hand, lets composeEstateOverlay do what it does for any
-    // member it could not observe: the source graph, `neutral`, the reason in
-    // the cover note. #370 replaces this branch with live-ls and live-plan.
-    if (opts.live || opts.overlay) throw new Error(`choudoufu ${dir} exited 1: live read not yet wired (behold#370)`);
-    const parsed = await readLiveCheck(dir);
-    if (!parsed.ok) throw new ChoudoufuReadError(parsed.refusal, dir);
-    return liveCheckToIr(parsed.doc);
-  },
-};
-
-/** The kind, as src/member-kind.ts registers it. */
-export const choudoufuSpec: MemberKindSpec = {
-  kind: "choudoufu",
-  probe: hasLiveBlock,
-  expects: "a `live { estate = … }` block in a root *.tf file",
-  via: choudoufuVia,
-};
+// The kind's `via` and spec live in src/choudoufu-live.ts (#370), which owns
+// the live half and imports this module for the declared one.

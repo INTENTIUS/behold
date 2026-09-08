@@ -131,6 +131,8 @@ import { sourceCommits, openRollbackBranches } from "./history.ts";
 import { composeEstate, composeEstateOverlay, estateMembers, withoutJoinedMembers } from "./estate.ts";
 import { addEstateMemberEdges } from "./estate-edges.ts";
 import { addChoudoufuReferenceEdges } from "./choudoufu-member.ts";
+import { choudoufuDiffNodes, readChoudoufuLive } from "./choudoufu-live.ts";
+import { memberKindOf } from "./member-kind.ts";
 import { invalidateMember, memberIr } from "./member-ir.ts";
 import { carveStatesFor, carveStatesUnder } from "./carve-discovery.ts";
 import { foreignNote, type GraphIRWithForeign } from "./foreign.ts";
@@ -230,6 +232,8 @@ function optsFromQuery(url: URL, tierEnvVar?: string, projectDir?: string): Grap
   if (q.get("down") === "1") opts.down = true;
   const env = q.get("env");
   if (env) opts.env = env;
+  // #370: the consistent listing, for a choudoufu member right after a move.
+  if (q.get("consistent") === "1") opts.consistent = true;
   // The stack picker (#76, follow-up to #71): `?stack=` names one of the
   // served project's declared `stacks[]` entries — chant.ts's `graphPath`
   // resolves it to that stack's own source tree, same shape as `?env=`
@@ -1276,7 +1280,15 @@ export function createApp(
   // detail) instead of the env being a launch-only flag. `currentEnv` is the
   // launch `--env`, the picker's initial selection.
   app.get("/api/project", async (c) => {
-    const { environments, lexicons, stacks, k8sProfiles } = await detectProject(cfg.projectDir);
+    const { environments: declaredEnvs, lexicons, stacks, k8sProfiles } = await detectProject(cfg.projectDir);
+    // #370: a choudoufu member declares no environments — it has one account,
+    // reached by the ambient credentials — and the overlay needs a name to be
+    // asked for. An estate whose chant members declare none but which holds a
+    // choudoufu member offers `live`, so the picker has something to pick;
+    // an estate with chant environments keeps them and a choudoufu member
+    // ignores the name.
+    const environments =
+      declaredEnvs.length === 0 && (cfg.projectDirs ?? [cfg.projectDir]).some((d) => memberKindOf(d) === "choudoufu") ? ["live"] : declaredEnvs;
     // #106: the k8s half's apiserver is dynamic (Floci allocates a port per EKS
     // cluster), so it is resolved from the kubeconfig on each read rather than
     // assumed. Only for a project that declares the lexicon — an aws-only
@@ -2674,6 +2686,28 @@ export function createApp(
   app.get("/api/diff", async (c) => {
     const env = optsFromQuery(new URL(c.req.url)).env ?? cfg.env;
     if (!env) return c.json({ error: "diff needs an environment — pick one, or start with --env" }, 400);
+    const nodes: Record<
+      string,
+      { observed: unknown; diff: unknown; health: string; healthDetail?: string; fieldDrift: unknown }
+    > = {};
+    // #370: a choudoufu member's live state for the pane — its listing and
+    // plan, sliced per address and keyed by the composed id the pane looks up.
+    // A member that cannot be read contributes nothing; the overlay's cover
+    // note already says why.
+    const multi = !!cfg.projectDirs && cfg.projectDirs.length > 1;
+    for (const m of estateMembers(cfg.projectDirs ?? [cfg.projectDir])) {
+      if (m.kind !== "choudoufu") continue;
+      try {
+        const r = await readChoudoufuLive(m.dir, {});
+        Object.assign(nodes, choudoufuDiffNodes(r.check, r.ls, r.plan, multi ? m.name : undefined));
+      } catch {
+        // painted unobserved on the overlay; nothing to slice
+      }
+    }
+    // The chant half asks the primary, which is a chant project unless the
+    // estate's first member is a choudoufu one (#370): then there is no chant
+    // to shell and the choudoufu entries above are the whole answer.
+    if ((memberKindOf(cfg.projectDir) ?? "chant") !== "chant") return c.json({ env, nodes });
     const { code, stdout, stderr } = await runChantRaw(["lifecycle", "diff", env, "--live", "--json"], cfg.projectDir);
     if (code !== 0) return c.json({ error: stderr.trim() || `diff exited ${code}` }, 500);
     let parsed: LiveDiffJson;
@@ -2701,10 +2735,6 @@ export function createApp(
       // unobserved line above rather than leaving it implicit.
       for (const rc of r.runtimeChildren ?? []) ids.add(rc.name);
     }
-    const nodes: Record<
-      string,
-      { observed: unknown; diff: unknown; health: string; healthDetail?: string; fieldDrift: unknown }
-    > = {};
     for (const id of ids) {
       const observed = nodeObserved(parsed, id);
       // #226: kind-aware for the GitOps controllers (the Argo health/sync pair,
@@ -2727,6 +2757,19 @@ export function createApp(
     const node = c.req.param("node");
     const env = optsFromQuery(new URL(c.req.url)).env ?? cfg.env;
     if (!env) return c.json({ error: "diff needs an environment — pick one, or start with --env" }, 400);
+    // #370: a choudoufu member's node — the member whose composed prefix the
+    // id carries (or the primary, on a single-member serve).
+    const multi = !!cfg.projectDirs && cfg.projectDirs.length > 1;
+    const owner = estateMembers(cfg.projectDirs ?? [cfg.projectDir]).find((m) => m.kind === "choudoufu" && (multi ? node.startsWith(`${m.name}/`) : true));
+    if (owner) {
+      try {
+        const r = await readChoudoufuLive(owner.dir, {});
+        const entry = choudoufuDiffNodes(r.check, r.ls, r.plan, multi ? owner.name : undefined)[node];
+        return c.json({ node, env, ...(entry ?? { diff: null, observed: null, health: "unknown", fieldDrift: null }) });
+      } catch (err) {
+        return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+      }
+    }
     const { code, stdout, stderr } = await runChantRaw(
       ["lifecycle", "diff", env, "--live", "--json"],
       cfg.projectDir,

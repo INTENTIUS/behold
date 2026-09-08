@@ -33,7 +33,7 @@
  * member kind"): the probe and the via, plus a presentation pack in
  * src/render.ts and a doctor line if the kind needs a tool on PATH.
  */
-import { choudoufuSpec } from "./choudoufu-member.ts";
+import { choudoufuSpec } from "./choudoufu-live.ts";
 import type { MemberVia } from "./member-ir.ts";
 import { chantConfigPath } from "./project.ts";
 

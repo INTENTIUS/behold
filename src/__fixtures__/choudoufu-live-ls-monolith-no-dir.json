@@ -1,0 +1,176 @@
+{
+  "estate": "tlmig-sample-monolith",
+  "consistent": false,
+  "stabilized": true,
+  "attempts": 1,
+  "schemas": "builtin",
+  "items": [
+    {
+      "id": "arn:aws:logs:us-east-1:000000000000:log-group:/tlmig-sample/team-a/svc-0",
+      "type": "aws_cloudwatch_log_group",
+      "address": "aws_cloudwatch_log_group.team_a_0",
+      "declared": false,
+      "source": "tagging",
+      "tags": {
+        "tofu-address": "aws_cloudwatch_log_group.team_a_0",
+        "tofu-estate": "tlmig-sample-monolith"
+      }
+    },
+    {
+      "id": "arn:aws:logs:us-east-1:000000000000:log-group:/tlmig-sample/team-a/svc-1",
+      "type": "aws_cloudwatch_log_group",
+      "address": "aws_cloudwatch_log_group.team_a_1",
+      "declared": false,
+      "source": "tagging",
+      "tags": {
+        "tofu-address": "aws_cloudwatch_log_group.team_a_1",
+        "tofu-estate": "tlmig-sample-monolith"
+      }
+    },
+    {
+      "id": "arn:aws:logs:us-east-1:000000000000:log-group:/tlmig-sample/team-a/svc-2",
+      "type": "aws_cloudwatch_log_group",
+      "address": "aws_cloudwatch_log_group.team_a_2",
+      "declared": false,
+      "source": "tagging",
+      "tags": {
+        "tofu-address": "aws_cloudwatch_log_group.team_a_2",
+        "tofu-estate": "tlmig-sample-monolith"
+      }
+    },
+    {
+      "id": "arn:aws:logs:us-east-1:000000000000:log-group:/tlmig-sample/team-b/svc-0",
+      "type": "aws_cloudwatch_log_group",
+      "address": "aws_cloudwatch_log_group.team_b_0",
+      "declared": false,
+      "source": "tagging",
+      "tags": {
+        "tofu-address": "aws_cloudwatch_log_group.team_b_0",
+        "tofu-estate": "tlmig-sample-monolith"
+      }
+    },
+    {
+      "id": "arn:aws:logs:us-east-1:000000000000:log-group:/tlmig-sample/team-b/svc-1",
+      "type": "aws_cloudwatch_log_group",
+      "address": "aws_cloudwatch_log_group.team_b_1",
+      "declared": false,
+      "source": "tagging",
+      "tags": {
+        "tofu-address": "aws_cloudwatch_log_group.team_b_1",
+        "tofu-estate": "tlmig-sample-monolith"
+      }
+    },
+    {
+      "id": "arn:aws:logs:us-east-1:000000000000:log-group:/tlmig-sample/team-b/svc-2",
+      "type": "aws_cloudwatch_log_group",
+      "address": "aws_cloudwatch_log_group.team_b_2",
+      "declared": false,
+      "source": "tagging",
+      "tags": {
+        "tofu-address": "aws_cloudwatch_log_group.team_b_2",
+        "tofu-estate": "tlmig-sample-monolith"
+      }
+    },
+    {
+      "id": "arn:aws:logs:us-east-1:000000000000:log-group:/tlmig-sample/team-c/svc-0",
+      "type": "aws_cloudwatch_log_group",
+      "address": "aws_cloudwatch_log_group.team_c_0",
+      "declared": false,
+      "source": "tagging",
+      "tags": {
+        "tofu-address": "aws_cloudwatch_log_group.team_c_0",
+        "tofu-estate": "tlmig-sample-monolith"
+      }
+    },
+    {
+      "id": "arn:aws:logs:us-east-1:000000000000:log-group:/tlmig-sample/team-c/svc-1",
+      "type": "aws_cloudwatch_log_group",
+      "address": "aws_cloudwatch_log_group.team_c_1",
+      "declared": false,
+      "source": "tagging",
+      "tags": {
+        "tofu-address": "aws_cloudwatch_log_group.team_c_1",
+        "tofu-estate": "tlmig-sample-monolith"
+      }
+    },
+    {
+      "id": "arn:aws:logs:us-east-1:000000000000:log-group:/tlmig-sample/team-c/svc-2",
+      "type": "aws_cloudwatch_log_group",
+      "address": "aws_cloudwatch_log_group.team_c_2",
+      "declared": false,
+      "source": "tagging",
+      "tags": {
+        "tofu-address": "aws_cloudwatch_log_group.team_c_2",
+        "tofu-estate": "tlmig-sample-monolith"
+      }
+    },
+    {
+      "id": "arn:aws:iam::000000000000:policy/tlmig-sample-team-a-policy",
+      "type": "aws_iam_policy",
+      "address": "aws_iam_policy.team_a",
+      "declared": false,
+      "source": "tagging",
+      "tags": {
+        "tofu-address": "aws_iam_policy.team_a",
+        "tofu-estate": "tlmig-sample-monolith"
+      }
+    },
+    {
+      "id": "arn:aws:iam::000000000000:policy/tlmig-sample-team-b-policy",
+      "type": "aws_iam_policy",
+      "address": "aws_iam_policy.team_b",
+      "declared": false,
+      "source": "tagging",
+      "tags": {
+        "tofu-address": "aws_iam_policy.team_b",
+        "tofu-estate": "tlmig-sample-monolith"
+      }
+    },
+    {
+      "id": "arn:aws:iam::000000000000:policy/tlmig-sample-team-c-policy",
+      "type": "aws_iam_policy",
+      "address": "aws_iam_policy.team_c",
+      "declared": false,
+      "source": "tagging",
+      "tags": {
+        "tofu-address": "aws_iam_policy.team_c",
+        "tofu-estate": "tlmig-sample-monolith"
+      }
+    },
+    {
+      "id": "arn:aws:iam::000000000000:role/tlmig-sample-team-a-role",
+      "type": "aws_iam_role",
+      "address": "aws_iam_role.team_a",
+      "declared": false,
+      "source": "tagging",
+      "tags": {
+        "tofu-address": "aws_iam_role.team_a",
+        "tofu-estate": "tlmig-sample-monolith"
+      }
+    },
+    {
+      "id": "arn:aws:iam::000000000000:role/tlmig-sample-team-b-role",
+      "type": "aws_iam_role",
+      "address": "aws_iam_role.team_b",
+      "declared": false,
+      "source": "tagging",
+      "tags": {
+        "tofu-address": "aws_iam_role.team_b",
+        "tofu-estate": "tlmig-sample-monolith"
+      }
+    },
+    {
+      "id": "arn:aws:iam::000000000000:role/tlmig-sample-team-c-role",
+      "type": "aws_iam_role",
+      "address": "aws_iam_role.team_c",
+      "declared": false,
+      "source": "tagging",
+      "tags": {
+        "tofu-address": "aws_iam_role.team_c",
+        "tofu-estate": "tlmig-sample-monolith"
+      }
+    }
+  ],
+  "gaps": [],
+  "gaps_skipped": "no configuration directory was given; pass DIR to compare this listing against a configuration's declared instances."
+}

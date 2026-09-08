@@ -38,6 +38,7 @@ import { projectK8sLogical, namespaceBoxKey } from "./logical-k8s.ts";
 import { projectHelmLogical } from "./logical-helm.ts";
 import { projectKustomizeLogical } from "./logical-kustomize.ts";
 import { projectFlyLogical } from "./logical-fly.ts";
+import { projectChoudoufuLogical } from "./logical-choudoufu.ts";
 
 /** The container-nesting map pinhole's `layoutArchitecture` consumes:
  * `containerId → memberIds`, where a member may itself be a container id (the
@@ -354,6 +355,8 @@ export function projectTopology(ir: GraphIR, env?: string, boundContext?: string
     projectK8sLogical(ir, env, boundContext),
     projectHelmLogical(ir),
     projectFlyLogical(ir),
+    // #370: a choudoufu member's estate box, the tool's own edges.
+    projectChoudoufuLogical(ir),
     // The kustomize lens probes for kustomization roots relative to whatever
     // base `sourceLoc.file` was reported against — the graphed root on the
     // declared path, the project dir on the live overlay path (see the lens's

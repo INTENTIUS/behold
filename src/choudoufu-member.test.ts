@@ -10,7 +10,7 @@ import {
   addChoudoufuReferenceEdges,
   choudoufuCardFields,
   choudoufuMeetsFloor,
-  choudoufuSpec,
+
   dataSourceKind,
   hasLiveBlock,
   isDevBuild,
@@ -21,6 +21,7 @@ import {
   readLiveCheck,
   type LiveCheckDocument,
 } from "./choudoufu-member.ts";
+import { choudoufuSpec } from "./choudoufu-live.ts";
 
 // Fixture provenance (#369). Every document below was printed by
 // `choudoufu live-check -json` from a choudoufu built from main at

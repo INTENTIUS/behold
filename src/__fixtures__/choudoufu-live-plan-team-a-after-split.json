@@ -1,0 +1,126 @@
+{
+  "estate": "tlmig-sample-team-a",
+  "choudoufu_version": "v0.15.0-30-g9c7d3701e2",
+  "upstream_version": "1.13.0-dev",
+  "bound": [
+    {
+      "addr": "aws_iam_role.team_a",
+      "type": "aws_iam_role",
+      "identity": "tlmig-sample-team-a-role",
+      "identity_values": {
+        "name": "tlmig-sample-team-a-role"
+      },
+      "source": "derived"
+    },
+    {
+      "addr": "aws_iam_role_policy.team_a_inline",
+      "type": "aws_iam_role_policy",
+      "identity": "tlmig-sample-team-a-role:tlmig-sample-team-a-inline",
+      "identity_values": {
+        "name": "tlmig-sample-team-a-inline",
+        "role": "tlmig-sample-team-a-role"
+      },
+      "source": "derived"
+    }
+  ],
+  "omissions": [
+    {
+      "addr": "aws_cloudwatch_log_group.team_a_0",
+      "reason": "UNOWNED",
+      "detail": "A live aws_cloudwatch_log_group already exists with identity \"/tlmig-sample/team-a/svc-0\" and carries tofu-estate=\"tlmig-sample-monolith\", so it belongs to another estate and nothing in this plan reads, changes or destroys it. See live/MARKERS.md, \"Ownership semantics\"."
+    },
+    {
+      "addr": "aws_cloudwatch_log_group.team_a_1",
+      "reason": "UNOWNED",
+      "detail": "A live aws_cloudwatch_log_group already exists with identity \"/tlmig-sample/team-a/svc-1\" and carries tofu-estate=\"tlmig-sample-monolith\", so it belongs to another estate and nothing in this plan reads, changes or destroys it. See live/MARKERS.md, \"Ownership semantics\"."
+    },
+    {
+      "addr": "aws_cloudwatch_log_group.team_a_2",
+      "reason": "UNOWNED",
+      "detail": "A live aws_cloudwatch_log_group already exists with identity \"/tlmig-sample/team-a/svc-2\" and carries tofu-estate=\"tlmig-sample-monolith\", so it belongs to another estate and nothing in this plan reads, changes or destroys it. See live/MARKERS.md, \"Ownership semantics\"."
+    },
+    {
+      "addr": "aws_iam_policy.team_a",
+      "reason": "NEEDS_DISCOVERY",
+      "detail": "No import identity exists for this instance: IAM mints the policy's own ARN at create time — it embeds the name argument and, when path is set, that too, but the provider's identity schema requires the whole arn as one opaque string (required_for_import=[arn]), not built component-by-component the way aws_sns_topic's account-derived ARN is. Taggable and listable (live/survey-full.json: list_resource=true), so recoverable by ordinary tag-filtered list. row-gen's own registry evidence (Id) undersold this; the IAM/ECR batch above left it out as account-derived follow-on work, but the provider's own required_for_import already names the simpler, schema-literal marker path this row takes instead. Marker discovery will find it; until then the plan will propose creating it."
+    },
+    {
+      "addr": "aws_iam_role_policy_attachment.team_a",
+      "reason": "PARENT_UNAVAILABLE",
+      "detail": "aws_iam_role_policy_attachment.team_a is identified by a composite of its parents' live IDs, and aws_iam_policy.team_a is not in the projection: IAM mints the policy's own ARN at create time — it embeds the name argument and, when path is set, that too, but the provider's identity schema requires the whole arn as one opaque string (required_for_import=[arn]), not built component-by-component the way aws_sns_topic's account-derived ARN is. Taggable and listable (live/survey-full.json: list_resource=true), so recoverable by ordinary tag-filtered list. row-gen's own registry evidence (Id) undersold this; the IAM/ECR batch above left it out as account-derived follow-on work, but the provider's own required_for_import already names the simpler, schema-literal marker path this row takes instead, so only marker discovery can find it. Without that parent's live ID there is no import identity for aws_iam_role_policy_attachment.team_a, so the plan will propose creating it."
+    }
+  ],
+  "unowned": [
+    {
+      "addr": "aws_cloudwatch_log_group.team_a_0",
+      "type": "aws_cloudwatch_log_group",
+      "identity": "/tlmig-sample/team-a/svc-0",
+      "tofu_estate": "tlmig-sample-monolith"
+    },
+    {
+      "addr": "aws_cloudwatch_log_group.team_a_1",
+      "type": "aws_cloudwatch_log_group",
+      "identity": "/tlmig-sample/team-a/svc-1",
+      "tofu_estate": "tlmig-sample-monolith"
+    },
+    {
+      "addr": "aws_cloudwatch_log_group.team_a_2",
+      "type": "aws_cloudwatch_log_group",
+      "identity": "/tlmig-sample/team-a/svc-2",
+      "tofu_estate": "tlmig-sample-monolith"
+    }
+  ],
+  "adoptable": [],
+  "swept": [
+    "aws_iam_policy",
+    "aws_iam_policy",
+    "aws_iam_role"
+  ],
+  "diagnostics": [
+    {
+      "severity": "warning",
+      "summary": "Provider version does not match the admission evidence version",
+      "detail": "This run resolved hashicorp/aws 6.58.0. Live resource markers' admission table - which resource types are accepted, what their import IDs look like, and how their identity is resolved - was verified against hashicorp/aws 6.59.0 (live/survey.json). Import grammar and identity schemas are the parts of that table a provider version change can invalidate: an import ID format or an identity attribute that changed between 6.58.0 and 6.59.0 would misbehave here with no further warning. Taggability judgments are not version-sensitive in the same way and rarely change between provider releases. This is a caution, not a failure: the plan continues."
+    },
+    {
+      "severity": "warning",
+      "summary": "Resource type has no orphan recovery",
+      "detail": "aws_cloudwatch_log_group is admitted by the provider's own identity schema rather than by this fork's admission table, so it plans and applies normally - but the estate-wide sweep draws its type universe from that table and will not list it. Deleting the last aws_cloudwatch_log_group block from this configuration leaves the live resource in the account with no run proposing to remove it, and no warning at that point either. Remove it by hand when you remove the block. See live/LIMITATIONS.md, \"Resource type has no orphan recovery\"."
+    },
+    {
+      "severity": "warning",
+      "summary": "Resource type has no orphan recovery",
+      "detail": "aws_iam_role is admitted by the provider's own identity schema rather than by this fork's admission table, so it plans and applies normally - but the estate-wide sweep draws its type universe from that table and will not list it. Deleting the last aws_iam_role block from this configuration leaves the live resource in the account with no run proposing to remove it, and no warning at that point either. Remove it by hand when you remove the block. See live/LIMITATIONS.md, \"Resource type has no orphan recovery\"."
+    },
+    {
+      "severity": "warning",
+      "summary": "Resource type has no orphan recovery",
+      "detail": "aws_iam_role_policy is admitted by the provider's own identity schema rather than by this fork's admission table, so it plans and applies normally - but the estate-wide sweep draws its type universe from that table and will not list it. Deleting the last aws_iam_role_policy block from this configuration leaves the live resource in the account with no run proposing to remove it, and no warning at that point either. Remove it by hand when you remove the block. See live/LIMITATIONS.md, \"Resource type has no orphan recovery\"."
+    },
+    {
+      "severity": "warning",
+      "summary": "Resource type has no orphan recovery",
+      "detail": "aws_iam_role_policy_attachment is admitted by the provider's own identity schema rather than by this fork's admission table, so it plans and applies normally - but the estate-wide sweep draws its type universe from that table and will not list it. Deleting the last aws_iam_role_policy_attachment block from this configuration leaves the live resource in the account with no run proposing to remove it, and no warning at that point either. Remove it by hand when you remove the block. See live/LIMITATIONS.md, \"Resource type has no orphan recovery\"."
+    },
+    {
+      "severity": "warning",
+      "summary": "Unbound instance with unreadable live markers of its type",
+      "detail": "Nothing bound to aws_iam_policy.team_a, so the plan below proposes creating it - but 3 live aws_iam_policy resource(s) this run listed came back with no readable ownership marker, and the estate's tag index holds no marker for this address either. If one of them is in fact this estate's aws_iam_policy.team_a, applying will create a second resource carrying the same marker rather than adopting the first. Check the resources reported as foreign below before applying; live-import binds one by hand."
+    },
+    {
+      "severity": "warning",
+      "summary": "Live resource outside this estate",
+      "detail": "A live aws_cloudwatch_log_group already exists with identity \"/tlmig-sample/team-a/svc-0\" and carries tofu-estate=\"tlmig-sample-monolith\", so it belongs to another estate and nothing in this plan reads, changes or destroys it. See live/MARKERS.md, \"Ownership semantics\"."
+    },
+    {
+      "severity": "warning",
+      "summary": "Live resource outside this estate",
+      "detail": "A live aws_cloudwatch_log_group already exists with identity \"/tlmig-sample/team-a/svc-1\" and carries tofu-estate=\"tlmig-sample-monolith\", so it belongs to another estate and nothing in this plan reads, changes or destroys it. See live/MARKERS.md, \"Ownership semantics\"."
+    },
+    {
+      "severity": "warning",
+      "summary": "Live resource outside this estate",
+      "detail": "A live aws_cloudwatch_log_group already exists with identity \"/tlmig-sample/team-a/svc-2\" and carries tofu-estate=\"tlmig-sample-monolith\", so it belongs to another estate and nothing in this plan reads, changes or destroys it. See live/MARKERS.md, \"Ownership semantics\"."
+    }
+  ]
+}

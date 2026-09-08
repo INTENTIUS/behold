@@ -48,6 +48,10 @@ export interface GraphOptions {
   down?: boolean;
   /** Environment: chant re-evaluates env-aware source for this name. */
   env?: string;
+  /** #370: a choudoufu member's `live-ls -consistent` — re-read the tagging
+   * index until two reads agree (up to ~100s), for the read right after a
+   * `live-mv`. Not a chant flag; a chant member ignores it. `?consistent=1`. */
+  consistent?: boolean;
   /** Live acquisition — `chant graph --live --env <env>`. Requires cloud creds
    * + provider CLIs on the host (why behold is a Node service, not an edge fn). */
   live?: boolean;
