@@ -1,0 +1,11 @@
+{
+  "from": "tlmig-sample-monolith",
+  "estates": ["tlmig-sample-team-a"],
+  "moves": [
+    { "address": "aws_iam_role.team_a", "from": "tlmig-sample-monolith", "to": "tlmig-sample-team-a" },
+    { "address": "aws_iam_policy.team_a", "from": "tlmig-sample-monolith", "to": "tlmig-sample-team-a" },
+    { "address": "aws_cloudwatch_log_group.team_a_0", "from": "tlmig-sample-monolith", "to": "tlmig-sample-team-a" },
+    { "address": "aws_iam_role.team_b", "from": "tlmig-sample-monolith", "to": "tlmig-sample-team-b" }
+  ],
+  "rules": [{ "match": "name", "value": "team_a", "to": "tlmig-sample-team-a" }]
+}

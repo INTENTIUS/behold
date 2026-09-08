@@ -495,6 +495,113 @@ export function renderCarveMorph(
   });
 }
 
+/** One member of a move morph (#371): the box it draws as, and the graph in
+ * it. `ir` node ids are the member's own (un-prefixed); the composition
+ * prefixes them `<name>/<id>` the way composeStacks does, EXCEPT the moved
+ * cards, which keep the id they had in their source member across both
+ * frames — identity continuity is what makes the card glide. */
+export interface MoveMorphMember {
+  name: string;
+  title: string;
+  /** The panel title inside the box — the estate name, for a choudoufu member. */
+  panel: string;
+  ir: GraphIR;
+}
+
+export interface MoveMorphMove {
+  address: string;
+  from: string;
+  to: string;
+  newAddress?: string;
+  /** The untaggable children that ride the parent's tag (`live-mv`'s
+   * `followers[]`), drawn gliding with it. */
+  followers?: string[];
+}
+
+/** N member boxes side by side, each holding one panel, in renderSvg's y-up
+ * plane — the carve estate's two-box composition generalised (#371). */
+function composeMembersEstate(members: Array<{ title: string; panel: string; ir: GraphIR }>): EstateComposition {
+  const plans = members.map((m) => bandedPlan(m.ir, m.ir.nodes.length ? { [m.panel]: m.ir.nodes.map((n) => n.id) } : {}));
+  const memberH = (plan: BandedPlan) => TITLE + PAD + Math.max(plan.height, NODE_H) + PAD;
+  const memberW = (plan: BandedPlan) => Math.max(plan.width, NODE_W + PAD * 2) + PAD * 2;
+  const x0s: number[] = [];
+  let x = 0;
+  for (const plan of plans) {
+    x0s.push(x);
+    x += memberW(plan) + MEMBER_GAP;
+  }
+  const width = Math.max(1, x - MEMBER_GAP);
+  const height = Math.max(1, ...plans.map(memberH));
+  const boxes: GroupBox[] = [];
+  const placed: Array<{ id: string; x: number; y: number }> = [];
+  members.forEach((m, i) => {
+    const plan = plans[i]!;
+    const x0 = x0s[i]!;
+    boxes.push({ title: m.title, x: x0 + memberW(plan) / 2, y: memberH(plan) / 2, w: memberW(plan), h: memberH(plan) });
+    for (const b of plan.boxes) boxes.push({ ...b, x: x0 + PAD + b.x, y: TITLE + PAD + b.y });
+    for (const p of plan.placed) placed.push({ id: p.id, x: x0 + PAD + p.x, y: TITLE + PAD + p.y });
+  });
+  const ir: GraphIR = {
+    nodes: members.flatMap((m) => m.ir.nodes),
+    edges: members.flatMap((m) => m.ir.edges),
+    groups: { byStack: Object.fromEntries(members.map((m) => [m.title, m.ir.nodes.map((n) => n.id)])) },
+  };
+  return {
+    ir,
+    layout: { width, height, nodes: placed.map((p) => ({ id: p.id, x: p.x, y: height - p.y })) },
+    boxes: boxes.map((b) => ({ ...b, y: height - b.y })),
+  };
+}
+
+/**
+ * The move morph (#371): every member of the estate as a box, and the frame
+ * after the plan's moves — each moved card (and its followers) in its
+ * destination box, keeping the id it had, so pinhole's FLIP glides it across
+ * while the boxes resize. A move whose source or destination is not a member
+ * here moves nothing and is left where it is: the morph shows what the served
+ * estate can show, never a guess about a box that is not on the picture.
+ */
+export function renderMoveMorph(members: MoveMorphMember[], moves: MoveMorphMove[], opts: { title?: string; estateOf?: (member: MoveMorphMember) => string } = {}): string {
+  const estateOf = opts.estateOf ?? ((m: MoveMorphMember) => m.panel);
+  const prefixed = members.map((m) => {
+    const ns = (id: string) => `${m.name}/${id}`;
+    return {
+      ...m,
+      ir: {
+        ...m.ir,
+        nodes: m.ir.nodes.map((n) => ({ ...n, id: ns(n.id) })),
+        edges: m.ir.edges.map((e) => ({ ...e, from: ns(e.from), to: ns(e.to) })),
+        groups: {},
+      },
+    };
+  });
+  const before = composeMembersEstate(prefixed);
+
+  // After: lift each moved card (and followers) out of its source member and
+  // drop it into the destination, same id, ownership repainted.
+  const after = prefixed.map((m) => ({ ...m, ir: { ...m.ir, nodes: [...m.ir.nodes], edges: [...m.ir.edges] } }));
+  for (const mv of moves) {
+    const src = after.find((m) => estateOf(m) === mv.from);
+    const dst = after.find((m) => estateOf(m) === mv.to);
+    if (!src || !dst || src === dst) continue;
+    const ids = new Set([mv.address, ...(mv.followers ?? [])].map((a) => `${src.name}/${a}`));
+    const moving = src.ir.nodes.filter((n) => ids.has(n.id));
+    if (!moving.length) continue;
+    src.ir.nodes = src.ir.nodes.filter((n) => !ids.has(n.id));
+    dst.ir.nodes.push(
+      ...moving.map((n) => ({
+        ...n,
+        attrs: { ...n.attrs, _status: "good", moved: `${mv.from} → ${mv.to}${mv.newAddress ? ` as ${mv.newAddress}` : ""}` },
+      })),
+    );
+  }
+  const afterComp = composeMembersEstate(after);
+  const view = (name: string, comp: EstateComposition): MorphView => ({ name, ir: comp.ir, layout: comp.layout, groups: comp.boxes });
+  return renderMorphHtml([view("as the account stands", before), view("after the plan's moves", afterComp)], {
+    title: opts.title ?? `move morph — ${moves.map((m) => m.address).join(", ")}`,
+  });
+}
+
 /** Re-place a laid-out graph's nodes on concentric rings by dagre rank (the
  * layout's discrete Y levels), so a wide horizontal DAG becomes a compact radial
  * one. Each ring's radius grows enough to seat its nodes without crowding

@@ -311,6 +311,16 @@ and it must be an address the served report already ranks — the value that
 reaches the spawn's argv comes from a closed set read off disk. No cloud write,
 no Terraform mutation, no edit to anyone's chant source.
 
+A choudoufu estate member (#366) adds no exception. A move there is one tag
+write through choudoufu's own `live-mv`, and behold never makes it: `GET
+/api/choudoufu/moves` reads a plan (`carve.json`) from inside a served member,
+previews each move with choudoufu's `live-mv -json -dry-run` (the only spelling
+of `live-mv` in the tree, src/choudoufu-moves.ts `dryRunArgs`, asserted by
+test), hands the lines back with copy buttons, and `?receipt=1` reads the
+listing after a person ran them. **There is no `/api/choudoufu/mv`**, and
+src/choudoufu-route.test.ts asserts it stays absent, for the same reason
+`/api/carve/apply` does not exist.
+
 ## Changing behold (for agents working on this repo)
 
 The sections above are about driving a running behold. This one is about

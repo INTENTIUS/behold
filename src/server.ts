@@ -61,7 +61,7 @@ import { addCompositeDepsCounted } from "./composite-deps.ts";
 import { notesFor, tierMismatchNote, namespaceMismatchNote, namespaceJoinNote, type Zoom } from "./zoom-notes.ts";
 import { resourcesByComponent, nonResourceEntities } from "./resources.ts";
 import { summarizePlan } from "./reconcile.ts";
-import { renderGraph, renderArchitecture, renderBanded, renderCarveEstate, renderCarveMorph } from "./render.ts";
+import { renderGraph, renderArchitecture, renderBanded, renderCarveEstate, renderCarveMorph, renderMoveMorph } from "./render.ts";
 import { readCarveReport, carveReportToIr, carveNote } from "./carve-lens.ts";
 import {
   bandGraduated,
@@ -130,8 +130,9 @@ import { pickAutoSyncOps, splitForgeRouted, suspendedByRollback, type AutoSyncMo
 import { sourceCommits, openRollbackBranches } from "./history.ts";
 import { composeEstate, composeEstateOverlay, estateMembers, withoutJoinedMembers } from "./estate.ts";
 import { addEstateMemberEdges } from "./estate-edges.ts";
-import { addChoudoufuReferenceEdges } from "./choudoufu-member.ts";
-import { choudoufuDiffNodes, readChoudoufuLive } from "./choudoufu-live.ts";
+import { addChoudoufuReferenceEdges, liveCheckToIr, readLiveCheck } from "./choudoufu-member.ts";
+import { choudoufuDiffNodes, readChoudoufuLive, type Runner as ChoudoufuRunner } from "./choudoufu-live.ts";
+import { discoverCarvePlans, moveMembers, moveReceipt, movesPayload, readCarvePlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
 import { memberKindOf } from "./member-kind.ts";
 import { invalidateMember, memberIr } from "./member-ir.ts";
 import { carveStatesFor, carveStatesUnder } from "./carve-discovery.ts";
@@ -212,6 +213,11 @@ export interface ServerOptions {
    * stop the (launch-scoped) drift poll, and capture a fresh baseline frame.
    * Absent in contexts with no long-lived side machinery (tests, export). */
   onProjectSwitch?: (dir: string) => void;
+  /** #371: how the choudoufu move routes spawn choudoufu — a test seam, so a
+   * route test can answer `live-mv -dry-run` from a recorded document with
+   * no binary. Never widens the write surface: the only `live-mv` spelling
+   * that reaches it is `dryRunArgs`' (src/choudoufu-moves.ts). */
+  choudoufu?: { run: ChoudoufuRunner };
   port: number;
 }
 
@@ -1314,9 +1320,16 @@ export function createApp(
     // manifest actually says — which Terraform addresses graduated, and how far
     // the others got — beside the estate rather than painted onto it.
     const carveState = carveStatePayload(await carveStatesUnder(estateDirs));
+    // #371: the move plans the served choudoufu members carry (`carve.json`
+    // at a member's root), as paths the SPA hands back to /api/choudoufu/moves.
+    const plans = discoverCarvePlans(
+      (cfg.projectDirs ?? [cfg.projectDir]).filter((d) => memberKindOf(d) === "choudoufu"),
+      cfg.projectDir,
+    );
     return c.json({
       projectDir: cfg.projectDir,
       ...(carveState.manifests ? { carve: { state: carveState } } : {}),
+      ...(plans.length ? { choudoufu: { plans } } : {}),
       // #195: the full estate composition (multi-project serves) and the
       // switcher's recents, so the SPA's project section can show what's
       // loaded and offer where to go. Recents exclude nothing here — the SPA
@@ -1688,6 +1701,12 @@ export function createApp(
         { method: "GET", path: "/api/reconcile", desc: "pending-change summary for ?env=" },
         { method: "GET", path: "/api/resources", desc: "component → declared resources" },
         { method: "GET", path: "/api/components/compare", desc: "cross-env digest comparison: ?env=&to= — is one env running what the other tested (ledger-only)" },
+        {
+          method: "GET",
+          path: "/api/choudoufu/moves",
+          desc: "a choudoufu move plan (carve.json) as previews: ?plan=<path inside a served member> [&dryrun=1: choudoufu's own live-mv -dry-run per move] [&receipt=1: the listing after a human ran the lines]. The lines are handed back; there is no endpoint that runs live-mv.",
+        },
+        { method: "GET", path: "/choudoufu/morph", desc: "the move plan as a morph page: every member a box, the moved cards gliding to their destination — ?plan=<path>" },
         { method: "GET", path: "/api/ci", desc: "generated CI pipeline projection {stages, jobs, forge}" },
         { method: "GET", path: "/api/substrates", desc: "substrate readiness {substrates: [{name, label, status, detail, bringUp?}]}" },
         { method: "GET", path: "/api/ops", desc: "committed Ops + adopt lexicons + apply progress + run playhead" },
@@ -2751,6 +2770,75 @@ export function createApp(
       };
     }
     return c.json({ env, nodes });
+  });
+
+  // -------------------------------------------------------------------------
+  // #371: the choudoufu move plan. Read-only end to end: the plan file is read
+  // from inside a served member, the preview is choudoufu's own `-dry-run`,
+  // the lines are handed back for a person to run, and the receipt is the
+  // listing afterwards. There is no `/api/choudoufu/mv` — see AGENTS.md's
+  // Invariant, and src/choudoufu-route.test.ts, which asserts it stays absent.
+  // -------------------------------------------------------------------------
+
+  /** The plan path a request names, resolved against the primary and accepted
+   * only inside a served choudoufu member: the same closed-set discipline the
+   * carve morph's `select` follows — nothing from the request reaches the
+   * filesystem outside what behold already serves. */
+  const choudoufuPlanPath = (plan: string | undefined): { path: string } | { error: string; code: string; remedy: string } => {
+    if (!plan) return { error: "no plan named", code: "choudoufu_no_plan", remedy: "pass ?plan=<path to a carve.json inside a served choudoufu member> — GET /api/project lists the ones found" };
+    const abs = resolve(cfg.projectDir, plan);
+    const members = (cfg.projectDirs ?? [cfg.projectDir]).filter((d) => memberKindOf(d) === "choudoufu");
+    const inside = members.some((d) => abs.startsWith(resolve(d) + sep));
+    if (!inside) return { error: `${plan} is not inside a served choudoufu member`, code: "choudoufu_plan_outside", remedy: "a plan lives in the estate it moves; point ?plan= at a carve.json under one of the served members" };
+    return { path: abs };
+  };
+
+  const choudoufuMembersServed = async () => {
+    const run = cfg.choudoufu?.run;
+    const all = estateMembers(cfg.projectDirs ?? [cfg.projectDir]).filter((m) => m.kind === "choudoufu");
+    return moveMembers(all, run);
+  };
+
+  app.get("/api/choudoufu/moves", async (c) => {
+    const q = new URL(c.req.url).searchParams;
+    const where = choudoufuPlanPath(q.get("plan") ?? undefined);
+    if ("error" in where) return c.json(where, 400);
+    const parsed = readCarvePlan(where.path);
+    if (!parsed.ok) return c.json(parsed.refusal, 422);
+    const members = await choudoufuMembersServed();
+    const payload = await movesPayload(parsed.plan, members, { dryRun: q.get("dryrun") === "1", run: cfg.choudoufu?.run });
+    const receipt = q.get("receipt") === "1" ? await moveReceipt(parsed.plan, members, cfg.choudoufu?.run) : undefined;
+    return c.json({ planPath: relative(cfg.projectDir, where.path), ...payload, ...(receipt ? { receipt } : {}) });
+  });
+
+  app.get("/choudoufu/morph", async (c) => {
+    const q = new URL(c.req.url).searchParams;
+    const where = choudoufuPlanPath(q.get("plan") ?? undefined);
+    if ("error" in where) return c.json(where, 400);
+    const parsed = readCarvePlan(where.path);
+    if (!parsed.ok) return c.json(parsed.refusal, 422);
+    const members = await choudoufuMembersServed();
+    // Each member's declared graph, through the same spawn seam as the
+    // previews (so a route test answers it from a recorded document).
+    const morphMembers = await Promise.all(
+      members.map(async (m) => {
+        const parsed = await readLiveCheck(m.dir, cfg.choudoufu?.run);
+        return { name: m.name, title: `${m.name} — choudoufu`, panel: `estate ${m.estate}`, ir: parsed.ok ? liveCheckToIr(parsed.doc) : { nodes: [], edges: [], groups: {} } };
+      }),
+    );
+    // Followers ride along when the preview knows them: one dry run per move
+    // whose destination is served, choudoufu's own list of what moves without
+    // a write of its own.
+    const previews = await movesPayload(parsed.plan, members, { dryRun: true, run: cfg.choudoufu?.run });
+    const moves: MoveMorphMoveInput[] = previews.moves.map((p) => ({
+      address: p.address,
+      from: p.from,
+      to: p.to,
+      ...(p.newAddress ? { newAddress: p.newAddress } : {}),
+      ...(p.dryRun && "followers" in p.dryRun && p.dryRun.followers ? { followers: p.dryRun.followers.map((f) => f.address) } : {}),
+    }));
+    const html = renderMoveMorph(morphMembers, moves, { title: `moves — ${relative(cfg.projectDir, where.path)}`, estateOf: (m) => m.panel.replace(/^estate /, "") });
+    return c.html(html);
   });
 
   app.get("/api/diff/:node", async (c) => {

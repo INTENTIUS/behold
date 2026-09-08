@@ -1271,6 +1271,75 @@ function renderCarveState(host, state) {
   host.appendChild(panelMuted(state.apply.note));
 }
 
+/** Copy `text` to the clipboard and say so on the button for a moment. */
+function copyToClipboard(text, el) {
+  const done = () => {
+    const was = el.textContent;
+    el.textContent = "copied ✓";
+    setTimeout(() => {
+      el.textContent = was;
+    }, 1200);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, done);
+  else done();
+}
+
+/**
+ * The choudoufu move plan (#371), as the scope panel shows it: one row per
+ * move (`address: from → to`), the line a person runs in the destination
+ * estate's directory with a copy button, and a link to the morph page. The
+ * plan is read from `/api/choudoufu/moves`, which previews with choudoufu's
+ * own `-dry-run` when asked and never runs the write — `apply.note` carries
+ * that sentence here verbatim. A no-op when no served member carries a
+ * `carve.json`.
+ */
+function renderChoudoufuMoves(host, info) {
+  if (!info || !info.plans || !info.plans.length || staticMode) return;
+  host.appendChild(panelHeading("moves (choudoufu)"));
+  for (const plan of info.plans) {
+    const head = document.createElement("div");
+    head.className = "count-row";
+    const label = document.createElement("span");
+    label.className = "grow";
+    label.textContent = plan;
+    const morph = document.createElement("a");
+    morph.className = "tag";
+    morph.textContent = "morph ↗";
+    morph.href = "/choudoufu/morph?plan=" + encodeURIComponent(plan);
+    morph.target = "_blank";
+    morph.title = "Every member a box, the moved cards gliding to their destination";
+    head.append(label, morph);
+    host.appendChild(head);
+    const rows = document.createElement("div");
+    host.appendChild(rows);
+    apiFetch("/api/choudoufu/moves?plan=" + encodeURIComponent(plan))
+      .then((r) => r.json())
+      .then((body) => {
+        if (!body || !Array.isArray(body.moves)) {
+          rows.appendChild(panelMuted((body && body.error) || "plan unreadable"));
+          return;
+        }
+        for (const m of body.moves) {
+          const row = document.createElement("div");
+          row.className = "count-row";
+          const name = document.createElement("span");
+          name.className = "grow";
+          name.textContent = m.address + (m.newAddress ? " → " + m.newAddress : "");
+          name.title = "run in " + m.runIn;
+          const tag = document.createElement("span");
+          tag.className = "tag";
+          tag.textContent = m.from + " → " + m.to;
+          const copy = actButton("copy", () => copyToClipboard(m.command, copy), "Copy the live-mv line to the clipboard");
+          row.append(name, tag, copy);
+          rows.appendChild(row);
+          rows.appendChild(panelMuted(m.command));
+        }
+        if (body.apply && body.apply.note) rows.appendChild(panelMuted(body.apply.note));
+      })
+      .catch(() => rows.appendChild(panelMuted("plan unreadable — is the behold server still running?")));
+  }
+}
+
 function renderPanelScope() {
   const host = document.getElementById("tab-scope");
   if (!host) return;
@@ -1302,6 +1371,9 @@ function renderPanelScope() {
   // one — and it renders identically in carve mode and on an ordinary project
   // serve, because /api/project publishes one shape for both.
   renderCarveState(host, info.carve && info.carve.state);
+  // #371: a choudoufu member's move plan — the handoff lines with copy
+  // buttons, and the morph page. Read-only: behold never runs live-mv.
+  renderChoudoufuMoves(host, info.choudoufu);
   // #195: switching — recents first (server-persisted, validated), then a
   // free path input. Locked in preview mode (the demo's contract) and
   // meaningless in a static export.
