@@ -33,6 +33,7 @@
  * member kind"): the probe and the via, plus a presentation pack in
  * src/render.ts and a doctor line if the kind needs a tool on PATH.
  */
+import { choudoufuSpec } from "./choudoufu-member.ts";
 import type { MemberVia } from "./member-ir.ts";
 import { chantConfigPath } from "./project.ts";
 
@@ -94,3 +95,8 @@ registerMemberKind({
   probe: (dir) => !!chantConfigPath(dir),
   expects: "a chant.config.* file",
 });
+
+/** The choudoufu member (#369): an OpenTofu-fork estate whose ownership is
+ * two AWS tags, read through `live-check -json`. After chant, so a directory
+ * that is both is a chant member. */
+registerMemberKind(choudoufuSpec);

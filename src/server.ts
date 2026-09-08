@@ -130,6 +130,7 @@ import { pickAutoSyncOps, splitForgeRouted, suspendedByRollback, type AutoSyncMo
 import { sourceCommits, openRollbackBranches } from "./history.ts";
 import { composeEstate, composeEstateOverlay, estateMembers, withoutJoinedMembers } from "./estate.ts";
 import { addEstateMemberEdges } from "./estate-edges.ts";
+import { addChoudoufuReferenceEdges } from "./choudoufu-member.ts";
 import { invalidateMember, memberIr } from "./member-ir.ts";
 import { carveStatesFor, carveStatesUnder } from "./carve-discovery.ts";
 import { foreignNote, type GraphIRWithForeign } from "./foreign.ts";
@@ -1847,6 +1848,9 @@ export function createApp(
         // exactly the one composition exists for. After the two passes above,
         // which is what tells it where a member's interior already starts.
         ir = addEstateMemberEdges(ir, estateMembers(cfg.projectDirs!));
+        // #369: a choudoufu member's cross-estate data sources name a producer
+        // ESTATE; composition knows which member box carries that estate.
+        ir = addChoudoufuReferenceEdges(ir);
         // #234's free rider: an `OperatorStack` renders as an ordinary namespace
         // of CronJobs, so the estate already draws the operating loop — just
         // anonymously. This names it, from chant's own labels. Additive paint;
@@ -2375,6 +2379,7 @@ export function createApp(
         ir = addK8sDeclaredEdges(ir);
         ir = addValueMatchEdges(ir);
         ir = addEstateMemberEdges(ir, estateMembers(cfg.projectDirs));
+        ir = addChoudoufuReferenceEdges(ir);
         // #234's free rider — see /api/graph's estate branch.
         ir = markOperatorHome(ir);
         const boundContext = await boundK8sContext(env);

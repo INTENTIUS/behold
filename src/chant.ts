@@ -17,6 +17,8 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import type { GraphIR, Layout, ComponentStatusRow } from "@intentius/chant";
 import { detectProject } from "./project.ts";
+import { meetsFloor } from "./floor.ts";
+import { stripAnsi } from "./ansi.ts";
 // Runtime import (not type-only): chant's own hand-rolled YAML parser, reused
 // rather than behold growing a second one or regex-scraping generated YAML
 // (M1.2 spike note, #58). `build`'s esbuild invocation deliberately does NOT
@@ -274,22 +276,11 @@ export function chantFloor(): string | undefined {
   }
 }
 
-/** Does `version` meet `floor`? Numeric dotted compare, prerelease suffix
- * dropped (`0.44.3-rc.1` compares as `0.44.3` — an rc of the floor is close
- * enough to not warn about). Unparseable input answers `true`: an unknown
- * version is not evidence of an old one. Pure; exported for testing. */
-export function meetsFloor(version: string | undefined, floor: string | undefined): boolean {
-  if (!version || !floor) return true;
-  const parts = (v: string): number[] => v.split("-")[0].split(".").map((n) => Number.parseInt(n, 10));
-  const a = parts(version);
-  const b = parts(floor);
-  if (a.some(Number.isNaN) || b.some(Number.isNaN)) return true;
-  for (let i = 0; i < Math.max(a.length, b.length); i++) {
-    const d = (a[i] ?? 0) - (b[i] ?? 0);
-    if (d !== 0) return d > 0;
-  }
-  return true;
-}
+// `meetsFloor` and `stripAnsi` live in src/floor.ts and src/ansi.ts (pure, no
+// imports) so modules that must not import this one at runtime can use them;
+// re-exported here so every existing caller is unchanged.
+export { meetsFloor };
+export { stripAnsi };
 
 function chantBin(projectDir?: string): string {
   return resolveChant(projectDir).bin;
@@ -382,13 +373,6 @@ export interface ChantFailure {
 // true for a spawned, non-interactive chant by default. Strip the escapes so
 // neither the classification regexes nor the JSON/UI surfaced text carry raw
 // control bytes.
-const ANSI_RE = /\x1b\[[0-9;]*m/g;
-
-/** Strip ANSI colour escapes from chant's stderr/stdout. Exported for testing. */
-export function stripAnsi(text: string): string {
-  return text.replace(ANSI_RE, "");
-}
-
 /** Classify a failed chant shell-out's stderr into one of `ChantFailureCode`
  * (#72). Pattern-matches chant's own wording rather than an exit-code
  * convention — chant exits 1 for every failure class alike, so the message

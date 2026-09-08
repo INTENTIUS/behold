@@ -268,9 +268,58 @@ describe("diagnose", () => {
     const project = by(report, "project");
     expect(project.status).toBe("fail");
     expect(project.detail).toContain("a (chant); invalid: b — unknown member kind \"terraform\"");
-    expect(project.fix).toContain("Member kinds this behold reads: chant");
+    expect(project.fix).toContain("Member kinds this behold reads: chant, choudoufu");
     // The chant line asks only the chant members.
     expect(by(report, "chant").detail).toBe("a: chant 0.54.0 (behold's floor 0.54.0)");
+  });
+
+  // #369: the choudoufu line, only on an estate with a choudoufu member.
+  describe("the choudoufu line", () => {
+    const estate = () =>
+      fixture({
+        ".behold.json": JSON.stringify({ members: ["a", { dir: "net", kind: "choudoufu" }] }),
+        "a/chant.config.ts": `export default { lexicons: [], environments: ["local"] };`,
+        "net/main.tf": 'terraform {\n  live {\n    estate = "net"\n  }\n}\n',
+        ...CHANT,
+      });
+    const document = (schemas: "provider" | "builtin") => ({
+      ok: true as const,
+      doc: { dir: ".", estate: "net", blocked: false, exit_code: 0, schemas, instances: [], references: [], checked: [] },
+    });
+    const current = { bin: "/usr/local/bin/choudoufu", version: "v0.16.0", forkField: true, upstream: "1.13.0" };
+
+    it("is absent from a plain chant project and a chant-only estate", async () => {
+      const plain = fixture({ "chant.config.ts": `export default { lexicons: [], environments: ["local"] };`, ...CHANT });
+      expect((await diagnose(plain, probes())).checks.some((c) => c.name === "choudoufu")).toBe(false);
+    });
+
+    it("passes when the binary meets the floor and every member has provider schemas", async () => {
+      const report = await diagnose(estate(), probes({ choudoufu: { version: () => current, liveCheck: async () => document("provider") } }));
+      expect(report.ok).toBe(true);
+      expect(by(report, "choudoufu")).toEqual({ name: "choudoufu", status: "pass", detail: "choudoufu v0.16.0 (on OpenTofu 1.13.0); net: schemas provider" });
+    });
+
+    it("fails with no choudoufu on PATH, and with one too old to carry choudoufu_version", async () => {
+      const none = await diagnose(estate(), probes({ choudoufu: { version: () => undefined, liveCheck: async () => document("provider") } }));
+      expect(by(none, "choudoufu")).toMatchObject({ status: "fail", detail: expect.stringContaining("no choudoufu on PATH"), fix: expect.stringContaining("0.16.0") });
+      const old = await diagnose(estate(), probes({ choudoufu: { version: () => ({ bin: "/x/choudoufu", version: "", forkField: false }), liveCheck: async () => document("provider") } }));
+      expect(by(old, "choudoufu")).toMatchObject({ status: "fail", detail: expect.stringContaining("v0.15.0 or older") });
+      expect(old.ok).toBe(false);
+    });
+
+    it("warns, with the init remedy, for a member whose rungs came from the built-in table — and does not run init", async () => {
+      const report = await diagnose(estate(), probes({ choudoufu: { version: () => current, liveCheck: async () => document("builtin") } }));
+      expect(report.ok).toBe(true);
+      expect(by(report, "choudoufu")).toMatchObject({ status: "warn", detail: expect.stringContaining("net: schemas builtin"), fix: "Run `choudoufu init -input=false` in net (behold does not run it for you)." });
+    });
+
+    it("fails on a member choudoufu could not read, with its refusal", async () => {
+      const report = await diagnose(
+        estate(),
+        probes({ choudoufu: { version: () => current, liveCheck: async () => ({ ok: false, refusal: { error: "choudoufu could not read net: Error: Unclosed configuration block", code: "choudoufu-live-check", remedy: "Fix it." } }) } }),
+      );
+      expect(by(report, "choudoufu")).toMatchObject({ status: "fail", detail: expect.stringContaining("Unclosed configuration block"), fix: "Fix it." });
+    });
   });
 
   it("is none, and says why, when the only declared member fails its kind's probe", async () => {

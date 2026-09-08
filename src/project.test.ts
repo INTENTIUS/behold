@@ -234,10 +234,9 @@ describe("loadBeholdConfig", () => {
     const cfg = loadBeholdConfig(make(JSON.stringify({ members: [{ dir: "x", kind: "terraform" }, { dir: "y", kind: "choudoufu" }, { kind: "chant" }, { dir: "" }] })));
     expect(cfg.members).toHaveLength(2); // an entry with no dir is not a declaration
     expect(cfg.members![0]).toEqual({ dir: "x", invalid: expect.stringContaining('unknown member kind "terraform"') });
-    expect(cfg.members![0]).toEqual({ dir: "x", invalid: expect.stringContaining("kinds are: chant") });
-    // A word the vocabulary knows but this behold has no reader for is a
-    // different sentence from a word nobody knows.
-    expect(cfg.members![1]).toEqual({ dir: "y", invalid: expect.stringContaining("no reader for it") });
+    expect(cfg.members![0]).toEqual({ dir: "x", invalid: expect.stringContaining("kinds are: chant, choudoufu") });
+    // #369: choudoufu is a registered kind, so its declaration is kept as one.
+    expect(cfg.members![1]).toEqual({ dir: "y", kind: "choudoufu" });
   });
 });
 
@@ -309,6 +308,37 @@ describe("detectProjectShape", () => {
         { dir: "c", invalid: expect.stringContaining('unknown member kind "terraform"') },
       ],
     });
+  });
+
+  // #369: the choudoufu kind's probe is a `live { … }` block in a root *.tf.
+  it("keeps a declared choudoufu member whose root *.tf carries a live block, and reports one whose does not", () => {
+    const dir = make({
+      ".behold.json": JSON.stringify({ members: ["app", { dir: "net", kind: "choudoufu" }, { dir: "plain", kind: "choudoufu" }] }),
+      "app/chant.config.ts": "export default {};",
+      "net/main.tf": 'terraform {\n  live {\n    estate = "net"\n  }\n}\n',
+      "plain/main.tf": 'resource "aws_vpc" "x" {}\n',
+    });
+    expect(detectProjectShape(dir)).toEqual({
+      kind: "estate",
+      members: [
+        { dir: "app", kind: "chant" },
+        { dir: "net", kind: "choudoufu" },
+      ],
+      membersFrom: "behold-config",
+      invalidMembers: [{ dir: "plain", invalid: "declared as choudoufu, but plain has no a `live { estate = … }` block in a root *.tf file" }],
+    });
+    // Workspaces: a choudoufu directory is claimed by its kind too; a chant
+    // project is chant whatever else it holds.
+    const ws = make({
+      "package.json": JSON.stringify({ workspaces: ["both", "net"] }),
+      "both/chant.config.ts": "export default {};",
+      "both/main.tf": "live {\n}\n",
+      "net/main.tf": "live {\n}\n",
+    });
+    expect(detectProjectShape(ws).members).toEqual([
+      { dir: "both", kind: "chant" },
+      { dir: "net", kind: "choudoufu" },
+    ]);
   });
 
   it("is none, with the reasons, when every declared member is invalid", () => {
