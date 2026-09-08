@@ -501,6 +501,13 @@ export interface OperatorTickJob {
   op: string;
   /** The cron expression driving the beat, when the IR carries the spec. */
   schedule?: string;
+  /** The ServiceAccount this tick's pods run as — Kubernetes RBAC, the identity
+   * the loop acts with (#357). Read from the CronJob's own pod spec
+   * (`spec.jobTemplate.spec.template.spec.serviceAccountName`), which is what
+   * the cluster actually uses, rather than matched by label to a ServiceAccount
+   * card. Absent when the IR is below the tier that carries the spec, or when
+   * the CronJob names none and the cluster will use `default`. */
+  serviceAccount?: string;
 }
 
 /** One namespace that is an operating loop's home. */
@@ -513,6 +520,46 @@ export interface OperatorHome {
    * across the ticks found here. */
   stack?: string;
   ticks: OperatorTickJob[];
+}
+
+/** What identity the loop in one home runs as, as a home-level claim (#357).
+ *
+ * `OperatorStack` gives every hosted ConvergeOp its OWN ServiceAccount, so a
+ * home with two ticks normally has two identities and there is no single name
+ * to put on its box. The three cases are genuinely different and a renderer
+ * should say which it is:
+ *
+ * - `one` — every tick runs as the same account, and `name` is it.
+ * - `many` — the ticks run as `count` different accounts, which is the ordinary
+ *   least-privilege shape; the names are on the tick cards.
+ * - `unknown` — no tick named an account. Below detail 3 the IR carries no pod
+ *   spec at all, so this is usually "not read" rather than "not set", and it
+ *   must not be reported as `default`.
+ */
+export interface OperatorIdentity {
+  kind: "one" | "many" | "unknown";
+  /** The account, for `one`. */
+  name?: string;
+  /** How many distinct accounts, for `many`. */
+  count?: number;
+}
+
+/** The identity claim for a home — see {@link OperatorIdentity}. */
+export function operatorIdentity(home: Pick<OperatorHome, "ticks">): OperatorIdentity {
+  const names = [...new Set(home.ticks.flatMap((t) => (t.serviceAccount ? [t.serviceAccount] : [])))].sort();
+  if (names.length === 0) return { kind: "unknown" };
+  if (names.length === 1) return { kind: "one", name: names[0] };
+  return { kind: "many", count: names.length };
+}
+
+/** The badge a home's box carries (#357, pinhole#122): the account when the
+ * loop runs as one, the count when it runs as several, and nothing at all when
+ * no tick named one — an absent badge says "not read", which is the honest
+ * claim below the tier that carries a pod spec. */
+export function operatorIdentityBadge(id: OperatorIdentity): string | undefined {
+  if (id.kind === "one") return `runs as ${id.name}`;
+  if (id.kind === "many") return `runs as ${id.count} identities`;
+  return undefined;
 }
 
 /**
@@ -547,8 +594,14 @@ export function operatorHomes(ir: GraphIR): OperatorHome[] {
         delete home.stack;
       }
     }
-    const schedule = str(rec(n.attrs?.spec)?.schedule);
-    home.ticks.push({ node: n.id, op, ...(schedule ? { schedule } : {}) });
+    const spec = rec(n.attrs?.spec);
+    const schedule = str(spec?.schedule);
+    // The identity the tick acts with (#357): the cluster reads it here, so
+    // behold does too — never by matching a ServiceAccount card's labels, which
+    // would agree with this only by construction and disagree silently when a
+    // caller overrides `defs.cronJob`.
+    const serviceAccount = str(rec(rec(rec(rec(spec?.jobTemplate)?.spec)?.template)?.spec)?.serviceAccountName);
+    home.ticks.push({ node: n.id, op, ...(schedule ? { schedule } : {}), ...(serviceAccount ? { serviceAccount } : {}) });
     byNamespace.set(ns, home);
   }
   if (!byNamespace.size) return [];
@@ -574,6 +627,10 @@ export interface OperatorMark {
   schedule?: string;
   /** The ConvergeOps hosted here (`role: "home"`). */
   ticks?: string[];
+  /** The ServiceAccount a tick runs as (`role: "tick"`), and the home's claim
+   * about its ticks' identities (`role: "home"`) — #357. */
+  serviceAccount?: string;
+  identity?: OperatorIdentity;
 }
 
 /**
@@ -594,6 +651,7 @@ export function markOperatorHome(ir: GraphIR): GraphIR {
         namespace: home.namespace,
         ...(home.stack ? { stack: home.stack } : {}),
         ticks: home.ticks.map((t) => t.op),
+        identity: operatorIdentity(home),
       });
     }
     for (const tick of home.ticks) {
@@ -603,6 +661,7 @@ export function markOperatorHome(ir: GraphIR): GraphIR {
         ...(home.stack ? { stack: home.stack } : {}),
         op: tick.op,
         ...(tick.schedule ? { schedule: tick.schedule } : {}),
+        ...(tick.serviceAccount ? { serviceAccount: tick.serviceAccount } : {}),
       });
     }
   }
@@ -656,6 +715,31 @@ export function operatorHomeBoxMarks(ir: GraphIR, namespaceBoxes: Readonly<Recor
   for (const home of operatorHomes(ir)) {
     const box = namespaceBoxes[home.namespace];
     if (box) out[box] = OPERATOR_HOME_GLYPH;
+  }
+  return out;
+}
+
+/**
+ * The identity badge for each operating-loop box (#357), keyed the same way
+ * `operatorHomeBoxMarks` keys its glyphs.
+ *
+ * The glyph says *this namespace is a loop's home*; this says **who it acts
+ * as** — the question "who is allowed to do this", answered off the picture
+ * instead of by opening a card. The name is Kubernetes RBAC: the ServiceAccount
+ * the tick's pods run under, which is what the cluster reads.
+ *
+ * Absence stays silent, which is #357's own requirement. A namespace with no
+ * loop gets nothing; a loop whose ticks named no account gets nothing rather
+ * than `default`, because below the tier that carries a pod spec "no account
+ * named" means the IR was not read deeply enough, not that the cluster will use
+ * `default`.
+ */
+export function operatorHomeBoxBadges(ir: GraphIR, namespaceBoxes: Readonly<Record<string, string>>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const home of operatorHomes(ir)) {
+    const box = namespaceBoxes[home.namespace];
+    const badge = operatorIdentityBadge(operatorIdentity(home));
+    if (box && badge) out[box] = badge;
   }
   return out;
 }

@@ -481,4 +481,28 @@ describe("renderArchitecture — group marks (pinhole#119, behold#331)", () => {
     expect(withEmptyOpts).toBe(withNoOpts);
     expect(withNoOpts).not.toContain(GLYPH_MARKER);
   });
+
+  // #357 (pinhole#122): the same plumbing for TEXT. A mark says what kind of
+  // box this is; a badge says a name the box asserts — here, the identity the
+  // operating loop runs as.
+  it("badges the box whose container KEY is in groupBadges, and only that one", () => {
+    const { svg } = renderArchitecture(archIr, byContainer, { groupBadges: { "namespace prod": "runs as staging-converge-sa" } });
+    expect(svg).toContain(">runs as staging-converge-sa</text>");
+    expect(svg).toContain('text-anchor="end"');
+    const wrongKey = renderArchitecture(archIr, byContainer, { groupBadges: { "namespace other": "runs as x" } }).svg;
+    expect(wrongKey).toBe(renderArchitecture(archIr, byContainer).svg);
+  });
+
+  it("carries a mark and a badge on one box without either displacing the other", () => {
+    const { svg } = renderArchitecture(archIr, byContainer, {
+      groupMarks: { "namespace prod": OPERATOR_HOME_GLYPH },
+      groupBadges: { "namespace prod": "runs as sa" },
+    });
+    expect(svg).toContain(GLYPH_MARKER);
+    expect(svg).toContain(">runs as sa</text>");
+  });
+
+  it("no groupBadges option renders byte-identical, so an estate with no loop is untouched", () => {
+    expect(renderArchitecture(archIr, byContainer, { groupBadges: {} }).svg).toBe(renderArchitecture(archIr, byContainer).svg);
+  });
 });

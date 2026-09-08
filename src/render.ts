@@ -100,6 +100,11 @@ export function renderArchitecture(
      * caller never has to know a box's rendered title. Absent = every box
      * renders exactly as before this option existed. */
     groupMarks?: Readonly<Record<string, string | GlyphSpec>>;
+    /** Text badges for boxes, keyed the same way `groupMarks` is (pinhole#122,
+     * behold#357). A mark says what KIND of box this is; a badge says a name
+     * the box asserts — the identity an operating loop runs as. Absent = no box
+     * carries one, and the SVG is byte-identical to before this existed. */
+    groupBadges?: Readonly<Record<string, string>>;
   } = {},
 ): RenderResult {
   // Spacing nudge by edge density: the projected graph can be nearly complete
@@ -114,10 +119,13 @@ export function renderArchitecture(
     nodesep: Math.round(48 + spread * 48),
     ranksep: Math.round(60 + spread * 56),
   });
-  if (opts.groupMarks) {
+  if (opts.groupMarks || opts.groupBadges) {
     for (const box of layout.groups ?? []) {
-      const mark = box.id !== undefined ? opts.groupMarks[box.id] : undefined;
+      if (box.id === undefined) continue;
+      const mark = opts.groupMarks?.[box.id];
       if (mark !== undefined) box.mark = mark;
+      const badge = opts.groupBadges?.[box.id];
+      if (badge !== undefined) box.badge = badge;
     }
   }
   const svg = renderSvg(ir, layout, {

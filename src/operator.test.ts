@@ -26,6 +26,9 @@ import {
   operatorHomes,
   markOperatorHome,
   operatorHomeBoxMarks,
+  operatorHomeBoxBadges,
+  operatorIdentity,
+  operatorIdentityBadge,
   OPERATOR_HOME_GLYPH,
   operatorRead,
   operatorNote,
@@ -779,7 +782,13 @@ function operatorEstate(): GraphIR {
             namespace: "chant-operator",
             labels: { ...common, "app.kubernetes.io/component": "converge-tick", "app.kubernetes.io/instance": "staging-converge" },
           },
-          spec: { schedule: "*/10 * * * *", concurrencyPolicy: "Forbid" },
+          spec: {
+            schedule: "*/10 * * * *",
+            concurrencyPolicy: "Forbid",
+            // What OperatorStack really emits: the identity the tick acts with
+            // (#357), on the pod spec where the cluster reads it.
+            jobTemplate: { spec: { template: { spec: { serviceAccountName: "staging-converge-sa", restartPolicy: "OnFailure" } } } },
+          },
         },
       },
       {
@@ -808,7 +817,7 @@ describe("markOperatorHome", () => {
         namespace: "chant-operator",
         node: "ns",
         stack: "chant-operator",
-        ticks: [{ node: "cron", op: "staging-converge", schedule: "*/10 * * * *" }],
+        ticks: [{ node: "cron", op: "staging-converge", schedule: "*/10 * * * *", serviceAccount: "staging-converge-sa" }],
       },
     ]);
   });
@@ -821,6 +830,7 @@ describe("markOperatorHome", () => {
       namespace: "chant-operator",
       stack: "chant-operator",
       ticks: ["staging-converge"],
+      identity: { kind: "one", name: "staging-converge-sa" },
     });
     expect(by.get("cron")).toEqual({
       role: "tick",
@@ -828,10 +838,57 @@ describe("markOperatorHome", () => {
       stack: "chant-operator",
       op: "staging-converge",
       schedule: "*/10 * * * *",
+      serviceAccount: "staging-converge-sa",
     });
     // The RBAC trio and an unrelated CronJob are left alone.
     expect(by.get("sa")).toBeUndefined();
     expect(by.get("backup")).toBeUndefined();
+  });
+
+  // #357: who the loop acts as. OperatorStack gives each hosted ConvergeOp its
+  // OWN ServiceAccount, so the home-level claim has three genuinely different
+  // answers and the badge says which.
+  it("reads the identity off the CronJob's pod spec, where the cluster reads it", () => {
+    const [home] = operatorHomes(operatorEstate());
+    expect(home.ticks[0].serviceAccount).toBe("staging-converge-sa");
+    expect(operatorIdentity(home)).toEqual({ kind: "one", name: "staging-converge-sa" });
+    expect(operatorIdentityBadge(operatorIdentity(home))).toBe("runs as staging-converge-sa");
+  });
+
+  it("says how many when the ticks run as different accounts — the ordinary least-privilege shape", () => {
+    const ir = operatorEstate();
+    const second = JSON.parse(JSON.stringify(ir.nodes.find((n) => n.id === "cron"))) as (typeof ir.nodes)[number];
+    second.id = "cron2";
+    const meta = second.attrs.metadata as { name: string; labels: Record<string, string> };
+    meta.name = "prod-converge";
+    meta.labels["app.kubernetes.io/instance"] = "prod-converge";
+    ((second.attrs.spec as Record<string, never>) as unknown as { jobTemplate: { spec: { template: { spec: { serviceAccountName: string } } } } }).jobTemplate.spec.template.spec.serviceAccountName = "prod-converge-sa";
+    const [home] = operatorHomes({ ...ir, nodes: [...ir.nodes, second] });
+    expect(home.ticks.map((t) => t.serviceAccount)).toEqual(["prod-converge-sa", "staging-converge-sa"]);
+    expect(operatorIdentity(home)).toEqual({ kind: "many", count: 2 });
+    expect(operatorIdentityBadge(operatorIdentity(home))).toBe("runs as 2 identities");
+  });
+
+  it("stays silent when no tick names an account — below detail 3 that means not read, never `default`", () => {
+    const ir = operatorEstate();
+    const cron = ir.nodes.find((n) => n.id === "cron")!;
+    delete (cron.attrs.spec as Record<string, unknown>).jobTemplate;
+    const [home] = operatorHomes(ir);
+    expect(home.ticks[0].serviceAccount).toBeUndefined();
+    expect(operatorIdentity(home)).toEqual({ kind: "unknown" });
+    expect(operatorIdentityBadge({ kind: "unknown" })).toBeUndefined();
+  });
+
+  it("badges the loop's box by its structural key, and nothing else", () => {
+    const ir = operatorEstate();
+    const boxes = { "chant-operator": "ns-box", apps: "apps-box" };
+    expect(operatorHomeBoxBadges(ir, boxes)).toEqual({ "ns-box": "runs as staging-converge-sa" });
+    // Absence stays silent (#357's own requirement): no loop, no badge; and a
+    // loop the projection never boxed gets none rather than inventing a box.
+    expect(operatorHomeBoxBadges(ir, { apps: "apps-box" })).toEqual({});
+    const noSpec = operatorEstate();
+    delete (noSpec.nodes.find((n) => n.id === "cron")!.attrs.spec as Record<string, unknown>).jobTemplate;
+    expect(operatorHomeBoxBadges(noSpec, boxes)).toEqual({});
   });
 
   it("is strictly additive — an estate with no OperatorStack is returned untouched", () => {
