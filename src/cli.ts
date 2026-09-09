@@ -249,6 +249,10 @@ export async function run(argv: string[]): Promise<void> {
 function warnIfNotChantProject(dir: string): void {
   const shape = detectProjectShape(dir);
   if (shape.kind === "project") return;
+  // #384: the directory is itself the member (a bare Terraform estate, a
+  // choudoufu estate). There is nothing to warn about — it serves as it is,
+  // and pointing at its own path would be the advice it already followed.
+  if (shape.membersFrom === "probe") return;
   if (shape.kind === "estate") {
     process.stderr.write(
       `behold: warning — ${dir} is an estate root, not a chant project itself.\n` +

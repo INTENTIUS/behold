@@ -371,8 +371,10 @@ export interface ProjectShape {
   /** Members relative to `dir`, for `kind: "estate"` — only those whose
    * kind's probe accepts them, in declared order, each with its kind (#368). */
   members?: { dir: string; kind: MemberKind }[];
-  /** Where the member list came from, so a report never implies behold chose it. */
-  membersFrom?: "behold-config" | "workspaces";
+  /** Where the member list came from, so a report never implies behold chose
+   * it. `probe` is the one member nothing declared: the served directory
+   * itself, claimed by a kind that is not chant (#384). */
+  membersFrom?: "behold-config" | "workspaces" | "probe";
   /** Declared members behold cannot serve, with the reason (#368): a kind it
    * does not know, or a directory that fails its declared kind's probe. Set
    * only for `.behold.json` declarations — a workspaces entry that is not a
@@ -436,6 +438,14 @@ export function detectProjectShape(projectDir: string): ProjectShape {
   }
   const invalidMembers = invalid.length ? { invalidMembers: invalid } : {};
   if (members.length) return { kind: "estate", members, membersFrom: from, ...invalidMembers };
+  // #384: nothing declared a member, and the directory ITSELF is one — a bare
+  // Terraform directory, a choudoufu estate. That is the whole of the lane
+  // #378 exists for ("every estate this exists to draw is a directory of `.tf`
+  // files and nothing else"), and until now it was the `none` dead end. Only a
+  // kind that is not chant: a chant project already returned above, and a
+  // directory that is neither is still nothing.
+  const own = memberKindOf(projectDir);
+  if (own && own !== "chant") return { kind: "estate", members: [{ dir: ".", kind: own }], membersFrom: "probe", ...invalidMembers };
   return { kind: "none", ...invalidMembers };
 }
 

@@ -37,6 +37,14 @@ import {
 import { registeredMemberKinds } from "./member-kind.ts";
 import { CHOUDOUFU_FLOOR, choudoufuMeetsFloor, choudoufuVersion, readLiveCheck, type ChoudoufuVersion, type LiveCheckParse } from "./choudoufu-member.ts";
 import { detectProject, detectProjectShape, type ProjectKind } from "./project.ts";
+import {
+  HCL_PARSER_PKG,
+  TERRAFORM_LEXICON_PKG,
+  discoverTerraformRoots,
+  terraformReaderState,
+  type TerraformReaderState,
+  type TerraformRootScan,
+} from "./terraform-member.ts";
 import { loadKubeconfig, resolveK8sTarget, type K8sProfiles, type Kubeconfig } from "./k8s-target.ts";
 import { detectSubstrates, type Substrate } from "./substrates.ts";
 import { discoverEstateOps, type OpInfo } from "./ops.ts";
@@ -48,7 +56,7 @@ export type CheckStatus = "pass" | "warn" | "fail";
  * on it); `detail` is what behold found; `fix` is the single next step, set
  * whenever the status isn't a pass. */
 export interface DoctorCheck {
-  name: "project" | "chant" | "lexicons" | "envs" | "kube" | "substrates" | "ops" | "choudoufu";
+  name: "project" | "chant" | "lexicons" | "envs" | "kube" | "substrates" | "ops" | "choudoufu" | "terraform";
   status: CheckStatus;
   detail: string;
   fix?: string;
@@ -76,6 +84,12 @@ export interface DoctorProbes {
   choudoufu?: {
     version: () => ChoudoufuVersion | undefined;
     liveCheck: (dir: string) => Promise<LiveCheckParse>;
+  };
+  /** The terraform reader's two optional peers and the root walk (#384),
+   * injectable so a test needs neither installed. */
+  terraform?: {
+    reader: () => TerraformReaderState;
+    roots: (dir: string) => TerraformRootScan;
   };
 }
 
@@ -328,6 +342,34 @@ async function choudoufuCheck(root: string, members: { dir: string; abs: string 
 }
 
 /**
+ * The terraform line (#384), only on an estate with a terraform member: is the
+ * reader here at all, and what did root discovery find.
+ *
+ * The reader is two optional peers behold deliberately does not install (see
+ * src/terraform-member.ts's header — an HCL parser in every user's install is
+ * the cost, and most users serve chant projects), so its absence is a fail with
+ * the one install line, exactly as a missing choudoufu binary is. The roots are
+ * a pass that says what will be drawn and what was skipped, because a root
+ * missing from the picture should be findable here rather than by counting
+ * boxes.
+ */
+function terraformCheck(members: { dir: string; abs: string }[], probe: NonNullable<DoctorProbes["terraform"]>): DoctorCheck {
+  const state = probe.reader();
+  const scans = members.map((m) => ({ m, scan: probe.roots(m.abs) }));
+  const perMember = list(
+    scans.map(({ m, scan }) => {
+      const skipped = scan.skipped.length ? `, ${scan.skipped.length} skipped (${list(scan.skipped.map((s) => s.dir))})` : "";
+      return `${m.dir}: ${scan.roots.length} root${scan.roots.length === 1 ? "" : "s"} (${list(scan.roots.map((r) => r.name))})${skipped}`;
+    }),
+  );
+  if (state.refusal) {
+    return { name: "terraform", status: "fail", detail: `${state.refusal.error} ${perMember}`, fix: state.refusal.remedy };
+  }
+  const reader = `${TERRAFORM_LEXICON_PKG} ${state.lexicon.version || "dev"} (${HCL_PARSER_PKG} ${state.parser.version || "dev"})`;
+  return { name: "terraform", status: "pass", detail: `${reader}; ${perMember}` };
+}
+
+/**
  * Diagnose a directory. Read-only; resolves every fact through the module the
  * server reads it from. A directory that is neither a chant project nor an
  * estate root returns the single `project` fail — every later line would be a
@@ -378,7 +420,8 @@ export async function diagnose(dir: string, probes: DoctorProbes = {}): Promise<
   const chantTargets = estate ? members.filter((m) => m.kind === "chant").map((m) => m.abs) : [root];
 
   const memberList = list(members.map((m) => `${m.dir} (${m.kind})`));
-  const membersFrom = shape.membersFrom === "behold-config" ? ".behold.json members" : "npm workspaces";
+  const membersFrom =
+    shape.membersFrom === "behold-config" ? ".behold.json members" : shape.membersFrom === "probe" ? "the directory's own shape" : "npm workspaces";
   const projectCheck: DoctorCheck = estate
     ? invalid.length
       ? {
@@ -414,7 +457,9 @@ export async function diagnose(dir: string, probes: DoctorProbes = {}): Promise<
     // An estate root is not itself servable — the hint has to name its members
     // (`behold serve a b c`, #31), which is what a stranger would otherwise
     // discover by having the root serve nothing.
-    envCheck(envs, estate ? shape.members!.map((m) => `${dir.replace(/\/$/, "")}/${m.dir}`).join(" ") : dir),
+    // #384: a directory that is its own member serves as itself — the hint
+    // must not tell a stranger to run `behold serve <dir>/.`.
+    envCheck(envs, estate && shape.membersFrom !== "probe" ? shape.members!.map((m) => `${dir.replace(/\/$/, "")}/${m.dir}`).join(" ") : dir),
     kube,
     substrateCheck(substrates),
     opsCheck(root, discoverEstateOps(targets), resolveChant(primary).source, estate),
@@ -422,6 +467,10 @@ export async function diagnose(dir: string, probes: DoctorProbes = {}): Promise<
   const choudoufuMembers = members.filter((m) => m.kind === "choudoufu");
   if (choudoufuMembers.length) {
     checks.push(await choudoufuCheck(root, choudoufuMembers, probes.choudoufu ?? { version: () => choudoufuVersion(), liveCheck: (d) => readLiveCheck(d) }));
+  }
+  const terraformMembers = members.filter((m) => m.kind === "terraform");
+  if (terraformMembers.length) {
+    checks.push(terraformCheck(terraformMembers, probes.terraform ?? { reader: () => terraformReaderState(), roots: (d) => discoverTerraformRoots(d) }));
   }
 
   return { behold, dir: root, kind: shape.kind, ok: !checks.some((c) => c.status === "fail"), checks };

@@ -142,7 +142,8 @@ import {
 } from "./terraform-lens.ts";
 import { choudoufuDiffNodes, readChoudoufuLive, type Runner as ChoudoufuRunner } from "./choudoufu-live.ts";
 import { discoverCarvePlans, moveMembers, moveReceipt, movesPayload, readCarvePlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
-import { memberKindOf } from "./member-kind.ts";
+import { memberKindOf, memberKindSpec } from "./member-kind.ts";
+import { TerraformReadError, discoverTerraformRoots, terraformRootsNote } from "./terraform-member.ts";
 import { invalidateMember, memberIr } from "./member-ir.ts";
 import { carveStatesFor, carveStatesUnder } from "./carve-discovery.ts";
 import { foreignNote, type GraphIRWithForeign } from "./foreign.ts";
@@ -308,7 +309,7 @@ async function knownComponents(projectDir: string, opts: GraphOptions): Promise<
  * classified from chant's own stderr), plus "tier" — a non-default tier that
  * needed parameters this host doesn't have, generalized below from what used
  * to be a one-off `tierErrorNote`/`tierNote` bolted onto a plain error. */
-export type RouteErrorCode = ChantFailure["code"] | "tier" | "no-project" | "carve-report";
+export type RouteErrorCode = ChantFailure["code"] | "tier" | "no-project" | "carve-report" | "terraform-lexicon";
 
 /** A read route's structured, typed error body (#72): a machine `code`, a
  * human `error` message, and a suggested `remedy` — what web/app.js's
@@ -382,6 +383,11 @@ function noProjectError(projectDir: string): RouteError {
 }
 
 function errorResponse(c: Context, opts: GraphOptions, err: unknown) {
+  // #384: the terraform reader's own refusal already carries the one install
+  // line that fixes it, so it rides through as the precondition card rather
+  // than being classified from a chant stderr that was never written — the
+  // read refused before any spawn.
+  if (err instanceof TerraformReadError) return c.json(err.refusal, 500);
   const message = err instanceof Error ? err.message : String(err);
   const failure = err instanceof ChantCliError ? err.failure : classifyChantFailure(message);
   const routeError: RouteError =
@@ -1876,6 +1882,10 @@ export function createApp(
       // Multi-estate (#31): graph each project and compose into one IR (namespaced
       // ids, per-project boundary boxes, cross-stack edges). Single project → as-is.
       const multi = cfg.projectDirs && cfg.projectDirs.length > 1;
+      // #384: how a single served directory is read. `undefined` for a chant
+      // project and for a directory no kind claims — both keep the chant path
+      // below, byte for byte.
+      const ownKindVia = multi ? undefined : memberKindSpec(memberKindOf(cfg.projectDir) ?? "chant")?.via;
       // #382: what the Terraform zoom filter elided, when the estate branch ran it.
       let estateTfElision: TerraformElision = { dropped: {}, total: 0 };
       let ir: GraphIR;
@@ -2046,6 +2056,16 @@ export function createApp(
         // The SPA ignores it and paints the svg as before.
         const logicalNote = notesFor("logical", projected, undefined, base.nodes.length);
         return c.json({ ir: projected, svg, byContainer, meta: { projectDir: cfg.projectDir, env: metaEnv, tier: opts.tier ?? null, target: opts.target ?? null, mode: "logical", ...(logicalNote ? { note: logicalNote } : {}) } });
+      } else if (ownKindVia) {
+        // #384: the served directory is itself a member of a kind that is not
+        // chant — a bare Terraform directory, a choudoufu estate — so it is
+        // read by that kind's own `via`, the same one `composeEstate` uses for
+        // it inside an estate (#368). Cached like every other source read
+        // (src/member-ir.ts), and none of the chant-shaped joins below run:
+        // there is no `cluster/` build root, no carve manifest and no
+        // kubeconfig behind a directory of `.tf` files, and #381 measured and
+        // refused the one edge pass that would have had an opinion about it.
+        ir = await memberIr(cfg.projectDir, opts, ownKindVia);
       } else {
         // The `cluster/` build root merges in (see the logical branch above).
         ir = mergeClusterRoot(await graphIr(cfg.projectDir, opts), await clusterRootGraphIr(cfg.projectDir, opts));
@@ -2103,7 +2123,7 @@ export function createApp(
       // components/logical emptiness has its own client handling (#182), a
       // lens can legitimately filter to nothing, and a chant.config.ts
       // project that declares no entities yet renders empty honestly.
-      if (!multi && !components && !logical && !opts.lens && ir.nodes.length === 0 && !existsSync(join(cfg.projectDir, "chant.config.ts"))) {
+      if (!multi && !components && !logical && !opts.lens && !ownKindVia && ir.nodes.length === 0 && !existsSync(join(cfg.projectDir, "chant.config.ts"))) {
         return c.json(noProjectError(cfg.projectDir), 404);
       }
       // Multi-estate (#31/M4): box each composed project's nodes via `groups.
@@ -2139,8 +2159,13 @@ export function createApp(
       // (see /api/overlay's single-project branch, which already passed this)
       // — without it, example-k8s's `/api/graph` asserted "nothing in this
       // estate references anything else" at detail 2 while detail 3 has 2.
+      // #384: a served Terraform directory says which roots it found and which
+      // directories of `.tf` it skipped, so a root missing from the picture is
+      // visible here rather than by counting boxes. Ahead of the elision note,
+      // which is about the same estate's zoom: what is drawn, then what isn't.
+      const rootsNote = ownKindVia && memberKindOf(cfg.projectDir) === "terraform" ? terraformRootsNote(discoverTerraformRoots(cfg.projectDir)) : undefined;
       const srcNote =
-        terraformElisionNote(tfElision, opts.detail) ??
+        [rootsNote, terraformElisionNote(tfElision, opts.detail)].filter(Boolean).join("; ") ||
         (multi ? estateLensNote : notesFor(srcZoom, ir, srcCompositeEdgesAttached, undefined, opts.detail ?? 2));
       return c.json({
         ir,

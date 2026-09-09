@@ -231,9 +231,9 @@ describe("loadBeholdConfig", () => {
   });
 
   it("keeps a member whose kind it cannot read, with the reason — never silently as chant", () => {
-    const cfg = loadBeholdConfig(make(JSON.stringify({ members: [{ dir: "x", kind: "terraform" }, { dir: "y", kind: "choudoufu" }, { kind: "chant" }, { dir: "" }] })));
+    const cfg = loadBeholdConfig(make(JSON.stringify({ members: [{ dir: "x", kind: "pulumi" }, { dir: "y", kind: "choudoufu" }, { kind: "chant" }, { dir: "" }] })));
     expect(cfg.members).toHaveLength(2); // an entry with no dir is not a declaration
-    expect(cfg.members![0]).toEqual({ dir: "x", invalid: expect.stringContaining('unknown member kind "terraform"') });
+    expect(cfg.members![0]).toEqual({ dir: "x", invalid: expect.stringContaining('unknown member kind "pulumi"') });
     expect(cfg.members![0]).toEqual({ dir: "x", invalid: expect.stringContaining("kinds are: chant, choudoufu") });
     // #369: choudoufu is a registered kind, so its declaration is kept as one.
     expect(cfg.members![1]).toEqual({ dir: "y", kind: "choudoufu" });
@@ -295,7 +295,7 @@ describe("detectProjectShape", () => {
   // member used to disappear into.
   it("reports a declared member that fails its kind's probe, and one whose kind it does not know", () => {
     const dir = make({
-      ".behold.json": JSON.stringify({ members: ["a", { dir: "b", kind: "chant" }, { dir: "c", kind: "terraform" }] }),
+      ".behold.json": JSON.stringify({ members: ["a", { dir: "b", kind: "chant" }, { dir: "c", kind: "pulumi" }] }),
       "a/chant.config.ts": "export default {};",
       "b/README.md": "not a chant project",
     });
@@ -305,7 +305,7 @@ describe("detectProjectShape", () => {
       membersFrom: "behold-config",
       invalidMembers: [
         { dir: "b", invalid: "declared as chant, but b has no a chant.config.* file" },
-        { dir: "c", invalid: expect.stringContaining('unknown member kind "terraform"') },
+        { dir: "c", invalid: expect.stringContaining('unknown member kind "pulumi"') },
       ],
     });
   });
@@ -347,6 +347,26 @@ describe("detectProjectShape", () => {
       kind: "none",
       invalidMembers: [{ dir: "b", invalid: expect.stringContaining("declared as chant") }],
     });
+  });
+
+  // #384: the lane #378 exists for — "every estate this exists to draw is a
+  // directory of `.tf` files and nothing else". Nothing declares it a member;
+  // its own shape does.
+  it("is an estate of one when the directory itself is a member of a kind that is not chant", () => {
+    const tf = make({
+      "envs/prod/versions.tf": "terraform {\n  required_providers {\n    aws = {}\n  }\n}\n",
+      "envs/prod/main.tf": 'resource "aws_s3_bucket" "b" {}\n',
+      "modules/persona/versions.tf": "terraform {\n  required_providers {\n    aws = {}\n  }\n}\n",
+      "modules/persona/main.tf": 'resource "aws_iam_role" "this" {}\n',
+    });
+    expect(detectProjectShape(tf)).toEqual({ kind: "estate", members: [{ dir: ".", kind: "terraform" }], membersFrom: "probe" });
+
+    // A chant project that happens to hold Terraform is still a chant project,
+    // and a choudoufu estate is still choudoufu — the table's order decides.
+    const chant = make({ "chant.config.ts": "export default {};", "main.tf": 'terraform {}\nresource "aws_vpc" "x" {}\n' });
+    expect(detectProjectShape(chant).kind).toBe("project");
+    const tofu = make({ "main.tf": 'terraform {\n  live {\n    estate = "net"\n  }\n}\n', "vpc.tf": 'resource "aws_vpc" "x" {}\n' });
+    expect(detectProjectShape(tofu).members).toEqual([{ dir: ".", kind: "choudoufu" }]);
   });
 
   it("is none for a directory that is neither — #193's dead end", () => {
