@@ -35,9 +35,12 @@ cd "$(dirname "$0")/.."
 PORT="${BEHOLD_E2E_PORT:-4699}"
 TARGET="${BEHOLD_E2E_TARGET:-$(mktemp -d "${TMPDIR:-/tmp}/behold-choudoufu-e2e.XXXXXX")/estate}"
 
+# behold#388: the binary behold itself spawns, so the run and the tool under
+# test never diverge.
+CHOUDOUFU="${CHOUDOUFU_BIN:-choudoufu}"
 if ! docker info >/dev/null 2>&1; then echo "skip: Docker is not running"; exit 0; fi
-if ! command -v choudoufu >/dev/null 2>&1; then echo "skip: choudoufu is not on PATH"; exit 0; fi
-if ! choudoufu version -json | grep -q choudoufu_version; then echo "skip: choudoufu predates version -json's choudoufu_version (needs 0.16.0 or a build from main)"; exit 0; fi
+if ! command -v "$CHOUDOUFU" >/dev/null 2>&1; then echo "skip: ${CHOUDOUFU} is not on PATH (set CHOUDOUFU_BIN to name a build)"; exit 0; fi
+if ! "$CHOUDOUFU" version -json | grep -q choudoufu_version; then echo "skip: choudoufu predates version -json's choudoufu_version (needs 0.16.0 or a build from main)"; exit 0; fi
 if docker ps -a --format '{{.Names}}' | grep -qx behold-choudoufu-floci; then
   echo "behold-choudoufu-floci already exists — a previous run didn't tear down; \`docker rm -f behold-choudoufu-floci\` and re-run" >&2
   exit 1
@@ -101,7 +104,7 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$PORT/ap
 echo "→ 5. by hand: the role moves to team-a; the receipt reads it back"
 LINE=$(printf '%s' "$M" | jq -r '.moves[] | select(.address == "aws_iam_role.team_a") | .command')
 ( cd "$TARGET/team-a" && AWS_ENDPOINT_URL=http://127.0.0.1:4650 AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_REGION=us-east-1 \
-    ${LINE/choudoufu live-mv/choudoufu live-mv -json} | jq -e '.written == true and .verified == true' >/dev/null )
+    ${LINE/choudoufu live-mv/$CHOUDOUFU live-mv -json} | jq -e '.written == true and .verified == true' >/dev/null )
 echo "  ✓ $LINE (written, verified)"
 R=$(api "/api/choudoufu/moves?plan=carve.json&receipt=1")
 jq_assert "$R" '[.receipt.moves[] | select(.address == "aws_iam_role.team_a")] | .[0].state == "moved"' "the receipt says moved"

@@ -153,6 +153,42 @@ describe("GET /api/demos — the catalog, with per-entry satisfiability (#268)",
     // The flag is absent on everything else, not false.
     expect(demos.filter((d) => d.switchable === false).map((d) => d.name)).toEqual(["carve"]);
   });
+
+  // #388: the workbench catalog reaches the panel through the same route, and
+  // each row says which catalog listed it so the panel can group the two.
+  it("carries `catalog` per entry, and a workbench local entry's satisfiability", async () => {
+    const catalogDir = mkdtempSync(join(tmpdir(), "behold-workbench-route-"));
+    writeFileSync(
+      join(catalogDir, "workbench.json"),
+      JSON.stringify({
+        demos: [
+          { name: "wb-ready", description: "an estate in a sibling checkout", source: "local", path: ".", requires: [], serve: {} },
+          { name: "wb-needs", description: "wants a tool this machine lacks", source: "local", path: ".", requires: ["terraform"], serve: {} },
+          { name: "wb-here", description: "served where it sits", source: "local", path: ".", inPlace: true, requires: [], serve: {} },
+        ],
+      }),
+    );
+    process.env.BEHOLD_WORKBENCH = join(catalogDir, "workbench.json");
+    try {
+      const { demos } = (await (await makeApp().request("/api/demos")).json()) as { demos: Array<DemoRow & { catalog: string }> };
+      expect(demos.find((d) => d.name === "writes")!.catalog).toBe("demos");
+      const ready = demos.find((d) => d.name === "wb-ready")!;
+      expect(ready.catalog).toBe("workbench");
+      expect(ready.satisfiable).toBe(true);
+      expect(ready.fetches).toBe(false); // a directory on this machine is not a fetch
+      expect(ready.target).toBe(join(sandbox, "behold-demos", "wb-ready"));
+      const needs = demos.find((d) => d.name === "wb-needs")!;
+      expect(needs.satisfiable).toBe(false);
+      expect(needs.reason).toMatch(/needs terraform on PATH/);
+      // An in-place entry IS its path, so it reads as already loaded.
+      const here = demos.find((d) => d.name === "wb-here")!;
+      expect(here.target).toBe(catalogDir);
+      expect(here.loaded).toBe(true);
+    } finally {
+      delete process.env.BEHOLD_WORKBENCH;
+      rmSync(catalogDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("POST /api/demos/open — a catalog name, never a path (#268)", () => {

@@ -1493,6 +1493,10 @@ export function createApp(
       description: e.description,
       requires: e.requires,
       source: e.source,
+      // #388: which catalog listed it — `demos` ships in the package,
+      // `workbench` is this checkout's own `workbench.json`. The panel groups
+      // on it, the same two blocks `behold demo --list` prints.
+      catalog: e.catalog ?? "demos",
       // #268's consent half: a git entry is cloned from a public repo, so the
       // button says so (and names the repo) BEFORE anything is fetched.
       fetches: fetchesFromNetwork(e),
@@ -1702,7 +1706,7 @@ export function createApp(
         { method: "GET", path: "/api/project", desc: "project info: dir, recents, environments, tiers, targets, stacks, preview lock" },
         { method: "POST", path: "/api/project/open", desc: "switch the served project: JSON body {dir} (validated; preview-locked)" },
         { method: "POST", path: "/api/project/reveal", desc: "open the OS file manager at a served/recent project dir: JSON body {dir?}" },
-        { method: "GET", path: "/api/demos", desc: "the bundled demo catalog: [{name, description, requires, satisfiable, reason?, fetches, repo?, target, loaded}]" },
+        { method: "GET", path: "/api/demos", desc: "the demo catalog, bundled and workbench: [{name, description, requires, catalog, satisfiable, reason?, fetches, repo?, target, loaded}]" },
         {
           method: "POST",
           path: "/api/demos/open",

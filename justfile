@@ -55,6 +55,15 @@ example-install:
 serve project="example" env="":
     npm run dev -- serve {{project}} {{ if env != "" { "--env " + env } else { "" } }}
 
+# Serve one catalog entry from this checkout (#388) — the workbench estates in
+# workbench.json as readily as the bundled demos. `behold demo --list` names
+# them and says which are ready; an entry whose sibling checkout is missing
+# says so instead of failing halfway.
+#   just example                      # terralith-4
+#   just example name="waterpark"
+example name="terralith-4":
+    npm run dev -- demo {{name}}
+
 # End-to-end: install the example's chant, build behold, serve it, assert the API.
 # Auto-detects AWS creds — exercises /api/overlay when present, /api/graph when not.
 e2e:

@@ -398,6 +398,43 @@ until the table existed. A new kind is:
 string is `chant`. Anything behold boots for a kind goes through
 `assertScratch` first.
 
+### The workbench catalog
+
+`demos.json` is the catalog that ships. `workbench.json`, read beside it and
+deliberately absent from package.json's `files`, is the catalog of internal
+estates this checkout is developed against (#386, #388). Four rules, and
+src/demos.ts holds them:
+
+1. A third source, `local`, and a second file. A local entry's `path` is
+   relative to the directory of the catalog file that named it — the intentius
+   checkouts are siblings, so the workbench writes `../choudoufu`,
+   `../waterpark`, `../chant`, and the file stays committed and reproducible.
+   An entry whose path is not checked out is unsatisfiable exactly as a
+   missing binary is: `--list` and `/api/demos` say so, CI stays clean.
+   `BEHOLD_WORKBENCH=<file>` names a catalog elsewhere; a workbench name that
+   collides with a bundled one is dropped with a stderr line.
+2. In place or copied, said explicitly. `inPlace: true` serves `path` where it
+   sits; the default copies to `behold-demos/<name>` with the bundled filter.
+   Anything whose setup writes into the tree — `init`, `apply`, a rendered
+   generator — is copied or generated into the target, never run in a
+   checkout, which is how #366's "behold never runs `choudoufu init` in a
+   served project" survives. An `inPlace` entry with a `setup` says so in its
+   description.
+3. A generator is a source. An entry with no `path` at all renders its estate
+   into an empty target through its own `setup`, which runs with cwd = the
+   target and two extra variables: `BEHOLD_WORKBENCH_DIR` (the catalog file's
+   directory, so a script can reach `../choudoufu`) and `BEHOLD_DEMO_NAME`.
+   The up script writes the matching down script into the target, the way the
+   bundled choudoufu demo ships `scripts/choudoufu-down.sh`.
+4. `CHOUDOUFU_BIN`. `choudoufuBinary()` (src/choudoufu-member.ts) names the
+   binary and every spawn, the doctor probe and the demo requirement check go
+   through it; the doctor line prints which binary answered. Workbench scripts
+   spell the same fallback, `${CHOUDOUFU_BIN:-choudoufu}`.
+
+`just example name="<entry>"` serves one. Scratch discipline is unchanged: an
+emulator a workbench entry boots is `behold-wb-<entry>` on its own port,
+through `assertScratch` like everything else.
+
 ### Rendering a Terraform estate
 
 A Terraform estate reaches behold through chant, not through a member kind.

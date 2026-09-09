@@ -57,7 +57,9 @@ Usage:
   demo    The five-minute path from npm — no chant project needed. A catalog
           of demo estates (behold demo --list): bundled ones copy out of the
           package into a directory that's yours to edit; git ones shallow-
-          clone a public estate. Bare \`behold demo\` is the AWS example — an
+          clone a public estate; and in a checkout, the workbench block lists
+          whatever workbench.json names on this machine (#388). Bare
+          \`behold demo\` is the AWS example — an
           S3 bucket + policy on a local emulator: blue = declared, click
           Deploy, watch it turn green. \`behold demo k8s\` stands a workload
           up on a throwaway k3d cluster instead. \`behold demo carve\` is the
@@ -349,9 +351,10 @@ async function runDoctor(rest: string[]): Promise<void> {
  * watching the graph react is part of the demo), install its deps, and serve
  * it. #209 grew this into a CATALOG (demos.json, shipped in the package):
  * `--list` prints it with per-demo requirement checks; `demo <name>` loads a
- * bundled (tarball copy) or git (shallow clone) entry. Idempotent: an
- * existing target is reused (and an already-installed one skips npm
- * install), so a second `behold demo` is just "start the demo again". */
+ * bundled (tarball copy), git (shallow clone) or — in a checkout — local
+ * (#388: copied, served in place, or rendered by its own setup) entry.
+ * Idempotent: an existing target is reused (and an already-installed one skips
+ * npm install), so a second `behold demo` is just "start the demo again". */
 async function runDemo(rest: string[]): Promise<void> {
   const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
   const registry = loadDemoRegistry(pkgRoot);
@@ -368,11 +371,23 @@ async function runDemo(rest: string[]): Promise<void> {
         process.stdout.write("behold demo: no catalog in this install (demos.json missing)\n");
         return;
       }
-      for (const e of registry) {
-        const missing = missingRequirements(e);
-        const ready = missing.length ? `needs ${missing.join(", ")}` : "ready";
-        process.stdout.write(`  ${e.name.padEnd(14)} ${ready.padEnd(20)} ${e.description}\n`);
-      }
+      // #388: two catalogs, two blocks. The bundled ones ship in the tarball
+      // and are the same everywhere; the workbench ones are this checkout's,
+      // and an entry whose sibling is not checked out says so in the same
+      // place a missing binary does.
+      const block = (heading: string, entries: typeof registry): void => {
+        if (!entries.length) return;
+        process.stdout.write(`${heading}\n`);
+        for (const e of entries) {
+          const missing = missingRequirements(e);
+          const ready = missing.length ? `needs ${missing.join(", ")}` : "ready";
+          process.stdout.write(`  ${e.name.padEnd(14)} ${ready.padEnd(20)} ${e.description}\n`);
+        }
+      };
+      block("bundled", registry.filter((e) => (e.catalog ?? "demos") === "demos"));
+      const workbench = registry.filter((e) => e.catalog === "workbench");
+      if (workbench.length) process.stdout.write("\n");
+      block("workbench (this checkout)", workbench);
       process.stdout.write("\nRun one: behold demo <name>   (bare `behold demo` = writes)\n");
       return;
     } else if (a === "-h" || a === "--help") return void process.stdout.write(USAGE);

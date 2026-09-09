@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from "vitest";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,9 +8,11 @@ import {
   RUNGS,
   SCHEMA_SOURCES,
   addChoudoufuReferenceEdges,
+  captureChoudoufu,
+  choudoufuBinary,
   choudoufuCardFields,
   choudoufuMeetsFloor,
-
+  choudoufuVersion,
   dataSourceKind,
   isChoudoufuEstate,
   isDevBuild,
@@ -22,7 +24,7 @@ import {
   type LiveCheckDocument,
 } from "./choudoufu-member.ts";
 import { choudoufuSpec } from "./choudoufu-live.ts";
-import { choudoufuSpawnEnv, setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
+import { choudoufuSpawnEnv, resetChoudoufuVersionCache, setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
 
 // Fixture provenance (#369). Every document below was printed by
 // `choudoufu live-check -json` from a choudoufu built from main at
@@ -256,6 +258,32 @@ describe("the spawn environment seam (#372)", () => {
     expect(choudoufuSpawnEnv(base).AWS_ENDPOINT_URL).toBe("https://real");
     setChoudoufuSpawnEnv({});
     expect(choudoufuSpawnEnv(base).AWS_ENDPOINT_URL).toBe("https://real");
+  });
+
+  // #388: `choudoufuSpawnEnv`'s sibling. The Homebrew release is below the
+  // floor and the build that carries the floor's fields is one somebody left
+  // outside PATH, so CHOUDOUFU_BIN has to reach the argv — not just the
+  // helper. Spawned for real against a script that prints its own name.
+  it("CHOUDOUFU_BIN is what captureChoudoufu spawns, and what the version probe reads", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "behold-choudoufu-bin-"));
+    const fake = join(dir, "choudoufu-from-main");
+    writeFileSync(fake, `#!/bin/sh\necho "{\\"choudoufu_version\\":\\"v0.16.0-37-g7d2f1b0b9e\\",\\"terraform_version\\":\\"1.13.0-dev\\",\\"argv\\":\\"$0 $*\\"}"\n`);
+    chmodSync(fake, 0o755);
+    const before = process.env.CHOUDOUFU_BIN;
+    try {
+      process.env.CHOUDOUFU_BIN = fake;
+      expect(choudoufuBinary()).toBe(fake);
+      const run = await captureChoudoufu(["version", "-json"], dir);
+      expect(run.code).toBe(0);
+      expect(JSON.parse(run.stdout).argv).toBe(`${fake} version -json`);
+      resetChoudoufuVersionCache();
+      expect(choudoufuVersion()).toMatchObject({ bin: fake, version: "v0.16.0-37-g7d2f1b0b9e", forkField: true });
+    } finally {
+      if (before === undefined) delete process.env.CHOUDOUFU_BIN;
+      else process.env.CHOUDOUFU_BIN = before;
+      resetChoudoufuVersionCache();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

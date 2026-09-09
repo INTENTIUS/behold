@@ -35,7 +35,7 @@ import {
   type ChantResolution,
 } from "./chant.ts";
 import { registeredMemberKinds } from "./member-kind.ts";
-import { CHOUDOUFU_FLOOR, choudoufuMeetsFloor, choudoufuVersion, readLiveCheck, type ChoudoufuVersion, type LiveCheckParse } from "./choudoufu-member.ts";
+import { CHOUDOUFU_FLOOR, choudoufuBinary, choudoufuMeetsFloor, choudoufuVersion, readLiveCheck, type ChoudoufuVersion, type LiveCheckParse } from "./choudoufu-member.ts";
 import { detectProject, detectProjectShape, type ProjectKind } from "./project.ts";
 import { loadKubeconfig, resolveK8sTarget, type K8sProfiles, type Kubeconfig } from "./k8s-target.ts";
 import { detectSubstrates, type Substrate } from "./substrates.ts";
@@ -276,7 +276,8 @@ function opsCheck(root: string, ops: OpInfo[], chantSource: ChantResolution["sou
 
 /**
  * The choudoufu line (#369), only on an estate with a choudoufu member: the
- * binary on PATH and at the floor — checked by the FIELD `version -json`
+ * binary — `choudoufu` from PATH or the one `CHOUDOUFU_BIN` names (#388), and
+ * the line prints which answered — at the floor, checked by the FIELD `version -json`
  * carries, since the floor's fields landed on choudoufu main before a release
  * did — then each member's own `live-check -json`, offline, for whether its
  * rungs came from provider schemas or from choudoufu's built-in table. The
@@ -290,8 +291,8 @@ async function choudoufuCheck(root: string, members: { dir: string; abs: string 
     return {
       name: "choudoufu",
       status: "fail",
-      detail: `${members.length} choudoufu member${members.length === 1 ? "" : "s"} (${list(members.map((m) => m.dir))}), and no choudoufu on PATH`,
-      fix: `Install choudoufu ${CHOUDOUFU_FLOOR} or newer (https://github.com/INTENTIUS/choudoufu) and put it on PATH.`,
+      detail: `${members.length} choudoufu member${members.length === 1 ? "" : "s"} (${list(members.map((m) => m.dir))}), and no choudoufu: \`${choudoufuBinary()}\` does not answer \`version -json\``,
+      fix: `Install choudoufu ${CHOUDOUFU_FLOOR} or newer (https://github.com/INTENTIUS/choudoufu) and put it on PATH, or point CHOUDOUFU_BIN at a build from main.`,
     };
   }
   if (!choudoufuMeetsFloor(v)) {
@@ -305,7 +306,10 @@ async function choudoufuCheck(root: string, members: { dir: string; abs: string 
   }
   const reads = await Promise.all(members.map(async (m) => ({ m, parsed: await probe.liveCheck(m.abs) })));
   const failed = reads.filter((r) => !r.parsed.ok);
-  const which = `choudoufu ${v.version || "dev build"}${v.upstream ? ` (on OpenTofu ${v.upstream})` : ""}`;
+  // #388: which binary answered, always — `choudoufu` from PATH, or whatever
+  // CHOUDOUFU_BIN named, which is how a build from main is used before a
+  // release carries the floor's fields.
+  const which = `choudoufu ${v.version || "dev build"}${v.upstream ? ` (on OpenTofu ${v.upstream})` : ""} at ${v.bin}`;
   if (failed.length) {
     return {
       name: "choudoufu",

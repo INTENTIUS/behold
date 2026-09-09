@@ -296,12 +296,20 @@ describe("diagnose", () => {
     it("passes when the binary meets the floor and every member has provider schemas", async () => {
       const report = await diagnose(estate(), probes({ choudoufu: { version: () => current, liveCheck: async () => document("provider") } }));
       expect(report.ok).toBe(true);
-      expect(by(report, "choudoufu")).toEqual({ name: "choudoufu", status: "pass", detail: "choudoufu v0.16.0 (on OpenTofu 1.13.0); net: schemas provider" });
+      // #388: the line names the binary that answered — `choudoufu` from PATH
+      // or whatever CHOUDOUFU_BIN pointed at.
+      expect(by(report, "choudoufu")).toEqual({ name: "choudoufu", status: "pass", detail: "choudoufu v0.16.0 (on OpenTofu 1.13.0) at /usr/local/bin/choudoufu; net: schemas provider" });
     });
 
-    it("fails with no choudoufu on PATH, and with one too old to carry choudoufu_version", async () => {
+    it("fails with no choudoufu to spawn, and with one too old to carry choudoufu_version", async () => {
       const none = await diagnose(estate(), probes({ choudoufu: { version: () => undefined, liveCheck: async () => document("provider") } }));
-      expect(by(none, "choudoufu")).toMatchObject({ status: "fail", detail: expect.stringContaining("no choudoufu on PATH"), fix: expect.stringContaining("0.16.0") });
+      // The detail names the binary that did not answer, and the fix names
+      // both ways to give it one (#388).
+      expect(by(none, "choudoufu")).toMatchObject({
+        status: "fail",
+        detail: expect.stringContaining("no choudoufu: `choudoufu` does not answer"),
+        fix: expect.stringContaining("CHOUDOUFU_BIN"),
+      });
       const old = await diagnose(estate(), probes({ choudoufu: { version: () => ({ bin: "/x/choudoufu", version: "", forkField: false }), liveCheck: async () => document("provider") } }));
       expect(by(old, "choudoufu")).toMatchObject({ status: "fail", detail: expect.stringContaining("v0.15.0 or older") });
       expect(old.ok).toBe(false);

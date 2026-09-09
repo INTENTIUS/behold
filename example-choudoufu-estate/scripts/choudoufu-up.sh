@@ -27,8 +27,13 @@ if ! docker info >/dev/null 2>&1; then
   echo "choudoufu-estate demo: Docker is not running — start Docker and re-run." >&2
   exit 1
 fi
-if ! command -v choudoufu >/dev/null 2>&1; then
-  echo "choudoufu-estate demo: choudoufu is not on PATH — https://github.com/INTENTIUS/choudoufu (0.16.0 or newer)." >&2
+# behold#388: the same binary behold itself spawns — the Homebrew release is
+# below the 0.16.0 floor, so a build from main is named by CHOUDOUFU_BIN and
+# every script that runs choudoufu has to honour it or the demo's `init` and
+# behold's own reads would be two different tools.
+CHOUDOUFU="${CHOUDOUFU_BIN:-choudoufu}"
+if ! command -v "$CHOUDOUFU" >/dev/null 2>&1; then
+  echo "choudoufu-estate demo: ${CHOUDOUFU} is not on PATH — https://github.com/INTENTIUS/choudoufu (0.16.0 or newer), or set CHOUDOUFU_BIN." >&2
   exit 1
 fi
 
@@ -48,10 +53,10 @@ export AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_REGION=us-east-1
 
 for estate in monolith team-a team-b team-c; do
   echo "→ choudoufu init in ${estate} (provider schemas — what makes the rungs real)"
-  (cd "$estate" && choudoufu init -input=false -no-color >/dev/null)
+  (cd "$estate" && "$CHOUDOUFU" init -input=false -no-color >/dev/null)
 done
 
 echo "→ choudoufu apply in monolith (the terralith: 21 resources, three teams in one estate)"
-(cd monolith && choudoufu apply -auto-approve -input=false -no-color | tail -1)
+(cd monolith && "$CHOUDOUFU" apply -auto-approve -input=false -no-color | tail -1)
 
 echo "choudoufu-estate demo: up. behold serves it next; the plan in monolith/carve.json moves team-a's resources out."
