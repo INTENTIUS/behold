@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { detectProject, detectProjectShape, loadBeholdConfig, readExecutor, executorDesignation, resetExecutorCache } from "./project.ts";
+import { servesAsEstate } from "./member-kind.ts";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -440,5 +441,45 @@ describe("executorDesignation — per member, not per primary (#165)", () => {
     expect(executorDesignation(member, "prod")).toBeUndefined();
     rmSync(member, { recursive: true, force: true });
     rmSync(primary, { recursive: true, force: true });
+  });
+});
+
+// #389: the workbench's generated entries (an estate-gen cohort, a terralith)
+// are ONE choudoufu estate each, and `behold serve <that dir>` used to answer
+// the no-project card over them — the single-project read is `chant graph`, and
+// a directory with no chant.config.ts and no lexicon has nothing for it to
+// read. `servesAsEstate` is the predicate that routes such a directory through
+// the estate compose path instead, where the member's own kind reads it.
+describe("servesAsEstate", () => {
+  const dirs: string[] = [];
+  afterAll(() => dirs.forEach((d) => rmSync(d, { recursive: true, force: true })));
+  const make = (files: Record<string, string>): string => {
+    const dir = mkdtempSync(join(tmpdir(), "behold-serves-"));
+    dirs.push(dir);
+    for (const [rel, content] of Object.entries(files)) {
+      mkdirSync(dirname(join(dir, rel)), { recursive: true });
+      writeFileSync(join(dir, rel), content);
+    }
+    return dir;
+  };
+
+  it("composes one directory that is a non-chant member — the sidecar form and the live-block form", () => {
+    expect(servesAsEstate([make({ "estate.chdf.hcl": 'estate = "s3-cohort"\n' })])).toBe(true);
+    expect(servesAsEstate([make({ "main.tf": 'terraform {\n  live {\n    estate = "tl"\n  }\n}\n' })])).toBe(true);
+  });
+
+  it("leaves one chant project on the single-project path, as it always was", () => {
+    expect(servesAsEstate([make({ "chant.config.ts": "export default {};" })])).toBe(false);
+  });
+
+  it("leaves a directory no kind claims on the single-project path, so #193's no-project card still explains it", () => {
+    expect(servesAsEstate([make({ "README.md": "" })])).toBe(false);
+  });
+
+  it("composes more than one directory whatever the kinds, and composes nothing for no directory", () => {
+    const a = make({ "chant.config.ts": "export default {};" });
+    const b = make({ "chant.config.ts": "export default {};" });
+    expect(servesAsEstate([a, b])).toBe(true);
+    expect(servesAsEstate([])).toBe(false);
   });
 });

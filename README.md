@@ -35,6 +35,17 @@ Argo CD estate, declared only, so it runs where Docker doesn't; `behold demo
 carve` is the Terraform peel walkthrough, below). Every loaded demo lands in
 the panel's recents, so switching between them is the Scope tab.
 
+Working in a checkout rather than an npm install? There is a second catalog,
+`workbench.json`, which is not in the published package: the internal estates
+behold is developed against, named by relative path from this repo's root, so
+an entry whose sibling checkout you don't have says so in `--list` instead of
+failing halfway. It holds chant's own examples served in place, the live-mv
+workbench's four estates, three `estate-gen` cohorts, and the generated
+terralith at scale 1 and 4 — greenfield, and adopted from a stock `terraform
+apply` by a `live-import` you run by hand. `just example terralith-4` serves
+one (`just example name="<entry>"`); each brings up its own scratch emulator
+and leaves a `scripts/down.sh` in the target that removes it.
+
 The catalog is in the panel too (#268): the Scope tab's switcher lists every
 bundled demo under your recents, one click to copy, install and serve it —
 demos whose prerequisites are missing stay visible, disabled, saying what to

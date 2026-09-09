@@ -14,6 +14,7 @@ import { runExport } from "./export.ts";
 import { diagnose, formatReport } from "./doctor.ts";
 import { isAutoSyncMode, type AutoSyncMode } from "./autosync.ts";
 import { detectProjectShape } from "./project.ts";
+import { servesAsEstate } from "./member-kind.ts";
 import { setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
 import { readCarveReport } from "./carve-lens.ts";
 import {
@@ -230,7 +231,11 @@ export async function run(argv: string[]): Promise<void> {
   for (const d of dirs) warnIfNotChantProject(d);
   await startServer({
     projectDir: dirs[0], // primary — ops/overlay/rollback act on it
-    ...(dirs.length > 1 ? { projectDirs: dirs } : {}),
+    // #389: more than one directory composes, and so does one that is a member
+    // of a kind chant cannot read — a lone choudoufu estate has no chant to
+    // shell, so it is served as a one-member estate rather than through the
+    // single-project read that would answer "no lexicon detected".
+    ...(servesAsEstate(dirs) ? { projectDirs: dirs } : {}),
     port,
     ...(env ? { env } : {}),
     ...(pollSecs !== undefined ? { pollSecs } : {}),

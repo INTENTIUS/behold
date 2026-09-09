@@ -142,7 +142,7 @@ import {
 } from "./terraform-lens.ts";
 import { choudoufuDiffNodes, readChoudoufuLive, type Runner as ChoudoufuRunner } from "./choudoufu-live.ts";
 import { discoverCarvePlans, moveMembers, moveReceipt, movesPayload, readCarvePlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
-import { memberKindOf } from "./member-kind.ts";
+import { memberKindOf, servesAsEstate } from "./member-kind.ts";
 import { invalidateMember, memberIr } from "./member-ir.ts";
 import { carveStatesFor, carveStatesUnder } from "./carve-discovery.ts";
 import { foreignNote, type GraphIRWithForeign } from "./foreign.ts";
@@ -1437,7 +1437,8 @@ export function createApp(
   const switchServedProject = (dirs: string[], env?: string, spawnEnv?: Record<string, string>): void => {
     addRecent(cfg.projectDir);
     cfg.projectDir = dirs[0];
-    cfg.projectDirs = dirs.length > 1 ? dirs : undefined;
+    // #389: one directory composes too when chant cannot read it — see servesAsEstate.
+    cfg.projectDirs = servesAsEstate(dirs) ? dirs : undefined;
     // #372: a demo's scratch emulator reaches its choudoufu spawns through
     // this seam; a switch to anything else drops it, so no later project
     // inherits an endpoint meant for a demo.
@@ -1878,8 +1879,10 @@ export function createApp(
       // Entity graph only (not the component DAG, not multi-estate compose).
       const logical = url.searchParams.get("logical") === "1";
       // Multi-estate (#31): graph each project and compose into one IR (namespaced
-      // ids, per-project boundary boxes, cross-stack edges). Single project → as-is.
-      const multi = cfg.projectDirs && cfg.projectDirs.length > 1;
+      // ids, per-project boundary boxes, cross-stack edges). A single chant
+      // project → as-is; a single directory of a non-chant kind composes too
+      // (#389, `servesAsEstate` — there is no chant to read it as-is with).
+      const multi = !!cfg.projectDirs;
       // #382: what the Terraform zoom filter elided, when the estate branch ran it.
       let estateTfElision: TerraformElision = { dropped: {}, total: 0 };
       let ir: GraphIR;
@@ -2428,7 +2431,7 @@ export function createApp(
       // extras; #224 brought the runtime tier and the logical lens across (the
       // helm artifact join and the cluster-root merge are still primary-only —
       // both are per-project reads, not passes over the composed IR).
-      if (cfg.projectDirs && cfg.projectDirs.length > 1) {
+      if (cfg.projectDirs) {
         // The logical lens needs the rich attrs, exactly as on the
         // single-project path below (`logical ? { detail: 3 }`). The runtime
         // tier needs them too (#261): its whole subject is the Flux
@@ -2773,7 +2776,7 @@ export function createApp(
     // plan, sliced per address and keyed by the composed id the pane looks up.
     // A member that cannot be read contributes nothing; the overlay's cover
     // note already says why.
-    const multi = !!cfg.projectDirs && cfg.projectDirs.length > 1;
+    const multi = !!cfg.projectDirs;
     for (const m of estateMembers(cfg.projectDirs ?? [cfg.projectDir])) {
       if (m.kind !== "choudoufu") continue;
       try {
@@ -2907,7 +2910,7 @@ export function createApp(
     if (!env) return c.json({ error: "diff needs an environment — pick one, or start with --env" }, 400);
     // #370: a choudoufu member's node — the member whose composed prefix the
     // id carries (or the primary, on a single-member serve).
-    const multi = !!cfg.projectDirs && cfg.projectDirs.length > 1;
+    const multi = !!cfg.projectDirs;
     const owner = estateMembers(cfg.projectDirs ?? [cfg.projectDir]).find((m) => m.kind === "choudoufu" && (multi ? node.startsWith(`${m.name}/`) : true));
     if (owner) {
       try {
