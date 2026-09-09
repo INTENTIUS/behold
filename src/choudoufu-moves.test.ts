@@ -144,7 +144,7 @@ describe("the handoff (#371)", () => {
       stdout: cwd.endsWith("mono") ? raw("choudoufu-live-check-monolith.json") : raw("choudoufu-live-check-estate-references.json"),
     });
     const got = await moveMembers([{ name: "mono", dir: "/est/mono" }, { name: "refs", dir: "/est/refs" }], run);
-    // The second declares no live block — not a destination, not an error.
+    // The second names no estate — not a destination, not an error.
     expect(got).toEqual([{ name: "mono", dir: "/est/mono", estate: "tlmig-sample-monolith" }]);
   });
 });

@@ -379,15 +379,21 @@ export async function diagnose(dir: string, probes: DoctorProbes = {}): Promise<
 
   const memberList = list(members.map((m) => `${m.dir} (${m.kind})`));
   const membersFrom = shape.membersFrom === "behold-config" ? ".behold.json members" : "npm workspaces";
+  // #387: a directory that is itself a member was named by nothing, so the
+  // line says what it is rather than "estate of 1 members (npm workspaces)".
+  const estateDetail =
+    shape.membersFrom === "itself"
+      ? `a ${members[0]!.kind} member — the directory itself, no member list`
+      : `estate of ${members.length} members (${membersFrom}): ${memberList}`;
   const projectCheck: DoctorCheck = estate
     ? invalid.length
       ? {
           name: "project",
           status: "fail",
-          detail: `estate of ${members.length} members (${membersFrom}): ${memberList}; invalid: ${list(invalidDetail)}`,
+          detail: `${estateDetail}; invalid: ${list(invalidDetail)}`,
           fix: kindsFix,
         }
-      : { name: "project", status: "pass", detail: `estate of ${members.length} members (${membersFrom}): ${memberList}` }
+      : { name: "project", status: "pass", detail: estateDetail }
     : { name: "project", status: "pass", detail: `chant project (${relative(root, shape.configFile!)})` };
 
   // One config read per chant target, shared by the lexicon/env/kube lines —
@@ -413,8 +419,9 @@ export async function diagnose(dir: string, probes: DoctorProbes = {}): Promise<
     lexiconCheck(root, declared, estate),
     // An estate root is not itself servable — the hint has to name its members
     // (`behold serve a b c`, #31), which is what a stranger would otherwise
-    // discover by having the root serve nothing.
-    envCheck(envs, estate ? shape.members!.map((m) => `${dir.replace(/\/$/, "")}/${m.dir}`).join(" ") : dir),
+    // discover by having the root serve nothing. The `.` member (#387) is the
+    // directory, so the hint stays the directory.
+    envCheck(envs, estate ? shape.members!.map((m) => (m.dir === "." ? dir.replace(/\/$/, "") : `${dir.replace(/\/$/, "")}/${m.dir}`)).join(" ") : dir),
     kube,
     substrateCheck(substrates),
     opsCheck(root, discoverEstateOps(targets), resolveChant(primary).source, estate),

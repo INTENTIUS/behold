@@ -249,6 +249,10 @@ export async function run(argv: string[]): Promise<void> {
 function warnIfNotChantProject(dir: string): void {
   const shape = detectProjectShape(dir);
   if (shape.kind === "project") return;
+  // #387: the one-member "the directory is itself a member" shape is servable
+  // as it stands (a choudoufu estate with its sidecar), so there is nothing to
+  // warn about — the member list would only name the directory again.
+  if (shape.kind === "estate" && shape.membersFrom === "itself") return;
   if (shape.kind === "estate") {
     process.stderr.write(
       `behold: warning — ${dir} is an estate root, not a chant project itself.\n` +

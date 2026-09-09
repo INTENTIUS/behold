@@ -310,7 +310,8 @@ describe("detectProjectShape", () => {
     });
   });
 
-  // #369: the choudoufu kind's probe is a `live { … }` block in a root *.tf.
+  // #369: the choudoufu kind's probe is a `live { … }` block in a root *.tf,
+  // or (#387) the `estate.chdf.hcl` sidecar.
   it("keeps a declared choudoufu member whose root *.tf carries a live block, and reports one whose does not", () => {
     const dir = make({
       ".behold.json": JSON.stringify({ members: ["app", { dir: "net", kind: "choudoufu" }, { dir: "plain", kind: "choudoufu" }] }),
@@ -325,7 +326,7 @@ describe("detectProjectShape", () => {
         { dir: "net", kind: "choudoufu" },
       ],
       membersFrom: "behold-config",
-      invalidMembers: [{ dir: "plain", invalid: "declared as choudoufu, but plain has no a `live { estate = … }` block in a root *.tf file" }],
+      invalidMembers: [{ dir: "plain", invalid: "declared as choudoufu, but plain has no an `estate.chdf.hcl` sidecar or a `live { estate = … }` block in a root *.tf file" }],
     });
     // Workspaces: a choudoufu directory is claimed by its kind too; a chant
     // project is chant whatever else it holds.
@@ -339,6 +340,36 @@ describe("detectProjectShape", () => {
       { dir: "both", kind: "chant" },
       { dir: "net", kind: "choudoufu" },
     ]);
+  });
+
+  // #387: the sidecar is what `tools/estate-gen` writes, so a cohort has no
+  // `live` block anywhere and used to fail its own declared kind's probe.
+  it("keeps a declared choudoufu member declared by the estate.chdf.hcl sidecar", () => {
+    const dir = make({
+      ".behold.json": JSON.stringify({ members: [{ dir: "s3", kind: "choudoufu" }, { dir: "net", kind: "choudoufu" }] }),
+      "s3/estate.chdf.hcl": 'estate = "s3-cohort"\n\nrecord_store "local" {\n  path = ".tofu-records"\n}\n',
+      "s3/s3.tf": 'resource "aws_s3_bucket" "one" {\n  bucket = "one"\n}\n',
+      "net/main.tf": 'terraform {\n  live {\n    estate = "net"\n  }\n}\n',
+    });
+    expect(detectProjectShape(dir).members).toEqual([
+      { dir: "s3", kind: "choudoufu" },
+      { dir: "net", kind: "choudoufu" },
+    ]);
+  });
+
+  // #387: a rendered cohort is a bare directory nobody wrote a member list
+  // for, and `behold serve <it>` has taken one since #369 — so the shape says
+  // "a member" rather than the dead end doctor used to print.
+  it("reads a directory that is itself a member of a non-chant kind as an estate of one", () => {
+    const dir = make({
+      "estate.chdf.hcl": 'estate = "s3-cohort"\n',
+      "s3.tf": 'resource "aws_s3_bucket" "one" {\n  bucket = "one"\n}\n',
+    });
+    expect(detectProjectShape(dir)).toEqual({ kind: "estate", members: [{ dir: ".", kind: "choudoufu" }], membersFrom: "itself" });
+    // A chant project is still a project, not an estate of itself.
+    expect(detectProjectShape(make({ "chant.config.ts": "export default {};" })).kind).toBe("project");
+    // And a directory no kind claims is still the dead end.
+    expect(detectProjectShape(make({ "README.md": "" })).kind).toBe("none");
   });
 
   it("is none, with the reasons, when every declared member is invalid", () => {

@@ -12,7 +12,7 @@ import {
   choudoufuMeetsFloor,
 
   dataSourceKind,
-  hasLiveBlock,
+  isChoudoufuEstate,
   isDevBuild,
   liveCheckToIr,
   parseChoudoufuVersion,
@@ -272,13 +272,31 @@ describe("the probe and the floor (#369)", () => {
     return dir;
   };
 
-  it("hasLiveBlock: a root *.tf with a live block, by regex, root files only", () => {
-    expect(hasLiveBlock(make({ "main.tf": 'terraform {\n  live {\n    estate = "x"\n  }\n}\n' }))).toBe(true);
-    expect(hasLiveBlock(make({ "main.tf": 'resource "aws_vpc" "x" {}\n' }))).toBe(false);
-    expect(hasLiveBlock(make({ "sub/main.tf": "live {\n}\n" }))).toBe(false);
-    expect(hasLiveBlock(make({ "notes.txt": "live {" }))).toBe(false);
-    expect(hasLiveBlock("/nonexistent/dir")).toBe(false);
-    expect(choudoufuSpec.probe).toBe(hasLiveBlock);
+  it("isChoudoufuEstate: a root *.tf with a live block, by regex, root files only", () => {
+    expect(isChoudoufuEstate(make({ "main.tf": 'terraform {\n  live {\n    estate = "x"\n  }\n}\n' }))).toBe(true);
+    expect(isChoudoufuEstate(make({ "main.tf": 'resource "aws_vpc" "x" {}\n' }))).toBe(false);
+    expect(isChoudoufuEstate(make({ "sub/main.tf": "live {\n}\n" }))).toBe(false);
+    expect(isChoudoufuEstate(make({ "notes.txt": "live {" }))).toBe(false);
+    expect(isChoudoufuEstate("/nonexistent/dir")).toBe(false);
+    expect(choudoufuSpec.probe).toBe(isChoudoufuEstate);
+  });
+
+  // #387: the sidecar is choudoufu's leading form, and every `tools/estate-gen`
+  // cohort writes one — a *.tf set with no `live` block anywhere in it.
+  it("isChoudoufuEstate: the estate.chdf.hcl sidecar, on its own, is enough", () => {
+    const cohort = {
+      "estate.chdf.hcl": 'estate = "s3-cohort"\n\nrecord_store "local" {\n  path = ".tofu-records"\n}\n',
+      "s3.tf": 'resource "aws_s3_bucket" "one" {\n  bucket = "one"\n}\n',
+      "versions.tf": 'terraform {\n  required_version = ">= 1.5.0"\n}\n',
+    };
+    expect(isChoudoufuEstate(make(cohort))).toBe(true);
+    // The sidecar is not read, only found — and only in the directory itself.
+    expect(isChoudoufuEstate(make({ "sub/estate.chdf.hcl": 'estate = "x"\n', "main.tf": 'resource "aws_vpc" "x" {}\n' }))).toBe(false);
+    // Neither form: still not an estate.
+    expect(isChoudoufuEstate(make({ "s3.tf": cohort["s3.tf"], "README.md": "an estate.chdf.hcl would go here" }))).toBe(false);
+    // Both forms at once is choudoufu's error to report, not the probe's.
+    expect(isChoudoufuEstate(make({ "estate.chdf.hcl": 'estate = "x"\n', "main.tf": "live {\n}\n" }))).toBe(true);
+    expect(choudoufuSpec.expects).toBe("an `estate.chdf.hcl` sidecar or a `live { estate = … }` block in a root *.tf file");
   });
 
   it("parseChoudoufuVersion: the field's presence is the floor's real check (choudoufu#968)", () => {

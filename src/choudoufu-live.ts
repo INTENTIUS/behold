@@ -41,7 +41,7 @@ import {
   captureChoudoufu,
   ChoudoufuReadError,
   choudoufuVersion,
-  hasLiveBlock,
+  isChoudoufuEstate,
   liveCheckToIr,
   readLiveCheck,
   stripAnsiLines,
@@ -376,7 +376,11 @@ export async function readChoudoufuLive(dir: string, opts: GraphOptions, run: Ru
   const estate = check.doc.estate;
   if (!estate) {
     throw new ChoudoufuReadError(
-      { error: `${dir} declares no \`live { estate = … }\` block, so there is no estate tag to list the account under.`, code: "choudoufu-live-check", remedy: "Add the live block (choudoufu's `live-check` says what else the configuration needs), then reload." },
+      {
+        error: `${dir} names no estate, so there is no estate tag to list the account under.`,
+        code: "choudoufu-live-check",
+        remedy: "Declare it — `estate = \"…\"` in an `estate.chdf.hcl` sidecar, or a `live { estate = … }` block in a root *.tf (choudoufu's `live-check` says what else the configuration needs) — then reload.",
+      },
       dir,
     );
   }
@@ -419,8 +423,8 @@ export const choudoufuVia: MemberVia = {
 /** The kind, as src/member-kind.ts registers it. */
 export const choudoufuSpec: MemberKindSpec = {
   kind: "choudoufu",
-  probe: hasLiveBlock,
-  expects: "a `live { estate = … }` block in a root *.tf file",
+  probe: isChoudoufuEstate,
+  expects: "an `estate.chdf.hcl` sidecar or a `live { estate = … }` block in a root *.tf file",
   via: choudoufuVia,
 };
 

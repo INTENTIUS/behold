@@ -3,8 +3,10 @@
  *
  * choudoufu is an OpenTofu fork whose ownership lives on the resource as two
  * AWS tags, `tofu-estate` and `tofu-address`; the state file is a cache that
- * is allowed to be stale. Each `live { estate = "..." }` block is one estate,
- * and one estate is one member box in behold's estate compose.
+ * is allowed to be stale. An estate is declared once per directory — in the
+ * `estate.chdf.hcl` sidecar, choudoufu's leading form, or in a `live { estate
+ * = "..." }` block in a root *.tf — and one estate is one member box in
+ * behold's estate compose.
  *
  * This module reads the DECLARED half: `choudoufu live-check -json`, which
  * makes no cloud call and reads no state. The document is the roster (every
@@ -32,7 +34,7 @@
  * header for the cycle that rule exists for); the spawn helper is its own.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { GraphIR } from "@intentius/chant";
 import { stripAnsi } from "./ansi.ts";
@@ -184,10 +186,24 @@ function tfFiles(dir: string): string[] {
 
 const LIVE_BLOCK = /^\s*live\s*\{/m;
 
-/** Does `dir` look like a choudoufu estate: a root `*.tf` with a `live { … }`
- * block. A regex, not a parse — behold reads no HCL — and over root files
+/** choudoufu's leading estate declaration (#387): a sidecar beside the root
+ * `*.tf` files carrying `estate = "…"` and the record store. choudoufu's own
+ * reference calls it the leading form; `tools/estate-gen` writes one into
+ * every cohort and a migrated terralith carries one, which is why a probe
+ * that knew only the `live` block missed the estates behold is developed
+ * against. */
+export const ESTATE_SIDECAR = "estate.chdf.hcl";
+
+/** Does `dir` look like a choudoufu estate: the `estate.chdf.hcl` sidecar in
+ * the directory, or — the other spelling, still supported — a root `*.tf`
+ * with a `live { … }` block. Either is enough; both at once is an error
+ * choudoufu itself reports, and not this probe's business.
+ *
+ * The sidecar half is the file's presence, nothing read. The `live` half is
+ * unchanged: a regex, not a parse — behold reads no HCL — over root files
  * only, because that is where choudoufu requires the block to be. */
-export function hasLiveBlock(dir: string): boolean {
+export function isChoudoufuEstate(dir: string): boolean {
+  if (existsSync(join(dir, ESTATE_SIDECAR))) return true;
   for (const f of tfFiles(dir)) {
     try {
       if (LIVE_BLOCK.test(readFileSync(join(dir, f), "utf8"))) return true;

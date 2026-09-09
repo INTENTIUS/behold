@@ -368,7 +368,9 @@ until the table existed. A new kind is:
 
 1. A `registerMemberKind({ kind, probe, expects, via })` call in
    `src/member-kind.ts` — the `probe` is sync, read-only and runs no code (a
-   file's presence, a regex over a root file); `via.tool` stamps the binary and
+   file's presence, a regex over a root file, or either: the choudoufu probe
+   takes the `estate.chdf.hcl` sidecar, choudoufu's leading form, OR a `live {`
+   block in a root *.tf, #387); `via.tool` stamps the binary and
    version that would answer, which is the version half of `memberIr`'s
    cache key; `via.read` is the one uncached read, source or live per `opts`.
    The module imports nothing from the read path at runtime (src/chant.ts
