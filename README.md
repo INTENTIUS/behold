@@ -36,15 +36,19 @@ carve` is the Terraform peel walkthrough, below). Every loaded demo lands in
 the panel's recents, so switching between them is the Scope tab.
 
 Working in a checkout rather than an npm install? There is a second catalog,
-`workbench.json`, which is not in the published package: the internal estates
-behold is developed against, named by relative path from this repo's root, so
-an entry whose sibling checkout you don't have says so in `--list` instead of
-failing halfway. It holds chant's own examples served in place, the live-mv
+`workbench.json`, which is this checkout's and is not shipped — it is
+deliberately absent from package.json's `files`, so an npm install has
+`demos.json` and nothing else. It holds the eleven internal estates behold is
+developed against, named by relative path from this repo's root, so an entry
+whose sibling checkout you don't have says so in `--list` instead of failing
+halfway: chant's own two examples and water park's `access/` Terraform roots
+served in place, `../fountain-ops` on its own k3d cluster, the live-mv
 workbench's four estates, three `estate-gen` cohorts, and the generated
 terralith at scale 1 and 4 — greenfield, and adopted from a stock `terraform
 apply` by a `live-import` you run by hand. `just example terralith-4` serves
-one (`just example name="<entry>"`); each brings up its own scratch emulator
-and leaves a `scripts/down.sh` in the target that removes it.
+one (`just example name="<entry>"`); each that boots a substrate brings up its
+own scratch emulator and leaves a `scripts/down.sh` in the target that removes
+it. `just e2e-workbench` loads the whole catalog and asserts each graph.
 
 The catalog is in the panel too (#268): the Scope tab's switcher lists every
 bundled demo under your recents, one click to copy, install and serve it —
