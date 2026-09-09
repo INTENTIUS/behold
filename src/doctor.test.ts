@@ -5,6 +5,7 @@ import { join, dirname } from "node:path";
 import { diagnose, formatReport, type DoctorProbes, type DoctorReport, type DoctorCheck } from "./doctor.ts";
 import type { Kubeconfig } from "./k8s-target.ts";
 import type { Substrate } from "./substrates.ts";
+import { discoverTerraformRoots as realRoots } from "./terraform-member.ts";
 
 // Fixtures are built in the OS tmpdir rather than pointed at the bundled
 // examples: example-writes' node_modules is intentionally absent in a fresh
@@ -40,7 +41,7 @@ function installed(name: string, version: string, bin?: string): Record<string, 
   };
 }
 
-const CHANT = installed("@intentius/chant", "0.54.0", "bin/chant");
+const CHANT = installed("@intentius/chant", "0.61.0", "bin/chant");
 
 const kubeconfig = (over: Partial<Kubeconfig> = {}): Kubeconfig => ({
   contexts: new Map(),
@@ -69,7 +70,7 @@ describe("diagnose", () => {
       "src/main.ts": "",
       "ops/deploy.op.ts": `export const op = { name: "prod-apply", kind: ApplyOp };`,
       ...CHANT,
-      ...installed("@intentius/chant-lexicon-aws", "0.54.0"),
+      ...installed("@intentius/chant-lexicon-aws", "0.61.0"),
     });
 
     const report = await diagnose(dir, probes({ detectSubstrates: async () => up }));
@@ -77,8 +78,8 @@ describe("diagnose", () => {
     expect(report.ok).toBe(true);
     expect(report.kind).toBe("project");
     expect(report.checks.map((c) => c.status)).toEqual(["pass", "pass", "pass", "pass", "pass", "pass", "pass"]);
-    expect(by(report, "chant").detail).toContain("chant 0.54.0");
-    expect(by(report, "lexicons").detail).toContain("aws 0.54.0");
+    expect(by(report, "chant").detail).toContain("chant 0.61.0");
+    expect(by(report, "lexicons").detail).toContain("aws 0.61.0");
     expect(by(report, "envs").detail).toContain("prod");
     expect(by(report, "ops").detail).toContain("prod-apply (apply)");
     expect(report.checks.every((c) => c.fix === undefined)).toBe(true);
@@ -116,7 +117,7 @@ describe("diagnose", () => {
     const dir = fixture({
       "chant.config.ts": `export default { lexicons: ["k8s"], k8s: { profiles: { local: { context: "k3d-demo" } } } };`,
       ...CHANT,
-      ...installed("@intentius/chant-lexicon-k8s", "0.54.0"),
+      ...installed("@intentius/chant-lexicon-k8s", "0.61.0"),
     });
 
     const report = await diagnose(dir, probes());
@@ -135,7 +136,7 @@ describe("diagnose", () => {
     const dir = fixture({
       "chant.config.ts": `export default { lexicons: ["k8s"], k8s: { profiles: { local: { context: "k3d-demo" } } } };`,
       ...CHANT,
-      ...installed("@intentius/chant-lexicon-k8s", "0.54.0"),
+      ...installed("@intentius/chant-lexicon-k8s", "0.61.0"),
     });
     const kc = kubeconfig({
       contexts: new Map([["k3d-demo", "k3d-demo-cluster"]]),
@@ -156,7 +157,7 @@ describe("diagnose", () => {
     const dir = fixture({
       "chant.config.ts": `export default { lexicons: ["k8s"], k8s: { profiles: { local: { context: "k3d-demo" } } } };`,
       ...CHANT,
-      ...installed("@intentius/chant-lexicon-k8s", "0.54.0"),
+      ...installed("@intentius/chant-lexicon-k8s", "0.61.0"),
     });
     const kc = kubeconfig({
       contexts: new Map([
@@ -182,7 +183,7 @@ describe("diagnose", () => {
     const dir = fixture({
       "chant.config.ts": `export default { lexicons: ["aws"], environments: ["prod"] };`,
       ...CHANT,
-      ...installed("@intentius/chant-lexicon-aws", "0.54.0"),
+      ...installed("@intentius/chant-lexicon-aws", "0.61.0"),
     });
     const down: Substrate[] = [
       { name: "docker", label: "Docker", status: "up", detail: "daemon running" },
@@ -223,14 +224,14 @@ describe("diagnose", () => {
       "a/ops/apply.op.ts": `export const op = { name: "a-apply", kind: ApplyOp };`,
       "b/chant.config.ts": `export default { lexicons: ["aws"], environments: ["staging"] };`,
       ...CHANT,
-      ...installed("@intentius/chant-lexicon-aws", "0.54.0"),
+      ...installed("@intentius/chant-lexicon-aws", "0.61.0"),
     });
 
     const report = await diagnose(dir, probes({ detectSubstrates: async () => up }));
 
     expect(report.kind).toBe("estate");
     expect(by(report, "project").detail).toContain(".behold.json members): a (chant), b (chant)");
-    expect(by(report, "chant").detail).toBe("a: chant 0.54.0, b: chant 0.54.0 (behold's floor 0.54.0)");
+    expect(by(report, "chant").detail).toBe("a: chant 0.61.0, b: chant 0.61.0 (behold's floor 0.61.0)");
     expect(by(report, "envs").detail).toContain(`behold serve ${dir}/a ${dir}/b --env prod`);
     expect(by(report, "ops").detail).toContain("a: a-apply (apply)");
   });
@@ -255,7 +256,7 @@ describe("diagnose", () => {
   // `.behold.json` is said out loud before the estate serves without it.
   it("fails the project line on a declared member with an unknown kind, naming the kinds it reads", async () => {
     const dir = fixture({
-      ".behold.json": JSON.stringify({ members: ["a", { dir: "b", kind: "terraform" }] }),
+      ".behold.json": JSON.stringify({ members: ["a", { dir: "b", kind: "pulumi" }] }),
       "a/chant.config.ts": `export default { lexicons: [], environments: ["local"] };`,
       "b/main.tf": "",
       ...CHANT,
@@ -267,10 +268,10 @@ describe("diagnose", () => {
     expect(report.ok).toBe(false);
     const project = by(report, "project");
     expect(project.status).toBe("fail");
-    expect(project.detail).toContain("a (chant); invalid: b — unknown member kind \"terraform\"");
+    expect(project.detail).toContain("a (chant); invalid: b — unknown member kind \"pulumi\"");
     expect(project.fix).toContain("Member kinds this behold reads: chant, choudoufu");
     // The chant line asks only the chant members.
-    expect(by(report, "chant").detail).toBe("a: chant 0.54.0 (behold's floor 0.54.0)");
+    expect(by(report, "chant").detail).toBe("a: chant 0.61.0 (behold's floor 0.61.0)");
   });
 
   // #369: the choudoufu line, only on an estate with a choudoufu member.
@@ -330,6 +331,63 @@ describe("diagnose", () => {
     });
   });
 
+  // #384: the terraform line, on the estate that is a directory of `.tf` files
+  // and nothing else. The reader is two optional peers behold does not install,
+  // so its absence is a fail with the one install line.
+  describe("the terraform line", () => {
+    const estate = () =>
+      fixture({
+        "envs/prod/versions.tf": "terraform {\n  required_providers {\n    aws = {}\n  }\n}\n",
+        "envs/prod/main.tf": 'resource "aws_s3_bucket" "artifacts" {}\n',
+        "modules/persona/versions.tf": "terraform {\n  required_providers {\n    aws = {}\n  }\n}\n",
+        "modules/persona/main.tf": 'resource "aws_iam_role" "this" {}\n',
+      });
+    const present = {
+      lexicon: { pkg: "@intentius/chant-lexicon-terraform", range: "^0.61.0", version: "0.61.0" },
+      parser: { pkg: "@cdktf/hcl2json", range: "^0.21.0", version: "0.21.0" },
+      from: "/opt/behold/dist",
+    };
+    const absent = {
+      ...present,
+      lexicon: { pkg: "@intentius/chant-lexicon-terraform", range: "^0.61.0" },
+      parser: { pkg: "@cdktf/hcl2json", range: "^0.21.0" },
+      refusal: {
+        error: "Reading a Terraform estate needs chant's terraform lexicon, which behold does not install: … are not resolvable from /opt/behold/dist.",
+        code: "terraform-lexicon" as const,
+        remedy: "Install @intentius/chant-lexicon-terraform@^0.61.0 @cdktf/hcl2json@^0.21.0 beside behold, then reload.",
+      },
+    };
+
+    it("is absent from a plain chant project", async () => {
+      const plain = fixture({ "chant.config.ts": `export default { lexicons: [], environments: ["local"] };`, ...CHANT });
+      expect((await diagnose(plain, probes())).checks.some((c) => c.name === "terraform")).toBe(false);
+    });
+
+    it("passes with the reader's versions and what discovery found, skips included", async () => {
+      const report = await diagnose(estate(), probes({ terraform: { reader: () => present, roots: (d) => realRoots(d) } }));
+      expect(report.kind).toBe("estate");
+      expect(by(report, "project").detail).toBe("a terraform member — the directory itself, no member list");
+      expect(by(report, "terraform")).toEqual({
+        name: "terraform",
+        status: "pass",
+        detail: "@intentius/chant-lexicon-terraform 0.61.0 (@cdktf/hcl2json 0.21.0); .: 1 root (prod), 1 skipped (modules/persona)",
+      });
+      // The chant line asks the chant members, and there are none.
+      expect(by(report, "chant").status).toBe("pass");
+    });
+
+    it("fails with the one install line when the reader is not there, and still says what it would draw", async () => {
+      const report = await diagnose(estate(), probes({ terraform: { reader: () => absent, roots: (d) => realRoots(d) } }));
+      expect(report.ok).toBe(false);
+      expect(by(report, "terraform")).toMatchObject({
+        status: "fail",
+        detail: expect.stringContaining("behold does not install"),
+        fix: absent.refusal.remedy,
+      });
+      expect(by(report, "terraform").detail).toContain("1 root (prod)");
+    });
+  });
+
   it("is none, and says why, when the only declared member fails its kind's probe", async () => {
     const dir = fixture({ ".behold.json": JSON.stringify({ members: [{ dir: "b", kind: "chant" }] }), "b/README.md": "" });
     const report = await diagnose(dir, probes());
@@ -344,7 +402,7 @@ describe("--json", () => {
       "chant.config.ts": `export default { lexicons: ["aws"], environments: ["prod"] };`,
       "ops/apply.op.ts": `export const op = { name: "prod-apply", kind: ApplyOp };`,
       ...CHANT,
-      ...installed("@intentius/chant-lexicon-aws", "0.54.0"),
+      ...installed("@intentius/chant-lexicon-aws", "0.61.0"),
     });
 
     const report = await diagnose(dir, probes({ detectSubstrates: async () => up }));

@@ -36,10 +36,11 @@
 import { choudoufuSpec } from "./choudoufu-live.ts";
 import type { MemberVia } from "./member-ir.ts";
 import { chantConfigPath } from "./project.ts";
+import { terraformSpec } from "./terraform-member.ts";
 
 /** The vocabulary `.behold.json` may use. Closed on purpose: a kind is a
  * contract behold knows how to read, not a label a project invents. */
-export const MEMBER_KINDS = ["chant", "choudoufu"] as const;
+export const MEMBER_KINDS = ["chant", "choudoufu", "terraform"] as const;
 export type MemberKind = (typeof MEMBER_KINDS)[number];
 
 export function isMemberKind(s: unknown): s is MemberKind {
@@ -100,3 +101,10 @@ registerMemberKind({
  * two AWS tags, read through `live-check -json`. After chant, so a directory
  * that is both is a chant member. */
 registerMemberKind(choudoufuSpec);
+
+/** The terraform member (#384): a directory of `.tf` files, read through a
+ * `chant.config.ts` behold generates in a scratch directory of its own. After
+ * choudoufu, so an estate whose roots carry a `live { … }` block is read as
+ * the choudoufu estate it is — the tag-owned reading is the richer one, and
+ * both would otherwise probe true. */
+registerMemberKind(terraformSpec);

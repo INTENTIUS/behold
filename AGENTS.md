@@ -437,7 +437,7 @@ through `assertScratch` like everything else.
 
 ### Rendering a Terraform estate
 
-A Terraform estate reaches behold through chant, not through a member kind.
+A Terraform estate reaches behold through chant.
 `@intentius/chant-lexicon-terraform` reads the HCL an estate already has and
 emits one entity per block, so **a Terraform estate is a chant project whose
 only lexicon is a reader** and `chant graph --format ir` serves it like any
@@ -469,8 +469,71 @@ resources, four fifths of it not infrastructure.
 Nothing is dropped silently: `terraformElisionNote` says what is not drawn and
 where to see it, the way `edgelessNote` says why a view has no edges.
 
-**Do not invent edges.** A stock Terraform estate has none until chant#2265
-resolves a block's `"${…}"` references. The one relationship that looked
-derivable — a cross-root read by name — was measured and refused (#381): both
+**Do not invent edges.** They arrive from chant or not at all: the fixtures here
+were recorded when a Terraform IR carried none, and lexicon 0.61.0 (chant#2265,
+which resolves a block's `"${…}"` references) draws 390 over water park's five
+roots with no change on this side. The one relationship that looked derivable
+without it — a cross-root read by name — was measured and refused (#381): both
 ends carry the same unresolved interpolation, so a match would be a coincidence
 of variable naming. A data source says what it reads as a row instead.
+
+**Serving a directory that declares nothing (#384).** Every estate this lane
+exists to draw is a directory of `.tf` files and nothing else, and #378 chose
+not to ask one for a `chant.config.ts` of its own — INTENTIUS/waterpark#88 was
+withdrawn because the estate is more useful untouched. So `behold serve
+<terraform-dir>` generates the reader config itself, outside the estate, and
+points chant at it. The Invariant's one in-project write stays
+`.behold/layout.json`; nothing is written under the served directory, and
+`src/terraform-member.test.ts` asserts the estate's source stamp is unchanged
+across a read. Three decisions, each a trade #384 left open and each measured on
+water park's `access/` before it was taken:
+
+1. **The lexicon is opt-in.** chant resolves the lexicon from the config file's
+   own location, so the generated project has to see it — and making it a
+   dependency would put `@cdktf/hcl2json`, a ~1.8 MB wasm blob, in the install
+   of every user who serves a chant project. `@intentius/chant-lexicon-terraform`
+   and `@cdktf/hcl2json` are therefore **optional peers**: declared in
+   package.json (the only place their versions are named — the refusal reads
+   them from there), never installed by behold, probed at serve and doctor time,
+   and refused with the one install line and where behold looked. The same gate
+   `behold demo` puts on a binary it does not ship. The lexicon's own chant peer
+   is what moved behold's `@intentius/chant` floor to `^0.61.0`: chant 0.54
+   loads no published version of it (`applyLineage is not a function`).
+2. **Roots are discovered, and the skips are reported.** A root is a directory
+   with a `.tf` declaring a line-start `terraform {` or `provider "` block
+   beside a `resource`, `data` or `module` block — a regex probe at the depth
+   the choudoufu probe uses, no HCL parsed. #384 proposed the first half alone
+   ("what a root has and a called module does not") and the estate refuted it:
+   water park's `modules/persona` is a shared module called by three roots and
+   its `versions.tf` is `baseline`'s byte for byte. So two exclusions stand
+   beside the probe — a directory under a `modules/` segment (Terraform's own
+   standard module structure; the roots that call it draw its blocks already)
+   and one with nothing to draw (`access/backends` is two backend fragments) —
+   and both are named in the graph's note with their reason, the way
+   `terraformElisionNote` names what a zoom left out. Measured on `access/`:
+   five roots (`envs/prod`, `identity`, `github`, `baseline`,
+   `satellites/waterpark-runner`), two skipped, `envs/dev` neither drawn nor
+   reported because it holds only a README.
+3. **A `terraform` member kind, after chant and choudoufu.** #378 said there is
+   no such kind and meant it about *reading*: behold parses no HCL and the
+   render goes through chant. A kind whose `read` shells `chant graph` against a
+   generated config is a scaffold, not a second reader, and it inherits the
+   probe, the cache stamp, the doctor line and estate composition (#368) for
+   free — so a Terraform root composes in an estate beside a chant project and a
+   choudoufu estate at no extra cost. `src/terraform-member.ts` is the whole of
+   it; `detectProjectShape` answers a directory that is its own member with
+   `membersFrom: "probe"`, which is what retired #384's `no chant.config.ts
+   here` dead end.
+
+The scratch project is `<tmpdir>/behold-tf-<hash of the estate path>`:
+`behold-*` and cleared through `assertScratch` (src/scratch.ts), one directory
+per estate reused across runs, asserted to be outside the estate before a byte
+is written. It holds the generated `chant.config.ts` and two symlinks —
+`node_modules` to behold's own, which is how the config resolves the lexicon,
+and `estate` to the served directory, which is how each root's `dir` is spelled.
+The second is not decoration: the lexicon sets a root's module boundary to the
+root's own directory when its `dir` resolves outside the project root, so
+absolute paths cost every `../modules/x` call the estate makes — 72 nodes and 6
+resources on water park, against 247 and 43 through the symlink. Nothing in the
+answer mentions the scratch path (a terraform entity carries `attrs.file`
+relative to its root, and no `sourceLoc`).
