@@ -88,6 +88,27 @@ export function memberKindOf(dir: string): MemberKind | undefined {
   return undefined;
 }
 
+/**
+ * Does serving these directories go through the estate compose path (#389)?
+ *
+ * More than one always did. ONE does too when the directory is a member of a
+ * kind that is not chant: the single-project read is `chant graph <dir>`, and a
+ * lone choudoufu estate has no chant.config.ts and no lexicon, so that read
+ * answers "No lexicon detected in infrastructure files" and behold serves the
+ * no-project card over a perfectly good estate. src/project.ts already says
+ * `behold serve <a choudoufu estate>` is a thing behold accepts; this is what
+ * makes it true, and the workbench's generated single-estate entries (#389 —
+ * every estate-gen cohort, every terralith) are what found it missing.
+ *
+ * A one-member estate composes exactly as a four-member one does, ids
+ * namespaced under the member's short name, so the graph, the pane and the
+ * morph agree on what a node is called.
+ */
+export function servesAsEstate(dirs: readonly string[]): boolean {
+  if (dirs.length > 1) return true;
+  return dirs.length === 1 && (memberKindOf(dirs[0]) ?? "chant") !== "chant";
+}
+
 /** The chant member: what every member was until #368. No `via`: chant is
  * the reader the estate falls back to, for this kind and for a directory no
  * kind claims. */

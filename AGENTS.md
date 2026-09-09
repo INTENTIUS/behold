@@ -432,8 +432,19 @@ src/demos.ts holds them:
    spell the same fallback, `${CHOUDOUFU_BIN:-choudoufu}`.
 
 `just example name="<entry>"` serves one. Scratch discipline is unchanged: an
-emulator a workbench entry boots is `behold-wb-<entry>` on its own port,
-through `assertScratch` like everything else.
+emulator a workbench entry boots is `behold-wb-<entry>` on its own port, and
+the up scripts (`workbench/<entry>/up.sh`, helpers in `workbench/lib/`) assert
+the `behold-wb-` prefix and the not-4566 rule themselves, in bash, because they
+are the boot site. Each writes the matching `scripts/down.sh` into its target.
+
+The seeded catalog (#389) found one thing missing in src/: a LONE choudoufu
+estate — every generated entry is one — served the no-project card, because the
+single-project read is `chant graph <dir>` and such a directory has no lexicon
+for it to read. `servesAsEstate` (src/member-kind.ts) is the predicate that
+routes one directory of a non-chant kind through the estate compose path, where
+the member's own kind reads it. One member composes exactly as four do, ids
+namespaced under the member's short name, so the graph, the pane and the morph
+agree on what a node is called.
 
 ### Rendering a Terraform estate
 
