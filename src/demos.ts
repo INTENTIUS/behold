@@ -307,7 +307,11 @@ export async function loadDemo(entry: DemoEntry, opts: DemoLoadOptions): Promise
   } else {
     say(`reusing ${target}`);
   }
-  if (existsSync(join(work, "package.json")) && !existsSync(join(work, "node_modules"))) {
+  // #390: an in-place entry is somebody's working copy, and `npm install`
+  // there would leave a node_modules and a package-lock.json in a checkout
+  // behold was only asked to read. It is served exactly as it sits; a project
+  // that is not installed says so on its own card, the way `behold serve` does.
+  if (!inPlace && existsSync(join(work, "package.json")) && !existsSync(join(work, "node_modules"))) {
     say("npm install…");
     if ((await runStep("npm", ["install"], { cwd: work, shell: process.platform === "win32" })) !== 0) {
       return { ok: false, error: `npm install failed in ${work}` };

@@ -2,7 +2,7 @@
   "demos": [
     {
       "name": "chant-getting-started",
-      "description": "chant's own getting-started example, served in place from ../chant — the source graph, no substrate, no setup, 8 nodes. The smallest thing in the workbench, and the one that answers 'did I break plain chant reading?' in a second. One caveat of serving a checkout in place: the example is not a chant workspace member, so if it has no node_modules the load runs `npm install` in it — the PUBLISHED chant, not the sibling's build — and leaves a node_modules and a package-lock.json in your chant tree. `behold serve ../chant/examples/getting-started` is the same graph with nothing written.",
+      "description": "chant's own getting-started example, served in place from ../chant — the source graph, no substrate, no setup, 8 nodes. The smallest thing in the workbench, and the one that answers 'did I break plain chant reading?' in a second. Served exactly as it sits: nothing is copied and nothing is installed in your chant tree, so the example needs its own node_modules (npm install there once) to read.",
       "source": "local",
       "path": "../chant/examples/getting-started",
       "inPlace": true,
@@ -11,7 +11,7 @@
     },
     {
       "name": "chant-local-cloud-trio",
-      "description": "chant's local-cloud-trio example, served in place from ../chant — one project declaring across aws, azure and gcp, as the source graph: 8 nodes, 2 edges, no substrate booted. Same caveat as chant-getting-started: an example with no node_modules gets an `npm install` in your chant tree on load, and `behold serve ../chant/examples/local-cloud-trio` is the same graph with nothing written.",
+      "description": "chant's local-cloud-trio example, served in place from ../chant — one project declaring across aws, azure and gcp, as the source graph: 8 nodes, 2 edges, no substrate booted. Served as it sits, nothing written: like chant-getting-started it needs its own node_modules to read.",
       "source": "local",
       "path": "../chant/examples/local-cloud-trio",
       "inPlace": true,
@@ -24,7 +24,13 @@
       "source": "local",
       "path": "../fountain-ops",
       "inPlace": true,
-      "requires": ["docker", "k3d", "kubectl", "jq", "just"],
+      "requires": [
+        "docker",
+        "k3d",
+        "kubectl",
+        "jq",
+        "just"
+      ],
       "setup": "just up",
       "serve": {
         "env": "local"
@@ -35,11 +41,19 @@
       "description": "The live-mv workbench's own four estates, copied out of ../choudoufu (not out of behold's bundled copy, which drifts): the monolith's 21 resources applied to a scratch floci and three team estates of 7 re-declaring them, served composed with --env live — 42 cards, the monolith green and every taggable team card reading `owned by tlmig-sample-monolith`. These four declare their estate the older way, a `live { … }` block in main.tf. The fixture carries no carve.json and no cross-estate data source — `behold demo choudoufu-estate` is where those live. About 50s cold. Docker + choudoufu; provider download on first init. scripts/down.sh in the target removes the container.",
       "source": "local",
       "path": "../choudoufu/examples/live-mv-workbench/tests/fixtures/sample-run/estates",
-      "requires": ["docker", "choudoufu"],
+      "requires": [
+        "docker",
+        "choudoufu"
+      ],
       "setup": "bash \"$BEHOLD_WORKBENCH_DIR/workbench/choudoufu-workbench/up.sh\"",
       "serve": {
         "env": "live",
-        "dirs": ["tlmig-sample-monolith", "tlmig-sample-team-a", "tlmig-sample-team-b", "tlmig-sample-team-c"],
+        "dirs": [
+          "tlmig-sample-monolith",
+          "tlmig-sample-team-a",
+          "tlmig-sample-team-b",
+          "tlmig-sample-team-c"
+        ],
         "spawnEnv": {
           "AWS_ENDPOINT_URL": "http://127.0.0.1:4651",
           "AWS_ACCESS_KEY_ID": "test",
@@ -52,7 +66,12 @@
       "name": "choudoufu-cohort-s3",
       "description": "choudoufu's `s3` cohort, rendered fresh by ../choudoufu's tools/estate-gen into the target — an estate declared ONLY by its `estate.chdf.hcl` sidecar, which is what #387 taught behold's probe to read. Scratch floci, `choudoufu init`, then `apply` best effort: floci answers S3 Control tag reads on a hostname that does not resolve, so the apply stops and all 6 cards serve honestly unbound. About 35s cold. Docker + choudoufu + go + terraform (estate-gen runs `terraform init` for the provider schemas). scripts/down.sh in the target removes the container.",
       "source": "local",
-      "requires": ["docker", "choudoufu", "go", "terraform"],
+      "requires": [
+        "docker",
+        "choudoufu",
+        "go",
+        "terraform"
+      ],
       "setup": "bash \"$BEHOLD_WORKBENCH_DIR/workbench/choudoufu-cohort-s3/up.sh\"",
       "serve": {
         "env": "live",
@@ -68,7 +87,12 @@
       "name": "choudoufu-cohort-iam-ecr",
       "description": "choudoufu's `iam-ecr` cohort, rendered fresh by ../choudoufu's tools/estate-gen into the target — a sidecar-declared estate again, and the one cohort floci implements end to end (live/cohort-acceptance.json), so this one applies clean: 6 resources, 6 green cards, about 35s cold. Docker + choudoufu + go + terraform. scripts/down.sh in the target removes the container.",
       "source": "local",
-      "requires": ["docker", "choudoufu", "go", "terraform"],
+      "requires": [
+        "docker",
+        "choudoufu",
+        "go",
+        "terraform"
+      ],
       "setup": "bash \"$BEHOLD_WORKBENCH_DIR/workbench/choudoufu-cohort-iam-ecr/up.sh\"",
       "serve": {
         "env": "live",
@@ -84,7 +108,12 @@
       "name": "choudoufu-cohort-ec2-networking",
       "description": "choudoufu's `ec2-networking` cohort, rendered fresh by ../choudoufu's tools/estate-gen into the target — 49 resources, the widest of the three cohorts, and what a big sidecar-declared roster looks like. floci does not implement it (live/cohort-acceptance.json records it failing at apply; here it stops on a transit gateway call floci refuses), so the apply is best effort and all 49 cards serve declared and unbound. About 30s cold. Docker + choudoufu + go + terraform. scripts/down.sh in the target removes the container.",
       "source": "local",
-      "requires": ["docker", "choudoufu", "go", "terraform"],
+      "requires": [
+        "docker",
+        "choudoufu",
+        "go",
+        "terraform"
+      ],
       "setup": "bash \"$BEHOLD_WORKBENCH_DIR/workbench/choudoufu-cohort-ec2-networking/up.sh\"",
       "serve": {
         "env": "live",
@@ -100,7 +129,11 @@
       "name": "terralith-1",
       "description": "../choudoufu's tools/terralith-gen at scale 1, rendered into the target and given the `estate.chdf.hcl` sidecar the generator deliberately omits: 79 resources across network, IAM, ECS, DNS and a module tier, applied by choudoufu against a scratch floci from nothing, so all 79 cards serve bound. About 50s cold. The small end of the scale knob terralith-4 turns up. Docker + choudoufu + go. scripts/down.sh in the target removes the container.",
       "source": "local",
-      "requires": ["docker", "choudoufu", "go"],
+      "requires": [
+        "docker",
+        "choudoufu",
+        "go"
+      ],
       "setup": "bash \"$BEHOLD_WORKBENCH_DIR/workbench/terralith-1/up.sh\"",
       "serve": {
         "env": "live",
@@ -116,7 +149,11 @@
       "name": "terralith-4",
       "description": "The same terralith at scale 4 — 301 resources at this generator, the same proportions — applied by choudoufu against a scratch floci and served with --env live: 301 nodes, every one of them green. The estate behold is sized against; #386 wrote 205, which is what an older composition rendered. About 105s cold, most of it the apply. Docker + choudoufu + go. scripts/down.sh in the target removes the container.",
       "source": "local",
-      "requires": ["docker", "choudoufu", "go"],
+      "requires": [
+        "docker",
+        "choudoufu",
+        "go"
+      ],
       "setup": "bash \"$BEHOLD_WORKBENCH_DIR/workbench/terralith-4/up.sh\"",
       "serve": {
         "env": "live",
@@ -132,7 +169,12 @@
       "name": "terralith-4-adopt",
       "description": "The terralith at scale 4 again, but applied by STOCK terraform first — the generator's versions.tf has no live block, which is the point — so nothing wears a marker tag and there is no record store. The sidecar and `choudoufu init` come after, over the state terraform wrote, and behold serves 301 cards none of which this estate owns (85 UNOWNED, the rest waiting on discovery or an unavailable parent). One `choudoufu live-import -state=terraform.tfstate -estate=behold-terralith-4-adopt -approve`, run by hand in the target — the up script prints it with the endpoint — stamps 137 of them and records all 301 identities; reload and all 301 are green. behold never runs that write. About 115s cold plus 23s for the import. Docker + choudoufu + go + terraform. scripts/down.sh in the target removes the container.",
       "source": "local",
-      "requires": ["docker", "choudoufu", "go", "terraform"],
+      "requires": [
+        "docker",
+        "choudoufu",
+        "go",
+        "terraform"
+      ],
       "setup": "bash \"$BEHOLD_WORKBENCH_DIR/workbench/terralith-4-adopt/up.sh\"",
       "serve": {
         "env": "live",
@@ -143,6 +185,15 @@
           "AWS_REGION": "us-east-1"
         }
       }
+    },
+    {
+      "name": "waterpark",
+      "description": "water park's own AWS access estate, ../waterpark/access, served IN PLACE as a bare Terraform directory (#384): five roots as boxes — envs/prod, identity, github, baseline, satellites/waterpark-runner — 58 cards at detail 2, modules/persona left out as a called module, and no file written under the estate. Needs chant's terraform lexicon beside behold, which behold does not install: npm install --no-save @intentius/chant-lexicon-terraform @cdktf/hcl2json (the refusal names the exact line). No cloud, no Docker.",
+      "source": "local",
+      "path": "../waterpark/access",
+      "inPlace": true,
+      "requires": [],
+      "serve": {}
     }
   ]
 }

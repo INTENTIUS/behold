@@ -321,6 +321,17 @@ describe("loadDemo — the copy/install/setup the CLI and the route share (#268)
     expect(demoTargetDir(entry)).toBe(join(path));
   });
 
+  it("#390: never runs npm install in an inPlace entry — a checkout is read as it sits", async () => {
+    const { catalogDir, path } = sibling("chant-uninstalled");
+    rmSync(join(path, "node_modules"), { recursive: true, force: true }); // the sibling helper's leftover — this checkout is NOT installed
+    writeFileSync(join(path, "package.json"), JSON.stringify({ name: "x", dependencies: { "@intentius/no-such-package-ever": "1.0.0" } }));
+    const entry = localEntry({ path: "../chant-uninstalled", inPlace: true, catalogDir });
+    const res = await loadDemo(entry, { pkgRoot: catalogDir, target: join(scratch("behold-demos-target-"), "wb") });
+    expect(res).toEqual({ ok: true, serveDirs: [path] }); // an install of that dependency would have failed
+    expect(existsSync(join(path, "node_modules"))).toBe(false);
+    expect(existsSync(join(path, "package-lock.json"))).toBe(false);
+  });
+
   it("makes a generator entry's target and runs the setup in it, with the workbench env", async () => {
     const catalogDir = scratch("behold-workbench-");
     const target = join(scratch("behold-demos-target-"), "terralith-4");
