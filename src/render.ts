@@ -95,6 +95,105 @@ export interface RenderResult {
   svg: string;
 }
 
+/**
+ * The passes both renderers run over an estate, in one place (#396 finding 1).
+ *
+ * `renderGraph` grew them one at a time — the card faces, the edgeless wrap,
+ * the component pack, the module bands, the badges — and `renderArchitecture`
+ * got the wrap alone. So `?logical=1` on the estates the passes exist for came
+ * back as the strip they exist to prevent: 165:1 on `terralith-4`, 24:1 on
+ * waterpark, 29:1 on the workbench, against 1.6:1 and 0.7:1 and 0.9:1 for the
+ * same estates one zoom away. The two renderers differ in exactly one thing —
+ * which layout call sits between the before-passes and the after-passes
+ * (`layoutIr` with flat groups, `layoutArchitecture` with nested containers) —
+ * so this is that shape: {@link estateFace} is everything before, and
+ * {@link packEstateBoxes} is everything after.
+ *
+ * Both are no-ops on a graph with no boxes and no choudoufu or Terraform card,
+ * which is what keeps every chant and k8s picture in the suite byte-identical.
+ */
+interface EstateFace {
+  /** The IR to lay out and paint — `cardFaces`'s display IR. */
+  ir: GraphIR;
+  /** Painted field overrides, keyed by display id. */
+  overrides: Record<string, NodeOverride>;
+  /** The drawn boxes, with the display ids in them. */
+  boxes: Record<string, string[]> | undefined;
+  /** Real id → display id, for a structure the display IR does not carry —
+   * the architecture lens's `byContainer`. Only ids that moved are in it. */
+  display: ReadonlyMap<string, string>;
+  /** A card's module band, resolved through the display ids. */
+  bandOf: ((id: string) => string | undefined) | undefined;
+  /** The chained IR for the layout call, and what the wrap did per box. */
+  chains: { ir: GraphIR; grids: Map<string, RowGrid> };
+  /** Put the real ids back on the finished SVG. */
+  restore(svg: string): string;
+}
+
+function estateFace(
+  irIn: GraphIR,
+  boxesIn: Record<string, string[]> | undefined,
+  opts: { prefixes?: Record<string, string[]>; nodesep?: number; ranksep?: number } = {},
+): EstateFace {
+  // #393 item 9: a choudoufu or Terraform card is painted with the address
+  // alone and the rows the box does not already carry. The ids are unchanged —
+  // `cardFaces` hands back a display IR to paint from and puts the real ids
+  // back on the finished SVG (src/card-face.ts) — and every other estate gets
+  // the same object it passed in.
+  const face = cardFaces(irIn, boxesIn, opts.prefixes ? { prefixes: opts.prefixes } : {});
+  const ir = face.ir;
+  if (Object.keys(face.overrides).length) faceOverrides.set(ir, face.overrides);
+  const boxes = boxesIn
+    ? Object.fromEntries(Object.entries(boxesIn).map(([key, ids]) => [key, ids.map((id) => face.display.get(id) ?? id)]))
+    : undefined;
+  // The band is read off the REAL ids: the display IR blanks a choudoufu card's
+  // lexicon (that is how the paint drops the word) and shortens its id, so
+  // `moduleBandOf` over it would find no choudoufu card at all. `cardFaces`
+  // maps nodes one to one and in order, which is the id translation.
+  const realBand = moduleBandOf(irIn);
+  const toReal = new Map(ir.nodes.map((n, i) => [n.id, irIn.nodes[i]!.id]));
+  const bandOf = realBand ? (id: string): string | undefined => realBand(toReal.get(id) ?? id) : undefined;
+  // #393 A/B: an edgeless box lays out as one dagre rank — see src/edgeless.ts.
+  // The chained IR is for the layout call and nothing else; `renderSvg` and
+  // every caller below keep the IR that came in. The chains run over the
+  // display IR, so the row grid and the painted cards agree on every id.
+  const chains = boxes
+    ? withRowChains(ir, boxes, {
+        sizes: footprints(ir, face.overrides),
+        ...(bandOf ? { bandOf } : {}),
+        ...(opts.nodesep !== undefined ? { nodesep: opts.nodesep } : {}),
+        ...(opts.ranksep !== undefined ? { ranksep: opts.ranksep } : {}),
+      })
+    : { ir, grids: new Map<string, RowGrid>() };
+  return { ir, overrides: face.overrides, boxes, display: face.display, bandOf, chains, restore: face.restore };
+}
+
+/** The after-passes: the component pack inside each box, the member shelves,
+ * the module sub-boxes and the badges — in that order, because each one reads
+ * the sizes the one before it produced. */
+function packEstateBoxes(
+  layout: RadialLayout & { groups?: GroupBox[]; height: number },
+  face: EstateFace,
+  opts: { members?: boolean; badges?: Readonly<Record<string, string>>; marks?: Readonly<Record<string, string | GlyphSpec>> } = {},
+): void {
+  const boxes = face.boxes;
+  if (!boxes) return;
+  // #393 item 1: a box that HAS edges is never wrapped, and dagre lays its
+  // components out side by side — the strip comes back the moment the estate's
+  // own references arrive. Pack them first, so the member shelves below see the
+  // sizes the boxes really need.
+  const boxGrids = packBoxComponents(layout, face.ir, boxes, face.bandOf);
+  // A composed estate's member boxes get the same treatment (#296): dagre lays
+  // the member clusters out along one horizontal band, so an 11-member estate
+  // rendered ~45k units wide and 316 tall. Wrap the boxes into rows instead.
+  if (opts.members) packMemberBoxes(layout, face.ir, boxes);
+  // The module sub-boxes (#393 B) and the count badges (#393 C), both over the
+  // boxes dagre just produced. A box's bands come from whichever pass shaped it
+  // — the wrap when it is edgeless, the component pack when it is not.
+  addBandBoxes(layout, new Map([...boxGrids, ...face.chains.grids]), footprints(face.ir, face.overrides));
+  applyBadges(layout.groups, opts.badges, opts.marks);
+}
+
 /** Paint the logical/architecture view (#63) — pinhole's `layoutArchitecture`
  * (chant#74) nests the resource cards inside their container boxes (VPC ⊃ subnet
  * ⊃ component ⊃ resource, per `byContainer`) and routes the surviving edges
@@ -105,6 +204,14 @@ export function renderArchitecture(
   byContainer: ByContainer,
   opts: {
     theme?: string;
+    /** The groups whose names a card's title may drop — the estate's member
+     * boxes (#396 finding 1). The containers this lens draws are its own
+     * (`estate terralith-4`, `root prod`) while the ids are still
+     * `<member>/<address>`, so the projection hands the members over and the
+     * cards read here exactly as they do at `resources`. Absent = the drawn
+     * containers are the only prefix rule, which is what a chant estate has
+     * always had (and where it changes nothing at all). */
+    cardPrefixes?: Record<string, string[]>;
     /** Box KEY → mark (pinhole#119's `GroupBox.mark`, #331's structural keys)
      * — e.g. `operatorHomeBoxMarks` (src/operator.ts). Applied after layout,
      * matched on `GroupBox.id` (the same `byContainer` key, pinhole#103), so a
@@ -136,17 +243,33 @@ export function renderArchitecture(
   const leafBoxes = Object.fromEntries(
     Object.entries(byContainer).filter(([, members]) => members.every((m) => !containers.has(m))),
   );
-  const chains = withRowChains(ir, leafBoxes, { sizes: footprints(ir), nodesep, ranksep, bandOf: moduleBandOf(ir) });
-  const layout = layoutArchitecture(chains.ir, byContainer, { fit: true, nodesep, ranksep });
-  addBandBoxes(layout, chains.grids, footprints(ir));
-  applyBadges(layout.groups, opts.groupBadges, opts.groupMarks);
-  const svg = renderSvg(ir, layout, {
+  // #396 finding 1: the after-passes reposition a box's cards and resize the
+  // box around them, and a box drawn INSIDE another box would then be moving
+  // inside a rect nothing re-measured. So they run on a FLAT projection only —
+  // one level of containers, which is what the choudoufu lens (one box per
+  // estate) and the Terraform lens (one per root) produce, and never on the
+  // k8s topology's region ⊃ VPC ⊃ subnet nesting, whose pictures are unchanged
+  // to the byte.
+  const flat = Object.keys(leafBoxes).length === Object.keys(byContainer).length;
+  const face = estateFace(ir, leafBoxes, { ...(opts.cardPrefixes ? { prefixes: opts.cardPrefixes } : {}), nodesep, ranksep });
+  // `byContainer` is an argument beside the IR, so nothing in `cardFaces` can
+  // rewrite it: a member that is a NODE takes its display id, and a member that
+  // is another container key is not in the map and passes through untouched.
+  const display = Object.fromEntries(Object.entries(byContainer).map(([key, members]) => [key, members.map((m) => face.display.get(m) ?? m)]));
+  const layout = layoutArchitecture(face.chains.ir, display, { fit: true, nodesep, ranksep, overrides: face.overrides });
+  if (flat) packEstateBoxes(layout as unknown as RadialLayout & { groups?: GroupBox[]; height: number }, face, { members: true, badges: opts.groupBadges, marks: opts.groupMarks });
+  else {
+    addBandBoxes(layout, face.chains.grids, footprints(face.ir, face.overrides));
+    applyBadges(layout.groups, opts.groupBadges, opts.groupMarks);
+  }
+  const svg = renderSvg(face.ir, layout, {
     fit: true,
     hideTitle: true,
+    overrides: face.overrides,
     groups: layout.groups,
     ...(opts.theme ? { theme: opts.theme as never } : {}),
   });
-  return { svg };
+  return { svg: face.restore(svg) };
 }
 
 /** `groups.byWave` (component DAG, M1.0 spike) and `groups.byStack` (multi-
@@ -191,30 +314,12 @@ export function renderGraph(
 ): RenderResult {
   const groupsIn = irIn.groups as ExtraGroups;
   const boxKey = groupsIn.byWave ? "byWave" : opts.boxes;
-  // #393 item 9: a choudoufu or Terraform card is painted with the address
-  // alone and the rows the box does not already carry. The ids are unchanged —
-  // `cardFaces` hands back a display IR to paint from and puts the real ids
-  // back on the finished SVG (src/card-face.ts) — and every other estate gets
-  // the same object it passed in.
-  const face = cardFaces(irIn, boxKey ? groupsIn[boxKey] : undefined);
+  // The before-passes: the card faces and the edgeless wrap — see `estateFace`,
+  // which the logical lens runs too (#396 finding 1).
+  const face = estateFace(irIn, boxKey ? groupsIn[boxKey] : undefined);
   const ir = face.ir;
-  if (Object.keys(face.overrides).length) faceOverrides.set(ir, face.overrides);
-  const groups = ir.groups as ExtraGroups;
-  const boxes = boxKey ? groups[boxKey] : undefined;
-  // #393 A/B: an edgeless box lays out as one dagre rank — see src/edgeless.ts.
-  // The chained IR is for the layout call and nothing else; `renderSvg` and
-  // every caller below keep the IR that came in. The chains run over the
-  // display IR, so the row grid and the painted cards agree on every id.
-  // The band is read off the REAL ids: the display IR blanks a choudoufu
-  // card's lexicon (that is how the paint drops the word) and shortens its id,
-  // so `moduleBandOf` over it would find no choudoufu card at all. `cardFaces`
-  // maps nodes one to one and in order, which is the id translation.
-  const realBand = moduleBandOf(irIn);
-  const toReal = new Map(ir.nodes.map((n, i) => [n.id, irIn.nodes[i]!.id]));
-  const bandOf = realBand ? (id: string): string | undefined => realBand(toReal.get(id) ?? id) : undefined;
-  const chains = boxes
-    ? withRowChains(ir, boxes, { sizes: footprints(ir, face.overrides), bandOf })
-    : { ir, grids: new Map<string, RowGrid>() };
+  const boxes = face.boxes;
+  const chains = face.chains;
   const layout = layoutIr(chains.ir, { fit: true, overrides: face.overrides, ...(boxes ? { groups: boxes } : {}) });
   // Radial layout (opt-in): dagre lays a wide DAG out in horizontal ranks that
   // sprawl off-screen. Re-place the same nodes on concentric rings — one ring
@@ -227,22 +332,8 @@ export function renderGraph(
   // right of the action. Pack the components into compact shelves instead (a
   // no-op when the graph is a single connected component).
   else if (!boxes) packComponents(layout as unknown as RadialLayout, ir);
-  // A composed estate's member boxes get the same treatment (#296): dagre lays
-  // the member clusters out along one horizontal band, so an 11-member estate
-  // rendered ~45k units wide and 316 tall. Wrap the boxes into rows instead.
-  // #393 item 1: a box that HAS edges is never wrapped, and dagre lays its
-  // components out side by side — the strip comes back the moment the estate's
-  // own references arrive. Pack them first, so the member shelves below see the
-  // sizes the boxes really need.
-  const boxGrids = boxes ? packBoxComponents(layout, ir, boxes, bandOf) : new Map<string, RowGrid>();
-  if (boxKey === "byStack" && boxes) packMemberBoxes(layout, ir, boxes);
-  // The module sub-boxes (#393 B) and the count badges (#393 C), both over the
-  // boxes dagre just produced. A box's bands come from whichever pass shaped it
-  // — the wrap when it is edgeless, the component pack when it is not.
-  if (boxes) {
-    addBandBoxes(layout, new Map([...boxGrids, ...chains.grids]), footprints(ir, face.overrides));
-    applyBadges(layout.groups, opts.groupBadges);
-  }
+  // The after-passes, the same ones the logical lens runs (#396 finding 1).
+  packEstateBoxes(layout, face, { members: boxKey === "byStack", ...(opts.groupBadges ? { badges: opts.groupBadges } : {}) });
   const svg = renderSvg(ir, layout, {
     fit: true,
     hideTitle: true,

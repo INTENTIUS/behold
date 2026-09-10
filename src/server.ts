@@ -886,6 +886,18 @@ const RUNTIME_LEXICONS = new Set(["k8s"]);
  * choudoufu estate gets the identical object back — the same discipline
  * `addChoudoufuReferenceEdges` follows.
  */
+/** The groups a logical card's title may drop the name of (#396 finding 1):
+ * the estate's member/root boxes, off the IR the projection was handed. The
+ * lens draws containers of its own (`estate terralith-4`, `root prod`) while
+ * the ids stay `<member>/<address>`, so without this a choudoufu or Terraform
+ * card reads its whole composed id at `logical` and its address everywhere
+ * else. Undefined on a graph that carries no such grouping, where it is the
+ * no-op it has always been. */
+function cardPrefixesOf(ir: GraphIR): Record<string, string[]> | undefined {
+  const byStack = (ir.groups as { byStack?: Record<string, string[]> }).byStack;
+  return byStack && Object.keys(byStack).length ? byStack : undefined;
+}
+
 function applyTerraformPasses(ir: GraphIR, detail: number | undefined): TerraformElision {
   if (!hasTerraformEntities(ir)) return { dropped: {}, total: 0 };
   groupTerraformByRoot(normalizeTerraformNodes(ir));
@@ -2060,7 +2072,7 @@ export function createApp(
           // detector as `markOperatorHome` above, run again against the box
           // KEYS the projection just minted — see src/operator.ts's
           // `operatorHomeBoxMarks`.
-          const { svg } = renderArchitecture(projected, byContainer, { groupMarks: operatorHomeBoxMarks(ir, namespaceBoxes ?? {}), groupBadges: operatorHomeBoxBadges(ir, namespaceBoxes ?? {}) });
+          const { svg } = renderArchitecture(projected, byContainer, { groupMarks: operatorHomeBoxMarks(ir, namespaceBoxes ?? {}), groupBadges: operatorHomeBoxBadges(ir, namespaceBoxes ?? {}), ...(cardPrefixesOf(ir) ? { cardPrefixes: cardPrefixesOf(ir)! } : {}) });
           // #393 item 5: the roots note rides the logical lens too. The lens
           // re-projects the same cards into the same boxes it was given, so
           // which roots those are is no less true here than at `resources` —
@@ -2169,7 +2181,7 @@ export function createApp(
         // never calls `markOperatorHome` on `base` (it returns before the
         // entity branch below would), so the box mark is derived straight from
         // `operatorHomes` — the same detector, not a second one.
-        const { svg } = renderArchitecture(projected, byContainer, { groupMarks: operatorHomeBoxMarks(base, namespaceBoxes ?? {}), groupBadges: operatorHomeBoxBadges(base, namespaceBoxes ?? {}) });
+        const { svg } = renderArchitecture(projected, byContainer, { groupMarks: operatorHomeBoxMarks(base, namespaceBoxes ?? {}), groupBadges: operatorHomeBoxBadges(base, namespaceBoxes ?? {}), ...(cardPrefixesOf(base) ? { cardPrefixes: cardPrefixesOf(base)! } : {}) });
         // `byContainer` rides along (behold#100): the nesting IS the projection's
         // primary output, and until now it was only observable by reading the
         // rendered SVG, which is not something an acceptance run can assert on.
@@ -2740,7 +2752,7 @@ export function createApp(
           const { ir: projected, byContainer, namespaceBoxes } = projectTopology(ir, env, boundContext, await estateSourceRoots(query));
           // #234's free rider, the logical lens's half (pinhole#119) — see
           // /api/graph's estate branch.
-          const { svg } = renderArchitecture(projected, byContainer, { groupMarks: operatorHomeBoxMarks(ir, namespaceBoxes ?? {}), groupBadges: operatorHomeBoxBadges(ir, namespaceBoxes ?? {}) });
+          const { svg } = renderArchitecture(projected, byContainer, { groupMarks: operatorHomeBoxMarks(ir, namespaceBoxes ?? {}), groupBadges: operatorHomeBoxBadges(ir, namespaceBoxes ?? {}), ...(cardPrefixesOf(ir) ? { cardPrefixes: cardPrefixesOf(ir)! } : {}) });
           const note = [
             notesFor("logical", projected, undefined, logicalBefore),
             coverNote,
@@ -2912,7 +2924,7 @@ export function createApp(
         // continuation below would), so the box mark is derived straight from
         // `operatorHomes` on the same pre-projection IR — the same detector,
         // not a second one.
-        const { svg } = renderArchitecture(projected, byContainer, { groupMarks: operatorHomeBoxMarks(projectionInput, namespaceBoxes ?? {}), groupBadges: operatorHomeBoxBadges(projectionInput, namespaceBoxes ?? {}) });
+        const { svg } = renderArchitecture(projected, byContainer, { groupMarks: operatorHomeBoxMarks(projectionInput, namespaceBoxes ?? {}), groupBadges: operatorHomeBoxBadges(projectionInput, namespaceBoxes ?? {}), ...(cardPrefixesOf(projectionInput) ? { cardPrefixes: cardPrefixesOf(projectionInput)! } : {}) });
         // See /api/graph's logical branch — `byContainer` is carried for the
         // same reason (behold#100). The wrong-tier note (#158) joins here too:
         // the logical view collapses to near-empty at a wrong tier exactly as
