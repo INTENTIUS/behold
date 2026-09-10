@@ -142,6 +142,45 @@ export function edgelessNote(zoom: Zoom, ir: NotableGraph, detail?: number, inst
   return "no edges — nothing in this estate references anything else";
 }
 
+/**
+ * A zoom that changes nothing for the kind of member being served (#396
+ * finding 3).
+ *
+ * `composites` and `attributes` are detail tiers of a CHANT read: the first
+ * adds the component DAG's ownership edges, the second the parsed attribute
+ * bodies. A member of another kind answers neither question, so the picture
+ * that comes back is the resources picture, byte for byte — and the picker
+ * offered three rows that produced one image with nothing saying why. That is
+ * #131's defect again, one kind further out, and it gets #131's answer: a
+ * caption, not an error and not a hidden row. The zoom stays offered because it
+ * is honest to ask, and the note says what the asking got.
+ *
+ * A choudoufu member's read is `live-check`, which takes no detail at all — so
+ * both zooms are the resources graph. A terraform member's read is pinned at
+ * detail 2 or better (src/terraform-member.ts) and the blocks it DRAWS change
+ * at 3 — outputs and variables arrive — so only `composites` is the no-op
+ * there.
+ *
+ * Silent on an estate of several kinds: `composites` genuinely changes the
+ * chant member's half of that picture, and a note that said otherwise would be
+ * false about the part of the canvas it is read next to.
+ */
+const SAME_AS_RESOURCES: Readonly<Record<string, readonly Zoom[]>> = {
+  choudoufu: ["composites", "attributes"],
+  terraform: ["composites"],
+};
+
+/** How a kind is spelled in the note — the word its own tooling uses. */
+const KIND_WORD: Readonly<Record<string, string>> = { choudoufu: "choudoufu", terraform: "Terraform", chant: "chant" };
+
+export function unchangedZoomNote(zoom: Zoom, kinds: readonly string[]): string | undefined {
+  const distinct = new Set(kinds);
+  if (distinct.size !== 1) return undefined;
+  const kind = [...distinct][0]!;
+  if (!SAME_AS_RESOURCES[kind]?.includes(zoom)) return undefined;
+  return `${zoom}: same as resources on a ${KIND_WORD[kind] ?? kind} estate`;
+}
+
 /** The slice of a node the namespace-mismatch check reads (#192). */
 interface NsNoteNode {
   lexicon?: string;

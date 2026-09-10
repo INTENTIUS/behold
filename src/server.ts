@@ -58,7 +58,7 @@ import { applyHelmRenderDrift, readHelmRenderDrift } from "./helm-drift.ts";
 import { addClusterAnchorEdges } from "./cluster-anchor.ts";
 import { projectTopology } from "./logical.ts";
 import { addCompositeDepsCounted } from "./composite-deps.ts";
-import { notesFor, tierMismatchNote, namespaceMismatchNote, namespaceJoinNote, type Zoom } from "./zoom-notes.ts";
+import { notesFor, tierMismatchNote, namespaceMismatchNote, namespaceJoinNote, unchangedZoomNote, type Zoom } from "./zoom-notes.ts";
 import { resourcesByComponent, nonResourceEntities } from "./resources.ts";
 import { summarizePlan } from "./reconcile.ts";
 import { renderGraph, renderArchitecture, renderBanded, renderCarveEstate, renderCarveMorph, renderMoveMorph } from "./render.ts";
@@ -2319,15 +2319,21 @@ export function createApp(
       // actually asked for on a composed estate, so this reads as it did for
       // every other view.
       const cdNote = lexiconNote(ir);
+      // #396 finding 3: a zoom the served kind's read does not distinguish
+      // renders the resources picture, and until now said nothing — three
+      // picker rows, one image. One clause, through the same module every
+      // other caption comes from.
+      const sameNote = unchangedZoomNote(srcZoom, estateMembers(estateDirs).map((m) => m.kind));
       const srcNote =
         [
-          [estateLensNote, tf.note, cdNote].filter(Boolean).join(" · ") ||
+          [estateLensNote, tf.note, cdNote, sameNote].filter(Boolean).join(" · ") ||
             (multi ? undefined : notesFor(srcZoom, ir, srcCompositeEdgesAttached, undefined, opts.detail ?? 2, cdNote)),
           collapsedNote,
         ]
           .filter(Boolean)
           .join(" · ") || undefined;
-      const srcNoteShort = tf.noteShort ? [estateLensNote, tf.noteShort, cdNote, collapsedNote].filter(Boolean).join(" · ") : undefined;
+      const srcNoteShort =
+        tf.noteShort || sameNote ? [estateLensNote, tf.noteShort ?? tf.note, cdNote, sameNote, collapsedNote].filter(Boolean).join(" · ") : undefined;
       return c.json({
         ir,
         svg,
@@ -2818,6 +2824,8 @@ export function createApp(
             detail ?? 2,
             ir.edges.length === 0 && cfg.projectDirs.some((d) => memberKindOf(d) === "choudoufu") ? choudoufuLexiconNote() : undefined,
           ),
+          // #396 finding 3 — the same clause the source graph carries.
+          unchangedZoomNote(zoom, estateMembers(cfg.projectDirs).map((m) => m.kind)),
           collapsed ? collapseNote(collapsed.collapsed) : undefined,
         ]
           .filter(Boolean)

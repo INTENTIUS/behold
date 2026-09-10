@@ -187,6 +187,23 @@ describe("GET /api/graph over a bare Terraform directory (#384)", () => {
     expect(graphIr).not.toHaveBeenCalled();
   });
 
+  // #396 finding 3: the composites zoom asks about component ownership, which
+  // a Terraform estate does not have — so it renders the resources picture and
+  // now says so. detail 3 really does change (the outputs and variables
+  // arrive), so it says nothing.
+  it("says composites is the resources picture, and says nothing at attributes", async () => {
+    const dir = estate();
+    registerMemberKind({ kind: "terraform", probe: hasTerraformRoots, expects: "a Terraform root", via: { tool: () => "lexicon\0v1", read: (async () => fixture()) as never } });
+
+    const app = serve(dir);
+    const composites = (await (await app.request("/api/graph?detail=1")).json()) as { meta: { note?: string; noteShort?: string } };
+    const attributes = (await (await app.request("/api/graph?detail=3")).json()) as { meta: { note?: string } };
+
+    expect(composites.meta.note).toContain("composites: same as resources on a Terraform estate");
+    expect(composites.meta.noteShort).toContain("composites: same as resources on a Terraform estate");
+    expect(attributes.meta.note ?? "").not.toContain("same as resources");
+  });
+
   it("draws no empty member box for the directory it composed (item 6)", async () => {
     const dir = estate();
     registerMemberKind({ kind: "terraform", probe: hasTerraformRoots, expects: "a Terraform root", via: { tool: () => "lexicon\0v1", read: (async () => fixture()) as never } });

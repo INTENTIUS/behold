@@ -7,6 +7,7 @@ import {
   tierMismatchNote,
   namespaceMismatchNote,
   namespaceJoinNote,
+  unchangedZoomNote,
   type NotableGraph,
 } from "./zoom-notes.ts";
 
@@ -332,5 +333,28 @@ describe("namespaceJoinNote (#221)", () => {
 
   it("says nothing on an estate that needed no join", () => {
     expect(namespaceJoinNote([])).toBeUndefined();
+  });
+});
+
+describe("unchangedZoomNote (#396 finding 3)", () => {
+  it("says composites and attributes are the resources picture on a choudoufu estate", () => {
+    expect(unchangedZoomNote("composites", ["choudoufu"])).toBe("composites: same as resources on a choudoufu estate");
+    expect(unchangedZoomNote("attributes", ["choudoufu", "choudoufu"])).toBe("attributes: same as resources on a choudoufu estate");
+    // The zoom this is measured against says nothing about itself.
+    expect(unchangedZoomNote("resources", ["choudoufu"])).toBeUndefined();
+    expect(unchangedZoomNote("logical", ["choudoufu"])).toBeUndefined();
+  });
+
+  it("says it of composites alone on a Terraform estate — detail 3 really does add the interface", () => {
+    expect(unchangedZoomNote("composites", ["terraform"])).toBe("composites: same as resources on a Terraform estate");
+    expect(unchangedZoomNote("attributes", ["terraform"])).toBeUndefined();
+  });
+
+  it("stays silent on a chant estate, and on one of several kinds", () => {
+    expect(unchangedZoomNote("composites", ["chant"])).toBeUndefined();
+    // `composites` genuinely changes the chant member's half of this canvas,
+    // and the note is read next to all of it.
+    expect(unchangedZoomNote("composites", ["chant", "choudoufu"])).toBeUndefined();
+    expect(unchangedZoomNote("composites", [])).toBeUndefined();
   });
 });
