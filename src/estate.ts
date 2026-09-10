@@ -138,6 +138,18 @@ export interface EstateOverlayResult {
    * declared rather than the member itself — see `estateNamespaceScopes`.
    * Sorted by name; empty on an estate with no such binding. */
   joined: { name: string; namespace: string }[];
+  /**
+   * Each member's own graph-level `meta`, keyed by the name composition
+   * namespaced it under — captured before `composeStacks`, which keeps
+   * nothing above `nodes`/`edges`/`groups`.
+   *
+   * `GraphIR` declares no `meta`, and that is the point: a lexicon states
+   * graph-level facts there (`meta._behaviour`, #398) and chant's graph JSON
+   * carries them through `runChantJson` verbatim. Read as `unknown` and
+   * validated by whoever claims a key — this module composes, it does not
+   * interpret. Absent for a member whose read carried none.
+   */
+  memberMeta: Record<string, unknown>;
 }
 
 /** A short human reason from a failure. ChantCliError's message leads with
@@ -431,6 +443,7 @@ export async function composeEstateOverlay(
   const dropped: { name: string; reason: string }[] = [];
   const joined: { name: string; namespace: string }[] = [];
   const stacks: ({ name: string; ir: GraphIR } | undefined)[] = new Array(projectDirs.length);
+  const memberMeta: Record<string, unknown> = {};
   // #221: where the estate itself says a member's objects run. Resolved before
   // the live pass because it is an argument TO that pass.
   const scopes = await estateNamespaceScopes(projectDirs, opts);
@@ -439,7 +452,12 @@ export async function composeEstateOverlay(
     const namespace = scopes.get(dir);
     try {
       const live = { ...opts, live: true, overlay: true, ...(namespace ? { namespace } : {}) };
-      stacks[i] = { name, ir: namespaceRuntimeOwners(name, classify(await memberLive(dir, live))) };
+      const read = await memberLive(dir, live);
+      // Before composition, while the member's own read is still whole — see
+      // `memberMeta` on the result.
+      const own = (read as { meta?: unknown }).meta;
+      if (own !== undefined) memberMeta[name] = own;
+      stacks[i] = { name, ir: namespaceRuntimeOwners(name, classify(read)) };
       // Reported only for a read that actually happened — an unobserved
       // member was not read anywhere, joined namespace or not.
       if (namespace) joined.push({ name, namespace });
@@ -468,5 +486,6 @@ export async function composeEstateOverlay(
     // Concurrent reads finish in whatever order the clusters answer; the note
     // this feeds should read the same twice.
     joined: joined.sort((a, b) => a.name.localeCompare(b.name)),
+    memberMeta,
   };
 }

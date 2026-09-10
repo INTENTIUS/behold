@@ -132,6 +132,7 @@ import { pickAutoSyncOps, splitForgeRouted, suspendedByRollback, type AutoSyncMo
 import { sourceCommits, openRollbackBranches } from "./history.ts";
 import { composeEstate, composeEstateOverlay, estateMembers, withoutJoinedMembers } from "./estate.ts";
 import { statusVocabulary } from "./status-vocabulary.ts";
+import { attachBehaviour, type BehaviourMember } from "./behaviour.ts";
 import { addEstateMemberEdges } from "./estate-edges.ts";
 import { addChoudoufuReferenceEdges, liveCheckToIr, readLiveCheck, setChoudoufuRunner, setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
 import {
@@ -144,7 +145,7 @@ import {
   type TerraformElision,
 } from "./terraform-lens.ts";
 import { choudoufuDiffNodes, readChoudoufuLive, type Runner as ChoudoufuRunner } from "./choudoufu-live.ts";
-import { choudoufuLexiconNote } from "./choudoufu-refs.ts";
+import { choudoufuLexiconNote, setEstateLexiconRead, type LexiconRead } from "./choudoufu-refs.ts";
 import { discoverCarvePlans, moveMembers, moveReceipt, movesPayload, readCarvePlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
 import { memberKindOf, memberKindSpec, servesAsEstate } from "./member-kind.ts";
 import { TerraformReadError, discoverTerraformRoots, terraformRootsNote, terraformRootsNoteShort } from "./terraform-member.ts";
@@ -231,7 +232,12 @@ export interface ServerOptions {
    * route test can answer `live-mv -dry-run` from a recorded document with
    * no binary. Never widens the write surface: the only `live-mv` spelling
    * that reaches it is `dryRunArgs`' (src/choudoufu-moves.ts). */
-  choudoufu?: { run: ChoudoufuRunner };
+  choudoufu?: {
+    run: ChoudoufuRunner;
+    /** #334: a test that wants intra-estate edges hands in a reader over a
+     * recorded lexicon IR; absent, a fake choudoufu means no lexicon spawn. */
+    lexicon?: LexiconRead;
+  };
   port: number;
 }
 
@@ -899,6 +905,7 @@ export function createApp(
   // A test's fake choudoufu answers every read, the member via's included
   // (src/choudoufu-member.ts `setChoudoufuRunner`); undefined in production.
   setChoudoufuRunner(cfg.choudoufu?.run);
+  setEstateLexiconRead(cfg.choudoufu ? (cfg.choudoufu.lexicon ?? null) : undefined);
 
   // Carve mode (#252) claims /api/graph, /api/project and friends before the
   // project-shaped handlers are registered — see carveRoutes.
@@ -1790,7 +1797,11 @@ export function createApp(
               },
             ]
           : []),
-        { method: "GET", path: "/api/overlay", desc: "live drift overlay for ?env= — same shape/params as /api/graph, plus runtime=1" },
+        {
+          method: "GET",
+          path: "/api/overlay",
+          desc: "live drift overlay for ?env= — same shape/params as /api/graph, plus runtime=1; each priced entity carries attrs._behaviour (cost/headroom/errorRate/resilience/rightSize/provenance, #398) and meta.behaviour holds the engine, its sums, a refusal or an absent line",
+        },
         { method: "GET", path: "/api/layout", desc: "hand-layout sidecar (.behold/layout.json): ?lens=<key> → {lens, deltas, writable}; no lens → every lens" },
         { method: "POST", path: "/api/layout", desc: "store one lens's deltas: JSON body {lens, deltas: {<node id>: {dx,dy,dw,dh}}} (the only file behold writes in your project)" },
         { method: "GET", path: "/api/diff", desc: "per-node live diff for ?env= — {env, nodes: {<id>: {observed, diff, health, fieldDrift}}}" },
@@ -2691,6 +2702,18 @@ export function createApp(
         // the same boxes the single-project runtime view draws, which is the
         // point of asking for the tier. Every other estate view keeps
         // `byStack`.
+        // #398: the behaviour block, from each member's own nodes or, when a
+        // member painted none, from the report document at its root. Before
+        // the collapse below, so the sums add the estate's real entities
+        // rather than the one card a collapsed box leaves behind, and after
+        // every edge/paint pass, so nothing downstream can invent a figure.
+        // The overlay only: `/api/graph` is the source graph and a prediction
+        // about a live account has no business on it (src/behaviour.ts).
+        const behaviour = attachBehaviour(
+          ir,
+          estateMembers(cfg.projectDirs).map((m): BehaviourMember => ({ name: m.name, dir: m.dir, meta: est.memberMeta[m.name] })),
+          env,
+        );
         // #393 C: the same collapse lens and the same count badges the source
         // graph carries — one flag, both routes, or the palette command would
         // undo itself the moment an env was picked.
@@ -2730,7 +2753,7 @@ export function createApp(
         return c.json({
           ir,
           svg,
-          meta: { projectDir: cfg.projectDir, env, mode: "overlay", estate: est.total, vocabulary, ...(note ? { note } : {}) },
+          meta: { projectDir: cfg.projectDir, env, mode: "overlay", estate: est.total, vocabulary, behaviour, ...(note ? { note } : {}) },
         });
       }
       // #261: `runtime` forces detail 3 exactly as `logical` does, and for the
@@ -2742,7 +2765,13 @@ export function createApp(
       // Reclassify wiring/examples so they don't read as "pending" over a done
       // deploy (see reclassifyOverlay): Parameters take their deployed
       // component's status, src/examples/ nodes go neutral + `_byo`.
-      let ir = joinCarvedSources(reclassifyOverlay(await graphIr(cfg.projectDir, opts)), (await carveStatesFor(cfg.projectDir)).values(), cfg.projectDir).ir;
+      const read = await graphIr(cfg.projectDir, opts);
+      // #398: the lexicon's graph-level behaviour statement, taken off the
+      // read itself — `GraphIR` declares no `meta`, and the passes below have
+      // no reason to carry one (see src/behaviour.ts and estate.ts's
+      // `memberMeta`, which captures the same fact per member).
+      const readMeta = (read as { meta?: unknown }).meta;
+      let ir = joinCarvedSources(reclassifyOverlay(read), (await carveStatesFor(cfg.projectDir)).values(), cfg.projectDir).ir;
       const boundContext = await boundK8sContext(env);
       // The `cluster/` build root merges in — the estates declare their k3d
       // cluster there, outside sourceDir (see clusterRootGraphIr) — painted
@@ -2864,6 +2893,9 @@ export function createApp(
           compositeEdgesAttached = 0;
         }
       }
+      // #398, the single-project half: one member, so an entity key in the
+      // report document IS the node id — nothing to prefix.
+      const behaviour = attachBehaviour(ir, [{ dir: cfg.projectDir, meta: readMeta }], env);
       // `boxes: "byContainer"` (#86) is a no-op unless attachRuntimeContainment
       // populated it above — same "harmless when absent" contract as byStack.
       const { svg } = renderGraph(ir, { boxes: "byContainer", radial: new URL(c.req.url).searchParams.get("radial") === "1" });
@@ -2890,7 +2922,7 @@ export function createApp(
       // that never had the attrs to derive edges from in the first place.
       const zoomNotes = notesFor(zoom, ir, compositeEdgesAttached, undefined, opts.detail ?? 2);
       const note = [tierNote, nsNote, zoomNotes].filter(Boolean).join(" · ");
-      return c.json({ ir, svg, meta: { projectDir: cfg.projectDir, env, mode: "overlay", vocabulary, ...(note ? { note } : {}) } });
+      return c.json({ ir, svg, meta: { projectDir: cfg.projectDir, env, mode: "overlay", vocabulary, behaviour, ...(note ? { note } : {}) } });
     } catch (err) {
       // #72: the same structured {error, code, remedy} the other read routes
       // return — this is in fact where a picked tier's creds gate USUALLY

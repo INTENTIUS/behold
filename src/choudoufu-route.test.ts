@@ -130,6 +130,30 @@ describe("GET /api/choudoufu/moves (#371)", () => {
     expect(body.meta.vocabulary.note).toBeUndefined();
   });
 
+  // #334: a fake choudoufu means no lexicon spawn — the overlay read used to
+  // shell a real chant for the estate's references and sat right under the
+  // five-second budget on a CI runner. A test that wants edges hands in a
+  // reader over a recorded lexicon IR instead.
+  it("spawns no lexicon read under the fake runner, and joins the edges a test's own reader hands in", async () => {
+    const { mono, teamA } = estate();
+    const broadcaster = new Broadcaster();
+    const lexicon = async () => ({
+      nodes: [],
+      edges: [{ from: "estate/aws_iam_role.team_a", to: "estate/aws_iam_policy.team_a", kind: "ref", viaAttr: "policy_arn" }],
+    }) as never;
+    const app = createApp(
+      { projectDir: mono, projectDirs: [mono, teamA], port: 0, choudoufu: { run: fakeChoudoufu([]), lexicon } },
+      broadcaster,
+      new FrameBuffer(),
+      new OpRunner({ projectDir: mono, broadcaster, onDone: () => {} }),
+    );
+    const started = Date.now();
+    const body = (await (await app.request("/api/graph")).json()) as { ir: { edges: Array<{ from: string; to: string }> } };
+    expect(Date.now() - started).toBeLessThan(3000); // no chant spawned for the join
+    // Joined on the member's own addresses, then composed under its short name.
+    expect(body.ir.edges).toContainEqual({ from: "mono/aws_iam_role.team_a", to: "mono/aws_iam_policy.team_a", kind: "ref", viaAttr: "policy_arn", inferred: true });
+  });
+
   it("is advertised on /api, and /api/project lists the plans found", async () => {
     const { app } = served();
     const api = (await (await app.request("/api")).json()) as { routes: Array<{ path: string }> };

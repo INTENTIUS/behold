@@ -100,6 +100,109 @@ preview-locked, and one load runs at a time (409 otherwise).
    web/app.js drives the same viewBox the wheel, the drag and "⤢ fit" drive.
    Nothing here fetches, so it works in a static export too.
 
+### The behaviour overlay (#398, M1 of #397)
+
+What the estate costs and where it runs out of headroom, on `/api/overlay`
+only. **behold never calls a behavioural engine**, never holds its key, and
+produces no figure of its own — it renders what a chant lexicon handed it, the
+way it already renders drift and the carve score. The one arithmetic it does is
+addition, and the result is named `sum` so nobody can read it as a bill.
+
+The contract's source of truth is the comment titled "The behaviour block,
+proposed" on INTENTIUS/behold#398 (chant#2356 is the writing half). Field names
+here match it exactly; `src/behaviour.ts` is the implementation and the
+validator.
+
+Per entity, `attrs._behaviour` on the overlay IR node — the channel `_status`,
+`_release` and `_carve` already ride: `{at: {traffic}, cost: {perHour,
+currency}, headroom: {cpu?, latency?}, errorRate, resilience: {failure, verdict:
+survives|degrades|fails, note?}, rightSize?: {suggestion, reason?}, provenance:
+{engine, version, tolerance, basis: modeled|validated}}`. An entity nothing
+priced carries **no `_behaviour` key at all**, never a zeroed block, and a
+missing headroom axis is absent rather than 0. The block stays on the node and
+there is deliberately no top-level `behaviour: {}` map: the SPA already walks
+`ir.nodes` reading `attrs._status`, and a colour-by-cost mode is that same walk,
+with no join.
+
+Two sources, in this order:
+
+1. `attrs._behaviour` on the nodes, as `chant graph --live --overlay` painted
+   them, with `meta._behaviour` beside them for the graph-level half.
+2. `behaviour.<env>.json` at a member's root — `{meta, entities: {<address>:
+   block}}` — read **only** when no node of that member carries the attr, and
+   **only on the overlay** (`/api/graph` is the source graph; a prediction
+   about a live account has no business on it). The file's keys are the
+   member's own addresses; behold prefixes them to reach the composed id
+   `<member>/<address>`.
+
+`meta.behaviour` carries the graph-level half: `engine`, `version`, `at`, the
+engine's own `total` when it stated one, else behold's `sum` and the same per
+box under `boxes[<boxKey>]` (`{perHour, currency, priced, unpriced}`). Mixed
+currencies produce no sum and a diagnostic — behold converts no currency. A
+malformed block is dropped whole with its reason in `diagnostics`, never
+half-rendered. A member with neither source gets `{absent: "…"}` naming both
+places behold looked; that is an absence, not a refusal, because nothing was
+configured.
+
+`meta.behaviour.refusal` is `{reason, remedy}` in the lexicon's own words,
+printed as it came, and it is present **instead of** everything above: a
+refusal emits no entity block at all and strips any that had arrived. The drift
+overlay is untouched either way — nothing in this pass reads or writes
+`_status`. `?logical=1` projects a different picture and carries no behaviour
+block in M1.
+
+### Colour by drift, cost or headroom (#399, M2)
+
+The SPA colours the graph by one of three modes. The mode is **client-side
+state** — `web/app.js`'s `colourMode`, persisted under `behold.colourBy` the way
+the theme is. It is deliberately NOT in `LENS_PARAMS`/`canonicalKey`: a lens
+param means "a different snapshot comes back", and a mode change changes no
+fetch at all. The block is already on every priced card, so a switch is a
+repaint of the SVG on screen.
+
+`drift` keeps the categorical fill and #393's vocabulary legend, unchanged. The
+two behaviour modes replace the card's FILL only, so the drift bar underneath
+keeps saying what chant observed. `cost` is a sequential scale over
+`cost.perHour` between the estate's own min and max; `headroom` is absolute over
+0..1 and reads **the lower of the axes present**. An entity with no block draws
+the drift overlay's neutral (`pinTokensFor().neutralFill`) and is marked
+`data-unpriced`, never the zero end of the scale — "nothing priced this" and
+"this is free" are opposite claims.
+
+Both ramps are derived from the active palette (`rampFor` in
+`web/behaviour-scale.js`), the way #229 derives the chrome: cost is a single hue
+off the accent walked in lightness away from the background — expensive is not a
+verdict behold gets to paint — and headroom rides the three status hues the
+drift overlay already anchors, degraded → foreign → managed.
+
+One legend per mode, in the Model tab. The Scope tab carries a totals row per
+box and per estate for the active mode: `cost` quotes `meta.behaviour.boxes[key]`
+and `.sum`, or `meta.behaviour.total` when the ENGINE stated one (labelled
+"engine total"); `headroom` has no server-side aggregate — no engine states one —
+so the SPA takes the scope's min and median itself and the row says "computed".
+Every row carries `n priced · m unpriced`. In drift mode there is no row.
+
+Everything either mode decides is pure in `web/behaviour-scale.js`, with
+`web/behaviour-scale.test.js` beside it; the SPA owns the fetches and the SVG.
+
+### Provenance on every figure, and the refusal (#401, M4)
+
+Every figure the SPA shows — the totals rows, the legend, and the inspect pane's
+`behaviour` section — carries `{engine} {version} · {tolerance} · {basis}`
+beside it, never once per page. `modeled` is spelled out on hover as "modeled,
+not billed": #397's one prohibition is a prediction presented as a bill, and the
+badge is where that is prevented. Provenance is per ENTITY in #398's contract, so
+a badge over a set (a box, the estate) says `mixed` on any field the set
+disagrees on rather than picking one.
+
+`meta.behaviour.refusal` disables both behaviour modes in the View tab and in
+⌘K — visibly, with the lexicon's reason and remedy as their tooltip — and prints
+those words verbatim where the legend would be. The drift overlay keeps
+rendering; it never depended on an engine. `meta.behaviour.absent` disables the
+same two modes with the absent line as their tooltip and prints **nothing**:
+nothing was configured, so nothing refused. `meta.behaviour.diagnostics` render
+in the Model tab under the legend.
+
 ## The carve loop (Terraform → chant, #230)
 
 `behold carve <report.json>` serves a `chant carve advise --json` peelability

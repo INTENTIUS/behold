@@ -560,7 +560,113 @@ const NON_CHANT_IR = {
   edges: [],
 };
 
-export function startStub(port, { carve = false, nonChant = false, choudoufu = false } = {}) {
+// ---------------------------------------------------------------------------
+// #399 M2 / #401 M4 of #397: an estate carrying the behaviour block.
+//
+// Two boxes, five cards, four of them priced and one deliberately not — the
+// unpriced card is the whole of #399's own acceptance test ("a node with no
+// behaviour block draws in a neutral colour … never a zero that could be
+// misread as free or empty"), and it has to be a card the smoke can point at.
+// Field names are #398's, exactly, and the figures are the ones the checks in
+// ui-smoke.mjs assert to the digit:
+//
+//   monolith/api   0.0416/h   headroom min 0.41
+//   monolith/db    0.2000/h   headroom min 0.10   (the estate's tightest)
+//   monolith/quiet  — no block at all —
+//   team-a/queue   0.0100/h   headroom min 0.95   (latency only: a missing
+//                                                  axis is ABSENT, not 0)
+//   team-a/edge    0.5000/h   headroom min 0.55
+//
+// `meta.behaviour` is what src/behaviour.ts's `attachBehaviour` really emits
+// for that set: the sum, the same per box, and one diagnostic. Three variants
+// — priced, refused, absent — because #401's refusal and M1's absence are two
+// different states with two different UIs and both have to be drivable.
+// ---------------------------------------------------------------------------
+const BEH_PROV = { engine: "acme-sim", version: "1.4.2", tolerance: "±15%", basis: "modeled" };
+export const BEH_BADGE = "acme-sim 1.4.2 · ±15% · modeled";
+export const BEH_AT = { traffic: "100 rps, p50" };
+const behBlock = (perHour, headroom) => ({
+  at: BEH_AT,
+  cost: { perHour, currency: "USD" },
+  headroom,
+  errorRate: 0.001,
+  resilience: { failure: "one zone lost", verdict: "survives", note: "two of three zones carry the load" },
+  rightSize: { suggestion: "t3.small", reason: "cpu never clears 40% at this level" },
+  provenance: BEH_PROV,
+});
+export const BEH_CARDS = [
+  { id: "monolith/api", box: "monolith", kind: "aws_ecs_service", status: "good", block: behBlock(0.0416, { cpu: 0.62, latency: 0.41 }) },
+  { id: "monolith/db", box: "monolith", kind: "aws_rds_instance", status: "good", block: behBlock(0.2, { cpu: 0.1, latency: 0.8 }) },
+  { id: "monolith/quiet", box: "monolith", kind: "aws_iam_role", status: "neutral", block: null },
+  { id: "team-a/queue", box: "team-a", kind: "aws_sqs_queue", status: "good", block: behBlock(0.01, { latency: 0.95 }) },
+  { id: "team-a/edge", box: "team-a", kind: "aws_cloudfront_distribution", status: "warn", block: behBlock(0.5, { cpu: 0.55, latency: 0.6 }) },
+];
+export const BEH_REFUSAL = {
+  reason: "the behavioural engine acme-sim is configured for this lexicon but did not answer.",
+  remedy: "Set CHANT_BEHAVIOUR_ENGINE_URL, or unset CHANT_BEHAVIOUR_ENGINE to render drift alone.",
+};
+export const BEH_ABSENT =
+  "no behaviour block: no node carries attrs._behaviour (what `chant graph --live --overlay` would paint from the lexicon's engine), and no report document at monolith/behaviour.live.json, team-a/behaviour.live.json";
+export const BEH_DIAGNOSTIC = "dropped the behaviour block on monolith/legacy: cost.perHour is not a finite number";
+const BEH_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 320" width="1100" height="320">
+  <style>:root{--pin-bg0:#0d1117;--pin-text:#e6edf3}</style>
+  <rect x="0" y="0" width="1100" height="320" fill="var(--pin-bg0, #0d1117)"/>
+  <rect data-group-id="monolith" x="20" y="40" width="600" height="220" rx="10" fill="none" stroke="var(--pin-edge, #444)"/>
+  <text x="30" y="30" font-size="12" fill="var(--pin-textMuted, #999)">monolith</text>
+  <rect data-group-id="team-a" x="640" y="40" width="430" height="220" rx="10" fill="none" stroke="var(--pin-edge, #444)"/>
+  <text x="650" y="30" font-size="12" fill="var(--pin-textMuted, #999)">team-a</text>
+${BEH_CARDS.map((c, i) => nodeSvg(c.id, i < 3 ? 40 + i * 190 : 100 + i * 190, c.status, c.id.split("/")[1])).join("")}
+</svg>`;
+const BEH_VOCABULARY = { of: "choudoufu", labels: { good: "bound", warn: "unowned", accent: "pending", neutral: "not observed", runtime: "runtime child" } };
+const BEH_PROJECT = {
+  projectDir: "/estates/behaviour-estate",
+  projectDirs: ["/estates/behaviour-estate/monolith", "/estates/behaviour-estate/team-a"],
+  recents: [],
+  environments: ["live"],
+  lexicons: [],
+  currentEnv: "live",
+  targets: [],
+  memberKinds: ["choudoufu", "choudoufu"],
+};
+/** The overlay meta for one of the three behaviour states. Exported so the
+ * smoke asserts against the same numbers the stub serves rather than a second
+ * copy of them that can drift. */
+export function behaviourMeta(variant) {
+  if (variant === "refused") return { refusal: BEH_REFUSAL };
+  if (variant === "absent") return { absent: BEH_ABSENT };
+  return {
+    engine: BEH_PROV.engine,
+    version: BEH_PROV.version,
+    at: BEH_AT,
+    sum: { perHour: 0.7516, currency: "USD", priced: 4, unpriced: 1 },
+    boxes: {
+      monolith: { perHour: 0.2416, currency: "USD", priced: 2, unpriced: 1 },
+      "team-a": { perHour: 0.51, currency: "USD", priced: 2, unpriced: 0 },
+    },
+    diagnostics: [BEH_DIAGNOSTIC],
+  };
+}
+function behaviourIr(variant) {
+  return {
+    nodes: BEH_CARDS.map((c) => ({
+      id: c.id,
+      kind: c.kind,
+      lexicon: "choudoufu",
+      attrs: {
+        _status: c.status,
+        estate: c.box,
+        // A refusal emits no entity block at all and strips any that arrived
+        // (src/behaviour.ts); an absence never had one. Either way the node the
+        // SPA sees carries nothing, which is what makes the modes undrawable.
+        ...(c.block && variant === "priced" ? { _behaviour: c.block } : {}),
+      },
+    })),
+    edges: [],
+    groups: { byStack: { monolith: BEH_CARDS.filter((c) => c.box === "monolith").map((c) => c.id), "team-a": BEH_CARDS.filter((c) => c.box === "team-a").map((c) => c.id) } },
+  };
+}
+
+export function startStub(port, { carve = false, nonChant = false, choudoufu = false, behaviour = null } = {}) {
   // #228: the hand-layout sidecar, in memory instead of `.behold/layout.json`
   // — the SAME wire contract src/server.ts serves (lens-keyed deltas, a
   // `writable` flag on the read), so the smoke drives the client's whole sync
@@ -667,6 +773,48 @@ export function startStub(port, { carve = false, nonChant = false, choudoufu = f
       if (path === "/api/ci") return json({ stages: [], jobs: [], forge: null });
       if (path === "/api/ops") return json({ ops: [], adoptLexicons: [], autoSync: "off" });
       if (path === "/api/layout") return json({ lens: url.searchParams.get("lens"), writable: false, reason: "a carve report isn't a project", deltas: {} });
+    }
+    if (behaviour) {
+      const json = (body) => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify(body));
+      };
+      if (path === "/api/project") return json(BEH_PROJECT);
+      // The block rides the OVERLAY only — src/behaviour.ts is explicit that a
+      // prediction about a live account has no business on the source graph —
+      // so `/api/graph` answers the same cards with no `meta.behaviour` at all,
+      // and the modes have to disable themselves there too.
+      if (path === "/api/graph") {
+        return json({
+          ir: behaviourIr("absent"),
+          svg: BEH_SVG,
+          meta: { projectDir: BEH_PROJECT.projectDir, env: null, tier: null, target: null, estate: 2, mode: "graph" },
+        });
+      }
+      if (path === "/api/overlay") {
+        return json({
+          ir: behaviourIr(behaviour),
+          svg: BEH_SVG,
+          meta: {
+            projectDir: BEH_PROJECT.projectDir,
+            env: "live",
+            tier: null,
+            target: null,
+            estate: 2,
+            mode: "overlay",
+            vocabulary: BEH_VOCABULARY,
+            behaviour: behaviourMeta(behaviour),
+          },
+        });
+      }
+      if (path === "/api/diff") return json({ env: "live", nodes: {} });
+      if (path === "/api/substrates") return json({ substrates: [] });
+      if (path === "/api/resources") return json({ byComponent: {} });
+      if (path === "/api/ci") return json({ stages: [], jobs: [], forge: null });
+      if (path === "/api/ops") return json({ ops: [], adoptLexicons: [], autoSync: "off" });
+      if (path === "/api/history") return json({ commits: [] });
+      if (path === "/api/demos") return json({ demos: [] });
+      if (path === "/api/layout") return json({ lens: url.searchParams.get("lens"), writable: false, reason: "a stub", deltas: {} });
     }
     if (choudoufu) {
       const json = (body) => {

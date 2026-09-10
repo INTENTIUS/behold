@@ -11,7 +11,7 @@ import { chromium } from "playwright";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { startStub, JSON_FIXTURE, BOX, EDGE_VIA, PAL_FAR, PAL_MEMBER } from "./stub.mjs";
+import { startStub, JSON_FIXTURE, BOX, EDGE_VIA, PAL_FAR, PAL_MEMBER, BEH_BADGE, BEH_REFUSAL, BEH_ABSENT, BEH_DIAGNOSTIC } from "./stub.mjs";
 import { THEMES, DEFAULT_THEME } from "../web/themes.js";
 import { tokensFor, pinTokensFor, colorForCategory, setTheme, hexToOklch, contrast } from "../web/theme.js";
 import { helmIconFor, PLATE_FILL } from "../src/icon-packs.ts";
@@ -1204,6 +1204,247 @@ try {
   } finally {
     await chdfPage.close();
     chdfServer.close();
+  }
+
+  // ---- #399 M2 / #401 M4 of #397: colour by drift, cost or headroom --------
+  // Three stubs of the same estate — priced, refused, absent — because those
+  // are three different UIs (a scale, the lexicon's refusal, and a pair of
+  // disabled controls that print nothing) and only the first draws a scale.
+  const behNeutral = pinTokensFor(THEMES[DEFAULT_THEME]).neutralFill.toLowerCase();
+  const modeBtn = (p, mode) => p.locator(`#panel-zoom button:text-is("${mode}")`);
+
+  {
+    const behServer = await startStub(PORT + 4, { behaviour: "priced" });
+    const behPage = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+    const behErrors = [];
+    behPage.on("pageerror", (e) => behErrors.push(String(e)));
+    try {
+      await behPage.goto(`http://localhost:${PORT + 4}/`);
+      await behPage.waitForSelector('#graph svg [data-node-id="monolith/api"]', { timeout: 20000 });
+      await behPage.click('#panel-tabs button[data-tab="view"]');
+      await behPage.waitForTimeout(100);
+
+      // Drift first: the mode the SPA has always been in, and the legend #393
+      // gave it. Nothing about M2 may change either.
+      check("drift is the mode a fresh SPA lands in", await modeBtn(behPage, "drift").evaluate((b) => b.classList.contains("active")));
+      await behPage.click('#panel-tabs button[data-tab="model"]');
+      await behPage.waitForTimeout(100);
+      const driftLegend = await behPage.locator("#tab-model").innerText();
+      check("the drift legend is still #393's vocabulary legend", /drift · live/i.test(driftLegend) && driftLegend.includes("bound") && driftLegend.includes("unowned"));
+      const driftFill = (await behPage.getAttribute('[data-node-id="monolith/quiet"] [data-cat="fill"]', "fill")).toLowerCase();
+      check("…and in drift the unpriced card wears its category hue like every other card", driftFill !== behNeutral);
+      check("…with no unpriced marks on the canvas at all", (await behPage.locator("#graph [data-unpriced]").count()) === 0);
+
+      // ---- cost -----------------------------------------------------------
+      await behPage.click('#panel-tabs button[data-tab="view"]');
+      await behPage.waitForTimeout(50);
+      await modeBtn(behPage, "cost").click();
+      await behPage.waitForTimeout(150);
+
+      const fills = {};
+      for (const id of ["monolith/api", "monolith/db", "monolith/quiet", "team-a/queue", "team-a/edge"]) {
+        fills[id] = (await behPage.getAttribute(`[data-node-id="${id}"] [data-cat="fill"]`, "fill")).toLowerCase();
+      }
+      // #399's own acceptance test, on the canvas: the card with no block is
+      // the drift overlay's neutral, and NOT the colour the cheapest priced
+      // card got — which is exactly what "never a zero that could be misread
+      // as free" forbids.
+      check("an unpriced card draws the drift overlay's neutral in cost mode", fills["monolith/quiet"] === behNeutral);
+      check("…and not the zero end of the scale", fills["monolith/quiet"] !== fills["team-a/queue"]);
+      check("…while every priced card takes a colour off the scale", ["monolith/api", "monolith/db", "team-a/queue", "team-a/edge"].every((id) => fills[id] !== behNeutral));
+      check("the cheapest and the dearest card are not the same colour", fills["team-a/queue"] !== fills["team-a/edge"]);
+      check("the unpriced card is marked as such, not merely coloured", (await behPage.locator('#graph [data-unpriced="1"]').count()) === 1);
+      check("the status strip says which colour the graph is in", (await behPage.locator("#statusbar").innerText()).includes("colour: cost"));
+
+      await behPage.click('#panel-tabs button[data-tab="model"]');
+      await behPage.waitForTimeout(100);
+      const costLegend = await behPage.locator("#tab-model").innerText();
+      check("the cost legend labels both ends of the estate's own range", costLegend.includes("0.0100 USD/h") && costLegend.includes("0.5000 USD/h"));
+      check("…and counts the priced against the unpriced", costLegend.includes("4 priced · 1 unpriced"));
+      check("…and says what the neutral cards are", costLegend.includes("unpriced — no behaviour block"));
+      check("…and is the cost legend, not the drift one", /cost · live/i.test(costLegend) && !costLegend.includes("bound"));
+      check("M1's diagnostics show under the legend", costLegend.includes(BEH_DIAGNOSTIC));
+      check("the legend's figures carry the provenance badge", costLegend.includes(BEH_BADGE));
+
+      await behPage.click('#panel-tabs button[data-tab="scope"]');
+      await behPage.waitForTimeout(100);
+      const costScope = await behPage.locator("#tab-scope").innerText();
+      // The server's own sums, quoted — per box and per estate — each with its
+      // priced/unpriced split and its badge.
+      check("the scope panel totals the boxes in cost mode", costScope.includes("0.2416 USD/h · 2 priced · 1 unpriced") && costScope.includes("0.5100 USD/h · 2 priced · 0 unpriced"));
+      check("…and the estate", costScope.includes("0.7516 USD/h · 4 priced · 1 unpriced"));
+      check("…naming which box each figure is for", /monolith\n0\.2416 USD\/h/.test(costScope) && /estate\n0\.7516 USD\/h/.test(costScope));
+      check("…with a badge on every figure", (await behPage.locator("#tab-scope .behaviour-badge").count()) === 3);
+      const totalBadge = behPage.locator("#tab-scope .behaviour-badge").first();
+      check("the badge reads {engine} {version} · {tolerance} · {basis}", (await totalBadge.innerText()) === BEH_BADGE);
+      check("…and spells `modeled` out as `modeled, not billed` on hover", (await totalBadge.getAttribute("title")).includes("modeled, not billed"));
+
+      // ---- headroom -------------------------------------------------------
+      await behPage.click('#panel-tabs button[data-tab="view"]');
+      await behPage.waitForTimeout(50);
+      await modeBtn(behPage, "headroom").click();
+      await behPage.waitForTimeout(150);
+      const hrQuiet = (await behPage.getAttribute('[data-node-id="monolith/quiet"] [data-cat="fill"]', "fill")).toLowerCase();
+      check("the neutral-not-zero rule holds in headroom mode too", hrQuiet === behNeutral);
+      await behPage.click('#panel-tabs button[data-tab="model"]');
+      await behPage.waitForTimeout(100);
+      const hrLegend = await behPage.locator("#tab-model").innerText();
+      check("the headroom legend runs 0% free to 100% free, absolutely", hrLegend.includes("0% free") && hrLegend.includes("100% free"));
+      check("…and says it colours on the lower axis present", hrLegend.includes("the lower of the axes the engine reported"));
+      check("…and is its own legend, not cost's", /headroom · live/i.test(hrLegend) && !hrLegend.includes("USD/h"));
+      await behPage.click('#panel-tabs button[data-tab="scope"]');
+      await behPage.waitForTimeout(100);
+      const hrScope = await behPage.locator("#tab-scope").innerText();
+      // No engine states a headroom aggregate, so this row is behold's own
+      // arithmetic — and has to say so on the row.
+      check("the headroom totals are the estate's worst and middle card", hrScope.includes("min 10% free · median 48% free · 4 priced · 1 unpriced · computed"));
+      check("…and the box's own", hrScope.includes("min 10% free · median 26% free · 2 priced · 1 unpriced · computed"));
+      check("…labelled as computed by behold, not quoted from an engine", hrScope.includes("no engine states a headroom aggregate"));
+
+      // ---- the inspect pane's behaviour section (#401) ---------------------
+      // dispatchEvent, not click: the floating panel is over this corner of the
+      // canvas by now (the Scope tab just grew a totals row), and the gesture
+      // under test is the card's own handler, not where the panel happens to sit.
+      await behPage.locator('[data-node-id="monolith/api"]').dispatchEvent("click");
+      await behPage.waitForTimeout(200);
+      const pane = behPage.locator("#inspect-body");
+      const paneText = await pane.innerText();
+      check("a priced card's inspect pane has a behaviour section", /behaviour/i.test(paneText));
+      check("…with the cost in the engine's own currency", paneText.includes("0.0416 USD/h"));
+      check("…both headroom axes, and which one the colour reads", paneText.includes("cpu 62% free · latency 41% free") && paneText.includes("colours on 41% free"));
+      check("…the error rate at the level the engine named", paneText.includes("0.10% of requests at 100 rps, p50"));
+      check("…the resilience verdict, its named failure and its note", paneText.includes("survives — one zone lost") && paneText.includes("two of three zones carry the load"));
+      check("…and the right-size suggestion", paneText.includes("t3.small"));
+      const paneBadges = pane.locator(".behaviour-badge");
+      check("every figure in the section carries its own badge, not one per pane", (await paneBadges.count()) === 5);
+      check("…reading the entity's own provenance", (await paneBadges.first().innerText()) === BEH_BADGE);
+      // An unpriced card has no section at all — an empty one would imply the
+      // engine answered and said nothing.
+      await behPage.locator('[data-node-id="monolith/quiet"]').dispatchEvent("click");
+      await behPage.waitForTimeout(200);
+      check("an unpriced card gets no behaviour section at all", !/behaviour/i.test(await pane.innerText()));
+
+      // ---- the modes off the overlay --------------------------------------
+      // `/api/graph` carries no behaviour block at all — a prediction about a
+      // live account has no business on the source graph (src/behaviour.ts) —
+      // so both modes have to disable themselves there, and drift must not.
+      await behPage.click('#panel-tabs button[data-tab="scope"]');
+      await behPage.waitForTimeout(100);
+      await behPage.locator('#tab-scope button:text-is("(source)")').click();
+      await behPage.waitForSelector('#graph svg [data-node-id="monolith/api"]', { timeout: 20000 });
+      await behPage.click('#panel-tabs button[data-tab="view"]');
+      await behPage.waitForTimeout(200);
+      for (const m of ["cost", "headroom"]) check(`the ${m} mode is disabled on the source graph`, await modeBtn(behPage, m).isDisabled());
+      check("…with the reason on it", (await modeBtn(behPage, "cost").getAttribute("title")).includes("pick an environment"));
+      check("drift is never disabled", !(await modeBtn(behPage, "drift").isDisabled()));
+      check("…and the graph falls back to drift rather than painting an empty scale", !(await behPage.locator("#statusbar").innerText()).includes("colour:"));
+      await behPage.click('#panel-tabs button[data-tab="scope"]');
+      await behPage.waitForTimeout(100);
+      await behPage.locator('#tab-scope button:text-is("live")').click();
+      await behPage.waitForSelector('#graph svg [data-node-id="monolith/api"]', { timeout: 20000 });
+      await behPage.waitForTimeout(300);
+      check("…and the pick comes back the moment the overlay can serve it again", (await behPage.locator("#statusbar").innerText()).includes("colour: headroom"));
+
+      // The pick survives a reload the way the theme does — and it is not a
+      // lens param, so the fetch that comes back is the same one.
+      await behPage.reload();
+      await behPage.waitForSelector('#graph svg [data-node-id="monolith/api"]', { timeout: 20000 });
+      await behPage.waitForTimeout(200);
+      check("the picked mode survives a reload", (await behPage.locator("#statusbar").innerText()).includes("colour: headroom"));
+
+      await behPage.click('#panel-tabs button[data-tab="view"]');
+      await behPage.waitForTimeout(50);
+      await behPage.screenshot({ path: join(SHOTS, "12-behaviour-headroom.png") });
+      check("no console errors across all three colour modes", behErrors.length === 0);
+      if (behErrors.length) console.error("behaviour page errors:", behErrors);
+    } finally {
+      await behPage.close();
+      behServer.close();
+    }
+  }
+
+  // ---- #401: the refusal, in place of the modes ----------------------------
+  {
+    const refServer = await startStub(PORT + 5, { behaviour: "refused" });
+    const refPage = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+    const refErrors = [];
+    refPage.on("pageerror", (e) => refErrors.push(String(e)));
+    try {
+      await refPage.goto(`http://localhost:${PORT + 5}/`);
+      await refPage.waitForSelector('#graph svg [data-node-id="monolith/api"]', { timeout: 20000 });
+      await refPage.click('#panel-tabs button[data-tab="view"]');
+      await refPage.waitForTimeout(150);
+
+      for (const mode of ["cost", "headroom"]) {
+        check(`the ${mode} mode is disabled on a refusal`, await modeBtn(refPage, mode).isDisabled());
+        const title = await modeBtn(refPage, mode).getAttribute("title");
+        check(`…with the refusal's reason on it`, title.includes(BEH_REFUSAL.reason));
+        check(`…and its remedy`, title.includes(BEH_REFUSAL.remedy));
+      }
+      check("drift is never disabled — it never depended on an engine", !(await modeBtn(refPage, "drift").isDisabled()));
+      check("…and the drift overlay is still painted", (await refPage.locator("#meta").innerText()).includes("bound"));
+
+      await refPage.click('#panel-tabs button[data-tab="model"]');
+      await refPage.waitForTimeout(100);
+      const refLegend = await refPage.locator("#tab-model").innerText();
+      check("the refusal's reason is printed where the legend is, verbatim", refLegend.includes(BEH_REFUSAL.reason));
+      check("…and its remedy with it", refLegend.includes(BEH_REFUSAL.remedy));
+      check("…and no figure is invented in its place", !/USD\/h|% free/.test(refLegend));
+      await refPage.click('#panel-tabs button[data-tab="scope"]');
+      await refPage.waitForTimeout(100);
+      check("no totals row on a refusal", !/totals/i.test(await refPage.locator("#tab-scope").innerText()));
+
+      // ⌘K lists the blocked modes with their reason rather than hiding them.
+      await refPage.keyboard.press("Meta+k");
+      await refPage.waitForTimeout(100);
+      await refPage.fill("#pal-input", "colour by");
+      await refPage.waitForTimeout(100);
+      const palRows = await refPage.locator("#pal-list > *").allInnerTexts();
+      check("⌘K lists all three colour modes", palRows.length === 3);
+      check("…and says on the blocked ones why", palRows.some((r) => r.startsWith("colour by: cost") && r.includes(BEH_REFUSAL.reason)));
+      await refPage.keyboard.press("Escape");
+      await refPage.waitForTimeout(100);
+
+      await refPage.click('#panel-tabs button[data-tab="model"]');
+      await refPage.waitForTimeout(100);
+      await refPage.screenshot({ path: join(SHOTS, "13-behaviour-refusal.png") });
+      check("no console errors on a refusal", refErrors.length === 0);
+      if (refErrors.length) console.error("refusal page errors:", refErrors);
+    } finally {
+      await refPage.close();
+      refServer.close();
+    }
+  }
+
+  // ---- M1's absence: disabled the same way, but nothing printed ------------
+  {
+    const absServer = await startStub(PORT + 6, { behaviour: "absent" });
+    const absPage = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+    const absErrors = [];
+    absPage.on("pageerror", (e) => absErrors.push(String(e)));
+    try {
+      await absPage.goto(`http://localhost:${PORT + 6}/`);
+      await absPage.waitForSelector('#graph svg [data-node-id="monolith/api"]', { timeout: 20000 });
+      await absPage.click('#panel-tabs button[data-tab="view"]');
+      await absPage.waitForTimeout(150);
+      for (const mode of ["cost", "headroom"]) {
+        check(`the ${mode} mode is disabled on an absence`, await modeBtn(absPage, mode).isDisabled());
+        check(`…with the absent line as its tooltip`, (await modeBtn(absPage, mode).getAttribute("title")) === BEH_ABSENT);
+      }
+      await absPage.click('#panel-tabs button[data-tab="model"]');
+      await absPage.waitForTimeout(100);
+      const absLegend = await absPage.locator("#tab-model").innerText();
+      // Nothing was configured, so nothing refused: the legend says nothing at
+      // all, and the drift legend is untouched.
+      check("nothing is printed in the legend on an absence", !/refus/i.test(absLegend) && !absLegend.includes(BEH_ABSENT));
+      check("…and the drift legend is exactly what it was", absLegend.includes("bound") && absLegend.includes("unowned"));
+      await absPage.screenshot({ path: join(SHOTS, "14-behaviour-absent.png") });
+      check("no console errors on an absence", absErrors.length === 0);
+      if (absErrors.length) console.error("absent page errors:", absErrors);
+    } finally {
+      await absPage.close();
+      absServer.close();
+    }
   }
 
   check("no page errors", pageErrors.length === 0);
