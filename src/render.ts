@@ -17,11 +17,13 @@ import {
   type GroupBox,
   type MorphView,
   type Status,
+  type NodeOverride,
 } from "@intentius/pinhole";
 import type { GraphIR, IRGroups, IRNode, Layout } from "@intentius/chant";
 import type { ByContainer } from "./logical.ts";
 import { k8sIconFor, helmIconFor } from "./icon-packs.ts";
 import { carveCardFields } from "./carve-lens.ts";
+import { cardFaces } from "./card-face.ts";
 import { CHOUDOUFU_LEXICON, choudoufuCardFields, moduleInstanceOf } from "./choudoufu-member.ts";
 import { terraformCardFields } from "./terraform-lens.ts";
 import { carveProgress, splitCarveState, type CarveState } from "./carve-manifest.ts";
@@ -176,7 +178,7 @@ type ExtraGroups = IRGroups & { byWave?: Record<string, string[]>; byStack?: Rec
  * "caller knows" discipline as `byStack`, since a source-only or component-DAG
  * graph never carries a meaningful `byContainer` to box. */
 export function renderGraph(
-  ir: GraphIR,
+  irIn: GraphIR,
   opts: {
     theme?: string;
     boxes?: "byStack" | "byContainer";
@@ -187,22 +189,38 @@ export function renderGraph(
     groupBadges?: Readonly<Record<string, string>>;
   } = {},
 ): RenderResult {
+  const groupsIn = irIn.groups as ExtraGroups;
+  const boxKey = groupsIn.byWave ? "byWave" : opts.boxes;
+  // #393 item 9: a choudoufu or Terraform card is painted with the address
+  // alone and the rows the box does not already carry. The ids are unchanged —
+  // `cardFaces` hands back a display IR to paint from and puts the real ids
+  // back on the finished SVG (src/card-face.ts) — and every other estate gets
+  // the same object it passed in.
+  const face = cardFaces(irIn, boxKey ? groupsIn[boxKey] : undefined);
+  const ir = face.ir;
   const groups = ir.groups as ExtraGroups;
-  const boxKey = groups.byWave ? "byWave" : opts.boxes;
   const boxes = boxKey ? groups[boxKey] : undefined;
   // #393 A/B: an edgeless box lays out as one dagre rank — see src/edgeless.ts.
   // The chained IR is for the layout call and nothing else; `renderSvg` and
-  // every caller below keep the IR that came in.
+  // every caller below keep the IR that came in. The chains run over the
+  // display IR, so the row grid and the painted cards agree on every id.
+  // The band is read off the REAL ids: the display IR blanks a choudoufu
+  // card's lexicon (that is how the paint drops the word) and shortens its id,
+  // so `moduleBandOf` over it would find no choudoufu card at all. `cardFaces`
+  // maps nodes one to one and in order, which is the id translation.
+  const realBand = moduleBandOf(irIn);
+  const toReal = new Map(ir.nodes.map((n, i) => [n.id, irIn.nodes[i]!.id]));
+  const bandOf = realBand ? (id: string): string | undefined => realBand(toReal.get(id) ?? id) : undefined;
   const chains = boxes
-    ? withRowChains(ir, boxes, { sizes: footprints(ir), bandOf: moduleBandOf(ir) })
+    ? withRowChains(ir, boxes, { sizes: footprints(ir, face.overrides), bandOf })
     : { ir, grids: new Map<string, RowGrid>() };
-  const layout = layoutIr(chains.ir, { fit: true, ...(boxes ? { groups: boxes } : {}) });
+  const layout = layoutIr(chains.ir, { fit: true, overrides: face.overrides, ...(boxes ? { groups: boxes } : {}) });
   // Radial layout (opt-in): dagre lays a wide DAG out in horizontal ranks that
   // sprawl off-screen. Re-place the same nodes on concentric rings — one ring
   // per rank — so the graph curls around a centre and far more fits in view. Only
   // for ungrouped graphs (the entity/infra view); the wave-boxed component graph
   // keeps its lanes.
-  if (opts.radial && !boxes) radializeLayout(layout as unknown as RadialLayout, groupKeyByNode(ir), footprints(ir));
+  if (opts.radial && !boxes) radializeLayout(layout as unknown as RadialLayout, groupKeyByNode(ir), footprints(ir, face.overrides));
   // Otherwise, pull disconnected islands in: dagre strings each connected
   // component out along a row, so a few unconnected composites sprawl far to the
   // right of the action. Pack the components into compact shelves instead (a
@@ -215,16 +233,17 @@ export function renderGraph(
   // The module sub-boxes (#393 B) and the count badges (#393 C), both over the
   // boxes dagre just produced.
   if (boxes) {
-    addBandBoxes(layout, chains.grids, footprints(ir));
+    addBandBoxes(layout, chains.grids, footprints(ir, face.overrides));
     applyBadges(layout.groups, opts.groupBadges);
   }
   const svg = renderSvg(ir, layout, {
     fit: true,
     hideTitle: true,
+    overrides: face.overrides,
     ...(boxes ? { groups: layout.groups } : {}),
     ...(opts.theme ? { theme: opts.theme as never } : {}),
   });
-  return { svg };
+  return { svg: face.restore(svg) };
 }
 
 /** Box marks and badges, applied after layout on `GroupBox.id` — the box key
@@ -767,8 +786,11 @@ const NODE_H = 104;
  * card grows to ~420px (a synthesized `release/<ns>/<name>` card, exactly the
  * nodes that arrive edgeless and get packed), so islands were shelved by a
  * width half their painted size and landed on their neighbours. */
-function footprints(ir: GraphIR): Map<string, { w: number; h: number }> {
-  const sizes = cardSizes(ir, { fit: true });
+function footprints(ir: GraphIR, overrides?: Record<string, NodeOverride>): Map<string, { w: number; h: number }> {
+  // The same overrides the layout and the paint get (#393 item 9's card
+  // faces): a card with fewer rows is shorter, and a footprint measured without
+  // them would inflate every band box past the cards it holds.
+  const sizes = cardSizes(ir, { fit: true, ...(overrides ? { overrides } : {}) });
   return new Map(Object.entries(sizes));
 }
 

@@ -396,11 +396,20 @@ until the table existed. A new kind is:
    `/api/overlay`'s — run the same passes in the same order and must not
    fork per kind; a kind's differences live inside its `read`.
 3. A `registerPack({ lexicon, iconFor, fields })` in `src/render.ts`, or the
-   kind's cards lead with the alphabetically first two short attrs.
-4. A `DoctorCheck` line when the kind needs a tool on PATH or a per-member
+   kind's cards lead with the alphabetically first two short attrs. A `fields`
+   function takes the box the card is drawn in as its second argument, so a
+   row the box already carries can be left off (#393 item 9,
+   `src/card-face.ts`).
+4. A row in `statusVocabulary` (`src/status-vocabulary.ts`) when the kind has
+   its own words for the four overlay colours — choudoufu's `bound` is not
+   chant's `managed`, and a legend that says `managed` over a card carrying no
+   marker is a claim behold has no right to make. The colours never move; only
+   the naming does, and an estate of several kinds keeps chant's words and says
+   so in the legend's tooltip.
+5. A `DoctorCheck` line when the kind needs a tool on PATH or a per-member
    precondition (a version floor checked before the spawn, the way
    `carveStatusReader` does; a PATH probe the way `src/demos.ts` does).
-5. Tests: the probe and the object form in `src/project.test.ts`; dispatch
+6. Tests: the probe and the object form in `src/project.test.ts`; dispatch
    in `src/estate.test.ts`'s "#368" block, which registers a fake kind and
    asserts chant members still go through exactly the calls they did; the
    kind's own reader off recorded documents in `src/__fixtures__/`, with

@@ -131,6 +131,7 @@ import { detectSubstrates, projectLexicons } from "./substrates.ts";
 import { pickAutoSyncOps, splitForgeRouted, suspendedByRollback, type AutoSyncMode } from "./autosync.ts";
 import { sourceCommits, openRollbackBranches } from "./history.ts";
 import { composeEstate, composeEstateOverlay, estateMembers, withoutJoinedMembers } from "./estate.ts";
+import { statusVocabulary } from "./status-vocabulary.ts";
 import { addEstateMemberEdges } from "./estate-edges.ts";
 import { addChoudoufuReferenceEdges, liveCheckToIr, readLiveCheck, setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
 import {
@@ -2574,6 +2575,12 @@ export function createApp(
     // and the single-project branch didn't read it until after its `graphIr`
     // call had already gone out at the wrong detail.
     const runtime = new URL(c.req.url).searchParams.get("runtime") === "1";
+    // #393 item 8: whose words the legend, the statusbar counts and the Model
+    // tab's drift block speak — derived from what the served members ARE, once
+    // per read, and carried on the meta beside the counts the SPA computes off
+    // the IR. The colours are unchanged; only the naming is. A mixed estate
+    // keeps chant's words and says why (src/status-vocabulary.ts).
+    const vocabulary = statusVocabulary(estateMembers(estateDirs).map((m) => m.kind));
     try {
       // #189: the estate-wide overlay. The single-project pipeline below only
       // ever observed the primary, so an N-project estate was coloured 1/N —
@@ -2659,7 +2666,7 @@ export function createApp(
             ir: projected,
             svg,
             byContainer,
-            meta: { projectDir: cfg.projectDir, env, mode: "logical", estate: est.total, ...(note ? { note } : {}) },
+            meta: { projectDir: cfg.projectDir, env, mode: "logical", estate: est.total, vocabulary, ...(note ? { note } : {}) },
           });
         }
         // One box per node: pinhole's `layoutIr` parents a node to a single
@@ -2696,7 +2703,7 @@ export function createApp(
         return c.json({
           ir,
           svg,
-          meta: { projectDir: cfg.projectDir, env, mode: "overlay", estate: est.total, ...(note ? { note } : {}) },
+          meta: { projectDir: cfg.projectDir, env, mode: "overlay", estate: est.total, vocabulary, ...(note ? { note } : {}) },
         });
       }
       // #261: `runtime` forces detail 3 exactly as `logical` does, and for the
@@ -2782,7 +2789,7 @@ export function createApp(
         // the detail tiers do, and until now only they said why.
         const logicalTierNote = tierMismatchNote(projected, beholdConfig.tiers, query.tier);
         const logicalNote = [logicalTierNote, notesFor("logical", projected, undefined, logicalBefore)].filter(Boolean).join(" · ");
-        return c.json({ ir: projected, svg, byContainer, meta: { projectDir: cfg.projectDir, env, mode: "logical", ...(logicalNote ? { note: logicalNote } : {}) } });
+        return c.json({ ir: projected, svg, byContainer, meta: { projectDir: cfg.projectDir, env, mode: "logical", vocabulary, ...(logicalNote ? { note: logicalNote } : {}) } });
       }
       // Below the ATTRIBUTES tier, hide cross-stack import handles — they're
       // value plumbing, not resources, and float off to the side (see
@@ -2856,7 +2863,7 @@ export function createApp(
       // that never had the attrs to derive edges from in the first place.
       const zoomNotes = notesFor(zoom, ir, compositeEdgesAttached, undefined, opts.detail ?? 2);
       const note = [tierNote, nsNote, zoomNotes].filter(Boolean).join(" · ");
-      return c.json({ ir, svg, meta: { projectDir: cfg.projectDir, env, mode: "overlay", ...(note ? { note } : {}) } });
+      return c.json({ ir, svg, meta: { projectDir: cfg.projectDir, env, mode: "overlay", vocabulary, ...(note ? { note } : {}) } });
     } catch (err) {
       // #72: the same structured {error, code, remedy} the other read routes
       // return — this is in fact where a picked tier's creds gate USUALLY

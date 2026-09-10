@@ -235,14 +235,36 @@ describe("addChoudoufuReferenceEdges — the cross-member edge (#369, #366's ope
   });
 });
 
-describe("choudoufuCardFields — the presentation pack (#369)", () => {
-  it("leads with rung and estate for an instance, and the producer for a data source", () => {
-    expect(choudoufuCardFields({ attrs: { estate: "e", rung: "tag-governable", schemas: "builtin" } })).toEqual([
-      { label: "rung", value: "tag-governable" },
-      { label: "estate", value: "e" },
-    ]);
+describe("choudoufuCardFields — the presentation pack (#369, #393 item 9)", () => {
+  it("shows the producer for a data source", () => {
     expect(choudoufuCardFields({ attrs: { estate: "app", producer: { estate: "net", address: "aws_vpc.main" } } })).toEqual([{ label: "reads", value: "net aws_vpc.main" }]);
     expect(choudoufuCardFields({ attrs: { score: 3 } })).toBeUndefined();
+  });
+
+  it("keeps the estate row only when the box is not already that estate", () => {
+    const attrs = { estate: "e", rung: "record-only", schemas: "builtin" };
+    // No box named: nothing is being repeated, so nothing is dropped.
+    expect(choudoufuCardFields({ attrs })).toEqual([
+      { label: "rung", value: "record-only" },
+      { label: "estate", value: "e" },
+    ]);
+    expect(choudoufuCardFields({ attrs }, { boxEstate: "e" })).toEqual([{ label: "rung", value: "record-only" }]);
+    expect(choudoufuCardFields({ attrs }, { boxEstate: "other" })).toEqual([
+      { label: "rung", value: "record-only" },
+      { label: "estate", value: "e" },
+    ]);
+  });
+
+  it("drops the rung all but a handful of instances sit on", () => {
+    expect(choudoufuCardFields({ attrs: { estate: "e", rung: "tag-governable" } }, { boxEstate: "e" })).toBeUndefined();
+    expect(choudoufuCardFields({ attrs: { estate: "e", rung: "declaration-carried" } }, { boxEstate: "e" })).toEqual([{ label: "rung", value: "declaration-carried" }]);
+  });
+
+  it("names the estate that holds an unowned object, and says when nothing declares a marked one", () => {
+    expect(choudoufuCardFields({ attrs: { estate: "e", rung: "tag-governable", ownedBy: "neighbour" } }, { boxEstate: "e" })).toEqual([{ label: "owned by", value: "neighbour" }]);
+    expect(choudoufuCardFields({ attrs: { estate: "e", marked: "carries this estate's marker, declared nowhere in its configuration" } }, { boxEstate: "e" })).toEqual([
+      { label: "declared", value: "nowhere" },
+    ]);
   });
 });
 

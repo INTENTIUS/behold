@@ -334,22 +334,45 @@ export function addChoudoufuReferenceEdges(ir: GraphIR): GraphIR {
   return ir;
 }
 
-/** The two fields a choudoufu card leads with (pinhole presentation pack,
- * registered in src/render.ts): the rung and the estate for an instance, the
- * producer for a data source. Without a pack the card would lead with the
- * first two short attrs alphabetically — `estate` then `rung` by accident
- * today, `reason` the day a refusal appears. */
-export function choudoufuCardFields(node: { attrs: Record<string, unknown> }): Array<{ label: string; value: string }> | undefined {
+/** The rung all but a handful of instances sit on: a type whose ownership the
+ * account can be asked about directly. It is the default answer, so a card
+ * that says it says nothing; the two rare rungs are the interesting ones. */
+export const COMMON_RUNG = "tag-governable";
+
+/**
+ * The rows a choudoufu card shows (pinhole presentation pack, registered in
+ * src/render.ts): the producer for a data source, and for an instance whatever
+ * the box it sits in does NOT already say (#393 item 9). Without a pack the
+ * card would lead with the first two short attrs alphabetically — `estate`
+ * then `rung` by accident today, `reason` the day a refusal appears.
+ *
+ * `ctx.boxEstate` is the estate the box this card is drawn in already stands
+ * for — the one every card in it declares (src/card-face.ts works it out from
+ * the boxes actually drawn). Absent — an unboxed render, a box holding two
+ * estates, or any caller that reaches the pack directly — means nothing is
+ * being repeated and every row is kept, which is what the card said before
+ * this rule existed.
+ */
+export function choudoufuCardFields(
+  node: { attrs: Record<string, unknown> },
+  ctx: { boxEstate?: string } = {},
+): Array<{ label: string; value: string }> | undefined {
   const a = node.attrs;
   const producer = a.producer as { estate?: unknown; address?: unknown } | undefined;
   if (isRecord(producer) && typeof producer.estate === "string") {
     return [{ label: "reads", value: typeof producer.address === "string" ? `${producer.estate} ${producer.address}` : producer.estate }];
   }
-  if (typeof a.rung !== "string" && typeof a.estate !== "string") return undefined;
-  return [
-    ...(typeof a.rung === "string" ? [{ label: "rung", value: a.rung }] : []),
-    ...(typeof a.estate === "string" ? [{ label: "estate", value: a.estate }] : []),
-  ];
+  const rows: Array<{ label: string; value: string }> = [];
+  // The live object at this address belongs to a DIFFERENT estate (#370's
+  // `unowned[].tofu_estate`) — the one estate name on a card that is not the
+  // box's, and the reason the card is yellow.
+  if (typeof a.ownedBy === "string") rows.push({ label: "owned by", value: a.ownedBy });
+  if (typeof a.rung === "string" && a.rung !== COMMON_RUNG) rows.push({ label: "rung", value: a.rung });
+  if (typeof a.estate === "string" && a.estate !== ctx.boxEstate) rows.push({ label: "estate", value: a.estate });
+  // Marked for this estate and declared nowhere: a warn card among bound ones
+  // whose reason is otherwise only in the inspect pane.
+  if (!rows.length && typeof a.marked === "string") rows.push({ label: "declared", value: "nowhere" });
+  return rows.length ? rows : undefined;
 }
 
 // ---------------------------------------------------------------------------

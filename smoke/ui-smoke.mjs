@@ -1119,6 +1119,52 @@ try {
     wbServer.close();
   }
 
+  // ---- #393 items 8 and 10: an estate that speaks choudoufu ----------------
+  // The legend, the statusbar counts and the inspect status row all render
+  // from the `vocabulary` the server puts on the overlay meta, and an UNOWNED
+  // card's first declared row is the line that adopts it, with a copy button.
+  const chdfServer = await startStub(PORT + 3, { choudoufu: true });
+  const chdfPage = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+  const chdfErrors = [];
+  chdfPage.on("pageerror", (e) => chdfErrors.push(String(e)));
+  try {
+    await chdfPage.goto(`http://localhost:${PORT + 3}/`);
+    await chdfPage.waitForSelector("#graph svg [data-node-id]", { timeout: 20000 });
+
+    const meta = await chdfPage.locator("#meta").innerText();
+    check("the statusbar counts read in choudoufu's words", meta.includes("1 bound") && meta.includes("1 unowned") && meta.includes("1 not observed"));
+    check("…and not in chant's", !/managed|foreign|unobserved/.test(meta));
+
+    await chdfPage.click('#panel-tabs button[data-tab="model"]');
+    await chdfPage.waitForTimeout(100);
+    const legend = await chdfPage.locator("#tab-model").innerText();
+    check("the legend says bound / unowned / pending", legend.includes("bound") && legend.includes("unowned") && legend.includes("pending"));
+    check("…and never says managed", !legend.includes("managed"));
+
+    // The UNOWNED card: the line to run, first, copyable.
+    await chdfPage.click('[data-node-id="terralith-4/aws_cloudwatch_log_group.extra"]');
+    await chdfPage.waitForTimeout(200);
+    const pane = chdfPage.locator("#inspect-body");
+    check("the inspect status row speaks choudoufu too", (await pane.innerText()).includes("unowned"));
+    const declaredKeys = await pane.locator("h3:text-is('declared') + dl dt").allInnerTexts();
+    check("the adoption line is the declared section's first row", declaredKeys[0] === "adopt");
+    check("…and the paragraph is below it", declaredKeys.indexOf("adopt") < declaredKeys.indexOf("detail"));
+    const adoptRow = pane.locator("h3:text-is('declared') + dl dd").first();
+    check("the row carries the two tags choudoufu named", (await adoptRow.innerText()).includes("tofu-estate=terralith-4 tofu-address=aws_cloudwatch_log_group.extra"));
+    const copy = adoptRow.locator("button");
+    check("…with a copy button beside it", (await copy.count()) === 1);
+    await copy.click();
+    await chdfPage.waitForTimeout(100);
+    check("the copy button confirms", (await copy.innerText()).includes("copied"));
+
+    check("no console errors on a choudoufu estate", chdfErrors.length === 0);
+    if (chdfErrors.length) console.error("choudoufu page errors:", chdfErrors);
+    await chdfPage.screenshot({ path: join(SHOTS, "10-choudoufu-vocabulary.png") });
+  } finally {
+    await chdfPage.close();
+    chdfServer.close();
+  }
+
   check("no page errors", pageErrors.length === 0);
   if (pageErrors.length) console.error("page errors:", pageErrors);
 } finally {

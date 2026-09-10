@@ -67,6 +67,14 @@ export function isTerraformEntity(node: Pick<IRNode, "kind" | "lexicon">): boole
   return node.lexicon === TERRAFORM_LEXICON && node.kind in BLOCK_OF;
 }
 
+/** Is this a terraform entity the way it looks AFTER `normalizeTerraformNodes`
+ * — the resource type in `kind`, the block class in `attrs.block`? The two
+ * predicates are the two sides of that pass, and a caller that runs on a
+ * rendered graph (src/card-face.ts) sees only this side. */
+export function isTerraformCard(node: Pick<IRNode, "lexicon" | "attrs">): boolean {
+  return node.lexicon === TERRAFORM_LEXICON && typeof node.attrs.block === "string" && node.attrs.block in BLOCK_LABEL;
+}
+
 /** Does this IR carry any of them? Every pass below is a no-op otherwise, and
  * this is the guard that keeps a chant or k8s estate byte-identical. */
 export function hasTerraformEntities(ir: Pick<GraphIR, "nodes">): boolean {

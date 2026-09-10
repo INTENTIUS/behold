@@ -188,6 +188,24 @@ function apiFetch(url) {
 // reaches a declared entity — expected runtime (a Pod its Deployment
 // created), never foreign and never drift. Additive the same way.
 const STATUS_LABEL = { good: "managed", warn: "foreign", accent: "pending", neutral: "unobserved", runtime: "runtime child" };
+// #393 item 8: the same four colours, in the words of whatever the estate's
+// members ARE. The server derives the set from the member kinds and puts it on
+// the overlay meta (`vocabulary`, src/status-vocabulary.ts) — on a choudoufu
+// estate the legend reads bound / unowned / pending / not observed, which is
+// what choudoufu itself calls those states. A mixed estate keeps chant's words
+// and carries a `note` the legend shows as its tooltip. No meta, or a meta from
+// a behold that predates this: chant's words, exactly as before.
+function statusLabels() {
+  const v = lastMeta && lastMeta.vocabulary;
+  return (v && v.labels) || STATUS_LABEL;
+}
+function statusLabel(status) {
+  return statusLabels()[status];
+}
+function vocabularyNote() {
+  const v = lastMeta && lastMeta.vocabulary;
+  return (v && v.note) || "";
+}
 // M1.1 (#57), palette hardened M2 (#54): the component-DAG live-status join
 // paints the same `_status` vocabulary (good/warn/accent/neutral) but with
 // different meaning — a stack-health reading, not "managed" — so the inspect
@@ -432,7 +450,7 @@ function inspect(node) {
       "status",
       driftLabel ||
         (node.lexicon === "op" ? opStatusLabel(node) : undefined) ||
-        (isArtifact ? ARTIFACT_STATUS_LABEL[st] : liveStatus || tickStatus ? COMPONENT_STATUS_LABEL[st] : STATUS_LABEL[st]) ||
+        (isArtifact ? ARTIFACT_STATUS_LABEL[st] : liveStatus || tickStatus ? COMPONENT_STATUS_LABEL[st] : statusLabel(st)) ||
         st,
     );
   if (node.attrs && node.attrs._artifact) {
@@ -639,7 +657,19 @@ function inspect(node) {
   const attrKeys = Object.keys(node.attrs || {}).filter((k) => !k.startsWith("_") && !(k === "release" && release));
   if (attrKeys.length) {
     const decl = section("declared");
-    for (const k of attrKeys) decl(k, fmtValue(node.attrs[k]));
+    // #393 item 10: an UNOWNED choudoufu card leads with the write that adopts
+    // the object — the two marker tags choudoufu named (`adopt_tofu_estate` /
+    // `adopt_tofu_address`), or its own one-line command if a release ever
+    // sends one. behold composes neither (src/choudoufu-live.ts); this puts
+    // the line first and makes it copyable, the way the moves panel already
+    // does for a `live-mv` line. The paragraph explaining the omission — which
+    // used to be the whole section, with the tags under it as JSON — follows.
+    const adoptable = node.lexicon === "choudoufu" && typeof node.attrs.adopt === "string" ? "adopt" : null;
+    if (adoptable) copyableRow(decl, adoptable, node.attrs.adopt, "Copy the tags that adopt this object");
+    for (const k of attrKeys) {
+      if (k === adoptable) continue;
+      decl(k, fmtValue(node.attrs[k]));
+    }
   }
 
   // CI projection facet (M1.2, #56/#58): loomster's GitLab CI is the SAME
@@ -803,11 +833,15 @@ function renderObserved(panel, o, health, healthDetail) {
     // sends the raw condition object gets the tree instead of `[object Object]`.
     for (const c of conditions) add("condition", valueCell(c), "var(--degraded)");
   }
+  // #393 item 10: the adoption line is a line to run, here as in the declared
+  // section — first, and with the same copy button.
+  if (typeof o.attributes?.adopt === "string") copyableRow(add, "adopt", o.attributes.adopt, "Copy the tags that adopt this object");
   // #259: an observed attribute is whatever the substrate reported — a k8s
   // `spec`, a nested `loadBalancer`, an array of ports. All of it collapsible
   // now, instead of one flat JSON.stringify line per key.
   for (const [k, v] of Object.entries(o.attributes || {})) {
     if (k === "conditions") continue; // rendered above, one line each
+    if (k === "adopt" && typeof v === "string") continue; // led with, above
     add(k, valueCell(v));
   }
   panel.appendChild(dl);
@@ -1293,6 +1327,25 @@ function renderCarveState(host, state) {
   host.appendChild(panelMuted(state.apply.note));
 }
 
+/**
+ * One inspect row whose value is a line to run: the line itself, monospaced,
+ * and a copy button beside it — the affordance the moves panel already gives a
+ * `live-mv` line (#371), reused here for the tags that adopt an unowned object
+ * (#393 item 10). `add` is a section's own row adder, so the row sits in the
+ * section it belongs to rather than in a box of its own.
+ */
+function copyableRow(add, key, text, title) {
+  const wrap = document.createElement("span");
+  wrap.style.cssText = "display:flex;gap:6px;align-items:baseline;min-width:0";
+  const line = document.createElement("code");
+  line.className = "grow";
+  line.style.cssText = "flex:1;min-width:0;overflow-wrap:anywhere";
+  line.textContent = text;
+  const copy = actButton("copy", () => copyToClipboard(text, copy), title);
+  wrap.append(line, copy);
+  add(key, wrap);
+}
+
 /** Copy `text` to the clipboard and say so on the button for a moment. */
 function copyToClipboard(text, el) {
   const done = () => {
@@ -1631,9 +1684,16 @@ function renderPanelModel() {
       host.appendChild(panelDotRow(COMPONENT_STATUS_VAR[s] || "var(--muted)", n.id, APPLY_STATUS_TAG[s] || "", () => selectNode(n.id)));
     }
   } else if (drift) {
-    host.appendChild(panelHeading(`drift · ${m.env}`));
-    const c = count(STATUS_LABEL);
-    for (const [k, label] of Object.entries(STATUS_LABEL)) {
+    // #393 item 8: the legend proper. The heading carries the mixed-estate
+    // sentence as its tooltip — the one case where the words on these rows are
+    // not the words the members would use for themselves.
+    const heading = panelHeading(`drift · ${m.env}`);
+    const why = vocabularyNote();
+    if (why) heading.title = why;
+    host.appendChild(heading);
+    const words = statusLabels();
+    const c = count(words);
+    for (const [k, label] of Object.entries(words)) {
       // The additive buckets (chant#1168 unobserved, chant#1180 runtime) stay
       // hidden until a chant actually emits them — same as the old legend.
       if ((k === "neutral" || k === "runtime") && !c[k]) continue;
@@ -1648,7 +1708,7 @@ function renderPanelModel() {
       host.appendChild(panelHeading("needs attention"));
       for (const n of attention.slice(0, 40)) {
         const s = n.attrs._status;
-        host.appendChild(panelDotRow(DRIFT_STATUS_VAR[s], n.id, STATUS_LABEL[s], () => selectNode(n.id)));
+        host.appendChild(panelDotRow(DRIFT_STATUS_VAR[s], n.id, statusLabel(s), () => selectNode(n.id)));
       }
       if (attention.length > 40) host.appendChild(panelMuted(`+ ${attention.length - 40} more — click nodes in the graph`));
     }
@@ -2773,8 +2833,12 @@ function render(ir, svg, m) {
       const s = n.attrs && n.attrs._status;
       if (s in c) c[s]++;
     }
-    tail = ` · ${c.good} managed · ${c.warn} foreign · ${c.accent} pending`;
-    if (c.neutral) tail += ` · ${c.neutral} unobserved`;
+    // #393 item 8: the estate's own words for these four colours — chant's
+    // managed/foreign/pending/unobserved on a chant estate, choudoufu's
+    // bound/unowned/pending/not observed on one whose members are choudoufu.
+    const w = statusLabels();
+    tail = ` · ${c.good} ${w.good} · ${c.warn} ${w.warn} · ${c.accent} ${w.accent}`;
+    if (c.neutral) tail += ` · ${c.neutral} ${w.neutral}`;
     if (c.runtime) tail += ` · ${c.runtime} runtime`;
     // Nothing observed live in this env — explain the all-blue rather than let it
     // read as a bug (#32).
