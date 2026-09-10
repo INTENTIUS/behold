@@ -185,6 +185,35 @@ while IFS=$'\x1f' read -r name env inplace local reason <&3; do
     echo "  ✓ overlay: bound $bound, unowned $unowned, neutral $neutral"
   fi
 
+  # #393: the estate behold is sized against must not come back as a strip.
+  # 301 choudoufu cards, no edges between them, and dagre's answer to that is
+  # one rank — a 144010 x 316 SVG where "fit" is a one-pixel line. The wrap
+  # (src/edgeless.ts) is what keeps it a picture, and this is the assertion
+  # that says so out loud, on the real estate rather than a fixture. Measured
+  # after the wrap: 8186 x 3436, 2.4:1. The count and the badge come with it —
+  # a box of 301 cards has to be able to say what it holds.
+  if [ "$name" = "terralith-4" ]; then
+    G2="$(api "$port" "/api/graph?detail=2")"
+    ratio="$(printf '%s' "$G2" | jq -r '.svg | capture("viewBox=\"0 0 (?<w>[0-9.]+) (?<h>[0-9.]+)\"") | (.w|tonumber) / (.h|tonumber)')"
+    jq_assert "$G2" "(.svg | capture(\"viewBox=\\\"0 0 (?<w>[0-9.]+) (?<h>[0-9.]+)\\\"\") | (.w|tonumber) / (.h|tonumber)) < 4" \
+      "$(printf 'the graph is %.2f:1 at detail 2 — not a strip' "$ratio")"
+    jq_assert "$G2" '.svg | test("301 resources")' "the member box is badged with its count"
+    # #393 item 1: the estate's own references, joined from chant's terraform
+    # lexicon to choudoufu's roster by address (src/choudoufu-refs.ts). 266 on
+    # this estate with the lexicon installed; without it there are none and the
+    # note says which install line would find them, so this asserts whichever
+    # of the two is true rather than skipping the entry.
+    if [ -n "$(printf '%s' "$G2" | jq -r '.meta.note // "" | select(test("terraform lexicon"))')" ]; then
+      jq_assert "$G2" '(.ir.edges | length) == 0 and (.meta.note | test("chant-lexicon-terraform"))' \
+        "no terraform lexicon beside behold — the note names the install line instead of claiming the estate references nothing"
+    else
+      jq_assert "$G2" "(.ir.edges | length) > 0" \
+        "$(printf '%s intra-estate edges at detail 2 — the roles and their attachments' "$(printf '%s' "$G2" | jq -r '.ir.edges|length')")"
+    fi
+    C="$(api "$port" "/api/graph?detail=2&collapse=1")"
+    jq_assert "$C" '(.ir.nodes | length) == 1 and (.ir.nodes[0].id | startswith("box:"))' "?collapse=1 draws the 301-card box as one summary card"
+  fi
+
   # #391: the adopt entry, twice — unowned before the by-hand import, bound
   # after it. The line run below is the one the up script printed into the
   # log; behold never runs it, and neither does the entry's setup.

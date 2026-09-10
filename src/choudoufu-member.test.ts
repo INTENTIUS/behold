@@ -17,6 +17,7 @@ import {
   isChoudoufuEstate,
   isDevBuild,
   liveCheckToIr,
+  moduleInstanceOf,
   parseChoudoufuVersion,
   parseLiveCheck,
   parseLiveCheckOutput,
@@ -234,14 +235,36 @@ describe("addChoudoufuReferenceEdges — the cross-member edge (#369, #366's ope
   });
 });
 
-describe("choudoufuCardFields — the presentation pack (#369)", () => {
-  it("leads with rung and estate for an instance, and the producer for a data source", () => {
-    expect(choudoufuCardFields({ attrs: { estate: "e", rung: "tag-governable", schemas: "builtin" } })).toEqual([
-      { label: "rung", value: "tag-governable" },
-      { label: "estate", value: "e" },
-    ]);
+describe("choudoufuCardFields — the presentation pack (#369, #393 item 9)", () => {
+  it("shows the producer for a data source", () => {
     expect(choudoufuCardFields({ attrs: { estate: "app", producer: { estate: "net", address: "aws_vpc.main" } } })).toEqual([{ label: "reads", value: "net aws_vpc.main" }]);
     expect(choudoufuCardFields({ attrs: { score: 3 } })).toBeUndefined();
+  });
+
+  it("keeps the estate row only when the box is not already that estate", () => {
+    const attrs = { estate: "e", rung: "record-only", schemas: "builtin" };
+    // No box named: nothing is being repeated, so nothing is dropped.
+    expect(choudoufuCardFields({ attrs })).toEqual([
+      { label: "rung", value: "record-only" },
+      { label: "estate", value: "e" },
+    ]);
+    expect(choudoufuCardFields({ attrs }, { boxEstate: "e" })).toEqual([{ label: "rung", value: "record-only" }]);
+    expect(choudoufuCardFields({ attrs }, { boxEstate: "other" })).toEqual([
+      { label: "rung", value: "record-only" },
+      { label: "estate", value: "e" },
+    ]);
+  });
+
+  it("drops the rung all but a handful of instances sit on", () => {
+    expect(choudoufuCardFields({ attrs: { estate: "e", rung: "tag-governable" } }, { boxEstate: "e" })).toBeUndefined();
+    expect(choudoufuCardFields({ attrs: { estate: "e", rung: "declaration-carried" } }, { boxEstate: "e" })).toEqual([{ label: "rung", value: "declaration-carried" }]);
+  });
+
+  it("names the estate that holds an unowned object, and says when nothing declares a marked one", () => {
+    expect(choudoufuCardFields({ attrs: { estate: "e", rung: "tag-governable", ownedBy: "neighbour" } }, { boxEstate: "e" })).toEqual([{ label: "owned by", value: "neighbour" }]);
+    expect(choudoufuCardFields({ attrs: { estate: "e", marked: "carries this estate's marker, declared nowhere in its configuration" } }, { boxEstate: "e" })).toEqual([
+      { label: "declared", value: "nowhere" },
+    ]);
   });
 });
 
@@ -349,5 +372,29 @@ describe("the probe and the floor (#369)", () => {
     expect(at("v0.15.0-30-g9c7d3701e2")).toBe(true); // a git-describe build is past its base tag
     expect(at("")).toBe(true); // a development build with no ldflag
     expect(isDevBuild("v0.16.0")).toBe(false);
+  });
+});
+
+describe("moduleInstanceOf — the sub-box a card sits in (#393 B)", () => {
+  it("names the module INSTANCE, brackets and all", () => {
+    expect(moduleInstanceOf('module.team_pod["pod-a"].aws_iam_role.pod_role[2]')).toBe('module.team_pod["pod-a"]');
+    expect(moduleInstanceOf('module.team_pod["pod-b"].aws_instance.node')).toBe('module.team_pod["pod-b"]');
+    // Two calls of one module are two boxes — the instance is the point.
+    expect(moduleInstanceOf('module.team_pod["pod-a"].x.y')).not.toBe(moduleInstanceOf('module.team_pod["pod-b"].x.y'));
+  });
+
+  it("takes a count-indexed and an unindexed call", () => {
+    expect(moduleInstanceOf("module.network[0].aws_subnet.private")).toBe("module.network[0]");
+    expect(moduleInstanceOf("module.network.aws_subnet.private")).toBe("module.network");
+  });
+
+  it("keeps only the outermost instance of a nested call", () => {
+    expect(moduleInstanceOf('module.a["x"].module.b.aws_s3_bucket.c')).toBe('module.a["x"]');
+  });
+
+  it("says nothing about a root-module address", () => {
+    expect(moduleInstanceOf("aws_ecs_cluster.main")).toBeUndefined();
+    expect(moduleInstanceOf("data.aws_vpc.network")).toBeUndefined();
+    expect(moduleInstanceOf("modules.not_a_module.x")).toBeUndefined();
   });
 });

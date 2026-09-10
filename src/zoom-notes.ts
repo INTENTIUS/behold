@@ -127,9 +127,15 @@ export function logicalKept(before: number, after: number): string | undefined {
  * `undefined` keeps the plain estate-fact wording, since a caller that
  * cannot say what tier it fetched at has no narrower claim to make.
  */
-export function edgelessNote(zoom: Zoom, ir: NotableGraph, detail?: number): string | undefined {
+export function edgelessNote(zoom: Zoom, ir: NotableGraph, detail?: number, instead?: string): string | undefined {
   if (zoom === "components" || zoom === "logical") return undefined;
   if (ir.nodes.length === 0 || ir.edges.length > 0) return undefined;
+  // #393 item 1: a caller that knows WHY there are no edges says so instead.
+  // A choudoufu estate's own references are read by chant's terraform lexicon
+  // (src/choudoufu-refs.ts), and with that reader absent both sentences below
+  // are claims behold cannot make — the detail tier is not what is missing,
+  // and "nothing references anything else" is a fact nobody established.
+  if (instead) return instead;
   if (detail !== undefined && detail < 3) {
     return "no edges at this detail — sourceRef/dependsOn and other attrs-derived references only appear at detail 3 (⌘K → attributes, or add &detail=3)";
   }
@@ -211,6 +217,7 @@ export function notesFor(
   compositeEdgesAttached?: number,
   logicalBefore?: number,
   detail?: number,
+  edgelessInstead?: string,
 ): string | undefined {
   // When the caller can say what logical was given, that reading wins: it
   // catches the partial projection the empty-only check cannot see.
@@ -218,7 +225,7 @@ export function notesFor(
     zoom === "logical" && logicalBefore !== undefined
       ? logicalKept(logicalBefore, ir.nodes.length)
       : zoomNote(zoom, ir, compositeEdgesAttached);
-  const notes = [primary, edgelessNote(zoom, ir, detail)].filter((n): n is string => n !== undefined);
+  const notes = [primary, edgelessNote(zoom, ir, detail, edgelessInstead)].filter((n): n is string => n !== undefined);
   return notes.length ? notes.join(" · ") : undefined;
 }
 

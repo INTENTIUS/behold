@@ -11,7 +11,7 @@ import { chromium } from "playwright";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { startStub, JSON_FIXTURE, BOX, EDGE_VIA } from "./stub.mjs";
+import { startStub, JSON_FIXTURE, BOX, EDGE_VIA, PAL_FAR, PAL_MEMBER } from "./stub.mjs";
 import { THEMES, DEFAULT_THEME } from "../web/themes.js";
 import { tokensFor, pinTokensFor, colorForCategory, setTheme, hexToOklch, contrast } from "../web/theme.js";
 import { helmIconFor, PLATE_FILL } from "../src/icon-packs.ts";
@@ -1052,6 +1052,158 @@ try {
   } finally {
     await carvePage.close();
     carveServer.close();
+  }
+
+  // ---- #393: an estate with no chant member -------------------------------
+  // A third stub (smoke/stub.mjs `{nonChant: true}`) serving what the audit
+  // measured on water park and on every choudoufu estate: one member, no
+  // components to project, an env with no owner chain under it, and a note that
+  // does not fit a 260px strip. Four of the audit's findings are visible in the
+  // first screen alone, so the first screen is what this drives.
+  const wbServer = await startStub(PORT + 2, { nonChant: true });
+  const wbPage = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+  const wbErrors = [];
+  wbPage.on("pageerror", (e) => wbErrors.push(String(e)));
+  wbPage.on("console", (m) => {
+    if (m.type() === "error" && !/favicon/i.test(m.text())) wbErrors.push(m.text());
+  });
+  try {
+    // The main stub's estate DOES declare k8s, so the stop it must keep is
+    // asserted here too — a gate that hides the stop everywhere is not a fix.
+    await page.click('#panel-tabs button[data-tab="view"]');
+    await page.waitForTimeout(100);
+    check("a k8s estate with an env keeps the runtime zoom", (await page.locator("#panel-zoom button", { hasText: /^runtime$/ }).count()) === 1);
+
+    await wbPage.goto(`http://localhost:${PORT + 2}/`);
+    await wbPage.waitForSelector("#graph svg [data-node-id]", { timeout: 20000 });
+
+    // Item 1: it opens on a picture, not on "the components lens doesn't apply
+    // to a composed estate yet".
+    check("an estate with no chant member boots on resources", (await wbPage.locator("#statusbar").innerText()).startsWith("zoom: resources"));
+
+    // Item 2: no runtime stop, on either surface — the palette and the View tab
+    // read the same list, and a stop must not appear in one and not the other.
+    await wbPage.click('#panel-tabs button[data-tab="view"]');
+    await wbPage.waitForTimeout(100);
+    const zooms = await wbPage.locator("#panel-zoom button").allInnerTexts();
+    check("the View tab offers no runtime zoom", !zooms.includes("runtime"));
+    check("…and still offers the granularity stops", ["components", "logical", "composites", "resources", "attributes"].every((z) => zooms.includes(z)));
+    await wbPage.click("#hintk");
+    await wbPage.fill("#pal-input", "zoom");
+    await wbPage.waitForTimeout(100);
+    const rows = await wbPage.locator("#pal-list .row").allInnerTexts();
+    check("⌘K offers no runtime zoom either", !rows.some((r) => /zoom: runtime/.test(r)));
+    await wbPage.keyboard.press("Escape");
+
+    // Item 7: the strip carries the short form, the long one is a hover away,
+    // and the Model tab prints it whole.
+    const strip = await wbPage.locator("#statusbar").innerText();
+    check("the strip shows the note's short form", strip.includes("5 roots · 2 skipped · 189 blocks not drawn"));
+    check("…and not the paragraph", !strip.includes("modules/persona"));
+    check("the full note is on the strip's tooltip", (await wbPage.locator("#statusbar .statusbar-note").getAttribute("title")).includes("modules/persona (called as a module"));
+    await wbPage.click('#panel-tabs button[data-tab="model"]');
+    await wbPage.waitForTimeout(100);
+    check("the Model tab prints the note in full", (await wbPage.locator("#tab-model").innerText()).includes("108 variables, 53 outputs"));
+
+    // Item 4: one member is a project.
+    const metaLine = await wbPage.locator("#meta").innerText();
+    check("a lone member reads 'estate of 1 project'", metaLine.includes("estate of 1 project") && !metaLine.includes("1 projects"));
+
+    // Item 4: ⌘K takes an address, and lands on the card.
+    const fitBox = () => wbPage.locator("#graph svg").getAttribute("viewBox");
+    const atFit = await fitBox();
+    await wbPage.click("#hintk");
+    await wbPage.fill("#pal-input", "aws_iam_role.team_0007");
+    await wbPage.waitForTimeout(120);
+    const nodeRows = wbPage.locator("#pal-list .row");
+    check("typing an address offers the card", (await nodeRows.first().innerText()).startsWith(`node: aws_iam_role.team_0007_role`));
+    check(
+      "…with the member and the kind on its second line",
+      (await nodeRows.first().locator(".sub").innerText()).includes(PAL_MEMBER) && (await nodeRows.first().locator(".sub").innerText()).includes("aws_iam_role"),
+    );
+    // Two members declare `aws_iam_role.shared`; both are offered, and the
+    // second line is the only thing that tells them apart.
+    await wbPage.fill("#pal-input", "aws_iam_role.shared");
+    await wbPage.waitForTimeout(120);
+    const shared = await wbPage.locator("#pal-list .row .sub").allInnerTexts();
+    check("two members declaring one address are two rows", shared.filter((s) => s.includes("aws_iam_role")).length === 2);
+
+    // Prefix matches rank first, and the list is capped.
+    await wbPage.fill("#pal-input", "aws_iam_role.");
+    await wbPage.waitForTimeout(120);
+    const many = await wbPage.locator("#pal-list .row").allInnerTexts();
+    check("the node rows are capped", many.filter((r) => r.startsWith("node: ")).length <= 12);
+    check("a prefix match leads", many[0].startsWith("node: aws_iam_role."));
+
+    await wbPage.fill("#pal-input", "aws_iam_role.team_0007");
+    await wbPage.waitForTimeout(120);
+    await wbPage.keyboard.press("Enter");
+    await wbPage.waitForTimeout(200);
+    check("Enter closes the palette", (await wbPage.locator("#palette.on").count()) === 0);
+    check("…and the inspect pane shows the card", (await wbPage.locator("#inspect").innerText()).includes(PAL_FAR.id));
+    check("…and the card is highlighted, the same as a click", (await wbPage.locator(`#graph svg [data-node-id="${PAL_FAR.id}"].sel`).count()) === 1);
+    const landed = (await fitBox()).split(/\s+/).map(Number);
+    check("…and the graph panned: the viewBox is no longer the fit", (await fitBox()) !== atFit);
+    check(
+      "…onto the card, which is inside the viewport",
+      PAL_FAR.x >= landed[0] && PAL_FAR.x + 312 <= landed[0] + landed[2] && PAL_FAR.y >= landed[1] && PAL_FAR.y + 84 <= landed[1] + landed[3],
+    );
+    await wbPage.screenshot({ path: join(SHOTS, "11-palette-address.png") });
+
+    // Item 3, from the browser's own side: nothing red in the console on the
+    // way to that first screen.
+    check("no console errors on a non-chant estate's boot", wbErrors.length === 0);
+    if (wbErrors.length) console.error("non-chant page errors:", wbErrors);
+    await wbPage.screenshot({ path: join(SHOTS, "9-non-chant-estate.png") });
+  } finally {
+    await wbPage.close();
+    wbServer.close();
+  }
+
+  // ---- #393 items 8 and 10: an estate that speaks choudoufu ----------------
+  // The legend, the statusbar counts and the inspect status row all render
+  // from the `vocabulary` the server puts on the overlay meta, and an UNOWNED
+  // card's first declared row is the line that adopts it, with a copy button.
+  const chdfServer = await startStub(PORT + 3, { choudoufu: true });
+  const chdfPage = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+  const chdfErrors = [];
+  chdfPage.on("pageerror", (e) => chdfErrors.push(String(e)));
+  try {
+    await chdfPage.goto(`http://localhost:${PORT + 3}/`);
+    await chdfPage.waitForSelector("#graph svg [data-node-id]", { timeout: 20000 });
+
+    const meta = await chdfPage.locator("#meta").innerText();
+    check("the statusbar counts read in choudoufu's words", meta.includes("1 bound") && meta.includes("1 unowned") && meta.includes("1 not observed"));
+    check("…and not in chant's", !/managed|foreign|unobserved/.test(meta));
+
+    await chdfPage.click('#panel-tabs button[data-tab="model"]');
+    await chdfPage.waitForTimeout(100);
+    const legend = await chdfPage.locator("#tab-model").innerText();
+    check("the legend says bound / unowned / pending", legend.includes("bound") && legend.includes("unowned") && legend.includes("pending"));
+    check("…and never says managed", !legend.includes("managed"));
+
+    // The UNOWNED card: the line to run, first, copyable.
+    await chdfPage.click('[data-node-id="terralith-4/aws_cloudwatch_log_group.extra"]');
+    await chdfPage.waitForTimeout(200);
+    const pane = chdfPage.locator("#inspect-body");
+    check("the inspect status row speaks choudoufu too", (await pane.innerText()).includes("unowned"));
+    const declaredKeys = await pane.locator("h3:text-is('declared') + dl dt").allInnerTexts();
+    check("the adoption line is the declared section's first row", declaredKeys[0] === "adopt");
+    check("…and the paragraph is below it", declaredKeys.indexOf("adopt") < declaredKeys.indexOf("detail"));
+    const adoptRow = pane.locator("h3:text-is('declared') + dl dd").first();
+    check("the row carries the two tags choudoufu named", (await adoptRow.innerText()).includes("tofu-estate=terralith-4 tofu-address=aws_cloudwatch_log_group.extra"));
+    const copy = adoptRow.locator("button");
+    check("…with a copy button beside it", (await copy.count()) === 1);
+    await copy.click();
+    await chdfPage.waitForTimeout(100);
+    check("the copy button confirms", (await copy.innerText()).includes("copied"));
+
+    check("no console errors on a choudoufu estate", chdfErrors.length === 0);
+    if (chdfErrors.length) console.error("choudoufu page errors:", chdfErrors);
+    await chdfPage.screenshot({ path: join(SHOTS, "10-choudoufu-vocabulary.png") });
+  } finally {
+    await chdfPage.close();
+    chdfServer.close();
   }
 
   check("no page errors", pageErrors.length === 0);

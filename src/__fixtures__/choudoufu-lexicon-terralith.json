@@ -1,0 +1,343 @@
+{
+  "nodes": [
+    {
+      "id": "estate/aws_iam_instance_profile.team_0000_profile",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_iam_instance_profile.team_0000_profile",
+        "file": "iam.tf",
+        "root": "estate"
+      }
+    },
+    {
+      "id": "estate/aws_iam_policy.count_team_policy",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_iam_policy.count_team_policy",
+        "file": "iam.tf",
+        "root": "estate",
+        "expansion": "count"
+      }
+    },
+    {
+      "id": "estate/aws_iam_policy.team_0000_policy",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_iam_policy.team_0000_policy",
+        "file": "iam.tf",
+        "root": "estate"
+      }
+    },
+    {
+      "id": "estate/aws_iam_role_policy_attachment.count_team_custom_attach",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_iam_role_policy_attachment.count_team_custom_attach",
+        "file": "iam.tf",
+        "root": "estate",
+        "expansion": "count"
+      }
+    },
+    {
+      "id": "estate/aws_iam_role_policy_attachment.team_0000_custom_attach",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_iam_role_policy_attachment.team_0000_custom_attach",
+        "file": "iam.tf",
+        "root": "estate"
+      }
+    },
+    {
+      "id": "estate/aws_iam_role_policy_attachment.team_0000_managed_attach",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_iam_role_policy_attachment.team_0000_managed_attach",
+        "file": "iam.tf",
+        "root": "estate"
+      }
+    },
+    {
+      "id": "estate/aws_iam_role_policy.count_team_inline",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_iam_role_policy.count_team_inline",
+        "file": "iam.tf",
+        "root": "estate",
+        "expansion": "count"
+      }
+    },
+    {
+      "id": "estate/aws_iam_role_policy.team_0000_inline",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_iam_role_policy.team_0000_inline",
+        "file": "iam.tf",
+        "root": "estate"
+      }
+    },
+    {
+      "id": "estate/aws_iam_role.count_team",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_iam_role.count_team",
+        "file": "iam.tf",
+        "root": "estate",
+        "expansion": "count"
+      }
+    },
+    {
+      "id": "estate/aws_iam_role.team_0000_role",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_iam_role.team_0000_role",
+        "file": "iam.tf",
+        "root": "estate"
+      }
+    },
+    {
+      "id": "estate/aws_route53_record.record",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_route53_record.record",
+        "file": "dns.tf",
+        "root": "estate",
+        "expansion": "for_each"
+      }
+    },
+    {
+      "id": "estate/aws_route53_zone.main",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_route53_zone.main",
+        "file": "dns.tf",
+        "root": "estate"
+      }
+    },
+    {
+      "id": "estate/locals",
+      "kind": "Terraform::Locals",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "locals",
+        "file": "dns.tf",
+        "root": "estate"
+      }
+    },
+    {
+      "id": "estate/locals~2",
+      "kind": "Terraform::Locals",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "locals",
+        "file": "main.tf",
+        "root": "estate"
+      }
+    },
+    {
+      "id": "estate/module.team_pod",
+      "kind": "Terraform::Module",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "module.team_pod",
+        "file": "pods.tf",
+        "root": "estate",
+        "expansion": "for_each"
+      }
+    },
+    {
+      "id": "estate/module.team_pod/aws_iam_policy.pod_policy",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_iam_policy.pod_policy",
+        "file": "main.tf",
+        "root": "estate",
+        "expansion": "count"
+      }
+    },
+    {
+      "id": "estate/module.team_pod/aws_iam_role_policy_attachment.pod_custom_attach",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_iam_role_policy_attachment.pod_custom_attach",
+        "file": "main.tf",
+        "root": "estate",
+        "expansion": "count"
+      }
+    },
+    {
+      "id": "estate/module.team_pod/aws_iam_role.pod_role",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_iam_role.pod_role",
+        "file": "main.tf",
+        "root": "estate",
+        "expansion": "count"
+      }
+    },
+    {
+      "id": "estate/module.team_pod/var.pod_size",
+      "kind": "Terraform::Variable",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "var.pod_size",
+        "file": "variables.tf",
+        "root": "estate"
+      }
+    },
+    {
+      "id": "estate/module.team_pod/var.prefix",
+      "kind": "Terraform::Variable",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "var.prefix",
+        "file": "variables.tf",
+        "root": "estate"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "estate/aws_iam_instance_profile.team_0000_profile",
+      "to": "estate/aws_iam_role.team_0000_role",
+      "kind": "ref",
+      "viaAttr": "role",
+      "toAttr": "name"
+    },
+    {
+      "from": "estate/aws_iam_role_policy_attachment.count_team_custom_attach",
+      "to": "estate/aws_iam_policy.count_team_policy",
+      "kind": "ref",
+      "viaAttr": "policy_arn"
+    },
+    {
+      "from": "estate/aws_iam_role_policy_attachment.count_team_custom_attach",
+      "to": "estate/aws_iam_role.count_team",
+      "kind": "ref",
+      "viaAttr": "role"
+    },
+    {
+      "from": "estate/aws_iam_role_policy_attachment.team_0000_custom_attach",
+      "to": "estate/aws_iam_policy.team_0000_policy",
+      "kind": "ref",
+      "viaAttr": "policy_arn",
+      "toAttr": "arn"
+    },
+    {
+      "from": "estate/aws_iam_role_policy_attachment.team_0000_custom_attach",
+      "to": "estate/aws_iam_role.team_0000_role",
+      "kind": "ref",
+      "viaAttr": "role",
+      "toAttr": "name"
+    },
+    {
+      "from": "estate/aws_iam_role_policy_attachment.team_0000_managed_attach",
+      "to": "estate/aws_iam_role.team_0000_role",
+      "kind": "ref",
+      "viaAttr": "role",
+      "toAttr": "name"
+    },
+    {
+      "from": "estate/aws_iam_role_policy.count_team_inline",
+      "to": "estate/aws_iam_role.count_team",
+      "kind": "ref",
+      "viaAttr": "role"
+    },
+    {
+      "from": "estate/aws_iam_role_policy.team_0000_inline",
+      "to": "estate/aws_iam_role.team_0000_role",
+      "kind": "ref",
+      "viaAttr": "role",
+      "toAttr": "name"
+    },
+    {
+      "from": "estate/aws_route53_record.record",
+      "to": "estate/aws_route53_zone.main",
+      "kind": "ref",
+      "viaAttr": "name",
+      "toAttr": "name"
+    },
+    {
+      "from": "estate/aws_route53_record.record",
+      "to": "estate/aws_route53_zone.main",
+      "kind": "ref",
+      "viaAttr": "zone_id",
+      "toAttr": "zone_id"
+    },
+    {
+      "from": "estate/aws_route53_record.record",
+      "to": "estate/locals",
+      "kind": "ref",
+      "viaAttr": "for_each"
+    },
+    {
+      "from": "estate/module.team_pod/aws_iam_policy.pod_policy",
+      "to": "estate/module.team_pod/var.pod_size",
+      "kind": "ref",
+      "viaAttr": "count"
+    },
+    {
+      "from": "estate/module.team_pod/aws_iam_policy.pod_policy",
+      "to": "estate/module.team_pod/var.prefix",
+      "kind": "ref",
+      "viaAttr": "name"
+    },
+    {
+      "from": "estate/module.team_pod/aws_iam_role_policy_attachment.pod_custom_attach",
+      "to": "estate/module.team_pod/aws_iam_policy.pod_policy",
+      "kind": "ref",
+      "viaAttr": "policy_arn"
+    },
+    {
+      "from": "estate/module.team_pod/aws_iam_role_policy_attachment.pod_custom_attach",
+      "to": "estate/module.team_pod/aws_iam_role.pod_role",
+      "kind": "ref",
+      "viaAttr": "role"
+    },
+    {
+      "from": "estate/module.team_pod/aws_iam_role_policy_attachment.pod_custom_attach",
+      "to": "estate/module.team_pod/var.pod_size",
+      "kind": "ref",
+      "viaAttr": "count"
+    },
+    {
+      "from": "estate/module.team_pod/aws_iam_role.pod_role",
+      "to": "estate/module.team_pod/var.pod_size",
+      "kind": "ref",
+      "viaAttr": "count"
+    },
+    {
+      "from": "estate/module.team_pod/aws_iam_role.pod_role",
+      "to": "estate/module.team_pod/var.prefix",
+      "kind": "ref",
+      "viaAttr": "name"
+    },
+    {
+      "from": "estate/module.team_pod",
+      "to": "estate/locals~2",
+      "kind": "ref",
+      "viaAttr": "pod_size"
+    },
+    {
+      "from": "estate/module.team_pod",
+      "to": "estate/locals~2",
+      "kind": "ref",
+      "viaAttr": "prefix"
+    }
+  ],
+  "groups": {}
+}

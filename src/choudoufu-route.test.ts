@@ -41,6 +41,7 @@ function fakeChoudoufu(spawns: string[][]) {
     if (verb === "live-check") return { code: 0, stderr: "", stdout: inMono ? raw("choudoufu-live-check-monolith.json") : raw("choudoufu-live-check-team-a.json") };
     if (verb === "live-mv") return { code: 0, stderr: "", stdout: args[4] === "aws_iam_role.team_b" ? raw("choudoufu-live-mv-refused.json") : raw("choudoufu-live-mv-cross-estate-dry-run.json") };
     if (verb === "live-ls") return { code: 0, stderr: "", stdout: inMono ? raw("choudoufu-live-ls-monolith.json") : raw("choudoufu-live-ls-team-a-after-split.json") };
+    if (verb === "live-plan") return { code: 0, stderr: "", stdout: inMono ? raw("choudoufu-live-plan-monolith-clean.json") : raw("choudoufu-live-plan-team-a-after-split.json") };
     return { code: 2, stderr: `unexpected ${verb}`, stdout: "" };
   };
 }
@@ -99,6 +100,34 @@ describe("GET /api/choudoufu/moves (#371)", () => {
     expect(((await outside.json()) as { code: string }).code).toBe("choudoufu_plan_outside");
     const notOne = await app.request("/api/choudoufu/moves?plan=main.tf");
     expect(notOne.status).toBe(422);
+  });
+
+  // #393 items 1, 2 and 3: what a choudoufu estate's first screen asked for,
+  // and what it was told. The estate here is the two-member one above — no
+  // chant member, no k8s lexicon, no components to project.
+  it("says its members are choudoufu, offers no runtime zoom, and answers /api/resources empty", async () => {
+    const { app } = served();
+
+    const info = (await (await app.request("/api/project")).json()) as { memberKinds: string[]; runtimeCapable?: boolean };
+    expect(info.memberKinds).toEqual(["choudoufu"]);
+    expect(info.runtimeCapable).toBeUndefined();
+
+    // Before this the panel's resources facet asked chant for the component
+    // resources of an estate chant cannot read, and every boot logged a 500
+    // (`No lexicon detected`) in the browser console.
+    const res = await app.request("/api/resources?env=live");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ byComponent: {} });
+  });
+
+  // #393 item 8: the legend speaks the members' own words.
+  it("carries choudoufu's vocabulary on the overlay meta", async () => {
+    const { app } = served();
+    const body = (await (await app.request("/api/overlay?env=live")).json()) as { meta: { vocabulary: { of: string; labels: Record<string, string>; note?: string } } };
+    expect(body.meta.vocabulary.of).toBe("choudoufu");
+    expect(body.meta.vocabulary.labels).toMatchObject({ good: "bound", warn: "unowned", accent: "pending", neutral: "not observed" });
+    // Nothing to explain: every member speaks this vocabulary.
+    expect(body.meta.vocabulary.note).toBeUndefined();
   });
 
   it("is advertised on /api, and /api/project lists the plans found", async () => {

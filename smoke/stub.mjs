@@ -259,6 +259,11 @@ const JSON_ROUTES = {
     targets: [{ endpoint: "http://localhost:4566" }],
     tier: "dev",
     target: "http://localhost:4566",
+    // #393 item 2: the runtime stop exists here — this estate declares `k8s`,
+    // whose live read is the only one with an owner-reference chain to descend.
+    // `nonChant` below is the estate that does not, and must not be offered it.
+    runtimeCapable: true,
+    memberKinds: ["chant"],
     // #284: the ops zoom stop only exists once the estate has emitted Ops. The
     // count is what opens it — and it is also what the operator strip (#234)
     // needs on screen, since the strip lives on that lens.
@@ -431,7 +436,131 @@ export const CARVE_BRIDGE = {
  * records what the page sent, so the smoke can assert the wire contract
  * (a JSON body carrying the picked address) and not just the pixels.
  */
-export function startStub(port, { carve = false } = {}) {
+/**
+ * #393 — a served estate whose members are NOT chant projects (a choudoufu
+ * estate, a bare Terraform directory). Three things about it differ from every
+ * other project the SPA has seen, and all three were audit findings:
+ *
+ *  - it has no components to project, so the boot zoom must be `resources`
+ *    rather than a first screen that apologises;
+ *  - it declares an env (`live`) but no substrate with an owner chain, so the
+ *    `runtime` stop must not be offered even though an env is picked;
+ *  - its note is a paragraph, so the strip gets `noteShort` and the long form
+ *    stays on the tooltip and the Model tab.
+ *
+ * The note is water park's own, verbatim from `/api/graph` over
+ * `../waterpark/access`.
+ */
+const NON_CHANT_NOTE =
+  "5 roots — baseline, prod, github, identity, waterpark-runner; skipped backends (no resource, data or module block — nothing to draw), " +
+  "modules/persona (called as a module, never applied on its own); showing the estate — 108 variables, 53 outputs, 14 terraform blocks, " +
+  "10 locals blocks, 4 providers not drawn (outputs and variables appear at detail 3 — ⌘K → attributes)";
+const NON_CHANT_NOTE_SHORT = "5 roots · 2 skipped · 189 blocks not drawn";
+const NON_CHANT_PROJECT = {
+  projectDir: "/estates/waterpark/access",
+  recents: [],
+  environments: ["live"],
+  lexicons: [],
+  currentEnv: "live",
+  targets: [],
+  memberKinds: ["terraform"],
+};
+
+/**
+ * #393 items 8 and 10 — an estate whose members are choudoufu, which is where
+ * the legend's words and the UNOWNED inspect's first row have to be right.
+ *
+ * Three cards, one per state a reader has to be able to name: bound (and bound
+ * by DERIVED identity, so no marker is on the object yet), unowned with the two
+ * tags that adopt it, and one the tool did not answer for. The meta carries the
+ * `vocabulary` the real server derives from the member kinds
+ * (src/status-vocabulary.ts) — the SPA renders the legend, the statusbar counts
+ * and the inspect status row from it, and this is what proves it reaches all
+ * three.
+ */
+const CHOUDOUFU_ADOPT = "tofu-estate=terralith-4 tofu-address=aws_cloudwatch_log_group.extra";
+const CHOUDOUFU_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 300" width="620" height="300">
+  <style>:root{--pin-bg0:#0d1117;--pin-text:#e6edf3}</style>
+  <rect x="0" y="0" width="620" height="300" fill="var(--pin-bg0, #0d1117)"/>
+  <rect data-group-id="terralith-4" x="20" y="40" width="580" height="220" rx="10" fill="none" stroke="var(--pin-edge, #444)"/>
+  <text x="30" y="30" font-size="12" fill="var(--pin-textMuted, #999)">terralith-4</text>
+  ${nodeSvg("terralith-4/aws_ecs_cluster.main", 40, "good", "aws_ecs_cluster.main")}
+  ${nodeSvg("terralith-4/aws_cloudwatch_log_group.extra", 230, "warn", "aws_cloudwatch_log_group.extra")}
+  ${nodeSvg("terralith-4/aws_iam_role.quiet", 420, "neutral", "aws_iam_role.quiet")}
+</svg>`;
+const CHOUDOUFU_IR = {
+  nodes: [
+    {
+      id: "terralith-4/aws_ecs_cluster.main",
+      kind: "aws_ecs_cluster",
+      lexicon: "choudoufu",
+      attrs: { estate: "terralith-4", bound: "by derived identity (the name the configuration states) — no marker on the object yet", _status: "good" },
+    },
+    {
+      id: "terralith-4/aws_cloudwatch_log_group.extra",
+      kind: "aws_cloudwatch_log_group",
+      lexicon: "choudoufu",
+      attrs: {
+        estate: "terralith-4",
+        adopt: CHOUDOUFU_ADOPT,
+        omission: "UNOWNED",
+        detail: "a live object stands at this identity and carries no marker of ours; adopt it by writing the two tags, or let the plan create a second one",
+        _status: "warn",
+      },
+    },
+    { id: "terralith-4/aws_iam_role.quiet", kind: "aws_iam_role", lexicon: "choudoufu", attrs: { estate: "terralith-4", _status: "neutral", _unobserved: "not mentioned by live-plan or live-ls" } },
+  ],
+  edges: [],
+};
+const CHOUDOUFU_VOCABULARY = { of: "choudoufu", labels: { good: "bound", warn: "unowned", accent: "pending", neutral: "not observed", runtime: "runtime child" } };
+const CHOUDOUFU_PROJECT = {
+  projectDir: "/estates/terralith-4",
+  recents: [],
+  environments: ["live"],
+  lexicons: [],
+  currentEnv: "live",
+  targets: [],
+  memberKinds: ["choudoufu"],
+};
+
+// #393 item 4 (⌘K takes an address): an estate at the scale that made the audit
+// ask for it — composed ids (`<member>/<address>`), one card per team, on a
+// canvas far wider than the pane. The last card sits in the far corner of an
+// 8000 x 3000 viewBox, so a palette pick that only SELECTED it would leave it a
+// pixel at the edge of the fit: the assertion is that the viewBox moves.
+//
+// Addresses are the terralith's own shape, and there are two members declaring
+// the same address on purpose — `aws_iam_role.shared` — because that pair is
+// the reason a node row needs a second line at all.
+export const PAL_MEMBER = "terralith-4";
+export const PAL_FAR = { id: `${PAL_MEMBER}/aws_iam_role.team_0007_role`, x: 7200, y: 2600 };
+const palCards = [
+  ...Array.from({ length: 8 }, (_, i) => ({
+    id: `${PAL_MEMBER}/aws_iam_role.team_000${i}_role`,
+    kind: "aws_iam_role",
+    x: i === 7 ? PAL_FAR.x : 120 + i * 420,
+    y: i === 7 ? PAL_FAR.y : 900,
+  })),
+  { id: `${PAL_MEMBER}/aws_iam_role.shared`, kind: "aws_iam_role", x: 120, y: 1500 },
+  { id: "cohort-iam-ecr/aws_iam_role.shared", kind: "aws_iam_role", x: 620, y: 1500 },
+];
+const palCardSvg = (c) => `
+  <g data-node-id="${c.id}">
+    <rect x="${c.x}" y="${c.y}" width="312" height="84" rx="12" fill="var(--pin-goodFill, #1c2431)" stroke="var(--pin-goodStroke, #345)"/>
+    <text x="${c.x + 16}" y="${c.y + 30}" font-size="13" fill="var(--pin-text, #e6edf3)">${c.id}</text>
+    <text x="${c.x + 16}" y="${c.y + 50}" font-size="10" fill="var(--pin-textMuted, #8b949e)">${c.kind}</text>
+  </g>`;
+const NON_CHANT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8000 3000" width="8000" height="3000">
+  <rect x="0" y="0" width="8000" height="3000" fill="var(--pin-bg0, #0d1117)"/>
+  <rect data-group-id="${PAL_MEMBER}" x="60" y="820" width="7500" height="1900" rx="10" fill="none" stroke="var(--pin-edge, #444)"/>
+${palCards.map(palCardSvg).join("\n")}
+</svg>`;
+const NON_CHANT_IR = {
+  nodes: palCards.map((c) => ({ id: c.id, kind: c.kind, lexicon: "choudoufu", attrs: { _status: "good", rung: "tag-governable", estate: "behold-terralith-4" } })),
+  edges: [],
+};
+
+export function startStub(port, { carve = false, nonChant = false, choudoufu = false } = {}) {
   // #228: the hand-layout sidecar, in memory instead of `.behold/layout.json`
   // — the SAME wire contract src/server.ts serves (lens-keyed deltas, a
   // `writable` flag on the read), so the smoke drives the client's whole sync
@@ -538,6 +667,68 @@ export function startStub(port, { carve = false } = {}) {
       if (path === "/api/ci") return json({ stages: [], jobs: [], forge: null });
       if (path === "/api/ops") return json({ ops: [], adoptLexicons: [], autoSync: "off" });
       if (path === "/api/layout") return json({ lens: url.searchParams.get("lens"), writable: false, reason: "a carve report isn't a project", deltas: {} });
+    }
+    if (choudoufu) {
+      const json = (body) => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify(body));
+      };
+      if (path === "/api/project") return json(CHOUDOUFU_PROJECT);
+      if (path === "/api/graph" || path === "/api/overlay") {
+        return json({
+          ir: CHOUDOUFU_IR,
+          svg: CHOUDOUFU_SVG,
+          meta: { projectDir: CHOUDOUFU_PROJECT.projectDir, env: "live", tier: null, target: null, estate: 1, mode: "overlay", vocabulary: CHOUDOUFU_VOCABULARY },
+        });
+      }
+      if (path === "/api/diff") {
+        return json({
+          env: "live",
+          nodes: {
+            "terralith-4/aws_cloudwatch_log_group.extra": {
+              observed: {
+                type: "aws_cloudwatch_log_group",
+                physicalId: "/terralith-4/extra",
+                ownership: "foreign",
+                attributes: { adopt: CHOUDOUFU_ADOPT, omission: "UNOWNED", detail: CHOUDOUFU_IR.nodes[1].attrs.detail, rung: "tag-governable" },
+              },
+              diff: null,
+              health: "degraded",
+              healthDetail: "UNOWNED: a live object stands at this identity and carries no marker of ours",
+              fieldDrift: null,
+            },
+          },
+        });
+      }
+      if (path === "/api/substrates") return json({ substrates: [] });
+      if (path === "/api/resources") return json({ byComponent: {} });
+      if (path === "/api/ci") return json({ stages: [], jobs: [], forge: null });
+      if (path === "/api/ops") return json({ ops: [], adoptLexicons: [], autoSync: "off" });
+      if (path === "/api/history") return json({ commits: [] });
+      if (path === "/api/demos") return json({ demos: [] });
+      if (path === "/api/layout") return json({ lens: url.searchParams.get("lens"), writable: false, reason: "a stub", deltas: {} });
+    }
+    if (nonChant) {
+      const json = (body) => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify(body));
+      };
+      if (path === "/api/project") return json(NON_CHANT_PROJECT);
+      // The same cards the ordinary stub paints — what differs is the meta,
+      // which is the whole point here: one member, a long note, a short one.
+      if (path === "/api/graph" || path === "/api/overlay") {
+        return json({
+          ir: NON_CHANT_IR,
+          svg: NON_CHANT_SVG,
+          meta: { projectDir: NON_CHANT_PROJECT.projectDir, env: "live", tier: null, target: null, estate: 1, note: NON_CHANT_NOTE, noteShort: NON_CHANT_NOTE_SHORT },
+        });
+      }
+      if (path === "/api/substrates") return json({ substrates: [] });
+      if (path === "/api/resources") return json({ byComponent: {} });
+      if (path === "/api/ci") return json({ stages: [], jobs: [], forge: null });
+      if (path === "/api/ops") return json({ ops: [], adoptLexicons: [], autoSync: "off" });
+      if (path === "/api/history") return json({ commits: [] });
+      if (path === "/api/demos") return json({ demos: [] });
     }
     if (path === "/api/layout") {
       res.writeHead(200, { "content-type": "application/json" });

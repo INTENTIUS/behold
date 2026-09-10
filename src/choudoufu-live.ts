@@ -49,6 +49,7 @@ import {
   type ChoudoufuRefusal,
   type LiveCheckDocument,
 } from "./choudoufu-member.ts";
+import { addIntraEstateEdges, lexiconStamp } from "./choudoufu-refs.ts";
 import type { MemberVia } from "./member-ir.ts";
 import type { MemberKindSpec } from "./member-kind.ts";
 
@@ -130,6 +131,16 @@ export interface LivePlanUnowned {
   tofu_estate?: string;
   adopt_tofu_estate?: string;
   adopt_tofu_address?: string;
+  /** The one-line command that writes those two tags, when choudoufu composed
+   * one. Its human render prints it after `adopt with:` and its views call the
+   * field `Hint`, but on 0.16.0 no such field is marshalled onto an `unowned[]`
+   * entry — `StatelessUnowned` carries the two marker values and nothing else
+   * (verified against a real `live-plan -json`, choudoufu v0.16.0). Read here
+   * so the day one arrives behold shows choudoufu's own line instead of the
+   * tags; behold composes no command of its own, because the API that writes a
+   * tag differs per resource type and guessing it is worse than saying nothing. */
+  hint?: string;
+  adopt_command?: string;
 }
 
 export interface LivePlanDiagnostic {
@@ -240,10 +251,26 @@ const UNOBSERVED_REASONS = new Set(["FAILED", "CYCLE", "SUPERSEDED", "UNREADABLE
 
 const BOUND_WORDS: Record<string, string> = {
   marker: "by its marker (the estate-wide tag sweep)",
-  derived: "by derived identity (the name the configuration states)",
+  // #393 item 8: this is the whole of an unadopted estate's green. 84 of the
+  // terralith's cards are bound this way and none of them carries a marker —
+  // choudoufu matched the live object by the identity the configuration
+  // states, which is correct and is NOT ownership. The card is painted good
+  // and counted bound, per choudoufu; the pane has to say the consequence out
+  // loud, or a reader takes a third of the estate for already adopted.
+  derived: "by derived identity (the name the configuration states) — no marker on the object yet",
   record: "from the estate's record store",
   cache: "from the local state cache",
 };
+
+/** The two tags that adopt an unowned object, as the one line a person writes:
+ * choudoufu's own composed command when the document carries one, else the
+ * marker pair itself. Never a command behold made up — see `LivePlanUnowned.hint`. */
+export function adoptLine(u: LivePlanUnowned): string | undefined {
+  const composed = u.hint || u.adopt_command;
+  if (composed) return composed;
+  if (!u.adopt_tofu_estate) return undefined;
+  return `tofu-estate=${u.adopt_tofu_estate} tofu-address=${u.adopt_tofu_address ?? u.addr}`;
+}
 
 /**
  * The verdict for one declared address, from the plan and the listing. The
@@ -271,12 +298,17 @@ export function verdictFor(address: string, ls: LiveLsDocument | undefined, plan
     const tone = REASON_TONE[omission.reason] ?? "neutral";
     const base: Record<string, unknown> = { omission: omission.reason, detail: omission.detail, ...listing };
     if (omission.reason === "UNOWNED" && unowned) {
-      if (unowned.adopt_tofu_estate) {
+      const adopt = adoptLine(unowned);
+      if (adopt) {
+        // #393 item 10: the adoption line FIRST. What a person wants off an
+        // UNOWNED card is the write to run; the paragraph explaining why the
+        // plan left the instance out is the second thing, not the first, and
+        // it used to be the whole thing with the tags under it as JSON.
         return {
           _status: "warn",
           physicalId: unowned.identity,
           ownership: "foreign",
-          attrs: { ...base, adopt: { "tofu-estate": unowned.adopt_tofu_estate, "tofu-address": unowned.adopt_tofu_address } },
+          attrs: { adopt, ...base },
         };
       }
       return {
@@ -406,17 +438,25 @@ export async function choudoufuLiveIr(dir: string, opts: GraphOptions, run: Runn
 }
 
 /** How a choudoufu member is read (the `via` of its kind): the declared half
- * for a source read, the painted graph for a live one. */
+ * for a source read, the painted graph for a live one — and, on both, the
+ * estate's own references (#393, src/choudoufu-refs.ts), which come from
+ * chant's terraform lexicon over the same HCL and not from choudoufu at all.
+ * The colour is the live half's; the topology is the same either way, which is
+ * the rule /api/graph and /api/overlay are already held to. */
 export const choudoufuVia: MemberVia = {
   tool: () => {
     const v = choudoufuVersion();
-    return `choudoufu\0${v ? v.version || "dev" : "absent"}`;
+    // The lexicon is half of what answers this member now: installing it turns
+    // an edgeless estate into one with 266 edges off byte-identical source, so
+    // it has to be a different cache key or the estate serves the pre-install
+    // IR until something else invalidates it (src/member-ir.ts, rule 3).
+    return `choudoufu\0${v ? v.version || "dev" : "absent"}\0${lexiconStamp()}`;
   },
   read: async (dir: string, opts: GraphOptions): Promise<GraphIR> => {
-    if (opts.live || opts.overlay) return choudoufuLiveIr(dir, opts);
+    if (opts.live || opts.overlay) return addIntraEstateEdges(await choudoufuLiveIr(dir, opts), dir);
     const parsed = await readLiveCheck(dir);
     if (!parsed.ok) throw new ChoudoufuReadError(parsed.refusal, dir);
-    return liveCheckToIr(parsed.doc);
+    return addIntraEstateEdges(liveCheckToIr(parsed.doc), dir);
   },
 };
 
@@ -469,7 +509,11 @@ export function choudoufuDiffNodes(check: LiveCheckDocument, ls: LiveLsDocument,
             type: i.type,
             ...(v.physicalId ? { physicalId: v.physicalId } : {}),
             ...(v.ownership ? { ownership: v.ownership } : {}),
-            attributes: { ...(i.rung ? { rung: i.rung } : {}), ...v.attrs },
+            // #393 item 10: the verdict's own rows first — an UNOWNED
+            // instance leads with the line that adopts it — and the rung, the
+            // one fact that is true of the declaration whatever the account
+            // holds, last.
+            attributes: { ...v.attrs, ...(i.rung ? { rung: i.rung } : {}) },
           }
         : null,
       diff: null,
