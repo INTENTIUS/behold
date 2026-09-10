@@ -10,7 +10,7 @@
  * (reclassify / prune / value-match / composite-deps / radial all included), no
  * logic duplicated.
  */
-import { mkdirSync, writeFileSync, copyFileSync, readFileSync, readdirSync } from "node:fs";
+import { mkdirSync, writeFileSync, copyFileSync, readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createApp, type ServerOptions } from "./server.ts";
@@ -102,6 +102,35 @@ function webDir(): string {
   return join(dirname(fileURLToPath(import.meta.url)), "..", "web");
 }
 
+/** The package root: where LICENSE, THIRD_PARTY.md and licenses/ sit, one
+ * level above web/ and dist/ alike. */
+function pkgRoot(): string {
+  return join(dirname(fileURLToPath(import.meta.url)), "..");
+}
+
+/** The notice files an export carries (#394): behold's own LICENSE, the
+ * third-party summary, and every vendored licence under licenses/. Exported
+ * for the test; a missing file is skipped rather than fatal, because a
+ * checkout mid-edit must still export. */
+export const NOTICE_FILES = ["LICENSE", "THIRD_PARTY.md"] as const;
+export function copyNotices(outDir: string, root: string = pkgRoot()): string[] {
+  const copied: string[] = [];
+  for (const f of NOTICE_FILES) {
+    if (!existsSync(join(root, f))) continue;
+    copyFileSync(join(root, f), join(outDir, f));
+    copied.push(f);
+  }
+  const lic = join(root, "licenses");
+  if (existsSync(lic)) {
+    mkdirSync(join(outDir, "licenses"), { recursive: true });
+    for (const f of readdirSync(lic)) {
+      copyFileSync(join(lic, f), join(outDir, "licenses", f));
+      copied.push(`licenses/${f}`);
+    }
+  }
+  return copied;
+}
+
 /** A Cloudflare Worker name: lowercase, alnum + hyphens, ≤ 63 chars. */
 function workerName(project: string, override?: string): string {
   const raw = override ?? `behold-${basename(project)}`;
@@ -164,6 +193,12 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: { name
     copyFileSync(join(webDir(), f), join(outDir, f));
   }
   writeFileSync(join(outDir, "README.md"), BUNDLE_README);
+  // #394: the bundle redistributes what the SPA vendors — the iTerm2 colour
+  // schemes in themes.js, the CNCF artwork and Kubernetes icons under
+  // web/icons — so the notices travel with it. Whoever serves an export is
+  // the redistributor, and the notices left behind in this repo would not
+  // reach them. behold's own grant rides along for the same reason.
+  copyNotices(outDir);
 
   // Deploy-ready: an assets-only Cloudflare Worker config (no server code — the
   // bundle is pure static), so `cd <out> && wrangler deploy` hosts it on

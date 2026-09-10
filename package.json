@@ -1,6 +1,7 @@
 {
   "name": "@intentius/behold",
   "version": "0.17.0",
+  "license": "Apache-2.0",
   "type": "module",
   "description": "behold — a live control plane on chant. See your whole estate (every substrate in one graph), coloured by drift; act through delegated, gated Ops.",
   "bin": {
@@ -17,7 +18,10 @@
     "example-carve",
     "example-choudoufu-estate",
     "demos.json",
-    "AGENTS.md"
+    "AGENTS.md",
+    "LICENSE",
+    "THIRD_PARTY.md",
+    "licenses"
   ],
   "publishConfig": {
     "access": "public",

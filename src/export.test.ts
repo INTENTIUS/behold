@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { canonicalKey, captureKeys } from "./export.ts";
+import { canonicalKey, captureKeys, copyNotices } from "./export.ts";
 
 describe("canonicalKey", () => {
   it("is independent of param order (sorted by the lens whitelist)", () => {
@@ -106,5 +106,27 @@ describe("the ops lens in a static bundle (#284)", () => {
     const keys = captureKeys({ environments: ["local"], tiers: [] });
     expect(keys.some((k) => k.includes("ops=1"))).toBe(false);
     expect(captureKeys({ environments: ["local"], tiers: [], ops: 0 }).some((k) => k.includes("ops=1"))).toBe(false);
+  });
+});
+
+describe("copyNotices — the export carries the grants it redistributes (#394)", () => {
+  it("copies LICENSE, THIRD_PARTY.md and every file under licenses/ into the bundle", async () => {
+    const { mkdtempSync, existsSync, readdirSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const out = mkdtempSync(join(tmpdir(), "behold-export-notices-"));
+    const copied = copyNotices(out);
+    expect(copied).toContain("LICENSE");
+    expect(copied).toContain("THIRD_PARTY.md");
+    expect(copied.filter((f) => f.startsWith("licenses/")).length).toBeGreaterThanOrEqual(3);
+    expect(existsSync(join(out, "LICENSE"))).toBe(true);
+    expect(readdirSync(join(out, "licenses")).length).toBe(copied.filter((f) => f.startsWith("licenses/")).length);
+  });
+
+  it("the package ships them too: LICENSE, THIRD_PARTY.md and licenses/ are in package.json files, and the grant is declared", async () => {
+    const { readFileSync } = await import("node:fs");
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { license?: string; files: string[] };
+    expect(pkg.license).toBe("Apache-2.0");
+    for (const f of ["LICENSE", "THIRD_PARTY.md", "licenses"]) expect(pkg.files).toContain(f);
   });
 });
