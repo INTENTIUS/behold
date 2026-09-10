@@ -404,6 +404,29 @@ until the table existed. A new kind is:
 string is `chant`. Anything behold boots for a kind goes through
 `assertScratch` first.
 
+**What the first screen owes a non-chant member (#393).** Three chant-shaped
+things used to be offered to every member whatever it was, and a new kind gets
+all three answered for free:
+
+- `/api/project` publishes `memberKinds` — the served members' kinds, in
+  composition order. The SPA opens on the `resources` zoom when none of them is
+  `chant`, because `components` is a projection of a chant project's own
+  component DAG and a member without one opens on "the components lens doesn't
+  apply to a composed estate yet". #182's zero-node fallback still covers a
+  chant project that declares no components.
+- `/api/project` publishes `runtimeCapable`, and the palette and the View tab
+  offer `zoom: runtime` only then. The tier below the declaration boundary is
+  the owner-referenced children chant stamps `runtimeOwner` on, and only a
+  Kubernetes read has an owner chain to resolve — `RUNTIME_LEXICONS` in
+  `src/server.ts` is the one word (`k8s`), read off the members' DECLARED
+  lexicons so the stop exists or not before anyone picks it.
+- A chant-only facet answers emptily rather than 500ing for a non-chant
+  primary: `/api/resources` returns `{byComponent: {}}`, the shape carve mode
+  already returns and the SPA already reads as "no resource facet here".
+
+A kind that grows components, or a substrate with an owner chain, changes those
+answers where they are decided — never per kind in a route.
+
 ### The workbench catalog
 
 `demos.json` is the catalog that ships. `workbench.json`, read beside it and
@@ -524,7 +547,14 @@ the identical object back:
    the block class lands in `attrs.block`. That is the shape a carve node
    already has, which is why one presentation pack serves both.
 2. **`groupTerraformByRoot`** — roots are a Terraform project's only grouping.
-   It retires itself when chant#2266 groups upstream.
+   It retires itself when chant#2266 groups upstream. A node sits in exactly one
+   box, so a box every node has left is dropped rather than drawn empty (#393):
+   a served directory arrives composed, `composeStacks` boxes the whole member,
+   and the root boxes then take those same nodes — which is what put an empty
+   box named `access` on water park's canvas. What the member box was there to
+   say moves into the root box's title, which is `<member>/<root>` whenever the
+   estate holds more than one member and the bare root name when it does not
+   (two members with a root apiece named `prod` would otherwise merge silently).
 3. **`filterTerraformCards`** — what is a card, below.
 
 **What is a card (#382).** Measured on a real estate: 247 nodes for 43
@@ -538,6 +568,16 @@ resources, four fifths of it not infrastructure.
 
 Nothing is dropped silently: `terraformElisionNote` says what is not drawn and
 where to see it, the way `edgelessNote` says why a view has no edges.
+
+**The note, at every zoom and in a 260px strip (#393).** The roots note and the
+elision note are built by one function in `/api/graph` and returned by all three
+of its branches, the logical lens included — it was the lens that most needed
+the line and the only one that dropped it. Both routes send `note` and, when
+there is a shorter true form, `noteShort` (`5 roots · 2 skipped · 189 blocks not
+drawn`). The strip shows the short one with the long one on its tooltip, and the
+panel's Model tab prints it whole. The server writes both: the SPA does not
+author notes, and truncating this one on a sentence boundary would keep the list
+of root names and drop the counts.
 
 **Do not invent edges.** They arrive from chant or not at all: the fixtures here
 were recorded when a Terraform IR carried none, and lexicon 0.61.0 (chant#2265,

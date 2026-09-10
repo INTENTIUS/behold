@@ -239,6 +239,16 @@ export function terraformRootsNote(scan: TerraformRootScan): string | undefined 
   return `${roots}; skipped ${named.join(", ")}${more}`;
 }
 
+/** The same scan as a chip (#393) — `5 roots · 2 skipped`. The statusbar note
+ * sits in a 260px panel and the sentence above is ~60 words of it, repeated at
+ * every zoom; the full text stays on the strip's tooltip and in the Model tab,
+ * and this is what the strip itself carries. */
+export function terraformRootsNoteShort(scan: TerraformRootScan): string | undefined {
+  if (!scan.roots.length) return undefined;
+  const roots = `${scan.roots.length} root${scan.roots.length === 1 ? "" : "s"}`;
+  return scan.skipped.length ? `${roots} · ${scan.skipped.length} skipped` : roots;
+}
+
 // ---------------------------------------------------------------------------
 // The reader: is the lexicon here at all?
 // ---------------------------------------------------------------------------

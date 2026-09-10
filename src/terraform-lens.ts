@@ -147,25 +147,68 @@ export function normalizeTerraformNodes(ir: GraphIR): GraphIR {
 
 /**
  * Roots become the boxes. Reads `attrs.root` — the lexicon's own field — and
- * falls back to the `<root>/` id prefix it also mints. Leaves an IR alone when
- * something upstream has already grouped by root (chant#2266), so this pass
- * retires itself rather than fighting the producer.
+ * falls back to the `<root>/` id prefix it also mints. Leaves the KEYING alone
+ * when something upstream has already grouped by root (chant#2266), so this
+ * pass retires itself rather than fighting the producer.
+ *
+ * #393: a node sits in exactly ONE box (pinhole's `layoutIr`: "a node may sit
+ * in one group"), so every box a regrouped node has left must give it up.
+ * Composition puts one box per member around a member's whole IR
+ * (`composeStacks`, src/estate.ts) and until now this pass added the root boxes
+ * beside it — so `behold serve <a terraform directory>` drew five root boxes
+ * AND an empty box named after the served directory. Both readings were
+ * available and the empty one is what it drew.
+ *
+ * Of the two fixes — nest the roots inside the member box, or drop a member box
+ * every node has left — nesting is not on offer here: `boxes: "byStack"` is a
+ * flat set of titled boundary boxes and only the architecture lens
+ * (`groups.byContainer`) nests. So the emptied box goes, and the thing it was
+ * there to say — WHICH member these roots came from — moves into the root box's
+ * own title: `<member>/<root>` when the estate holds more than that one member,
+ * the bare root name when it does not. Without that, two Terraform members with
+ * a root apiece named `prod` would silently merge into one box, which is a
+ * worse lie than the empty box this fixes.
  */
 export function groupTerraformByRoot(ir: GraphIR): GraphIR {
-  const roots = new Map<string, string[]>();
+  /** Each root's nodes, keyed by the composed member prefix its ids carry
+   * (`""` when nothing composed them) together with the root name. */
+  const roots = new Map<string, { prefix: string; root: string; ids: string[] }>();
   for (const n of ir.nodes) {
     if (n.lexicon !== TERRAFORM_LEXICON) continue;
     const root = typeof n.attrs.root === "string" && n.attrs.root ? n.attrs.root : n.id.includes("/") ? n.id.slice(0, n.id.indexOf("/")) : undefined;
-    if (root) (roots.get(root) ?? roots.set(root, []).get(root)!).push(n.id);
+    if (!root) continue;
+    // `<member>/<root>/<address>` once composed, `<root>/<address>` otherwise.
+    const at = n.id.indexOf(`/${root}/`);
+    const prefix = at > 0 ? n.id.slice(0, at) : "";
+    const key = `${prefix} ${root}`;
+    (roots.get(key) ?? roots.set(key, { prefix, root, ids: [] }).get(key)!).ids.push(n.id);
   }
   if (roots.size === 0) return ir;
   const byStack = { ...(ir.groups.byStack ?? {}) } as Record<string, string[]>;
   // Already grouped by root upstream: every root is its own entry and the
-  // lexicon-wide bucket is gone. Nothing to do.
-  const grouped = [...roots.keys()].every((r) => byStack[r]?.length === roots.get(r)!.length);
-  if (grouped) return ir;
-  delete byStack[TERRAFORM_LEXICON];
-  for (const [root, ids] of roots) byStack[root] = ids;
+  // lexicon-wide bucket is gone. The keying below is then a no-op — the strip
+  // under it is not, so only the keying is skipped.
+  const grouped = [...roots.values()].every((r) => byStack[r.root]?.length === r.ids.length);
+  const rootBoxes = new Set<string>();
+  if (grouped) {
+    for (const r of roots.values()) rootBoxes.add(r.root);
+  } else {
+    delete byStack[TERRAFORM_LEXICON];
+    const members = new Set([...roots.values()].map((r) => r.prefix));
+    const qualify = members.size > 1 || [...members].some((p) => p && Object.keys(byStack).some((b) => b !== p));
+    for (const { prefix, root, ids } of roots.values()) {
+      const box = qualify && prefix ? `${prefix}/${root}` : root;
+      byStack[box] = ids;
+      rootBoxes.add(box);
+    }
+  }
+  const regrouped = new Set([...roots.values()].flatMap((r) => r.ids));
+  for (const [box, ids] of Object.entries(byStack)) {
+    if (rootBoxes.has(box)) continue;
+    const left = ids.filter((id) => !regrouped.has(id));
+    if (left.length) byStack[box] = left;
+    else delete byStack[box];
+  }
   ir.groups = { ...ir.groups, byStack };
   return ir;
 }
@@ -232,6 +275,14 @@ export function terraformElisionNote(e: TerraformElision, detail: number | undef
     });
   const interfaceHidden = (detail ?? 2) < 3 && (e.dropped.variable || e.dropped.output);
   return `showing the estate — ${parts.join(", ")} not drawn${interfaceHidden ? " (outputs and variables appear at detail 3 — ⌘K → attributes)" : ""}`;
+}
+
+/** The same fact as a chip rather than a sentence (#393): the statusbar note
+ * lives in a 260px panel, and the full sentence — every block class, its count,
+ * and how to see it — is a paragraph there. The long form stays reachable (the
+ * strip's tooltip, and the panel's Model tab); this is what the strip shows. */
+export function terraformElisionNoteShort(e: TerraformElision): string | undefined {
+  return e.total === 0 ? undefined : `${e.total} block${e.total === 1 ? "" : "s"} not drawn`;
 }
 
 /**

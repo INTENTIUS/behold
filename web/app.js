@@ -998,6 +998,20 @@ const view = { env: null, detail: 2, components: true, logical: false, runtime: 
 // or ⌘K) still shows the honest empty view + the server's note.
 let autoZoomFallback = true;
 
+// #393 item 1: for an estate whose members are NONE of them chant projects, the
+// fallback above is a round-trip too late and one degree too vague. The
+// components zoom is a chant projection of a chant project's own component DAG;
+// a choudoufu estate or a bare Terraform directory has no components to
+// project, so the first screen was "the components lens doesn't apply to a
+// composed estate yet" — an apology, every time, before the person had picked
+// anything. The kinds come from /api/project (`memberKinds`, in composition
+// order), so the decision is made from what the server already knows rather
+// than from a zero-node answer. A chant member anywhere in the estate keeps
+// #182's behaviour exactly, and picking components later still shows the note.
+function bootZoom(memberKinds) {
+  return memberKinds && memberKinds.length && !memberKinds.includes("chant") ? "resources" : "components";
+}
+
 // v0.1.0 preview lock (set from /api/project in initActions): hides the git/PR
 // write ops (Rollback, Sync, Adopt, Run ▾) — the server also 403s them. Local
 // deploy (Apply all / dial), Reset, Bring up, Approve, and reads stay on.
@@ -1035,11 +1049,19 @@ const ZOOM_DETAIL = { composites: 1, resources: 2, attributes: 3, runtime: 3 };
 /** How many emitted Ops the served estate has (0 = the stop doesn't exist).
  * Seeded from /api/project in initPickers(). */
 let opsAvailable = 0;
-/** The zoom stops this project can actually offer — `runtime` needs an env,
- * `ops` needs emitted op.json files. Both the panel and ⌘K read this, so a stop
- * never appears in one surface and not the other. */
+/** #393 item 2: whether ANY served member could have owner-referenced children
+ * — /api/project's `runtimeCapable`, decided from the members' declared
+ * lexicons (src/server.ts's RUNTIME_LEXICONS). Before this the stop needed only
+ * an env, so every choudoufu estate (which declares `live`) offered a
+ * Kubernetes tier that could only ever answer "nothing below the declaration
+ * boundary". */
+let runtimeCapable = false;
+/** The zoom stops this project can actually offer — `runtime` needs an env AND
+ * a member whose substrate has an owner chain, `ops` needs emitted op.json
+ * files. Both the panel and ⌘K read this, so a stop never appears in one
+ * surface and not the other. */
 function availableZooms() {
-  return ZOOM_OPTS.filter(([, z]) => (z === "runtime" ? Boolean(view.env) : z === "ops" ? opsAvailable > 0 : true));
+  return ZOOM_OPTS.filter(([, z]) => (z === "runtime" ? Boolean(view.env) && runtimeCapable : z === "ops" ? opsAvailable > 0 : true));
 }
 /** Current zoom value from (components, logical, ops, detail). */
 function zoomValue() {
@@ -1578,6 +1600,15 @@ function renderPanelModel() {
     host.appendChild(panelMuted("no graph loaded yet"));
     return;
   }
+  // #393 item 7: the note in full, where there is room for it. The strip may be
+  // showing the server's short form (a 260px strip cannot hold five root names,
+  // two skip reasons and five block counts), so the whole sentence has to be
+  // readable somewhere that is not a tooltip — and this tab is where the panel
+  // already explains the picture.
+  if (lastNote && lastNoteShort) {
+    host.appendChild(panelHeading("note"));
+    host.appendChild(panelMuted(lastNote));
+  }
   const drift = m.mode === "overlay" || (m.mode === "logical" && !!m.env);
   const componentStatus = m.mode === "component-status";
   const count = (statuses) => {
@@ -2002,7 +2033,15 @@ function renderStatusbar() {
   if (lastNote) {
     const note = document.createElement("span");
     note.className = "statusbar-note";
-    note.textContent = " — " + lastNote;
+    // #393 item 7: the strip is a strip. A Terraform estate's note names every
+    // root, every skipped directory with its reason, and every block class the
+    // zoom left out — ~60 words, in a 260px panel, at every zoom. The server
+    // sends the short form beside the long one (`meta.noteShort`) when it has
+    // one; the full text stays one hover away here and is printed in full on
+    // the panel's Model tab. Nothing is truncated client-side: the SPA does not
+    // write notes, and a note with no short form is already a line.
+    note.textContent = " — " + (lastNoteShort || lastNote);
+    if (lastNoteShort) note.title = lastNote;
     el.appendChild(note);
   }
 }
@@ -2011,6 +2050,9 @@ function renderStatusbar() {
 // or null. Set on every load so a level that stops degrading stops explaining
 // itself.
 let lastNote = null;
+// #393 item 7: the same note as the strip can hold (`meta.noteShort`), or null
+// when the long one already fits. Never derived here — see renderStatusbar().
+let lastNoteShort = null;
 
 // The `meta` of the last rendered graph — the panel's Model tab reads its
 // mode/env to pick the status vocabulary (drift vs component live status).
@@ -2684,6 +2726,7 @@ function render(ir, svg, m) {
   // #131: set before anything can early-return, so a level that stopped
   // degrading stops explaining itself on the very next render.
   lastNote = m.note || null;
+  lastNoteShort = m.noteShort || null;
   // The panel's Model tab reads both of these via renderStatusbar() →
   // renderPanel() below — set them first so it renders THIS graph, not the
   // previous one (recolorNodesByCategory also sets lastGraphIr; harmless).
@@ -2749,8 +2792,9 @@ function render(ir, svg, m) {
   // Multi-estate (#31): note the composed project count; the graph draws one box per project.
   // #186: the meta line lives in the panel's 272px footer now — the directory
   // basename reads better than an absolute path (full path in the tooltip).
+  // #393 item 4: one member is a project, not "1 projects".
   const scope = m.estate
-    ? `estate of ${m.estate} projects`
+    ? `estate of ${m.estate} project${m.estate === 1 ? "" : "s"}`
     : String(m.projectDir || "").replace(/\/+$/, "").split("/").pop() || m.projectDir;
   // The deploy axes (#59 unify, M2 #54 lenses) — tier/target, kept in sync with
   // what this response actually observed (falls back to the launch-time value
@@ -3762,6 +3806,15 @@ async function initPickers() {
   // way it gates `tiers`/`stacks`), so an unbuilt project or a chant < 0.50
   // never grows a stop that would refuse.
   opsAvailable = info.ops || 0;
+  // #393: whether the runtime stop exists here, and where this estate can
+  // honestly open. Both are read before the first load() below, so a non-chant
+  // estate never paints the components apology on its way to a picture.
+  runtimeCapable = !!info.runtimeCapable;
+  const boot = bootZoom(info.memberKinds);
+  if (boot !== "components") {
+    applyZoom(boot);
+    autoZoomFallback = false;
+  }
   // #254: carve mode declares itself here. The Carve tab is mounted at runtime
   // (panel.js's addPanelTab), so nothing else grows a dead tab.
   carveInfo = info.carve || null;
