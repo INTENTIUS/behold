@@ -565,3 +565,83 @@ describe("module sub-boxes inside a choudoufu member (#393 B)", () => {
     expect(rects(renderGraph(terralith(60, 0), { boxes: "byStack" }).svg).map((b) => b.id)).toEqual(["terralith-4"]);
   });
 });
+
+describe("packing a box that HAS edges (#393 item 1)", () => {
+  /** A member shaped like `terralith-4` once its own references arrive: N
+   * small clusters — a role with its inline policy, two attachments and a
+   * profile — plus a `for_each` fan into one zone, plus two module instances.
+   * Every edge is real, which is exactly why src/edgeless.ts's wrap does not
+   * apply and dagre goes back to laying the components out side by side. */
+  const wired = (clusters: number, fan: number, perModule: number): GraphIR => {
+    const ids: string[] = [];
+    const nodes: GraphIR["nodes"] = [];
+    const edges: GraphIR["edges"] = [];
+    const card = (address: string): string => {
+      const id = `terralith-4/${address}`;
+      ids.push(id);
+      nodes.push({ id, kind: "aws_iam_role", lexicon: "choudoufu", attrs: { rung: "tag-governable", estate: "e" } });
+      return id;
+    };
+    for (let i = 0; i < clusters; i++) {
+      const role = card(`aws_iam_role.team_${i}_role`);
+      for (const sat of ["inline", "managed_attach", "custom_attach", "profile"]) {
+        edges.push({ from: card(`aws_iam_role_policy.team_${i}_${sat}`), to: role, kind: "ref", viaAttr: "role" });
+      }
+    }
+    const zone = card("aws_route53_zone.main");
+    for (let i = 0; i < fan; i++) edges.push({ from: card(`aws_route53_record.record["host-${i}"]`), to: zone, kind: "ref", viaAttr: "zone_id" });
+    for (const pod of ["pod-a", "pod-b"]) {
+      for (let i = 0; i < perModule; i++) {
+        const role = card(`module.team_pod["${pod}"].aws_iam_role.pod_role[${i}]`);
+        edges.push({ from: card(`module.team_pod["${pod}"].aws_iam_role_policy.pod_inline[${i}]`), to: role, kind: "ref", viaAttr: "role" });
+      }
+    }
+    return { nodes, edges, groups: { byStack: { "terralith-4": ids } } };
+  };
+  const canvas = (svg: string): { w: number; h: number } => {
+    const m = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(svg)!;
+    return { w: Number(m[1]), h: Number(m[2]) };
+  };
+
+  it("keeps a 290-card member with real edges under the audit's 4:1", () => {
+    const { w, h } = canvas(renderGraph(wired(40, 40, 12), { boxes: "byStack" }).svg);
+    expect(w / h).toBeLessThan(4);
+    expect(w / h).toBeGreaterThan(0.25); // and not a column either
+  });
+
+  it("wraps the fan rather than letting one 40-way star set the box's width", () => {
+    const wide = canvas(renderGraph(wired(4, 40, 0), { boxes: "byStack" }).svg);
+    expect(wide.w / wide.h).toBeLessThan(4);
+  });
+
+  it("still draws a sub-box per module instance — the bands survive the edges", () => {
+    const svg = renderGraph(wired(40, 40, 12), { boxes: "byStack" }).svg;
+    expect(svg).toContain(">module.team_pod[&quot;pod-a&quot;]</text>");
+    expect(svg).toContain(">module.team_pod[&quot;pod-b&quot;]</text>");
+  });
+
+  it("draws every card and every edge it was given", () => {
+    const ir = wired(12, 8, 4);
+    const svg = renderGraph(ir, { boxes: "byStack" }).svg;
+    for (const n of ir.nodes) expect(svg).toContain(`data-node-id="${n.id.replace(/"/g, "&quot;")}"`);
+    const drawn = new Set([...svg.matchAll(/data-edge-from="([^"]*)" data-edge-to="([^"]*)"/g)].map((m) => `${m[1]}\0${m[2]}`));
+    expect(drawn.size).toBe(ir.edges.length);
+  });
+
+  it("leaves a box that already reads as a picture exactly as dagre laid it", () => {
+    // Two three-card chains: more than one component, and nothing to fix.
+    const ids = ["a1", "a2", "a3", "b1", "b2", "b3"];
+    const ir: GraphIR = {
+      nodes: ids.map((id) => ({ id, kind: "aws_iam_role", lexicon: "choudoufu", attrs: {} })),
+      edges: [
+        { from: "a1", to: "a2", kind: "ref" },
+        { from: "a2", to: "a3", kind: "ref" },
+        { from: "b1", to: "b2", kind: "ref" },
+        { from: "b2", to: "b3", kind: "ref" },
+      ],
+      groups: { byStack: { m: ids } },
+    };
+    const { w, h } = canvas(renderGraph(ir, { boxes: "byStack" }).svg);
+    expect(w / h).toBeLessThan(4);
+  });
+});

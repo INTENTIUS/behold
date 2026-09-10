@@ -49,6 +49,7 @@ import {
   type ChoudoufuRefusal,
   type LiveCheckDocument,
 } from "./choudoufu-member.ts";
+import { addIntraEstateEdges, lexiconStamp } from "./choudoufu-refs.ts";
 import type { MemberVia } from "./member-ir.ts";
 import type { MemberKindSpec } from "./member-kind.ts";
 
@@ -406,17 +407,25 @@ export async function choudoufuLiveIr(dir: string, opts: GraphOptions, run: Runn
 }
 
 /** How a choudoufu member is read (the `via` of its kind): the declared half
- * for a source read, the painted graph for a live one. */
+ * for a source read, the painted graph for a live one — and, on both, the
+ * estate's own references (#393, src/choudoufu-refs.ts), which come from
+ * chant's terraform lexicon over the same HCL and not from choudoufu at all.
+ * The colour is the live half's; the topology is the same either way, which is
+ * the rule /api/graph and /api/overlay are already held to. */
 export const choudoufuVia: MemberVia = {
   tool: () => {
     const v = choudoufuVersion();
-    return `choudoufu\0${v ? v.version || "dev" : "absent"}`;
+    // The lexicon is half of what answers this member now: installing it turns
+    // an edgeless estate into one with 266 edges off byte-identical source, so
+    // it has to be a different cache key or the estate serves the pre-install
+    // IR until something else invalidates it (src/member-ir.ts, rule 3).
+    return `choudoufu\0${v ? v.version || "dev" : "absent"}\0${lexiconStamp()}`;
   },
   read: async (dir: string, opts: GraphOptions): Promise<GraphIR> => {
-    if (opts.live || opts.overlay) return choudoufuLiveIr(dir, opts);
+    if (opts.live || opts.overlay) return addIntraEstateEdges(await choudoufuLiveIr(dir, opts), dir);
     const parsed = await readLiveCheck(dir);
     if (!parsed.ok) throw new ChoudoufuReadError(parsed.refusal, dir);
-    return liveCheckToIr(parsed.doc);
+    return addIntraEstateEdges(liveCheckToIr(parsed.doc), dir);
   },
 };
 

@@ -143,6 +143,7 @@ import {
   type TerraformElision,
 } from "./terraform-lens.ts";
 import { choudoufuDiffNodes, readChoudoufuLive, type Runner as ChoudoufuRunner } from "./choudoufu-live.ts";
+import { choudoufuLexiconNote } from "./choudoufu-refs.ts";
 import { discoverCarvePlans, moveMembers, moveReceipt, movesPayload, readCarvePlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
 import { memberKindOf, memberKindSpec, servesAsEstate } from "./member-kind.ts";
 import { TerraformReadError, discoverTerraformRoots, terraformRootsNote, terraformRootsNoteShort } from "./terraform-member.ts";
@@ -1972,6 +1973,16 @@ export function createApp(
         const noteShort = [...scans.map((s) => terraformRootsNoteShort(s)), terraformElisionNoteShort(elision)].filter(Boolean).join(" · ");
         return note ? { note, ...(noteShort && noteShort !== note ? { noteShort } : {}) } : {};
       };
+      // #393 item 1: a choudoufu estate's own references come from chant's
+      // terraform lexicon (src/choudoufu-refs.ts), and with it absent there are
+      // none. Said once, in place of `edgelessNote`'s "nothing in this estate
+      // references anything else" — which behold has no reader to assert —
+      // and only when the picture really has no edges, so an estate that got
+      // them says nothing at all.
+      const lexiconNote = (graph: { edges: readonly unknown[] }): string | undefined =>
+        graph.edges.length === 0 && (multi ? cfg.projectDirs! : [cfg.projectDir]).some((d) => memberKindOf(d) === "choudoufu")
+          ? choudoufuLexiconNote()
+          : undefined;
       let ir: GraphIR;
       let mode: "component-status" | undefined;
       let metaEnv = cfg.env ?? null;
@@ -2279,14 +2290,16 @@ export function createApp(
       // applied and wasn't. `estateLensNote` is undefined unless components was
       // actually asked for on a composed estate, so this reads as it did for
       // every other view.
+      const cdNote = lexiconNote(ir);
       const srcNote =
         [
-          [estateLensNote, tf.note].filter(Boolean).join(" · ") || (multi ? undefined : notesFor(srcZoom, ir, srcCompositeEdgesAttached, undefined, opts.detail ?? 2)),
+          [estateLensNote, tf.note, cdNote].filter(Boolean).join(" · ") ||
+            (multi ? undefined : notesFor(srcZoom, ir, srcCompositeEdgesAttached, undefined, opts.detail ?? 2, cdNote)),
           collapsedNote,
         ]
           .filter(Boolean)
           .join(" · ") || undefined;
-      const srcNoteShort = tf.noteShort ? [estateLensNote, tf.noteShort, collapsedNote].filter(Boolean).join(" · ") : undefined;
+      const srcNoteShort = tf.noteShort ? [estateLensNote, tf.noteShort, cdNote, collapsedNote].filter(Boolean).join(" · ") : undefined;
       return c.json({
         ir,
         svg,
@@ -2688,7 +2701,18 @@ export function createApp(
           coverNote,
           namespaceJoinNote(est.joined),
           namespaceMismatchNote(withoutJoinedMembers(ir.nodes, est.joined)),
-          notesFor(zoom, ir, undefined, undefined, detail ?? 2),
+          // #393 item 1: the same substitution /api/graph's estate branch
+          // makes — with chant's terraform lexicon absent a choudoufu estate
+          // has no reader for its own references, and the note says that
+          // rather than asserting there are none.
+          notesFor(
+            zoom,
+            ir,
+            undefined,
+            undefined,
+            detail ?? 2,
+            ir.edges.length === 0 && cfg.projectDirs.some((d) => memberKindOf(d) === "choudoufu") ? choudoufuLexiconNote() : undefined,
+          ),
           collapsed ? collapseNote(collapsed.collapsed) : undefined,
         ]
           .filter(Boolean)
