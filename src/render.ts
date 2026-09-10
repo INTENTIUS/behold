@@ -26,6 +26,7 @@ import { CHOUDOUFU_LEXICON, choudoufuCardFields } from "./choudoufu-member.ts";
 import { terraformCardFields } from "./terraform-lens.ts";
 import { carveProgress, splitCarveState, type CarveState } from "./carve-manifest.ts";
 import { opCardFields } from "./ops-lens.ts";
+import { withRowChains, type RowGrid } from "./edgeless.ts";
 
 // Lexicon-native icons (#227), step 2 of 2. pinhole resolves a node's glyph
 // through a chain — per-node override → lexicon pack → keyword heuristic →
@@ -114,20 +115,20 @@ export function renderArchitecture(
   // to fan out, rather than a blunt uniform bump. Sparse graphs keep pinhole's
   // compact defaults (nodesep 48 / ranksep 60).
   const spread = Math.min(1.5, ir.edges.length / Math.max(ir.nodes.length, 1));
-  const layout = layoutArchitecture(ir, byContainer, {
-    fit: true,
-    nodesep: Math.round(48 + spread * 48),
-    ranksep: Math.round(60 + spread * 56),
-  });
-  if (opts.groupMarks || opts.groupBadges) {
-    for (const box of layout.groups ?? []) {
-      if (box.id === undefined) continue;
-      const mark = opts.groupMarks?.[box.id];
-      if (mark !== undefined) box.mark = mark;
-      const badge = opts.groupBadges?.[box.id];
-      if (badge !== undefined) box.badge = badge;
-    }
-  }
+  const nodesep = Math.round(48 + spread * 48);
+  const ranksep = Math.round(60 + spread * 56);
+  // #393 A: the same edgeless wrap the estate view gets, over the containers
+  // that hold only cards. A container of containers is nesting the layout is
+  // already good at, and its members are boxes rather than the uniform cards a
+  // grid is a grid of. The chained IR reaches `layoutArchitecture` and nothing
+  // else — see src/edgeless.ts.
+  const containers = new Set(Object.keys(byContainer));
+  const leafBoxes = Object.fromEntries(
+    Object.entries(byContainer).filter(([, members]) => members.every((m) => !containers.has(m))),
+  );
+  const chains = withRowChains(ir, leafBoxes, { sizes: footprints(ir), nodesep, ranksep });
+  const layout = layoutArchitecture(chains.ir, byContainer, { fit: true, nodesep, ranksep });
+  applyBadges(layout.groups, opts.groupBadges, opts.groupMarks);
   const svg = renderSvg(ir, layout, {
     fit: true,
     hideTitle: true,
@@ -165,11 +166,22 @@ type ExtraGroups = IRGroups & { byWave?: Record<string, string[]>; byStack?: Rec
  * on the live-overlay render path, which passes this explicitly — same
  * "caller knows" discipline as `byStack`, since a source-only or component-DAG
  * graph never carries a meaningful `byContainer` to box. */
-export function renderGraph(ir: GraphIR, opts: { theme?: string; boxes?: "byStack" | "byContainer"; radial?: boolean } = {}): RenderResult {
+export function renderGraph(
+  ir: GraphIR,
+  opts: {
+    theme?: string;
+    boxes?: "byStack" | "byContainer";
+    radial?: boolean;
+  } = {},
+): RenderResult {
   const groups = ir.groups as ExtraGroups;
   const boxKey = groups.byWave ? "byWave" : opts.boxes;
   const boxes = boxKey ? groups[boxKey] : undefined;
-  const layout = layoutIr(ir, { fit: true, ...(boxes ? { groups: boxes } : {}) });
+  // #393 A/B: an edgeless box lays out as one dagre rank — see src/edgeless.ts.
+  // The chained IR is for the layout call and nothing else; `renderSvg` and
+  // every caller below keep the IR that came in.
+  const chains = boxes ? withRowChains(ir, boxes, { sizes: footprints(ir) }) : { ir, grids: new Map<string, RowGrid>() };
+  const layout = layoutIr(chains.ir, { fit: true, ...(boxes ? { groups: boxes } : {}) });
   // Radial layout (opt-in): dagre lays a wide DAG out in horizontal ranks that
   // sprawl off-screen. Re-place the same nodes on concentric rings — one ring
   // per rank — so the graph curls around a centre and far more fits in view. Only
@@ -192,6 +204,24 @@ export function renderGraph(ir: GraphIR, opts: { theme?: string; boxes?: "byStac
     ...(opts.theme ? { theme: opts.theme as never } : {}),
   });
   return { svg };
+}
+
+/** Box marks and badges, applied after layout on `GroupBox.id` — the box key
+ * the caller already knows (`byContainer`/`byStack`), never a rendered title.
+ * Absent options leave every box exactly as it laid out. */
+function applyBadges(
+  boxes: GroupBox[] | undefined,
+  badges?: Readonly<Record<string, string>>,
+  marks?: Readonly<Record<string, string | GlyphSpec>>,
+): void {
+  if (!badges && !marks) return;
+  for (const box of boxes ?? []) {
+    if (box.id === undefined) continue;
+    const mark = marks?.[box.id];
+    if (mark !== undefined) box.mark = mark;
+    const badge = badges?.[box.id];
+    if (badge !== undefined) box.badge = badge;
+  }
 }
 
 /**
@@ -759,6 +789,15 @@ function packMemberBoxes(layout: RadialLayout & { groups?: GroupBox[] }, ir: Gra
   // painted card rects (they should already sit inside, but a card that leaks
   // must not land on a neighbour).
   const byId = new Map(nodes.map((n) => [n.id, n]));
+  // Same ownership rule the layout used: a node listed by two boxes belongs to
+  // the LAST that claims it (pinhole's `setParent`, see src/edgeless.ts). A
+  // served Terraform directory lists its cards twice — once as the member, once
+  // under the root that really holds them — so without this the member's BLOCK
+  // was the union of every card in the picture, every other box nested inside
+  // it, and the shelf packing had one block to place and nothing to do. That
+  // is waterpark's 15833 x 1164 at detail 2.
+  const ownerOf = new Map<string, string>();
+  for (const [key, ids] of Object.entries(members)) for (const id of ids) if (byId.has(id)) ownerOf.set(id, key);
   const claimed = new Set<string>();
   interface Block {
     ns: RadialLayout["nodes"];
@@ -769,7 +808,8 @@ function packMemberBoxes(layout: RadialLayout & { groups?: GroupBox[] }, ir: Gra
     h: number;
   }
   const blocks: Block[] = boxes.map((box) => {
-    const ns = (members[box.id ?? box.title] ?? members[box.title] ?? []).flatMap((id) => byId.get(id) ?? []);
+    const key = box.id ?? box.title;
+    const ns = (members[key] ?? members[box.title] ?? []).filter((id) => ownerOf.get(id) === key || ownerOf.get(id) === undefined).flatMap((id) => byId.get(id) ?? []);
     for (const n of ns) claimed.add(n.id);
     let minX = box.x - box.w / 2;
     let maxX = box.x + box.w / 2;

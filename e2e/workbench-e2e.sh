@@ -185,6 +185,19 @@ while IFS=$'\x1f' read -r name env inplace local reason <&3; do
     echo "  ✓ overlay: bound $bound, unowned $unowned, neutral $neutral"
   fi
 
+  # #393: the estate behold is sized against must not come back as a strip.
+  # 301 choudoufu cards, no edges between them, and dagre's answer to that is
+  # one rank — a 144010 x 316 SVG where "fit" is a one-pixel line. The wrap
+  # (src/edgeless.ts) is what keeps it a picture, and this is the assertion
+  # that says so out loud, on the real estate rather than a fixture. Measured
+  # after the wrap: 8186 x 3436, 2.4:1.
+  if [ "$name" = "terralith-4" ]; then
+    G2="$(api "$port" "/api/graph?detail=2")"
+    ratio="$(printf '%s' "$G2" | jq -r '.svg | capture("viewBox=\"0 0 (?<w>[0-9.]+) (?<h>[0-9.]+)\"") | (.w|tonumber) / (.h|tonumber)')"
+    jq_assert "$G2" "(.svg | capture(\"viewBox=\\\"0 0 (?<w>[0-9.]+) (?<h>[0-9.]+)\\\"\") | (.w|tonumber) / (.h|tonumber)) < 4" \
+      "$(printf 'the graph is %.2f:1 at detail 2 — not a strip' "$ratio")"
+  fi
+
   # #391: the adopt entry, twice — unowned before the by-hand import, bound
   # after it. The line run below is the one the up script printed into the
   # log; behold never runs it, and neither does the entry's setup.

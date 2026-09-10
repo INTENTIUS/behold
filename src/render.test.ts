@@ -262,10 +262,13 @@ describe("renderBanded — the banded ranking layout (#252)", () => {
   const viewBox = (svg: string) => (svg.match(/viewBox="0 0 (\d+) (\d+)"/) ?? []).slice(1).map(Number);
 
   it("grid-wraps instead of stringing an edgeless graph out along one row", () => {
-    const [wide] = viewBox(renderGraph(bandedIr, { boxes: "byStack" }).svg);
+    const [ww, wh] = viewBox(renderGraph(bandedIr, { boxes: "byStack" }).svg);
     const [w, h] = viewBox(renderBanded(bandedIr).svg);
-    // dagre puts all 30 cards in rank 0 — one very long row.
-    expect(wide).toBeGreaterThan(6000);
+    // #393: the boxed render used to put all 30 cards in dagre's rank 0 — one
+    // 6000-unit row, which is what this band layout was built to escape. It
+    // wraps too now (src/edgeless.ts), so the foil is gone and what is left to
+    // say is that neither picture is a strip.
+    expect(ww / wh).toBeLessThan(4);
     expect(w).toBeLessThan(2000);
     // Near a screen's shape, not a strip: no worse than 3:1 either way.
     expect(w / h).toBeLessThan(3);
