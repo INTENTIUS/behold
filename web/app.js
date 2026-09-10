@@ -329,6 +329,29 @@ function vocabularyNote() {
   const v = lastMeta && lastMeta.vocabulary;
   return (v && v.note) || "";
 }
+// #396 item 5: the inspect pane's LIVE section prints `ownership` raw, and
+// `ownership` is a word two different readers write into the same field.
+// chant's live reader answers it from the resource's own marker — `owned` /
+// `foreign`, which is chant's contract for that field (chant graph-ir.d.ts).
+// src/choudoufu-live.ts has no marker to read: it writes the same two words for
+// choudoufu's `bound[]` and `unowned[]`, so an unowned card read `status:
+// unowned` and, two rows below it, `ownership: foreign` — chant's word for
+// choudoufu's state, the last of the four #393 item 8 did not reach.
+//
+// So this row joins the legend, the counts and the status row in being rendered
+// through the estate's own vocabulary rather than printed. Translated ONLY when
+// the estate's members are all of a kind that has its own words for these
+// colours (`vocabulary.of`): on a chant estate, and on a mixed one — which
+// keeps chant's words on the legend by design and says so in its tooltip — the
+// value is printed exactly as it is today, which is the point. The mapping is
+// value → the colour that value means → that colour's word, so it needs no
+// table of its own beyond the two words chant's field can hold.
+const OWNERSHIP_STATUS = { owned: "good", foreign: "warn" };
+function ownershipLabel(value) {
+  const v = lastMeta && lastMeta.vocabulary;
+  if (!v || !v.labels || !v.of || v.of === "chant" || v.of === "mixed") return value;
+  return v.labels[OWNERSHIP_STATUS[value]] || value;
+}
 // #404: whether a plan was read for this overlay, and how many cards it would
 // change. `{read: false}` and `{read: true, drifted: 0}` are DIFFERENT answers
 // — "nobody looked" versus "looked, nothing drifted" — and the legend must not
@@ -708,7 +731,7 @@ function inspect(node) {
   if (node.physicalId || node.ownership) {
     const live = section("live");
     if (node.physicalId) live("physical id", node.physicalId);
-    if (node.ownership) live("ownership", node.ownership);
+    if (node.ownership) live("ownership", ownershipLabel(node.ownership)); // #396 item 5: the estate's own word for it
   } else if (liveStatus) {
     // The colour alone doesn't carry chant's verdict or its reasoning — spell
     // both out here (never rely on the node's colour alone, #57 accessibility
@@ -994,7 +1017,7 @@ function renderObserved(panel, o, health, healthDetail) {
   if (o.type) add("type", o.type);
   if (o.status) add("status", o.status, HEALTH_COLOR[health] || undefined);
   if (o.physicalId) add("physical id", o.physicalId);
-  if (o.ownership) add("ownership", o.ownership);
+  if (o.ownership) add("ownership", ownershipLabel(o.ownership)); // #396 item 5: same, off /api/diff
   if (o.lastUpdated) add("last updated", o.lastUpdated);
   // What the object's own controller says is wrong with it (#86, chant#1401).
   // Placed with health and status rather than among the attributes below,

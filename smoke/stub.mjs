@@ -494,12 +494,21 @@ const CHOUDOUFU_IR = {
       id: "terralith-4/aws_ecs_cluster.main",
       kind: "aws_ecs_cluster",
       lexicon: "choudoufu",
+      // #396 item 5: `paintChoudoufu` writes chant's `owned` / `foreign` into
+      // the IR node's `ownership` field (chant's own contract for it,
+      // src/choudoufu-live.ts) — so the pane's LIVE section is where a
+      // choudoufu card said `foreign` under a status of `unowned`. Served here
+      // exactly as the server serves it, because the fix is in the render.
+      physicalId: "terralith-4-main",
+      ownership: "owned",
       attrs: { estate: "terralith-4", bound: "by derived identity (the name the configuration states) — no marker on the object yet", _status: "good" },
     },
     {
       id: "terralith-4/aws_cloudwatch_log_group.extra",
       kind: "aws_cloudwatch_log_group",
       lexicon: "choudoufu",
+      physicalId: "/terralith-4/extra",
+      ownership: "foreign",
       attrs: {
         estate: "terralith-4",
         adopt: CHOUDOUFU_ADOPT,

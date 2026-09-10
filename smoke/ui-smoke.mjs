@@ -1231,6 +1231,10 @@ try {
     const legend = await chdfPage.locator("#tab-model").innerText();
     check("the legend says bound / unowned / pending", legend.includes("bound") && legend.includes("unowned") && legend.includes("pending"));
     check("…and never says managed", !legend.includes("managed"));
+    // #396 item 5: the NEEDS ATTENTION rows are the same words, and the whole
+    // tab is free of chant's.
+    check("the needs-attention row names the card unowned", /aws_cloudwatch_log_group\.extra[\s\S]*unowned/.test(legend));
+    check("…and nothing in the Model tab says foreign", !legend.includes("foreign"));
 
     // The UNOWNED card: the line to run, first, copyable.
     await chdfPage.click('[data-node-id="terralith-4/aws_cloudwatch_log_group.extra"]');
@@ -1244,6 +1248,15 @@ try {
     check("the row carries the two tags choudoufu named", (await adoptRow.innerText()).includes("tofu-estate=terralith-4 tofu-address=aws_cloudwatch_log_group.extra"));
     const copy = adoptRow.locator("button");
     check("…with a copy button beside it", (await copy.count()) === 1);
+
+    // ---- #396 item 5: no chant word anywhere on a choudoufu card -----------
+    // `ownership` is the last of the four #393 item 8 did not reach: the pane
+    // printed it raw, so an unowned card said `status: unowned` and, two rows
+    // down, `ownership: foreign`.
+    const chdfPaneText = await pane.innerText();
+    check("the LIVE section names ownership in choudoufu's words", /ownership[\s\S]{0,40}unowned/.test(chdfPaneText));
+    check("…and the word `foreign` is nowhere on the card", !chdfPaneText.includes("foreign"));
+    check("…nor is `managed`", !chdfPaneText.includes("managed"));
 
     await copy.click();
     await chdfPage.waitForTimeout(100);
