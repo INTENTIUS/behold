@@ -2956,6 +2956,45 @@ function fitGraph() {
     applyVB();
   }
 }
+
+// How much of the viewBox one card should take when ⌘K lands on it (#393): the
+// window is this many card-widths across, so a 301-card estate arrives readable
+// rather than at whatever zoom the last gesture left. Never wider than the fit,
+// which is the whole graph — there is nothing beyond it to show.
+const REVEAL_CARDS_ACROSS = 9;
+
+/**
+ * Pan (and zoom) the graph so one card sits in the middle of the pane (#393
+ * item 4). The same viewBox the wheel/drag handlers drive and "⤢ fit" resets —
+ * there was no programmatic pan before this, only the reset.
+ *
+ * The card's rectangle comes from the DOM rather than from the IR: pinhole
+ * paints a card as a `<g data-node-id>` whose first `<rect>` carries absolute
+ * viewBox coordinates (no transform on the estate view, unlike the radial one),
+ * and `getBBox()` covers whichever it is. Returns false when there is no such
+ * card on the canvas — a node the current zoom elided — so the caller can say
+ * so instead of panning to nowhere.
+ */
+function revealNode(id) {
+  const svg = currentSvg();
+  if (!svg || !vb || !vbInit) return false;
+  const g = svg.querySelector(`[data-node-id="${CSS.escape(id)}"]`);
+  if (!g) return false;
+  let box;
+  try {
+    box = g.getBBox();
+  } catch {
+    const r = g.querySelector("rect");
+    if (!r) return false;
+    box = { x: +r.getAttribute("x"), y: +r.getAttribute("y"), width: +r.getAttribute("width"), height: +r.getAttribute("height") };
+  }
+  if (!box.width || !box.height) return false;
+  const w = Math.min(vbInit[2], Math.max(box.width * REVEAL_CARDS_ACROSS, vbInit[2] / 60));
+  const h = w * (vbInit[3] / vbInit[2]);
+  vb = [box.x + box.width / 2 - w / 2, box.y + box.height / 2 - h / 2, w, h];
+  applyVB();
+  return true;
+}
 function ensureZoomControls(host) {
   let btn = document.getElementById("zoom-toggle");
   if (!btn || btn.parentElement !== host) {
@@ -4705,9 +4744,73 @@ function paletteCommands() {
   return c.map(([label, run]) => ({ label, run }));
 }
 
+// --- ⌘K takes an address (#393 item 4) ---------------------------------------
+// The audit's finding was that the palette had zoom, env, panel and deploy
+// commands and nothing that took a node. The SPA already holds the IR it
+// painted (`lastGraphIr`), so the whole feature is a filter over it.
+//
+// Built per keystroke rather than baked into `paletteCommands()` on open: a
+// 301-card estate would otherwise put 301 rows in front of somebody who typed
+// nothing, and push every command below them. Nothing at all until two
+// characters are typed, and at most {@link PAL_NODE_ROWS} rows after that.
+//
+// Outside `paletteCommands()` for a second reason: that function returns early
+// in a static export (no writes there at all), and finding a card is a READ.
+// Nothing below fetches anything — the IR is the one the page painted and the
+// pan is a viewBox — so a bundle answers ⌘K exactly as a served project does.
+
+/** How many node rows the palette will show. A cap, not a ranking: past a
+ * dozen the reader is scrolling a list rather than recognising a name, and the
+ * answer is a longer query. */
+const PAL_NODE_ROWS = 12;
+
+/** The address inside a composed id — `terralith-4/aws_iam_role.x` is the id,
+ * `aws_iam_role.x` is what a person types. A member name cannot hold a slash
+ * (composeStacks' `shortStackNames`), so the FIRST one splits it. */
+function nodeAddress(id) {
+  const slash = id.indexOf("/");
+  return slash >= 0 ? id.slice(slash + 1) : id;
+}
+function nodeMember(id) {
+  const slash = id.indexOf("/");
+  return slash >= 0 ? id.slice(0, slash) : "";
+}
+
+/** The node rows for a query: matches on the composed id and on the address,
+ * with anything that STARTS with the query first — typing `aws_iam_role.team_00`
+ * should reach `aws_iam_role.team_0007_role` before a card that merely mentions
+ * it. Stable within each half (the IR's own order), so the list does not
+ * reshuffle as a query grows. */
+function paletteNodes(q) {
+  if (!lastGraphIr || q.length < 2) return [];
+  const prefix = [];
+  const rest = [];
+  for (const n of lastGraphIr.nodes) {
+    const address = nodeAddress(n.id);
+    const id = n.id.toLowerCase();
+    const a = address.toLowerCase();
+    if (a.startsWith(q) || id.startsWith(q)) prefix.push({ n, address });
+    else if (a.includes(q) || id.includes(q)) rest.push({ n, address });
+    if (prefix.length >= PAL_NODE_ROWS) break;
+  }
+  return [...prefix, ...rest].slice(0, PAL_NODE_ROWS).map(({ n, address }) => ({
+    label: `node: ${address}`,
+    // What the address alone does not say: which member it is in, and what it
+    // is. Two members of one estate can declare the same address.
+    sub: [nodeMember(n.id), n.kind, n.lexicon].filter(Boolean).join(" · "),
+    run: () => {
+      selectNode(n.id); // the same path a graph click takes — inspect included
+      if (!revealNode(n.id)) showToast(`${address} is not on this view — it may be elided at this zoom`, false);
+    },
+  }));
+}
+
 function palRender() {
   const q = palInput.value.toLowerCase().trim();
-  palCurrent = q ? palCmds.filter((c) => c.label.toLowerCase().includes(q)) : palCmds;
+  const cmds = q ? palCmds.filter((c) => c.label.toLowerCase().includes(q)) : palCmds;
+  // Nodes first: a query that matches a card is nearly always somebody looking
+  // for that card, and a query that matches no card costs nothing.
+  palCurrent = [...paletteNodes(q), ...cmds];
   palSel = Math.max(0, Math.min(palSel, palCurrent.length - 1));
   palList.replaceChildren();
   if (!palCurrent.length) {
@@ -4721,6 +4824,12 @@ function palRender() {
     const d = document.createElement("div");
     d.className = "row" + (i === palSel ? " sel" : "");
     d.textContent = c.label;
+    if (c.sub) {
+      const sub = document.createElement("div");
+      sub.className = "sub";
+      sub.textContent = c.sub;
+      d.appendChild(sub);
+    }
     d.onmousedown = (ev) => {
       ev.preventDefault();
       closePalette();

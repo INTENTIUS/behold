@@ -523,6 +523,10 @@
         font: var(--t-body)/1.5 var(--font-mono);
         cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       #pal-list .row.sel { background: var(--pending); color: var(--pal-sel-fg, var(--fg)); }
+      /* A node row's second line (#393): the member and the kind, which is what
+         tells two same-named addresses in two members apart. Inherits the row's
+         colour so the selected row stays readable on --pending. */
+      #pal-list .row .sub { font-size: var(--t-caption); opacity: 0.66; margin-top: 1px; }
       #pal-list .empty { padding: 8px 11px; color: var(--muted); font-size: var(--t-body); }
     </style>
   </head>
@@ -585,7 +589,7 @@
     <!-- Command palette (⌘K / Ctrl+K, #73) — the spicypath FG-036 shape
          (../spicypath/src/index.html): input + filtered list, driven entirely
          by app.js's paletteCommands()/palRender()/openPalette()/closePalette(). -->
-    <div id="palette"><div class="box"><input id="pal-input" placeholder="type a command…   (Esc to close)" autocomplete="off"><div id="pal-list"></div></div></div>
+    <div id="palette"><div class="box"><input id="pal-input" placeholder="type a command, or an address…   (Esc to close)" autocomplete="off"><div id="pal-list"></div></div></div>
     <script type="module" src="./app.js"></script>
   </body>
 </html>

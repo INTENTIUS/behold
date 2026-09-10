@@ -466,6 +466,43 @@ const NON_CHANT_PROJECT = {
   memberKinds: ["terraform"],
 };
 
+// #393 item 4 (⌘K takes an address): an estate at the scale that made the audit
+// ask for it — composed ids (`<member>/<address>`), one card per team, on a
+// canvas far wider than the pane. The last card sits in the far corner of an
+// 8000 x 3000 viewBox, so a palette pick that only SELECTED it would leave it a
+// pixel at the edge of the fit: the assertion is that the viewBox moves.
+//
+// Addresses are the terralith's own shape, and there are two members declaring
+// the same address on purpose — `aws_iam_role.shared` — because that pair is
+// the reason a node row needs a second line at all.
+export const PAL_MEMBER = "terralith-4";
+export const PAL_FAR = { id: `${PAL_MEMBER}/aws_iam_role.team_0007_role`, x: 7200, y: 2600 };
+const palCards = [
+  ...Array.from({ length: 8 }, (_, i) => ({
+    id: `${PAL_MEMBER}/aws_iam_role.team_000${i}_role`,
+    kind: "aws_iam_role",
+    x: i === 7 ? PAL_FAR.x : 120 + i * 420,
+    y: i === 7 ? PAL_FAR.y : 900,
+  })),
+  { id: `${PAL_MEMBER}/aws_iam_role.shared`, kind: "aws_iam_role", x: 120, y: 1500 },
+  { id: "cohort-iam-ecr/aws_iam_role.shared", kind: "aws_iam_role", x: 620, y: 1500 },
+];
+const palCardSvg = (c) => `
+  <g data-node-id="${c.id}">
+    <rect x="${c.x}" y="${c.y}" width="312" height="84" rx="12" fill="var(--pin-goodFill, #1c2431)" stroke="var(--pin-goodStroke, #345)"/>
+    <text x="${c.x + 16}" y="${c.y + 30}" font-size="13" fill="var(--pin-text, #e6edf3)">${c.id}</text>
+    <text x="${c.x + 16}" y="${c.y + 50}" font-size="10" fill="var(--pin-textMuted, #8b949e)">${c.kind}</text>
+  </g>`;
+const NON_CHANT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8000 3000" width="8000" height="3000">
+  <rect x="0" y="0" width="8000" height="3000" fill="var(--pin-bg0, #0d1117)"/>
+  <rect data-group-id="${PAL_MEMBER}" x="60" y="820" width="7500" height="1900" rx="10" fill="none" stroke="var(--pin-edge, #444)"/>
+${palCards.map(palCardSvg).join("\n")}
+</svg>`;
+const NON_CHANT_IR = {
+  nodes: palCards.map((c) => ({ id: c.id, kind: c.kind, lexicon: "choudoufu", attrs: { _status: "good", rung: "tag-governable", estate: "behold-terralith-4" } })),
+  edges: [],
+};
+
 export function startStub(port, { carve = false, nonChant = false } = {}) {
   // #228: the hand-layout sidecar, in memory instead of `.behold/layout.json`
   // — the SAME wire contract src/server.ts serves (lens-keyed deltas, a
@@ -584,8 +621,8 @@ export function startStub(port, { carve = false, nonChant = false } = {}) {
       // which is the whole point here: one member, a long note, a short one.
       if (path === "/api/graph" || path === "/api/overlay") {
         return json({
-          ir: irFor("live"),
-          svg,
+          ir: NON_CHANT_IR,
+          svg: NON_CHANT_SVG,
           meta: { projectDir: NON_CHANT_PROJECT.projectDir, env: "live", tier: null, target: null, estate: 1, note: NON_CHANT_NOTE, noteShort: NON_CHANT_NOTE_SHORT },
         });
       }

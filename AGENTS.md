@@ -91,6 +91,14 @@ preview-locked, and one load runs at a time (409 otherwise).
    "Collapse large boxes" / "Expand all". Below the limit it changes nothing.
 3. **inspect** — a node's `sourceLoc.file` is the typed source that declared it;
    edit there to change the estate (chant is the source of truth, not behold).
+4. **find** — ⌘K also takes an ADDRESS (#393). Two characters in, the palette
+   matches the ids and addresses of the graph the page is currently showing and
+   offers up to twelve `node: <address>` rows, prefix matches first, each with
+   its member and kind on a second line (two members of one estate can declare
+   the same address). Enter takes the same path a click on the card does — the
+   inspect pane and the highlight — and pans the graph onto it: `revealNode` in
+   web/app.js drives the same viewBox the wheel, the drag and "⤢ fit" drive.
+   Nothing here fetches, so it works in a static export too.
 
 ## The carve loop (Terraform → chant, #230)
 
