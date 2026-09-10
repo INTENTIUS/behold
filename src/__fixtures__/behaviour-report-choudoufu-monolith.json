@@ -1,0 +1,495 @@
+{
+  "meta": {
+    "engine": "behold-fixture",
+    "version": "0",
+    "at": {
+      "traffic": "100 rps, p50"
+    }
+  },
+  "entities": {
+    "aws_iam_role.team_a": {
+      "at": {
+        "traffic": "100 rps, p50"
+      },
+      "cost": {
+        "perHour": 0.0004,
+        "currency": "USD"
+      },
+      "headroom": {
+        "cpu": 0.9,
+        "latency": 0.85
+      },
+      "errorRate": 0.001,
+      "resilience": {
+        "failure": "one zone lost",
+        "verdict": "survives"
+      },
+      "provenance": {
+        "engine": "behold-fixture",
+        "version": "0",
+        "tolerance": "fixture",
+        "basis": "modeled"
+      }
+    },
+    "aws_iam_role_policy.team_a_inline": {
+      "at": {
+        "traffic": "100 rps, p50"
+      },
+      "cost": {
+        "perHour": 0.0002,
+        "currency": "USD"
+      },
+      "headroom": {
+        "cpu": 0.84,
+        "latency": 0.76
+      },
+      "errorRate": 0.001,
+      "resilience": {
+        "failure": "one zone lost",
+        "verdict": "survives"
+      },
+      "provenance": {
+        "engine": "behold-fixture",
+        "version": "0",
+        "tolerance": "fixture",
+        "basis": "modeled"
+      }
+    },
+    "aws_iam_policy.team_a": {
+      "at": {
+        "traffic": "100 rps, p50"
+      },
+      "cost": {
+        "perHour": 0.0002,
+        "currency": "USD"
+      },
+      "headroom": {
+        "cpu": 0.74
+      },
+      "errorRate": 0.001,
+      "resilience": {
+        "failure": "one zone lost",
+        "verdict": "survives"
+      },
+      "provenance": {
+        "engine": "behold-fixture",
+        "version": "0",
+        "tolerance": "fixture",
+        "basis": "modeled"
+      }
+    },
+    "aws_iam_role_policy_attachment.team_a": {
+      "at": {
+        "traffic": "100 rps, p50"
+      },
+      "cost": {
+        "perHour": 0.0001,
+        "currency": "USD"
+      },
+      "headroom": {
+        "cpu": 0.72,
+        "latency": 0.58
+      },
+      "errorRate": 0.001,
+      "resilience": {
+        "failure": "one zone lost",
+        "verdict": "survives"
+      },
+      "provenance": {
+        "engine": "behold-fixture",
+        "version": "0",
+        "tolerance": "fixture",
+        "basis": "modeled"
+      }
+    },
+    "aws_cloudwatch_log_group.team_a_0": {
+      "at": {
+        "traffic": "100 rps, p50"
+      },
+      "cost": {
+        "perHour": 0.0416,
+        "currency": "USD"
+      },
+      "headroom": {
+        "cpu": 0.66,
+        "latency": 0.49
+      },
+      "errorRate": 0.0004,
+      "resilience": {
+        "failure": "one zone lost",
+        "verdict": "survives"
+      },
+      "provenance": {
+        "engine": "behold-fixture",
+        "version": "0",
+        "tolerance": "fixture",
+        "basis": "modeled"
+      }
+    },
+    "aws_cloudwatch_log_group.team_a_1": {
+      "at": {
+        "traffic": "100 rps, p50"
+      },
+      "cost": {
+        "perHour": 0.0312,
+        "currency": "USD"
+      },
+      "headroom": {
+        "cpu": 0.6,
+        "latency": 0.85
+      },
+      "errorRate": 0.0004,
+      "resilience": {
+        "failure": "one zone lost",
+        "verdict": "survives"
+      },
+      "provenance": {
+        "engine": "behold-fixture",
+        "version": "0",
+        "tolerance": "fixture",
+        "basis": "modeled"
+      }
+    },
+    "aws_cloudwatch_log_group.team_a_2": {
+      "at": {
+        "traffic": "100 rps, p50"
+      },
+      "cost": {
+        "perHour": 0.0208,
+        "currency": "USD"
+      },
+      "headroom": {
+        "cpu": 0.54,
+        "latency": 0.76
+      },
+      "errorRate": 0.0004,
+      "resilience": {
+        "failure": "one zone lost",
+        "verdict": "survives"
+      },
+      "provenance": {
+        "engine": "behold-fixture",
+        "version": "0",
+        "tolerance": "fixture",
+        "basis": "modeled"
+      }
+    },
+    "aws_iam_role.team_b": {
+      "at": {
+        "traffic": "100 rps, p50"
+      },
+      "cost": {
+        "perHour": 0.0004,
+        "currency": "USD"
+      },
+      "headroom": {
+        "cpu": 0.9,
+        "latency": 0.67
+      },
+      "errorRate": 0.001,
+      "resilience": {
+        "failure": "one zone lost",
+        "verdict": "degrades",
+        "note": "the trust policy names a zone-scoped service principal, so the assume path is re-established rather than kept"
+      },
+      "provenance": {
+        "engine": "behold-fixture",
+        "version": "0",
+        "tolerance": "fixture",
+        "basis": "modeled"
+      }
+    },
+    "aws_iam_role_policy.team_b_inline": {
+      "at": {
+        "traffic": "100 rps, p50"
+      },
+      "cost": {
+        "perHour": 0.0002,
+        "currency": "USD"
+      },
+      "headroom": {
+        "cpu": 0.84,
+        "latency": 0.58
+      },
+      "errorRate": 0.001,
+      "resilience": {
+        "failure": "one zone lost",
+        "verdict": "survives"
+      },
+      "provenance": {
+        "engine": "behold-fixture",
+        "version": "0",
+        "tolerance": "fixture",
+        "basis": "modeled"
+      }
+    },
+    "aws_iam_policy.team_b": {
+      "at": {
+        "traffic": "100 rps, p50"
+      },
+      "cost": {
+        "perHour": 0.0002,
+        "currency": "USD"
+      },
+      "headroom": {
+        "cpu": 0.78,
+        "latency": 0.49
+      },
+      "errorRate": 0.001,
+      "resilience": {
+        "failure": "one zone lost",
+        "verdict": "survives"
+      },
+      "provenance": {
+        "engine": "behold-fixture",
+        "version": "0",
+        "tolerance": "fixture",
+        "basis": "modeled"
+      }
+    },
+    "aws_iam_role_policy_attachment.team_b": {
+      "at": {
+        "traffic": "100 rps, p50"
+      },
+      "cost": {
+        "perHour": 0.0001,
+        "currency": "USD"
+      },
+      "headroom": {
+        "cpu": 0.72,
+        "latency": 0.85
+      },
+      "errorRate": 0.001,
+      "resilience": {
+        "failure": "one zone lost",
+        "verdict": "survives"
+      },
+      "provenance": {
+        "engine": "behold-fixture",
+        "version": "0",
+        "tolerance": "fixture",
+        "basis": "modeled"
+      }
+    },
+    "aws_cloudwatch_log_group.team_b_0": {
+      "at": {
+        "traffic": "100 rps, p50"
+      },
+      "cost": {
+        "perHour": 0.0416,
+        "currency": "USD"
+      },
+      "headroom": {
+        "cpu": 0.66,
+        "latency": 0.76
+      },
+      "errorRate": 0.0004,
+      "resilience": {
+        "failure": "one zone lost",
+        "verdict": "survives"
+      },
+      "provenance": {
+        "engine": "behold-fixture",
+        "version": "0",
+        "tolerance": "fixture",
+        "basis": "modeled"
+      }
+    },
+    "aws_cloudwatch_log_group.team_b_1": {
+      "at": {
+        "traffic": "100 rps, p50"
+      },
+      "cost": {
+        "perHour": 0.0312,
+        "currency": "USD"
+      },
+      "headroom": {
+        "cpu": 0.6,
+        "latency": 0.67
+      },
+      "errorRate": 0.0004,
+      "resilience": {
+        "failure": "one zone lost",
+        "verdict": "survives"
+      },
+      "provenance": {
+        "engine": "behold-fixture",
+        "version": "0",
+        "tolerance": "fixture",
+        "basis": "modeled"
+      },
+      "rightSize": {
+        "suggestion": "retention 1 day -> 7 days",
+        "reason": "the group is read for a week after every deploy and re-ingested when it is not"
+      }
+    },
+    "aws_cloudwatch_log_group.team_b_2": {
+      "at": {
+        "traffic": "100 rps, p50"
+      },
+      "cost": {
+        "perHour": 0.0208,
+        "currency": "USD"
+      },
+      "headroom": {
+        "cpu": 0.54,
+        "latency": 0.58
+      },
+      "errorRate": 0.0004,
+      "resilience": {
+        "failure": "one zone lost",
+        "verdict": "survives"
+      },
+      "provenance": {
+        "engine": "behold-fixture",
+        "version": "0",
+        "tolerance": "fixture",
+        "basis": "modeled"
+      }
+    },
+    "aws_iam_role.team_c": {
+      "at": {
+        "traffic": "100 rps, p50"
+      },
+      "cost": {
+        "perHour": 0.0004,
+        "currency": "USD"
+      },
+      "headroom": {
+        "cpu": 0.9,
+        "latency": 0.49
+      },
+      "errorRate": 0.001,
+      "resilience": {
+        "failure": "one zone lost",
+        "verdict": "survives"
+      },
+      "provenance": {
+        "engine": "behold-fixture",
+        "version": "0",
+        "tolerance": "fixture",
+        "basis": "modeled"
+      }
+    },
+    "aws_iam_role_policy.team_c_inline": {
+      "at": {
+        "traffic": "100 rps, p50"
+      },
+      "cost": {
+        "perHour": 0.0002,
+        "currency": "USD"
+      },
+      "headroom": {
+        "cpu": 0.84,
+        "latency": 0.85
+      },
+      "errorRate": 0.001,
+      "resilience": {
+        "failure": "one zone lost",
+        "verdict": "survives"
+      },
+      "provenance": {
+        "engine": "behold-fixture",
+        "version": "0",
+        "tolerance": "fixture",
+        "basis": "modeled"
+      }
+    },
+    "aws_iam_policy.team_c": {
+      "at": {
+        "traffic": "100 rps, p50"
+      },
+      "cost": {
+        "perHour": 0.0002,
+        "currency": "USD"
+      },
+      "headroom": {
+        "cpu": 0.78,
+        "latency": 0.76
+      },
+      "errorRate": 0.001,
+      "resilience": {
+        "failure": "one zone lost",
+        "verdict": "survives"
+      },
+      "provenance": {
+        "engine": "behold-fixture",
+        "version": "0",
+        "tolerance": "fixture",
+        "basis": "modeled"
+      }
+    },
+    "aws_cloudwatch_log_group.team_c_0": {
+      "at": {
+        "traffic": "100 rps, p50"
+      },
+      "cost": {
+        "perHour": 0.0416,
+        "currency": "USD"
+      },
+      "headroom": {
+        "cpu": 0.66,
+        "latency": 0.58
+      },
+      "errorRate": 0.0004,
+      "resilience": {
+        "failure": "one zone lost",
+        "verdict": "survives"
+      },
+      "provenance": {
+        "engine": "behold-fixture",
+        "version": "0",
+        "tolerance": "fixture",
+        "basis": "modeled"
+      }
+    },
+    "aws_cloudwatch_log_group.team_c_1": {
+      "at": {
+        "traffic": "100 rps, p50"
+      },
+      "cost": {
+        "perHour": 0.0312,
+        "currency": "USD"
+      },
+      "headroom": {
+        "cpu": 0.6,
+        "latency": 0.49
+      },
+      "errorRate": 0.0004,
+      "resilience": {
+        "failure": "one zone lost",
+        "verdict": "survives"
+      },
+      "provenance": {
+        "engine": "behold-fixture",
+        "version": "0",
+        "tolerance": "fixture",
+        "basis": "modeled"
+      }
+    },
+    "aws_cloudwatch_log_group.team_c_2": {
+      "at": {
+        "traffic": "100 rps, p50"
+      },
+      "cost": {
+        "perHour": 0.0208,
+        "currency": "USD"
+      },
+      "headroom": {
+        "cpu": 0.54,
+        "latency": 0.85
+      },
+      "errorRate": 0.0004,
+      "resilience": {
+        "failure": "one zone lost",
+        "verdict": "survives"
+      },
+      "provenance": {
+        "engine": "behold-fixture",
+        "version": "0",
+        "tolerance": "fixture",
+        "basis": "modeled"
+      }
+    }
+  }
+}

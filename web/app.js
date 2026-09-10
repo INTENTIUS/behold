@@ -8,7 +8,31 @@
 // floating control panel's chrome (panel.js — drag/snap/collapse/tabs, persisted
 // position), and the theme picker into the panel's View-tab slot (a stable element
 // renderPanelView never rewrites, so the select mounts once and survives re-renders).
-import { initTheme, mountThemePicker, readableOn, colorForCategory, onThemeChange, getTokens } from "./theme.js";
+import { initTheme, mountThemePicker, readableOn, colorForCategory, onThemeChange, getTokens, getTheme, pinTokensFor } from "./theme.js";
+// #399 M2 / #401 M4 of #397: the colour-by modes' arithmetic and the
+// provenance badge's wording — every decision the behaviour overlay makes,
+// pure and unit-tested beside the file. This module owns the fetches, the SVG
+// and the panels; nothing below states a figure of its own.
+import {
+  COLOUR_MODES,
+  badgeFor,
+  blockOf,
+  countFigures,
+  countsText,
+  domainFor,
+  effectiveMode,
+  figureOf,
+  fillFor,
+  fmtCost,
+  fmtHeadroom,
+  headroomOf,
+  modeAvailability,
+  rampFor,
+  rampGradient,
+  scaleEnds,
+  totalsFor,
+  totalsText,
+} from "./behaviour-scale.js";
 import { addPanelTab, initPanel, setPanelTab, togglePanelCollapsed, isPanelCollapsed } from "./panel.js";
 // #254: the carve walkthrough's stepper — everything it DECIDES is a pure
 // function in there; this file owns the fetches, the graph selection, and the
@@ -66,16 +90,115 @@ mountThemePicker(document.getElementById("panel-theme"));
 // labels/icons get readable ink (black/white) on the category fill. Re-runs on theme switch,
 // since the categorical hues come from the active theme's palette.
 let lastGraphIr = null;
+
+// --- colour by drift, cost or headroom (#399, M2 of #397) -------------------
+//
+// The mode is CLIENT-SIDE state, deliberately. It changes no fetch: the server
+// hands the same overlay whichever mode is picked — `attrs._behaviour` rides
+// every priced card already (src/behaviour.ts explains why the block stays on
+// the node), so a mode switch is a repaint of the SVG that is already on
+// screen, with no round trip and nothing for a slow chant read to hold up. It
+// is therefore NOT in `LENS_PARAMS`/`canonicalKey`: a lens param there means "a
+// different snapshot comes back", and adding one would give a static export
+// three identical bundles of the same graph under three keys.
+//
+// It survives a reload the way the theme does, and for the same reason — the
+// colour you left the graph in is part of how you read it.
+const COLOUR_STORE_KEY = "behold.colourBy";
+let colourMode = "drift";
+try {
+  const saved = localStorage.getItem(COLOUR_STORE_KEY);
+  if (COLOUR_MODES.includes(saved)) colourMode = saved;
+} catch {
+  /* private mode */
+}
+
+const COLOUR_MODE_TITLE = {
+  drift: "Colour each card by what chant observed live — the overlay behold has always drawn",
+  cost: "Colour each card by the engine's cost per hour, low to high across this estate. An entity nothing priced draws neutral, never the cheap end.",
+  headroom: "Colour each card by how far it is from saturation — the LOWER of the axes the engine reported. An entity nothing priced draws neutral.",
+};
+
+/** `meta.behaviour` off the last render, or null. */
+function behaviourMeta() {
+  return (lastMeta && lastMeta.behaviour) || null;
+}
+
+/** The mode actually painted: the pick, unless this graph cannot serve it (no
+ * overlay, a refusal, an absence), in which case drift — which never depended
+ * on an engine. The PICK is kept either way, so switching back to a live env
+ * lands where you left off. */
+function activeColourMode() {
+  return effectiveMode(colourMode, lastMeta);
+}
+
+function setColourMode(mode) {
+  colourMode = mode;
+  try {
+    localStorage.setItem(COLOUR_STORE_KEY, mode);
+  } catch {
+    /* private mode */
+  }
+  // No load(): the mode changes nothing the server would answer differently,
+  // so the SVG already on screen is repainted in place. renderStatusbar() is
+  // the one entry point that redraws the strip AND all three panel tabs, which
+  // is exactly the surface a mode switch moves.
+  recolorNodesByCategory();
+  renderStatusbar();
+}
+
+/**
+ * What each card is painted, in the active mode.
+ *
+ * Drift keeps the categorical hue #62 gives a card (the drift state stays on
+ * the bar and the stroke, where pinhole puts it). The two behaviour modes
+ * replace the FILL with the mode's scale, so the drift bar underneath is
+ * untouched and both facts stay on the card at once.
+ *
+ * The scale's domain is taken over every entity in the graph that carries a
+ * figure — the same single walk of `ir.nodes` M1's design note promised, with
+ * no join against a second index.
+ */
+function colourPlan(graphIr) {
+  const mode = activeColourMode();
+  const tokens = getTokens();
+  const kindOf = new Map(graphIr.nodes.map((n) => [n.id, n.kind || n.lexicon || "node"]));
+  if (mode === "drift" || !tokens) {
+    return { mode, fillOf: (id) => ({ fill: colorForCategory(kindOf.get(id)), unpriced: false }) };
+  }
+  const theme = getTheme();
+  // The drift overlay's own neutral card ground — the colour a card wears when
+  // chant could not read it. #399: an entity with no block draws THIS, never
+  // the zero end of the scale, which would say "free" or "saturated" about an
+  // entity nothing priced.
+  const neutralFill = theme ? pinTokensFor(theme).neutralFill : tokens.neutral;
+  const ramp = rampFor(mode, tokens);
+  const domain = domainFor(
+    mode,
+    graphIr.nodes.map((n) => figureOf(mode, blockOf(n))),
+  );
+  const figures = new Map(graphIr.nodes.map((n) => [n.id, figureOf(mode, blockOf(n))]));
+  return { mode, domain, ramp, fillOf: (id) => fillFor(figures.get(id), domain, ramp, neutralFill) };
+}
+
 function recolorNodesByCategory(ir) {
   if (ir) lastGraphIr = ir;
   const graphIr = ir || lastGraphIr;
   const svg = document.querySelector("#graph svg");
   if (!svg || !graphIr) return;
   const kindOf = new Map(graphIr.nodes.map((n) => [n.id, n.kind || n.lexicon || "node"]));
+  const plan = colourPlan(graphIr);
   for (const g of svg.querySelectorAll("[data-node-id]")) {
-    const kind = kindOf.get(g.getAttribute("data-node-id"));
+    const id = g.getAttribute("data-node-id");
+    const kind = kindOf.get(id);
     if (!kind) continue;
-    const cat = colorForCategory(kind), ink = readableOn(cat);
+    const paint = plan.fillOf(id);
+    const cat = paint.fill, ink = readableOn(cat);
+    // #399: an unpriced card is marked, not merely coloured — a hex cannot be
+    // read back out into "the engine did not price this", and the legend's
+    // unpriced count has to agree with what is on the canvas.
+    if (plan.mode !== "drift" && paint.unpriced) g.setAttribute("data-unpriced", "1");
+    else g.removeAttribute("data-unpriced");
     // Classify each element ONCE by the pinhole token it rode on (data-cat role), then apply
     // the role's colour on every pass. This is what makes it recolour on theme switch: after
     // the first pass the fill is a hex (not a --pin-* var), so we must key off the marker, not
@@ -403,6 +526,37 @@ function renderDriftSection(section, r) {
   pr("rendered", `${p.renderedAt} · helm ${p.helmVersion} · chant ${p.chantVersion}`);
 }
 
+const RESILIENCE_WORD = { survives: "survives", degrades: "degrades", fails: "fails" };
+
+/**
+ * The `behaviour` inspect section (#401, M4 of #397) — one entity's whole
+ * block, as rows, with the provenance badge beside every figure.
+ *
+ * Every row here is the engine's claim, echoed. The currency is the engine's
+ * (behold converts none), the traffic level is the string the engine named
+ * (there is no default one), a headroom axis the engine did not report is
+ * simply not a row, and `rightSize` appears only when the engine suggested
+ * something. The badge on each figure says who stated it, to what tolerance,
+ * and whether it was modeled from list prices or validated against a bill.
+ */
+function renderBehaviourSection(section, b) {
+  if (!b) return;
+  const meta = behaviourMeta();
+  const one = [b];
+  const add = section("behaviour");
+  add("at", b.at.traffic);
+  add("cost", figureWithBadge(fmtCost(b.cost.perHour, b.cost.currency), one, meta));
+  const axes = [];
+  if (typeof b.headroom.cpu === "number") axes.push(`cpu ${fmtHeadroom(b.headroom.cpu)}`);
+  if (typeof b.headroom.latency === "number") axes.push(`latency ${fmtHeadroom(b.headroom.latency)}`);
+  const worst = headroomOf(b);
+  add("headroom", figureWithBadge(`${axes.join(" · ")} — colours on ${fmtHeadroom(worst)}`, one, meta));
+  add("error rate", figureWithBadge(`${(b.errorRate * 100).toFixed(2)}% of requests at ${b.at.traffic}`, one, meta));
+  add("resilience", figureWithBadge(`${RESILIENCE_WORD[b.resilience.verdict] || b.resilience.verdict} — ${b.resilience.failure}`, one, meta));
+  if (b.resilience.note) add("resilience note", b.resilience.note);
+  if (b.rightSize) add("right-size", figureWithBadge(b.rightSize.suggestion + (b.rightSize.reason ? ` — ${b.rightSize.reason}` : ""), one, meta));
+}
+
 function inspect(node) {
   const panel = document.getElementById("inspect-body");
   panel.innerHTML = "<h2>inspect</h2>";
@@ -526,6 +680,13 @@ function inspect(node) {
       }
     });
   }
+
+  // #401: the behaviour block, field by field, with a badge on every figure.
+  // The colour on the card carries one number at a time (whichever mode is
+  // picked) and carries it as a hue; this is where the engine's whole
+  // statement about this entity is legible — and where a figure without its
+  // provenance would be visible as the contract violation it is.
+  renderBehaviourSection(section, blockOf(node));
 
   // Render diff (#146's deferred half): what `chant helm diff <digest> <env>
   // --live --json` said about this chart's PINNED render. Never rely on the
@@ -1166,6 +1327,28 @@ function renderPanelView() {
       }),
     );
   }
+  // #399: the three-state colour switch, beside the zoom — the other thing
+  // this tab is for is "what am I looking at", and colour is half that answer.
+  // Sits below the stops because it is not a granularity: every zoom paints in
+  // whichever of the three you picked.
+  zoom.appendChild(panelHeading("colour by"));
+  for (const mode of COLOUR_MODES) {
+    const gate = mode === "drift" ? { available: true, reason: "" } : modeAvailability(lastMeta, mode);
+    const b = panelOpt(
+      mode,
+      mode === activeColourMode(),
+      () => {
+        if (!gate.available) return;
+        setColourMode(mode);
+      },
+      gate.available ? COLOUR_MODE_TITLE[mode] : gate.reason,
+    );
+    // #401: disabled VISIBLY, with the lexicon's own reason on it. A control
+    // greyed out is where a person asks "why not", so that is where the answer
+    // goes — never hidden, which would leave the question unasked.
+    if (!gate.available) b.disabled = true;
+    zoom.appendChild(b);
+  }
   // Radial toggle — entity zooms only, same gate the ⌘K entry has
   // (components/logical/ops all lay themselves out: waves / nested arch boxes /
   // phase boxes).
@@ -1415,6 +1598,66 @@ function renderChoudoufuMoves(host, info) {
   }
 }
 
+/**
+ * The totals, per box and per estate, in the active mode (#399).
+ *
+ * Sits in the Scope tab because Scope is already the tab that says what this
+ * estate IS — its members, its moves, its environments — and a per-box figure
+ * is a fact about a member, not about the picture.
+ *
+ * In `drift` mode there is no row at all. Drift counts states; a sum of states
+ * is not a thing, and the Model tab's legend already carries the counts.
+ *
+ * Where the figure comes from is on the row, every time. `cost` quotes the
+ * server: `meta.behaviour.boxes[<key>]` per box and `.sum` for the estate, both
+ * additions of engine figures — or `meta.behaviour.total`, the engine's own
+ * estate figure, which outranks the sum and is labelled "engine total" so the
+ * two can never be confused. `headroom` has no server-side aggregate, because
+ * no engine states one and adding fractions of capacity would mean nothing, so
+ * the SPA takes the worst and middle card of the scope itself and the row says
+ * "computed".
+ */
+function renderBehaviourTotals(host) {
+  const mode = activeColourMode();
+  if (mode === "drift") return;
+  const b = behaviourMeta();
+  const ir = lastGraphIr;
+  if (!b || !ir) return;
+  const byId = new Map(ir.nodes.map((n) => [n.id, n]));
+  const boxes = (ir.groups && ir.groups.byStack) || {};
+  host.appendChild(panelHeading(`${mode} totals`));
+
+  const row = (label, blocks, sum, engineTotal, title) => {
+    const totals = totalsFor(mode, blocks, sum, engineTotal);
+    if (!totals) return;
+    // Stacked, not a name/value row: the panel is 260px and one of these
+    // lines is "0.5669 USD/h · 41 priced · 4 unpriced" — side by side, the
+    // figure takes the width and the box's name ellipses away to nothing,
+    // which is the one part of the row that says WHAT is being totalled.
+    const r = document.createElement("div");
+    r.className = "behaviour-total";
+    const name = document.createElement("div");
+    name.className = "grow";
+    name.style.fontWeight = "600";
+    name.textContent = label;
+    if (title) name.title = title;
+    r.appendChild(name);
+    r.appendChild(figureWithBadge(totalsText(totals), blocks.filter(Boolean), b));
+    host.appendChild(r);
+  };
+
+  for (const [key, ids] of Object.entries(boxes).sort(([a], [c]) => a.localeCompare(c))) {
+    const blocks = ids.map((id) => blockOf(byId.get(id)));
+    row(key, blocks, (b.boxes || {})[key], undefined, `${ids.length} entities in this box`);
+  }
+  const all = ir.nodes.map((n) => blockOf(n));
+  // `total` is the engine's word and only ever holds an engine's own figure;
+  // `sum` is behold's addition. Passing both lets totalsFor apply #398's
+  // precedence in one place rather than at each call site.
+  row(b.total ? "estate · engine total" : "estate", all, b.sum, b.total, b.total ? "the engine stated this estate total itself; behold added nothing" : "behold's sum over the engine's per-entity figures");
+  if (mode === "headroom") host.appendChild(panelMuted("min and median computed by behold over the engine's per-entity figures — no engine states a headroom aggregate."));
+}
+
 function renderPanelScope() {
   const host = document.getElementById("tab-scope");
   if (!host) return;
@@ -1446,6 +1689,10 @@ function renderPanelScope() {
   // one — and it renders identically in carve mode and on an ordinary project
   // serve, because /api/project publishes one shape for both.
   renderCarveState(host, info.carve && info.carve.state);
+  // #399: what the estate costs, or how much room it has left, per member box
+  // and for the whole estate — right under the member list the figures are
+  // about, and above the moves that would change them.
+  renderBehaviourTotals(host);
   // #371: a choudoufu member's move plan — the handoff lines with copy
   // buttons, and the morph page. Read-only: behold never runs live-mv.
   renderChoudoufuMoves(host, info.choudoufu);
@@ -1609,6 +1856,103 @@ function renderPanelScope() {
 const DRIFT_STATUS_VAR = { good: "var(--managed)", warn: "var(--foreign)", accent: "var(--pending)", neutral: "var(--muted)", runtime: "var(--runtime)" };
 const COMPONENT_STATUS_VAR = { good: "var(--managed)", accent: "var(--pending)", warn: "var(--degraded)", neutral: "var(--muted)" };
 
+/**
+ * The provenance badge (#401, M4 of #397) — `{engine} {version} · {tolerance}
+ * · {basis}`, beside a figure rather than once per page.
+ *
+ * #397's one prohibition is a prediction presented as a bill, and this element
+ * is where that is prevented: the word `modeled` is on the badge and the
+ * sentence "modeled, not billed" is on its hover, on every figure that carries
+ * one. `blocks` is the entities the figure was derived from — one for an
+ * inspect row, a whole box or estate for a totals row — because #398 puts
+ * provenance on the ENTITY, so a badge over a set can only say what the set
+ * agrees on (badgeFor says `mixed` where it does not).
+ */
+function badgeEl(blocks, meta) {
+  const b = badgeFor(blocks, meta);
+  if (!b) return null;
+  const el = document.createElement("span");
+  el.className = "tag behaviour-badge";
+  el.textContent = b.text;
+  el.title = b.title;
+  return el;
+}
+
+/** A figure and its badge on one line — the shape every behaviour figure the
+ * SPA shows takes, so none of them can end up without one. */
+function figureWithBadge(text, blocks, meta) {
+  const wrap = document.createElement("span");
+  wrap.style.cssText = "display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;min-width:0";
+  const val = document.createElement("span");
+  val.textContent = text;
+  wrap.appendChild(val);
+  const badge = badgeEl(blocks, meta);
+  if (badge) wrap.appendChild(badge);
+  return wrap;
+}
+
+/**
+ * One mode's legend (#399: one legend per mode).
+ *
+ * `drift` is not here — it keeps #393's vocabulary legend, the estate's own
+ * words for the four states, which is the whole point of that issue. The two
+ * behaviour modes get a ramp with its two ends labelled, the priced/unpriced
+ * split, the neutral swatch that says what an unpriced card is drawn in, and
+ * the badge for the figures the ramp spans.
+ */
+function renderBehaviourLegend(host, mode) {
+  const b = behaviourMeta();
+  const ir = lastGraphIr;
+  if (!b || !ir) return;
+  const blocks = ir.nodes.map((n) => blockOf(n));
+  const values = ir.nodes.map((n) => figureOf(mode, blockOf(n)));
+  const domain = domainFor(mode, values);
+  const tokens = getTokens();
+  const ramp = rampFor(mode, tokens);
+  const currency = (blocks.find((x) => x && x.cost) || { cost: {} }).cost.currency || "";
+  const heading = panelHeading(`${mode} · ${lastMeta.env}`);
+  heading.title = COLOUR_MODE_TITLE[mode];
+  host.appendChild(heading);
+
+  const bar = document.createElement("div");
+  bar.className = "behaviour-ramp";
+  bar.style.cssText = `height:10px;border-radius:5px;border:1px solid var(--line);background:${rampGradient(ramp)}`;
+  host.appendChild(bar);
+  const ends = scaleEnds(mode, domain, currency);
+  if (ends) {
+    const row = document.createElement("div");
+    row.className = "count-row";
+    const lo = document.createElement("span");
+    lo.className = "grow";
+    lo.textContent = ends.low;
+    const hi = document.createElement("span");
+    hi.className = "tag";
+    hi.textContent = ends.high;
+    row.append(lo, hi);
+    host.appendChild(row);
+  }
+
+  const counts = countFigures(mode, blocks);
+  const priced = blocks.filter((x) => x && figureOf(mode, x) !== undefined);
+  const line = document.createElement("div");
+  line.className = "count-row";
+  const txt = document.createElement("span");
+  txt.className = "grow";
+  txt.textContent = countsText(counts);
+  line.appendChild(txt);
+  const badge = badgeEl(priced, b);
+  if (badge) line.appendChild(badge);
+  host.appendChild(line);
+
+  // The neutral, spelled out. Without this row the grey cards read as a third
+  // band of the scale rather than as "nothing priced these".
+  const theme = getTheme();
+  host.appendChild(
+    panelDotRow(theme ? pinTokensFor(theme).neutralFill : "var(--muted)", "unpriced — no behaviour block", String(counts.unpriced)),
+  );
+  if (mode === "headroom") host.appendChild(panelMuted("the lower of the axes the engine reported; a missing axis is absent, not zero"));
+}
+
 function panelDotRow(color, main, tag, onClick) {
   const row = document.createElement("div");
   row.className = onClick ? "node-row" : "count-row";
@@ -1683,6 +2027,11 @@ function renderPanelModel() {
       const s = n.attrs && n.attrs._status;
       host.appendChild(panelDotRow(COMPONENT_STATUS_VAR[s] || "var(--muted)", n.id, APPLY_STATUS_TAG[s] || "", () => selectNode(n.id)));
     }
+  } else if (drift && activeColourMode() !== "drift") {
+    // #399: one legend per mode. The drift legend below is #393's vocabulary
+    // legend and stays exactly as it was — this branch is the two behaviour
+    // modes, whose legend is a scale rather than a set of states.
+    renderBehaviourLegend(host, activeColourMode());
   } else if (drift) {
     // #393 item 8: the legend proper. The heading carries the mixed-estate
     // sentence as its tooltip — the one case where the words on these rows are
@@ -1720,6 +2069,45 @@ function renderPanelModel() {
       host.appendChild(actButton("→ Scope", () => setPanelTab("scope")));
     }
   }
+  renderBehaviourRefusal(host);
+  renderBehaviourDiagnostics(host);
+}
+
+/**
+ * The refusal, where the legend would be (#401).
+ *
+ * The words are the lexicon's, in its own house style — an env-var chain and
+ * the variable it wants — and behold prints them as they came. It does not
+ * paraphrase them, does not soften them, and above all does not substitute a
+ * number: "a missing or unreachable engine means no overlay and a refusal that
+ * names why, never a locally faked number" is #397's rule, and this is the one
+ * surface where a person finds out it fired.
+ *
+ * An ABSENCE prints nothing here. Nothing was configured, so nothing refused —
+ * and a panel that announced every estate with no behavioural engine would be
+ * shouting about a feature nobody asked for. The absent line is on the disabled
+ * modes' tooltips instead, where the question actually gets asked.
+ */
+function renderBehaviourRefusal(host) {
+  const b = behaviourMeta();
+  if (!b || !b.refusal) return;
+  host.appendChild(panelHeading("behaviour — refused"));
+  const reason = panelMuted(b.refusal.reason);
+  reason.style.color = "var(--degraded)";
+  host.appendChild(reason);
+  host.appendChild(panelMuted(b.refusal.remedy));
+  host.appendChild(panelMuted("the drift overlay above is unaffected — it never depended on an engine."));
+}
+
+/** M1's diagnostics (`meta.behaviour.diagnostics`): every block behold dropped
+ * and every thing it could not reconcile, under the legend where the figures
+ * they are about are. They were reaching the wire and nothing was reading
+ * them. */
+function renderBehaviourDiagnostics(host) {
+  const b = behaviourMeta();
+  if (!b || !b.diagnostics || !b.diagnostics.length) return;
+  host.appendChild(panelHeading(`behaviour diagnostics · ${b.diagnostics.length}`));
+  for (const d of b.diagnostics) host.appendChild(panelMuted(d));
 }
 
 // ---------------------------------------------------------------------------
@@ -2081,6 +2469,10 @@ function renderStatusbar() {
   // Pure state — the strip echoes the axes whose controls live on the floating
   // panel and in ⌘K, so the current view stays legible with the panel collapsed.
   const parts = [`zoom: ${zoomValue()}`, view.env ? `env: ${view.env}` : "env: (source)"];
+  // #399: which colour the graph is in is state, not a control, so it belongs
+  // on the strip the same way the zoom and the env do. Only when it is not
+  // drift — drift is what the strip has always implied.
+  if (activeColourMode() !== "drift") parts.push(`colour: ${activeColourMode()}`);
   if (view.stack) parts.push(`stack: ${view.stack}`);
   if (axes.tier) parts.push(`tier: ${axes.tier}`);
   if (view.radial && !view.components && !view.logical && !view.ops) parts.push("radial");
@@ -4723,6 +5115,21 @@ function paletteCommands() {
   // Lens/zoom switches (#56, #63) — replaces the old header zoom picker.
   for (const [label, v] of availableZooms()) {
     c.push([label + (v === zoomValue() ? " ✓" : ""), () => { applyZoom(v); load(); }]);
+  }
+  // #399: the colour-by modes, with the same ✓ every other lens row carries.
+  // A disabled mode is LISTED with its reason rather than hidden — same rule
+  // #254's blocked carve steps follow, and the same reason: "why can't I do
+  // that" is a question the palette should be able to answer.
+  for (const mode of COLOUR_MODES) {
+    const gate = mode === "drift" ? { available: true, reason: "" } : modeAvailability(lastMeta, mode);
+    const why = gate.available ? "" : ` — ${gate.reason}`;
+    c.push([
+      `colour by: ${mode}${mode === activeColourMode() ? " ✓" : ""}${why}`,
+      () => {
+        if (!gate.available) return showToast(gate.reason, false);
+        setColourMode(mode);
+      },
+    ]);
   }
   // Radial toggle — entity zooms only, same gate the removed checkbox had
   // (components/logical/ops all lay themselves out: waves / nested arch boxes /

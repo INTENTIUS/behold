@@ -301,13 +301,29 @@ export async function readEstateLexicon(dir: string, opts: GraphOptions = {}): P
  * behold already has; the note says the reader is absent, and a reader that
  * broke says nothing louder than an empty edge set).
  */
+/** The test seam for the lexicon read (#334). `readEstateLexicon` spawns a
+ * real chant over a scratch project — three to four seconds on a laptop, and
+ * right under vitest's default five-second budget on a CI runner, which is how
+ * a route test that only wanted the roster timed out. `createApp` sets this
+ * beside `setChoudoufuRunner`: a fake choudoufu means no lexicon spawn either
+ * (`null`), unless the test hands in a reader of its own, which is how a
+ * route test asks for edges off a recorded lexicon IR. `undefined` outside a
+ * test: the real read. */
+let lexiconReadOverride: LexiconRead | null | undefined;
+export function setEstateLexiconRead(read: LexiconRead | null | undefined): void {
+  lexiconReadOverride = read;
+}
+
 export async function addIntraEstateEdges(
   ir: GraphIR,
   dir: string,
   state: TerraformReaderState = terraformReaderState(),
-  read: LexiconRead = readEstateLexicon,
+  read: LexiconRead = lexiconReadOverride === undefined ? readEstateLexicon : lexiconReadOverride ?? (async () => ({ nodes: [], edges: [] }) as unknown as GraphIR),
 ): Promise<GraphIR> {
-  if (state.refusal || ir.nodes.length === 0) return ir;
+  // A reader a test handed in is its own source of truth: the lexicon's
+  // resolvability on this machine says nothing about it (CI has no lexicon).
+  const handed = lexiconReadOverride !== undefined && lexiconReadOverride !== null;
+  if ((state.refusal && !handed) || ir.nodes.length === 0) return ir;
   let lexicon: GraphIR;
   try {
     lexicon = await read(dir, {});

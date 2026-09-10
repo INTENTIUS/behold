@@ -14,5 +14,12 @@ export default defineConfig({
   test: {
     include: ["src/**/*.test.ts", "web/**/*.test.js"],
     reporters: ["default", ["json", { outputFile: ".vitest-last.json" }]],
+    // #334: the route tests that spawn a real chant (`carve status` over a
+    // project, a lexicon read) have a fixed cost the runner sets — under a
+    // second here, 4.7 s on a GitHub runner, 5.008 s the day PR #405 failed
+    // its first run against the 5 s default. A spawn is not a unit test's
+    // budget. Twenty seconds still catches a hang; it stops a slow runner
+    // counting as a flake.
+    testTimeout: 20_000,
   },
 });

@@ -321,6 +321,25 @@
       #panel .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       #panel .tag { color: var(--muted); font: var(--t-caption)/1.5 var(--font-mono); white-space: nowrap; }
 
+      /* The provenance badge (#401, M4 of #397): who stated this figure, to
+         what tolerance, and whether it is modeled from list prices or
+         validated against a bill. Boxed rather than plain muted text, because
+         it rides BESIDE a number and has to read as a label on that number
+         rather than as more of it — and it sits on every figure the behaviour
+         overlay shows, in the panel and in the inspect pane alike, so it is
+         styled for both. `help` cursor: the hover carries "modeled, not
+         billed", which is the sentence #397 turns on. */
+      .behaviour-badge { color: var(--muted); font: var(--t-caption)/1.4 var(--font-mono);
+        border: 1px solid var(--line); border-radius: var(--r-ctl); padding: 0 5px;
+        white-space: nowrap; cursor: help; flex: none; }
+      #panel .behaviour-total { display: flex; flex-direction: column; gap: 1px; padding: 3px 0;
+        font: var(--t-caption)/1.5 var(--font-mono); }
+      #panel .behaviour-ramp { margin: 4px 0 2px; }
+      /* A card nothing priced keeps the drift overlay's neutral fill (#399) —
+         and says so, faintly, so the grey is legible as "not looked at" rather
+         than as the low end of the scale. */
+      #graph [data-unpriced="1"] { opacity: 0.82; }
+
       /* Substrate readiness (M5, #54) — one row per substrate on the panel's
          Substrates tab: status dot + name + state, with its actions (bring up /
          reset / run pipeline) visible inline again. #73 moved those into ⌘K;
