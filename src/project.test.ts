@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { detectProject, detectProjectShape, loadBeholdConfig, readExecutor, executorDesignation, resetExecutorCache } from "./project.ts";
+import { servesAsEstate } from "./member-kind.ts";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -231,9 +232,9 @@ describe("loadBeholdConfig", () => {
   });
 
   it("keeps a member whose kind it cannot read, with the reason — never silently as chant", () => {
-    const cfg = loadBeholdConfig(make(JSON.stringify({ members: [{ dir: "x", kind: "terraform" }, { dir: "y", kind: "choudoufu" }, { kind: "chant" }, { dir: "" }] })));
+    const cfg = loadBeholdConfig(make(JSON.stringify({ members: [{ dir: "x", kind: "pulumi" }, { dir: "y", kind: "choudoufu" }, { kind: "chant" }, { dir: "" }] })));
     expect(cfg.members).toHaveLength(2); // an entry with no dir is not a declaration
-    expect(cfg.members![0]).toEqual({ dir: "x", invalid: expect.stringContaining('unknown member kind "terraform"') });
+    expect(cfg.members![0]).toEqual({ dir: "x", invalid: expect.stringContaining('unknown member kind "pulumi"') });
     expect(cfg.members![0]).toEqual({ dir: "x", invalid: expect.stringContaining("kinds are: chant, choudoufu") });
     // #369: choudoufu is a registered kind, so its declaration is kept as one.
     expect(cfg.members![1]).toEqual({ dir: "y", kind: "choudoufu" });
@@ -295,7 +296,7 @@ describe("detectProjectShape", () => {
   // member used to disappear into.
   it("reports a declared member that fails its kind's probe, and one whose kind it does not know", () => {
     const dir = make({
-      ".behold.json": JSON.stringify({ members: ["a", { dir: "b", kind: "chant" }, { dir: "c", kind: "terraform" }] }),
+      ".behold.json": JSON.stringify({ members: ["a", { dir: "b", kind: "chant" }, { dir: "c", kind: "pulumi" }] }),
       "a/chant.config.ts": "export default {};",
       "b/README.md": "not a chant project",
     });
@@ -305,12 +306,13 @@ describe("detectProjectShape", () => {
       membersFrom: "behold-config",
       invalidMembers: [
         { dir: "b", invalid: "declared as chant, but b has no a chant.config.* file" },
-        { dir: "c", invalid: expect.stringContaining('unknown member kind "terraform"') },
+        { dir: "c", invalid: expect.stringContaining('unknown member kind "pulumi"') },
       ],
     });
   });
 
-  // #369: the choudoufu kind's probe is a `live { … }` block in a root *.tf.
+  // #369: the choudoufu kind's probe is a `live { … }` block in a root *.tf,
+  // or (#387) the `estate.chdf.hcl` sidecar.
   it("keeps a declared choudoufu member whose root *.tf carries a live block, and reports one whose does not", () => {
     const dir = make({
       ".behold.json": JSON.stringify({ members: ["app", { dir: "net", kind: "choudoufu" }, { dir: "plain", kind: "choudoufu" }] }),
@@ -325,7 +327,7 @@ describe("detectProjectShape", () => {
         { dir: "net", kind: "choudoufu" },
       ],
       membersFrom: "behold-config",
-      invalidMembers: [{ dir: "plain", invalid: "declared as choudoufu, but plain has no a `live { estate = … }` block in a root *.tf file" }],
+      invalidMembers: [{ dir: "plain", invalid: "declared as choudoufu, but plain has no an `estate.chdf.hcl` sidecar or a `live { estate = … }` block in a root *.tf file" }],
     });
     // Workspaces: a choudoufu directory is claimed by its kind too; a chant
     // project is chant whatever else it holds.
@@ -341,12 +343,62 @@ describe("detectProjectShape", () => {
     ]);
   });
 
+  // #387: the sidecar is what `tools/estate-gen` writes, so a cohort has no
+  // `live` block anywhere and used to fail its own declared kind's probe.
+  it("keeps a declared choudoufu member declared by the estate.chdf.hcl sidecar", () => {
+    const dir = make({
+      ".behold.json": JSON.stringify({ members: [{ dir: "s3", kind: "choudoufu" }, { dir: "net", kind: "choudoufu" }] }),
+      "s3/estate.chdf.hcl": 'estate = "s3-cohort"\n\nrecord_store "local" {\n  path = ".tofu-records"\n}\n',
+      "s3/s3.tf": 'resource "aws_s3_bucket" "one" {\n  bucket = "one"\n}\n',
+      "net/main.tf": 'terraform {\n  live {\n    estate = "net"\n  }\n}\n',
+    });
+    expect(detectProjectShape(dir).members).toEqual([
+      { dir: "s3", kind: "choudoufu" },
+      { dir: "net", kind: "choudoufu" },
+    ]);
+  });
+
+  // #387: a rendered cohort is a bare directory nobody wrote a member list
+  // for, and `behold serve <it>` has taken one since #369 — so the shape says
+  // "a member" rather than the dead end doctor used to print.
+  it("reads a directory that is itself a member of a non-chant kind as an estate of one", () => {
+    const dir = make({
+      "estate.chdf.hcl": 'estate = "s3-cohort"\n',
+      "s3.tf": 'resource "aws_s3_bucket" "one" {\n  bucket = "one"\n}\n',
+    });
+    expect(detectProjectShape(dir)).toEqual({ kind: "estate", members: [{ dir: ".", kind: "choudoufu" }], membersFrom: "itself" });
+    // A chant project is still a project, not an estate of itself.
+    expect(detectProjectShape(make({ "chant.config.ts": "export default {};" })).kind).toBe("project");
+    // And a directory no kind claims is still the dead end.
+    expect(detectProjectShape(make({ "README.md": "" })).kind).toBe("none");
+  });
+
   it("is none, with the reasons, when every declared member is invalid", () => {
     const dir = make({ ".behold.json": JSON.stringify({ members: [{ dir: "b", kind: "chant" }] }), "b/README.md": "" });
     expect(detectProjectShape(dir)).toEqual({
       kind: "none",
       invalidMembers: [{ dir: "b", invalid: expect.stringContaining("declared as chant") }],
     });
+  });
+
+  // #384: the lane #378 exists for — "every estate this exists to draw is a
+  // directory of `.tf` files and nothing else". Nothing declares it a member;
+  // its own shape does.
+  it("is an estate of one when the directory itself is a member of a kind that is not chant", () => {
+    const tf = make({
+      "envs/prod/versions.tf": "terraform {\n  required_providers {\n    aws = {}\n  }\n}\n",
+      "envs/prod/main.tf": 'resource "aws_s3_bucket" "b" {}\n',
+      "modules/persona/versions.tf": "terraform {\n  required_providers {\n    aws = {}\n  }\n}\n",
+      "modules/persona/main.tf": 'resource "aws_iam_role" "this" {}\n',
+    });
+    expect(detectProjectShape(tf)).toEqual({ kind: "estate", members: [{ dir: ".", kind: "terraform" }], membersFrom: "itself" });
+
+    // A chant project that happens to hold Terraform is still a chant project,
+    // and a choudoufu estate is still choudoufu — the table's order decides.
+    const chant = make({ "chant.config.ts": "export default {};", "main.tf": 'terraform {}\nresource "aws_vpc" "x" {}\n' });
+    expect(detectProjectShape(chant).kind).toBe("project");
+    const tofu = make({ "main.tf": 'terraform {\n  live {\n    estate = "net"\n  }\n}\n', "vpc.tf": 'resource "aws_vpc" "x" {}\n' });
+    expect(detectProjectShape(tofu).members).toEqual([{ dir: ".", kind: "choudoufu" }]);
   });
 
   it("is none for a directory that is neither — #193's dead end", () => {
@@ -409,5 +461,45 @@ describe("executorDesignation — per member, not per primary (#165)", () => {
     expect(executorDesignation(member, "prod")).toBeUndefined();
     rmSync(member, { recursive: true, force: true });
     rmSync(primary, { recursive: true, force: true });
+  });
+});
+
+// #389: the workbench's generated entries (an estate-gen cohort, a terralith)
+// are ONE choudoufu estate each, and `behold serve <that dir>` used to answer
+// the no-project card over them — the single-project read is `chant graph`, and
+// a directory with no chant.config.ts and no lexicon has nothing for it to
+// read. `servesAsEstate` is the predicate that routes such a directory through
+// the estate compose path instead, where the member's own kind reads it.
+describe("servesAsEstate", () => {
+  const dirs: string[] = [];
+  afterAll(() => dirs.forEach((d) => rmSync(d, { recursive: true, force: true })));
+  const make = (files: Record<string, string>): string => {
+    const dir = mkdtempSync(join(tmpdir(), "behold-serves-"));
+    dirs.push(dir);
+    for (const [rel, content] of Object.entries(files)) {
+      mkdirSync(dirname(join(dir, rel)), { recursive: true });
+      writeFileSync(join(dir, rel), content);
+    }
+    return dir;
+  };
+
+  it("composes one directory that is a non-chant member — the sidecar form and the live-block form", () => {
+    expect(servesAsEstate([make({ "estate.chdf.hcl": 'estate = "s3-cohort"\n' })])).toBe(true);
+    expect(servesAsEstate([make({ "main.tf": 'terraform {\n  live {\n    estate = "tl"\n  }\n}\n' })])).toBe(true);
+  });
+
+  it("leaves one chant project on the single-project path, as it always was", () => {
+    expect(servesAsEstate([make({ "chant.config.ts": "export default {};" })])).toBe(false);
+  });
+
+  it("leaves a directory no kind claims on the single-project path, so #193's no-project card still explains it", () => {
+    expect(servesAsEstate([make({ "README.md": "" })])).toBe(false);
+  });
+
+  it("composes more than one directory whatever the kinds, and composes nothing for no directory", () => {
+    const a = make({ "chant.config.ts": "export default {};" });
+    const b = make({ "chant.config.ts": "export default {};" });
+    expect(servesAsEstate([a, b])).toBe(true);
+    expect(servesAsEstate([])).toBe(false);
   });
 });

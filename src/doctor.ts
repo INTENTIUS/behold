@@ -35,8 +35,16 @@ import {
   type ChantResolution,
 } from "./chant.ts";
 import { registeredMemberKinds } from "./member-kind.ts";
-import { CHOUDOUFU_FLOOR, choudoufuMeetsFloor, choudoufuVersion, readLiveCheck, type ChoudoufuVersion, type LiveCheckParse } from "./choudoufu-member.ts";
+import { CHOUDOUFU_FLOOR, choudoufuBinary, choudoufuMeetsFloor, choudoufuVersion, readLiveCheck, type ChoudoufuVersion, type LiveCheckParse } from "./choudoufu-member.ts";
 import { detectProject, detectProjectShape, type ProjectKind } from "./project.ts";
+import {
+  HCL_PARSER_PKG,
+  TERRAFORM_LEXICON_PKG,
+  discoverTerraformRoots,
+  terraformReaderState,
+  type TerraformReaderState,
+  type TerraformRootScan,
+} from "./terraform-member.ts";
 import { loadKubeconfig, resolveK8sTarget, type K8sProfiles, type Kubeconfig } from "./k8s-target.ts";
 import { detectSubstrates, type Substrate } from "./substrates.ts";
 import { discoverEstateOps, type OpInfo } from "./ops.ts";
@@ -48,7 +56,7 @@ export type CheckStatus = "pass" | "warn" | "fail";
  * on it); `detail` is what behold found; `fix` is the single next step, set
  * whenever the status isn't a pass. */
 export interface DoctorCheck {
-  name: "project" | "chant" | "lexicons" | "envs" | "kube" | "substrates" | "ops" | "choudoufu";
+  name: "project" | "chant" | "lexicons" | "envs" | "kube" | "substrates" | "ops" | "choudoufu" | "terraform";
   status: CheckStatus;
   detail: string;
   fix?: string;
@@ -76,6 +84,12 @@ export interface DoctorProbes {
   choudoufu?: {
     version: () => ChoudoufuVersion | undefined;
     liveCheck: (dir: string) => Promise<LiveCheckParse>;
+  };
+  /** The terraform reader's two optional peers and the root walk (#384),
+   * injectable so a test needs neither installed. */
+  terraform?: {
+    reader: () => TerraformReaderState;
+    roots: (dir: string) => TerraformRootScan;
   };
 }
 
@@ -276,7 +290,8 @@ function opsCheck(root: string, ops: OpInfo[], chantSource: ChantResolution["sou
 
 /**
  * The choudoufu line (#369), only on an estate with a choudoufu member: the
- * binary on PATH and at the floor — checked by the FIELD `version -json`
+ * binary — `choudoufu` from PATH or the one `CHOUDOUFU_BIN` names (#388), and
+ * the line prints which answered — at the floor, checked by the FIELD `version -json`
  * carries, since the floor's fields landed on choudoufu main before a release
  * did — then each member's own `live-check -json`, offline, for whether its
  * rungs came from provider schemas or from choudoufu's built-in table. The
@@ -290,8 +305,8 @@ async function choudoufuCheck(root: string, members: { dir: string; abs: string 
     return {
       name: "choudoufu",
       status: "fail",
-      detail: `${members.length} choudoufu member${members.length === 1 ? "" : "s"} (${list(members.map((m) => m.dir))}), and no choudoufu on PATH`,
-      fix: `Install choudoufu ${CHOUDOUFU_FLOOR} or newer (https://github.com/INTENTIUS/choudoufu) and put it on PATH.`,
+      detail: `${members.length} choudoufu member${members.length === 1 ? "" : "s"} (${list(members.map((m) => m.dir))}), and no choudoufu: \`${choudoufuBinary()}\` does not answer \`version -json\``,
+      fix: `Install choudoufu ${CHOUDOUFU_FLOOR} or newer (https://github.com/INTENTIUS/choudoufu) and put it on PATH, or point CHOUDOUFU_BIN at a build from main.`,
     };
   }
   if (!choudoufuMeetsFloor(v)) {
@@ -305,7 +320,10 @@ async function choudoufuCheck(root: string, members: { dir: string; abs: string 
   }
   const reads = await Promise.all(members.map(async (m) => ({ m, parsed: await probe.liveCheck(m.abs) })));
   const failed = reads.filter((r) => !r.parsed.ok);
-  const which = `choudoufu ${v.version || "dev build"}${v.upstream ? ` (on OpenTofu ${v.upstream})` : ""}`;
+  // #388: which binary answered, always — `choudoufu` from PATH, or whatever
+  // CHOUDOUFU_BIN named, which is how a build from main is used before a
+  // release carries the floor's fields.
+  const which = `choudoufu ${v.version || "dev build"}${v.upstream ? ` (on OpenTofu ${v.upstream})` : ""} at ${v.bin}`;
   if (failed.length) {
     return {
       name: "choudoufu",
@@ -325,6 +343,34 @@ async function choudoufuCheck(root: string, members: { dir: string; abs: string 
     };
   }
   return { name: "choudoufu", status: "pass", detail: `${which}; ${perMember}` };
+}
+
+/**
+ * The terraform line (#384), only on an estate with a terraform member: is the
+ * reader here at all, and what did root discovery find.
+ *
+ * The reader is two optional peers behold deliberately does not install (see
+ * src/terraform-member.ts's header — an HCL parser in every user's install is
+ * the cost, and most users serve chant projects), so its absence is a fail with
+ * the one install line, exactly as a missing choudoufu binary is. The roots are
+ * a pass that says what will be drawn and what was skipped, because a root
+ * missing from the picture should be findable here rather than by counting
+ * boxes.
+ */
+function terraformCheck(members: { dir: string; abs: string }[], probe: NonNullable<DoctorProbes["terraform"]>): DoctorCheck {
+  const state = probe.reader();
+  const scans = members.map((m) => ({ m, scan: probe.roots(m.abs) }));
+  const perMember = list(
+    scans.map(({ m, scan }) => {
+      const skipped = scan.skipped.length ? `, ${scan.skipped.length} skipped (${list(scan.skipped.map((s) => s.dir))})` : "";
+      return `${m.dir}: ${scan.roots.length} root${scan.roots.length === 1 ? "" : "s"} (${list(scan.roots.map((r) => r.name))})${skipped}`;
+    }),
+  );
+  if (state.refusal) {
+    return { name: "terraform", status: "fail", detail: `${state.refusal.error} ${perMember}`, fix: state.refusal.remedy };
+  }
+  const reader = `${TERRAFORM_LEXICON_PKG} ${state.lexicon.version || "dev"} (${HCL_PARSER_PKG} ${state.parser.version || "dev"})`;
+  return { name: "terraform", status: "pass", detail: `${reader}; ${perMember}` };
 }
 
 /**
@@ -379,15 +425,21 @@ export async function diagnose(dir: string, probes: DoctorProbes = {}): Promise<
 
   const memberList = list(members.map((m) => `${m.dir} (${m.kind})`));
   const membersFrom = shape.membersFrom === "behold-config" ? ".behold.json members" : "npm workspaces";
+  // #387: a directory that is itself a member was named by nothing, so the
+  // line says what it is rather than "estate of 1 members (npm workspaces)".
+  const estateDetail =
+    shape.membersFrom === "itself"
+      ? `a ${members[0]!.kind} member — the directory itself, no member list`
+      : `estate of ${members.length} members (${membersFrom}): ${memberList}`;
   const projectCheck: DoctorCheck = estate
     ? invalid.length
       ? {
           name: "project",
           status: "fail",
-          detail: `estate of ${members.length} members (${membersFrom}): ${memberList}; invalid: ${list(invalidDetail)}`,
+          detail: `${estateDetail}; invalid: ${list(invalidDetail)}`,
           fix: kindsFix,
         }
-      : { name: "project", status: "pass", detail: `estate of ${members.length} members (${membersFrom}): ${memberList}` }
+      : { name: "project", status: "pass", detail: estateDetail }
     : { name: "project", status: "pass", detail: `chant project (${relative(root, shape.configFile!)})` };
 
   // One config read per chant target, shared by the lexicon/env/kube lines —
@@ -413,8 +465,9 @@ export async function diagnose(dir: string, probes: DoctorProbes = {}): Promise<
     lexiconCheck(root, declared, estate),
     // An estate root is not itself servable — the hint has to name its members
     // (`behold serve a b c`, #31), which is what a stranger would otherwise
-    // discover by having the root serve nothing.
-    envCheck(envs, estate ? shape.members!.map((m) => `${dir.replace(/\/$/, "")}/${m.dir}`).join(" ") : dir),
+    // discover by having the root serve nothing. The `.` member (#387) is the
+    // directory, so the hint stays the directory.
+    envCheck(envs, estate ? shape.members!.map((m) => (m.dir === "." ? dir.replace(/\/$/, "") : `${dir.replace(/\/$/, "")}/${m.dir}`)).join(" ") : dir),
     kube,
     substrateCheck(substrates),
     opsCheck(root, discoverEstateOps(targets), resolveChant(primary).source, estate),
@@ -422,6 +475,10 @@ export async function diagnose(dir: string, probes: DoctorProbes = {}): Promise<
   const choudoufuMembers = members.filter((m) => m.kind === "choudoufu");
   if (choudoufuMembers.length) {
     checks.push(await choudoufuCheck(root, choudoufuMembers, probes.choudoufu ?? { version: () => choudoufuVersion(), liveCheck: (d) => readLiveCheck(d) }));
+  }
+  const terraformMembers = members.filter((m) => m.kind === "terraform");
+  if (terraformMembers.length) {
+    checks.push(terraformCheck(terraformMembers, probes.terraform ?? { reader: () => terraformReaderState(), roots: (d) => discoverTerraformRoots(d) }));
   }
 
   return { behold, dir: root, kind: shape.kind, ok: !checks.some((c) => c.status === "fail"), checks };

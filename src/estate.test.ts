@@ -26,6 +26,7 @@ import {
 } from "./estate.ts";
 import { resetMemberIrCache } from "./member-ir.ts";
 import { registerMemberKind } from "./member-kind.ts";
+import { hasTerraformRoots } from "./terraform-member.ts";
 import { attachRuntimeContainment } from "./overlay.ts";
 import type { GraphIR as ChantGraphIR } from "@intentius/chant";
 
@@ -620,6 +621,32 @@ describe("estate reads dispatch on member kind (#368)", () => {
     expect(res.unobserved).toEqual([{ name: "net", reason: "no credentials" }]);
     const subnet = res.ir.nodes.find((n) => n.id === "net/subnet")!;
     expect(subnet.attrs._status).toBe("neutral");
+  });
+
+  // #384: the terraform kind is registered by its real probe, so this asserts
+  // the dispatch a bare Terraform directory actually takes — a directory of
+  // `.tf` files, no chant config, no `live` block — with the read stubbed
+  // where the lexicon would be.
+  it("reads a bare Terraform directory through the terraform kind, beside a chant member", async () => {
+    const root = mkdtempSync(join(tmpdir(), "behold-kinds-tf-"));
+    made.push(root);
+    mkdirSync(join(root, "app"), { recursive: true });
+    writeFileSync(join(root, "app", "chant.config.ts"), "export default {};\n");
+    mkdirSync(join(root, "access", "envs", "prod"), { recursive: true });
+    writeFileSync(join(root, "access", "envs", "prod", "versions.tf"), "terraform {\n  required_providers {\n    aws = {}\n  }\n}\n");
+    writeFileSync(join(root, "access", "envs", "prod", "main.tf"), 'resource "aws_s3_bucket" "artifacts" {}\n');
+    const tfRead = vi.fn(async (_dir: string) => stack("aws_s3_bucket.artifacts", "terraform"));
+    registerMemberKind({ kind: "terraform", probe: hasTerraformRoots, expects: "a Terraform root", via: { tool: () => "lexicon\0v1", read: tfRead as never } });
+    vi.mocked(graphIr).mockImplementation((async () => stack("vpc")) as never);
+
+    const chantDir = join(root, "app");
+    const tfDir = join(root, "access");
+    const ir = await composeEstate([chantDir, tfDir]);
+
+    expect(estateMembers([chantDir, tfDir]).map((m) => m.kind)).toEqual(["chant", "terraform"]);
+    expect(tfRead.mock.calls.map(([dir]) => dir)).toEqual([tfDir]);
+    expect(vi.mocked(graphIr).mock.calls.map(([dir]) => dir)).toEqual([chantDir]);
+    expect(ir.nodes.map((n) => n.id).sort()).toEqual(["access/aws_s3_bucket.artifacts", "app/vpc"]);
   });
 
   it("a directory no kind claims still reads as chant — the failure it always produced, from the same place", async () => {

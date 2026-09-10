@@ -242,9 +242,9 @@ describe("readChoudoufuLive — the three spawns (#370)", () => {
     expect(consistent.find((a) => a[0] === "live-ls")).toEqual(["live-ls", "-estate=tlmig-sample-monolith", "-json", "-consistent", "."]);
   });
 
-  it("refuses a member with no live block: there is no estate tag to list under", async () => {
-    const noEstate = raw("choudoufu-live-check-estate-references.json"); // choudoufu's own fixture, no live block
-    await expect(readChoudoufuLive("/est/refs", {}, runner({ "live-check": { code: 0, stdout: noEstate, stderr: "" } }))).rejects.toThrow("declares no `live { estate = … }` block");
+  it("refuses a member that names no estate: there is no estate tag to list under", async () => {
+    const noEstate = raw("choudoufu-live-check-estate-references.json"); // choudoufu's own fixture, no estate named
+    await expect(readChoudoufuLive("/est/refs", {}, runner({ "live-check": { code: 0, stdout: noEstate, stderr: "" } }))).rejects.toThrow("names no estate");
   });
 
   it("throws with the plan's own error when live-plan carries an error diagnostic, and with the refusal when a read is refused", async () => {

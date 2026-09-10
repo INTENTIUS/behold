@@ -36,10 +36,22 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.0.5",
-    "@intentius/chant": "^0.54.0",
-    "@intentius/chant-k8s-client": "^0.54.0",
+    "@intentius/chant": "^0.61.0",
+    "@intentius/chant-k8s-client": "^0.61.0",
     "@intentius/pinhole": "^0.3.8",
     "hono": "^4.12.34"
+  },
+  "peerDependencies": {
+    "@intentius/chant-lexicon-terraform": "^0.61.0",
+    "@cdktf/hcl2json": "^0.21.0"
+  },
+  "peerDependenciesMeta": {
+    "@intentius/chant-lexicon-terraform": {
+      "optional": true
+    },
+    "@cdktf/hcl2json": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "^26.4.1",

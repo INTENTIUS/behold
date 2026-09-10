@@ -25,6 +25,12 @@ it against a local emulator (Docker). A directory that is not a chant project
 gets a structured `{code: "no-project"}` error from `/api/graph`, not a blank
 graph.
 
+In a checkout, `behold demo --list` prints a second block under the bundled
+one: the eleven workbench entries from `workbench.json`, this repo's own
+catalog of the internal estates behold is developed against — the same
+`behold demo <entry>` load, `just example name="<entry>"` to serve one, and
+"The workbench catalog" below for what each is and what it boots.
+
 A running server offers the same catalog over HTTP (#268): `GET /api/demos`
 lists every bundled demo with `{name, description, requires, satisfiable,
 reason?, fetches, repo?, target, loaded}` — `satisfiable` is doctor's PATH probe
@@ -368,7 +374,9 @@ until the table existed. A new kind is:
 
 1. A `registerMemberKind({ kind, probe, expects, via })` call in
    `src/member-kind.ts` — the `probe` is sync, read-only and runs no code (a
-   file's presence, a regex over a root file); `via.tool` stamps the binary and
+   file's presence, a regex over a root file, or either: the choudoufu probe
+   takes the `estate.chdf.hcl` sidecar, choudoufu's leading form, OR a `live {`
+   block in a root *.tf, #387); `via.tool` stamps the binary and
    version that would answer, which is the version half of `memberIr`'s
    cache key; `via.read` is the one uncached read, source or live per `opts`.
    The module imports nothing from the read path at runtime (src/chant.ts
@@ -396,9 +404,110 @@ until the table existed. A new kind is:
 string is `chant`. Anything behold boots for a kind goes through
 `assertScratch` first.
 
+### The workbench catalog
+
+`demos.json` is the catalog that ships. `workbench.json`, read beside it and
+deliberately absent from package.json's `files`, is the catalog of internal
+estates this checkout is developed against (#386, #388). Four rules, and
+src/demos.ts holds them:
+
+1. A third source, `local`, and a second file. A local entry's `path` is
+   relative to the directory of the catalog file that named it — the intentius
+   checkouts are siblings, so the workbench writes `../choudoufu`,
+   `../waterpark`, `../chant`, and the file stays committed and reproducible.
+   An entry whose path is not checked out is unsatisfiable exactly as a
+   missing binary is: `--list` and `/api/demos` say so, CI stays clean.
+   `BEHOLD_WORKBENCH=<file>` names a catalog elsewhere; a workbench name that
+   collides with a bundled one is dropped with a stderr line.
+2. In place or copied, said explicitly. `inPlace: true` serves `path` where it
+   sits; the default copies to `behold-demos/<name>` with the bundled filter.
+   Anything whose setup writes into the tree — `init`, `apply`, a rendered
+   generator — is copied or generated into the target, never run in a
+   checkout, which is how #366's "behold never runs `choudoufu init` in a
+   served project" survives. An `inPlace` entry with a `setup` says so in its
+   description.
+3. A generator is a source. An entry with no `path` at all renders its estate
+   into an empty target through its own `setup`, which runs with cwd = the
+   target and two extra variables: `BEHOLD_WORKBENCH_DIR` (the catalog file's
+   directory, so a script can reach `../choudoufu`) and `BEHOLD_DEMO_NAME`.
+   The up script writes the matching down script into the target, the way the
+   bundled choudoufu demo ships `scripts/choudoufu-down.sh`.
+4. `CHOUDOUFU_BIN`. `choudoufuBinary()` (src/choudoufu-member.ts) names the
+   binary and every spawn, the doctor probe and the demo requirement check go
+   through it; the doctor line prints which binary answered. Workbench scripts
+   spell the same fallback, `${CHOUDOUFU_BIN:-choudoufu}`.
+
+`just example name="<entry>"` serves one. Scratch discipline is unchanged: an
+emulator a workbench entry boots is `behold-wb-<entry>` on its own port, and
+the up scripts (`workbench/<entry>/up.sh`, helpers in `workbench/lib/`) assert
+the `behold-wb-` prefix and the not-4566 rule themselves, in bash, because they
+are the boot site. Each writes the matching `scripts/down.sh` into its target.
+
+**The eleven entries**, in catalog order. The counts are measured, not
+estimated — every entry the e2e below can reach on a developer machine prints
+its own graph and overlay counts as it runs.
+
+| entry | what it serves | needs |
+|---|---|---|
+| `chant-getting-started` | chant's own getting-started example from `../chant`, in place: the source graph, 8 nodes, no substrate. The one-second answer to "did I break plain chant reading?" | that example's own `node_modules` — nothing is installed in your chant tree |
+| `chant-local-cloud-trio` | chant's local-cloud-trio, in place: one project declaring across aws, azure and gcp, 8 nodes and 2 edges of source | the same |
+| `fountain-ops` | `../fountain-ops` in place with `--env local` — the mature estate on your working checkout | docker, k3d, kubectl, jq, just. **The one entry whose setup runs in your working copy**: the checkout's own `just up`, a five-minute k3d cluster, and it switches your kubectl context. `just down` there removes it; behold never does |
+| `choudoufu-workbench` | the live-mv workbench's four estates copied out of `../choudoufu`, composed with `--env live`: 42 cards — 24 bound, the 12 team cards reading `owned by tlmig-sample-monolith`, 6 neutral | docker, choudoufu |
+| `choudoufu-cohort-s3` | `estate-gen`'s `s3` cohort rendered into the target — a sidecar-declared estate (#387): 6 cards, all neutral, because the apply stops where floci answers S3 Control tag reads on a hostname that does not resolve | docker, choudoufu, go, terraform |
+| `choudoufu-cohort-iam-ecr` | the same for `iam-ecr`, the one cohort floci implements end to end: 6 cards, all 6 bound | the same |
+| `choudoufu-cohort-ec2-networking` | the same for `ec2-networking`: 49 cards, the widest roster, all neutral (floci refuses a transit gateway call and the apply stops) | the same |
+| `terralith-1` | `terralith-gen` at scale 1 plus the `estate.chdf.hcl` sidecar it omits, applied by choudoufu from nothing: 79 cards, all 79 bound | docker, choudoufu, go |
+| `terralith-4` | the same at scale 4: 301 cards, all 301 bound. The estate behold is sized against | the same |
+| `terralith-4-adopt` | scale 4 again, but STOCK terraform applies it first, so nothing wears a marker: 301 cards — 85 UNOWNED, 84 bound by derived identity alone, 132 neutral. One `choudoufu live-import` line, which the up script prints and you run, and all 301 read bound | docker, choudoufu, go, terraform |
+| `waterpark` | `../waterpark/access` in place as a bare Terraform directory (#384): five roots as boxes, 58 cards, 49 edges, nothing written under the estate | `@intentius/chant-lexicon-terraform` + `@cdktf/hcl2json` beside behold — optional peers behold declares and does not install |
+
+**The scratch, by name and port.** Each emulator is the entry's own, booted by
+its up script and removed by the `scripts/down.sh` that script wrote into the
+target — never by pattern.
+
+| entry | container | host port |
+|---|---|---|
+| `choudoufu-workbench` | `behold-wb-choudoufu-workbench` | 4651 |
+| `choudoufu-cohort-s3` | `behold-wb-choudoufu-cohort-s3` | 4652 |
+| `choudoufu-cohort-iam-ecr` | `behold-wb-choudoufu-cohort-iam-ecr` | 4653 |
+| `choudoufu-cohort-ec2-networking` | `behold-wb-choudoufu-cohort-ec2-networking` | 4654 |
+| `terralith-1` | `behold-wb-terralith-1` | 4655 |
+| `terralith-4` | `behold-wb-terralith-4` | 4656 |
+| `terralith-4-adopt` | `behold-wb-terralith-4-adopt` | 4657 |
+| `chant-*`, `waterpark` | none — source reads, no substrate | — |
+| `fountain-ops` | the k3d cluster `fountain-local`, which is the checkout's, not behold's | — |
+
+The port is the floci's host binding and the entry's `serve.spawnEnv`
+`AWS_ENDPOINT_URL` at once, so the estate's own applies and the choudoufu
+behold spawns talk to the same emulator.
+
+**The e2e** is `just e2e-workbench` (`e2e/workbench-e2e.sh`, #391): every entry
+loaded through `behold demo <entry> <tmp target> --port <p>` on its own port
+from 4720 up, `/api/graph` asserted to carry nodes and a live entry's
+`/api/overlay?env=live` to answer with its bound/unowned/neutral split, timings
+per entry; eight entries and 475s on the machine this was written on.
+`terralith-4-adopt` is asserted twice — 85 UNOWNED, then the
+`live-import` line the up script printed, run by the script itself in the
+target the way a person would, then 301 bound — because that write is the
+person's, never behold's (#372). `waterpark` is checked for an untouched
+checkout afterwards. `missingRequirements` decides what runs: a missing binary,
+an unchecked-out sibling, an uninstalled chant example or the absent Terraform
+lexicon each print `skip: <entry>: needs …`, so in CI every entry skips and the
+run exits 0. `fountain-ops` is skipped by name everywhere, for the reason in
+the table. A `behold-wb-*` container left standing at the end fails the run.
+
+The seeded catalog (#389) found one thing missing in src/: a LONE choudoufu
+estate — every generated entry is one — served the no-project card, because the
+single-project read is `chant graph <dir>` and such a directory has no lexicon
+for it to read. `servesAsEstate` (src/member-kind.ts) is the predicate that
+routes one directory of a non-chant kind through the estate compose path, where
+the member's own kind reads it. One member composes exactly as four do, ids
+namespaced under the member's short name, so the graph, the pane and the morph
+agree on what a node is called.
+
 ### Rendering a Terraform estate
 
-A Terraform estate reaches behold through chant, not through a member kind.
+A Terraform estate reaches behold through chant.
 `@intentius/chant-lexicon-terraform` reads the HCL an estate already has and
 emits one entity per block, so **a Terraform estate is a chant project whose
 only lexicon is a reader** and `chant graph --format ir` serves it like any
@@ -430,8 +539,71 @@ resources, four fifths of it not infrastructure.
 Nothing is dropped silently: `terraformElisionNote` says what is not drawn and
 where to see it, the way `edgelessNote` says why a view has no edges.
 
-**Do not invent edges.** A stock Terraform estate has none until chant#2265
-resolves a block's `"${…}"` references. The one relationship that looked
-derivable — a cross-root read by name — was measured and refused (#381): both
+**Do not invent edges.** They arrive from chant or not at all: the fixtures here
+were recorded when a Terraform IR carried none, and lexicon 0.61.0 (chant#2265,
+which resolves a block's `"${…}"` references) draws 390 over water park's five
+roots with no change on this side. The one relationship that looked derivable
+without it — a cross-root read by name — was measured and refused (#381): both
 ends carry the same unresolved interpolation, so a match would be a coincidence
 of variable naming. A data source says what it reads as a row instead.
+
+**Serving a directory that declares nothing (#384).** Every estate this lane
+exists to draw is a directory of `.tf` files and nothing else, and #378 chose
+not to ask one for a `chant.config.ts` of its own — INTENTIUS/waterpark#88 was
+withdrawn because the estate is more useful untouched. So `behold serve
+<terraform-dir>` generates the reader config itself, outside the estate, and
+points chant at it. The Invariant's one in-project write stays
+`.behold/layout.json`; nothing is written under the served directory, and
+`src/terraform-member.test.ts` asserts the estate's source stamp is unchanged
+across a read. Three decisions, each a trade #384 left open and each measured on
+water park's `access/` before it was taken:
+
+1. **The lexicon is opt-in.** chant resolves the lexicon from the config file's
+   own location, so the generated project has to see it — and making it a
+   dependency would put `@cdktf/hcl2json`, a ~1.8 MB wasm blob, in the install
+   of every user who serves a chant project. `@intentius/chant-lexicon-terraform`
+   and `@cdktf/hcl2json` are therefore **optional peers**: declared in
+   package.json (the only place their versions are named — the refusal reads
+   them from there), never installed by behold, probed at serve and doctor time,
+   and refused with the one install line and where behold looked. The same gate
+   `behold demo` puts on a binary it does not ship. The lexicon's own chant peer
+   is what moved behold's `@intentius/chant` floor to `^0.61.0`: chant 0.54
+   loads no published version of it (`applyLineage is not a function`).
+2. **Roots are discovered, and the skips are reported.** A root is a directory
+   with a `.tf` declaring a line-start `terraform {` or `provider "` block
+   beside a `resource`, `data` or `module` block — a regex probe at the depth
+   the choudoufu probe uses, no HCL parsed. #384 proposed the first half alone
+   ("what a root has and a called module does not") and the estate refuted it:
+   water park's `modules/persona` is a shared module called by three roots and
+   its `versions.tf` is `baseline`'s byte for byte. So two exclusions stand
+   beside the probe — a directory under a `modules/` segment (Terraform's own
+   standard module structure; the roots that call it draw its blocks already)
+   and one with nothing to draw (`access/backends` is two backend fragments) —
+   and both are named in the graph's note with their reason, the way
+   `terraformElisionNote` names what a zoom left out. Measured on `access/`:
+   five roots (`envs/prod`, `identity`, `github`, `baseline`,
+   `satellites/waterpark-runner`), two skipped, `envs/dev` neither drawn nor
+   reported because it holds only a README.
+3. **A `terraform` member kind, after chant and choudoufu.** #378 said there is
+   no such kind and meant it about *reading*: behold parses no HCL and the
+   render goes through chant. A kind whose `read` shells `chant graph` against a
+   generated config is a scaffold, not a second reader, and it inherits the
+   probe, the cache stamp, the doctor line and estate composition (#368) for
+   free — so a Terraform root composes in an estate beside a chant project and a
+   choudoufu estate at no extra cost. `src/terraform-member.ts` is the whole of
+   it; `detectProjectShape` answers a directory that is its own member with
+   `membersFrom: "probe"`, which is what retired #384's `no chant.config.ts
+   here` dead end.
+
+The scratch project is `<tmpdir>/behold-tf-<hash of the estate path>`:
+`behold-*` and cleared through `assertScratch` (src/scratch.ts), one directory
+per estate reused across runs, asserted to be outside the estate before a byte
+is written. It holds the generated `chant.config.ts` and two symlinks —
+`node_modules` to behold's own, which is how the config resolves the lexicon,
+and `estate` to the served directory, which is how each root's `dir` is spelled.
+The second is not decoration: the lexicon sets a root's module boundary to the
+root's own directory when its `dir` resolves outside the project root, so
+absolute paths cost every `../modules/x` call the estate makes — 72 nodes and 6
+resources on water park, against 247 and 43 through the symlink. Nothing in the
+answer mentions the scratch path (a terraform entity carries `attrs.file`
+relative to its root, and no `sourceLoc`).

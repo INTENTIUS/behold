@@ -55,6 +55,15 @@ example-install:
 serve project="example" env="":
     npm run dev -- serve {{project}} {{ if env != "" { "--env " + env } else { "" } }}
 
+# Serve one catalog entry from this checkout (#388) — the workbench estates in
+# workbench.json as readily as the bundled demos. `behold demo --list` names
+# them and says which are ready; an entry whose sibling checkout is missing
+# says so instead of failing halfway.
+#   just example                      # terralith-4
+#   just example name="waterpark"
+example name="terralith-4":
+    npm run dev -- demo {{name}}
+
 # End-to-end: install the example's chant, build behold, serve it, assert the API.
 # Auto-detects AWS creds — exercises /api/overlay when present, /api/graph when not.
 e2e:
@@ -154,3 +163,21 @@ e2e-argo-estate:
 #   just e2e-ci-github
 e2e-ci-github:
     bash e2e/ci-executor-github-e2e.sh
+
+# behold#391 (M5 of #386): the workbench catalog itself. Every entry in
+# workbench.json — this checkout's, not the package's — loaded through
+# `behold demo <entry> <tmp target>` on its own port from 4720 up, asserted
+# over /api/graph and, for a live entry, /api/overlay; the terralith adopted
+# from a stock apply asserted before and after a `choudoufu live-import` the
+# script runs BY HAND in the target, the way a person would. Each entry's
+# scratch emulator is torn down through the scripts/down.sh its own up script
+# wrote — never `docker rm` by pattern — and a left-behind behold-wb-* fails
+# the run. An entry whose requirement is missing (a binary, a sibling
+# checkout, the optional Terraform lexicon) prints its reason and is skipped,
+# so in CI every entry skips and this exits 0. `fountain-ops` is skipped by
+# name everywhere: its setup boots a five-minute k3d cluster in your working
+# copy and switches your kubectl context.
+#   just e2e-workbench
+#   BEHOLD_E2E_ONLY="terralith-1 waterpark" just e2e-workbench
+e2e-workbench:
+    bash e2e/workbench-e2e.sh

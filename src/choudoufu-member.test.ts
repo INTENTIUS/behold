@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from "vitest";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,11 +8,13 @@ import {
   RUNGS,
   SCHEMA_SOURCES,
   addChoudoufuReferenceEdges,
+  captureChoudoufu,
+  choudoufuBinary,
   choudoufuCardFields,
   choudoufuMeetsFloor,
-
+  choudoufuVersion,
   dataSourceKind,
-  hasLiveBlock,
+  isChoudoufuEstate,
   isDevBuild,
   liveCheckToIr,
   parseChoudoufuVersion,
@@ -22,7 +24,7 @@ import {
   type LiveCheckDocument,
 } from "./choudoufu-member.ts";
 import { choudoufuSpec } from "./choudoufu-live.ts";
-import { choudoufuSpawnEnv, setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
+import { choudoufuSpawnEnv, resetChoudoufuVersionCache, setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
 
 // Fixture provenance (#369). Every document below was printed by
 // `choudoufu live-check -json` from a choudoufu built from main at
@@ -257,6 +259,32 @@ describe("the spawn environment seam (#372)", () => {
     setChoudoufuSpawnEnv({});
     expect(choudoufuSpawnEnv(base).AWS_ENDPOINT_URL).toBe("https://real");
   });
+
+  // #388: `choudoufuSpawnEnv`'s sibling. The Homebrew release is below the
+  // floor and the build that carries the floor's fields is one somebody left
+  // outside PATH, so CHOUDOUFU_BIN has to reach the argv — not just the
+  // helper. Spawned for real against a script that prints its own name.
+  it("CHOUDOUFU_BIN is what captureChoudoufu spawns, and what the version probe reads", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "behold-choudoufu-bin-"));
+    const fake = join(dir, "choudoufu-from-main");
+    writeFileSync(fake, `#!/bin/sh\necho "{\\"choudoufu_version\\":\\"v0.16.0-37-g7d2f1b0b9e\\",\\"terraform_version\\":\\"1.13.0-dev\\",\\"argv\\":\\"$0 $*\\"}"\n`);
+    chmodSync(fake, 0o755);
+    const before = process.env.CHOUDOUFU_BIN;
+    try {
+      process.env.CHOUDOUFU_BIN = fake;
+      expect(choudoufuBinary()).toBe(fake);
+      const run = await captureChoudoufu(["version", "-json"], dir);
+      expect(run.code).toBe(0);
+      expect(JSON.parse(run.stdout).argv).toBe(`${fake} version -json`);
+      resetChoudoufuVersionCache();
+      expect(choudoufuVersion()).toMatchObject({ bin: fake, version: "v0.16.0-37-g7d2f1b0b9e", forkField: true });
+    } finally {
+      if (before === undefined) delete process.env.CHOUDOUFU_BIN;
+      else process.env.CHOUDOUFU_BIN = before;
+      resetChoudoufuVersionCache();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("the probe and the floor (#369)", () => {
@@ -272,13 +300,31 @@ describe("the probe and the floor (#369)", () => {
     return dir;
   };
 
-  it("hasLiveBlock: a root *.tf with a live block, by regex, root files only", () => {
-    expect(hasLiveBlock(make({ "main.tf": 'terraform {\n  live {\n    estate = "x"\n  }\n}\n' }))).toBe(true);
-    expect(hasLiveBlock(make({ "main.tf": 'resource "aws_vpc" "x" {}\n' }))).toBe(false);
-    expect(hasLiveBlock(make({ "sub/main.tf": "live {\n}\n" }))).toBe(false);
-    expect(hasLiveBlock(make({ "notes.txt": "live {" }))).toBe(false);
-    expect(hasLiveBlock("/nonexistent/dir")).toBe(false);
-    expect(choudoufuSpec.probe).toBe(hasLiveBlock);
+  it("isChoudoufuEstate: a root *.tf with a live block, by regex, root files only", () => {
+    expect(isChoudoufuEstate(make({ "main.tf": 'terraform {\n  live {\n    estate = "x"\n  }\n}\n' }))).toBe(true);
+    expect(isChoudoufuEstate(make({ "main.tf": 'resource "aws_vpc" "x" {}\n' }))).toBe(false);
+    expect(isChoudoufuEstate(make({ "sub/main.tf": "live {\n}\n" }))).toBe(false);
+    expect(isChoudoufuEstate(make({ "notes.txt": "live {" }))).toBe(false);
+    expect(isChoudoufuEstate("/nonexistent/dir")).toBe(false);
+    expect(choudoufuSpec.probe).toBe(isChoudoufuEstate);
+  });
+
+  // #387: the sidecar is choudoufu's leading form, and every `tools/estate-gen`
+  // cohort writes one — a *.tf set with no `live` block anywhere in it.
+  it("isChoudoufuEstate: the estate.chdf.hcl sidecar, on its own, is enough", () => {
+    const cohort = {
+      "estate.chdf.hcl": 'estate = "s3-cohort"\n\nrecord_store "local" {\n  path = ".tofu-records"\n}\n',
+      "s3.tf": 'resource "aws_s3_bucket" "one" {\n  bucket = "one"\n}\n',
+      "versions.tf": 'terraform {\n  required_version = ">= 1.5.0"\n}\n',
+    };
+    expect(isChoudoufuEstate(make(cohort))).toBe(true);
+    // The sidecar is not read, only found — and only in the directory itself.
+    expect(isChoudoufuEstate(make({ "sub/estate.chdf.hcl": 'estate = "x"\n', "main.tf": 'resource "aws_vpc" "x" {}\n' }))).toBe(false);
+    // Neither form: still not an estate.
+    expect(isChoudoufuEstate(make({ "s3.tf": cohort["s3.tf"], "README.md": "an estate.chdf.hcl would go here" }))).toBe(false);
+    // Both forms at once is choudoufu's error to report, not the probe's.
+    expect(isChoudoufuEstate(make({ "estate.chdf.hcl": 'estate = "x"\n', "main.tf": "live {\n}\n" }))).toBe(true);
+    expect(choudoufuSpec.expects).toBe("an `estate.chdf.hcl` sidecar or a `live { estate = … }` block in a root *.tf file");
   });
 
   it("parseChoudoufuVersion: the field's presence is the floor's real check (choudoufu#968)", () => {

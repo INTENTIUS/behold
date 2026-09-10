@@ -360,7 +360,12 @@ export function loadBeholdConfig(projectDir: string): BeholdConfig {
  *  - `estate`  — not itself a project, but it names member projects that are:
  *                `.behold.json`'s `members`, else npm `workspaces`. This is the
  *                `behold serve a b c` shape (#31) with the member list written
- *                down — `behold demo flux-estate` is one.
+ *                down — `behold demo flux-estate` is one. Also a directory
+ *                that IS a member of some non-chant kind (#387): a choudoufu
+ *                estate is a bare directory with a sidecar in it, `behold
+ *                serve <that dir>` already accepts one, and reporting it as
+ *                an estate of one is what lets doctor run the kind's own
+ *                line over it instead of "no chant.config.ts here".
  *  - `none`    — neither, which is #193's structured dead end. */
 export type ProjectKind = "project" | "estate" | "none";
 
@@ -371,8 +376,10 @@ export interface ProjectShape {
   /** Members relative to `dir`, for `kind: "estate"` — only those whose
    * kind's probe accepts them, in declared order, each with its kind (#368). */
   members?: { dir: string; kind: MemberKind }[];
-  /** Where the member list came from, so a report never implies behold chose it. */
-  membersFrom?: "behold-config" | "workspaces";
+  /** Where the member list came from, so a report never implies behold chose
+   * it. `itself` is the one-member case above: nothing named it, the
+   * directory's own kind probe claimed it (#387). */
+  membersFrom?: "behold-config" | "workspaces" | "itself";
   /** Declared members behold cannot serve, with the reason (#368): a kind it
    * does not know, or a directory that fails its declared kind's probe. Set
    * only for `.behold.json` declarations — a workspaces entry that is not a
@@ -436,6 +443,16 @@ export function detectProjectShape(projectDir: string): ProjectShape {
   }
   const invalidMembers = invalid.length ? { invalidMembers: invalid } : {};
   if (members.length) return { kind: "estate", members, membersFrom: from, ...invalidMembers };
+  // #387: nothing named a member, but the directory may BE one — a choudoufu
+  // estate is a bare directory with `estate.chdf.hcl` (or a `live` block) in
+  // it, and `behold serve <that dir>` has accepted one since #369
+  // (`memberKindOf(dirs[0])`, src/server.ts). Only when no declaration failed:
+  // a `.behold.json` that named members and got them all wrong is a report
+  // about that, not a directory to re-probe.
+  if (!invalid.length) {
+    const own = memberKindOf(projectDir);
+    if (own && own !== "chant") return { kind: "estate", members: [{ dir: ".", kind: own }], membersFrom: "itself" };
+  }
   return { kind: "none", ...invalidMembers };
 }
 

@@ -3,8 +3,10 @@
  *
  * choudoufu is an OpenTofu fork whose ownership lives on the resource as two
  * AWS tags, `tofu-estate` and `tofu-address`; the state file is a cache that
- * is allowed to be stale. Each `live { estate = "..." }` block is one estate,
- * and one estate is one member box in behold's estate compose.
+ * is allowed to be stale. An estate is declared once per directory — in the
+ * `estate.chdf.hcl` sidecar, choudoufu's leading form, or in a `live { estate
+ * = "..." }` block in a root *.tf — and one estate is one member box in
+ * behold's estate compose.
  *
  * This module reads the DECLARED half: `choudoufu live-check -json`, which
  * makes no cloud call and reads no state. The document is the roster (every
@@ -32,7 +34,7 @@
  * header for the cycle that rule exists for); the spawn helper is its own.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { GraphIR } from "@intentius/chant";
 import { stripAnsi } from "./ansi.ts";
@@ -104,7 +106,7 @@ export type LiveCheckParse = { ok: true; doc: LiveCheckDocument } | { ok: false;
 
 const refuse = (error: string, remedy: string): LiveCheckParse => ({ ok: false, refusal: { error, code: "choudoufu-live-check", remedy } });
 
-const INSTALL = `Install choudoufu ${CHOUDOUFU_FLOOR} or newer (https://github.com/INTENTIUS/choudoufu) and put it on PATH.`;
+const INSTALL = `Install choudoufu ${CHOUDOUFU_FLOOR} or newer (https://github.com/INTENTIUS/choudoufu) and put it on PATH, or point CHOUDOUFU_BIN at a build from main.`;
 const INIT = (dir: string): string => `Run \`choudoufu init -input=false\` in ${dir} so the rungs come from the provider's schemas.`;
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -184,10 +186,24 @@ function tfFiles(dir: string): string[] {
 
 const LIVE_BLOCK = /^\s*live\s*\{/m;
 
-/** Does `dir` look like a choudoufu estate: a root `*.tf` with a `live { … }`
- * block. A regex, not a parse — behold reads no HCL — and over root files
+/** choudoufu's leading estate declaration (#387): a sidecar beside the root
+ * `*.tf` files carrying `estate = "…"` and the record store. choudoufu's own
+ * reference calls it the leading form; `tools/estate-gen` writes one into
+ * every cohort and a migrated terralith carries one, which is why a probe
+ * that knew only the `live` block missed the estates behold is developed
+ * against. */
+export const ESTATE_SIDECAR = "estate.chdf.hcl";
+
+/** Does `dir` look like a choudoufu estate: the `estate.chdf.hcl` sidecar in
+ * the directory, or — the other spelling, still supported — a root `*.tf`
+ * with a `live { … }` block. Either is enough; both at once is an error
+ * choudoufu itself reports, and not this probe's business.
+ *
+ * The sidecar half is the file's presence, nothing read. The `live` half is
+ * unchanged: a regex, not a parse — behold reads no HCL — over root files
  * only, because that is where choudoufu requires the block to be. */
-export function hasLiveBlock(dir: string): boolean {
+export function isChoudoufuEstate(dir: string): boolean {
+  if (existsSync(join(dir, ESTATE_SIDECAR))) return true;
   for (const f of tfFiles(dir)) {
     try {
       if (LIVE_BLOCK.test(readFileSync(join(dir, f), "utf8"))) return true;
@@ -340,6 +356,22 @@ export function choudoufuCardFields(node: { attrs: Record<string, unknown> }): A
 // The binary.
 // ---------------------------------------------------------------------------
 
+/**
+ * The choudoufu behold spawns (#388, decision 4 of #386): `CHOUDOUFU_BIN` when
+ * it names one, else `choudoufu` from PATH. One helper, so the version probe,
+ * the doctor line, every `-json` read and the demo requirement check all mean
+ * the same binary.
+ *
+ * It exists because the Homebrew release is 0.15.0, below behold's floor, and
+ * the build that carries the floor's fields is one somebody built from main
+ * and left outside PATH. Read on every call, not captured: a served-project
+ * switch or a test may change it under a running process. Workbench scripts
+ * spell the same fallback, `${CHOUDOUFU_BIN:-choudoufu}`.
+ */
+export function choudoufuBinary(): string {
+  return process.env.CHOUDOUFU_BIN || "choudoufu";
+}
+
 /** What `choudoufu version -json` said. `forkField` is whether the document
  * carried `choudoufu_version` at all — absent means v0.15.0 or older
  * (choudoufu#968 designed the key to be always present, empty on a dev build,
@@ -354,7 +386,7 @@ export interface ChoudoufuVersion {
 }
 
 /** Parse `version -json`'s stdout. Exported for testing. */
-export function parseChoudoufuVersion(stdout: string, bin = "choudoufu"): ChoudoufuVersion | undefined {
+export function parseChoudoufuVersion(stdout: string, bin: string = choudoufuBinary()): ChoudoufuVersion | undefined {
   let json: unknown;
   try {
     json = JSON.parse(stdout);
@@ -388,10 +420,10 @@ export function choudoufuMeetsFloor(v: ChoudoufuVersion): boolean {
 
 const versionCache = new Map<string, ChoudoufuVersion | undefined>();
 
-/** The choudoufu on PATH, once per process: undefined when there is none.
- * Sync because it is the version half of `memberIr`'s cache key, which is
- * computed on every read. */
-export function choudoufuVersion(bin = "choudoufu"): ChoudoufuVersion | undefined {
+/** The choudoufu `choudoufuBinary()` names, once per binary per process:
+ * undefined when there is none. Sync because it is the version half of
+ * `memberIr`'s cache key, which is computed on every read. */
+export function choudoufuVersion(bin: string = choudoufuBinary()): ChoudoufuVersion | undefined {
   if (versionCache.has(bin)) return versionCache.get(bin);
   const run = spawnSync(bin, ["version", "-json"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   const v = run.error || run.status !== 0 ? undefined : parseChoudoufuVersion(run.stdout, bin);
@@ -424,7 +456,7 @@ export function choudoufuSpawnEnv(base: NodeJS.ProcessEnv = process.env): NodeJS
  * once at close, as `runChantRaw` does — coercing per chunk corrupts a
  * multi-byte character straddling the 64KB highWaterMark. Never rejects: a
  * missing binary is code 127, a failing exit is data. */
-export function captureChoudoufu(args: string[], cwd: string, bin = "choudoufu"): Promise<Captured> {
+export function captureChoudoufu(args: string[], cwd: string, bin: string = choudoufuBinary()): Promise<Captured> {
   return new Promise((resolvePromise) => {
     const out: Buffer[] = [];
     const err: Buffer[] = [];

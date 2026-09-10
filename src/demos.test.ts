@@ -6,7 +6,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadDemoRegistry, missingRequirements, fetchesFromNetwork, demoTargetDir, loadDemo, type DemoEntry } from "./demos.ts";
+import { loadDemoRegistry, missingRequirements, fetchesFromNetwork, demoTargetDir, demoLocalPath, loadDemo, type DemoEntry } from "./demos.ts";
+import { choudoufuBinary } from "./choudoufu-member.ts";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -26,6 +27,24 @@ describe("demos.json — the committed catalog (#209)", () => {
       expect(files, `${e.name}: ${e.dir} not shipped`).toContain(e.dir!);
     }
     expect(files).toContain("demos.json");
+    // #388: the workbench catalog is a checkout's, not the tarball's — an
+    // entry naming `../choudoufu` means nothing inside an npm install.
+    expect(files).not.toContain("workbench.json");
+  });
+
+  // #388: the committed workbench.json has to load — a typo there is a
+  // catalog nobody in this repo can run — and its entries carry the catalog
+  // they came from, which is what the two `--list` blocks and the panel group on.
+  it("reads workbench.json beside demos.json, stamping every entry with its catalog", () => {
+    expect(existsSync(join(REPO, "workbench.json"))).toBe(true);
+    for (const e of registry) expect(e.catalog === "demos" || e.catalog === "workbench", e.name).toBe(true);
+    expect(registry.filter((e) => e.catalog === "demos").map((e) => e.name)).toContain("writes");
+    // Every workbench entry (M3 seeds them) is a local one, and names its
+    // path relative to the file that listed it.
+    for (const e of registry.filter((e) => e.catalog === "workbench")) {
+      expect(e.source, e.name).toBe("local");
+      expect(e.catalogDir, e.name).toBe(REPO);
+    }
   });
 
   // #254: the walkthrough is a catalog entry like any other, and every path it
@@ -101,6 +120,68 @@ describe("loadDemoRegistry — malformed input degrades, never throws", () => {
     expect(shipped.requires).toEqual(["docker", "choudoufu"]);
     expect(shipped.serve).toMatchObject({ env: "live", dirs: ["monolith", "team-a", "team-b", "team-c"], spawnEnv: { AWS_ENDPOINT_URL: "http://127.0.0.1:4650" } });
     for (const d of shipped.serve.dirs!) expect(existsSync(join(REPO, shipped.dir!, d, "main.tf")), d).toBe(true);
+  });
+
+  // #388: the local source. A path, a path served in place, or no path at all
+  // and a setup that renders one — anything else names nothing to serve.
+  it("validates the local source: path, no path + setup, inPlace; and drops what names nothing", () => {
+    const local = (over: Record<string, unknown>) => ({ description: "d", source: "local", requires: [], serve: {}, ...over });
+    const dir = tmpRoot(
+      JSON.stringify({
+        demos: [
+          local({ name: "path", path: "../choudoufu" }),
+          local({ name: "generator", setup: "bash render.sh" }),
+          local({ name: "in-place", path: "../chant", inPlace: true, description: "served where it sits; its setup writes nothing the repo does not gitignore" }),
+          local({ name: "nothing" }),
+          local({ name: "in-place-no-path", inPlace: true, setup: "x" }),
+          local({ name: "path-not-string", path: 4 }),
+          local({ name: "in-place-not-bool", path: "../x", inPlace: "yes" }),
+        ],
+      }),
+    );
+    expect(loadDemoRegistry(dir).map((e) => e.name)).toEqual(["path", "generator", "in-place"]);
+    // A relative path resolves against the CATALOG file's directory, never the
+    // cwd behold started in — the workbench names its siblings.
+    const entry = loadDemoRegistry(dir).find((e) => e.name === "path")!;
+    expect(demoLocalPath(entry)).toBe(join(dir, "..", "choudoufu"));
+    expect(demoLocalPath({ ...entry, path: "/opt/estates/net" })).toBe("/opt/estates/net");
+    expect(demoLocalPath(loadDemoRegistry(dir).find((e) => e.name === "generator")!)).toBeUndefined();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  // #388: two files, one registry. A workbench name that collides with a
+  // bundled one is dropped — `behold demo writes` means the same demo in every
+  // checkout, and a silent override is how it would stop meaning it.
+  it("merges workbench.json and BEHOLD_WORKBENCH, dropping collisions", () => {
+    const dir = tmpRoot(JSON.stringify({ demos: [{ name: "writes", description: "the bundled one", source: "bundled", dir: "x", requires: [], serve: {} }] }));
+    writeFileSync(
+      join(dir, "workbench.json"),
+      JSON.stringify({
+        demos: [
+          { name: "writes", description: "an impostor", source: "local", path: "../elsewhere", requires: [], serve: {} },
+          { name: "terralith-4", description: "205 resources", source: "local", setup: "render.sh", requires: [], serve: {} },
+        ],
+      }),
+    );
+    const elsewhere = mkdtempSync(join(tmpdir(), "behold-workbench-"));
+    writeFileSync(join(elsewhere, "extra.json"), JSON.stringify({ demos: [{ name: "waterpark", description: "the access roots", source: "local", path: "../waterpark", requires: [], serve: {} }] }));
+
+    const before = loadDemoRegistry(dir);
+    expect(before.map((e) => e.name)).toEqual(["writes", "terralith-4"]);
+    expect(before.map((e) => e.catalog)).toEqual(["demos", "workbench"]);
+    expect(before[0]!.description).toBe("the bundled one"); // the bundled entry wins the collision
+
+    process.env.BEHOLD_WORKBENCH = join(elsewhere, "extra.json");
+    try {
+      const after = loadDemoRegistry(dir);
+      expect(after.map((e) => e.name)).toEqual(["writes", "terralith-4", "waterpark"]);
+      // The named file's own directory is what ITS entries resolve against.
+      expect(demoLocalPath(after.find((e) => e.name === "waterpark")!)).toBe(join(elsewhere, "..", "waterpark"));
+    } finally {
+      delete process.env.BEHOLD_WORKBENCH;
+    }
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(elsewhere, { recursive: true, force: true });
   });
 
   it("a half-wired carve entry drops rather than serving a walkthrough that can't act (#254)", () => {
@@ -202,6 +283,77 @@ describe("loadDemo — the copy/install/setup the CLI and the route share (#268)
     expect(res.ok).toBe(false);
     expect(!res.ok && res.error).toContain("exit 3");
   });
+
+  // #388, the local source. Three shapes, one loader.
+  const localEntry = (over: Partial<DemoEntry>): DemoEntry => ({ name: "wb", description: "d", source: "local", requires: [], serve: {}, ...over });
+
+  /** A checkout to point a local entry at: a sibling of the catalog file. */
+  const sibling = (name: string): { catalogDir: string; path: string } => {
+    const catalogDir = scratch("behold-workbench-");
+    const path = join(catalogDir, "..", name);
+    mkdirSync(join(path, "src"), { recursive: true });
+    mkdirSync(join(path, "node_modules", "left-behind"), { recursive: true });
+    writeFileSync(join(path, "chant.config.ts"), "export default {};");
+    roots.push(path);
+    return { catalogDir, path };
+  };
+
+  it("copies a local entry into the target by default — it's yours, edit it", async () => {
+    const { catalogDir, path } = sibling("choudoufu-copy");
+    const target = join(scratch("behold-demos-target-"), "wb");
+    const res = await loadDemo(localEntry({ path: `../choudoufu-copy`, catalogDir }), { pkgRoot: catalogDir, target });
+    expect(res.ok && res.serveDirs).toEqual([target]);
+    expect(existsSync(join(target, "chant.config.ts"))).toBe(true);
+    expect(existsSync(join(target, "node_modules"))).toBe(false); // the bundled filter, unchanged
+    expect(readFileSync(join(path, "chant.config.ts"), "utf8")).toBe("export default {};"); // the checkout is untouched
+  });
+
+  it("serves an inPlace entry where it sits — no copy, and dirs resolve under the path", async () => {
+    const { catalogDir, path } = sibling("chant-in-place");
+    mkdirSync(join(path, "examples", "one"), { recursive: true });
+    const entry = localEntry({ path: "../chant-in-place", inPlace: true, catalogDir, serve: { dirs: ["examples/one"] } });
+    const target = join(scratch("behold-demos-target-"), "wb");
+    const res = await loadDemo(entry, { pkgRoot: catalogDir, target });
+    expect(res.ok && res.serveDirs).toEqual([join(path, "examples", "one")]);
+    expect(existsSync(target)).toBe(false); // nothing copied, nothing created
+    // And `demoTargetDir` agrees: an in-place entry IS its path, so the panel
+    // reads it as already loaded rather than offering a copy nobody serves.
+    expect(demoTargetDir(entry)).toBe(join(path));
+  });
+
+  it("#390: never runs npm install in an inPlace entry — a checkout is read as it sits", async () => {
+    const { catalogDir, path } = sibling("chant-uninstalled");
+    rmSync(join(path, "node_modules"), { recursive: true, force: true }); // the sibling helper's leftover — this checkout is NOT installed
+    writeFileSync(join(path, "package.json"), JSON.stringify({ name: "x", dependencies: { "@intentius/no-such-package-ever": "1.0.0" } }));
+    const entry = localEntry({ path: "../chant-uninstalled", inPlace: true, catalogDir });
+    const res = await loadDemo(entry, { pkgRoot: catalogDir, target: join(scratch("behold-demos-target-"), "wb") });
+    expect(res).toEqual({ ok: true, serveDirs: [path] }); // an install of that dependency would have failed
+    expect(existsSync(join(path, "node_modules"))).toBe(false);
+    expect(existsSync(join(path, "package-lock.json"))).toBe(false);
+  });
+
+  it("makes a generator entry's target and runs the setup in it, with the workbench env", async () => {
+    const catalogDir = scratch("behold-workbench-");
+    const target = join(scratch("behold-demos-target-"), "terralith-4");
+    const res = await loadDemo(
+      localEntry({
+        name: "terralith-4",
+        catalogDir,
+        setup: 'printf "%s\\n%s\\n" "$BEHOLD_WORKBENCH_DIR" "$BEHOLD_DEMO_NAME" > rendered.txt && echo "estate = \\"t4\\"" > estate.chdf.hcl',
+      }),
+      { pkgRoot: catalogDir, target },
+    );
+    expect(res.ok && res.serveDirs).toEqual([target]);
+    expect(readFileSync(join(target, "rendered.txt"), "utf8")).toBe(`${catalogDir}\nterralith-4\n`);
+    expect(existsSync(join(target, "estate.chdf.hcl"))).toBe(true); // the setup rendered the estate
+  });
+
+  it("refuses an inPlace entry whose checkout is not there, rather than serving an empty directory", async () => {
+    const catalogDir = scratch("behold-workbench-");
+    const res = await loadDemo(localEntry({ path: "../not-checked-out", inPlace: true, catalogDir }), { pkgRoot: catalogDir, target: join(scratch("behold-demos-target-"), "wb") });
+    expect(res.ok).toBe(false);
+    expect(!res.ok && res.error).toContain("../not-checked-out");
+  });
 });
 
 describe("demoTargetDir", () => {
@@ -239,5 +391,36 @@ describe("missingRequirements", () => {
   it("git entries implicitly require git", () => {
     const entry = { name: "x", description: "", source: "git" as const, repo: "https://x/y", requires: [], serve: {} };
     expect(missingRequirements(entry)).toEqual([]); // git is installed here
+  });
+
+  // #388: a sibling nobody checked out reads exactly like a missing binary —
+  // the entry stays listed, disabled, saying what is absent, and CI (where no
+  // sibling is checked out) stays clean.
+  it("reports a local entry's unchecked-out path as missing, and says so in its own words", () => {
+    const catalogDir = mkdtempSync(join(tmpdir(), "behold-workbench-"));
+    const here = { name: "x", description: "", source: "local" as const, path: ".", requires: [], serve: {}, catalogDir };
+    expect(missingRequirements(here)).toEqual([]);
+    expect(missingRequirements({ ...here, path: "../nope" })).toEqual(["../nope (not checked out)"]);
+    // A generator entry names no path, so there is nothing to be missing.
+    expect(missingRequirements({ ...here, path: undefined, setup: "render.sh" })).toEqual([]);
+    rmSync(catalogDir, { recursive: true, force: true });
+  });
+
+  // #388, decision 4: the binary behold spawns is CHOUDOUFU_BIN's when it
+  // names one — the Homebrew release is below behold's floor, and the build
+  // that carries the floor's fields is one somebody left outside PATH.
+  it("CHOUDOUFU_BIN satisfies the choudoufu requirement, and is the binary the helper names", () => {
+    const entry = { name: "x", description: "", source: "bundled" as const, dir: "x", requires: ["choudoufu"], serve: {} };
+    const before = process.env.CHOUDOUFU_BIN;
+    try {
+      delete process.env.CHOUDOUFU_BIN;
+      expect(choudoufuBinary()).toBe("choudoufu");
+      process.env.CHOUDOUFU_BIN = process.execPath; // an existing file, which is all the check asks
+      expect(choudoufuBinary()).toBe(process.execPath);
+      expect(missingRequirements(entry)).toEqual([]);
+    } finally {
+      if (before === undefined) delete process.env.CHOUDOUFU_BIN;
+      else process.env.CHOUDOUFU_BIN = before;
+    }
   });
 });
