@@ -14,6 +14,7 @@ import {
   normalizeTerraformNodes,
   terraformCardFields,
   terraformElisionNote,
+  terraformElisionNoteShort,
 } from "./terraform-lens.ts";
 import { projectTerraformLogical, rootBoxTitle } from "./logical-terraform.ts";
 
@@ -124,6 +125,73 @@ describe("groupTerraformByRoot — the roots are the boxes (#380)", () => {
     const after = JSON.stringify(ir.groups);
     groupTerraformByRoot(ir);
     expect(JSON.stringify(ir.groups)).toBe(after);
+  });
+
+  // #393 item 6. The composed shape: `composeStacks` namespaces every id under
+  // the member and boxes the member's whole IR, then this pass boxes the same
+  // nodes by root. A node sits in ONE box, so the member box drew empty — which
+  // is what `behold serve ../waterpark/access` put at the top right of the
+  // canvas: a box named `access` with nothing in it, beside the five roots.
+  const composed = (member: string, roots: Record<string, string[]>): GraphIR => ({
+    nodes: Object.entries(roots).flatMap(([root, addrs]) =>
+      addrs.map((a) => ({ id: `${member}/${root}/${a}`, kind: "Terraform::Resource", lexicon: "terraform", attrs: { address: a, root } })),
+    ),
+    edges: [],
+    groups: { byStack: { [member]: Object.entries(roots).flatMap(([root, addrs]) => addrs.map((a) => `${member}/${root}/${a}`)) } },
+  });
+
+  it("drops a member box every node has left, rather than drawing it empty", () => {
+    const ir = groupTerraformByRoot(composed("access", { baseline: ["aws_iam_policy.boundary"], prod: ["aws_s3_bucket.artifacts"] }));
+    const boxes = ir.groups.byStack as Record<string, string[]>;
+    expect(Object.keys(boxes).sort()).toEqual(["baseline", "prod"]);
+    expect(boxes.access).toBeUndefined();
+  });
+
+  it("keeps a member box that kept nodes of its own, holding only those", () => {
+    const ir = composed("access", { prod: ["aws_s3_bucket.artifacts"] });
+    ir.nodes.push({ id: "access/README", kind: "Doc", lexicon: "docs", attrs: {} });
+    (ir.groups.byStack as Record<string, string[]>).access.push("access/README");
+    const boxes = groupTerraformByRoot(ir).groups.byStack as Record<string, string[]>;
+    expect(boxes.access).toEqual(["access/README"]);
+    expect(boxes["access/prod"] ?? boxes.prod).toEqual(["access/prod/aws_s3_bucket.artifacts"]);
+  });
+
+  it("qualifies the root box with its member once the estate holds more than one", () => {
+    // Two Terraform members, each with a root called `prod`: unqualified they
+    // merge into one box, and with the member box gone nothing would say which
+    // estate a card came from.
+    const a = composed("alpha", { prod: ["aws_s3_bucket.a"] });
+    const b = composed("beta", { prod: ["aws_s3_bucket.b"] });
+    const ir: GraphIR = {
+      nodes: [...a.nodes, ...b.nodes],
+      edges: [],
+      groups: { byStack: { ...(a.groups.byStack as Record<string, string[]>), ...(b.groups.byStack as Record<string, string[]>) } },
+    };
+    const boxes = groupTerraformByRoot(ir).groups.byStack as Record<string, string[]>;
+    expect(Object.keys(boxes).sort()).toEqual(["alpha/prod", "beta/prod"]);
+    expect(boxes["alpha/prod"]).toEqual(["alpha/prod/aws_s3_bucket.a"]);
+  });
+
+  it("qualifies it beside a member of another kind, so both members stay named", () => {
+    const ir = composed("access", { prod: ["aws_s3_bucket.artifacts"] });
+    ir.nodes.push({ id: "tlmig/aws_iam_role.app", kind: "aws_iam_role", lexicon: "choudoufu", attrs: {} });
+    (ir.groups.byStack as Record<string, string[]>).tlmig = ["tlmig/aws_iam_role.app"];
+    const boxes = groupTerraformByRoot(ir).groups.byStack as Record<string, string[]>;
+    expect(Object.keys(boxes).sort()).toEqual(["access/prod", "tlmig"]);
+  });
+});
+
+describe("the note the strip can hold (#393 item 7)", () => {
+  it("counts what a zoom left out instead of naming every block class", () => {
+    const ir = normalizeTerraformNodes(legacy());
+    const elision = filterTerraformCards(ir, 2);
+    expect(terraformElisionNote(elision, 2)).toContain("showing the estate —");
+    expect(terraformElisionNoteShort(elision)).toBe(`${elision.total} blocks not drawn`);
+  });
+
+  it("says nothing when nothing was dropped", () => {
+    expect(terraformElisionNoteShort({ dropped: {}, total: 0 })).toBeUndefined();
+    expect(terraformElisionNoteShort({ dropped: { output: 1 }, total: 1 })).toBe("1 block not drawn");
   });
 });
 

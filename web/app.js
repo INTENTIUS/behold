@@ -159,7 +159,7 @@ if (staticMode) {
 
 /** Canonical key for a read URL — path + the lens params (whitelisted, sorted)
  * that select a distinct snapshot. MUST match src/export.ts `canonicalKey`. */
-const LENS_PARAMS = ["components", "detail", "env", "logical", "ops", "radial", "runtime", "tier"];
+const LENS_PARAMS = ["collapse", "components", "detail", "env", "logical", "ops", "radial", "runtime", "tier"];
 function canonicalKey(path, params) {
   // Components + logical + ops views ignore detail/radial — drop them so they
   // match the single captured snapshot (MUST match src/export.ts).
@@ -188,6 +188,24 @@ function apiFetch(url) {
 // reaches a declared entity — expected runtime (a Pod its Deployment
 // created), never foreign and never drift. Additive the same way.
 const STATUS_LABEL = { good: "managed", warn: "foreign", accent: "pending", neutral: "unobserved", runtime: "runtime child" };
+// #393 item 8: the same four colours, in the words of whatever the estate's
+// members ARE. The server derives the set from the member kinds and puts it on
+// the overlay meta (`vocabulary`, src/status-vocabulary.ts) — on a choudoufu
+// estate the legend reads bound / unowned / pending / not observed, which is
+// what choudoufu itself calls those states. A mixed estate keeps chant's words
+// and carries a `note` the legend shows as its tooltip. No meta, or a meta from
+// a behold that predates this: chant's words, exactly as before.
+function statusLabels() {
+  const v = lastMeta && lastMeta.vocabulary;
+  return (v && v.labels) || STATUS_LABEL;
+}
+function statusLabel(status) {
+  return statusLabels()[status];
+}
+function vocabularyNote() {
+  const v = lastMeta && lastMeta.vocabulary;
+  return (v && v.note) || "";
+}
 // M1.1 (#57), palette hardened M2 (#54): the component-DAG live-status join
 // paints the same `_status` vocabulary (good/warn/accent/neutral) but with
 // different meaning — a stack-health reading, not "managed" — so the inspect
@@ -432,7 +450,7 @@ function inspect(node) {
       "status",
       driftLabel ||
         (node.lexicon === "op" ? opStatusLabel(node) : undefined) ||
-        (isArtifact ? ARTIFACT_STATUS_LABEL[st] : liveStatus || tickStatus ? COMPONENT_STATUS_LABEL[st] : STATUS_LABEL[st]) ||
+        (isArtifact ? ARTIFACT_STATUS_LABEL[st] : liveStatus || tickStatus ? COMPONENT_STATUS_LABEL[st] : statusLabel(st)) ||
         st,
     );
   if (node.attrs && node.attrs._artifact) {
@@ -639,7 +657,19 @@ function inspect(node) {
   const attrKeys = Object.keys(node.attrs || {}).filter((k) => !k.startsWith("_") && !(k === "release" && release));
   if (attrKeys.length) {
     const decl = section("declared");
-    for (const k of attrKeys) decl(k, fmtValue(node.attrs[k]));
+    // #393 item 10: an UNOWNED choudoufu card leads with the write that adopts
+    // the object — the two marker tags choudoufu named (`adopt_tofu_estate` /
+    // `adopt_tofu_address`), or its own one-line command if a release ever
+    // sends one. behold composes neither (src/choudoufu-live.ts); this puts
+    // the line first and makes it copyable, the way the moves panel already
+    // does for a `live-mv` line. The paragraph explaining the omission — which
+    // used to be the whole section, with the tags under it as JSON — follows.
+    const adoptable = node.lexicon === "choudoufu" && typeof node.attrs.adopt === "string" ? "adopt" : null;
+    if (adoptable) copyableRow(decl, adoptable, node.attrs.adopt, "Copy the tags that adopt this object");
+    for (const k of attrKeys) {
+      if (k === adoptable) continue;
+      decl(k, fmtValue(node.attrs[k]));
+    }
   }
 
   // CI projection facet (M1.2, #56/#58): loomster's GitLab CI is the SAME
@@ -803,11 +833,15 @@ function renderObserved(panel, o, health, healthDetail) {
     // sends the raw condition object gets the tree instead of `[object Object]`.
     for (const c of conditions) add("condition", valueCell(c), "var(--degraded)");
   }
+  // #393 item 10: the adoption line is a line to run, here as in the declared
+  // section — first, and with the same copy button.
+  if (typeof o.attributes?.adopt === "string") copyableRow(add, "adopt", o.attributes.adopt, "Copy the tags that adopt this object");
   // #259: an observed attribute is whatever the substrate reported — a k8s
   // `spec`, a nested `loadBalancer`, an array of ports. All of it collapsible
   // now, instead of one flat JSON.stringify line per key.
   for (const [k, v] of Object.entries(o.attributes || {})) {
     if (k === "conditions") continue; // rendered above, one line each
+    if (k === "adopt" && typeof v === "string") continue; // led with, above
     add(k, valueCell(v));
   }
   panel.appendChild(dl);
@@ -988,7 +1022,7 @@ function wire(ir) {
 // null on a project that declares no `stacks[]` at all — the picker (and the
 // status strip's stack tag) then never renders. Every fetch reads this, so
 // the `changed` SSE re-pull and a palette lens change go through the same path.
-const view = { env: null, detail: 2, components: true, logical: false, runtime: false, ops: false, tier: null, target: null, stack: null, radial: false, compareTo: null };
+const view = { env: null, detail: 2, components: true, logical: false, runtime: false, ops: false, tier: null, target: null, stack: null, radial: false, collapse: false, compareTo: null };
 
 // #182: `components` is the boot default, but a project that declares no
 // components renders it as ZERO nodes — the first screen was a blank graph
@@ -997,6 +1031,20 @@ const view = { env: null, detail: 2, components: true, logical: false, runtime: 
 // before anything is painted. An explicit later pick of "components" (panel
 // or ⌘K) still shows the honest empty view + the server's note.
 let autoZoomFallback = true;
+
+// #393 item 1: for an estate whose members are NONE of them chant projects, the
+// fallback above is a round-trip too late and one degree too vague. The
+// components zoom is a chant projection of a chant project's own component DAG;
+// a choudoufu estate or a bare Terraform directory has no components to
+// project, so the first screen was "the components lens doesn't apply to a
+// composed estate yet" — an apology, every time, before the person had picked
+// anything. The kinds come from /api/project (`memberKinds`, in composition
+// order), so the decision is made from what the server already knows rather
+// than from a zero-node answer. A chant member anywhere in the estate keeps
+// #182's behaviour exactly, and picking components later still shows the note.
+function bootZoom(memberKinds) {
+  return memberKinds && memberKinds.length && !memberKinds.includes("chant") ? "resources" : "components";
+}
 
 // v0.1.0 preview lock (set from /api/project in initActions): hides the git/PR
 // write ops (Rollback, Sync, Adopt, Run ▾) — the server also 403s them. Local
@@ -1035,11 +1083,19 @@ const ZOOM_DETAIL = { composites: 1, resources: 2, attributes: 3, runtime: 3 };
 /** How many emitted Ops the served estate has (0 = the stop doesn't exist).
  * Seeded from /api/project in initPickers(). */
 let opsAvailable = 0;
-/** The zoom stops this project can actually offer — `runtime` needs an env,
- * `ops` needs emitted op.json files. Both the panel and ⌘K read this, so a stop
- * never appears in one surface and not the other. */
+/** #393 item 2: whether ANY served member could have owner-referenced children
+ * — /api/project's `runtimeCapable`, decided from the members' declared
+ * lexicons (src/server.ts's RUNTIME_LEXICONS). Before this the stop needed only
+ * an env, so every choudoufu estate (which declares `live`) offered a
+ * Kubernetes tier that could only ever answer "nothing below the declaration
+ * boundary". */
+let runtimeCapable = false;
+/** The zoom stops this project can actually offer — `runtime` needs an env AND
+ * a member whose substrate has an owner chain, `ops` needs emitted op.json
+ * files. Both the panel and ⌘K read this, so a stop never appears in one
+ * surface and not the other. */
 function availableZooms() {
-  return ZOOM_OPTS.filter(([, z]) => (z === "runtime" ? Boolean(view.env) : z === "ops" ? opsAvailable > 0 : true));
+  return ZOOM_OPTS.filter(([, z]) => (z === "runtime" ? Boolean(view.env) && runtimeCapable : z === "ops" ? opsAvailable > 0 : true));
 }
 /** Current zoom value from (components, logical, ops, detail). */
 function zoomValue() {
@@ -1269,6 +1325,25 @@ function renderCarveState(host, state) {
     if (!s.graduated) host.appendChild(panelMuted(s.applyCommand));
   }
   host.appendChild(panelMuted(state.apply.note));
+}
+
+/**
+ * One inspect row whose value is a line to run: the line itself, monospaced,
+ * and a copy button beside it — the affordance the moves panel already gives a
+ * `live-mv` line (#371), reused here for the tags that adopt an unowned object
+ * (#393 item 10). `add` is a section's own row adder, so the row sits in the
+ * section it belongs to rather than in a box of its own.
+ */
+function copyableRow(add, key, text, title) {
+  const wrap = document.createElement("span");
+  wrap.style.cssText = "display:flex;gap:6px;align-items:baseline;min-width:0";
+  const line = document.createElement("code");
+  line.className = "grow";
+  line.style.cssText = "flex:1;min-width:0;overflow-wrap:anywhere";
+  line.textContent = text;
+  const copy = actButton("copy", () => copyToClipboard(text, copy), title);
+  wrap.append(line, copy);
+  add(key, wrap);
 }
 
 /** Copy `text` to the clipboard and say so on the button for a moment. */
@@ -1578,6 +1653,15 @@ function renderPanelModel() {
     host.appendChild(panelMuted("no graph loaded yet"));
     return;
   }
+  // #393 item 7: the note in full, where there is room for it. The strip may be
+  // showing the server's short form (a 260px strip cannot hold five root names,
+  // two skip reasons and five block counts), so the whole sentence has to be
+  // readable somewhere that is not a tooltip — and this tab is where the panel
+  // already explains the picture.
+  if (lastNote && lastNoteShort) {
+    host.appendChild(panelHeading("note"));
+    host.appendChild(panelMuted(lastNote));
+  }
   const drift = m.mode === "overlay" || (m.mode === "logical" && !!m.env);
   const componentStatus = m.mode === "component-status";
   const count = (statuses) => {
@@ -1600,9 +1684,16 @@ function renderPanelModel() {
       host.appendChild(panelDotRow(COMPONENT_STATUS_VAR[s] || "var(--muted)", n.id, APPLY_STATUS_TAG[s] || "", () => selectNode(n.id)));
     }
   } else if (drift) {
-    host.appendChild(panelHeading(`drift · ${m.env}`));
-    const c = count(STATUS_LABEL);
-    for (const [k, label] of Object.entries(STATUS_LABEL)) {
+    // #393 item 8: the legend proper. The heading carries the mixed-estate
+    // sentence as its tooltip — the one case where the words on these rows are
+    // not the words the members would use for themselves.
+    const heading = panelHeading(`drift · ${m.env}`);
+    const why = vocabularyNote();
+    if (why) heading.title = why;
+    host.appendChild(heading);
+    const words = statusLabels();
+    const c = count(words);
+    for (const [k, label] of Object.entries(words)) {
       // The additive buckets (chant#1168 unobserved, chant#1180 runtime) stay
       // hidden until a chant actually emits them — same as the old legend.
       if ((k === "neutral" || k === "runtime") && !c[k]) continue;
@@ -1617,7 +1708,7 @@ function renderPanelModel() {
       host.appendChild(panelHeading("needs attention"));
       for (const n of attention.slice(0, 40)) {
         const s = n.attrs._status;
-        host.appendChild(panelDotRow(DRIFT_STATUS_VAR[s], n.id, STATUS_LABEL[s], () => selectNode(n.id)));
+        host.appendChild(panelDotRow(DRIFT_STATUS_VAR[s], n.id, statusLabel(s), () => selectNode(n.id)));
       }
       if (attention.length > 40) host.appendChild(panelMuted(`+ ${attention.length - 40} more — click nodes in the graph`));
     }
@@ -2002,7 +2093,15 @@ function renderStatusbar() {
   if (lastNote) {
     const note = document.createElement("span");
     note.className = "statusbar-note";
-    note.textContent = " — " + lastNote;
+    // #393 item 7: the strip is a strip. A Terraform estate's note names every
+    // root, every skipped directory with its reason, and every block class the
+    // zoom left out — ~60 words, in a 260px panel, at every zoom. The server
+    // sends the short form beside the long one (`meta.noteShort`) when it has
+    // one; the full text stays one hover away here and is printed in full on
+    // the panel's Model tab. Nothing is truncated client-side: the SPA does not
+    // write notes, and a note with no short form is already a line.
+    note.textContent = " — " + (lastNoteShort || lastNote);
+    if (lastNoteShort) note.title = lastNote;
     el.appendChild(note);
   }
 }
@@ -2011,6 +2110,9 @@ function renderStatusbar() {
 // or null. Set on every load so a level that stops degrading stops explaining
 // itself.
 let lastNote = null;
+// #393 item 7: the same note as the strip can hold (`meta.noteShort`), or null
+// when the long one already fits. Never derived here — see renderStatusbar().
+let lastNoteShort = null;
 
 // The `meta` of the last rendered graph — the panel's Model tab reads its
 // mode/env to pick the status vocabulary (drift vs component live status).
@@ -2684,6 +2786,7 @@ function render(ir, svg, m) {
   // #131: set before anything can early-return, so a level that stopped
   // degrading stops explaining itself on the very next render.
   lastNote = m.note || null;
+  lastNoteShort = m.noteShort || null;
   // The panel's Model tab reads both of these via renderStatusbar() →
   // renderPanel() below — set them first so it renders THIS graph, not the
   // previous one (recolorNodesByCategory also sets lastGraphIr; harmless).
@@ -2730,8 +2833,12 @@ function render(ir, svg, m) {
       const s = n.attrs && n.attrs._status;
       if (s in c) c[s]++;
     }
-    tail = ` · ${c.good} managed · ${c.warn} foreign · ${c.accent} pending`;
-    if (c.neutral) tail += ` · ${c.neutral} unobserved`;
+    // #393 item 8: the estate's own words for these four colours — chant's
+    // managed/foreign/pending/unobserved on a chant estate, choudoufu's
+    // bound/unowned/pending/not observed on one whose members are choudoufu.
+    const w = statusLabels();
+    tail = ` · ${c.good} ${w.good} · ${c.warn} ${w.warn} · ${c.accent} ${w.accent}`;
+    if (c.neutral) tail += ` · ${c.neutral} ${w.neutral}`;
     if (c.runtime) tail += ` · ${c.runtime} runtime`;
     // Nothing observed live in this env — explain the all-blue rather than let it
     // read as a bug (#32).
@@ -2749,8 +2856,9 @@ function render(ir, svg, m) {
   // Multi-estate (#31): note the composed project count; the graph draws one box per project.
   // #186: the meta line lives in the panel's 272px footer now — the directory
   // basename reads better than an absolute path (full path in the tooltip).
+  // #393 item 4: one member is a project, not "1 projects".
   const scope = m.estate
-    ? `estate of ${m.estate} projects`
+    ? `estate of ${m.estate} project${m.estate === 1 ? "" : "s"}`
     : String(m.projectDir || "").replace(/\/+$/, "").split("/").pop() || m.projectDir;
   // The deploy axes (#59 unify, M2 #54 lenses) — tier/target, kept in sync with
   // what this response actually observed (falls back to the launch-time value
@@ -2911,6 +3019,45 @@ function fitGraph() {
     vb = vbInit.slice();
     applyVB();
   }
+}
+
+// How much of the viewBox one card should take when ⌘K lands on it (#393): the
+// window is this many card-widths across, so a 301-card estate arrives readable
+// rather than at whatever zoom the last gesture left. Never wider than the fit,
+// which is the whole graph — there is nothing beyond it to show.
+const REVEAL_CARDS_ACROSS = 9;
+
+/**
+ * Pan (and zoom) the graph so one card sits in the middle of the pane (#393
+ * item 4). The same viewBox the wheel/drag handlers drive and "⤢ fit" resets —
+ * there was no programmatic pan before this, only the reset.
+ *
+ * The card's rectangle comes from the DOM rather than from the IR: pinhole
+ * paints a card as a `<g data-node-id>` whose first `<rect>` carries absolute
+ * viewBox coordinates (no transform on the estate view, unlike the radial one),
+ * and `getBBox()` covers whichever it is. Returns false when there is no such
+ * card on the canvas — a node the current zoom elided — so the caller can say
+ * so instead of panning to nowhere.
+ */
+function revealNode(id) {
+  const svg = currentSvg();
+  if (!svg || !vb || !vbInit) return false;
+  const g = svg.querySelector(`[data-node-id="${CSS.escape(id)}"]`);
+  if (!g) return false;
+  let box;
+  try {
+    box = g.getBBox();
+  } catch {
+    const r = g.querySelector("rect");
+    if (!r) return false;
+    box = { x: +r.getAttribute("x"), y: +r.getAttribute("y"), width: +r.getAttribute("width"), height: +r.getAttribute("height") };
+  }
+  if (!box.width || !box.height) return false;
+  const w = Math.min(vbInit[2], Math.max(box.width * REVEAL_CARDS_ACROSS, vbInit[2] / 60));
+  const h = w * (vbInit[3] / vbInit[2]);
+  vb = [box.x + box.width / 2 - w / 2, box.y + box.height / 2 - h / 2, w, h];
+  applyVB();
+  return true;
 }
 function ensureZoomControls(host) {
   let btn = document.getElementById("zoom-toggle");
@@ -3643,6 +3790,11 @@ async function load(opts = {}) {
     }
     // Radial layout (entity view only) — curl the wide DAG onto concentric rings.
     if (view.radial && !view.components && !view.logical && !view.ops) q.set("radial", "1");
+    // Collapse large boxes (#393): a member box over the server's limit draws
+    // as one card carrying its counts. An estate-box lens — the component DAG
+    // and the ops view have no member boxes to shut — and it rides both the
+    // source graph and the overlay, so picking an env doesn't undo it.
+    if (view.collapse && !view.components && !view.ops) q.set("collapse", "1");
     // The CI + resources facets are component-DAG-mode-only details. Load
     // both whenever components mode is on, env picked or not — #59 unifies
     // the CI facet (#58), the live-status join (#57), and resources (#59) so
@@ -3762,6 +3914,15 @@ async function initPickers() {
   // way it gates `tiers`/`stacks`), so an unbuilt project or a chant < 0.50
   // never grows a stop that would refuse.
   opsAvailable = info.ops || 0;
+  // #393: whether the runtime stop exists here, and where this estate can
+  // honestly open. Both are read before the first load() below, so a non-chant
+  // estate never paints the components apology on its way to a picture.
+  runtimeCapable = !!info.runtimeCapable;
+  const boot = bootZoom(info.memberKinds);
+  if (boot !== "components") {
+    applyZoom(boot);
+    autoZoomFallback = false;
+  }
   // #254: carve mode declares itself here. The Carve tab is mounted at runtime
   // (panel.js's addPanelTab), so nothing else grows a dead tab.
   carveInfo = info.carve || null;
@@ -4569,6 +4730,18 @@ function paletteCommands() {
   if (!view.components && !view.logical && !view.ops) {
     c.push([(view.radial ? "Disable" : "Enable") + " radial layout", () => { view.radial = !view.radial; load(); }]);
   }
+  // #393: 301 cards in one box read as a strip at any zoom. This shuts every
+  // box over the server's limit down to a card carrying its own counts, so an
+  // estate can be read at the level of its members first.
+  //
+  // Not in a static export: `captureKeys` (src/export.ts) captures the estate
+  // once, expanded, and a bundle that offers a stop it has no snapshot behind
+  // answers the click with "not in this static export". `collapse` is in
+  // `canonicalKey`'s LENS_PARAMS all the same, so the day a bundle does carry
+  // both, the two keys are already distinct.
+  if (!staticMode && !view.components && !view.ops) {
+    c.push([view.collapse ? "Expand all" : "Collapse large boxes", () => { view.collapse = !view.collapse; load(); }]);
+  }
 
   // Env/stack/tier/target selection — replaces the old header pickers.
   c.push(["env: (source)" + (!view.env ? " ✓" : ""), () => { view.env = null; resetDialCaches(); load(); }]);
@@ -4635,9 +4808,73 @@ function paletteCommands() {
   return c.map(([label, run]) => ({ label, run }));
 }
 
+// --- ⌘K takes an address (#393 item 4) ---------------------------------------
+// The audit's finding was that the palette had zoom, env, panel and deploy
+// commands and nothing that took a node. The SPA already holds the IR it
+// painted (`lastGraphIr`), so the whole feature is a filter over it.
+//
+// Built per keystroke rather than baked into `paletteCommands()` on open: a
+// 301-card estate would otherwise put 301 rows in front of somebody who typed
+// nothing, and push every command below them. Nothing at all until two
+// characters are typed, and at most {@link PAL_NODE_ROWS} rows after that.
+//
+// Outside `paletteCommands()` for a second reason: that function returns early
+// in a static export (no writes there at all), and finding a card is a READ.
+// Nothing below fetches anything — the IR is the one the page painted and the
+// pan is a viewBox — so a bundle answers ⌘K exactly as a served project does.
+
+/** How many node rows the palette will show. A cap, not a ranking: past a
+ * dozen the reader is scrolling a list rather than recognising a name, and the
+ * answer is a longer query. */
+const PAL_NODE_ROWS = 12;
+
+/** The address inside a composed id — `terralith-4/aws_iam_role.x` is the id,
+ * `aws_iam_role.x` is what a person types. A member name cannot hold a slash
+ * (composeStacks' `shortStackNames`), so the FIRST one splits it. */
+function nodeAddress(id) {
+  const slash = id.indexOf("/");
+  return slash >= 0 ? id.slice(slash + 1) : id;
+}
+function nodeMember(id) {
+  const slash = id.indexOf("/");
+  return slash >= 0 ? id.slice(0, slash) : "";
+}
+
+/** The node rows for a query: matches on the composed id and on the address,
+ * with anything that STARTS with the query first — typing `aws_iam_role.team_00`
+ * should reach `aws_iam_role.team_0007_role` before a card that merely mentions
+ * it. Stable within each half (the IR's own order), so the list does not
+ * reshuffle as a query grows. */
+function paletteNodes(q) {
+  if (!lastGraphIr || q.length < 2) return [];
+  const prefix = [];
+  const rest = [];
+  for (const n of lastGraphIr.nodes) {
+    const address = nodeAddress(n.id);
+    const id = n.id.toLowerCase();
+    const a = address.toLowerCase();
+    if (a.startsWith(q) || id.startsWith(q)) prefix.push({ n, address });
+    else if (a.includes(q) || id.includes(q)) rest.push({ n, address });
+    if (prefix.length >= PAL_NODE_ROWS) break;
+  }
+  return [...prefix, ...rest].slice(0, PAL_NODE_ROWS).map(({ n, address }) => ({
+    label: `node: ${address}`,
+    // What the address alone does not say: which member it is in, and what it
+    // is. Two members of one estate can declare the same address.
+    sub: [nodeMember(n.id), n.kind, n.lexicon].filter(Boolean).join(" · "),
+    run: () => {
+      selectNode(n.id); // the same path a graph click takes — inspect included
+      if (!revealNode(n.id)) showToast(`${address} is not on this view — it may be elided at this zoom`, false);
+    },
+  }));
+}
+
 function palRender() {
   const q = palInput.value.toLowerCase().trim();
-  palCurrent = q ? palCmds.filter((c) => c.label.toLowerCase().includes(q)) : palCmds;
+  const cmds = q ? palCmds.filter((c) => c.label.toLowerCase().includes(q)) : palCmds;
+  // Nodes first: a query that matches a card is nearly always somebody looking
+  // for that card, and a query that matches no card costs nothing.
+  palCurrent = [...paletteNodes(q), ...cmds];
   palSel = Math.max(0, Math.min(palSel, palCurrent.length - 1));
   palList.replaceChildren();
   if (!palCurrent.length) {
@@ -4651,6 +4888,12 @@ function palRender() {
     const d = document.createElement("div");
     d.className = "row" + (i === palSel ? " sel" : "");
     d.textContent = c.label;
+    if (c.sub) {
+      const sub = document.createElement("div");
+      sub.className = "sub";
+      sub.textContent = c.sub;
+      d.appendChild(sub);
+    }
     d.onmousedown = (ev) => {
       ev.preventDefault();
       closePalette();

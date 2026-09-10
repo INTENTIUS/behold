@@ -4,6 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>behold</title>
+    <!-- #393: "nothing in the browser console" includes the 404 every page
+         load has always fetched for itself. behold ships no icon file and its
+         static export copies only web/, so the mark is a data URI rather than a
+         route or an asset: no request, and the exported page keeps it. -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='none' stroke='%23a6adc8' stroke-width='1.6'/%3E%3Ccircle cx='8' cy='8' r='2.2' fill='%23a6adc8'/%3E%3C/svg%3E"
+    />
     <style>
       /* Pre-paint fallback (#229). These are the DEFAULT theme's tokens —
          Catppuccin Mocha run through theme.js's tokensFor() — not a palette of
@@ -515,6 +523,10 @@
         font: var(--t-body)/1.5 var(--font-mono);
         cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       #pal-list .row.sel { background: var(--pending); color: var(--pal-sel-fg, var(--fg)); }
+      /* A node row's second line (#393): the member and the kind, which is what
+         tells two same-named addresses in two members apart. Inherits the row's
+         colour so the selected row stays readable on --pending. */
+      #pal-list .row .sub { font-size: var(--t-caption); opacity: 0.66; margin-top: 1px; }
       #pal-list .empty { padding: 8px 11px; color: var(--muted); font-size: var(--t-body); }
     </style>
   </head>
@@ -577,7 +589,7 @@
     <!-- Command palette (⌘K / Ctrl+K, #73) — the spicypath FG-036 shape
          (../spicypath/src/index.html): input + filtered list, driven entirely
          by app.js's paletteCommands()/palRender()/openPalette()/closePalette(). -->
-    <div id="palette"><div class="box"><input id="pal-input" placeholder="type a command…   (Esc to close)" autocomplete="off"><div id="pal-list"></div></div></div>
+    <div id="palette"><div class="box"><input id="pal-input" placeholder="type a command, or an address…   (Esc to close)" autocomplete="off"><div id="pal-list"></div></div></div>
     <script type="module" src="./app.js"></script>
   </body>
 </html>

@@ -142,6 +142,83 @@ describe("GET /api/graph over a bare Terraform directory (#384)", () => {
     );
   });
 
+  // -------------------------------------------------------------------------
+  // #393 — what the audit found on the water park estate, at the routes.
+  // -------------------------------------------------------------------------
+  it("carries the roots note through the logical zoom, and a short form for the strip (items 5, 7)", async () => {
+    const dir = estate();
+    registerMemberKind({ kind: "terraform", probe: hasTerraformRoots, expects: "a Terraform root", via: { tool: () => "lexicon\0v1", read: (async () => fixture()) as never } });
+
+    const app = serve(dir);
+    const resources = (await (await app.request("/api/graph?detail=2")).json()) as { meta: { note?: string; noteShort?: string } };
+    const logical = (await (await app.request("/api/graph?logical=1")).json()) as { meta: { note?: string; noteShort?: string } };
+
+    // The one line that explains the picture does not vanish with the lens.
+    expect(logical.meta.note).toContain("2 roots — baseline, prod");
+    expect(logical.meta.note).toContain("skipped backends");
+    // And both zooms hand the 260px strip something that fits, with the counts
+    // the long sentence spells out.
+    expect(resources.meta.noteShort).toBe("2 roots · 2 skipped · 26 blocks not drawn");
+    expect(logical.meta.noteShort).toBe(resources.meta.noteShort);
+  });
+
+  it("says what its members are, and never offers the runtime zoom (items 1, 2)", async () => {
+    const dir = estate();
+    registerMemberKind({ kind: "terraform", probe: hasTerraformRoots, expects: "a Terraform root", via: { tool: () => "lexicon\0v1", read: (async () => fixture()) as never } });
+
+    const info = (await (await serve(dir).request("/api/project")).json()) as { memberKinds: string[]; runtimeCapable?: boolean };
+
+    // The SPA boots on `resources` off this: no chant member, no components.
+    expect(info.memberKinds).toEqual(["terraform"]);
+    // A Terraform root has no owner-reference chain, so there is no tier below
+    // the declaration boundary to descend to.
+    expect(info.runtimeCapable).toBeUndefined();
+  });
+
+  it("answers /api/resources with the empty facet instead of 500ing (item 3)", async () => {
+    const dir = estate();
+    registerMemberKind({ kind: "terraform", probe: hasTerraformRoots, expects: "a Terraform root", via: { tool: () => "lexicon\0v1", read: (async () => fixture()) as never } });
+
+    const res = await serve(dir).request("/api/resources");
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ byComponent: {} });
+    // Nothing was asked of chant: there is no chant here to ask.
+    expect(graphIr).not.toHaveBeenCalled();
+  });
+
+  it("draws no empty member box for the directory it composed (item 6)", async () => {
+    const dir = estate();
+    registerMemberKind({ kind: "terraform", probe: hasTerraformRoots, expects: "a Terraform root", via: { tool: () => "lexicon\0v1", read: (async () => fixture()) as never } });
+
+    // How `behold serve <a terraform directory>` actually arrives (#389): the
+    // lone directory is composed as a one-member estate, so `composeStacks`
+    // puts a box named after it around every node — and the root boxes then
+    // take those same nodes.
+    const broadcaster = new Broadcaster();
+    const app = createApp({ projectDir: dir, projectDirs: [dir], port: 0 }, broadcaster, new FrameBuffer(), new OpRunner({ projectDir: dir, broadcaster, onDone: () => {} }));
+    const { ir } = (await (await app.request("/api/graph?detail=2")).json()) as { ir: GraphIR };
+
+    const boxes = ir.groups.byStack as Record<string, string[]>;
+    expect(Object.values(boxes).every((ids) => ids.length > 0)).toBe(true);
+    expect(Object.keys(boxes).sort()).toEqual(["baseline", "runner"]);
+  });
+
+  it("still says the components lens does not apply when someone picks it (item 1)", async () => {
+    const dir = estate();
+    registerMemberKind({ kind: "terraform", probe: hasTerraformRoots, expects: "a Terraform root", via: { tool: () => "lexicon\0v1", read: (async () => fixture()) as never } });
+
+    const broadcaster = new Broadcaster();
+    const app = createApp({ projectDir: dir, projectDirs: [dir], port: 0 }, broadcaster, new FrameBuffer(), new OpRunner({ projectDir: dir, broadcaster, onDone: () => {} }));
+    const { meta } = (await (await app.request("/api/graph?components=1")).json()) as { meta: { note?: string } };
+
+    // The SPA no longer BOOTS here (item 1), but the stop is still pickable and
+    // the picker must not look applied: the reason comes first, and the
+    // estate's own note follows it rather than replacing it.
+    expect(meta.note).toMatch(/^the components lens doesn't apply to a composed estate yet/);
+    expect(meta.note).toContain("2 roots — baseline, prod");
+  });
+
   it("answers the reader's own refusal, with the install line, when the lexicon is not there", async () => {
     const dir = estate();
     const refusal = {

@@ -82,9 +82,23 @@ preview-locked, and one load runs at a time (409 otherwise).
    `chant operator status --json`.
 2. **focus** — narrow with chant graph options as query params: `?detail=0..3`,
    `?components=1`, `?logical=1`, `?lens=blast:<id>&down=1`, `?lens=lexicon:aws`,
-   `?env=`, `?stack=`, `?tier=`, `?target=`.
+   `?env=`, `?stack=`, `?tier=`, `?target=`, `?collapse=1`.
+   `?collapse=1` (#393) shuts every member box holding more than 40 cards: the
+   box is drawn as ONE card carrying the count it was badged with (`301
+   resources · 84 bound · 85 unowned · 132 neutral`, in the estate's own
+   words), ids namespaced `box:<member>`, and the returned IR is the collapsed
+   one so every count and note speaks about the picture on screen. ⌘K →
+   "Collapse large boxes" / "Expand all". Below the limit it changes nothing.
 3. **inspect** — a node's `sourceLoc.file` is the typed source that declared it;
    edit there to change the estate (chant is the source of truth, not behold).
+4. **find** — ⌘K also takes an ADDRESS (#393). Two characters in, the palette
+   matches the ids and addresses of the graph the page is currently showing and
+   offers up to twelve `node: <address>` rows, prefix matches first, each with
+   its member and kind on a second line (two members of one estate can declare
+   the same address). Enter takes the same path a click on the card does — the
+   inspect pane and the highlight — and pans the graph onto it: `revealNode` in
+   web/app.js drives the same viewBox the wheel, the drag and "⤢ fit" drive.
+   Nothing here fetches, so it works in a static export too.
 
 ## The carve loop (Terraform → chant, #230)
 
@@ -390,11 +404,20 @@ until the table existed. A new kind is:
    `/api/overlay`'s — run the same passes in the same order and must not
    fork per kind; a kind's differences live inside its `read`.
 3. A `registerPack({ lexicon, iconFor, fields })` in `src/render.ts`, or the
-   kind's cards lead with the alphabetically first two short attrs.
-4. A `DoctorCheck` line when the kind needs a tool on PATH or a per-member
+   kind's cards lead with the alphabetically first two short attrs. A `fields`
+   function takes the box the card is drawn in as its second argument, so a
+   row the box already carries can be left off (#393 item 9,
+   `src/card-face.ts`).
+4. A row in `statusVocabulary` (`src/status-vocabulary.ts`) when the kind has
+   its own words for the four overlay colours — choudoufu's `bound` is not
+   chant's `managed`, and a legend that says `managed` over a card carrying no
+   marker is a claim behold has no right to make. The colours never move; only
+   the naming does, and an estate of several kinds keeps chant's words and says
+   so in the legend's tooltip.
+5. A `DoctorCheck` line when the kind needs a tool on PATH or a per-member
    precondition (a version floor checked before the spawn, the way
    `carveStatusReader` does; a PATH probe the way `src/demos.ts` does).
-5. Tests: the probe and the object form in `src/project.test.ts`; dispatch
+6. Tests: the probe and the object form in `src/project.test.ts`; dispatch
    in `src/estate.test.ts`'s "#368" block, which registers a fake kind and
    asserts chant members still go through exactly the calls they did; the
    kind's own reader off recorded documents in `src/__fixtures__/`, with
@@ -403,6 +426,29 @@ until the table existed. A new kind is:
 `.behold.json` names a kind as `{ "dir": "x", "kind": "<kind>" }`; a bare
 string is `chant`. Anything behold boots for a kind goes through
 `assertScratch` first.
+
+**What the first screen owes a non-chant member (#393).** Three chant-shaped
+things used to be offered to every member whatever it was, and a new kind gets
+all three answered for free:
+
+- `/api/project` publishes `memberKinds` — the served members' kinds, in
+  composition order. The SPA opens on the `resources` zoom when none of them is
+  `chant`, because `components` is a projection of a chant project's own
+  component DAG and a member without one opens on "the components lens doesn't
+  apply to a composed estate yet". #182's zero-node fallback still covers a
+  chant project that declares no components.
+- `/api/project` publishes `runtimeCapable`, and the palette and the View tab
+  offer `zoom: runtime` only then. The tier below the declaration boundary is
+  the owner-referenced children chant stamps `runtimeOwner` on, and only a
+  Kubernetes read has an owner chain to resolve — `RUNTIME_LEXICONS` in
+  `src/server.ts` is the one word (`k8s`), read off the members' DECLARED
+  lexicons so the stop exists or not before anyone picks it.
+- A chant-only facet answers emptily rather than 500ing for a non-chant
+  primary: `/api/resources` returns `{byComponent: {}}`, the shape carve mode
+  already returns and the SPA already reads as "no resource facet here".
+
+A kind that grows components, or a substrate with an owner chain, changes those
+answers where they are decided — never per kind in a route.
 
 ### The workbench catalog
 
@@ -524,7 +570,14 @@ the identical object back:
    the block class lands in `attrs.block`. That is the shape a carve node
    already has, which is why one presentation pack serves both.
 2. **`groupTerraformByRoot`** — roots are a Terraform project's only grouping.
-   It retires itself when chant#2266 groups upstream.
+   It retires itself when chant#2266 groups upstream. A node sits in exactly one
+   box, so a box every node has left is dropped rather than drawn empty (#393):
+   a served directory arrives composed, `composeStacks` boxes the whole member,
+   and the root boxes then take those same nodes — which is what put an empty
+   box named `access` on water park's canvas. What the member box was there to
+   say moves into the root box's title, which is `<member>/<root>` whenever the
+   estate holds more than one member and the bare root name when it does not
+   (two members with a root apiece named `prod` would otherwise merge silently).
 3. **`filterTerraformCards`** — what is a card, below.
 
 **What is a card (#382).** Measured on a real estate: 247 nodes for 43
@@ -538,6 +591,16 @@ resources, four fifths of it not infrastructure.
 
 Nothing is dropped silently: `terraformElisionNote` says what is not drawn and
 where to see it, the way `edgelessNote` says why a view has no edges.
+
+**The note, at every zoom and in a 260px strip (#393).** The roots note and the
+elision note are built by one function in `/api/graph` and returned by all three
+of its branches, the logical lens included — it was the lens that most needed
+the line and the only one that dropped it. Both routes send `note` and, when
+there is a shorter true form, `noteShort` (`5 roots · 2 skipped · 189 blocks not
+drawn`). The strip shows the short one with the long one on its tooltip, and the
+panel's Model tab prints it whole. The server writes both: the SPA does not
+author notes, and truncating this one on a sentence boundary would keep the list
+of root names and drop the counts.
 
 **Do not invent edges.** They arrive from chant or not at all: the fixtures here
 were recorded when a Terraform IR carried none, and lexicon 0.61.0 (chant#2265,
@@ -607,3 +670,46 @@ absolute paths cost every `../modules/x` call the estate makes — 72 nodes and 
 resources on water park, against 247 and 43 through the symlink. Nothing in the
 answer mentions the scratch path (a terraform entity carries `attrs.file`
 relative to its root, and no `sourceLoc`).
+
+### A choudoufu estate's own references (#393)
+
+`choudoufu live-check -json` states the roster and `references[]`, and that
+second list is *cross-estate by construction* — data sources filtered on
+another estate's marker tags. So a 301-resource terralith of roles, policies
+and attachments drew no edge at all and the graph asserted "nothing in this
+estate references anything else", which is false about every one of them.
+
+The references were never missing; nothing was reading them. **A choudoufu
+member's read now also runs the terraform kind's reader over its own
+directory** — one root, the estate directory itself, through the same scratch
+project machinery above (nothing written under the estate) — and joins the two
+documents by address. behold still parses no HCL: `src/choudoufu-refs.ts` is
+two lists of strings and the rules that match them, and its header is the
+argument for each. In short: the lexicon names *blocks* in a path of module
+*calls* (`estate/module.team_pod/aws_iam_role.pod_role`) and choudoufu names
+*instances* in a path of module *instances*
+(`module.team_pod["pod-a"].aws_iam_role.pod_role[0]`), so one lexicon edge is a
+product — kept inside one module instance (Terraform's scoping, not a guess),
+joined key to key when both ends expand over the same keys (266 true edges on
+`terralith-4` against 666 of which ~400 would be false), landing on a module
+call's whole interior, and dropped whole when either end is a `var`, a
+`locals` or anything else the roster declares no card for.
+
+Every edge is `inferred` and carries the lexicon's own attribute name (`role`,
+`policy_arn`), so the card says what made the reference. **Without the
+lexicon there are no edges and the note says so** — carrying the terraform
+kind's own install line rather than the sentence behold has no reader to
+assert — and the lexicon's version is in the member's cache stamp, so
+installing it invalidates the edgeless IR rather than serving it forever.
+
+The layout half is `packBoxComponents` (src/render.ts). src/edgeless.ts wraps a
+box whose cards reference *nothing*; a box that has edges is never wrapped, so
+`terralith-4` came back as a 110996 x 628 strip the day the join landed —
+dagre lays 42 connected components side by side on three ranks. The pass packs
+a box's components into shelves and resizes the box around them, re-laying each
+component on its own first (inside a cluster dagre interleaves them: a six-card
+cluster's bounding box spanned 46598 units) and wrapping a component that is a
+strip either way — the DNS fan is 19564 x 400 upright and 900 x 10046 on its
+side. A box under 4:1 is left exactly as it laid out. Measured: `terralith-4`
+7660 x 5162 with 266 edges, waterpark 3536 x 3138 at detail 2 and 7142 x 6974
+at detail 3 (from 4.2:1 and 15.1:1, the case #393's wrap did not answer).
