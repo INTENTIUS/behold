@@ -8,6 +8,7 @@ import {
   BOUND_SOURCES,
   GAP_RUNGS,
   OMISSION_REASONS,
+  adoptLine,
   choudoufuDiffNodes,
   paintChoudoufu,
   parseLiveLs,
@@ -145,7 +146,10 @@ describe("verdictFor and paintChoudoufu — the palette (#370)", () => {
     const extra = ir.nodes.find((n) => n.id === "aws_cloudwatch_log_group.extra")!;
     expect(extra.attrs._status).toBe("warn");
     expect(extra.attrs.omission).toBe("UNOWNED");
-    expect(extra.attrs.adopt).toEqual({ "tofu-estate": "tlmig-sample-monolith", "tofu-address": "aws_cloudwatch_log_group.extra" });
+    // #393 item 10: one line to copy, and it is the FIRST row of the pane's
+    // declared section — the paragraph that explains the omission follows it.
+    expect(extra.attrs.adopt).toBe("tofu-estate=tlmig-sample-monolith tofu-address=aws_cloudwatch_log_group.extra");
+    expect(Object.keys(extra.attrs).indexOf("adopt")).toBeLessThan(Object.keys(extra.attrs).indexOf("detail"));
     expect(extra.physicalId).toBe("/tlmig-sample/extra");
     expect(extra.ownership).toBe("foreign");
     const zero = ir.nodes.find((n) => n.id === "aws_cloudwatch_log_group.team_a_zero")!;
@@ -290,5 +294,38 @@ describe("projectChoudoufuLogical — the estate box (#370)", () => {
     expect(p.ir.nodes.map((n) => n.id)).not.toContain("k8s/deploy");
     expect(p.ir.edges.map((e) => `${e.from}>${e.to}`)).toEqual(["app/aws_subnet.app>app/data.aws_vpc.network", "app/aws_subnet.app2>app/data.aws_vpc.network", "app/data.aws_vpc.network>net/aws_vpc.main"]);
     expect(projectChoudoufuLogical({ nodes: [], edges: [], groups: {} })).toEqual({ ir: { nodes: [], edges: [], groups: {} }, byContainer: {} });
+  });
+});
+
+// #393 item 10: the UNOWNED inspect leads with the line to run.
+describe("adoptLine — the write a person actually makes", () => {
+  it("names the two marker tags, with the address escaped the way the tag stores it", () => {
+    expect(adoptLine({ addr: "aws_iam_role.r[0]", type: "aws_iam_role", identity: "r-0", adopt_tofu_estate: "e", adopt_tofu_address: "aws_iam_role.r:0" })).toBe(
+      "tofu-estate=e tofu-address=aws_iam_role.r:0",
+    );
+  });
+
+  it("prefers choudoufu's own one-line command if a release ever sends one", () => {
+    const composed = "aws ecs tag-resource --resource-arn ARN --tags key=tofu-estate,value=e";
+    expect(adoptLine({ addr: "a", type: "t", identity: "i", adopt_tofu_estate: "e", adopt_tofu_address: "a", hint: composed })).toBe(composed);
+  });
+
+  it("offers nothing for an object that belongs to another estate — adoption is not this run's to give", () => {
+    expect(adoptLine({ addr: "a", type: "t", identity: "i", tofu_estate: "neighbour" })).toBeUndefined();
+  });
+});
+
+// #393 item 8: a card bound by derived identity is good and IS bound — and
+// carries no marker yet, which the pane has to say out loud.
+describe("bound by derived identity says the marker is still missing", () => {
+  it("spells the consequence in the card's row and in the diff's health detail", () => {
+    const doc = check("choudoufu-live-check-monolith.json");
+    const listing = ls("choudoufu-live-ls-monolith.json");
+    const planDoc = plan("choudoufu-live-plan-monolith-clean.json");
+    const ir = paintChoudoufu(liveCheckToIr(doc), listing, planDoc);
+    const inline = ir.nodes.find((n) => n.id === "aws_iam_role_policy.team_a_inline")!;
+    expect(inline.attrs._status).toBe("good");
+    expect(inline.attrs.bound).toBe("by derived identity (the name the configuration states) — no marker on the object yet");
+    expect(choudoufuDiffNodes(doc, listing, planDoc)["aws_iam_role_policy.team_a_inline"].healthDetail).toContain("no marker on the object yet");
   });
 });

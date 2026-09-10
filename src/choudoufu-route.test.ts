@@ -119,6 +119,16 @@ describe("GET /api/choudoufu/moves (#371)", () => {
     expect(await res.json()).toEqual({ byComponent: {} });
   });
 
+  // #393 item 8: the legend speaks the members' own words.
+  it("carries choudoufu's vocabulary on the overlay meta", async () => {
+    const { app } = served();
+    const body = (await (await app.request("/api/overlay?env=live")).json()) as { meta: { vocabulary: { of: string; labels: Record<string, string>; note?: string } } };
+    expect(body.meta.vocabulary.of).toBe("choudoufu");
+    expect(body.meta.vocabulary.labels).toMatchObject({ good: "bound", warn: "unowned", accent: "pending", neutral: "not observed" });
+    // Nothing to explain: every member speaks this vocabulary.
+    expect(body.meta.vocabulary.note).toBeUndefined();
+  });
+
   it("is advertised on /api, and /api/project lists the plans found", async () => {
     const { app } = served();
     const api = (await (await app.request("/api")).json()) as { routes: Array<{ path: string }> };

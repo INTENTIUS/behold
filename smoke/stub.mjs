@@ -466,7 +466,64 @@ const NON_CHANT_PROJECT = {
   memberKinds: ["terraform"],
 };
 
-export function startStub(port, { carve = false, nonChant = false } = {}) {
+/**
+ * #393 items 8 and 10 — an estate whose members are choudoufu, which is where
+ * the legend's words and the UNOWNED inspect's first row have to be right.
+ *
+ * Three cards, one per state a reader has to be able to name: bound (and bound
+ * by DERIVED identity, so no marker is on the object yet), unowned with the two
+ * tags that adopt it, and one the tool did not answer for. The meta carries the
+ * `vocabulary` the real server derives from the member kinds
+ * (src/status-vocabulary.ts) — the SPA renders the legend, the statusbar counts
+ * and the inspect status row from it, and this is what proves it reaches all
+ * three.
+ */
+const CHOUDOUFU_ADOPT = "tofu-estate=terralith-4 tofu-address=aws_cloudwatch_log_group.extra";
+const CHOUDOUFU_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 300" width="620" height="300">
+  <style>:root{--pin-bg0:#0d1117;--pin-text:#e6edf3}</style>
+  <rect x="0" y="0" width="620" height="300" fill="var(--pin-bg0, #0d1117)"/>
+  <rect data-group-id="terralith-4" x="20" y="40" width="580" height="220" rx="10" fill="none" stroke="var(--pin-edge, #444)"/>
+  <text x="30" y="30" font-size="12" fill="var(--pin-textMuted, #999)">terralith-4</text>
+  ${nodeSvg("terralith-4/aws_ecs_cluster.main", 40, "good", "aws_ecs_cluster.main")}
+  ${nodeSvg("terralith-4/aws_cloudwatch_log_group.extra", 230, "warn", "aws_cloudwatch_log_group.extra")}
+  ${nodeSvg("terralith-4/aws_iam_role.quiet", 420, "neutral", "aws_iam_role.quiet")}
+</svg>`;
+const CHOUDOUFU_IR = {
+  nodes: [
+    {
+      id: "terralith-4/aws_ecs_cluster.main",
+      kind: "aws_ecs_cluster",
+      lexicon: "choudoufu",
+      attrs: { estate: "terralith-4", bound: "by derived identity (the name the configuration states) — no marker on the object yet", _status: "good" },
+    },
+    {
+      id: "terralith-4/aws_cloudwatch_log_group.extra",
+      kind: "aws_cloudwatch_log_group",
+      lexicon: "choudoufu",
+      attrs: {
+        estate: "terralith-4",
+        adopt: CHOUDOUFU_ADOPT,
+        omission: "UNOWNED",
+        detail: "a live object stands at this identity and carries no marker of ours; adopt it by writing the two tags, or let the plan create a second one",
+        _status: "warn",
+      },
+    },
+    { id: "terralith-4/aws_iam_role.quiet", kind: "aws_iam_role", lexicon: "choudoufu", attrs: { estate: "terralith-4", _status: "neutral", _unobserved: "not mentioned by live-plan or live-ls" } },
+  ],
+  edges: [],
+};
+const CHOUDOUFU_VOCABULARY = { of: "choudoufu", labels: { good: "bound", warn: "unowned", accent: "pending", neutral: "not observed", runtime: "runtime child" } };
+const CHOUDOUFU_PROJECT = {
+  projectDir: "/estates/terralith-4",
+  recents: [],
+  environments: ["live"],
+  lexicons: [],
+  currentEnv: "live",
+  targets: [],
+  memberKinds: ["choudoufu"],
+};
+
+export function startStub(port, { carve = false, nonChant = false, choudoufu = false } = {}) {
   // #228: the hand-layout sidecar, in memory instead of `.behold/layout.json`
   // — the SAME wire contract src/server.ts serves (lens-keyed deltas, a
   // `writable` flag on the read), so the smoke drives the client's whole sync
@@ -573,6 +630,46 @@ export function startStub(port, { carve = false, nonChant = false } = {}) {
       if (path === "/api/ci") return json({ stages: [], jobs: [], forge: null });
       if (path === "/api/ops") return json({ ops: [], adoptLexicons: [], autoSync: "off" });
       if (path === "/api/layout") return json({ lens: url.searchParams.get("lens"), writable: false, reason: "a carve report isn't a project", deltas: {} });
+    }
+    if (choudoufu) {
+      const json = (body) => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify(body));
+      };
+      if (path === "/api/project") return json(CHOUDOUFU_PROJECT);
+      if (path === "/api/graph" || path === "/api/overlay") {
+        return json({
+          ir: CHOUDOUFU_IR,
+          svg: CHOUDOUFU_SVG,
+          meta: { projectDir: CHOUDOUFU_PROJECT.projectDir, env: "live", tier: null, target: null, estate: 1, mode: "overlay", vocabulary: CHOUDOUFU_VOCABULARY },
+        });
+      }
+      if (path === "/api/diff") {
+        return json({
+          env: "live",
+          nodes: {
+            "terralith-4/aws_cloudwatch_log_group.extra": {
+              observed: {
+                type: "aws_cloudwatch_log_group",
+                physicalId: "/terralith-4/extra",
+                ownership: "foreign",
+                attributes: { adopt: CHOUDOUFU_ADOPT, omission: "UNOWNED", detail: CHOUDOUFU_IR.nodes[1].attrs.detail, rung: "tag-governable" },
+              },
+              diff: null,
+              health: "degraded",
+              healthDetail: "UNOWNED: a live object stands at this identity and carries no marker of ours",
+              fieldDrift: null,
+            },
+          },
+        });
+      }
+      if (path === "/api/substrates") return json({ substrates: [] });
+      if (path === "/api/resources") return json({ byComponent: {} });
+      if (path === "/api/ci") return json({ stages: [], jobs: [], forge: null });
+      if (path === "/api/ops") return json({ ops: [], adoptLexicons: [], autoSync: "off" });
+      if (path === "/api/history") return json({ commits: [] });
+      if (path === "/api/demos") return json({ demos: [] });
+      if (path === "/api/layout") return json({ lens: url.searchParams.get("lens"), writable: false, reason: "a stub", deltas: {} });
     }
     if (nonChant) {
       const json = (body) => {
