@@ -329,6 +329,14 @@ function vocabularyNote() {
   const v = lastMeta && lastMeta.vocabulary;
   return (v && v.note) || "";
 }
+// #404: whether a plan was read for this overlay, and how many cards it would
+// change. `{read: false}` and `{read: true, drifted: 0}` are DIFFERENT answers
+// — "nobody looked" versus "looked, nothing drifted" — and the legend must not
+// print a count for the first one. Null from a behold that predates this, and
+// every reader below treats null as "not read".
+function driftMeta() {
+  return (lastMeta && lastMeta.drift) || null;
+}
 // M1.1 (#57), palette hardened M2 (#54): the component-DAG live-status join
 // paints the same `_status` vocabulary (good/warn/accent/neutral) but with
 // different meaning — a stack-health reading, not "managed" — so the inspect
@@ -930,6 +938,13 @@ function inspect(node) {
 // node is instant (no per-node query). Via apiFetch, so a static export replays
 // the captured snapshot. Cache is per env; cleared on lens change / after an op.
 let bulkDiffCache = null; // { env, nodes: { <id>: { observed, diff, health } } }
+// #404: ONE-SHOT. Set by the "Re-check live with plan" palette row and cleared
+// by the request that carries it, so `plan=1` is exactly as opt-in as the
+// person's keystroke — an ordinary load, a lens change or a reconnect never
+// spawns a plan. The server still serves the change set that read produced
+// from its own cache on the loads that follow, so the drift stays on screen
+// without anyone paying for a second full pass over the account.
+let planDriftOnce = false;
 async function loadNodeDiff(id) {
   if (!bulkDiffCache || bulkDiffCache.env !== view.env) {
     bulkDiffCache = null;
@@ -1010,6 +1025,11 @@ function renderObserved(panel, o, health, healthDetail) {
 
 const DIFF_LABEL = {
   drifted: "drifted since snapshot",
+  // #404: a choudoufu member has no snapshot to drift FROM — the category is
+  // what a plan says it would do to the live object right now, so it does not
+  // borrow chant's "since snapshot" wording. The rows underneath are the same
+  // `{path, oldValue, newValue}` triples, printed `before → after`.
+  planned: "the plan would change this",
   missing: "declared, not in cloud",
   orphan: "in cloud, not declared",
   disappeared: "gone since snapshot",
@@ -2048,6 +2068,17 @@ function renderPanelModel() {
       if ((k === "neutral" || k === "runtime") && !c[k]) continue;
       host.appendChild(panelDotRow(DRIFT_STATUS_VAR[k], label, String(c[k])));
     }
+    // #404: attribute drift, on its own row under the ownership counts —
+    // beside them, never mixed into them, because a drifted card is still
+    // bound and is already counted on the row above. The row appears only when
+    // a plan was actually read; where it was not, the legend says so in words
+    // and prints no number, because "0 drifted" would be a claim nobody made.
+    const dm = driftMeta();
+    if (dm && dm.read) {
+      host.appendChild(panelDotRow("var(--degraded)", "drifted (the plan would change it)", String(dm.drifted)));
+    } else if (dm) {
+      host.appendChild(panelMuted("attribute drift not read — the overlay is ownership only. ⌘K → “Re-check live with plan”."));
+    }
     // The actionable nodes — foreign (adoptable) and pending (not applied yet).
     const attention = ir.nodes.filter((n) => {
       const s = n.attrs && n.attrs._status;
@@ -2409,6 +2440,58 @@ function markOperatorCards(ir) {
         ? `The operating loop's home: namespace ${mark.namespace}${mark.stack ? ` (OperatorStack ${mark.stack})` : ""}` +
           `${mark.ticks && mark.ticks.length ? ` — ticks ${mark.ticks.join(", ")}` : ""}`
         : `Ticks the ConvergeOp ${mark.op}${mark.schedule ? ` on ${mark.schedule}` : ""}`;
+    g.appendChild(title);
+    g.appendChild(tag);
+  }
+}
+
+/**
+ * #404: the second signal on a bound choudoufu card — the plan would change an
+ * attribute on a resource the estate demonstrably owns.
+ *
+ * The ownership verdict keeps the card's FILL: bound is still green, and this
+ * only adds a stroke and a corner glyph, the same post-render stamp
+ * `markCarvedCards`/`markOperatorCards` use (pinhole's SVG arrives from the
+ * server as a string and is replaced on every render, so a mark has to be
+ * re-applied here rather than asked for at layout time).
+ *
+ * `~` is OpenTofu's own symbol for update-in-place, so the card and the
+ * terminal read the same. The corner is the bottom-right one the carve and
+ * operator marks also use — a choudoufu card is never carved (that is chant
+ * source) and never the operating loop's home (that is Kubernetes), so on the
+ * estates this can appear on the corner is free; the guard below still skips a
+ * card that already carries one of those, rather than drawing over it.
+ */
+function markDriftedCards(ir) {
+  const svg = document.querySelector("#graph svg");
+  if (!svg) return;
+  for (const n of ir.nodes || []) {
+    const mark = n.attrs && n.attrs._planDrift;
+    if (!mark || !mark.attributes || !mark.attributes.length) continue;
+    const g = svg.querySelector('[data-node-id="' + CSS.escape(n.id) + '"]');
+    if (!g || g.querySelector('[data-plan-drift="1"]')) continue;
+    if (g.querySelector('[data-carved="1"]') || g.querySelector('[data-operator="1"]')) continue;
+    g.classList.add("plan-drifted");
+    // Measured, not read off attributes — markCarvedCards()'s note applies
+    // here verbatim (pinhole sizes a card from its content).
+    const rect = g.querySelector("rect");
+    const box = rect && rect.getBBox ? rect.getBBox() : null;
+    const tag = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    tag.setAttribute("data-plan-drift", "1");
+    tag.setAttribute("x", String((box ? box.x + box.width : 150) - 10));
+    tag.setAttribute("y", String((box ? box.y + box.height : 60) - 9));
+    tag.setAttribute("text-anchor", "end");
+    tag.setAttribute("font-size", "11");
+    tag.setAttribute("font-weight", "600");
+    tag.setAttribute("fill", "var(--degraded)");
+    // A COUNT, not the attribute names: a name like `image_tag_mutability` is
+    // wider than the corner and runs into the card's own subtitle (seen in the
+    // browser). The count is bounded whatever the provider calls its fields,
+    // and the names are one hover — or one click, in the pane — away.
+    const count_ = mark.attributes.length;
+    tag.textContent = `~ ${count_} attribute${count_ === 1 ? "" : "s"}`;
+    const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    title.textContent = `The plan would ${(mark.actions || ["update"]).join("+")} this: ${mark.attributes.join(", ")}. Ownership is unchanged — the card's colour is still its ownership verdict.`;
     g.appendChild(title);
     g.appendChild(tag);
   }
@@ -3232,6 +3315,11 @@ function render(ir, svg, m) {
     tail = ` · ${c.good} ${w.good} · ${c.warn} ${w.warn} · ${c.accent} ${w.accent}`;
     if (c.neutral) tail += ` · ${c.neutral} ${w.neutral}`;
     if (c.runtime) tail += ` · ${c.runtime} runtime`;
+    // #404: beside the ownership counts, never folded into them — a drifted
+    // card is bound and is already inside `c.good`. Silent when no plan was
+    // read, so the strip never implies the question was asked and answered.
+    const dm = driftMeta();
+    if (dm && dm.read) tail += ` · ${dm.drifted} drifted`;
     // Nothing observed live in this env — explain the all-blue rather than let it
     // read as a bug (#32).
     if (c.good === 0 && c.warn === 0 && c.accent > 0) tail += ` — nothing deployed in ${m.env} yet`;
@@ -3299,6 +3387,7 @@ function render(ir, svg, m) {
   markCarvedCards(); // #254: the SVG is replaced per render — re-stamp the marker
   markPlayhead(ir); // #284 item 2: same, for the step the run is sitting on
   markOperatorCards(ir); // #234 free rider: same, for the operating loop's home
+  markDriftedCards(ir); // #404: same, for a bound card the plan would change — after the carve/operator stamps, so it can see and yield to them
   applyLayout(); // #228: last, so the hand-placed deltas ride on top of every other pass
   renderDial();
 }
@@ -4179,6 +4268,12 @@ async function load(opts = {}) {
       // never in your source — so it rides the overlay and means nothing
       // without an env.
       if (view.runtime) q.set("runtime", "1");
+      // #404: the attribute-drift read, when this load is the one the person
+      // asked for it on. Consumed here — the next load goes without it.
+      if (planDriftOnce) {
+        q.set("plan", "1");
+        planDriftOnce = false;
+      }
     }
     // Radial layout (entity view only) — curl the wide DAG onto concentric rings.
     if (view.radial && !view.components && !view.logical && !view.ops) q.set("radial", "1");
@@ -4240,6 +4335,35 @@ async function load(opts = {}) {
   } finally {
     if (!opts.quiet) hideLoading();
   }
+}
+
+/**
+ * #404: re-read the overlay AND ask for the attribute-drift plan.
+ *
+ * A second row rather than a flag on `refresh()` above, for two reasons.
+ *
+ * The costs are different in kind. The ownership read a refresh already makes
+ * (`live-ls` + `live-plan`) is answered out of the account's tagging index —
+ * a handful of calls whatever the estate's size. `plan` refreshes every
+ * resource, which is one provider read per card: on the workbench's
+ * terralith-4 that is 301 reads for one keypress. Putting them on one button
+ * would make the cheap, repeatable "did anything move?" silently cost the
+ * expensive question every time.
+ *
+ * And they are not even the same request. `refresh()` is `POST /api/refresh`,
+ * which re-observes the PRIMARY project and captures a lanes frame; it never
+ * composes the estate. A choudoufu member is served through the estate branch
+ * of `GET /api/overlay`, which is where the drift read lives — so this row
+ * goes through `load()`, the path that actually renders those cards.
+ */
+async function refreshWithPlan() {
+  planDriftOnce = true;
+  bulkDiffCache = null; // the pane's rows come from /api/diff — re-fetch them against the new plan
+  nowline("↻ planning — a full read of the account…");
+  await load();
+  const dm = driftMeta();
+  if (dm && dm.read) nowline(dm.drifted ? `↻ plan read — ${dm.drifted} drifted` : "↻ plan read — nothing drifted");
+  else nowline("↻ the plan could not be read — the overlay is ownership only");
 }
 
 // Refresh (#24): re-check live drift now and capture a lanes frame, in one
@@ -5086,6 +5210,17 @@ function paletteCommands() {
 
   // Reads — always available, even in a static export or the preview lock.
   if (!staticMode) c.push(["Re-check live (refresh drift)", () => refresh()]);
+  // #404: the expensive sibling, listed beside it and named for what it costs.
+  // Offered only with an env picked — there is no overlay to plan against
+  // without one — and disabled-with-its-reason otherwise, the convention the
+  // colour-mode and carve rows below already follow.
+  if (!staticMode) {
+    c.push(
+      view.env
+        ? ["Re-check live with plan (attribute drift) — a full read of the account", () => refreshWithPlan()]
+        : ["Re-check live with plan (attribute drift) — pick an environment first", () => showToast("attribute drift is read from a plan, which needs an environment to plan against", false)],
+    );
+  }
   c.push(["Fit graph to view", () => fitGraph()]);
   c.push(["Export: current graph as SVG", () => exportSvg()]);
   const inspectCollapsed = document.getElementById("app").classList.contains("inspect-collapsed");

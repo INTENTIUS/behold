@@ -376,6 +376,51 @@ export function paintChoudoufu(ir: GraphIR, ls: LiveLsDocument | undefined, plan
 }
 
 // ---------------------------------------------------------------------------
+// The second signal: attribute drift (#404).
+// ---------------------------------------------------------------------------
+
+/**
+ * What a card wears when the plan would change a resource the estate owns.
+ * `_`-prefixed, so it is a signal the SPA reads and not an inspect row.
+ */
+export interface PlanDriftMark {
+  /** The plan's own verb(s) for this address: `["update"]`, or a replace. */
+  actions: string[];
+  /** The changed attribute NAMES, for the card's glyph and its tooltip. The
+   * values live in `/api/diff`, which is where a pane can afford them. */
+  attributes: string[];
+}
+
+/**
+ * Mark the bound cards a plan would change. Mutates and returns `ir`.
+ *
+ * The ownership verdict stays the card's colour (#404's second bullet): this
+ * only ADDS `_planDrift`, and never touches `_status`. A resource that is not
+ * bound is skipped on purpose — an unowned object's planned create is an
+ * ownership fact the overlay already paints, not an attribute that moved, and
+ * `planDrift` drops creates for the same reason.
+ *
+ * Keyed by the COMPOSED id (`<member>/<address>`) when a member name is given,
+ * because this runs over the composed estate IR at the route, not inside the
+ * member's own read — the plan is opt-in per request and has no business in
+ * `via.read`, which also answers `/api/graph`.
+ */
+export function paintPlanDrift(ir: GraphIR, drift: Map<string, { actions: string[]; changes: { path: string }[] }>, member?: string): number {
+  if (!drift.size) return 0;
+  let marked = 0;
+  for (const n of ir.nodes) {
+    if (n.lexicon !== CHOUDOUFU_LEXICON || n.attrs._status !== "good") continue;
+    const address = member && n.id.startsWith(`${member}/`) ? n.id.slice(member.length + 1) : n.id;
+    const d = drift.get(address);
+    if (!d) continue;
+    const mark: PlanDriftMark = { actions: d.actions, attributes: d.changes.map((c) => c.path) };
+    n.attrs = { ...n.attrs, _planDrift: mark };
+    marked++;
+  }
+  return marked;
+}
+
+// ---------------------------------------------------------------------------
 // The read.
 // ---------------------------------------------------------------------------
 
@@ -486,9 +531,26 @@ export interface DiffNode {
  * a member name is given, so the pane's lookup by node id lands. `health` is
  * the pane's own vocabulary: `healthy` for a bound instance, `degraded` for
  * an unowned object, `unknown` otherwise; `healthDetail` is the verdict's own
- * sentence. `diff` is null — choudoufu has no snapshot to drift from; the
- * plan IS the drift, and it is on the card. */
-export function choudoufuDiffNodes(check: LiveCheckDocument, ls: LiveLsDocument, plan: LivePlanDocument, member?: string): Record<string, DiffNode> {
+ * sentence.
+ *
+ * `diff` is null unless a plan was read for this member (#404, `plan=1`).
+ * choudoufu has no snapshot to drift from, so there is no `driftedSinceSnapshot`
+ * to report — but a plan document names the attributes that differ between the
+ * live object and the configuration, and that is what the pane's `diff`
+ * section renders: one row per attribute, `before → after`. The category is
+ * `planned` rather than chant's `drifted`, because "drifted since snapshot" is
+ * a claim about a baseline that does not exist here — see web/app.js's
+ * DIFF_LABEL.
+ *
+ * `fieldDrift` stays null: it is the k8s managed-fields question (which
+ * MANAGER owns a path), and a Terraform plan answers nothing about it. */
+export function choudoufuDiffNodes(
+  check: LiveCheckDocument,
+  ls: LiveLsDocument,
+  plan: LivePlanDocument,
+  member?: string,
+  drift?: Map<string, { actions: string[]; changes: { path: string; oldValue: unknown; newValue: unknown }[] }>,
+): Record<string, DiffNode> {
   const key = (address: string): string => (member ? `${member}/${address}` : address);
   const out: Record<string, DiffNode> = {};
   const seen = new Set<string>();
@@ -516,7 +578,9 @@ export function choudoufuDiffNodes(check: LiveCheckDocument, ls: LiveLsDocument,
             attributes: { ...v.attrs, ...(i.rung ? { rung: i.rung } : {}) },
           }
         : null,
-      diff: null,
+      // #404: only for a BOUND instance — the same gate `paintPlanDrift`
+      // applies, so the card's mark and the pane's rows can never disagree.
+      diff: v?._status === "good" && drift?.has(i.address) ? { category: "planned", changes: drift.get(i.address)!.changes } : null,
       health,
       ...(detail ? { healthDetail: detail } : {}),
       fieldDrift: null,

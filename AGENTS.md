@@ -774,6 +774,50 @@ resources on water park, against 247 and 43 through the symlink. Nothing in the
 answer mentions the scratch path (a terraform entity carries `attrs.file`
 relative to its root, and no `sourceLoc`).
 
+### A choudoufu member's overlay is ownership; attribute drift is the plan (#404)
+
+**Read a green choudoufu card as "this is ours", never as "nothing changed".**
+The overlay is composed from `live-ls -json` and `live-plan -json`, and those
+two documents answer one question — bound, unowned, omitted, or invisible to
+the listing. Neither of them ever compares an attribute VALUE. A resource whose
+tag, path or mutability was changed out of band still carries its markers, so
+it is still bound, and it is still green.
+
+The other half of the terminal's answer — "would a plan change anything?" — is
+a **separate, opt-in read**: `choudoufu plan -input=false -out=<tmp>` then
+`choudoufu show -json <tmp>`, whose `resource_changes[].change.{actions,before,
+after}` name the attributes and both their values. (`choudoufu plan -json` is
+NOT this: on 0.16.0 it prints choudoufu's own ownership document, the same
+shape as `live-plan -json`, with no attribute values in it at all. The
+measurement is in src/choudoufu-plan.ts's header.) The plan file is written to
+a scratch directory of behold's own and removed after — never inside the served
+member, which would be a write into someone's source.
+
+It is opt-in because it costs differently: the ownership read is answered out
+of the tagging index and is flat in the estate's size, while `plan` refreshes
+every resource — one provider read per card, 301 of them on `terralith-4`. So:
+
+- **Never on an ordinary overlay read.** `GET /api/overlay?plan=1` and
+  `GET /api/diff?plan=1` are the only things that spawn one, and the palette's
+  **"Re-check live with plan (attribute drift)"** row is the only thing in the
+  SPA that sends the flag. The cheap **"Re-check live (refresh drift)"** row is
+  deliberately left alone — it is `POST /api/refresh`, a primary-only re-observe
+  that captures a lanes frame and never composes the estate.
+- **Cached under the member's source stamp**, the same key half `memberIr`
+  uses. A read that did NOT ask is served that stored answer, so a reload after
+  a refresh keeps showing the drift without paying for a second pass; a read
+  that DID ask always re-plans, because "re-check" means re-check.
+- **The ownership verdict stays the card's colour.** A bound card that drifted
+  is still painted bound and still counted `bound`; it gains `attrs._planDrift`
+  and wears a dashed `--degraded` edge plus a `~ n attributes` corner glyph
+  (web/app.js `markDriftedCards`, the same post-render stamp as the carve and
+  operator marks). A card that is not bound is never marked — an unowned
+  object's planned `create` is an ownership fact the overlay already paints,
+  and `planDrift` drops creates for that reason.
+- **`/api/overlay`'s meta carries `drift`**: `{read: false}` or `{read: true,
+  drifted: n}`. The two are different answers — "nobody looked" versus "looked,
+  nothing drifted" — and the legend prints a count only for the second.
+
 ### A choudoufu estate's own references (#393)
 
 `choudoufu live-check -json` states the roster and `references[]`, and that

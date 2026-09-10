@@ -81,7 +81,7 @@
     },
     {
       "name": "choudoufu-estate",
-      "description": "A tag-owned estate: four choudoufu estates (an OpenTofu fork whose ownership is two AWS tags) served composed \u2014 the terralith applied to a scratch floci, three team estates whose declared resources are the monolith's (every card `owned by` it, dashed to its card), a cross-estate data-source edge, and a move plan whose `live-mv` lines you run by hand while behold previews with -dry-run and reads the receipt. Docker + choudoufu (0.16.0+, or a build from main) on PATH; provider download on first init. scripts/choudoufu-down.sh removes the container.",
+      "description": "A tag-owned estate: four choudoufu estates (an OpenTofu fork whose ownership is two AWS tags) served composed \u2014 the terralith applied to a scratch floci, three team estates whose declared resources are the monolith's (every card `owned by` it, dashed to its card), a cross-estate data-source edge, and a move plan whose `live-mv` lines you run by hand while behold previews with -dry-run and reads the receipt. A card's colour is ownership, not \"nothing changed\": attribute drift is a separate plan read, opt-in through \u2318K \u2192 \"Re-check live with plan\". Docker + choudoufu (0.16.0+, or a build from main) on PATH; provider download on first init. scripts/choudoufu-down.sh removes the container.",
       "source": "bundled",
       "dir": "example-choudoufu-estate",
       "requires": [

@@ -1198,6 +1198,44 @@ try {
     await chdfPage.waitForTimeout(100);
     check("the copy button confirms", (await copy.innerText()).includes("copied"));
 
+    // ---- #404: attribute drift, opt-in, as a SECOND signal ----------------
+    // Before the plan is read the estate looks exactly as #404 reported it:
+    // every card bound and green while a plan would change one of them.
+    check("no card is marked drifted before the plan is read", (await chdfPage.locator("#graph [data-node-id].plan-drifted").count()) === 0);
+    check("the statusbar says nothing about drift", !meta.includes("drifted"));
+    check("the legend says the question was not asked, and prints no count", legend.includes("attribute drift not read") && !/drifted \(/.test(legend));
+
+    // The palette's second row reads the plan.
+    await chdfPage.keyboard.press("Meta+k");
+    await chdfPage.waitForTimeout(200);
+    await chdfPage.keyboard.type("Re-check live with plan");
+    await chdfPage.waitForTimeout(200);
+    await chdfPage.keyboard.press("Enter");
+    await chdfPage.waitForSelector("#graph [data-node-id].plan-drifted", { timeout: 20000 });
+
+    const marked = chdfPage.locator('#graph [data-node-id="terralith-4/aws_ecs_cluster.main"]');
+    check("the drifted card wears the mark", (await marked.locator('[data-plan-drift="1"]').count()) === 1);
+    // textContent, not innerText: the mark is an SVG <text>, not an HTMLElement.
+    check("…as a count, so a long attribute name cannot run off the card", (await marked.locator('[data-plan-drift="1"]').textContent()).trim() === "~ 1 attribute");
+    // The whole of #404's second bullet: ownership is still the card's colour.
+    check("…and the card is still painted bound, not demoted", (await chdfPage.locator("#graph [data-node-id].plan-drifted").count()) === 1);
+    const meta2 = await chdfPage.locator("#meta").innerText();
+    check("the statusbar counts the drift beside the ownership counts", meta2.includes("1 bound") && meta2.includes("1 drifted"));
+
+    await chdfPage.click('#panel-tabs button[data-tab="model"]');
+    await chdfPage.waitForTimeout(100);
+    const legend2 = await chdfPage.locator("#tab-model").innerText();
+    check("the legend gains a drifted row with its count", /drifted \(the plan would change it\)/.test(legend2) && !legend2.includes("attribute drift not read"));
+
+    // The pane names the attributes, before → after.
+    await chdfPage.click('[data-node-id="terralith-4/aws_ecs_cluster.main"]');
+    await chdfPage.waitForTimeout(400);
+    const driftPane = await chdfPage.locator("#inspect-body").innerText();
+    check("the inspect pane says what the plan would do", driftPane.includes("the plan would change this"));
+    check("…names the changed attributes", driftPane.includes("tags") && driftPane.includes("image_tag_mutability"));
+    check("…and prints a scalar as before → after", driftPane.includes('"IMMUTABLE" → "MUTABLE"'));
+    check("…while the card's health stays healthy", driftPane.includes("healthy"));
+
     check("no console errors on a choudoufu estate", chdfErrors.length === 0);
     if (chdfErrors.length) console.error("choudoufu page errors:", chdfErrors);
     await chdfPage.screenshot({ path: join(SHOTS, "10-choudoufu-vocabulary.png") });

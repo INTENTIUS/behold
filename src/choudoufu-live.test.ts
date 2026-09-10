@@ -280,6 +280,43 @@ describe("choudoufuDiffNodes — the pane's live state (#370)", () => {
     // Unprefixed on a single-member serve.
     expect(Object.keys(choudoufuDiffNodes(doc, listing, plan("choudoufu-live-plan-monolith-clean.json")))).toContain("aws_iam_role.team_a");
   });
+
+  // #404: the attribute half, when a plan was read for this member.
+  it("carries the plan's changed attributes as the pane's `diff`, before → after", () => {
+    const doc = check("choudoufu-live-check-monolith.json");
+    const listing = ls("choudoufu-live-ls-monolith.json");
+    const clean = plan("choudoufu-live-plan-monolith-clean.json");
+    const drift = new Map([
+      ["aws_iam_role.team_a", { actions: ["update"], changes: [{ path: "tags", oldValue: { extra: "1" }, newValue: {} }] }],
+    ]);
+    const nodes = choudoufuDiffNodes(doc, listing, clean, "mono", drift);
+    expect(nodes["mono/aws_iam_role.team_a"]).toMatchObject({
+      // Still BOUND: attribute drift is a second signal, never a demotion —
+      // the health the pane prints is the ownership verdict, unchanged.
+      health: "healthy",
+      diff: { category: "planned", changes: [{ path: "tags", oldValue: { extra: "1" }, newValue: {} }] },
+      // The k8s managed-fields question, which a Terraform plan never answers.
+      fieldDrift: null,
+    });
+    // An address the plan did not change keeps the null it always had.
+    expect(nodes["mono/aws_iam_policy.team_a"].diff).toBeNull();
+    // And with no plan read at all, nothing anywhere carries a diff.
+    const none = choudoufuDiffNodes(doc, listing, clean, "mono");
+    expect(Object.values(none).every((n) => n.diff === null)).toBe(true);
+  });
+
+  it("never shows plan drift on a card that is not bound", () => {
+    const doc = check("choudoufu-live-check-monolith.json");
+    doc.instances.push({ address: "aws_cloudwatch_log_group.extra", type: "aws_cloudwatch_log_group", rung: "tag-governable" });
+    const unowned = plan("choudoufu-live-plan-monolith-unowned-and-renamed.json");
+    const drift = new Map([["aws_cloudwatch_log_group.extra", { actions: ["update"], changes: [{ path: "retention_in_days", oldValue: 1, newValue: 7 }] }]]);
+    const nodes = choudoufuDiffNodes(doc, ls("choudoufu-live-ls-monolith.json"), unowned, "mono", drift);
+    // UNOWNED is the answer this card owes a reader; an attribute diff beside
+    // it would be behold arguing with its own overlay (`paintPlanDrift` skips
+    // the same card, so the two can never disagree).
+    expect(nodes["mono/aws_cloudwatch_log_group.extra"].health).toBe("degraded");
+    expect(nodes["mono/aws_cloudwatch_log_group.extra"].diff).toBeNull();
+  });
 });
 
 describe("projectChoudoufuLogical — the estate box (#370)", () => {
