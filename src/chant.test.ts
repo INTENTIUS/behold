@@ -562,11 +562,11 @@ describe("applyArgs", () => {
 describe("runChantRaw — env override reaches the spawn", () => {
   beforeEach(() => vi.mocked(spawnMock).mockReset());
 
-  it("spawns with no explicit `env` option when no override is given — inherits process.env as before", async () => {
+  it("snapshots the inherited environment before a read can queue", async () => {
     vi.mocked(spawnMock).mockReturnValue(fakeProc(0, "{}"));
     await runChantRaw(["graph", "src", "--format", "ir"], "/proj");
     const opts = vi.mocked(spawnMock).mock.calls[0]![2] as { env?: unknown } | undefined;
-    expect(opts?.env).toBeUndefined();
+    expect(opts?.env).toEqual(process.env);
   });
 
   it("merges the env override over process.env for exactly this spawn (M2 tier/target lenses)", async () => {

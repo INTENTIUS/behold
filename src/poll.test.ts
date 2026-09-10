@@ -105,6 +105,21 @@ describe("startDriftPoll", () => {
     stop();
   });
 
+  it("prepares namespace scopes once per sweep and supplies the existing IR for capture", async () => {
+    const observed = ir([{ id: "svc", status: "good" }]);
+    let namespace = "old";
+    const prepare = vi.fn(async () => { namespace = "app"; });
+    const query = vi.fn(async () => { expect(namespace).toBe("app"); return observed; });
+    const onRead = vi.fn();
+    const stop = startDriftPoll({ intervalMs: 1000, beforeSweep: prepare,
+      members: [{ dir: "/app", query }], onRead, onChange: vi.fn() });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(prepare).toHaveBeenCalledTimes(2);
+    expect(query).toHaveBeenCalledTimes(2); // capture costs no third/fourth query
+    expect(onRead).toHaveBeenCalledWith("/app", observed);
+    stop();
+  });
+
   it("sweeps members sequentially — a slow read never stampedes the next member", async () => {
     let release!: (ir: GraphIR) => void;
     const slow = { dir: "/estate/a", query: vi.fn(() => new Promise<GraphIR>((res) => (release = res))) };

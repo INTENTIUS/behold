@@ -21,7 +21,7 @@
 import { joinCarvedSources } from "./carve-manifest.ts";
 import { carveStatesFor } from "./carve-discovery.ts";
 import { statSync } from "node:fs";
-import { availableParallelism } from "node:os";
+import { readConcurrency } from "./read-scheduler.ts";
 import { join, resolve, sep } from "node:path";
 import { composeStacks, shortStackNames, type GraphIR } from "@intentius/pinhole";
 import { meetsFloor, resolveChant, type GraphOptions } from "./chant.ts";
@@ -43,15 +43,10 @@ import { CLUSTER_SCOPED } from "./zoom-notes.ts";
 // host busy without drowning it.
 // ---------------------------------------------------------------------------
 
-/** How many member chant processes one estate read runs at once: the host's
- * parallelism capped at 4 (each spawn wants a core-plus for its TS eval),
- * never more lanes than members. `BEHOLD_ESTATE_CONCURRENCY` overrides the
- * cap for tuning a live estate; anything unparseable or < 1 is ignored
- * rather than honoured into a stall. Exported for testing. */
+/** Per-composition pipelining; runChantRaw also enforces this budget across
+ * all simultaneous estate requests, background polls, and frame captures. */
 export function estateReadPool(members: number, env: Record<string, string | undefined> = process.env): number {
-  const override = Number.parseInt(env.BEHOLD_ESTATE_CONCURRENCY ?? "", 10);
-  const cap = Number.isInteger(override) && override >= 1 ? override : Math.min(4, availableParallelism());
-  return Math.max(1, Math.min(cap, members));
+  return Math.max(1, Math.min(readConcurrency(env), members));
 }
 
 /** `Promise.all(items.map(fn))` with at most `width` calls in flight.
