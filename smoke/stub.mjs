@@ -259,6 +259,11 @@ const JSON_ROUTES = {
     targets: [{ endpoint: "http://localhost:4566" }],
     tier: "dev",
     target: "http://localhost:4566",
+    // #393 item 2: the runtime stop exists here — this estate declares `k8s`,
+    // whose live read is the only one with an owner-reference chain to descend.
+    // `nonChant` below is the estate that does not, and must not be offered it.
+    runtimeCapable: true,
+    memberKinds: ["chant"],
     // #284: the ops zoom stop only exists once the estate has emitted Ops. The
     // count is what opens it — and it is also what the operator strip (#234)
     // needs on screen, since the strip lives on that lens.
@@ -431,7 +436,37 @@ export const CARVE_BRIDGE = {
  * records what the page sent, so the smoke can assert the wire contract
  * (a JSON body carrying the picked address) and not just the pixels.
  */
-export function startStub(port, { carve = false } = {}) {
+/**
+ * #393 — a served estate whose members are NOT chant projects (a choudoufu
+ * estate, a bare Terraform directory). Three things about it differ from every
+ * other project the SPA has seen, and all three were audit findings:
+ *
+ *  - it has no components to project, so the boot zoom must be `resources`
+ *    rather than a first screen that apologises;
+ *  - it declares an env (`live`) but no substrate with an owner chain, so the
+ *    `runtime` stop must not be offered even though an env is picked;
+ *  - its note is a paragraph, so the strip gets `noteShort` and the long form
+ *    stays on the tooltip and the Model tab.
+ *
+ * The note is water park's own, verbatim from `/api/graph` over
+ * `../waterpark/access`.
+ */
+const NON_CHANT_NOTE =
+  "5 roots — baseline, prod, github, identity, waterpark-runner; skipped backends (no resource, data or module block — nothing to draw), " +
+  "modules/persona (called as a module, never applied on its own); showing the estate — 108 variables, 53 outputs, 14 terraform blocks, " +
+  "10 locals blocks, 4 providers not drawn (outputs and variables appear at detail 3 — ⌘K → attributes)";
+const NON_CHANT_NOTE_SHORT = "5 roots · 2 skipped · 189 blocks not drawn";
+const NON_CHANT_PROJECT = {
+  projectDir: "/estates/waterpark/access",
+  recents: [],
+  environments: ["live"],
+  lexicons: [],
+  currentEnv: "live",
+  targets: [],
+  memberKinds: ["terraform"],
+};
+
+export function startStub(port, { carve = false, nonChant = false } = {}) {
   // #228: the hand-layout sidecar, in memory instead of `.behold/layout.json`
   // — the SAME wire contract src/server.ts serves (lens-keyed deltas, a
   // `writable` flag on the read), so the smoke drives the client's whole sync
@@ -538,6 +573,28 @@ export function startStub(port, { carve = false } = {}) {
       if (path === "/api/ci") return json({ stages: [], jobs: [], forge: null });
       if (path === "/api/ops") return json({ ops: [], adoptLexicons: [], autoSync: "off" });
       if (path === "/api/layout") return json({ lens: url.searchParams.get("lens"), writable: false, reason: "a carve report isn't a project", deltas: {} });
+    }
+    if (nonChant) {
+      const json = (body) => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify(body));
+      };
+      if (path === "/api/project") return json(NON_CHANT_PROJECT);
+      // The same cards the ordinary stub paints — what differs is the meta,
+      // which is the whole point here: one member, a long note, a short one.
+      if (path === "/api/graph" || path === "/api/overlay") {
+        return json({
+          ir: irFor("live"),
+          svg,
+          meta: { projectDir: NON_CHANT_PROJECT.projectDir, env: "live", tier: null, target: null, estate: 1, note: NON_CHANT_NOTE, noteShort: NON_CHANT_NOTE_SHORT },
+        });
+      }
+      if (path === "/api/substrates") return json({ substrates: [] });
+      if (path === "/api/resources") return json({ byComponent: {} });
+      if (path === "/api/ci") return json({ stages: [], jobs: [], forge: null });
+      if (path === "/api/ops") return json({ ops: [], adoptLexicons: [], autoSync: "off" });
+      if (path === "/api/history") return json({ commits: [] });
+      if (path === "/api/demos") return json({ demos: [] });
     }
     if (path === "/api/layout") {
       res.writeHead(200, { "content-type": "application/json" });

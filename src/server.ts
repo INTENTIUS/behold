@@ -138,12 +138,13 @@ import {
   hasTerraformEntities,
   normalizeTerraformNodes,
   terraformElisionNote,
+  terraformElisionNoteShort,
   type TerraformElision,
 } from "./terraform-lens.ts";
 import { choudoufuDiffNodes, readChoudoufuLive, type Runner as ChoudoufuRunner } from "./choudoufu-live.ts";
 import { discoverCarvePlans, moveMembers, moveReceipt, movesPayload, readCarvePlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
 import { memberKindOf, memberKindSpec, servesAsEstate } from "./member-kind.ts";
-import { TerraformReadError, discoverTerraformRoots, terraformRootsNote } from "./terraform-member.ts";
+import { TerraformReadError, discoverTerraformRoots, terraformRootsNote, terraformRootsNoteShort } from "./terraform-member.ts";
 import { invalidateMember, memberIr } from "./member-ir.ts";
 import { carveStatesFor, carveStatesUnder } from "./carve-discovery.ts";
 import { foreignNote, type GraphIRWithForeign } from "./foreign.ts";
@@ -849,6 +850,24 @@ async function readoptDispatchedRun(
 }
 
 /**
+ * The lexicons whose live read can report a node BELOW the declaration
+ * boundary (#86, #393). chant paints a node `runtime` only when it carries
+ * `runtimeOwner` — the declared entity a live object's OWNER-REFERENCE chain
+ * resolves to (chant#1077) — and owner references are a Kubernetes API
+ * mechanism. Every other substrate behold reads (AWS, Azure, GCP, Fly, Helm's
+ * releases, a Terraform root, a choudoufu estate) has no owner chain at all, so
+ * the `runtime` stop there could only ever answer "nothing below the
+ * declaration boundary": a stop that exists to be refused. `/api/project`
+ * publishes whether any member declares one of these, and the SPA's palette and
+ * View tab offer the stop only then.
+ *
+ * Kustomize and Helm declare Kubernetes objects, but a chant project that
+ * reaches a cluster to read them declares `k8s` as well — that is what the
+ * cluster connection lives on — so one word is enough.
+ */
+const RUNTIME_LEXICONS = new Set(["k8s"]);
+
+/**
  * The three Terraform passes (#379, #380, #382), in the one order they make
  * sense: name the cards, box them by root, then drop what is not estate at this
  * detail. Returns what the filter elided so the view can say so.
@@ -1356,6 +1375,31 @@ export function createApp(
       (cfg.projectDirs ?? [cfg.projectDir]).filter((d) => memberKindOf(d) === "choudoufu"),
       cfg.projectDir,
     );
+    // #393 item 1: what each served member IS, in composition order — the one
+    // fact that decides where the SPA can honestly BOOT. `components` is a
+    // chant projection of a chant project's own component DAG (`chant graph
+    // --components`); a member that is not a chant project has no components to
+    // project, so the boot zoom lands on an apology ("the components lens
+    // doesn't apply to a composed estate yet") for every choudoufu and
+    // Terraform estate. #182's fallback only fires on a zero-node answer, i.e.
+    // after the round-trip. The SPA reads this and boots on `resources`
+    // instead; an explicit later pick of components still gets the honest note.
+    // An unclaimed directory reads `chant`, exactly as `estateMembers` resolves
+    // it — chant is the reader for a directory no kind claims.
+    const memberKinds = [...new Set(estateMembers(estateDirs).map((m) => m.kind))];
+    // #393 item 2: whether `runtime` is a zoom this estate can answer. The
+    // tier below the declaration boundary is the owner-referenced children a
+    // substrate maintains — chant stamps `runtimeOwner` on exactly those
+    // (src/overlay.ts), and only a Kubernetes read has an owner-reference chain
+    // to resolve: AWS, Azure, GCP, Terraform and choudoufu have none, so the
+    // stop was offered on every choudoufu estate and always answered "nothing
+    // below the declaration boundary". Read off the DECLARED lexicons of every
+    // member, not off a live read: a stop must exist or not before anyone picks
+    // it. Chant members only — a non-chant kind declares no lexicons at all.
+    const memberLexicons = await Promise.all(
+      estateDirs.map((d) => (memberKindOf(d) === "chant" ? detectProject(d).then((p) => p.lexicons).catch(() => []) : Promise.resolve([] as string[]))),
+    );
+    const runtimeCapable = memberLexicons.flat().some((l) => RUNTIME_LEXICONS.has(l));
     return c.json({
       projectDir: cfg.projectDir,
       ...(carveState.manifests ? { carve: { state: carveState } } : {}),
@@ -1404,6 +1448,11 @@ export function createApp(
       // stop and no dead ⌘K entry. The count, not a bare flag — the SPA shows
       // it, and "ops: 0" is not a thing this can ever say.
       ...(emittedOps ? { ops: emittedOps } : {}),
+      // #393: what the served members are, and whether `runtime` applies to any
+      // of them. Both gated exactly like `ops` above — a flag that is only ever
+      // true is a flag the SPA can read as "absent means no".
+      memberKinds,
+      ...(runtimeCapable ? { runtimeCapable: true } : {}),
       targets: deployTargets(lexicons, k8sTarget),
       // Where the k8s binding came from, so the SPA never implies behold chose
       // it (#106). Absent for a project with no k8s lexicon or no resolvable
@@ -1897,6 +1946,31 @@ export function createApp(
       const ownKindVia = multi ? undefined : memberKindSpec(memberKindOf(cfg.projectDir) ?? "chant")?.via;
       // #382: what the Terraform zoom filter elided, when the estate branch ran it.
       let estateTfElision: TerraformElision = { dropped: {}, total: 0 };
+      // #384: a served Terraform directory says which roots it found and which
+      // directories of `.tf` it skipped, so a root missing from the picture is
+      // visible here rather than by counting boxes. Ahead of the elision note,
+      // which is about the same estate's zoom: what is drawn, then what isn't.
+      // A served directory normally arrives composed (#389), so the terraform
+      // members are read off the composed list; the lone `projectDir` case is a
+      // caller that set it alone.
+      //
+      // #393 items 5 and 7. Item 5: this used to be built at the bottom of the
+      // route, which the logical branches return above — so the one note that
+      // explained the picture vanished at exactly the zoom that most needed it.
+      // It is a function now, called from all three. Item 7: the long form is
+      // ~60 words and repeats at every zoom in a 260px panel, so the SERVER
+      // sends both. The server, not the SPA truncating on a sentence boundary,
+      // because the counts are the server's own — the first sentence IS the
+      // list of root names, so cutting at the first period keeps the longest
+      // clause and drops the elision entirely, and the SPA would have to
+      // re-derive `5 roots · 2 skipped` from prose it did not write. The rule
+      // src/zoom-notes.ts states holds: the server decides what a note says.
+      const terraformNotes = (elision: TerraformElision): { note?: string; noteShort?: string } => {
+        const scans = (multi ? cfg.projectDirs! : [cfg.projectDir]).filter((d) => memberKindOf(d) === "terraform").map((d) => discoverTerraformRoots(d));
+        const note = [...scans.map((s) => terraformRootsNote(s)), terraformElisionNote(elision, opts.detail)].filter(Boolean).join("; ");
+        const noteShort = [...scans.map((s) => terraformRootsNoteShort(s)), terraformElisionNoteShort(elision)].filter(Boolean).join(" · ");
+        return note ? { note, ...(noteShort && noteShort !== note ? { noteShort } : {}) } : {};
+      };
       let ir: GraphIR;
       let mode: "component-status" | undefined;
       let metaEnv = cfg.env ?? null;
@@ -1959,7 +2033,15 @@ export function createApp(
           // KEYS the projection just minted — see src/operator.ts's
           // `operatorHomeBoxMarks`.
           const { svg } = renderArchitecture(projected, byContainer, { groupMarks: operatorHomeBoxMarks(ir, namespaceBoxes ?? {}), groupBadges: operatorHomeBoxBadges(ir, namespaceBoxes ?? {}) });
-          const logicalNote = notesFor("logical", projected, undefined, logicalBefore);
+          // #393 item 5: the roots note rides the logical lens too. The lens
+          // re-projects the same cards into the same boxes it was given, so
+          // which roots those are is no less true here than at `resources` —
+          // and on a Terraform estate it is the only line that explains the
+          // picture at all.
+          const tf = terraformNotes(estateTfElision);
+          const lensNote = notesFor("logical", projected, undefined, logicalBefore);
+          const logicalNote = [tf.note, lensNote].filter(Boolean).join(" · ");
+          const logicalNoteShort = tf.note ? [tf.noteShort ?? tf.note, lensNote].filter(Boolean).join(" · ") : undefined;
           return c.json({
             ir: projected,
             svg,
@@ -1972,6 +2054,7 @@ export function createApp(
               mode: "logical",
               estate: cfg.projectDirs!.length,
               ...(logicalNote ? { note: logicalNote } : {}),
+              ...(logicalNoteShort && logicalNoteShort !== logicalNote ? { noteShort: logicalNoteShort } : {}),
             },
           });
         }
@@ -2046,7 +2129,7 @@ export function createApp(
         const base = addClusterAnchorEdges(addValueMatchEdges(addK8sDeclaredEdges(raw)), logicalContext);
         // #379/#380/#382: name and box the Terraform cards before the lens
         // projects them, so its own boxes hold cards rather than block classes.
-        applyTerraformPasses(base, opts.detail);
+        const singleTfElision = applyTerraformPasses(base, opts.detail);
         // #102: the lens follows the substrate — AWS nests region/VPC/subnet,
         // Azure nests resource group/VNet/subnet. `metaEnv` names the resource
         // group on Azure, which ARM never declares as a resource.
@@ -2063,8 +2146,12 @@ export function createApp(
         // primary output, and until now it was only observable by reading the
         // rendered SVG, which is not something an acceptance run can assert on.
         // The SPA ignores it and paints the svg as before.
-        const logicalNote = notesFor("logical", projected, undefined, base.nodes.length);
-        return c.json({ ir: projected, svg, byContainer, meta: { projectDir: cfg.projectDir, env: metaEnv, tier: opts.tier ?? null, target: opts.target ?? null, mode: "logical", ...(logicalNote ? { note: logicalNote } : {}) } });
+        // #393 item 5 — see the estate branch's logical note.
+        const tf = terraformNotes(singleTfElision);
+        const lensNote = notesFor("logical", projected, undefined, base.nodes.length);
+        const logicalNote = [tf.note, lensNote].filter(Boolean).join(" · ");
+        const logicalNoteShort = tf.note ? [tf.noteShort ?? tf.note, lensNote].filter(Boolean).join(" · ") : undefined;
+        return c.json({ ir: projected, svg, byContainer, meta: { projectDir: cfg.projectDir, env: metaEnv, tier: opts.tier ?? null, target: opts.target ?? null, mode: "logical", ...(logicalNote ? { note: logicalNote } : {}), ...(logicalNoteShort && logicalNoteShort !== logicalNote ? { noteShort: logicalNoteShort } : {}) } });
       } else if (ownKindVia) {
         // #384: the served directory is itself a member of a kind that is not
         // chant — a bare Terraform directory, a choudoufu estate — so it is
@@ -2168,18 +2255,19 @@ export function createApp(
       // (see /api/overlay's single-project branch, which already passed this)
       // — without it, example-k8s's `/api/graph` asserted "nothing in this
       // estate references anything else" at detail 2 while detail 3 has 2.
-      // #384: a served Terraform directory says which roots it found and which
-      // directories of `.tf` it skipped, so a root missing from the picture is
-      // visible here rather than by counting boxes. Ahead of the elision note,
-      // which is about the same estate's zoom: what is drawn, then what isn't.
-      // A served directory normally arrives composed (#389), so the terraform
-      // members are read off the composed list; the lone `projectDir` case is
-      // a caller that set it alone.
-      const tfDirs = (multi ? cfg.projectDirs! : [cfg.projectDir]).filter((d) => memberKindOf(d) === "terraform");
-      const rootsNote = tfDirs.length ? tfDirs.map((d) => terraformRootsNote(discoverTerraformRoots(d))).join("; ") : undefined;
+      // #384 / #393 item 5: the roots and what this zoom left out — see
+      // `terraformNotes` above, which the two logical branches call as well.
+      const tf = terraformNotes(tfElision);
+      // #393 item 1: whoever picks `components` on an estate is owed the reason
+      // it is not a components picture, and is owed it FIRST — a Terraform
+      // estate's roots note used to displace it entirely, so the picker looked
+      // applied and wasn't. `estateLensNote` is undefined unless components was
+      // actually asked for on a composed estate, so this reads as it did for
+      // every other view.
       const srcNote =
-        [rootsNote, terraformElisionNote(tfElision, opts.detail)].filter(Boolean).join("; ") ||
-        (multi ? estateLensNote : notesFor(srcZoom, ir, srcCompositeEdgesAttached, undefined, opts.detail ?? 2));
+        [estateLensNote, tf.note].filter(Boolean).join(" · ") ||
+        (multi ? undefined : notesFor(srcZoom, ir, srcCompositeEdgesAttached, undefined, opts.detail ?? 2));
+      const srcNoteShort = tf.noteShort ? [estateLensNote, tf.noteShort].filter(Boolean).join(" · ") : undefined;
       return c.json({
         ir,
         svg,
@@ -2187,6 +2275,10 @@ export function createApp(
           projectDir: cfg.projectDir,
           env: metaEnv,
           ...(srcNote ? { note: srcNote } : {}),
+          // #393 item 7: the strip's form of the same note, when there is a
+          // shorter true one. Absent means "the note fits" — the SPA shows
+          // `note` then.
+          ...(srcNoteShort && srcNoteShort !== srcNote ? { noteShort: srcNoteShort } : {}),
           // The picked tier/target (M2, #54), echoed back so the SPA can keep
           // its header's axes display in sync with what it's actually looking
           // at, not just the launch-time value. null when neither was picked.
@@ -2381,6 +2473,18 @@ export function createApp(
   app.get("/api/resources", async (c) => {
     const opts = optsFromQuery(new URL(c.req.url), tierEnvVar, cfg.projectDir);
     const env = opts.env ?? cfg.env;
+    // #393 item 3: this facet is a chant-project convention match — it groups
+    // the entity graph by the `src/<component>/` directory each node was
+    // declared in — and every step of it (`chant graph --live --overlay`,
+    // `knownComponents`) is a chant shell-out against the primary. A primary
+    // that is a member of another kind has no chant to ask: a choudoufu estate
+    // answered `No lexicon detected` and this route 500'd on every boot the
+    // SPA spent in components mode, which was every boot (item 1). There is
+    // nothing to spawn and nothing to say, so it says nothing — the same
+    // `{ byComponent: {} }` carve mode returns, and the same shape the SPA's
+    // `loadResources` already treats as "this project has no resource facet".
+    const kind = memberKindOf(cfg.projectDir);
+    if (kind && kind !== "chant") return c.json({ byComponent: {} });
     try {
       const [ir, known] = await Promise.all([
         graphIr(

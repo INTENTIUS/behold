@@ -1054,6 +1054,71 @@ try {
     carveServer.close();
   }
 
+  // ---- #393: an estate with no chant member -------------------------------
+  // A third stub (smoke/stub.mjs `{nonChant: true}`) serving what the audit
+  // measured on water park and on every choudoufu estate: one member, no
+  // components to project, an env with no owner chain under it, and a note that
+  // does not fit a 260px strip. Four of the audit's findings are visible in the
+  // first screen alone, so the first screen is what this drives.
+  const wbServer = await startStub(PORT + 2, { nonChant: true });
+  const wbPage = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+  const wbErrors = [];
+  wbPage.on("pageerror", (e) => wbErrors.push(String(e)));
+  wbPage.on("console", (m) => {
+    if (m.type() === "error" && !/favicon/i.test(m.text())) wbErrors.push(m.text());
+  });
+  try {
+    // The main stub's estate DOES declare k8s, so the stop it must keep is
+    // asserted here too — a gate that hides the stop everywhere is not a fix.
+    await page.click('#panel-tabs button[data-tab="view"]');
+    await page.waitForTimeout(100);
+    check("a k8s estate with an env keeps the runtime zoom", (await page.locator("#panel-zoom button", { hasText: /^runtime$/ }).count()) === 1);
+
+    await wbPage.goto(`http://localhost:${PORT + 2}/`);
+    await wbPage.waitForSelector("#graph svg [data-node-id]", { timeout: 20000 });
+
+    // Item 1: it opens on a picture, not on "the components lens doesn't apply
+    // to a composed estate yet".
+    check("an estate with no chant member boots on resources", (await wbPage.locator("#statusbar").innerText()).startsWith("zoom: resources"));
+
+    // Item 2: no runtime stop, on either surface — the palette and the View tab
+    // read the same list, and a stop must not appear in one and not the other.
+    await wbPage.click('#panel-tabs button[data-tab="view"]');
+    await wbPage.waitForTimeout(100);
+    const zooms = await wbPage.locator("#panel-zoom button").allInnerTexts();
+    check("the View tab offers no runtime zoom", !zooms.includes("runtime"));
+    check("…and still offers the granularity stops", ["components", "logical", "composites", "resources", "attributes"].every((z) => zooms.includes(z)));
+    await wbPage.click("#hintk");
+    await wbPage.fill("#pal-input", "zoom");
+    await wbPage.waitForTimeout(100);
+    const rows = await wbPage.locator("#pal-list .row").allInnerTexts();
+    check("⌘K offers no runtime zoom either", !rows.some((r) => /zoom: runtime/.test(r)));
+    await wbPage.keyboard.press("Escape");
+
+    // Item 7: the strip carries the short form, the long one is a hover away,
+    // and the Model tab prints it whole.
+    const strip = await wbPage.locator("#statusbar").innerText();
+    check("the strip shows the note's short form", strip.includes("5 roots · 2 skipped · 189 blocks not drawn"));
+    check("…and not the paragraph", !strip.includes("modules/persona"));
+    check("the full note is on the strip's tooltip", (await wbPage.locator("#statusbar .statusbar-note").getAttribute("title")).includes("modules/persona (called as a module"));
+    await wbPage.click('#panel-tabs button[data-tab="model"]');
+    await wbPage.waitForTimeout(100);
+    check("the Model tab prints the note in full", (await wbPage.locator("#tab-model").innerText()).includes("108 variables, 53 outputs"));
+
+    // Item 4: one member is a project.
+    const metaLine = await wbPage.locator("#meta").innerText();
+    check("a lone member reads 'estate of 1 project'", metaLine.includes("estate of 1 project") && !metaLine.includes("1 projects"));
+
+    // Item 3, from the browser's own side: nothing red in the console on the
+    // way to that first screen.
+    check("no console errors on a non-chant estate's boot", wbErrors.length === 0);
+    if (wbErrors.length) console.error("non-chant page errors:", wbErrors);
+    await wbPage.screenshot({ path: join(SHOTS, "9-non-chant-estate.png") });
+  } finally {
+    await wbPage.close();
+    wbServer.close();
+  }
+
   check("no page errors", pageErrors.length === 0);
   if (pageErrors.length) console.error("page errors:", pageErrors);
 } finally {
