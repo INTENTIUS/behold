@@ -22,6 +22,7 @@ import type { GraphIR, IRGroups, IRNode, Layout } from "@intentius/chant";
 import type { ByContainer } from "./logical.ts";
 import { k8sIconFor, helmIconFor } from "./icon-packs.ts";
 import { carveCardFields } from "./carve-lens.ts";
+import { cardFaces } from "./card-face.ts";
 import { CHOUDOUFU_LEXICON, choudoufuCardFields } from "./choudoufu-member.ts";
 import { terraformCardFields } from "./terraform-lens.ts";
 import { carveProgress, splitCarveState, type CarveState } from "./carve-manifest.ts";
@@ -165,11 +166,19 @@ type ExtraGroups = IRGroups & { byWave?: Record<string, string[]>; byStack?: Rec
  * on the live-overlay render path, which passes this explicitly — same
  * "caller knows" discipline as `byStack`, since a source-only or component-DAG
  * graph never carries a meaningful `byContainer` to box. */
-export function renderGraph(ir: GraphIR, opts: { theme?: string; boxes?: "byStack" | "byContainer"; radial?: boolean } = {}): RenderResult {
+export function renderGraph(irIn: GraphIR, opts: { theme?: string; boxes?: "byStack" | "byContainer"; radial?: boolean } = {}): RenderResult {
+  const groupsIn = irIn.groups as ExtraGroups;
+  const boxKey = groupsIn.byWave ? "byWave" : opts.boxes;
+  // #393 item 9: a choudoufu or Terraform card is painted with the address
+  // alone and the rows the box does not already carry. The ids are unchanged —
+  // `cardFaces` hands back a display IR to paint from and puts the real ids
+  // back on the finished SVG (src/card-face.ts) — and every other estate gets
+  // the same object it passed in.
+  const face = cardFaces(irIn, boxKey ? groupsIn[boxKey] : undefined);
+  const ir = face.ir;
   const groups = ir.groups as ExtraGroups;
-  const boxKey = groups.byWave ? "byWave" : opts.boxes;
   const boxes = boxKey ? groups[boxKey] : undefined;
-  const layout = layoutIr(ir, { fit: true, ...(boxes ? { groups: boxes } : {}) });
+  const layout = layoutIr(ir, { fit: true, overrides: face.overrides, ...(boxes ? { groups: boxes } : {}) });
   // Radial layout (opt-in): dagre lays a wide DAG out in horizontal ranks that
   // sprawl off-screen. Re-place the same nodes on concentric rings — one ring
   // per rank — so the graph curls around a centre and far more fits in view. Only
@@ -188,10 +197,11 @@ export function renderGraph(ir: GraphIR, opts: { theme?: string; boxes?: "byStac
   const svg = renderSvg(ir, layout, {
     fit: true,
     hideTitle: true,
+    overrides: face.overrides,
     ...(boxes ? { groups: layout.groups } : {}),
     ...(opts.theme ? { theme: opts.theme as never } : {}),
   });
-  return { svg };
+  return { svg: face.restore(svg) };
 }
 
 /**
