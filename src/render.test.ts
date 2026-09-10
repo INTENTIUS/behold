@@ -645,3 +645,92 @@ describe("packing a box that HAS edges (#393 item 1)", () => {
     expect(w / h).toBeLessThan(4);
   });
 });
+
+// #396 finding 1: the logical lens renders through `renderArchitecture`, which
+// had the edgeless wrap and none of the rest — so `?logical=1` came back as
+// the strip the other passes exist to prevent (terralith-4 165:1, waterpark
+// 24:1, the workbench 29:1, against 1.6:1 / 0.7:1 / 0.9:1 one zoom away). The
+// passes are `estateFace` and `packEstateBoxes` now, and both renderers run
+// them; these are the same assertions the estate view already carries, made of
+// the same fixture, through the other renderer.
+describe("the logical lens gets the estate view's passes (#396 finding 1)", () => {
+  /** The terralith once its references arrive, boxed the way the choudoufu
+   * lens boxes it: one container per estate, cards inside, no nesting. */
+  const projected = (clusters: number, fan: number, perModule: number): { ir: GraphIR; byContainer: Record<string, string[]> } => {
+    const ids: string[] = [];
+    const nodes: GraphIR["nodes"] = [];
+    const edges: GraphIR["edges"] = [];
+    const card = (address: string): string => {
+      const id = `terralith-4/${address}`;
+      ids.push(id);
+      nodes.push({ id, kind: "aws_iam_role", lexicon: "choudoufu", attrs: { rung: "tag-governable", estate: "behold-terralith-4" } });
+      return id;
+    };
+    for (let i = 0; i < clusters; i++) {
+      const role = card(`aws_iam_role.team_${i}_role`);
+      for (const sat of ["inline", "managed_attach", "custom_attach", "profile"]) {
+        edges.push({ from: card(`aws_iam_role_policy.team_${i}_${sat}`), to: role, kind: "ref", viaAttr: "role" });
+      }
+    }
+    const zone = card("aws_route53_zone.main");
+    for (let i = 0; i < fan; i++) edges.push({ from: card(`aws_route53_record.record["host-${i}"]`), to: zone, kind: "ref", viaAttr: "zone_id" });
+    for (const pod of ["pod-a", "pod-b"]) {
+      for (let i = 0; i < perModule; i++) {
+        const role = card(`module.team_pod["${pod}"].aws_iam_role.pod_role[${i}]`);
+        edges.push({ from: card(`module.team_pod["${pod}"].aws_iam_role_policy.pod_inline[${i}]`), to: role, kind: "ref", viaAttr: "role" });
+      }
+    }
+    return { ir: { nodes, edges, groups: { byStack: { "terralith-4": ids } } }, byContainer: { "estate behold-terralith-4": ids } };
+  };
+  const canvas = (svg: string): { w: number; h: number } => {
+    const m = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(svg)!;
+    return { w: Number(m[1]), h: Number(m[2]) };
+  };
+  const titles = (svg: string): string[] => [...svg.matchAll(/font-size="15" font-weight="700">([^<]*)</g)].map((m) => m[1]);
+  const prefixes = (ir: GraphIR): Record<string, string[]> => (ir.groups as { byStack: Record<string, string[]> }).byStack;
+
+  it("keeps a 290-card estate box under the audit's 4:1", () => {
+    const { ir, byContainer } = projected(40, 40, 12);
+    const { w, h } = canvas(renderArchitecture(ir, byContainer, { cardPrefixes: prefixes(ir) }).svg);
+    expect(w / h).toBeLessThan(4);
+    expect(w / h).toBeGreaterThan(0.25);
+  });
+
+  it("keeps the module sub-boxes, so the logical picture does not subtract the boxes resources had", () => {
+    const { ir, byContainer } = projected(40, 40, 12);
+    const { svg } = renderArchitecture(ir, byContainer, { cardPrefixes: prefixes(ir) });
+    expect(svg).toContain(">module.team_pod[&quot;pod-a&quot;]</text>");
+    expect(svg).toContain(">module.team_pod[&quot;pod-b&quot;]</text>");
+  });
+
+  it("paints the card faces and still hands back the real ids", () => {
+    const { ir, byContainer } = projected(2, 2, 0);
+    const { svg } = renderArchitecture(ir, byContainer, { cardPrefixes: prefixes(ir) });
+    expect(titles(svg)).toContain("aws_iam_role.team_0_role");
+    expect(svg).not.toContain("terralith-4/aws_iam_role.team_0_role<");
+    for (const n of ir.nodes) expect(svg).toContain(`data-node-id="${n.id.replace(/"/g, "&quot;")}"`);
+  });
+
+  it("draws every edge the projection gave it", () => {
+    const { ir, byContainer } = projected(6, 4, 2);
+    const { svg } = renderArchitecture(ir, byContainer, { cardPrefixes: prefixes(ir) });
+    const drawn = new Set([...svg.matchAll(/data-edge-from="([^"]*)" data-edge-to="([^"]*)"/g)].map((m) => `${m[1]}\0${m[2]}`));
+    expect(drawn.size).toBe(ir.edges.length);
+  });
+
+  // The k8s topology nests (region ⊃ VPC ⊃ subnet), and the after-passes
+  // reposition cards and resize the box around them — inside a parent box
+  // nothing re-measures. So they run on a FLAT projection only, and a nested
+  // one renders exactly as it did.
+  it("leaves a NESTED projection alone", () => {
+    const nested: GraphIR = {
+      nodes: ["a", "b"].map((id) => ({ id, kind: "K8s::Apps::Deployment", lexicon: "k8s", attrs: {} })),
+      edges: [],
+      groups: {},
+    };
+    const byContainer = { "region eu": ["namespace prod"], "namespace prod": ["a", "b"] };
+    const { svg } = renderArchitecture(nested, byContainer);
+    expect(svg).toContain('data-node-id="a"');
+    expect(svg).toContain('data-group-id="namespace prod"');
+  });
+});

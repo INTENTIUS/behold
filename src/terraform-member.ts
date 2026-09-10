@@ -494,6 +494,28 @@ export const terraformVia: MemberVia = {
 };
 
 /**
+ * The tier this member is read at, whatever the caller asked for (#396
+ * finding 3): never below 2.
+ *
+ * The lexicon thins its attrs by tier, and `address` and `root` go first — but
+ * those two are not attributes of a Terraform block. They are its NAME and the
+ * root it is declared in, which is what `normalizeTerraformNodes` titles a card
+ * from and what `groupTerraformByRoot` boxes by. Read at detail 1 (the
+ * `composites` zoom) waterpark came back as ONE box named `access` — the id's
+ * first segment, taken by the fallback for a missing `root` — with all 73 cards
+ * titled `access/baseline/aws_iam_policy.boundary` and every `kind` the same
+ * mangled string: the whole resources picture undone by a zoom whose subject is
+ * component ownership a Terraform estate does not have.
+ *
+ * What a zoom DRAWS is untouched — that is `filterTerraformCards` at the
+ * caller's own detail, so 3 still adds the outputs and variables and 0-2 still
+ * show the estate alone. This is only about what the reader is asked to carry.
+ */
+export function terraformReadDetail(detail: number | undefined): number {
+  return Math.max(detail ?? 2, 2);
+}
+
+/**
  * The uncached read: discover the roots, write the scratch project, and let
  * chant graph it. The reader state is an argument with a default, the way
  * `readLiveCheck`'s spawn is, so a test can ask what an install without the
@@ -517,13 +539,14 @@ export async function readTerraformMember(dir: string, opts: GraphOptions, state
   // holds is choudoufu's question (#366) or an Op's, and `--live` against a
   // reader lexicon would ask chant to observe entities it never applied.
   const { live: _live, overlay: _overlay, env: _env, ...source } = opts;
+  const detail = terraformReadDetail(source.detail);
   // Imported here, not at module load: src/member-kind.ts registers this spec,
   // src/chant.ts imports src/project.ts which imports that table, and a
   // load-time edge back into src/chant.ts from here is the cycle that module's
   // header refuses. A dynamic import inside the read is not one, and a test's
   // mock of ./chant.ts still answers it.
   const { graphIr } = await import("./chant.ts");
-  return graphIr(project, source);
+  return graphIr(project, { ...source, detail });
 }
 
 /** The terraform member (#384): a directory of `.tf` files, read through a

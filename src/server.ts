@@ -58,7 +58,7 @@ import { applyHelmRenderDrift, readHelmRenderDrift } from "./helm-drift.ts";
 import { addClusterAnchorEdges } from "./cluster-anchor.ts";
 import { projectTopology } from "./logical.ts";
 import { addCompositeDepsCounted } from "./composite-deps.ts";
-import { notesFor, tierMismatchNote, namespaceMismatchNote, namespaceJoinNote, type Zoom } from "./zoom-notes.ts";
+import { notesFor, tierMismatchNote, namespaceMismatchNote, namespaceJoinNote, unchangedZoomNote, type Zoom } from "./zoom-notes.ts";
 import { resourcesByComponent, nonResourceEntities } from "./resources.ts";
 import { summarizePlan } from "./reconcile.ts";
 import { renderGraph, renderArchitecture, renderBanded, renderCarveEstate, renderCarveMorph, renderMoveMorph } from "./render.ts";
@@ -151,6 +151,7 @@ import { discoverCarvePlans, moveMembers, moveReceipt, movesPayload, readCarvePl
 import { memberKindOf, memberKindSpec, servesAsEstate } from "./member-kind.ts";
 import { TerraformReadError, discoverTerraformRoots, terraformRootsNote, terraformRootsNoteShort } from "./terraform-member.ts";
 import { invalidateMember, memberIr, memberSourceStamp } from "./member-ir.ts";
+import { invalidateOverlay } from "./overlay-ir.ts";
 import { carveStatesFor, carveStatesUnder } from "./carve-discovery.ts";
 import { foreignNote, type GraphIRWithForeign } from "./foreign.ts";
 import { Broadcaster, watchSources } from "./events.ts";
@@ -470,6 +471,11 @@ async function captureFrame(
   broadcaster: Broadcaster,
 ): Promise<{ ir: GraphIR; captured: boolean } | null> {
   try {
+    // #396 finding 6: a capture is behold looking at the account again — the
+    // manual Refresh row and the end of an Op run are its two callers, and
+    // both mean the stored overlay documents are about a moment that has
+    // passed. Dropped here, so neither caller has to remember to.
+    invalidateOverlay();
     const ir = await graphIr(projectDir, env ? { live: true, overlay: true, env } : {});
     const captured = frames.capture(ir) !== null;
     if (captured) broadcaster.emit("frames");
@@ -886,6 +892,18 @@ const RUNTIME_LEXICONS = new Set(["k8s"]);
  * choudoufu estate gets the identical object back — the same discipline
  * `addChoudoufuReferenceEdges` follows.
  */
+/** The groups a logical card's title may drop the name of (#396 finding 1):
+ * the estate's member/root boxes, off the IR the projection was handed. The
+ * lens draws containers of its own (`estate terralith-4`, `root prod`) while
+ * the ids stay `<member>/<address>`, so without this a choudoufu or Terraform
+ * card reads its whole composed id at `logical` and its address everywhere
+ * else. Undefined on a graph that carries no such grouping, where it is the
+ * no-op it has always been. */
+function cardPrefixesOf(ir: GraphIR): Record<string, string[]> | undefined {
+  const byStack = (ir.groups as { byStack?: Record<string, string[]> }).byStack;
+  return byStack && Object.keys(byStack).length ? byStack : undefined;
+}
+
 function applyTerraformPasses(ir: GraphIR, detail: number | undefined): TerraformElision {
   if (!hasTerraformEntities(ir)) return { dropped: {}, total: 0 };
   groupTerraformByRoot(normalizeTerraformNodes(ir));
@@ -2060,7 +2078,7 @@ export function createApp(
           // detector as `markOperatorHome` above, run again against the box
           // KEYS the projection just minted — see src/operator.ts's
           // `operatorHomeBoxMarks`.
-          const { svg } = renderArchitecture(projected, byContainer, { groupMarks: operatorHomeBoxMarks(ir, namespaceBoxes ?? {}), groupBadges: operatorHomeBoxBadges(ir, namespaceBoxes ?? {}) });
+          const { svg } = renderArchitecture(projected, byContainer, { groupMarks: operatorHomeBoxMarks(ir, namespaceBoxes ?? {}), groupBadges: operatorHomeBoxBadges(ir, namespaceBoxes ?? {}), ...(cardPrefixesOf(ir) ? { cardPrefixes: cardPrefixesOf(ir)! } : {}) });
           // #393 item 5: the roots note rides the logical lens too. The lens
           // re-projects the same cards into the same boxes it was given, so
           // which roots those are is no less true here than at `resources` —
@@ -2169,7 +2187,7 @@ export function createApp(
         // never calls `markOperatorHome` on `base` (it returns before the
         // entity branch below would), so the box mark is derived straight from
         // `operatorHomes` — the same detector, not a second one.
-        const { svg } = renderArchitecture(projected, byContainer, { groupMarks: operatorHomeBoxMarks(base, namespaceBoxes ?? {}), groupBadges: operatorHomeBoxBadges(base, namespaceBoxes ?? {}) });
+        const { svg } = renderArchitecture(projected, byContainer, { groupMarks: operatorHomeBoxMarks(base, namespaceBoxes ?? {}), groupBadges: operatorHomeBoxBadges(base, namespaceBoxes ?? {}), ...(cardPrefixesOf(base) ? { cardPrefixes: cardPrefixesOf(base)! } : {}) });
         // `byContainer` rides along (behold#100): the nesting IS the projection's
         // primary output, and until now it was only observable by reading the
         // rendered SVG, which is not something an acceptance run can assert on.
@@ -2262,6 +2280,11 @@ export function createApp(
       // graph the reader cannot see. Off, and below the limit, nothing moves.
       const collapse = new URL(c.req.url).searchParams.get("collapse") === "1";
       let collapsedNote: string | undefined;
+      // #396 finding 6: the notes below are about the ESTATE, and a shut box
+      // hides what it references rather than changing it — so they read the
+      // expanded IR and the collapse clause is added to them. See the same
+      // move in /api/overlay's estate branch.
+      const expanded = ir;
       if (multi && collapse) {
         const shut = collapseBoxes(ir);
         ir = shut.ir;
@@ -2316,16 +2339,22 @@ export function createApp(
       // applied and wasn't. `estateLensNote` is undefined unless components was
       // actually asked for on a composed estate, so this reads as it did for
       // every other view.
-      const cdNote = lexiconNote(ir);
+      const cdNote = lexiconNote(expanded);
+      // #396 finding 3: a zoom the served kind's read does not distinguish
+      // renders the resources picture, and until now said nothing — three
+      // picker rows, one image. One clause, through the same module every
+      // other caption comes from.
+      const sameNote = unchangedZoomNote(srcZoom, estateMembers(estateDirs).map((m) => m.kind));
       const srcNote =
         [
-          [estateLensNote, tf.note, cdNote].filter(Boolean).join(" · ") ||
-            (multi ? undefined : notesFor(srcZoom, ir, srcCompositeEdgesAttached, undefined, opts.detail ?? 2, cdNote)),
+          [estateLensNote, tf.note, cdNote, sameNote].filter(Boolean).join(" · ") ||
+            (multi ? undefined : notesFor(srcZoom, expanded, srcCompositeEdgesAttached, undefined, opts.detail ?? 2, cdNote)),
           collapsedNote,
         ]
           .filter(Boolean)
           .join(" · ") || undefined;
-      const srcNoteShort = tf.noteShort ? [estateLensNote, tf.noteShort, cdNote, collapsedNote].filter(Boolean).join(" · ") : undefined;
+      const srcNoteShort =
+        tf.noteShort || sameNote ? [estateLensNote, tf.noteShort ?? tf.note, cdNote, sameNote, collapsedNote].filter(Boolean).join(" · ") : undefined;
       return c.json({
         ir,
         svg,
@@ -2691,7 +2720,14 @@ export function createApp(
         // detail 2, where the derivation had nothing to read and the view
         // rendered edgeless.
         const detail = logical || runtime ? 3 : query.detail;
-        const est = await composeEstateOverlay(cfg.projectDirs, { ...tierTargetOpts(query), detail, env }, reclassifyOverlay);
+        // #404: the second signal on a bound choudoufu card, opt-in.
+        // #396 finding 6: it is also what says this read means to observe
+        // again — "Re-check live with plan" re-checks BOTH halves of the
+        // answer, so the ownership read behind it is fresh too. Every other
+        // overlay read, `?collapse=1` among them, is served the document each
+        // member was last read as (src/overlay-ir.ts).
+        const planWanted = new URL(c.req.url).searchParams.get("plan") === "1";
+        const est = await composeEstateOverlay(cfg.projectDirs, { ...tierTargetOpts(query), detail, env }, reclassifyOverlay, { fresh: planWanted });
         if (est.dropped.length === est.total) {
           return c.json({ error: `no project in the estate could be graphed — ${est.dropped.map((d) => `${d.name}: ${d.reason}`).join("; ")}` }, 500);
         }
@@ -2727,8 +2763,8 @@ export function createApp(
         // #404: the second signal on a bound choudoufu card. After the paint
         // passes, because it reads `_status` (only a BOUND card can carry
         // attribute drift) and only ever adds `_planDrift` beside it — the
-        // ownership verdict stays the card's colour.
-        const planWanted = new URL(c.req.url).searchParams.get("plan") === "1";
+        // ownership verdict stays the card's colour. `planWanted` is read
+        // above, where it also decides whether the ownership half re-observes.
         const drift = await choudoufuPlanDrift(cfg.projectDirs, planWanted);
         let driftedCards = 0;
         for (const e of drift.byDir.values()) driftedCards += paintPlanDrift(ir, e.drift, e.name);
@@ -2750,7 +2786,7 @@ export function createApp(
           const { ir: projected, byContainer, namespaceBoxes } = projectTopology(ir, env, boundContext, await estateSourceRoots(query));
           // #234's free rider, the logical lens's half (pinhole#119) — see
           // /api/graph's estate branch.
-          const { svg } = renderArchitecture(projected, byContainer, { groupMarks: operatorHomeBoxMarks(ir, namespaceBoxes ?? {}), groupBadges: operatorHomeBoxBadges(ir, namespaceBoxes ?? {}) });
+          const { svg } = renderArchitecture(projected, byContainer, { groupMarks: operatorHomeBoxMarks(ir, namespaceBoxes ?? {}), groupBadges: operatorHomeBoxBadges(ir, namespaceBoxes ?? {}), ...(cardPrefixesOf(ir) ? { cardPrefixes: cardPrefixesOf(ir)! } : {}) });
           const note = [
             notesFor("logical", projected, undefined, logicalBefore),
             coverNote,
@@ -2788,6 +2824,15 @@ export function createApp(
         // graph carries — one flag, both routes, or the palette command would
         // undo itself the moment an env was picked.
         const collapsed = new URL(c.req.url).searchParams.get("collapse") === "1" && !runtime ? collapseBoxes(ir) : undefined;
+        // #396 finding 6: the notes are written about the ESTATE, and a shut
+        // box does not change what the estate references — it hides it. Read
+        // off the expanded IR, so the collapsed picture carries the line the
+        // expanded one had plus the collapse clause. Before this, collapsing
+        // `terralith-4` (301 cards and 266 real edges, drawn as one card and
+        // none) brought back #393's retired "no edges at this detail —
+        // sourceRef/dependsOn …", which was false about the estate and about
+        // the tier both.
+        const expanded = ir;
         if (collapsed) ir = collapsed.ir;
         const { svg } = renderGraph(ir, runtime ? { boxes: "byContainer" } : { boxes: "byStack", groupBadges: boxBadges(ir) });
         // #221: the join line says which members were read where the ESTATE
@@ -2803,19 +2848,21 @@ export function createApp(
         const note = [
           coverNote,
           namespaceJoinNote(est.joined),
-          namespaceMismatchNote(withoutJoinedMembers(ir.nodes, est.joined)),
+          namespaceMismatchNote(withoutJoinedMembers(expanded.nodes, est.joined)),
           // #393 item 1: the same substitution /api/graph's estate branch
           // makes — with chant's terraform lexicon absent a choudoufu estate
           // has no reader for its own references, and the note says that
           // rather than asserting there are none.
           notesFor(
             zoom,
-            ir,
+            expanded,
             undefined,
             undefined,
             detail ?? 2,
-            ir.edges.length === 0 && cfg.projectDirs.some((d) => memberKindOf(d) === "choudoufu") ? choudoufuLexiconNote() : undefined,
+            expanded.edges.length === 0 && cfg.projectDirs.some((d) => memberKindOf(d) === "choudoufu") ? choudoufuLexiconNote() : undefined,
           ),
+          // #396 finding 3 — the same clause the source graph carries.
+          unchangedZoomNote(zoom, estateMembers(cfg.projectDirs).map((m) => m.kind)),
           collapsed ? collapseNote(collapsed.collapsed) : undefined,
         ]
           .filter(Boolean)
@@ -2922,7 +2969,7 @@ export function createApp(
         // continuation below would), so the box mark is derived straight from
         // `operatorHomes` on the same pre-projection IR — the same detector,
         // not a second one.
-        const { svg } = renderArchitecture(projected, byContainer, { groupMarks: operatorHomeBoxMarks(projectionInput, namespaceBoxes ?? {}), groupBadges: operatorHomeBoxBadges(projectionInput, namespaceBoxes ?? {}) });
+        const { svg } = renderArchitecture(projected, byContainer, { groupMarks: operatorHomeBoxMarks(projectionInput, namespaceBoxes ?? {}), groupBadges: operatorHomeBoxBadges(projectionInput, namespaceBoxes ?? {}), ...(cardPrefixesOf(projectionInput) ? { cardPrefixes: cardPrefixesOf(projectionInput)! } : {}) });
         // See /api/graph's logical branch — `byContainer` is carried for the
         // same reason (behold#100). The wrong-tier note (#158) joins here too:
         // the logical view collapses to near-empty at a wrong tier exactly as
@@ -3451,6 +3498,11 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   // whose clock granularity hides an edit inside the tick that cached the read.
   const onMemberSourceChange = (memberDir: string): void => {
     invalidateMember(memberDir);
+    // #396 finding 6: the overlay document too — a member whose source moved
+    // is a member whose live read is about a configuration that no longer
+    // exists, and the stamp cannot see an edit that lands inside the tick the
+    // read was cached in.
+    invalidateOverlay(memberDir);
     onEstateChange(memberDir);
   };
   // On an estate, tag now-line entries with the member the event belongs to —

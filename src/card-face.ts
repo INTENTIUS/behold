@@ -34,11 +34,29 @@
  * for either of them. Not for looks — the boxes would tell those two apart on
  * the canvas — but because the id is how the label gets back to being an id
  * again, and a `data-node-id` that two cards claim restores to one of them.
- * Two members declaring the same address is a real estate, not a corner: the
- * live-mv workbench is one estate split four ways, and every one of its 42
- * addresses is declared twice, so it keeps the full ids and reads exactly as it
- * did. A member whose addresses are its own — the terraliths, a Terraform
- * root — shortens every card.
+ *
+ * **The limit is per BOX (#396 finding 4).** Evaluated across the whole graph
+ * it defeated itself on exactly the estate it was written for: the live-mv
+ * workbench is one estate split four ways, so all 42 of its addresses are
+ * declared in two to four member boxes, every label collided with a sibling in
+ * another box, and all 42 cards kept `monolith/aws_cloudwatch_log_group.team_a_0`
+ * — the member prefix the box beside them already spells out. A box IS the
+ * disambiguation: two cards in DIFFERENT boxes sharing a label are told apart
+ * by the boxes, and only two in the SAME box are genuinely ambiguous. So the
+ * count is per box, and a real in-box collision still keeps the full id.
+ *
+ * That leaves the restore, which the whole-graph rule was really protecting:
+ * the display id is also the painted title (pinhole titles from `node.id`), so
+ * two cards with one label would be one node to dagre and one `data-node-id` to
+ * the SPA. The two demands are separable — the TITLE has to repeat, the ID has
+ * to be unique — so a repeated label is minted as `<label>` + n
+ * {@link INVISIBLE} characters, which pinhole paints as nothing and
+ * {@link CardFaces.restore} takes back off the finished SVG along with the real
+ * ids. Nothing outside this module ever sees one: the IR the route returns is
+ * the original, and the SVG that leaves `restore` carries neither the minted id
+ * nor the character. The one cost is measurement — pinhole sizes a fitted card
+ * from the string it is given, so a card whose label was minted is a few pixels
+ * wider than its twin.
  */
 import type { GraphIR, IRNode } from "@intentius/chant";
 import type { NodeOverride } from "@intentius/pinhole";
@@ -47,6 +65,13 @@ import { isTerraformCard } from "./terraform-lens.ts";
 
 /** The three SVG attributes pinhole stamps a node id onto. */
 const ID_ATTRS = ["data-node-id", "data-edge-from", "data-edge-to"] as const;
+
+/** What a repeated label is made unique with: U+200B ZERO WIDTH SPACE, which
+ * paints as nothing and is stripped from the finished SVG by `restore`, so it
+ * reaches neither the browser nor anything downstream. A real id never contains
+ * one — chant composes ids out of member names and Terraform addresses — so a
+ * minted id can only ever collide with another minted id, which is counted. */
+const INVISIBLE = "\u200b";
 
 /** pinhole's own attribute escaping (`esc`, paint/svg.ts), so the ids put back
  * on the SVG are byte-identical to the ones taken off it. */
@@ -114,8 +139,25 @@ export interface CardFaces {
   /** Per-node field overrides, keyed by the DISPLAY id, for `layoutIr` and
    * `renderSvg` both (they must agree, or spacing and drawing diverge). */
   overrides: Record<string, NodeOverride>;
+  /** Real id → the id the display IR carries, for a caller holding a structure
+   * the display IR does not: the architecture lens's `byContainer` is an
+   * argument beside the IR rather than a field on it, so nothing in here can
+   * rewrite it. Only ids that moved are in the map. */
+  display: ReadonlyMap<string, string>;
   /** Put the real ids back on a finished SVG. */
   restore(svg: string): string;
+}
+
+/** What `cardFaces` takes beyond the boxes that are actually drawn. */
+export interface CardFaceOptions {
+  /** Which prefix a title may drop, when the drawn box's key is not it. The
+   * estate view draws the member boxes, so the two are one map and this stays
+   * absent. The architecture lens draws containers of its own making (`estate
+   * terralith-4`, `root prod`) over ids that are still `<member>/<address>`,
+   * so it passes the member groups here and the drawn containers as `boxes`:
+   * the prefix a title drops is the member's, and the collision that has to be
+   * kept apart is the one inside a box a reader can actually see. */
+  prefixes?: Record<string, string[]>;
 }
 
 /**
@@ -125,28 +167,47 @@ export interface CardFaces {
  * graph with no choudoufu or Terraform cards in it, which is every chant
  * estate.
  */
-export function cardFaces(ir: GraphIR, boxes?: Record<string, string[]>): CardFaces {
+export function cardFaces(ir: GraphIR, boxes?: Record<string, string[]>, opts: CardFaceOptions = {}): CardFaces {
   const box = boxOf(boxes);
+  const prefix = opts.prefixes ? boxOf(opts.prefixes) : box;
   const boxEstate = estateOfBox(ir, boxes);
   const wanted = new Map<string, string>();
   for (const n of ir.nodes) {
-    const label = cardLabel(n, box.get(n.id));
+    const label = cardLabel(n, prefix.get(n.id));
     if (label) wanted.set(n.id, label);
   }
-  // A label that names two cards names neither: drop the shortening for every
-  // node that would land on a taken name, including one an untouched id holds.
+  // A label that names two cards IN ONE BOX names neither: drop the shortening
+  // for every node that would land on a name already taken inside its own box,
+  // including one an untouched id holds. Across boxes a repeat is fine — see
+  // the header: the boxes are the disambiguation a reader sees, and the id the
+  // restore needs is minted below.
   const taken = new Map<string, number>();
+  const scope = (id: string): string => `${box.get(id) ?? ""} `;
   for (const n of ir.nodes) {
-    const display = wanted.get(n.id) ?? n.id;
-    taken.set(display, (taken.get(display) ?? 0) + 1);
+    const key = scope(n.id) + (wanted.get(n.id) ?? n.id);
+    taken.set(key, (taken.get(key) ?? 0) + 1);
   }
-  for (const [id, label] of [...wanted]) if ((taken.get(label) ?? 0) > 1) wanted.delete(id);
+  for (const [id, label] of [...wanted]) if ((taken.get(scope(id) + label) ?? 0) > 1) wanted.delete(id);
+
+  // Now the ids: unique across the SVG, whatever the labels repeat. A label
+  // first come keeps it bare; every later claim on the same string is minted
+  // with one more invisible character than the last, which pinhole paints as
+  // nothing and `restore` strips.
+  const minted = new Map<string, string>();
+  const used = new Set<string>();
+  for (const n of ir.nodes) {
+    const label = wanted.get(n.id) ?? n.id;
+    let id = label;
+    while (used.has(id)) id += INVISIBLE;
+    used.add(id);
+    if (id !== n.id) minted.set(n.id, id);
+  }
 
   const overrides: Record<string, NodeOverride> = {};
   const choudoufu = ir.nodes.some((n) => n.lexicon === CHOUDOUFU_LEXICON);
-  if (wanted.size === 0 && !choudoufu) return { ir, overrides, restore: (svg) => svg };
+  if (minted.size === 0 && !choudoufu) return { ir, overrides, display: minted, restore: (svg) => svg };
   const nodes = ir.nodes.map((n) => {
-    const display = wanted.get(n.id) ?? n.id;
+    const display = minted.get(n.id) ?? n.id;
     if (n.lexicon !== CHOUDOUFU_LEXICON) return display === n.id ? n : { ...n, id: display };
     // The card's second line is `kind · lexicon`, and for a choudoufu card the
     // kind IS the Terraform type — the thing the icon already stands for — so
@@ -160,26 +221,31 @@ export function cardFaces(ir: GraphIR, boxes?: Record<string, string[]>): CardFa
     return { ...n, id: display, lexicon: "" };
   });
   const back = new Map<string, string>();
-  for (const [id, label] of wanted) back.set(esc(label), esc(id));
-  const display: GraphIR = {
+  for (const [id, shown] of minted) back.set(esc(shown), esc(id));
+  const displayIr: GraphIR = {
     ...ir,
     nodes,
-    edges: ir.edges.map((e) => ({ ...e, from: wanted.get(e.from) ?? e.from, to: wanted.get(e.to) ?? e.to })),
+    edges: ir.edges.map((e) => ({ ...e, from: minted.get(e.from) ?? e.from, to: minted.get(e.to) ?? e.to })),
     groups: Object.fromEntries(
       Object.entries(ir.groups ?? {}).map(([key, value]) => [
         key,
         value && typeof value === "object" && !Array.isArray(value)
-          ? Object.fromEntries(Object.entries(value as Record<string, string[]>).map(([g, ids]) => [g, (ids ?? []).map((id) => wanted.get(id) ?? id)]))
+          ? Object.fromEntries(Object.entries(value as Record<string, string[]>).map(([g, ids]) => [g, (ids ?? []).map((id) => minted.get(id) ?? id)]))
           : value,
       ]),
     ) as GraphIR["groups"],
   };
+  // The ids first, then the character itself: after the attributes carry real
+  // ids again the only place an invisible can still be is a painted title, and
+  // nothing downstream should have to know it was ever there.
   const restore = (svg: string): string =>
     back.size === 0
       ? svg
-      : svg.replace(new RegExp(`(${ID_ATTRS.join("|")})="([^"]*)"`, "g"), (whole, attr: string, value: string) => {
-          const real = back.get(value);
-          return real === undefined ? whole : `${attr}="${real}"`;
-        });
-  return { ir: display, overrides, restore };
+      : svg
+          .replace(new RegExp(`(${ID_ATTRS.join("|")})="([^"]*)"`, "g"), (whole, attr: string, value: string) => {
+            const real = back.get(value);
+            return real === undefined ? whole : `${attr}="${real}"`;
+          })
+          .replaceAll(INVISIBLE, "");
+  return { ir: displayIr, overrides, display: minted, restore };
 }

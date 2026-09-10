@@ -129,6 +129,35 @@ jq_assert() { # <json> <jq expr that must be true> <message>
 # it), neutral (looked, and could not answer).
 counts() { printf '%s' "$1" | jq -r '[([.ir.nodes[]|select(.attrs._status=="good")]|length), ([.ir.nodes[]|select(.attrs.omission=="UNOWNED")]|length), ([.ir.nodes[]|select(.attrs._status=="neutral")]|length)] | @tsv'; }
 
+# #393/#396: the estate behold is sized against must not come back as a strip,
+# at ANY zoom. #393's wrap answered `resources` and this script asserted only
+# that one, so #396 found `logical` still 165:1 on terralith-4 and 24:1 on
+# waterpark — it renders through `renderArchitecture`, which had none of the
+# passes the entity graph gets. Every zoom the estate offers, on both routes:
+# the SPA's own five (⌘K), with the params web/app.js sends for each.
+ZOOMS=("logical|logical=1" "composites|detail=1" "resources|detail=2" "attributes|detail=3" "collapse|detail=2&collapse=1")
+CEILING=4
+shapes() { # <port> <env, or empty for an estate with no live half>
+  local port="$1" env="$2" z label params route path body dims ratio
+  for z in "${ZOOMS[@]}"; do
+    label="${z%%|*}"; params="${z#*|}"
+    for route in graph overlay; do
+      if [ "$route" = "overlay" ]; then
+        # An estate that declares no environment has no overlay to read.
+        if [ -z "$env" ]; then continue; fi
+        path="/api/overlay?env=$env&$params"
+      else
+        path="/api/graph?$params"
+      fi
+      body="$(api "$port" "$path")" || { echo "FAIL: $ENTRY: $path did not answer" >&2; exit 1; }
+      dims="$(printf '%s' "$body" | jq -r '.svg | capture("viewBox=\"0 0 (?<w>[0-9.]+) (?<h>[0-9.]+)\"") | "\(.w) x \(.h)"')"
+      ratio="$(printf '%s' "$body" | jq -r '.svg | capture("viewBox=\"0 0 (?<w>[0-9.]+) (?<h>[0-9.]+)\"") | (.w|tonumber) / (.h|tonumber)')"
+      jq_assert "$body" "(.svg | capture(\"viewBox=\\\"0 0 (?<w>[0-9.]+) (?<h>[0-9.]+)\\\"\") | (.w|tonumber) / (.h|tonumber)) < $CEILING" \
+        "$(printf '%s %s: %s (%.2f:1) — under %s:1' "$route" "$label" "$dims" "$ratio" "$CEILING")"
+    done
+  done
+}
+
 TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/behold-workbench-e2e.XXXXXX")"
 RAN=0; SKIPPED=0; i=-1
 RUN_T0=$SECONDS
@@ -189,14 +218,12 @@ while IFS=$'\x1f' read -r name env inplace local reason <&3; do
   # 301 choudoufu cards, no edges between them, and dagre's answer to that is
   # one rank — a 144010 x 316 SVG where "fit" is a one-pixel line. The wrap
   # (src/edgeless.ts) is what keeps it a picture, and this is the assertion
-  # that says so out loud, on the real estate rather than a fixture. Measured
-  # after the wrap: 8186 x 3436, 2.4:1. The count and the badge come with it —
-  # a box of 301 cards has to be able to say what it holds.
+  # that says so out loud, on the real estate rather than a fixture. #396: at
+  # every zoom, not only at `resources` — see `shapes` above. The count and the
+  # badge come with it: a box of 301 cards has to be able to say what it holds.
   if [ "$name" = "terralith-4" ]; then
+    shapes "$port" "$env"
     G2="$(api "$port" "/api/graph?detail=2")"
-    ratio="$(printf '%s' "$G2" | jq -r '.svg | capture("viewBox=\"0 0 (?<w>[0-9.]+) (?<h>[0-9.]+)\"") | (.w|tonumber) / (.h|tonumber)')"
-    jq_assert "$G2" "(.svg | capture(\"viewBox=\\\"0 0 (?<w>[0-9.]+) (?<h>[0-9.]+)\\\"\") | (.w|tonumber) / (.h|tonumber)) < 4" \
-      "$(printf 'the graph is %.2f:1 at detail 2 — not a strip' "$ratio")"
     jq_assert "$G2" '.svg | test("301 resources")' "the member box is badged with its count"
     # #393 item 1: the estate's own references, joined from chant's terraform
     # lexicon to choudoufu's roster by address (src/choudoufu-refs.ts). 266 on
@@ -236,6 +263,18 @@ while IFS=$'\x1f' read -r name env inplace local reason <&3; do
     [ "$bound2" -gt "$bound" ] || { echo "FAIL: $name: the import bound nothing" >&2; exit 1; }
     [ "$unowned2" -eq 0 ] || { echo "FAIL: $name: $unowned2 cards still read UNOWNED after the import" >&2; exit 1; }
     jq_assert "$O2" '([.ir.nodes[]|select(.attrs._status=="good")]|length) == (.ir.nodes|length)' "every card is bound after the import — the whole estate, adopted"
+  fi
+
+  # #396: waterpark is the other estate the audit measured, and the one whose
+  # `composites` zoom used to undo the resources picture (five root boxes into
+  # one named `access`). Same ceiling, same five zooms; it declares no env, so
+  # `/api/graph` alone.
+  if [ "$name" = "waterpark" ]; then
+    shapes "$port" "$env"
+    W="$(api "$port" "/api/graph?detail=1")"
+    jq_assert "$W" '(.ir.groups.byStack | keys | length) > 1' "composites keeps the root boxes"
+    jq_assert "$W" '.meta.noteShort | test("composites: same as resources on a Terraform estate")' \
+      "the strip says the zoom changed nothing on this kind of member"
   fi
 
   # #384/#390: an in-place entry is served where it sits — a Terraform estate's

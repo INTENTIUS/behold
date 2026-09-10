@@ -56,17 +56,55 @@ describe("cardFaces", () => {
     expect(face.restore('<g data-node-id="loomster/loomDb">')).toBe('<g data-node-id="loomster/loomDb">');
   });
 
-  it("keeps the full id on both cards when two members declare the same address", () => {
+  /** Two members of one split estate declaring the same address — the live-mv
+   * workbench, all 42 of its addresses over. */
+  const splitIr = (): GraphIR => ({
+    nodes: [
+      { id: "a/aws_iam_role.shared", kind: "aws_iam_role", lexicon: "choudoufu", attrs: { estate: "a" } },
+      { id: "b/aws_iam_role.shared", kind: "aws_iam_role", lexicon: "choudoufu", attrs: { estate: "b" } },
+    ],
+    edges: [],
+    groups: { byStack: { a: ["a/aws_iam_role.shared"], b: ["b/aws_iam_role.shared"] } },
+  });
+
+  it("shortens both cards when two BOXES declare the same address (#396 finding 4)", () => {
+    const ir = splitIr();
+    const face = cardFaces(ir, ir.groups.byStack);
+    // The label is the address in both boxes; the ids stay distinct, which is
+    // what the restore and dagre need and what the reader never sees.
+    expect(face.ir.nodes.map((n) => n.id.replace(/​/g, ""))).toEqual(["aws_iam_role.shared", "aws_iam_role.shared"]);
+    expect(new Set(face.ir.nodes.map((n) => n.id)).size).toBe(2);
+  });
+
+  it("puts both real ids back, and leaves no invisible in the SVG", () => {
+    const ir = splitIr();
+    const face = cardFaces(ir, ir.groups.byStack);
+    const painted = face.ir.nodes.map((n) => `<g data-node-id="${n.id}"><text>${n.id}</text></g>`).join("");
+    const restored = face.restore(painted);
+    expect(restored).toContain('data-node-id="a/aws_iam_role.shared"');
+    expect(restored).toContain('data-node-id="b/aws_iam_role.shared"');
+    expect(restored).not.toContain("​");
+    expect(restored).toContain("<text>aws_iam_role.shared</text>");
+  });
+
+  it("keeps the full id when the collision is INSIDE one box", () => {
+    // Two terraform cards in the `baseline` root declaring one address — the
+    // shortening would land both on `aws_iam_policy.boundary`, and inside a
+    // single box nothing else tells them apart.
+    const card = (id: string): GraphIR["nodes"][number] => ({
+      id,
+      kind: "aws_iam_policy",
+      lexicon: "terraform",
+      attrs: { block: "resource", address: "aws_iam_policy.boundary", root: "baseline" },
+    });
     const ir: GraphIR = {
-      nodes: [
-        { id: "a/aws_iam_role.shared", kind: "aws_iam_role", lexicon: "choudoufu", attrs: { estate: "a" } },
-        { id: "b/aws_iam_role.shared", kind: "aws_iam_role", lexicon: "choudoufu", attrs: { estate: "b" } },
-      ],
+      nodes: [card("access/baseline/aws_iam_policy.boundary"), card("access/baseline/module.twin/aws_iam_policy.boundary")],
       edges: [],
-      groups: { byStack: { a: ["a/aws_iam_role.shared"], b: ["b/aws_iam_role.shared"] } },
+      groups: { byStack: { baseline: ["access/baseline/aws_iam_policy.boundary", "access/baseline/module.twin/aws_iam_policy.boundary"] } },
     };
     const face = cardFaces(ir, ir.groups.byStack);
-    expect(face.ir.nodes.map((n) => n.id)).toEqual(["a/aws_iam_role.shared", "b/aws_iam_role.shared"]);
+    expect(face.ir.nodes.map((n) => n.id)).toEqual(ir.nodes.map((n) => n.id));
+    expect(face.display.size).toBe(0);
   });
 
   it("remaps edge endpoints with the nodes, and puts every id back", () => {
