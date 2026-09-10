@@ -87,8 +87,20 @@ preview-locked, and one load runs at a time (409 otherwise).
    box is drawn as ONE card carrying the count it was badged with (`301
    resources · 84 bound · 85 unowned · 132 neutral`, in the estate's own
    words), ids namespaced `box:<member>`, and the returned IR is the collapsed
-   one so every count and note speaks about the picture on screen. ⌘K →
-   "Collapse large boxes" / "Expand all". Below the limit it changes nothing.
+   one so every count and note speaks about the picture on screen — except its
+   NOTE, which is written about the expanded estate plus one collapse clause
+   (#396): a shut box hides what the estate references rather than changing it.
+   ⌘K → "Collapse large boxes" / "Expand all". Below the limit it changes
+   nothing. **The toggle costs no live read** (#396): a member's overlay
+   document is cached under its source stamp and the read's own options, the
+   same key half `memberIr` and #404's plan cache use, so collapse and expand
+   are re-renders of a document behold already holds. `src/overlay-ir.ts` is
+   that cache and its header is the stated exception to src/member-ir.ts's
+   "a live read is never cached"; it names everything that drops an entry —
+   `POST /api/refresh` ("Re-check live"), `GET /api/overlay?plan=1`
+   ("Re-check live with plan", which re-checks both halves), the capture that
+   ends an Op run, and the member's source moving. A change made to the account
+   by something that is not behold is what the re-check rows are for.
 3. **inspect** — a node's `sourceLoc.file` is the typed source that declared it;
    edit there to change the estate (chant is the source of truth, not behold).
 4. **find** — ⌘K also takes an ADDRESS (#393). Two characters in, the palette

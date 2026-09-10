@@ -119,3 +119,47 @@ describe("GET /api/overlay — cross-substrate anchoring (#103)", () => {
     expect(body.ir.nodes.every((n) => (n.attrs as Record<string, unknown>)._status === "good")).toBe(true);
   });
 });
+
+// #396 finding 6, the second half: the collapsed picture's caption.
+//
+// `?collapse=1` draws a box of more than 40 cards as ONE card (#393 C). The
+// notes were then written about THAT graph — one node, no edges — so an estate
+// with 266 real references came back with #393's retired "no edges at this
+// detail — sourceRef/dependsOn …", which was false about the estate and about
+// the tier. A shut box hides what the estate references; it does not change it.
+describe("the collapsed view carries the expanded view's note (#396 finding 6)", () => {
+  /** A member big enough to be shut, with references inside it. */
+  const member = (cards: number): GraphIR => {
+    const nodes = Array.from({ length: cards }, (_, i) => ({ id: `r${i}`, kind: "AWS::IAM::Role", lexicon: "aws", attrs: { _status: "good" } }));
+    return { nodes: nodes as unknown as GraphIR["nodes"], edges: [{ from: "r1", to: "r0", kind: "ref" }], groups: {} };
+  };
+
+  const estate = () => {
+    const broadcaster = new Broadcaster();
+    return createApp(
+      { projectDir: "/big", projectDirs: ["/big", "/small"], port: 0 },
+      broadcaster,
+      new FrameBuffer(),
+      new OpRunner({ projectDir: "/big", broadcaster, onDone: () => {} }),
+    );
+  };
+
+  beforeEach(() => {
+    vi.mocked(graphIr).mockReset();
+    vi.mocked(graphIr).mockImplementation((async (dir: string) => (dir === "/big" ? member(41) : member(1))) as never);
+  });
+
+  it("says nothing about edges when the estate has them, collapsed or not", async () => {
+    const app = estate();
+    const expanded = (await (await app.request("/api/overlay?env=local")).json()) as { meta: { note?: string } };
+    const collapsed = (await (await app.request("/api/overlay?env=local&collapse=1")).json()) as { ir: GraphIR; meta: { note?: string } };
+
+    // It really collapsed: the 41-card box is one card now.
+    expect(collapsed.ir.nodes.length).toBeLessThan(41);
+    expect(collapsed.meta.note ?? "").not.toContain("no edges");
+    // The collapse clause is what the collapsed view adds, and the only thing.
+    expect(collapsed.meta.note).toContain("drawn as one card");
+    const withoutCollapse = (collapsed.meta.note ?? "").split(" · ").filter((c) => !c.startsWith("collapsed:"));
+    expect(withoutCollapse.join(" · ")).toBe(expanded.meta.note ?? "");
+  });
+});
