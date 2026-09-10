@@ -1562,12 +1562,21 @@ function renderCarveState(host, state) {
  */
 function copyableRow(add, key, text, title) {
   const wrap = document.createElement("span");
-  wrap.style.cssText = "display:flex;gap:6px;align-items:baseline;min-width:0";
+  // `center`, not `baseline`: an `overflow: hidden` flex item takes its bottom
+  // margin edge as its baseline, so the clipped line below would have dragged
+  // the copy button down with it.
+  wrap.style.cssText = "display:flex;gap:6px;align-items:center;min-width:0";
   const line = document.createElement("code");
   line.className = "grow";
-  line.style.cssText = "flex:1;min-width:0;overflow-wrap:anywhere";
+  // #396 item 7c: ONE line, clipped. `tofu-estate=… tofu-address=…` wrapped
+  // onto three lines in the 260px pane and pushed everything the card had to
+  // say off the bottom — for a string nobody reads off the screen anyway,
+  // because the copy button beside it is how it gets used. The whole of it is
+  // on this row's tooltip, on the button's, and in the clipboard.
+  line.style.cssText = "flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
   line.textContent = text;
-  const copy = actButton("copy", () => copyToClipboard(text, copy), title);
+  line.title = text;
+  const copy = actButton("copy", () => copyToClipboard(text, copy), title ? `${title}:\n${text}` : text);
   wrap.append(line, copy);
   add(key, wrap);
 }
@@ -3523,6 +3532,7 @@ function currentSvg() {
 function applyVB() {
   const s = currentSvg();
   if (s && vb) s.setAttribute("viewBox", vb.join(" "));
+  scaleBoxLabels(); // #396 item 7b: box titles/badges keep a legible size at every zoom
 }
 
 // #396 item 2: the panel is `position: fixed` and floats OVER the graph pane
@@ -3604,6 +3614,97 @@ function watchPaneForFit(host) {
   new ResizeObserver(() => {
     if (vbAtFit) fitGraph();
   }).observe(host);
+}
+
+// --- #396 item 7b: box titles and badges that survive the fit ---------------
+//
+// pinhole draws a group box's title at a flat `font-size="12"` and its badge at
+// `11`, in viewBox UNITS. That reads as 12px on a graph whose fit is 1:1 and as
+// 7px on terralith-4, whose box is 8000 units wide — the one label that says
+// which member 301 cards belong to, and the one that counts them, are the two
+// things on the canvas a person cannot read at the zoom they arrive at.
+//
+// So the label is given a floor in SCREEN pixels: its size in units is raised
+// by the inverse of the current scale until it renders at its natural size, and
+// never below it, so anything already legible is untouched (zoomed IN, the
+// attribute is left at 12 and grows with the graph, exactly as before). The
+// anchor never moves — x, y and `text-anchor` are pinhole's — so a title stays
+// welded to its box's top-left corner and a badge to its top-right through
+// every pan and zoom; only the type gets bigger.
+//
+// The floor yields to the box: a label may not grow past a fraction of the
+// box's height, nor past its width. A sub-box too small to hold readable type
+// at this zoom says so by staying small, rather than by writing across its
+// neighbours.
+const BOX_LABEL_GUTTER = 34; // units below a box's top edge that the title row occupies
+const BOX_LABEL_MAX_H = 8; // a label may be at most box height / this
+const BOX_LABEL_EM = 0.62; // rough advance width per char, as a fraction of the size
+
+let boxLabelCache = { svg: null, labels: [] };
+let boxLabelScale = null;
+
+/** The `<text>` elements pinhole put in each group box's title gutter, with the
+ * box they belong to and the size it drew them at. Matched by geometry rather
+ * than by sibling order: a box's optional identity mark sits between the title
+ * and the badge, and #228's layout pass lifts the rect and its title into a
+ * wrapper `<g>` after the render, so neither order nor a common parent holds.
+ * What geometry alone would let through — a card's own text, an edge chip's —
+ * is excluded by the ancestor it sits under. */
+function boxLabelsOf(svg) {
+  if (boxLabelCache.svg === svg) return boxLabelCache.labels;
+  const labels = [];
+  const boxes = [];
+  for (const rect of svg.querySelectorAll("rect[data-group-id]")) {
+    const b = {
+      x: parseFloat(rect.getAttribute("x")),
+      y: parseFloat(rect.getAttribute("y")),
+      w: parseFloat(rect.getAttribute("width")),
+      h: parseFloat(rect.getAttribute("height")),
+    };
+    if ([b.x, b.y, b.w, b.h].every((n) => Number.isFinite(n))) boxes.push(b);
+  }
+  if (boxes.length) {
+    for (const t of svg.querySelectorAll("text")) {
+      const x = parseFloat(t.getAttribute("x"));
+      const y = parseFloat(t.getAttribute("y"));
+      // pinhole's own size, stashed the first time so a re-index can never
+      // read a size this pass already raised as if it were the natural one.
+      const base = parseFloat(t.dataset.pinFont ?? t.getAttribute("font-size"));
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(base)) continue;
+      // Not a card's own text (inside its `g[data-node-id]`), not an edge
+      // chip's (inside the edge's `g`), not a radial wedge label behold adds
+      // itself. What is left at a box's title row IS the box's title row.
+      if (t.closest("[data-node-id], [data-edge-from], [data-edge-to], #radial-labels")) continue;
+      const box = boxes.find((b) => y > b.y && y <= b.y + BOX_LABEL_GUTTER && x >= b.x - 2 && x <= b.x + b.w + 2);
+      if (!box) continue;
+      t.dataset.pinFont = String(base);
+      labels.push({ el: t, box, base });
+    }
+  }
+  boxLabelCache = { svg, labels };
+  boxLabelScale = null;
+  return labels;
+}
+
+/** Re-size every box label for the current zoom. Cheap and idempotent: the
+ * scale is remembered, so the pan handler's stream of `applyVB` calls (which
+ * move the viewBox without changing its width) touches no attribute at all. */
+function scaleBoxLabels() {
+  const svg = currentSvg();
+  if (!svg || !vb) return;
+  const labels = boxLabelsOf(svg);
+  if (!labels.length) return;
+  const pane = svg.getBoundingClientRect();
+  if (!(pane.width > 0 && pane.height > 0)) return;
+  const scale = Math.min(pane.width / vb[2], pane.height / vb[3]);
+  if (!(scale > 0) || scale === boxLabelScale) return;
+  boxLabelScale = scale;
+  for (const l of labels) {
+    const chars = Math.max(4, (l.el.textContent || "").length);
+    const cap = Math.max(l.base, Math.min(l.box.h / BOX_LABEL_MAX_H, l.box.w / (chars * BOX_LABEL_EM)));
+    const size = Math.max(l.base, Math.min(l.base / scale, cap));
+    l.el.setAttribute("font-size", String(Math.round(size * 10) / 10));
+  }
 }
 
 // How much of the viewBox one card should take when ⌘K lands on it (#393): the

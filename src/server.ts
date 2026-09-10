@@ -2289,9 +2289,19 @@ export function createApp(
       // with mode: "logical"), so this is down to `components` — which is a
       // chant projection of one project's own component DAG, not a pass over
       // the composed IR, and genuinely has nothing to run here.
-      const estateLensNote = multi && components
-        ? "the components lens doesn't apply to a composed estate yet — showing the composed entity graph"
-        : undefined;
+      // #396 item 7a: "a composed estate" is a sentence about several members,
+      // and most of what behold serves this way is one — `behold demo
+      // terralith-4-adopt` is a single directory, and every estate the audit
+      // ran on except the workbench is too. Telling a reader their estate is
+      // composed, on the one screen that is already explaining itself, hands
+      // them a shape their estate does not have.
+      const composedEstate = (cfg.projectDirs?.length ?? 0) > 1;
+      const estateLensNote =
+        multi && components
+          ? composedEstate
+            ? "the components lens doesn't apply to a composed estate yet — showing the composed entity graph"
+            : "the components lens doesn't apply to this estate yet — showing its entity graph"
+          : undefined;
       // #322: the 5th `detail` argument, so `edgelessNote` can tell a real
       // edgeless project from one graphed below the tier that has its edges
       // (see /api/overlay's single-project branch, which already passed this)

@@ -11,7 +11,22 @@ import { chromium } from "playwright";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { startStub, JSON_FIXTURE, BOX, EDGE_VIA, PAL_FAR, PAL_MEMBER, BEH_BADGE, BEH_REFUSAL, BEH_ABSENT, BEH_DIAGNOSTIC } from "./stub.mjs";
+import {
+  startStub,
+  JSON_FIXTURE,
+  BOX,
+  EDGE_VIA,
+  PAL_FAR,
+  PAL_MEMBER,
+  NON_CHANT_BOX,
+  NON_CHANT_BADGE,
+  NON_CHANT_COMPONENTS_NOTE,
+  CHOUDOUFU_ADOPT,
+  BEH_BADGE,
+  BEH_REFUSAL,
+  BEH_ABSENT,
+  BEH_DIAGNOSTIC,
+} from "./stub.mjs";
 import { THEMES, DEFAULT_THEME } from "../web/themes.js";
 import { tokensFor, pinTokensFor, colorForCategory, setTheme, hexToOklch, contrast } from "../web/theme.js";
 import { helmIconFor, PLATE_FILL } from "../src/icon-packs.ts";
@@ -1131,6 +1146,29 @@ try {
     await wbPage.waitForTimeout(200);
     check("…and re-opening it makes room again", (await leftmostCard()).left >= (await panelRight()));
 
+    // ---- #396 item 7b: the box's own labels survive the fit ----------------
+    // pinhole draws them at a flat 12 / 11 SVG units, which on a box 7500 units
+    // wide is ~7px at fit. They keep pinhole's anchor and gain size instead.
+    const boxLabel = (text) =>
+      wbPage.evaluate((t) => {
+        // Not `svg > text`: #228's layout pass lifts a box's rect and its title
+        // into a `g[data-layout-box]` after the render, so the title is a
+        // grandchild and the badge beside it is not.
+        const el = [...document.querySelectorAll("#graph svg text")].find((e) => e.textContent === t);
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { px: r.height, units: parseFloat(el.getAttribute("font-size")), x: el.getAttribute("x"), y: el.getAttribute("y") };
+      }, text);
+    const boxTitle = await boxLabel(NON_CHANT_BOX.id);
+    const boxBadge = await boxLabel(NON_CHANT_BADGE);
+    check("the box title is legible at fit, not 7px", !!boxTitle && boxTitle.px >= 9);
+    check("the count badge is too", !!boxBadge && boxBadge.px >= 9);
+    check("…which took growing them in viewBox units", boxTitle.units > 12 && boxBadge.units > 11);
+    check(
+      "…and neither moved: pinhole's anchor is still pinhole's",
+      boxTitle.x === String(NON_CHANT_BOX.x + 18) && boxTitle.y === String(NON_CHANT_BOX.y + 23) && boxBadge.x === String(NON_CHANT_BOX.x + NON_CHANT_BOX.w - 16),
+    );
+
     // Item 2: no runtime stop, on either surface — the palette and the View tab
     // read the same list, and a stop must not appear in one and not the other.
     await wbPage.click('#panel-tabs button[data-tab="view"]');
@@ -1200,11 +1238,24 @@ try {
     );
     await wbPage.screenshot({ path: join(SHOTS, "11-palette-address.png") });
 
+    await wbPage.screenshot({ path: join(SHOTS, "9-non-chant-estate.png") });
+
+    // ---- #396 item 7a: a lone estate is not a composed one -----------------
+    // Picking `components` here still gets the honest note (#393 item 1 kept
+    // that), and the note must not tell the reader their one-directory estate
+    // has members it does not have.
+    await wbPage.click('#panel-tabs button[data-tab="view"]');
+    await wbPage.waitForTimeout(100);
+    await wbPage.click('#panel-zoom button:text-is("components")');
+    await wbPage.waitForTimeout(400);
+    const lensNote = await wbPage.locator("#statusbar").innerText();
+    check("the components note on a lone estate says 'this estate'", lensNote.includes(NON_CHANT_COMPONENTS_NOTE));
+    check("…and never calls it composed", !/composed/.test(lensNote));
+
     // Item 3, from the browser's own side: nothing red in the console on the
     // way to that first screen.
     check("no console errors on a non-chant estate's boot", wbErrors.length === 0);
     if (wbErrors.length) console.error("non-chant page errors:", wbErrors);
-    await wbPage.screenshot({ path: join(SHOTS, "9-non-chant-estate.png") });
   } finally {
     await wbPage.close();
     wbServer.close();
@@ -1257,6 +1308,24 @@ try {
     check("the LIVE section names ownership in choudoufu's words", /ownership[\s\S]{0,40}unowned/.test(chdfPaneText));
     check("…and the word `foreign` is nowhere on the card", !chdfPaneText.includes("foreign"));
     check("…nor is `managed`", !chdfPaneText.includes("managed"));
+
+    // ---- #396 item 7c: the adopt line is ONE line -------------------------
+    // `tofu-estate=… tofu-address=…` wrapped onto three lines in a 260px pane
+    // and pushed the rest of the card off the bottom. Clipped now, with the
+    // whole of it on both tooltips and in the clipboard.
+    const adoptLine = await adoptRow.locator("code").first().evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return {
+        h: el.getBoundingClientRect().height,
+        lh: parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.45,
+        clipped: el.scrollWidth > el.clientWidth + 1,
+        title: el.title,
+      };
+    });
+    check("the adopt line occupies one line, not three", adoptLine.h <= adoptLine.lh * 1.5);
+    check("…because it is clipped rather than wrapped", adoptLine.clipped);
+    check("…with the whole of it on the row's own tooltip", adoptLine.title === CHOUDOUFU_ADOPT);
+    check("…and on the copy button's", (await copy.getAttribute("title")).includes(CHOUDOUFU_ADOPT));
 
     await copy.click();
     await chdfPage.waitForTimeout(100);

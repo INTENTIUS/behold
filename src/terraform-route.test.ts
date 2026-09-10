@@ -214,8 +214,10 @@ describe("GET /api/graph over a bare Terraform directory (#384)", () => {
 
     // The SPA no longer BOOTS here (item 1), but the stop is still pickable and
     // the picker must not look applied: the reason comes first, and the
-    // estate's own note follows it rather than replacing it.
-    expect(meta.note).toMatch(/^the components lens doesn't apply to a composed estate yet/);
+    // estate's own note follows it rather than replacing it. #396 item 7a: one
+    // served directory is not a composed estate, and the sentence says so.
+    expect(meta.note).toMatch(/^the components lens doesn't apply to this estate yet/);
+    expect(meta.note ?? "").not.toContain("composed");
     expect(meta.note).toContain("2 roots — baseline, prod");
   });
 

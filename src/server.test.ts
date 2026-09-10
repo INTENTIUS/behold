@@ -833,6 +833,20 @@ describe("GET /api/graph — estate composition runs the edge passes (#188)", ()
     expect(body.meta.note).toMatch(/components lens doesn't apply to a composed estate/);
   });
 
+  // #396 item 7a: an estate of one member is not composed, and the note that
+  // apologises for the lens must not tell its reader otherwise.
+  it("…and says 'this estate' when the estate has one member (#396)", { timeout: 20_000 }, async () => {
+    const a = tmpProj("solo");
+    const EMPTY = JSON.stringify({ nodes: [], edges: [], groups: {} });
+    vi.mocked(spawnMock).mockImplementation((() => fakeProc(0, EMPTY)) as never);
+    const broadcaster = new Broadcaster();
+    const runner = new OpRunner({ projectDir: a, broadcaster, onDone: () => {} });
+    const app = createApp({ projectDir: a, projectDirs: [a], port: 0 }, broadcaster, new FrameBuffer(), runner);
+    const body = (await (await app.request("/api/graph?components=1")).json()) as { meta: { note?: string } };
+    expect(body.meta.note).toMatch(/components lens doesn't apply to this estate yet/);
+    expect(body.meta.note ?? "").not.toMatch(/composed/);
+  });
+
   // #224 turned that note off for `logical`, which now runs (see the block
   // below); the lens that still genuinely has nothing to run keeps it, and a
   // plain estate request stays note-free.
