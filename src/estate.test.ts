@@ -25,6 +25,7 @@ import {
   withoutJoinedMembers,
 } from "./estate.ts";
 import { resetMemberIrCache } from "./member-ir.ts";
+import { resetOverlayCache } from "./overlay-ir.ts";
 import { registerMemberKind } from "./member-kind.ts";
 import { hasTerraformRoots } from "./terraform-member.ts";
 import { attachRuntimeContainment } from "./overlay.ts";
@@ -109,7 +110,10 @@ afterAll(() => {
 
 // #307 put a per-member source-IR cache behind these reads; it is process-wide,
 // so one test's warm members must not be another's.
-beforeEach(() => resetMemberIrCache());
+beforeEach(() => {
+  resetMemberIrCache();
+  resetOverlayCache();
+});
 
 /** A miniature of the flux-estate demo on disk: a control plane and an app
  * project under one repo root, the app's `manifests/` really there, and a
@@ -527,11 +531,17 @@ describe("estate reads reuse an unchanged member's source IR (#307)", () => {
 
     const second = await composeEstateOverlay([controlPlane, appB], { env: "local" }, (ir) => ir);
     // The bindings pass is source-only and the source has not moved: no new
-    // process. The live pass is a cluster read and always is one.
-    expect([srcCalls(), liveCalls()]).toEqual([2, 4]);
+    // process. #396 finding 6: nor is the live pass one — a read that did not
+    // ask to observe again is served the document each member was last read
+    // as, which is what makes `?collapse=1` a re-render.
+    expect([srcCalls(), liveCalls()]).toEqual([2, 2]);
     // Same picture, and the same join — a cached binding is still a binding.
     expect(second.ir.nodes.map((n) => n.id).sort()).toEqual(first.ir.nodes.map((n) => n.id).sort());
     expect(second.joined).toEqual([{ name: "app-b", namespace: "app-b" }]);
+
+    // And a caller that DID ask observes again, per member.
+    await composeEstateOverlay([controlPlane, appB], { env: "local" }, (ir) => ir, { fresh: true });
+    expect([srcCalls(), liveCalls()]).toEqual([2, 4]);
   });
 
   it("re-reads the member whose source moved and no other", async () => {
@@ -558,6 +568,7 @@ describe("estate reads dispatch on member kind (#368)", () => {
 
   beforeEach(() => {
     resetMemberIrCache();
+    resetOverlayCache();
     vi.mocked(graphIr).mockReset();
     fakeRead.mockReset();
     fakeTool.mockClear();

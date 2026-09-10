@@ -456,6 +456,9 @@ const NON_CHANT_NOTE =
   "modules/persona (called as a module, never applied on its own); showing the estate — 108 variables, 53 outputs, 14 terraform blocks, " +
   "10 locals blocks, 4 providers not drawn (outputs and variables appear at detail 3 — ⌘K → attributes)";
 const NON_CHANT_NOTE_SHORT = "5 roots · 2 skipped · 189 blocks not drawn";
+/** #396 item 7a, verbatim from `/api/graph?components=1` over a served estate
+ * of one member (`estateLensNote`, src/server.ts). */
+export const NON_CHANT_COMPONENTS_NOTE = "the components lens doesn't apply to this estate yet — showing its entity graph";
 const NON_CHANT_PROJECT = {
   projectDir: "/estates/waterpark/access",
   recents: [],
@@ -478,7 +481,7 @@ const NON_CHANT_PROJECT = {
  * and the inspect status row from it, and this is what proves it reaches all
  * three.
  */
-const CHOUDOUFU_ADOPT = "tofu-estate=terralith-4 tofu-address=aws_cloudwatch_log_group.extra";
+export const CHOUDOUFU_ADOPT = "tofu-estate=terralith-4 tofu-address=aws_cloudwatch_log_group.extra";
 const CHOUDOUFU_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 300" width="620" height="300">
   <style>:root{--pin-bg0:#0d1117;--pin-text:#e6edf3}</style>
   <rect x="0" y="0" width="620" height="300" fill="var(--pin-bg0, #0d1117)"/>
@@ -494,12 +497,21 @@ const CHOUDOUFU_IR = {
       id: "terralith-4/aws_ecs_cluster.main",
       kind: "aws_ecs_cluster",
       lexicon: "choudoufu",
+      // #396 item 5: `paintChoudoufu` writes chant's `owned` / `foreign` into
+      // the IR node's `ownership` field (chant's own contract for it,
+      // src/choudoufu-live.ts) — so the pane's LIVE section is where a
+      // choudoufu card said `foreign` under a status of `unowned`. Served here
+      // exactly as the server serves it, because the fix is in the render.
+      physicalId: "terralith-4-main",
+      ownership: "owned",
       attrs: { estate: "terralith-4", bound: "by derived identity (the name the configuration states) — no marker on the object yet", _status: "good" },
     },
     {
       id: "terralith-4/aws_cloudwatch_log_group.extra",
       kind: "aws_cloudwatch_log_group",
       lexicon: "choudoufu",
+      physicalId: "/terralith-4/extra",
+      ownership: "foreign",
       attrs: {
         estate: "terralith-4",
         adopt: CHOUDOUFU_ADOPT,
@@ -559,9 +571,19 @@ const palCardSvg = (c) => `
     <text x="${c.x + 16}" y="${c.y + 30}" font-size="13" fill="var(--pin-text, #e6edf3)">${c.id}</text>
     <text x="${c.x + 16}" y="${c.y + 50}" font-size="10" fill="var(--pin-textMuted, #8b949e)">${c.kind}</text>
   </g>`;
+// #396 item 7b: the box's title and its count badge, drawn where pinhole draws
+// them (`groupBox`, @intentius/pinhole) — `x + 18` / the right gutter, both on
+// the `y + 23` title row, at a flat 12 and 11 SVG units. On a box 7500 units
+// wide that is the whole of the finding: the two labels that say which member
+// 301 cards belong to and how many of them are bound render at about 7px at
+// fit. They are here so the smoke can measure them on screen.
+export const NON_CHANT_BOX = { id: PAL_MEMBER, x: 60, y: 820, w: 7500, h: 1900 };
+export const NON_CHANT_BADGE = "301 resources · all bound";
 const NON_CHANT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8000 3000" width="8000" height="3000">
   <rect x="0" y="0" width="8000" height="3000" fill="var(--pin-bg0, #0d1117)"/>
-  <rect data-group-id="${PAL_MEMBER}" x="60" y="820" width="7500" height="1900" rx="10" fill="none" stroke="var(--pin-edge, #444)"/>
+  <rect data-group-id="${NON_CHANT_BOX.id}" x="${NON_CHANT_BOX.x}" y="${NON_CHANT_BOX.y}" width="${NON_CHANT_BOX.w}" height="${NON_CHANT_BOX.h}" rx="10" fill="none" stroke="var(--pin-edge, #444)"/>
+  <text x="${NON_CHANT_BOX.x + 18}" y="${NON_CHANT_BOX.y + 23}" fill="var(--pin-textMuted, #8b949e)" font-size="12" font-weight="700" letter-spacing=".5">${PAL_MEMBER}</text>
+  <text x="${NON_CHANT_BOX.x + NON_CHANT_BOX.w - 16}" y="${NON_CHANT_BOX.y + 23}" text-anchor="end" fill="var(--pin-textMuted, #8b949e)" font-size="11" font-weight="600">${NON_CHANT_BADGE}</text>
 ${palCards.map(palCardSvg).join("\n")}
 </svg>`;
 const NON_CHANT_IR = {
@@ -911,10 +933,22 @@ export function startStub(port, { carve = false, nonChant = false, choudoufu = f
       // The same cards the ordinary stub paints — what differs is the meta,
       // which is the whole point here: one member, a long note, a short one.
       if (path === "/api/graph" || path === "/api/overlay") {
+        // #396 item 7a: picking `components` on this estate is the one screen
+        // that has to explain itself, and the server's sentence for an estate
+        // of ONE member does not call it composed (src/server.ts).
+        const components = url.searchParams.get("components") === "1";
         return json({
           ir: NON_CHANT_IR,
           svg: NON_CHANT_SVG,
-          meta: { projectDir: NON_CHANT_PROJECT.projectDir, env: "live", tier: null, target: null, estate: 1, note: NON_CHANT_NOTE, noteShort: NON_CHANT_NOTE_SHORT },
+          meta: {
+            projectDir: NON_CHANT_PROJECT.projectDir,
+            env: "live",
+            tier: null,
+            target: null,
+            estate: 1,
+            note: components ? NON_CHANT_COMPONENTS_NOTE : NON_CHANT_NOTE,
+            ...(components ? {} : { noteShort: NON_CHANT_NOTE_SHORT }),
+          },
         });
       }
       if (path === "/api/substrates") return json({ substrates: [] });

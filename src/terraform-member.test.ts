@@ -12,6 +12,7 @@ import {
   hasTerraformRoots,
   readTerraformMember,
   terraformReaderState,
+  terraformReadDetail,
   terraformRootsNote,
   terraformScratchConfig,
   terraformScratchDir,
@@ -202,5 +203,17 @@ describe("the reader behold does not install (#384)", () => {
     await expect(readTerraformMember(empty, {}, { lexicon: { pkg: TERRAFORM_LEXICON_PKG, version: "0.61.0" }, parser: { pkg: HCL_PARSER_PKG, version: "0.21.0" }, from: empty })).rejects.toThrow(
       /holds no Terraform root/,
     );
+  });
+});
+
+describe("the tier the reader is asked for (#396 finding 3)", () => {
+  it("never goes below detail 2, and passes 3 through", () => {
+    // `address` and `root` are a block's name and the root it sits in, not its
+    // attributes — and the lexicon drops them first. Below 2, water park came
+    // back as one box named `access` with every card titled by its whole
+    // composed id, which is the resources picture undone by the composites
+    // zoom. What a zoom DRAWS is `filterTerraformCards` at the caller's own
+    // detail and is untouched by this.
+    expect([undefined, 0, 1, 2, 3].map(terraformReadDetail)).toEqual([2, 2, 2, 2, 3]);
   });
 });

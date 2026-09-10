@@ -26,6 +26,7 @@ import { join, resolve, sep } from "node:path";
 import { composeStacks, shortStackNames, type GraphIR } from "@intentius/pinhole";
 import { meetsFloor, resolveChant, type GraphOptions } from "./chant.ts";
 import { chantVia, memberIr, type MemberVia } from "./member-ir.ts";
+import { overlayIr } from "./overlay-ir.ts";
 import { memberKindOf, memberKindSpec, type MemberKind } from "./member-kind.ts";
 import { CLUSTER_SCOPED } from "./zoom-notes.ts";
 
@@ -106,8 +107,14 @@ const memberViaFor = (dir: string): MemberVia => memberKindSpec(memberKindOf(dir
 /** A member's source IR: cached (#307), read by the member's own kind. */
 const memberSource = (dir: string, opts: GraphOptions): Promise<GraphIR> => memberIr(dir, opts, memberViaFor(dir));
 
-/** A member's live read: never cached, by the member's own kind. */
-const memberLive = (dir: string, opts: GraphOptions): Promise<GraphIR> => memberViaFor(dir).read(dir, opts);
+/** A member's live read, by the member's own kind — served from the overlay
+ * document the member was last read as when nothing behold knows about has
+ * moved (#396 finding 6), so `?collapse=1` is a re-render rather than a second
+ * `live-ls`/`live-plan` pass. `fresh` is a caller that asked to observe again;
+ * it bypasses the entry and replaces it. The invalidation rule, and the
+ * exception it takes to src/member-ir.ts's "a live read is never cached", are
+ * in src/overlay-ir.ts's header. */
+const memberLive = (dir: string, opts: GraphOptions, fresh: boolean): Promise<GraphIR> => overlayIr(dir, opts, memberViaFor(dir), fresh);
 
 /** Graph each project's source and compose them into one estate IR. */
 export async function composeEstate(projectDirs: string[], opts: GraphOptions = {}): Promise<GraphIR> {
@@ -437,6 +444,11 @@ export async function composeEstateOverlay(
   projectDirs: string[],
   opts: GraphOptions,
   classify: (ir: GraphIR) => GraphIR,
+  /** The caller asked the account to be looked at again — the palette's
+   * re-check rows (#396 finding 6). Absent, a member whose source has not
+   * moved is served the document it was last read as, so a collapse toggle
+   * costs a re-render and not a second live pass. */
+  observe: { fresh?: boolean } = {},
 ): Promise<EstateOverlayResult> {
   const names = shortStackNames(projectDirs);
   const unobserved: { name: string; reason: string }[] = [];
@@ -452,7 +464,7 @@ export async function composeEstateOverlay(
     const namespace = scopes.get(dir);
     try {
       const live = { ...opts, live: true, overlay: true, ...(namespace ? { namespace } : {}) };
-      const read = await memberLive(dir, live);
+      const read = await memberLive(dir, live, observe.fresh === true);
       // Before composition, while the member's own read is still whole — see
       // `memberMeta` on the result.
       const own = (read as { meta?: unknown }).meta;

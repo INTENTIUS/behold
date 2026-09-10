@@ -7,6 +7,7 @@ import { createApp } from "./server.ts";
 import { Broadcaster } from "./events.ts";
 import { FrameBuffer } from "./frames.ts";
 import { OpRunner } from "./op-runner.ts";
+import { resetOverlayCache } from "./overlay-ir.ts";
 
 // #371: the move routes over a two-member choudoufu estate on disk, with the
 // choudoufu spawn answered from the recorded documents — no binary, no cloud.
@@ -278,5 +279,55 @@ describe("what does not exist (#371)", () => {
     }
     const api = (await (await app.request("/api")).json()) as { routes: Array<{ path: string; method: string }> };
     expect(api.routes.some((r) => r.path.startsWith("/api/choudoufu") && r.method !== "GET")).toBe(false);
+  });
+});
+
+// #396 finding 6: the collapse toggle re-ran the live read. "Collapse large
+// boxes" and "Expand all" each re-fetch `/api/overlay`, and each fetch re-ran
+// `live-ls` and `live-plan` per member — four seconds on `terralith-4`, with
+// the graph frozen, to draw the same document a different way.
+describe("collapse and expand are re-renders, not second live reads (#396 finding 6)", () => {
+  const observes = (spawns: string[][]): number => spawns.filter((a) => a[0] === "live-ls" || a[0] === "live-plan").length;
+
+  it("serves both pictures from one live read per member", async () => {
+    const spawns: string[][] = [];
+    const { app } = served(spawns);
+    resetOverlayCache();
+
+    await app.request("/api/overlay?env=live");
+    const once = observes(spawns);
+    expect(once).toBe(4); // two choudoufu members, two documents each
+
+    await app.request("/api/overlay?env=live&collapse=1"); // "Collapse large boxes"
+    await app.request("/api/overlay?env=live"); // "Expand all"
+
+    expect(observes(spawns)).toBe(once);
+  });
+
+  it("observes again when the palette asks — a re-check re-checks both halves", async () => {
+    const spawns: string[][] = [];
+    const { app } = served(spawns);
+    resetOverlayCache();
+
+    await app.request("/api/overlay?env=live");
+    const once = observes(spawns);
+    // "Re-check live with plan (attribute drift)" — the ownership read behind
+    // the plan is fresh too, or the two halves would describe two moments.
+    await app.request("/api/overlay?env=live&plan=1");
+    expect(observes(spawns)).toBe(once * 2);
+  });
+
+  it("observes again after a member's source moves", async () => {
+    const spawns: string[][] = [];
+    const { app, mono } = served(spawns);
+    resetOverlayCache();
+
+    await app.request("/api/overlay?env=live");
+    const once = observes(spawns);
+    writeFileSync(join(mono, "extra.tf"), '# a change to the configuration\n');
+    await app.request("/api/overlay?env=live");
+
+    // The moved member is read again; the one that did not move is not.
+    expect(observes(spawns)).toBe(once + 2);
   });
 });

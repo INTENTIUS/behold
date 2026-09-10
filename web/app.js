@@ -329,6 +329,29 @@ function vocabularyNote() {
   const v = lastMeta && lastMeta.vocabulary;
   return (v && v.note) || "";
 }
+// #396 item 5: the inspect pane's LIVE section prints `ownership` raw, and
+// `ownership` is a word two different readers write into the same field.
+// chant's live reader answers it from the resource's own marker — `owned` /
+// `foreign`, which is chant's contract for that field (chant graph-ir.d.ts).
+// src/choudoufu-live.ts has no marker to read: it writes the same two words for
+// choudoufu's `bound[]` and `unowned[]`, so an unowned card read `status:
+// unowned` and, two rows below it, `ownership: foreign` — chant's word for
+// choudoufu's state, the last of the four #393 item 8 did not reach.
+//
+// So this row joins the legend, the counts and the status row in being rendered
+// through the estate's own vocabulary rather than printed. Translated ONLY when
+// the estate's members are all of a kind that has its own words for these
+// colours (`vocabulary.of`): on a chant estate, and on a mixed one — which
+// keeps chant's words on the legend by design and says so in its tooltip — the
+// value is printed exactly as it is today, which is the point. The mapping is
+// value → the colour that value means → that colour's word, so it needs no
+// table of its own beyond the two words chant's field can hold.
+const OWNERSHIP_STATUS = { owned: "good", foreign: "warn" };
+function ownershipLabel(value) {
+  const v = lastMeta && lastMeta.vocabulary;
+  if (!v || !v.labels || !v.of || v.of === "chant" || v.of === "mixed") return value;
+  return v.labels[OWNERSHIP_STATUS[value]] || value;
+}
 // #404: whether a plan was read for this overlay, and how many cards it would
 // change. `{read: false}` and `{read: true, drifted: 0}` are DIFFERENT answers
 // — "nobody looked" versus "looked, nothing drifted" — and the legend must not
@@ -708,7 +731,7 @@ function inspect(node) {
   if (node.physicalId || node.ownership) {
     const live = section("live");
     if (node.physicalId) live("physical id", node.physicalId);
-    if (node.ownership) live("ownership", node.ownership);
+    if (node.ownership) live("ownership", ownershipLabel(node.ownership)); // #396 item 5: the estate's own word for it
   } else if (liveStatus) {
     // The colour alone doesn't carry chant's verdict or its reasoning — spell
     // both out here (never rely on the node's colour alone, #57 accessibility
@@ -994,7 +1017,7 @@ function renderObserved(panel, o, health, healthDetail) {
   if (o.type) add("type", o.type);
   if (o.status) add("status", o.status, HEALTH_COLOR[health] || undefined);
   if (o.physicalId) add("physical id", o.physicalId);
-  if (o.ownership) add("ownership", o.ownership);
+  if (o.ownership) add("ownership", ownershipLabel(o.ownership)); // #396 item 5: same, off /api/diff
   if (o.lastUpdated) add("last updated", o.lastUpdated);
   // What the object's own controller says is wrong with it (#86, chant#1401).
   // Placed with health and status rather than among the attributes below,
@@ -1539,12 +1562,21 @@ function renderCarveState(host, state) {
  */
 function copyableRow(add, key, text, title) {
   const wrap = document.createElement("span");
-  wrap.style.cssText = "display:flex;gap:6px;align-items:baseline;min-width:0";
+  // `center`, not `baseline`: an `overflow: hidden` flex item takes its bottom
+  // margin edge as its baseline, so the clipped line below would have dragged
+  // the copy button down with it.
+  wrap.style.cssText = "display:flex;gap:6px;align-items:center;min-width:0";
   const line = document.createElement("code");
   line.className = "grow";
-  line.style.cssText = "flex:1;min-width:0;overflow-wrap:anywhere";
+  // #396 item 7c: ONE line, clipped. `tofu-estate=… tofu-address=…` wrapped
+  // onto three lines in the 260px pane and pushed everything the card had to
+  // say off the bottom — for a string nobody reads off the screen anyway,
+  // because the copy button beside it is how it gets used. The whole of it is
+  // on this row's tooltip, on the button's, and in the clipboard.
+  line.style.cssText = "flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
   line.textContent = text;
-  const copy = actButton("copy", () => copyToClipboard(text, copy), title);
+  line.title = text;
+  const copy = actButton("copy", () => copyToClipboard(text, copy), title ? `${title}:\n${text}` : text);
   wrap.append(line, copy);
   add(key, wrap);
 }
@@ -3483,7 +3515,13 @@ function setupGraphViewBox(svg) {
   const a = (svg.getAttribute("viewBox") || "").split(/\s+/).map(Number);
   if (a.length === 4 && a.every((n) => !Number.isNaN(n))) {
     vbInit = a.slice();
-    vb = a.slice();
+    // #396 item 2: land on the fit that keeps the panel's footprint clear, not
+    // on the raw box — a re-render (a zoom change, an env change, the SSE
+    // re-pull) goes through here and never through fitGraph, so the first
+    // column would slide back under the panel at every one of them.
+    vb = fittedViewBox() || a.slice();
+    vbAtFit = true;
+    applyVB();
   } else {
     vbInit = vb = null;
   }
@@ -3494,11 +3532,178 @@ function currentSvg() {
 function applyVB() {
   const s = currentSvg();
   if (s && vb) s.setAttribute("viewBox", vb.join(" "));
+  scaleBoxLabels(); // #396 item 7b: box titles/badges keep a legible size at every zoom
 }
+
+// #396 item 2: the panel is `position: fixed` and floats OVER the graph pane
+// (index.html), so "fit the pane" put the leftmost column of cards underneath
+// it — a whole column of the terralith, half waterpark's `github` box — at
+// boot and after every re-render. The panel is furniture the reader cannot see
+// through, so the fit's target is the pane MINUS whatever the panel is
+// currently covering.
+//
+// Read at fit time, never remembered: the panel drags, docks to either side and
+// collapses to its tab bar, and a fit computed against where it used to be is
+// the same bug with a different offset. Collapsed or hidden → no footprint, and
+// the fit is the whole pane exactly as before.
+//
+// Horizontal only. The panel is a tall palette that docks left or right; a
+// top/bottom dock still leaves the full width, and insetting vertically for it
+// would shrink the graph for a strip the cards mostly clear anyway.
+const FIT_PANEL_MAX = 0.45; // the panel can never claim more than this of the pane
+
+function panelInsets(pane) {
+  const none = { left: 0, right: 0 };
+  const p = document.getElementById("panel");
+  if (!p || p.classList.contains("collapsed")) return none;
+  const cs = getComputedStyle(p);
+  if (cs.display === "none" || cs.visibility === "hidden" || Number(cs.opacity) === 0) return none;
+  const r = p.getBoundingClientRect();
+  if (!r.width || !r.height) return none;
+  // Nothing to inset for a panel that has been dragged clear of the graph pane.
+  if (r.bottom <= pane.top || r.top >= pane.bottom || r.right <= pane.left || r.left >= pane.right) return none;
+  const cap = pane.width * FIT_PANEL_MAX;
+  // Whichever side it is nearer to is the side it eats.
+  return (r.left + r.right) / 2 < (pane.left + pane.right) / 2
+    ? { left: Math.min(cap, Math.max(0, r.right - pane.left)), right: 0 }
+    : { left: 0, right: Math.min(cap, Math.max(0, pane.right - r.left)) };
+}
+
+/**
+ * The viewBox that fits the whole graph into the pane's UNCOVERED part.
+ *
+ * The returned box is given the pane's own aspect ratio, so `xMidYMid meet`
+ * letterboxes nothing and the pane's pixels map to viewBox units at one known
+ * scale: the graph is then placed by arithmetic — centred inside the band
+ * between the insets, centred vertically — instead of wherever `meet` would
+ * have dropped it. With no insets the result is pixel-identical to the old
+ * `vb = vbInit`, which is why nothing without a panel over it moves.
+ */
+function fittedViewBox() {
+  if (!vbInit) return null;
+  const host = document.getElementById("graph");
+  if (!host) return null;
+  const pane = host.getBoundingClientRect();
+  const [x0, y0, w0, h0] = vbInit;
+  if (!(pane.width > 0 && pane.height > 0 && w0 > 0 && h0 > 0)) return null;
+  const { left, right } = panelInsets(pane);
+  const band = Math.max(1, pane.width - left - right);
+  const s = Math.min(band / w0, pane.height / h0);
+  const vw = pane.width / s;
+  const vh = pane.height / s;
+  return [x0 - left / s - (band / s - w0) / 2, y0 - (vh - h0) / 2, vw, vh];
+}
+
 function fitGraph() {
-  if (vbInit) {
-    vb = vbInit.slice();
-    applyVB();
+  if (!vbInit) return;
+  vb = fittedViewBox() || vbInit.slice();
+  vbAtFit = true;
+  applyVB();
+}
+
+// #396 item 2: the fit now depends on the pane — its size, and what the panel
+// covers of it — where `vbInit` alone depended on neither, so a graph sitting
+// at fit has to be re-fitted when the pane moves under it. It moves more often
+// than a window resize: the statusbar's note wraps onto a second line, the
+// inspect pane is dragged wider, a panel tab's content grows. Only while the
+// view IS the fit: a pan or a zoom takes ownership of the viewBox, and nothing
+// here may pull it back out from under the reader's hands.
+let vbAtFit = false;
+function watchPaneForFit(host) {
+  if (typeof ResizeObserver === "undefined") return;
+  new ResizeObserver(() => {
+    if (vbAtFit) fitGraph();
+  }).observe(host);
+}
+
+// --- #396 item 7b: box titles and badges that survive the fit ---------------
+//
+// pinhole draws a group box's title at a flat `font-size="12"` and its badge at
+// `11`, in viewBox UNITS. That reads as 12px on a graph whose fit is 1:1 and as
+// 7px on terralith-4, whose box is 8000 units wide — the one label that says
+// which member 301 cards belong to, and the one that counts them, are the two
+// things on the canvas a person cannot read at the zoom they arrive at.
+//
+// So the label is given a floor in SCREEN pixels: its size in units is raised
+// by the inverse of the current scale until it renders at its natural size, and
+// never below it, so anything already legible is untouched (zoomed IN, the
+// attribute is left at 12 and grows with the graph, exactly as before). The
+// anchor never moves — x, y and `text-anchor` are pinhole's — so a title stays
+// welded to its box's top-left corner and a badge to its top-right through
+// every pan and zoom; only the type gets bigger.
+//
+// The floor yields to the box: a label may not grow past a fraction of the
+// box's height, nor past its width. A sub-box too small to hold readable type
+// at this zoom says so by staying small, rather than by writing across its
+// neighbours.
+const BOX_LABEL_GUTTER = 34; // units below a box's top edge that the title row occupies
+const BOX_LABEL_MAX_H = 8; // a label may be at most box height / this
+const BOX_LABEL_EM = 0.62; // rough advance width per char, as a fraction of the size
+
+let boxLabelCache = { svg: null, labels: [] };
+let boxLabelScale = null;
+
+/** The `<text>` elements pinhole put in each group box's title gutter, with the
+ * box they belong to and the size it drew them at. Matched by geometry rather
+ * than by sibling order: a box's optional identity mark sits between the title
+ * and the badge, and #228's layout pass lifts the rect and its title into a
+ * wrapper `<g>` after the render, so neither order nor a common parent holds.
+ * What geometry alone would let through — a card's own text, an edge chip's —
+ * is excluded by the ancestor it sits under. */
+function boxLabelsOf(svg) {
+  if (boxLabelCache.svg === svg) return boxLabelCache.labels;
+  const labels = [];
+  const boxes = [];
+  for (const rect of svg.querySelectorAll("rect[data-group-id]")) {
+    const b = {
+      x: parseFloat(rect.getAttribute("x")),
+      y: parseFloat(rect.getAttribute("y")),
+      w: parseFloat(rect.getAttribute("width")),
+      h: parseFloat(rect.getAttribute("height")),
+    };
+    if ([b.x, b.y, b.w, b.h].every((n) => Number.isFinite(n))) boxes.push(b);
+  }
+  if (boxes.length) {
+    for (const t of svg.querySelectorAll("text")) {
+      const x = parseFloat(t.getAttribute("x"));
+      const y = parseFloat(t.getAttribute("y"));
+      // pinhole's own size, stashed the first time so a re-index can never
+      // read a size this pass already raised as if it were the natural one.
+      const base = parseFloat(t.dataset.pinFont ?? t.getAttribute("font-size"));
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(base)) continue;
+      // Not a card's own text (inside its `g[data-node-id]`), not an edge
+      // chip's (inside the edge's `g`), not a radial wedge label behold adds
+      // itself. What is left at a box's title row IS the box's title row.
+      if (t.closest("[data-node-id], [data-edge-from], [data-edge-to], #radial-labels")) continue;
+      const box = boxes.find((b) => y > b.y && y <= b.y + BOX_LABEL_GUTTER && x >= b.x - 2 && x <= b.x + b.w + 2);
+      if (!box) continue;
+      t.dataset.pinFont = String(base);
+      labels.push({ el: t, box, base });
+    }
+  }
+  boxLabelCache = { svg, labels };
+  boxLabelScale = null;
+  return labels;
+}
+
+/** Re-size every box label for the current zoom. Cheap and idempotent: the
+ * scale is remembered, so the pan handler's stream of `applyVB` calls (which
+ * move the viewBox without changing its width) touches no attribute at all. */
+function scaleBoxLabels() {
+  const svg = currentSvg();
+  if (!svg || !vb) return;
+  const labels = boxLabelsOf(svg);
+  if (!labels.length) return;
+  const pane = svg.getBoundingClientRect();
+  if (!(pane.width > 0 && pane.height > 0)) return;
+  const scale = Math.min(pane.width / vb[2], pane.height / vb[3]);
+  if (!(scale > 0) || scale === boxLabelScale) return;
+  boxLabelScale = scale;
+  for (const l of labels) {
+    const chars = Math.max(4, (l.el.textContent || "").length);
+    const cap = Math.max(l.base, Math.min(l.box.h / BOX_LABEL_MAX_H, l.box.w / (chars * BOX_LABEL_EM)));
+    const size = Math.max(l.base, Math.min(l.base / scale, cap));
+    l.el.setAttribute("font-size", String(Math.round(size * 10) / 10));
   }
 }
 
@@ -3537,6 +3742,7 @@ function revealNode(id) {
   const w = Math.min(vbInit[2], Math.max(box.width * REVEAL_CARDS_ACROSS, vbInit[2] / 60));
   const h = w * (vbInit[3] / vbInit[2]);
   vb = [box.x + box.width / 2 - w / 2, box.y + box.height / 2 - h / 2, w, h];
+  vbAtFit = false;
   applyVB();
   return true;
 }
@@ -3555,6 +3761,7 @@ function ensureZoomControls(host) {
   }
   if (zoomWired) return;
   zoomWired = true;
+  watchPaneForFit(host);
   host.addEventListener(
     "wheel",
     (e) => {
@@ -3576,6 +3783,7 @@ function ensureZoomControls(host) {
       vb[1] = cy - ((cy - vb[1]) * nh) / vb[3];
       vb[2] = nw;
       vb[3] = nh;
+      vbAtFit = false;
       applyVB();
     },
     { passive: false },
@@ -3608,6 +3816,7 @@ function ensureZoomControls(host) {
     }
     vb[0] -= (dx / r.width) * vb[2];
     vb[1] -= (dy / r.height) * vb[3];
+    vbAtFit = false;
     px = e.clientX;
     py = e.clientY;
     applyVB();

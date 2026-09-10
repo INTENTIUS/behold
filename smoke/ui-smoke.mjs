@@ -11,7 +11,22 @@ import { chromium } from "playwright";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { startStub, JSON_FIXTURE, BOX, EDGE_VIA, PAL_FAR, PAL_MEMBER, BEH_BADGE, BEH_REFUSAL, BEH_ABSENT, BEH_DIAGNOSTIC } from "./stub.mjs";
+import {
+  startStub,
+  JSON_FIXTURE,
+  BOX,
+  EDGE_VIA,
+  PAL_FAR,
+  PAL_MEMBER,
+  NON_CHANT_BOX,
+  NON_CHANT_BADGE,
+  NON_CHANT_COMPONENTS_NOTE,
+  CHOUDOUFU_ADOPT,
+  BEH_BADGE,
+  BEH_REFUSAL,
+  BEH_ABSENT,
+  BEH_DIAGNOSTIC,
+} from "./stub.mjs";
 import { THEMES, DEFAULT_THEME } from "../web/themes.js";
 import { tokensFor, pinTokensFor, colorForCategory, setTheme, hexToOklch, contrast } from "../web/theme.js";
 import { helmIconFor, PLATE_FILL } from "../src/icon-packs.ts";
@@ -1081,6 +1096,79 @@ try {
     // to a composed estate yet".
     check("an estate with no chant member boots on resources", (await wbPage.locator("#statusbar").innerText()).startsWith("zoom: resources"));
 
+    // ---- #396 item 2: fit leaves the panel's footprint alone ---------------
+    // The View panel is `position: fixed` and floats OVER the graph pane, and
+    // "fit" fitted the pane, so on an 8000-unit canvas the first column of
+    // cards landed underneath it — reachable only by collapsing the panel or
+    // panning. Measured, not eyeballed: the leftmost card's rectangle on screen
+    // against the panel's right edge.
+    const leftmostCard = () =>
+      wbPage.evaluate(() => {
+        let best = null;
+        for (const g of document.querySelectorAll("#graph svg [data-node-id]")) {
+          const r = g.getBoundingClientRect();
+          if (!r.width || !r.height) continue;
+          if (!best || r.left < best.left) best = { left: r.left, id: g.getAttribute("data-node-id") };
+        }
+        return best;
+      });
+    const panelRight = async () => {
+      const b = await wbPage.locator("#panel").boundingBox();
+      return b.x + b.width;
+    };
+    const bootCard = await leftmostCard();
+    const bootPanelRight = await panelRight();
+    check("the leftmost card clears the floating panel at boot", !!bootCard && bootCard.left >= bootPanelRight);
+
+    // Every re-render lands on the same fit — a zoom change goes through the
+    // viewBox setup, not through the "⤢ fit" button, and that is the path that
+    // used to put the column back under the panel.
+    await wbPage.click('#panel-tabs button[data-tab="view"]');
+    await wbPage.waitForTimeout(100);
+    await wbPage.click('#panel-zoom button:text-is("attributes")');
+    await wbPage.waitForTimeout(400);
+    const zoomedCard = await leftmostCard();
+    check("…and after a zoom change", !!zoomedCard && zoomedCard.left >= (await panelRight()));
+    await wbPage.click('#panel-zoom button:text-is("resources")');
+    await wbPage.waitForTimeout(400);
+
+    // Collapsed, the panel covers nothing, so the fit is the whole pane again
+    // — the inset is read at fit time, never remembered.
+    await wbPage.click("#panel-collapse");
+    await wbPage.waitForTimeout(100);
+    await wbPage.click("#zoom-toggle");
+    await wbPage.waitForTimeout(200);
+    const collapsedCard = await leftmostCard();
+    check("a collapsed panel yields the pane back to the graph", !!collapsedCard && collapsedCard.left < bootCard.left);
+    await wbPage.click("#panel-collapse");
+    await wbPage.waitForTimeout(100);
+    await wbPage.click("#zoom-toggle");
+    await wbPage.waitForTimeout(200);
+    check("…and re-opening it makes room again", (await leftmostCard()).left >= (await panelRight()));
+
+    // ---- #396 item 7b: the box's own labels survive the fit ----------------
+    // pinhole draws them at a flat 12 / 11 SVG units, which on a box 7500 units
+    // wide is ~7px at fit. They keep pinhole's anchor and gain size instead.
+    const boxLabel = (text) =>
+      wbPage.evaluate((t) => {
+        // Not `svg > text`: #228's layout pass lifts a box's rect and its title
+        // into a `g[data-layout-box]` after the render, so the title is a
+        // grandchild and the badge beside it is not.
+        const el = [...document.querySelectorAll("#graph svg text")].find((e) => e.textContent === t);
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { px: r.height, units: parseFloat(el.getAttribute("font-size")), x: el.getAttribute("x"), y: el.getAttribute("y") };
+      }, text);
+    const boxTitle = await boxLabel(NON_CHANT_BOX.id);
+    const boxBadge = await boxLabel(NON_CHANT_BADGE);
+    check("the box title is legible at fit, not 7px", !!boxTitle && boxTitle.px >= 9);
+    check("the count badge is too", !!boxBadge && boxBadge.px >= 9);
+    check("…which took growing them in viewBox units", boxTitle.units > 12 && boxBadge.units > 11);
+    check(
+      "…and neither moved: pinhole's anchor is still pinhole's",
+      boxTitle.x === String(NON_CHANT_BOX.x + 18) && boxTitle.y === String(NON_CHANT_BOX.y + 23) && boxBadge.x === String(NON_CHANT_BOX.x + NON_CHANT_BOX.w - 16),
+    );
+
     // Item 2: no runtime stop, on either surface — the palette and the View tab
     // read the same list, and a stop must not appear in one and not the other.
     await wbPage.click('#panel-tabs button[data-tab="view"]');
@@ -1150,11 +1238,24 @@ try {
     );
     await wbPage.screenshot({ path: join(SHOTS, "11-palette-address.png") });
 
+    await wbPage.screenshot({ path: join(SHOTS, "9-non-chant-estate.png") });
+
+    // ---- #396 item 7a: a lone estate is not a composed one -----------------
+    // Picking `components` here still gets the honest note (#393 item 1 kept
+    // that), and the note must not tell the reader their one-directory estate
+    // has members it does not have.
+    await wbPage.click('#panel-tabs button[data-tab="view"]');
+    await wbPage.waitForTimeout(100);
+    await wbPage.click('#panel-zoom button:text-is("components")');
+    await wbPage.waitForTimeout(400);
+    const lensNote = await wbPage.locator("#statusbar").innerText();
+    check("the components note on a lone estate says 'this estate'", lensNote.includes(NON_CHANT_COMPONENTS_NOTE));
+    check("…and never calls it composed", !/composed/.test(lensNote));
+
     // Item 3, from the browser's own side: nothing red in the console on the
     // way to that first screen.
     check("no console errors on a non-chant estate's boot", wbErrors.length === 0);
     if (wbErrors.length) console.error("non-chant page errors:", wbErrors);
-    await wbPage.screenshot({ path: join(SHOTS, "9-non-chant-estate.png") });
   } finally {
     await wbPage.close();
     wbServer.close();
@@ -1181,6 +1282,10 @@ try {
     const legend = await chdfPage.locator("#tab-model").innerText();
     check("the legend says bound / unowned / pending", legend.includes("bound") && legend.includes("unowned") && legend.includes("pending"));
     check("…and never says managed", !legend.includes("managed"));
+    // #396 item 5: the NEEDS ATTENTION rows are the same words, and the whole
+    // tab is free of chant's.
+    check("the needs-attention row names the card unowned", /aws_cloudwatch_log_group\.extra[\s\S]*unowned/.test(legend));
+    check("…and nothing in the Model tab says foreign", !legend.includes("foreign"));
 
     // The UNOWNED card: the line to run, first, copyable.
     await chdfPage.click('[data-node-id="terralith-4/aws_cloudwatch_log_group.extra"]');
@@ -1194,6 +1299,34 @@ try {
     check("the row carries the two tags choudoufu named", (await adoptRow.innerText()).includes("tofu-estate=terralith-4 tofu-address=aws_cloudwatch_log_group.extra"));
     const copy = adoptRow.locator("button");
     check("…with a copy button beside it", (await copy.count()) === 1);
+
+    // ---- #396 item 5: no chant word anywhere on a choudoufu card -----------
+    // `ownership` is the last of the four #393 item 8 did not reach: the pane
+    // printed it raw, so an unowned card said `status: unowned` and, two rows
+    // down, `ownership: foreign`.
+    const chdfPaneText = await pane.innerText();
+    check("the LIVE section names ownership in choudoufu's words", /ownership[\s\S]{0,40}unowned/.test(chdfPaneText));
+    check("…and the word `foreign` is nowhere on the card", !chdfPaneText.includes("foreign"));
+    check("…nor is `managed`", !chdfPaneText.includes("managed"));
+
+    // ---- #396 item 7c: the adopt line is ONE line -------------------------
+    // `tofu-estate=… tofu-address=…` wrapped onto three lines in a 260px pane
+    // and pushed the rest of the card off the bottom. Clipped now, with the
+    // whole of it on both tooltips and in the clipboard.
+    const adoptLine = await adoptRow.locator("code").first().evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return {
+        h: el.getBoundingClientRect().height,
+        lh: parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.45,
+        clipped: el.scrollWidth > el.clientWidth + 1,
+        title: el.title,
+      };
+    });
+    check("the adopt line occupies one line, not three", adoptLine.h <= adoptLine.lh * 1.5);
+    check("…because it is clipped rather than wrapped", adoptLine.clipped);
+    check("…with the whole of it on the row's own tooltip", adoptLine.title === CHOUDOUFU_ADOPT);
+    check("…and on the copy button's", (await copy.getAttribute("title")).includes(CHOUDOUFU_ADOPT));
+
     await copy.click();
     await chdfPage.waitForTimeout(100);
     check("the copy button confirms", (await copy.innerText()).includes("copied"));
