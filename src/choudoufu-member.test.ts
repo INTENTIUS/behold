@@ -17,6 +17,7 @@ import {
   isChoudoufuEstate,
   isDevBuild,
   liveCheckToIr,
+  moduleInstanceOf,
   parseChoudoufuVersion,
   parseLiveCheck,
   parseLiveCheckOutput,
@@ -349,5 +350,29 @@ describe("the probe and the floor (#369)", () => {
     expect(at("v0.15.0-30-g9c7d3701e2")).toBe(true); // a git-describe build is past its base tag
     expect(at("")).toBe(true); // a development build with no ldflag
     expect(isDevBuild("v0.16.0")).toBe(false);
+  });
+});
+
+describe("moduleInstanceOf — the sub-box a card sits in (#393 B)", () => {
+  it("names the module INSTANCE, brackets and all", () => {
+    expect(moduleInstanceOf('module.team_pod["pod-a"].aws_iam_role.pod_role[2]')).toBe('module.team_pod["pod-a"]');
+    expect(moduleInstanceOf('module.team_pod["pod-b"].aws_instance.node')).toBe('module.team_pod["pod-b"]');
+    // Two calls of one module are two boxes — the instance is the point.
+    expect(moduleInstanceOf('module.team_pod["pod-a"].x.y')).not.toBe(moduleInstanceOf('module.team_pod["pod-b"].x.y'));
+  });
+
+  it("takes a count-indexed and an unindexed call", () => {
+    expect(moduleInstanceOf("module.network[0].aws_subnet.private")).toBe("module.network[0]");
+    expect(moduleInstanceOf("module.network.aws_subnet.private")).toBe("module.network");
+  });
+
+  it("keeps only the outermost instance of a nested call", () => {
+    expect(moduleInstanceOf('module.a["x"].module.b.aws_s3_bucket.c')).toBe('module.a["x"]');
+  });
+
+  it("says nothing about a root-module address", () => {
+    expect(moduleInstanceOf("aws_ecs_cluster.main")).toBeUndefined();
+    expect(moduleInstanceOf("data.aws_vpc.network")).toBeUndefined();
+    expect(moduleInstanceOf("modules.not_a_module.x")).toBeUndefined();
   });
 });

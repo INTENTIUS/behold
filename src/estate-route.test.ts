@@ -70,3 +70,39 @@ describe("GET /api/graph — multi-estate composition (#31/M4)", () => {
     expect(body.svg).toContain("k8s-gke-microservice");
   });
 });
+
+/** A member the size of a real one: 60 edgeless cards under one project. */
+const bigIr = (kind: string): GraphIR => ({
+  nodes: Array.from({ length: 60 }, (_, i) => ({ id: `r${i}`, kind, lexicon: "choudoufu", attrs: { rung: "tag-governable" } })),
+  edges: [],
+  groups: {},
+});
+
+describe("GET /api/graph — the box's counts and the collapse lens (#393 C)", () => {
+  it("badges every member box with what it holds", async () => {
+    vi.mocked(graphIr).mockResolvedValueOnce(bigIr("aws_iam_role")).mockResolvedValueOnce(k8sGkeIr);
+    const res = await makeEstateApp().request("/api/graph");
+    const body = (await res.json()) as { svg: string };
+    expect(body.svg).toContain("60 resources");
+    expect(body.svg).toContain("1 card");
+  });
+
+  it("?collapse=1 draws a box over the limit as one summary card, and says so", async () => {
+    vi.mocked(graphIr).mockResolvedValueOnce(bigIr("aws_iam_role")).mockResolvedValueOnce(k8sGkeIr);
+    const res = await makeEstateApp().request("/api/graph?collapse=1");
+    const body = (await res.json()) as { ir: GraphIR; svg: string; meta: { note?: string } };
+    // The 60-card member became one card; the 1-card member is untouched.
+    expect(body.ir.nodes.map((n) => n.id).sort()).toEqual(["box:loomster", "k8s-gke-microservice/appDeployment"]);
+    expect(body.ir.nodes.find((n) => n.id === "box:loomster")!.attrs.summary).toBe("60 resources");
+    expect(body.svg).toContain('data-node-id="box:loomster"');
+    expect(body.meta.note).toContain("collapsed: loomster");
+  });
+
+  it("without the flag nothing collapses, whatever the size", async () => {
+    vi.mocked(graphIr).mockResolvedValueOnce(bigIr("aws_iam_role")).mockResolvedValueOnce(k8sGkeIr);
+    const res = await makeEstateApp().request("/api/graph");
+    const body = (await res.json()) as { ir: GraphIR; meta: { note?: string } };
+    expect(body.ir.nodes).toHaveLength(61);
+    expect(body.meta.note ?? "").not.toContain("collapsed");
+  });
+});

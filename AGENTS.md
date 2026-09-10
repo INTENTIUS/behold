@@ -82,7 +82,13 @@ preview-locked, and one load runs at a time (409 otherwise).
    `chant operator status --json`.
 2. **focus** — narrow with chant graph options as query params: `?detail=0..3`,
    `?components=1`, `?logical=1`, `?lens=blast:<id>&down=1`, `?lens=lexicon:aws`,
-   `?env=`, `?stack=`, `?tier=`, `?target=`.
+   `?env=`, `?stack=`, `?tier=`, `?target=`, `?collapse=1`.
+   `?collapse=1` (#393) shuts every member box holding more than 40 cards: the
+   box is drawn as ONE card carrying the count it was badged with (`301
+   resources · 84 bound · 85 unowned · 132 neutral`, in the estate's own
+   words), ids namespaced `box:<member>`, and the returned IR is the collapsed
+   one so every count and note speaks about the picture on screen. ⌘K →
+   "Collapse large boxes" / "Expand all". Below the limit it changes nothing.
 3. **inspect** — a node's `sourceLoc.file` is the typed source that declared it;
    edit there to change the estate (chant is the source of truth, not behold).
 

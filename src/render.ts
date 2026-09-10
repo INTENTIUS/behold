@@ -22,10 +22,12 @@ import type { GraphIR, IRGroups, IRNode, Layout } from "@intentius/chant";
 import type { ByContainer } from "./logical.ts";
 import { k8sIconFor, helmIconFor } from "./icon-packs.ts";
 import { carveCardFields } from "./carve-lens.ts";
-import { CHOUDOUFU_LEXICON, choudoufuCardFields } from "./choudoufu-member.ts";
+import { CHOUDOUFU_LEXICON, choudoufuCardFields, moduleInstanceOf } from "./choudoufu-member.ts";
 import { terraformCardFields } from "./terraform-lens.ts";
 import { carveProgress, splitCarveState, type CarveState } from "./carve-manifest.ts";
 import { opCardFields } from "./ops-lens.ts";
+import { withRowChains, type RowGrid } from "./edgeless.ts";
+import { SUMMARY_LEXICON, summaryCardFields } from "./collapse-lens.ts";
 
 // Lexicon-native icons (#227), step 2 of 2. pinhole resolves a node's glyph
 // through a chain — per-node override → lexicon pack → keyword heuristic →
@@ -80,6 +82,13 @@ registerPack({ lexicon: "op", iconFor: () => undefined, fields: opCardFields });
 // the keyword heuristic already resolves the way it does for the carve lens.
 registerPack({ lexicon: CHOUDOUFU_LEXICON, iconFor: () => undefined, fields: choudoufuCardFields });
 
+// The collapse lens (#393) registers behold's own lexicon for the one card
+// that is not the estate's: the summary standing in for a shut box. Its whole
+// content is the sentence the box was badged with, and the default template
+// would spend both its rows on `box` and `cards` — the two attrs the title
+// already says — because it picks them alphabetically.
+registerPack({ lexicon: SUMMARY_LEXICON, iconFor: () => undefined, fields: summaryCardFields });
+
 export interface RenderResult {
   svg: string;
 }
@@ -114,20 +123,21 @@ export function renderArchitecture(
   // to fan out, rather than a blunt uniform bump. Sparse graphs keep pinhole's
   // compact defaults (nodesep 48 / ranksep 60).
   const spread = Math.min(1.5, ir.edges.length / Math.max(ir.nodes.length, 1));
-  const layout = layoutArchitecture(ir, byContainer, {
-    fit: true,
-    nodesep: Math.round(48 + spread * 48),
-    ranksep: Math.round(60 + spread * 56),
-  });
-  if (opts.groupMarks || opts.groupBadges) {
-    for (const box of layout.groups ?? []) {
-      if (box.id === undefined) continue;
-      const mark = opts.groupMarks?.[box.id];
-      if (mark !== undefined) box.mark = mark;
-      const badge = opts.groupBadges?.[box.id];
-      if (badge !== undefined) box.badge = badge;
-    }
-  }
+  const nodesep = Math.round(48 + spread * 48);
+  const ranksep = Math.round(60 + spread * 56);
+  // #393 A: the same edgeless wrap the estate view gets, over the containers
+  // that hold only cards. A container of containers is nesting the layout is
+  // already good at, and its members are boxes rather than the uniform cards a
+  // grid is a grid of. The chained IR reaches `layoutArchitecture` and nothing
+  // else — see src/edgeless.ts.
+  const containers = new Set(Object.keys(byContainer));
+  const leafBoxes = Object.fromEntries(
+    Object.entries(byContainer).filter(([, members]) => members.every((m) => !containers.has(m))),
+  );
+  const chains = withRowChains(ir, leafBoxes, { sizes: footprints(ir), nodesep, ranksep, bandOf: moduleBandOf(ir) });
+  const layout = layoutArchitecture(chains.ir, byContainer, { fit: true, nodesep, ranksep });
+  addBandBoxes(layout, chains.grids, footprints(ir));
+  applyBadges(layout.groups, opts.groupBadges, opts.groupMarks);
   const svg = renderSvg(ir, layout, {
     fit: true,
     hideTitle: true,
@@ -165,11 +175,28 @@ type ExtraGroups = IRGroups & { byWave?: Record<string, string[]>; byStack?: Rec
  * on the live-overlay render path, which passes this explicitly — same
  * "caller knows" discipline as `byStack`, since a source-only or component-DAG
  * graph never carries a meaningful `byContainer` to box. */
-export function renderGraph(ir: GraphIR, opts: { theme?: string; boxes?: "byStack" | "byContainer"; radial?: boolean } = {}): RenderResult {
+export function renderGraph(
+  ir: GraphIR,
+  opts: {
+    theme?: string;
+    boxes?: "byStack" | "byContainer";
+    radial?: boolean;
+    /** Text badges for the boxes, keyed by box key — the same seam
+     * `renderArchitecture` has carried since #357, brought to the estate view
+     * because that is where the counts #393 asks for belong. */
+    groupBadges?: Readonly<Record<string, string>>;
+  } = {},
+): RenderResult {
   const groups = ir.groups as ExtraGroups;
   const boxKey = groups.byWave ? "byWave" : opts.boxes;
   const boxes = boxKey ? groups[boxKey] : undefined;
-  const layout = layoutIr(ir, { fit: true, ...(boxes ? { groups: boxes } : {}) });
+  // #393 A/B: an edgeless box lays out as one dagre rank — see src/edgeless.ts.
+  // The chained IR is for the layout call and nothing else; `renderSvg` and
+  // every caller below keep the IR that came in.
+  const chains = boxes
+    ? withRowChains(ir, boxes, { sizes: footprints(ir), bandOf: moduleBandOf(ir) })
+    : { ir, grids: new Map<string, RowGrid>() };
+  const layout = layoutIr(chains.ir, { fit: true, ...(boxes ? { groups: boxes } : {}) });
   // Radial layout (opt-in): dagre lays a wide DAG out in horizontal ranks that
   // sprawl off-screen. Re-place the same nodes on concentric rings — one ring
   // per rank — so the graph curls around a centre and far more fits in view. Only
@@ -185,6 +212,12 @@ export function renderGraph(ir: GraphIR, opts: { theme?: string; boxes?: "byStac
   // the member clusters out along one horizontal band, so an 11-member estate
   // rendered ~45k units wide and 316 tall. Wrap the boxes into rows instead.
   else if (boxKey === "byStack" && boxes) packMemberBoxes(layout, ir, boxes);
+  // The module sub-boxes (#393 B) and the count badges (#393 C), both over the
+  // boxes dagre just produced.
+  if (boxes) {
+    addBandBoxes(layout, chains.grids, footprints(ir));
+    applyBadges(layout.groups, opts.groupBadges);
+  }
   const svg = renderSvg(ir, layout, {
     fit: true,
     hideTitle: true,
@@ -192,6 +225,95 @@ export function renderGraph(ir: GraphIR, opts: { theme?: string; boxes?: "byStac
     ...(opts.theme ? { theme: opts.theme as never } : {}),
   });
   return { svg };
+}
+
+/** Box marks and badges, applied after layout on `GroupBox.id` — the box key
+ * the caller already knows (`byContainer`/`byStack`), never a rendered title.
+ * Absent options leave every box exactly as it laid out. */
+function applyBadges(
+  boxes: GroupBox[] | undefined,
+  badges?: Readonly<Record<string, string>>,
+  marks?: Readonly<Record<string, string | GlyphSpec>>,
+): void {
+  if (!badges && !marks) return;
+  for (const box of boxes ?? []) {
+    if (box.id === undefined) continue;
+    const mark = marks?.[box.id];
+    if (mark !== undefined) box.mark = mark;
+    const badge = badges?.[box.id];
+    if (badge !== undefined) box.badge = badge;
+  }
+}
+
+/**
+ * The module sub-boxes (#393 B): one box per `module.<name>[...]` instance
+ * inside its member's box, drawn from where the cards actually landed.
+ *
+ * pinhole's `layoutIr` parents a node to ONE cluster (dist/concept.d.ts), so a
+ * box inside a box is not something the layout can be asked for. It does not
+ * have to be: {@link withRowChains} gave each band its own whole rows, so a
+ * band's cards are a contiguous rectangle of the grid and the box is that
+ * rectangle. Drawn at `depth: 1` so pinhole paints it after (on top of) the
+ * member box, and clamped inside it so an inflated rect can never poke out of
+ * the box it claims to be inside. Ids are `<member>/<module instance>` — the
+ * SPA addresses a box by `data-group-id` and stores its hand-set size under
+ * it, so they have to be stable and unique; the TITLE drops the member, which
+ * the enclosing box already says.
+ */
+function addBandBoxes(layout: { groups?: GroupBox[]; height: number }, grids: Map<string, RowGrid>, sizes: Map<string, { w: number; h: number }>): void {
+  const boxes = layout.groups;
+  if (!boxes || grids.size === 0) return;
+  const at = new Map(((layout as unknown as RadialLayout).nodes ?? []).map((n) => [n.id, n]));
+  const added: GroupBox[] = [];
+  for (const box of boxes) {
+    const grid = box.id !== undefined ? grids.get(box.id) : undefined;
+    if (!grid) continue;
+    for (const band of grid.bands) {
+      if (band.key === undefined) continue;
+      const cards = band.ids.flatMap((id) => {
+        const p = at.get(id);
+        const s = sizes.get(id) ?? { w: NODE_W, h: NODE_H };
+        return p ? [{ x: p.x, y: p.y, w: s.w, h: s.h }] : [];
+      });
+      if (cards.length === 0) continue;
+      // y is up here (renderSvg flips), so the title band inflates the TOP,
+      // which is the larger y.
+      const x0 = Math.min(...cards.map((c) => c.x - c.w / 2)) - BAND_PAD;
+      const x1 = Math.max(...cards.map((c) => c.x + c.w / 2)) + BAND_PAD;
+      const y0 = Math.min(...cards.map((c) => c.y - c.h / 2)) - BAND_PAD;
+      const y1 = Math.max(...cards.map((c) => c.y + c.h / 2)) + TITLE;
+      const clamped = clampInside({ x0, x1, y0, y1 }, box);
+      added.push({
+        title: band.key,
+        id: `${box.id}/${band.key}`,
+        depth: (box.depth ?? 0) + 1,
+        x: (clamped.x0 + clamped.x1) / 2,
+        y: (clamped.y0 + clamped.y1) / 2,
+        w: clamped.x1 - clamped.x0,
+        h: clamped.y1 - clamped.y0,
+      });
+    }
+  }
+  boxes.push(...added);
+}
+
+/** Padding between a band's cards and the box drawn around them. */
+const BAND_PAD = 14;
+
+/** A rect pulled inside its parent box, leaving the parent's own title row
+ * clear. Never grows the rect, so a band that already fits is untouched. */
+function clampInside(r: { x0: number; x1: number; y0: number; y1: number }, box: GroupBox): { x0: number; x1: number; y0: number; y1: number } {
+  const inset = 6;
+  const left = box.x - box.w / 2 + inset;
+  const right = box.x + box.w / 2 - inset;
+  const bottom = box.y - box.h / 2 + inset;
+  const top = box.y + box.h / 2 - TITLE; // the member's own title row
+  return {
+    x0: Math.max(r.x0, left),
+    x1: Math.min(r.x1, right),
+    y0: Math.max(r.y0, bottom),
+    y1: Math.min(r.y1, top),
+  };
 }
 
 /**
@@ -759,6 +881,15 @@ function packMemberBoxes(layout: RadialLayout & { groups?: GroupBox[] }, ir: Gra
   // painted card rects (they should already sit inside, but a card that leaks
   // must not land on a neighbour).
   const byId = new Map(nodes.map((n) => [n.id, n]));
+  // Same ownership rule the layout used: a node listed by two boxes belongs to
+  // the LAST that claims it (pinhole's `setParent`, see src/edgeless.ts). A
+  // served Terraform directory lists its cards twice — once as the member, once
+  // under the root that really holds them — so without this the member's BLOCK
+  // was the union of every card in the picture, every other box nested inside
+  // it, and the shelf packing had one block to place and nothing to do. That
+  // is waterpark's 15833 x 1164 at detail 2.
+  const ownerOf = new Map<string, string>();
+  for (const [key, ids] of Object.entries(members)) for (const id of ids) if (byId.has(id)) ownerOf.set(id, key);
   const claimed = new Set<string>();
   interface Block {
     ns: RadialLayout["nodes"];
@@ -769,7 +900,8 @@ function packMemberBoxes(layout: RadialLayout & { groups?: GroupBox[] }, ir: Gra
     h: number;
   }
   const blocks: Block[] = boxes.map((box) => {
-    const ns = (members[box.id ?? box.title] ?? members[box.title] ?? []).flatMap((id) => byId.get(id) ?? []);
+    const key = box.id ?? box.title;
+    const ns = (members[key] ?? members[box.title] ?? []).filter((id) => ownerOf.get(id) === key || ownerOf.get(id) === undefined).flatMap((id) => byId.get(id) ?? []);
     for (const n of ns) claimed.add(n.id);
     let minX = box.x - box.w / 2;
     let maxX = box.x + box.w / 2;
@@ -1000,4 +1132,20 @@ function radializeLayout(layout: RadialLayout, groupOf: Map<string, string>, siz
   }
   layout.width = Math.max(...nodes.map((n) => n.x + wOf(n) / 2)) + pad;
   layout.height = Math.max(...nodes.map((n) => n.y + hOf(n) / 2)) + pad;
+}
+
+/** Band a choudoufu card by the module instance its address names (#393 B),
+ * for {@link withRowChains}. A composed id is `<member>/<address>` and a box
+ * key is the member, so the address is what follows the first slash; a node of
+ * any other lexicon bands as the box's own remainder, because "module" is a
+ * word only this one has. Returns undefined — no banding at all — for a graph
+ * with no choudoufu in it, which is every other estate. */
+function moduleBandOf(ir: GraphIR): ((id: string) => string | undefined) | undefined {
+  const choudoufu = new Set(ir.nodes.filter((n) => n.lexicon === CHOUDOUFU_LEXICON).map((n) => n.id));
+  if (choudoufu.size === 0) return undefined;
+  return (id) => {
+    if (!choudoufu.has(id)) return undefined;
+    const slash = id.indexOf("/");
+    return moduleInstanceOf(slash >= 0 ? id.slice(slash + 1) : id);
+  };
 }
