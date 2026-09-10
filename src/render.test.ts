@@ -509,3 +509,59 @@ describe("renderArchitecture — group marks (pinhole#119, behold#331)", () => {
     expect(renderArchitecture(archIr, byContainer, { groupBadges: {} }).svg).toBe(renderArchitecture(archIr, byContainer).svg);
   });
 });
+
+describe("module sub-boxes inside a choudoufu member (#393 B)", () => {
+  /** A member shaped like the terralith: root-module cards plus two calls of
+   * one module, every card edgeless. */
+  const terralith = (loose: number, perModule: number): GraphIR => {
+    const ids: string[] = [];
+    const nodes: GraphIR["nodes"] = [];
+    const card = (address: string) => {
+      const id = `terralith-4/${address}`;
+      ids.push(id);
+      nodes.push({ id, kind: "aws_iam_role", lexicon: "choudoufu", attrs: { rung: "tag-governable", estate: "behold-terralith-4" } });
+    };
+    for (let i = 0; i < loose; i++) card(`aws_iam_role.r${i}`);
+    for (const pod of ["pod-a", "pod-b"]) for (let i = 0; i < perModule; i++) card(`module.team_pod["${pod}"].aws_iam_role.pod_role[${i}]`);
+    return { nodes, edges: [], groups: { byStack: { "terralith-4": ids } } };
+  };
+
+  const rects = (svg: string) =>
+    [...svg.matchAll(/<rect data-group-id="([^"]*)" x="([-\d.]+)" y="([-\d.]+)" width="([\d.]+)" height="([\d.]+)"/g)].map((m) => ({
+      id: m[1].replace(/&quot;/g, '"'),
+      x: Number(m[2]),
+      y: Number(m[3]),
+      w: Number(m[4]),
+      h: Number(m[5]),
+    }));
+
+  it("draws one sub-box per module instance, inside the member box, and leaves the rest loose", () => {
+    const drawn = rects(renderGraph(terralith(60, 12), { boxes: "byStack" }).svg);
+    expect(drawn.map((b) => b.id)).toEqual(["terralith-4", 'terralith-4/module.team_pod["pod-a"]', 'terralith-4/module.team_pod["pod-b"]']);
+    const [box, a, b] = drawn;
+    for (const sub of [a, b]) {
+      expect(sub.x).toBeGreaterThanOrEqual(box.x);
+      expect(sub.y).toBeGreaterThanOrEqual(box.y);
+      expect(sub.x + sub.w).toBeLessThanOrEqual(box.x + box.w);
+      expect(sub.y + sub.h).toBeLessThanOrEqual(box.y + box.h);
+    }
+    // Two boxes stacked, not one band shared between the module instances.
+    expect(a.y + a.h).toBeLessThanOrEqual(b.y + 1);
+  });
+
+  it("titles a sub-box by the module instance and keeps the member out of the title", () => {
+    const svg = renderGraph(terralith(60, 12), { boxes: "byStack" }).svg;
+    expect(svg).toContain(">module.team_pod[&quot;pod-a&quot;]</text>");
+    expect(svg).not.toContain(">terralith-4/module.team_pod[&quot;pod-a&quot;]</text>");
+  });
+
+  it("keeps every card id as it arrived — the overlay, the diff pane and the moves join on them", () => {
+    const ir = terralith(60, 12);
+    const svg = renderGraph(ir, { boxes: "byStack" }).svg;
+    for (const n of ir.nodes) expect(svg).toContain(`data-node-id="${n.id.replace(/"/g, "&quot;")}"`);
+  });
+
+  it("draws no sub-box for a member with no module calls, and never one per type", () => {
+    expect(rects(renderGraph(terralith(60, 0), { boxes: "byStack" }).svg).map((b) => b.id)).toEqual(["terralith-4"]);
+  });
+});

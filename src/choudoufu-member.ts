@@ -491,3 +491,22 @@ export class ChoudoufuReadError extends Error {
 
 // The kind's `via` and spec live in src/choudoufu-live.ts (#370), which owns
 // the live half and imports this module for the declared one.
+
+/**
+ * The module INSTANCE an address sits in, or undefined when it sits in the
+ * root module (#393 B).
+ *
+ * `module.team_pod["pod-a"].aws_iam_role.pod_role[2]` →
+ * `module.team_pod["pod-a"]`. The instance, not the module: a terralith calls
+ * one module twice and the two copies are two boxes, which is the grouping a
+ * person reads the estate by — the `["pod-a"]` is the whole point. A nested
+ * call keeps only its OUTERMOST instance, so the estate groups by the thing
+ * its own root declares rather than by a depth nobody chose.
+ *
+ * Deliberately not a grouping by TYPE: an estate of 248 identity resources
+ * would draw as one box called `aws_iam_role` and say nothing a card does not.
+ */
+export function moduleInstanceOf(address: string): string | undefined {
+  const m = /^module\.[A-Za-z0-9_-]+(\[[^\]]*\])?/.exec(address);
+  return m ? m[0] : undefined;
+}
