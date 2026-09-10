@@ -3483,7 +3483,13 @@ function setupGraphViewBox(svg) {
   const a = (svg.getAttribute("viewBox") || "").split(/\s+/).map(Number);
   if (a.length === 4 && a.every((n) => !Number.isNaN(n))) {
     vbInit = a.slice();
-    vb = a.slice();
+    // #396 item 2: land on the fit that keeps the panel's footprint clear, not
+    // on the raw box — a re-render (a zoom change, an env change, the SSE
+    // re-pull) goes through here and never through fitGraph, so the first
+    // column would slide back under the panel at every one of them.
+    vb = fittedViewBox() || a.slice();
+    vbAtFit = true;
+    applyVB();
   } else {
     vbInit = vb = null;
   }
@@ -3495,11 +3501,86 @@ function applyVB() {
   const s = currentSvg();
   if (s && vb) s.setAttribute("viewBox", vb.join(" "));
 }
+
+// #396 item 2: the panel is `position: fixed` and floats OVER the graph pane
+// (index.html), so "fit the pane" put the leftmost column of cards underneath
+// it — a whole column of the terralith, half waterpark's `github` box — at
+// boot and after every re-render. The panel is furniture the reader cannot see
+// through, so the fit's target is the pane MINUS whatever the panel is
+// currently covering.
+//
+// Read at fit time, never remembered: the panel drags, docks to either side and
+// collapses to its tab bar, and a fit computed against where it used to be is
+// the same bug with a different offset. Collapsed or hidden → no footprint, and
+// the fit is the whole pane exactly as before.
+//
+// Horizontal only. The panel is a tall palette that docks left or right; a
+// top/bottom dock still leaves the full width, and insetting vertically for it
+// would shrink the graph for a strip the cards mostly clear anyway.
+const FIT_PANEL_MAX = 0.45; // the panel can never claim more than this of the pane
+
+function panelInsets(pane) {
+  const none = { left: 0, right: 0 };
+  const p = document.getElementById("panel");
+  if (!p || p.classList.contains("collapsed")) return none;
+  const cs = getComputedStyle(p);
+  if (cs.display === "none" || cs.visibility === "hidden" || Number(cs.opacity) === 0) return none;
+  const r = p.getBoundingClientRect();
+  if (!r.width || !r.height) return none;
+  // Nothing to inset for a panel that has been dragged clear of the graph pane.
+  if (r.bottom <= pane.top || r.top >= pane.bottom || r.right <= pane.left || r.left >= pane.right) return none;
+  const cap = pane.width * FIT_PANEL_MAX;
+  // Whichever side it is nearer to is the side it eats.
+  return (r.left + r.right) / 2 < (pane.left + pane.right) / 2
+    ? { left: Math.min(cap, Math.max(0, r.right - pane.left)), right: 0 }
+    : { left: 0, right: Math.min(cap, Math.max(0, pane.right - r.left)) };
+}
+
+/**
+ * The viewBox that fits the whole graph into the pane's UNCOVERED part.
+ *
+ * The returned box is given the pane's own aspect ratio, so `xMidYMid meet`
+ * letterboxes nothing and the pane's pixels map to viewBox units at one known
+ * scale: the graph is then placed by arithmetic — centred inside the band
+ * between the insets, centred vertically — instead of wherever `meet` would
+ * have dropped it. With no insets the result is pixel-identical to the old
+ * `vb = vbInit`, which is why nothing without a panel over it moves.
+ */
+function fittedViewBox() {
+  if (!vbInit) return null;
+  const host = document.getElementById("graph");
+  if (!host) return null;
+  const pane = host.getBoundingClientRect();
+  const [x0, y0, w0, h0] = vbInit;
+  if (!(pane.width > 0 && pane.height > 0 && w0 > 0 && h0 > 0)) return null;
+  const { left, right } = panelInsets(pane);
+  const band = Math.max(1, pane.width - left - right);
+  const s = Math.min(band / w0, pane.height / h0);
+  const vw = pane.width / s;
+  const vh = pane.height / s;
+  return [x0 - left / s - (band / s - w0) / 2, y0 - (vh - h0) / 2, vw, vh];
+}
+
 function fitGraph() {
-  if (vbInit) {
-    vb = vbInit.slice();
-    applyVB();
-  }
+  if (!vbInit) return;
+  vb = fittedViewBox() || vbInit.slice();
+  vbAtFit = true;
+  applyVB();
+}
+
+// #396 item 2: the fit now depends on the pane — its size, and what the panel
+// covers of it — where `vbInit` alone depended on neither, so a graph sitting
+// at fit has to be re-fitted when the pane moves under it. It moves more often
+// than a window resize: the statusbar's note wraps onto a second line, the
+// inspect pane is dragged wider, a panel tab's content grows. Only while the
+// view IS the fit: a pan or a zoom takes ownership of the viewBox, and nothing
+// here may pull it back out from under the reader's hands.
+let vbAtFit = false;
+function watchPaneForFit(host) {
+  if (typeof ResizeObserver === "undefined") return;
+  new ResizeObserver(() => {
+    if (vbAtFit) fitGraph();
+  }).observe(host);
 }
 
 // How much of the viewBox one card should take when ⌘K lands on it (#393): the
@@ -3537,6 +3618,7 @@ function revealNode(id) {
   const w = Math.min(vbInit[2], Math.max(box.width * REVEAL_CARDS_ACROSS, vbInit[2] / 60));
   const h = w * (vbInit[3] / vbInit[2]);
   vb = [box.x + box.width / 2 - w / 2, box.y + box.height / 2 - h / 2, w, h];
+  vbAtFit = false;
   applyVB();
   return true;
 }
@@ -3555,6 +3637,7 @@ function ensureZoomControls(host) {
   }
   if (zoomWired) return;
   zoomWired = true;
+  watchPaneForFit(host);
   host.addEventListener(
     "wheel",
     (e) => {
@@ -3576,6 +3659,7 @@ function ensureZoomControls(host) {
       vb[1] = cy - ((cy - vb[1]) * nh) / vb[3];
       vb[2] = nw;
       vb[3] = nh;
+      vbAtFit = false;
       applyVB();
     },
     { passive: false },
@@ -3608,6 +3692,7 @@ function ensureZoomControls(host) {
     }
     vb[0] -= (dx / r.width) * vb[2];
     vb[1] -= (dy / r.height) * vb[3];
+    vbAtFit = false;
     px = e.clientX;
     py = e.clientY;
     applyVB();

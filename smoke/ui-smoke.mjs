@@ -1081,6 +1081,56 @@ try {
     // to a composed estate yet".
     check("an estate with no chant member boots on resources", (await wbPage.locator("#statusbar").innerText()).startsWith("zoom: resources"));
 
+    // ---- #396 item 2: fit leaves the panel's footprint alone ---------------
+    // The View panel is `position: fixed` and floats OVER the graph pane, and
+    // "fit" fitted the pane, so on an 8000-unit canvas the first column of
+    // cards landed underneath it — reachable only by collapsing the panel or
+    // panning. Measured, not eyeballed: the leftmost card's rectangle on screen
+    // against the panel's right edge.
+    const leftmostCard = () =>
+      wbPage.evaluate(() => {
+        let best = null;
+        for (const g of document.querySelectorAll("#graph svg [data-node-id]")) {
+          const r = g.getBoundingClientRect();
+          if (!r.width || !r.height) continue;
+          if (!best || r.left < best.left) best = { left: r.left, id: g.getAttribute("data-node-id") };
+        }
+        return best;
+      });
+    const panelRight = async () => {
+      const b = await wbPage.locator("#panel").boundingBox();
+      return b.x + b.width;
+    };
+    const bootCard = await leftmostCard();
+    const bootPanelRight = await panelRight();
+    check("the leftmost card clears the floating panel at boot", !!bootCard && bootCard.left >= bootPanelRight);
+
+    // Every re-render lands on the same fit — a zoom change goes through the
+    // viewBox setup, not through the "⤢ fit" button, and that is the path that
+    // used to put the column back under the panel.
+    await wbPage.click('#panel-tabs button[data-tab="view"]');
+    await wbPage.waitForTimeout(100);
+    await wbPage.click('#panel-zoom button:text-is("attributes")');
+    await wbPage.waitForTimeout(400);
+    const zoomedCard = await leftmostCard();
+    check("…and after a zoom change", !!zoomedCard && zoomedCard.left >= (await panelRight()));
+    await wbPage.click('#panel-zoom button:text-is("resources")');
+    await wbPage.waitForTimeout(400);
+
+    // Collapsed, the panel covers nothing, so the fit is the whole pane again
+    // — the inset is read at fit time, never remembered.
+    await wbPage.click("#panel-collapse");
+    await wbPage.waitForTimeout(100);
+    await wbPage.click("#zoom-toggle");
+    await wbPage.waitForTimeout(200);
+    const collapsedCard = await leftmostCard();
+    check("a collapsed panel yields the pane back to the graph", !!collapsedCard && collapsedCard.left < bootCard.left);
+    await wbPage.click("#panel-collapse");
+    await wbPage.waitForTimeout(100);
+    await wbPage.click("#zoom-toggle");
+    await wbPage.waitForTimeout(200);
+    check("…and re-opening it makes room again", (await leftmostCard()).left >= (await panelRight()));
+
     // Item 2: no runtime stop, on either surface — the palette and the View tab
     // read the same list, and a stop must not appear in one and not the other.
     await wbPage.click('#panel-tabs button[data-tab="view"]');
@@ -1194,6 +1244,7 @@ try {
     check("the row carries the two tags choudoufu named", (await adoptRow.innerText()).includes("tofu-estate=terralith-4 tofu-address=aws_cloudwatch_log_group.extra"));
     const copy = adoptRow.locator("button");
     check("…with a copy button beside it", (await copy.count()) === 1);
+
     await copy.click();
     await chdfPage.waitForTimeout(100);
     check("the copy button confirms", (await copy.innerText()).includes("copied"));
