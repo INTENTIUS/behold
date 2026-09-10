@@ -41,6 +41,7 @@ function fakeChoudoufu(spawns: string[][]) {
     if (verb === "live-check") return { code: 0, stderr: "", stdout: inMono ? raw("choudoufu-live-check-monolith.json") : raw("choudoufu-live-check-team-a.json") };
     if (verb === "live-mv") return { code: 0, stderr: "", stdout: args[4] === "aws_iam_role.team_b" ? raw("choudoufu-live-mv-refused.json") : raw("choudoufu-live-mv-cross-estate-dry-run.json") };
     if (verb === "live-ls") return { code: 0, stderr: "", stdout: inMono ? raw("choudoufu-live-ls-monolith.json") : raw("choudoufu-live-ls-team-a-after-split.json") };
+    if (verb === "live-plan") return { code: 0, stderr: "", stdout: inMono ? raw("choudoufu-live-plan-monolith-clean.json") : raw("choudoufu-live-plan-team-a-after-split.json") };
     return { code: 2, stderr: `unexpected ${verb}`, stdout: "" };
   };
 }

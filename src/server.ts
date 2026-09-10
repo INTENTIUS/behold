@@ -133,7 +133,7 @@ import { sourceCommits, openRollbackBranches } from "./history.ts";
 import { composeEstate, composeEstateOverlay, estateMembers, withoutJoinedMembers } from "./estate.ts";
 import { statusVocabulary } from "./status-vocabulary.ts";
 import { addEstateMemberEdges } from "./estate-edges.ts";
-import { addChoudoufuReferenceEdges, liveCheckToIr, readLiveCheck, setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
+import { addChoudoufuReferenceEdges, liveCheckToIr, readLiveCheck, setChoudoufuRunner, setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
 import {
   filterTerraformCards,
   groupTerraformByRoot,
@@ -896,6 +896,9 @@ export function createApp(
   }),
 ): Hono {
   const app = new Hono();
+  // A test's fake choudoufu answers every read, the member via's included
+  // (src/choudoufu-member.ts `setChoudoufuRunner`); undefined in production.
+  setChoudoufuRunner(cfg.choudoufu?.run);
 
   // Carve mode (#252) claims /api/graph, /api/project and friends before the
   // project-shaped handlers are registered — see carveRoutes.

@@ -479,7 +479,19 @@ export function choudoufuSpawnEnv(base: NodeJS.ProcessEnv = process.env): NodeJS
  * once at close, as `runChantRaw` does — coercing per chunk corrupts a
  * multi-byte character straddling the 64KB highWaterMark. Never rejects: a
  * missing binary is code 127, a failing exit is data. */
+/** The runner every choudoufu read goes through when a test hands one in
+ * (`createApp({ choudoufu: { run } })`): the moves routes took it as an
+ * argument since #371, but the member's own via reads through
+ * `captureChoudoufu` directly, so the overlay of a choudoufu estate could not
+ * be exercised without a binary on PATH — CI has none. Undefined outside a
+ * test; set beside `setChoudoufuSpawnEnv`. */
+let runnerOverride: ((args: string[], cwd: string) => Promise<Captured>) | undefined;
+export function setChoudoufuRunner(run: ((args: string[], cwd: string) => Promise<Captured>) | undefined): void {
+  runnerOverride = run;
+}
+
 export function captureChoudoufu(args: string[], cwd: string, bin: string = choudoufuBinary()): Promise<Captured> {
+  if (runnerOverride) return runnerOverride(args, cwd);
   return new Promise((resolvePromise) => {
     const out: Buffer[] = [];
     const err: Buffer[] = [];
