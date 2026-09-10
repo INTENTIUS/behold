@@ -451,6 +451,13 @@
          here", not "something is wrong". */
       #graph [data-node-id].operator-home rect:first-of-type { stroke: var(--pending); stroke-width: 2; }
 
+      /* #404: a bound choudoufu card the plan would change in place. A DASHED
+         --degraded edge, deliberately not a fill: the fill is the ownership
+         verdict and attribute drift never moves it, so the two signals have to
+         live in different channels. Dashed rather than solid so it reads apart
+         from .carved's and .operator-home's solid strokes at a glance. */
+      #graph [data-node-id].plan-drifted rect:first-of-type { stroke: var(--degraded); stroke-width: 2; stroke-dasharray: 4 3; }
+
       /* The step the playhead sits on, on the graph itself — the ops lens marks
          it `_playhead` and the card wears a dashed edge, so "here" reads
          differently from "this one is done". */

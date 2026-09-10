@@ -30,9 +30,28 @@ function estate(): { root: string; mono: string; teamA: string } {
   return { root, mono: join(root, "mono"), teamA: join(root, "team-a") };
 }
 
+/**
+ * #404: what `show -json` answers here. Synthetic, and deliberately so — the
+ * recorded plan documents are from the iam-ecr cohort and name ITS addresses,
+ * which no roster in this file declares, so a join against them would prove
+ * nothing. The parser and the change-set rules are pinned against the real
+ * documents in src/choudoufu-plan.test.ts; this is only the shape the route
+ * has to carry from a spawn to a card, keyed to an address the monolith's own
+ * roster declares and `live-plan` reports bound.
+ */
+const FAKE_PLAN = JSON.stringify({
+  format_version: "1.2",
+  resource_changes: [
+    { address: "aws_iam_role.team_a", mode: "managed", change: { actions: ["update"], before: { tags: { drifted: "out-of-band" } }, after: { tags: {} } } },
+    { address: "aws_iam_policy.team_a", mode: "managed", change: { actions: ["no-op"], before: { name: "p" }, after: { name: "p" } } },
+  ],
+});
+
 /** The spawn seam: live-check per member from its recorded roster, live-mv
- * from the recorded dry run or refusal, live-ls from the recorded listings.
- * Records every argv so a test can assert what was (not) run. */
+ * from the recorded dry run or refusal, live-ls from the recorded listings,
+ * and (#404) the two-spawn plan read — `plan` writes a file and prints
+ * progress, `show -json` prints the document. Records every argv so a test can
+ * assert what was (not) run. */
 function fakeChoudoufu(spawns: string[][]) {
   return async (args: string[], cwd: string) => {
     spawns.push(args);
@@ -42,6 +61,8 @@ function fakeChoudoufu(spawns: string[][]) {
     if (verb === "live-mv") return { code: 0, stderr: "", stdout: args[4] === "aws_iam_role.team_b" ? raw("choudoufu-live-mv-refused.json") : raw("choudoufu-live-mv-cross-estate-dry-run.json") };
     if (verb === "live-ls") return { code: 0, stderr: "", stdout: inMono ? raw("choudoufu-live-ls-monolith.json") : raw("choudoufu-live-ls-team-a-after-split.json") };
     if (verb === "live-plan") return { code: 0, stderr: "", stdout: inMono ? raw("choudoufu-live-plan-monolith-clean.json") : raw("choudoufu-live-plan-team-a-after-split.json") };
+    if (verb === "plan") return { code: 0, stderr: "", stdout: "" };
+    if (verb === "show") return { code: 0, stderr: "", stdout: inMono ? FAKE_PLAN : '{"format_version":"1.2","resource_changes":[]}' };
     return { code: 2, stderr: `unexpected ${verb}`, stdout: "" };
   };
 }
@@ -128,6 +149,66 @@ describe("GET /api/choudoufu/moves (#371)", () => {
     expect(body.meta.vocabulary.labels).toMatchObject({ good: "bound", warn: "unowned", accent: "pending", neutral: "not observed" });
     // Nothing to explain: every member speaks this vocabulary.
     expect(body.meta.vocabulary.note).toBeUndefined();
+  });
+
+  // #404: attribute drift is opt-in, and the meta says which of the two
+  // "nothing is drifted" answers a reader is looking at.
+  describe("attribute drift from the plan (#404)", () => {
+    type Overlay = { ir: { nodes: { id: string; attrs: Record<string, unknown> }[] }; meta: { drift?: { read: boolean; drifted?: number } } };
+    const overlay = async (app: ReturnType<typeof served>["app"], q = "") => (await (await app.request(`/api/overlay?env=live${q}`)).json()) as Overlay;
+
+    it("never plans on an ordinary overlay read, and says the question was not asked", async () => {
+      const spawns: string[][] = [];
+      const { app } = served(spawns);
+      const body = await overlay(app);
+      // The distinction the SPA renders: not `drifted: 0`, which would claim a
+      // plan ran and found nothing.
+      expect(body.meta.drift).toEqual({ read: false });
+      expect(body.ir.nodes.every((n) => n.attrs._planDrift === undefined)).toBe(true);
+      // And no spawn was paid for it.
+      expect(spawns.map((a) => a[0])).not.toContain("plan");
+      expect(spawns.map((a) => a[0])).not.toContain("show");
+    });
+
+    it("plans on ?plan=1, marks the bound card and leaves its ownership colour alone", async () => {
+      const spawns: string[][] = [];
+      const { app } = served(spawns);
+      const body = await overlay(app, "&plan=1");
+      expect(body.meta.drift).toEqual({ read: true, drifted: 1 });
+      const node = body.ir.nodes.find((n) => n.id === "mono/aws_iam_role.team_a")!;
+      expect(node.attrs._status).toBe("good");
+      expect(node.attrs._planDrift).toEqual({ actions: ["update"], attributes: ["tags"] });
+      // The no-op entry in the same document earns no mark.
+      expect(body.ir.nodes.find((n) => n.id === "mono/aws_iam_policy.team_a")!.attrs._planDrift).toBeUndefined();
+      // The two spawns the module header pins, in order, per choudoufu member.
+      expect(spawns.filter((a) => a[0] === "plan" || a[0] === "show").map((a) => a.slice(0, 2).join(" "))).toEqual(["plan -input=false", "show -json", "plan -input=false", "show -json"]);
+    });
+
+    it("a reload after a plan read serves the cached change set instead of planning again", async () => {
+      const spawns: string[][] = [];
+      const { app } = served(spawns);
+      await overlay(app, "&plan=1");
+      const planned = spawns.filter((a) => a[0] === "plan").length;
+      const again = await overlay(app); // no ?plan=1 — an ordinary reload
+      // The drift is still on the card...
+      expect(again.meta.drift).toEqual({ read: true, drifted: 1 });
+      expect(again.ir.nodes.find((n) => n.id === "mono/aws_iam_role.team_a")!.attrs._planDrift).toBeDefined();
+      // ...and it cost nothing: the source has not moved, so the stored answer
+      // still stands.
+      expect(spawns.filter((a) => a[0] === "plan").length).toBe(planned);
+    });
+
+    it("names the changed attributes on /api/diff, in the pane's own before/after shape", async () => {
+      const { app } = served();
+      const body = (await (await app.request("/api/diff?env=live&plan=1")).json()) as {
+        nodes: Record<string, { health: string; diff: { category: string; changes: { path: string; oldValue: unknown; newValue: unknown }[] } | null }>;
+      };
+      expect(body.nodes["mono/aws_iam_role.team_a"]).toMatchObject({
+        health: "healthy", // bound is bound — drift is the second signal, not a demotion
+        diff: { category: "planned", changes: [{ path: "tags", oldValue: { drifted: "out-of-band" }, newValue: {} }] },
+      });
+      expect(body.nodes["mono/aws_iam_policy.team_a"].diff).toBeNull();
+    });
   });
 
   // #334: a fake choudoufu means no lexicon spawn — the overlay read used to

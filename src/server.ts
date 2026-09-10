@@ -144,12 +144,13 @@ import {
   terraformElisionNoteShort,
   type TerraformElision,
 } from "./terraform-lens.ts";
-import { choudoufuDiffNodes, readChoudoufuLive, type Runner as ChoudoufuRunner } from "./choudoufu-live.ts";
+import { choudoufuDiffNodes, paintPlanDrift, readChoudoufuLive, type Runner as ChoudoufuRunner } from "./choudoufu-live.ts";
+import { cacheChoudoufuPlan, cachedChoudoufuPlan, readChoudoufuPlan, type PlanResourceDrift } from "./choudoufu-plan.ts";
 import { choudoufuLexiconNote, setEstateLexiconRead, type LexiconRead } from "./choudoufu-refs.ts";
 import { discoverCarvePlans, moveMembers, moveReceipt, movesPayload, readCarvePlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
 import { memberKindOf, memberKindSpec, servesAsEstate } from "./member-kind.ts";
 import { TerraformReadError, discoverTerraformRoots, terraformRootsNote, terraformRootsNoteShort } from "./terraform-member.ts";
-import { invalidateMember, memberIr } from "./member-ir.ts";
+import { invalidateMember, memberIr, memberSourceStamp } from "./member-ir.ts";
 import { carveStatesFor, carveStatesUnder } from "./carve-discovery.ts";
 import { foreignNote, type GraphIRWithForeign } from "./foreign.ts";
 import { Broadcaster, watchSources } from "./events.ts";
@@ -2580,6 +2581,57 @@ export function createApp(
     }
   });
 
+  /**
+   * #404: the attribute drift half of a choudoufu member, per member.
+   *
+   * OPT-IN. `plan` refreshes every resource in the estate — a read per
+   * resource against the account, where the ownership half (`live-ls` /
+   * `live-plan`) costs the tagging index and is flat in the estate's size. So
+   * an ordinary overlay read never plans; `?plan=1` does, and that is the only
+   * thing that spawns one.
+   *
+   * A read WITHOUT `plan=1` still serves a change set already in the cache for
+   * a member whose source has not moved, so a reload after a plan refresh
+   * keeps showing what the refresh found rather than dropping it. `read` is
+   * false only when no plan was asked for AND none was cached — which is what
+   * lets the SPA tell "not looked" from "looked, nothing drifted".
+   *
+   * A member whose plan refuses (no credentials, a provider error) is skipped:
+   * the ownership overlay is untouched and perfectly good, and a failed
+   * SECOND opinion must not blank the first one.
+   */
+  const choudoufuPlanDrift = async (dirs: string[], wanted: boolean): Promise<{ read: boolean; byDir: Map<string, { name: string; drift: Map<string, PlanResourceDrift> }> }> => {
+    const members = estateMembers(dirs).filter((m) => m.kind === "choudoufu");
+    // Keyed by DIRECTORY, not by member name: a member's name is derived from
+    // its path, so a call scoped to one member (the single-node diff route)
+    // and a call over the whole estate must agree on the key, and the
+    // directory is the only thing both of them know for certain.
+    const byDir = new Map<string, { name: string; drift: Map<string, PlanResourceDrift> }>();
+    let read = false;
+    for (const m of members) {
+      const stamp = memberSourceStamp(m.dir);
+      if (!wanted) {
+        const hit = cachedChoudoufuPlan(m.dir, stamp);
+        if (hit) {
+          read = true;
+          byDir.set(m.dir, { name: m.name, drift: hit });
+        }
+        continue;
+      }
+      try {
+        const drift = await readChoudoufuPlan(m.dir, cfg.choudoufu?.run);
+        cacheChoudoufuPlan(m.dir, stamp, drift);
+        read = true;
+        byDir.set(m.dir, { name: m.name, drift });
+      } catch {
+        // The plan could not be read for this member — the overlay's ownership
+        // colours stand, and `drift.read` stays false unless another member
+        // answered.
+      }
+    }
+    return { read, byDir };
+  };
+
   // Live / overlay — the drift-coloured graph (chant #821, shipped in chant
   // 0.18.31). `chant graph --live --overlay` defaults to the source-anchored
   // overlay: declared edges (the cross-substrate topology) kept, live status
@@ -2662,6 +2714,14 @@ export function createApp(
         // #379/#380/#382 — the same three, in the same order, as /api/graph's
         // estate branch. A live overlay adds colour, never a different picture.
         applyTerraformPasses(ir, detail);
+        // #404: the second signal on a bound choudoufu card. After the paint
+        // passes, because it reads `_status` (only a BOUND card can carry
+        // attribute drift) and only ever adds `_planDrift` beside it — the
+        // ownership verdict stays the card's colour.
+        const planWanted = new URL(c.req.url).searchParams.get("plan") === "1";
+        const drift = await choudoufuPlanDrift(cfg.projectDirs, planWanted);
+        let driftedCards = 0;
+        for (const e of drift.byDir.values()) driftedCards += paintPlanDrift(ir, e.drift, e.name);
         const coverNote =
           est.unobserved.length || est.dropped.length
             ? `live observe covered ${est.observed} of ${est.total} projects — ` +
@@ -2753,7 +2813,21 @@ export function createApp(
         return c.json({
           ir,
           svg,
-          meta: { projectDir: cfg.projectDir, env, mode: "overlay", estate: est.total, vocabulary, behaviour, ...(note ? { note } : {}) },
+          meta: {
+            projectDir: cfg.projectDir,
+            env,
+            mode: "overlay",
+            estate: est.total,
+            vocabulary,
+            behaviour,
+            // #404: "not looked" and "looked, nothing drifted" are different
+            // answers and the SPA must be able to tell them apart — a legend
+            // that says nothing where a plan was never read is honest; one
+            // that says `0 drifted` there is a claim behold did not earn.
+            // The figure is CARDS marked, which is what the legend counts.
+            drift: drift.read ? { read: true, drifted: driftedCards } : { read: false },
+            ...(note ? { note } : {}),
+          },
         });
       }
       // #261: `runtime` forces detail 3 exactly as `logical` does, and for the
@@ -3003,11 +3077,15 @@ export function createApp(
     // A member that cannot be read contributes nothing; the overlay's cover
     // note already says why.
     const multi = !!cfg.projectDirs;
+    // #404: the same opt-in the overlay takes — `?plan=1` reads a plan, no
+    // flag serves one already cached for a member whose source has not moved,
+    // and neither one ever plans on a read that did not ask.
+    const diffDrift = await choudoufuPlanDrift(cfg.projectDirs ?? [cfg.projectDir], new URL(c.req.url).searchParams.get("plan") === "1");
     for (const m of estateMembers(cfg.projectDirs ?? [cfg.projectDir])) {
       if (m.kind !== "choudoufu") continue;
       try {
         const r = await readChoudoufuLive(m.dir, {});
-        Object.assign(nodes, choudoufuDiffNodes(r.check, r.ls, r.plan, multi ? m.name : undefined));
+        Object.assign(nodes, choudoufuDiffNodes(r.check, r.ls, r.plan, multi ? m.name : undefined, diffDrift.byDir.get(m.dir)?.drift));
       } catch {
         // painted unobserved on the overlay; nothing to slice
       }
@@ -3141,7 +3219,10 @@ export function createApp(
     if (owner) {
       try {
         const r = await readChoudoufuLive(owner.dir, {});
-        const entry = choudoufuDiffNodes(r.check, r.ls, r.plan, multi ? owner.name : undefined)[node];
+        // #404: the same opt-in as the bulk route above, so one node's pane
+        // and the whole estate's pane cannot disagree about what drifted.
+        const one = await choudoufuPlanDrift([owner.dir], new URL(c.req.url).searchParams.get("plan") === "1");
+        const entry = choudoufuDiffNodes(r.check, r.ls, r.plan, multi ? owner.name : undefined, one.byDir.get(owner.dir)?.drift)[node];
         return c.json({ node, env, ...(entry ?? { diff: null, observed: null, health: "unknown", fieldDrift: null }) });
       } catch (err) {
         return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);

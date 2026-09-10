@@ -32,8 +32,13 @@ There's a whole catalog — `behold demo --list` names the rest (`behold demo
 k8s` stands the same loop up on a throwaway k3d cluster: runtime Pods, field
 ownership; `behold demo argo-estate` needs nothing at all — a three-project
 Argo CD estate, declared only, so it runs where Docker doesn't; `behold demo
-carve` is the Terraform peel walkthrough, below). Every loaded demo lands in
-the panel's recents, so switching between them is the Scope tab.
+choudoufu-estate` is four tag-owned OpenTofu estates served composed, where a
+card's colour is **ownership** — bound, unowned, pending — and not "nothing
+changed": a resource whose attributes drifted out of band still carries its
+markers and is still green, so attribute drift is a separate read you ask for
+with ⌘K → "Re-check live with plan"; `behold demo carve` is the Terraform peel
+walkthrough, below). Every loaded demo lands in the panel's recents, so
+switching between them is the Scope tab.
 
 Working in a checkout rather than an npm install? There is a second catalog,
 `workbench.json`, which is this checkout's and is not shipped — it is

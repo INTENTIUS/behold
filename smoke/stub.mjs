@@ -513,6 +513,15 @@ const CHOUDOUFU_IR = {
   edges: [],
 };
 const CHOUDOUFU_VOCABULARY = { of: "choudoufu", labels: { good: "bound", warn: "unowned", accent: "pending", neutral: "not observed", runtime: "runtime child" } };
+// #404: the attribute drift a plan would revert, on the BOUND card — the case
+// the ownership half cannot see, because both markers are intact on either
+// side of the change. Served only for `?plan=1`, so the stub reproduces the
+// opt-in: an ordinary overlay read gets `{read: false}` and no mark at all.
+const CHOUDOUFU_PLAN_DRIFT = { actions: ["update"], attributes: ["tags"] };
+const CHOUDOUFU_PLAN_CHANGES = [
+  { path: "tags", oldValue: { drifted: "out-of-band", "tofu-estate": "terralith-4" }, newValue: { "tofu-estate": "terralith-4" } },
+  { path: "image_tag_mutability", oldValue: "IMMUTABLE", newValue: "MUTABLE" },
+];
 const CHOUDOUFU_PROJECT = {
   projectDir: "/estates/terralith-4",
   recents: [],
@@ -673,6 +682,13 @@ export function startStub(port, { carve = false, nonChant = false, choudoufu = f
   // layer without a project on disk. `server.layout` lets the test read and
   // seed it as if it were the file.
   const layout = new Map();
+  // #404: the server's plan cache, modelled. `?plan=1` reads a plan and stores
+  // it under the member's source stamp; every read AFTER that one is served
+  // from the store without re-planning, which is why the SPA's `/api/diff`
+  // fetch carries no `plan=1` of its own and still gets the attributes. A stub
+  // that only answered the flagged request would make the client look broken
+  // where the server is doing exactly what it was asked to.
+  let choudoufuPlanned = false;
   const carvePosts = [];
   /** #284 item 2: what the pending gate card's Approve button actually sent —
    * so the smoke asserts the wire contract (the EXISTING op-signal route), not
@@ -823,16 +839,46 @@ export function startStub(port, { carve = false, nonChant = false, choudoufu = f
       };
       if (path === "/api/project") return json(CHOUDOUFU_PROJECT);
       if (path === "/api/graph" || path === "/api/overlay") {
+        // #404: the plan read is opt-in, so the mark and the count exist only
+        // on the request that asked for them.
+        if (url.searchParams.get("plan") === "1") choudoufuPlanned = true;
+        const planned = choudoufuPlanned;
+        const ir = {
+          ...CHOUDOUFU_IR,
+          nodes: CHOUDOUFU_IR.nodes.map((n) =>
+            planned && n.id === "terralith-4/aws_ecs_cluster.main" ? { ...n, attrs: { ...n.attrs, _planDrift: CHOUDOUFU_PLAN_DRIFT } } : n,
+          ),
+        };
         return json({
-          ir: CHOUDOUFU_IR,
+          ir,
           svg: CHOUDOUFU_SVG,
-          meta: { projectDir: CHOUDOUFU_PROJECT.projectDir, env: "live", tier: null, target: null, estate: 1, mode: "overlay", vocabulary: CHOUDOUFU_VOCABULARY },
+          meta: {
+            projectDir: CHOUDOUFU_PROJECT.projectDir,
+            env: "live",
+            tier: null,
+            target: null,
+            estate: 1,
+            mode: "overlay",
+            vocabulary: CHOUDOUFU_VOCABULARY,
+            drift: planned ? { read: true, drifted: 1 } : { read: false },
+          },
         });
       }
       if (path === "/api/diff") {
+        if (url.searchParams.get("plan") === "1") choudoufuPlanned = true;
+        const planned = choudoufuPlanned;
         return json({
           env: "live",
           nodes: {
+            "terralith-4/aws_ecs_cluster.main": {
+              observed: { type: "aws_ecs_cluster", physicalId: "terralith-4-main", ownership: "owned", attributes: { bound: CHOUDOUFU_IR.nodes[0].attrs.bound } },
+              // The ownership verdict is unchanged by the drift — `healthy`
+              // either way, which is the whole of #404's second bullet.
+              diff: planned ? { category: "planned", changes: CHOUDOUFU_PLAN_CHANGES } : null,
+              health: "healthy",
+              healthDetail: CHOUDOUFU_IR.nodes[0].attrs.bound,
+              fieldDrift: null,
+            },
             "terralith-4/aws_cloudwatch_log_group.extra": {
               observed: {
                 type: "aws_cloudwatch_log_group",
