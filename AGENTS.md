@@ -91,6 +91,14 @@ preview-locked, and one load runs at a time (409 otherwise).
    "Collapse large boxes" / "Expand all". Below the limit it changes nothing.
 3. **inspect** — a node's `sourceLoc.file` is the typed source that declared it;
    edit there to change the estate (chant is the source of truth, not behold).
+4. **find** — ⌘K also takes an ADDRESS (#393). Two characters in, the palette
+   matches the ids and addresses of the graph the page is currently showing and
+   offers up to twelve `node: <address>` rows, prefix matches first, each with
+   its member and kind on a second line (two members of one estate can declare
+   the same address). Enter takes the same path a click on the card does — the
+   inspect pane and the highlight — and pans the graph onto it: `revealNode` in
+   web/app.js drives the same viewBox the wheel, the drag and "⤢ fit" drive.
+   Nothing here fetches, so it works in a static export too.
 
 ## The carve loop (Terraform → chant, #230)
 
@@ -662,3 +670,46 @@ absolute paths cost every `../modules/x` call the estate makes — 72 nodes and 
 resources on water park, against 247 and 43 through the symlink. Nothing in the
 answer mentions the scratch path (a terraform entity carries `attrs.file`
 relative to its root, and no `sourceLoc`).
+
+### A choudoufu estate's own references (#393)
+
+`choudoufu live-check -json` states the roster and `references[]`, and that
+second list is *cross-estate by construction* — data sources filtered on
+another estate's marker tags. So a 301-resource terralith of roles, policies
+and attachments drew no edge at all and the graph asserted "nothing in this
+estate references anything else", which is false about every one of them.
+
+The references were never missing; nothing was reading them. **A choudoufu
+member's read now also runs the terraform kind's reader over its own
+directory** — one root, the estate directory itself, through the same scratch
+project machinery above (nothing written under the estate) — and joins the two
+documents by address. behold still parses no HCL: `src/choudoufu-refs.ts` is
+two lists of strings and the rules that match them, and its header is the
+argument for each. In short: the lexicon names *blocks* in a path of module
+*calls* (`estate/module.team_pod/aws_iam_role.pod_role`) and choudoufu names
+*instances* in a path of module *instances*
+(`module.team_pod["pod-a"].aws_iam_role.pod_role[0]`), so one lexicon edge is a
+product — kept inside one module instance (Terraform's scoping, not a guess),
+joined key to key when both ends expand over the same keys (266 true edges on
+`terralith-4` against 666 of which ~400 would be false), landing on a module
+call's whole interior, and dropped whole when either end is a `var`, a
+`locals` or anything else the roster declares no card for.
+
+Every edge is `inferred` and carries the lexicon's own attribute name (`role`,
+`policy_arn`), so the card says what made the reference. **Without the
+lexicon there are no edges and the note says so** — carrying the terraform
+kind's own install line rather than the sentence behold has no reader to
+assert — and the lexicon's version is in the member's cache stamp, so
+installing it invalidates the edgeless IR rather than serving it forever.
+
+The layout half is `packBoxComponents` (src/render.ts). src/edgeless.ts wraps a
+box whose cards reference *nothing*; a box that has edges is never wrapped, so
+`terralith-4` came back as a 110996 x 628 strip the day the join landed —
+dagre lays 42 connected components side by side on three ranks. The pass packs
+a box's components into shelves and resizes the box around them, re-laying each
+component on its own first (inside a cluster dagre interleaves them: a six-card
+cluster's bounding box spanned 46598 units) and wrapping a component that is a
+strip either way — the DNS fan is 19564 x 400 upright and 900 x 10046 on its
+side. A box under 4:1 is left exactly as it laid out. Measured: `terralith-4`
+7660 x 5162 with 266 edges, waterpark 3536 x 3138 at detail 2 and 7142 x 6974
+at detail 3 (from 4.2:1 and 15.1:1, the case #393's wrap did not answer).

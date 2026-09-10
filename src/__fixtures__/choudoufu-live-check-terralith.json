@@ -1,0 +1,357 @@
+{
+  "dir": ".",
+  "estate": "behold-terralith-4",
+  "blocked": false,
+  "exit_code": 0,
+  "schemas": "provider",
+  "instances": [
+    {
+      "address": "aws_iam_instance_profile.team_0000_profile",
+      "type": "aws_iam_instance_profile",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_iam_policy.count_team_policy[0]",
+      "type": "aws_iam_policy",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_iam_policy.count_team_policy[1]",
+      "type": "aws_iam_policy",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_iam_policy.count_team_policy[2]",
+      "type": "aws_iam_policy",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_iam_policy.count_team_policy[3]",
+      "type": "aws_iam_policy",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_iam_policy.count_team_policy[4]",
+      "type": "aws_iam_policy",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_iam_policy.count_team_policy[5]",
+      "type": "aws_iam_policy",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_iam_policy.count_team_policy[6]",
+      "type": "aws_iam_policy",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_iam_policy.count_team_policy[7]",
+      "type": "aws_iam_policy",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_iam_policy.team_0000_policy",
+      "type": "aws_iam_policy",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_iam_role.count_team[0]",
+      "type": "aws_iam_role",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_iam_role.count_team[1]",
+      "type": "aws_iam_role",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_iam_role.count_team[2]",
+      "type": "aws_iam_role",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_iam_role.count_team[3]",
+      "type": "aws_iam_role",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_iam_role.count_team[4]",
+      "type": "aws_iam_role",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_iam_role.count_team[5]",
+      "type": "aws_iam_role",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_iam_role.count_team[6]",
+      "type": "aws_iam_role",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_iam_role.count_team[7]",
+      "type": "aws_iam_role",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_iam_role.team_0000_role",
+      "type": "aws_iam_role",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_iam_role_policy.count_team_inline[0]",
+      "type": "aws_iam_role_policy",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "aws_iam_role_policy.count_team_inline[1]",
+      "type": "aws_iam_role_policy",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "aws_iam_role_policy.count_team_inline[2]",
+      "type": "aws_iam_role_policy",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "aws_iam_role_policy.count_team_inline[3]",
+      "type": "aws_iam_role_policy",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "aws_iam_role_policy.count_team_inline[4]",
+      "type": "aws_iam_role_policy",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "aws_iam_role_policy.count_team_inline[5]",
+      "type": "aws_iam_role_policy",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "aws_iam_role_policy.count_team_inline[6]",
+      "type": "aws_iam_role_policy",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "aws_iam_role_policy.count_team_inline[7]",
+      "type": "aws_iam_role_policy",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "aws_iam_role_policy.team_0000_inline",
+      "type": "aws_iam_role_policy",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "aws_iam_role_policy_attachment.count_team_custom_attach[0]",
+      "type": "aws_iam_role_policy_attachment",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "aws_iam_role_policy_attachment.count_team_custom_attach[1]",
+      "type": "aws_iam_role_policy_attachment",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "aws_iam_role_policy_attachment.count_team_custom_attach[2]",
+      "type": "aws_iam_role_policy_attachment",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "aws_iam_role_policy_attachment.count_team_custom_attach[3]",
+      "type": "aws_iam_role_policy_attachment",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "aws_iam_role_policy_attachment.count_team_custom_attach[4]",
+      "type": "aws_iam_role_policy_attachment",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "aws_iam_role_policy_attachment.count_team_custom_attach[5]",
+      "type": "aws_iam_role_policy_attachment",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "aws_iam_role_policy_attachment.count_team_custom_attach[6]",
+      "type": "aws_iam_role_policy_attachment",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "aws_iam_role_policy_attachment.count_team_custom_attach[7]",
+      "type": "aws_iam_role_policy_attachment",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "aws_iam_role_policy_attachment.team_0000_custom_attach",
+      "type": "aws_iam_role_policy_attachment",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "aws_iam_role_policy_attachment.team_0000_managed_attach",
+      "type": "aws_iam_role_policy_attachment",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "aws_route53_record.record[\"host-0000\"]",
+      "type": "aws_route53_record",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "aws_route53_record.record[\"host-0001\"]",
+      "type": "aws_route53_record",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "aws_route53_record.record[\"host-0002\"]",
+      "type": "aws_route53_record",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "aws_route53_record.record[\"host-0003\"]",
+      "type": "aws_route53_record",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "aws_route53_zone.main",
+      "type": "aws_route53_zone",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "module.team_pod[\"pod-a\"].aws_iam_policy.pod_policy[0]",
+      "type": "aws_iam_policy",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "module.team_pod[\"pod-a\"].aws_iam_policy.pod_policy[1]",
+      "type": "aws_iam_policy",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "module.team_pod[\"pod-a\"].aws_iam_policy.pod_policy[2]",
+      "type": "aws_iam_policy",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "module.team_pod[\"pod-a\"].aws_iam_policy.pod_policy[3]",
+      "type": "aws_iam_policy",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "module.team_pod[\"pod-a\"].aws_iam_role.pod_role[0]",
+      "type": "aws_iam_role",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "module.team_pod[\"pod-a\"].aws_iam_role.pod_role[1]",
+      "type": "aws_iam_role",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "module.team_pod[\"pod-a\"].aws_iam_role.pod_role[2]",
+      "type": "aws_iam_role",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "module.team_pod[\"pod-a\"].aws_iam_role.pod_role[3]",
+      "type": "aws_iam_role",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "module.team_pod[\"pod-a\"].aws_iam_role_policy_attachment.pod_custom_attach[0]",
+      "type": "aws_iam_role_policy_attachment",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "module.team_pod[\"pod-a\"].aws_iam_role_policy_attachment.pod_custom_attach[1]",
+      "type": "aws_iam_role_policy_attachment",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "module.team_pod[\"pod-a\"].aws_iam_role_policy_attachment.pod_custom_attach[2]",
+      "type": "aws_iam_role_policy_attachment",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "module.team_pod[\"pod-a\"].aws_iam_role_policy_attachment.pod_custom_attach[3]",
+      "type": "aws_iam_role_policy_attachment",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "module.team_pod[\"pod-b\"].aws_iam_policy.pod_policy[0]",
+      "type": "aws_iam_policy",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "module.team_pod[\"pod-b\"].aws_iam_policy.pod_policy[1]",
+      "type": "aws_iam_policy",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "module.team_pod[\"pod-b\"].aws_iam_policy.pod_policy[2]",
+      "type": "aws_iam_policy",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "module.team_pod[\"pod-b\"].aws_iam_policy.pod_policy[3]",
+      "type": "aws_iam_policy",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "module.team_pod[\"pod-b\"].aws_iam_role.pod_role[0]",
+      "type": "aws_iam_role",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "module.team_pod[\"pod-b\"].aws_iam_role.pod_role[1]",
+      "type": "aws_iam_role",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "module.team_pod[\"pod-b\"].aws_iam_role.pod_role[2]",
+      "type": "aws_iam_role",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "module.team_pod[\"pod-b\"].aws_iam_role.pod_role[3]",
+      "type": "aws_iam_role",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "module.team_pod[\"pod-b\"].aws_iam_role_policy_attachment.pod_custom_attach[0]",
+      "type": "aws_iam_role_policy_attachment",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "module.team_pod[\"pod-b\"].aws_iam_role_policy_attachment.pod_custom_attach[1]",
+      "type": "aws_iam_role_policy_attachment",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "module.team_pod[\"pod-b\"].aws_iam_role_policy_attachment.pod_custom_attach[2]",
+      "type": "aws_iam_role_policy_attachment",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "module.team_pod[\"pod-b\"].aws_iam_role_policy_attachment.pod_custom_attach[3]",
+      "type": "aws_iam_role_policy_attachment",
+      "rung": "declaration-carried"
+    }
+  ],
+  "references": [],
+  "checked": [
+    "lint",
+    "identity",
+    "dataread",
+    "stamp"
+  ],
+  "partial": [
+    "projection (2 of 47 refusals; the rest need a cloud)"
+  ],
+  "unchecked": [
+    "discovery"
+  ]
+}

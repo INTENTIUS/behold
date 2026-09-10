@@ -127,6 +127,30 @@ describe("edgelessNote", () => {
       expect(edgelessNote("resources", graph(11, 3), 2)).toBeUndefined();
     });
   });
+
+  // #393 item 1: a choudoufu estate's references are read by chant's terraform
+  // lexicon, and with that reader absent BOTH sentences above are wrong — the
+  // detail tier is not what is missing, and nobody established that nothing
+  // references anything.
+  describe("a caller that knows why there are no edges (#393)", () => {
+    const why = "no edges — … needs chant's terraform lexicon beside behold.";
+
+    it("says the caller's reason instead of the estate fact", () => {
+      expect(edgelessNote("resources", graph(11, 0), 3, why)).toBe(why);
+    });
+
+    it("…and instead of the detail-tier line, which is a different wrong answer", () => {
+      expect(edgelessNote("resources", graph(11, 0), 2, why)).toBe(why);
+    });
+
+    it("is ignored where there ARE edges — an estate that got them needs no caption", () => {
+      expect(edgelessNote("resources", graph(11, 3), 2, why)).toBeUndefined();
+    });
+
+    it("reaches the statusbar through notesFor", () => {
+      expect(notesFor("resources", graph(11, 0), undefined, undefined, 2, why)).toBe(why);
+    });
+  });
 });
 
 describe("notesFor", () => {

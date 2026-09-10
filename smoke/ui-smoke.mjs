@@ -11,7 +11,7 @@ import { chromium } from "playwright";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { startStub, JSON_FIXTURE, BOX, EDGE_VIA } from "./stub.mjs";
+import { startStub, JSON_FIXTURE, BOX, EDGE_VIA, PAL_FAR, PAL_MEMBER } from "./stub.mjs";
 import { THEMES, DEFAULT_THEME } from "../web/themes.js";
 import { tokensFor, pinTokensFor, colorForCategory, setTheme, hexToOklch, contrast } from "../web/theme.js";
 import { helmIconFor, PLATE_FILL } from "../src/icon-packs.ts";
@@ -1108,6 +1108,47 @@ try {
     // Item 4: one member is a project.
     const metaLine = await wbPage.locator("#meta").innerText();
     check("a lone member reads 'estate of 1 project'", metaLine.includes("estate of 1 project") && !metaLine.includes("1 projects"));
+
+    // Item 4: ⌘K takes an address, and lands on the card.
+    const fitBox = () => wbPage.locator("#graph svg").getAttribute("viewBox");
+    const atFit = await fitBox();
+    await wbPage.click("#hintk");
+    await wbPage.fill("#pal-input", "aws_iam_role.team_0007");
+    await wbPage.waitForTimeout(120);
+    const nodeRows = wbPage.locator("#pal-list .row");
+    check("typing an address offers the card", (await nodeRows.first().innerText()).startsWith(`node: aws_iam_role.team_0007_role`));
+    check(
+      "…with the member and the kind on its second line",
+      (await nodeRows.first().locator(".sub").innerText()).includes(PAL_MEMBER) && (await nodeRows.first().locator(".sub").innerText()).includes("aws_iam_role"),
+    );
+    // Two members declare `aws_iam_role.shared`; both are offered, and the
+    // second line is the only thing that tells them apart.
+    await wbPage.fill("#pal-input", "aws_iam_role.shared");
+    await wbPage.waitForTimeout(120);
+    const shared = await wbPage.locator("#pal-list .row .sub").allInnerTexts();
+    check("two members declaring one address are two rows", shared.filter((s) => s.includes("aws_iam_role")).length === 2);
+
+    // Prefix matches rank first, and the list is capped.
+    await wbPage.fill("#pal-input", "aws_iam_role.");
+    await wbPage.waitForTimeout(120);
+    const many = await wbPage.locator("#pal-list .row").allInnerTexts();
+    check("the node rows are capped", many.filter((r) => r.startsWith("node: ")).length <= 12);
+    check("a prefix match leads", many[0].startsWith("node: aws_iam_role."));
+
+    await wbPage.fill("#pal-input", "aws_iam_role.team_0007");
+    await wbPage.waitForTimeout(120);
+    await wbPage.keyboard.press("Enter");
+    await wbPage.waitForTimeout(200);
+    check("Enter closes the palette", (await wbPage.locator("#palette.on").count()) === 0);
+    check("…and the inspect pane shows the card", (await wbPage.locator("#inspect").innerText()).includes(PAL_FAR.id));
+    check("…and the card is highlighted, the same as a click", (await wbPage.locator(`#graph svg [data-node-id="${PAL_FAR.id}"].sel`).count()) === 1);
+    const landed = (await fitBox()).split(/\s+/).map(Number);
+    check("…and the graph panned: the viewBox is no longer the fit", (await fitBox()) !== atFit);
+    check(
+      "…onto the card, which is inside the viewport",
+      PAL_FAR.x >= landed[0] && PAL_FAR.x + 312 <= landed[0] + landed[2] && PAL_FAR.y >= landed[1] && PAL_FAR.y + 84 <= landed[1] + landed[3],
+    );
+    await wbPage.screenshot({ path: join(SHOTS, "11-palette-address.png") });
 
     // Item 3, from the browser's own side: nothing red in the console on the
     // way to that first screen.

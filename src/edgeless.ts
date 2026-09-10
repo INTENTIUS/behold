@@ -51,13 +51,16 @@
  *     detail 2   before 15833 x 1164  13.6:1   after  7499 x 1798   4.2:1
  *     detail 3   before 60230 x 1404  42.9:1   after 29958 x 1982  15.1:1
  *
- *   waterpark at detail 3 is the case this module does NOT answer, and the
- *   number says so. Its `prod` root is 104 cards in 37 connected components —
+ *   waterpark at detail 3 was the case this module does NOT answer, and the
+ *   number said so. Its `prod` root is 104 cards in 37 connected components —
  *   five clusters and 32 loose cards — and dagre puts all 37 side by side on
  *   three ranks. That is a wide rank, not a single one: the box has plenty of
- *   edges and every one of them is real. Packing a box's components the way
- *   `packComponents` packs the whole canvas is the fix, and it is a
- *   post-layout move with a box resize behind it rather than an edge.
+ *   edges and every one of them is real. `packBoxComponents` (src/render.ts,
+ *   #393 item 1) is that fix, a post-layout move with a box resize behind it
+ *   rather than an edge, and it took the same two pictures to 3536 x 3138 and
+ *   7142 x 6974. It had to exist the moment a choudoufu member grew its own
+ *   references: an estate with edges never reaches this module at all, so
+ *   `terralith-4` came back a 176:1 strip the day the join landed.
  */
 import type { GraphIR, IREdge } from "@intentius/chant";
 
