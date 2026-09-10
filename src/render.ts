@@ -27,6 +27,7 @@ import { terraformCardFields } from "./terraform-lens.ts";
 import { carveProgress, splitCarveState, type CarveState } from "./carve-manifest.ts";
 import { opCardFields } from "./ops-lens.ts";
 import { withRowChains, type RowGrid } from "./edgeless.ts";
+import { SUMMARY_LEXICON, summaryCardFields } from "./collapse-lens.ts";
 
 // Lexicon-native icons (#227), step 2 of 2. pinhole resolves a node's glyph
 // through a chain — per-node override → lexicon pack → keyword heuristic →
@@ -80,6 +81,13 @@ registerPack({ lexicon: "op", iconFor: () => undefined, fields: opCardFields });
 // a node's kind is the Terraform type (`aws_subnet`, `aws_iam_role`), which
 // the keyword heuristic already resolves the way it does for the carve lens.
 registerPack({ lexicon: CHOUDOUFU_LEXICON, iconFor: () => undefined, fields: choudoufuCardFields });
+
+// The collapse lens (#393) registers behold's own lexicon for the one card
+// that is not the estate's: the summary standing in for a shut box. Its whole
+// content is the sentence the box was badged with, and the default template
+// would spend both its rows on `box` and `cards` — the two attrs the title
+// already says — because it picks them alphabetically.
+registerPack({ lexicon: SUMMARY_LEXICON, iconFor: () => undefined, fields: summaryCardFields });
 
 export interface RenderResult {
   svg: string;
@@ -173,6 +181,10 @@ export function renderGraph(
     theme?: string;
     boxes?: "byStack" | "byContainer";
     radial?: boolean;
+    /** Text badges for the boxes, keyed by box key — the same seam
+     * `renderArchitecture` has carried since #357, brought to the estate view
+     * because that is where the counts #393 asks for belong. */
+    groupBadges?: Readonly<Record<string, string>>;
   } = {},
 ): RenderResult {
   const groups = ir.groups as ExtraGroups;
@@ -200,8 +212,12 @@ export function renderGraph(
   // the member clusters out along one horizontal band, so an 11-member estate
   // rendered ~45k units wide and 316 tall. Wrap the boxes into rows instead.
   else if (boxKey === "byStack" && boxes) packMemberBoxes(layout, ir, boxes);
-  // The module sub-boxes (#393 B), over the boxes dagre just produced.
-  if (boxes) addBandBoxes(layout, chains.grids, footprints(ir));
+  // The module sub-boxes (#393 B) and the count badges (#393 C), both over the
+  // boxes dagre just produced.
+  if (boxes) {
+    addBandBoxes(layout, chains.grids, footprints(ir));
+    applyBadges(layout.groups, opts.groupBadges);
+  }
   const svg = renderSvg(ir, layout, {
     fit: true,
     hideTitle: true,

@@ -159,7 +159,7 @@ if (staticMode) {
 
 /** Canonical key for a read URL — path + the lens params (whitelisted, sorted)
  * that select a distinct snapshot. MUST match src/export.ts `canonicalKey`. */
-const LENS_PARAMS = ["components", "detail", "env", "logical", "ops", "radial", "runtime", "tier"];
+const LENS_PARAMS = ["collapse", "components", "detail", "env", "logical", "ops", "radial", "runtime", "tier"];
 function canonicalKey(path, params) {
   // Components + logical + ops views ignore detail/radial — drop them so they
   // match the single captured snapshot (MUST match src/export.ts).
@@ -988,7 +988,7 @@ function wire(ir) {
 // null on a project that declares no `stacks[]` at all — the picker (and the
 // status strip's stack tag) then never renders. Every fetch reads this, so
 // the `changed` SSE re-pull and a palette lens change go through the same path.
-const view = { env: null, detail: 2, components: true, logical: false, runtime: false, ops: false, tier: null, target: null, stack: null, radial: false, compareTo: null };
+const view = { env: null, detail: 2, components: true, logical: false, runtime: false, ops: false, tier: null, target: null, stack: null, radial: false, collapse: false, compareTo: null };
 
 // #182: `components` is the boot default, but a project that declares no
 // components renders it as ZERO nodes — the first screen was a blank graph
@@ -3643,6 +3643,11 @@ async function load(opts = {}) {
     }
     // Radial layout (entity view only) — curl the wide DAG onto concentric rings.
     if (view.radial && !view.components && !view.logical && !view.ops) q.set("radial", "1");
+    // Collapse large boxes (#393): a member box over the server's limit draws
+    // as one card carrying its counts. An estate-box lens — the component DAG
+    // and the ops view have no member boxes to shut — and it rides both the
+    // source graph and the overlay, so picking an env doesn't undo it.
+    if (view.collapse && !view.components && !view.ops) q.set("collapse", "1");
     // The CI + resources facets are component-DAG-mode-only details. Load
     // both whenever components mode is on, env picked or not — #59 unifies
     // the CI facet (#58), the live-status join (#57), and resources (#59) so
@@ -4568,6 +4573,18 @@ function paletteCommands() {
   // phase boxes).
   if (!view.components && !view.logical && !view.ops) {
     c.push([(view.radial ? "Disable" : "Enable") + " radial layout", () => { view.radial = !view.radial; load(); }]);
+  }
+  // #393: 301 cards in one box read as a strip at any zoom. This shuts every
+  // box over the server's limit down to a card carrying its own counts, so an
+  // estate can be read at the level of its members first.
+  //
+  // Not in a static export: `captureKeys` (src/export.ts) captures the estate
+  // once, expanded, and a bundle that offers a stop it has no snapshot behind
+  // answers the click with "not in this static export". `collapse` is in
+  // `canonicalKey`'s LENS_PARAMS all the same, so the day a bundle does carry
+  // both, the two keys are already distinct.
+  if (!staticMode && !view.components && !view.ops) {
+    c.push([view.collapse ? "Expand all" : "Collapse large boxes", () => { view.collapse = !view.collapse; load(); }]);
   }
 
   // Env/stack/tier/target selection — replaces the old header pickers.

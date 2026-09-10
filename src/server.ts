@@ -62,6 +62,7 @@ import { notesFor, tierMismatchNote, namespaceMismatchNote, namespaceJoinNote, t
 import { resourcesByComponent, nonResourceEntities } from "./resources.ts";
 import { summarizePlan } from "./reconcile.ts";
 import { renderGraph, renderArchitecture, renderBanded, renderCarveEstate, renderCarveMorph, renderMoveMorph } from "./render.ts";
+import { boxBadges, collapseBoxes, collapseNote } from "./collapse-lens.ts";
 import { readCarveReport, carveReportToIr, carveNote } from "./carve-lens.ts";
 import {
   bandGraduated,
@@ -2140,7 +2141,21 @@ export function createApp(
       // render.ts's doc comment for why this is an explicit opt-in rather than
       // auto-detected the way the component DAG's `byWave` is.
       const radial = new URL(c.req.url).searchParams.get("radial") === "1";
-      const { svg } = renderGraph(ir, multi ? { boxes: "byStack" } : { radial });
+      // #393 C: `?collapse=1` — a member box over COLLAPSE_LIMIT cards is
+      // drawn as one summary card carrying the box's own count sentence. The
+      // COLLAPSED ir is what goes back, so the inspect pane, the edge count
+      // and every note speak about the picture on screen and not about a
+      // graph the reader cannot see. Off, and below the limit, nothing moves.
+      const collapse = new URL(c.req.url).searchParams.get("collapse") === "1";
+      let collapsedNote: string | undefined;
+      if (multi && collapse) {
+        const shut = collapseBoxes(ir);
+        ir = shut.ir;
+        collapsedNote = collapseNote(shut.collapsed);
+      }
+      // The count badges (#393 C) ride on every estate render, collapsed or
+      // not: a box of 301 cards has to be able to say so at "fit".
+      const { svg } = renderGraph(ir, multi ? { boxes: "byStack", groupBadges: boxBadges(ir) } : { radial });
       // #131: a level that renders empty, or as the level below, says which.
       // Multi-estate composition has its own shape and is left alone.
       const srcZoom: Zoom = components
@@ -2178,8 +2193,13 @@ export function createApp(
       const tfDirs = (multi ? cfg.projectDirs! : [cfg.projectDir]).filter((d) => memberKindOf(d) === "terraform");
       const rootsNote = tfDirs.length ? tfDirs.map((d) => terraformRootsNote(discoverTerraformRoots(d))).join("; ") : undefined;
       const srcNote =
-        [rootsNote, terraformElisionNote(tfElision, opts.detail)].filter(Boolean).join("; ") ||
-        (multi ? estateLensNote : notesFor(srcZoom, ir, srcCompositeEdgesAttached, undefined, opts.detail ?? 2));
+        [
+          [rootsNote, terraformElisionNote(tfElision, opts.detail)].filter(Boolean).join("; ") ||
+            (multi ? estateLensNote : notesFor(srcZoom, ir, srcCompositeEdgesAttached, undefined, opts.detail ?? 2)),
+          collapsedNote,
+        ]
+          .filter(Boolean)
+          .join(" · ") || undefined;
       return c.json({
         ir,
         svg,
@@ -2545,7 +2565,12 @@ export function createApp(
         // the same boxes the single-project runtime view draws, which is the
         // point of asking for the tier. Every other estate view keeps
         // `byStack`.
-        const { svg } = renderGraph(ir, { boxes: runtime ? "byContainer" : "byStack" });
+        // #393 C: the same collapse lens and the same count badges the source
+        // graph carries — one flag, both routes, or the palette command would
+        // undo itself the moment an env was picked.
+        const collapsed = new URL(c.req.url).searchParams.get("collapse") === "1" && !runtime ? collapseBoxes(ir) : undefined;
+        if (collapsed) ir = collapsed.ir;
+        const { svg } = renderGraph(ir, runtime ? { boxes: "byContainer" } : { boxes: "byStack", groupBadges: boxBadges(ir) });
         // #221: the join line says which members were read where the ESTATE
         // says they run; #192's note then speaks only for the members the join
         // did not reach — for the joined ones the read no longer looked in
@@ -2561,6 +2586,7 @@ export function createApp(
           namespaceJoinNote(est.joined),
           namespaceMismatchNote(withoutJoinedMembers(ir.nodes, est.joined)),
           notesFor(zoom, ir, undefined, undefined, detail ?? 2),
+          collapsed ? collapseNote(collapsed.collapsed) : undefined,
         ]
           .filter(Boolean)
           .join(" · ");

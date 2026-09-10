@@ -20,7 +20,7 @@ import { createApp, type ServerOptions } from "./server.ts";
  * frontend appends (target/lens/etc. don't vary a static bundle). Sorted, so
  * capture and replay agree regardless of param order. MUST stay identical to the
  * copy in web/app.js (`canonicalKey`). */
-const LENS_PARAMS = ["components", "detail", "env", "logical", "ops", "radial", "tier"];
+const LENS_PARAMS = ["collapse", "components", "detail", "env", "logical", "ops", "radial", "tier"];
 export function canonicalKey(path: string, params: URLSearchParams): string {
   // The component-DAG, logical and ops views ignore detail/radial (they're
   // entity-graph knobs), but the frontend still appends the current detail —
