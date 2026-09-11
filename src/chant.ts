@@ -31,6 +31,7 @@ import { stripAnsi } from "./ansi.ts";
 import { createHash } from "node:crypto";
 import { memberSourceStamp } from "./member-source.ts";
 import { ReadScheduler, currentReadSignal, readGeneration } from "./read-scheduler.ts";
+import { labelRead } from "./read-stats.ts";
 import { parseYAML } from "@intentius/chant/yaml";
 import { carveStatusArgs, type CarveStatusJson } from "./carve-manifest.ts";
 import { dropForeignDeclarations } from "./foreign.ts";
@@ -334,7 +335,9 @@ export function runChantRaw(
   const key = createHash("sha256").update(JSON.stringify([
     dir, chant.bin, chant.version, args, environment, readGeneration(), stamp ?? ++unstampableRead,
   ])).digest("hex");
-  return reads.read(key, (signal) => spawnChant(chant.bin, args, projectDir, effectiveEnv, signal), currentReadSignal())
+  // The label rides beside the key, never into it (#420): what a read is called
+  // must not change who it shares a spawn with. See src/read-stats.ts.
+  return reads.read(key, (signal) => spawnChant(chant.bin, args, projectDir, effectiveEnv, signal), currentReadSignal(), labelRead(args, dir))
     .then((result) => ({ ...result })); // callers own their result; JSON is parsed separately
 }
 
