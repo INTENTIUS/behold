@@ -247,6 +247,30 @@ const operatorHistory = () => ({
   readAt: "2026-01-04T00:00:00.000Z",
 });
 
+// #421: a diagnosis plus #420's read ledger. The numbers are the ones from
+// #367's own report — an 11-member estate, the slowest member at 147s — so the
+// smoke run renders the line a real slow estate would produce.
+export const DOCTOR = {
+  behold: "0.18.0",
+  dir: "/estates/stub-estate",
+  kind: "project",
+  ok: true,
+  checks: [{ name: "project", status: "pass", detail: "a chant project" }],
+  reads: {
+    runs: 3,
+    shared: 1,
+    refused: 0,
+    source: { runs: 1, queuedMs: 2, runningMs: 900 },
+    live: { runs: 2, queuedMs: 40, runningMs: 150_000 },
+    byOutcome: { completed: 3, failed: 0, cancelled: 0, deadline: 0 },
+    recent: [
+      { dir: ".", what: "graph", live: false, queuedMs: 2, runningMs: 900, outcome: "completed" },
+      { dir: "team-a", what: "graph --live", live: true, queuedMs: 40, runningMs: 147_000, outcome: "completed" },
+    ],
+  },
+  cache: { hits: 4, misses: 2, entries: 2 },
+};
+
 const JSON_ROUTES = {
   "/api/project": {
     projectDir: "/estates/stub-estate",
@@ -724,6 +748,7 @@ export function startStub(port, { carve = false, nonChant = false, choudoufu = f
    * history is pull-on-demand, so "how many times was this asked for, and with
    * what window" is exactly what the smoke needs to be able to check. */
   const logGets = [];
+  const doctorGets = [];
   /** #234 join 3: the operator strip's state, mutable so the re-poll after an
    * approve can answer with the gate gone — chant would drop it from
    * `pendingGates` once a resolution newer than the gated tick exists. */
@@ -745,6 +770,14 @@ export function startStub(port, { carve = false, nonChant = false, choudoufu = f
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://x");
     const path = url.pathname;
+    // #421: answered in every mode. The SPA asks after each load settles, so a
+    // mode that did not answer it would turn every load in that mode into a 404
+    // in the console — which is exactly how this smoke run caught it.
+    if (path === "/api/doctor") {
+      doctorGets.push(Date.now());
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(JSON.stringify(DOCTOR));
+    }
     if (carve) {
       const json = (body, code = 200) => {
         res.writeHead(code, { "content-type": "application/json" });
@@ -1091,5 +1124,6 @@ export function startStub(port, { carve = false, nonChant = false, choudoufu = f
   server.signalPosts = signalPosts; // what the pending gate card sent (#284 item 2)
   server.approvePosts = approvePosts; // what the converge gate card sent (#234 join 1)
   server.logGets = logGets; // when the converge history was read (#234, chant#2029)
+  server.doctorGets = doctorGets; // that the SPA asks what the last read cost (#421)
   return new Promise((resolve) => server.listen(port, () => resolve(server)));
 }

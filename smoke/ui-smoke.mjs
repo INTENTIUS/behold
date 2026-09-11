@@ -26,7 +26,9 @@ import {
   BEH_REFUSAL,
   BEH_ABSENT,
   BEH_DIAGNOSTIC,
+  DOCTOR,
 } from "./stub.mjs";
+import { readCostLine } from "../web/read-cost.js";
 import { THEMES, DEFAULT_THEME } from "../web/themes.js";
 import { tokensFor, pinTokensFor, colorForCategory, setTheme, hexToOklch, contrast } from "../web/theme.js";
 import { helmIconFor, PLATE_FILL } from "../src/icon-packs.ts";
@@ -1617,6 +1619,21 @@ try {
       absServer.close();
     }
   }
+
+  // #421: the cost line, end to end. The SPA asks what the last read cost after
+  // a load settles, so a boot alone proves the wiring — and the element has to
+  // be there for the next load to have somewhere to put the sentence.
+  check("the SPA asks what the last read cost", server.doctorGets.length > 0);
+  check(
+    "the scrim has a line to put it on",
+    (await page.locator("#loading-cost").count()) === 1,
+  );
+  // The stub answers with #367's own numbers, so this is the sentence a real
+  // slow estate produces, not a synthetic one.
+  check(
+    "…and the ledger renders as the slowest member, not the sum",
+    readCostLine(DOCTOR.reads) === "last read: 2 members, slowest 2m 27s (team-a graph --live)",
+  );
 
   check("no page errors", pageErrors.length === 0);
   if (pageErrors.length) console.error("page errors:", pageErrors);

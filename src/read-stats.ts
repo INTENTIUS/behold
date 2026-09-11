@@ -54,7 +54,23 @@ export interface ReadLabel {
 
 /** One finished read. Durations are whole milliseconds. */
 export interface ReadSample extends ReadLabel {
-  /** Enqueued until a slot opened. Pure contention: the budget, not the work. */
+  /**
+   * Enqueued in the SCHEDULER until a slot opened — the contention #367 bounded:
+   * an HTTP read, a background poll and a frame capture competing for the same
+   * process-wide budget.
+   *
+   * It is deliberately not the whole of what a member waits. An estate read
+   * fans out through `mapPool` at `estateReadPool()` width (src/estate.ts) and
+   * that bound sits ABOVE this one, so the fourth member of a three-wide estate
+   * waits in `mapPool` and arrives here to find a slot free. Measured on a
+   * three-member argo estate: 3033/3035/2218ms running, `queuedMs` 0 across the
+   * board, against 5.2s of wall clock. The gap between those is the upstream
+   * wait, and it is not in this number.
+   *
+   * Instrumenting it means timing the fan-out itself, which #422 restructures
+   * when it makes the picture arrive in pieces. Until then: a zero here means
+   * no cross-request contention, never "nothing waited".
+   */
   queuedMs: number;
   /** Started until it stopped. The work, plus whatever the substrate took. */
   runningMs: number;

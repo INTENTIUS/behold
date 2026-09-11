@@ -151,7 +151,9 @@ import { choudoufuLexiconNote, setEstateLexiconRead, type LexiconRead } from "./
 import { discoverCarvePlans, moveMembers, moveReceipt, movesPayload, readCarvePlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
 import { memberKindOf, memberKindSpec, servesAsEstate } from "./member-kind.ts";
 import { TerraformReadError, discoverTerraformRoots, terraformRootsNote, terraformRootsNoteShort } from "./terraform-member.ts";
-import { invalidateMember, memberIr, memberSourceStamp } from "./member-ir.ts";
+import { invalidateMember, memberIr, memberIrCacheStats, memberSourceStamp } from "./member-ir.ts";
+import { diagnose } from "./doctor.ts";
+import { readStats } from "./read-stats.ts";
 import { invalidateOverlay } from "./overlay-ir.ts";
 import { carveStatesFor, carveStatesUnder } from "./carve-discovery.ts";
 import { foreignNote, type GraphIRWithForeign } from "./foreign.ts";
@@ -1363,6 +1365,31 @@ export function createApp(
       unsubscribe();
     }),
   );
+
+  // What behold is and what its reads cost (#421, M2 of #419). `diagnose()` has
+  // produced this report since #193 and only the CLI has ever asked for it, so
+  // an operator watching a two-minute read had nowhere to look. The read ledger
+  // (#420) and the member IR cache counters ride along: the diagnosis says
+  // whether the estate CAN be read, and these say what reading it costs.
+  //
+  // Preview mode keeps the diagnosis and loses `recent`. Those samples are keyed
+  // by member directory, and the demo has spent effort elsewhere on not
+  // publishing the shape of the operator's tmpdir (`shortenIn`, carve state);
+  // the totals answer "is this slow" without naming anyone's filesystem.
+  app.get("/api/doctor", async (c) => {
+    const report = await diagnose(cfg.projectDir);
+    const { recent, ...totals } = readStats();
+    return c.json({
+      ...report,
+      reads: {
+        ...totals,
+        ...(cfg.previewMode ? {} : {
+          recent: recent.map(({ dir, ...rest }) => ({ dir: relative(cfg.projectDir, dir) || ".", ...rest })),
+        }),
+      },
+      cache: memberIrCacheStats(),
+    });
+  });
 
   // The mixed-substrate source graph — works today (cross-lexicon AttrRefs are
   // direct edges). This is behold's read-only core: the whole estate in one graph.
