@@ -9,6 +9,7 @@
 // position), and the theme picker into the panel's View-tab slot (a stable element
 // renderPanelView never rewrites, so the select mounts once and survives re-renders).
 import { createRefreshQueue } from "./refresh-queue.js";
+import { readCostLine } from "./read-cost.js";
 import { initTheme, mountThemePicker, readableOn, colorForCategory, onThemeChange, getTokens, getTheme, pinTokensFor } from "./theme.js";
 // #399 M2 / #401 M4 of #397: the colour-by modes' arithmetic and the
 // provenance badge's wording — every decision the behaviour overlay makes,
@@ -4814,11 +4815,19 @@ setInterval(() => {
 // can't fire a second pull while one's in flight. Ref-counted — nested loads
 // (graph + CI + resources) only lift the scrim when the last finishes.
 let loadingDepth = 0;
+// #421: what the LAST read cost, shown while this one runs. The person watching
+// the scrim wants to know whether to wait or go away, and behold has never told
+// them. Fetched after a load settles rather than during one — asking the server
+// how slow it is while it is being slow helps nobody — so the line always
+// describes the previous read and never guesses at this one.
+let lastReadCost = null;
 function showLoading(msg) {
   loadingDepth++;
   const o = document.getElementById("loading-overlay");
   if (!o) return;
   document.getElementById("loading-msg").textContent = msg || "loading…";
+  const cost = document.getElementById("loading-cost");
+  if (cost) cost.textContent = lastReadCost || "";
   o.hidden = false;
 }
 function hideLoading() {
@@ -4826,6 +4835,19 @@ function hideLoading() {
   if (loadingDepth > 0) return;
   const o = document.getElementById("loading-overlay");
   if (o) o.hidden = true;
+  void refreshReadCost();
+}
+
+// One cheap call on counters, never on the read path. A cost line is never worth
+// breaking a load over, so every failure here leaves the previous line standing.
+async function refreshReadCost() {
+  try {
+    const res = await fetch("/api/doctor");
+    if (!res.ok) return;
+    lastReadCost = readCostLine((await res.json()).reads);
+  } catch {
+    /* no line rather than a wrong one */
+  }
 }
 
 // #259: the op stream is chant's own stdout, and an Op that reports as JSON

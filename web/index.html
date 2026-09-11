@@ -163,6 +163,11 @@
         cursor: progress; }
       #loading-overlay[hidden] { display: none; }
       #loading-overlay #loading-msg { font: var(--t-body)/1.4 var(--font-mono); color: var(--muted); }
+      /* #421: what the last read cost, for the person waiting on this one.
+         Quieter than the message above it — an estimate, never a promise. */
+      #loading-overlay #loading-cost { font: var(--t-caption)/1.4 var(--font-mono); color: var(--muted);
+        opacity: 0.75; }
+      #loading-overlay #loading-cost:empty { display: none; }
       #loading-overlay .spinner { width: 34px; height: 34px; border-radius: 50%;
         border: 3px solid var(--line); border-top-color: var(--focus);
         animation: spin 0.7s linear infinite; }
@@ -560,6 +565,7 @@
     <div id="loading-overlay" hidden>
       <div class="spinner"></div>
       <span id="loading-msg">loading…</span>
+      <span id="loading-cost"></span>
     </div>
     <div id="app">
       <div id="graph"></div>

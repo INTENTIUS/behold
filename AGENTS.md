@@ -112,6 +112,34 @@ preview-locked, and one load runs at a time (409 otherwise).
    web/app.js drives the same viewBox the wheel, the drag and "⤢ fit" drive.
    Nothing here fetches, so it works in a static export too.
 
+### What a read cost (#420, #421)
+
+`GET /api/doctor` serves `diagnose()` — the same report `behold doctor` prints,
+which until #421 only the CLI could ask for — with two extra blocks on it:
+
+- `reads`, the ledger from `src/read-stats.ts`. Every scheduled chant read
+  passes through `ReadScheduler`, so each one is filed there with its running
+  time, its outcome, and which side of the source/live split it sits on. A bare
+  `chant graph` is the member's own TypeScript evaluation; anything with
+  `--live`/`--overlay`, and every other verb `isScheduledRead` allows, reaches
+  past it. `shared` counts subscribers handed an in-flight spawn — work not
+  done, never a run.
+- `cache`, `memberIrCacheStats()`.
+
+Two things to know before reading a number off it. `queuedMs` is contention
+**in the scheduler** — the HTTP-versus-poll-versus-capture competition #367
+bounded — and not the whole of what a member waits: the estate fan-out bounds
+upstream through `mapPool` (src/estate.ts), so a three-member estate measured
+3033/3035/2218 ms of running time with `queuedMs` 0 against 5.2 s of wall clock.
+The gap is the upstream wait and #422 is where it gets measured. And preview
+mode keeps the totals but drops `recent`, whose samples are keyed by member
+directory.
+
+The SPA asks once after each load settles and shows the answer on the loading
+scrim the *next* time one goes up (`web/read-cost.js`, `#loading-cost`): the
+slowest recent member, because an estate read finishes when its last member
+does, so a sum would report a number nobody waits for.
+
 ### The behaviour overlay (#398, M1 of #397)
 
 What the estate costs and where it runs out of headroom, on `/api/overlay`
