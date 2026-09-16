@@ -202,6 +202,12 @@ function recolorNodesByCategory(ir) {
     // unpriced count has to agree with what is on the canvas.
     if (plan.mode !== "drift" && paint.unpriced) g.setAttribute("data-unpriced", "1");
     else g.removeAttribute("data-unpriced");
+    // #429: and the card an overlay never observed because its member has no
+    // live half. Only on an overlay: on the source graph NO card has a status
+    // and the mark would be on every one of them, saying nothing.
+    const onOverlay = !!(lastMeta && lastMeta.env);
+    const node = graphIr.nodes.find((n) => n.id === id);
+    g.toggleAttribute("data-no-live", onOverlay && !!node && !(node.attrs && node.attrs._status));
     // Classify each element ONCE by the pinhole token it rode on (data-cat role), then apply
     // the role's colour on every pass. This is what makes it recolour on theme switch: after
     // the first pass the fill is a hex (not a --pin-* var), so we must key off the marker, not
@@ -2126,6 +2132,23 @@ function renderPanelModel() {
     // bound and is already counted on the row above. The row appears only when
     // a plan was actually read; where it was not, the legend says so in words
     // and prints no number, because "0 drifted" would be a claim nobody made.
+    // #429: a card with NO `_status` at all. pinhole's painter falls back to
+    // `neutral` for an unrecognised value, `undefined` included, so a member
+    // with no live half — a Terraform root, whose `live`/`overlay`/`env` are
+    // stripped in src/terraform-member.ts — paints exactly like a card behold
+    // looked at and could not see. It is in no legend bucket either, so the
+    // colour claimed 37 unobserved cards on an estate whose legend counted 2.
+    //
+    // Named rather than folded into `unobserved`, because they are different
+    // claims: "I looked and could not see" against "there is nothing here to
+    // look at". Same argument #399 makes for an unpriced card, and the same
+    // answer — mark it, do not merely colour it.
+    const noLive = ir.nodes.filter((n) => !(n.attrs && n.attrs._status)).length;
+    if (noLive) {
+      const row = panelDotRow("var(--muted)", "no live half", String(noLive));
+      row.title = "These members declare no live half, so nothing observed them — which is not the same as unobserved, and not the same as absent.";
+      host.appendChild(row);
+    }
     const dm = driftMeta();
     if (dm && dm.read) {
       host.appendChild(panelDotRow("var(--degraded)", "drifted (the plan would change it)", String(dm.drifted)));
