@@ -49,6 +49,7 @@ import { loadKubeconfig, resolveK8sTarget, type K8sProfiles, type Kubeconfig } f
 import { detectSubstrates, type Substrate } from "./substrates.ts";
 import { discoverEstateOps, type OpInfo } from "./ops.ts";
 import { beholdVersion } from "./server.ts";
+import { NO_AMBIENT_TARGET, SUBSTRATE_TARGET_VARS } from "./targets.ts";
 
 export type CheckStatus = "pass" | "warn" | "fail";
 
@@ -56,7 +57,7 @@ export type CheckStatus = "pass" | "warn" | "fail";
  * on it); `detail` is what behold found; `fix` is the single next step, set
  * whenever the status isn't a pass. */
 export interface DoctorCheck {
-  name: "project" | "chant" | "lexicons" | "envs" | "kube" | "substrates" | "ops" | "choudoufu" | "terraform";
+  name: "project" | "chant" | "lexicons" | "targets" | "envs" | "kube" | "substrates" | "ops" | "choudoufu" | "terraform";
   status: CheckStatus;
   detail: string;
   fix?: string;
@@ -171,6 +172,60 @@ function lexiconCheck(root: string, declared: Map<string, string[]>, estate: boo
     return { name: "lexicons", status: "pass", detail: "none declared" };
   }
   return { name: "lexicons", status: "pass", detail: `${found.length} installed: ${list(found)}` };
+}
+
+/**
+ * The targets line (#430, M2 of #428): a lexicon behold draws but cannot aim.
+ *
+ * `SUBSTRATE_TARGET_VARS` (src/targets.ts) names four lexicons against the nine
+ * behold draws, and that list is deliberately short — it withholds a lexicon
+ * until chant can actually be pointed at an emulator for it. The module also
+ * names the cost of that discipline in its own header: "a landed chant change
+ * leaves a stale omission here until someone notices; #125 was exactly that",
+ * which left behold showing a floci-gcp pill it had no way to aim a read at.
+ *
+ * "Until someone notices" was the whole detector. This is a line someone reads.
+ *
+ * ---------------------------------------------------------------------------
+ * WHAT THIS CANNOT DO, stated because the gap is the interesting part. The
+ * honest check is "chant can route this lexicon and behold does not list it",
+ * and behold cannot ask that question. Since chant 0.61 the endpoint variable
+ * is declared by the LEXICON PLUGIN (`endpointEnvVarsFor`, chant's
+ * live-endpoint.ts) rather than by a table in core, and behold installs none of
+ * those plugins — the served project does. No chant CLI reports them either:
+ * `lifecycle whoami --json` answers identity per lexicon and says nothing about
+ * endpoints.
+ *
+ * So this warns on the weaker question it CAN answer — the project declares a
+ * lexicon this list omits — and says plainly that it may be over-reporting,
+ * because a lexicon chant genuinely cannot route belongs absent. A stale
+ * omission and a deliberate one look the same from here, and a line that says
+ * so is still better than the silence #125 shipped in. The real fix is upstream:
+ * a chant surface that reports each lexicon's endpoint variable.
+ * ---------------------------------------------------------------------------
+ */
+function targetCheck(declared: Map<string, string[]>): DoctorCheck {
+  const lexicons = [...new Set([...declared.values()].flat())].sort();
+  const routable = new Set(SUBSTRATE_TARGET_VARS.map((t) => t.lexicon));
+  // A lexicon that resolves its target from chant.config is not a stale
+  // omission — it is a finished one, and src/targets.ts says which.
+  const unlisted = lexicons.filter((l) => !routable.has(l) && !(l in NO_AMBIENT_TARGET));
+  if (!lexicons.length) return { name: "targets", status: "pass", detail: "no lexicon declared — nothing to aim" };
+  if (!unlisted.length) {
+    const settled = lexicons.filter((l) => l in NO_AMBIENT_TARGET);
+    const aimable = lexicons.filter((l) => routable.has(l));
+    const parts = [
+      ...(aimable.length ? [`${list(aimable)} can be aimed at an emulator`] : []),
+      ...(settled.length ? [`${list(settled)} bind from chant.config by design`] : []),
+    ];
+    return { name: "targets", status: "pass", detail: parts.join("; ") };
+  }
+  return {
+    name: "targets",
+    status: "warn",
+    detail: `no emulator target for ${list(unlisted)} — the picker cannot aim a read at one, which is correct if chant cannot route it either`,
+    fix: "If chant can point that lexicon at an emulator, add it to SUBSTRATE_TARGET_VARS (src/targets.ts); if not, nothing to do — the omission is the honest answer.",
+  };
 }
 
 /** The envs line: what the env picker will infer. No envs is not broken — it
@@ -463,6 +518,7 @@ export async function diagnose(dir: string, probes: DoctorProbes = {}): Promise<
     projectCheck,
     chantCheck(root, chantTargets, estate),
     lexiconCheck(root, declared, estate),
+    targetCheck(declared),
     // An estate root is not itself servable — the hint has to name its members
     // (`behold serve a b c`, #31), which is what a stranger would otherwise
     // discover by having the root serve nothing. The `.` member (#387) is the

@@ -50,6 +50,22 @@ export const SUBSTRATE_TARGET_VARS: readonly SubstrateTargetVar[] = [
   { lexicon: "gcp", label: "floci-gcp", envVar: "GCP_ENDPOINT_URL" },
 ];
 
+/**
+ * Lexicons that belong absent from {@link SUBSTRATE_TARGET_VARS}, and why.
+ *
+ * The list above withholds a lexicon until chant can be pointed at one; these
+ * two are not withheld, they are *finished* — they resolve their target from
+ * `chant.config` rather than from an ambient variable, so there is nothing for
+ * behold to override and nothing to show in a picker. Named here rather than
+ * only in prose, so `behold doctor`'s targets line (#430) can tell a deliberate
+ * absence from a stale one instead of warning about `temporal` on every chant
+ * project that declares it.
+ */
+export const NO_AMBIENT_TARGET: Readonly<Record<string, string>> = {
+  k8s: "binds its cluster from chant.config's k8s.profiles, not from an ambient variable",
+  temporal: "resolves its endpoint from chant.config, not from an ambient variable",
+};
+
 /** One substrate's resolved target. */
 export interface SubstrateTarget {
   /** Substrate key — the lexicon name, which is what a component inherits through. */

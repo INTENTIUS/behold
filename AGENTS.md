@@ -958,6 +958,29 @@ every resource — one provider read per card, 301 of them on `terralith-4`. So:
   drifted: n}`. The two are different answers — "nobody looked" versus "looked,
   nothing drifted" — and the legend prints a count only for the second.
 
+### A lexicon behold draws but cannot aim (#430)
+
+`behold doctor`'s **targets** line. `SUBSTRATE_TARGET_VARS` (src/targets.ts)
+names four lexicons against the nine behold draws, deliberately — it withholds
+one until chant can actually be pointed at an emulator for it. That module also
+names the cost: a landed chant change leaves a stale omission "until someone
+notices", which happened once (#125) and left behold showing a floci-gcp pill it
+could not aim a read at. This is the line someone reads instead.
+
+`NO_AMBIENT_TARGET` (same module) is what stops it being noise: k8s and temporal
+are not withheld, they are finished — they bind from `chant.config` rather than
+an ambient variable, so there is nothing to override and nothing for a picker.
+Those report as settled, not as a gap.
+
+What the line CANNOT say, stated because the gap is the point: the honest
+question is "chant can route this and behold does not list it", and behold
+cannot ask it. Since chant 0.61 the endpoint variable is declared by the LEXICON
+PLUGIN (`endpointEnvVarsFor`), not by a table in core, and behold installs no
+lexicon plugins — the served project does. No chant CLI reports them either
+(`lifecycle whoami --json` answers identity and says nothing about endpoints).
+So the check warns on the weaker question it can answer and says it may be
+over-reporting. The real fix is upstream, and #430 records the ask.
+
 ### A card with no live half is not an unobserved one (#429)
 
 pinhole's painter takes a closed `_status` set and falls back to `neutral` for
