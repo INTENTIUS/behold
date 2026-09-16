@@ -37,10 +37,15 @@ describe("zoomNote", () => {
     expect(zoomNote("components", graph(0, 0))).toMatch(/no components discovered/);
   });
 
-  // #74: the projection is AWS-only by design, which is indistinguishable from
+  // #431: the projection was AWS-only when this was written and is not since —
+  // nine lenses compose in projectTopology. What stayed true is that an empty
+  // projection is indistinguishable from
   // a broken lens unless it says so.
-  it("explains an empty logical view as the AWS-only projection it is", () => {
-    expect(zoomNote("logical", graph(0, 0))).toMatch(/AWS projection/);
+  it("explains an empty logical view as no lens matching, not as an AWS-only projection (#431)", () => {
+    const note = zoomNote("logical", graph(0, 0))!;
+    expect(note).toMatch(/no topology lens matched/);
+    // The caption must not name one substrate as though it were the lens.
+    expect(note).not.toMatch(/AWS projection/);
   });
 
   // The case that made #131: composites IS resources plus component edges, so
@@ -169,7 +174,7 @@ describe("notesFor", () => {
   // The real shape of fountain-ops, the project #131 was measured against.
   it("describes a pure-k8s estate at every collapsed level", () => {
     expect(notesFor("components", graph(5, 4))).toBeUndefined();
-    expect(notesFor("logical", graph(0, 0))).toMatch(/AWS projection/);
+    expect(notesFor("logical", graph(0, 0))).toMatch(/no topology lens matched/);
     expect(notesFor("resources", graph(11, 0))).toMatch(/no edges/);
     expect(notesFor("runtime", withRuntimeChild(15, { dep: ["pod"] }))).toMatch(/no edges/);
   });
@@ -212,7 +217,7 @@ describe("notesFor with a logical input count", () => {
   });
 
   it("falls back to the empty-only check when it cannot", () => {
-    expect(notesFor("logical", graph(0, 0))).toMatch(/AWS projection/);
+    expect(notesFor("logical", graph(0, 0))).toMatch(/no topology lens matched/);
   });
 
   it("stays silent on a logical view that kept most of its input", () => {
