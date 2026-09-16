@@ -6,8 +6,9 @@
  * A user stepping through the picker saw the same view repeatedly and read the
  * control as stuck — which is how #131 was reported.
  *
- * None of these are errors. `logical` on a k8s estate is correctly empty (#74,
- * the projection's headline kinds are AWS-only) and `composites` with no
+ * None of these are errors. `logical` is correctly empty on an estate whose
+ * substrates nest nothing the nine lenses recognise (#431 — it was AWS-only
+ * when this module was written, and has not been since), and `composites` with no
  * component ownership is correctly the resource graph. The defect is silence,
  * so this module produces one short line saying which of those happened, and
  * `renderStatusbar()` in web/app.js puts it beside the zoom name that caused
@@ -48,15 +49,24 @@ export function zoomNote(zoom: Zoom, ir: NotableGraph, compositeEdgesAttached?: 
   }
 
   if (zoom === "logical") {
-    // #74: src/logical.ts's headline kinds are literal `AWS::*`, so a project
-    // with no AWS resources matches nothing. Correct, and indistinguishable
-    // from a broken lens without saying it.
+    // #431: this said "logical is an AWS projection" and meant it — in 2026
+    // src/logical.ts's headline kinds were literal `AWS::*` and nothing else
+    // existed. Eight lenses have been written since (azure, gcp, k8s, helm,
+    // kustomize, fly, terraform, choudoufu), all composed in `projectTopology`,
+    // so the caption was explaining an emptiness that had stopped being the
+    // reason for it. The measurement is on #431.
+    //
+    // What is still true: every lens filters its OWN lexicon and ignores the
+    // rest, so an empty projection means none of the nine recognised anything
+    // here — which a substrate with no topology to nest legitimately produces.
     //
     // Empty is the loud case; the quiet one is a projection that kept a
     // handful of nodes out of many, which looks like a working lens on a tiny
     // estate. `logicalKept` covers both — see its threshold note. Callers that
     // cannot count the input fall back to the empty-only check.
-    return empty ? "logical is an AWS projection — no AWS resources in this estate" : undefined;
+    return empty
+      ? "no topology lens matched this estate — logical nests what a substrate itself nests (VPC/subnet, resource group, project/location, namespace, release, app, root, estate), and none of those is declared here"
+      : undefined;
   }
 
   if (zoom === "composites") {
@@ -98,9 +108,13 @@ export function zoomNote(zoom: Zoom, ir: NotableGraph, compositeEdgesAttached?: 
  */
 export function logicalKept(before: number, after: number): string | undefined {
   if (after > 0 && after * 3 >= before) return undefined;
+  // #431: "a cloud-topology lens" and the #74 reference both predate the eight
+  // lenses written since. What the reader needs is why THEIR nodes were left
+  // out, and the answer is the same either way: a lens nests what its own
+  // substrate nests, and these kinds are not part of that topology.
   return after === 0
-    ? `logical projected nothing from ${before} resources — it is a cloud-topology lens, and this estate declares none of the kinds it nests (behold#74)`
-    : `logical kept ${after} of ${before} resources — it is a cloud-topology lens, and the rest are kinds it does not nest (behold#74)`;
+    ? `logical projected nothing from ${before} resources — each lens nests what its own substrate nests, and this estate declares none of those kinds`
+    : `logical kept ${after} of ${before} resources — each lens nests what its own substrate nests, and the rest are kinds no lens nests`;
 }
 
 /**
