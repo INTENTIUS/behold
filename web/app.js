@@ -10,6 +10,7 @@
 // renderPanelView never rewrites, so the select mounts once and survives re-renders).
 import { createRefreshQueue } from "./refresh-queue.js";
 import { readCostLine } from "./read-cost.js";
+import { applyMemberFrame, pendingLine, stillPending } from "./pending.js";
 import { initTheme, mountThemePicker, readableOn, colorForCategory, onThemeChange, getTokens, getTheme, pinTokensFor } from "./theme.js";
 // #399 M2 / #401 M4 of #397: the colour-by modes' arithmetic and the
 // provenance badge's wording — every decision the behaviour overlay makes,
@@ -1303,6 +1304,11 @@ let opsAvailable = 0;
  * Kubernetes tier that could only ever answer "nothing below the declaration
  * boundary". */
 let runtimeCapable = false;
+/** #422: the members whose live read has not landed yet, off the progressive
+ * overlay's `meta.pending`. Empty on every non-progressive load, which is every
+ * single-project serve and every static snapshot. */
+let pendingMembers = [];
+let pendingTotal = 0;
 /** #426: whether the apply-order stop is worth offering — /api/project's
  * `stacksCapable`, which is false for an estate and for a single-lexicon
  * project, where the answer could only ever be one box. */
@@ -2509,6 +2515,36 @@ function markOperatorCards(ir) {
  * estates this can appear on the corner is free; the guard below still skips a
  * card that already carries one of those, rather than drawing over it.
  */
+/**
+ * The cards whose member is still being read (#422).
+ *
+ * The same post-render stamp `markCarvedCards`/`markDriftedCards` use, and for
+ * the same reason: pinhole's SVG arrives as a string and is replaced on every
+ * render, so a mark is re-applied here rather than asked for at layout time.
+ *
+ * A dashed outline and a muted corner rather than a fill, because the fill is
+ * the status channel and this card HAS no status yet — painting one would be
+ * the claim the whole milestone exists to avoid. `_pendingRead` rides its own
+ * attr for the same reason: a fifth `_status` value falls back to neutral in
+ * pinhole's painter, which reads as "unobserved", which is a different and
+ * wrong thing.
+ */
+function markPendingCards(ir) {
+  const svg = document.querySelector("#graph svg");
+  if (!svg) return;
+  for (const n of (ir && ir.nodes) || []) {
+    const g = svg.querySelector('[data-node-id="' + CSS.escape(n.id) + '"]');
+    if (!g) continue;
+    const pending = !!(n.attrs && n.attrs._pendingRead);
+    g.toggleAttribute("data-pending-read", pending);
+    if (pending && !g.querySelector("title")) {
+      const t = document.createElementNS("http://www.w3.org/2000/svg", "title");
+      t.textContent = "still reading this member — not yet observed";
+      g.appendChild(t);
+    }
+  }
+}
+
 function markDriftedCards(ir) {
   const svg = document.querySelector("#graph svg");
   if (!svg) return;
@@ -2606,6 +2642,11 @@ function renderStatusbar() {
   if (view.stack) parts.push(`stack: ${view.stack}`);
   if (axes.tier) parts.push(`tier: ${axes.tier}`);
   if (view.radial && !view.components && !view.logical && !view.ops) parts.push("radial");
+  // #422: what the picture is still waiting on, while it is waiting. Ahead of
+  // the zoom note, because a half-read estate is the more urgent fact about
+  // what is on screen.
+  const stillReading = pendingLine(pendingMembers, pendingTotal);
+  if (stillReading) parts.push(stillReading);
   el.textContent = parts.join(" · ");
   // #131: why this level rendered empty, or as the one below it. The server
   // decides (src/zoom-notes.ts) — the SPA never infers it, so the note always
@@ -3435,6 +3476,7 @@ function render(ir, svg, m) {
   markPlayhead(ir); // #284 item 2: same, for the step the run is sitting on
   markOperatorCards(ir); // #234 free rider: same, for the operating loop's home
   markDriftedCards(ir); // #404: same, for a bound card the plan would change — after the carve/operator stamps, so it can see and yield to them
+  markPendingCards(ir); // #422: and the cards whose member has not answered yet
   applyLayout(); // #228: last, so the hand-placed deltas ride on top of every other pass
   renderDial();
 }
@@ -4496,6 +4538,11 @@ async function loadOnce(opts = {}, isCurrent = () => true) {
     } else if (view.env) {
       endpoint = "/api/overlay";
       q.set("env", view.env);
+      // #422: draw the estate from source at once and recolour each member as
+      // its own live read lands, instead of a blank canvas until the slowest
+      // one finishes. The server only honours it for a composed estate, and
+      // never in a static snapshot, where there is no stream to follow.
+      if (!staticMode) q.set("progressive", "1");
       // The runtime tier (#86) descends below the declaration boundary. It is
       // live-only by nature — owner-referenced children exist in the cluster,
       // never in your source — so it rides the overlay and means nothing
@@ -4551,6 +4598,12 @@ async function loadOnce(opts = {}, isCurrent = () => true) {
       return loadOnce(opts, isCurrent);
     }
     autoZoomFallback = false;
+    // #422: a progressive answer names the members it is still reading, and
+    // the `member` stream above clears them one at a time. Any other answer
+    // resets it, so a switch away from a progressive load never leaves a stale
+    // "still reading" claim on screen.
+    pendingMembers = body.meta && body.meta.mode === "progressive" ? [...(body.meta.pending || [])] : [];
+    pendingTotal = pendingMembers.length;
     render(body.ir, body.svg, body.meta);
   } catch (err) {
     // A background settle poll must not blow away a good graph on a transient error.
@@ -4697,6 +4750,33 @@ initPickers();
 const events = staticMode ? { addEventListener() {} } : new EventSource("/api/events");
 // One notification requests one refresh. Further notifications during a slow
 // read collapse to one follow-up; no wall-clock timers multiply estate scans.
+// #422: one frame per member as its live read settles. Payload-carrying, like
+// `apply` and `run` — the node set is already on screen, so this is id ->
+// status and the client repaints in place. Nothing is re-fetched: a refetch
+// here would re-run the whole estate read this stream exists to narrate.
+events.addEventListener("member", (e) => {
+  let frame;
+  try {
+    frame = JSON.parse(e.data);
+  } catch {
+    return;
+  }
+  // The live pass itself failed. Say so on the now-line and stop claiming the
+  // remaining members are still arriving, because nothing more is coming.
+  if (frame.error) {
+    pendingMembers = [];
+    nowline(`the estate read failed — ${frame.error}`);
+    renderStatusbar();
+    return;
+  }
+  if (!lastGraphIr) return;
+  const moved = applyMemberFrame(lastGraphIr, frame);
+  pendingMembers = stillPending(pendingMembers, frame);
+  if (moved.length) recolorNodesByCategory(lastGraphIr);
+  markPendingCards(lastGraphIr);
+  renderStatusbar();
+});
+
 events.addEventListener("changed", () => {
   bulkDiffCache = null; // an op ran → per-node live state may have changed
   load();
