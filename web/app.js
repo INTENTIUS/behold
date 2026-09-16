@@ -284,11 +284,11 @@ if (staticMode) {
 
 /** Canonical key for a read URL — path + the lens params (whitelisted, sorted)
  * that select a distinct snapshot. MUST match src/export.ts `canonicalKey`. */
-const LENS_PARAMS = ["collapse", "components", "detail", "env", "logical", "ops", "radial", "runtime", "tier"];
+const LENS_PARAMS = ["collapse", "components", "detail", "env", "logical", "ops", "radial", "runtime", "stacks", "tier"];
 function canonicalKey(path, params) {
   // Components + logical + ops views ignore detail/radial — drop them so they
   // match the single captured snapshot (MUST match src/export.ts).
-  const flat = params.get("components") === "1" || params.get("logical") === "1" || params.get("ops") === "1";
+  const flat = params.get("components") === "1" || params.get("logical") === "1" || params.get("ops") === "1" || params.get("stacks") === "1";
   const q = LENS_PARAMS.filter((k) => params.has(k) && !(flat && (k === "detail" || k === "radial")))
     .map((k) => `${k}=${params.get(k)}`)
     .join("&");
@@ -1284,6 +1284,13 @@ const ZOOM_OPTS = [
   // same chant source), so it sits last, and only appears when the served
   // estate has actually emitted Ops — `opsAvailable`, from /api/project.
   ["zoom: ops", "ops"],
+  // The apply order (#426): the cross-stack ordering chant already computes at
+  // synthesis — which lexicon partition must apply before which. A different
+  // axis again, like `ops`: neither coarser nor finer than a resource, and the
+  // only stop whose edges are about TIME rather than reference. Single-project
+  // only and gated on `stacksCapable`, because two members' `aws` stacks are
+  // not one stack.
+  ["zoom: apply order", "stacks"],
 ];
 const ZOOM_DETAIL = { composites: 1, resources: 2, attributes: 3, runtime: 3 };
 /** How many emitted Ops the served estate has (0 = the stop doesn't exist).
@@ -1296,18 +1303,23 @@ let opsAvailable = 0;
  * Kubernetes tier that could only ever answer "nothing below the declaration
  * boundary". */
 let runtimeCapable = false;
+/** #426: whether the apply-order stop is worth offering — /api/project's
+ * `stacksCapable`, which is false for an estate and for a single-lexicon
+ * project, where the answer could only ever be one box. */
+let stacksCapable = false;
 /** The zoom stops this project can actually offer — `runtime` needs an env AND
  * a member whose substrate has an owner chain, `ops` needs emitted op.json
  * files. Both the panel and ⌘K read this, so a stop never appears in one
  * surface and not the other. */
 function availableZooms() {
-  return ZOOM_OPTS.filter(([, z]) => (z === "runtime" ? Boolean(view.env) && runtimeCapable : z === "ops" ? opsAvailable > 0 : true));
+  return ZOOM_OPTS.filter(([, z]) => (z === "runtime" ? Boolean(view.env) && runtimeCapable : z === "ops" ? opsAvailable > 0 : z === "stacks" ? stacksCapable : true));
 }
 /** Current zoom value from (components, logical, ops, detail). */
 function zoomValue() {
   if (view.components) return "components";
   if (view.logical) return "logical";
   if (view.ops) return "ops";
+  if (view.stacks) return "stacks";
   if (view.runtime) return "runtime";
   return { 1: "composites", 2: "resources", 3: "attributes" }[view.detail] ?? "resources";
 }
@@ -1316,8 +1328,9 @@ function applyZoom(z) {
   view.components = z === "components";
   view.logical = z === "logical";
   view.ops = z === "ops";
+  view.stacks = z === "stacks";
   view.runtime = z === "runtime";
-  if (z !== "components" && z !== "logical" && z !== "ops") view.detail = ZOOM_DETAIL[z] ?? 2;
+  if (z !== "components" && z !== "logical" && z !== "ops" && z !== "stacks") view.detail = ZOOM_DETAIL[z] ?? 2;
 }
 
 // --- Floating control panel content ---------------------------------------
@@ -4442,6 +4455,14 @@ async function loadOnce(opts = {}, isCurrent = () => true) {
       // cross-substrate entity overlay, which components never use.
       q.set("components", "1");
       if (view.env) q.set("env", view.env);
+    } else if (view.stacks) {
+      // The apply-order lens (#426): chant's cross-stack ordering, built fresh
+      // for the same reason the ops lens is — it reads none of the entity
+      // knobs. No env (it is computed at synthesis, with no substrate), no
+      // detail, no radial. Tier rides along because a project's source can
+      // branch on one, which can change which lexicons it partitions into.
+      q = new URLSearchParams({ stacks: "1" });
+      if (view.tier) q.set("tier", view.tier);
     } else if (view.ops) {
       // The ops lens (#284): the declared Ops, read from each Op's emitted
       // op.json. Built fresh rather than layered onto the entity lenses,
@@ -4647,6 +4668,7 @@ async function initPickers() {
   // honestly open. Both are read before the first load() below, so a non-chant
   // estate never paints the components apology on its way to a picture.
   runtimeCapable = !!info.runtimeCapable;
+  stacksCapable = !!info.stacksCapable;
   const boot = bootZoom(info.memberKinds);
   if (boot !== "components") {
     applyZoom(boot);

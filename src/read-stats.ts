@@ -176,6 +176,10 @@ export function labelRead(args: readonly string[], dir: string): ReadLabel {
   const verb = args[0] ?? "";
   const head = verb === "graph" ? "graph" : [verb, args[1]].filter(Boolean).join(" ");
   const reaches = args.includes("--live") || args.includes("--overlay");
+  // #426: the apply-order read is a `graph` verb with no `--live`, which is the
+  // entity graph's own shape — so without this it would file under the same
+  // name and the ledger would report two different reads as one.
+  if (verb === "graph" && args.includes("--stacks")) return { dir, what: "graph --stacks", live: false };
   const what = verb === "graph" && reaches ? `graph ${args.includes("--overlay") ? "--overlay" : "--live"}` : head;
   return { dir, what, live: verb === "graph" ? reaches : true };
 }

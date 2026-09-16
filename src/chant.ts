@@ -491,6 +491,102 @@ async function runChantJson<T>(args: string[], projectDir?: string, envOverride?
   return JSON.parse(stdout) as T;
 }
 
+/**
+ * The cross-stack apply-ordering graph (#426).
+ *
+ * chant computes this at synthesis while it resolves cross-lexicon references,
+ * lands it on `BuildManifest.stackGraph`, and prints it from `chant graph
+ * --stacks --json`. Its own words: "chant exposes the order; it does not drive
+ * the apply." behold read neither it nor `deployOrder` and re-derived a subset.
+ *
+ * It is genuinely new information, not a second spelling of something behold
+ * has. Measured on chant's own `gitlab-cells-single-region-gke`: `stackGraph`
+ * states `helm` applies after `k8s`, and the entity IR behold reads for the
+ * same project carries 211 nodes and ZERO edges. The component DAG's `byWave`
+ * is a different axis again — chant's `components/cli-support.ts` says it
+ * "mirrors `computeStackGraph` … but reuses `resolveComponentGraph`" — and the
+ * two can disagree in either direction.
+ *
+ * Three things here are not the shape the other reads take:
+ *
+ *  1. **The project ROOT, never `graphPath`.** `runStackGraph` does not call
+ *     `mergeGraphOps`, so it only sees `ops/*.op.ts` when the path positional
+ *     is the root. Measured on example-writes, whose config sets
+ *     `sourceDir: "src"`: `chant graph . --stacks` answers `[aws, temporal]`
+ *     and `chant graph src --stacks` answers `[aws]`. Every other read here
+ *     wants `graphPath`; this one would be silently wrong with it.
+ *  2. **A non-zero exit is data, not a failure.** chant exits 1 when `cycles`
+ *     is non-empty, with valid JSON on stdout — a cyclic estate is a real
+ *     answer about a real estate. `runChantJson` would turn every one of those
+ *     into a 500, so this reads raw and branches on the payload.
+ *  3. **A bare argv.** `runStackGraph` reads none of `--detail`/`--lens`/`--up`
+ *     /`--down`/`--live`/`--overlay`/`--namespace`, so threading `graphFlags`
+ *     would only pollute the scheduler key. Tier and target still ride through
+ *     `envOverridesFor`, since a project's source can branch on them.
+ *
+ * No version gate: `--stacks` shipped in chant-v0.1.19, far below behold's
+ * `^0.61.0` floor — the same reasoning `ciPipeline` applies, not
+ * `CARVE_STATUS_FLOOR`'s.
+ */
+export interface StackGraph {
+  /** Stacks (lexicon partitions) in the build. */
+  nodes: string[];
+  /** consumer -> producer, from cross-lexicon attribute references. */
+  edges: { from: string; to: string }[];
+  /** A flat sequence, every producer before its consumers. */
+  order: string[];
+  /** Levels; a wave's stacks have no inter-dependency and apply concurrently. */
+  waves: string[][];
+  /** Dependency cycles. chant exits 1 when this is non-empty, and the entangled
+   * nodes are then absent from `order` and `waves` — a partial answer. */
+  cycles: string[][];
+}
+
+export function stackGraphArgs(projectDir: string): string[] {
+  return ["graph", projectDir, "--stacks", "--json"];
+}
+
+/**
+ * Drop anything chant did not also name in `nodes`.
+ *
+ * Not defensive programming for its own sake: `chant graph --stacks --json` is
+ * reproducibly malformed on two of chant's own examples today (`fan-out-estate`
+ * and `bedrock-agentcore-agent`), emitting an edge with no `from`, a `null` in
+ * `order`, and a wave whose only member is that `null`. `computeStackGraph`'s
+ * walk uses `entity.lexicon` as the consumer without filtering entities that
+ * carry none, while `nodes` comes from `lexiconNames` and excludes them. Filed
+ * upstream; until it lands, `nodes` is the roster and everything else is
+ * checked against it.
+ */
+export function sanitizeStackGraph(raw: Partial<StackGraph> | null | undefined): StackGraph {
+  const nodes = (raw?.nodes ?? []).filter((n): n is string => typeof n === "string");
+  const known = new Set(nodes);
+  const keep = (n: unknown): n is string => typeof n === "string" && known.has(n);
+  return {
+    nodes,
+    edges: (raw?.edges ?? []).filter((e) => e && keep(e.from) && keep(e.to)).map((e) => ({ from: e.from, to: e.to })),
+    order: (raw?.order ?? []).filter(keep),
+    waves: (raw?.waves ?? []).map((w) => (w ?? []).filter(keep)).filter((w) => w.length > 0),
+    cycles: (raw?.cycles ?? []).map((c) => (c ?? []).filter(keep)).filter((c) => c.length > 0),
+  };
+}
+
+/** Read the apply order for a project. Source-only: no env, no credentials, no
+ * substrate — chant computes it from resolved entities at synthesis. */
+export async function stackGraph(projectDir: string, opts: GraphOptions = {}): Promise<StackGraph> {
+  const args = stackGraphArgs(projectDir);
+  const { code, stdout, stderr } = await runChantRaw(args, projectDir, envOverridesFor(opts));
+  let parsed: Partial<StackGraph> | undefined;
+  try {
+    parsed = JSON.parse(stdout) as Partial<StackGraph>;
+  } catch {
+    // Exit 1 WITH parseable JSON is a cyclic estate; exit 1 with nothing to
+    // parse is the read itself failing, and that is the caller's error.
+    throw new ChantCliError(args, code, stderr);
+  }
+  return sanitizeStackGraph(parsed);
+}
+
 /** A running Op (`chant run <name>`), streaming its output line by line. */
 export interface OpRun {
   pid: number;
