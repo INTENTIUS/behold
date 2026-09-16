@@ -958,6 +958,30 @@ every resource — one provider read per card, 301 of them on `terralith-4`. So:
   drifted: n}`. The two are different answers — "nobody looked" versus "looked,
   nothing drifted" — and the legend prints a count only for the second.
 
+### The adoption sweep is off unless a serve asks (#412)
+
+`live-plan -json` carries `adoptable[]` (live resources the estate-wide sweep
+matched to a declared instance by content) and `swept` (the types it listed in
+full). Both are empty on a run that did not ask the account-inventory question,
+and behold does not ask by default.
+
+The opt-in is `TOFU_LIVE_COLLECT_UNCLAIMED=1` (`ADOPTION_SWEEP_VAR`,
+src/choudoufu-live.ts), carried through `serve.spawnEnv` — the seam
+`setChoudoufuSpawnEnv` already feeds every choudoufu spawn. The env var rather
+than `-adoption-only`, because that flag suppresses the resource diff the
+overlay needs. Off by default because the sweep is bounded by the ACCOUNT rather
+than the estate, and behold polls. `0` means no, which is choudoufu's own
+spelling, not a truthiness test.
+
+Measured while landing this, and it bounds what M2 can be built on: against the
+bundled choudoufu demo on floci with choudoufu 0.16.0, turning the sweep on does
+make `swept` grow and does produce the `NEEDS_DISCOVERY` omission for a
+declaration carrying no identity — but no candidate reached `adoptable[]`.
+`live-plan -adoption-only` classified it "no path — needs a marker; this run
+found no live resource to offer", with floci listing the matching object and
+returning its policy document. So `adoptable[]` populated is not yet
+reproducible here; see #412.
+
 ### A choudoufu estate's own references (#393)
 
 `choudoufu live-check -json` states the roster and `references[]`, and that
