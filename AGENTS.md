@@ -112,6 +112,56 @@ preview-locked, and one load runs at a time (409 otherwise).
    web/app.js drives the same viewBox the wheel, the drag and "⤢ fit" drive.
    Nothing here fetches, so it works in a static export too.
 
+### What a read cost (#420, #421)
+
+`GET /api/doctor` serves `diagnose()` — the same report `behold doctor` prints,
+which until #421 only the CLI could ask for — with two extra blocks on it:
+
+- `reads`, the ledger from `src/read-stats.ts`. Every scheduled chant read
+  passes through `ReadScheduler`, so each one is filed there with its running
+  time, its outcome, and which side of the source/live split it sits on. A bare
+  `chant graph` is the member's own TypeScript evaluation; anything with
+  `--live`/`--overlay`, and every other verb `isScheduledRead` allows, reaches
+  past it. `shared` counts subscribers handed an in-flight spawn — work not
+  done, never a run.
+- `cache`, `memberIrCacheStats()`.
+
+`GET /api/doctor?reads=1` is the same two blocks WITHOUT the diagnosis, and it
+is what the SPA asks for. The split is the one #421 states — the full report is
+for a person diagnosing, the panel line is for a person waiting — and it is a
+cost split too: `diagnose()` probes docker, gh, helm and k3d through
+src/substrates.ts, whose `probe` has no timeout and no kill, and the SPA asks
+after every load settles. A static export asks for neither; `refreshReadCost`
+returns on `staticMode` rather than relying on the bundle's own 404.
+
+`reads.inFlight` is `{running, queued}` off the scheduler itself. The ledger
+cannot answer it — a read still in flight has finished nothing, so it has filed
+nothing — and "what is queued now" is what someone watching a slow read wants.
+
+Three things to know before reading a number off it. `queuedMs` is contention
+**in the scheduler** — the HTTP-versus-poll-versus-capture competition #367
+bounded — and not the whole of what a member waits: the estate fan-out bounds
+upstream through `mapPool` (src/estate.ts), so a three-member estate measured
+3033/3035/2218 ms of running time with `queuedMs` 0 against 5.2 s of wall clock.
+The gap is the upstream wait and #422 is where it gets measured.
+
+`reads.unmeasured` counts the served members the ledger is BLIND to, and the
+panel line prints it rather than quietly excluding them. Only reads that pass
+`ReadScheduler` are filed, which is every chant read and therefore a terraform
+member too (its `via.read` shells `chant graph`, src/terraform-member.ts). A
+choudoufu member spawns its own binary through its own helper and is filed
+nowhere, so on a chant+choudoufu estate the slowest card may be one that never
+reached `recent` — "slowest 3s · 1 not measured" is the honest form of that, and
+an unqualified "slowest 3s" is not.
+
+And preview mode keeps the totals but drops `recent`, whose samples are keyed by
+member directory.
+
+The SPA asks once after each load settles and shows the answer on the loading
+scrim the *next* time one goes up (`web/read-cost.js`, `#loading-cost`): the
+slowest recent member, because an estate read finishes when its last member
+does, so a sum would report a number nobody waits for.
+
 ### The behaviour overlay (#398, M1 of #397)
 
 What the estate costs and where it runs out of headroom, on `/api/overlay`
