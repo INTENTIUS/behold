@@ -77,7 +77,7 @@ describe("diagnose", () => {
 
     expect(report.ok).toBe(true);
     expect(report.kind).toBe("project");
-    expect(report.checks.map((c) => c.status)).toEqual(["pass", "pass", "pass", "pass", "pass", "pass", "pass"]);
+    expect(report.checks.map((c) => c.status)).toEqual(["pass", "pass", "pass", "pass", "pass", "pass", "pass", "pass"]);
     expect(by(report, "chant").detail).toContain("chant 0.61.0");
     expect(by(report, "lexicons").detail).toContain("aws 0.61.0");
     expect(by(report, "envs").detail).toContain("prod");
@@ -412,7 +412,7 @@ describe("--json", () => {
     expect(round.dir).toBe(dir);
     expect(round.kind).toBe("project");
     expect(round.ok).toBe(true);
-    expect(round.checks.map((c) => c.name)).toEqual(["project", "chant", "lexicons", "envs", "kube", "substrates", "ops"]);
+    expect(round.checks.map((c) => c.name)).toEqual(["project", "chant", "lexicons", "targets", "envs", "kube", "substrates", "ops"]);
     for (const c of round.checks) {
       expect(Object.keys(c).filter((k) => k !== "fix")).toEqual(["name", "status", "detail"]);
       expect(["pass", "warn", "fail"]).toContain(c.status);
@@ -433,6 +433,7 @@ describe("formatReport", () => {
       { name: "project", status: "pass", detail: "chant project (chant.config.ts)" },
       { name: "chant", status: "fail", detail: "no chant installed — behold shells the project's own chant", fix: "Run `npm install` in /tmp/project" },
       { name: "lexicons", status: "pass", detail: "none declared" },
+      { name: "targets", status: "pass", detail: "no lexicon declared — nothing to aim" },
       { name: "envs", status: "pass", detail: "prod — `behold serve . --env prod` for the live overlay" },
       { name: "kube", status: "pass", detail: "no k8s or helm lexicon — no cluster binding to check" },
       { name: "substrates", status: "warn", detail: "Docker down", fix: "Bring up: Docker (open -a Docker)" },
@@ -448,14 +449,61 @@ describe("formatReport", () => {
         fail  chant       no chant installed — behold shells the project's own chant
               fix         Run \`npm install\` in /tmp/project
         pass  lexicons    none declared
+        pass  targets     no lexicon declared — nothing to aim
         pass  envs        prod — \`behold serve . --env prod\` for the live overlay
         pass  kube        no k8s or helm lexicon — no cluster binding to check
         warn  substrates  Docker down
               fix         Bring up: Docker (open -a Docker)
         pass  ops         1 committed: prod-apply (apply); chant MCP unavailable until the project's chant is installed
 
-        5 pass, 1 warn, 1 fail
+        6 pass, 1 warn, 1 fail
       "
     `);
+  });
+});
+
+// #430 (M2 of #428): behold draws nine lexicons and can aim four. The list is
+// deliberately short and src/targets.ts names the cost of that discipline — a
+// landed chant change leaves a stale omission "until someone notices", which
+// happened once (#125). This is the line someone reads instead.
+describe("the targets line (#430)", () => {
+  const targetsFor = async (lexicons: string[]): Promise<DoctorCheck> => {
+    const dir = fixture({
+      "chant.config.ts": `export default { lexicons: ${JSON.stringify(lexicons)}, environments: ["prod"] };`,
+      "package.json": JSON.stringify({ name: "t", dependencies: { "@intentius/chant": "^0.61.0" } }),
+      ...CHANT,
+    });
+    return by(await diagnose(dir, probes()), "targets");
+  };
+
+  it("passes when every declared lexicon can be aimed", async () => {
+    const c = await targetsFor(["aws"]);
+    expect(c.status).toBe("pass");
+    expect(c.detail).toContain("aws can be aimed at an emulator");
+  });
+
+  it("does not warn about a lexicon that binds from chant.config by design", async () => {
+    // k8s and temporal are not withheld, they are finished: they resolve their
+    // target from chant.config, so there is nothing to override and nothing to
+    // put in a picker. Warning about them would be noise on every project.
+    const c = await targetsFor(["k8s", "temporal"]);
+    expect(c.status).toBe("pass");
+    expect(c.detail).toContain("bind from chant.config by design");
+  });
+
+  it("warns about a lexicon with neither a target nor a stated reason", async () => {
+    const c = await targetsFor(["aws", "fictional"]);
+    expect(c.status).toBe("warn");
+    expect(c.detail).toContain("fictional");
+    // And says it may be over-reporting: behold cannot ask whether chant can
+    // route a lexicon, so a stale omission and a deliberate one look alike.
+    expect(c.detail).toContain("correct if chant cannot route it either");
+    expect(c.fix).toContain("SUBSTRATE_TARGET_VARS");
+  });
+
+  it("says so plainly when nothing is declared", async () => {
+    const c = await targetsFor([]);
+    expect(c.status).toBe("pass");
+    expect(c.detail).toContain("nothing to aim");
   });
 });
