@@ -21,7 +21,7 @@ import { FrameBuffer } from "./frames.ts";
 import { OpRunner } from "./op-runner.ts";
 import { resetMemberIrCache } from "./member-ir.ts";
 import { registerMemberKind } from "./member-kind.ts";
-import { TerraformReadError, hasTerraformRoots } from "./terraform-member.ts";
+import { TerraformReadError, hasTerraformRoots, terraformSpec } from "./terraform-member.ts";
 
 // Provenance: `chant graph --format ir --detail 3` over water park's
 // `access/baseline` and its `waterpark-runner` satellite as two roots, through
@@ -127,7 +127,7 @@ describe("GET /api/graph over a bare Terraform directory (#384)", () => {
   it("serves it, and the note says which roots it found and what it skipped", async () => {
     const dir = estate();
     const read = vi.fn(async (_dir: string) => fixture());
-    registerMemberKind({ kind: "terraform", probe: hasTerraformRoots, expects: "a Terraform root", via: { tool: () => "lexicon\0v1", read: read as never } });
+    registerMemberKind({ ...terraformSpec, via: { tool: () => "lexicon\0v1", read: read as never } });
 
     const { ir, meta } = (await (await serve(dir).request("/api/graph?detail=2")).json()) as { ir: GraphIR; meta: { note?: string } };
 
@@ -147,7 +147,7 @@ describe("GET /api/graph over a bare Terraform directory (#384)", () => {
   // -------------------------------------------------------------------------
   it("carries the roots note through the logical zoom, and a short form for the strip (items 5, 7)", async () => {
     const dir = estate();
-    registerMemberKind({ kind: "terraform", probe: hasTerraformRoots, expects: "a Terraform root", via: { tool: () => "lexicon\0v1", read: (async () => fixture()) as never } });
+    registerMemberKind({ ...terraformSpec, via: { tool: () => "lexicon\0v1", read: (async () => fixture()) as never } });
 
     const app = serve(dir);
     const resources = (await (await app.request("/api/graph?detail=2")).json()) as { meta: { note?: string; noteShort?: string } };
@@ -164,7 +164,7 @@ describe("GET /api/graph over a bare Terraform directory (#384)", () => {
 
   it("says what its members are, and never offers the runtime zoom (items 1, 2)", async () => {
     const dir = estate();
-    registerMemberKind({ kind: "terraform", probe: hasTerraformRoots, expects: "a Terraform root", via: { tool: () => "lexicon\0v1", read: (async () => fixture()) as never } });
+    registerMemberKind({ ...terraformSpec, via: { tool: () => "lexicon\0v1", read: (async () => fixture()) as never } });
 
     const info = (await (await serve(dir).request("/api/project")).json()) as { memberKinds: string[]; runtimeCapable?: boolean };
 
@@ -177,7 +177,7 @@ describe("GET /api/graph over a bare Terraform directory (#384)", () => {
 
   it("answers /api/resources with the empty facet instead of 500ing (item 3)", async () => {
     const dir = estate();
-    registerMemberKind({ kind: "terraform", probe: hasTerraformRoots, expects: "a Terraform root", via: { tool: () => "lexicon\0v1", read: (async () => fixture()) as never } });
+    registerMemberKind({ ...terraformSpec, via: { tool: () => "lexicon\0v1", read: (async () => fixture()) as never } });
 
     const res = await serve(dir).request("/api/resources");
 
@@ -193,7 +193,7 @@ describe("GET /api/graph over a bare Terraform directory (#384)", () => {
   // arrive), so it says nothing.
   it("says composites is the resources picture, and says nothing at attributes", async () => {
     const dir = estate();
-    registerMemberKind({ kind: "terraform", probe: hasTerraformRoots, expects: "a Terraform root", via: { tool: () => "lexicon\0v1", read: (async () => fixture()) as never } });
+    registerMemberKind({ ...terraformSpec, via: { tool: () => "lexicon\0v1", read: (async () => fixture()) as never } });
 
     const app = serve(dir);
     const composites = (await (await app.request("/api/graph?detail=1")).json()) as { meta: { note?: string; noteShort?: string } };
@@ -206,7 +206,7 @@ describe("GET /api/graph over a bare Terraform directory (#384)", () => {
 
   it("draws no empty member box for the directory it composed (item 6)", async () => {
     const dir = estate();
-    registerMemberKind({ kind: "terraform", probe: hasTerraformRoots, expects: "a Terraform root", via: { tool: () => "lexicon\0v1", read: (async () => fixture()) as never } });
+    registerMemberKind({ ...terraformSpec, via: { tool: () => "lexicon\0v1", read: (async () => fixture()) as never } });
 
     // How `behold serve <a terraform directory>` actually arrives (#389): the
     // lone directory is composed as a one-member estate, so `composeStacks`
@@ -223,7 +223,7 @@ describe("GET /api/graph over a bare Terraform directory (#384)", () => {
 
   it("still says the components lens does not apply when someone picks it (item 1)", async () => {
     const dir = estate();
-    registerMemberKind({ kind: "terraform", probe: hasTerraformRoots, expects: "a Terraform root", via: { tool: () => "lexicon\0v1", read: (async () => fixture()) as never } });
+    registerMemberKind({ ...terraformSpec, via: { tool: () => "lexicon\0v1", read: (async () => fixture()) as never } });
 
     const broadcaster = new Broadcaster();
     const app = createApp({ projectDir: dir, projectDirs: [dir], port: 0 }, broadcaster, new FrameBuffer(), new OpRunner({ projectDir: dir, broadcaster, onDone: () => {} }));
