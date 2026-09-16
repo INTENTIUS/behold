@@ -762,7 +762,19 @@ behold spawns talk to the same emulator.
 loaded through `behold demo <entry> <tmp target> --port <p>` on its own port
 from 4720 up, `/api/graph` asserted to carry nodes and a live entry's
 `/api/overlay?env=live` to answer with its bound/unowned/neutral split, timings
-per entry; eight entries and 475s on the machine this was written on.
+per entry; eight entries and 553s on the machine this was written on.
+
+Time is asserted, not only printed (#423). Each entry carries a ceiling at
+roughly twice its own measured value, and the run carries one too, because
+#419's whole subject was a number nobody was watching — the ratio could not
+regress silently and the duration could. The measured figures the ceilings come
+from are in the script beside them; `BEHOLD_E2E_SECS_<entry>` and
+`BEHOLD_E2E_RUN_SECS` override. A live entry also asserts #422's shape: the
+progressive overlay answers with every member marked pending and does so before
+the blocking read returns, so the estate cannot quietly regress to
+all-or-nothing. Where the blocking read is already sub-second there is nothing
+to beat, and the run reports the two numbers rather than claiming a pass.
+
 `terralith-4-adopt` is asserted twice — 85 UNOWNED, then the
 `live-import` line the up script printed, run by the script itself in the
 target the way a person would, then 301 bound — because that write is the

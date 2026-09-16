@@ -137,6 +137,88 @@ counts() { printf '%s' "$1" | jq -r '[([.ir.nodes[]|select(.attrs._status=="good
 # the SPA's own five (⌘K), with the params web/app.js sends for each.
 ZOOMS=("logical|logical=1" "composites|detail=1" "resources|detail=2" "attributes|detail=3" "collapse|detail=2&collapse=1")
 CEILING=4
+
+# #423: the ratio could not regress silently, and the TIME could. #419 opened on
+# a number nobody was watching — 147s warm on eleven members — so this asserts a
+# per-entry ceiling the way `shapes` asserts a per-zoom one, and prints the
+# measured value either way, so a run reads as a measurement rather than a pass.
+#
+# These are CEILINGS, not targets, and each is roughly twice its own measured
+# value — high enough that a cold npm cache or a busy machine does not fail a
+# run, low enough that a doubling does. Measured on the machine this landed on,
+# whole catalog, 8 entries green and 3 skipped in 553s:
+#
+#   choudoufu-workbench              79s      terralith-1          57s
+#   choudoufu-cohort-s3              44s      terralith-4         134s
+#   choudoufu-cohort-iam-ecr         41s      terralith-4-adopt   157s
+#   choudoufu-cohort-ec2-networking  36s      waterpark             5s
+#
+# One machine's numbers, so re-baseline rather than argue with them if a
+# different box reads differently. BEHOLD_E2E_SECS_<entry, - as _> overrides
+# one; BEHOLD_E2E_SECS_DEFAULT moves every entry that has no row here.
+entry_ceiling() { # <entry name> -> seconds
+  local var="BEHOLD_E2E_SECS_$(printf '%s' "$1" | tr 'a-z-' 'A-Z_')"
+  local override="${!var:-}"
+  if [ -n "$override" ]; then printf '%s' "$override"; return; fi
+  case "$1" in
+    terralith-4-adopt)               printf '320' ;;
+    terralith-4)                     printf '270' ;;
+    choudoufu-workbench)             printf '160' ;;
+    terralith-1)                     printf '120' ;;
+    choudoufu-cohort-s3|choudoufu-cohort-iam-ecr|choudoufu-cohort-ec2-networking) printf '90' ;;
+    waterpark)                       printf '30' ;;
+    *) printf '%s' "${BEHOLD_E2E_SECS_DEFAULT:-240}" ;;
+  esac
+}
+
+# The whole run, for the trend no single entry carries. 553s measured.
+RUN_CEILING="${BEHOLD_E2E_RUN_SECS:-1100}"
+
+# #422's shape, asserted so it cannot quietly regress to all-or-nothing.
+#
+# The STRUCTURAL assertion is the real one, and it is the one that holds
+# whatever the machine is doing: the progressive answer names members it has not
+# read (`meta.pending`) and every card on it says `_pendingRead`, which can only
+# be true if the response was written before the live pass finished. That is the
+# milestone, and it is cache-independent.
+#
+# The two timings below are corroboration, not proof, and they are confounded:
+# the plain `/api/overlay?env=` above this call has already warmed the member's
+# live document (src/overlay-ir.ts caches it under the source stamp, #396
+# finding 6), so on a one-member estate both reads here are cache hits and both
+# report 0s. Hence the guard: below two seconds there is no wait to beat and the
+# run says so instead of printing a tick it has not earned. Re-ordering to make
+# the race fair would only bias it the other way — the progressive call would be
+# the cold one.
+progressive_arrives_first() { # <port> <env>
+  local port="$1" env="$2" p0 p1 b0 b1 body ptime btime pending
+  p0=$SECONDS
+  body="$(api "$port" "/api/overlay?env=$env&progressive=1")" || { echo "FAIL: $ENTRY: progressive overlay did not answer" >&2; exit 1; }
+  p1=$SECONDS
+  jq_assert "$body" '.meta.mode == "progressive"' "the progressive overlay answers as one"
+  pending="$(printf '%s' "$body" | jq -r '.meta.pending | length')"
+  jq_assert "$body" '(.meta.pending | length) > 0' "  it names $pending member(s) still being read"
+  jq_assert "$body" '[.ir.nodes[] | select(.attrs._pendingRead == true)] | length > 0' \
+    "  and every card on screen says so — pending, not unobserved, not absent"
+  b0=$SECONDS
+  api "$port" "/api/overlay?env=$env" >/dev/null || { echo "FAIL: $ENTRY: blocking overlay did not answer" >&2; exit 1; }
+  b1=$SECONDS
+  ptime=$((p1 - p0)); btime=$((b1 - b0))
+  # Only compare where the comparison means something. On a one-member estate
+  # the blocking read is already sub-second, and "0s is not slower than 0s" is a
+  # green tick that proves nothing — worse than no assertion, because it reads
+  # like coverage. The shape is asserted where there is a wait to beat; below
+  # that the numbers are reported and left alone.
+  if [ "$btime" -ge 2 ]; then
+    if [ "$ptime" -ge "$btime" ]; then
+      echo "FAIL: $ENTRY: the first picture took ${ptime}s against ${btime}s for the whole estate — no longer arriving first" >&2
+      exit 1
+    fi
+    echo "  ✓ first picture in ${ptime}s against ${btime}s for the whole estate"
+  else
+    echo "  · first picture ${ptime}s, whole estate ${btime}s — too fast to compare, not asserted"
+  fi
+}
 shapes() { # <port> <env, or empty for an estate with no live half>
   local port="$1" env="$2" z label params route path body dims ratio
   for z in "${ZOOMS[@]}"; do
@@ -212,6 +294,8 @@ while IFS=$'\x1f' read -r name env inplace local reason <&3; do
     jq_assert "$O" '(.ir.nodes | length) > 0' "/api/overlay?env=$env answers"
     IFS=$'\t' read -r bound unowned neutral <<<"$(counts "$O")"
     echo "  ✓ overlay: bound $bound, unowned $unowned, neutral $neutral"
+    # #423: and that the picture can arrive before the whole estate has.
+    progressive_arrives_first "$port" "$env"
   fi
 
   # #393: the estate behold is sized against must not come back as a strip.
@@ -291,7 +375,12 @@ while IFS=$'\x1f' read -r name env inplace local reason <&3; do
   fi
 
   teardown
-  echo "  $name: $((SECONDS - t0))s"
+  took=$((SECONDS - t0)); ceiling="$(entry_ceiling "$name")"
+  if [ "$took" -gt "$ceiling" ]; then
+    echo "FAIL: $name: took ${took}s, over the ${ceiling}s ceiling" >&2
+    exit 1
+  fi
+  echo "  $name: ${took}s (ceiling ${ceiling}s)"
   RAN=$((RAN + 1))
 done 3<<<"$CATALOG"
 
@@ -302,4 +391,9 @@ if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
   echo
   echo "✓ no behold-wb-* container left"
 fi
-echo "workbench e2e: $RAN entries green, $SKIPPED skipped, $((SECONDS - RUN_T0))s"
+RUN_SECS=$((SECONDS - RUN_T0))
+echo "workbench e2e: $RAN entries green, $SKIPPED skipped, ${RUN_SECS}s (ceiling ${RUN_CEILING}s)"
+if [ "$RUN_SECS" -gt "$RUN_CEILING" ]; then
+  echo "FAIL: the run took ${RUN_SECS}s, over the ${RUN_CEILING}s ceiling" >&2
+  exit 1
+fi
