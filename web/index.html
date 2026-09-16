@@ -559,7 +559,17 @@
          colour so the selected row stays readable on --pending. */
       #pal-list .row .sub { font-size: var(--t-caption); opacity: 0.66; margin-top: 1px; }
       #pal-list .empty { padding: 8px 11px; color: var(--muted); font-size: var(--t-body); }
-    </style>
+    
+    /* #422: a card whose member is still being read. Dashed and dimmed, never
+       filled — the fill is the status channel and this card has no status yet,
+       so colouring it would claim an observation behold has not made. */
+    #graph [data-pending-read] { opacity: 0.55; }
+    #graph [data-pending-read] rect { stroke-dasharray: 4 3; }
+    @media (prefers-reduced-motion: no-preference) {
+      #graph [data-pending-read] { animation: pending-breathe 2.4s ease-in-out infinite; }
+      @keyframes pending-breathe { 0%, 100% { opacity: 0.45; } 50% { opacity: 0.68; } }
+    }
+</style>
   </head>
   <body>
     <div id="loading-overlay" hidden>

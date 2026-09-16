@@ -133,7 +133,7 @@ import { OpRunner } from "./op-runner.ts";
 import { detectSubstrates, projectLexicons } from "./substrates.ts";
 import { pickAutoSyncOps, splitForgeRouted, suspendedByRollback, type AutoSyncMode } from "./autosync.ts";
 import { sourceCommits, openRollbackBranches } from "./history.ts";
-import { composeEstate, composeEstateOverlay, estateNamespaceScopes, estateMembers, withoutJoinedMembers } from "./estate.ts";
+import { composeEstate, composeEstateOverlay, composeEstatePending, estateNamespaceScopes, estateMembers, withoutJoinedMembers } from "./estate.ts";
 import { statusVocabulary } from "./status-vocabulary.ts";
 import { attachBehaviour, type BehaviourMember } from "./behaviour.ts";
 import { addEstateMemberEdges } from "./estate-edges.ts";
@@ -148,6 +148,7 @@ import { invalidateMember, memberIr, memberIrCacheStats, memberSourceStamp } fro
 import { diagnose } from "./doctor.ts";
 import { readStats } from "./read-stats.ts";
 import { stackOrderNote, stackOrderNoteShort, stackOrderToIr } from "./stack-order.ts";
+import { shortStackNames } from "@intentius/pinhole";
 import { invalidateOverlay } from "./overlay-ir.ts";
 import { carveStatesFor, carveStatesUnder } from "./carve-discovery.ts";
 import { foreignNote, type GraphIRWithForeign } from "./foreign.ts";
@@ -2815,6 +2816,56 @@ export function createApp(
         // overlay read, `?collapse=1` among them, is served the document each
         // member was last read as (src/overlay-ir.ts).
         const planWanted = new URL(c.req.url).searchParams.get("plan") === "1";
+        // #422: the picture arrives in pieces, opt-in.
+        //
+        // Opt-in, and never the default, because `/api/overlay` is a CONTRACT:
+        // AGENTS.md's read loop names it as the live entity overlay, an agent
+        // GETs it expecting the account's answer, and `src/export.ts` captures
+        // whatever it returns into a static bundle. A route that answered with
+        // members it had not read yet would hand an agent a half-picture it had
+        // no way to know was half, and would freeze a bundle with members
+        // permanently marked still-reading. So the blocking answer stays
+        // exactly what it was, and `?progressive=1` is the SPA's own path.
+        //
+        // What it does: compose the estate from every member's SOURCE, mark it
+        // pending, answer at once — then keep reading, and broadcast each
+        // member as its own live read settles. No live result is cached to
+        // build the first picture and none is reused; a pending member becomes
+        // a real one only when its own read completes.
+        if (new URL(c.req.url).searchParams.get("progressive") === "1") {
+          const readOpts = { ...tierTargetOpts(query), detail, env };
+          const pending = await composeEstatePending(cfg.projectDirs, readOpts);
+          // The live pass runs past this response on purpose. It is the same
+          // read the blocking branch does — one per member, under the same
+          // budget — so a progressive load costs the estate no extra spawn.
+          void composeEstateOverlay(cfg.projectDirs, readOpts, reclassifyOverlay, {
+            fresh: planWanted,
+            onMember: ({ name, ir: memberIrDoc, unobserved }) => {
+              broadcaster.emit("member", JSON.stringify({
+                member: name,
+                ...(unobserved ? { unobserved } : {}),
+                // Only what the client needs to recolour in place: the node set
+                // is already on screen, so this is id -> status and nothing more.
+                statuses: Object.fromEntries(
+                  memberIrDoc.nodes.map((n) => [`${name}/${n.id}`, (n.attrs as { _status?: string })?._status ?? "neutral"]),
+                ),
+              }));
+            },
+          }).catch((err) => broadcaster.emit("member", JSON.stringify({ error: err instanceof Error ? err.message.split("\n")[0] : String(err) })));
+          const { svg } = renderGraph(pending, { boxes: "byStack", groupBadges: boxBadges(pending) });
+          return c.json({
+            ir: pending,
+            svg,
+            meta: {
+              projectDir: cfg.projectDir,
+              env,
+              mode: "progressive",
+              // Which members the picture is still waiting on, so a client can
+              // say so without inferring it from the attrs.
+              pending: shortStackNames(cfg.projectDirs),
+            },
+          });
+        }
         const est = await composeEstateOverlay(cfg.projectDirs, { ...tierTargetOpts(query), detail, env }, reclassifyOverlay, { fresh: planWanted });
         if (est.dropped.length === est.total) {
           return c.json({ error: `no project in the estate could be graphed — ${est.dropped.map((d) => `${d.name}: ${d.reason}`).join("; ")}` }, 500);

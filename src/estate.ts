@@ -125,6 +125,49 @@ export async function composeEstate(projectDirs: string[], opts: GraphOptions = 
 }
 
 /** The estate-wide overlay's composition report (#189). */
+/**
+ * The estate before any live read has landed (#422).
+ *
+ * An estate whose slowest member takes two minutes showed NOTHING for two
+ * minutes, including the members that answered in three seconds, because both
+ * routes await every member before returning anything. This is the picture that
+ * goes up first: every member composed from its own SOURCE, each node carrying
+ * `_pendingRead` so the SPA can say the read is still running and the inspect
+ * pane can say it too.
+ *
+ * ---------------------------------------------------------------------------
+ * PENDING IS NOT UNOBSERVED AND NOT ABSENT, and the distinction is the whole
+ * point of the milestone. `_unobserved` means behold LOOKED and could not see;
+ * `neutral` means the plan did not mention it; this means the read has not
+ * finished. Three different claims, and painting any of them as another is the
+ * lie behold exists not to tell.
+ *
+ * It rides its own attr rather than a fifth `_status` because a fifth `_status`
+ * is not paintable: pinhole's painter takes a closed set (`neutral`, `accent`,
+ * `good`, `warn`, `runtime`, `selected`) and silently falls back to `neutral`
+ * for anything else — which is unobserved, the exact false picture this avoids.
+ * The word is taken twice over anyway: `accent` is already labelled "pending"
+ * for a declared-not-yet-live entity, and `--pending` is that blue in the CSS.
+ *
+ * No live result is cached to build this, and none is read. #422's proof says
+ * it outright — "a pending member becomes a real one only when its own read
+ * completes" — so what is composed here is the member's source, which is the
+ * same thing `composeEstateOverlay`'s own failure path falls back to and which
+ * the #307 cache already holds warm.
+ * ---------------------------------------------------------------------------
+ */
+export async function composeEstatePending(projectDirs: string[], opts: GraphOptions = {}): Promise<GraphIR> {
+  const names = shortStackNames(projectDirs);
+  // Source only: strip anything that would reach the account.
+  const { env: _env, live: _live, overlay: _overlay, ...srcOpts } = opts;
+  const stacks = await mapPool(projectDirs, estateReadPool(projectDirs.length), async (dir, i) => {
+    const ir = joinCarvedSources(await memberSource(dir, srcOpts), (await carveStatesFor(dir)).values(), dir).ir;
+    for (const n of ir.nodes) n.attrs = { ...n.attrs, _pendingRead: true };
+    return { name: names[i], ir };
+  });
+  return composeStacks(stacks);
+}
+
 export interface EstateOverlayResult {
   ir: GraphIR;
   /** How many projects were actually observed live. */
@@ -443,7 +486,15 @@ export async function composeEstateOverlay(
    * re-check rows (#396 finding 6). Absent, a member whose source has not
    * moved is served the document it was last read as, so a collapse toggle
    * costs a re-render and not a second live pass. */
-  observe: { fresh?: boolean } = {},
+  observe: {
+    fresh?: boolean;
+    /** #422: called as each member's own live read settles, with that member's
+     * composed name and the nodes it resolved to. The progressive route turns
+     * each call into one SSE frame, so a member that answered in three seconds
+     * is drawn rather than waiting on one that takes two minutes. Never used to
+     * cache anything: this is the read happening, not a record of one. */
+    onMember?: (member: { name: string; dir: string; ir: GraphIR; unobserved?: string }) => void;
+  } = {},
 ): Promise<EstateOverlayResult> {
   const names = shortStackNames(projectDirs);
   const unobserved: { name: string; reason: string }[] = [];
@@ -465,6 +516,7 @@ export async function composeEstateOverlay(
       const own = (read as { meta?: unknown }).meta;
       if (own !== undefined) memberMeta[name] = own;
       stacks[i] = { name, ir: namespaceRuntimeOwners(name, classify(read)) };
+      observe.onMember?.({ name, dir, ir: stacks[i]!.ir });
       // Reported only for a read that actually happened — an unobserved
       // member was not read anywhere, joined namespace or not.
       if (namespace) joined.push({ name, namespace });
@@ -477,6 +529,7 @@ export async function composeEstateOverlay(
         const src = joinCarvedSources(await memberSource(dir, srcOpts), (await carveStatesFor(dir)).values(), dir).ir;
         for (const n of src.nodes) n.attrs = { ...n.attrs, _status: "neutral", _unobserved: reason };
         stacks[i] = { name, ir: src };
+        observe.onMember?.({ name, dir, ir: src, unobserved: reason });
         unobserved.push({ name, reason });
       } catch (err2) {
         dropped.push({ name, reason: firstLine(err2) });

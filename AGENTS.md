@@ -131,6 +131,35 @@ preview-locked, and one load runs at a time (409 otherwise).
    web/app.js drives the same viewBox the wheel, the drag and "⤢ fit" drive.
    Nothing here fetches, so it works in a static export too.
 
+### The picture arrives in pieces (#422)
+
+`GET /api/overlay?progressive=1` answers at once with the estate composed from
+every member's SOURCE, each node carrying `attrs._pendingRead`, and then
+broadcasts one `member` SSE frame per member as its own live read settles —
+`{member, statuses: {<composed id>: <status>}, unobserved?}`, or `{error}` if
+the pass itself failed. `meta.mode` is `progressive` and `meta.pending` names
+the members not yet read.
+
+**Opt-in, and never the default.** `/api/overlay` without the flag is byte-for-
+byte what it was: the blocking, complete live answer this guide's read loop
+names, which is what an agent GETs and what `src/export.ts` captures into a
+static bundle. A route that answered with members it had not read would hand an
+agent a half-picture it could not know was half, and freeze a bundle with
+members permanently still-reading.
+
+**Pending is a third claim.** `_unobserved` is "behold looked and could not
+see"; `neutral` is "the plan did not mention it"; `_pendingRead` is "the read
+has not finished". It rides its own attr rather than a fifth `_status` because
+a fifth `_status` is not paintable — pinhole's painter takes a closed set and
+falls back to `neutral` for anything else, which is `unobserved`, the exact
+wrong answer. The SPA draws it dashed and dimmed, never filled: the fill is the
+status channel and a pending card has no status yet.
+
+No live result is cached to build the first picture and none is reused. A
+pending member becomes a real one only when its own read completes, and the
+live pass a progressive request starts is the same one per member under the
+same budget — a progressive load costs the estate no extra spawn.
+
 ### What a read cost (#420, #421)
 
 `GET /api/doctor` serves `diagnose()` — the same report `behold doctor` prints,
