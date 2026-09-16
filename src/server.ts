@@ -38,6 +38,7 @@ import {
   lifecyclePlan,
   lifecycleDiffLive,
   runChantRaw,
+  readsInFlight,
   resolveChant,
   meetsFloor,
   graphPath,
@@ -1377,18 +1378,38 @@ export function createApp(
   // publishing the shape of the operator's tmpdir (`shortenIn`, carve state);
   // the totals answer "is this slow" without naming anyone's filesystem.
   app.get("/api/doctor", async (c) => {
-    const report = await diagnose(cfg.projectDir);
+    // #421 splits this route in two on purpose, because the issue splits the
+    // AUDIENCE in two: "The full report is for a person diagnosing; the panel
+    // line is for a person waiting, and they want different things."
+    //
+    // They also cost different things. `diagnose()` fans out to `docker info`,
+    // `docker ps`, `gh`, `helm` and `k3d` through src/substrates.ts's `probe`,
+    // which has no timeout and no kill — a `DOCKER_HOST` pointing at a dead
+    // socket blocks until the daemon answers or the process ends. The SPA asks
+    // after EVERY load settles, so it must never be what pays for that. It
+    // sends `?reads=1` and gets the ledger alone: counters, a bounded sample
+    // map and two integers off the scheduler, no subprocess anywhere.
+    const readsOnly = new URL(c.req.url).searchParams.get("reads") === "1";
     const { recent, ...totals } = readStats();
-    return c.json({
-      ...report,
-      reads: {
-        ...totals,
-        ...(cfg.previewMode ? {} : {
-          recent: recent.map(({ dir, ...rest }) => ({ dir: relative(cfg.projectDir, dir) || ".", ...rest })),
-        }),
-      },
-      cache: memberIrCacheStats(),
-    });
+    // A choudoufu member spawns its own binary (src/choudoufu-member.ts's spawn
+    // helper) and never passes ReadScheduler, so the ledger cannot see it. A
+    // terraform member does pass it — its `via.read` shells `chant graph`
+    // through src/chant.ts (src/terraform-member.ts:548). Counting the members
+    // the ledger is blind to is what stops "slowest member" being a claim about
+    // members it never measured: on a chant+choudoufu estate the slowest card
+    // may well be the one missing from `recent`.
+    const unmeasured = (cfg.projectDirs ?? [cfg.projectDir]).filter((d) => memberKindOf(d) === "choudoufu").length;
+    const reads = {
+      ...totals,
+      inFlight: readsInFlight(),
+      unmeasured,
+      ...(cfg.previewMode ? {} : {
+        recent: recent.map(({ dir, ...rest }) => ({ dir: relative(cfg.projectDir, dir) || ".", ...rest })),
+      }),
+    };
+    const cache = memberIrCacheStats();
+    if (readsOnly) return c.json({ reads, cache });
+    return c.json({ ...await diagnose(cfg.projectDir), reads, cache });
   });
 
   // The mixed-substrate source graph — works today (cross-lexicon AttrRefs are

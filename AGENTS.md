@@ -126,14 +126,36 @@ which until #421 only the CLI could ask for — with two extra blocks on it:
   done, never a run.
 - `cache`, `memberIrCacheStats()`.
 
-Two things to know before reading a number off it. `queuedMs` is contention
+`GET /api/doctor?reads=1` is the same two blocks WITHOUT the diagnosis, and it
+is what the SPA asks for. The split is the one #421 states — the full report is
+for a person diagnosing, the panel line is for a person waiting — and it is a
+cost split too: `diagnose()` probes docker, gh, helm and k3d through
+src/substrates.ts, whose `probe` has no timeout and no kill, and the SPA asks
+after every load settles. A static export asks for neither; `refreshReadCost`
+returns on `staticMode` rather than relying on the bundle's own 404.
+
+`reads.inFlight` is `{running, queued}` off the scheduler itself. The ledger
+cannot answer it — a read still in flight has finished nothing, so it has filed
+nothing — and "what is queued now" is what someone watching a slow read wants.
+
+Three things to know before reading a number off it. `queuedMs` is contention
 **in the scheduler** — the HTTP-versus-poll-versus-capture competition #367
 bounded — and not the whole of what a member waits: the estate fan-out bounds
 upstream through `mapPool` (src/estate.ts), so a three-member estate measured
 3033/3035/2218 ms of running time with `queuedMs` 0 against 5.2 s of wall clock.
-The gap is the upstream wait and #422 is where it gets measured. And preview
-mode keeps the totals but drops `recent`, whose samples are keyed by member
-directory.
+The gap is the upstream wait and #422 is where it gets measured.
+
+`reads.unmeasured` counts the served members the ledger is BLIND to, and the
+panel line prints it rather than quietly excluding them. Only reads that pass
+`ReadScheduler` are filed, which is every chant read and therefore a terraform
+member too (its `via.read` shells `chant graph`, src/terraform-member.ts). A
+choudoufu member spawns its own binary through its own helper and is filed
+nowhere, so on a chant+choudoufu estate the slowest card may be one that never
+reached `recent` — "slowest 3s · 1 not measured" is the honest form of that, and
+an unqualified "slowest 3s" is not.
+
+And preview mode keeps the totals but drops `recent`, whose samples are keyed by
+member directory.
 
 The SPA asks once after each load settles and shows the answer on the loading
 scrim the *next* time one goes up (`web/read-cost.js`, `#loading-cost`): the

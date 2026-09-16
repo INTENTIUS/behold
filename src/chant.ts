@@ -319,6 +319,13 @@ export function isScheduledRead(args: string[]): boolean {
 const reads = new ReadScheduler<ChantRun>();
 let unstampableRead = 0;
 
+/** What the read budget is doing right now (#421) — running and queued. The
+ * ledger cannot answer this: a read in flight has not finished, so it has
+ * filed nothing. See ReadScheduler.inFlight. */
+export function readsInFlight(): { running: number; queued: number } {
+  return reads.inFlight();
+}
+
 export function runChantRaw(
   args: string[],
   projectDir?: string,

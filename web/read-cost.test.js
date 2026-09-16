@@ -55,3 +55,22 @@ describe("readCostLine (#421)", () => {
     expect(readCostLine({ runs: 12, live: { runs: 6, runningMs: 900_000 } })).toBeNull();
   });
 });
+
+describe("the members the ledger cannot see (#421)", () => {
+  it("names them rather than reporting a slowest it did not measure", () => {
+    // A choudoufu member spawns its own binary and never reaches ReadScheduler,
+    // so "slowest 3s" beside an unmeasured 60s member would be a false claim.
+    const line = readCostLine({ unmeasured: 2, recent: [sample({ dir: "app", runningMs: 3000 })] });
+    expect(line).toBe("last read: 1 member, slowest 3s (app graph --live) · 2 not measured");
+  });
+
+  it("says nothing extra when every member was measured", () => {
+    const line = readCostLine({ unmeasured: 0, recent: [sample({ dir: "app", runningMs: 3000 })] });
+    expect(line).toBe("last read: 1 member, slowest 3s (app graph --live)");
+  });
+
+  it("says nothing extra when the field is absent, as an older payload has it", () => {
+    const line = readCostLine({ recent: [sample({ dir: "app", runningMs: 3000 })] });
+    expect(line).toBe("last read: 1 member, slowest 3s (app graph --live)");
+  });
+});

@@ -4838,11 +4838,19 @@ function hideLoading() {
   void refreshReadCost();
 }
 
-// One cheap call on counters, never on the read path. A cost line is never worth
-// breaking a load over, so every failure here leaves the previous line standing.
+// One cheap call on counters, never on the read path. `?reads=1` is what makes
+// that true: the bare route also runs the full doctor diagnosis, whose substrate
+// probes spawn docker/gh/helm/k3d with no timeout, and this runs after every
+// load settles. A cost line is never worth breaking a load over, so every
+// failure here leaves the previous line standing.
+//
+// A static export has no backend to ask and no reads to report, so it does not
+// ask. Without this guard the bundle logs a 404 on every page load and relies on
+// the fetch failing to stay silent, which is an outcome rather than a rule.
 async function refreshReadCost() {
+  if (staticMode) return;
   try {
-    const res = await fetch("/api/doctor");
+    const res = await fetch("/api/doctor?reads=1");
     if (!res.ok) return;
     lastReadCost = readCostLine((await res.json()).reads);
   } catch {

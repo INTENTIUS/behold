@@ -11,7 +11,11 @@ type DoctorBody = {
   behold: string;
   ok: boolean;
   checks: { name: string; status: string }[];
-  reads: Omit<ReadStats, "recent"> & { recent?: ReadSample[] };
+  reads: Omit<ReadStats, "recent"> & {
+    recent?: ReadSample[];
+    inFlight: { running: number; queued: number };
+    unmeasured: number;
+  };
   cache: { hits: number; misses: number; entries: number };
 };
 
@@ -96,5 +100,45 @@ describe("GET /api/doctor (#421)", () => {
 
     const body = (await (await app(dir).request("/api/doctor")).json()) as DoctorBody;
     expect(body.reads.byOutcome).toEqual({ completed: 0, failed: 0, cancelled: 1, deadline: 1 });
+  });
+});
+
+// #421's Do asks for "what is queued now, what is running" and for a panel line
+// that costs the person waiting nothing. Both are route behaviour, so both are
+// asserted here rather than left to the ledger's own unit tests.
+describe("GET /api/doctor?reads=1 — the line the waiting person gets", () => {
+  it("answers without running the diagnosis", async () => {
+    const dir = project();
+    recordRead({ dir, what: "graph", live: false, queuedMs: 0, runningMs: 7, outcome: "completed" });
+
+    const body = (await (await app(dir).request("/api/doctor?reads=1")).json()) as Partial<DoctorBody>;
+    // The ledger and the cache, and nothing that costs a subprocess: `diagnose`
+    // probes docker/gh/helm/k3d with no timeout, and this runs after every load.
+    expect(body.reads!.runs).toBe(1);
+    expect(body.cache).toBeDefined();
+    expect(body.checks).toBeUndefined();
+    expect(body.ok).toBeUndefined();
+  });
+
+  it("reports what is running and what is queued, which the ledger cannot", async () => {
+    const dir = project();
+    // A read in flight has finished nothing, so it has filed nothing — the
+    // counters are history and this number has to come off the scheduler.
+    const body = (await (await app(dir).request("/api/doctor?reads=1")).json()) as DoctorBody;
+    expect(body.reads.inFlight).toEqual({ running: 0, queued: 0 });
+  });
+
+  it("counts the members the ledger cannot see, so the line can say so", async () => {
+    const dir = project();
+    const body = (await (await app(dir).request("/api/doctor?reads=1")).json()) as DoctorBody;
+    // A chant project is measured end to end; nothing is missing from it.
+    expect(body.reads.unmeasured).toBe(0);
+  });
+
+  it("still serves the whole report without the flag", async () => {
+    const dir = project();
+    const body = (await (await app(dir).request("/api/doctor")).json()) as DoctorBody;
+    expect(Array.isArray(body.checks)).toBe(true);
+    expect(body.reads.inFlight).toBeDefined();
   });
 });

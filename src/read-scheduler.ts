@@ -106,6 +106,19 @@ export class ReadScheduler<T> {
     return result;
   }
 
+  /**
+   * What the scheduler is doing right now (#421).
+   *
+   * A snapshot, not a counter. src/read-stats.ts is finished-read history and
+   * cannot answer this by construction — a read that has not ended has nothing
+   * to file — so the question "what is running, what is queued" has to be asked
+   * of the scheduler itself. `running` holds a slot; `queued` is waiting for
+   * one, and is the contention #367 bounded.
+   */
+  inFlight(): { running: number; queued: number } {
+    return { running: this.active, queued: this.queue.length };
+  }
+
   /** File what this read cost (#420). A job nobody named records nothing: the
    * scheduler is generic, and only its caller knows what an argv is called. */
   private record(job: Job<T>, outcome: ReadOutcome, now: number = Date.now()): void {

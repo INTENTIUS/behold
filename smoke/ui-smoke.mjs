@@ -1625,6 +1625,10 @@ try {
   // be there for the next load to have somewhere to put the sentence.
   check("the SPA asks what the last read cost", server.doctorGets.length > 0);
   check(
+    "…and asks for the ledger alone, never the full diagnosis",
+    server.doctorGets.every((g) => g.search === "?reads=1"),
+  );
+  check(
     "the scrim has a line to put it on",
     (await page.locator("#loading-cost").count()) === 1,
   );

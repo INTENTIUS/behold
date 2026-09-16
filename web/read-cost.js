@@ -37,5 +37,13 @@ export function readCostLine(reads) {
   const members = new Set(recent.map((r) => r.dir)).size;
   const who = [slowest.dir, slowest.what].filter(Boolean).join(" ");
   const scope = members === 1 ? "1 member" : `${members} members`;
-  return `last read: ${scope}, slowest ${took}${who ? ` (${who})` : ""}`;
+  // A member the ledger cannot see is named rather than dropped. Only chant
+  // reads pass ReadScheduler; a choudoufu member spawns its own binary, so on a
+  // mixed estate the slowest member may be one of the ones missing here. Saying
+  // "slowest 3s" while a 60s member went unmeasured is the claim behold refuses
+  // to make anywhere else, and the clause is what keeps this line honest.
+  const blind = Number.isInteger(reads.unmeasured) && reads.unmeasured > 0
+    ? ` · ${reads.unmeasured} not measured`
+    : "";
+  return `last read: ${scope}, slowest ${took}${who ? ` (${who})` : ""}${blind}`;
 }

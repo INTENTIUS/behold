@@ -774,7 +774,11 @@ export function startStub(port, { carve = false, nonChant = false, choudoufu = f
     // mode that did not answer it would turn every load in that mode into a 404
     // in the console — which is exactly how this smoke run caught it.
     if (path === "/api/doctor") {
-      doctorGets.push(Date.now());
+      // `?reads=1` is the cheap half (#421): the bare route also runs the full
+      // diagnosis, whose substrate probes spawn docker/gh/helm/k3d with no
+      // timeout. Recording the search here is what proves the SPA asks for the
+      // half it can afford to ask for after every load.
+      doctorGets.push({ at: Date.now(), search: url.search });
       res.writeHead(200, { "content-type": "application/json" });
       return res.end(JSON.stringify(DOCTOR));
     }
