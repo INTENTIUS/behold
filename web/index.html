@@ -344,6 +344,12 @@
          and says so, faintly, so the grey is legible as "not looked at" rather
          than as the low end of the scale. */
       #graph [data-unpriced="1"] { opacity: 0.82; }
+      /* #429: a member with no live half, on an overlay. Distinct from the
+         neutral fill it would otherwise be indistinguishable from — a dashed
+         edge says "nothing observed this" where neutral says "looked, could
+         not see". */
+      #graph [data-no-live] rect { stroke-dasharray: 2 4; }
+      #graph [data-no-live] { opacity: 0.75; }
 
       /* Substrate readiness (M5, #54) — one row per substrate on the panel's
          Substrates tab: status dot + name + state, with its actions (bring up /

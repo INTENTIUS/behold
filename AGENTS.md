@@ -958,6 +958,26 @@ every resource — one provider read per card, 301 of them on `terralith-4`. So:
   drifted: n}`. The two are different answers — "nobody looked" versus "looked,
   nothing drifted" — and the legend prints a count only for the second.
 
+### A card with no live half is not an unobserved one (#429)
+
+pinhole's painter takes a closed `_status` set and falls back to `neutral` for
+anything else, `undefined` included. So on a mixed overlay a member with no live
+half — a Terraform root, whose `live`/`overlay`/`env` are stripped in
+src/terraform-member.ts — painted exactly like a card behold looked at and could
+not see, while the legend counted only the latter. Measured on
+`serve example-writes example-terraform-estate --env prod`: 37 Terraform cards
+carrying no `_status`, 2 chant cards carrying `neutral`, one fill between them.
+
+Those cards now carry `data-no-live` and the legend gives them their own row.
+Named rather than folded into `unobserved`, because "I looked and could not see"
+and "there is nothing here to look at" are different claims — the same argument
+#399 makes for an unpriced card, and the same answer: mark it, do not merely
+colour it. The mark is overlay-only; on the source graph no card has a status
+and marking every one of them would say nothing.
+
+This is presentation, not vocabulary. `statusVocabulary` gets no terraform row:
+there is no status to name. See #429 for the measurement that established it.
+
 ### The adoption sweep is off unless a serve asks (#412)
 
 `live-plan -json` carries `adoptable[]` (live resources the estate-wide sweep
