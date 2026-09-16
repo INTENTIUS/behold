@@ -26,8 +26,8 @@ import {
 } from "./estate.ts";
 import { resetMemberIrCache } from "./member-ir.ts";
 import { resetOverlayCache } from "./overlay-ir.ts";
-import { registerMemberKind } from "./member-kind.ts";
-import { hasTerraformRoots } from "./terraform-member.ts";
+import { applyMemberPasses, memberPassNote, registerMemberKind } from "./member-kind.ts";
+import { terraformSpec } from "./terraform-member.ts";
 import { attachRuntimeContainment } from "./overlay.ts";
 import type { GraphIR as ChantGraphIR } from "@intentius/chant";
 
@@ -647,7 +647,7 @@ describe("estate reads dispatch on member kind (#368)", () => {
     writeFileSync(join(root, "access", "envs", "prod", "versions.tf"), "terraform {\n  required_providers {\n    aws = {}\n  }\n}\n");
     writeFileSync(join(root, "access", "envs", "prod", "main.tf"), 'resource "aws_s3_bucket" "artifacts" {}\n');
     const tfRead = vi.fn(async (_dir: string) => stack("aws_s3_bucket.artifacts", "terraform"));
-    registerMemberKind({ kind: "terraform", probe: hasTerraformRoots, expects: "a Terraform root", via: { tool: () => "lexicon\0v1", read: tfRead as never } });
+    registerMemberKind({ ...terraformSpec, via: { tool: () => "lexicon\0v1", read: tfRead as never } });
     vi.mocked(graphIr).mockImplementation((async () => stack("vpc")) as never);
 
     const chantDir = join(root, "app");
@@ -679,5 +679,70 @@ describe("withoutJoinedMembers (#221)", () => {
 
   it("is the identity when nothing joined", () => {
     expect(withoutJoinedMembers(nodes, []).map((n) => n.id)).toEqual(nodes.map((n) => n.id));
+  });
+});
+
+// #427: a kind's render passes reach every estate branch through the registry,
+// so a route never forks per kind. The passes themselves are unchanged and
+// tested in src/terraform-lens.test.ts; what is asserted here is the dispatch.
+describe("render passes dispatch on member kind (#427)", () => {
+  const ir = (): ChantGraphIR => ({ nodes: [{ id: "a", kind: "K", lexicon: "x", attrs: {} }], edges: [], groups: {} }) as never;
+
+  afterEach(() => {
+    // Put the real kinds back: the registry is process-wide within a file.
+    registerMemberKind(terraformSpec);
+  });
+
+  it("runs a registered kind's pass and hands back its outcome", () => {
+    const apply = vi.fn((graph: ChantGraphIR, _opts: { detail: number | undefined }) => {
+      (graph.nodes[0] as { kind: string }).kind = "renamed";
+      return { note: () => ({ note: "a clause" }) };
+    });
+    registerMemberKind({ ...terraformSpec, passes: { apply: apply as never } });
+
+    const graph = ir();
+    const run = applyMemberPasses(graph, { detail: 2 });
+
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(apply.mock.calls[0]![1]).toEqual({ detail: 2 });
+    expect(graph.nodes[0]!.kind).toBe("renamed");
+    expect(run.map((r: { kind: string }) => r.kind)).toContain("terraform");
+  });
+
+  it("leaves the identical object alone for a kind that declines it", () => {
+    registerMemberKind({ ...terraformSpec, passes: { apply: () => ({ note: () => ({}) }) } });
+    const graph = ir();
+    expect(applyMemberPasses(graph, { detail: undefined })).toHaveLength(1);
+    // The guard is the kind's own; an IR it does not recognise comes back as it went in.
+    expect(graph.nodes[0]!.kind).toBe("K");
+  });
+
+  it("contributes nothing for a kind that registers no passes", () => {
+    registerMemberKind({ kind: "terraform", probe: () => false, expects: "nothing" });
+    expect(applyMemberPasses(ir(), { detail: 1 })).toEqual([]);
+    expect(memberPassNote([], ["/anywhere"])).toEqual({});
+  });
+
+  it("hands each kind only the served dirs that are its own", () => {
+    const seen: string[][] = [];
+    registerMemberKind({
+      ...terraformSpec,
+      passes: { apply: () => ({ note: (dirs) => { seen.push([...dirs]); return { note: `${dirs.length} of mine` }; } }) },
+    });
+    const tf = mkdtempSync(join(tmpdir(), "behold-passes-tf-"));
+    made.push(tf);
+    mkdirSync(join(tf, "root"), { recursive: true });
+    writeFileSync(join(tf, "root", "versions.tf"), 'terraform {\n  required_providers {\n    aws = {}\n  }\n}\n');
+    writeFileSync(join(tf, "root", "main.tf"), 'resource "aws_s3_bucket" "b" {}\n');
+    const notMine = mkdtempSync(join(tmpdir(), "behold-passes-chant-"));
+    made.push(notMine);
+    writeFileSync(join(notMine, "chant.config.ts"), "export default {};\n");
+
+    const run = applyMemberPasses(ir(), { detail: 3 });
+    const note = memberPassNote(run, [notMine, tf]);
+
+    // The chant member is never offered to the terraform kind.
+    expect(seen).toEqual([[tf]]);
+    expect(note.note).toBe("1 of mine");
   });
 });

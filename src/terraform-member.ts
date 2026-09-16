@@ -91,7 +91,18 @@ import { fileURLToPath } from "node:url";
 import type { GraphIR } from "@intentius/chant";
 import type { GraphOptions } from "./chant.ts";
 import type { MemberVia } from "./member-ir.ts";
-import type { MemberKindSpec } from "./member-kind.ts";
+import type { MemberKindSpec, MemberPasses } from "./member-kind.ts";
+// The three passes themselves do not move (#427) — only their caller does.
+// src/terraform-lens.ts imports chant types and src/carve-lens.ts's `tfTypeOf`
+// and nothing from the read path, so this adds no cycle.
+import {
+  filterTerraformCards,
+  groupTerraformByRoot,
+  hasTerraformEntities,
+  normalizeTerraformNodes,
+  terraformElisionNote,
+  terraformElisionNoteShort,
+} from "./terraform-lens.ts";
 import { SCRATCH_PREFIX, assertScratch } from "./scratch.ts";
 
 /** The reader chant loads for a Terraform root, and the HCL parser it lazily
@@ -549,6 +560,38 @@ export async function readTerraformMember(dir: string, opts: GraphOptions, state
   return graphIr(project, { ...source, detail });
 }
 
+/**
+ * The three passes that turn what chant read into a picture (#379, #380, #382),
+ * in the one order they make sense: name the cards, box them by root, then drop
+ * what is not estate at this detail. Lived at six call sites in src/server.ts
+ * until #427 gave a kind somewhere to put them.
+ *
+ * Guarded on the IR carrying terraform entities, so every chant, k8s and helm
+ * estate gets the identical object back. The guard is deliberately content and
+ * not `lexicon === "terraform"`: a carve report's scored resources carry that
+ * lexicon too (src/carve-lens.ts) and are not estate blocks.
+ */
+const terraformPasses: MemberPasses = {
+  apply(ir, { detail }) {
+    const elision = hasTerraformEntities(ir)
+      ? (groupTerraformByRoot(normalizeTerraformNodes(ir)), filterTerraformCards(ir, detail))
+      : { dropped: {}, total: 0 };
+    return {
+      // The roots half is membership-driven and survives an empty elision: a
+      // served member says which roots it found and which directories of `.tf`
+      // it skipped even when the zoom elided nothing. Ahead of the elision
+      // note, which is about the same estate's zoom — what is drawn, then what
+      // is not.
+      note(dirs) {
+        const scans = dirs.map((d) => discoverTerraformRoots(d));
+        const note = [...scans.map(terraformRootsNote), terraformElisionNote(elision, detail)].filter(Boolean).join("; ");
+        const short = [...scans.map(terraformRootsNoteShort), terraformElisionNoteShort(elision)].filter(Boolean).join(" · ");
+        return note ? { note, ...(short && short !== note ? { noteShort: short } : {}) } : {};
+      },
+    };
+  },
+};
+
 /** The terraform member (#384): a directory of `.tf` files, read through a
  * generated chant config. Registered after chant and choudoufu, so a directory
  * that is also a chant project or a choudoufu estate is read as one of those. */
@@ -557,4 +600,5 @@ export const terraformSpec: MemberKindSpec = {
   probe: hasTerraformRoots,
   expects: "Terraform root under it — a `terraform` or `provider` block beside a resource, data or module block",
   via: terraformVia,
+  passes: terraformPasses,
 };

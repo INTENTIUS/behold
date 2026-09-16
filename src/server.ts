@@ -137,21 +137,12 @@ import { statusVocabulary } from "./status-vocabulary.ts";
 import { attachBehaviour, type BehaviourMember } from "./behaviour.ts";
 import { addEstateMemberEdges } from "./estate-edges.ts";
 import { addChoudoufuReferenceEdges, liveCheckToIr, readLiveCheck, setChoudoufuRunner, setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
-import {
-  filterTerraformCards,
-  groupTerraformByRoot,
-  hasTerraformEntities,
-  normalizeTerraformNodes,
-  terraformElisionNote,
-  terraformElisionNoteShort,
-  type TerraformElision,
-} from "./terraform-lens.ts";
 import { choudoufuDiffNodes, paintPlanDrift, readChoudoufuLive, type Runner as ChoudoufuRunner } from "./choudoufu-live.ts";
 import { cacheChoudoufuPlan, cachedChoudoufuPlan, readChoudoufuPlan, type PlanResourceDrift } from "./choudoufu-plan.ts";
 import { choudoufuLexiconNote, setEstateLexiconRead, type LexiconRead } from "./choudoufu-refs.ts";
 import { discoverCarvePlans, moveMembers, moveReceipt, movesPayload, readCarvePlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
-import { memberKindOf, memberKindSpec, servesAsEstate } from "./member-kind.ts";
-import { TerraformReadError, discoverTerraformRoots, terraformRootsNote, terraformRootsNoteShort } from "./terraform-member.ts";
+import { applyMemberPasses, memberKindOf, memberKindSpec, memberPassNote, servesAsEstate, type MemberPassRun } from "./member-kind.ts";
+import { TerraformReadError } from "./terraform-member.ts";
 import { invalidateMember, memberIr, memberIrCacheStats, memberSourceStamp } from "./member-ir.ts";
 import { diagnose } from "./doctor.ts";
 import { readStats } from "./read-stats.ts";
@@ -887,15 +878,6 @@ async function readoptDispatchedRun(
  */
 const RUNTIME_LEXICONS = new Set(["k8s"]);
 
-/**
- * The three Terraform passes (#379, #380, #382), in the one order they make
- * sense: name the cards, box them by root, then drop what is not estate at this
- * detail. Returns what the filter elided so the view can say so.
- *
- * Guarded on the IR carrying terraform entities at all, so every chant, k8s and
- * choudoufu estate gets the identical object back — the same discipline
- * `addChoudoufuReferenceEdges` follows.
- */
 /** The groups a logical card's title may drop the name of (#396 finding 1):
  * the estate's member/root boxes, off the IR the projection was handed. The
  * lens draws containers of its own (`estate terralith-4`, `root prod`) while
@@ -906,12 +888,6 @@ const RUNTIME_LEXICONS = new Set(["k8s"]);
 function cardPrefixesOf(ir: GraphIR): Record<string, string[]> | undefined {
   const byStack = (ir.groups as { byStack?: Record<string, string[]> }).byStack;
   return byStack && Object.keys(byStack).length ? byStack : undefined;
-}
-
-function applyTerraformPasses(ir: GraphIR, detail: number | undefined): TerraformElision {
-  if (!hasTerraformEntities(ir)) return { dropped: {}, total: 0 };
-  groupTerraformByRoot(normalizeTerraformNodes(ir));
-  return filterTerraformCards(ir, detail);
 }
 
 export function createApp(
@@ -2033,8 +2009,11 @@ export function createApp(
       // byte for byte; a served non-chant directory normally arrives composed
       // (#389) and never reaches this.
       const ownKindVia = multi ? undefined : memberKindSpec(memberKindOf(cfg.projectDir) ?? "chant")?.via;
-      // #382: what the Terraform zoom filter elided, when the estate branch ran it.
-      let estateTfElision: TerraformElision = { dropped: {}, total: 0 };
+      // #427: what the member kinds' render passes did, when the estate branch
+      // ran them. Carried forward rather than re-run — a pass that already
+      // elided its cards returns an empty elision the second time, so a re-run
+      // would silently drop the note on every composed Terraform estate.
+      let estateRun: MemberPassRun = [];
       // #384: a served Terraform directory says which roots it found and which
       // directories of `.tf` it skipped, so a root missing from the picture is
       // visible here rather than by counting boxes. Ahead of the elision note,
@@ -2054,12 +2033,12 @@ export function createApp(
       // clause and drops the elision entirely, and the SPA would have to
       // re-derive `5 roots · 2 skipped` from prose it did not write. The rule
       // src/zoom-notes.ts states holds: the server decides what a note says.
-      const terraformNotes = (elision: TerraformElision): { note?: string; noteShort?: string } => {
-        const scans = (multi ? cfg.projectDirs! : [cfg.projectDir]).filter((d) => memberKindOf(d) === "terraform").map((d) => discoverTerraformRoots(d));
-        const note = [...scans.map((s) => terraformRootsNote(s)), terraformElisionNote(elision, opts.detail)].filter(Boolean).join("; ");
-        const noteShort = [...scans.map((s) => terraformRootsNoteShort(s)), terraformElisionNoteShort(elision)].filter(Boolean).join(" · ");
-        return note ? { note, ...(noteShort && noteShort !== note ? { noteShort } : {}) } : {};
-      };
+      //
+      // #427: the route no longer knows whose note this is. `memberPassNote`
+      // hands each kind only the served dirs that are its own, so a kind that
+      // registers `passes` contributes a clause here for free.
+      const passNote = (run: MemberPassRun): { note?: string; noteShort?: string } =>
+        memberPassNote(run, multi ? cfg.projectDirs! : [cfg.projectDir]);
       // #393 item 1: a choudoufu estate's own references come from chant's
       // terraform lexicon (src/choudoufu-refs.ts), and with it absent there are
       // none. Said once, in place of `edgelessNote`'s "nothing in this estate
@@ -2117,7 +2096,7 @@ export function createApp(
         ir = addClusterAnchorEdges(ir, estateContext);
         // #379/#380/#382 — see the single-project branch below. An estate whose
         // members are Terraform roots gets the same three passes.
-        estateTfElision = applyTerraformPasses(ir, opts.detail);
+        estateRun = applyMemberPasses(ir, { detail: opts.detail });
         // #224: the logical lens over the COMPOSED IR. Every projection joins
         // on attribute values, never node ids, so composeStacks' prefixed ids
         // pass through exactly as the edge passes above do — and the k8s lens
@@ -2137,7 +2116,7 @@ export function createApp(
           // which roots those are is no less true here than at `resources` —
           // and on a Terraform estate it is the only line that explains the
           // picture at all.
-          const tf = terraformNotes(estateTfElision);
+          const tf = passNote(estateRun);
           const lensNote = notesFor("logical", projected, undefined, logicalBefore);
           const logicalNote = [tf.note, lensNote].filter(Boolean).join(" · ");
           const logicalNoteShort = tf.note ? [tf.noteShort ?? tf.note, lensNote].filter(Boolean).join(" · ") : undefined;
@@ -2228,7 +2207,7 @@ export function createApp(
         const base = addClusterAnchorEdges(addValueMatchEdges(addK8sDeclaredEdges(raw)), logicalContext);
         // #379/#380/#382: name and box the Terraform cards before the lens
         // projects them, so its own boxes hold cards rather than block classes.
-        const singleTfElision = applyTerraformPasses(base, opts.detail);
+        const singleRun = applyMemberPasses(base, { detail: opts.detail });
         // #102: the lens follows the substrate — AWS nests region/VPC/subnet,
         // Azure nests resource group/VNet/subnet. `metaEnv` names the resource
         // group on Azure, which ARM never declares as a resource.
@@ -2246,7 +2225,7 @@ export function createApp(
         // rendered SVG, which is not something an acceptance run can assert on.
         // The SPA ignores it and paints the svg as before.
         // #393 item 5 — see the estate branch's logical note.
-        const tf = terraformNotes(singleTfElision);
+        const tf = passNote(singleRun);
         const lensNote = notesFor("logical", projected, undefined, base.nodes.length);
         const logicalNote = [tf.note, lensNote].filter(Boolean).join(" · ");
         const logicalNoteShort = tf.note ? [tf.noteShort ?? tf.note, lensNote].filter(Boolean).join(" · ") : undefined;
@@ -2295,7 +2274,7 @@ export function createApp(
       // The estate branch above already ran them — it has to, because its
       // logical path returns before this line — so this is the single-project
       // half of the same one call per request.
-      const tfElision = multi ? estateTfElision : applyTerraformPasses(ir, opts.detail);
+      const run = multi ? estateRun : applyMemberPasses(ir, { detail: opts.detail });
       // COMPOSITES (level 1) on the SOURCE view too (#138): the overlay branch
       // below has joined the component DAG's dependsOn edges since #84, but a
       // source-only serve (no env) rendered the tier with no component edges at
@@ -2384,8 +2363,8 @@ export function createApp(
       // — without it, example-k8s's `/api/graph` asserted "nothing in this
       // estate references anything else" at detail 2 while detail 3 has 2.
       // #384 / #393 item 5: the roots and what this zoom left out — see
-      // `terraformNotes` above, which the two logical branches call as well.
-      const tf = terraformNotes(tfElision);
+      // `passNote` above, which the two logical branches call as well.
+      const tf = passNote(run);
       // #393 item 1: whoever picks `components` on an estate is owed the reason
       // it is not a components picture, and is owed it FIRST — a Terraform
       // estate's roots note used to displace it entirely, so the picker looked
@@ -2812,7 +2791,7 @@ export function createApp(
         ir = addClusterAnchorEdges(ir, boundContext);
         // #379/#380/#382 — the same three, in the same order, as /api/graph's
         // estate branch. A live overlay adds colour, never a different picture.
-        applyTerraformPasses(ir, detail);
+        applyMemberPasses(ir, { detail });
         // #404: the second signal on a bound choudoufu card. After the paint
         // passes, because it reads `_status` (only a BOUND card can carry
         // attribute drift) and only ever adds `_planDrift` beside it — the
@@ -3015,7 +2994,7 @@ export function createApp(
         // source-anchored, so this is the same derivation on both.
         const projectionInput = addClusterAnchorEdges(addValueMatchEdges(addK8sDeclaredEdges(ir)), boundContext);
         // #379/#380/#382 — as on the source logical path.
-        applyTerraformPasses(projectionInput, opts.detail);
+        applyMemberPasses(projectionInput, { detail: opts.detail });
         const { ir: projected, byContainer, namespaceBoxes } = projectTopology(projectionInput, env, boundContext, [await graphPath(cfg.projectDir, opts), cfg.projectDir]);
         // #234's free rider, the logical lens's half (pinhole#119): this route
         // never calls `markOperatorHome` (it returns before the non-logical
@@ -3052,7 +3031,7 @@ export function createApp(
       // source-anchored, so this is the same derivation, not a live-only one.
       ir = addClusterAnchorEdges(ir, boundContext);
       // #379/#380/#382 — as on the source path.
-      applyTerraformPasses(ir, opts.detail);
+      applyMemberPasses(ir, { detail: opts.detail });
       // At COMPOSITES (level 1), composites only wired via import sinks (now
       // pruned) so they'd all float — overlay the authoritative component
       // dependsOn graph so they read as a dependency graph (see addCompositeDeps).

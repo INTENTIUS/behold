@@ -33,6 +33,7 @@
  * member kind"): the probe and the via, plus a presentation pack in
  * src/render.ts and a doctor line if the kind needs a tool on PATH.
  */
+import type { GraphIR } from "@intentius/chant";
 import { choudoufuSpec } from "./choudoufu-live.ts";
 import type { MemberVia } from "./member-ir.ts";
 import { chantConfigPath } from "./project.ts";
@@ -47,6 +48,45 @@ export function isMemberKind(s: unknown): s is MemberKind {
   return typeof s === "string" && (MEMBER_KINDS as readonly string[]).includes(s);
 }
 
+/** What a render pass is told about the request it is running for. */
+export interface MemberPassOpts {
+  /** The zoom the request asked for. `undefined` is chant's own default. */
+  detail: number | undefined;
+}
+
+/** The two forms of the line a rendered graph carries about itself. */
+export interface MemberPassNote {
+  note?: string;
+  noteShort?: string;
+}
+
+/**
+ * What one kind's passes left behind, so a route can explain the picture
+ * without knowing which kind drew it. The kind closes over its own result.
+ *
+ * `note` is separate from `apply` on purpose. The note is membership-driven —
+ * a served Terraform member says which roots it found even when the zoom
+ * elided nothing — while `apply` is content-driven, and resolving membership
+ * costs a filesystem walk (`hasTerraformRoots`) that the three `/api/overlay`
+ * sites do not pay today and must not start paying.
+ */
+export interface MemberPassOutcome {
+  /** This kind's clause. `dirs` are the SERVED directories OF THIS KIND, in
+   * composition order, and empty when none is served. */
+  note(dirs: readonly string[]): MemberPassNote;
+}
+
+/** What a kind runs over an IR at render time, after the read. */
+export interface MemberPasses {
+  /**
+   * Run over `ir`, IN PLACE — the existing passes mutate and their callers
+   * depend on it. MUST be self-guarded on the IR's own content: an IR carrying
+   * none of this kind's nodes comes back the identical object, untouched, so
+   * every other estate renders byte-identical.
+   */
+  apply(ir: GraphIR, opts: MemberPassOpts): MemberPassOutcome;
+}
+
 /** What behold knows how to do with one kind of member. */
 export interface MemberKindSpec {
   kind: MemberKind;
@@ -58,6 +98,9 @@ export interface MemberKindSpec {
   /** How a member of this kind is read. Absent only for chant, the default
    * reader every other kind is an alternative to. */
   via?: MemberVia;
+  /** What this kind runs over an IR at RENDER time (#427). Absent for a kind
+   * that contributes nothing, which is chant and choudoufu today. */
+  passes?: MemberPasses;
 }
 
 const registry = new Map<MemberKind, MemberKindSpec>();
@@ -86,6 +129,59 @@ export function memberKindSpec(kind: MemberKind): MemberKindSpec | undefined {
 export function memberKindOf(dir: string): MemberKind | undefined {
   for (const spec of registry.values()) if (spec.probe(dir)) return spec.kind;
   return undefined;
+}
+
+/** One request's passes, per kind, in registration order. */
+export type MemberPassRun = ReadonlyArray<{ kind: MemberKind; outcome: MemberPassOutcome }>;
+
+/**
+ * Run every registered kind's render passes over `ir` (#427).
+ *
+ * The estate routes used to invoke one kind's passes by name at six sites, which
+ * is the per-kind route fork AGENTS.md forbids. This is the one call they make
+ * instead, and a kind that registers `passes` reaches every branch for free.
+ *
+ * Dispatch is over the IR's CONTENT, not over the served members' kinds. Each
+ * kind's `apply` self-guards, and the deciding case is a chant project that
+ * declares the terraform lexicon: its `memberKindOf` is `chant`, so membership
+ * dispatch would silently stop rendering it (src/terraform-route.test.ts's
+ * first block is exactly that estate). Membership decides only whose note it
+ * is, in {@link memberPassNote}.
+ *
+ * Run the result through `memberPassNote` ONCE per response, and carry a run
+ * forward rather than re-running: a pass that already elided its cards returns
+ * an empty elision the second time, so a re-run silently drops the note.
+ */
+export function applyMemberPasses(ir: GraphIR, opts: MemberPassOpts): MemberPassRun {
+  const run: { kind: MemberKind; outcome: MemberPassOutcome }[] = [];
+  for (const spec of registry.values()) {
+    if (!spec.passes) continue;
+    run.push({ kind: spec.kind, outcome: spec.passes.apply(ir, opts) });
+  }
+  return run;
+}
+
+/**
+ * The line a run contributes for these served directories.
+ *
+ * Each kind is handed only the dirs that are its own, so a kind never learns
+ * about another's members and a route never names a kind. Joins are the ones
+ * the Terraform note has always used — `"; "` long, `" · "` short — and a short
+ * form identical to the long one is dropped rather than repeated.
+ */
+export function memberPassNote(run: MemberPassRun, dirs: readonly string[]): MemberPassNote {
+  const kindOf = new Map(dirs.map((d) => [d, memberKindOf(d)]));
+  const notes: string[] = [];
+  const shorts: string[] = [];
+  for (const { kind, outcome } of run) {
+    const mine = dirs.filter((d) => kindOf.get(d) === kind);
+    const { note, noteShort } = outcome.note(mine);
+    if (note) notes.push(note);
+    if (noteShort) shorts.push(noteShort);
+  }
+  const note = notes.join("; ");
+  const noteShort = shorts.join(" · ");
+  return note ? { note, ...(noteShort && noteShort !== note ? { noteShort } : {}) } : {};
 }
 
 /**

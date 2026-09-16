@@ -551,7 +551,7 @@ tool answers reads for it, and how it becomes a `GraphIR`. `src/member-kind.ts`
 is the one table; `chant` is the first row and every member was that row
 until the table existed. A new kind is:
 
-1. A `registerMemberKind({ kind, probe, expects, via })` call in
+1. A `registerMemberKind({ kind, probe, expects, via, passes })` call in
    `src/member-kind.ts` — the `probe` is sync, read-only and runs no code (a
    file's presence, a regex over a root file, or either: the choudoufu probe
    takes the `estate.chdf.hcl` sidecar, choudoufu's leading form, OR a `live {`
@@ -567,7 +567,24 @@ until the table existed. A new kind is:
    `estateNamespaceScopes` already dispatch through `memberKindOf(dir)`.
    The two routes that render an estate — `/api/graph`'s estate branch and
    `/api/overlay`'s — run the same passes in the same order and must not
-   fork per kind; a kind's differences live inside its `read`.
+   fork per kind; a kind's differences live inside its `read` or its `passes`.
+
+   `passes` (#427) is the render-time half, and it exists because the read-time
+   one could not hold it: the Terraform kind's third pass takes the request's
+   zoom, so it cannot run where the reader runs. `applyMemberPasses(ir,
+   {detail})` is the one call the six render sites make, and `memberPassNote(run,
+   dirs)` the line they return — each kind handed only the served dirs that are
+   its own, so a route never names a kind. Three rules a `passes` holds. It
+   mutates IN PLACE, because the existing passes do and their callers depend on
+   it. It self-guards on the IR's own CONTENT and never on the served members'
+   kinds: a chant project may declare a kind's lexicon — a chant project
+   declaring `terraform` is what `src/terraform-route.test.ts`'s first block
+   serves, and `memberKindOf` says `chant` there — so membership dispatch would
+   silently stop rendering it. And a run is carried forward, never re-run: a
+   pass that already elided its cards returns an empty elision the second time,
+   which drops the note on every composed estate. A test that re-registers a
+   kind to stub its reader spreads the real spec (`{ ...terraformSpec, via: … }`)
+   or it drops the passes with it.
 3. A `registerPack({ lexicon, iconFor, fields })` in `src/render.ts`, or the
    kind's cards lead with the alphabetically first two short attrs. A `fields`
    function takes the box the card is drawn in as its second argument, so a
@@ -584,7 +601,8 @@ until the table existed. A new kind is:
    `carveStatusReader` does; a PATH probe the way `src/demos.ts` does).
 6. Tests: the probe and the object form in `src/project.test.ts`; dispatch
    in `src/estate.test.ts`'s "#368" block, which registers a fake kind and
-   asserts chant members still go through exactly the calls they did; the
+   asserts chant members still go through exactly the calls they did, and its
+   "#427" block for the render passes; the
    kind's own reader off recorded documents in `src/__fixtures__/`, with
    provenance in prose above the load.
 
