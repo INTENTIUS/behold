@@ -149,6 +149,35 @@ export interface LivePlanDiagnostic {
   detail?: string;
 }
 
+/**
+ * The account-inventory opt-in (#412, M1 of #410).
+ *
+ * `adoptable[]` is empty on any run that did not ask the account-inventory
+ * question, and behold spawns `live-plan` without asking. choudoufu's own
+ * `live-plan -help` states the switch and the cost: "-adoption-only … asks the
+ * estate-wide sweep which live resources carry no ownership marker at all, a
+ * question bounded by the account rather than by the estate, so it costs more
+ * than an ordinary plan rather than less. Set TOFU_LIVE_COLLECT_UNCLAIMED=1 to
+ * ask it on an ordinary plan, or 0 to skip it here."
+ *
+ * The env var and not the flag, for two reasons. `-adoption-only` suppresses
+ * the resource diff, and the overlay needs `bound`/`omissions`/`unowned` as
+ * much as it needs this. And behold already has a way to hand a choudoufu spawn
+ * an environment that is not the process's — `serve.spawnEnv`, fed through
+ * `setChoudoufuSpawnEnv` (src/choudoufu-member.ts) — so the opt-in rides a seam
+ * that exists rather than a new argv behold would have to decide when to add.
+ *
+ * OFF BY DEFAULT, and it has to be: the sweep is bounded by the account rather
+ * than the estate, and behold polls. Nothing about an ordinary serve changes.
+ */
+export const ADOPTION_SWEEP_VAR = "TOFU_LIVE_COLLECT_UNCLAIMED";
+
+/** Did this environment ask for the sweep? `1` asks, `0` and absent do not —
+ * choudoufu's own spelling, not a truthiness test of behold's invention. */
+export function adoptionSweepRequested(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env[ADOPTION_SWEEP_VAR] === "1";
+}
+
 export interface LivePlanDocument {
   estate: string;
   choudoufu_version: string;

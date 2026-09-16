@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, afterEach } from "vitest";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -26,6 +26,7 @@ import {
 } from "./choudoufu-member.ts";
 import { choudoufuSpec } from "./choudoufu-live.ts";
 import { choudoufuSpawnEnv, resetChoudoufuVersionCache, setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
+import { ADOPTION_SWEEP_VAR, adoptionSweepRequested } from "./choudoufu-live.ts";
 
 // Fixture provenance (#369). Every document below was printed by
 // `choudoufu live-check -json` from a choudoufu built from main at
@@ -396,5 +397,34 @@ describe("moduleInstanceOf — the sub-box a card sits in (#393 B)", () => {
     expect(moduleInstanceOf("aws_ecs_cluster.main")).toBeUndefined();
     expect(moduleInstanceOf("data.aws_vpc.network")).toBeUndefined();
     expect(moduleInstanceOf("modules.not_a_module.x")).toBeUndefined();
+  });
+});
+
+// #412 (M1 of #410): the account-inventory sweep is what populates
+// `adoptable[]`, and it is off unless a serve asks for it.
+describe("the adoption sweep opt-in (#412)", () => {
+  afterEach(() => setChoudoufuSpawnEnv(undefined));
+
+  it("is absent from an ordinary serve's spawn environment", () => {
+    // The sweep is bounded by the ACCOUNT rather than by the estate, and
+    // behold polls. Nothing about an ordinary serve may turn it on.
+    const env = choudoufuSpawnEnv({ PATH: "/usr/bin" });
+    expect(env[ADOPTION_SWEEP_VAR]).toBeUndefined();
+    expect(adoptionSweepRequested(env)).toBe(false);
+  });
+
+  it("reaches the spawn when a serve asks for it, through the seam that already exists", () => {
+    setChoudoufuSpawnEnv({ [ADOPTION_SWEEP_VAR]: "1" });
+    const env = choudoufuSpawnEnv({ PATH: "/usr/bin" });
+    expect(env[ADOPTION_SWEEP_VAR]).toBe("1");
+    expect(adoptionSweepRequested(env)).toBe(true);
+  });
+
+  it("reads choudoufu's own spelling, not a truthiness test of behold's invention", () => {
+    // `-help`: "Set TOFU_LIVE_COLLECT_UNCLAIMED=1 to ask it on an ordinary
+    // plan, or 0 to skip it here." So 0 is a real answer and means no.
+    expect(adoptionSweepRequested({ [ADOPTION_SWEEP_VAR]: "0" })).toBe(false);
+    expect(adoptionSweepRequested({ [ADOPTION_SWEEP_VAR]: "true" })).toBe(false);
+    expect(adoptionSweepRequested({})).toBe(false);
   });
 });
