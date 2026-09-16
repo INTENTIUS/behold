@@ -39,6 +39,7 @@ import {
   lifecycleDiffLive,
   runChantRaw,
   readsInFlight,
+  stackGraph,
   resolveChant,
   meetsFloor,
   graphPath,
@@ -146,6 +147,7 @@ import { TerraformReadError } from "./terraform-member.ts";
 import { invalidateMember, memberIr, memberIrCacheStats, memberSourceStamp } from "./member-ir.ts";
 import { diagnose } from "./doctor.ts";
 import { readStats } from "./read-stats.ts";
+import { stackOrderNote, stackOrderNoteShort, stackOrderToIr } from "./stack-order.ts";
 import { invalidateOverlay } from "./overlay-ir.ts";
 import { carveStatesFor, carveStatesUnder } from "./carve-discovery.ts";
 import { foreignNote, type GraphIRWithForeign } from "./foreign.ts";
@@ -1509,6 +1511,16 @@ export function createApp(
       // stop and no dead ⌘K entry. The count, not a bare flag — the SPA shows
       // it, and "ops: 0" is not a thing this can ever say.
       ...(emittedOps ? { ops: emittedOps } : {}),
+      // #426: whether the apply-order stop is worth offering. The honest gate
+      // is "more than one stack", and a stack is a lexicon partition — but
+      // deriving that exactly costs the read itself, and this route spawns no
+      // chant at all today. `lexicons` from the project's own config is the
+      // cheap proxy behold already has in hand: it can over-offer (chant's
+      // partition drops LexiconOutput, secrets, plan scenarios and Op
+      // entities, so an IR lexicon may carry no stack node) and the lens says
+      // so when it does, which is the failure worth having. An estate is
+      // excluded outright — the route refuses `stacks=1` there.
+      ...(!cfg.projectDirs && memberLexicons.flat().length > 1 ? { stacksCapable: true } : {}),
       // #393: what the served members are, and whether `runtime` applies to any
       // of them. Both gated exactly like `ops` above — a flag that is only ever
       // true is a flag the SPA can read as "absent means no".
@@ -1899,6 +1911,50 @@ export function createApp(
       // the stop when `/api/project` reported ops (below), so reaching here
       // with none is either a hand-built URL or a project rebuilt out from
       // under an open tab: #193's structured error, not a blank canvas.
+      // #426: the apply order chant already computes. Opt-in for the same
+      // reason `ops=1` is: it is one more chant spawn per graph load — a full
+      // TypeScript evaluation of the member's source, the cost src/estate.ts
+      // documents — to say "one wave" on every project that has only one.
+      //
+      // Single-project only, and the note says so. `stackGraph` is per project
+      // and `composeStacks` pools every member's nodes into one bucket per bare
+      // lexicon name, so two members' `aws` stacks would merge into a claim
+      // that they are one stack, which they are not. Namespacing them is a
+      // second issue, not this one.
+      if (url.searchParams.get("stacks") === "1") {
+        if (cfg.projectDirs) {
+          return c.json(
+            {
+              error: "the apply order is a single project's — an estate composes several, and two members' stacks are not one stack",
+              code: "stacks-estate",
+              remedy: "serve one project to see its apply order",
+            },
+            422,
+          );
+        }
+        try {
+          const graph = await stackGraph(cfg.projectDir, opts);
+          const ir = stackOrderToIr(graph);
+          const { svg } = renderGraph(ir, { boxes: "byStack" });
+          const note = stackOrderNote(graph);
+          const noteShort = stackOrderNoteShort(graph);
+          return c.json({
+            ir,
+            svg,
+            meta: {
+              projectDir: cfg.projectDir,
+              mode: "stacks",
+              // Verbatim, so a consumer can act on the cycle rather than parse
+              // the sentence behold wrote about it.
+              stacks: { order: graph.order, waves: graph.waves, cycles: graph.cycles },
+              ...(note ? { note } : {}),
+              ...(noteShort && noteShort !== note ? { noteShort } : {}),
+            },
+          });
+        } catch (err) {
+          return errorResponse(c, opts, err);
+        }
+      }
       if (url.searchParams.get("ops") === "1") {
         const files = discoverOpIrs(estateDirs);
         if (!files.length) {

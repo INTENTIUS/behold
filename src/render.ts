@@ -30,6 +30,7 @@ import { carveProgress, splitCarveState, type CarveState } from "./carve-manifes
 import { opCardFields } from "./ops-lens.ts";
 import { ROW_ASPECT, ROW_MIN_CARDS, rowColumns, withRowChains, type RowBand, type RowGrid } from "./edgeless.ts";
 import { SUMMARY_LEXICON, summaryCardFields } from "./collapse-lens.ts";
+import { STACK_LEXICON } from "./stack-order.ts";
 
 // Lexicon-native icons (#227), step 2 of 2. pinhole resolves a node's glyph
 // through a chain — per-node override → lexicon pack → keyword heuristic →
@@ -83,6 +84,26 @@ registerPack({ lexicon: "op", iconFor: () => undefined, fields: opCardFields });
 // a node's kind is the Terraform type (`aws_subnet`, `aws_iam_role`), which
 // the keyword heuristic already resolves the way it does for the carve lens.
 registerPack({ lexicon: CHOUDOUFU_LEXICON, iconFor: () => undefined, fields: choudoufuCardFields });
+
+// The apply-order lens (#426) registers behold's own lexicon for the same
+// reason the ops lens does: a stack card must lead with the wave it applies in
+// and its position in the order, and the default template picks the first two
+// short scalar attrs ALPHABETICALLY — which on these nodes is `cycle` then
+// `position`, burying the one thing the lens exists to say. No `iconFor`: a
+// card's kind IS the lexicon name (`aws`, `k8s`, `helm`), which pinhole's
+// keyword heuristic already resolves better than a table behold would have to
+// keep in step with every lexicon chant adds.
+registerPack({
+  lexicon: STACK_LEXICON,
+  iconFor: () => undefined,
+  fields: (node) => {
+    const attrs = (node.attrs ?? {}) as { wave?: string; position?: number; cycle?: boolean };
+    return [
+      { label: "wave", value: attrs.cycle ? "in a cycle" : (attrs.wave ?? "unordered") },
+      ...(attrs.position ? [{ label: "position", value: `${attrs.position} of the order` }] : []),
+    ];
+  },
+});
 
 // The collapse lens (#393) registers behold's own lexicon for the one card
 // that is not the estate's: the summary standing in for a shut box. Its whole

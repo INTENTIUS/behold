@@ -67,6 +67,25 @@ preview-locked, and one load runs at a time (409 otherwise).
    itself carries an address (chant#2045); `originSource: "inferred"` means
    behold read the id's spelling and nothing more, and a `forge: "unknown"` id
    is never resolved to a link on behold's guess.
+   `?stacks=1` is the apply-order lens (#426) — the cross-stack ordering chant
+   computes at synthesis and prints from `chant graph --stacks --json`, which
+   behold read nowhere and re-derived a subset of. One card per stack (a
+   lexicon partition), one box per wave, edges consumer to producer;
+   `meta.stacks` carries `order`, `waves` and `cycles` verbatim. It is
+   source-only — no env, no credentials, no substrate — and asks chant for the
+   project ROOT, not `graphPath`, because `runStackGraph` only sees
+   `ops/*.op.ts` from there (measured: `example-writes` answers `[aws,
+   temporal]` from `.` and `[aws]` from `src`). Single project only: an estate
+   is refused with `422 stacks-estate`, since `composeStacks` pools members
+   into one bucket per bare lexicon name and two members' `aws` stacks are not
+   one stack. A cycle is NOT a refusal — chant exits 1 with valid JSON and the
+   entangled stacks absent from `order`/`waves`, so they are drawn unwaved in
+   their own box and the note says so; nothing invents a wave number for a
+   stack chant could not order. `/api/project`'s `stacksCapable` gates the
+   stop. Note that `chant graph --stacks --json` is malformed today on two of
+   chant's own examples (an edge with no `from`, a `null` in `order` and in a
+   wave); `sanitizeStackGraph` treats `nodes` as the roster and drops anything
+   named nowhere else.
    `?ops=1` is the ops lens — the project's declared Ops as a phase track, read
    from each emitted `dist/ops/<name>/op.json`, with the current run painted
    over it (`meta.run`, `meta.gate`); `/api/ops/<name>/status` reads that Op's
