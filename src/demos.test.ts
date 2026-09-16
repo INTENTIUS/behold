@@ -50,6 +50,21 @@ describe("demos.json — the committed catalog (#209)", () => {
   // #254: the walkthrough is a catalog entry like any other, and every path it
   // names has to exist in the directory that gets copied — a typo here is a
   // demo that boots to an Emit button with nowhere to write.
+  it("the Terraform estate entry needs nothing to run (#417)", () => {
+    const tf = registry.find((e) => e.name === "terraform-estate");
+    expect(tf).toBeDefined();
+    // Declared only, like argo-estate: no cluster, no emulator, no setup step.
+    expect(tf!.requires).toEqual([]);
+    expect(tf!.setup).toBeUndefined();
+    // No `serve.dirs`: a Terraform estate's roots are DISCOVERED under the
+    // served directory, not listed here — src/terraform-member.ts owns that,
+    // and listing them would be a second roster to keep in step.
+    expect(tf!.serve.dirs).toBeUndefined();
+    expect(tf!.serve.env).toBeUndefined();
+    // The lexicon behold does not install is named where someone will read it.
+    expect(tf!.description).toContain("@intentius/chant-lexicon-terraform");
+  });
+
   it("the carve entry names four real paths inside the bundled estate", () => {
     const carve = registry.find((e) => e.name === "carve");
     expect(carve, "no carve entry in demos.json").toBeTruthy();
