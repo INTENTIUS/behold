@@ -366,3 +366,59 @@ describe("bound by derived identity says the marker is still missing", () => {
     expect(choudoufuDiffNodes(doc, listing, planDoc)["aws_iam_role_policy.team_a_inline"].healthDetail).toContain("no marker on the object yet");
   });
 });
+
+// #412 fixture provenance. Printed by choudoufu v0.16.0 (the installed
+// release, OpenTofu v1.13.0-dev) against a scratch floci
+// (`behold-adoptable-fixture`, 127.0.0.1:4661, removed after), over a
+// two-file estate written for this: an `estate.chdf.hcl` naming the estate
+// and one scalar `aws_vpc` declaring `cidr_block = "10.77.0.0/16"`. Nothing
+// was applied. The live twin was created out of band with `aws ec2
+// create-vpc --cidr-block 10.77.0.0/16` so it carries no ownership marker,
+// and the run was `TOFU_LIVE_COLLECT_UNCLAIMED=1 choudoufu live-plan -json`.
+//
+// Why `aws_vpc` and not the `aws_iam_role` #412 first tried: content matching
+// is a closed per-type table — `matchTable`, internal/live/foreign/classify.go
+// — of eleven types keyed on their identity-bearing arguments, and IAM is not
+// among them. A type absent from it "can never produce a bind candidate", in
+// that table's own words, so the first attempt was measuring a shape that
+// cannot match rather than a gap. `aws_vpc` keys on `cidr_block`.
+describe("the adoption sweep's own row (#412)", () => {
+  const doc = plan("choudoufu-live-plan-adoptable.json");
+
+  it("pairs a NEEDS_DISCOVERY omission with the row the sweep matched", () => {
+    // This pairing IS #413: the omission says the declaration has no identity
+    // of its own, and the adoptable row says the sweep found its live twin
+    // anyway. Same address on both halves.
+    const omission = (doc.omissions ?? []).find((o) => o.reason === "NEEDS_DISCOVERY");
+    expect(omission?.addr).toBe("aws_vpc.adoptable");
+    const row = (doc.adoptable ?? [])[0] as { addr: string; type: string; identity: string };
+    expect(row.addr).toBe("aws_vpc.adoptable");
+    expect(row.type).toBe("aws_vpc");
+    // The identity is the live object's, assigned by the cloud — which is why
+    // the declaration could not carry it and why this is not an unowned row.
+    expect(row.identity).toMatch(/^vpc-/);
+  });
+
+  it("carries what the sweep compared, in the order it compared it", () => {
+    const row = (doc.adoptable ?? [])[0] as { matched: { attribute: string; value: string }[] };
+    expect(row.matched).toEqual([{ attribute: "cidr_block", value: "10.77.0.0/16" }]);
+  });
+
+  it("carries choudoufu's own adopt command, not tags behold composed", () => {
+    const row = (doc.adoptable ?? [])[0] as { adopt_command: string; adopt_tofu_estate: string; adopt_tofu_address: string };
+    expect(row.adopt_command).toContain("aws ec2 create-tags");
+    expect(row.adopt_command).toContain("Key=tofu-estate,Value=behold-adoptable-fixture");
+    expect(row.adopt_tofu_address).toBe("aws_vpc.adoptable");
+  });
+
+  it("says which types the run actually swept", () => {
+    // An empty `adoptable[]` means two different things and `swept` is how
+    // they are told apart (#414). Here the type is present, so the sweep
+    // looked at it.
+    expect(doc.swept).toContain("aws_vpc");
+  });
+
+  it("is not an unowned row — those are a different section and a different mechanism", () => {
+    expect(doc.unowned ?? []).toHaveLength(0);
+  });
+});
