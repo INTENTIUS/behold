@@ -37,8 +37,13 @@ card's colour is **ownership** — bound, unowned, pending — and not "nothing
 changed": a resource whose attributes drifted out of band still carries its
 markers and is still green, so attribute drift is a separate read you ask for
 with ⌘K → "Re-check live with plan"; `behold demo carve` is the Terraform peel
-walkthrough, below). Every loaded demo lands in the panel's recents, so
-switching between them is the Scope tab.
+walkthrough, below). Two more need no Docker either: `behold demo
+terraform-estate` draws a multi-root Terraform estate boxed by root — and shows
+what behold refuses to infer, since one root reads a key the other declares and
+no edge is drawn between them; `behold demo flux-estate` is a GitOps estate on
+k3d, a Flux control plane plus two app projects composed. `behold demo fountain`
+clones a real self-hosted app onto a throwaway cluster. Every loaded demo lands
+in the panel's recents, so switching between them is the Scope tab.
 
 Working in a checkout rather than an npm install? There is a second catalog,
 `workbench.json`, which is this checkout's and is not shipped — it is
@@ -71,78 +76,59 @@ npx @intentius/behold serve . --env prod --poll 30   # live drift overlay
 
 `behold doctor` is the first thing to run on a project behold hasn't seen: one
 line each for the project's kind, its own chant install and version, declared
-lexicons, the envs the picker will infer, the kube context chant binds versus
-your ambient one, substrate readiness and committed Ops — pass/warn/fail with
-a one-line fix. It starts nothing and changes nothing; it exits non-zero only
+lexicons, which of them can be aimed at an emulator, the envs the picker will
+infer, the kube context chant binds versus your ambient one, substrate
+readiness, committed Ops, and a line per non-chant member kind it found —
+pass/warn/fail with a one-line fix. It starts nothing and changes nothing; it exits non-zero only
 when something would actually stop behold serving the project well, so CI can
 gate on it. `--json` for scripts and agents.
 
-Driving it from an agent or script? `GET /api` lists every JSON route;
+Driving it from an agent or script? `GET /api` is the front door — it lists the
+graph and action routes with a one-line description each, and
+`GET /api/doctor?reads=1` answers what the last reads cost.
 [AGENTS.md](./AGENTS.md) (shipped in the package) is the read/act contract.
 
-## Preview: your project, or the Loom-on-Floci demo (v0.1.0)
+## Preview — one project's graph, nothing set up
 
 `behold preview` is the quick way to look at a chant project's graph in a
-browser at one port. Plain, it just opens the project you point it at — no env,
-no emulator. From a repo checkout the same commands run through `npm run dev`:
+browser at one port. No env, no emulator, no config — it opens the project you
+point it at.
 
 ```sh
-npm install
-npm run dev -- preview                # → http://localhost:4600, cwd as the project
-npm run dev -- preview ../my-project  # → someone else's project
+npx @intentius/behold preview                  # the current directory
+npx @intentius/behold preview ../my-project    # somewhere else
 ```
 
-With no path, it opens the **current directory** — run it from inside your chant
-project. Pass a path to look at another one.
+With no path it opens the **current directory**, so running it from inside your
+project is the shortest thing that works. From a checkout the same commands run
+through `npm run dev -- preview`.
 
-behold also ships a turnkey **demo**: the whole live experience running Loom on a
-local [Floci](https://github.com/lex00/floci) emulator, no cloud account and
-nothing to configure. Opt in with `--emulator`:
+To colour the graph by what is actually deployed, name an environment —
+`serve . --env prod`, below.
 
-```sh
-npm run dev -- preview ../loomster --emulator   # → http://localhost:4600
-```
-
-`--emulator` injects the env Loom's own Floci setup expects
-(`AWS_ENDPOINT_URL=http://localhost:4566`, dummy AWS creds, `LOOM_ENV=local`) and
-locks the UI into previewMode (git/PR ops hidden, substrate strip scoped to
-Docker+Floci, no arbitrary-project switching). If Floci isn't up, **Bring up** on
-its substrate pill boots the emulator and deploys Loom. Needs Docker.
-
-**What you can do (with `--emulator`):** explore the graph at every **zoom**
-(components → logical → composites → resources → attributes, with an optional
-radial layout — where _logical_ is a traditional AWS architecture diagram: nested
-VPC/subnet ⊃ component boxes, CIDRs as labels, one headline resource per
-composite), watch live per-component status, read the reconcile plan, inspect any
-node, and **deploy to the emulator** — the full observe → reconcile → apply,
-Apply all, and a one-click Reset.
-
-**Not yet** (this demo is a preview of what's coming): any real cloud, and the
-git/PR actions (Rollback, Sync, Adopt) — `--emulator` is Loom-on-Floci only. To
-look at your own real infra, `preview`/`export` without `--emulator`, or `serve`
-with your own `--env` and creds.
+<sub>`preview`/`export` also take an `--emulator` flag, a v0.1.0-era turnkey path
+for one specific demo project. `behold demo` and `serve --local` supersede it for
+every purpose; it is kept for compatibility and is not documented further.</sub>
 
 ## Export & host — a shareable, interactive snapshot
 
 `behold export` freezes whatever estate you're looking at into a **self-contained
 static folder** that any static host can serve — a read-only but fully
-interactive snapshot. Pan/zoom, the zoom dial (components → logical → composites →
-resources → attributes), radial layout, the inspect pane, and the env/tier
-pickers all work client-side; there's no live observe or deploy.
+interactive snapshot. Pan/zoom, the zoom dial (components, logical, composites,
+resources, attributes, plus the ops track and the apply order where the project
+has them), radial layout, the inspect pane, and the env/tier pickers all work
+client-side; there's no live observe or deploy.
 
 ```sh
 npm run dev -- export --out ./behold-export           # defaults to cwd, like preview
 #   or someone else's project, with its live overlay:
 #   npm run dev -- export <project> --env <name> --out ./behold-export
-#   or the turnkey Loom-on-Floci demo:
-#   npm run dev -- export ../loomster --emulator --out ./behold-export
 npx serve ./behold-export                              # → open it, no backend running
 ```
 
 Like `preview`, `export` defaults to the current directory and stays plain (no
 env, no emulator) unless you ask. `--env <name>` turns on that project's live
-overlay for the snapshot; `--emulator` injects the same turnkey Loom-on-Floci env
-as `preview --emulator`, for exporting that demo.
+overlay for the snapshot.
 
 It captures every read endpoint for the whole lens matrix (each env/tier × zoom ×
 radial) in-process — the exact same handlers the live server runs, so a snapshot
@@ -166,10 +152,9 @@ Cloudflare Pages (`wrangler pages deploy .`).
 The bundled `example-writes` is one S3 bucket. `serve --local` boots *that
 project's own* local emulator (Floci, via Docker, generically through
 `chant emulator up` — chant #920), points behold's live overlay at it, and gives
-you a **▶ Deploy (floci-apply)** button in the header that deploys to it — no AWS
-account, no creds, no cost. This is `serve`'s generic mechanism, separate from `preview`/`export`'s
-`--emulator` flag above, which is a Loom-specific turnkey demo path — see
-`behold --help` for how the two relate:
+you a **▶ Deploy (floci-apply)** button on the panel's **Deploy** tab that
+deploys to it — no AWS account, no creds, no cost. Generic: it works for any
+emulator-backed lexicon, not one demo project.
 
 ```sh
 npm install
@@ -180,7 +165,7 @@ npm run demo        # installs example-writes' deps, then serves it with --local
 <sub>(or by hand: `npm install --prefix example-writes && npm run dev -- serve example-writes --local --env prod`)</sub>
 
 1. The graph shows the bucket + its TLS policy — **blue** (declared, not yet deployed).
-2. Click **▶ Deploy (floci-apply)** in the header (or ⌘K → "Deploy: Sync"). The
+2. Click **▶ Deploy (floci-apply)** on the panel's **Deploy** tab (or ⌘K → "Deploy: Sync"). The
    now-line streams Build → Apply → Verify; the bucket is created in the emulator
    via the CloudFormation API.
 3. The nodes flip **green (managed)** — behold's overlay observes the live emulator.
@@ -190,16 +175,17 @@ it never dies on you.
 
 **Real AWS.** The same project's **▶ Deploy** button starts its `ApplyOp` against a
 real account: `npm run dev -- serve example-writes --env prod` (needs AWS
-credentials). What the header offers depends on what the project committed: a
+credentials). What the Deploy tab offers depends on what the project committed: a
 committed `ApplyOp` gets the **▶ Deploy (<op>)** button (plus **Approve** when
 gated); a project with only components gets **▶ Deploy…**, which opens the dial's
 component picker; **Adopt** appears per foreign node (`ReconcileOp`); every other
 Op runs from ⌘K (**Run: \<name\>**). Full walkthrough:
 **[example-writes/README.md](example-writes/README.md)**.
 
-## The k3d demo — the Kubernetes counterpart to Loom-on-Floci
+## The k3d demo — `behold demo k8s`
 
-`npm run demo:k8s` is the k8s analogue of the Floci demo above: it brings up a
+`behold demo k8s` (or `npm run demo:k8s` from a checkout) is the k8s analogue
+of the Floci demo above: it brings up a
 local, single-node [k3d](https://k3d.io) cluster (Docker only, no cloud
 account), then serves the bundled `example-k8s` — an nginx Deployment +
 Service — with `--local`. Same mechanism, same shape: declared-not-deployed
@@ -226,8 +212,6 @@ including the exact commands and what each state looks like over the API:
   running on your executor — it holds no apply creds.
 - Two write gestures, both human-confirmed: **Apply** (gate signal) and **Open PR**
   (merge). Authority stays in your source and your worker, never in behold.
-- The first product is **read-only, full stop**: the mixed graph + drift + source
-  deep-links. Writes are a later, opt-in layer.
 
 ## Why a Node service (not an edge function)
 
@@ -251,19 +235,6 @@ behold is drivable by an agent, and leans on chant's MCP rather than reinventing
 behold's value over raw MCP is the live spatial + temporal view and the coupling
 between them; the underlying capabilities are chant's, exposed the same way to a
 human and an agent. See [AGENTS.md](./AGENTS.md).
-
-## Status
-
-Bootstrap. `behold serve <project>` renders the **source** mixed-substrate graph
-(cross-lexicon edges are real today — verified in chant core) in a browser, with
-click-to-inspect and source deep-links.
-
-Both read paths work: `/api/graph` (the source mixed-substrate graph) and
-`/api/overlay` (the source-anchored **live drift** graph — declared topology kept,
-nodes coloured managed/foreign/pending; needs chant ≥ 0.18.1 and cloud creds).
-
-Not yet: the deployment-lanes timeline and the delegated actions. See the concept
-notes and the issue set below.
 
 ## Usage
 
@@ -292,9 +263,21 @@ one Chant subprocess budget: two reads at once by default (one on a one-CPU
 host). `BEHOLD_ESTATE_CONCURRENCY` overrides that process-wide limit. Up to 64
 distinct reads can wait; excess reads fail explicitly rather than growing an
 unbounded queue. Identical in-flight reads share work only when the project,
-resolved Chant, source stamp, argv, and effective environment match. Completed
-live results are not cached. Source watcher invalidation also separates new
-requests from work begun before an edit.
+resolved Chant, source stamp, argv, and effective environment match. Source
+watcher invalidation also separates new requests from work begun before an edit.
+
+**What is cached, and what drops it.** A member's source IR is cached under its
+source stamp, resolved chant and graph options (`src/member-ir.ts`), because
+~800ms of every `chant` invocation is module load that has nothing to do with the
+member's content. A member's completed live overlay document is cached too
+(`src/overlay-ir.ts`), so that a re-render — collapsing a box, say — is a
+re-render rather than a second pass over the account. That second cache is the
+stated exception to "a live read is never cached", and its header names
+everything that drops an entry: `POST /api/refresh` ("Re-check live"),
+`GET /api/overlay?plan=1` ("Re-check live with plan"), the capture that ends an
+Op run, and the member's source moving. What it cannot notice is a change made to
+the account by something that is not behold, which is what the re-check rows are
+for.
 
 A running read has a 180-second deadline, configurable with
 `BEHOLD_READ_TIMEOUT_MS`. A disconnected GET releases its subscription; when no
@@ -309,6 +292,21 @@ Polling uses the same estate namespace bindings as the HTTP overlay and reuses
 the primary member's observation for lanes capture. Slow sweeps extend the poll
 period; they do not overlap the next sweep. These bounds control duplicate work;
 they do not eliminate Chant's underlying live discovery cost.
+
+**What a read cost.** Every scheduled chant read is filed with its running time,
+its outcome and which side of the source/live split it sits on.
+`GET /api/doctor` serves the same report `behold doctor` prints with that ledger
+on it; `GET /api/doctor?reads=1` is the cheap half — counters, the per-member
+samples, `inFlight` (running and queued), and `unmeasured`, the count of served
+members the ledger is blind to because they spawn their own binary rather than
+chant. The loading scrim shows the slowest recent member, since an estate read
+finishes when its last member does.
+
+**The picture can arrive in pieces.** `GET /api/overlay?progressive=1` answers at
+once with the estate composed from each member's source, every card marked
+pending, then streams one SSE frame per member as its own live read lands.
+Opt-in and never the default: the blocking `/api/overlay` is what agents read and
+what `behold export` captures, and it is unchanged.
 
 behold shells the **project's own** chant (resolved from the project's
 `node_modules` first), so the project decides the chant version — pin it to
@@ -332,8 +330,12 @@ curl localhost:4600/api/carve                # the raw report, for agents
 behold parses no HCL and needs no Terraform tooling: the report **is** the
 contract. A file that isn't a peelability report is refused with a structured
 `{error, code: "carve-report", remedy}` — in the terminal, and from the routes —
-never a blank graph. See `docs/using/carve` and issue #230 for the roadmap
-(the post-emit diff, then Terraform as an estate member).
+never a blank graph. See [the carve lens](https://intentius.io/behold/using/carve/) and
+[the Terraform estate page](https://intentius.io/behold/using/terraform/) for the
+other half of that lane: Terraform is a member
+kind now (`MEMBER_KINDS = ["chant", "choudoufu", "terraform"]`), so an estate of
+`.tf` files draws beside a chant project, and carve state is read from chant's
+own `<address>.carve.json` manifests.
 
 ### The walkthrough: `behold demo carve`
 
@@ -363,7 +365,7 @@ stepper on the panel's **Carve** tab:
 The Emit step reports `chant lint`, not `chant build`: `build` fails on the
 emitted bucket (scored 84 by the advisor) on one rule — WAW042, a TLS-deny
 bucket policy the source Terraform never declared — and the panel links the
-reason. `example-carve/README.md` has the estate's full story, the band table,
+reason. [example-carve/README.md](example-carve/README.md) has the estate's full story, the band table,
 and the offline/`--live` split.
 
 behold writes only into the demo copy it made — `app/carveout/`, and nothing
@@ -373,7 +375,10 @@ else. Your Terraform is never edited; see AGENTS.md, "Invariant".
 
 An optional `.behold.json` in the served project's root is **behold's own**
 config — kept separate from `chant.config.ts` so behold's concerns (like the
-tier picker) don't leak into chant's. Today it declares one thing: the
+tier picker) don't leak into chant's. Three keys: `tiers` below, `executor`
+(which forge deploys an environment), and `members` — `[{ "dir": "x", "kind":
+"chant" | "choudoufu" | "terraform" }]`, how an estate root names what it
+composes, fail-closed on a kind behold has no reader for. First, the
 project's deploy-**tier** axis, a dimension orthogonal to `environment` (chant
 has no native tier concept — it's entirely a project convention, e.g. Loom's
 components branching on an env-conditioned `namingParams.tier`):
@@ -459,18 +464,34 @@ review a layout:
 
 ## Layout
 
+A shape, not a manifest — `src/` is ~85 modules with one concern each, and
+[AGENTS.md](./AGENTS.md) is the map that stays current.
+
 ```
 src/
-  cli.ts       serve verb + arg parsing
-  server.ts    Hono read-only API (/api/graph, /api/overlay) + static SPA
-  chant.ts     shell-out to the chant bin (graph IR, live/overlay) — reads, never mutates
-  render.ts    pinhole painter (layoutIr + renderSvg) — IR → SVG
-  overlay.ts   _status → drift semantics (managed/foreign/pending)
-web/
-  index.html   SPA shell
-  app.js       inlines pinhole's SVG + click-inspect by data-node-id
-example/       a tiny AWS chant project for local dev + e2e
-e2e/run.sh     end-to-end runner (install example chant → serve → assert the API)
+  cli.ts            the verbs: serve, preview, demo, doctor, export, carve
+  server.ts         the Hono API + static SPA — every route, read and delegated
+
+  the read path
+  chant.ts          shells the PROJECT's own chant; every read is scheduled
+  read-scheduler.ts one process-wide budget, in-flight sharing, cancellation
+  read-stats.ts     what each read cost (/api/doctor)
+  member-ir.ts      per-member source cache; overlay-ir.ts, the live one
+  estate.ts         N members composed into one graph (pinhole's composeStacks)
+  member-kind.ts    what a member can be: chant, choudoufu, terraform
+
+  the lenses (pure IR -> IR, no subprocess)
+  logical*.ts       one topology projection per substrate
+  ops-lens.ts       declared Ops as a phase track; run-playhead.ts paints a run
+  carve-lens.ts     a peelability report; stack-order.ts, chant's apply order
+  terraform-lens.ts collapse-lens.ts, edgeless.ts
+
+  render.ts         pinhole painter — IR -> SVG, one pack per lexicon
+web/                the SPA, unbundled ES modules (app.js + ~20 siblings)
+docs/               the published site (Astro/Starlight)
+demos.json          the shipped demo catalog; workbench.json, this checkout's
+example-*/          nine bundled projects the demos and e2e serve
+e2e/                twelve acceptance runs, one per substrate lane
 ```
 
 ## The painter
@@ -511,7 +532,8 @@ error card.
 Type splits by purpose: mono (system stacks — ui-monospace, SF Mono,
 Cascadia, JetBrains, IBM Plex) carries node ids, ARNs, statuses and counts;
 sans carries labels only. Colour comes from 552 Ghostty terminal palettes run
-through an OKLCH-derived token pipeline (`src/theme.ts`), so a theme switch
+through an OKLCH-derived token pipeline (`web/theme.js`, the palettes in
+`web/themes.js`), so a theme switch
 re-derives the whole chrome, not just the graph — and a node whose drift
 status just changed pulses once in the colour it became, off under
 `prefers-reduced-motion`.
@@ -558,16 +580,19 @@ server is torn down on exit. `BEHOLD_E2E_PORT` overrides the port.
 ## Unit tests
 
 ```sh
-npm test    # vitest — pure units (graphFlags, _status mapping); no server, no cloud
+npm test    # vitest — 106 files, including in-process route tests against
+            # the real Hono app. No cloud, no cluster.
 ```
 
-## Related issues
+## Upstream
 
-- chant **#821** — source-anchored overlay (the linchpin: cross-substrate topology + live
-  status) — done, shipped chant 0.18.31; behold adopted it in M4 (see `src/overlay.ts`).
-- chant **#822** — diff two historical snapshots (feeds the timeline).
-- chant **#513** — compose separate stacks into one IR — done; behold's `composeEstate`
-  (`src/estate.ts`, #31) consumes pinhole's `composeStacks` built on it.
-- pinhole **#82** — ship the painter as a library (done; behold consumes it).
-- pinhole **#79/#80/#81** — drive `--live`/`--overlay`, first-class drift rendering, morph-over-time.
-- Concept notes: `~/Documents/research/chant-live-control-plane.md`.
+behold is a viewer over a compiler, so some of what it cannot do is not its to
+fix. The open asks:
+
+- chant **#822** — diff two historical snapshots, which is what a timeline of
+  more than the frames behold captures itself would need.
+- chant **#2481** — `chant` costs ~800ms per invocation before it does any work,
+  and behold shells it once per member per read.
+- pinhole **#79/#80/#81** — morph-over-time and first-class drift rendering.
+
+behold's own work is on the [issue tracker](https://github.com/INTENTIUS/behold/issues).
