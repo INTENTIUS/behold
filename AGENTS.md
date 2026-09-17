@@ -1,7 +1,7 @@
 # Driving behold (for agents)
 
 behold is a **read-only control plane** over a chant estate, with **delegated,
-gated** writes. As an agent you drive it the same way a human does — and the
+gated** writes. As an agent you drive it the same way a human does, and the
 mutating capabilities are chant's MCP Op tools, not behold's, so nothing here holds
 apply creds.
 
@@ -26,8 +26,8 @@ gets a structured `{code: "no-project"}` error from `/api/graph`, not a blank
 graph.
 
 In a checkout, `behold demo --list` prints a second block under the bundled
-one: the eleven workbench entries from `workbench.json`, this repo's own
-catalog of the internal estates behold is developed against — the same
+one: the eleven workbench entries from `workbench.json` (this repo's own
+catalog of the internal estates behold is developed against), the same
 `behold demo <entry>` load, `just example name="<entry>"` to serve one, and
 "The workbench catalog" below for what each is and what it boots.
 
@@ -43,7 +43,7 @@ preview-locked, and one load runs at a time (409 otherwise).
 
 ## The read loop
 
-0. **discover** — GET `/api` lists every route with a one-line description,
+0. **discover.** GET `/api` lists every route with a one-line description,
    plus the server's version and a link back to this guide. Before the server
    exists (or when a route answers with an error you'd have to guess at), run
    `npx @intentius/behold doctor <dir> --json`: a read-only diagnosis of the
@@ -52,7 +52,7 @@ preview-locked, and one load runs at a time (409 otherwise).
    substrate readiness and committed Ops. Each check is
    `{name, status: pass|warn|fail, detail, fix}`; the process exits non-zero
    iff something failed. It starts no server and changes nothing.
-1. **observe** — GET `/api/graph` (JSON: `{ ir, svg, meta }`). The mixed graph
+1. **observe.** GET `/api/graph` (JSON: `{ ir, svg, meta }`). The mixed graph
    of the project, every node with `id`/`kind`/`lexicon`/`attrs`/`sourceLoc`. Drift
    status, when present, is `attrs._status` (`good`=managed, `warn`=foreign,
    `accent`=pending, `neutral`=unobserved, `runtime`=runtime child). With
@@ -67,12 +67,12 @@ preview-locked, and one load runs at a time (409 otherwise).
    itself carries an address (chant#2045); `originSource: "inferred"` means
    behold read the id's spelling and nothing more, and a `forge: "unknown"` id
    is never resolved to a link on behold's guess.
-   `?stacks=1` is the apply-order lens (#426) — the cross-stack ordering chant
+   `?stacks=1` is the apply-order lens (#426): the cross-stack ordering chant
    computes at synthesis and prints from `chant graph --stacks --json`, which
    behold read nowhere and re-derived a subset of. One card per stack (a
    lexicon partition), one box per wave, edges consumer to producer;
    `meta.stacks` carries `order`, `waves` and `cycles` verbatim. It is
-   source-only — no env, no credentials, no substrate — and asks chant for the
+   source-only (no env, no credentials, no substrate) and asks chant for the
    project ROOT, not `graphPath`, because `runStackGraph` only sees
    `ops/*.op.ts` from there (measured: `example-writes` answers `[aws,
    temporal]` from `.` and `[aws]` from `src`). Single project only: an estate
@@ -86,7 +86,7 @@ preview-locked, and one load runs at a time (409 otherwise).
    chant's own examples (an edge with no `from`, a `null` in `order` and in a
    wave); `sanitizeStackGraph` treats `nodes` as the roster and drops anything
    named nowhere else.
-   `?ops=1` is the ops lens — the project's declared Ops as a phase track, read
+   `?ops=1` is the ops lens: the project's declared Ops as a phase track, read
    from each emitted `dist/ops/<name>/op.json`, with the current run painted
    over it (`meta.run`, `meta.gate`); `/api/ops/<name>/status` reads that Op's
    durable run status and pending gate (`chant run status --temporal`). A
@@ -96,10 +96,10 @@ preview-locked, and one load runs at a time (409 otherwise).
    every rule, verbatim. `then: run(<op>)` is an edge to that Op's first step
    when the Op is in the rendered set, and `attrs.dangling` when it isn't.
    `meta.operator` on that same lens names the ConvergeOps the project declares
-   (chant's own `searchAttributes.Converge === "true"`, read from op.json — no
+   (chant's own `searchAttributes.Converge === "true"`, read from op.json, no
    subprocess), and `/api/operator/status` fills the strip in from
    `chant operator status --json`.
-2. **focus** — narrow with chant graph options as query params: `?detail=0..3`,
+2. **focus.** Narrow with chant graph options as query params: `?detail=0..3`,
    `?components=1`, `?logical=1`, `?lens=blast:<id>&down=1`, `?lens=lexicon:aws`,
    `?env=`, `?stack=`, `?tier=`, `?target=`, `?collapse=1`.
    `?collapse=1` (#393) shuts every member box holding more than 40 cards: the
@@ -120,14 +120,14 @@ preview-locked, and one load runs at a time (409 otherwise).
    ("Re-check live with plan", which re-checks both halves), the capture that
    ends an Op run, and the member's source moving. A change made to the account
    by something that is not behold is what the re-check rows are for.
-3. **inspect** — a node's `sourceLoc.file` is the typed source that declared it;
+3. **inspect.** A node's `sourceLoc.file` is the typed source that declared it;
    edit there to change the estate (chant is the source of truth, not behold).
-4. **find** — ⌘K also takes an ADDRESS (#393). Two characters in, the palette
+4. **find.** ⌘K also takes an ADDRESS (#393). Two characters in, the palette
    matches the ids and addresses of the graph the page is currently showing and
    offers up to twelve `node: <address>` rows, prefix matches first, each with
    its member and kind on a second line (two members of one estate can declare
-   the same address). Enter takes the same path a click on the card does — the
-   inspect pane and the highlight — and pans the graph onto it: `revealNode` in
+   the same address). Enter takes the same path a click on the card does (the
+   inspect pane and the highlight) and pans the graph onto it: `revealNode` in
    web/app.js drives the same viewBox the wheel, the drag and "⤢ fit" drive.
    Nothing here fetches, so it works in a static export too.
 
@@ -158,11 +158,11 @@ status channel and a pending card has no status yet.
 No live result is cached to build the first picture and none is reused. A
 pending member becomes a real one only when its own read completes, and the
 live pass a progressive request starts is the same one per member under the
-same budget — a progressive load costs the estate no extra spawn.
+same budget: a progressive load costs the estate no extra spawn.
 
 ### What a read cost (#420, #421)
 
-`GET /api/doctor` serves `diagnose()` — the same report `behold doctor` prints,
+`GET /api/doctor` serves `diagnose()`, the same report `behold doctor` prints,
 which until #421 only the CLI could ask for — with two extra blocks on it:
 
 - `reads`, the ledger from `src/read-stats.ts`. Every scheduled chant read
@@ -170,25 +170,25 @@ which until #421 only the CLI could ask for — with two extra blocks on it:
   time, its outcome, and which side of the source/live split it sits on. A bare
   `chant graph` is the member's own TypeScript evaluation; anything with
   `--live`/`--overlay`, and every other verb `isScheduledRead` allows, reaches
-  past it. `shared` counts subscribers handed an in-flight spawn — work not
+  past it. `shared` counts subscribers handed an in-flight spawn, work not
   done, never a run.
 - `cache`, `memberIrCacheStats()`.
 
 `GET /api/doctor?reads=1` is the same two blocks WITHOUT the diagnosis, and it
-is what the SPA asks for. The split is the one #421 states — the full report is
-for a person diagnosing, the panel line is for a person waiting — and it is a
+is what the SPA asks for. The split is the one #421 states: the full report is
+for a person diagnosing and the panel line is for a person waiting. It is also a
 cost split too: `diagnose()` probes docker, gh, helm and k3d through
 src/substrates.ts, whose `probe` has no timeout and no kill, and the SPA asks
 after every load settles. A static export asks for neither; `refreshReadCost`
 returns on `staticMode` rather than relying on the bundle's own 404.
 
 `reads.inFlight` is `{running, queued}` off the scheduler itself. The ledger
-cannot answer it — a read still in flight has finished nothing, so it has filed
-nothing — and "what is queued now" is what someone watching a slow read wants.
+cannot answer it: a read still in flight has finished nothing, so it has filed
+nothing. "What is queued now" is what someone watching a slow read wants.
 
 Three things to know before reading a number off it. `queuedMs` is contention
-**in the scheduler** — the HTTP-versus-poll-versus-capture competition #367
-bounded — and not the whole of what a member waits: the estate fan-out bounds
+**in the scheduler** (the HTTP-versus-poll-versus-capture competition #367
+bounded) rather than the whole of what a member waits: the estate fan-out bounds
 upstream through `mapPool` (src/estate.ts), so a three-member estate measured
 3033/3035/2218 ms of running time with `queuedMs` 0 against 5.2 s of wall clock.
 The gap is the upstream wait and #422 is where it gets measured.
@@ -257,7 +257,7 @@ configured.
 `meta.behaviour.refusal` is `{reason, remedy}` in the lexicon's own words,
 printed as it came, and it is present **instead of** everything above: a
 refusal emits no entity block at all and strips any that had arrived. The drift
-overlay is untouched either way — nothing in this pass reads or writes
+overlay is untouched either way: nothing in this pass reads or writes
 `_status`. `?logical=1` projects a different picture and carries no behaviour
 block in M1.
 
@@ -282,13 +282,13 @@ the drift overlay's neutral (`pinTokensFor().neutralFill`) and is marked
 Both ramps are derived from the active palette (`rampFor` in
 `web/behaviour-scale.js`), the way #229 derives the chrome: cost is a single hue
 off the accent walked in lightness away from the background — expensive is not a
-verdict behold gets to paint — and headroom rides the three status hues the
+verdict behold gets to paint, and headroom rides the three status hues the
 drift overlay already anchors, degraded → foreign → managed.
 
 One legend per mode, in the Model tab. The Scope tab carries a totals row per
 box and per estate for the active mode: `cost` quotes `meta.behaviour.boxes[key]`
 and `.sum`, or `meta.behaviour.total` when the ENGINE stated one (labelled
-"engine total"); `headroom` has no server-side aggregate — no engine states one —
+"engine total"); `headroom` has no server-side aggregate, since no engine states one —
 so the SPA takes the scope's min and median itself and the row says "computed".
 Every row carries `n priced · m unpriced`. In drift mode there is no row.
 
@@ -297,7 +297,7 @@ Everything either mode decides is pure in `web/behaviour-scale.js`, with
 
 ### Provenance on every figure, and the refusal (#401, M4)
 
-Every figure the SPA shows — the totals rows, the legend, and the inspect pane's
+Every figure the SPA shows, the totals rows, the legend, and the inspect pane's
 `behaviour` section — carries `{engine} {version} · {tolerance} · {basis}`
 beside it, never once per page. `modeled` is spelled out on hover as "modeled,
 not billed": #397's one prohibition is a prediction presented as a bill, and the
@@ -306,7 +306,7 @@ a badge over a set (a box, the estate) says `mixed` on any field the set
 disagrees on rather than picking one.
 
 `meta.behaviour.refusal` disables both behaviour modes in the View tab and in
-⌘K — visibly, with the lexicon's reason and remedy as their tooltip — and prints
+⌘K (visibly, with the lexicon's reason and remedy as their tooltip) and prints
 those words verbatim where the legend would be. The drift overlay keeps
 rendering; it never depended on an engine. `meta.behaviour.absent` disables the
 same two modes with the absent line as their tooltip and prints **nothing**:
@@ -339,7 +339,7 @@ session.
 {human, note}}`. Each entry carries `target`, `stage`
 (`emitted`/`bridged`/`applied`), `graduated`, `note` and a retypeable
 `applyCommand`. The same field appears on an ordinary `behold serve` whose
-project directory carries a carveout — no report and no demo needed — and is
+project directory carries a carveout (no report and no demo needed) and is
 absent entirely when nothing has been carved.
 
 In the graph, an `applied` address draws inside the chant member box (keeping
@@ -391,7 +391,7 @@ behold does not apply. To change the estate:
    - `op-run <name>` — start the project's `ApplyOp` (code→cloud) or `ReconcileOp`
      (cloud→code PR).
    - `op-signal <name> <gate>` — approve a gate (e.g. a destructive apply).
-   - `op-status <name>` — watch phases; `op-report <name>` — the run report.
+   - `op-status <name>` — watch phases; `op-report <name>`, the run report.
 
 Every mutation is a gated, durable Temporal workflow with a human-confirmable gate
 and saga rollback. There is no behold endpoint that mutates the cloud.
@@ -399,7 +399,7 @@ and saga rollback. There is no behold endpoint that mutates the cloud.
 A run behold triggered is asked for structured per-step records (chant#1676:
 `--progress-json` on the durable path, `--json` on the local one), so the ops
 lens paints the run over the declared track and a pending gate renders as a card
-with an Approve button. That button is `op-signal` — the same delegated write —
+with an Approve button. That button is `op-signal`, the same delegated write —
 and nothing else about the run is behold's to decide: a stream that dies leaves
 the playhead at the last settled step and says so, and a gate paints as pending
 only when chant's `gateState` query named it.
@@ -443,7 +443,7 @@ A dispatched run is followed honestly (#165 §6, PR #350): only GitHub's own
 `completed` + conclusion paints `ok`/`failed`; a poll-failure budget or the
 follow deadline promotes the run to `lost` (chips frozen at last-observed,
 the run possibly still live at its own page), never to a verdict. The adopted
-run id is persisted as one JSON per project under `~/.behold/ci-runs/` — the
+run id is persisted as one JSON per project under `~/.behold/ci-runs/`, the
 operator's machine-state, outside the project tree, so the Invariant below
 still names the whole in-project write surface. `GET /api/ci/run` reads the
 record; `POST /api/ci/readopt` (also attempted once at boot) re-follows an
@@ -455,14 +455,14 @@ reader instead of nothing.
 A project that declares a `ConvergeOp` gets an operator strip on the ops lens:
 per loop, the last tick's own log line (verbatim, with its instant), the lease,
 and how many gates are pending. **One** tick — `chant operator status` keeps only
-`records.at(-1)` — so the strip is never a timeline, and it says so.
+`records.at(-1)`, so the strip is never a timeline, and it says so.
 
 The timeline is its own read: `GET /api/operator/log` → `chant operator log
 --json` (chant#2029), the tick records and the gate resolutions against them
 merged oldest-first. It lives in a panel that grows from the strip, and two rules
 hold it there. It is **pulled**, on the click that opens it and never on a timer.
 And it is **bounded** — `--limit` on every invocation, 50 by default and 200 at
-most, `--since` when asked — because the ledger grows one line per tick forever;
+most, `--since` when asked, because the ledger grows one line per tick forever;
 the answer reports the window it used, so a full one can't read as the end of
 history. The route checks the project's chant version *before* it spawns: below
 0.53.1, `chant operator log` resolves to `chant operator`, the tick daemon, and
@@ -471,12 +471,12 @@ behold reading a history must never become behold running an operator.
 Since chant 0.53.1 (chant#2027) a tick record carries an `id` and the
 per-component verdicts it derived, and both ride through to
 `[].lastTick.{id,components}`. The strip line names the tick (truncated), and
-the verdicts join onto the component DAG by component name — the same key the
+the verdicts join onto the component DAG by component name, the same key the
 live `chant components status` read is joined by. They join **under** that read:
 a tick only ever feeds the last tier of `componentStatusColor` (the
 reconciliation verdict), only on a node the live read left unpainted, and only
 while the tick is younger than fifteen of chant's own operator rounds. Past
-that it is named on the node, dated, and painted nothing — a graph fill has
+that it is named on the node, dated, and painted nothing: a graph fill has
 nowhere to put "as of an hour ago". A chant older than 0.53.1 sends neither
 field and every one of these paths is a no-op.
 
@@ -496,13 +496,13 @@ design (a local tick with no PR behind it has none) and never synthesized, so a
 fact without one renders no link and no placeholder for one, and a url behold
 would not put behind an `href` reads as no address at all.
 
-A gate someone already resolved simply leaves `pendingGates` — the status read
-carries no `resolvedBy`/`when` — so the strip shows no resolved-by line rather
+A gate someone already resolved simply leaves `pendingGates`, the status read
+carries no `resolvedBy`/`when`, so the strip shows no resolved-by line rather
 than attributing an approval to nobody. The timeline is where resolutions are
 named, because there they are records rather than an inference.
 
 An `OperatorStack` (chant#1940) declares the loop as a k8s estate, so it already
-appears in the entity graph. behold names it there — the Namespace as the loop's
+appears in the entity graph. behold names it there, the Namespace as the loop's
 home, each CronJob as a converge tick — off chant's own
 `app.kubernetes.io/component: converge-tick` labels, never a naming convention.
 
@@ -515,7 +515,7 @@ executor.
 ### The exceptions, and their exact size
 
 `POST /api/layout` (#228) writes **one** file in the served project:
-`.behold/layout.json` — the hand-layout sidecar, `{version, lenses: {<lens>:
+`.behold/layout.json`, the hand-layout sidecar, `{version, lenses: {<lens>:
 {<node id>: {dx,dy,dw,dh}}}}`. That is the whole of behold's write surface
 inside a project, and it does not weaken the invariant above:
 
@@ -524,7 +524,7 @@ inside a project, and it does not weaken the invariant above:
   chant's, and a delta for a node that left the estate is dropped on read.
 - It **never touches the cloud and never touches your source**. No `.ts`, no
   `chant.config.ts`, no `.behold.json`. The path is `cfg.projectDir` + two
-  constants — nothing from the request reaches the filesystem.
+  constants; nothing from the request reaches the filesystem.
 - It refuses politely when it shouldn't write: preview mode, a static-export
   capture, a read-only project directory, an oversized or malformed body.
 - It is **per-user state**, unlike `.behold.json` (config, meant to be tracked).
@@ -540,7 +540,7 @@ copy, they write only into `<copy>/app/carveout/`, and the directory they write
 into is a scratch dir behold created inside a directory it copied for you a
 minute earlier. `carve bridge` runs without `--apply-rewrites`, so the demo's
 own Terraform is not edited either. The only request-derived value is `select`,
-and it must be an address the served report already ranks — the value that
+and it must be an address the served report already ranks, the value that
 reaches the spawn's argv comes from a closed set read off disk. No cloud write,
 no Terraform mutation, no edit to anyone's chant source.
 
@@ -557,7 +557,7 @@ src/choudoufu-route.test.ts asserts it stays absent, for the same reason
 ## Changing behold (for agents working on this repo)
 
 The sections above are about driving a running behold. This one is about
-changing it — the working rules that used to live in a handoff note and now
+changing it, the working rules that used to live in a handoff note and now
 live here, with the enforceable ones enforced.
 
 - **Branches and merges.** Work on a branch off `main` (an isolated worktree
@@ -568,7 +568,7 @@ live here, with the enforceable ones enforced.
   next onto what landed.
 - **The local gate** is `just check` (tsc, tests, build). Every vitest run
   also writes `.vitest-last.json` (the json reporter, PR #351), and `just
-  test` keeps the reporter's full output in `vitest.log` — both gitignored —
+  test` keeps the reporter's full output in `vitest.log`, both gitignored —
   because #334's one-shot first-run failures kept losing the failing file's
   name. If the suite fails once and passes on rerun, those two files from the
   first run are the evidence; attach them to #334 (`jq '.testResults[] |
@@ -576,7 +576,7 @@ live here, with the enforceable ones enforced.
 - **Releasing** is `just release`, after the version-bump PR merged: it tags
   `behold-v<version>`, pushes the tag (which is what runs `release.yml`), and
   waits for npm to show the version. It refuses in every state where a tag
-  push would be wrong. Never re-push a `behold-v*` tag by hand — a tag push
+  push would be wrong. Never re-push a `behold-v*` tag by hand: a tag push
   re-fires publish. Tags absent from origin (behold-v0.10.0, 0.10.1) stay
   absent for that reason.
 - **Scratch infrastructure** is governed by `src/scratch.ts`, asserted by
@@ -600,7 +600,7 @@ is the one table; `chant` is the first row and every member was that row
 until the table existed. A new kind is:
 
 1. A `registerMemberKind({ kind, probe, expects, via, passes })` call in
-   `src/member-kind.ts` — the `probe` is sync, read-only and runs no code (a
+   `src/member-kind.ts`, the `probe` is sync, read-only and runs no code (a
    file's presence, a regex over a root file, or either: the choudoufu probe
    takes the `estate.chdf.hcl` sidecar, choudoufu's leading form, OR a `live {`
    block in a root *.tf, #387); `via.tool` stamps the binary and
@@ -621,13 +621,13 @@ until the table existed. A new kind is:
    one could not hold it: the Terraform kind's third pass takes the request's
    zoom, so it cannot run where the reader runs. `applyMemberPasses(ir,
    {detail})` is the one call the six render sites make, and `memberPassNote(run,
-   dirs)` the line they return — each kind handed only the served dirs that are
+   dirs)` the line they return, each kind handed only the served dirs that are
    its own, so a route never names a kind. Three rules a `passes` holds. It
    mutates IN PLACE, because the existing passes do and their callers depend on
    it. It self-guards on the IR's own CONTENT and never on the served members'
-   kinds: a chant project may declare a kind's lexicon — a chant project
+   kinds. A chant project may declare a kind's lexicon; a chant project
    declaring `terraform` is what `src/terraform-route.test.ts`'s first block
-   serves, and `memberKindOf` says `chant` there — so membership dispatch would
+   serves, and `memberKindOf` says `chant` there, so membership dispatch would
    silently stop rendering it. And a run is carried forward, never re-run: a
    pass that already elided its cards returns an empty elision the second time,
    which drops the note on every composed estate. A test that re-registers a
@@ -662,7 +662,7 @@ string is `chant`. Anything behold boots for a kind goes through
 things used to be offered to every member whatever it was, and a new kind gets
 all three answered for free:
 
-- `/api/project` publishes `memberKinds` — the served members' kinds, in
+- `/api/project` publishes `memberKinds`, the served members' kinds, in
   composition order. The SPA opens on the `resources` zoom when none of them is
   `chant`, because `components` is a projection of a chant project's own
   component DAG and a member without one opens on "the components lens doesn't
@@ -679,7 +679,7 @@ all three answered for free:
   already returns and the SPA already reads as "no resource facet here".
 
 A kind that grows components, or a substrate with an owner chain, changes those
-answers where they are decided — never per kind in a route.
+answers where they are decided rather than per kind in a route.
 
 ### The workbench catalog
 
@@ -689,7 +689,7 @@ estates this checkout is developed against (#386, #388). Four rules, and
 src/demos.ts holds them:
 
 1. A third source, `local`, and a second file. A local entry's `path` is
-   relative to the directory of the catalog file that named it — the intentius
+   relative to the directory of the catalog file that named it, the intentius
    checkouts are siblings, so the workbench writes `../choudoufu`,
    `../waterpark`, `../chant`, and the file stays committed and reproducible.
    An entry whose path is not checked out is unsatisfiable exactly as a
@@ -726,11 +726,11 @@ its own graph and overlay counts as it runs.
 
 | entry | what it serves | needs |
 |---|---|---|
-| `chant-getting-started` | chant's own getting-started example from `../chant`, in place: the source graph, 8 nodes, no substrate. The one-second answer to "did I break plain chant reading?" | that example's own `node_modules` — nothing is installed in your chant tree |
+| `chant-getting-started` | chant's own getting-started example from `../chant`, in place: the source graph, 8 nodes, no substrate. The one-second answer to "did I break plain chant reading?" | that example's own `node_modules`, nothing is installed in your chant tree |
 | `chant-local-cloud-trio` | chant's local-cloud-trio, in place: one project declaring across aws, azure and gcp, 8 nodes and 2 edges of source | the same |
-| `fountain-ops` | `../fountain-ops` in place with `--env local` — the mature estate on your working checkout | docker, k3d, kubectl, jq, just. **The one entry whose setup runs in your working copy**: the checkout's own `just up`, a five-minute k3d cluster, and it switches your kubectl context. `just down` there removes it; behold never does |
+| `fountain-ops` | `../fountain-ops` in place with `--env local`, the mature estate on your working checkout | docker, k3d, kubectl, jq, just. **The one entry whose setup runs in your working copy**: the checkout's own `just up`, a five-minute k3d cluster, and it switches your kubectl context. `just down` there removes it; behold never does |
 | `choudoufu-workbench` | the live-mv workbench's four estates copied out of `../choudoufu`, composed with `--env live`: 42 cards — 24 bound, the 12 team cards reading `owned by tlmig-sample-monolith`, 6 neutral | docker, choudoufu |
-| `choudoufu-cohort-s3` | `estate-gen`'s `s3` cohort rendered into the target — a sidecar-declared estate (#387): 6 cards, all neutral, because the apply stops where floci answers S3 Control tag reads on a hostname that does not resolve | docker, choudoufu, go, terraform |
+| `choudoufu-cohort-s3` | `estate-gen`'s `s3` cohort rendered into the target, a sidecar-declared estate (#387): 6 cards, all neutral, because the apply stops where floci answers S3 Control tag reads on a hostname that does not resolve | docker, choudoufu, go, terraform |
 | `choudoufu-cohort-iam-ecr` | the same for `iam-ecr`, the one cohort floci implements end to end: 6 cards, all 6 bound | the same |
 | `choudoufu-cohort-ec2-networking` | the same for `ec2-networking`: 49 cards, the widest roster, all neutral (floci refuses a transit gateway call and the apply stops) | the same |
 | `terralith-1` | `terralith-gen` at scale 1 plus the `estate.chdf.hcl` sidecar it omits, applied by choudoufu from nothing: 79 cards, all 79 bound | docker, choudoufu, go |
@@ -740,7 +740,7 @@ its own graph and overlay counts as it runs.
 
 **The scratch, by name and port.** Each emulator is the entry's own, booted by
 its up script and removed by the `scripts/down.sh` that script wrote into the
-target — never by pattern.
+target rather than by pattern.
 
 | entry | container | host port |
 |---|---|---|
@@ -751,7 +751,7 @@ target — never by pattern.
 | `terralith-1` | `behold-wb-terralith-1` | 4655 |
 | `terralith-4` | `behold-wb-terralith-4` | 4656 |
 | `terralith-4-adopt` | `behold-wb-terralith-4-adopt` | 4657 |
-| `chant-*`, `waterpark` | none — source reads, no substrate | — |
+| `chant-*`, `waterpark` | none (source reads, no substrate |) |
 | `fountain-ops` | the k3d cluster `fountain-local`, which is the checkout's, not behold's | — |
 
 The port is the floci's host binding and the entry's `serve.spawnEnv`
@@ -766,7 +766,7 @@ per entry; eight entries and 553s on the machine this was written on.
 
 Time is asserted, not only printed (#423). Each entry carries a ceiling at
 roughly twice its own measured value, and the run carries one too, because
-#419's whole subject was a number nobody was watching — the ratio could not
+#419's whole subject was a number nobody was watching: the ratio could not
 regress silently and the duration could. The measured figures the ceilings come
 from are in the script beside them; `BEHOLD_E2E_SECS_<entry>` and
 `BEHOLD_E2E_RUN_SECS` override. A live entry also asserts #422's shape: the
@@ -777,7 +777,7 @@ to beat, and the run reports the two numbers rather than claiming a pass.
 
 `terralith-4-adopt` is asserted twice — 85 UNOWNED, then the
 `live-import` line the up script printed, run by the script itself in the
-target the way a person would, then 301 bound — because that write is the
+target the way a person would, then 301 bound, because that write is the
 person's, never behold's (#372). `waterpark` is checked for an untouched
 checkout afterwards. `missingRequirements` decides what runs: a missing binary,
 an unchecked-out sibling, an uninstalled chant example or the absent Terraform
@@ -786,7 +786,7 @@ run exits 0. `fountain-ops` is skipped by name everywhere, for the reason in
 the table. A `behold-wb-*` container left standing at the end fails the run.
 
 The seeded catalog (#389) found one thing missing in src/: a LONE choudoufu
-estate — every generated entry is one — served the no-project card, because the
+estate (every generated entry is one) served the no-project card, because the
 single-project read is `chant graph <dir>` and such a directory has no lexicon
 for it to read. `servesAsEstate` (src/member-kind.ts) is the predicate that
 routes one directory of a non-chant kind through the estate compose path, where
@@ -800,28 +800,28 @@ A Terraform estate reaches behold through chant.
 `@intentius/chant-lexicon-terraform` reads the HCL an estate already has and
 emits one entity per block, so **a Terraform estate is a chant project whose
 only lexicon is a reader** and `chant graph --format ir` serves it like any
-other. behold parses no HCL and ships no HCL parser — the same posture
+other. behold parses no HCL and ships no HCL parser, the same posture
 `src/carve-lens.ts` states for the carve report (#378).
 
 Three passes turn what arrives into a picture (`src/terraform-lens.ts`), in this
 order, guarded on the IR carrying terraform entities so every other estate gets
 the identical object back:
 
-1. **`normalizeTerraformNodes`** — a node's `kind` arrives as the entity class
+1. **`normalizeTerraformNodes`.** A node's `kind` arrives as the entity class
    (`Terraform::Resource`), not the resource type, so every card would be titled
    and iconed the same. The type moves out of `attrs.address` into `kind` and
    the block class lands in `attrs.block`. That is the shape a carve node
    already has, which is why one presentation pack serves both.
-2. **`groupTerraformByRoot`** — roots are a Terraform project's only grouping.
+2. **`groupTerraformByRoot`.** Roots are a Terraform project's only grouping.
    It retires itself when chant#2266 groups upstream. A node sits in exactly one
    box, so a box every node has left is dropped rather than drawn empty (#393):
    a served directory arrives composed, `composeStacks` boxes the whole member,
-   and the root boxes then take those same nodes — which is what put an empty
+   and the root boxes then take those same nodes, which is what put an empty
    box named `access` on water park's canvas. What the member box was there to
    say moves into the root box's title, which is `<member>/<root>` whenever the
    estate holds more than one member and the bare root name when it does not
    (two members with a root apiece named `prod` would otherwise merge silently).
-3. **`filterTerraformCards`** — what is a card, below.
+3. **`filterTerraformCards`.** What is a card, below.
 
 **What is a card (#382).** Measured on a real estate: 247 nodes for 43
 resources, four fifths of it not infrastructure.
@@ -849,7 +849,7 @@ of root names and drop the counts.
 were recorded when a Terraform IR carried none, and lexicon 0.61.0 (chant#2265,
 which resolves a block's `"${…}"` references) draws 390 over water park's five
 roots with no change on this side. The one relationship that looked derivable
-without it — a cross-root read by name — was measured and refused (#381): both
+without it (a cross-root read by name) was measured and refused (#381): both
 ends carry the same unresolved interpolation, so a match would be a coincidence
 of variable naming. A data source says what it reads as a row instead.
 
@@ -865,11 +865,11 @@ across a read. Three decisions, each a trade #384 left open and each measured on
 water park's `access/` before it was taken:
 
 1. **The lexicon is opt-in.** chant resolves the lexicon from the config file's
-   own location, so the generated project has to see it — and making it a
+   own location, so the generated project has to see it, and making it a
    dependency would put `@cdktf/hcl2json`, a ~1.8 MB wasm blob, in the install
    of every user who serves a chant project. `@intentius/chant-lexicon-terraform`
    and `@cdktf/hcl2json` are therefore **optional peers**: declared in
-   package.json (the only place their versions are named — the refusal reads
+   package.json (the only place their versions are named, the refusal reads
    them from there), never installed by behold, probed at serve and doctor time,
    and refused with the one install line and where behold looked. The same gate
    `behold demo` puts on a binary it does not ship. The lexicon's own chant peer
@@ -877,12 +877,12 @@ water park's `access/` before it was taken:
    loads no published version of it (`applyLineage is not a function`).
 2. **Roots are discovered, and the skips are reported.** A root is a directory
    with a `.tf` declaring a line-start `terraform {` or `provider "` block
-   beside a `resource`, `data` or `module` block — a regex probe at the depth
+   beside a `resource`, `data` or `module` block, a regex probe at the depth
    the choudoufu probe uses, no HCL parsed. #384 proposed the first half alone
    ("what a root has and a called module does not") and the estate refuted it:
    water park's `modules/persona` is a shared module called by three roots and
    its `versions.tf` is `baseline`'s byte for byte. So two exclusions stand
-   beside the probe — a directory under a `modules/` segment (Terraform's own
+   beside the probe, a directory under a `modules/` segment (Terraform's own
    standard module structure; the roots that call it draw its blocks already)
    and one with nothing to draw (`access/backends` is two backend fragments) —
    and both are named in the graph's note with their reason, the way
@@ -895,7 +895,7 @@ water park's `access/` before it was taken:
    render goes through chant. A kind whose `read` shells `chant graph` against a
    generated config is a scaffold, not a second reader, and it inherits the
    probe, the cache stamp, the doctor line and estate composition (#368) for
-   free — so a Terraform root composes in an estate beside a chant project and a
+   free, so a Terraform root composes in an estate beside a chant project and a
    choudoufu estate at no extra cost. `src/terraform-member.ts` is the whole of
    it; `detectProjectShape` answers a directory that is its own member with
    `membersFrom: "probe"`, which is what retired #384's `no chant.config.ts
@@ -923,19 +923,19 @@ the listing. Neither of them ever compares an attribute VALUE. A resource whose
 tag, path or mutability was changed out of band still carries its markers, so
 it is still bound, and it is still green.
 
-The other half of the terminal's answer — "would a plan change anything?" — is
+The other half of the terminal's answer ("would a plan change anything?") is
 a **separate, opt-in read**: `choudoufu plan -input=false -out=<tmp>` then
 `choudoufu show -json <tmp>`, whose `resource_changes[].change.{actions,before,
 after}` name the attributes and both their values. (`choudoufu plan -json` is
 NOT this: on 0.16.0 it prints choudoufu's own ownership document, the same
 shape as `live-plan -json`, with no attribute values in it at all. The
 measurement is in src/choudoufu-plan.ts's header.) The plan file is written to
-a scratch directory of behold's own and removed after — never inside the served
+a scratch directory of behold's own and removed after rather than inside the served
 member, which would be a write into someone's source.
 
 It is opt-in because it costs differently: the ownership read is answered out
 of the tagging index and is flat in the estate's size, while `plan` refreshes
-every resource — one provider read per card, 301 of them on `terralith-4`. So:
+every resource, one provider read per card, 301 of them on `terralith-4`. So:
 
 - **Never on an ordinary overlay read.** `GET /api/overlay?plan=1` and
   `GET /api/diff?plan=1` are the only things that spawn one, and the palette's
@@ -951,12 +951,12 @@ every resource — one provider read per card, 301 of them on `terralith-4`. So:
   is still painted bound and still counted `bound`; it gains `attrs._planDrift`
   and wears a dashed `--degraded` edge plus a `~ n attributes` corner glyph
   (web/app.js `markDriftedCards`, the same post-render stamp as the carve and
-  operator marks). A card that is not bound is never marked — an unowned
+  operator marks). A card that is not bound is never marked: an unowned
   object's planned `create` is an ownership fact the overlay already paints,
   and `planDrift` drops creates for that reason.
 - **`/api/overlay`'s meta carries `drift`**: `{read: false}` or `{read: true,
   drifted: n}`. The two are different answers — "nobody looked" versus "looked,
-  nothing drifted" — and the legend prints a count only for the second.
+  nothing drifted", and the legend prints a count only for the second.
 
 ### A lexicon behold draws but cannot aim (#430)
 
@@ -976,7 +976,7 @@ What the line CANNOT say, stated because the gap is the point: the honest
 question is "chant can route this and behold does not list it", and behold
 cannot ask it. Since chant 0.61 the endpoint variable is declared by the LEXICON
 PLUGIN (`endpointEnvVarsFor`), not by a table in core, and behold installs no
-lexicon plugins — the served project does. No chant CLI reports them either
+lexicon plugins; the served project does. No chant CLI reports them either
 (`lifecycle whoami --json` answers identity and says nothing about endpoints).
 So the check warns on the weaker question it can answer and says it may be
 over-reporting. The real fix is upstream, and #430 records the ask.
@@ -985,7 +985,7 @@ over-reporting. The real fix is upstream, and #430 records the ask.
 
 pinhole's painter takes a closed `_status` set and falls back to `neutral` for
 anything else, `undefined` included. So on a mixed overlay a member with no live
-half — a Terraform root, whose `live`/`overlay`/`env` are stripped in
+half, a Terraform root, whose `live`/`overlay`/`env` are stripped in
 src/terraform-member.ts — painted exactly like a card behold looked at and could
 not see, while the legend counted only the latter. Measured on
 `serve example-writes example-terraform-estate --env prod`: 37 Terraform cards
@@ -993,7 +993,7 @@ carrying no `_status`, 2 chant cards carrying `neutral`, one fill between them.
 
 Those cards now carry `data-no-live` and the legend gives them their own row.
 Named rather than folded into `unobserved`, because "I looked and could not see"
-and "there is nothing here to look at" are different claims — the same argument
+and "there is nothing here to look at" are different claims, the same argument
 #399 makes for an unpriced card, and the same answer: mark it, do not merely
 colour it. The mark is overlay-only; on the source graph no card has a status
 and marking every one of them would say nothing.
@@ -1009,7 +1009,7 @@ full). Both are empty on a run that did not ask the account-inventory question,
 and behold does not ask by default.
 
 The opt-in is `TOFU_LIVE_COLLECT_UNCLAIMED=1` (`ADOPTION_SWEEP_VAR`,
-src/choudoufu-live.ts), carried through `serve.spawnEnv` — the seam
+src/choudoufu-live.ts), carried through `serve.spawnEnv`, the seam
 `setChoudoufuSpawnEnv` already feeds every choudoufu spawn. The env var rather
 than `-adoption-only`, because that flag suppresses the resource diff the
 overlay needs. Off by default because the sweep is bounded by the ACCOUNT rather
@@ -1030,7 +1030,7 @@ attempt measured a shape that cannot match rather than a gap. A resource with a
 `src/__fixtures__/choudoufu-live-plan-adoptable.json` is the real thing,
 recorded off floci: one scalar `aws_vpc` declaring a static `cidr_block`, its
 unmarked live twin created out of band, and the run asked with the opt-in. It
-carries the pairing M2 is about — a `NEEDS_DISCOVERY` omission and an
+carries the pairing M2 is about, a `NEEDS_DISCOVERY` omission and an
 `adoptable[]` row at the same address — plus `matched[]` naming what was
 compared and choudoufu's own `adopt_command`.
 
@@ -1044,8 +1044,8 @@ estate references anything else", which is false about every one of them.
 
 The references were never missing; nothing was reading them. **A choudoufu
 member's read now also runs the terraform kind's reader over its own
-directory** — one root, the estate directory itself, through the same scratch
-project machinery above (nothing written under the estate) — and joins the two
+directory**, one root, the estate directory itself, through the same scratch
+project machinery above (nothing written under the estate), and joins the two
 documents by address. behold still parses no HCL: `src/choudoufu-refs.ts` is
 two lists of strings and the rules that match them, and its header is the
 argument for each. In short: the lexicon names *blocks* in a path of module
@@ -1062,7 +1062,7 @@ Every edge is `inferred` and carries the lexicon's own attribute name (`role`,
 `policy_arn`), so the card says what made the reference. **Without the
 lexicon there are no edges and the note says so** — carrying the terraform
 kind's own install line rather than the sentence behold has no reader to
-assert — and the lexicon's version is in the member's cache stamp, so
+assert, and the lexicon's version is in the member's cache stamp, so
 installing it invalidates the edgeless IR rather than serving it forever.
 
 The layout half is `packBoxComponents` (src/render.ts). src/edgeless.ts wraps a
@@ -1072,7 +1072,7 @@ dagre lays 42 connected components side by side on three ranks. The pass packs
 a box's components into shelves and resizes the box around them, re-laying each
 component on its own first (inside a cluster dagre interleaves them: a six-card
 cluster's bounding box spanned 46598 units) and wrapping a component that is a
-strip either way — the DNS fan is 19564 x 400 upright and 900 x 10046 on its
+strip either way: the DNS fan is 19564 x 400 upright and 900 x 10046 on its
 side. A box under 4:1 is left exactly as it laid out. Measured: `terralith-4`
 7660 x 5162 with 266 edges, waterpark 3536 x 3138 at detail 2 and 7142 x 6974
 at detail 3 (from 4.2:1 and 15.1:1, the case #393's wrap did not answer).
