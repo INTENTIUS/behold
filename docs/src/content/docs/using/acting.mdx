@@ -1,6 +1,6 @@
 ---
 title: Acting on it
-description: Sync, Adopt, gates, rollback and auto-sync — all of it delegated to Ops you committed.
+description: Sync, Adopt, gates, rollback and auto-sync, all delegated to Ops you committed.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -18,7 +18,7 @@ Every action below starts something **you** committed, running on **your** execu
 | **Run: \<name\>** | ⌘K palette | any other committed Op | whatever you wrote |
 | **Rollback…** | ⌘K palette | a rollback PR to a picked commit | code → code |
 
-One deploy intent, one word: the floating control panel's **Deploy** tab carries a single **▶ Deploy** button whether the project routes it through a committed `ApplyOp` or a raw component apply — the tooltip says which. Every action is also in the **⌘K palette**. A project with no Ops and no environment shows no deploy affordance — by design, not a missing feature.
+The floating control panel's **Deploy** tab carries a single **▶ Deploy** button whether the project routes it through a committed `ApplyOp` or a raw component apply; the tooltip says which. Every action is also in the **⌘K palette**. A project with no Ops and no environment shows no deploy affordance, by design.
 
 ## Gates
 
@@ -34,16 +34,16 @@ An environment can be designated to deploy through GitHub Actions rather than fr
 { "executor": { "prod": { "forge": "github", "workflow": "deploy-prod.yml" } } }
 ```
 
-The designation names the committed workflow file, not only the forge: two environments' generated pipelines carry identical job ids, so nothing short of the file can tell prod's from staging's. For a designated environment:
+The designation names the committed workflow file rather than only the forge, because two environments' generated pipelines carry identical job ids and nothing short of the file tells prod's from staging's. For a designated environment:
 
 - **Deploy** dispatches that workflow through your own `gh` login (`gh workflow run`, on the current branch) and follows the run on the dial, job by job, to GitHub's own verdict. The run's page is linked from the dial.
 - A local apply, a committed ApplyOp for that environment, and auto-sync are refused with `executor-forge`, and rollback is withheld. Nothing about that environment ever runs here.
 - **Approval lives on the forge.** If the workflow's GitHub environment has a protection rule, the approval is granted there, by your GitHub identity. behold holds none that could, on purpose, so the only affordance it offers is the link.
-- A designation behold cannot honour — a forge it has no trigger for, a workflow that is missing or lacks `workflow_dispatch` — disables Deploy for that environment and says why. It never falls back to a guess, and never to your laptop.
+- A designation behold cannot honour (a forge it has no trigger for, a workflow that is missing or lacks `workflow_dispatch`) disables Deploy for that environment and says why. It never falls back to a guess, and never to your laptop.
 
 Without a designation, the palette's dispatch picks the committed workflow named for the environment (`chant-components-<env>`, as chant 0.54 names a generated pipeline). On older projects it matches by job ids, refuses a tie rather than letting directory order choose, and never picks a workflow named for another environment.
 
-A dispatched run's id is persisted under `~/.behold/ci-runs/`, the operator's own state. Restart behold mid-deploy and it re-adopts the run at boot; `POST /api/ci/readopt` does the same on request. A follow whose polls keep failing, or that outlives its deadline, is reported as **lost**, never as a verdict — the run itself may still be live at its page, which the lost line names.
+A dispatched run's id is persisted under `~/.behold/ci-runs/`, the operator's own state. Restart behold mid-deploy and it re-adopts the run at boot; `POST /api/ci/readopt` does the same on request. A follow whose polls keep failing, or that outlives its deadline, is reported as **lost** rather than as a verdict. The run itself may still be live at its page, which the lost line names.
 
 ## Auto-sync
 
@@ -53,15 +53,15 @@ Off by default. With `--poll` and `--auto-sync`, a detected drift triggers a com
 npx behold serve . --env prod --poll 30 --auto-sync apply
 ```
 
-- `apply` — heal the cloud toward source, via your `ApplyOp`.
-- `pull-request` — adopt live into source, via your `ReconcileOp`, as a PR someone merges.
+- `apply` heals the cloud toward source, via your `ApplyOp`.
+- `pull-request` adopts live into source, via your `ReconcileOp`, as a PR someone merges.
 
-It routes **per substrate**: drift in the Kubernetes half triggers the Op that owns Kubernetes, not whichever Op sorts first. Where several Ops match a substrate, or none does, it declines and says so on the now-line rather than guessing. A self-heal loop that picks the wrong half of an estate to rewrite is worse than one that stops.
+It routes **per substrate**: drift in the Kubernetes half triggers the Op that owns Kubernetes rather than whichever Op sorts first. Where several Ops match a substrate, or none does, it declines and says so on the now-line. A self-heal loop that picks the wrong half of an estate to rewrite is worse than one that stops.
 
-While a rollback PR is open, `pull-request` mode suspends — otherwise the loop would re-adopt exactly what the rollback removed, and the two would fight.
+While a rollback PR is open, `pull-request` mode suspends. Otherwise the loop would re-adopt exactly what the rollback removed, and the two would fight.
 
 <Aside type="caution" title="One write at a time">
-All delegated writes share one guard. If something is already running, a second trigger is refused and says which. It is not queued — the substrate waits until it drifts again.
+All delegated writes share one guard. If something is already running, a second trigger is refused and says which. It is not queued: the substrate waits until it drifts again.
 </Aside>
 
 ## Rollback
