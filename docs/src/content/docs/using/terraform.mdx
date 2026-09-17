@@ -1,6 +1,6 @@
 ---
 title: Look at a Terraform estate
-description: Draw a multi-root Terraform estate — what behold reads, what it refuses to infer, and where the live half is not.
+description: Draw a multi-root Terraform estate. What behold reads, what it refuses to infer, and where the live half is not.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -18,7 +18,7 @@ No cloud account, no Docker, no `terraform` binary.
 
 ## behold parses no HCL
 
-This is the posture, not an implementation detail. `@intentius/chant-lexicon-terraform`
+This is the posture rather than an implementation detail. `@intentius/chant-lexicon-terraform`
 reads the HCL an estate already has and emits one entity per block, so **a
 Terraform estate is a chant project whose only lexicon is a reader**, and
 `chant graph` serves it like any other. behold ships no HCL parser and never has.
@@ -53,8 +53,8 @@ their reason:
 
 - a directory under a `modules/` segment is a called module, and the roots that
   call it draw its blocks already;
-- a directory with nothing to draw — a lone backend fragment — is reported
-  rather than drawn as an empty box.
+- a directory with nothing to draw, such as a lone backend fragment, is
+  reported rather than drawn as an empty box.
 
 The probe alone is not enough, and the bundled estate is built to show why: the
 shared module's `versions.tf` is byte-for-byte a root's. Nothing in the file
@@ -69,7 +69,7 @@ infrastructure.
 | zoom | blocks drawn | why |
 |---|---|---|
 | default (detail 0-2) | `resource`, `data`, `module` | the estate: what is declared, what it reads, what it composes |
-| attributes (detail 3) | + `output`, `variable` | its interface — real, but a second question |
+| attributes (detail 3) | + `output`, `variable` | its interface: real, and a second question |
 | never | `terraform`, `provider`, `locals` | settings, not estate |
 
 Nothing is dropped silently. The status line says what is not drawn and where to
