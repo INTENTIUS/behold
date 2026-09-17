@@ -1016,14 +1016,23 @@ overlay needs. Off by default because the sweep is bounded by the ACCOUNT rather
 than the estate, and behold polls. `0` means no, which is choudoufu's own
 spelling, not a truthiness test.
 
-Measured while landing this, and it bounds what M2 can be built on: against the
-bundled choudoufu demo on floci with choudoufu 0.16.0, turning the sweep on does
-make `swept` grow and does produce the `NEEDS_DISCOVERY` omission for a
-declaration carrying no identity — but no candidate reached `adoptable[]`.
-`live-plan -adoption-only` classified it "no path — needs a marker; this run
-found no live resource to offer", with floci listing the matching object and
-returning its policy document. So `adoptable[]` populated is not yet
-reproducible here; see #412.
+**Content matching is a closed per-type table**, and that is what decides
+whether a declaration can ever produce an `adoptable[]` row. `matchTable`
+(choudoufu's internal/live/foreign/classify.go) lists eleven types against the
+identity-bearing arguments a match may use — `aws_vpc` on `cidr_block`,
+`aws_security_group`/`aws_lb`/`aws_sns_topic` and friends on `name`,
+`aws_subnet` on `cidr_block` + `availability_zone`, `aws_acm_certificate` on
+`domain_name`. A type absent from it, in the table's own words, "can never
+produce a bind candidate". `aws_iam_role` is absent, which is why #412's first
+attempt measured a shape that cannot match rather than a gap. A resource with a
+`count`/`for_each` key is skipped too, so a fixture wants a scalar.
+
+`src/__fixtures__/choudoufu-live-plan-adoptable.json` is the real thing,
+recorded off floci: one scalar `aws_vpc` declaring a static `cidr_block`, its
+unmarked live twin created out of band, and the run asked with the opt-in. It
+carries the pairing M2 is about — a `NEEDS_DISCOVERY` omission and an
+`adoptable[]` row at the same address — plus `matched[]` naming what was
+compared and choudoufu's own `adopt_command`.
 
 ### A choudoufu estate's own references (#393)
 
