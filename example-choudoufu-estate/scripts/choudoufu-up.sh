@@ -59,4 +59,25 @@ done
 echo "→ choudoufu apply in monolith (the terralith: 21 resources, three teams in one estate)"
 (cd monolith && "$CHOUDOUFU" apply -auto-approve -input=false -no-color | tail -1)
 
+# behold#415: the adoptable card's subject. team-a declares `aws_vpc.main` at
+# 10.77.0.0/16 and nothing applies that estate, so it has no marker and no
+# identity a configuration can reconstruct — EC2 assigns the `vpc-…` id. That
+# makes it NEEDS_DISCOVERY, and `aws_vpc` is in choudoufu's content-match table
+# keyed on `cidr_block`, so the estate-wide sweep can match it to a live VPC
+# carrying the same cidr and no marker.
+#
+# Created out of band on purpose: a VPC choudoufu applied would wear the estate
+# markers and read `bound`, which is the opposite of what this demonstrates.
+# `aws` is not a requirement of this demo, so a machine without it gets the
+# whole estate minus one card and is told which one.
+if command -v aws >/dev/null 2>&1; then
+  echo "→ seeding an unmarked VPC at 10.77.0.0/16 (the adoptable card — behold#415)"
+  AWS_ENDPOINT_URL="http://127.0.0.1:${PORT}" AWS_ACCESS_KEY_ID=test \
+  AWS_SECRET_ACCESS_KEY=test AWS_REGION=us-east-1 \
+    aws ec2 create-vpc --cidr-block 10.77.0.0/16 --query 'Vpc.VpcId' --output text >/dev/null 2>&1 \
+    || echo "  (floci refused the create — the adoptable card will not appear)"
+else
+  echo "→ no 'aws' on PATH, so the adoptable card is skipped; everything else stands up"
+fi
+
 echo "choudoufu-estate demo: up. behold serves it next; the plan in monolith/carve.json moves team-a's resources out."
