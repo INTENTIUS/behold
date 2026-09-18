@@ -185,12 +185,34 @@ export interface LivePlanDocument {
   bound?: LivePlanBound[] | null;
   omissions?: LivePlanOmission[] | null;
   unowned?: LivePlanUnowned[] | null;
-  /** choudoufu#962: live objects the sweep found for declarations that
-   * declare no identity. Empty unless the run asked the account-inventory
-   * question; `swept` says whether it did. Carried, not painted, in M2. */
-  adoptable?: unknown[] | null;
+  /** choudoufu#962: live objects the estate-wide sweep matched to a declared
+   * instance BY CONTENT — the identity-bearing arguments agree exactly and the
+   * object carries no marker for this estate. Empty unless the run asked the
+   * account-inventory question (`TOFU_LIVE_COLLECT_UNCLAIMED=1`, #412);
+   * `swept` says whether it did. */
+  adoptable?: LivePlanAdoptable[] | null;
   swept?: string[] | null;
   diagnostics?: LivePlanDiagnostic[] | null;
+}
+
+/**
+ * A live object the sweep matched to a declaration that names no identity.
+ *
+ * choudoufu shaped this so one consumer handles both halves: the field names
+ * follow `StatelessUnowned`'s rather than the Go type's, so {@link adoptLine}
+ * reads an adoptable row with the same code it reads an unowned one. What is
+ * added is {@link matched} — and that is the whole difference in kind.
+ *
+ * An UNOWNED row is a live object sitting at an identity the configuration
+ * DECLARES, so the claim needs no evidence: the identity is the match. Here
+ * the declaration names no identity at all, and choudoufu is asserting that
+ * this live object is that declaration because their identity-bearing
+ * arguments agree. A person about to stamp two tags onto somebody's resource
+ * needs to see which arguments those were.
+ */
+export interface LivePlanAdoptable extends LivePlanUnowned {
+  /** The arguments the sweep compared, in the order it compared them. */
+  matched?: { attribute: string; value: string }[] | null;
 }
 
 export type LiveLsParse = { ok: true; doc: LiveLsDocument } | { ok: false; refusal: ChoudoufuRefusal };
@@ -313,6 +335,7 @@ export function verdictFor(address: string, ls: LiveLsDocument | undefined, plan
   const gap = ls?.gaps?.find((g) => g.address === address);
   const omission = plan?.omissions?.find((o) => o.addr === address);
   const unowned = plan?.unowned?.find((u) => u.addr === address);
+  const adoptable = plan?.adoptable?.find((a) => a.addr === address);
   const listing = gap ? { listing: gap.detail } : {};
   if (bound) {
     const id = bound.identity || item?.id;
@@ -326,6 +349,35 @@ export function verdictFor(address: string, ls: LiveLsDocument | undefined, plan
   if (omission) {
     const tone = REASON_TONE[omission.reason] ?? "neutral";
     const base: Record<string, unknown> = { omission: omission.reason, detail: omission.detail, ...listing };
+    // #413: the same gesture one branch over. NEEDS_DISCOVERY means the
+    // declaration carries no identity of its own, which on its own is a
+    // neutral "could not answer" — but when the sweep found the live object
+    // anyway, there IS something to do about it, and the card says so.
+    //
+    // `warn` rather than neutral, and it is the same word for the same
+    // reason: the live object carries no marker for this estate, so it is
+    // unowned in choudoufu's own vocabulary (src/status-vocabulary.ts). What
+    // separates it from the UNOWNED branch is the evidence, not the verdict.
+    if (omission.reason === "NEEDS_DISCOVERY" && adoptable) {
+      const adopt = adoptLine(adoptable);
+      const matched = (adoptable.matched ?? []).filter((m) => m && m.attribute);
+      return {
+        _status: "warn",
+        physicalId: adoptable.identity,
+        ownership: "foreign",
+        attrs: {
+          // The write to run first, as #393 item 10 settled for the unowned
+          // card. behold composes none of its own: `adoptLine` prints
+          // choudoufu's `adopt_command` when there is one and the two marker
+          // values when there is not.
+          ...(adopt ? { adopt } : {}),
+          // Then why choudoufu believes it. Rendered as the estate's own
+          // words rather than a shape behold invented.
+          ...(matched.length ? { matchedOn: matched.map((m) => `${m.attribute}=${m.value}`).join(", ") } : {}),
+          ...base,
+        },
+      };
+    }
     if (omission.reason === "UNOWNED" && unowned) {
       const adopt = adoptLine(unowned);
       if (adopt) {

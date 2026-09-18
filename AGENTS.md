@@ -1001,6 +1001,28 @@ and marking every one of them would say nothing.
 This is presentation, not vocabulary. `statusVocabulary` gets no terraform row:
 there is no status to name. See #429 for the measurement that established it.
 
+### An adoptable row is painted like an unowned one, plus its evidence (#413)
+
+A `NEEDS_DISCOVERY` omission paired with an `adoptable[]` row at the same
+address paints `warn` with `ownership: "foreign"`, the same verdict the UNOWNED
+branch gives and for the same reason: the live object carries no marker for
+this estate. On its own, `NEEDS_DISCOVERY` stays neutral — the declaration
+names no identity, and with nothing found that is a "could not answer" rather
+than an action.
+
+The card leads with `attrs.adopt`, which is choudoufu's own `adopt_command`
+here rather than the marker pair an unowned row carries. `adoptLine`'s
+composed-command branch had no real caller until this. behold composes no
+command of its own: the API that writes a tag differs per resource type.
+
+`attrs.matchedOn` is the difference in kind. An unowned row needs no evidence
+because the identity IS the match; here choudoufu asserts that a live object is
+a declaration because their identity-bearing arguments agree, and a person
+about to stamp two tags onto somebody's resource is owed the list.
+
+`web/app.js` renders both through the one copyable row, and its tooltip says
+whether the line is a command or a pair of tags.
+
 ### The adoption sweep is off unless a serve asks (#412)
 
 `live-plan -json` carries `adoptable[]` (live resources the estate-wide sweep

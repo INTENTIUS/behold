@@ -858,15 +858,22 @@ function inspect(node) {
   const attrKeys = Object.keys(node.attrs || {}).filter((k) => !k.startsWith("_") && !(k === "release" && release));
   if (attrKeys.length) {
     const decl = section("declared");
-    // #393 item 10: an UNOWNED choudoufu card leads with the write that adopts
-    // the object — the two marker tags choudoufu named (`adopt_tofu_estate` /
-    // `adopt_tofu_address`), or its own one-line command if a release ever
-    // sends one. behold composes neither (src/choudoufu-live.ts); this puts
-    // the line first and makes it copyable, the way the moves panel already
-    // does for a `live-mv` line. The paragraph explaining the omission — which
-    // used to be the whole section, with the tags under it as JSON — follows.
+    // #393 item 10: a choudoufu card that can be adopted leads with the write
+    // that does it — the two marker tags choudoufu named (`adopt_tofu_estate` /
+    // `adopt_tofu_address`), or its own one-line command when it sends one.
+    // behold composes neither (src/choudoufu-live.ts); this puts the line
+    // first and makes it copyable, the way the moves panel already does for a
+    // `live-mv` line. The paragraph explaining the omission follows.
+    //
+    // #413: both kinds reach here now. An UNOWNED row carries the marker pair,
+    // and an adoptable one carries choudoufu's own command — so the tooltip
+    // says which of the two this is rather than claiming tags either way.
     const adoptable = node.lexicon === "choudoufu" && typeof node.attrs.adopt === "string" ? "adopt" : null;
-    if (adoptable) copyableRow(decl, adoptable, node.attrs.adopt, "Copy the tags that adopt this object");
+    if (adoptable) {
+      const isCommand = /\s/.test(node.attrs.adopt.trim()) && !node.attrs.adopt.startsWith("tofu-estate=");
+      copyableRow(decl, adoptable, node.attrs.adopt,
+        isCommand ? "Copy the command that adopts this object" : "Copy the tags that adopt this object");
+    }
     for (const k of attrKeys) {
       if (k === adoptable) continue;
       decl(k, fmtValue(node.attrs[k]));
