@@ -19,7 +19,7 @@ no `*.op.ts` (like `../example`) shows no Sync — that's expected, not a bug.
 ## Creds-free: deploy to a local emulator (`--local`)
 
 No AWS account? Serve with `--local` and behold boots a local Floci emulator
-(needs Docker), then the **floci-apply** Op deploys the bucket to it — the same
+(needs Docker), then the **floci-apply** Op deploys the bucket to it, the same
 delegated-write path, zero cloud creds:
 
 ```sh
@@ -36,7 +36,7 @@ you Ctrl-C. Everything below uses real AWS instead.
 ## Prerequisites
 
 - Node 20+, and **AWS credentials** in your environment (`aws sts get-caller-identity`
-  should work). The apply creates a real S3 bucket via CloudFormation — a few cents,
+  should work). The apply creates a real S3 bucket via CloudFormation, a few cents,
   torn down at the end. behold holds no creds; `chant` uses yours on this machine.
 - One edit: S3 bucket names are **globally unique**, so change `BucketName` in
   [`src/bucket.ts`](src/bucket.ts) to something of your own (e.g. include your AWS
@@ -59,10 +59,10 @@ npm run dev -- serve example-writes --env prod
    colour flip.)
 2. In the header, click **Sync**. The now-line streams the Op's phases:
    `▶ chant run prod-apply` → Build → Plan → **Apply** (`aws cloudformation deploy`).
-   `prod-apply` is **ungated**, so it applies straight away — no approval step.
+   `prod-apply` is **ungated**, so it applies straight away, no approval step.
 3. When it finishes, the `store` node flips **blue → green (managed)**. Click it: the
    inspect panel's **live** section shows the bucket's observed **physical id** and
-   status. That's the hydration — the cloud's view of your declared resource.
+   status. That's the hydration, the cloud's view of your declared resource.
 4. Click **Refresh** any time to re-check drift and drop a lanes frame.
 
 ## What "gated" looks like
