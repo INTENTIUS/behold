@@ -422,3 +422,48 @@ describe("the adoption sweep's own row (#412)", () => {
     expect(doc.unowned ?? []).toHaveLength(0);
   });
 });
+
+// #413: the adoptable row painted. The pairing is NEEDS_DISCOVERY plus an
+// `adoptable[]` entry at the same address — the omission says the declaration
+// carries no identity, and the sweep says it found the live object anyway.
+describe("an adoptable row is painted, with its evidence (#413)", () => {
+  const doc = plan("choudoufu-live-plan-adoptable.json");
+
+  it("turns a NEEDS_DISCOVERY card from a shrug into something actionable", () => {
+    const v = verdictFor("aws_vpc.adoptable", undefined, doc)!;
+    // Same verdict as the unowned branch, for the same reason: the live object
+    // carries no marker for this estate.
+    expect(v._status).toBe("warn");
+    expect(v.ownership).toBe("foreign");
+    expect(v.physicalId).toBe("vpc-113c8c15");
+  });
+
+  it("puts choudoufu's own adopt command on the card, not tags behold composed", () => {
+    const v = verdictFor("aws_vpc.adoptable", undefined, doc)!;
+    // `adoptLine`'s composed-command branch gets its first real caller here:
+    // an unowned row on 0.16.0 carries the marker pair and no command.
+    expect(v.attrs.adopt).toContain("aws ec2 create-tags");
+    expect(v.attrs.adopt).toContain("Key=tofu-estate,Value=behold-adoptable-fixture");
+  });
+
+  it("says what the sweep compared, which is why it believes the match", () => {
+    const v = verdictFor("aws_vpc.adoptable", undefined, doc)!;
+    expect(v.attrs.matchedOn).toBe("cidr_block=10.77.0.0/16");
+  });
+
+  it("keeps the omission and its reason, so the card still explains itself", () => {
+    const v = verdictFor("aws_vpc.adoptable", undefined, doc)!;
+    expect(v.attrs.omission).toBe("NEEDS_DISCOVERY");
+    expect(String(v.attrs.detail)).toContain("No import identity exists");
+  });
+
+  it("leaves a NEEDS_DISCOVERY the sweep did not match exactly as it was", () => {
+    // The honest empty is #414's subject, and nothing here may pre-empt it: an
+    // omission with no adoptable row stays neutral and gains no command.
+    const unmatched: LivePlanDocument = { ...doc, adoptable: [] };
+    const v = verdictFor("aws_vpc.adoptable", undefined, unmatched)!;
+    expect(v._status).toBe("neutral");
+    expect(v.attrs.adopt).toBeUndefined();
+    expect(v.attrs.matchedOn).toBeUndefined();
+  });
+});
