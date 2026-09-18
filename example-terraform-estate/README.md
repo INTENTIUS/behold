@@ -25,7 +25,7 @@ on. 25 resources, drawing 37 cards and 31 edges at the `resources` zoom.
 
 Discovery has to tell five things apart, and this estate is built to be each of
 them. A root is a directory with a `.tf` declaring a line-start `terraform {` or
-`provider "` block beside a `resource`, `data` or `module` block — a regex probe
+`provider "` block beside a `resource`, `data` or `module` block, a regex probe
 at depth, never an HCL parse.
 
 **`envs/prod` is the obvious root.** Provider block, resources, module calls.
@@ -35,7 +35,7 @@ root configures a provider" would miss it. It is a root because it declares
 resources beside a `terraform` block, and it is applied on its own.
 
 **`modules/service` is the case that defeats the probe.** Its `versions.tf` is
-byte-for-byte `envs/prod/versions.tf` — the same `required_version`, the same
+byte-for-byte `envs/prod/versions.tf`, the same `required_version`, the same
 `required_providers`. Nothing in the file's content says which of the two is a
 root. What separates them is that this one sits under a `modules/` segment,
 Terraform's own standard module structure, and the roots that call it draw its
@@ -43,7 +43,7 @@ blocks already. Drawing it again would double every card in it.
 
 **`backends` has a `terraform` block and nothing to draw.** No resource, no
 data source, no module call. It is reported as skipped rather than drawn as an
-empty box — a box with nothing in it is a question, and the note answers it.
+empty box, a box with nothing in it is a question, and the note answers it.
 
 **`envs/dev` is neither drawn nor reported.** It holds no `.tf` at all, so
 there is nothing here that looks like Terraform and nothing to say about it.

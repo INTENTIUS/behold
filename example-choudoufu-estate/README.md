@@ -7,18 +7,18 @@ cache that is allowed to be stale, and an estate is split by retagging. The
 estates here are the live-mv workbench's own fixture (`examples/live-mv-workbench`
 in the choudoufu repo), copied:
 
-- **monolith/** — the terralith: three teams' IAM roles, policies, inline
+- **monolith/.** The terralith: three teams' IAM roles, policies, inline
   policies, attachments and log groups in one estate. `scripts/choudoufu-up.sh`
   applies it, so every one of its 21 resources is live and marked
   `tofu-estate = tlmig-sample-monolith`.
-- **team-a/**, **team-b/**, **team-c/** — the estates the teams would own.
+- **team-a/**, **team-b/**, **team-c/** are the estates the teams would own.
   Each declares its own seven resources, which are the monolith's: served
   live, every card reads *owned by tlmig-sample-monolith*, with a dashed
   edge to the monolith's card of the same address. team-a also declares a VPC
   the monolith does not, and team-b reads it through a data source filtered
-  on team-a's marker tags — the cross-estate reference `live-check -json`
+  on team-a's marker tags, the cross-estate reference `live-check -json`
   states, drawn as an edge between the two boxes.
-- **monolith/carve.json** — the plan: team-a's five taggable resources move to
+- **monolith/carve.json.** The plan: team-a's five taggable resources move to
   `tlmig-sample-team-a`. The scope panel shows each move with the
   `choudoufu live-mv` line to run and a link to the morph; behold never runs
   the write.

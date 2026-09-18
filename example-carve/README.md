@@ -1,4 +1,4 @@
-# example-carve — the mixed estate the peeling demo runs on
+# example-carve, the mixed estate the peeling demo runs on
 
 A migration caught half-done. `app/` is chant; `legacy-tf/` is Terraform; both
 describe one AWS account, and the walkthrough carves one more resource across
@@ -13,7 +13,7 @@ behold demo carve          # copies this directory, installs, advises, serves
 The boot does three things before a port opens: `npm install` in `app/` (whose
 chant every step of the walkthrough shells), `@cdktf/hcl2json` into the copy's
 root `node_modules` (chant lazy-loads the HCL parser from its own install
-upward, so `<copy>/node_modules` is where it resolves — not beside the `.tf`
+upward, so `<copy>/node_modules` is where it resolves rather than beside the `.tf`
 files), and `chant carve advise --report` over the copy's own Terraform. If any
 of that fails, the committed `carve-report.json` is served instead and the
 reason is on screen; a blank graph is the one outcome that's never allowed.
@@ -61,7 +61,7 @@ chant carve advise --from example-carve/legacy-tf \
 | score | address | band | why | role in the script |
 |---|---|---|---|---|
 | 100 | `aws_cloudwatch_log_group.worker` | clean leaf | clean 1:1 native map, no boundary edges | the free first move: named, not carved |
-| 84 | `aws_s3_bucket.assets` | clean leaf | 1 inbound, 1 output | **the star** — the resource we carve on camera |
+| 84 | `aws_s3_bucket.assets` | clean leaf | 1 inbound, 1 output | **the star**, the resource we carve on camera |
 | 71 | `module.cdn` | carvable w/ edits | 1 outbound, tier 2, data present | one module, so module scoring appears |
 | 69 | `aws_iam_role.api` | carvable w/ edits | 1 inbound, 1 outbound, tier 2 | what an inbound edge costs |
 | 69 | `aws_vpc_endpoint.ssm` | carvable w/ edits | 4 outbound, tier 2 | outbound edges are cheap, but they add up |
@@ -85,7 +85,7 @@ above is that arithmetic on the edges in `legacy-tf/`, which is why the estate
 is shaped the way it is:
 
 - The bucket has one inbound edge — `aws_lambda_function.api`'s
-  `ASSETS_BUCKET` environment variable — and, since `outputs.tf`'s
+  `ASSETS_BUCKET` environment variable, and, since `outputs.tf`'s
   `assets_bucket` reads it too, one output edge. Two edges, two rewrites, 84.
   `assets_bucket` is deliberate: a downstream consumer of this state reads the
   bucket name today, so the carve has a second thing to bridge, not just the
@@ -98,7 +98,7 @@ is shaped the way it is:
   output, and 32 says so.
 - The subnets and the security group each read a data source, which costs 10.
   The subnets also feed `private_subnet_ids`, an existing output, which costs
-  4 more apiece and drops them under the security group's 43 — the one place
+  4 more apiece and drops them under the security group's 43, the one place
   the outputs term reorders the table, not just re-scores it.
 
 No resource uses `count` or `for_each`, so the instance-count penalty is zero
@@ -132,7 +132,7 @@ bucket scores 84 instead of 88 and the report's `patchOnCarve` list names
 fold is applied, not just reported (chant#1637), so the emitted bucket actually
 carries `VersioningConfiguration` and `PublicAccessBlockConfiguration` instead
 of leaving them in an "unmapped attributes" comment. The committed report above
-is byte-identical to what 0.44.7 regenerates — re-verified at 0.52.1 — which is
+is byte-identical to what 0.44.7 regenerates — re-verified at 0.52.1, which is
 why the demo's fallback path and its fresh-run path show the same picture.
 
 ## The six beats
@@ -177,7 +177,7 @@ still says so. Run `chant carve apply` yourself in the copy and the card leaves
 the Terraform bands for the `app — chant` box, keeping its Terraform address,
 and the panel counts `carved so far — 1 of 12 carved`.
 
-`carve apply` is the one beat that has no button — not in the stepper, not on
+`carve apply` is the one beat that has no button: not in the stepper, not on
 the API. It resolves the marker that makes chant the owner of a live resource,
 which is a decision that stays with the person at the terminal. The Handoff
 step echoes the command beside the two `terraform` ones, for the same reason
@@ -194,7 +194,7 @@ tier guarantees the first thirty seconds of the video.
 **`--live` is the full video.** `behold demo carve --live` boots a scratch
 Floci (`behold-carve-floci`, its own port, deleted on exit), arms
 `legacy-tf/floci-override.tf.disabled` (see its header) into the demo copy, and
-`terraform apply -target`s the starred resources into it — so the tfstate the
+`terraform apply -target`s the starred resources into it, so the tfstate the
 advisor reads is one terraform really wrote. At Handoff the stepper gains a
 read-only **terraform plan** button: before `state rm` it shows a no-op, after
 it the carved bucket is simply gone from Terraform's world — `0 to destroy`.
@@ -204,7 +204,7 @@ never blinked."
 The observe beat is footage now, not caption: after Emit, "▶ watch chant read
 it live" runs `chant lifecycle diff prod --live` in the carveout with the
 endpoint pointed at the scratch Floci, and the bucket reads OBSERVED —
-`EXTERNAL`, ownership `foreign` — while Terraform still owns it. That is
+`EXTERNAL`, ownership `foreign`, while Terraform still owns it. That is
 chant#1647's physical-identity read path (chant ≥ 0.44.12): stack-absent no
 longer means confirmed-absent when the declared `BucketName` names the
 resource precisely.
@@ -223,7 +223,7 @@ grey band, so expect `-target` rather than one apply of the whole estate.
 and as of chant 0.44.7 (chant#1637, chant PR #1640) the emitted `Bucket`
 actually carries both: `VersioningConfiguration` and
 `PublicAccessBlockConfiguration` come out as native props, not an "unmapped
-Terraform attributes" comment. That used to be the rough edge here — a fold
+Terraform attributes" comment. That used to be the rough edge here, a fold
 that was reported but not applied, so `chant build` failed two AWS policy
 rules on source the advisor called clean. It is fixed now.
 
@@ -237,7 +237,7 @@ here would show up scanning the `.tf` by eye, because there is nothing to
 find — only an absence.
 
 Verified against chant 0.44.7. The walkthrough's Emit beat still shows `lint`,
-not `build` — the step's "why lint and not build?" note says why on screen —
+not `build`, the step's "why lint and not build?" note says why on screen —
 but the reason changed: `build` doesn't fail because the fold is incomplete
 anymore, it fails because the estate really does have a policy gap. "chant
 found a policy gap Terraform never noticed" is the honest line to close the

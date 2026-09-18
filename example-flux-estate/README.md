@@ -2,20 +2,20 @@
 
 Three chant projects served as one composed estate:
 
-- **control-plane/** — the Flux machinery: a `GitRepository` pointing at
+- **control-plane/.** The Flux machinery: a `GitRepository` pointing at
   behold's own public repo and one `Kustomization` per app, app-b's gated on
   app-a's with `dependsOn` (behold#223). The reconcilers deploy the apps; this
   project never applies a workload itself.
-- **app-a/** — a small web workload with explicit `metadata.namespace` on
+- **app-a/.** A small web workload with explicit `metadata.namespace` on
   every object: the fully-resolved half.
-- **app-b/** — the same workload with **no** namespace anywhere: the control
+- **app-b/.** The same workload with **no** namespace anywhere: the control
   plane's `targetNamespace` stamps it at apply time. Idiomatic Flux, and the
   deliberate exhibit of the estate namespace join (behold#221). Served alone,
   app-b's live read scopes to `default`, finds nothing, and behold explains
   the all-pending paint with the namespace-mismatch note (behold#192) instead
   of letting it read as "not deployed". Served composed, the estate reads the
   binding off the control plane's own `Kustomization` and scopes app-b's read
-  to `app-b` — the answer neither project holds by itself.
+  to `app-b`, the answer neither project holds by itself.
 
 ```sh
 npx @intentius/behold demo flux-estate
@@ -28,7 +28,7 @@ this repo, and serves the three projects composed. What to look at:
 
 - The **estate**: per-project boundary boxes, the `sourceRef` edges wiring
   Kustomization → GitRepository across stacks, and the `dependsOn` edge from
-  app-b's Kustomization to app-a's — the estate's reconcile ordering.
+  app-b's Kustomization to app-a's, the estate's reconcile ordering.
 - The **overlay** (env `local`): app-a green, the control plane's CRs green,
   and app-b green too — read in the namespace the control plane binds it to,
   with a note naming where it looked. Serve `app-b` on its own to see the
