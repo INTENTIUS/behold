@@ -1,0 +1,113 @@
+---
+title: Look at a choudoufu estate
+description: Ownership as two tags. What a green card means here, and what it does not.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+[choudoufu](https://github.com/INTENTIUS/choudoufu) is an OpenTofu fork whose
+ownership lives in two AWS tags rather than in a state file. behold draws such
+an estate as a member kind of its own, beside chant projects and Terraform
+roots.
+
+```sh
+npx @intentius/behold demo choudoufu-estate     # four estates on a scratch emulator
+npx @intentius/behold serve ./my-estate --env live
+```
+
+## A green card means "this is ours"
+
+This is the one thing worth getting right before reading anything else.
+
+The overlay is composed from `live-ls -json` and `live-plan -json`, and those
+two documents answer one question: is this resource bound, unowned, omitted, or
+invisible to the listing. **Neither of them ever compares an attribute value.**
+
+So a resource whose tag or path was changed out of band still carries its
+markers, is still bound, and is still green. Read a green card as *this is
+ours*, never as *nothing changed*.
+
+| colour | choudoufu's word | means |
+|---|---|---|
+| green | bound | a declared instance matched a live object |
+| amber | unowned | a live object at a declared identity that is not ours |
+| blue | pending | the plan would create it |
+| grey | not observed | the listing could not see it, or neither document mentions it |
+
+Those are choudoufu's words, not chant's, and the legend says so. A `bound`
+resource is not "managed": a resource bound by derived identity carries no
+marker yet, and claiming it is managed would claim a marker that is not there.
+
+## Attribute drift is a separate question
+
+Since the ownership read never compares a value, "would a plan change
+anything?" is a second read you ask for: ⌘K → **Re-check live with plan**.
+
+It costs differently. The ownership read is answered out of the tagging index
+and is flat in the estate's size; a plan refreshes every resource, one provider
+read per card, which is 301 of them on the estate behold is sized against. So
+it never runs on an ordinary overlay.
+
+A bound card that drifted stays bound and stays counted as bound. It gains a
+dashed edge and a `~ n attributes` corner, because the ownership verdict is
+still the card's colour.
+
+<Aside type="note" title="Nobody looked is not nothing drifted">
+The legend prints a drift count only after a plan was actually read. Before
+that it says so in words and prints no number, because "0 drifted" would be a
+claim nobody made.
+</Aside>
+
+## Unowned, and adoptable
+
+Two different situations, and the difference is where the identity comes from.
+
+**Unowned** is a live object sitting at an identity the configuration
+*declares*. The claim needs no evidence, because the identity is the match. The
+card leads with the two marker tags that adopt it.
+
+**Adoptable** is a live object the estate-wide sweep found for a declaration
+that names *no identity at all*: a VPC, say, whose `vpc-…` id EC2 assigns at
+create time and which nothing in the configuration reconstructs. choudoufu
+matches it by content instead, comparing the identity-bearing arguments for
+that resource type.
+
+An adoptable card leads with choudoufu's own adopt command, and carries
+`matchedOn`: the arguments the sweep compared. behold composes no command of
+its own, and shows the evidence because a person about to stamp two tags onto
+somebody's resource is owed it.
+
+Content matching covers a closed list of resource types. A type outside it can
+never produce an adoptable row, which is a property of the type rather than of
+your estate.
+
+## The sweep is off unless you ask
+
+The sweep is bounded by the **account** rather than by the estate, and behold
+polls, so it cannot be on by default. Turn it on for a serve:
+
+```json
+{ "spawnEnv": { "TOFU_LIVE_COLLECT_UNCLAIMED": "1" } }
+```
+
+Without it, `adoptable` is empty on every run. Which is why an empty result
+says which empty it is:
+
+- *the sweep listed every `aws_vpc` and matched none of them to this
+  declaration*, so the question was asked and answered.
+- *this run did not sweep the account, so nothing was looked for*, and the line
+  names the variable that asks it.
+
+Reporting the second as the first would be an absence of evidence dressed as
+evidence of absence.
+
+## Moves are previewed, never run
+
+`GET /api/choudoufu/moves` reads a `carve.json` plan from inside a served
+member and previews each move with `live-mv -json -dry-run`, handing the lines
+back with copy buttons.
+
+**There is no `/api/choudoufu/mv`**, and a test asserts it stays absent. A move
+is one tag write against somebody's account. behold previews it and reads the
+receipt afterwards; the write is yours to run, which is the line the carve
+walkthrough draws around `terraform state rm`.
