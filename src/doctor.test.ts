@@ -6,6 +6,7 @@ import { diagnose, formatReport, type DoctorProbes, type DoctorReport, type Doct
 import type { Kubeconfig } from "./k8s-target.ts";
 import type { Substrate } from "./substrates.ts";
 import { discoverTerraformRoots as realRoots } from "./terraform-member.ts";
+import { chantFloor } from "./chant.ts";
 
 // Fixtures are built in the OS tmpdir rather than pointed at the bundled
 // examples: example-writes' node_modules is intentionally absent in a fresh
@@ -41,7 +42,18 @@ function installed(name: string, version: string, bin?: string): Record<string, 
   };
 }
 
-const CHANT = installed("@intentius/chant", "0.61.0", "bin/chant");
+/**
+ * A chant install at behold's own declared floor, so these fixtures describe a
+ * healthy project rather than a stale one.
+ *
+ * Read from behold's `package.json` rather than written as a literal: the floor
+ * moves with every chant bump, and a literal here silently reclassifies every
+ * fixture below it — which is how three of these tests came to be the only
+ * coverage the below-floor branch had (chant 0.61 -> 0.75). The below-floor
+ * report has its own test now, with its own version, so it stays put.
+ */
+const AT_FLOOR = chantFloor() ?? "0.61.0";
+const CHANT = installed("@intentius/chant", AT_FLOOR, "bin/chant");
 
 const kubeconfig = (over: Partial<Kubeconfig> = {}): Kubeconfig => ({
   contexts: new Map(),
@@ -78,11 +90,33 @@ describe("diagnose", () => {
     expect(report.ok).toBe(true);
     expect(report.kind).toBe("project");
     expect(report.checks.map((c) => c.status)).toEqual(["pass", "pass", "pass", "pass", "pass", "pass", "pass", "pass"]);
-    expect(by(report, "chant").detail).toContain("chant 0.61.0");
+    expect(by(report, "chant").detail).toContain(`chant ${AT_FLOOR}`);
     expect(by(report, "lexicons").detail).toContain("aws 0.61.0");
     expect(by(report, "envs").detail).toContain("prod");
     expect(by(report, "ops").detail).toContain("prod-apply (apply)");
     expect(report.checks.every((c) => c.fix === undefined)).toBe(true);
+  });
+
+  // Until the 0.61 -> 0.75 bump this branch had no test of its own: three
+  // fixtures pinned below the floor were covering it by accident, and bumping
+  // them would have taken the only coverage with them.
+  it("warns when the project's chant is below behold's floor, naming both versions", async () => {
+    const dir = fixture({
+      "chant.config.ts": `export default { lexicons: ["aws"], environments: ["prod"], sourceDir: "src" };`,
+      "package.json": JSON.stringify({ name: "stale", dependencies: { "@intentius/chant": "^0.1.0" } }),
+      "src/main.ts": "",
+      // 0.1.0 is below any floor behold will ever declare, so this test does
+      // not go stale the way the fixtures it replaced did.
+      ...installed("@intentius/chant", "0.1.0", "bin/chant"),
+    });
+
+    const report = await diagnose(dir, probes({ detectSubstrates: async () => up }));
+    const chant = by(report, "chant");
+
+    expect(chant.status).not.toBe("pass");
+    // Both numbers, because "upgrade chant" without saying to what is not a fix.
+    expect(chant.detail).toContain("0.1.0");
+    expect(chant.detail).toContain(`below behold's floor ${chantFloor()}`);
   });
 
   it("fails with one line, and the fix, for a directory that is no project at all (#193's dead end)", async () => {
@@ -231,7 +265,7 @@ describe("diagnose", () => {
 
     expect(report.kind).toBe("estate");
     expect(by(report, "project").detail).toContain(".behold.json members): a (chant), b (chant)");
-    expect(by(report, "chant").detail).toBe("a: chant 0.61.0, b: chant 0.61.0 (behold's floor 0.61.0)");
+    expect(by(report, "chant").detail).toBe(`a: chant ${AT_FLOOR}, b: chant ${AT_FLOOR} (behold's floor ${AT_FLOOR})`);
     expect(by(report, "envs").detail).toContain(`behold serve ${dir}/a ${dir}/b --env prod`);
     expect(by(report, "ops").detail).toContain("a: a-apply (apply)");
   });
@@ -271,7 +305,7 @@ describe("diagnose", () => {
     expect(project.detail).toContain("a (chant); invalid: b — unknown member kind \"pulumi\"");
     expect(project.fix).toContain("Member kinds this behold reads: chant, choudoufu");
     // The chant line asks only the chant members.
-    expect(by(report, "chant").detail).toBe("a: chant 0.61.0 (behold's floor 0.61.0)");
+    expect(by(report, "chant").detail).toBe(`a: chant ${AT_FLOOR} (behold's floor ${AT_FLOOR})`);
   });
 
   // #369: the choudoufu line, only on an estate with a choudoufu member.

@@ -525,7 +525,7 @@ async function runChantJson<T>(args: string[], projectDir?: string, envOverride?
  *     `envOverridesFor`, since a project's source can branch on them.
  *
  * No version gate: `--stacks` shipped in chant-v0.1.19, far below behold's
- * `^0.61.0` floor — the same reasoning `ciPipeline` applies, not
+ * `^0.75.0` floor — the same reasoning `ciPipeline` applies, not
  * `CARVE_STATUS_FLOOR`'s.
  */
 export interface StackGraph {
