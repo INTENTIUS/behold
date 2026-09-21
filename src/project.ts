@@ -103,6 +103,22 @@ export interface BeholdConfig {
    * guessing. Absent when the file declares none (see `detectProjectShape`,
    * which then falls back to npm `workspaces`). */
   members?: MemberDecl[];
+  /** The behaviour overlay's inputs (#402). `traffic` is the level every
+   * prediction is asked for, verbatim, as chant's `--traffic` takes it
+   * ("100 rps, p50"). behold never picks one: with none here and none on the
+   * request (`?traffic=`), no prediction is asked for at all, which reads as
+   * "not looked" rather than as a refusal. */
+  behaviour?: { traffic: string };
+}
+
+/** `.behold.json`'s `behaviour.traffic`, when it is a non-blank string. A
+ * wrong-typed or blank value is dropped like any other config typo: it means
+ * "not looked", which is what an absent key means. */
+function readBehaviour(raw: Record<string, unknown>): { traffic: string } | undefined {
+  const b = raw.behaviour;
+  if (!b || typeof b !== "object" || Array.isArray(b)) return undefined;
+  const traffic = (b as { traffic?: unknown }).traffic;
+  return typeof traffic === "string" && traffic.trim() ? { traffic: traffic.trim() } : undefined;
 }
 
 /** Parse one `members[]` entry; undefined for an entry that is not a member
@@ -349,7 +365,13 @@ export function loadBeholdConfig(projectDir: string): BeholdConfig {
     const tiers = readTiers(raw);
     const members = Array.isArray(raw.members) ? raw.members.map(readMember).filter((m): m is MemberDecl => !!m) : [];
     const executor = readExecutor(raw);
-    return { ...(tiers ? { tiers } : {}), ...(members.length ? { members } : {}), ...(executor ? { executor } : {}) };
+    const behaviour = readBehaviour(raw);
+    return {
+      ...(tiers ? { tiers } : {}),
+      ...(members.length ? { members } : {}),
+      ...(executor ? { executor } : {}),
+      ...(behaviour ? { behaviour } : {}),
+    };
   } catch {
     return {};
   }

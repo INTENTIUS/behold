@@ -199,6 +199,38 @@ export function fmtCost(perHour, currency) {
 }
 
 /** A headroom fraction as the percentage of capacity still free. */
+/** A signed delta, in the engine's own currency: the sign is the statement. */
+export function fmtDelta(perHour, currency) {
+  const figure = fmtCost(Math.abs(perHour), currency);
+  if (perHour === 0) return `${figure}, no difference`;
+  return `${perHour > 0 ? "+" : "-"}${figure}`;
+}
+
+/**
+ * Live versus declared (#402), as the rows the Scope panel prints: one triple
+ * for the estate, one per member that has a side. Empty when the payload
+ * carries neither figure, which is a request that named no traffic level.
+ *
+ * Each figure says whose it is. `total` is the engine's own statement and
+ * `sum` is behold adding the engine's per-entity figures; the delta is always
+ * behold's subtraction of the two beside it, and a missing side is said, not
+ * left blank, so a reader never takes an absent live figure for a zero.
+ */
+export function deltaRows(meta) {
+  if (!meta || (!meta.live && !meta.declared)) return [];
+  const whose = (f) => (f.basis === "total" ? "engine total" : "behold's sum");
+  const side = (f, missing) => (f ? `${fmtCost(f.perHour, f.currency)} · ${whose(f)}` : missing);
+  const triple = (label, t) => ({
+    label,
+    live: side(t.live, "no live figure"),
+    declared: side(t.declared, "no declared figure"),
+    delta: t.delta ? fmtDelta(t.delta.perHour, t.delta.currency) : "no delta, see diagnostics",
+  });
+  const rows = [triple("estate", meta)];
+  for (const [name, t] of Object.entries(meta.members || {}).sort(([a], [b]) => a.localeCompare(b))) rows.push(triple(name, t));
+  return rows;
+}
+
 export function fmtHeadroom(v) {
   return typeof v === "number" && Number.isFinite(v) ? `${Math.round(v * 100)}% free` : "—";
 }

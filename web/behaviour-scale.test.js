@@ -9,6 +9,8 @@ import { describe, it, expect } from "vitest";
 import { THEMES } from "./themes.js";
 import { tokensFor, hexToOklch } from "./theme.js";
 import {
+  deltaRows,
+  fmtDelta,
   badgeFor,
   blockOf,
   countFigures,
@@ -303,5 +305,42 @@ describe("what a refusal and an absence do to the modes (#401)", () => {
     expect(a.available).toBe(false);
     expect(a.reason).toBe(absent);
     expect(a.refusal).toBeNull();
+  });
+});
+
+describe("live versus declared rows (#402)", () => {
+  const live = { perHour: 0.005, currency: "USD", basis: "sum" };
+  const declared = { perHour: 0.01, currency: "USD", basis: "sum" };
+
+  it("signs the delta, and says when there is none", () => {
+    expect(fmtDelta(-0.005, "USD")).toBe("-0.0050 USD/h");
+    expect(fmtDelta(1.5, "USD")).toBe("+1.50 USD/h");
+    expect(fmtDelta(0, "USD")).toBe("0.0000 USD/h, no difference");
+  });
+
+  it("is empty for a payload with neither figure: no traffic level was named", () => {
+    expect(deltaRows(null)).toEqual([]);
+    expect(deltaRows({ engine: "e", sum: { perHour: 1, currency: "USD", priced: 1, unpriced: 0 } })).toEqual([]);
+  });
+
+  it("prints the estate, then each member by name, and says whose each figure is", () => {
+    const rows = deltaRows({
+      live,
+      declared,
+      delta: { perHour: -0.005, currency: "USD" },
+      members: {
+        "team-a": { live: { perHour: 0, currency: "USD", basis: "total" }, declared: { perHour: 0, currency: "USD", basis: "total" }, delta: { perHour: 0, currency: "USD" } },
+        monolith: { live: { ...live, basis: "total" }, declared: { ...declared, basis: "total" }, delta: { perHour: -0.005, currency: "USD" } },
+      },
+    });
+    expect(rows.map((r) => r.label)).toEqual(["estate", "monolith", "team-a"]);
+    expect(rows[0]).toEqual({ label: "estate", live: "0.0050 USD/h · behold's sum", declared: "0.0100 USD/h · behold's sum", delta: "-0.0050 USD/h" });
+    expect(rows[1].live).toBe("0.0050 USD/h · engine total");
+  });
+
+  it("says a missing side is missing rather than printing a zero", () => {
+    const [estate] = deltaRows({ declared });
+    expect(estate.live).toBe("no live figure");
+    expect(estate.delta).toBe("no delta, see diagnostics");
   });
 });

@@ -78,6 +78,22 @@ If your project's source branches on a build parameter such as a deployment tier
 
 This is behold's own config, deliberately separate from `chant.config.ts` so a viewer's concerns stay out of the compiler's.
 
+## Optional: a traffic level for live versus declared
+
+behold can show what your estate costs as the account stands beside what the file says it should, with the difference. Both figures are predictions at a traffic level, and behold never picks one for you. Name it in `.behold.json`:
+
+```json
+{
+  "behaviour": { "traffic": "100 rps, p50" }
+}
+```
+
+The string goes to chant verbatim as `chant graph --traffic`. `?traffic=` on `/api/graph` and `/api/overlay` overrides it for one request. With neither, behold asks for no prediction, which reads as "not looked" and is not a refusal.
+
+With a level, `/api/overlay` asks chant twice for each member: once about the account (`--live`) and once about the file. The payload's `meta.behaviour` carries `live`, `declared` and `delta`, per member and for the estate, and a card the account no longer holds keeps its declared figure under `attrs._behaviourDeclared`. The live figure moves with drift. The declared one moves only when a file under the member changes, so behold reads it once per edit.
+
+The figures are an engine's, reached by chant through `CHANT_BEHAVIOUR_ENGINE`. behold calls no engine and holds no key. A choudoufu or Terraform member also needs the optional `@intentius/chant-lexicon-terraform` installed beside behold, since that lexicon is what predicts a `.tf` root.
+
 ## Optional: a shared hand layout
 
 Drag a card or resize a containment box and behold remembers the offset, in your browser and (if the project directory is writable) in a `.behold/layout.json` sidecar next to it. That sidecar is the one file behold writes inside your project. It stores offsets rather than positions, so the graph underneath stays chant's, and `behold export` bakes it into the exported SVGs.

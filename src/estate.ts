@@ -24,7 +24,7 @@ import { statSync } from "node:fs";
 import { readConcurrency } from "./read-scheduler.ts";
 import { join, resolve, sep } from "node:path";
 import { composeStacks, shortStackNames, type GraphIR } from "@intentius/pinhole";
-import { meetsFloor, resolveChant, type GraphOptions } from "./chant.ts";
+import { meetsFloor, memberTakesTraffic, resolveChant, type GraphOptions } from "./chant.ts";
 import { chantVia, memberIr, type MemberVia } from "./member-ir.ts";
 import { overlayIr } from "./overlay-ir.ts";
 import { memberKindOf, memberKindSpec, type MemberKind } from "./member-kind.ts";
@@ -100,7 +100,17 @@ export function estateMembers(projectDirs: readonly string[]): { name: string; d
 const memberViaFor = (dir: string): MemberVia => memberKindSpec(memberKindOf(dir) ?? "chant")?.via ?? chantVia;
 
 /** A member's source IR: cached (#307), read by the member's own kind. */
-const memberSource = (dir: string, opts: GraphOptions): Promise<GraphIR> => memberIr(dir, opts, memberViaFor(dir));
+/** #402: `--traffic` reaches only a member whose own read takes it. An older
+ * chant rejects the flag outright, and a choudoufu member's read is not
+ * chant's (src/behaviour-delta.ts predicts that kind separately). Every member
+ * read below goes through this, so no caller has to remember to. */
+function forMember(dir: string, opts: GraphOptions): GraphOptions {
+  if (!opts.traffic || memberTakesTraffic(dir, memberKindOf(dir) ?? "chant")) return opts;
+  const { traffic: _traffic, ...rest } = opts;
+  return rest;
+}
+
+const memberSource = (dir: string, opts: GraphOptions): Promise<GraphIR> => memberIr(dir, forMember(dir, opts), memberViaFor(dir));
 
 /** A member's live read, by the member's own kind — served from the overlay
  * document the member was last read as when nothing behold knows about has
@@ -109,7 +119,7 @@ const memberSource = (dir: string, opts: GraphOptions): Promise<GraphIR> => memb
  * it bypasses the entry and replaces it. The invalidation rule, and the
  * exception it takes to src/member-ir.ts's "a live read is never cached", are
  * in src/overlay-ir.ts's header. */
-const memberLive = (dir: string, opts: GraphOptions, fresh: boolean): Promise<GraphIR> => overlayIr(dir, opts, memberViaFor(dir), fresh);
+const memberLive = (dir: string, opts: GraphOptions, fresh: boolean): Promise<GraphIR> => overlayIr(dir, forMember(dir, opts), memberViaFor(dir), fresh);
 
 /** Graph each project's source and compose them into one estate IR. */
 export async function composeEstate(projectDirs: string[], opts: GraphOptions = {}): Promise<GraphIR> {

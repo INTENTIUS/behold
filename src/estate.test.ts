@@ -309,6 +309,30 @@ describe("composeEstateOverlay — threading the joined namespace into the live 
     expect(est.joined).toEqual([]);
   });
 
+  it("sends --traffic to a member whose chant has the flag, on both reads (#402)", async () => {
+    const { controlPlane, appB } = fixtureEstate("0.75.0");
+    wire({ [controlPlane]: controlPlaneIr(kustomization("./x", "app-b")), [appB]: appBIr() });
+
+    await composeEstateOverlay([controlPlane, appB], { env: "local", traffic: "100 rps, p50" }, (ir) => ir);
+    const live = vi.mocked(graphIr).mock.calls.filter(([, o]) => (o as GraphOptions | undefined)?.live);
+    expect(live).toHaveLength(2);
+    for (const [, o] of live) expect(o as GraphOptions).toMatchObject({ traffic: "100 rps, p50" });
+
+    vi.mocked(graphIr).mockClear();
+    await composeEstate([controlPlane, appB], { traffic: "100 rps, p50" });
+    for (const [, o] of vi.mocked(graphIr).mock.calls) expect(o as GraphOptions).toMatchObject({ traffic: "100 rps, p50" });
+  });
+
+  it("sends no --traffic to a member whose chant predates it: an unknown flag is a hard error there (#402)", async () => {
+    const { controlPlane, appB } = fixtureEstate("0.74.9");
+    wire({ [controlPlane]: controlPlaneIr(kustomization("./x", "app-b")), [appB]: appBIr() });
+
+    await composeEstateOverlay([controlPlane, appB], { env: "local", traffic: "100 rps, p50" }, (ir) => ir);
+    await composeEstate([controlPlane, appB], { traffic: "100 rps, p50" });
+    expect(vi.mocked(graphIr).mock.calls.length).toBeGreaterThan(0);
+    for (const [, o] of vi.mocked(graphIr).mock.calls) expect(o as GraphOptions).not.toHaveProperty("traffic");
+  });
+
   it("asks for the bindings at detail 3 without touching the cluster — spec is the attributes tier, and reading live to decide where to read live is circular", async () => {
     const { controlPlane, appB } = fixtureEstate();
     wire({

@@ -172,6 +172,13 @@ describe("loadBeholdConfig", () => {
     return d;
   };
 
+  it("reads behaviour.traffic, trimmed, and drops anything that is not a level (#402)", () => {
+    expect(loadBeholdConfig(make(JSON.stringify({ behaviour: { traffic: " 100 rps, p50 " } })))).toEqual({ behaviour: { traffic: "100 rps, p50" } });
+    for (const bad of [{ behaviour: { traffic: "  " } }, { behaviour: { traffic: 100 } }, { behaviour: "100 rps" }, { behaviour: [] }]) {
+      expect(loadBeholdConfig(make(JSON.stringify(bad)))).toEqual({});
+    }
+  });
+
   it("reads the pinned schema — envVar + values", () => {
     const dir = make(
       JSON.stringify({ tiers: { envVar: "LOOM_TIER", values: ["light", "production", "production-ha"] } }),

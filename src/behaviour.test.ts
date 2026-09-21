@@ -7,6 +7,7 @@ import { createApp } from "./server.ts";
 import { Broadcaster } from "./events.ts";
 import { FrameBuffer } from "./frames.ts";
 import { OpRunner } from "./op-runner.ts";
+import type { PredictMemberDeps } from "./behaviour-delta.ts";
 import { attachBehaviour, validateBehaviourBlock, validateBehaviourMeta, type BehaviourBlock, type BehaviourMeta } from "./behaviour.ts";
 
 /**
@@ -81,11 +82,11 @@ const fakeChoudoufu = async (args: string[], cwd: string) => {
   return { code: 2, stderr: `unexpected ${verb}`, stdout: "" };
 };
 
-function served(reports: Record<string, string> = {}) {
-  const { mono, teamA } = estate(reports);
+function served(reports: Record<string, string> = {}, behaviour?: PredictMemberDeps, config?: unknown) {
+  const { mono, teamA } = estate(config === undefined ? reports : { ...reports, "mono/.behold.json": JSON.stringify(config) });
   const broadcaster = new Broadcaster();
   const app = createApp(
-    { projectDir: mono, projectDirs: [mono, teamA], port: 0, choudoufu: { run: fakeChoudoufu } },
+    { projectDir: mono, projectDirs: [mono, teamA], port: 0, choudoufu: { run: fakeChoudoufu }, ...(behaviour ? { behaviour } : {}) },
     broadcaster,
     new FrameBuffer(),
     new OpRunner({ projectDir: mono, broadcaster, onDone: () => {} }),
@@ -377,6 +378,23 @@ describe("the source priority (#398 item 3)", () => {
     expect(meta.sum).toEqual({ perHour: 0.0416, currency: "USD", priced: 1, unpriced: 1 });
   });
 
+  it("never reads the document for a member that was predicted and priced at nothing (#402)", () => {
+    // An estate of roles and log groups: the lexicon answered, with a meta and
+    // no block. A fixture's figures beside that zero would be two answers.
+    const looked: string[] = [];
+    const doc = JSON.stringify({ meta: { engine: "fixture", version: "0", at: { traffic: "t" } }, entities: { a: block(9) } });
+    const ir = irOf([{ id: "mono/a" }]);
+    const predicted = { ...members[0], meta: { engine: "e", version: "1", at: { traffic: "t" }, total: { perHour: 0, currency: "USD" } } };
+    const meta = attachBehaviour(ir, [predicted], "live", (p) => {
+      looked.push(p);
+      return doc;
+    });
+    expect(looked).toEqual([]);
+    expect(ir.nodes[0].attrs?._behaviour).toBeUndefined();
+    expect(meta.engine).toBe("e");
+    expect(meta.total).toEqual({ perHour: 0, currency: "USD" });
+  });
+
   it("names the environment in the file it looks for", () => {
     const looked: string[] = [];
     attachBehaviour(irOf([{ id: "mono/a" }]), [members[0]], "staging", (p) => {
@@ -455,5 +473,99 @@ describe("the validator (#398 item 1)", () => {
     const v = validateBehaviourMeta({ refusal: { reason: "unreachable" } });
     expect(v.ok).toBe(false);
     expect(!v.ok && v.reason).toContain("refusal.remedy missing");
+  });
+});
+
+describe("live versus declared on the routes (#402)", () => {
+  const TRAFFIC = "100 rps, p50";
+  const figure = (perHour: number) => ({ ...block(perHour), at: { traffic: TRAFFIC } });
+  const levelMeta = (total: number) => ({ engine: "behold-fixture", version: "0", at: { traffic: TRAFFIC }, total: { perHour: total, currency: "USD" } });
+
+  /** chant, as a written report: the file prices two of the monolith's
+   * entities, and the account holds one of them. team-a prices nothing. */
+  const asked: { project: string; live: boolean; traffic?: string }[] = [];
+  const predictor: PredictMemberDeps = {
+    readerState: () => ({ lexicon: { pkg: "l", version: "0.76.0" }, parser: { pkg: "p", version: "0.21.0" }, from: "test" }) as never,
+    read: async (project, opts) => {
+      asked.push({ project, live: opts.live === true, traffic: opts.traffic });
+      const mono = !readFileSync(join(project, "chant.config.ts"), "utf8").includes('"team-a"');
+      const held = ["aws_iam_role.team_a", ...(opts.live ? [] : ["aws_iam_policy.team_a"])];
+      const nodes = mono ? held.map((address) => ({ id: `mono/${address}`, kind: "Terraform::Resource", lexicon: "terraform", attrs: { _behaviour: figure(0.01) } })) : [];
+      return { nodes, edges: [], groups: {}, meta: { _behaviour: levelMeta(nodes.length * 0.01) } } as never;
+    },
+  };
+  const get = async (app: { request: (p: string) => Promise<Response> | Response }, path: string) => (await (await app.request(path)).json()) as OverlayBody & { meta: { behaviour?: Record<string, unknown> } };
+
+  it("carries both figures and the delta when the request names a level", async () => {
+    asked.length = 0;
+    const body = await get(served({}, predictor).app, `/api/overlay?env=live&traffic=${encodeURIComponent(TRAFFIC)}`);
+    const b = body.meta.behaviour as Record<string, unknown>;
+    expect(b.live).toEqual({ perHour: 0.01, currency: "USD", basis: "sum" });
+    expect(b.declared).toEqual({ perHour: 0.02, currency: "USD", basis: "sum" });
+    expect(b.delta).toEqual({ perHour: -0.01, currency: "USD" });
+    expect((b.members as Record<string, unknown>).mono).toEqual({
+      live: { perHour: 0.01, currency: "USD", basis: "total" },
+      declared: { perHour: 0.02, currency: "USD", basis: "total" },
+      delta: { perHour: -0.01, currency: "USD" },
+    });
+    // The entity the account no longer holds: declared, and not live.
+    const gone = body.ir.nodes.find((n) => n.id === "mono/aws_iam_policy.team_a")!;
+    expect(gone.attrs?._behaviour).toBeUndefined();
+    expect(gone.attrs?._behaviourDeclared).toBeDefined();
+    // Two reads a member, one of each estate, every one at the level asked.
+    expect(asked.filter((a) => a.live)).toHaveLength(2);
+    expect(asked.filter((a) => !a.live)).toHaveLength(2);
+    expect(new Set(asked.map((a) => a.traffic))).toEqual(new Set([TRAFFIC]));
+  });
+
+  it("takes the level from .behold.json, and the request's over it", async () => {
+    asked.length = 0;
+    const { app } = served({}, predictor, { members: [{ dir: ".", kind: "choudoufu" }], behaviour: { traffic: TRAFFIC } });
+    expect(((await get(app, "/api/overlay?env=live")).meta.behaviour as { delta?: unknown }).delta).toEqual({ perHour: -0.01, currency: "USD" });
+    await get(app, "/api/overlay?env=live&traffic=9%20rps");
+    expect(asked.some((a) => a.traffic === "9 rps")).toBe(true);
+  });
+
+  it("asks for nothing with no level anywhere, and the fixture documents still read as before", async () => {
+    asked.length = 0;
+    const body = await get(served({ "mono/behaviour.live.json": raw("behaviour-report-choudoufu-monolith.json") }, predictor).app, "/api/overlay?env=live");
+    expect(asked).toEqual([]);
+    const b = body.meta.behaviour as Record<string, unknown>;
+    expect(b.live).toBeUndefined();
+    expect(b.declared).toBeUndefined();
+    expect(b.delta).toBeUndefined();
+    expect(b.engine).toBe("behold-fixture");
+  });
+
+  it("reads no fixture document once a level is given, even for a member whose prediction failed", async () => {
+    // team-a's prediction fails, so it has no meta and no block: exactly the
+    // member the document fallback would otherwise answer for, with a
+    // fixture's figures standing where the account's should be.
+    const failing: PredictMemberDeps = {
+      ...predictor,
+      read: async (project, opts) => {
+        if (readFileSync(join(project, "chant.config.ts"), "utf8").includes('"team-a"')) throw new Error("Chant read exceeded 180000ms");
+        return predictor.read(project, opts);
+      },
+    };
+    const doc = JSON.stringify({ meta: levelMeta(9), entities: { "aws_iam_role.team_a": figure(9) } });
+    const level = await get(served({ "team-a/behaviour.live.json": doc }, failing).app, `/api/overlay?env=live&traffic=${encodeURIComponent(TRAFFIC)}`);
+    expect(level.ir.nodes.filter((n) => n.id.startsWith("team-a/") && n.attrs?._behaviour)).toEqual([]);
+    expect((level.meta.behaviour as { diagnostics: string[] }).diagnostics.join()).toContain("team-a: live prediction unavailable: Chant read exceeded 180000ms");
+    // The same estate with no level: the document is read, as it always was.
+    const none = await get(served({ "team-a/behaviour.live.json": doc }, failing).app, "/api/overlay?env=live");
+    expect(none.ir.nodes.filter((n) => n.id.startsWith("team-a/") && n.attrs?._behaviour).map((n) => n.id)).toEqual(["team-a/aws_iam_role.team_a"]);
+  });
+
+  it("paints the declared side on the source graph, with no live half", async () => {
+    asked.length = 0;
+    const body = await get(served({}, predictor).app, `/api/graph?traffic=${encodeURIComponent(TRAFFIC)}`);
+    const b = body.meta.behaviour as Record<string, unknown>;
+    expect(b.declared).toEqual({ perHour: 0.02, currency: "USD", basis: "sum" });
+    expect(b.live).toBeUndefined();
+    expect(b.delta).toBeUndefined();
+    expect(body.ir.nodes.filter((n) => n.attrs?._behaviour).map((n) => n.id).sort()).toEqual(["mono/aws_iam_policy.team_a", "mono/aws_iam_role.team_a"]);
+    expect(asked.every((a) => !a.live)).toBe(true);
+    expect((await get(served({}, predictor).app, "/api/graph")).meta.behaviour).toBeUndefined();
   });
 });

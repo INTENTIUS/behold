@@ -111,6 +111,20 @@ export interface GraphOptions {
    * outright ("Unknown flag", chant#1127), which is why that join gates on the
    * member's own resolved chant version rather than sending it hopefully. */
   namespace?: string;
+  /** The traffic level to predict at (#402) — chant's `--traffic "<level>"`,
+   * verbatim. With it chant asks the project's predicting lexicon about the
+   * estate this read is of: the file on a source read, the account under
+   * `live`. Resolved by `trafficFor` (src/behaviour-delta.ts) from `?traffic=`
+   * or `.behold.json`; absent means no prediction is asked for. Only ever set
+   * for a member whose chant has the flag (0.75.0, chant#2377): an older chant
+   * rejects an unknown flag outright (chant#1127). */
+  traffic?: string;
+  /** Extra environment for this read's chant spawn (#402): what a choudoufu
+   * member's own spawns are given (`choudoufuSpawnEnv`, the demo's emulator
+   * endpoint and dummy credentials), for the one chant read that has the
+   * lexicon run choudoufu on behold's behalf. Below the lens overrides, so a
+   * picked `?target=` still wins. */
+  spawnEnv?: Record<string, string>;
 }
 
 /** Env overrides for the tier/target lenses (M2, #54): `tier`/`target` above are
@@ -124,7 +138,7 @@ export interface GraphOptions {
  * set, so callers can skip the spawn's `env` override entirely (equivalent to
  * inheriting `process.env` as-is). Pure; exported for testing. */
 export function envOverridesFor(opts: GraphOptions): Record<string, string> | undefined {
-  const overrides: Record<string, string> = {};
+  const overrides: Record<string, string> = { ...(opts.spawnEnv ?? {}) };
   if (opts.tier && opts.tierEnvVar) overrides[opts.tierEnvVar] = opts.tier;
   if (opts.substrateTargets?.length) {
     // Each substrate gets its own endpoint, or all of them get the chosen one:
@@ -135,6 +149,21 @@ export function envOverridesFor(opts: GraphOptions): Record<string, string> | un
     overrides.AWS_ENDPOINT_URL = opts.target;
   }
   return Object.keys(overrides).length ? overrides : undefined;
+}
+
+/** The first chant whose `graph` takes `--traffic` (chant#2377). An older one
+ * rejects an unknown flag outright (chant#1127), so the flag is never sent
+ * hopefully. */
+export const TRAFFIC_FLOOR = "0.75.0";
+
+/** Does this member's own read take `--traffic` (#402)? A chant member does
+ * when its own chant has the flag; a terraform member is read by behold's
+ * chant, which does. A choudoufu member's read is not chant's at all
+ * (src/behaviour-delta.ts predicts that kind through a reader project). */
+export function memberTakesTraffic(dir: string, kind: "chant" | "choudoufu" | "terraform"): boolean {
+  if (kind === "terraform") return true;
+  if (kind !== "chant") return false;
+  return meetsFloor(resolveChant(dir).version, TRAFFIC_FLOOR);
 }
 
 /** Build chant flags for a set of graph options. Pure; exported for testing. */
@@ -150,6 +179,7 @@ export function graphFlags(opts: GraphOptions): string[] {
   // #221 / chant#1629 — only meaningful alongside `--live` (it scopes the
   // read, not the build), and only ever set by the estate namespace join.
   if (opts.namespace) flags.push("--namespace", opts.namespace);
+  if (opts.traffic) flags.push("--traffic", opts.traffic);
   return flags;
 }
 

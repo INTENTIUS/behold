@@ -170,6 +170,14 @@ describe("the scratch project (#384)", () => {
     // A root that IS the served directory is the symlink itself, not `<link>/.`.
     expect(terraformScratchConfig({ roots: [{ name: "prod", dir: "." }], skipped: [] }, ESTATE_LINK)).toContain(`"prod": { dir: "${ESTATE_LINK}" }`);
   });
+
+  it("names choudoufu as the binary for the predictor's project and for no other, in a directory of its own (#402)", () => {
+    const scan = { roots: [{ name: "prod", dir: "." }], skipped: [] };
+    expect(terraformScratchConfig(scan, ESTATE_LINK, "chdf")).toContain('binary: "choudoufu"');
+    expect(terraformScratchConfig(scan, ESTATE_LINK)).not.toContain("binary");
+    expect(terraformScratchDir(ESTATE, undefined, "chdf")).not.toBe(terraformScratchDir(ESTATE));
+    expect(terraformScratchDir(ESTATE, undefined, "chdf")).toMatch(/behold-chdf-[0-9a-f]{12}$/);
+  });
 });
 
 describe("the reader behold does not install (#384)", () => {
