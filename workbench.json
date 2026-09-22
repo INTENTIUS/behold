@@ -166,6 +166,26 @@
       }
     },
     {
+      "name": "terralith-14",
+      "description": "The same terralith at scale 14 — 1041 resources at this generator, 868 of them identity (roles and the untaggable policies and attachments that hang off them) — applied by choudoufu against a scratch floci and served with --env live. The ~1k estate #457's dot view is measured and recorded against; `scripts/dot-bench/record-carve.sh` carves it. Several minutes cold, nearly all of it the apply. Docker + choudoufu + go. scripts/down.sh in the target removes the container.",
+      "source": "local",
+      "requires": [
+        "docker",
+        "choudoufu",
+        "go"
+      ],
+      "setup": "bash \"$BEHOLD_WORKBENCH_DIR/workbench/terralith-14/up.sh\"",
+      "serve": {
+        "env": "live",
+        "spawnEnv": {
+          "AWS_ENDPOINT_URL": "http://127.0.0.1:4658",
+          "AWS_ACCESS_KEY_ID": "test",
+          "AWS_SECRET_ACCESS_KEY": "test",
+          "AWS_REGION": "us-east-1"
+        }
+      }
+    },
+    {
       "name": "terralith-4-adopt",
       "description": "The terralith at scale 4 again, but applied by STOCK terraform first — the generator's versions.tf has no live block, which is the point — so nothing wears a marker tag and there is no record store. The sidecar and `choudoufu init` come after, over the state terraform wrote, and behold serves 301 cards none of which this estate owns: 85 UNOWNED, 84 bound by derived identity alone (the name the configuration states, not a marker), 132 neutral — waiting on discovery or an unavailable parent. One `choudoufu live-import -state=terraform.tfstate -estate=behold-terralith-4-adopt -approve`, run by hand in the target — the up script prints it with the endpoint — stamps 137 of them and records all 301 identities; reload and all 301 are green. behold never runs that write. About 115s cold plus 23s for the import. Docker + choudoufu + go + terraform. scripts/down.sh in the target removes the container.",
       "source": "local",

@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>carve replay</title>
+  <style>
+    html, body { margin: 0; height: 100%; font: 12px/1.4 ui-sans-serif, system-ui, sans-serif; background: #fbfbfa; color: #222; }
+    #bar { position: absolute; left: 0; right: 0; bottom: 0; height: 44px; display: flex; gap: 10px; align-items: center; padding: 0 12px; background: #fff; border-top: 1px solid #ddd; }
+    #scrub { flex: 1; }
+    #legend { position: absolute; top: 8px; right: 8px; background: #fff; border: 1px solid #ddd; padding: 6px 8px; }
+    #legend div { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+    #legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    #tip { position: absolute; pointer-events: none; background: #222; color: #fff; padding: 3px 6px; border-radius: 3px; display: none; white-space: nowrap; }
+    #host { position: absolute; left: 0; top: 0; right: 0; bottom: 44px; overflow: hidden; }
+  </style>
+</head>
+<body>
+  <div id="host"></div>
+  <div id="legend"></div>
+  <div id="tip"></div>
+  <div id="bar">
+    <button id="play">play</button>
+    <input id="scrub" type="range" min="0" value="0">
+    <span id="clock"></span>
+  </div>
+  <script type="module" src="./replay.js"></script>
+</body>
+</html>
