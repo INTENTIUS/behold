@@ -27,6 +27,7 @@ import { listRecents, addRecent } from "./recents.ts";
 import type { GraphIR, IRNode } from "@intentius/chant";
 import {
   graphIr,
+  memberTakesTraffic,
   clusterRootGraphIr,
   componentGraphIr,
   componentStatus,
@@ -136,6 +137,7 @@ import { sourceCommits, openRollbackBranches } from "./history.ts";
 import { composeEstate, composeEstateOverlay, composeEstatePending, estateNamespaceScopes, estateMembers, withoutJoinedMembers } from "./estate.ts";
 import { statusVocabulary } from "./status-vocabulary.ts";
 import { attachBehaviour, type BehaviourMember } from "./behaviour.ts";
+import { attachBehaviourDelta, attachDeclaredBehaviour, paintLive, predictMember, trafficFor, type DeltaMember, type PredictMemberDeps } from "./behaviour-delta.ts";
 import { addEstateMemberEdges } from "./estate-edges.ts";
 import { addChoudoufuReferenceEdges, liveCheckToIr, readLiveCheck, setChoudoufuRunner, setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
 import { choudoufuDiffNodes, paintPlanDrift, readChoudoufuLive, type Runner as ChoudoufuRunner } from "./choudoufu-live.ts";
@@ -238,6 +240,10 @@ export interface ServerOptions {
      * recorded lexicon IR; absent, a fake choudoufu means no lexicon spawn. */
     lexicon?: LexiconRead;
   };
+  /** #402: how a member is predicted — the chant read, and the probe for the
+   * optional lexicon. `graphIr` and the real probe outside a test; a route
+   * test answers both halves from written reports with no chant to spawn. */
+  behaviour?: PredictMemberDeps;
   port: number;
 }
 
@@ -928,6 +934,7 @@ export function createApp(
   // tier read.
   // `let`, not `const` (#195): a project switch re-reads the new project's
   // .behold.json — its tier axis is per-project state like everything else.
+  const predictDeps: PredictMemberDeps = cfg.behaviour ?? { read: graphIr };
   let beholdConfig = loadBeholdConfig(cfg.projectDir);
   let tierEnvVar = beholdConfig.tiers?.envVar;
   // The executor contract (#165, #61): which envs deploy through a forge, per
@@ -1861,7 +1868,7 @@ export function createApp(
         {
           method: "GET",
           path: "/api/overlay",
-          desc: "live drift overlay for ?env= — same shape/params as /api/graph, plus runtime=1; each priced entity carries attrs._behaviour (cost/headroom/errorRate/resilience/rightSize/provenance, #398) and meta.behaviour holds the engine, its sums, a refusal or an absent line",
+          desc: "live drift overlay for ?env= — same shape/params as /api/graph, plus runtime=1; each priced entity carries attrs._behaviour (cost/headroom/errorRate/resilience/rightSize/provenance, #398) and meta.behaviour holds the engine, its sums, a refusal or an absent line; with ?traffic= (or .behold.json behaviour.traffic) each member is predicted live and declared, and meta.behaviour adds live, declared and delta with attrs._behaviourDeclared per entity (#402)",
         },
         { method: "GET", path: "/api/layout", desc: "hand-layout sidecar (.behold/layout.json): ?lens=<key> → {lens, deltas, writable}; no lens → every lens" },
         { method: "POST", path: "/api/layout", desc: "store one lens's deltas: JSON body {lens, deltas: {<node id>: {dx,dy,dw,dh}}} (the only file behold writes in your project)" },
@@ -2373,6 +2380,23 @@ export function createApp(
       // hides what it references rather than changing it — so they read the
       // expanded IR and the collapse clause is added to them. See the same
       // move in /api/overlay's estate branch.
+      // #402: the declared prediction on the source graph, when a traffic
+      // level was given. The file is the only estate this route has, so there
+      // is no live half and no delta here; both are `/api/overlay`'s. Before
+      // the collapse, so the figure adds the estate's entities and not the one
+      // card a shut box leaves behind. Read through the member cache under the
+      // member's source stamp, so a reload that changed no file spawns nothing.
+      const srcTraffic = components ? undefined : trafficFor(new URL(c.req.url).searchParams, beholdConfig);
+      const srcBehaviour = srcTraffic
+        ? attachDeclaredBehaviour(
+            ir,
+            await Promise.all(
+              (multi ? estateMembers(cfg.projectDirs!) : [{ name: undefined, dir: cfg.projectDir, kind: memberKindOf(cfg.projectDir) ?? ("chant" as const) }]).map(
+                async (m) => ({ name: m.name, prediction: await predictMember(m, undefined, srcTraffic, predictDeps) }),
+              ),
+            ),
+          )
+        : undefined;
       const expanded = ir;
       if (multi && collapse) {
         const shut = collapseBoxes(ir);
@@ -2450,6 +2474,7 @@ export function createApp(
         meta: {
           projectDir: cfg.projectDir,
           env: metaEnv,
+          ...(srcBehaviour ? { behaviour: srcBehaviour } : {}),
           ...(srcNote ? { note: srcNote } : {}),
           // #393 item 7: the strip's form of the same note, when there is a
           // shorter true one. Absent means "the note fits" — the SPA shows
@@ -2866,7 +2891,12 @@ export function createApp(
             },
           });
         }
-        const est = await composeEstateOverlay(cfg.projectDirs, { ...tierTargetOpts(query), detail, env }, reclassifyOverlay, { fresh: planWanted });
+        // #402: the level both halves are predicted at, or none. The blocking
+        // read only: the progressive branch above answers before any live read
+        // has settled, and a figure about the account belongs with the picture
+        // of the account.
+        const traffic = trafficFor(new URL(c.req.url).searchParams, beholdConfig);
+        const est = await composeEstateOverlay(cfg.projectDirs, { ...tierTargetOpts(query), detail, env, ...(traffic ? { traffic } : {}) }, reclassifyOverlay, { fresh: planWanted });
         if (est.dropped.length === est.total) {
           return c.json({ error: `no project in the estate could be graphed — ${est.dropped.map((d) => `${d.name}: ${d.reason}`).join("; ")}` }, 500);
         }
@@ -2954,11 +2984,35 @@ export function createApp(
         // every edge/paint pass, so nothing downstream can invent a figure.
         // The overlay only: `/api/graph` is the source graph and a prediction
         // about a live account has no business on it (src/behaviour.ts).
-        const behaviour = attachBehaviour(
+        // #402: with a traffic level, each member is predicted on both sides.
+        // A choudoufu member's live side is painted first, so the pass below
+        // reads it through the channel it already prefers; the declared side
+        // and the delta go on after, over validated blocks.
+        const predicted = traffic
+          ? await Promise.all(
+              estateMembers(cfg.projectDirs).map(async (m) => ({ m, prediction: await predictMember(m, env, traffic, predictDeps, planWanted) })),
+            )
+          : [];
+        const paintNotes: string[] = [];
+        for (const { m, prediction } of predicted) {
+          if (prediction.live) est.memberMeta[m.name] = paintLive(ir, m.name, prediction.live, paintNotes);
+        }
+        // With a traffic level the report documents are not read at all: a
+        // member whose prediction failed says so in the diagnostics, and a
+        // fixture's figures standing in for it would read as the account's.
+        const attached = attachBehaviour(
           ir,
           estateMembers(cfg.projectDirs).map((m): BehaviourMember => ({ name: m.name, dir: m.dir, meta: est.memberMeta[m.name] })),
           env,
+          ...(traffic ? [(): undefined => undefined] : []),
         );
+        const behaviour = traffic
+          ? attachBehaviourDelta(
+              ir,
+              predicted.map(({ m, prediction }): DeltaMember => ({ name: m.name, liveMeta: est.memberMeta[m.name], prediction })),
+              paintNotes.length ? { ...attached, diagnostics: [...(attached.diagnostics ?? []), ...paintNotes] } : attached,
+            )
+          : attached;
         // #393 C: the same collapse lens and the same count badges the source
         // graph carries — one flag, both routes, or the palette command would
         // undo itself the moment an env was picked.
@@ -3031,7 +3085,18 @@ export function createApp(
       // single-project runtime view had the identical bug: `?runtime=1` alone
       // composed at chant's default detail 2, so a GitOps project's own
       // sourceRef/dependsOn edges never made it into the IR either.
-      const opts: GraphOptions = { ...query, live: true, overlay: true, env, ...(logical || runtime ? { detail: 3 } : {}) };
+      // #402: the single-project half of the traffic level — see the estate
+      // branch above.
+      const traffic = trafficFor(new URL(c.req.url).searchParams, beholdConfig);
+      const ownKind = memberKindOf(cfg.projectDir) ?? "chant";
+      const opts: GraphOptions = {
+        ...query,
+        live: true,
+        overlay: true,
+        env,
+        ...(logical || runtime ? { detail: 3 } : {}),
+        ...(traffic && memberTakesTraffic(cfg.projectDir, ownKind) ? { traffic } : {}),
+      };
       // Reclassify wiring/examples so they don't read as "pending" over a done
       // deploy (see reclassifyOverlay): Parameters take their deployed
       // component's status, src/examples/ nodes go neutral + `_byo`.
@@ -3165,7 +3230,13 @@ export function createApp(
       }
       // #398, the single-project half: one member, so an entity key in the
       // report document IS the node id — nothing to prefix.
-      const behaviour = attachBehaviour(ir, [{ dir: cfg.projectDir, meta: readMeta }], env);
+      const prediction = traffic ? await predictMember({ dir: cfg.projectDir, kind: ownKind }, env, traffic, predictDeps) : undefined;
+      const paintNotes: string[] = [];
+      const liveMeta = prediction?.live ? paintLive(ir, undefined, prediction.live, paintNotes) : readMeta;
+      const attached = attachBehaviour(ir, [{ dir: cfg.projectDir, meta: liveMeta }], env, ...(traffic ? [(): undefined => undefined] : []));
+      const behaviour = prediction
+        ? attachBehaviourDelta(ir, [{ liveMeta, prediction }], paintNotes.length ? { ...attached, diagnostics: [...(attached.diagnostics ?? []), ...paintNotes] } : attached)
+        : attached;
       // `boxes: "byContainer"` (#86) is a no-op unless attachRuntimeContainment
       // populated it above — same "harmless when absent" contract as byStack.
       const { svg } = renderGraph(ir, { boxes: "byContainer", radial: new URL(c.req.url).searchParams.get("radial") === "1" });

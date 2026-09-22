@@ -27,7 +27,8 @@
  *     Graph-level facts ride beside it on `meta._behaviour`.
  *  2. **`behaviour.<env>.json` at a member's root** — the same shapes as a
  *     document, `{ meta, entities: { <address>: block } }`. Read ONLY when no
- *     node in that member's slice carries `_behaviour`, and only on the
+ *     node in that member's slice carries `_behaviour` and the member's read
+ *     carried no `meta._behaviour` either (#402), and only on the
  *     overlay: `/api/graph` is the source graph and a prediction of a live
  *     account has no business on it. Entity keys are the member's own
  *     addresses, as a lexicon writes them; behold prefixes them with the
@@ -324,6 +325,11 @@ export function validateBehaviourReport(v: unknown): Validated<{ meta: Behaviour
 /** The report document a member's root may carry for an environment. One
  * name, derived from the env the overlay was asked for — so a `live` overlay
  * never reads a `staging` prediction. */
+/** The line for an estate where more than one member stated a total. Named
+ * because src/behaviour-delta.ts withdraws it, together with the total it is
+ * about, when it has every member's figure to add instead (#402). */
+export const FIRST_TOTAL_SHOWN = "two members stated an estate total; the first is shown";
+
 export const behaviourFileName = (env: string): string => `behaviour.${env}.json`;
 
 /** How a file is read. Injected so tests (and a future non-fs source) do not
@@ -437,9 +443,14 @@ export function attachBehaviour(
     const slice = sliceOf(ir.nodes, m.name);
     const inline = slice.filter((n) => n.attrs?.[BEHAVIOUR_ATTR] !== undefined);
 
-    if (inline.length > 0) {
+    if (inline.length > 0 || m.meta !== undefined) {
       // Source 1 wins outright: a member whose lexicon painted the nodes is
       // never second-guessed by a file someone left in its root.
+      //
+      // #402: nor is one whose read carried `meta._behaviour` and painted
+      // nothing. It was predicted, and the prediction priced none of its
+      // entities (an estate of roles and log groups). A fixture's figures
+      // beside a real engine's zero would be two answers to one question.
       sources.set(label, "attrs");
       for (const n of inline) {
         const v = validateBehaviourBlock(n.attrs![BEHAVIOUR_ATTR]);
@@ -552,7 +563,7 @@ export function attachBehaviour(
   const engineTotal = metas.map((m) => m.meta.total).find((t): t is BehaviourCost => !!t);
   if (engineTotal) {
     meta.total = engineTotal;
-    if (metas.filter((m) => m.meta.total).length > 1) diagnostics.push("two members stated an estate total; the first is shown");
+    if (metas.filter((m) => m.meta.total).length > 1) diagnostics.push(FIRST_TOTAL_SHOWN);
   } else {
     const sum = sumOver(ir.nodes, (cs) => diagnostics.push(`no estate sum: the figures are in ${cs.join(" and ")} and behold converts no currency`));
     if (sum) meta.sum = sum;

@@ -64,6 +64,11 @@ describe("graphFlags", () => {
     expect(graphFlags({})).toEqual([]);
   });
 
+  it("passes the traffic level verbatim, as one argument (#402)", () => {
+    expect(graphFlags({ traffic: "100 rps, p50" })).toEqual(["--traffic", "100 rps, p50"]);
+    expect(graphFlags({ traffic: "" })).toEqual([]);
+  });
+
   it("maps detail, lens, direction, env", () => {
     expect(graphFlags({ detail: 1, lens: "blast:vpc", down: true, env: "prod" })).toEqual([
       "--detail",
@@ -108,6 +113,16 @@ describe("graphFlags", () => {
 // src/project.ts `loadBeholdConfig`), so these tests thread it explicitly,
 // standing in for whatever a project's own `.behold.json` declares.
 describe("envOverridesFor", () => {
+  it("carries a read's own spawn env, under a picked target (#402)", () => {
+    expect(envOverridesFor({ spawnEnv: { AWS_ENDPOINT_URL: "http://emulator", AWS_REGION: "us-east-1" } })).toEqual({
+      AWS_ENDPOINT_URL: "http://emulator",
+      AWS_REGION: "us-east-1",
+    });
+    expect(envOverridesFor({ spawnEnv: { AWS_ENDPOINT_URL: "http://emulator" }, target: "http://picked" })).toEqual({
+      AWS_ENDPOINT_URL: "http://picked",
+    });
+  });
+
   it("is undefined for no tier/target — no spawn env override needed", () => {
     expect(envOverridesFor({})).toBeUndefined();
     expect(envOverridesFor({ env: "prod", live: true })).toBeUndefined();

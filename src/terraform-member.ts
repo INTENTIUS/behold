@@ -402,9 +402,9 @@ export function beholdNodeModules(from = beholdDir()): string | undefined {
  * runs), `behold-*` (src/scratch.ts, asserted here rather than at the write),
  * and never inside the estate — which is checked rather than assumed, because
  * that check is the whole write boundary this feature has to hold. */
-export function terraformScratchDir(estate: string, tmp = tmpdir()): string {
+export function terraformScratchDir(estate: string, tmp = tmpdir(), flavour: ScratchFlavour = "tf"): string {
   const target = resolve(estate);
-  const name = `${SCRATCH_PREFIX}tf-${createHash("sha1").update(target).digest("hex").slice(0, 12)}`;
+  const name = `${SCRATCH_PREFIX}${flavour}-${createHash("sha1").update(target).digest("hex").slice(0, 12)}`;
   assertScratch(name);
   // realpath first: on macOS `tmpdir()` is a symlink (/var → /private/var), and
   // an unresolved path makes the containment check below compare two different
@@ -422,10 +422,17 @@ export function terraformScratchDir(estate: string, tmp = tmpdir()): string {
   return dir;
 }
 
+/** Which generated project a scratch directory holds: the Terraform member's
+ * reader (`tf`, #384), or the choudoufu member's predictor (`chdf`, #402),
+ * whose config names `binary: "choudoufu"` so the lexicon reads the root live.
+ * Two names, so one directory served as each kind in turn never rewrites the
+ * other's config. */
+export type ScratchFlavour = "tf" | "chdf";
+
 /** The `chant.config.ts` a scan generates. Pure and deterministic: the same
  * estate and the same roots produce the same bytes, so a reload rewrites
  * nothing. Exported for testing. */
-export function terraformScratchConfig(scan: TerraformRootScan, estateLink: string): string {
+export function terraformScratchConfig(scan: TerraformRootScan, estateLink: string, flavour: ScratchFlavour = "tf"): string {
   const roots = [...scan.roots].sort((a, b) => (a.name < b.name ? -1 : 1));
   const entries = roots.map((r) => `      ${JSON.stringify(r.name)}: { dir: ${JSON.stringify(r.dir === "." ? estateLink : `${estateLink}/${r.dir}`)} },`);
   return [
@@ -439,6 +446,7 @@ export function terraformScratchConfig(scan: TerraformRootScan, estateLink: stri
     "export default {",
     '  lexicons: ["terraform"],',
     "  terraform: {",
+    ...(flavour === "chdf" ? ['    binary: "choudoufu",'] : []),
     "    roots: {",
     ...entries,
     "    },",
@@ -468,14 +476,14 @@ function relink(path: string, target: string): void {
  * The only writes this feature performs, all of them under the OS temp
  * directory: the config, and the two symlinks the header explains.
  */
-export function writeTerraformScratchProject(estate: string, scan: TerraformRootScan, tmp = tmpdir()): string {
+export function writeTerraformScratchProject(estate: string, scan: TerraformRootScan, tmp = tmpdir(), flavour: ScratchFlavour = "tf"): string {
   const target = resolve(estate);
-  const dir = terraformScratchDir(target, tmp);
+  const dir = terraformScratchDir(target, tmp, flavour);
   mkdirSync(dir, { recursive: true });
   relink(join(dir, ESTATE_LINK), target);
   const modules = beholdNodeModules();
   if (modules) relink(join(dir, "node_modules"), modules);
-  const config = terraformScratchConfig(scan, ESTATE_LINK);
+  const config = terraformScratchConfig(scan, ESTATE_LINK, flavour);
   const path = join(dir, "chant.config.ts");
   // Rewritten only when it changed: the file's mtime is what chant's own
   // caching and a watcher would key on, and a reload that changed nothing

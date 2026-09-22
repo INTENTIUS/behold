@@ -239,7 +239,8 @@ Two sources, in this order:
 1. `attrs._behaviour` on the nodes, as `chant graph --live --overlay` painted
    them, with `meta._behaviour` beside them for the graph-level half.
 2. `behaviour.<env>.json` at a member's root — `{meta, entities: {<address>:
-   block}}` — read **only** when no node of that member carries the attr, and
+   block}}` — read **only** when no node of that member carries the attr and
+   the member's read carried no `meta._behaviour` either (#402), and
    **only on the overlay** (`/api/graph` is the source graph; a prediction
    about a live account has no business on it). The file's keys are the
    member's own addresses; behold prefixes them to reach the composed id
@@ -260,6 +261,41 @@ refusal emits no entity block at all and strips any that had arrived. The drift
 overlay is untouched either way: nothing in this pass reads or writes
 `_status`. `?logical=1` projects a different picture and carries no behaviour
 block in M1.
+
+### Live versus declared (#402, M5)
+
+With a traffic level, `/api/overlay` predicts each member twice and carries
+both figures and their difference. The level is `?traffic=` on the request,
+else `.behold.json`'s `{"behaviour": {"traffic": "100 rps, p50"}}`, else none;
+with none nothing is asked for and the payload is exactly M1's. behold never
+defaults a level, because every figure is *at* one.
+
+`meta.behaviour` gains `live`, `declared` (each `{perHour, currency, basis}`,
+where `basis` is `total` for a figure the engine stated and `sum` for behold
+adding the engine's per-entity figures) and `delta` (`{perHour, currency}`,
+live minus declared), plus the same three per member under `members[<name>]`.
+A delta is only ever like with like: one currency, and two totals or two sums.
+Anything else yields no delta and a line in `diagnostics` saying why. A node
+also carries the file's block under `attrs._behaviourDeclared`, including a
+node the account no longer holds, which has no `_behaviour` at all.
+
+Who reads what is `src/behaviour-delta.ts`'s header. A chant member's live
+half is its own overlay read with `--traffic` added (sent only to a chant at
+0.75.0 or newer; an older one rejects the flag). A choudoufu member is not
+read by chant, so behold predicts it through a generated reader project with
+`binary: "choudoufu"` (the Terraform member's scratch project, under
+`behold-chdf-*`), which needs the optional terraform lexicon. A terraform
+member has no live half and so no delta.
+
+The declared half goes through `memberIr` and is cached under the member's
+source stamp plus the traffic level. The live half goes through `overlayIr`
+and is dropped by whatever drops the overlay. With a level set, the
+`behaviour.<env>.json` documents are not read at all: a fixture's figures
+beside a real prediction would be two answers to one question.
+
+`/api/graph?traffic=` (or the config default) paints the declared side alone
+as `attrs._behaviour` with `meta.behaviour.declared`. The file is the only
+estate that route has, so it carries no live half and no delta.
 
 ### Colour by drift, cost or headroom (#399, M2)
 

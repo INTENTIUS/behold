@@ -35,6 +35,7 @@ import {
   scaleEnds,
   totalsFor,
   totalsText,
+  deltaRows,
 } from "./behaviour-scale.js";
 import { addPanelTab, initPanel, setPanelTab, togglePanelCollapsed, isPanelCollapsed } from "./panel.js";
 // #254: the carve walkthrough's stepper — everything it DECIDES is a pure
@@ -727,6 +728,15 @@ function inspect(node) {
   // statement about this entity is legible — and where a figure without its
   // provenance would be visible as the contract violation it is.
   renderBehaviourSection(section, blockOf(node));
+  // #402: what the FILE says this entity costs, beside what the account does.
+  // On a card the account no longer holds this is the only behaviour row, and
+  // it says so rather than reading as the card's cost.
+  const declared = node.attrs && node.attrs._behaviourDeclared;
+  if (declared && declared.cost) {
+    const add = section("behaviour · declared");
+    add("cost", figureWithBadge(fmtCost(declared.cost.perHour, declared.cost.currency), [declared], behaviourMeta()));
+    if (!blockOf(node)) add("live", "no live figure — the prediction of the account does not include this entity");
+  }
 
   // Render diff (#146's deferred half): what `chant helm diff <digest> <env>
   // --live --json` said about this chart's PINNED render. Never rely on the
@@ -1742,6 +1752,35 @@ function renderBehaviourTotals(host) {
   // precedence in one place rather than at each call site.
   row(b.total ? "estate · engine total" : "estate", all, b.sum, b.total, b.total ? "the engine stated this estate total itself; behold added nothing" : "behold's sum over the engine's per-entity figures");
   if (mode === "headroom") host.appendChild(panelMuted("min and median computed by behold over the engine's per-entity figures — no engine states a headroom aggregate."));
+  if (mode === "cost") renderBehaviourDelta(host, b);
+}
+
+/**
+ * Live versus declared (#402): what the account costs as it stands, what the
+ * file says it should, and the difference. Present only when the overlay was
+ * asked for at a traffic level, because both figures are predictions *at* one.
+ * The wording of every row is `deltaRows`' (web/behaviour-scale.js).
+ */
+function renderBehaviourDelta(host, b) {
+  const rows = deltaRows(b);
+  if (!rows.length) return;
+  host.appendChild(panelHeading(`live versus declared${b.at ? ` · at ${b.at.traffic}` : ""}`));
+  for (const t of rows) {
+    const r = document.createElement("div");
+    r.className = "behaviour-total";
+    const name = document.createElement("div");
+    name.className = "grow";
+    name.style.fontWeight = "600";
+    name.textContent = t.label;
+    r.appendChild(name);
+    for (const [word, text] of [["live", t.live], ["declared", t.declared], ["delta", t.delta]]) {
+      const line = document.createElement("div");
+      line.textContent = `${word} ${text}`;
+      r.appendChild(line);
+    }
+    host.appendChild(r);
+  }
+  host.appendChild(panelMuted("delta is live minus declared. A negative one means the account holds less than the file declares."));
 }
 
 function renderPanelScope() {

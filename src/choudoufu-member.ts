@@ -469,6 +469,12 @@ export function setChoudoufuSpawnEnv(env: Record<string, string> | undefined): v
   spawnEnvOverride = env && Object.keys(env).length ? { ...env } : undefined;
 }
 
+/** The demo override alone, for a spawn that is not choudoufu's own but runs
+ * it (#402: the chant read that has the lexicon run `live-ls`). */
+export function choudoufuSpawnOverride(): Record<string, string> | undefined {
+  return spawnEnvOverride ? { ...spawnEnvOverride } : undefined;
+}
+
 /** The environment a choudoufu spawn gets: the process's, the demo override
  * on top, colour off. Exported for testing. */
 export function choudoufuSpawnEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
