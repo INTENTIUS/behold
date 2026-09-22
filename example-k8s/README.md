@@ -11,7 +11,7 @@ src/web.ts            WebApp composite → Deployment + Service + PodDisruptionB
 ops/k3d-apply.op.ts   ApplyOp "k3d-apply" — code → local k3d, server-side apply
 base/                 a plain Deployment + Service, core kinds only
 overlays/dev/         kustomize overlay over base/ — namePrefix "dev-" + a replica patch
-chant.config.ts       lexicons [k8s, temporal], k8s.profiles.local bound to k3d-behold-k3d-demo,
+chant.config.ts       lexicons [k8s], k8s.profiles.local bound to k3d-behold-k3d-demo,
                        k8s.kustomize.roots: ["overlays/dev"]
 scripts/local/        local-up.sh / local-down.sh — the k3d cluster's own lifecycle
 ```

@@ -4,8 +4,8 @@
   "type": "module",
   "private": true,
   "dependencies": {
-    "@intentius/chant": "^0.54.0",
-    "@intentius/chant-lexicon-aws": "^0.54.0",
-    "@intentius/chant-lexicon-github": "^0.54.0"
+    "@intentius/chant": "^0.77.0",
+    "@intentius/chant-lexicon-aws": "^0.77.0",
+    "@intentius/chant-lexicon-github": "^0.77.0"
   }
 }

@@ -1,7 +1,7 @@
 import type { TemporalChantConfig } from "@intentius/chant-lexicon-temporal";
 
 export default {
-  lexicons: ["aws", "temporal"],
+  lexicons: ["aws"],
   sourceDir: "src",
   environments: ["prod"],
   ownership: { stack: "behold-writes", env: "prod" },

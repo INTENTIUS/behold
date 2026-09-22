@@ -1,4 +1,5 @@
-import { Op, phase, build, awsApply, httpCheck } from "@intentius/chant-lexicon-temporal";
+import { Op, phase, build, httpCheck } from "@intentius/chant/op";
+import { awsApply } from "@intentius/chant-lexicon-aws";
 
 // Deploy the S3 bucket to the local Floci emulator via the CloudFormation API
 // (awsApply — direct create-or-update + poll, no aws CLI, honours the endpoint).
@@ -8,7 +9,6 @@ import { Op, phase, build, awsApply, httpCheck } from "@intentius/chant-lexicon-
 export default Op({
   name: "floci-apply",
   overview: "S3 bucket → local Floci (CloudFormation API), no cloud account",
-  taskQueue: "behold-local",
   phases: [
     phase("Build", [build(".", { script: "build" })]),
     // Stack name = the env ("prod"), so `serve --local --env prod`'s overlay —

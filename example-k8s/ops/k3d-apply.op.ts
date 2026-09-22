@@ -1,4 +1,4 @@
-import { ApplyOp } from "@intentius/chant-lexicon-temporal";
+import { ApplyOp } from "@intentius/chant/op";
 
 // code → local k3d (chant#704), no cloud account. scripts/local/local-up.sh
 // (run by `npm run demo:k8s` before behold starts serving) brings the cluster

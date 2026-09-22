@@ -10,7 +10,7 @@ src/bucket.ts        one S3 Bucket + a TLS-only policy (the whole "infra")
 ops/apply.op.ts      ApplyOp "prod-apply" — code → real AWS (aws cloudformation deploy)
 ops/floci.op.ts      Op "floci-apply" — code → local Floci (CloudFormation API), no account
 ops/reconcile.op.ts  ReconcileOp "prod-reconcile" — cloud → code PR (the Adopt button)
-chant.config.ts      lexicons [aws, temporal], environments [prod]
+chant.config.ts      lexicons [aws], environments [prod]
 ```
 
 The **Sync** button appears because a project declares an `ApplyOp`. A project with

@@ -1,4 +1,4 @@
-import { ApplyOp } from "@intentius/chant-lexicon-temporal";
+import { ApplyOp } from "@intentius/chant/op";
 
 // code → cloud. Additive apply (no gate) runs one-shot on the local executor —
 // behold's Sync button shells `chant run prod-apply`. Target cloudformation;
