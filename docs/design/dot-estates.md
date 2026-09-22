@@ -17,7 +17,7 @@ it replays is committed beside the scripts.
 
 | Question | Answer |
 |---|---|
-| 1. Renderer | Canvas 2D, no library: 0.2 ms a frame at 1k, and 1.0 ms with the CPU slowed 4x. SVG breaks first, and today's whole-SVG swap drops frames at 1k on a slow CPU. Hand-written WebGL is the step past about 20k. |
+| 1. Renderer | Canvas 2D, no library: 0.3 ms a frame at 1k, and 1.1 ms with the CPU slowed 4x. SVG breaks first, and today's whole-SVG swap drops frames at 1k on a slow CPU. Hand-written WebGL is the step past about 20k. |
 | 2. Layout | A dot's position is a function of its address, never its owner. Resources cluster by unit (a team, a service, the zone), untaggable children ring their parent, and a moving dot recolours in place, so it never takes a new slot. |
 | 3. The card graph | The dots are a new zoom stop above `resources`, and they share node ids with the cards, so a click opens the same inspect pane. The replay is a lens on that surface, with its own scrubber. |
 | 4. Recording | JSON Lines: a header, a roster from `live-check -json`, owner keyframes from `live-ls`, and one line per `live-mv -json`. Scrubbing starts from the nearest keyframe. It stays apart from `run-playhead`. |
@@ -43,43 +43,45 @@ The machine is an Apple M5 Pro, with Chrome 153 on ANGLE over Metal, at 1600x100
 
 | renderer | 300 | 1k | 5k | 10k | frames dropped at 5k / 10k |
 |---|---|---|---|---|---|
-| svg-replace (behold's frame path today) | 0.8 / 1.0 | 2.2 / 3.1 | 9.6 / 14.6 | 19.3 / 36.3 | 5 / 40 |
-| svg-mutate | 0.7 / 0.8 | 1.8 / 2.2 | 7.9 / 10.4 | 15.8 / 34.0 | 1 / 24 |
-| canvas2d | 0.1 / 0.2 | 0.2 / 0.4 | 0.8 / 1.0 | 1.5 / 1.8 | 0 / 0 |
-| webgl-raw | 0.1 / 0.2 | 0.1 / 0.2 | 0.4 / 0.6 | 0.1 / 2.4 | 0 / 1 |
-| regl | 0.1 / 0.2 | 0.1 / 0.2 | 0.4 / 0.6 | 0.1 / 2.4 | 0 / 1 |
-| pixi | 0.1 / 0.3 | 0.3 / 0.5 | 1.4 / 2.3 | 2.7 / 3.3 | 0 / 0 |
+| svg-replace (behold's frame path today) | 0.9 / 1.2 | 2.6 / 3.7 | 11.3 / 17.6 | 22.9 / 34.2 | 8 / 56 |
+| svg-mutate | 0.7 / 0.8 | 2.1 / 2.4 | 9.4 / 12.5 | 17.7 / 35.8 | 6 / 43 |
+| canvas2d | 0.2 / 0.3 | 0.3 / 0.5 | 0.9 / 1.2 | 1.6 / 1.9 | 0 / 0 |
+| webgl-raw | 0.1 / 0.2 | 0.2 / 0.3 | 0.4 / 0.7 | 0.2 / 2.4 | 0 / 1 |
+| regl | 0.1 / 0.2 | 0.2 / 0.3 | 0.5 / 0.7 | 0.2 / 2.4 | 0 / 1 |
+| pixi | 0.1 / 0.3 | 0.4 / 0.7 | 1.8 / 2.5 | 3.4 / 3.9 | 0 / 0 |
 
 **CPU slowed 4x:**
 
 | renderer | 300 | 1k | 5k | 10k | frames dropped at 1k / 5k / 10k |
 |---|---|---|---|---|---|
-| svg-replace | 3.3 / 4.3 | 8.5 / 13.4 | 41.5 / 61.7 | 78.5 / 111.7 | 3 / 237 / 240 |
-| svg-mutate | 2.7 / 3.2 | 7.2 / 8.6 | 32.6 / 51.1 | 66.9 / 87.9 | 0 / 219 / 240 |
-| canvas2d | 0.5 / 1.1 | 1.0 / 1.6 | 3.4 / 4.1 | 6.5 / 7.2 | 0 / 0 / 0 |
-| webgl-raw | 0.3 / 1.1 | 0.7 / 1.2 | 1.7 / 2.5 | 3.0 / 3.8 | 0 / 0 / 0 |
-| regl | 0.5 / 1.1 | 0.7 / 1.3 | 1.8 / 2.5 | 3.0 / 3.9 | 0 / 0 / 0 |
-| pixi | 1.0 / 1.7 | 1.5 / 2.6 | 5.4 / 8.1 | 9.0 / 13.4 | 0 / 0 / 1 |
+| svg-replace | 3.9 / 4.9 | 9.8 / 13.9 | 41.8 / 59.1 | 79.3 / 118.4 | 5 / 239 / 240 |
+| svg-mutate | 3.1 / 3.6 | 8.1 / 9.5 | 32.6 / 50.9 | 67.4 / 87.1 | 1 / 222 / 240 |
+| canvas2d | 0.8 / 1.3 | 1.1 / 1.7 | 3.5 / 4.3 | 6.5 / 7.2 | 0 / 0 / 0 |
+| webgl-raw | 0.5 / 1.1 | 0.8 / 1.5 | 1.7 / 2.5 | 3.0 / 3.8 | 0 / 0 / 0 |
+| regl | 0.6 / 1.2 | 0.9 / 1.5 | 1.8 / 2.5 | 3.0 / 3.8 | 0 / 0 / 0 |
+| pixi | 1.4 / 2.0 | 1.9 / 2.8 | 5.7 / 8.0 | 9.3 / 13.9 | 0 / 0 / 0 |
 
 **Past 10k**, for the two renderers still inside the budget:
 
 | renderer | 20k | 40k | 20k, CPU 4x | 40k, CPU 4x |
 |---|---|---|---|---|
-| canvas2d | 3.0 / 3.5 | 6.2 / 7.3 | 11.8 / 13.4 (1 dropped) | 23.4 / 27.4 (19 dropped) |
-| webgl-raw | 0.2 / 2.5 | 2.7 / 4.3 | 5.6 / 7.0 | 10.9 / 15.0 (4 dropped) |
+| canvas2d | 3.2 / 3.9 | 5.8 / 6.7 | 11.9 / 13.4 | 22.9 / 26.7 (16 dropped) |
+| webgl-raw | 0.3 / 2.5 | 2.8 / 4.4 | 5.7 / 7.4 | 11.1 / 15.1 (4 dropped) |
 
 **Hit testing.** SVG uses the browser's `elementFromPoint`. The others share one uniform grid over the dot centres (`scripts/dot-bench/grid.js`), because the DOM cannot see into a canvas.
 
 | | 1k | 10k | 10k, CPU 4x |
 |---|---|---|---|
-| SVG `elementFromPoint`, µs per query | 5 | 40 | 170 to 180 |
-| grid index, µs per query | 0.6 to 0.9 | 0.7 to 0.9 | 2.6 to 3.0 |
+| SVG `elementFromPoint`, µs per query | 6 | 48 to 56 | 169 to 176 |
+| grid index, µs per query | 0.7 to 0.8 | 0.8 to 0.9 | 2.4 to 3.4 |
 
 Both are fast enough for a pointer. The grid is a few dozen lines, and it is a cost any non-SVG choice pays once.
 
-**First paint at 1k** is 3 to 14 ms for everything except PixiJS, at 29 ms (99 ms at 4x). Most of that is the library starting up.
+The bench also records how often a query returns the dot its point was sampled from. That is 1.0 everywhere except under `travel`, where it sits near 0.97 for the browser's own hit testing and for the grid alike, because a dot in transit overlaps another dot's slot. Overlapping dots explain it, and every renderer shows the same rate.
 
-**The libraries**, measured from the published packages (`npm pack`, the single-file browser build of each, gzip -9):
+**First paint at 1k** is 3 to 14 ms for everything except PixiJS, at 36 ms (102 ms at 4x). Most of that is the library starting up.
+
+**The libraries.** regl and PixiJS are in the tables above. sigma and deck.gl were judged on what the issue asks for, size, licence and fit, and were not benchmarked: both bring a model behold already holds in its IR, so adopting either means taking on its graph or its map as well as its painter. Sizes are from the published packages (`npm pack`, the single-file browser build of each, gzip -9):
 
 | candidate | version | licence | single-file build | min | gzip | fit with `web/` |
 |---|---|---|---|---|---|---|
@@ -90,7 +92,7 @@ Both are fast enough for a pointer. The grid is a few dozen lines, and it is a c
 
 behold's `web/` has no third-party runtime module today: every file is behold's own and is served as it sits.
 
-**Canvas 2D, written in `web/` with no library, is the choice.** At 1k it costs 0.2 ms a frame, and 1.0 ms with the CPU slowed 4x, with nothing to vendor. It is still inside a frame at 10k slowed 4x (6.5 ms p50). It is also the only candidate whose hit testing, text and image export are the plain browser APIs behold already uses.
+**Canvas 2D, written in `web/` with no library, is the choice.** At 1k it costs 0.3 ms a frame, and 1.1 ms with the CPU slowed 4x, with nothing to vendor. It is still inside a frame at 10k slowed 4x (6.5 ms p50). It is also the only candidate whose hit testing, text and image export are the plain browser APIs behold already uses.
 
 **SVG is what breaks first,** and behold's current path, replacing the whole element each frame, breaks first of all. At 1k on a slowed CPU it already spends half a frame and drops frames. At 5k it drops nearly all of them. Mutating attributes in place helps with recolouring but not with motion.
 
@@ -145,11 +147,11 @@ At the start all 1041 dots belong to one estate. Halfway, the profiles and
 policies have moved and the roles have not. At the end there are eight estates,
 and the shared layer and the 14 refused services are still grey.
 
-![The replay at move 0](img/dot-estates-replay-start.png)
+![Move 0 of the recording](img/dot-estates-replay-start.png)
 
-![The replay at move 232](img/dot-estates-replay-half.png)
+![The same view at move 232](img/dot-estates-replay-half.png)
 
-![The replay at move 463](img/dot-estates-replay-end.png)
+![Where it ends, at move 463](img/dot-estates-replay-end.png)
 
 The halfway frame shows a limit of the recorder rather than of the layout. Moves
 ran in address order, so every instance profile and managed policy moved before
@@ -180,6 +182,8 @@ recording is a finished file, not a live read, so the lens swaps the live
 owner colours for the scrubber's, and swaps the live refresh for play and pause.
 The lens never reads the account. The join from a recording to the live
 graph is by address, which is also the key the recording uses.
+
+**Painting moves to the client, and that is the real cost of this choice.** behold paints on the server today: `/api/graph` answers with `{ir, svg, meta}`, `src/render.ts` draws that SVG through pinhole, and the SPA installs it. The hand-layout sidecar even patches the returned SVG (`applyLayoutToSvg`). A canvas surface is drawn in the browser from the IR, so for the `dots` stop there is no server-rendered SVG to patch, to hand to a static bundle, or to save as a picture. Either those paths stay on the card zooms, or the dot view grows its own answer for each. Build issue 1 has to decide which.
 
 The live `dots` stop is useful before any recording exists. It is the
 overlay's drift colours at a density cards cannot reach. That is why it comes
@@ -226,6 +230,8 @@ a finished file and can go backwards. They can share the step tones
 (`RUN_STEP_COLOR`: a landed move is `ok`, a refusal is `fail`), but not their
 state, and a recording should never be presented as a run in progress.
 
+**A recording carries live data.** Every keyframe holds `live-ls`'s items, which are live resource ids and their tags. The one committed here is a floci fixture, so it holds nothing real. A recording of a real account is not a fixture and should not be committed.
+
 **Who records.** The recorder runs `live-mv` itself, on an emulator, by hand.
 behold still has no route that writes, and this research does not add one.
 Whether a carve becomes a committed chant Op that behold triggers is the
@@ -266,9 +272,9 @@ its records, and the VPC, subnet, security group and cluster stayed.
 In order of arrival, measured where the scripts can measure it:
 
 1. Whole-SVG replacement, behold's current frame path, goes first. Section 1
-   has it dropping frames at 1k on a slowed CPU and 237 of 240 at 5k.
+   has it dropping frames at 1k on a slowed CPU and 239 of 240 at 5k.
 2. SVG of any kind goes next. Mutating attributes in place holds at 1k, but at
-   5k on a slowed CPU it drops 219 of 240 frames.
+   5k on a slowed CPU it drops 222 of 240 frames.
 3. The recording's keyframes grow with the estate. At 10k resources a full `live-ls` keyframe is
    about 2.4 MB per estate per cut. Compact keyframes (section 4) fix it.
 4. Recording takes hours. At 2.9 s a move, a 10k carve is about 8 hours of
@@ -281,21 +287,27 @@ In order of arrival, measured where the scripts can measure it:
 
 Canvas 2D is not on this list at 10k: 6.5 ms a frame with the CPU slowed 4x. It reaches the budget around 20k on a slow CPU, which is where hand-written WebGL takes over (section 1).
 
-## Build issues to open next
+## What follows this note
 
-1. `zoom: dots`, live. A canvas 2D surface in `web/`, fed the same IR as
-   the cards, with the address-unit layout and a grid hit index for hover and click.
-   It shares ids with the cards and is offered above `resources` when a
-   member's count warrants it. There is no recording yet: colours come from the
-   live overlay.
-2. The recorder as a supported tool: `record-carve.mjs` grown into a
+The dots zoom is #462, a second research issue rather than a build issue. This
+note settles the renderer and the layout; the surface still has open questions
+that decide the build, starting with where server-side painting stops, since
+`/api/graph` answers with an SVG today and a canvas is drawn in the browser.
+The rest are the theme tokens `web/` uses everywhere, what the view offers a
+reader without a pointer, what one dot is when a block is `count`-expanded, and
+what the IR costs at this size.
+
+The other three are not filed yet, because each sits on top of whatever #462
+decides:
+
+1. The recorder as a supported tool: `record-carve.mjs` grown into a
    choudoufu-side or behold-side script. It needs compact keyframes, a move order
    (by unit by default), resume after a failure, and the format above pinned by
    a test.
-3. `?lens=carve:<recording>`, the scrubber over a recording on the `dots`
+2. `?lens=carve:<recording>`, the scrubber over a recording on the `dots`
    surface: play and pause, travel trails, refusals in the `fail` tone, and a
    final-owner packing toggle.
-4. A workbench entry that serves a finished carve, so the lens has
+3. A workbench entry that serves a finished carve, so the lens has
    something to open without a 35-minute recording first.
 
 ## Reproduce

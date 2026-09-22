@@ -170,7 +170,6 @@ async function main() {
   // while a move is in flight, so every keyframe is a consistent cut.
   while (next < planned.length) {
     const batchEnd = Math.min(planned.length, next + keyframeEvery);
-    const stop = next;
     const saved = planned.length;
     await Promise.all(Array.from({ length: Math.min(workers, batchEnd - stop) }, async () => {
       for (;;) {

@@ -75,6 +75,7 @@ export function svgMutate(host, state) {
       const el = document.elementFromPoint(x, y);
       return el && el.dataset && el.dataset.i !== undefined ? Number(el.dataset.i) : -1;
     },
+    viewportCoords: true,
     destroy() { svg.remove(); },
   };
 }
@@ -97,6 +98,7 @@ export function svgReplace(host, state) {
       const el = document.elementFromPoint(x, y);
       return el && el.dataset && el.dataset.i !== undefined ? Number(el.dataset.i) : -1;
     },
+    viewportCoords: true,
     destroy() { box.remove(); },
   };
 }
