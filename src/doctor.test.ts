@@ -377,18 +377,18 @@ describe("diagnose", () => {
         "modules/persona/main.tf": 'resource "aws_iam_role" "this" {}\n',
       });
     const present = {
-      lexicon: { pkg: "@intentius/chant-lexicon-terraform", range: "^0.61.0", version: "0.61.0" },
-      parser: { pkg: "@cdktf/hcl2json", range: "^0.21.0", version: "0.21.0" },
+      lexicon: { pkg: "@intentius/chant-lexicon-terraform", range: "^0.77.0", version: "0.77.0" },
+      parser: { pkg: "@cdktn/hcl2json", range: "^0.24.0", version: "0.24.0" },
       from: "/opt/behold/dist",
     };
     const absent = {
       ...present,
-      lexicon: { pkg: "@intentius/chant-lexicon-terraform", range: "^0.61.0" },
-      parser: { pkg: "@cdktf/hcl2json", range: "^0.21.0" },
+      lexicon: { pkg: "@intentius/chant-lexicon-terraform", range: "^0.77.0" },
+      parser: { pkg: "@cdktn/hcl2json", range: "^0.24.0" },
       refusal: {
         error: "Reading a Terraform estate needs chant's terraform lexicon, which behold does not install: … are not resolvable from /opt/behold/dist.",
         code: "terraform-lexicon" as const,
-        remedy: "Install @intentius/chant-lexicon-terraform@^0.61.0 @cdktf/hcl2json@^0.21.0 beside behold, then reload.",
+        remedy: "Install @intentius/chant-lexicon-terraform@^0.77.0 @cdktn/hcl2json@^0.24.0 beside behold, then reload.",
       },
     };
 
@@ -404,7 +404,7 @@ describe("diagnose", () => {
       expect(by(report, "terraform")).toEqual({
         name: "terraform",
         status: "pass",
-        detail: "@intentius/chant-lexicon-terraform 0.61.0 (@cdktf/hcl2json 0.21.0); .: 1 root (prod), 1 skipped (modules/persona)",
+        detail: "@intentius/chant-lexicon-terraform 0.77.0 (@cdktn/hcl2json 0.24.0); .: 1 root (prod), 1 skipped (modules/persona)",
       });
       // The chant line asks the chant members, and there are none.
       expect(by(report, "chant").status).toBe("pass");

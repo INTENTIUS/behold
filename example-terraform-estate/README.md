@@ -84,13 +84,13 @@ HCL.
 ## It needs the lexicon
 
 behold parses no HCL and ships no HCL parser. The reading goes through
-`@intentius/chant-lexicon-terraform`, which loads `@cdktf/hcl2json` underneath —
+`@intentius/chant-lexicon-terraform`, which loads `@cdktn/hcl2json` underneath —
 a ~1.8 MB wasm blob. Both are declared as optional peers and behold does not
 install them, so that every user who serves an ordinary chant project does not
 carry an HCL parser they will never run:
 
 ```sh
-npm install --no-save @intentius/chant-lexicon-terraform @cdktf/hcl2json
+npm install --no-save @intentius/chant-lexicon-terraform @cdktn/hcl2json
 ```
 
 Without them the demo refuses with that exact line and says where it looked.

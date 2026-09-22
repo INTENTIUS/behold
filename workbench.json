@@ -188,7 +188,7 @@
     },
     {
       "name": "waterpark",
-      "description": "water park's own AWS access estate, ../waterpark/access, served IN PLACE as a bare Terraform directory (#384): five roots as boxes — envs/prod, identity, github, baseline, satellites/waterpark-runner — 58 cards at detail 2, modules/persona left out as a called module, and no file written under the estate. Needs chant's terraform lexicon beside behold, which behold does not install: npm install --no-save @intentius/chant-lexicon-terraform @cdktf/hcl2json (the refusal names the exact line). No cloud, no Docker.",
+      "description": "water park's own AWS access estate, ../waterpark/access, served IN PLACE as a bare Terraform directory (#384): five roots as boxes — envs/prod, identity, github, baseline, satellites/waterpark-runner — 58 cards at detail 2, modules/persona left out as a called module, and no file written under the estate. Needs chant's terraform lexicon beside behold, which behold does not install: npm install --no-save @intentius/chant-lexicon-terraform @cdktn/hcl2json (the refusal names the exact line). No cloud, no Docker.",
       "source": "local",
       "path": "../waterpark/access",
       "inPlace": true,

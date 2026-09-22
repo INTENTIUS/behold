@@ -243,7 +243,7 @@ describe("GET /api/graph over a bare Terraform directory (#384)", () => {
     const refusal = {
       error: "Reading a Terraform estate needs chant's terraform lexicon, which behold does not install: …",
       code: "terraform-lexicon" as const,
-      remedy: "Install @intentius/chant-lexicon-terraform@^0.61.0 @cdktf/hcl2json@^0.21.0 beside behold, then reload.",
+      remedy: "Install @intentius/chant-lexicon-terraform@^0.77.0 @cdktn/hcl2json@^0.24.0 beside behold, then reload.",
     };
     registerMemberKind({
       kind: "terraform",

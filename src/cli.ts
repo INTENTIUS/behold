@@ -17,6 +17,7 @@ import { detectProjectShape } from "./project.ts";
 import { servesAsEstate } from "./member-kind.ts";
 import { setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
 import { readCarveReport } from "./carve-lens.ts";
+import { HCL_PARSER_PKG } from "./terraform-member.ts";
 import {
   bootScratchFloci,
   teardownScratchFloci,
@@ -474,7 +475,7 @@ function spawnStep(cmd: string, args: string[], cwd: string): Promise<number> {
  *  1. `npm install` in the copy's chant project (`app/`). Its chant is the one
  *     every step of the walkthrough shells — the project decides the version,
  *     same rule as every other behold shell-out.
- *  2. `@cdktf/hcl2json` into the copy's ROOT `node_modules`. chant lazy-loads
+ *  2. `@cdktn/hcl2json` into the copy's ROOT `node_modules`. chant lazy-loads
  *     the HCL parser with a bare `import`, resolved from chant's OWN install
  *     upward — `<copy>/app/node_modules/@intentius/chant/…` reaches
  *     `<copy>/node_modules`, which is why the parser goes there and not into
@@ -549,10 +550,10 @@ async function serveCarveDemo(target: string, carve: DemoCarve, port: number, li
   }
 
   let degraded: string | undefined;
-  if (!existsSync(join(target, "node_modules", "@cdktf", "hcl2json"))) {
-    process.stdout.write("behold demo carve → npm install @cdktf/hcl2json (chant's HCL parser, ~2MB, once)…\n");
-    const code = await spawnStep("npm", ["install", "--no-save", "--no-package-lock", "@cdktf/hcl2json"], target);
-    if (code !== 0) degraded = "couldn't install @cdktf/hcl2json (chant's HCL parser) — no network?";
+  if (!existsSync(join(target, "node_modules", ...HCL_PARSER_PKG.split("/")))) {
+    process.stdout.write(`behold demo carve → npm install ${HCL_PARSER_PKG} (chant's HCL parser, ~2MB, once)…\n`);
+    const code = await spawnStep("npm", ["install", "--no-save", "--no-package-lock", HCL_PARSER_PKG], target);
+    if (code !== 0) degraded = `couldn't install ${HCL_PARSER_PKG} (chant's HCL parser) — no network?`;
   }
 
   const report = at("carve-report.json");

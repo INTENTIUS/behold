@@ -23,12 +23,12 @@ reads the HCL an estate already has and emits one entity per block, so **a
 Terraform estate is a chant project whose only lexicon is a reader**, and
 `chant graph` serves it like any other. behold ships no HCL parser and never has.
 
-The lexicon and the `@cdktf/hcl2json` wasm blob underneath it are **optional
+The lexicon and the `@cdktn/hcl2json` wasm blob underneath it are **optional
 peers**: declared in behold's `package.json`, never installed by it, probed when
 you serve, and refused with one install line and where behold looked.
 
 ```sh
-npm install --no-save @intentius/chant-lexicon-terraform @cdktf/hcl2json
+npm install --no-save @intentius/chant-lexicon-terraform @cdktn/hcl2json
 ```
 
 That keeps a ~1.8 MB parser out of the install of everyone who serves an

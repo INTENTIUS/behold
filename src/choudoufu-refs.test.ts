@@ -181,18 +181,18 @@ describe("joinLexiconEdges — the lexicon's blocks joined to the roster's insta
 // ---------------------------------------------------------------------------
 
 const present: TerraformReaderState = {
-  lexicon: { pkg: "@intentius/chant-lexicon-terraform", range: "^0.61.0", version: "0.61.0" },
-  parser: { pkg: "@cdktf/hcl2json", range: "^0.21.0", version: "0.21.0" },
+  lexicon: { pkg: "@intentius/chant-lexicon-terraform", range: "^0.77.0", version: "0.77.0" },
+  parser: { pkg: "@cdktn/hcl2json", range: "^0.24.0", version: "0.24.0" },
   from: "/behold/src",
 };
 const absent: TerraformReaderState = {
-  lexicon: { pkg: "@intentius/chant-lexicon-terraform", range: "^0.61.0" },
-  parser: { pkg: "@cdktf/hcl2json", range: "^0.21.0" },
+  lexicon: { pkg: "@intentius/chant-lexicon-terraform", range: "^0.77.0" },
+  parser: { pkg: "@cdktn/hcl2json", range: "^0.24.0" },
   from: "/behold/src",
   refusal: {
     error: "Reading a Terraform estate needs chant's terraform lexicon, which behold does not install: … are not resolvable from /behold/src.",
     code: "terraform-lexicon",
-    remedy: "Install @intentius/chant-lexicon-terraform@^0.61.0 @cdktf/hcl2json@^0.21.0 beside behold, then reload.",
+    remedy: "Install @intentius/chant-lexicon-terraform@^0.77.0 @cdktn/hcl2json@^0.24.0 beside behold, then reload.",
   },
 };
 
@@ -253,6 +253,6 @@ describe("the absent-lexicon note and the cache stamp (#393)", () => {
   it("stamps the two peers, so installing them is a different cache key", () => {
     expect(lexiconStamp(present)).not.toBe(lexiconStamp(absent));
     expect(lexiconStamp(absent)).toContain("absent");
-    expect(lexiconStamp(present)).toContain("0.61.0");
+    expect(lexiconStamp(present)).toContain("0.77.0");
   });
 });
