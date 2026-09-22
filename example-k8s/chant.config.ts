@@ -9,7 +9,7 @@ import type { K8sChantConfig } from "@intentius/chant-lexicon-k8s";
 // "unobserved" step (README.md) is exactly that refusal, produced on purpose
 // by switching away from this context for a moment.
 export default {
-  lexicons: ["k8s", "temporal"],
+  lexicons: ["k8s"],
   sourceDir: "src",
   environments: ["local"],
   ownership: { stack: "behold-k3d-demo", env: "local" },
