@@ -772,7 +772,7 @@ its own graph and overlay counts as it runs.
 | `terralith-1` | `terralith-gen` at scale 1 plus the `estate.chdf.hcl` sidecar it omits, applied by choudoufu from nothing: 79 cards, all 79 bound | docker, choudoufu, go |
 | `terralith-4` | the same at scale 4: 301 cards, all 301 bound. The estate behold is sized against | the same |
 | `terralith-4-adopt` | scale 4 again, but STOCK terraform applies it first, so nothing wears a marker: 301 cards — 85 UNOWNED, 84 bound by derived identity alone, 132 neutral. One `choudoufu live-import` line, which the up script prints and you run, and all 301 read bound | docker, choudoufu, go, terraform |
-| `waterpark` | `../waterpark/access` in place as a bare Terraform directory (#384): five roots as boxes, 58 cards, 49 edges, nothing written under the estate | `@intentius/chant-lexicon-terraform` + `@cdktf/hcl2json` beside behold — optional peers behold declares and does not install |
+| `waterpark` | `../waterpark/access` in place as a bare Terraform directory (#384): five roots as boxes, 58 cards, 49 edges, nothing written under the estate | `@intentius/chant-lexicon-terraform` + `@cdktn/hcl2json` beside behold — optional peers behold declares and does not install |
 
 **The scratch, by name and port.** Each emulator is the entry's own, booted by
 its up script and removed by the `scripts/down.sh` that script wrote into the
@@ -902,9 +902,9 @@ water park's `access/` before it was taken:
 
 1. **The lexicon is opt-in.** chant resolves the lexicon from the config file's
    own location, so the generated project has to see it, and making it a
-   dependency would put `@cdktf/hcl2json`, a ~1.8 MB wasm blob, in the install
+   dependency would put `@cdktn/hcl2json`, a ~1.8 MB wasm blob, in the install
    of every user who serves a chant project. `@intentius/chant-lexicon-terraform`
-   and `@cdktf/hcl2json` are therefore **optional peers**: declared in
+   and `@cdktn/hcl2json` are therefore **optional peers**: declared in
    package.json (the only place their versions are named, the refusal reads
    them from there), never installed by behold, probed at serve and doctor time,
    and refused with the one install line and where behold looked. The same gate

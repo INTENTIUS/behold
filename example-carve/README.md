@@ -11,7 +11,7 @@ behold demo carve          # copies this directory, installs, advises, serves
 ```
 
 The boot does three things before a port opens: `npm install` in `app/` (whose
-chant every step of the walkthrough shells), `@cdktf/hcl2json` into the copy's
+chant every step of the walkthrough shells), `@cdktn/hcl2json` into the copy's
 root `node_modules` (chant lazy-loads the HCL parser from its own install
 upward, so `<copy>/node_modules` is where it resolves rather than beside the `.tf`
 files), and `chant carve advise --report` over the copy's own Terraform. If any
@@ -53,7 +53,7 @@ Real output, from `chant carve advise` (first cut at chant 0.44.7, verified
 identical at 0.52.1). Reproduce it with:
 
 ```sh
-npm install -D @cdktf/hcl2json          # once, anywhere on your PATH resolution
+npm install -D @cdktn/hcl2json          # once, anywhere on your PATH resolution
 chant carve advise --from example-carve/legacy-tf \
                    --state example-carve/legacy-tf/terraform.tfstate
 ```
@@ -188,7 +188,7 @@ and in the same shape.
 **Offline is the default.** The synthetic `terraform.tfstate` is committed, so
 `carve advise` and `carve emit --state` run with no Docker, no terraform binary,
 no AWS account and no network. The only dependency beyond this directory is
-`@cdktf/hcl2json`, which chant lazy-loads and names in its error if absent. This
+`@cdktn/hcl2json`, which chant lazy-loads and names in its error if absent. This
 tier guarantees the first thirty seconds of the video.
 
 **`--live` is the full video.** `behold demo carve --live` boots a scratch

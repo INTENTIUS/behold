@@ -65,7 +65,7 @@
     },
     {
       "name": "terraform-estate",
-      "description": "A multi-root Terraform estate, declared only: two roots applied separately (envs/prod and platform) plus the shared module both are built on — 37 cards boxed by root, module calls expanded into their own contents, and the two look-alike versions.tf files told apart. Shows what behold does NOT infer as clearly as what it draws: platform declares the KMS key and prod reads it back by alias, and no edge is drawn between them, because both ends carry the same unresolved interpolation (#381). Needs chant's terraform lexicon beside behold, which behold does not install: npm install --no-save @intentius/chant-lexicon-terraform @cdktf/hcl2json (the refusal names the exact line). No cloud, no Docker, no terraform binary.",
+      "description": "A multi-root Terraform estate, declared only: two roots applied separately (envs/prod and platform) plus the shared module both are built on — 37 cards boxed by root, module calls expanded into their own contents, and the two look-alike versions.tf files told apart. Shows what behold does NOT infer as clearly as what it draws: platform declares the KMS key and prod reads it back by alias, and no edge is drawn between them, because both ends carry the same unresolved interpolation (#381). Needs chant's terraform lexicon beside behold, which behold does not install: npm install --no-save @intentius/chant-lexicon-terraform @cdktn/hcl2json (the refusal names the exact line). No cloud, no Docker, no terraform binary.",
       "source": "bundled",
       "dir": "example-terraform-estate",
       "requires": [],

@@ -442,7 +442,7 @@ export async function runCarveEmit(demo: CarveDemo, select: string): Promise<Car
     return refuse(
       "carve-action",
       `chant carve emit exited ${run.code}: ${output || "(no output)"}`,
-      "The offline emit needs `@cdktf/hcl2json` in the demo copy and the demo's own chant install — " +
+      "The offline emit needs `@cdktn/hcl2json` in the demo copy and the demo's own chant install — " +
         "`npm install` in the copy's `app/` and re-run `behold demo carve`.",
     );
   }

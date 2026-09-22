@@ -18,7 +18,7 @@
  * **The lexicon is opt-in, not part of behold's install.** chant resolves
  * `@intentius/chant-lexicon-terraform` from the config file's own location, so
  * the generated project has to see it. Making it a dependency would put an HCL
- * parser — `@cdktf/hcl2json`, a ~1.8 MB wasm blob — in every user's install,
+ * parser — `@cdktn/hcl2json`, a ~1.8 MB wasm blob — in every user's install,
  * most of whom serve chant projects, and would break `src/carve-lens.ts`'s
  * posture that behold ships no Terraform tooling. So both are declared as
  * OPTIONAL PEERS in behold's package.json (the versions this reader was built
@@ -110,7 +110,11 @@ import { SCRATCH_PREFIX, assertScratch } from "./scratch.ts";
  * ranges live in behold's package.json and are read from it, so the install
  * line and the manifest cannot drift apart. */
 export const TERRAFORM_LEXICON_PKG = "@intentius/chant-lexicon-terraform";
-export const HCL_PARSER_PKG = "@cdktf/hcl2json";
+/** The parser chant's terraform lexicon loads since 0.77.0 (chant#2483): the
+ * CDK Terrain continuation of `@cdktf/hcl2json`, whose repo HashiCorp archived
+ * on 2025-12-10. The lexicon peer range above this constant in package.json is
+ * the floor that names it, so the two are installed and refused together. */
+export const HCL_PARSER_PKG = "@cdktn/hcl2json";
 
 /** How far below the served directory a root may sit. water park's roots are
  * two levels down (`envs/prod`, `satellites/waterpark-runner`); three is one

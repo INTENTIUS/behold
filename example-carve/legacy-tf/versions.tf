@@ -8,7 +8,7 @@
 # the account id in it is 000000000000, and every ARN is fake. Values are
 # boring-realistic on purpose: the walkthrough video pauses on the inspect pane.
 #
-# `chant carve advise` parses these files with @cdktf/hcl2json — no terraform
+# `chant carve advise` parses these files with @cdktn/hcl2json — no terraform
 # binary, no provider download, no network. See ../README.md for the scores this
 # estate is tuned to produce and why each one lands where it does.
 
