@@ -128,6 +128,11 @@ async function run() {
     last = t;
   }
 
+  // One call per query, in the coordinates that renderer reads: SVG asks the
+  // browser (`elementFromPoint`, viewport), and the grid index is in the
+  // host's own coordinates. `hitFound` is the share of queries that returned
+  // the dot the point was sampled from; under `travel` it sits near 0.97 for
+  // every renderer, because a dot in transit overlaps another dot's slot.
   const rect = host.getBoundingClientRect();
   const queries = 2000;
   let found = 0;
@@ -136,7 +141,8 @@ async function run() {
     const i = Math.floor(rand() * n);
     const x = state.x[i] + (rand() - 0.5) * state.r;
     const y = state.y[i] + (rand() - 0.5) * state.r;
-    if (r.hit(rect.left + x, rect.top + y) === i || r.hit(x, y) === i) found++;
+    const hit = r.viewportCoords ? r.hit(rect.left + x, rect.top + y) : r.hit(x, y);
+    if (hit === i) found++;
   }
   const hitMs = (performance.now() - hs) / queries;
 

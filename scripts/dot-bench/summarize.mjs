@@ -37,3 +37,5 @@ const create = renderers.map((r) => { const x = rs.find((y) => y.renderer === r 
 const hit = renderers.map((r) => { const x = rs.filter((y) => y.renderer === r && y.n === sizes[sizes.length - 1]); return x.length ? `${r} ${f(Math.max(...x.map((y) => y.hitMs * 1000)), 1)}` : null; }).filter(Boolean);
 console.log(`First paint at 1000, ms: ${create.join(" · ")}`);
 console.log(`Hit test at ${sizes[sizes.length - 1]}, µs per query: ${hit.join(" · ")}`);
+const found = [...new Set(rs.map((r) => r.hitFound))].sort();
+console.log(`Queries that returned the sampled dot: ${f(Math.min(...found), 3)} to ${f(Math.max(...found), 3)}`);
