@@ -1,0 +1,358 @@
+{
+  "headed": false,
+  "throttle": 4,
+  "width": 1600,
+  "height": 1000,
+  "scale": 2,
+  "frames": 240,
+  "results": [
+    {
+      "renderer": "canvas2d",
+      "n": 20000,
+      "scenario": "recolour",
+      "frames": 240,
+      "w": 1600,
+      "h": 1000,
+      "dpr": 2,
+      "refresh": 17.75,
+      "glRenderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+      "create": 26.875,
+      "js": {
+        "p50": 6.664999961853027,
+        "p95": 7.269999980926514,
+        "max": 7.659999966621399,
+        "mean": 6.671104167401791
+      },
+      "interval": {
+        "p50": 7.420000000000073,
+        "p95": 8.055000000000291,
+        "max": 8.809999999999945,
+        "mean": 7.441520833333334
+      },
+      "fps": 134.38113288894237,
+      "isolated": true,
+      "dropped": 0,
+      "hitMs": 0.0025674999952316284,
+      "hitFound": 1
+    },
+    {
+      "renderer": "webgl-raw",
+      "n": 20000,
+      "scenario": "recolour",
+      "frames": 240,
+      "w": 1600,
+      "h": 1000,
+      "dpr": 2,
+      "refresh": 17.585000000000036,
+      "glRenderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+      "create": 29.5900000333786,
+      "js": {
+        "p50": 0.06499993801116943,
+        "p95": 0.9350000619888306,
+        "max": 1.125,
+        "mean": 0.2453541656335195
+      },
+      "interval": {
+        "p50": 0.9149999999999636,
+        "p95": 1.4349999999999454,
+        "max": 3.1649999999999636,
+        "mean": 0.9260624999999995
+      },
+      "fps": 1079.8407234932854,
+      "isolated": true,
+      "dropped": 0,
+      "hitMs": 0.0033475000262260437,
+      "hitFound": 1
+    },
+    {
+      "renderer": "canvas2d",
+      "n": 20000,
+      "scenario": "travel",
+      "frames": 240,
+      "w": 1600,
+      "h": 1000,
+      "dpr": 2,
+      "refresh": 17.870000000000005,
+      "glRenderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+      "create": 26.8400000333786,
+      "js": {
+        "p50": 9.004999995231628,
+        "p95": 9.724999904632568,
+        "max": 13.769999980926514,
+        "mean": 9.060937500993411
+      },
+      "interval": {
+        "p50": 9.975000000000136,
+        "p95": 11.279999999999973,
+        "max": 15.5,
+        "mean": 10.082124999999996
+      },
+      "fps": 99.18543957747006,
+      "isolated": true,
+      "dropped": 0,
+      "hitMs": 0.0028675000071525574,
+      "hitFound": 0.9335
+    },
+    {
+      "renderer": "webgl-raw",
+      "n": 20000,
+      "scenario": "travel",
+      "frames": 240,
+      "w": 1600,
+      "h": 1000,
+      "dpr": 2,
+      "refresh": 17.664999999999964,
+      "glRenderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+      "create": 30.12999999523163,
+      "js": {
+        "p50": 2.5049999952316284,
+        "p95": 3.384999990463257,
+        "max": 5.940000057220459,
+        "mean": 2.6016874998807906
+      },
+      "interval": {
+        "p50": 3.3350000000000364,
+        "p95": 4.764999999999873,
+        "max": 8.605000000000018,
+        "mean": 3.479041666666667
+      },
+      "fps": 287.4354767237146,
+      "isolated": true,
+      "dropped": 0,
+      "hitMs": 0.002852500021457672,
+      "hitFound": 0.9335
+    },
+    {
+      "renderer": "canvas2d",
+      "n": 20000,
+      "scenario": "orbit",
+      "frames": 240,
+      "w": 1600,
+      "h": 1000,
+      "dpr": 2,
+      "refresh": 17.720000000000027,
+      "glRenderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+      "create": 27.9650000333786,
+      "js": {
+        "p50": 9.009999990463257,
+        "p95": 10.325000047683716,
+        "max": 12.590000033378601,
+        "mean": 9.107249996562798
+      },
+      "interval": {
+        "p50": 11.829999999999927,
+        "p95": 13.424999999999727,
+        "max": 34.38499999999999,
+        "mean": 11.978229166666665
+      },
+      "fps": 83.48479446217532,
+      "isolated": true,
+      "dropped": 1,
+      "hitMs": 0.0034375,
+      "hitFound": 1
+    },
+    {
+      "renderer": "webgl-raw",
+      "n": 20000,
+      "scenario": "orbit",
+      "frames": 240,
+      "w": 1600,
+      "h": 1000,
+      "dpr": 2,
+      "refresh": 17.58000000000004,
+      "glRenderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+      "create": 29.860000014305115,
+      "js": {
+        "p50": 2.6399999856948853,
+        "p95": 3.3949999809265137,
+        "max": 6.335000038146973,
+        "mean": 2.7096041684349377
+      },
+      "interval": {
+        "p50": 5.599999999999909,
+        "p95": 7.004999999999882,
+        "max": 11.129999999999882,
+        "mean": 5.760604166666667
+      },
+      "fps": 173.59290294348466,
+      "isolated": true,
+      "dropped": 0,
+      "hitMs": 0.002092500030994415,
+      "hitFound": 1
+    },
+    {
+      "renderer": "canvas2d",
+      "n": 40000,
+      "scenario": "recolour",
+      "frames": 240,
+      "w": 1600,
+      "h": 1000,
+      "dpr": 2,
+      "refresh": 17.64500000000001,
+      "glRenderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+      "create": 37.980000019073486,
+      "js": {
+        "p50": 13.449999928474426,
+        "p95": 14.079999923706055,
+        "max": 14.570000052452087,
+        "mean": 13.405583331982294
+      },
+      "interval": {
+        "p50": 14.575000000000045,
+        "p95": 15.340000000000146,
+        "max": 16.329999999999927,
+        "mean": 14.591749999999998
+      },
+      "fps": 68.53187588877277,
+      "isolated": true,
+      "dropped": 0,
+      "hitMs": 0.003949999988079071,
+      "hitFound": 1
+    },
+    {
+      "renderer": "webgl-raw",
+      "n": 40000,
+      "scenario": "recolour",
+      "frames": 240,
+      "w": 1600,
+      "h": 1000,
+      "dpr": 2,
+      "refresh": 17.675000000000068,
+      "glRenderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+      "create": 37.9099999666214,
+      "js": {
+        "p50": 0.41999995708465576,
+        "p95": 1.0149999856948853,
+        "max": 1.1649999618530273,
+        "mean": 0.4146250009536743
+      },
+      "interval": {
+        "p50": 1.2349999999999,
+        "p95": 1.8299999999999272,
+        "max": 3.490000000000009,
+        "mean": 1.2609791666666665
+      },
+      "fps": 793.0345135228907,
+      "isolated": true,
+      "dropped": 0,
+      "hitMs": 0.003455000042915344,
+      "hitFound": 1
+    },
+    {
+      "renderer": "canvas2d",
+      "n": 40000,
+      "scenario": "travel",
+      "frames": 240,
+      "w": 1600,
+      "h": 1000,
+      "dpr": 2,
+      "refresh": 17.805000000000064,
+      "glRenderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+      "create": 38.08500003814697,
+      "js": {
+        "p50": 18.94000005722046,
+        "p95": 22.31500005722046,
+        "max": 33.22500002384186,
+        "mean": 19.336062504847845
+      },
+      "interval": {
+        "p50": 20.059999999999945,
+        "p95": 24.609999999999673,
+        "max": 34.535000000000764,
+        "mean": 20.50000000000001
+      },
+      "fps": 48.78048780487802,
+      "isolated": true,
+      "dropped": 6,
+      "hitMs": 0.004355000019073486,
+      "hitFound": 0.926
+    },
+    {
+      "renderer": "webgl-raw",
+      "n": 40000,
+      "scenario": "travel",
+      "frames": 240,
+      "w": 1600,
+      "h": 1000,
+      "dpr": 2,
+      "refresh": 17.985000000000014,
+      "glRenderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+      "create": 37.144999980926514,
+      "js": {
+        "p50": 5.710000038146973,
+        "p95": 8.864999890327454,
+        "max": 21.895000100135803,
+        "mean": 6.12820833226045
+      },
+      "interval": {
+        "p50": 6.399999999999864,
+        "p95": 10.795000000000073,
+        "max": 23.5,
+        "mean": 7.053270833333333
+      },
+      "fps": 141.77819392303215,
+      "isolated": true,
+      "dropped": 0,
+      "hitMs": 0.0029300000071525575,
+      "hitFound": 0.926
+    },
+    {
+      "renderer": "canvas2d",
+      "n": 40000,
+      "scenario": "orbit",
+      "frames": 240,
+      "w": 1600,
+      "h": 1000,
+      "dpr": 2,
+      "refresh": 17.629999999999995,
+      "glRenderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+      "create": 38.13499999046326,
+      "js": {
+        "p50": 17.37000000476837,
+        "p95": 20.93999993801117,
+        "max": 36.919999957084656,
+        "mean": 17.938875002165634
+      },
+      "interval": {
+        "p50": 23.390000000000327,
+        "p95": 27.394999999999982,
+        "max": 42.554999999999836,
+        "mean": 23.743916666666646
+      },
+      "fps": 42.116050777918595,
+      "isolated": true,
+      "dropped": 19,
+      "hitMs": 0.003115000009536743,
+      "hitFound": 1
+    },
+    {
+      "renderer": "webgl-raw",
+      "n": 40000,
+      "scenario": "orbit",
+      "frames": 240,
+      "w": 1600,
+      "h": 1000,
+      "dpr": 2,
+      "refresh": 17.880000000000052,
+      "glRenderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)",
+      "create": 32.74000000953674,
+      "js": {
+        "p50": 5.4700000286102295,
+        "p95": 8.409999966621399,
+        "max": 17.664999961853027,
+        "mean": 5.875916664302349
+      },
+      "interval": {
+        "p50": 10.885000000000218,
+        "p95": 15.02000000000021,
+        "max": 29.99500000000012,
+        "mean": 11.39106250000001
+      },
+      "fps": 87.78812336426029,
+      "isolated": true,
+      "dropped": 4,
+      "hitMs": 0.0023274999856948853,
+      "hitFound": 1
+    }
+  ]
+}
