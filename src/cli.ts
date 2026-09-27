@@ -9,7 +9,8 @@ import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
 import { startServer, beholdVersion } from "./server.ts";
 import { loadDemoRegistry, missingRequirements, demoTargetDir, loadDemo, type DemoCarve } from "./demos.ts";
-import { resolveChant } from "./chant.ts";
+import { resolveChant, runChantRaw } from "./chant.ts";
+import { applyConversion, planConversion } from "./workspace-convert.ts";
 import { runExport } from "./export.ts";
 import { diagnose, formatReport } from "./doctor.ts";
 import { isAutoSyncMode, type AutoSyncMode } from "./autosync.ts";
@@ -33,7 +34,7 @@ const USAGE = `behold — a live control plane on chant (read-only core)
 Usage:
   behold demo [name] [target-dir] [--port <n>] [--list]
   behold demo carve [--live] [--port <n>]
-  behold doctor [project-dir] [--json]
+  behold doctor [project-dir] [--json] [--fix]
   behold preview [project-dir] [--port <n>] [--emulator]
   behold export [project-dir] [--out <dir>] [--env <name>] [--name <worker>] [--emulator]
   behold serve <project-dir…> [--port <n>] [--env <name>] [--poll <secs>] [--local]
@@ -127,6 +128,10 @@ Options:
                       with chant's generic \`chant emulator up\`.
   --json              doctor only: the report as JSON (stable keys) instead of
                       the console lines — the AGENTS.md audience.
+  --fix               doctor only: write chant.workspace.json for an estate
+                      root that lists its members in .behold.json, move its
+                      saved layout to the root, and run chant workspace check.
+                      The one doctor that writes (#464).
   --out <dir>         export only: output directory (default ./behold-export).
   --name <worker>     export only: Cloudflare Worker name in the generated
                       wrangler.jsonc.
@@ -331,9 +336,11 @@ async function runCarve(rest: string[]): Promise<void> {
  * serve this project well". */
 async function runDoctor(rest: string[]): Promise<void> {
   let json = false;
+  let fix = false;
   let dirArg: string | undefined;
   for (const a of rest) {
     if (a === "--json") json = true;
+    else if (a === "--fix") fix = true;
     else if (a === "-h" || a === "--help") return void process.stdout.write(USAGE);
     else if (!a.startsWith("-")) dirArg = a;
     else {
@@ -346,9 +353,33 @@ async function runDoctor(rest: string[]): Promise<void> {
     process.stderr.write(`behold doctor: no such directory: ${resolve(dir)}\n`);
     process.exit(2);
   }
+  if (fix) return runDoctorFix(dir);
   const report = await diagnose(dir);
   process.stdout.write(json ? JSON.stringify(report, null, 2) + "\n" : formatReport(report));
   if (!report.ok) process.exitCode = 1;
+}
+
+/** `behold doctor --fix` (#464, ws-015): write the chant workspace declaration
+ * for an estate served from a member list, move its saved layout to the root,
+ * and have chant check what was written. The only doctor that writes, and it
+ * writes only on this flag; see src/workspace-convert.ts for the two files. */
+async function runDoctorFix(dir: string): Promise<void> {
+  const planned = planConversion(dir);
+  if (!planned.ok) {
+    process.stderr.write(`behold doctor --fix: ${planned.error}\n`);
+    process.exitCode = 1;
+    return;
+  }
+  const { plan } = planned;
+  const wrote = applyConversion(plan);
+  process.stdout.write(`wrote ${wrote.declaration} (${plan.declaration.members.length} members)\n`);
+  if ("wrote" in wrote.layout) process.stdout.write(`moved the saved layout to ${wrote.layout.wrote} (${wrote.layout.ids} node ids)\n`);
+  else process.stdout.write(`layout: ${wrote.layout.skipped}\n`);
+  for (const n of plan.notes) process.stdout.write(`note: ${n}\n`);
+  process.stdout.write(`.behold.json's members are ignored from now on, since the declaration lists them; you can delete them.\n`);
+  const check = await runChantRaw(["workspace", "check", plan.root, "--format", "json"], plan.root);
+  process.stdout.write(check.code === 0 ? "chant workspace check: passed\n" : `chant workspace check failed (exit ${check.code}):\n${check.stdout || check.stderr}\n`);
+  if (check.code !== 0) process.exitCode = 1;
 }
 
 /** `behold demo` (#193) — the five-minute path for someone who just ran
