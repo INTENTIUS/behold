@@ -541,3 +541,55 @@ describe("the targets line (#430)", () => {
     expect(c.detail).toContain("nothing to aim");
   });
 });
+
+// #464: a root with chant.workspace.json is diagnosed from chant's own member
+// list, and says what the picture will and won't draw.
+describe("diagnose — a declared workspace", () => {
+  const listing = (members: object[]): (() => Promise<import("./workspace.ts").WorkspaceRead>) => async () => ({
+    ok: true,
+    workspace: { name: "acme", root: "/w", file: "chant.workspace.json", chant: "0.95.0", members: members as never },
+  });
+
+  it("names the declaration, the drawn members, the unreadable ones and the ones never drawn", async () => {
+    const dir = fixture({
+      "chant.workspace.json": "{}",
+      "api/chant.config.ts": "export default {};",
+      "docs/README.md": "",
+    });
+    const members = [
+      { name: "api", dir: "api", kind: "chant", abs: join(dir, "api"), reason: null, because: null },
+      { name: "gone", dir: "gone", kind: "terraform", abs: join(dir, "gone"), reason: { code: "dir-missing", message: "no such directory" }, because: null },
+      { name: "docs", dir: "docs", kind: "other", abs: join(dir, "docs"), reason: null, because: "prose" },
+    ];
+    const report = await diagnose(dir, probes({ readWorkspace: listing(members) }));
+    const line = by(report, "project");
+    expect(line.status).toBe("warn");
+    expect(line.detail).toContain("chant workspace acme");
+    expect(line.detail).toContain("1 of 3 members drawn: api (chant)");
+    expect(line.detail).toContain("gone dir-missing: no such directory");
+    expect(line.detail).toContain("listed, not drawn: docs (other)");
+  });
+
+  it("warns when .behold.json still lists members beside the declaration", async () => {
+    const dir = fixture({
+      "chant.workspace.json": "{}",
+      ".behold.json": JSON.stringify({ members: [{ dir: "api", kind: "chant" }] }),
+      "api/chant.config.ts": "export default {};",
+    });
+    const members = [{ name: "api", dir: "api", kind: "chant", abs: join(dir, "api"), reason: null, because: null }];
+    const report = await diagnose(dir, probes({ readWorkspace: listing(members) }));
+    expect(by(report, "project").status).toBe("warn");
+    expect(by(report, "project").fix).toContain("Delete `members` from .behold.json");
+  });
+
+  it("fails with chant's reason when the declaration can't be listed", async () => {
+    const dir = fixture({ "chant.workspace.json": "{}" });
+    const report = await diagnose(
+      dir,
+      probes({ readWorkspace: async () => ({ ok: false, refusal: { error: "chant could not read the declaration: declaration-invalid", code: "declaration-invalid", remedy: "run chant workspace check" } }) }),
+    );
+    expect(report.ok).toBe(false);
+    expect(report.checks).toHaveLength(1);
+    expect(by(report, "project").detail).toContain("declaration-invalid");
+  });
+});
