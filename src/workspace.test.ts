@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -12,6 +12,10 @@ import {
   unreadableMembers,
   workspaceMemberOf,
   LS_SCHEMA_ID,
+  memberIrFromWorkspaceGraph,
+  WorkspaceMemberError,
+  workspaceGraphArgs,
+  workspaceGraphTakes,
 } from "./workspace.ts";
 
 // #464: the declared half of serving. The listing is chant's (`workspace ls
@@ -135,5 +139,74 @@ describe("findDeclaration", () => {
     expect(findDeclaration(dir)).toEqual({ file: "chant.workspace.jsonc" });
     writeFileSync(join(dir, "chant.workspace.json"), "{}");
     expect(findDeclaration(dir)).toEqual({ ambiguous: true });
+  });
+});
+
+describe("memberIrFromWorkspaceGraph", () => {
+  const doc = (extra: Record<string, unknown> = {}) =>
+    JSON.stringify({
+      $schema: "https://intentius.io/chant/schemas/workspace/graph/v1/graph.schema.json",
+      contract: 1,
+      chant: "0.95.0",
+      at: null,
+      version: 1,
+      workspace: { name: "acme", root: "." },
+      members: [
+        { name: "api", dir: "api", kind: "chant", status: "composed", reason: null, chant: "0.95.0", irVersion: 1, meta: { _behaviour: { x: 1 } } },
+        { name: "db", dir: "db", kind: "chant", status: "composed", reason: null, chant: "0.95.0", irVersion: 1 },
+        { name: "net", dir: "net", kind: "terraform", status: "failed", reason: { code: "command-failed", message: "no lexicon" }, chant: null, irVersion: null },
+      ],
+      nodes: [
+        { id: "api/Fn", kind: "Function", lexicon: "aws", member: "api", attrs: { role: { $ref: "api/Role" }, _drift: "in-sync" }, runtimeOwner: "api/Role" },
+        { id: "api/Role", kind: "Role", lexicon: "aws", member: "api", attrs: {} },
+        { id: "db/Table", kind: "Table", lexicon: "aws", member: "db", attrs: {} },
+      ],
+      edges: [
+        { from: "api/Fn", to: "api/Role", member: "api" },
+        { from: "db/Table", to: "db/Table", member: "db" },
+      ],
+      groups: { byMember: { api: ["api/Fn", "api/Role"], db: ["db/Table"] }, byLexicon: { aws: ["api/Fn", "api/Role", "db/Table"] }, byStack: { "api/web": ["api/Fn"], "db/data": ["db/Table"] } },
+      exports: [{ name: "RoleArn", node: "api/Role", member: "api" }],
+      imports: [],
+      links: [],
+      records: [],
+      ...extra,
+    });
+
+  it("takes one member's part back out, in the member's own ids", () => {
+    const ir = memberIrFromWorkspaceGraph(doc(), "api") as unknown as Record<string, any>;
+    expect(ir.nodes.map((n: any) => n.id)).toEqual(["Fn", "Role"]);
+    expect(ir.nodes[0].attrs).toEqual({ role: { $ref: "Role" }, _drift: "in-sync" });
+    expect(ir.nodes[0].runtimeOwner).toBe("Role");
+    expect(ir.nodes[0].member).toBeUndefined();
+    expect(ir.edges).toEqual([{ from: "Fn", to: "Role" }]);
+    expect(ir.groups).toEqual({ byLexicon: { aws: ["Fn", "Role"] }, byStack: { web: ["Fn"] } });
+    expect(ir.exports).toEqual([{ name: "RoleArn", node: "Role" }]);
+    expect(ir.meta).toEqual({ _behaviour: { x: 1 } });
+  });
+
+  it("carries chant's reason for a member it could not read", () => {
+    expect(() => memberIrFromWorkspaceGraph(doc(), "net")).toThrow(WorkspaceMemberError);
+    expect(() => memberIrFromWorkspaceGraph(doc(), "net")).toThrow(/command-failed: no lexicon/);
+  });
+
+  it("refuses another contract, and a failure document", () => {
+    expect(() => memberIrFromWorkspaceGraph(doc({ contract: 2 }), "api")).toThrow(/contract 2/);
+    expect(() => memberIrFromWorkspaceGraph(JSON.stringify({ contract: 1, error: { code: "declaration-invalid", message: "x" } }), "api")).toThrow(/declaration-invalid/);
+  });
+
+  it("reads a document chant 0.94 wrote", () => {
+    const text = readFileSync(join(__dirname, "__fixtures__/workspace-graph-reference.json"), "utf8");
+    const ir = memberIrFromWorkspaceGraph(text, "delivery") as unknown as Record<string, any>;
+    expect(ir.nodes.map((n: any) => n.id)).toEqual(["appService"]);
+  });
+
+  it("passes only the flags the contract takes", () => {
+    expect(workspaceGraphArgs("/w", "api", { env: "prod", live: true, overlay: true, traffic: "peak" })).toEqual([
+      "workspace", "graph", "/w", "--member", "api", "--env", "prod", "--live", "--overlay", "--traffic", "peak",
+    ]);
+    expect(workspaceGraphTakes({ env: "prod", live: true })).toBe(true);
+    expect(workspaceGraphTakes({ detail: 1 })).toBe(false);
+    expect(workspaceGraphTakes({ lens: "k8s" })).toBe(false);
   });
 });
