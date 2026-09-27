@@ -1,0 +1,27 @@
+{
+  "name": "example-flux-estate",
+  "schema": 1,
+  "pins": [
+    {
+      "package": "@intentius/chant",
+      "version": "0.95.0"
+    }
+  ],
+  "members": [
+    {
+      "name": "control-plane",
+      "dir": "control-plane",
+      "kind": "chant"
+    },
+    {
+      "name": "app-a",
+      "dir": "app-a",
+      "kind": "chant"
+    },
+    {
+      "name": "app-b",
+      "dir": "app-b",
+      "kind": "chant"
+    }
+  ]
+}

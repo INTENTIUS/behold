@@ -66,6 +66,8 @@ export interface IdMove {
 
 export interface ConversionPlan {
   root: string;
+  /** Where the member list came from: `.behold.json`, or npm workspaces. */
+  from: "behold-config" | "workspaces";
   declaration: Declaration;
   /** Id prefixes to rewrite in the saved layout, longest first. */
   moves: IdMove[];
@@ -173,7 +175,7 @@ export function planConversion(rootArg: string): ConversionResult {
   };
   const firstLayout = layoutPath(abs[0]);
   moves.sort((a, b) => b.from.length - a.from.length);
-  return { ok: true, plan: { root, declaration, moves, ...(existsSync(firstLayout) ? { layoutFrom: firstLayout } : {}), notes } };
+  return { ok: true, plan: { root, from: shape.membersFrom === "behold-config" ? "behold-config" : "workspaces", declaration, moves, ...(existsSync(firstLayout) ? { layoutFrom: firstLayout } : {}), notes } };
 }
 
 /** Rewrite every node id in a layout by the first move whose prefix it starts with. */

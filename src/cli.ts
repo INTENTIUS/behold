@@ -416,7 +416,7 @@ async function runDoctorFix(dir: string): Promise<void> {
   if ("wrote" in wrote.layout) process.stdout.write(`moved the saved layout to ${wrote.layout.wrote} (${wrote.layout.ids} node ids)\n`);
   else process.stdout.write(`layout: ${wrote.layout.skipped}\n`);
   for (const n of plan.notes) process.stdout.write(`note: ${n}\n`);
-  process.stdout.write(`.behold.json's members are ignored from now on, since the declaration lists them; you can delete them.\n`);
+  if (plan.from === "behold-config") process.stdout.write(`.behold.json's members are ignored from now on, since the declaration lists them; you can delete them.\n`);
   const check = await runChantRaw(["workspace", "check", "--format", "json"], plan.root);
   process.stdout.write(check.code === 0 ? "chant workspace check: passed\n" : `chant workspace check failed (exit ${check.code}):\n${check.stdout || check.stderr}\n`);
   if (check.code !== 0) process.exitCode = 1;

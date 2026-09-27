@@ -33,6 +33,18 @@ describe("the bundled estates' workspace declarations", () => {
     expect(existsSync(join(REPO, "example-choudoufu-estate", ".behold.json"))).toBe(false);
   });
 
+  it("example-argo-estate and example-flux-estate declare their three chant projects, pinned at the chant their lockfile installs", () => {
+    for (const example of ["example-argo-estate", "example-flux-estate"]) {
+      const decl = declaration(example);
+      expect(decl.members, example).toEqual(["control-plane", "app-a", "app-b"].map((n) => ({ name: n, dir: n, kind: "chant" })));
+      // ws-021: the root's pinned chant reads the declaration, and a pin that
+      // is not the installed version is a refusal (root-chant-required).
+      const lock = JSON.parse(readFileSync(join(REPO, example, "package-lock.json"), "utf8")) as { packages: Record<string, { version?: string }> };
+      const locked = lock.packages["node_modules/@intentius/chant"]?.version;
+      expect(decl.pins?.find((p) => p.package === "@intentius/chant")?.version, example).toBe(locked);
+    }
+  });
+
   const installed = installedVersion(TERRAFORM_LEXICON, REPO);
   it.skipIf(!installed)("pins the terraform lexicon at the version installed beside behold", () => {
     for (const example of ["example-terraform-estate", "example-choudoufu-estate"]) {
