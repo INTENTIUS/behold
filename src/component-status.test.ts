@@ -672,11 +672,18 @@ describe("pins chant's ReleaseRecord key union (chant#2045)", () => {
     manifestDigest: true,
     profileOverride: true,
     inputDigest: true,
+    // The ^0.95 bump (#464): gate flags and the promote, redeploy and restore
+    // links a release record carries. behold passes the record through as
+    // `_release` and reads none of these yet.
+    flags: true,
+    promotedFrom: true,
+    redeploys: true,
+    restores: true,
   } satisfies Record<keyof ReleaseRecord, true>;
 
   it("the floor's ReleaseRecord has exactly these keys — runOrigin is read as chant's own type", () => {
     expect(Object.keys(KEYS).sort()).toEqual([
-      "actor", "approver", "component", "digest", "env", "gitSha", "inputDigest", "manifestDigest", "profileOverride", "runId", "runOrigin", "timestamp", "version",
+      "actor", "approver", "component", "digest", "env", "flags", "gitSha", "inputDigest", "manifestDigest", "profileOverride", "promotedFrom", "redeploys", "restores", "runId", "runOrigin", "timestamp", "version",
     ]);
   });
 });

@@ -210,3 +210,25 @@ describe("memberIrFromWorkspaceGraph", () => {
     expect(workspaceGraphTakes({ lens: "k8s" })).toBe(false);
   });
 });
+
+describe("the root member's stamp (#464)", () => {
+  it("leaves the other members' directories out", async () => {
+    const { memberSourceStamp } = await import("./member-source.ts");
+    const root = mkdtempSync(join(tmpdir(), "behold-ws-stamp-"));
+    const { mkdirSync } = await import("node:fs");
+    mkdirSync(join(root, "api"));
+    writeFileSync(join(root, "chant.config.ts"), "export default {};");
+    writeFileSync(join(root, "api/a.ts"), "1");
+    const text = JSON.stringify({ contract: 1, chant: "0.95.0", workspace: { name: "w" }, members: [member(".", "chant"), member("api", "chant")] });
+    const read = parseWorkspaceLs(text.replace('"name":".","dir":"."', '"name":"root","dir":"."'), root);
+    if (!read.ok) throw new Error(read.refusal.error);
+    const before = memberSourceStamp(root);
+    setServedWorkspace(read.workspace);
+    const scoped = memberSourceStamp(root);
+    writeFileSync(join(root, "api/a.ts"), "22");
+    expect(memberSourceStamp(root)).toBe(scoped);
+    expect(memberSourceStamp(join(root, "api"))).not.toBeUndefined();
+    setServedWorkspace(undefined);
+    expect(memberSourceStamp(root)).not.toBe(before);
+  });
+});

@@ -4,6 +4,16 @@ import { readdirSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 const SKIP = new Set(["node_modules", "dist", ".git"]);
 
+// #464: directories a member's stamp leaves out, keyed by the member's
+// absolute root. A declared workspace's root member (`.`) holds the other
+// members' directories, which are theirs, not its source: chant's own member
+// stamp leaves them out for the same reason (the read contract's "Member
+// stamps"). Set by src/workspace.ts when a workspace is served.
+let exclusions = new Map<string, Set<string>>();
+export function setStampExclusions(next: Map<string, readonly string[]>): void {
+  exclusions = new Map([...next].map(([k, v]) => [resolve(k), new Set(v.map((d) => resolve(d)))]));
+}
+
 /** Hash the whole member root by relative path, mtime and size. Config can
  * choose source outside src/, so narrowing the walk would miss declarations.
  * Unreadable or empty roots return undefined and are never shared/cached.
@@ -11,6 +21,7 @@ const SKIP = new Set(["node_modules", "dist", ".git"]);
  * the caller separately keys on the resolved Chant compiler identity. */
 export function memberSourceStamp(dir: string): string | undefined {
   const root = resolve(dir);
+  const skipDirs = exclusions.get(root);
   const h = createHash("sha1");
   let any = false;
   const walk = (at: string): void => {
@@ -20,7 +31,7 @@ export function memberSourceStamp(dir: string): string | undefined {
       if (SKIP.has(e.name)) continue;
       const path = join(at, e.name);
       if (e.isDirectory()) {
-        walk(path);
+        if (!skipDirs?.has(path)) walk(path);
         continue;
       }
       if (!e.isFile()) continue; // sockets, fifos, dangling symlinks: nothing to stamp

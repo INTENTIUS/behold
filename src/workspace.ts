@@ -32,6 +32,7 @@ import type { GraphIR } from "@intentius/chant";
 import { envOverridesFor, runChantRaw, resolveChant, type GraphOptions } from "./chant.ts";
 import type { MemberVia } from "./member-ir.ts";
 import { meetsFloor } from "./floor.ts";
+import { setStampExclusions } from "./member-source.ts";
 
 /** The read contract version behold reads (chant's `reference/workspace-read-contract`). */
 export const WORKSPACE_CONTRACT = 1;
@@ -196,6 +197,9 @@ export function setServedWorkspace(ws: Workspace | undefined): void {
   served = ws;
   byDir.clear();
   for (const m of ws?.members ?? []) byDir.set(m.abs, m);
+  // A root member's source is the root minus every other member's directory.
+  const root = ws?.members.find((m) => m.dir === ".");
+  setStampExclusions(root && ws ? new Map([[root.abs, ws.members.filter((m) => m !== root).map((m) => m.abs)]]) : new Map());
 }
 
 export function servedWorkspace(): Workspace | undefined {
