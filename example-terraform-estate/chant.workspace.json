@@ -1,0 +1,22 @@
+{
+  "name": "example-terraform-estate",
+  "schema": 1,
+  "pins": [
+    {
+      "package": "@intentius/chant-lexicon-terraform",
+      "version": "0.95.0"
+    }
+  ],
+  "members": [
+    {
+      "name": "prod",
+      "dir": "envs/prod",
+      "kind": "terraform"
+    },
+    {
+      "name": "platform",
+      "dir": "platform",
+      "kind": "terraform"
+    }
+  ]
+}

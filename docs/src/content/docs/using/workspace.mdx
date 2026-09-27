@@ -1,0 +1,77 @@
+---
+title: Serve a chant workspace
+description: Serve a directory that holds a chant.workspace.json, and convert an estate that lists its members in .behold.json.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Since chant 0.81.0, a directory can hold many members and list them in a
+`chant.workspace.json` at its root. behold serves such a workspace from that
+list:
+
+```sh
+npx @intentius/behold serve ./estate      # the directory holding chant.workspace.json
+```
+
+behold reads the declaration through chant rather than parsing it itself. Every
+reader goes through the same contract, which keeps behold and `chant workspace`
+in agreement about the member list.
+
+## What behold asks chant
+
+| Question | Command |
+|---|---|
+| Which members are there, and can each be read? | `chant workspace ls --json` |
+| What does a member hold? | `chant workspace graph --member <name>`, with `--live`, `--overlay` and `--traffic` for the live picture |
+
+Both documents carry a contract version, and behold reads version 1. A
+document written to any other version is refused with what to upgrade, because
+a new contract version can change what a field means. The chant that answers
+is the one the workspace root resolves: its own install, or behold's when the
+root has none, which is how a Terraform-only estate with no chant of its own
+stays viewable.
+
+## What is drawn
+
+| Member | Drawn as |
+|---|---|
+| `chant` and `terraform` | A box of the member's resources, read through `chant workspace graph` |
+| `choudoufu` | A box of the estate's instances, read by behold's own choudoufu reader, since chant's graph does not carry choudoufu's rungs, ownership or adoptable rows |
+| A member chant cannot read | A box with one card that gives chant's reason code and message, such as `dir-missing` or `unknown-kind` |
+| `other`, or a nested `workspace` | Nothing. It is listed when behold starts and in `behold doctor` |
+
+Node ids are `<member>/<id>`, with the member's declared name. That is the id
+chant composes too. The hand layout lives in the workspace root's
+`.behold/layout.json`.
+
+Several directories on the command line (`behold serve a b c`) are still the
+loose view behold composes itself, with no declaration involved.
+
+## Converting a `.behold.json` member list
+
+The `members` key in `.behold.json` is deprecated. When a
+`chant.workspace.json` sits beside it, behold ignores the key and prints a
+warning at startup. An estate root that has only the `.behold.json` list
+converts with one command:
+
+```sh
+npx @intentius/behold doctor ./estate --fix
+```
+
+This writes `chant.workspace.json` in the root and never over an existing one.
+It then runs `chant workspace check` on what it wrote.
+
+- Each member keeps the name behold already composed it under, so a chant
+  member's node ids don't change.
+- A Terraform member holding several roots becomes one member per root, because
+  a chant `terraform` member is a single root.
+- Any `terraform` or `choudoufu` member makes the declaration pin
+  `@intentius/chant-lexicon-terraform`, which supplies both kinds.
+- The saved layout in the first member's `.behold/layout.json` is copied into
+  the root, and its node ids are rewritten to the declared names.
+
+<Aside type="note" title="What --fix writes">
+Two files: `chant.workspace.json` and `.behold/layout.json`, both in the estate
+root. The old layout file and `.behold.json` stay as they were. Every other
+doctor run writes nothing.
+</Aside>

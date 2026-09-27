@@ -14,6 +14,23 @@ apply creds.
   - Actions (delegated writes): `op-run` (start an `ApplyOp`/`ReconcileOp`),
     `op-signal` (approve a gate), `op-status` / `op-report` (watch it).
 
+## A declared workspace
+
+A directory with a `chant.workspace.json` is a chant workspace (chant ≥ 0.81.0,
+INTENTIUS/chant#2524). `behold serve <root>` serves it from chant's own member
+list (`chant workspace ls --json`, read contract 1; any other contract is
+refused), and reads each `chant` and `terraform` member through `chant
+workspace graph --member <name>`. A `choudoufu` member keeps behold's own
+reader, whose vocabulary (rungs, ownership, adoptable rows) chant's graph does
+not carry. Node ids are `<member>/<id>` with the declared member name, the same
+form chant composes. A member chant cannot read is drawn as one
+`UnreadableMember` node carrying `attrs._unreadable: {code, message}` with
+chant's reason code. An `other` member is listed on startup and in doctor and
+draws nothing. `.behold.json`'s `members` are ignored beside a declaration;
+`behold doctor --fix` writes the declaration for an estate that has only them.
+Several directories on the command line (`behold serve a b c`) stay the loose
+view behold composes itself.
+
 ## Getting a server
 
 ```sh
@@ -570,7 +587,17 @@ inside a project, and it does not weaken the invariant above:
 render with the deltas baked into the SVG, which is how `behold export` and
 static snapshots honour a hand layout.
 
-The second exception is the carve walkthrough's two steps above (#254), and it
+A declared workspace (#464) keeps that file in the workspace root, the
+directory holding `chant.workspace.json`, rather than in its first member.
+
+`behold doctor --fix` (#464, ws-015) is the third exception, and it runs only
+when you type the flag: for an estate root whose members are listed in
+`.behold.json`, it writes `chant.workspace.json` in that root (never over an
+existing one) and moves the saved `.behold/layout.json` from the first member to
+the root with its node ids rewritten. It then runs `chant workspace check`. The
+old layout file and `.behold.json` are left as they were.
+
+The fourth exception is the carve walkthrough's two steps above (#254), and it
 is narrower still: they exist only when behold booted a `behold demo carve`
 copy, they write only into `<copy>/app/carveout/`, and the directory they write
 into is a scratch dir behold created inside a directory it copied for you a

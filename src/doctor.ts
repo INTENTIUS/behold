@@ -36,7 +36,8 @@ import {
 } from "./chant.ts";
 import { registeredMemberKinds } from "./member-kind.ts";
 import { CHOUDOUFU_FLOOR, choudoufuBinary, choudoufuMeetsFloor, choudoufuVersion, readLiveCheck, type ChoudoufuVersion, type LiveCheckParse } from "./choudoufu-member.ts";
-import { detectProject, detectProjectShape, type ProjectKind } from "./project.ts";
+import { detectProject, detectProjectShape, loadBeholdConfig, type ProjectKind } from "./project.ts";
+import { drawnMembers, hasDeclaration, readWorkspace, undrawnMembers, unreadableMembers, type Workspace, type WorkspaceRead } from "./workspace.ts";
 import {
   HCL_PARSER_PKG,
   TERRAFORM_LEXICON_PKG,
@@ -92,6 +93,9 @@ export interface DoctorProbes {
     reader: () => TerraformReaderState;
     roots: (dir: string) => TerraformRootScan;
   };
+  /** #464: the workspace listing (`chant workspace ls --json`), injectable so a
+   * test needs no chant that writes the workspace contract. */
+  readWorkspace?: (root: string) => Promise<WorkspaceRead>;
 }
 
 const list = (xs: readonly string[]): string => xs.join(", ");
@@ -428,6 +432,37 @@ function terraformCheck(members: { dir: string; abs: string }[], probe: NonNulla
   return { name: "terraform", status: "pass", detail: `${reader}; ${perMember}` };
 }
 
+/** A declared workspace in the shape the rest of `diagnose` reads: the members
+ * behold draws, by the declaration's own kinds. */
+function workspaceShape(ws: Workspace): ReturnType<typeof detectProjectShape> {
+  return { kind: "estate", members: drawnMembers(ws).map((m) => ({ dir: m.dir, kind: m.kind as never })) };
+}
+
+/**
+ * The project line for a declared workspace (#464): which chant listed it,
+ * what is drawn, what chant cannot read (a warn with the reason code, since
+ * those members draw as an unreadable box rather than their resources), what
+ * is listed and never drawn, and a `.behold.json` member list the declaration
+ * now overrides (ws-015).
+ */
+export function workspaceCheck(ws: Workspace, beholdMembers: boolean): DoctorCheck {
+  const drawn = drawnMembers(ws);
+  const unreadable = unreadableMembers(ws);
+  const undrawn = undrawnMembers(ws);
+  const parts = [
+    `chant workspace ${ws.name} (${ws.file}, listed by chant ${ws.chant}): ${drawn.length} of ${ws.members.length} members drawn: ${list(drawn.map((m) => `${m.name} (${m.kind})`))}`,
+    ...(unreadable.length ? [`unreadable: ${list(unreadable.map((m) => `${m.name} ${m.reason!.code}: ${m.reason!.message}`))}`] : []),
+    ...(undrawn.length ? [`listed, not drawn: ${list(undrawn.map((m) => `${m.name} (${m.kind})`))}`] : []),
+    ...(beholdMembers ? [".behold.json also lists members, which are ignored beside the declaration"] : []),
+  ];
+  const warn = unreadable.length > 0 || beholdMembers;
+  const fix = [
+    ...(unreadable.length ? ["`chant workspace check` says what each unreadable member needs."] : []),
+    ...(beholdMembers ? ["Delete `members` from .behold.json; chant.workspace.json lists them now."] : []),
+  ].join(" ");
+  return { name: "project", status: warn ? "warn" : "pass", detail: parts.join("; "), ...(warn ? { fix } : {}) };
+}
+
 /**
  * Diagnose a directory. Read-only; resolves every fact through the module the
  * server reads it from. A directory that is neither a chant project nor an
@@ -436,8 +471,21 @@ function terraformCheck(members: { dir: string; abs: string }[], probe: NonNulla
  */
 export async function diagnose(dir: string, probes: DoctorProbes = {}): Promise<DoctorReport> {
   const root = resolve(dir);
-  const shape = detectProjectShape(root);
   const behold = beholdVersion();
+  // #464: a root with a chant.workspace.json is a declared workspace; its
+  // members are chant's list, not behold's probes.
+  const listing = hasDeclaration(root) ? await (probes.readWorkspace ?? readWorkspace)(root) : undefined;
+  if (listing && !listing.ok) {
+    return {
+      behold,
+      dir: root,
+      kind: "estate",
+      ok: false,
+      checks: [{ name: "project", status: "fail", detail: listing.refusal.error, fix: listing.refusal.remedy }],
+    };
+  }
+  const workspace = listing?.ok ? listing.workspace : undefined;
+  const shape = workspace ? workspaceShape(workspace) : detectProjectShape(root);
 
   // #368: a declared member behold cannot serve — a kind it does not know, or
   // a directory that fails its declared kind's probe — is a fail with the
@@ -486,7 +534,9 @@ export async function diagnose(dir: string, probes: DoctorProbes = {}): Promise<
     shape.membersFrom === "itself"
       ? `a ${members[0]!.kind} member — the directory itself, no member list`
       : `estate of ${members.length} members (${membersFrom}): ${memberList}`;
-  const projectCheck: DoctorCheck = estate
+  const projectCheck: DoctorCheck = workspace
+    ? workspaceCheck(workspace, !!loadBeholdConfig(root).members)
+    : estate
     ? invalid.length
       ? {
           name: "project",

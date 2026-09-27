@@ -153,6 +153,10 @@ CEILING=4
 #   choudoufu-cohort-iam-ecr         41s      terralith-4-adopt   157s
 #   choudoufu-cohort-ec2-networking  36s      waterpark             5s
 #
+# terralith-14 (#461) came later and had no row, so it fell to the 240s
+# default while its apply alone takes five minutes: 320s measured twice here
+# (#464), 310s of it the up script's apply and 10s behold.
+#
 # One machine's numbers, so re-baseline rather than argue with them if a
 # different box reads differently. BEHOLD_E2E_SECS_<entry, - as _> overrides
 # one; BEHOLD_E2E_SECS_DEFAULT moves every entry that has no row here.
@@ -161,6 +165,7 @@ entry_ceiling() { # <entry name> -> seconds
   local override="${!var:-}"
   if [ -n "$override" ]; then printf '%s' "$override"; return; fi
   case "$1" in
+    terralith-14)                    printf '640' ;;
     terralith-4-adopt)               printf '320' ;;
     terralith-4)                     printf '270' ;;
     choudoufu-workbench)             printf '160' ;;

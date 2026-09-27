@@ -1,0 +1,66 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/graph/v1/graph.schema.json",
+  "contract": 1,
+  "chant": "0.94.0",
+  "at": null,
+  "version": 1,
+  "workspace": {
+    "name": "reference",
+    "root": "reference-workspace"
+  },
+  "members": [
+    {
+      "name": "delivery",
+      "dir": "delivery",
+      "kind": "chant",
+      "status": "composed",
+      "reason": null,
+      "chant": "0.94.0",
+      "irVersion": 1
+    }
+  ],
+  "nodes": [
+    {
+      "id": "delivery/appService",
+      "kind": "Docker::Compose::Service",
+      "lexicon": "docker",
+      "attrs": {
+        "image": "reference-workspace-app:local",
+        "restart": "unless-stopped"
+      },
+      "compositeParent": "DockerWebService",
+      "compositeInstance": "delivery/app",
+      "sourceLoc": {
+        "file": "src/app.ts"
+      },
+      "member": "delivery"
+    }
+  ],
+  "edges": [],
+  "groups": {
+    "byMember": {
+      "delivery": [
+        "delivery/appService"
+      ]
+    },
+    "byLexicon": {
+      "docker": [
+        "delivery/appService"
+      ]
+    },
+    "byComposite": {
+      "DockerWebService": [
+        "delivery/appService"
+      ]
+    },
+    "byStack": {
+      "delivery/docker": [
+        "delivery/appService"
+      ]
+    }
+  },
+  "exports": [],
+  "imports": [],
+  "links": [],
+  "records": []
+}
