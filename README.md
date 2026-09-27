@@ -375,7 +375,11 @@ config, kept separate from `chant.config.ts` so behold's concerns (like the
 tier picker) don't leak into chant's. Three keys: `tiers` below, `executor`
 (which forge deploys an environment), and `members`, spelled `[{ "dir": "x", "kind":
 "chant" | "choudoufu" | "terraform" }]`, how an estate root names what it
-composes, fail-closed on a kind behold has no reader for. First, the
+composes, fail-closed on a kind behold has no reader for. `members` is
+deprecated: a chant workspace declaration (`chant.workspace.json`) lists an
+estate's members for every reader, and beside one, `.behold.json`'s list is
+ignored. `behold doctor --fix` writes the declaration from it (see
+[Serve a chant workspace](https://intentius.io/behold/using/workspace/)). First, the
 project's deploy-**tier** axis, a dimension orthogonal to `environment` (chant
 has no native tier concept; it is entirely a project convention, e.g. Loom's
 components branching on an env-conditioned `namingParams.tier`):
