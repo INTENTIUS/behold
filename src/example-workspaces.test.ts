@@ -1,0 +1,43 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { discoverTerraformRoots } from "./terraform-member.ts";
+import { installedVersion, TERRAFORM_LEXICON } from "./workspace-convert.ts";
+
+// #464: the bundled estates declare themselves as chant workspaces, written by
+// `behold doctor --fix`. Pinned here: the declarations still say what behold's
+// own discovery sees, and the lexicon pin is the version installed beside
+// behold, which is where chant looks for it from an example in this checkout
+// (a pin chant can't find fails `chant workspace check` with WSP002).
+const REPO = join(import.meta.dirname, "..");
+
+interface Declaration {
+  name: string;
+  pins?: { package?: string; version?: string }[];
+  members: { name: string; dir: string; kind: string }[];
+}
+const declaration = (example: string): Declaration => JSON.parse(readFileSync(join(REPO, example, "chant.workspace.json"), "utf8")) as Declaration;
+
+describe("the bundled estates' workspace declarations", () => {
+  it("example-terraform-estate declares one member per root discovery finds", () => {
+    const decl = declaration("example-terraform-estate");
+    const roots = discoverTerraformRoots(join(REPO, "example-terraform-estate")).roots;
+    expect(decl.members.map((m) => [m.name, m.dir, m.kind]).sort()).toEqual(roots.map((r) => [r.name, r.dir, "terraform"]).sort());
+  });
+
+  it("example-choudoufu-estate declares its four estates", () => {
+    expect(declaration("example-choudoufu-estate").members).toEqual(
+      ["monolith", "team-a", "team-b", "team-c"].map((n) => ({ name: n, dir: n, kind: "choudoufu" })),
+    );
+    // The member list moved to the declaration; .behold.json no longer holds one.
+    expect(existsSync(join(REPO, "example-choudoufu-estate", ".behold.json"))).toBe(false);
+  });
+
+  const installed = installedVersion(TERRAFORM_LEXICON, REPO);
+  it.skipIf(!installed)("pins the terraform lexicon at the version installed beside behold", () => {
+    for (const example of ["example-terraform-estate", "example-choudoufu-estate"]) {
+      const pin = declaration(example).pins?.find((p) => p.package === TERRAFORM_LEXICON);
+      expect(pin?.version, example).toBe(installed);
+    }
+  });
+});

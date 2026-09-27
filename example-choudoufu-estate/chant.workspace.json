@@ -1,0 +1,32 @@
+{
+  "name": "example-choudoufu-estate",
+  "schema": 1,
+  "pins": [
+    {
+      "package": "@intentius/chant-lexicon-terraform",
+      "version": "0.94.0"
+    }
+  ],
+  "members": [
+    {
+      "name": "monolith",
+      "dir": "monolith",
+      "kind": "choudoufu"
+    },
+    {
+      "name": "team-a",
+      "dir": "team-a",
+      "kind": "choudoufu"
+    },
+    {
+      "name": "team-b",
+      "dir": "team-b",
+      "kind": "choudoufu"
+    },
+    {
+      "name": "team-c",
+      "dir": "team-c",
+      "kind": "choudoufu"
+    }
+  ]
+}
