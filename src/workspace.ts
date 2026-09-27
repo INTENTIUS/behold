@@ -29,7 +29,8 @@
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { GraphIR } from "@intentius/chant";
-import { runChantRaw, resolveChant, type GraphOptions } from "./chant.ts";
+import { envOverridesFor, runChantRaw, resolveChant, type GraphOptions } from "./chant.ts";
+import type { MemberVia } from "./member-ir.ts";
 import { meetsFloor } from "./floor.ts";
 
 /** The read contract version behold reads (chant's `reference/workspace-read-contract`). */
@@ -257,4 +258,142 @@ export function unreadableMemberIr(m: WorkspaceMember): GraphIR {
 /** Graph options the workspace read carries today; anything else goes to the member's own `chant graph`. */
 export function workspaceGraphTakes(opts: GraphOptions): boolean {
   return opts.detail === undefined && !opts.lens && !opts.up && !opts.down && !opts.namespace;
+}
+
+// ---------------------------------------------------------------------------
+// Reading a declared member through the contract (#464, ws-018).
+//
+// `chant workspace graph --member <name>` composes that one member, read by
+// its own toolchain, with ids `<member>/<id>` (ws-022). The estate code
+// composes members itself (`composeStacks` over the member IRs, with behold's
+// cache, pool and live fallbacks per member), so this takes the member's part
+// back out of the document with the `<member>/` prefix removed:
+// `composeStacks` puts the same prefix back under the same name, which is why
+// a declared member is named what the declaration names it (see
+// `estateMemberNames` in src/estate.ts).
+// ---------------------------------------------------------------------------
+
+/** A member chant says it could not read, carried as an error the estate code reports per member. */
+export class WorkspaceMemberError extends Error {
+  constructor(
+    readonly member: string,
+    readonly reason: WorkspaceReason,
+  ) {
+    super(`chant workspace graph could not read ${member}: ${reason.code}: ${reason.message}`);
+  }
+}
+
+type Json = unknown;
+
+function stripRefs(value: Json, prefix: string): Json {
+  if (Array.isArray(value)) return value.map((v) => stripRefs(v, prefix));
+  if (!isRecord(value)) return value;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value)) {
+    out[k] = k === "$ref" && typeof v === "string" && v.startsWith(prefix) ? v.slice(prefix.length) : stripRefs(v, prefix);
+  }
+  return out;
+}
+
+/**
+ * One member's IR out of a composed workspace graph document, ids back in the
+ * member's own terms. Throws {@link WorkspaceMemberError} for a member the
+ * document lists as failed or skipped, and an Error for a document behold
+ * can't read at all.
+ */
+export function memberIrFromWorkspaceGraph(text: string, member: string): GraphIR {
+  let doc: unknown;
+  try {
+    doc = JSON.parse(text);
+  } catch {
+    throw new Error("chant workspace graph printed something that is not JSON");
+  }
+  if (!isRecord(doc)) throw new Error("chant workspace graph printed JSON that is not an object");
+  const contract = contractRefusal(doc, "graph");
+  if (contract) throw new Error(`${contract.error} ${contract.remedy}`);
+  if (isRecord(doc.error)) throw new Error(`chant workspace graph: ${String(doc.error.code)}: ${String(doc.error.message ?? "")}`);
+  const entry = Array.isArray(doc.members) ? doc.members.find((m) => isRecord(m) && m.name === member) : undefined;
+  if (!isRecord(entry)) throw new Error(`chant workspace graph did not list member ${member}`);
+  if (entry.status !== "composed") {
+    const r = isRecord(entry.reason) ? entry.reason : {};
+    throw new WorkspaceMemberError(member, { code: String(r.code ?? entry.status), message: String(r.message ?? "") });
+  }
+  const p = `${member}/`;
+  const un = (id: unknown): string => (typeof id === "string" && id.startsWith(p) ? id.slice(p.length) : String(id));
+  const mine = (x: unknown): x is Record<string, unknown> => isRecord(x) && x.member === member;
+
+  const nodes = (Array.isArray(doc.nodes) ? doc.nodes : []).filter(mine).map((n) => {
+    const { member: _m, ...rest } = n;
+    const out: Record<string, unknown> = { ...rest, id: un(n.id), attrs: stripRefs(n.attrs ?? {}, p) };
+    if (typeof n.compositeInstance === "string") out.compositeInstance = un(n.compositeInstance);
+    if (typeof n.runtimeOwner === "string") out.runtimeOwner = un(n.runtimeOwner);
+    return out;
+  });
+  const edges = (Array.isArray(doc.edges) ? doc.edges : []).filter(mine).map((e) => {
+    const { member: _m, ...rest } = e;
+    return { ...rest, from: un(e.from), to: un(e.to) };
+  });
+  const own = new Set(nodes.map((n) => n.id as string));
+  const groups: Record<string, Record<string, string[]>> = {};
+  if (isRecord(doc.groups)) {
+    for (const [key, table] of Object.entries(doc.groups)) {
+      if (key === "byMember" || !isRecord(table)) continue;
+      // byStack, byContainer and byWave keys name things inside one member and
+      // carry its prefix; byLexicon and byComposite keys are shared.
+      const scoped = key === "byStack" || key === "byContainer" || key === "byWave";
+      for (const [k, ids] of Object.entries(table)) {
+        if (scoped && !k.startsWith(p)) continue;
+        const members = (Array.isArray(ids) ? ids : []).map(un).filter((id) => own.has(id));
+        if (members.length) (groups[key] ??= {})[scoped ? k.slice(p.length) : k] = members;
+      }
+    }
+  }
+  const exports = (Array.isArray(doc.exports) ? doc.exports : []).filter(mine).map((e) => {
+    const { member: _m, ...rest } = e;
+    return typeof e.node === "string" ? { ...rest, node: un(e.node) } : rest;
+  });
+  const imports = (Array.isArray(doc.imports) ? doc.imports : []).filter(mine).map((i) => {
+    const { member: _m, ...rest } = i;
+    return { ...rest, node: un(i.node) };
+  });
+  const ir: Record<string, unknown> = { version: 1, nodes, edges, groups, exports, imports };
+  if (isRecord(entry.meta)) ir.meta = entry.meta;
+  if (entry.pipeline !== undefined) ir.pipeline = entry.pipeline;
+  if (isRecord(doc.derivedAttrs)) ir.derivedAttrs = doc.derivedAttrs;
+  return ir as unknown as GraphIR;
+}
+
+/** The flags one member's contract read passes on. */
+export function workspaceGraphArgs(root: string, member: string, opts: GraphOptions): string[] {
+  const args = ["workspace", "graph", root, "--member", member];
+  if (opts.env) args.push("--env", opts.env);
+  if (opts.live) args.push("--live");
+  if (opts.overlay) args.push("--overlay");
+  if (opts.traffic) args.push("--traffic", opts.traffic);
+  return args;
+}
+
+/** Kinds chant reads through `workspace graph`. choudoufu stays behold's own reader: see #464. */
+export const CONTRACT_READ_KINDS = new Set(["chant", "terraform"]);
+
+/**
+ * How a declared member of a kind chant reads is read: through the contract,
+ * by the workspace root's chant. `fallback` answers the reads the contract
+ * does not carry (a lens, a detail level, a namespace-scoped live read), which
+ * go to the member's own `chant graph` as they did before.
+ */
+export function workspaceVia(member: WorkspaceMember, root: string, fallback: MemberVia): MemberVia {
+  return {
+    tool: (dir) => {
+      const chant = resolveChant(root);
+      return `workspace\0${chant.bin}\0${chant.version ?? ""}\0${fallback.tool(dir)}`;
+    },
+    read: async (dir, opts) => {
+      if (!workspaceGraphTakes(opts)) return fallback.read(dir, opts);
+      const args = workspaceGraphArgs(root, member.name, opts);
+      const run = await runChantRaw(args, root, envOverridesFor(opts));
+      if (!run.stdout.trim()) throw new Error(`chant ${args.join(" ")} exited ${run.code}: ${run.stderr.trim()}`);
+      return memberIrFromWorkspaceGraph(run.stdout, member.name);
+    },
+  };
 }

@@ -134,7 +134,7 @@ import { OpRunner } from "./op-runner.ts";
 import { detectSubstrates, projectLexicons } from "./substrates.ts";
 import { pickAutoSyncOps, splitForgeRouted, suspendedByRollback, type AutoSyncMode } from "./autosync.ts";
 import { sourceCommits, openRollbackBranches } from "./history.ts";
-import { composeEstate, composeEstateOverlay, composeEstatePending, estateNamespaceScopes, estateMembers, withoutJoinedMembers } from "./estate.ts";
+import { composeEstate, composeEstateOverlay, composeEstatePending, estateMemberNames, estateNamespaceScopes, estateMembers, withoutJoinedMembers } from "./estate.ts";
 import { statusVocabulary } from "./status-vocabulary.ts";
 import { attachBehaviour, type BehaviourMember } from "./behaviour.ts";
 import { attachBehaviourDelta, attachDeclaredBehaviour, paintLive, predictMember, trafficFor, type DeltaMember, type PredictMemberDeps } from "./behaviour-delta.ts";
@@ -144,6 +144,7 @@ import { choudoufuDiffNodes, paintPlanDrift, readChoudoufuLive, type Runner as C
 import { cacheChoudoufuPlan, cachedChoudoufuPlan, readChoudoufuPlan, type PlanResourceDrift } from "./choudoufu-plan.ts";
 import { choudoufuLexiconNote, setEstateLexiconRead, type LexiconRead } from "./choudoufu-refs.ts";
 import { discoverCarvePlans, moveMembers, moveReceipt, movesPayload, readCarvePlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
+import { setServedWorkspace, type Workspace } from "./workspace.ts";
 import { applyMemberPasses, memberKindOf, memberKindSpec, memberPassNote, servesAsEstate, type MemberPassRun } from "./member-kind.ts";
 import { TerraformReadError } from "./terraform-member.ts";
 import { invalidateMember, memberIr, memberIrCacheStats, memberSourceStamp } from "./member-ir.ts";
@@ -186,6 +187,11 @@ export interface ServerOptions {
   /** The chant project directory behold observes. When multiple projects are
    * served (#31), this is the primary — the one ops/overlay/rollback act on. */
   projectDir: string;
+  /** #464: the declared chant workspace being served, when `serve` was pointed
+   * at a root with a `chant.workspace.json`. `projectDirs` are then its drawn
+   * members, and the hand layout lives in the workspace root rather than in the
+   * first member. */
+  workspace?: Workspace;
   /** All served project dirs (#31 multi-estate). Present with length > 1 only when
    * composing several projects; the source graph then merges them. */
   projectDirs?: string[];
@@ -914,6 +920,9 @@ export function createApp(
   // (src/choudoufu-member.ts `setChoudoufuRunner`); undefined in production.
   setChoudoufuRunner(cfg.choudoufu?.run);
   setEstateLexiconRead(cfg.choudoufu ? (cfg.choudoufu.lexicon ?? null) : undefined);
+  // #464: the declared workspace this app serves, if any — the estate code asks
+  // it which member a directory is and what the declaration names it.
+  setServedWorkspace(cfg.workspace);
   app.use("/api/*", async (c, next) => {
     if (c.req.method === "GET") return withReadSignal(c.req.raw.signal, next);
     await next();
@@ -1573,6 +1582,10 @@ export function createApp(
   const switchServedProject = (dirs: string[], env?: string, spawnEnv?: Record<string, string>): void => {
     addRecent(cfg.projectDir);
     cfg.projectDir = dirs[0];
+    // A switch always lands on a loose project or estate; a declared workspace
+    // is only served from `behold serve <root>`.
+    cfg.workspace = undefined;
+    setServedWorkspace(undefined);
     // #389: one directory composes too when chant cannot read it — see servesAsEstate.
     cfg.projectDirs = servesAsEstate(dirs) ? dirs : undefined;
     // #372: a demo's scratch emulator reaches its choudoufu spawns through
@@ -1718,6 +1731,9 @@ export function createApp(
   });
 
   // --- The hand-layout sidecar (#228) -------------------------------------
+  // #464: a declared workspace keeps its layout in the workspace root, the one
+  // directory that is the whole estate; a loose estate keeps it in its first member.
+  const layoutDir = (): string => cfg.workspace?.root ?? cfg.projectDir;
   // behold's FIRST write into a served project, and the boundary is drawn
   // tightly on purpose (src/layout.ts carries the full statement of it):
   //
@@ -1744,18 +1760,18 @@ export function createApp(
     // directory is not a thing to do quietly.
     if (cfg.carveReport) return "a carve report isn't a project — there's nowhere to keep a hand layout";
     if (cfg.layoutWrites === false) return "a static export captures a snapshot — it doesn't write to the project";
-    return unwritableReason(cfg.projectDir);
+    return unwritableReason(layoutDir());
   };
 
   app.get("/api/layout", (c) => {
     const block = layoutWriteBlock();
-    const shared = { path: layoutPath(cfg.projectDir), writable: !block, ...(block ? { reason: block } : {}) };
+    const shared = { path: layoutPath(layoutDir()), writable: !block, ...(block ? { reason: block } : {}) };
     const raw = new URL(c.req.url).searchParams.get("lens");
     // No `?lens=` → the whole file, which is how you'd inspect or diff one.
-    if (raw === null) return c.json({ ...shared, lenses: readLayoutFile(cfg.projectDir).lenses });
+    if (raw === null) return c.json({ ...shared, lenses: readLayoutFile(layoutDir()).lenses });
     const lens = normalizeLens(raw);
     if (!lens) return c.json({ error: `not a lens key: ${raw}`, code: "bad-layout" }, 400);
-    return c.json({ ...shared, lens, deltas: readLens(cfg.projectDir, lens) });
+    return c.json({ ...shared, lens, deltas: readLens(layoutDir(), lens) });
   });
 
   app.post("/api/layout", async (c) => {
@@ -1785,8 +1801,8 @@ export function createApp(
     try {
       // Echoes what was STORED, not what was sent: zeroes and junk are pruned
       // on the way in, and the client should see the truth on disk.
-      const stored = writeLens(cfg.projectDir, lens, body.deltas);
-      return c.json({ ok: true, lens: stored.lens, deltas: stored.deltas, count: Object.keys(stored.deltas).length, path: layoutPath(cfg.projectDir) });
+      const stored = writeLens(layoutDir(), lens, body.deltas);
+      return c.json({ ok: true, lens: stored.lens, deltas: stored.deltas, count: Object.keys(stored.deltas).length, path: layoutPath(layoutDir()) });
     } catch (err) {
       if (err instanceof LayoutTooLarge) return c.json({ error: err.message, code: "too-large" }, 413);
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
@@ -1813,7 +1829,7 @@ export function createApp(
     const res = c.res;
     if (!res || res.status !== 200 || !(res.headers.get("content-type") ?? "").includes("json")) return;
     const lens = lensFromQuery(url.searchParams);
-    const deltas = readLens(cfg.projectDir, lens);
+    const deltas = readLens(layoutDir(), lens);
     if (!Object.keys(deltas).length) return;
     let body: { svg?: unknown; meta?: Record<string, unknown> };
     try {
@@ -2887,7 +2903,7 @@ export function createApp(
               mode: "progressive",
               // Which members the picture is still waiting on, so a client can
               // say so without inferring it from the attrs.
-              pending: shortStackNames(cfg.projectDirs),
+              pending: estateMemberNames(cfg.projectDirs),
             },
           });
         }

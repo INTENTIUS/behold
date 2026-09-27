@@ -14,7 +14,8 @@ import { applyConversion, planConversion } from "./workspace-convert.ts";
 import { runExport } from "./export.ts";
 import { diagnose, formatReport } from "./doctor.ts";
 import { isAutoSyncMode, type AutoSyncMode } from "./autosync.ts";
-import { detectProjectShape } from "./project.ts";
+import { detectProjectShape, loadBeholdConfig } from "./project.ts";
+import { drawnMembers, hasDeclaration, readWorkspace, undrawnMembers, unreadableMembers, type Workspace } from "./workspace.ts";
 import { servesAsEstate } from "./member-kind.ts";
 import { setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
 import { readCarveReport } from "./carve-lens.ts";
@@ -234,6 +235,23 @@ export async function run(argv: string[]): Promise<void> {
   }
 
   const dirs = projectDirs.map((d) => resolve(d));
+  // #464: one directory holding a chant.workspace.json is a declared workspace,
+  // served from chant's member list. Anything else is the loose view (ws-019).
+  const workspace = dirs.length === 1 && hasDeclaration(dirs[0]) ? await declaredWorkspace(dirs[0]) : undefined;
+  if (workspace) {
+    const drawn = drawnMembers(workspace).map((m) => m.abs);
+    await startServer({
+      projectDir: drawn[0] ?? workspace.root,
+      projectDirs: drawn,
+      workspace,
+      port,
+      ...(env ? { env } : {}),
+      ...(pollSecs !== undefined ? { pollSecs } : {}),
+      ...(autoSync !== "off" ? { autoSync } : {}),
+      ...(local ? { local: true } : {}),
+    });
+    return;
+  }
   for (const d of dirs) warnIfNotChantProject(d);
   await startServer({
     projectDir: dirs[0], // primary — ops/overlay/rollback act on it
@@ -248,6 +266,28 @@ export async function run(argv: string[]): Promise<void> {
     ...(autoSync !== "off" ? { autoSync } : {}),
     ...(local ? { local: true } : {}),
   });
+}
+
+/** Read the declared workspace at `root` for `serve`, or exit with chant's
+ * reason. Says at startup what the picture will and won't hold: members chant
+ * cannot read are drawn as unreadable boxes, `other` members are listed and
+ * draw nothing, and a `.behold.json` member list beside the declaration is
+ * ignored (ws-015). */
+async function declaredWorkspace(root: string): Promise<Workspace> {
+  const read = await readWorkspace(root);
+  if (!read.ok) {
+    process.stderr.write(`behold serve: ${read.refusal.error}\n        ${read.refusal.remedy}\n`);
+    process.exit(1);
+  }
+  const ws = read.workspace;
+  const drawn = drawnMembers(ws);
+  process.stdout.write(`behold: serving chant workspace ${ws.name} (${ws.file}), ${drawn.length} of ${ws.members.length} members drawn\n`);
+  for (const m of unreadableMembers(ws)) process.stdout.write(`        ${m.name}: unreadable, ${m.reason!.code}: ${m.reason!.message}\n`);
+  for (const m of undrawnMembers(ws)) process.stdout.write(`        ${m.name}: kind ${m.kind}, listed and not drawn${m.because ? ` (${m.because})` : ""}\n`);
+  if (loadBeholdConfig(root).members) {
+    process.stderr.write(`behold: warning — ${root}/.behold.json lists members, and chant.workspace.json does too; the declaration wins and .behold.json's members are ignored.\n`);
+  }
+  return ws;
 }
 
 /** #193: point out a not-a-chant-project directory at startup, in the same

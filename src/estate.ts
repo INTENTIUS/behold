@@ -29,6 +29,7 @@ import { chantVia, memberIr, type MemberVia } from "./member-ir.ts";
 import { overlayIr } from "./overlay-ir.ts";
 import { memberKindOf, memberKindSpec, type MemberKind } from "./member-kind.ts";
 import { CLUSTER_SCOPED } from "./zoom-notes.ts";
+import { CONTRACT_READ_KINDS, servedWorkspace, unreadableMemberIr, unreadableMembers, workspaceMemberOf, workspaceVia } from "./workspace.ts";
 
 // ---------------------------------------------------------------------------
 // Bounded member reads (#295). Every estate read below fans out one `chant
@@ -85,8 +86,33 @@ export async function mapPool<T, R>(
  * One reading of `shortStackNames`, so the names here and the ids in the
  * composed IR cannot drift apart. */
 export function estateMembers(projectDirs: readonly string[]): { name: string; dir: string; kind: MemberKind }[] {
-  const names = shortStackNames([...projectDirs]);
-  return projectDirs.map((dir, i) => ({ name: names[i], dir, kind: memberKindOf(dir) ?? "chant" }));
+  const names = estateMemberNames(projectDirs);
+  // A declared member's kind is the declaration's (#464); a loose one's is its probe's.
+  const kindOf = (dir: string): MemberKind => (workspaceMemberOf(dir)?.kind as MemberKind | undefined) ?? memberKindOf(dir) ?? "chant";
+  return projectDirs.map((dir, i) => ({ name: names[i], dir, kind: kindOf(dir) }));
+}
+
+/**
+ * The name each member composes under: what the workspace declaration names
+ * it when a declared workspace is served (#464, ws-022: chant composes the same
+ * member as `<name>/<id>`, so the two agree), else `shortStackNames`' readable
+ * label, as a loose `behold serve a b c` always has.
+ */
+export function estateMemberNames(projectDirs: readonly string[]): string[] {
+  const declared = projectDirs.map((d) => workspaceMemberOf(d)?.name);
+  if (declared.every((n): n is string => n !== undefined)) return declared;
+  return shortStackNames([...projectDirs]);
+}
+
+/**
+ * The members of the served workspace chant says it cannot read, each as a
+ * one-node box saying why (#464): listed with its reason code, never silently
+ * missing. Only when the estate being composed is that workspace's.
+ */
+function unreadableStacks(projectDirs: readonly string[]): { name: string; ir: GraphIR }[] {
+  const ws = servedWorkspace();
+  if (!ws || !projectDirs.every((d) => workspaceMemberOf(d))) return [];
+  return unreadableMembers(ws).map((m) => ({ name: m.name, ir: unreadableMemberIr(m) }));
 }
 
 // #368: every member read below dispatches on the member's kind through
@@ -97,7 +123,14 @@ export function estateMembers(projectDirs: readonly string[]): { name: string; d
 // it always did, from the same place.
 
 /** How `dir` is read: its kind's own `via`, else chant's. */
-const memberViaFor = (dir: string): MemberVia => memberKindSpec(memberKindOf(dir) ?? "chant")?.via ?? chantVia;
+const memberViaFor = (dir: string): MemberVia => {
+  const own = memberKindSpec(memberKindOf(dir) ?? "chant")?.via ?? chantVia;
+  // #464: a declared member of a kind chant composes is read through the
+  // workspace contract, by the root's chant; choudoufu keeps behold's reader.
+  const declared = workspaceMemberOf(dir);
+  const ws = servedWorkspace();
+  return declared && ws && CONTRACT_READ_KINDS.has(declared.kind) ? workspaceVia(declared, ws.root, own) : own;
+};
 
 /** A member's source IR: cached (#307), read by the member's own kind. */
 /** #402: `--traffic` reaches only a member whose own read takes it. An older
@@ -123,7 +156,7 @@ const memberLive = (dir: string, opts: GraphOptions, fresh: boolean): Promise<Gr
 
 /** Graph each project's source and compose them into one estate IR. */
 export async function composeEstate(projectDirs: string[], opts: GraphOptions = {}): Promise<GraphIR> {
-  const names = shortStackNames(projectDirs); // readable per-project labels (common prefix stripped)
+  const names = estateMemberNames(projectDirs); // declared names, else readable labels (common prefix stripped)
   const stacks = await mapPool(projectDirs, estateReadPool(projectDirs.length), async (dir, i) => ({
     name: names[i],
     // chant#2040: the manifests a member holds name the files its carved
@@ -131,7 +164,7 @@ export async function composeEstate(projectDirs: string[], opts: GraphOptions = 
     // known, onto a COPY (the member IR is the #312 cache's own object).
     ir: joinCarvedSources(await memberSource(dir, opts), (await carveStatesFor(dir)).values(), dir).ir,
   }));
-  return composeStacks(stacks);
+  return composeStacks([...stacks, ...unreadableStacks(projectDirs)]);
 }
 
 /** The estate-wide overlay's composition report (#189). */
@@ -167,7 +200,7 @@ export async function composeEstate(projectDirs: string[], opts: GraphOptions = 
  * ---------------------------------------------------------------------------
  */
 export async function composeEstatePending(projectDirs: string[], opts: GraphOptions = {}): Promise<GraphIR> {
-  const names = shortStackNames(projectDirs);
+  const names = estateMemberNames(projectDirs);
   // Source only: strip anything that would reach the account.
   const { env: _env, live: _live, overlay: _overlay, ...srcOpts } = opts;
   const stacks = await mapPool(projectDirs, estateReadPool(projectDirs.length), async (dir, i) => {
@@ -175,7 +208,7 @@ export async function composeEstatePending(projectDirs: string[], opts: GraphOpt
     for (const n of ir.nodes) n.attrs = { ...n.attrs, _pendingRead: true };
     return { name: names[i], ir };
   });
-  return composeStacks(stacks);
+  return composeStacks([...stacks, ...unreadableStacks(projectDirs)]);
 }
 
 export interface EstateOverlayResult {
@@ -506,7 +539,7 @@ export async function composeEstateOverlay(
     onMember?: (member: { name: string; dir: string; ir: GraphIR; unobserved?: string }) => void;
   } = {},
 ): Promise<EstateOverlayResult> {
-  const names = shortStackNames(projectDirs);
+  const names = estateMemberNames(projectDirs);
   const unobserved: { name: string; reason: string }[] = [];
   const dropped: { name: string; reason: string }[] = [];
   const joined: { name: string; namespace: string }[] = [];
@@ -548,7 +581,7 @@ export async function composeEstateOverlay(
   });
   const present = stacks.filter((s): s is { name: string; ir: GraphIR } => !!s);
   return {
-    ir: composeStacks(present),
+    ir: composeStacks([...present, ...unreadableStacks(projectDirs)]),
     observed: present.length - unobserved.length,
     total: projectDirs.length,
     unobserved,
