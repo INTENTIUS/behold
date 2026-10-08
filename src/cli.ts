@@ -16,6 +16,7 @@ import { diagnose, formatReport } from "./doctor.ts";
 import { isAutoSyncMode, type AutoSyncMode } from "./autosync.ts";
 import { detectProjectShape, loadBeholdConfig } from "./project.ts";
 import { drawnMembers, hasDeclaration, readWorkspace, undrawnMembers, unreadableMembers, type Workspace } from "./workspace.ts";
+import { hudAddress } from "./workspace-why.ts";
 import { servesAsEstate } from "./member-kind.ts";
 import { setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
 import { readCarveReport } from "./carve-lens.ts";
@@ -38,7 +39,7 @@ Usage:
   behold doctor [project-dir] [--json] [--fix]
   behold preview [project-dir] [--port <n>] [--emulator]
   behold export [project-dir] [--out <dir>] [--env <name>] [--name <worker>] [--emulator]
-  behold serve <project-dir…> [--port <n>] [--host <addr>] [--allow-host <name,…>] [--env <name>] [--poll <secs>] [--local]
+  behold serve <project-dir…> [--port <n>] [--host <addr>] [--allow-host <name,…>] [--hud <url>] [--env <name>] [--poll <secs>] [--local]
   behold carve <report.json> [--port <n>]
 
   carve   Render a chant Terraform peelability report — the JSON from
@@ -103,6 +104,9 @@ Options:
   --allow-host <n,…>  serve only: names besides loopback behold answers to, and
                       whose pages may write (BEHOLD_ALLOWED_HOSTS too). For a
                       proxy that frames behold, or --host 0.0.0.0.
+  --hud <url>         serve only: where hud reviews this workspace's records
+                      (BEHOLD_HUD_URL too). A proposed decision in a member's
+                      or a card's "why" links to its review there (#471).
   --env <name>        Environment name — turns on the live drift overlay.
                       export/serve.
   --poll <secs>       Re-query live drift every <secs> and push updates (needs --env).
@@ -196,6 +200,7 @@ export async function run(argv: string[]): Promise<void> {
   let autoSync: AutoSyncMode = "off";
   let local = false;
   let host: string | undefined;
+  let hudArg: string | undefined = process.env.BEHOLD_HUD_URL || undefined;
   const allowHosts: string[] = [];
 
   for (let i = 0; i < rest.length; i++) {
@@ -203,6 +208,7 @@ export async function run(argv: string[]): Promise<void> {
     if (a === "--port") port = Number(rest[++i]);
     else if (a === "--host") host = rest[++i];
     else if (a === "--allow-host") allowHosts.push(...(rest[++i] ?? "").split(","));
+    else if (a === "--hud") hudArg = rest[++i];
     else if (a === "--env") env = rest[++i];
     else if (a === "--poll") pollSecs = Number(rest[++i]);
     else if (a === "--local") local = true;
@@ -243,6 +249,11 @@ export async function run(argv: string[]): Promise<void> {
     process.stderr.write("behold serve: --auto-sync needs --env and --poll (it acts on polled drift)\n");
     process.exit(2);
   }
+  const hud = hudAddress(hudArg);
+  if (hudArg && !hud) {
+    process.stderr.write(`behold serve: --hud must be an http or https address, not ${JSON.stringify(hudArg)}\n`);
+    process.exit(2);
+  }
 
   const dirs = projectDirs.map((d) => resolve(d));
   // #464: one directory holding a chant.workspace.json is a declared workspace,
@@ -261,6 +272,7 @@ export async function run(argv: string[]): Promise<void> {
       ...(local ? { local: true } : {}),
       ...(host ? { host } : {}),
       ...(allowHosts.length ? { allowedHosts: allowHosts } : {}),
+      ...(hud ? { hud } : {}),
     });
     return;
   }

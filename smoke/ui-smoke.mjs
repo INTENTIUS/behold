@@ -27,6 +27,9 @@ import {
   BEH_ABSENT,
   BEH_DIAGNOSTIC,
   DOCTOR,
+  WHY_DELAY_MS,
+  WHY_HUD,
+  WHY_PROPOSED,
 } from "./stub.mjs";
 import { readCostLine } from "../web/read-cost.js";
 import { THEMES, DEFAULT_THEME } from "../web/themes.js";
@@ -1621,6 +1624,87 @@ try {
     } finally {
       await absPage.close();
       absServer.close();
+    }
+  }
+
+  // ---- #471: the why of a member and of a card, read when asked ------------
+  // The stub answers after WHY_DELAY_MS, as chant does on a real repository:
+  // nothing is read at boot, the section says it is reading while it is, the
+  // page keeps working, and the answer names the decisions (a proposed one
+  // linked to hud), the run and the commit.
+  {
+    const whyServer = await startStub(PORT + 7, { why: true });
+    const whyPage = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+    const whyErrors = [];
+    whyPage.on("pageerror", (e) => whyErrors.push(String(e)));
+    try {
+      await whyPage.goto(`http://localhost:${PORT + 7}/`);
+      await whyPage.waitForSelector("#graph svg [data-node-id]", { timeout: 20000 });
+      await whyPage.waitForTimeout(400);
+      check("no why is read at boot", whyServer.whyGets.length === 0);
+
+      const card = "terralith-4/aws_ecs_cluster.main";
+      await whyPage.click(`[data-node-id="${card}"]`);
+      await whyPage.waitForTimeout(150);
+      const pane = whyPage.locator("#inspect-body");
+      check("a card in a declared member has a why section", (await pane.locator("h3", { hasText: /^why$/ }).count()) === 1);
+      check("…with a button, and still nothing read", (await pane.locator("button.why-read", { hasText: "Read why" }).count()) === 1 && whyServer.whyGets.length === 0);
+
+      await pane.locator("button.why-read", { hasText: "Read why" }).click();
+      await whyPage.waitForTimeout(250);
+      check("while chant reads, the section says so", (await pane.locator(".why-reading").innerText()).startsWith("reading…"));
+      // The page goes on: a panel tab opens while the read is in flight.
+      await whyPage.click('#panel-tabs button[data-tab="model"]');
+      await whyPage.waitForTimeout(100);
+      check("…and the page stays responsive", (await whyPage.locator("#tab-model").isVisible()) && (await pane.locator(".why-reading").count()) === 1);
+      await whyPage.screenshot({ path: join(SHOTS, "15-why-reading.png") });
+      check("the read asks about the card", whyServer.whyGets.at(-1) === `?node=${encodeURIComponent(card)}`);
+
+      await whyPage.waitForSelector("#inspect-body .why-headline", { timeout: WHY_DELAY_MS + 5000 });
+      const text = await pane.locator(".why").innerText();
+      check("the answer names the decisions covering it", text.includes("2 decisions cover terralith-4/main.tf.") && text.includes("fix-001") && text.includes("How the app is deployed"));
+      const review = pane.locator(`.why a[href="${WHY_HUD}"]`);
+      check("…a proposed one links to its review in hud", (await review.count()) === 1 && (await review.innerText()) === WHY_PROPOSED);
+      check("…and the run and the commit behind it", text.includes("conformance-run") && text.includes("6b3865dd") && text.includes("the reader conformance workspace"));
+      check("…and how long chant took, with the command it ran", text.includes("read in 1.5 s") && text.includes("chant workspace graph --intent terralith-4/main.tf"));
+      await pane.locator(".why").screenshot({ path: join(SHOTS, "16-why-node.png") });
+      await whyPage.screenshot({ path: join(SHOTS, "17-why-page.png") });
+
+      // Stopping a read leaves the section as it was before the click.
+      await whyPage.click('[data-node-id="terralith-4/aws_iam_role.quiet"]');
+      await whyPage.waitForTimeout(150);
+      const before = whyServer.whyGets.length;
+      await pane.locator("button.why-read", { hasText: "Read why" }).click();
+      await whyPage.waitForTimeout(200);
+      await pane.locator("button.why-read", { hasText: "Stop" }).click();
+      await whyPage.waitForTimeout(WHY_DELAY_MS + 300);
+      check("Stop ends the read and paints nothing", whyServer.whyGets.length === before + 1 && (await pane.innerText()).includes("Stopped. Nothing was read.") && (await pane.locator(".why-headline").count()) === 0);
+
+      // A member's box: what the declaration says of it, and its why.
+      await whyPage.locator('rect[data-group-id="terralith-4"]').dispatchEvent("click");
+      await whyPage.waitForTimeout(150);
+      const memberPane = await pane.innerText();
+      check("a member's box opens the member in the inspect pane", memberPane.includes("terralith-4") && memberPane.includes("choudoufu"));
+      await pane.locator("button.why-read", { hasText: "Read why" }).click();
+      await whyPage.waitForSelector("#inspect-body .why-headline", { timeout: WHY_DELAY_MS + 5000 });
+      check("…and its why is the member directory's", (await pane.locator(".why-headline").innerText()) === "2 decisions cover terralith-4/." && whyServer.whyGets.at(-1) === "?member=terralith-4");
+      await pane.locator(".why").screenshot({ path: join(SHOTS, "18-why-member.png") });
+
+      // Embed mode (#476): the section is drawn the same.
+      await whyPage.goto(`http://localhost:${PORT + 7}/?embed=1`);
+      await whyPage.waitForSelector("#graph svg [data-node-id]", { timeout: 20000 });
+      await whyPage.click(`[data-node-id="${card}"]`);
+      await whyPage.waitForTimeout(150);
+      await pane.locator("button.why-read", { hasText: "Read why" }).click();
+      await whyPage.waitForSelector("#inspect-body .why-headline", { timeout: WHY_DELAY_MS + 5000 });
+      check("framed, the why section is drawn too", (await pane.locator(`.why a[href="${WHY_HUD}"]`).count()) === 1);
+      await whyPage.screenshot({ path: join(SHOTS, "19-why-embed.png") });
+
+      check("no console errors on the why estate", whyErrors.length === 0);
+      if (whyErrors.length) console.error("why page errors:", whyErrors);
+    } finally {
+      await whyPage.close();
+      whyServer.close();
     }
   }
 

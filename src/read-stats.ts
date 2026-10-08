@@ -180,6 +180,8 @@ export function labelRead(args: readonly string[], dir: string): ReadLabel {
   // entity graph's own shape — so without this it would file under the same
   // name and the ledger would report two different reads as one.
   if (verb === "graph" && args.includes("--stacks")) return { dir, what: "graph --stacks", live: false };
+  // #471: the why read is history and records, never the cloud.
+  if (verb === "workspace" && args[1] === "graph" && args[2] === "--intent") return { dir, what: "workspace graph --intent", live: false };
   const what = verb === "graph" && reaches ? `graph ${args.includes("--overlay") ? "--overlay" : "--live"}` : head;
   return { dir, what, live: verb === "graph" ? reaches : true };
 }

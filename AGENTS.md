@@ -39,6 +39,17 @@ test` (`src/workspace-reader-conformance.test.ts`, #468), so a new workspace
 read is added to the reader and to the suite's `commands`, never shelled from
 somewhere else.
 
+`GET /api/workspace/why?member=<name>` or `?node=<member>/<id>` (#471) answers
+why a member or a card is the way it is, from `chant workspace graph --intent
+<region> --json` (chant 0.102.0 or newer writes its `why`): the decisions
+covering it in chant's order, the agent runs and the commits behind it, and the
+gaps chant names. The region is the member's declared directory or the node id,
+never a path from the caller. It takes seconds on a small workspace and tens of
+seconds on a large one, so the inspect pane reads it only on a click, and it is
+a scheduled read: it holds a slot in the read budget, has the read deadline,
+and stops when the request does. `serve --hud <url>` (or `BEHOLD_HUD_URL`)
+links a proposed decision to its review in hud.
+
 ## Getting a server
 
 ```sh

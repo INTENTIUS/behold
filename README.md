@@ -359,6 +359,17 @@ workspace block keys them, so the two show the same set. Standalone, a gate's
 button says who chant will record (the user running behold) before the click.
 Every approve route refuses in preview mode.
 
+In a declared workspace, the inspect pane of a member's box or a card has a
+"why" section. "Read why" asks `chant workspace graph --intent <member dir or
+node id> --json` (chant 0.102.0 or newer in the workspace root) and shows the
+decisions covering it, in chant's order, with the agent runs and commits behind
+it. Nothing is read until the click: on chant's own repository one member takes
+about 30 s, a small workspace about 1 s. While it reads the section says
+"reading…" with a Stop button, and picking something else stops the read.
+Start behold with `--hud <url>` (or `BEHOLD_HUD_URL`) and a proposed decision
+links to its review in hud; otherwise it is named by id. Framed, the section is
+drawn the same, and clicks on the graph still go to the host.
+
 A host that already watches the workspace tells behold it changed with
 `POST /api/refresh?notify=1`, instead of running behold with `--poll` beside
 it. behold drops its cached reads and every open page re-pulls.

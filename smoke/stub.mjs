@@ -568,6 +568,39 @@ const CHOUDOUFU_PROJECT = {
   memberKinds: ["choudoufu"],
 };
 
+// #471: the why estate. The answers are /api/workspace/why's shape, written
+// from what chant 0.102.0 printed for the conformance fixture (a decided and a
+// proposed decision constraining the member, one agent run, one commit).
+export const WHY_DELAY_MS = 1500;
+const WHY_WORKSPACE = { name: "terralith", members: [{ name: "terralith-4", dir: "terralith-4", kind: "choudoufu" }], hud: true };
+export const WHY_PROPOSED = "fix-002";
+export const WHY_HUD = "http://hud.test/decisions#fix-002";
+function whyAnswer(q) {
+  const node = q.get("node");
+  const commit = { sha: "6b3865dd9936437b58ca8bf84db0ec5264d85f7b", subject: "the reader conformance workspace", date: "2026-10-07T23:45:37-06:00", author: "chant", pullRequest: null, run: "conformance-run" };
+  return {
+    workspace: true,
+    member: "terralith-4",
+    ms: WHY_DELAY_MS,
+    hud: true,
+    region: node ? "region:terralith-4/main.tf" : "region:terralith-4",
+    path: node ? "terralith-4/main.tf" : "terralith-4",
+    type: node ? "file" : "dir",
+    chant: "0.102.0",
+    answered: true,
+    explained: true,
+    decisions: [
+      { id: "fix-001", title: "How the app is deployed", state: "decided", relevance: "member", current: true, closed: false, lines: 0, decidedBy: "lex00", decidedOn: "2026-09-24", review: null },
+      { id: WHY_PROPOSED, title: "Where kept records wait", state: "proposed", relevance: "member", current: true, closed: false, lines: 0, decidedBy: null, decidedOn: null, review: WHY_HUD },
+    ],
+    runs: [{ id: "conformance-run", lines: node ? 4 : 0, commits: [commit.sha], unit: null, by: "conformance", harness: "conformance", model: "none", outcome: "done", startedAt: "2026-01-01T00:00:00Z", endedAt: "2026-01-01T00:01:00Z", decisions: [] }],
+    commits: [commit],
+    commitsTotal: 1,
+    uncommittedLines: 0,
+    gaps: [],
+  };
+}
+
 // #393 item 4 (⌘K takes an address): an estate at the scale that made the audit
 // ask for it — composed ids (`<member>/<address>`), one card per team, on a
 // canvas far wider than the pane. The last card sits in the far corner of an
@@ -721,7 +754,12 @@ function behaviourIr(variant) {
   };
 }
 
-export function startStub(port, { carve = false, nonChant = false, choudoufu = false, behaviour = null } = {}) {
+export function startStub(port, { carve = false, nonChant = false, choudoufu = false, behaviour = null, why = false } = {}) {
+  // #471: the why estate is the choudoufu estate served as a declared
+  // workspace, whose member is terralith-4.
+  if (why) choudoufu = true;
+  /** #471: every why read the page made, so the smoke can say none happened at boot. */
+  const whyGets = [];
   // #228: the hand-layout sidecar, in memory instead of `.behold/layout.json`
   // — the SAME wire contract src/server.ts serves (lens-keyed deltas, a
   // `writable` flag on the read), so the smoke drives the client's whole sync
@@ -891,12 +929,20 @@ export function startStub(port, { carve = false, nonChant = false, choudoufu = f
       if (path === "/api/demos") return json({ demos: [] });
       if (path === "/api/layout") return json({ lens: url.searchParams.get("lens"), writable: false, reason: "a stub", deltas: {} });
     }
+    if (why && path === "/api/workspace/why") {
+      // Slow on purpose, as chant is on a real repository: the page has to say
+      // it is reading, keep going, and paint the answer when it lands.
+      whyGets.push(url.search);
+      await new Promise((r) => setTimeout(r, WHY_DELAY_MS));
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(JSON.stringify(whyAnswer(url.searchParams)));
+    }
     if (choudoufu) {
       const json = (body) => {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify(body));
       };
-      if (path === "/api/project") return json(CHOUDOUFU_PROJECT);
+      if (path === "/api/project") return json(why ? { ...CHOUDOUFU_PROJECT, workspace: WHY_WORKSPACE } : CHOUDOUFU_PROJECT);
       if (path === "/api/graph" || path === "/api/overlay") {
         // #404: the plan read is opt-in, so the mark and the count exist only
         // on the request that asked for them.
@@ -1135,5 +1181,6 @@ export function startStub(port, { carve = false, nonChant = false, choudoufu = f
   server.approvePosts = approvePosts; // what the converge gate card sent (#234 join 1)
   server.logGets = logGets; // when the converge history was read (#234, chant#2029)
   server.doctorGets = doctorGets; // that the SPA asks what the last read cost (#421)
+  server.whyGets = whyGets; // when a why was read (#471)
   return new Promise((resolve) => server.listen(port, () => resolve(server)));
 }

@@ -146,6 +146,7 @@ import { choudoufuLexiconNote, setEstateLexiconRead, type LexiconRead } from "./
 import { discoverCarvePlans, moveMembers, moveReceipt, movesPayload, readCarvePlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
 import { servedWorkspace, setServedWorkspace, type Workspace } from "./workspace.ts";
 import { approveArgs, isEnvName, localApprover, readWorkspaceGates } from "./workspace-gates.ts";
+import { readWhy, whyRegion } from "./workspace-why.ts";
 import { allowedHostsFrom, guardRequest } from "./request-guard.ts";
 import { applyMemberPasses, memberKindOf, memberKindSpec, memberPassNote, servesAsEstate, type MemberPassRun } from "./member-kind.ts";
 import { TerraformReadError } from "./terraform-member.ts";
@@ -199,6 +200,9 @@ export interface ServerOptions {
    * members, and the hand layout lives in the workspace root rather than in the
    * first member. */
   workspace?: Workspace;
+  /** #471: hud's address (`--hud`, BEHOLD_HUD_URL). A proposed decision in a
+   * "why" links to its review there; without it the decision is named by id. */
+  hud?: string;
   /** All served project dirs (#31 multi-estate). Present with length > 1 only when
    * composing several projects; the source graph then merges them. */
   projectDirs?: string[];
@@ -1386,6 +1390,33 @@ export function createApp(
     return c.json({ workspace: true, env, gates: read.gates.map(({ dir: _dir, ...g }) => g), approver: localApprover() });
   });
 
+  // #471: why a member or a node is the way it is, from `chant workspace graph
+  // --intent <region> --json`. Read when the page asks (a click on "why"),
+  // never at boot: on a large repository it takes tens of seconds. It is a
+  // scheduled read, so it waits for a slot in the read budget, has the read
+  // deadline, and stops when the page aborts the request (a new pick, or the
+  // tab closing). The region is the member's declared directory or the node's
+  // id, checked against the served workspace; the page never sends a path.
+  app.get("/api/workspace/why", async (c) => {
+    const ws = servedWorkspace();
+    if (!ws) return c.json({ workspace: false, error: "behold isn't serving a declared chant workspace, so there is no why to read.", code: "no-workspace" });
+    const ask = whyRegion(ws, { member: c.req.query("member") || null, node: c.req.query("node") || null });
+    if (!ask.ok) return c.json({ workspace: true, ...ask.refusal }, 400);
+    const started = Date.now();
+    let read: Awaited<ReturnType<typeof readWhy>>;
+    try {
+      read = await readWhy(ws, ask.region, cfg.hud ?? null);
+    } catch (e) {
+      // The read deadline, a full queue, or the page leaving: chant's answer
+      // never came, which the page says in words rather than as a 500.
+      if (c.req.raw.signal.aborted) return c.body(null, 499 as never);
+      read = { ok: false, refusal: { error: `The why read for ${ask.region} stopped: ${(e as Error).message}.`, code: "why-read", remedy: "BEHOLD_READ_TIMEOUT_MS raises the read deadline; /api/doctor shows what else is reading." } };
+    }
+    const ms = Date.now() - started;
+    if (!read.ok) return c.json({ workspace: true, member: ask.member, region: ask.region, ms, refusal: read.refusal });
+    return c.json({ workspace: true, member: ask.member, ms, hud: !!cfg.hud, ...read.why });
+  });
+
   // #477: approve one workspace gate, by key. The member's directory, env and
   // plan digest come from a fresh status read, never from the page. Recorded as
   // whoever runs behold, which the card says before the click; a framed behold
@@ -1576,6 +1607,11 @@ export function createApp(
       // #477: who `chant approve` records when behold runs it. The approve
       // buttons say it before the click.
       approver: localApprover(),
+      // #471: the declared workspace's members, so the inspect pane offers a
+      // member's or a card's "why" only where chant can answer it.
+      ...(servedWorkspace()
+        ? { workspace: { name: servedWorkspace()!.name, members: servedWorkspace()!.members.map((m) => ({ name: m.name, dir: m.dir, kind: m.kind })), hud: !!cfg.hud } }
+        : {}),
       // The tier picker's options (M2 #54, sourced #70): gated on the served
       // project's `.behold.json` declaring a `tiers` block at all — NOT on
       // whether its env var happens to be set in behold's own launch env
@@ -1986,6 +2022,7 @@ export function createApp(
         { method: "POST", path: "/api/ops/:name/run", desc: "run a committed Op (delegated write)" },
         { method: "POST", path: "/api/ops/:name/signal/:gate", desc: "approve an Op's gate (releases the waiting run)" },
         { method: "GET", path: "/api/workspace/gates", desc: "a declared workspace's waiting gates from chant workspace status <env> --json (?env=), keyed member/op/gate, with the approver behold would record (#477)" },
+        { method: "GET", path: "/api/workspace/why", desc: "why a member (?member=) or a node (?node=<member>/<id>) is the way it is: the decisions covering it, the runs and commits behind it, from chant workspace graph --intent <region> --json; read on demand, cancelled with the request (#471)" },
         { method: "POST", path: "/api/workspace/gates/approve", desc: "approve one workspace gate: JSON body {key, env}; env and plan come from a fresh status read; recorded as the user running behold; preview-locked (#477)" },
         { method: "POST", path: "/api/operator/approve/:op/:gate", desc: "record a converge gate's resolution (chant approve — a fact for the next tick, not an unblock)" },
         { method: "POST", path: "/api/rollback", desc: "open a rollback PR: ?to=<sha>" },

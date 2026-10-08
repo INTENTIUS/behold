@@ -12,6 +12,7 @@ import { createRefreshQueue } from "./refresh-queue.js";
 import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine } from "./view-url.js";
 import { readEmbed, selectMessage, viewFromMessage } from "./embed.js";
 import { gateCards } from "./workspace-gates.js";
+import { seconds, whyQuery, whyView } from "./why.js";
 import { readCostLine } from "./read-cost.js";
 import { applyMemberFrame, pendingLine, stillPending } from "./pending.js";
 import { initTheme, setTheme, mountThemePicker, readableOn, colorForCategory, onThemeChange, getTokens, getTheme, pinTokensFor } from "./theme.js";
@@ -579,6 +580,194 @@ function renderDriftSection(section, r) {
   pr("rendered", `${p.renderedAt} · helm ${p.helmVersion} · chant ${p.chantVersion}`);
 }
 
+// ---------------------------------------------------------------------------
+// #471: the "why" of a member or a card in a declared workspace.
+//
+// Read on demand: `chant workspace graph --intent` walks git history and takes
+// seconds on a small workspace and tens of seconds on a large one, so nothing
+// asks for it until someone clicks. While it reads, the section says so with
+// the seconds counting and a Stop button; the rest of the page goes on as
+// before. Picking something else aborts the request, and the server's read
+// scheduler stops chant when nobody is waiting for it any more. In embed mode
+// the section is drawn the same; clicks on the graph still go to the host.
+// ---------------------------------------------------------------------------
+
+/** The member a card or a box belongs to, when the served workspace declares it. */
+function declaredMember(name) {
+  const ws = projectInfo && projectInfo.workspace;
+  return (ws && ws.members.find((m) => m.name === name)) || null;
+}
+
+/** Answers already read this session, by query. A source change clears them. */
+const whyAnswers = new Map();
+/** The read in flight, so a new pick can stop it. */
+let whyInFlight = null;
+
+function stopWhyRead() {
+  if (whyInFlight) whyInFlight.abort();
+  whyInFlight = null;
+}
+
+function renderWhySection(panel, ask) {
+  stopWhyRead();
+  if (staticMode) return;
+  const memberName = ask.member || nodeMember(ask.node || "");
+  if (!declaredMember(memberName)) return;
+  const query = whyQuery(ask);
+  const forId = panel.dataset.node;
+  const h = document.createElement("h3");
+  h.textContent = "why";
+  const box = document.createElement("div");
+  box.className = "why";
+  box.dataset.why = query;
+  panel.append(h, box);
+
+  const button = (label, title, onClick) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "why-read";
+    b.textContent = label;
+    b.title = title;
+    b.addEventListener("click", onClick);
+    return b;
+  };
+  const idle = (note) => {
+    box.replaceChildren();
+    const p = document.createElement("p");
+    p.className = "queried";
+    p.textContent = note || `The decisions that cover ${ask.node ? "this card" : `member ${memberName}`}, and the runs and commits behind it, from chant workspace graph --intent. Reading walks the repository's history; on a large one it takes a while.`;
+    box.append(p, button("Read why", "Ask chant now. Nothing is read until you click.", read));
+  };
+  const read = async () => {
+    stopWhyRead();
+    const controller = new AbortController();
+    whyInFlight = controller;
+    const started = Date.now();
+    box.replaceChildren();
+    const status = document.createElement("p");
+    status.className = "queried why-reading";
+    const tick = () => (status.textContent = `reading… ${seconds(Date.now() - started)}`);
+    tick();
+    const timer = setInterval(tick, 250);
+    box.append(status, button("Stop", "Stop the read; chant is stopped too when nothing else waits for it.", () => {
+      stopWhyRead();
+      idle("Stopped. Nothing was read.");
+    }));
+    let answer;
+    try {
+      answer = await fetch(query, { signal: controller.signal }).then((r) => r.json());
+    } catch (e) {
+      clearInterval(timer);
+      if (controller.signal.aborted) return;
+      answer = { error: `The why read failed: ${e.message}`, remedy: "" };
+    }
+    clearInterval(timer);
+    if (whyInFlight === controller) whyInFlight = null;
+    if (panel.dataset.node !== forId || !box.isConnected) return;
+    if (!answer.refusal && !answer.error) whyAnswers.set(query, answer);
+    paintWhy(box, answer, read);
+  };
+  const known = whyAnswers.get(query);
+  if (known) paintWhy(box, known, read);
+  else idle();
+}
+
+function paintWhy(box, answer, again) {
+  const v = whyView(answer);
+  box.replaceChildren();
+  const para = (text, cls) => {
+    const p = document.createElement("p");
+    if (cls) p.className = cls;
+    p.textContent = text;
+    box.appendChild(p);
+    return p;
+  };
+  const list = (title, rows, row) => {
+    if (!rows.length) return;
+    const t = document.createElement("div");
+    t.className = "why-head";
+    t.textContent = title;
+    const ul = document.createElement("ul");
+    ul.className = "why-list";
+    for (const r of rows) ul.appendChild(row(r));
+    box.append(t, ul);
+  };
+  const li = (lead, rest, meta) => {
+    const el = document.createElement("li");
+    const top = document.createElement("div");
+    top.append(lead);
+    if (rest) top.append(` ${rest}`);
+    el.appendChild(top);
+    if (meta) {
+      const m = document.createElement("div");
+      m.className = "why-meta";
+      m.textContent = meta;
+      el.appendChild(m);
+    }
+    return el;
+  };
+  if (v.refusal) {
+    para(v.refusal.error, "why-refusal");
+    if (v.refusal.remedy) para(v.refusal.remedy, "queried");
+  } else {
+    para(v.headline, "why-headline");
+    list("decisions", v.decisions, (d) => {
+      let lead;
+      if (d.href) {
+        lead = document.createElement("a");
+        lead.href = d.href;
+        lead.target = "_blank";
+        lead.rel = "noreferrer noopener";
+        lead.title = "Review this proposed decision in hud";
+      } else {
+        lead = document.createElement("code");
+      }
+      lead.textContent = d.id;
+      return li(lead, d.title, [d.meta, d.note].filter(Boolean).join(" · "));
+    });
+    list("runs", v.runs, (r) => {
+      const lead = document.createElement("code");
+      lead.textContent = r.id;
+      return li(lead, r.when ? r.when.slice(0, 10) : "", r.meta);
+    });
+    list(`commits${v.more ? ` · ${v.commits.length} of ${v.commits.length + v.more}` : ""}`, v.commits, (c) => {
+      const lead = document.createElement("code");
+      lead.textContent = c.sha;
+      return li(lead, c.subject, c.meta);
+    });
+    for (const g of v.gaps) para(g, "why-gap");
+  }
+  if (v.footer) para(v.footer, "queried");
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "why-read";
+  b.textContent = "Read again";
+  b.title = "Ask chant again, for changes since this read.";
+  b.addEventListener("click", again);
+  box.appendChild(b);
+}
+
+/** A member's box was picked: what the declaration says of it, and its why. */
+function inspectMember(name) {
+  const m = declaredMember(name);
+  if (!m) return;
+  const panel = document.getElementById("inspect-body");
+  panel.innerHTML = "<h2>inspect</h2>";
+  panel.dataset.node = `member:${name}`;
+  const h = document.createElement("h3");
+  h.textContent = "member";
+  const dl = document.createElement("dl");
+  for (const [k, v] of [["name", m.name], ["dir", m.dir], ["kind", m.kind]]) {
+    const dt = document.createElement("dt");
+    dt.textContent = k;
+    const dd = document.createElement("dd");
+    dd.textContent = v;
+    dl.append(dt, dd);
+  }
+  panel.append(h, dl);
+  renderWhySection(panel, { member: name });
+}
+
 const RESILIENCE_WORD = { survives: "survives", degrades: "degrades", fails: "fails" };
 
 /**
@@ -733,6 +922,9 @@ function inspect(node) {
       }
     });
   }
+
+  // #471: why this card is the way it is, read from chant when asked.
+  renderWhySection(panel, { node: node.id });
 
   // #401: the behaviour block, field by field, with a badge on every figure.
   // The colour on the card carries one number at a time (whichever mode is
@@ -1259,6 +1451,7 @@ function wire(ir) {
       selectedNodeId = null;
       view.member = id;
       renderStatusbar();
+      inspectMember(id);
       embedSelected(id, null);
     });
   }
@@ -5206,6 +5399,7 @@ events.addEventListener("member", (e) => {
 
 events.addEventListener("changed", () => {
   bulkDiffCache = null; // an op ran → per-node live state may have changed
+  whyAnswers.clear(); // #471: a why read before the change may no longer hold
   load();
   loadWorkspaceGates({ force: true });
   loadSubstrates(); // a bring-up (or any op) finished → re-detect readiness

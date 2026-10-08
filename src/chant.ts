@@ -344,7 +344,15 @@ export function isScheduledRead(args: string[]): boolean {
     (args[0] === "lifecycle" && ["diff", "plan"].includes(args[1])) ||
     (args[0] === "helm" && ["renders", "diff"].includes(args[1])) ||
     (args[0] === "run" && args[1] === "status") ||
-    (args[0] === "operator" && ["status", "log"].includes(args[1]));
+    (args[0] === "operator" && ["status", "log"].includes(args[1])) ||
+    isIntentRead(args);
+}
+
+/** #471: `chant workspace graph --intent`, the why read. Scheduled like any
+ * other read, so it takes a slot in the budget, has the deadline, and is
+ * cancelled when the page that asked goes away. */
+export function isIntentRead(args: readonly string[]): boolean {
+  return args[0] === "workspace" && args[1] === "graph" && args[2] === "--intent";
 }
 const reads = new ReadScheduler<ChantRun>();
 let unstampableRead = 0;
@@ -364,7 +372,12 @@ export function runChantRaw(
   const chant = resolveChant(projectDir);
   if (!isScheduledRead(args)) return spawnChant(chant.bin, args, projectDir, envOverride);
   const dir = resolve(projectDir ?? process.cwd());
-  const stamp = memberSourceStamp(dir);
+  // A why read answers from git history as well as the files, which no mtime
+  // stamp sees, and stamping a large workspace root walks every file on the
+  // event loop (2.2 s on chant's own repo). Its key is the argv, so only reads
+  // in flight at the same moment share a spawn, which is all the scheduler
+  // shares anyway: it never caches a finished read.
+  const stamp = isIntentRead(args) ? "intent" : memberSourceStamp(dir);
   const effectiveEnv = { ...process.env, ...envOverride };
   const environment = Object.entries(effectiveEnv).sort(([a], [b]) => a.localeCompare(b));
   // Include the resolved compiler, exact argv (namespace/lens/env included),
