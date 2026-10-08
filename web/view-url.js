@@ -8,8 +8,15 @@
 // it takes the same parameters against its captured lens matrix.
 
 /** The view's keys, in the order they are written back. Anything else in the
- * query (embed, theme, host, #476) is left where it is. */
-export const VIEW_KEYS = ["member", "zoom", "env", "tier", "lens", "node", "radial"];
+ * query (embed, theme, host, #476) is left where it is. `gates` is the env the
+ * gate strip reads when it isn't the graph's (#477); it is the view's because
+ * a host can move it with `behold:view`, and a reload has to keep that. */
+export const VIEW_KEYS = ["member", "zoom", "env", "tier", "lens", "node", "radial", "gates"];
+
+/** An env name as the server takes one (src/workspace-gates.ts isEnvName). */
+export function isEnvName(env) {
+  return typeof env === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(env);
+}
 
 /** The colour lenses (web/behaviour-scale.js COLOUR_MODES). `lens` in the URL
  * is the colour the graph is painted in. */
@@ -63,6 +70,7 @@ export function writeViewQuery(search, state, defaults = {}) {
   if (s.lens && s.lens !== lensDefault) q.set("lens", s.lens);
   if (s.node) q.set("node", s.node);
   if (s.radial) q.set("radial", "1");
+  if (s.gates) q.set("gates", s.gates);
   const out = q.toString();
   return out ? `?${out}` : "";
 }
@@ -98,6 +106,11 @@ export function settleView(want, offer) {
   if ("radial" in want) {
     if (typeof want.radial === "boolean") apply.radial = want.radial;
     else refused.push({ key: "radial", value: want.radial, reason: "radial is 1 or 0" });
+  }
+  if ("gates" in want) {
+    // null: the gate strip follows the graph's env again.
+    if (want.gates === null || isEnvName(want.gates)) apply.gates = want.gates;
+    else refused.push({ key: "gates", value: want.gates, reason: "an env name is letters, digits, '.', '_' and '-'" });
   }
   if (want.member) apply.member = want.member;
   if (want.node) apply.node = want.node;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine } from "./view-url.js";
+import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine, isEnvName } from "./view-url.js";
 
 describe("readViewQuery (#475)", () => {
   it("reads the view keys and nothing else", () => {
@@ -58,6 +58,31 @@ describe("settleView (#475)", () => {
   });
   it("takes env= as the source graph", () => {
     expect(settleView({ env: null }, offer).apply).toEqual({ env: null });
+  });
+});
+
+describe("gates, the gate strip's env (#477)", () => {
+  it("reads gates from the query, and an empty one as no override", () => {
+    expect(readViewQuery("?gates=prod&env=")).toEqual({ env: null, gates: "prod" });
+    expect(readViewQuery("?gates=")).toEqual({});
+  });
+  it("owns gates on write-back: written when set, dropped when cleared", () => {
+    expect(writeViewQuery("?embed=1&gates=old", { zoom: "resources", gates: "prod" })).toBe("?embed=1&zoom=resources&gates=prod");
+    expect(writeViewQuery("?embed=1&gates=old", { zoom: "resources", gates: null })).toBe("?embed=1&zoom=resources");
+  });
+  it("round-trips through readViewQuery", () => {
+    expect(readViewQuery(writeViewQuery("", { gates: "staging" }))).toEqual({ gates: "staging" });
+  });
+  it("takes an env name or null, and refuses anything chant would read as a flag", () => {
+    expect(settleView({ gates: "prod" }, {}).apply).toEqual({ gates: "prod" });
+    expect(settleView({ gates: null }, {}).apply).toEqual({ gates: null });
+    const { apply, refused } = settleView({ gates: "--sign" }, {});
+    expect(apply).toEqual({});
+    expect(refused).toEqual([{ key: "gates", value: "--sign", reason: "an env name is letters, digits, '.', '_' and '-'" }]);
+  });
+  it("matches the server's env-name check", () => {
+    for (const ok of ["local", "prod-eu", "a.b_c", "0"]) expect(isEnvName(ok)).toBe(true);
+    for (const bad of ["", "-x", ".x", "a b", "a/b", null]) expect(isEnvName(bad)).toBe(false);
   });
 });
 

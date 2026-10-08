@@ -340,7 +340,11 @@ any theme name the picker lists:
 
 `gates=<env>` sets the env the gate strip reads, apart from the graph's, so a
 host can open behold on the source graph and still show the gates of the env
-it watches.
+it watches. A host whose env changes posts `{type: "behold:view", gates: "<env>"}`
+instead of reloading the frame: behold checks the name as it checks the URL's,
+reads that env's gates at once, and writes `gates=` back into the URL so a
+reload keeps it. `gates: null` (or `""`) hands the strip back to the graph's
+env.
 
 behold binds 127.0.0.1 and answers only loopback names, since it runs writes
 with the credentials of whoever started it. A page from another site can't

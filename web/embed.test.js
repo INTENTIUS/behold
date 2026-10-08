@@ -37,6 +37,12 @@ describe("viewFromMessage (#476)", () => {
   it("reads member null as the whole estate and env empty as the source", () => {
     expect(viewFromMessage({ origin: host, data: { type: "behold:view", member: null, env: "" } }, host)).toEqual({ member: null, env: null });
   });
+  it("takes gates, the gate strip's env, and null or empty as following the graph's env (#477)", () => {
+    expect(viewFromMessage({ origin: host, data: { type: "behold:view", gates: "prod" } }, host)).toEqual({ gates: "prod" });
+    expect(viewFromMessage({ origin: host, data: { type: "behold:view", gates: "" } }, host)).toEqual({ gates: null });
+    expect(viewFromMessage({ origin: host, data: { type: "behold:view", gates: null } }, host)).toEqual({ gates: null });
+    expect(viewFromMessage({ origin: host, data: { type: "behold:view", gates: 3 } }, host)).toEqual({});
+  });
   it("ignores another origin, another type, and any message when there is no host", () => {
     expect(viewFromMessage({ origin: "http://evil", data: { type: "behold:view", member: "x" } }, host)).toBe(null);
     expect(viewFromMessage({ origin: host, data: { type: "other" } }, host)).toBe(null);
