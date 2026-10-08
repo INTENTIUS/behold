@@ -61,9 +61,11 @@ export function viewFromMessage(event, host) {
       if (typeof v === "boolean") want.radial = v;
       continue;
     }
-    if (k === "env") {
-      if (v === null || v === "") want.env = null;
-      else if (typeof v === "string") want.env = v;
+    if (k === "env" || k === "gates") {
+      // env: null or "" is the source graph. gates: null or "" hands the
+      // gate strip back to the graph's env.
+      if (v === null || v === "") want[k] = null;
+      else if (typeof v === "string") want[k] = v;
       continue;
     }
     if (k === "member" && v === null) {

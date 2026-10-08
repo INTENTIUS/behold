@@ -29,7 +29,7 @@ import { chantVia, memberIr, type MemberVia } from "./member-ir.ts";
 import { overlayIr } from "./overlay-ir.ts";
 import { memberKindOf, memberKindSpec, type MemberKind } from "./member-kind.ts";
 import { CLUSTER_SCOPED } from "./zoom-notes.ts";
-import { CONTRACT_READ_KINDS, servedWorkspace, unreadableMemberIr, unreadableMembers, workspaceMemberOf, workspaceVia } from "./workspace.ts";
+import { CONTRACT_READ_KINDS, servedWorkspace, unreadableMemberIr, unreadableMembers, workspaceMemberOf, workspaceVia, WorkspaceMemberError } from "./workspace.ts";
 
 // ---------------------------------------------------------------------------
 // Bounded member reads (#295). Every estate read below fans out one `chant
@@ -154,15 +154,49 @@ const memberSource = (dir: string, opts: GraphOptions): Promise<GraphIR> => memb
  * in src/overlay-ir.ts's header. */
 const memberLive = (dir: string, opts: GraphOptions, fresh: boolean): Promise<GraphIR> => overlayIr(dir, forMember(dir, opts), memberViaFor(dir), fresh);
 
+/**
+ * A member's source, with its carved files joined (chant#2040: the manifests a
+ * member holds name the files its carved entities were emitted into, joined
+ * here where the member's root is known, onto a COPY, since the member IR is
+ * the #312 cache's own object).
+ *
+ * #474: in a served workspace, a declared member chant could not graph (a
+ * `chant` member with no lexicon, say, which `ls` still calls readable) is
+ * drawn as the same box an unreadable member is, with chant's reason, so one
+ * member never takes the whole page down with it. A loose estate still throws:
+ * there is no declaration to say the member exists.
+ */
+async function memberSourceOrBox(dir: string, opts: GraphOptions): Promise<GraphIR> {
+  try {
+    return joinCarvedSources(await memberSource(dir, opts), (await carveStatesFor(dir)).values(), dir).ir;
+  } catch (err) {
+    const box = declaredMemberBox(dir, err);
+    if (!box) throw err;
+    return box;
+  }
+}
+
+/** The unreadable box for a declared member whose read failed, or undefined
+ * when `dir` isn't a member of the served workspace. */
+function declaredMemberBox(dir: string, err: unknown): GraphIR | undefined {
+  const m = servedWorkspace() ? workspaceMemberOf(dir) : undefined;
+  if (!m) return undefined;
+  // chant's own words, every line: its error is often under a warning.
+  const said = (e: unknown): string => {
+    const msg = e instanceof Error ? e.message : String(e);
+    return (msg.match(/exited \d+:\s*([\s\S]*)/)?.[1] ?? msg).trim().slice(0, 600);
+  };
+  const reason = err instanceof WorkspaceMemberError ? err.reason : { code: "command-failed", message: said(err) };
+  // chant colours its own warnings; the box is text.
+  return unreadableMemberIr({ ...m, reason: { ...reason, message: reason.message.replace(/\u001b\[[0-9;]*m/g, "") } });
+}
+
 /** Graph each project's source and compose them into one estate IR. */
 export async function composeEstate(projectDirs: string[], opts: GraphOptions = {}): Promise<GraphIR> {
   const names = estateMemberNames(projectDirs); // declared names, else readable labels (common prefix stripped)
   const stacks = await mapPool(projectDirs, estateReadPool(projectDirs.length), async (dir, i) => ({
     name: names[i],
-    // chant#2040: the manifests a member holds name the files its carved
-    // entities were emitted into — joined here, where the member's root is
-    // known, onto a COPY (the member IR is the #312 cache's own object).
-    ir: joinCarvedSources(await memberSource(dir, opts), (await carveStatesFor(dir)).values(), dir).ir,
+    ir: await memberSourceOrBox(dir, opts),
   }));
   return composeStacks([...stacks, ...unreadableStacks(projectDirs)]);
 }
@@ -204,8 +238,9 @@ export async function composeEstatePending(projectDirs: string[], opts: GraphOpt
   // Source only: strip anything that would reach the account.
   const { env: _env, live: _live, overlay: _overlay, ...srcOpts } = opts;
   const stacks = await mapPool(projectDirs, estateReadPool(projectDirs.length), async (dir, i) => {
-    const ir = joinCarvedSources(await memberSource(dir, srcOpts), (await carveStatesFor(dir)).values(), dir).ir;
-    for (const n of ir.nodes) n.attrs = { ...n.attrs, _pendingRead: true };
+    const ir = await memberSourceOrBox(dir, srcOpts);
+    // An unreadable box has no read to wait on.
+    for (const n of ir.nodes) if (n.kind !== "UnreadableMember") n.attrs = { ...n.attrs, _pendingRead: true };
     return { name: names[i], ir };
   });
   return composeStacks([...stacks, ...unreadableStacks(projectDirs)]);
@@ -575,7 +610,12 @@ export async function composeEstateOverlay(
         observe.onMember?.({ name, dir, ir: src, unobserved: reason });
         unobserved.push({ name, reason });
       } catch (err2) {
-        dropped.push({ name, reason: firstLine(err2) });
+        // #474: a declared member is still drawn, as a box with chant's reason.
+        const box = declaredMemberBox(dir, err2);
+        if (box) {
+          stacks[i] = { name, ir: box };
+          observe.onMember?.({ name, dir, ir: box });
+        } else dropped.push({ name, reason: firstLine(err2) });
       }
     }
   });

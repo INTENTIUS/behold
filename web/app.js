@@ -1284,7 +1284,7 @@ function wire(ir) {
 // member (#475) is the estate member the view is on: a host opens behold with
 // ?member=, and picking a card or a member box moves it. It changes no fetch;
 // the graph is the whole estate, framed on that member's box.
-const view = { member: null, env: null, detail: 2, components: true, logical: false, runtime: false, ops: false, tier: null, target: null, stack: null, radial: false, collapse: false, compareTo: null };
+const view = { member: null, env: null, gates: null, detail: 2, components: true, logical: false, runtime: false, ops: false, tier: null, target: null, stack: null, radial: false, collapse: false, compareTo: null };
 
 // #182: `components` is the boot default, but a project that declares no
 // components renders it as ZERO nodes — the first screen was a blank graph
@@ -2173,6 +2173,7 @@ function applyWantedView(want) {
   }
   if (apply.lens) colourMode = apply.lens; // not written to localStorage: the link's pick, not yours
   if ("radial" in apply) view.radial = apply.radial;
+  if ("gates" in apply) view.gates = apply.gates;
   if (want.member === null) {
     view.member = null;
     selectedNodeId = null;
@@ -2195,7 +2196,12 @@ window.addEventListener("message", (e) => {
   const want = viewFromMessage(e, embedOpts.host);
   if (!want) return;
   const lensBefore = colourMode;
-  if (applyWantedView(want)) {
+  const gatesBefore = view.gates;
+  const moved = applyWantedView(want);
+  // #477: the host's env for the gate strip moved. Read it now, not on the
+  // next `changed`; renderStatusbar below writes it into the URL.
+  if (view.gates !== gatesBefore) loadWorkspaceGates({ force: true });
+  if (moved) {
     resetDialCaches();
     renderStatusbar();
     load();
@@ -2228,10 +2234,10 @@ function embedSelected(member, node) {
 let wsGates = { env: undefined, answer: null, seq: 0 };
 // ?gates=<env> (#477): the env the gate strip reads, apart from the graph's.
 // A host that opens behold on the source graph still wants the gates of the
-// env its block watches.
-const gatesEnvParam = new URLSearchParams(location.search).get("gates") || "";
+// env its block watches. It is a view key (view-url.js), so the link sets it,
+// a host's `behold:view` moves it, and the URL keeps it.
 function gatesEnv() {
-  return gatesEnvParam || view.env || "";
+  return view.gates || view.env || "";
 }
 function loadWorkspaceGates({ force = false } = {}) {
   if (staticMode) return;
@@ -2429,6 +2435,7 @@ function syncViewUrl() {
     lens: colourMode,
     node: place.node || selectedNodeId,
     radial: view.radial && !view.components && !view.logical && !view.ops,
+    gates: view.gates,
   };
   const defaults = { env: (projectInfo && projectInfo.currentEnv) || null, lens: savedColourMode };
   const next = location.pathname + writeViewQuery(location.search, state, defaults) + location.hash;
