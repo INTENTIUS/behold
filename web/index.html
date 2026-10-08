@@ -132,6 +132,16 @@
          either for the full reason (native SVG <title>). */
       #graph g[data-edge-via="data dependency"] .pin-edge-line { stroke-dasharray: 6 5; }
       #graph g[data-edge-from][data-edge-via] { cursor: help; }
+      /* #477: a declared workspace's waiting gates, over the top of the graph
+         pane (same grid cell, so #graph's re-renders never take it with them). */
+      #ws-gates { grid-row: 1; grid-column: 1; align-self: start; justify-self: center; z-index: 3; margin-top: 8px;
+        max-width: min(560px, 70%); display: flex; flex-direction: column; gap: 6px; }
+      #ws-gates[hidden] { display: none; }
+      #ws-gates .ws-gate { background: var(--panel); border: 1px solid var(--warn, var(--rule)); border-radius: var(--r-ctl);
+        padding: 6px 10px; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+      #ws-gates .ws-gate-title { font-weight: 600; }
+      #ws-gates .ws-gate-facts, #ws-gates .ws-gate-note { color: var(--muted); font-size: var(--t-caption); }
+      #ws-gates .ws-gate button { margin-top: 4px; }
       /* Fit reset + a zoom hint, floating top-right of the graph pane. */
       #zoom-toggle { position: absolute; top: 8px; right: 8px; z-index: 2; background: var(--panel);
         color: var(--muted); border: 1px solid var(--rule); border-radius: var(--r-ctl); padding: 4px 10px;
@@ -594,6 +604,7 @@
     </div>
     <div id="app">
       <div id="graph"></div>
+      <div id="ws-gates" hidden></div>
       <aside id="inspect">
         <div id="inspect-resize" title="Drag to resize"></div>
         <button id="inspect-collapse" title="Collapse panel">›</button>

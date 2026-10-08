@@ -186,9 +186,21 @@ export function renderGateCard(gate, actions = {}) {
   );
   if (gate.guards) box.appendChild(el("div", "run-gate-meta", `holds back: ${gate.guards}`));
 
-  const approve = el("button", "approve", `Approve ${gate.signalName}`);
+  // #477: framed in a host, the host approves; the gate is drawn, not offered.
+  if (!actions.approve) {
+    box.appendChild(el("div", "run-gate-meta", NO_APPROVE[actions.why] || NO_APPROVE.host));
+    return box;
+  }
+  const approve = el("button", "approve", actions.approver ? `Approve ${gate.signalName} as ${actions.approver}` : `Approve ${gate.signalName}`);
   approve.title = `${gate.approve.method} ${gate.approve.path} — the same delegated signal as chant run signal ${gate.op} ${gate.signalName}. behold never approves on its own.`;
   approve.addEventListener("click", () => actions.approve?.(gate.op, gate.signalName));
   box.appendChild(approve);
   return box;
 }
+
+// #477: why a gate card has no approve button.
+const NO_APPROVE = {
+  host: "approve in the host that framed this graph",
+  preview: "approving is off in preview",
+  static: "a snapshot: approve where behold runs",
+};

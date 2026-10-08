@@ -148,7 +148,7 @@ export function parseWorkspaceLs(text: string, root: string): WorkspaceRead {
  * `contract` is refused whole: within a version fields are only added, and a
  * new version can change what a field means.
  */
-export function contractRefusal(doc: Record<string, unknown>, command: "ls" | "graph"): WorkspaceRefusal | undefined {
+export function contractRefusal(doc: Record<string, unknown>, command: "ls" | "graph" | "status"): WorkspaceRefusal | undefined {
   if (doc.contract === WORKSPACE_CONTRACT) return undefined;
   const said = doc.contract === undefined ? "no contract version" : `contract ${JSON.stringify(doc.contract)}`;
   return {

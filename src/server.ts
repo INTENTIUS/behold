@@ -144,7 +144,9 @@ import { choudoufuDiffNodes, paintPlanDrift, readChoudoufuLive, type Runner as C
 import { cacheChoudoufuPlan, cachedChoudoufuPlan, readChoudoufuPlan, type PlanResourceDrift } from "./choudoufu-plan.ts";
 import { choudoufuLexiconNote, setEstateLexiconRead, type LexiconRead } from "./choudoufu-refs.ts";
 import { discoverCarvePlans, moveMembers, moveReceipt, movesPayload, readCarvePlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
-import { setServedWorkspace, type Workspace } from "./workspace.ts";
+import { servedWorkspace, setServedWorkspace, type Workspace } from "./workspace.ts";
+import { approveArgs, isEnvName, localApprover, readWorkspaceGates } from "./workspace-gates.ts";
+import { allowedHostsFrom, guardRequest } from "./request-guard.ts";
 import { applyMemberPasses, memberKindOf, memberKindSpec, memberPassNote, servesAsEstate, type MemberPassRun } from "./member-kind.ts";
 import { TerraformReadError } from "./terraform-member.ts";
 import { invalidateMember, memberIr, memberIrCacheStats, memberSourceStamp } from "./member-ir.ts";
@@ -184,6 +186,11 @@ const execFileP = async (cmd: string, args: string[]): Promise<string> =>
   (await promisify(execFile)(cmd, args, { encoding: "utf8", timeout: 10_000 })).stdout;
 
 export interface ServerOptions {
+  /** The address to bind. 127.0.0.1 unless given (`--host`, BEHOLD_HOST). */
+  host?: string;
+  /** Names besides loopback that behold answers to (`--allow-host`,
+   * BEHOLD_ALLOWED_HOSTS): a proxy's name, or this machine's for --host 0.0.0.0. */
+  allowedHosts?: string[];
   /** The chant project directory behold observes. When multiple projects are
    * served (#31), this is the primary — the one ops/overlay/rollback act on. */
   projectDir: string;
@@ -916,6 +923,21 @@ export function createApp(
   }),
 ): Hono {
   const app = new Hono();
+  // Only this machine, and only behold's own pages, may write (src/request-guard.ts).
+  const guard = { allowedHosts: allowedHostsFrom(cfg.allowedHosts ?? []), ...(cfg.host ? { boundHost: cfg.host } : {}) };
+  app.use("*", async (c, next) => {
+    const verdict = guardRequest(
+      {
+        method: c.req.method,
+        host: c.req.header("host") ?? new URL(c.req.url).host,
+        origin: c.req.header("origin") ?? null,
+        secFetchSite: c.req.header("sec-fetch-site") ?? null,
+      },
+      guard,
+    );
+    if (!verdict.ok) return c.json({ error: verdict.error, code: "request-refused" }, verdict.status);
+    await next();
+  });
   // A test's fake choudoufu answers every read, the member via's included
   // (src/choudoufu-member.ts `setChoudoufuRunner`); undefined in production.
   setChoudoufuRunner(cfg.choudoufu?.run);
@@ -1320,6 +1342,8 @@ export function createApp(
   // `chant approve` writes a fact and "is not itself the unblock". The next tick
   // reads it. behold never approves on its own initiative; this is a button.
   app.post("/api/operator/approve/:op/:gate", async (c) => {
+    // #477: the preview is a look, not a hand on the controls.
+    if (cfg.previewMode) return c.json({ error: "approving is disabled in preview mode", code: "preview" }, 403);
     const { op, gate } = c.req.param();
     // The gate belongs to the DISPATCHED op (chant's gate ledger is keyed by op
     // name for exactly that reason), so run in that op's own project dir — the
@@ -1335,6 +1359,7 @@ export function createApp(
 
   // Approve a gated apply: signal the Op's wait-for-approval gate, in its own dir.
   app.post("/api/ops/:name/signal/:gate", async (c) => {
+    if (cfg.previewMode) return c.json({ error: "approving is disabled in preview mode", code: "preview" }, 403);
     const { name, gate } = c.req.param();
     const info = estateOps().find((o) => o.name === name);
     broadcaster.emit("op", `✎ signal ${name} ${gate}`);
@@ -1343,6 +1368,52 @@ export function createApp(
     const { code, stderr } = await runChantRaw(["run", "signal", name, gate, "--temporal"], info?.dir ?? cfg.projectDir);
     if (code !== 0) return c.json({ error: stderr.trim() || `signal exited ${code}` }, 500);
     return c.json({ signalled: true });
+  });
+
+  // #477: a declared workspace's waiting gates, from `chant workspace status
+  // <env> --json`, keyed member/op/gate the way arugula's workspace block keys
+  // them, so a framed behold and the block show the same set. No env picked is
+  // the served env, then `local` (the block's default). Not a workspace: an
+  // empty list, so the page has nothing to draw.
+  app.get("/api/workspace/gates", async (c) => {
+    const ws = servedWorkspace();
+    const env = c.req.query("env") || cfg.env || "local";
+    if (!isEnvName(env)) return c.json({ error: `${JSON.stringify(env)} isn't an env name`, code: "env" }, 400);
+    if (!ws) return c.json({ workspace: false, env, gates: [], approver: localApprover() });
+    const read = await readWorkspaceGates(ws, env);
+    if (!read.ok) return c.json({ workspace: true, env, gates: [], refusal: read.refusal, approver: localApprover() });
+    // dir stays on the server: approving looks it up again.
+    return c.json({ workspace: true, env, gates: read.gates.map(({ dir: _dir, ...g }) => g), approver: localApprover() });
+  });
+
+  // #477: approve one workspace gate, by key. The member's directory, env and
+  // plan digest come from a fresh status read, never from the page. Recorded as
+  // whoever runs behold, which the card says before the click; a framed behold
+  // draws no button and leaves this to its host (#476).
+  app.post("/api/workspace/gates/approve", async (c) => {
+    if (cfg.previewMode) return c.json({ error: "approving is disabled in preview mode", code: "preview" }, 403);
+    // JSON only, as /api/layout: a cross-origin page can't send this content
+    // type without a preflight, which behold never answers.
+    if (!(c.req.header("content-type") ?? "").toLowerCase().startsWith("application/json")) {
+      return c.json({ error: "send the body as application/json", code: "content-type" }, 415);
+    }
+    const ws = servedWorkspace();
+    if (!ws) return c.json({ error: "behold isn't serving a declared workspace", code: "no-workspace" }, 404);
+    const body = await c.req.json().catch(() => ({}));
+    const key = typeof body?.key === "string" ? body.key : "";
+    const env = typeof body?.env === "string" && body.env ? body.env : cfg.env || "local";
+    if (!isEnvName(env)) return c.json({ error: `${JSON.stringify(env)} isn't an env name`, code: "env" }, 400);
+    const read = await readWorkspaceGates(ws, env);
+    if (!read.ok) return c.json({ error: read.refusal.error, code: read.refusal.code }, 422);
+    const g = read.gates.find((x) => x.key === key);
+    if (!g) return c.json({ error: `no gate ${key} is waiting in ${env}`, code: "no-gate" }, 404);
+    if (g.signed) return c.json({ error: `${key} wants a signed approval, which behold can't make. Run: ${g.approve}`, code: "signed" }, 422);
+    const approver = localApprover();
+    broadcaster.emit("op", `✎ approve ${g.key} as ${approver}`);
+    const { code, stderr, stdout } = await runChantRaw(approveArgs(g), g.dir);
+    if (code !== 0) return c.json({ error: stderr.trim() || stdout.trim() || `approve exited ${code}`, code: "approve" }, 500);
+    broadcaster.emit("changed", "");
+    return c.json({ recorded: true, key: g.key, approver });
   });
 
   // Live updates (#3): SSE stream the SPA subscribes to. On a "changed" event
@@ -1502,6 +1573,9 @@ export function createApp(
       currentEnv: cfg.env ?? null,
       // v0.1.0 preview: the SPA hides git/PR ops + arbitrary-project affordances.
       ...(cfg.previewMode ? { previewMode: true } : {}),
+      // #477: who `chant approve` records when behold runs it. The approve
+      // buttons say it before the click.
+      approver: localApprover(),
       // The tier picker's options (M2 #54, sourced #70): gated on the served
       // project's `.behold.json` declaring a `tiers` block at all — NOT on
       // whether its env var happens to be set in behold's own launch env
@@ -1911,6 +1985,8 @@ export function createApp(
         { method: "POST", path: "/api/apply", desc: "delegated apply: ?env=&component=<name|all> (guarded, preview-locked)" },
         { method: "POST", path: "/api/ops/:name/run", desc: "run a committed Op (delegated write)" },
         { method: "POST", path: "/api/ops/:name/signal/:gate", desc: "approve an Op's gate (releases the waiting run)" },
+        { method: "GET", path: "/api/workspace/gates", desc: "a declared workspace's waiting gates from chant workspace status <env> --json (?env=), keyed member/op/gate, with the approver behold would record (#477)" },
+        { method: "POST", path: "/api/workspace/gates/approve", desc: "approve one workspace gate: JSON body {key, env}; env and plan come from a fresh status read; recorded as the user running behold; preview-locked (#477)" },
         { method: "POST", path: "/api/operator/approve/:op/:gate", desc: "record a converge gate's resolution (chant approve — a fact for the next tick, not an unblock)" },
         { method: "POST", path: "/api/rollback", desc: "open a rollback PR: ?to=<sha>" },
         { method: "POST", path: "/api/substrates/:name/up", desc: "bring a substrate up" },
@@ -3709,6 +3785,7 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
     broadcaster,
     onDone: (opEnv) => captureFrame(cfg.projectDir, opEnv ?? cfg.env, frames, broadcaster),
   });
+  if (!cfg.host && process.env.BEHOLD_HOST) cfg.host = process.env.BEHOLD_HOST;
   const app = createApp(cfg, broadcaster, frames, runner);
   const autoSync = cfg.autoSync ?? "off";
 
@@ -3894,7 +3971,8 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
-  const server = serve({ fetch: app.fetch, port: cfg.port }, (info) => {
+  const hostname = cfg.host ?? process.env.BEHOLD_HOST ?? "127.0.0.1";
+  const server = serve({ fetch: app.fetch, port: cfg.port, hostname }, (info) => {
     if (carve) {
       process.stdout.write(
         `behold → http://localhost:${info.port}\n` +

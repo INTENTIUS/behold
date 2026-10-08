@@ -11,6 +11,7 @@
 import { createRefreshQueue } from "./refresh-queue.js";
 import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine } from "./view-url.js";
 import { readEmbed, selectMessage, viewFromMessage } from "./embed.js";
+import { gateCards } from "./workspace-gates.js";
 import { readCostLine } from "./read-cost.js";
 import { applyMemberFrame, pendingLine, stillPending } from "./pending.js";
 import { initTheme, setTheme, mountThemePicker, readableOn, colorForCategory, onThemeChange, getTokens, getTheme, pinTokensFor } from "./theme.js";
@@ -2220,6 +2221,107 @@ function embedSelected(member, node) {
   }
 }
 
+// --- #477: a declared workspace's waiting gates --------------------------------
+// Read when the env changes and when the server says something moved (the
+// `changed` event, which a host's POST /api/refresh?notify=1 also sends).
+// Framed, the cards carry no button: the host approves (workspace-gates.js).
+let wsGates = { env: undefined, answer: null, seq: 0 };
+// ?gates=<env> (#477): the env the gate strip reads, apart from the graph's.
+// A host that opens behold on the source graph still wants the gates of the
+// env its block watches.
+const gatesEnvParam = new URLSearchParams(location.search).get("gates") || "";
+function gatesEnv() {
+  return gatesEnvParam || view.env || "";
+}
+function loadWorkspaceGates({ force = false } = {}) {
+  if (staticMode) return;
+  const env = gatesEnv();
+  if (!force && wsGates.env === env) return paintWorkspaceGates();
+  // Every read is numbered; only the newest one paints, so an answer for an
+  // env the view has left never lands under the one it moved to.
+  const seq = ++wsGates.seq;
+  wsGates.env = env;
+  fetch(`/api/workspace/gates${env ? `?env=${encodeURIComponent(env)}` : ""}`)
+    .then((r) => r.json())
+    .then((j) => {
+      if (seq === wsGates.seq) wsGates.answer = j;
+    })
+    .catch(() => {
+      if (seq === wsGates.seq) wsGates.answer = null;
+    })
+    .finally(() => {
+      if (seq === wsGates.seq) paintWorkspaceGates();
+    });
+}
+function paintWorkspaceGates() {
+  const host = document.getElementById("ws-gates");
+  if (!host) return;
+  const answer = wsGates.answer;
+  host.replaceChildren();
+  if (!answer || !answer.workspace) {
+    host.hidden = true;
+    return;
+  }
+  const { cards, elsewhere, refusal } = gateCards(answer, { embed: embedOpts.embed, member: embedOpts.embed ? view.member : null });
+  for (const c of cards) {
+    const box = document.createElement("div");
+    box.className = "ws-gate";
+    box.dataset.gate = c.key;
+    const title = document.createElement("div");
+    title.className = "ws-gate-title";
+    title.textContent = c.title;
+    const facts = document.createElement("div");
+    facts.className = "ws-gate-facts";
+    facts.textContent = c.facts;
+    facts.title = c.command;
+    box.append(title, facts);
+    if (c.note) {
+      const note = document.createElement("div");
+      note.className = "ws-gate-note";
+      note.textContent = c.note;
+      box.appendChild(note);
+    }
+    if (c.button && !previewMode && !staticMode) {
+      const b = button(c.button.label, "approve", () => approveWorkspaceGate(c.key, b));
+      b.title = c.button.title;
+      box.appendChild(b);
+    }
+    host.appendChild(box);
+  }
+  if (elsewhere) {
+    const more = document.createElement("div");
+    more.className = "ws-gate ws-gate-note";
+    more.textContent = `${elsewhere} more gate${elsewhere === 1 ? "" : "s"} waiting in other members`;
+    host.appendChild(more);
+  }
+  if (refusal) {
+    const err = document.createElement("div");
+    err.className = "ws-gate ws-gate-note";
+    err.textContent = `gates unread: ${refusal.error}`;
+    err.title = refusal.remedy || "";
+    host.appendChild(err);
+  }
+  host.hidden = !host.children.length;
+}
+function approveWorkspaceGate(key, btn) {
+  if (btn) btn.disabled = true;
+  fetch("/api/workspace/gates/approve", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key, env: wsGates.answer && wsGates.answer.env }) })
+    .then((r) => r.json())
+    .then((j) => {
+      if (j.error) {
+        showToast(`✗ approve ${key}: ${j.error}`, false);
+        nowline("✗ " + j.error);
+      } else {
+        showToast(`✓ ${key} approved as ${j.approver}`, true);
+      }
+      loadWorkspaceGates({ force: true });
+    })
+    .catch((e) => showToast(`✗ approve ${key}: ${e}`, false))
+    .finally(() => {
+      if (btn) btn.disabled = false;
+    });
+}
+
 /** The member names a graph shows: its member boxes, and the first segment of
  * each composed node id. */
 function membersOf(ir) {
@@ -2959,6 +3061,9 @@ function renderStatusbar() {
   if (stillReading) parts.push(stillReading);
   el.textContent = parts.join(" · ");
   syncViewUrl();
+  // #477: gates don't wait on the graph (a member that fails to draw can still
+  // have a gate waiting). Re-read only when the env moved; `changed` forces it.
+  if (projectInfo) loadWorkspaceGates();
   // #131: why this level rendered empty, or as the one below it. The server
   // decides (src/zoom-notes.ts) — the SPA never infers it, so the note always
   // describes the graph that actually came back. Appended rather than mixed
@@ -3302,7 +3407,9 @@ function mountOperator(host) {
     box,
     operatorState,
     {
-      approve: (op, gate) => approveConvergeGate(op, gate),
+      approve: embedOpts.embed || previewMode || staticMode ? null : (op, gate) => approveConvergeGate(op, gate),
+      approver: projectInfo && projectInfo.approver,
+      why: embedOpts.embed ? "host" : previewMode ? "preview" : "static",
       // A static export has no server to ask, so it gets no history affordance
       // at all rather than a button that can only fail.
       ...(staticMode ? {} : { history: () => toggleOperatorHistory() }),
@@ -3320,7 +3427,7 @@ function mountPlayhead(host) {
   if (!hasPlayhead(runState)) return;
   const box = document.createElement("div");
   box.className = "run-playhead";
-  renderPlayhead(box, runState, gateCard, { approve: (op, gate) => signal(op, gate) });
+  renderPlayhead(box, runState, gateCard, { approve: embedOpts.embed || previewMode || staticMode ? null : (op, gate) => signal(op, gate), approver: projectInfo && projectInfo.approver, why: embedOpts.embed ? "host" : previewMode ? "preview" : "static" });
   host.appendChild(box);
 }
 
@@ -5093,6 +5200,7 @@ events.addEventListener("member", (e) => {
 events.addEventListener("changed", () => {
   bulkDiffCache = null; // an op ran → per-node live state may have changed
   load();
+  loadWorkspaceGates({ force: true });
   loadSubstrates(); // a bring-up (or any op) finished → re-detect readiness
 });
 
@@ -5982,7 +6090,7 @@ function paletteCommands() {
     if (opsApply) {
       // #165: not for a designated env — its ApplyOp is refused server-side too.
       if (!designatedFor(view.env || opsInitialEnv)) c.push([`Deploy: Sync (${opsApply.name})`, () => runOp(opsApply.name)]);
-      if (opsApply.gate) c.push([`Approve ${opsApply.gate}`, () => signal(opsApply.name, opsApply.gate)]);
+      if (opsApply.gate && !embedOpts.embed) c.push([`Approve ${opsApply.gate}`, () => signal(opsApply.name, opsApply.gate)]);
     }
     // #165: a designated env's applies happen on the forge, so a rollback PR
     // opened from here would have nothing local to land — hidden, as designed.

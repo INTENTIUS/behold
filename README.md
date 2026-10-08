@@ -338,6 +338,23 @@ any theme name the picker lists:
   other origin are ignored
 - gates are the host's to approve: behold draws them and says so
 
+`gates=<env>` sets the env the gate strip reads, apart from the graph's, so a
+host can open behold on the source graph and still show the gates of the env
+it watches.
+
+behold binds 127.0.0.1 and answers only loopback names, since it runs writes
+with the credentials of whoever started it. A page from another site can't
+write to it. A host that frames behold through a proxy of its own passes the
+proxy's name with `--allow-host <name>` (or `BEHOLD_ALLOWED_HOSTS`); `--host`
+(or `BEHOLD_HOST`) binds another address, which then needs `--allow-host` for
+the names it is reached by.
+
+In a declared workspace, the gates waiting on a person come from
+`chant workspace status <env> --json`, keyed `member/op/gate` the way arugula's
+workspace block keys them, so the two show the same set. Standalone, a gate's
+button says who chant will record (the user running behold) before the click.
+Every approve route refuses in preview mode.
+
 A host that already watches the workspace tells behold it changed with
 `POST /api/refresh?notify=1`, instead of running behold with `--poll` beside
 it. behold drops its cached reads and every open page re-pulls.

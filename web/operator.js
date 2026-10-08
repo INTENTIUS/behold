@@ -26,6 +26,13 @@
  */
 import { waitingFor } from "./run-playhead.js";
 
+// #477: why a gate card has no approve button.
+const NO_APPROVE = {
+  host: "approve in the host that framed this graph",
+  preview: "approving is off in preview",
+  static: "a snapshot: approve where behold runs",
+};
+
 /** How a lease reads. `expired` is its own tone, not a shade of `free`: a lapsed
  * lease means the holder stopped renewing and the next round reclaims it, which
  * is a different statement from "nobody has ever held it". */
@@ -459,7 +466,13 @@ export function renderConvergeGateCard(gate, actions = {}) {
   if (at) box.appendChild(at);
 
   const command = (gate.approve && gate.approve.command) || `chant approve ${gate.op} ${gate.gate}`;
-  const approve = el("button", "approve", "Record approval");
+  // #477: framed in a host, the host approves; the gate is drawn, not offered.
+  if (!actions.approve) {
+    box.appendChild(el("div", "run-gate-meta", NO_APPROVE[actions.why] || NO_APPROVE.host));
+    return box;
+  }
+  // Standalone, chant records whoever runs behold. Said before the click.
+  const approve = el("button", "approve", actions.approver ? `Record approval as ${actions.approver}` : "Record approval");
   approve.title =
     `${(gate.approve && gate.approve.method) || "POST"} ${(gate.approve && gate.approve.path) || ""} — ` +
     `${command}. ${gate.semantics || APPROVE_SEMANTICS} behold never approves on its own.`;
