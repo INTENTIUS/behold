@@ -43,18 +43,24 @@ export function readViewQuery(search) {
 
 /**
  * The query string for a view, keeping every parameter that isn't a view key.
- * Defaults are left out so a plain view keeps a plain URL: no env is the
- * source graph, drift is the default lens, radial off is the default.
+ * Defaults are left out so a plain view keeps a plain URL. `defaults` says
+ * what a load with no parameter would give: the env behold was started with
+ * (so the source graph under `--env` is written `env=`, or a reload would
+ * open live), and the lens saved in this browser (so a link carries a lens
+ * that differs from it, drift included).
  */
-export function writeViewQuery(search, state) {
+export function writeViewQuery(search, state, defaults = {}) {
   const q = new URLSearchParams(search || "");
   for (const k of VIEW_KEYS) q.delete(k);
   const s = state || {};
+  const envDefault = defaults.env || null;
+  const lensDefault = defaults.lens || "drift";
   if (s.member) q.set("member", s.member);
   if (s.zoom) q.set("zoom", s.zoom);
   if (s.env) q.set("env", s.env);
+  else if (envDefault) q.set("env", "");
   if (s.tier) q.set("tier", s.tier);
-  if (s.lens && s.lens !== "drift") q.set("lens", s.lens);
+  if (s.lens && s.lens !== lensDefault) q.set("lens", s.lens);
   if (s.node) q.set("node", s.node);
   if (s.radial) q.set("radial", "1");
   const out = q.toString();

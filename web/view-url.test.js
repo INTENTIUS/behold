@@ -28,6 +28,14 @@ describe("writeViewQuery (#475)", () => {
     const state = { member: "delivery", zoom: "components", env: "prod", tier: "local", lens: "cost", node: "delivery/appService", radial: true };
     expect(readViewQuery(writeViewQuery("", state))).toEqual(state);
   });
+  it("writes env= for the source graph when behold was started on an env, so a reload doesn't open live", () => {
+    expect(writeViewQuery("", { zoom: "resources", env: null }, { env: "prod" })).toBe("?zoom=resources&env=");
+    expect(readViewQuery("?zoom=resources&env=")).toEqual({ zoom: "resources", env: null });
+  });
+  it("writes a lens that differs from the saved one, drift included", () => {
+    expect(writeViewQuery("", { lens: "drift" }, { lens: "cost" })).toBe("?lens=drift");
+    expect(writeViewQuery("", { lens: "cost" }, { lens: "cost" })).toBe("");
+  });
   it("writes nothing for an empty view", () => {
     expect(writeViewQuery("", {})).toBe("");
   });

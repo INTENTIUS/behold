@@ -117,6 +117,8 @@ try {
 } catch {
   /* private mode */
 }
+// #475: what a load with no `lens=` would paint, so the URL carries any other.
+let savedColourMode = colourMode;
 
 const COLOUR_MODE_TITLE = {
   drift: "Colour each card by what chant observed live — the overlay behold has always drawn",
@@ -141,6 +143,7 @@ function setColourMode(mode) {
   colourMode = mode;
   try {
     localStorage.setItem(COLOUR_STORE_KEY, mode);
+    savedColourMode = mode;
   } catch {
     /* private mode */
   }
@@ -2177,7 +2180,7 @@ function afterPaint(ir) {
     urlRefusals.push(...place.refused);
     if (place.apply.member) view.member = place.apply.member;
     if (place.apply.node) {
-      selectNode(place.apply.node);
+      selectNode(place.apply.node, { quiet: true });
       revealNode(place.apply.node);
     }
     const line = refusalLine(urlRefusals);
@@ -2193,12 +2196,13 @@ function afterPaint(ir) {
 }
 
 /** A card was picked (graph click, panel row, palette, the link). */
-function noteSelection(id) {
+function noteSelection(id, { quiet = false } = {}) {
   selectedNodeId = id;
   const m = nodeMember(id);
   if (m) view.member = m;
   syncViewUrl();
-  if (typeof embedSelected === "function") embedSelected(view.member, id);
+  // A pick the link or the host made isn't a click: the host isn't told.
+  if (!quiet && typeof embedSelected === "function") embedSelected(view.member, id);
 }
 
 /** Frame one member's box, or the cards in it when the zoom draws no boxes. */
@@ -2208,17 +2212,12 @@ function revealMember(member) {
   let box = null;
   const rect = svg.querySelector(`rect[data-group-id="${CSS.escape(member)}"]`);
   if (rect) {
-    box = { x: +rect.getAttribute("x"), y: +rect.getAttribute("y"), width: +rect.getAttribute("width"), height: +rect.getAttribute("height") };
+    box = boxInSvg(svg, rect);
   } else {
     for (const g of svg.querySelectorAll("[data-node-id]")) {
       if (nodeMember(g.getAttribute("data-node-id")) !== member) continue;
-      let b;
-      try {
-        b = g.getBBox();
-      } catch {
-        continue;
-      }
-      box = box ? union(box, b) : { x: b.x, y: b.y, width: b.width, height: b.height };
+      const b = boxInSvg(svg, g);
+      if (b) box = box ? union(box, b) : b;
     }
   }
   if (!box || !(box.width > 0) || !(box.height > 0)) return false;
@@ -2232,6 +2231,21 @@ function revealMember(member) {
   vbAtFit = false;
   applyVB();
   return true;
+}
+/** An element's box in the svg's user units, after every transform on the way
+ * (a dragged box is a `translate` on its wrapper, #228). */
+function boxInSvg(svg, el) {
+  try {
+    const b = el.getBBox();
+    const m = svg.getScreenCTM() && el.getScreenCTM() ? svg.getScreenCTM().inverse().multiply(el.getScreenCTM()) : null;
+    if (!m) return { x: b.x, y: b.y, width: b.width, height: b.height };
+    const pts = [[b.x, b.y], [b.x + b.width, b.y], [b.x, b.y + b.height], [b.x + b.width, b.y + b.height]].map(([x, y]) => new DOMPoint(x, y).matrixTransform(m));
+    const xs = pts.map((p) => p.x);
+    const ys = pts.map((p) => p.y);
+    return { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
+  } catch {
+    return null;
+  }
 }
 function union(a, b) {
   const x = Math.min(a.x, b.x);
@@ -2252,7 +2266,8 @@ function syncViewUrl() {
     node: place.node || selectedNodeId,
     radial: view.radial && !view.components && !view.logical && !view.ops,
   };
-  const next = location.pathname + writeViewQuery(location.search, state) + location.hash;
+  const defaults = { env: (projectInfo && projectInfo.currentEnv) || null, lens: savedColourMode };
+  const next = location.pathname + writeViewQuery(location.search, state, defaults) + location.hash;
   if (next === location.pathname + location.search + location.hash) return;
   try {
     history.replaceState(history.state, "", next);
@@ -2263,7 +2278,7 @@ function syncViewUrl() {
 
 // Select a node from a panel row the same way a graph click would: highlight
 // its card (when it's in the current SVG) and open its inspect panel.
-function selectNode(id) {
+function selectNode(id, { quiet = false } = {}) {
   const node = lastGraphIr && lastGraphIr.nodes.find((n) => n.id === id);
   if (!node) return;
   const host = document.getElementById("graph");
@@ -2271,7 +2286,7 @@ function selectNode(id) {
   const g = host.querySelector(`[data-node-id="${CSS.escape(id)}"]`);
   if (g) g.classList.add("sel");
   inspect(node);
-  noteSelection(node.id);
+  noteSelection(node.id, { quiet });
   carvePick(node);
 }
 
