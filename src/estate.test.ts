@@ -29,6 +29,7 @@ import { resetOverlayCache } from "./overlay-ir.ts";
 import { applyMemberPasses, memberPassNote, registerMemberKind } from "./member-kind.ts";
 import { terraformSpec } from "./terraform-member.ts";
 import { attachRuntimeContainment } from "./overlay.ts";
+import { LS_SCHEMA_ID, parseWorkspaceLs, setServedWorkspace, WorkspaceMemberError } from "./workspace.ts";
 import type { GraphIR as ChantGraphIR } from "@intentius/chant";
 
 const stack = (nodeId: string, lexicon = "aws") => ({
@@ -768,5 +769,67 @@ describe("render passes dispatch on member kind (#427)", () => {
     // The chant member is never offered to the terraform kind.
     expect(seen).toEqual([[tf]]);
     expect(note.note).toBe("1 of mine");
+  });
+});
+
+// #474: a declared member chant can't graph (arugula's toy workspace: a chant
+// member holding only op files, "No lexicon detected") used to throw out of
+// composeEstate and take the page with it. In a served workspace it is drawn
+// as the same box an unreadable member is, with chant's reason.
+describe("a declared member that fails to graph is a box, not a page error (#474)", () => {
+  const lsDoc = (names: string[]) =>
+    JSON.stringify({
+      $schema: LS_SCHEMA_ID,
+      contract: 1,
+      chant: "0.95.0",
+      at: null,
+      workspace: { name: "toy", root: ".", file: "chant.workspace.json", schema: 1, minReader: null, pins: [], records: [] },
+      members: names.map((name) => ({ name, dir: name, kind: "chant", roles: [], upstream: null, because: null, readable: true, reason: null, records: [] })),
+      groups: [],
+    });
+  const serve = (names: string[]) => {
+    const read = parseWorkspaceLs(lsDoc(names), "/toy");
+    if (!read.ok) throw new Error("fixture");
+    setServedWorkspace(read.workspace);
+  };
+  afterEach(() => setServedWorkspace(undefined));
+  const noLexicon = () => new Error("chant graph /toy/delivery --format ir exited 1: \u001b[33mwarning\u001b[0m: could not load the project's lexicons\nerror: No lexicon detected in infrastructure files");
+  type Node = { id: string; kind: string; attrs: Record<string, unknown> };
+
+  it("draws the only drawn member as a box carrying chant's words", async () => {
+    serve(["delivery"]);
+    vi.mocked(graphIr).mockReset().mockRejectedValue(noLexicon());
+    // detail 2 reads through the member's own chant (workspaceGraphTakes), the mocked shell-out.
+    const ir = await composeEstate(["/toy/delivery"], { detail: 2 });
+    const nodes = ir.nodes as unknown as Node[];
+    expect(nodes.map((n) => [n.id, n.kind])).toEqual([["delivery/unreadable", "UnreadableMember"]]);
+    expect(nodes[0].attrs._unreadable).toEqual({ code: "command-failed", message: "warning: could not load the project's lexicons\nerror: No lexicon detected in infrastructure files" });
+  });
+
+  it("keeps chant's own reason code when the workspace read names one, and draws the members that did read", async () => {
+    serve(["delivery", "api"]);
+    vi.mocked(graphIr)
+      .mockReset()
+      .mockImplementation(async (dir: string) => {
+        if (dir.endsWith("delivery")) throw new WorkspaceMemberError("delivery", { code: "command-failed", message: "No lexicon detected" });
+        return stack("svc") as never;
+      });
+    const ir = await composeEstate(["/toy/delivery", "/toy/api"], { detail: 2 });
+    const nodes = ir.nodes as unknown as Node[];
+    expect(nodes.map((n) => n.id).sort()).toEqual(["api/svc", "delivery/unreadable"]);
+    expect(nodes.find((n) => n.id === "delivery/unreadable")!.attrs._unreadable).toEqual({ code: "command-failed", message: "No lexicon detected" });
+  });
+
+  it("draws the box on the live path too, where the source fallback also failed", async () => {
+    serve(["delivery"]);
+    vi.mocked(graphIr).mockReset().mockRejectedValue(noLexicon());
+    const est = await composeEstateOverlay(["/toy/delivery"], { env: "local", detail: 2 }, (ir) => ir);
+    expect(est.dropped).toEqual([]);
+    expect(est.ir.nodes.map((n) => n.id)).toEqual(["delivery/unreadable"]);
+  });
+
+  it("still throws for a loose estate, which has no declaration to say the member exists", async () => {
+    vi.mocked(graphIr).mockReset().mockRejectedValue(noLexicon());
+    await expect(composeEstate(["/loose/delivery"], { detail: 2 })).rejects.toThrow(/No lexicon detected/);
   });
 });
