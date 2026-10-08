@@ -19,6 +19,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { workspaceFromLs, memberIrFromGraphDocument } from "./workspace.ts";
 import { gatesFromStatus } from "./workspace-gates.ts";
+import { whyFromIntent } from "./workspace-why.ts";
 import { BEHOLD_READS, workspaceReader, type WorkspaceDocument, type WorkspaceReadCommand } from "./workspace-reader.ts";
 
 /** The suite fixture's chant member, the one `graph --member` reads. */
@@ -34,12 +35,16 @@ function use(command: WorkspaceReadCommand, doc: WorkspaceDocument): void {
   } else if (command === "status") {
     const read = gatesFromStatus(doc, "/conformance");
     if (!read.ok) throw new Error(`behold could not use the status document: ${read.refusal.error}`);
+  } else if (command === "graph --intent") {
+    const read = whyFromIntent(doc);
+    if (!read.ok) throw new Error(`behold could not use the intent document: ${read.refusal.error}`);
+    if (!read.why.answered) throw new Error(`the intent document from chant ${String(doc.chant)} has no why`);
   }
 }
 
 describeWorkspaceReaderConformance({
   name: "behold",
-  commands: BEHOLD_READS.filter((c) => c !== "graph --intent") as ReadContractCommand[],
+  commands: [...BEHOLD_READS] as ReadContractCommand[],
   reader: (chant: ChantTransport) => {
     const reader = workspaceReader({ run: (argv) => chant.run(argv) });
     return {

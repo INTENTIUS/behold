@@ -206,6 +206,16 @@
       #actions button:hover, #inspect button:hover { border-color: var(--focus); }
       #actions button.approve { border-color: var(--managed); color: var(--managed); }
       #inspect button { border-color: var(--foreign); color: var(--foreign); }
+      /* #471: the why section. Its buttons read, they change nothing, so they
+         don't wear the foreign hue the pane's write buttons do. */
+      #inspect button.why-read { border-color: var(--rule); color: var(--fg); margin: 6px 6px 0 0; }
+      #inspect .why-headline { margin: 0 0 6px; }
+      #inspect .why-head { color: var(--muted); font-size: var(--t-caption); margin-top: 10px; }
+      #inspect .why-list { list-style: none; margin: 2px 0 0; padding: 0; }
+      #inspect .why-list li { margin: 6px 0 0; font-size: var(--t-body); overflow-wrap: anywhere; }
+      #inspect .why-list code { font: var(--t-body)/1.45 var(--font-mono); }
+      #inspect .why-meta { color: var(--muted); font-size: var(--t-caption); }
+      #inspect .why-gap, #inspect .why-refusal { color: var(--pending); }
 
       /* ---- Collapsible JSON (#259) -----------------------------------------
          web/json-view.js builds this; nothing else styles it. Two colours and
