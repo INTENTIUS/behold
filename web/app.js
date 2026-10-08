@@ -9,6 +9,7 @@
 // position), and the theme picker into the panel's View-tab slot (a stable element
 // renderPanelView never rewrites, so the select mounts once and survives re-renders).
 import { createRefreshQueue } from "./refresh-queue.js";
+import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine } from "./view-url.js";
 import { readCostLine } from "./read-cost.js";
 import { applyMemberFrame, pendingLine, stillPending } from "./pending.js";
 import { initTheme, mountThemePicker, readableOn, colorForCategory, onThemeChange, getTokens, getTheme, pinTokensFor } from "./theme.js";
@@ -116,6 +117,8 @@ try {
 } catch {
   /* private mode */
 }
+// #475: what a load with no `lens=` would paint, so the URL carries any other.
+let savedColourMode = colourMode;
 
 const COLOUR_MODE_TITLE = {
   drift: "Colour each card by what chant observed live — the overlay behold has always drawn",
@@ -140,6 +143,7 @@ function setColourMode(mode) {
   colourMode = mode;
   try {
     localStorage.setItem(COLOUR_STORE_KEY, mode);
+    savedColourMode = mode;
   } catch {
     /* private mode */
   }
@@ -1227,10 +1231,27 @@ function wire(ir) {
       host.querySelectorAll(".sel").forEach((n) => n.classList.remove("sel"));
       g.classList.add("sel");
       inspect(node);
+      noteSelection(node.id);
       // #254: in carve mode a click is also the walkthrough's Pick step — the
       // inspect pane already shows the score arithmetic the lens spelled out,
       // and the stepper picks up the same node.
       carvePick(node);
+    });
+  }
+  // #475/#476: a member's box picks the member. Only boxes that are members
+  // (a wave or a VPC box is not one), and only a click on the box itself, not
+  // on a card inside it or after a drag-pan.
+  const members = new Set(ir.nodes.map((n) => nodeMember(n.id)).filter(Boolean));
+  for (const rect of host.querySelectorAll("rect[data-group-id]")) {
+    const id = rect.getAttribute("data-group-id");
+    if (!members.has(id)) continue;
+    rect.addEventListener("click", (e) => {
+      if (panMoved || e.target !== rect) return;
+      host.querySelectorAll(".sel").forEach((n) => n.classList.remove("sel"));
+      selectedNodeId = null;
+      view.member = id;
+      renderStatusbar();
+      if (typeof embedSelected === "function") embedSelected(id, null);
     });
   }
 }
@@ -1252,7 +1273,10 @@ function wire(ir) {
 // null on a project that declares no `stacks[]` at all — the picker (and the
 // status strip's stack tag) then never renders. Every fetch reads this, so
 // the `changed` SSE re-pull and a palette lens change go through the same path.
-const view = { env: null, detail: 2, components: true, logical: false, runtime: false, ops: false, tier: null, target: null, stack: null, radial: false, collapse: false, compareTo: null };
+// member (#475) is the estate member the view is on: a host opens behold with
+// ?member=, and picking a card or a member box moves it. It changes no fetch;
+// the graph is the whole estate, framed on that member's box.
+const view = { member: null, env: null, detail: 2, components: true, logical: false, runtime: false, ops: false, tier: null, target: null, stack: null, radial: false, collapse: false, compareTo: null };
 
 // #182: `components` is the boot default, but a project that declares no
 // components renders it as ZERO nodes — the first screen was a blank graph
@@ -2099,9 +2123,162 @@ function panelDotRow(color, main, tag, onClick) {
   return row;
 }
 
+// --- #475: the view in the URL -----------------------------------------------
+// The query is read once, at boot (openFromQuery), and written back with
+// history.replaceState from renderStatusbar(), which every view change already
+// runs through. member and node can only be checked once a graph is on screen,
+// so they wait in `pendingPlace` for the first paint (afterPaint). What the
+// link asked for and behold could not open is said on the now line.
+let pendingPlace = null;
+let urlRefusals = [];
+let selectedNodeId = null;
+
+let viewUrlReady = false; // nothing is written back until the link has been read
+function openFromQuery() {
+  viewUrlReady = true;
+  const want = readViewQuery(location.search);
+  if (!Object.keys(want).length) return;
+  // env first: whether the runtime stop exists depends on it.
+  const first = settleView("env" in want ? { env: want.env } : {}, { envs: environments });
+  if ("env" in first.apply) view.env = first.apply.env;
+  const { env: _env, ...rest } = want;
+  const { apply, refused } = settleView(rest, {
+    zooms: availableZooms().map(([, z]) => z),
+    tiers,
+    lenses: COLOUR_MODES,
+  });
+  urlRefusals = [...first.refused, ...refused];
+  if (apply.tier) view.tier = apply.tier;
+  if (apply.zoom) {
+    applyZoom(apply.zoom);
+    autoZoomFallback = false; // the link chose the zoom; an empty one is said, not swapped
+  }
+  if (apply.lens) colourMode = apply.lens; // not written to localStorage: the link's pick, not yours
+  if ("radial" in apply) view.radial = apply.radial;
+  if (apply.member || apply.node) pendingPlace = { member: apply.member || null, node: apply.node || null };
+}
+
+/** The member names a graph shows: its member boxes, and the first segment of
+ * each composed node id. */
+function membersOf(ir) {
+  const out = new Set();
+  for (const n of (ir && ir.nodes) || []) {
+    const m = nodeMember(n.id);
+    if (m) out.add(m);
+  }
+  const svg = currentSvg();
+  if (svg && out.size) for (const r of svg.querySelectorAll("rect[data-group-id]")) out.add(r.getAttribute("data-group-id"));
+  return out;
+}
+
+/** After every paint: place the view where the link (or the last pick) put it. */
+function afterPaint(ir) {
+  const ids = new Set(((ir && ir.nodes) || []).map((n) => n.id));
+  if (pendingPlace) {
+    const place = settlePlace(pendingPlace, membersOf(ir), ids);
+    pendingPlace = null;
+    urlRefusals.push(...place.refused);
+    if (place.apply.member) view.member = place.apply.member;
+    if (place.apply.node) {
+      selectNode(place.apply.node, { quiet: true });
+      revealNode(place.apply.node);
+    }
+    const line = refusalLine(urlRefusals);
+    urlRefusals = [];
+    if (line) nowline(line);
+    renderStatusbar();
+  } else if (selectedNodeId && !ids.has(selectedNodeId)) {
+    // The pick isn't on this view any more; the URL stops naming it.
+    selectedNodeId = null;
+    syncViewUrl();
+  }
+  if (view.member && !selectedNodeId) revealMember(view.member);
+}
+
+/** A card was picked (graph click, panel row, palette, the link). */
+function noteSelection(id, { quiet = false } = {}) {
+  selectedNodeId = id;
+  const m = nodeMember(id);
+  if (m) view.member = m;
+  syncViewUrl();
+  // A pick the link or the host made isn't a click: the host isn't told.
+  if (!quiet && typeof embedSelected === "function") embedSelected(view.member, id);
+}
+
+/** Frame one member's box, or the cards in it when the zoom draws no boxes. */
+function revealMember(member) {
+  const svg = currentSvg();
+  if (!svg || !vbInit) return false;
+  let box = null;
+  const rect = svg.querySelector(`rect[data-group-id="${CSS.escape(member)}"]`);
+  if (rect) {
+    box = boxInSvg(svg, rect);
+  } else {
+    for (const g of svg.querySelectorAll("[data-node-id]")) {
+      if (nodeMember(g.getAttribute("data-node-id")) !== member) continue;
+      const b = boxInSvg(svg, g);
+      if (b) box = box ? union(box, b) : b;
+    }
+  }
+  if (!box || !(box.width > 0) || !(box.height > 0)) return false;
+  const pad = 0.06;
+  const aspect = vbInit[3] / vbInit[2];
+  let w = box.width * (1 + 2 * pad);
+  let h = box.height * (1 + 2 * pad);
+  if (h / w > aspect) w = h / aspect;
+  else h = w * aspect;
+  vb = [box.x + box.width / 2 - w / 2, box.y + box.height / 2 - h / 2, w, h];
+  vbAtFit = false;
+  applyVB();
+  return true;
+}
+/** An element's box in the svg's user units, after every transform on the way
+ * (a dragged box is a `translate` on its wrapper, #228). */
+function boxInSvg(svg, el) {
+  try {
+    const b = el.getBBox();
+    const m = svg.getScreenCTM() && el.getScreenCTM() ? svg.getScreenCTM().inverse().multiply(el.getScreenCTM()) : null;
+    if (!m) return { x: b.x, y: b.y, width: b.width, height: b.height };
+    const pts = [[b.x, b.y], [b.x + b.width, b.y], [b.x, b.y + b.height], [b.x + b.width, b.y + b.height]].map(([x, y]) => new DOMPoint(x, y).matrixTransform(m));
+    const xs = pts.map((p) => p.x);
+    const ys = pts.map((p) => p.y);
+    return { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
+  } catch {
+    return null;
+  }
+}
+function union(a, b) {
+  const x = Math.min(a.x, b.x);
+  const y = Math.min(a.y, b.y);
+  return { x, y, width: Math.max(a.x + a.width, b.x + b.width) - x, height: Math.max(a.y + a.height, b.y + b.height) - y };
+}
+
+/** Write the view into the address bar, keeping every other parameter. */
+function syncViewUrl() {
+  if (!viewUrlReady) return;
+  const place = pendingPlace || {};
+  const state = {
+    member: place.member || view.member,
+    zoom: zoomValue(),
+    env: view.env,
+    tier: view.tier,
+    lens: colourMode,
+    node: place.node || selectedNodeId,
+    radial: view.radial && !view.components && !view.logical && !view.ops,
+  };
+  const defaults = { env: (projectInfo && projectInfo.currentEnv) || null, lens: savedColourMode };
+  const next = location.pathname + writeViewQuery(location.search, state, defaults) + location.hash;
+  if (next === location.pathname + location.search + location.hash) return;
+  try {
+    history.replaceState(history.state, "", next);
+  } catch {
+    /* a sandboxed frame may refuse; the view still works */
+  }
+}
+
 // Select a node from a panel row the same way a graph click would: highlight
 // its card (when it's in the current SVG) and open its inspect panel.
-function selectNode(id) {
+function selectNode(id, { quiet = false } = {}) {
   const node = lastGraphIr && lastGraphIr.nodes.find((n) => n.id === id);
   if (!node) return;
   const host = document.getElementById("graph");
@@ -2109,6 +2286,7 @@ function selectNode(id) {
   const g = host.querySelector(`[data-node-id="${CSS.escape(id)}"]`);
   if (g) g.classList.add("sel");
   inspect(node);
+  noteSelection(node.id, { quiet });
   carvePick(node);
 }
 
@@ -2704,6 +2882,7 @@ function renderStatusbar() {
   // Pure state — the strip echoes the axes whose controls live on the floating
   // panel and in ⌘K, so the current view stays legible with the panel collapsed.
   const parts = [`zoom: ${zoomValue()}`, view.env ? `env: ${view.env}` : "env: (source)"];
+  if (view.member) parts.unshift(`member: ${view.member}`);
   // #399: which colour the graph is in is state, not a control, so it belongs
   // on the strip the same way the zoom and the env do. Only when it is not
   // drift — drift is what the strip has always implied.
@@ -2717,6 +2896,7 @@ function renderStatusbar() {
   const stillReading = pendingLine(pendingMembers, pendingTotal);
   if (stillReading) parts.push(stillReading);
   el.textContent = parts.join(" · ");
+  syncViewUrl();
   // #131: why this level rendered empty, or as the one below it. The server
   // decides (src/zoom-notes.ts) — the SPA never infers it, so the note always
   // describes the graph that actually came back. Appended rather than mixed
@@ -4674,6 +4854,7 @@ async function loadOnce(opts = {}, isCurrent = () => true) {
     pendingMembers = body.meta && body.meta.mode === "progressive" ? [...(body.meta.pending || [])] : [];
     pendingTotal = pendingMembers.length;
     render(body.ir, body.svg, body.meta);
+    afterPaint(body.ir);
   } catch (err) {
     // A background settle poll must not blow away a good graph on a transient error.
     if (!opts.quiet && isCurrent()) {
@@ -4807,6 +4988,7 @@ async function initPickers() {
   environments = info.environments || [];
   tiers = info.tiers || [];
   targets = info.targets || [];
+  openFromQuery();
   renderStatusbar();
   load();
 }
@@ -5691,6 +5873,10 @@ function paletteCommands() {
   }
 
   // Env/stack/tier/target selection — replaces the old header pickers.
+  if (view.member) c.push([`member: whole estate (leave ${view.member})`, () => { view.member = null; selectedNodeId = null; renderStatusbar(); fitGraph(); }]);
+  for (const m of lastGraphIr ? membersOf(lastGraphIr) : []) {
+    if (m !== view.member) c.push([`member: ${m}`, () => { view.member = m; selectedNodeId = null; renderStatusbar(); revealMember(m); }]);
+  }
   c.push(["env: (source)" + (!view.env ? " ✓" : ""), () => { view.env = null; resetDialCaches(); load(); }]);
   for (const e of environments) {
     c.push([`env: ${e}` + (view.env === e ? " ✓" : ""), () => { view.env = e; resetDialCaches(); load(); }]);

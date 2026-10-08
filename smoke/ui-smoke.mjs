@@ -524,6 +524,10 @@ try {
   // own edgeLabel geometry), so its centre is directly comparable with the
   // midpoint of the re-anchored path.
   const labelAt = () => userRect(null, EDGE_VIA);
+  // #475: the view lives in the URL, so a plain reload reopens on the card a
+  // click picked. These checks are about the layout store, which must survive
+  // a load from nothing, so they reload without the view's query.
+  const reloadFresh = () => page.goto(page.url().split("?")[0]);
   const dragBy = async (box, dx, dy) => {
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.down();
@@ -606,7 +610,7 @@ try {
   check("an export does not carry a visible resize handle", /data-layout-resize="[^"]*"[^>]*opacity="0"/.test(serialized));
 
   // Reload: the layout is still there, applied onto a freshly fetched SVG.
-  await page.reload();
+  await reloadFresh();
   await page.waitForSelector("#graph svg [data-node-id]", { timeout: 20000 });
   await page.waitForTimeout(300);
   check("the card's placement survives a reload", (await transformOf('#graph [data-node-id="api"]')) === cardTf);
@@ -626,7 +630,7 @@ try {
     },
     [key],
   );
-  await page.reload();
+  await reloadFresh();
   await page.waitForSelector("#graph svg [data-node-id]", { timeout: 20000 });
   await page.waitForTimeout(300);
   check(
@@ -638,7 +642,7 @@ try {
   // THE acceptance for this half: wipe this browser's tier entirely, reload,
   // and the placement is still there — it came off the server.
   await page.evaluate((p) => Object.keys(localStorage).filter((k) => k.startsWith(p)).forEach((k) => localStorage.removeItem(k)), LAYOUT_PREFIX);
-  await page.reload();
+  await reloadFresh();
   await page.waitForSelector("#graph svg [data-node-id]", { timeout: 20000 });
   await page.waitForFunction((want) => document.querySelector('#graph [data-node-id="api"]').getAttribute("transform") === want, cardTf, { timeout: 10000 });
   check("with localStorage cleared, the position comes from the server", (await transformOf('#graph [data-node-id="api"]')) === cardTf);
@@ -650,7 +654,7 @@ try {
   // idea about `api`.)
   server.layout.set("components", { ...sidecar(), api: { dx: -300, dy: -300 }, worker: { dx: 15, dy: 25 } });
   await page.evaluate(([k]) => localStorage.setItem(k, JSON.stringify({ api: { dx: 60, dy: 30 } })), [key]);
-  await page.reload();
+  await reloadFresh();
   await page.waitForSelector("#graph svg [data-node-id]", { timeout: 20000 });
   await page.waitForFunction(() => document.querySelector('#graph [data-node-id="worker"]').getAttribute("transform") !== "translate(230, 80)", null, { timeout: 10000 });
   check("a conflicting id takes the LOCAL delta, not the server's", /translate\(\s*60,\s*30\)/.test(await transformOf('#graph [data-node-id="api"]')));
@@ -698,7 +702,7 @@ try {
   // A delta stored before any of this existed (or against a box since shrunk)
   // is brought back inside on apply — clamped, never discarded (#267).
   await page.evaluate(([k]) => localStorage.setItem(k, JSON.stringify({ api: { dx: 4000, dy: 4000 } })), [key]);
-  await page.reload();
+  await reloadFresh();
   await page.waitForSelector("#graph svg [data-node-id]", { timeout: 20000 });
   await page.waitForTimeout(400);
   const wall2 = await boxRect();
