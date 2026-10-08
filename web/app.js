@@ -10,9 +10,10 @@
 // renderPanelView never rewrites, so the select mounts once and survives re-renders).
 import { createRefreshQueue } from "./refresh-queue.js";
 import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine } from "./view-url.js";
+import { readEmbed, selectMessage, viewFromMessage } from "./embed.js";
 import { readCostLine } from "./read-cost.js";
 import { applyMemberFrame, pendingLine, stillPending } from "./pending.js";
-import { initTheme, mountThemePicker, readableOn, colorForCategory, onThemeChange, getTokens, getTheme, pinTokensFor } from "./theme.js";
+import { initTheme, setTheme, mountThemePicker, readableOn, colorForCategory, onThemeChange, getTokens, getTheme, pinTokensFor } from "./theme.js";
 // #399 M2 / #401 M4 of #397: the colour-by modes' arithmetic and the
 // provenance badge's wording — every decision the behaviour overlay makes,
 // pure and unit-tested beside the file. This module owns the fetches, the SVG
@@ -87,7 +88,13 @@ import { hasOperator, renderOperator, APPROVED_SEMANTICS } from "./operator.js";
 import { releaseRows } from "./release.js";
 import { comparisonRow, comparisonSummary } from "./cross-env.js";
 initTheme();
-initPanel();
+// #476: framed in a host pane. The flag is a class on <html>, so the CSS that
+// folds the chrome away needs no JS, and the theme is the host's for this
+// frame only.
+const embedOpts = readEmbed(location.search);
+if (embedOpts.theme && !setTheme(embedOpts.theme, { persist: false })) console.warn(`behold: no theme named ${embedOpts.theme}`);
+if (embedOpts.embed) document.documentElement.classList.add("embed");
+initPanel({ embed: embedOpts.embed });
 mountThemePicker(document.getElementById("panel-theme"));
 
 // Colour node fills by category/kind using the theme's FULL palette (spicypath-style, so the
@@ -1251,7 +1258,7 @@ function wire(ir) {
       selectedNodeId = null;
       view.member = id;
       renderStatusbar();
-      if (typeof embedSelected === "function") embedSelected(id, null);
+      embedSelected(id, null);
     });
   }
 }
@@ -2136,8 +2143,18 @@ let selectedNodeId = null;
 let viewUrlReady = false; // nothing is written back until the link has been read
 function openFromQuery() {
   viewUrlReady = true;
-  const want = readViewQuery(location.search);
-  if (!Object.keys(want).length) return;
+  applyWantedView(readViewQuery(location.search));
+}
+
+/**
+ * Move the view to what a link or the host asked for. Values the estate can't
+ * honour are kept in `urlRefusals` for the now line; member and node wait in
+ * `pendingPlace` for a graph to check them against. Returns whether the
+ * fetch-shaping part of the view moved (a re-read is needed).
+ */
+function applyWantedView(want) {
+  if (!Object.keys(want).length) return false;
+  const before = fetchKey();
   // env first: whether the runtime stop exists depends on it.
   const first = settleView("env" in want ? { env: want.env } : {}, { envs: environments });
   if ("env" in first.apply) view.env = first.apply.env;
@@ -2147,7 +2164,7 @@ function openFromQuery() {
     tiers,
     lenses: COLOUR_MODES,
   });
-  urlRefusals = [...first.refused, ...refused];
+  urlRefusals.push(...first.refused, ...refused);
   if (apply.tier) view.tier = apply.tier;
   if (apply.zoom) {
     applyZoom(apply.zoom);
@@ -2155,7 +2172,52 @@ function openFromQuery() {
   }
   if (apply.lens) colourMode = apply.lens; // not written to localStorage: the link's pick, not yours
   if ("radial" in apply) view.radial = apply.radial;
+  if (want.member === null) {
+    view.member = null;
+    selectedNodeId = null;
+  }
+  if (apply.member && !apply.node && selectedNodeId && nodeMember(selectedNodeId) !== apply.member) {
+    // Another member, and no card named in it: the old pick goes.
+    selectedNodeId = null;
+    document.querySelectorAll("#graph .sel").forEach((n) => n.classList.remove("sel"));
+  }
   if (apply.member || apply.node) pendingPlace = { member: apply.member || null, node: apply.node || null };
+  return fetchKey() !== before;
+}
+function fetchKey() {
+  return [view.env, zoomValue(), view.tier, view.radial].join("|");
+}
+
+// #476: the host moves the view with a `behold:view` message carrying the same
+// fields as the URL. Only from the host's origin (viewFromMessage).
+window.addEventListener("message", (e) => {
+  const want = viewFromMessage(e, embedOpts.host);
+  if (!want) return;
+  const lensBefore = colourMode;
+  if (applyWantedView(want)) {
+    resetDialCaches();
+    renderStatusbar();
+    load();
+    return;
+  }
+  if (colourMode !== lensBefore) recolorNodesByCategory();
+  if (pendingPlace && lastGraphIr) afterPaint(lastGraphIr);
+  else if (want.member === null) fitGraph();
+  const line = refusalLine(urlRefusals);
+  urlRefusals = [];
+  if (line) nowline(line);
+  renderStatusbar();
+});
+
+/** Tell the host what was picked: a card (member + node) or a member's box. */
+function embedSelected(member, node) {
+  if (embedOpts.embed && member) setInspectCollapsed(!node);
+  if (!embedOpts.host || window.parent === window) return;
+  try {
+    window.parent.postMessage(selectMessage(member, node), embedOpts.host);
+  } catch {
+    /* the parent went away */
+  }
 }
 
 /** The member names a graph shows: its member boxes, and the first segment of
@@ -2183,9 +2245,6 @@ function afterPaint(ir) {
       selectNode(place.apply.node, { quiet: true });
       revealNode(place.apply.node);
     }
-    const line = refusalLine(urlRefusals);
-    urlRefusals = [];
-    if (line) nowline(line);
     renderStatusbar();
   } else if (selectedNodeId && !ids.has(selectedNodeId)) {
     // The pick isn't on this view any more; the URL stops naming it.
@@ -2193,6 +2252,9 @@ function afterPaint(ir) {
     syncViewUrl();
   }
   if (view.member && !selectedNodeId) revealMember(view.member);
+  const line = refusalLine(urlRefusals);
+  urlRefusals = [];
+  if (line) nowline(line);
 }
 
 /** A card was picked (graph click, panel row, palette, the link). */
@@ -2202,7 +2264,7 @@ function noteSelection(id, { quiet = false } = {}) {
   if (m) view.member = m;
   syncViewUrl();
   // A pick the link or the host made isn't a click: the host isn't told.
-  if (!quiet && typeof embedSelected === "function") embedSelected(view.member, id);
+  if (!quiet) embedSelected(view.member, id);
 }
 
 /** Frame one member's box, or the cards in it when the zoom draws no boxes. */
@@ -5682,6 +5744,8 @@ async function initActions() {
   }
 }
 initActions();
+// #476: a frame keeps its own inspect state, folded until something is picked.
+const INSPECT_COLLAPSED_KEY = embedOpts.embed ? "behold.inspectCollapsed.embed" : "behold.inspectCollapsed";
 initInspectPane();
 
 // Inspect pane chrome (#15): collapse (chevron / edge tab) + drag-to-resize, with
@@ -5690,7 +5754,11 @@ initInspectPane();
 // so the ⌘K palette (#73) can drive the same collapse/reopen the chevron does.
 function setInspectCollapsed(on) {
   document.getElementById("app").classList.toggle("inspect-collapsed", on);
-  localStorage.setItem("behold.inspectCollapsed", on ? "1" : "0");
+  try {
+    localStorage.setItem(INSPECT_COLLAPSED_KEY, on ? "1" : "0");
+  } catch {
+    /* private mode */
+  }
 }
 function toggleInspect() {
   setInspectCollapsed(!document.getElementById("app").classList.contains("inspect-collapsed"));
@@ -5703,7 +5771,13 @@ function initInspectPane() {
   // Restore persisted width + collapsed state.
   const savedW = Number(localStorage.getItem("behold.inspectW"));
   if (savedW >= MIN && savedW <= MAX) document.documentElement.style.setProperty("--inspect-w", savedW + "px");
-  if (localStorage.getItem("behold.inspectCollapsed") === "1") app.classList.add("inspect-collapsed");
+  let folded = null;
+  try {
+    folded = localStorage.getItem(INSPECT_COLLAPSED_KEY);
+  } catch {
+    /* private mode */
+  }
+  if (folded === "1" || (folded === null && embedOpts.embed)) app.classList.add("inspect-collapsed");
 
   document.getElementById("inspect-collapse").addEventListener("click", () => setInspectCollapsed(true));
   document.getElementById("inspect-reopen").addEventListener("click", () => setInspectCollapsed(false));

@@ -1270,3 +1270,26 @@ describe("the cross-member estate edge on both paths (#166)", () => {
     );
   });
 });
+
+describe("POST /api/refresh?notify=1 (#476)", () => {
+  it("is a host's notice: every open page is told to re-pull, and nothing is read", async () => {
+    const broadcaster = new Broadcaster();
+    const seen: string[] = [];
+    broadcaster.subscribe((type) => seen.push(type));
+    const runner = new OpRunner({ projectDir: "/proj", broadcaster, onDone: () => {} });
+    const app = createApp({ projectDir: "/proj", port: 0 }, broadcaster, new FrameBuffer(), runner);
+    const res = await app.request("/api/refresh?notify=1", { method: "POST" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ notified: true });
+    expect(seen).toEqual(["changed"]);
+  });
+});
+
+describe("static files (#476)", () => {
+  it("are revalidated on each load, so a framed behold never runs last version's app.js", async () => {
+    const { app } = makeApp();
+    const res = await app.request("/app.js");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("no-cache");
+  });
+});

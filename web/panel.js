@@ -6,7 +6,9 @@
 // browser JS, no build step, themed entirely by the shared CSS vars — same
 // rules as app.js.
 
-const STORE_KEY = "behold.panel";
+// #476: a framed behold keeps its own panel state, folded to start with, so a
+// host pane and a full window never fight over one saved position.
+let STORE_KEY = "behold.panel";
 const MARGIN = 12; // gap kept between a snapped panel and the viewport edge
 const SNAP = 32; // released within this many px of an edge → dock to it
 
@@ -168,9 +170,14 @@ export function isPanelCollapsed() {
   return !!state.collapsed;
 }
 
-export function initPanel() {
+export function initPanel({ embed = false } = {}) {
   panel = document.getElementById("panel");
   if (!panel) return;
+  if (embed) {
+    STORE_KEY = "behold.panel.embed";
+    state.collapsed = true;
+    state.y = 12;
+  }
   state = loadState();
   const bar = document.getElementById("panel-tabs");
   initDrag(bar);
@@ -182,7 +189,8 @@ export function initPanel() {
   for (const b of panel.querySelectorAll("#panel-tabs button[data-tab]")) b.addEventListener("click", () => setPanelTab(b.dataset.tab));
   const known = [...panel.querySelectorAll("#panel-tabs button[data-tab]")].map((b) => b.dataset.tab);
   setCollapsed(state.collapsed);
-  setPanelTab(known.includes(state.tab) ? state.tab : known[0], { expand: false });
+  const hidden = embed ? ["deploy"] : [];
+  setPanelTab(known.includes(state.tab) && !hidden.includes(state.tab) ? state.tab : known[0], { expand: false });
   window.addEventListener("resize", applyPosition);
   // Tab-content re-renders change the panel's height — a bottom-snapped panel
   // must stay flush through them.
