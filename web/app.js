@@ -2130,7 +2130,9 @@ let pendingPlace = null;
 let urlRefusals = [];
 let selectedNodeId = null;
 
+let viewUrlReady = false; // nothing is written back until the link has been read
 function openFromQuery() {
+  viewUrlReady = true;
   const want = readViewQuery(location.search);
   if (!Object.keys(want).length) return;
   // env first: whether the runtime stop exists depends on it.
@@ -2239,6 +2241,7 @@ function union(a, b) {
 
 /** Write the view into the address bar, keeping every other parameter. */
 function syncViewUrl() {
+  if (!viewUrlReady) return;
   const place = pendingPlace || {};
   const state = {
     member: place.member || view.member,
