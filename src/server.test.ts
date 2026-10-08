@@ -1293,3 +1293,56 @@ describe("static files (#476)", () => {
     expect(res.headers.get("cache-control")).toBe("no-cache");
   });
 });
+
+describe("approving in preview mode (#477)", () => {
+  const preview = () => {
+    const broadcaster = new Broadcaster();
+    const runner = new OpRunner({ projectDir: "/proj", broadcaster, onDone: () => {} });
+    return createApp({ projectDir: "/proj", port: 0, previewMode: true }, broadcaster, new FrameBuffer(), runner);
+  };
+  it.each([
+    "/api/operator/approve/deploy/go",
+    "/api/ops/deploy/signal/go",
+    "/api/workspace/gates/approve",
+  ])("POST %s refuses", async (path) => {
+    const res = await preview().request(path, { method: "POST" });
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe("preview");
+  });
+});
+
+describe("GET /api/workspace/gates (#477)", () => {
+  it("is an empty list when behold isn't serving a declared workspace", async () => {
+    const { app } = makeApp();
+    const res = await app.request("/api/workspace/gates");
+    const body = (await res.json()) as { approver: unknown };
+    expect(body).toMatchObject({ workspace: false, env: "local", gates: [] });
+    expect(typeof body.approver).toBe("string");
+  });
+});
+
+describe("who may talk to behold", () => {
+  it("refuses a request for another host name", async () => {
+    const { app } = makeApp();
+    const res = await app.request("http://evil.example/api/project");
+    expect(res.status).toBe(421);
+  });
+  it("refuses a write from another site, before any route runs", async () => {
+    const { app } = makeApp();
+    const res = await app.request("/api/refresh?notify=1", { method: "POST", headers: { origin: "https://evil.example", "sec-fetch-site": "cross-site" } });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("POST /api/workspace/gates/approve (#477)", () => {
+  it("takes only a JSON body, so a cross-origin simple POST can't reach it", async () => {
+    const { app } = makeApp();
+    const res = await app.request("/api/workspace/gates/approve", { method: "POST", headers: { "content-type": "text/plain" }, body: '{"key":"a/b/c"}' });
+    expect(res.status).toBe(415);
+  });
+  it("refuses an env chant would read as a flag", async () => {
+    const { app } = makeApp();
+    const res = await app.request("/api/workspace/gates?env=--help");
+    expect(res.status).toBe(400);
+  });
+});

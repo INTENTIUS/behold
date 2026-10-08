@@ -38,7 +38,7 @@ Usage:
   behold doctor [project-dir] [--json] [--fix]
   behold preview [project-dir] [--port <n>] [--emulator]
   behold export [project-dir] [--out <dir>] [--env <name>] [--name <worker>] [--emulator]
-  behold serve <project-dir…> [--port <n>] [--env <name>] [--poll <secs>] [--local]
+  behold serve <project-dir…> [--port <n>] [--host <addr>] [--allow-host <name,…>] [--env <name>] [--poll <secs>] [--local]
   behold carve <report.json> [--port <n>]
 
   carve   Render a chant Terraform peelability report — the JSON from
@@ -97,6 +97,12 @@ Usage:
 
 Options:
   --port <n>          Port (default 4600). preview/serve/carve.
+  --host <addr>       serve only: the address to bind (default 127.0.0.1, or
+                      BEHOLD_HOST). behold runs writes with your credentials,
+                      so it answers this machine unless you say otherwise.
+  --allow-host <n,…>  serve only: names besides loopback behold answers to, and
+                      whose pages may write (BEHOLD_ALLOWED_HOSTS too). For a
+                      proxy that frames behold, or --host 0.0.0.0.
   --env <name>        Environment name — turns on the live drift overlay.
                       export/serve.
   --poll <secs>       Re-query live drift every <secs> and push updates (needs --env).
@@ -189,10 +195,14 @@ export async function run(argv: string[]): Promise<void> {
   let pollSecs: number | undefined;
   let autoSync: AutoSyncMode = "off";
   let local = false;
+  let host: string | undefined;
+  const allowHosts: string[] = [];
 
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     if (a === "--port") port = Number(rest[++i]);
+    else if (a === "--host") host = rest[++i];
+    else if (a === "--allow-host") allowHosts.push(...(rest[++i] ?? "").split(","));
     else if (a === "--env") env = rest[++i];
     else if (a === "--poll") pollSecs = Number(rest[++i]);
     else if (a === "--local") local = true;
@@ -249,6 +259,8 @@ export async function run(argv: string[]): Promise<void> {
       ...(pollSecs !== undefined ? { pollSecs } : {}),
       ...(autoSync !== "off" ? { autoSync } : {}),
       ...(local ? { local: true } : {}),
+      ...(host ? { host } : {}),
+      ...(allowHosts.length ? { allowedHosts: allowHosts } : {}),
     });
     return;
   }
@@ -265,6 +277,8 @@ export async function run(argv: string[]): Promise<void> {
     ...(pollSecs !== undefined ? { pollSecs } : {}),
     ...(autoSync !== "off" ? { autoSync } : {}),
     ...(local ? { local: true } : {}),
+    ...(host ? { host } : {}),
+    ...(allowHosts.length ? { allowedHosts: allowHosts } : {}),
   });
 }
 

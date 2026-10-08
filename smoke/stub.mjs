@@ -1040,6 +1040,12 @@ export function startStub(port, { carve = false, nonChant = false, choudoufu = f
     // #234 join 3 — the operator strip's read. `operator` is the whole state the
     // real route answers with (src/operator.ts's OperatorState), and it mutates
     // when the approve below lands, so the re-poll shows the gate gone.
+    // #477: none of the stub's estates is a declared workspace, which the real
+    // route answers with an empty list.
+    if (path === "/api/workspace/gates") {
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ workspace: false, env: "local", gates: [], approver: "smoke" }));
+    }
     if (path === "/api/operator/status") {
       res.writeHead(200, { "content-type": "application/json" });
       return res.end(JSON.stringify({ ...operator, operator }));
