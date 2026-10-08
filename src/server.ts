@@ -1907,7 +1907,7 @@ export function createApp(
         { method: "GET", path: "/api/history", desc: "recent source commits (rollback targets)" },
         { method: "GET", path: "/api/frames", desc: "captured lanes frames" },
         { method: "GET", path: "/api/events", desc: "SSE: changed / op / apply / run / pr" },
-        { method: "POST", path: "/api/refresh", desc: "re-observe live now (?env=) — returns the fresh graph" },
+        { method: "POST", path: "/api/refresh", desc: "re-observe live now (?env=) — returns the fresh graph. With ?notify=1 it is a host's notice that the workspace changed: cached reads are dropped and every open page re-pulls (#476)" },
         { method: "POST", path: "/api/apply", desc: "delegated apply: ?env=&component=<name|all> (guarded, preview-locked)" },
         { method: "POST", path: "/api/ops/:name/run", desc: "run a committed Op (delegated write)" },
         { method: "POST", path: "/api/ops/:name/signal/:gate", desc: "approve an Op's gate (releases the waiting run)" },
@@ -3293,8 +3293,21 @@ export function createApp(
   // timeline a datapoint without waiting for a source edit or --poll. Returns the
   // rendered graph so the caller renders from this one query (no double pull); the
   // `frames` event (emitted by captureFrame when the estate moved) updates lanes.
+  //
+  // #476: a host that already watches the workspace (arugula's fingerprint)
+  // says "it changed" with `?notify=1` instead of running behold with --poll
+  // beside it. behold then drops every cached member read and overlay, and
+  // every open page re-pulls on the `changed` event, so a framed behold moves
+  // when the host's view of the repo does.
   app.post("/api/refresh", async (c) => {
-    const env = optsFromQuery(new URL(c.req.url)).env ?? cfg.env;
+    const url = new URL(c.req.url);
+    if (url.searchParams.get("notify") === "1") {
+      invalidateMember();
+      invalidateOverlay();
+      broadcaster.emit("changed", "");
+      return c.json({ notified: true });
+    }
+    const env = optsFromQuery(url).env ?? cfg.env;
     const result = await captureFrame(cfg.projectDir, env, frames, broadcaster);
     if (!result) return c.json({ error: "refresh failed — see server log" }, 500);
     // Same wiring/examples reclassification the /api/overlay view gets, so a
@@ -3631,6 +3644,14 @@ export function createApp(
 
   // Static SPA. Served last so /api and /healthz win.
   const rel = relative(process.cwd(), webRoot) || ".";
+  // #476: the SPA is a graph of ES modules with no build hash in their names,
+  // so a browser that kept app.js from the last behold would run it against
+  // this one's modules. A framed behold can't be hard-reloaded from its host,
+  // so every file is revalidated on each load.
+  app.use("/*", async (c, next) => {
+    await next();
+    if (!c.req.path.startsWith("/api/") && c.res.ok && !c.res.headers.has("cache-control")) c.res.headers.set("cache-control", "no-cache");
+  });
   app.use("/*", serveStatic({ root: rel }));
   app.get("/", serveStatic({ path: join(rel, "index.html") }));
 

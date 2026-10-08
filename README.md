@@ -310,6 +310,38 @@ behold shells the **project's own** chant (resolved from the project's
 `@intentius/chant ^0.18.1` or later for the live overlay; `graph --live` observed
 nothing before that fix.
 
+## Linking to a view, and framing behold in a host
+
+The view is in the URL. behold reads it at boot and writes it back as the view
+changes, so a reload keeps it and a link opens where the sender was:
+
+```
+http://localhost:4600/?member=delivery&zoom=components&env=prod&node=delivery/appService
+```
+
+`member`, `zoom`, `env`, `tier`, `lens` (the colour: `drift`, `cost` or
+`headroom`), `node` and `radial` (`1` or `0`). An empty `env=` is the source
+graph. A value the estate can't honour (a member it doesn't have, a zoom it
+doesn't offer) is named on the now line. A static export takes the same
+parameters against what it captured.
+
+A host pane, such as arugula's workspace block, frames behold with
+`?embed=1&host=<the host's origin>`, and optionally `theme=light`, `dark` or
+any theme name the picker lists:
+
+- the panel and the inspect pane start folded, and the Deploy tab and the theme
+  picker are gone
+- picking a card posts `{type: "behold:select", member, node}` to the parent at
+  `host`; picking a member's box posts the same with `node: null`
+- the parent moves the view with `{type: "behold:view", ...}`, carrying any of
+  the URL's fields (`member: null` is the whole estate). Messages from any
+  other origin are ignored
+- gates are the host's to approve: behold draws them and says so
+
+A host that already watches the workspace tells behold it changed with
+`POST /api/refresh?notify=1`, instead of running behold with `--poll` beside
+it. behold drops its cached reads and every open page re-pulls.
+
 ## Terraform carve-out: `behold carve <report.json>`
 
 `chant carve advise` ranks a Terraform estate by **peelability**: how cleanly

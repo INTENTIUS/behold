@@ -279,6 +279,15 @@
         color: var(--muted); font: var(--t-caption)/1 var(--font-ui); padding: 6px 0; cursor: pointer; }
       #panel-tabs button[data-tab]:hover { color: var(--fg); }
       #panel-tabs button[data-tab].active { color: var(--fg); background: var(--active); font-weight: 600; }
+      /* #476: framed in a host pane. Deploying and the theme are the host's
+         business; the panel and the inspect pane start folded (app.js). */
+      .embed #panel-tabs button[data-tab="deploy"], .embed #panel-body section[data-tab="deploy"],
+      .embed #panel-body section[data-tab="view"] > h3:has(+ #panel-theme), .embed #panel-theme { display: none !important; }
+      /* Folded in a frame, the panel is a small pill (⌘K and the expand
+         chevron) in the corner, so the graph has the pane to itself. */
+      .embed #panel.collapsed #panel-tabs button[data-tab] { display: none; }
+      .embed #panel.collapsed { width: auto; }
+      .embed #panel.collapsed #panel-tabs { gap: 4px; padding: 2px 4px; }
       #panel-tabs #hintk { flex: none; align-self: center; padding: 2px 6px; margin-left: 2px; }
       #panel-collapse { flex: none; align-self: center; background: none; border: none; color: var(--muted);
         font-size: var(--t-body); cursor: pointer; line-height: 1; padding: 2px 4px; }
