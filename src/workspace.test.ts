@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { readArgv } from "./workspace-reader.ts";
 import {
   drawnMembers,
   findDeclaration,
@@ -202,7 +203,7 @@ describe("memberIrFromWorkspaceGraph", () => {
   });
 
   it("passes only the flags the contract takes", () => {
-    expect(workspaceGraphArgs("/w", "api", { env: "prod", live: true, overlay: true, traffic: "peak" })).toEqual([
+    expect(readArgv("graph", workspaceGraphArgs("/w", "api", { env: "prod", live: true, overlay: true, traffic: "peak" }))).toEqual([
       "workspace", "graph", "/w", "--member", "api", "--env", "prod", "--live", "--overlay", "--traffic", "peak",
     ]);
     expect(workspaceGraphTakes({ env: "prod", live: true })).toBe(true);

@@ -15,8 +15,8 @@
  * looking (#476).
  */
 import { resolve } from "node:path";
-import { runChantRaw } from "./chant.ts";
-import { contractRefusal, type Workspace, type WorkspaceRefusal } from "./workspace.ts";
+import type { Workspace } from "./workspace.ts";
+import { contractRefusal, rootReader, WorkspaceReadError, type WorkspaceDocument, type WorkspaceReader, type WorkspaceRefusal } from "./workspace-reader.ts";
 
 export const STATUS_SCHEMA_ID = "https://intentius.io/chant/schemas/workspace/status/v1/status.schema.json";
 
@@ -73,6 +73,11 @@ export function parseWorkspaceStatus(text: string, root: string): GatesRead {
     return { ok: false, refusal: { error: "chant workspace status printed something that is not JSON.", code: "workspace-status", remedy: "Run `chant workspace status <env> --json` in the workspace root to see what it says." } };
   }
   if (!isRecord(doc)) return { ok: false, refusal: { error: "chant workspace status printed JSON that is not an object.", code: "workspace-status", remedy: "Run `chant workspace status <env> --json` in the workspace root." } };
+  return gatesFromStatus(doc, root);
+}
+
+/** The waiting gates in a status document the reader returned. */
+export function gatesFromStatus(doc: WorkspaceDocument, root: string): GatesRead {
   const contract = contractRefusal(doc, "status");
   if (contract) return { ok: false, refusal: contract };
   if (isRecord(doc.error)) {
@@ -118,20 +123,14 @@ export function parseWorkspaceStatus(text: string, root: string): GatesRead {
   return { ok: true, env: String(doc.env ?? ""), gates };
 }
 
-/** Ask the workspace's chant for its status in `env`. */
-export async function readWorkspaceGates(ws: Workspace, env: string): Promise<GatesRead> {
-  const run = await runChantRaw(["workspace", "status", env, "--json"], ws.root);
-  if (!run.stdout.trim()) {
-    return {
-      ok: false,
-      refusal: {
-        error: `chant workspace status ${env} failed in ${ws.root} (exit ${run.code}): ${run.stderr.trim().split("\n").slice(-3).join(" ")}`,
-        code: "workspace-status",
-        remedy: "Run `chant workspace status <env>` in the workspace root.",
-      },
-    };
+/** Ask the workspace's chant for its status in `env`, through the reader (#468). */
+export async function readWorkspaceGates(ws: Workspace, env: string, reader: WorkspaceReader = rootReader(ws.root)): Promise<GatesRead> {
+  try {
+    return gatesFromStatus(await reader.read("status", [env]), ws.root);
+  } catch (e) {
+    if (e instanceof WorkspaceReadError) return { ok: false, refusal: e.refusal };
+    throw e;
   }
-  return parseWorkspaceStatus(run.stdout, ws.root);
 }
 
 /** An env name chant can take as a positional argument: never a flag. */
