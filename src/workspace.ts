@@ -29,15 +29,21 @@
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { GraphIR } from "@intentius/chant";
-import { envOverridesFor, runChantRaw, resolveChant, type GraphOptions } from "./chant.ts";
+import { envOverridesFor, resolveChant, type GraphOptions } from "./chant.ts";
 import type { MemberVia } from "./member-ir.ts";
 import { meetsFloor } from "./floor.ts";
 import { setStampExclusions } from "./member-source.ts";
+import {
+  contractRefusal,
+  rootReader,
+  WORKSPACE_CHANT_FLOOR,
+  WorkspaceReadError,
+  type WorkspaceDocument,
+  type WorkspaceReader,
+  type WorkspaceRefusal,
+} from "./workspace-reader.ts";
 
-/** The read contract version behold reads (chant's `reference/workspace-read-contract`). */
-export const WORKSPACE_CONTRACT = 1;
-/** The first chant that writes contract 1. An older one has no `workspace` command at all. */
-export const WORKSPACE_CHANT_FLOOR = "0.81.0";
+export { contractRefusal, WORKSPACE_CHANT_FLOOR, WORKSPACE_CONTRACT, type WorkspaceRefusal } from "./workspace-reader.ts";
 export const LS_SCHEMA_ID = "https://intentius.io/chant/schemas/workspace/ls/v1/ls.schema.json";
 export const GRAPH_SCHEMA_ID = "https://intentius.io/chant/schemas/workspace/graph/v1/graph.schema.json";
 
@@ -73,13 +79,6 @@ export interface Workspace {
   members: WorkspaceMember[];
 }
 
-/** Why behold will not serve a declared workspace, in the #193 refusal shape. */
-export interface WorkspaceRefusal {
-  error: string;
-  code: string;
-  remedy: string;
-}
-
 export type WorkspaceRead = { ok: true; workspace: Workspace } | { ok: false; refusal: WorkspaceRefusal };
 
 /** The declaration file in `dir`, or a refusal when both spellings exist. `undefined` when there is none. */
@@ -112,6 +111,15 @@ export function parseWorkspaceLs(text: string, root: string): WorkspaceRead {
     return refuse(`chant workspace ls printed something that is not JSON for ${root}.`, "workspace-ls", "Run `chant workspace ls --json` in the workspace root to see what it says.");
   }
   if (!isRecord(doc)) return refuse("chant workspace ls printed JSON that is not an object.", "workspace-ls", "Run `chant workspace ls --json` in the workspace root.");
+  return workspaceFromLs(doc, root);
+}
+
+/**
+ * The workspace an `ls` document lists, or why behold can't use it. The
+ * reader (src/workspace-reader.ts) has checked the contract already; this
+ * checks it again for a document handed over straight, as a test does.
+ */
+export function workspaceFromLs(doc: WorkspaceDocument, root: string): WorkspaceRead {
   const contract = contractRefusal(doc, "ls");
   if (contract) return { ok: false, refusal: contract };
   if (isRecord(doc.error)) {
@@ -143,26 +151,8 @@ export function parseWorkspaceLs(text: string, root: string): WorkspaceRead {
   };
 }
 
-/**
- * The contract check every workspace document gets. A document with another
- * `contract` is refused whole: within a version fields are only added, and a
- * new version can change what a field means.
- */
-export function contractRefusal(doc: Record<string, unknown>, command: "ls" | "graph" | "status"): WorkspaceRefusal | undefined {
-  if (doc.contract === WORKSPACE_CONTRACT) return undefined;
-  const said = doc.contract === undefined ? "no contract version" : `contract ${JSON.stringify(doc.contract)}`;
-  return {
-    error: `chant workspace ${command} wrote a document with ${said}; behold reads contract ${WORKSPACE_CONTRACT}.`,
-    code: "workspace-contract",
-    remedy:
-      doc.contract === undefined
-        ? `Upgrade the workspace's chant to ${WORKSPACE_CHANT_FLOOR} or newer.`
-        : "Upgrade behold: this chant writes a newer workspace contract than it knows.",
-  };
-}
-
 /** Ask the workspace's own chant for its member list. */
-export async function readWorkspace(root: string): Promise<WorkspaceRead> {
+export async function readWorkspace(root: string, reader: WorkspaceReader = rootReader(resolve(root))): Promise<WorkspaceRead> {
   const dir = resolve(root);
   const found = findDeclaration(dir);
   if (!found) return refuse(`${dir} has no chant.workspace.json.`, "declaration-missing", "`chant workspace init` proposes one.");
@@ -177,11 +167,12 @@ export async function readWorkspace(root: string): Promise<WorkspaceRead> {
       `Install @intentius/chant ${WORKSPACE_CHANT_FLOOR} or newer in the workspace root.`,
     );
   }
-  const run = await runChantRaw(["workspace", "ls", dir, "--json"], dir);
-  if (!run.stdout.trim()) {
-    return refuse(`chant workspace ls failed in ${dir} (exit ${run.code}): ${run.stderr.trim().split("\n").slice(-3).join(" ")}`, "workspace-ls", "Run `chant workspace ls` in the workspace root.");
+  try {
+    return workspaceFromLs(await reader.read("ls", [dir]), dir);
+  } catch (e) {
+    if (e instanceof WorkspaceReadError) return { ok: false, refusal: e.refusal };
+    throw e;
   }
-  return parseWorkspaceLs(run.stdout, dir);
 }
 
 // ---------------------------------------------------------------------------
@@ -313,6 +304,11 @@ export function memberIrFromWorkspaceGraph(text: string, member: string): GraphI
     throw new Error("chant workspace graph printed something that is not JSON");
   }
   if (!isRecord(doc)) throw new Error("chant workspace graph printed JSON that is not an object");
+  return memberIrFromGraphDocument(doc, member);
+}
+
+/** {@link memberIrFromWorkspaceGraph} over a document the reader returned. */
+export function memberIrFromGraphDocument(doc: WorkspaceDocument, member: string): GraphIR {
   const contract = contractRefusal(doc, "graph");
   if (contract) throw new Error(`${contract.error} ${contract.remedy}`);
   if (isRecord(doc.error)) throw new Error(`chant workspace graph: ${String(doc.error.code)}: ${String(doc.error.message ?? "")}`);
@@ -367,9 +363,9 @@ export function memberIrFromWorkspaceGraph(text: string, member: string): GraphI
   return ir as unknown as GraphIR;
 }
 
-/** The flags one member's contract read passes on. */
+/** The arguments one member's contract read passes `workspace graph`. */
 export function workspaceGraphArgs(root: string, member: string, opts: GraphOptions): string[] {
-  const args = ["workspace", "graph", root, "--member", member];
+  const args = [root, "--member", member];
   if (opts.env) args.push("--env", opts.env);
   if (opts.live) args.push("--live");
   if (opts.overlay) args.push("--overlay");
@@ -394,10 +390,8 @@ export function workspaceVia(member: WorkspaceMember, root: string, fallback: Me
     },
     read: async (dir, opts) => {
       if (!workspaceGraphTakes(opts)) return fallback.read(dir, opts);
-      const args = workspaceGraphArgs(root, member.name, opts);
-      const run = await runChantRaw(args, root, envOverridesFor(opts));
-      if (!run.stdout.trim()) throw new Error(`chant ${args.join(" ")} exited ${run.code}: ${run.stderr.trim()}`);
-      return memberIrFromWorkspaceGraph(run.stdout, member.name);
+      const doc = await rootReader(root, envOverridesFor(opts)).read("graph", workspaceGraphArgs(root, member.name, opts));
+      return memberIrFromGraphDocument(doc, member.name);
     },
   };
 }

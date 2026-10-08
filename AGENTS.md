@@ -31,6 +31,14 @@ draws nothing. `.behold.json`'s `members` are ignored beside a declaration;
 Several directories on the command line (`behold serve a b c`) stay the loose
 view behold composes itself.
 
+Every workspace read goes through one module, `src/workspace-reader.ts`: one
+chant call per read, the document handed back as chant printed it, any
+contract but 1 refused. chant's reader conformance suite
+(`@intentius/chant/workspace/conformance`) runs against that module in `npm
+test` (`src/workspace-reader-conformance.test.ts`, #468), so a new workspace
+read is added to the reader and to the suite's `commands`, never shelled from
+somewhere else.
+
 ## Getting a server
 
 ```sh
