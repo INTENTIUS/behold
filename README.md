@@ -159,6 +159,12 @@ open the bucket's own report pages through the same presigned link or front
 door. An export asked for marks it cannot read fails rather than publishing a
 picture without them.
 
+`--publish s3://<bucket>/<prefix>/views/<name>` uploads the bundle there too,
+each file with its content type, signed with the AWS credentials in the
+environment (no SDK, no aws CLI needed). It writes only under a `views/<name>`
+directory, terragucci's reserved viewer prefix, so a bundle's `index.html`
+never lands on a page behold did not make.
+
 ## Try it: your first apply, no cloud account
 
 The bundled `example-writes` is one S3 bucket. `serve --local` boots *that
@@ -229,6 +235,9 @@ offers is a command it starts for you, run by a tool you already trust.
   alone need only read roles.
 - An env `.behold.json` designates to a forge is never applied from the laptop;
   Deploy dispatches the forge's workflow through your `gh` instead.
+- `behold export --publish s3://…/views/<name>` uploads the bundle it just made.
+  It is the one write behold makes to a cloud, and only when an export is
+  asked for it.
 - A terragucci repo (a `terragucci.yml` in the served directory or above it) is
   applied by its pipeline only. behold refuses every write there (Deploy, Op
   runs, gate approvals, pipeline dispatch, rollback) with `409 terragucci` and

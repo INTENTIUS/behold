@@ -32,8 +32,9 @@ Three keys from terragucci's [reports bucket](https://intentius.io/terragucci/re
 | `<run>/report.json` | for each root, the newest `tf-plan` and `tf-drift` run that planned it, and the newest `tf-apply` wave that held it |
 | `estate.json` | the counts and the waiting waves, as terragucci's estate page shows them |
 
-With an `s3://` source, behold reads each key with your own `aws s3 cp <key> -`,
-so it uses your shell's profile and region. A read-only identity needs
+With an `s3://` source on a laptop, behold reads each key with your own
+`aws s3 cp <key> -`, so it uses your shell's profile and region. In a job,
+where the credentials are in the environment, it signs its GETs itself. A read-only identity needs
 `GetObject` on `<prefix>/*index.json`, `<prefix>/*/report.json` and
 `<prefix>/estate.json`, the same policy terragucci's estate job has.
 
@@ -94,21 +95,28 @@ graph: which resources, in which roots, drifted or will change.
 
 For a team that wants a link rather than a command, the job that already runs
 `terragucci estate` can publish a static view to the reports bucket. terragucci
-keeps `<prefix>/views/` for a viewer's files and never writes there:
+keeps `<prefix>/views/` for a viewer's files and never writes there. One more
+step in that job, after `terragucci estate`:
 
 ```sh
 npx -y -p @intentius/behold -p @intentius/chant-lexicon-terraform -p @cdktn/hcl2json \
-  behold export . --terragucci s3://<bucket>/<prefix> --no-source --out behold-view
-aws s3 sync behold-view s3://<bucket>/<prefix>/views/behold/ --delete
+  behold export . --terragucci s3://<bucket>/<prefix> --no-source \
+  --publish s3://<bucket>/<prefix>/views/behold
 ```
 
-The view is a static folder: the same marks with the same dates, the gate cards
-and their lines, and terragucci's counts. Its report links are relative to
-`<prefix>/views/behold/`, so they open the bucket's own report pages through the
-same presigned link or front door as `estate.html`. It carries no credential,
-no user name and no path of the machine that made it, and `--no-source` leaves
-each root's HCL out. The job needs `PutObject` on `<prefix>/views/behold/*`
-beside the reads `terragucci estate` already has.
+It reads the reports and writes the view with the job's own credentials from
+the environment (static keys, or a role assumed with the job's OIDC token),
+so the job needs no aws CLI. Add `PutObject` on `<prefix>/views/behold/*` to
+the job's policy, beside the reads `terragucci estate` has and `GetObject` on
+`<prefix>/*/report.json`. `--publish` writes only under a `views/<name>`
+directory, so a typo never puts the view's `index.html` over the prefix's own.
+
+The view is a static folder: the same marks with the same dates, the gate
+cards and their lines, and terragucci's counts. Its report links are relative
+to `<prefix>/views/behold/`, so they open the bucket's own report pages through
+the same presigned link or front door as `estate.html`. It carries no
+credential, no user name and no path of the machine that made it, and
+`--no-source` leaves each root's HCL out.
 
 Make it a step of its own that may fail: a view that cannot be built leaves the
 estate page as it was, and `behold export` fails rather than publishing a

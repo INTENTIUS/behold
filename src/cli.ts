@@ -11,7 +11,8 @@ import { startServer, beholdVersion } from "./server.ts";
 import { loadDemoRegistry, missingRequirements, demoTargetDir, loadDemo, type DemoCarve } from "./demos.ts";
 import { resolveChant, runChantRaw } from "./chant.ts";
 import { applyConversion, planConversion } from "./workspace-convert.ts";
-import { runExport } from "./export.ts";
+import { publishBundle, publishTarget, runExport } from "./export.ts";
+import { hasEnvCredentials, S3Object, s3FromEnv } from "./s3-object.ts";
 import { diagnose, formatReport } from "./doctor.ts";
 import { isAutoSyncMode, type AutoSyncMode } from "./autosync.ts";
 import { detectProjectShape, loadBeholdConfig } from "./project.ts";
@@ -40,6 +41,7 @@ Usage:
   behold preview [project-dir] [--port <n>] [--emulator]
   behold export [project-dir] [--out <dir>] [--env <name>] [--name <worker>] [--emulator]
                 [--terragucci <src> [--terragucci-project <p>] [--reports-base <rel>]] [--no-source]
+                [--publish s3://<bucket>/<prefix>/views/<name>]
   behold serve <project-dir…> [--port <n>] [--host <addr>] [--allow-host <name,…>] [--hud <url>] [--env <name>] [--poll <secs>] [--local]
   behold carve <report.json> [--port <n>]
 
@@ -159,6 +161,13 @@ Options:
   --no-source         export only: leave each card's source text out of the
                       bundle (a Terraform root's whole file rides on its cards
                       as attrs.source otherwise).
+  --publish <s3://b/p/views/name>
+                      export only: also upload the bundle there, each file
+                      with its content type, signed with AWS credentials from
+                      the environment. Only under a views/<name> directory
+                      (terragucci never writes there), so a bundle never
+                      overwrites a page it did not make. The one cloud write
+                      behold makes, and only when an export asks for it.
   --reports-base <r>  export with --terragucci only: where a report link points
                       from the bundle, relative to it (default ../../, for a
                       bundle uploaded to <prefix>/views/behold/).
@@ -802,6 +811,7 @@ async function runExportCmd(rest: string[]): Promise<void> {
   let terragucci: string | undefined;
   let terragucciProject: string | undefined;
   let reportsBase: string | undefined;
+  let publish: string | undefined;
   let noSource = false;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
@@ -813,11 +823,27 @@ async function runExportCmd(rest: string[]): Promise<void> {
     else if (a === "--terragucci-project") terragucciProject = rest[++i];
     else if (a === "--reports-base") reportsBase = rest[++i];
     else if (a === "--no-source") noSource = true;
+    else if (a === "--publish") publish = rest[++i];
     else if (a === "-h" || a === "--help") return void process.stdout.write(USAGE);
     else if (!a.startsWith("-")) dirArg = a;
   }
   if ((terragucciProject || reportsBase !== undefined) && !terragucci) {
     process.stderr.write("behold export: --terragucci-project and --reports-base need --terragucci\n");
+    process.exit(2);
+  }
+
+  // #491: checked before anything is captured, so a destination that would
+  // be refused costs nothing.
+  const destination = publish === undefined ? undefined : publishTarget(publish);
+  if (destination && "error" in destination) {
+    process.stderr.write(`behold export: ${destination.error}\n`);
+    process.exit(2);
+  }
+  if (destination && !hasEnvCredentials()) {
+    process.stderr.write(
+      "behold export: --publish signs with AWS credentials from the environment (AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, or AWS_ROLE_ARN and AWS_WEB_IDENTITY_TOKEN_FILE), and there are none.\n" +
+        "        In a job, the step that gives it an identity sets them; on a laptop, eval \"$(aws configure export-credentials --format env)\" first.\n",
+    );
     process.exit(2);
   }
 
@@ -843,6 +869,10 @@ async function runExportCmd(rest: string[]): Promise<void> {
     outDir,
     { ...(name ? { name } : {}), ...(noSource ? { noSource } : {}), ...(reportsBase !== undefined ? { reportsBase } : {}) },
   );
+  if (destination && !("error" in destination)) {
+    const n = await publishBundle(outDir, destination, new S3Object(s3FromEnv(destination.bucket)));
+    process.stdout.write(`  Published: ${n} files to s3://${destination.bucket}/${destination.prefix}/\n`);
+  }
 }
 
 // Run when invoked directly (`tsx src/cli.ts …`), not when imported. realpath both
