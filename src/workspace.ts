@@ -373,8 +373,8 @@ export function workspaceGraphArgs(root: string, member: string, opts: GraphOpti
   return args;
 }
 
-/** Kinds chant reads through `workspace graph`. choudoufu stays behold's own reader: see #464. */
-export const CONTRACT_READ_KINDS = new Set(["chant", "terraform"]);
+/** Kinds chant reads through `workspace graph`. A choudoufu member's roster, rungs and cross-estate references still come from choudoufu: src/choudoufu-workspace.ts says why (#465). */
+export const CONTRACT_READ_KINDS = new Set(["chant", "terraform", "choudoufu"]);
 
 /**
  * How a declared member of a kind chant reads is read: through the contract,

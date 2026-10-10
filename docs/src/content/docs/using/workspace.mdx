@@ -36,7 +36,7 @@ stays viewable.
 | Member | Drawn as |
 |---|---|
 | `chant` and `terraform` | A box of the member's resources, read through `chant workspace graph` |
-| `choudoufu` | A box of the estate's instances, read by behold's own choudoufu reader, since chant's graph does not carry choudoufu's rungs, ownership or adoptable rows |
+| `choudoufu` | A box of the estate's instances. The edges between them and each block's place in the source come from `chant workspace graph`; the instances, their rungs and the references to other estates come from `choudoufu live-check`, since chant's graph has one node per block and no rung or reference |
 | A member chant cannot read | A box with one card that gives chant's reason code and message, such as `dir-missing` or `unknown-kind` |
 | `other`, or a nested `workspace` | Nothing. It is listed when behold starts and in `behold doctor` |
 

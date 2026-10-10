@@ -1,0 +1,71 @@
+{
+  "dir": ".",
+  "estate": "tlmig-sample-team-b",
+  "blocked": false,
+  "exit_code": 0,
+  "schemas": "provider",
+  "instances": [
+    {
+      "address": "aws_cloudwatch_log_group.team_b_0",
+      "type": "aws_cloudwatch_log_group",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_cloudwatch_log_group.team_b_1",
+      "type": "aws_cloudwatch_log_group",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_cloudwatch_log_group.team_b_2",
+      "type": "aws_cloudwatch_log_group",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_iam_policy.team_b",
+      "type": "aws_iam_policy",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_iam_role.team_b",
+      "type": "aws_iam_role",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_iam_role_policy.team_b_inline",
+      "type": "aws_iam_role_policy",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "aws_iam_role_policy_attachment.team_b",
+      "type": "aws_iam_role_policy_attachment",
+      "rung": "declaration-carried"
+    },
+    {
+      "address": "aws_subnet.app",
+      "type": "aws_subnet",
+      "rung": "tag-governable"
+    }
+  ],
+  "references": [
+    {
+      "from": "data.aws_vpc.team_a_network",
+      "estate": "tlmig-sample-team-a",
+      "address": "aws_vpc.main",
+      "read_by": [
+        "aws_subnet.app"
+      ]
+    }
+  ],
+  "checked": [
+    "lint",
+    "identity",
+    "dataread",
+    "stamp"
+  ],
+  "partial": [
+    "projection (2 of 47 refusals; the rest need a cloud)"
+  ],
+  "unchecked": [
+    "discovery"
+  ]
+}

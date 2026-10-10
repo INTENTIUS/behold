@@ -29,6 +29,7 @@ import { chantVia, memberIr, type MemberVia } from "./member-ir.ts";
 import { overlayIr } from "./overlay-ir.ts";
 import { memberKindOf, memberKindSpec, type MemberKind } from "./member-kind.ts";
 import { CLUSTER_SCOPED } from "./zoom-notes.ts";
+import { choudoufuWorkspaceVia } from "./choudoufu-workspace.ts";
 import { CONTRACT_READ_KINDS, servedWorkspace, unreadableMemberIr, unreadableMembers, workspaceMemberOf, workspaceVia, WorkspaceMemberError } from "./workspace.ts";
 
 // ---------------------------------------------------------------------------
@@ -126,10 +127,12 @@ function unreadableStacks(projectDirs: readonly string[]): { name: string; ir: G
 const memberViaFor = (dir: string): MemberVia => {
   const own = memberKindSpec(memberKindOf(dir) ?? "chant")?.via ?? chantVia;
   // #464: a declared member of a kind chant composes is read through the
-  // workspace contract, by the root's chant; choudoufu keeps behold's reader.
+  // workspace contract, by the root's chant. #465: a choudoufu member too,
+  // with choudoufu's own roster joined on (src/choudoufu-workspace.ts says why).
   const declared = workspaceMemberOf(dir);
   const ws = servedWorkspace();
-  return declared && ws && CONTRACT_READ_KINDS.has(declared.kind) ? workspaceVia(declared, ws.root, own) : own;
+  if (!declared || !ws || !CONTRACT_READ_KINDS.has(declared.kind)) return own;
+  return declared.kind === "choudoufu" ? choudoufuWorkspaceVia(declared, ws.root) : workspaceVia(declared, ws.root, own);
 };
 
 /** A member's source IR: cached (#307), read by the member's own kind. */
