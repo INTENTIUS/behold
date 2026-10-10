@@ -1,0 +1,219 @@
+{
+  "schema": "terragucci.report/v1",
+  "minor": 25,
+  "run": {
+    "project": "github.com/acme/shop",
+    "commit": "d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2",
+    "base": "main",
+    "stage": "tf-apply",
+    "wave": 2,
+    "binary": "tofu",
+    "runtime": "forge",
+    "started": "2026-10-08T09:30:30.000Z",
+    "finished": "2026-10-08T09:31:00.000Z",
+    "job_url": "https://github.com/acme/shop/actions/runs/9131",
+    "terragucci": "0.4.4",
+    "commit_url": "https://github.com/acme/shop/commit/d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2"
+  },
+  "change_set": "jcs1-sha256:2a600dd18d7137b91e3531d02aefa7538063f66bd9d395c2c7fc5b625ce70836",
+  "unit": "member",
+  "units": 5,
+  "totals": {
+    "create": 0,
+    "update": 0,
+    "replace": 0,
+    "delete": 1,
+    "read": 0,
+    "no-op": 16,
+    "forget": 0
+  },
+  "groups": [
+    {
+      "id": "49648f9475c7",
+      "units": [
+        "envs/staging/orders",
+        "envs/staging/payments",
+        "envs/staging/platform",
+        "envs/staging/search"
+      ],
+      "outlier": false,
+      "noChanges": true,
+      "changes": [],
+      "destroys": 0,
+      "varies": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "id": "e2ffd4ada760",
+      "units": [
+        "envs/staging/email"
+      ],
+      "outlier": true,
+      "noChanges": false,
+      "changes": [
+        {
+          "line": "- module.service.aws_dynamodb_table.records",
+          "action": "delete",
+          "count": 1
+        }
+      ],
+      "destroys": 1,
+      "varies": [],
+      "fold": "open",
+      "why": [
+        "outlier: read it on its own",
+        "1 destroy or replacement"
+      ]
+    }
+  ],
+  "roots": [
+    {
+      "path": "envs/staging/email",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:e2cef582235c4bfb8a8d0ce11a65dc428a8bd484478bbdcdc4c9da0132f276af",
+      "counts": {
+        "delete": 1,
+        "no-op": 3
+      },
+      "group": "e2ffd4ada760",
+      "plan": {
+        "text": "roots/envs/staging/email/plan.txt",
+        "json": "roots/envs/staging/email/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9131",
+      "changes": [
+        {
+          "address": "module.service.aws_dynamodb_table.records[0]",
+          "type": "aws_dynamodb_table",
+          "action": "delete",
+          "disruption": "destroy",
+          "module": "module.service",
+          "index": 0,
+          "attributes": [],
+          "fold": "open",
+          "why": "destroys"
+        }
+      ],
+      "highlights": [
+        {
+          "address": "module.service.aws_dynamodb_table.records[0]",
+          "type": "aws_dynamodb_table",
+          "action": "delete",
+          "why": "destroys"
+        }
+      ],
+      "fold": "open",
+      "why": [
+        "outlier: its change matches no other root's",
+        "destroys"
+      ]
+    },
+    {
+      "path": "envs/staging/orders",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:382af56de522ced703e9a6aea0e246763af6788ad834863eb740d5987e6eff29",
+      "counts": {
+        "no-op": 4
+      },
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/staging/orders/plan.txt",
+        "json": "roots/envs/staging/orders/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9131",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/staging/payments",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:0ff826873a1cf5e80fec7f2c9906f4ddb466eac06bd7ac5ca853e30e3734fb00",
+      "counts": {
+        "no-op": 4
+      },
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/staging/payments/plan.txt",
+        "json": "roots/envs/staging/payments/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9131",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/staging/platform",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:a05fee1de20defc2b6ec9e0d1aea81b6cb7979e4f8b669677c8e2b4d6bd7d1e8",
+      "counts": {
+        "no-op": 1
+      },
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/staging/platform/plan.txt",
+        "json": "roots/envs/staging/platform/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9131",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/staging/search",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:5eba9c8ba1858fe36e39093e067d47f1ef81c7669e96040ae9fcaffe33e4162f",
+      "counts": {
+        "no-op": 4
+      },
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/staging/search/plan.txt",
+        "json": "roots/envs/staging/search/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9131",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    }
+  ],
+  "waves": [
+    {
+      "number": 2,
+      "roots": [
+        "envs/staging/platform",
+        "envs/staging/email",
+        "envs/staging/orders",
+        "envs/staging/payments",
+        "envs/staging/search"
+      ],
+      "set_digest": "jcs1-sha256:2e0fba16ce38925adf41e3b03b2a779ff0963955b10431dbcedca86cce354436",
+      "approval": "waiting",
+      "gate": {
+        "branch": "chant/lifecycle",
+        "path": "_gates/tf-apply.jsonl"
+      },
+      "waiting_since": "2026-10-08T09:31:00.000Z",
+      "state": "waiting"
+    }
+  ],
+  "named": [
+    {
+      "root": "envs/staging/email",
+      "address": "module.service.aws_dynamodb_table.records[0]",
+      "type": "aws_dynamodb_table",
+      "action": "delete"
+    }
+  ],
+  "holes": [],
+  "redaction": {
+    "marker": "(sensitive, redacted by terragucci)",
+    "values": 0
+  },
+  "tips": []
+}

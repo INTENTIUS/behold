@@ -1,0 +1,173 @@
+{
+  "schema": "terragucci.report/v1",
+  "minor": 25,
+  "run": {
+    "project": "github.com/acme/shop",
+    "commit": "d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2",
+    "base": "main",
+    "stage": "tf-apply",
+    "wave": 1,
+    "binary": "tofu",
+    "runtime": "forge",
+    "started": "2026-10-08T09:25:00.000Z",
+    "finished": "2026-10-08T09:30:00.000Z",
+    "job_url": "https://github.com/acme/shop/actions/runs/9130",
+    "terragucci": "0.4.4",
+    "commit_url": "https://github.com/acme/shop/commit/d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2"
+  },
+  "change_set": "jcs1-sha256:155f39c99a854f6db391bdb9b7f50bbedac0606503ff3901a76891100e1204af",
+  "unit": "member",
+  "units": 5,
+  "totals": {
+    "create": 0,
+    "update": 0,
+    "replace": 0,
+    "delete": 0,
+    "read": 0,
+    "no-op": 17,
+    "forget": 0
+  },
+  "groups": [
+    {
+      "id": "49648f9475c7",
+      "units": [
+        "envs/dev/email",
+        "envs/dev/orders",
+        "envs/dev/payments",
+        "envs/dev/platform",
+        "envs/dev/search"
+      ],
+      "outlier": false,
+      "noChanges": true,
+      "changes": [],
+      "destroys": 0,
+      "varies": [],
+      "fold": "folded",
+      "why": []
+    }
+  ],
+  "roots": [
+    {
+      "path": "envs/dev/email",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:06416a611e4c81020d760e5e138d2d7f461d0ea5e3b14e73359455ddecec3666",
+      "counts": {
+        "no-op": 4
+      },
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/dev/email/plan.txt",
+        "json": "roots/envs/dev/email/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9130",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": [],
+      "resources": [],
+      "applied_changes": []
+    },
+    {
+      "path": "envs/dev/orders",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:d78e73c62c9607b3156c3cff9521cf2104215e23664093c65751355a81bf74de",
+      "counts": {
+        "no-op": 4
+      },
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/dev/orders/plan.txt",
+        "json": "roots/envs/dev/orders/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9130",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": [],
+      "resources": [],
+      "applied_changes": []
+    },
+    {
+      "path": "envs/dev/payments",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:d92253871b650a0958ea2924c5cb33bce63063adda193ad80f3a43acd44c6f6c",
+      "counts": {
+        "no-op": 4
+      },
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/dev/payments/plan.txt",
+        "json": "roots/envs/dev/payments/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9130",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": [],
+      "resources": [],
+      "applied_changes": []
+    },
+    {
+      "path": "envs/dev/platform",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:c77f658e8416975a5ba3a703783c1155a9778b6976fe219d46110cacfc909bf5",
+      "counts": {
+        "no-op": 1
+      },
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/dev/platform/plan.txt",
+        "json": "roots/envs/dev/platform/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9130",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": [],
+      "resources": [],
+      "applied_changes": []
+    },
+    {
+      "path": "envs/dev/search",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:2f7a4176fa8120740624a017632eca2c39bb645e450914a937f180d952b3fc5f",
+      "counts": {
+        "no-op": 4
+      },
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/dev/search/plan.txt",
+        "json": "roots/envs/dev/search/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9130",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": [],
+      "resources": [],
+      "applied_changes": []
+    }
+  ],
+  "waves": [
+    {
+      "number": 1,
+      "roots": [
+        "envs/dev/platform",
+        "envs/dev/email",
+        "envs/dev/orders",
+        "envs/dev/payments",
+        "envs/dev/search"
+      ],
+      "set_digest": "jcs1-sha256:9d062f8b8235dbe17a88fe5856992814507d4edf181e60acfbcd9613521f6664",
+      "approval": "not-required",
+      "state": "applied"
+    }
+  ],
+  "named": [],
+  "holes": [],
+  "redaction": {
+    "marker": "(sensitive, redacted by terragucci)",
+    "values": 0
+  },
+  "tips": []
+}

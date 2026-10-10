@@ -107,6 +107,17 @@ Options:
   --hud <url>         serve only: where hud reviews this workspace's records
                       (BEHOLD_HUD_URL too). A proposed decision in a member's
                       or a card's "why" links to its review there (#471).
+  --terragucci <src>  serve only: paint a terragucci estate from its reports
+                      (#490). <src> is a report directory (a synced bucket
+                      prefix, or <prefix>/<project>), s3://bucket/prefix (read
+                      with your aws CLI, GetObject only), or an https address
+                      that serves the bucket. Each root's newest tf-plan and
+                      tf-drift verdict is marked on its cards with the run's
+                      age and a link to its report; nothing is read from a
+                      cloud, and a waiting wave offers only the line to run.
+  --terragucci-project <host/path>
+                      serve only: which project, when the reports hold several
+                      and none is this checkout's git remote.
   --env <name>        Environment name — turns on the live drift overlay.
                       export/serve.
   --poll <secs>       Re-query live drift every <secs> and push updates (needs --env).
@@ -201,6 +212,8 @@ export async function run(argv: string[]): Promise<void> {
   let local = false;
   let host: string | undefined;
   let hudArg: string | undefined = process.env.BEHOLD_HUD_URL || undefined;
+  let terragucci: string | undefined;
+  let terragucciProject: string | undefined;
   const allowHosts: string[] = [];
 
   for (let i = 0; i < rest.length; i++) {
@@ -209,6 +222,8 @@ export async function run(argv: string[]): Promise<void> {
     else if (a === "--host") host = rest[++i];
     else if (a === "--allow-host") allowHosts.push(...(rest[++i] ?? "").split(","));
     else if (a === "--hud") hudArg = rest[++i];
+    else if (a === "--terragucci") terragucci = rest[++i];
+    else if (a === "--terragucci-project") terragucciProject = rest[++i];
     else if (a === "--env") env = rest[++i];
     else if (a === "--poll") pollSecs = Number(rest[++i]);
     else if (a === "--local") local = true;
@@ -255,6 +270,14 @@ export async function run(argv: string[]): Promise<void> {
     process.exit(2);
   }
 
+  if (terragucci !== undefined && !terragucci) {
+    process.stderr.write("behold serve: --terragucci needs a report directory, s3://bucket/prefix or an https address\n");
+    process.exit(2);
+  }
+  if (terragucciProject && terragucci === undefined) {
+    process.stderr.write("behold serve: --terragucci-project needs --terragucci\n");
+    process.exit(2);
+  }
   const dirs = projectDirs.map((d) => resolve(d));
   const target = await serveTarget(dirs, "serve");
   await startServer({
@@ -267,6 +290,7 @@ export async function run(argv: string[]): Promise<void> {
     ...(host ? { host } : {}),
     ...(allowHosts.length ? { allowedHosts: allowHosts } : {}),
     ...(target.workspace && hud ? { hud } : {}),
+    ...(terragucci ? { terragucci: { source: terragucci, ...(terragucciProject ? { project: terragucciProject } : {}) } } : {}),
   });
 }
 

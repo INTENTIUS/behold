@@ -1,0 +1,367 @@
+{
+  "schema": "terragucci.report/v1",
+  "minor": 25,
+  "run": {
+    "project": "github.com/acme/shop",
+    "commit": "5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f",
+    "base": "main",
+    "stage": "tf-drift",
+    "binary": "tofu",
+    "runtime": "forge",
+    "started": "2026-10-08T06:00:00.000Z",
+    "finished": "2026-10-08T06:04:12.000Z",
+    "job_url": "https://github.com/acme/shop/actions/runs/9102",
+    "terragucci": "0.4.4",
+    "commit_url": "https://github.com/acme/shop/commit/5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f"
+  },
+  "change_set": "jcs1-sha256:aa3a370cf51ffe0de39f2af9cd414215d23c0bba0f9374e52e5edd7abdc54387",
+  "unit": "member",
+  "units": 15,
+  "totals": {
+    "create": 0,
+    "update": 0,
+    "replace": 0,
+    "delete": 1,
+    "read": 0,
+    "no-op": 0,
+    "forget": 0
+  },
+  "groups": [
+    {
+      "id": "49648f9475c7",
+      "units": [
+        "envs/dev/email",
+        "envs/dev/orders",
+        "envs/dev/payments",
+        "envs/dev/platform",
+        "envs/dev/search",
+        "envs/prod/email",
+        "envs/prod/orders",
+        "envs/prod/platform",
+        "envs/prod/search",
+        "envs/staging/email",
+        "envs/staging/payments",
+        "envs/staging/platform",
+        "envs/staging/search"
+      ],
+      "outlier": false,
+      "noChanges": true,
+      "changes": [],
+      "destroys": 0,
+      "varies": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "id": "4dfa08e28c56",
+      "units": [
+        "envs/staging/orders"
+      ],
+      "outlier": true,
+      "noChanges": false,
+      "changes": [
+        {
+          "line": "- module.service.aws_sqs_queue.jobs",
+          "action": "delete",
+          "count": 1
+        }
+      ],
+      "destroys": 1,
+      "varies": [],
+      "fold": "open",
+      "why": [
+        "outlier: read it on its own",
+        "1 destroy or replacement",
+        "drifted"
+      ]
+    }
+  ],
+  "roots": [
+    {
+      "path": "envs/dev/email",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/dev/email/plan.txt",
+        "json": "roots/envs/dev/email/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9102",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/dev/orders",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/dev/orders/plan.txt",
+        "json": "roots/envs/dev/orders/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9102",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/dev/payments",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/dev/payments/plan.txt",
+        "json": "roots/envs/dev/payments/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9102",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/dev/platform",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/dev/platform/plan.txt",
+        "json": "roots/envs/dev/platform/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9102",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/dev/search",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/dev/search/plan.txt",
+        "json": "roots/envs/dev/search/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9102",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/prod/email",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/prod/email/plan.txt",
+        "json": "roots/envs/prod/email/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9102",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/prod/orders",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/prod/orders/plan.txt",
+        "json": "roots/envs/prod/orders/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9102",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/prod/payments",
+      "status": "failed",
+      "error": "plan failed:\nError: reading SQS Queue (shop-prod-payments-dead-letter): AccessDenied: not authorized to perform sqs:GetQueueAttributes",
+      "plan_digest": null,
+      "counts": {},
+      "plan": {
+        "text": "roots/envs/prod/payments/plan.txt",
+        "json": "roots/envs/prod/payments/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9102",
+      "changes": [],
+      "highlights": [],
+      "fold": "open",
+      "why": [
+        "refused to plan"
+      ]
+    },
+    {
+      "path": "envs/prod/platform",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/prod/platform/plan.txt",
+        "json": "roots/envs/prod/platform/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9102",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/prod/search",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/prod/search/plan.txt",
+        "json": "roots/envs/prod/search/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9102",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/staging/email",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/staging/email/plan.txt",
+        "json": "roots/envs/staging/email/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9102",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/staging/orders",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:0b39650bb1417bba64f5b6f7e2df01dab37e25b17e537b61bf599369da62a90c",
+      "counts": {
+        "delete": 1
+      },
+      "group": "4dfa08e28c56",
+      "plan": {
+        "text": "roots/envs/staging/orders/plan.txt",
+        "json": "roots/envs/staging/orders/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9102",
+      "changes": [
+        {
+          "address": "module.service.aws_sqs_queue.jobs",
+          "type": "aws_sqs_queue",
+          "action": "delete",
+          "disruption": "destroy",
+          "module": "module.service",
+          "attributes": [],
+          "fold": "open",
+          "why": "destroys"
+        }
+      ],
+      "highlights": [
+        {
+          "address": "module.service.aws_sqs_queue.jobs",
+          "type": "aws_sqs_queue",
+          "action": "delete",
+          "why": "destroys"
+        }
+      ],
+      "fold": "open",
+      "why": [
+        "drifted",
+        "outlier: its change matches no other root's",
+        "destroys"
+      ]
+    },
+    {
+      "path": "envs/staging/payments",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/staging/payments/plan.txt",
+        "json": "roots/envs/staging/payments/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9102",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/staging/platform",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/staging/platform/plan.txt",
+        "json": "roots/envs/staging/platform/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9102",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/staging/search",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/staging/search/plan.txt",
+        "json": "roots/envs/staging/search/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9102",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    }
+  ],
+  "waves": [],
+  "named": [
+    {
+      "root": "envs/prod/payments",
+      "action": "refused",
+      "reason": "plan failed:\nError: reading SQS Queue (shop-prod-payments-dead-letter): AccessDenied: not authorized to perform sqs:GetQueueAttributes"
+    },
+    {
+      "root": "envs/staging/orders",
+      "address": "module.service.aws_sqs_queue.jobs",
+      "type": "aws_sqs_queue",
+      "action": "delete"
+    }
+  ],
+  "holes": [],
+  "redaction": {
+    "marker": "(sensitive, redacted by terragucci)",
+    "values": 0
+  },
+  "tips": []
+}

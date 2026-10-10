@@ -1,0 +1,12 @@
+5 members: 2 groups, 1 destroy or replacement.
+
+Destroys and replacements (1):
+  envs/staging/email: module.service.aws_dynamodb_table.records[0] (delete)
+
+Group 49648f9475c7: 4 members, no changes:
+  members: envs/staging/orders, envs/staging/payments, envs/staging/platform, envs/staging/search
+
+Group e2ffd4ada760: 1 member (outlier), change:
+    - module.service.aws_dynamodb_table.records
+  members: envs/staging/email
+  destroys and replacements: 1, listed above

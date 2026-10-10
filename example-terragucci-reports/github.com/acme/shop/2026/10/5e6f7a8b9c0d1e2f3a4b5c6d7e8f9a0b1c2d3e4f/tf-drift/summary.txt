@@ -1,0 +1,15 @@
+15 members: 2 groups, 1 failed, 1 destroy or replacement.
+
+Destroys and replacements (1):
+  envs/staging/orders: module.service.aws_sqs_queue.jobs (delete)
+
+Failed (1), not grouped:
+  envs/prod/payments: plan failed: Error: reading SQS Queue (shop-prod-payments-dead-letter): AccessDenied: not authorized to perform sqs:GetQueueAttributes
+
+Group 49648f9475c7: 13 members, no changes:
+  members: envs/dev/email, envs/dev/orders, envs/dev/payments, envs/dev/platform, envs/dev/search, envs/prod/email, envs/prod/orders, envs/prod/platform, envs/prod/search, envs/staging/email, envs/staging/payments, envs/staging/platform, envs/staging/search
+
+Group 4dfa08e28c56: 1 member (outlier), change:
+    - module.service.aws_sqs_queue.jobs
+  members: envs/staging/orders
+  destroys and replacements: 1, listed above

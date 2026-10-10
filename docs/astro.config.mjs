@@ -30,6 +30,7 @@ export default defineConfig({
 						{ label: 'Export a snapshot', slug: 'using/export' },
 						{ label: 'Serve a chant workspace', slug: 'using/workspace' },
 						{ label: 'Look at a Terraform estate', slug: 'using/terraform' },
+						{ label: 'Look at a terragucci estate', slug: 'using/terragucci' },
 						{ label: 'Look at a choudoufu estate', slug: 'using/choudoufu' },
 						{ label: 'Look at a Terraform carve-out', slug: 'using/carve' },
 						{ label: 'Driving it from an agent', slug: 'using/agents' },

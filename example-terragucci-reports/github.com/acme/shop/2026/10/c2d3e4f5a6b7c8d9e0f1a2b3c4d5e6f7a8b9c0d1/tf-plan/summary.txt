@@ -1,0 +1,5 @@
+1 instance: 1 group, 0 destroys or replacements.
+
+Group 5c5c905dd6a9: 1 instance of module.service.aws_sqs_queue.jobs, change:
+    ~ module.service.aws_sqs_queue.jobs: message_retention_seconds
+  instances: module.service.aws_sqs_queue.jobs
