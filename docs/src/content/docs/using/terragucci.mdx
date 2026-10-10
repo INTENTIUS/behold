@@ -99,12 +99,14 @@ keeps `<prefix>/views/` for a viewer's files and never writes there. One more
 step in that job, after `terragucci estate`:
 
 ```sh
-npx -y -p @intentius/behold -p @intentius/chant-lexicon-terraform -p @cdktn/hcl2json \
+npx -y -p @intentius/behold -p @intentius/chant-lexicon-terraform@^0.102.0 -p @cdktn/hcl2json@^0.24.0 \
   behold export . --terragucci s3://<bucket>/<prefix> --no-source \
   --publish s3://<bucket>/<prefix>/views/behold
 ```
 
-It reads the reports and writes the view with the job's own credentials from
+The two Terraform packages are the ones behold reads HCL with, at the ranges
+it declares. The step reads the reports and writes the view with the job's own
+credentials from
 the environment (static keys, or a role assumed with the job's OIDC token),
 so the job needs no aws CLI. Add `PutObject` on `<prefix>/views/behold/*` to
 the job's policy, beside the reads `terragucci estate` has and `GetObject` on
