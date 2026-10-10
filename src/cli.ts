@@ -91,7 +91,7 @@ Usage:
           directory; pass a path to look at another one.
 
   serve   Start the server: the mixed-substrate graph of <project-dir> in a
-          browser, coloured by drift. Read-only — never mutates. Pass several
+          browser, coloured by drift. Reads only; writes are commands it starts. Pass several
           project dirs to compose them into one estate (#31): per-project
           boundary boxes + cross-stack edges. The first is the primary (ops,
           overlay, and rollback act on it).
@@ -256,34 +256,9 @@ export async function run(argv: string[]): Promise<void> {
   }
 
   const dirs = projectDirs.map((d) => resolve(d));
-  // #464: one directory holding a chant.workspace.json is a declared workspace,
-  // served from chant's member list. Anything else is the loose view (ws-019).
-  const workspace = dirs.length === 1 && hasDeclaration(dirs[0]) ? await declaredWorkspace(dirs[0]) : undefined;
-  if (workspace) {
-    const drawn = drawnMembers(workspace).map((m) => m.abs);
-    await startServer({
-      projectDir: drawn[0] ?? workspace.root,
-      projectDirs: drawn,
-      workspace,
-      port,
-      ...(env ? { env } : {}),
-      ...(pollSecs !== undefined ? { pollSecs } : {}),
-      ...(autoSync !== "off" ? { autoSync } : {}),
-      ...(local ? { local: true } : {}),
-      ...(host ? { host } : {}),
-      ...(allowHosts.length ? { allowedHosts: allowHosts } : {}),
-      ...(hud ? { hud } : {}),
-    });
-    return;
-  }
-  for (const d of dirs) warnIfNotChantProject(d);
+  const target = await serveTarget(dirs, "serve");
   await startServer({
-    projectDir: dirs[0], // primary — ops/overlay/rollback act on it
-    // #389: more than one directory composes, and so does one that is a member
-    // of a kind chant cannot read — a lone choudoufu estate has no chant to
-    // shell, so it is served as a one-member estate rather than through the
-    // single-project read that would answer "no lexicon detected".
-    ...(servesAsEstate(dirs) ? { projectDirs: dirs } : {}),
+    ...target,
     port,
     ...(env ? { env } : {}),
     ...(pollSecs !== undefined ? { pollSecs } : {}),
@@ -291,7 +266,35 @@ export async function run(argv: string[]): Promise<void> {
     ...(local ? { local: true } : {}),
     ...(host ? { host } : {}),
     ...(allowHosts.length ? { allowedHosts: allowHosts } : {}),
+    ...(target.workspace && hud ? { hud } : {}),
   });
+}
+
+/** What `serve` and `export` read for the directories on the command line. */
+type ServeTarget = { projectDir: string; projectDirs?: string[]; workspace?: Workspace };
+
+/**
+ * #464: one directory holding a chant.workspace.json is a declared workspace,
+ * served from chant's member list. Anything else is the loose view (ws-019).
+ * #489: a declaration with no members (terragucci ships one, for its gates
+ * and not as an estate) declares nothing to draw, so the directory is read
+ * the way it would be without one, and startup says so.
+ */
+async function serveTarget(dirs: string[], verb: "serve" | "export"): Promise<ServeTarget> {
+  const workspace = dirs.length === 1 && hasDeclaration(dirs[0]) ? await declaredWorkspace(dirs[0], verb) : undefined;
+  if (workspace && workspace.members.length > 0) {
+    const drawn = drawnMembers(workspace).map((m) => m.abs);
+    return { projectDir: drawn[0] ?? workspace.root, projectDirs: drawn, workspace };
+  }
+  for (const d of dirs) warnIfNotChantProject(d);
+  return {
+    projectDir: dirs[0], // primary — ops/overlay/rollback act on it
+    // #389: more than one directory composes, and so does one that is a member
+    // of a kind chant cannot read — a lone choudoufu estate has no chant to
+    // shell, so it is served as a one-member estate rather than through the
+    // single-project read that would answer "no lexicon detected".
+    ...(servesAsEstate(dirs) ? { projectDirs: dirs } : {}),
+  };
 }
 
 /** Read the declared workspace at `root` for `serve`, or exit with chant's
@@ -299,13 +302,17 @@ export async function run(argv: string[]): Promise<void> {
  * cannot read are drawn as unreadable boxes, `other` members are listed and
  * draw nothing, and a `.behold.json` member list beside the declaration is
  * ignored (ws-015). */
-async function declaredWorkspace(root: string): Promise<Workspace> {
+async function declaredWorkspace(root: string, verb: "serve" | "export"): Promise<Workspace> {
   const read = await readWorkspace(root);
   if (!read.ok) {
-    process.stderr.write(`behold serve: ${read.refusal.error}\n        ${read.refusal.remedy}\n`);
+    process.stderr.write(`behold ${verb}: ${read.refusal.error}\n        ${read.refusal.remedy}\n`);
     process.exit(1);
   }
   const ws = read.workspace;
+  if (ws.members.length === 0) {
+    process.stdout.write(`behold: ${ws.file} (workspace ${ws.name}) declares no members, so behold reads ${root} as it would without one\n`);
+    return ws;
+  }
   const drawn = drawnMembers(ws);
   process.stdout.write(`behold: serving chant workspace ${ws.name} (${ws.file}), ${drawn.length} of ${ws.members.length} members drawn\n`);
   for (const m of unreadableMembers(ws)) process.stdout.write(`        ${m.name}: unreadable, ${m.reason!.code}: ${m.reason!.message}\n`);
@@ -780,7 +787,10 @@ async function runExportCmd(rest: string[]): Promise<void> {
     process.stderr.write(`behold export: project not found at ${projectDir}\n`);
     process.exit(2);
   }
-  await runExport({ projectDir, port: 0, ...(env ? { env } : {}) }, outDir, name ? { name } : {});
+  // The same reading of the directory `serve` would make, so an export of a
+  // declared workspace or a Terraform estate captures what serve draws.
+  const target = await serveTarget([projectDir], "export");
+  await runExport({ ...target, port: 0, ...(env ? { env } : {}) }, outDir, name ? { name } : {});
 }
 
 // Run when invoked directly (`tsx src/cli.ts …`), not when imported. realpath both

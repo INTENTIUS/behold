@@ -582,6 +582,42 @@ describe("diagnose — a declared workspace", () => {
     expect(by(report, "project").fix).toContain("Delete `members` from .behold.json");
   });
 
+  // #489: terragucci ships a declaration with `members: []` for its gates. It
+  // declares nothing to draw, so the directory is diagnosed as serve reads it.
+  it("reads a declaration with no members as the directory it sits in, and does not crash", async () => {
+    const dir = fixture({ "chant.workspace.json": "{}", "chant.config.ts": "export default {};" });
+    const report = await diagnose(dir, probes({ readWorkspace: listing([]) }));
+    const line = by(report, "project");
+    expect(line.status).toBe("pass");
+    expect(line.detail).toContain("chant.workspace.json (workspace acme) declares no members");
+    expect(line.detail).toContain("chant project (chant.config.ts)");
+  });
+
+  it("reads a Terraform directory behind an empty declaration as Terraform", async () => {
+    const dir = fixture({
+      "chant.workspace.json": "{}",
+      "envs/dev/main.tf": 'terraform {\n  required_version = ">= 1.6"\n}\nresource "aws_s3_bucket" "b" {\n  bucket = "b"\n}\n',
+    });
+    const report = await diagnose(dir, probes({ readWorkspace: listing([]) }));
+    const line = by(report, "project");
+    expect(line.detail).toContain("declares no members");
+    expect(line.detail).toContain("a terraform member");
+  });
+
+  it("does not crash on a workspace whose members are all listed and never drawn", async () => {
+    const dir = fixture({ "chant.workspace.json": "{}", "docs/README.md": "" });
+    const members = [{ name: "docs", dir: "docs", kind: "other", abs: join(dir, "docs"), reason: null, because: "prose" }];
+    const report = await diagnose(dir, probes({ readWorkspace: listing(members) }));
+    expect(by(report, "project").detail).toContain("0 of 1 members drawn");
+  });
+
+  it("says a terragucci repo is applied by its pipeline, not that it lacks Ops", async () => {
+    const dir = fixture({ "chant.workspace.json": "{}", "terragucci.yml": "binary: tofu\n", "chant.config.ts": "export default {};" });
+    const report = await diagnose(dir, probes({ readWorkspace: listing([]) }));
+    expect(by(report, "ops").status).toBe("pass");
+    expect(by(report, "ops").detail).toContain("applied by its pipeline only");
+  });
+
   it("fails with chant's reason when the declaration can't be listed", async () => {
     const dir = fixture({ "chant.workspace.json": "{}" });
     const report = await diagnose(

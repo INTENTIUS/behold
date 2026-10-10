@@ -1505,6 +1505,9 @@ function bootZoom(memberKinds) {
 // write ops (Rollback, Sync, Adopt, Run ▾) — the server also 403s them. Local
 // deploy (Apply all / dial), Reset, Bring up, Approve, and reads stay on.
 let previewMode = false;
+// #489: set when /api/project says the repo is a terragucci repo — applied by
+// its pipeline only, so the page offers no write at all.
+let terragucciRepo = null;
 
 // The unified "zoom" control (one granularity axis, coarse → fine). Underlying
 // state stays (components, detail); zoom is just the single knob the header
@@ -3607,7 +3610,7 @@ function mountOperator(host) {
     box,
     operatorState,
     {
-      approve: embedOpts.embed || previewMode || staticMode ? null : (op, gate) => approveConvergeGate(op, gate),
+      approve: embedOpts.embed || previewMode || staticMode || terragucciRepo ? null : (op, gate) => approveConvergeGate(op, gate),
       approver: projectInfo && projectInfo.approver,
       why: embedOpts.embed ? "host" : previewMode ? "preview" : "static",
       // A static export has no server to ask, so it gets no history affordance
@@ -3627,7 +3630,7 @@ function mountPlayhead(host) {
   if (!hasPlayhead(runState)) return;
   const box = document.createElement("div");
   box.className = "run-playhead";
-  renderPlayhead(box, runState, gateCard, { approve: embedOpts.embed || previewMode || staticMode ? null : (op, gate) => signal(op, gate), approver: projectInfo && projectInfo.approver, why: embedOpts.embed ? "host" : previewMode ? "preview" : "static" });
+  renderPlayhead(box, runState, gateCard, { approve: embedOpts.embed || previewMode || staticMode || terragucciRepo ? null : (op, gate) => signal(op, gate), approver: projectInfo && projectInfo.approver, why: embedOpts.embed ? "host" : previewMode ? "preview" : "static" });
   host.appendChild(box);
 }
 
@@ -5936,6 +5939,16 @@ async function initActions() {
   // them right now (`/api/project`'s executor block).
   executorInfo = project.executor || {};
   previewMode = staticMode || !!project.previewMode; // static ⇒ read-only, no writes at all
+  if (project.terragucci) {
+    terragucciRepo = project.terragucci;
+    previewMode = true;
+    const pill = document.createElement("span");
+    pill.textContent = "● applied by terragucci";
+    pill.title = `${project.terragucci.error}\n\n${project.terragucci.remedy}`;
+    pill.style.cssText = "align-self:center;font:var(--t-caption)/1.4 var(--font-mono);color:var(--muted);border:1px solid var(--line);border-radius:var(--r-ctl);padding:2px 8px";
+    bar.appendChild(pill);
+    return; // no Deploy, no Run, no Approve: the pipeline is the only way to apply
+  }
   const { ops, adoptLexicons, autoSync, local, applyProgress: apInit, runState: runInit, operatorState: opInit } = await apiFetch("/api/ops")
     .then((r) => r.json())
     .catch(() => ({ ops: [], adoptLexicons: [] }));
@@ -6281,7 +6294,7 @@ function paletteCommands() {
     c.push([`target: ${t.endpoint}` + (view.target === t.endpoint ? " ✓" : ""), () => { view.target = t.endpoint; resetDialCaches(); load(); }]);
   }
 
-  if (staticMode) return c.map(([label, run]) => ({ label, run })); // no writes at all in a static export
+  if (staticMode || terragucciRepo) return c.map(([label, run]) => ({ label, run })); // no writes at all in a static export or a terragucci repo
 
   // Deploy / write actions — previewMode hides exactly the git/PR write
   // affordances the toolbar hid (Rollback, Sync, Run <op>); Apply all, Reset,
