@@ -1,0 +1,291 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/graph/v1/graph.schema.json",
+  "contract": 1,
+  "chant": "0.102.0",
+  "plantable": {
+    "plantable": false,
+    "box": null,
+    "reason": {
+      "code": "box-none",
+      "message": "no member's box block declares services, so there is no box to plant"
+    }
+  },
+  "version": 1,
+  "workspace": {
+    "name": "example-choudoufu-estate",
+    "root": "/private/tmp/claude-501/-Users-alex-Documents-checkouts-intentius-behold/1dc4fe31-2f62-4d2d-bf06-51c31e3c03ee/scratchpad/chdf"
+  },
+  "members": [
+    {
+      "name": "team-b",
+      "dir": "team-b",
+      "kind": "choudoufu",
+      "status": "composed",
+      "reason": null,
+      "chant": "0.102.0",
+      "irVersion": 1,
+      "live": false,
+      "cached": false,
+      "stamp": "sha256:79f74671f4ac5c9bda5c03b152af742bf47283b2fc77807c8104c9f0a01bbfb5",
+      "box": null
+    }
+  ],
+  "nodes": [
+    {
+      "id": "team-b/team-b/aws_cloudwatch_log_group.team_b_0",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_cloudwatch_log_group.team_b_0",
+        "file": "main.tf",
+        "root": "team-b",
+        "line": 38,
+        "mode": "live",
+        "estate": "tlmig-sample-team-b"
+      },
+      "member": "team-b"
+    },
+    {
+      "id": "team-b/team-b/aws_cloudwatch_log_group.team_b_1",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_cloudwatch_log_group.team_b_1",
+        "file": "main.tf",
+        "root": "team-b",
+        "line": 43,
+        "mode": "live",
+        "estate": "tlmig-sample-team-b"
+      },
+      "member": "team-b"
+    },
+    {
+      "id": "team-b/team-b/aws_cloudwatch_log_group.team_b_2",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_cloudwatch_log_group.team_b_2",
+        "file": "main.tf",
+        "root": "team-b",
+        "line": 48,
+        "mode": "live",
+        "estate": "tlmig-sample-team-b"
+      },
+      "member": "team-b"
+    },
+    {
+      "id": "team-b/team-b/aws_iam_policy.team_b",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_iam_policy.team_b",
+        "file": "main.tf",
+        "root": "team-b",
+        "line": 28,
+        "mode": "live",
+        "estate": "tlmig-sample-team-b"
+      },
+      "member": "team-b"
+    },
+    {
+      "id": "team-b/team-b/aws_iam_role_policy_attachment.team_b",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_iam_role_policy_attachment.team_b",
+        "file": "main.tf",
+        "root": "team-b",
+        "line": 33,
+        "mode": "live",
+        "estate": "tlmig-sample-team-b"
+      },
+      "member": "team-b"
+    },
+    {
+      "id": "team-b/team-b/aws_iam_role_policy.team_b_inline",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_iam_role_policy.team_b_inline",
+        "file": "main.tf",
+        "root": "team-b",
+        "line": 22,
+        "mode": "live",
+        "estate": "tlmig-sample-team-b"
+      },
+      "member": "team-b"
+    },
+    {
+      "id": "team-b/team-b/aws_iam_role.team_b",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_iam_role.team_b",
+        "file": "main.tf",
+        "root": "team-b",
+        "line": 17,
+        "mode": "live",
+        "estate": "tlmig-sample-team-b"
+      },
+      "member": "team-b"
+    },
+    {
+      "id": "team-b/team-b/aws_subnet.app",
+      "kind": "Terraform::Resource",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "aws_subnet.app",
+        "file": "main.tf",
+        "root": "team-b",
+        "line": 70,
+        "mode": "live",
+        "estate": "tlmig-sample-team-b"
+      },
+      "member": "team-b"
+    },
+    {
+      "id": "team-b/team-b/data.aws_vpc.team_a_network",
+      "kind": "Terraform::Data",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "data.aws_vpc.team_a_network",
+        "file": "main.tf",
+        "root": "team-b",
+        "line": 59,
+        "mode": "live",
+        "estate": "tlmig-sample-team-b"
+      },
+      "member": "team-b"
+    },
+    {
+      "id": "team-b/team-b/live",
+      "kind": "Terraform::Live",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "live",
+        "file": "main.tf",
+        "root": "team-b",
+        "mode": "live",
+        "estate": "tlmig-sample-team-b"
+      },
+      "member": "team-b"
+    },
+    {
+      "id": "team-b/team-b/provider.aws",
+      "kind": "Terraform::Provider",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "provider.aws",
+        "file": "main.tf",
+        "root": "team-b",
+        "line": 13,
+        "mode": "live",
+        "estate": "tlmig-sample-team-b"
+      },
+      "member": "team-b"
+    },
+    {
+      "id": "team-b/team-b/terraform",
+      "kind": "Terraform::Terraform",
+      "lexicon": "terraform",
+      "attrs": {
+        "address": "terraform",
+        "file": "main.tf",
+        "root": "team-b",
+        "line": 1,
+        "mode": "live",
+        "estate": "tlmig-sample-team-b"
+      },
+      "member": "team-b"
+    }
+  ],
+  "edges": [
+    {
+      "from": "team-b/team-b/aws_iam_role_policy_attachment.team_b",
+      "to": "team-b/team-b/aws_iam_policy.team_b",
+      "kind": "ref",
+      "viaAttr": "policy_arn",
+      "toAttr": "arn",
+      "member": "team-b"
+    },
+    {
+      "from": "team-b/team-b/aws_iam_role_policy_attachment.team_b",
+      "to": "team-b/team-b/aws_iam_role.team_b",
+      "kind": "ref",
+      "viaAttr": "role",
+      "toAttr": "name",
+      "member": "team-b"
+    },
+    {
+      "from": "team-b/team-b/aws_iam_role_policy.team_b_inline",
+      "to": "team-b/team-b/aws_iam_role.team_b",
+      "kind": "ref",
+      "viaAttr": "role",
+      "toAttr": "id",
+      "member": "team-b"
+    },
+    {
+      "from": "team-b/team-b/aws_subnet.app",
+      "to": "team-b/team-b/data.aws_vpc.team_a_network",
+      "kind": "ref",
+      "viaAttr": "vpc_id",
+      "toAttr": "id",
+      "member": "team-b"
+    }
+  ],
+  "groups": {
+    "byMember": {
+      "team-b": [
+        "team-b/team-b/aws_cloudwatch_log_group.team_b_0",
+        "team-b/team-b/aws_cloudwatch_log_group.team_b_1",
+        "team-b/team-b/aws_cloudwatch_log_group.team_b_2",
+        "team-b/team-b/aws_iam_policy.team_b",
+        "team-b/team-b/aws_iam_role.team_b",
+        "team-b/team-b/aws_iam_role_policy.team_b_inline",
+        "team-b/team-b/aws_iam_role_policy_attachment.team_b",
+        "team-b/team-b/aws_subnet.app",
+        "team-b/team-b/data.aws_vpc.team_a_network",
+        "team-b/team-b/live",
+        "team-b/team-b/provider.aws",
+        "team-b/team-b/terraform"
+      ]
+    },
+    "byLexicon": {
+      "terraform": [
+        "team-b/team-b/aws_cloudwatch_log_group.team_b_0",
+        "team-b/team-b/aws_cloudwatch_log_group.team_b_1",
+        "team-b/team-b/aws_cloudwatch_log_group.team_b_2",
+        "team-b/team-b/aws_iam_policy.team_b",
+        "team-b/team-b/aws_iam_role.team_b",
+        "team-b/team-b/aws_iam_role_policy.team_b_inline",
+        "team-b/team-b/aws_iam_role_policy_attachment.team_b",
+        "team-b/team-b/aws_subnet.app",
+        "team-b/team-b/data.aws_vpc.team_a_network",
+        "team-b/team-b/live",
+        "team-b/team-b/provider.aws",
+        "team-b/team-b/terraform"
+      ]
+    },
+    "byStack": {
+      "team-b/team-b": [
+        "team-b/team-b/aws_cloudwatch_log_group.team_b_0",
+        "team-b/team-b/aws_cloudwatch_log_group.team_b_1",
+        "team-b/team-b/aws_cloudwatch_log_group.team_b_2",
+        "team-b/team-b/aws_iam_policy.team_b",
+        "team-b/team-b/aws_iam_role.team_b",
+        "team-b/team-b/aws_iam_role_policy.team_b_inline",
+        "team-b/team-b/aws_iam_role_policy_attachment.team_b",
+        "team-b/team-b/aws_subnet.app",
+        "team-b/team-b/data.aws_vpc.team_a_network",
+        "team-b/team-b/live",
+        "team-b/team-b/provider.aws",
+        "team-b/team-b/terraform"
+      ]
+    }
+  },
+  "exports": [],
+  "imports": [],
+  "links": [],
+  "collectors": [],
+  "records": []
+}

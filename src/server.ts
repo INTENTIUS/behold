@@ -144,7 +144,7 @@ import { choudoufuDiffNodes, paintPlanDrift, readChoudoufuLive, type Runner as C
 import { cacheChoudoufuPlan, cachedChoudoufuPlan, readChoudoufuPlan, type PlanResourceDrift } from "./choudoufu-plan.ts";
 import { choudoufuLexiconNote, setEstateLexiconRead, type LexiconRead } from "./choudoufu-refs.ts";
 import { discoverCarvePlans, moveMembers, moveReceipt, movesPayload, readCarvePlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
-import { servedWorkspace, setServedWorkspace, type Workspace } from "./workspace.ts";
+import { servedWorkspace, setServedWorkspace, workspaceMemberOf, type Workspace } from "./workspace.ts";
 import { approveArgs, isEnvName, localApprover, readWorkspaceGates } from "./workspace-gates.ts";
 import { readWhy, whyRegion } from "./workspace-why.ts";
 import { allowedHostsFrom, guardRequest } from "./request-guard.ts";
@@ -2261,7 +2261,9 @@ export function createApp(
       // and only when the picture really has no edges, so an estate that got
       // them says nothing at all.
       const lexiconNote = (graph: { edges: readonly unknown[] }): string | undefined =>
-        graph.edges.length === 0 && (multi ? cfg.projectDirs! : [cfg.projectDir]).some((d) => memberKindOf(d) === "choudoufu")
+        // #465: a declared member's edges are chant's, read through the
+        // workspace, so behold's own lexicon only speaks for a loose one.
+        graph.edges.length === 0 && (multi ? cfg.projectDirs! : [cfg.projectDir]).some((d) => memberKindOf(d) === "choudoufu" && !workspaceMemberOf(d))
           ? choudoufuLexiconNote()
           : undefined;
       let ir: GraphIR;
