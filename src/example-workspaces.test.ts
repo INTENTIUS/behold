@@ -4,6 +4,10 @@ import { describe, expect, it } from "vitest";
 import { discoverTerraformRoots } from "./terraform-member.ts";
 import { installedVersion, TERRAFORM_LEXICON } from "./workspace-convert.ts";
 
+// CI's `peers` job sets BEHOLD_REQUIRE_PEERS=1 (scripts/install-peers.sh): there a
+// missing peer fails the test instead of skipping it.
+const REQUIRE_PEERS = process.env.BEHOLD_REQUIRE_PEERS === "1";
+
 // #464: the bundled estates declare themselves as chant workspaces, written by
 // `behold doctor --fix`. Pinned here: the declarations still say what behold's
 // own discovery sees, and the lexicon pin is the version installed beside
@@ -46,7 +50,7 @@ describe("the bundled estates' workspace declarations", () => {
   });
 
   const installed = installedVersion(TERRAFORM_LEXICON, REPO);
-  it.skipIf(!installed)("pins the terraform lexicon at the version installed beside behold", () => {
+  it.skipIf(!installed && !REQUIRE_PEERS)("pins the terraform lexicon at the version installed beside behold", () => {
     for (const example of ["example-terraform-estate", "example-choudoufu-estate"]) {
       const pin = declaration(example).pins?.find((p) => p.package === TERRAFORM_LEXICON);
       expect(pin?.version, example).toBe(installed);

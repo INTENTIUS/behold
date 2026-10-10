@@ -12,6 +12,10 @@ import { readWorkspace, setServedWorkspace, drawnMembers, type WorkspaceMember }
 import { resolvedPackage } from "./terraform-member.ts";
 import { linkDemoPins } from "./demo-pins.ts";
 
+// CI's `peers` job sets BEHOLD_REQUIRE_PEERS=1 (scripts/install-peers.sh): there a
+// missing peer fails the test instead of skipping it.
+const REQUIRE_PEERS = process.env.BEHOLD_REQUIRE_PEERS === "1";
+
 // #465. Provenance:
 //  - choudoufu-workspace-graph-team-b.json: `chant workspace graph --member
 //    team-b --json` (chant 0.102.0, terraform lexicon 0.102.0 pinned) in a copy
@@ -109,7 +113,7 @@ describe("example-choudoufu-estate, declared against loose (#465)", () => {
     setServedWorkspace(undefined);
     for (const d of made) rmSync(d, { recursive: true, force: true });
   });
-  it.skipIf(!ready)("keeps every id and edge, and reads the topology through chant", { timeout: 120_000 }, async () => {
+  it.skipIf(!ready && !REQUIRE_PEERS)("keeps every id and edge, and reads the topology through chant", { timeout: 120_000 }, async () => {
     const dir = join(mkdtempSync(join(tmpdir(), "behold-chdf-ws-")), "estate");
     made.push(join(dir, ".."));
     cpSync(join(import.meta.dirname, "..", "example-choudoufu-estate"), dir, { recursive: true });
