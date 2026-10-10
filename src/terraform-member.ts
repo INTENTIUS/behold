@@ -299,6 +299,12 @@ export function declaredPeerRange(pkg: string, manifestDir = join(beholdDir(), "
  * `./package.json` to a file that does not exist (src/chant.ts says the same
  * of its own resolution). */
 export function resolvedVersion(pkg: string, from = beholdDir()): string | undefined {
+  return resolvedPackage(pkg, from)?.version;
+}
+
+/** Where `pkg` resolves from `from`, and its version: the directory holding
+ * its manifest. Undefined when it does not resolve. */
+export function resolvedPackage(pkg: string, from = beholdDir()): { dir: string; version: string } | undefined {
   const req = createRequire(join(resolve(from), "noop.js"));
   let entry: string;
   try {
@@ -310,7 +316,7 @@ export function resolvedVersion(pkg: string, from = beholdDir()): string | undef
   for (;;) {
     try {
       const manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as { name?: string; version?: string };
-      if (manifest.name === pkg) return manifest.version ?? "";
+      if (manifest.name === pkg) return { dir, version: manifest.version ?? "" };
     } catch {
       // keep walking up
     }

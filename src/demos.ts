@@ -16,6 +16,7 @@
  * yours, edit it), served where it is (`inPlace`), or rendered into an empty
  * target by its own `setup` when it names no path at all.
  */
+import { linkDemoPins } from "./demo-pins.ts";
 import { readFileSync, existsSync, cpSync, mkdirSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
@@ -306,6 +307,14 @@ export async function loadDemo(entry: DemoEntry, opts: DemoLoadOptions): Promise
     }
   } else {
     say(`reusing ${target}`);
+  }
+  // #484: a copy's pinned kinds are read by chant from the copy's own
+  // node_modules, so it gets links to the packages behold resolved. Never in
+  // place: that directory is somebody's checkout.
+  if (!inPlace) {
+    const pins = linkDemoPins(work);
+    if (!pins.ok) return { ok: false, error: `${pins.error} ${pins.remedy}` };
+    for (const p of pins.linked) say(`linked ${p.pkg} ${p.version} into the copy${p.was ? ` (the declaration pinned ${p.was}; now ${p.version})` : ""}`);
   }
   // #390: an in-place entry is somebody's working copy, and `npm install`
   // there would leave a node_modules and a package-lock.json in a checkout
