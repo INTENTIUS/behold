@@ -10,7 +10,7 @@
  * (reclassify / prune / value-match / composite-deps / radial all included), no
  * logic duplicated.
  */
-import { mkdirSync, writeFileSync, copyFileSync, readFileSync, readdirSync, existsSync } from "node:fs";
+import { mkdirSync, writeFileSync, copyFileSync, cpSync, readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createApp, type ServerOptions } from "./server.ts";
@@ -191,9 +191,11 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: { name
   // Copy every sibling web asset, not just app.js: the SPA is unbundled ES modules, so app.js
   // imports theme.js which imports themes.js. Copying app.js alone 404s the rest of the module
   // graph and the whole bundle fails to boot. index.html is templated above, so skip it here.
+  // #489: web/icons is a directory (the icon corpus), so each entry is copied
+  // recursively; copyFileSync on it died with ENOTSUP mid-export.
   for (const f of readdirSync(webDir())) {
-    if (f === "index.html") continue;
-    copyFileSync(join(webDir(), f), join(outDir, f));
+    if (f === "index.html" || f.endsWith(".test.js")) continue;
+    cpSync(join(webDir(), f), join(outDir, f), { recursive: true });
   }
   writeFileSync(join(outDir, "README.md"), BUNDLE_README);
   // #394: the bundle redistributes what the SPA vendors — the iTerm2 colour

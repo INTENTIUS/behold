@@ -8,7 +8,8 @@ apply creds.
 ## The division of labour
 
 - **behold** serves the live, mixed-substrate graph (and, later, the deployment-lanes
-  timeline). It reads; it never mutates.
+  timeline). It reads; every write it offers is a command it starts (an Op, a
+  `chant run`, a forge dispatch), and on a terragucci repo it starts none.
 - **chant's MCP** is where the real capabilities live. Prefer it over shelling.
   - Reads: `lifecycle-diff`, `lifecycle-snapshot`, `build`, `lint`.
   - Actions (delegated writes): `op-run` (start an `ApplyOp`/`ReconcileOp`),
@@ -26,7 +27,9 @@ not carry. Node ids are `<member>/<id>` with the declared member name, the same
 form chant composes. A member chant cannot read is drawn as one
 `UnreadableMember` node carrying `attrs._unreadable: {code, message}` with
 chant's reason code. An `other` member is listed on startup and in doctor and
-draws nothing. `.behold.json`'s `members` are ignored beside a declaration;
+draws nothing. A declaration with `members: []` (terragucci writes one for its
+gates) declares nothing to draw, so serve, export and doctor read the
+directory as they would without one, and say so (#489). `.behold.json`'s `members` are ignored beside a declaration;
 `behold doctor --fix` writes the declaration for an estate that has only them.
 Several directories on the command line (`behold serve a b c`) stay the loose
 view behold composes itself.
@@ -583,6 +586,16 @@ home, each CronJob as a converge tick — off chant's own
 If a request would have behold write to a cloud or to source directly, it's wrong.
 behold shows truth and triggers Ops. Authority stays in the committed source and the
 executor.
+
+The commands behold starts run with behold's own environment, so Deploy (`POST
+/api/apply`, chant's local executor) applies with the credentials of whoever
+started it. On a terragucci repo (a `terragucci.yml` in the served directory or
+above it, up to the git root) behold starts nothing: every POST that deploys,
+approves or starts a run answers `409` with `code: "terragucci"` and names the
+pipeline (`src/terragucci-repo.ts`, #489), `/api/project` carries `terragucci`
+so the page offers no write, and auto-sync declines. A new POST route goes in
+`TERRAGUCCI_REFUSED_WRITES` or in the test's list of routes that write nothing
+outside behold; `src/terragucci-repo.test.ts` fails until it is in one.
 
 ### The exceptions, and their exact size
 

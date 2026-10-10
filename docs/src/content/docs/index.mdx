@@ -64,7 +64,7 @@ If a competent stranger, or their agent, cannot operate the thing on day one fro
 		Components, composites, resources, attributes. On Kubernetes one tier further, to the Pods your Deployment owns and which field manager wrote each field.
 	</Card>
 	<Card title="Writes stay delegated" icon="seti:lock">
-		behold never mutates anything. Sync starts the `ApplyOp` you committed; Adopt starts your `ReconcileOp`, which opens a PR a human merges. It holds no apply credentials.
+		behold writes nothing to a cloud itself. Sync starts the `ApplyOp` you committed; Adopt starts your `ReconcileOp`, which opens a PR a human merges; Deploy runs chant with the credentials behold was started with. On a terragucci repo it offers no write at all.
 	</Card>
 </CardGrid>
 

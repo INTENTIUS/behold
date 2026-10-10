@@ -37,6 +37,7 @@ import {
 import { registeredMemberKinds } from "./member-kind.ts";
 import { CHOUDOUFU_FLOOR, choudoufuBinary, choudoufuMeetsFloor, choudoufuVersion, readLiveCheck, type ChoudoufuVersion, type LiveCheckParse } from "./choudoufu-member.ts";
 import { detectProject, detectProjectShape, loadBeholdConfig, type ProjectKind } from "./project.ts";
+import { terragucciConfig } from "./terragucci-repo.ts";
 import { drawnMembers, hasDeclaration, readWorkspace, undrawnMembers, unreadableMembers, type Workspace, type WorkspaceRead } from "./workspace.ts";
 import {
   HCL_PARSER_PKG,
@@ -335,6 +336,16 @@ function opsCheck(root: string, ops: OpInfo[], chantSource: ChantResolution["sou
     chantSource === "project"
       ? "chant MCP available (the project's own chant)"
       : "chant MCP unavailable until the project's chant is installed";
+  // #489: a terragucci repo is applied by its pipeline; an Op behold could
+  // trigger here is exactly what it must not offer.
+  const tg = terragucciConfig(root);
+  if (tg) {
+    return {
+      name: "ops",
+      status: "pass",
+      detail: `a terragucci repo (${relative(root, tg) || tg}): applied by its pipeline only, so behold offers no Deploy, Op run or approve here`,
+    };
+  }
   if (!ops.length) {
     return {
       name: "ops",
@@ -484,7 +495,12 @@ export async function diagnose(dir: string, probes: DoctorProbes = {}): Promise<
       checks: [{ name: "project", status: "fail", detail: listing.refusal.error, fix: listing.refusal.remedy }],
     };
   }
-  const workspace = listing?.ok ? listing.workspace : undefined;
+  // #489: a declaration with no members declares nothing to draw (terragucci
+  // writes one for its gates), so the directory is diagnosed as `serve` reads
+  // it: the way it would be without a declaration.
+  const listed = listing?.ok ? listing.workspace : undefined;
+  const workspace = listed && listed.members.length > 0 ? listed : undefined;
+  const emptyDeclaration = listed && !workspace ? `${listed.file} (workspace ${listed.name}) declares no members, so behold reads the directory as it would without one; ` : "";
   const shape = workspace ? workspaceShape(workspace) : detectProjectShape(root);
 
   // #368: a declared member behold cannot serve — a kind it does not know, or
@@ -511,7 +527,7 @@ export async function diagnose(dir: string, probes: DoctorProbes = {}): Promise<
           : {
               name: "project",
               status: "fail",
-              detail: `no chant.config.ts here, and no estate members declared (.behold.json \`members\`, or npm workspaces)`,
+              detail: `${emptyDeclaration}no chant.config.ts here, and no estate members declared (.behold.json \`members\`, or npm workspaces)`,
               fix: "Point behold at a chant project (`behold doctor <dir>`), or run `behold demo` for a bundled working example.",
             },
       ],
@@ -521,7 +537,9 @@ export async function diagnose(dir: string, probes: DoctorProbes = {}): Promise<
   const estate = shape.kind === "estate";
   const members = (shape.members ?? []).map((m) => ({ ...m, abs: resolve(root, m.dir) }));
   const targets = estate ? members.map((m) => m.abs) : [root];
-  const primary = targets[0]!;
+  // A workspace whose members are all listed-not-drawn has no target; the
+  // root is what the remaining lines ask instead of crashing on undefined.
+  const primary = targets[0] ?? root;
   // The chant-shaped lines (the chant install, the lexicons, the envs) ask
   // only the members that are chant projects; another kind has its own line.
   const chantTargets = estate ? members.filter((m) => m.kind === "chant").map((m) => m.abs) : [root];
@@ -544,8 +562,8 @@ export async function diagnose(dir: string, probes: DoctorProbes = {}): Promise<
           detail: `${estateDetail}; invalid: ${list(invalidDetail)}`,
           fix: kindsFix,
         }
-      : { name: "project", status: "pass", detail: estateDetail }
-    : { name: "project", status: "pass", detail: `chant project (${relative(root, shape.configFile!)})` };
+      : { name: "project", status: "pass", detail: `${emptyDeclaration}${estateDetail}` }
+    : { name: "project", status: "pass", detail: `${emptyDeclaration}chant project (${relative(root, shape.configFile!)})` };
 
   // One config read per chant target, shared by the lexicon/env/kube lines —
   // the same `detectProject` the server's pickers are built from.

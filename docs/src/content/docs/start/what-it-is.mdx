@@ -28,20 +28,22 @@ That last row is why component status reads from a resource rollup rather than a
 
 ## Read-only core, delegated writes
 
-**behold never mutates anything itself.** This is the invariant rather than a current limitation.
+**behold writes nothing to a cloud or to your source itself.** Every write it offers is a command it starts for you, run by a tool you already trust.
 
-- Every view is a read: `chant graph`, snapshots, live describes.
+- Every view is a read: `chant graph`, snapshots, live describes. Viewing needs only read roles.
 - **Sync** starts the `ApplyOp` your project committed. **Adopt** starts your `ReconcileOp`, which opens a PR a human merges.
-- behold triggers Ops that run on your executor. It holds no apply credentials, and there is no endpoint in it that writes to a cloud.
+- **Deploy** on a project with no committed `ApplyOp` runs `chant run <component> --components` on chant's local executor, as a child of behold. It applies with the credentials in behold's environment, so Deploy from behold needs write roles there.
+- An environment `.behold.json` designates to a forge is never applied from your machine; Deploy dispatches the forge's workflow through your `gh`.
+- A terragucci repo is applied by its pipeline only: behold refuses every deploy, Op run, approval and dispatch there, and offers none of them.
 
-Authority stays in your committed source and your worker. If a request would have behold write to a cloud or to source directly, that is a bug.
+Authority stays in your committed source and your executor. If a request would have behold write to a cloud or to source directly, that is a bug.
 
 <Aside type="note" title="Why that matters for an agent">
-An agent driving behold can look at everything and cannot break anything. The dangerous half sits behind a gate a human answers in a workflow you wrote.
+An agent driving behold can look at everything. What it can change is what the commands above can change with the credentials behold was started with, so start it with read-only credentials when nothing should be applied from it.
 </Aside>
 
 ## What it is not
 
-- Not a deployer: behold starts your Ops, and chant's executor does the work.
+- Not a deployer: behold starts your Ops or chant's local executor, and they do the work.
 - Not a state store. Truth lives in the live system, and ownership is read from a marker on the resource.
 - Not a new abstraction over your cloud. The graph is your declarations and your resources, at their real names.

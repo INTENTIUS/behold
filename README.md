@@ -202,21 +202,30 @@ including the exact commands and what each state looks like over the API:
 
 ## Read-only core, delegated gated writes (the invariant)
 
-**behold never mutates anything itself.**
+**behold writes nothing to a cloud or to your source itself.** Every write it
+offers is a command it starts for you, run by a tool you already trust.
 
 - The vizes only read (`chant graph`, snapshots, Temporal history).
-- Actions don't mutate directly. Sync starts your `ApplyOp`; Adopt starts your
-  `ReconcileOp` (opens a PR a human merges). behold *triggers* Ops you committed,
-  running on your executor. It holds no apply creds.
-- Two write gestures, both human-confirmed: **Apply** (gate signal) and **Open PR**
-  (merge). Authority stays in your source and your worker, never in behold.
+- Sync starts your committed `ApplyOp`; Adopt starts your `ReconcileOp` (opens a
+  PR a human merges). Those run on your executor.
+- Deploy on a project with no committed ApplyOp runs `chant run <component>
+  --components` on chant's local executor, as a child of behold. That child has
+  behold's environment, so it applies with the credentials of whoever started
+  behold: to Deploy from behold, that environment needs write roles. Reads
+  alone need only read roles.
+- An env `.behold.json` designates to a forge is never applied from the laptop;
+  Deploy dispatches the forge's workflow through your `gh` instead.
+- A terragucci repo (a `terragucci.yml` in the served directory or above it) is
+  applied by its pipeline only. behold refuses every write there (Deploy, Op
+  runs, gate approvals, pipeline dispatch, rollback) with `409 terragucci` and
+  offers none of them on the page.
 
 ## Why a Node service (not an edge function)
 
 The live path (`chant graph --live --overlay`, `chant lifecycle plan`) shells
 `kubectl`/`aws`/`az`/the Temporal client and holds cloud creds. That needs a real
-process, so behold is a Node service you run where your creds live. Read-only means it only needs **read**
-roles (describe/list), so it's least-privilege to run.
+process, so behold is a Node service you run where your creds live. Viewing needs only **read**
+roles (describe/list); a Deploy from behold applies with whatever credentials its environment holds.
 
 ## Agent-drivable, on chant's MCP
 

@@ -175,6 +175,7 @@ import {
   unwritableReason,
 } from "./layout.ts";
 import { emulatorUp, emulatorDown, mergedEnv, type EmulatorInfo } from "./emulator.ts";
+import { refusedWrite, servedTerragucciConfig, terragucciRefusal } from "./terragucci-repo.ts";
 import { loadDemoRegistry, missingRequirements, fetchesFromNetwork, demoTargetDir, loadDemo, type DemoEntry } from "./demos.ts";
 
 /** The installed behold package root — `demos.json` and the bundled examples
@@ -953,6 +954,16 @@ export function createApp(
     if (c.req.method === "GET") return withReadSignal(c.req.raw.signal, next);
     await next();
   });
+  const tgConfig = (): string | undefined => servedTerragucciConfig(cfg.projectDirs ?? [cfg.projectDir]);
+  // #489: a terragucci repo is applied by its pipeline only. Asked per request,
+  // because a project switch changes cfg.projectDir under a running server.
+  app.use("/api/*", async (c, next) => {
+    if (c.req.method !== "POST") return next();
+    const what = refusedWrite(c.req.path);
+    const config = what ? tgConfig() : undefined;
+    if (what && config) return c.json(terragucciRefusal(config, what), 409);
+    await next();
+  });
 
   // Carve mode (#252) claims /api/graph, /api/project and friends before the
   // project-shaped handlers are registered — see carveRoutes.
@@ -1604,6 +1615,9 @@ export function createApp(
       currentEnv: cfg.env ?? null,
       // v0.1.0 preview: the SPA hides git/PR ops + arbitrary-project affordances.
       ...(cfg.previewMode ? { previewMode: true } : {}),
+      // #489: a terragucci repo is applied by its pipeline; the SPA offers no
+      // write at all, and the write routes refuse with the same words.
+      ...(tgConfig() ? { terragucci: { config: tgConfig()!, ...terragucciRefusal(tgConfig()!, "deploying from behold") } } : {}),
       // #477: who `chant approve` records when behold runs it. The approve
       // buttons say it before the click.
       approver: localApprover(),
@@ -3831,7 +3845,7 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   // its saved id — best-effort and out loud: a refusal (gh gone, pipeline
   // gone) prints its reason and leaves the record for the next attempt or an
   // explicit POST /api/ci/readopt. Never in carve mode (no project to paint).
-  if (!cfg.carveReport) {
+  if (!cfg.carveReport && !servedTerragucciConfig(cfg.projectDirs ?? [cfg.projectDir])) {
     void readoptDispatchedRun(cfg, runner).then((result) => {
       if (result.outcome === "readopted") {
         process.stdout.write(`  re-adopted dispatched run ${result.run.runId} (${result.run.workflow}) — following via gh\n`);
@@ -3877,6 +3891,11 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   const onPollDrift = (dir: string, movedLexicons: string[]): void => {
     broadcaster.emit("changed", dir);
     if (autoSync === "off") return;
+    const tg = servedTerragucciConfig(cfg.projectDirs ?? [cfg.projectDir]);
+    if (tg) {
+      broadcaster.emit("op", `⟳ auto-sync (${autoSync})${memberTag(dir)} declined: ${terragucciRefusal(tg, "auto-sync").error}`);
+      return;
+    }
     void routeAutoSync(dir, movedLexicons);
   };
 
