@@ -141,3 +141,39 @@ describe("shapeSnapshot and exportScrubber (#491)", () => {
     expect(scrub('{"a":"/home/u/repos/infra/envs/x","b":"/home/u/repos/infra","c":"/home/u/other"}')).toBe('{"a":"envs/x","b":"infra","c":"~/other"}');
   });
 });
+
+describe("export --publish (#491)", () => {
+  it("writes only under a views/<name> directory", async () => {
+    const { publishTarget } = await import("./export.ts");
+    expect(publishTarget("s3://acme/reports/views/behold")).toEqual({ bucket: "acme", prefix: "reports/views/behold" });
+    expect(publishTarget("s3://acme/views/behold/")).toEqual({ bucket: "acme", prefix: "views/behold" });
+    expect(publishTarget("s3://acme/reports")).toMatchObject({ error: expect.stringContaining("s3://acme/reports/views/behold") });
+    expect(publishTarget("s3://acme/reports/views")).toHaveProperty("error");
+    expect(publishTarget("s3://acme/reports/views/behold/extra")).toHaveProperty("error");
+    expect(publishTarget("s3://acme/../views/behold")).toHaveProperty("error");
+    expect(publishTarget("./out")).toHaveProperty("error");
+  });
+
+  it("uploads every file of the bundle with its content type", async () => {
+    const { publishBundle } = await import("./export.ts");
+    const dir = mkdtempSync(join(tmpdir(), "behold-publish-"));
+    made.push(dir);
+    mkdirSync(join(dir, "snapshots"));
+    mkdirSync(join(dir, "icons", "k8s"), { recursive: true });
+    writeFileSync(join(dir, "index.html"), "<html>");
+    writeFileSync(join(dir, "app.js"), "export {}");
+    writeFileSync(join(dir, "snapshots", "api_terragucci.json"), "{}");
+    writeFileSync(join(dir, "icons", "k8s", "pod.svg"), "<svg/>");
+    writeFileSync(join(dir, "LICENSE"), "Apache");
+    const put: [string, string][] = [];
+    const n = await publishBundle(dir, { bucket: "acme", prefix: "reports/views/behold" }, { put: async (k: string, _b: unknown, t: string) => void put.push([k, t]) } as never);
+    expect(n).toBe(5);
+    expect(put).toEqual([
+      ["reports/views/behold/LICENSE", "text/plain; charset=utf-8"],
+      ["reports/views/behold/app.js", "text/javascript; charset=utf-8"],
+      ["reports/views/behold/icons/k8s/pod.svg", "image/svg+xml"],
+      ["reports/views/behold/index.html", "text/html; charset=utf-8"],
+      ["reports/views/behold/snapshots/api_terragucci.json", "application/json"],
+    ]);
+  });
+});

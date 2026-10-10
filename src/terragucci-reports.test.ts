@@ -169,3 +169,23 @@ describe("readTerragucci over terragucci's example bucket (#490)", () => {
     expect(reads.filter((k) => k.includes("tf-plan")).length).toBe(MAX_RUNS_PER_STAGE);
   });
 });
+
+describe("an s3:// source in a job, with credentials in the environment (#491)", () => {
+  it("signs its own GETs and needs no aws CLI", async () => {
+    const asked: string[] = [];
+    const fetchFn = async (url: string, init: { headers: Record<string, string> }) => {
+      asked.push(url);
+      expect(init.headers.authorization).toMatch(/^AWS4-HMAC-SHA256 Credential=AKIATEST\//);
+      const key = url.replace("http://floci:4566/acme-reports/shop/", "");
+      try {
+        return { ok: true, status: 200, text: async () => readFileSync(join(BUCKET, key), "utf8") };
+      } catch {
+        return { ok: false, status: 404, text: async () => "" };
+      }
+    };
+    const env = { AWS_ACCESS_KEY_ID: "AKIATEST", AWS_SECRET_ACCESS_KEY: "s", AWS_ENDPOINT_URL: "http://floci:4566" };
+    const r = await readTerragucci(terragucciSource("s3://acme-reports/shop", { env, fetch: fetchFn as never }), { roots: ROOTS });
+    expect(r.project).toBe("github.com/acme/shop");
+    expect(asked[0]).toBe("http://floci:4566/acme-reports/shop/index.json");
+  });
+});

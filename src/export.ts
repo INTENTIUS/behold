@@ -12,7 +12,8 @@
  */
 import { mkdirSync, writeFileSync, copyFileSync, cpSync, readFileSync, readdirSync, existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, dirname, basename, resolve } from "node:path";
+import { join, dirname, basename, relative, resolve, sep } from "node:path";
+import { S3Object } from "./s3-object.ts";
 import { fileURLToPath } from "node:url";
 import { createApp, type ServerOptions } from "./server.ts";
 
@@ -319,6 +320,58 @@ function safeRealpath(p: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Publishing a bundle to a bucket (#491): the one cloud write behold makes,
+// and only when an export is asked for it.
+// ---------------------------------------------------------------------------
+
+const CONTENT_TYPES: Record<string, string> = {
+  html: "text/html; charset=utf-8",
+  js: "text/javascript; charset=utf-8",
+  mjs: "text/javascript; charset=utf-8",
+  css: "text/css; charset=utf-8",
+  json: "application/json",
+  jsonc: "application/json",
+  svg: "image/svg+xml",
+  png: "image/png",
+  md: "text/markdown; charset=utf-8",
+  txt: "text/plain; charset=utf-8",
+};
+const contentType = (file: string): string => {
+  const ext = file.includes(".") ? file.slice(file.lastIndexOf(".") + 1).toLowerCase() : "";
+  return CONTENT_TYPES[ext] ?? (ext ? "application/octet-stream" : "text/plain; charset=utf-8");
+};
+
+/**
+ * Where `--publish` may write: `s3://<bucket>/<…>/views/<name>`. A bundle has
+ * an `index.html` and a `manifest.json` at its top, and a reports prefix has
+ * an `index.html` of its own, so a destination outside a `views/` directory
+ * (terragucci's reserved prefix, which it never writes) could overwrite a
+ * page behold did not make. Refused rather than guessed at.
+ */
+export function publishTarget(spec: string): { bucket: string; prefix: string } | { error: string } {
+  const m = /^s3:\/\/([^/]+)\/(.+?)\/?$/.exec(spec);
+  if (!m) return { error: `--publish takes s3://<bucket>/<prefix>/views/<name>, not ${spec}` };
+  const prefix = m[2]!;
+  const parts = prefix.split("/");
+  if (parts.some((p) => p === "" || p === "." || p === "..")) return { error: `--publish ${spec}: the prefix has an empty, . or .. segment` };
+  const at = parts.lastIndexOf("views");
+  if (at < 0 || at !== parts.length - 2) {
+    return { error: `--publish writes only to a views/<name> directory, such as s3://${m[1]}/${parts.filter((p) => p !== "views").join("/")}/views/behold: a bundle's index.html would overwrite the prefix's own pages anywhere else` };
+  }
+  return { bucket: m[1]!, prefix };
+}
+
+/** Upload every file under `outDir` to `<prefix>/<path>`, each with its content type. Returns how many. */
+export async function publishBundle(outDir: string, target: { bucket: string; prefix: string }, client: Pick<S3Object, "put">): Promise<number> {
+  const files = (readdirSync(outDir, { recursive: true, withFileTypes: true }) as import("node:fs").Dirent[])
+    .filter((d) => d.isFile())
+    .map((d) => relative(outDir, join(d.parentPath, d.name)).split(sep).join("/"))
+    .sort();
+  for (const f of files) await client.put(`${target.prefix}/${f}`, readFileSync(join(outDir, f)), contentType(f));
+  return files.length;
 }
 
 const BUNDLE_README = `# behold — static export

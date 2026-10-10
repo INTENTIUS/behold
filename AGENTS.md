@@ -672,6 +672,14 @@ and it must be an address the served report already ranks, the value that
 reaches the spawn's argv comes from a closed set read off disk. No cloud write,
 no Terraform mutation, no edit to anyone's chant source.
 
+`behold export --publish s3://<bucket>/<prefix>/views/<name>` (#491) is the
+one write to a cloud, and it is not a server route: an export, asked for it on
+the command line, uploads the bundle it just wrote, signed with the AWS
+credentials in the environment (src/s3-object.ts). `publishTarget` refuses
+any destination that is not a `views/<name>` directory, terragucci's reserved
+viewer prefix, so the bundle's `index.html` can never land on a page behold did
+not make.
+
 A choudoufu estate member (#366) adds no exception. A move there is one tag
 write through choudoufu's own `live-mv`, and behold never makes it: `GET
 /api/choudoufu/moves` reads a plan (`carve.json`) from inside a served member,
