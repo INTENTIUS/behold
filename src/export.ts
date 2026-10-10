@@ -10,8 +10,9 @@
  * (reclassify / prune / value-match / composite-deps / radial all included), no
  * logic duplicated.
  */
-import { mkdirSync, writeFileSync, copyFileSync, cpSync, readFileSync, readdirSync, existsSync } from "node:fs";
-import { join, dirname, basename } from "node:path";
+import { mkdirSync, writeFileSync, copyFileSync, cpSync, readFileSync, readdirSync, existsSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, dirname, basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createApp, type ServerOptions } from "./server.ts";
 
@@ -49,6 +50,8 @@ export interface ExportAxes {
    * when this is non-zero, exactly as the SPA gates it on `/api/project`'s
    * `ops`. Absent/0 means no stop, so nothing to capture. */
   ops?: number;
+  /** #491: the export was given `--terragucci`, so the marks are one more snapshot. */
+  terragucci?: boolean;
 }
 
 /** The read URLs to capture for the given axes. */
@@ -68,6 +71,8 @@ export function captureKeys(axes: ExportAxes): string[] {
   // the step→estate links; the canonical key ignores it, so the SPA's lookup
   // still matches.
   if (axes.ops) add("/api/graph", { ops: "1", entities: "1" });
+  // #491: the terragucci marks: one read, whatever the lens, as the SPA asks it.
+  if (axes.terragucci) add("/api/terragucci", {});
 
   const tiers = axes.tiers && axes.tiers.length ? axes.tiers : [""];
   const envs = ["", ...axes.environments]; // "" = the declared-source view
@@ -142,15 +147,32 @@ function workerName(project: string, override?: string): string {
 }
 
 /** Capture the estate `cfg` observes into a static bundle at `outDir`. */
-export async function runExport(cfg: ServerOptions, outDir: string, opts: { name?: string } = {}): Promise<void> {
+export interface ExportOptions {
+  name?: string;
+  /** `--no-source`: leave each card's source text (a Terraform root's whole file, in `attrs.source`) out of the bundle. */
+  noSource?: boolean;
+  /** Where a terragucci report key opens from the bundle (#491): relative to it, `../../` by default, since the estate job uploads it to `<prefix>/views/behold/`. */
+  reportsBase?: string;
+}
+
+/** Export's default for a report key's base: the bundle sits at `<prefix>/views/behold/`, so `../../` is the prefix. */
+export const VIEWS_REPORTS_BASE = "../../";
+
+export async function runExport(cfg: ServerOptions, outDir: string, opts: ExportOptions = {}): Promise<void> {
   // A capture reads the project; it never writes to it (#228). The layout
   // sidecar is the one thing behold can write, and an export is exactly the
   // wrong moment for it — so the app built here refuses that write outright
   // rather than relying on nothing happening to call it.
   const app = createApp({ ...cfg, layoutWrites: false });
 
-  const proj = (await (await app.request("/api/project")).json()) as { environments?: string[]; tiers?: string[]; ops?: number };
-  const axes: ExportAxes = { environments: proj.environments ?? [], tiers: proj.tiers ?? [], ...(proj.ops ? { ops: proj.ops } : {}) };
+  const proj = (await (await app.request("/api/project")).json()) as { environments?: string[]; tiers?: string[]; ops?: number; terragucciReports?: unknown };
+  const axes: ExportAxes = {
+    environments: proj.environments ?? [],
+    tiers: proj.tiers ?? [],
+    ...(proj.ops ? { ops: proj.ops } : {}),
+    ...(proj.terragucciReports ? { terragucci: true } : {}),
+  };
+  const scrub = exportScrubber(cfg);
 
   const snapDir = join(outDir, "snapshots");
   mkdirSync(snapDir, { recursive: true });
@@ -165,18 +187,25 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: { name
     // the six that select a distinct snapshot and drops everything else — so the
     // captured key stays exactly what the frontend will ask for.
     const res = await app.request(`${key}${key.includes("?") ? "&" : "?"}layout=1`); // key is already `path?sortedLensParams`
-    const body = await res.text();
+    const body = scrub(shapeSnapshot(key, await res.text(), opts));
     const file = slug(key);
     writeFileSync(join(snapDir, file), body);
     keyToFile[key] = `snapshots/${file}`;
     if (res.ok) ok++;
     else failed++;
+    // #491: a view asked to carry terragucci's marks and could not read them is
+    // no view: the estate job's step fails, rather than publishing a picture
+    // with no marks that looks like an estate with nothing to say.
+    if (key === "/api/terragucci" && !res.ok) {
+      const refusal = JSON.parse(body) as { error?: string; remedy?: string };
+      throw new Error(`terragucci reports not read: ${refusal.error ?? res.status}${refusal.remedy ? `\n  ${refusal.remedy}` : ""}`);
+    }
   }
 
   const manifest = {
     static: true,
     capturedAt: new Date().toISOString(),
-    projectDir: cfg.projectDir,
+    projectDir: basename(cfg.projectDir),
     axes,
     keyToFile,
   };
@@ -223,6 +252,73 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: { name
       `  View:   npx serve ${outDir}\n` +
       `  Deploy: cd ${outDir} && npx wrangler deploy   → https://${name}.<your-account>.workers.dev\n`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// What a bundle carries (#491). A bundle is meant to be put where other people
+// open it (a bucket, a Worker), so it carries the picture and nothing about
+// the machine that captured it: no list of the operator's other projects, no
+// user name, no absolute path, and, on request, no source text.
+// ---------------------------------------------------------------------------
+
+const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
+
+/** Delete `attrs.source` wherever an object carries `attrs`. */
+function dropSource(v: unknown): void {
+  if (Array.isArray(v)) return v.forEach(dropSource);
+  if (!isRecord(v)) return;
+  if (isRecord(v.attrs)) delete v.attrs.source;
+  for (const x of Object.values(v)) dropSource(x);
+}
+
+/** One snapshot as the bundle keeps it. Bodies that are not JSON pass through. */
+export function shapeSnapshot(key: string, body: string, opts: ExportOptions = {}): string {
+  let doc: unknown;
+  try {
+    doc = JSON.parse(body);
+  } catch {
+    return body;
+  }
+  if (!isRecord(doc)) return body;
+  if (key === "/api/project") {
+    // The switcher's recents are the operator's other projects; the approver
+    // is their login. Neither is part of the picture.
+    delete doc.recents;
+    delete doc.approver;
+  }
+  if (key === "/api/terragucci") doc.files = opts.reportsBase ?? VIEWS_REPORTS_BASE;
+  if (opts.noSource) dropSource(doc);
+  return JSON.stringify(doc);
+}
+
+/**
+ * Replace the capturing machine's paths with names: each served directory
+ * (and a local reports directory) by its basename, then the home directory by
+ * `~`. Longest first, so a member inside the root keeps its own name.
+ */
+export function exportScrubber(cfg: Pick<ServerOptions, "projectDir" | "projectDirs" | "workspace" | "terragucci">, home: string = homedir()): (text: string) => string {
+  const dirs = [cfg.projectDir, ...(cfg.projectDirs ?? []), ...(cfg.workspace ? [cfg.workspace.root] : [])];
+  const tg = cfg.terragucci?.source;
+  if (tg && !/^[a-z0-9]+:\/\//i.test(tg)) dirs.push(resolve(tg));
+  const pairs = new Map<string, string>();
+  for (const d of dirs) {
+    for (const p of [resolve(d), safeRealpath(d)]) if (p && p !== "/") pairs.set(p, basename(p));
+  }
+  const ordered = [...pairs].sort((a, b) => b[0].length - a[0].length);
+  return (text) => {
+    let out = text;
+    for (const [from, to] of ordered) out = out.split(from).join(to);
+    if (home && home !== "/") out = out.split(home).join("~");
+    return out;
+  };
+}
+
+function safeRealpath(p: string): string | undefined {
+  try {
+    return realpathSync(p);
+  } catch {
+    return undefined;
+  }
 }
 
 const BUNDLE_README = `# behold — static export

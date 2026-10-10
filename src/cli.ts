@@ -39,6 +39,7 @@ Usage:
   behold doctor [project-dir] [--json] [--fix]
   behold preview [project-dir] [--port <n>] [--emulator]
   behold export [project-dir] [--out <dir>] [--env <name>] [--name <worker>] [--emulator]
+                [--terragucci <src> [--terragucci-project <p>] [--reports-base <rel>]] [--no-source]
   behold serve <project-dir…> [--port <n>] [--host <addr>] [--allow-host <name,…>] [--hud <url>] [--env <name>] [--poll <secs>] [--local]
   behold carve <report.json> [--port <n>]
 
@@ -107,7 +108,7 @@ Options:
   --hud <url>         serve only: where hud reviews this workspace's records
                       (BEHOLD_HUD_URL too). A proposed decision in a member's
                       or a card's "why" links to its review there (#471).
-  --terragucci <src>  serve only: paint a terragucci estate from its reports
+  --terragucci <src>  serve/export: paint a terragucci estate from its reports
                       (#490). <src> is a report directory (a synced bucket
                       prefix, or <prefix>/<project>), s3://bucket/prefix (read
                       with your aws CLI, GetObject only), or an https address
@@ -116,7 +117,7 @@ Options:
                       age and a link to its report; nothing is read from a
                       cloud, and a waiting wave offers only the line to run.
   --terragucci-project <host/path>
-                      serve only: which project, when the reports hold several
+                      serve/export: which project, when the reports hold several
                       and none is this checkout's git remote.
   --env <name>        Environment name — turns on the live drift overlay.
                       export/serve.
@@ -155,6 +156,12 @@ Options:
                       saved layout to the root, and run chant workspace check.
                       The one doctor that writes (#464).
   --out <dir>         export only: output directory (default ./behold-export).
+  --no-source         export only: leave each card's source text out of the
+                      bundle (a Terraform root's whole file rides on its cards
+                      as attrs.source otherwise).
+  --reports-base <r>  export with --terragucci only: where a report link points
+                      from the bundle, relative to it (default ../../, for a
+                      bundle uploaded to <prefix>/views/behold/).
   --name <worker>     export only: Cloudflare Worker name in the generated
                       wrangler.jsonc.
   -h, --help          This text.
@@ -792,14 +799,26 @@ async function runExportCmd(rest: string[]): Promise<void> {
   let name: string | undefined;
   let dirArg: string | undefined;
   let emulator = false;
+  let terragucci: string | undefined;
+  let terragucciProject: string | undefined;
+  let reportsBase: string | undefined;
+  let noSource = false;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     if (a === "--out") outDir = resolve(rest[++i]);
     else if (a === "--env") env = rest[++i];
     else if (a === "--name") name = rest[++i];
     else if (a === "--emulator") emulator = true;
+    else if (a === "--terragucci") terragucci = rest[++i];
+    else if (a === "--terragucci-project") terragucciProject = rest[++i];
+    else if (a === "--reports-base") reportsBase = rest[++i];
+    else if (a === "--no-source") noSource = true;
     else if (a === "-h" || a === "--help") return void process.stdout.write(USAGE);
     else if (!a.startsWith("-")) dirArg = a;
+  }
+  if ((terragucciProject || reportsBase !== undefined) && !terragucci) {
+    process.stderr.write("behold export: --terragucci-project and --reports-base need --terragucci\n");
+    process.exit(2);
   }
 
   const projectDir = resolve(dirArg ?? process.cwd());
@@ -814,7 +833,16 @@ async function runExportCmd(rest: string[]): Promise<void> {
   // The same reading of the directory `serve` would make, so an export of a
   // declared workspace or a Terraform estate captures what serve draws.
   const target = await serveTarget([projectDir], "export");
-  await runExport({ ...target, port: 0, ...(env ? { env } : {}) }, outDir, name ? { name } : {});
+  await runExport(
+    {
+      ...target,
+      port: 0,
+      ...(env ? { env } : {}),
+      ...(terragucci ? { terragucci: { source: terragucci, ...(terragucciProject ? { project: terragucciProject } : {}) } } : {}),
+    },
+    outDir,
+    { ...(name ? { name } : {}), ...(noSource ? { noSource } : {}), ...(reportsBase !== undefined ? { reportsBase } : {}) },
+  );
 }
 
 // Run when invoked directly (`tsx src/cli.ts …`), not when imported. realpath both

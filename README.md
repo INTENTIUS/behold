@@ -145,6 +145,20 @@ Set the Worker name with `--name`, or edit `wrangler.jsonc`. Auth via
 Workers deploy). GitHub Pages, S3, nginx and Cloudflare Pages
 (`wrangler pages deploy .`) all work too.
 
+A bundle is made to be opened by other people, so it carries the picture and
+nothing about the machine that made it: no list of your recent projects, no
+user name, and every absolute path reduced to its directory's name. Each card
+of a Terraform root carries that root's whole source file (`attrs.source`);
+`--no-source` leaves it out.
+
+`--terragucci <src>` (with `--terragucci-project`, as for `serve`) captures the
+terragucci marks too, for the view terragucci's estate job can publish beside
+`estate.html`. The bundle's report links are relative to
+`<prefix>/views/behold/` (`--reports-base` changes that), so uploaded there they
+open the bucket's own report pages through the same presigned link or front
+door. An export asked for marks it cannot read fails rather than publishing a
+picture without them.
+
 ## Try it: your first apply, no cloud account
 
 The bundled `example-writes` is one S3 bucket. `serve --local` boots *that
