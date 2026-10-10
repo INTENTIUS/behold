@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:">
+<meta name="color-scheme" content="light dark">
+<title>github.com/acme/shop tf-plan at b1c2d3e4f5a6</title>
+<link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADMAAAAfCAMAAAB9EQVVAAAAVFBMVEUAAAAJtroqIiI2PCVaNBNdjApk09N9KhGKSxmSbj6W4eOjZyOlyhC06ee4Ski8Gg7U727Wm0DZ9vbbqljcDwjnj4LnwSr0lQr0wmr21pv22Qf39/d/Xc1TAAAAAXRSTlMAQObYZgAAAa1JREFUeNqNlIF2gyAMRSUD5la7GWZXnf//n3uBIKC2p++cUqq5vCRAu+4ggvLYpfGZJJAGSMeO4vgUGSEanBuStgUemEWL0QEQDYNwMlGeHllIpLOtBHenDDze0sJgllrAziGKHlgUH5bIeVPEsNS+JBolZXv7SsTMG8FK/WDRlhLGvk/TFNMqRG01to2INmBiJYihRnjQzwujLNkvqm2mb0HweiYvMuu6GpmQZolWyHZRZlzscCodSAjBryKDidkgaYUy2Ep0035kBHE+IeJkQnFClCPNjMhpKRFB6BoydL1WkJ0yIlvJWr6PWZmMCFOc7HSLkNgMxQalhIoBIFKIsR13yo3mvPVkoj4VuaafxKxGf3+UO83baZFOY+GgNmh6QQAlBn0btM0XdfK5cTKrkdne0+1NR6YclZheiDl5TYz16OGlGAG52RpJkE+1N4nVDNl4ZhooMQekMLBpjAB5tdHEyuWgXzA9mO2u5G8yidm5MJgFzNJTa1KO3R6JPqeMpie7r0gGLw3Tn0FHF2UA0XJmNJ8hM3M6B3zhnQ4Pyot8T/l1UfO/+5ok/B+M50/N53uHFAAAAABJRU5ErkJggg==">
+<style>
+:root{--bg:#fbfbfa;--fg:#1d1d1b;--muted:#6b6b66;--line:#deded8;--card:#fff;--bad:#b42318;--badbg:#fdecea;--hl:#8a5a00;--hlbg:#fff5e0;--link:#1f5fbf;--code:#f1f1ee}
+@media (prefers-color-scheme:dark){:root{--bg:#141413;--fg:#ecece8;--muted:#a0a09a;--line:#34342f;--card:#1c1c1a;--bad:#ff8a80;--badbg:#3a1714;--hl:#ffc766;--hlbg:#33270f;--link:#8ab4ff;--code:#262623}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:16px}h1{font-size:20px;margin:0 0 4px}h2{font-size:16px;margin:20px 0 8px}h3{font-size:14px;margin:12px 0 4px}
+a{color:var(--link)}code,pre{font:12.5px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}pre{background:var(--code);padding:8px;overflow-x:auto;margin:6px 0}
+.run{color:var(--muted);margin:0 0 8px}.run code{color:var(--fg)}.notice{color:var(--muted);font-size:13px}
+details{background:var(--card);border:1px solid var(--line);border-radius:6px;margin:6px 0;padding:6px 10px}details details{margin:6px 0}
+summary{cursor:pointer}ul{margin:4px 0;padding-left:20px}.attrs{list-style:none;padding-left:16px}
+.why{display:inline-block;background:var(--hlbg);color:var(--hl);border-radius:4px;padding:0 6px;font-size:12px;margin-left:4px}
+.tag{display:inline-block;border:1px solid var(--line);border-radius:4px;padding:0 6px;font-size:12px}.tag.bad{background:var(--badbg);color:var(--bad);border-color:transparent}
+.pinned{border:2px solid var(--bad);border-radius:8px;padding:8px 12px;background:var(--card)}.pinned h2{margin-top:0;color:var(--bad)}
+.first{border:1px solid var(--hl);border-radius:8px;padding:8px 12px;margin-top:10px;background:var(--card)}.first h2{margin-top:0}
+.filters{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 4px;position:sticky;top:0;background:var(--bg);padding:6px 0;z-index:1}
+.filters label{display:flex;gap:4px;align-items:center}select,input{background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:4px;padding:3px 6px;font:inherit}
+.counts,.meta{color:var(--muted)}.links a{margin-right:6px}.digest{color:var(--muted);font-size:11px}.sym{display:inline-block;min-width:3ch}
+#timings table,.timings table{display:block;overflow-x:auto}
+.a-delete .sym,.a-replace .sym{color:var(--bad)}.hidden{display:none}table{border-collapse:collapse}td,th{border-bottom:1px solid var(--line);padding:3px 10px 3px 0;text-align:left}
+h1.brand{display:flex;align-items:center;gap:10px}.taco{image-rendering:pixelated;flex:none}</style>
+</head>
+<body>
+<main>
+<h1 class="brand"><img class="taco" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADMAAAAfCAMAAAB9EQVVAAAAVFBMVEUAAAAJtroqIiI2PCVaNBNdjApk09N9KhGKSxmSbj6W4eOjZyOlyhC06ee4Ski8Gg7U727Wm0DZ9vbbqljcDwjnj4LnwSr0lQr0wmr21pv22Qf39/d/Xc1TAAAAAXRSTlMAQObYZgAAAa1JREFUeNqNlIF2gyAMRSUD5la7GWZXnf//n3uBIKC2p++cUqq5vCRAu+4ggvLYpfGZJJAGSMeO4vgUGSEanBuStgUemEWL0QEQDYNwMlGeHllIpLOtBHenDDze0sJgllrAziGKHlgUH5bIeVPEsNS+JBolZXv7SsTMG8FK/WDRlhLGvk/TFNMqRG01to2INmBiJYihRnjQzwujLNkvqm2mb0HweiYvMuu6GpmQZolWyHZRZlzscCodSAjBryKDidkgaYUy2Ep0035kBHE+IeJkQnFClCPNjMhpKRFB6BoydL1WkJ0yIlvJWr6PWZmMCFOc7HSLkNgMxQalhIoBIFKIsR13yo3mvPVkoj4VuaafxKxGf3+UO83baZFOY+GgNmh6QQAlBn0btM0XdfK5cTKrkdne0+1NR6YclZheiDl5TYz16OGlGAG52RpJkE+1N4nVDNl4ZhooMQekMLBpjAB5tdHEyuWgXzA9mO2u5G8yidm5MJgFzNJTa1KO3R6JPqeMpie7r0gGLw3Tn0FHF2UA0XJmNJ8hM3M6B3zhnQ4Pyot8T/l1UfO/+5ok/B+M50/N53uHFAAAAABJRU5ErkJggg==" width="51" height="31" alt="">github.com/acme/shop: tf-plan</h1>
+<p class="run">commit <a href="https://github.com/acme/shop/commit/b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0"><code>b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0</code></a> against <code>main</code>, pull request <a href="https://github.com/acme/shop/pull/11">#11</a>, tofu on forge, 2026-10-08T07:58:00.000Z to 2026-10-08T08:00:30.000Z, <a href="https://github.com/acme/shop/actions/runs/9110">job</a><br>1 instances in 1 groups: 1 replace. Change set <code class="digest">jcs1-sha256:085c4cba75ce7c80ec792e03e66390f7fae8e5ca8b531f6f9ff1adf8d92f5688</code></p>
+<p class="notice">Every value a plan marks sensitive is replaced with <code>(sensitive, redacted by terragucci)</code> in the stored plans (0 in this run). Plan digests are taken before that, over the plans as planned.</p>
+<section class="pinned" id="pinned"><h2>Destroys, replacements and refusals (1)</h2><ul><li class="named a-replace"><span class="tag bad">replace</span> <a href="#root-envs/prod/search"><code>envs/prod/search</code></a> <code>module.service.aws_dynamodb_table.records[0]</code> <span class="why">forced by <code>hash_key</code></span> <span class="links"><a href="roots/envs/prod/search/plan.txt">plan</a> <a href="roots/envs/prod/search/plan.json">plan.json</a> <a href="https://github.com/acme/shop/actions/runs/9110">job</a></span></li></ul></section>
+
+<form class="filters" onsubmit="return false"><label>Group <select id="f-group"><option value="">all</option><option value="3c5cc5e65263">3c5cc5e65263 (1)</option></select></label><label>Root <input id="f-root" placeholder="path contains" size="18"></label><label>Action <select id="f-action"><option value="">all</option><option value="replace">replace</option></select></label><span id="shown" class="counts"></span></form>
+
+<h2>Groups (1)</h2>
+<details class="group" id="group-3c5cc5e65263" data-group="3c5cc5e65263" data-roots="module.service.aws_dynamodb_table.records[0]" data-actions="replace" data-wave="" open><summary>Group 3c5cc5e65263: 1 instance of module.service.aws_dynamodb_table.records, change <span class="why">1 destroy or replacement</span></summary><pre class="diff">-/+ module.service.aws_dynamodb_table.records: hash_key</pre><ul><li><code>module.service.aws_dynamodb_table.records[0]</code></li></ul></details>
+<h2>Roots (1)</h2>
+<details class="root" id="root-envs/prod/search" data-root="envs/prod/search" data-group="" data-actions="replace" data-wave="" open><summary><code>envs/prod/search</code> <span class="counts">1 replace</span> <span class="why">replaces, forced by hash_key</span></summary><div class="meta"><span class="links"><a href="roots/envs/prod/search/plan.txt">plan</a> <a href="roots/envs/prod/search/plan.json">plan.json</a> <a href="https://github.com/acme/shop/actions/runs/9110">job</a></span>  <code class="digest">jcs1-sha256:d2090b68b86733ce2002bd08814685d2cbc7e57f582532549aea12bd3e228cf7</code></div><ul class="changes"><li class="change a-replace hl" data-action="replace"><code class="sym">-/+</code> <code>module.service.aws_dynamodb_table.records[0]</code> <span class="why">replaces, forced by hash_key</span><ul class="attrs"><li><code>hash_key</code> &quot;id&quot; -&gt; &quot;sku&quot; <span class="tag bad">forces replacement</span></li></ul></li></ul></details>
+
+
+<section id="tips"><h2>Tips (0)</h2><p class="notice">Advice on how your roots are set up. A tip never fails a run or changes a gate.</p><p>None.</p></section>
+</main>
+<script type="application/json" id="terragucci-report">
+{"schema":"terragucci.report/v1","minor":25,"run":{"project":"github.com/acme/shop","commit":"b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0","base":"main","stage":"tf-plan","binary":"tofu","runtime":"forge","started":"2026-10-08T07:58:00.000Z","finished":"2026-10-08T08:00:30.000Z","job_url":"https://github.com/acme/shop/actions/runs/9110","terragucci":"0.4.4","commit_url":"https://github.com/acme/shop/commit/b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0","pull_request":"11","pull_request_url":"https://github.com/acme/shop/pull/11"},"change_set":"jcs1-sha256:085c4cba75ce7c80ec792e03e66390f7fae8e5ca8b531f6f9ff1adf8d92f5688","unit":"instance","units":1,"totals":{"create":0,"update":0,"replace":1,"delete":0,"read":0,"no-op":3,"forget":0},"groups":[{"id":"3c5cc5e65263","resource":"module.service.aws_dynamodb_table.records","units":["module.service.aws_dynamodb_table.records[0]"],"outlier":false,"noChanges":false,"changes":[{"line":"-/+ module.service.aws_dynamodb_table.records: hash_key","action":"replace","count":1}],"destroys":1,"varies":[],"fold":"open","why":["1 destroy or replacement"]}],"roots":[{"path":"envs/prod/search","status":"planned","plan_digest":"jcs1-sha256:d2090b68b86733ce2002bd08814685d2cbc7e57f582532549aea12bd3e228cf7","counts":{"replace":1,"no-op":3},"plan":{"text":"roots/envs/prod/search/plan.txt","json":"roots/envs/prod/search/plan.json"},"job_url":"https://github.com/acme/shop/actions/runs/9110","changes":[{"address":"module.service.aws_dynamodb_table.records[0]","type":"aws_dynamodb_table","action":"replace","disruption":"destroy","module":"module.service","index":0,"attributes":[{"path":"hash_key","before":"id","after":"sku","forcesReplacement":true}],"replace_paths":[["hash_key"]],"fold":"open","why":"replaces, forced by hash_key"}],"highlights":[{"address":"module.service.aws_dynamodb_table.records[0]","type":"aws_dynamodb_table","action":"replace","why":"replaces, forced by hash_key"}],"fold":"open","why":["replaces, forced by hash_key"]}],"waves":[],"named":[{"root":"envs/prod/search","address":"module.service.aws_dynamodb_table.records[0]","type":"aws_dynamodb_table","action":"replace","replace_paths":[["hash_key"]]}],"holes":[],"redaction":{"marker":"(sensitive, redacted by terragucci)","values":0},"tips":[]}
+</script>
+<script>
+(function(){
+var report=JSON.parse(document.getElementById("terragucci-report").textContent);
+function openTo(id){var el=document.getElementById(id);if(!el)return;for(var p=el;p;p=p.parentElement){if(p.tagName==="DETAILS")p.open=true;}el.scrollIntoView();}
+function onHash(){if(location.hash.length>1)openTo(decodeURIComponent(location.hash.slice(1)));}
+window.addEventListener("hashchange",onHash);onHash();
+var f={group:document.getElementById("f-group"),root:document.getElementById("f-root"),action:document.getElementById("f-action"),wave:document.getElementById("f-wave")};
+function has(list,v){return (" "+(list||"")+" ").indexOf(" "+v+" ")>=0;}
+function apply(){
+var g=f.group.value,r=f.root.value.trim(),a=f.action.value,w=f.wave?f.wave.value:"";
+document.querySelectorAll(".group").forEach(function(el){
+var ok=(!g||el.dataset.group===g)&&(!r||el.dataset.roots.indexOf(r)>=0)&&(!a||has(el.dataset.actions,a))&&(!w||has(el.dataset.wave,w));
+el.classList.toggle("hidden",!ok);});
+document.querySelectorAll(".root").forEach(function(el){
+var ok=(!g||el.dataset.group===g)&&(!r||el.dataset.root.indexOf(r)>=0)&&(!a||has(el.dataset.actions,a))&&(!w||el.dataset.wave===w);
+el.classList.toggle("hidden",!ok);});
+document.getElementById("shown").textContent=document.querySelectorAll(".root:not(.hidden)").length+" of "+report.roots.length+" roots shown";
+}
+Object.keys(f).forEach(function(k){if(f[k])f[k].addEventListener("input",apply);});apply();
+})();
+</script>
+</body>
+</html>

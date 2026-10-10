@@ -1,0 +1,97 @@
+{
+  "schema": "terragucci.report/v1",
+  "minor": 25,
+  "run": {
+    "project": "github.com/acme/shop",
+    "commit": "c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1",
+    "base": "main",
+    "stage": "tf-plan",
+    "binary": "tofu",
+    "runtime": "forge",
+    "started": "2026-10-08T08:58:00.000Z",
+    "finished": "2026-10-08T09:00:20.000Z",
+    "job_url": "https://github.com/acme/shop/actions/runs/9120",
+    "terragucci": "0.4.4",
+    "commit_url": "https://github.com/acme/shop/commit/c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1",
+    "pull_request": "12",
+    "pull_request_url": "https://github.com/acme/shop/pull/12"
+  },
+  "change_set": "jcs1-sha256:7c2660cd42277865a1193ecd5fcc1dbb3a8b9ed7fc3ee657be326a972290df43",
+  "unit": "instance",
+  "units": 1,
+  "totals": {
+    "create": 0,
+    "update": 1,
+    "replace": 0,
+    "delete": 0,
+    "read": 0,
+    "no-op": 3,
+    "forget": 0
+  },
+  "groups": [
+    {
+      "id": "5c5c905dd6a9",
+      "resource": "module.service.aws_sqs_queue.jobs",
+      "units": [
+        "module.service.aws_sqs_queue.jobs"
+      ],
+      "outlier": false,
+      "noChanges": false,
+      "changes": [
+        {
+          "line": "~ module.service.aws_sqs_queue.jobs: message_retention_seconds",
+          "action": "update",
+          "count": 1
+        }
+      ],
+      "destroys": 0,
+      "varies": [],
+      "fold": "folded",
+      "why": []
+    }
+  ],
+  "roots": [
+    {
+      "path": "envs/dev/orders",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:2caa4477da13f46183f01065c8f00f720218b24b3acf15cdc49652b5140ef5cf",
+      "counts": {
+        "no-op": 3,
+        "update": 1
+      },
+      "plan": {
+        "text": "roots/envs/dev/orders/plan.txt",
+        "json": "roots/envs/dev/orders/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9120",
+      "changes": [
+        {
+          "address": "module.service.aws_sqs_queue.jobs",
+          "type": "aws_sqs_queue",
+          "action": "update",
+          "disruption": "in-place",
+          "module": "module.service",
+          "attributes": [
+            {
+              "path": "message_retention_seconds",
+              "before": 345600,
+              "after": 604800
+            }
+          ],
+          "fold": "open"
+        }
+      ],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    }
+  ],
+  "waves": [],
+  "named": [],
+  "holes": [],
+  "redaction": {
+    "marker": "(sensitive, redacted by terragucci)",
+    "values": 0
+  },
+  "tips": []
+}

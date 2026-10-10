@@ -12,6 +12,7 @@ import { createRefreshQueue } from "./refresh-queue.js";
 import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine } from "./view-url.js";
 import { readEmbed, selectMessage, viewFromMessage } from "./embed.js";
 import { gateCards } from "./workspace-gates.js";
+import { cornerOf, estateLine, hrefOf as tgHref, legend as tgLegend, markLine, rootRows as tgRootRows, waveCards } from "./terragucci.js";
 import { seconds, whyQuery, whyView } from "./why.js";
 import { readCostLine } from "./read-cost.js";
 import { applyMemberFrame, pendingLine, stillPending } from "./pending.js";
@@ -881,6 +882,27 @@ function inspect(node) {
   // the graph node itself, no diff fetch needed.
   if (node.runtimeOwner) id("runtime owner", node.runtimeOwner);
   if (node.sourceLoc && node.sourceLoc.file) id("source", node.sourceLoc.file);
+
+  // #490: what terragucci's reports found about this card, each dated and
+  // linked to its run. Not a status: the card's fill says nothing about it.
+  const tgMarks = tgAnswer && tgAnswer.cards && tgAnswer.cards[node.id];
+  if (tgMarks && tgMarks.length) {
+    const h = document.createElement("h3");
+    h.textContent = "terragucci reports (not live)";
+    panel.appendChild(h);
+    const now = new Date();
+    for (const m of tgMarks) {
+      const p = document.createElement("p");
+      p.className = "tg-inspect";
+      p.textContent = markLine(m, now) + " ";
+      p.title = m.addresses.join("\n");
+      p.appendChild(tgLink("report", tgHref(tgAnswer, m.run.report)));
+      if (m.run.job_url) p.append(" · ", tgLink("job", m.run.job_url));
+      if (m.run.pull_request_url) p.append(" · ", tgLink(`PR #${m.run.pull_request}`, m.run.pull_request_url));
+      if (m.run.trace_url) p.append(" · ", tgLink("trace", m.run.trace_url));
+      panel.appendChild(p);
+    }
+  }
 
   // Containment hierarchy: a resource shows its parent chain UP (composite →
   // component); a collapsed composite (detail 1: `attrs.members` is a count)
@@ -3194,6 +3216,166 @@ function markDriftedCards(ir) {
   }
 }
 
+// --- #490: a terragucci estate, painted from its reports ----------------------
+// /api/terragucci answers each root's newest plan, drift and apply run, the
+// cards they flag and the waves waiting for an approval. Marks are dated
+// corner glyphs, never a fill: the fill is the live-status channel, and none
+// of this is live. A waiting wave offers its approve line to copy, no button.
+let tgAnswer = null;
+let tgHost = null;
+async function initTerragucci() {
+  const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
+  if (!project.terragucciReports) return;
+  await loadTerragucci();
+}
+async function loadTerragucci({ fresh = false } = {}) {
+  const answer = await apiFetch(`/api/terragucci${fresh ? "?fresh=1" : ""}`)
+    .then((r) => r.json())
+    .catch((e) => ({ error: String(e), code: "terragucci-report", remedy: "" }));
+  tgAnswer = answer;
+  renderTerragucciPanel();
+  markTerragucciCards();
+}
+function markTerragucciCards() {
+  const svg = document.querySelector("#graph svg");
+  if (!svg || !tgAnswer || !tgAnswer.cards) return;
+  const now = new Date();
+  for (const [id, marks] of Object.entries(tgAnswer.cards)) {
+    const g = svg.querySelector('[data-node-id="' + CSS.escape(id) + '"]');
+    if (!g || g.querySelector('[data-tg-mark="1"]')) continue;
+    const corner = cornerOf(marks);
+    g.classList.add("tg-marked", `tg-${corner.tone}`);
+    const rect = g.querySelector("rect");
+    const box = rect && rect.getBBox ? rect.getBBox() : null;
+    const tag = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    tag.setAttribute("data-tg-mark", "1");
+    tag.setAttribute("x", String((box ? box.x + box.width : 150) - 10));
+    tag.setAttribute("y", String((box ? box.y + box.height : 60) - 9));
+    tag.setAttribute("text-anchor", "end");
+    tag.setAttribute("font-size", "11");
+    tag.setAttribute("font-weight", "600");
+    tag.setAttribute("fill", corner.tone === "drift" ? "var(--degraded)" : corner.tone === "wave" ? "var(--pending)" : "var(--muted)");
+    tag.textContent = `${corner.text} · ${markAge(marks)}`;
+    const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    title.textContent = marks.map((m) => markLine(m, now)).join("\n") + "\n(from terragucci reports, not live: the Terragucci tab links each run)";
+    g.append(title, tag);
+  }
+}
+function markAge(marks) {
+  const newest = marks.map((m) => m.run.finished).sort().pop();
+  const s = Math.max(0, (Date.now() - Date.parse(newest)) / 1000);
+  return s < 3600 ? `${Math.max(1, Math.round(s / 60))}m` : s < 172800 ? `${Math.round(s / 3600)}h` : `${Math.round(s / 86400)}d`;
+}
+function tgLink(text, href) {
+  const a = document.createElement("a");
+  a.textContent = text;
+  a.href = href;
+  a.target = "_blank";
+  a.rel = "noopener";
+  return a;
+}
+function renderTerragucciPanel() {
+  if (!tgHost) {
+    tgHost = addPanelTab("terragucci", "Terragucci", "What terragucci's reports found: each root's newest drift check, plan and apply wave, dated. Not live.");
+    if (!tgHost) return;
+    tgHost.id = "tab-terragucci";
+  }
+  const host = tgHost;
+  host.replaceChildren();
+  const a = tgAnswer;
+  if (!a || a.error) {
+    const err = document.createElement("div");
+    err.className = "tg-refusal";
+    err.textContent = a ? a.error : "terragucci reports not read";
+    if (a && a.remedy) err.title = a.remedy;
+    const fix = document.createElement("div");
+    fix.className = "tg-legend";
+    fix.textContent = (a && a.remedy) || "";
+    host.append(err, fix);
+    return;
+  }
+  const now = new Date();
+  const head = document.createElement("div");
+  head.className = "tg-legend";
+  const lg = tgLegend(a, now);
+  head.textContent = lg.text;
+  head.title = lg.title;
+  host.appendChild(head);
+  const est = estateLine(a);
+  if (est) {
+    const line = document.createElement("div");
+    line.className = "tg-estate";
+    line.appendChild(tgLink(est.text, est.href));
+    host.appendChild(line);
+  }
+  for (const w of waveCards(a, now)) {
+    const box = document.createElement("div");
+    box.className = "ws-gate tg-wave";
+    const title = document.createElement("div");
+    title.className = "ws-gate-title";
+    title.textContent = w.title;
+    const facts = document.createElement("div");
+    facts.className = "ws-gate-facts";
+    facts.textContent = w.facts;
+    box.append(title, facts);
+    for (const d of w.destroys) {
+      const row = document.createElement("div");
+      row.className = "ws-gate-note";
+      row.textContent = `destroys ${d}`;
+      box.appendChild(row);
+    }
+    const cmd = document.createElement("code");
+    cmd.className = "tg-command";
+    cmd.textContent = w.command;
+    const copy = button("Copy", "", () => copyToClipboard(w.command, copy));
+    copy.title = "Copy the line. Run it at your shell: the approval is yours, signed, in git.";
+    const note = document.createElement("div");
+    note.className = "ws-gate-note";
+    note.textContent = w.note;
+    const links = document.createElement("div");
+    links.className = "ws-gate-note";
+    links.appendChild(tgLink("report", w.report));
+    if (w.job) links.append(" · ", tgLink("job", w.job));
+    box.append(cmd, copy, note, links);
+    host.appendChild(box);
+  }
+  for (const r of tgRootRows(a, now)) {
+    const row = document.createElement("div");
+    row.className = "tg-root";
+    const path = document.createElement("div");
+    path.className = "tg-path";
+    path.textContent = r.path;
+    path.title = `${r.member}/${r.name}`;
+    const cells = document.createElement("div");
+    cells.className = "tg-cells";
+    for (const k of ["drift", "plan", "apply"]) {
+      const span = document.createElement("span");
+      span.className = `tg-${r[k].tone}`;
+      span.dataset.stage = k;
+      if (r[k].href) span.appendChild(tgLink(r[k].text, r[k].href));
+      else span.textContent = r[k].text;
+      if (r[k].title) span.title = r[k].title;
+      cells.appendChild(span);
+    }
+    row.append(path, cells);
+    host.appendChild(row);
+  }
+  if (a.unmatched && (a.unmatched.roots.length || a.unmatched.changes.length)) {
+    const um = document.createElement("div");
+    um.className = "tg-legend";
+    um.textContent = [
+      a.unmatched.roots.length ? `reported roots this checkout does not declare: ${a.unmatched.roots.join(", ")}` : "",
+      a.unmatched.changes.length ? `changes no card is: ${a.unmatched.changes.map((c) => `${c.root}: ${c.address}`).join(", ")}` : "",
+    ].filter(Boolean).join(" · ");
+    host.appendChild(um);
+  }
+  if (!staticMode) {
+    const again = button("Read the reports again", "", () => loadTerragucci({ fresh: true }));
+    host.appendChild(again);
+  }
+}
+initTerragucci();
+
 function renderPanelCarve() {
   if (!carveMode()) return;
   if (!carveHost) {
@@ -4098,6 +4280,7 @@ function render(ir, svg, m) {
   markOperatorCards(ir); // #234 free rider: same, for the operating loop's home
   markDriftedCards(ir); // #404: same, for a bound card the plan would change — after the carve/operator stamps, so it can see and yield to them
   markPendingCards(ir); // #422: and the cards whose member has not answered yet
+  markTerragucciCards(); // #490: and what terragucci's reports found, dated
   applyLayout(); // #228: last, so the hand-placed deltas ride on top of every other pass
   renderDial();
 }

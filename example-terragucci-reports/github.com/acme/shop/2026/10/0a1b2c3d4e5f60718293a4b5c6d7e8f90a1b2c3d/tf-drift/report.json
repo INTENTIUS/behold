@@ -1,0 +1,308 @@
+{
+  "schema": "terragucci.report/v1",
+  "minor": 25,
+  "run": {
+    "project": "github.com/acme/shop",
+    "commit": "0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d",
+    "base": "main",
+    "stage": "tf-drift",
+    "binary": "tofu",
+    "runtime": "forge",
+    "started": "2026-10-07T06:00:00.000Z",
+    "finished": "2026-10-07T06:04:00.000Z",
+    "job_url": "https://github.com/acme/shop/actions/runs/9001",
+    "terragucci": "0.4.4",
+    "commit_url": "https://github.com/acme/shop/commit/0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d"
+  },
+  "change_set": "jcs1-sha256:e06c2f4e930d0f05678e94df50aeb07ba3b50be1229cfee48b182ec5f4934ef2",
+  "unit": "member",
+  "units": 15,
+  "totals": {
+    "create": 0,
+    "update": 0,
+    "replace": 0,
+    "delete": 0,
+    "read": 0,
+    "no-op": 0,
+    "forget": 0
+  },
+  "groups": [
+    {
+      "id": "49648f9475c7",
+      "units": [
+        "envs/dev/email",
+        "envs/dev/orders",
+        "envs/dev/payments",
+        "envs/dev/platform",
+        "envs/dev/search",
+        "envs/prod/email",
+        "envs/prod/orders",
+        "envs/prod/payments",
+        "envs/prod/platform",
+        "envs/prod/search",
+        "envs/staging/email",
+        "envs/staging/orders",
+        "envs/staging/payments",
+        "envs/staging/platform",
+        "envs/staging/search"
+      ],
+      "outlier": false,
+      "noChanges": true,
+      "changes": [],
+      "destroys": 0,
+      "varies": [],
+      "fold": "folded",
+      "why": []
+    }
+  ],
+  "roots": [
+    {
+      "path": "envs/dev/email",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/dev/email/plan.txt",
+        "json": "roots/envs/dev/email/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9001",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/dev/orders",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/dev/orders/plan.txt",
+        "json": "roots/envs/dev/orders/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9001",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/dev/payments",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/dev/payments/plan.txt",
+        "json": "roots/envs/dev/payments/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9001",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/dev/platform",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/dev/platform/plan.txt",
+        "json": "roots/envs/dev/platform/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9001",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/dev/search",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/dev/search/plan.txt",
+        "json": "roots/envs/dev/search/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9001",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/prod/email",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/prod/email/plan.txt",
+        "json": "roots/envs/prod/email/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9001",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/prod/orders",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/prod/orders/plan.txt",
+        "json": "roots/envs/prod/orders/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9001",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/prod/payments",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/prod/payments/plan.txt",
+        "json": "roots/envs/prod/payments/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9001",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/prod/platform",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/prod/platform/plan.txt",
+        "json": "roots/envs/prod/platform/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9001",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/prod/search",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/prod/search/plan.txt",
+        "json": "roots/envs/prod/search/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9001",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/staging/email",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/staging/email/plan.txt",
+        "json": "roots/envs/staging/email/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9001",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/staging/orders",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/staging/orders/plan.txt",
+        "json": "roots/envs/staging/orders/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9001",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/staging/payments",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/staging/payments/plan.txt",
+        "json": "roots/envs/staging/payments/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9001",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/staging/platform",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/staging/platform/plan.txt",
+        "json": "roots/envs/staging/platform/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9001",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    },
+    {
+      "path": "envs/staging/search",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:7fc6c31e59dbac13dc7a09e9cbd51b0d7df244f03841a2cafffe14b23ba9e804",
+      "counts": {},
+      "group": "49648f9475c7",
+      "plan": {
+        "text": "roots/envs/staging/search/plan.txt",
+        "json": "roots/envs/staging/search/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9001",
+      "changes": [],
+      "highlights": [],
+      "fold": "folded",
+      "why": []
+    }
+  ],
+  "waves": [],
+  "named": [],
+  "holes": [],
+  "redaction": {
+    "marker": "(sensitive, redacted by terragucci)",
+    "values": 0
+  },
+  "tips": []
+}

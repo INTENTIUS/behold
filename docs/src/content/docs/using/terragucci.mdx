@@ -1,0 +1,114 @@
+---
+title: Look at a terragucci estate
+description: Every root of a terragucci repo as one graph, marked with what the pipeline last found. Local, read-only, dated.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+[terragucci](https://intentius.io/terragucci/) plans, applies and checks
+drift for a Terraform or OpenTofu repo in your CI, and keeps every run's
+report in a bucket. behold reads those reports and draws the repo's roots as
+one graph, each card marked with what the newest run found about it.
+
+```sh
+npx @intentius/behold serve . --terragucci s3://acme-terragucci-reports
+npx @intentius/behold serve . --terragucci ./reports         # an `aws s3 sync` of the prefix
+npx @intentius/behold serve . --terragucci https://reports.example.com
+```
+
+Nothing new runs in your CI and nothing is hosted. behold runs on your laptop,
+reads the checkout for the graph and the bucket for the verdicts, and reads no
+cloud. Serve the repo's root: its `chant.workspace.json` declares no members
+(terragucci writes one for its gates), so behold reads the Terraform roots in
+the directory.
+
+## What it reads
+
+Three keys from terragucci's [reports bucket](https://intentius.io/terragucci/reference/reports-bucket/), each with one GET and never with a list:
+
+| Key | What behold takes from it |
+|---|---|
+| `index.json` | every run, newest first, and the directory of each |
+| `<run>/report.json` | for each root, the newest `tf-plan` and `tf-drift` run that planned it, and the newest `tf-apply` wave that held it |
+| `estate.json` | the counts and the waiting waves, as terragucci's estate page shows them |
+
+With an `s3://` source, behold reads each key with your own `aws s3 cp <key> -`,
+so it uses your shell's profile and region. A read-only identity needs
+`GetObject` on `<prefix>/*index.json`, `<prefix>/*/report.json` and
+`<prefix>/estate.json`, the same policy terragucci's estate job has.
+
+When `@intentius/terragucci` is installed beside behold or in the repo, every
+document is checked against the JSON Schemas it ships. Without it, behold checks
+the schema id and the fields it reads, and refuses anything else with
+`code: "terragucci-report"` and what to do.
+
+## What a mark means
+
+A mark is what one run found, when that run finished, and where its report is:
+
+- **⚠ drift**: the newest drift check found the resource changed outside Terraform, deleted outside Terraform, or existing outside the state.
+- **~ plan**: the newest plan that holds the root would change the resource. The pull request is named.
+- **⏸ wave**: a `tf-apply` wave holding the resource waits for an approval and would change it once approved.
+
+Each card's corner says how old its newest mark is. Clicking the card lists
+every mark in the inspect pane, worded the way terragucci words it ("drift
+found 06:04 UTC, 4h ago: deleted outside Terraform"), with links to the run's
+report, job, pull request and trace. The **Terragucci** tab lists every root:
+its newest drift check, plan and apply wave, or "no report" when no run holds
+it, which is not the same as "no changes".
+
+<Aside type="caution" title="Never a live green">
+A mark is never a fill. The fill is behold's live-status channel, and nothing
+here is live: a report is what a run saw when it ran. A card no report flags
+is left as it is. Read it as "the reports say nothing about this card", not
+as "this card is fine".
+</Aside>
+
+Report pages open through behold, which reads them from the same source, so a
+link works for a private bucket too. They are served sandboxed.
+
+## Waiting waves
+
+A wave waiting for an approval appears as a gate card in the Terragucci tab:
+the roots it holds, what its kept report says it destroys or replaces, how long
+it has waited, and the line to run:
+
+```sh
+npx terragucci approve wave-2 --plan jcs1-sha256:2e0f…
+```
+
+There is no approve button. An approval is a git record on `chant/lifecycle`,
+bound to the wave's plan digest and, under `approval: sealed`, signed with your
+key, so it is made at your shell. On a terragucci repo behold refuses every
+write it otherwise offers (Deploy, Op runs, approvals, pipeline dispatch,
+rollback): the pipeline is the only way to apply.
+
+## The counts are terragucci's
+
+When the source holds `estate.json`, the drifted, failed and waiting counts
+behold shows are the estate page's own, and the tab links `estate.html`. behold
+never counts them again, so the two never disagree. behold owns the resource
+graph: which resources, in which roots, drifted or will change.
+
+## Several projects in one bucket
+
+A bucket prefix can hold many repos' runs. behold picks the project named by
+the checkout's git remote (`github.com/acme/infra`). If the index holds several
+and none is this checkout, it asks for one:
+
+```sh
+npx @intentius/behold serve . --terragucci s3://acme-reports --terragucci-project github.com/acme/infra
+```
+
+## Try it on terragucci's example
+
+behold ships a reports bucket for terragucci's own example estate, written by
+terragucci's code (`example-terragucci-reports/` in behold's repo, whose README
+lists the runs). From a terragucci checkout:
+
+```sh
+npx @intentius/behold serve example --terragucci <behold>/example-terragucci-reports
+```
+
+It shows a drift on staging orders' jobs queue, two pull requests' plans, a
+failed drift check on prod payments, and wave 2 waiting with a destroy.

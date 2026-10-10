@@ -1,0 +1,9 @@
+1 instance: 1 group, 1 destroy or replacement.
+
+Destroys and replacements (1):
+  envs/prod/search: module.service.aws_dynamodb_table.records[0] (replace)
+
+Group 3c5cc5e65263: 1 instance of module.service.aws_dynamodb_table.records, change:
+    -/+ module.service.aws_dynamodb_table.records: hash_key
+  instances: module.service.aws_dynamodb_table.records[0]
+  destroys and replacements: 1, listed above

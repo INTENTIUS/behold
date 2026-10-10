@@ -1,0 +1,874 @@
+{
+  "nodes": [
+    {
+      "id": "tg-example/envs-dev-email/data.terraform_remote_state.platform",
+      "kind": "terraform_remote_state",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-email",
+        "address": "data.terraform_remote_state.platform",
+        "block": "data"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-email/module.service",
+      "kind": "module",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-email",
+        "address": "module.service",
+        "block": "module"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-email/module.service/aws_dynamodb_table.records",
+      "kind": "aws_dynamodb_table",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-email",
+        "address": "aws_dynamodb_table.records",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-email/module.service/aws_s3_bucket.files",
+      "kind": "aws_s3_bucket",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-email",
+        "address": "aws_s3_bucket.files",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-email/module.service/aws_s3_object.registration",
+      "kind": "aws_s3_object",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-email",
+        "address": "aws_s3_object.registration",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-email/module.service/aws_sqs_queue.dead_letter",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-email",
+        "address": "aws_sqs_queue.dead_letter",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-email/module.service/aws_sqs_queue.jobs",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-email",
+        "address": "aws_sqs_queue.jobs",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-orders/data.terraform_remote_state.platform",
+      "kind": "terraform_remote_state",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-orders",
+        "address": "data.terraform_remote_state.platform",
+        "block": "data"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-orders/module.service",
+      "kind": "module",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-orders",
+        "address": "module.service",
+        "block": "module"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-orders/module.service/aws_dynamodb_table.records",
+      "kind": "aws_dynamodb_table",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-orders",
+        "address": "aws_dynamodb_table.records",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-orders/module.service/aws_s3_bucket.files",
+      "kind": "aws_s3_bucket",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-orders",
+        "address": "aws_s3_bucket.files",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-orders/module.service/aws_s3_object.registration",
+      "kind": "aws_s3_object",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-orders",
+        "address": "aws_s3_object.registration",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-orders/module.service/aws_sqs_queue.dead_letter",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-orders",
+        "address": "aws_sqs_queue.dead_letter",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-orders/module.service/aws_sqs_queue.jobs",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-orders",
+        "address": "aws_sqs_queue.jobs",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-payments/data.terraform_remote_state.platform",
+      "kind": "terraform_remote_state",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-payments",
+        "address": "data.terraform_remote_state.platform",
+        "block": "data"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-payments/module.service",
+      "kind": "module",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-payments",
+        "address": "module.service",
+        "block": "module"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-payments/module.service/aws_dynamodb_table.records",
+      "kind": "aws_dynamodb_table",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-payments",
+        "address": "aws_dynamodb_table.records",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-payments/module.service/aws_s3_bucket.files",
+      "kind": "aws_s3_bucket",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-payments",
+        "address": "aws_s3_bucket.files",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-payments/module.service/aws_s3_object.registration",
+      "kind": "aws_s3_object",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-payments",
+        "address": "aws_s3_object.registration",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-payments/module.service/aws_sqs_queue.dead_letter",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-payments",
+        "address": "aws_sqs_queue.dead_letter",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-payments/module.service/aws_sqs_queue.jobs",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-payments",
+        "address": "aws_sqs_queue.jobs",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-platform/aws_s3_bucket.logs",
+      "kind": "aws_s3_bucket",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-platform",
+        "address": "aws_s3_bucket.logs",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-search/data.terraform_remote_state.platform",
+      "kind": "terraform_remote_state",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-search",
+        "address": "data.terraform_remote_state.platform",
+        "block": "data"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-search/module.service",
+      "kind": "module",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-search",
+        "address": "module.service",
+        "block": "module"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-search/module.service/aws_dynamodb_table.records",
+      "kind": "aws_dynamodb_table",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-search",
+        "address": "aws_dynamodb_table.records",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-search/module.service/aws_s3_bucket.files",
+      "kind": "aws_s3_bucket",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-search",
+        "address": "aws_s3_bucket.files",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-search/module.service/aws_s3_object.registration",
+      "kind": "aws_s3_object",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-search",
+        "address": "aws_s3_object.registration",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-search/module.service/aws_sqs_queue.dead_letter",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-search",
+        "address": "aws_sqs_queue.dead_letter",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-dev-search/module.service/aws_sqs_queue.jobs",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-dev-search",
+        "address": "aws_sqs_queue.jobs",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-email/data.terraform_remote_state.platform",
+      "kind": "terraform_remote_state",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-email",
+        "address": "data.terraform_remote_state.platform",
+        "block": "data"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-email/module.service",
+      "kind": "module",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-email",
+        "address": "module.service",
+        "block": "module"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-email/module.service/aws_dynamodb_table.records",
+      "kind": "aws_dynamodb_table",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-email",
+        "address": "aws_dynamodb_table.records",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-email/module.service/aws_s3_bucket.files",
+      "kind": "aws_s3_bucket",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-email",
+        "address": "aws_s3_bucket.files",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-email/module.service/aws_s3_object.registration",
+      "kind": "aws_s3_object",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-email",
+        "address": "aws_s3_object.registration",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-email/module.service/aws_sqs_queue.dead_letter",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-email",
+        "address": "aws_sqs_queue.dead_letter",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-email/module.service/aws_sqs_queue.jobs",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-email",
+        "address": "aws_sqs_queue.jobs",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-orders/data.terraform_remote_state.platform",
+      "kind": "terraform_remote_state",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-orders",
+        "address": "data.terraform_remote_state.platform",
+        "block": "data"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-orders/module.service",
+      "kind": "module",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-orders",
+        "address": "module.service",
+        "block": "module"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-orders/module.service/aws_dynamodb_table.records",
+      "kind": "aws_dynamodb_table",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-orders",
+        "address": "aws_dynamodb_table.records",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-orders/module.service/aws_s3_bucket.files",
+      "kind": "aws_s3_bucket",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-orders",
+        "address": "aws_s3_bucket.files",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-orders/module.service/aws_s3_object.registration",
+      "kind": "aws_s3_object",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-orders",
+        "address": "aws_s3_object.registration",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-orders/module.service/aws_sqs_queue.dead_letter",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-orders",
+        "address": "aws_sqs_queue.dead_letter",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-orders/module.service/aws_sqs_queue.jobs",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-orders",
+        "address": "aws_sqs_queue.jobs",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-payments/data.terraform_remote_state.platform",
+      "kind": "terraform_remote_state",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-payments",
+        "address": "data.terraform_remote_state.platform",
+        "block": "data"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-payments/module.service",
+      "kind": "module",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-payments",
+        "address": "module.service",
+        "block": "module"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-payments/module.service/aws_dynamodb_table.records",
+      "kind": "aws_dynamodb_table",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-payments",
+        "address": "aws_dynamodb_table.records",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-payments/module.service/aws_s3_bucket.files",
+      "kind": "aws_s3_bucket",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-payments",
+        "address": "aws_s3_bucket.files",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-payments/module.service/aws_s3_object.registration",
+      "kind": "aws_s3_object",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-payments",
+        "address": "aws_s3_object.registration",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-payments/module.service/aws_sqs_queue.dead_letter",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-payments",
+        "address": "aws_sqs_queue.dead_letter",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-payments/module.service/aws_sqs_queue.jobs",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-payments",
+        "address": "aws_sqs_queue.jobs",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-platform/aws_s3_bucket.logs",
+      "kind": "aws_s3_bucket",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-platform",
+        "address": "aws_s3_bucket.logs",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-search/data.terraform_remote_state.platform",
+      "kind": "terraform_remote_state",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-search",
+        "address": "data.terraform_remote_state.platform",
+        "block": "data"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-search/module.service",
+      "kind": "module",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-search",
+        "address": "module.service",
+        "block": "module"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-search/module.service/aws_dynamodb_table.records",
+      "kind": "aws_dynamodb_table",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-search",
+        "address": "aws_dynamodb_table.records",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-search/module.service/aws_s3_bucket.files",
+      "kind": "aws_s3_bucket",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-search",
+        "address": "aws_s3_bucket.files",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-search/module.service/aws_s3_object.registration",
+      "kind": "aws_s3_object",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-search",
+        "address": "aws_s3_object.registration",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-search/module.service/aws_sqs_queue.dead_letter",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-search",
+        "address": "aws_sqs_queue.dead_letter",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-prod-search/module.service/aws_sqs_queue.jobs",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-prod-search",
+        "address": "aws_sqs_queue.jobs",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-email/data.terraform_remote_state.platform",
+      "kind": "terraform_remote_state",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-email",
+        "address": "data.terraform_remote_state.platform",
+        "block": "data"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-email/module.service",
+      "kind": "module",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-email",
+        "address": "module.service",
+        "block": "module"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-email/module.service/aws_dynamodb_table.records",
+      "kind": "aws_dynamodb_table",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-email",
+        "address": "aws_dynamodb_table.records",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-email/module.service/aws_s3_bucket.files",
+      "kind": "aws_s3_bucket",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-email",
+        "address": "aws_s3_bucket.files",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-email/module.service/aws_s3_object.registration",
+      "kind": "aws_s3_object",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-email",
+        "address": "aws_s3_object.registration",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-email/module.service/aws_sqs_queue.dead_letter",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-email",
+        "address": "aws_sqs_queue.dead_letter",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-email/module.service/aws_sqs_queue.jobs",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-email",
+        "address": "aws_sqs_queue.jobs",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-orders/data.terraform_remote_state.platform",
+      "kind": "terraform_remote_state",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-orders",
+        "address": "data.terraform_remote_state.platform",
+        "block": "data"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-orders/module.service",
+      "kind": "module",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-orders",
+        "address": "module.service",
+        "block": "module"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-orders/module.service/aws_dynamodb_table.records",
+      "kind": "aws_dynamodb_table",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-orders",
+        "address": "aws_dynamodb_table.records",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-orders/module.service/aws_s3_bucket.files",
+      "kind": "aws_s3_bucket",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-orders",
+        "address": "aws_s3_bucket.files",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-orders/module.service/aws_s3_object.registration",
+      "kind": "aws_s3_object",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-orders",
+        "address": "aws_s3_object.registration",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-orders/module.service/aws_sqs_queue.dead_letter",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-orders",
+        "address": "aws_sqs_queue.dead_letter",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-orders/module.service/aws_sqs_queue.jobs",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-orders",
+        "address": "aws_sqs_queue.jobs",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-payments/data.terraform_remote_state.platform",
+      "kind": "terraform_remote_state",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-payments",
+        "address": "data.terraform_remote_state.platform",
+        "block": "data"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-payments/module.service",
+      "kind": "module",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-payments",
+        "address": "module.service",
+        "block": "module"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-payments/module.service/aws_dynamodb_table.records",
+      "kind": "aws_dynamodb_table",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-payments",
+        "address": "aws_dynamodb_table.records",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-payments/module.service/aws_s3_bucket.files",
+      "kind": "aws_s3_bucket",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-payments",
+        "address": "aws_s3_bucket.files",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-payments/module.service/aws_s3_object.registration",
+      "kind": "aws_s3_object",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-payments",
+        "address": "aws_s3_object.registration",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-payments/module.service/aws_sqs_queue.dead_letter",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-payments",
+        "address": "aws_sqs_queue.dead_letter",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-payments/module.service/aws_sqs_queue.jobs",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-payments",
+        "address": "aws_sqs_queue.jobs",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-platform/aws_s3_bucket.logs",
+      "kind": "aws_s3_bucket",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-platform",
+        "address": "aws_s3_bucket.logs",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-search/data.terraform_remote_state.platform",
+      "kind": "terraform_remote_state",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-search",
+        "address": "data.terraform_remote_state.platform",
+        "block": "data"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-search/module.service",
+      "kind": "module",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-search",
+        "address": "module.service",
+        "block": "module"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-search/module.service/aws_dynamodb_table.records",
+      "kind": "aws_dynamodb_table",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-search",
+        "address": "aws_dynamodb_table.records",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-search/module.service/aws_s3_bucket.files",
+      "kind": "aws_s3_bucket",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-search",
+        "address": "aws_s3_bucket.files",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-search/module.service/aws_s3_object.registration",
+      "kind": "aws_s3_object",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-search",
+        "address": "aws_s3_object.registration",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-search/module.service/aws_sqs_queue.dead_letter",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-search",
+        "address": "aws_sqs_queue.dead_letter",
+        "block": "resource"
+      }
+    },
+    {
+      "id": "tg-example/envs-staging-search/module.service/aws_sqs_queue.jobs",
+      "kind": "aws_sqs_queue",
+      "lexicon": "terraform",
+      "attrs": {
+        "root": "envs-staging-search",
+        "address": "aws_sqs_queue.jobs",
+        "block": "resource"
+      }
+    }
+  ]
+}

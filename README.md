@@ -383,6 +383,27 @@ A host that already watches the workspace tells behold it changed with
 `POST /api/refresh?notify=1`, instead of running behold with `--poll` beside
 it. behold drops its cached reads and every open page re-pulls.
 
+## A terragucci estate, from its reports: `--terragucci`
+
+```sh
+npx @intentius/behold serve . --terragucci s3://acme-terragucci-reports   # or a synced dir, or an https address
+```
+
+In a [terragucci](https://intentius.io/terragucci/) repo, behold draws every
+root from the checkout and marks each card with what terragucci's newest runs
+found: the newest `tf-drift` and `tf-plan` report per root (one GET of
+`index.json`, then one of each run's `report.json`), and the waves waiting for
+an approval. Every mark is dated by its run and links its report and job
+("drift found 06:04 UTC, 4h ago"); none is a fill, and nothing is read from a
+cloud. Counts and waiting waves come from `estate.json` when the source has
+one, so behold agrees with terragucci's estate page and links it. A waiting
+wave offers `npx terragucci approve wave-<k> --plan <digest>` to copy; there is
+no approve button, and every behold write refuses on a terragucci repo.
+Documents are checked against terragucci's JSON Schemas when
+`@intentius/terragucci` is installed, structurally otherwise. Full page:
+docs `using/terragucci`. `example-terragucci-reports/` is a bucket for
+terragucci's own example, written by terragucci's code.
+
 ## Terraform carve-out: `behold carve <report.json>`
 
 `chant carve advise` ranks a Terraform estate by **peelability**: how cleanly

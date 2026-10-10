@@ -1,0 +1,250 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://intentius.io/terragucci/schemas/estate/v1/estate.schema.json",
+  "title": "terragucci.estate/v1",
+  "description": "estate.json at the top of a reports prefix, which terragucci estate builds from every project's index.json, inventory.json and changes.json. Within v1 fields are only added, and an existing field never changes meaning.",
+  "type": "object",
+  "required": ["schema", "generated", "totals", "projects", "recent"],
+  "properties": {
+    "schema": { "const": "terragucci.estate/v1" },
+    "generated": { "type": "string", "description": "When the page was built, ISO 8601. Every age on it is as of this time." },
+    "totals": {
+      "type": "object",
+      "required": ["projects", "waiting", "drifted_projects", "drifted_roots", "failed_roots", "unreadable"],
+      "properties": {
+        "projects": { "type": "integer" },
+        "waiting": { "type": "integer", "description": "Waves waiting for an approval." },
+        "drifted_projects": { "type": "integer" },
+        "drifted_roots": { "type": "integer" },
+        "failed_roots": { "type": "integer" },
+        "unreadable": { "type": "integer", "description": "Projects whose index could not be read." },
+        "overridden_roots": { "type": "integer", "description": "Roots the newest apply waves applied under a policy override. Absent when none." },
+        "resources": { "type": "integer", "description": "Resources across every project's inventory. Absent when no project has one." }
+      }
+    },
+    "projects": { "type": "array", "items": { "$ref": "#/$defs/project" } },
+    "recent": { "type": "array", "description": "The 20 newest runs across every project, newest first.", "items": { "$ref": "#/$defs/run" } },
+    "audit": {
+      "type": "object",
+      "description": "The audit trail beside the page, when terragucci audit wrote one.",
+      "required": ["page", "entries", "generated"],
+      "properties": {
+        "page": { "type": "string" },
+        "entries": { "type": "integer" },
+        "generated": { "type": "string" }
+      }
+    },
+    "history": {
+      "type": "object",
+      "description": "The resource history beside the page (history.json and history.html), when an apply changed a resource.",
+      "required": ["page", "resources", "generated"],
+      "properties": {
+        "page": { "type": "string" },
+        "resources": { "type": "integer", "description": "Addresses with at least one apply." },
+        "generated": { "type": "string" }
+      }
+    },
+    "dora": {
+      "type": "object",
+      "description": "The DORA metrics beside the page (dora.json, terragucci.dora/v1).",
+      "required": ["file", "generated", "deployments"],
+      "properties": {
+        "file": { "type": "string" },
+        "generated": { "type": "string" },
+        "deployments": { "type": "integer", "description": "The estate's applied waves in the metrics' window." }
+      }
+    },
+    "graph": {
+      "type": "object",
+      "description": "The dependency graph, from the run view of each project's newest applied commit: every root by wave, and an edge from each root to each root that reads its state through terraform_remote_state. An edge between two projects matched a read of a state outside the reader's project to the root of the other that holds it. Absent when no project has a run view.",
+      "required": ["nodes", "edges"],
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["project", "root", "wave"],
+            "properties": {
+              "project": { "type": "string" },
+              "root": { "type": "string" },
+              "wave": { "type": "integer" }
+            }
+          }
+        },
+        "edges": {
+          "type": "array",
+          "description": "Each edge: to reads the state of from.",
+          "items": {
+            "type": "object",
+            "required": ["from", "to"],
+            "properties": {
+              "from": { "$ref": "#/$defs/graphRoot" },
+              "to": { "$ref": "#/$defs/graphRoot" }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "graphRoot": {
+      "type": "object",
+      "required": ["project", "root"],
+      "properties": {
+        "project": { "type": "string" },
+        "root": { "type": "string" }
+      }
+    },
+    "totals": {
+      "type": "object",
+      "required": ["create", "update", "replace", "delete"],
+      "properties": {
+        "create": { "type": "integer" },
+        "update": { "type": "integer" },
+        "replace": { "type": "integer" },
+        "delete": { "type": "integer" }
+      }
+    },
+    "run": {
+      "type": "object",
+      "description": "A run, from its index row.",
+      "required": ["project", "commit", "stage", "finished", "roots", "refused", "totals", "destroys"],
+      "properties": {
+        "project": { "type": "string" },
+        "commit": { "type": "string" },
+        "stage": { "enum": ["tf-plan", "tf-apply", "tf-drift"] },
+        "wave": { "type": "integer" },
+        "share": { "type": "integer", "description": "The share of a tf-apply wave split across jobs." },
+        "finished": { "type": "string" },
+        "roots": { "type": "integer" },
+        "changed": { "type": "integer" },
+        "failed": { "type": "integer" },
+        "refused": { "type": "integer" },
+        "totals": { "$ref": "#/$defs/totals" },
+        "destroys": { "type": "integer", "description": "How many destroys and replacements the run has." },
+        "approval": { "enum": ["waiting", "approved", "not-required"] },
+        "waiting_since": { "type": "string" },
+        "applied": { "type": "string" },
+        "overridden": { "type": "integer" },
+        "report": { "type": "string", "description": "The run's report.html, relative to the page or absolute on another bucket's address. Absent when the page cannot link it." },
+        "pull_request": { "type": "string" },
+        "pull_request_url": { "type": "string" },
+        "job_url": { "type": "string" }
+      }
+    },
+    "waiting": {
+      "type": "object",
+      "required": ["project", "wave", "commit", "since", "age_seconds"],
+      "properties": {
+        "project": { "type": "string" },
+        "wave": { "type": "integer" },
+        "commit": { "type": "string" },
+        "since": { "type": "string", "description": "When the wave began waiting for an approval of its digest." },
+        "age_seconds": { "type": "integer", "description": "Seconds it had waited at generated." },
+        "report": { "type": "string" }
+      }
+    },
+    "project": {
+      "type": "object",
+      "required": ["project", "status", "waiting", "drifted", "failed"],
+      "properties": {
+        "project": { "type": "string" },
+        "status": { "enum": ["ok", "no-index", "error"] },
+        "error": { "type": "string", "description": "Why the index could not be read." },
+        "index": { "type": "string", "description": "The project's index.html, when the page can link it." },
+        "plan": { "$ref": "#/$defs/run", "description": "The latest tf-plan." },
+        "drift": { "$ref": "#/$defs/run", "description": "The latest tf-drift." },
+        "apply": {
+          "type": "object",
+          "description": "The waves of the newest commit that ran tf-apply, by wave number.",
+          "required": ["commit", "waves"],
+          "properties": {
+            "commit": { "type": "string" },
+            "waves": { "type": "array", "items": { "$ref": "#/$defs/run" } }
+          }
+        },
+        "waiting": { "type": "array", "items": { "$ref": "#/$defs/waiting" } },
+        "drifted": { "type": "integer", "description": "Roots that drifted in the latest drift check." },
+        "failed": { "type": "integer", "description": "Roots that failed in the latest plan, drift check and apply waves." },
+        "overridden": { "type": "integer", "description": "Roots the newest commit's apply waves applied under a policy override. Absent when none." },
+        "inventory": { "$ref": "#/$defs/inventory", "description": "The resources its roots hold, from its inventory.json. Absent until an apply records them." },
+        "states": { "type": "array", "description": "Each root's state versions, from its states.json. Absent until an apply records them.", "items": { "$ref": "#/$defs/stateRoot" } },
+        "run_view": {
+          "type": "object",
+          "description": "The run view of the project's newest applied commit, which the dependency graph read: its commit, when a wave last wrote it, and its run.html when the page can link it. Absent until a wave writes one.",
+          "required": ["commit", "updated"],
+          "properties": {
+            "commit": { "type": "string" },
+            "updated": { "type": "string" },
+            "page": { "type": "string" }
+          }
+        }
+      }
+    },
+    "stateRoot": {
+      "type": "object",
+      "description": "One root's state: where it is, whether its backend keeps versions, and the version ids its applies left, newest first. Never the state's contents.",
+      "required": ["root", "backend", "versioning", "checked", "versions"],
+      "properties": {
+        "root": { "type": "string" },
+        "backend": { "type": "string" },
+        "location": { "type": "string" },
+        "versioning": { "enum": ["on", "off", "unknown"] },
+        "note": { "type": "string" },
+        "checked": { "type": "string", "description": "When the newest apply that recorded the root finished." },
+        "versions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["version_id", "commit", "finished"],
+            "properties": {
+              "version_id": { "type": "string" },
+              "commit": { "type": "string" },
+              "finished": { "type": "string" },
+              "wave": { "type": "integer" },
+              "report": { "type": "string", "description": "The wave's report.html, when the page can link it." }
+            }
+          }
+        }
+      }
+    },
+    "inventory": {
+      "type": "object",
+      "required": ["resources", "types", "roots"],
+      "properties": {
+        "resources": { "type": "integer" },
+        "types": {
+          "type": "array",
+          "description": "How many resources of each type, most first.",
+          "items": { "type": "object", "required": ["type", "count"], "properties": { "type": { "type": "string" }, "count": { "type": "integer" } } }
+        },
+        "roots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "description": "One root's resources, as its newest applied wave left them.",
+            "required": ["root", "commit", "finished", "resources"],
+            "properties": {
+              "root": { "type": "string" },
+              "commit": { "type": "string" },
+              "finished": { "type": "string" },
+              "wave": { "type": "integer" },
+              "report": { "type": "string", "description": "The wave's report.html, when the page can link it." },
+              "resources": { "type": "array", "items": { "$ref": "#/$defs/resource" } }
+            }
+          }
+        }
+      }
+    },
+    "resource": {
+      "type": "object",
+      "required": ["address", "type", "provider"],
+      "properties": {
+        "address": { "type": "string" },
+        "type": { "type": "string" },
+        "provider": { "type": "string" },
+        "history": { "type": "string", "description": "Its section of history.html, when an apply changed it." }
+      }
+    }
+  }
+}

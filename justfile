@@ -140,6 +140,13 @@ e2e-helm-logical:
 e2e-flux-estate:
     bash e2e/flux-estate-k3d-e2e.sh
 
+# behold#490: terragucci's example painted from example-terragucci-reports,
+# through the real server and the real Terraform read. Needs TERRAGUCCI (a
+# terragucci checkout) and the terraform lexicon beside behold; skips without.
+#   TERRAGUCCI=../terragucci just e2e-terragucci
+e2e-terragucci:
+    bash e2e/terragucci-e2e.sh
+
 # behold#269 (the GitOps lane, Argo half): the argo-estate demo driven headless
 # against a REAL Argo CD — the Argo joins (#222/#235), the estate lenses (#241)
 # and #238's health/sync mapping asserted in front of an application controller

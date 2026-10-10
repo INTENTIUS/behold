@@ -1,0 +1,128 @@
+{
+  "schema": "terragucci.report/v1",
+  "minor": 25,
+  "run": {
+    "project": "github.com/acme/shop",
+    "commit": "b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0",
+    "base": "main",
+    "stage": "tf-plan",
+    "binary": "tofu",
+    "runtime": "forge",
+    "started": "2026-10-08T07:58:00.000Z",
+    "finished": "2026-10-08T08:00:30.000Z",
+    "job_url": "https://github.com/acme/shop/actions/runs/9110",
+    "terragucci": "0.4.4",
+    "commit_url": "https://github.com/acme/shop/commit/b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0",
+    "pull_request": "11",
+    "pull_request_url": "https://github.com/acme/shop/pull/11"
+  },
+  "change_set": "jcs1-sha256:085c4cba75ce7c80ec792e03e66390f7fae8e5ca8b531f6f9ff1adf8d92f5688",
+  "unit": "instance",
+  "units": 1,
+  "totals": {
+    "create": 0,
+    "update": 0,
+    "replace": 1,
+    "delete": 0,
+    "read": 0,
+    "no-op": 3,
+    "forget": 0
+  },
+  "groups": [
+    {
+      "id": "3c5cc5e65263",
+      "resource": "module.service.aws_dynamodb_table.records",
+      "units": [
+        "module.service.aws_dynamodb_table.records[0]"
+      ],
+      "outlier": false,
+      "noChanges": false,
+      "changes": [
+        {
+          "line": "-/+ module.service.aws_dynamodb_table.records: hash_key",
+          "action": "replace",
+          "count": 1
+        }
+      ],
+      "destroys": 1,
+      "varies": [],
+      "fold": "open",
+      "why": [
+        "1 destroy or replacement"
+      ]
+    }
+  ],
+  "roots": [
+    {
+      "path": "envs/prod/search",
+      "status": "planned",
+      "plan_digest": "jcs1-sha256:d2090b68b86733ce2002bd08814685d2cbc7e57f582532549aea12bd3e228cf7",
+      "counts": {
+        "replace": 1,
+        "no-op": 3
+      },
+      "plan": {
+        "text": "roots/envs/prod/search/plan.txt",
+        "json": "roots/envs/prod/search/plan.json"
+      },
+      "job_url": "https://github.com/acme/shop/actions/runs/9110",
+      "changes": [
+        {
+          "address": "module.service.aws_dynamodb_table.records[0]",
+          "type": "aws_dynamodb_table",
+          "action": "replace",
+          "disruption": "destroy",
+          "module": "module.service",
+          "index": 0,
+          "attributes": [
+            {
+              "path": "hash_key",
+              "before": "id",
+              "after": "sku",
+              "forcesReplacement": true
+            }
+          ],
+          "replace_paths": [
+            [
+              "hash_key"
+            ]
+          ],
+          "fold": "open",
+          "why": "replaces, forced by hash_key"
+        }
+      ],
+      "highlights": [
+        {
+          "address": "module.service.aws_dynamodb_table.records[0]",
+          "type": "aws_dynamodb_table",
+          "action": "replace",
+          "why": "replaces, forced by hash_key"
+        }
+      ],
+      "fold": "open",
+      "why": [
+        "replaces, forced by hash_key"
+      ]
+    }
+  ],
+  "waves": [],
+  "named": [
+    {
+      "root": "envs/prod/search",
+      "address": "module.service.aws_dynamodb_table.records[0]",
+      "type": "aws_dynamodb_table",
+      "action": "replace",
+      "replace_paths": [
+        [
+          "hash_key"
+        ]
+      ]
+    }
+  ],
+  "holes": [],
+  "redaction": {
+    "marker": "(sensitive, redacted by terragucci)",
+    "values": 0
+  },
+  "tips": []
+}

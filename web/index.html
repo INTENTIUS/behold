@@ -142,6 +142,25 @@
       #ws-gates .ws-gate-title { font-weight: 600; }
       #ws-gates .ws-gate-facts, #ws-gates .ws-gate-note { color: var(--muted); font-size: var(--t-caption); }
       #ws-gates .ws-gate button { margin-top: 4px; }
+      /* #490: terragucci's reports, dated. Never a fill. */
+      #panel-body #tab-terragucci.active { display: flex; flex-direction: column; gap: 8px; font-size: var(--t-caption); }
+      #tab-terragucci .tg-legend, #tab-terragucci .tg-estate { color: var(--muted); }
+      #tab-terragucci .tg-refusal { color: var(--degraded); font-weight: 600; }
+      #tab-terragucci .ws-gate { background: var(--panel); border: 1px solid var(--pending, var(--rule)); border-radius: var(--r-ctl); padding: 6px 8px; display: flex; flex-direction: column; gap: 3px; }
+      #tab-terragucci .ws-gate-title { font-weight: 600; }
+      #tab-terragucci .ws-gate-facts, #tab-terragucci .ws-gate-note { color: var(--muted); overflow-wrap: anywhere; }
+      #inspect-body .tg-inspect { font-size: var(--t-caption); margin: 2px 0 6px; overflow-wrap: anywhere; }
+      #inspect-body .tg-inspect a { color: inherit; }
+      #tab-terragucci .tg-command { font-family: var(--font-mono); overflow-wrap: anywhere; }
+      #tab-terragucci .tg-root { border-top: 1px solid var(--rule); padding-top: 4px; }
+      #tab-terragucci .tg-path { font-family: var(--font-mono); }
+      #tab-terragucci .tg-cells { display: flex; flex-wrap: wrap; gap: 0 10px; }
+      #tab-terragucci .tg-cells > span::before { content: attr(data-stage) ": "; color: var(--muted); }
+      #tab-terragucci .tg-drift, #tab-terragucci .tg-failed { color: var(--degraded); }
+      #tab-terragucci .tg-wave { color: var(--pending); }
+      #tab-terragucci .tg-plan { color: var(--fg); }
+      #tab-terragucci .tg-none, #tab-terragucci .tg-ok { color: var(--muted); }
+      #tab-terragucci a { color: inherit; }
       /* Fit reset + a zoom hint, floating top-right of the graph pane. */
       #zoom-toggle { position: absolute; top: 8px; right: 8px; z-index: 2; background: var(--panel);
         color: var(--muted); border: 1px solid var(--rule); border-radius: var(--r-ctl); padding: 4px 10px;

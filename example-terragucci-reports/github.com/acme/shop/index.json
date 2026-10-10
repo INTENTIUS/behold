@@ -1,0 +1,151 @@
+{
+  "schema": "terragucci.report-index/v1",
+  "reports": [
+    {
+      "project": "github.com/acme/shop",
+      "commit": "d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2",
+      "stage": "tf-apply",
+      "wave": 2,
+      "finished": "2026-10-08T09:31:00.000Z",
+      "path": "2026/10/d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2/tf-apply-wave-2",
+      "roots": 5,
+      "groups": 2,
+      "totals": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 1
+      },
+      "refused": 0,
+      "failed": 0,
+      "changed": 1,
+      "approval": "waiting",
+      "waiting_since": "2026-10-08T09:31:00.000Z",
+      "destroys": [
+        "envs/staging/email: module.service.aws_dynamodb_table.records[0]"
+      ],
+      "commit_url": "https://github.com/acme/shop/commit/d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2",
+      "job_url": "https://github.com/acme/shop/actions/runs/9131"
+    },
+    {
+      "project": "github.com/acme/shop",
+      "commit": "d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2",
+      "stage": "tf-apply",
+      "wave": 1,
+      "finished": "2026-10-08T09:30:00.000Z",
+      "path": "2026/10/d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2/tf-apply-wave-1",
+      "roots": 5,
+      "groups": 1,
+      "totals": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      },
+      "refused": 0,
+      "failed": 0,
+      "changed": 0,
+      "approval": "not-required",
+      "applied": "2026-10-08T09:30:00.000Z",
+      "destroys": [],
+      "commit_url": "https://github.com/acme/shop/commit/d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2",
+      "job_url": "https://github.com/acme/shop/actions/runs/9130"
+    },
+    {
+      "project": "github.com/acme/shop",
+      "commit": "c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1",
+      "stage": "tf-plan",
+      "finished": "2026-10-08T09:00:20.000Z",
+      "path": "2026/10/c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1/tf-plan",
+      "roots": 1,
+      "groups": 1,
+      "totals": {
+        "create": 0,
+        "update": 1,
+        "replace": 0,
+        "delete": 0
+      },
+      "refused": 0,
+      "failed": 0,
+      "changed": 1,
+      "destroys": [],
+      "commit_url": "https://github.com/acme/shop/commit/c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1",
+      "pull_request": "12",
+      "pull_request_url": "https://github.com/acme/shop/pull/12",
+      "job_url": "https://github.com/acme/shop/actions/runs/9120"
+    },
+    {
+      "project": "github.com/acme/shop",
+      "commit": "b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0",
+      "stage": "tf-plan",
+      "finished": "2026-10-08T08:00:30.000Z",
+      "path": "2026/10/b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0/tf-plan",
+      "roots": 1,
+      "groups": 1,
+      "totals": {
+        "create": 0,
+        "update": 0,
+        "replace": 1,
+        "delete": 0
+      },
+      "refused": 0,
+      "failed": 0,
+      "changed": 1,
+      "destroys": [
+        "envs/prod/search: module.service.aws_dynamodb_table.records[0]"
+      ],
+      "commit_url": "https://github.com/acme/shop/commit/b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0",
+      "pull_request": "11",
+      "pull_request_url": "https://github.com/acme/shop/pull/11",
+      "job_url": "https://github.com/acme/shop/actions/runs/9110"
+    },
+    {
+      "project": "github.com/acme/shop",
+      "commit": "5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f",
+      "stage": "tf-drift",
+      "finished": "2026-10-08T06:04:12.000Z",
+      "path": "2026/10/5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f/tf-drift",
+      "roots": 15,
+      "groups": 2,
+      "totals": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 1
+      },
+      "refused": 1,
+      "failed": 1,
+      "changed": 1,
+      "drifted_roots": [
+        "envs/staging/orders"
+      ],
+      "destroys": [
+        "envs/staging/orders: module.service.aws_sqs_queue.jobs"
+      ],
+      "commit_url": "https://github.com/acme/shop/commit/5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f",
+      "job_url": "https://github.com/acme/shop/actions/runs/9102",
+      "drift_since": "2026-10-08T06:04:12.000Z"
+    },
+    {
+      "project": "github.com/acme/shop",
+      "commit": "0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d",
+      "stage": "tf-drift",
+      "finished": "2026-10-07T06:04:00.000Z",
+      "path": "2026/10/0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d/tf-drift",
+      "roots": 15,
+      "groups": 1,
+      "totals": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      },
+      "refused": 0,
+      "failed": 0,
+      "changed": 0,
+      "destroys": [],
+      "commit_url": "https://github.com/acme/shop/commit/0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d",
+      "job_url": "https://github.com/acme/shop/actions/runs/9001"
+    }
+  ]
+}

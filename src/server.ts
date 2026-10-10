@@ -176,6 +176,7 @@ import {
 } from "./layout.ts";
 import { emulatorUp, emulatorDown, mergedEnv, type EmulatorInfo } from "./emulator.ts";
 import { refusedWrite, servedTerragucciConfig, terragucciRefusal } from "./terragucci-repo.ts";
+import { terragucciRoutes, type TerragucciOptions } from "./terragucci-view.ts";
 import { loadDemoRegistry, missingRequirements, fetchesFromNetwork, demoTargetDir, loadDemo, type DemoEntry } from "./demos.ts";
 
 /** The installed behold package root — `demos.json` and the bundled examples
@@ -201,6 +202,8 @@ export interface ServerOptions {
    * members, and the hand layout lives in the workspace root rather than in the
    * first member. */
   workspace?: Workspace;
+  /** #490: `--terragucci`: paint the estate from terragucci's reports (src/terragucci-view.ts). */
+  terragucci?: TerragucciOptions;
   /** #471: hud's address (`--hud`, BEHOLD_HUD_URL). A proposed decision in a
    * "why" links to its review there; without it the decision is named by id. */
   hud?: string;
@@ -965,6 +968,9 @@ export function createApp(
     await next();
   });
 
+  // #490: the reports' marks, when serve was given --terragucci.
+  if (cfg.terragucci) terragucciRoutes(app, cfg.terragucci, () => cfg.projectDirs ?? [cfg.projectDir]);
+
   // Carve mode (#252) claims /api/graph, /api/project and friends before the
   // project-shaped handlers are registered — see carveRoutes.
   if (cfg.carveReport) carveRoutes(app, cfg.carveReport, cfg.carveDemo);
@@ -1618,6 +1624,8 @@ export function createApp(
       // #489: a terragucci repo is applied by its pipeline; the SPA offers no
       // write at all, and the write routes refuse with the same words.
       ...(tgConfig() ? { terragucci: { config: tgConfig()!, ...terragucciRefusal(tgConfig()!, "deploying from behold") } } : {}),
+      // #490: the page asks /api/terragucci for the marks when this is set.
+      ...(cfg.terragucci ? { terragucciReports: { source: cfg.terragucci.source, ...(cfg.terragucci.project ? { project: cfg.terragucci.project } : {}) } } : {}),
       // #477: who `chant approve` records when behold runs it. The approve
       // buttons say it before the click.
       approver: localApprover(),

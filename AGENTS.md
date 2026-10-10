@@ -53,6 +53,34 @@ a scheduled read: it holds a slot in the read budget, has the read deadline,
 and stops when the request does. `serve --hud <url>` (or `BEHOLD_HUD_URL`)
 links a proposed decision to its review in hud.
 
+## A terragucci estate, from its reports (#490)
+
+`behold serve <repo> --terragucci <dir|s3://bucket/prefix|https://…>`
+(`--terragucci-project <host/path>` when the bucket holds several projects
+and none is the checkout's git remote) adds two reads, in
+`src/terragucci-view.ts`:
+
+- `GET /api/terragucci`: `{source, project, validation, read, reports, files,
+  estate?, roots[], cards{}, waiting[], unmatched}`. `roots[]` is every
+  Terraform root of the checkout with the newest `plan`, `drift` and `apply`
+  run that held it; a missing stage means no report holds that root, which is
+  not "no changes". `cards` maps a card id to its marks (`verdict: drift |
+  plan | wave`, terragucci's words, the instance addresses, the run). Nothing
+  sets `_status`: a report is never painted as live. `waiting[]` carries each
+  wave's roots, destroys, and the `command` a person runs. `estate` is
+  terragucci's own counts when the source has `estate.json`. A key such as a
+  run's `report` opens at `files` + the key. Refusals are `422 {code:
+  "terragucci-report"}`. `?fresh=1` skips the 30 s cache.
+- `GET /api/terragucci/file?key=<key>`: one report file from the source,
+  sandboxed.
+
+The reads are `src/terragucci-reports.ts` (index, each run's report, estate;
+terragucci's JSON Schemas when `@intentius/terragucci` resolves, a structural
+check otherwise) and the join is `src/terragucci-overlay.ts` (root path to
+`attrs.root`, instance address to block path). An S3 source shells the
+operator's `aws s3 cp <key> -`. There is no approve route, by design: hand the
+operator `waiting[].command`.
+
 ## Getting a server
 
 ```sh
