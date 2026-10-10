@@ -46,3 +46,28 @@ jobs:
       # Last, and reinstalling chant, so it cannot perturb the steps above.
       - name: typecheck against the declared chant floor
         run: bash scripts/typecheck-floor.sh
+
+  # #465: the tests that need behold's optional peers (chant's terraform
+  # lexicon, @cdktn/hcl2json) and choudoufu skip in `check`, which installs
+  # none of them. Here they are installed and the tests must run: with
+  # BEHOLD_REQUIRE_PEERS=1 a missing peer fails instead of skipping. Among
+  # them, a declared choudoufu member read through chant workspace graph
+  # against the same member read loose: same ids, same edges.
+  peers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: install the optional peers and choudoufu
+        run: |
+          bin="$(bash scripts/install-peers.sh)"
+          echo "$bin" >> "$GITHUB_PATH"
+      - name: the tests that need them
+        env:
+          BEHOLD_REQUIRE_PEERS: '1'
+        run: npx vitest run src/choudoufu-workspace.test.ts src/demo-pins.test.ts src/example-workspaces.test.ts

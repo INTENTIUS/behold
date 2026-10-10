@@ -7,6 +7,10 @@ import { resolvedPackage, type TerraformReaderState } from "./terraform-member.t
 import { loadDemo, loadDemoRegistry } from "./demos.ts";
 import { readWorkspace } from "./workspace.ts";
 
+// CI's `peers` job sets BEHOLD_REQUIRE_PEERS=1 (scripts/install-peers.sh): there a
+// missing peer fails the test instead of skipping it.
+const REQUIRE_PEERS = process.env.BEHOLD_REQUIRE_PEERS === "1";
+
 const LEXICON = "@intentius/chant-lexicon-terraform";
 const REPO = join(import.meta.dirname, "..");
 const made: string[] = [];
@@ -89,7 +93,7 @@ describe("linkDemoPins (#484)", () => {
 // `behold demo` loads it, is one chant lists with both members readable.
 describe("behold demo terraform-estate, against chant (#484)", () => {
   const installed = resolvedPackage(LEXICON) && resolvedPackage("@cdktn/hcl2json");
-  it.skipIf(!installed)("lists both roots as terraform members chant can read", { timeout: 60_000 }, async () => {
+  it.skipIf(!installed && !REQUIRE_PEERS)("lists both roots as terraform members chant can read", { timeout: 60_000 }, async () => {
     const entry = loadDemoRegistry(REPO).find((e) => e.name === "terraform-estate")!;
     const target = join(scratch(), "terraform-estate");
     const loaded = await loadDemo(entry, { pkgRoot: REPO, target });
