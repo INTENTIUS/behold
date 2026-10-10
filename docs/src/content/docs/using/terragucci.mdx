@@ -90,6 +90,30 @@ behold shows are the estate page's own, and the tab links `estate.html`. behold
 never counts them again, so the two never disagree. behold owns the resource
 graph: which resources, in which roots, drifted or will change.
 
+## Publish a view beside the estate page
+
+For a team that wants a link rather than a command, the job that already runs
+`terragucci estate` can publish a static view to the reports bucket. terragucci
+keeps `<prefix>/views/` for a viewer's files and never writes there:
+
+```sh
+npx -y -p @intentius/behold -p @intentius/chant-lexicon-terraform -p @cdktn/hcl2json \
+  behold export . --terragucci s3://<bucket>/<prefix> --no-source --out behold-view
+aws s3 sync behold-view s3://<bucket>/<prefix>/views/behold/ --delete
+```
+
+The view is a static folder: the same marks with the same dates, the gate cards
+and their lines, and terragucci's counts. Its report links are relative to
+`<prefix>/views/behold/`, so they open the bucket's own report pages through the
+same presigned link or front door as `estate.html`. It carries no credential,
+no user name and no path of the machine that made it, and `--no-source` leaves
+each root's HCL out. The job needs `PutObject` on `<prefix>/views/behold/*`
+beside the reads `terragucci estate` already has.
+
+Make it a step of its own that may fail: a view that cannot be built leaves the
+estate page as it was, and `behold export` fails rather than publishing a
+picture with no marks.
+
 ## Several projects in one bucket
 
 A bucket prefix can hold many repos' runs. behold picks the project named by

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# behold#490 local E2E: a terragucci estate painted from its reports.
+# behold#490/#491 local E2E: a terragucci estate painted from its reports.
 #
 # Serves a copy of terragucci's own example (15 Terraform roots) with
 # `--terragucci example-terragucci-reports` (the bucket terragucci's code wrote
@@ -9,7 +9,11 @@
 #   - /api/terragucci marks exactly the cards the newest runs flag, places
 #     every change, and offers the waiting wave as a line, not a route;
 #   - a run's report page opens through the server, sandboxed;
-#   - every write route refuses, since the example holds terragucci.yml (#489).
+#   - every write route refuses, since the example holds terragucci.yml (#489);
+#   - `behold export --terragucci --no-source`, into a copy of the bucket at
+#     views/behold/ the way the estate job uploads it, carries the same marks,
+#     no source text and no path of this machine, and its report links open
+#     the bucket's own objects through a plain file server (#491).
 #
 # Needs: TERRAGUCCI=<a terragucci checkout> (its example/ is copied, never
 # written), and chant's terraform lexicon + @cdktn/hcl2json beside behold.
@@ -95,4 +99,33 @@ done
 echo "  writes refused"
 kill "$PID" 2>/dev/null || true
 
+echo "→ behold export --terragucci, into views/behold/ of a copy of the bucket"
+cp -R example-terragucci-reports "$WORK/bucket"
+node ./bin/behold.js export "$EX" --terragucci "$WORK/bucket" --no-source --out "$WORK/bucket/views/behold" >"$WORK/export.log" 2>&1 || { cat "$WORK/export.log"; exit 1; }
+check '
+  const fs = require("fs"), path = require("path");
+  const dir = process.argv[1];
+  const fail = (m) => { console.error("✗", m); process.exit(1); };
+  const m = JSON.parse(fs.readFileSync(path.join(dir, "manifest.json"), "utf8"));
+  const f = m.keyToFile["/api/terragucci"];
+  if (!f) fail("no /api/terragucci snapshot");
+  const j = JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"));
+  if (Object.keys(j.cards).length !== 4) fail("export marks " + Object.keys(j.cards));
+  if (j.files !== "../../") fail("export links are not bucket-relative: " + j.files);
+  const all = fs.readdirSync(dir, { recursive: true }).filter((x) => /\.json$/.test(x)).map((x) => fs.readFileSync(path.join(dir, x), "utf8")).join("\n");
+  if (all.includes(require("os").homedir())) fail("a home path is in the bundle");
+  if (/"source":"(terraform|resource|variable)/.test(all) || all.includes("required_providers")) fail("source text is in the bundle");
+  console.log("  export ok:", Object.keys(j.cards).length, "cards marked, links ../../, no source, no local paths");
+' "$WORK/bucket/views/behold"
+
+echo "→ the published view, served as the bucket serves it"
+python3 -m http.server "$((PORT + 1))" --bind 127.0.0.1 --directory "$WORK/bucket" >"$WORK/http.log" 2>&1 &
+HTTP=$!
+trap 'kill "${PID:-}" "${HTTP:-}" 2>/dev/null || true; rm -rf "$WORK"' EXIT
+BASE="http://127.0.0.1:$((PORT + 1))/views/behold"
+for _ in $(seq 1 20); do curl -sf -o /dev/null "$BASE/index.html" && break; sleep 0.5; done
+curl -sf -o "$WORK/page.html" "$BASE/index.html" && grep -q "__BEHOLD_STATIC__" "$WORK/page.html" || { echo "✗ the view's page is not there"; exit 1; }
+REPORT="$(node -e 'const fs=require("fs"),p=require("path");const d=process.argv[1];const m=JSON.parse(fs.readFileSync(p.join(d,"manifest.json")));const j=JSON.parse(fs.readFileSync(p.join(d,m.keyToFile["/api/terragucci"])));process.stdout.write(j.files+j.waiting[0].report)' "$WORK/bucket/views/behold")"
+curl -sf -o "$WORK/report.html" "$BASE/$REPORT" && grep -qi "<html" "$WORK/report.html" || { echo "✗ $REPORT does not open from the view"; exit 1; }
+echo "  view ok: page served, $REPORT opens"
 echo "✓ terragucci e2e passed"

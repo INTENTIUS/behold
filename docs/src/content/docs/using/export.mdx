@@ -24,6 +24,20 @@ npx behold export ../my-project --env prod --out ./behold-export
 
 Freezes the drift colours as they were when you exported. Useful for an incident write-up, or for showing someone an estate they have no credentials for.
 
+## What it leaves out
+
+A bundle carries the picture and nothing about the machine that made it: no list of your recent projects, no user name, and every absolute path reduced to its directory's name.
+
+A Terraform card carries its root's whole source file. `--no-source` leaves that text out of every snapshot:
+
+```sh
+npx behold export . --no-source --out ./behold-export
+```
+
+## A terragucci estate
+
+`--terragucci <src>` captures the marks [`serve --terragucci`](/behold/using/terragucci/) shows, with the same dates. [Publish a view](/behold/using/terragucci/#publish-a-view-beside-the-estate-page) says how terragucci's estate job puts it beside `estate.html`.
+
 ## Hosting it
 
 The bundle is deploy-ready for Cloudflare, since `export` writes an assets-only `wrangler.jsonc`:
