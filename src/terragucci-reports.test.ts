@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from "vitest";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readTerragucci, terragucciValidator, TerragucciReadError, MAX_RUNS_PER_STAGE } from "./terragucci-reports.ts";
@@ -187,5 +187,40 @@ describe("an s3:// source in a job, with credentials in the environment (#491)",
     const r = await readTerragucci(terragucciSource("s3://acme-reports/shop", { env, fetch: fetchFn as never }), { roots: ROOTS });
     expect(r.project).toBe("github.com/acme/shop");
     expect(asked[0]).toBe("http://floci:4566/acme-reports/shop/index.json");
+  });
+});
+
+describe("terragucciValidator is looked up per read (#500)", () => {
+  /** Install `@intentius/terragucci` into `d` at `version`, with the fixture schemas. */
+  const install = (d: string, version: string) => {
+    const pkg = join(d, "node_modules", "@intentius", "terragucci");
+    mkdirSync(join(pkg, "dist"), { recursive: true });
+    writeFileSync(join(pkg, "package.json"), JSON.stringify({ name: "@intentius/terragucci", version, exports: { "./report.schema.json": "./dist/report.schema.json" } }));
+    for (const f of ["report.schema.json", "report-index.schema.json", "estate.schema.json"]) cpSync(join(SCHEMAS, f), join(pkg, "dist", f));
+    return pkg;
+  };
+
+  it("picks up an install between two reads, and an upgrade after it", async () => {
+    const d = scratch();
+    const first = await readTerragucci(terragucciSource(BUCKET), { roots: ROOTS, validator: terragucciValidator([d]) });
+    expect(first.validation).toEqual({ by: "structural" });
+
+    const pkg = install(d, "0.4.4");
+    const second = await readTerragucci(terragucciSource(BUCKET), { roots: ROOTS, validator: terragucciValidator([d]) });
+    expect(second.validation).toEqual({ by: "schema", terragucci: "0.4.4" });
+
+    // An upgrade in place: same path, new files. The mtime is moved on
+    // explicitly, since a rewrite can land inside the same millisecond.
+    writeFileSync(join(pkg, "package.json"), JSON.stringify({ name: "@intentius/terragucci", version: "0.5.0", exports: { "./report.schema.json": "./dist/report.schema.json" } }));
+    const later = new Date(Date.now() + 5_000);
+    utimesSync(join(pkg, "package.json"), later, later);
+    const third = await readTerragucci(terragucciSource(BUCKET), { roots: ROOTS, validator: terragucciValidator([d]) });
+    expect(third.validation).toEqual({ by: "schema", terragucci: "0.5.0" });
+  });
+
+  it("reuses the compiled schemas while the package is unchanged", () => {
+    const d = scratch();
+    install(d, "0.4.4");
+    expect(terragucciValidator([d])).toBe(terragucciValidator([d]));
   });
 });

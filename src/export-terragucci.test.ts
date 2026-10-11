@@ -3,6 +3,8 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { GraphIR } from "@intentius/chant";
+import { createHash } from "node:crypto";
+import { S3Error } from "./s3-object.ts";
 
 // #491: `behold export --terragucci` is the view terragucci's estate job
 // uploads to `<prefix>/views/behold/`. The estate read is the one seam mocked
@@ -154,26 +156,130 @@ describe("export --publish (#491)", () => {
     expect(publishTarget("./out")).toHaveProperty("error");
   });
 
-  it("uploads every file of the bundle with its content type", async () => {
-    const { publishBundle } = await import("./export.ts");
+  /** A fake bucket: what was put, in order, with its headers, what was deleted, and the objects it holds. */
+  function fakeBucket(objects: Record<string, string> = {}, opts: { deny?: boolean } = {}) {
+    const put: { key: string; type: string; cache: string | undefined }[] = [];
+    const deleted: string[] = [];
+    const got: string[] = [];
+    const client = {
+      get: async (k: string) => {
+        got.push(k);
+        return objects[k];
+      },
+      put: async (k: string, _b: unknown, type: string, cache?: string) => {
+        put.push({ key: k, type, cache });
+      },
+      delete: async (k: string) => {
+        if (opts.deny) throw new S3Error(`DELETE s3://acme/${k}: 403 <Error><Code>AccessDenied</Code></Error>`, { status: 403, body: "<Error><Code>AccessDenied</Code></Error>" });
+        deleted.push(k);
+      },
+    };
+    return { client, put, deleted, got };
+  }
+
+  function bundle(): string {
     const dir = mkdtempSync(join(tmpdir(), "behold-publish-"));
     made.push(dir);
     mkdirSync(join(dir, "snapshots"));
     mkdirSync(join(dir, "icons", "k8s"), { recursive: true });
     writeFileSync(join(dir, "index.html"), "<html>");
+    writeFileSync(join(dir, "manifest.json"), JSON.stringify({ keyToFile: { "/api/terragucci": "snapshots/api_terragucci.0123456789abcdef.json" } }));
     writeFileSync(join(dir, "app.js"), "export {}");
-    writeFileSync(join(dir, "snapshots", "api_terragucci.json"), "{}");
+    writeFileSync(join(dir, "snapshots", "api_terragucci.0123456789abcdef.json"), "{}");
     writeFileSync(join(dir, "icons", "k8s", "pod.svg"), "<svg/>");
     writeFileSync(join(dir, "LICENSE"), "Apache");
-    const put: [string, string][] = [];
-    const n = await publishBundle(dir, { bucket: "acme", prefix: "reports/views/behold" }, { put: async (k: string, _b: unknown, t: string) => void put.push([k, t]) } as never);
-    expect(n).toBe(5);
-    expect(put).toEqual([
-      ["reports/views/behold/LICENSE", "text/plain; charset=utf-8"],
-      ["reports/views/behold/app.js", "text/javascript; charset=utf-8"],
-      ["reports/views/behold/icons/k8s/pod.svg", "image/svg+xml"],
-      ["reports/views/behold/index.html", "text/html; charset=utf-8"],
-      ["reports/views/behold/snapshots/api_terragucci.json", "application/json"],
+    return dir;
+  }
+  const P = "reports/views/behold";
+
+  it("uploads every file with its content type, the manifest after the snapshots and index.html last, cached by whether the name carries its hash (#500)", async () => {
+    const { publishBundle, IMMUTABLE, NO_CACHE } = await import("./export.ts");
+    const b = fakeBucket();
+    const done = await publishBundle(bundle(), { bucket: "acme", prefix: P }, b.client as never);
+    expect(done).toEqual({ files: 6, removed: [], warnings: [] });
+    expect(b.got).toEqual([`${P}/manifest.json`]);
+    expect(b.put.map((p) => [p.key.slice(P.length + 1), p.type, p.cache])).toEqual([
+      ["LICENSE", "text/plain; charset=utf-8", NO_CACHE],
+      ["app.js", "text/javascript; charset=utf-8", NO_CACHE],
+      ["icons/k8s/pod.svg", "image/svg+xml", NO_CACHE],
+      ["snapshots/api_terragucci.0123456789abcdef.json", "application/json", IMMUTABLE],
+      ["manifest.json", "application/json", NO_CACHE],
+      ["index.html", "text/html; charset=utf-8", NO_CACHE],
     ]);
+    expect(IMMUTABLE).toBe("public, max-age=31536000, immutable");
+    expect(NO_CACHE).toBe("no-cache");
+  });
+
+  it("deletes, after index.html, the snapshots the previous manifest named and this export did not write, only under the prefix (#500)", async () => {
+    const { publishBundle } = await import("./export.ts");
+    const previous = {
+      keyToFile: {
+        "/api/terragucci": "snapshots/api_terragucci.0123456789abcdef.json", // written again: kept
+        "/api/project": "snapshots/api_project.fedcba9876543210.json", // stale: removed
+        "/api/graph": "snapshots/api_graph.json", // a 0.23.0 name: removed
+        "/x": "../../index.html", // outside the prefix: never touched
+        "/y": "snapshots/../../estate.html",
+        "/z": "manifest.json",
+      },
+    };
+    const b = fakeBucket({ [`${P}/manifest.json`]: JSON.stringify(previous) });
+    const order: string[] = [];
+    const client = {
+      get: b.client.get,
+      put: async (k: string, body: unknown, t: string, c?: string) => {
+        order.push(`put ${k}`);
+        await b.client.put(k, body, t, c);
+      },
+      delete: async (k: string) => {
+        order.push(`delete ${k}`);
+        await b.client.delete(k);
+      },
+    };
+    const done = await publishBundle(bundle(), { bucket: "acme", prefix: P }, client as never);
+    expect(b.deleted).toEqual([`${P}/snapshots/api_project.fedcba9876543210.json`, `${P}/snapshots/api_graph.json`]);
+    expect(done.removed).toEqual(b.deleted);
+    expect(done.warnings).toEqual([]);
+    // Every delete comes after the new index.html.
+    expect(order.indexOf(`put ${P}/index.html`)).toBeLessThan(order.findIndex((o) => o.startsWith("delete ")));
+  });
+
+  it("publishes anyway when the credentials cannot delete, and names s3:DeleteObject (#500)", async () => {
+    const { publishBundle } = await import("./export.ts");
+    const b = fakeBucket({ [`${P}/manifest.json`]: JSON.stringify({ keyToFile: { "/a": "snapshots/a.0000000000000000.json", "/b": "snapshots/b.1111111111111111.json" } }) }, { deny: true });
+    const done = await publishBundle(bundle(), { bucket: "acme", prefix: P }, b.client as never);
+    expect(done.files).toBe(6);
+    expect(done.removed).toEqual([]);
+    expect(done.warnings).toHaveLength(1);
+    expect(done.warnings[0]).toContain("s3:DeleteObject");
+    expect(b.put.at(-1)!.key).toBe(`${P}/index.html`);
+  });
+
+  it("publishes anyway when the previous manifest cannot be read, and leaves its files", async () => {
+    const { publishBundle } = await import("./export.ts");
+    const b = fakeBucket();
+    const client = { ...b.client, get: async () => Promise.reject(new S3Error("GET: 403", { status: 403, body: "<Error><Code>AccessDenied</Code></Error>" })) };
+    const done = await publishBundle(bundle(), { bucket: "acme", prefix: P }, client as never);
+    expect(done.files).toBe(6);
+    expect(b.deleted).toEqual([]);
+    expect(done.warnings[0]).toContain("previous manifest.json could not be read");
+  });
+});
+
+describe("snapshot names carry their content hash (#500)", () => {
+  it("names every snapshot in the manifest by its bytes", { timeout: 60_000 }, async () => {
+    const { CONTENT_ADDRESSED } = await import("./export.ts");
+    vi.mocked(composeEstate).mockImplementation((async () => IR()) as never);
+    const dir = checkout();
+    const out = join(mkdtempSync(join(tmpdir(), "behold-tg-view-")), "bundle");
+    made.push(dirname(out));
+    await quiet(() => runExport({ projectDir: dir, projectDirs: [dir], port: 0, terragucci: { source: BUCKET } }, out));
+    const manifest = JSON.parse(readFileSync(join(out, "manifest.json"), "utf8")) as { keyToFile: Record<string, string> };
+    const files = Object.values(manifest.keyToFile);
+    expect(files.length).toBeGreaterThan(1);
+    for (const f of files) {
+      expect(f).toMatch(CONTENT_ADDRESSED);
+      const hash = createHash("sha256").update(readFileSync(join(out, f), "utf8")).digest("hex").slice(0, 16);
+      expect(f.endsWith(`.${hash}.json`)).toBe(true);
+    }
   });
 });

@@ -960,10 +960,12 @@ export function createApp(
   const tgConfig = (): string | undefined => servedTerragucciConfig(cfg.projectDirs ?? [cfg.projectDir]);
   // #489: a terragucci repo is applied by its pipeline only. Asked per request,
   // because a project switch changes cfg.projectDir under a running server.
-  app.use("/api/*", async (c, next) => {
-    if (c.req.method !== "POST") return next();
-    const what = refusedWrite(c.req.path);
-    const config = what ? tgConfig() : undefined;
+  // #500: an allowlist. Every method but GET, HEAD and OPTIONS is refused,
+  // on every path, unless TERRAGUCCI_ALLOWED_WRITES names the route.
+  app.use("*", async (c, next) => {
+    const what = refusedWrite(c.req.method, c.req.path);
+    if (!what) return next();
+    const config = tgConfig();
     if (what && config) return c.json(terragucciRefusal(config, what), 409);
     await next();
   });

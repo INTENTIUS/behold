@@ -81,7 +81,8 @@ and none is the checkout's git remote) adds two reads, in
 
 The reads are `src/terragucci-reports.ts` (index, each run's report, estate;
 terragucci's JSON Schemas when `@intentius/terragucci` resolves, a structural
-check otherwise) and the join is `src/terragucci-overlay.ts` (root path to
+check otherwise; the package is looked up on every read and the compiled
+schemas cached by its path and files' mtimes, #500) and the join is `src/terragucci-overlay.ts` (root path to
 `attrs.root`, instance address to block path). An S3 source shells the
 operator's `aws s3 cp <key> -`. There is no approve route, by design: hand the
 operator `waiting[].command`.
@@ -626,9 +627,18 @@ started it. On a terragucci repo (a `terragucci.yml` in the served directory or
 above it, up to the git root) behold starts nothing: every POST that deploys,
 approves or starts a run answers `409` with `code: "terragucci"` and names the
 pipeline (`src/terragucci-repo.ts`, #489), `/api/project` carries `terragucci`
-so the page offers no write, and auto-sync declines. A new POST route goes in
-`TERRAGUCCI_REFUSED_WRITES` or in the test's list of routes that write nothing
-outside behold; `src/terragucci-repo.test.ts` fails until it is in one.
+so the page offers no write, and auto-sync declines. The boundary is an
+allowlist (#500): every request whose method is not GET, HEAD or OPTIONS, on
+any path, answers that `409` unless `TERRAGUCCI_ALLOWED_WRITES` names its
+method and route, and that list holds only the exceptions below (the layout
+sidecar, project open and reveal, demo open, refresh, and the four carve
+steps). A new write route is refused on a terragucci repo until it is added
+there. `src/terragucci-repo.test.ts` walks every non-GET route of the real
+app (`app.routes`, built plain, with a carve report and with `--terragucci`)
+and asserts each one is allowlisted or answers 409, and that every allowlist
+entry is a registered route. `TERRAGUCCI_REFUSED_WRITES` only words the
+refusal for known routes. The remedy names `npx terragucci approve wave-<k>
+--plan <digest>`, the digest from the wave's gate card.
 
 ### The exceptions, and their exact size
 
@@ -678,7 +688,15 @@ the command line, uploads the bundle it just wrote, signed with the AWS
 credentials in the environment (src/s3-object.ts). `publishTarget` refuses
 any destination that is not a `views/<name>` directory, terragucci's reserved
 viewer prefix, so the bundle's `index.html` can never land on a page behold did
-not make.
+not make. `publishBundle` (src/export.ts, #500) uploads every other file
+first, then `manifest.json`, then `index.html`. Snapshot names carry the first
+16 hex digits of their SHA-256 (`CONTENT_ADDRESSED`) and go up with
+`Cache-Control: public, max-age=31536000, immutable`; everything else gets
+`no-cache`. It GETs the previous `manifest.json` under the prefix before
+uploading (no list call) and, after `index.html`, deletes the
+`snapshots/<name>` files that manifest named and this export did not write.
+Nothing outside the prefix is deleted. A refused delete stops the sweep with
+a warning naming `s3:DeleteObject`, and the publish still succeeds.
 
 A choudoufu estate member (#366) adds no exception. A move there is one tag
 write through choudoufu's own `live-mv`, and behold never makes it: `GET
