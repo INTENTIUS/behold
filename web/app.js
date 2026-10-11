@@ -3243,10 +3243,10 @@ async function initTerragucci() {
   await loadTerragucciLane();
   watchTerragucci();
 }
-let tgLane = null;
+let tgLifecycle = null;
 let tgPolled = null;
 async function loadTerragucciLane({ fresh = false } = {}) {
-  tgLane = await apiFetch(`/api/terragucci/lifecycle${fresh ? "?fresh=1" : ""}`)
+  tgLifecycle = await apiFetch(`/api/terragucci/lifecycle${fresh ? "?fresh=1" : ""}`)
     .then((r) => r.json())
     .catch((e) => ({ error: String(e) }));
   renderTerragucciPanel();
@@ -3257,7 +3257,7 @@ function watchTerragucci() {
   const es = new EventSource("/api/terragucci/events");
   es.addEventListener("reports", () => loadTerragucci({ fresh: true }));
   es.addEventListener("lifecycle", (e) => {
-    tgLane = JSON.parse(e.data);
+    tgLifecycle = JSON.parse(e.data);
     renderTerragucciPanel();
   });
   es.addEventListener("polled", (e) => {
@@ -3266,8 +3266,8 @@ function watchTerragucci() {
   });
 }
 function renderTerragucciLane(host, now) {
-  if (staticMode || (!tgLane && !tgPolled)) return;
-  renderLane(host, tgLane, tgPolled, now, { button, copy: copyToClipboard, link: tgLink });
+  if (staticMode || (!tgLifecycle && !tgPolled)) return;
+  renderLane(host, tgLifecycle, tgPolled, now, { button, copy: copyToClipboard, link: tgLink });
 }
 async function loadTerragucci({ fresh = false } = {}) {
   const answer = await apiFetch(`/api/terragucci${fresh ? "?fresh=1" : ""}`)
