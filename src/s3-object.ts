@@ -46,6 +46,7 @@ type Fetch = (url: string, init: { method: string; headers: Record<string, strin
   ok: boolean;
   status: number;
   text(): Promise<string>;
+  headers?: { get(name: string): string | null };
 }>;
 
 export class S3Error extends Error {
@@ -176,6 +177,23 @@ export class S3Object {
       throw new S3Error(`GET s3://${t.bucket}/${key}: ${res.status} ${body.slice(0, 300)}`, { status: res.status, body });
     }
     return res.text();
+  }
+
+  /**
+   * #505: a conditional HEAD of the object. `same` when its ETag is still
+   * `ifNoneMatch` (S3 answers 304), its ETag otherwise, undefined when there
+   * is no such object.
+   */
+  async head(key: string, ifNoneMatch?: string): Promise<{ same: true } | { same: false; etag?: string } | undefined> {
+    const t = await this.signer();
+    const url = objectUrl(t, key);
+    const extra: Record<string, string> = ifNoneMatch ? { "if-none-match": ifNoneMatch } : {};
+    const res = await this.fetchFn(url, { method: "HEAD", headers: sign(t, "HEAD", url, extra, sha256(""), this.now()) });
+    if (res.status === 304) return { same: true };
+    if (res.status === 404) return undefined;
+    if (!res.ok) throw new S3Error(`HEAD s3://${t.bucket}/${key}: ${res.status}`, { status: res.status, body: "" });
+    const etag = res.headers?.get("etag") ?? undefined;
+    return { same: false, ...(etag ? { etag } : {}) };
   }
 
   /** Write an object, with a Cache-Control header when one is given. */

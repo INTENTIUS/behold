@@ -13,6 +13,10 @@
  * - `GET /api/terragucci/timeline` is the audit record's lane
  *   (src/terragucci-timeline.ts, #506).
  *
+ * - `GET /api/terragucci/lifecycle` and `GET /api/terragucci/events` (#505):
+ *   the gates and locks on `chant/lifecycle`, and the poll that pushes what
+ *   moved while a page is open (src/terragucci-poll.ts).
+ *
  * No write: approving a waiting wave is a person's act at their shell
  * (`npx terragucci approve wave-<k> --plan <digest>`), and the page offers
  * that line to copy, never a button. The served repo is a terragucci repo, so
@@ -29,6 +33,7 @@ import { readTerragucci, terragucciValidator, TerragucciReadError, type Terraguc
 import { joinTerragucci, type CheckoutRoot } from "./terragucci-overlay.ts";
 import { terragucciSource, type AwsRun } from "./terragucci-source.ts";
 import { auditValidator, terragucciTimelineRoute } from "./terragucci-timeline.ts";
+import { terragucciLaneRoutes, type LaneRouteOptions } from "./terragucci-poll.ts";
 
 export interface TerragucciOptions {
   /** `--terragucci`: a directory, `s3://bucket/prefix`, or an http(s) address serving the bucket. */
@@ -40,6 +45,10 @@ export interface TerragucciOptions {
   fetch?: typeof fetch;
   /** Injected by a test: the clock the read is dated with. */
   now?: () => Date;
+  /** #505 `--terragucci-poll <secs>`: how often an open page is told what moved (default 30, 0 off). */
+  pollSecs?: number;
+  /** #505, injected by a test: the lifecycle cache and git, and the index probe. */
+  lane?: Pick<LaneRouteOptions, "lifecycle" | "probe">;
 }
 
 /** How long a read is reused before the next page load reads the source again. */
@@ -103,7 +112,7 @@ export function checkoutRoots(dirs: readonly string[], base: string = repoBase(d
 const FILE_KEY = /^(?!\/)(?!.*(?:^|\/)\.\.?(?:\/|$))[A-Za-z0-9._~\-/]+\.(html|json|txt|md)$/;
 const TYPES: Record<string, string> = { html: "text/html; charset=utf-8", json: "application/json", txt: "text/plain; charset=utf-8", md: "text/plain; charset=utf-8" };
 
-/** Register the two routes. `dirs()` is asked per request, since a project switch changes what is served. */
+/** Register the routes. `dirs()` is asked per request, since a project switch changes what is served. */
 export function terragucciRoutes(app: Hono, opts: TerragucciOptions, dirs: () => string[]): void {
   const source = terragucciSource(opts.source, { ...(opts.aws ? { aws: opts.aws } : {}), ...(opts.fetch ? { fetch: opts.fetch } : {}) });
   let cached: { at: number; key: string; read: Promise<TerragucciRead> } | undefined;
@@ -125,6 +134,14 @@ export function terragucciRoutes(app: Hono, opts: TerragucciOptions, dirs: () =>
     p.catch(() => (cached = undefined));
     return p;
   };
+
+  // #505: the chant/lifecycle lane, and the poll that pushes what moved.
+  terragucciLaneRoutes(
+    app,
+    { source: opts.source, ...(opts.pollSecs !== undefined ? { pollSecs: opts.pollSecs } : {}), ...(opts.aws ? { aws: opts.aws } : {}), ...(opts.fetch ? { fetch: opts.fetch } : {}), ...(opts.now ? { now: opts.now } : {}), ...opts.lane },
+    () => repoBase(dirs()),
+    () => (cached = undefined),
+  );
 
   app.get("/api/terragucci", async (c) => {
     const served = dirs();

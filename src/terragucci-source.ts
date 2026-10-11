@@ -31,7 +31,7 @@ export interface TerragucciSource {
 /** Runs `aws s3 cp <url> -`. Injectable so a test needs no aws CLI. */
 export type AwsRun = (args: string[]) => Promise<{ code: number; stdout: string; stderr: string }>;
 
-const realAws: AwsRun = (args) =>
+export const realAws: AwsRun = (args) =>
   new Promise((res) => {
     const child = spawn(process.env.AWS_BIN || "aws", args, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";

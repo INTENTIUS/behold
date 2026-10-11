@@ -122,6 +122,43 @@ still answers stay inside behold: saving the hand layout, switching the served
 project, refreshing caches, and the carve walkthrough's scratch steps. The
 pipeline is the only way to apply.
 
+## Gates and locks, from chant/lifecycle
+
+The reports say what a wave asked for when its run finished. The gates and
+locks themselves live on the repo's `chant/lifecycle` branch, and the
+Terragucci tab reads them too:
+
+- each wave's gate from `_gates/tf-apply.jsonl` and
+  `_gates/tf-apply/applied.jsonl`: waiting (with the approve line), approved
+  and by whom, applied, failed, or a request that expired;
+- each locked root from `_locks/tf-apply.json`: the pull request holding it,
+  who took it, when, and whether a plan, an apply or `/terragucci lock` did.
+
+Every gate and lock names the commit of `chant/lifecycle` it was read from and
+when that commit was made, and the tab says when behold last read the branch.
+
+behold fetches the branch from your checkout's `origin` with your own git and
+credentials, into a cache of its own (`<tmpdir>/behold-lifecycle-*`). It never
+fetches into your checkout and never moves one of its refs. When the fetch
+fails (offline, or no access), the tab shows your checkout's
+`origin/chant/lifecycle` as of your last `git fetch`, and says so. A repo with
+no `chant/lifecycle` yet shows that no gate has asked and no root is locked.
+
+While the page is open, behold checks every 30 seconds whether the reports'
+`index.json` changed (a conditional request: `If-None-Match` for a bucket or an
+address, the file's time for a directory) and fetches `chant/lifecycle` again,
+and the page updates its marks and gate cards without a reload. Nothing is
+polled when no page is open. Change the interval, or turn it off with `0`:
+
+```sh
+npx @intentius/behold serve . --terragucci s3://acme-terragucci-reports --terragucci-poll 120
+```
+
+With an `s3://` source on a laptop, the check is `aws s3api head-object
+--if-none-match`, so the identity needs `GetObject` on `<prefix>/index.json`,
+which it already has. behold approves, locks and unlocks nothing: unlock is a
+pull request comment, approve is the line on the gate card.
+
 ## The counts are terragucci's
 
 When the source holds `estate.json`, the drifted, failed and waiting counts

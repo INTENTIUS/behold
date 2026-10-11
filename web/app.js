@@ -14,6 +14,7 @@ import { readEmbed, selectMessage, viewFromMessage } from "./embed.js";
 import { gateCards } from "./workspace-gates.js";
 import { cornerOf, estateLine, hrefOf as tgHref, legend as tgLegend, markLine, rootRows as tgRootRows, waveCards } from "./terragucci.js";
 import { laneElement as tgLane, rootOfCard as tgRootOfCard } from "./terragucci-timeline.js";
+import { renderLane } from "./terragucci-lifecycle.js";
 import { seconds, whyQuery, whyView } from "./why.js";
 import { readCostLine } from "./read-cost.js";
 import { applyMemberFrame, pendingLine, stillPending } from "./pending.js";
@@ -3237,6 +3238,36 @@ async function initTerragucci() {
   const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
   if (!project.terragucciReports) return;
   await loadTerragucci();
+  // #505: the chant/lifecycle lane, and what moved while this page is open.
+  if (staticMode) return;
+  await loadTerragucciLane();
+  watchTerragucci();
+}
+let tgLifecycle = null;
+let tgPolled = null;
+async function loadTerragucciLane({ fresh = false } = {}) {
+  tgLifecycle = await apiFetch(`/api/terragucci/lifecycle${fresh ? "?fresh=1" : ""}`)
+    .then((r) => r.json())
+    .catch((e) => ({ error: String(e) }));
+  renderTerragucciPanel();
+}
+// The server polls only while this stream is open, and stops when the page goes.
+function watchTerragucci() {
+  if (typeof EventSource === "undefined") return;
+  const es = new EventSource("/api/terragucci/events");
+  es.addEventListener("reports", () => loadTerragucci({ fresh: true }));
+  es.addEventListener("lifecycle", (e) => {
+    tgLifecycle = JSON.parse(e.data);
+    renderTerragucciPanel();
+  });
+  es.addEventListener("polled", (e) => {
+    tgPolled = JSON.parse(e.data);
+    renderTerragucciPanel();
+  });
+}
+function renderTerragucciLane(host, now) {
+  if (staticMode || (!tgLifecycle && !tgPolled)) return;
+  renderLane(host, tgLifecycle, tgPolled, now, { button, copy: copyToClipboard, link: tgLink });
 }
 async function loadTerragucci({ fresh = false } = {}) {
   const answer = await apiFetch(`/api/terragucci${fresh ? "?fresh=1" : ""}`)
@@ -3254,9 +3285,12 @@ function markTerragucciCards() {
   const svg = document.querySelector("#graph svg");
   if (!svg || !tgAnswer || !tgAnswer.cards) return;
   const now = new Date();
+  // #505: a pushed read replaces the marks, so the old ones go first.
+  for (const old of svg.querySelectorAll("[data-tg-mark]")) old.remove();
+  for (const g of svg.querySelectorAll(".tg-marked")) g.classList.remove("tg-marked", "tg-drift", "tg-wave", "tg-plan");
   for (const [id, marks] of Object.entries(tgAnswer.cards)) {
     const g = svg.querySelector('[data-node-id="' + CSS.escape(id) + '"]');
-    if (!g || g.querySelector('[data-tg-mark="1"]')) continue;
+    if (!g) continue;
     const corner = cornerOf(marks);
     g.classList.add("tg-marked", `tg-${corner.tone}`);
     const rect = g.querySelector("rect");
@@ -3271,6 +3305,7 @@ function markTerragucciCards() {
     tag.setAttribute("fill", corner.tone === "drift" ? "var(--degraded)" : corner.tone === "wave" ? "var(--pending)" : "var(--muted)");
     tag.textContent = `${corner.text} · ${markAge(marks)}`;
     const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    title.setAttribute("data-tg-mark", "title");
     title.textContent = marks.map((m) => markLine(m, now)).join("\n") + "\n(from terragucci reports, not live: the Terragucci tab links each run)";
     g.append(title, tag);
   }
@@ -3306,6 +3341,7 @@ function renderTerragucciPanel() {
     fix.className = "tg-legend";
     fix.textContent = (a && a.remedy) || "";
     host.append(err, fix);
+    renderTerragucciLane(host, new Date());
     return;
   }
   const now = new Date();
@@ -3322,6 +3358,7 @@ function renderTerragucciPanel() {
     line.appendChild(tgLink(est.text, est.href));
     host.appendChild(line);
   }
+  renderTerragucciLane(host, now);
   for (const w of waveCards(a, now)) {
     const box = document.createElement("div");
     box.className = "ws-gate tg-wave";
@@ -3390,7 +3427,10 @@ function renderTerragucciPanel() {
     host.append(h, tgLane(tgTimeline));
   }
   if (!staticMode) {
-    const again = button("Read the reports again", "", () => loadTerragucci({ fresh: true }));
+    const again = button("Read the reports again", "", () => {
+      loadTerragucci({ fresh: true });
+      loadTerragucciLane({ fresh: true }); // #505: and chant/lifecycle
+    });
     host.appendChild(again);
   }
 }
