@@ -6,3 +6,8 @@ behold's schema path without installing terragucci.
 unchanged from INTENTIUS/terragucci `packages/terragucci/src/report/audit.schema.json`
 at `b0b7e144` (main, `@intentius/terragucci` 0.4.7), which ships it as
 `dist/audit.schema.json` (#506).
+
+`run.schema.json` is `terragucci.run/v1`, a project's run view
+(`<project>/runs/<commit>/run.json`), copied unchanged from
+INTENTIUS/terragucci `packages/terragucci/src/report/run.schema.json` on main
+(`@intentius/terragucci` 0.4.7), which ships it as `dist/run.schema.json` (#509).

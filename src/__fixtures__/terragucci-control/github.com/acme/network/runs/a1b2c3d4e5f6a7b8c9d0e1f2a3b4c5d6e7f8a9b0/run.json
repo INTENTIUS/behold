@@ -1,0 +1,55 @@
+{
+  "schema": "terragucci.run/v1",
+  "project": "github.com/acme/network",
+  "commit": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+  "updated": "2026-10-07T12:10:00.000Z",
+  "roots": [
+    {
+      "root": "vpc",
+      "wave": 1,
+      "reads": [],
+      "state": {
+        "bucket": "acme-state",
+        "key": "network/vpc.tfstate"
+      }
+    },
+    {
+      "root": "dns",
+      "wave": 2,
+      "reads": [
+        "vpc"
+      ],
+      "state": {
+        "bucket": "acme-state",
+        "key": "network/dns.tfstate"
+      }
+    }
+  ],
+  "waves": [
+    {
+      "number": 1,
+      "roots": [
+        "vpc"
+      ],
+      "reads": [],
+      "state": "applied",
+      "gate": "wave-1",
+      "approval": "not-required",
+      "updated": "2026-10-07T12:00:00.000Z"
+    },
+    {
+      "number": 2,
+      "roots": [
+        "dns"
+      ],
+      "reads": [
+        1
+      ],
+      "state": "applied",
+      "gate": "wave-2",
+      "approval": "approved",
+      "digest": "jcs1-sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "updated": "2026-10-07T12:10:00.000Z"
+    }
+  ]
+}

@@ -15,6 +15,7 @@ import { gateCards } from "./workspace-gates.js";
 import { cornerOf, estateLine, hrefOf as tgHref, legend as tgLegend, markLine, rootRows as tgRootRows, waveCards } from "./terragucci.js";
 import { laneElement as tgLane, rootOfCard as tgRootOfCard } from "./terragucci-timeline.js";
 import { renderLane } from "./terragucci-lifecycle.js";
+import { initTerragucciEstate } from "./terragucci-estate.js";
 import { seconds, whyQuery, whyView } from "./why.js";
 import { readCostLine } from "./read-cost.js";
 import { applyMemberFrame, pendingLine, stillPending } from "./pending.js";
@@ -3435,6 +3436,8 @@ function renderTerragucciPanel() {
   }
 }
 initTerragucci();
+// #509: a control repo draws its projects from estate.json and their run views.
+initTerragucciEstate({ fetchUrl: apiFetch, copy: copyToClipboard });
 
 function renderPanelCarve() {
   if (!carveMode()) return;

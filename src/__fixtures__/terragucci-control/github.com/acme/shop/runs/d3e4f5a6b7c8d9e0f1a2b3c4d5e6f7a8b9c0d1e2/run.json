@@ -1,0 +1,64 @@
+{
+  "schema": "terragucci.run/v1",
+  "project": "github.com/acme/shop",
+  "commit": "d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2",
+  "updated": "2026-10-08T09:31:00.000Z",
+  "roots": [
+    {
+      "root": "envs/prod/app",
+      "wave": 1,
+      "reads": [],
+      "state": {
+        "bucket": "acme-state",
+        "key": "shop/app.tfstate"
+      },
+      "external": [
+        {
+          "data": "vpc",
+          "bucket": "acme-state",
+          "key": "network/vpc.tfstate"
+        }
+      ]
+    },
+    {
+      "root": "envs/prod/worker",
+      "wave": 2,
+      "reads": [
+        "envs/prod/app"
+      ],
+      "state": {
+        "bucket": "acme-state",
+        "key": "shop/worker.tfstate"
+      }
+    }
+  ],
+  "waves": [
+    {
+      "number": 1,
+      "roots": [
+        "envs/prod/app"
+      ],
+      "reads": [],
+      "state": "applied",
+      "gate": "wave-1",
+      "approval": "not-required",
+      "updated": "2026-10-08T09:20:00.000Z"
+    },
+    {
+      "number": 2,
+      "roots": [
+        "envs/prod/worker"
+      ],
+      "reads": [
+        1
+      ],
+      "state": "waiting",
+      "gate": "wave-2",
+      "policy": "always",
+      "approval": "waiting",
+      "digest": "jcs1-sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "command": "npx terragucci approve wave-2 --plan jcs1-sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "updated": "2026-10-08T09:31:00.000Z"
+    }
+  ]
+}
