@@ -90,7 +90,7 @@ install them, so that every user who serves an ordinary chant project does not
 carry an HCL parser they will never run:
 
 ```sh
-npm install --no-save @intentius/chant-lexicon-terraform@^0.102.0 @cdktn/hcl2json@^0.24.0
+npm install --no-save @intentius/chant-lexicon-terraform@^0.121.0 @cdktn/hcl2json@^0.24.0
 ```
 
 Without them the demo refuses before it serves, naming both packages, the
@@ -101,7 +101,7 @@ the packages `chant.workspace.json` pins, looked up from the workspace's own
 `node_modules` at exactly the pinned version. A demo copy has no
 `node_modules`, so `behold demo` links the lexicon behold resolved into the
 copy and sets the copy's pin to that version (#484). It says so as it loads:
-`linked @intentius/chant-lexicon-terraform 0.102.0 into the copy`. Serving
+`linked @intentius/chant-lexicon-terraform 0.121.0 into the copy`. Serving
 your own declared workspace is different: install the pinned lexicon in its
 root, the way `chant workspace check` asks.
 

@@ -28,11 +28,16 @@ peers**: declared in behold's `package.json`, never installed by it, probed when
 you serve, and refused with one install line and where behold looked.
 
 ```sh
-npm install --no-save @intentius/chant-lexicon-terraform@^0.102.0 @cdktn/hcl2json@^0.24.0
+npm install --no-save @intentius/chant-lexicon-terraform@^0.121.0 @cdktn/hcl2json@^0.24.0
 ```
 
 That keeps a ~1.8 MB parser out of the install of everyone who serves an
 ordinary chant project.
+
+The tested ranges are the ones above. The lexicon's minor has to be behold's
+chant's (0.121): each lexicon release asks for its own chant minor as a peer,
+so installing an older one puts a second chant in the tree and the lexicon
+where behold's reader does not look.
 
 <Aside type="note" title="Nothing is written under your estate">
 chant resolves a lexicon from its config file's location, so behold generates
