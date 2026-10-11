@@ -13,6 +13,7 @@ import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine } f
 import { readEmbed, selectMessage, viewFromMessage } from "./embed.js";
 import { gateCards } from "./workspace-gates.js";
 import { cornerOf, estateLine, hrefOf as tgHref, legend as tgLegend, markLine, rootRows as tgRootRows, waveCards } from "./terragucci.js";
+import { laneElement as tgLane, rootOfCard as tgRootOfCard } from "./terragucci-timeline.js";
 import { seconds, whyQuery, whyView } from "./why.js";
 import { readCostLine } from "./read-cost.js";
 import { applyMemberFrame, pendingLine, stillPending } from "./pending.js";
@@ -902,6 +903,14 @@ function inspect(node) {
       if (m.run.trace_url) p.append(" · ", tgLink("trace", m.run.trace_url));
       panel.appendChild(p);
     }
+  }
+  // #506: the audit record's entries for this card's root (the record names
+  // roots, never a resource), newest first.
+  const tgRoot = tgTimeline && tgRootOfCard(tgAnswer, node.id);
+  if (tgRoot) {
+    const h = document.createElement("h3");
+    h.textContent = "terragucci timeline (audit record)";
+    panel.append(h, tgLane(tgTimeline, { root: tgRoot }));
   }
 
   // Containment hierarchy: a resource shows its parent chain UP (composite →
@@ -3223,6 +3232,7 @@ function markDriftedCards(ir) {
 // of this is live. A waiting wave offers its approve line to copy, no button.
 let tgAnswer = null;
 let tgHost = null;
+let tgTimeline = null; // #506: /api/terragucci/timeline, the audit record's lane
 async function initTerragucci() {
   const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
   if (!project.terragucciReports) return;
@@ -3233,6 +3243,10 @@ async function loadTerragucci({ fresh = false } = {}) {
     .then((r) => r.json())
     .catch((e) => ({ error: String(e), code: "terragucci-report", remedy: "" }));
   tgAnswer = answer;
+  // #506: the timeline, whole; the inspect pane filters it by a card's root.
+  tgTimeline = await apiFetch(`/api/terragucci/timeline${fresh ? "?fresh=1" : ""}`)
+    .then((r) => r.json())
+    .catch((e) => ({ error: String(e), code: "terragucci-report", remedy: "" }));
   renderTerragucciPanel();
   markTerragucciCards();
 }
@@ -3368,6 +3382,12 @@ function renderTerragucciPanel() {
       a.unmatched.changes.length ? `changes no card is: ${a.unmatched.changes.map((c) => `${c.root}: ${c.address}`).join(", ")}` : "",
     ].filter(Boolean).join(" · ");
     host.appendChild(um);
+  }
+  if (tgTimeline) {
+    const h = document.createElement("div");
+    h.className = "tg-timeline-title";
+    h.textContent = "Timeline";
+    host.append(h, tgLane(tgTimeline));
   }
   if (!staticMode) {
     const again = button("Read the reports again", "", () => loadTerragucci({ fresh: true }));

@@ -21,6 +21,13 @@ supplies plans shaped like `tofu show -json` for the tutorial's scenarios:
 | tf-apply wave 1 | 2026-10-08 09:30 | dev, applied (no approval required) |
 | tf-apply wave 2 | 2026-10-08 09:31 | staging, waiting for an approval; destroys staging email's records table |
 
+`audit.jsonl` is the audit record `terragucci audit` would write for these
+runs (wave 1's apply, wave 2's approval request and its waiting apply). It is
+written by hand, field for field on terragucci's `report/audit.ts` at
+`b0b7e144`, with report entries' ids computed the way it computes them, and
+validates against that commit's `audit.schema.json`
+(`src/__fixtures__/terragucci-schemas/`, #506).
+
 The project is `github.com/acme/shop`. The plans' resource names are made up;
 the addresses are the example's own. Plan text files hold a placeholder line.
 

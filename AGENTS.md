@@ -78,6 +78,21 @@ and none is the checkout's git remote) adds two reads, in
   "terragucci-report"}`. `?fresh=1` skips the 30 s cache.
 - `GET /api/terragucci/file?key=<key>`: one report file from the source,
   sandboxed.
+- `GET /api/terragucci/timeline?root=<path>&limit=<n>` (#506): terragucci's
+  audit record (`audit.jsonl` at the top of the prefix, one GET) as `{source,
+  project, validation, read, record: {key, present}, absent?, files, root?,
+  total, limit, entries[]}`, newest first, 200 by default and 1000 at most.
+  An entry is `{id, kind, at, who, what, wave?, digest, result, roots[], run:
+  {commit?, job_url?, run_id?, pull_request?, report?}, evidence, detail?}`;
+  `run.report` opens at `files` + the key. An approval takes the roots and
+  report of its wave's other entries (same gate and digest). No
+  `audit.jsonl` is `present: false` plus an `absent` sentence, never an
+  empty history; a bad line is the `422 terragucci-report` refusal naming it.
+  `src/terragucci-timeline.ts` holds the read and the check (terragucci's
+  `dist/audit.schema.json` when it resolves, structural otherwise). The SPA
+  draws it in the Terragucci tab and, filtered to the card's root, in the
+  inspect pane (`web/terragucci-timeline.js`); an export carries it as one
+  snapshot and does not fail on it.
 
 The reads are `src/terragucci-reports.ts` (index, each run's report, estate;
 terragucci's JSON Schemas when `@intentius/terragucci` resolves, a structural

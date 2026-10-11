@@ -10,6 +10,8 @@
  * - `GET /api/terragucci/file?key=<key>` hands back one report page or JSON
  *   from the same source, so a mark's "report" link opens wherever the reports
  *   live (a directory, or a bucket only the operator's aws CLI can read).
+ * - `GET /api/terragucci/timeline` is the audit record's lane
+ *   (src/terragucci-timeline.ts, #506).
  *
  * No write: approving a waiting wave is a person's act at their shell
  * (`npx terragucci approve wave-<k> --plan <digest>`), and the page offers
@@ -26,6 +28,7 @@ import { terragucciConfig } from "./terragucci-repo.ts";
 import { readTerragucci, terragucciValidator, TerragucciReadError, type TerragucciRead } from "./terragucci-reports.ts";
 import { joinTerragucci, type CheckoutRoot } from "./terragucci-overlay.ts";
 import { terragucciSource, type AwsRun } from "./terragucci-source.ts";
+import { auditValidator, terragucciTimelineRoute } from "./terragucci-timeline.ts";
 
 export interface TerragucciOptions {
   /** `--terragucci`: a directory, `s3://bucket/prefix`, or an http(s) address serving the bucket. */
@@ -152,6 +155,14 @@ export function terragucciRoutes(app: Hono, opts: TerragucciOptions, dirs: () =>
       ...(r.estate ? { estate: r.estate } : {}),
       ...marks,
     });
+  });
+
+  // #506: the timeline lane, from the audit record at the same source.
+  terragucciTimelineRoute(app, source, {
+    ...(opts.project ? { project: opts.project } : {}),
+    checkoutProject: () => checkoutProject(repoBase(dirs())),
+    validator: () => auditValidator(dirs()),
+    ...(opts.now ? { now: opts.now } : {}),
   });
 
   app.get("/api/terragucci/file", async (c) => {

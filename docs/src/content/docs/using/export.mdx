@@ -36,7 +36,7 @@ npx behold export . --no-source --out ./behold-export
 
 ## A terragucci estate
 
-`--terragucci <src>` captures the marks [`serve --terragucci`](/behold/using/terragucci/) shows, with the same dates. `--publish s3://<bucket>/<prefix>/views/<name>` also uploads the bundle there, signed with AWS credentials from the environment; it writes only under a `views/<name>` directory. [Publish a view](/behold/using/terragucci/#publish-a-view-beside-the-estate-page) says how terragucci's estate job puts it beside `estate.html`.
+`--terragucci <src>` captures the marks [`serve --terragucci`](/behold/using/terragucci/) shows, with the same dates, and the audit record's timeline as one more snapshot (a refusal or an absent record is captured as the lane shows it, and does not fail the export). `--publish s3://<bucket>/<prefix>/views/<name>` also uploads the bundle there, signed with AWS credentials from the environment; it writes only under a `views/<name>` directory. [Publish a view](/behold/using/terragucci/#publish-a-view-beside-the-estate-page) says how terragucci's estate job puts it beside `estate.html`.
 
 ## Hosting it
 

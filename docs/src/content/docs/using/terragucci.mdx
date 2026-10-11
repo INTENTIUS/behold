@@ -31,6 +31,7 @@ Three keys from terragucci's [reports bucket](https://intentius.io/terragucci/re
 | `index.json` | every run, newest first, and the directory of each |
 | `<run>/report.json` | for each root, the newest `tf-plan` and `tf-drift` run that planned it, and the newest `tf-apply` wave that held it |
 | `estate.json` | the counts and the waiting waves, as terragucci's estate page shows them |
+| `audit.jsonl` | the audit record, for the [timeline](#the-timeline-from-the-audit-record), when the job writes one |
 
 With an `s3://` source on a laptop, behold reads each key with your own
 `aws s3 cp <key> -`, so it uses your shell's profile and region. In a job,
@@ -69,6 +70,33 @@ as "this card is fine".
 
 Report pages open through behold, which reads them from the same source, so a
 link works for a private bucket too. They are served sandboxed.
+
+## The timeline, from the audit record
+
+When terragucci's estate job runs `terragucci audit`, the top of the reports
+prefix holds `audit.jsonl`: one line per approval, approval request and
+revocation, policy override, apply, refused wave, state migration, lock
+release, state export and ephemeral copy, with who, when and the evidence
+([The audit trail](https://intentius.io/terragucci/reference/audit-trail/)).
+behold reads it with one more GET and draws it as a **Timeline** lane, newest
+first, under the roots in the Terragucci tab. Clicking a card shows the
+entries of its root in the inspect pane (the record names roots, never a
+single resource). Each entry keeps its time and its run, and links the run's
+report the same way a mark does, plus its CI job or the ledger commit on
+`chant/lifecycle`.
+
+An approval names no root of its own: behold gives it the roots of the
+request, apply or refusal of the same wave and plan digest. A source without
+`audit.jsonl` (the job does not run `terragucci audit`, or `--terragucci`
+names one project's directory rather than the prefix) shows the sentence
+"has no audit.jsonl", which is not the same as "nothing happened". Every line is
+checked against `dist/audit.schema.json` when `@intentius/terragucci` 0.4.7 or
+newer is installed, and structurally otherwise; one bad line refuses the
+record with `code: "terragucci-report"` and its line number.
+
+The read-only identity needs `GetObject` on `<prefix>/audit.jsonl` too. For an
+agent: `GET /api/terragucci/timeline?root=<path>&limit=<n>` (200 by default,
+1000 at most).
 
 ## Waiting waves
 
@@ -173,4 +201,5 @@ npx @intentius/behold serve example --terragucci <behold>/example-terragucci-rep
 ```
 
 It shows a drift on staging orders' jobs queue, two pull requests' plans, a
-failed drift check on prod payments, and wave 2 waiting with a destroy.
+failed drift check on prod payments, and wave 2 waiting with a destroy. Its
+`audit.jsonl` gives the timeline wave 1's apply and wave 2's request.
