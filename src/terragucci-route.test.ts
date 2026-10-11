@@ -104,8 +104,11 @@ describe("GET /api/terragucci (#490)", () => {
   it("has no approve route: a waiting wave is approved at a shell", async () => {
     const app = served();
     for (const path of ["/api/terragucci/approve", "/api/terragucci/approve/wave-2"]) {
-      expect((await app.request(path, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status).toBe(404);
+      // A terragucci repo refuses every write before routing (#500), so the
+      // answer is 409; the route list is what shows no approve route exists.
+      expect((await app.request(path, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status).toBe(409);
     }
+    expect(app.routes.filter((r) => r.path.startsWith("/api/terragucci") && r.method !== "GET").map((r) => `${r.method} ${r.path}`)).toEqual([]);
   });
 });
 
