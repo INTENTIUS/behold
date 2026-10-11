@@ -1,0 +1,161 @@
+{
+  "schema": "terragucci.run/v1",
+  "project": "github.com/acme/shop",
+  "commit": "d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2",
+  "updated": "2026-10-08T09:43:00.000Z",
+  "roots": [
+    {
+      "root": "envs/prod/platform",
+      "wave": 1,
+      "reads": []
+    },
+    {
+      "root": "envs/prod/orders",
+      "wave": 2,
+      "reads": [
+        "envs/prod/platform"
+      ]
+    },
+    {
+      "root": "envs/prod/payments",
+      "wave": 2,
+      "reads": [
+        "envs/prod/platform"
+      ]
+    },
+    {
+      "root": "envs/prod/email",
+      "wave": 3,
+      "reads": [
+        "envs/prod/platform"
+      ]
+    }
+  ],
+  "waves": [
+    {
+      "number": 1,
+      "roots": [
+        "envs/prod/platform"
+      ],
+      "reads": [],
+      "state": "applied",
+      "gate": "wave-1",
+      "policy": "on-destructive",
+      "approval": "not-required",
+      "digest": "jcs1-sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "report": "2026/10/d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2/tf-apply-wave-1",
+      "changed": [
+        "envs/prod/platform"
+      ],
+      "spans": [
+        {
+          "phase": "plan",
+          "start": "2026-10-08T09:20:00.000Z",
+          "end": "2026-10-08T09:22:00.000Z"
+        },
+        {
+          "phase": "apply",
+          "start": "2026-10-08T09:22:00.000Z",
+          "end": "2026-10-08T09:30:00.000Z"
+        }
+      ],
+      "progress": {
+        "read": "2026-10-08T09:29:55.000Z",
+        "resources": [
+          {
+            "root": "envs/prod/platform",
+            "address": "aws_s3_bucket.logs",
+            "action": "update",
+            "status": "done",
+            "done_at": "2026-10-08T09:25:05.000Z"
+          }
+        ]
+      },
+      "updated": "2026-10-08T09:30:00.000Z"
+    },
+    {
+      "number": 2,
+      "roots": [
+        "envs/prod/orders",
+        "envs/prod/payments"
+      ],
+      "reads": [
+        1
+      ],
+      "state": "applying",
+      "gate": "wave-2",
+      "policy": "on-destructive",
+      "approval": "approved",
+      "digest": "jcs1-sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "changed": [
+        "envs/prod/orders",
+        "envs/prod/payments"
+      ],
+      "spans": [
+        {
+          "phase": "plan",
+          "start": "2026-10-08T09:31:00.000Z",
+          "end": "2026-10-08T09:32:00.000Z"
+        },
+        {
+          "phase": "gate",
+          "start": "2026-10-08T09:32:00.000Z",
+          "end": "2026-10-08T09:40:00.000Z"
+        },
+        {
+          "phase": "apply",
+          "start": "2026-10-08T09:40:00.000Z"
+        }
+      ],
+      "progress": {
+        "read": "2026-10-08T09:43:00.000Z",
+        "resources": [
+          {
+            "root": "envs/prod/orders",
+            "address": "module.service.aws_s3_bucket.files",
+            "action": "create",
+            "status": "done",
+            "done_at": "2026-10-08T09:41:10.000Z"
+          },
+          {
+            "root": "envs/prod/orders",
+            "address": "module.service.aws_dynamodb_table.records[0]",
+            "action": "replace",
+            "status": "done",
+            "done_at": "2026-10-08T09:42:20.000Z"
+          },
+          {
+            "root": "envs/prod/orders",
+            "address": "module.service.aws_dynamodb_table.records[1]",
+            "action": "replace",
+            "status": "in-flight"
+          },
+          {
+            "root": "envs/prod/payments",
+            "address": "module.service.aws_sqs_queue.jobs",
+            "action": "create",
+            "status": "waiting"
+          },
+          {
+            "root": "envs/prod/payments",
+            "address": "module.service.aws_iam_role.worker",
+            "action": "create",
+            "status": "waiting"
+          }
+        ]
+      },
+      "updated": "2026-10-08T09:43:00.000Z"
+    },
+    {
+      "number": 3,
+      "roots": [
+        "envs/prod/email"
+      ],
+      "reads": [
+        1
+      ],
+      "state": "not-started",
+      "gate": "wave-3"
+    }
+  ]
+}

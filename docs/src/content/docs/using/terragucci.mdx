@@ -24,7 +24,7 @@ the directory.
 
 ## What it reads
 
-Three keys from terragucci's [reports bucket](https://intentius.io/terragucci/reference/reports-bucket/), each with one GET and never with a list:
+The keys from terragucci's [reports bucket](https://intentius.io/terragucci/reference/reports-bucket/), each with one GET and never with a list:
 
 | Key | What behold takes from it |
 |---|---|
@@ -32,6 +32,7 @@ Three keys from terragucci's [reports bucket](https://intentius.io/terragucci/re
 | `<run>/report.json` | for each root, the newest `tf-plan` and `tf-drift` run that planned it, and the newest `tf-apply` wave that held it |
 | `estate.json` | the counts and the waiting waves, as terragucci's estate page shows them |
 | `audit.jsonl` | the audit record, for the [timeline](#the-timeline-from-the-audit-record), when the job writes one |
+| `<project>/runs/<commit>/run.json` | the newest apply's progress per resource, for [apply progress](#apply-progress-from-the-run-view) |
 
 With an `s3://` source on a laptop, behold reads each key with your own
 `aws s3 cp <key> -`, so it uses your shell's profile and region. In a job,
@@ -158,6 +159,27 @@ With an `s3://` source on a laptop, the check is `aws s3api head-object
 --if-none-match`, so the identity needs `GetObject` on `<prefix>/index.json`,
 which it already has. behold approves, locks and unlocks nothing: unlock is a
 pull request comment, approve is the line on the gate card.
+
+## Apply progress, from the run view
+
+A choudoufu repo's `tf-apply` wave job writes its progress per resource into
+the run view while it applies: each resource its plans change, done, in
+flight, waiting, or not applied once its root's apply failed, as of the job's
+last read of the estates' records. behold reads the run view of the newest
+commit `index.json` names an apply of
+(`<prefix>/<project>/runs/<commit>/run.json`, one more GET) and tags each card
+of the wave at its top corner, for example `▶ wave 2 in flight · 2m`. The age is
+that of the records read, not of the page. The tag is never a fill, and the
+Terragucci tab lists each wave's counts with the same read time.
+
+While a wave is applying, or a resource is in flight or waiting, the 30 second
+poll also asks whether that `run.json` changed (`If-None-Match`, or the file's
+time for a directory) and updates the tags without a reload. Once every
+resource is done or not applied it stops asking. A source with no run view (no
+`reports.bucket`, or a Terraform repo, whose waves write no progress) says so,
+which is not the same as "nothing is applying". The read-only identity needs
+`GetObject` on `<prefix>/*/runs/*/run.json`. For an agent:
+`GET /api/terragucci/progress`.
 
 ## The counts are terragucci's
 
