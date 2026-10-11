@@ -121,6 +121,13 @@ Options:
   --terragucci-project <host/path>
                       serve/export: which project, when the reports hold several
                       and none is this checkout's git remote.
+  --terragucci-poll <secs>
+                      serve with --terragucci only: while a page is open, ask
+                      whether index.json changed (If-None-Match, or its mtime)
+                      and fetch chant/lifecycle (the gates and locks) every
+                      <secs> (default 30), and push what moved to the page.
+                      0 turns it off. The fetch goes into behold's own cache
+                      (<tmpdir>/behold-lifecycle-*), never into the checkout.
   --env <name>        Environment name — turns on the live drift overlay.
                       export/serve.
   --poll <secs>       Re-query live drift every <secs> and push updates (needs --env).
@@ -230,6 +237,7 @@ export async function run(argv: string[]): Promise<void> {
   let hudArg: string | undefined = process.env.BEHOLD_HUD_URL || undefined;
   let terragucci: string | undefined;
   let terragucciProject: string | undefined;
+  let terragucciPoll: number | undefined;
   const allowHosts: string[] = [];
 
   for (let i = 0; i < rest.length; i++) {
@@ -240,6 +248,7 @@ export async function run(argv: string[]): Promise<void> {
     else if (a === "--hud") hudArg = rest[++i];
     else if (a === "--terragucci") terragucci = rest[++i];
     else if (a === "--terragucci-project") terragucciProject = rest[++i];
+    else if (a === "--terragucci-poll") terragucciPoll = Number(rest[++i]);
     else if (a === "--env") env = rest[++i];
     else if (a === "--poll") pollSecs = Number(rest[++i]);
     else if (a === "--local") local = true;
@@ -294,6 +303,14 @@ export async function run(argv: string[]): Promise<void> {
     process.stderr.write("behold serve: --terragucci-project needs --terragucci\n");
     process.exit(2);
   }
+  if (terragucciPoll !== undefined && (!Number.isFinite(terragucciPoll) || terragucciPoll < 0)) {
+    process.stderr.write("behold serve: --terragucci-poll must be a number of seconds, 0 for off\n");
+    process.exit(2);
+  }
+  if (terragucciPoll !== undefined && terragucci === undefined) {
+    process.stderr.write("behold serve: --terragucci-poll needs --terragucci\n");
+    process.exit(2);
+  }
   const dirs = projectDirs.map((d) => resolve(d));
   const target = await serveTarget(dirs, "serve");
   await startServer({
@@ -306,7 +323,7 @@ export async function run(argv: string[]): Promise<void> {
     ...(host ? { host } : {}),
     ...(allowHosts.length ? { allowedHosts: allowHosts } : {}),
     ...(target.workspace && hud ? { hud } : {}),
-    ...(terragucci ? { terragucci: { source: terragucci, ...(terragucciProject ? { project: terragucciProject } : {}) } } : {}),
+    ...(terragucci ? { terragucci: { source: terragucci, ...(terragucciProject ? { project: terragucciProject } : {}), ...(terragucciPoll !== undefined ? { pollSecs: terragucciPoll } : {}) } } : {}),
   });
 }
 

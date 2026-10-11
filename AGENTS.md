@@ -93,6 +93,33 @@ and none is the checkout's git remote) adds two reads, in
   draws it in the Terragucci tab and, filtered to the card's root, in the
   inspect pane (`web/terragucci-timeline.js`); an export carries it as one
   snapshot and does not fail on it.
+- `GET /api/terragucci/lifecycle` (#505): the repo's `chant/lifecycle` lane,
+  `{branch, found, via, origin?, fetch: {ok, error?}, commit?: {sha,
+  committed}, read: {at}, gates[], locks[], note}`. `gates[]` is one entry per
+  `wave-<k>` in `_gates/tf-apply.jsonl` and `_gates/tf-apply/applied.jsonl`:
+  `state` (`waiting | expired | approved | applied | failed`), `digest`,
+  `pending`, `approval` (by, at, signed), `applied`, the kept reports under
+  `_gates/tf-apply/wave-<k>/`, and `command` when it waits. `locks[]` is
+  `_locks/tf-apply.json`, one per root (`pr, by, at, head, via?, stage?`).
+  Every gate and lock carries `source: {commit, committed, path}`, the newest
+  commit of the branch that changed its file. The branch is fetched from the
+  checkout's origin URL into `<tmpdir>/behold-lifecycle-<hash of the URL>`, a
+  bare repo behold owns (`assertScratch`), with the person's own git
+  credentials and no prompt; the checkout is never fetched into and no ref of
+  it moves. A failed fetch falls back to the checkout's own
+  `refs/remotes/origin/chant/lifecycle`, read-only (`via: "checkout-ref"`,
+  `fetch.error`); a remote without the branch is `found: false, via:
+  "fetch"`, not an error. 30 s cache, `?fresh=1` skips it. Reader:
+  `src/terragucci-lifecycle.ts`.
+- `GET /api/terragucci/events` (#505): SSE. While at least one page holds it
+  open, a timer (`--terragucci-poll <secs>`, default 30, 0 off) asks
+  whether `index.json` changed (`If-None-Match` with the last ETag for S3 and
+  http, mtime for a directory) and fetches `chant/lifecycle` again. Events:
+  `hello {pollSecs}`, `reports {at, tag}` (the page reads `/api/terragucci`
+  again), `lifecycle <the whole answer>` when the read differs from the last,
+  and `polled {at, reports, lifecycle}` after every tick. The last page
+  leaving stops the timer (`src/terragucci-poll.ts`). Neither route writes,
+  approves, locks or unlocks.
 
 The reads are `src/terragucci-reports.ts` (index, each run's report, estate;
 terragucci's JSON Schemas when `@intentius/terragucci` resolves, a structural
