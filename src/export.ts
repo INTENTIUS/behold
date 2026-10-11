@@ -258,6 +258,9 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
       2,
     ) + "\n",
   );
+  // #510: the manifest names every file of the bundle, so a published commit
+  // can be removed file by file later without a list call.
+  writeFileSync(join(outDir, "manifest.json"), JSON.stringify({ ...manifest, files: bundleFiles(outDir).filter((f) => f !== "manifest.json") }, null, 2));
 
   process.stdout.write(
     `behold export → ${outDir}\n  ${ok} snapshots${failed ? ` (${failed} endpoint error(s) captured as-is)` : ""}\n` +
@@ -350,7 +353,7 @@ const CONTENT_TYPES: Record<string, string> = {
   md: "text/markdown; charset=utf-8",
   txt: "text/plain; charset=utf-8",
 };
-const contentType = (file: string): string => {
+export const contentType = (file: string): string => {
   const ext = file.includes(".") ? file.slice(file.lastIndexOf(".") + 1).toLowerCase() : "";
   return CONTENT_TYPES[ext] ?? (ext ? "application/octet-stream" : "text/plain; charset=utf-8");
 };
@@ -402,6 +405,14 @@ function manifestFiles(text: string): string[] {
   return Object.values(map).filter((f): f is string => typeof f === "string" && /^snapshots\/[A-Za-z0-9=_.-]+$/.test(f) && !f.includes(".."));
 }
 
+/** Every file under `outDir`, as sorted `/`-separated paths relative to it. */
+export function bundleFiles(outDir: string): string[] {
+  return (readdirSync(outDir, { recursive: true, withFileTypes: true }) as import("node:fs").Dirent[])
+    .filter((d) => d.isFile())
+    .map((d) => relative(outDir, join(d.parentPath, d.name)).split(sep).join("/"))
+    .sort();
+}
+
 /**
  * Upload every file under `outDir` to `<prefix>/<path>` (#491), in the order
  * that keeps a reader from seeing a half-written view (#500): every file but
@@ -416,10 +427,7 @@ function manifestFiles(text: string): string[] {
  * warning naming `s3:DeleteObject`, and the publish still succeeds.
  */
 export async function publishBundle(outDir: string, target: { bucket: string; prefix: string }, client: Pick<S3Object, "put" | "get" | "delete">): Promise<Published> {
-  const files = (readdirSync(outDir, { recursive: true, withFileTypes: true }) as import("node:fs").Dirent[])
-    .filter((d) => d.isFile())
-    .map((d) => relative(outDir, join(d.parentPath, d.name)).split(sep).join("/"))
-    .sort();
+  const files = bundleFiles(outDir);
   const warnings: string[] = [];
   const at = (f: string) => `${target.prefix}/${f}`;
 

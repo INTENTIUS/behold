@@ -18,6 +18,7 @@ import { renderLane } from "./terragucci-lifecycle.js";
 import { initTerragucciEstate } from "./terragucci-estate.js";
 import { seconds, whyQuery, whyView } from "./why.js";
 import { readCostLine } from "./read-cost.js";
+import { mountHistoryPicker } from "./history-picker.js";
 import { applyMemberFrame, pendingLine, stillPending } from "./pending.js";
 import { initTheme, setTheme, mountThemePicker, readableOn, colorForCategory, onThemeChange, getTokens, getTheme, pinTokensFor } from "./theme.js";
 // #399 M2 / #401 M4 of #397: the colour-by modes' arithmetic and the
@@ -6173,6 +6174,7 @@ async function initActions() {
     pill.title = "An exported, read-only snapshot — no live observe or deploy.";
     pill.style.cssText = "align-self:center;font:var(--t-caption)/1.4 var(--font-mono);color:var(--muted);border:1px solid var(--line);border-radius:var(--r-ctl);padding:2px 8px";
     bar.appendChild(pill);
+    mountHistoryPicker(bar); // #510: other commits' views, when ../history.json sits beside this one
     previewMode = true;
     return; // nothing else in the bar is a read
   }

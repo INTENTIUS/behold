@@ -267,13 +267,16 @@ describe("export --publish (#491)", () => {
 
 describe("snapshot names carry their content hash (#500)", () => {
   it("names every snapshot in the manifest by its bytes", { timeout: 60_000 }, async () => {
-    const { CONTENT_ADDRESSED } = await import("./export.ts");
+    const { CONTENT_ADDRESSED, bundleFiles } = await import("./export.ts");
     vi.mocked(composeEstate).mockImplementation((async () => IR()) as never);
     const dir = checkout();
     const out = join(mkdtempSync(join(tmpdir(), "behold-tg-view-")), "bundle");
     made.push(dirname(out));
     await quiet(() => runExport({ projectDir: dir, projectDirs: [dir], port: 0, terragucci: { source: BUCKET } }, out));
-    const manifest = JSON.parse(readFileSync(join(out, "manifest.json"), "utf8")) as { keyToFile: Record<string, string> };
+    const manifest = JSON.parse(readFileSync(join(out, "manifest.json"), "utf8")) as { keyToFile: Record<string, string>; files: string[] };
+    // #510: and every file of the bundle but itself, so a pruned commit is deleted without a list call.
+    expect(manifest.files).toEqual(bundleFiles(out).filter((f) => f !== "manifest.json"));
+    expect(manifest.files).toEqual(expect.arrayContaining(["index.html", "app.js", "history-picker.js", ...Object.values(manifest.keyToFile)]));
     const files = Object.values(manifest.keyToFile);
     expect(files.length).toBeGreaterThan(1);
     for (const f of files) {
