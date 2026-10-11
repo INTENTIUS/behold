@@ -83,6 +83,8 @@ export function captureKeys(axes: ExportAxes): string[] {
   if (axes.ops) add("/api/graph", { ops: "1", entities: "1" });
   // #491: the terragucci marks: one read, whatever the lens, as the SPA asks it.
   if (axes.terragucci) add("/api/terragucci", {});
+  // #506: and the audit record's timeline, the SPA's one unfiltered ask (it filters by root itself).
+  if (axes.terragucci) add("/api/terragucci/timeline", {});
 
   const tiers = axes.tiers && axes.tiers.length ? axes.tiers : [""];
   const envs = ["", ...axes.environments]; // "" = the declared-source view
@@ -296,7 +298,7 @@ export function shapeSnapshot(key: string, body: string, opts: ExportOptions = {
     delete doc.recents;
     delete doc.approver;
   }
-  if (key === "/api/terragucci") doc.files = opts.reportsBase ?? VIEWS_REPORTS_BASE;
+  if (key === "/api/terragucci" || key === "/api/terragucci/timeline") doc.files = opts.reportsBase ?? VIEWS_REPORTS_BASE;
   if (opts.noSource) dropSource(doc);
   return JSON.stringify(doc);
 }

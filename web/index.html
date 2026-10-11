@@ -161,6 +161,16 @@
       #tab-terragucci .tg-plan { color: var(--fg); }
       #tab-terragucci .tg-none, #tab-terragucci .tg-ok { color: var(--muted); }
       #tab-terragucci a { color: inherit; }
+      /* #506: the audit record's lane, in the tab and in a card's inspect pane. */
+      #tab-terragucci .tg-timeline-title { font-weight: 600; border-top: 1px solid var(--rule); padding-top: 6px; }
+      .tg-timeline { display: flex; flex-direction: column; gap: 3px; font-size: var(--t-caption); }
+      .tg-timeline .tg-legend { color: var(--muted); }
+      .tg-timeline .tg-refusal { color: var(--degraded); font-weight: 600; }
+      .tg-timeline .tg-entry { overflow-wrap: anywhere; }
+      .tg-timeline .tg-when { color: var(--muted); font-family: var(--font-mono); }
+      .tg-timeline .tg-failed, .tg-timeline .tg-drift { color: var(--degraded); }
+      .tg-timeline .tg-wave { color: var(--pending); }
+      .tg-timeline a { color: inherit; }
       /* Fit reset + a zoom hint, floating top-right of the graph pane. */
       #zoom-toggle { position: absolute; top: 8px; right: 8px; z-index: 2; background: var(--panel);
         color: var(--muted); border: 1px solid var(--rule); border-radius: var(--r-ctl); padding: 4px 10px;
