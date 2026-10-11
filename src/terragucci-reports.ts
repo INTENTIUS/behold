@@ -23,7 +23,7 @@
  * checks the fields it reads and the schema id, and refuses anything else,
  * structurally, the way carve refuses a report it can't read.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -183,11 +183,55 @@ function structural(name: DocName, doc: unknown): string | undefined {
 }
 
 /**
+ * Compiled schema validators, by the package's `dist/` directory and the
+ * mtimes of its package.json and three schemas (#500). A read asks for the
+ * validator every time; a package installed, upgraded or removed since the
+ * last read gives a new key and is compiled afresh, and an unchanged one costs
+ * four stats.
+ */
+const compiledSchemas = new Map<string, Validator>();
+
+/** The key `dist` is cached under, or undefined when one of its files is missing. */
+function schemaStamp(dist: string): string | undefined {
+  try {
+    const files = [join(dist, "..", "package.json"), ...Object.values(SCHEMA_FILES).map((f) => join(dist, f))];
+    return [dist, ...files.map((f) => {
+      const st = statSync(f);
+      return `${st.mtimeMs}:${st.size}`;
+    })].join("\u0000");
+  } catch {
+    return undefined;
+  }
+}
+
+function compileSchemas(dist: string): Validator {
+  const version = (JSON.parse(readFileSync(join(dist, "..", "package.json"), "utf8")) as { version?: string }).version ?? "";
+  const ajv = new Ajv2020({ strict: false, allErrors: false });
+  const compiled = Object.fromEntries(
+    (Object.keys(SCHEMA_FILES) as DocName[]).map((n) => [n, ajv.compile(JSON.parse(readFileSync(join(dist, SCHEMA_FILES[n]), "utf8")) as object)]),
+  ) as Record<DocName, ReturnType<Ajv2020["compile"]>>;
+  return {
+    validation: { by: "schema", terragucci: version },
+    check(name, doc) {
+      const id = isRecord(doc) ? doc.schema : undefined;
+      if (id !== SCHEMA_IDS[name]) return `its schema is ${JSON.stringify(id)}, not ${SCHEMA_IDS[name]}`;
+      if (compiled[name](doc)) return undefined;
+      const e = compiled[name].errors?.[0];
+      return `${SCHEMA_FILES[name]} rejects it: ${e?.instancePath || "/"} ${e?.message ?? "is invalid"}`;
+    },
+  };
+}
+
+/**
  * The validator for documents read for the project at `dirs[0]`: terragucci's
  * schemas when `@intentius/terragucci` resolves from one of `dirs` (the served
  * project first, then behold itself), otherwise behold's structural check.
  * The schema id is always checked first, so a v2 document is refused by name
  * whichever check runs.
+ *
+ * Looked up on every call, so a serve that outlives an install or upgrade of
+ * `@intentius/terragucci` checks with the package now on disk (#500); the
+ * compile is cached by the package's path and its files' mtimes.
  */
 export function terragucciValidator(dirs: readonly string[] = []): Validator {
   for (const from of [...dirs, dirname(fileURLToPath(import.meta.url))]) {
@@ -198,27 +242,21 @@ export function terragucciValidator(dirs: readonly string[] = []): Validator {
       continue;
     }
     const dist = dirname(entry);
+    // A package without one of the three schemas (an older terragucci) is
+    // no reason to refuse; the structural check still runs.
+    const stamp = schemaStamp(dist);
+    if (!stamp) continue;
+    const hit = compiledSchemas.get(stamp);
+    if (hit) return hit;
+    let v: Validator;
     try {
-      const version = (JSON.parse(readFileSync(join(dist, "..", "package.json"), "utf8")) as { version?: string }).version ?? "";
-      const ajv = new Ajv2020({ strict: false, allErrors: false });
-      const compiled = Object.fromEntries(
-        (Object.keys(SCHEMA_FILES) as DocName[]).map((n) => [n, ajv.compile(JSON.parse(readFileSync(join(dist, SCHEMA_FILES[n]), "utf8")) as object)]),
-      ) as Record<DocName, ReturnType<Ajv2020["compile"]>>;
-      return {
-        validation: { by: "schema", terragucci: version },
-        check(name, doc) {
-          const id = isRecord(doc) ? doc.schema : undefined;
-          if (id !== SCHEMA_IDS[name]) return `its schema is ${JSON.stringify(id)}, not ${SCHEMA_IDS[name]}`;
-          if (compiled[name](doc)) return undefined;
-          const e = compiled[name].errors?.[0];
-          return `${SCHEMA_FILES[name]} rejects it: ${e?.instancePath || "/"} ${e?.message ?? "is invalid"}`;
-        },
-      };
+      v = compileSchemas(dist);
     } catch {
-      // A package without one of the three schemas (an older terragucci) is
-      // no reason to refuse; the structural check still runs.
       continue;
     }
+    for (const k of compiledSchemas.keys()) if (k.startsWith(`${dist}\u0000`)) compiledSchemas.delete(k);
+    compiledSchemas.set(stamp, v);
+    return v;
   }
   return { validation: { by: "structural" }, check: structural };
 }

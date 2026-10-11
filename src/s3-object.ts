@@ -1,6 +1,7 @@
 /**
- * The little of S3 behold needs (#491): read one object, and write one, signed
- * with AWS Signature Version 4 from `node:crypto`. No SDK, no list call.
+ * The little of S3 behold needs (#491): read one object, write one, and
+ * delete one (#500), signed with AWS Signature Version 4 from `node:crypto`.
+ * No SDK, no list call.
  *
  * Ported from terragucci's report store (INTENTIUS/terragucci,
  * packages/terragucci/src/report/s3.ts, Apache-2.0), so behold reads a
@@ -47,7 +48,20 @@ type Fetch = (url: string, init: { method: string; headers: Record<string, strin
   text(): Promise<string>;
 }>;
 
-export class S3Error extends Error {}
+export class S3Error extends Error {
+  /** The HTTP status S3 answered, when it answered. */
+  readonly status?: number;
+  /** S3's error code (`AccessDenied`, `NoSuchBucket`, ...), when the body carried one. */
+  readonly code?: string;
+  constructor(message: string, answer?: { status: number; body: string }) {
+    super(message);
+    if (answer) {
+      this.status = answer.status;
+      const code = xmlText(answer.body, "Code");
+      if (code) this.code = code;
+    }
+  }
+}
 
 const encodeStrict = (v: string): string => encodeURIComponent(v).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 const encodePath = (key: string): string => key.split("/").map(encodeStrict).join("/");
@@ -157,15 +171,32 @@ export class S3Object {
     const url = objectUrl(t, key);
     const res = await this.fetchFn(url, { method: "GET", headers: sign(t, "GET", url, {}, sha256(""), this.now()) });
     if (res.status === 404) return undefined;
-    if (!res.ok) throw new S3Error(`GET s3://${t.bucket}/${key}: ${res.status} ${(await res.text()).slice(0, 300)}`);
+    if (!res.ok) {
+      const body = await res.text();
+      throw new S3Error(`GET s3://${t.bucket}/${key}: ${res.status} ${body.slice(0, 300)}`, { status: res.status, body });
+    }
     return res.text();
   }
 
-  /** Write an object. */
-  async put(key: string, body: string | Uint8Array, contentType: string): Promise<void> {
+  /** Write an object, with a Cache-Control header when one is given. */
+  async put(key: string, body: string | Uint8Array, contentType: string, cacheControl?: string): Promise<void> {
     const t = await this.signer();
     const url = objectUrl(t, key);
-    const res = await this.fetchFn(url, { method: "PUT", headers: sign(t, "PUT", url, { "content-type": contentType }, sha256(body), this.now()), body });
-    if (!res.ok) throw new S3Error(`PUT s3://${t.bucket}/${key}: ${res.status} ${(await res.text()).slice(0, 300)}`);
+    const extra = { "content-type": contentType, ...(cacheControl ? { "cache-control": cacheControl } : {}) };
+    const res = await this.fetchFn(url, { method: "PUT", headers: sign(t, "PUT", url, extra, sha256(body), this.now()), body });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new S3Error(`PUT s3://${t.bucket}/${key}: ${res.status} ${text.slice(0, 300)}`, { status: res.status, body: text });
+    }
+  }
+
+  /** Delete an object. A missing one is not an error. */
+  async delete(key: string): Promise<void> {
+    const t = await this.signer();
+    const url = objectUrl(t, key);
+    const res = await this.fetchFn(url, { method: "DELETE", headers: sign(t, "DELETE", url, {}, sha256(""), this.now()) });
+    if (res.ok || res.status === 404) return;
+    const text = await res.text();
+    throw new S3Error(`DELETE s3://${t.bucket}/${key}: ${res.status} ${text.slice(0, 300)}`, { status: res.status, body: text });
   }
 }

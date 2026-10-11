@@ -2,7 +2,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { hasEnvCredentials, objectUrl, S3Object, s3FromEnv, sign } from "./s3-object.ts";
+import { hasEnvCredentials, objectUrl, S3Error, S3Object, s3FromEnv, sign } from "./s3-object.ts";
 
 const made: string[] = [];
 afterAll(() => {
@@ -75,5 +75,49 @@ describe("credentials from the environment (#491)", () => {
     const client = new S3Object({ bucket: "b", region: "us-east-1", accessKeyId: "a", secretAccessKey: "s" }, fetchFn as never);
     expect(await client.get("gone.json")).toBeUndefined();
     await expect(client.get("index.json")).rejects.toThrow(/403 <Error><Code>AccessDenied/);
+  });
+});
+
+describe("DELETE and Cache-Control (#500)", () => {
+  const target = { bucket: "b", region: "us-east-1", endpoint: "http://s3.test", accessKeyId: "a", secretAccessKey: "s" };
+
+  it("signs a DELETE like a GET, and takes a missing object as deleted", async () => {
+    const calls: { url: string; method: string; headers: Record<string, string> }[] = [];
+    const fetchFn = async (url: string, init: { method: string; headers: Record<string, string> }) => {
+      calls.push({ url, ...init });
+      return { ok: url.endsWith("here.json"), status: url.endsWith("here.json") ? 204 : 404, text: async () => "" };
+    };
+    const client = new S3Object(target, fetchFn as never, () => new Date("2026-10-10T00:00:00Z"));
+    await client.delete("views/behold/snapshots/here.json");
+    await client.delete("views/behold/snapshots/gone.json");
+    expect(calls.map((c) => [c.method, c.url])).toEqual([
+      ["DELETE", "http://s3.test/b/views/behold/snapshots/here.json"],
+      ["DELETE", "http://s3.test/b/views/behold/snapshots/gone.json"],
+    ]);
+    const expected = sign(target, "DELETE", calls[0]!.url, {}, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", new Date("2026-10-10T00:00:00Z"));
+    expect(calls[0]!.headers).toEqual(expected);
+  });
+
+  it("throws an S3Error carrying the status and S3's code when a DELETE is refused", async () => {
+    const fetchFn = async () => ({ ok: false, status: 403, text: async () => "<Error><Code>AccessDenied</Code><Message>no</Message></Error>" });
+    const client = new S3Object(target, fetchFn as never);
+    const e = await client.delete("views/behold/a.json").catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(S3Error);
+    expect((e as S3Error).status).toBe(403);
+    expect((e as S3Error).code).toBe("AccessDenied");
+  });
+
+  it("sends and signs Cache-Control on a PUT when given one", async () => {
+    const calls: { headers: Record<string, string> }[] = [];
+    const fetchFn = async (_url: string, init: { headers: Record<string, string> }) => {
+      calls.push(init);
+      return { ok: true, status: 200, text: async () => "" };
+    };
+    const client = new S3Object(target, fetchFn as never);
+    await client.put("views/behold/index.html", "<html>", "text/html; charset=utf-8", "no-cache");
+    await client.put("views/behold/app.js", "x", "text/javascript");
+    expect(calls[0]!.headers["cache-control"]).toBe("no-cache");
+    expect(calls[0]!.headers.authorization).toContain("SignedHeaders=cache-control;content-type;host;");
+    expect(calls[1]!.headers).not.toHaveProperty("cache-control");
   });
 });

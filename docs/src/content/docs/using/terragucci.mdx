@@ -41,7 +41,9 @@ where the credentials are in the environment, it signs its GETs itself. A read-o
 When `@intentius/terragucci` is installed beside behold or in the repo, every
 document is checked against the JSON Schemas it ships. Without it, behold checks
 the schema id and the fields it reads, and refuses anything else with
-`code: "terragucci-report"` and what to do.
+`code: "terragucci-report"` and what to do. behold looks for the package on
+every read, so installing or upgrading it while `serve` runs takes effect on
+the next read (within the 30 second cache, or at once with `?fresh=1`).
 
 ## What a mark means
 
@@ -80,9 +82,17 @@ npx terragucci approve wave-2 --plan jcs1-sha256:2e0f…
 
 There is no approve button. An approval is a git record on `chant/lifecycle`,
 bound to the wave's plan digest and, under `approval: sealed`, signed with your
-key, so it is made at your shell. On a terragucci repo behold refuses every
-write it otherwise offers (Deploy, Op runs, approvals, pipeline dispatch,
-rollback): the pipeline is the only way to apply.
+key, so it is made at your shell. Copy the line from the gate card, digest
+included: `--plan` makes terragucci approve only the plan you looked at, and
+refuse if the wave now holds a different one.
+
+On a terragucci repo behold refuses every write (Deploy, Op runs, approvals,
+pipeline dispatch, rollback, and any write route added later) with `409` and
+`code: "terragucci"`. The refusal's remedy is the same
+`npx terragucci approve wave-<k> --plan <digest>` line. The only writes it
+still answers stay inside behold: saving the hand layout, switching the served
+project, refreshing caches, and the carve walkthrough's scratch steps. The
+pipeline is the only way to apply.
 
 ## The counts are terragucci's
 
@@ -108,7 +118,8 @@ The two Terraform packages are the ones behold reads HCL with, at the ranges
 it declares. The step reads the reports and writes the view with the job's own
 credentials from
 the environment (static keys, or a role assumed with the job's OIDC token),
-so the job needs no aws CLI. Add `PutObject` on `<prefix>/views/behold/*` to
+so the job needs no aws CLI. Add `PutObject` and `GetObject` on
+`<prefix>/views/behold/*` (and `DeleteObject` there, for the sweep below) to
 the job's policy, beside the reads `terragucci estate` has and `GetObject` on
 `<prefix>/*/report.json`. `--publish` writes only under a `views/<name>`
 directory, so a typo never puts the view's `index.html` over the prefix's own.
@@ -119,6 +130,18 @@ to `<prefix>/views/behold/`, so they open the bucket's own report pages through
 the same presigned link or front door as `estate.html`. It carries no
 credential, no user name and no path of the machine that made it, and
 `--no-source` leaves each root's HCL out.
+
+The upload is ordered so a reader never opens a half-written view: the
+snapshots and the SPA's files first, then `manifest.json`, then `index.html`.
+Each snapshot's name carries a hash of its contents and is uploaded with
+`Cache-Control: public, max-age=31536000, immutable`; `manifest.json`,
+`index.html` and the SPA's other files get `Cache-Control: no-cache`, so a
+browser or CDN asks the bucket again and finds the new manifest. Before
+uploading, the step reads the previous `manifest.json` (one GET), and after
+the new `index.html` it deletes the snapshots that manifest named and this
+export did not write, only under `<prefix>/views/behold/`. That needs
+`DeleteObject` on `<prefix>/views/behold/*`; without it the step prints a
+warning naming `s3:DeleteObject`, leaves the old snapshots, and still succeeds.
 
 Make it a step of its own that may fail: a view that cannot be built leaves the
 estate page as it was, and `behold export` fails rather than publishing a

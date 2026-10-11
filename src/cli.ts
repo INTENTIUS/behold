@@ -870,8 +870,13 @@ async function runExportCmd(rest: string[]): Promise<void> {
     { ...(name ? { name } : {}), ...(noSource ? { noSource } : {}), ...(reportsBase !== undefined ? { reportsBase } : {}) },
   );
   if (destination && !("error" in destination)) {
-    const n = await publishBundle(outDir, destination, new S3Object(s3FromEnv(destination.bucket)));
-    process.stdout.write(`  Published: ${n} files to s3://${destination.bucket}/${destination.prefix}/\n`);
+    const done = await publishBundle(outDir, destination, new S3Object(s3FromEnv(destination.bucket)));
+    process.stdout.write(
+      `  Published: ${done.files} files to s3://${destination.bucket}/${destination.prefix}/` +
+        (done.removed.length ? `, ${done.removed.length} stale snapshot${done.removed.length === 1 ? "" : "s"} removed` : "") +
+        "\n",
+    );
+    for (const w of done.warnings) process.stderr.write(`  warning: ${w}\n`);
   }
 }
 

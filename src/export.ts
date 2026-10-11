@@ -13,7 +13,8 @@
 import { mkdirSync, writeFileSync, copyFileSync, cpSync, readFileSync, readdirSync, existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname, basename, relative, resolve, sep } from "node:path";
-import { S3Object } from "./s3-object.ts";
+import { createHash } from "node:crypto";
+import { S3Error, S3Object } from "./s3-object.ts";
 import { fileURLToPath } from "node:url";
 import { createApp, type ServerOptions } from "./server.ts";
 
@@ -38,11 +39,19 @@ export function canonicalKey(path: string, params: URLSearchParams): string {
   return q ? `${path}?${q}` : path;
 }
 
-/** A readable, filesystem-safe snapshot filename from a canonical key. */
-function slug(key: string): string {
+/**
+ * A readable, filesystem-safe snapshot filename from a canonical key, with
+ * the first 16 hex digits of the body's SHA-256 before `.json` (#500). The
+ * name changes whenever the bytes do, so a published snapshot can be cached
+ * for good, and a new manifest never points at an old body under the same name.
+ */
+function slug(key: string, body: string): string {
   const base = key.replace(/^\//, "").replace(/[^a-zA-Z0-9=_.-]+/g, "_").slice(0, 120);
-  return `${base}.json`;
+  return `${base}.${createHash("sha256").update(body).digest("hex").slice(0, 16)}.json`;
 }
+
+/** A snapshot file whose name carries its content hash (slug above). */
+export const CONTENT_ADDRESSED = /^snapshots\/[A-Za-z0-9=_.-]+\.[0-9a-f]{16}\.json$/;
 
 export interface ExportAxes {
   environments: string[];
@@ -189,7 +198,7 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
     // captured key stays exactly what the frontend will ask for.
     const res = await app.request(`${key}${key.includes("?") ? "&" : "?"}layout=1`); // key is already `path?sortedLensParams`
     const body = scrub(shapeSnapshot(key, await res.text(), opts));
-    const file = slug(key);
+    const file = slug(key, body);
     writeFileSync(join(snapDir, file), body);
     keyToFile[key] = `snapshots/${file}`;
     if (res.ok) ok++;
@@ -364,14 +373,85 @@ export function publishTarget(spec: string): { bucket: string; prefix: string } 
   return { bucket: m[1]!, prefix };
 }
 
-/** Upload every file under `outDir` to `<prefix>/<path>`, each with its content type. Returns how many. */
-export async function publishBundle(outDir: string, target: { bucket: string; prefix: string }, client: Pick<S3Object, "put">): Promise<number> {
+/** Cache-Control for a file whose name changes with its bytes. */
+export const IMMUTABLE = "public, max-age=31536000, immutable";
+/** Cache-Control for every other file: the reader asks the bucket again each time. */
+export const NO_CACHE = "no-cache";
+
+/** What a publish did. */
+export interface Published {
+  /** How many files were uploaded. */
+  files: number;
+  /** Keys of the previous export's snapshots this one removed. */
+  removed: string[];
+  /** Why the sweep of the previous export's files stopped short, when it did. The publish still succeeded. */
+  warnings: string[];
+}
+
+/** The snapshot files a manifest names, each a plain `snapshots/<name>` so a delete can only land under the prefix. */
+function manifestFiles(text: string): string[] {
+  let doc: unknown;
+  try {
+    doc = JSON.parse(text);
+  } catch {
+    return [];
+  }
+  const map = isRecord(doc) && isRecord(doc.keyToFile) ? doc.keyToFile : {};
+  return Object.values(map).filter((f): f is string => typeof f === "string" && /^snapshots\/[A-Za-z0-9=_.-]+$/.test(f) && !f.includes(".."));
+}
+
+/**
+ * Upload every file under `outDir` to `<prefix>/<path>` (#491), in the order
+ * that keeps a reader from seeing a half-written view (#500): every file but
+ * `manifest.json` and `index.html`, then `manifest.json`, then `index.html`.
+ * A content-addressed snapshot is uploaded with IMMUTABLE, every other file
+ * with NO_CACHE.
+ *
+ * Before uploading, it reads the previous `manifest.json` under the prefix
+ * (one GET, no list call); after the new `index.html`, it deletes the
+ * snapshots that manifest named and this export did not write, only under the
+ * prefix. The sweep is best effort: a delete S3 refuses stops it with a
+ * warning naming `s3:DeleteObject`, and the publish still succeeds.
+ */
+export async function publishBundle(outDir: string, target: { bucket: string; prefix: string }, client: Pick<S3Object, "put" | "get" | "delete">): Promise<Published> {
   const files = (readdirSync(outDir, { recursive: true, withFileTypes: true }) as import("node:fs").Dirent[])
     .filter((d) => d.isFile())
     .map((d) => relative(outDir, join(d.parentPath, d.name)).split(sep).join("/"))
     .sort();
-  for (const f of files) await client.put(`${target.prefix}/${f}`, readFileSync(join(outDir, f)), contentType(f));
-  return files.length;
+  const warnings: string[] = [];
+  const at = (f: string) => `${target.prefix}/${f}`;
+
+  let previous: string[] = [];
+  try {
+    const text = await client.get(at("manifest.json"));
+    if (text !== undefined) previous = manifestFiles(text);
+  } catch (e) {
+    const note = e instanceof S3Error && e.status === 403 ? " (S3 answers 403 for a missing object too when the credentials lack s3:ListBucket)" : "";
+    warnings.push(`the previous manifest.json could not be read, so its files are left in place: ${e instanceof Error ? e.message : String(e)}${note}`);
+  }
+
+  const last = ["manifest.json", "index.html"];
+  const order = [...files.filter((f) => !last.includes(f)), ...last.filter((f) => files.includes(f))];
+  for (const f of order) await client.put(at(f), readFileSync(join(outDir, f)), contentType(f), CONTENT_ADDRESSED.test(f) ? IMMUTABLE : NO_CACHE);
+
+  const wrote = new Set(files);
+  const removed: string[] = [];
+  for (const f of previous) {
+    if (wrote.has(f)) continue;
+    try {
+      await client.delete(at(f));
+      removed.push(at(f));
+    } catch (e) {
+      const denied = e instanceof S3Error && (e.status === 403 || e.code === "AccessDenied");
+      warnings.push(
+        denied
+          ? `the previous export's files were left in s3://${target.bucket}/${target.prefix}/: deleting them needs s3:DeleteObject on that prefix, which these credentials lack`
+          : `the previous export's files were left in s3://${target.bucket}/${target.prefix}/: ${e instanceof Error ? e.message : String(e)}`,
+      );
+      break;
+    }
+  }
+  return { files: files.length, removed, warnings };
 }
 
 const BUNDLE_README = `# behold — static export
