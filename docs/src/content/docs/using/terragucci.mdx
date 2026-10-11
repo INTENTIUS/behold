@@ -227,6 +227,42 @@ and none is this checkout, it asks for one:
 npx @intentius/behold serve . --terragucci s3://acme-reports --terragucci-project github.com/acme/infra
 ```
 
+## A control repo
+
+A control repo lists its projects under `projects:` in `terragucci.yml` and
+holds no Terraform root, so there is no card to mark. Serve it with the top of
+the reports prefix, where `terragucci estate` writes `estate.json`:
+
+```sh
+npx @intentius/behold serve . --terragucci s3://acme-reports
+```
+
+behold draws one box per project with its roots grouped by wave, a solid
+arrow for each read inside a project and a dashed one for each read between
+projects. It reads `estate.json` once, then each project's newest run view,
+`<project>/runs/<commit>/run.json`, once. The commit comes from `estate.json`:
+the project's `run_view` when it names one, otherwise its newest apply. A read
+between projects is a root's `terraform_remote_state` read of a state that a
+root of another project holds, matched the same way terragucci's estate page
+matches it.
+
+Each box shows terragucci's counts for the project, dated by `estate.json`'s
+`generated`, and the run view it was drawn from, dated by when a wave last
+wrote it. Under the picture, each project lists its waiting waves with the
+approve line to copy. The approve line comes from the run view, so it carries
+the plan digest; run it in the project's own checkout, because behold approves
+nothing. Each project also links its index, the estate page and its run view.
+When the project's repo is checked out next to the control repo (a sibling
+directory whose git remote names the project), the list shows the
+`behold serve <path> --terragucci <src>` line that opens that repo.
+
+A project with no run view (no apply yet, or none in the bucket) stays on the
+page as a box that says "no run view". A run view that does not match
+terragucci's `run.schema.json` is refused on its own project, and the other
+projects still draw. A project listed in `terragucci.yml` that `estate.json`
+does not list is shown as "not in estate.json". The read needs `GetObject` on
+`<prefix>/estate.json` and `<prefix>/*/runs/*/run.json`, and no list call.
+
 ## Try it on terragucci's example
 
 behold ships a reports bucket for terragucci's own example estate, written by

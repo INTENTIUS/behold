@@ -177,6 +177,7 @@ import {
 import { emulatorUp, emulatorDown, mergedEnv, type EmulatorInfo } from "./emulator.ts";
 import { refusedWrite, servedTerragucciConfig, terragucciRefusal } from "./terragucci-repo.ts";
 import { terragucciRoutes, type TerragucciOptions } from "./terragucci-view.ts";
+import { controlRepoInfo, terragucciEstateRoutes } from "./terragucci-estate.ts";
 import { loadDemoRegistry, missingRequirements, fetchesFromNetwork, demoTargetDir, loadDemo, type DemoEntry } from "./demos.ts";
 
 /** The installed behold package root — `demos.json` and the bundled examples
@@ -972,6 +973,8 @@ export function createApp(
 
   // #490: the reports' marks, when serve was given --terragucci.
   if (cfg.terragucci) terragucciRoutes(app, cfg.terragucci, () => cfg.projectDirs ?? [cfg.projectDir]);
+  // #509: a control repo's projects, from estate.json and each project's run view.
+  if (cfg.terragucci) terragucciEstateRoutes(app, cfg.terragucci, () => cfg.projectDirs ?? [cfg.projectDir]);
 
   // Carve mode (#252) claims /api/graph, /api/project and friends before the
   // project-shaped handlers are registered — see carveRoutes.
@@ -1628,6 +1631,11 @@ export function createApp(
       ...(tgConfig() ? { terragucci: { config: tgConfig()!, ...terragucciRefusal(tgConfig()!, "deploying from behold") } } : {}),
       // #490: the page asks /api/terragucci for the marks when this is set.
       ...(cfg.terragucci ? { terragucciReports: { source: cfg.terragucci.source, ...(cfg.terragucci.project ? { project: cfg.terragucci.project } : {}) } } : {}),
+      // #509: a control repo (`projects:`, no roots): the page asks /api/terragucci/estate.
+      ...((): { terragucciControl?: { config: string; projects: string[] } } => {
+        const control = cfg.terragucci ? controlRepoInfo(cfg.projectDirs ?? [cfg.projectDir]) : undefined;
+        return control ? { terragucciControl: control } : {};
+      })(),
       // #477: who `chant approve` records when behold runs it. The approve
       // buttons say it before the click.
       approver: localApprover(),

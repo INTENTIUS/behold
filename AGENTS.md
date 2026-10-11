@@ -129,6 +129,30 @@ schemas cached by its path and files' mtimes, #500) and the join is `src/terragu
 operator's `aws s3 cp <key> -`. There is no approve route, by design: hand the
 operator `waiting[].command`.
 
+A control repo (#509), one whose terragucci config has `projects:` and whose
+checkout declares no Terraform root (`controlRepo` in
+`src/terragucci-estate.ts`), gets one more read, and `/api/project` carries
+`terragucciControl: {config, projects}`:
+
+- `GET /api/terragucci/estate`: `{source, kind, config, validation: {estate,
+  run}, read, estate: {key, html, generated}, gets, projects[], edges[],
+  files}`. It reads `estate.json` and each project's newest run view,
+  `<project>/runs/<commit>/run.json`, one GET each (the commit is the
+  project's `run_view.commit`, else its `apply.commit`). A project is
+  `{project, status, index?, counts: {drifted, failed, waiting, dated},
+  waiting[], run? | missing? | refused?, checkout?, configured}`. Every
+  figure carries `dated: {key, at}`: estate.json's `generated`, or the run
+  view's `updated`. `waiting[].command` is the run view's approve line when it
+  holds that wave. `edges[]` is `{from, to, cross}`, `to` reading `from`'s
+  state; a cross edge matches a root's `external` read to another project's
+  root `state`, as terragucci's `estateGraph` does. A malformed run view is
+  `refused: {code: "terragucci-report"}` on its project only; a missing or
+  malformed `estate.json` is a 422. Not a control repo: 404 `code:
+  "terragucci-not-control"`. Run views are checked against
+  `@intentius/terragucci`'s `dist/run.schema.json` when it resolves, a
+  structural check otherwise. The page (`web/terragucci-estate.js`) draws it
+  in a layer over the graph area.
+
 ## Getting a server
 
 ```sh

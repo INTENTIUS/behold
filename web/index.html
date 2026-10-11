@@ -158,6 +158,31 @@
       #tab-terragucci .tg-cells > span::before { content: attr(data-stage) ": "; color: var(--muted); }
       #tab-terragucci .tg-drift, #tab-terragucci .tg-failed { color: var(--degraded); }
       #tab-terragucci .tg-wave { color: var(--pending); }
+      /* #509: a control repo's projects, over the empty graph area. Dated, never live. */
+      #tg-estate { grid-row: 1; grid-column: 1; z-index: 2; overflow: auto; background: var(--bg); padding: 10px 14px; display: flex; flex-direction: column; gap: 10px; font-size: var(--t-caption); }
+      #tg-estate .tg-estate-head { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; }
+      #tg-estate .tg-legend, #tg-estate .tg-none, #tg-estate .ws-gate-facts, #tg-estate .ws-gate-note { color: var(--muted); overflow-wrap: anywhere; }
+      #tg-estate .tg-refusal, #tg-estate .tg-bad { color: var(--degraded); font-weight: 600; }
+      #tg-estate a { color: inherit; }
+      #tg-estate .tg-estate-graph { overflow: auto; }
+      #tg-estate svg text { fill: var(--fg); font-size: 11px; }
+      #tg-estate .tg-project-box { fill: var(--panel); stroke: var(--rule); }
+      #tg-estate .tg-project-box.tg-no-run { stroke-dasharray: 4 3; }
+      #tg-estate .tg-project-name { font-weight: 600; font-size: 12px; }
+      #tg-estate svg .tg-project-counts, #tg-estate svg .tg-project-run.tg-none, #tg-estate svg .tg-wave-label { fill: var(--muted); }
+      #tg-estate svg .tg-project-run.tg-bad { fill: var(--degraded); }
+      #tg-estate svg .tg-wave-waiting, #tg-estate svg .tg-wave-applying { fill: var(--pending); }
+      #tg-estate svg .tg-wave-failed, #tg-estate svg .tg-wave-refused { fill: var(--degraded); }
+      #tg-estate .tg-root-node rect { fill: var(--bg); stroke: var(--edge); }
+      #tg-estate .tg-root-node text { font-family: var(--font-mono); }
+      #tg-estate .tg-edge { fill: none; stroke: var(--edge); stroke-width: 1.3; }
+      #tg-estate .tg-edge-cross { stroke-dasharray: 5 4; stroke: var(--pending); }
+      #tg-estate .tg-estate-projects { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+      #tg-estate .tg-estate-project { border: 1px solid var(--rule); border-radius: var(--r-ctl); padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; }
+      #tg-estate .tg-estate-title { font-weight: 600; overflow-wrap: anywhere; }
+      #tg-estate .ws-gate { border: 1px solid var(--pending, var(--rule)); border-radius: var(--r-ctl); padding: 4px 6px; }
+      #tg-estate .tg-estate-cmd { display: flex; gap: 6px; align-items: center; }
+      #tg-estate .tg-command { font-family: var(--font-mono); overflow-wrap: anywhere; }
       #tab-terragucci .tg-plan { color: var(--fg); }
       #tab-terragucci .tg-none, #tab-terragucci .tg-ok { color: var(--muted); }
       #tab-terragucci a { color: inherit; }
