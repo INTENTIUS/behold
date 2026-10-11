@@ -109,15 +109,20 @@ keeps `<prefix>/views/` for a viewer's files and never writes there. One more
 step in that job, after `terragucci estate`:
 
 ```sh
-npx -y -p @intentius/behold -p @intentius/chant-lexicon-terraform@^0.102.0 -p @cdktn/hcl2json@^0.24.0 \
+npx -y -p @intentius/behold -p @intentius/chant-lexicon-terraform@^0.121.0 -p @cdktn/hcl2json@^0.24.0 \
   behold export . --terragucci s3://<bucket>/<prefix> --no-source \
   --publish s3://<bucket>/<prefix>/views/behold
 ```
 
 The two Terraform packages are the ones behold reads HCL with, at the ranges
-it declares. The step reads the reports and writes the view with the job's own
-credentials from
-the environment (static keys, or a role assumed with the job's OIDC token),
+it declares. behold is built and tested on chant 0.121, so the lexicon range is
+`^0.121.0`: the lexicon's own peer on `@intentius/chant` holds its minor, and a
+lexicon from another minor installs a second chant beside it that behold's
+reader never resolves. behold's chant reads a root whose `chant.workspace.json`
+asks for `minReader` 0.108.0 or anything up to 0.121.
+
+The step reads the reports and writes the view with the job's own credentials
+from the environment (static keys, or a role assumed with the job's OIDC token),
 so the job needs no aws CLI. Add `PutObject` and `GetObject` on
 `<prefix>/views/behold/*` (and `DeleteObject` there, for the sweep below) to
 the job's policy, beside the reads `terragucci estate` has and `GetObject` on

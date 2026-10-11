@@ -60,12 +60,12 @@ describe("linkDemoPins (#484)", () => {
     const { work } = copy([{ package: LEXICON, version: "0.102.0" }]);
     const got = linkDemoPins(work, {
       resolve: () => undefined,
-      reader: () => ({ ...readable(), refusal: { error: "Reading a Terraform estate needs chant's terraform lexicon…", code: "terraform-lexicon", remedy: "Install @intentius/chant-lexicon-terraform@^0.102.0 @cdktn/hcl2json@^0.24.0 beside behold, then reload." } }),
+      reader: () => ({ ...readable(), refusal: { error: "Reading a Terraform estate needs chant's terraform lexicon…", code: "terraform-lexicon", remedy: "Install @intentius/chant-lexicon-terraform@^0.121.0 @cdktn/hcl2json@^0.24.0 beside behold, then reload." } }),
     });
     expect(got).toEqual({
       ok: false,
       error: "Reading a Terraform estate needs chant's terraform lexicon…",
-      remedy: "Install @intentius/chant-lexicon-terraform@^0.102.0 @cdktn/hcl2json@^0.24.0 beside behold, then reload.",
+      remedy: "Install @intentius/chant-lexicon-terraform@^0.121.0 @cdktn/hcl2json@^0.24.0 beside behold, then reload.",
     });
   });
 
