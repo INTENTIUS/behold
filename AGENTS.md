@@ -764,6 +764,20 @@ uploading (no list call) and, after `index.html`, deletes the
 Nothing outside the prefix is deleted. A refused delete stops the sweep with
 a warning naming `s3:DeleteObject`, and the publish still succeeds.
 
+Since #510 the bundle goes to `<prefix>/<commit>/` (the checkout's HEAD, or
+`--commit`), with publishBundle's order and sweep one level down, and
+`src/publish-snapshots.ts` then writes, in order, `history.json` (newest
+first, `{commit, at, project, generated}`, one GET of the old one),
+`latest.json` (`{commit}`) and the root `index.html`, a no-cache page that
+opens `<latest>/index.html`, so old links keep working. `--keep <n>` (30)
+drops older commits from `history.json` and then deletes their files as each
+commit's `manifest.json` lists them (`files`, which runExport now writes,
+plus `keyToFile`), best effort with the same `s3:DeleteObject` warning. A
+view from before the layout keeps its files; only its `index.html` is
+replaced. With `--publish` the default `--reports-base` is `../../../`. The
+view's history picker (`web/history-picker.js`) reads `../history.json` and
+only navigates.
+
 A choudoufu estate member (#366) adds no exception. A move there is one tag
 write through choudoufu's own `live-mv`, and behold never makes it: `GET
 /api/choudoufu/moves` reads a plan (`carve.json`) from inside a served member,

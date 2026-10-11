@@ -196,7 +196,7 @@ directory, so a typo never puts the view's `index.html` over the prefix's own.
 
 The view is a static folder: the same marks with the same dates, the gate
 cards and their lines, and terragucci's counts. Its report links are relative
-to `<prefix>/views/behold/`, so they open the bucket's own report pages through
+to `<prefix>/views/behold/<commit>/`, so they open the bucket's own report pages through
 the same presigned link or front door as `estate.html`. It carries no
 credential, no user name and no path of the machine that made it, and
 `--no-source` leaves each root's HCL out.
@@ -212,6 +212,34 @@ the new `index.html` it deletes the snapshots that manifest named and this
 export did not write, only under `<prefix>/views/behold/`. That needs
 `DeleteObject` on `<prefix>/views/behold/*`; without it the step prints a
 warning naming `s3:DeleteObject`, leaves the old snapshots, and still succeeds.
+
+Each run keeps its own view, filed under the commit it was exported from:
+
+```
+<prefix>/views/behold/<commit>/   the view, as above (index.html, manifest.json, snapshots/, ...)
+<prefix>/views/behold/history.json  newest first: [{commit, at, project, generated}]
+<prefix>/views/behold/latest.json   {commit}
+<prefix>/views/behold/index.html    opens the commit latest.json names
+```
+
+The commit is the checkout's `HEAD`, or `--commit <sha>`. The ordering above
+applies inside `<commit>/`; after that commit's `index.html` the step rewrites
+`history.json` (one GET of the old one, no list call), then `latest.json`,
+then the root `index.html`, all `no-cache`. The root page is a few lines that
+read `latest.json` and open `<commit>/index.html` with the link's query and
+fragment, so a link to `<prefix>/views/behold/index.html` keeps opening the
+newest view. Inside a view, a picker beside the "static snapshot" pill reads
+`../history.json` and opens another commit's view, each labeled with its commit
+and when it was exported. `at` is the commit's own date and `generated` the
+export's.
+
+`--keep <n>` (30 by default) is how many commits `history.json` holds. A commit
+past it leaves `history.json`, and its files are deleted as that commit's own
+`manifest.json` names them (`index.html` first, `manifest.json` last), with the
+same `DeleteObject` permission and the same warning as the sweep above.
+Nothing outside `<prefix>/views/behold/` is touched. A view published before
+this layout, its files directly under `views/behold/`, is left where it is;
+only its `index.html` becomes the page that opens the newest commit.
 
 Make it a step of its own that may fail: a view that cannot be built leaves the
 estate page as it was, and `behold export` fails rather than publishing a

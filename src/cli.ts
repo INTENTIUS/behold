@@ -11,7 +11,8 @@ import { startServer, beholdVersion } from "./server.ts";
 import { loadDemoRegistry, missingRequirements, demoTargetDir, loadDemo, type DemoCarve } from "./demos.ts";
 import { resolveChant, runChantRaw } from "./chant.ts";
 import { applyConversion, planConversion } from "./workspace-convert.ts";
-import { publishBundle, publishTarget, runExport } from "./export.ts";
+import { publishTarget, runExport } from "./export.ts";
+import { DEFAULT_KEEP, publishSnapshot, resolveCommit, SNAPSHOT_REPORTS_BASE } from "./publish-snapshots.ts";
 import { hasEnvCredentials, S3Object, s3FromEnv } from "./s3-object.ts";
 import { diagnose, formatReport } from "./doctor.ts";
 import { isAutoSyncMode, type AutoSyncMode } from "./autosync.ts";
@@ -41,7 +42,7 @@ Usage:
   behold preview [project-dir] [--port <n>] [--emulator]
   behold export [project-dir] [--out <dir>] [--env <name>] [--name <worker>] [--emulator]
                 [--terragucci <src> [--terragucci-project <p>] [--reports-base <rel>]] [--no-source]
-                [--publish s3://<bucket>/<prefix>/views/<name>]
+                [--publish s3://<bucket>/<prefix>/views/<name> [--commit <sha>] [--keep <n>]]
   behold serve <project-dir…> [--port <n>] [--host <addr>] [--allow-host <name,…>] [--hud <url>] [--env <name>] [--poll <secs>] [--local]
   behold carve <report.json> [--port <n>]
 
@@ -175,9 +176,17 @@ Options:
                       (terragucci never writes there), so a bundle never
                       overwrites a page it did not make. The one cloud write
                       behold makes, and only when an export asks for it.
+                      Each commit's view goes to <name>/<commit>/; history.json,
+                      latest.json and a redirecting index.html sit beside them.
+  --commit <sha>      export with --publish only: the commit to file the view
+                      under (default: the served checkout's HEAD).
+  --keep <n>          export with --publish only: how many commits history.json
+                      keeps (default 30); older commits' files are deleted as
+                      their manifest.json names them, best effort.
   --reports-base <r>  export with --terragucci only: where a report link points
                       from the bundle, relative to it (default ../../, for a
-                      bundle uploaded to <prefix>/views/behold/).
+                      bundle at <prefix>/views/behold/; ../../../ with
+                      --publish, whose bundle sits one commit deeper).
   --name <worker>     export only: Cloudflare Worker name in the generated
                       wrangler.jsonc.
   -h, --help          This text.
@@ -829,6 +838,8 @@ async function runExportCmd(rest: string[]): Promise<void> {
   let terragucciProject: string | undefined;
   let reportsBase: string | undefined;
   let publish: string | undefined;
+  let commitArg: string | undefined;
+  let keepArg: string | undefined;
   let noSource = false;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
@@ -841,6 +852,8 @@ async function runExportCmd(rest: string[]): Promise<void> {
     else if (a === "--reports-base") reportsBase = rest[++i];
     else if (a === "--no-source") noSource = true;
     else if (a === "--publish") publish = rest[++i];
+    else if (a === "--commit") commitArg = rest[++i];
+    else if (a === "--keep") keepArg = rest[++i];
     else if (a === "-h" || a === "--help") return void process.stdout.write(USAGE);
     else if (!a.startsWith("-")) dirArg = a;
   }
@@ -856,6 +869,15 @@ async function runExportCmd(rest: string[]): Promise<void> {
     process.stderr.write(`behold export: ${destination.error}\n`);
     process.exit(2);
   }
+  if ((commitArg !== undefined || keepArg !== undefined) && !destination) {
+    process.stderr.write("behold export: --commit and --keep need --publish\n");
+    process.exit(2);
+  }
+  const keep = keepArg === undefined ? DEFAULT_KEEP : Number(keepArg);
+  if (!Number.isInteger(keep) || keep < 1) {
+    process.stderr.write(`behold export: --keep takes a whole number of at least 1, not ${keepArg}\n`);
+    process.exit(2);
+  }
   if (destination && !hasEnvCredentials()) {
     process.stderr.write(
       "behold export: --publish signs with AWS credentials from the environment (AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, or AWS_ROLE_ARN and AWS_WEB_IDENTITY_TOKEN_FILE), and there are none.\n" +
@@ -865,6 +887,12 @@ async function runExportCmd(rest: string[]): Promise<void> {
   }
 
   const projectDir = resolve(dirArg ?? process.cwd());
+  // #510: the commit a published view is filed under, settled before the capture.
+  const commit = destination ? resolveCommit(projectDir, commitArg) : undefined;
+  if (commit && "error" in commit) {
+    process.stderr.write(`behold export: ${commit.error}\n`);
+    process.exit(2);
+  }
   if (emulator) {
     injectEmulatorEnv(env);
     env ??= "local";
@@ -884,13 +912,18 @@ async function runExportCmd(rest: string[]): Promise<void> {
       ...(terragucci ? { terragucci: { source: terragucci, ...(terragucciProject ? { project: terragucciProject } : {}) } } : {}),
     },
     outDir,
-    { ...(name ? { name } : {}), ...(noSource ? { noSource } : {}), ...(reportsBase !== undefined ? { reportsBase } : {}) },
+    {
+      ...(name ? { name } : {}),
+      ...(noSource ? { noSource } : {}),
+      ...(reportsBase !== undefined ? { reportsBase } : destination ? { reportsBase: SNAPSHOT_REPORTS_BASE } : {}),
+    },
   );
-  if (destination && !("error" in destination)) {
-    const done = await publishBundle(outDir, destination, new S3Object(s3FromEnv(destination.bucket)));
+  if (destination && !("error" in destination) && commit && !("error" in commit)) {
+    const done = await publishSnapshot(outDir, destination, commit, new S3Object(s3FromEnv(destination.bucket)), { keep });
     process.stdout.write(
-      `  Published: ${done.files} files to s3://${destination.bucket}/${destination.prefix}/` +
-        (done.removed.length ? `, ${done.removed.length} stale snapshot${done.removed.length === 1 ? "" : "s"} removed` : "") +
+      `  Published: ${done.files} files to s3://${destination.bucket}/${destination.prefix}/${done.commit}/, latest and history (${done.history} of ${keep} kept) updated` +
+        (done.removed.length ? `, ${done.removed.length} stale file${done.removed.length === 1 ? "" : "s"} removed` : "") +
+        (done.dropped.length ? `, ${done.dropped.length} commit${done.dropped.length === 1 ? "" : "s"} past --keep dropped` : "") +
         "\n",
     );
     for (const w of done.warnings) process.stderr.write(`  warning: ${w}\n`);
