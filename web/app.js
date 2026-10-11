@@ -16,6 +16,7 @@ import { cornerOf, estateLine, hrefOf as tgHref, legend as tgLegend, markLine, r
 import { laneElement as tgLane, rootOfCard as tgRootOfCard } from "./terragucci-timeline.js";
 import { renderLane } from "./terragucci-lifecycle.js";
 import { initTerragucciEstate } from "./terragucci-estate.js";
+import { cardProgress as tgCardProgress, progressLines as tgProgressLines, progressSection as tgProgressSection, stampProgress as tgStampProgress } from "./terragucci-progress.js";
 import { seconds, whyQuery, whyView } from "./why.js";
 import { readCostLine } from "./read-cost.js";
 import { mountHistoryPicker } from "./history-picker.js";
@@ -904,6 +905,19 @@ function inspect(node) {
       if (m.run.job_url) p.append(" · ", tgLink("job", m.run.job_url));
       if (m.run.pull_request_url) p.append(" · ", tgLink(`PR #${m.run.pull_request}`, m.run.pull_request_url));
       if (m.run.trace_url) p.append(" · ", tgLink("trace", m.run.trace_url));
+      panel.appendChild(p);
+    }
+  }
+  // #511: the newest apply's progress on this card, dated by the records read.
+  const tgProg = tgCardProgress(tgProgress && tgProgress.cards && tgProgress.cards[node.id]);
+  if (tgProg) {
+    const h = document.createElement("h3");
+    h.textContent = "terragucci apply progress (run view, not live)";
+    panel.appendChild(h);
+    for (const line of tgProgressLines(tgProg, new Date())) {
+      const p = document.createElement("p");
+      p.className = "tg-inspect";
+      p.textContent = line;
       panel.appendChild(p);
     }
   }
@@ -3258,6 +3272,11 @@ function watchTerragucci() {
   if (typeof EventSource === "undefined") return;
   const es = new EventSource("/api/terragucci/events");
   es.addEventListener("reports", () => loadTerragucci({ fresh: true }));
+  // #511: the run view moved while a wave applies.
+  es.addEventListener("progress", (e) => {
+    tgProgress = JSON.parse(e.data);
+    paintTgProgress();
+  });
   es.addEventListener("lifecycle", (e) => {
     tgLifecycle = JSON.parse(e.data);
     renderTerragucciPanel();
@@ -3282,9 +3301,23 @@ async function loadTerragucci({ fresh = false } = {}) {
     .catch((e) => ({ error: String(e), code: "terragucci-report", remedy: "" }));
   renderTerragucciPanel();
   markTerragucciCards();
+  if (!staticMode) await loadTgProgress({ fresh });
+}
+// #511: /api/terragucci/progress, the newest apply's run view on the cards.
+let tgProgress = null;
+async function loadTgProgress({ fresh = false } = {}) {
+  tgProgress = await apiFetch(`/api/terragucci/progress${fresh ? "?fresh=1" : ""}`)
+    .then((r) => r.json())
+    .catch((e) => ({ error: String(e) }));
+  paintTgProgress();
+}
+function paintTgProgress() {
+  tgStampProgress(document.querySelector("#graph svg"), tgProgress, new Date());
+  renderTerragucciPanel();
 }
 function markTerragucciCards() {
   const svg = document.querySelector("#graph svg");
+  tgStampProgress(svg, tgProgress, new Date()); // #511
   if (!svg || !tgAnswer || !tgAnswer.cards) return;
   const now = new Date();
   // #505: a pushed read replaces the marks, so the old ones go first.
@@ -3361,6 +3394,7 @@ function renderTerragucciPanel() {
     host.appendChild(line);
   }
   renderTerragucciLane(host, now);
+  if (tgProgress) host.appendChild(tgProgressSection(tgProgress, now, tgLink)); // #511
   for (const w of waveCards(a, now)) {
     const box = document.createElement("div");
     box.className = "ws-gate tg-wave";

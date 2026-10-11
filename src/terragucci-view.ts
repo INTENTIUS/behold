@@ -13,6 +13,8 @@
  * - `GET /api/terragucci/timeline` is the audit record's lane
  *   (src/terragucci-timeline.ts, #506).
  *
+ * - `GET /api/terragucci/progress` is a choudoufu wave's progress per
+ *   resource from the newest apply's run view (src/terragucci-progress.ts, #511).
  * - `GET /api/terragucci/lifecycle` and `GET /api/terragucci/events` (#505):
  *   the gates and locks on `chant/lifecycle`, and the poll that pushes what
  *   moved while a page is open (src/terragucci-poll.ts).
@@ -33,7 +35,8 @@ import { readTerragucci, terragucciValidator, TerragucciReadError, type Terraguc
 import { joinTerragucci, type CheckoutRoot } from "./terragucci-overlay.ts";
 import { terragucciSource, type AwsRun } from "./terragucci-source.ts";
 import { auditValidator, terragucciTimelineRoute } from "./terragucci-timeline.ts";
-import { terragucciLaneRoutes, type LaneRouteOptions } from "./terragucci-poll.ts";
+import { indexProbe, terragucciLaneRoutes, type LaneRouteOptions } from "./terragucci-poll.ts";
+import { runValidator, TerragucciProgress, terragucciProgressRoute } from "./terragucci-progress.ts";
 
 export interface TerragucciOptions {
   /** `--terragucci`: a directory, `s3://bucket/prefix`, or an http(s) address serving the bucket. */
@@ -135,12 +138,30 @@ export function terragucciRoutes(app: Hono, opts: TerragucciOptions, dirs: () =>
     return p;
   };
 
+  // #511: the newest apply's run view, its progress per resource on the cards.
+  const progress = new TerragucciProgress({
+    source,
+    ...(opts.project ? { project: opts.project } : {}),
+    checkoutProject: () => checkoutProject(repoBase(dirs())),
+    validators: () => ({ index: terragucciValidator(dirs()), run: runValidator(dirs()) }),
+    context: async () => {
+      const served = dirs();
+      return { nodes: (await composeEstate(served, { detail: 3 })).nodes as never, roots: checkoutRoots(served) };
+    },
+    probe: (key) => indexProbe(opts.source, { key, ...(opts.aws ? { aws: opts.aws } : {}), ...(opts.fetch ? { fetch: opts.fetch } : {}) }),
+    ...(opts.now ? { now: opts.now } : {}),
+  });
+  terragucciProgressRoute(app, progress);
+
   // #505: the chant/lifecycle lane, and the poll that pushes what moved.
   terragucciLaneRoutes(
     app,
-    { source: opts.source, ...(opts.pollSecs !== undefined ? { pollSecs: opts.pollSecs } : {}), ...(opts.aws ? { aws: opts.aws } : {}), ...(opts.fetch ? { fetch: opts.fetch } : {}), ...(opts.now ? { now: opts.now } : {}), ...opts.lane },
+    { source: opts.source, ...(opts.pollSecs !== undefined ? { pollSecs: opts.pollSecs } : {}), ...(opts.aws ? { aws: opts.aws } : {}), ...(opts.fetch ? { fetch: opts.fetch } : {}), ...(opts.now ? { now: opts.now } : {}), progress: () => progress.poll(), ...opts.lane },
     () => repoBase(dirs()),
-    () => (cached = undefined),
+    () => {
+      cached = undefined;
+      progress.forget();
+    },
   );
 
   app.get("/api/terragucci", async (c) => {

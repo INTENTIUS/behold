@@ -9,6 +9,10 @@
  * - The lane: `chant/lifecycle` is fetched again on the same timer
  *   (src/terragucci-lifecycle.ts). A read whose tip, source or entries
  *   differ from the last one is pushed whole as a `lifecycle` event.
+ * - The run view (#511): while the newest apply's `run.json` is unsettled (a
+ *   wave applying, or a resource in flight or waiting), the same conditional
+ *   ask of that key, and a changed progress pushed whole as a `progress`
+ *   event (src/terragucci-progress.ts). A settled run view is not asked about.
  * - Every tick ends with a `polled` event carrying when it read, so the page
  *   says when it last looked rather than painting anything as live.
  *
@@ -30,7 +34,7 @@ import { readLifecycle, type LifecycleAnswer, type LifecycleOptions } from "./te
 
 /** The default tick, the same 30 s the reports read is cached for. */
 export const TERRAGUCCI_POLL_SECS = 30;
-const INDEX = "index.json";
+const INDEX_KEY = "index.json";
 
 /** What the index looked like this time: a tag to compare (ETag or mtime), or undefined when there is no index. */
 export interface IndexProbe {
@@ -50,11 +54,13 @@ const verdict = (prev: string | undefined, tag: string | undefined): IndexProbe 
  * three kinds of source src/terragucci-source.ts reads, asked only whether
  * the index changed.
  */
-export function indexProbe(spec: string, opts: { cwd?: string; aws?: AwsRun; fetch?: typeof fetch; env?: NodeJS.ProcessEnv } = {}): Probe {
+export function indexProbe(spec: string, opts: { cwd?: string; aws?: AwsRun; fetch?: typeof fetch; env?: NodeJS.ProcessEnv; key?: string } = {}): Probe {
+  // #511: the same ask of another key under the prefix (a run view's run.json).
+  const name = opts.key ?? INDEX_KEY;
   const s3 = /^s3:\/\/([^/]+)\/?(.*)$/.exec(spec);
   if (s3) {
     const bucket = s3[1]!;
-    const key = joinKey(s3[2] ?? "", INDEX);
+    const key = joinKey(s3[2] ?? "", name);
     const env = opts.env ?? process.env;
     if (!opts.aws && hasEnvCredentials(env)) {
       const client = new S3Object(s3FromEnv(bucket, env), opts.fetch as never);
@@ -82,7 +88,7 @@ export function indexProbe(spec: string, opts: { cwd?: string; aws?: AwsRun; fet
     };
   }
   if (/^https?:\/\//.test(spec)) {
-    const url = `${spec.replace(/\/+$/, "")}/${INDEX}`;
+    const url = `${spec.replace(/\/+$/, "")}/${name}`;
     const get = opts.fetch ?? fetch;
     return async (prev) => {
       const res = await get(url, { headers: prev ? { "if-none-match": prev } : {} });
@@ -94,7 +100,7 @@ export function indexProbe(spec: string, opts: { cwd?: string; aws?: AwsRun; fet
       return verdict(prev, etag);
     };
   }
-  const file = join(resolve(opts.cwd ?? process.cwd(), spec), INDEX);
+  const file = join(resolve(opts.cwd ?? process.cwd(), spec), name);
   return async (prev) => {
     try {
       const s = await stat(file);
@@ -115,7 +121,16 @@ export function lifecycleKey(a: LifecycleAnswer): string {
 export type PollEvent =
   | { type: "reports"; data: { at: string; tag?: string } }
   | { type: "lifecycle"; data: LifecycleAnswer }
-  | { type: "polled"; data: { at: string; reports: { tag?: string; error?: string }; lifecycle: { commit?: string; via?: string; error?: string } } };
+  | { type: "progress"; data: unknown }
+  | { type: "polled"; data: { at: string; reports: { tag?: string; error?: string }; lifecycle: { commit?: string; via?: string; error?: string }; progress?: Omit<ProgressPoll, "answer"> & { error?: string } } };
+
+/** #511: one tick's ask of the run view. `answer` is present when the progress moved, and is pushed whole. */
+export interface ProgressPoll {
+  asked: boolean;
+  key?: string;
+  changed?: boolean;
+  answer?: unknown;
+}
 
 export interface PollerOptions {
   intervalMs: number;
@@ -126,6 +141,8 @@ export interface PollerOptions {
   lastLifecycle?: () => LifecycleAnswer | undefined;
   onLifecycle?: (a: LifecycleAnswer) => void;
   onReportsChanged?: () => void;
+  /** #511: the run view's ask, made after the index's on every tick. */
+  progress?: () => Promise<ProgressPoll>;
   now?: () => Date;
 }
 
@@ -203,6 +220,16 @@ export class TerragucciPoller {
     } catch (e) {
       reports.error = e instanceof Error ? e.message : String(e);
     }
+    let progress: (Omit<ProgressPoll, "answer"> & { error?: string }) | undefined;
+    if (this.o.progress) {
+      try {
+        const { answer, ...asked } = await this.o.progress();
+        progress = asked;
+        if (answer !== undefined) this.send({ type: "progress", data: answer });
+      } catch (e) {
+        progress = { asked: true, error: e instanceof Error ? e.message : String(e) };
+      }
+    }
     const lifecycle: { commit?: string; via?: string; error?: string } = {};
     try {
       const a = await this.o.lifecycle();
@@ -217,7 +244,7 @@ export class TerragucciPoller {
     } catch (e) {
       lifecycle.error = e instanceof Error ? e.message : String(e);
     }
-    this.send({ type: "polled", data: { at: now(), reports, lifecycle } });
+    this.send({ type: "polled", data: { at: now(), reports, lifecycle, ...(progress ? { progress } : {}) } });
   }
 
   /** For a test: wait for a tick in flight. */
@@ -238,6 +265,8 @@ export interface LaneRouteOptions {
   probe?: Probe;
   /** Injected by a test instead of readLifecycle. */
   readLane?: (base: string) => Promise<LifecycleAnswer>;
+  /** #511: the run view's ask, src/terragucci-progress.ts. */
+  progress?: () => Promise<ProgressPoll>;
 }
 
 /** How long a lifecycle read is reused by the GET route, as the reports read is. */
@@ -271,6 +300,7 @@ export function terragucciLaneRoutes(app: Hono, o: LaneRouteOptions, base: () =>
     lifecycle: fresh,
     lastLifecycle: () => last,
     onReportsChanged: forget,
+    ...(o.progress ? { progress: o.progress } : {}),
     ...(o.now ? { now: o.now } : {}),
   });
 

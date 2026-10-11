@@ -120,6 +120,26 @@ and none is the checkout's git remote) adds two reads, in
   and `polled {at, reports, lifecycle}` after every tick. The last page
   leaving stops the timer (`src/terragucci-poll.ts`). Neither route writes,
   approves, locks or unlocks.
+- `GET /api/terragucci/progress` (#511): a choudoufu wave's progress per
+  resource from the run view of the newest commit `index.json` names a
+  `tf-apply` run of (one GET of `index.json`, one of
+  `<project dir>/runs/<commit>/run.json`, the directory taken from the index
+  row's own path). `{source, kind, project, validation, read, run: {commit,
+  key, present, updated?, html?} | null, absent?, files, watching, waves[],
+  cards{}, unmatched[]}`. A wave is `{number, state, gate, read, counts,
+  resources[]}`, a resource `{root, address, action, status: done | in-flight
+  | waiting | not-applied, done_at?, card?}`. `cards` is keyed by the same ids
+  as `/api/terragucci`'s marks (root path to `attrs.root`, instance to block),
+  one entry per wave with the wave's records `read` time and the card's
+  status (not applied, else in flight, else waiting, else done). It is a
+  dated corner tag, never a fill. No `run.json` is `run.present: false` plus
+  an `absent` sentence. `watching` is true while a wave is applying or a
+  resource is in flight or waiting; only then does the poll ask whether that
+  `run.json` changed (`If-None-Match`, mtime for a directory) and push a
+  `progress` event with the whole answer, and `polled` carries `progress:
+  {asked, key?, changed?, error?}`. Checked against `dist/run.schema.json`
+  when `@intentius/terragucci` resolves, structurally otherwise; reader
+  `src/terragucci-progress.ts`, page `web/terragucci-progress.js`.
 
 The reads are `src/terragucci-reports.ts` (index, each run's report, estate;
 terragucci's JSON Schemas when `@intentius/terragucci` resolves, a structural

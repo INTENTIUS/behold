@@ -365,7 +365,7 @@ const readRemedy = (source: TerragucciSource): string =>
 
 const under = (base: string, rel: string): string => [base, rel].filter(Boolean).join("/");
 
-function pickProject(rows: IndexRow[], opts: ReadOptions, source: TerragucciSource): string {
+export function pickProject(rows: IndexRow[], opts: ReadOptions, source: TerragucciSource): string {
   const projects = [...new Set(rows.map((r) => r.project))].sort();
   if (opts.project) {
     if (!projects.includes(opts.project)) {
