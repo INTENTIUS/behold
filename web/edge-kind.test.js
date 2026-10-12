@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { edgeLabel, edgeLegend, edgeTitle } from "./edge-kind.js";
+import { edgeKey, edgeLabel, edgeLegend, edgeTitle, viaIndex } from "./edge-kind.js";
 
 // The edges chant 0.124.20's GitHub lexicon writes (lexicons/github/src/
 // graph-edges.ts) and one from its GitLab lexicon.
@@ -66,5 +66,35 @@ describe("edgeLegend (#553)", () => {
 
   it("is empty for a graph of references", () => {
     expect(edgeLegend([ref, { from: "a", to: "b", kind: "ref" }])).toEqual([]);
+  });
+});
+
+// #564: pinhole 0.5.0 keys an edge on from, to and kind (pinhole#128), so two
+// kinds on one pair are two edges, each with its own chip and tooltip.
+describe("edgeKey and viaIndex (#564)", () => {
+  it("gives the key pinhole's edgeKey gives: a reference keeps from>to", () => {
+    expect(edgeKey({ from: "api", to: "db", kind: "ref" })).toBe("api>db");
+    expect(edgeKey({ from: "api", to: "db" })).toBe("api>db");
+    expect(edgeKey({ from: "test", to: "build", kind: "needs" })).toBe("test>build>needs");
+  });
+
+  it("keeps each kind's reason on a pair joined twice", () => {
+    const via = viaIndex([
+      { from: "test", to: "build", kind: "needs", viaAttr: "stage" },
+      { from: "test", to: "build", kind: "extends", viaAttr: "extends" },
+    ]);
+    expect(via.get(edgeKey({ from: "test", to: "build", kind: "needs" }))).toBe("stage");
+    expect(via.get(edgeKey({ from: "test", to: "build", kind: "extends" }))).toBe("extends");
+  });
+
+  it("fills in the reverse direction without overwriting an edge drawn that way", () => {
+    const via = viaIndex([
+      { from: "a", to: "b", kind: "ref", viaAttr: "role" },
+      { from: "b", to: "a", kind: "ref", viaAttr: "policy_arn" },
+      { from: "c", to: "d", kind: "ref", viaAttr: "zone_id" },
+    ]);
+    expect(via.get("a>b")).toBe("role");
+    expect(via.get("b>a")).toBe("policy_arn");
+    expect(via.get("d>c")).toBe("zone_id");
   });
 });

@@ -48,12 +48,16 @@ An estate that spans providers keeps its edges: a managed cluster declared in yo
 
 A project that declares CI (the github, forgejo or gitlab lexicon, chant 0.124.20 or later) draws each workflow or pipeline as a box holding the workflow and its jobs. The box takes the workflow's `name:` when it has one (`CI Pipeline`), and the entity's key otherwise. A reusable-workflow call runs between two boxes.
 
-Pipeline boxes appear on a single project's resources view. The composites level has none, because chant leaves pipeline membership off at detail 1 ([chant#3921](https://github.com/INTENTIUS/chant/issues/3921)). An estate view has none either: there a pipeline box would sit inside its member's box, and pinhole cannot nest boxes yet ([pinhole#125](https://github.com/INTENTIUS/pinhole/issues/125)). When a graph carries deploy waves as well, the wave boxes are drawn.
+Pipeline boxes appear on a project's resources view, alone or in an estate. In an estate (`behold serve a b`, or a declared workspace) each member's box holds its pipeline boxes, one level down, titled the same way without the member name the box around them already shows (`release`, not `api/release`). A pipeline goes in the member box that holds most of its cards. When the member boxes are packed into rows, or a wide member's cards are laid out again, each pipeline box is drawn again around where its cards ended up, so it stays inside its member box and clear of the others.
+
+The composites level has no pipeline boxes, because chant leaves pipeline membership off at detail 1 ([chant#3921](https://github.com/INTENTIUS/chant/issues/3921)). When a graph carries deploy waves as well, the wave boxes are drawn instead.
 
 
 ## CI edges
 
 A GitHub Actions, Forgejo or GitLab project draws its edges by the kind chant gives them (chant 0.124.20 or newer). A `needs` edge is a heavier solid line, `calls` and `triggers` have their own colours, and `includes` and `extends` are dotted. An edge that leaves its own workflow or pipeline, such as a call to a reusable workflow or a `workflow_run` trigger, is dashed. The chip on the edge says the kind, with the attribute when that adds something (`needs (stage)`, `calls (uses)`), as chant's Mermaid output does, and hovering the edge says what the kind means. The Model tab lists the kinds the graph holds, with a count for each.
+
+Two nodes can be joined by more than one kind, such as a GitLab job that both `needs` and `extends` another. Each kind is its own edge, drawn as its own line a little apart from the other, with its own chip, tooltip and highlight.
 
 ## What was deployed, from where
 

@@ -145,6 +145,9 @@ interface EstateFace {
   overrides: Record<string, NodeOverride>;
   /** The drawn boxes, with the display ids in them. */
   boxes: Record<string, string[]> | undefined;
+  /** The boxes drawn inside them (pinhole's `subgroups`, #564), display ids
+   * too. Absent when nothing nests. */
+  subgroups: Record<string, string[]> | undefined;
   /** Real id → display id, for a structure the display IR does not carry —
    * the architecture lens's `byContainer`. Only ids that moved are in it. */
   display: ReadonlyMap<string, string>;
@@ -159,7 +162,7 @@ interface EstateFace {
 function estateFace(
   irIn: GraphIR,
   boxesIn: Record<string, string[]> | undefined,
-  opts: { prefixes?: Record<string, string[]>; nodesep?: number; ranksep?: number } = {},
+  opts: { prefixes?: Record<string, string[]>; nodesep?: number; ranksep?: number; subgroups?: Record<string, string[]> } = {},
 ): EstateFace {
   // #393 item 9: a choudoufu or Terraform card is painted with the address
   // alone and the rows the box does not already carry. The ids are unchanged —
@@ -169,9 +172,10 @@ function estateFace(
   const face = cardFaces(irIn, boxesIn, opts.prefixes ? { prefixes: opts.prefixes } : {});
   const ir = face.ir;
   if (Object.keys(face.overrides).length) faceOverrides.set(ir, face.overrides);
-  const boxes = boxesIn
-    ? Object.fromEntries(Object.entries(boxesIn).map(([key, ids]) => [key, ids.map((id) => face.display.get(id) ?? id)]))
-    : undefined;
+  const toDisplay = (record: Record<string, string[]> | undefined): Record<string, string[]> | undefined =>
+    record ? Object.fromEntries(Object.entries(record).map(([key, ids]) => [key, ids.map((id) => face.display.get(id) ?? id)])) : undefined;
+  const boxes = toDisplay(boxesIn);
+  const subgroups = boxes ? toDisplay(opts.subgroups) : undefined;
   // The band is read off the REAL ids: the display IR blanks a choudoufu card's
   // lexicon (that is how the paint drops the word) and shortens its id, so
   // `moduleBandOf` over it would find no choudoufu card at all. `cardFaces`
@@ -191,7 +195,7 @@ function estateFace(
         ...(opts.ranksep !== undefined ? { ranksep: opts.ranksep } : {}),
       })
     : { ir, grids: new Map<string, RowGrid>() };
-  return { ir, overrides: face.overrides, boxes, display: face.display, bandOf, chains, restore: face.restore };
+  return { ir, overrides: face.overrides, boxes, subgroups, display: face.display, bandOf, chains, restore: face.restore };
 }
 
 /** The after-passes: the component pack inside each box, the member shelves,
@@ -208,11 +212,16 @@ function packEstateBoxes(
   // components out side by side — the strip comes back the moment the estate's
   // own references arrive. Pack them first, so the member shelves below see the
   // sizes the boxes really need.
-  const boxGrids = packBoxComponents(layout, face.ir, boxes, face.bandOf);
+  const boxGrids = packBoxComponents(layout, face.ir, boxes, face.bandOf, face.subgroups);
   // A composed estate's member boxes get the same treatment (#296): dagre lays
   // the member clusters out along one horizontal band, so an 11-member estate
   // rendered ~45k units wide and 316 tall. Wrap the boxes into rows instead.
-  if (opts.members) packMemberBoxes(layout, face.ir, boxes);
+  // A pipeline box with no member box to sit in is a top-level box holding its
+  // own cards (#564), so it packs as a block like a member does.
+  if (opts.members) packMemberBoxes(layout, face.ir, { ...topLevelSubgroups(layout.groups, face.subgroups), ...boxes });
+  // Both passes above move cards, and the first re-lays some of them, so each
+  // box nested inside a member is drawn again around its cards (#564).
+  if (face.subgroups) fitNestedBoxes(layout, face.ir, boxes, face.subgroups);
   // The module sub-boxes (#393 B) and the count badges (#393 C), both over the
   // boxes dagre just produced. A box's bands come from whichever pass shaped it
   // — the wrap when it is edgeless, the component pack when it is not.
@@ -334,10 +343,12 @@ type ExtraGroups = IRGroups & { byWave?: Record<string, string[]>; byStack?: Rec
  *   to one cluster, so the two cannot both be drawn, and the wave lanes are
  *   what the component view is for. The component DAG carries no pipelines
  *   today, so this is a tie-break, not a case seen in practice.
- * - An explicit `opts.boxes` wins as well. That covers the estate view, which
- *   passes `byStack`: pipeline boxes there would have to sit inside member
- *   boxes, and pinhole cannot nest them yet (INTENTIUS/pinhole#125). It also
- *   covers the runtime tier's `byContainer`, for the same one-cluster reason.
+ * - An explicit `opts.boxes` wins as well. For the runtime tier's
+ *   `byContainer` that means no pipeline boxes, for the same one-cluster
+ *   reason. The estate view's `byStack` keeps its member boxes and draws the
+ *   pipelines inside them (#564): pinhole 0.5.0's `subgroups` (pinhole#125)
+ *   nests each pipeline box in the member box holding most of its cards, and
+ *   {@link fitNestedBoxes} draws them again after the member boxes are packed.
  * At detail 1 chant drops `byPipeline` (INTENTIUS/chant#3921), so that level
  * draws no pipeline boxes until chant keeps them. */
 export function renderGraph(
@@ -357,11 +368,17 @@ export function renderGraph(
   const boxKey = groupsIn.byWave ? "byWave" : (opts.boxes ?? (pipelines ? "byPipeline" : undefined));
   // The before-passes: the card faces and the edgeless wrap — see `estateFace`,
   // which the logical lens runs too (#396 finding 1).
-  const face = estateFace(irIn, boxKey ? groupsIn[boxKey] : undefined);
+  const nested = boxKey === "byStack" ? pipelines : undefined;
+  const face = estateFace(irIn, boxKey ? groupsIn[boxKey] : undefined, nested ? { subgroups: nested } : {});
   const ir = face.ir;
   const boxes = face.boxes;
   const chains = face.chains;
-  const layout = layoutIr(chains.ir, { fit: true, overrides: face.overrides, ...(boxes ? { groups: boxes } : {}) });
+  const layout = layoutIr(chains.ir, {
+    fit: true,
+    overrides: face.overrides,
+    ...(boxes ? { groups: boxes } : {}),
+    ...(face.subgroups ? { subgroups: face.subgroups } : {}),
+  });
   // Radial layout (opt-in): dagre lays a wide DAG out in horizontal ranks that
   // sprawl off-screen. Re-place the same nodes on concentric rings — one ring
   // per rank — so the graph curls around a centre and far more fits in view. Only
@@ -376,10 +393,16 @@ export function renderGraph(
   // The after-passes, the same ones the logical lens runs (#396 finding 1).
   packEstateBoxes(layout, face, { members: boxKey === "byStack", ...(opts.groupBadges ? { badges: opts.groupBadges } : {}) });
   // A pipeline box keeps its key as `id` (the SPA stores a hand-set box size
-  // under `data-group-id`) and only its painted title changes.
-  if (boxKey === "byPipeline" && pipelines) {
+  // under `data-group-id`) and only its painted title changes. Nested in a
+  // member box (#564), a key with no named workflow drops the member prefix
+  // the box around it already shows.
+  if ((boxKey === "byPipeline" || nested) && pipelines) {
     const titles = pipelineTitles(irIn, pipelines);
-    for (const box of layout.groups ?? []) if (box.id !== undefined && titles[box.id] !== undefined) box.title = titles[box.id]!;
+    for (const box of layout.groups ?? []) {
+      if (box.id === undefined || titles[box.id] === undefined) continue;
+      const title = titles[box.id]!;
+      box.title = title === box.id && box.parent !== undefined && title.startsWith(`${box.parent}/`) ? title.slice(box.parent.length + 1) : title;
+    }
   }
   const svg = renderSvg(ir, layout, {
     fit: true,
@@ -392,14 +415,26 @@ export function renderGraph(
 }
 
 /** A pipeline box's title (#555), per `byPipeline` key: the `name` attribute
- * of the node the key names (a GitHub or Forgejo Workflow's `name:`, "CI
- * Pipeline"), or the key itself when that node has no name or the key names
- * no node (a GitLab pipeline). */
+ * of the Workflow node the key names (a GitHub or Forgejo Workflow's `name:`,
+ * "CI Pipeline"), or the key itself when that node has no name or the key
+ * names no node (a GitLab pipeline).
+ *
+ * In an estate the key is member-prefixed (`web/ci`, #564). chant's GitHub
+ * lexicon keys a pipeline by its Workflow node's id, and composition prefixes
+ * both the same way, so the lookup by key still finds the node. When it does
+ * not, the Workflow node among the pipeline's own members gives the name. */
 export function pipelineTitles(ir: GraphIR, byPipeline: Record<string, string[]>): Record<string, string> {
   const nodes = new Map(ir.nodes.map((n) => [n.id, n]));
+  const workflowOf = (ids: readonly string[]): IRNode | undefined => {
+    const workflows = ids.flatMap((id) => {
+      const n = nodes.get(id);
+      return n && /::Workflow$/.test(n.kind) ? [n] : [];
+    });
+    return workflows.length === 1 ? workflows[0] : undefined;
+  };
   return Object.fromEntries(
-    Object.keys(byPipeline).map((key) => {
-      const name = nodes.get(key)?.attrs?.["name"];
+    Object.entries(byPipeline).map(([key, ids]) => {
+      const name = (nodes.get(key) ?? workflowOf(ids))?.attrs?.["name"];
       return [key, typeof name === "string" && name.trim() ? name : key];
     }),
   );
@@ -477,6 +512,73 @@ function addBandBoxes(layout: { groups?: GroupBox[]; height: number }, grids: Ma
 
 /** Padding between a band's cards and the box drawn around them. */
 const BAND_PAD = 14;
+
+/** Padding round a nested box's cards (#564): dagre's cluster margins as
+ * pinhole 0.5.0 lays a subgroup out, measured on a GitHub Actions estate. The
+ * top one holds the box's title. Using pinhole's own numbers means a nested box
+ * that nothing moved is drawn again exactly where pinhole put it. */
+const NEST_PAD_X = 50;
+const NEST_PAD_Y = 36;
+/** Between a member box's edge and a box nested in it, as pinhole leaves it;
+ * the top one holds the member's own title. */
+const NEST_OUTER = 36;
+
+/** The subgroups pinhole drew as top-level boxes because none of their cards
+ * sits in a member box (pinhole#125's fallback). */
+function topLevelSubgroups(boxes: GroupBox[] | undefined, subgroups: Record<string, string[]> | undefined): Record<string, string[]> {
+  if (!subgroups) return {};
+  return Object.fromEntries(
+    (boxes ?? []).flatMap((b) => (b.parent === undefined && b.id !== undefined && subgroups[b.id] ? [[b.id, subgroups[b.id]!] as const] : [])),
+  );
+}
+
+/**
+ * Draw each nested box (pinhole 0.5.0's `GroupBox.parent`, #564) again around
+ * where its cards are now.
+ *
+ * `packBoxComponents` re-lays a member's cards and `packMemberBoxes` moves a
+ * member's block, and both leave the nested boxes where dagre put them. The
+ * other way to keep them would be to move each nested box by its parent's
+ * offset, which holds for the rigid move and fails for the re-lay, where the
+ * cards inside one member move by different amounts. Rebuilding from the cards
+ * holds for both, and with pinhole's own padding it gives back pinhole's rect
+ * for a box nothing moved.
+ *
+ * A nested box's cards are its subgroup's members that its parent box owns
+ * (the last box to list a card owns it, as pinhole's `setParent` does).
+ * `only` limits the pass to the boxes inside one member. The padding is the
+ * same on every side, so this works in either the y-up or the y-down frame.
+ */
+function fitNestedBoxes(
+  layout: RadialLayout & { groups?: GroupBox[] },
+  ir: GraphIR,
+  boxes: Readonly<Record<string, readonly string[]>>,
+  subgroups: Readonly<Record<string, readonly string[]>>,
+  only?: string,
+): void {
+  const at = new Map(layout.nodes.map((n) => [n.id, n]));
+  const ownerOf = new Map<string, string>();
+  for (const [key, ids] of Object.entries(boxes)) for (const id of ids) if (at.has(id)) ownerOf.set(id, key);
+  const sizes = footprints(ir);
+  for (const box of layout.groups ?? []) {
+    if (box.parent === undefined || box.id === undefined || (only !== undefined && box.parent !== only)) continue;
+    const cards = (subgroups[box.id] ?? []).flatMap((id) => {
+      const p = at.get(id);
+      if (!p || ownerOf.get(id) !== box.parent) return [];
+      const s = sizes.get(id) ?? { w: NODE_W, h: NODE_H };
+      return [{ x: p.x, y: p.y, w: s.w, h: s.h }];
+    });
+    if (!cards.length) continue;
+    const x0 = Math.min(...cards.map((c) => c.x - c.w / 2)) - NEST_PAD_X;
+    const x1 = Math.max(...cards.map((c) => c.x + c.w / 2)) + NEST_PAD_X;
+    const y0 = Math.min(...cards.map((c) => c.y - c.h / 2)) - NEST_PAD_Y;
+    const y1 = Math.max(...cards.map((c) => c.y + c.h / 2)) + NEST_PAD_Y;
+    box.x = (x0 + x1) / 2;
+    box.y = (y0 + y1) / 2;
+    box.w = x1 - x0;
+    box.h = y1 - y0;
+  }
+}
 
 /** A rect pulled inside its parent box, leaving the parent's own title row
  * clear. Never grows the rect, so a band that already fits is untouched. */
@@ -1050,7 +1152,10 @@ function packComponents(layout: RadialLayout, ir: GraphIR): void {
  * Mutates node/box x/y and the layout bounds; renderSvg routes edges from node
  * centres, so cross-member edges re-anchor on their own. */
 function packMemberBoxes(layout: RadialLayout & { groups?: GroupBox[] }, ir: GraphIR, members: Record<string, string[]>): void {
-  const boxes = layout.groups ?? [];
+  // A nested box (`parent`, #564) is not a block: it rides inside its member's
+  // block, and `fitNestedBoxes` draws it again once the blocks have moved.
+  const allBoxes = layout.groups ?? [];
+  const boxes = allBoxes.filter((b) => b.parent === undefined);
   if (boxes.length < 4) return;
   const nodes = layout.nodes;
   const size = footprints(ir);
@@ -1259,6 +1364,7 @@ function packBoxComponents(
   ir: GraphIR,
   boxes: Readonly<Record<string, readonly string[]>>,
   bandOf?: (id: string) => string | undefined,
+  subgroups?: Readonly<Record<string, readonly string[]>>,
 ): Map<string, RowGrid> {
   const grids = new Map<string, RowGrid>();
   const groupBoxes = layout.groups ?? [];
@@ -1303,6 +1409,12 @@ function packBoxComponents(
       const b = idxOf.get(e.to);
       if (a !== undefined && b !== undefined) parent[find(a)] = find(b);
     }
+    // A pipeline nested in this box (#564) is one block whatever its edges say,
+    // so its box can be drawn round it without taking in another pipeline.
+    for (const ids of Object.values(subgroups ?? {})) {
+      const inside = ids.flatMap((id) => idxOf.get(id) ?? []);
+      for (const i of inside.slice(1)) parent[find(i)] = find(inside[0]!);
+    }
     const comps = new Map<number, RadialLayout["nodes"]>();
     own.forEach((n, i) => (comps.get(find(i)) ?? comps.set(find(i), []).get(find(i))!).push(n));
     if (comps.size < 2) continue;
@@ -1324,7 +1436,16 @@ function packBoxComponents(
         edges: ir.edges.filter((e) => inside.has(e.from) && inside.has(e.to)),
         groups: {},
       };
-      let one = layoutIr(sub, { fit: true }) as unknown as RadialLayout;
+      // The pipelines in this component keep their clusters (#564), so dagre
+      // leaves the room between them that their boxes are drawn in.
+      const nest = Object.fromEntries(
+        Object.entries(subgroups ?? {}).flatMap(([k, ids]) => {
+          const mine = ids.filter((id) => inside.has(id));
+          return mine.length ? [[k, mine] as const] : [];
+        }),
+      );
+      const nests = Object.keys(nest).length > 0;
+      let one = layoutIr(sub, { fit: true, ...(nests ? { groups: nest } : {}) }) as unknown as RadialLayout;
       // A star turned on its side. `terralith-4`'s DNS fan is one zone and 40
       // records on a single rank: 19564 units of card in a 400-tall strip, and
       // one component that wide sets the shelf's width for all 42. `rankdir`
@@ -1333,7 +1454,7 @@ function packBoxComponents(
       // layout reads closer to {@link ROW_ASPECT} than the upright one does,
       // measured as a ratio either way so 40:1 and 1:40 are equally bad.
       if (one.width > one.height * BOX_ASPECT_MAX) {
-        const sideways = layoutIr(sub, { fit: true, rankdir: "LR" }) as unknown as RadialLayout;
+        const sideways = layoutIr(sub, { fit: true, rankdir: "LR", ...(nests ? { groups: nest } : {}) }) as unknown as RadialLayout;
         if (offAspect(sideways) < offAspect(one)) one = sideways;
       }
       // …and a star is a strip whichever way it is turned: the DNS fan is
@@ -1343,9 +1464,11 @@ function packBoxComponents(
       // keeping and the component wraps into a grid, which is the answer
       // src/edgeless.ts already gives for cards no rank orders. Its edges are
       // then drawn over the grid rather than by it.
-      // Local coordinates are y-DOWN, the frame this pass shelves in.
+      // Local coordinates are y-DOWN, the frame this pass shelves in. A grid
+      // would mix one pipeline's cards in with the next, so a component that
+      // holds a pipeline keeps its ranks.
       const placed =
-        offAspect(one) > GRID_COMPONENT
+        !nests && offAspect(one) > GRID_COMPONENT
           ? gridComponent(one, size)
           : { local: new Map(one.nodes.map((n) => [n.id, { x: n.x, y: one.height - n.y }] as const)), w: one.width, h: one.height };
       laid.set(root, { ...placed, ns });
@@ -1374,8 +1497,12 @@ function packBoxComponents(
     // The box's own origin, so the packed block lands where the box already is
     // and every other box on the canvas stays put. The title row is the box's,
     // and no card may sit in it.
-    const originX = box.x - box.w / 2 + BAND_PAD;
-    const originY = box.y - box.h / 2 + TITLE;
+    // A component laid out with its pipeline clusters already holds their
+    // padding, so the nested boxes start at the origin and the member's own
+    // margin goes outside them (#564).
+    const holdsNested = groupBoxes.some((b) => b.parent === key);
+    const originX = box.x - box.w / 2 + (holdsNested ? NEST_OUTER : BAND_PAD);
+    const originY = box.y - box.h / 2 + (holdsNested ? NEST_OUTER : TITLE);
     let shelfX = 0;
     let shelfY = 0;
     let shelfH = 0;
@@ -1410,11 +1537,22 @@ function packBoxComponents(
       bands.push({ key: band, ids });
     }
 
-    // The box is now whatever its cards occupy, plus its padding and its title.
-    const x0 = Math.min(...own.map((n) => n.x - halfW(n))) - BAND_PAD;
-    const x1 = Math.max(...own.map((n) => n.x + halfW(n))) + BAND_PAD;
-    const y0 = Math.min(...own.map((n) => n.y - halfH(n))) - TITLE;
-    const y1 = Math.max(...own.map((n) => n.y + halfH(n))) + BAND_PAD;
+    // The box is now whatever its cards occupy, plus its padding and its title,
+    // and whatever the boxes nested in it now take (#564). Those are drawn
+    // again around the cards just placed; this frame is y-down, and their
+    // padding is the same on every side, so the frame does not matter.
+    if (subgroups) fitNestedBoxes(layout, ir, boxes, subgroups, key);
+    const inner = groupBoxes.filter((b) => b.parent === key);
+    let x0 = Math.min(...own.map((n) => n.x - halfW(n))) - BAND_PAD;
+    let x1 = Math.max(...own.map((n) => n.x + halfW(n))) + BAND_PAD;
+    let y0 = Math.min(...own.map((n) => n.y - halfH(n))) - TITLE;
+    let y1 = Math.max(...own.map((n) => n.y + halfH(n))) + BAND_PAD;
+    for (const b of inner) {
+      x0 = Math.min(x0, b.x - b.w / 2 - NEST_OUTER);
+      x1 = Math.max(x1, b.x + b.w / 2 + NEST_OUTER);
+      y0 = Math.min(y0, b.y - b.h / 2 - NEST_OUTER);
+      y1 = Math.max(y1, b.y + b.h / 2 + NEST_OUTER);
+    }
     box.x = (x0 + x1) / 2;
     box.y = (y0 + y1) / 2;
     box.w = x1 - x0;
