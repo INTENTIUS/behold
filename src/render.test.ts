@@ -64,6 +64,53 @@ describe("renderGraph — boundary boxes (#31/M4)", () => {
   });
 });
 
+// #555: chant#3912's `groups.byPipeline`, shaped like the IR chant 0.124.20
+// emits for lexicons/github/examples/reusable-workflow.
+const pipelineIr: GraphIR = {
+  nodes: [
+    { id: "callCi", kind: "GitHub::Actions::Job", lexicon: "github", attrs: { uses: "./.github/workflows/reusable-workflow.yml" } },
+    { id: "callerWorkflow", kind: "GitHub::Actions::Workflow", lexicon: "github", attrs: { name: "CI Pipeline" } },
+    { id: "ci", kind: "GitHub::Actions::Job", lexicon: "github", attrs: {} },
+    { id: "reusableWorkflow", kind: "GitHub::Actions::Workflow", lexicon: "github", attrs: {} },
+  ],
+  edges: [
+    { from: "callCi", to: "reusableWorkflow", kind: "calls", viaAttr: "uses", crossPipeline: true },
+    { from: "callerWorkflow", to: "callCi", kind: "ref", viaAttr: "jobs" },
+    { from: "reusableWorkflow", to: "ci", kind: "ref", viaAttr: "jobs" },
+  ],
+  groups: {
+    byStack: { github: ["callCi", "callerWorkflow", "ci", "reusableWorkflow"] },
+    byPipeline: { callerWorkflow: ["callCi", "callerWorkflow"], reusableWorkflow: ["ci", "reusableWorkflow"] },
+  },
+};
+
+describe("renderGraph — pipeline boxes (#555)", () => {
+  const boxIds = (svg: string): string[] => [...svg.matchAll(/data-group-id="([^"]*)"/g)].map((m) => m[1]!);
+
+  it("boxes each pipeline with no opt-in, keyed by the pipeline and titled by the workflow's name, else the key", () => {
+    const { svg } = renderGraph(pipelineIr);
+    expect(boxIds(svg).sort()).toEqual(["callerWorkflow", "reusableWorkflow"]);
+    expect(svg).toContain(">CI Pipeline<");
+    expect(svg).toContain(">reusableWorkflow<");
+  });
+
+  it("draws no pipeline boxes in an estate view, which boxes byStack (nesting waits on pinhole#125)", () => {
+    const { svg } = renderGraph(pipelineIr, { boxes: "byStack" });
+    expect(boxIds(svg)).toEqual(["github"]);
+  });
+
+  it("byWave wins over byPipeline when an IR carries both", () => {
+    const both: GraphIR = { ...pipelineIr, groups: { ...pipelineIr.groups, byWave: { "wave-1": ["ci"] } } as GraphIR["groups"] };
+    const { svg } = renderGraph(both);
+    expect(boxIds(svg)).toEqual(["wave-1"]);
+  });
+
+  it("an empty byPipeline draws no box", () => {
+    const { svg } = renderGraph({ ...pipelineIr, groups: { byPipeline: {} } });
+    expect(svg).not.toContain(BOX_MARKER);
+  });
+});
+
 // #86, chant#1180/#1077: the runtime tier's containment — src/overlay.ts's
 // `attachRuntimeContainment` populates `groups.byContainer` (owner entity id
 // -> its live, undeclared runtime children); `renderGraph`'s `boxes:
