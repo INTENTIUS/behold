@@ -18,6 +18,7 @@ export function gateCards(answer, { embed = false, member = null } = {}) {
   const all = (answer && answer.gates) || [];
   const shown = member ? all.filter((g) => g.member === member) : all;
   const cards = shown.map((g) => {
+    if (g.override) return overrideCard(g);
     const facts = [`${g.approvals.length} of ${g.needed} approval${g.needed === 1 ? "" : "s"}`];
     if (g.env) facts.push(`env ${g.env}`);
     if (g.planDigest) facts.push(`plan ${shortDigest(g.planDigest)}`);
@@ -36,6 +37,34 @@ export function gateCards(answer, { embed = false, member = null } = {}) {
   });
   const elsewhere = all.length - shown.length;
   return { cards, elsewhere, refusal: (answer && answer.refusal) || null };
+}
+
+/**
+ * #519: a policy denial. chant's override needs the denied rules and a
+ * person's reason, so the card shows them and the command to run, and never a
+ * button, framed or not. An override that counts reads as overridden until a
+ * run applies it, then as spent.
+ */
+export function overrideCard(g) {
+  const o = g.override;
+  const facts = [];
+  facts.push(o.rules.length ? `denied by ${o.rules.join(", ")}` : "denied by rules the ledger did not name");
+  if (o.plan) facts.push(`plan ${shortDigest(o.plan)}`);
+  if (o.digest) facts.push(`override digest ${shortDigest(o.digest)}`);
+  if (g.recordedAt) facts.push(`denied ${g.recordedAt}`);
+  if (o.source) facts.push(`from ${o.source}`);
+  const card = { key: g.key, member: g.member, facts: facts.join(" · "), command: o.command, override: o.state };
+  if (o.state === "spent") {
+    card.title = `${g.member}: the override of ${o.subject} is spent`;
+    card.note = `a run applied under it${o.spentAt ? ` at ${o.spentAt}` : ""}; a new denial needs a new override`;
+  } else if (o.state === "overridden") {
+    card.title = `${g.member}: ${o.subject} is overridden`;
+    card.note = "an override counts for this plan; the next run applies it once";
+  } else {
+    card.title = `${g.member}: the policy denied ${o.subject}`;
+    card.note = `a reason is required. Override it at your shell: ${o.command}`;
+  }
+  return card;
 }
 
 function shortDigest(d) {

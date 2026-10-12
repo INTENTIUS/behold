@@ -40,6 +40,14 @@ where the credentials are in the environment, it signs its GETs itself. A read-o
 `GetObject` on `<prefix>/*index.json`, `<prefix>/*/report.json` and
 `<prefix>/estate.json`, the same policy terragucci's estate job has.
 
+`audit.jsonl` and the run views are optional reads, and they need `GetObject`
+on `<prefix>/audit.jsonl` and `<prefix>/*/runs/*/run.json` as well. When S3
+answers 403 for one of them, behold says the record is not readable with these
+credentials, names the key and `s3:GetObject` (S3 also answers 403 for a
+missing object when the identity lacks `s3:ListBucket`), and draws the rest of
+the page as it would for an absent file. A 403 on `index.json`, a report or
+`estate.json` still fails the read, with the same words.
+
 When `@intentius/terragucci` is installed beside behold or in the repo, every
 document is checked against the JSON Schemas it ships. Without it, behold checks
 the schema id and the fields it reads, and refuses anything else with
@@ -99,6 +107,22 @@ The read-only identity needs `GetObject` on `<prefix>/audit.jsonl` too. For an
 agent: `GET /api/terragucci/timeline?root=<path>&limit=<n>` (200 by default,
 1000 at most).
 
+### The ledger's own history
+
+Under the audit record, the Timeline shows a second list labelled "ledger":
+every request, approval, policy override and revocation in the gate ledgers on
+`chant/lifecycle`, read from the branch's git history with chant's gate-audit
+reader. Each entry names the ledger line it came from and the commit that
+added it, with that commit's author and date. A revocation is a line a commit
+removed, attributed to whoever made that commit. When the reports have no
+`audit.jsonl`, this list is the history. It holds no applies: those are in
+terragucci's reports, not the ledger.
+
+The branch is read from the same cache as the gates and locks below, and falls
+back to your checkout's `origin/chant/lifecycle` the same way. The route works
+for any product that keeps its gates on `chant/lifecycle`:
+`GET /api/lifecycle/history?op=<op>&gate=<gate>&limit=<n>`.
+
 ## Waiting waves
 
 A wave waiting for an approval appears as a gate card in the Terragucci tab:
@@ -131,7 +155,20 @@ Terragucci tab reads them too:
 
 - each wave's gate from `_gates/tf-apply.jsonl` and
   `_gates/tf-apply/applied.jsonl`: waiting (with the approve line), approved
-  and by whom, applied, failed, or a request that expired;
+  and by whom, applied, failed, a request that expired, or refused because an
+  approval stands for other plans. Once terragucci's waves run on chant's op
+  waves, a wave can also be refused by policy (a run was denied and no
+  override counts; the card gives the override line for each run), held on
+  another gate such as a state migration (the card gives that gate's approve
+  line), or applied with its outcome not recorded. A gate that asks a decision
+  point gives `chant workspace points answer <id>` instead of an approve line.
+  behold decides each wave with chant's own
+  gate decision, the one terragucci applies under: an approval a wave already
+  applied under is spent, and under `approval: sealed` an approval counts only
+  when its seal verifies against the signers file on the default branch. An
+  approval that does not count is shown with the reason. A card also names
+  who relayed an approval from chat, the pull request review it came from,
+  and the roots the wave planned;
 - each locked root from `_locks/tf-apply.json`: the pull request holding it,
   who took it, when, and whether a plan, an apply or `/terragucci lock` did.
 
@@ -196,17 +233,17 @@ keeps `<prefix>/views/` for a viewer's files and never writes there. One more
 step in that job, after `terragucci estate`:
 
 ```sh
-npx -y -p @intentius/behold -p @intentius/chant-lexicon-terraform@^0.121.0 -p @cdktn/hcl2json@^0.24.0 \
+npx -y -p @intentius/behold -p @intentius/chant-lexicon-terraform@^0.124.0 -p @cdktn/hcl2json@^0.24.0 \
   behold export . --terragucci s3://<bucket>/<prefix> --no-source \
   --publish s3://<bucket>/<prefix>/views/behold
 ```
 
 The two Terraform packages are the ones behold reads HCL with, at the ranges
-it declares. behold is built and tested on chant 0.121, so the lexicon range is
-`^0.121.0`: the lexicon's own peer on `@intentius/chant` holds its minor, and a
+it declares. behold is built and tested on chant 0.124, so the lexicon range is
+`^0.124.0`: the lexicon's own peer on `@intentius/chant` holds its minor, and a
 lexicon from another minor installs a second chant beside it that behold's
 reader never resolves. behold's chant reads a root whose `chant.workspace.json`
-asks for `minReader` 0.108.0 or anything up to 0.121.
+asks for `minReader` 0.108.0 or anything up to 0.124.
 
 The step reads the reports and writes the view with the job's own credentials
 from the environment (static keys, or a role assumed with the job's OIDC token),

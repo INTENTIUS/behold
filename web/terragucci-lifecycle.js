@@ -29,7 +29,11 @@ export function laneLegend(lane, now = new Date(), polled = null) {
   const how = lane.via === "fetch" ? "fetched from origin" : "the checkout's origin/chant/lifecycle, as of its last git fetch (behold's fetch failed)";
   return {
     text: `chant/lifecycle at ${short(lane.commit.sha)}, committed ${ago(lane.commit.committed, now)} · ${when}, ${how}`,
-    title: [lane.note, lane.fetch && lane.fetch.error ? `fetch: ${lane.fetch.error}` : ""].filter(Boolean).join("\n"),
+    title: [
+      lane.note,
+      lane.approval ? `approvals counted: ${lane.approval.mode} (${lane.approval.source}${lane.approval.base ? `, base ${short(lane.approval.base)}` : ""})${lane.approval.note ? `; ${lane.approval.note}` : ""}` : "",
+      lane.fetch && lane.fetch.error ? `fetch: ${lane.fetch.error}` : "",
+    ].filter(Boolean).join("\n"),
     tone: lane.via === "fetch" ? "quiet" : "stale",
   };
 }
@@ -38,28 +42,65 @@ const TITLE = {
   waiting: (g) => `wave ${g.wave} waits for an approval`,
   expired: (g) => `wave ${g.wave}'s request for an approval expired`,
   approved: (g) => `wave ${g.wave} approved by ${g.approval.by}, not applied yet`,
-  applied: (g) => `wave ${g.wave} applied`,
+  applied: (g) => (g.applied && !g.applied.result ? `wave ${g.wave} applied (outcome not recorded)` : `wave ${g.wave} applied`),
   failed: (g) => `wave ${g.wave}'s apply failed`,
+  refused: (g) => `wave ${g.wave} refused: an approval stands for other plans`,
+  "refused-by-policy": (g) => `wave ${g.wave} refused by policy: ${(g.denials || []).length} run${(g.denials || []).length === 1 ? "" : "s"} denied, no override counts`,
+  held: (g) => `wave ${g.wave} held on ${g.heldOn.op}/${g.heldOn.gate}`,
 };
+
+const NOTE = {
+  approve: "An approval is a signed git record bound to this plan digest: run the line at your shell. behold does not approve.",
+  answer: "This gate asks a decision point: answer it at your shell. behold does not answer.",
+  override: "An override is a person's git record with a reason, bound to this plan and these rules: run the line at your shell. behold does not override.",
+};
+
+/** Who approved, and how: signed, relayed, from a pull request's review. */
+function approvalWords(a, now) {
+  const how = [
+    a.signed ? "signed" : "",
+    a.via ? `via ${a.via}` : "",
+    a.pr !== undefined ? `PR #${a.pr}${a.head ? ` at ${short(a.head)}` : ""}` : "",
+    a.reviewers && a.reviewers.length ? `reviewed by ${a.reviewers.join(", ")}` : "",
+    a.relayedBy ? `relayed by ${a.relayedBy}` : "",
+  ].filter(Boolean);
+  return `${a.by}${how.length ? ` (${how.join(", ")})` : ""} ${clock(a.at, now)}, ${ago(a.at, now)}`;
+}
 
 /** Each wave's gate as a card: its state, who and when, the digest, the commit it was read from, and for a waiting wave the line to run. No button. */
 export function laneGateCards(lane, now = new Date()) {
   if (!lane || !lane.found) return [];
   return lane.gates.map((g) => {
     const facts = [];
-    if (g.pending) facts.push(`asked ${clock(g.pending.timestamp, now)}, ${ago(g.pending.timestamp, now)}`);
-    if (g.approval) facts.push(`approved by ${g.approval.by}${g.approval.signed ? " (signed)" : ""}${g.approval.via ? ` via ${g.approval.via}` : ""} ${clock(g.approval.at, now)}, ${ago(g.approval.at, now)}`);
-    if (g.applied) facts.push(`${g.applied.result === "failed" ? "apply failed" : "applied"} ${clock(g.applied.finished || g.applied.at, now)}, ${ago(g.applied.finished || g.applied.at, now)}`);
+    const own = g.state !== "refused-by-policy" && g.state !== "held";
+    if (g.pending && own) facts.push(`asked ${clock(g.pending.timestamp, now)}, ${ago(g.pending.timestamp, now)}`);
+    if (g.pending && g.pending.description && own) facts.push(g.pending.description);
+    if (g.pending && g.pending.answer && g.state === "waiting") facts.push(`asks decision point ${g.pending.answer.point}`);
+    if (g.heldOn) facts.push(`${g.heldOn.hook ? `${g.heldOn.hook} ` : ""}held it ${clock(g.heldOn.since, now)}, ${ago(g.heldOn.since, now)}; ${g.heldOn.op}/${g.heldOn.gate} waits${g.heldOn.digest ? ` for plan ${short(g.heldOn.digest)}` : ""}${g.heldOn.answer ? ` on decision point ${g.heldOn.answer.point}` : ""}`);
+    if (g.approval) facts.push(`${g.state === "refused" ? `approved for plan ${short(g.refused && g.refused.digest) || "(none)"} by` : "approved by"} ${approvalWords(g.approval, now)}`);
+    if (g.applied) facts.push(`${g.applied.result === "failed" ? "apply failed" : "applied"} ${clock(g.applied.finished || g.applied.at, now)}, ${ago(g.applied.finished || g.applied.at, now)}${g.applied.review && g.applied.review.pr !== undefined ? ` under the review of PR #${g.applied.review.pr}` : ""}`);
     if (g.digest) facts.push(`plan ${short(g.digest)}`);
+    if (g.pending && g.pending.members && g.pending.members.length) facts.push(`${g.pending.members.length} root${g.pending.members.length === 1 ? "" : "s"}: ${g.pending.members.map((m) => m.member).join(", ")}`);
+    if (g.pending && g.pending.neverOverMcp) facts.push("never approved over MCP");
+    if (g.spent) facts.push(`the approval of plan ${short(g.spent.planDigest)} by ${g.spent.by} was spent by its apply`);
+    const uncounted = (g.uncounted || []).map((u) => `${u.approval.by}'s approval of this plan does not count: ${u.reason}`);
+    const overrides = (g.denials || []).map((d) => ({
+      text: `${d.member}: plan ${short(d.plan)} denied by ${d.rules.join(", ")} ${clock(d.at, now)}, ${ago(d.at, now)}${d.moved ? `; ${d.moved.by} overrode an earlier plan or other rules` : ""}${d.refusals.length ? `; ${d.refusals.join("; ")}` : ""}`,
+      command: d.command,
+      ...(d.url ? { job: d.url } : {}),
+    }));
+    const commandNote = (g.state === "held" ? g.heldOn && g.heldOn.answer : g.pending && g.pending.answer) ? NOTE.answer : NOTE.approve;
     return {
       wave: g.wave,
       state: g.state,
-      tone: g.state === "waiting" ? "wave" : g.state === "failed" ? "failed" : g.state === "expired" ? "none" : "ok",
+      tone: g.state === "waiting" || g.state === "held" ? "wave" : g.state === "failed" || g.state === "refused" || g.state === "refused-by-policy" ? "failed" : g.state === "expired" ? "none" : "ok",
       title: TITLE[g.state] ? TITLE[g.state](g) : `wave ${g.wave}: ${g.state}`,
       facts: facts.join(" · "),
+      ...(uncounted.length ? { uncounted } : {}),
+      ...(overrides.length ? { overrides, overrideNote: NOTE.override } : {}),
       source: sourceWords(g.source, now),
-      ...(g.command ? { command: g.command, note: "An approval is a signed git record bound to this plan digest: run the line at your shell. behold does not approve." } : {}),
-      ...(g.pending && g.pending.url ? { job: g.pending.url } : {}),
+      ...(g.command ? { command: g.command, note: commandNote } : {}),
+      ...(g.heldOn && g.heldOn.url ? { job: g.heldOn.url } : g.pending && g.pending.url ? { job: g.pending.url } : {}),
     };
   });
 }
@@ -108,13 +149,43 @@ export function renderLane(host, lane, polled, now, ui) {
     const src = document.createElement("div");
     src.className = "ws-gate-note";
     src.textContent = `from ${g.source}`;
-    box.append(title, facts, src);
+    box.append(title, facts);
+    for (const u of g.uncounted || []) {
+      const why = document.createElement("div");
+      why.className = "ws-gate-note";
+      why.textContent = u;
+      box.appendChild(why);
+    }
+    box.appendChild(src);
+    for (const o of g.overrides || []) {
+      const what = document.createElement("div");
+      what.className = "ws-gate-note";
+      what.textContent = o.text;
+      const cmd = document.createElement("code");
+      cmd.className = "tg-command";
+      cmd.textContent = o.command;
+      const copy = ui.button("Copy", "", () => ui.copy(o.command, copy));
+      copy.title = "Copy the line. Run it at your shell, with your reason: the override is yours.";
+      box.append(what, cmd, copy);
+      if (o.job) {
+        const links = document.createElement("div");
+        links.className = "ws-gate-note";
+        links.appendChild(ui.link("job", o.job));
+        box.appendChild(links);
+      }
+    }
+    if (g.overrideNote) {
+      const n = document.createElement("div");
+      n.className = "ws-gate-note";
+      n.textContent = g.overrideNote;
+      box.appendChild(n);
+    }
     if (g.command) {
       const cmd = document.createElement("code");
       cmd.className = "tg-command";
       cmd.textContent = g.command;
       const copy = ui.button("Copy", "", () => ui.copy(g.command, copy));
-      copy.title = "Copy the line. Run it at your shell: the approval is yours, signed, in git.";
+      copy.title = "Copy the line. Run it at your shell: the approval or answer is yours.";
       const note = document.createElement("div");
       note.className = "ws-gate-note";
       note.textContent = g.note;

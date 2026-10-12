@@ -85,6 +85,8 @@ export function captureKeys(axes: ExportAxes): string[] {
   if (axes.terragucci) add("/api/terragucci", {});
   // #506: and the audit record's timeline, the SPA's one unfiltered ask (it filters by root itself).
   if (axes.terragucci) add("/api/terragucci/timeline", {});
+  // #522: and the gate ledgers' history on chant/lifecycle, as the SPA asks it.
+  if (axes.terragucci) add("/api/lifecycle/history", {});
 
   const tiers = axes.tiers && axes.tiers.length ? axes.tiers : [""];
   const envs = ["", ...axes.environments]; // "" = the declared-source view

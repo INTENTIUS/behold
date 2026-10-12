@@ -28,6 +28,7 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Ajv2020 } from "ajv/dist/2020.js";
+import { terragucciApproveCommand } from "./terragucci-lifecycle.ts";
 import type { TerragucciSource } from "./terragucci-source.ts";
 
 export const REPORT_SCHEMA = "terragucci.report/v1";
@@ -485,7 +486,7 @@ export async function readTerragucci(source: TerragucciSource, opts: ReadOptions
       destroys: (doc?.named ?? []).filter((n) => n.action === "delete" || n.action === "replace").map((n) => `${n.root}: ${n.address ?? ""} (${n.action})`),
       report: under(row.path, "report.html"),
       ...(row.job_url ? { job_url: row.job_url } : {}),
-      command: `npx terragucci approve wave-${row.wave}${digest ? ` --plan ${digest}` : ""}`,
+      command: terragucciApproveCommand(row.wave!, digest),
       from: estateProject ? "estate" : "index",
     });
   }

@@ -43,7 +43,7 @@ import type { Hono } from "hono";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { blockPath, type CheckoutRoot } from "./terragucci-overlay.ts";
 import { pickProject, TerragucciReadError, type IndexRow, type Validation, type Validator } from "./terragucci-reports.ts";
-import type { TerragucciSource } from "./terragucci-source.ts";
+import { deniedWords, TerragucciDenied, type TerragucciSource } from "./terragucci-source.ts";
 import type { Probe, ProgressPoll } from "./terragucci-poll.ts";
 
 export const RUN_SCHEMA = "terragucci.run/v1";
@@ -307,8 +307,10 @@ export interface ProgressAnswer extends ProgressJoin {
   read: string;
   /** The run view read: the newest commit with a tf-apply run. Null when the index has none. */
   run: { commit: string; key: string; present: boolean; updated?: string; html?: string } | null;
-  /** Present when there is no run view to read, saying so. */
+  /** Present when there is no run view to read, saying so; or, with `unreadable`, that S3 refused the read and which permission it needs. */
   absent?: string;
+  /** #523: true when run.json answered 403 rather than being missing. */
+  unreadable?: true;
   /** Where a key (`run.html`) opens. */
   files: string;
 }
@@ -418,10 +420,13 @@ export class TerragucciProgress {
     const src = this.o.source;
     const validator = v ?? runValidator();
     let text: string | undefined;
+    let unreadable: string | undefined;
     try {
       text = await src.read(key);
     } catch (e) {
-      refuse(
+      // #523: the run view is optional; a 403 is reported, and the page draws as for an absent one.
+      if (e instanceof TerragucciDenied) unreadable = deniedWords(e, "the wave's progress");
+      else refuse(
         `Could not read ${key} from ${src.location}: ${e instanceof Error ? e.message : String(e)}`,
         src.kind === "s3" ? "behold reads the bucket with your aws CLI or the environment's credentials: check GetObject on <prefix>/*/runs/*/run.json." : "Check the source serves the reports prefix.",
       );
@@ -431,7 +436,8 @@ export class TerragucciProgress {
       return {
         ...this.base(project, validator.validation),
         run: { commit, key, present: false },
-        absent: `${src.location} has no ${key}: terragucci writes the run view when reports.bucket is set, and a wave's progress per resource only for a choudoufu wave (terragucci 0.4.7 and newer). This says nothing about whether the apply moved.`,
+        ...(unreadable ? { unreadable: true as const } : {}),
+        absent: unreadable ?? `${src.location} has no ${key}: terragucci writes the run view when reports.bucket is set, and a wave's progress per resource only for a choudoufu wave (terragucci 0.4.7 and newer). This says nothing about whether the apply moved.`,
         waves: [],
         cards: {},
         unmatched: [],

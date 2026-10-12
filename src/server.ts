@@ -145,7 +145,7 @@ import { cacheChoudoufuPlan, cachedChoudoufuPlan, readChoudoufuPlan, type PlanRe
 import { choudoufuLexiconNote, setEstateLexiconRead, type LexiconRead } from "./choudoufu-refs.ts";
 import { discoverCarvePlans, moveMembers, moveReceipt, movesPayload, readCarvePlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
 import { servedWorkspace, setServedWorkspace, workspaceMemberOf, type Workspace } from "./workspace.ts";
-import { approveArgs, isEnvName, localApprover, readWorkspaceGates } from "./workspace-gates.ts";
+import { approveArgs, isEnvName, isOverrideGate, localApprover, readWorkspaceGates } from "./workspace-gates.ts";
 import { readWhy, whyRegion } from "./workspace-why.ts";
 import { allowedHostsFrom, guardRequest } from "./request-guard.ts";
 import { applyMemberPasses, memberKindOf, memberKindSpec, memberPassNote, servesAsEstate, type MemberPassRun } from "./member-kind.ts";
@@ -175,8 +175,9 @@ import {
   unwritableReason,
 } from "./layout.ts";
 import { emulatorUp, emulatorDown, mergedEnv, type EmulatorInfo } from "./emulator.ts";
-import { refusedWrite, servedTerragucciConfig, terragucciRefusal } from "./terragucci-repo.ts";
-import { terragucciRoutes, type TerragucciOptions } from "./terragucci-view.ts";
+import { productRefusal, refusedWrite, servedProductRepo, terragucciRefusal } from "./terragucci-repo.ts";
+import { repoBase, terragucciRoutes, type TerragucciOptions } from "./terragucci-view.ts";
+import { lifecycleHistoryRoute } from "./lifecycle-history.ts";
 import { controlRepoInfo, terragucciEstateRoutes } from "./terragucci-estate.ts";
 import { yodelReportRoute } from "./yodel-report.ts";
 import { loadDemoRegistry, missingRequirements, fetchesFromNetwork, demoTargetDir, loadDemo, type DemoEntry } from "./demos.ts";
@@ -961,16 +962,23 @@ export function createApp(
     if (c.req.method === "GET") return withReadSignal(c.req.raw.signal, next);
     await next();
   });
-  const tgConfig = (): string | undefined => servedTerragucciConfig(cfg.projectDirs ?? [cfg.projectDir]);
+  // #517: the guarded product repo (terragucci or SQL Yodeler) being served.
+  const guardedRepo = () => servedProductRepo(cfg.projectDirs ?? [cfg.projectDir]);
+  const tgConfig = (): string | undefined => {
+    const r = guardedRepo();
+    return r?.product === "terragucci" ? r.config : undefined;
+  };
   // #489: a terragucci repo is applied by its pipeline only. Asked per request,
   // because a project switch changes cfg.projectDir under a running server.
   // #500: an allowlist. Every method but GET, HEAD and OPTIONS is refused,
   // on every path, unless TERRAGUCCI_ALLOWED_WRITES names the route.
+  // #517: a SQL Yodeler repo gets the same allowlist, refused with
+  // `code: "sql-yodeler"`.
   app.use("*", async (c, next) => {
     const what = refusedWrite(c.req.method, c.req.path);
     if (!what) return next();
-    const config = tgConfig();
-    if (what && config) return c.json(terragucciRefusal(config, what), 409);
+    const repo = guardedRepo();
+    if (what && repo) return c.json(productRefusal(repo, what), 409);
     await next();
   });
 
@@ -980,6 +988,8 @@ export function createApp(
   if (cfg.terragucci) terragucciEstateRoutes(app, cfg.terragucci, () => cfg.projectDirs ?? [cfg.projectDir]);
   // #526: SQL Yodeler's report and drift, read from files; never yodel, never the database.
   if (cfg.yodelReport) yodelReportRoute(app, cfg.yodelReport, () => cfg.projectDirs ?? [cfg.projectDir]);
+  // #522: gate history from chant/lifecycle through chant's gate-audit, any product.
+  lifecycleHistoryRoute(app, () => repoBase(cfg.projectDirs ?? [cfg.projectDir]));
 
   // Carve mode (#252) claims /api/graph, /api/project and friends before the
   // project-shaped handlers are registered — see carveRoutes.
@@ -1465,6 +1475,8 @@ export function createApp(
     if (!read.ok) return c.json({ error: read.refusal.error, code: read.refusal.code }, 422);
     const g = read.gates.find((x) => x.key === key);
     if (!g) return c.json({ error: `no gate ${key} is waiting in ${env}`, code: "no-gate" }, 404);
+    // #519: a person overrides a policy denial with its rules and a reason; behold never approves one.
+    if (isOverrideGate(g)) return c.json({ error: `${key} is a policy denial, which behold never overrides. Run, with your reason: ${g.approve}`, code: "override" }, 422);
     if (g.signed) return c.json({ error: `${key} wants a signed approval, which behold can't make. Run: ${g.approve}`, code: "signed" }, 422);
     const approver = localApprover();
     broadcaster.emit("op", `✎ approve ${g.key} as ${approver}`);
@@ -1634,6 +1646,11 @@ export function createApp(
       // #489: a terragucci repo is applied by its pipeline; the SPA offers no
       // write at all, and the write routes refuse with the same words.
       ...(tgConfig() ? { terragucci: { config: tgConfig()!, ...terragucciRefusal(tgConfig()!, "deploying from behold") } } : {}),
+      // #517: a SQL Yodeler repo is migrated by its pipeline; same contract.
+      ...((): { sqlYodeler?: { config: string; error: string; code: string; remedy: string } } => {
+        const r = guardedRepo();
+        return r?.product === "sql-yodeler" ? { sqlYodeler: { config: r.config, ...productRefusal(r, "applying from behold") } } : {};
+      })(),
       // #490: the page asks /api/terragucci for the marks when this is set.
       ...(cfg.terragucci ? { terragucciReports: { source: cfg.terragucci.source, ...(cfg.terragucci.project ? { project: cfg.terragucci.project } : {}) } } : {}),
       // #526: the page asks /api/yodel-report for the marks when this is set.
@@ -2060,9 +2077,9 @@ export function createApp(
         { method: "POST", path: "/api/apply", desc: "delegated apply: ?env=&component=<name|all> (guarded, preview-locked)" },
         { method: "POST", path: "/api/ops/:name/run", desc: "run a committed Op (delegated write)" },
         { method: "POST", path: "/api/ops/:name/signal/:gate", desc: "approve an Op's gate (releases the waiting run)" },
-        { method: "GET", path: "/api/workspace/gates", desc: "a declared workspace's waiting gates from chant workspace status <env> --json (?env=), keyed member/op/gate, with the approver behold would record (#477)" },
+        { method: "GET", path: "/api/workspace/gates", desc: "a declared workspace's waiting gates from chant workspace status <env> --json (?env=), keyed member/op/gate, with the approver behold would record (#477); a policy-override gate carries override {subject, rules, plan, digest, state, spentAt, product, command, source} and no approve path (#519)" },
         { method: "GET", path: "/api/workspace/why", desc: "why a member (?member=) or a node (?node=<member>/<id>) is the way it is: the decisions covering it, the runs and commits behind it, from chant workspace graph --intent <region> --json; read on demand, cancelled with the request (#471)" },
-        { method: "POST", path: "/api/workspace/gates/approve", desc: "approve one workspace gate: JSON body {key, env}; env and plan come from a fresh status read; recorded as the user running behold; preview-locked (#477)" },
+        { method: "POST", path: "/api/workspace/gates/approve", desc: "approve one workspace gate: JSON body {key, env}; env and plan come from a fresh status read; recorded as the user running behold; preview-locked (#477); a policy-override gate answers 422 code override with its command (#519)" },
         { method: "POST", path: "/api/operator/approve/:op/:gate", desc: "record a converge gate's resolution (chant approve — a fact for the next tick, not an unblock)" },
         { method: "POST", path: "/api/rollback", desc: "open a rollback PR: ?to=<sha>" },
         { method: "POST", path: "/api/substrates/:name/up", desc: "bring a substrate up" },
@@ -3872,7 +3889,7 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   // its saved id — best-effort and out loud: a refusal (gh gone, pipeline
   // gone) prints its reason and leaves the record for the next attempt or an
   // explicit POST /api/ci/readopt. Never in carve mode (no project to paint).
-  if (!cfg.carveReport && !servedTerragucciConfig(cfg.projectDirs ?? [cfg.projectDir])) {
+  if (!cfg.carveReport && !servedProductRepo(cfg.projectDirs ?? [cfg.projectDir])) {
     void readoptDispatchedRun(cfg, runner).then((result) => {
       if (result.outcome === "readopted") {
         process.stdout.write(`  re-adopted dispatched run ${result.run.runId} (${result.run.workflow}) — following via gh\n`);
@@ -3918,9 +3935,10 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   const onPollDrift = (dir: string, movedLexicons: string[]): void => {
     broadcaster.emit("changed", dir);
     if (autoSync === "off") return;
-    const tg = servedTerragucciConfig(cfg.projectDirs ?? [cfg.projectDir]);
-    if (tg) {
-      broadcaster.emit("op", `⟳ auto-sync (${autoSync})${memberTag(dir)} declined: ${terragucciRefusal(tg, "auto-sync").error}`);
+    // #517: declined on a SQL Yodeler repo as on a terragucci one.
+    const guarded = servedProductRepo(cfg.projectDirs ?? [cfg.projectDir]);
+    if (guarded) {
+      broadcaster.emit("op", `⟳ auto-sync (${autoSync})${memberTag(dir)} declined: ${productRefusal(guarded, "auto-sync").error}`);
       return;
     }
     void routeAutoSync(dir, movedLexicons);
