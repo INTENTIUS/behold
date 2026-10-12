@@ -16,6 +16,7 @@ import { cornerOf, estateLine, hrefOf as tgHref, legend as tgLegend, markLine, r
 import { laneElement as tgLane, rootOfCard as tgRootOfCard, historyElement as tgHistoryLane } from "./terragucci-timeline.js";
 import { renderLane } from "./terragucci-lifecycle.js";
 import { renderReleases } from "./releases.js";
+import { renderYodelLane } from "./sql-yodeler-lane.js";
 import { initTerragucciEstate } from "./terragucci-estate.js";
 import { cornerText as yrCorner, datedWords as yrDated, environmentLines as yrEnvLines, joinMarks as yrJoin, legend as yrLegend, markLine as yrMarkLine } from "./yodel-report.js";
 import { cardProgress as tgCardProgress, progressLines as tgProgressLines, progressSection as tgProgressSection, stampProgress as tgStampProgress } from "./terragucci-progress.js";
@@ -3626,6 +3627,37 @@ function renderYodelPanel() {
   if (!staticMode) host.appendChild(button("Read the files again", "", () => loadYodelReport()));
 }
 initYodelReport();
+
+// --- #524: a SQL Yodeler repo's lane over chant/lifecycle -------------------
+// /api/sql-yodeler/lifecycle: each environment's wave gate and migrations-op
+// gate, in the order of applies, with the approve line to copy. Below it,
+// the gate ledgers' history (#522). Read-only and dated; never live.
+let ylHost = null;
+async function initYodelLane() {
+  if (staticMode) return;
+  const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
+  if (!project.sqlYodeler) return;
+  await loadYodelLane();
+}
+async function loadYodelLane({ fresh = false } = {}) {
+  const q = fresh ? "?fresh=1" : "";
+  const [lane, history] = await Promise.all([
+    apiFetch(`/api/sql-yodeler/lifecycle${q}`).then((r) => r.json()).catch((e) => ({ error: String(e) })),
+    apiFetch(`/api/lifecycle/history${q}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+  ]);
+  if (!ylHost) {
+    ylHost = addPanelTab("yodel-lane", "Pipeline", "SQL Yodeler's gates on chant/lifecycle: each environment's wave and migrations op, in the order of applies, dated. Not live.");
+    if (!ylHost) return;
+    ylHost.id = "tab-yodel-lane";
+  }
+  ylHost.replaceChildren();
+  renderYodelLane(ylHost, lane, new Date(), { button, copy: copyToClipboard, link: tgLink });
+  if (history) ylHost.appendChild(tgHistoryLane(history));
+  const again = button("Read again", "", () => loadYodelLane({ fresh: true }));
+  again.title = "Fetch chant/lifecycle again and redraw.";
+  ylHost.appendChild(again);
+}
+initYodelLane();
 // #509: a control repo draws its projects from estate.json and their run views.
 initTerragucciEstate({ fetchUrl: apiFetch, copy: copyToClipboard });
 

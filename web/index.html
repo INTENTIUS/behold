@@ -148,6 +148,15 @@
       #tab-yodel .tg-legend { color: var(--muted); overflow-wrap: anywhere; }
       #tab-yodel .tg-inspect { overflow-wrap: anywhere; }
       #tab-yodel .tg-refusal { color: var(--degraded); font-weight: 600; }
+      /* #524: SQL Yodeler's gates on chant/lifecycle, dated. A Copy button is the only control. */
+      #panel-body #tab-yodel-lane.active { display: flex; flex-direction: column; gap: 6px; font-size: var(--t-caption); }
+      #tab-yodel-lane h3 { margin: 8px 0 0; font-size: var(--t-caption); }
+      #tab-yodel-lane .tg-legend { color: var(--muted); overflow-wrap: anywhere; }
+      #tab-yodel-lane .tg-refusal { color: var(--degraded); font-weight: 600; }
+      #tab-yodel-lane .ws-gate { border: 1px solid var(--rule); border-radius: 6px; padding: 6px 8px; }
+      #tab-yodel-lane .ws-gate-title { font-weight: 600; }
+      #tab-yodel-lane .ws-gate-facts, #tab-yodel-lane .ws-gate-note { color: var(--muted); overflow-wrap: anywhere; }
+      #tab-yodel-lane .tg-command { display: block; font-family: var(--font-mono); overflow-wrap: anywhere; margin: 4px 0; }
       /* #490: terragucci's reports, dated. Never a fill. */
       #panel-body #tab-terragucci.active { display: flex; flex-direction: column; gap: 8px; font-size: var(--t-caption); }
       #tab-terragucci .tg-legend, #tab-terragucci .tg-estate { color: var(--muted); }

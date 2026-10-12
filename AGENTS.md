@@ -295,6 +295,37 @@ the database.
   corner tag with its age; never a fill. Objects no card is are listed in
   the SQL Yodeler tab, which also holds the environments and gaps.
 
+## A SQL Yodeler project: kinds and a lifecycle lane (#524)
+
+A SQL Yodeler project is a chant project with `lexicons: ["sql"]` and a
+`yodel.config.ts` (#517's detection, `productRepo` in src/terragucci-repo.ts).
+Its graph draws from `chant graph` as any project's does. src/sql-kinds.ts
+registers a pinhole pack for the `sql` lexicon: a line glyph per
+`Postgres::*` and `ClickHouse::*` kind, and cards that lead with the kind in
+words and the qualified name. A `REFERENCES ${other}` foreign key is a `ref`
+edge; e2e/fixtures/sql-yodeler-fk holds a project with one (its test skips
+where `@intentius/chant-lexicon-sql` does not resolve).
+
+`GET /api/sql-yodeler/lifecycle[?fresh=1]` (src/sql-yodeler-lane.ts) reads
+`chant/lifecycle` with `readLifecycle` and a spec per op, sharing one fetch:
+
+- `opWavesLane("yodel-apply")` for the apply pipeline's
+  `yodel-apply-wave-<k>` gates, with the mode at base from `yodel-waves.json`
+  when every wave names the same `approval`, else chant's rule and a note.
+- `migrateOpLane(env)` for each `migrate-<env>` op that `ops/` or
+  `yodel-waves.json` names: its one gate `approve-migrate-<env>`, drawn as
+  wave 1 of that op.
+
+The answer is the lane's header (branch, via, commit, rule, note) with
+`environments[]` in the order of applies (`yodel-waves.json`, then any
+environment only `ops/` names), each with its wave (`k`, targets, gate
+policy, approval) and `gates[]` (`kind: "wave" | "migrate"`, the GateEntry
+of #520/#521). A waiting gate carries `npx yodel approve <env> --plan
+<digest>` (`--sign` under sealed). Waves the spec does not name go in
+`unplaced`. A served directory that is not SQL Yodeler gets 404 with
+`code: "sql-yodeler"`. The page's Pipeline tab (`web/sql-yodeler-lane.js`)
+draws it, with `/api/lifecycle/history` (#522) below. Reads are reused 30s.
+
 ## Getting a server
 
 ```sh
