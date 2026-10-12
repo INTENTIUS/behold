@@ -1,0 +1,11 @@
+{
+  "environment": "prod",
+  "dialect": "postgres",
+  "server": { "dialect": "postgres", "address": "db.internal:5432/shop" },
+  "changed": [{ "name": "orders", "type": "Postgres::Table", "changes": [{ "path": "columns[2].default", "kind": "changed", "declared": "'placed'::text", "live": "'new'::text" }] }],
+  "missing": ["ordersStatusIdx"],
+  "unobserved": [],
+  "against": { "source": "src" },
+  "drifted": true,
+  "fingerprint": "sha256:1234"
+}

@@ -1,6 +1,6 @@
 ---
 title: Look at a SQL Yodeler project
-description: Which schema each environment holds, from the release ledger SQL Yodeler writes. Local, read-only, dated.
+description: Which schema each environment holds, and what SQL Yodeler's report and drift files say, drawn on the project's schema. Local, read-only, dated.
 ---
 
 [SQL Yodeler](https://intentius.io/sql-yodeler/) applies a project's schema
@@ -27,3 +27,30 @@ its own and reads it with chant's release-ledger reader. If the fetch fails
 it reads the checkout's `origin/chant/lifecycle` instead and says so. It
 never writes to the repository, the branch or a database. `behold export`
 carries the strip as a snapshot of the moment it ran.
+
+## Report and drift
+
+```sh
+yodel report --json > out/report.json
+yodel drift prod --json > out/drift-prod.json
+behold serve . --yodel-report out/
+```
+
+`--yodel-report` takes the report file, or the directory holding it. Any
+drift JSON in the same directory is read too. behold never runs `yodel`
+and never connects to the database: it reads the files you or your
+pipeline wrote.
+
+- The SQL Yodeler tab lists each environment's applied migrations, the ones
+  not applied with their state, and the gaps the report found, dated by the
+  report's `generatedAt`.
+- A table or other object a drift file names as changed or missing gets a
+  corner tag on its card, such as `drift prod · 4h`. Drift JSON has no time
+  of its own, so the age is when its file was written. Hover the card or
+  open it for the properties that differ.
+- Objects no card is are listed in the tab, not dropped.
+
+Every file is checked against SQL Yodeler's own JSON Schemas, from
+`@intentius/sql-yodeler` when it is installed and from a copy pinned in
+behold otherwise. A file that does not match is refused by name with
+`code: "yodel-report"`, and nothing from that read is drawn.

@@ -269,6 +269,32 @@ none. `/api/project` says `releaseLedger: true` for a checkout with a
 `yodel.config.ts` or `yodel-waves.json`; the page then opens a Releases tab
 (`web/releases.js`), and `behold export` captures the route as a snapshot.
 
+## SQL Yodeler's report and drift, from files (#526)
+
+`behold serve <dir> --yodel-report <file|dir>` adds `GET /api/yodel-report`
+(`src/yodel-report.ts`). It reads one `yodel report --json` output and any
+`yodel drift <env> --json` output in the same directory, written by the
+person or their pipeline. behold never runs `yodel` and never connects to
+the database.
+
+- The answer is `{source, validation, report, environments[], drift[],
+  marks[], ignored[]}`. Each environment carries its applied migrations, the
+  rest with their state, its gaps and notes, dated by the report's
+  `generatedAt`. Each mark is one object a drift file names (`changed` or
+  `missing`), dated by the file's mtime (drift JSON has no time of its own)
+  and named by its file.
+- Every file is checked against SQL Yodeler's schemas: from
+  `@intentius/sql-yodeler/schemas/` when the package resolves beside the
+  served project or behold, otherwise from the copy pinned in
+  `src/sql-yodeler-schemas/` (sql-yodeler 19ebbff). A file that fails is a
+  422 with `code: "yodel-report"` naming the file, and nothing is drawn.
+  Update the pinned copy by copying the three files from sql-yodeler's
+  `schemas/` and changing `PINNED_COMMIT`.
+- The page (`web/yodel-report.js`) joins a mark to the card whose id is the
+  object's name, or ends in `/<name>` in a composed estate, and draws a
+  corner tag with its age; never a fill. Objects no card is are listed in
+  the SQL Yodeler tab, which also holds the environments and gaps.
+
 ## Getting a server
 
 ```sh

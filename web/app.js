@@ -17,6 +17,7 @@ import { laneElement as tgLane, rootOfCard as tgRootOfCard, historyElement as tg
 import { renderLane } from "./terragucci-lifecycle.js";
 import { renderReleases } from "./releases.js";
 import { initTerragucciEstate } from "./terragucci-estate.js";
+import { cornerText as yrCorner, datedWords as yrDated, environmentLines as yrEnvLines, joinMarks as yrJoin, legend as yrLegend, markLine as yrMarkLine } from "./yodel-report.js";
 import { cardProgress as tgCardProgress, progressLines as tgProgressLines, progressSection as tgProgressSection, stampProgress as tgStampProgress } from "./terragucci-progress.js";
 import { seconds, whyQuery, whyView } from "./why.js";
 import { readCostLine } from "./read-cost.js";
@@ -906,6 +907,21 @@ function inspect(node) {
       if (m.run.job_url) p.append(" · ", tgLink("job", m.run.job_url));
       if (m.run.pull_request_url) p.append(" · ", tgLink(`PR #${m.run.pull_request}`, m.run.pull_request_url));
       if (m.run.trace_url) p.append(" · ", tgLink("trace", m.run.trace_url));
+      panel.appendChild(p);
+    }
+  }
+  // #526: SQL Yodeler's drift on this card, each dated by its file.
+  const yrMarks = yrJoined && yrJoined.cards[node.id];
+  if (yrMarks && yrMarks.length) {
+    const h = document.createElement("h3");
+    h.textContent = "SQL Yodeler drift (from files, not live)";
+    panel.appendChild(h);
+    const now = new Date();
+    for (const m of yrMarks) {
+      const p = document.createElement("p");
+      p.className = "tg-inspect";
+      p.textContent = yrMarkLine(m, now);
+      p.title = m.changes.map((c) => `${c.path || ""} ${c.kind || ""}: declared ${JSON.stringify(c.declared ?? null)}, live ${JSON.stringify(c.live ?? null)}`).join("\n");
       panel.appendChild(p);
     }
   }
@@ -3508,6 +3524,108 @@ async function loadReleases({ fresh = false } = {}) {
   }
 }
 initReleases();
+
+
+// --- #526: SQL Yodeler's report and drift, from files ------------------------
+// /api/yodel-report reads `yodel report --json` and drift JSON the person or
+// their pipeline wrote, checked against SQL Yodeler's schemas. Drift marks are
+// dated corner tags on the cards they name; environments and gaps go in the
+// panel. Nothing is live, and behold never runs yodel.
+let yrAnswer = null;
+let yrJoined = null;
+let yrHost = null;
+async function initYodelReport() {
+  const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
+  if (!project.yodelReport) return;
+  await loadYodelReport();
+}
+async function loadYodelReport() {
+  yrAnswer = await apiFetch("/api/yodel-report")
+    .then((r) => r.json())
+    .catch((e) => ({ error: String(e), code: "yodel-report", remedy: "" }));
+  markYodelCards();
+}
+function markYodelCards() {
+  if (!yrAnswer) return;
+  const svg = document.querySelector("#graph svg");
+  if (svg) {
+    for (const old of svg.querySelectorAll("[data-yr-mark]")) old.remove();
+    const ids = [...svg.querySelectorAll("[data-node-id]")].map((g) => g.getAttribute("data-node-id"));
+    yrJoined = yrAnswer.error ? null : yrJoin(yrAnswer, ids);
+    const now = new Date();
+    for (const [id, marks] of Object.entries(yrJoined ? yrJoined.cards : {})) {
+      const g = svg.querySelector('[data-node-id="' + CSS.escape(id) + '"]');
+      if (!g) continue;
+      const rect = g.querySelector("rect");
+      const box = rect && rect.getBBox ? rect.getBBox() : null;
+      const tag = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      tag.setAttribute("data-yr-mark", "1");
+      tag.setAttribute("x", String((box ? box.x + box.width : 150) - 10));
+      tag.setAttribute("y", String((box ? box.y : 0) + 14));
+      tag.setAttribute("text-anchor", "end");
+      tag.setAttribute("font-size", "11");
+      tag.setAttribute("font-weight", "600");
+      tag.setAttribute("fill", "var(--degraded)");
+      tag.textContent = yrCorner(marks, now);
+      const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+      title.setAttribute("data-yr-mark", "title");
+      title.textContent = marks.map((m) => yrMarkLine(m, now)).join("\n") + "\n(from SQL Yodeler drift files, not live)";
+      g.append(title, tag);
+    }
+  }
+  renderYodelPanel();
+}
+function renderYodelPanel() {
+  if (!yrHost) {
+    yrHost = addPanelTab("yodel", "SQL Yodeler", "SQL Yodeler's report and drift, read from files: each environment's applied migrations and gaps, dated. Not live.");
+    if (!yrHost) return;
+    yrHost.id = "tab-yodel";
+  }
+  const host = yrHost;
+  host.replaceChildren();
+  const a = yrAnswer;
+  const line = (cls, text, title) => {
+    const d = document.createElement("div");
+    d.className = cls;
+    d.textContent = text;
+    if (title) d.title = title;
+    host.appendChild(d);
+    return d;
+  };
+  if (!a || a.error) {
+    line("tg-refusal", a ? `${a.code}: ${a.error}` : "SQL Yodeler report not read");
+    if (a && a.remedy) line("tg-legend", a.remedy);
+    return;
+  }
+  const now = new Date();
+  const lg = yrLegend(a, now);
+  line("tg-legend", lg.text, lg.title);
+  for (const e of a.environments) {
+    const h = document.createElement("h3");
+    h.textContent = e.op ? `${e.name} (op ${e.op.name}, gate ${e.op.gate})` : e.name;
+    host.appendChild(h);
+    for (const t of yrEnvLines(e, now)) line("tg-inspect", t);
+    line("tg-legend", `from ${yrDated(e.dated, now)}`);
+  }
+  for (const d of a.drift) {
+    const h = document.createElement("h3");
+    h.textContent = `${d.environment} drift`;
+    host.appendChild(h);
+    line("tg-inspect", d.drifted ? `${d.changed} changed, ${d.missing} missing` : "no drift in what could be read");
+    for (const u of d.unobserved) line("tg-inspect", `not read: ${u.name}${u.reason ? ` (${u.reason})` : ""}`);
+    line("tg-legend", `from ${yrDated(d.dated, now)}${d.server ? ` · ${d.server}` : ""}`);
+  }
+  const unmatched = (yrJoined && yrJoined.unmatched) || [];
+  if (unmatched.length) {
+    const h = document.createElement("h3");
+    h.textContent = "drift on no card";
+    host.appendChild(h);
+    for (const m of unmatched) line("tg-inspect", `${m.object}: ${yrMarkLine(m, now)}`);
+  }
+  if (a.ignored.length) line("tg-legend", `not read (neither a report nor drift): ${a.ignored.join(", ")}`);
+  if (!staticMode) host.appendChild(button("Read the files again", "", () => loadYodelReport()));
+}
+initYodelReport();
 // #509: a control repo draws its projects from estate.json and their run views.
 initTerragucciEstate({ fetchUrl: apiFetch, copy: copyToClipboard });
 
@@ -4416,6 +4534,7 @@ function render(ir, svg, m) {
   markDriftedCards(ir); // #404: same, for a bound card the plan would change — after the carve/operator stamps, so it can see and yield to them
   markPendingCards(ir); // #422: and the cards whose member has not answered yet
   markTerragucciCards(); // #490: and what terragucci's reports found, dated
+  markYodelCards(); // #526: and SQL Yodeler's drift, dated
   applyLayout(); // #228: last, so the hand-placed deltas ride on top of every other pass
   renderDial();
 }

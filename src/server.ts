@@ -180,6 +180,7 @@ import { repoBase, terragucciRoutes, type TerragucciOptions } from "./terragucci
 import { lifecycleHistoryRoute } from "./lifecycle-history.ts";
 import { hasReleaseLedgerHint, releasesRoutes } from "./lifecycle-releases.ts";
 import { controlRepoInfo, terragucciEstateRoutes } from "./terragucci-estate.ts";
+import { yodelReportRoute } from "./yodel-report.ts";
 import { loadDemoRegistry, missingRequirements, fetchesFromNetwork, demoTargetDir, loadDemo, type DemoEntry } from "./demos.ts";
 
 /** The installed behold package root — `demos.json` and the bundled examples
@@ -207,6 +208,8 @@ export interface ServerOptions {
   workspace?: Workspace;
   /** #490: `--terragucci`: paint the estate from terragucci's reports (src/terragucci-view.ts). */
   terragucci?: TerragucciOptions;
+  /** #526: `--yodel-report`: SQL Yodeler's report and drift JSON, drawn as dated marks (src/yodel-report.ts). */
+  yodelReport?: string;
   /** #471: hud's address (`--hud`, BEHOLD_HUD_URL). A proposed decision in a
    * "why" links to its review there; without it the decision is named by id. */
   hud?: string;
@@ -986,6 +989,8 @@ export function createApp(
   if (cfg.terragucci) terragucciEstateRoutes(app, cfg.terragucci, () => cfg.projectDirs ?? [cfg.projectDir]);
   // #525: each environment's newest release, from the release ledger on chant/lifecycle.
   releasesRoutes(app, () => cfg.projectDir);
+  // #526: SQL Yodeler's report and drift, read from files; never yodel, never the database.
+  if (cfg.yodelReport) yodelReportRoute(app, cfg.yodelReport, () => cfg.projectDirs ?? [cfg.projectDir]);
   // #522: gate history from chant/lifecycle through chant's gate-audit, any product.
   lifecycleHistoryRoute(app, () => repoBase(cfg.projectDirs ?? [cfg.projectDir]));
 
@@ -1651,6 +1656,8 @@ export function createApp(
       })(),
       // #490: the page asks /api/terragucci for the marks when this is set.
       ...(cfg.terragucci ? { terragucciReports: { source: cfg.terragucci.source, ...(cfg.terragucci.project ? { project: cfg.terragucci.project } : {}) } } : {}),
+      // #526: the page asks /api/yodel-report for the marks when this is set.
+      ...(cfg.yodelReport ? { yodelReport: { source: cfg.yodelReport } } : {}),
       // #509: a control repo (`projects:`, no roots): the page asks /api/terragucci/estate.
       ...((): { terragucciControl?: { config: string; projects: string[] } } => {
         const control = cfg.terragucci ? controlRepoInfo(cfg.projectDirs ?? [cfg.projectDir]) : undefined;

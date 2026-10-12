@@ -142,6 +142,12 @@
       #ws-gates .ws-gate-title { font-weight: 600; }
       #ws-gates .ws-gate-facts, #ws-gates .ws-gate-note { color: var(--muted); font-size: var(--t-caption); }
       #ws-gates .ws-gate button { margin-top: 4px; }
+      /* #526: SQL Yodeler's report and drift, from files, dated. Never a fill. */
+      #panel-body #tab-yodel.active { display: flex; flex-direction: column; gap: 4px; font-size: var(--t-caption); }
+      #tab-yodel h3 { margin: 8px 0 0; font-size: var(--t-caption); }
+      #tab-yodel .tg-legend { color: var(--muted); overflow-wrap: anywhere; }
+      #tab-yodel .tg-inspect { overflow-wrap: anywhere; }
+      #tab-yodel .tg-refusal { color: var(--degraded); font-weight: 600; }
       /* #490: terragucci's reports, dated. Never a fill. */
       #panel-body #tab-terragucci.active { display: flex; flex-direction: column; gap: 8px; font-size: var(--t-caption); }
       #tab-terragucci .tg-legend, #tab-terragucci .tg-estate { color: var(--muted); }
