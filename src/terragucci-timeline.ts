@@ -36,6 +36,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Hono } from "hono";
 import { Ajv2020 } from "ajv/dist/2020.js";
+import { waveOfGate } from "./terragucci-lifecycle.ts";
 import { TerragucciReadError, type Validation } from "./terragucci-reports.ts";
 import { deniedWords, TerragucciDenied, type TerragucciSource } from "./terragucci-source.ts";
 
@@ -273,7 +274,7 @@ export function timelineEntries(entries: readonly AuditEntry[], project: string)
     const d = e.detail ?? {};
     let roots = ownRoots(e);
     if (!roots.length && (e.kind === "approval" || e.kind === "approval-revoked")) roots = [...(gateRoots.get(gate(e)) ?? [])];
-    const waveNo = typeof d.wave === "number" ? d.wave : /^wave-(\d+)$/.exec(e.what)?.[1];
+    const waveNo = typeof d.wave === "number" ? d.wave : waveOfGate(e.what);
     const report = reportKey(e) ?? (WHAT_IS_ROOT.has(e.kind) ? undefined : gateReport.get(gate(e))?.key);
     const pr = d.pull_request;
     const entry: TimelineEntry = {

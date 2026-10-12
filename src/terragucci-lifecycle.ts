@@ -55,6 +55,18 @@ import {
   type PendingGateRecord,
 } from "@intentius/chant/gate-decision";
 import { parseGateLedger } from "@intentius/chant/lifecycle/gate-ledger";
+import {
+  decideOverride,
+  OVERRIDE_APPLIED,
+  OVERRIDE_LEDGER,
+  OVERRIDE_OP,
+  OVERRIDERS_PATH,
+  overrideCommand,
+  parseAppliedOverrides,
+  parseOverriders,
+  recordedDenials,
+  type AppliedOverrideRecord,
+} from "@intentius/chant/override-gate";
 import { samePlanDigest } from "@intentius/chant/lifecycle/plan-digest";
 import { parseYAML } from "@intentius/chant/yaml";
 import { assertScratch } from "./scratch.ts";
@@ -102,8 +114,19 @@ export interface GateLaneSpec {
   appliedPath: string;
   /** The wave a gate name is, or undefined for a gate the lane does not show. */
   waveOf(gate: string): number | undefined;
-  /** The line a person runs to approve a waiting gate. behold never runs it. */
-  approveCommand(gate: string, digest: string | undefined, mode: GateApprovalSource): string;
+  /** The gate wave `k` waits on, for a wave the lane knows only from another ledger (a policy denial, a hold). */
+  gateOf(wave: number): string;
+  /**
+   * The line a person runs to approve a waiting gate. behold never runs it.
+   * `at.op` is the op the pending fact names (the ledger's, not a constant);
+   * `at.wave` is the gate's wave.
+   */
+  approveCommand(gate: string, digest: string | undefined, mode: GateApprovalSource, at?: { op: string; wave?: number }): string;
+  /**
+   * Who may override a policy denial, read at base (`show` reads a file
+   * there). Default: chant's `.chant/overriders`.
+   */
+  overriders?(show: (path: string) => Promise<string | undefined>): Promise<{ principals: string[]; path: string }>;
   /** Whether a wave's applied approval is spent (chant#3784). */
   spend: boolean;
   /**
@@ -124,7 +147,69 @@ export function gateLanePaths(op: string): Pick<GateLaneSpec, "op" | "ledgerPath
   return { op, ledgerPath: `_gates/${op}.jsonl`, appliedPath: `${a.dir}/${a.file}` };
 }
 
-const WAVE_GATE = /^wave-(\d+)$/;
+/**
+ * A wave's gate name: terragucci's `wave-<k>`, chant op-waves' default
+ * `<gate>-wave-<k>` (`tf-apply-wave-2`), or a product's own `<name>-wave-<k>`
+ * (SQL Yodeler's `yodel-apply-wave-<k>`).
+ */
+export const WAVE_GATE = /^(?:[\w-]+-)?wave-(\d+)$/;
+
+/** The wave a gate name is, by {@link WAVE_GATE}, or undefined. */
+export function waveOfGate(gate: string): number | undefined {
+  const m = WAVE_GATE.exec(gate);
+  return m ? Number(m[1]) : undefined;
+}
+
+/** chant's own approve line (`chant approve <op> <gate> --plan <digest>`, `--sign` under sealed), as chant's op waves print it. */
+export function chantApproveCommand(op: string, gate: string, digest: string | undefined, sealed: boolean): string {
+  return `chant approve ${op} ${gate}${digest ? ` --plan ${digest}` : ""}${sealed ? " --sign" : ""}`;
+}
+
+/** The line that answers a decision point a gate asks (chant#3170): `chant workspace points answer <id>`. */
+export function pointAnswerCommand(id: string): string {
+  return `chant workspace points answer ${id}`;
+}
+
+/** terragucci's approve line for wave `k`: `npx terragucci approve wave-<k>`, whatever chant names the gate. */
+export function terragucciApproveCommand(wave: number, digest: string | undefined | null, sealed = false): string {
+  return `npx terragucci approve wave-${wave}${digest ? ` --plan ${digest}` : ""}${sealed ? " --sign" : ""}`;
+}
+
+/** A gate policy as chant names it: `on-destroy` is an alias of `on-destructive` (terragucci#863). */
+export function gatePolicyName(policy: string): string {
+  return policy === "on-destroy" ? "on-destructive" : policy;
+}
+
+/** The overriders in `.chant/overriders` at base (chant's default list). */
+export async function chantOverriders(show: (path: string) => Promise<string | undefined>): Promise<{ principals: string[]; path: string }> {
+  const text = await show(OVERRIDERS_PATH);
+  return { principals: text === undefined ? [] : parseOverriders(text), path: OVERRIDERS_PATH };
+}
+
+/** chant's mode at base for a product with no approval key of its own: any `identity.gates` means sealed, else ledger. */
+export async function chantApprovalMode(_show: (path: string) => Promise<string | undefined>, identityGates: number): Promise<Omit<ApprovalRule, "base" | "signers">> {
+  if (identityGates > 0) return { mode: "sealed", source: "identity.gates in chant.workspace.json at base" };
+  return { mode: "ledger", source: "the default" };
+}
+
+/**
+ * A lane for any product whose waves run on chant's op waves (#521): the
+ * gates of `op` named by {@link WAVE_GATE}, chant's approve line, spent
+ * approvals, chant's mode rule and `.chant/overriders`. Pass `over` to set a
+ * product's own gate name, approve line, mode or overriders.
+ */
+export function opWavesLane(op: string, over: Partial<Omit<GateLaneSpec, "op" | "ledgerPath" | "appliedPath">> = {}): GateLaneSpec {
+  return {
+    ...gateLanePaths(op),
+    waveOf: waveOfGate,
+    gateOf: (k) => `${op}-wave-${k}`,
+    approveCommand: (gate, digest, mode, at) => chantApproveCommand(at?.op ?? op, gate, digest, mode === "sealed"),
+    spend: true,
+    approvalMode: chantApprovalMode,
+    overriders: chantOverriders,
+    ...over,
+  };
+}
 
 /**
  * terragucci's mode at base (terragucci `src/approval.ts` effectiveApproval):
@@ -156,19 +241,38 @@ export async function terragucciApprovalMode(show: (path: string) => Promise<str
   return { mode: "ledger", source: "the default", ...(note ? { note } : {}) };
 }
 
-/** terragucci's lane: tf-apply's wave gates, its approve line, its lock file and its kept reports. */
-export const TERRAGUCCI_LANE: GateLaneSpec = {
-  ...gateLanePaths("tf-apply"),
-  waveOf: (gate) => {
-    const m = WAVE_GATE.exec(gate);
-    return m ? Number(m[1]) : undefined;
+/** terragucci's overriders: `policy.override` in its config at base (terragucci `src/override.ts`). */
+export async function terragucciOverriders(show: (path: string) => Promise<string | undefined>): Promise<{ principals: string[]; path: string }> {
+  for (const name of TERRAGUCCI_CONFIG_NAMES) {
+    const text = await show(name);
+    if (text === undefined || name.endsWith(".ts")) continue;
+    try {
+      const doc = (name.endsWith(".json") ? JSON.parse(text) : parseYAML(text)) as { policy?: { override?: unknown } } | null;
+      const list = doc?.policy?.override;
+      return { principals: Array.isArray(list) ? list.filter((x): x is string => typeof x === "string") : [], path: "policy.override" };
+    } catch {
+      return { principals: [], path: "policy.override" };
+    }
+  }
+  return { principals: [], path: "policy.override" };
+}
+
+/**
+ * terragucci's lane: tf-apply's wave gates (`wave-<k>` today, chant's
+ * `tf-apply-wave-<k>` or terragucci's own name once terragucci#879 lands),
+ * its approve line, its lock file and its kept reports.
+ */
+export const TERRAGUCCI_LANE: GateLaneSpec = opWavesLane("tf-apply", {
+  gateOf: (k) => `wave-${k}`,
+  approveCommand: (gate, digest, mode, at) => {
+    const k = at?.wave ?? waveOfGate(gate);
+    return k !== undefined ? terragucciApproveCommand(k, digest, mode === "sealed") : chantApproveCommand(at?.op ?? "tf-apply", gate, digest, mode === "sealed");
   },
-  approveCommand: (gate, digest, mode) => `npx terragucci approve ${gate}${digest ? ` --plan ${digest}` : ""}${mode === "sealed" ? " --sign" : ""}`,
-  spend: true,
   approvalMode: terragucciApprovalMode,
+  overriders: terragucciOverriders,
   locksPath: LOCKS_PATH,
   recordsDir: WAVE_RECORDS_DIR,
-};
+});
 
 // ── terragucci's own formats ─────────────────────────────────────────────
 
@@ -189,6 +293,21 @@ export interface GateLedger {
   resolutions: GateResolutionRecord[];
   applied: AppliedGateRecord[];
   finished: FinishedRecord[];
+  /**
+   * The other ledgers on the branch (`_gates/<op>.jsonl`), read for waves
+   * held on another gate (#521). The override ledger is `override`.
+   */
+  others?: OtherLedger[];
+  /** `_gates/policy-override.jsonl` and its applied lines: the policy's denials and the overrides of them (#521). */
+  override?: { pending: PendingGateRecord[]; resolutions: GateResolutionRecord[]; applied: AppliedOverrideRecord[] };
+}
+
+/** Another op's ledger on the branch. */
+export interface OtherLedger {
+  op: string;
+  path: string;
+  pending: PendingGateRecord[];
+  resolutions: GateResolutionRecord[];
 }
 
 const lines = (text: string): string[] => text.split("\n").map((l) => l.trim()).filter(Boolean);
@@ -212,10 +331,25 @@ export function parseFinished(text: string): FinishedRecord[] {
   return out;
 }
 
-/** The ledger and the applied file, read with chant's parsers (and the finished lines with terragucci's). */
-export function readGateLedgerText(ledgerText: string, appliedText: string): GateLedger {
+/**
+ * The ledger and the applied file, read with chant's parsers (and the
+ * finished lines with terragucci's). `more` adds the other ledgers on the
+ * branch, by path, and the override ledger's applied file, for the policy
+ * refusals and holds (#521).
+ */
+export function readGateLedgerText(ledgerText: string, appliedText: string, more: { ledgers?: Record<string, string>; overrideApplied?: string } = {}): GateLedger {
   const { pending, resolutions } = parseGateLedger(ledgerText);
-  return { pending, resolutions, applied: parseAppliedGateLines(appliedText), finished: parseFinished(appliedText) };
+  const out: GateLedger = { pending, resolutions, applied: parseAppliedGateLines(appliedText), finished: parseFinished(appliedText) };
+  const others: OtherLedger[] = [];
+  for (const [path, text] of Object.entries(more.ledgers ?? {})) {
+    const op = /^_gates\/([^/]+)\.jsonl$/.exec(path)?.[1];
+    if (!op) continue;
+    const l = parseGateLedger(text);
+    if (path === OVERRIDE_LEDGER) out.override = { pending: l.pending, resolutions: l.resolutions, applied: parseAppliedOverrides(more.overrideApplied ?? "") };
+    else others.push({ op, path, pending: l.pending, resolutions: l.resolutions });
+  }
+  if (others.length) out.others = others;
+  return out;
 }
 
 /** One root's lock, as `_locks/tf-apply.json` holds it. */
@@ -257,10 +391,17 @@ export interface LifecycleSource {
  * another digest: the wave refuses its plans), `approved` (an unspent approval
  * of the digest counts, and no wave applied under it yet), `applied` /
  * `failed` (a wave applied under the approval, and how it finished when
- * recorded).
+ * recorded; with no `finished` line, as chant's op waves write none, the
+ * outcome is not recorded and `applied.result` is absent).
+ *
+ * From the other ledgers (#521): `refused-by-policy` (the product's policy
+ * denied a run of the wave and no override counts, chant's exit 7: a denial
+ * on `_gates/policy-override.jsonl` newer than anything on the wave's own
+ * gate) and `held` (a hook held the wave on another gate that waits: a
+ * pending fact on that gate's ledger).
  */
-export type GateState = "waiting" | "expired" | "refused" | "approved" | "applied" | "failed";
-export const GATE_STATES: readonly GateState[] = ["waiting", "expired", "refused", "approved", "applied", "failed"];
+export type GateState = "waiting" | "expired" | "refused" | "approved" | "applied" | "failed" | "refused-by-policy" | "held";
+export const GATE_STATES: readonly GateState[] = ["waiting", "expired", "refused", "approved", "applied", "failed", "refused-by-policy", "held"];
 
 /** One approval line as the lane shows it. */
 export interface LaneApproval {
@@ -283,6 +424,8 @@ export interface LaneApproval {
 export interface GateEntry {
   gate: string;
   wave: number;
+  /** The op the gate's lines name. */
+  op: string;
   state: GateState;
   /** The plan digest the gate is about: the newest pending fact's, else the newest approval's. */
   digest?: string;
@@ -298,6 +441,8 @@ export interface GateEntry {
     members?: { member: string; planDigest: string }[];
     /** The gate is never resolved over MCP or ACP (chant#3485). */
     neverOverMcp?: true;
+    /** The decision point the gate asks (chant#3170): answered with `chant workspace points answer <id>`, not an approval. */
+    answer?: { point: string; id: string; path?: string };
   };
   /** The approval the state rests on: the counted one, the spent one a wave applied under, or under `refused` the one for another digest. */
   approval?: LaneApproval;
@@ -310,7 +455,11 @@ export interface GateEntry {
   applied?: { at: string; approvedAt: string; approvedBy: string; runId?: string; commit?: string; wave?: { number: number; name: string }; review?: { pr?: number; head?: string }; result?: "applied" | "failed"; finished?: string };
   /** The reports a waiting wave kept on the branch, one per digest it asked approval for. */
   records: { digest: string; path: string }[];
-  /** The line a person runs to approve, when the gate waits. behold never runs it. */
+  /** Under `refused-by-policy`: each run the policy denied, with no override that counts, and the line that overrides it. */
+  denials?: { member: string; plan: string; rules: string[]; at: string; expiresAt: string; description?: string; url?: string; refusals: string[]; moved?: { by: string; was?: string }; command: string }[];
+  /** Under `held`: the other gate a hook holds the wave on, which waits. */
+  heldOn?: { op: string; gate: string; digest?: string; since: string; hook?: string; description?: string; url?: string; answer?: { point: string; id: string; path?: string } };
+  /** The line a person runs, when the gate waits or the wave is held: an approval, or a decision point's answer. behold never runs it. */
   command?: string;
   source: LifecycleSource;
 }
@@ -362,7 +511,7 @@ export function laneApproval(r: GateResolutionRecord): LaneApproval {
     at: r.timestamp,
     ...(r.planDigest ? { planDigest: r.planDigest } : {}),
     signed: !!seal && typeof seal === "object" && typeof seal.signature === "string" && seal.signature.length > 0,
-    ...(typeof x.via === "string" ? { via: x.via } : r.review ? { via: "pr-review" } : {}),
+    ...(typeof x.via === "string" ? { via: x.via } : r.review ? { via: "review" } : {}),
     ...(pr !== undefined ? { pr } : {}),
     ...(head ? { head } : {}),
     ...(reviewers && reviewers.length ? { reviewers } : {}),
@@ -372,10 +521,11 @@ export function laneApproval(r: GateResolutionRecord): LaneApproval {
   };
 }
 
-/** What the lane decides one gate by: the mode, and under `sealed` the signers at base. */
+/** What the lane decides one gate by: the mode, under `sealed` the signers at base, and who may override a policy denial. */
 export interface LaneRule {
   mode: GateApprovalSource;
   signers?: GateSigners;
+  overriders?: { principals: string[]; path: string };
 }
 
 /**
@@ -407,6 +557,7 @@ export function decideLaneGate(
           ...(pending.description ? { description: pending.description } : {}),
           ...(membersOf(pending) ? { members: membersOf(pending)! } : {}),
           ...(pending.neverOverMcp ? { neverOverMcp: true as const } : {}),
+          ...(answerOf(pending) ? { answer: answerOf(pending)! } : {}),
         },
       }
     : {};
@@ -462,6 +613,12 @@ export function decideLaneGate(
   return { state: expired ? "expired" : "waiting", ...base, ...uncounted, ...spent, decision };
 }
 
+function answerOf(p: PendingGateRecord): { point: string; id: string; path?: string } | undefined {
+  const a = (p as { answer?: unknown }).answer as { point?: unknown; id?: unknown; path?: unknown } | undefined;
+  if (!a || typeof a !== "object" || typeof a.point !== "string" || typeof a.id !== "string") return undefined;
+  return { point: a.point, id: a.id, ...(typeof a.path === "string" ? { path: a.path } : {}) };
+}
+
 function membersOf(p: PendingGateRecord): { member: string; planDigest: string }[] | undefined {
   const raw = (p as { members?: unknown }).members;
   if (!Array.isArray(raw)) return undefined;
@@ -469,31 +626,181 @@ function membersOf(p: PendingGateRecord): { member: string; planDigest: string }
   return out.length ? out : undefined;
 }
 
-/** Each wave's gate, decided by chant's gate-decision under `rule`. */
+/** The line for a waiting gate: a decision point's answer when its pending fact asks one, else the product's approve line. */
+function waitingCommand(spec: Pick<GateLaneSpec, "approveCommand">, op: string, gate: string, wave: number, d: Pick<GateEntry, "digest" | "pending">, mode: GateApprovalSource): string {
+  return d.pending?.answer ? pointAnswerCommand(d.pending.answer.id) : spec.approveCommand(gate, d.digest, mode, { op, wave });
+}
+
+/** Each wave's gate, decided by chant's gate-decision under `rule`, with the waves the policy refused or a hook holds (#521). */
 export function gateEntries(
   ledger: GateLedger,
   records: { wave: number; digest: string; path: string }[],
   source: LifecycleSource,
   now: Date,
   rule: LaneRule = { mode: "ledger" },
-  spec: Pick<GateLaneSpec, "waveOf" | "approveCommand" | "spend"> = TERRAGUCCI_LANE,
+  spec: Pick<GateLaneSpec, "op" | "waveOf" | "gateOf" | "approveCommand" | "spend"> = TERRAGUCCI_LANE,
 ): GateEntry[] {
-  const gates = new Set<string>();
-  for (const r of [...ledger.pending, ...ledger.resolutions, ...ledger.applied]) if (spec.waveOf(r.gate) !== undefined) gates.add(r.gate);
+  const gates = new Map<string, string>();
+  for (const r of [...ledger.pending, ...ledger.resolutions, ...ledger.applied]) if (spec.waveOf(r.gate) !== undefined) gates.set(r.gate, r.op || spec.op);
   const out: GateEntry[] = [];
-  for (const gate of gates) {
+  const recordsOf = (wave: number) => records.filter((r) => r.wave === wave).map(({ digest: dg, path }) => ({ digest: dg, path }));
+  for (const [gate, op] of gates) {
     const wave = spec.waveOf(gate)!;
     const { decision: _d, ...d } = decideLaneGate(ledger, gate, rule, now, spec.spend);
     out.push({
       gate,
       wave,
+      op,
       ...d,
-      records: records.filter((r) => r.wave === wave).map(({ digest: dg, path }) => ({ digest: dg, path })),
-      ...(d.state === "waiting" ? { command: spec.approveCommand(gate, d.digest, rule.mode) } : {}),
+      records: recordsOf(wave),
+      ...(d.state === "waiting" ? { command: waitingCommand(spec, op, gate, wave, d, rule.mode) } : {}),
       source,
     });
   }
+  // A wave the policy refused, or a hook holds on another gate, shows that state when it is newer than anything on the wave's own gate.
+  const since = (e: GateEntry): number => Math.max(e.pending ? t(e.pending.timestamp) : 0, e.approval ? t(e.approval.at) : 0, e.applied ? t(e.applied.at) : 0);
+  const place = (wave: number, at: string, entry: Omit<GateEntry, "gate" | "wave" | "op" | "records" | "source">): void => {
+    const i = out.findIndex((e) => e.wave === wave);
+    const before = i >= 0 ? out[i]! : undefined;
+    if (before && since(before) > t(at)) return;
+    const gate = before?.gate ?? spec.gateOf(wave);
+    const next: GateEntry = {
+      gate,
+      wave,
+      op: before?.op ?? spec.op,
+      ...(before?.digest ? { digest: before.digest } : {}),
+      ...(before?.pending ? { pending: before.pending } : {}),
+      ...entry,
+      records: recordsOf(wave),
+      source,
+    };
+    if (i >= 0) out[i] = next;
+    else out.push(next);
+  };
+  for (const r of policyRefusals(ledger, rule, now, spec)) place(r.wave, r.at, { state: "refused-by-policy", denials: r.denials });
+  for (const h of heldWaves(ledger, rule, now, spec)) place(h.wave, h.heldOn.since, { state: "held", heldOn: h.heldOn, command: h.command });
   return out.sort((a, b) => a.wave - b.wave);
+}
+
+/** chant op-waves' own descriptions, which name the wave: a denial's and a hold's (`op-waves-run.ts` settleDenials, settleOtherGate). */
+const DENIAL_TEXT = /^wave (\d+) \((?:[^)]*)\) of (\S+): /;
+const HELD_TEXT = /^wave (\d+) \((?:[^)]*)\) of (\S+) is held on it by (.+)$/;
+
+/** The wave a run of this op is in, from the newest pending fact of a wave gate that lists it as a member. */
+function waveOfMember(ledger: GateLedger, member: string, spec: Pick<GateLaneSpec, "waveOf">): number | undefined {
+  const facts = ledger.pending.filter((p) => spec.waveOf(p.gate) !== undefined && membersOf(p)?.some((m) => m.member === member));
+  const p = newest(facts, (x) => x.timestamp);
+  return p ? spec.waveOf(p.gate) : undefined;
+}
+
+/**
+ * The waves the policy refused (#521): each denial on the override ledger
+ * (chant's `recordedDenials`) that no override counts for, as chant's
+ * `decideOverride` decides under the lane's mode and overriders, and that no
+ * run applied an override of since. Its wave is the one chant's description
+ * names, else the wave whose pending fact lists the run.
+ */
+export function policyRefusals(
+  ledger: GateLedger,
+  rule: LaneRule,
+  now: Date,
+  spec: Pick<GateLaneSpec, "op" | "waveOf">,
+): { wave: number; at: string; denials: NonNullable<GateEntry["denials"]> }[] {
+  const o = ledger.override;
+  if (!o) return [];
+  const byWave = new Map<number, { at: string; denials: NonNullable<GateEntry["denials"]> }>();
+  const sealed = rule.mode === "sealed";
+  for (const d of recordedDenials(o.pending)) {
+    const named = d.description ? DENIAL_TEXT.exec(d.description) : null;
+    const wave = named ? (named[2] === spec.op ? Number(named[1]) : undefined) : waveOfMember(ledger, d.gate, spec);
+    if (wave === undefined || !d.plan) continue;
+    const verdict = decideOverride({
+      ledger: { pending: o.pending, resolutions: o.resolutions },
+      applied: o.applied,
+      subject: d.gate,
+      planDigest: d.plan,
+      rules: d.rules,
+      overriders: rule.overriders?.principals ?? [],
+      ...(rule.overriders ? { overridersPath: rule.overriders.path } : {}),
+      mode: rule.mode,
+      ...(rule.signers ? { signers: rule.signers } : {}),
+      now: now.toISOString(),
+    });
+    if (verdict.status === "overridden") continue;
+    // A run applied under an override of this subject after the denial: the wave went on.
+    if (o.applied.some((a) => a.op === OVERRIDE_OP && a.gate === d.gate && t(a.timestamp) >= t(d.timestamp))) continue;
+    const w = byWave.get(wave) ?? { at: d.timestamp, denials: [] };
+    if (t(d.timestamp) > t(w.at)) w.at = d.timestamp;
+    w.denials.push({
+      member: d.gate,
+      plan: d.plan,
+      rules: d.rules,
+      at: d.timestamp,
+      expiresAt: d.expiresAt,
+      ...(d.description ? { description: d.description } : {}),
+      ...(d.url ? { url: d.url } : {}),
+      refusals: verdict.refusals,
+      ...(verdict.status === "moved" ? { moved: { by: verdict.by, ...(verdict.was ? { was: verdict.was } : {}) } } : {}),
+      command: overrideCommand(d.gate, d.rules, sealed),
+    });
+    byWave.set(wave, w);
+  }
+  return [...byWave.entries()].map(([wave, w]) => ({ wave, ...w }));
+}
+
+/**
+ * The waves a hook holds on another gate that waits (#521): a pending fact
+ * chant's op waves recorded on that gate's ledger, whose description names
+ * this op's wave, with no approval of its digest that counts under the
+ * lane's mode (`pr-review` counts the ledger, as chant settles a hold).
+ */
+export function heldWaves(
+  ledger: GateLedger,
+  rule: LaneRule,
+  now: Date,
+  spec: Pick<GateLaneSpec, "op">,
+): { wave: number; heldOn: NonNullable<GateEntry["heldOn"]>; command: string }[] {
+  const out = new Map<number, { wave: number; heldOn: NonNullable<GateEntry["heldOn"]>; command: string }>();
+  const ledgers = [{ op: spec.op, pending: ledger.pending, resolutions: ledger.resolutions }, ...(ledger.others ?? [])];
+  const mode: GateApprovalSource = rule.mode === "sealed" ? "sealed" : "ledger";
+  for (const l of ledgers) {
+    const newestByGate = new Map<string, PendingGateRecord>();
+    for (const p of l.pending) {
+      const b = newestByGate.get(p.gate);
+      if (!b || t(p.timestamp) >= t(b.timestamp)) newestByGate.set(p.gate, p);
+    }
+    for (const p of newestByGate.values()) {
+      const m = p.description ? HELD_TEXT.exec(p.description) : null;
+      if (!m || m[2] !== spec.op) continue;
+      const wave = Number(m[1]);
+      if (p.planDigest) {
+        const d = decideGateApproval({
+          ledger: { pending: l.pending, resolutions: l.resolutions, applied: [] },
+          gate: p.gate,
+          planDigest: p.planDigest,
+          mode,
+          ...(rule.signers ? { signers: rule.signers } : {}),
+          now: now.toISOString(),
+        });
+        if (d.status === "approved") continue;
+      }
+      const answer = answerOf(p);
+      const heldOn: NonNullable<GateEntry["heldOn"]> = {
+        op: p.op || l.op,
+        gate: p.gate,
+        ...(p.planDigest ? { digest: p.planDigest } : {}),
+        since: p.timestamp,
+        hook: m[3]!,
+        description: p.description!,
+        ...(p.url ? { url: p.url } : {}),
+        ...(answer ? { answer } : {}),
+      };
+      const before = out.get(wave);
+      if (before && t(before.heldOn.since) > t(p.timestamp)) continue;
+      out.set(wave, { wave, heldOn, command: answer ? pointAnswerCommand(answer.id) : chantApproveCommand(heldOn.op, p.gate, p.planDigest, mode === "sealed") });
+    }
+  }
+  return [...out.values()];
 }
 
 /** `<recordsDir>/wave-<k>/<digest>.json` paths, as `git ls-tree` names them, back to their wave and digest. */
@@ -510,7 +817,7 @@ export function waveRecords(paths: string[], dir: string = WAVE_RECORDS_DIR): { 
 
 /** The mode at base and, under `sealed`, the signers there. `repo` is a directory git can read `base` in. */
 export async function approvalRuleAt(
-  spec: Pick<GateLaneSpec, "approvalMode">,
+  spec: Pick<GateLaneSpec, "approvalMode" | "overriders">,
   repo: string,
   base: string | undefined,
   show: (path: string) => Promise<string | undefined>,
@@ -527,12 +834,13 @@ export async function approvalRuleAt(
     note = e instanceof Error ? e.message : String(e);
   }
   const m = await spec.approvalMode(show, identity);
+  const overriders = await (spec.overriders ?? chantOverriders)(show);
   const notes = [m.note, note].filter(Boolean).join("; ");
-  if (m.mode !== "sealed") return { rule: { ...m, base, ...(notes ? { note: notes } : {}) }, lane: { mode: m.mode } };
+  if (m.mode !== "sealed") return { rule: { ...m, base, ...(notes ? { note: notes } : {}) }, lane: { mode: m.mode, overriders } };
   const signers = gateSignersAt(repo, base);
   return {
     rule: { ...m, base, signers: { path: signers.signersPath, active: signers.active, count: signers.signers.length, problems: signers.problems }, ...(notes ? { note: notes } : {}) },
-    lane: { mode: m.mode, signers },
+    lane: { mode: m.mode, signers, overriders },
   };
 }
 
@@ -642,16 +950,22 @@ async function readAt(
     const [c, at] = r.code === 0 && r.stdout.trim() ? (r.stdout.trim().split("\0") as [string, string]) : [sha, committed];
     return { branch: LIFECYCLE_BRANCH, commit: c, committed: at, path: paths.join(" ") };
   };
-  const [ledgerText, appliedText, locksText, tree, rule] = await Promise.all([
+  const [ledgerText, appliedText, locksText, tree, gatesDir, rule] = await Promise.all([
     show(spec.ledgerPath),
     show(spec.appliedPath),
     spec.locksPath ? show(spec.locksPath) : Promise.resolve(""),
     spec.recordsDir ? git([...repo, "ls-tree", "-r", "--name-only", sha, "--", `${spec.recordsDir}/`]) : Promise.resolve({ code: 1, stdout: "", stderr: "" }),
+    git([...repo, "ls-tree", "--name-only", sha, "--", "_gates/"]),
     approvalRuleAt(spec, dir, base, (path) => showAt(base!, path)),
   ]);
-  const ledger = readGateLedgerText(ledgerText, appliedText);
+  // #521: the other ops' ledgers, for a wave held on another gate, and the override ledger, for a wave the policy refused.
+  const otherPaths = (gatesDir.code === 0 ? lines(gatesDir.stdout) : []).filter((p) => /^_gates\/[^/]+\.jsonl$/.test(p) && p !== spec.ledgerPath);
+  const otherTexts = await Promise.all(otherPaths.map((p) => show(p)));
+  const overrideApplied = otherPaths.includes(OVERRIDE_LEDGER) ? await show(OVERRIDE_APPLIED) : "";
+  const ledger = readGateLedgerText(ledgerText, appliedText, { ledgers: Object.fromEntries(otherPaths.map((p, i) => [p, otherTexts[i]!])), overrideApplied });
   const records = spec.recordsDir ? waveRecords(tree.code === 0 ? lines(tree.stdout) : [], spec.recordsDir) : [];
-  const gates = ledger.pending.length || ledger.resolutions.length || ledger.applied.length ? gateEntries(ledger, records, await changed(spec.ledgerPath, spec.appliedPath), now, rule.lane, spec) : [];
+  const any = ledger.pending.length || ledger.resolutions.length || ledger.applied.length || ledger.override?.pending.length || ledger.others?.some((o) => o.pending.length);
+  const gates = any ? gateEntries(ledger, records, await changed(spec.ledgerPath, spec.appliedPath, ...otherPaths), now, rule.lane, spec) : [];
   const lockMap = parseLocks(locksText);
   const lockSource = Object.keys(lockMap).length && spec.locksPath ? await changed(spec.locksPath) : undefined;
   const locks = Object.entries(lockMap)

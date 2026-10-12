@@ -140,7 +140,13 @@ Terragucci tab reads them too:
 - each wave's gate from `_gates/tf-apply.jsonl` and
   `_gates/tf-apply/applied.jsonl`: waiting (with the approve line), approved
   and by whom, applied, failed, a request that expired, or refused because an
-  approval stands for other plans. behold decides each wave with chant's own
+  approval stands for other plans. Once terragucci's waves run on chant's op
+  waves, a wave can also be refused by policy (a run was denied and no
+  override counts; the card gives the override line for each run), held on
+  another gate such as a state migration (the card gives that gate's approve
+  line), or applied with its outcome not recorded. A gate that asks a decision
+  point gives `chant workspace points answer <id>` instead of an approve line.
+  behold decides each wave with chant's own
   gate decision, the one terragucci applies under: an approval a wave already
   applied under is spent, and under `approval: sealed` an approval counts only
   when its seal verifies against the signers file on the default branch. An
