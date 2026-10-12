@@ -25,8 +25,9 @@
  *
  * A project that is a chant workspace member keeps its ledgers under
  * `_members/<member>/` on the branch (#537); chant's `resolveMemberLedger`
- * names the member (src/member-ledger.ts) and the environments are listed and
- * read there.
+ * names the member (src/member-ledger.ts), and chant's `listReleaseEnvironments`
+ * and `readReleaseLedger` list and read the environments under that prefix
+ * (their `ledgerPrefix` option, chant#3865).
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -184,34 +185,16 @@ async function copyCheckoutRef(git: GitRun, checkout: string, cache: string): Pr
   return f.code === 0;
 }
 
-/**
- * The environments under a member's `prefix` with a `releases.jsonl`, as
- * chant's `listLedgerEnvironments` lists them for a member. chant takes the
- * member from its working directory, and the cache has none, so behold lists
- * the member's directory itself.
- */
-async function memberEnvironments(git: GitRun, cache: string, prefix: string): Promise<string[]> {
-  const ls = await git(["--git-dir", cache, "ls-tree", "--full-tree", `refs/heads/${LIFECYCLE_BRANCH}:${prefix.replace(/\/$/, "")}`]);
-  if (ls.code !== 0) return [];
-  const envs: string[] = [];
-  for (const line of ls.stdout.split("\n")) {
-    const m = /^\d+\s+tree\s+[0-9a-f]+\t(.+)$/.exec(line.trim());
-    if (!m || m[1]!.startsWith("_")) continue;
-    const has = await git(["--git-dir", cache, "cat-file", "-e", `refs/heads/${LIFECYCLE_BRANCH}:${prefix}${m[1]}/releases.jsonl`]);
-    if (has.code === 0) envs.push(m[1]!);
-  }
-  return envs.sort();
-}
-
 /** Read every environment's ledger in the bare repository `cache`, with chant's reader, under the member's prefix when there is one. */
 async function readCache(git: GitRun, cache: string, prefix = ""): Promise<{ ledgers: Map<string, ReleaseRecord[]>; malformed: Record<string, number>; sources: Map<string, ReleaseSource> }> {
-  const envs = prefix ? await memberEnvironments(git, cache, prefix) : await listReleaseEnvironments({ cwd: cache });
+  // The cache is a bare repository with no member to resolve from, so the prefix goes to chant as it is (`ledgerPrefix`, chant#3865).
+  const at = { cwd: cache, ledgerPrefix: prefix };
+  const envs = await listReleaseEnvironments(at);
   const ledgers = new Map<string, ReleaseRecord[]>();
   const malformed: Record<string, number> = {};
   const sources = new Map<string, ReleaseSource>();
   for (const env of envs) {
-    // chant's reader reads `<environment>/releases.jsonl` on the branch; a member's environment is the path under its prefix.
-    const r = await readReleaseLedger(`${prefix}${env}`, { cwd: cache });
+    const r = await readReleaseLedger(env, at);
     ledgers.set(env, r.records);
     if (r.malformed) malformed[env] = r.malformed;
     const path = `${prefix}${env}/releases.jsonl`;

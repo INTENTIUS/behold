@@ -82,4 +82,43 @@ describe("readReleases on a real chant/lifecycle branch (#525)", () => {
     expect(prod.differs).toEqual({ from: "staging", digest: B, everHad: false });
     expect(prod.source.commit).toMatch(/^[0-9a-f]{40}$/);
   });
+
+  // #537: a workspace member's environments, listed and read by chant under its prefix (chant#3865).
+  it("reads a workspace member's environments under _members/<member>/", async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { execFileSync } = await import("node:child_process");
+    const { readReleases } = await import("./lifecycle-releases.ts");
+    const root = mkdtempSync(join(tmpdir(), "behold-rel-member-"));
+    const origin = join(root, "origin");
+    const work = join(root, "work");
+    const g = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, stdio: "pipe" });
+    mkdirSync(origin);
+    mkdirSync(join(work, "db"), { recursive: true });
+    g(origin, "init", "-q");
+    g(origin, "checkout", "-q", "--orphan", "chant/lifecycle");
+    // The flat root's prod and the other member's dev must not be read for db.
+    const put = (dir: string, list: ReleaseRecord[]) => {
+      mkdirSync(join(origin, dir), { recursive: true });
+      writeFileSync(join(origin, dir, "releases.jsonl"), list.map((r) => JSON.stringify(r)).join("\n") + "\n");
+    };
+    put("_members/db/dev", ledgers.get("dev")!);
+    put("_members/db/staging", ledgers.get("staging")!);
+    mkdirSync(join(origin, "_members/db/_gates"));
+    writeFileSync(join(origin, "_members/db/_gates/yodel-apply-wave-1.jsonl"), "{}\n");
+    put("_members/api/dev", ledgers.get("dev")!);
+    put("prod", ledgers.get("prod")!);
+    g(origin, "add", "-A");
+    g(origin, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "ledger");
+    writeFileSync(join(work, "chant.workspace.json"), JSON.stringify({ name: "acme", schema: 1, members: [{ name: "db", dir: "db", kind: "chant" }] }));
+    writeFileSync(join(work, "db", "chant.config.json"), JSON.stringify({ lexicons: ["sql"] }));
+    g(work, "init", "-q");
+    g(work, "remote", "add", "origin", origin);
+    const a = await readReleases(join(work, "db"), { cacheRoot: root });
+    expect(a.found).toBe(true);
+    expect(a.member).toEqual({ members: ["db"], prefix: "_members/db/" });
+    expect(a.environments).toEqual(["dev", "staging"]);
+    expect(a.cells.find((c) => c.env === "staging" && c.component === "schema")!.source.path).toBe("_members/db/staging/releases.jsonl");
+  });
 });
