@@ -27,7 +27,9 @@
 export interface NotableGraph {
   nodes: unknown[];
   edges: unknown[];
-  groups?: { byContainer?: Record<string, string[]> };
+  groups?: { byContainer?: Record<string, string[]>; byPipeline?: Record<string, string[]> };
+  /** References to a target the project does not declare (chant#3912, #554). */
+  dangling?: unknown[];
 }
 
 /** Which zoom produced the graph. Mirrors web/app.js's `ZOOM_OPTS` values. */
@@ -150,10 +152,44 @@ export function edgelessNote(zoom: Zoom, ir: NotableGraph, detail?: number, inst
   // are claims behold cannot make — the detail tier is not what is missing,
   // and "nothing references anything else" is a fact nobody established.
   if (instead) return instead;
-  if (detail !== undefined && detail < 3) {
+  // #554: references do exist, to targets the project does not declare (a
+  // reusable workflow in another repo, a local composite action). "Nothing
+  // references anything else" would be false, and so would blaming the tier.
+  const dangling = ir.dangling?.length ?? 0;
+  if (dangling > 0) {
+    return `no edges: ${referencesCount(dangling)} ${dangling === 1 ? "names a target" : "name targets"} this project does not declare, listed on the card that holds ${dangling === 1 ? "it" : "each"}`;
+  }
+  // #554: CI references (needs, uses, triggers) come from chant's lexicon
+  // hooks at every detail, so on a graph of CI jobs and workflows alone the
+  // tier explains nothing.
+  if (detail !== undefined && detail < 3 && !allInPipelines(ir)) {
     return "no edges at this detail — sourceRef/dependsOn and other attrs-derived references only appear at detail 3 (⌘K → attributes, or add &detail=3)";
   }
   return "no edges — nothing in this estate references anything else";
+}
+
+/** "1 reference" or "3 references". */
+function referencesCount(n: number): string {
+  return `${n} reference${n === 1 ? "" : "s"}`;
+}
+
+/** True when every node belongs to a CI pipeline (`groups.byPipeline`, chant#3910). */
+function allInPipelines(ir: NotableGraph): boolean {
+  const byPipeline = ir.groups?.byPipeline;
+  if (!byPipeline) return false;
+  const inPipeline = new Set(Object.values(byPipeline).flat());
+  return ir.nodes.every((n) => inPipeline.has((n as { id?: string }).id ?? ""));
+}
+
+/**
+ * #554: how many references name a target the project does not declare, for
+ * a graph that has edges as well. Undefined when there are none. On an
+ * edgeless graph `edgelessNote` says it, so `notesFor` never says it twice.
+ */
+export function danglingNote(ir: NotableGraph): string | undefined {
+  const n = ir.dangling?.length ?? 0;
+  if (n === 0) return undefined;
+  return `${referencesCount(n)} to targets not declared here, such as another repo's workflow or a local action: listed on their cards, not drawn`;
 }
 
 /**
@@ -278,7 +314,11 @@ export function notesFor(
     zoom === "logical" && logicalBefore !== undefined
       ? logicalKept(logicalBefore, ir.nodes.length)
       : zoomNote(zoom, ir, compositeEdgesAttached);
-  const notes = [primary, edgelessNote(zoom, ir, detail, edgelessInstead)].filter((n): n is string => n !== undefined);
+  const edgeless = edgelessNote(zoom, ir, detail, edgelessInstead);
+  // #554: counted once. With no edges, the edgeless note has already said it;
+  // components and logical draw other graphs, where these cards may not be.
+  const counted = edgeless !== undefined || zoom === "components" || zoom === "logical" ? undefined : danglingNote(ir);
+  const notes = [primary, edgeless, counted].filter((n): n is string => n !== undefined);
   return notes.length ? notes.join(" · ") : undefined;
 }
 

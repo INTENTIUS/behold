@@ -401,6 +401,51 @@ describe("GET /api/graph — a project below the detail tier that has its edges 
   });
 });
 
+// #554: chant#3912's `ir.dangling` reaches the client unchanged, and the note
+// counts it. The fixture is the shape chant 0.124.20 writes for a GitHub
+// Actions project whose job calls another repo's workflow and whose step uses
+// a local composite action.
+describe("GET /api/graph — references to undeclared targets (#554)", () => {
+  let dirs: string[] = [];
+  beforeEach(() => vi.mocked(spawnMock).mockReset());
+  afterEach(() => {
+    dirs.forEach((d) => rmSync(d, { recursive: true, force: true }));
+    dirs = [];
+  });
+  const project = () => {
+    const dir = mkdtempSync(join(tmpdir(), "behold-server-dangling-"));
+    writeFileSync(join(dir, "chant.config.ts"), `export default { lexicons: ["github"] };`);
+    dirs.push(dir);
+    return dir;
+  };
+  const NODES = [
+    { id: "build", kind: "GitHub::Actions::Job", lexicon: "github", attrs: {} },
+    { id: "release", kind: "GitHub::Actions::Job", lexicon: "github", attrs: {} },
+  ];
+  const DANGLING = [
+    { from: "build", kind: "calls", path: "steps.uses", value: "./.github/actions/setup" },
+    { from: "release", kind: "calls", path: "uses", value: "octo/shared/.github/workflows/release.yml@main", crossPipeline: true },
+  ];
+  const groups = { byPipeline: { ci: ["build", "release"] } };
+
+  it("passes the list through and says a project with only dangling references has them", async () => {
+    vi.mocked(spawnMock).mockReturnValue(fakeProc(0, JSON.stringify({ nodes: NODES, edges: [], groups, dangling: DANGLING })));
+    const app = makeAppFor(project());
+    const body = (await (await app.request("/api/graph")).json()) as { ir: { dangling?: unknown[] }; meta: { note?: string } };
+    expect(body.ir.dangling).toEqual(DANGLING);
+    expect(body.meta.note).toMatch(/^no edges: 2 references name targets this project does not declare/);
+    expect(body.meta.note).not.toMatch(/detail 3|nothing in this estate references/);
+  });
+
+  it("counts them beside the edges a project does have", async () => {
+    const edges = [{ from: "release", to: "build", kind: "needs" }];
+    vi.mocked(spawnMock).mockReturnValue(fakeProc(0, JSON.stringify({ nodes: NODES, edges, groups, dangling: DANGLING })));
+    const app = makeAppFor(project());
+    const body = (await (await app.request("/api/graph")).json()) as { meta: { note?: string } };
+    expect(body.meta.note).toMatch(/2 references to targets not declared here/);
+  });
+});
+
 // #72: a graph/facet route's failure gets a structured {error, code, remedy}
 // body instead of an opaque 500 — errorResponse (src/server.ts) classifying
 // whatever the chant shell-out (mocked at the `spawn` layer above) reported.

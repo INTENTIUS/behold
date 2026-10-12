@@ -97,6 +97,7 @@ import { hasOperator, renderOperator, APPROVED_SEMANTICS } from "./operator.js";
 // which commit, approved by whom — and, when the ledger's run id cannot be
 // followed, the reason in words rather than a guessed link.
 import { releaseRows } from "./release.js";
+import { danglingFor, danglingRows, danglingHeading, DANGLING_EXPLAINED } from "./dangling.js";
 import { comparisonRow, comparisonSummary } from "./cross-env.js";
 initTheme();
 // #476: framed in a host pane. The flag is a class on <html>, so the CSS that
@@ -1158,6 +1159,19 @@ function inspect(node) {
       if (k === adoptable) continue;
       decl(k, fmtValue(node.attrs[k]));
     }
+  }
+
+  // #554: references from this card to a target the project does not declare
+  // (chant#3912's `ir.dangling`), with the value as written. No edge is drawn
+  // for any of them, so this is the one place they show.
+  const dangling = danglingFor(lastGraphIr, node.id);
+  if (dangling.length) {
+    const row = section(danglingHeading(dangling));
+    for (const [k, v] of danglingRows(dangling)) row(k, v);
+    const p = document.createElement("p");
+    p.style.color = "var(--muted)";
+    p.textContent = DANGLING_EXPLAINED;
+    panel.appendChild(p);
   }
 
   // CI projection facet (M1.2, #56/#58): loomster's GitLab CI is the SAME

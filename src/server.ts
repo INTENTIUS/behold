@@ -62,7 +62,7 @@ import { applyHelmRenderDrift, readHelmRenderDrift } from "./helm-drift.ts";
 import { addClusterAnchorEdges } from "./cluster-anchor.ts";
 import { projectTopology } from "./logical.ts";
 import { addCompositeDepsCounted } from "./composite-deps.ts";
-import { notesFor, tierMismatchNote, namespaceMismatchNote, namespaceJoinNote, unchangedZoomNote, type Zoom } from "./zoom-notes.ts";
+import { notesFor, danglingNote, tierMismatchNote, namespaceMismatchNote, namespaceJoinNote, unchangedZoomNote, type Zoom } from "./zoom-notes.ts";
 import { resourcesByComponent, nonResourceEntities } from "./resources.ts";
 import { summarizePlan } from "./reconcile.ts";
 import { renderGraph, renderArchitecture, renderBanded, renderCarveEstate, renderCarveMorph, renderMoveMorph } from "./render.ts";
@@ -2656,16 +2656,21 @@ export function createApp(
       // picker rows, one image. One clause, through the same module every
       // other caption comes from.
       const sameNote = unchangedZoomNote(srcZoom, estateMembers(estateDirs).map((m) => m.kind));
+      const ownNote = [estateLensNote, tf.note, cdNote, sameNote].filter(Boolean).join(" · ");
+      // #554: notesFor counts the references to undeclared targets itself.
+      // When it is not consulted (an estate, or a note above took its place),
+      // the count is added here, read from the expanded IR like the rest.
+      const danglingClause = (ownNote || multi) && srcZoom !== "components" && srcZoom !== "logical" ? danglingNote(expanded) : undefined;
       const srcNote =
         [
-          [estateLensNote, tf.note, cdNote, sameNote].filter(Boolean).join(" · ") ||
-            (multi ? undefined : notesFor(srcZoom, expanded, srcCompositeEdgesAttached, undefined, opts.detail ?? 2, cdNote)),
+          ownNote || (multi ? undefined : notesFor(srcZoom, expanded, srcCompositeEdgesAttached, undefined, opts.detail ?? 2, cdNote)),
+          danglingClause,
           collapsedNote,
         ]
           .filter(Boolean)
           .join(" · ") || undefined;
       const srcNoteShort =
-        tf.noteShort || sameNote ? [estateLensNote, tf.noteShort ?? tf.note, cdNote, sameNote, collapsedNote].filter(Boolean).join(" · ") : undefined;
+        tf.noteShort || sameNote ? [estateLensNote, tf.noteShort ?? tf.note, cdNote, sameNote, danglingClause, collapsedNote].filter(Boolean).join(" · ") : undefined;
       return c.json({
         ir,
         svg,
