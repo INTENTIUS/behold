@@ -1,0 +1,8 @@
+{
+  "environment": "prod",
+  "dialect": "mysql",
+  "changed": [],
+  "missing": [],
+  "unobserved": [],
+  "drifted": false
+}

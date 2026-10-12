@@ -32,6 +32,7 @@ export default defineConfig({
 						{ label: 'Look at a Terraform estate', slug: 'using/terraform' },
 						{ label: 'Look at a terragucci estate', slug: 'using/terragucci' },
 						{ label: 'Look at a choudoufu estate', slug: 'using/choudoufu' },
+						{ label: 'Look at a SQL Yodeler project', slug: 'using/sql-yodeler' },
 						{ label: 'Look at a Terraform carve-out', slug: 'using/carve' },
 						{ label: 'Driving it from an agent', slug: 'using/agents' },
 					],

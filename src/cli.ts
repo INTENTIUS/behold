@@ -44,6 +44,7 @@ Usage:
                 [--terragucci <src> [--terragucci-project <p>] [--reports-base <rel>]] [--no-source]
                 [--publish s3://<bucket>/<prefix>/views/<name> [--commit <sha>] [--keep <n>]]
   behold serve <project-dir…> [--port <n>] [--host <addr>] [--allow-host <name,…>] [--hud <url>] [--env <name>] [--poll <secs>] [--local]
+                [--yodel-report <file|dir>]
   behold carve <report.json> [--port <n>]
 
   carve   Render a chant Terraform peelability report — the JSON from
@@ -129,6 +130,13 @@ Options:
                       <secs> (default 30), and push what moved to the page.
                       0 turns it off. The fetch goes into behold's own cache
                       (<tmpdir>/behold-lifecycle-*), never into the checkout.
+  --yodel-report <file|dir>
+                      serve only: mark SQL Yodeler's \`yodel report --json\`
+                      output and any \`yodel drift <env> --json\` beside it
+                      (#526): each environment's applied migrations and gaps,
+                      and drift on the cards it names, dated. Checked against
+                      SQL Yodeler's schemas; behold never runs yodel or reads
+                      the database.
   --env <name>        Environment name — turns on the live drift overlay.
                       export/serve.
   --poll <secs>       Re-query live drift every <secs> and push updates (needs --env).
@@ -247,6 +255,7 @@ export async function run(argv: string[]): Promise<void> {
   let terragucci: string | undefined;
   let terragucciProject: string | undefined;
   let terragucciPoll: number | undefined;
+  let yodelReport: string | undefined;
   const allowHosts: string[] = [];
 
   for (let i = 0; i < rest.length; i++) {
@@ -258,6 +267,7 @@ export async function run(argv: string[]): Promise<void> {
     else if (a === "--terragucci") terragucci = rest[++i];
     else if (a === "--terragucci-project") terragucciProject = rest[++i];
     else if (a === "--terragucci-poll") terragucciPoll = Number(rest[++i]);
+    else if (a === "--yodel-report") yodelReport = rest[++i];
     else if (a === "--env") env = rest[++i];
     else if (a === "--poll") pollSecs = Number(rest[++i]);
     else if (a === "--local") local = true;
@@ -320,6 +330,10 @@ export async function run(argv: string[]): Promise<void> {
     process.stderr.write("behold serve: --terragucci-poll needs --terragucci\n");
     process.exit(2);
   }
+  if (yodelReport !== undefined && !yodelReport) {
+    process.stderr.write("behold serve: --yodel-report needs the file `yodel report --json` wrote, or the directory holding it\n");
+    process.exit(2);
+  }
   const dirs = projectDirs.map((d) => resolve(d));
   const target = await serveTarget(dirs, "serve");
   await startServer({
@@ -332,6 +346,7 @@ export async function run(argv: string[]): Promise<void> {
     ...(host ? { host } : {}),
     ...(allowHosts.length ? { allowedHosts: allowHosts } : {}),
     ...(target.workspace && hud ? { hud } : {}),
+    ...(yodelReport ? { yodelReport: resolve(yodelReport) } : {}),
     ...(terragucci ? { terragucci: { source: terragucci, ...(terragucciProject ? { project: terragucciProject } : {}), ...(terragucciPoll !== undefined ? { pollSecs: terragucciPoll } : {}) } } : {}),
   });
 }

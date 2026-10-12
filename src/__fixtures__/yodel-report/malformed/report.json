@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "generatedAt": "2026-10-11T06:04:00.000Z",
+  "project": "examples/postgres",
+  "dialect": "postgres",
+  "migrations": ["20261010T1723-baseline", "20261010T1723-coupons", "20261010T1725-index-placed-at"],
+  "environments": [
+    {
+      "name": "prod",
+      "history": "shop.history",
+      "op": { "name": "yodel-prod", "gate": "approve-prod" },
+      "notes": [],
+      "migrations": [
+        { "id": "20261010T1723-baseline", "state": "applied", "inDirectory": true, "at": "2026-10-10T17:30:00.000Z", "by": "ci", "digest": "sha256:aa", "approvedBy": "alex", "approvedAt": "2026-10-10T17:29:00.000Z" },
+        { "id": "20261010T1723-coupons", "state": "applied", "inDirectory": true, "at": "2026-10-10T17:31:00.000Z", "by": "ci", "digest": "sha256:bb" },
+        { "id": "20261010T1725-index-placed-at", "state": "pending", "inDirectory": true }
+      ]
+    }
+  ],
+  "audit": [
+    { "id": "e1", "at": "2026-10-10T17:30:00.000Z", "environment": "prod", "kind": "applied", "migration": "20261010T1723-baseline", "source": { "history": "shop.history", "seq": 1, "run": "r1" } }
+  ],
+  "gaps": [{ "environment": "prod", "kind": "approval", "detail": "20261010T1723-coupons applied with no approval on the ledger" }]
+}
