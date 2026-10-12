@@ -338,9 +338,9 @@ export function memberIrFromGraphDocument(doc: WorkspaceDocument, member: string
   if (isRecord(doc.groups)) {
     for (const [key, table] of Object.entries(doc.groups)) {
       if (key === "byMember" || !isRecord(table)) continue;
-      // byStack, byContainer and byWave keys name things inside one member and
-      // carry its prefix; byLexicon and byComposite keys are shared.
-      const scoped = key === "byStack" || key === "byContainer" || key === "byWave";
+      // byStack, byContainer, byWave and byPipeline keys name things inside one
+      // member and carry its prefix; byLexicon and byComposite keys are shared.
+      const scoped = key === "byStack" || key === "byContainer" || key === "byWave" || key === "byPipeline";
       for (const [k, ids] of Object.entries(table)) {
         if (scoped && !k.startsWith(p)) continue;
         const members = (Array.isArray(ids) ? ids : []).map(un).filter((id) => own.has(id));
@@ -356,7 +356,17 @@ export function memberIrFromGraphDocument(doc: WorkspaceDocument, member: string
     const { member: _m, ...rest } = i;
     return { ...rest, node: un(i.node) };
   });
+  // chant#3912's dangling references, the member's own by `member` or by the
+  // prefix on `from` (chant#3922 asks workspace graph to compose them).
+  const dangling = (Array.isArray(doc.dangling) ? doc.dangling : [])
+    .filter((d): d is Record<string, unknown> => isRecord(d) && (d.member === member || (d.member === undefined && typeof d.from === "string" && d.from.startsWith(p))))
+    .map((d) => {
+      const { member: _m, ...rest } = d;
+      return { ...rest, from: un(d.from) };
+    })
+    .filter((d) => own.has(d.from));
   const ir: Record<string, unknown> = { version: 1, nodes, edges, groups, exports, imports };
+  if (dangling.length) ir.dangling = dangling;
   if (isRecord(entry.meta)) ir.meta = entry.meta;
   if (entry.pipeline !== undefined) ir.pipeline = entry.pipeline;
   if (isRecord(doc.derivedAttrs)) ir.derivedAttrs = doc.derivedAttrs;

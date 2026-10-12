@@ -10,7 +10,7 @@
  *
  * Until chant scopes discovery to the project (chant#2058), a node whose
  * declaring file resolves outside the project it was graphed from is dropped
- * here, with its edges and group memberships, and the routes say so on the
+ * here, with its edges, group memberships and dangling references, and the routes say so on the
  * statusbar. The test is the file, not the kind: an Op declared INSIDE the
  * project keeps its place, and anything else chant ever reports from beyond
  * the root gets the same treatment. Relative `sourceLoc` paths are by
@@ -53,13 +53,16 @@ export function dropForeignDeclarations(ir: GraphIR, projectDir: string): GraphI
     }
     (groups as Record<string, unknown>)[axis] = kept;
   }
-  return {
+  const out: GraphIRWithForeign = {
     ...ir,
     nodes: ir.nodes.filter((n) => !gone.has(n.id)),
     edges: ir.edges.filter((e) => !gone.has(e.from) && !gone.has(e.to)),
     groups,
     foreign,
   };
+  // A dangling reference (chant#3912) held by a dropped node goes with it.
+  if (ir.dangling) out.dangling = ir.dangling.filter((d) => !gone.has(d.from));
+  return out;
 }
 
 /** The statusbar clause for dropped declarations, or undefined when none. */
