@@ -107,6 +107,16 @@ describe("the ops lens in a static bundle (#284)", () => {
     expect(keys.some((k) => k.includes("ops=1"))).toBe(false);
     expect(captureKeys({ environments: ["local"], tiers: [], ops: 0 }).some((k) => k.includes("ops=1"))).toBe(false);
   });
+
+  it("captures SQL Yodeler's report and its Pipeline lane only when the project has them (#537)", () => {
+    const none = captureKeys({ environments: ["prod"], tiers: [] });
+    expect(none).not.toContain("/api/yodel-report");
+    expect(none).not.toContain("/api/sql-yodeler/lifecycle");
+    const keys = captureKeys({ environments: ["prod"], tiers: [], yodelReport: true, sqlYodeler: true });
+    expect(keys).toContain("/api/yodel-report");
+    expect(keys).toContain("/api/sql-yodeler/lifecycle");
+    expect(keys).toContain("/api/lifecycle/history");
+  });
 });
 
 describe("copyNotices — the export carries the grants it redistributes (#394)", () => {

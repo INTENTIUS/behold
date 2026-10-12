@@ -294,6 +294,15 @@ the database.
   object's name, or ends in `/<name>` in a composed estate, and draws a
   corner tag with its age; never a fill. Objects no card is are listed in
   the SQL Yodeler tab, which also holds the environments and gaps.
+- `audit[]` (#537) carries the report's audit entries with the report file
+  they came from. The tab lists them under their environment, each dated by
+  its own `at` and named by its source (a ledger's op and gate, or a history
+  table's row and run).
+- `behold export --yodel-report <file|dir>` (#537) captures `/api/yodel-report`
+  as a snapshot, and a refusal fails the export, as `--terragucci` does. A
+  SQL Yodeler repo's export also captures `/api/sql-yodeler/lifecycle` and
+  `/api/lifecycle/history`, so the Pipeline lane draws in static mode,
+  without its Read again button.
 
 ## A SQL Yodeler project: kinds and a lifecycle lane (#524)
 

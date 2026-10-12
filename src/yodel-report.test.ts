@@ -16,6 +16,10 @@ describe("yodel report (#526)", () => {
       ["orders", "changed", "file-written", "drift-prod.json"],
       ["ordersStatusIdx", "missing", "file-written", "drift-prod.json"],
     ]);
+    // #537: the audit entries, each with its own time, its source, and the report it came from.
+    expect(r.audit).toEqual([
+      { id: "e1", at: "2026-10-10T17:30:00.000Z", environment: "prod", kind: "applied", migration: "20261010T1723-baseline", source: { history: "shop.history", seq: 1, run: "r1" }, file: "report.json" },
+    ]);
   });
 
   it("refuses a malformed file by name", () => {
