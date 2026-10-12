@@ -189,6 +189,13 @@
       /* #506: the audit record's lane, in the tab and in a card's inspect pane. */
       #tab-terragucci .tg-timeline-title { font-weight: 600; border-top: 1px solid var(--rule); padding-top: 6px; }
       .tg-timeline { display: flex; flex-direction: column; gap: 3px; font-size: var(--t-caption); }
+      .rel-strip { border-collapse: collapse; margin: 6px 0; font-size: 12px; }
+      .rel-strip th, .rel-strip td { padding: 3px 6px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--neutral); }
+      .rel-strip .rel-component { font-family: var(--font-mono); overflow-wrap: anywhere; }
+      .rel-strip .rel-cell { font-family: var(--font-mono); }
+      .rel-strip .rel-empty { color: var(--muted); }
+      .rel-strip .rel-differs { box-shadow: inset 2px 0 0 var(--degraded); }
+      .rel-strip .rel-mark { color: var(--degraded); font-weight: 600; font-family: inherit; }
       .tg-timeline .tg-legend { color: var(--muted); }
       .tg-timeline .tg-refusal { color: var(--degraded); font-weight: 600; }
       .tg-timeline .tg-entry { overflow-wrap: anywhere; }
