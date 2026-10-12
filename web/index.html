@@ -132,6 +132,34 @@
          either for the full reason (native SVG <title>). */
       #graph g[data-edge-via="data dependency"] .pin-edge-line { stroke-dasharray: 6 5; }
       #graph g[data-edge-from][data-edge-via] { cursor: help; }
+      /* #553: CI edges by kind (chant's IREdge.kind, stamped by pinhole as
+         data-edge-kind, left off for a plain reference). Each kind has a hue,
+         65% of a status token and 35% --fg so it clears the background on the
+         light palettes too (all but Unikitty, whose pastel slots sit on its
+         pink ground, read at least as well as --edge). On 128 of the 552
+         themes two of those slots come out the same colour, so the line's
+         pattern carries the kind
+         as well: needs is a heavier solid line, triggers a dash-dot, includes
+         and extends dotted. An edge that leaves its workflow or pipeline
+         (data-edge-cross) is dashed, as chant's Mermaid and DOT draw it. The
+         Model tab's edge legend (.edge-swatch) is drawn by the same rules.
+         Hover and .edge-hi above stay the more specific rules, so a traced
+         edge still turns --pending. */
+      .edge-swatch { flex: none; overflow: visible; }
+      .edge-swatch .pin-edge-line { stroke: var(--edge); stroke-width: 1.5; fill: none; }
+      :is(#graph, .edge-swatch) g[data-edge-kind] .pin-edge-line { stroke-width: 1.6; }
+      :is(#graph, .edge-swatch) g[data-edge-kind="needs"] .pin-edge-line { stroke: color-mix(in srgb, var(--runtime) 65%, var(--fg)); stroke-width: 2.1; }
+      :is(#graph, .edge-swatch) g[data-edge-kind="calls"] .pin-edge-line { stroke: color-mix(in srgb, var(--foreign) 65%, var(--fg)); }
+      :is(#graph, .edge-swatch) g[data-edge-kind="triggers"] .pin-edge-line { stroke: color-mix(in srgb, var(--managed) 65%, var(--fg)); }
+      :is(#graph, .edge-swatch) g[data-edge-cross="true"] .pin-edge-line { stroke-dasharray: 7 5; }
+      :is(#graph, .edge-swatch) g[data-edge-kind="triggers"] .pin-edge-line { stroke-dasharray: 9 4 2 4; }
+      :is(#graph, .edge-swatch) g[data-edge-kind="includes"] .pin-edge-line,
+      :is(#graph, .edge-swatch) g[data-edge-kind="extends"] .pin-edge-line { stroke: var(--muted); stroke-dasharray: 1.5 4; stroke-linecap: round; }
+      /* The chip wears its kind's hue on its outline; its text stays pinhole's. */
+      #graph g[data-edge-kind="needs"] rect { stroke: color-mix(in srgb, var(--runtime) 65%, var(--fg)); }
+      #graph g[data-edge-kind="calls"] rect { stroke: color-mix(in srgb, var(--foreign) 65%, var(--fg)); }
+      #graph g[data-edge-kind="triggers"] rect { stroke: color-mix(in srgb, var(--managed) 65%, var(--fg)); }
+      #graph g[data-edge-kind="includes"] rect, #graph g[data-edge-kind="extends"] rect { stroke: var(--muted); }
       /* #477: a declared workspace's waiting gates, over the top of the graph
          pane (same grid cell, so #graph's re-renders never take it with them). */
       #ws-gates { grid-row: 1; grid-column: 1; align-self: start; justify-self: center; z-index: 3; margin-top: 8px;
