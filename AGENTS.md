@@ -95,11 +95,34 @@ and none is the checkout's git remote) adds two reads, in
   snapshot and does not fail on it.
 - `GET /api/terragucci/lifecycle` (#505): the repo's `chant/lifecycle` lane,
   `{branch, found, via, origin?, fetch: {ok, error?}, commit?: {sha,
-  committed}, read: {at}, gates[], locks[], note}`. `gates[]` is one entry per
-  `wave-<k>` in `_gates/tf-apply.jsonl` and `_gates/tf-apply/applied.jsonl`:
-  `state` (`waiting | expired | approved | applied | failed`), `digest`,
-  `pending`, `approval` (by, at, signed), `applied`, the kept reports under
-  `_gates/tf-apply/wave-<k>/`, and `command` when it waits. `locks[]` is
+  committed}, read: {at}, approval?, gates[], locks[], note}`. `gates[]` is one
+  entry per `wave-<k>` in `_gates/tf-apply.jsonl` and
+  `_gates/tf-apply/applied.jsonl`, decided by chant's `decideGateApproval`
+  (`@intentius/chant/gate-decision`, #520) with spent approvals left out, on
+  lines parsed by chant's `parseGateLedger` and `parseAppliedGateLines`. The
+  states:
+  - `waiting`: no approval of the wave's digest counts; `command` is the
+    approve line (`--sign` under `sealed`).
+  - `expired`: the pending fact's `expiresAt` passed with none.
+  - `refused`: an unspent approval stands for another digest
+    (`refused: {digest, by, at}`); no approve line.
+  - `approved`: an unspent approval of the digest counts, not applied yet.
+  - `applied` / `failed`: a wave applied under that approval, and how the
+    apply finished when terragucci recorded it.
+  Each entry also carries `digest`, `pending` (with `members` and
+  `neverOverMcp` when recorded), `approval` (by, at, `signed` when the seal has
+  a signature, via, pr, head, reviewers, relayedBy, note), `uncounted` (an
+  approval of this digest the mode did not count, with chant's reason, such
+  as an unsealed one under `sealed`), `spent` (an approval of another digest
+  an apply used), `applied` (with `wave` and `review` when present), the kept
+  reports under `_gates/tf-apply/wave-<k>/`, and `command`. `approval` on the
+  answer is the rule read at base, the tip of origin's default branch fetched
+  depth 1 into the same cache (`refs/behold/base`): `mode` from
+  terragucci.yml's `approval:` key, else `sealed` when chant.workspace.json
+  lists `identity.gates`, else `ledger`; under `sealed`, the signers read with
+  chant's `gateSignersAt`. The op, ledger paths, gate names, approve line and
+  mode reader are a `GateLaneSpec` (`TERRAGUCCI_LANE` is terragucci's), for
+  another product's lane. `locks[]` is
   `_locks/tf-apply.json`, one per root (`pr, by, at, head, via?, stage?`).
   Every gate and lock carries `source: {commit, committed, path}`, the newest
   commit of the branch that changed its file. The branch is fetched from the
