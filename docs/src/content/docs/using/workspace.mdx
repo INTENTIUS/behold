@@ -47,6 +47,25 @@ chant composes too. The hand layout lives in the workspace root's
 Several directories on the command line (`behold serve a b c`) are still the
 loose view behold composes itself, with no declaration involved.
 
+## Policy denials
+
+A run whose plan the policy denies records a gate of op `policy-override` on
+`chant/lifecycle`. `chant workspace status` lists it with the other gates, but
+an override needs the rules that denied the plan and a person's reason, so
+behold draws it as an override card with no button. The card names the subject
+(a root, or SQL Yodeler's migrations Op), the denied rules and the plan digest,
+read from `_gates/policy-override.jsonl`, and the command to run at your shell:
+
+| Repo | Command on the card |
+|---|---|
+| terragucci (a `terragucci.yml` in the member or above it) | `npx terragucci override <root> --rule <id> --reason "..."` |
+| SQL Yodeler (a `yodel.config.ts`) | `npx yodel override <env> --rule <id> --reason "..."` |
+| anything else | `chant approve policy-override <subject> --rule <id> --reason "..." --plan <digest>` |
+
+An override that counts reads as overridden until a run applies it. Once a run
+records it in `_gates/policy-override/applied.jsonl` the card reads as spent,
+with the time it was applied.
+
 ## Converting a `.behold.json` member list
 
 The `members` key in `.behold.json` is deprecated. When a

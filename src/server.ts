@@ -145,7 +145,7 @@ import { cacheChoudoufuPlan, cachedChoudoufuPlan, readChoudoufuPlan, type PlanRe
 import { choudoufuLexiconNote, setEstateLexiconRead, type LexiconRead } from "./choudoufu-refs.ts";
 import { discoverCarvePlans, moveMembers, moveReceipt, movesPayload, readCarvePlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
 import { servedWorkspace, setServedWorkspace, workspaceMemberOf, type Workspace } from "./workspace.ts";
-import { approveArgs, isEnvName, localApprover, readWorkspaceGates } from "./workspace-gates.ts";
+import { approveArgs, isEnvName, isOverrideGate, localApprover, readWorkspaceGates } from "./workspace-gates.ts";
 import { readWhy, whyRegion } from "./workspace-why.ts";
 import { allowedHostsFrom, guardRequest } from "./request-guard.ts";
 import { applyMemberPasses, memberKindOf, memberKindSpec, memberPassNote, servesAsEstate, type MemberPassRun } from "./member-kind.ts";
@@ -1467,6 +1467,8 @@ export function createApp(
     if (!read.ok) return c.json({ error: read.refusal.error, code: read.refusal.code }, 422);
     const g = read.gates.find((x) => x.key === key);
     if (!g) return c.json({ error: `no gate ${key} is waiting in ${env}`, code: "no-gate" }, 404);
+    // #519: a person overrides a policy denial with its rules and a reason; behold never approves one.
+    if (isOverrideGate(g)) return c.json({ error: `${key} is a policy denial, which behold never overrides. Run, with your reason: ${g.approve}`, code: "override" }, 422);
     if (g.signed) return c.json({ error: `${key} wants a signed approval, which behold can't make. Run: ${g.approve}`, code: "signed" }, 422);
     const approver = localApprover();
     broadcaster.emit("op", `✎ approve ${g.key} as ${approver}`);
@@ -2065,9 +2067,9 @@ export function createApp(
         { method: "POST", path: "/api/apply", desc: "delegated apply: ?env=&component=<name|all> (guarded, preview-locked)" },
         { method: "POST", path: "/api/ops/:name/run", desc: "run a committed Op (delegated write)" },
         { method: "POST", path: "/api/ops/:name/signal/:gate", desc: "approve an Op's gate (releases the waiting run)" },
-        { method: "GET", path: "/api/workspace/gates", desc: "a declared workspace's waiting gates from chant workspace status <env> --json (?env=), keyed member/op/gate, with the approver behold would record (#477)" },
+        { method: "GET", path: "/api/workspace/gates", desc: "a declared workspace's waiting gates from chant workspace status <env> --json (?env=), keyed member/op/gate, with the approver behold would record (#477); a policy-override gate carries override {subject, rules, plan, digest, state, spentAt, product, command, source} and no approve path (#519)" },
         { method: "GET", path: "/api/workspace/why", desc: "why a member (?member=) or a node (?node=<member>/<id>) is the way it is: the decisions covering it, the runs and commits behind it, from chant workspace graph --intent <region> --json; read on demand, cancelled with the request (#471)" },
-        { method: "POST", path: "/api/workspace/gates/approve", desc: "approve one workspace gate: JSON body {key, env}; env and plan come from a fresh status read; recorded as the user running behold; preview-locked (#477)" },
+        { method: "POST", path: "/api/workspace/gates/approve", desc: "approve one workspace gate: JSON body {key, env}; env and plan come from a fresh status read; recorded as the user running behold; preview-locked (#477); a policy-override gate answers 422 code override with its command (#519)" },
         { method: "POST", path: "/api/operator/approve/:op/:gate", desc: "record a converge gate's resolution (chant approve — a fact for the next tick, not an unblock)" },
         { method: "POST", path: "/api/rollback", desc: "open a rollback PR: ?to=<sha>" },
         { method: "POST", path: "/api/substrates/:name/up", desc: "bring a substrate up" },
