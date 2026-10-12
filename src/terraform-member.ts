@@ -484,7 +484,8 @@ function relink(path: string, target: string): void {
 /**
  * Write (or refresh) the scratch project for `estate` and return its directory.
  * The only writes this feature performs, all of them under the OS temp
- * directory: the config, and the two symlinks the header explains.
+ * directory: the config, its `package.json`, and the two symlinks the header
+ * explains.
  */
 export function writeTerraformScratchProject(estate: string, scan: TerraformRootScan, tmp = tmpdir(), flavour: ScratchFlavour = "tf"): string {
   const target = resolve(estate);
@@ -493,14 +494,23 @@ export function writeTerraformScratchProject(estate: string, scan: TerraformRoot
   relink(join(dir, ESTATE_LINK), target);
   const modules = beholdNodeModules();
   if (modules) relink(join(dir, "node_modules"), modules);
-  const config = terraformScratchConfig(scan, ESTATE_LINK, flavour);
-  const path = join(dir, "chant.config.ts");
   // Rewritten only when it changed: the file's mtime is what chant's own
   // caching and a watcher would key on, and a reload that changed nothing
   // should look like nothing changed.
-  if (!existsSync(path) || readFileSync(path, "utf8") !== config) writeFileSync(path, config);
+  const write = (path: string, text: string) => {
+    if (!existsSync(path) || readFileSync(path, "utf8") !== text) writeFileSync(path, text);
+  };
+  // The config is an ES module, and says so. Without a package.json declaring
+  // it, tsx compiles it as CommonJS, and chant's compiled CLI (0.124.14 on,
+  // INTENTIUS/chant#3897) reads that as `{ default: config }`: no lexicons,
+  // "No lexicon detected", and an empty graph for every loose estate.
+  write(join(dir, "package.json"), SCRATCH_PACKAGE_JSON);
+  write(join(dir, "chant.config.ts"), terraformScratchConfig(scan, ESTATE_LINK, flavour));
   return dir;
 }
+
+/** The scratch project's package.json: private, and an ES module (INTENTIUS/chant#3897). */
+export const SCRATCH_PACKAGE_JSON = `${JSON.stringify({ name: "behold-scratch", private: true, type: "module" }, null, 2)}\n`;
 
 // ---------------------------------------------------------------------------
 // The kind.

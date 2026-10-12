@@ -1394,7 +1394,10 @@ water park's `access/` before it was taken:
 The scratch project is `<tmpdir>/behold-tf-<hash of the estate path>`:
 `behold-*` and cleared through `assertScratch` (src/scratch.ts), one directory
 per estate reused across runs, asserted to be outside the estate before a byte
-is written. It holds the generated `chant.config.ts` and two symlinks —
+is written. It holds the generated `chant.config.ts`, a `package.json` that
+declares it an ES module (chant's compiled CLI, 0.124.14 on, otherwise reads a
+config tsx compiled as CommonJS as `{default: config}` and finds no lexicon:
+INTENTIUS/chant#3897), and two symlinks —
 `node_modules` to behold's own, which is how the config resolves the lexicon,
 and `estate` to the served directory, which is how each root's `dir` is spelled.
 The second is not decoration: the lexicon sets a root's module boundary to the
