@@ -14,25 +14,30 @@
  * `_gates/policy-override/applied.jsonl` (chant's `OVERRIDE_APPLIED`), and
  * such a gate reads as spent, never as waiting.
  *
- * behold only reads these files (`git show`), never writes them. The field
- * names follow chant's `override-gate` module (`OverridePendingRecord`,
- * `AppliedOverrideRecord`); behold pins chant 0.121 until #518, which has no
- * `@intentius/chant/override-gate` export, so the two small readers here stay
- * until it does.
+ * behold only reads these files (`git show`), never writes them. The ledger
+ * lines are parsed by chant: `parseGateLedger` and `recordedDenials` for the
+ * denials, `parseAppliedOverrides` for the applied lines, and the constants,
+ * `sortedRules` and the chant command line come from
+ * `@intentius/chant/override-gate` (#537). Which product governs the repo is
+ * `productRepo()` from `./terragucci-repo.ts`, the same walk #517's write
+ * guard uses.
  */
-import { existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
-import { terragucciConfig } from "./terragucci-repo.ts";
+import { parseGateLedger } from "@intentius/chant/lifecycle/gate-ledger";
+import {
+  OVERRIDE_APPLIED,
+  OVERRIDE_LEDGER,
+  OVERRIDE_OP,
+  overrideCommand as chantOverrideCommand,
+  parseAppliedOverrides,
+  recordedDenials,
+  sortedRules,
+} from "@intentius/chant/override-gate";
+import { productRepo, SQL_YODELER_CONFIG_NAMES } from "./terragucci-repo.ts";
 
-/** chant's `OVERRIDE_OP`. */
-export const OVERRIDE_OP = "policy-override";
-/** chant's `OVERRIDE_LEDGER`. */
-export const OVERRIDE_LEDGER = `_gates/${OVERRIDE_OP}.jsonl`;
-/** chant's `OVERRIDE_APPLIED`. */
-export const OVERRIDE_APPLIED = `_gates/${OVERRIDE_OP}/applied.jsonl`;
+export { OVERRIDE_APPLIED, OVERRIDE_LEDGER, OVERRIDE_OP, sortedRules };
 /** SQL Yodeler's config file (sql-yodeler src/config/load.ts `CONFIG_FILE`). */
-export const YODEL_CONFIG = "yodel.config.ts";
+export const YODEL_CONFIG = SQL_YODELER_CONFIG_NAMES[0];
 
 export type OverrideProduct = "terragucci" | "sql-yodeler" | null;
 
@@ -71,64 +76,32 @@ interface AppliedLine {
   timestamp: string;
 }
 
-const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
-
-function jsonLines(text: string): Record<string, unknown>[] {
-  const out: Record<string, unknown>[] = [];
-  for (const line of text.split("\n").map((l) => l.trim()).filter(Boolean)) {
-    try {
-      const r = JSON.parse(line);
-      if (isRecord(r)) out.push(r);
-    } catch {
-      continue;
-    }
-  }
-  return out;
-}
-
-/** chant's `sortedRules`: trimmed, each once, sorted. */
-export function sortedRules(rules: readonly string[]): string[] {
-  return [...new Set(rules.map((r) => r.trim()).filter(Boolean))].sort();
-}
-
-/** The newest denial recorded for `subject` on the override ledger, or undefined. */
+/** The newest denial recorded for `subject` on the override ledger, or undefined (chant's `recordedDenials`). */
 export function newestDenial(ledger: string, subject: string): PendingLine | undefined {
-  let best: PendingLine | undefined;
-  for (const r of jsonLines(ledger)) {
-    if (r.kind !== "pending" || r.op !== OVERRIDE_OP || r.gate !== subject || typeof r.timestamp !== "string") continue;
-    if (best && Date.parse(r.timestamp) < Date.parse(best.timestamp)) continue;
-    best = {
-      gate: subject,
-      timestamp: r.timestamp,
-      ...(typeof r.planDigest === "string" ? { planDigest: r.planDigest } : {}),
-      ...(typeof r.plan === "string" ? { plan: r.plan } : {}),
-      rules: Array.isArray(r.rules) ? sortedRules(r.rules.filter((x): x is string => typeof x === "string")) : [],
-    };
-  }
-  return best;
+  const d = recordedDenials(parseGateLedger(ledger).pending).find((r) => r.gate === subject);
+  if (!d) return undefined;
+  return {
+    gate: subject,
+    timestamp: d.timestamp,
+    ...(d.planDigest ? { planDigest: d.planDigest } : {}),
+    ...(d.plan ? { plan: d.plan } : {}),
+    rules: d.rules,
+  };
 }
 
-/** The applied lines for `subject` in `_gates/policy-override/applied.jsonl`. */
+/** The applied lines for `subject` in `_gates/policy-override/applied.jsonl` (chant's `parseAppliedOverrides`). */
 export function appliedFor(applied: string, subject: string): AppliedLine[] {
-  return jsonLines(applied)
-    .filter((r) => r.kind === "applied" && r.op === OVERRIDE_OP && r.gate === subject && typeof r.planDigest === "string" && typeof r.timestamp === "string")
-    .map((r) => ({ gate: subject, planDigest: r.planDigest as string, timestamp: r.timestamp as string }));
+  return parseAppliedOverrides(applied)
+    .filter((r) => r.op === OVERRIDE_OP && r.gate === subject && typeof r.timestamp === "string")
+    .map((r) => ({ gate: subject, planDigest: r.planDigest, timestamp: r.timestamp }));
 }
 
 const bareDigest = (d: string): string => d.replace(/^[a-z0-9-]+:/i, "");
 const sameDigest = (a: string | null | undefined, b: string | null | undefined): boolean => !!a && !!b && bareDigest(a) === bareDigest(b);
 
-/** The product whose repo governs `dir`, from its config file in `dir` or above it, up to the git root. */
+/** The product whose repo governs `dir`, from its config file in `dir` or above it, up to the git root (#517's `productRepo`). */
 export function overrideProduct(dir: string): OverrideProduct {
-  if (terragucciConfig(dir)) return "terragucci";
-  let at = resolve(dir);
-  for (;;) {
-    if (existsSync(join(at, YODEL_CONFIG))) return "sql-yodeler";
-    if (existsSync(join(at, ".git"))) return null;
-    const up = dirname(at);
-    if (up === at) return null;
-    at = up;
-  }
+  return productRepo(dir)?.product ?? null;
 }
 
 const quoteRules = (rules: readonly string[]): string => (rules.length ? rules : ["<id>"]).map((r) => `--rule ${r}`).join(" ");
@@ -148,7 +121,7 @@ export function overrideCommand(o: { subject: string; rules: readonly string[]; 
     const revert = /\/revert-(.+)$/.exec(o.subject)?.[1];
     return `npx yodel override ${o.env ?? "<env>"} ${rules} --reason "<why>"${revert ? ` --revert ${revert}` : ""}`;
   }
-  return `chant approve ${OVERRIDE_OP} ${o.subject} ${rules} --reason "<why>"${o.digest ? ` --plan ${o.digest}` : ""}${o.signed ? " --sign" : ""}`;
+  return `${chantOverrideCommand(o.subject, o.rules.length ? o.rules : ["<id>"])}${o.digest ? ` --plan ${o.digest}` : ""}${o.signed ? " --sign" : ""}`;
 }
 
 /** What status says about a policy-override gate. `approved` means an override counts for its digest. */
