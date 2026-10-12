@@ -9,7 +9,8 @@ apply creds.
 
 - **behold** serves the live, mixed-substrate graph (and, later, the deployment-lanes
   timeline). It reads; every write it offers is a command it starts (an Op, a
-  `chant run`, a forge dispatch), and on a terragucci repo it starts none.
+  `chant run`, a forge dispatch), and on a terragucci or SQL Yodeler repo it
+  starts none.
 - **chant's MCP** is where the real capabilities live. Prefer it over shelling.
   - Reads: `lifecycle-diff`, `lifecycle-snapshot`, `build`, `lint`.
   - Actions (delegated writes): `op-run` (start an `ApplyOp`/`ReconcileOp`),
@@ -726,7 +727,25 @@ entry is a registered route. `TERRAGUCCI_REFUSED_WRITES` only words the
 refusal for known routes. The remedy names `npx terragucci approve wave-<k>
 --plan <digest>`, the digest from the wave's gate card.
 
+A SQL Yodeler repo (a `yodel.config.ts` in the served directory or above it,
+up to the git root) is guarded the same way (#517): the same allowlist, the
+same refused routes, auto-sync declined, and `/api/project` carries
+`sqlYodeler` so the page offers no write. The refusal is `409` with `code:
+"sql-yodeler"`, and its remedy names `npx yodel approve <env> --plan <digest>`
+(with `--sign` when the environment's gate is sealed) and `yodel apply <env>`
+in the project's pipeline. `productRepo()` in `src/terragucci-repo.ts` looks
+for terragucci's config along the whole walk first, so a yodel project nested
+inside a terragucci repo is refused as terragucci.
+
+Op discovery (`src/ops.ts`) reads a gate from `signalName: "<name>"` or from
+`gate("<name>", ...)`, the form chant's op builder and SQL Yodeler write, so
+a gated Op is never listed or run as ungated on any repo (#517).
+
 ### The exceptions, and their exact size
+
+These are also the only writes a guarded product repo answers: terragucci
+(`terragucci.yml` and its siblings) and SQL Yodeler (`yodel.config.ts`), both
+listed in `TERRAGUCCI_ALLOWED_WRITES`.
 
 `POST /api/layout` (#228) writes **one** file in the served project:
 `.behold/layout.json`, the hand-layout sidecar, `{version, lenses: {<lens>:
