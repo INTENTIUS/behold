@@ -31,8 +31,9 @@ export function projectChoudoufuLogical(ir: GraphIR): LogicalProjection {
   const edges: IREdge[] = [];
   const seen = new Set<string>();
   for (const e of ir.edges) {
-    if (!kept.has(e.from) || !kept.has(e.to) || seen.has(`${e.from}|${e.to}`)) continue;
-    seen.add(`${e.from}|${e.to}`);
+    const key = `${e.from}|${e.to}|${e.kind}`;
+    if (!kept.has(e.from) || !kept.has(e.to) || seen.has(key)) continue;
+    seen.add(key);
     edges.push(e);
   }
   return { ir: { nodes: cards, edges, groups: {} }, byContainer };
