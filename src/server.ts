@@ -175,7 +175,7 @@ import {
   unwritableReason,
 } from "./layout.ts";
 import { emulatorUp, emulatorDown, mergedEnv, type EmulatorInfo } from "./emulator.ts";
-import { refusedWrite, servedTerragucciConfig, terragucciRefusal } from "./terragucci-repo.ts";
+import { productRefusal, refusedWrite, servedProductRepo, terragucciRefusal } from "./terragucci-repo.ts";
 import { repoBase, terragucciRoutes, type TerragucciOptions } from "./terragucci-view.ts";
 import { lifecycleHistoryRoute } from "./lifecycle-history.ts";
 import { controlRepoInfo, terragucciEstateRoutes } from "./terragucci-estate.ts";
@@ -959,16 +959,23 @@ export function createApp(
     if (c.req.method === "GET") return withReadSignal(c.req.raw.signal, next);
     await next();
   });
-  const tgConfig = (): string | undefined => servedTerragucciConfig(cfg.projectDirs ?? [cfg.projectDir]);
+  // #517: the guarded product repo (terragucci or SQL Yodeler) being served.
+  const guardedRepo = () => servedProductRepo(cfg.projectDirs ?? [cfg.projectDir]);
+  const tgConfig = (): string | undefined => {
+    const r = guardedRepo();
+    return r?.product === "terragucci" ? r.config : undefined;
+  };
   // #489: a terragucci repo is applied by its pipeline only. Asked per request,
   // because a project switch changes cfg.projectDir under a running server.
   // #500: an allowlist. Every method but GET, HEAD and OPTIONS is refused,
   // on every path, unless TERRAGUCCI_ALLOWED_WRITES names the route.
+  // #517: a SQL Yodeler repo gets the same allowlist, refused with
+  // `code: "sql-yodeler"`.
   app.use("*", async (c, next) => {
     const what = refusedWrite(c.req.method, c.req.path);
     if (!what) return next();
-    const config = tgConfig();
-    if (what && config) return c.json(terragucciRefusal(config, what), 409);
+    const repo = guardedRepo();
+    if (what && repo) return c.json(productRefusal(repo, what), 409);
     await next();
   });
 
@@ -1632,6 +1639,11 @@ export function createApp(
       // #489: a terragucci repo is applied by its pipeline; the SPA offers no
       // write at all, and the write routes refuse with the same words.
       ...(tgConfig() ? { terragucci: { config: tgConfig()!, ...terragucciRefusal(tgConfig()!, "deploying from behold") } } : {}),
+      // #517: a SQL Yodeler repo is migrated by its pipeline; same contract.
+      ...((): { sqlYodeler?: { config: string; error: string; code: string; remedy: string } } => {
+        const r = guardedRepo();
+        return r?.product === "sql-yodeler" ? { sqlYodeler: { config: r.config, ...productRefusal(r, "applying from behold") } } : {};
+      })(),
       // #490: the page asks /api/terragucci for the marks when this is set.
       ...(cfg.terragucci ? { terragucciReports: { source: cfg.terragucci.source, ...(cfg.terragucci.project ? { project: cfg.terragucci.project } : {}) } } : {}),
       // #509: a control repo (`projects:`, no roots): the page asks /api/terragucci/estate.
@@ -3868,7 +3880,7 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   // its saved id — best-effort and out loud: a refusal (gh gone, pipeline
   // gone) prints its reason and leaves the record for the next attempt or an
   // explicit POST /api/ci/readopt. Never in carve mode (no project to paint).
-  if (!cfg.carveReport && !servedTerragucciConfig(cfg.projectDirs ?? [cfg.projectDir])) {
+  if (!cfg.carveReport && !servedProductRepo(cfg.projectDirs ?? [cfg.projectDir])) {
     void readoptDispatchedRun(cfg, runner).then((result) => {
       if (result.outcome === "readopted") {
         process.stdout.write(`  re-adopted dispatched run ${result.run.runId} (${result.run.workflow}) — following via gh\n`);
@@ -3914,9 +3926,10 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   const onPollDrift = (dir: string, movedLexicons: string[]): void => {
     broadcaster.emit("changed", dir);
     if (autoSync === "off") return;
-    const tg = servedTerragucciConfig(cfg.projectDirs ?? [cfg.projectDir]);
-    if (tg) {
-      broadcaster.emit("op", `⟳ auto-sync (${autoSync})${memberTag(dir)} declined: ${terragucciRefusal(tg, "auto-sync").error}`);
+    // #517: declined on a SQL Yodeler repo as on a terragucci one.
+    const guarded = servedProductRepo(cfg.projectDirs ?? [cfg.projectDir]);
+    if (guarded) {
+      broadcaster.emit("op", `⟳ auto-sync (${autoSync})${memberTag(dir)} declined: ${productRefusal(guarded, "auto-sync").error}`);
       return;
     }
     void routeAutoSync(dir, movedLexicons);

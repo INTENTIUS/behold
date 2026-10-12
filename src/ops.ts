@@ -85,7 +85,12 @@ export function discoverOps(projectDir: string): OpInfo[] {
       const name = content.match(/name:\s*["'`]([^"'`]+)["'`]/)?.[1];
       if (!name || seen.has(name)) continue;
       seen.add(name);
-      const gate = content.match(/signalName:\s*["'`]([^"'`]+)["'`]/)?.[1];
+      // A gate is declared as `signalName: "<name>"` or, as chant's op
+      // builder and SQL Yodeler write it, `gate("<name>", ...)` (#517). Either
+      // way the Op is gated, and behold never runs it as ungated.
+      const gate =
+        content.match(/signalName:\s*["'`]([^"'`]+)["'`]/)?.[1] ??
+        content.match(/\bgate\(\s*["'`]([^"'`]+)["'`]/)?.[1];
       const env = content.match(/\benv:\s*["'`]([^"'`]+)["'`]/)?.[1];
       // Scraped the same way as `name:`/`signalName:`/`env:` above — declared
       // source, read as text. An unrecognised target maps to undefined rather
