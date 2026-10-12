@@ -18,7 +18,7 @@ import { renderLane } from "./terragucci-lifecycle.js";
 import { renderReleases } from "./releases.js";
 import { renderYodelLane } from "./sql-yodeler-lane.js";
 import { initTerragucciEstate } from "./terragucci-estate.js";
-import { cornerText as yrCorner, datedWords as yrDated, environmentLines as yrEnvLines, joinMarks as yrJoin, legend as yrLegend, markLine as yrMarkLine } from "./yodel-report.js";
+import { auditLines as yrAuditLines, cornerText as yrCorner, datedWords as yrDated, environmentLines as yrEnvLines, joinMarks as yrJoin, legend as yrLegend, markLine as yrMarkLine } from "./yodel-report.js";
 import { cardProgress as tgCardProgress, progressLines as tgProgressLines, progressSection as tgProgressSection, stampProgress as tgStampProgress } from "./terragucci-progress.js";
 import { seconds, whyQuery, whyView } from "./why.js";
 import { readCostLine } from "./read-cost.js";
@@ -3607,6 +3607,28 @@ function renderYodelPanel() {
     host.appendChild(h);
     for (const t of yrEnvLines(e, now)) line("tg-inspect", t);
     line("tg-legend", `from ${yrDated(e.dated, now)}`);
+    drawAudit((a.audit || []).filter((x) => x.environment === e.name));
+  }
+  // #537: audit entries for an environment the report lists no row for.
+  const named = new Set(a.environments.map((e) => e.name));
+  const loose = (a.audit || []).filter((x) => !named.has(x.environment));
+  if (loose.length) {
+    const h = document.createElement("h3");
+    h.textContent = "audit, environments the report lists no row for";
+    host.appendChild(h);
+    drawAudit(loose, true);
+  }
+  function drawAudit(entries, withEnv = false) {
+    if (!entries.length) return;
+    const sub = document.createElement("div");
+    sub.className = "tg-legend";
+    sub.textContent = `audit, ${entries.length} entr${entries.length === 1 ? "y" : "ies"}, oldest first`;
+    host.appendChild(sub);
+    for (const x of entries) {
+      const l = yrAuditLines(x, now);
+      line("tg-inspect", withEnv ? `${x.environment}: ${l.text}` : l.text, l.source);
+      line("tg-legend", l.source);
+    }
   }
   for (const d of a.drift) {
     const h = document.createElement("h3");
@@ -3634,7 +3656,7 @@ initYodelReport();
 // the gate ledgers' history (#522). Read-only and dated; never live.
 let ylHost = null;
 async function initYodelLane() {
-  if (staticMode) return;
+  // #537: a static export carries the lane as a snapshot (src/export.ts), so it draws here too.
   const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
   if (!project.sqlYodeler) return;
   await loadYodelLane();
@@ -3653,6 +3675,7 @@ async function loadYodelLane({ fresh = false } = {}) {
   ylHost.replaceChildren();
   renderYodelLane(ylHost, lane, new Date(), { button, copy: copyToClipboard, link: tgLink });
   if (history) ylHost.appendChild(tgHistoryLane(history));
+  if (staticMode) return;
   const again = button("Read again", "", () => loadYodelLane({ fresh: true }));
   again.title = "Fetch chant/lifecycle again and redraw.";
   ylHost.appendChild(again);

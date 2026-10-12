@@ -63,3 +63,37 @@ export function legend(answer, now = new Date()) {
   const what = answer.report ? `${answer.report.file}, generated ${clock(answer.report.generatedAt, now)}, ${ago(answer.report.generatedAt, now)}` : "no report";
   return { text: `SQL Yodeler, not live · ${what} · ${answer.drift.length} drift file${answer.drift.length === 1 ? "" : "s"}`, title: `Read from ${answer.source}, checked against ${checked}. behold never runs yodel or reads the database.` };
 }
+
+// #537: the report's audit entries. Each is dated by its own `at` and says
+// where SQL Yodeler read it: a gate ledger on chant/lifecycle, or a row of
+// the environment's history table.
+const AUDIT_WORDS = {
+  "approval-requested": "approval asked",
+  approved: "approved",
+  override: "overridden",
+  silenced: "silenced",
+  applied: "applied",
+  refused: "refused",
+  failed: "failed",
+  repaired: "repaired",
+  reverted: "reverted",
+  step: "step",
+};
+
+/** Where an entry came from: "ledger <l>, <op>/<gate>" or "<history> row <seq>, run <run>". */
+export function auditSource(a) {
+  const s = a.source || {};
+  if (s.ledger !== undefined) return `chant/lifecycle ledger ${s.ledger}, ${s.op}/${s.gate}`;
+  if (s.history !== undefined) return `${s.history} row ${s.seq}, run ${s.run}`;
+  return "an unnamed source";
+}
+
+/** One entry as a line and its source line. Pure. */
+export function auditLines(a, now = new Date()) {
+  const what = [AUDIT_WORDS[a.kind] || a.kind, a.migration || "", a.by ? `by ${a.by}` : ""].filter(Boolean).join(" ");
+  const extra = [a.detail || "", a.digest ? `plan ${String(a.digest).replace(/^(jcs1-)?sha256:/, "").slice(0, 12)}` : "", a.wave ? `wave gate ${a.wave.gate} ${a.wave.status === "approved" ? "approved" : "needed no approval"}` : ""].filter(Boolean);
+  return {
+    text: `${what}${extra.length ? ` (${extra.join(", ")})` : ""} · ${clock(a.at, now)}, ${ago(a.at, now)}`,
+    source: `from ${auditSource(a)}, in ${a.file}`,
+  };
+}

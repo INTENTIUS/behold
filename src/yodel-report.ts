@@ -91,8 +91,23 @@ interface Report {
   dialect: "clickhouse" | "postgres";
   migrations: string[];
   environments: ReportEnvironment[];
-  audit: unknown[];
+  audit: AuditEntry[];
   gaps: ReportGap[];
+}
+
+/** One audit entry, as SQL Yodeler's report schema has it (`$defs.entry`). */
+interface AuditEntry {
+  id: string;
+  at: string;
+  environment: string;
+  kind: "approval-requested" | "approved" | "override" | "silenced" | "applied" | "refused" | "failed" | "repaired" | "reverted" | "step";
+  by?: string;
+  migration?: string;
+  digest?: string;
+  detail?: string;
+  wave?: { gate: string; digest: string; status: "approved" | "not-required" };
+  /** A gate ledger on chant/lifecycle, or a row in an environment's history table. */
+  source: { ledger: string; op: string; gate: string } | { history: string; seq: number; run: string };
 }
 
 interface DriftChange {
@@ -242,6 +257,12 @@ export interface DriftRead {
   dated: Dated;
 }
 
+/** #537: an audit entry as the page draws it: the entry, and the report it was read from. */
+export interface AuditMark extends AuditEntry {
+  /** The report file the entry was read from. The entry's own `at` dates it; `source` says where SQL Yodeler read it. */
+  file: string;
+}
+
 export interface YodelRead {
   source: string;
   validation: YodelValidation;
@@ -250,6 +271,8 @@ export interface YodelRead {
   drift: DriftRead[];
   /** Drift marks; the page joins each to the card whose id its object names. */
   marks: DriftMark[];
+  /** #537: the report's audit entries, oldest first, as SQL Yodeler orders them. */
+  audit: AuditMark[];
   /** JSON files in the directory that are neither a report nor drift. Said, never dropped silently. */
   ignored: string[];
 }
@@ -361,6 +384,7 @@ export function readYodelReport(source: string, validator: YodelValidator): Yode
     environments,
     drift,
     marks,
+    audit: report ? (report.doc.audit ?? []).map((a) => ({ ...a, file: basename(report!.file) })) : [],
     ignored,
   };
 }
