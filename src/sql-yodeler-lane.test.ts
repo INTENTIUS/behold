@@ -124,23 +124,15 @@ describe("the sql lexicon's kinds (#524)", () => {
   });
 
   const fk = resolve(__dirname, "..", "e2e", "fixtures", "sql-yodeler-fk");
-  // #537: skipped even with @intentius/chant-lexicon-sql installed. Tried
-  // 0.124.8 (with chant 0.124.9): `chant graph --format ir` on this fixture
-  // emits no graph, it refuses with "source has lint errors". Every SQL lint
-  // rule (SQLCH001-004, SQLPG001-003, SQLPG005) throws
-  // "ts.isImportDeclaration is not a function", because the lexicon takes
-  // typescript as a peer (^5.9.3) and behold's root typescript is 7.0.2,
-  // which has no JS API. The lexicon does see the foreign key (its SQLPG102
-  // warning names orders.customer_id -> shop.customers). Un-skip once the
-  // lexicon runs alongside typescript 7, or behold's root typescript is 5.
-  it.skip("draws a REFERENCES foreign key as an edge", async () => {
+  it("draws a REFERENCES foreign key as an edge", async () => {
     const ir = await graphIr(fk);
     const id = (name: string) => ir.nodes.find((n) => n.kind === "Postgres::Table" && JSON.stringify(n).includes(name))?.id;
     const orders = id("orders");
     const customers = id("customers");
     expect(orders && customers).toBeTruthy();
     expect(ir.edges.some((e) => e.from === orders && e.to === customers)).toBe(true);
-  });
+    // chant compiles the fixture cold: about 7 s alone, past 20 s beside the other files.
+  }, 60_000);
 });
 
 // #537: waves that name different approval modes are decided per wave, and a

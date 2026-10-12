@@ -320,8 +320,10 @@ Its graph draws from `chant graph` as any project's does. src/sql-kinds.ts
 registers a pinhole pack for the `sql` lexicon: a line glyph per
 `Postgres::*` and `ClickHouse::*` kind, and cards that lead with the kind in
 words and the qualified name. A `REFERENCES ${other}` foreign key is a `ref`
-edge; e2e/fixtures/sql-yodeler-fk holds a project with one (its test skips
-where `@intentius/chant-lexicon-sql` does not resolve).
+edge; e2e/fixtures/sql-yodeler-fk holds a project with one, and
+src/sql-yodeler-lane.test.ts graphs it. `@intentius/chant-lexicon-sql` is a
+devDependency for that test; from 0.124.13 its lint rules use chant's own
+TypeScript (chant#3864), so they run beside behold's TypeScript 7.
 
 `GET /api/sql-yodeler/lifecycle[?fresh=1]` (src/sql-yodeler-lane.ts) reads
 `chant/lifecycle` with `readLifecycle` and a spec per op, sharing one fetch:
@@ -353,7 +355,8 @@ records under `_members/<member>/` on `chant/lifecycle`. src/member-ledger.ts
 asks chant's `resolveMemberLedger` (`@intentius/chant/lifecycle/member-ledger`)
 for the prefix; the lane passes it as `GateLaneSpec.ledgerPrefix`, which
 `readLifecycle` puts before every branch path, and `/api/lifecycle/releases`
-lists and reads the environments under it. Both answers then carry
+hands it to chant's `listReleaseEnvironments` and `readReleaseLedger` as
+`ledgerPrefix` (chant#3865), which list and read the environments under it. Both answers then carry
 `member: { members, prefix, error? }`, and `yodel-waves.json` at base is read
 in the project's own directory.
 

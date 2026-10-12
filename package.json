@@ -60,6 +60,7 @@
     }
   },
   "devDependencies": {
+    "@intentius/chant-lexicon-sql": "^0.124.13",
     "@types/node": "^26.4.1",
     "esbuild": "^0.28.0",
     "playwright": "^1.62.1",
