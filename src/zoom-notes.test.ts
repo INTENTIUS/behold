@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   zoomNote,
   edgelessNote,
+  danglingNote,
   logicalKept,
   notesFor,
   tierMismatchNote,
@@ -361,5 +362,62 @@ describe("unchangedZoomNote (#396 finding 3)", () => {
     // and the note is read next to all of it.
     expect(unchangedZoomNote("composites", ["chant", "choudoufu"])).toBeUndefined();
     expect(unchangedZoomNote("composites", [])).toBeUndefined();
+  });
+});
+
+// #554: chant#3912's `ir.dangling`, references to targets the project does not
+// declare. The fixture is the shape chant 0.124.20 writes for a workflow whose
+// job calls another repo's reusable workflow and whose step uses a local action.
+describe("references to undeclared targets (#554)", () => {
+  const DANGLING = [
+    { from: "build", kind: "calls", path: "steps.uses", value: "./.github/actions/setup" },
+    { from: "release", kind: "calls", path: "uses", value: "octo/shared/.github/workflows/release.yml@main", crossPipeline: true },
+  ];
+  const ci = (edges: number, dangling = DANGLING): NotableGraph => ({
+    nodes: [{ id: "build" }, { id: "release" }, { id: "ci" }],
+    edges: Array.from({ length: edges }, () => ({ from: "ci", to: "build" })),
+    groups: { byPipeline: { ci: ["build", "ci", "release"] } },
+    dangling,
+  });
+
+  it("an edgeless project with only dangling references says they exist, never that nothing references anything", () => {
+    const note = edgelessNote("resources", ci(0), 3);
+    expect(note).toBe("no edges: 2 references name targets this project does not declare, listed on the card that holds each");
+  });
+
+  it("says the same below detail 3, where the tier is not the reason", () => {
+    expect(edgelessNote("resources", ci(0), 2)).toMatch(/^no edges: 2 references name targets/);
+  });
+
+  it("speaks of one reference in the singular", () => {
+    expect(edgelessNote("resources", ci(0, DANGLING.slice(0, 1)), 2)).toBe(
+      "no edges: 1 reference names a target this project does not declare, listed on the card that holds it",
+    );
+  });
+
+  it("does not blame the detail tier on a graph of CI jobs alone, whose edges come at every detail", () => {
+    expect(edgelessNote("resources", ci(0, []), 2)).toBe("no edges — nothing in this estate references anything else");
+  });
+
+  it("still names the tier when some nodes are outside any pipeline", () => {
+    const mixed = { ...ci(0, []), nodes: [...ci(0, []).nodes, { id: "deploy" }] };
+    expect(edgelessNote("resources", mixed, 2)).toMatch(/no edges at this detail/);
+  });
+
+  it("counts them in the note of a graph that has edges", () => {
+    expect(danglingNote(ci(2))).toMatch(/^2 references to targets not declared here/);
+    expect(notesFor("resources", ci(2), undefined, undefined, 2)).toBe(danglingNote(ci(2)));
+  });
+
+  it("counts them once on an edgeless graph", () => {
+    const note = notesFor("resources", ci(0), undefined, undefined, 2)!;
+    expect(note.match(/2 references/g)).toHaveLength(1);
+  });
+
+  it("says nothing when there are none, and nothing on components or logical", () => {
+    expect(danglingNote(ci(2, []))).toBeUndefined();
+    expect(notesFor("resources", ci(2, []), undefined, undefined, 2)).toBeUndefined();
+    expect(notesFor("logical", ci(2), undefined, 3)).toBeUndefined();
+    expect(notesFor("components", ci(2))).toBeUndefined();
   });
 });
