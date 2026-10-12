@@ -163,6 +163,27 @@ and none is the checkout's git remote) adds two reads, in
   `fetch.error`); a remote without the branch is `found: false, via:
   "fetch"`, not an error. 30 s cache, `?fresh=1` skips it. Reader:
   `src/terragucci-lifecycle.ts`.
+- `GET /api/lifecycle/history?op=<op>&gate=<gate>&limit=<n>` (#522): the
+  gate ledgers' history on `chant/lifecycle`, for any product, registered
+  whether or not `--terragucci` is given. Same bare cache and fallback as
+  the lifecycle lane; per `_gates/<op>.jsonl` it runs `git log -p
+  --unified=0 --no-renames` and hands the text to chant's
+  `gateLedgerLinesFromLog`, then all ledgers to `deriveGateAudit`
+  (`@intentius/chant/lifecycle/gate-audit`). behold parses no ledger line
+  itself. Answer: `{branch, source: "ledger", found, via, origin?, fetch,
+  commit?, read, ledgers[], op?, gate?, total, limit, entries[], gaps[],
+  note}`, newest first, 200 by default and 1000 at most. An entry is `{id,
+  kind, at, op, gate, wave?, digest?, actor?, seal?, note?, rules?, subject?,
+  source: {path, line?, commit, committer, committed, change}, audit}`;
+  `kind` is chant's (`approval-requested | approved | override-requested |
+  override-recorded | revoked`), `audit` is chant's whole entry. A revocation
+  is a line a commit removed, and its `actor` is that commit's author. The
+  ledger holds no applies, so `applied` and `override-spent` appear only in
+  a product's own record (terragucci's `audit.jsonl`). The Terragucci tab's
+  Timeline draws it under the audit record, labelled "ledger"; when the
+  source has no `audit.jsonl` the record's lane says so and the ledger is
+  the history. An export carries it as one snapshot. Reader:
+  `src/lifecycle-history.ts`.
 - `GET /api/terragucci/events` (#505): SSE. While at least one page holds it
   open, a timer (`--terragucci-poll <secs>`, default 30, 0 off) asks
   whether `index.json` changed (`If-None-Match` with the last ETag for S3 and

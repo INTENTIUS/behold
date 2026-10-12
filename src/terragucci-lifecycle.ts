@@ -81,7 +81,7 @@ export const LOCKS_PATH = "_locks/tf-apply.json";
 /** The checkout's own copy of the branch, read only when behold's fetch fails. */
 export const CHECKOUT_REF = `refs/remotes/origin/${LIFECYCLE_BRANCH}`;
 /** The ref behold keeps in its own cache. */
-const CACHE_REF = `refs/heads/${LIFECYCLE_BRANCH}`;
+export const CACHE_REF = `refs/heads/${LIFECYCLE_BRANCH}`;
 /** The tip of origin's default branch in behold's cache: the base a gate's rule is read at. */
 export const CACHE_BASE_REF = "refs/behold/base";
 export const CACHE_PREFIX = "behold-lifecycle-";
@@ -892,12 +892,13 @@ export interface LifecycleOptions {
 }
 
 /** The origin URL as git would fetch it: a relative local path is resolved against the checkout. */
-function fetchable(url: string, checkout: string): string {
+export function fetchable(url: string, checkout: string): string {
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(url) || /^[^/]+@[^:/]+:/.test(url) || isAbsolute(url)) return url;
   return resolve(checkout, url);
 }
+
 /** Fetch the branch, and origin's default branch tip as base, into behold's cache. `found: false` when the remote has no such branch. */
-async function fetchIntoCache(git: GitRun, origin: string, cache: string): Promise<{ ok: true; found: boolean; base?: string } | { ok: false; error: string }> {
+export async function fetchIntoCache(git: GitRun, origin: string, cache: string): Promise<{ ok: true; found: boolean; base?: string } | { ok: false; error: string }> {
   assertScratch(basename(cache));
   return serially(cache, async () => {
     if (!existsSync(join(cache, "HEAD"))) {
