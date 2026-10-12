@@ -33,6 +33,37 @@ export function isCiKind(kind) {
 }
 
 /**
+ * An edge's identity, the same key pinhole 0.5.0's `edgeKey` gives
+ * (pinhole#128): `from>to` for a reference, `from>to>kind` otherwise. Two
+ * kinds on one pair (a GitLab job that both `needs` and `extends` another)
+ * are two edges, so anything the SPA looks up per edge goes through this
+ * (#564). Read off a drawn edge, pass `data-edge-kind`, which pinhole leaves
+ * off for "ref".
+ */
+export function edgeKey({ from, to, kind } = {}) {
+  return `${from}>${to}${isCiKind(kind) ? `>${kind}` : ""}`;
+}
+
+/**
+ * The `viaAttr` per edge key, for the drawn edges pinhole did not stamp
+ * `data-edge-via` on. The reverse direction is filled in as well, where
+ * nothing already holds it, since pinhole may paint an edge either way round
+ * relative to the IR.
+ */
+export function viaIndex(edges = []) {
+  const via = new Map();
+  for (const e of edges) {
+    if (!e.viaAttr) continue;
+    via.set(edgeKey(e), e.viaAttr);
+  }
+  for (const e of edges) {
+    const back = edgeKey({ from: e.to, to: e.from, kind: e.kind });
+    if (e.viaAttr && !via.has(back)) via.set(back, e.viaAttr);
+  }
+  return via;
+}
+
+/**
  * The chip text, as chant's Mermaid and DOT writers label the edge
  * (graph-mermaid.ts `edgeLabel`): a CI edge by its kind, plus the attribute
  * when that says something more (`needs (stage)`, `calls (uses)`); a

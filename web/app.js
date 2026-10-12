@@ -21,7 +21,7 @@ import { initTerragucciEstate } from "./terragucci-estate.js";
 import { auditLines as yrAuditLines, cornerText as yrCorner, datedWords as yrDated, environmentLines as yrEnvLines, joinMarks as yrJoin, legend as yrLegend, markLine as yrMarkLine } from "./yodel-report.js";
 import { cardProgress as tgCardProgress, progressLines as tgProgressLines, progressSection as tgProgressSection, stampProgress as tgStampProgress } from "./terragucci-progress.js";
 import { seconds, whyQuery, whyView } from "./why.js";
-import { edgeLabel, edgeLegend, edgeTitle, isCiKind } from "./edge-kind.js";
+import { edgeKey, edgeLabel, edgeLegend, edgeTitle, isCiKind, viaIndex } from "./edge-kind.js";
 import { readCostLine } from "./read-cost.js";
 import { mountHistoryPicker } from "./history-picker.js";
 import { applyMemberFrame, pendingLine, stillPending } from "./pending.js";
@@ -4457,21 +4457,16 @@ function relabelEdgeChip(chip, kind, via) {
 function wireEdgeHighlight(svgEl, ir) {
   const edges = [...svgEl.querySelectorAll("g[data-edge-from]")];
   if (!edges.length) return;
-  // Reason per edge, keyed by from|to (and its reverse, since pinhole may paint
-  // an edge in either direction relative to the IR). pinhole stamps
-  // data-edge-via itself; this fills it in where it did not.
-  const viaOf = new Map();
-  for (const e of ir.edges || []) {
-    if (!e.viaAttr) continue;
-    viaOf.set(`${e.from}|${e.to}`, e.viaAttr);
-    viaOf.set(`${e.to}|${e.from}`, e.viaAttr);
-  }
+  // Reason per edge, keyed by from, to and kind (pinhole's edgeKey, #564), so
+  // two kinds on one pair keep their own reason. pinhole stamps data-edge-via
+  // itself; this fills it in where it did not.
+  const viaOf = viaIndex(ir.edges || []);
   for (const g of edges) {
     const from = g.getAttribute("data-edge-from");
     const to = g.getAttribute("data-edge-to");
-    const via = g.getAttribute("data-edge-via") || viaOf.get(`${from}|${to}`);
-    if (via) g.setAttribute("data-edge-via", via); // drives the dashed style
     const kind = g.getAttribute("data-edge-kind") || "ref";
+    const via = g.getAttribute("data-edge-via") || viaOf.get(edgeKey({ from, to, kind }));
+    if (via) g.setAttribute("data-edge-via", via); // drives the dashed style
     const cross = g.getAttribute("data-edge-cross") === "true";
     if (!g.querySelector("path")) relabelEdgeChip(g, kind, via);
     const title = document.createElementNS(SVGNS, "title");
@@ -5280,15 +5275,22 @@ function userRect(el, toUser) {
  */
 function edgeLabelOf(g) {
   if (!(g.getAttribute("data-edge-via") || "").trim()) return null;
-  const from = g.getAttribute("data-edge-from");
-  const to = g.getAttribute("data-edge-to");
+  // The pair and the kind (pinhole#128, #564): two kinds on one pair draw two
+  // lines with a chip each, and each line keeps its own chip.
+  const key = edgeKeyOf(g);
   for (const cand of g.parentNode ? g.parentNode.children : []) {
     if (cand === g || cand.tagName.toLowerCase() !== "g") continue;
-    if (cand.getAttribute("data-edge-from") !== from || cand.getAttribute("data-edge-to") !== to) continue;
+    if (!cand.hasAttribute("data-edge-from") || edgeKeyOf(cand) !== key) continue;
     if (cand.hasAttribute("data-node-id") || cand.querySelector("path")) continue;
     return cand;
   }
   return null;
+}
+
+/** A drawn edge group's identity, pinhole's `edgeKey` over its stamped
+ * attributes (no `data-edge-kind` is a reference). */
+function edgeKeyOf(g) {
+  return edgeKey({ from: g.getAttribute("data-edge-from"), to: g.getAttribute("data-edge-to"), kind: g.getAttribute("data-edge-kind") || "ref" });
 }
 
 /** Index the freshly rendered SVG: node groups, containment boxes, edge paths. */

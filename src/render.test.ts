@@ -94,9 +94,14 @@ describe("renderGraph — pipeline boxes (#555)", () => {
     expect(svg).toContain(">reusableWorkflow<");
   });
 
-  it("draws no pipeline boxes in an estate view, which boxes byStack (nesting waits on pinhole#125)", () => {
+  it("draws the pipeline boxes inside the byStack box in an estate view (#564)", () => {
     const { svg } = renderGraph(pipelineIr, { boxes: "byStack" });
-    expect(boxIds(svg)).toEqual(["github"]);
+    expect(boxIds(svg)).toEqual(["github", "callerWorkflow", "reusableWorkflow"]);
+  });
+
+  it("keeps byContainer's boxes alone, with no pipeline box", () => {
+    const { svg } = renderGraph({ ...pipelineIr, groups: { ...pipelineIr.groups, byContainer: { callerWorkflow: ["callCi"] } } }, { boxes: "byContainer" });
+    expect(boxIds(svg)).toEqual(["callerWorkflow"]);
   });
 
   it("byWave wins over byPipeline when an IR carries both", () => {
@@ -108,6 +113,118 @@ describe("renderGraph — pipeline boxes (#555)", () => {
   it("an empty byPipeline draws no box", () => {
     const { svg } = renderGraph({ ...pipelineIr, groups: { byPipeline: {} } });
     expect(svg).not.toContain(BOX_MARKER);
+  });
+});
+
+// #564: pinhole 0.5.0 nests `subgroups` inside `groups`, so an estate draws
+// each member's pipelines inside the member's box. behold's after-passes move
+// and re-lay cards, so these check the picture after them: every pipeline box
+// inside its member box, no two boxes at one level overlapping, and every card
+// inside its pipeline box.
+describe("renderGraph — pipeline boxes nested in an estate's members (#564)", () => {
+  type Rect = { x: number; y: number; w: number; h: number };
+  const RECT = 'x="([\\d.-]+)" y="([\\d.-]+)" width="([\\d.]+)" height="([\\d.]+)"';
+  const rects = (svg: string, attr: "data-group-id" | "data-node-id"): Map<string, Rect> =>
+    new Map(
+      [...svg.matchAll(new RegExp(attr === "data-group-id" ? `<rect data-group-id="([^"]*)" ${RECT}` : `<g data-node-id="([^"]*)"><rect ${RECT}`, "g"))].map((m) => [
+        m[1]!,
+        { x: Number(m[2]), y: Number(m[3]), w: Number(m[4]), h: Number(m[5]) },
+      ]),
+    );
+  const inside = (a: Rect, b: Rect): boolean => a.x >= b.x && a.y >= b.y && a.x + a.w <= b.x + b.w && a.y + a.h <= b.y + b.h;
+  const overlap = (a: Rect, b: Rect): boolean => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+  /** A GitHub Actions estate: per member, `workflows` workflows of a Workflow
+   * node and `jobs` jobs, the first workflow's first job calling the second
+   * workflow by local path (a `calls` edge, chant 0.124.20). */
+  const estate = (members: string[], workflows: number, jobs = 1): GraphIR & { groups: { byPipeline: Record<string, string[]> } } => {
+    const nodes: GraphIR["nodes"] = [];
+    const edges: GraphIR["edges"] = [];
+    const byStack: Record<string, string[]> = {};
+    const byPipeline: Record<string, string[]> = {};
+    for (const m of members) {
+      byStack[m] = [];
+      for (let w = 0; w < workflows; w++) {
+        const wf = `${m}/wf${w}`;
+        nodes.push({ id: wf, kind: "GitHub::Actions::Workflow", lexicon: "github", attrs: w === 0 ? { name: "CI" } : {} });
+        byPipeline[wf] = [wf];
+        byStack[m]!.push(wf);
+        for (let j = 0; j < jobs; j++) {
+          const job = `${wf}Job${j}`;
+          nodes.push({ id: job, kind: "GitHub::Actions::Job", lexicon: "github", attrs: {} });
+          edges.push({ from: wf, to: job, kind: "ref", viaAttr: "jobs" });
+          byPipeline[wf]!.push(job);
+          byStack[m]!.push(job);
+        }
+      }
+      edges.push({ from: `${m}/wf0Job0`, to: `${m}/wf1`, kind: "calls", viaAttr: "uses", crossPipeline: true } as GraphIR["edges"][number]);
+    }
+    return { nodes, edges, groups: { byStack, byPipeline } as never };
+  };
+
+  const check = (ir: ReturnType<typeof estate>): void => {
+    const svg = renderGraph(ir, { boxes: "byStack" }).svg;
+    const boxes = rects(svg, "data-group-id");
+    const cards = rects(svg, "data-node-id");
+    const members = Object.keys(ir.groups.byStack!);
+    const pipelines = Object.keys(ir.groups.byPipeline);
+    expect([...boxes.keys()].sort()).toEqual([...members, ...pipelines].sort());
+    for (const [i, a] of members.entries()) for (const b of members.slice(i + 1)) expect(overlap(boxes.get(a)!, boxes.get(b)!), `${a} / ${b}`).toBe(false);
+    for (const p of pipelines) {
+      const member = p.split("/")[0]!;
+      expect(inside(boxes.get(p)!, boxes.get(member)!), `${p} in ${member}`).toBe(true);
+      for (const id of ir.groups.byPipeline[p]!) expect(inside(cards.get(id)!, boxes.get(p)!), `${id} in ${p}`).toBe(true);
+      for (const q of pipelines) if (q > p && q.startsWith(`${member}/`)) expect(overlap(boxes.get(p)!, boxes.get(q)!), `${p} / ${q}`).toBe(false);
+    }
+  };
+
+  it("two members: each pipeline box sits inside its member box, none overlapping", () => {
+    check(estate(["web", "api"], 2));
+  });
+
+  it("five members, after the member boxes are packed into rows", () => {
+    check(estate(["web", "api", "infra", "docs", "ops"], 2, 2));
+  });
+
+  it("a member wide enough that its components are re-laid", () => {
+    // Twelve one-job workflows side by side: past BOX_ASPECT_MAX, so
+    // packBoxComponents re-lays them and the nested boxes are drawn again.
+    const ir = estate(["web", "api", "infra", "docs"], 12);
+    check(ir);
+    // …and it was re-laid: dagre alone puts the twelve side by side.
+    const web = rects(renderGraph(ir, { boxes: "byStack" }).svg, "data-group-id").get("web")!;
+    expect(web.w / web.h).toBeLessThan(4);
+  });
+
+  it("titles a nested box by its Workflow's name, else by its key without the member", () => {
+    const svg = renderGraph(estate(["web", "api"], 2), { boxes: "byStack" }).svg;
+    const title = (id: string): string | undefined => new RegExp(`data-group-id="${id}"[^>]*/><text[^>]*>([^<]*)</text>`).exec(svg)?.[1];
+    expect(title("web/wf0")).toBe("CI");
+    expect(title("web/wf1")).toBe("wf1");
+    expect(title("web")).toBe("web");
+  });
+});
+
+// #564, pinhole#128: two kinds on one pair (a GitLab job that both `needs` and
+// `extends` another) are two edges, each with its own line and chip.
+describe("renderGraph — two edge kinds on one pair (#564)", () => {
+  it("draws each kind as its own line with its own chip", () => {
+    const ir: GraphIR = {
+      nodes: [
+        { id: "test", kind: "GitLab::CI::Job", lexicon: "gitlab", attrs: {} },
+        { id: "build", kind: "GitLab::CI::Job", lexicon: "gitlab", attrs: {} },
+      ],
+      edges: [
+        { from: "test", to: "build", kind: "needs", viaAttr: "needs" },
+        { from: "test", to: "build", kind: "extends", viaAttr: "extends" },
+      ] as GraphIR["edges"],
+      groups: {},
+    };
+    const svg = renderGraph(ir).svg;
+    const groups = [...svg.matchAll(/<g data-edge-from="test" data-edge-to="build"[^>]*data-edge-kind="([^"]*)"[^>]*>/g)].map((m) => m[1]);
+    // One line group and one chip group per kind.
+    expect(groups.filter((k) => k === "needs")).toHaveLength(2);
+    expect(groups.filter((k) => k === "extends")).toHaveLength(2);
   });
 });
 
