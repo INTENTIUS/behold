@@ -1,11 +1,32 @@
 ---
 title: Look at a SQL Yodeler project
-description: A SQL Yodeler project's schema as a graph, marked with what its report and drift files say. Local, read-only, dated.
+description: Which schema each environment holds, and what SQL Yodeler's report and drift files say, drawn on the project's schema. Local, read-only, dated.
 ---
 
-[SQL Yodeler](https://intentius.io/sql-yodeler/) plans and applies database
-migrations through chant. behold draws the project's declared schema, and
-reads what `yodel` already wrote about each environment.
+[SQL Yodeler](https://intentius.io/sql-yodeler/) applies a project's schema
+one environment at a time. After every apply it appends a release record to
+`<env>/releases.jsonl` on the repository's `chant/lifecycle` branch, keyed by
+the digest of the schema the environment now holds.
+
+## Releases
+
+When the served directory has a `yodel.config.ts` or a `yodel-waves.json`,
+behold adds a Releases tab: one column per environment, one row per
+component or tenant (`<component>/<tenant>`). Each cell is that
+environment's newest release, with its digest, when it was recorded, who ran
+it and who approved it, and the `chant/lifecycle` commit it was read from.
+
+Columns follow the wave order in `yodel-waves.json`. A cell whose digest the
+environment before it does not hold is marked "differs from `<env>`", and its
+hover gives both digests and says whether that environment ever recorded
+this one. It answers the same question as `chant components status prod
+--compare-to staging`.
+
+behold fetches `chant/lifecycle` from the checkout's origin into a cache of
+its own and reads it with chant's release-ledger reader. If the fetch fails
+it reads the checkout's `origin/chant/lifecycle` instead and says so. It
+never writes to the repository, the branch or a database. `behold export`
+carries the strip as a snapshot of the moment it ran.
 
 ## Report and drift
 

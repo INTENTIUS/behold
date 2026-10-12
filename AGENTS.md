@@ -246,6 +246,29 @@ checkout declares no Terraform root (`controlRepo` in
   structural check otherwise. The page (`web/terragucci-estate.js`) draws it
   in a layer over the graph area.
 
+## Releases per environment, from the release ledger (#525)
+
+`GET /api/lifecycle/releases[?fresh=1]` (src/lifecycle-releases.ts) reads
+`<env>/releases.jsonl` on the served checkout's `chant/lifecycle` with chant's
+own reader (`listReleaseEnvironments`, `readReleaseLedger`,
+`latestPerComponent`, `recordsForDigest`). The branch is fetched into the
+same bare cache the terragucci lane uses (`fetchIntoCache` in
+src/terragucci-lifecycle.ts). When that fetch fails, the checkout's
+`refs/remotes/origin/chant/lifecycle` is fetched into a second cache of
+behold's and read there (`via: "checkout-ref"`); the checkout is never
+written. Reads are reused for 30s.
+
+The answer: `environments` (wave order from `yodel-waves.json` when present,
+`order: "waves"`, else by name), `components` (a tenant is
+`<component>/<tenant>`, as SQL Yodeler records it), and `cells[]`, one per
+component and environment that has a release: `digest`, `timestamp`,
+`actor`, `approver?`, `gitSha`, `runId`, `runUrl?`, `source` (the newest
+commit that changed that environment's ledger), and `differs: {from,
+digest?, everHad}` when the environment before it holds another digest or
+none. `/api/project` says `releaseLedger: true` for a checkout with a
+`yodel.config.ts` or `yodel-waves.json`; the page then opens a Releases tab
+(`web/releases.js`), and `behold export` captures the route as a snapshot.
+
 ## SQL Yodeler's report and drift, from files (#526)
 
 `behold serve <dir> --yodel-report <file|dir>` adds `GET /api/yodel-report`

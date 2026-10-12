@@ -178,6 +178,7 @@ import { emulatorUp, emulatorDown, mergedEnv, type EmulatorInfo } from "./emulat
 import { productRefusal, refusedWrite, servedProductRepo, terragucciRefusal } from "./terragucci-repo.ts";
 import { repoBase, terragucciRoutes, type TerragucciOptions } from "./terragucci-view.ts";
 import { lifecycleHistoryRoute } from "./lifecycle-history.ts";
+import { hasReleaseLedgerHint, releasesRoutes } from "./lifecycle-releases.ts";
 import { controlRepoInfo, terragucciEstateRoutes } from "./terragucci-estate.ts";
 import { yodelReportRoute } from "./yodel-report.ts";
 import { loadDemoRegistry, missingRequirements, fetchesFromNetwork, demoTargetDir, loadDemo, type DemoEntry } from "./demos.ts";
@@ -986,6 +987,8 @@ export function createApp(
   if (cfg.terragucci) terragucciRoutes(app, cfg.terragucci, () => cfg.projectDirs ?? [cfg.projectDir]);
   // #509: a control repo's projects, from estate.json and each project's run view.
   if (cfg.terragucci) terragucciEstateRoutes(app, cfg.terragucci, () => cfg.projectDirs ?? [cfg.projectDir]);
+  // #525: each environment's newest release, from the release ledger on chant/lifecycle.
+  releasesRoutes(app, () => cfg.projectDir);
   // #526: SQL Yodeler's report and drift, read from files; never yodel, never the database.
   if (cfg.yodelReport) yodelReportRoute(app, cfg.yodelReport, () => cfg.projectDirs ?? [cfg.projectDir]);
   // #522: gate history from chant/lifecycle through chant's gate-audit, any product.
@@ -1660,6 +1663,8 @@ export function createApp(
         const control = cfg.terragucci ? controlRepoInfo(cfg.projectDirs ?? [cfg.projectDir]) : undefined;
         return control ? { terragucciControl: control } : {};
       })(),
+      // #525: a SQL Yodeler checkout; the page asks /api/lifecycle/releases.
+      ...(hasReleaseLedgerHint(cfg.projectDir) ? { releaseLedger: true } : {}),
       // #477: who `chant approve` records when behold runs it. The approve
       // buttons say it before the click.
       approver: localApprover(),
