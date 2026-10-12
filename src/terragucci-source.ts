@@ -16,7 +16,7 @@
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { hasEnvCredentials, S3Object, s3FromEnv } from "./s3-object.ts";
+import { hasEnvCredentials, S3Error, S3Object, s3FromEnv } from "./s3-object.ts";
 
 export type TerragucciSourceKind = "dir" | "s3" | "http";
 
@@ -27,6 +27,30 @@ export interface TerragucciSource {
   /** The object at `key` (relative to the prefix), or undefined when there is none. Throws on any other failure. */
   read(key: string): Promise<string | undefined>;
 }
+
+/**
+ * #523: S3 refused a read with 403 (AccessDenied). An S3 source's `read`
+ * throws this, so a caller whose read is optional (audit.jsonl, a run view)
+ * can say the record is not readable with these credentials and draw the
+ * rest, while a required read (index.json, a report) still fails, now naming
+ * the permission. S3 also answers 403 for a missing object when the
+ * credentials lack `s3:ListBucket`, so the words name both.
+ */
+export class TerragucciDenied extends Error {
+  /** The key under the prefix. */
+  readonly key: string;
+  /** The full address, `s3://bucket/prefix/key`. */
+  readonly url: string;
+  constructor(key: string, url: string, detail: string) {
+    super(`${url} is not readable with these credentials (${detail}): reading it needs s3:GetObject on that key, and S3 answers 403 for a missing object too when the credentials lack s3:ListBucket on the bucket`);
+    this.key = key;
+    this.url = url;
+  }
+}
+
+/** The sentence an answer carries when an optional record answered 403. */
+export const deniedWords = (e: TerragucciDenied, what: string): string =>
+  `${e.url} is not readable with these credentials, so ${what} is not shown: grant s3:GetObject on ${e.key} (or s3:ListBucket on the bucket, if the object may not exist yet). This says nothing about the record itself.`;
 
 /** Runs `aws s3 cp <url> -`. Injectable so a test needs no aws CLI. */
 export type AwsRun = (args: string[]) => Promise<{ code: number; stdout: string; stderr: string }>;
@@ -60,7 +84,17 @@ export function terragucciSource(spec: string, opts: { cwd?: string; aws?: AwsRu
       return {
         kind: "s3",
         location: `s3://${joinKey(bucket, prefix)}`,
-        read: (key) => client.get(joinKey(prefix, key)),
+        async read(key) {
+          const k = joinKey(prefix, key);
+          try {
+            return await client.get(k);
+          } catch (e) {
+            if (e instanceof S3Error && (e.status === 403 || e.code === "AccessDenied")) {
+              throw new TerragucciDenied(trim(key), `s3://${joinKey(bucket, k)}`, `${e.status ?? 403}${e.code ? ` ${e.code}` : ""}`);
+            }
+            throw e;
+          }
+        },
       };
     }
     const aws = opts.aws ?? realAws;
@@ -73,6 +107,8 @@ export function terragucciSource(spec: string, opts: { cwd?: string; aws?: AwsRu
         if (r.code === 0) return r.stdout;
         // A missing object is an answer (no estate.json yet); anything else is not.
         if (/\b(404|NoSuchKey|Not Found|does not exist)\b/i.test(r.stderr)) return undefined;
+        // #523: a refused read is its own answer, so an optional read can degrade.
+        if (/\b(403|AccessDenied|Forbidden)\b|Access Denied/i.test(r.stderr)) throw new TerragucciDenied(trim(key), url, /AccessDenied/i.test(r.stderr) ? "AccessDenied" : "403");
         throw new Error(r.code === -1 ? `could not run aws to read ${url}: ${r.stderr.trim()}` : `aws s3 cp ${url} failed: ${r.stderr.trim() || `exit ${r.code}`}`);
       },
     };

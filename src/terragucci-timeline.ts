@@ -38,7 +38,7 @@ import type { Hono } from "hono";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { waveOfGate } from "./terragucci-lifecycle.ts";
 import { TerragucciReadError, type Validation } from "./terragucci-reports.ts";
-import type { TerragucciSource } from "./terragucci-source.ts";
+import { deniedWords, TerragucciDenied, type TerragucciSource } from "./terragucci-source.ts";
 
 export const AUDIT_SCHEMA = "terragucci.audit/v1";
 /** The record's key, at the top of the reports prefix. */
@@ -319,6 +319,8 @@ export interface TimelineRead {
   /** How many lines the record holds, every project. */
   lines: number;
   entries: TimelineEntry[];
+  /** #523: set when S3 refused the read (403); the lane says so in place of the absent line and the page draws. */
+  unreadable?: string;
 }
 
 export interface TimelineOptions {
@@ -334,16 +336,19 @@ export interface TimelineOptions {
 export async function readTimeline(source: TerragucciSource, opts: TimelineOptions = {}): Promise<TimelineRead> {
   const v = opts.validator ?? auditValidator();
   let text: string | undefined;
+  let unreadable: string | undefined;
   try {
     text = await source.read(AUDIT_KEY);
   } catch (e) {
-    refuse(
+    // #523: audit.jsonl is optional; a 403 is reported, and the page draws as for an absent record.
+    if (e instanceof TerragucciDenied) unreadable = deniedWords(e, "the audit timeline");
+    else refuse(
       `Could not read ${AUDIT_KEY} from ${source.location}: ${e instanceof Error ? e.message : String(e)}`,
       source.kind === "s3" ? "behold reads the bucket with your aws CLI or the environment's credentials: check GetObject on <prefix>/audit.jsonl." : "Check the source serves the reports prefix.",
     );
   }
   const base = { source: source.location, kind: source.kind, validation: v.validation, read: (opts.now ?? new Date()).toISOString() };
-  if (text === undefined) return { ...base, present: false, project: opts.project ?? opts.checkoutProject ?? null, projects: [], lines: 0, entries: [] };
+  if (text === undefined) return { ...base, present: false, project: opts.project ?? opts.checkoutProject ?? null, projects: [], lines: 0, entries: [], ...(unreadable ? { unreadable } : {}) };
   const all = parseAudit(text, source.location, v);
   const projects = [...new Set(all.map((e) => e.project))].sort();
   let project: string | null;
@@ -370,8 +375,10 @@ export interface TimelineAnswer {
   validation: Validation;
   read: string;
   record: { key: typeof AUDIT_KEY; present: boolean };
-  /** Present when the source has no record, saying so. */
+  /** Present when the source has no record, saying so; or, with `unreadable`, that S3 refused the read and which permission it needs. */
   absent?: string;
+  /** #523: true when the record answered 403 rather than being missing. */
+  unreadable?: true;
   /** Where a `run.report` key opens. */
   files: string;
   /** The root asked for, when one was. */
@@ -393,7 +400,8 @@ export function timelineAnswer(r: TimelineRead, q: { root?: string; limit?: numb
     validation: r.validation,
     read: r.read,
     record: { key: AUDIT_KEY, present: r.present },
-    ...(r.present ? {} : { absent: absentWords(r.source) }),
+    ...(r.present ? {} : { absent: r.unreadable ?? absentWords(r.source) }),
+    ...(r.unreadable ? { unreadable: true } : {}),
     files: "/api/terragucci/file?key=",
     ...(q.root ? { root: q.root } : {}),
     total: matched.length,
