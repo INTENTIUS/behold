@@ -155,6 +155,9 @@ describe("the scratch project (#384)", () => {
     const config = join(project, "chant.config.ts");
     expect(lstatSync(join(project, ESTATE_LINK)).isSymbolicLink()).toBe(true);
     expect(readlinkSync(join(project, ESTATE_LINK))).toBe(ESTATE);
+    // An ES module by declaration: chant's compiled CLI reads a config tsx
+    // compiled as CommonJS as `{ default: config }` (INTENTIUS/chant#3897).
+    expect(JSON.parse(readFileSync(join(project, "package.json"), "utf8"))).toMatchObject({ private: true, type: "module" });
 
     const stamp = memberSourceStamp(project);
     writeTerraformScratchProject(ESTATE, discoverTerraformRoots(ESTATE));

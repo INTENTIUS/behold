@@ -132,6 +132,11 @@ describe("example-choudoufu-estate, declared against loose (#465)", () => {
     expect(declared.nodes.map((n) => n.id).sort()).toEqual(loose.nodes.map((n) => n.id).sort());
     const edge = (g: GraphIR) => g.edges.map((e) => `${e.from}>${e.to}`).sort();
     expect(edge(declared)).toEqual(edge(loose));
+    // Both sides carry the HCL's own references, not only choudoufu's
+    // cross-estate one. chant 0.124.14's compiled CLI emptied the loose read
+    // (INTENTIUS/chant#3897) while the declared read kept them, and this is
+    // the line that says which side went missing.
+    expect(edge(loose)).toContain("team-a/aws_iam_role_policy.team_a_inline>team-a/aws_iam_role.team_a");
     expect(declared.nodes.find((n) => n.id === "team-b/aws_subnet.app")!.attrs).toMatchObject({ file: "main.tf", line: expect.any(Number) });
     expect(loose.nodes.find((n) => n.id === "team-b/aws_subnet.app")!.attrs.line).toBeUndefined();
   });
