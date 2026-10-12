@@ -25,14 +25,15 @@ export interface FrameSummary {
   byLexicon: Record<string, number>;
 }
 
-/** A frame's fingerprint: nodes (id+kind+drift status) and edges, sorted. Two
- * captures with the same digest are the same graph state, so we don't store a
- * duplicate keyframe. */
+/** A frame's fingerprint: nodes (id+kind+drift status) and edges (from, to and
+ * kind), sorted. Two captures with the same digest are the same graph state, so
+ * we don't store a duplicate keyframe. A `ref` edge writes no kind, so a
+ * ref-only graph digests as it did before kinds were counted (#556). */
 export function frameDigest(ir: GraphIR): string {
   const nodes = ir.nodes
     .map((n) => `${n.id}:${n.kind}:${(n.attrs as { _status?: string })?._status ?? ""}`)
     .sort();
-  const edges = ir.edges.map((e) => `${e.from}>${e.to}`).sort();
+  const edges = ir.edges.map((e) => `${e.from}>${e.to}${e.kind === "ref" ? "" : `:${e.kind}`}`).sort();
   return `${nodes.join("|")}#${edges.join("|")}`;
 }
 

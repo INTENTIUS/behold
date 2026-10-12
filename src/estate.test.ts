@@ -51,6 +51,30 @@ describe("composeEstate (#31)", () => {
     expect(Object.keys(ir.groups.byStack ?? {}).sort()).toEqual(["api", "infra"]);
     expect(ir.nodes.map((n) => n.id).sort()).toEqual(["api/svc", "infra/vpc"]);
   });
+
+  // #552: two GitHub Actions members, each with a pipeline and a reference to a
+  // workflow outside the project, keep both through composition.
+  it("keeps each member's dangling references and pipeline groups, scoped", async () => {
+    const ci = (wf: string) => ({
+      nodes: [
+        { id: "build", kind: "GitHub::Actions::Job", lexicon: "github", attrs: {} },
+        { id: "deploy", kind: "GitHub::Actions::Job", lexicon: "github", attrs: {} },
+      ],
+      edges: [{ from: "deploy", to: "build", kind: "needs" }],
+      groups: { byPipeline: { [wf]: ["build", "deploy"] } },
+      dangling: [{ from: "deploy", kind: "calls", path: "uses", value: "acme/shared/.github/workflows/ship.yml@v1", crossPipeline: true }],
+    });
+    vi.mocked(graphIr)
+      .mockResolvedValueOnce(ci("ci") as never)
+      .mockResolvedValueOnce(ci("release") as never);
+
+    const ir = (await composeEstate(["/work/web", "/work/infra"])) as ChantGraphIR;
+
+    expect(ir.groups.byPipeline).toEqual({ "web/ci": ["web/build", "web/deploy"], "infra/release": ["infra/build", "infra/deploy"] });
+    expect(ir.dangling?.map((d) => d.from)).toEqual(["web/deploy", "infra/deploy"]);
+    expect(ir.dangling?.[0]).toMatchObject({ kind: "calls", path: "uses", value: "acme/shared/.github/workflows/ship.yml@v1", crossPipeline: true });
+    expect(ir.edges.map((e) => e.kind)).toEqual(["needs", "needs"]);
+  });
 });
 
 // #224: composeStacks namespaces node ids but not chant's `runtimeOwner`, so
