@@ -165,7 +165,9 @@ export function collapseBoxes(ir: GraphIR, opts: { limit?: number } = {}): Colla
     const from = standsFor.get(e.from) ?? e.from;
     const to = standsFor.get(e.to) ?? e.to;
     if (from === to) continue;
-    const key = `${from}|${to}`;
+    // Kind is part of the key: a GitLab job that both `needs` and `extends`
+    // another keeps both edges when either end folds into a summary (#556).
+    const key = `${from}|${to}|${e.kind}`;
     if (seen.has(key)) continue;
     seen.add(key);
     edges.push(from === e.from && to === e.to ? e : { ...e, from, to });
