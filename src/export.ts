@@ -62,6 +62,8 @@ export interface ExportAxes {
   ops?: number;
   /** #491: the export was given `--terragucci`, so the marks are one more snapshot. */
   terragucci?: boolean;
+  /** #525: the project reads a release ledger, so its Releases strip is one more snapshot. */
+  releases?: boolean;
 }
 
 /** The read URLs to capture for the given axes. */
@@ -85,6 +87,8 @@ export function captureKeys(axes: ExportAxes): string[] {
   if (axes.terragucci) add("/api/terragucci", {});
   // #506: and the audit record's timeline, the SPA's one unfiltered ask (it filters by root itself).
   if (axes.terragucci) add("/api/terragucci/timeline", {});
+  // #525: the Releases strip, as of the export: one read, whatever the lens.
+  if (axes.releases) add("/api/lifecycle/releases", {});
 
   const tiers = axes.tiers && axes.tiers.length ? axes.tiers : [""];
   const envs = ["", ...axes.environments]; // "" = the declared-source view
@@ -177,12 +181,13 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
   // rather than relying on nothing happening to call it.
   const app = createApp({ ...cfg, layoutWrites: false });
 
-  const proj = (await (await app.request("/api/project")).json()) as { environments?: string[]; tiers?: string[]; ops?: number; terragucciReports?: unknown };
+  const proj = (await (await app.request("/api/project")).json()) as { environments?: string[]; tiers?: string[]; ops?: number; terragucciReports?: unknown; releaseLedger?: boolean };
   const axes: ExportAxes = {
     environments: proj.environments ?? [],
     tiers: proj.tiers ?? [],
     ...(proj.ops ? { ops: proj.ops } : {}),
     ...(proj.terragucciReports ? { terragucci: true } : {}),
+    ...(proj.releaseLedger ? { releases: true } : {}),
   };
   const scrub = exportScrubber(cfg);
 

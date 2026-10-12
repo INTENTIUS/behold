@@ -15,6 +15,7 @@ import { gateCards } from "./workspace-gates.js";
 import { cornerOf, estateLine, hrefOf as tgHref, legend as tgLegend, markLine, rootRows as tgRootRows, waveCards } from "./terragucci.js";
 import { laneElement as tgLane, rootOfCard as tgRootOfCard } from "./terragucci-timeline.js";
 import { renderLane } from "./terragucci-lifecycle.js";
+import { renderReleases } from "./releases.js";
 import { initTerragucciEstate } from "./terragucci-estate.js";
 import { cardProgress as tgCardProgress, progressLines as tgProgressLines, progressSection as tgProgressSection, stampProgress as tgStampProgress } from "./terragucci-progress.js";
 import { seconds, whyQuery, whyView } from "./why.js";
@@ -3471,6 +3472,32 @@ function renderTerragucciPanel() {
   }
 }
 initTerragucci();
+// #525: each environment's newest release from the release ledger on
+// chant/lifecycle, with a cell whose schema the environment before it does
+// not hold marked. Dated and read-only; a static export carries its snapshot.
+let relHost = null;
+async function initReleases() {
+  const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
+  if (!project.releaseLedger) return;
+  await loadReleases();
+}
+async function loadReleases({ fresh = false } = {}) {
+  const a = await apiFetch(`/api/lifecycle/releases${fresh ? "?fresh=1" : ""}`)
+    .then((r) => r.json())
+    .catch((e) => ({ error: String(e) }));
+  if (!relHost) {
+    relHost = addPanelTab("releases", "Releases", "Each environment's newest release from the release ledger on chant/lifecycle, dated. Not live.");
+    if (!relHost) return;
+    relHost.id = "tab-releases";
+  }
+  renderReleases(relHost, a, new Date(), { link: tgLink });
+  if (!staticMode) {
+    const again = button("Read again", "", () => loadReleases({ fresh: true }));
+    again.title = "Read chant/lifecycle again and redraw.";
+    relHost.appendChild(again);
+  }
+}
+initReleases();
 // #509: a control repo draws its projects from estate.json and their run views.
 initTerragucciEstate({ fetchUrl: apiFetch, copy: copyToClipboard });
 
