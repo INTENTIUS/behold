@@ -22,6 +22,11 @@
  *
  * Environment order is the wave order of `yodel-waves.json` when the checkout
  * has one, then any other environment by name.
+ *
+ * A project that is a chant workspace member keeps its ledgers under
+ * `_members/<member>/` on the branch (#537); chant's `resolveMemberLedger`
+ * names the member (src/member-ledger.ts) and the environments are listed and
+ * read there.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -39,6 +44,7 @@ import {
   type LifecycleVia,
 } from "./terragucci-lifecycle.ts";
 import { assertScratch } from "./scratch.ts";
+import { memberNote, projectLedger, type ProjectLedger } from "./member-ledger.ts";
 
 /** SQL Yodeler's waves spec (sql-yodeler src/waves/index.ts WAVES_SPEC_FILE): one wave per environment, in order. */
 export const WAVES_SPEC_FILE = "yodel-waves.json";
@@ -107,6 +113,8 @@ export interface ReleasesAnswer {
   cells: ReleaseCell[];
   /** Ledger lines chant's reader skipped as malformed, per environment. */
   malformed: Record<string, number>;
+  /** Set when the project is a workspace member (its records under `_members/<member>/`), or chant could not place it. */
+  member?: { members: string[]; prefix: string; error?: string };
   note: string;
 }
 
@@ -176,17 +184,37 @@ async function copyCheckoutRef(git: GitRun, checkout: string, cache: string): Pr
   return f.code === 0;
 }
 
-/** Read every environment's ledger in the bare repository `cache`, with chant's reader. */
-async function readCache(git: GitRun, cache: string): Promise<{ ledgers: Map<string, ReleaseRecord[]>; malformed: Record<string, number>; sources: Map<string, ReleaseSource> }> {
-  const envs = await listReleaseEnvironments({ cwd: cache });
+/**
+ * The environments under a member's `prefix` with a `releases.jsonl`, as
+ * chant's `listLedgerEnvironments` lists them for a member. chant takes the
+ * member from its working directory, and the cache has none, so behold lists
+ * the member's directory itself.
+ */
+async function memberEnvironments(git: GitRun, cache: string, prefix: string): Promise<string[]> {
+  const ls = await git(["--git-dir", cache, "ls-tree", "--full-tree", `refs/heads/${LIFECYCLE_BRANCH}:${prefix.replace(/\/$/, "")}`]);
+  if (ls.code !== 0) return [];
+  const envs: string[] = [];
+  for (const line of ls.stdout.split("\n")) {
+    const m = /^\d+\s+tree\s+[0-9a-f]+\t(.+)$/.exec(line.trim());
+    if (!m || m[1]!.startsWith("_")) continue;
+    const has = await git(["--git-dir", cache, "cat-file", "-e", `refs/heads/${LIFECYCLE_BRANCH}:${prefix}${m[1]}/releases.jsonl`]);
+    if (has.code === 0) envs.push(m[1]!);
+  }
+  return envs.sort();
+}
+
+/** Read every environment's ledger in the bare repository `cache`, with chant's reader, under the member's prefix when there is one. */
+async function readCache(git: GitRun, cache: string, prefix = ""): Promise<{ ledgers: Map<string, ReleaseRecord[]>; malformed: Record<string, number>; sources: Map<string, ReleaseSource> }> {
+  const envs = prefix ? await memberEnvironments(git, cache, prefix) : await listReleaseEnvironments({ cwd: cache });
   const ledgers = new Map<string, ReleaseRecord[]>();
   const malformed: Record<string, number> = {};
   const sources = new Map<string, ReleaseSource>();
   for (const env of envs) {
-    const r = await readReleaseLedger(env, { cwd: cache });
+    // chant's reader reads `<environment>/releases.jsonl` on the branch; a member's environment is the path under its prefix.
+    const r = await readReleaseLedger(`${prefix}${env}`, { cwd: cache });
     ledgers.set(env, r.records);
     if (r.malformed) malformed[env] = r.malformed;
-    const path = `${env}/releases.jsonl`;
+    const path = `${prefix}${env}/releases.jsonl`;
     const log = await git(["--git-dir", cache, "log", "-1", "--format=%H%x00%cI", `refs/heads/${LIFECYCLE_BRANCH}`, "--", path]);
     const [commit, committed] = log.code === 0 && log.stdout.trim() ? log.stdout.trim().split("\0") : [];
     sources.set(env, { branch: LIFECYCLE_BRANCH, path, ...(commit ? { commit } : {}), ...(committed ? { committed } : {}) });
@@ -202,13 +230,16 @@ export async function readReleases(checkout: string, opts: ReleasesOptions = {})
   const git = opts.git ?? realGit;
   const now = (opts.now ?? (() => new Date()))();
   const waves = waveOrder(checkout);
-  const base = { branch: LIFECYCLE_BRANCH, read: { at: now.toISOString() }, order: (waves ? "waves" : "name") as ReleasesAnswer["order"] } as const;
+  const ledger: ProjectLedger = await projectLedger(checkout, git);
+  const member = ledger.members.length || ledger.error ? { member: { members: ledger.members, prefix: ledger.prefix, ...(ledger.error ? { error: ledger.error } : {}) } } : {};
+  const also = memberNote(ledger);
+  const base = { branch: LIFECYCLE_BRANCH, read: { at: now.toISOString() }, order: (waves ? "waves" : "name") as ReleasesAnswer["order"], ...member } as const;
   const empty = { environments: [] as string[], components: [] as string[], cells: [] as ReleaseCell[], malformed: {} };
   const answer = async (cache: string, via: LifecycleVia, fetch: ReleasesAnswer["fetch"], origin: string | undefined, note: string): Promise<ReleasesAnswer> => {
-    const { ledgers, malformed, sources } = await readCache(git, cache);
+    const { ledgers, malformed, sources } = await readCache(git, cache, ledger.prefix);
     const environments = orderEnvironments([...ledgers.keys()], waves);
     const { components, cells } = releaseCells(ledgers, environments, sources);
-    return { ...base, found: true, via, ...(origin ? { origin } : {}), fetch, environments, components, cells, malformed, note };
+    return { ...base, found: true, via, ...(origin ? { origin } : {}), fetch, environments, components, cells, malformed, note: also ? `${note} ${also}` : note };
   };
 
   const remote = await git(["-C", checkout, "remote", "get-url", "origin"]);
