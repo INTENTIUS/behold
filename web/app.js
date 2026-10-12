@@ -6221,12 +6221,14 @@ async function initActions() {
   // them right now (`/api/project`'s executor block).
   executorInfo = project.executor || {};
   previewMode = staticMode || !!project.previewMode; // static ⇒ read-only, no writes at all
-  if (project.terragucci) {
-    terragucciRepo = project.terragucci;
+  // #517: a SQL Yodeler repo is guarded the same way.
+  const guarded = project.terragucci || project.sqlYodeler;
+  if (guarded) {
+    terragucciRepo = guarded;
     previewMode = true;
     const pill = document.createElement("span");
-    pill.textContent = "● applied by terragucci";
-    pill.title = `${project.terragucci.error}\n\n${project.terragucci.remedy}`;
+    pill.textContent = project.terragucci ? "● applied by terragucci" : "● migrated by SQL Yodeler";
+    pill.title = `${guarded.error}\n\n${guarded.remedy}`;
     pill.style.cssText = "align-self:center;font:var(--t-caption)/1.4 var(--font-mono);color:var(--muted);border:1px solid var(--line);border-radius:var(--r-ctl);padding:2px 8px";
     bar.appendChild(pill);
     return; // no Deploy, no Run, no Approve: the pipeline is the only way to apply

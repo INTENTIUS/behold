@@ -40,6 +40,14 @@ where the credentials are in the environment, it signs its GETs itself. A read-o
 `GetObject` on `<prefix>/*index.json`, `<prefix>/*/report.json` and
 `<prefix>/estate.json`, the same policy terragucci's estate job has.
 
+`audit.jsonl` and the run views are optional reads, and they need `GetObject`
+on `<prefix>/audit.jsonl` and `<prefix>/*/runs/*/run.json` as well. When S3
+answers 403 for one of them, behold says the record is not readable with these
+credentials, names the key and `s3:GetObject` (S3 also answers 403 for a
+missing object when the identity lacks `s3:ListBucket`), and draws the rest of
+the page as it would for an absent file. A 403 on `index.json`, a report or
+`estate.json` still fails the read, with the same words.
+
 When `@intentius/terragucci` is installed beside behold or in the repo, every
 document is checked against the JSON Schemas it ships. Without it, behold checks
 the schema id and the fields it reads, and refuses anything else with

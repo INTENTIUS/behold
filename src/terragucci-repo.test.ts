@@ -6,7 +6,7 @@ import { createApp } from "./server.ts";
 import { Broadcaster } from "./events.ts";
 import { FrameBuffer } from "./frames.ts";
 import { OpRunner } from "./op-runner.ts";
-import { allowedWrite, READ_METHODS, refusedWrite, terragucciConfig, TERRAGUCCI_ALLOWED_WRITES, TERRAGUCCI_REFUSED_WRITES } from "./terragucci-repo.ts";
+import { allowedWrite, productRepo, READ_METHODS, refusedWrite, terragucciConfig, TERRAGUCCI_ALLOWED_WRITES, TERRAGUCCI_REFUSED_WRITES } from "./terragucci-repo.ts";
 
 const made: string[] = [];
 afterAll(() => {
@@ -154,5 +154,37 @@ describe("a terragucci repo refuses every write that deploys, approves or starts
     for (const m of ["GET", "HEAD", "OPTIONS", "get"]) expect(refusedWrite(m, "/api/apply")).toBeUndefined();
     for (const w of TERRAGUCCI_ALLOWED_WRITES) expect(refusedWrite(w.method, w.pattern.source.replace(/^\^|\$$/g, "").replace(/\\\//g, "/"))).toBeUndefined();
     expect(TERRAGUCCI_REFUSED_WRITES.every((w) => !allowedWrite("POST", w.pattern.source))).toBe(true);
+  });
+});
+
+describe("a SQL Yodeler repo is guarded the same way (#517)", () => {
+  const writes = [
+    "/api/apply?env=prod",
+    "/api/ops/migrate-prod/run",
+    "/api/ops/migrate-prod/signal/approve-migrate-prod",
+    "/api/operator/approve/migrate-prod/approve-migrate-prod",
+  ];
+
+  it.each(writes)("POST %s answers 409 sql-yodeler, naming yodel approve", async (path) => {
+    const dir = repo({ ".git/HEAD": "", "yodel.config.ts": "export default {};\n" });
+    const res = await app(dir).request(path, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string; remedy: string };
+    expect(body.code).toBe("sql-yodeler");
+    expect(body.remedy).toContain("npx yodel approve <env> --plan <digest>");
+    expect(body.remedy).toContain("--sign");
+    expect(body.remedy).toContain("yodel apply <env>");
+  });
+
+  it("refuses a yodel project nested inside a terragucci repo as terragucci", () => {
+    const dir = repo({ ".git/HEAD": "", "terragucci.yml": "", "db/yodel.config.ts": "" });
+    expect(productRepo(join(dir, "db"))).toEqual({ product: "terragucci", config: join(dir, "terragucci.yml") });
+  });
+
+  it("tells the page, so it offers no write", async () => {
+    const dir = repo({ ".git/HEAD": "", "yodel.config.ts": "" });
+    const project = (await (await app(dir).request("/api/project")).json()) as { sqlYodeler?: { code: string }; terragucci?: unknown };
+    expect(project.sqlYodeler?.code).toBe("sql-yodeler");
+    expect(project.terragucci).toBeUndefined();
   });
 });

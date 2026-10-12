@@ -12,6 +12,9 @@
  * The repo is recognised by terragucci's own config file (terragucci's
  * `CONFIG_NAMES`) in the served directory or any directory above it up to the
  * git root, so serving `envs/` of a terragucci repo is refused the same way.
+ *
+ * #517: a SQL Yodeler repo (`yodel.config.ts`) is guarded the same way, with
+ * the same allowlist and its own refusal, `code: "sql-yodeler"`.
  */
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -21,9 +24,14 @@ export const TERRAGUCCI_CONFIG_NAMES = ["terragucci.yml", "terragucci.yaml", "te
 
 /** The terragucci config that governs `dir`, or undefined when no terragucci config sits in it or above it within its git repo. */
 export function terragucciConfig(dir: string): string | undefined {
+  return walkUp(dir, TERRAGUCCI_CONFIG_NAMES);
+}
+
+/** The first of `names` in `dir` or any directory above it, stopping at the git root. */
+function walkUp(dir: string, names: readonly string[]): string | undefined {
   let at = resolve(dir);
   for (;;) {
-    for (const name of TERRAGUCCI_CONFIG_NAMES) {
+    for (const name of names) {
       const file = join(at, name);
       if (existsSync(file)) return file;
     }
@@ -33,6 +41,50 @@ export function terragucciConfig(dir: string): string | undefined {
     if (up === at) return undefined;
     at = up;
   }
+}
+
+/**
+ * SQL Yodeler's config file (#517). A SQL Yodeler repo is migrated by its
+ * pipeline: `yodel apply <env>` behind `gate("approve-migrate-<env>")`, bound
+ * to the plan's digest. A behold write there would be a migration with no plan
+ * and no approval record, so it is refused the same way as on terragucci.
+ */
+export const SQL_YODELER_CONFIG_NAMES = ["yodel.config.ts"] as const;
+
+/** A product whose repo behold never writes to, and the config file that names it (#517). */
+export type ProductRepo = { product: "terragucci" | "sql-yodeler"; config: string };
+
+/**
+ * The guarded product repo that governs `dir`, or undefined (#517). terragucci
+ * is looked for along the whole walk first, so a yodel project nested inside a
+ * terragucci repo is refused as terragucci.
+ */
+export function productRepo(dir: string): ProductRepo | undefined {
+  const tg = terragucciConfig(dir);
+  if (tg) return { product: "terragucci", config: tg };
+  const yodel = walkUp(dir, SQL_YODELER_CONFIG_NAMES);
+  return yodel ? { product: "sql-yodeler", config: yodel } : undefined;
+}
+
+/** The guarded product repo that governs any of the served directories. A terragucci repo wins over a SQL Yodeler one. */
+export function servedProductRepo(dirs: readonly string[]): ProductRepo | undefined {
+  const found = dirs.map(productRepo).filter((r): r is ProductRepo => !!r);
+  return found.find((r) => r.product === "terragucci") ?? found[0];
+}
+
+/** The refusal every write answers on a SQL Yodeler repo: 409, `code: "sql-yodeler"` (#517). */
+export function sqlYodelerRefusal(config: string, what: string): { error: string; code: "sql-yodeler"; remedy: string } {
+  return {
+    error: `${what} is refused: this is a SQL Yodeler repo (${config}), and a SQL Yodeler repo is migrated by its pipeline only. behold never applies, approves or starts a run here`,
+    code: "sql-yodeler",
+    remedy:
+      "Approve at your shell with `npx yodel approve <env> --plan <digest>`, adding `--sign` when the environment's gate is sealed; the digest is the one `yodel plan <env>` printed, and it binds the approval to that plan. The project's pipeline then runs `yodel apply <env>`.",
+  };
+}
+
+/** The refusal for whichever product governs the repo (#517). */
+export function productRefusal(repo: ProductRepo, what: string): { error: string; code: "terragucci" | "sql-yodeler"; remedy: string } {
+  return repo.product === "terragucci" ? terragucciRefusal(repo.config, what) : sqlYodelerRefusal(repo.config, what);
 }
 
 /** The terragucci config that governs any of the served directories. */

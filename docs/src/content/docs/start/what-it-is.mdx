@@ -35,6 +35,7 @@ That last row is why component status reads from a resource rollup rather than a
 - **Deploy** on a project with no committed `ApplyOp` runs `chant run <component> --components` on chant's local executor, as a child of behold. It applies with the credentials in behold's environment, so Deploy from behold needs write roles there.
 - An environment `.behold.json` designates to a forge is never applied from your machine; Deploy dispatches the forge's workflow through your `gh`.
 - A terragucci repo is applied by its pipeline only: behold refuses every deploy, Op run, approval and dispatch there, and offers none of them.
+- A SQL Yodeler repo (one with a `yodel.config.ts`) is guarded the same way. Its refusal says `code: "sql-yodeler"` and names `npx yodel approve <env> --plan <digest>` (with `--sign` under a sealed gate) and `yodel apply <env>` in the project's pipeline.
 
 Authority stays in your committed source and your executor. If a request would have behold write to a cloud or to source directly, that is a bug.
 
