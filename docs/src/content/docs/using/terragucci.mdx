@@ -165,7 +165,12 @@ Terragucci tab reads them too:
   behold decides each wave with chant's own
   gate decision, the one terragucci applies under: an approval a wave already
   applied under is spent, and under `approval: sealed` an approval counts only
-  when its seal verifies against the signers file on the default branch. An
+  when its seal verifies against the signers file on the default branch. A
+  gate that `identity.gates` in chant.workspace.json names counts only a
+  signed approval under any mode; when it names a class, behold checks the
+  signature but not the class, and the card says so. The approval mode is
+  read on the default branch, since the waves do not record the mode they
+  asked under, and the lane's legend says it is inferred. An
   approval that does not count is shown with the reason. A card also names
   who relayed an approval from chat, the pull request review it came from,
   and the roots the wave planned;

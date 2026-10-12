@@ -160,6 +160,16 @@ describe("each wave decided by chant's gate-decision (#520)", () => {
     expect(decideLaneGate(l, "wave-1", { mode: "ledger" }, NOW).state).toBe("approved");
   });
 
+  it("applies identity.gates under ledger: an unsealed approval of a named gate does not count, and the class is marked unchecked (#537)", () => {
+    const signers: GateSigners = { base: "b", signersPath: ".chant/allowed_signers", active: true, signers: [], problems: [] };
+    const l = ledger({ pending: [pending("wave-1", D1)], resolutions: [approval("wave-1", D1, "2026-10-09T09:00:00Z")] });
+    const d = decideLaneGate(l, "wave-1", { mode: "ledger", signers, identityGates: [{ gate: "wave-1", class: "human" }] }, NOW);
+    expect(d.state).toBe("waiting");
+    expect(d.uncounted?.[0]?.reason).toMatch(/identity\.gates\.wave-1/);
+    expect(d.identity).toEqual({ class: "human", classChecked: false });
+    expect(decideLaneGate(l, "wave-1", { mode: "ledger", signers, identityGates: [{ gate: "wave-2", class: null }] }, NOW).state).toBe("approved");
+  });
+
   it("carries relayedBy, the review's head and reviewers, and the pending members", () => {
     const l = ledger({
       pending: [{ ...pending("wave-1", D1), members: [{ member: "envs/prod", planDigest: D1 }], neverOverMcp: true as const } as GateLedger["pending"][number]],

@@ -44,6 +44,8 @@ import { basename, isAbsolute, join, resolve } from "node:path";
 import {
   appliedGatePath,
   decideGateApproval,
+  DEFAULT_SIGNERS_PATH,
+  gateSealRefusal,
   gateSignersAt,
   identityGatesAt,
   parseAppliedGateLines,
@@ -52,6 +54,7 @@ import {
   type GateApprovalSource,
   type GateResolutionRecord,
   type GateSigners,
+  type IdentityGate,
   type PendingGateRecord,
 } from "@intentius/chant/gate-decision";
 import { parseGateLedger } from "@intentius/chant/lifecycle/gate-ledger";
@@ -102,7 +105,22 @@ export interface ApprovalRule {
   signers?: { path: string; active: boolean; count: number; problems: string[] };
   /** Something the person should know, such as a base behold could not read. */
   note?: string;
+  /** The gates `identity.gates` in chant.workspace.json at base names, each counting only a sealed approval (from its class, when it names one). */
+  identityGates?: IdentityGate[];
+  /**
+   * Why the mode is inferred: a wave's pending fact does not record the mode
+   * it asked under (chant#3861), and a pipeline's `--approval` flag lives in
+   * its generated CI, so the mode is the one read at base.
+   */
+  inferred?: string;
 }
+
+/** The lane's mode is read at base, never from the wave: what the lane says about it until chant#3861 records it on the pending fact. */
+export const MODE_INFERRED =
+  "the mode is inferred from the config at base: a wave's pending fact does not record the approval mode it asked under (INTENTIUS/chant#3861), and a pipeline's --approval flag in its generated CI can set another";
+
+/** behold checks the seal on an identity.gates gate, not the class it names: gate-decision does not export the class check (INTENTIUS/chant#3862). */
+export const CLASS_UNCHECKED = "behold checks the seal but not the class: chant's class check cannot be read at a base commit yet (INTENTIUS/chant#3862)";
 
 /** What a product's lane is: its op, where its ledger lines are, its gate names, its approve line and its mode at base. */
 export interface GateLaneSpec {
@@ -446,6 +464,12 @@ export interface GateEntry {
   };
   /** The approval the state rests on: the counted one, the spent one a wave applied under, or under `refused` the one for another digest. */
   approval?: LaneApproval;
+  /**
+   * When `identity.gates` at base names this gate: only a sealed approval
+   * counts, from `class` when it names one. `classChecked` is false when it
+   * names a class, which behold cannot check (chant#3862).
+   */
+  identity?: { class: string | null; classChecked: boolean };
   /** Under `refused`: the digest the standing approval is for. */
   refused?: { digest?: string; by: string; at: string };
   /** Approvals of this digest the mode did not count (an unsealed approval under `sealed`), with chant's reason. */
@@ -524,8 +548,36 @@ export function laneApproval(r: GateResolutionRecord): LaneApproval {
 /** What the lane decides one gate by: the mode, under `sealed` the signers at base, and who may override a policy denial. */
 export interface LaneRule {
   mode: GateApprovalSource;
+  /** The signers at base: under `sealed`, and whenever `identity.gates` names a gate. */
   signers?: GateSigners;
+  /** The gates `identity.gates` at base names (chant's `identityGatesAt`). */
+  identityGates?: IdentityGate[];
   overriders?: { principals: string[]; path: string };
+}
+
+/**
+ * chant's `identity.gates` rule for `gate`, as `decideGateApproval`'s
+ * `refuses`: an approval counts only when its seal verifies against the
+ * signers at base (chant's `gateSealRefusal`), whatever the lane's mode.
+ * chant also checks the class the gate names against the role grants at
+ * base; gate-decision does not export that check (INTENTIUS/chant#3862), so
+ * the gate's entry says the class was not checked. Undefined when
+ * `identity.gates` does not name the gate.
+ */
+export function identityRefuses(rule: Pick<LaneRule, "identityGates" | "signers">, gate: string): ((r: GateResolutionRecord) => string | null) | undefined {
+  const named = rule.identityGates?.find((g) => g.gate === gate);
+  if (!named) return undefined;
+  const signers: GateSigners = rule.signers ?? { base: null, signersPath: DEFAULT_SIGNERS_PATH, active: false, signers: [], problems: ["no signers were read at base"] };
+  return (r) => {
+    const why = gateSealRefusal(signers, r);
+    return why === null ? null : `identity.gates.${gate} at base needs a sealed approval: ${why}`;
+  };
+}
+
+/** The entry's `identity` field, for a gate `identity.gates` names. */
+function identityOf(rule: Pick<LaneRule, "identityGates">, gate: string): Pick<GateEntry, "identity"> {
+  const named = rule.identityGates?.find((g) => g.gate === gate);
+  return named ? { identity: { class: named.class, classChecked: named.class === null } } : {};
 }
 
 /**
@@ -541,7 +593,7 @@ export function decideLaneGate(
   rule: LaneRule,
   now: Date,
   spend = true,
-): Pick<GateEntry, "state" | "digest" | "pending" | "approval" | "refused" | "uncounted" | "spent" | "applied"> & { decision?: GateApprovalDecision } {
+): Pick<GateEntry, "state" | "digest" | "pending" | "approval" | "refused" | "uncounted" | "spent" | "applied" | "identity"> & { decision?: GateApprovalDecision } {
   const pending = newest(ledger.pending.filter((p) => p.gate === gate), (p) => p.timestamp);
   const mine = ledger.resolutions.filter((r) => r.gate === gate);
   const digest = pending?.planDigest ?? newest(mine.filter((r) => !pending || t(r.timestamp) >= t(pending.timestamp)), (r) => r.timestamp)?.planDigest ?? newest(mine, (r) => r.timestamp)?.planDigest;
@@ -561,7 +613,8 @@ export function decideLaneGate(
         },
       }
     : {};
-  const base = { ...(digest ? { digest } : {}), ...pendingOut };
+  const base = { ...(digest ? { digest } : {}), ...pendingOut, ...identityOf(rule, gate) };
+  const refuses = identityRefuses(rule, gate);
   if (!digest) {
     // A gate with no digest on any line binds no plan; the lane shows it waiting, as chant would never pass it.
     return { state: pending && t(pending.expiresAt) <= now.getTime() ? "expired" : "waiting", ...base };
@@ -572,6 +625,7 @@ export function decideLaneGate(
     planDigest: digest,
     mode: rule.mode,
     ...(rule.signers ? { signers: rule.signers } : {}),
+    ...(refuses ? { refuses } : {}),
     now: now.toISOString(),
     spend,
   });
@@ -774,12 +828,14 @@ export function heldWaves(
       if (!m || m[2] !== spec.op) continue;
       const wave = Number(m[1]);
       if (p.planDigest) {
+        const refuses = identityRefuses(rule, p.gate);
         const d = decideGateApproval({
           ledger: { pending: l.pending, resolutions: l.resolutions, applied: [] },
           gate: p.gate,
           planDigest: p.planDigest,
           mode,
           ...(rule.signers ? { signers: rule.signers } : {}),
+          ...(refuses ? { refuses } : {}),
           now: now.toISOString(),
         });
         if (d.status === "approved") continue;
@@ -824,23 +880,27 @@ export async function approvalRuleAt(
 ): Promise<{ rule: ApprovalRule; lane: LaneRule }> {
   if (!base) {
     const m = await spec.approvalMode(async () => undefined, 0);
-    return { rule: { ...m, note: [m.note, "behold could not read the default branch at base, so the mode is the default and no seal is checked"].filter(Boolean).join("; ") }, lane: { mode: m.mode } };
+    return { rule: { ...m, inferred: MODE_INFERRED, note: [m.note, "behold could not read the default branch at base, so the mode is the default and no seal is checked"].filter(Boolean).join("; ") }, lane: { mode: m.mode } };
   }
-  let identity = 0;
+  let identityGates: IdentityGate[] = [];
   let note: string | undefined;
   try {
-    identity = identityGatesAt(repo, base).length;
+    identityGates = identityGatesAt(repo, base);
   } catch (e) {
     note = e instanceof Error ? e.message : String(e);
   }
-  const m = await spec.approvalMode(show, identity);
+  const m = await spec.approvalMode(show, identityGates.length);
   const overriders = await (spec.overriders ?? chantOverriders)(show);
-  const notes = [m.note, note].filter(Boolean).join("; ");
-  if (m.mode !== "sealed") return { rule: { ...m, base, ...(notes ? { note: notes } : {}) }, lane: { mode: m.mode, overriders } };
+  const classes = identityGates.filter((g) => g.class !== null);
+  const classNote = classes.length ? `identity.gates names a class for ${classes.map((g) => `${g.gate} (${g.class})`).join(", ")}; ${CLASS_UNCHECKED}` : undefined;
+  const notes = [m.note, note, classNote].filter(Boolean).join("; ");
+  const ids = identityGates.length ? { identityGates } : {};
+  if (m.mode !== "sealed" && !identityGates.length) return { rule: { ...m, base, inferred: MODE_INFERRED, ...(notes ? { note: notes } : {}) }, lane: { mode: m.mode, overriders } };
+  // Sealed, or a gate identity.gates names: seals are checked against the signers at base.
   const signers = gateSignersAt(repo, base);
   return {
-    rule: { ...m, base, signers: { path: signers.signersPath, active: signers.active, count: signers.signers.length, problems: signers.problems }, ...(notes ? { note: notes } : {}) },
-    lane: { mode: m.mode, signers, overriders },
+    rule: { ...m, base, inferred: MODE_INFERRED, signers: { path: signers.signersPath, active: signers.active, count: signers.signers.length, problems: signers.problems }, ...ids, ...(notes ? { note: notes } : {}) },
+    lane: { mode: m.mode, signers, overriders, ...ids },
   };
 }
 
