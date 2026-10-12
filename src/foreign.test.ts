@@ -40,6 +40,18 @@ describe("dropForeignDeclarations (chant#2058)", () => {
     ]);
   });
 
+  it("drops a dangling reference whose holder was dropped (#552)", () => {
+    const withDangling: GraphIR = {
+      ...ir,
+      dangling: [
+        { from: "assets", kind: "needs", path: "needs", value: "lint" },
+        { from: "apply", kind: "calls", path: "uses", value: "acme/shared/.github/workflows/ship.yml@v1" },
+      ],
+    };
+    expect(dropForeignDeclarations(withDangling, "/repo/app").dangling).toEqual([{ from: "assets", kind: "needs", path: "needs", value: "lint" }]);
+    expect(dropForeignDeclarations(ir, "/repo/app").dangling).toBeUndefined();
+  });
+
   it("keeps an Op declared inside the project, relative paths, and nodes with no source location", () => {
     const out = dropForeignDeclarations(ir, "/repo/app");
     expect(out.nodes.some((n) => n.id === "ownOp")).toBe(true);
