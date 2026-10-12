@@ -112,7 +112,7 @@ export interface ApprovalRule {
    * it asked under (chant#3861), and a pipeline's `--approval` flag lives in
    * its generated CI, so the mode is the one read at base.
    */
-  inferred: string;
+  inferred?: string;
 }
 
 /** The lane's mode is read at base, never from the wave: what the lane says about it until chant#3861 records it on the pending fact. */
