@@ -17,6 +17,14 @@
  * gate shows `npx yodel approve <env> --plan <digest>`, which approves either
  * kind; behold never runs it. Nothing here writes: the reads share one fetch
  * into behold's own cache, as the terragucci lane's do.
+ *
+ * #537: a project that is a chant workspace member keeps all of these under
+ * `_members/<member>/` on the branch (chant's `resolveMemberLedger`, see
+ * src/member-ledger.ts), and its `yodel-waves.json` at base is read in its
+ * own directory. When the waves name different approval modes, each wave is
+ * decided under its own. Under `pr-review` the heads a pull request's
+ * pipeline recorded plans for (`_wave-plans/yodel-apply/<head>.json`) are
+ * matched to a waiting wave's digest.
  */
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -37,9 +45,13 @@ import {
   type LifecycleOptions,
 } from "./terragucci-lifecycle.ts";
 import { WAVES_SPEC_FILE } from "./lifecycle-releases.ts";
+import { memberNote, projectLedger, type ProjectLedger } from "./member-ledger.ts";
 
 /** The apply pipeline's op (sql-yodeler src/waves/record.ts WAVES_PIPELINE). */
 export const YODEL_APPLY_OP = "yodel-apply";
+
+/** Where the pull request job records each head's plans (chant's `headPlansPath(YODEL_APPLY_OP, head)`). */
+export const YODEL_HEAD_PLANS_DIR = `_wave-plans/${YODEL_APPLY_OP}`;
 
 /** One wave of `yodel-waves.json`, the parts read here. */
 export interface YodelWave {
@@ -87,7 +99,8 @@ export function parseYodelWaves(text: string, path = WAVES_SPEC_FILE): YodelWave
       targets: targets.length ? targets : [x.name],
       ops: ops.length ? ops : [`migrate-${x.name}`],
       ...(typeof x.gate === "string" ? { gate: x.gate } : {}),
-      ...(x.approval === "ledger" || x.approval === "pr-review" || x.approval === "sealed" ? { approval: x.approval } : {}),
+      // chant reads a mode it does not know as sealed, the strictest (op-waves-run's rule at base).
+      ...(x.approval === "ledger" || x.approval === "pr-review" || x.approval === "sealed" ? { approval: x.approval } : x.approval !== undefined ? { approval: "sealed" as const } : {}),
     });
   });
   return { path, waves };
@@ -124,46 +137,58 @@ export function yodelApproveCommand(env: string, digest: string | undefined, mod
 }
 
 /**
- * The mode at base for the apply pipeline: `yodel-waves.json` at base, when
- * every wave there names the same approval; with waves that differ, chant's
- * own rule, and a note naming each wave's. `yodel.config.ts` is TypeScript,
+ * The mode at base for the apply pipeline, from `yodel-waves.json` at base
+ * (in the project's directory `dir` of its repository). When every wave names
+ * the same approval, that is the lane's mode. When they differ (#537), the
+ * lane's mode is chant's own rule and each wave is decided under its own: a
+ * wave's `approval`, else chant's rule. `yodel.config.ts` is TypeScript,
  * which behold does not run.
  */
-export async function yodelApprovalMode(show: (path: string) => Promise<string | undefined>, identityGates: number): Promise<Omit<ApprovalRule, "base" | "signers">> {
-  const text = await show(WAVES_SPEC_FILE);
-  const chant = await chantApprovalMode(show, identityGates);
-  if (text === undefined) return chant;
-  const spec = parseYodelWaves(text);
-  if (spec.error || !spec.waves.length) return { ...chant, note: `${WAVES_SPEC_FILE} at base could not be read: ${spec.error ?? "no waves"}` };
-  const modes = new Set(spec.waves.map((w) => w.approval ?? "ledger"));
-  if (modes.size === 1) {
-    const mode = [...modes][0]!;
-    // ledger in the spec is the absence of a key: chant's identity.gates may still seal it.
-    if (mode === "ledger") return chant;
-    return { mode, source: `approval: ${mode} on every wave in ${WAVES_SPEC_FILE} at base` };
-  }
-  return { ...chant, note: `the waves in ${WAVES_SPEC_FILE} at base differ in approval (${spec.waves.map((w) => `${w.env}: ${w.approval ?? "ledger"}`).join(", ")}); each wave's line is decided under ${chant.mode}` };
+export function yodelApprovalMode(dir = ""): (show: (path: string) => Promise<string | undefined>, identityGates: number) => Promise<Omit<ApprovalRule, "base" | "signers">> {
+  return async (show, identityGates) => {
+    const path = `${dir}${WAVES_SPEC_FILE}`;
+    const text = await show(path);
+    const chant = await chantApprovalMode(show, identityGates);
+    if (text === undefined) return chant;
+    const spec = parseYodelWaves(text, path);
+    if (spec.error || !spec.waves.length) return { ...chant, note: `${path} at base could not be read: ${spec.error ?? "no waves"}` };
+    const modes = new Set(spec.waves.map((w) => w.approval ?? "ledger"));
+    if (modes.size === 1) {
+      const mode = [...modes][0]!;
+      // ledger in the spec is the absence of a key: chant's identity.gates may still seal it.
+      if (mode === "ledger") return chant;
+      return { mode, source: `approval: ${mode} on every wave in ${path} at base` };
+    }
+    return {
+      ...chant,
+      source: `each wave's approval in ${path} at base; a wave that names none takes ${chant.source}`,
+      waves: spec.waves.map((w) => ({ wave: w.k, name: w.env, mode: w.approval ?? chant.mode })),
+    };
+  };
 }
 
 /** The lane for the apply pipeline's waves: `yodel-apply-wave-<k>`, approved with `npx yodel approve <env>`. */
-export function yodelApplyLane(waves: readonly YodelWave[]): GateLaneSpec {
+export function yodelApplyLane(waves: readonly YodelWave[], ledger: Pick<ProjectLedger, "prefix" | "dir"> = { prefix: "", dir: "" }): GateLaneSpec {
   const envOf = (k: number | undefined): string | undefined => (k === undefined ? undefined : waves.find((w) => w.k === k)?.env);
   return opWavesLane(YODEL_APPLY_OP, {
     approveCommand: (gate, digest, mode, at) => {
       const env = envOf(at?.wave ?? waveOfGate(gate));
       return env ? yodelApproveCommand(env, digest, mode) : `chant approve ${at?.op ?? YODEL_APPLY_OP} ${gate}${digest ? ` --plan ${digest}` : ""}${mode === "sealed" ? " --sign" : ""}`;
     },
-    approvalMode: yodelApprovalMode,
+    approvalMode: yodelApprovalMode(ledger.dir),
+    headPlansDir: YODEL_HEAD_PLANS_DIR,
+    ...(ledger.prefix ? { ledgerPrefix: ledger.prefix } : {}),
   });
 }
 
 /** The lane for one environment's migrations op: its one gate `approve-migrate-<env>`, drawn as wave 1 of that op. */
-export function migrateOpLane(env: string): GateLaneSpec {
+export function migrateOpLane(env: string, ledgerPrefix = ""): GateLaneSpec {
   const gate = `approve-migrate-${env}`;
   return opWavesLane(`migrate-${env}`, {
     waveOf: (g) => (g === gate ? 1 : undefined),
     gateOf: () => gate,
     approveCommand: (_g, digest, mode) => yodelApproveCommand(env, digest, mode),
+    ...(ledgerPrefix ? { ledgerPrefix } : {}),
   });
 }
 
@@ -185,6 +210,8 @@ export interface SqlYodelerLaneAnswer extends Omit<LifecycleAnswer, "gates" | "l
   environments: YodelEnvironment[];
   /** Waves on the ledger that `yodel-waves.json` does not name. */
   unplaced: YodelGate[];
+  /** Set when the project is a workspace member (its records under `_members/<member>/`), or chant could not place it. */
+  member?: { members: string[]; prefix: string; error?: string };
 }
 
 /** One git run per distinct argument list in a read: the several specs share one fetch and one set of reads. */
@@ -245,10 +272,13 @@ export async function readSqlYodelerLane(checkout: string, opts: Omit<LifecycleO
   const opEnvs = migrateOpEnvironments(checkout);
   const envs = [...new Set([...(waves?.waves ?? []).flatMap((w) => w.ops.map((o) => o.replace(/^migrate-/, ""))), ...opEnvs])];
   const o = { ...opts, git };
-  const apply = await readLifecycle(checkout, { ...o, spec: yodelApplyLane(waves?.waves ?? []) });
+  const ledger = await projectLedger(checkout, git);
+  const apply = await readLifecycle(checkout, { ...o, spec: yodelApplyLane(waves?.waves ?? [], ledger) });
   const migrate: { env: string; answer: LifecycleAnswer }[] = [];
-  for (const env of envs) migrate.push({ env, answer: await readLifecycle(checkout, { ...o, spec: migrateOpLane(env) }) });
-  return sqlYodelerLane(apply, migrate, waves, opEnvs);
+  for (const env of envs) migrate.push({ env, answer: await readLifecycle(checkout, { ...o, spec: migrateOpLane(env, ledger.prefix) }) });
+  const lane = sqlYodelerLane(apply, migrate, waves, opEnvs);
+  if (!ledger.members.length && !ledger.error) return lane;
+  return { ...lane, member: { members: ledger.members, prefix: ledger.prefix, ...(ledger.error ? { error: ledger.error } : {}) }, note: `${lane.note} ${memberNote(ledger)}` };
 }
 
 /** How long a read is reused by the route. */

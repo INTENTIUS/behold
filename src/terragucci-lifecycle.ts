@@ -71,6 +71,7 @@ import {
   type AppliedOverrideRecord,
 } from "@intentius/chant/override-gate";
 import { samePlanDigest } from "@intentius/chant/lifecycle/plan-digest";
+import type { HeadPlans } from "@intentius/chant/op/gate-review";
 import { parseYAML } from "@intentius/chant/yaml";
 import { assertScratch } from "./scratch.ts";
 import { TERRAGUCCI_CONFIG_NAMES } from "./terragucci-repo.ts";
@@ -101,8 +102,13 @@ export interface ApprovalRule {
   source: string;
   /** The commit it was read at, when one could be read. */
   base?: string;
-  /** Under `sealed`: the signers path at base, whether it exists, and any problem reading it. */
+  /** Under `sealed` (the lane's or any wave's): the signers path at base, whether it exists, and any problem reading it. */
   signers?: { path: string; active: boolean; count: number; problems: string[] };
+  /**
+   * Each wave's own mode, when the waves at base name different ones (#537).
+   * A wave listed here is decided under its mode; any other under `mode`.
+   */
+  waves?: { wave: number; name?: string; mode: GateApprovalSource }[];
   /** Something the person should know, such as a base behold could not read. */
   note?: string;
   /** The gates `identity.gates` in chant.workspace.json at base names, each counting only a sealed approval (from its class, when it names one). */
@@ -157,6 +163,18 @@ export interface GateLaneSpec {
   locksPath?: string;
   /** Where waiting waves keep their reports, `<dir>/wave-<k>/<digest>.json`, for a product that keeps them. */
   recordsDir?: string;
+  /**
+   * Where `chant run wave --record-plans` keeps each pull request head's
+   * plans, `<dir>/<head>.json` (chant's `headPlansPath`: `_wave-plans/<op>`),
+   * read for a `pr-review` wave (#537).
+   */
+  headPlansDir?: string;
+  /**
+   * The project's ledger on the branch: `""`, or `_members/<member>/` per
+   * level for a workspace member (chant's `resolveMemberLedger`, #537). Every
+   * branch path above is read under it.
+   */
+  ledgerPrefix?: string;
 }
 
 /** A lane spec for `op` with chant's paths: `_gates/<op>.jsonl` and `_gates/<op>/applied.jsonl`. */
@@ -485,6 +503,16 @@ export interface GateEntry {
   heldOn?: { op: string; gate: string; digest?: string; since: string; hook?: string; description?: string; url?: string; answer?: { point: string; id: string; path?: string } };
   /** The line a person runs, when the gate waits or the wave is held: an approval, or a decision point's answer. behold never runs it. */
   command?: string;
+  /** The mode this wave is decided under, when it is its own and not the lane's (#537). */
+  mode?: GateApprovalSource;
+  /**
+   * Under `pr-review`, for a gate not yet approved: the pull request heads
+   * whose recorded plans (`_wave-plans/<op>/<head>.json`) name this wave's
+   * digest. An approving review of the merged pull request at one of these
+   * heads, by a writer other than its author, approves the wave when it runs
+   * again; behold cannot see the review itself.
+   */
+  headPlans?: { head: string; timestamp: string; path: string }[];
   source: LifecycleSource;
 }
 
@@ -548,6 +576,8 @@ export function laneApproval(r: GateResolutionRecord): LaneApproval {
 /** What the lane decides one gate by: the mode, under `sealed` the signers at base, and who may override a policy denial. */
 export interface LaneRule {
   mode: GateApprovalSource;
+  /** Each wave's own mode, when it differs from the lane's (#537). */
+  waves?: Record<number, GateApprovalSource>;
   /** The signers at base: under `sealed`, and whenever `identity.gates` names a gate. */
   signers?: GateSigners;
   /** The gates `identity.gates` at base names (chant's `identityGatesAt`). */
@@ -685,6 +715,12 @@ function waitingCommand(spec: Pick<GateLaneSpec, "approveCommand">, op: string, 
   return d.pending?.answer ? pointAnswerCommand(d.pending.answer.id) : spec.approveCommand(gate, d.digest, mode, { op, wave });
 }
 
+/** The rule wave `k` is decided by: the lane's, under the wave's own mode when it names one (#537). */
+export function waveRule(rule: LaneRule, wave: number): LaneRule {
+  const mode = rule.waves?.[wave];
+  return mode && mode !== rule.mode ? { ...rule, mode } : rule;
+}
+
 /** Each wave's gate, decided by chant's gate-decision under `rule`, with the waves the policy refused or a hook holds (#521). */
 export function gateEntries(
   ledger: GateLedger,
@@ -700,14 +736,16 @@ export function gateEntries(
   const recordsOf = (wave: number) => records.filter((r) => r.wave === wave).map(({ digest: dg, path }) => ({ digest: dg, path }));
   for (const [gate, op] of gates) {
     const wave = spec.waveOf(gate)!;
-    const { decision: _d, ...d } = decideLaneGate(ledger, gate, rule, now, spec.spend);
+    const r = waveRule(rule, wave);
+    const { decision: _d, ...d } = decideLaneGate(ledger, gate, r, now, spec.spend);
     out.push({
       gate,
       wave,
       op,
       ...d,
+      ...(r !== rule ? { mode: r.mode } : {}),
       records: recordsOf(wave),
-      ...(d.state === "waiting" ? { command: waitingCommand(spec, op, gate, wave, d, rule.mode) } : {}),
+      ...(d.state === "waiting" ? { command: waitingCommand(spec, op, gate, wave, d, r.mode) } : {}),
       source,
     });
   }
@@ -763,11 +801,12 @@ export function policyRefusals(
   const o = ledger.override;
   if (!o) return [];
   const byWave = new Map<number, { at: string; denials: NonNullable<GateEntry["denials"]> }>();
-  const sealed = rule.mode === "sealed";
   for (const d of recordedDenials(o.pending)) {
     const named = d.description ? DENIAL_TEXT.exec(d.description) : null;
     const wave = named ? (named[2] === spec.op ? Number(named[1]) : undefined) : waveOfMember(ledger, d.gate, spec);
     if (wave === undefined || !d.plan) continue;
+    const r = waveRule(rule, wave);
+    const sealed = r.mode === "sealed";
     const verdict = decideOverride({
       ledger: { pending: o.pending, resolutions: o.resolutions },
       applied: o.applied,
@@ -776,7 +815,7 @@ export function policyRefusals(
       rules: d.rules,
       overriders: rule.overriders?.principals ?? [],
       ...(rule.overriders ? { overridersPath: rule.overriders.path } : {}),
-      mode: rule.mode,
+      mode: r.mode,
       ...(rule.signers ? { signers: rule.signers } : {}),
       now: now.toISOString(),
     });
@@ -816,7 +855,6 @@ export function heldWaves(
 ): { wave: number; heldOn: NonNullable<GateEntry["heldOn"]>; command: string }[] {
   const out = new Map<number, { wave: number; heldOn: NonNullable<GateEntry["heldOn"]>; command: string }>();
   const ledgers = [{ op: spec.op, pending: ledger.pending, resolutions: ledger.resolutions }, ...(ledger.others ?? [])];
-  const mode: GateApprovalSource = rule.mode === "sealed" ? "sealed" : "ledger";
   for (const l of ledgers) {
     const newestByGate = new Map<string, PendingGateRecord>();
     for (const p of l.pending) {
@@ -827,6 +865,7 @@ export function heldWaves(
       const m = p.description ? HELD_TEXT.exec(p.description) : null;
       if (!m || m[2] !== spec.op) continue;
       const wave = Number(m[1]);
+      const mode: GateApprovalSource = waveRule(rule, wave).mode === "sealed" ? "sealed" : "ledger";
       if (p.planDigest) {
         const refuses = identityRefuses(rule, p.gate);
         const d = decideGateApproval({
@@ -857,6 +896,38 @@ export function heldWaves(
     }
   }
   return [...out.values()];
+}
+
+/** How many head plans records a read takes, newest first: one per pull request head piles up over time. */
+export const HEAD_PLANS_READ = 50;
+
+/** A `_wave-plans/<op>/<head>.json` record as `chant run wave --record-plans` writes it (chant's `HeadPlans`), or undefined. */
+export function parseHeadPlans(text: string): HeadPlans | undefined {
+  let doc: unknown;
+  try {
+    doc = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  const d = doc as Partial<HeadPlans> | null;
+  if (!d || typeof d !== "object" || d.version !== 1 || typeof d.head !== "string" || typeof d.name !== "string" || !Array.isArray(d.waves)) return undefined;
+  const waves = d.waves.filter((w): w is HeadPlans["waves"][number] => !!w && typeof w.wave === "number" && typeof w.digest === "string");
+  return { version: 1, name: d.name, head: d.head, timestamp: typeof d.timestamp === "string" ? d.timestamp : "", waves };
+}
+
+/**
+ * Each `pr-review` gate that is not approved or applied gets the heads whose
+ * recorded plans name its wave's digest, newest first. Pure.
+ */
+export function withHeadPlans(gates: GateEntry[], records: { path: string; plans: HeadPlans }[], rule: LaneRule): GateEntry[] {
+  return gates.map((g) => {
+    if (waveRule(rule, g.wave).mode !== "pr-review" || !g.digest || ["approved", "applied", "failed"].includes(g.state)) return g;
+    const heads = records
+      .filter((r) => r.plans.waves.some((w) => w.wave === g.wave && samePlanDigest(w.digest, g.digest!)))
+      .map((r) => ({ head: r.plans.head, timestamp: r.plans.timestamp, path: r.path }))
+      .sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1));
+    return heads.length ? { ...g, headPlans: heads } : g;
+  });
 }
 
 /** `<recordsDir>/wave-<k>/<digest>.json` paths, as `git ls-tree` names them, back to their wave and digest. */
@@ -895,12 +966,14 @@ export async function approvalRuleAt(
   const classNote = classes.length ? `identity.gates names a class for ${classes.map((g) => `${g.gate} (${g.class})`).join(", ")}; ${CLASS_UNCHECKED}` : undefined;
   const notes = [m.note, note, classNote].filter(Boolean).join("; ");
   const ids = identityGates.length ? { identityGates } : {};
-  if (m.mode !== "sealed" && !identityGates.length) return { rule: { ...m, base, inferred: MODE_INFERRED, ...(notes ? { note: notes } : {}) }, lane: { mode: m.mode, overriders } };
-  // Sealed, or a gate identity.gates names: seals are checked against the signers at base.
+  // #537: a wave whose mode is its own is decided under it.
+  const waves = m.waves?.length ? { waves: Object.fromEntries(m.waves.map((w) => [w.wave, w.mode])) as Record<number, GateApprovalSource> } : {};
+  if (m.mode !== "sealed" && !m.waves?.some((w) => w.mode === "sealed") && !identityGates.length) return { rule: { ...m, base, inferred: MODE_INFERRED, ...(notes ? { note: notes } : {}) }, lane: { mode: m.mode, overriders, ...waves } };
+  // Sealed (the lane's mode or a wave's), or a gate identity.gates names: seals are checked against the signers at base.
   const signers = gateSignersAt(repo, base);
   return {
     rule: { ...m, base, inferred: MODE_INFERRED, signers: { path: signers.signersPath, active: signers.active, count: signers.signers.length, problems: signers.problems }, ...ids, ...(notes ? { note: notes } : {}) },
-    lane: { mode: m.mode, signers, overriders, ...ids },
+    lane: { mode: m.mode, signers, overriders, ...ids, ...waves },
   };
 }
 
@@ -1011,24 +1084,41 @@ async function readAt(
     const [c, at] = r.code === 0 && r.stdout.trim() ? (r.stdout.trim().split("\0") as [string, string]) : [sha, committed];
     return { branch: LIFECYCLE_BRANCH, commit: c, committed: at, path: paths.join(" ") };
   };
+  // #537: a workspace member's ledger sits under `_members/<member>/`; every path is read there.
+  const at = (path: string): string => `${spec.ledgerPrefix ?? ""}${path}`;
   const [ledgerText, appliedText, locksText, tree, gatesDir, rule] = await Promise.all([
-    show(spec.ledgerPath),
-    show(spec.appliedPath),
-    spec.locksPath ? show(spec.locksPath) : Promise.resolve(""),
-    spec.recordsDir ? git([...repo, "ls-tree", "-r", "--name-only", sha, "--", `${spec.recordsDir}/`]) : Promise.resolve({ code: 1, stdout: "", stderr: "" }),
-    git([...repo, "ls-tree", "--name-only", sha, "--", "_gates/"]),
+    show(at(spec.ledgerPath)),
+    show(at(spec.appliedPath)),
+    spec.locksPath ? show(at(spec.locksPath)) : Promise.resolve(""),
+    spec.recordsDir ? git([...repo, "ls-tree", "-r", "--name-only", sha, "--", `${at(spec.recordsDir)}/`]) : Promise.resolve({ code: 1, stdout: "", stderr: "" }),
+    git([...repo, "ls-tree", "--name-only", sha, "--", at("_gates/")]),
     approvalRuleAt(spec, dir, base, (path) => showAt(base!, path)),
   ]);
   // #521: the other ops' ledgers, for a wave held on another gate, and the override ledger, for a wave the policy refused.
-  const otherPaths = (gatesDir.code === 0 ? lines(gatesDir.stdout) : []).filter((p) => /^_gates\/[^/]+\.jsonl$/.test(p) && p !== spec.ledgerPath);
-  const otherTexts = await Promise.all(otherPaths.map((p) => show(p)));
-  const overrideApplied = otherPaths.includes(OVERRIDE_LEDGER) ? await show(OVERRIDE_APPLIED) : "";
+  const otherPaths = (gatesDir.code === 0 ? lines(gatesDir.stdout) : [])
+    .filter((p) => p.startsWith(at("")))
+    .map((p) => p.slice(at("").length))
+    .filter((p) => /^_gates\/[^/]+\.jsonl$/.test(p) && p !== spec.ledgerPath);
+  const otherTexts = await Promise.all(otherPaths.map((p) => show(at(p))));
+  const overrideApplied = otherPaths.includes(OVERRIDE_LEDGER) ? await show(at(OVERRIDE_APPLIED)) : "";
   const ledger = readGateLedgerText(ledgerText, appliedText, { ledgers: Object.fromEntries(otherPaths.map((p, i) => [p, otherTexts[i]!])), overrideApplied });
-  const records = spec.recordsDir ? waveRecords(tree.code === 0 ? lines(tree.stdout) : [], spec.recordsDir) : [];
+  const records = spec.recordsDir ? waveRecords(tree.code === 0 ? lines(tree.stdout) : [], at(spec.recordsDir)) : [];
   const any = ledger.pending.length || ledger.resolutions.length || ledger.applied.length || ledger.override?.pending.length || ledger.others?.some((o) => o.pending.length);
-  const gates = any ? gateEntries(ledger, records, await changed(spec.ledgerPath, spec.appliedPath, ...otherPaths), now, rule.lane, spec) : [];
+  let gates = any ? gateEntries(ledger, records, await changed(at(spec.ledgerPath), at(spec.appliedPath), ...otherPaths.map(at)), now, rule.lane, spec) : [];
+  // #537: under `pr-review`, the heads whose recorded plans name a waiting wave's digest.
+  if (spec.headPlansDir && gates.some((g) => waveRule(rule.lane, g.wave).mode === "pr-review")) {
+    const dirPath = at(spec.headPlansDir);
+    const log = await git([...repo, "log", "--format=", "--name-only", sha, "--", `${dirPath}/`]);
+    const paths = [...new Set(log.code === 0 ? lines(log.stdout) : [])].filter((p) => p.startsWith(`${dirPath}/`) && p.endsWith(".json")).slice(0, HEAD_PLANS_READ);
+    const texts = await Promise.all(paths.map((p) => showAt(sha, p)));
+    const plans = paths.flatMap((path, i) => {
+      const parsed = texts[i] === undefined ? undefined : parseHeadPlans(texts[i]!);
+      return parsed ? [{ path, plans: parsed }] : [];
+    });
+    gates = withHeadPlans(gates, plans, rule.lane);
+  }
   const lockMap = parseLocks(locksText);
-  const lockSource = Object.keys(lockMap).length && spec.locksPath ? await changed(spec.locksPath) : undefined;
+  const lockSource = Object.keys(lockMap).length && spec.locksPath ? await changed(at(spec.locksPath)) : undefined;
   const locks = Object.entries(lockMap)
     .sort(([a], [b]) => (a < b ? -1 : 1))
     .map(([root, l]) => ({ root, ...l, source: lockSource! }));

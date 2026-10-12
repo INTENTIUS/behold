@@ -26,7 +26,8 @@ export function yodelLegend(answer, now = new Date()) {
   const lg = laneLegend(answer, now);
   if (!answer || answer.error) return lg;
   const order = answer.order && answer.order.source === "yodel-waves.json" ? "environments in yodel-waves.json's order" : answer.order && answer.order.source === "ops" ? "environments from ops/migrate-<env>.op.ts (no yodel-waves.json)" : "no environments declared";
-  return { ...lg, text: `${lg.text} · ${order}`, title: [lg.title, answer.order && answer.order.error ? `yodel-waves.json: ${answer.order.error}` : ""].filter(Boolean).join("\n") };
+  const member = answer.member && answer.member.members.length ? ` · workspace member ${answer.member.members.join(" / ")}, read under ${answer.member.prefix}` : "";
+  return { ...lg, text: `${lg.text} · ${order}${member}`, title: [lg.title, answer.order && answer.order.error ? `yodel-waves.json: ${answer.order.error}` : "", answer.member && answer.member.error ? answer.member.error : ""].filter(Boolean).join("\n") };
 }
 
 /** One gate as a card: title, facts, source, and the line to copy when it waits. Pure. */
@@ -42,6 +43,11 @@ export function yodelGateCard(env, g, now = new Date()) {
   if (g.digest) facts.push(`plan ${short(g.digest)}`);
   for (const u of g.uncounted || []) facts.push(`${u.approval.by}'s approval does not count: ${u.reason}`);
   if (g.heldOn) facts.push(`held on ${g.heldOn.op}/${g.heldOn.gate}`);
+  if (g.mode) facts.push(`decided under this wave's approval: ${g.mode}`);
+  if ((g.headPlans || []).length) {
+    const h = g.headPlans[0];
+    facts.push(`pull request head ${h.head.slice(0, 12)} recorded this plan ${clock(h.timestamp, now)}, ${ago(h.timestamp, now)} (${h.path}): a writer's approving review of that head, merged, approves it${g.headPlans.length > 1 ? `; ${g.headPlans.length - 1} more head${g.headPlans.length > 2 ? "s" : ""} recorded it too` : ""}`);
+  }
   return {
     env,
     kind: g.kind,

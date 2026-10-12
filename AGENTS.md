@@ -328,7 +328,12 @@ where `@intentius/chant-lexicon-sql` does not resolve).
 
 - `opWavesLane("yodel-apply")` for the apply pipeline's
   `yodel-apply-wave-<k>` gates, with the mode at base from `yodel-waves.json`
-  when every wave names the same `approval`, else chant's rule and a note.
+  when every wave names the same `approval`. When they differ (#537) the
+  rule carries `waves[]` and each wave is decided under its own mode
+  (`waveRule`; a gate decided so carries `mode`). Under `pr-review` a gate not
+  yet approved carries `headPlans[]`: the heads whose
+  `_wave-plans/yodel-apply/<head>.json` (chant's HeadPlans, newest 50 read)
+  name its digest.
 - `migrateOpLane(env)` for each `migrate-<env>` op that `ops/` or
   `yodel-waves.json` names: its one gate `approve-migrate-<env>`, drawn as
   wave 1 of that op.
@@ -342,6 +347,15 @@ of #520/#521). A waiting gate carries `npx yodel approve <env> --plan
 `unplaced`. A served directory that is not SQL Yodeler gets 404 with
 `code: "sql-yodeler"`. The page's Pipeline tab (`web/sql-yodeler-lane.js`)
 draws it, with `/api/lifecycle/history` (#522) below. Reads are reused 30s.
+
+A SQL Yodeler project that is a chant workspace member (#537) keeps its
+records under `_members/<member>/` on `chant/lifecycle`. src/member-ledger.ts
+asks chant's `resolveMemberLedger` (`@intentius/chant/lifecycle/member-ledger`)
+for the prefix; the lane passes it as `GateLaneSpec.ledgerPrefix`, which
+`readLifecycle` puts before every branch path, and `/api/lifecycle/releases`
+lists and reads the environments under it. Both answers then carry
+`member: { members, prefix, error? }`, and `yodel-waves.json` at base is read
+in the project's own directory.
 
 ## Getting a server
 

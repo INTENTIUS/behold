@@ -36,6 +36,22 @@ npx yodel approve prod --plan <digest>
 ```
 
 Copy it and run it yourself; behold has no approve button for SQL Yodeler.
+
+When the waves in `yodel-waves.json` at the base commit name different
+approval modes (say `pr-review` for staging and `sealed` for prod), each
+wave is decided under its own mode and its card says which. A wave that
+names none takes chant's rule. Under `pr-review`, a waiting wave also lists
+the pull request heads whose recorded plans
+(`_wave-plans/yodel-apply/<head>.json`) name its digest: a writer's
+approving review of that head, once merged, approves it when the wave runs
+again. behold does not read the forge, so it cannot say whether that review
+exists.
+
+A project that is a member of a chant workspace keeps all of this under
+`_members/<member>/` on `chant/lifecycle`. behold asks chant which member
+owns the served directory and reads the gates, the head plans and the
+releases there; the legend names the member.
+
 Under the tab, the gate ledgers' history lists every request, approval and
 apply in the order they were committed.
 

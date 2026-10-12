@@ -3,7 +3,8 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { migrateOpLane, parseYodelWaves, readSqlYodelerLane, yodelApproveCommand } from "./sql-yodeler-lane.ts";
+import { migrateOpLane, parseYodelWaves, readSqlYodelerLane, yodelApprovalMode, yodelApproveCommand } from "./sql-yodeler-lane.ts";
+import { parseHeadPlans, waveRule, withHeadPlans } from "./terragucci-lifecycle.ts";
 import { sqlCardFields, sqlIconFor, sqlKindLabel } from "./sql-kinds.ts";
 import { graphIr } from "./chant.ts";
 
@@ -139,5 +140,33 @@ describe("the sql lexicon's kinds (#524)", () => {
     const customers = id("customers");
     expect(orders && customers).toBeTruthy();
     expect(ir.edges.some((e) => e.from === orders && e.to === customers)).toBe(true);
+  });
+});
+
+// #537: waves that name different approval modes are decided per wave, and a
+// pr-review wave shows the heads whose recorded plans name its digest.
+describe("per-wave approval and head plans (#537)", () => {
+  const spec = JSON.stringify({ name: "yodel-apply", waves: [{ name: "dev" }, { name: "staging", approval: "pr-review" }, { name: "prod", approval: "sealed" }] });
+  it("gives each wave its own mode when they differ", async () => {
+    const m = await yodelApprovalMode("db/")(async (p) => (p === "db/yodel-waves.json" ? spec : undefined), 0);
+    expect(m.mode).toBe("ledger");
+    expect(m.waves).toEqual([
+      { wave: 1, name: "dev", mode: "ledger" },
+      { wave: 2, name: "staging", mode: "pr-review" },
+      { wave: 3, name: "prod", mode: "sealed" },
+    ]);
+    expect(waveRule({ mode: "ledger", waves: { 3: "sealed" } }, 3).mode).toBe("sealed");
+    expect(waveRule({ mode: "ledger", waves: { 3: "sealed" } }, 1).mode).toBe("ledger");
+  });
+  it("reads an unknown approval as sealed, as chant does", () => {
+    expect(parseYodelWaves(JSON.stringify({ waves: [{ name: "prod", approval: "two-person" }] })).waves[0]!.approval).toBe("sealed");
+  });
+  it("matches a waiting pr-review wave to the heads that planned its digest", () => {
+    const plans = parseHeadPlans(JSON.stringify({ version: 1, name: "yodel-apply", head: "abc123", timestamp: "2026-10-10T00:00:00Z", waves: [{ wave: 2, name: "staging", digest: D2 }] }))!;
+    const gate = { gate: "yodel-apply-wave-2", wave: 2, op: "yodel-apply", state: "waiting" as const, digest: D2, records: [], source: { branch: "chant/lifecycle" as const, commit: "x", committed: "2026-10-10T00:00:00Z", path: "" } };
+    const path = "_members/db/_wave-plans/yodel-apply/abc123.json";
+    const [g] = withHeadPlans([gate], [{ path, plans }], { mode: "ledger", waves: { 2: "pr-review" } });
+    expect(g!.headPlans).toEqual([{ head: "abc123", timestamp: "2026-10-10T00:00:00Z", path }]);
+    expect(withHeadPlans([gate], [{ path, plans }], { mode: "ledger" })[0]!.headPlans).toBeUndefined();
   });
 });
