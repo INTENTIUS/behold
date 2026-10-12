@@ -9,7 +9,8 @@ apply creds.
 
 - **behold** serves the live, mixed-substrate graph (and, later, the deployment-lanes
   timeline). It reads; every write it offers is a command it starts (an Op, a
-  `chant run`, a forge dispatch), and on a terragucci repo it starts none.
+  `chant run`, a forge dispatch), and on a terragucci or SQL Yodeler repo it
+  starts none.
 - **chant's MCP** is where the real capabilities live. Prefer it over shelling.
   - Reads: `lifecycle-diff`, `lifecycle-snapshot`, `build`, `lint`.
   - Actions (delegated writes): `op-run` (start an `ApplyOp`/`ReconcileOp`),
@@ -88,6 +89,12 @@ and none is the checkout's git remote) adds two reads, in
   report of its wave's other entries (same gate and digest). No
   `audit.jsonl` is `present: false` plus an `absent` sentence, never an
   empty history; a bad line is the `422 terragucci-report` refusal naming it.
+  #523: an S3 403 on an optional read (`audit.jsonl` here, `run.json` for
+  `/api/terragucci/progress` and the estate's run views) is not a refusal:
+  the source throws `TerragucciDenied` (`src/terragucci-source.ts`), and the
+  answer carries `present: false`, `unreadable: true` and an `absent`
+  sentence naming the key and `s3:GetObject` (or `s3:ListBucket`). A 403 on
+  `index.json`, a report or `estate.json` still fails.
   `src/terragucci-timeline.ts` holds the read and the check (terragucci's
   `dist/audit.schema.json` when it resolves, structural otherwise). The SPA
   draws it in the Terragucci tab and, filtered to the card's root, in the
@@ -726,6 +733,20 @@ entry is a registered route. `TERRAGUCCI_REFUSED_WRITES` only words the
 refusal for known routes. The remedy names `npx terragucci approve wave-<k>
 --plan <digest>`, the digest from the wave's gate card.
 
+A SQL Yodeler repo (a `yodel.config.ts` in the served directory or above it,
+up to the git root) is guarded the same way (#517): the same allowlist, the
+same refused routes, auto-sync declined, and `/api/project` carries
+`sqlYodeler` so the page offers no write. The refusal is `409` with `code:
+"sql-yodeler"`, and its remedy names `npx yodel approve <env> --plan <digest>`
+(with `--sign` when the environment's gate is sealed) and `yodel apply <env>`
+in the project's pipeline. `productRepo()` in `src/terragucci-repo.ts` looks
+for terragucci's config along the whole walk first, so a yodel project nested
+inside a terragucci repo is refused as terragucci.
+
+Op discovery (`src/ops.ts`) reads a gate from `signalName: "<name>"` or from
+`gate("<name>", ...)`, the form chant's op builder and SQL Yodeler write, so
+a gated Op is never listed or run as ungated on any repo (#517).
+
 A policy denial is never approved from behold (#519, `src/policy-override.ts`).
 `GET /api/workspace/gates` gives a gate of op `policy-override` an `override`
 field `{subject, rules, plan, digest, state, spentAt, product, command,
@@ -738,9 +759,13 @@ for its digest), and `command` is the product's (`npx terragucci override`,
 --rule <id> --reason "<why>" --plan <digest>`. The card shows that command and
 no button, and `POST /api/workspace/gates/approve` answers such a gate `422`
 with `code: "override"`. These readers mirror chant's `override-gate` field
-names until behold resolves chant 0.124 (#518) and can import it.
+names; moving them onto chant's own `override-gate` export is a follow-up.
 
 ### The exceptions, and their exact size
+
+These are also the only writes a guarded product repo answers: terragucci
+(`terragucci.yml` and its siblings) and SQL Yodeler (`yodel.config.ts`), both
+listed in `TERRAGUCCI_ALLOWED_WRITES`.
 
 `POST /api/layout` (#228) writes **one** file in the served project:
 `.behold/layout.json`, the hand-layout sidecar, `{version, lenses: {<lens>:

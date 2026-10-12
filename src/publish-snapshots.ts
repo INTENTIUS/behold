@@ -139,7 +139,11 @@ export function redirectPage(): string {
   var path = location.pathname;
   var base = /\\/$|\\.html?$/.test(path) ? "" : path.split("/").pop() + "/";
   fetch(base + "latest.json", { cache: "no-cache" })
-    .then(function (r) { if (!r.ok) throw new Error("latest.json: " + r.status); return r.json(); })
+    .then(function (r) {
+      if (r.status === 403) throw new Error("latest.json: 403, not readable here (whatever serves this prefix needs s3:GetObject on latest.json)");
+      if (!r.ok) throw new Error("latest.json: " + r.status);
+      return r.json();
+    })
     .then(function (l) {
       if (!l || typeof l.commit !== "string" || !${COMMIT}.test(l.commit)) throw new Error("latest.json names no commit");
       location.replace(base + l.commit + "/index.html" + location.search + location.hash);
@@ -192,7 +196,10 @@ export async function publishSnapshot(
     const text = await client.get(at("history.json"));
     if (text !== undefined) old = parseHistory(text);
   } catch (e) {
-    const note = e instanceof S3Error && e.status === 403 ? " (S3 answers 403 for a missing object too when the credentials lack s3:ListBucket)" : "";
+    // #523: name the permission. On a first publish there is no history.json, and S3 answers 403 for it without s3:ListBucket.
+    const note = denied(e)
+      ? ` (not readable with these credentials: reading s3://${target.bucket}/${at("history.json")} needs s3:GetObject on it, and on a first publish S3 answers 403 for the missing object unless the credentials also hold s3:ListBucket on ${target.bucket})`
+      : "";
     warnings.push(`the previous history.json could not be read, so it starts again from ${sha} and older commits are left in place: ${message(e)}${note}`);
   }
   const { history, dropped } = nextHistory(old, entry, keep);
