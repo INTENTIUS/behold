@@ -21,6 +21,7 @@ import { initTerragucciEstate } from "./terragucci-estate.js";
 import { auditLines as yrAuditLines, cornerText as yrCorner, datedWords as yrDated, environmentLines as yrEnvLines, joinMarks as yrJoin, legend as yrLegend, markLine as yrMarkLine } from "./yodel-report.js";
 import { cardProgress as tgCardProgress, progressLines as tgProgressLines, progressSection as tgProgressSection, stampProgress as tgStampProgress } from "./terragucci-progress.js";
 import { seconds, whyQuery, whyView } from "./why.js";
+import { edgeLabel, edgeLegend, edgeTitle, isCiKind } from "./edge-kind.js";
 import { readCostLine } from "./read-cost.js";
 import { mountHistoryPicker } from "./history-picker.js";
 import { applyMemberFrame, pendingLine, stillPending } from "./pending.js";
@@ -2833,8 +2834,45 @@ function renderPanelModel() {
       host.appendChild(actButton("→ Scope", () => setPanelTab("scope")));
     }
   }
+  renderEdgeLegend(host, ir);
   renderBehaviourRefusal(host);
   renderBehaviourDiagnostics(host);
+}
+
+// #553: the CI edge kinds this graph draws, each with a stroke drawn by the
+// same rules as the graph's own edges (index.html matches `.edge-swatch` beside
+// `#graph`), so the legend changes with the theme. Nothing on a graph that
+// holds only references.
+function renderEdgeLegend(host, ir) {
+  const rows = edgeLegend(ir.edges || []);
+  if (!rows.length) return;
+  host.appendChild(panelHeading("edges"));
+  for (const r of rows) {
+    const row = document.createElement("div");
+    row.className = "count-row";
+    row.title = r.title;
+    const svg = document.createElementNS(SVGNS, "svg");
+    svg.setAttribute("class", "edge-swatch");
+    svg.setAttribute("viewBox", "0 0 28 10");
+    svg.setAttribute("width", "28");
+    svg.setAttribute("height", "10");
+    const g = document.createElementNS(SVGNS, "g");
+    if (r.kind) g.setAttribute("data-edge-kind", r.kind);
+    if (r.cross) g.setAttribute("data-edge-cross", "true");
+    const line = document.createElementNS(SVGNS, "path");
+    line.setAttribute("class", "pin-edge-line");
+    line.setAttribute("d", "M 1 5 L 27 5");
+    g.appendChild(line);
+    svg.appendChild(g);
+    const name = document.createElement("span");
+    name.className = "grow";
+    name.textContent = r.label;
+    const t = document.createElement("span");
+    t.className = "tag";
+    t.textContent = String(r.count);
+    row.append(svg, name, t);
+    host.appendChild(row);
+  }
 }
 
 /**
@@ -4372,24 +4410,42 @@ async function loadReconcile() {
   }
 }
 
+// #553: pinhole writes the IR edge's `viaAttr` on the chip ("uses",
+// "workflow_run"). A CI edge's chip says its kind instead, with the attribute
+// when it adds something ("calls (uses)"), as chant's Mermaid does. The pill
+// is re-sized around the new text with pinhole's own metrics (5.7 per
+// character plus 14), centred where pinhole centred it.
+function relabelEdgeChip(chip, kind, via) {
+  if (!isCiKind(kind)) return;
+  const text = chip.querySelector("text");
+  const rect = chip.querySelector("rect");
+  const label = edgeLabel({ kind, via });
+  if (!text || !label || text.textContent === label) return;
+  text.textContent = label;
+  if (!rect) return;
+  const cx = Number(text.getAttribute("x"));
+  const w = label.length * 5.7 + 14;
+  if (!Number.isFinite(cx)) return;
+  rect.setAttribute("width", w.toFixed(1));
+  rect.setAttribute("x", (cx - w / 2).toFixed(1));
+}
+
 // Edge hover-highlight (helps trace one edge through an overlapping bundle — see
 // index.html's `.pin-edge-line` rules). pinhole already paints a fat transparent
 // hit-path per edge, so the CSS `:hover` does the visual work; this adds two
 // things CSS can't: raise the hovered edge to the top of the paint order (SVG has
 // no z-index) so it's not buried, and light up every edge touching a hovered node
 // (the `.edge-hi` class) so hovering a card traces all its connections.
-// Human-readable "why does this edge exist" from the IR edge's `viaAttr`
-// (src/logical.ts tags them). Shown as a native SVG <title> tooltip on hover;
-// the value also drives a dashed style for data-dependency links (index.html).
-const EDGE_REASON = {
-  "security-group ingress": "security-group ingress — traffic is allowed here",
-  "data dependency": "data dependency — reads/uses this store",
-};
+// Human-readable "why does this edge exist" from the IR edge's `viaAttr` and,
+// for a CI edge (#553), its `kind` and `crossPipeline` (web/edge-kind.js says
+// them in words). Shown as a native SVG <title> tooltip on hover; the stamped
+// attributes also drive the dashed and per-kind styles (index.html).
 function wireEdgeHighlight(svgEl, ir) {
   const edges = [...svgEl.querySelectorAll("g[data-edge-from]")];
   if (!edges.length) return;
   // Reason per edge, keyed by from|to (and its reverse, since pinhole may paint
-  // an edge in either direction relative to the IR).
+  // an edge in either direction relative to the IR). pinhole stamps
+  // data-edge-via itself; this fills it in where it did not.
   const viaOf = new Map();
   for (const e of ir.edges || []) {
     if (!e.viaAttr) continue;
@@ -4399,10 +4455,13 @@ function wireEdgeHighlight(svgEl, ir) {
   for (const g of edges) {
     const from = g.getAttribute("data-edge-from");
     const to = g.getAttribute("data-edge-to");
-    const via = viaOf.get(`${from}|${to}`);
+    const via = g.getAttribute("data-edge-via") || viaOf.get(`${from}|${to}`);
     if (via) g.setAttribute("data-edge-via", via); // drives the dashed style
+    const kind = g.getAttribute("data-edge-kind") || "ref";
+    const cross = g.getAttribute("data-edge-cross") === "true";
+    if (!g.querySelector("path")) relabelEdgeChip(g, kind, via);
     const title = document.createElementNS(SVGNS, "title");
-    title.textContent = `${from} → ${to}${via ? "\n" + (EDGE_REASON[via] || via) : ""}`;
+    title.textContent = edgeTitle(from, to, { kind, via, cross });
     g.insertBefore(title, g.firstChild);
   }
   const raise = (g) => g.parentNode && g.parentNode.appendChild(g);

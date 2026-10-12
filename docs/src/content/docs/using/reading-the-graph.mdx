@@ -45,6 +45,10 @@ Foreign-owned is shown as a distinct state from drifted. A field the HPA legitim
 An estate that spans providers keeps its edges: a managed cluster declared in your cloud lexicon and the workload running on it render connected, in the live view and not only in the source graph.
 
 
+## CI edges
+
+A GitHub Actions, Forgejo or GitLab project draws its edges by the kind chant gives them (chant 0.124.20 or newer). A `needs` edge is a heavier solid line, `calls` and `triggers` have their own colours, and `includes` and `extends` are dotted. An edge that leaves its own workflow or pipeline, such as a call to a reusable workflow or a `workflow_run` trigger, is dashed. The chip on the edge says the kind, with the attribute when that adds something (`needs (stage)`, `calls (uses)`), as chant's Mermaid output does, and hovering the edge says what the kind means. The Model tab lists the kinds the graph holds, with a count for each.
+
 ## What was deployed, from where
 
 Three cards carry provenance beside their status, so "is this what we meant to deploy" has an answer on the card rather than in a CI log.
