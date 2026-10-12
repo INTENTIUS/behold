@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { laneGateCards, laneLegend, laneLockRows, sourceWords } from "./terragucci-lifecycle.js";
+import { holderWords, laneGateCards, laneLegend, laneLockRows, sourceWords } from "./terragucci-lifecycle.js";
 
 const NOW = new Date("2026-10-09T12:00:00Z");
 const source = { branch: "chant/lifecycle", commit: "1a2b3c4d5e6f7a8b", committed: "2026-10-09T10:00:00Z", path: "_gates/tf-apply.jsonl" };
@@ -73,6 +73,18 @@ describe("the chant/lifecycle lane, dated (#505)", () => {
     expect(c.facts).not.toContain("chant#3862");
     expect(c.facts).toContain("held 10:00 UTC, 2h ago; tf-migrate/move-db waits");
     expect(c.facts).toContain("migrate the orders table first");
+    expect(c.title).toBe("wave 1 held on tf-migrate/move-db");
+  });
+
+  it("names the hook that holds a wave from the fact's heldBy, before its description (chant#3886)", () => {
+    const [one] = lane().gates;
+    const heldOn = { op: "tf-migrate", gate: "move-db", since: "2026-10-09T10:00:00Z", heldBy: { hook: "migrate", moment: "after-plan", target: "vpc" }, description: "migrate the orders table first" };
+    const [c] = laneGateCards(lane({ gates: [{ ...one, state: "held", approval: undefined, heldOn }] }), NOW);
+    expect(c.title).toBe("wave 1 held on tf-migrate/move-db by hook migrate");
+    expect(c.facts).toContain("held by hook migrate at after-plan for vpc");
+    expect(c.facts).not.toContain("migrate the orders table first");
+    expect(holderWords({ ...heldOn, heldBy: { hook: "migrate", moment: "after-plan" } })).toBe("held by hook migrate at after-plan");
+    expect(holderWords({ ...heldOn, heldBy: undefined })).toBe("migrate the orders table first");
   });
 
   it("words a lock with its holder, its age and its source", () => {

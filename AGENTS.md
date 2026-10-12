@@ -127,14 +127,18 @@ and none is the checkout's git remote) adds two reads, in
     applied an override of since. `denials[]` carries each run, its plan and
     rules, and chant's `overrideCommand` line; no approve line. The wave is
     the one the denial's pending fact names (`wave: {number, name, op}`,
-    `factWave`), else, for a fact an older chant wrote, the one whose
-    pending fact lists the run.
+    typed on chant's `PendingGateRecord`, whose parser drops a wave of the
+    wrong shape, chant#3887), else, for a fact an older chant wrote, the one
+    whose pending fact lists the run.
   - `held` (#521): a pending fact on another gate (any `_gates/<op>.jsonl`)
     that names this op's wave (`wave: {number, name, op}`), with no approval
     of its digest that counts under the mode the fact records. `heldOn: {op,
-    gate, digest, since, description}`; `command` approves that gate
-    (`chant approve <op> <gate> --plan`) or answers its decision point. A
-    hold fact that names no wave is not read as a hold.
+    gate, digest, since, heldBy, description}`; `heldBy: {hook, moment,
+    target?}` is the hook that holds the wave (chant#3886), and the card
+    (`holderWords` in `web/terragucci-lifecycle.js`) names it from there,
+    or from `description` for a fact an older chant wrote. `command`
+    approves that gate (`chant approve <op> <gate> --plan`) or answers its
+    decision point. A hold fact that names no wave is not read as a hold.
   Each entry also carries `digest`, `pending` (with `members` and
   `neverOverMcp` when recorded, `description`, `url`, `answer`), `approval`
   (by, at, `signed` when the seal has a signature, via (`review` for chant's
@@ -155,9 +159,13 @@ and none is the checkout's git remote) adds two reads, in
   `identityGateAdmissionAt`, which checks the seal against the signers at
   base and, when the gate names a class, the role grants in
   `.chant/trust.json` at base, whatever the mode; the entry carries
-  `identity: {class}`. That reader loads no pinned package, so a gate whose
-  class only a pinned package supplies refuses every approval, with chant's
-  reason. Under `pr-review`, a spec's `headPlans` (the op-waves spec name)
+  `identity: {class}`. A class a pinned package supplies is read by chant
+  from `./workspace-principals` (chant#3888): a path pin's file at base, a
+  package pin's from the package installed in the served checkout's
+  node_modules (behold passes the checkout as `packages`, since the bare
+  cache has none), at the pinned version. When that package is missing or
+  at another version, a gate naming a domain class or `human` refuses every
+  approval and chant's reason names the pin. Under `pr-review`, a spec's `headPlans` (the op-waves spec name)
   has the newest 50 `_wave-plans/<name>/<head>.json` records read with
   chant's `readHeadPlans` (`@intentius/chant/lifecycle/wave-plans`) through
   `ledgerPort`, a `LedgerReadPort` over the fetched commit. The op, ledger paths, gate names, approve line and

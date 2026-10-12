@@ -42,7 +42,8 @@ approval modes (say `pr-review` for staging and `sealed` for prod), each
 wave is decided under its own mode. A wave's request records the mode it
 asked under, and its card shows it; a request written by an older chant
 records none, and then the card says the mode was read at base. A wave that
-names none takes chant's rule. Under `pr-review`, a waiting wave also lists
+names none takes chant's rule. A wave held on another gate names the
+hook that holds it. Under `pr-review`, a waiting wave also lists
 the pull request heads whose recorded plans
 (`_wave-plans/yodel-apply/<head>.json`) name its digest: a writer's
 approving review of that head, once merged, approves it when the wave runs

@@ -6,7 +6,7 @@
 // nothing here approves.
 
 import { ago, clock } from "./terragucci.js";
-import { laneLegend, modeWords, sourceWords } from "./terragucci-lifecycle.js";
+import { holderWords, laneLegend, modeWords, sourceWords } from "./terragucci-lifecycle.js";
 
 const short = (s) => (s ? String(s).replace(/^(jcs1-)?sha256:/, "").slice(0, 12) : "");
 
@@ -42,7 +42,7 @@ export function yodelGateCard(env, g, now = new Date()) {
   if (g.applied) facts.push(`applied ${clock(g.applied.at, now)}, ${ago(g.applied.at, now)}${g.applied.result ? "" : " (outcome not recorded)"}`);
   if (g.digest) facts.push(`plan ${short(g.digest)}`);
   for (const u of g.uncounted || []) facts.push(`${u.approval.by}'s approval does not count: ${u.reason}`);
-  if (g.heldOn) facts.push(`held on ${g.heldOn.op}/${g.heldOn.gate}`);
+  if (g.heldOn) facts.push(`held on ${g.heldOn.op}/${g.heldOn.gate}${holderWords(g.heldOn) ? `, ${holderWords(g.heldOn)}` : ""}`);
   if (modeWords(g)) facts.push(modeWords(g));
   if ((g.headPlans || []).length) {
     const h = g.headPlans[0];

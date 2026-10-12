@@ -46,8 +46,20 @@ const TITLE = {
   failed: (g) => `wave ${g.wave}'s apply failed`,
   refused: (g) => `wave ${g.wave} refused: an approval stands for other plans`,
   "refused-by-policy": (g) => `wave ${g.wave} refused by policy: ${(g.denials || []).length} run${(g.denials || []).length === 1 ? "" : "s"} denied, no override counts`,
-  held: (g) => `wave ${g.wave} held on ${g.heldOn.op}/${g.heldOn.gate}`,
+  held: (g) => `wave ${g.wave} held on ${g.heldOn.op}/${g.heldOn.gate}${g.heldOn.heldBy ? ` by hook ${g.heldOn.heldBy.hook}` : ""}`,
 };
+
+/**
+ * Who holds a wave on another gate: the hook the fact names (`heldBy`,
+ * chant#3886), with the moment it ran at and its run; for a fact written
+ * before chant named it, the fact's description, which the hook wrote.
+ */
+export function holderWords(heldOn) {
+  if (!heldOn) return "";
+  const h = heldOn.heldBy;
+  if (h) return `held by hook ${h.hook} at ${h.moment}${h.target ? ` for ${h.target}` : ""}`;
+  return heldOn.description || "";
+}
 
 const NOTE = {
   approve: "An approval is a signed git record bound to this plan digest: run the line at your shell. behold does not approve.",
@@ -83,7 +95,7 @@ export function laneGateCards(lane, now = new Date()) {
     if (g.pending && g.pending.description && own) facts.push(g.pending.description);
     if (g.pending && g.pending.answer && g.state === "waiting") facts.push(`asks decision point ${g.pending.answer.point}`);
     if (g.heldOn) facts.push(`held ${clock(g.heldOn.since, now)}, ${ago(g.heldOn.since, now)}; ${g.heldOn.op}/${g.heldOn.gate} waits${g.heldOn.digest ? ` for plan ${short(g.heldOn.digest)}` : ""}${g.heldOn.answer ? ` on decision point ${g.heldOn.answer.point}` : ""}`);
-    if (g.heldOn && g.heldOn.description) facts.push(g.heldOn.description);
+    if (holderWords(g.heldOn)) facts.push(holderWords(g.heldOn));
     if (g.approval) facts.push(`${g.state === "refused" ? `approved for plan ${short(g.refused && g.refused.digest) || "(none)"} by` : "approved by"} ${approvalWords(g.approval, now)}`);
     if (g.applied) facts.push(`${g.applied.result === "failed" ? "apply failed" : "applied"} ${clock(g.applied.finished || g.applied.at, now)}, ${ago(g.applied.finished || g.applied.at, now)}${g.applied.review && g.applied.review.pr !== undefined ? ` under the review of PR #${g.applied.review.pr}` : ""}`);
     if (g.digest) facts.push(`plan ${short(g.digest)}`);

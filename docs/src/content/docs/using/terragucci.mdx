@@ -159,8 +159,9 @@ Terragucci tab reads them too:
   approval stands for other plans. Once terragucci's waves run on chant's op
   waves, a wave can also be refused by policy (a run was denied and no
   override counts; the card gives the override line for each run), held on
-  another gate such as a state migration (the card gives that gate's approve
-  line), or applied with its outcome not recorded. A gate that asks a decision
+  another gate such as a state migration (the card names the hook that holds
+  it and gives that gate's approve line), or applied with its outcome not
+  recorded. A gate that asks a decision
   point gives `chant workspace points answer <id>` instead of an approve line.
   behold decides each wave with chant's own
   gate decision, the one terragucci applies under: an approval a wave already
@@ -168,7 +169,11 @@ Terragucci tab reads them too:
   when its seal verifies against the signers file on the default branch. A
   gate that `identity.gates` in chant.workspace.json names counts only a
   signed approval under any mode, and when it names a class, only one from a
-  person the role grants on the default branch put in that class. Each wave
+  person the role grants on the default branch put in that class. A class
+  that a pinned package declares is read from that package as installed in
+  your checkout, so run `npm install` there first; until it is installed at
+  the pinned version, the card says the pin could not be read and no
+  approval counts for that gate. Each wave
   is decided under the approval mode its request recorded, and the card says
   which. A request written by an older chant records none: that wave takes
   the mode read on the default branch, and the card and the lane's legend say
