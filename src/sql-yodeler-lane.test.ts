@@ -6,7 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { migrateOpLane, parseYodelWaves, readSqlYodelerLane, yodelApprovalMode, yodelApproveCommand } from "./sql-yodeler-lane.ts";
 import { parseHeadPlans, waveRule, withHeadPlans } from "./terragucci-lifecycle.ts";
 import { sqlCardFields, sqlIconFor, sqlKindLabel } from "./sql-kinds.ts";
-import { graphIr, resolveLexicons } from "./chant.ts";
+import { graphIr } from "./chant.ts";
 
 // #524: a SQL Yodeler repo's lane, from a fixture chant/lifecycle built with
 // real git: dev applied, staging approved, prod waiting on its wave, and
@@ -124,8 +124,16 @@ describe("the sql lexicon's kinds (#524)", () => {
   });
 
   const fk = resolve(__dirname, "..", "e2e", "fixtures", "sql-yodeler-fk");
-  const installed = resolveLexicons(fk, ["sql"])[0]!.installed;
-  it.skipIf(!installed)("draws a REFERENCES foreign key as an edge", async () => {
+  // #537: skipped even with @intentius/chant-lexicon-sql installed. Tried
+  // 0.124.8 (with chant 0.124.9): `chant graph --format ir` on this fixture
+  // emits no graph, it refuses with "source has lint errors". Every SQL lint
+  // rule (SQLCH001-004, SQLPG001-003, SQLPG005) throws
+  // "ts.isImportDeclaration is not a function", because the lexicon takes
+  // typescript as a peer (^5.9.3) and behold's root typescript is 7.0.2,
+  // which has no JS API. The lexicon does see the foreign key (its SQLPG102
+  // warning names orders.customer_id -> shop.customers). Un-skip once the
+  // lexicon runs alongside typescript 7, or behold's root typescript is 5.
+  it.skip("draws a REFERENCES foreign key as an edge", async () => {
     const ir = await graphIr(fk);
     const id = (name: string) => ir.nodes.find((n) => n.kind === "Postgres::Table" && JSON.stringify(n).includes(name))?.id;
     const orders = id("orders");

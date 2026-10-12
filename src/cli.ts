@@ -42,6 +42,7 @@ Usage:
   behold preview [project-dir] [--port <n>] [--emulator]
   behold export [project-dir] [--out <dir>] [--env <name>] [--name <worker>] [--emulator]
                 [--terragucci <src> [--terragucci-project <p>] [--reports-base <rel>]] [--no-source]
+                [--yodel-report <file|dir>]
                 [--publish s3://<bucket>/<prefix>/views/<name> [--commit <sha>] [--keep <n>]]
   behold serve <project-dir…> [--port <n>] [--host <addr>] [--allow-host <name,…>] [--hud <url>] [--env <name>] [--poll <secs>] [--local]
                 [--yodel-report <file|dir>]
@@ -131,7 +132,7 @@ Options:
                       0 turns it off. The fetch goes into behold's own cache
                       (<tmpdir>/behold-lifecycle-*), never into the checkout.
   --yodel-report <file|dir>
-                      serve only: mark SQL Yodeler's \`yodel report --json\`
+                      serve/export: mark SQL Yodeler's \`yodel report --json\`
                       output and any \`yodel drift <env> --json\` beside it
                       (#526): each environment's applied migrations and gaps,
                       and drift on the cards it names, dated. Checked against
@@ -856,9 +857,11 @@ async function runExportCmd(rest: string[]): Promise<void> {
   let commitArg: string | undefined;
   let keepArg: string | undefined;
   let noSource = false;
+  let yodelReport: string | undefined;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     if (a === "--out") outDir = resolve(rest[++i]);
+    else if (a === "--yodel-report") yodelReport = rest[++i];
     else if (a === "--env") env = rest[++i];
     else if (a === "--name") name = rest[++i];
     else if (a === "--emulator") emulator = true;
@@ -871,6 +874,10 @@ async function runExportCmd(rest: string[]): Promise<void> {
     else if (a === "--keep") keepArg = rest[++i];
     else if (a === "-h" || a === "--help") return void process.stdout.write(USAGE);
     else if (!a.startsWith("-")) dirArg = a;
+  }
+  if (yodelReport !== undefined && !yodelReport) {
+    process.stderr.write("behold export: --yodel-report needs the file `yodel report --json` wrote, or the directory holding it\n");
+    process.exit(2);
   }
   if ((terragucciProject || reportsBase !== undefined) && !terragucci) {
     process.stderr.write("behold export: --terragucci-project and --reports-base need --terragucci\n");
@@ -925,6 +932,7 @@ async function runExportCmd(rest: string[]): Promise<void> {
       port: 0,
       ...(env ? { env } : {}),
       ...(terragucci ? { terragucci: { source: terragucci, ...(terragucciProject ? { project: terragucciProject } : {}) } } : {}),
+      ...(yodelReport ? { yodelReport: resolve(yodelReport) } : {}),
     },
     outDir,
     {

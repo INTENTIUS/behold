@@ -64,6 +64,10 @@ export interface ExportAxes {
   terragucci?: boolean;
   /** #525: the project reads a release ledger, so its Releases strip is one more snapshot. */
   releases?: boolean;
+  /** #537: the export was given `--yodel-report`, so SQL Yodeler's report and drift are one more snapshot. */
+  yodelReport?: boolean;
+  /** #537: the project is a SQL Yodeler repo, so its Pipeline lane (#524) is one more snapshot. */
+  sqlYodeler?: boolean;
 }
 
 /** The read URLs to capture for the given axes. */
@@ -90,7 +94,10 @@ export function captureKeys(axes: ExportAxes): string[] {
   // #525: the Releases strip, as of the export: one read, whatever the lens.
   if (axes.releases) add("/api/lifecycle/releases", {});
   // #522: and the gate ledgers' history on chant/lifecycle, as the SPA asks it.
-  if (axes.terragucci) add("/api/lifecycle/history", {});
+  if (axes.terragucci || axes.sqlYodeler) add("/api/lifecycle/history", {});
+  // #537: SQL Yodeler's report and drift, and its Pipeline lane, each one read as the SPA asks it.
+  if (axes.yodelReport) add("/api/yodel-report", {});
+  if (axes.sqlYodeler) add("/api/sql-yodeler/lifecycle", {});
 
   const tiers = axes.tiers && axes.tiers.length ? axes.tiers : [""];
   const envs = ["", ...axes.environments]; // "" = the declared-source view
@@ -183,13 +190,15 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
   // rather than relying on nothing happening to call it.
   const app = createApp({ ...cfg, layoutWrites: false });
 
-  const proj = (await (await app.request("/api/project")).json()) as { environments?: string[]; tiers?: string[]; ops?: number; terragucciReports?: unknown; releaseLedger?: boolean };
+  const proj = (await (await app.request("/api/project")).json()) as { environments?: string[]; tiers?: string[]; ops?: number; terragucciReports?: unknown; releaseLedger?: boolean; yodelReport?: unknown; sqlYodeler?: unknown };
   const axes: ExportAxes = {
     environments: proj.environments ?? [],
     tiers: proj.tiers ?? [],
     ...(proj.ops ? { ops: proj.ops } : {}),
     ...(proj.terragucciReports ? { terragucci: true } : {}),
     ...(proj.releaseLedger ? { releases: true } : {}),
+    ...(proj.yodelReport ? { yodelReport: true } : {}),
+    ...(proj.sqlYodeler ? { sqlYodeler: true } : {}),
   };
   const scrub = exportScrubber(cfg);
 
@@ -218,6 +227,11 @@ export async function runExport(cfg: ServerOptions, outDir: string, opts: Export
     if (key === "/api/terragucci" && !res.ok) {
       const refusal = JSON.parse(body) as { error?: string; remedy?: string };
       throw new Error(`terragucci reports not read: ${refusal.error ?? res.status}${refusal.remedy ? `\n  ${refusal.remedy}` : ""}`);
+    }
+    // #537: the same for `--yodel-report`: files the export was pointed at and could not read fail it.
+    if (key === "/api/yodel-report" && !res.ok) {
+      const refusal = JSON.parse(body) as { error?: string; remedy?: string };
+      throw new Error(`SQL Yodeler report not read: ${refusal.error ?? res.status}${refusal.remedy ? `\n  ${refusal.remedy}` : ""}`);
     }
   }
 
@@ -318,10 +332,12 @@ export function shapeSnapshot(key: string, body: string, opts: ExportOptions = {
  * (and a local reports directory) by its basename, then the home directory by
  * `~`. Longest first, so a member inside the root keeps its own name.
  */
-export function exportScrubber(cfg: Pick<ServerOptions, "projectDir" | "projectDirs" | "workspace" | "terragucci">, home: string = homedir()): (text: string) => string {
+export function exportScrubber(cfg: Pick<ServerOptions, "projectDir" | "projectDirs" | "workspace" | "terragucci" | "yodelReport">, home: string = homedir()): (text: string) => string {
   const dirs = [cfg.projectDir, ...(cfg.projectDirs ?? []), ...(cfg.workspace ? [cfg.workspace.root] : [])];
   const tg = cfg.terragucci?.source;
   if (tg && !/^[a-z0-9]+:\/\//i.test(tg)) dirs.push(resolve(tg));
+  // #537: the yodel report's files are local; name them by their directory's basename.
+  if (cfg.yodelReport) dirs.push(resolve(cfg.yodelReport));
   const pairs = new Map<string, string>();
   for (const d of dirs) {
     for (const p of [resolve(d), safeRealpath(d)]) if (p && p !== "/") pairs.set(p, basename(p));

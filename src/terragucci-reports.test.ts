@@ -3,7 +3,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, write
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readTerragucci, terragucciValidator, TerragucciReadError, MAX_RUNS_PER_STAGE } from "./terragucci-reports.ts";
-import { terragucciSource } from "./terragucci-source.ts";
+import { deniedWords, TerragucciDenied, terragucciSource } from "./terragucci-source.ts";
 
 // #490: the bundled bucket was written by terragucci's own code for its own
 // example estate (example-terragucci-reports/README.md says how).
@@ -187,6 +187,23 @@ describe("an s3:// source in a job, with credentials in the environment (#491)",
     const r = await readTerragucci(terragucciSource("s3://acme-reports/shop", { env, fetch: fetchFn as never }), { roots: ROOTS });
     expect(r.project).toBe("github.com/acme/shop");
     expect(asked[0]).toBe("http://floci:4566/acme-reports/shop/index.json");
+  });
+});
+
+describe("an http(s) source that answers 403 (#537)", () => {
+  const src = (status: number) =>
+    terragucciSource("https://reports.example.com/shop", { fetch: (async () => ({ ok: status === 200, status, text: async () => "" })) as never });
+
+  it("throws the permission error, as an s3:// source does (#523)", async () => {
+    const e = await src(403).read("audit.jsonl").catch((x) => x);
+    expect(e).toBeInstanceOf(TerragucciDenied);
+    expect(e.url).toBe("https://reports.example.com/shop/audit.jsonl");
+    expect(e.message).toContain("not readable with these credentials (403)");
+    expect(deniedWords(e, "the audit timeline")).toMatch(/not readable with these credentials, so the audit timeline is not shown/);
+  });
+
+  it("still reads a 404 as absent", async () => {
+    expect(await src(404).read("audit.jsonl")).toBeUndefined();
   });
 });
 

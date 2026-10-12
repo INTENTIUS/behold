@@ -145,7 +145,15 @@ and none is the checkout's git remote) adds two reads, in
   depth 1 into the same cache (`refs/behold/base`): `mode` from
   terragucci.yml's `approval:` key, else `sealed` when chant.workspace.json
   lists `identity.gates`, else `ledger`; under `sealed`, the signers read with
-  chant's `gateSignersAt`. The op, ledger paths, gate names, approve line and
+  chant's `gateSignersAt`. A gate `identity.gates` names at base (chant's
+  `identityGatesAt`) is decided with `refuses` from `identityRefuses`: only an
+  approval whose seal verifies against the signers at base counts, whatever
+  the mode, and the entry carries `identity: {class, classChecked}`. behold
+  does not check the class a gate names, since gate-decision does not export
+  that check (INTENTIUS/chant#3862); `approval.note` says so. `approval.inferred`
+  says the mode is read at base: a wave's pending fact does not record the
+  mode it asked under (INTENTIUS/chant#3861), and a pipeline's `--approval`
+  flag lives in its generated CI, which behold does not read. The op, ledger paths, gate names, approve line and
   mode reader are a `GateLaneSpec` (`TERRAGUCCI_LANE` is terragucci's), for
   another product's lane: `opWavesLane(op, over?)` gives one with chant's
   approve line, mode rule and overriders, and `readLifecycle(checkout, {spec})`
@@ -294,6 +302,15 @@ the database.
   object's name, or ends in `/<name>` in a composed estate, and draws a
   corner tag with its age; never a fill. Objects no card is are listed in
   the SQL Yodeler tab, which also holds the environments and gaps.
+- `audit[]` (#537) carries the report's audit entries with the report file
+  they came from. The tab lists them under their environment, each dated by
+  its own `at` and named by its source (a ledger's op and gate, or a history
+  table's row and run).
+- `behold export --yodel-report <file|dir>` (#537) captures `/api/yodel-report`
+  as a snapshot, and a refusal fails the export, as `--terragucci` does. A
+  SQL Yodeler repo's export also captures `/api/sql-yodeler/lifecycle` and
+  `/api/lifecycle/history`, so the Pipeline lane draws in static mode,
+  without its Read again button.
 
 ## A SQL Yodeler project: kinds and a lifecycle lane (#524)
 
@@ -918,8 +935,10 @@ for its digest), and `command` is the product's (`npx terragucci override`,
 `npx yodel override`) or chant's `chant approve policy-override <subject>
 --rule <id> --reason "<why>" --plan <digest>`. The card shows that command and
 no button, and `POST /api/workspace/gates/approve` answers such a gate `422`
-with `code: "override"`. These readers mirror chant's `override-gate` field
-names; moving them onto chant's own `override-gate` export is a follow-up.
+with `code: "override"`. The ledger lines are parsed by chant's
+`@intentius/chant/override-gate` (`recordedDenials`, `parseAppliedOverrides`,
+`overrideCommand`) and `parseGateLedger`, and the product is `productRepo()`
+from `src/terragucci-repo.ts` (#537).
 
 ### The exceptions, and their exact size
 

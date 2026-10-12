@@ -104,6 +104,13 @@ pipeline wrote.
   of its own, so the age is when its file was written. Hover the card or
   open it for the properties that differ.
 - Objects no card is are listed in the tab, not dropped.
+- The report's audit entries are listed under their environment, oldest
+  first, each with its own time and where SQL Yodeler read it: a gate
+  ledger on `chant/lifecycle`, or a row of the environment's history table.
+
+`behold export . --yodel-report out/` carries the report and drift as a
+snapshot of the moment it ran, and fails if the files cannot be read. A
+SQL Yodeler repo's Pipeline lane is captured the same way.
 
 Every file is checked against SQL Yodeler's own JSON Schemas, from
 `@intentius/sql-yodeler` when it is installed and from a copy pinned in
