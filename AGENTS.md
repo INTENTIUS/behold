@@ -747,6 +747,20 @@ Op discovery (`src/ops.ts`) reads a gate from `signalName: "<name>"` or from
 `gate("<name>", ...)`, the form chant's op builder and SQL Yodeler write, so
 a gated Op is never listed or run as ungated on any repo (#517).
 
+A policy denial is never approved from behold (#519, `src/policy-override.ts`).
+`GET /api/workspace/gates` gives a gate of op `policy-override` an `override`
+field `{subject, rules, plan, digest, state, spentAt, product, command,
+source}`: the rules and denied plan come from `chant/lifecycle:_gates/
+policy-override.jsonl` (read with `git show`, the local branch then
+`origin/chant/lifecycle`), `state` is `waiting`, `overridden` (status says an
+override counts) or `spent` (a line in `_gates/policy-override/applied.jsonl`
+for its digest), and `command` is the product's (`npx terragucci override`,
+`npx yodel override`) or chant's `chant approve policy-override <subject>
+--rule <id> --reason "<why>" --plan <digest>`. The card shows that command and
+no button, and `POST /api/workspace/gates/approve` answers such a gate `422`
+with `code: "override"`. These readers mirror chant's `override-gate` field
+names; moving them onto chant's own `override-gate` export is a follow-up.
+
 ### The exceptions, and their exact size
 
 These are also the only writes a guarded product repo answers: terragucci
