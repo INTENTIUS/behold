@@ -9,7 +9,8 @@ apply creds.
 
 - **behold** serves the live, mixed-substrate graph (and, later, the deployment-lanes
   timeline). It reads; every write it offers is a command it starts (an Op, a
-  `chant run`, a forge dispatch), and on a terragucci repo it starts none.
+  `chant run`, a forge dispatch), and on a terragucci or SQL Yodeler repo it
+  starts none.
 - **chant's MCP** is where the real capabilities live. Prefer it over shelling.
   - Reads: `lifecycle-diff`, `lifecycle-snapshot`, `build`, `lint`.
   - Actions (delegated writes): `op-run` (start an `ApplyOp`/`ReconcileOp`),
@@ -88,6 +89,12 @@ and none is the checkout's git remote) adds two reads, in
   report of its wave's other entries (same gate and digest). No
   `audit.jsonl` is `present: false` plus an `absent` sentence, never an
   empty history; a bad line is the `422 terragucci-report` refusal naming it.
+  #523: an S3 403 on an optional read (`audit.jsonl` here, `run.json` for
+  `/api/terragucci/progress` and the estate's run views) is not a refusal:
+  the source throws `TerragucciDenied` (`src/terragucci-source.ts`), and the
+  answer carries `present: false`, `unreadable: true` and an `absent`
+  sentence naming the key and `s3:GetObject` (or `s3:ListBucket`). A 403 on
+  `index.json`, a report or `estate.json` still fails.
   `src/terragucci-timeline.ts` holds the read and the check (terragucci's
   `dist/audit.schema.json` when it resolves, structural otherwise). The SPA
   draws it in the Terragucci tab and, filtered to the card's root, in the
@@ -95,11 +102,56 @@ and none is the checkout's git remote) adds two reads, in
   snapshot and does not fail on it.
 - `GET /api/terragucci/lifecycle` (#505): the repo's `chant/lifecycle` lane,
   `{branch, found, via, origin?, fetch: {ok, error?}, commit?: {sha,
-  committed}, read: {at}, gates[], locks[], note}`. `gates[]` is one entry per
-  `wave-<k>` in `_gates/tf-apply.jsonl` and `_gates/tf-apply/applied.jsonl`:
-  `state` (`waiting | expired | approved | applied | failed`), `digest`,
-  `pending`, `approval` (by, at, signed), `applied`, the kept reports under
-  `_gates/tf-apply/wave-<k>/`, and `command` when it waits. `locks[]` is
+  committed}, read: {at}, approval?, gates[], locks[], note}`. `gates[]` is one
+  entry per wave gate (`wave-<k>`, chant op-waves' `<gate>-wave-<k>` or a
+  product's `<name>-wave-<k>`: `WAVE_GATE`, #521) in `_gates/tf-apply.jsonl` and
+  `_gates/tf-apply/applied.jsonl`, decided by chant's `decideGateApproval`
+  (`@intentius/chant/gate-decision`, #520) with spent approvals left out, on
+  lines parsed by chant's `parseGateLedger` and `parseAppliedGateLines`. The
+  states:
+  - `waiting`: no approval of the wave's digest counts; `command` is the
+    approve line (`--sign` under `sealed`), or `chant workspace points answer
+    <id>` when the pending fact carries `answer: {point, id}` (#521).
+  - `expired`: the pending fact's `expiresAt` passed with none.
+  - `refused`: an unspent approval stands for another digest
+    (`refused: {digest, by, at}`); no approve line.
+  - `approved`: an unspent approval of the digest counts, not applied yet.
+  - `applied` / `failed`: a wave applied under that approval, and how the
+    apply finished when terragucci recorded it. chant's op waves write no
+    `finished` line: then `applied.result` is absent and the page says
+    "applied (outcome not recorded)".
+  - `refused-by-policy` (#521): a denial on `_gates/policy-override.jsonl`
+    (chant's `recordedDenials`) newer than anything on the wave's gate, that
+    no override counts for (chant's `decideOverride`, with the overriders at
+    base: `.chant/overriders`, or terragucci's `policy.override`) and no run
+    applied an override of since. `denials[]` carries each run, its plan and
+    rules, and chant's `overrideCommand` line; no approve line. The wave is
+    the one chant's description names, else the one whose pending fact lists
+    the run.
+  - `held` (#521): a pending fact on another gate (any `_gates/<op>.jsonl`)
+    whose description is chant's hold text for this op's wave, with no
+    approval of its digest that counts. `heldOn: {op, gate, digest, since,
+    hook}`; `command` approves that gate (`chant approve <op> <gate> --plan`)
+    or answers its decision point.
+  Each entry also carries `digest`, `pending` (with `members` and
+  `neverOverMcp` when recorded, `description`, `url`, `answer`), `approval`
+  (by, at, `signed` when the seal has a signature, via (`review` for chant's
+  `review: {pr, head, approvers}` line), pr, head, reviewers, relayedBy, note), `uncounted` (an
+  approval of this digest the mode did not count, with chant's reason, such
+  as an unsealed one under `sealed`), `spent` (an approval of another digest
+  an apply used), `applied` (with `wave` and `review` when present), the kept
+  reports under `_gates/tf-apply/wave-<k>/`, and `command`. `approval` on the
+  answer is the rule read at base, the tip of origin's default branch fetched
+  depth 1 into the same cache (`refs/behold/base`): `mode` from
+  terragucci.yml's `approval:` key, else `sealed` when chant.workspace.json
+  lists `identity.gates`, else `ledger`; under `sealed`, the signers read with
+  chant's `gateSignersAt`. The op, ledger paths, gate names, approve line and
+  mode reader are a `GateLaneSpec` (`TERRAGUCCI_LANE` is terragucci's), for
+  another product's lane: `opWavesLane(op, over?)` gives one with chant's
+  approve line, mode rule and overriders, and `readLifecycle(checkout, {spec})`
+  reads it. `terragucciApproveCommand` is the one approve line the reports,
+  the estate and the lane share, and `gatePolicyName` reads `on-destroy` as
+  `on-destructive` (terragucci#863). `locks[]` is
   `_locks/tf-apply.json`, one per root (`pr, by, at, head, via?, stage?`).
   Every gate and lock carries `source: {commit, committed, path}`, the newest
   commit of the branch that changed its file. The branch is fetched from the
@@ -111,6 +163,27 @@ and none is the checkout's git remote) adds two reads, in
   `fetch.error`); a remote without the branch is `found: false, via:
   "fetch"`, not an error. 30 s cache, `?fresh=1` skips it. Reader:
   `src/terragucci-lifecycle.ts`.
+- `GET /api/lifecycle/history?op=<op>&gate=<gate>&limit=<n>` (#522): the
+  gate ledgers' history on `chant/lifecycle`, for any product, registered
+  whether or not `--terragucci` is given. Same bare cache and fallback as
+  the lifecycle lane; per `_gates/<op>.jsonl` it runs `git log -p
+  --unified=0 --no-renames` and hands the text to chant's
+  `gateLedgerLinesFromLog`, then all ledgers to `deriveGateAudit`
+  (`@intentius/chant/lifecycle/gate-audit`). behold parses no ledger line
+  itself. Answer: `{branch, source: "ledger", found, via, origin?, fetch,
+  commit?, read, ledgers[], op?, gate?, total, limit, entries[], gaps[],
+  note}`, newest first, 200 by default and 1000 at most. An entry is `{id,
+  kind, at, op, gate, wave?, digest?, actor?, seal?, note?, rules?, subject?,
+  source: {path, line?, commit, committer, committed, change}, audit}`;
+  `kind` is chant's (`approval-requested | approved | override-requested |
+  override-recorded | revoked`), `audit` is chant's whole entry. A revocation
+  is a line a commit removed, and its `actor` is that commit's author. The
+  ledger holds no applies, so `applied` and `override-spent` appear only in
+  a product's own record (terragucci's `audit.jsonl`). The Terragucci tab's
+  Timeline draws it under the audit record, labelled "ledger"; when the
+  source has no `audit.jsonl` the record's lane says so and the ledger is
+  the history. An export carries it as one snapshot. Reader:
+  `src/lifecycle-history.ts`.
 - `GET /api/terragucci/events` (#505): SSE. While at least one page holds it
   open, a timer (`--terragucci-poll <secs>`, default 30, 0 off) asks
   whether `index.json` changed (`If-None-Match` with the last ETag for S3 and
@@ -749,7 +822,39 @@ entry is a registered route. `TERRAGUCCI_REFUSED_WRITES` only words the
 refusal for known routes. The remedy names `npx terragucci approve wave-<k>
 --plan <digest>`, the digest from the wave's gate card.
 
+A SQL Yodeler repo (a `yodel.config.ts` in the served directory or above it,
+up to the git root) is guarded the same way (#517): the same allowlist, the
+same refused routes, auto-sync declined, and `/api/project` carries
+`sqlYodeler` so the page offers no write. The refusal is `409` with `code:
+"sql-yodeler"`, and its remedy names `npx yodel approve <env> --plan <digest>`
+(with `--sign` when the environment's gate is sealed) and `yodel apply <env>`
+in the project's pipeline. `productRepo()` in `src/terragucci-repo.ts` looks
+for terragucci's config along the whole walk first, so a yodel project nested
+inside a terragucci repo is refused as terragucci.
+
+Op discovery (`src/ops.ts`) reads a gate from `signalName: "<name>"` or from
+`gate("<name>", ...)`, the form chant's op builder and SQL Yodeler write, so
+a gated Op is never listed or run as ungated on any repo (#517).
+
+A policy denial is never approved from behold (#519, `src/policy-override.ts`).
+`GET /api/workspace/gates` gives a gate of op `policy-override` an `override`
+field `{subject, rules, plan, digest, state, spentAt, product, command,
+source}`: the rules and denied plan come from `chant/lifecycle:_gates/
+policy-override.jsonl` (read with `git show`, the local branch then
+`origin/chant/lifecycle`), `state` is `waiting`, `overridden` (status says an
+override counts) or `spent` (a line in `_gates/policy-override/applied.jsonl`
+for its digest), and `command` is the product's (`npx terragucci override`,
+`npx yodel override`) or chant's `chant approve policy-override <subject>
+--rule <id> --reason "<why>" --plan <digest>`. The card shows that command and
+no button, and `POST /api/workspace/gates/approve` answers such a gate `422`
+with `code: "override"`. These readers mirror chant's `override-gate` field
+names; moving them onto chant's own `override-gate` export is a follow-up.
+
 ### The exceptions, and their exact size
+
+These are also the only writes a guarded product repo answers: terragucci
+(`terragucci.yml` and its siblings) and SQL Yodeler (`yodel.config.ts`), both
+listed in `TERRAGUCCI_ALLOWED_WRITES`.
 
 `POST /api/layout` (#228) writes **one** file in the served project:
 `.behold/layout.json`, the hand-layout sidecar, `{version, lenses: {<lens>:

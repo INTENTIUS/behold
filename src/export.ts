@@ -89,6 +89,8 @@ export function captureKeys(axes: ExportAxes): string[] {
   if (axes.terragucci) add("/api/terragucci/timeline", {});
   // #525: the Releases strip, as of the export: one read, whatever the lens.
   if (axes.releases) add("/api/lifecycle/releases", {});
+  // #522: and the gate ledgers' history on chant/lifecycle, as the SPA asks it.
+  if (axes.terragucci) add("/api/lifecycle/history", {});
 
   const tiers = axes.tiers && axes.tiers.length ? axes.tiers : [""];
   const envs = ["", ...axes.environments]; // "" = the declared-source view

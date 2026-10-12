@@ -116,3 +116,80 @@ export function laneElement(answer, opts = {}) {
   }
   return box;
 }
+
+// #522: the gate ledgers' history on chant/lifecycle, from
+// /api/lifecycle/history (chant's gate-audit over `git log -p`). Drawn beside
+// the audit record, or alone when the source has no audit.jsonl, and labelled
+// "ledger" so the two are never mistaken for each other.
+
+const HISTORY_WORDS = {
+  "approval-requested": "approval requested",
+  approved: "approved",
+  "override-requested": "override requested",
+  "override-recorded": "policy overridden",
+  applied: "applied",
+  "override-spent": "override spent",
+};
+
+/** One ledger entry as a line: "approved wave-2 by dana: unsigned · plan 4be1…". */
+export function historyLine(entry) {
+  const what = entry.kind === "revoked" ? `${entry.subject || "approval"} revoked` : HISTORY_WORDS[entry.kind] || entry.kind;
+  const op = entry.op && entry.op !== "tf-apply" ? ` (${entry.op})` : "";
+  const by = entry.actor ? ` by ${entry.actor}` : "";
+  const seal = entry.seal && (entry.kind === "approved" || entry.kind === "override-recorded") ? `: ${entry.seal}` : "";
+  const digest = entry.digest ? ` · plan ${entry.digest.replace(/^(jcs1-)?sha256:/, "").slice(0, 12)}` : "";
+  return `${what} ${entry.gate}${op}${by}${seal}${digest}`;
+}
+
+/** The history's rows, newest first: clock, line, tone, and the line's file, commit and committer in the title. */
+export function historyRows(answer, { now = new Date() } = {}) {
+  if (!answer || !answer.entries) return [];
+  return answer.entries.map((e) => {
+    const s = e.source || {};
+    const commit = s.commit ? `${s.change === "removed" ? "removed" : "added"} in ${s.commit.slice(0, 12)}${s.committer ? ` by ${s.committer}` : ""}${s.committed ? ` at ${s.committed}` : ""}` : "";
+    return {
+      id: e.id,
+      when: `${clock(e.at, now)}, ${ago(e.at, now)}`,
+      text: historyLine(e),
+      tone: e.kind === "revoked" ? "drift" : e.kind.endsWith("-requested") ? "wave" : "ok",
+      title: [e.at, `${s.path}${s.line ? `:${s.line}` : ""}`, commit, e.note || ""].filter(Boolean).join("\n"),
+    };
+  });
+}
+
+/** The line over the history: its source, how many entries, where it was read from and how old. */
+export function historyLegend(answer, { shown = 0 } = {}) {
+  if (!answer) return "ledger history not read";
+  if (answer.error) return answer.error;
+  if (!answer.found) return `ledger: ${answer.note}`;
+  if (!shown) return `ledger: no gate record on ${answer.branch}`;
+  const more = answer.total > shown ? ` of ${answer.total}` : "";
+  const via = answer.via === "checkout-ref" ? " (the checkout's copy: the fetch failed)" : "";
+  const tip = answer.commit ? `, tip committed ${answer.commit.committed}` : "";
+  return `ledger: ${shown}${more} entr${shown === 1 ? "y" : "ies"} from the gate ledgers on ${answer.branch}${via}${tip}, newest first`;
+}
+
+/** The history as DOM. Browser-only (the tests take the pure functions above). */
+export function historyElement(answer, opts = {}) {
+  const rows = historyRows(answer, opts);
+  const box = document.createElement("div");
+  box.className = "tg-timeline";
+  const head = document.createElement("div");
+  head.className = answer && answer.error ? "tg-refusal" : "tg-legend";
+  head.textContent = historyLegend(answer, { shown: rows.length });
+  if (answer && answer.note) head.title = answer.note;
+  box.appendChild(head);
+  for (const r of rows) {
+    const row = document.createElement("div");
+    row.className = `tg-entry tg-${r.tone}`;
+    row.title = r.title;
+    const when = document.createElement("span");
+    when.className = "tg-when";
+    when.textContent = r.when;
+    const text = document.createElement("span");
+    text.textContent = ` ${r.text}`;
+    row.append(when, text);
+    box.appendChild(row);
+  }
+  return box;
+}

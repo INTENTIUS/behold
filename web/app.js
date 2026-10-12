@@ -13,7 +13,7 @@ import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine } f
 import { readEmbed, selectMessage, viewFromMessage } from "./embed.js";
 import { gateCards } from "./workspace-gates.js";
 import { cornerOf, estateLine, hrefOf as tgHref, legend as tgLegend, markLine, rootRows as tgRootRows, waveCards } from "./terragucci.js";
-import { laneElement as tgLane, rootOfCard as tgRootOfCard } from "./terragucci-timeline.js";
+import { laneElement as tgLane, rootOfCard as tgRootOfCard, historyElement as tgHistoryLane } from "./terragucci-timeline.js";
 import { renderLane } from "./terragucci-lifecycle.js";
 import { renderReleases } from "./releases.js";
 import { initTerragucciEstate } from "./terragucci-estate.js";
@@ -3251,6 +3251,7 @@ function markDriftedCards(ir) {
 let tgAnswer = null;
 let tgHost = null;
 let tgTimeline = null; // #506: /api/terragucci/timeline, the audit record's lane
+let tgHistory = null; // #522: /api/lifecycle/history, the gate ledgers' history
 async function initTerragucci() {
   const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
   if (!project.terragucciReports) return;
@@ -3300,6 +3301,10 @@ async function loadTerragucci({ fresh = false } = {}) {
   tgTimeline = await apiFetch(`/api/terragucci/timeline${fresh ? "?fresh=1" : ""}`)
     .then((r) => r.json())
     .catch((e) => ({ error: String(e), code: "terragucci-report", remedy: "" }));
+  // #522: the gate ledgers' history, with or in place of the audit record.
+  tgHistory = await apiFetch(`/api/lifecycle/history${fresh ? "?fresh=1" : ""}`)
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null);
   renderTerragucciPanel();
   markTerragucciCards();
   if (!staticMode) await loadTgProgress({ fresh });
@@ -3457,11 +3462,16 @@ function renderTerragucciPanel() {
     ].filter(Boolean).join(" · ");
     host.appendChild(um);
   }
-  if (tgTimeline) {
+  if (tgTimeline || tgHistory) {
     const h = document.createElement("div");
     h.className = "tg-timeline-title";
     h.textContent = "Timeline";
-    host.append(h, tgLane(tgTimeline));
+    host.append(h);
+    // #522: the audit record, and the ledger's history beside it, each
+    // labelled by its source. Without an audit.jsonl the record's lane is its
+    // one "has no audit.jsonl" sentence and the ledger carries the history.
+    if (tgTimeline) host.append(tgLane(tgTimeline));
+    if (tgHistory) host.append(tgHistoryLane(tgHistory));
   }
   if (!staticMode) {
     const again = button("Read the reports again", "", () => {
@@ -6248,12 +6258,14 @@ async function initActions() {
   // them right now (`/api/project`'s executor block).
   executorInfo = project.executor || {};
   previewMode = staticMode || !!project.previewMode; // static ⇒ read-only, no writes at all
-  if (project.terragucci) {
-    terragucciRepo = project.terragucci;
+  // #517: a SQL Yodeler repo is guarded the same way.
+  const guarded = project.terragucci || project.sqlYodeler;
+  if (guarded) {
+    terragucciRepo = guarded;
     previewMode = true;
     const pill = document.createElement("span");
-    pill.textContent = "● applied by terragucci";
-    pill.title = `${project.terragucci.error}\n\n${project.terragucci.remedy}`;
+    pill.textContent = project.terragucci ? "● applied by terragucci" : "● migrated by SQL Yodeler";
+    pill.title = `${guarded.error}\n\n${guarded.remedy}`;
     pill.style.cssText = "align-self:center;font:var(--t-caption)/1.4 var(--font-mono);color:var(--muted);border:1px solid var(--line);border-radius:var(--r-ctl);padding:2px 8px";
     bar.appendChild(pill);
     return; // no Deploy, no Run, no Approve: the pipeline is the only way to apply
