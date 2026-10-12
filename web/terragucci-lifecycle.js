@@ -28,7 +28,7 @@ export function laneLegend(lane, now = new Date(), polled = null) {
   }
   const how = lane.via === "fetch" ? "fetched from origin" : "the checkout's origin/chant/lifecycle, as of its last git fetch (behold's fetch failed)";
   return {
-    text: `chant/lifecycle at ${short(lane.commit.sha)}, committed ${ago(lane.commit.committed, now)} · ${when}, ${how}${lane.approval && lane.approval.inferred ? ` · approval mode ${lane.approval.mode}, inferred at base (the waves do not record it)` : ""}`,
+    text: `chant/lifecycle at ${short(lane.commit.sha)}, committed ${ago(lane.commit.committed, now)} · ${when}, ${how}${lane.approval && lane.approval.inferred ? ` · approval mode ${lane.approval.mode} at base, for the waves whose requests record none` : ""}`,
     title: [
       lane.note,
       lane.approval ? `approvals counted: ${lane.approval.mode} (${lane.approval.source}${lane.approval.base ? `, base ${short(lane.approval.base)}` : ""})${lane.approval.inferred ? `; ${lane.approval.inferred}` : ""}${lane.approval.note ? `; ${lane.approval.note}` : ""}` : "",
@@ -55,6 +55,12 @@ const NOTE = {
   override: "An override is a person's git record with a reason, bound to this plan and these rules: run the line at your shell. behold does not override.",
 };
 
+/** The mode a wave is decided under: the one its request recorded (chant#3861), else the one read at base. */
+export function modeWords(g) {
+  if (!g.approvalMode) return "";
+  return g.approvalMode.from === "pending" ? `asked under ${g.approvalMode.mode}` : `approval mode ${g.approvalMode.mode}, read at base: its request records none`;
+}
+
 /** Who approved, and how: signed, relayed, from a pull request's review. */
 function approvalWords(a, now) {
   const how = [
@@ -76,13 +82,15 @@ export function laneGateCards(lane, now = new Date()) {
     if (g.pending && own) facts.push(`asked ${clock(g.pending.timestamp, now)}, ${ago(g.pending.timestamp, now)}`);
     if (g.pending && g.pending.description && own) facts.push(g.pending.description);
     if (g.pending && g.pending.answer && g.state === "waiting") facts.push(`asks decision point ${g.pending.answer.point}`);
-    if (g.heldOn) facts.push(`${g.heldOn.hook ? `${g.heldOn.hook} ` : ""}held it ${clock(g.heldOn.since, now)}, ${ago(g.heldOn.since, now)}; ${g.heldOn.op}/${g.heldOn.gate} waits${g.heldOn.digest ? ` for plan ${short(g.heldOn.digest)}` : ""}${g.heldOn.answer ? ` on decision point ${g.heldOn.answer.point}` : ""}`);
+    if (g.heldOn) facts.push(`held ${clock(g.heldOn.since, now)}, ${ago(g.heldOn.since, now)}; ${g.heldOn.op}/${g.heldOn.gate} waits${g.heldOn.digest ? ` for plan ${short(g.heldOn.digest)}` : ""}${g.heldOn.answer ? ` on decision point ${g.heldOn.answer.point}` : ""}`);
+    if (g.heldOn && g.heldOn.description) facts.push(g.heldOn.description);
     if (g.approval) facts.push(`${g.state === "refused" ? `approved for plan ${short(g.refused && g.refused.digest) || "(none)"} by` : "approved by"} ${approvalWords(g.approval, now)}`);
     if (g.applied) facts.push(`${g.applied.result === "failed" ? "apply failed" : "applied"} ${clock(g.applied.finished || g.applied.at, now)}, ${ago(g.applied.finished || g.applied.at, now)}${g.applied.review && g.applied.review.pr !== undefined ? ` under the review of PR #${g.applied.review.pr}` : ""}`);
     if (g.digest) facts.push(`plan ${short(g.digest)}`);
     if (g.pending && g.pending.members && g.pending.members.length) facts.push(`${g.pending.members.length} root${g.pending.members.length === 1 ? "" : "s"}: ${g.pending.members.map((m) => m.member).join(", ")}`);
     if (g.pending && g.pending.neverOverMcp) facts.push("never approved over MCP");
-    if (g.identity) facts.push(`identity.gates at base: only a signed approval counts${g.identity.class ? `, from class ${g.identity.class}; behold checks the seal, not the class (chant#3862)` : ""}`);
+    if (modeWords(g)) facts.push(modeWords(g));
+    if (g.identity) facts.push(`identity.gates at base: only a signed approval counts${g.identity.class ? `, from class ${g.identity.class}` : ""}`);
     if (g.spent) facts.push(`the approval of plan ${short(g.spent.planDigest)} by ${g.spent.by} was spent by its apply`);
     const uncounted = (g.uncounted || []).map((u) => `${u.approval.by}'s approval of this plan does not count: ${u.reason}`);
     const overrides = (g.denials || []).map((d) => ({

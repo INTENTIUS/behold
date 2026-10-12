@@ -6,7 +6,7 @@
 // nothing here approves.
 
 import { ago, clock } from "./terragucci.js";
-import { laneLegend, sourceWords } from "./terragucci-lifecycle.js";
+import { laneLegend, modeWords, sourceWords } from "./terragucci-lifecycle.js";
 
 const short = (s) => (s ? String(s).replace(/^(jcs1-)?sha256:/, "").slice(0, 12) : "");
 
@@ -43,7 +43,7 @@ export function yodelGateCard(env, g, now = new Date()) {
   if (g.digest) facts.push(`plan ${short(g.digest)}`);
   for (const u of g.uncounted || []) facts.push(`${u.approval.by}'s approval does not count: ${u.reason}`);
   if (g.heldOn) facts.push(`held on ${g.heldOn.op}/${g.heldOn.gate}`);
-  if (g.mode) facts.push(`decided under this wave's approval: ${g.mode}`);
+  if (modeWords(g)) facts.push(modeWords(g));
   if ((g.headPlans || []).length) {
     const h = g.headPlans[0];
     facts.push(`pull request head ${h.head.slice(0, 12)} recorded this plan ${clock(h.timestamp, now)}, ${ago(h.timestamp, now)} (${h.path}): a writer's approving review of that head, merged, approves it${g.headPlans.length > 1 ? `; ${g.headPlans.length - 1} more head${g.headPlans.length > 2 ? "s" : ""} recorded it too` : ""}`);

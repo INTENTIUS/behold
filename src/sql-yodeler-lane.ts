@@ -29,6 +29,7 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { headPlansPath } from "@intentius/chant/lifecycle/wave-plans";
 import type { Hono } from "hono";
 import {
   chantApprovalMode,
@@ -51,7 +52,7 @@ import { memberNote, projectLedger, type ProjectLedger } from "./member-ledger.t
 export const YODEL_APPLY_OP = "yodel-apply";
 
 /** Where the pull request job records each head's plans (chant's `headPlansPath(YODEL_APPLY_OP, head)`). */
-export const YODEL_HEAD_PLANS_DIR = `_wave-plans/${YODEL_APPLY_OP}`;
+export const YODEL_HEAD_PLANS_DIR = headPlansPath(YODEL_APPLY_OP, "").dir;
 
 /** One wave of `yodel-waves.json`, the parts read here. */
 export interface YodelWave {
@@ -176,7 +177,7 @@ export function yodelApplyLane(waves: readonly YodelWave[], ledger: Pick<Project
       return env ? yodelApproveCommand(env, digest, mode) : `chant approve ${at?.op ?? YODEL_APPLY_OP} ${gate}${digest ? ` --plan ${digest}` : ""}${mode === "sealed" ? " --sign" : ""}`;
     },
     approvalMode: yodelApprovalMode(ledger.dir),
-    headPlansDir: YODEL_HEAD_PLANS_DIR,
+    headPlans: YODEL_APPLY_OP,
     ...(ledger.prefix ? { ledgerPrefix: ledger.prefix } : {}),
   });
 }

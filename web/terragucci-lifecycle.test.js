@@ -52,6 +52,29 @@ describe("the chant/lifecycle lane, dated (#505)", () => {
     expect(two.tone).toBe("wave");
   });
 
+  it("shows the mode a wave asked under, and says when it was read at base instead (chant#3861)", () => {
+    const [one, two] = lane().gates;
+    const g = lane({
+      approval: { mode: "ledger", source: "the default", inferred: "a wave whose pending fact records no approval mode ..." },
+      gates: [{ ...one, approvalMode: { mode: "sealed", from: "pending" } }, { ...two, approvalMode: { mode: "ledger", from: "base" } }],
+    });
+    const [a, b] = laneGateCards(g, NOW);
+    expect(a.facts).toContain("asked under sealed");
+    expect(b.facts).toContain("approval mode ledger, read at base: its request records none");
+    expect(laneLegend(g, NOW).text).toContain("approval mode ledger at base, for the waves whose requests record none");
+    expect(laneLegend(lane({ approval: { mode: "ledger", source: "the default" } }), NOW).text).not.toContain("approval mode");
+  });
+
+  it("names an identity.gates gate's class without a caveat, and a hold by its fact (chant#3862, chant#3839)", () => {
+    const [one] = lane().gates;
+    const held = { ...one, state: "held", approval: undefined, heldOn: { op: "tf-migrate", gate: "move-db", since: "2026-10-09T10:00:00Z", description: "migrate the orders table first" }, identity: { class: "human" } };
+    const [c] = laneGateCards(lane({ gates: [held] }), NOW);
+    expect(c.facts).toContain("only a signed approval counts, from class human");
+    expect(c.facts).not.toContain("chant#3862");
+    expect(c.facts).toContain("held 10:00 UTC, 2h ago; tf-migrate/move-db waits");
+    expect(c.facts).toContain("migrate the orders table first");
+  });
+
   it("words a lock with its holder, its age and its source", () => {
     const [l] = laneLockRows(lane(), NOW);
     expect(l.text).toBe("locked by PR #12 (carol, by an apply) 07:00 UTC, 5h ago");
