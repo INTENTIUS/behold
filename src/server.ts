@@ -179,6 +179,7 @@ import { productRefusal, refusedWrite, servedProductRepo, terragucciRefusal } fr
 import { repoBase, terragucciRoutes, type TerragucciOptions } from "./terragucci-view.ts";
 import { lifecycleHistoryRoute } from "./lifecycle-history.ts";
 import { hasReleaseLedgerHint, releasesRoutes } from "./lifecycle-releases.ts";
+import { sqlYodelerLaneRoute } from "./sql-yodeler-lane.ts";
 import { controlRepoInfo, terragucciEstateRoutes } from "./terragucci-estate.ts";
 import { yodelReportRoute } from "./yodel-report.ts";
 import { loadDemoRegistry, missingRequirements, fetchesFromNetwork, demoTargetDir, loadDemo, type DemoEntry } from "./demos.ts";
@@ -993,6 +994,11 @@ export function createApp(
   if (cfg.yodelReport) yodelReportRoute(app, cfg.yodelReport, () => cfg.projectDirs ?? [cfg.projectDir]);
   // #522: gate history from chant/lifecycle through chant's gate-audit, any product.
   lifecycleHistoryRoute(app, () => repoBase(cfg.projectDirs ?? [cfg.projectDir]));
+  // #524: a SQL Yodeler repo's lane over its migrate and wave gates on chant/lifecycle.
+  sqlYodelerLaneRoute(app, () => {
+    const r = guardedRepo();
+    return r?.product === "sql-yodeler" ? dirname(r.config) : undefined;
+  });
 
   // Carve mode (#252) claims /api/graph, /api/project and friends before the
   // project-shaped handlers are registered — see carveRoutes.

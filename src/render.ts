@@ -22,6 +22,7 @@ import {
 import type { GraphIR, IRGroups, IRNode, Layout } from "@intentius/chant";
 import type { ByContainer } from "./logical.ts";
 import { k8sIconFor, helmIconFor } from "./icon-packs.ts";
+import { SQL_LEXICON, sqlCardFields, sqlIconFor } from "./sql-kinds.ts";
 import { carveCardFields } from "./carve-lens.ts";
 import { cardFaces } from "./card-face.ts";
 import { CHOUDOUFU_LEXICON, choudoufuCardFields, moduleInstanceOf } from "./choudoufu-member.ts";
@@ -47,6 +48,10 @@ import { STACK_LEXICON } from "./stack-order.ts";
 // heuristic is a better answer than a wrong picture.
 registerPack({ lexicon: "k8s", iconFor: k8sIconFor });
 registerPack({ lexicon: "helm", iconFor: helmIconFor });
+// #524: a SQL Yodeler project's schema (chant-lexicon-sql): a line glyph per
+// Postgres and ClickHouse kind, and cards that lead with the kind in words and
+// the qualified name instead of two alphabetical attrs.
+registerPack({ lexicon: SQL_LEXICON, iconFor: sqlIconFor, fields: sqlCardFields });
 
 // The carve lens (#252) registers a pack for its `terraform` lexicon to pin the
 // two fields a peelability card shows — the score and the verdict. Without it

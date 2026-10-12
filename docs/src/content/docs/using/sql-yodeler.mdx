@@ -3,12 +3,51 @@ title: Look at a SQL Yodeler project
 description: Which schema each environment holds, and what SQL Yodeler's report and drift files say, drawn on the project's schema. Local, read-only, dated.
 ---
 
-[SQL Yodeler](https://intentius.io/sql-yodeler/) applies a project's schema
-one environment at a time. After every apply it appends a release record to
-`<env>/releases.jsonl` on the repository's `chant/lifecycle` branch, keyed by
-the digest of the schema the environment now holds.
+[SQL Yodeler](https://intentius.io/sql-yodeler/) plans and applies database
+migrations through chant, one environment at a time. behold draws the
+project's declared schema and reads what `yodel` and chant already wrote
+about each environment. It never writes to the repository, its
+`chant/lifecycle` branch or a database.
+
+## The schema
+
+`behold serve .` in a SQL Yodeler project draws what `src/` declares:
+Postgres schemas, tables, indexes and the rest, or ClickHouse databases and
+tables, each card named by its kind ("Postgres table") and its qualified
+name, with the column and foreign key count. A table that `REFERENCES`
+another has an edge to it. The migrations ops in `ops/` draw as `Chant::Op`
+cards.
+
+## The pipeline
+
+The Pipeline tab reads the gates SQL Yodeler and chant write on
+`chant/lifecycle`: the apply pipeline's waves (`_gates/yodel-apply.jsonl`,
+one gate `yodel-apply-wave-<k>` per environment) and each environment's
+migrations op (`_gates/migrate-<env>.jsonl`, gate `approve-migrate-<env>`).
+Environments are listed in the order `yodel-waves.json` applies them.
+
+Each gate says whether it waits, was approved, applied, or was refused, the
+plan digest it is bound to, who approved it and how (signed, through a
+pull request's review), and which commit of `chant/lifecycle` it was read
+from and how old that is. A waiting gate shows the line to approve it:
+
+```sh
+npx yodel approve prod --plan <digest>
+```
+
+Copy it and run it yourself; behold has no approve button for SQL Yodeler.
+Under the tab, the gate ledgers' history lists every request, approval and
+apply in the order they were committed.
+
+The history table that records which migrations ran lives in the database,
+which behold does not connect to; the report files below and the release
+ledger cover that ground.
 
 ## Releases
+
+After every apply SQL Yodeler appends a release record to
+`<env>/releases.jsonl` on the repository's `chant/lifecycle` branch, keyed by
+the digest of the schema the environment now holds.
 
 When the served directory has a `yodel.config.ts` or a `yodel-waves.json`,
 behold adds a Releases tab: one column per environment, one row per
