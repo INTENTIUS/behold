@@ -26,7 +26,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Hono } from "hono";
-import { latestPerComponent, listReleaseEnvironments, readReleaseLedger, recordsForDigest, type ReleaseRecord } from "@intentius/chant";
+import { latestPerComponent, listReleaseEnvironments, readReleaseLedger, recordsForDigest, type ReleaseRecord } from "@intentius/chant/lifecycle/release-ledger";
 import {
   CHECKOUT_REF,
   LIFECYCLE_BRANCH,
