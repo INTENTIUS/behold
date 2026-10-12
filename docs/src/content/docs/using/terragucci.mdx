@@ -99,6 +99,22 @@ The read-only identity needs `GetObject` on `<prefix>/audit.jsonl` too. For an
 agent: `GET /api/terragucci/timeline?root=<path>&limit=<n>` (200 by default,
 1000 at most).
 
+### The ledger's own history
+
+Under the audit record, the Timeline shows a second list labelled "ledger":
+every request, approval, policy override and revocation in the gate ledgers on
+`chant/lifecycle`, read from the branch's git history with chant's gate-audit
+reader. Each entry names the ledger line it came from and the commit that
+added it, with that commit's author and date. A revocation is a line a commit
+removed, attributed to whoever made that commit. When the reports have no
+`audit.jsonl`, this list is the history. It holds no applies: those are in
+terragucci's reports, not the ledger.
+
+The branch is read from the same cache as the gates and locks below, and falls
+back to your checkout's `origin/chant/lifecycle` the same way. The route works
+for any product that keeps its gates on `chant/lifecycle`:
+`GET /api/lifecycle/history?op=<op>&gate=<gate>&limit=<n>`.
+
 ## Waiting waves
 
 A wave waiting for an approval appears as a gate card in the Terragucci tab:
