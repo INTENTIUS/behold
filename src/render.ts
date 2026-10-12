@@ -325,7 +325,21 @@ type ExtraGroups = IRGroups & { byWave?: Record<string, string[]>; byStack?: Rec
  * (owner entity id → its live, undeclared runtime children, chant#1180/#1077)
  * on the live-overlay render path, which passes this explicitly — same
  * "caller knows" discipline as `byStack`, since a source-only or component-DAG
- * graph never carries a meaningful `byContainer` to box. */
+ * graph never carries a meaningful `byContainer` to box.
+ *
+ * `groups.byPipeline` (chant#3912: pipeline key -> the workflow node and its
+ * jobs) is auto-boxed too (#555), titled by {@link pipelineTitles}. Only when
+ * nothing else is boxed:
+ * - `byWave` wins when both are present. pinhole's `layoutIr` parents a node
+ *   to one cluster, so the two cannot both be drawn, and the wave lanes are
+ *   what the component view is for. The component DAG carries no pipelines
+ *   today, so this is a tie-break, not a case seen in practice.
+ * - An explicit `opts.boxes` wins as well. That covers the estate view, which
+ *   passes `byStack`: pipeline boxes there would have to sit inside member
+ *   boxes, and pinhole cannot nest them yet (INTENTIUS/pinhole#125). It also
+ *   covers the runtime tier's `byContainer`, for the same one-cluster reason.
+ * At detail 1 chant drops `byPipeline` (INTENTIUS/chant#3921), so that level
+ * draws no pipeline boxes until chant keeps them. */
 export function renderGraph(
   irIn: GraphIR,
   opts: {
@@ -339,7 +353,8 @@ export function renderGraph(
   } = {},
 ): RenderResult {
   const groupsIn = irIn.groups as ExtraGroups;
-  const boxKey = groupsIn.byWave ? "byWave" : opts.boxes;
+  const pipelines = groupsIn.byPipeline && Object.keys(groupsIn.byPipeline).length ? groupsIn.byPipeline : undefined;
+  const boxKey = groupsIn.byWave ? "byWave" : (opts.boxes ?? (pipelines ? "byPipeline" : undefined));
   // The before-passes: the card faces and the edgeless wrap — see `estateFace`,
   // which the logical lens runs too (#396 finding 1).
   const face = estateFace(irIn, boxKey ? groupsIn[boxKey] : undefined);
@@ -360,6 +375,12 @@ export function renderGraph(
   else if (!boxes) packComponents(layout as unknown as RadialLayout, ir);
   // The after-passes, the same ones the logical lens runs (#396 finding 1).
   packEstateBoxes(layout, face, { members: boxKey === "byStack", ...(opts.groupBadges ? { badges: opts.groupBadges } : {}) });
+  // A pipeline box keeps its key as `id` (the SPA stores a hand-set box size
+  // under `data-group-id`) and only its painted title changes.
+  if (boxKey === "byPipeline" && pipelines) {
+    const titles = pipelineTitles(irIn, pipelines);
+    for (const box of layout.groups ?? []) if (box.id !== undefined && titles[box.id] !== undefined) box.title = titles[box.id]!;
+  }
   const svg = renderSvg(ir, layout, {
     fit: true,
     hideTitle: true,
@@ -368,6 +389,20 @@ export function renderGraph(
     ...(opts.theme ? { theme: opts.theme as never } : {}),
   });
   return { svg: face.restore(svg) };
+}
+
+/** A pipeline box's title (#555), per `byPipeline` key: the `name` attribute
+ * of the node the key names (a GitHub or Forgejo Workflow's `name:`, "CI
+ * Pipeline"), or the key itself when that node has no name or the key names
+ * no node (a GitLab pipeline). */
+export function pipelineTitles(ir: GraphIR, byPipeline: Record<string, string[]>): Record<string, string> {
+  const nodes = new Map(ir.nodes.map((n) => [n.id, n]));
+  return Object.fromEntries(
+    Object.keys(byPipeline).map((key) => {
+      const name = nodes.get(key)?.attrs?.["name"];
+      return [key, typeof name === "string" && name.trim() ? name : key];
+    }),
+  );
 }
 
 /** Box marks and badges, applied after layout on `GroupBox.id` — the box key
