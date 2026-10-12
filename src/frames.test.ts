@@ -17,6 +17,20 @@ describe("frameDigest", () => {
   });
 });
 
+describe("frameDigest and edge kinds (#556)", () => {
+  const two = (kind: string) =>
+    ({ nodes: [{ id: "a", kind: "K", lexicon: "gitlab", attrs: {} }, { id: "b", kind: "K", lexicon: "gitlab", attrs: {} }], edges: [{ from: "a", to: "b", kind }], groups: {} }) as unknown as GraphIR;
+
+  it("sees a kind change on the same pair as a new state", () => {
+    expect(frameDigest(two("needs"))).not.toBe(frameDigest(two("extends")));
+    expect(frameDigest(two("needs"))).not.toBe(frameDigest(two("ref")));
+  });
+
+  it("digests a ref edge as it did before kinds counted", () => {
+    expect(frameDigest(two("ref"))).toBe("a:K:|b:K:#a>b");
+  });
+});
+
 describe("FrameBuffer", () => {
   it("captures distinct frames and dedupes consecutive identical ones", () => {
     let t = 100;

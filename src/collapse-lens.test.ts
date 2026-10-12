@@ -97,6 +97,28 @@ describe("collapseBoxes — the collapse lens (#393)", () => {
     expect(out.groups.byStack).toEqual({ small: small.groups.byStack!.small });
   });
 
+  it("keeps two kinds on one pair as two edges, and still folds a repeated kind into one (#556)", () => {
+    // A GitLab job that both `needs` and `extends` one in a shut box: once the
+    // box is a summary card both edges land on the same pair, and each kind
+    // says something the other does not.
+    const big = member("big", COLLAPSE_LIMIT + 1);
+    const small = member("small", 2);
+    const ir: GraphIR = {
+      nodes: [...big.nodes, ...small.nodes],
+      edges: [
+        { from: "small/aws_iam_role.r0", to: "big/aws_iam_role.r0", kind: "needs" },
+        { from: "small/aws_iam_role.r0", to: "big/aws_iam_role.r1", kind: "extends" },
+        { from: "small/aws_iam_role.r0", to: "big/aws_iam_role.r2", kind: "needs" },
+      ],
+      groups: { byStack: { big: big.groups.byStack!.big, small: small.groups.byStack!.small } },
+    };
+    const { ir: out } = collapseBoxes(ir);
+    expect(out.edges).toEqual([
+      { from: "small/aws_iam_role.r0", to: "box:big", kind: "needs" },
+      { from: "small/aws_iam_role.r0", to: "box:big", kind: "extends" },
+    ]);
+  });
+
   it("takes the limit from the caller", () => {
     expect(collapseBoxes(member("m", 8), { limit: 5 }).collapsed).toEqual(["m"]);
     expect(collapseBoxes(member("m", 8), { limit: 20 }).collapsed).toEqual([]);
