@@ -58,7 +58,7 @@ import {
   type IdentityGateAdmission,
   type PendingGateRecord,
 } from "@intentius/chant/gate-decision";
-import { parseGateLedger } from "@intentius/chant/lifecycle/gate-ledger";
+import { parseGateLedger, type PendingGateHeldBy } from "@intentius/chant/lifecycle/gate-ledger";
 import {
   decideOverride,
   OVERRIDE_APPLIED,
@@ -500,7 +500,17 @@ export interface GateEntry {
   /** Under `refused-by-policy`: each run the policy denied, with no override that counts, and the line that overrides it. */
   denials?: { member: string; plan: string; rules: string[]; at: string; expiresAt: string; description?: string; url?: string; refusals: string[]; moved?: { by: string; was?: string }; command: string }[];
   /** Under `held`: the other gate a hook holds the wave on, which waits. */
-  heldOn?: { op: string; gate: string; digest?: string; since: string; description?: string; url?: string; answer?: { point: string; id: string; path?: string } };
+  heldOn?: {
+    op: string;
+    gate: string;
+    digest?: string;
+    since: string;
+    /** The hook that holds the wave (chant#3886): its name, the moment it ran at and its run. Absent on a fact written before chant named it; the card then names the holder from `description`. */
+    heldBy?: PendingGateHeldBy;
+    description?: string;
+    url?: string;
+    answer?: { point: string; id: string; path?: string };
+  };
   /** The line a person runs, when the gate waits or the wave is held: an approval, or a decision point's answer. behold never runs it. */
   command?: string;
   /** The mode this wave is decided under, when it is its own and not the lane's (#537). */
@@ -733,17 +743,6 @@ export function recordedMode(p: PendingGateRecord): GateApprovalSource | undefin
 }
 
 /**
- * The wave a policy denial's or a hold's pending fact names (chant#3839):
- * `wave: {number, name, op}`, `op` being the op-waves spec. Undefined for a
- * fact written before chant named it.
- */
-export function factWave(p: PendingGateRecord): { number: number; name?: string; op?: string } | undefined {
-  const w = (p as { wave?: unknown }).wave as { number?: unknown; name?: unknown; op?: unknown } | undefined;
-  if (!w || typeof w !== "object" || typeof w.number !== "number") return undefined;
-  return { number: w.number, ...(typeof w.name === "string" ? { name: w.name } : {}), ...(typeof w.op === "string" ? { op: w.op } : {}) };
-}
-
-/**
  * The rule with each wave's recorded mode (chant#3861): a wave whose newest
  * pending fact records the mode it asked under is decided under that mode;
  * any other keeps the mode read at base. `recorded` lists the waves whose
@@ -855,7 +854,7 @@ export function policyRefusals(
   if (!o) return [];
   const byWave = new Map<number, { at: string; denials: NonNullable<GateEntry["denials"]> }>();
   for (const d of recordedDenials(o.pending)) {
-    const named = factWave(d);
+    const named = d.wave;
     const wave = named ? (named.op === undefined || named.op === spec.op ? named.number : undefined) : waveOfMember(ledger, d.gate, spec);
     if (wave === undefined || !d.plan) continue;
     const r = waveRule(rule, wave);
@@ -917,7 +916,7 @@ export function heldWaves(
       if (!b || t(p.timestamp) >= t(b.timestamp)) newestByGate.set(p.gate, p);
     }
     for (const p of newestByGate.values()) {
-      const named = factWave(p);
+      const named = p.wave;
       if (!named || named.op !== spec.op) continue;
       const wave = named.number;
       const recordedAs = recordedMode(p);
@@ -942,6 +941,7 @@ export function heldWaves(
         gate: p.gate,
         ...(p.planDigest ? { digest: p.planDigest } : {}),
         since: p.timestamp,
+        ...(p.heldBy ? { heldBy: p.heldBy } : {}),
         ...(p.description ? { description: p.description } : {}),
         ...(p.url ? { url: p.url } : {}),
         ...(answer ? { answer } : {}),
@@ -990,12 +990,18 @@ export function waveRecords(paths: string[], dir: string = WAVE_RECORDS_DIR): { 
   return out;
 }
 
-/** The mode at base and, under `sealed`, the signers there. `repo` is a directory git can read `base` in. */
+/**
+ * The mode at base and, under `sealed`, the signers there. `repo` is a
+ * directory git can read `base` in. `packages` is where a package pin's
+ * classes are read from (chant#3888): the served checkout, whose
+ * node_modules a bare cache has not got. Default `repo`.
+ */
 export async function approvalRuleAt(
   spec: Pick<GateLaneSpec, "approvalMode" | "overriders">,
   repo: string,
   base: string | undefined,
   show: (path: string) => Promise<string | undefined>,
+  packages: string = repo,
 ): Promise<{ rule: ApprovalRule; lane: LaneRule }> {
   if (!base) {
     const m = await spec.approvalMode(async () => undefined, 0);
@@ -1006,8 +1012,8 @@ export async function approvalRuleAt(
   let note: string | undefined;
   try {
     identityGates = identityGatesAt(repo, base);
-    // chant#3862: each named gate's judge, seal and class, read at base.
-    admissions = identityGates.flatMap((g) => identityGateAdmissionAt(repo, base, g.gate) ?? []);
+    // chant#3862: each named gate's judge, seal and class, read at base; a pinned package's classes from the checkout's install (chant#3888).
+    admissions = identityGates.flatMap((g) => identityGateAdmissionAt(repo, base, g.gate, { packages }) ?? []);
   } catch (e) {
     note = e instanceof Error ? e.message : String(e);
   }
@@ -1140,7 +1146,7 @@ export function ledgerPort(git: GitRun, repo: string[], sha: string, prefix = ""
   };
 }
 
-/** Read the lane at `ref` in `repo` (git args that name the repository; `dir` is its directory), deciding under the rule at `base`. */
+/** Read the lane at `ref` in `repo` (git args that name the repository; `dir` is its directory), deciding under the rule at `base`; `packages` is where pinned packages are installed. */
 async function readAt(
   git: GitRun,
   repo: string[],
@@ -1149,6 +1155,7 @@ async function readAt(
   base: string | undefined,
   now: Date,
   spec: GateLaneSpec,
+  packages: string = dir,
 ): Promise<{ commit: { sha: string; committed: string }; approval: ApprovalRule; gates: GateEntry[]; locks: LockEntry[] } | undefined> {
   const tip = await git([...repo, "log", "-1", "--format=%H%x00%cI", ref, "--"]);
   if (tip.code !== 0 || !tip.stdout.trim()) return undefined;
@@ -1171,7 +1178,7 @@ async function readAt(
     spec.locksPath ? show(at(spec.locksPath)) : Promise.resolve(""),
     spec.recordsDir ? git([...repo, "ls-tree", "-r", "--name-only", sha, "--", `${at(spec.recordsDir)}/`]) : Promise.resolve({ code: 1, stdout: "", stderr: "" }),
     git([...repo, "ls-tree", "--name-only", sha, "--", at("_gates/")]),
-    approvalRuleAt(spec, dir, base, (path) => showAt(base!, path)),
+    approvalRuleAt(spec, dir, base, (path) => showAt(base!, path), packages),
   ]);
   // #521: the other ops' ledgers, for a wave held on another gate, and the override ledger, for a wave the policy refused.
   const otherPaths = (gatesDir.code === 0 ? lines(gatesDir.stdout) : [])
@@ -1241,7 +1248,7 @@ export async function readLifecycle(checkout: string, opts: LifecycleOptions = {
       return { ...base, found: false, via: "fetch", origin, fetch: { ok: true }, ...empty, note: `${origin} has no ${LIFECYCLE_BRANCH} branch: no wave has asked for an approval and no root is locked yet.` };
     }
     if (f.ok) {
-      const lane = await readAt(git, ["--git-dir", cache], cache, CACHE_REF, f.base, now, spec);
+      const lane = await readAt(git, ["--git-dir", cache], cache, CACHE_REF, f.base, now, spec, checkout);
       if (lane) return { ...base, found: true, via: "fetch", origin, fetch: { ok: true }, ...lane, note: `${LIFECYCLE_BRANCH} as fetched from ${origin} at ${base.read.at}.` };
       fetchError = `fetched ${LIFECYCLE_BRANCH}, but behold's cache could not read it`;
     } else {

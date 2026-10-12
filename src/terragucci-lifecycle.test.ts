@@ -256,6 +256,18 @@ describe("chant op-waves records (#521)", () => {
     expect(gateEntries(readGateLedgerText("", "", { ledgers: { "_gates/tf-migrate.jsonl": unnamed } }), [], SRC, NOW)).toEqual([]);
   });
 
+  it("carries the hook a hold's fact names, and reads no hold from a wave chant's parser dropped (chant#3886, chant#3887)", () => {
+    const fact = (o: object) => JSON.stringify({ version: 1, kind: "pending", op: "tf-migrate", gate: "move-db", timestamp: "2026-10-09T10:00:00Z", expiresAt: "2099-01-01T00:00:00Z", planDigest: D2, ...o });
+    const g = gateEntries(readGateLedgerText("", "", { ledgers: { "_gates/tf-migrate.jsonl": fact({ wave: { number: 1, name: "base", op: "tf-apply" }, heldBy: { hook: "migrate", moment: "after-plan" } }) } }), [], SRC, NOW)[0]!;
+    expect(g.heldOn).toMatchObject({ heldBy: { hook: "migrate", moment: "after-plan" } });
+    // A wave of the wrong shape is dropped by chant's parseGateLedger, so the fact holds nothing.
+    expect(gateEntries(readGateLedgerText("", "", { ledgers: { "_gates/tf-migrate.jsonl": fact({ wave: { number: "1", name: "base", op: "tf-apply" } }) } }), [], SRC, NOW)).toEqual([]);
+    // A heldBy of the wrong shape is dropped; the hold stands without it.
+    const bad = gateEntries(readGateLedgerText("", "", { ledgers: { "_gates/tf-migrate.jsonl": fact({ wave: { number: 1, name: "base", op: "tf-apply" }, heldBy: "migrate" }) } }), [], SRC, NOW)[0]!;
+    expect(bad.state).toBe("held");
+    expect(bad.heldOn!.heldBy).toBeUndefined();
+  });
+
   it("decides a held wave's gate under the mode its fact records (chant#3861)", () => {
     const held = JSON.stringify({ version: 1, kind: "pending", op: "tf-migrate", gate: "move-db", timestamp: "2026-10-09T10:00:00Z", expiresAt: "2099-01-01T00:00:00Z", planDigest: D2, approvalMode: "sealed", wave: { number: 1, name: "base", op: "tf-apply" } });
     const g = gateEntries(readGateLedgerText("", "", { ledgers: { "_gates/tf-migrate.jsonl": held } }), [], SRC, NOW)[0]!;
@@ -359,6 +371,25 @@ describe("readLifecycle on a fixture repo (#505)", () => {
     // alice's approval is unsealed: chant's judge refuses it, and the gate waits.
     expect(w1).toMatchObject({ state: "waiting", identity: { class: "human" } });
     expect(w1.uncounted?.[0]?.reason).toMatch(/^identity\.gates\.wave-1 at base: /);
+  });
+
+  it("reads a class a pinned package supplies from the checkout's install, so the gate admits by it (chant#3888)", async () => {
+    const decl = { version: 1, members: [], pins: [{ package: "@acme/ops-classes", version: "1.0.0" }], identity: { gates: { "wave-1": { class: "operator" } } } };
+    const { checkout } = fixture({ main: { "chant.workspace.json": JSON.stringify(decl) } });
+    const reason = async () => {
+      const a = await readLifecycle(checkout, { cacheRoot: scratch(), now: () => new Date("2026-10-10T00:00:00Z") });
+      return a.gates.find((g) => g.wave === 1)!.uncounted?.[0]?.reason ?? "";
+    };
+    // Not installed: chant names the pin it could not read, under the checkout.
+    expect(await reason()).toContain(`@acme/ops-classes is not installed under ${checkout}`);
+    // Installed in the checkout: the class is known, and alice's approval is refused only for its missing seal.
+    const pkg = join(checkout, "node_modules/@acme/ops-classes");
+    mkdirSync(pkg, { recursive: true });
+    writeFileSync(join(pkg, "package.json"), JSON.stringify({ name: "@acme/ops-classes", version: "1.0.0", exports: { "./workspace-principals": "./principals.json" } }));
+    writeFileSync(join(pkg, "principals.json"), JSON.stringify({ schema: 1, classes: [{ name: "operator", description: "people who apply infrastructure", role: "operator" }] }));
+    const r = await reason();
+    expect(r).toMatch(/^identity\.gates\.wave-1 at base: /);
+    expect(r).not.toMatch(/could not all be read|no pinned package supplies/);
   });
 
   it("dates an entry by the newest commit that changed its file, not the branch tip", async () => {
