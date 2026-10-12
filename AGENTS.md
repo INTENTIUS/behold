@@ -145,7 +145,15 @@ and none is the checkout's git remote) adds two reads, in
   depth 1 into the same cache (`refs/behold/base`): `mode` from
   terragucci.yml's `approval:` key, else `sealed` when chant.workspace.json
   lists `identity.gates`, else `ledger`; under `sealed`, the signers read with
-  chant's `gateSignersAt`. The op, ledger paths, gate names, approve line and
+  chant's `gateSignersAt`. A gate `identity.gates` names at base (chant's
+  `identityGatesAt`) is decided with `refuses` from `identityRefuses`: only an
+  approval whose seal verifies against the signers at base counts, whatever
+  the mode, and the entry carries `identity: {class, classChecked}`. behold
+  does not check the class a gate names, since gate-decision does not export
+  that check (INTENTIUS/chant#3862); `approval.note` says so. `approval.inferred`
+  says the mode is read at base: a wave's pending fact does not record the
+  mode it asked under (INTENTIUS/chant#3861), and a pipeline's `--approval`
+  flag lives in its generated CI, which behold does not read. The op, ledger paths, gate names, approve line and
   mode reader are a `GateLaneSpec` (`TERRAGUCCI_LANE` is terragucci's), for
   another product's lane: `opWavesLane(op, over?)` gives one with chant's
   approve line, mode rule and overriders, and `readLifecycle(checkout, {spec})`

@@ -28,10 +28,10 @@ export function laneLegend(lane, now = new Date(), polled = null) {
   }
   const how = lane.via === "fetch" ? "fetched from origin" : "the checkout's origin/chant/lifecycle, as of its last git fetch (behold's fetch failed)";
   return {
-    text: `chant/lifecycle at ${short(lane.commit.sha)}, committed ${ago(lane.commit.committed, now)} · ${when}, ${how}`,
+    text: `chant/lifecycle at ${short(lane.commit.sha)}, committed ${ago(lane.commit.committed, now)} · ${when}, ${how}${lane.approval && lane.approval.inferred ? ` · approval mode ${lane.approval.mode}, inferred at base (the waves do not record it)` : ""}`,
     title: [
       lane.note,
-      lane.approval ? `approvals counted: ${lane.approval.mode} (${lane.approval.source}${lane.approval.base ? `, base ${short(lane.approval.base)}` : ""})${lane.approval.note ? `; ${lane.approval.note}` : ""}` : "",
+      lane.approval ? `approvals counted: ${lane.approval.mode} (${lane.approval.source}${lane.approval.base ? `, base ${short(lane.approval.base)}` : ""})${lane.approval.inferred ? `; ${lane.approval.inferred}` : ""}${lane.approval.note ? `; ${lane.approval.note}` : ""}` : "",
       lane.fetch && lane.fetch.error ? `fetch: ${lane.fetch.error}` : "",
     ].filter(Boolean).join("\n"),
     tone: lane.via === "fetch" ? "quiet" : "stale",
@@ -82,6 +82,7 @@ export function laneGateCards(lane, now = new Date()) {
     if (g.digest) facts.push(`plan ${short(g.digest)}`);
     if (g.pending && g.pending.members && g.pending.members.length) facts.push(`${g.pending.members.length} root${g.pending.members.length === 1 ? "" : "s"}: ${g.pending.members.map((m) => m.member).join(", ")}`);
     if (g.pending && g.pending.neverOverMcp) facts.push("never approved over MCP");
+    if (g.identity) facts.push(`identity.gates at base: only a signed approval counts${g.identity.class ? `, from class ${g.identity.class}; behold checks the seal, not the class (chant#3862)` : ""}`);
     if (g.spent) facts.push(`the approval of plan ${short(g.spent.planDigest)} by ${g.spent.by} was spent by its apply`);
     const uncounted = (g.uncounted || []).map((u) => `${u.approval.by}'s approval of this plan does not count: ${u.reason}`);
     const overrides = (g.denials || []).map((d) => ({
