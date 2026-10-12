@@ -88,6 +88,12 @@ and none is the checkout's git remote) adds two reads, in
   report of its wave's other entries (same gate and digest). No
   `audit.jsonl` is `present: false` plus an `absent` sentence, never an
   empty history; a bad line is the `422 terragucci-report` refusal naming it.
+  #523: an S3 403 on an optional read (`audit.jsonl` here, `run.json` for
+  `/api/terragucci/progress` and the estate's run views) is not a refusal:
+  the source throws `TerragucciDenied` (`src/terragucci-source.ts`), and the
+  answer carries `present: false`, `unreadable: true` and an `absent`
+  sentence naming the key and `s3:GetObject` (or `s3:ListBucket`). A 403 on
+  `index.json`, a report or `estate.json` still fails.
   `src/terragucci-timeline.ts` holds the read and the check (terragucci's
   `dist/audit.schema.json` when it resolves, structural otherwise). The SPA
   draws it in the Terragucci tab and, filtered to the card's root, in the
