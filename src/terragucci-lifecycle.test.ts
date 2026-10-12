@@ -7,7 +7,8 @@ import { createApp } from "./server.ts";
 import { Broadcaster } from "./events.ts";
 import { FrameBuffer } from "./frames.ts";
 import { OpRunner } from "./op-runner.ts";
-import { cacheDir, CHECKOUT_REF, gateEntries, parseApplied, parseLedger, parseLocks, readLifecycle, redact, samePlanDigest, waveRecords, type LifecycleAnswer } from "./terragucci-lifecycle.ts";
+import { cacheDir, CHECKOUT_REF, decideLaneGate, gateEntries, parseLocks, readGateLedgerText, readLifecycle, redact, waveRecords, type GateLedger, type LifecycleAnswer } from "./terragucci-lifecycle.ts";
+import { decideGateApproval, type GateSigners } from "@intentius/chant/gate-decision";
 
 // #505: the chant/lifecycle lane, read from a fixture repo built here with
 // real git: an origin holding the branch, and a checkout of it that behold
@@ -83,25 +84,19 @@ function fixture(o: { branch?: boolean; files?: Record<string, string> } = {}): 
 /** Every ref of a repository with its value, and whether FETCH_HEAD exists: what a write would change. */
 const refs = (repo: string): string => `${git(repo, ["for-each-ref", "--format=%(refname) %(objectname)"])}\nFETCH_HEAD:${existsSync(join(repo, ".git", "FETCH_HEAD"))}`;
 
-describe("the lane's parsers mirror terragucci's", () => {
-  it("skips malformed ledger lines and keeps pending and resolutions apart", () => {
-    const l = parseLedger(LANE["_gates/tf-apply.jsonl"]!);
+describe("the lane reads with chant's parsers (#520)", () => {
+  it("skips malformed ledger lines and keeps pending, resolutions, applied and finished apart", () => {
+    const l = readGateLedgerText(LANE["_gates/tf-apply.jsonl"]!, LANE["_gates/tf-apply/applied.jsonl"]!);
     expect(l.pending.map((p) => p.gate)).toEqual(["wave-1", "wave-2", "wave-3"]);
     expect(l.resolutions.map((r) => r.resolvedBy)).toEqual(["alice", "bob"]);
-    const a = parseApplied(LANE["_gates/tf-apply/applied.jsonl"]!);
-    expect(a.applied).toHaveLength(1);
-    expect(a.finished[0]!.result).toBe("applied");
+    expect(l.applied).toHaveLength(1);
+    expect(l.finished[0]!.result).toBe("applied");
   });
 
   it("reads a lock file the way parseLocks does, and anything else as no locks", () => {
     expect(parseLocks(LANE["_locks/tf-apply.json"]!)["envs/prod/orders"]).toEqual({ pr: 12, by: "carol", at: "2026-10-09T07:00:00Z", head: "abc123" });
     expect(parseLocks("{")).toEqual({});
     expect(parseLocks(JSON.stringify({ version: 2, locks: { a: { pr: 1, by: "x", at: "t", head: "h" } } }))).toEqual({});
-  });
-
-  it("treats the two digest spellings as one", () => {
-    expect(samePlanDigest(D3, `jcs1-${D3}`)).toBe(true);
-    expect(samePlanDigest(D1, D2)).toBe(false);
   });
 
   it("names each kept wave report's digest", () => {
@@ -125,6 +120,55 @@ describe("the lane's parsers mirror terragucci's", () => {
   });
 });
 
+describe("each wave decided by chant's gate-decision (#520)", () => {
+  const NOW = new Date("2026-10-10T00:00:00Z");
+  const pending = (gate: string, digest: string, at = "2026-10-09T08:00:00Z") => ({ version: 1 as const, kind: "pending" as const, op: "tf-apply", gate, timestamp: at, expiresAt: "2099-01-01T00:00:00Z", planDigest: digest });
+  const approval = (gate: string, digest: string, at: string, extra: object = {}) => ({ version: 1 as const, op: "tf-apply", gate, resolvedBy: "alice", timestamp: at, planDigest: digest, ...extra });
+  const ledger = (l: Partial<GateLedger>): GateLedger => ({ pending: [], resolutions: [], applied: [], finished: [], ...l });
+  const chant = (l: GateLedger, gate: string, digest: string, mode: "ledger" | "sealed", signers?: GateSigners) =>
+    decideGateApproval({ ledger: l, gate, planDigest: digest, mode, ...(signers ? { signers } : {}), now: NOW.toISOString(), spend: true });
+
+  it("refuses when an unspent approval stands for another digest, with that digest and no approve line", () => {
+    const l = ledger({ pending: [pending("wave-1", D2)], resolutions: [approval("wave-1", D1, "2026-10-09T09:00:00Z")] });
+    const g = gateEntries(l, [], { branch: "chant/lifecycle", commit: "x", committed: "2026-10-09T09:00:00Z", path: "" }, NOW)[0]!;
+    expect(g).toMatchObject({ state: "refused", digest: D2, refused: { digest: D1, by: "alice" } });
+    expect(g.command).toBeUndefined();
+    expect(chant(l, "wave-1", D2, "ledger")).toMatchObject({ status: "waiting", mismatched: { planDigest: D1 } });
+  });
+
+  it("does not count a spent approval: the wave waits for its own", () => {
+    const l = ledger({
+      pending: [pending("wave-1", D2, "2026-10-09T08:00:00Z")],
+      resolutions: [approval("wave-1", D1, "2026-10-09T09:00:00Z")],
+      applied: [{ version: 1, kind: "applied", op: "tf-apply", gate: "wave-1", planDigest: D1, approvedAt: "2026-10-09T09:00:00Z", approvedBy: "alice", timestamp: "2026-10-09T09:05:00Z" }],
+    });
+    const d = decideLaneGate(l, "wave-1", { mode: "ledger" }, NOW);
+    expect(d.state).toBe("waiting");
+    expect(d.spent).toMatchObject({ by: "alice", planDigest: D1 });
+    expect(chant(l, "wave-1", D2, "ledger").status).toBe("waiting");
+  });
+
+  it("does not count an unsealed approval under sealed, and says why", () => {
+    const signers: GateSigners = { base: "b", signersPath: ".chant/allowed_signers", active: true, signers: [], problems: [] };
+    const l = ledger({ pending: [pending("wave-1", D1)], resolutions: [approval("wave-1", D1, "2026-10-09T09:00:00Z", { seal: { signer: "alice" } })] });
+    const d = decideLaneGate(l, "wave-1", { mode: "sealed", signers }, NOW);
+    expect(d.state).toBe("waiting");
+    expect(d.uncounted?.[0]?.approval.signed).toBe(false);
+    expect(d.uncounted?.[0]?.reason).toMatch(/seal/);
+    expect(chant(l, "wave-1", D1, "sealed", signers).status).toBe("waiting");
+    expect(decideLaneGate(l, "wave-1", { mode: "ledger" }, NOW).state).toBe("approved");
+  });
+
+  it("carries relayedBy, the review's head and reviewers, and the pending members", () => {
+    const l = ledger({
+      pending: [{ ...pending("wave-1", D1), members: [{ member: "envs/prod", planDigest: D1 }], neverOverMcp: true as const } as GateLedger["pending"][number]],
+      resolutions: [approval("wave-1", D1, "2026-10-09T09:00:00Z", { relayedBy: "slackbot", via: "pr-review", pr: 4, head: "abc", reviewers: ["bob"] })],
+    });
+    const d = decideLaneGate(l, "wave-1", { mode: "ledger" }, NOW);
+    expect(d).toMatchObject({ state: "approved", approval: { relayedBy: "slackbot", via: "pr-review", pr: 4, head: "abc", reviewers: ["bob"] }, pending: { members: [{ member: "envs/prod", planDigest: D1 }], neverOverMcp: true } });
+  });
+});
+
 describe("readLifecycle on a fixture repo (#505)", () => {
   it("fetches into behold's own cache and reads a waiting wave, an approved wave, an applied wave and a lock, each with its commit", async () => {
     const { checkout, origin } = fixture();
@@ -142,7 +186,7 @@ describe("readLifecycle on a fixture repo (#505)", () => {
     expect(byWave[1]!.command).toBeUndefined();
     expect(byWave[2]).toMatchObject({ state: "waiting", digest: D2, pending: { timestamp: "2026-10-09T10:00:00Z", runId: "77" }, command: `npx terragucci approve wave-2 --plan ${D2}` });
     expect(byWave[2]!.records).toEqual([{ digest: D2, path: `_gates/tf-apply/wave-2/${D2.replace(":", "_")}.json` }]);
-    expect(byWave[3]).toMatchObject({ state: "applied", approval: { by: "bob", signed: true }, applied: { at: "2026-10-08T11:05:00Z", result: "applied", finished: "2026-10-08T11:09:00Z" } });
+    expect(byWave[3]).toMatchObject({ state: "applied", approval: { by: "bob", signed: false }, applied: { at: "2026-10-08T11:05:00Z", result: "applied", finished: "2026-10-08T11:09:00Z" } });
 
     expect(a.locks).toEqual([{ root: "envs/prod/orders", pr: 12, by: "carol", at: "2026-10-09T07:00:00Z", head: "abc123", source: { branch: "chant/lifecycle", commit: tip, committed: "2026-10-09T10:01:00Z", path: "_locks/tf-apply.json" } }]);
     for (const e of [...a.gates, ...a.locks]) expect(e.source).toMatchObject({ commit: tip, committed: "2026-10-09T10:01:00Z" });

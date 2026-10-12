@@ -29,7 +29,11 @@ export function laneLegend(lane, now = new Date(), polled = null) {
   const how = lane.via === "fetch" ? "fetched from origin" : "the checkout's origin/chant/lifecycle, as of its last git fetch (behold's fetch failed)";
   return {
     text: `chant/lifecycle at ${short(lane.commit.sha)}, committed ${ago(lane.commit.committed, now)} · ${when}, ${how}`,
-    title: [lane.note, lane.fetch && lane.fetch.error ? `fetch: ${lane.fetch.error}` : ""].filter(Boolean).join("\n"),
+    title: [
+      lane.note,
+      lane.approval ? `approvals counted: ${lane.approval.mode} (${lane.approval.source}${lane.approval.base ? `, base ${short(lane.approval.base)}` : ""})${lane.approval.note ? `; ${lane.approval.note}` : ""}` : "",
+      lane.fetch && lane.fetch.error ? `fetch: ${lane.fetch.error}` : "",
+    ].filter(Boolean).join("\n"),
     tone: lane.via === "fetch" ? "quiet" : "stale",
   };
 }
@@ -40,7 +44,20 @@ const TITLE = {
   approved: (g) => `wave ${g.wave} approved by ${g.approval.by}, not applied yet`,
   applied: (g) => `wave ${g.wave} applied`,
   failed: (g) => `wave ${g.wave}'s apply failed`,
+  refused: (g) => `wave ${g.wave} refused: an approval stands for other plans`,
 };
+
+/** Who approved, and how: signed, relayed, from a pull request's review. */
+function approvalWords(a, now) {
+  const how = [
+    a.signed ? "signed" : "",
+    a.via ? `via ${a.via}` : "",
+    a.pr !== undefined ? `PR #${a.pr}${a.head ? ` at ${short(a.head)}` : ""}` : "",
+    a.reviewers && a.reviewers.length ? `reviewed by ${a.reviewers.join(", ")}` : "",
+    a.relayedBy ? `relayed by ${a.relayedBy}` : "",
+  ].filter(Boolean);
+  return `${a.by}${how.length ? ` (${how.join(", ")})` : ""} ${clock(a.at, now)}, ${ago(a.at, now)}`;
+}
 
 /** Each wave's gate as a card: its state, who and when, the digest, the commit it was read from, and for a waiting wave the line to run. No button. */
 export function laneGateCards(lane, now = new Date()) {
@@ -48,15 +65,20 @@ export function laneGateCards(lane, now = new Date()) {
   return lane.gates.map((g) => {
     const facts = [];
     if (g.pending) facts.push(`asked ${clock(g.pending.timestamp, now)}, ${ago(g.pending.timestamp, now)}`);
-    if (g.approval) facts.push(`approved by ${g.approval.by}${g.approval.signed ? " (signed)" : ""}${g.approval.via ? ` via ${g.approval.via}` : ""} ${clock(g.approval.at, now)}, ${ago(g.approval.at, now)}`);
-    if (g.applied) facts.push(`${g.applied.result === "failed" ? "apply failed" : "applied"} ${clock(g.applied.finished || g.applied.at, now)}, ${ago(g.applied.finished || g.applied.at, now)}`);
+    if (g.approval) facts.push(`${g.state === "refused" ? `approved for plan ${short(g.refused && g.refused.digest) || "(none)"} by` : "approved by"} ${approvalWords(g.approval, now)}`);
+    if (g.applied) facts.push(`${g.applied.result === "failed" ? "apply failed" : "applied"} ${clock(g.applied.finished || g.applied.at, now)}, ${ago(g.applied.finished || g.applied.at, now)}${g.applied.review && g.applied.review.pr !== undefined ? ` under the review of PR #${g.applied.review.pr}` : ""}`);
     if (g.digest) facts.push(`plan ${short(g.digest)}`);
+    if (g.pending && g.pending.members && g.pending.members.length) facts.push(`${g.pending.members.length} root${g.pending.members.length === 1 ? "" : "s"}: ${g.pending.members.map((m) => m.member).join(", ")}`);
+    if (g.pending && g.pending.neverOverMcp) facts.push("never approved over MCP");
+    if (g.spent) facts.push(`the approval of plan ${short(g.spent.planDigest)} by ${g.spent.by} was spent by its apply`);
+    const uncounted = (g.uncounted || []).map((u) => `${u.approval.by}'s approval of this plan does not count: ${u.reason}`);
     return {
       wave: g.wave,
       state: g.state,
-      tone: g.state === "waiting" ? "wave" : g.state === "failed" ? "failed" : g.state === "expired" ? "none" : "ok",
+      tone: g.state === "waiting" ? "wave" : g.state === "failed" || g.state === "refused" ? "failed" : g.state === "expired" ? "none" : "ok",
       title: TITLE[g.state] ? TITLE[g.state](g) : `wave ${g.wave}: ${g.state}`,
       facts: facts.join(" · "),
+      ...(uncounted.length ? { uncounted } : {}),
       source: sourceWords(g.source, now),
       ...(g.command ? { command: g.command, note: "An approval is a signed git record bound to this plan digest: run the line at your shell. behold does not approve." } : {}),
       ...(g.pending && g.pending.url ? { job: g.pending.url } : {}),
@@ -108,7 +130,14 @@ export function renderLane(host, lane, polled, now, ui) {
     const src = document.createElement("div");
     src.className = "ws-gate-note";
     src.textContent = `from ${g.source}`;
-    box.append(title, facts, src);
+    box.append(title, facts);
+    for (const u of g.uncounted || []) {
+      const why = document.createElement("div");
+      why.className = "ws-gate-note";
+      why.textContent = u;
+      box.appendChild(why);
+    }
+    box.appendChild(src);
     if (g.command) {
       const cmd = document.createElement("code");
       cmd.className = "tg-command";

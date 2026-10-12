@@ -102,11 +102,34 @@ and none is the checkout's git remote) adds two reads, in
   snapshot and does not fail on it.
 - `GET /api/terragucci/lifecycle` (#505): the repo's `chant/lifecycle` lane,
   `{branch, found, via, origin?, fetch: {ok, error?}, commit?: {sha,
-  committed}, read: {at}, gates[], locks[], note}`. `gates[]` is one entry per
-  `wave-<k>` in `_gates/tf-apply.jsonl` and `_gates/tf-apply/applied.jsonl`:
-  `state` (`waiting | expired | approved | applied | failed`), `digest`,
-  `pending`, `approval` (by, at, signed), `applied`, the kept reports under
-  `_gates/tf-apply/wave-<k>/`, and `command` when it waits. `locks[]` is
+  committed}, read: {at}, approval?, gates[], locks[], note}`. `gates[]` is one
+  entry per `wave-<k>` in `_gates/tf-apply.jsonl` and
+  `_gates/tf-apply/applied.jsonl`, decided by chant's `decideGateApproval`
+  (`@intentius/chant/gate-decision`, #520) with spent approvals left out, on
+  lines parsed by chant's `parseGateLedger` and `parseAppliedGateLines`. The
+  states:
+  - `waiting`: no approval of the wave's digest counts; `command` is the
+    approve line (`--sign` under `sealed`).
+  - `expired`: the pending fact's `expiresAt` passed with none.
+  - `refused`: an unspent approval stands for another digest
+    (`refused: {digest, by, at}`); no approve line.
+  - `approved`: an unspent approval of the digest counts, not applied yet.
+  - `applied` / `failed`: a wave applied under that approval, and how the
+    apply finished when terragucci recorded it.
+  Each entry also carries `digest`, `pending` (with `members` and
+  `neverOverMcp` when recorded), `approval` (by, at, `signed` when the seal has
+  a signature, via, pr, head, reviewers, relayedBy, note), `uncounted` (an
+  approval of this digest the mode did not count, with chant's reason, such
+  as an unsealed one under `sealed`), `spent` (an approval of another digest
+  an apply used), `applied` (with `wave` and `review` when present), the kept
+  reports under `_gates/tf-apply/wave-<k>/`, and `command`. `approval` on the
+  answer is the rule read at base, the tip of origin's default branch fetched
+  depth 1 into the same cache (`refs/behold/base`): `mode` from
+  terragucci.yml's `approval:` key, else `sealed` when chant.workspace.json
+  lists `identity.gates`, else `ledger`; under `sealed`, the signers read with
+  chant's `gateSignersAt`. The op, ledger paths, gate names, approve line and
+  mode reader are a `GateLaneSpec` (`TERRAGUCCI_LANE` is terragucci's), for
+  another product's lane. `locks[]` is
   `_locks/tf-apply.json`, one per root (`pr, by, at, head, via?, stage?`).
   Every gate and lock carries `source: {commit, committed, path}`, the newest
   commit of the branch that changed its file. The branch is fetched from the
@@ -767,6 +790,20 @@ inside a terragucci repo is refused as terragucci.
 Op discovery (`src/ops.ts`) reads a gate from `signalName: "<name>"` or from
 `gate("<name>", ...)`, the form chant's op builder and SQL Yodeler write, so
 a gated Op is never listed or run as ungated on any repo (#517).
+
+A policy denial is never approved from behold (#519, `src/policy-override.ts`).
+`GET /api/workspace/gates` gives a gate of op `policy-override` an `override`
+field `{subject, rules, plan, digest, state, spentAt, product, command,
+source}`: the rules and denied plan come from `chant/lifecycle:_gates/
+policy-override.jsonl` (read with `git show`, the local branch then
+`origin/chant/lifecycle`), `state` is `waiting`, `overridden` (status says an
+override counts) or `spent` (a line in `_gates/policy-override/applied.jsonl`
+for its digest), and `command` is the product's (`npx terragucci override`,
+`npx yodel override`) or chant's `chant approve policy-override <subject>
+--rule <id> --reason "<why>" --plan <digest>`. The card shows that command and
+no button, and `POST /api/workspace/gates/approve` answers such a gate `422`
+with `code: "override"`. These readers mirror chant's `override-gate` field
+names; moving them onto chant's own `override-gate` export is a follow-up.
 
 ### The exceptions, and their exact size
 

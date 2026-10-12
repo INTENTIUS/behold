@@ -155,7 +155,14 @@ Terragucci tab reads them too:
 
 - each wave's gate from `_gates/tf-apply.jsonl` and
   `_gates/tf-apply/applied.jsonl`: waiting (with the approve line), approved
-  and by whom, applied, failed, or a request that expired;
+  and by whom, applied, failed, a request that expired, or refused because an
+  approval stands for other plans. behold decides each wave with chant's own
+  gate decision, the one terragucci applies under: an approval a wave already
+  applied under is spent, and under `approval: sealed` an approval counts only
+  when its seal verifies against the signers file on the default branch. An
+  approval that does not count is shown with the reason. A card also names
+  who relayed an approval from chat, the pull request review it came from,
+  and the roots the wave planned;
 - each locked root from `_locks/tf-apply.json`: the pull request holding it,
   who took it, when, and whether a plan, an apply or `/terragucci lock` did.
 
