@@ -904,8 +904,10 @@ for its digest), and `command` is the product's (`npx terragucci override`,
 `npx yodel override`) or chant's `chant approve policy-override <subject>
 --rule <id> --reason "<why>" --plan <digest>`. The card shows that command and
 no button, and `POST /api/workspace/gates/approve` answers such a gate `422`
-with `code: "override"`. These readers mirror chant's `override-gate` field
-names; moving them onto chant's own `override-gate` export is a follow-up.
+with `code: "override"`. The ledger lines are parsed by chant's
+`@intentius/chant/override-gate` (`recordedDenials`, `parseAppliedOverrides`,
+`overrideCommand`) and `parseGateLedger`, and the product is `productRepo()`
+from `src/terragucci-repo.ts` (#537).
 
 ### The exceptions, and their exact size
 
