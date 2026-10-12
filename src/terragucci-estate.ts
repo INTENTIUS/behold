@@ -35,6 +35,7 @@ import { fileURLToPath } from "node:url";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import type { Hono } from "hono";
 import { parseYAMLDocument } from "@intentius/chant/yaml";
+import { gatePolicyName, terragucciApproveCommand } from "./terragucci-lifecycle.ts";
 import { servedTerragucciConfig } from "./terragucci-repo.ts";
 import { terragucciValidator, TerragucciReadError, type TerragucciRefusal, type Validation, type Validator } from "./terragucci-reports.ts";
 import { terragucciSource, type TerragucciSource } from "./terragucci-source.ts";
@@ -483,7 +484,7 @@ export async function readControlEstate(source: TerragucciSource, config: string
               reads: w.reads,
               state: w.state,
               gate: w.gate,
-              ...(w.policy ? { policy: w.policy } : {}),
+              ...(w.policy ? { policy: gatePolicyName(w.policy) } : {}),
               ...(w.approval ? { approval: w.approval } : {}),
               ...(w.digest !== undefined ? { digest: w.digest } : {}),
               ...(w.command ? { command: w.command } : {}),
@@ -504,7 +505,7 @@ export async function readControlEstate(source: TerragucciSource, config: string
         age_seconds: w.age_seconds,
         ...(w.report ? { report: w.report } : {}),
         ...(digest !== undefined ? { digest } : {}),
-        command: fromRun?.command ?? `npx terragucci approve wave-${w.wave}${digest ? ` --plan ${digest}` : " --plan <digest>"}`,
+        command: fromRun?.command ?? (digest ? terragucciApproveCommand(w.wave, digest) : `${terragucciApproveCommand(w.wave, undefined)} --plan <digest>`),
         dated: estateDated,
       };
     });

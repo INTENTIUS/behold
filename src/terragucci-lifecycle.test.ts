@@ -7,7 +7,8 @@ import { createApp } from "./server.ts";
 import { Broadcaster } from "./events.ts";
 import { FrameBuffer } from "./frames.ts";
 import { OpRunner } from "./op-runner.ts";
-import { cacheDir, CHECKOUT_REF, decideLaneGate, gateEntries, parseLocks, readGateLedgerText, readLifecycle, redact, waveRecords, type GateLedger, type LifecycleAnswer } from "./terragucci-lifecycle.ts";
+import { cacheDir, CHECKOUT_REF, decideLaneGate, gateEntries, opWavesLane, parseLocks, readGateLedgerText, readLifecycle, redact, waveOfGate, waveRecords, type GateLedger, type LifecycleAnswer } from "./terragucci-lifecycle.ts";
+import { overridePending } from "@intentius/chant/override-gate";
 import { decideGateApproval, type GateSigners } from "@intentius/chant/gate-decision";
 
 // #505: the chant/lifecycle lane, read from a fixture repo built here with
@@ -166,6 +167,88 @@ describe("each wave decided by chant's gate-decision (#520)", () => {
     });
     const d = decideLaneGate(l, "wave-1", { mode: "ledger" }, NOW);
     expect(d).toMatchObject({ state: "approved", approval: { relayedBy: "slackbot", via: "pr-review", pr: 4, head: "abc", reviewers: ["bob"] }, pending: { members: [{ member: "envs/prod", planDigest: D1 }], neverOverMcp: true } });
+  });
+});
+
+describe("chant op-waves records (#521)", () => {
+  const NOW = new Date("2026-10-10T00:00:00Z");
+  const SRC = { branch: "chant/lifecycle" as const, commit: "x", committed: "2026-10-09T12:00:00Z", path: "" };
+  const ledger = (l: Partial<GateLedger>): GateLedger => ({ pending: [], resolutions: [], applied: [], finished: [], ...l });
+  const pending = (op: string, gate: string, digest: string, extra: object = {}, at = "2026-10-09T08:00:00Z") =>
+    ({ version: 1 as const, kind: "pending" as const, op, gate, timestamp: at, expiresAt: "2099-01-01T00:00:00Z", planDigest: digest, ...extra }) as GateLedger["pending"][number];
+
+  it("accepts wave-<k>, chant's <gate>-wave-<k> and a product's own name, and nothing else", () => {
+    expect(["wave-2", "tf-apply-wave-2", "yodel-apply-wave-3", "approve-migrate-prod", "pr-12", "wave-x"].map(waveOfGate)).toEqual([2, 2, 3, undefined, undefined, undefined]);
+  });
+
+  it("draws chant's default gate name with terragucci's approve line, by wave", () => {
+    const g = gateEntries(ledger({ pending: [pending("tf-apply", "tf-apply-wave-2", D2)] }), [], SRC, NOW)[0]!;
+    expect(g).toMatchObject({ gate: "tf-apply-wave-2", wave: 2, op: "tf-apply", state: "waiting", command: `npx terragucci approve wave-2 --plan ${D2}` });
+  });
+
+  it("draws a product's gate name with chant's approve line, the op from the ledger", () => {
+    const spec = opWavesLane("yodel-apply");
+    const g = gateEntries(ledger({ pending: [pending("yodel-apply", "yodel-apply-wave-1", D1)] }), [], SRC, NOW, { mode: "sealed" }, spec)[0]!;
+    expect(g).toMatchObject({ gate: "yodel-apply-wave-1", wave: 1, op: "yodel-apply", state: "waiting", command: `chant approve yodel-apply yodel-apply-wave-1 --plan ${D1} --sign` });
+    expect(spec.ledgerPath).toBe("_gates/yodel-apply.jsonl");
+  });
+
+  it("labels a review approval (review.pr, review.head, approver.kind, no via) as review", () => {
+    const l = ledger({
+      pending: [pending("tf-apply", "tf-apply-wave-1", D1)],
+      resolutions: [{ version: 1, kind: "resolution", op: "tf-apply", gate: "tf-apply-wave-1", resolvedBy: "bob", timestamp: "2026-10-09T09:00:00Z", planDigest: D1, approver: { kind: "human" }, review: { pr: 42, head: "abc", approvers: ["bob", "carol"] } } as GateLedger["resolutions"][number]],
+    });
+    const g = gateEntries(l, [], SRC, NOW)[0]!;
+    expect(g).toMatchObject({ state: "approved", approval: { by: "bob", via: "review", pr: 42, head: "abc", reviewers: ["bob", "carol"] } });
+  });
+
+  it("says applied with no outcome when chant wrote no finished line", () => {
+    const l = ledger({
+      pending: [pending("tf-apply", "tf-apply-wave-1", D1)],
+      resolutions: [{ version: 1, op: "tf-apply", gate: "tf-apply-wave-1", resolvedBy: "alice", timestamp: "2026-10-09T09:00:00Z", planDigest: D1 }],
+      applied: [{ version: 1, kind: "applied", op: "tf-apply", gate: "tf-apply-wave-1", planDigest: D1, approvedAt: "2026-10-09T09:00:00Z", approvedBy: "alice", timestamp: "2026-10-09T09:05:00Z" }],
+    });
+    const g = gateEntries(l, [], SRC, NOW)[0]!;
+    expect(g.state).toBe("applied");
+    expect(g.applied).toMatchObject({ at: "2026-10-09T09:05:00Z" });
+    expect(g.applied!.result).toBeUndefined();
+  });
+
+  it("draws a wave the policy refused, with the override line and no approve line", () => {
+    const denial = overridePending({ subject: "envs/prod/db", planDigest: D3, rules: ["no-destroy"], timestamp: "2026-10-09T10:00:00Z", expiresAt: "2099-01-01T00:00:00Z", description: `wave 2 (apps) of tf-apply: envs/prod/db: plan ${D3} denied by no-destroy` });
+    const l = readGateLedgerText(line({ kind: "pending", gate: "tf-apply-wave-1", timestamp: "2026-10-09T08:00:00Z", expiresAt: "2099-01-01T00:00:00Z", planDigest: D1 }), "", { ledgers: { "_gates/policy-override.jsonl": JSON.stringify(denial) } });
+    const g = gateEntries(l, [], SRC, NOW).find((e) => e.wave === 2)!;
+    expect(g).toMatchObject({ gate: "wave-2", state: "refused-by-policy", denials: [{ member: "envs/prod/db", plan: D3, rules: ["no-destroy"], command: 'chant approve policy-override envs/prod/db --rule no-destroy --reason "<why>"' }] });
+    expect(g.command).toBeUndefined();
+    // An override from a listed overrider with a reason lets the wave go on.
+    const over = { version: 1, op: "policy-override", gate: "envs/prod/db", resolvedBy: "dana", timestamp: "2026-10-09T11:00:00Z", planDigest: denial.planDigest, note: "planned migration" };
+    const l2 = readGateLedgerText("", "", { ledgers: { "_gates/policy-override.jsonl": [JSON.stringify(denial), JSON.stringify(over)].join("\n") } });
+    expect(gateEntries(l2, [], SRC, NOW, { mode: "ledger", overriders: { principals: ["dana"], path: "policy.override" } })).toEqual([]);
+    expect(gateEntries(l2, [], SRC, NOW, { mode: "ledger", overriders: { principals: [], path: "policy.override" } })[0]!.state).toBe("refused-by-policy");
+  });
+
+  it("draws a wave held on another op's gate, with that gate's approve line, until it is approved", () => {
+    const held = JSON.stringify({ version: 1, kind: "pending", op: "tf-migrate", gate: "move-db", timestamp: "2026-10-09T10:00:00Z", expiresAt: "2099-01-01T00:00:00Z", planDigest: D2, description: "wave 1 (base) of tf-apply is held on it by after-plan hook migrate" });
+    const l = readGateLedgerText("", "", { ledgers: { "_gates/tf-migrate.jsonl": held } });
+    const g = gateEntries(l, [], SRC, NOW)[0]!;
+    expect(g).toMatchObject({ gate: "wave-1", wave: 1, state: "held", heldOn: { op: "tf-migrate", gate: "move-db", digest: D2, hook: "after-plan hook migrate" }, command: `chant approve tf-migrate move-db --plan ${D2}` });
+    const ok = JSON.stringify({ version: 1, op: "tf-migrate", gate: "move-db", resolvedBy: "alice", timestamp: "2026-10-09T11:00:00Z", planDigest: D2 });
+    expect(gateEntries(readGateLedgerText("", "", { ledgers: { "_gates/tf-migrate.jsonl": `${held}\n${ok}` } }), [], SRC, NOW)).toEqual([]);
+  });
+
+  it("answers a decision-point gate with chant workspace points answer, and needs no commit on the pending fact", () => {
+    const l = ledger({ pending: [pending("tf-apply", "tf-apply-wave-3", D1, { answer: { point: "go-live", id: "pt-7", path: ".chant/points/go-live/pt-7.json" } })] });
+    const g = gateEntries(l, [], SRC, NOW)[0]!;
+    expect(g).toMatchObject({ state: "waiting", pending: { answer: { point: "go-live", id: "pt-7" } }, command: "chant workspace points answer pt-7" });
+    expect(g.pending!.commit).toBeUndefined();
+  });
+
+  it("reads the other ledgers off the branch", async () => {
+    const denial = overridePending({ subject: "envs/prod/db", planDigest: D3, rules: ["no-destroy"], timestamp: "2026-10-09T11:00:00Z", expiresAt: "2099-01-01T00:00:00Z", description: `wave 2 (apps) of tf-apply: envs/prod/db: plan ${D3} denied by no-destroy` });
+    const { checkout } = fixture({ files: { ...LANE, "_gates/policy-override.jsonl": JSON.stringify(denial) } });
+    const a = await readLifecycle(checkout, { cacheRoot: scratch(), now: () => NOW });
+    expect(a.gates.find((g) => g.wave === 2)).toMatchObject({ state: "refused-by-policy", denials: [{ member: "envs/prod/db" }] });
+    expect(a.gates.find((g) => g.wave === 1)!.state).toBe("approved");
   });
 });
 

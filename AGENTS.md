@@ -96,22 +96,40 @@ and none is the checkout's git remote) adds two reads, in
 - `GET /api/terragucci/lifecycle` (#505): the repo's `chant/lifecycle` lane,
   `{branch, found, via, origin?, fetch: {ok, error?}, commit?: {sha,
   committed}, read: {at}, approval?, gates[], locks[], note}`. `gates[]` is one
-  entry per `wave-<k>` in `_gates/tf-apply.jsonl` and
+  entry per wave gate (`wave-<k>`, chant op-waves' `<gate>-wave-<k>` or a
+  product's `<name>-wave-<k>`: `WAVE_GATE`, #521) in `_gates/tf-apply.jsonl` and
   `_gates/tf-apply/applied.jsonl`, decided by chant's `decideGateApproval`
   (`@intentius/chant/gate-decision`, #520) with spent approvals left out, on
   lines parsed by chant's `parseGateLedger` and `parseAppliedGateLines`. The
   states:
   - `waiting`: no approval of the wave's digest counts; `command` is the
-    approve line (`--sign` under `sealed`).
+    approve line (`--sign` under `sealed`), or `chant workspace points answer
+    <id>` when the pending fact carries `answer: {point, id}` (#521).
   - `expired`: the pending fact's `expiresAt` passed with none.
   - `refused`: an unspent approval stands for another digest
     (`refused: {digest, by, at}`); no approve line.
   - `approved`: an unspent approval of the digest counts, not applied yet.
   - `applied` / `failed`: a wave applied under that approval, and how the
-    apply finished when terragucci recorded it.
+    apply finished when terragucci recorded it. chant's op waves write no
+    `finished` line: then `applied.result` is absent and the page says
+    "applied (outcome not recorded)".
+  - `refused-by-policy` (#521): a denial on `_gates/policy-override.jsonl`
+    (chant's `recordedDenials`) newer than anything on the wave's gate, that
+    no override counts for (chant's `decideOverride`, with the overriders at
+    base: `.chant/overriders`, or terragucci's `policy.override`) and no run
+    applied an override of since. `denials[]` carries each run, its plan and
+    rules, and chant's `overrideCommand` line; no approve line. The wave is
+    the one chant's description names, else the one whose pending fact lists
+    the run.
+  - `held` (#521): a pending fact on another gate (any `_gates/<op>.jsonl`)
+    whose description is chant's hold text for this op's wave, with no
+    approval of its digest that counts. `heldOn: {op, gate, digest, since,
+    hook}`; `command` approves that gate (`chant approve <op> <gate> --plan`)
+    or answers its decision point.
   Each entry also carries `digest`, `pending` (with `members` and
-  `neverOverMcp` when recorded), `approval` (by, at, `signed` when the seal has
-  a signature, via, pr, head, reviewers, relayedBy, note), `uncounted` (an
+  `neverOverMcp` when recorded, `description`, `url`, `answer`), `approval`
+  (by, at, `signed` when the seal has a signature, via (`review` for chant's
+  `review: {pr, head, approvers}` line), pr, head, reviewers, relayedBy, note), `uncounted` (an
   approval of this digest the mode did not count, with chant's reason, such
   as an unsealed one under `sealed`), `spent` (an approval of another digest
   an apply used), `applied` (with `wave` and `review` when present), the kept
@@ -122,7 +140,11 @@ and none is the checkout's git remote) adds two reads, in
   lists `identity.gates`, else `ledger`; under `sealed`, the signers read with
   chant's `gateSignersAt`. The op, ledger paths, gate names, approve line and
   mode reader are a `GateLaneSpec` (`TERRAGUCCI_LANE` is terragucci's), for
-  another product's lane. `locks[]` is
+  another product's lane: `opWavesLane(op, over?)` gives one with chant's
+  approve line, mode rule and overriders, and `readLifecycle(checkout, {spec})`
+  reads it. `terragucciApproveCommand` is the one approve line the reports,
+  the estate and the lane share, and `gatePolicyName` reads `on-destroy` as
+  `on-destructive` (terragucci#863). `locks[]` is
   `_locks/tf-apply.json`, one per root (`pr, by, at, head, via?, stage?`).
   Every gate and lock carries `source: {commit, committed, path}`, the newest
   commit of the branch that changed its file. The branch is fetched from the
