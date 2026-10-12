@@ -4,7 +4,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { migrateOpLane, parseYodelWaves, readSqlYodelerLane, yodelApprovalMode, yodelApproveCommand } from "./sql-yodeler-lane.ts";
-import { parseHeadPlans, waveRule, withHeadPlans } from "./terragucci-lifecycle.ts";
+import { waveRule, withHeadPlans } from "./terragucci-lifecycle.ts";
+import { parseHeadPlans } from "@intentius/chant/lifecycle/wave-plans";
 import { sqlCardFields, sqlIconFor, sqlKindLabel } from "./sql-kinds.ts";
 import { graphIr } from "./chant.ts";
 

@@ -39,7 +39,9 @@ Copy it and run it yourself; behold has no approve button for SQL Yodeler.
 
 When the waves in `yodel-waves.json` at the base commit name different
 approval modes (say `pr-review` for staging and `sealed` for prod), each
-wave is decided under its own mode and its card says which. A wave that
+wave is decided under its own mode. A wave's request records the mode it
+asked under, and its card shows it; a request written by an older chant
+records none, and then the card says the mode was read at base. A wave that
 names none takes chant's rule. Under `pr-review`, a waiting wave also lists
 the pull request heads whose recorded plans
 (`_wave-plans/yodel-apply/<head>.json`) name its digest: a writer's

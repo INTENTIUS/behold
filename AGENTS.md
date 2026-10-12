@@ -126,13 +126,15 @@ and none is the checkout's git remote) adds two reads, in
     base: `.chant/overriders`, or terragucci's `policy.override`) and no run
     applied an override of since. `denials[]` carries each run, its plan and
     rules, and chant's `overrideCommand` line; no approve line. The wave is
-    the one chant's description names, else the one whose pending fact lists
-    the run.
+    the one the denial's pending fact names (`wave: {number, name, op}`,
+    `factWave`), else, for a fact an older chant wrote, the one whose
+    pending fact lists the run.
   - `held` (#521): a pending fact on another gate (any `_gates/<op>.jsonl`)
-    whose description is chant's hold text for this op's wave, with no
-    approval of its digest that counts. `heldOn: {op, gate, digest, since,
-    hook}`; `command` approves that gate (`chant approve <op> <gate> --plan`)
-    or answers its decision point.
+    that names this op's wave (`wave: {number, name, op}`), with no approval
+    of its digest that counts under the mode the fact records. `heldOn: {op,
+    gate, digest, since, description}`; `command` approves that gate
+    (`chant approve <op> <gate> --plan`) or answers its decision point. A
+    hold fact that names no wave is not read as a hold.
   Each entry also carries `digest`, `pending` (with `members` and
   `neverOverMcp` when recorded, `description`, `url`, `answer`), `approval`
   (by, at, `signed` when the seal has a signature, via (`review` for chant's
@@ -144,16 +146,21 @@ and none is the checkout's git remote) adds two reads, in
   answer is the rule read at base, the tip of origin's default branch fetched
   depth 1 into the same cache (`refs/behold/base`): `mode` from
   terragucci.yml's `approval:` key, else `sealed` when chant.workspace.json
-  lists `identity.gates`, else `ledger`; under `sealed`, the signers read with
-  chant's `gateSignersAt`. A gate `identity.gates` names at base (chant's
-  `identityGatesAt`) is decided with `refuses` from `identityRefuses`: only an
-  approval whose seal verifies against the signers at base counts, whatever
-  the mode, and the entry carries `identity: {class, classChecked}`. behold
-  does not check the class a gate names, since gate-decision does not export
-  that check (INTENTIUS/chant#3862); `approval.note` says so. `approval.inferred`
-  says the mode is read at base: a wave's pending fact does not record the
-  mode it asked under (INTENTIUS/chant#3861), and a pipeline's `--approval`
-  flag lives in its generated CI, which behold does not read. The op, ledger paths, gate names, approve line and
+  lists `identity.gates`, else `ledger`, and the signers read with chant's
+  `gateSignersAt`. Each wave is decided under the approval mode its newest
+  pending fact records (`approvalMode`, `withRecordedModes`), else the mode at
+  base; the entry carries `approvalMode: {mode, from: "pending" | "base"}`,
+  and `approval.inferred` is set only when some wave's fact records none. A
+  gate `identity.gates` names at base is decided with `refuses` from chant's
+  `identityGateAdmissionAt`, which checks the seal against the signers at
+  base and, when the gate names a class, the role grants in
+  `.chant/trust.json` at base, whatever the mode; the entry carries
+  `identity: {class}`. That reader loads no pinned package, so a gate whose
+  class only a pinned package supplies refuses every approval, with chant's
+  reason. Under `pr-review`, a spec's `headPlans` (the op-waves spec name)
+  has the newest 50 `_wave-plans/<name>/<head>.json` records read with
+  chant's `readHeadPlans` (`@intentius/chant/lifecycle/wave-plans`) through
+  `ledgerPort`, a `LedgerReadPort` over the fetched commit. The op, ledger paths, gate names, approve line and
   mode reader are a `GateLaneSpec` (`TERRAGUCCI_LANE` is terragucci's), for
   another product's lane: `opWavesLane(op, over?)` gives one with chant's
   approve line, mode rule and overriders, and `readLifecycle(checkout, {spec})`
