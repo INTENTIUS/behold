@@ -186,6 +186,28 @@ describe("memberIrFromWorkspaceGraph", () => {
     expect(ir.meta).toEqual({ _behaviour: { x: 1 } });
   });
 
+  // #552: chant#3912's pipeline groups are scoped like byStack, and a dangling
+  // reference belongs to the member that holds it.
+  it("keeps the member's byPipeline and dangling references, in its own ids", () => {
+    const ir = memberIrFromWorkspaceGraph(
+      doc({
+        groups: { byPipeline: { "api/ci": ["api/Fn", "api/Role"], "db/ci": ["db/Table"] } },
+        dangling: [
+          { from: "api/Fn", kind: "calls", path: "uses", value: "acme/shared/.github/workflows/ship.yml@v1", crossPipeline: true, member: "api" },
+          { from: "db/Table", kind: "needs", path: "needs", value: "lint", member: "db" },
+          { from: "api/Role", kind: "needs", path: "needs", value: "test" },
+        ],
+      }),
+      "api",
+    ) as unknown as Record<string, any>;
+    expect(ir.groups.byPipeline).toEqual({ ci: ["Fn", "Role"] });
+    expect(ir.dangling).toEqual([
+      { from: "Fn", kind: "calls", path: "uses", value: "acme/shared/.github/workflows/ship.yml@v1", crossPipeline: true },
+      { from: "Role", kind: "needs", path: "needs", value: "test" },
+    ]);
+    expect((memberIrFromWorkspaceGraph(doc(), "api") as unknown as Record<string, unknown>).dangling).toBeUndefined();
+  });
+
   it("carries chant's reason for a member it could not read", () => {
     expect(() => memberIrFromWorkspaceGraph(doc(), "net")).toThrow(WorkspaceMemberError);
     expect(() => memberIrFromWorkspaceGraph(doc(), "net")).toThrow(/command-failed: no lexicon/);
