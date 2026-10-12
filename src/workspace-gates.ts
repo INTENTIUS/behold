@@ -13,9 +13,16 @@
  * GITHUB_ACTOR, GITLAB_USER_LOGIN, then USER), which is why the page says so,
  * and why a framed behold leaves approving to its host, which knows who is
  * looking (#476).
+ *
+ * A gate of op `policy-override` is a policy denial (#519). It is never
+ * approved here: chant's override needs the rules and a person's reason, so
+ * the gate carries `override` (its rules, plan digest and the product's
+ * override command) and the approve route refuses it. An override that counts
+ * is kept too, as `overridden` until a run spends it and `spent` after.
  */
 import { resolve } from "node:path";
 import type { Workspace } from "./workspace.ts";
+import { OVERRIDE_OP, readPolicyOverride, type LifecycleFileReader, type PolicyOverride } from "./policy-override.ts";
 import { contractRefusal, rootReader, WorkspaceReadError, type WorkspaceDocument, type WorkspaceReader, type WorkspaceRefusal } from "./workspace-reader.ts";
 
 export const STATUS_SCHEMA_ID = "https://intentius.io/chant/schemas/workspace/status/v1/status.schema.json";
@@ -42,8 +49,12 @@ export interface WorkspaceGate {
   expiresAt: string | null;
   /** The gate wants a signed approval, which behold can't make. */
   signed: boolean;
-  /** The line chant says approving runs, or the same built from the gate. */
+  /** The line chant says approving runs, or the same built from the gate. For a policy denial, the override command. */
   approve: string;
+  /** status's state: `pending`, or `approved` for a policy-override gate an override counts for. */
+  state: "pending" | "approved";
+  /** Set on a policy denial (#519): drawn as an override card, never approved by behold. */
+  override?: PolicyOverride;
 }
 
 export type GatesRead = { ok: true; env: string; gates: WorkspaceGate[] } | { ok: false; refusal: WorkspaceRefusal };
@@ -90,10 +101,12 @@ export function gatesFromStatus(doc: WorkspaceDocument, root: string): GatesRead
     const dir = typeof m.dir === "string" ? (m.dir === "." ? resolve(root) : resolve(root, m.dir)) : resolve(root);
     for (const g of Array.isArray(m.gates) ? m.gates : []) {
       if (!isRecord(g)) continue;
-      if (g.state !== undefined && g.state !== "pending") continue;
       const op = str(g.component);
       const gate = str(g.name);
       if (!op || !gate) continue;
+      // An approved policy-override gate is an override waiting for a run, or spent by one (#519).
+      const keepApproved = op === OVERRIDE_OP && g.state === "approved";
+      if (g.state !== undefined && g.state !== "pending" && !keepApproved) continue;
       const env = str(g.env);
       const planDigest = str(g.planDigest);
       const approvals = (Array.isArray(g.approvals) ? g.approvals : []).filter(isRecord).map((a) => ({
@@ -116,6 +129,7 @@ export function gatesFromStatus(doc: WorkspaceDocument, root: string): GatesRead
         signed: isRecord(g.signed),
         // status's line already carries --sign for a signed gate; only the
         // line built here needs it added.
+        state: keepApproved ? "approved" : "pending",
         approve: str(g.approve) ?? ["chant", ...approveArgs({ op, gate, env, planDigest }), ...(isRecord(g.signed) ? ["--sign"] : [])].join(" "),
       });
     }
@@ -123,10 +137,27 @@ export function gatesFromStatus(doc: WorkspaceDocument, root: string): GatesRead
   return { ok: true, env: String(doc.env ?? ""), gates };
 }
 
+/** Whether a gate is a policy denial, which behold never approves (#519). */
+export function isOverrideGate(g: Pick<WorkspaceGate, "op">): boolean {
+  return g.op === OVERRIDE_OP;
+}
+
+/** Give each policy-override gate its override: rules and plan from `chant/lifecycle`, and the command in place of `approve`. */
+export async function withOverrides(gates: WorkspaceGate[], read?: LifecycleFileReader): Promise<WorkspaceGate[]> {
+  return Promise.all(
+    gates.map(async (g) => {
+      if (!isOverrideGate(g)) return g;
+      const override = await readPolicyOverride(g.dir, { gate: g.gate, planDigest: g.planDigest, env: g.env, signed: g.signed, recordedAt: g.recordedAt, approved: g.state === "approved" }, read);
+      return { ...g, override, approve: override.command };
+    }),
+  );
+}
+
 /** Ask the workspace's chant for its status in `env`, through the reader (#468). */
 export async function readWorkspaceGates(ws: Workspace, env: string, reader: WorkspaceReader = rootReader(ws.root)): Promise<GatesRead> {
   try {
-    return gatesFromStatus(await reader.read("status", [env]), ws.root);
+    const read = gatesFromStatus(await reader.read("status", [env]), ws.root);
+    return read.ok ? { ...read, gates: await withOverrides(read.gates) } : read;
   } catch (e) {
     if (e instanceof WorkspaceReadError) return { ok: false, refusal: e.refusal };
     throw e;

@@ -726,6 +726,20 @@ entry is a registered route. `TERRAGUCCI_REFUSED_WRITES` only words the
 refusal for known routes. The remedy names `npx terragucci approve wave-<k>
 --plan <digest>`, the digest from the wave's gate card.
 
+A policy denial is never approved from behold (#519, `src/policy-override.ts`).
+`GET /api/workspace/gates` gives a gate of op `policy-override` an `override`
+field `{subject, rules, plan, digest, state, spentAt, product, command,
+source}`: the rules and denied plan come from `chant/lifecycle:_gates/
+policy-override.jsonl` (read with `git show`, the local branch then
+`origin/chant/lifecycle`), `state` is `waiting`, `overridden` (status says an
+override counts) or `spent` (a line in `_gates/policy-override/applied.jsonl`
+for its digest), and `command` is the product's (`npx terragucci override`,
+`npx yodel override`) or chant's `chant approve policy-override <subject>
+--rule <id> --reason "<why>" --plan <digest>`. The card shows that command and
+no button, and `POST /api/workspace/gates/approve` answers such a gate `422`
+with `code: "override"`. These readers mirror chant's `override-gate` field
+names until behold resolves chant 0.124 (#518) and can import it.
+
 ### The exceptions, and their exact size
 
 `POST /api/layout` (#228) writes **one** file in the served project:
