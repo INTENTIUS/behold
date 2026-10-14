@@ -10,7 +10,7 @@ floci's S3 and nothing on it needs to reach a real account.
 ```
 internet ──443/80──> caddy ──edge network──> behold :4600 (--public, GET only)
                                                │ terragucci network
-                                               ├─> floci :4566  (reports, demo.json; GetObject key)
+                                               ├─> floci :4566  (reports, demo.json; read-only key)
                                                └─> forgejo :3000 (chant/lifecycle; read-only token)
 driver (host network) ── docker.sock ──> terragucci stack: forgejo, forgejo-runner, floci, job containers
 watchdog (systemd) ── docker + localhost:4580 ──> driver, demo.json, behold's checkout
@@ -56,8 +56,8 @@ bootstrap recreate them with the other file's settings.
   it before the bootstrap, because Caddy asks Let's Encrypt for the certificate
   as soon as it starts and the challenge has to reach this machine.
 
-Whether these four get infrastructure as code is an open question on #570
-(Decision needed). Until it's decided, make them by hand.
+These four are made by hand, in the console or with the CLI. Decided on #570:
+no infrastructure as code for them.
 
 ## Secrets
 
@@ -79,7 +79,7 @@ What the host keeps:
 |---|---|
 | `/etc/demo-host/demo.env` | the settings (mode 600); no secrets |
 | `/etc/demo-host/caddy/password.caddy` | the `basic_auth` block: the user and a bcrypt hash, never the password |
-| `/var/lib/demo-host/behold/behold-s3.env` | behold's floci key (`s3:GetObject` on the reports prefix), new after each bootstrap |
+| `/var/lib/demo-host/behold/behold-s3.env` | behold's floci key (`s3:GetObject` and `s3:ListBucket` on the reports prefix), new after each bootstrap |
 | `/var/lib/demo-host/viewer.env` | the Forgejo user `demo-viewer`'s generated password and its `read:repository` token |
 | `/opt/demo/terragucci/stack/.state/` | terragucci's own: Forgejo's admin token, the driver's signing key, the base snapshot |
 
@@ -209,3 +209,11 @@ refs `demo.env` already names, for example after a fix lands on `main`.
   `DEMO_REPORTS` in `demo.env`.
 - terragucci `stack/docker-compose.yml`: the network `terragucci`, and Forgejo
   and floci published on 3300 and 4580 with no address.
+- behold's floci key is limited only while floci's IAM enforcement is on.
+  The driver's environment sets `TERRAGUCCI_FLOCI_IAM_ENFORCEMENT=true`
+  (`compose.yaml`), and terragucci's compose file has to read it:
+  `FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED: ${TERRAGUCCI_FLOCI_IAM_ENFORCEMENT:-false}`.
+  That line lands with INTENTIUS/terragucci#1014 step 2. Until then floci
+  starts with enforcement off, and behold's key, like any key, can do anything
+  in floci. Under enforcement, `test` (the jobs' and the driver's key) passes
+  as floci's account root, and unsigned S3 requests are not refused.

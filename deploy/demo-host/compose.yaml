@@ -119,6 +119,13 @@ services:
       DEMO_VIEWER_USER: ${DEMO_VIEWER_USER:-demo-viewer}
       TERRAGUCCI_FORGEJO_PORT: ${TERRAGUCCI_FORGEJO_PORT:-3300}
       TERRAGUCCI_FLOCI_PORT: ${TERRAGUCCI_FLOCI_PORT:-4580}
+      # floci checks every signed key but `test` against its IAM policies, so
+      # behold-reader's key can only read the reports prefix; the jobs and the
+      # driver keep `test`. terragucci's stack/docker-compose.yml reads this
+      # as FLOCI_SERVICES_IAM_ENFORCEMENT_ENABLED from
+      # INTENTIUS/terragucci#1014 step 2 on (decided on #570). Before that
+      # line lands, floci runs with enforcement off whatever this says.
+      TERRAGUCCI_FLOCI_IAM_ENFORCEMENT: "true"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${DEMO_ROOT:-/opt/demo}/terragucci:${DEMO_ROOT:-/opt/demo}/terragucci

@@ -11,7 +11,8 @@
 #      the reader below are gone, and the bootstrap runs again. It also runs
 #      again when TERRAGUCCI_REF moved the checkout (demo-host.sh update).
 #   3. After a bootstrap, gives behold what it reads with: floci keys that may
-#      only GetObject on the reports prefix, a Forgejo token that may only read
+#      only GetObject and ListBucket on the reports prefix (enforced once
+#      floci's IAM enforcement is on; see compose.yaml), a Forgejo token that may only read
 #      the demo repo, and the view checkout (/view) with that token in origin.
 #   4. Hands over to the loop: `exec stack/demo.sh loop`.
 #
@@ -67,11 +68,17 @@ reader_keys() {
   prefix=""
   [ "$rest" = "$bucket" ] || prefix="${rest#*/}"
   prefix="${prefix%/}"
-  policy="$(jq -cn --arg r "arn:aws:s3:::$bucket${prefix:+/$prefix}/*" \
-    '{Version: "2012-10-17", Statement: [{Effect: "Allow", Action: ["s3:GetObject"], Resource: [$r]}]}')"
+  # GetObject on the prefix's objects, and ListBucket limited to the prefix,
+  # so an object not written yet answers 404 (missing) rather than 403
+  # (denied). Decided on #570.
+  policy="$(jq -cn --arg obj "arn:aws:s3:::$bucket${prefix:+/$prefix}/*" --arg bucket "arn:aws:s3:::$bucket" \
+    --arg p "${prefix:+$prefix/}*" \
+    '{Version: "2012-10-17", Statement: [
+       {Effect: "Allow", Action: ["s3:GetObject"], Resource: [$obj]},
+       {Effect: "Allow", Action: ["s3:ListBucket"], Resource: [$bucket], Condition: {StringLike: {"s3:prefix": [$p]}}}]}')"
   # An existing user (floci kept it) answers 409; the policy and a new key follow either way.
   iam CreateUser "UserName=behold-reader" >/dev/null 2>&1 || true
-  iam PutUserPolicy "UserName=behold-reader" "PolicyName=reports-get-object" "PolicyDocument=$policy" >/dev/null \
+  iam PutUserPolicy "UserName=behold-reader" "PolicyName=reports-read" "PolicyDocument=$policy" >/dev/null \
     || die "floci refused the reader's policy"
   out="$(iam CreateAccessKey "UserName=behold-reader")" || die "floci made no key for the reader"
   id="$(xml_field AccessKeyId <<<"$out")"
@@ -81,7 +88,7 @@ reader_keys() {
   ( umask 077; printf 'AWS_ACCESS_KEY_ID=%s\nAWS_SECRET_ACCESS_KEY=%s\n' "$id" "$secret" > "$dir/behold-s3.env.new" )
   chown "$BEHOLD_UID:$BEHOLD_UID" "$dir" "$dir/behold-s3.env.new"
   mv "$dir/behold-s3.env.new" "$dir/behold-s3.env"
-  log "behold reads $REPORTS with floci key $id (s3:GetObject on $bucket${prefix:+/$prefix}/* only)"
+  log "behold reads $REPORTS with floci key $id (s3:GetObject and s3:ListBucket on $bucket${prefix:+/$prefix}/ only)"
 }
 
 viewer_token() { # prints a working read:repository token for $VIEWER, making the user and token as needed
