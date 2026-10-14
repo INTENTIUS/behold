@@ -87,12 +87,42 @@ export interface ReportChange {
   attributes?: { path: string; sensitive?: boolean }[];
 }
 
+/** A root's `terraform_remote_state` read of another root (minor 21, #568). */
+export interface ReportRead {
+  upstream: string;
+  /** The data block's label. */
+  data: string;
+  /** `planned`: the upstream's plan in this run. `applied`: its state as it stands. */
+  outputs: "planned" | "applied";
+  /** With `planned`: the outputs it reads that are known only once the upstream applies. */
+  unknown?: string[];
+  /** With `applied` in a tf-plan: why it did not plan on the upstream's planned outputs. */
+  why?: string;
+}
+
 export interface ReportRoot {
   path: string;
   status: "planned" | "failed";
   error?: string;
   changes: ReportChange[];
+  /** minor 21 (#568). */
+  reads?: ReportRead[];
+  /** minor 23 (#568). */
+  dependencies?: string[];
 }
+
+/** A wave's or a run's monthly cost (minor 12 and 19, #568). Null where the estimator gave no figure. */
+export interface ReportCostSums {
+  currency: string;
+  monthly_delta: number | null;
+  monthly_total: number | null;
+  past_monthly_total: number | null;
+  unestimated?: string[];
+  approve_above?: number;
+  over?: boolean;
+}
+
+export type ReportWaveState = "planned" | "waiting" | "applying" | "applied" | "refused" | "failed";
 
 export interface ReportWave {
   number: number;
@@ -100,6 +130,39 @@ export interface ReportWave {
   set_digest: string | null;
   approval: string;
   waiting_since?: string;
+  /** minor 9 (#568): the digest a pull request's review binds; null when no root of the wave changes, or when it plans again. */
+  review_digest?: string | null;
+  /** minor 9 (#568). */
+  waits?: boolean;
+  /** minor 19 (#568). */
+  cost?: ReportCostSums;
+  /** minor 21 (#568). */
+  state?: ReportWaveState;
+  /** minor 21 (#568): the waves whose roots' state its roots read. */
+  reads?: number[];
+  /** minor 21 (#568): a tf-plan wave that plans again after these waves apply. */
+  replans_after?: number[];
+}
+
+/** A changed resource and the resources that depend on it, nearest first (minor 31, #568). */
+export interface ReportBlastResource {
+  root: string;
+  address: string;
+  actions: string[];
+  reaches: { root: string; address: string; through?: { root: string; output: string } }[];
+}
+
+/** A tf-plan run's blast radius (minor 22 and 31, #568). */
+export interface ReportBlast {
+  roots: string[];
+  downstream: { root: string; reads: string[]; depth: number; wave?: number; planned: boolean }[];
+  resources?: ReportBlastResource[];
+}
+
+/** The run's cost estimate (minor 12, #568). */
+export interface ReportCost extends ReportCostSums {
+  estimator: string;
+  roots: { root: string; monthly_delta: number | null; monthly_total: number | null; past_monthly_total: number | null; error?: string }[];
 }
 
 export interface Report {
@@ -121,6 +184,12 @@ export interface Report {
   roots: ReportRoot[];
   waves: ReportWave[];
   named?: { root: string; address?: string; action: string; reason?: string }[];
+  /** Changes by action across the run's roots (#568). */
+  totals?: Record<string, number>;
+  /** minor 12 (#568). */
+  cost?: ReportCost;
+  /** minor 22 (#568). */
+  blast?: ReportBlast;
 }
 
 export interface EstateWaiting {
@@ -304,6 +373,43 @@ export interface WaitingWave {
   from: "estate" | "index";
 }
 
+/**
+ * The pull request stage (#568): the newest tf-plan report that planned a
+ * pull request, as it planned it. terragucci's run view starts at the merge,
+ * so before it this is what the card view has of a change: which root read
+ * which root's planned outputs, what it read before it was known, which wave
+ * plans again after which, the blast radius, the totals and the cost.
+ */
+export interface PullRequestPlan {
+  run: {
+    commit: string;
+    finished: string;
+    pull_request: string;
+    pull_request_url?: string;
+    job_url?: string;
+    /** The run's report.html, as a key under the source. */
+    report: string;
+  };
+  /** Each planned root's reads of another root's state, in report order. */
+  reads: (ReportRead & { root: string })[];
+  /** The roots it planned, in report order: a root of the checkout not here was not planned. */
+  roots: string[];
+  waves: {
+    number: number;
+    roots: string[];
+    state?: ReportWaveState;
+    set_digest: string | null;
+    review_digest?: string | null;
+    waits?: boolean;
+    reads?: number[];
+    replans_after?: number[];
+    cost?: ReportCostSums;
+  }[];
+  totals?: Record<string, number>;
+  cost?: ReportCost;
+  blast?: ReportBlast;
+}
+
 export interface TerragucciRead {
   source: string;
   kind: TerragucciSource["kind"];
@@ -316,6 +422,8 @@ export interface TerragucciRead {
   /** The newest run of each stage that planned each root, by root path. */
   roots: Record<string, { plan?: RootRun; drift?: RootRun; apply?: RootRun }>;
   waiting: WaitingWave[];
+  /** #568: the newest pull request's plan, when the index holds one. */
+  pull_request?: PullRequestPlan;
   /** terragucci's estate page for this project, when the source has one: the counts it shows, as it shows them. */
   estate?: { generated: string; html: string; drifted: number; failed: number; waiting: number; status: string };
 }
@@ -450,6 +558,12 @@ export async function readTerragucci(source: TerragucciSource, opts: ReadOptions
     }
   }
 
+  // #568: the pull request stage, from the newest tf-plan that planned one.
+  let pullRequest: PullRequestPlan | undefined;
+  const prRow = rows.find((r) => r.stage === "tf-plan" && r.pull_request);
+  const prDoc = prRow ? await report(prRow) : undefined;
+  if (prRow && prDoc) pullRequest = pullRequestPlan(prDoc, under(prRow.path, "report.html"));
+
   // The estate page lives at the top of the prefix; a project directory has none.
   const estateDoc = await readDoc<Estate>(source, "estate.json", "estate", v);
   const estateProject = estateDoc?.projects.find((p) => p.project === project);
@@ -500,6 +614,7 @@ export async function readTerragucci(source: TerragucciSource, opts: ReadOptions
     reports: cache.size,
     roots,
     waiting,
+    ...(pullRequest ? { pull_request: pullRequest } : {}),
     ...(estateDoc && estateProject
       ? {
           estate: {
@@ -512,5 +627,45 @@ export async function readTerragucci(source: TerragucciSource, opts: ReadOptions
           },
         }
       : {}),
+  };
+}
+
+/** The pull request stage of one tf-plan report (#568). Pure. */
+export function pullRequestPlan(doc: Report, report: string): PullRequestPlan {
+  return {
+    run: {
+      commit: doc.run.commit,
+      finished: doc.run.finished,
+      pull_request: doc.run.pull_request ?? "",
+      ...(doc.run.pull_request_url ? { pull_request_url: doc.run.pull_request_url } : {}),
+      ...(doc.run.job_url ? { job_url: doc.run.job_url } : {}),
+      report,
+    },
+    reads: doc.roots.flatMap((r) =>
+      (r.reads ?? []).map((x) => ({
+        root: r.path,
+        upstream: x.upstream,
+        data: x.data,
+        outputs: x.outputs,
+        ...(x.unknown?.length ? { unknown: [...x.unknown] } : {}),
+        ...(x.why ? { why: x.why } : {}),
+      })),
+    ),
+    roots: doc.roots.map((r) => r.path),
+    waves: doc.waves.map((w) => ({
+      number: w.number,
+      roots: w.roots,
+      ...(w.state ? { state: w.state } : {}),
+      // A wave that plans again has no digest a review binds until it does.
+      set_digest: w.replans_after?.length ? null : w.set_digest,
+      ...(w.review_digest !== undefined ? { review_digest: w.replans_after?.length ? null : w.review_digest } : {}),
+      ...(w.waits !== undefined ? { waits: w.waits } : {}),
+      ...(w.reads?.length ? { reads: w.reads } : {}),
+      ...(w.replans_after?.length ? { replans_after: w.replans_after } : {}),
+      ...(w.cost ? { cost: w.cost } : {}),
+    })),
+    ...(doc.totals ? { totals: doc.totals } : {}),
+    ...(doc.cost ? { cost: doc.cost } : {}),
+    ...(doc.blast ? { blast: doc.blast } : {}),
   };
 }

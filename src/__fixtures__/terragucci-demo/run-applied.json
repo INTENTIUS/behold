@@ -1,0 +1,137 @@
+{
+  "schema": "terragucci.run/v1",
+  "project": "forge.example/demo/two-roots",
+  "commit": "f0e1d2c3b4a5968778695a4b3c2d1e0f12345678",
+  "updated": "2026-10-20T10:07:00.000Z",
+  "roots": [
+    {
+      "root": "network",
+      "wave": 1,
+      "reads": [],
+      "state": {
+        "bucket": "demo-state",
+        "key": "network/terraform.tfstate"
+      }
+    },
+    {
+      "root": "app",
+      "wave": 2,
+      "reads": [
+        "network"
+      ],
+      "state": {
+        "bucket": "demo-state",
+        "key": "app/terraform.tfstate"
+      }
+    },
+    {
+      "root": "edge",
+      "wave": 3,
+      "reads": [
+        "app"
+      ],
+      "state": {
+        "bucket": "demo-state",
+        "key": "edge/terraform.tfstate"
+      }
+    }
+  ],
+  "waves": [
+    {
+      "number": 1,
+      "roots": [
+        "network"
+      ],
+      "reads": [],
+      "state": "applied",
+      "gate": "wave-1",
+      "policy": "on-destructive",
+      "approval": "not-required",
+      "digest": "jcs1-sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "report": "forge.example/demo/two-roots/2026/10/f0e1d2c3b4a5968778695a4b3c2d1e0f12345678/tf-apply-wave-1",
+      "changed": [
+        "network"
+      ],
+      "spans": [
+        {
+          "phase": "plan",
+          "start": "2026-10-20T10:03:00.000Z",
+          "end": "2026-10-20T10:03:40.000Z"
+        },
+        {
+          "phase": "apply",
+          "start": "2026-10-20T10:03:40.000Z",
+          "end": "2026-10-20T10:04:10.000Z"
+        }
+      ],
+      "updated": "2026-10-20T10:04:10.000Z"
+    },
+    {
+      "number": 2,
+      "roots": [
+        "app"
+      ],
+      "reads": [
+        1
+      ],
+      "state": "applied",
+      "gate": "wave-2",
+      "policy": "on-destructive",
+      "approval": "approved",
+      "digest": "jcs1-sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "report": "forge.example/demo/two-roots/2026/10/f0e1d2c3b4a5968778695a4b3c2d1e0f12345678/tf-apply-wave-2",
+      "changed": [
+        "app"
+      ],
+      "spans": [
+        {
+          "phase": "plan",
+          "start": "2026-10-20T10:04:20.000Z",
+          "end": "2026-10-20T10:05:00.000Z"
+        },
+        {
+          "phase": "gate",
+          "start": "2026-10-20T10:05:00.000Z",
+          "end": "2026-10-20T10:05:20.000Z"
+        },
+        {
+          "phase": "apply",
+          "start": "2026-10-20T10:05:25.000Z",
+          "end": "2026-10-20T10:06:00.000Z"
+        }
+      ],
+      "updated": "2026-10-20T10:06:00.000Z"
+    },
+    {
+      "number": 3,
+      "roots": [
+        "edge"
+      ],
+      "reads": [
+        2
+      ],
+      "state": "applied",
+      "gate": "wave-3",
+      "policy": "on-destructive",
+      "approval": "not-required",
+      "digest": "jcs1-sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "report": "forge.example/demo/two-roots/2026/10/f0e1d2c3b4a5968778695a4b3c2d1e0f12345678/tf-apply-wave-3",
+      "changed": [
+        "edge"
+      ],
+      "spans": [
+        {
+          "phase": "plan",
+          "start": "2026-10-20T10:06:10.000Z",
+          "end": "2026-10-20T10:06:40.000Z"
+        },
+        {
+          "phase": "apply",
+          "start": "2026-10-20T10:06:40.000Z",
+          "end": "2026-10-20T10:07:00.000Z"
+        }
+      ],
+      "updated": "2026-10-20T10:07:00.000Z"
+    }
+  ]
+}
