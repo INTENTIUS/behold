@@ -306,6 +306,10 @@ function markStatusChanges(ir, statusVar) {
 // replay every read from `snapshots/` — the graph, zoom dial, radial, inspect,
 // and env/tier pickers all work; live observe + all writes are off.
 const staticMode = !!window.__BEHOLD_STATIC__;
+// #569: `behold serve --public` injects this flag into the page it serves. The
+// reads stay live (the SSE stream, the polls); every control that writes is
+// hidden, and the server refuses every method but GET, HEAD and OPTIONS anyway.
+const publicMode = !!window.__BEHOLD_PUBLIC__;
 let manifest = null;
 if (staticMode) {
   try {
@@ -621,6 +625,7 @@ function stopWhyRead() {
 }
 
 function renderWhySection(panel, ask) {
+  if (publicMode) return; // #569: /api/workspace/why is refused in a public view
   stopWhyRead();
   if (staticMode) return;
   const memberName = ask.member || nodeMember(ask.node || "");
@@ -1296,6 +1301,7 @@ let bulkDiffCache = null; // { env, nodes: { <id>: { observed, diff, health } } 
 // without anyone paying for a second full pass over the account.
 let planDriftOnce = false;
 async function loadNodeDiff(id) {
+  if (publicMode) return null; // #569: /api/diff is refused in a public view
   if (!bulkDiffCache || bulkDiffCache.env !== view.env) {
     bulkDiffCache = null;
     try {
@@ -1601,7 +1607,7 @@ function bootZoom(memberKinds) {
 // v0.1.0 preview lock (set from /api/project in initActions): hides the git/PR
 // write ops (Rollback, Sync, Adopt, Run ▾) — the server also 403s them. Local
 // deploy (Apply all / dial), Reset, Bring up, Approve, and reads stay on.
-let previewMode = false;
+let previewMode = publicMode; // #569: a public view hides what preview hides, and more
 // #489: set when /api/project says the repo is a terragucci repo — applied by
 // its pipeline only, so the page offers no write at all.
 let terragucciRepo = null;
@@ -1973,7 +1979,7 @@ function copyToClipboard(text, el) {
  * `carve.json`.
  */
 function renderChoudoufuMoves(host, info) {
-  if (!info || !info.plans || !info.plans.length || staticMode) return;
+  if (!info || !info.plans || !info.plans.length || staticMode || publicMode) return;
   host.appendChild(panelHeading("moves (choudoufu)"));
   for (const plan of info.plans) {
     const head = document.createElement("div");
@@ -2128,7 +2134,7 @@ function renderPanelScope() {
     name.textContent = pathBasename(dir) + (estateDirs.length > 1 && dir === info.projectDir ? " · primary" : "");
     name.title = dir;
     row.appendChild(name);
-    if (!staticMode) row.appendChild(actButton("⌖ reveal", () => revealProject(dir), "Open this project's folder in your file manager"));
+    if (!staticMode && !publicMode) row.appendChild(actButton("⌖ reveal", () => revealProject(dir), "Open this project's folder in your file manager"));
     host.appendChild(row);
     host.appendChild(panelMuted(dir));
   }
@@ -2211,7 +2217,7 @@ function renderPanelScope() {
   // #234's last remainder — "is prod running what staging tested". Only when
   // an env is picked and there is another to compare against; ledger-only, so
   // it never adds a cloud read to opening the panel (fetch happens on pick).
-  if (view.env && environments.length > 1 && !staticMode) {
+  if (view.env && environments.length > 1 && !staticMode && !publicMode) {
     if (view.compareTo === view.env) view.compareTo = null; // env re-picked onto the compared one
     host.appendChild(panelHeading("compare releases"));
     const sel = document.createElement("select");
@@ -2533,7 +2539,7 @@ function gatesEnv() {
   return view.gates || view.env || "";
 }
 function loadWorkspaceGates({ force = false } = {}) {
-  if (staticMode) return;
+  if (staticMode || publicMode) return;
   const env = gatesEnv();
   if (!force && wsGates.env === env) return paintWorkspaceGates();
   // Every read is numbered; only the newest one paints, so an answer for an
@@ -3807,6 +3813,7 @@ initYodelReport();
 // the gate ledgers' history (#522). Read-only and dated; never live.
 let ylHost = null;
 async function initYodelLane() {
+  if (publicMode) return; // #569: /api/sql-yodeler/lifecycle is refused in a public view
   // #537: a static export carries the lane as a snapshot (src/export.ts), so it draws here too.
   const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
   if (!project.sqlYodeler) return;
@@ -3971,6 +3978,7 @@ let ciByComponent = new Map();
 let ciForge = null; // the forge the pipeline was generated for (#164) — heads the inspect section
 
 async function loadCi() {
+  if (publicMode) return; // #569: /api/ci is refused in a public view
   try {
     const q = lensParams(new URLSearchParams(view.env ? { env: view.env } : {}));
     const res = await apiFetch(`/api/ci?${q}`);
@@ -3995,6 +4003,7 @@ async function loadCi() {
 let resourcesByComponent = {};
 
 async function loadResources() {
+  if (publicMode) return; // #569: /api/resources is refused in a public view
   try {
     const q = lensParams(new URLSearchParams(view.env ? { env: view.env } : {}));
     const res = await apiFetch(`/api/resources?${q}`);
@@ -4215,7 +4224,7 @@ function renderDial() {
   // Apply is the write step — omitted in a static export (observe + reconcile
   // above are reads and stay).
   const applying = applyProgress && applyProgress.status === "running";
-  if (!staticMode) {
+  if (!staticMode && !publicMode) {
     track.appendChild(dialArrow());
     const applyBtn = button(
       applying ? "apply · running…" : "apply",
@@ -4233,7 +4242,7 @@ function renderDial() {
 
   host.appendChild(track);
   if (reconcileCache) host.appendChild(renderReconcileDetail(reconcileCache));
-  if (applyPicker && !applying && !staticMode) host.appendChild(renderApplyPicker());
+  if (applyPicker && !applying && !staticMode && !publicMode) host.appendChild(renderApplyPicker());
   if (applyProgress && applyProgress.waves.length) host.appendChild(renderApplyProgress(applyProgress));
   mountOperator(host);
   mountPlayhead(host);
@@ -4253,7 +4262,7 @@ function mountOperator(host) {
     {
       approve: embedOpts.embed || previewMode || staticMode || terragucciRepo ? null : (op, gate) => approveConvergeGate(op, gate),
       approver: projectInfo && projectInfo.approver,
-      why: embedOpts.embed ? "host" : previewMode ? "preview" : "static",
+      why: embedOpts.embed ? "host" : publicMode ? "public" : previewMode ? "preview" : "static",
       // A static export has no server to ask, so it gets no history affordance
       // at all rather than a button that can only fail.
       ...(staticMode ? {} : { history: () => toggleOperatorHistory() }),
@@ -4271,7 +4280,7 @@ function mountPlayhead(host) {
   if (!hasPlayhead(runState)) return;
   const box = document.createElement("div");
   box.className = "run-playhead";
-  renderPlayhead(box, runState, gateCard, { approve: embedOpts.embed || previewMode || staticMode || terragucciRepo ? null : (op, gate) => signal(op, gate), approver: projectInfo && projectInfo.approver, why: embedOpts.embed ? "host" : previewMode ? "preview" : "static" });
+  renderPlayhead(box, runState, gateCard, { approve: embedOpts.embed || previewMode || staticMode || terragucciRepo ? null : (op, gate) => signal(op, gate), approver: projectInfo && projectInfo.approver, why: embedOpts.embed ? "host" : publicMode ? "public" : previewMode ? "preview" : "static" });
   host.appendChild(box);
 }
 
@@ -4508,6 +4517,7 @@ function renderReconcileDetail(r) {
 }
 
 async function loadReconcile() {
+  if (publicMode) return; // #569: /api/reconcile is refused in a public view
   try {
     const q = lensParams(new URLSearchParams({ env: view.env }));
     const res = await apiFetch(`/api/reconcile?${q}`);
@@ -5572,7 +5582,7 @@ async function pullServerLayout(lens) {
  * read-only project, older behold) simply never pushes, and a failed push is
  * not reported — the localStorage tier already has it. */
 const pushServerLayout = debounce((lens, deltas) => {
-  if (staticMode || !layoutServer.writable || layoutServer.lens !== lens) return;
+  if (staticMode || publicMode || !layoutServer.writable || layoutServer.lens !== lens) return;
   postServerLayout((url, init) => fetch(url, init), lens, deltas);
 }, 600);
 // A reload (or a tab closing) within the debounce window would otherwise drop
@@ -6080,6 +6090,7 @@ events.addEventListener("changed", () => {
 // status dot + name + state, with the bring-up/reset/pipeline actions inline
 // again (#73 moved those into ⌘K; they remain there too, via lastSubstrates).
 async function loadSubstrates() {
+  if (publicMode) return; // #569: /api/substrates is refused in a public view
   try {
     const { substrates } = await apiFetch("/api/substrates").then((r) => r.json());
     renderSubstrates(substrates || []);
@@ -6122,7 +6133,7 @@ function renderSubstrates(subs) {
     row.append(dot, name, status);
     // Writes — none in a static export; the GitHub dispatch also respects the
     // preview lock, mirroring paletteCommands()'s gating exactly.
-    if (!staticMode) {
+    if (!staticMode && !publicMode) {
       if (s.bringUp) row.appendChild(actButton("bring up", () => bringUpSubstrate(s)));
       if (s.name === "floci" && s.status === "up")
         row.appendChild(actButton("reset", () => resetLocal(), "Reset the local emulator — wipes every stack, reboots, redeploys clean"));
@@ -6242,7 +6253,7 @@ function hideLoading() {
 // ask. Without this guard the bundle logs a 404 on every page load and relies on
 // the fetch failing to stay silent, which is an outcome rather than a rule.
 async function refreshReadCost() {
-  if (staticMode) return;
+  if (staticMode || publicMode) return; // #569: /api/doctor is refused in a public view
   try {
     const res = await fetch("/api/doctor?reads=1");
     if (!res.ok) return;
@@ -6363,7 +6374,7 @@ function runStatusTarget() {
   return opsApply && opsApply.gate ? opsApply.name : null;
 }
 function pollRunStatus() {
-  if (staticMode || runStatusInFlight) return;
+  if (staticMode || publicMode || runStatusInFlight) return; // #569: a public serve refuses the op tools
   const name = runStatusTarget();
   if (!name) return;
   // Only a durable run has gate state at all. A local run's playhead is
@@ -6392,7 +6403,7 @@ function pollRunStatus() {
  * strip standing in for "behold couldn't ask".
  */
 function pollOperatorStatus() {
-  if (staticMode || operatorInFlight) return;
+  if (staticMode || publicMode || operatorInFlight) return;
   operatorInFlight = true;
   apiFetch("/api/operator/status")
     .then((r) => r.json())
@@ -6432,7 +6443,7 @@ function toggleOperatorHistory() {
  * empty timeline must never stand in for "behold couldn't ask".
  */
 function loadOperatorHistory() {
-  if (staticMode || operatorHistory.loading) return;
+  if (staticMode || publicMode || operatorHistory.loading) return;
   operatorHistory = { ...operatorHistory, loading: true, error: null };
   apiFetch("/api/operator/log")
     .then((r) => r.json())
@@ -6606,7 +6617,7 @@ async function initActions() {
   // #165: which envs deploy through a forge, and whether Deploy can dispatch
   // them right now (`/api/project`'s executor block).
   executorInfo = project.executor || {};
-  previewMode = staticMode || !!project.previewMode; // static ⇒ read-only, no writes at all
+  previewMode = staticMode || publicMode || !!project.previewMode; // static ⇒ read-only, no writes at all
   // #517: a SQL Yodeler repo is guarded the same way.
   const guarded = project.terragucci || project.sqlYodeler;
   if (guarded) {
@@ -6618,6 +6629,16 @@ async function initActions() {
     pill.style.cssText = "align-self:center;font:var(--t-caption)/1.4 var(--font-mono);color:var(--muted);border:1px solid var(--line);border-radius:var(--r-ctl);padding:2px 8px";
     bar.appendChild(pill);
     return; // no Deploy, no Run, no Approve: the pipeline is the only way to apply
+  }
+  // #569: a public view. Nothing in the bar writes; the pill says why.
+  if (publicMode || project.publicMode) {
+    previewMode = true;
+    const pill = document.createElement("span");
+    pill.textContent = "● public view, read-only";
+    pill.title = "behold serve --public: this page reads and follows; it starts nothing and approves nothing.";
+    pill.style.cssText = "align-self:center;font:var(--t-caption)/1.4 var(--font-mono);color:var(--muted);border:1px solid var(--line);border-radius:var(--r-ctl);padding:2px 8px";
+    bar.appendChild(pill);
+    return;
   }
   const { ops, adoptLexicons, autoSync, local, applyProgress: apInit, runState: runInit, operatorState: opInit } = await apiFetch("/api/ops")
     .then((r) => r.json())
@@ -6862,12 +6883,13 @@ function paletteCommands() {
   const c = [];
 
   // Reads — always available, even in a static export or the preview lock.
-  if (!staticMode) c.push(["Re-check live (refresh drift)", () => refresh()]);
+  // #569: not in a public view — Refresh is a POST.
+  if (!staticMode && !publicMode) c.push(["Re-check live (refresh drift)", () => refresh()]);
   // #404: the expensive sibling, listed beside it and named for what it costs.
   // Offered only with an env picked — there is no overlay to plan against
   // without one — and disabled-with-its-reason otherwise, the convention the
   // colour-mode and carve rows below already follow.
-  if (!staticMode) {
+  if (!staticMode && !publicMode) {
     c.push(
       view.env
         ? ["Re-check live with plan (attribute drift) — a full read of the account", () => refreshWithPlan()]
@@ -6964,7 +6986,7 @@ function paletteCommands() {
     c.push([`target: ${t.endpoint}` + (view.target === t.endpoint ? " ✓" : ""), () => { view.target = t.endpoint; resetDialCaches(); load(); }]);
   }
 
-  if (staticMode || terragucciRepo) return c.map(([label, run]) => ({ label, run })); // no writes at all in a static export or a terragucci repo
+  if (staticMode || publicMode || terragucciRepo) return c.map(([label, run]) => ({ label, run })); // no writes at all in a static export, a public view (#569) or a terragucci repo
 
   // Deploy / write actions — previewMode hides exactly the git/PR write
   // affordances the toolbar hid (Rollback, Sync, Run <op>); Apply all, Reset,

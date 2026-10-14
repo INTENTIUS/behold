@@ -131,6 +131,7 @@ export interface ExecutorStatus {
 import { nodeDiff, nodeObserved, nodeFieldDrift, type LiveDiffJson } from "./diff.ts";
 import { classifyObservedHealth } from "./health.ts";
 import { OpRunner } from "./op-runner.ts";
+import { ReadOnlyRunner, publicRoutes, type Runner } from "./public-mode.ts";
 import { detectSubstrates, projectLexicons } from "./substrates.ts";
 import { pickAutoSyncOps, splitForgeRouted, suspendedByRollback, type AutoSyncMode } from "./autosync.ts";
 import { sourceCommits, openRollbackBranches } from "./history.ts";
@@ -199,6 +200,10 @@ export interface ServerOptions {
   /** Names besides loopback that behold answers to (`--allow-host`,
    * BEHOLD_ALLOWED_HOSTS): a proxy's name, or this machine's for --host 0.0.0.0. */
   allowedHosts?: string[];
+  /** #569: `--public`. A read-only view anyone may load (src/public-mode.ts):
+   * no OpRunner is built, every method but GET, HEAD and OPTIONS is refused,
+   * the op tools' reads are refused, and the page hides every write control. */
+  public?: boolean;
   /** The chant project directory behold observes. When multiple projects are
    * served (#31), this is the primary — the one ops/overlay/rollback act on. */
   projectDir: string;
@@ -869,7 +874,7 @@ function followLimits(env: Record<string, string | undefined> = process.env): { 
 
 async function readoptDispatchedRun(
   cfg: ServerOptions,
-  runner: OpRunner,
+  runner: Runner,
 ): Promise<{ outcome: "readopted"; run: DispatchedRun } | { outcome: "none" } | { outcome: "refused"; reason: string; run: DispatchedRun }> {
   const run = readDispatchedRun(cfg.projectDir);
   // A LOST run is exactly the one worth re-adopting: the stream died, the run
@@ -931,15 +936,25 @@ export function createApp(
   cfg: ServerOptions,
   broadcaster: Broadcaster = new Broadcaster(),
   frames: FrameBuffer = new FrameBuffer(),
-  runner: OpRunner = new OpRunner({
-    projectDir: cfg.projectDir,
-    broadcaster,
-    onDone: (opEnv) => captureFrame(cfg.projectDir, opEnv ?? cfg.env, frames, broadcaster),
-  }),
+  given?: Runner,
 ): Hono {
+  // #569: a public serve never builds an OpRunner, whatever it was handed.
+  const runner: Runner = cfg.public
+    ? new ReadOnlyRunner()
+    : given ??
+      new OpRunner({
+        projectDir: cfg.projectDir,
+        broadcaster,
+        onDone: (opEnv) => captureFrame(cfg.projectDir, opEnv ?? cfg.env, frames, broadcaster),
+      });
   const app = new Hono();
   // Only this machine, and only behold's own pages, may write (src/request-guard.ts).
-  const guard = { allowedHosts: allowedHostsFrom(cfg.allowedHosts ?? []), ...(cfg.host ? { boundHost: cfg.host } : {}) };
+  // #569: a public serve lets no one write.
+  const guard = {
+    allowedHosts: allowedHostsFrom(cfg.allowedHosts ?? []),
+    ...(cfg.host ? { boundHost: cfg.host } : {}),
+    ...(cfg.public ? { public: true } : {}),
+  };
   app.use("*", async (c, next) => {
     const verdict = guardRequest(
       {
@@ -950,9 +965,14 @@ export function createApp(
       },
       guard,
     );
-    if (!verdict.ok) return c.json({ error: verdict.error, code: "request-refused" }, verdict.status);
+    if (!verdict.ok) {
+      if (verdict.status === 405) c.header("allow", "GET, HEAD, OPTIONS");
+      return c.json({ error: verdict.error, code: verdict.status === 405 ? "public" : "request-refused" }, verdict.status);
+    }
     await next();
   });
+  // #569: the op tools' reads are refused and the page carries the public flag.
+  if (cfg.public) publicRoutes(app, webRoot);
   // A test's fake choudoufu answers every read, the member via's included
   // (src/choudoufu-member.ts `setChoudoufuRunner`); undefined in production.
   setChoudoufuRunner(cfg.choudoufu?.run);
@@ -1572,8 +1592,10 @@ export function createApp(
     // choudoufu member offers `live`, so the picker has something to pick;
     // an estate with chant environments keeps them and a choudoufu member
     // ignores the name.
-    const environments =
-      declaredEnvs.length === 0 && (cfg.projectDirs ?? [cfg.projectDir]).some((d) => memberKindOf(d) === "choudoufu") ? ["live"] : declaredEnvs;
+    // #569: a public view offers no environment: every live read is refused.
+    const environments = cfg.public
+      ? []
+      : declaredEnvs.length === 0 && (cfg.projectDirs ?? [cfg.projectDir]).some((d) => memberKindOf(d) === "choudoufu") ? ["live"] : declaredEnvs;
     // #106: the k8s half's apiserver is dynamic (Floci allocates a port per EKS
     // cluster), so it is resolved from the kubeconfig on each read rather than
     // assumed. Only for a project that declares the lexicon — an aws-only
@@ -1652,6 +1674,8 @@ export function createApp(
       currentEnv: cfg.env ?? null,
       // v0.1.0 preview: the SPA hides git/PR ops + arbitrary-project affordances.
       ...(cfg.previewMode ? { previewMode: true } : {}),
+      // #569: a public view; the SPA hides every control that writes.
+      ...(cfg.public ? { publicMode: true } : {}),
       // #489: a terragucci repo is applied by its pipeline; the SPA offers no
       // write at all, and the write routes refuse with the same words.
       ...(tgConfig() ? { terragucci: { config: tgConfig()!, ...terragucciRefusal(tgConfig()!, "deploying from behold") } } : {}),
@@ -1720,7 +1744,8 @@ export function createApp(
       // true is a flag the SPA can read as "absent means no".
       memberKinds,
       ...(runtimeCapable ? { runtimeCapable: true } : {}),
-      targets: deployTargets(lexicons, k8sTarget),
+      // #569: a public view offers no target: `?target=` is refused there.
+      targets: cfg.public ? [] : deployTargets(lexicons, k8sTarget),
       // Where the k8s binding came from, so the SPA never implies behold chose
       // it (#106). Absent for a project with no k8s lexicon or no resolvable
       // context.
@@ -1931,6 +1956,7 @@ export function createApp(
   // remote authority over the browser you're looking at.
   const layoutWriteBlock = (): string | null => {
     if (cfg.previewMode) return "the layout sidecar is read-only in preview mode";
+    if (cfg.public) return "a public view doesn't write to the project";
     // #252: carve mode's `projectDir` is wherever the report file happens to
     // sit — a Downloads folder, someone's Terraform repo. There is no project
     // there to keep a hand layout in, and dropping `.behold/` into a stranger's
@@ -3891,11 +3917,14 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   const broadcaster = new Broadcaster();
   const frames = new FrameBuffer();
   // One runner shared by the HTTP routes and the auto-sync loop (one running-guard).
-  const runner = new OpRunner({
-    projectDir: cfg.projectDir,
-    broadcaster,
-    onDone: (opEnv) => captureFrame(cfg.projectDir, opEnv ?? cfg.env, frames, broadcaster),
-  });
+  // #569: a public serve builds none; it gets the idle stand-in.
+  const runner: Runner = cfg.public
+    ? new ReadOnlyRunner()
+    : new OpRunner({
+        projectDir: cfg.projectDir,
+        broadcaster,
+        onDone: (opEnv) => captureFrame(cfg.projectDir, opEnv ?? cfg.env, frames, broadcaster),
+      });
   if (!cfg.host && process.env.BEHOLD_HOST) cfg.host = process.env.BEHOLD_HOST;
   const app = createApp(cfg, broadcaster, frames, runner);
   const autoSync = cfg.autoSync ?? "off";
@@ -3905,7 +3934,7 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   // its saved id — best-effort and out loud: a refusal (gh gone, pipeline
   // gone) prints its reason and leaves the record for the next attempt or an
   // explicit POST /api/ci/readopt. Never in carve mode (no project to paint).
-  if (!cfg.carveReport && !servedProductRepo(cfg.projectDirs ?? [cfg.projectDir])) {
+  if (!cfg.public && !cfg.carveReport && !servedProductRepo(cfg.projectDirs ?? [cfg.projectDir])) {
     void readoptDispatchedRun(cfg, runner).then((result) => {
       if (result.outcome === "readopted") {
         process.stdout.write(`  re-adopted dispatched run ${result.run.runId} (${result.run.workflow}) — following via gh\n`);
@@ -3950,7 +3979,7 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   // the rollback interlock.
   const onPollDrift = (dir: string, movedLexicons: string[]): void => {
     broadcaster.emit("changed", dir);
-    if (autoSync === "off") return;
+    if (autoSync === "off" || cfg.public) return;
     // #517: declined on a SQL Yodeler repo as on a terragucci one.
     const guarded = servedProductRepo(cfg.projectDirs ?? [cfg.projectDir]);
     if (guarded) {
@@ -4113,7 +4142,10 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
     process.stdout.write(
       `behold → http://localhost:${info.port}\n` +
         `  project: ${cfg.projectDir}${cfg.env ? `  env: ${cfg.env}` : ""}${auto}${localTag}\n` +
-        `  read-only, watching for edits${poll}. lanes: /lanes. Ctrl-C to stop.\n`,
+        `  read-only, watching for edits${poll}. lanes: /lanes. Ctrl-C to stop.\n` +
+        (cfg.public
+          ? `  public: GET, HEAD and OPTIONS only; no op runner; answers ${["localhost", ...allowedHostsFrom(cfg.allowedHosts ?? [])].join(", ")}.\n`
+          : ""),
     );
     // Report what the pickers will offer, so an empty env picker is diagnosable.
     void detectProject(cfg.projectDir).then(({ environments, lexicons }) => {

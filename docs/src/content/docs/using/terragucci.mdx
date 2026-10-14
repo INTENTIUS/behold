@@ -197,8 +197,9 @@ no `chant/lifecycle` yet shows that no gate has asked and no root is locked.
 While the page is open, behold checks every 30 seconds whether the reports'
 `index.json` changed (a conditional request: `If-None-Match` for a bucket or an
 address, the file's time for a directory) and fetches `chant/lifecycle` again,
-and the page updates its marks and gate cards without a reload. Nothing is
-polled when no page is open. Change the interval, or turn it off with `0`:
+and the page updates its marks and gate cards without a reload (every 10
+seconds under `--public`, below). Nothing is polled when no page is open.
+Change the interval, or turn it off with `0`:
 
 ```sh
 npx @intentius/behold serve . --terragucci s3://acme-terragucci-reports --terragucci-poll 120
@@ -361,6 +362,57 @@ terragucci's `run.schema.json` is refused on its own project, and the other
 projects still draw. A project listed in `terragucci.yml` that `estate.json`
 does not list is shown as "not in estate.json". The read needs `GetObject` on
 `<prefix>/estate.json` and `<prefix>/*/runs/*/run.json`, and no list call.
+
+## A public view
+
+`behold serve --public` serves a read-only view to anyone who reaches it, for
+a repo whose pipeline is the only thing that applies it, such as one a loop
+drives through a change again and again:
+
+```sh
+npx @intentius/behold serve . --public --allow-host demo.example.com \
+  --terragucci s3://acme-terragucci-reports
+```
+
+Under `--public`:
+
+- behold builds no op runner, so no route can start an Op, an apply or any
+  other write.
+- Every method but GET, HEAD and OPTIONS is refused with 405, on every path,
+  before any route sees it.
+- Every read that runs a command or calls out with behold's own credentials,
+  and isn't part of the view, is refused with 403:
+  - `/api/ops/<name>/status` and `/api/operator/*`, the op tools' reads
+  - `/api/overlay`, the live overlay, its `plan=1` attribute-drift read included
+  - `/api/graph` with `env`, `target`, `consistent`, `plan` or `live`; the
+    source graph without them still answers
+  - `/api/reconcile`, `/api/diff`, `/api/diff/<node>` and
+    `/api/components/compare`, which read or plan the live estate
+  - `/api/resources`, `/api/ci` and `/api/ci/run`
+  - `/api/doctor` and `/api/substrates`, which probe the host's tools
+  - `/api/history`, which runs `git log`
+  - `/api/workspace/gates` and `/api/workspace/why`
+  - `/api/choudoufu/moves` and `/choudoufu/morph`
+  - `/api/sql-yodeler/lifecycle`
+- What still answers: `/api/terragucci` and everything under it (the
+  timeline, progress, estate, lifecycle and its events), the gate history
+  (`/api/lifecycle/history`) and releases (`/api/lifecycle/releases`), which
+  read the same `chant/lifecycle` branch; the source graph; the project
+  summary, which offers no environment; the event stream; the lanes; and the
+  page itself.
+- The page shows no control that writes or asks for a refused read, and no
+  environment picker. A waiting wave's approve line is still shown, as the
+  line someone else runs.
+- The `--terragucci` poll defaults to 10 seconds. `--terragucci-poll` still
+  sets it.
+- One project directory only, and not with `--env`, `--poll`, `--local` or
+  `--auto-sync`.
+
+behold still binds 127.0.0.1. Put a proxy in front of it that forwards the
+public name in `Host`, and pass that name with `--allow-host`; any other name is
+refused with 421. Give the process read-only credentials: `GetObject` on the
+reports bucket, and a read-only key for the checkout's `origin`, which
+`chant/lifecycle` is fetched from.
 
 ## Try it on terragucci's example
 

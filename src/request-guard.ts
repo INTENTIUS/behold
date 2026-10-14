@@ -15,6 +15,13 @@
  *
  * A host that frames behold through a proxy (arugula's block sites) passes
  * its site's name with `--allow-host`.
+ *
+ * #569: `serve --public` serves a read-only view to anyone who reaches it.
+ * It still binds 127.0.0.1 and sits behind a proxy that forwards the public
+ * name in Host, so the name is passed with `--allow-host` like any other.
+ * What changes is the methods: with `public` set, anything but GET, HEAD and
+ * OPTIONS is refused with 405 here, before any route sees it, whatever its
+ * Host, Origin or Sec-Fetch-Site say.
  */
 
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
@@ -25,6 +32,8 @@ export interface GuardConfig {
   allowedHosts: string[];
   /** The address behold bound, when it's a specific one. */
   boundHost?: string;
+  /** #569: `serve --public`. Every method but GET, HEAD and OPTIONS is refused. */
+  public?: boolean;
 }
 
 export interface GuardRequest {
@@ -35,7 +44,7 @@ export interface GuardRequest {
   secFetchSite?: string | null;
 }
 
-export type GuardVerdict = { ok: true } | { ok: false; status: 403 | 421; error: string };
+export type GuardVerdict = { ok: true } | { ok: false; status: 403 | 405 | 421; error: string };
 
 /** The name part of a Host header or an origin's host, lowercased, without the port. */
 export function hostName(hostport: string): string {
@@ -68,6 +77,9 @@ export function guardRequest(req: GuardRequest, cfg: GuardConfig): GuardVerdict 
     return { ok: false, status: 421, error: `behold doesn't answer to host ${name}. Start it with --allow-host ${name} if a proxy of yours sends that name.` };
   }
   if (SAFE.has(req.method.toUpperCase())) return { ok: true };
+  if (cfg.public) {
+    return { ok: false, status: 405, error: `behold is serving a public, read-only view: a ${req.method.toUpperCase()} is refused (GET, HEAD and OPTIONS only)` };
+  }
   if ((req.secFetchSite || "").toLowerCase() === "cross-site") {
     return { ok: false, status: 403, error: "a cross-site page can't write to behold" };
   }
