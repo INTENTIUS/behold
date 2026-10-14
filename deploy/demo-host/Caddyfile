@@ -1,0 +1,32 @@
+# The demo host's only public listener (#570). Caddy gets and renews the
+# Let's Encrypt certificate for the name itself (HTTP-01 on port 80, which is
+# why 80 is open), redirects http to https, and proxies to behold on the
+# compose network. behold is --public: GET, HEAD and OPTIONS only.
+#
+# Until the morning of 2026-11-04 the site asks for a password. The
+# basic_auth block is not in this file: demo-host.sh bootstrap writes it to
+# /etc/demo-host/caddy/password.caddy on the host (mounted here as
+# /etc/caddy/auth), with a bcrypt hash of the password it was given. The
+# import below is a glob, so when no file matches it imports nothing and
+# Caddy only logs a warning.
+#
+# Launch morning, one line on the host (README.md, "Launch morning"):
+#
+#   sudo /opt/demo/behold/deploy/demo-host/demo-host.sh open
+#
+# which renames password.caddy to password.caddy.off and reloads Caddy.
+
+{$DEMO_HOSTNAME:demo.intentius.io} {
+	import /etc/caddy/auth/*.caddy
+
+	# The view's live updates are server-sent events; send each one on as
+	# it comes rather than buffering.
+	reverse_proxy behold:4600 {
+		flush_interval -1
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

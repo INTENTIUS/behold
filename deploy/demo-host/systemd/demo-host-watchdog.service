@@ -1,0 +1,15 @@
+# The demo host's watchdog (#570): restarts the loop driver when it exits or
+# stalls, logs each stall, and moves behold's checkout to main at the start of
+# every cycle. Installed by demo-host.sh bootstrap, with @DEMO_ROOT@ filled in.
+[Unit]
+Description=Demo host watchdog
+Requires=docker.service
+After=docker.service demo-host.service
+
+[Service]
+ExecStart=@DEMO_ROOT@/behold/deploy/demo-host/watchdog.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
