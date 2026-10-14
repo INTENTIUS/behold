@@ -149,7 +149,8 @@ export interface ReportBlastResource {
   root: string;
   address: string;
   actions: string[];
-  reaches: { root: string; address: string; through?: { root: string; output: string } }[];
+  /** `depth` (minor 36, #568 step 2): the distance from the changed resource, 1 for a resource that refers to it, one more per resource in between and per hop from a root's output into its reader. Absent before minor 36. */
+  reaches: { root: string; address: string; depth?: number; through?: { root: string; output: string } }[];
 }
 
 /** A tf-plan run's blast radius (minor 22 and 31, #568). */
@@ -186,6 +187,8 @@ export interface Report {
   named?: { root: string; address?: string; action: string; reason?: string }[];
   /** Changes by action across the run's roots (#568). */
   totals?: Record<string, number>;
+  /** minor 35 (#568 step 2): how many roots `totals` counts a change of. */
+  totals_roots?: number;
   /** minor 12 (#568). */
   cost?: ReportCost;
   /** minor 22 (#568). */
@@ -406,6 +409,8 @@ export interface PullRequestPlan {
     cost?: ReportCostSums;
   }[];
   totals?: Record<string, number>;
+  /** #568 step 2: how many roots `totals` counts a change of (minor 35). */
+  totals_roots?: number;
   cost?: ReportCost;
   blast?: ReportBlast;
 }
@@ -665,6 +670,7 @@ export function pullRequestPlan(doc: Report, report: string): PullRequestPlan {
       ...(w.cost ? { cost: w.cost } : {}),
     })),
     ...(doc.totals ? { totals: doc.totals } : {}),
+    ...(doc.totals_roots !== undefined ? { totals_roots: doc.totals_roots } : {}),
     ...(doc.cost ? { cost: doc.cost } : {}),
     ...(doc.blast ? { blast: doc.blast } : {}),
   };

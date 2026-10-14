@@ -1,6 +1,6 @@
 {
   "schema": "terragucci.report/v1",
-  "minor": 34,
+  "minor": 36,
   "run": {
     "project": "forge.example/demo/two-roots",
     "commit": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
@@ -28,6 +28,7 @@
     "no-op": 3,
     "forget": 0
   },
+  "totals_roots": 3,
   "groups": [],
   "roots": [
     {
@@ -329,6 +330,7 @@
           {
             "root": "app",
             "address": "terraform_data.service",
+            "depth": 2,
             "through": {
               "root": "network",
               "output": "subnet_id"
@@ -337,6 +339,7 @@
           {
             "root": "app",
             "address": "terraform_data.worker",
+            "depth": 2,
             "through": {
               "root": "network",
               "output": "subnet_id"
@@ -345,6 +348,7 @@
           {
             "root": "edge",
             "address": "terraform_data.route",
+            "depth": 4,
             "through": {
               "root": "app",
               "output": "service_port"
@@ -361,11 +365,13 @@
         "reaches": [
           {
             "root": "app",
-            "address": "terraform_data.schedule"
+            "address": "terraform_data.schedule",
+            "depth": 1
           },
           {
             "root": "edge",
             "address": "terraform_data.route",
+            "depth": 2,
             "through": {
               "root": "app",
               "output": "service_port"

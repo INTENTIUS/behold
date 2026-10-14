@@ -95,6 +95,12 @@ export function totalsLine(totals) {
   return parts.length ? parts.join(" · ") : "no changes";
 }
 
+/** #568 step 2: "across 3 roots", from `totals_roots` (report minor 35); null on an older report, which has no count. */
+export function rootsCount(n) {
+  if (n === undefined || n === null) return null;
+  return `across ${n} ${n === 1 ? "root" : "roots"}`;
+}
+
 const money = (n) => (n === null || n === undefined ? "no figure" : n.toFixed(2));
 const signed = (n) => (n === null || n === undefined ? "no figure" : `${n >= 0 ? "+" : "-"}${Math.abs(n).toFixed(2)}`);
 
@@ -110,11 +116,36 @@ export function costLine(cost) {
   return `cost: ${signed(cost.monthly_delta)} ${cost.currency} a month, from ${money(cost.past_monthly_total)} to ${money(cost.monthly_total)}${by}${over}${missing}${rootsMissing}`;
 }
 
+const reachText = (x) => `${x.root}: ${x.address}${x.through ? ` through ${x.through.root} output ${x.through.output}` : ""}`;
+
+/**
+ * #568 step 2: a changed resource's reaches, grouped by distance (`depth`,
+ * report minor 36), nearest first: "at 1: app: a; at 2: app: b, edge: c". A
+ * report before minor 36 has no depth: its reaches stay in their order,
+ * nearest first, with no count, as terragucci wrote them.
+ */
+export function reachGroups(reaches) {
+  if (!reaches.length || !reaches.every((x) => typeof x.depth === "number")) return [{ depth: null, reaches: reaches.map(reachText) }];
+  const by = new Map();
+  for (const x of reaches) {
+    if (!by.has(x.depth)) by.set(x.depth, []);
+    by.get(x.depth).push(reachText(x));
+  }
+  return [...by.keys()].sort((a, b) => a - b).map((depth) => ({ depth, reaches: by.get(depth) }));
+}
+
+/** The reach groups as one line: "at distance 1: …; at distance 2: …", or the plain list when there is no depth. */
+export function reachLine(groups) {
+  if (!groups.length || (groups.length === 1 && !groups[0].reaches.length)) return "nothing";
+  if (groups[0].depth === null) return `nearest first: ${list(groups[0].reaches)}`;
+  return groups.map((g) => `at distance ${g.depth}: ${list(g.reaches)}`).join("; ");
+}
+
 /**
  * The blast radius, nearest first, as terragucci recorded it: each changed
- * resource and the resources it reaches, in their order and without a count
- * (distance comes with INTENTIUS/terragucci#1016); then the roots downstream,
- * and the checkout's roots the pull request did not plan.
+ * resource and the resources it reaches, by distance from it across roots
+ * (an older report without depth: in their order, without a count); then the
+ * roots downstream, and the checkout's roots the pull request did not plan.
  */
 export function blastRows(answer) {
   const pr = answer && answer.pull_request;
@@ -127,7 +158,7 @@ export function blastRows(answer) {
     resources: b && b.resources
       ? b.resources.map((r) => ({
           head: `${r.root}: ${r.address} (${r.actions.join(", ")})`,
-          reaches: r.reaches.map((x) => `${x.root}: ${x.address}${x.through ? ` through ${x.through.root} output ${x.through.output}` : ""}`),
+          reaches: reachGroups(r.reaches),
         }))
       : [],
     downstream: b ? b.downstream.map((d) => `${d.root}${d.wave !== undefined ? ` (wave ${d.wave})` : ""}${d.planned ? "" : ", not planned"}`) : [],
@@ -163,6 +194,9 @@ export function waveRows(answer, progress, now = new Date()) {
       const facts = [];
       if (w.reads.length) facts.push(`after wave ${list(w.reads)}`);
       if (w.digest) facts.push(`plan ${short(w.digest)}`);
+      // #568 step 2: the wave's own totals, once it planned (a wave not started has none).
+      const totals = totalsLine(w.totals);
+      if (totals) facts.push(`changes: ${totals}${rootsCount(w.totals_roots) ? ` ${rootsCount(w.totals_roots)}` : ""}`);
       if (w.state === "failed" || w.state === "refused") {
         const before = states.filter((x) => x.number < w.number && x.state === "applied").map((x) => x.number);
         facts.push(before.length ? `wave ${list(before)} applied before it and stays applied` : "no wave before it applied");
@@ -252,7 +286,7 @@ export function changeSection(answer, progress, now, ui) {
   const pr = answer && answer.pull_request;
   if (pr) {
     const totals = totalsLine(pr.totals);
-    if (totals) add("tg-legend", `totals across roots (pull request #${pr.run.pull_request}): ${totals}`);
+    if (totals) add("tg-legend", `totals ${rootsCount(pr.totals_roots) || "across roots"} (pull request #${pr.run.pull_request}): ${totals}`);
     const cost = costLine(pr.cost);
     if (cost) add("tg-legend", cost);
     const b = blastRows(answer);
@@ -265,7 +299,7 @@ export function changeSection(answer, progress, now, ui) {
       for (const r of b.resources) {
         const n = document.createElement("div");
         n.className = "ws-gate-note";
-        n.textContent = `${r.head} reaches, nearest first: ${r.reaches.length ? list(r.reaches) : "nothing"}`;
+        n.textContent = `${r.head} reaches ${reachLine(r.reaches)}`;
         d.appendChild(n);
       }
       box.appendChild(d);

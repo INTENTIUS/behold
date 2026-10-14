@@ -80,6 +80,10 @@ export interface RunView {
     report?: string;
     /** #568: the roots whose plan in this wave changes something. */
     changed?: string[];
+    /** #568 step 2: the wave's changes by action, once it planned (report minor 35). */
+    totals?: Record<string, number>;
+    /** #568 step 2: how many of the wave's roots `totals` counts a change of. */
+    totals_roots?: number;
     progress?: { read: string; resources: { root: string; address: string; action: string; status: ProgressStatus; done_at?: string }[] };
   }[];
 }
@@ -262,6 +266,10 @@ export interface RunWaveState {
   /** Its report.html, as a key under the source. */
   report?: string;
   changed?: string[];
+  /** #568 step 2: its changes by action, once it planned. */
+  totals?: Record<string, number>;
+  /** #568 step 2: how many of its roots `totals` counts a change of. */
+  totals_roots?: number;
 }
 
 export interface ProgressJoin {
@@ -346,6 +354,8 @@ export function joinProgress(run: Pick<RunView, "waves" | "roots">, nodes: reado
     ...(w.state === "waiting" ? { command: w.command ?? terragucciApproveCommand(w.number, w.digest ?? null) } : {}),
     ...(w.report ? { report: `${w.report}/report.html` } : {}),
     ...(w.changed ? { changed: [...w.changed] } : {}),
+    ...(w.totals ? { totals: { ...w.totals } } : {}),
+    ...(w.totals_roots !== undefined ? { totals_roots: w.totals_roots } : {}),
   }));
   const reads = (run.roots ?? []).map((r) => ({ root: r.root, wave: r.wave, reads: [...(r.reads ?? [])] }));
   return { states, reads, waves, cards, unmatched, watching: unsettled(run) };
