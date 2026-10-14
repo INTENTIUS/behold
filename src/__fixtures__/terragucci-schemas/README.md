@@ -21,3 +21,10 @@ brings `report.schema.json` and `estate.schema.json` up to minor 34 and adds
 The demo fixtures in `../terragucci-demo/` (a pull request's tf-plan
 `report.json` and the run views of its waves) are written against these, at
 minor 34.
+
+#568 step 2: every `*.schema.json` refreshed again, unchanged, from
+INTENTIUS/terragucci main at `3bf6287c` (`@intentius/terragucci` 0.4.9, report
+schema minor 36). Minor 35 (INTENTIUS/terragucci#1015) adds `totals_roots` to
+`report.schema.json` and `waves[].totals` and `waves[].totals_roots` to
+`run.schema.json`; minor 36 (INTENTIUS/terragucci#1016) adds `depth` to each
+`blast.resources[].reaches[]`. The demo fixtures carry these fields, at minor 36.
