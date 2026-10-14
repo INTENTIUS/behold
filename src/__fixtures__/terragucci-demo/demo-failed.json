@@ -1,0 +1,14 @@
+{
+  "cycle": 12,
+  "scenario": "failure",
+  "title": "app fails mid-apply, and a re-run finishes it",
+  "step": "failed",
+  "label": "Wave 2 failed: app's migration exited 1. Wave 1 stays applied: network holds 9090. app's state holds what applied before the failure: listener 9080. edge did not run",
+  "started_at": "2026-10-20T10:00:00Z",
+  "next": {
+    "action": "delete the marker and post /terragucci apply",
+    "at": "2026-10-20T10:05:20Z"
+  },
+  "pull": 41,
+  "commit": "f0e1d2c3b4a5968778695a4b3c2d1e0f12345678"
+}

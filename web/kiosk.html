@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>behold kiosk</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='none' stroke='%23a6adc8' stroke-width='1.6'/%3E%3Ccircle cx='8' cy='8' r='2.2' fill='%23a6adc8'/%3E%3C/svg%3E"
+    />
+    <style>
+      /* #569 step 2. The pre-paint fallback is index.html's: the default
+         theme's tokens, which initTheme() replaces with the viewer's theme. */
+      :root {
+        --bg: #1e1e2e; --panel: #2e2f40; --line: #3b3c4a; --fg: #cdd6f4; --muted: #777a8c;
+        --edge: #56596d; --managed: #a6e3a1; --foreign: #f9e2af; --pending: #89b4fa;
+        --degraded: #f38ba8; --neutral: #6d7187; --runtime: #94e2d5;
+        --rule: #4e4f64; --focus: #a3b4d0; --active: #3d4660; --well: #11101f; --shadow: #050507;
+        --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; background: var(--bg); color: var(--fg); font: 18px/1.45 var(--font-ui); }
+      #kiosk { max-width: 1100px; margin: 0 auto; padding: 2rem 1rem 3rem; display: grid; gap: 1.25rem; }
+      .k-kicker { font: 600 0.8rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+      .k-title { margin: 0.2rem 0; font-size: 2rem; line-height: 1.2; }
+      .k-muted { color: var(--muted); margin: 0.25rem 0; }
+      section { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 1rem 1.25rem; }
+      .k-strip { list-style: none; display: flex; flex-wrap: wrap; gap: 0.4rem; padding: 0; margin: 0; }
+      .k-stop { font: 0.85rem var(--font-mono); padding: 0.3rem 0.7rem; border-radius: 999px; border: 1px solid var(--rule); color: var(--muted); }
+      .k-done { color: var(--fg); border-color: var(--managed); }
+      .k-current { color: var(--bg); background: var(--pending); border-color: var(--pending); font-weight: 600; }
+      .k-failed { color: var(--bg); background: var(--degraded); border-color: var(--degraded); font-weight: 600; }
+      .k-label { font-size: 1.35rem; margin: 0.4rem 0 0; }
+      .k-step-waiting { border-color: var(--foreign); }
+      .k-step-failed, .k-step-stalled { border-color: var(--degraded); }
+      .k-step-applied { border-color: var(--managed); }
+      .k-next-line { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: baseline; margin: 0.4rem 0 0; font-size: 1.2rem; }
+      .k-action { font-family: var(--font-mono); }
+      .k-when { color: var(--foreign); font-family: var(--font-mono); }
+      .k-approve { margin-top: 0.75rem; }
+      .k-command { display: block; padding: 0.6rem 0.8rem; background: var(--well); border-radius: 6px; font: 0.95rem var(--font-mono); overflow-wrap: anywhere; user-select: none; }
+      .k-read { font-family: var(--font-mono); font-size: 0.95rem; margin: 0.3rem 0; }
+      .k-unknown { color: var(--foreign); }
+      .k-unreviewed { margin: 0.4rem 0; padding-left: 0.6rem; border-left: 3px solid var(--foreign); }
+      .k-waves { list-style: none; padding: 0; margin: 0.6rem 0; display: grid; gap: 0.5rem; }
+      .k-wave { border: 1px solid var(--rule); border-left-width: 4px; border-radius: 6px; padding: 0.5rem 0.8rem; background: var(--bg); }
+      .k-wave-title { font-family: var(--font-mono); }
+      .k-wave-fact { color: var(--muted); font-size: 0.9rem; }
+      .k-tone-ok { border-left-color: var(--managed); }
+      .k-tone-wave { border-left-color: var(--foreign); }
+      .k-tone-failed { border-left-color: var(--degraded); }
+      .k-tone-plan { border-left-color: var(--pending); }
+      .k-tone-none { border-left-color: var(--neutral); }
+      .k-foot { font-size: 0.8rem; }
+    </style>
+  </head>
+  <body>
+    <main id="kiosk" aria-live="polite"></main>
+    <script type="module">
+      import { initTheme } from "/theme.js";
+      import { startKiosk } from "/kiosk.js";
+      initTheme();
+      startKiosk(document.getElementById("kiosk"));
+    </script>
+  </body>
+</html>

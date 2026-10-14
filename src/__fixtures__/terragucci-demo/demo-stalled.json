@@ -1,0 +1,11 @@
+{
+  "cycle": 12,
+  "scenario": "a-output",
+  "title": "The same change, read through .output",
+  "step": "stalled",
+  "label": "Stalled after applying: run 104 did not end within 900s (last status: running). The driver resets and goes on with the next cycle.",
+  "started_at": "2026-10-20T10:00:00Z",
+  "next": null,
+  "pull": 41,
+  "commit": "f0e1d2c3b4a5968778695a4b3c2d1e0f12345678"
+}

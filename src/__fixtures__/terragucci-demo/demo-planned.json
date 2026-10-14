@@ -1,0 +1,14 @@
+{
+  "cycle": 12,
+  "scenario": "a-known",
+  "title": "A port change, known when it plans",
+  "step": "planned",
+  "label": "One plan note: network 8080 -> 9090, app's listener 9080 and edge's upstream http://app:9080 planned on the new value; other is not planned",
+  "started_at": "2026-10-20T10:00:00Z",
+  "next": {
+    "action": "merge pull request 41",
+    "at": "2026-10-20T10:02:00Z"
+  },
+  "pull": 41,
+  "commit": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"
+}

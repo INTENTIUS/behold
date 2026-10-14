@@ -1,0 +1,14 @@
+{
+  "cycle": 12,
+  "scenario": "a-known",
+  "title": "A port change, known when it plans",
+  "step": "pull-request",
+  "label": "Pull request 41: network's http_proxy_port goes 8080 -> 9090, and its output reads .input",
+  "started_at": "2026-10-20T10:00:00Z",
+  "next": {
+    "action": "wait for the plan note",
+    "at": null
+  },
+  "pull": 41,
+  "commit": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"
+}
