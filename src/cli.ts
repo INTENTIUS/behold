@@ -45,6 +45,7 @@ Usage:
                 [--yodel-report <file|dir>]
                 [--publish s3://<bucket>/<prefix>/views/<name> [--commit <sha>] [--keep <n>]]
   behold serve <project-dir…> [--port <n>] [--host <addr>] [--allow-host <name,…>] [--hud <url>] [--env <name>] [--poll <secs>] [--local]
+                [--public] [--terragucci <src> [--terragucci-project <p>] [--terragucci-poll <secs>]]
                 [--yodel-report <file|dir>]
   behold carve <report.json> [--port <n>]
 
@@ -110,6 +111,14 @@ Options:
   --allow-host <n,…>  serve only: names besides loopback behold answers to, and
                       whose pages may write (BEHOLD_ALLOWED_HOSTS too). For a
                       proxy that frames behold, or --host 0.0.0.0.
+  --public            serve only: a read-only view anyone may load, for a
+                      public host (#569). behold builds no op runner, refuses
+                      every method but GET, HEAD and OPTIONS (405), refuses the
+                      op tools' reads, and the page shows no control that
+                      writes. One project directory only. Not with --local or
+                      --auto-sync. It still binds 127.0.0.1: put a proxy in
+                      front and pass the public name with --allow-host. With
+                      --terragucci, the poll defaults to 10 s.
   --hud <url>         serve only: where hud reviews this workspace's records
                       (BEHOLD_HUD_URL too). A proposed decision in a member's
                       or a card's "why" links to its review there (#471).
@@ -128,7 +137,8 @@ Options:
                       serve with --terragucci only: while a page is open, ask
                       whether index.json changed (If-None-Match, or its mtime)
                       and fetch chant/lifecycle (the gates and locks) every
-                      <secs> (default 30), and push what moved to the page.
+                      <secs> (default 30, or 10 with --public), and push what
+                      moved to the page.
                       0 turns it off. The fetch goes into behold's own cache
                       (<tmpdir>/behold-lifecycle-*), never into the checkout.
   --yodel-report <file|dir>
@@ -257,6 +267,7 @@ export async function run(argv: string[]): Promise<void> {
   let terragucciProject: string | undefined;
   let terragucciPoll: number | undefined;
   let yodelReport: string | undefined;
+  let isPublic = false;
   const allowHosts: string[] = [];
 
   for (let i = 0; i < rest.length; i++) {
@@ -272,6 +283,7 @@ export async function run(argv: string[]): Promise<void> {
     else if (a === "--env") env = rest[++i];
     else if (a === "--poll") pollSecs = Number(rest[++i]);
     else if (a === "--local") local = true;
+    else if (a === "--public") isPublic = true;
     else if (a === "--auto-sync") {
       const m = rest[++i];
       if (!m || !isAutoSyncMode(m)) {
@@ -331,6 +343,20 @@ export async function run(argv: string[]): Promise<void> {
     process.stderr.write("behold serve: --terragucci-poll needs --terragucci\n");
     process.exit(2);
   }
+  if (isPublic && projectDirs.length > 1) {
+    process.stderr.write("behold serve: --public serves one project directory\n");
+    process.exit(2);
+  }
+  if (isPublic && local) {
+    process.stderr.write("behold serve: --public can't --local (it boots emulators and deploys to them)\n");
+    process.exit(2);
+  }
+  if (isPublic && autoSync !== "off") {
+    process.stderr.write("behold serve: --public can't --auto-sync (it runs Ops)\n");
+    process.exit(2);
+  }
+  // #569: a public view follows a looping run, so it asks more often.
+  if (isPublic && terragucci !== undefined && terragucciPoll === undefined) terragucciPoll = PUBLIC_TERRAGUCCI_POLL_SECS;
   if (yodelReport !== undefined && !yodelReport) {
     process.stderr.write("behold serve: --yodel-report needs the file `yodel report --json` wrote, or the directory holding it\n");
     process.exit(2);
@@ -346,11 +372,15 @@ export async function run(argv: string[]): Promise<void> {
     ...(local ? { local: true } : {}),
     ...(host ? { host } : {}),
     ...(allowHosts.length ? { allowedHosts: allowHosts } : {}),
+    ...(isPublic ? { public: true, layoutWrites: false } : {}),
     ...(target.workspace && hud ? { hud } : {}),
     ...(yodelReport ? { yodelReport: resolve(yodelReport) } : {}),
     ...(terragucci ? { terragucci: { source: terragucci, ...(terragucciProject ? { project: terragucciProject } : {}), ...(terragucciPoll !== undefined ? { pollSecs: terragucciPoll } : {}) } } : {}),
   });
 }
+
+/** #569: `--terragucci-poll`'s default under `--public`, in seconds. */
+const PUBLIC_TERRAGUCCI_POLL_SECS = 10;
 
 /** What `serve` and `export` read for the directories on the command line. */
 type ServeTarget = { projectDir: string; projectDirs?: string[]; workspace?: Workspace };

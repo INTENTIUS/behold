@@ -385,6 +385,24 @@ proxy's name with `--allow-host <name>` (or `BEHOLD_ALLOWED_HOSTS`); `--host`
 (or `BEHOLD_HOST`) binds another address, which then needs `--allow-host` for
 the names it is reached by.
 
+`behold serve --public` is for a host anyone may load (#569). behold builds no
+op runner at all, refuses every method but GET, HEAD and OPTIONS with 405,
+refuses the op tools' reads (`/api/ops/<name>/status`, `/api/operator/*`), and
+the page shows no control that writes: no apply, approve, run, refresh, reset,
+project switch or layout save. It serves one project directory and can't be
+combined with `--local` or `--auto-sync`. It still binds 127.0.0.1, so put a
+proxy in front that forwards the public name in `Host`, and pass that name:
+
+```sh
+npx @intentius/behold serve . --public --allow-host demo.example.com \
+  --terragucci s3://acme-terragucci-reports
+```
+
+With `--terragucci`, the poll defaults to 10 seconds under `--public`
+(`--terragucci-poll` still sets it). The credentials behold runs with should
+be read-only too: `GetObject` on the reports bucket, and a read-only key for
+the repo's `origin`, which `chant/lifecycle` is fetched from.
+
 In a declared workspace, the gates waiting on a person come from
 `chant workspace status <env> --json`, keyed `member/op/gate` the way arugula's
 workspace block keys them, so the two show the same set. Standalone, a gate's
