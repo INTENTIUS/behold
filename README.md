@@ -387,10 +387,12 @@ the names it is reached by.
 
 `behold serve --public` is for a host anyone may load (#569). behold builds no
 op runner at all, refuses every method but GET, HEAD and OPTIONS with 405,
-refuses the op tools' reads (`/api/ops/<name>/status`, `/api/operator/*`), and
-the page shows no control that writes: no apply, approve, run, refresh, reset,
-project switch or layout save. It serves one project directory and can't be
-combined with `--local` or `--auto-sync`. It still binds 127.0.0.1, so put a
+refuses with 403 every read that runs a command or uses its credentials and
+isn't part of the view (the op tools, the live overlay, plans, diffs, CI,
+doctor, substrates and more; the docs' terragucci page lists them), and the
+page shows no control that writes or asks for those reads. It serves one
+project directory and can't be combined with `--env`, `--poll`, `--local` or
+`--auto-sync`. It still binds 127.0.0.1, so put a
 proxy in front that forwards the public name in `Host`, and pass that name:
 
 ```sh

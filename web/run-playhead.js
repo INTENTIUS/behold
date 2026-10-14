@@ -202,5 +202,6 @@ export function renderGateCard(gate, actions = {}) {
 const NO_APPROVE = {
   host: "approve in the host that framed this graph",
   preview: "approving is off in preview",
+  public: "a public view: approving is off",
   static: "a snapshot: approve where behold runs",
 };

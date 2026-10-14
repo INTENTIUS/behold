@@ -113,12 +113,17 @@ Options:
                       proxy that frames behold, or --host 0.0.0.0.
   --public            serve only: a read-only view anyone may load, for a
                       public host (#569). behold builds no op runner, refuses
-                      every method but GET, HEAD and OPTIONS (405), refuses the
-                      op tools' reads, and the page shows no control that
-                      writes. One project directory only. Not with --local or
-                      --auto-sync. It still binds 127.0.0.1: put a proxy in
-                      front and pass the public name with --allow-host. With
-                      --terragucci, the poll defaults to 10 s.
+                      every method but GET, HEAD and OPTIONS (405), and refuses
+                      (403) every read that runs a command or uses your
+                      credentials and isn't part of the view: the op tools,
+                      the live overlay and its plan, diff, reconcile, CI,
+                      doctor, substrates, history, workspace gates and why,
+                      choudoufu moves. The page shows no control that writes
+                      or asks for those. One project directory only; not with
+                      --env, --poll, --local or --auto-sync. It still binds
+                      127.0.0.1: put a proxy in front and pass the public name
+                      with --allow-host. With --terragucci, the poll defaults
+                      to 10 s.
   --hud <url>         serve only: where hud reviews this workspace's records
                       (BEHOLD_HUD_URL too). A proposed decision in a member's
                       or a card's "why" links to its review there (#471).
@@ -349,6 +354,10 @@ export async function run(argv: string[]): Promise<void> {
   }
   if (isPublic && local) {
     process.stderr.write("behold serve: --public can't --local (it boots emulators and deploys to them)\n");
+    process.exit(2);
+  }
+  if (isPublic && (env || pollSecs !== undefined)) {
+    process.stderr.write("behold serve: --public can't --env or --poll (a live read uses your credentials)\n");
     process.exit(2);
   }
   if (isPublic && autoSync !== "off") {

@@ -625,6 +625,7 @@ function stopWhyRead() {
 }
 
 function renderWhySection(panel, ask) {
+  if (publicMode) return; // #569: /api/workspace/why is refused in a public view
   stopWhyRead();
   if (staticMode) return;
   const memberName = ask.member || nodeMember(ask.node || "");
@@ -1300,6 +1301,7 @@ let bulkDiffCache = null; // { env, nodes: { <id>: { observed, diff, health } } 
 // without anyone paying for a second full pass over the account.
 let planDriftOnce = false;
 async function loadNodeDiff(id) {
+  if (publicMode) return null; // #569: /api/diff is refused in a public view
   if (!bulkDiffCache || bulkDiffCache.env !== view.env) {
     bulkDiffCache = null;
     try {
@@ -1977,7 +1979,7 @@ function copyToClipboard(text, el) {
  * `carve.json`.
  */
 function renderChoudoufuMoves(host, info) {
-  if (!info || !info.plans || !info.plans.length || staticMode) return;
+  if (!info || !info.plans || !info.plans.length || staticMode || publicMode) return;
   host.appendChild(panelHeading("moves (choudoufu)"));
   for (const plan of info.plans) {
     const head = document.createElement("div");
@@ -2215,7 +2217,7 @@ function renderPanelScope() {
   // #234's last remainder — "is prod running what staging tested". Only when
   // an env is picked and there is another to compare against; ledger-only, so
   // it never adds a cloud read to opening the panel (fetch happens on pick).
-  if (view.env && environments.length > 1 && !staticMode) {
+  if (view.env && environments.length > 1 && !staticMode && !publicMode) {
     if (view.compareTo === view.env) view.compareTo = null; // env re-picked onto the compared one
     host.appendChild(panelHeading("compare releases"));
     const sel = document.createElement("select");
@@ -2537,7 +2539,7 @@ function gatesEnv() {
   return view.gates || view.env || "";
 }
 function loadWorkspaceGates({ force = false } = {}) {
-  if (staticMode) return;
+  if (staticMode || publicMode) return;
   const env = gatesEnv();
   if (!force && wsGates.env === env) return paintWorkspaceGates();
   // Every read is numbered; only the newest one paints, so an answer for an
@@ -3811,6 +3813,7 @@ initYodelReport();
 // the gate ledgers' history (#522). Read-only and dated; never live.
 let ylHost = null;
 async function initYodelLane() {
+  if (publicMode) return; // #569: /api/sql-yodeler/lifecycle is refused in a public view
   // #537: a static export carries the lane as a snapshot (src/export.ts), so it draws here too.
   const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
   if (!project.sqlYodeler) return;
@@ -3975,6 +3978,7 @@ let ciByComponent = new Map();
 let ciForge = null; // the forge the pipeline was generated for (#164) — heads the inspect section
 
 async function loadCi() {
+  if (publicMode) return; // #569: /api/ci is refused in a public view
   try {
     const q = lensParams(new URLSearchParams(view.env ? { env: view.env } : {}));
     const res = await apiFetch(`/api/ci?${q}`);
@@ -3999,6 +4003,7 @@ async function loadCi() {
 let resourcesByComponent = {};
 
 async function loadResources() {
+  if (publicMode) return; // #569: /api/resources is refused in a public view
   try {
     const q = lensParams(new URLSearchParams(view.env ? { env: view.env } : {}));
     const res = await apiFetch(`/api/resources?${q}`);
@@ -4257,7 +4262,7 @@ function mountOperator(host) {
     {
       approve: embedOpts.embed || previewMode || staticMode || terragucciRepo ? null : (op, gate) => approveConvergeGate(op, gate),
       approver: projectInfo && projectInfo.approver,
-      why: embedOpts.embed ? "host" : previewMode ? "preview" : "static",
+      why: embedOpts.embed ? "host" : publicMode ? "public" : previewMode ? "preview" : "static",
       // A static export has no server to ask, so it gets no history affordance
       // at all rather than a button that can only fail.
       ...(staticMode ? {} : { history: () => toggleOperatorHistory() }),
@@ -4275,7 +4280,7 @@ function mountPlayhead(host) {
   if (!hasPlayhead(runState)) return;
   const box = document.createElement("div");
   box.className = "run-playhead";
-  renderPlayhead(box, runState, gateCard, { approve: embedOpts.embed || previewMode || staticMode || terragucciRepo ? null : (op, gate) => signal(op, gate), approver: projectInfo && projectInfo.approver, why: embedOpts.embed ? "host" : previewMode ? "preview" : "static" });
+  renderPlayhead(box, runState, gateCard, { approve: embedOpts.embed || previewMode || staticMode || terragucciRepo ? null : (op, gate) => signal(op, gate), approver: projectInfo && projectInfo.approver, why: embedOpts.embed ? "host" : publicMode ? "public" : previewMode ? "preview" : "static" });
   host.appendChild(box);
 }
 
@@ -4512,6 +4517,7 @@ function renderReconcileDetail(r) {
 }
 
 async function loadReconcile() {
+  if (publicMode) return; // #569: /api/reconcile is refused in a public view
   try {
     const q = lensParams(new URLSearchParams({ env: view.env }));
     const res = await apiFetch(`/api/reconcile?${q}`);
@@ -6084,6 +6090,7 @@ events.addEventListener("changed", () => {
 // status dot + name + state, with the bring-up/reset/pipeline actions inline
 // again (#73 moved those into ⌘K; they remain there too, via lastSubstrates).
 async function loadSubstrates() {
+  if (publicMode) return; // #569: /api/substrates is refused in a public view
   try {
     const { substrates } = await apiFetch("/api/substrates").then((r) => r.json());
     renderSubstrates(substrates || []);
@@ -6246,7 +6253,7 @@ function hideLoading() {
 // ask. Without this guard the bundle logs a 404 on every page load and relies on
 // the fetch failing to stay silent, which is an outcome rather than a rule.
 async function refreshReadCost() {
-  if (staticMode) return;
+  if (staticMode || publicMode) return; // #569: /api/doctor is refused in a public view
   try {
     const res = await fetch("/api/doctor?reads=1");
     if (!res.ok) return;
@@ -6882,7 +6889,7 @@ function paletteCommands() {
   // Offered only with an env picked — there is no overlay to plan against
   // without one — and disabled-with-its-reason otherwise, the convention the
   // colour-mode and carve rows below already follow.
-  if (!staticMode) {
+  if (!staticMode && !publicMode) {
     c.push(
       view.env
         ? ["Re-check live with plan (attribute drift) — a full read of the account", () => refreshWithPlan()]

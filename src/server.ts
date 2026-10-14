@@ -1592,8 +1592,10 @@ export function createApp(
     // choudoufu member offers `live`, so the picker has something to pick;
     // an estate with chant environments keeps them and a choudoufu member
     // ignores the name.
-    const environments =
-      declaredEnvs.length === 0 && (cfg.projectDirs ?? [cfg.projectDir]).some((d) => memberKindOf(d) === "choudoufu") ? ["live"] : declaredEnvs;
+    // #569: a public view offers no environment: every live read is refused.
+    const environments = cfg.public
+      ? []
+      : declaredEnvs.length === 0 && (cfg.projectDirs ?? [cfg.projectDir]).some((d) => memberKindOf(d) === "choudoufu") ? ["live"] : declaredEnvs;
     // #106: the k8s half's apiserver is dynamic (Floci allocates a port per EKS
     // cluster), so it is resolved from the kubeconfig on each read rather than
     // assumed. Only for a project that declares the lexicon — an aws-only
@@ -1742,7 +1744,8 @@ export function createApp(
       // true is a flag the SPA can read as "absent means no".
       memberKinds,
       ...(runtimeCapable ? { runtimeCapable: true } : {}),
-      targets: deployTargets(lexicons, k8sTarget),
+      // #569: a public view offers no target: `?target=` is refused there.
+      targets: cfg.public ? [] : deployTargets(lexicons, k8sTarget),
       // Where the k8s binding came from, so the SPA never implies behold chose
       // it (#106). Absent for a project with no k8s lexicon or no resolvable
       // context.
