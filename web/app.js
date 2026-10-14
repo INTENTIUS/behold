@@ -18,6 +18,7 @@ import { renderLane } from "./terragucci-lifecycle.js";
 import { renderReleases } from "./releases.js";
 import { renderYodelLane } from "./sql-yodeler-lane.js";
 import { initTerragucciEstate } from "./terragucci-estate.js";
+import { changeSection as tgChangeSection, readCardIds as tgReadCardIds, readEdges as tgReadEdges, readLine as tgReadLine, readTag as tgReadTag } from "./terragucci-change.js";
 import { auditLines as yrAuditLines, cornerText as yrCorner, datedWords as yrDated, environmentLines as yrEnvLines, joinMarks as yrJoin, legend as yrLegend, markLine as yrMarkLine } from "./yodel-report.js";
 import { cardProgress as tgCardProgress, progressLines as tgProgressLines, progressSection as tgProgressSection, stampProgress as tgStampProgress } from "./terragucci-progress.js";
 import { seconds, whyQuery, whyView } from "./why.js";
@@ -938,6 +939,21 @@ function inspect(node) {
       const p = document.createElement("p");
       p.className = "tg-inspect";
       p.textContent = line;
+      panel.appendChild(p);
+    }
+  }
+  // #568: the reads this card's root makes or answers, from the pull
+  // request's plan or the run view, dated by its run.
+  const tgReadRoot = tgAnswer && !tgAnswer.error && tgRootOfCard(tgAnswer, node.id);
+  const tgReads = tgReadRoot ? tgReadEdges(tgAnswer, tgProgress).filter((e) => e.from === tgReadRoot || e.to === tgReadRoot) : [];
+  if (tgReads.length) {
+    const h = document.createElement("h3");
+    h.textContent = "terragucci reads between roots (not live)";
+    panel.appendChild(h);
+    for (const e of tgReads) {
+      const p = document.createElement("p");
+      p.className = "tg-inspect";
+      p.textContent = tgReadLine(e);
       panel.appendChild(p);
     }
   }
@@ -3388,7 +3404,88 @@ async function loadTgProgress({ fresh = false } = {}) {
 }
 function paintTgProgress() {
   tgStampProgress(document.querySelector("#graph svg"), tgProgress, new Date());
+  drawTgReads(); // #568: the run view's reads, once the change merged
   renderTerragucciPanel();
+}
+// #568: the reads edges between roots of one repo, drawn over the card view:
+// a dashed line from the reader (its data card when the checkout draws one,
+// else its root's cards) to the root it reads, behind the cards, plus a tag on
+// the reader's data card ("reads network · planned · 1 unknown"). From the
+// pull request's plan, or from the run view once merged. Not live; redrawn on
+// each render, so a card dragged since moves its line on the next one.
+function drawTgReads() {
+  const svg = document.querySelector("#graph svg");
+  if (!svg) return;
+  for (const old of svg.querySelectorAll("[data-tg-reads]")) old.remove();
+  if (!tgAnswer || tgAnswer.error || !tgAnswer.roots) return;
+  const edges = tgReadEdges(tgAnswer, tgProgress);
+  if (!edges.length) return;
+  const toSvg = svg.getScreenCTM && svg.getScreenCTM();
+  if (!toSvg) return;
+  const inv = toSvg.inverse();
+  // A card's box in the svg's own coordinates, whatever transform a layout put on it.
+  const boxOf = (g) => {
+    let b;
+    try {
+      b = g.getBBox();
+    } catch {
+      return null;
+    }
+    const ctm = g.getScreenCTM && g.getScreenCTM();
+    if (!ctm || !b.width) return null;
+    const m = inv.multiply(ctm);
+    const pts = [[b.x, b.y], [b.x + b.width, b.y + b.height]].map(([x, y]) => new DOMPoint(x, y).matrixTransform(m));
+    return { x: Math.min(pts[0].x, pts[1].x), y: Math.min(pts[0].y, pts[1].y), x2: Math.max(pts[0].x, pts[1].x), y2: Math.max(pts[0].y, pts[1].y) };
+  };
+  const union = (boxes) => (boxes.length ? { x: Math.min(...boxes.map((b) => b.x)), y: Math.min(...boxes.map((b) => b.y)), x2: Math.max(...boxes.map((b) => b.x2)), y2: Math.max(...boxes.map((b) => b.y2)) } : null);
+  const rootBox = (path) => {
+    const r = tgAnswer.roots.find((x) => x.path === path);
+    if (!r) return null;
+    const prefix = `${r.member}/${r.name}/`;
+    return union([...svg.querySelectorAll("[data-node-id]")].filter((g) => (g.getAttribute("data-node-id") || "").startsWith(prefix)).map(boxOf).filter(Boolean));
+  };
+  const NS = "http://www.w3.org/2000/svg";
+  const layer = document.createElementNS(NS, "g");
+  layer.setAttribute("data-tg-reads", "1");
+  layer.setAttribute("pointer-events", "none");
+  for (const e of edges) {
+    const card = tgReadCardIds(tgAnswer, e).map((id) => svg.querySelector('[data-node-id="' + CSS.escape(id) + '"]')).find(Boolean);
+    const from = (card && boxOf(card)) || rootBox(e.from);
+    const to = rootBox(e.to);
+    if (card) {
+      const tag = document.createElementNS(NS, "text");
+      tag.setAttribute("data-tg-reads", "tag");
+      const rect = card.querySelector("rect");
+      const local = rect && rect.getBBox ? rect.getBBox() : null;
+      tag.setAttribute("x", String((local ? local.x : 0) + 10));
+      tag.setAttribute("y", String((local ? local.y + local.height : 60) - 9));
+      tag.setAttribute("font-size", "11");
+      tag.setAttribute("font-weight", "600");
+      tag.setAttribute("fill", e.unknown.length ? "var(--pending)" : "var(--muted)");
+      tag.textContent = tgReadTag(e);
+      const t = document.createElementNS(NS, "title");
+      t.setAttribute("data-tg-reads", "title");
+      t.textContent = tgReadLine(e) + "\n(from terragucci reports, not live)";
+      card.append(t, tag);
+    }
+    if (!from || !to) continue;
+    const line = document.createElementNS(NS, "line");
+    line.setAttribute("x1", String((from.x + from.x2) / 2));
+    line.setAttribute("y1", String((from.y + from.y2) / 2));
+    line.setAttribute("x2", String((to.x + to.x2) / 2));
+    line.setAttribute("y2", String((to.y + to.y2) / 2));
+    line.setAttribute("stroke", e.unknown.length ? "var(--pending)" : "var(--muted)");
+    line.setAttribute("stroke-width", "2");
+    line.setAttribute("stroke-dasharray", e.outputs === "planned" ? "6 4" : "2 4");
+    line.setAttribute("data-tg-read-from", e.from);
+    line.setAttribute("data-tg-read-to", e.to);
+    const t = document.createElementNS(NS, "title");
+    t.textContent = tgReadLine(e);
+    line.appendChild(t);
+    layer.appendChild(line);
+  }
+  // Behind every card: first in the svg.
+  svg.insertBefore(layer, svg.firstChild);
 }
 function markTerragucciCards() {
   const svg = document.querySelector("#graph svg");
@@ -3419,6 +3516,7 @@ function markTerragucciCards() {
     title.textContent = marks.map((m) => markLine(m, now)).join("\n") + "\n(from terragucci reports, not live: the Terragucci tab links each run)";
     g.append(title, tag);
   }
+  drawTgReads(); // #568
 }
 function markAge(marks) {
   const newest = marks.map((m) => m.run.finished).sort().pop();
@@ -3470,6 +3568,7 @@ function renderTerragucciPanel() {
   }
   renderTerragucciLane(host, now);
   if (tgProgress) host.appendChild(tgProgressSection(tgProgress, now, tgLink)); // #511
+  host.appendChild(tgChangeSection(a, tgProgress, now, { link: tgLink, button, copy: copyToClipboard })); // #568
   for (const w of waveCards(a, now)) {
     const box = document.createElement("div");
     box.className = "ws-gate tg-wave";
@@ -4659,6 +4758,7 @@ function render(ir, svg, m) {
   markTerragucciCards(); // #490: and what terragucci's reports found, dated
   markYodelCards(); // #526: and SQL Yodeler's drift, dated
   applyLayout(); // #228: last, so the hand-placed deltas ride on top of every other pass
+  drawTgReads(); // #568: after the layout, so the reads lines meet the cards where they now sit
   renderDial();
 }
 

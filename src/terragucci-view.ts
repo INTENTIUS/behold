@@ -191,6 +191,8 @@ export function terragucciRoutes(app: Hono, opts: TerragucciOptions, dirs: () =>
       // Where a key opens: this server, which reads it from the same source.
       files: "/api/terragucci/file?key=",
       ...(r.estate ? { estate: r.estate } : {}),
+      // #568: the pull request stage, read from the newest tf-plan of a pull request.
+      ...(r.pull_request ? { pull_request: r.pull_request } : {}),
       ...marks,
     });
   });

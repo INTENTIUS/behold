@@ -71,6 +71,7 @@
         "required": ["path", "status", "plan_digest", "counts", "plan", "changes", "highlights", "fold", "why"],
         "properties": {
           "path": { "type": "string" },
+          "environment": { "type": "string", "description": "The environment of environments: in terragucci.yml the root is in (minor 33). Absent when the config names no environments or the root is in none." },
           "binary": {
             "description": "The binary the root ran, its version, and where the root pinned that version when it did (minor 18).",
             "type": "object",
@@ -78,7 +79,16 @@
             "properties": {
               "name": { "type": "string" },
               "version": { "type": "string" },
-              "pin": { "type": "string" }
+              "pin": { "type": "string" },
+              "terragrunt": {
+                "description": "A Terragrunt unit: the Terragrunt release that ran it, and terragrunt_version_constraint when the unit pinned it (minor 24).",
+                "type": "object",
+                "required": ["version"],
+                "properties": {
+                  "version": { "type": "string" },
+                  "pin": { "type": "string" }
+                }
+              }
             }
           },
           "terragrunt": {
@@ -87,6 +97,7 @@
             "required": ["stack", "selection", "provisional", "run_result"],
             "properties": {
               "stack": { "type": "string" },
+              "stack_file": { "description": "The terragrunt.stack.hcl that generates the unit, when an explicit stack does (minor 29).", "type": "string" },
               "selection": { "type": "string" },
               "provisional": { "type": "boolean" },
               "run_result": { "type": "string" }
@@ -197,9 +208,15 @@
                 "type": { "type": "string" },
                 "actions": { "type": "array", "items": { "enum": ["create", "update", "replace", "delete", "import", "move", "forget"] } },
                 "attributes": { "type": "array", "items": { "type": "string" } },
-                "previous_address": { "type": "string" }
+                "previous_address": { "type": "string" },
+                "record_versions": { "$ref": "#/$defs/record_versions" }
               }
             }
+          },
+          "dependencies": {
+            "description": "A Terragrunt unit's dependency and dependencies blocks: the units whose outputs it reads, as plain paths in its terragrunt.hcl (minor 23). For a plain root, the roots waves.after puts before it. Absent when it names none.",
+            "type": "array",
+            "items": { "type": "string" }
           },
           "state": {
             "description": "On a tf-apply wave, a root that applied or had nothing to apply: the state version its backend holds afterwards, read from the object's metadata, never its contents (minor 20).",
@@ -229,7 +246,7 @@
             }
           },
           "reads": {
-            "description": "The roots whose state the root reads through terraform_remote_state, and which outputs it planned on: planned, the upstream's plan in this run, with the outputs known only once it applies under unknown; applied, its state as it stands (minor 21).",
+            "description": "The roots whose state the root reads through terraform_remote_state, or under choudoufu whose estate's outputs it reads through terraform_estate_outputs, and which outputs it planned on: planned, the upstream's plan in this run, with the outputs known only once it applies under unknown; applied, its state as it stands (minor 21).",
             "type": "array",
             "items": {
               "type": "object",
@@ -240,6 +257,39 @@
                 "outputs": { "enum": ["planned", "applied"] },
                 "unknown": { "type": "array", "items": { "type": "string" } },
                 "why": { "type": "string" }
+              }
+            }
+          },
+          "unknown_reads": {
+            "description": "Its terraform_remote_state blocks whose state the code does not address, an expression or a value the backend takes from the environment: no edge orders the root after the root that writes that state, so the edge is unknown (minor 30).",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["data", "why"],
+              "properties": {
+                "data": { "type": "string", "description": "The block's label." },
+                "why": { "type": "string" }
+              }
+            }
+          },
+          "unaddressed": { "type": "string", "description": "Why the code does not address the root's own state, when a root of the run reads state through terraform_remote_state: a reader of it is not ordered after it (minor 30)." },
+          "cone": {
+            "type": "object",
+            "description": "A choudoufu plan of a pull request's root under a live block, run with -cone=<base>: the cone it planned, or why choudoufu's guard planned the whole estate (minor 34). Absent on every other plan.",
+            "required": ["base"],
+            "properties": {
+              "base": { "type": "string", "description": "The revision the change is measured from: the pull request's base." },
+              "blocks": { "type": "integer", "description": "With a cone: the blocks it holds, when choudoufu said." },
+              "of": { "type": "integer", "description": "With a cone: the estate's blocks, when choudoufu said." },
+              "targets": { "type": "integer", "description": "With a cone: how many addresses it targets. Its targets join the root's plan digest." },
+              "fallback": {
+                "type": "object",
+                "description": "The guard planned the whole estate: its kind and why.",
+                "required": ["kind", "reason"],
+                "properties": {
+                  "kind": { "type": "string" },
+                  "reason": { "type": "string" }
+                }
               }
             }
           }
@@ -305,7 +355,27 @@
           },
           "state": { "enum": ["planned", "waiting", "applying", "applied", "refused", "failed"], "description": "Where the wave stands (minor 21): a tf-plan wave is planned; a tf-apply wave waiting, applying, applied, refused or failed." },
           "reads": { "type": "array", "items": { "type": "integer" }, "description": "The waves whose roots' state its roots read (minor 21)." },
-          "replans_after": { "type": "array", "items": { "type": "integer" }, "description": "A tf-plan wave whose plans read outputs known only once these waves apply: it plans again after they apply and waits for an approval of that plan; its review digest is null (minor 21)." }
+          "replans_after": { "type": "array", "items": { "type": "integer" }, "description": "A tf-plan wave whose plans read outputs known only once these waves apply: it plans again after they apply and waits for an approval of that plan; its review digest is null (minor 21)." },
+          "preview": {
+            "type": "object",
+            "required": ["pull_request", "units"],
+            "description": "A tf-apply wave of Terragrunt units: its plans against the preview of them the merged pull request's plan note showed (minor 25).",
+            "properties": {
+              "pull_request": { "type": "integer" },
+              "units": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["unit"],
+                  "properties": {
+                    "unit": { "type": "string" },
+                    "differences": { "type": "array", "items": { "type": "string" }, "description": "How its plan differs from the preview. Absent when it plans as previewed." }
+                  }
+                }
+              }
+            }
+          },
+          "environments": { "type": "array", "items": { "type": "string" }, "description": "The environments of environments: in terragucci.yml its roots are in, sorted (minor 33). Absent when none of its roots is in one." }
         }
       }
     },
@@ -354,7 +424,7 @@
       }
     },
     "blast": {
-      "description": "A tf-plan run's blast radius (minor 22): the roots whose plan changes a resource or an output, and every root of the repo that reads their state through terraform_remote_state, followed through, nearest first. Absent when no root's plan changes anything, on a Terragrunt repo, and on other stages.",
+      "description": "A tf-plan run's blast radius (minor 22): the roots whose plan changes a resource or an output, and every root of the repo that reads their state through terraform_remote_state (in a Terragrunt repo, every unit that depends on them through a dependency or dependencies block), followed through, nearest first. Absent when no root's plan changes anything, and on other stages.",
       "type": "object",
       "required": ["roots", "downstream"],
       "properties": {
@@ -370,6 +440,36 @@
               "depth": { "type": "integer", "minimum": 1, "description": "1 when it reads a changed root's state itself, 2 when it reads such a reader's, and so on." },
               "wave": { "type": "integer", "description": "The apply wave it is in." },
               "planned": { "type": "boolean", "description": "Whether this run planned it." }
+            }
+          }
+        },
+        "resources": {
+          "description": "The radius by resource (minor 31), when a root is downstream: each resource a plan changes and the resources that depend on it, from the plans' references and the outputs each root reads, nearest first. A changed resource that nothing depends on is left out. Absent in a Terragrunt repo.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["root", "address", "actions", "reaches"],
+            "properties": {
+              "root": { "type": "string" },
+              "address": { "type": "string", "description": "The changed resource instance's address." },
+              "actions": { "type": "array", "items": { "type": "string" } },
+              "reaches": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["root", "address"],
+                  "properties": {
+                    "root": { "type": "string" },
+                    "address": { "type": "string", "description": "Its address in the root's configuration, with no instance key." },
+                    "through": {
+                      "type": "object",
+                      "required": ["root", "output"],
+                      "description": "In another root: the output it reads, and the root that makes it.",
+                      "properties": { "root": { "type": "string" }, "output": { "type": "string" } }
+                    }
+                  }
+                }
+              }
             }
           }
         }
@@ -505,6 +605,30 @@
     }
   },
   "$defs": {
+    "record_versions": {
+      "description": "For a choudoufu root: its record's versions once the apply finished, newest first, from choudoufu live-history: each version's id, when it was written, and whether it is current or a delete marker, never what it holds. kept is false for a record store that keeps none (local, kubernetes); error is live-history's error as it printed it (minor 32).",
+      "type": "object",
+      "required": ["read"],
+      "properties": {
+        "kept": { "type": "boolean" },
+        "store": { "type": "string" },
+        "versions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["version_id", "last_modified", "current", "deleted"],
+            "properties": {
+              "version_id": { "type": "string" },
+              "last_modified": { "type": "string" },
+              "current": { "type": "boolean" },
+              "deleted": { "type": "boolean" }
+            }
+          }
+        },
+        "error": { "type": "string" },
+        "read": { "type": "string" }
+      }
+    },
     "resource": {
       "type": "object",
       "required": ["address", "type", "provider"],

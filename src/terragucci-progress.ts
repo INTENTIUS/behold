@@ -44,6 +44,7 @@ import { Ajv2020 } from "ajv/dist/2020.js";
 import { blockPath, type CheckoutRoot } from "./terragucci-overlay.ts";
 import { pickProject, TerragucciReadError, type IndexRow, type Validation, type Validator } from "./terragucci-reports.ts";
 import { deniedWords, TerragucciDenied, type TerragucciSource } from "./terragucci-source.ts";
+import { terragucciApproveCommand } from "./terragucci-lifecycle.ts";
 import type { Probe, ProgressPoll } from "./terragucci-poll.ts";
 
 export const RUN_SCHEMA = "terragucci.run/v1";
@@ -61,11 +62,24 @@ export interface RunView {
   project: string;
   commit: string;
   updated: string;
+  /** Each root, its wave, and the roots whose state it reads (#568). Empty for a Terragrunt repo. */
+  roots?: { root: string; wave: number; reads: string[] }[];
   waves: {
     number: number;
     state: WaveState;
     gate: string;
     roots: string[];
+    /** #568: the waves whose roots' state its roots read. */
+    reads?: number[];
+    approval?: string;
+    /** #568: the set digest its gate decided on. */
+    digest?: string | null;
+    /** #568: the command that approves it, while it waits. */
+    command?: string;
+    /** #568: its report's directory, relative to the project's index.json. */
+    report?: string;
+    /** #568: the roots whose plan in this wave changes something. */
+    changed?: string[];
     progress?: { read: string; resources: { root: string; address: string; action: string; status: ProgressStatus; done_at?: string }[] };
   }[];
 }
@@ -230,7 +244,31 @@ export interface CardProgress {
   resources: { root: string; address: string; action: string; status: ProgressStatus; done_at?: string }[];
 }
 
+/**
+ * #568: one wave of the run view as it stands, for any binary, not only
+ * choudoufu's per-resource progress.
+ */
+export interface RunWaveState {
+  number: number;
+  state: WaveState;
+  gate: string;
+  roots: string[];
+  /** The waves whose roots' state its roots read. */
+  reads: number[];
+  approval?: string;
+  digest?: string | null;
+  /** While it waits: the line a person runs at their shell. behold never runs it. */
+  command?: string;
+  /** Its report.html, as a key under the source. */
+  report?: string;
+  changed?: string[];
+}
+
 export interface ProgressJoin {
+  /** #568: every wave's state, in the run view's order. */
+  states: RunWaveState[];
+  /** #568: each root's wave and the roots whose state it reads, from the run view. */
+  reads: { root: string; wave: number; reads: string[] }[];
   waves: ProgressWave[];
   cards: Record<string, CardProgress[]>;
   /** Resources no card is: said, never dropped. */
@@ -244,11 +282,16 @@ const MARK_ORDER: ProgressStatus[] = ["not-applied", "in-flight", "waiting", "do
 
 /** Whether a run view still moves: a wave applying, or a resource of any wave's progress in flight or waiting. */
 export function unsettled(run: Pick<RunView, "waves">): boolean {
-  return run.waves.some((w) => w.state === "applying" || (w.progress?.resources ?? []).some((r) => r.status === "in-flight" || r.status === "waiting"));
+  if (run.waves.some((w) => w.state === "applying" || (w.progress?.resources ?? []).some((r) => r.status === "in-flight" || r.status === "waiting"))) return true;
+  // #568: a wave waiting at its gate, or a wave not started behind an applied
+  // one with nothing failed or refused, moves next without a new report.
+  if (run.waves.some((w) => w.state === "waiting")) return true;
+  if (run.waves.some((w) => w.state === "failed" || w.state === "refused")) return false;
+  return run.waves.some((w) => w.state === "applied") && run.waves.some((w) => w.state === "not-started");
 }
 
 /** Join a run view's progress onto the checkout's cards. Pure. */
-export function joinProgress(run: Pick<RunView, "waves">, nodes: readonly Node[], roots: readonly CheckoutRoot[]): ProgressJoin {
+export function joinProgress(run: Pick<RunView, "waves" | "roots">, nodes: readonly Node[], roots: readonly CheckoutRoot[]): ProgressJoin {
   // Cards by member and root name, then block path: the same index the marks use.
   const byRoot = new Map<string, Map<string, string>>();
   for (const n of nodes) {
@@ -291,7 +334,21 @@ export function joinProgress(run: Pick<RunView, "waves">, nodes: readonly Node[]
     }
     waves.push({ number: w.number, state: w.state, gate: w.gate, read: w.progress.read, counts, resources });
   }
-  return { waves, cards, unmatched, watching: unsettled(run) };
+  const states: RunWaveState[] = run.waves.map((w) => ({
+    number: w.number,
+    state: w.state,
+    gate: w.gate,
+    roots: [...w.roots],
+    reads: [...(w.reads ?? [])],
+    ...(w.approval ? { approval: w.approval } : {}),
+    ...(w.digest !== undefined ? { digest: w.digest } : {}),
+    // The run view writes the approve line while the wave waits; behold's own form when it does not.
+    ...(w.state === "waiting" ? { command: w.command ?? terragucciApproveCommand(w.number, w.digest ?? null) } : {}),
+    ...(w.report ? { report: `${w.report}/report.html` } : {}),
+    ...(w.changed ? { changed: [...w.changed] } : {}),
+  }));
+  const reads = (run.roots ?? []).map((r) => ({ root: r.root, wave: r.wave, reads: [...(r.reads ?? [])] }));
+  return { states, reads, waves, cards, unmatched, watching: unsettled(run) };
 }
 
 // ---------------------------------------------------------------------------
@@ -336,7 +393,7 @@ export interface ProgressOptions {
 const FILES = "/api/terragucci/file?key=";
 
 /** What makes two answers the same picture: everything but when behold read it. */
-export const progressKey = (a: ProgressAnswer): string => JSON.stringify([a.run, a.waves, a.unmatched]);
+export const progressKey = (a: ProgressAnswer): string => JSON.stringify([a.run, a.waves, a.unmatched, a.states, a.reads]);
 
 /**
  * The route's read and the poll's watch over one run view. `answer()` reads
@@ -399,6 +456,8 @@ export class TerragucciProgress {
         ...this.base(project, v?.run.validation),
         run: null,
         absent: `index.json lists no tf-apply run of ${project} yet, so there is no run view to read.`,
+        states: [],
+        reads: [],
         waves: [],
         cards: {},
         unmatched: [],
@@ -438,6 +497,8 @@ export class TerragucciProgress {
         run: { commit, key, present: false },
         ...(unreadable ? { unreadable: true as const } : {}),
         absent: unreadable ?? `${src.location} has no ${key}: terragucci writes the run view when reports.bucket is set, and a wave's progress per resource only for a choudoufu wave (terragucci 0.4.7 and newer). This says nothing about whether the apply moved.`,
+        states: [],
+        reads: [],
         waves: [],
         cards: {},
         unmatched: [],
