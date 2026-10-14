@@ -441,9 +441,12 @@ The kiosk shows:
   sentence.
 - The driver's next action, with a countdown to `next.at` when the driver acts
   on its own clock, or "when the pipeline gets there" when it waits on a run.
-- At a waiting wave, the wave, its roots, its digest and the approve line,
-  shown as what the driver runs, signed with its own key, when the countdown
-  ends. There is no copy button: nobody watching needs to run it.
+- At a waiting wave, the wave and its roots, and what the driver runs when the
+  countdown ends: `chant approve tf-apply wave-<N> --actor <driver> --sign
+  <driver key>`, then a `/terragucci apply` comment on the pull request. The
+  actor and key are placeholders, never a path. The wave's digest from the run
+  view is shown beside it, so a viewer sees which plan is approved. There is no
+  copy button: nobody watching needs to run it.
 - The newest run that is this step's. Before the merge, the pull request's
   plan (the one `demo.json` names): the reads between roots, the waves, the
   totals, the cost and the roots it did not plan. From the merge on, the run

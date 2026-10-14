@@ -169,8 +169,24 @@ export function unreviewedLines(answer) {
 }
 
 /**
- * The waiting wave the driver approves next, from the run view: its digest
- * and the approve line. Null unless demo.json is at `waiting` and names it.
+ * The approval the driver gives at a waiting wave, as terragucci's
+ * stack/demo.sh gives it: `approve_wave` runs chant's approve, sealed with
+ * the driver's ssh key, then `resume_pull` posts `/terragucci apply` on the
+ * merged pull request. The actor and the key are placeholders: the kiosk
+ * never names a path or a secret.
+ */
+export function driverApproveLines(wave, pull) {
+  return {
+    approve: `chant approve tf-apply wave-${wave} --actor <driver> --sign <driver key>`,
+    comment: "/terragucci apply",
+    on: pull !== null && pull !== undefined ? `pull request #${pull}` : "the merged pull request",
+  };
+}
+
+/**
+ * The waiting wave the driver approves next: the wave and its roots and
+ * digest from the run view, and the lines the driver runs. Null unless
+ * demo.json is at `waiting` and names it.
  */
 export function pendingApproval(demo, progress) {
   if (demo.step !== "waiting" || !demo.next) return null;
@@ -182,8 +198,8 @@ export function pendingApproval(demo, progress) {
   return {
     wave: number,
     digest: w && w.digest ? w.digest : null,
-    command: w && w.command ? w.command : null,
     roots: w ? w.roots : [],
+    ...driverApproveLines(number, demo.pull),
   };
 }
 
@@ -242,10 +258,13 @@ export function renderKiosk(root, s, now = new Date()) {
       el(
         "p",
         "k-muted",
-        `The driver approves wave ${appr.wave}${appr.roots.length ? ` (${appr.roots.join(", ")})` : ""} ${nx.secs === null ? "next" : nx.when}, signed with its own key${appr.digest ? `, for plan ${appr.digest}` : ""}. The approve line it runs:`,
+        `The driver approves wave ${appr.wave}${appr.roots.length ? ` (${appr.roots.join(", ")})` : ""} ${nx.secs === null ? "next" : nx.when}, signed with its own key. It runs:`,
       ),
     );
-    a.appendChild(el("code", "k-command", appr.command || `approve wave-${appr.wave}`));
+    a.appendChild(el("code", "k-command", appr.approve));
+    a.appendChild(el("p", "k-muted", appr.digest ? `The plan it approves: ${appr.digest}` : "The plan it approves: the run view names no digest for this wave yet."));
+    a.appendChild(el("p", "k-muted", `Then it comments on ${appr.on}, so the waves run again:`));
+    a.appendChild(el("code", "k-command", appr.comment));
     next.appendChild(a);
   }
   root.appendChild(next);
