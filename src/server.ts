@@ -180,7 +180,7 @@ import {
 import { emulatorUp, emulatorDown, mergedEnv, type EmulatorInfo } from "./emulator.ts";
 import { productRefusal, refusedWrite, servedProductRepo, terragucciRefusal } from "./terragucci-repo.ts";
 import { repoBase, terragucciRoutes, type TerragucciOptions } from "./terragucci-view.ts";
-import { kioskRoute } from "./terragucci-demo.ts";
+import { kioskRoute, vendorFallback, vendorRoutes } from "./terragucci-demo.ts";
 import { lifecycleHistoryRoute } from "./lifecycle-history.ts";
 import { hasReleaseLedgerHint, releasesRoutes } from "./lifecycle-releases.ts";
 import { sqlYodelerLaneRoute } from "./sql-yodeler-lane.ts";
@@ -1108,6 +1108,8 @@ export function createApp(
 
   // #569 step 2: the kiosk, a looping terragucci demo narrated from demo.json.
   kioskRoute(app, webRoot, !!cfg.terragucci);
+  // behold#571: a page per tool (/terraform, /terragrunt, ...), the kiosk for that tool alone.
+  vendorRoutes(app, webRoot, !!cfg.terragucci);
 
   // Deployment lanes (#5): the captured keyframes as a per-substrate filmstrip.
   app.get("/api/frames", (c) => c.json({ frames: frames.summaries() }));
@@ -3954,6 +3956,8 @@ export function createApp(
   });
   app.use("/*", serveStatic({ root: rel }));
   app.get("/", serveStatic({ path: join(rel, "index.html") }));
+  // behold#571: a short path that is no tool's page links to the kiosk.
+  if (cfg.terragucci) vendorFallback(app);
 
   return app;
 }

@@ -138,8 +138,19 @@
       .k-view-note { color: var(--muted); font-size: 0.8em; }
       #foot { display: flex; flex-wrap: wrap; gap: 0.2em 1.6em; padding: 0.55em 1.6em; border-top: 1px solid var(--rule); background: var(--panel); font-size: 0.85em; }
       .k-legend { color: var(--muted); flex-basis: 100%; }
+      /* behold#571: a tool's page. Its name (and logo where allowed) before the scenario, the replay's banner, the credit. */
+      .k-brand { display: inline-flex; align-items: center; gap: 0.35em; margin-right: 0.8em; color: var(--fg); text-decoration: none; font-weight: 700; vertical-align: 0.05em; }
+      .k-brand:hover .k-brand-name { text-decoration: underline; }
+      .k-brand-logo { width: 1.25em; height: 1.25em; }
+      .k-replay { grid-column: 1 / -1; margin: 0; padding: 0.25em 0.7em; border-left: 4px solid var(--neutral); background: var(--well); color: var(--fg); font-size: 0.92em; }
+      .k-credit { color: var(--muted); flex-basis: 100%; }
+      .k-credit-link { color: var(--fg); }
+      .k-nograph-note { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 0.88em; }
+      /* With no graph to show, the graph pane folds away and the runs and the log take its width. */
+      body.k-nograph #stage { grid-template-columns: minmax(15em, 22%) minmax(0, 1fr); }
+      body.k-nograph #view-pane { display: none; }
       .k-fact { color: var(--fg); }
-      @media (max-width: 900px) { #bar { grid-template-columns: 1fr; } #stage { grid-template-columns: 1fr; } }
+      @media (max-width: 900px) { #bar { grid-template-columns: 1fr; } #stage, body.k-nograph #stage { grid-template-columns: 1fr; } }
     </style>
   </head>
   <body>
@@ -156,8 +167,13 @@
     <script type="module">
       import { initTheme } from "/theme.js";
       import { startKiosk } from "/kiosk.js";
+      import { pageTool } from "/kiosk-vendor.js";
       initTheme();
-      startKiosk({ bar: document.getElementById("bar"), frame: document.getElementById("view"), foot: document.getElementById("foot"), side: document.getElementById("runs-side"), main: document.getElementById("runs-main"), views: document.getElementById("views") });
+      // behold#571: /<tool> serves this page with its tool in a meta tag; /kiosk has none.
+      startKiosk(
+        { bar: document.getElementById("bar"), frame: document.getElementById("view"), foot: document.getElementById("foot"), side: document.getElementById("runs-side"), main: document.getElementById("runs-main"), views: document.getElementById("views") },
+        { tool: pageTool(document) },
+      );
     </script>
   </body>
 </html>

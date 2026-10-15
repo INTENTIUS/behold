@@ -22,7 +22,15 @@
  * are optional too: the paragraph on the problem the demo solves, the
  * scenario's short label in plain words, and how many scenarios the loop runs
  * and which one this is (0 or null for the base). One of them of the wrong type is left out
- * (null), never a refusal of the whole narration.
+ * (null), never a refusal of the whole narration. `tool` and `repo` (behold#571)
+ * are optional the same way: the tool the scenario shows and the forge repo
+ * its cycle runs on, which the per-tool pages read.
+ *
+ * Per-tool pages (behold#571): `GET /<tool>` for each of {@link VENDOR_TOOLS}
+ * serves the kiosk page for that tool alone, and `GET
+ * /api/terragucci/cycles/<tool>` reads `cycles/<tool>/latest.json`, the
+ * tool's newest cycle that ran to its reset, which such a page replays while
+ * another tool's scenario is live.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -66,6 +74,10 @@ export interface Demo {
   scenarios: number | null;
   /** This scenario's place in the loop, 1-based (behold#571); null without it. */
   index: number | null;
+  /** The tool the scenario shows, "terragrunt" (behold#571); null from a driver before it. */
+  tool: string | null;
+  /** The forge repo the cycle runs on, "<admin>/demo-terragrunt" (behold#571); null from a driver before it. */
+  repo: string | null;
 }
 
 export type DemoAnswer =
@@ -124,25 +136,30 @@ export async function readDemo(source: TerragucciSource, now: Date = new Date())
   }
   const problem = demoProblem(doc);
   if (problem) return { ...base, demo: null, error: `${DEMO_KEY} in ${source.location} is not the demo's format: ${problem}.`, code: "terragucci-demo" };
-  const d = doc as Demo;
+  return { ...base, demo: demoOf(doc as Demo) };
+}
+
+const text = (v: unknown): string | null => (str(v) && v.trim() ? v.trim() : null);
+
+/** demo.json's fields as the kiosk reads them, from a document {@link demoProblem} passed. */
+export function demoOf(d: Demo): Demo {
   return {
-    ...base,
-    demo: {
-      cycle: d.cycle,
-      scenario: d.scenario,
-      title: d.title,
-      step: d.step,
-      label: d.label,
-      started_at: d.started_at,
-      next: d.next ? { action: d.next.action, at: d.next.at } : null,
-      pull: d.pull,
-      commit: d.commit,
-      about: d.about ? { changes: d.about.changes, watch: d.about.watch, shows: d.about.shows } : null,
-      intro: str(d.intro) && d.intro.trim() ? d.intro.trim() : null,
-      name: str(d.name) && d.name.trim() ? d.name.trim() : null,
-      scenarios: positive(d.scenarios),
-      index: positive(d.index),
-    },
+    cycle: d.cycle,
+    scenario: d.scenario,
+    title: d.title,
+    step: d.step,
+    label: d.label,
+    started_at: d.started_at,
+    next: d.next ? { action: d.next.action, at: d.next.at } : null,
+    pull: d.pull,
+    commit: d.commit,
+    about: d.about ? { changes: d.about.changes, watch: d.about.watch, shows: d.about.shows } : null,
+    intro: text(d.intro),
+    name: text(d.name),
+    scenarios: positive(d.scenarios),
+    index: positive(d.index),
+    tool: text(d.tool),
+    repo: text(d.repo),
   };
 }
 
@@ -157,6 +174,12 @@ export function terragucciDemoRoute(app: Hono, source: TerragucciSource, opts: {
   });
 }
 
+const disabledPage =
+  `<!doctype html><meta charset=utf-8><title>behold kiosk</title>` +
+  `<script type="module">import { initTheme } from "/theme.js"; initTheme();</script>` +
+  `<body style="font:16px system-ui;background:var(--bg,#1e1e2e);color:var(--fg,#cdd6f4);padding:2rem">` +
+  `<h3>The kiosk follows a terragucci demo</h3><p style="color:var(--muted,#777a8c)">Start behold with <code>--terragucci &lt;reports source&gt;</code>; the kiosk reads <code>demo.json</code> there.</p></body>`;
+
 /**
  * `GET /kiosk`: the kiosk page. Without `--terragucci` there is nothing to
  * narrate, and the page says so instead of loading.
@@ -164,14 +187,152 @@ export function terragucciDemoRoute(app: Hono, source: TerragucciSource, opts: {
 export function kioskRoute(app: Hono, webRoot: string, enabled: boolean): void {
   app.get("/kiosk", (c) => {
     if (!enabled) {
-      return c.html(
-        `<!doctype html><meta charset=utf-8><title>behold kiosk</title>` +
-          `<script type="module">import { initTheme } from "/theme.js"; initTheme();</script>` +
-          `<body style="font:16px system-ui;background:var(--bg,#1e1e2e);color:var(--fg,#cdd6f4);padding:2rem">` +
-          `<h3>The kiosk follows a terragucci demo</h3><p style="color:var(--muted,#777a8c)">Start behold with <code>--terragucci &lt;reports source&gt;</code>; the kiosk reads <code>demo.json</code> there.</p></body>`,
-        404,
-      );
+      return c.html(disabledPage, 404);
     }
     return new Response(readFileSync(join(webRoot, "kiosk.html"), "utf8"), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } });
   });
+}
+
+// ---------------------------------------------------------------------------
+// behold#571: a page per tool. Each tool's maker can share
+// `https://<host>/<tool>`: the kiosk with that tool's scenarios alone, live
+// when demo.json's `tool` is it, otherwise a replay of its newest cycle.
+
+/** The tools with a page of their own, in the order the loop runs them. web/kiosk-vendor.js has their names. */
+export const VENDOR_TOOLS = ["terraform", "terragrunt", "cdk-terrain", "choudoufu"] as const;
+export type VendorTool = (typeof VENDOR_TOOLS)[number];
+
+export const isVendorTool = (v: string): v is VendorTool => (VENDOR_TOOLS as readonly string[]).includes(v);
+
+export const cycleKey = (tool: VendorTool): string => `cycles/${tool}/latest.json`;
+
+/** How long one read of a tool's latest cycle is shared. It changes once a cycle, at its reset. */
+export const CYCLE_READ_TTL_MS = 10_000;
+
+/** One step of a cycle: demo.json as the driver wrote it, and when (`at`). */
+export type CycleStep = Demo & { at: string };
+
+/** A tool's newest cycle that ran to its reset (terragucci's scripts/demo-cycles.ts, demo.cycle/v1). */
+export interface Cycle {
+  tool: string;
+  repo: string;
+  scenario: string;
+  cycle: number;
+  started: string | null;
+  ended: string | null;
+  steps: CycleStep[];
+  runs: number[];
+}
+
+export type CycleAnswer =
+  | { source: string; read: string; cycle: Cycle }
+  | { source: string; read: string; cycle: null; absent: string }
+  | { source: string; read: string; cycle: null; error: string; code: "terragucci-cycle" };
+
+const timeOrNull = (v: unknown): boolean => v === null || v === undefined || (str(v) && UTC.test(v));
+
+/** What is wrong with a cycle document, or undefined when it is the driver's format for `tool`. */
+export function cycleProblem(doc: unknown, tool: string): string | undefined {
+  if (!isRecord(doc)) return "it is not an object";
+  if (doc.schema !== undefined && doc.schema !== "demo.cycle/v1") return `schema is ${JSON.stringify(doc.schema)}, not demo.cycle/v1`;
+  if (doc.tool !== tool) return `tool is ${JSON.stringify(doc.tool)}, not ${tool}`;
+  if (!str(doc.repo) || !doc.repo) return "repo is not a string";
+  if (!str(doc.scenario) || !doc.scenario) return "scenario is not a string";
+  if (!int(doc.cycle)) return "cycle is not an integer";
+  if (!timeOrNull(doc.started) || !timeOrNull(doc.ended)) return "started or ended is neither a UTC time nor null";
+  if (!Array.isArray(doc.runs) || !doc.runs.every((r) => int(r) && r > 0)) return "runs is not a list of run ids";
+  if (!Array.isArray(doc.steps) || !doc.steps.length) return "steps is not a list of demo.json writes";
+  for (const [i, s] of doc.steps.entries()) {
+    const p = demoProblem(s);
+    if (p) return `steps[${i}]: ${p}`;
+    if (!str((s as Record<string, unknown>).at) || !UTC.test((s as Record<string, string>).at)) return `steps[${i}].at is not a UTC time`;
+  }
+  return undefined;
+}
+
+/** One read of `cycles/<tool>/latest.json`. Never throws. */
+export async function readCycle(source: TerragucciSource, tool: VendorTool, now: Date = new Date()): Promise<CycleAnswer> {
+  const base = { source: source.location, read: now.toISOString() };
+  const key = cycleKey(tool);
+  let body: string | undefined;
+  try {
+    body = await source.read(key);
+  } catch (e) {
+    if (e instanceof TerragucciDenied) return { ...base, cycle: null, error: deniedWords(e, `${tool}'s latest cycle`), code: "terragucci-cycle" };
+    return { ...base, cycle: null, error: `behold could not read ${key} from ${source.location}: ${e instanceof Error ? e.message : String(e)}`, code: "terragucci-cycle" };
+  }
+  if (body === undefined) return { ...base, cycle: null, absent: `${source.location} has no ${key}: the loop driver writes it when a cycle of ${tool}'s scenario ends.` };
+  let doc: unknown;
+  try {
+    doc = JSON.parse(body);
+  } catch {
+    return { ...base, cycle: null, error: `${key} in ${source.location} is not JSON.`, code: "terragucci-cycle" };
+  }
+  const problem = cycleProblem(doc, tool);
+  if (problem) return { ...base, cycle: null, error: `${key} in ${source.location} is not the driver's format: ${problem}.`, code: "terragucci-cycle" };
+  const c = doc as Cycle;
+  return {
+    ...base,
+    cycle: {
+      tool: c.tool,
+      repo: c.repo,
+      scenario: c.scenario,
+      cycle: c.cycle,
+      started: c.started ?? null,
+      ended: c.ended ?? null,
+      steps: c.steps.map((s) => ({ ...demoOf(s), at: s.at })),
+      runs: [...c.runs],
+    },
+  };
+}
+
+/** `GET /api/terragucci/cycles/:tool`: a tool's latest cycle, 404 for a tool with no page or no cycle yet. */
+export function terragucciCyclesRoute(app: Hono, source: TerragucciSource, opts: { now?: () => Date } = {}): void {
+  const cache = new Map<string, { at: number; read: Promise<CycleAnswer> }>();
+  app.get("/api/terragucci/cycles/:tool", async (c) => {
+    const tool = c.req.param("tool");
+    if (!isVendorTool(tool)) return c.json({ error: `no tool "${tool.slice(0, 40)}" has a page; the tools are ${VENDOR_TOOLS.join(", ")}`, code: "terragucci-cycle" }, 404);
+    const at = Date.now();
+    const hit = cache.get(tool);
+    const read = hit && at - hit.at < CYCLE_READ_TTL_MS ? hit.read : readCycle(source, tool, opts.now ? opts.now() : new Date());
+    if (read !== hit?.read) cache.set(tool, { at, read });
+    const a = await read;
+    return c.json(a, "error" in a ? 502 : "absent" in a ? 404 : 200, { "cache-control": "no-store" });
+  });
+}
+
+/** The kiosk page for one tool: kiosk.html, told its tool by a meta tag the page reads. */
+export function vendorPage(html: string, tool: VendorTool): string {
+  return html.replace(/<meta charset="utf-8" \/>/, `<meta charset="utf-8" />\n    <meta name="kiosk-tool" content="${tool}" />`);
+}
+
+/**
+ * `GET /<tool>` for each of {@link VENDOR_TOOLS}: the kiosk for that tool
+ * alone. Without `--terragucci` it says what /kiosk says.
+ */
+export function vendorRoutes(app: Hono, webRoot: string, enabled: boolean): void {
+  for (const tool of VENDOR_TOOLS) {
+    app.get(`/${tool}`, (c) => {
+      if (!enabled) return c.html(disabledPage, 404);
+      const html = vendorPage(readFileSync(join(webRoot, "kiosk.html"), "utf8"), tool);
+      return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } });
+    });
+  }
+}
+
+/** A short path that names no page, where a tool's page would be: a page that links to /kiosk. */
+export const VENDOR_PATH = /^\/[a-z][a-z0-9-]{0,40}$/;
+
+export const notFoundPage =
+  `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width, initial-scale=1"><title>No page here</title>` +
+  `<script type="module">import { initTheme } from "/theme.js"; initTheme();</script>` +
+  `<body style="font:16px system-ui;background:var(--bg,#1e1e2e);color:var(--fg,#cdd6f4);padding:2rem">` +
+  `<h3>No page here</h3><p style="color:var(--muted,#777a8c)">This address shows nothing. The demo runs at <a style="color:inherit" href="/kiosk">/kiosk</a>.</p></body>`;
+
+/**
+ * Registered after the static files: a one-segment path that is no file and
+ * no route answers 404 with a link to /kiosk, instead of an empty 404.
+ */
+export function vendorFallback(app: Hono): void {
+  app.get("*", (c) => (VENDOR_PATH.test(c.req.path) ? c.html(notFoundPage, 404) : c.notFound()));
 }
