@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { VENDOR_TOOLS } from "../src/terragucci-demo.ts";
 import { logRows } from "./kiosk-runs.js";
-import { SCENARIOS, legendWords, scenarioHead } from "./kiosk.js";
+import { NO_GRAPH_WORDS, SCENARIOS, legendWords, scenarioHead } from "./kiosk.js";
 import {
   REPLAY_LAST_HOLD_MS,
   RUNS_WITH,
@@ -20,6 +20,7 @@ import {
   replayAt,
   replayBanner,
   replayIndex,
+  rootWord,
   runAsOf,
   scrubDemo,
   servesRepo,
@@ -159,26 +160,46 @@ describe("the branding table (behold#571)", () => {
     expect(creditLines("terragrunt").flat().filter((s) => s.url).map((s) => s.text)).toEqual(["Terragrunt"]);
     expect(linkSegments("a b a", [{ name: "a", url: "u" }])).toEqual([{ text: "a", url: "u" }, { text: " b a" }]);
   });
-  it("counts every other tool and maker as another's name, and OpenTofu only where the tool doesn't run on it", () => {
-    expect(otherTerms("terragrunt")).toEqual(expect.arrayContaining(["Terraform", "HashiCorp", "CDK Terrain", "choudoufu", "OpenTofu"]));
-    expect(otherTerms("terraform")).not.toContain("OpenTofu");
-    expect(namesOther("Big Terraform setups", "terragrunt")).toBe(true);
-    // Inside an identifier a reader still sees the name.
-    expect(namesOther("terraform_data.app", "terragrunt")).toBe(true);
-    expect(namesOther("state in demo-terraform-state", "terragrunt")).toBe(true);
-    expect(namesOther("network applies first", "terragrunt")).toBe(false);
-    expect(namesOther("Big Terraform setups", "terraform")).toBe(false);
+  it("counts as a competitor each other tool of the same kind: engines with engines, orchestrators with orchestrators", () => {
+    const matrix = Object.fromEntries(VENDOR_TOOLS.map((t) => [t, otherTerms(t)]));
+    expect(matrix).toEqual({
+      // OpenTofu is an engine too, but Terraform's scenarios really run on it.
+      terraform: ["choudoufu"],
+      terragrunt: ["CDK Terrain", "CDKTN", "Open Construct", "Atmos", "Cloud Posse", "Terramate"],
+      "cdk-terrain": ["Terragrunt", "Gruntwork", "Atmos", "Cloud Posse", "Terramate"],
+      choudoufu: ["Terraform", "HashiCorp", "OpenTofu"],
+    });
+    expect(otherTerms(null)).toEqual([]);
   });
-  it("leaves out the driver's words that name another tool, and the loop's count", () => {
-    const d = scrubDemo(demo({ intro: "Big Terraform setups split", about: { changes: "A unit changes", watch: "Terraform plans", shows: "It waits" }, label: "Terraform applies wave 2", title: "Terraform roots" }), "terragrunt");
-    expect([d.intro, d.label, d.title, d.scenarios, d.index]).toEqual([null, "", "a new subnet", null, null]);
+  it("lets an orchestrator's page name the engines it runs on, and keeps an engine's page from naming another engine", () => {
+    expect(namesOther("Big Terraform setups run on OpenTofu", "terragrunt")).toBe(false);
+    expect(namesOther("Big Terraform setups", "cdk-terrain")).toBe(false);
+    expect(namesOther("compare with Atmos", "terragrunt")).toBe(true);
+    expect(namesOther("Terragrunt units", "cdk-terrain")).toBe(true);
+    expect(namesOther("Big Terraform setups", "choudoufu")).toBe(true);
+    expect(namesOther("Terraform.", "choudoufu")).toBe(true);
+    expect(namesOther("runs on choudoufu", "terraform")).toBe(true);
+    expect(namesOther("works with OpenTofu", "terraform")).toBe(false);
+    expect(rootWord("choudoufu")).toBe("a root");
+    expect(rootWord("terragrunt")).toBe("a Terraform root");
+  });
+  it("never counts a resource address, a bucket or a path as a brand", () => {
+    for (const t of ["terraform_data.app", "data.terraform_remote_state.network", "state in demo-terraform-state", "s3://demo-terraform-state/edge.tfstate", "developer.hashicorp.com/terraform", ".terraform.lock.hcl", "terragrunt-cache"]) {
+      expect(namesOther(t, "choudoufu"), t).toBe(false);
+      expect(namesOther(t, "cdk-terrain"), t).toBe(false);
+    }
+  });
+  it("leaves out the driver's words that name a competitor, and the loop's count", () => {
+    const d = scrubDemo(demo({ intro: "Big Terraform setups split", about: { changes: "A unit changes", watch: "Terramate plans", shows: "It waits" }, label: "Atmos applies wave 2", title: "CDK Terrain roots" }), "terragrunt");
+    expect([d.intro, d.label, d.title, d.scenarios, d.index]).toEqual(["Big Terraform setups split", "", "a new subnet", null, null]);
     expect(d.about).toEqual({ changes: "A unit changes", shows: "It waits" });
     expect(scenarioHead(d, { vendor: "terragrunt" })).toEqual({ kicker: "Scenario · a new subnet", title: "a new subnet" });
     expect(scenarioHead(demo(), { vendor: "terraform" }).kicker).not.toMatch(/of 3|\d/);
+    expect(scrubDemo(demo({ intro: "Big Terraform setups split" }), "choudoufu").intro).toBe(null);
   });
-  it("leaves a log line naming another tool out, and says how many", () => {
-    const rows = logRows(["plan ok", "Terraform binary", "done"], { hide: (l) => namesOther(l, "terragrunt") });
-    expect(rows).toEqual([{ n: 1, text: "plan ok" }, { n: 3, text: "done" }, { hidden: 1 }]);
+  it("leaves a log line naming a competitor out, says how many, and keeps the engine's lines on an orchestrator's page", () => {
+    const rows = logRows(["plan ok", "Terramate binary", "Terraform v1.9", "edge: s3://demo-terraform-state/edge.tfstate"], { hide: (l) => namesOther(l, "terragrunt") });
+    expect(rows).toEqual([{ n: 1, text: "plan ok" }, { n: 3, text: "Terraform v1.9" }, { n: 4, text: "edge: s3://demo-terraform-state/edge.tfstate" }, { hidden: 1 }]);
   });
 });
 
@@ -202,16 +223,20 @@ describe("a tool's page, drawn (behold#571)", () => {
     try {
       const bar = document.createElement("header");
       const foot = document.createElement("footer");
-      const s = { vendor: "terragrunt", mode: "replay", replay: { banner: "Replay of the run at 14:05 UTC" }, noReports: true, demo: { demo: scrubDemo(demo({ tool: "terragrunt", intro: "Big Terraform setups" }), "terragrunt") }, answer: null, progress: null };
+      const about = { changes: "A unit changes", watch: "Terramate would plan it too", shows: "It waits" };
+      const s = { vendor: "terragrunt", mode: "replay", replay: { banner: "Replay of the run at 14:05 UTC" }, noReports: true, demo: { demo: scrubDemo(demo({ tool: "terragrunt", intro: "Big Terraform setups", about }), "terragrunt") }, answer: null, progress: null };
       renderKiosk(bar, s, new Date("2026-10-20T10:01:00Z"), foot);
       expect(bar.children[0].className).toBe("k-replay");
       const title = all(bar).find((n) => n.className === "k-title");
       expect(title.children.map((c) => c.className)).toEqual(["k-brand", "k-kicker", "k-title-text"]);
       const brand = title.children[0];
       expect([brand.href, brand.target, brand.rel, text(brand)]).toEqual([VENDORS.terragrunt.url, "_blank", "noopener", "Terragrunt"]);
-      expect(text(bar)).not.toMatch(/of 3|Terraform/);
+      expect(text(bar)).not.toMatch(/of 3|Terramate/);
+      // The engine Terragrunt runs on is no competitor: the shared intro stays.
+      expect(text(bar)).toContain("Big Terraform setups");
+      // No graph of this repo here: one line in the header says so.
+      expect(all(bar).filter((n) => n.className === "k-nograph-note").map(text)).toEqual([NO_GRAPH_WORDS]);
       expect(all(foot).filter((n) => n.className === "k-credit").map(text)).toEqual([VENDORS.terragrunt.credit]);
-      expect(text(foot)).not.toMatch(/Terraform/);
     } finally {
       globalThis.document = was;
     }

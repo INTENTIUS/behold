@@ -512,8 +512,9 @@ function drawBar(bar, s, now, foot) {
   const demo = s.demo.demo;
   const head = scenarioHead(demo, { vendor: s.vendor || null });
 
-  // behold#571: a tool's page says plainly when it replays an earlier run.
+  // behold#571: a tool's page says plainly when it replays an earlier run, and when it can't draw the repo's graph.
   if (s.replay && s.replay.banner) bar.appendChild(el("p", "k-replay", s.replay.banner));
+  if (vendor && s.noReports && (s.mode === "live" || s.mode === "replay")) bar.appendChild(el("p", "k-nograph-note", NO_GRAPH_WORDS));
   const intro = introText(demo);
   if (intro) bar.appendChild(el("p", "k-intro", intro));
 
@@ -572,6 +573,9 @@ function drawBar(bar, s, now, foot) {
   }
 }
 
+/** behold#571: the header's line when this behold serves another repo than the page's. */
+export const NO_GRAPH_WORDS = "This page shows the runs and their logs; the graph of this repo isn't served here.";
+
 /** behold#571: a tool's name, and its logo where its owner allows one, linking to its official site. */
 function brandEl(vendor) {
   const a = el("a", "k-brand");
@@ -622,7 +626,7 @@ export const DEMO_POLL_MS = 3_000;
  * countdown. When the roots the step is about change, move the framed view
  * with a `behold:view` message; the frame takes them only from this origin.
  */
-export function startKiosk({ bar, frame, foot, side, main, views, noView = null }, { fetchJson = defaultFetch, now = () => new Date(), origin = location.origin, tool = null } = {}) {
+export function startKiosk({ bar, frame, foot, side, main, views }, { fetchJson = defaultFetch, now = () => new Date(), origin = location.origin, tool = null } = {}) {
   const s = { demo: null, answer: null, progress: null, components: false, pick: null, view: "resources", roots: [], waves: [], light: false, hover: null, frameHover: null };
   // behold#571: on a tool's page, `live` while its scenario runs, `replay` of its latest cycle otherwise, `none` before it has one.
   const vendor = vendorOf(tool);
@@ -744,8 +748,8 @@ export function startKiosk({ bar, frame, foot, side, main, views, noView = null 
     s.noReports = !ok;
     renderKiosk(bar, s, shownNow(), foot);
     renderViewToggle(views, shown, { components: s.components && ok, onPick: pickView });
-    if (frame) frame.hidden = !ok || s.mode === "none";
-    if (noView) noView.hidden = !(vendor && (s.mode === "live" || s.mode === "replay") && !ok);
+    // behold#571: with no graph to show, the graph pane folds away and the runs and the log take its width.
+    if (typeof document !== "undefined" && document.body && document.body.classList) document.body.classList.toggle("k-nograph", !!vendor && !ok);
     tellFrame(false);
   };
 

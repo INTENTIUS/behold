@@ -1,5 +1,5 @@
 // behold#571: a kiosk page per tool, `/<tool>`, that the tool's maker can
-// share without it promoting anyone else. It shows that tool's scenarios
+// share without it promoting a competitor (COMPETES). It shows that tool's scenarios
 // alone: its name (and its logo where its owner allows one), its runs only,
 // and a footer saying who makes it and that they don't endorse the demo.
 //
@@ -14,8 +14,9 @@
  * Each tool with a page: its name as its owner writes it, its owner, its
  * official site, its logo when its owner's published rules allow one (else
  * null, the name as text), and the footer's credit. `terms` are the words
- * that name the tool or its owner, which no other tool's page may show.
- * Keep the keys in step with VENDOR_TOOLS in src/terragucci-demo.ts.
+ * that name the tool or its owner. `kind` is what it competes as (see
+ * COMPETES): an `engine` plans and applies, an `orchestrator` drives an
+ * engine. Keep the keys in step with VENDOR_TOOLS in src/terragucci-demo.ts.
  *
  * - Terraform: HashiCorp's rules allow the name as text, with the mark noted.
  * - Terragrunt: Gruntwork publishes logo files, but a logo on a page like
@@ -31,7 +32,8 @@ export const VENDORS = {
     url: "https://developer.hashicorp.com/terraform",
     logo: null,
     credit: "Terraform is a trademark of HashiCorp. HashiCorp makes Terraform and does not endorse this demo.",
-    terms: ["Terraform", "HashiCorp", "CDKTF"],
+    kind: "engine",
+    terms: ["Terraform", "HashiCorp"],
     // The demo's Terraform roots run in OpenTofu's image (terragucci's stack/demo.sh).
     runsWith: ["opentofu"],
   },
@@ -41,6 +43,7 @@ export const VENDORS = {
     url: "https://terragrunt.com/",
     logo: null,
     credit: "Terragrunt is made by Gruntwork, Inc., who don't endorse this demo.",
+    kind: "orchestrator",
     terms: ["Terragrunt", "Gruntwork"],
     runsWith: [],
   },
@@ -50,6 +53,7 @@ export const VENDORS = {
     url: "https://cdktn.io/",
     logo: null,
     credit: "CDK Terrain is made by the Open Construct Foundation, who don't endorse this demo.",
+    kind: "orchestrator",
     terms: ["CDK Terrain", "CDKTN", "Open Construct"],
     runsWith: [],
   },
@@ -59,6 +63,7 @@ export const VENDORS = {
     url: "https://intentius.io/choudoufu/",
     logo: { src: "/vendors/choudoufu-64.png", src2x: "/vendors/choudoufu-128.png" },
     credit: "choudoufu is made by Intentius, who also make this demo. It supports AWS and Kubernetes.",
+    kind: "engine",
     terms: ["choudoufu"],
     runsWith: [],
   },
@@ -70,9 +75,28 @@ export const RUNS_WITH = {
     name: "OpenTofu",
     url: "https://opentofu.org/",
     words: "The pipeline here works with OpenTofu, which runs these roots.",
+    kind: "engine",
     terms: ["OpenTofu"],
   },
 };
+
+/**
+ * Tools with no page yet that a page still must not promote: orchestrators
+ * that compete with Terragrunt and CDK Terrain.
+ */
+export const COMPETITORS = {
+  atmos: { kind: "orchestrator", terms: ["Atmos", "Cloud Posse"] },
+  terramate: { kind: "orchestrator", terms: ["Terramate"] },
+};
+
+/**
+ * What competes with what. Engines compete with engines (Terraform, OpenTofu,
+ * choudoufu); orchestrators with orchestrators (Terragrunt, CDK Terrain,
+ * Atmos, Terramate). An orchestrator runs on an engine, so its page names the
+ * engine freely; an engine's page names no other engine, but for the one its
+ * scenarios really run with (`runsWith`).
+ */
+export const COMPETES = { engine: "engine", orchestrator: "orchestrator" };
 
 const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 
@@ -88,30 +112,39 @@ export function pageTool(doc) {
   return vendorOf(t) ? t : null;
 }
 
-/** The words no page for `tool` may show: every other tool's and owner's, and what it doesn't run with. */
+/**
+ * The words no page for `tool` may show: each competitor's name and maker's,
+ * the competitors being the other tools of its kind, less what its scenarios
+ * run with. A page for no tool (/kiosk) has none.
+ */
 export function otherTerms(tool) {
   const v = vendorOf(tool);
+  if (!v) return [];
+  const rivals = COMPETES[v.kind];
   const out = [];
-  for (const [id, x] of Object.entries(VENDORS)) if (id !== tool) out.push(...x.terms);
-  for (const [id, x] of Object.entries(RUNS_WITH)) if (!v || !v.runsWith.includes(id)) out.push(...x.terms);
+  for (const [id, x] of [...Object.entries(VENDORS), ...Object.entries(RUNS_WITH), ...Object.entries(COMPETITORS)]) {
+    if (id === tool || x.kind !== rivals || v.runsWith.includes(id)) continue;
+    out.push(...x.terms);
+  }
   return out;
 }
 
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 /**
- * Whether `text` names another tool or its owner, in any case and anywhere in
- * it: inside an identifier (`terraform_data`, `demo-terraform-state`) a
- * reader still sees the name.
+ * Whether `text` names a competitor of `tool` or its maker, as a whole word
+ * in any case. A word inside an identifier is no brand: `terraform_data` is a
+ * resource type and `demo-terraform-state` a bucket.
  */
 export function namesOther(text, tool) {
   if (typeof text !== "string" || !text) return false;
-  const low = text.toLowerCase();
-  return otherTerms(tool).some((t) => low.includes(t.toLowerCase()));
+  return otherTerms(tool).some((t) => new RegExp(`(?<![\\w./-])${escapeRe(t)}(?![\\w/-])`, "i").test(text));
 }
 
 /**
  * demo.json as a tool's page shows it: no count of the loop's scenarios or
  * place in it (they would hint at the others), and any text the driver wrote
- * that names another tool left out: the intro, a card row, the title (the
+ * that names a competitor left out: the intro, a card row, the title (the
  * scenario's name instead), the step's line, the next action.
  */
 export function scrubDemo(demo, tool) {
@@ -311,9 +344,9 @@ export function notRunWords(vendor) {
   };
 }
 
-/** The legend's words, without naming a tool on another tool's page. */
+/** The legend's words, without naming a competing engine on an engine's page. */
 export function rootWord(tool) {
-  return !tool || tool === "terraform" ? "a Terraform root" : "a root";
+  return namesOther("Terraform", tool) ? "a root" : "a Terraform root";
 }
 
 /**
