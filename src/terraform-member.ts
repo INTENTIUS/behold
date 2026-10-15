@@ -104,6 +104,13 @@ import {
   terraformElisionNoteShort,
 } from "./terraform-lens.ts";
 import { SCRATCH_PREFIX, assertScratch } from "./scratch.ts";
+import {
+  TERRAGUCCI_COMPONENT_MODULE,
+  declaredRootScan,
+  readTerragucciComponents,
+  terragucciComponentModule,
+  type TerragucciComponents,
+} from "./terragucci-components.ts";
 
 /** The reader chant loads for a Terraform root, and the HCL parser it lazily
  * loads underneath. Both are optional peers of behold (see the header); the
@@ -487,7 +494,13 @@ function relink(path: string, target: string): void {
  * directory: the config, its `package.json`, and the two symlinks the header
  * explains.
  */
-export function writeTerraformScratchProject(estate: string, scan: TerraformRootScan, tmp = tmpdir(), flavour: ScratchFlavour = "tf"): string {
+export function writeTerraformScratchProject(
+  estate: string,
+  scan: TerraformRootScan,
+  tmp = tmpdir(),
+  flavour: ScratchFlavour = "tf",
+  components?: TerragucciComponents,
+): string {
   const target = resolve(estate);
   const dir = terraformScratchDir(target, tmp, flavour);
   mkdirSync(dir, { recursive: true });
@@ -506,7 +519,32 @@ export function writeTerraformScratchProject(estate: string, scan: TerraformRoot
   // "No lexicon detected", and an empty graph for every loose estate.
   write(join(dir, "package.json"), SCRATCH_PACKAGE_JSON);
   write(join(dir, "chant.config.ts"), terraformScratchConfig(scan, ESTATE_LINK, flavour));
+  // #571: a terragucci repo's declared components, for `chant graph
+  // --components`. A repo that stopped declaring them gets the module emptied
+  // rather than removed (nothing here is ever deleted), so chant finds no
+  // components where there are none.
+  const module = join(dir, TERRAGUCCI_COMPONENT_MODULE);
+  if (components) write(module, terragucciComponentModule(components));
+  else if (existsSync(module)) write(module, "// terragucci.components.json is gone; no components.\nexport {};\n");
   return dir;
+}
+
+/**
+ * #571: the scan a terraform member's scratch project is written from. A
+ * terragucci repo that carries `terragucci.components.json` names its own
+ * roots, so the config is keyed by those names and dirs (the names its
+ * components' `terraform-apply` steps use); any other directory is discovered.
+ */
+export function terraformMemberScan(dir: string): { scan: TerraformRootScan; components?: TerragucciComponents } {
+  const components = readTerragucciComponents(dir);
+  return components ? { scan: declaredRootScan(components), components } : { scan: discoverTerraformRoots(dir) };
+}
+
+/** #571: write the scratch project for a terraform member and return it, with
+ * the declaration when there is one. What the components zoom reads. */
+export function terraformMemberProject(dir: string): { project: string; components?: TerragucciComponents } {
+  const { scan, components } = terraformMemberScan(dir);
+  return { project: writeTerraformScratchProject(dir, scan, undefined, "tf", components), ...(components ? { components } : {}) };
 }
 
 /** The scratch project's package.json: private, and an ES module (INTENTIUS/chant#3897). */
@@ -562,7 +600,7 @@ export function terraformReadDetail(detail: number | undefined): number {
  */
 export async function readTerraformMember(dir: string, opts: GraphOptions, state: TerraformReaderState = terraformReaderState()): Promise<GraphIR> {
   if (state.refusal) throw new TerraformReadError(state.refusal, dir);
-  const scan = discoverTerraformRoots(dir);
+  const { scan, components } = terraformMemberScan(dir);
   if (!scan.roots.length) {
     throw new TerraformReadError(
       {
@@ -573,7 +611,7 @@ export async function readTerraformMember(dir: string, opts: GraphOptions, state
       dir,
     );
   }
-  const project = writeTerraformScratchProject(dir, scan);
+  const project = writeTerraformScratchProject(dir, scan, undefined, "tf", components);
   // Source only. A Terraform estate has no live half here: what the cloud
   // holds is choudoufu's question (#366) or an Op's, and `--live` against a
   // reader lexicon would ask chant to observe entities it never applied.

@@ -63,7 +63,8 @@ import { addClusterAnchorEdges } from "./cluster-anchor.ts";
 import { projectTopology } from "./logical.ts";
 import { addCompositeDepsCounted } from "./composite-deps.ts";
 import { notesFor, danglingNote, tierMismatchNote, namespaceMismatchNote, namespaceJoinNote, unchangedZoomNote, type Zoom } from "./zoom-notes.ts";
-import { resourcesByComponent, nonResourceEntities } from "./resources.ts";
+import { resourcesByComponent, resourcesByRoot, nonResourceEntities } from "./resources.ts";
+import { TERRAGUCCI_COMPONENTS_FILE, componentJobs, componentRootMap, readTerragucciComponents, waveTitles, type TerragucciComponents } from "./terragucci-components.ts";
 import { summarizePlan } from "./reconcile.ts";
 import { renderGraph, renderArchitecture, renderBanded, renderCarveEstate, renderCarveMorph, renderMoveMorph } from "./render.ts";
 import { boxBadges, collapseBoxes, collapseNote } from "./collapse-lens.ts";
@@ -150,7 +151,8 @@ import { approveArgs, isEnvName, isOverrideGate, localApprover, readWorkspaceGat
 import { readWhy, whyRegion } from "./workspace-why.ts";
 import { allowedHostsFrom, guardRequest } from "./request-guard.ts";
 import { applyMemberPasses, memberKindOf, memberKindSpec, memberPassNote, servesAsEstate, type MemberPassRun } from "./member-kind.ts";
-import { TerraformReadError } from "./terraform-member.ts";
+import { TerraformReadError, terraformMemberProject, terraformReaderState, terraformVia } from "./terraform-member.ts";
+import { normalizeTerraformNodes } from "./terraform-lens.ts";
 import { invalidateMember, memberIr, memberIrCacheStats, memberSourceStamp } from "./member-ir.ts";
 import { diagnose } from "./doctor.ts";
 import { readStats } from "./read-stats.ts";
@@ -1683,6 +1685,9 @@ export function createApp(
       // #489: a terragucci repo is applied by its pipeline; the SPA offers no
       // write at all, and the write routes refuse with the same words.
       ...(tgConfig() ? { terragucci: { config: tgConfig()!, ...terragucciRefusal(tgConfig()!, "deploying from behold") } } : {}),
+      // #571: the repo declares its roots as components, so the page opens on
+      // the components zoom (web/app.js `bootZoom`).
+      ...(servedTerragucciComponents() ? { terragucciComponents: true } : {}),
       // #517: a SQL Yodeler repo is migrated by its pipeline; same contract.
       ...((): { sqlYodeler?: { config: string; error: string; code: string; remedy: string } } => {
         const r = guardedRepo();
@@ -2132,6 +2137,60 @@ export function createApp(
     }),
   );
 
+  /** #571: the served directory's terragucci.components.json, when behold is
+   * serving one terraform directory on its own (the loose view: a terragucci
+   * repo's own chant.workspace.json declares no members). */
+  const servedTerragucciComponents = (): TerragucciComponents | undefined =>
+    (cfg.projectDirs?.length ?? 1) === 1 && memberKindOf(cfg.projectDir) === "terraform" ? readTerragucciComponents(cfg.projectDir) : undefined;
+
+  /** #571: component -> its root's resources, off the entity read the
+   * resources zoom makes (cached under the same key, so this is usually free).
+   * Empty when that read fails: the facet is a detail, never the picture. */
+  const terragucciResources = async (decl: TerragucciComponents, opts: GraphOptions): Promise<Record<string, ReturnType<typeof resourcesByRoot>[string]>> => {
+    try {
+      // A copy, normalized so each resource is listed by its type
+      // (`terraform_data`) rather than its block class: the cached IR is
+      // shared with the resources zoom and is not this facet's to mutate.
+      const entities = normalizeTerraformNodes(structuredClone(await memberIr(cfg.projectDir, { ...tierTargetOpts(opts), detail: 2 }, terraformVia)));
+      return resourcesByRoot(entities, componentRootMap(decl));
+    } catch {
+      return {};
+    }
+  };
+
+  /** #571: the components picture of a terragucci repo — see the graph route. */
+  const terragucciComponentsGraph = async (decl: TerragucciComponents, opts: GraphOptions) => {
+    const state = terraformReaderState();
+    if (state.refusal) throw new TerraformReadError(state.refusal, cfg.projectDir);
+    const { project } = terraformMemberProject(cfg.projectDir);
+    const ir = await componentGraphIr(project, tierTargetOpts(opts));
+    const titles = waveTitles(ir, decl);
+    const { svg } = renderGraph(ir, { waveTitles: titles });
+    const waves = Object.keys((ir.groups as { byWave?: Record<string, string[]> }).byWave ?? {}).length;
+    const note = `${ir.nodes.length} root${ir.nodes.length === 1 ? "" : "s"} in ${waves} wave${waves === 1 ? "" : "s"}, from ${TERRAGUCCI_COMPONENTS_FILE}`;
+    return {
+      ir,
+      svg,
+      meta: {
+        projectDir: cfg.projectDir,
+        env: null,
+        tier: opts.tier ?? null,
+        target: opts.target ?? null,
+        components: true,
+        note,
+        // The CI facet's source on a terragucci repo: the declared jobs, not a
+        // chant-generated pipeline (`/api/ci`, which a public view refuses).
+        terragucciComponents: {
+          ...(decl.pipeline.forge ? { forge: decl.pipeline.forge } : {}),
+          ...(decl.pipeline.path ? { pipeline: decl.pipeline.path } : {}),
+          jobs: Object.values(componentJobs(decl)),
+          waveTitles: titles,
+          resources: await terragucciResources(decl, opts),
+        },
+      },
+    };
+  };
+
   app.get("/api/graph", async (c) => {
     const url = new URL(c.req.url);
     const opts = optsFromQuery(url, tierEnvVar, cfg.projectDir);
@@ -2341,6 +2400,14 @@ export function createApp(
         graph.edges.length === 0 && (multi ? cfg.projectDirs! : [cfg.projectDir]).some((d) => memberKindOf(d) === "choudoufu" && !workspaceMemberOf(d))
           ? choudoufuLexiconNote()
           : undefined;
+      // #571: a terragucci repo served alone, carrying terragucci.components.json,
+      // HAS a components picture: its roots, as the components the declaration
+      // names, read by chant from the generated scratch project (not the repo)
+      // and boxed by wave under the jobs that apply them. Source only — the
+      // declaration is all there is to read, so no env, tier or live join runs
+      // here, which is also what lets a public view draw it.
+      const tgDecl = components ? servedTerragucciComponents() : undefined;
+      if (tgDecl) return c.json(await terragucciComponentsGraph(tgDecl, opts));
       let ir: GraphIR;
       let mode: "component-status" | undefined;
       let metaEnv = cfg.env ?? null;
@@ -2917,6 +2984,11 @@ export function createApp(
     // nothing to spawn and nothing to say, so it says nothing — the same
     // `{ byComponent: {} }` carve mode returns, and the same shape the SPA's
     // `loadResources` already treats as "this project has no resource facet".
+    // #571: a terragucci repo's components are its roots, so a component's
+    // resources are the cards its root holds — joined on `attrs.root`, the
+    // root the component's `terraform-apply` step names.
+    const tgDecl = servedTerragucciComponents();
+    if (tgDecl) return c.json({ byComponent: await terragucciResources(tgDecl, opts) });
     const kind = memberKindOf(cfg.projectDir);
     if (kind && kind !== "chant") return c.json({ byComponent: {} });
     try {

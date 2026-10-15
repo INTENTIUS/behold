@@ -361,6 +361,10 @@ export function renderGraph(
      * `renderArchitecture` has carried since #357, brought to the estate view
      * because that is where the counts #393 asks for belong. */
     groupBadges?: Readonly<Record<string, string>>;
+    /** #571: a `byWave` box's painted title, by wave key (`wave-1`) — a
+     * terragucci repo titles each wave with the job that applies it. The
+     * box keeps its key as `id`, as a pipeline box does. */
+    waveTitles?: Readonly<Record<string, string>>;
   } = {},
 ): RenderResult {
   const groupsIn = irIn.groups as ExtraGroups;
@@ -402,6 +406,12 @@ export function renderGraph(
       if (box.id === undefined || titles[box.id] === undefined) continue;
       const title = titles[box.id]!;
       box.title = title === box.id && box.parent !== undefined && title.startsWith(`${box.parent}/`) ? title.slice(box.parent.length + 1) : title;
+    }
+  }
+  if (boxKey === "byWave" && opts.waveTitles) {
+    for (const box of layout.groups ?? []) {
+      const title = box.id === undefined ? undefined : opts.waveTitles[box.id];
+      if (title !== undefined) box.title = title;
     }
   }
   const svg = renderSvg(ir, layout, {
