@@ -475,6 +475,12 @@ the same in the full app:
   it.
 - A caption says which run all of it comes from: the pull request's plan before
   the merge, the run view from the merge on.
+- The kiosk keeps the view on the cycle its narration describes with a
+  `behold:view` message (`run`): the pull request's plan before the merge,
+  the cycle's commit (demo.json's `commit`) from the merge through `applied`,
+  and nothing in flight at `reset`, where the caption says the states went
+  back to the base. The loop's own next runs (the reset's push back to the
+  base) never take the view while the narration is before `reset`.
 - The kiosk brings the roots each step is about forward with a `behold:view`
   message (`focus`): the pull request's roots while it is planned, then the
   wave that waits, applies or failed, then everything once applied.

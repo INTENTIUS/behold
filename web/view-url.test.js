@@ -120,3 +120,13 @@ describe("focus (#569)", () => {
     expect(settleView({ focus: "app,<b>" }, {}).refused[0].key).toBe("focus");
   });
 });
+
+describe("run (#569)", () => {
+  it("takes a commit, none or base, and null for the newest", () => {
+    expect(readViewQuery("?run=abc1234")).toEqual({ run: "abc1234" });
+    expect(settleView({ run: "base" }, {}).apply).toEqual({ run: "base" });
+    expect(settleView({ run: null }, {}).apply).toEqual({ run: null });
+    expect(settleView({ run: "main" }, {}).refused[0].key).toBe("run");
+    expect(writeViewQuery("", { run: "none" })).toBe("?run=none");
+  });
+});

@@ -374,6 +374,10 @@ any theme name the picker lists:
 - `focus=<box>,<box>` (in the URL or a `behold:view` message) brings those boxes
   forward and dims the rest; `focus: null` brings nothing forward. On a
   terragucci repo the boxes are its roots
+- `run=<commit>` (or a `behold:view` message's `run`) keeps a terragucci repo's
+  view on that commit's run view instead of the newest; `run=none` draws the
+  pull request's plan, `run=base` nothing in flight; `run: null` the newest
+  again. `GET /api/terragucci/progress?commit=<sha>` reads that run view
 
 `gates=<env>` sets the env the gate strip reads, apart from the graph's, so a
 host can open behold on the source graph and still show the gates of the env
