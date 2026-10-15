@@ -107,3 +107,16 @@ describe("settlePlace (#475)", () => {
     expect(refusalLine([])).toBe("");
   });
 });
+
+describe("focus (#569)", () => {
+  it("reads, writes and settles a list of box names", () => {
+    expect(readViewQuery("?focus=app,edge")).toEqual({ focus: "app,edge" });
+    expect(readViewQuery("?focus=")).toEqual({ focus: null });
+    expect(writeViewQuery("?embed=1", { focus: "app,edge" })).toBe("?embed=1&focus=app%2Cedge");
+    expect(settleView({ focus: " app , edge " }, {}).apply).toEqual({ focus: "app,edge" });
+    expect(settleView({ focus: null }, {}).apply).toEqual({ focus: null });
+  });
+  it("refuses a focus that isn't box names", () => {
+    expect(settleView({ focus: "app,<b>" }, {}).refused[0].key).toBe("focus");
+  });
+});

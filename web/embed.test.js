@@ -7,7 +7,12 @@ describe("readEmbed (#476)", () => {
       embed: true,
       host: "http://localhost:7777",
       theme: THEME_ALIASES.dark,
+      bare: false,
     });
+  });
+  it("reads bare only inside embed (#569)", () => {
+    expect(readEmbed("?embed=1&bare=1").bare).toBe(true);
+    expect(readEmbed("?bare=1").bare).toBe(false);
   });
   it("takes no host that isn't an http(s) origin", () => {
     expect(readEmbed("?host=localhost").host).toBe(null);
@@ -17,7 +22,7 @@ describe("readEmbed (#476)", () => {
     expect(readEmbed("?theme=Atom%20One%20Light").theme).toBe("Atom One Light");
   });
   it("is off by default", () => {
-    expect(readEmbed("")).toEqual({ embed: false, host: null, theme: null });
+    expect(readEmbed("")).toEqual({ embed: false, host: null, theme: null, bare: false });
   });
 });
 
@@ -47,5 +52,14 @@ describe("viewFromMessage (#476)", () => {
     expect(viewFromMessage({ origin: "http://evil", data: { type: "behold:view", member: "x" } }, host)).toBe(null);
     expect(viewFromMessage({ origin: host, data: { type: "other" } }, host)).toBe(null);
     expect(viewFromMessage({ origin: host, data: { type: "behold:view" } }, null)).toBe(null);
+  });
+});
+
+describe("viewFromMessage focus (#569)", () => {
+  const host = "http://localhost:7777";
+  it("takes focus as box names, and null or empty as nothing brought forward", () => {
+    expect(viewFromMessage({ origin: host, data: { type: "behold:view", focus: "network,other" } }, host)).toEqual({ focus: "network,other" });
+    expect(viewFromMessage({ origin: host, data: { type: "behold:view", focus: null } }, host)).toEqual({ focus: null });
+    expect(viewFromMessage({ origin: host, data: { type: "behold:view", focus: "" } }, host)).toEqual({ focus: null });
   });
 });

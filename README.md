@@ -369,6 +369,11 @@ any theme name the picker lists:
   the URL's fields (`member: null` is the whole estate). Messages from any
   other origin are ignored
 - gates are the host's to approve: behold draws them and says so
+- `bare=1` (with `embed=1`) leaves the graph alone in the frame: no panel, no
+  inspect pane, no buttons, no now line. The kiosk frames behold this way
+- `focus=<box>,<box>` (in the URL or a `behold:view` message) brings those boxes
+  forward and dims the rest; `focus: null` brings nothing forward. On a
+  terragucci repo the boxes are its roots
 
 `gates=<env>` sets the env the gate strip reads, apart from the graph's, so a
 host can open behold on the source graph and still show the gates of the env
@@ -407,10 +412,11 @@ the repo's `origin`, which `chant/lifecycle` is fetched from.
 
 `/kiosk` follows terragucci's looping demo (#569): it reads the `demo.json`
 the demo's driver writes beside `index.json`, and narrates the scenario, the
-step and the driver's next action with a countdown, next to the newest run of
-that step (the pull request's plan, then the merge's waves) and back to the
-start when the loop resets. It needs `--terragucci`, asks only GETs, and has
-no control. The docs' terragucci page says what it shows.
+step and the driver's next action with a countdown in a status bar, over
+behold's own view of the change in a frame (`/?embed=1&bare=1`): each root's
+wave and its state, the reads between roots, and the roots the step is about
+brought forward. It needs `--terragucci`, asks only GETs, and has no control.
+The docs' terragucci page says what it shows.
 
 In a declared workspace, the gates waiting on a person come from
 `chant workspace status <env> --json`, keyed `member/op/gate` the way arugula's

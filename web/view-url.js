@@ -10,8 +10,10 @@
 /** The view's keys, in the order they are written back. Anything else in the
  * query (embed, theme, host, #476) is left where it is. `gates` is the env the
  * gate strip reads when it isn't the graph's (#477); it is the view's because
- * a host can move it with `behold:view`, and a reload has to keep that. */
-export const VIEW_KEYS = ["member", "zoom", "env", "tier", "lens", "node", "radial", "gates"];
+ * a host can move it with `behold:view`, and a reload has to keep that.
+ * `focus` (#569) names the boxes the view brings forward, comma-separated
+ * (a terragucci repo's roots): the rest are drawn dimmed, nothing is hidden. */
+export const VIEW_KEYS = ["member", "zoom", "env", "tier", "lens", "node", "radial", "gates", "focus"];
 
 /** An env name as the server takes one (src/workspace-gates.ts isEnvName). */
 export function isEnvName(env) {
@@ -43,6 +45,10 @@ export function readViewQuery(search) {
       want.env = v || null;
       continue;
     }
+    if (k === "focus") {
+      want.focus = v || null;
+      continue;
+    }
     if (v) want[k] = v;
   }
   return want;
@@ -71,6 +77,7 @@ export function writeViewQuery(search, state, defaults = {}) {
   if (s.node) q.set("node", s.node);
   if (s.radial) q.set("radial", "1");
   if (s.gates) q.set("gates", s.gates);
+  if (s.focus) q.set("focus", s.focus);
   const out = q.toString();
   return out ? `?${out}` : "";
 }
@@ -111,6 +118,12 @@ export function settleView(want, offer) {
     // null: the gate strip follows the graph's env again.
     if (want.gates === null || isEnvName(want.gates)) apply.gates = want.gates;
     else refused.push({ key: "gates", value: want.gates, reason: "an env name is letters, digits, '.', '_' and '-'" });
+  }
+  if ("focus" in want) {
+    // null: nothing brought forward. Otherwise box names, comma-separated.
+    const names = want.focus === null ? [] : String(want.focus).split(",").map((x) => x.trim()).filter(Boolean);
+    if (names.every((n) => /^[A-Za-z0-9][A-Za-z0-9._\/-]*$/.test(n))) apply.focus = names.length ? names.join(",") : null;
+    else refused.push({ key: "focus", value: want.focus, reason: "focus is box names, comma-separated" });
   }
   if (want.member) apply.member = want.member;
   if (want.node) apply.node = want.node;

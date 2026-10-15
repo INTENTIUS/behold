@@ -1,4 +1,5 @@
-// #569 step 2: the kiosk. A looping terragucci demo (terragucci#1014),
+// #569 step 2: the kiosk. #569 step 3: a status bar over behold's own view of
+// the change, framed (`/?embed=1&bare=1`), moved to the roots each step is about. A looping terragucci demo (terragucci#1014),
 // narrated from the demo.json its driver writes at every step, beside the
 // newest run: the pull request's plan before the merge, the run view's waves
 // from the merge on, and back to the start when the loop resets.
@@ -12,7 +13,7 @@
 // A wave that failed says which waves applied before it and stay applied.
 // Nothing here is all-or-nothing, and nothing says so.
 
-import { STATE_WORDS, costLine, readEdges, readLine, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
+import { STATE_WORDS, costLine, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
 
 /** The scenarios terragucci#1014 numbers. An id not here is shown by the title demo.json carries. */
 export const SCENARIOS = {
@@ -203,8 +204,61 @@ export function pendingApproval(demo, progress) {
   };
 }
 
+/**
+ * #569: the roots the step is about, for the framed view to bring forward:
+ * the pull request's roots while it is planned; from the merge on, the wave
+ * that is waiting, applying, failed or refused (its roots and, for a composed
+ * run, every root in it); nothing in particular once applied or reset, so the
+ * whole picture shows. Null brings nothing forward.
+ */
+export function focusRoots(demo, answer, progress) {
+  if (!demo) return null;
+  const stage = demoStage(demo);
+  if (stage === "none" || demo.step === "applied") return null;
+  if (stage === "pull-request") {
+    const pr = matchingPull(answer, demo);
+    return pr && pr.roots && pr.roots.length ? [...pr.roots] : null;
+  }
+  const run = matchingRun(progress, demo);
+  if (!run) {
+    const pr = matchingPull(answer, demo);
+    return pr && pr.roots && pr.roots.length ? [...pr.roots] : null;
+  }
+  const order = ["failed", "refused", "waiting", "applying"];
+  for (const want of order) {
+    const w = progress.states.find((x) => x.state === want);
+    if (!w) continue;
+    const inRun = progress.reads.filter((r) => r.composed && r.composed.wave === w.number).map((r) => r.root);
+    const roots = [...new Set([...w.roots, ...(w.composed ? w.composed.roots : []), ...inRun])];
+    if (roots.length) return roots;
+  }
+  return null;
+}
+
+/** The framed view's address: behold's own page, bare, at the resources zoom, told who its host is. */
+export function frameSrc(origin) {
+  const q = new URLSearchParams({ embed: "1", bare: "1", zoom: "resources", host: origin });
+  return `/?${q.toString()}`;
+}
+
+/** The one-line facts under the view: the pull request's totals, cost and blast radius, as #568 has them. */
+export function factLines(demo, answer) {
+  const pr = demo ? matchingPull(answer, demo) : null;
+  if (!pr) return [];
+  const out = [];
+  const totals = totalsLine(pr.totals);
+  if (totals) out.push(`pull request #${pr.run.pull_request} changes ${rootsCount(pr.totals_roots) || "across roots"}: ${totals}`);
+  const b = blastRows(answer);
+  if (b && b.changed.length) out.push(`blast radius: ${b.changed.join(", ")}${b.downstream.length ? `; downstream, nearest first: ${b.downstream.join(", ")}` : ""}`);
+  if (b && b.unplanned.length) out.push(`not touched: ${b.unplanned.join(", ")}`);
+  const cost = costLine(pr.cost);
+  if (cost) out.push(cost);
+  return out;
+}
+
 // ---------------------------------------------------------------------------
-// The page.
+// The page: a status bar over behold's own view in a frame, and a line of
+// facts under it. The bar is the narration; the frame shows the change.
 
 const el = (tag, cls, text) => {
   const n = document.createElement(tag);
@@ -213,101 +267,72 @@ const el = (tag, cls, text) => {
   return n;
 };
 
-/** Draw everything from what the kiosk holds. Pure over its arguments, but for the DOM. */
-export function renderKiosk(root, s, now = new Date()) {
-  root.replaceChildren();
+/** Draw the bar and the foot from what the kiosk holds. Pure over its arguments, but for the DOM. */
+export function renderKiosk(bar, s, now = new Date(), foot = null) {
+  bar.replaceChildren();
+  if (foot) foot.replaceChildren();
   if (!s.demo || !s.demo.demo) {
-    const box = el("section", "k-empty");
+    const box = el("div", "k-empty");
     box.appendChild(el("h1", "k-title", "Waiting for the demo"));
     box.appendChild(el("p", "k-muted", s.demo ? s.demo.error || s.demo.absent : "Reading demo.json…"));
-    root.appendChild(box);
+    bar.appendChild(box);
     return;
   }
   const demo = s.demo.demo;
   const head = scenarioHead(demo);
 
-  const top = el("header", "k-head");
-  top.appendChild(el("div", "k-kicker", head.kicker));
-  top.appendChild(el("h1", "k-title", head.title));
-  top.appendChild(el("div", "k-muted", cycleWords(demo, now)));
-  root.appendChild(top);
+  const left = el("div", "k-left");
+  const kick = el("div", "k-kicker");
+  kick.append(el("span", null, head.kicker), el("span", "k-cycle", cycleWords(demo, now)));
+  left.appendChild(kick);
+  left.appendChild(el("h1", "k-title", head.title));
+  const said = el("div", `k-step k-step-${demo.step}`);
+  said.appendChild(el("span", "k-step-word", STEP_WORDS[demo.step] || demo.step));
+  said.appendChild(el("p", "k-label", demo.label));
+  left.appendChild(said);
+  bar.appendChild(left);
 
+  const right = el("div", "k-right");
   const strip = el("ol", "k-strip");
-  for (const stop of stripStops(demo.step)) {
-    const li = el("li", `k-stop k-${stop.state}`, stop.words);
-    strip.appendChild(li);
-  }
-  root.appendChild(strip);
-
-  const step = el("section", `k-step k-step-${demo.step}`);
-  step.appendChild(el("div", "k-kicker", STEP_WORDS[demo.step] || demo.step));
-  step.appendChild(el("p", "k-label", demo.label));
-  root.appendChild(step);
+  for (const stop of stripStops(demo.step)) strip.appendChild(el("li", `k-stop k-${stop.state}`, stop.words));
+  right.appendChild(strip);
 
   const nx = nextWords(demo, now);
-  const next = el("section", "k-next");
-  next.appendChild(el("div", "k-kicker", "next, by the driver"));
-  const line = el("p", "k-next-line");
-  line.appendChild(el("span", "k-action", nx.action));
-  line.appendChild(el("span", "k-when", nx.when));
-  next.appendChild(line);
+  const next = el("div", "k-next");
+  next.appendChild(el("span", "k-next-word", "next, by the driver"));
+  next.appendChild(el("span", "k-action", nx.action));
+  next.appendChild(el("span", "k-when", nx.when));
+  right.appendChild(next);
+
   const appr = pendingApproval(demo, s.progress);
   if (appr) {
     const a = el("div", "k-approve");
     a.appendChild(
       el(
         "p",
-        "k-muted",
-        `The driver approves wave ${appr.wave}${appr.roots.length ? ` (${appr.roots.join(", ")})` : ""} ${nx.secs === null ? "next" : nx.when}, signed with its own key. It runs:`,
+        "k-approve-head",
+        `The driver approves wave ${appr.wave}${appr.roots.length ? ` (${appr.roots.join(", ")})` : ""}, signed with its own key${appr.digest ? `, for the plan ${appr.digest.replace(/^jcs1-sha256:/, "").slice(0, 12)}` : ""}:`,
       ),
     );
     a.appendChild(el("code", "k-command", appr.approve));
-    a.appendChild(el("p", "k-muted", appr.digest ? `The plan it approves: ${appr.digest}` : "The plan it approves: the run view names no digest for this wave yet."));
-    a.appendChild(el("p", "k-muted", `Then it comments on ${appr.on}, so the waves run again:`));
-    a.appendChild(el("code", "k-command", appr.comment));
-    next.appendChild(a);
-  }
-  root.appendChild(next);
-
-  const panel = runPanel(demo, s.answer, s.progress);
-  const runBox = el("section", "k-run");
-  if (panel.note) {
-    runBox.appendChild(el("div", "k-kicker", panel.stage === "pull-request" ? "the pull request's plan" : panel.stage === "apply" ? "the waves" : "the run"));
-    runBox.appendChild(el("p", "k-muted", panel.note));
-  } else if (panel.stage === "pull-request") {
-    runBox.appendChild(el("div", "k-kicker", `the plan of pull request #${panel.pr.run.pull_request}, commit ${panel.pr.run.commit.slice(0, 8)}`));
-    const rows = pullRows(s.answer);
-    for (const e of rows.reads) runBox.appendChild(el("p", e.unknown.length ? "k-read k-unknown" : "k-read", readLine(e)));
-    for (const u of unreviewedLines(s.answer)) runBox.appendChild(el("p", "k-unreviewed", u));
-    runBox.appendChild(waveList(rows.waves));
-    const totals = totalsLine(panel.pr.totals);
-    if (totals) runBox.appendChild(el("p", "k-muted", `totals across roots: ${totals}`));
-    const cost = costLine(panel.pr.cost);
-    if (cost) runBox.appendChild(el("p", "k-muted", cost));
-    const b = blastRows(s.answer);
-    if (b && b.downstream.length) runBox.appendChild(el("p", "k-muted", `blast radius, nearest first: ${b.downstream.join(", ")}`));
-    if (b && b.unplanned.length) runBox.appendChild(el("p", "k-muted", `not planned by this pull request: ${b.unplanned.join(", ")}`));
+    const then = el("p", "k-approve-then");
+    then.append(`then comments `, el("code", "k-inline", appr.comment), ` on ${appr.on}, and the waves run again.`);
+    a.appendChild(then);
+    right.appendChild(a);
   } else {
-    runBox.appendChild(el("div", "k-kicker", `the waves of ${panel.run.commit.slice(0, 8)}`));
-    runBox.appendChild(waveList(runRows(s.progress)));
+    const panel = runPanel(demo, s.answer, s.progress);
+    if (panel.note) right.appendChild(el("p", "k-note", panel.note));
+    else if (panel.stage === "pull-request") for (const u of unreviewedLines(s.answer)) right.appendChild(el("p", "k-note k-unknown", u));
   }
-  root.appendChild(runBox);
+  bar.appendChild(right);
 
-  const foot = el("footer", "k-foot k-muted");
-  foot.textContent = `narration read ${clockOf(s.demo.read)} from ${s.demo.source}${demo.pull !== null ? ` · pull request #${demo.pull}` : ""}${demo.commit ? ` · commit ${demo.commit.slice(0, 8)}` : ""}`;
-  root.appendChild(foot);
-}
-
-function waveList(rows) {
-  const ol = el("ol", "k-waves");
-  for (const w of rows) {
-    const li = el("li", `k-wave k-tone-${w.tone}`);
-    li.dataset.state = w.state;
-    li.appendChild(el("div", "k-wave-title", w.text));
-    for (const f of w.facts) li.appendChild(el("div", "k-wave-fact", f));
-    ol.appendChild(li);
+  if (foot) {
+    foot.appendChild(el("span", "k-legend", "Each box is a Terraform root with its own state; an arrow is one root reading another's outputs, dashed while it reads planned values. A wave applies its roots together, after the waves it reads."));
+    for (const f of factLines(demo, s.answer)) foot.appendChild(el("span", "k-fact", f));
+    foot.appendChild(
+      el("span", "k-source", `narration read ${clockOf(s.demo.read)} from ${s.demo.source}${demo.pull !== null ? ` · pull request #${demo.pull}` : ""}${demo.commit ? ` · commit ${demo.commit.slice(0, 8)}` : ""} · nothing here writes`),
+    );
   }
-  return ol;
 }
 
 const clockOf = (iso) => {
@@ -319,14 +344,35 @@ const clockOf = (iso) => {
 export const DEMO_POLL_MS = 3_000;
 
 /**
- * Boot the kiosk into `root`: ask demo.json every few seconds, the reports
- * and the run view when the step, cycle or commit moves or the event stream
- * says they did, and redraw every second for the countdown.
+ * Boot the kiosk: the bar, the frame and the foot. Ask demo.json every few
+ * seconds, the reports and the run view when the step, cycle or commit moves
+ * or the event stream says they did, and redraw every second for the
+ * countdown. When the roots the step is about change, move the framed view
+ * with a `behold:view` message; the frame takes them only from this origin.
  */
-export function startKiosk(root, { fetchJson = defaultFetch, now = () => new Date() } = {}) {
+export function startKiosk({ bar, frame, foot }, { fetchJson = defaultFetch, now = () => new Date(), origin = location.origin } = {}) {
   const s = { demo: null, answer: null, progress: null };
   let lastKey = "";
-  const draw = () => renderKiosk(root, s, now());
+  let lastFocus;
+  const tellFrame = (force) => {
+    const d = s.demo && s.demo.demo;
+    const roots = focusRoots(d, s.answer, s.progress);
+    const focus = roots ? roots.join(",") : null;
+    if (!force && focus === lastFocus) return;
+    lastFocus = focus;
+    if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: "behold:view", member: null, focus }, origin);
+  };
+  const draw = () => {
+    renderKiosk(bar, s, now(), foot);
+    tellFrame(false);
+  };
+  if (frame) {
+    frame.src = frameSrc(origin);
+    // The frame reads its graph after load; tell it again once it has had the time.
+    frame.addEventListener("load", () => {
+      for (const ms of [1500, 4000, 8000]) setTimeout(() => tellFrame(true), ms);
+    });
+  }
 
   const reports = async (fresh) => {
     s.answer = await fetchJson(`/api/terragucci${fresh ? "?fresh=1" : ""}`);
