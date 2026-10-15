@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { mergeRun, newerOf, agoWords, defaultJob, defaultStep, durationWords, jobOrder, liveRun, placeWords, sidebarRuns, splitSkipped, STATUS_TONE, triggerWords } from "./kiosk-runs.js";
+import { FOLLOW_LINES, followsLog, logKey, nearEnd, mergeRun, newerOf, agoWords, defaultJob, defaultStep, durationWords, jobOrder, liveRun, placeWords, sidebarRuns, splitSkipped, STATUS_TONE, triggerWords } from "./kiosk-runs.js";
 
 const FIX = join(import.meta.dirname, "..", "src", "__fixtures__", "terragucci-demo", "runs");
 const run = (id) => JSON.parse(readFileSync(join(FIX, `${id}.json`), "utf8"));
@@ -94,5 +94,26 @@ describe("one run, from the index and its own document (#569)", () => {
     expect(newerOf({ status: "running" }, { status: "waiting" }).status).toBe("waiting");
     expect(mergeRun(null, doc)).toBe(doc);
     expect(mergeRun(entry, null)).toBe(entry);
+  });
+});
+
+describe("the log pane follows its end, like a CI page's log", () => {
+  const key = logKey(448, "apply-wave-2", 2);
+  it("follows a log that just opened: another run, job or step", () => {
+    expect(followsLog(null, key, false)).toBe(true);
+    expect(followsLog(logKey(447, "apply-wave-2", 2), key, false)).toBe(true);
+    expect(followsLog(logKey(448, "apply-wave-1", 2), key, false)).toBe(true);
+    expect(followsLog(logKey(448, "apply-wave-2", 1), key, false)).toBe(true);
+  });
+  it("on the same log, keeps what the viewer chose", () => {
+    expect(followsLog(key, key, true)).toBe(true);
+    expect(followsLog(key, key, false)).toBe(false);
+  });
+  it("counts a view within a few lines of the end as at the end", () => {
+    const slack = 18 * FOLLOW_LINES;
+    expect(nearEnd({ scrollTop: 600, clientHeight: 400, scrollHeight: 1000 }, slack)).toBe(true);
+    expect(nearEnd({ scrollTop: 600 - slack, clientHeight: 400, scrollHeight: 1000 }, slack)).toBe(true);
+    expect(nearEnd({ scrollTop: 600 - slack - 1, clientHeight: 400, scrollHeight: 1000 }, slack)).toBe(false);
+    expect(nearEnd({ scrollTop: 0, clientHeight: 400, scrollHeight: 1000 }, slack)).toBe(false);
   });
 });
