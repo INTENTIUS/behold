@@ -38,7 +38,7 @@
 #   start-driver            start (the driver alone on a fresh host) and the watchdog
 #   wait-bootstrap          wait for the driver's bootstrap to record its base
 #   up                      bring every service up (behold and Caddy too)
-#   reload-caddy            reload Caddy's config from the Caddyfile
+#   reload-caddy            restart Caddy on the Caddyfile (a moved checkout replaces the file)
 #
 # The secrets file (never committed; README.md, "Secrets") holds
 # KEY=value lines: DEMO_AUTH_PASSWORD, and optionally any key of
@@ -314,9 +314,13 @@ cmd_up() {
   log "up: https://$(conf DEMO_HOSTNAME demo.intentius.io) (password until launch morning). $0 status shows the loop."
 }
 
+# The Caddyfile is bind-mounted as one file. git replaces the file when the
+# checkout moves, and a single-file mount keeps the old one, so `caddy reload`
+# would read the stale copy: Caddy restarts to mount the new one. (The password
+# lives in a mounted directory, so open and close can reload.)
 cmd_reload_caddy() {
-  docker exec demo-host-caddy caddy reload --config /etc/caddy/Caddyfile
-  log "Caddy reloaded $HERE/Caddyfile"
+  docker restart demo-host-caddy >/dev/null
+  log "Caddy restarted on $HERE/Caddyfile"
 }
 
 cmd_bootstrap_rest() { # [--secrets <file>]
@@ -357,6 +361,7 @@ cmd_update_rest() {
   # A new terragucci commit makes driver-entry.sh run the bootstrap again.
   compose up -d --force-recreate driver
   compose up -d
+  cmd_reload_caddy
   log "updated: terragucci $(conf TERRAGUCCI_REF main), behold $(conf BEHOLD_REF main)"
 }
 
