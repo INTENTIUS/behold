@@ -74,30 +74,36 @@
         white-space: pre-wrap; overflow-wrap: anywhere; overflow-y: auto; max-height: 52vh; min-height: 6em; }
       .r-log-line { display: grid; grid-template-columns: 3.2em 1fr; gap: 0.8em; padding: 0 0.8em 0 0; }
       .r-ln { color: var(--muted); text-align: right; user-select: none; opacity: 0.7; }
+      /* behold#571: the runner's set-up lines, folded into one row so terragucci's own lines come first. */
+      .r-log-setup { color: var(--muted); padding: 0 0.8em 0.2em 4em; cursor: pointer; user-select: none; }
+      .r-log-setup:hover { color: var(--fg); }
+      .r-log-quiet .r-lt { color: var(--muted); }
       .r-log-cut { color: var(--muted); padding: 0 0.8em 0.2em 4em; font-style: italic; }
       .r-log-live { color: var(--foreign); padding-left: 4em; }
       @media (prefers-reduced-motion: no-preference) { .r-log-live { animation: r-blink 1s steps(2) infinite; } }
       @keyframes r-blink { 50% { opacity: 0; } }
       .r-note { color: var(--muted); padding: 0 1em; font-size: 0.88em; }
-      #bar { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 1.6em; align-items: start;
-        padding: 0.7em 1.4em 0.7em; background: var(--panel); border-bottom: 1px solid var(--rule); }
+      #bar { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 0.45em 1.6em; align-items: start;
+        padding: 0.55em 1.4em 0.6em; background: var(--panel); border-bottom: 1px solid var(--rule); }
       #bar > .k-empty { grid-column: 1 / -1; }
-      .k-kicker { display: flex; gap: 1.2em; font: 600 0.78em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
-      .k-cycle { text-transform: none; letter-spacing: 0; font-weight: 400; }
-      .k-title { margin: 0.05em 0 0.25em; font-size: 1.45em; line-height: 1.15; }
+      /* behold#571: the problem the demo solves, always on, across the bar's top. */
+      .k-intro { grid-column: 1 / -1; margin: 0; font-size: 1em; line-height: 1.35; color: var(--fg); }
+      .k-kicker { font: 600 0.58em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-right: 0.9em; vertical-align: 0.2em; white-space: nowrap; }
+      .k-cycle { color: var(--muted); font: 0.78em var(--font-mono); white-space: nowrap; }
+      .k-title { margin: 0 0 0.2em; font-size: 1.35em; line-height: 1.2; }
       /* behold#571: the scenario's card, three labelled rows under the title. */
-      .k-about { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.12em 0.9em; align-items: baseline; margin: 0 0 0.45em; font-size: 0.9em; line-height: 1.3; }
+      .k-about { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.08em 0.9em; align-items: baseline; margin: 0 0 0.35em; font-size: 0.88em; line-height: 1.25; }
       .k-about-label { font: 600 0.74em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
       .k-about-text { margin: 0; color: var(--fg); }
       .k-muted { color: var(--muted); margin: 0.25em 0; }
-      .k-step { border-left: 4px solid var(--pending); padding: 0.1em 0 0.1em 0.8em; }
-      .k-step-word { font: 600 0.75em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
-      .k-label { font-size: 1.02em; margin: 0.1em 0 0; }
+      .k-step { border-left: 4px solid var(--pending); padding: 0.1em 0 0.1em 0.8em; margin: 0; font-size: 0.95em; line-height: 1.3; }
+      .k-step-word { font: 600 0.72em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-right: 0.7em; }
       .k-step-waiting { border-left-color: var(--foreign); }
       .k-step-failed, .k-step-stalled { border-left-color: var(--degraded); }
       .k-step-applied { border-left-color: var(--managed); }
       .k-step-reset { border-left-color: var(--neutral); }
-      .k-right { display: grid; gap: 0.6em; align-content: start; }
+      .k-right { display: grid; gap: 0.45em; align-content: start; }
+      .k-where { display: flex; flex-wrap: wrap; gap: 0.35em 1em; align-items: center; }
       .k-strip { list-style: none; display: flex; flex-wrap: wrap; gap: 0.35em; padding: 0; margin: 0; }
       .k-stop { font: 0.82em var(--font-mono); padding: 0.25em 0.7em; border-radius: 999px; border: 1px solid var(--rule); color: var(--muted); }
       .k-done { color: var(--fg); border-color: var(--managed); }
@@ -109,7 +115,8 @@
       .k-when { color: var(--foreign); font-family: var(--font-mono); }
       .k-approve { border-left: 4px solid var(--foreign); padding-left: 0.8em; }
       .k-approve p { margin: 0.15em 0; }
-      .k-approve-head, .k-approve-then { color: var(--muted); font-size: 0.92em; }
+      .k-approve-gloss { color: var(--fg); font-size: 0.92em; }
+      .k-approve-then { color: var(--muted); font-size: 0.92em; }
       .k-command { display: block; margin: 0.25em 0; padding: 0.45em 0.7em; background: var(--well); border-radius: 6px; font: 0.88em var(--font-mono); overflow-wrap: anywhere; user-select: none; }
       .k-inline { font-family: var(--font-mono); color: var(--fg); background: var(--well); padding: 0.05em 0.35em; border-radius: 4px; user-select: none; }
       .k-note { color: var(--muted); margin: 0; font-size: 0.92em; }
@@ -129,7 +136,6 @@
       #foot { display: flex; flex-wrap: wrap; gap: 0.2em 1.6em; padding: 0.55em 1.6em; border-top: 1px solid var(--rule); background: var(--panel); font-size: 0.85em; }
       .k-legend { color: var(--muted); flex-basis: 100%; }
       .k-fact { color: var(--fg); }
-      .k-source { color: var(--muted); margin-left: auto; }
       @media (max-width: 900px) { #bar { grid-template-columns: 1fr; } #stage { grid-template-columns: 1fr; } }
     </style>
   </head>

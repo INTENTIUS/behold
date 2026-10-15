@@ -227,10 +227,86 @@ export function agoWords(at, now = new Date()) {
   return `${Math.floor(s / 86400)} d ago`;
 }
 
-/** "a-output" as the kiosk names scenarios, with the cycle: "A, read through .output · cycle 90". */
-export function placeWords(run, scenarios) {
-  const sc = run.scenario && scenarios && Object.prototype.hasOwnProperty.call(scenarios, run.scenario) ? scenarios[run.scenario].name : run.scenario;
+/**
+ * behold#571: whether a scenario's short label reads as code to someone new
+ * to the demo: a lettered label ("A, read through .output", "B on waves"), a
+ * code token in it, or the bare id ("a-output").
+ */
+export function codeish(label) {
+  return typeof label === "string" && (/^[A-Z]\b/.test(label) || /\.[A-Za-z]|[_`]/.test(label) || /^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(label));
+}
+
+const MERGE_TITLE = /^Merge pull request '(.+)' \(#\d+\)/;
+
+/**
+ * behold#571: each scenario's title in plain words, by id: from the merge
+ * runs' titles (the pull request is titled after its scenario), and from
+ * `known` (the titles demo.json has carried, which win).
+ */
+export function scenarioTitles(runs, known = {}) {
+  const out = {};
+  for (const r of [...(runs || [])].reverse()) {
+    const m = r && r.scenario && typeof r.title === "string" ? MERGE_TITLE.exec(r.title) : null;
+    if (m) out[r.scenario] = m[1];
+  }
+  for (const [id, title] of Object.entries(known || {})) if (typeof title === "string" && title) out[id] = title;
+  return out;
+}
+
+/**
+ * The scenario and the cycle under a run: "a failure mid-apply · cycle 90".
+ * The scenario's name as demo.json last carried it (`names`, terragucci#1050)
+ * comes first, then the kiosk's SCENARIOS label; a label that reads as code
+ * gives way to the scenario's title when one is known (behold#571).
+ */
+export function placeWords(run, scenarios, titles = {}, names = {}) {
+  const own = (m) => !!(run.scenario && m && Object.prototype.hasOwnProperty.call(m, run.scenario));
+  const short = own(names) && names[run.scenario] ? names[run.scenario] : own(scenarios) ? scenarios[run.scenario].name : run.scenario;
+  const title = own(titles) ? titles[run.scenario] : null;
+  const sc = title && (!short || codeish(short)) ? title : short;
   return [sc, run.cycle !== null && run.cycle !== undefined ? `cycle ${run.cycle}` : null].filter(Boolean).join(" · ");
+}
+
+/**
+ * behold#571: a runner's or an action's set-up line, not terragucci's own:
+ * git's hints, the checkout's `[command]` lines and groups, the runner's
+ * docker and fetch lines.
+ */
+export const SETUP_LINES = [
+  /^hint:/,
+  /^\[command\]/,
+  /^##\[(?:group|endgroup)\]/,
+  /^Initialized empty Git repository\b/,
+  /^::(?:add|remove)-matcher\b/,
+  /^\s*❓\s*add-matcher\b/u,
+  /^\s*🐳\s+docker\b/u,
+  /^\s*☁️\s+git fetch\b/u,
+  /^git version \d/,
+  /^Temporarily overriding HOME=/,
+  /^Adding repository directory to the temporary git global config\b/,
+  /^Deleting the contents of '/,
+  /^Syncing repository: /,
+  /^Working directory is '/,
+];
+
+/** Whether a log line is set-up noise (SETUP_LINES). */
+export function setupLine(line) {
+  return typeof line === "string" && SETUP_LINES.some((re) => re.test(line));
+}
+
+/**
+ * behold#571: a step's log as the kiosk draws it. The set-up lines fold into
+ * one row at the top, `{ setup: n }`, so terragucci's own lines come first;
+ * opened (`open`), the row heads the whole log in order. Every line keeps
+ * its number in the log. A log with no set-up lines is drawn as it came.
+ */
+export function logRows(lines, { open = false, from = 0 } = {}) {
+  const all = (lines || []).map((text, i) => ({ n: from + i + 1, text, setup: setupLine(text) }));
+  const n = all.filter((l) => l.setup).length;
+  if (!n) return all.map(({ n: num, text }) => ({ n: num, text }));
+  const head = { setup: n, open };
+  const body = open ? all : all.filter((l) => !l.setup);
+  return [head, ...body.map(({ n: num, text, setup }) => (open && setup ? { n: num, text, quiet: true } : { n: num, text }))];
 }
 
 // ---------------------------------------------------------------------------
@@ -277,7 +353,7 @@ export function statusIcon(status) {
 }
 
 /** The sidebar: the live run pinned, then the recent ones. `pick(id)` selects one; nothing here writes. */
-export function renderSidebar(host, index, selectedId, { now = new Date(), scenarios = {}, pick = () => {}, merged = null } = {}) {
+export function renderSidebar(host, index, selectedId, { now = new Date(), scenarios = {}, titles = {}, names = {}, pick = () => {}, merged = null } = {}) {
   host.replaceChildren();
   const head = el("div", "r-side-head");
   head.appendChild(el("div", "r-side-title", "Pipeline runs"));
@@ -290,6 +366,7 @@ export function renderSidebar(host, index, selectedId, { now = new Date(), scena
   // The selected run as its page draws it, when its own document is newer than the index.
   const runs = sidebarRuns(index.doc.runs).map((r) => (merged && merged.id === r.id ? merged : r));
   const live = runs[0];
+  const named = scenarioTitles(index.doc.runs, titles);
   const list = el("ol", "r-runs");
   runs.forEach((r, i) => {
     if (i === 0) list.appendChild(el("li", "r-group", LIVE.has(live.status) ? "Live" : "Latest"));
@@ -300,7 +377,7 @@ export function renderSidebar(host, index, selectedId, { now = new Date(), scena
     li.appendChild(statusIcon(r.status));
     const body = el("div", "r-run-body");
     body.appendChild(el("div", "r-run-title", triggerWords(r)));
-    const place = placeWords(r, scenarios);
+    const place = placeWords(r, scenarios, named, names);
     if (place) body.appendChild(el("div", "r-run-place", place));
     const meta = el("div", "r-run-meta");
     meta.append(
@@ -328,7 +405,7 @@ export function renderSidebar(host, index, selectedId, { now = new Date(), scena
  * null for the defaults. Returns what it drew, so the caller can keep a log's
  * scroll.
  */
-export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => {}, toggleStep = () => {}, entry = null } = {}) {
+export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => {}, toggleStep = () => {}, toggleSetup = () => {}, entry = null } = {}) {
   host.replaceChildren();
   if (!answer || answer.error || answer.absent || !answer.doc) {
     host.appendChild(el("p", "r-note", answer ? answer.absent || answer.error : "Reading the run…"));
@@ -398,12 +475,25 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
     if (i === open) {
       const pre = el("pre", "r-log");
       if (s.truncated) pre.appendChild(el("div", "r-log-cut", `… ${s.truncated} earlier lines not kept`));
-      s.log.forEach((l, n) => {
-        const ln = el("div", "r-log-line");
-        const shown = logLineWords(job.status, l);
-        ln.append(el("span", "r-ln", String((s.truncated || 0) + n + 1)), el("span", shown.held ? "r-lt r-wait" : "r-lt", shown.text));
+      const key = logKey(run.id, job.name, i);
+      for (const row of logRows(s.log, { open: ui.setup === key, from: s.truncated || 0 })) {
+        if (row.setup) {
+          const fold = el("div", `r-log-setup${row.open ? " r-log-setup-open" : ""}`, `${row.open ? "▾" : "▸"} setup (${row.setup} line${row.setup === 1 ? "" : "s"})`);
+          fold.setAttribute("role", "button");
+          fold.tabIndex = 0;
+          fold.setAttribute("aria-expanded", String(row.open));
+          fold.addEventListener("click", () => toggleSetup(key));
+          fold.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" || e.key === " ") toggleSetup(key);
+          });
+          pre.appendChild(fold);
+          continue;
+        }
+        const ln = el("div", `r-log-line${row.quiet ? " r-log-quiet" : ""}`);
+        const shown = logLineWords(job.status, row.text);
+        ln.append(el("span", "r-ln", String(row.n)), el("span", shown.held ? "r-lt r-wait" : "r-lt", shown.text));
         pre.appendChild(ln);
-      });
+      }
       if (!s.log.length) pre.appendChild(el("div", "r-log-cut", s.status === "running" ? "waiting for output…" : "no output"));
       if (s.status === "running") pre.appendChild(el("div", "r-log-live", "▍"));
       row.appendChild(pre);
@@ -447,8 +537,8 @@ export const PICK_HOLD_MS = 90_000;
  * is live), and redraw. The live run is selected until a viewer picks
  * another, and again {@link PICK_HOLD_MS} after their last pick.
  */
-export function startRuns({ side, main }, { fetchJson, now = () => new Date(), scenarios = {}, onLive = () => {} } = {}) {
-  const s = { index: null, run: null, selected: null, picked: 0, ui: { job: null, open: null } };
+export function startRuns({ side, main }, { fetchJson, now = () => new Date(), scenarios = {}, titles = () => ({}), names = () => ({}), onLive = () => {} } = {}) {
+  const s = { index: null, run: null, selected: null, picked: 0, ui: { job: null, open: null, setup: null } };
   let follow = true;
   let lastRunKey = "";
   // The open log and whether the pane follows its end; a viewer who scrolls up stops it until they come back.
@@ -470,7 +560,7 @@ export function startRuns({ side, main }, { fetchJson, now = () => new Date(), s
     const ans = s.run && (!s.run.doc || s.run.doc.id === id) ? s.run : null;
     // One merged read of the selected run for both the sidebar and its page.
     const merged = ans && ans.doc ? mergeRun(entry, ans.doc) : null;
-    renderSidebar(side, s.index, id, { now: now(), scenarios, pick, merged });
+    renderSidebar(side, s.index, id, { now: now(), scenarios, titles: titles(), names: names(), pick, merged });
     // The redraw replaces the scrollers: keep where a viewer left them.
     const old = main.querySelector(".r-log");
     const oldSteps = main.querySelector(".r-steps");
@@ -480,12 +570,17 @@ export function startRuns({ side, main }, { fetchJson, now = () => new Date(), s
       now: now(),
       entry,
       pickJob: (name) => {
-        s.ui = { job: name, open: null };
+        s.ui = { job: name, open: null, setup: null };
         hold();
         draw();
       },
       toggleStep: (job, i) => {
-        s.ui = { job, open: i };
+        s.ui = { job, open: i, setup: null };
+        hold();
+        draw();
+      },
+      toggleSetup: (key) => {
+        s.ui = { ...s.ui, setup: s.ui.setup === key ? null : key };
         hold();
         draw();
       },
@@ -528,7 +623,7 @@ export function startRuns({ side, main }, { fetchJson, now = () => new Date(), s
     s.selected = id;
     follow = false;
     s.picked = now().getTime();
-    s.ui = { job: null, open: null };
+    s.ui = { job: null, open: null, setup: null };
     void readRun();
   };
   const readIndex = async () => {
@@ -545,7 +640,7 @@ export function startRuns({ side, main }, { fetchJson, now = () => new Date(), s
     // A run that ended reads once; one still going reads on every tick.
     const key = `${id}|${entry ? entry.status : ""}|${entry ? entry.ended_at : ""}`;
     if (key === lastRunKey && entry && !LIVE.has(entry.status) && s.run && s.run.doc && s.run.doc.id === id) return draw();
-    if (s.run && s.run.doc && s.run.doc.id !== id) s.ui = { job: null, open: null };
+    if (s.run && s.run.doc && s.run.doc.id !== id) s.ui = { job: null, open: null, setup: null };
     lastRunKey = key;
     s.run = await fetchJson(`/api/terragucci/runs/${id}`);
     draw();

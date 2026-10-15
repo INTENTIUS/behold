@@ -51,12 +51,38 @@ export const STEP_WORDS = {
   stalled: "stalled",
 };
 
-/** "Scenario 3 of 6 · B on waves", or the driver's title alone for an id behold doesn't know. */
+const counted = (n) => Number.isInteger(n) && n > 0;
+
+/** demo.json's `name`, the scenario's short label in plain words (terragucci#1050); null without one. */
+export function scenarioName(demo) {
+  const n = demo && demo.name;
+  return typeof n === "string" && n.trim() ? n.trim() : null;
+}
+
+/**
+ * The kicker and the title over the card. behold#571: "Scenario 2 of 5" when
+ * demo.json counts the loop (`index` of `scenarios`), "Scenario 2" with the
+ * index alone, with the title in plain words. Without an index, today's
+ * kicker: "scenario 3 · B on waves" from SCENARIOS, demo.json's `name` in
+ * place of SCENARIOS' label when it has one; the driver's title alone for an
+ * id behold doesn't know.
+ */
 export function scenarioHead(demo) {
   const known = Object.prototype.hasOwnProperty.call(SCENARIOS, demo.scenario) ? SCENARIOS[demo.scenario] : null;
-  if (!known) return { kicker: `scenario ${demo.scenario}`, title: demo.title };
-  if (known.n === null) return { kicker: demo.title || "The base", title: demo.title || "The base" };
-  return { kicker: `scenario ${known.n} · ${known.name}`, title: demo.title };
+  const name = scenarioName(demo);
+  if (counted(demo.index)) {
+    const of = counted(demo.scenarios) && demo.index <= demo.scenarios ? ` of ${demo.scenarios}` : "";
+    return { kicker: `Scenario ${demo.index}${of}`, title: demo.title || name || (known ? known.name : demo.scenario) };
+  }
+  if (!known) return { kicker: name ? `scenario · ${name}` : `scenario ${demo.scenario}`, title: demo.title };
+  if (known.n === null) return { kicker: demo.title || name || "The base", title: demo.title || name || "The base" };
+  return { kicker: `scenario ${known.n} · ${name || known.name}`, title: demo.title };
+}
+
+/** behold#571: demo.json's `intro`, one paragraph on the problem the demo solves; null without one. */
+export function introText(demo) {
+  const t = demo && demo.intro;
+  return typeof t === "string" && t.trim() ? t.trim() : null;
 }
 
 /** The card's rows under the title, in order, with the labels the kiosk draws (behold#571). */
@@ -224,6 +250,16 @@ export function pendingApproval(demo, progress) {
     roots: w ? changingRoots(w, [...new Set([...w.roots, ...(w.composed ? w.composed.roots : [])])]) : [],
     ...driverApproveLines(number, demo.pull),
   };
+}
+
+/**
+ * behold#571: the approval in plain words, before the command, for a viewer
+ * who has never approved a pipeline: who the driver is, what it signs. The
+ * plan's digest is on the wave's box in the view.
+ */
+export function approveGloss(appr) {
+  const roots = appr.roots.length ? ` (${appr.roots.join(", ")})` : "";
+  return `The driver stands in for a person: it approves wave ${appr.wave}${roots} with its own signing key.`;
 }
 
 /**
@@ -435,27 +471,31 @@ export function renderKiosk(bar, s, now = new Date(), foot = null) {
   const demo = s.demo.demo;
   const head = scenarioHead(demo);
 
+  const intro = introText(demo);
+  if (intro) bar.appendChild(el("p", "k-intro", intro));
+
+  // behold#571: the kicker on the title's line, so the bar has room for the intro.
   const left = el("div", "k-left");
-  const kick = el("div", "k-kicker");
-  kick.append(el("span", null, head.kicker), el("span", "k-cycle", cycleWords(demo, now)));
-  left.appendChild(kick);
-  left.appendChild(el("h1", "k-title", head.title));
+  const title = el("h1", "k-title");
+  title.append(el("span", "k-kicker", head.kicker), el("span", "k-title-text", head.title));
+  left.appendChild(title);
   const rows = aboutRows(demo);
   if (rows.length) {
     const card = el("dl", "k-about");
     for (const r of rows) card.append(el("dt", "k-about-label", r.label), el("dd", "k-about-text", r.text));
     left.appendChild(card);
   }
-  const said = el("div", `k-step k-step-${demo.step}`);
-  said.appendChild(el("span", "k-step-word", STEP_WORDS[demo.step] || demo.step));
-  said.appendChild(el("p", "k-label", demo.label));
+  const said = el("p", `k-step k-step-${demo.step}`);
+  said.append(el("span", "k-step-word", STEP_WORDS[demo.step] || demo.step), el("span", "k-label", demo.label));
   left.appendChild(said);
   bar.appendChild(left);
 
   const right = el("div", "k-right");
   const strip = el("ol", "k-strip");
   for (const stop of stripStops(demo.step)) strip.appendChild(el("li", `k-stop k-${stop.state}`, stop.words));
-  right.appendChild(strip);
+  const where = el("div", "k-where");
+  where.append(strip, el("span", "k-cycle", cycleWords(demo, now)));
+  right.appendChild(where);
 
   const nx = nextWords(demo, now);
   const next = el("div", "k-next");
@@ -467,13 +507,7 @@ export function renderKiosk(bar, s, now = new Date(), foot = null) {
   const appr = pendingApproval(demo, s.progress);
   if (appr) {
     const a = el("div", "k-approve");
-    a.appendChild(
-      el(
-        "p",
-        "k-approve-head",
-        `The driver approves wave ${appr.wave}${appr.roots.length ? ` (${appr.roots.join(", ")})` : ""}, signed with its own key${appr.digest ? `, for the plan ${appr.digest.replace(/^jcs1-sha256:/, "").slice(0, 12)}` : ""}:`,
-      ),
-    );
+    a.appendChild(el("p", "k-approve-gloss", approveGloss(appr)));
     a.appendChild(el("code", "k-command", appr.approve));
     const then = el("p", "k-approve-then");
     then.append(`then comments `, el("code", "k-inline", appr.comment), ` on ${appr.on}, and the waves run again.`);
@@ -488,17 +522,10 @@ export function renderKiosk(bar, s, now = new Date(), foot = null) {
 
   if (foot) {
     foot.appendChild(el("span", "k-legend", legendWords(s.view || "resources")));
+    // behold#571: no line on where the narration was read from: a viewer new to the demo reads the facts.
     for (const f of factLines(demo, s.answer)) foot.appendChild(el("span", "k-fact", f));
-    foot.appendChild(
-      el("span", "k-source", `narration read ${clockOf(s.demo.read)} from ${s.demo.source}${demo.pull !== null ? ` · pull request #${demo.pull}` : ""}${demo.commit ? ` · commit ${demo.commit.slice(0, 8)}` : ""} · nothing here writes`),
-    );
   }
 }
-
-const clockOf = (iso) => {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}:${String(d.getUTCSeconds()).padStart(2, "0")} UTC`;
-};
 
 /** How often the kiosk asks for demo.json. The server shares one read between kiosks. */
 export const DEMO_POLL_MS = 3_000;
@@ -539,7 +566,10 @@ export function startKiosk({ bar, frame, foot, side, main, views }, { fetchJson 
     tellFrame(false);
   };
   // #569: the pipeline's runs beside the view, CI-page style.
-  if (side && main) startRuns({ side, main }, { fetchJson, now, scenarios: SCENARIOS });
+  // behold#571: the titles and names demo.json has carried, by scenario, for the runs' subtitles.
+  const titles = {};
+  const names = {};
+  if (side && main) startRuns({ side, main }, { fetchJson, now, scenarios: SCENARIOS, titles: () => titles, names: () => names });
   // #571: whether the repo offers the components zoom (a terragucci.components.json), read before the frame opens so it opens on the step's view.
   const openFrame = () => {
     if (!frame) return;
@@ -577,6 +607,8 @@ export function startKiosk({ bar, frame, foot, side, main, views }, { fetchJson 
   const demo = async () => {
     s.demo = await fetchJson("/api/terragucci/demo");
     const d = s.demo && s.demo.demo;
+    if (d && d.scenario && typeof d.title === "string" && d.title) titles[d.scenario] = d.title;
+    if (d && d.scenario && scenarioName(d)) names[d.scenario] = scenarioName(d);
     const key = d ? `${d.cycle}|${d.step}|${d.commit}|${d.pull}` : "";
     if (key !== lastKey) {
       lastKey = key;

@@ -79,3 +79,23 @@ export function viewFromMessage(event, host) {
   }
   return want;
 }
+
+/**
+ * behold#571: a card's line the kiosk's frame leaves out, for a viewer new to
+ * Terraform: the kind line ("Component · chant", "terraform_data ·
+ * terraform"), and the `archetype:`, `wave:` and `root:` meta lines (the wave
+ * or the root is the box the card sits in). behold's own page keeps them.
+ */
+export function kioskQuietLine(text) {
+  const t = typeof text === "string" ? text.trim() : "";
+  return /^Component\b/.test(t) || /^[\w.-]+ · [\w.-]+$/.test(t) || /^archetype:\s*\S/.test(t) || /^wave:\s*\d+$/.test(t) || /^root:\s*\S+$/.test(t);
+}
+
+/** Hide the kioskQuietLine lines of every card in a drawn graph; marks them so a redraw of the marks leaves them hidden. */
+export function quietCardLines(svg) {
+  for (const t of svg.querySelectorAll("[data-node-id] text")) {
+    if (!kioskQuietLine(t.textContent)) continue;
+    t.setAttribute("visibility", "hidden");
+    t.setAttribute("data-kiosk-quiet", "1");
+  }
+}

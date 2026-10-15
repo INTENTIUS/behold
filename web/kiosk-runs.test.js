@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { FOLLOW_LINES, followsLog, logKey, nearEnd, mergeRun, newerOf, agoWords, defaultJob, defaultStep, durationWords, jobOrder, liveRun, logLineWords, placeWords, sidebarRuns, splitSkipped, STATUS_TONE, triggerWords } from "./kiosk-runs.js";
+import { FOLLOW_LINES, followsLog, logKey, nearEnd, mergeRun, newerOf, agoWords, defaultJob, defaultStep, durationWords, jobOrder, liveRun, codeish, logLineWords, logRows, placeWords, scenarioTitles, setupLine, sidebarRuns, splitSkipped, STATUS_TONE, triggerWords } from "./kiosk-runs.js";
 
 const FIX = join(import.meta.dirname, "..", "src", "__fixtures__", "terragucci-demo", "runs");
 const run = (id) => JSON.parse(readFileSync(join(FIX, `${id}.json`), "utf8"));
@@ -129,5 +129,57 @@ describe("the log pane follows its end, like a CI page's log", () => {
     expect(nearEnd({ scrollTop: 600 - slack, clientHeight: 400, scrollHeight: 1000 }, slack)).toBe(true);
     expect(nearEnd({ scrollTop: 600 - slack - 1, clientHeight: 400, scrollHeight: 1000 }, slack)).toBe(false);
     expect(nearEnd({ scrollTop: 0, clientHeight: 400, scrollHeight: 1000 }, slack)).toBe(false);
+  });
+});
+
+describe("the runs for a viewer new to the demo (behold#571)", () => {
+  const SC = { "a-output": { name: "A, read through .output" }, "b-waves": { name: "B on waves" }, failure: { name: "a failure mid-apply" } };
+  it("prefers the scenario's title when its short label reads as code", () => {
+    expect(codeish("A, read through .output")).toBe(true);
+    expect(codeish("B on waves")).toBe(true);
+    expect(codeish("a-output")).toBe(true);
+    expect(codeish("a failure mid-apply")).toBe(false);
+    expect(codeish("the base")).toBe(false);
+    const titles = { "a-output": "The same change, read once it is built", failure: "One root fails partway" };
+    expect(placeWords({ scenario: "a-output", cycle: 90 }, SC, titles)).toBe("The same change, read once it is built · cycle 90");
+    expect(placeWords({ scenario: "failure", cycle: 92 }, SC, titles)).toBe("a failure mid-apply · cycle 92");
+    expect(placeWords({ scenario: "b-waves", cycle: 91 }, SC, titles)).toBe("B on waves · cycle 91");
+    expect(placeWords({ scenario: "c-new", cycle: 93 }, SC, { "c-new": "A new one" })).toBe("A new one · cycle 93");
+    expect(placeWords({ scenario: "a-output", cycle: 90 }, SC)).toBe("A, read through .output · cycle 90");
+  });
+  it("takes demo.json's name for a scenario before the table's label (terragucci#1050)", () => {
+    const names = { "b-waves": "a new subnet", failure: "a failure halfway" };
+    expect(placeWords({ scenario: "b-waves", cycle: 12 }, SC, {}, names)).toBe("a new subnet · cycle 12");
+    expect(placeWords({ scenario: "failure", cycle: 12 }, SC, { failure: "One root fails" }, names)).toBe("a failure halfway · cycle 12");
+    expect(placeWords({ scenario: "a-output", cycle: 12 }, SC, {}, names)).toBe("A, read through .output · cycle 12");
+  });
+  it("learns titles from the merge runs, and demo.json's win", () => {
+    const runs = index().runs;
+    const t = scenarioTitles(runs);
+    expect(t["a-known"]).toBe("A port change, known when it plans");
+    expect(scenarioTitles(runs, { "a-known": "A plain title" })["a-known"]).toBe("A plain title");
+    expect(scenarioTitles([], {})).toEqual({});
+  });
+  it("knows the runner's set-up lines from terragucci's own", () => {
+    for (const l of ["hint: Using 'master' as the name", "[command]/usr/bin/git init /workspace/demo", "##[group]Initializing the repository", "##[endgroup]", "Initialized empty Git repository in /workspace/demo/.git/"]) expect(setupLine(l)).toBe(true);
+    for (const l of ["wave 2 of 3: planning app", "app: Plan: 0 to add, 1 to change, 0 to destroy.", "  terragucci approve wave-2 --plan jcs1-sha256:0a", "⚙️ [runner]: exitcode '3': failure"]) expect(setupLine(l)).toBe(false);
+  });
+  it("folds the set-up lines into one row at the top, and opens it in order", () => {
+    const log = ["##[group]Init", "[command]/usr/bin/git init", "wave 1 of 3: planning network", "hint: x", "##[endgroup]", "wave 1 of 3: applied"];
+    expect(logRows(log)).toEqual([{ setup: 4, open: false }, { n: 3, text: "wave 1 of 3: planning network" }, { n: 6, text: "wave 1 of 3: applied" }]);
+    const open = logRows(log, { open: true });
+    expect(open[0]).toEqual({ setup: 4, open: true });
+    expect(open.slice(1).map((r) => r.n)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(open.filter((r) => r.quiet).map((r) => r.n)).toEqual([1, 2, 4, 5]);
+    expect(logRows(["a", "b"], { from: 10 })).toEqual([{ n: 11, text: "a" }, { n: 12, text: "b" }]);
+  });
+  it("folds the checkout's set-up in a real held job's log, and leaves terragucci's step as it came", () => {
+    const job = run(444).jobs.find((j) => j.status === "waiting");
+    const checkout = job.steps.find((s) => s.name.includes("checkout") && !s.name.startsWith("Post"));
+    const rows = logRows(checkout.log);
+    expect(rows[0].setup).toBeGreaterThan(40);
+    expect(rows.slice(1).some((r) => /^hint:|^\[command\]|^##\[/.test(r.text))).toBe(false);
+    const own = job.steps.find((s) => /^Apply wave/.test(s.name));
+    expect(logRows(own.log)).toEqual(own.log.map((text, i) => ({ n: i + 1, text })));
   });
 });
