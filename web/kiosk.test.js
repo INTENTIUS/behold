@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { aboutRows, focusRoots, frameSrc, factLines, matchingPull, pendingApproval, renderKiosk, runPanel, runPin } from "./kiosk.js";
+import { STEP_VIEW, STEP_WORDS, aboutRows, focusRoots, frameSrc, factLines, kioskView, legendWords, matchingPull, pendingApproval, renderKiosk, renderViewToggle, runPanel, runPin, stepView, viewZoom } from "./kiosk.js";
+import { PICK_HOLD_MS } from "./kiosk-runs.js";
 
 const demo = (step, extra = {}) => ({ cycle: 1, scenario: "a-output", title: "t", step, label: "", started_at: "2026-10-15T03:00:00Z", next: null, pull: 7, commit: "abc12345", ...extra });
 const answer = {
@@ -139,6 +140,81 @@ describe("the scenario's card under the title (behold#571)", () => {
       s.demo.demo = demo("reset", { scenario: "base", about: null });
       renderKiosk(bar, s, new Date("2026-10-15T03:01:00Z"));
       expect(find(bar, "k-about")).toEqual([]);
+    } finally {
+      globalThis.document = was;
+    }
+  });
+});
+
+describe("which view the frame shows (#571)", () => {
+  it("shows the resources for the pull request's steps and the roots by wave from the merge on", () => {
+    for (const step of ["pull-request", "planned"]) expect(stepView(step)).toBe("resources");
+    for (const step of ["merged", "applying", "waiting", "approved", "failed", "resumed", "applied", "reset"]) expect(stepView(step)).toBe("components");
+    expect(Object.keys(STEP_VIEW).sort()).toEqual(Object.keys(STEP_WORDS).sort());
+  });
+
+  it("follows the step, and only the resources when the repo offers no components zoom", () => {
+    expect(kioskView(demo("planned"), { components: true })).toEqual({ view: "resources", pinned: false, secs: null });
+    expect(kioskView(demo("waiting"), { components: true })).toEqual({ view: "components", pinned: false, secs: null });
+    expect(kioskView(demo("waiting"), { components: false })).toEqual({ view: "resources", pinned: false, secs: null });
+    expect(kioskView(demo("waiting"), { components: false, pick: { view: "components", at: 0 }, now: 1000 }).view).toBe("resources");
+    expect(kioskView(null, { components: true }).view).toBe("resources");
+  });
+
+  it("holds a clicked view for 90 s after the last click, then follows the step again", () => {
+    const pick = { view: "resources", at: 1_000_000 };
+    expect(PICK_HOLD_MS).toBe(90_000);
+    expect(kioskView(demo("applying"), { components: true, pick, now: 1_000_000 })).toEqual({ view: "resources", pinned: true, secs: 90 });
+    expect(kioskView(demo("applying"), { components: true, pick, now: 1_000_000 + 89_500 })).toEqual({ view: "resources", pinned: true, secs: 1 });
+    expect(kioskView(demo("applying"), { components: true, pick, now: 1_000_000 + 90_000 })).toEqual({ view: "components", pinned: false, secs: null });
+    // A pick of a view the toggle doesn't offer holds nothing.
+    expect(kioskView(demo("applying"), { components: true, pick: { view: "logical", at: 1_000_000 }, now: 1_000_000 }).view).toBe("components");
+  });
+
+  it("opens the frame on a view's zoom", () => {
+    expect(frameSrc("https://demo.example")).toContain("zoom=resources");
+    expect(frameSrc("https://demo.example", viewZoom("components"))).toContain("zoom=components");
+    expect(viewZoom("resources")).toBe("resources");
+    expect(viewZoom("nonsense")).toBe("resources");
+  });
+
+  it("says how to read the view shown", () => {
+    expect(legendWords("components")).toMatch(/^Each card is a Terraform root .* titled with the pipeline job that applies it/);
+    expect(legendWords("resources")).toMatch(/^Each box is a Terraform root/);
+  });
+
+  // A DOM for the toggle: elements with attributes and click listeners.
+  const toggleDocument = () => ({
+    createElement: (tag) => {
+      const n = { tagName: tag, className: "", textContent: "", children: [], attrs: {}, hidden: false, listeners: {} };
+      n.appendChild = (c) => (n.children.push(c), c);
+      n.replaceChildren = () => (n.children = []);
+      n.setAttribute = (k, v) => (n.attrs[k] = v);
+      n.addEventListener = (k, f) => (n.listeners[k] = f);
+      return n;
+    },
+  });
+
+  it("draws the toggle with the view shown pressed, says what leads, and hides without a components zoom", () => {
+    const was = globalThis.document;
+    globalThis.document = toggleDocument();
+    try {
+      const host = document.createElement("div");
+      const picked = [];
+      renderViewToggle(host, { view: "components", pinned: false, secs: null }, { components: true, onPick: (v) => picked.push(v) });
+      expect(host.hidden).toBe(false);
+      const buttons = host.children[0].children;
+      expect(buttons.map((b) => [b.textContent, b.attrs["aria-pressed"]])).toEqual([["Resources", "false"], ["Roots by wave", "true"]]);
+      expect(host.children[1].textContent).toBe("follows the step");
+      buttons[0].listeners.click();
+      expect(picked).toEqual(["resources"]);
+
+      renderViewToggle(host, { view: "resources", pinned: true, secs: 42 }, { components: true });
+      expect(host.children[1].textContent).toBe("held by a click; the step leads again in 42 s");
+
+      renderViewToggle(host, { view: "resources", pinned: false, secs: null }, { components: false });
+      expect(host.hidden).toBe(true);
+      expect(host.children).toEqual([]);
     } finally {
       globalThis.document = was;
     }

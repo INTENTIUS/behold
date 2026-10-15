@@ -18,7 +18,8 @@ import { renderLane } from "./terragucci-lifecycle.js";
 import { renderReleases } from "./releases.js";
 import { renderYodelLane } from "./sql-yodeler-lane.js";
 import { initTerragucciEstate } from "./terragucci-estate.js";
-import { changeSection as tgChangeSection, readCardIds as tgReadCardIds, readEdges as tgReadEdges, readLabel as tgReadLabel, readLine as tgReadLine, readTag as tgReadTag, rootStates as tgRootStates, viewCaption as tgViewCaption, pinnedAnswer as tgPinnedAnswer, pinnedCaption as tgPinnedCaption, pinsCommit as tgPinsCommit } from "./terragucci-change.js";
+import { componentMarks as tgComponentMarks, waveOfKey as tgWaveOfKey } from "./terragucci-components-live.js";
+import { STATE_WORDS as tgStateWords, changeSection as tgChangeSection, readCardIds as tgReadCardIds, readEdges as tgReadEdges, readLabel as tgReadLabel, readLine as tgReadLine, readTag as tgReadTag, rootStates as tgRootStates, viewCaption as tgViewCaption, pinnedAnswer as tgPinnedAnswer, pinnedCaption as tgPinnedCaption, pinsCommit as tgPinsCommit } from "./terragucci-change.js";
 import { auditLines as yrAuditLines, cornerText as yrCorner, datedWords as yrDated, environmentLines as yrEnvLines, joinMarks as yrJoin, legend as yrLegend, markLine as yrMarkLine } from "./yodel-report.js";
 import { cardProgress as tgCardProgress, progressLines as tgProgressLines, progressSection as tgProgressSection, stampProgress as tgStampProgress } from "./terragucci-progress.js";
 import { seconds, whyQuery, whyView } from "./why.js";
@@ -3484,6 +3485,7 @@ function paintTgProgress() {
 // merged. Not live; redrawn on each render and each read.
 const TG_TONE = { plan: "var(--pending)", wait: "var(--foreign)", busy: "var(--runtime)", ok: "var(--managed)", bad: "var(--degraded)", idle: "var(--neutral)" };
 function drawTgReads() {
+  watchTgRuns(); // #571: the wave boxes' jobs, while the components zoom is on screen
   const svg = document.querySelector("#graph svg");
   if (!svg) return;
   for (const old of svg.querySelectorAll("[data-tg-reads]")) old.remove();
@@ -3493,6 +3495,10 @@ function drawTgReads() {
     r.setAttribute("stroke-width", r.getAttribute("data-tg-width0") || "1.2");
     r.removeAttribute("data-tg-stroke0");
     r.removeAttribute("data-tg-width0");
+  }
+  for (const r of svg.querySelectorAll("[data-tg-fill0]")) {
+    r.setAttribute("fill", r.getAttribute("data-tg-fill0"));
+    r.removeAttribute("data-tg-fill0");
   }
   for (const t of svg.querySelectorAll("[data-tg-hid]")) {
     t.removeAttribute("data-tg-hid");
@@ -3522,13 +3528,24 @@ function drawTgReads() {
   };
   const union = (boxes) => (boxes.length ? { x: Math.min(...boxes.map((b) => b.x)), y: Math.min(...boxes.map((b) => b.y)), x2: Math.max(...boxes.map((b) => b.x2)), y2: Math.max(...boxes.map((b) => b.y2)) } : null);
   const rootOf = (path) => tgAnswer.roots.find((x) => x.path === path) || null;
+  // #571: on a terragucci repo's components zoom each root is one card, in a
+  // box per wave: the reads run card to card, and the marks go on the cards
+  // and the wave boxes (drawTgComponentMarks).
+  const compMode = !!(view.components && terragucciComponentsRepo && tgComponentFacets);
+  const componentsOfRoot = (r) => {
+    const roots = (tgComponentFacets && tgComponentFacets.roots) || {};
+    const named = (tgComponentFacets && tgComponentFacets.jobs ? tgComponentFacets.jobs.map((j) => j.component) : []).filter((c) => (roots[c] || c) === r.path || (roots[c] || c) === r.name);
+    return named.length ? named : [r.name];
+  };
   const groupRect = (path) => {
     const r = rootOf(path);
+    if (compMode) return null;
     return r ? svg.querySelector(`rect[data-group-id="${CSS.escape(r.name)}"]`) : null;
   };
   const cardsOf = (path) => {
     const r = rootOf(path);
     if (!r) return [];
+    if (compMode) return componentsOfRoot(r).map((c) => svg.querySelector(`[data-node-id="${CSS.escape(c)}"]`)).filter(Boolean);
     const prefix = `${r.member}/${r.name}/`;
     return [...svg.querySelectorAll("[data-node-id]")].filter((g) => (g.getAttribute("data-node-id") || "").startsWith(prefix));
   };
@@ -3581,8 +3598,12 @@ function drawTgReads() {
     if (focus && !focus.has(r.path) && !focus.has(r.name)) {
       for (const el of [rect && rect.parentElement, ...cardsOf(r.path)]) {
         if (!el) continue;
-        el.setAttribute("data-tg-dim", "1");
-        el.style.opacity = "0.5";
+        // #571: a card on the components zoom keeps its body opaque, so the graph's edges behind it stay hidden; what is on it dims.
+        const parts = compMode ? [...el.children].filter((c) => c !== el.querySelector(":scope > rect")) : [el];
+        for (const part of parts) {
+          part.setAttribute("data-tg-dim", "1");
+          part.style.opacity = "0.5";
+        }
       }
     }
     if (!rect || !st || !b) continue;
@@ -3651,6 +3672,13 @@ function drawTgReads() {
     }
   }
 
+  // #571: the components zoom's own marks; its wave boxes are the boxes the caption and the labels keep clear of.
+  const edgePoints = compMode ? chantEdgePoints(svg) : [];
+  if (compMode) {
+    boxes.length = 0;
+    boxes.push(...drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints }));
+  }
+
   // The reads. #569 review: no line or label crosses text. Each line is the
   // shortest one, from a point on the reader's card (or box) border to a point
   // on the read root's box border, that crosses no text and as few cards as
@@ -3696,6 +3724,20 @@ function drawTgReads() {
     .map((b) => grow(b, 3));
   const cardEls = [...svg.querySelectorAll("[data-node-id]")];
   const cardBoxOf = new Map(cardEls.map((g) => [g, boxOf(g)]));
+  // #571: how many of the components graph's own edge points a segment runs over, so a read never hides a dependency line.
+  const nearEdge = (a, z, d = 6) => {
+    if (!edgePoints.length) return 0;
+    const dx = z.x - a.x;
+    const dy = z.y - a.y;
+    const l2 = dx * dx + dy * dy || 1;
+    let n = 0;
+    for (const p of edgePoints) {
+      const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
+      if (Math.hypot(a.x + dx * t - p.x, a.y + dy * t - p.y) < d) n++;
+    }
+    return n;
+  };
+  const edgeIn = (r) => edgePoints.filter((p) => p.x >= r.x - 3 && p.x <= r.x2 + 3 && p.y >= r.y - 3 && p.y <= r.y2 + 3).length;
   const defs = svg.querySelector("defs") || svg.insertBefore(make("defs", {}), svg.firstChild);
   for (const [id, color] of [["tg-arrow-unknown", "var(--foreign)"], ["tg-arrow-planned", "var(--pending)"], ["tg-arrow-applied", "var(--focus)"]]) {
     if (svg.querySelector(`#${id}`)) continue;
@@ -3719,7 +3761,7 @@ function drawTgReads() {
     const fromBox = (card && cardBoxOf.get(card)) || (card && boxOf(card)) || rootBox(e.from);
     const toBox = rootBox(e.to);
     if (!fromBox || !toBox) continue;
-    const others = cardEls.filter((g) => g !== card).map((g) => cardBoxOf.get(g)).filter(Boolean);
+    const others = cardEls.filter((g) => g !== card).map((g) => cardBoxOf.get(g)).filter((b) => b && b !== fromBox && b !== toBox && !(compMode && (sameBox(b, fromBox) || sameBox(b, toBox))));
     let best = null;
     for (const p0 of borderPoints(fromBox, [0.25, 0.5, 0.75])) {
       for (const p1 of borderPoints(toBox, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9])) {
@@ -3736,7 +3778,7 @@ function drawTgReads() {
         const texts = textBoxes.filter((t) => crosses(a, z, t)).length;
         const cards = others.filter((c) => crosses(a, z, c)).length;
         const lines = drawn.filter((d) => crosses(a, z, grow({ x: Math.min(d.p0.x, d.p1.x), y: Math.min(d.p0.y, d.p1.y), x2: Math.max(d.p0.x, d.p1.x), y2: Math.max(d.p0.y, d.p1.y) }, 0)) && Math.hypot(d.p1.x - p1.x, d.p1.y - p1.y) < 30).length;
-        const score = texts * 10000 + cards * 2000 + lines * 500 + len;
+        const score = texts * 10000 + cards * 2000 + lines * 500 + nearEdge(a, z) * 400 + len;
         if (!best || score < best.score) best = { p0, p1, score };
       }
     }
@@ -3779,7 +3821,7 @@ function drawTgReads() {
       }
       for (const c of spots) {
         const r = { x: c.x - w / 2, y: c.y - h / 2, x2: c.x + w / 2, y2: c.y + h / 2 };
-        const lineHits = drawn.filter((d) => crosses(d.p0, d.p1, r)).length;
+        const lineHits = drawn.filter((d) => crosses(d.p0, d.p1, r)).length + edgeIn(r);
         // Outside the boxes' own span the label may leave the drawing when the view is fitted: keep it in.
         const span = union(boxes);
         const out = span ? (r.x2 - r.x) * (r.y2 - r.y) - overlap(r, { x: span.x - 40, y: span.y - 60, x2: span.x2 + 40, y2: span.y2 + 40 }) : 0;
@@ -3798,8 +3840,216 @@ function drawTgReads() {
   const caption = tgPinnedCaption(tgAnswer, view.run) || (shown ? `Showing ${shown}` : null);
   const all = union(boxes);
   if (caption && all) {
-    layer.appendChild(make("text", { "data-tg-reads": "caption", x: all.x, y: all.y - 22, "font-size": 16, "font-weight": 600, fill: "var(--muted)" }, caption));
+    const line = make("text", { "data-tg-reads": "caption", x: all.x, y: all.y - 22, "font-size": 16, "font-weight": 600, fill: "var(--muted)" }, caption);
+    layer.appendChild(line);
+    // #571: the components zoom is narrow; a caption wider than its boxes goes on two lines, broken after its colon or comma.
+    let wide = 0;
+    try {
+      wide = line.getComputedTextLength();
+    } catch {
+      /* not laid out */
+    }
+    const cut = caption.indexOf(": ") > 0 ? caption.indexOf(": ") : caption.indexOf(", ");
+    if (compMode && cut > 0 && wide > all.x2 - all.x + 40) {
+      line.textContent = caption.slice(0, cut + 1);
+      line.setAttribute("y", String(all.y - 42));
+      layer.appendChild(make("text", { "data-tg-reads": "caption", x: all.x, y: all.y - 22, "font-size": 16, "font-weight": 600, fill: "var(--muted)" }, caption.slice(cut + 2)));
+    }
   }
+}
+const sameBox = (a, b) => !!a && !!b && Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5 && Math.abs(a.x2 - b.x2) < 0.5 && Math.abs(a.y2 - b.y2) < 0.5;
+
+/** #571: points along the components graph's own edges, in the svg's coordinates, every few units. */
+function chantEdgePoints(svg) {
+  const toSvg = svg.getScreenCTM && svg.getScreenCTM();
+  if (!toSvg) return [];
+  const inv = toSvg.inverse();
+  const out = [];
+  for (const path of svg.querySelectorAll("path.pin-edge-line")) {
+    let len = 0;
+    try {
+      len = path.getTotalLength();
+    } catch {
+      continue;
+    }
+    const ctm = path.getScreenCTM && path.getScreenCTM();
+    if (!ctm || !len) continue;
+    const m = inv.multiply(ctm);
+    for (let d = 0; d <= len; d += 5) {
+      const p = path.getPointAtLength(d);
+      out.push(new DOMPoint(p.x, p.y).matrixTransform(m));
+    }
+  }
+  return out;
+}
+
+// #571: the pipeline's runs (terragucci#1038), for the components zoom's wave
+// boxes: each box's job and its status on the run the view draws.
+let tgRuns = null;
+let tgRunsTimer = null;
+async function loadTgRuns() {
+  const was = JSON.stringify(tgRuns && tgRuns.doc ? tgRuns.doc.runs : null);
+  tgRuns = await apiFetch("/api/terragucci/runs")
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null);
+  if (JSON.stringify(tgRuns && tgRuns.doc ? tgRuns.doc.runs : null) !== was) drawTgReads();
+}
+/** Read the runs while the components zoom of a terragucci repo is on screen, every few seconds as the kiosk does. */
+function watchTgRuns() {
+  const on = !staticMode && !!tgAnswer && !tgAnswer.error && view.components && terragucciComponentsRepo;
+  if (on && !tgRunsTimer) {
+    void loadTgRuns();
+    tgRunsTimer = setInterval(() => void loadTgRuns(), 3_000);
+  } else if (!on && tgRunsTimer) {
+    clearInterval(tgRunsTimer);
+    tgRunsTimer = null;
+  }
+}
+
+/**
+ * #571: the live marks on a terragucci repo's components zoom, for the run
+ * the view draws (`view.run`): each card in its wave's state, each wave box
+ * outlined in its wave's state with its job's status after its title and its
+ * first fact (a waiting wave's plan digest) in its bottom padding. Text goes
+ * only where it covers no text, no card and no edge of the graph: the first
+ * spot that is clear, in the words that fit, else only in the tooltip.
+ * Returns the wave boxes, in the svg's coordinates.
+ */
+function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints }) {
+  const marks = tgComponentMarks(drawnAnswer, tgProgress, tgComponentFacets, { runs: tgRuns, pin: view.run || null });
+  const group = make("g", { "data-tg-root": "components", "pointer-events": "none" });
+  svg.appendChild(group);
+  const grow = (b, d) => ({ x: b.x - d, y: b.y - d, x2: b.x2 + d, y2: b.y2 + d });
+  const hits = (a, b) => a.x < b.x2 && a.x2 > b.x && a.y < b.y2 && a.y2 > b.y;
+  const textBoxes = () =>
+    [...svg.querySelectorAll("text")]
+      .filter((t) => t.getAttribute("visibility") !== "hidden" && (t.textContent || "").trim() && !t.closest("[data-tg-reads]"))
+      .map(boxOf)
+      .filter(Boolean);
+  const cardEls = [...svg.querySelectorAll("[data-node-id]")];
+  const cardBoxes = cardEls.map(boxOf).filter(Boolean);
+  const edgeHit = (r) => edgePoints.some((p) => p.x >= r.x - 4 && p.x <= r.x2 + 4 && p.y >= r.y - 4 && p.y <= r.y2 + 4);
+  const probe = make("text", { "font-size": 12, "font-weight": 700 });
+  group.appendChild(probe);
+  const width = (t, size, weight) => {
+    probe.setAttribute("font-size", String(size));
+    probe.setAttribute("font-weight", String(weight));
+    probe.textContent = t;
+    try {
+      return probe.getComputedTextLength() || t.length * size * 0.58;
+    } catch {
+      return t.length * size * 0.58;
+    }
+  };
+  const tone = (t) => TG_TONE[t] || TG_TONE.idle;
+
+  // The cards: outlined and barred in their state's colour, the state in the
+  // line under the name (the "Component · chant" line gives way to it).
+  for (const g of cardEls) {
+    const id = g.getAttribute("data-node-id");
+    const m = marks.cards[id];
+    if (!m) continue;
+    const rects = [...g.querySelectorAll(":scope > rect")];
+    const body = rects.reduce((a, r) => (!a || Number(r.getAttribute("width")) * Number(r.getAttribute("height")) > Number(a.getAttribute("width")) * Number(a.getAttribute("height")) ? r : a), null);
+    const bar = rects.find((r) => r !== body && Number(r.getAttribute("width")) <= 6);
+    const quiet = m.state === "outside" || m.state === "unchanged" || m.state === "not-started";
+    const inFocus = !focus || focus.has(m.root) || focus.has(id);
+    if (body) {
+      body.setAttribute("data-tg-stroke0", body.getAttribute("stroke") || "");
+      body.setAttribute("data-tg-width0", body.getAttribute("stroke-width") || "1.2");
+      if (!quiet) {
+        body.setAttribute("stroke", tone(m.tone));
+        body.setAttribute("stroke-width", focus && inFocus ? "4" : "2.5");
+      }
+    }
+    if (bar && !quiet) {
+      bar.setAttribute("data-tg-fill0", bar.getAttribute("fill") || "");
+      bar.setAttribute("fill", tone(m.tone));
+    }
+    const texts = [...g.querySelectorAll(":scope > text")];
+    const sub = texts.find((t) => /^Component\b/.test((t.textContent || "").trim())) || texts[1];
+    if (!sub || !body) continue;
+    const x = Number(sub.getAttribute("x"));
+    const y = Number(sub.getAttribute("y"));
+    const room = Number(body.getAttribute("x")) + Number(body.getAttribute("width")) - 10 - x;
+    const words = width(m.words, 12, 700) <= room ? m.words : m.short;
+    sub.setAttribute("visibility", "hidden");
+    sub.setAttribute("data-tg-hid", "1");
+    const t = make("text", { "data-tg-root": "card", x, y, "font-size": 12, "font-weight": 700, fill: quiet ? "var(--muted)" : tone(m.tone) }, words);
+    if (m.state === "applying") t.setAttribute("class", "pin-pulse");
+    if (!inFocus) t.style.opacity = "0.6";
+    t.appendChild(make("title", {}, [`wave ${m.wave} · ${m.words}`, ...m.facts].join("\n") + "\n(from terragucci's reports, not live)"));
+    g.appendChild(t);
+  }
+
+  // The wave boxes.
+  const out = [];
+  const placed = [];
+  for (const rect of svg.querySelectorAll("rect[data-group-id]")) {
+    const n = tgWaveOfKey(rect.getAttribute("data-group-id"));
+    const w = n === null ? null : marks.waves[n];
+    const b = boxOf(rect);
+    if (!b) continue;
+    out.push(b);
+    if (!w) continue;
+    const quiet = !w.state || w.state === "not-started";
+    rect.setAttribute("data-tg-stroke0", rect.getAttribute("stroke") || "");
+    rect.setAttribute("data-tg-width0", rect.getAttribute("stroke-width") || "1.2");
+    if (!quiet) {
+      rect.setAttribute("stroke", tone(w.tone));
+      rect.setAttribute("stroke-width", "2.5");
+    }
+    const title = [...svg.querySelectorAll("text[data-layout-move]")].find((t) => t.getAttribute("data-layout-move") === `box:${rect.getAttribute("data-group-id")}`);
+    const tb = title ? boxOf(title) : null;
+    const others = () => [...textBoxes(), ...placed].filter((x) => !(tb && sameBox(x, tb)));
+    const clear = (r) => r.x >= b.x + 6 && r.x2 <= b.x2 - 6 && !edgeHit(r) && !others().some((x) => hits(grow(x, 2), r)) && !cardBoxes.some((c) => hits(grow(c, 4), r));
+    // The job's status: after the title on its line, else at the right of that line.
+    if (w.status && tb) {
+      const size = 12;
+      const cy = (tb.y + tb.y2) / 2;
+      // Right after the title, as "apply-wave-2 · held at the gate"; else alone at the right of the title's line.
+      const spots = [{ words: `· ${w.status.words}`, at: () => tb.x2 + 6 }, { words: w.status.words, at: (wd) => b.x2 - 16 - wd }];
+      for (const { words, at } of spots) {
+        const wd = width(words, size, 700);
+        const x = at(wd);
+        const r = { x, y: cy - size / 2 - 2, x2: x + wd, y2: cy + size / 2 + 2 };
+        if (x < tb.x2 + 4 || !clear(r)) continue;
+        const t = make("text", { "data-tg-root": "wave-status", x, y: cy, "dominant-baseline": "central", "font-size": size, "font-weight": 700, fill: tone(w.status.tone) }, words);
+        if (w.status.status === "running") t.setAttribute("class", "pin-pulse");
+        group.appendChild(t);
+        placed.push(r);
+        break;
+      }
+    }
+    if (title) {
+      const tip = make("title", { "data-tg-root": "tip" }, [w.title, ...(w.state ? [`wave ${n} ${tgStateWords[w.state] || w.state}`] : []), ...w.facts].join("\n") + "\n(the job's status from the pipeline's runs; the wave's from terragucci's reports)");
+      title.appendChild(tip);
+    }
+    // The wave's first fact (a waiting wave's plan digest) in the box's bottom padding, where it fits.
+    const fact = w.facts[0];
+    if (fact) {
+      const size = 12.5;
+      const digest = /^approve plan (\S+)/.exec(fact);
+      const say = digest ? [fact, `plan ${digest[1]}`, `plan ${digest[1].slice(0, 8)}`, digest[1].slice(0, 8)] : [fact];
+      const fill = w.state === "waiting" ? tone(w.tone) : "var(--muted)";
+      let done = false;
+      for (const words of say) {
+        const wd = width(words, size, 600);
+        for (const x of [b.x2 - 14 - wd, b.x + 18]) {
+          const cy = b.y2 - 14;
+          const r = { x, y: cy - size / 2 - 2, x2: x + wd, y2: cy + size / 2 + 2 };
+          if (!clear(r)) continue;
+          group.appendChild(make("text", { "data-tg-root": "wave-fact", x, y: cy, "dominant-baseline": "central", "font-size": size, "font-weight": 600, fill }, words));
+          placed.push(r);
+          done = true;
+          break;
+        }
+        if (done) break;
+      }
+    }
+  }
+  probe.remove();
+  return out;
 }
 function markTerragucciCards() {
   recolorNodesByCategory(); // #569 review: the reports arrived, so the cards may go neutral
@@ -4290,12 +4540,15 @@ let ciForge = null; // the forge the pipeline was generated for (#164) — heads
 // (`meta.terragucciComponents`, see takeTerragucciFacets), which a public view
 // can read, so the two facet fetches below are skipped.
 let terragucciComponentsRepo = false;
+// #571: the components graph's facets (jobs, component -> root), for the live marks drawTgReads puts on it.
+let tgComponentFacets = null;
 
 /** #571: the CI and resources facets from a terragucci repo's components
  * graph: component -> its declared job ({jobName, needs, wave, alsoIn}), and
  * component -> the resources its root holds. */
 function takeTerragucciFacets(m) {
   const tg = m && m.terragucciComponents;
+  tgComponentFacets = tg || null;
   if (!tg) return;
   ciByComponent = new Map((tg.jobs || []).map((job) => [job.component, job]));
   ciForge = tg.forge || null;
