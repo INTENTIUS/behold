@@ -47,6 +47,25 @@ jobs:
       - name: typecheck against the declared chant floor
         run: bash scripts/typecheck-floor.sh
 
+  # The demo host's chant project (#570): template.json, compose.yaml and the
+  # two Dockerfiles must be what chant builds from deploy/demo-host/chant.
+  demo-host:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: deploy/demo-host/chant
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: deploy/demo-host/chant/package-lock.json
+      - run: npm ci
+      - name: built files match the committed ones
+        run: npm run check
+
   # #465: the tests that need behold's optional peers (chant's terraform
   # lexicon, @cdktn/hcl2json) and choudoufu skip in `check`, which installs
   # none of them. Here they are installed and the tests must run: with

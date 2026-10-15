@@ -1,0 +1,26 @@
+{
+  "name": "demo-host-chant",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The demo host (#570) declared in chant: its AWS resources (CloudFormation) and its compose file and Dockerfiles.",
+  "scripts": {
+    "build": "npm run build:aws && npm run build:docker",
+    "build:aws": "chant build src/aws --lexicon aws -o template.json",
+    "build:docker": "chant build src/docker --lexicon docker -o build/docker/compose.yaml && node scripts/place-docker.mjs",
+    "check": "npm run tsc && npm run check:aws && npm run check:docker && npm run lint",
+    "check:aws": "chant build src/aws --lexicon aws -o build/template.json && cmp build/template.json template.json",
+    "check:docker": "chant build src/docker --lexicon docker -o build/docker/compose.yaml && node scripts/place-docker.mjs --check",
+    "lint": "chant lint src && chant lint ops",
+    "tsc": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@intentius/chant": "0.124.27",
+    "@intentius/chant-lexicon-aws": "0.124.27",
+    "@intentius/chant-lexicon-docker": "0.124.27"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "yaml": "^2.8.1"
+  }
+}
