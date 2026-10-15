@@ -491,14 +491,16 @@ export function rootStates(answer, progress) {
         if (state === "waiting" && c && c.unknown && c.unknown.includes(root)) facts.push("read a value unknown when planned");
         const totals = totalsLine(w.totals);
         const together = new Set([...w.roots, ...(c ? c.roots : []), ...inRun]).size > 1;
+        const composedHere = !!c && (c.roots.includes(root) || inRun.includes(root));
         if (m && m.apply) facts.push(memberApplyLine(m).replace(`${root}: `, "")); // this root's own part, not the wave's
-        else if (totals && state !== "not-started") facts.push(totals === "no changes" ? `${together ? "the wave: " : ""}no changes` : `${together ? "the wave " : ""}${state === "applied" ? "applied" : state === "failed" || state === "refused" ? "planned" : "plans"} ${totals}`);
+        else if (c && !composedHere) {
+          // Beside a composed run in its wave: the wave's figures are the run's, not this root's.
+        } else if (totals && state !== "not-started") facts.push(totals === "no changes" ? `${together ? "the wave: " : ""}no changes` : `${together ? "the wave " : ""}${state === "applied" ? "applied" : state === "failed" || state === "refused" ? "planned" : "plans"} ${totals}`);
         if (state === "failed" || state === "refused") {
           const before = progress.states.filter((x) => x.number < w.number && x.state === "applied").map((x) => x.number);
           if (before.length) facts.push(`wave ${list(before)} stays applied`);
         }
-        const composed = !!c && (c.roots.includes(root) || inRun.includes(root));
-        const words = `wave ${w.number} · ${STATE_WORDS[state] || state}${composed ? ", composed" : ""}`;
+        const words = `wave ${w.number} · ${STATE_WORDS[state] || state}${composedHere ? ", composed" : ""}`;
         roots[root] = { wave: w.number, state, tone: STATE_TONE[state] || "idle", words, facts };
       }
     }
