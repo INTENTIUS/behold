@@ -12,6 +12,10 @@ WORKDIR /app
 # The whole tree first: npm ci runs the prepare script, which is the build.
 COPY . .
 RUN npm ci --no-audit --no-fund && test -x dist/cli.js
+# Reading a Terraform estate needs chant's terraform lexicon, which behold
+# doesn't install itself (it says so and names these): beside behold, so the
+# view draws the demo's roots instead of the error.
+RUN npm install --no-save --no-audit --no-fund @intentius/chant-lexicon-terraform@^0.124.0 @cdktn/hcl2json@^0.24.0
 
 USER node
 EXPOSE 4600
