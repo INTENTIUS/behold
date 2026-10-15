@@ -30,3 +30,23 @@
 		format console
 	}
 }
+
+# The same view by the instance's address, on plain http, for looking at it
+# before DNS points the name here. Any other host on port 80 lands here; the
+# name's own http requests still redirect to https and answer Let's Encrypt.
+# behold answers only the names it is started with, so the Host header is the
+# public name's. Same password as the site. Plain http carries the password in
+# the clear: remove this block once the name serves https.
+http:// {
+	import /etc/caddy/auth/*.caddy
+
+	reverse_proxy behold:4600 {
+		header_up Host {$DEMO_HOSTNAME:demo.intentius.io}
+		flush_interval -1
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
