@@ -47,6 +47,16 @@ if [ "$(cat node_modules/.demo-host-lock 2>/dev/null || true)" != "$lock_sum" ];
   npm ci --no-audit --no-fund >&2
   echo "$lock_sum" > node_modules/.demo-host-lock
 fi
+# The terragucci CLI is packages/terragucci/dist/terragucci.mjs, which only a
+# build writes, so npm ci on a fresh checkout links no node_modules/.bin/terragucci.
+# Build it for each checkout commit and link it, as `just build-cli` does on a laptop.
+if [ "$(cat node_modules/.demo-host-cli 2>/dev/null || true)" != "$HEAD_SHA" ] || [ ! -f packages/terragucci/dist/terragucci.mjs ]; then
+  log "building the terragucci CLI at ${HEAD_SHA:0:8}"
+  node scripts/build-cli.mjs >&2
+  echo "$HEAD_SHA" > node_modules/.demo-host-cli
+fi
+ln -sfn ../@intentius/terragucci/dist/terragucci.mjs node_modules/.bin/terragucci
+chmod +x packages/terragucci/dist/terragucci.mjs
 
 # ── 3. what behold reads with ──────────────────────────────────────────────
 iam() { # Action, then Key=Value pairs: one signed IAM query call to floci as its root key
