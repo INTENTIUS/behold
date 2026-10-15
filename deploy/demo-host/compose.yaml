@@ -16,22 +16,25 @@ services:
       HOME: /tmp
       DEMO_HOSTNAME: '${DEMO_HOSTNAME:-demo.intentius.io}'
       DEMO_REPORTS: '${DEMO_REPORTS:-s3://demo-reports/demo}'
+      DEMO_REPOS: '${DEMO_REPOS:-terragucci-admin/demo terragucci-admin/demo-terragrunt}'
       AWS_ENDPOINT_URL: http://floci:4566
       AWS_REGION: us-east-1
       AWS_DEFAULT_REGION: us-east-1
     volumes:
-      - '${DEMO_ROOT:-/opt/demo}/view:/view'
+      - '${DEMO_ROOT:-/opt/demo}/views:/view'
       - /var/lib/demo-host/behold:/run/demo-host:ro
     command:
       - sh
       - -c
       - |
-        until [ -s /run/demo-host/behold-s3.env ] && [ -d /view/.git ]; do
-          echo "waiting for the driver's bootstrap (behold-s3.env and the view checkout)"; sleep 10
+        first="$$(set -- $$DEMO_REPOS; echo "$$1")"
+        first="/view/$${first##*/}"
+        until [ -s /run/demo-host/behold-s3.env ] && [ -d "$$first/.git" ]; do
+          echo "waiting for the driver's bootstrap (behold-s3.env and the view checkout $$first)"; sleep 10
         done
         . /run/demo-host/behold-s3.env
         export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
-        exec node /app/bin/behold.js serve /view --public \
+        exec node /app/bin/behold.js serve "$$first" --repos /view --public \
           --host 0.0.0.0 --port 4600 \
           --allow-host "$$DEMO_HOSTNAME" \
           --terragucci "$$DEMO_REPORTS"
@@ -67,7 +70,7 @@ services:
     working_dir: '${DEMO_ROOT:-/opt/demo}/terragucci'
     environment:
       TERRAGUCCI_SRC: '${DEMO_ROOT:-/opt/demo}/terragucci'
-      DEMO_REPO: '${DEMO_REPO:-terragucci-admin/demo}'
+      DEMO_REPOS: '${DEMO_REPOS:-terragucci-admin/demo terragucci-admin/demo-terragrunt}'
       DEMO_REPORTS: '${DEMO_REPORTS:-s3://demo-reports/demo}'
       DEMO_VIEWER_USER: '${DEMO_VIEWER_USER:-demo-viewer}'
       TERRAGUCCI_FORGEJO_PORT: '${TERRAGUCCI_FORGEJO_PORT:-3300}'
@@ -76,7 +79,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - '${DEMO_ROOT:-/opt/demo}/terragucci:${DEMO_ROOT:-/opt/demo}/terragucci'
-      - '${DEMO_ROOT:-/opt/demo}/view:/view'
+      - '${DEMO_ROOT:-/opt/demo}/views:/view'
       - /var/lib/demo-host:/var/lib/demo-host
       - ./driver-entry.sh:/usr/local/bin/driver-entry.sh:ro
     command:

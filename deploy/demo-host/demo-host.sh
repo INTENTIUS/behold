@@ -211,7 +211,7 @@ checkout() { # name, ref: clone or move <root>/<name> to ref (a branch on origin
 }
 
 checkouts() {
-  mkdir -p "$ROOT" "$ROOT/view"
+  mkdir -p "$ROOT" "$ROOT/views"
   checkout terragucci "$(conf TERRAGUCCI_REF main)"
   checkout behold "$(conf BEHOLD_REF main)"
 }
@@ -242,7 +242,7 @@ wait_bootstrap() { # the driver's first bootstrap: until floci holds the marker 
 # ── commands ─────────────────────────────────────────────────────────────────
 
 cmd_start() {
-  mkdir -p "$STATE" "$STATE/behold" "$ROOT/view" /var/log/demo-host
+  mkdir -p "$STATE" "$STATE/behold" "$ROOT/views" /var/log/demo-host
   echo running > "$STATE/driver-mode"
   # behold joins terragucci's network, which the driver's first bootstrap
   # makes. Before it exists, start the driver alone; bootstrap starts the rest.

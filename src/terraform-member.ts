@@ -111,6 +111,7 @@ import {
   terragucciComponentModule,
   type TerragucciComponents,
 } from "./terragucci-components.ts";
+import { addTerragruntUnits, discoverTerragruntUnits, terragruntNote, terragruntPicture, type TerragruntPicture } from "./terragrunt-units.ts";
 
 /** The reader chant loads for a Terraform root, and the HCL parser it lazily
  * loads underneath. Both are optional peers of behold (see the header); the
@@ -157,6 +158,9 @@ export interface TerraformRoot {
   name: string;
   /** Relative to the estate, POSIX-separated. `.` for the estate itself. */
   dir: string;
+  /** behold#571: a Terragrunt unit's own directory, when `dir` is the module
+   * its source names (the directory chant reads its resources from). */
+  unit?: string;
 }
 
 /** A directory holding `.tf` files that is not a root, and why — so a missing
@@ -241,9 +245,43 @@ export function discoverTerraformRoots(estate: string): TerraformRootScan {
   };
 }
 
-/** Does `dir` hold at least one Terraform root? The kind's probe. */
+/** Does `dir` hold at least one Terraform root? */
 export function hasTerraformRoots(dir: string): boolean {
   return discoverTerraformRoots(dir).roots.length > 0;
+}
+
+/**
+ * The kind's probe: a directory of Terraform roots, or (behold#571) a
+ * Terragrunt repo, whose units hold no `.tf` of their own, or a terragucci
+ * repo whose terragucci.components.json declares its roots.
+ */
+export function isTerraformMember(dir: string): boolean {
+  return hasTerraformRoots(dir) || discoverTerragruntUnits(dir).length > 0 || readTerragucciComponents(dir) !== undefined;
+}
+
+/** behold#571: the Terragrunt picture of `dir`, when it is a Terragrunt repo
+ * (units on disk, or a declaration whose roots hold no `.tf`); undefined for a
+ * directory of Terraform roots. */
+export function terragruntOf(dir: string, components: TerragucciComponents | undefined = readTerragucciComponents(dir)): TerragruntPicture | undefined {
+  const units = discoverTerragruntUnits(dir);
+  if (!units.length && (!components || hasTerraformRoots(dir))) return undefined;
+  const picture = terragruntPicture(dir, units, components);
+  return picture.units.length || picture.declaredOnly.length ? picture : undefined;
+}
+
+/** behold#571: each unit whose module resolved, as a root chant reads: keyed by the unit's directory, read from the module's. */
+export function terragruntRootScan(picture: TerragruntPicture): TerraformRootScan {
+  return {
+    roots: picture.units.filter((u) => u.module).map((u) => ({ name: u.dir, dir: u.module!, unit: u.dir })),
+    skipped: [],
+  };
+}
+
+/** The roots a repo's reports name, with the directory each is at (relative to `dir`): its Terraform roots, or its Terragrunt units. */
+export function checkoutRootDirs(dir: string): { name: string; dir: string }[] {
+  const tg = terragruntOf(dir);
+  if (tg) return [...tg.units.map((u) => ({ name: u.dir, dir: u.dir })), ...tg.declaredOnly.map((d) => ({ name: d.name, dir: d.dir }))];
+  return discoverTerraformRoots(dir).roots.map((r) => ({ name: r.name, dir: r.dir }));
 }
 
 /**
@@ -535,8 +573,11 @@ export function writeTerraformScratchProject(
  * roots, so the config is keyed by those names and dirs (the names its
  * components' `terraform-apply` steps use); any other directory is discovered.
  */
-export function terraformMemberScan(dir: string): { scan: TerraformRootScan; components?: TerragucciComponents } {
+export function terraformMemberScan(dir: string): { scan: TerraformRootScan; components?: TerragucciComponents; terragrunt?: TerragruntPicture } {
   const components = readTerragucciComponents(dir);
+  // behold#571: a Terragrunt repo's roots are its units, read from their modules.
+  const terragrunt = terragruntOf(dir, components);
+  if (terragrunt) return { scan: terragruntRootScan(terragrunt), terragrunt, ...(components ? { components } : {}) };
   return components ? { scan: declaredRootScan(components), components } : { scan: discoverTerraformRoots(dir) };
 }
 
@@ -600,7 +641,9 @@ export function terraformReadDetail(detail: number | undefined): number {
  */
 export async function readTerraformMember(dir: string, opts: GraphOptions, state: TerraformReaderState = terraformReaderState()): Promise<GraphIR> {
   if (state.refusal) throw new TerraformReadError(state.refusal, dir);
-  const { scan, components } = terraformMemberScan(dir);
+  const { scan, components, terragrunt } = terraformMemberScan(dir);
+  // behold#571: a Terragrunt repo with no module behold can read is drawn from its units alone.
+  if (terragrunt && !scan.roots.length) return addTerragruntUnits({ version: 1, nodes: [], edges: [], groups: {} } as unknown as GraphIR, terragrunt);
   if (!scan.roots.length) {
     throw new TerraformReadError(
       {
@@ -623,7 +666,8 @@ export async function readTerraformMember(dir: string, opts: GraphOptions, state
   // header refuses. A dynamic import inside the read is not one, and a test's
   // mock of ./chant.ts still answers it.
   const { graphIr } = await import("./chant.ts");
-  return graphIr(project, { ...source, detail });
+  const ir = await graphIr(project, { ...source, detail });
+  return terragrunt ? addTerragruntUnits(ir, terragrunt) : ir;
 }
 
 /**
@@ -650,8 +694,11 @@ const terraformPasses: MemberPasses = {
       // is not.
       note(dirs) {
         const scans = dirs.map((d) => discoverTerraformRoots(d));
-        const note = [...scans.map(terraformRootsNote), terraformElisionNote(elision, detail)].filter(Boolean).join("; ");
-        const short = [...scans.map(terraformRootsNoteShort), terraformElisionNoteShort(elision)].filter(Boolean).join(" · ");
+        // behold#571: a Terragrunt repo says which units it drew, and from what.
+        const units = dirs.map((d) => terragruntOf(d)).filter((p): p is TerragruntPicture => !!p);
+        const unitShort = (p: TerragruntPicture) => `${p.units.length} unit${p.units.length === 1 ? "" : "s"}`;
+        const note = [...scans.map(terraformRootsNote), ...units.map(terragruntNote), terraformElisionNote(elision, detail)].filter(Boolean).join("; ");
+        const short = [...scans.map(terraformRootsNoteShort), ...units.map(unitShort), terraformElisionNoteShort(elision)].filter(Boolean).join(" · ");
         return note ? { note, ...(short && short !== note ? { noteShort: short } : {}) } : {};
       },
     };
@@ -663,8 +710,8 @@ const terraformPasses: MemberPasses = {
  * that is also a chant project or a choudoufu estate is read as one of those. */
 export const terraformSpec: MemberKindSpec = {
   kind: "terraform",
-  probe: hasTerraformRoots,
-  expects: "Terraform root under it — a `terraform` or `provider` block beside a resource, data or module block",
+  probe: isTerraformMember,
+  expects: "Terraform root under it — a `terraform` or `provider` block beside a resource, data or module block — or a Terragrunt unit (a terragrunt.hcl)",
   via: terraformVia,
   passes: terraformPasses,
 };

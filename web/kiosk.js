@@ -16,6 +16,7 @@
 import { PICK_HOLD_MS, startRuns } from "./kiosk-runs.js";
 import { cssString, hoverCss, hoverFromMessage, hoverLinks, hoverMessage, isLightBg, rootSegments, rootText } from "./kiosk-roots.js";
 import { creditLines, filterIndex, keepRun, liveEstimate, liveFor, namesOther, notRunWords, replayAt, replayBanner, replayIndex, rootWord, runAsOf, scrubDemo, servesRepo, vendorOf } from "./kiosk-vendor.js";
+import { repoParam, repoUrl } from "./kiosk-repo.js";
 import { STATE_WORDS, changingRoots, costLine, pinsCommit, planFitsPin, pullPin, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
 
 /** The scenarios terragucci#1014 numbers. An id not here is shown by the title demo.json carries. */
@@ -342,8 +343,9 @@ export function runPin(demo) {
 }
 
 /** The framed view's address: behold's own page, bare, at a zoom (the resources zoom unless told), told who its host is. */
-export function frameSrc(origin, zoom = "resources") {
+export function frameSrc(origin, zoom = "resources", repo = null) {
   const q = new URLSearchParams({ embed: "1", bare: "1", zoom, host: origin });
+  if (repo) q.set("repo", repo); // behold#571: the checkout the frame draws, on a behold that serves several
   return `/?${q.toString()}`;
 }
 
@@ -640,6 +642,23 @@ export function startKiosk({ bar, frame, foot, side, main, views }, { fetchJson 
   const shownNow = () => (s.mode === "replay" && s.replay && s.replay.at ? s.replay.at : now());
   /** behold#571: the frame and the plan's facts are the served repo's, so a tool's page shows them only for its own repo. */
   const frameOk = () => !vendor || servesRepo(s.answer && !s.answer.error ? s.answer.project : null, s.repo);
+  // behold#571: a behold serving several repos (`serve --repos`) answers the
+  // graph's reads from the checkout of the repo the page is about, asked by
+  // name. `viewRepos` is what it serves, `aimed` the repo the reads are for.
+  s.viewRepos = null;
+  s.aimed = null;
+  const wantRepo = () => repoParam(s.repo, s.viewRepos);
+  const fetchServed = fetchJson;
+  fetchJson = (url) => fetchServed(repoUrl(url, wantRepo()));
+  /** When the page moves to another served repo, read its project, reports and run view again, and point the frame at it. */
+  const followRepo = () => {
+    const want = wantRepo();
+    if (!want || want === s.aimed) return;
+    s.aimed = want;
+    void readProject();
+    void reports(true);
+    void progress(true);
+  };
   let lastKey = "";
   let lastFocus;
   const shownView = () => kioskView(s.demo && s.demo.demo, { components: s.components, pick: s.pick, now: now().getTime() });
@@ -739,6 +758,7 @@ export function startKiosk({ bar, frame, foot, side, main, views }, { fetchJson 
   };
 
   const draw = () => {
+    followRepo();
     replayTick();
     s.light = typeof document !== "undefined" && document.documentElement ? isLightBg(getComputedStyle(document.documentElement).getPropertyValue("--bg")) : false;
     s.rootNames = rootList();
@@ -804,24 +824,39 @@ export function startKiosk({ bar, frame, foot, side, main, views }, { fetchJson 
     );
   }
   // #571: whether the repo offers the components zoom (a terragucci.components.json), read before the frame opens so it opens on the step's view.
+  let frameSrcNow = null;
   const openFrame = () => {
     if (!frame) return;
-    frame.src = frameSrc(origin, viewZoom(shownView().view));
-    // The frame reads its graph after load; tell it again once it has had the time.
-    frame.addEventListener("load", () => {
-      for (const ms of [1500, 4000, 8000]) setTimeout(() => tellFrame(true), ms);
-    });
+    const src = frameSrc(origin, viewZoom(shownView().view), wantRepo());
+    if (src === frameSrcNow) return;
+    if (frameSrcNow === null) {
+      // The frame reads its graph after load; tell it again once it has had the time.
+      frame.addEventListener("load", () => {
+        for (const ms of [1500, 4000, 8000]) setTimeout(() => tellFrame(true), ms);
+      });
+    }
+    frameSrcNow = src;
+    frame.src = src;
   };
-  void fetchJson("/api/project").then((p) => {
+  const readProject = () => fetchJson("/api/project").then((p) => {
+    // behold#571: the repos this behold serves, and which one this answer is.
+    if (p && !p.error && Array.isArray(p.viewRepos)) {
+      s.viewRepos = p.viewRepos;
+      if (s.aimed === null && p.viewRepo) s.aimed = p.viewRepo;
+    }
     s.components = !!(p && !p.error && p.terragucciComponents);
     // behold#571: the declared roots (their colours' order) and the wave jobs that apply them.
     if (p && p.terragucciRoots) {
       s.roots = Array.isArray(p.terragucciRoots.roots) ? p.terragucciRoots.roots : [];
       s.waves = Array.isArray(p.terragucciRoots.waves) ? p.terragucciRoots.waves : [];
+    } else if (s.aimed) {
+      s.roots = [];
+      s.waves = [];
     }
     openFrame();
     draw();
   });
+  void readProject();
 
   const reports = async (fresh) => {
     s.answer = await fetchJson(`/api/terragucci${fresh ? "?fresh=1" : ""}`);

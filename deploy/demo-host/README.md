@@ -204,6 +204,7 @@ What the host keeps:
 | `/var/lib/demo-host/behold/behold-s3.env` | behold's floci key (`s3:GetObject` and `s3:ListBucket` on the reports prefix), new after each bootstrap |
 | `/var/lib/demo-host/viewer.env` | the Forgejo user `demo-viewer`'s generated password and its `read:repository` token |
 | `/opt/demo/terragucci/stack/.state/` | terragucci's own: Forgejo's admin token, the driver's signing key, the base snapshot |
+| `/opt/demo/views/<repo name>` | a checkout of each demo repo in `DEMO_REPOS` at its `main` (behold#571), which behold serves: the first by default, another when a page asks for it with `?repo=<name>`. The driver makes them after a bootstrap, and a missing one on its next start; the watchdog moves each to `main` every cycle. `/opt/demo/view`, the single checkout before, is no longer read and is left as it is |
 
 ## Bring it up
 
@@ -329,10 +330,12 @@ in `chant/` waits for that step itself, then waits for the new bootstrap.
   (#569, pull request #572). behold binds `0.0.0.0` inside its container,
   which publishes nothing, and only Caddy reaches it.
 - terragucci `stack/demo.sh up` and `stack/demo.sh loop`
-  (INTENTIUS/terragucci#1014). The repo is `terragucci-admin/demo` (the
-  stack's admin, `$USER/demo`), the reports are `s3://demo-reports/demo`, and
-  `demo.json` is at `demo-reports/demo/demo.json`. The admin token is in
-  `stack/.state/forgejo.env`. If any of these change, set `DEMO_REPO` or
+  (INTENTIUS/terragucci#1014). The repos are `terragucci-admin/demo`
+  (Terraform) and `terragucci-admin/demo-terragrunt` (Terragrunt), one per
+  tool (the stack's admin, `$USER/demo` and `$USER/demo-terragrunt`), the
+  reports are `s3://demo-reports/demo`, and `demo.json` is at
+  `demo-reports/demo/demo.json`. The admin token is in
+  `stack/.state/forgejo.env`. If any of these change, set `DEMO_REPOS` or
   `DEMO_REPORTS` in `demo.env`.
 - terragucci `stack/docker-compose.yml`: the network `terragucci`, and Forgejo
   and floci published on 3300 and 4580 with no address.

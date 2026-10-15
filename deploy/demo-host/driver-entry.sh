@@ -12,9 +12,20 @@
 #      again when TERRAGUCCI_REF moved the checkout (demo-host.sh update).
 #   3. After a bootstrap, gives behold what it reads with: floci keys that may
 #      only GetObject and ListBucket on the reports prefix (enforced once
-#      floci's IAM enforcement is on; see compose.yaml), a Forgejo token that may only read
-#      the demo repo, and the view checkout (/view) with that token in origin.
+#      floci's IAM enforcement is on; see compose.yaml), a Forgejo token that
+#      may only read the demo repos, and a view checkout of each demo repo
+#      (/view/<repo name>) with that token in origin. On any other start, a
+#      demo repo with no view checkout yet gets one (behold#571).
 #   4. Hands over to the loop: `exec stack/demo.sh loop`.
+#
+# The demo repos are DEMO_REPOS, space-separated: one forge repo per tool the
+# driver runs (terragucci's stack/demo.sh: <admin>/demo for Terraform,
+# <admin>/demo-terragrunt for Terragrunt). A setting, not read from the
+# driver: stack/demo.sh keeps its tool-to-repo table in shell functions with
+# no machine-readable output, and the reports' runs index names a repo only
+# once a run of it has been copied, which is after behold needs the checkout.
+# A listed repo Forgejo doesn't have (its tool's tree is not in the terragucci
+# checkout, so `up` made none) is skipped with a line in the log.
 #
 # If any step fails the container exits, Docker restarts it (restart:
 # unless-stopped), and the watchdog logs the restart.
@@ -23,7 +34,7 @@ set -euo pipefail
 TG="${TERRAGUCCI_SRC:?TERRAGUCCI_SRC names the terragucci checkout}"
 FORGEJO="http://127.0.0.1:${TERRAGUCCI_FORGEJO_PORT:-3300}"
 FLOCI="http://127.0.0.1:${TERRAGUCCI_FLOCI_PORT:-4580}"
-REPO="${DEMO_REPO:-terragucci-admin/demo}"
+REPOS="${DEMO_REPOS:-terragucci-admin/demo terragucci-admin/demo-terragrunt}"
 REPORTS="${DEMO_REPORTS:-s3://demo-reports/demo}"
 VIEWER="${DEMO_VIEWER_USER:-demo-viewer}"
 STATE=/var/lib/demo-host
@@ -127,11 +138,20 @@ viewer_token() { # prints a working read:repository token for $VIEWER, making th
       "$FORGEJO/api/v1/admin/users" || die "could not create the Forgejo user $VIEWER"
     token=""
   fi
-  # Read access to the demo repo, whether or not the repo is public.
-  curl -fsS -o /dev/null -H "Authorization: token $admin" -H 'content-type: application/json' -X PUT \
-    -d '{"permission":"read"}' "$FORGEJO/api/v1/repos/$REPO/collaborators/$VIEWER" \
-    || die "could not give $VIEWER read access to $REPO"
-  if [ -z "$token" ] || ! curl -fsS -o /dev/null -H "Authorization: token $token" "$FORGEJO/api/v1/repos/$REPO" 2>/dev/null; then
+  # Read access to each demo repo there is, whether or not it is public.
+  local repo first=""
+  for repo in $REPOS; do
+    if ! curl -fsS -o /dev/null -H "Authorization: token $admin" "$FORGEJO/api/v1/repos/$repo" 2>/dev/null; then
+      log "Forgejo has no $repo; no read access to give (its tool's tree is not in this terragucci checkout?)"
+      continue
+    fi
+    curl -fsS -o /dev/null -H "Authorization: token $admin" -H 'content-type: application/json' -X PUT \
+      -d '{"permission":"read"}' "$FORGEJO/api/v1/repos/$repo/collaborators/$VIEWER" \
+      || die "could not give $VIEWER read access to $repo"
+    [ -n "$first" ] || first="$repo"
+  done
+  [ -n "$first" ] || die "Forgejo has none of the demo repos ($REPOS)"
+  if [ -z "$token" ] || ! curl -fsS -o /dev/null -H "Authorization: token $token" "$FORGEJO/api/v1/repos/$first" 2>/dev/null; then
     out="$(curl -fsS -u "$VIEWER:$pw" -H 'content-type: application/json' -X POST \
       -d "$(jq -cn --arg n "behold-$(date +%s)" '{name: $n, scopes: ["read:repository"]}')" \
       "$FORGEJO/api/v1/users/$VIEWER/tokens")" || die "could not mint a read-only token for $VIEWER"
@@ -143,20 +163,39 @@ viewer_token() { # prints a working read:repository token for $VIEWER, making th
   printf '%s' "$token"
 }
 
-view_checkout() { # token
-  local here="http://$VIEWER:$1@127.0.0.1:${TERRAGUCCI_FORGEJO_PORT:-3300}/$REPO.git"
+view_checkout() { # token, repo: /view/<repo name> at the repo's main
+  local repo="$2" dir="$VIEW/${2##*/}"
+  local here="http://$VIEWER:$1@127.0.0.1:${TERRAGUCCI_FORGEJO_PORT:-3300}/$repo.git"
   # behold's own fetch of chant/lifecycle goes over terragucci's network.
-  local there="http://$VIEWER:$1@forgejo:3000/$REPO.git"
-  if [ ! -d "$VIEW/.git" ]; then
-    git clone -q "$here" "$VIEW" || die "could not clone $REPO into the view checkout"
+  local there="http://$VIEWER:$1@forgejo:3000/$repo.git"
+  if [ ! -d "$dir/.git" ]; then
+    git clone -q "$here" "$dir" || die "could not clone $repo into $dir"
   fi
-  git -C "$VIEW" remote set-url origin "$here"
-  git -C "$VIEW" fetch -q origin '+refs/heads/*:refs/remotes/origin/*' || die "could not fetch $REPO"
-  git -C "$VIEW" checkout -q -B main origin/main
-  git -C "$VIEW" reset -q --hard origin/main
-  git -C "$VIEW" remote set-url origin "$there"
-  chown -R "$BEHOLD_UID:$BEHOLD_UID" "$VIEW"
-  log "view checkout at $(git -C "$VIEW" rev-parse --short HEAD) ($REPO main)"
+  git -C "$dir" remote set-url origin "$here"
+  git -C "$dir" fetch -q origin '+refs/heads/*:refs/remotes/origin/*' || die "could not fetch $repo"
+  git -C "$dir" checkout -q -B main origin/main
+  git -C "$dir" reset -q --hard origin/main
+  git -C "$dir" remote set-url origin "$there"
+  chown -R "$BEHOLD_UID:$BEHOLD_UID" "$dir"
+  log "view checkout $dir at $(git -C "$dir" rev-parse --short HEAD) ($repo main)"
+}
+
+view_checkouts() { # token: a view checkout of each demo repo Forgejo has
+  local repo
+  mkdir -p "$VIEW"
+  chown "$BEHOLD_UID:$BEHOLD_UID" "$VIEW"
+  for repo in $REPOS; do
+    if curl -fsS -o /dev/null -H "Authorization: token $1" "$FORGEJO/api/v1/repos/$repo" 2>/dev/null; then
+      view_checkout "$1" "$repo"
+    else
+      log "Forgejo has no $repo; no view checkout of it"
+    fi
+  done
+}
+
+missing_views() { # the demo repos with no view checkout yet, if any
+  local repo
+  for repo in $REPOS; do [ -d "$VIEW/${repo##*/}/.git" ] || echo "$repo"; done
 }
 
 # ── 2. the driver's bootstrap, when floci has no base for this commit ──────
@@ -170,13 +209,25 @@ if [ "$have" != "$HEAD_SHA" ]; then
   node scripts/build-cli.mjs >/dev/null
   stack/demo.sh up
   reader_keys
-  view_checkout "$(viewer_token)"
+  view_checkouts "$(viewer_token)"
   # behold reads its keys when it starts.
   docker restart demo-host-behold >/dev/null 2>&1 || log "demo-host-behold is not running yet; it reads the keys when it starts"
   curl -fsS -o /dev/null -X PUT "$FLOCI/demo-host" 2>/dev/null || true
   printf '%s' "$HEAD_SHA" | curl -fsS -o /dev/null -X PUT --data-binary @- "$FLOCI/demo-host/bootstrapped" \
     || die "could not record the bootstrap in floci"
   log "bootstrapped at terragucci ${HEAD_SHA:0:8}"
+fi
+
+# behold#571: a demo repo added to DEMO_REPOS, or one a bootstrap could not
+# check out yet, gets its view checkout on the next start; behold reads the
+# checkouts under /view when it starts.
+missing="$(missing_views)"
+if [ "$have" = "$HEAD_SHA" ] && [ -n "$missing" ]; then
+  log "no view checkout yet of $(tr '\n' ' ' <<<"$missing")"
+  view_checkouts "$(viewer_token)"
+  if [ "$(missing_views)" != "$missing" ]; then
+    docker restart demo-host-behold >/dev/null 2>&1 || log "demo-host-behold is not running yet; it reads the checkouts when it starts"
+  fi
 fi
 
 # ── 4. the loop ────────────────────────────────────────────────────────────

@@ -33,7 +33,7 @@ import { dirname, join, relative, sep } from "node:path";
 import type { Hono } from "hono";
 import type { GraphIR } from "@intentius/chant";
 import { composeEstate, estateMembers } from "./estate.ts";
-import { discoverTerraformRoots } from "./terraform-member.ts";
+import { checkoutRootDirs } from "./terraform-member.ts";
 import { terragucciConfig } from "./terragucci-repo.ts";
 import { readTerragucci, terragucciValidator, TerragucciReadError, type TerragucciRead } from "./terragucci-reports.ts";
 import { joinTerragucci, type CheckoutRoot } from "./terragucci-overlay.ts";
@@ -111,7 +111,8 @@ export function checkoutRoots(dirs: readonly string[], base: string = repoBase(d
   const out: CheckoutRoot[] = [];
   for (const m of estateMembers(dirs)) {
     if (m.kind !== "terraform") continue;
-    for (const r of discoverTerraformRoots(m.dir).roots) {
+    // behold#571: a Terragrunt repo's roots are its units.
+    for (const r of checkoutRootDirs(m.dir)) {
       const path = relative(base, join(m.dir, r.dir)).split(sep).join("/") || ".";
       out.push({ member: m.name, name: r.name, path });
     }

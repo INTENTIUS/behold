@@ -57,12 +57,18 @@ export const caddy = new Service({
 // behold binds 0.0.0.0 inside its container, which publishes nothing: only
 // Caddy, on the edge network, reaches it. --allow-host lets the public name
 // through behold's Host check. `$$` is compose's escape for a literal `$`.
-const beholdEntry = `until [ -s /run/demo-host/behold-s3.env ] && [ -d /view/.git ]; do
-  echo "waiting for the driver's bootstrap (behold-s3.env and the view checkout)"; sleep 10
+// behold#571: /view holds a checkout per demo repo. behold serves the first
+// of DEMO_REPOS by default, and any of them for a request that asks for it by
+// name (--repos /view): the kiosk asks for the repo its scenario runs on, a
+// tool's page for its tool's repo.
+const beholdEntry = `first="$$(set -- $$DEMO_REPOS; echo "$$1")"
+first="/view/$\${first##*/}"
+until [ -s /run/demo-host/behold-s3.env ] && [ -d "$$first/.git" ]; do
+  echo "waiting for the driver's bootstrap (behold-s3.env and the view checkout $$first)"; sleep 10
 done
 . /run/demo-host/behold-s3.env
 export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
-exec node /app/bin/behold.js serve /view --public \\
+exec node /app/bin/behold.js serve "$$first" --repos /view --public \\
   --host 0.0.0.0 --port 4600 \\
   --allow-host "$$DEMO_HOSTNAME" \\
   --terragucci "$$DEMO_REPORTS"
@@ -82,14 +88,17 @@ export const behold = new Service({
     HOME: "/tmp",
     DEMO_HOSTNAME: "${DEMO_HOSTNAME:-demo.intentius.io}",
     DEMO_REPORTS: "${DEMO_REPORTS:-s3://demo-reports/demo}",
+    DEMO_REPOS: "${DEMO_REPOS:-terragucci-admin/demo terragucci-admin/demo-terragrunt}",
     AWS_ENDPOINT_URL: "http://floci:4566",
     AWS_REGION: "us-east-1",
     AWS_DEFAULT_REGION: "us-east-1",
   },
   volumes: [
-    // The demo repo's checkout: behold's cards are its roots. The watchdog
-    // moves it to origin's main at the start of every cycle.
-    "${DEMO_ROOT:-/opt/demo}/view:/view",
+    // A checkout per demo repo, /view/<repo name> (behold#571): behold's
+    // cards are their roots. The watchdog moves each to origin's main at the
+    // start of every cycle. `views`, not the single checkout `view` was
+    // before: that directory is left as it is.
+    "${DEMO_ROOT:-/opt/demo}/views:/view",
     // behold-s3.env: floci keys that may only GetObject on the reports
     // prefix, written by driver-entry.sh after each bootstrap.
     "/var/lib/demo-host/behold:/run/demo-host:ro",
@@ -119,7 +128,7 @@ export const driver = new Service({
   working_dir: "${DEMO_ROOT:-/opt/demo}/terragucci",
   environment: {
     TERRAGUCCI_SRC: "${DEMO_ROOT:-/opt/demo}/terragucci",
-    DEMO_REPO: "${DEMO_REPO:-terragucci-admin/demo}",
+    DEMO_REPOS: "${DEMO_REPOS:-terragucci-admin/demo terragucci-admin/demo-terragrunt}",
     DEMO_REPORTS: "${DEMO_REPORTS:-s3://demo-reports/demo}",
     DEMO_VIEWER_USER: "${DEMO_VIEWER_USER:-demo-viewer}",
     TERRAGUCCI_FORGEJO_PORT: "${TERRAGUCCI_FORGEJO_PORT:-3300}",
@@ -135,7 +144,7 @@ export const driver = new Service({
   volumes: [
     "/var/run/docker.sock:/var/run/docker.sock",
     "${DEMO_ROOT:-/opt/demo}/terragucci:${DEMO_ROOT:-/opt/demo}/terragucci",
-    "${DEMO_ROOT:-/opt/demo}/view:/view",
+    "${DEMO_ROOT:-/opt/demo}/views:/view",
     "/var/lib/demo-host:/var/lib/demo-host",
     "./driver-entry.sh:/usr/local/bin/driver-entry.sh:ro",
   ],

@@ -23,6 +23,7 @@ import { servesAsEstate } from "./member-kind.ts";
 import { setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
 import { readCarveReport } from "./carve-lens.ts";
 import { HCL_PARSER_PKG } from "./terraform-member.ts";
+import { listCheckouts, type RepoTarget, type ViewRepos } from "./view-repos.ts";
 import {
   bootScratchFloci,
   teardownScratchFloci,
@@ -46,7 +47,7 @@ Usage:
                 [--publish s3://<bucket>/<prefix>/views/<name> [--commit <sha>] [--keep <n>]]
   behold serve <project-dir…> [--port <n>] [--host <addr>] [--allow-host <name,…>] [--hud <url>] [--env <name>] [--poll <secs>] [--local]
                 [--public] [--terragucci <src> [--terragucci-project <p>] [--terragucci-poll <secs>] [--terragucci-runs <src>]]
-                [--yodel-report <file|dir>]
+                [--repos <parent>] [--yodel-report <file|dir>]
   behold carve <report.json> [--port <n>]
 
   carve   Render a chant Terraform peelability report — the JSON from
@@ -151,6 +152,12 @@ Options:
                       demo's pipeline runs (runs/index.json, runs/<id>.json),
                       when not beside the reports: a directory, s3:// or
                       http(s), as --terragucci takes.
+  --repos <parent>    serve only: the git checkouts directly under <parent>
+                      may each be served, one per request: a request with
+                      ?repo=<name> (the checkout's directory name, or
+                      <owner>/<name>) reads that checkout instead of
+                      <project-dir>. Any other name is refused. For a host
+                      that keeps one checkout per demo repo (behold#571).
   --yodel-report <file|dir>
                       serve/export: mark SQL Yodeler's \`yodel report --json\`
                       output and any \`yodel drift <env> --json\` beside it
@@ -279,6 +286,7 @@ export async function run(argv: string[]): Promise<void> {
   let terragucciRuns: string | undefined;
   let yodelReport: string | undefined;
   let isPublic = false;
+  let reposParent: string | undefined;
   const allowHosts: string[] = [];
 
   for (let i = 0; i < rest.length; i++) {
@@ -291,6 +299,7 @@ export async function run(argv: string[]): Promise<void> {
     else if (a === "--terragucci-project") terragucciProject = rest[++i];
     else if (a === "--terragucci-poll") terragucciPoll = Number(rest[++i]);
     else if (a === "--terragucci-runs") terragucciRuns = rest[++i];
+    else if (a === "--repos") reposParent = rest[++i];
     else if (a === "--yodel-report") yodelReport = rest[++i];
     else if (a === "--env") env = rest[++i];
     else if (a === "--poll") pollSecs = Number(rest[++i]);
@@ -381,10 +390,20 @@ export async function run(argv: string[]): Promise<void> {
     process.stderr.write("behold serve: --yodel-report needs the file `yodel report --json` wrote, or the directory holding it\n");
     process.exit(2);
   }
+  if (reposParent !== undefined && !reposParent) {
+    process.stderr.write("behold serve: --repos needs the directory holding the checkouts\n");
+    process.exit(2);
+  }
+  if (reposParent !== undefined && projectDirs.length > 1) {
+    process.stderr.write("behold serve: --repos serves one checkout per request, beside one <project-dir>\n");
+    process.exit(2);
+  }
   const dirs = projectDirs.map((d) => resolve(d));
   const target = await serveTarget(dirs, "serve");
+  const viewRepos = reposParent !== undefined ? await serveRepos(resolve(reposParent), target) : undefined;
   await startServer({
     ...target,
+    ...(viewRepos ? { viewRepos } : {}),
     port,
     ...(env ? { env } : {}),
     ...(pollSecs !== undefined ? { pollSecs } : {}),
@@ -397,6 +416,31 @@ export async function run(argv: string[]): Promise<void> {
     ...(yodelReport ? { yodelReport: resolve(yodelReport) } : {}),
     ...(terragucci ? { terragucci: { source: terragucci, ...(terragucciProject ? { project: terragucciProject } : {}), ...(terragucciPoll !== undefined ? { pollSecs: terragucciPoll } : {}), ...(terragucciRuns ? { runsSource: terragucciRuns } : {}) } } : {}),
   });
+}
+
+/**
+ * behold#571 `--repos`: each checkout under `parent`, as `serve` would read it
+ * alone. A checkout that declares a workspace with members is left out (one
+ * request serves one directory) and startup says so; the default checkout is
+ * the <project-dir> as given.
+ */
+async function serveRepos(parent: string, primary: ServeTarget): Promise<ViewRepos> {
+  const repos = new Map<string, RepoTarget>();
+  for (const c of listCheckouts(parent)) {
+    if (resolve(c.dir) === resolve(primary.projectDir) && !primary.workspace) {
+      repos.set(c.name, { projectDir: primary.projectDir, ...(primary.projectDirs ? { projectDirs: primary.projectDirs } : {}) });
+      continue;
+    }
+    const t = await serveTarget([c.dir], "serve");
+    if (t.workspace) {
+      process.stderr.write(`behold serve: --repos leaves out ${c.name}: it declares a workspace with members, and a request serves one directory\n`);
+      continue;
+    }
+    repos.set(c.name, { projectDir: t.projectDir, ...(t.projectDirs ? { projectDirs: t.projectDirs } : {}) });
+  }
+  if (!repos.size) process.stderr.write(`behold serve: --repos found no git checkout under ${parent}; every request reads ${primary.projectDir}\n`);
+  const defaultName = [...repos].find(([, t]) => t.projectDir === primary.projectDir)?.[0];
+  return { parent, repos, ...(defaultName ? { defaultName } : {}) };
 }
 
 /** #569: `--terragucci-poll`'s default under `--public`, in seconds. */
