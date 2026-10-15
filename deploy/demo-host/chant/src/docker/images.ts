@@ -17,8 +17,12 @@ export const beholdImage = new Dockerfile({
     { run: "npm ci --no-audit --no-fund && test -x dist/cli.js" },
     // Reading a Terraform estate needs chant's terraform lexicon, which behold
     // doesn't install itself (it says so and names these): beside behold, so
-    // the view draws the demo's roots instead of the error.
-    { run: "npm install --no-save --no-audit --no-fund @intentius/chant-lexicon-terraform@^0.124.0 @cdktn/hcl2json@^0.24.0" },
+    // the view draws the demo's roots instead of the error. They are behold's
+    // optional peers, and npm crashes adding them to its own tree
+    // ("Cannot read properties of null (reading 'edgesOut')"), so they install
+    // in a directory of their own and are copied in, chant at the version the
+    // lexicon asks for included.
+    { run: "mkdir /opt/lexicon && cd /opt/lexicon && npm init -y >/dev/null && npm install --no-audit --no-fund @intentius/chant-lexicon-terraform@^0.124.0 @cdktn/hcl2json@^0.24.0 && cp -R /opt/lexicon/node_modules/. /app/node_modules/ && test -d /app/node_modules/@intentius/chant-lexicon-terraform && test -d /app/node_modules/@cdktn/hcl2json" },
     { user: "node" },
     { expose: 4600 },
   ],
