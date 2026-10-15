@@ -857,8 +857,8 @@ export function startRuns(
       draw();
     });
     document.addEventListener("click", (e) => {
-      // The approval panel's chips show their line through `show`, which opens its note.
-      if (e.target && e.target.closest && e.target.closest("[data-ann-jump]")) return;
+      // The approval panel's chips and the features strip show their line, which opens its note.
+      if (e.target && e.target.closest && e.target.closest("[data-ann-jump], .r-feat")) return;
       const key = annKeyAt(e.target);
       const onMark = e.target && e.target.closest && e.target.closest(".r-ann, .r-ann-dot");
       if (onMark && key) {

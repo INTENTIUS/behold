@@ -310,11 +310,13 @@ describe("the kiosk for a viewer new to the demo (behold#571)", () => {
     }
   };
 
-  it("shows the intro first in the bar, and none without one", () => {
-    const { bar } = draw(demo("planned", { intro }));
-    expect(bar.children[0].className).toBe("k-intro");
-    expect(bar.children[0].textContent).toBe(intro);
-    expect(find(draw(demo("planned")).bar, "k-intro")).toEqual([]);
+  it("shows the intro in the card's box between scenarios, never as a band, and none without one", () => {
+    // behold#571: a live step has no intro band; "What is this?" holds it.
+    expect(find(draw(demo("planned", { intro })).bar, "k-intro")).toEqual([]);
+    const shown = find(draw(demo("reset", { intro })).bar, "k-intro");
+    expect(shown).toHaveLength(1);
+    expect(shown[0].children.map((c) => c.textContent)).toEqual([INTRO_HEAD, intro]);
+    expect(find(draw(demo("reset")).bar, "k-intro")).toEqual([]);
     expect(find(draw(demo("planned", { intro: null })).bar, "k-intro")).toEqual([]);
     expect(introText(demo("planned", { intro: "   " }))).toBe(null);
   });

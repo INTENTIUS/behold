@@ -76,7 +76,9 @@ describe("tokensFor — the kiosk's surfaces (behold#571)", () => {
     const glare = Object.values(THEMES).find((th) => th.fg.toLowerCase() === "#ffffff" && th.bg.toLowerCase() === "#000000");
     const t = tokensFor(glare);
     expect(t.soft.toLowerCase()).not.toBe("#ffffff");
-    expect(contrast(t.soft, glare.bg)).toBeLessThanOrEqual(SOFT_CEILING + 0.05);
+    // At the ceiling, give or take the 8-bit rounding of the eased colour.
+    expect(contrast(t.soft, glare.bg)).toBeLessThanOrEqual(SOFT_CEILING + 0.15);
+    expect(contrast(t.soft, glare.bg)).toBeLessThan(contrast(glare.fg, glare.bg));
     const mocha = tokensFor(THEMES["Catppuccin Mocha"]);
     expect(mocha.soft).toBe(THEMES["Catppuccin Mocha"].fg);
   });
