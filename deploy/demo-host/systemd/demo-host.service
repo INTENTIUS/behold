@@ -1,0 +1,18 @@
+# The demo host's stack at boot (#570). Docker's restart policies bring the
+# containers back by themselves; this runs `demo-host.sh start` as well, so a
+# stack that was never started, or one paused with `demo-host.sh pause`, comes
+# up too. Installed by demo-host.sh bootstrap, with @DEMO_ROOT@ filled in.
+[Unit]
+Description=Demo host: Caddy, behold and the loop driver
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=@DEMO_ROOT@/behold/deploy/demo-host/demo-host.sh start
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

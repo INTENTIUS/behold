@@ -1,0 +1,4 @@
+# A secrets file kept next to the setup by mistake never gets committed.
+secrets.env
+*.secrets.env
+demo.env
