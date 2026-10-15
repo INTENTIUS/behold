@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { focusRoots, frameSrc, factLines, pendingApproval, runPin } from "./kiosk.js";
+import { focusRoots, frameSrc, factLines, matchingPull, pendingApproval, runPanel, runPin } from "./kiosk.js";
 
 const demo = (step, extra = {}) => ({ cycle: 1, scenario: "a-output", title: "t", step, label: "", started_at: "2026-10-15T03:00:00Z", next: null, pull: 7, commit: "abc12345", ...extra });
 const answer = {
@@ -54,12 +54,37 @@ describe("factLines (#569)", () => {
 
 describe("runPin: the frame stays on the cycle's run (#569)", () => {
   it("draws the pull request's plan, then the cycle's commit up to applied, then the base", () => {
-    expect(runPin(demo("pull-request"))).toBe("none");
-    expect(runPin(demo("planned"))).toBe("none");
+    expect(runPin(demo("pull-request"))).toBe("pull-7-abc12345");
+    expect(runPin(demo("planned"))).toBe("pull-7-abc12345");
+    expect(runPin(demo("pull-request", { commit: null }))).toBe("pull-7");
+    expect(runPin(demo("pull-request", { pull: null, commit: null }))).toBe("pull");
     for (const step of ["merged", "applying", "waiting", "approved", "failed", "resumed", "applied"]) expect(runPin(demo(step))).toBe("abc12345");
     expect(runPin(demo("reset"))).toBe("base");
     expect(runPin(demo("applied", { scenario: "base" }))).toBe("base");
     expect(runPin(demo("stalled", { commit: null }))).toBe("none");
     expect(runPin(null)).toBe(null);
+  });
+});
+
+describe("before the merge, no other cycle's plan (#569)", () => {
+  // Cycle 441's narration at pull-request 989, while the reports' newest plan is cycle 439's pull request 987.
+  const older = { ...answer, pull_request: { ...answer.pull_request, run: { pull_request: "987", commit: "365a4f0d" } } };
+  const sameNumberOtherCommit = { ...answer, pull_request: { ...answer.pull_request, run: { pull_request: "989", commit: "0badc0de" } } };
+  const ours = { ...answer, pull_request: { ...answer.pull_request, run: { pull_request: "989", commit: "659dee43" } } };
+  const now = (step) => demo(step, { pull: 989, commit: "659dee43" });
+  it("pins the frame to this cycle's pull request and commit at pull-request and planned", () => {
+    for (const step of ["pull-request", "planned"]) {
+      expect(runPin(now(step))).toBe("pull-989-659dee43");
+      expect(matchingPull(older, now(step))).toBe(null);
+      expect(matchingPull(sameNumberOtherCommit, now(step))).toBe(null);
+      expect(matchingPull(ours, now(step))).toBe(ours.pull_request);
+      expect(focusRoots(now(step), older, null)).toBe(null);
+      expect(factLines(now(step), older)).toEqual([]);
+      expect(runPanel(now(step), older, null).note).toBe("The plan of pull request #989 isn't in the reports yet: the pipeline is planning it.");
+    }
+  });
+  it("from the merge on, takes the plan by its number: demo.json's commit is the merge's", () => {
+    expect(matchingPull(ours, demo("merged", { pull: 989, commit: "53c1e5d2" }))).toBe(ours.pull_request);
+    expect(matchingPull(older, demo("merged", { pull: 989, commit: "53c1e5d2" }))).toBe(null);
   });
 });
