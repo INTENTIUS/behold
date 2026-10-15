@@ -159,6 +159,22 @@ export function defaultJob(jobs) {
   return started[0] || jobs.find((j) => j.status !== "skipped") || jobs[0] || null;
 }
 
+/** Forgejo's runner line ending a step that exited 3, the code terragucci holds a wave with. */
+const RUNNER_EXIT_3 = /^\s*⚙️\s*\[runner\]: exitcode '3': failure\s*$/u;
+
+/**
+ * A log line as the kiosk shows it under a job: in a job held at the gate,
+ * the runner's `exitcode '3': failure` reads as what it is, a hold waiting for
+ * an approval, never a failure. `{ text, held }`; any other line, and any line
+ * of a job that is not held, is kept as it came.
+ */
+export function logLineWords(jobStatus, line) {
+  if (jobStatus === "waiting" && typeof line === "string" && RUNNER_EXIT_3.test(line)) {
+    return { text: "[runner]: exit code 3: held at the gate, waiting for an approval", held: true };
+  }
+  return { text: line, held: false };
+}
+
 /** The workflow's own steps of a job: not the runner's set-up or trailer, a post step, or an action's (named by its address). */
 function ownSteps(steps) {
   return steps.map((s, i) => ({ s, i })).filter(({ s, i }) => i > 0 && i < steps.length - 1 && !isPostStep(s.name) && !looksLikeAction(s.name));
@@ -384,7 +400,8 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
       if (s.truncated) pre.appendChild(el("div", "r-log-cut", `… ${s.truncated} earlier lines not kept`));
       s.log.forEach((l, n) => {
         const ln = el("div", "r-log-line");
-        ln.append(el("span", "r-ln", String((s.truncated || 0) + n + 1)), el("span", "r-lt", l));
+        const shown = logLineWords(job.status, l);
+        ln.append(el("span", "r-ln", String((s.truncated || 0) + n + 1)), el("span", shown.held ? "r-lt r-wait" : "r-lt", shown.text));
         pre.appendChild(ln);
       });
       if (!s.log.length) pre.appendChild(el("div", "r-log-cut", s.status === "running" ? "waiting for output…" : "no output"));
