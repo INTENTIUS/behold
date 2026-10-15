@@ -14,8 +14,9 @@
  * `focus` (#569) names the boxes the view brings forward, comma-separated
  * (a terragucci repo's roots): the rest are drawn dimmed, nothing is hidden.
  * `run` (#569) pins which terragucci run the view draws: a commit's run view,
- * `none` (no run view: the pull request's plan) or `base` (nothing in
- * flight); absent, the newest. */
+ * `none` (no run view: the newest pull request's plan), `pull-<n>[-<sha>]`
+ * (no run view, and only that pull request's plan, of that commit) or `base`
+ * (nothing in flight); absent, the newest. */
 export const VIEW_KEYS = ["member", "zoom", "env", "tier", "lens", "node", "radial", "gates", "focus", "run"];
 
 /** An env name as the server takes one (src/workspace-gates.ts isEnvName). */
@@ -131,8 +132,8 @@ export function settleView(want, offer) {
   }
   if ("run" in want) {
     // null: the newest run, as without the key.
-    if (want.run === null || /^([0-9a-f]{7,40}|none|base)$/.test(String(want.run))) apply.run = want.run;
-    else refused.push({ key: "run", value: want.run, reason: "run is a commit sha, none or base" });
+    if (want.run === null || /^([0-9a-f]{7,40}|none|base|pull(-\d+(-[0-9a-f]{7,40})?)?)$/.test(String(want.run))) apply.run = want.run;
+    else refused.push({ key: "run", value: want.run, reason: "run is a commit sha, none, base or pull-<number>[-<sha>]" });
   }
   if (want.member) apply.member = want.member;
   if (want.node) apply.node = want.node;

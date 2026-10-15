@@ -14,7 +14,7 @@
 // Nothing here is all-or-nothing, and nothing says so.
 
 import { startRuns } from "./kiosk-runs.js";
-import { STATE_WORDS, changingRoots, costLine, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
+import { STATE_WORDS, changingRoots, costLine, pinsCommit, planFitsPin, pullPin, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
 
 /** The scenarios terragucci#1014 numbers. An id not here is shown by the title demo.json carries. */
 export const SCENARIOS = {
@@ -112,13 +112,15 @@ const runOf = (progress) => (progress && !progress.error && progress.run && prog
 
 /**
  * The newest pull request's plan, when it is this step's: the pull request
- * demo.json names. A forge never reuses a number, so an older cycle's plan is
- * never shown as this one's.
+ * demo.json names, of its commit before the merge. A forge never reuses a
+ * number, so an older cycle's plan is never shown as this one's.
  */
 export function matchingPull(answer, demo) {
   const pr = pullOf(answer);
   if (!pr || demo.pull === null) return null;
-  return String(pr.run.pull_request) === String(demo.pull) ? pr : null;
+  // From the merge on, demo.json's commit is the merge's, not the plan's.
+  const before = demo.step === "pull-request" || demo.step === "planned";
+  return planFitsPin(pr, before ? pullPin(planPin(demo)) : { pull: String(demo.pull), commit: null }) ? pr : null;
 }
 
 /**
@@ -242,11 +244,23 @@ export function focusRoots(demo, answer, progress) {
 }
 
 /**
+ * #569: the pin on this cycle's plan, `pull-<n>-<sha>` (or `pull-<n>`, or bare
+ * `pull` while none is open): the frame draws that plan or none, never the
+ * plan of another cycle's pull request.
+ */
+export function planPin(demo) {
+  if (demo.pull === null || demo.pull === undefined || !/^\d+$/.test(String(demo.pull))) return "pull";
+  const sha = demo.commit && /^[0-9a-f]{7,40}$/.test(demo.commit) ? `-${demo.commit}` : "";
+  return `pull-${demo.pull}${sha}`;
+}
+
+/**
  * #569: which run the framed view draws for this step, so the graph stays on
  * the cycle the narration describes while the loop's next runs (the reset's
  * push back to the base) already go:
  *
- * - before the merge, `none`: no run view, the pull request's plan;
+ * - before the merge, `pull-<n>-<sha>` (planPin): no run view, and only this
+ *   cycle's plan; until the plan job writes it, the roots with no marks;
  * - from the merge to `applied`, the cycle's commit (demo.json's `commit`:
  *   the merge, whose run view the `/terragucci apply` resume rewrites, or
  *   scenario 5's push);
@@ -257,7 +271,7 @@ export function focusRoots(demo, answer, progress) {
 export function runPin(demo) {
   if (!demo) return null;
   if (demo.scenario === "base" || demo.step === "reset") return "base";
-  if (demo.step === "pull-request" || demo.step === "planned") return "none";
+  if (demo.step === "pull-request" || demo.step === "planned") return planPin(demo);
   if (demo.step === "stalled") return demo.commit ? demo.commit : "none";
   return demo.commit || "none";
 }
@@ -413,7 +427,7 @@ export function startKiosk({ bar, frame, foot, side, main }, { fetchJson = defau
   // #569: the run view of the cycle's commit, the same one the frame draws.
   const pinnedCommit = () => {
     const pin = runPin(s.demo && s.demo.demo);
-    return pin && pin !== "none" && pin !== "base" ? pin : null;
+    return pinsCommit(pin) ? pin : null;
   };
   const progress = async (fresh) => {
     const pin = pinnedCommit();

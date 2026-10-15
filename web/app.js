@@ -18,7 +18,7 @@ import { renderLane } from "./terragucci-lifecycle.js";
 import { renderReleases } from "./releases.js";
 import { renderYodelLane } from "./sql-yodeler-lane.js";
 import { initTerragucciEstate } from "./terragucci-estate.js";
-import { changeSection as tgChangeSection, readCardIds as tgReadCardIds, readEdges as tgReadEdges, readLabel as tgReadLabel, readLine as tgReadLine, readTag as tgReadTag, rootStates as tgRootStates, viewCaption as tgViewCaption } from "./terragucci-change.js";
+import { changeSection as tgChangeSection, readCardIds as tgReadCardIds, readEdges as tgReadEdges, readLabel as tgReadLabel, readLine as tgReadLine, readTag as tgReadTag, rootStates as tgRootStates, viewCaption as tgViewCaption, pinnedAnswer as tgPinnedAnswer, pinnedCaption as tgPinnedCaption, pinsCommit as tgPinsCommit } from "./terragucci-change.js";
 import { auditLines as yrAuditLines, cornerText as yrCorner, datedWords as yrDated, environmentLines as yrEnvLines, joinMarks as yrJoin, legend as yrLegend, markLine as yrMarkLine } from "./yodel-report.js";
 import { cardProgress as tgCardProgress, progressLines as tgProgressLines, progressSection as tgProgressSection, stampProgress as tgStampProgress } from "./terragucci-progress.js";
 import { seconds, whyQuery, whyView } from "./why.js";
@@ -964,7 +964,7 @@ function inspect(node) {
   // #568: the reads this card's root makes or answers, from the pull
   // request's plan or the run view, dated by its run.
   const tgReadRoot = tgAnswer && !tgAnswer.error && tgRootOfCard(tgAnswer, node.id);
-  const tgReads = tgReadRoot ? tgReadEdges(tgAnswer, tgProgress).filter((e) => e.from === tgReadRoot || e.to === tgReadRoot) : [];
+  const tgReads = tgReadRoot ? tgReadEdges(tgAnswerDrawn(), tgProgress).filter((e) => e.from === tgReadRoot || e.to === tgReadRoot) : [];
   if (tgReads.length) {
     const h = document.createElement("h3");
     h.textContent = "terragucci reads between roots (not live)";
@@ -3394,7 +3394,7 @@ function watchTerragucci() {
     if (tgPushFits(pushed)) {
       tgProgress = pushed;
       paintTgProgress();
-    } else if (view.run && view.run !== "none" && view.run !== "base") void loadTgProgress({ fresh: true });
+    } else if (tgPinsCommit(view.run)) void loadTgProgress({ fresh: true });
   });
   es.addEventListener("lifecycle", (e) => {
     tgLifecycle = JSON.parse(e.data);
@@ -3429,9 +3429,9 @@ async function loadTerragucci({ fresh = false } = {}) {
 // #511: /api/terragucci/progress, the newest apply's run view on the cards.
 let tgProgress = null;
 async function loadTgProgress({ fresh = false } = {}) {
-  // #569: `run` pins the run view: a commit's, or none at all (the pull request's plan, or the base).
+  // #569: `run` pins the run view: a commit's, or none at all (a pull request's plan, or the base).
   const pin = view.run;
-  if (pin === "none" || pin === "base") {
+  if (pin && !tgPinsCommit(pin)) {
     tgProgress = null;
     paintTgProgress();
     return;
@@ -3451,12 +3451,12 @@ async function loadTgProgress({ fresh = false } = {}) {
 function tgPushFits(answer) {
   const pin = view.run;
   if (!pin) return true;
-  if (pin === "none" || pin === "base") return false;
+  if (!tgPinsCommit(pin)) return false;
   return !!(answer && answer.run && answer.run.commit && (answer.run.commit.startsWith(pin) || pin.startsWith(answer.run.commit)));
 }
-/** #569: the reports as the view draws them: at `run=base` nothing is in flight, so no pull request either. */
+/** #569: the reports as the view draws them: at `run=base` no pull request, at `run=pull-<n>` only that one's plan. */
 function tgAnswerDrawn() {
-  return view.run === "base" && tgAnswer && !tgAnswer.error ? { ...tgAnswer, pull_request: null } : tgAnswer;
+  return tgPinnedAnswer(tgAnswer, view.run);
 }
 function paintTgProgress() {
   tgStampProgress(document.querySelector("#graph svg"), tgProgress, new Date());
@@ -3783,10 +3783,12 @@ function drawTgReads() {
   }
 
   // Which run the marks come from, above the boxes.
-  const caption = view.run === "base" ? "nothing in flight: the states went back to the base" : tgViewCaption(drawnAnswer, tgProgress, new Date());
+  // #569: a pin that holds the view off every plan says why in its own words.
+  const shown = tgViewCaption(drawnAnswer, tgProgress, new Date());
+  const caption = tgPinnedCaption(tgAnswer, view.run) || (shown ? `Showing ${shown}` : null);
   const all = union(boxes);
   if (caption && all) {
-    layer.appendChild(make("text", { "data-tg-reads": "caption", x: all.x, y: all.y - 22, "font-size": 16, "font-weight": 600, fill: "var(--muted)" }, `Showing ${caption}`));
+    layer.appendChild(make("text", { "data-tg-reads": "caption", x: all.x, y: all.y - 22, "font-size": 16, "font-weight": 600, fill: "var(--muted)" }, caption));
   }
 }
 function markTerragucciCards() {

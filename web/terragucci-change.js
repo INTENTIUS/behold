@@ -553,6 +553,55 @@ export function readLabel(e) {
   return `reads ${e.to}'s applied state`;
 }
 
+/**
+ * #569: a `run` pin on one pull request's plan, as the kiosk sends it before
+ * the merge: `pull-<n>`, or `pull-<n>-<sha>` with the commit the plan is of;
+ * bare `pull` while no pull request is open. Null for any other pin.
+ */
+export function pullPin(run) {
+  const m = /^pull(?:-(\d+)(?:-([0-9a-f]{7,40}))?)?$/.exec(String(run || ""));
+  return m ? { pull: m[1] || null, commit: m[2] || null } : null;
+}
+
+/** #569: whether a pin names a commit's run view (not `none`, `base` or a pull request's plan). */
+export function pinsCommit(run) {
+  return !!run && run !== "none" && run !== "base" && !pullPin(run);
+}
+
+const sameSha = (a, b) => !!a && !!b && (a.startsWith(b) || b.startsWith(a));
+
+/** #569: whether a pull request's plan is the one a `pull-…` pin names: its number, and its commit when the pin has one. */
+export function planFitsPin(pr, pin) {
+  if (!pr || !pr.run || !pin || pin.pull === null) return false;
+  if (String(pr.run.pull_request) !== pin.pull) return false;
+  return !pin.commit || sameSha(pr.run.commit, pin.commit);
+}
+
+/**
+ * #569: the reports as the view draws them under its `run` pin. At `base`
+ * nothing is in flight; at `pull-…` only that pull request's plan, so another
+ * cycle's plan is never drawn as this one's. Anything else draws them as read.
+ */
+export function pinnedAnswer(answer, run) {
+  if (!answer || answer.error) return answer;
+  const pin = pullPin(run);
+  if (run === "base" || (pin && !planFitsPin(answer.pull_request, pin))) return { ...answer, pull_request: null };
+  return answer;
+}
+
+/**
+ * #569: the sentence above the boxes when the pin holds the view off every
+ * plan and run: the base, or a pull request whose plan isn't written yet.
+ * Null when the view draws a run, and viewCaption says which.
+ */
+export function pinnedCaption(answer, run) {
+  if (run === "base") return "Nothing in flight: the states went back to the base";
+  const pin = pullPin(run);
+  if (!pin || (answer && !answer.error && planFitsPin(answer.pull_request, pin))) return null;
+  if (pin.pull === null) return "The pull request isn't open yet; its plan shows here once the plan job writes it";
+  return `Pull request #${pin.pull} is being planned; its plan shows here once the plan job writes it`;
+}
+
 /** Which run the view's marks come from, dated: "the plan of pull request #201, 03:11 UTC". */
 export function viewCaption(answer, progress, now = new Date()) {
   const stage = changeStage(answer, progress);

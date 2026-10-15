@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readCardIds, readLabel, rootStates, viewCaption } from "./terragucci-change.js";
+import { pinnedAnswer, pinnedCaption, pinsCommit, pullPin, readCardIds, readLabel, rootStates, viewCaption } from "./terragucci-change.js";
 
 const roots = ["app", "edge", "network", "other"].map((name) => ({ member: "demo", name, path: name }));
 const prAnswer = {
@@ -95,5 +95,40 @@ describe("viewCaption (#569)", () => {
     const now = new Date("2026-10-15T03:30:00Z");
     expect(viewCaption(prAnswer, null, now)).toBe("the plan of pull request #201 at 03:11 UTC: not merged yet, nothing applied");
     expect(viewCaption(prAnswer, run([{ number: 1, state: "applied", roots: ["network"], reads: [] }], []), now)).toBe("the run of merge 6b9f7e25, as of 03:20 UTC");
+  });
+});
+
+describe("a pin on one pull request's plan (#569)", () => {
+  it("reads pull-<n>[-<sha>] and bare pull, and tells them from a commit's run view", () => {
+    expect(pullPin("pull-201-c9dfc649")).toEqual({ pull: "201", commit: "c9dfc649" });
+    expect(pullPin("pull-201")).toEqual({ pull: "201", commit: null });
+    expect(pullPin("pull")).toEqual({ pull: null, commit: null });
+    expect(pullPin("c9dfc649")).toBe(null);
+    expect(pinsCommit("c9dfc649")).toBe(true);
+    for (const p of ["pull-201", "none", "base", null]) expect(pinsCommit(p)).toBe(false);
+  });
+  it("draws the pinned pull request's plan, of its commit", () => {
+    expect(pinnedAnswer(prAnswer, "pull-201-c9dfc649")).toBe(prAnswer);
+    expect(pinnedAnswer(prAnswer, "pull-201")).toBe(prAnswer);
+    expect(pinnedCaption(prAnswer, "pull-201-c9dfc649")).toBe(null);
+    expect(rootStates(pinnedAnswer(prAnswer, "pull-201"), null).stage).toBe("pull-request");
+  });
+  it("draws no other cycle's plan before this cycle's is written: no marks, and says it is being planned", () => {
+    for (const pin of ["pull-202", "pull-202-c9dfc649", "pull-201-0123abcd", "pull"]) {
+      const drawn = pinnedAnswer(prAnswer, pin);
+      expect(drawn.pull_request).toBe(null);
+      expect(rootStates(drawn, null)).toEqual({ stage: "none", roots: {} });
+      expect(viewCaption(drawn, null)).toBe(null);
+    }
+    expect(pinnedCaption(prAnswer, "pull-202-c9dfc649")).toBe("Pull request #202 is being planned; its plan shows here once the plan job writes it");
+    expect(pinnedCaption({ roots }, "pull-202")).toBe("Pull request #202 is being planned; its plan shows here once the plan job writes it");
+    expect(pinnedCaption(prAnswer, "pull")).toBe("The pull request isn't open yet; its plan shows here once the plan job writes it");
+  });
+  it("leaves the newest plan to an unpinned view, and none to the base", () => {
+    expect(pinnedAnswer(prAnswer, null)).toBe(prAnswer);
+    expect(pinnedAnswer(prAnswer, "none")).toBe(prAnswer);
+    expect(pinnedAnswer(prAnswer, "base").pull_request).toBe(null);
+    expect(pinnedCaption(prAnswer, "none")).toBe(null);
+    expect(pinnedCaption(prAnswer, "base")).toBe("Nothing in flight: the states went back to the base");
   });
 });

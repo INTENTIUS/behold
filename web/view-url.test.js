@@ -127,6 +127,10 @@ describe("run (#569)", () => {
     expect(settleView({ run: "base" }, {}).apply).toEqual({ run: "base" });
     expect(settleView({ run: null }, {}).apply).toEqual({ run: null });
     expect(settleView({ run: "main" }, {}).refused[0].key).toBe("run");
+    expect(settleView({ run: "pull-989-659dee43" }, {}).apply).toEqual({ run: "pull-989-659dee43" });
+    expect(settleView({ run: "pull-989" }, {}).apply).toEqual({ run: "pull-989" });
+    expect(settleView({ run: "pull" }, {}).apply).toEqual({ run: "pull" });
+    expect(settleView({ run: "pull-x" }, {}).refused[0].key).toBe("run");
     expect(writeViewQuery("", { run: "none" })).toBe("?run=none");
   });
 });
