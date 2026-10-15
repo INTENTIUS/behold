@@ -311,7 +311,15 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
   sh.append(statusIcon(job.status), el("span", "r-steps-job", job.name), el("span", "r-steps-word", job.status === "waiting" ? "waits for an approval at the gate" : STATUS_WORDS[job.status] || job.status));
   stepsBox.appendChild(sh);
   const steps = job.steps || [];
-  if (!steps.length) stepsBox.appendChild(el("p", "r-note", job.status === "queued" ? "Queued: it starts once the jobs it needs finish." : "No steps recorded for this job."));
+  if (!steps.length) {
+    const words =
+      job.status === "queued"
+        ? "Queued: it starts once the jobs it needs finish."
+        : job.status === "running"
+          ? "Started: its steps and log appear here as the loop driver copies them from the forge, every few seconds."
+          : "No steps recorded for this job.";
+    stepsBox.appendChild(el("p", "r-note", words));
+  }
   const open = ui.open !== null && ui.open !== undefined && ui.job === job.name ? ui.open : defaultStep(steps);
   let logEl = null;
   steps.forEach((s, i) => {
