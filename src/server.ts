@@ -181,6 +181,7 @@ import { emulatorUp, emulatorDown, mergedEnv, type EmulatorInfo } from "./emulat
 import { productRefusal, refusedWrite, servedProductRepo, terragucciRefusal } from "./terragucci-repo.ts";
 import { repoBase, terragucciRoutes, type TerragucciOptions } from "./terragucci-view.ts";
 import { kioskRoute, vendorFallback, vendorRoutes } from "./terragucci-demo.ts";
+import { scopeServedDirs, viewRepoFacts, viewReposMiddleware, type ViewRepos } from "./view-repos.ts";
 import { lifecycleHistoryRoute } from "./lifecycle-history.ts";
 import { hasReleaseLedgerHint, releasesRoutes } from "./lifecycle-releases.ts";
 import { sqlYodelerLaneRoute } from "./sql-yodeler-lane.ts";
@@ -217,6 +218,9 @@ export interface ServerOptions {
   workspace?: Workspace;
   /** #490: `--terragucci`: paint the estate from terragucci's reports (src/terragucci-view.ts). */
   terragucci?: TerragucciOptions;
+  /** behold#571 `--repos <parent>`: the checkouts a request may pick with
+   * `?repo=<name>` (src/view-repos.ts). Without one, `projectDir` as given. */
+  viewRepos?: ViewRepos;
   /** #526: `--yodel-report`: SQL Yodeler's report and drift JSON, drawn as dated marks (src/yodel-report.ts). */
   yodelReport?: string;
   /** #471: hud's address (`--hud`, BEHOLD_HUD_URL). A proposed decision in a
@@ -941,6 +945,8 @@ export function createApp(
   frames: FrameBuffer = new FrameBuffer(),
   given?: Runner,
 ): Hono {
+  // behold#571: with --repos, `cfg.projectDir` answers for the request's `?repo=`.
+  if (cfg.viewRepos) scopeServedDirs(cfg);
   // #569: a public serve never builds an OpRunner, whatever it was handed.
   const runner: Runner = cfg.public
     ? new ReadOnlyRunner()
@@ -974,6 +980,8 @@ export function createApp(
     }
     await next();
   });
+  // behold#571: `?repo=<name>` serves that checkout for this request; an unknown name is refused here.
+  if (cfg.viewRepos) viewReposMiddleware(app, cfg.viewRepos);
   // #569: the op tools' reads are refused and the page carries the public flag.
   if (cfg.public) publicRoutes(app, webRoot);
   // A test's fake choudoufu answers every read, the member via's included
@@ -1662,6 +1670,8 @@ export function createApp(
     const runtimeCapable = memberLexicons.flat().some((l) => RUNTIME_LEXICONS.has(l));
     return c.json({
       projectDir: cfg.projectDir,
+      // behold#571: with --repos, the checkout this request reads and the ones it may ask for.
+      ...viewRepoFacts(cfg.viewRepos, cfg.projectDir),
       ...(carveState.manifests ? { carve: { state: carveState } } : {}),
       ...(plans.length ? { choudoufu: { plans } } : {}),
       // #195: the full estate composition (multi-project serves) and the
@@ -4236,7 +4246,8 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
         `  read-only, watching for edits${poll}. lanes: /lanes. Ctrl-C to stop.\n` +
         (cfg.public
           ? `  public: GET, HEAD and OPTIONS only; no op runner; answers ${["localhost", ...allowedHostsFrom(cfg.allowedHosts ?? [])].join(", ")}.\n`
-          : ""),
+          : "") +
+        (cfg.viewRepos ? `  repos: ${[...cfg.viewRepos.repos.keys()].join(", ") || "none"} under ${cfg.viewRepos.parent}, one per request with ?repo=<name>\n` : ""),
     );
     // Report what the pickers will offer, so an empty env picker is diagnosable.
     void detectProject(cfg.projectDir).then(({ environments, lexicons }) => {

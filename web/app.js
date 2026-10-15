@@ -8,6 +8,7 @@
 // floating control panel's chrome (panel.js — drag/snap/collapse/tabs, persisted
 // position), and the theme picker into the panel's View-tab slot (a stable element
 // renderPanelView never rewrites, so the select mounts once and survives re-renders).
+import "./view-repo.js"; // behold#571: first, so every read carries the page's ?repo=
 import { createRefreshQueue } from "./refresh-queue.js";
 import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine } from "./view-url.js";
 import { quietCardLines, readEmbed, selectMessage, viewFromMessage } from "./embed.js";

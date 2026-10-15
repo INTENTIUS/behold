@@ -533,6 +533,24 @@ The kiosk asks for `demo.json` every 3 seconds, and for the reports and the run
 view when the step moves or the event stream says they did. Everything it asks
 is a GET, and it shows no control.
 
+#### One checkout per repo
+
+The demo runs each tool on its own forge repo. `behold serve <dir> --repos
+<parent>` serves every git checkout directly under `<parent>`, one per
+request: a request with `?repo=<name>` (the checkout's directory name, or
+`<owner>/<name>` as `demo.json` writes it) reads that checkout, and a request
+without one reads `<dir>`. The kiosk asks for the repo its scenario runs on,
+and a tool's page for its tool's repo, so each draws its own repo's graph,
+marks and popover. A name the server doesn't serve is refused with 404; only
+the names it listed at startup ever reach the filesystem.
+
+A Terragrunt repo is drawn the same way: each unit (a directory with a
+`terragrunt.hcl`) is a root box holding the resources of the module its
+`terraform { source }` names, when that is a directory of `.tf` in the repo,
+and each `dependency` block is a card with an arrow to the unit it reads.
+behold reads those two blocks and evaluates nothing else. A unit whose module
+it can't read is one card saying so.
+
 ## Try it on terragucci's example
 
 behold ships a reports bucket for terragucci's own example estate, written by
