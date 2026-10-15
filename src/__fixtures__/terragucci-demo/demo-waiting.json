@@ -1,0 +1,14 @@
+{
+  "cycle": 12,
+  "scenario": "b-waves",
+  "title": "A new network, read downstream",
+  "step": "waiting",
+  "label": "Wave 2 waits for an approval",
+  "started_at": "2026-10-20T10:00:00Z",
+  "next": {
+    "action": "approve wave-2",
+    "at": "2026-10-20T10:05:20Z"
+  },
+  "pull": 41,
+  "commit": "f0e1d2c3b4a5968778695a4b3c2d1e0f12345678"
+}

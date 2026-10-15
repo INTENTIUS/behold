@@ -1,0 +1,14 @@
+{
+  "cycle": 12,
+  "scenario": "a-known",
+  "title": "A port change, known when it plans",
+  "step": "reset",
+  "label": "Reset out of band: each root's state written back to the base snapshot, and main forced back to the base commit 00000000",
+  "started_at": "2026-10-20T10:00:00Z",
+  "next": {
+    "action": "start the next cycle",
+    "at": null
+  },
+  "pull": null,
+  "commit": "0000000000000000000000000000000000000001"
+}

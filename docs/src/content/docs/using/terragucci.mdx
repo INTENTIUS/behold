@@ -414,6 +414,53 @@ refused with 421. Give the process read-only credentials: `GetObject` on the
 reports bucket, and a read-only key for the checkout's `origin`, which
 `chant/lifecycle` is fetched from.
 
+### The kiosk
+
+`/kiosk` is a page that follows terragucci's looping demo, one change across
+the `network`, `app`, `edge` and `other` roots, run through the real pipeline
+again and again (`just demo loop` in terragucci's repo). Open
+`https://demo.example.com/kiosk` on the host above; it works under `--public`
+and without it, and needs `--terragucci`.
+
+The demo's driver writes `demo.json` beside `index.json` at every step, so the
+kiosk reads it from the top of the `--terragucci` source (for the demo,
+`s3://demo-reports/demo`), through `GET /api/terragucci/demo`. That read needs
+`GetObject` on `<prefix>/demo.json` and nothing else, and one read is shared
+by every open kiosk for 2 seconds. A `demo.json` that is missing, refused or
+not in the demo's format is said on the page, which waits for the next one.
+
+The kiosk shows:
+
+- The scenario, numbered as terragucci numbers it, with the title the driver
+  wrote. A scenario id behold doesn't know shows the title alone.
+- Where the cycle is: pull request, planned, merged, the waves, applied, reset.
+  A failed step is marked; a stalled cycle marks none.
+- The driver's words for the step (`label`), as written. Where a value applies
+  without a review that showed it, the driver says so, and so does the kiosk:
+  each read of an output known only after its upstream applies gets its own
+  sentence.
+- The driver's next action, with a countdown to `next.at` when the driver acts
+  on its own clock, or "when the pipeline gets there" when it waits on a run.
+- At a waiting wave, the wave and its roots, and what the driver runs when the
+  countdown ends: `chant approve tf-apply wave-<N> --actor <driver> --sign
+  <driver key>`, then a `/terragucci apply` comment on the pull request. The
+  actor and key are placeholders, never a path. The wave's digest from the run
+  view is shown beside it, so a viewer sees which plan is approved. There is no
+  copy button: nobody watching needs to run it.
+- The newest run that is this step's. Before the merge, the pull request's
+  plan (the one `demo.json` names): the reads between roots, the waves, the
+  totals, the cost and the roots it did not plan. From the merge on, the run
+  view's waves (on the commit `demo.json` names, or written since the cycle
+  started). A wave that failed or refused names the waves before it that
+  applied and stay applied. Until the reports hold the step's run, the kiosk
+  says it isn't written yet rather than show the last cycle's.
+- At a reset, that the states are back on the base, and then the next cycle
+  from the start.
+
+The kiosk asks for `demo.json` every 3 seconds, and for the reports and the run
+view when the step moves or the event stream says they did. Everything it asks
+is a GET, and it shows no control.
+
 ## Try it on terragucci's example
 
 behold ships a reports bucket for terragucci's own example estate, written by

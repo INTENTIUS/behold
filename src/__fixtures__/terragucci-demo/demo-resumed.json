@@ -1,0 +1,14 @@
+{
+  "cycle": 12,
+  "scenario": "failure",
+  "title": "app fails mid-apply, and a re-run finishes it",
+  "step": "resumed",
+  "label": "The marker is deleted; /terragucci apply on pull request 41 runs the waves again: network has nothing left to apply, and app's migration runs again",
+  "started_at": "2026-10-20T10:00:00Z",
+  "next": {
+    "action": "follow the waves",
+    "at": null
+  },
+  "pull": 41,
+  "commit": "f0e1d2c3b4a5968778695a4b3c2d1e0f12345678"
+}

@@ -405,6 +405,13 @@ With `--terragucci`, the poll defaults to 10 seconds under `--public`
 be read-only too: `GetObject` on the reports bucket, and a read-only key for
 the repo's `origin`, which `chant/lifecycle` is fetched from.
 
+`/kiosk` follows terragucci's looping demo (#569): it reads the `demo.json`
+the demo's driver writes beside `index.json`, and narrates the scenario, the
+step and the driver's next action with a countdown, next to the newest run of
+that step (the pull request's plan, then the merge's waves) and back to the
+start when the loop resets. It needs `--terragucci`, asks only GETs, and has
+no control. The docs' terragucci page says what it shows.
+
 In a declared workspace, the gates waiting on a person come from
 `chant workspace status <env> --json`, keyed `member/op/gate` the way arugula's
 workspace block keys them, so the two show the same set. Standalone, a gate's

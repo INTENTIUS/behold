@@ -1,0 +1,14 @@
+{
+  "cycle": 12,
+  "scenario": "a-known",
+  "title": "A port change, known when it plans",
+  "step": "applied",
+  "label": "Applied: network 9090, app 9080, edge http://app:9080",
+  "started_at": "2026-10-20T10:00:00Z",
+  "next": {
+    "action": "reset",
+    "at": "2026-10-20T10:06:20Z"
+  },
+  "pull": 41,
+  "commit": "f0e1d2c3b4a5968778695a4b3c2d1e0f12345678"
+}

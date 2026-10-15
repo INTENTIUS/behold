@@ -178,6 +178,7 @@ import {
 import { emulatorUp, emulatorDown, mergedEnv, type EmulatorInfo } from "./emulator.ts";
 import { productRefusal, refusedWrite, servedProductRepo, terragucciRefusal } from "./terragucci-repo.ts";
 import { repoBase, terragucciRoutes, type TerragucciOptions } from "./terragucci-view.ts";
+import { kioskRoute } from "./terragucci-demo.ts";
 import { lifecycleHistoryRoute } from "./lifecycle-history.ts";
 import { hasReleaseLedgerHint, releasesRoutes } from "./lifecycle-releases.ts";
 import { sqlYodelerLaneRoute } from "./sql-yodeler-lane.ts";
@@ -1102,6 +1103,9 @@ export function createApp(
     (await Promise.all((cfg.projectDirs ?? []).map(async (dir) => [await graphPath(dir, opts), dir]))).flat();
 
   app.get("/healthz", (c) => c.json({ ok: true, projectDir: cfg.projectDir, env: cfg.env ?? null, frames: frames.size }));
+
+  // #569 step 2: the kiosk, a looping terragucci demo narrated from demo.json.
+  kioskRoute(app, webRoot, !!cfg.terragucci);
 
   // Deployment lanes (#5): the captured keyframes as a per-substrate filmstrip.
   app.get("/api/frames", (c) => c.json({ frames: frames.summaries() }));
