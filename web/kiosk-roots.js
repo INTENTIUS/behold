@@ -7,17 +7,17 @@
 // its name, never as a text or fill colour. The hues below are none of those,
 // and each passes 4.5:1 on its theme's background and panel (checked against
 // #1e1e2e, #2e2f40, #11101f and #0f141d for dark; #ffffff and #f6f8fa for
-// light).
+// light). theme.js pushes each, per theme, to 3:1 on every kiosk surface
+// (--root-0 … --root-4), and the page paints a dot with that, this as its fallback.
 //
 // The colour follows the root's place in the sorted list of declared roots
 // (terragucci.components.json), so it is the same on every cycle and on every
 // screen showing the same repo.
 
-/** The root hues, by theme: violet, orange, orchid, silver, tan. */
-export const ROOT_HUES = {
-  dark: ["#b392f0", "#ff9f5a", "#e66ce8", "#e4e4e4", "#c89b6d"],
-  light: ["#7c3aed", "#c2410c", "#a21caf", "#334155", "#8b5a2b"],
-};
+import { ROOT_HUES } from "./theme.js";
+
+/** The root hues, by theme: violet, orange, orchid, silver, tan. theme.js holds them, and derives each theme's own (--root-0 …). */
+export { ROOT_HUES };
 
 /** The declared roots, sorted and without repeats: the order colours follow. */
 export function rootOrder(roots) {
@@ -31,6 +31,14 @@ export function rootColour(name, roots, { light = false } = {}) {
   if (i < 0) return null;
   const hues = light ? ROOT_HUES.light : ROOT_HUES.dark;
   return hues[i % hues.length];
+}
+
+/** A root's paint: the theme's own root colour (--root-<i>), with rootColour's as its fallback; null for a name that is not a root. */
+export function rootPaint(name, roots, { light = false } = {}) {
+  const c = rootColour(name, roots, { light });
+  if (!c) return null;
+  const hues = light ? ROOT_HUES.light : ROOT_HUES.dark;
+  return `var(--root-${rootOrder(roots).indexOf(name) % hues.length}, ${c})`;
 }
 
 // A token holding any of these is an address, a path, a hash or a key=value:
@@ -167,7 +175,7 @@ export function rootText(doc, text, roots, { light = false } = {}) {
     const span = doc.createElement("span");
     span.className = "k-root";
     span.dataset.kRoot = seg.root;
-    span.style.setProperty("--k-root", rootColour(seg.root, roots, { light }));
+    span.style.setProperty("--k-root", rootPaint(seg.root, roots, { light }));
     span.textContent = seg.text;
     frag.appendChild(span);
   }

@@ -40,6 +40,7 @@ export const WORDS = {
   leftIsApplied: "Left of each arrow is the value applied now.",
   pinHint: "Click to keep this open.",
   pinnedHint: "Click elsewhere or press Escape to close this.",
+  tapPinnedHint: "Tap elsewhere to close this.",
   noResources: "No resources found for this root.",
   noRootChange: "No resource in this root changes.",
   changes: "changes",

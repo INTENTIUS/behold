@@ -10,7 +10,8 @@
 // A job held at a terragucci gate is `waiting`: it waits for an approval, and
 // is never drawn as a failure. Step names are shown as the driver wrote them.
 
-import { rootColour, rootSegments, rootText, rootsOfWave, waveOfJob } from "./kiosk-roots.js";
+import { rootColour, rootPaint, rootSegments, rootText, rootsOfWave, waveOfJob } from "./kiosk-roots.js";
+import { TOUR, chipWords, docsUrl, jobMarks, runFeatures } from "./kiosk-annotations.js";
 
 /** The run, job and step statuses, as a viewer reads them. */
 export const STATUS_WORDS = {
@@ -184,7 +185,12 @@ function ownSteps(steps) {
 
 /** How many log lines a job's own steps wrote. */
 function ownLines(steps) {
-  return ownSteps(steps).reduce((n, { s }) => n + (s.log ? s.log.length : 0), 0);
+  return ownSteps(steps).reduce((n, { s }) => n + saidLines(s.log), 0);
+}
+
+/** behold#571: a log's lines that are not set-up or an artifact's copy, the ones a viewer reads. */
+function saidLines(log) {
+  return (log || []).filter((l) => !setupLine(l) && typeof l === "string" && l.trim()).length;
 }
 
 /**
@@ -200,8 +206,8 @@ export function defaultStep(steps) {
     const i = steps.findIndex((x) => x.status === s);
     if (i >= 0) return i;
   }
-  const own = ownSteps(steps).filter(({ s }) => s.log && s.log.length);
-  if (own.length) return own.reduce((a, b) => (b.s.log.length > a.s.log.length ? b : a)).i;
+  const own = ownSteps(steps).filter(({ s }) => saidLines(s.log) > 0);
+  if (own.length) return own.reduce((a, b) => (saidLines(b.s.log) > saidLines(a.s.log) ? b : a)).i;
   const any = steps.map((s, i) => ({ s, i })).filter(({ s }) => s.log && s.log.length);
   return any.length ? any[any.length - 1].i : 0;
 }
@@ -289,6 +295,39 @@ export const SETUP_LINES = [
   /^Deleting the contents of '/,
   /^Syncing repository: /,
   /^Working directory is '/,
+  // behold#571: an artifact's upload or download, as actions/upload-artifact and download-artifact print it.
+  /^With the provided path, there will be \d+ files? uploaded$/,
+  /^Starting artifact upload$/,
+  /^For more detailed logs during the artifact (?:upload|download) process, enable step-debugging: /,
+  /^Artifact name is valid!$/,
+  /^Container for artifact "[^"]*" successfully created\. Starting upload of file\(s\)$/,
+  /^Total size of all the files uploaded is \d+ bytes$/,
+  /^File upload process has finished\. Finalizing the artifact upload$/,
+  /^Artifact has been finalized\. All files have been successfully uploaded!$/,
+  /^The raw size of all the files that were specified for upload is \d+ bytes$/,
+  /^The size of all the files that were uploaded is \d+ bytes\. /,
+  /^Note: The size of downloaded zips can differ significantly from the reported size\./,
+  /^Artifact \S+ has been successfully uploaded!/,
+  /^Uploaded bytes \d+$/,
+  /^Beginning upload of artifact content to blob storage$/,
+  /^Finished uploading artifact content to blob storage!$/,
+  /^SHA256 (?:hash|digest) of (?:uploaded )?artifact (?:zip )?is /,
+  /^Finalizing artifact upload$/,
+  /^Artifact \S+ successfully finalized\. Artifact ID \d+$/,
+  /^Artifact download URL: /,
+  /^Starting download for \S+$/,
+  /^Directory structure has been setup for the artifact$/,
+  /^Total number of files that will be downloaded: \d+$/,
+  /^Artifact \S+ was downloaded to /,
+  /^Artifact download has finished successfully$/,
+  /^Downloading single artifact$/,
+  /^Preparing to download the following artifacts:$/,
+  /^- \S+ \(ID: \d+, Size: \d+/,
+  /^Redirecting to blob download url: /,
+  /^Starting download of artifact to: /,
+  /^Artifact download completed successfully\.$/,
+  /^Total of \d+ artifact\(s\) downloaded$/,
+  /^Download artifact has finished successfully$/,
 ];
 
 /** Whether a log line is set-up noise (SETUP_LINES). */
@@ -305,6 +344,12 @@ export function setupLine(line) {
 export function logRows(lines, { open = false, from = 0, hide = null } = {}) {
   // behold#571: a tool's page leaves out a line naming another tool, and says how many it left out.
   const every = (lines || []).map((text, i) => ({ n: from + i + 1, text, setup: setupLine(text) }));
+  // behold#571: a blank line after a set-up line (the upload's spacing) folds with it.
+  let prev = false;
+  for (const l of every) {
+    if (typeof l.text === "string" && !l.text.trim()) l.setup = prev;
+    else prev = l.setup;
+  }
   const all = hide ? every.filter((l) => !hide(l.text)) : every;
   const gone = every.length - all.length;
   const rows = logRowsOf(all, open);
@@ -420,7 +465,7 @@ export function renderSidebar(host, index, selectedId, { now = new Date(), scena
  * null for the defaults. Returns what it drew, so the caller can keep a log's
  * scroll.
  */
-export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => {}, toggleStep = () => {}, toggleSetup = () => {}, entry = null, roots = [], waves = [], light = false, hideLine = null } = {}) {
+export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => {}, toggleStep = () => {}, toggleSetup = () => {}, jump = () => {}, toggleFeats = () => {}, featsOpen = false, note = null, flash = null, entry = null, roots = [], waves = [], light = false, hideLine = null } = {}) {
   // behold#571: a root's name with its colour's dot, where the line names one.
   const textOf = (cls, text) => {
     if (!roots.length || !rootSegments(text, roots).some((x) => x.root)) return el("span", cls, text);
@@ -471,7 +516,7 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
       for (const r of applies) {
         const name = el("span", "k-root", r);
         name.dataset.kRoot = r;
-        name.style.setProperty("--k-root", rootColour(r, roots, { light }));
+        name.style.setProperty("--k-root", rootPaint(r, roots, { light }));
         box.appendChild(name);
       }
       li.appendChild(box);
@@ -483,6 +528,31 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
   }
   if (skipped.length) jobsBox.appendChild(el("li", "r-job r-job-skipped", `${skipped.length} skipped, not for this event: ${skipped.map((j) => j.name).join(", ")}`));
   host.appendChild(jobsBox);
+
+  // behold#571: the features this run's logs show, by tool, each jumping to its first line.
+  // One wrapping list (a tool's name, then its features); folded, it shows whole lines only (fitFeatures).
+  const feats = runFeatures(shown, { hide: hideLine });
+  if (feats.length) {
+    const box = el("div", `r-feats${featsOpen ? " r-feats-open" : ""}`);
+    box.appendChild(el("div", "r-label r-feats-label", "Features in this run"));
+    const list = el("div", "r-feats-list");
+    for (const g of feats) {
+      list.appendChild(el("span", `r-feats-product r-ann-${g.product}`, g.product));
+      for (const f of g.features) {
+        const b = el("button", "r-feat", f.feature);
+        b.type = "button";
+        b.title = `${f.a.note} (${f.job}, line ${f.n})`;
+        b.addEventListener("click", () => jump(f.job, f.step, f.n));
+        list.appendChild(b);
+      }
+    }
+    const more = el("button", "r-feats-more", featsOpen ? "Show fewer" : "");
+    more.type = "button";
+    more.addEventListener("click", () => toggleFeats());
+    list.appendChild(more);
+    box.appendChild(list);
+    host.appendChild(box);
+  }
 
   if (!job) return { log: null, steps: null, key: null };
   host.appendChild(el("div", "r-label", "Steps of the job, with its log"));
@@ -502,6 +572,7 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
   }
   const open = ui.open !== null && ui.open !== undefined && ui.job === job.name ? ui.open : defaultStep(steps);
   let logEl = null;
+  const marks = jobMarks(steps, { hide: hideLine });
   steps.forEach((s, i) => {
     const row = el("div", `r-step${i === open ? " r-open" : ""}`);
     const line = el("div", "r-step-line");
@@ -518,7 +589,7 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
           continue;
         }
         if (row.setup) {
-          const fold = el("div", `r-log-setup${row.open ? " r-log-setup-open" : ""}`, `${row.open ? "▾" : "▸"} setup (${row.setup} line${row.setup === 1 ? "" : "s"})`);
+          const fold = el("div", `r-log-setup${row.open ? " r-log-setup-open" : ""}`, `${row.open ? "▾" : "▸"} runner set-up and file copies (${row.setup} line${row.setup === 1 ? "" : "s"})`);
           fold.setAttribute("role", "button");
           fold.tabIndex = 0;
           fold.setAttribute("aria-expanded", String(row.open));
@@ -529,9 +600,20 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
           pre.appendChild(fold);
           continue;
         }
-        const ln = el("div", `r-log-line${row.quiet ? " r-log-quiet" : ""}`);
+        const lineKey = `${key}|${row.n}`;
+        const ln = el("div", `r-log-line${row.quiet ? " r-log-quiet" : ""}${flash === lineKey ? " r-flash" : ""}`);
+        ln.dataset.n = String(row.n);
         const shown = logLineWords(job.status, row.text);
-        ln.append(el("span", "r-ln", String(row.n)), row.quiet ? el("span", shown.held ? "r-lt r-wait" : "r-lt", shown.text) : textOf(shown.held ? "r-lt r-wait" : "r-lt", shown.text));
+        const text = row.quiet ? el("span", shown.held ? "r-lt r-wait" : "r-lt", shown.text) : textOf(shown.held ? "r-lt r-wait" : "r-lt", shown.text);
+        ln.append(el("span", "r-ln", String(row.n)), text);
+        // behold#571: the line's feature, as a chip on its first line in the job and a dot after.
+        const mark = marks.get(`${i}:${row.n}`);
+        if (mark) {
+          ln.classList.add("r-ann-line");
+          ln.dataset.annKey = lineKey;
+          text.append(" ", annMark(mark.a, { first: mark.first, tour: mark.first && TOUR.includes(mark.a.id) }));
+          if (note && note.key === lineKey) ln.appendChild(annNote(mark.a, note));
+        }
         pre.appendChild(ln);
       }
       if (!s.log.length) pre.appendChild(el("div", "r-log-cut", s.status === "running" ? "waiting for output…" : "no output"));
@@ -543,6 +625,67 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
   });
   host.appendChild(stepsBox);
   return { log: logEl, steps: stepsBox, key: logEl ? logKey(run.id, job.name, open) : null, live: LIVE.has(job.status) };
+}
+
+/** behold#571: a line's feature mark: an outlined chip (the tool and the feature), or a faint dot on a later line of it. */
+export function annMark(a, { first = true, tour = false } = {}) {
+  const b = el("button", first ? `r-ann r-ann-${a.product}${tour ? " r-ann-tour" : ""}` : `r-ann-dot r-ann-${a.product}`, first ? chipWords(a) : "");
+  b.type = "button";
+  b.dataset.ann = a.id;
+  b.setAttribute("aria-label", `${chipWords(a)}: ${a.note}`);
+  if (!first) b.title = chipWords(a);
+  return b;
+}
+
+/** behold#571: a feature's note, opened under its line: the sentence, and the docs in a new tab. */
+export function annNote(a, { auto = false, pinned = false } = {}) {
+  const box = el("div", `r-ann-note${auto ? " r-ann-auto" : ""}${pinned ? " r-ann-pinned" : ""}`);
+  box.setAttribute("role", "note");
+  box.appendChild(el("div", `r-ann-note-head r-ann-${a.product}`, chipWords(a)));
+  box.appendChild(el("p", "r-ann-note-text", a.note));
+  const link = el("a", "r-ann-more", "Read more");
+  link.href = docsUrl(a);
+  link.target = "_blank";
+  link.rel = "noopener";
+  box.appendChild(link);
+  return box;
+}
+
+/** behold#571: how many whole lines the folded features strip shows. */
+export const FEATURE_LINES = 3;
+
+/**
+ * behold#571: fold the features strip to FEATURE_LINES whole lines: what
+ * would wrap past them is hidden, never cut through, and a "+N more" button
+ * on the last line opens the rest. A tool's name left last on a line with
+ * none of its features after it goes too. Measures the drawn list.
+ */
+export function fitFeatures(list, open, lines = FEATURE_LINES) {
+  if (!list) return;
+  const more = list.querySelector(".r-feats-more");
+  const items = [...list.children].filter((c) => c !== more);
+  for (const i of items) i.hidden = false;
+  if (open) {
+    more.hidden = false;
+    return;
+  }
+  more.hidden = true;
+  const tops = [...new Set(items.map((i) => i.offsetTop))].sort((a, b) => a - b);
+  if (tops.length <= lines) return;
+  const last = tops[lines - 1];
+  const shown = items.filter((i) => i.offsetTop <= last);
+  for (const i of items) if (i.offsetTop > last) i.hidden = true;
+  more.hidden = false;
+  const count = () => items.filter((i) => i.hidden && i.classList.contains("r-feat")).length;
+  more.textContent = `+${count()} more`;
+  // The button sits on the last line: hide features from its end until it fits there.
+  while (more.offsetTop > last && shown.length) {
+    shown.pop().hidden = true;
+    more.textContent = `+${count()} more`;
+  }
+  // A tool's name with none of its features shown after it.
+  const vis = items.filter((i) => !i.hidden);
+  if (vis.length && vis[vis.length - 1].classList.contains("r-feats-product")) vis[vis.length - 1].hidden = true;
 }
 
 /** Which log is open: the run, the job and the step. A new key means a different log, which the pane follows from its end. */
@@ -596,7 +739,11 @@ export function startRuns(
     hideLine = null,
   } = {},
 ) {
-  const s = { index: null, run: null, selected: null, picked: 0, ui: { job: null, open: null, setup: null } };
+  const s = { index: null, run: null, selected: null, picked: 0, ui: { job: null, open: null, setup: null }, note: null, flash: null, scrollTo: null, pending: null, featsOpen: false };
+  // behold#571: the notes a kiosk with nobody at it has opened by itself, and when it last had a pointer.
+  const toured = new Set();
+  let lastPointer = -Infinity;
+  let tourRest = 0;
   let follow = true;
   let lastRunKey = "";
   // The open log and whether the pane follows its end; a viewer who scrolls up stops it until they come back.
@@ -616,6 +763,22 @@ export function startRuns(
     const id = selectedId();
     const entry = s.index && s.index.doc ? s.index.doc.runs.find((r) => r.id === id) || null : null;
     const ans = s.run && (!s.run.doc || s.run.doc.id === id) ? s.run : null;
+    // behold#571: a line asked for from elsewhere (the approval panel), once its run is read.
+    if (s.pending && ans && ans.doc && ans.doc.id === s.pending.run) {
+      const p = s.pending;
+      s.pending = null;
+      s.ui = { job: p.job, open: p.step, setup: null };
+      const k = `${logKey(p.run, p.job, p.step)}|${p.n}`;
+      s.scrollTo = k;
+      s.flash = { key: k, until: now().getTime() + FLASH_MS };
+      s.note = p.note === false ? s.note : { key: k, pinned: true, auto: false };
+    }
+    const t = now().getTime();
+    if (s.flash && t > s.flash.until) s.flash = null;
+    if (s.note && s.note.auto && t > s.note.until) {
+      s.note = null;
+      tourRest = t + TOUR_REST_MS;
+    }
     // One merged read of the selected run for both the sidebar and its page.
     const merged = ans && ans.doc ? mergeRun(entry, ans.doc) : null;
     renderSidebar(side, s.index, id, { now: shown(), scenarios, titles: titles(), names: names(), pick, merged, replay: replay() });
@@ -631,6 +794,21 @@ export function startRuns(
       waves: waves(),
       light: light(),
       hideLine,
+      note: s.note,
+      flash: s.flash ? s.flash.key : null,
+      featsOpen: s.featsOpen,
+      toggleFeats: () => {
+        s.featsOpen = !s.featsOpen;
+        hold();
+        draw();
+      },
+      jump: (job, step, n) => {
+        const runId = ans && ans.doc ? ans.doc.id : null;
+        if (runId === null) return;
+        s.pending = { run: runId, job, step, n };
+        hold();
+        draw();
+      },
       pickJob: (name) => {
         s.ui = { job: name, open: null, setup: null };
         hold();
@@ -647,6 +825,7 @@ export function startRuns(
         draw();
       },
     });
+    fitFeatures(main.querySelector(".r-feats-list"), s.featsOpen);
     logFollow = followsLog(logShown, drawn.key, logFollow);
     const sameLog = drawn.key !== null && drawn.key === logShown;
     logShown = drawn.key;
@@ -656,7 +835,17 @@ export function startRuns(
     }
     const log = drawn.log;
     const steps = drawn.steps;
-    if (logFollow) {
+    const target = s.scrollTo && s.scrollTo.startsWith(`${drawn.key}|`) ? log.querySelector(`.r-log-line[data-n="${s.scrollTo.slice(drawn.key.length + 1)}"]`) : null;
+    if (target) {
+      // A line asked for: in the middle of the log's view, the log in the steps' view; the pane stops following.
+      s.scrollTo = null;
+      logFollow = false;
+      log.scrollTop = Math.max(0, target.offsetTop - log.clientHeight / 3);
+      steps.scrollTop = 0;
+      const below = log.getBoundingClientRect().bottom - steps.getBoundingClientRect().bottom;
+      if (below > 0) steps.scrollTop += below + 8;
+      if (typeof target.scrollIntoView === "function" && main.closest && main.closest(".k-runs-open")) target.scrollIntoView({ block: "center" });
+    } else if (logFollow) {
       log.scrollTop = log.scrollHeight;
       // The steps list scrolls too: bring the log's end into its view.
       steps.scrollTop = sameLog ? prevStepsTop : 0;
@@ -675,7 +864,70 @@ export function startRuns(
     };
     log.addEventListener("scroll", onScroll, { passive: true });
     steps.addEventListener("scroll", onScroll, { passive: true });
+    tour(log);
   };
+  /**
+   * behold#571: with nobody at the screen (no pointer or touch for a while,
+   * and not a touch screen), the tour's chips open their notes one at a
+   * time, each for a few seconds, as their line scrolls into the log's view.
+   */
+  const tour = (log) => {
+    const t = now().getTime();
+    if (s.note || t < tourRest || t - lastPointer < IDLE_MS || !tourable()) return;
+    const view = log.getBoundingClientRect();
+    if (!view.height) return;
+    for (const chip of log.querySelectorAll(".r-ann-tour")) {
+      const line = chip.closest(".r-ann-line");
+      const key = line && line.dataset.annKey;
+      if (!key || toured.has(key)) continue;
+      const r = line.getBoundingClientRect();
+      if (r.top < view.top || r.bottom > view.bottom - view.height / 4) continue;
+      toured.add(key);
+      s.note = { key, pinned: false, auto: true, until: t + TOUR_NOTE_MS };
+      draw();
+      return;
+    }
+  };
+  // behold#571: pointing at a chip or a dot opens its note, a click or a tap keeps it open; a click elsewhere closes it.
+  const annKeyAt = (target) => {
+    const mark = target && target.closest ? target.closest(".r-ann, .r-ann-dot, .r-ann-note") : null;
+    const line = mark && mark.closest(".r-ann-line");
+    return line ? line.dataset.annKey : null;
+  };
+  if (main.addEventListener) {
+    const seen = () => (lastPointer = now().getTime());
+    for (const ev of ["pointermove", "pointerdown", "touchstart", "wheel", "keydown"]) document.addEventListener(ev, seen, { passive: true });
+    main.addEventListener("pointerover", (e) => {
+      if (e.pointerType === "touch") return;
+      const key = annKeyAt(e.target);
+      if (s.note && (s.note.pinned || s.note.key === key)) return;
+      if (!key && !s.note) return;
+      s.note = key ? { key, pinned: false, auto: false } : null;
+      draw();
+    });
+    document.addEventListener("click", (e) => {
+      // The approval panel's chips and the features strip show their line, which opens its note.
+      if (e.target && e.target.closest && e.target.closest("[data-ann-jump], .r-feat")) return;
+      const key = annKeyAt(e.target);
+      const onMark = e.target && e.target.closest && e.target.closest(".r-ann, .r-ann-dot");
+      if (onMark && key) {
+        s.note = s.note && s.note.key === key && s.note.pinned ? null : { key, pinned: true, auto: false };
+        hold();
+        draw();
+        return;
+      }
+      if (s.note && !key) {
+        s.note = null;
+        draw();
+      }
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && s.note) {
+        s.note = null;
+        draw();
+      }
+    });
+  }
   const hold = () => {
     follow = false;
     s.selected = selectedId() ?? s.selected;
@@ -708,7 +960,7 @@ export function startRuns(
     const src = source();
     const key = `${src ? "replay" : "live"}|${id}|${entry ? entry.status : ""}|${entry ? entry.ended_at : ""}`;
     if (key === lastRunKey && entry && !LIVE.has(entry.status) && s.run && s.run.doc && s.run.doc.id === id) return draw();
-    if (s.run && s.run.doc && s.run.doc.id !== id) s.ui = { job: null, open: null, setup: null };
+    if (s.run && s.run.doc && s.run.doc.id !== id && !s.pending) s.ui = { job: null, open: null, setup: null };
     lastRunKey = key;
     s.run = src ? await src.run(id) : await fetchJson(`/api/terragucci/runs/${id}`);
     draw();
@@ -716,5 +968,27 @@ export function startRuns(
   void readIndex();
   setInterval(() => void readIndex(), 3_000);
   setInterval(draw, 1_000);
+  /** behold#571: show a run's log line from elsewhere (the approval panel's chips): its job, its step open, the line in view and lit, its note open. */
+  s.show = (run, job, step, n) => {
+    s.selected = run;
+    follow = false;
+    s.picked = now().getTime();
+    s.pending = { run, job, step, n };
+    if (s.run && s.run.doc && s.run.doc.id === run) draw();
+    else void readRun();
+  };
   return s;
+}
+
+/** How long a line asked for stays lit. */
+export const FLASH_MS = 2_500;
+/** How long a tour's note stays open, and the rest before the next. */
+export const TOUR_NOTE_MS = 6_000;
+export const TOUR_REST_MS = 2_000;
+/** How long without a pointer or a touch before the kiosk counts as unattended. */
+export const IDLE_MS = 45_000;
+
+/** Whether this screen takes a tour: not a touch screen, where a finger opens the notes. */
+function tourable() {
+  return !(typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches);
 }

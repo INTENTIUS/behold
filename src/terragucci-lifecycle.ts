@@ -45,6 +45,7 @@ import {
   appliedGatePath,
   decideGateApproval,
   GATE_APPROVAL_SOURCES,
+  gateSealRefusal,
   gateSignersAt,
   identityGateAdmissionAt,
   identityGatesAt,
@@ -455,6 +456,12 @@ export interface LaneApproval {
   relayedBy?: string;
   note?: string;
   url?: string;
+  /**
+   * behold#571: a signed approval's seal, checked against the signers at base
+   * (chant's `gateSealRefusal`), whatever the mode: `ok`, or chant's reason it
+   * does not count. Absent for an unsigned approval, or when no signers were read.
+   */
+  sealCheck?: { ok: boolean; reason?: string };
 }
 
 export interface GateEntry {
@@ -569,7 +576,7 @@ const t = (iso: string): number => new Date(iso).getTime();
 const newest = <T>(xs: T[], at: (x: T) => string): T | undefined => xs.reduce<T | undefined>((b, x) => (!b || t(at(x)) >= t(at(b)) ? x : b), undefined);
 
 /** A resolution line as the lane shows it. `signed` follows `seal.signature`, as chant's sealOf does. */
-export function laneApproval(r: GateResolutionRecord): LaneApproval {
+export function laneApproval(r: GateResolutionRecord, signers?: GateSigners): LaneApproval {
   const x = r as GateResolutionRecord & { via?: unknown; pr?: unknown; head?: unknown; reviewers?: unknown };
   const seal = r.seal as { signature?: unknown } | null | undefined;
   const reviewers = Array.isArray(x.reviewers) ? x.reviewers.filter((v): v is string => typeof v === "string") : r.review?.approvers;
@@ -587,7 +594,21 @@ export function laneApproval(r: GateResolutionRecord): LaneApproval {
     ...(r.relayedBy ? { relayedBy: r.relayedBy } : {}),
     ...(r.note ? { note: r.note } : {}),
     ...(r.url ? { url: r.url } : {}),
+    ...sealCheckOf(r, signers),
   };
+}
+
+/** behold#571: whether a signed approval's seal verifies against the signers at base, in chant's words. */
+export function sealCheckOf(r: GateResolutionRecord, signers?: GateSigners): Pick<LaneApproval, "sealCheck"> {
+  const seal = r.seal as { signature?: unknown } | null | undefined;
+  if (!signers || !seal || typeof seal !== "object" || typeof seal.signature !== "string" || !seal.signature) return {};
+  let why: string | null;
+  try {
+    why = gateSealRefusal(signers, r);
+  } catch (e) {
+    why = e instanceof Error ? e.message : String(e);
+  }
+  return { sealCheck: why === null ? { ok: true } : { ok: false, reason: why } };
 }
 
 /** What the lane decides one gate by: the mode, under `sealed` the signers at base, and who may override a policy denial. */
@@ -675,9 +696,9 @@ export function decideLaneGate(
     spend,
   });
   if (decision.status === "approved") {
-    return { state: "approved", ...base, ...(decision.via === "ledger" ? { approval: laneApproval(decision.resolution) } : {}), decision };
+    return { state: "approved", ...base, ...(decision.via === "ledger" ? { approval: laneApproval(decision.resolution, rule.signers) } : {}), decision };
   }
-  const uncounted = decision.uncounted.length ? { uncounted: decision.uncounted.map((u) => ({ approval: laneApproval(u.resolution), reason: u.reason })) } : {};
+  const uncounted = decision.uncounted.length ? { uncounted: decision.uncounted.map((u) => ({ approval: laneApproval(u.resolution, rule.signers), reason: u.reason })) } : {};
   // A spent approval of this digest: a wave applied under it.
   if (decision.spent && samePlanDigest(decision.spent.planDigest, digest)) {
     const s = decision.spent;
@@ -687,7 +708,7 @@ export function decideLaneGate(
       return {
         state: finished?.result === "failed" ? "failed" : "applied",
         ...base,
-        approval: laneApproval(s),
+        approval: laneApproval(s, rule.signers),
         ...uncounted,
         applied: {
           at: applied.timestamp,
@@ -703,10 +724,10 @@ export function decideLaneGate(
       };
     }
   }
-  const spent = decision.spent && !samePlanDigest(decision.spent.planDigest, digest) ? { spent: laneApproval(decision.spent) } : {};
+  const spent = decision.spent && !samePlanDigest(decision.spent.planDigest, digest) ? { spent: laneApproval(decision.spent, rule.signers) } : {};
   if (decision.mismatched && pending) {
     const m = decision.mismatched;
-    return { state: "refused", ...base, approval: laneApproval(m), refused: { ...(m.planDigest ? { digest: m.planDigest } : {}), by: m.resolvedBy, at: m.timestamp }, ...uncounted, ...spent, decision };
+    return { state: "refused", ...base, approval: laneApproval(m, rule.signers), refused: { ...(m.planDigest ? { digest: m.planDigest } : {}), by: m.resolvedBy, at: m.timestamp }, ...uncounted, ...spent, decision };
   }
   const expired = pending && t(pending.expiresAt) <= now.getTime();
   return { state: expired ? "expired" : "waiting", ...base, ...uncounted, ...spent, decision };

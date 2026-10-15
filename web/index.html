@@ -426,6 +426,8 @@
         border: 1px solid var(--rule); border-radius: 8px; box-shadow: 0 6px 22px color-mix(in srgb, var(--shadow) 70%, transparent);
         font: 14px/1.4 var(--font-ui); pointer-events: auto; }
       #k-pop[hidden] { display: none; }
+      /* behold#571: on a phone the popover takes the frame's width, less a margin. */
+      @media (max-width: 600px) { #k-pop { max-width: calc(100vw - 16px); } }
       #k-pop.k-pinned { border-color: var(--focus); }
       #k-pop p { margin: 0.25em 0; }
       .k-pop-addr { font: 700 1.05em var(--font-mono); overflow-wrap: anywhere; }

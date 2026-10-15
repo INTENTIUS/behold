@@ -232,8 +232,13 @@ describe("a tool's page, drawn (behold#571)", () => {
       const brand = title.children[0];
       expect([brand.href, brand.target, brand.rel, text(brand)]).toEqual([VENDORS.terragrunt.url, "_blank", "noopener", "Terragrunt"]);
       expect(text(bar)).not.toMatch(/of 3|Terramate/);
+      // behold#571: no intro band at a live step; the intro fills the card's box at reset.
+      expect(text(bar)).not.toContain("Big Terraform setups");
       // The engine Terragrunt runs on is no competitor: the shared intro stays.
-      expect(text(bar)).toContain("Big Terraform setups");
+      const reset = { ...s, demo: { demo: { ...s.demo.demo, step: "reset" } } };
+      const bar2 = document.createElement("header");
+      renderKiosk(bar2, reset, new Date("2026-10-20T10:01:00Z"), document.createElement("footer"));
+      expect(text(bar2)).toContain("Big Terraform setups");
       // No graph of this repo here: one line in the header says so.
       expect(all(bar).filter((n) => n.className === "k-nograph-note").map(text)).toEqual([NO_GRAPH_WORDS]);
       expect(all(foot).filter((n) => n.className === "k-credit").map(text)).toEqual([VENDORS.terragrunt.credit]);

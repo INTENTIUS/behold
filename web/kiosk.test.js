@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { STEP_VIEW, STEP_WORDS, aboutRows, approveGloss, focusRoots, introText, scenarioHead, frameSrc, factLines, kioskView, legendWords, matchingPull, pendingApproval, renderKiosk, renderViewToggle, runPanel, runPin, stepView, viewZoom } from "./kiosk.js";
+import { INTRO_HEAD, STEP_VIEW, STEP_WORDS, aboutRows, approvalPanel, approveGloss, focusRoots, introText, scenarioHead, frameSrc, factLines, kioskView, legendWords, matchingPull, pendingApproval, renderKiosk, renderViewToggle, runPanel, runPin, stepView, viewZoom } from "./kiosk.js";
 import { PICK_HOLD_MS } from "./kiosk-runs.js";
 
 const demo = (step, extra = {}) => ({ cycle: 1, scenario: "a-output", title: "t", step, label: "", started_at: "2026-10-15T03:00:00Z", next: null, pull: 7, commit: "abc12345", ...extra });
@@ -127,8 +127,9 @@ describe("the scenario's card under the title (behold#571)", () => {
       const s = { demo: { source: "fx", read: "2026-10-15T03:00:00Z", demo: demo("failed", { scenario: "failure", about }) }, answer: null, progress: null };
       renderKiosk(bar, s, new Date("2026-10-15T03:01:00Z"));
       const left = find(bar, "k-left")[0];
-      const kinds = left.children.map((c) => c.className.split(" ")[0]);
-      expect(kinds.indexOf("k-about")).toBe(kinds.indexOf("k-title") + 1);
+      // behold#571: the title, the card and the step, each in its own fixed box.
+      expect(left.children.map((c) => c.className.split(" ")[0])).toEqual(["k-box", "k-box", "k-box"]);
+      expect(left.children.map((c) => c.children.map((x) => x.className.split(" ")[0]))).toEqual([["k-title"], ["k-about"], ["k-step"]]);
       const card = find(bar, "k-about")[0];
       expect(card.tagName).toBe("dl");
       expect(card.children.map((c) => [c.tagName, c.textContent])).toEqual([
@@ -140,6 +141,65 @@ describe("the scenario's card under the title (behold#571)", () => {
       s.demo.demo = demo("reset", { scenario: "base", about: null });
       renderKiosk(bar, s, new Date("2026-10-15T03:01:00Z"));
       expect(find(bar, "k-about")).toEqual([]);
+
+      // behold#571: no intro band at a live step; between scenarios the intro takes the card's box.
+      const intro = "Terraform keeps what it built in a state file.";
+      s.demo.demo = demo("waiting", { scenario: "failure", about, intro });
+      renderKiosk(bar, s, new Date("2026-10-15T03:01:00Z"));
+      expect(find(bar, "k-intro")).toEqual([]);
+      s.demo.demo = demo("reset", { scenario: "failure", about, intro });
+      renderKiosk(bar, s, new Date("2026-10-15T03:01:00Z"));
+      const shown = find(bar, "k-intro");
+      expect(shown).toHaveLength(1);
+      expect(shown[0].children.map((c) => c.textContent)).toEqual([INTRO_HEAD, intro]);
+      expect(find(bar, "k-about")).toEqual([]);
+    } finally {
+      globalThis.document = was;
+    }
+  });
+});
+
+describe("the approval panel's drawing (behold#571)", () => {
+  // A DOM with what the panel's chip needs: attributes, data and a click.
+  const panelDocument = () => ({
+    createElement: (tag) => {
+      const n = { tagName: tag, className: "", textContent: "", children: [], attrs: {}, dataset: {}, listeners: {} };
+      n.appendChild = (c) => (n.children.push(c), c);
+      n.append = (...cs) => cs.forEach((c) => n.children.push(typeof c === "string" ? { tagName: "#text", textContent: c, children: [] } : c));
+      n.setAttribute = (k, v) => (n.attrs[k] = v);
+      n.addEventListener = (k, f) => (n.listeners[k] = f);
+      return n;
+    },
+  });
+  const find = (n, cls) => ((n.className || "").split(" ").includes(cls) ? [n] : []).concat(...(n.children || []).map((c) => find(c, cls)));
+
+  it("draws four rows, lit as the model says, and a chip that shows its log line", () => {
+    const was = globalThis.document;
+    globalThis.document = panelDocument();
+    try {
+      const a = { id: "T11", product: "terragucci", feature: "Waiting for approval", note: "The wave stops here.", docs: { product: "terragucci", path: "/guides/approve-a-wave/" } };
+      const line = { run: 444, job: "apply-wave-2", step: 2, n: 13, a };
+      const shown = [];
+      const model = {
+        wave: 2,
+        digest: "jcs1-sha256:0accc105ba060b9974468c91def518039d935ad6629f8a15869f6e89ef748b61",
+        rows: [
+          { id: "requested", label: "Requested", state: "lit", text: "Wave 2 asked for an approval of this plan.", at: "2026-10-15T04:09:41Z", commit: "57869649aaaa", line },
+          { id: "approved", label: "Approved", state: "dim", text: "Next the driver signs.", command: "chant approve tf-apply wave-2" },
+          { id: "resumed", label: "Resumed", state: "dim", text: "Then the waves run again." },
+          { id: "spent", label: "Spent", state: "dim", text: "Then the approval is used up." },
+        ],
+      };
+      const panel = approvalPanel(model, { showLine: (l) => shown.push(l) });
+      const head = find(panel, "k-ap-head")[0];
+      expect([head.textContent, ...head.children.map((c) => c.textContent)].join("")).toBe("How this hold ends · wave 2 plan 0accc105ba06 · times in UTC");
+      expect(find(panel, "k-ap-row").map((r) => r.className)).toEqual(["k-ap-row k-ap-lit", "k-ap-row k-ap-dim", "k-ap-row k-ap-dim", "k-ap-row k-ap-dim"]);
+      expect(find(panel, "k-ap-facts")[0].textContent).toBe("04:09:41 · ledger 57869649");
+      expect(find(panel, "k-command")[0].textContent).toBe("chant approve tf-apply wave-2");
+      const chip = find(panel, "r-ann")[0];
+      expect(chip.textContent).toBe("terragucci · Waiting for approval");
+      chip.listeners.click();
+      expect(shown).toEqual([line]);
     } finally {
       globalThis.document = was;
     }
@@ -174,6 +234,9 @@ describe("which view the frame shows (#571)", () => {
   it("opens the frame on a view's zoom", () => {
     expect(frameSrc("https://demo.example")).toContain("zoom=resources");
     expect(frameSrc("https://demo.example", viewZoom("components"))).toContain("zoom=components");
+    // behold#571: the kiosk's theme goes to the frame with the repo.
+    expect(frameSrc("https://demo.example", "components", "demo", "Dawnfox")).toContain("theme=Dawnfox");
+    expect(frameSrc("https://demo.example", "components", null, null)).not.toContain("theme=");
     expect(viewZoom("resources")).toBe("resources");
     expect(viewZoom("nonsense")).toBe("resources");
   });
@@ -247,11 +310,13 @@ describe("the kiosk for a viewer new to the demo (behold#571)", () => {
     }
   };
 
-  it("shows the intro first in the bar, and none without one", () => {
-    const { bar } = draw(demo("planned", { intro }));
-    expect(bar.children[0].className).toBe("k-intro");
-    expect(bar.children[0].textContent).toBe(intro);
-    expect(find(draw(demo("planned")).bar, "k-intro")).toEqual([]);
+  it("shows the intro in the card's box between scenarios, never as a band, and none without one", () => {
+    // behold#571: a live step has no intro band; "What is this?" holds it.
+    expect(find(draw(demo("planned", { intro })).bar, "k-intro")).toEqual([]);
+    const shown = find(draw(demo("reset", { intro })).bar, "k-intro");
+    expect(shown).toHaveLength(1);
+    expect(shown[0].children.map((c) => c.textContent)).toEqual([INTRO_HEAD, intro]);
+    expect(find(draw(demo("reset")).bar, "k-intro")).toEqual([]);
     expect(find(draw(demo("planned", { intro: null })).bar, "k-intro")).toEqual([]);
     expect(introText(demo("planned", { intro: "   " }))).toBe(null);
   });

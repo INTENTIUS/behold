@@ -7,7 +7,7 @@ import { createApp } from "./server.ts";
 import { Broadcaster } from "./events.ts";
 import { FrameBuffer } from "./frames.ts";
 import { OpRunner } from "./op-runner.ts";
-import { cacheDir, CHECKOUT_REF, decideLaneGate, gateEntries, MODE_INFERRED, opWavesLane, parseLocks, readGateLedgerText, readLifecycle, redact, waveOfGate, waveRecords, type GateLedger, type LifecycleAnswer } from "./terragucci-lifecycle.ts";
+import { cacheDir, CHECKOUT_REF, decideLaneGate, gateEntries, laneApproval, sealCheckOf, MODE_INFERRED, opWavesLane, parseLocks, readGateLedgerText, readLifecycle, redact, waveOfGate, waveRecords, type GateLedger, type LifecycleAnswer } from "./terragucci-lifecycle.ts";
 import { overridePending } from "@intentius/chant/override-gate";
 import { decideGateApproval, type GateSigners } from "@intentius/chant/gate-decision";
 
@@ -483,5 +483,33 @@ describe("GET /api/terragucci/lifecycle (#505)", () => {
     const app = served(checkout, scratch());
     const lane = app.routes.filter((r) => r.path === "/api/terragucci/lifecycle" || r.path === "/api/terragucci/events");
     expect(lane.map((r) => r.method).sort()).toEqual(["GET", "GET"]);
+  });
+});
+
+// behold#571: the kiosk's approval panel says whether a signed approval's seal
+// checks out against the repo's allowed signers, whatever the mode.
+describe("a signed approval's seal, checked against the signers at base (behold#571)", () => {
+  const approval = (seal?: object) => ({ version: 1, op: "tf-apply", gate: "wave-2", resolvedBy: "demo-reviewer", timestamp: "2026-10-15T04:10:08.707Z", planDigest: D2, ...(seal ? { seal } : {}) }) as never;
+  const signers = (active: boolean) => ({ base: "abc", signersPath: ".chant/allowed_signers", active, signers: active ? [{ principal: "demo-reviewer", key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG7oHJl68PzD2gH1fFfBoiPzeBmmjcuK+fBBVeEs667B", namespaces: "chant-gate" }] : [], problems: [] }) as never;
+
+  it("checks nothing on an unsigned approval, or with no signers read", () => {
+    expect(sealCheckOf(approval(), signers(true))).toEqual({});
+    expect(sealCheckOf(approval({ signer: "demo-reviewer" }), signers(true))).toEqual({});
+    expect(sealCheckOf(approval({ signer: "demo-reviewer", signature: "sig" }), undefined)).toEqual({});
+  });
+
+  it("says why a seal does not count: no signers file, or a signature that is not one", () => {
+    const none = sealCheckOf(approval({ signer: "demo-reviewer", signature: "sig" }), signers(false));
+    expect(none.sealCheck?.ok).toBe(false);
+    expect(none.sealCheck?.reason).toMatch(/no signers file/);
+    const bad = sealCheckOf(approval({ signer: "demo-reviewer", signature: "sig" }), signers(true));
+    expect(bad.sealCheck?.ok).toBe(false);
+    expect(bad.sealCheck?.reason).toMatch(/does not verify/);
+  });
+
+  it("carries the check on the lane's approval", () => {
+    const a = laneApproval(approval({ signer: "demo-reviewer", signature: "sig" }), signers(true));
+    expect(a.signed).toBe(true);
+    expect(a.sealCheck?.ok).toBe(false);
   });
 });

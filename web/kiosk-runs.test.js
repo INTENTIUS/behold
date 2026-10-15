@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { FOLLOW_LINES, followsLog, logKey, nearEnd, mergeRun, newerOf, agoWords, defaultJob, defaultStep, durationWords, jobOrder, liveRun, codeish, logLineWords, logRows, placeWords, scenarioTitles, setupLine, sidebarRuns, splitSkipped, STATUS_TONE, triggerWords } from "./kiosk-runs.js";
+import { FEATURE_LINES, fitFeatures, FOLLOW_LINES, followsLog, logKey, nearEnd, mergeRun, newerOf, agoWords, defaultJob, defaultStep, durationWords, jobOrder, liveRun, codeish, logLineWords, logRows, placeWords, scenarioTitles, setupLine, sidebarRuns, splitSkipped, STATUS_TONE, triggerWords } from "./kiosk-runs.js";
 
 const FIX = join(import.meta.dirname, "..", "src", "__fixtures__", "terragucci-demo", "runs");
 const run = (id) => JSON.parse(readFileSync(join(FIX, `${id}.json`), "utf8"));
@@ -181,5 +181,81 @@ describe("the runs for a viewer new to the demo (behold#571)", () => {
     expect(rows.slice(1).some((r) => /^hint:|^\[command\]|^##\[/.test(r.text))).toBe(false);
     const own = job.steps.find((s) => /^Apply wave/.test(s.name));
     expect(logRows(own.log)).toEqual(own.log.map((text, i) => ({ n: i + 1, text })));
+  });
+});
+
+describe("an artifact's upload and download fold with the set-up (behold#571)", () => {
+  it("knows upload-artifact's and download-artifact's lines", () => {
+    for (const l of [
+      "With the provided path, there will be 9 files uploaded",
+      "Starting artifact upload",
+      "For more detailed logs during the artifact upload process, enable step-debugging: https://docs.github.com/actions/monitoring-and-troubleshooting-workflows/enabling-debug-logging#enabling-step-debug-logging",
+      "Artifact name is valid!",
+      'Container for artifact "terragucci-report-apply-wave-1" successfully created. Starting upload of file(s)',
+      "Total size of all the files uploaded is 10011 bytes",
+      "File upload process has finished. Finalizing the artifact upload",
+      "Artifact has been finalized. All files have been successfully uploaded!",
+      "The raw size of all the files that were specified for upload is 38546 bytes",
+      "The size of all the files that were uploaded is 10011 bytes. This takes into account any gzip compression used to reduce the upload size, time and storage",
+      "Note: The size of downloaded zips can differ significantly from the reported size. For more information see: https://github.com/actions/upload-artifact#zipped-artifact-downloads ",
+      "Artifact terragucci-report-apply-wave-1 has been successfully uploaded!",
+      "Starting download for terragucci-report",
+      "Directory structure has been setup for the artifact",
+      "Total number of files that will be downloaded: 16",
+      "Artifact terragucci-report was downloaded to /workspace/terragucci-admin/demo/terragucci-report",
+      "Artifact download has finished successfully",
+    ]) expect(setupLine(l), l).toBe(true);
+    expect(setupLine("wave 2: report copied to demo/forgejo:3000/x/tf-apply-wave-2")).toBe(false);
+  });
+
+  it("folds a whole upload step, its blank lines with it, into the one row", () => {
+    const keep = run(444).jobs.find((j) => j.name === "apply-wave-1").steps.find((s) => s.name === "Keep the apply report");
+    const rows = logRows(keep.log);
+    expect(rows).toEqual([{ setup: keep.log.length, open: false }]);
+  });
+
+  it("keeps a blank line that follows terragucci's own lines", () => {
+    expect(logRows(["3 members: 3 groups, 0 destroys or replacements.", "", "Group b6b888372b35: 1 member (outlier), change:"]).map((r) => r.n)).toEqual([1, 2, 3]);
+  });
+
+  it("never opens an upload step by default, even when it has the most lines", () => {
+    const check = run(444).jobs.find((j) => j.name === "check").steps;
+    expect(check[defaultStep(check)].name).toBe("Format check and validate, every root");
+  });
+});
+
+describe("the features strip, folded to whole lines (behold#571)", () => {
+  // A drawn list just big enough: each item where it wrapped to, and the "+N more" button.
+  const item = (cls, top) => ({ hidden: false, offsetTop: top, classList: { contains: (c) => c === cls } });
+  const list = (items, moreTop) => {
+    const more = { hidden: false, offsetTop: moreTop, textContent: "", classList: { contains: () => false } };
+    return { more, items, el: { children: [...items, more], querySelector: () => more } };
+  };
+
+  it("hides what wraps past the last line it shows, never part of a line, and counts the features hidden", () => {
+    expect(FEATURE_LINES).toBe(3);
+    const items = [item("r-feats-product", 0), item("r-feat", 0), item("r-feat", 20), item("r-feat", 40), item("r-feats-product", 60), item("r-feat", 60), item("r-feat", 80)];
+    const l = list(items, 40);
+    fitFeatures(l.el, false);
+    expect(items.map((i) => i.hidden)).toEqual([false, false, false, false, true, true, true]);
+    expect(l.more).toMatchObject({ hidden: false, textContent: "+2 more" });
+  });
+
+  it("shows everything, and no button, when it fits; everything with the button when opened", () => {
+    const fits = list([item("r-feat", 0), item("r-feat", 20)], 20);
+    fitFeatures(fits.el, false);
+    expect(fits.items.every((i) => !i.hidden)).toBe(true);
+    expect(fits.more.hidden).toBe(true);
+    const open = list([item("r-feat", 0), item("r-feat", 20), item("r-feat", 40), item("r-feat", 60)], 60);
+    fitFeatures(open.el, true);
+    expect(open.items.every((i) => !i.hidden)).toBe(true);
+    expect(open.more.hidden).toBe(false);
+  });
+
+  it("drops a tool's name left last on a line with none of its features after it", () => {
+    const items = [item("r-feat", 0), item("r-feat", 20), item("r-feats-product", 40), item("r-feat", 60)];
+    const l = list(items, 40);
+    fitFeatures(l.el, false);
+    expect(items.map((i) => i.hidden)).toEqual([false, false, true, true]);
   });
 });

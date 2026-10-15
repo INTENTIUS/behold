@@ -13,7 +13,9 @@
 // A wave that failed says which waves applied before it and stay applied.
 // Nothing here is all-or-nothing, and nothing says so.
 
-import { PICK_HOLD_MS, startRuns } from "./kiosk-runs.js";
+import { PICK_HOLD_MS, annMark, mergeRun, startRuns } from "./kiosk-runs.js";
+import { PANEL_STEPS, PANEL_TITLE, approvalModel, cycleRuns, rowFacts, shortDigest } from "./kiosk-approval.js";
+import { getThemeName, mountThemePicker, onThemeChange } from "./theme.js";
 import { cssString, hoverCss, hoverFromMessage, hoverLinks, hoverMessage, isLightBg, rootSegments, rootText } from "./kiosk-roots.js";
 import { creditLines, filterIndex, keepRun, liveEstimate, liveFor, namesOther, notRunWords, replayAt, replayBanner, replayIndex, rootWord, runAsOf, scrubDemo, servesRepo, vendorOf } from "./kiosk-vendor.js";
 import { repoParam, repoUrl } from "./kiosk-repo.js";
@@ -343,9 +345,10 @@ export function runPin(demo) {
 }
 
 /** The framed view's address: behold's own page, bare, at a zoom (the resources zoom unless told), told who its host is. */
-export function frameSrc(origin, zoom = "resources", repo = null) {
+export function frameSrc(origin, zoom = "resources", repo = null, theme = null) {
   const q = new URLSearchParams({ embed: "1", bare: "1", zoom, host: origin });
   if (repo) q.set("repo", repo); // behold#571: the checkout the frame draws, on a behold that serves several
+  if (theme) q.set("theme", theme); // behold#571: the kiosk's theme, which the frame follows
   return `/?${q.toString()}`;
 }
 
@@ -518,30 +521,41 @@ function drawBar(bar, s, now, foot) {
   if (s.replay && s.replay.banner) bar.appendChild(el("p", "k-replay", s.replay.banner));
   if (vendor && s.noReports && (s.mode === "live" || s.mode === "replay")) bar.appendChild(el("p", "k-nograph-note", NO_GRAPH_WORDS));
   const intro = introText(demo);
-  if (intro) bar.appendChild(el("p", "k-intro", intro));
 
-  // behold#571: the kicker on the title's line, so the bar has room for the intro.
+  // behold#571: the left column in fixed boxes: the title, the card (the intro between scenarios), the step.
   const left = el("div", "k-left");
+  const titleBox = box("title", "k-box-title");
   const title = el("h1", "k-title");
   if (vendor) title.appendChild(brandEl(vendor));
   title.append(el("span", "k-kicker", head.kicker), el("span", "k-title-text", head.title));
-  left.appendChild(title);
+  if (title.setAttribute) title.setAttribute("title", `${head.kicker} · ${head.title || ""}`);
+  titleBox.appendChild(title);
+  left.appendChild(titleBox);
+  const cardBox = box("card");
   const rows = aboutRows(demo);
-  if (rows.length) {
+  if (demo.step === "reset" && intro) {
+    // Between scenarios nothing else happens: the card's box says what the demo is about.
+    const p = el("p", "k-intro");
+    p.append(el("span", "k-intro-head", INTRO_HEAD), intro);
+    cardBox.appendChild(p);
+  } else if (rows.length) {
     const card = el("dl", "k-about");
     for (const r of rows) card.append(el("dt", "k-about-label", r.label), elRoots("dd", "k-about-text", r.text, s));
-    left.appendChild(card);
+    cardBox.appendChild(card);
   }
+  left.appendChild(cardBox);
   const said = el("p", `k-step k-step-${demo.step}`);
   said.append(el("span", "k-step-word", STEP_WORDS[demo.step] || demo.step), elRoots("span", "k-label", demo.label, s));
-  left.appendChild(said);
+  const stepBox = box("step");
+  stepBox.appendChild(said);
+  left.appendChild(stepBox);
   bar.appendChild(left);
 
   const right = el("div", "k-right");
   const strip = el("ol", "k-strip");
   for (const stop of stripStops(demo.step)) strip.appendChild(el("li", `k-stop k-${stop.state}`, stop.words));
   const where = el("div", "k-where");
-  where.append(strip, el("span", "k-cycle", cycleWords(demo, now)));
+  where.appendChild(strip);
   right.appendChild(where);
 
   const nx = nextWords(demo, now);
@@ -549,22 +563,28 @@ function drawBar(bar, s, now, foot) {
   next.appendChild(el("span", "k-next-word", "next, by the driver"));
   next.appendChild(elRoots("span", "k-action", nx.action, s));
   next.appendChild(el("span", "k-when", nx.when));
+  next.appendChild(el("span", "k-cycle", cycleWords(demo, now)));
   right.appendChild(next);
 
+  // behold#571: the hold's box: how the hold ends, from the records; else the driver's approval, or the run's note.
+  const holdBox = box("hold");
   const appr = pendingApproval(demo, s.progress);
-  if (appr) {
+  if (s.approval) {
+    holdBox.appendChild(approvalPanel(s.approval, s));
+  } else if (appr) {
     const a = el("div", "k-approve");
     a.appendChild(elRoots("p", "k-approve-gloss", approveGloss(appr), s));
     a.appendChild(el("code", "k-command", appr.approve));
     const then = el("p", "k-approve-then");
     then.append(`then comments `, el("code", "k-inline", appr.comment), ` on ${appr.on}, and the waves run again.`);
     a.appendChild(then);
-    right.appendChild(a);
+    holdBox.appendChild(a);
   } else if (!s.noReports) {
     const panel = runPanel(demo, s.answer, s.progress);
-    if (panel.note) right.appendChild(elRoots("p", "k-note", panel.note, s));
-    else if (panel.stage === "pull-request") for (const u of unreviewedLines(s.answer)) right.appendChild(elRoots("p", "k-note k-unknown", u, s));
+    if (panel.note) holdBox.appendChild(elRoots("p", "k-note", panel.note, s));
+    else if (panel.stage === "pull-request") for (const u of unreviewedLines(s.answer)) holdBox.appendChild(elRoots("p", "k-note k-unknown", u, s));
   }
+  right.appendChild(holdBox);
   bar.appendChild(right);
 
   if (foot) {
@@ -573,6 +593,52 @@ function drawBar(bar, s, now, foot) {
     // behold#571: no line on where the narration was read from: a viewer new to the demo reads the facts.
     if (!s.noReports) for (const f of factLines(demo, s.answer)) foot.appendChild(elRoots("span", "k-fact", f, s));
   }
+}
+
+/** behold#571: the head over the intro, in the card's box between scenarios, and the title of "What is this?". */
+export const INTRO_HEAD = "What this demo is about";
+
+/** A fixed box of the header: its text scrolls inside it, and the page keeps its scroll across redraws by `data-box`. */
+function box(name, cls = "") {
+  const b = el("div", `k-box${cls ? ` ${cls}` : ""}`);
+  if (b.dataset) b.dataset.box = name;
+  return b;
+}
+
+/**
+ * behold#571: "How this hold ends", drawn from approvalModel's rows. A row's
+ * chip names the log line it rests on and shows it in the runs pane
+ * (`s.showLine`).
+ */
+export function approvalPanel(model, s = {}) {
+  const wrap = el("div", "k-ap");
+  const head = el("p", "k-ap-head", `${PANEL_TITLE} · wave ${model.wave} `);
+  if (model.digest) head.appendChild(el("span", "k-ap-plan", `plan ${shortDigest(model.digest)}`));
+  head.append(" · times in UTC");
+  wrap.appendChild(head);
+  const list = el("ol", "k-ap-rows");
+  for (const r of model.rows) {
+    const li = el("li", `k-ap-row k-ap-${r.state}`);
+    const mark = el("span", "k-ap-mark");
+    if (mark.setAttribute) mark.setAttribute("aria-label", r.state === "lit" ? "done" : r.state === "going" ? "under way" : "not yet");
+    li.append(mark, el("span", "k-ap-label", r.label));
+    const text = elRoots("span", "k-ap-text", r.text, s);
+    const facts = rowFacts(r);
+    if (facts.length) text.appendChild(el("span", `k-ap-facts${r.seal && r.seal.ok === false ? " k-ap-bad" : ""}`, facts.join(" · ")));
+    if (r.line && r.line.a) {
+      const chip = annMark(r.line.a, { first: true });
+      chip.dataset.annJump = "1";
+      chip.title = `${r.line.a.note} Shows run #${r.line.run}, ${r.line.job}, line ${r.line.n}.`;
+      const line = r.line;
+      chip.addEventListener("click", () => s.showLine && s.showLine(line));
+      text.append(" ", chip);
+    }
+    li.appendChild(text);
+    if (r.command) li.appendChild(el("code", "k-command", r.command));
+    list.appendChild(li);
+  }
+  wrap.appendChild(list);
+  return wrap;
 }
 
 /** behold#571: the header's line when this behold serves another repo than the page's. */
@@ -618,6 +684,22 @@ function drawCredit(foot, tool) {
 export const HOVER_ROOT_RULE = "background: color-mix(in srgb, var(--focus) 32%, transparent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus) 32%, transparent); border-radius: 3px;";
 export const HOVER_JOB_RULE = "background: color-mix(in srgb, var(--focus) 24%, transparent); box-shadow: inset 4px 0 0 var(--focus);";
 
+/** behold#571: how often the approval panel reads the cycle's runs, and the gate ledger (which the server caches 30 s). */
+export const APPROVAL_POLL_MS = 4_000;
+export const LEDGER_POLL_MS = 10_000;
+
+/** behold#571: the approval panel's words for the approval the driver gives next, over its command. */
+export const DRIVER_SIGNS = "Next the driver plays a reviewer with no hand in the change and signs this plan with that reviewer's key:";
+
+/** behold#571: "What is this?" before demo.json says. */
+export const WHAT_FALLBACK = "A demo that runs a real infrastructure change through its pipeline in a loop, and shows each step as it happens.";
+
+/** behold#571: a fade at a box's edge where its text goes on past it. */
+function fade(b) {
+  b.classList.toggle("k-more-below", b.scrollTop + b.clientHeight < b.scrollHeight - 1);
+  b.classList.toggle("k-more-above", b.scrollTop > 1);
+}
+
 /** How often the kiosk asks for demo.json. The server shares one read between kiosks. */
 export const DEMO_POLL_MS = 3_000;
 
@@ -628,7 +710,7 @@ export const DEMO_POLL_MS = 3_000;
  * countdown. When the roots the step is about change, move the framed view
  * with a `behold:view` message; the frame takes them only from this origin.
  */
-export function startKiosk({ bar, frame, foot, side, main, views }, { fetchJson = defaultFetch, now = () => new Date(), origin = location.origin, tool = null } = {}) {
+export function startKiosk({ bar, frame, foot, side, main, views, tools = null }, { fetchJson = defaultFetch, now = () => new Date(), origin = location.origin, tool = null } = {}) {
   const s = { demo: null, answer: null, progress: null, components: false, pick: null, view: "resources", roots: [], waves: [], light: false, hover: null, frameHover: null };
   // behold#571: on a tool's page, `live` while its scenario runs, `replay` of its latest cycle otherwise, `none` before it has one.
   const vendor = vendorOf(tool);
@@ -766,7 +848,16 @@ export function startKiosk({ bar, frame, foot, side, main, views }, { fetchJson 
     s.view = shown.view;
     const ok = frameOk();
     s.noReports = !ok;
+    s.approval = approvalNow();
+    // behold#571: the header's boxes redraw every second; each keeps where a viewer scrolled it.
+    const scrolled = Object.fromEntries([...bar.querySelectorAll(".k-box")].map((b) => [b.dataset.box, b.scrollTop]));
     renderKiosk(bar, s, shownNow(), foot);
+    for (const b of bar.querySelectorAll(".k-box")) {
+      if (scrolled[b.dataset.box]) b.scrollTop = scrolled[b.dataset.box];
+      fade(b);
+      b.addEventListener("scroll", () => fade(b), { passive: true });
+    }
+    whatText();
     renderViewToggle(views, shown, { components: s.components && ok, onPick: pickView });
     // behold#571: with no graph to show, the graph pane folds away and the runs and the log take its width.
     if (typeof document !== "undefined" && document.body && document.body.classList) document.body.classList.toggle("k-nograph", !!vendor && !ok);
@@ -803,8 +894,94 @@ export function startKiosk({ bar, frame, foot, side, main, views }, { fetchJson 
       },
     };
   };
+  // behold#571: the approval panel's records: the cycle's runs, the gate ledger's history, and the lane.
+  const ap = { runs: new Map(), list: [], lifecycle: null, history: null, at: 0, ledgerAt: 0, busy: false };
+  const readApproval = async () => {
+    const d = s.demo && s.demo.demo;
+    if (!d || !PANEL_STEPS.includes(d.step) || ap.busy) return;
+    const t = now().getTime();
+    if (t - ap.at < APPROVAL_POLL_MS) return;
+    ap.busy = true;
+    ap.at = t;
+    try {
+      const src = runsSource();
+      const raw = src ? await src.index() : await fetchJson("/api/terragucci/runs");
+      const idx = vendor ? filterIndex(raw, { tool, repo: s.repo }) : raw;
+      const mine = cycleRuns(idx && idx.doc && Array.isArray(idx.doc.runs) ? idx.doc.runs : [], d);
+      for (const e of mine) {
+        const key = `${s.mode}|${e.status}|${e.ended_at}|${src ? Math.floor(shownNow().getTime() / 5000) : ""}`;
+        const had = ap.runs.get(e.id);
+        if (had && had.key === key) continue;
+        const r = src ? await src.run(e.id) : await fetchJson(`/api/terragucci/runs/${e.id}`);
+        if (r && r.doc) ap.runs.set(e.id, { key, doc: mergeRun(e, r.doc) });
+      }
+      ap.list = mine.map((e) => ap.runs.get(e.id)).filter(Boolean).map((x) => x.doc);
+      if (t - ap.ledgerAt >= LEDGER_POLL_MS) {
+        ap.ledgerAt = t;
+        const [lifecycle, history] = await Promise.all([fetchJson("/api/terragucci/lifecycle"), fetchJson("/api/lifecycle/history?limit=200")]);
+        ap.lifecycle = lifecycle && !lifecycle.error ? lifecycle : null;
+        ap.history = history && !history.error ? history : null;
+      }
+    } finally {
+      ap.busy = false;
+    }
+    draw();
+  };
+  const approvalNow = () => {
+    const d = s.demo && s.demo.demo;
+    if (!d || !PANEL_STEPS.includes(d.step)) return null;
+    const appr = pendingApproval(d, s.progress);
+    const driver = appr && s.mode !== "replay" ? { gloss: DRIVER_SIGNS, approve: appr.approve, comment: appr.comment, on: appr.on } : null;
+    return approvalModel({ demo: d, runs: ap.list, history: ap.history, lifecycle: ap.lifecycle, fallback: appr, now: shownNow().getTime(), driver });
+  };
+  // behold#571: a chip in the panel shows its log line in the runs pane (opened, on a phone).
+  let runsApi = null;
+  s.showLine = (line) => {
+    if (!runsApi) return;
+    if (tools && tools.runsToggle) setRunsOpen(true);
+    runsApi.show(line.run, line.job, line.step, line.n);
+  };
+  const setRunsOpen = (open) => {
+    document.body.classList.toggle("k-runs-open", open);
+    if (tools && tools.runsToggle) tools.runsToggle.setAttribute("aria-expanded", String(open));
+  };
+  if (tools && tools.runsToggle) tools.runsToggle.addEventListener("click", () => setRunsOpen(!document.body.classList.contains("k-runs-open")));
+
+  // behold#571: "What is this?" opens the intro over the page (no layout moves); a click elsewhere or Escape closes it.
+  const whatText = () => {
+    if (!tools || !tools.pop) return;
+    const d = s.demo && s.demo.demo;
+    const text = (d && introText(d)) || WHAT_FALLBACK;
+    const p = tools.pop.firstElementChild;
+    if (p && p.textContent === text) return;
+    tools.pop.replaceChildren(el("p", null, text));
+  };
+  if (tools && tools.what && tools.pop) {
+    const setWhat = (open) => {
+      tools.pop.hidden = !open;
+      tools.what.setAttribute("aria-expanded", String(open));
+    };
+    tools.what.addEventListener("click", (e) => {
+      e.stopPropagation();
+      whatText();
+      setWhat(tools.pop.hidden);
+    });
+    document.addEventListener("click", (e) => {
+      if (!tools.pop.hidden && !tools.pop.contains(e.target)) setWhat(false);
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") setWhat(false);
+    });
+  }
+  // behold#571: the theme picker, persisted per viewer as the app does; the frame follows without a reload.
+  if (tools && tools.theme) mountThemePicker(tools.theme);
+  onThemeChange((th) => {
+    if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: "behold:theme", name: th.name }, origin);
+    draw();
+  });
+
   if (side && main) {
-    startRuns(
+    runsApi = startRuns(
       { side, main },
       {
         fetchJson,
@@ -827,7 +1004,7 @@ export function startKiosk({ bar, frame, foot, side, main, views }, { fetchJson 
   let frameSrcNow = null;
   const openFrame = () => {
     if (!frame) return;
-    const src = frameSrc(origin, viewZoom(shownView().view), wantRepo());
+    const src = frameSrc(origin, viewZoom(shownView().view), wantRepo(), getThemeName());
     if (src === frameSrcNow) return;
     if (frameSrcNow === null) {
       // The frame reads its graph after load; tell it again once it has had the time.
@@ -923,6 +1100,7 @@ export function startKiosk({ bar, frame, foot, side, main, views }, { fetchJson 
   void reports(false);
   void progress(false);
   setInterval(() => void demo(), DEMO_POLL_MS);
+  setInterval(() => void readApproval(), 1000);
   setInterval(draw, 1000);
 
   if (typeof EventSource !== "undefined") {
