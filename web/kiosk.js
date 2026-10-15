@@ -208,7 +208,8 @@ export function pendingApproval(demo, progress) {
  * #569: the roots the step is about, for the framed view to bring forward:
  * the pull request's roots while it is planned; from the merge on, the wave
  * that is waiting, applying, failed or refused (its roots and, for a composed
- * run, every root in it); nothing in particular once applied or reset, so the
+ * run, every root in it; for a failed or refused wave, the roots of the waves
+ * before it that applied, which stay applied); nothing in particular once applied or reset, so the
  * whole picture shows. Null brings nothing forward.
  */
 export function focusRoots(demo, answer, progress) {
@@ -229,7 +230,9 @@ export function focusRoots(demo, answer, progress) {
     const w = progress.states.find((x) => x.state === want);
     if (!w) continue;
     const inRun = progress.reads.filter((r) => r.composed && r.composed.wave === w.number).map((r) => r.root);
-    const roots = [...new Set([...w.roots, ...(w.composed ? w.composed.roots : []), ...inRun])];
+    // A wave that failed or refused: the waves before it that applied too, since they stay applied.
+    const before = want === "failed" || want === "refused" ? progress.states.filter((x) => x.number < w.number && x.state === "applied").flatMap((x) => x.roots) : [];
+    const roots = [...new Set([...w.roots, ...(w.composed ? w.composed.roots : []), ...inRun, ...before])];
     if (roots.length) return roots;
   }
   return null;

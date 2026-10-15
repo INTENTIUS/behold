@@ -21,6 +21,14 @@ describe("focusRoots (#569)", () => {
     expect(focusRoots(demo("applied"), answer, p)).toBe(null);
     expect(focusRoots(demo("reset"), answer, p)).toBe(null);
   });
+  it("brings a failed wave forward with the waves before it that stay applied", () => {
+    const p = progress([
+      { number: 1, state: "applied", roots: ["network", "other"], reads: [] },
+      { number: 2, state: "failed", roots: ["app"], reads: [1] },
+      { number: 3, state: "not-started", roots: ["edge"], reads: [2] },
+    ]);
+    expect(focusRoots(demo("failed"), answer, p)).toEqual(["app", "network", "other"]);
+  });
   it("takes every root of a composed run", () => {
     const p = progress([{ number: 1, state: "applying", roots: ["network"], reads: [], composed: { roots: ["network", "app", "edge"] } }]);
     expect(focusRoots(demo("applying"), answer, p)).toEqual(["network", "app", "edge"]);
