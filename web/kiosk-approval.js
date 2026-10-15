@@ -46,10 +46,13 @@ const ms = (t) => (t ? Date.parse(t) : NaN);
 export function cycleRuns(runs, demo) {
   const start = ms(demo && demo.started_at);
   return (runs || [])
-    .filter((r) => r && (r.trigger === "merge" || r.trigger === "resume" || r.trigger === "push"))
+    .filter((r) => r && (r.trigger === "merge" || isResume(r) || r.trigger === "push"))
     .filter((r) => (Number.isInteger(r.cycle) && Number.isInteger(demo.cycle) ? r.cycle === demo.cycle : String(r.pull) === String(demo.pull) && !(ms(r.created_at) < start)))
     .sort((a, b) => ms(a.created_at) - ms(b.created_at) || a.id - b.id);
 }
+
+/** A run that `/terragucci apply` started: the driver's resume, a comment on the merged pull request. */
+export const isResume = (r) => !!r && (r.trigger === "resume" || r.event === "issue_comment");
 
 const waveLine = (wave) => (text) => new RegExp(`^wave ${wave}\\b`).test(text);
 
@@ -124,7 +127,9 @@ export function approvalModel({ demo, runs = [], history = null, lifecycle = nul
 
   // Approved.
   const apRow = { id: "approved", label: "Approved" };
-  const resumeRuns = cycle.filter((r) => r.trigger === "resume" && (!approved || !(ms(r.created_at) < ms(approved.at))));
+  // The resume runs: started by /terragucci apply after the run that held the wave.
+  const holdRun = reqLine ? cycle.find((r) => r.id === reqLine.run) : null;
+  const resumeRuns = cycle.filter((r) => isResume(r) && (!holdRun || !(ms(r.created_at) < ms(holdRun.created_at))));
   const gateRead = resumeRuns.map((r) => lineOf(r, ["T09"], wave, (text) => / approved by /.test(text))).find(Boolean) || null;
   if (approved) {
     const check = lane && lane.approval && lane.approval.by === approved.actor && ms(lane.approval.at) === ms(approved.at) ? lane.approval.sealCheck || null : null;
@@ -173,7 +178,40 @@ export function approvalModel({ demo, runs = [], history = null, lifecycle = nul
     });
   } else Object.assign(spRow, { state: "dim", text: `Once wave ${wave} applies, this approval is used up for good.` });
 
-  return { wave, digest, rows: [reqRow, apRow, rsRow, spRow] };
+  return { wave, digest, rows: inferBack([reqRow, apRow, rsRow, spRow], { wave, gateRead, spentLine, resumeRuns }) };
+}
+
+/** The words a row lit only because a later one is, by row. Each says it was inferred; none invents a time. */
+export const INFERRED = {
+  requested: (wave) => `Wave ${wave} asked for an approval of this plan.`,
+  approved: (actor) => `${actor || "A reviewer"} approved this plan.`,
+  resumed: () => "The waves ran again under this approval.",
+};
+
+/**
+ * behold#571: a hold ends in order, so no row is lit after one that isn't.
+ * A lit row lights the rows before it: Spent means the waves ran again
+ * (Resumed), which means the plan was approved, which means it was asked
+ * for. A row lit this way says so (`inferred`), names what the later rows
+ * show (the approver from the gate's or the spend's line, the run), and
+ * carries no time it does not have.
+ */
+export function inferBack(rows, { wave, gateRead = null, spentLine = null, resumeRuns = [] } = {}) {
+  const out = rows.map((r) => ({ ...r }));
+  for (let i = out.length - 1; i > 0; i--) {
+    if (out[i].state !== "lit" || out[i - 1].state === "lit") continue;
+    const r = out[i - 1];
+    const base = { id: r.id, label: r.label, state: "lit", inferred: true };
+    if (r.id === "requested") out[i - 1] = { ...base, text: INFERRED.requested(wave) };
+    else if (r.id === "approved") {
+      const said = [gateRead, spentLine].filter(Boolean).map((l) => / approv(?:ed|al) by (\S+?)[;,\s]/.exec(`${l.text} `)).find(Boolean);
+      out[i - 1] = { ...base, text: INFERRED.approved(said ? said[1] : null), line: gateRead || null };
+    } else if (r.id === "resumed") {
+      const run = resumeRuns[resumeRuns.length - 1] || null;
+      out[i - 1] = { ...base, text: INFERRED.resumed(), runId: run ? run.id : r.runId || (spentLine ? spentLine.run : null), at: r.at || null, line: r.line || null };
+    }
+  }
+  return out;
 }
 
 /**
@@ -198,6 +236,6 @@ export function clockWords(at) {
 
 /** A row's facts after its sentence, in order: the seal, the time, the ledger's commit on chant/lifecycle, the run. */
 export function rowFacts(row) {
-  return [row.seal ? row.seal.text : null, clockWords(row.at), row.commit ? `ledger ${row.commit.slice(0, 8)}` : null, row.runId ? `run #${row.runId}` : null].filter(Boolean);
+  return [row.inferred ? "inferred from the rows after it" : null, row.seal ? row.seal.text : null, clockWords(row.at), row.commit ? `ledger ${row.commit.slice(0, 8)}` : null, row.runId ? `run #${row.runId}` : null].filter(Boolean);
 }
 

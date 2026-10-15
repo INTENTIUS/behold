@@ -465,7 +465,7 @@ export function renderSidebar(host, index, selectedId, { now = new Date(), scena
  * null for the defaults. Returns what it drew, so the caller can keep a log's
  * scroll.
  */
-export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => {}, toggleStep = () => {}, toggleSetup = () => {}, jump = () => {}, note = null, flash = null, entry = null, roots = [], waves = [], light = false, hideLine = null } = {}) {
+export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => {}, toggleStep = () => {}, toggleSetup = () => {}, jump = () => {}, toggleFeats = () => {}, featsOpen = false, note = null, flash = null, entry = null, roots = [], waves = [], light = false, hideLine = null } = {}) {
   // behold#571: a root's name with its colour's dot, where the line names one.
   const textOf = (cls, text) => {
     if (!roots.length || !rootSegments(text, roots).some((x) => x.root)) return el("span", cls, text);
@@ -530,22 +530,27 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
   host.appendChild(jobsBox);
 
   // behold#571: the features this run's logs show, by tool, each jumping to its first line.
+  // One wrapping list (a tool's name, then its features); folded, it shows whole lines only (fitFeatures).
   const feats = runFeatures(shown, { hide: hideLine });
   if (feats.length) {
-    const box = el("div", "r-feats");
+    const box = el("div", `r-feats${featsOpen ? " r-feats-open" : ""}`);
     box.appendChild(el("div", "r-label r-feats-label", "Features in this run"));
+    const list = el("div", "r-feats-list");
     for (const g of feats) {
-      const row = el("div", "r-feats-group");
-      row.appendChild(el("span", `r-feats-product r-ann-${g.product}`, g.product));
+      list.appendChild(el("span", `r-feats-product r-ann-${g.product}`, g.product));
       for (const f of g.features) {
         const b = el("button", "r-feat", f.feature);
         b.type = "button";
         b.title = `${f.a.note} (${f.job}, line ${f.n})`;
         b.addEventListener("click", () => jump(f.job, f.step, f.n));
-        row.appendChild(b);
+        list.appendChild(b);
       }
-      box.appendChild(row);
     }
+    const more = el("button", "r-feats-more", featsOpen ? "Show fewer" : "");
+    more.type = "button";
+    more.addEventListener("click", () => toggleFeats());
+    list.appendChild(more);
+    box.appendChild(list);
     host.appendChild(box);
   }
 
@@ -646,6 +651,43 @@ export function annNote(a, { auto = false, pinned = false } = {}) {
   return box;
 }
 
+/** behold#571: how many whole lines the folded features strip shows. */
+export const FEATURE_LINES = 3;
+
+/**
+ * behold#571: fold the features strip to FEATURE_LINES whole lines: what
+ * would wrap past them is hidden, never cut through, and a "+N more" button
+ * on the last line opens the rest. A tool's name left last on a line with
+ * none of its features after it goes too. Measures the drawn list.
+ */
+export function fitFeatures(list, open, lines = FEATURE_LINES) {
+  if (!list) return;
+  const more = list.querySelector(".r-feats-more");
+  const items = [...list.children].filter((c) => c !== more);
+  for (const i of items) i.hidden = false;
+  if (open) {
+    more.hidden = false;
+    return;
+  }
+  more.hidden = true;
+  const tops = [...new Set(items.map((i) => i.offsetTop))].sort((a, b) => a - b);
+  if (tops.length <= lines) return;
+  const last = tops[lines - 1];
+  const shown = items.filter((i) => i.offsetTop <= last);
+  for (const i of items) if (i.offsetTop > last) i.hidden = true;
+  more.hidden = false;
+  const count = () => items.filter((i) => i.hidden && i.classList.contains("r-feat")).length;
+  more.textContent = `+${count()} more`;
+  // The button sits on the last line: hide features from its end until it fits there.
+  while (more.offsetTop > last && shown.length) {
+    shown.pop().hidden = true;
+    more.textContent = `+${count()} more`;
+  }
+  // A tool's name with none of its features shown after it.
+  const vis = items.filter((i) => !i.hidden);
+  if (vis.length && vis[vis.length - 1].classList.contains("r-feats-product")) vis[vis.length - 1].hidden = true;
+}
+
 /** Which log is open: the run, the job and the step. A new key means a different log, which the pane follows from its end. */
 export function logKey(runId, job, step) {
   return `${runId}|${job}|${step}`;
@@ -697,7 +739,7 @@ export function startRuns(
     hideLine = null,
   } = {},
 ) {
-  const s = { index: null, run: null, selected: null, picked: 0, ui: { job: null, open: null, setup: null }, note: null, flash: null, scrollTo: null, pending: null };
+  const s = { index: null, run: null, selected: null, picked: 0, ui: { job: null, open: null, setup: null }, note: null, flash: null, scrollTo: null, pending: null, featsOpen: false };
   // behold#571: the notes a kiosk with nobody at it has opened by itself, and when it last had a pointer.
   const toured = new Set();
   let lastPointer = -Infinity;
@@ -754,6 +796,12 @@ export function startRuns(
       hideLine,
       note: s.note,
       flash: s.flash ? s.flash.key : null,
+      featsOpen: s.featsOpen,
+      toggleFeats: () => {
+        s.featsOpen = !s.featsOpen;
+        hold();
+        draw();
+      },
       jump: (job, step, n) => {
         const runId = ans && ans.doc ? ans.doc.id : null;
         if (runId === null) return;
@@ -777,6 +825,7 @@ export function startRuns(
         draw();
       },
     });
+    fitFeatures(main.querySelector(".r-feats-list"), s.featsOpen);
     logFollow = followsLog(logShown, drawn.key, logFollow);
     const sameLog = drawn.key !== null && drawn.key === logShown;
     logShown = drawn.key;

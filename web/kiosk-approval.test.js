@@ -4,7 +4,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { PANEL_STEPS, ROWS, approvalModel, clockWords, cycleRuns, heldWave, rowFacts, sameDigest, sealWords, shortDigest } from "./kiosk-approval.js";
+import { PANEL_STEPS, ROWS, approvalModel, inferBack, clockWords, cycleRuns, heldWave, rowFacts, sameDigest, sealWords, shortDigest } from "./kiosk-approval.js";
 
 const FIX = join(import.meta.dirname, "..", "src", "__fixtures__", "terragucci-demo", "runs");
 const run = (id) => JSON.parse(readFileSync(join(FIX, `${id}.json`), "utf8"));
@@ -90,5 +90,33 @@ describe("the approval panel (behold#571)", () => {
     expect(shortDigest(D2)).toBe("0accc105ba06");
     expect(clockWords("2026-10-15T04:10:08.707Z")).toBe("04:10:08");
     expect(rowFacts({ at: "2026-10-15T04:10:08Z", commit: "4cba487a0000", runId: 445 })).toEqual(["04:10:08", "ledger 4cba487a", "run #445"]);
+  });
+
+  it("never lights a row after one that is not lit", () => {
+    const resumeless = { ...run(445), trigger: "merge", event: "push" };
+    const inputs = {
+      runs: [[run(444)], [run(444), run(445)], [run(444), resumeless], [run(445)]],
+      history: [null, history(["approval-requested"]), history(["approval-requested", "approved"]), history(["approved"])],
+      lifecycle: [null, lane(), lane({ applied: { at: "2026-10-15T04:10:15Z", approvedAt: "2026-10-15T04:10:08.707Z", approvedBy: "terragucci-admin" } })],
+    };
+    for (const step of PANEL_STEPS)
+      for (const runs of inputs.runs)
+        for (const h of inputs.history)
+          for (const l of inputs.lifecycle) {
+            const m = approvalModel({ demo: demo(step), runs, history: h, lifecycle: l, fallback: { wave: 2, digest: D2 }, now: Date.parse("2026-10-15T04:11:00Z") });
+            if (!m) continue;
+            const lit = m.rows.map((r) => r.state === "lit");
+            expect(lit.findIndex((x, i) => x && i > 0 && !lit[i - 1]), `${step}: ${m.rows.map((r) => r.state).join(",")}`).toBe(-1);
+          }
+  });
+
+  it("lights Resumed from the spend when no resume run was copied, says so, and invents no time", () => {
+    const resumeless = { ...run(445), trigger: "merge", event: "push" };
+    const m = approvalModel({ demo: demo("applied"), runs: [run(444), resumeless], now: Date.parse("2026-10-15T04:11:00Z") });
+    expect(m.rows.map((r) => r.state)).toEqual(["lit", "lit", "lit", "lit"]);
+    expect(m.rows[2]).toMatchObject({ inferred: true, runId: 445, at: null });
+    expect(rowFacts(m.rows[2])).toEqual(["inferred from the rows after it", "run #445"]);
+    expect(m.rows[1]).toMatchObject({ inferred: true, text: "terragucci-admin approved this plan." });
+    expect(inferBack([{ id: "requested", state: "dim" }, { id: "approved", state: "dim" }], { wave: 2 }).map((r) => r.state)).toEqual(["dim", "dim"]);
   });
 });

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { FOLLOW_LINES, followsLog, logKey, nearEnd, mergeRun, newerOf, agoWords, defaultJob, defaultStep, durationWords, jobOrder, liveRun, codeish, logLineWords, logRows, placeWords, scenarioTitles, setupLine, sidebarRuns, splitSkipped, STATUS_TONE, triggerWords } from "./kiosk-runs.js";
+import { FEATURE_LINES, fitFeatures, FOLLOW_LINES, followsLog, logKey, nearEnd, mergeRun, newerOf, agoWords, defaultJob, defaultStep, durationWords, jobOrder, liveRun, codeish, logLineWords, logRows, placeWords, scenarioTitles, setupLine, sidebarRuns, splitSkipped, STATUS_TONE, triggerWords } from "./kiosk-runs.js";
 
 const FIX = join(import.meta.dirname, "..", "src", "__fixtures__", "terragucci-demo", "runs");
 const run = (id) => JSON.parse(readFileSync(join(FIX, `${id}.json`), "utf8"));
@@ -221,5 +221,41 @@ describe("an artifact's upload and download fold with the set-up (behold#571)", 
   it("never opens an upload step by default, even when it has the most lines", () => {
     const check = run(444).jobs.find((j) => j.name === "check").steps;
     expect(check[defaultStep(check)].name).toBe("Format check and validate, every root");
+  });
+});
+
+describe("the features strip, folded to whole lines (behold#571)", () => {
+  // A drawn list just big enough: each item where it wrapped to, and the "+N more" button.
+  const item = (cls, top) => ({ hidden: false, offsetTop: top, classList: { contains: (c) => c === cls } });
+  const list = (items, moreTop) => {
+    const more = { hidden: false, offsetTop: moreTop, textContent: "", classList: { contains: () => false } };
+    return { more, items, el: { children: [...items, more], querySelector: () => more } };
+  };
+
+  it("hides what wraps past the last line it shows, never part of a line, and counts the features hidden", () => {
+    expect(FEATURE_LINES).toBe(3);
+    const items = [item("r-feats-product", 0), item("r-feat", 0), item("r-feat", 20), item("r-feat", 40), item("r-feats-product", 60), item("r-feat", 60), item("r-feat", 80)];
+    const l = list(items, 40);
+    fitFeatures(l.el, false);
+    expect(items.map((i) => i.hidden)).toEqual([false, false, false, false, true, true, true]);
+    expect(l.more).toMatchObject({ hidden: false, textContent: "+2 more" });
+  });
+
+  it("shows everything, and no button, when it fits; everything with the button when opened", () => {
+    const fits = list([item("r-feat", 0), item("r-feat", 20)], 20);
+    fitFeatures(fits.el, false);
+    expect(fits.items.every((i) => !i.hidden)).toBe(true);
+    expect(fits.more.hidden).toBe(true);
+    const open = list([item("r-feat", 0), item("r-feat", 20), item("r-feat", 40), item("r-feat", 60)], 60);
+    fitFeatures(open.el, true);
+    expect(open.items.every((i) => !i.hidden)).toBe(true);
+    expect(open.more.hidden).toBe(false);
+  });
+
+  it("drops a tool's name left last on a line with none of its features after it", () => {
+    const items = [item("r-feat", 0), item("r-feat", 20), item("r-feats-product", 40), item("r-feat", 60)];
+    const l = list(items, 40);
+    fitFeatures(l.el, false);
+    expect(items.map((i) => i.hidden)).toEqual([false, false, true, true]);
   });
 });
