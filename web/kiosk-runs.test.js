@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { FOLLOW_LINES, followsLog, logKey, nearEnd, mergeRun, newerOf, agoWords, defaultJob, defaultStep, durationWords, jobOrder, liveRun, placeWords, sidebarRuns, splitSkipped, STATUS_TONE, triggerWords } from "./kiosk-runs.js";
+import { FOLLOW_LINES, followsLog, logKey, nearEnd, mergeRun, newerOf, agoWords, defaultJob, defaultStep, durationWords, jobOrder, liveRun, logLineWords, placeWords, sidebarRuns, splitSkipped, STATUS_TONE, triggerWords } from "./kiosk-runs.js";
 
 const FIX = join(import.meta.dirname, "..", "src", "__fixtures__", "terragucci-demo", "runs");
 const run = (id) => JSON.parse(readFileSync(join(FIX, `${id}.json`), "utf8"));
@@ -20,6 +20,20 @@ describe("the runs, as a CI page lists them (#569)", () => {
   it("never draws a wave held at the gate as a failure", () => {
     expect(STATUS_TONE.waiting).toBe("wait");
     expect(STATUS_TONE.waiting).not.toBe(STATUS_TONE.failure);
+  });
+  it("shows the runner's exit 3 under a job held at the gate as the hold, not a failure", () => {
+    const line = "⚙️ [runner]: exitcode '3': failure";
+    expect(logLineWords("waiting", line)).toEqual({ text: "[runner]: exit code 3: held at the gate, waiting for an approval", held: true });
+    // The fixture's held job ends its log with that line.
+    const held = run(444).jobs.find((j) => j.status === "waiting");
+    const last = held.steps.find((s) => s.status === "waiting").log.at(-1);
+    expect(logLineWords(held.status, last).held).toBe(true);
+    // A real failure keeps its line, whatever the code.
+    expect(logLineWords("failure", line)).toEqual({ text: line, held: false });
+    expect(logLineWords("failure", "⚙️ [runner]: exitcode '1': failure")).toEqual({ text: "⚙️ [runner]: exitcode '1': failure", held: false });
+    // A held job's other lines, and another code, are kept as they came.
+    expect(logLineWords("waiting", "⚙️ [runner]: exitcode '1': failure").held).toBe(false);
+    expect(logLineWords("waiting", "wave 2 of 3: approval ledger (the default)").held).toBe(false);
   });
   it("follows the newest run still going, pinned first", () => {
     const runs = index().runs;
