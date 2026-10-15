@@ -98,6 +98,55 @@ export interface ReportRead {
   unknown?: string[];
   /** With `applied` in a tf-plan: why it did not plan on the upstream's planned outputs. */
   why?: string;
+  /** #568 step 3, minor 38 (INTENTIUS/terragucci#1013): a read of another member inside the composed run. */
+  composed?: true;
+}
+
+// #568 step 3: the composed run's fields, report minor 38 (INTENTIUS/terragucci#1013,
+// `report/schema.ts` and `report.schema.json` at terragucci main 11647640).
+
+/** `Report.compose`: present when the run's config has `waves.compose: true`. */
+export interface ReportCompose {
+  /** The roots the change reaches plus the roots they read, followed upstream, sorted. */
+  roots: string[];
+  /** waves.compose_max. */
+  max: number;
+  /** The wave whose run composes them. Absent when the change applies in waves. */
+  wave?: number;
+  /** Why the change applies in waves: a kind, the root it is about when there is one, and a sentence. */
+  fallback?: { kind: string; root?: string; reason: string };
+}
+
+export type ComposedApply = "applied" | "partial" | "failed" | "not-started" | "no-changes";
+export type ComposedState = "written" | "unchanged" | "not-written";
+
+export interface ReportComposedMember {
+  root: string;
+  /** Its address in the run, such as module.network. */
+  module: string;
+  /** tf-apply only: how its part of the apply ended. */
+  apply?: ComposedApply;
+  /** tf-apply only: how many of its planned changes completed. */
+  changes?: { done: number; planned: number };
+  /** tf-apply only: its state after the run. */
+  state?: ComposedState;
+  /** With not-written: where the state the run holds for it was kept, and that its lock is still held. */
+  kept?: string;
+  lock_held?: boolean;
+  /** Why the write failed, or the first error of its part of the apply. */
+  error?: string;
+}
+
+/** `ReportWave.composed`, on the wave that carries the run. */
+export interface ReportComposedRun {
+  /** The composed plan's digest; null when it failed to plan. */
+  plan_digest: string | null;
+  /** Each root in the run, upstreams first. */
+  members: ReportComposedMember[];
+  /** The members that read a value of another member unknown at plan time. Absent when there are none. */
+  held_by_unknown?: string[];
+  /** Why the run failed before or in its apply, when no member's own error says it. */
+  error?: string;
 }
 
 export interface ReportRoot {
@@ -109,6 +158,10 @@ export interface ReportRoot {
   reads?: ReportRead[];
   /** minor 23 (#568). */
   dependencies?: string[];
+  /** Its changes by action, as its plan counts them. */
+  counts?: Record<string, number>;
+  /** #568 step 3, minor 38 (INTENTIUS/terragucci#1013): on each root in a composed run. */
+  composed?: { wave: number; module: string };
 }
 
 /** A wave's or a run's monthly cost (minor 12 and 19, #568). Null where the estimator gave no figure. */
@@ -142,6 +195,8 @@ export interface ReportWave {
   reads?: number[];
   /** minor 21 (#568): a tf-plan wave that plans again after these waves apply. */
   replans_after?: number[];
+  /** #568 step 3, minor 38 (INTENTIUS/terragucci#1013): on the wave that carries the composed run. */
+  composed?: ReportComposedRun;
 }
 
 /** A changed resource and the resources that depend on it, nearest first (minor 31, #568). */
@@ -193,6 +248,8 @@ export interface Report {
   cost?: ReportCost;
   /** minor 22 (#568). */
   blast?: ReportBlast;
+  /** #568 step 3, minor 38 (INTENTIUS/terragucci#1013). */
+  compose?: ReportCompose;
 }
 
 export interface EstateWaiting {
@@ -407,7 +464,11 @@ export interface PullRequestPlan {
     reads?: number[];
     replans_after?: number[];
     cost?: ReportCostSums;
+    /** #568 step 3: the composed run this wave carries, each member with its own changes by action. */
+    composed?: ReportComposedRun & { members: (ReportComposedMember & { counts?: Record<string, number> })[] };
   }[];
+  /** #568 step 3: whether the change's roots compose, and if not, why (absent when `waves.compose` is off). */
+  compose?: ReportCompose;
   totals?: Record<string, number>;
   /** #568 step 2: how many roots `totals` counts a change of (minor 35). */
   totals_roots?: number;
@@ -654,6 +715,7 @@ export function pullRequestPlan(doc: Report, report: string): PullRequestPlan {
         outputs: x.outputs,
         ...(x.unknown?.length ? { unknown: [...x.unknown] } : {}),
         ...(x.why ? { why: x.why } : {}),
+        ...(x.composed ? { composed: true } : {}),
       })),
     ),
     roots: doc.roots.map((r) => r.path),
@@ -668,7 +730,20 @@ export function pullRequestPlan(doc: Report, report: string): PullRequestPlan {
       ...(w.reads?.length ? { reads: w.reads } : {}),
       ...(w.replans_after?.length ? { replans_after: w.replans_after } : {}),
       ...(w.cost ? { cost: w.cost } : {}),
+      // #568 step 3: each member's changes come from its own slice, under its own name.
+      ...(w.composed
+        ? {
+            composed: {
+              ...w.composed,
+              members: w.composed.members.map((m) => {
+                const counts = doc.roots.find((r) => r.path === m.root)?.counts;
+                return { ...m, ...(counts ? { counts } : {}) };
+              }),
+            },
+          }
+        : {}),
     })),
+    ...(doc.compose ? { compose: doc.compose } : {}),
     ...(doc.totals ? { totals: doc.totals } : {}),
     ...(doc.totals_roots !== undefined ? { totals_roots: doc.totals_roots } : {}),
     ...(doc.cost ? { cost: doc.cost } : {}),
