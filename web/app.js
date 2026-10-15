@@ -3571,7 +3571,7 @@ function drawTgReads() {
     const badge = pill(mark, local.x + local.width - 16, tabY, st.words, { stroke: tone, fill: solid ? tone : "var(--panel)", color: solid ? "var(--bg)" : "var(--fg)", size: 14, weight: 700, anchor: "end", cls: st.state === "applying" ? "pin-pulse" : "" });
     badge.g.appendChild(make("title", {}, [st.words, ...st.facts].join("\n") + "\n(from terragucci's reports, not live)"));
     // The facts under it, at the box's bottom right: the plan a wave waits on, its changes.
-    // Packed into at most two lines that fit the box; what doesn't fit is in the badge's tooltip.
+    // Packed into one line that fits the box, most telling first; the rest is in the badge's tooltip.
     if (st.facts.length) {
       const room = local.width - 28;
       const fill = st.state === "waiting" ? tone : "var(--muted)";
@@ -3597,8 +3597,9 @@ function drawTgReads() {
       }
       if (cur) lines.push(cur);
       probe.remove();
-      const shown = lines.slice(0, 2);
-      if (lines.length > 2) shown[1] += " …";
+      // One line: the box's bottom padding holds no more without touching a card.
+      const shown = lines.slice(0, 1);
+      if (lines.length > 1) shown[0] += " …";
       shown.forEach((t, i) => {
         mark.appendChild(make("text", { x: local.x + local.width - 14, y: local.y + local.height - 10 - (shown.length - 1 - i) * 15, "text-anchor": "end", "font-size": 12.5, "font-weight": 600, fill }, t));
       });
