@@ -9,7 +9,7 @@
 import {
   layoutIr,
   layoutArchitecture,
-  renderSvg,
+  renderSvg as pinholeRenderSvg,
   renderMorphHtml,
   cardSizes,
   registerPack,
@@ -32,6 +32,7 @@ import { opCardFields } from "./ops-lens.ts";
 import { ROW_ASPECT, ROW_MIN_CARDS, rowColumns, withRowChains, type RowBand, type RowGrid } from "./edgeless.ts";
 import { SUMMARY_LEXICON, summaryCardFields } from "./collapse-lens.ts";
 import { STACK_LEXICON } from "./stack-order.ts";
+import { routeEdges } from "./edge-route.ts";
 
 // Lexicon-native icons (#227), step 2 of 2. pinhole resolves a node's glyph
 // through a chain — per-node override → lexicon pack → keyword heuristic →
@@ -46,6 +47,15 @@ import { STACK_LEXICON } from "./stack-order.ts";
 // module load, before any renderSvg call. A kind neither pack answers for
 // returns undefined and falls through pinhole's chain untouched — the keyword
 // heuristic is a better answer than a wrong picture.
+/** pinhole's painter with behold's edge routing over it (#571): pinhole draws
+ * an edge centre to centre, so a column of cards gets a line through every
+ * card's text; src/edge-route.ts moves each end to the card's border and
+ * routes around whatever is in between. Every picture this module paints goes
+ * through here. */
+function renderSvg(...args: Parameters<typeof pinholeRenderSvg>): string {
+  return routeEdges(pinholeRenderSvg(...args));
+}
+
 registerPack({ lexicon: "k8s", iconFor: k8sIconFor });
 registerPack({ lexicon: "helm", iconFor: helmIconFor });
 // #524: a SQL Yodeler project's schema (chant-lexicon-sql): a line glyph per
