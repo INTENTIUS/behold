@@ -47,12 +47,22 @@ describe("joinTerragucci over terragucci's example (#490)", () => {
         words: "deleted outside Terraform",
         addresses: ["module.service.aws_sqs_queue.jobs"],
         attributes: [],
+        values: [],
         run: expect.objectContaining({ stage: "tf-drift", finished: "2026-10-08T06:04:12.000Z", job_url: "https://github.com/acme/shop/actions/runs/9102", report: expect.stringMatching(/tf-drift\/report\.html$/) }),
       },
     ]);
     expect(m.cards["tg-example/envs-prod-search/module.service/aws_dynamodb_table.records"]![0]).toMatchObject({ verdict: "plan", words: "would replace", addresses: ["module.service.aws_dynamodb_table.records[0]"], attributes: ["hash_key"], run: { pull_request: "11" } });
     // A waiting wave's change marks its card; an applied wave's does not.
     expect(m.cards["tg-example/envs-staging-email/module.service/aws_dynamodb_table.records"]![0]).toMatchObject({ verdict: "wave", words: "would destroy", run: { wave: 2 } });
+  });
+
+  it("carries each changed attribute's before and after, by address, for the kiosk's popover (behold#571)", async () => {
+    const read = await readTerragucci(terragucciSource(BUCKET), { roots: ROOTS.map((r) => r.path) });
+    const m = joinTerragucci(read, NODES, ROOTS);
+    const mark = m.cards["tg-example/envs-prod-search/module.service/aws_dynamodb_table.records"]![0]!;
+    expect(mark.values).toEqual([{ address: "module.service.aws_dynamodb_table.records[0]", path: "hash_key", before: "id", after: "sku" }]);
+    // Only an applied wave's changes land in `applied`; every entry there names its run.
+    for (const a of Object.values(m.applied)) expect(a.run.stage).toBe("tf-apply");
   });
 
   it("never writes a status: the marks ride beside the graph, not in it", async () => {

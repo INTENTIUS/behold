@@ -10,6 +10,8 @@
 // A job held at a terragucci gate is `waiting`: it waits for an approval, and
 // is never drawn as a failure. Step names are shown as the driver wrote them.
 
+import { rootColour, rootSegments, rootText, rootsOfWave, waveOfJob } from "./kiosk-roots.js";
+
 /** The run, job and step statuses, as a viewer reads them. */
 export const STATUS_WORDS = {
   queued: "queued",
@@ -405,7 +407,14 @@ export function renderSidebar(host, index, selectedId, { now = new Date(), scena
  * null for the defaults. Returns what it drew, so the caller can keep a log's
  * scroll.
  */
-export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => {}, toggleStep = () => {}, toggleSetup = () => {}, entry = null } = {}) {
+export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => {}, toggleStep = () => {}, toggleSetup = () => {}, entry = null, roots = [], waves = [], light = false } = {}) {
+  // behold#571: a root's name with its colour's dot, where the line names one.
+  const textOf = (cls, text) => {
+    if (!roots.length || !rootSegments(text, roots).some((x) => x.root)) return el("span", cls, text);
+    const n = el("span", cls);
+    n.appendChild(rootText(document, text, roots, { light }));
+    return n;
+  };
   host.replaceChildren();
   if (!answer || answer.error || answer.absent || !answer.doc) {
     host.appendChild(el("p", "r-note", answer ? answer.absent || answer.error : "Reading the run…"));
@@ -440,6 +449,20 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
     li.style.setProperty("--depth", String(j.depth));
     li.appendChild(statusIcon(j.status));
     li.appendChild(el("span", "r-job-name", j.name));
+    // behold#571: a wave's job row names the roots it applies, each with its dot, and lights its wave box on hover.
+    const wave = waveOfJob(j.name, waves);
+    const applies = wave !== null ? rootsOfWave(wave, waves).filter((r) => rootColour(r, roots, { light })) : [];
+    if (wave !== null && waves.length) li.dataset.kWave = String(wave);
+    if (applies.length) {
+      const box = el("span", "r-job-roots");
+      for (const r of applies) {
+        const name = el("span", "k-root", r);
+        name.dataset.kRoot = r;
+        name.style.setProperty("--k-root", rootColour(r, roots, { light }));
+        box.appendChild(name);
+      }
+      li.appendChild(box);
+    }
     if (j.needs && j.needs.length) li.appendChild(el("span", "r-job-needs", `after ${j.needs.join(", ")}`));
     li.appendChild(el("span", "r-dur", j.status === "waiting" ? "held at the gate" : durationWords(j.started_at, j.ended_at, now) || STATUS_WORDS[j.status] || ""));
     li.addEventListener("click", () => pickJob(j.name));
@@ -491,7 +514,7 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
         }
         const ln = el("div", `r-log-line${row.quiet ? " r-log-quiet" : ""}`);
         const shown = logLineWords(job.status, row.text);
-        ln.append(el("span", "r-ln", String(row.n)), el("span", shown.held ? "r-lt r-wait" : "r-lt", shown.text));
+        ln.append(el("span", "r-ln", String(row.n)), row.quiet ? el("span", shown.held ? "r-lt r-wait" : "r-lt", shown.text) : textOf(shown.held ? "r-lt r-wait" : "r-lt", shown.text));
         pre.appendChild(ln);
       }
       if (!s.log.length) pre.appendChild(el("div", "r-log-cut", s.status === "running" ? "waiting for output…" : "no output"));
@@ -537,7 +560,7 @@ export const PICK_HOLD_MS = 90_000;
  * is live), and redraw. The live run is selected until a viewer picks
  * another, and again {@link PICK_HOLD_MS} after their last pick.
  */
-export function startRuns({ side, main }, { fetchJson, now = () => new Date(), scenarios = {}, titles = () => ({}), names = () => ({}), onLive = () => {} } = {}) {
+export function startRuns({ side, main }, { fetchJson, now = () => new Date(), scenarios = {}, titles = () => ({}), names = () => ({}), onLive = () => {}, roots = () => [], waves = () => [], light = () => false } = {}) {
   const s = { index: null, run: null, selected: null, picked: 0, ui: { job: null, open: null, setup: null } };
   let follow = true;
   let lastRunKey = "";
@@ -569,6 +592,9 @@ export function startRuns({ side, main }, { fetchJson, now = () => new Date(), s
     const drawn = renderRun(main, ans, s.ui, {
       now: now(),
       entry,
+      roots: roots(),
+      waves: waves(),
+      light: light(),
       pickJob: (name) => {
         s.ui = { job: name, open: null, setup: null };
         hold();

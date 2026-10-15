@@ -2,7 +2,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readTerragucci, terragucciValidator, TerragucciReadError, MAX_RUNS_PER_STAGE } from "./terragucci-reports.ts";
+import { readTerragucci, terragucciValidator, TerragucciReadError, MAX_RUNS_PER_STAGE, attributeValues, VALUE_CAP } from "./terragucci-reports.ts";
 import { deniedWords, TerragucciDenied, terragucciSource } from "./terragucci-source.ts";
 
 // #490: the bundled bucket was written by terragucci's own code for its own
@@ -239,5 +239,24 @@ describe("terragucciValidator is looked up per read (#500)", () => {
     const d = scratch();
     install(d, "0.4.4");
     expect(terragucciValidator([d])).toBe(terragucciValidator([d]));
+  });
+});
+
+describe("an attribute's values, for the kiosk's popover (behold#571)", () => {
+  it("keeps the path, the before and after, and whether the after is known only after apply", () => {
+    expect(attributeValues({ path: "input", before: 8080, after: 9090 })).toEqual({ path: "input", before: 8080, after: 9090 });
+    expect(attributeValues({ path: "input", before: "a", unknown: true })).toEqual({ path: "input", before: "a", unknown: true });
+    expect(attributeValues({ path: "tags", after: null })).toEqual({ path: "tags", after: null });
+  });
+
+  it("leaves out a value too long to carry, and says so", () => {
+    const big = "x".repeat(VALUE_CAP + 1);
+    expect(attributeValues({ path: "policy", before: big, after: "short" })).toEqual({ path: "policy", after: "short", long: true });
+  });
+
+  it("serves the values of terragucci's example plan, never a sensitive one", async () => {
+    const r = await readTerragucci(terragucciSource(BUCKET), { roots: ROOTS });
+    expect(r.roots["envs/prod/search"]!.plan!.changes[0]!.attributes).toEqual([{ path: "hash_key", before: "id", after: "sku" }]);
+    for (const root of Object.values(r.roots)) for (const run of Object.values(root)) for (const c of run!.changes) for (const a of c.attributes ?? []) expect(a).not.toHaveProperty("sensitive");
   });
 });

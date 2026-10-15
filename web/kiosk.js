@@ -14,6 +14,7 @@
 // Nothing here is all-or-nothing, and nothing says so.
 
 import { PICK_HOLD_MS, startRuns } from "./kiosk-runs.js";
+import { cssString, hoverCss, hoverFromMessage, hoverLinks, hoverMessage, isLightBg, rootSegments, rootText } from "./kiosk-roots.js";
 import { STATE_WORDS, changingRoots, costLine, pinsCommit, planFitsPin, pullPin, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
 
 /** The scenarios terragucci#1014 numbers. An id not here is shown by the title demo.json carries. */
@@ -218,14 +219,17 @@ export function unreviewedLines(answer) {
 
 /**
  * The approval the driver gives at a waiting wave, as terragucci's
- * stack/demo.sh gives it: `approve_wave` runs chant's approve, sealed with
- * the driver's ssh key, then `resume_pull` posts `/terragucci apply` on the
- * merged pull request. The actor and the key are placeholders: the kiosk
- * never names a path or a secret.
+ * stack/demo.sh gives it: `approve_wave` runs chant's approve as the
+ * reviewer (terragucci#1052: the driver plays two people, demo-author who
+ * opens, merges and comments, and demo-reviewer who approves, since an
+ * approval only counts from someone who had no hand in the change), sealed
+ * with the reviewer's own signing key; then `resume_pull` posts
+ * `/terragucci apply` on the merged pull request. The actor and the key are
+ * placeholders: the kiosk never names a path or a secret.
  */
 export function driverApproveLines(wave, pull) {
   return {
-    approve: `chant approve tf-apply wave-${wave} --actor <driver> --sign <driver key>`,
+    approve: `chant approve tf-apply wave-${wave} --actor <reviewer> --sign <reviewer key>`,
     comment: "/terragucci apply",
     on: pull !== null && pull !== undefined ? `pull request #${pull}` : "the merged pull request",
   };
@@ -254,12 +258,13 @@ export function pendingApproval(demo, progress) {
 
 /**
  * behold#571: the approval in plain words, before the command, for a viewer
- * who has never approved a pipeline: who the driver is, what it signs. The
+ * who has never approved a pipeline: who the driver plays, what it signs
+ * with (terragucci#1052: a reviewer apart from the change's author). The
  * plan's digest is on the wave's box in the view.
  */
 export function approveGloss(appr) {
   const roots = appr.roots.length ? ` (${appr.roots.join(", ")})` : "";
-  return `The driver stands in for a person: it approves wave ${appr.wave}${roots} with its own signing key.`;
+  return `The driver plays a reviewer who had no hand in the change, and approves wave ${appr.wave}${roots} with that reviewer's own signing key.`;
 }
 
 /**
@@ -457,6 +462,15 @@ const el = (tag, cls, text) => {
   return n;
 };
 
+/** behold#571: an element whose text puts a dot in its root's colour by each whole-word root name. */
+const elRoots = (tag, cls, text, s) => {
+  const roots = (s && (s.rootNames || s.roots)) || [];
+  if (text === undefined || text === null || !rootSegments(String(text), roots).some((x) => x.root)) return el(tag, cls, text);
+  const n = el(tag, cls);
+  n.appendChild(rootText(document, String(text), roots, { light: !!(s && s.light) }));
+  return n;
+};
+
 /** Draw the bar and the foot from what the kiosk holds. Pure over its arguments, but for the DOM. */
 export function renderKiosk(bar, s, now = new Date(), foot = null) {
   bar.replaceChildren();
@@ -482,11 +496,11 @@ export function renderKiosk(bar, s, now = new Date(), foot = null) {
   const rows = aboutRows(demo);
   if (rows.length) {
     const card = el("dl", "k-about");
-    for (const r of rows) card.append(el("dt", "k-about-label", r.label), el("dd", "k-about-text", r.text));
+    for (const r of rows) card.append(el("dt", "k-about-label", r.label), elRoots("dd", "k-about-text", r.text, s));
     left.appendChild(card);
   }
   const said = el("p", `k-step k-step-${demo.step}`);
-  said.append(el("span", "k-step-word", STEP_WORDS[demo.step] || demo.step), el("span", "k-label", demo.label));
+  said.append(el("span", "k-step-word", STEP_WORDS[demo.step] || demo.step), elRoots("span", "k-label", demo.label, s));
   left.appendChild(said);
   bar.appendChild(left);
 
@@ -500,14 +514,14 @@ export function renderKiosk(bar, s, now = new Date(), foot = null) {
   const nx = nextWords(demo, now);
   const next = el("div", "k-next");
   next.appendChild(el("span", "k-next-word", "next, by the driver"));
-  next.appendChild(el("span", "k-action", nx.action));
+  next.appendChild(elRoots("span", "k-action", nx.action, s));
   next.appendChild(el("span", "k-when", nx.when));
   right.appendChild(next);
 
   const appr = pendingApproval(demo, s.progress);
   if (appr) {
     const a = el("div", "k-approve");
-    a.appendChild(el("p", "k-approve-gloss", approveGloss(appr)));
+    a.appendChild(elRoots("p", "k-approve-gloss", approveGloss(appr), s));
     a.appendChild(el("code", "k-command", appr.approve));
     const then = el("p", "k-approve-then");
     then.append(`then comments `, el("code", "k-inline", appr.comment), ` on ${appr.on}, and the waves run again.`);
@@ -515,17 +529,21 @@ export function renderKiosk(bar, s, now = new Date(), foot = null) {
     right.appendChild(a);
   } else {
     const panel = runPanel(demo, s.answer, s.progress);
-    if (panel.note) right.appendChild(el("p", "k-note", panel.note));
-    else if (panel.stage === "pull-request") for (const u of unreviewedLines(s.answer)) right.appendChild(el("p", "k-note k-unknown", u));
+    if (panel.note) right.appendChild(elRoots("p", "k-note", panel.note, s));
+    else if (panel.stage === "pull-request") for (const u of unreviewedLines(s.answer)) right.appendChild(elRoots("p", "k-note k-unknown", u, s));
   }
   bar.appendChild(right);
 
   if (foot) {
     foot.appendChild(el("span", "k-legend", legendWords(s.view || "resources")));
     // behold#571: no line on where the narration was read from: a viewer new to the demo reads the facts.
-    for (const f of factLines(demo, s.answer)) foot.appendChild(el("span", "k-fact", f));
+    for (const f of factLines(demo, s.answer)) foot.appendChild(elRoots("span", "k-fact", f, s));
   }
 }
+
+/** behold#571: how a hovered root's name and wave's job row light. A background and a shadow: nothing moves. */
+export const HOVER_ROOT_RULE = "background: color-mix(in srgb, var(--focus) 32%, transparent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus) 32%, transparent); border-radius: 3px;";
+export const HOVER_JOB_RULE = "background: color-mix(in srgb, var(--focus) 24%, transparent); box-shadow: inset 4px 0 0 var(--focus);";
 
 /** How often the kiosk asks for demo.json. The server shares one read between kiosks. */
 export const DEMO_POLL_MS = 3_000;
@@ -538,7 +556,7 @@ export const DEMO_POLL_MS = 3_000;
  * with a `behold:view` message; the frame takes them only from this origin.
  */
 export function startKiosk({ bar, frame, foot, side, main, views }, { fetchJson = defaultFetch, now = () => new Date(), origin = location.origin } = {}) {
-  const s = { demo: null, answer: null, progress: null, components: false, pick: null, view: "resources" };
+  const s = { demo: null, answer: null, progress: null, components: false, pick: null, view: "resources", roots: [], waves: [], light: false, hover: null, frameHover: null };
   let lastKey = "";
   let lastFocus;
   const shownView = () => kioskView(s.demo && s.demo.demo, { components: s.components, pick: s.pick, now: now().getTime() });
@@ -558,7 +576,59 @@ export function startKiosk({ bar, frame, foot, side, main, views }, { fetchJson 
     s.pick = { view, at: now().getTime() };
     draw();
   };
+  // behold#571: the roots' colours and the hover links between the panes and the frame.
+  const rootList = () => (s.roots.length ? s.roots : s.answer && Array.isArray(s.answer.roots) ? s.answer.roots.map((r) => r.path) : []);
+  const glow = () => {
+    let style = document.getElementById("k-hover-style");
+    if (!style) {
+      style = document.createElement("style");
+      style.id = "k-hover-style";
+      document.head.appendChild(style);
+    }
+    const a = hoverLinks(s.hover, s.waves);
+    const b = hoverLinks(s.frameHover, s.waves);
+    const links = { roots: [...new Set([...a.roots, ...b.roots])], waves: [...new Set([...a.waves, ...b.waves])] };
+    style.textContent = [
+      hoverCss({ roots: links.roots, waves: [] }, { root: (r) => `.k-root[data-k-root=${cssString(r)}]` }, HOVER_ROOT_RULE),
+      hoverCss({ roots: [], waves: links.waves }, { wave: (w) => `.r-job[data-k-wave="${w}"]` }, HOVER_JOB_RULE),
+    ].join("\n");
+  };
+  const tellHover = (h) => {
+    if (frame && frame.contentWindow) frame.contentWindow.postMessage(hoverMessage(h), origin);
+  };
+  const hoverAt = (target) => {
+    const t = target && target.closest ? target.closest("[data-k-root],[data-k-wave]") : null;
+    if (!t) return null;
+    if (t.dataset.kRoot) return { root: t.dataset.kRoot };
+    const w = Number(t.dataset.kWave);
+    return Number.isInteger(w) ? { wave: w } : null;
+  };
+  const setHover = (h) => {
+    if ((h && h.root) === (s.hover && s.hover.root) && (h && h.wave) === (s.hover && s.hover.wave)) return;
+    s.hover = h;
+    glow();
+    tellHover(h);
+  };
+  if (typeof document !== "undefined" && document.addEventListener) {
+    document.addEventListener("pointerover", (e) => setHover(hoverAt(e.target)));
+    document.documentElement.addEventListener("pointerleave", () => setHover(null));
+    // A click or Escape anywhere here is a click elsewhere for the frame's pinned popover.
+    const unpin = () => frame && frame.contentWindow && frame.contentWindow.postMessage({ type: "behold:unpin" }, origin);
+    document.addEventListener("pointerdown", unpin);
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") unpin();
+    });
+    window.addEventListener("message", (e) => {
+      if (e.origin !== origin || !frame || e.source !== frame.contentWindow) return;
+      const h = hoverFromMessage(e.data);
+      if (h === undefined) return;
+      s.frameHover = h;
+      glow();
+    });
+  }
   const draw = () => {
+    s.light = typeof document !== "undefined" && document.documentElement ? isLightBg(getComputedStyle(document.documentElement).getPropertyValue("--bg")) : false;
+    s.rootNames = rootList();
     const shown = shownView();
     s.view = shown.view;
     renderKiosk(bar, s, now(), foot);
@@ -569,7 +639,7 @@ export function startKiosk({ bar, frame, foot, side, main, views }, { fetchJson 
   // behold#571: the titles and names demo.json has carried, by scenario, for the runs' subtitles.
   const titles = {};
   const names = {};
-  if (side && main) startRuns({ side, main }, { fetchJson, now, scenarios: SCENARIOS, titles: () => titles, names: () => names });
+  if (side && main) startRuns({ side, main }, { fetchJson, now, scenarios: SCENARIOS, titles: () => titles, names: () => names, roots: rootList, waves: () => s.waves, light: () => s.light });
   // #571: whether the repo offers the components zoom (a terragucci.components.json), read before the frame opens so it opens on the step's view.
   const openFrame = () => {
     if (!frame) return;
@@ -581,6 +651,11 @@ export function startKiosk({ bar, frame, foot, side, main, views }, { fetchJson 
   };
   void fetchJson("/api/project").then((p) => {
     s.components = !!(p && !p.error && p.terragucciComponents);
+    // behold#571: the declared roots (their colours' order) and the wave jobs that apply them.
+    if (p && p.terragucciRoots) {
+      s.roots = Array.isArray(p.terragucciRoots.roots) ? p.terragucciRoots.roots : [];
+      s.waves = Array.isArray(p.terragucciRoots.waves) ? p.terragucciRoots.waves : [];
+    }
     openFrame();
     draw();
   });
