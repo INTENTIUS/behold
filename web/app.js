@@ -3573,7 +3573,8 @@ function drawTgReads() {
     // The facts under it, at the box's bottom right: the plan a wave waits on, its changes.
     // Packed into one line that fits the box, most telling first; the rest is in the badge's tooltip.
     if (st.facts.length) {
-      const room = local.width - 28;
+      // Right-aligned and at most about three fifths of the box, so a read's arrow leaving the box has room beside it.
+      const room = local.width * 0.6 - 14;
       const fill = st.state === "waiting" ? tone : "var(--muted)";
       const probe = make("text", { "font-size": 12.5, "font-weight": 600 });
       mark.appendChild(probe);
@@ -3587,9 +3588,10 @@ function drawTgReads() {
       };
       const lines = [];
       let cur = "";
+      const more = width(" …");
       for (const f of st.facts) {
         const next = cur ? `${cur} · ${f}` : f;
-        if (!cur || width(next) <= room) cur = next;
+        if (!cur || width(next) <= room - more) cur = next;
         else {
           lines.push(cur);
           cur = f;
