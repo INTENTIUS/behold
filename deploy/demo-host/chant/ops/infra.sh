@@ -13,6 +13,11 @@
 # change set deletes one. A replacement would still be a new instance or a new
 # Elastic IP, so plan and apply refuse any change whose Replacement is not
 # False.
+#
+# The stack's one parameter, OperatorCidr (the address ssh is open to), never
+# lives in this repo: it comes from DEMO_OPERATOR_CIDR, set in the
+# environment or in the operator's secrets file (DEMO_SECRETS, default
+# ~/.config/demo-intentius/secrets.env).
 set -euo pipefail
 
 STACK="${DEMO_STACK:-demo-intentius-host}"
@@ -20,6 +25,15 @@ export AWS_REGION="${AWS_REGION:-us-east-2}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE="$HERE/build/infra-change-set"
 mkdir -p "$HERE/build"
+
+operator_cidr() {
+  local f="${DEMO_SECRETS:-$HOME/.config/demo-intentius/secrets.env}"
+  if [ -z "${DEMO_OPERATOR_CIDR:-}" ] && [ -f "$f" ]; then
+    DEMO_OPERATOR_CIDR="$(sed -n 's/^DEMO_OPERATOR_CIDR=//p' "$f" | tail -1 | tr -d "\"' ")"
+  fi
+  [ -n "${DEMO_OPERATOR_CIDR:-}" ] || { echo "DEMO_OPERATOR_CIDR is not set: put DEMO_OPERATOR_CIDR=<your address>/32 in $f" >&2; return 1; }
+  printf '%s' "$DEMO_OPERATOR_CIDR"
+}
 
 changes() { # change set name: its changes, canonical
   aws cloudformation describe-change-set --stack-name "$STACK" --change-set-name "$1" --output json \
@@ -36,7 +50,8 @@ case "${1:-}" in
   plan)
     name="chant-$(date -u +%Y%m%d%H%M%S)"
     aws cloudformation create-change-set --stack-name "$STACK" --change-set-name "$name" \
-      --change-set-type UPDATE --template-body "file://$HERE/template.json" --output text --query Id >/dev/null
+      --change-set-type UPDATE --template-body "file://$HERE/template.json" \
+      --parameters "ParameterKey=OperatorCidr,ParameterValue=$(operator_cidr)" --output text --query Id >/dev/null
     if ! aws cloudformation wait change-set-create-complete --stack-name "$STACK" --change-set-name "$name" 2>/dev/null; then
       reason="$(aws cloudformation describe-change-set --stack-name "$STACK" --change-set-name "$name" --query StatusReason --output text)"
       case "$reason" in
