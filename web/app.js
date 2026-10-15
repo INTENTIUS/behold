@@ -193,10 +193,17 @@ function colourPlan(graphIr) {
   const mode = activeColourMode();
   const tokens = getTokens();
   const kindOf = new Map(graphIr.nodes.map((n) => [n.id, n.kind || n.lexicon || "node"]));
+  const theme = getTheme();
+  // #569 review: a terragucci repo's view with no drift read draws each root's
+  // wave state on its box, so the cards wear the neutral ground: colour there
+  // means a wave's state, never a category hue that reads as an error.
+  if (mode === "drift" && tokens && tgStatesDrawn(graphIr)) {
+    const neutral = theme ? pinTokensFor(theme).neutralFill : tokens.neutral;
+    return { mode, fillOf: () => ({ fill: neutral, unpriced: false }) };
+  }
   if (mode === "drift" || !tokens) {
     return { mode, fillOf: (id) => ({ fill: colorForCategory(kindOf.get(id)), unpriced: false }) };
   }
-  const theme = getTheme();
   // The drift overlay's own neutral card ground — the colour a card wears when
   // chant could not read it. #399: an entity with no block draws THIS, never
   // the zero end of the scale, which would say "free" or "saturated" about an
@@ -209,6 +216,12 @@ function colourPlan(graphIr) {
   );
   const figures = new Map(graphIr.nodes.map((n) => [n.id, figureOf(mode, blockOf(n))]));
   return { mode, domain, ramp, fillOf: (id) => fillFor(figures.get(id), domain, ramp, neutralFill) };
+}
+
+/** Whether the view draws a terragucci repo's root states over cards that carry no drift read. */
+function tgStatesDrawn(graphIr) {
+  if (!tgAnswer || tgAnswer.error || !tgAnswer.roots || !tgAnswer.roots.length) return false;
+  return !graphIr.nodes.some((n) => n.attrs && n.attrs._status);
 }
 
 function recolorNodesByCategory(ir) {
@@ -3533,7 +3546,7 @@ function drawTgReads() {
     const tone = TG_TONE[st.tone] || TG_TONE.idle;
     rect.setAttribute("data-tg-stroke0", rect.getAttribute("stroke") || "");
     rect.setAttribute("data-tg-width0", rect.getAttribute("stroke-width") || "1.2");
-    if (st.state !== "outside") {
+    if (st.state !== "outside" && st.state !== "unchanged") {
       rect.setAttribute("stroke", tone);
       rect.setAttribute("stroke-width", focus && (focus.has(r.path) || focus.has(r.name)) ? "4" : "2.5");
     }
@@ -3554,7 +3567,7 @@ function drawTgReads() {
       }
     }
     // Filled when something happened or waits on the root; an outline when nothing has yet.
-    const solid = st.state !== "outside" && st.state !== "not-started";
+    const solid = st.state !== "outside" && st.state !== "not-started" && st.state !== "unchanged";
     const badge = pill(mark, local.x + local.width - 16, tabY, st.words, { stroke: tone, fill: solid ? tone : "var(--panel)", color: solid ? "var(--bg)" : "var(--fg)", size: 14, weight: 700, anchor: "end", cls: st.state === "applying" ? "pin-pulse" : "" });
     badge.g.appendChild(make("title", {}, [st.words, ...st.facts].join("\n") + "\n(from terragucci's reports, not live)"));
     // The facts under it, at the box's bottom right: the plan a wave waits on, its changes.
@@ -3592,17 +3605,51 @@ function drawTgReads() {
     }
   }
 
-  // The reads.
+  // The reads. #569 review: no line or label crosses text. Each line is the
+  // shortest one, from a point on the reader's card (or box) border to a point
+  // on the read root's box border, that crosses no text and as few cards as
+  // there are; each label then sits beside its line where it covers no text
+  // and crosses no line.
   const edges = tgReadEdges(tgAnswer, tgProgress);
   const centre = (b) => ({ x: (b.x + b.x2) / 2, y: (b.y + b.y2) / 2 });
-  // Where the ray from b's centre along (dx, dy) leaves b.
-  const exitOf = (b, dx, dy) => {
-    const c = centre(b);
-    const hx = (b.x2 - b.x) / 2;
-    const hy = (b.y2 - b.y) / 2;
-    const t = Math.min(dx ? hx / Math.abs(dx) : Infinity, dy ? hy / Math.abs(dy) : Infinity);
-    return { x: c.x + dx * t, y: c.y + dy * t };
+  const grow = (b, d) => ({ x: b.x - d, y: b.y - d, x2: b.x2 + d, y2: b.y2 + d });
+  // Whether the segment p-q passes through the box (Liang-Barsky).
+  const crosses = (p, q, b) => {
+    let t0 = 0;
+    let t1 = 1;
+    const dx = q.x - p.x;
+    const dy = q.y - p.y;
+    for (const [pp, qq] of [[-dx, p.x - b.x], [dx, b.x2 - p.x], [-dy, p.y - b.y], [dy, b.y2 - p.y]]) {
+      if (pp === 0) {
+        if (qq < 0) return false;
+        continue;
+      }
+      const r = qq / pp;
+      if (pp < 0) t0 = Math.max(t0, r);
+      else t1 = Math.min(t1, r);
+      if (t0 > t1) return false;
+    }
+    return true;
   };
+  // Points along a box's four sides, its corners left out.
+  const borderPoints = (b, fractions) => {
+    const out = [];
+    for (const f of fractions) {
+      const x = b.x + (b.x2 - b.x) * f;
+      const y = b.y + (b.y2 - b.y) * f;
+      out.push({ x, y: b.y }, { x, y: b.y2 }, { x: b.x, y }, { x: b.x2, y });
+    }
+    return out;
+  };
+  // Text to keep clear: every text drawn so far (cards, box names, badges,
+  // facts, the checkout's own edge labels), a little grown.
+  const textBoxes = [...svg.querySelectorAll("text")]
+    .filter((t) => !t.closest("[data-tg-reads]") && t.getAttribute("visibility") !== "hidden" && (t.textContent || "").trim())
+    .map(boxOf)
+    .filter(Boolean)
+    .map((b) => grow(b, 3));
+  const cardEls = [...svg.querySelectorAll("[data-node-id]")];
+  const cardBoxOf = new Map(cardEls.map((g) => [g, boxOf(g)]));
   const defs = svg.querySelector("defs") || svg.insertBefore(make("defs", {}), svg.firstChild);
   for (const [id, color] of [["tg-arrow-unknown", "var(--foreign)"], ["tg-arrow-planned", "var(--pending)"], ["tg-arrow-applied", "var(--focus)"]]) {
     if (svg.querySelector(`#${id}`)) continue;
@@ -3611,6 +3658,7 @@ function drawTgReads() {
     defs.appendChild(m);
   }
   const labels = [];
+  const drawn = [];
   for (const e of edges) {
     const card = tgReadCardIds(tgAnswer, e).map((id) => svg.querySelector('[data-node-id="' + CSS.escape(id) + '"]')).find(Boolean);
     const kind = e.unknown.length ? "unknown" : e.outputs === "planned" ? "planned" : "applied";
@@ -3622,29 +3670,43 @@ function drawTgReads() {
       const tag = make("text", { "data-tg-reads": "tag", x: (local ? local.x + local.width : 150) - 10, y: (local ? local.y + local.height : 60) - 9, "text-anchor": "end", "font-size": 11, "font-weight": 700, fill: (card.querySelector("text") && card.querySelector("text").getAttribute("fill")) || "var(--fg)", opacity: 0.8 }, tgReadTag(e));
       card.append(make("title", { "data-tg-reads": "title" }, tgReadLine(e) + "\n(from terragucci reports, not live)"), tag);
     }
-    const fromBox = (card && boxOf(card)) || rootBox(e.from);
+    const fromBox = (card && cardBoxOf.get(card)) || (card && boxOf(card)) || rootBox(e.from);
     const toBox = rootBox(e.to);
     if (!fromBox || !toBox) continue;
-    const a = centre(fromBox);
-    const z = centre(toBox);
-    const dx = z.x - a.x;
-    const dy = z.y - a.y;
-    if (!dx && !dy) continue;
-    const p0 = exitOf(fromBox, dx, dy);
-    const p1 = exitOf(toBox, -dx, -dy);
+    const others = cardEls.filter((g) => g !== card).map((g) => cardBoxOf.get(g)).filter(Boolean);
+    let best = null;
+    for (const p0 of borderPoints(fromBox, [0.25, 0.5, 0.75])) {
+      for (const p1 of borderPoints(toBox, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9])) {
+        // Pull the ends a hair off the borders, so a line never counts the box it starts or ends on.
+        const len = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+        if (len < 20) continue;
+        const ux = (p1.x - p0.x) / len;
+        const uy = (p1.y - p0.y) / len;
+        const a = { x: p0.x + ux * 2, y: p0.y + uy * 2 };
+        const z = { x: p1.x - ux * 2, y: p1.y - uy * 2 };
+        // Leaving the reader inward, or reaching the read box from inside it, is no route.
+        if (crosses({ x: a.x + ux * 4, y: a.y + uy * 4 }, { x: a.x + ux * 4, y: a.y + uy * 4 }, fromBox)) continue;
+        if (crosses({ x: z.x - ux * 4, y: z.y - uy * 4 }, { x: z.x - ux * 4, y: z.y - uy * 4 }, toBox)) continue;
+        const texts = textBoxes.filter((t) => crosses(a, z, t)).length;
+        const cards = others.filter((c) => crosses(a, z, c)).length;
+        const lines = drawn.filter((d) => crosses(a, z, grow({ x: Math.min(d.p0.x, d.p1.x), y: Math.min(d.p0.y, d.p1.y), x2: Math.max(d.p0.x, d.p1.x), y2: Math.max(d.p0.y, d.p1.y) }, 0)) && Math.hypot(d.p1.x - p1.x, d.p1.y - p1.y) < 30).length;
+        const score = texts * 10000 + cards * 2000 + lines * 500 + len;
+        if (!best || score < best.score) best = { p0, p1, score };
+      }
+    }
+    if (!best) continue;
+    const { p0, p1 } = best;
     const line = make("line", { x1: p0.x, y1: p0.y, x2: p1.x, y2: p1.y, stroke: color, "stroke-width": 3, "stroke-dasharray": e.outputs === "planned" ? "9 6" : "none", "marker-end": `url(#tg-arrow-${kind})`, "data-tg-read-from": e.from, "data-tg-read-to": e.to });
     line.appendChild(make("title", {}, tgReadLine(e)));
     if (focus && !(focus.has(e.from) || focus.has(e.to))) line.style.opacity = "0.5";
     layer.appendChild(line);
+    drawn.push({ p0, p1 });
     labels.push({ e, p0, p1, color, kind });
   }
-  // Each read's words beside its line, where they cover the fewest cards: the
-  // boxes sit close, so a label on the line would hide the line.
-  const cardBoxes = [...svg.querySelectorAll("[data-node-id]")].map(boxOf).filter(Boolean);
-  // What a label must not cover: cards, each box's header row (its name, its
-  // badge) and its facts line, the other labels; and, lightly, a box's inside.
+  // Each read's words beside its line: covering no text, crossing no line,
+  // over as few cards and box headers as can be.
+  const cardBoxes = cardEls.map((g) => cardBoxOf.get(g)).filter(Boolean);
   const headers = boxes.map((b) => ({ x: b.x, y: b.y - 14, x2: b.x2, y2: b.y + 36 }));
-  const facts = [...svg.querySelectorAll("[data-tg-root] text, [data-tg-root] rect")].map(boxOf).filter(Boolean);
   const placed = [];
   const overlap = (r, b) => Math.max(0, Math.min(r.x2, b.x2) - Math.max(r.x, b.x)) * Math.max(0, Math.min(r.y2, b.y2) - Math.max(r.y, b.y));
   const sum = (r, list, k) => list.reduce((a, b) => a + k * overlap(r, b), 0);
@@ -3656,22 +3718,23 @@ function drawTgReads() {
     const dx = l.p1.x - l.p0.x;
     const dy = l.p1.y - l.p0.y;
     let best = null;
-    for (const t of [0.5, 0.3, 0.7]) {
+    for (const t of [0.5, 0.35, 0.65, 0.2, 0.8]) {
       const m = { x: l.p0.x + dx * t, y: l.p0.y + dy * t };
-      // Beside the line (left or right of it) or off it (above or below), never on it.
-      for (const c of [
-        { x: m.x + w / 2 + 12, y: m.y },
-        { x: m.x - w / 2 - 12, y: m.y },
-        { x: m.x, y: m.y - h / 2 - 10 },
-        { x: m.x, y: m.y + h / 2 + 10 },
-      ]) {
+      // Beside the line, then farther off it into open ground: the boxes sit close.
+      const spots = [];
+      for (let k = 0; k < 6; k++) {
+        const off = k * (h + 6);
+        spots.push(
+          { x: m.x + w / 2 + 12 + off, y: m.y, off },
+          { x: m.x - w / 2 - 12 - off, y: m.y, off },
+          { x: m.x, y: m.y - h / 2 - 10 - off, off },
+          { x: m.x, y: m.y + h / 2 + 10 + off, off },
+        );
+      }
+      for (const c of spots) {
         const r = { x: c.x - w / 2, y: c.y - h / 2, x2: c.x + w / 2, y2: c.y + h / 2 };
-        let onLine = 0;
-        for (let i = 0; i <= 20; i++) {
-          const q = { x: l.p0.x + (dx * i) / 20, y: l.p0.y + (dy * i) / 20 };
-          if (q.x > r.x && q.x < r.x2 && q.y > r.y && q.y < r.y2) onLine++;
-        }
-        const score = sum(r, cardBoxes, 1) + sum(r, headers, 1.5) + sum(r, facts, 2) + sum(r, placed, 4) + sum(r, boxes, 0.15) + onLine * 400 + Math.abs(t - 0.5) * 300;
+        const lineHits = drawn.filter((d) => crosses(d.p0, d.p1, r)).length;
+        const score = lineHits * 1e6 + sum(r, textBoxes, 50) + sum(r, placed, 50) + sum(r, cardBoxes, 1) + sum(r, headers, 1.5) + sum(r, boxes, 0.15) + Math.abs(t - 0.5) * 300 + c.off * 4;
         if (!best || score < best.score) best = { c, r, score };
       }
     }
@@ -3688,6 +3751,7 @@ function drawTgReads() {
   }
 }
 function markTerragucciCards() {
+  recolorNodesByCategory(); // #569 review: the reports arrived, so the cards may go neutral
   const svg = document.querySelector("#graph svg");
   tgStampProgress(svg, tgProgress, new Date()); // #511
   if (!svg || !tgAnswer || !tgAnswer.cards) return;

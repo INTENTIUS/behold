@@ -13,7 +13,7 @@
 // A wave that failed says which waves applied before it and stay applied.
 // Nothing here is all-or-nothing, and nothing says so.
 
-import { STATE_WORDS, costLine, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
+import { STATE_WORDS, changingRoots, costLine, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
 
 /** The scenarios terragucci#1014 numbers. An id not here is shown by the title demo.json carries. */
 export const SCENARIOS = {
@@ -199,7 +199,8 @@ export function pendingApproval(demo, progress) {
   return {
     wave: number,
     digest: w && w.digest ? w.digest : null,
-    roots: w ? w.roots : [],
+    // #569 review: only the roots whose plan the approval covers a change in.
+    roots: w ? changingRoots(w, [...new Set([...w.roots, ...(w.composed ? w.composed.roots : [])])]) : [],
     ...driverApproveLines(number, demo.pull),
   };
 }
@@ -231,8 +232,9 @@ export function focusRoots(demo, answer, progress) {
     if (!w) continue;
     const inRun = progress.reads.filter((r) => r.composed && r.composed.wave === w.number).map((r) => r.root);
     // A wave that failed or refused: the waves before it that applied too, since they stay applied.
-    const before = want === "failed" || want === "refused" ? progress.states.filter((x) => x.number < w.number && x.state === "applied").flatMap((x) => x.roots) : [];
-    const roots = [...new Set([...w.roots, ...(w.composed ? w.composed.roots : []), ...inRun, ...before])];
+    const before = want === "failed" || want === "refused" ? progress.states.filter((x) => x.number < w.number && x.state === "applied").flatMap((x) => changingRoots(x, x.roots)) : [];
+    // A root its wave plans no change in is not what the step is about.
+    const roots = [...new Set([...changingRoots(w, [...w.roots, ...(w.composed ? w.composed.roots : []), ...inRun]), ...before])];
     if (roots.length) return roots;
   }
   return null;

@@ -55,6 +55,25 @@ describe("rootStates (#569)", () => {
   });
 });
 
+describe("rootStates, a root that plans no change (#569 review)", () => {
+  it("never shows a root its wave plans no change in as waiting", () => {
+    const p = run([{ number: 1, state: "waiting", roots: ["network", "other"], reads: [], digest: "jcs1-sha256:365a4f0d54d7aa", totals: { create: 5 }, changed: ["network"] }], []);
+    const { roots: r } = rootStates(prAnswer, p);
+    expect(r.network.state).toBe("waiting");
+    expect(r.other).toMatchObject({ state: "unchanged", tone: "idle", words: "wave 1 · no changes", facts: [] });
+  });
+  it("takes a composed member's own no-changes over the wave's state", () => {
+    const p = run([{ number: 1, state: "failed", roots: ["network"], reads: [], composed: { roots: ["network", "edge"], members: [{ root: "network", module: "m", apply: "failed" }, { root: "edge", module: "e", apply: "no-changes" }] } }], []);
+    expect(rootStates(prAnswer, p).roots.edge.state).toBe("unchanged");
+  });
+  it("shows a planned root outside the blast radius that reads nothing unknown as no changes", () => {
+    const a = { ...prAnswer, pull_request: { ...prAnswer.pull_request, blast: { roots: ["app", "network"], downstream: [] } } };
+    const { roots: r } = rootStates(a, null);
+    expect(r.edge.state).toBe("unchanged");
+    expect(r.app.state).toBe("planned");
+  });
+});
+
 describe("readLabel (#569)", () => {
   it("says what is read and when it is known", () => {
     expect(readLabel({ from: "app", to: "network", outputs: "planned", unknown: ["http_proxy_port"] })).toBe("reads http_proxy_port from network: unknown until network applies");

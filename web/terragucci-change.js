@@ -443,7 +443,29 @@ export const STATE_TONE = {
   refused: "bad",
   failed: "bad",
   outside: "idle",
+  unchanged: "idle",
 };
+
+/**
+ * #569 review: whether a root of a run-view wave plans a change. A root its
+ * wave planned without a change (`changed`, the roots whose plan changes a
+ * resource or an output) is never shown waiting, applying or failed: nothing
+ * of it is approved or applied. A composed run's member says for itself.
+ * Unknown (true) until the wave has planned, or on a run view without
+ * `changed`.
+ */
+export function rootChanges(w, root) {
+  const m = w.composed && w.composed.members ? w.composed.members.find((x) => x.root === root) : null;
+  if (m && m.apply) return m.apply !== "no-changes";
+  const planned = w.state !== "not-started" && (!!w.totals || !!w.digest);
+  if (!planned || !Array.isArray(w.changed)) return true;
+  return w.changed.includes(root);
+}
+
+/** The roots of a wave that plan a change, in the wave's order (all of them while that isn't known). */
+export function changingRoots(w, roots) {
+  return roots.filter((r) => rootChanges(w, r));
+}
 
 /** A member of a composed run, once it ended, as a root state. */
 const MEMBER_STATE = { applied: "applied", partial: "failed", failed: "failed", "not-started": "not-started", "no-changes": "applied" };
@@ -467,6 +489,14 @@ export function rootStates(answer, progress) {
       const c = w.composed;
       const members = c ? c.members.map((m) => m.root) : [];
       for (const root of [...new Set([...w.roots, ...members])]) {
+        // #569 review: a root the pull request plans without a change, and that
+        // reads nothing unknown, shows no changes rather than a wave's plan.
+        const blast = pr.blast && Array.isArray(pr.blast.roots) ? pr.blast.roots : null;
+        const readsUnknown = (pr.reads || []).some((r) => r.root === root && r.unknown && r.unknown.length) || !!(c && c.held_by_unknown && c.held_by_unknown.includes(root));
+        if (blast && !blast.includes(root) && !readsUnknown) {
+          roots[root] = { wave: w.number, state: "unchanged", tone: STATE_TONE.unchanged, words: `wave ${w.number} · no changes`, facts: [] };
+          continue;
+        }
         const facts = [];
         if (w.replans_after && w.replans_after.length) facts.push(`plans again once wave ${list(w.replans_after)} applies`);
         else if (w.review_digest || w.set_digest) facts.push(`plan ${short(w.review_digest || w.set_digest)}`);
@@ -484,6 +514,10 @@ export function rootStates(answer, progress) {
       const c = w.composed;
       const inRun = [...composedOf].filter(([, n]) => n === w.number).map(([r]) => r);
       for (const root of [...new Set([...w.roots, ...(c ? c.roots : []), ...inRun])]) {
+        if (!rootChanges(w, root)) {
+          roots[root] = { wave: w.number, state: "unchanged", tone: STATE_TONE.unchanged, words: `wave ${w.number} · no changes`, facts: [] };
+          continue;
+        }
         const m = c && c.members ? c.members.find((x) => x.root === root) : null;
         const state = m && m.apply ? MEMBER_STATE[m.apply] || w.state : w.state;
         const facts = [];
