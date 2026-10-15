@@ -42,7 +42,7 @@ import { fileURLToPath } from "node:url";
 import type { Hono } from "hono";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { blockPath, type CheckoutRoot } from "./terragucci-overlay.ts";
-import { pickProject, TerragucciReadError, type IndexRow, type Validation, type Validator } from "./terragucci-reports.ts";
+import { pickProject, TerragucciReadError, type ComposedApply, type ComposedState, type IndexRow, type Validation, type Validator } from "./terragucci-reports.ts";
 import { deniedWords, TerragucciDenied, type TerragucciSource } from "./terragucci-source.ts";
 import { terragucciApproveCommand } from "./terragucci-lifecycle.ts";
 import type { Probe, ProgressPoll } from "./terragucci-poll.ts";
@@ -63,7 +63,7 @@ export interface RunView {
   commit: string;
   updated: string;
   /** Each root, its wave, and the roots whose state it reads (#568). Empty for a Terragrunt repo. */
-  roots?: { root: string; wave: number; reads: string[] }[];
+  roots?: { root: string; wave: number; reads: string[]; composed?: RunRootComposed }[];
   waves: {
     number: number;
     state: WaveState;
@@ -84,8 +84,34 @@ export interface RunView {
     totals?: Record<string, number>;
     /** #568 step 2: how many of the wave's roots `totals` counts a change of. */
     totals_roots?: number;
+    /** #568 step 3: the composed run this wave's job runs. */
+    composed?: RunWaveComposed;
     progress?: { read: string; resources: { root: string; address: string; action: string; status: ProgressStatus; done_at?: string }[] };
   }[];
+}
+
+// #568 step 3: run.json's composed run, from the #1013 step 1 shape, minor 38
+// (INTENTIUS/terragucci#1013, "Step 1: the shape", part 3). run.json has no
+// minor; terragucci's run.schema.json with these fields is not merged yet, and
+// the vendored copy stays as it is until it is.
+
+/** `RunRoot.composed`: `wave` is the wave that applies it (the run's), `own_wave` the wave it would be in on its own. */
+export interface RunRootComposed {
+  wave: number;
+  module: string;
+  own_wave: number;
+}
+
+/** `RunWave.composed`, on the wave whose job runs it. */
+export interface RunWaveComposed {
+  /** Upstreams first. */
+  roots: string[];
+  /** The composed plan's digest, once planned. */
+  digest?: string | null;
+  /** The members that read a value of another member unknown at plan time. */
+  unknown?: string[];
+  /** Once the apply ended. */
+  members?: { root: string; module: string; apply?: ComposedApply; state?: ComposedState }[];
 }
 
 // ---------------------------------------------------------------------------
@@ -270,13 +296,15 @@ export interface RunWaveState {
   totals?: Record<string, number>;
   /** #568 step 2: how many of its roots `totals` counts a change of. */
   totals_roots?: number;
+  /** #568 step 3: the composed run its job runs. */
+  composed?: RunWaveComposed;
 }
 
 export interface ProgressJoin {
   /** #568: every wave's state, in the run view's order. */
   states: RunWaveState[];
   /** #568: each root's wave and the roots whose state it reads, from the run view. */
-  reads: { root: string; wave: number; reads: string[] }[];
+  reads: { root: string; wave: number; reads: string[]; composed?: RunRootComposed }[];
   waves: ProgressWave[];
   cards: Record<string, CardProgress[]>;
   /** Resources no card is: said, never dropped. */
@@ -356,8 +384,18 @@ export function joinProgress(run: Pick<RunView, "waves" | "roots">, nodes: reado
     ...(w.changed ? { changed: [...w.changed] } : {}),
     ...(w.totals ? { totals: { ...w.totals } } : {}),
     ...(w.totals_roots !== undefined ? { totals_roots: w.totals_roots } : {}),
+    ...(w.composed
+      ? {
+          composed: {
+            roots: [...w.composed.roots],
+            ...(w.composed.digest !== undefined ? { digest: w.composed.digest } : {}),
+            ...(w.composed.unknown ? { unknown: [...w.composed.unknown] } : {}),
+            ...(w.composed.members ? { members: w.composed.members.map((m) => ({ ...m })) } : {}),
+          },
+        }
+      : {}),
   }));
-  const reads = (run.roots ?? []).map((r) => ({ root: r.root, wave: r.wave, reads: [...(r.reads ?? [])] }));
+  const reads = (run.roots ?? []).map((r) => ({ root: r.root, wave: r.wave, reads: [...(r.reads ?? [])], ...(r.composed ? { composed: { ...r.composed } } : {}) }));
   return { states, reads, waves, cards, unmatched, watching: unsettled(run) };
 }
 

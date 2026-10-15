@@ -1,0 +1,128 @@
+{
+  "schema": "terragucci.run/v1",
+  "project": "forge.example/demo/two-roots",
+  "commit": "f0e1d2c3b4a5968778695a4b3c2d1e0f12345678",
+  "updated": "2026-10-20T10:04:40.000Z",
+  "roots": [
+    {
+      "root": "network",
+      "wave": 1,
+      "reads": [],
+      "state": {
+        "bucket": "demo-state",
+        "key": "network/terraform.tfstate"
+      },
+      "composed": {
+        "wave": 1,
+        "module": "module.network",
+        "own_wave": 1
+      }
+    },
+    {
+      "root": "app",
+      "wave": 1,
+      "reads": [
+        "network"
+      ],
+      "state": {
+        "bucket": "demo-state",
+        "key": "app/terraform.tfstate"
+      },
+      "composed": {
+        "wave": 1,
+        "module": "module.app",
+        "own_wave": 2
+      }
+    },
+    {
+      "root": "edge",
+      "wave": 1,
+      "reads": [
+        "app"
+      ],
+      "state": {
+        "bucket": "demo-state",
+        "key": "edge/terraform.tfstate"
+      },
+      "composed": {
+        "wave": 1,
+        "module": "module.edge",
+        "own_wave": 3
+      }
+    }
+  ],
+  "waves": [
+    {
+      "number": 1,
+      "roots": [
+        "network",
+        "app",
+        "edge"
+      ],
+      "reads": [],
+      "gate": "wave-1",
+      "policy": "on-destructive",
+      "report": "forge.example/demo/two-roots/2026/10/f0e1d2c3b4a5968778695a4b3c2d1e0f12345678/tf-apply-wave-1",
+      "changed": [
+        "network",
+        "app",
+        "edge"
+      ],
+      "totals": {
+        "create": 5,
+        "update": 1,
+        "replace": 0,
+        "delete": 0,
+        "read": 0,
+        "no-op": 3,
+        "forget": 0
+      },
+      "totals_roots": 3,
+      "composed": {
+        "roots": [
+          "network",
+          "app",
+          "edge"
+        ],
+        "digest": "jcs1-sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "unknown": [
+          "app"
+        ]
+      },
+      "state": "applying",
+      "approval": "approved",
+      "digest": "jcs1-sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "spans": [
+        {
+          "phase": "plan",
+          "start": "2026-10-20T10:03:00.000Z",
+          "end": "2026-10-20T10:03:50.000Z"
+        },
+        {
+          "phase": "gate",
+          "start": "2026-10-20T10:03:50.000Z",
+          "end": "2026-10-20T10:04:30.000Z"
+        },
+        {
+          "phase": "apply",
+          "start": "2026-10-20T10:04:35.000Z"
+        }
+      ],
+      "updated": "2026-10-20T10:04:40.000Z"
+    },
+    {
+      "number": 2,
+      "roots": [],
+      "reads": [],
+      "state": "not-started",
+      "gate": "wave-2"
+    },
+    {
+      "number": 3,
+      "roots": [],
+      "reads": [],
+      "state": "not-started",
+      "gate": "wave-3"
+    }
+  ]
+}
