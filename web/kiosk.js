@@ -13,6 +13,7 @@
 // A wave that failed says which waves applied before it and stay applied.
 // Nothing here is all-or-nothing, and nothing says so.
 
+import { startRuns } from "./kiosk-runs.js";
 import { STATE_WORDS, changingRoots, costLine, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
 
 /** The scenarios terragucci#1014 numbers. An id not here is shown by the title demo.json carries. */
@@ -355,7 +356,7 @@ export const DEMO_POLL_MS = 3_000;
  * countdown. When the roots the step is about change, move the framed view
  * with a `behold:view` message; the frame takes them only from this origin.
  */
-export function startKiosk({ bar, frame, foot }, { fetchJson = defaultFetch, now = () => new Date(), origin = location.origin } = {}) {
+export function startKiosk({ bar, frame, foot, side, main }, { fetchJson = defaultFetch, now = () => new Date(), origin = location.origin } = {}) {
   const s = { demo: null, answer: null, progress: null };
   let lastKey = "";
   let lastFocus;
@@ -371,6 +372,8 @@ export function startKiosk({ bar, frame, foot }, { fetchJson = defaultFetch, now
     renderKiosk(bar, s, now(), foot);
     tellFrame(false);
   };
+  // #569: the pipeline's runs beside the view, CI-page style.
+  if (side && main) startRuns({ side, main }, { fetchJson, now, scenarios: SCENARIOS });
   if (frame) {
     frame.src = frameSrc(origin);
     // The frame reads its graph after load; tell it again once it has had the time.

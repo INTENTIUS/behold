@@ -415,7 +415,10 @@ the demo's driver writes beside `index.json`, and narrates the scenario, the
 step and the driver's next action with a countdown in a status bar, over
 behold's own view of the change in a frame (`/?embed=1&bare=1`): each root's
 wave and its state, the reads between roots, and the roots the step is about
-brought forward. It needs `--terragucci`, asks only GETs, and has no control.
+brought forward. Beside it, the pipeline's runs the way a CI page shows them:
+the recent runs, the selected run's jobs and steps, and the running step's
+log, which the loop driver copies into the bucket under `runs/`. It needs
+`--terragucci`, asks only GETs, and has no control.
 The docs' terragucci page says what it shows.
 
 In a declared workspace, the gates waiting on a person come from

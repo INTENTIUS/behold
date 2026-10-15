@@ -17,6 +17,8 @@
  *   resource from the newest apply's run view (src/terragucci-progress.ts, #511).
  * - `GET /api/terragucci/demo` (#569): the looping demo's `demo.json`,
  *   which the kiosk narrates (src/terragucci-demo.ts).
+ * - `GET /api/terragucci/runs` and `/api/terragucci/runs/:id` (#569): the
+ *   demo's pipeline runs, which the kiosk lists (src/terragucci-runs.ts).
  * - `GET /api/terragucci/lifecycle` and `GET /api/terragucci/events` (#505):
  *   the gates and locks on `chant/lifecycle`, and the poll that pushes what
  *   moved while a page is open (src/terragucci-poll.ts).
@@ -40,12 +42,15 @@ import { auditValidator, terragucciTimelineRoute } from "./terragucci-timeline.t
 import { indexProbe, terragucciLaneRoutes, type LaneRouteOptions } from "./terragucci-poll.ts";
 import { runValidator, TerragucciProgress, terragucciProgressRoute } from "./terragucci-progress.ts";
 import { terragucciDemoRoute } from "./terragucci-demo.ts";
+import { terragucciRunsRoutes } from "./terragucci-runs.ts";
 
 export interface TerragucciOptions {
   /** `--terragucci`: a directory, `s3://bucket/prefix`, or an http(s) address serving the bucket. */
   source: string;
   /** `--terragucci-project`: which project, when the reports hold several. */
   project?: string;
+  /** #569 `--terragucci-runs`: where the kiosk reads the demo's pipeline runs, when not beside the reports. */
+  runsSource?: string;
   /** Injected by a test: the aws CLI and fetch the source reads through. */
   aws?: AwsRun;
   fetch?: typeof fetch;
@@ -202,6 +207,9 @@ export function terragucciRoutes(app: Hono, opts: TerragucciOptions, dirs: () =>
 
   // #569: the looping demo's narration, from demo.json at the same source.
   terragucciDemoRoute(app, source, opts.now ? { now: opts.now } : {});
+  // #569: the demo's pipeline runs, as the loop driver copies them from the forge.
+  const runsSource = opts.runsSource ? terragucciSource(opts.runsSource, { ...(opts.aws ? { aws: opts.aws } : {}), ...(opts.fetch ? { fetch: opts.fetch } : {}) }) : source;
+  terragucciRunsRoutes(app, runsSource, opts.now ? { now: opts.now } : {});
 
   // #506: the timeline lane, from the audit record at the same source.
   terragucciTimelineRoute(app, source, {
