@@ -45,7 +45,7 @@ Usage:
                 [--yodel-report <file|dir>]
                 [--publish s3://<bucket>/<prefix>/views/<name> [--commit <sha>] [--keep <n>]]
   behold serve <project-dir…> [--port <n>] [--host <addr>] [--allow-host <name,…>] [--hud <url>] [--env <name>] [--poll <secs>] [--local]
-                [--public] [--terragucci <src> [--terragucci-project <p>] [--terragucci-poll <secs>]]
+                [--public] [--terragucci <src> [--terragucci-project <p>] [--terragucci-poll <secs>] [--terragucci-runs <src>]]
                 [--yodel-report <file|dir>]
   behold carve <report.json> [--port <n>]
 
@@ -146,6 +146,11 @@ Options:
                       moved to the page.
                       0 turns it off. The fetch goes into behold's own cache
                       (<tmpdir>/behold-lifecycle-*), never into the checkout.
+  --terragucci-runs <src>
+                      serve with --terragucci only: where /kiosk reads the
+                      demo's pipeline runs (runs/index.json, runs/<id>.json),
+                      when not beside the reports: a directory, s3:// or
+                      http(s), as --terragucci takes.
   --yodel-report <file|dir>
                       serve/export: mark SQL Yodeler's \`yodel report --json\`
                       output and any \`yodel drift <env> --json\` beside it
@@ -271,6 +276,7 @@ export async function run(argv: string[]): Promise<void> {
   let terragucci: string | undefined;
   let terragucciProject: string | undefined;
   let terragucciPoll: number | undefined;
+  let terragucciRuns: string | undefined;
   let yodelReport: string | undefined;
   let isPublic = false;
   const allowHosts: string[] = [];
@@ -284,6 +290,7 @@ export async function run(argv: string[]): Promise<void> {
     else if (a === "--terragucci") terragucci = rest[++i];
     else if (a === "--terragucci-project") terragucciProject = rest[++i];
     else if (a === "--terragucci-poll") terragucciPoll = Number(rest[++i]);
+    else if (a === "--terragucci-runs") terragucciRuns = rest[++i];
     else if (a === "--yodel-report") yodelReport = rest[++i];
     else if (a === "--env") env = rest[++i];
     else if (a === "--poll") pollSecs = Number(rest[++i]);
@@ -348,6 +355,10 @@ export async function run(argv: string[]): Promise<void> {
     process.stderr.write("behold serve: --terragucci-poll needs --terragucci\n");
     process.exit(2);
   }
+  if (terragucciRuns !== undefined && terragucci === undefined) {
+    process.stderr.write("behold serve: --terragucci-runs needs --terragucci\n");
+    process.exit(2);
+  }
   if (isPublic && projectDirs.length > 1) {
     process.stderr.write("behold serve: --public serves one project directory\n");
     process.exit(2);
@@ -384,7 +395,7 @@ export async function run(argv: string[]): Promise<void> {
     ...(isPublic ? { public: true, layoutWrites: false } : {}),
     ...(target.workspace && hud ? { hud } : {}),
     ...(yodelReport ? { yodelReport: resolve(yodelReport) } : {}),
-    ...(terragucci ? { terragucci: { source: terragucci, ...(terragucciProject ? { project: terragucciProject } : {}), ...(terragucciPoll !== undefined ? { pollSecs: terragucciPoll } : {}) } } : {}),
+    ...(terragucci ? { terragucci: { source: terragucci, ...(terragucciProject ? { project: terragucciProject } : {}), ...(terragucciPoll !== undefined ? { pollSecs: terragucciPoll } : {}), ...(terragucciRuns ? { runsSource: terragucciRuns } : {}) } } : {}),
   });
 }
 

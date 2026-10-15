@@ -1,0 +1,602 @@
+{
+ "schema": "demo.runs/v1",
+ "updated_at": "2026-10-15T04:17:28Z",
+ "keep": 30,
+ "runs": [
+  {
+   "id": 448,
+   "title": "Merge pull request 'A port change, known when it plans' (#287) from demo-a-known into main",
+   "event": "push",
+   "trigger": "merge",
+   "ref": "main",
+   "commit": "9c2d4e1a00000000000000000000000000000abc",
+   "pull": 287,
+   "cycle": 93,
+   "scenario": "a-known",
+   "status": "running",
+   "created_at": "2026-10-15T04:17:28Z",
+   "started_at": "2026-10-15T04:17:28Z",
+   "ended_at": null,
+   "jobs": [
+    {
+     "id": 5074,
+     "name": "check",
+     "needs": [],
+     "status": "success",
+     "started_at": "2026-10-15T04:17:28Z",
+     "ended_at": "2026-10-15T04:17:31Z"
+    },
+    {
+     "id": 5075,
+     "name": "plan",
+     "needs": [],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 5076,
+     "name": "plan-note",
+     "needs": [
+      "plan"
+     ],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 5077,
+     "name": "replan",
+     "needs": [],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 5078,
+     "name": "replan-note",
+     "needs": [
+      "replan"
+     ],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 5079,
+     "name": "fmt",
+     "needs": [
+      "check"
+     ],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 5080,
+     "name": "apply-comment",
+     "needs": [],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 5081,
+     "name": "apply-wave-1",
+     "needs": [
+      "check"
+     ],
+     "status": "success",
+     "started_at": "2026-10-15T04:17:34Z",
+     "ended_at": "2026-10-15T04:17:38Z"
+    },
+    {
+     "id": 5082,
+     "name": "apply-wave-2",
+     "needs": [
+      "apply-wave-1"
+     ],
+     "status": "running",
+     "started_at": "2026-10-15T04:17:40Z",
+     "ended_at": null
+    },
+    {
+     "id": 5083,
+     "name": "apply-wave-3",
+     "needs": [
+      "apply-wave-2"
+     ],
+     "status": "queued",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 5084,
+     "name": "tips",
+     "needs": [
+      "apply-wave-3"
+     ],
+     "status": "queued",
+     "started_at": null,
+     "ended_at": null
+    }
+   ]
+  },
+  {
+   "id": 447,
+   "title": "Merge pull request 'app fails mid-apply, and a re-run finishes it' (#284) from demo-failure into main",
+   "event": "push",
+   "trigger": "merge",
+   "ref": "main",
+   "commit": "87f3e1330000000000000000000000000000beef",
+   "pull": 284,
+   "cycle": 92,
+   "scenario": "failure",
+   "status": "failure",
+   "created_at": "2026-10-15T04:13:28Z",
+   "started_at": "2026-10-15T04:13:28Z",
+   "ended_at": "2026-10-15T04:13:44Z",
+   "jobs": [
+    {
+     "id": 4974,
+     "name": "check",
+     "needs": [],
+     "status": "success",
+     "started_at": "2026-10-15T04:13:28Z",
+     "ended_at": "2026-10-15T04:13:31Z"
+    },
+    {
+     "id": 4975,
+     "name": "plan",
+     "needs": [],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4976,
+     "name": "plan-note",
+     "needs": [
+      "plan"
+     ],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4977,
+     "name": "replan",
+     "needs": [],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4978,
+     "name": "replan-note",
+     "needs": [
+      "replan"
+     ],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4979,
+     "name": "fmt",
+     "needs": [
+      "check"
+     ],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4980,
+     "name": "apply-comment",
+     "needs": [],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4981,
+     "name": "apply-wave-1",
+     "needs": [
+      "check"
+     ],
+     "status": "success",
+     "started_at": "2026-10-15T04:13:34Z",
+     "ended_at": "2026-10-15T04:13:38Z"
+    },
+    {
+     "id": 4982,
+     "name": "apply-wave-2",
+     "needs": [
+      "apply-wave-1"
+     ],
+     "status": "failure",
+     "started_at": "2026-10-15T04:13:40Z",
+     "ended_at": "2026-10-15T04:13:44Z"
+    },
+    {
+     "id": 4983,
+     "name": "apply-wave-3",
+     "needs": [
+      "apply-wave-2"
+     ],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4984,
+     "name": "tips",
+     "needs": [
+      "apply-wave-3"
+     ],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    }
+   ]
+  },
+  {
+   "id": 445,
+   "title": "Merge pull request 'The same change, read through .output' (#278) from demo-a-output into main",
+   "event": "issue_comment",
+   "trigger": "resume",
+   "ref": "main",
+   "commit": "ef959409b8d590f4c3b05f0b7154cd576c9e1abf",
+   "pull": 278,
+   "cycle": 90,
+   "scenario": "a-output",
+   "status": "success",
+   "created_at": "2026-10-15T04:10:10Z",
+   "started_at": "2026-10-15T04:10:10Z",
+   "ended_at": "2026-10-15T04:10:17Z",
+   "jobs": [
+    {
+     "id": 4885,
+     "name": "check",
+     "needs": [],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4886,
+     "name": "plan",
+     "needs": [],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4887,
+     "name": "plan-note",
+     "needs": [
+      "plan"
+     ],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4888,
+     "name": "replan",
+     "needs": [],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4889,
+     "name": "replan-note",
+     "needs": [
+      "replan"
+     ],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4890,
+     "name": "fmt",
+     "needs": [
+      "check"
+     ],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4891,
+     "name": "apply-comment",
+     "needs": [],
+     "status": "success",
+     "started_at": "2026-10-15T04:10:10Z",
+     "ended_at": "2026-10-15T04:10:17Z"
+    },
+    {
+     "id": 4892,
+     "name": "apply-wave-1",
+     "needs": [
+      "check"
+     ],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4893,
+     "name": "apply-wave-2",
+     "needs": [
+      "apply-wave-1"
+     ],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4894,
+     "name": "apply-wave-3",
+     "needs": [
+      "apply-wave-2"
+     ],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4895,
+     "name": "tips",
+     "needs": [
+      "apply-wave-3"
+     ],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    }
+   ]
+  },
+  {
+   "id": 444,
+   "title": "Merge pull request 'The same change, read through .output' (#278) from demo-a-output into main",
+   "event": "push",
+   "trigger": "merge",
+   "ref": "main",
+   "commit": "ef959409b8d590f4c3b05f0b7154cd576c9e1abf",
+   "pull": 278,
+   "cycle": 90,
+   "scenario": "a-output",
+   "status": "waiting",
+   "created_at": "2026-10-15T04:09:28Z",
+   "started_at": "2026-10-15T04:09:28Z",
+   "ended_at": "2026-10-15T04:09:45Z",
+   "jobs": [
+    {
+     "id": 4874,
+     "name": "check",
+     "needs": [],
+     "status": "success",
+     "started_at": "2026-10-15T04:09:28Z",
+     "ended_at": "2026-10-15T04:09:31Z"
+    },
+    {
+     "id": 4875,
+     "name": "plan",
+     "needs": [],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4876,
+     "name": "plan-note",
+     "needs": [
+      "plan"
+     ],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4877,
+     "name": "replan",
+     "needs": [],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4878,
+     "name": "replan-note",
+     "needs": [
+      "replan"
+     ],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4879,
+     "name": "fmt",
+     "needs": [
+      "check"
+     ],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4880,
+     "name": "apply-comment",
+     "needs": [],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4881,
+     "name": "apply-wave-1",
+     "needs": [
+      "check"
+     ],
+     "status": "success",
+     "started_at": "2026-10-15T04:09:34Z",
+     "ended_at": "2026-10-15T04:09:38Z"
+    },
+    {
+     "id": 4882,
+     "name": "apply-wave-2",
+     "needs": [
+      "apply-wave-1"
+     ],
+     "status": "waiting",
+     "started_at": "2026-10-15T04:09:40Z",
+     "ended_at": "2026-10-15T04:09:45Z"
+    },
+    {
+     "id": 4883,
+     "name": "apply-wave-3",
+     "needs": [
+      "apply-wave-2"
+     ],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4884,
+     "name": "tips",
+     "needs": [
+      "apply-wave-3"
+     ],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    }
+   ]
+  },
+  {
+   "id": 443,
+   "title": "The same change, read through .output (cycle 90)",
+   "event": "pull_request",
+   "trigger": "plan",
+   "ref": "demo-a-output",
+   "commit": "edfb18b91382d9ab01708ca9b6c4202c914d8a2d",
+   "pull": 278,
+   "cycle": 90,
+   "scenario": "a-output",
+   "status": "success",
+   "created_at": "2026-10-15T04:08:54Z",
+   "started_at": "2026-10-15T04:08:54Z",
+   "ended_at": "2026-10-15T04:09:03Z",
+   "jobs": [
+    {
+     "id": 4863,
+     "name": "check",
+     "needs": [],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4864,
+     "name": "plan",
+     "needs": [],
+     "status": "success",
+     "started_at": "2026-10-15T04:08:54Z",
+     "ended_at": "2026-10-15T04:08:58Z"
+    },
+    {
+     "id": 4865,
+     "name": "plan-note",
+     "needs": [
+      "plan"
+     ],
+     "status": "success",
+     "started_at": "2026-10-15T04:09:02Z",
+     "ended_at": "2026-10-15T04:09:03Z"
+    },
+    {
+     "id": 4866,
+     "name": "replan",
+     "needs": [],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4867,
+     "name": "replan-note",
+     "needs": [
+      "replan"
+     ],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4868,
+     "name": "fmt",
+     "needs": [
+      "check"
+     ],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4869,
+     "name": "apply-comment",
+     "needs": [],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4870,
+     "name": "apply-wave-1",
+     "needs": [
+      "check"
+     ],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4871,
+     "name": "apply-wave-2",
+     "needs": [
+      "apply-wave-1"
+     ],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4872,
+     "name": "apply-wave-3",
+     "needs": [
+      "apply-wave-2"
+     ],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    },
+    {
+     "id": 4873,
+     "name": "tips",
+     "needs": [
+      "apply-wave-3"
+     ],
+     "status": "skipped",
+     "started_at": null,
+     "ended_at": null
+    }
+   ]
+  }
+ ]
+}

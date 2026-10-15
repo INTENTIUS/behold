@@ -429,8 +429,11 @@ kiosk reads it from the top of the `--terragucci` source (for the demo,
 by every open kiosk for 2 seconds. A `demo.json` that is missing, refused or
 not in the demo's format is said on the page, which waits for the next one.
 
-The kiosk is one screen: a status bar with the narration, behold's own view
-of the change filling the rest (the same page as `/`, framed with
+The kiosk is one screen: a status bar with the narration; under it, the
+pipeline's runs the way a CI page shows them (a sidebar of recent runs with
+the live one pinned on top, the selected run's jobs in their `needs` order,
+each job's steps and the step that matters opened on its log, following it
+while it runs); and behold's own view of the change beside them (the same page as `/`, framed with
 `?embed=1&bare=1`, so nothing in it opens or writes), and a line of facts under
 it. In the bar:
 
@@ -478,6 +481,20 @@ the same in the full app:
 
 Under it: the pull request's totals, its blast radius, the roots it does not
 touch and its cost.
+
+The runs are the demo repo's real pipeline runs, which the loop driver copies
+from its forge into the reports bucket as they go: `<prefix>/runs/index.json`
+(the newest runs, at most `keep`, each with its jobs) and
+`<prefix>/runs/<id>.json` (one run, each job's steps and each step's log
+tail), read through `GET /api/terragucci/runs` and
+`GET /api/terragucci/runs/<id>`, shared between kiosks for 2 seconds like
+`demo.json`. A job held at a terragucci gate is `waiting` and is drawn as
+held at the gate, never as a failure. Step names are shown as the driver
+wrote them. A viewer can open an older run in the sidebar; the kiosk goes
+back to the live run 90 seconds after the last pick. `--terragucci-runs
+<source>` reads the runs from somewhere else than the reports, such as a
+directory of fixtures (behold's own are in
+`src/__fixtures__/terragucci-demo/`).
 
 The kiosk asks for `demo.json` every 3 seconds, and for the reports and the run
 view when the step moves or the event stream says they did. Everything it asks

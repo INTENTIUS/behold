@@ -23,18 +23,72 @@
       /* #569 step 3: one screen. The bar is the narration, the frame is
          behold's own view of the change, the foot is the plan's facts. Sizes
          follow the screen's width, so a TV reads it from across a room. */
-      html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: clamp(14px, 0.95vw, 22px)/1.4 var(--font-ui); overflow: hidden; }
-      body { display: grid; grid-template-rows: auto 1fr auto; }
+      html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: clamp(13px, 0.82vw, 20px)/1.4 var(--font-ui); overflow: hidden; }
+      body { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+      /* #569: the pipeline's runs (left), the selected run's jobs, steps and
+         log (middle), behold's view of the change (right). */
+      #stage { display: grid; grid-template-columns: minmax(15em, 18%) minmax(26em, 34%) minmax(0, 1fr); min-height: 0; }
+      #runs-side { overflow-y: auto; border-right: 1px solid var(--rule); background: var(--panel); }
+      #runs-main { overflow: hidden; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--rule); }
+      .r-side-head { padding: 0.8em 1em 0.5em; }
+      .r-side-title { font-weight: 700; font-size: 1.05em; }
+      .r-side-note { color: var(--muted); font-size: 0.82em; margin-top: 0.15em; }
+      .r-runs { list-style: none; margin: 0; padding: 0 0 1em; }
+      .r-group { font: 600 0.72em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 0.7em 1em 0.25em; }
+      .r-run { display: grid; grid-template-columns: 1.2em 1fr; gap: 0.6em; padding: 0.5em 1em; cursor: pointer; border-left: 3px solid transparent; }
+      .r-run:hover { background: color-mix(in srgb, var(--active) 50%, transparent); }
+      .r-run.r-selected { background: var(--active); border-left-color: var(--focus); }
+      .r-run-title { font-weight: 600; line-height: 1.25; }
+      .r-run-place { color: var(--muted); font-size: 0.85em; }
+      .r-run-meta { display: flex; flex-wrap: wrap; gap: 0 0.7em; color: var(--muted); font-size: 0.8em; }
+      .r-icon { width: 1.15em; height: 1.15em; flex: none; margin-top: 0.15em; }
+      .r-ok { color: var(--managed); } .r-bad { color: var(--degraded); } .r-wait { color: var(--foreign); } .r-busy { color: var(--foreign); } .r-idle { color: var(--neutral); }
+      .r-word.r-idle { color: var(--muted); }
+      @media (prefers-reduced-motion: no-preference) { .r-spin { animation: r-spin 1s linear infinite; } }
+      @keyframes r-spin { to { transform: rotate(360deg); } }
+      .r-head { padding: 0.8em 1em 0.6em; border-bottom: 1px solid var(--rule); }
+      .r-head-title { display: flex; gap: 0.5em; align-items: center; font-weight: 700; font-size: 1.15em; }
+      .r-head-title .r-icon { margin: 0; }
+      .r-head-sub { color: var(--fg); font-size: 0.88em; margin-top: 0.15em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .r-head-meta { color: var(--muted); font-size: 0.82em; }
+      .r-label { font: 600 0.7em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 0.6em 1em 0; }
+      .r-jobs { list-style: none; margin: 0; padding: 0.3em 0 0.5em; border-bottom: 1px solid var(--rule); }
+      .r-job { display: flex; gap: 0.5em; align-items: center; padding: 0.22em 1em 0.22em calc(1em + var(--depth, 0) * 0.9em); cursor: pointer; }
+      .r-job .r-icon { margin: 0; }
+      .r-job.r-selected { background: var(--active); }
+      .r-job-name { font: 600 0.92em var(--font-mono); }
+      .r-job-needs { color: var(--muted); font-size: 0.78em; }
+      .r-dur { margin-left: auto; color: var(--muted); font-size: 0.8em; white-space: nowrap; }
+      .r-job-skipped { color: var(--muted); font-size: 0.78em; cursor: default; }
+      .r-steps { display: flex; flex-direction: column; min-height: 0; flex: 1; overflow-y: auto; padding-bottom: 0.5em; }
+      .r-steps-head { display: flex; gap: 0.5em; align-items: center; padding: 0.3em 1em 0.3em; }
+      .r-steps-head .r-icon { margin: 0; }
+      .r-steps-job { font: 700 0.95em var(--font-mono); }
+      .r-steps-word { color: var(--muted); font-size: 0.85em; }
+      .r-step-line { display: flex; gap: 0.45em; align-items: center; padding: 0.2em 1em; cursor: pointer; }
+      .r-step-line .r-icon { margin: 0; width: 1em; height: 1em; }
+      .r-caret { color: var(--muted); width: 0.8em; font-size: 0.8em; }
+      .r-step-name { font-size: 0.88em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .r-open > .r-step-line { background: color-mix(in srgb, var(--active) 60%, transparent); }
+      .r-log { margin: 0.2em 0.6em 0.4em 1.6em; padding: 0.5em 0; background: var(--well); border-radius: 6px; font: 0.76em/1.45 var(--font-mono);
+        white-space: pre-wrap; overflow-wrap: anywhere; overflow-y: auto; max-height: 52vh; min-height: 6em; }
+      .r-log-line { display: grid; grid-template-columns: 3.2em 1fr; gap: 0.8em; padding: 0 0.8em 0 0; }
+      .r-ln { color: var(--muted); text-align: right; user-select: none; opacity: 0.7; }
+      .r-log-cut { color: var(--muted); padding: 0 0.8em 0.2em 4em; font-style: italic; }
+      .r-log-live { color: var(--foreign); padding-left: 4em; }
+      @media (prefers-reduced-motion: no-preference) { .r-log-live { animation: r-blink 1s steps(2) infinite; } }
+      @keyframes r-blink { 50% { opacity: 0; } }
+      .r-note { color: var(--muted); padding: 0 1em; font-size: 0.88em; }
       #bar { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 1.6em; align-items: start;
-        padding: 1em 1.6em 0.9em; background: var(--panel); border-bottom: 1px solid var(--rule); }
+        padding: 0.7em 1.4em 0.7em; background: var(--panel); border-bottom: 1px solid var(--rule); }
       #bar > .k-empty { grid-column: 1 / -1; }
       .k-kicker { display: flex; gap: 1.2em; font: 600 0.78em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
       .k-cycle { text-transform: none; letter-spacing: 0; font-weight: 400; }
-      .k-title { margin: 0.1em 0 0.35em; font-size: 1.75em; line-height: 1.15; }
+      .k-title { margin: 0.05em 0 0.25em; font-size: 1.45em; line-height: 1.15; }
       .k-muted { color: var(--muted); margin: 0.25em 0; }
       .k-step { border-left: 4px solid var(--pending); padding: 0.1em 0 0.1em 0.8em; }
       .k-step-word { font: 600 0.75em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
-      .k-label { font-size: 1.12em; margin: 0.1em 0 0; }
+      .k-label { font-size: 1.02em; margin: 0.1em 0 0; }
       .k-step-waiting { border-left-color: var(--foreign); }
       .k-step-failed, .k-step-stalled { border-left-color: var(--degraded); }
       .k-step-applied { border-left-color: var(--managed); }
@@ -61,18 +115,22 @@
       .k-legend { color: var(--muted); flex-basis: 100%; }
       .k-fact { color: var(--fg); }
       .k-source { color: var(--muted); margin-left: auto; }
-      @media (max-width: 900px) { #bar { grid-template-columns: 1fr; } }
+      @media (max-width: 900px) { #bar { grid-template-columns: 1fr; } #stage { grid-template-columns: 1fr; } }
     </style>
   </head>
   <body>
     <header id="bar" aria-live="polite"></header>
-    <iframe id="view" title="behold's view of the change"></iframe>
+    <div id="stage">
+      <nav id="runs-side" aria-label="pipeline runs"></nav>
+      <section id="runs-main" aria-live="polite"></section>
+      <iframe id="view" title="behold's view of the change"></iframe>
+    </div>
     <footer id="foot"></footer>
     <script type="module">
       import { initTheme } from "/theme.js";
       import { startKiosk } from "/kiosk.js";
       initTheme();
-      startKiosk({ bar: document.getElementById("bar"), frame: document.getElementById("view"), foot: document.getElementById("foot") });
+      startKiosk({ bar: document.getElementById("bar"), frame: document.getElementById("view"), foot: document.getElementById("foot"), side: document.getElementById("runs-side"), main: document.getElementById("runs-main") });
     </script>
   </body>
 </html>
