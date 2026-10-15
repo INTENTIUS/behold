@@ -64,7 +64,7 @@ the systemd units, `demo-host.sh`, `driver-entry.sh`, `watchdog.sh` and
 
 The host's AWS resources are declared in chant, in `chant/src/aws/host.ts`
 (chant's aws lexicon, CloudFormation), and live in the stack
-`demo-intentius-host` in us-east-2, account 354867293429:
+`demo-intentius-host` in us-east-2:
 
 | Logical id | Resource |
 |---|---|
@@ -185,6 +185,15 @@ DEMO_AUTH_PASSWORD=<at least 12 characters>
 The file may also set any key of `demo.env.example`, for example
 `BEHOLD_REF=<branch>` to bring the host up from a branch. Without a secrets
 file, `bootstrap` asks for the password on the terminal.
+
+The address ssh is open to is the stack's `OperatorCidr` parameter, and it is
+never written in this repo or in `template.json`. `ops/infra.sh` reads it
+from `DEMO_OPERATOR_CIDR` in the environment or in
+`~/.config/demo-intentius/secrets.env` (or `DEMO_SECRETS`):
+
+```sh
+DEMO_OPERATOR_CIDR=<your address>/32
+```
 
 What the host keeps:
 

@@ -1,5 +1,4 @@
-// The demo host's AWS resources (#570, tracked in #571), us-east-2, account
-// 354867293429. They were made by hand on 2026-10-15 and brought under the
+// The demo host's AWS resources (#570, tracked in #571), us-east-2. They were made by hand on 2026-10-15 and brought under the
 // CloudFormation stack demo-intentius-host by resource import, so every
 // property here is the value the live resource already had: a property that
 // differed would show as an update in the next change set.
@@ -11,7 +10,7 @@
 // The default VPC and its subnet are the account's, not this stack's: they
 // are named by id. The root volume is the instance's (BlockDeviceMappings);
 // a volume isn't a resource of its own here.
-import { EIP, EIPAssociation, Instance, KeyPair, SecurityGroup } from "@intentius/chant-lexicon-aws";
+import { EIP, EIPAssociation, Instance, KeyPair, Parameter, SecurityGroup } from "@intentius/chant-lexicon-aws";
 
 const retain = { DeletionPolicy: "Retain", UpdateReplacePolicy: "Retain" } as const;
 
@@ -21,8 +20,18 @@ const project = { Key: "Project", Value: "behold-571" };
 export const vpcId = "vpc-42e9e02a";
 export const subnetId = "subnet-cbe33587";
 
-/** The operator's address, the only one ssh is open to. */
-export const operatorCidr = "73.14.154.133/32";
+/**
+ * The operator's address, the only one ssh is open to. It is a stack
+ * parameter, never written here: ops/infra.sh passes it from
+ * DEMO_OPERATOR_CIDR in the operator's own secrets file
+ * (~/.config/demo-intentius/secrets.env), so this public repo and its
+ * template.json never hold the operator's address.
+ */
+export const OperatorCidr = new Parameter("String", {
+  description: "The operator's address, the only one ssh is open to (a /32)",
+  allowedPattern: "^\\d{1,3}(\\.\\d{1,3}){3}/32$",
+  constraintDescription: "one address, as a.b.c.d/32",
+});
 
 /** The ssh key the instance was launched with: ed25519, the public half only. */
 export const demoKeyPair = new KeyPair(
@@ -45,7 +54,7 @@ export const hostSecurityGroup = new SecurityGroup(
     SecurityGroupIngress: [
       { IpProtocol: "tcp", FromPort: 443, ToPort: 443, CidrIp: "0.0.0.0/0", Description: "site" },
       { IpProtocol: "tcp", FromPort: 80, ToPort: 80, CidrIp: "0.0.0.0/0", Description: "acme-and-redirect" },
-      { IpProtocol: "tcp", FromPort: 22, ToPort: 22, CidrIp: operatorCidr, Description: "operator" },
+      { IpProtocol: "tcp", FromPort: 22, ToPort: 22, CidrIp: OperatorCidr, Description: "operator" },
     ],
     SecurityGroupEgress: [{ IpProtocol: "-1", CidrIp: "0.0.0.0/0" }],
     Tags: [project, { Key: "Name", Value: "demo-intentius-host" }],

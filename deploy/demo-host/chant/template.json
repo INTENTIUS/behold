@@ -18,6 +18,14 @@
       }
     }
   },
+  "Parameters": {
+    "OperatorCidr": {
+      "AllowedPattern": "^\\d{1,3}(\\.\\d{1,3}){3}/32$",
+      "ConstraintDescription": "one address, as a.b.c.d/32",
+      "Description": "The operator's address, the only one ssh is open to (a /32)",
+      "Type": "String"
+    }
+  },
   "Resources": {
     "demoKeyPair": {
       "DeletionPolicy": "Retain",
@@ -151,7 +159,9 @@
             "ToPort": 80
           },
           {
-            "CidrIp": "73.14.154.133/32",
+            "CidrIp": {
+              "Ref": "OperatorCidr"
+            },
             "Description": "operator",
             "FromPort": 22,
             "IpProtocol": "tcp",
