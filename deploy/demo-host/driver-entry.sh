@@ -90,6 +90,13 @@ reader_keys() {
   iam CreateUser "UserName=behold-reader" >/dev/null 2>&1 || true
   iam PutUserPolicy "UserName=behold-reader" "PolicyName=reports-read" "PolicyDocument=$policy" >/dev/null \
     || die "floci refused the reader's policy"
+  # A user floci kept from an earlier bootstrap still holds that run's keys, and
+  # IAM allows two, so the old ones go before a new one is made. behold is
+  # restarted on the new key, so nothing still reads with an old one.
+  local old
+  for old in $(iam ListAccessKeys "UserName=behold-reader" 2>/dev/null | tr -d '\n' | grep -o '<AccessKeyId>[^<]*' | sed 's/^<AccessKeyId>//'); do
+    iam DeleteAccessKey "UserName=behold-reader" "AccessKeyId=$old" >/dev/null || die "floci kept the reader's old key $old"
+  done
   out="$(iam CreateAccessKey "UserName=behold-reader")" || die "floci made no key for the reader"
   id="$(xml_field AccessKeyId <<<"$out")"
   secret="$(xml_field SecretAccessKey <<<"$out")"
