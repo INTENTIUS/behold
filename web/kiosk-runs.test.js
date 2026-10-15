@@ -252,6 +252,33 @@ describe("the features strip, folded to whole lines (behold#571)", () => {
     expect(open.more.hidden).toBe(false);
   });
 
+  it("never shows \"+0 more\": past the last line only a tool's name, so no button", () => {
+    const items = [item("r-feats-product", 0), item("r-feat", 0), item("r-feat", 20), item("r-feat", 40), item("r-feats-product", 60)];
+    const l = list(items, 40);
+    fitFeatures(l.el, false);
+    expect(items.map((i) => i.hidden)).toEqual([false, false, false, false, true]);
+    expect(l.more.hidden).toBe(true);
+    expect(l.more.textContent).not.toBe("+0 more");
+  });
+
+  it("shows \"+N more\" with N the features hidden, and no button once a wider list fits them all", () => {
+    const items = [item("r-feat", 0), item("r-feat", 20), item("r-feat", 40), item("r-feat", 60), item("r-feat", 60), item("r-feat", 80)];
+    const l = list(items, 40);
+    fitFeatures(l.el, false);
+    expect(l.more).toMatchObject({ hidden: false, textContent: "+3 more" });
+    // Measured again after the list widened: everything on three lines.
+    for (const [i, top] of [0, 0, 20, 20, 40, 40].entries()) items[i].offsetTop = top;
+    fitFeatures(l.el, false);
+    expect(items.every((i) => !i.hidden)).toBe(true);
+    expect(l.more.hidden).toBe(true);
+  });
+
+  it("opened, offers to fold back only when folding would hide a feature", () => {
+    const open = list([item("r-feat", 0), item("r-feat", 20), item("r-feat", 40), item("r-feats-product", 60)], 60);
+    fitFeatures(open.el, true);
+    expect(open.more.hidden).toBe(true);
+  });
+
   it("drops a tool's name left last on a line with none of its features after it", () => {
     const items = [item("r-feat", 0), item("r-feat", 20), item("r-feats-product", 40), item("r-feat", 60)];
     const l = list(items, 40);
