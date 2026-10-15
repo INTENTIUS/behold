@@ -1,0 +1,177 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Outputs": {
+    "ElasticIp": {
+      "Value": {
+        "Fn::GetAtt": [
+          "hostEip",
+          "PublicIp"
+        ]
+      }
+    },
+    "ElasticIpAllocationId": {
+      "Value": {
+        "Fn::GetAtt": [
+          "hostEip",
+          "AllocationId"
+        ]
+      }
+    }
+  },
+  "Resources": {
+    "demoKeyPair": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "KeyName": "demo-intentius",
+        "KeyType": "ed25519",
+        "PublicKeyMaterial": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBZV6IyTcqViNJ8+0g+kb+QgTj6hYRPsx5NfDsJBshb2 demo-intentius",
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "behold-571"
+          },
+          {
+            "Key": "Name",
+            "Value": "demo-intentius"
+          }
+        ]
+      },
+      "Type": "AWS::EC2::KeyPair",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "hostEip": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "Domain": "vpc",
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "behold-571"
+          },
+          {
+            "Key": "Name",
+            "Value": "demo-intentius"
+          }
+        ]
+      },
+      "Type": "AWS::EC2::EIP",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "hostEipAssociation": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AllocationId": {
+          "Fn::GetAtt": [
+            "hostEip",
+            "AllocationId"
+          ]
+        },
+        "InstanceId": {
+          "Fn::GetAtt": [
+            "hostInstance",
+            "InstanceId"
+          ]
+        }
+      },
+      "Type": "AWS::EC2::EIPAssociation",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "hostInstance": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "BlockDeviceMappings": [
+          {
+            "DeviceName": "/dev/sda1",
+            "Ebs": {
+              "DeleteOnTermination": true,
+              "VolumeSize": 60,
+              "VolumeType": "gp3"
+            }
+          }
+        ],
+        "ImageId": "ami-09519cc56eb20524a",
+        "InstanceType": "c7i.xlarge",
+        "KeyName": {
+          "Ref": "demoKeyPair"
+        },
+        "MetadataOptions": {
+          "HttpEndpoint": "enabled",
+          "HttpProtocolIpv6": "disabled",
+          "HttpPutResponseHopLimit": 2,
+          "HttpTokens": "required",
+          "InstanceMetadataTags": "disabled"
+        },
+        "SecurityGroupIds": [
+          {
+            "Fn::GetAtt": [
+              "hostSecurityGroup",
+              "GroupId"
+            ]
+          }
+        ],
+        "SubnetId": "subnet-cbe33587",
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "behold-571"
+          },
+          {
+            "Key": "Name",
+            "Value": "demo-intentius"
+          }
+        ]
+      },
+      "Type": "AWS::EC2::Instance",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "hostSecurityGroup": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "GroupDescription": "demo.intentius.io: 80/443 public, 22 from the operator",
+        "GroupName": "demo-intentius-host",
+        "SecurityGroupEgress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "IpProtocol": "-1"
+          }
+        ],
+        "SecurityGroupIngress": [
+          {
+            "CidrIp": "0.0.0.0/0",
+            "Description": "site",
+            "FromPort": 443,
+            "IpProtocol": "tcp",
+            "ToPort": 443
+          },
+          {
+            "CidrIp": "0.0.0.0/0",
+            "Description": "acme-and-redirect",
+            "FromPort": 80,
+            "IpProtocol": "tcp",
+            "ToPort": 80
+          },
+          {
+            "CidrIp": "73.14.154.133/32",
+            "Description": "operator",
+            "FromPort": 22,
+            "IpProtocol": "tcp",
+            "ToPort": 22
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "behold-571"
+          },
+          {
+            "Key": "Name",
+            "Value": "demo-intentius-host"
+          }
+        ],
+        "VpcId": "vpc-42e9e02a"
+      },
+      "Type": "AWS::EC2::SecurityGroup",
+      "UpdateReplacePolicy": "Retain"
+    }
+  }
+}

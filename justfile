@@ -188,3 +188,9 @@ e2e-ci-github:
 #   BEHOLD_E2E_ONLY="terralith-1 waterpark" just e2e-workbench
 e2e-workbench:
     bash e2e/workbench-e2e.sh
+
+# The demo host's chant project (deploy/demo-host/chant): typecheck, lint, and
+# check that template.json, compose.yaml and the two Dockerfiles are what
+# chant builds from its source.
+demo-host-check:
+    cd deploy/demo-host/chant && npm ci && npm run check

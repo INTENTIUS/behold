@@ -1,0 +1,7 @@
+[
+  { "ResourceType": "AWS::EC2::KeyPair", "LogicalResourceId": "demoKeyPair", "ResourceIdentifier": { "KeyName": "demo-intentius" } },
+  { "ResourceType": "AWS::EC2::SecurityGroup", "LogicalResourceId": "hostSecurityGroup", "ResourceIdentifier": { "Id": "sg-0a79a7fda2a635059" } },
+  { "ResourceType": "AWS::EC2::Instance", "LogicalResourceId": "hostInstance", "ResourceIdentifier": { "InstanceId": "i-0262f1207d6eac51d" } },
+  { "ResourceType": "AWS::EC2::EIP", "LogicalResourceId": "hostEip", "ResourceIdentifier": { "PublicIp": "77.114.54.88", "AllocationId": "eipalloc-0c27d65c070ab3d92" } },
+  { "ResourceType": "AWS::EC2::EIPAssociation", "LogicalResourceId": "hostEipAssociation", "ResourceIdentifier": { "Id": "eipassoc-0b56691cca77e7314" } }
+]

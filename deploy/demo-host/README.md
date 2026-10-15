@@ -21,43 +21,156 @@ watchdog (systemd) ── docker + localhost:4580 ──> driver, demo.json, beh
 | File | What it is |
 |---|---|
 | `demo-host.sh` | Everything done on the host: `bootstrap`, `start`, `pause`, `update`, `open`, `close`, `status` |
-| `compose.yaml` | Caddy, behold and the driver (project `demo-host`) |
+| `compose.yaml` | Caddy, behold and the driver (project `demo-host`); written by chant |
 | `Caddyfile` | `demo.intentius.io`, the certificate, the password until launch morning |
-| `behold.Dockerfile` | behold built from its checkout at `BEHOLD_REF` |
-| `driver.Dockerfile` | node, git and the Docker CLI for terragucci's scripts |
+| `behold.Dockerfile` | behold built from its checkout at `BEHOLD_REF`; written by chant |
+| `driver.Dockerfile` | node, git and the Docker CLI for terragucci's scripts; written by chant |
 | `driver-entry.sh` | The driver container's entry: bootstrap when floci has no base, behold's keys, then the loop |
 | `watchdog.sh` | Restarts the driver when it exits or stalls, logs stalls, pulls behold's checkout every cycle |
 | `systemd/` | `demo-host.service` (the stack at boot) and `demo-host-watchdog.service` |
 | `demo.env.example` | The settings, copied to `/etc/demo-host/demo.env` |
+| `chant/` | The chant project: the AWS resources (`src/aws`), `compose.yaml` and the Dockerfiles (`src/docker`), and the ops (`ops/`) |
 
 Forgejo, the runner and floci aren't in `compose.yaml`. They come from
 terragucci's `stack/docker-compose.yml`, which the driver's bootstrap starts
 the way it does on a laptop. Defining them here as well would make each
 bootstrap recreate them with the other file's settings.
 
+## The chant project
+
+`chant/` is a chant project with its own `package.json`, so behold's root
+doesn't carry the lexicons. It declares everything here that chant has a
+lexicon for:
+
+- `src/aws/`: the instance, security group, Elastic IP, association and key
+  pair (chant's aws lexicon), built to `template.json`. See "The machine".
+- `src/docker/`: `compose.yaml`, `behold.Dockerfile` and `driver.Dockerfile`
+  (chant's docker lexicon). `npm run build:docker` builds them and writes
+  them here, where `demo-host.sh` reads them, with a header naming the source
+  and the compose project's `name: demo-host`, which the lexicon has no field
+  for. Edit the TypeScript, not these files.
+- `ops/`: the procedures the operator runs from a laptop, as chant Ops. See
+  "The ops".
+
+`npm run check` (and `just demo-host-check`, and CI's `demo-host` job)
+typechecks and lints the project, and fails when `template.json`,
+`compose.yaml` or either Dockerfile isn't what chant builds.
+
+These stay as files, because chant has no lexicon for them: the `Caddyfile`,
+the systemd units, `demo-host.sh`, `driver-entry.sh`, `watchdog.sh` and
+`demo.env.example`.
+
 ## The machine
 
-- EC2, about 4 vCPU and 8 GB, for example `c7i.xlarge` (x86_64) or `c7g.xlarge`
-  (arm64; every image here has both). A 60 GB gp3 root volume holds the
-  terragucci CI images, Forgejo's data and the job cache.
-- Ubuntu 24.04 LTS or Amazon Linux 2023. `demo-host.sh` installs Docker and
-  everything else it needs from these.
-- No instance profile. Nothing on the instance holds AWS credentials.
-- A security group allowing:
-  - TCP 443 from anywhere (the site)
-  - TCP 80 from anywhere (Let's Encrypt's HTTP-01 challenge, and the redirect to https)
-  - TCP 22 from the operator's address only (`<your IP>/32`)
+The host's AWS resources are declared in chant, in `chant/src/aws/host.ts`
+(chant's aws lexicon, CloudFormation), and live in the stack
+`demo-intentius-host` in us-east-2, account 354867293429:
 
-  and nothing else. Forgejo (3300) and floci (4580) are published on
-  127.0.0.1 only. The security group doesn't need to block them, but it
-  does anyway.
-- An Elastic IP associated with the instance.
-- DNS: an `A` record for `demo.intentius.io` pointing at the Elastic IP. Create
-  it before the bootstrap, because Caddy asks Let's Encrypt for the certificate
-  as soon as it starts and the challenge has to reach this machine.
+| Logical id | Resource |
+|---|---|
+| `hostInstance` | `i-0262f1207d6eac51d`, c7i.xlarge, Ubuntu 24.04 (`ami-09519cc56eb20524a`), 60 GB gp3 root, IMDSv2 only, no instance profile |
+| `hostSecurityGroup` | `sg-0a79a7fda2a635059` `demo-intentius-host` in the default VPC: TCP 443 and 80 from anywhere (the site; Let's Encrypt's HTTP-01 challenge and the redirect), TCP 22 from the operator's address only |
+| `hostEip` | the Elastic IP `77.114.54.88` (`eipalloc-0c27d65c070ab3d92`) |
+| `hostEipAssociation` | its association with the instance (`eipassoc-0b56691cca77e7314`) |
+| `demoKeyPair` | the ed25519 key pair `demo-intentius` (the public half; the private key is the operator's `~/.ssh/demo-intentius.pem`) |
 
-These four are made by hand, in the console or with the CLI. Decided on #570:
-no infrastructure as code for them.
+The stack's outputs are `ElasticIp` and `ElasticIpAllocationId`. The DNS
+record for `demo.intentius.io` is an `A` record pointing at `ElasticIp`; it
+isn't in the stack. The default VPC and its subnet are the account's and are
+named by id.
+
+Every resource has `DeletionPolicy: Retain` and `UpdateReplacePolicy: Retain`.
+Deleting the stack, or removing a resource from `host.ts`, leaves the resource
+in the account. The `demo-host-infra` op also refuses a change set that would
+replace a resource, since a new instance or a new Elastic IP would take the
+demo down and change the address DNS names.
+
+Nothing on the instance holds AWS credentials, since the demo is
+`terraform_data` against floci's S3 and nothing on it needs to reach a real
+account. Forgejo (3300) and floci (4580) are published on 127.0.0.1 only; the
+security group doesn't need to block them, but it does anyway.
+
+### Building and deploying it
+
+```sh
+cd deploy/demo-host/chant
+npm ci
+npm run build:aws            # writes template.json
+npx chant run demo-host-infra
+```
+
+`demo-host-infra` builds `template.json`, makes a change set against the
+stack, prints it, and stops at a gate. Read the change set, then approve it and
+run the op again: it executes the change set and runs drift detection.
+
+```sh
+npx chant approve demo-host-infra apply-change-set --actor <you>
+npx chant run demo-host-infra
+```
+
+The gate approves that plan's digest, so if the change set differs on the
+second run, it stops again. `template.json` is committed; `npm run check`
+(and CI) fails when it isn't what chant builds from `src/aws`.
+
+### How the stack was made
+
+The instance, security group, Elastic IP, association and key pair were made
+by hand on 2026-10-15 (an earlier decision on #570 said no infrastructure as
+code; that was replaced). On 2026-10-15 they were brought under the stack by
+CloudFormation resource import, without changing any of them:
+
+1. Every property in `host.ts` was read off the live resources
+   (`aws ec2 describe-instances`, `describe-security-groups`,
+   `describe-addresses`, `describe-key-pairs`, `describe-volumes`).
+2. An import can't add outputs, so the import used `template.json` without
+   them (`jq 'del(.Outputs)' template.json > build/import-template.json`).
+3. `aws cloudformation create-change-set --change-set-type IMPORT` with
+   `chant/import.json`, which names each resource by its identifier
+   (`KeyName`, the security group's `Id`, `InstanceId`, the EIP's `PublicIp`
+   and `AllocationId`, the association's `Id`). All five resource types
+   support import.
+4. `describe-change-set` showed five changes, every one `Import` with no
+   replacement and nothing else; then `execute-change-set`, to
+   `IMPORT_COMPLETE`.
+5. An `UPDATE` change set with the full `template.json` added the two outputs.
+   It had no resource changes.
+6. Drift detection: `IN_SYNC`, no drifted resources. (CloudFormation doesn't
+   detect drift on `AWS::EC2::EIPAssociation`.)
+
+The import added CloudFormation's own `aws:cloudformation:*` tags to the
+instance, security group and Elastic IP. The key pair's tags can't change
+without replacing it, so CloudFormation left them alone.
+
+To make a host like this from nothing, `chant build` the same source and
+deploy it as a new stack; for this host that is never needed.
+
+## The ops
+
+Run from `deploy/demo-host/chant` on the operator's laptop, with
+`npx chant run <name>`. They reach the host over ssh as `ubuntu`, at the
+stack's `ElasticIp` output, with `~/.ssh/demo-intentius.pem` (`ops/host.sh`;
+`DEMO_HOST_IP` and `DEMO_SSH_KEY` override both). Each calls `demo-host.sh` on
+the host, so the systemd units and the watchdog don't change, and the
+subcommands below still work by hand.
+
+| Op | What it does |
+|---|---|
+| `demo-host-status` | `demo-host.sh status`: the containers, `demo.json`, the last stalls. Changes nothing. |
+| `demo-host-bootstrap` | `demo-host.sh bootstrap` one piece per phase, for a fresh instance: copy the script and the secrets file (`DEMO_SECRETS`, default `./secrets.env`), install Docker, check out behold, write `demo.env` and Caddy's password (and remove the copied secrets file), check out terragucci and behold, install the units, build the images, start the driver and the watchdog, wait for the driver's base apply (up to 75 minutes), then bring up behold and Caddy. Not for the live host. |
+| `demo-host-update` | Waits until `demo.json` says `reset` or `applied` (read from floci on the host), runs `demo-host.sh update` with `--terragucci-ref "$TERRAGUCCI_REF"` and `--behold-ref "$BEHOLD_REF"` for whichever of the two is set, then waits until floci holds the driver's base for the new terragucci commit (`bootstrapped at terragucci <commit>` in the driver's log). |
+| `demo-host-go-public` | Launch morning. Checks that `demo.intentius.io` resolves to the Elastic IP and answers on https. While the host's `Caddyfile` still has the plain-http site by the address, it waits for a quiet step, runs `demo-host.sh update` so the host takes what behold's `main` holds (behold #590 removes that site), and fails if `main` still has it. It reloads Caddy and checks the address no longer serves the view. Then it stops at the gate `take-the-password-off`. After `npx chant approve demo-host-go-public take-the-password-off --actor <you>` and another run, it runs `demo-host.sh open` and checks the site answers 200 without a password. |
+| `demo-host-infra` | The AWS stack: build, change set, gate `apply-change-set`, execute, drift detection. See "Building and deploying it". |
+
+A gate stops the run with exit code 3 and records the pending approval;
+`npx chant run status <name>` shows it. The run after an approval starts from
+the first phase again. Every phase before a gate in these ops can run twice
+without changing anything the first run didn't.
+
+`demo-host.sh`'s pieces of `bootstrap`, which `demo-host-bootstrap` calls in
+order: `install`, `checkout-self [--secrets <file>]`,
+`configure [--secrets <file>]`, `checkouts`, `units`, `build`,
+`start-driver`, `wait-bootstrap`, `up`. `reload-caddy` reloads Caddy's
+config.
 
 ## Secrets
 
@@ -85,7 +198,8 @@ What the host keeps:
 
 ## Bring it up
 
-On a fresh instance:
+On a fresh instance, from your laptop: `npx chant run demo-host-bootstrap` in
+`chant/` (see "The ops"). By hand:
 
 ```sh
 scp secrets.env deploy/demo-host/demo-host.sh ubuntu@<elastic ip>:
@@ -167,7 +281,9 @@ http://localhost:3300.
 
 ## Launch morning (2026-11-04)
 
-Take the password off:
+From your laptop, `npx chant run demo-host-go-public` in `chant/` does the
+checks, drops the by-address http site and stops for an approval before the
+password comes off (see "The ops"). By hand, take the password off:
 
 ```sh
 sudo /opt/demo/behold/deploy/demo-host/demo-host.sh open
@@ -195,6 +311,8 @@ refs `demo.env` already names, for example after a fix lands on `main`.
 
 `update` restarts the driver wherever it is in a cycle, so run it while
 `demo.json` says `reset` or `applied`, when no wave is waiting or applying.
+`TERRAGUCCI_REF=v<x.y.z> BEHOLD_REF=behold-v<x.y.z> npx chant run demo-host-update`
+in `chant/` waits for that step itself, then waits for the new bootstrap.
 
 ## What this relies on from the other lanes
 

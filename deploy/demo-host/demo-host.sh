@@ -24,6 +24,22 @@
 #   demo-host.sh close      put the password back
 #   demo-host.sh status     containers, demo.json and the last stalls
 #
+# bootstrap's pieces, one at a time, for the demo-host-bootstrap op
+# (chant/ops/bootstrap.op.ts), which runs them over ssh in this order:
+#   install                 Docker, compose, buildx, git, jq, curl; ports on 127.0.0.1
+#   checkout-self [--secrets <file>]
+#                           clone behold at BEHOLD_REF into /opt/demo/behold;
+#                           the pieces after this run from that checkout
+#   configure [--secrets <file>]
+#                           /etc/demo-host/demo.env and Caddy's password
+#   checkouts               terragucci and behold at the refs in demo.env
+#   units                   install and enable the systemd units
+#   build                   build the behold and driver images
+#   start-driver            start (the driver alone on a fresh host) and the watchdog
+#   wait-bootstrap          wait for the driver's bootstrap to record its base
+#   up                      bring every service up (behold and Caddy too)
+#   reload-caddy            reload Caddy's config from the Caddyfile
+#
 # The secrets file (never committed; README.md, "Secrets") holds
 # KEY=value lines: DEMO_AUTH_PASSWORD, and optionally any key of
 # demo.env.example. Without one, bootstrap asks.
@@ -260,6 +276,49 @@ cmd_bootstrap() { # [--secrets <file>]: the part that needs nothing but this fil
   exec "$self/demo-host.sh" bootstrap-rest ${secrets:+--secrets "$secrets"}
 }
 
+secrets_arg() { # [--secrets <file>]: the file's absolute path, or nothing
+  local secrets=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --secrets) secrets="${2:?--secrets needs a file}"; shift 2 ;;
+      *) die "unknown argument '$1'" ;;
+    esac
+  done
+  if [ -n "$secrets" ]; then
+    [ -r "$secrets" ] || die "cannot read $secrets"
+    secrets="$(cd "$(dirname "$secrets")" && pwd)/$(basename "$secrets")"
+  fi
+  printf '%s' "$secrets"
+}
+
+cmd_install() {
+  install_packages
+  docker_localhost_only
+}
+
+cmd_checkout_self() { # [--secrets <file>]: behold at the secrets file's BEHOLD_REF, else demo.env's
+  local secrets ref
+  secrets="$(secrets_arg "$@")"
+  ref="$( { [ -z "$secrets" ] || read_secret "$secrets" BEHOLD_REF; } )"
+  mkdir -p "$ROOT"
+  checkout behold "${ref:-$(conf BEHOLD_REF main)}"
+}
+
+cmd_start_driver() {
+  cmd_start
+  systemctl start demo-host-watchdog.service
+}
+
+cmd_up() {
+  compose up -d
+  log "up: https://$(conf DEMO_HOSTNAME demo.intentius.io) (password until launch morning). $0 status shows the loop."
+}
+
+cmd_reload_caddy() {
+  docker exec demo-host-caddy caddy reload --config /etc/caddy/Caddyfile
+  log "Caddy reloaded $HERE/Caddyfile"
+}
+
 cmd_bootstrap_rest() { # [--secrets <file>]
   local secrets=""
   [ "${1:-}" != --secrets ] || secrets="${2:?}"
@@ -268,11 +327,9 @@ cmd_bootstrap_rest() { # [--secrets <file>]
   install_units
   log "building the behold and driver images"
   compose build
-  cmd_start
-  systemctl start demo-host-watchdog.service
+  cmd_start_driver
   wait_bootstrap
-  compose up -d
-  log "up: https://$(conf DEMO_HOSTNAME demo.intentius.io) (password until launch morning). $0 status shows the loop."
+  cmd_up
 }
 
 cmd_pause() {
@@ -343,6 +400,16 @@ main() {
     open) need_root; cmd_open ;;
     close) need_root; cmd_close ;;
     status) need_root; cmd_status ;;
+    install) need_root; cmd_install ;;
+    checkout-self) need_root; cmd_checkout_self "$@" ;;
+    configure) need_root; write_env "$(secrets_arg "$@")" ;;
+    checkouts) need_root; checkouts ;;
+    units) need_root; install_units ;;
+    build) need_root; log "building the behold and driver images"; compose build ;;
+    start-driver) need_root; cmd_start_driver ;;
+    wait-bootstrap) need_root; wait_bootstrap ;;
+    up) need_root; cmd_up ;;
+    reload-caddy) need_root; cmd_reload_caddy ;;
     *) sed -n '3,/^set -/p' "$0" | grep '^#' | sed 's/^# \{0,1\}//'; exit 2 ;;
   esac
 }
