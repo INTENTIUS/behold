@@ -263,6 +263,7 @@ export function waveRows(answer, progress, now = new Date()) {
         // #568 step 3: each root's changes under its own name, and the run's one digest.
         facts.push(`composed run, each root under its own name: ${c.members.map(memberPlanLine).join("; ")}`);
         if (c.plan_digest === null) facts.push("the composed plan failed");
+        if (c.error) facts.push(`the composed run: ${c.error}`);
       }
       if (w.replans_after && w.replans_after.length) facts.push(`plans again after wave ${list(w.replans_after)} applies, no digest until then`);
       else if (w.review_digest) facts.push(`${c ? "one digest for the wave and its composed run, " : ""}review digest ${short(w.review_digest)}`);

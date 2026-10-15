@@ -29,11 +29,13 @@ schema minor 36). Minor 35 (INTENTIUS/terragucci#1015) adds `totals_roots` to
 `run.schema.json`; minor 36 (INTENTIUS/terragucci#1016) adds `depth` to each
 `blast.resources[].reaches[]`. The demo fixtures carry these fields, at minor 36.
 
-#568 step 3: `../terragucci-demo-composed/` holds the same change as a composed
-run (`waves.compose`, INTENTIUS/terragucci#1013): a pull request's tf-plan
-`report.json`, wave 1's tf-apply `report.json` after a failure part way, and
-the run views of the run waiting on an unknown read, applying, applied and
-failed part way. They follow the #1013 step 1 shape (report minor 38, and
-run.json's `composed` fields), written ahead of terragucci's schema: the
-schemas here stay at minor 36 until #1013's pull request merges, and these
-fixtures don't validate against them until the refresh that follows.
+#568 step 3: every `*.schema.json` refreshed again, unchanged, from
+INTENTIUS/terragucci main at `11647640` (`@intentius/terragucci` 0.4.9, report
+schema minor 38). Minor 38 (INTENTIUS/terragucci#1013, `waves.compose`) adds
+`compose`, `waves[].composed`, `roots[].composed` and `roots[].reads[].composed`
+to `report.schema.json`, and `roots[].composed` and `waves[].composed` to
+`run.schema.json`. `../terragucci-demo-composed/` holds the same change as a
+composed run: a pull request's tf-plan `report.json`, wave 1's tf-apply
+`report.json` after a failure part way, and the run views of the run waiting on
+an unknown read, applying, applied and failed part way. Every fixture in both
+directories validates against these schemas.

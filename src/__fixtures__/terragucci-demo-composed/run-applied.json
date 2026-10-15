@@ -5,20 +5,6 @@
   "updated": "2026-10-20T10:05:30.000Z",
   "roots": [
     {
-      "root": "network",
-      "wave": 1,
-      "reads": [],
-      "state": {
-        "bucket": "demo-state",
-        "key": "network/terraform.tfstate"
-      },
-      "composed": {
-        "wave": 1,
-        "module": "module.network",
-        "own_wave": 1
-      }
-    },
-    {
       "root": "app",
       "wave": 1,
       "reads": [
@@ -49,24 +35,38 @@
         "module": "module.edge",
         "own_wave": 3
       }
+    },
+    {
+      "root": "network",
+      "wave": 1,
+      "reads": [],
+      "state": {
+        "bucket": "demo-state",
+        "key": "network/terraform.tfstate"
+      },
+      "composed": {
+        "wave": 1,
+        "module": "module.network",
+        "own_wave": 1
+      }
     }
   ],
   "waves": [
     {
       "number": 1,
       "roots": [
-        "network",
         "app",
-        "edge"
+        "edge",
+        "network"
       ],
       "reads": [],
       "gate": "wave-1",
       "policy": "on-destructive",
       "report": "forge.example/demo/two-roots/2026/10/f0e1d2c3b4a5968778695a4b3c2d1e0f12345678/tf-apply-wave-1",
       "changed": [
-        "network",
         "app",
-        "edge"
+        "edge",
+        "network"
       ],
       "totals": {
         "create": 5,

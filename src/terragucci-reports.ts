@@ -98,14 +98,12 @@ export interface ReportRead {
   unknown?: string[];
   /** With `applied` in a tf-plan: why it did not plan on the upstream's planned outputs. */
   why?: string;
-  /** #568 step 3, from the #1013 step 1 shape, minor 38: a read of another member inside the composed run. */
-  composed?: boolean;
+  /** #568 step 3, minor 38 (INTENTIUS/terragucci#1013): a read of another member inside the composed run. */
+  composed?: true;
 }
 
-// #568 step 3: the composed run's fields, from the #1013 step 1 shape, minor 38
-// (INTENTIUS/terragucci#1013, "Step 1: the shape", part 2). Terragucci's schema
-// with these fields is not merged yet; the vendored schemas stay at minor 36
-// until it is, and a refresh follows.
+// #568 step 3: the composed run's fields, report minor 38 (INTENTIUS/terragucci#1013,
+// `report/schema.ts` and `report.schema.json` at terragucci main 11647640).
 
 /** `Report.compose`: present when the run's config has `waves.compose: true`. */
 export interface ReportCompose {
@@ -147,6 +145,8 @@ export interface ReportComposedRun {
   members: ReportComposedMember[];
   /** The members that read a value of another member unknown at plan time. Absent when there are none. */
   held_by_unknown?: string[];
+  /** Why the run failed before or in its apply, when no member's own error says it. */
+  error?: string;
 }
 
 export interface ReportRoot {
@@ -160,7 +160,7 @@ export interface ReportRoot {
   dependencies?: string[];
   /** Its changes by action, as its plan counts them. */
   counts?: Record<string, number>;
-  /** #568 step 3, from the #1013 step 1 shape, minor 38: on each root in a composed run. */
+  /** #568 step 3, minor 38 (INTENTIUS/terragucci#1013): on each root in a composed run. */
   composed?: { wave: number; module: string };
 }
 
@@ -195,7 +195,7 @@ export interface ReportWave {
   reads?: number[];
   /** minor 21 (#568): a tf-plan wave that plans again after these waves apply. */
   replans_after?: number[];
-  /** #568 step 3, from the #1013 step 1 shape, minor 38: on the wave that carries the composed run. */
+  /** #568 step 3, minor 38 (INTENTIUS/terragucci#1013): on the wave that carries the composed run. */
   composed?: ReportComposedRun;
 }
 
@@ -248,7 +248,7 @@ export interface Report {
   cost?: ReportCost;
   /** minor 22 (#568). */
   blast?: ReportBlast;
-  /** #568 step 3, from the #1013 step 1 shape, minor 38. */
+  /** #568 step 3, minor 38 (INTENTIUS/terragucci#1013). */
   compose?: ReportCompose;
 }
 

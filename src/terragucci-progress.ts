@@ -90,10 +90,10 @@ export interface RunView {
   }[];
 }
 
-// #568 step 3: run.json's composed run, from the #1013 step 1 shape, minor 38
-// (INTENTIUS/terragucci#1013, "Step 1: the shape", part 3). run.json has no
-// minor; terragucci's run.schema.json with these fields is not merged yet, and
-// the vendored copy stays as it is until it is.
+// #568 step 3: run.json's composed run (INTENTIUS/terragucci#1013), as
+// `report/run-view.ts` and `run.schema.json` write it at terragucci main
+// 11647640. run.json has no minor; its members carry no kept, lock_held or
+// error (those are in the wave's tf-apply report.json).
 
 /** `RunRoot.composed`: `wave` is the wave that applies it (the run's), `own_wave` the wave it would be in on its own. */
 export interface RunRootComposed {
