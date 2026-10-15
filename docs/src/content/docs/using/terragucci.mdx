@@ -454,9 +454,12 @@ it. In the bar:
 - The driver's next action, with a countdown to `next.at` when the driver acts
   on its own clock, or "when the pipeline gets there" when it waits on a run.
 - At a waiting wave, the wave and its roots, and what the driver runs when the
-  countdown ends: `chant approve tf-apply wave-<N> --actor <driver> --sign
-  <driver key>`, then a `/terragucci apply` comment on the pull request. The
-  actor and key are placeholders, never a path. The wave's digest from the run
+  countdown ends: `chant approve tf-apply wave-<N> --actor <reviewer> --sign
+  <reviewer key>`, then a `/terragucci apply` comment on the pull request. The
+  driver plays two people (terragucci#1052): an author who opens, merges and
+  comments, and a reviewer with no hand in the change who approves with its
+  own signing key, since only such an approval counts. The actor and key are
+  placeholders, never a path. The wave's digest from the run
   view is shown beside it, so a viewer sees which plan is approved. There is no
   copy button: nobody watching needs to run it.
 - Until the reports hold the step's run, that it isn't written yet.
@@ -490,6 +493,24 @@ the same in the full app:
 - The kiosk brings the roots each step is about forward with a `behold:view`
   message (`focus`): the pull request's roots while it is planned, then the
   wave that waits, applies or failed, then everything once applied.
+- Pointing at a card opens a popover next to it. The popover stays inside the
+  frame and leaves the card in view. The resources view names the resource and
+  its root and gives each attribute the plan changes its own line as
+  `before -> after`. Six lines show at most, and a count stands for the rest.
+  A value known only after apply shows in the unknown colour with a note that
+  no review shows it. Once a wave has applied the root, the popover also lists
+  the values the state holds now. The view by wave lists the root's resources
+  and marks whether each one changes, stays as it is or is known after apply.
+  Its first line counts the changes. A click keeps the popover open until a
+  click elsewhere or Escape, and for 90 seconds at most. Nothing opens without
+  a pointer, so a screen nobody touches looks the same.
+- Each root has its own colour. It shows only as a dot by the root's name and
+  never as the colour of a text or a fill, since those mean a state. The dots
+  sit on the root's box or card and by each wave's job. The narration and
+  the facts carry them too, as do terragucci's own log lines. The colours follow the
+  sorted list of roots in `terragucci.components.json`, so each cycle keeps
+  them. Pointing at any root's name lights that root in every pane, and the
+  same goes for a wave's job and a box.
 
 Under it: the pull request's totals, its blast radius, the roots it does not
 touch and its cost.

@@ -1688,6 +1688,14 @@ export function createApp(
       // #571: the repo declares its roots as components, so the page opens on
       // the components zoom (web/app.js `bootZoom`).
       ...(servedTerragucciComponents() ? { terragucciComponents: true } : {}),
+      // behold#571: the declared roots and the wave jobs that apply them, so
+      // the kiosk gives each root its colour and ties a job row to its roots.
+      ...((): { terragucciRoots?: { roots: string[]; waves: { job: string; wave: number; roots: string[] }[] } } => {
+        const decl = servedTerragucciComponents();
+        if (!decl) return {};
+        const waves = decl.pipeline.jobs.filter((j) => typeof j.wave === "number").map((j) => ({ job: j.name, wave: j.wave as number, roots: [...j.applies] }));
+        return { terragucciRoots: { roots: Object.keys(decl.roots).sort(), waves } };
+      })(),
       // #517: a SQL Yodeler repo is migrated by its pipeline; same contract.
       ...((): { sqlYodeler?: { config: string; error: string; code: string; remedy: string } } => {
         const r = guardedRepo();

@@ -283,8 +283,8 @@ describe("the kiosk for a viewer new to the demo (behold#571)", () => {
   });
 
   it("says who the driver is before the command it runs", () => {
-    expect(approveGloss({ wave: 2, roots: ["app"], digest: "jcs1-sha256:0accc105ba06" })).toBe("The driver stands in for a person: it approves wave 2 (app) with its own signing key.");
-    expect(approveGloss({ wave: 3, roots: [], digest: null })).toBe("The driver stands in for a person: it approves wave 3 with its own signing key.");
+    expect(approveGloss({ wave: 2, roots: ["app"], digest: "jcs1-sha256:0accc105ba06" })).toBe("The driver plays a reviewer who had no hand in the change, and approves wave 2 (app) with that reviewer's own signing key.");
+    expect(approveGloss({ wave: 3, roots: [], digest: null })).toBe("The driver plays a reviewer who had no hand in the change, and approves wave 3 with that reviewer's own signing key.");
     const p = progress([{ number: 2, state: "waiting", roots: ["app"], reads: [], digest: "jcs1-sha256:0accc105ba06" }]);
     const was = globalThis.document;
     globalThis.document = fakeDocument();
@@ -293,7 +293,7 @@ describe("the kiosk for a viewer new to the demo (behold#571)", () => {
       renderKiosk(bar, { demo: { source: "fx", read: "2026-10-15T03:00:00Z", demo: demo("waiting", { next: { action: "approve wave-2", at: null } }) }, answer: null, progress: p }, new Date("2026-10-15T03:01:00Z"));
       const card = find(bar, "k-approve")[0];
       expect(card.children.map((c) => c.className)).toEqual(["k-approve-gloss", "k-command", "k-approve-then"]);
-      expect(card.children[1].textContent).toBe("chant approve tf-apply wave-2 --actor <driver> --sign <driver key>");
+      expect(card.children[1].textContent).toBe("chant approve tf-apply wave-2 --actor <reviewer> --sign <reviewer key>");
     } finally {
       globalThis.document = was;
     }

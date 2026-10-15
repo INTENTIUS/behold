@@ -11,6 +11,8 @@
 import { createRefreshQueue } from "./refresh-queue.js";
 import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine } from "./view-url.js";
 import { quietCardLines, readEmbed, selectMessage, viewFromMessage } from "./embed.js";
+import { WORDS as POP_WORDS, cardRoot as popCardRoot, placePopover, popReduce, popState, resourcePopover, rootPopover } from "./kiosk-popover.js";
+import { cssString, hoverCss, hoverFromMessage, hoverLinks, hoverMessage, isLightBg, rootColour, rootText } from "./kiosk-roots.js";
 import { gateCards } from "./workspace-gates.js";
 import { cornerOf, estateLine, hrefOf as tgHref, legend as tgLegend, markLine, rootRows as tgRootRows, waveCards } from "./terragucci.js";
 import { laneElement as tgLane, rootOfCard as tgRootOfCard, historyElement as tgHistoryLane } from "./terragucci-timeline.js";
@@ -3378,6 +3380,7 @@ let tgTimeline = null; // #506: /api/terragucci/timeline, the audit record's lan
 let tgHistory = null; // #522: /api/lifecycle/history, the gate ledgers' history
 async function initTerragucci() {
   const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
+  kioskRoots = project.terragucciRoots || null; // behold#571
   if (!project.terragucciReports) return;
   await loadTerragucci();
   // #505: the chant/lifecycle lane, and what moved while this page is open.
@@ -3485,6 +3488,7 @@ function paintTgProgress() {
 // merged. Not live; redrawn on each render and each read.
 const TG_TONE = { plan: "var(--pending)", wait: "var(--foreign)", busy: "var(--runtime)", ok: "var(--managed)", bad: "var(--degraded)", idle: "var(--neutral)" };
 function drawTgReads() {
+  if (embedOpts.bare) queueMicrotask(kioskDecorate); // behold#571: once this draw is done
   watchTgRuns(); // #571: the wave boxes' jobs, while the components zoom is on screen
   const svg = document.querySelector("#graph svg");
   if (!svg) return;
@@ -4083,6 +4087,266 @@ function markTerragucciCards() {
   }
   drawTgReads(); // #568
 }
+// --- behold#571: the kiosk frame's popover, root colours and hover links -------
+// The kiosk frames this page bare, with no Inspect pane. Pointing at a card
+// shows a popover beside it (web/kiosk-popover.js says what it holds); a
+// click keeps it open. Each root's name carries a dot in its own colour, and
+// hovering a card or box here lights its root and wave in the kiosk's other
+// panes, and theirs light it here (`behold:hover`, web/kiosk-roots.js).
+// Nothing happens until someone points: a TV with no pointer sees the page
+// as before.
+let kioskRoots = null; // /api/project's terragucciRoots: { roots, waves }
+let kioskPop = popState();
+let kioskHover = null; // this frame's pointer: { root } | { wave } | null
+let kioskHostHover = null; // the kiosk's pointer, from its message
+function kioskRootList() {
+  if (kioskRoots && Array.isArray(kioskRoots.roots) && kioskRoots.roots.length) return kioskRoots.roots;
+  return tgAnswer && Array.isArray(tgAnswer.roots) ? tgAnswer.roots.map((r) => r.path) : [];
+}
+function kioskWaves() {
+  return (kioskRoots && kioskRoots.waves) || [];
+}
+function kioskLight() {
+  return isLightBg(getComputedStyle(document.documentElement).getPropertyValue("--bg"));
+}
+function kioskCompMode() {
+  return !!(view.components && terragucciComponentsRepo && tgComponentFacets);
+}
+function kioskRootOfComponent(c) {
+  const m = (tgComponentFacets && tgComponentFacets.roots) || {};
+  return m[c] || c;
+}
+/** The terragucci root (its path) of a resources-zoom box name. */
+function kioskRootOfBox(name) {
+  const r = tgAnswer && Array.isArray(tgAnswer.roots) ? tgAnswer.roots.find((x) => x.name === name) : null;
+  return r ? r.path : name;
+}
+/** What the pointer is on: a card's or a box's root, or a wave's box. */
+function kioskHoverOf(target) {
+  if (!target || !target.closest) return null;
+  const card = target.closest("[data-node-id]");
+  if (card) {
+    const id = card.getAttribute("data-node-id");
+    if (kioskCompMode()) return { root: kioskRootOfComponent(id) };
+    const at = popCardRoot(tgAnswer, id);
+    return at ? { root: at.path } : null;
+  }
+  const rect = target.closest("rect[data-group-id]");
+  if (!rect) return null;
+  const g = rect.getAttribute("data-group-id") || "";
+  const w = /^wave-(\d+)$/.exec(g);
+  if (w) return { wave: Number(w[1]) };
+  const root = kioskRootOfBox(g);
+  return kioskRootList().includes(root) ? { root } : null;
+}
+const sameHover = (a, b) => (a && a.root) === (b && b.root) && (a && a.wave) === (b && b.wave);
+function kioskSetHover(h) {
+  if (sameHover(h, kioskHover)) return;
+  kioskHover = h;
+  kioskGlow();
+  if (!embedOpts.host || window.parent === window) return;
+  try {
+    window.parent.postMessage(hoverMessage(h), embedOpts.host);
+  } catch {
+    /* the parent went away */
+  }
+}
+/** Light what the two pointers link: a root's box (or card) and a wave's box, with one style element that survives a redraw. */
+function kioskGlow() {
+  let style = document.getElementById("k-hover-style");
+  if (!style) {
+    style = document.createElement("style");
+    style.id = "k-hover-style";
+    document.head.appendChild(style);
+  }
+  const a = hoverLinks(kioskHover, kioskWaves());
+  const b = hoverLinks(kioskHostHover, kioskWaves());
+  const links = { roots: [...new Set([...a.roots, ...b.roots])], waves: [...new Set([...a.waves, ...b.waves])] };
+  const boxes = (root) => {
+    const names = new Set([root]);
+    const r = tgAnswer && Array.isArray(tgAnswer.roots) ? tgAnswer.roots.find((x) => x.path === root || x.name === root) : null;
+    if (r) names.add(r.name);
+    const comps = tgComponentFacets && tgComponentFacets.roots ? Object.keys(tgComponentFacets.roots).filter((c) => tgComponentFacets.roots[c] === root) : [];
+    for (const c of comps) names.add(c);
+    return [...names].map((n) => `#graph rect[data-group-id=${cssString(n)}], #graph g[data-node-id=${cssString(n)}]`).join(", ");
+  };
+  style.textContent = hoverCss(links, { root: boxes, wave: (w) => `#graph rect[data-group-id="wave-${w}"]` }, "filter: drop-shadow(0 0 2px var(--focus)) drop-shadow(0 0 7px var(--focus));");
+}
+/** The dots by each root's name: on its box's title (Resources) or its card (Roots by wave). */
+function kioskDots(svg) {
+  for (const d of svg.querySelectorAll("[data-k-dot]")) d.remove();
+  const roots = kioskRootList();
+  if (!roots.length) return;
+  const light = kioskLight();
+  const dotBy = (text, root) => {
+    const colour = rootColour(root, roots, { light });
+    if (!colour) return;
+    let bb;
+    try {
+      bb = text.getBBox();
+    } catch {
+      return;
+    }
+    if (!bb.width) return;
+    const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    c.setAttribute("data-k-dot", "1");
+    // After the name: before it sits the card's icon.
+    c.setAttribute("cx", String(bb.x + bb.width + 9));
+    c.setAttribute("cy", String(bb.y + bb.height / 2));
+    c.setAttribute("r", "5.5");
+    c.setAttribute("fill", colour);
+    c.setAttribute("pointer-events", "none");
+    text.parentNode.insertBefore(c, text.nextSibling);
+  };
+  if (kioskCompMode()) {
+    for (const card of svg.querySelectorAll("[data-node-id]")) {
+      const id = card.getAttribute("data-node-id");
+      const t = [...card.querySelectorAll("text")].find((x) => (x.textContent || "").trim() === id);
+      if (t) dotBy(t, kioskRootOfComponent(id));
+    }
+    return;
+  }
+  for (const rect of svg.querySelectorAll("rect[data-group-id]")) {
+    const name = rect.getAttribute("data-group-id");
+    const root = kioskRootOfBox(name);
+    if (!roots.includes(root)) continue;
+    const t = [...(rect.parentNode ? rect.parentNode.querySelectorAll(":scope > text") : [])].find((x) => (x.textContent || "").trim() === name && x.getAttribute("visibility") !== "hidden");
+    if (t) dotBy(t, root);
+  }
+}
+function kioskDecorate() {
+  const svg = document.querySelector("#graph svg");
+  if (!svg) return;
+  kioskDots(svg);
+  kioskGlow();
+  kioskPopRender();
+}
+function kioskPopEvent(ev) {
+  const next = popReduce(kioskPop, ev, Date.now());
+  if (next === kioskPop) return;
+  kioskPop = next;
+  kioskPopRender();
+}
+function kioskPopRender() {
+  let pop = document.getElementById("k-pop");
+  const svg = document.querySelector("#graph svg");
+  const id = kioskPop.shown;
+  const card = id && svg ? svg.querySelector(`[data-node-id="${CSS.escape(id)}"]`) : null;
+  const answer = tgAnswerDrawn();
+  const content = !card || !answer ? null : kioskCompMode() ? rootPopover(answer, kioskRootOfComponent(id), resourcesByComponent[id]) : resourcePopover(answer, id);
+  if (!content) {
+    if (pop) pop.hidden = true;
+    return;
+  }
+  if (!pop) {
+    pop = document.createElement("div");
+    pop.id = "k-pop";
+    pop.setAttribute("role", "tooltip");
+    document.body.appendChild(pop);
+  }
+  pop.replaceChildren();
+  pop.classList.toggle("k-pinned", kioskPop.pinned);
+  const roots = kioskRootList();
+  const light = kioskLight();
+  const add = (tag, cls, text) => {
+    const n = document.createElement(tag);
+    n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    pop.appendChild(n);
+    return n;
+  };
+  const list = (rows) => {
+    const ul = add("ul", "k-pop-lines");
+    for (const r of rows) {
+      const li = document.createElement("li");
+      li.className = r.tone === "unknown" ? "k-pop-unknown" : "";
+      li.textContent = r.text;
+      ul.appendChild(li);
+    }
+    return ul;
+  };
+  if (content.address !== undefined) {
+    add("div", "k-pop-addr", content.address);
+    add("div", "k-pop-root").appendChild(rootText(document, `It sits in root ${content.root}.`, roots, { light }));
+    add("p", "k-pop-head", content.head);
+    if (content.lines.length) {
+      const ul = list(content.lines);
+      if (content.more) ul.appendChild(Object.assign(document.createElement("li"), { className: "k-pop-more", textContent: `and ${content.more} more` }));
+    }
+    if (content.applied) {
+      add("p", "k-pop-note", content.applied.when);
+      list(content.applied.lines);
+    } else if (content.note) add("p", "k-pop-note", content.note);
+  } else {
+    add("div", "k-pop-addr").appendChild(rootText(document, content.root, roots, { light }));
+    add("p", "k-pop-head", content.head);
+    const ul = add("ul", "k-pop-lines");
+    for (const r of content.rows) {
+      const li = document.createElement("li");
+      li.className = "k-pop-res";
+      const st = document.createElement("span");
+      st.className = `k-pop-state k-pop-${r.state}`;
+      st.textContent = r.words;
+      li.append(document.createTextNode(`${r.address} `), st);
+      ul.appendChild(li);
+    }
+    if (content.more > 0) ul.appendChild(Object.assign(document.createElement("li"), { className: "k-pop-more", textContent: `and ${content.more} more` }));
+  }
+  add("p", "k-pop-hint", kioskPop.pinned ? POP_WORDS.pinnedHint : POP_WORDS.pinHint);
+  pop.hidden = false;
+  const cb = card.getBoundingClientRect();
+  const pb = pop.getBoundingClientRect();
+  const at = placePopover({ left: cb.left, top: cb.top, width: cb.width, height: cb.height }, { width: pb.width, height: pb.height }, { width: window.innerWidth, height: window.innerHeight });
+  pop.style.left = `${Math.round(at.left)}px`;
+  pop.style.top = `${Math.round(at.top)}px`;
+}
+/** Wire the frame's pointer once: the popover, and the hover links to the kiosk. Bare frames only. */
+function wireKioskFrame() {
+  if (!embedOpts.bare) return;
+  const graph = document.getElementById("graph");
+  if (!graph) return;
+  graph.addEventListener("pointerover", (e) => {
+    const card = e.target.closest && e.target.closest("[data-node-id]");
+    if (card) {
+      // The card's own tooltips would sit over the popover.
+      for (const t of card.querySelectorAll("title")) t.remove();
+      kioskPopEvent({ type: "enter", id: card.getAttribute("data-node-id") });
+    }
+    kioskSetHover(kioskHoverOf(e.target));
+  });
+  graph.addEventListener("pointerout", (e) => {
+    const card = e.target.closest && e.target.closest("[data-node-id]");
+    const into = e.relatedTarget;
+    if (card && !(into && card.contains(into))) kioskPopEvent({ type: "leave", id: card.getAttribute("data-node-id") });
+    if (!into || !graph.contains(into)) kioskSetHover(null);
+  });
+  graph.addEventListener(
+    "click",
+    (e) => {
+      const card = e.target.closest && e.target.closest("[data-node-id]");
+      if (card) kioskPopEvent({ type: "click", id: card.getAttribute("data-node-id") });
+      else kioskPopEvent({ type: "outside" });
+    },
+    true,
+  );
+  document.addEventListener("click", (e) => {
+    if (!graph.contains(e.target) && !(e.target.closest && e.target.closest("#k-pop"))) kioskPopEvent({ type: "outside" });
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") kioskPopEvent({ type: "escape" });
+  });
+  setInterval(() => kioskPopEvent({ type: "tick" }), 1000);
+  window.addEventListener("message", (e) => {
+    if (!embedOpts.host || e.origin !== embedOpts.host) return;
+    if (e.data && e.data.type === "behold:unpin") return kioskPopEvent({ type: "outside" });
+    const h = hoverFromMessage(e.data);
+    if (h === undefined) return;
+    kioskHostHover = h;
+    kioskGlow();
+  });
+}
+wireKioskFrame();
+
 function markAge(marks) {
   const newest = marks.map((m) => m.run.finished).sort().pop();
   const s = Math.max(0, (Date.now() - Date.parse(newest)) / 1000);

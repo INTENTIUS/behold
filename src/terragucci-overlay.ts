@@ -16,7 +16,7 @@
  * flags is not painted "live". The SPA draws a mark as a corner glyph and an
  * age ("drift found 06:04, 4h ago"), never as a fill.
  */
-import type { RootRun, TerragucciRead, WaitingWave } from "./terragucci-reports.ts";
+import type { ReportAttribute, RootRun, TerragucciRead, WaitingWave } from "./terragucci-reports.ts";
 
 type Node = { id: string; attrs?: Record<string, unknown> };
 
@@ -52,6 +52,17 @@ export interface CardMark {
   addresses: string[];
   /** The attribute paths that changed (never a sensitive one). */
   attributes: string[];
+  /** behold#571: each changed attribute's before and after (or `unknown`), by instance address, for the kiosk's popover. */
+  values: AttributeValue[];
+  run: RunRef;
+}
+
+/** behold#571: one attribute of one instance, as a report states it. */
+export type AttributeValue = ReportAttribute & { address: string };
+
+/** behold#571: what an applied wave wrote for a card's attributes: the state the root holds now, as of that run. */
+export interface AppliedValues {
+  values: AttributeValue[];
   run: RunRef;
 }
 
@@ -79,6 +90,8 @@ export interface TerragucciMarks {
   /** Report roots no root of the checkout is, and changes no card is: said, never dropped. */
   unmatched: { roots: string[]; changes: { root: string; address: string }[] };
   waiting: WaitingWave[];
+  /** behold#571: by card id, the attributes the root's newest applied wave wrote. */
+  applied: Record<string, AppliedValues>;
 }
 
 /** An instance address's block path, behold's way: module calls as segments, instance keys dropped. */
@@ -150,6 +163,7 @@ export function joinTerragucci(read: TerragucciRead, nodes: readonly Node[], roo
   }
 
   const cards: Record<string, CardMark[]> = {};
+  const applied: Record<string, AppliedValues> = {};
   const unmatchedChanges: { root: string; address: string }[] = [];
   const out: RootMarks[] = [];
   const known = new Set(roots.map((r) => r.path));
@@ -162,7 +176,18 @@ export function joinTerragucci(read: TerragucciRead, nodes: readonly Node[], roo
       marks[slot] = verdict(run);
       // An applied wave's changes have happened; a waiting one's would, once
       // a person approves it, so they mark their cards like a plan's.
-      if (slot === "apply" && run.approval !== "waiting") continue;
+      if (slot === "apply" && run.approval !== "waiting") {
+        // behold#571: what it wrote is what the state holds now, for the kiosk's popover.
+        if (run.applied) {
+          for (const c of run.changes) {
+            const id = blocks?.get(blockPath(c.address));
+            if (!id || !c.attributes?.length) continue;
+            const a = (applied[id] ??= { values: [], run: ref(run) });
+            for (const v of c.attributes) a.values.push({ ...v, address: c.address });
+          }
+        }
+        continue;
+      }
       const kind = slot === "apply" ? "wave" : slot;
       const words = slot === "drift" ? DRIFT_WORDS : PLAN_WORDS;
       // One mark per card and action, gathering the instances.
@@ -176,9 +201,12 @@ export function joinTerragucci(read: TerragucciRead, nodes: readonly Node[], roo
           continue;
         }
         const k = `${id}\u0000${c.action}`;
-        const m = grouped.get(k) ?? { verdict: kind, action: c.action, words: said, addresses: [], attributes: [], run: ref(run) };
+        const m = grouped.get(k) ?? { verdict: kind, action: c.action, words: said, addresses: [], attributes: [], values: [], run: ref(run) };
         m.addresses.push(c.address);
-        for (const a of c.attributes ?? []) if (!m.attributes.includes(a.path)) m.attributes.push(a.path);
+        for (const a of c.attributes ?? []) {
+          if (!m.attributes.includes(a.path)) m.attributes.push(a.path);
+          m.values.push({ ...a, address: c.address });
+        }
         grouped.set(k, m);
       }
       for (const [k, m] of grouped) (cards[k.slice(0, k.indexOf("\u0000"))] ??= []).push(m);
@@ -190,5 +218,6 @@ export function joinTerragucci(read: TerragucciRead, nodes: readonly Node[], roo
     roots: out,
     unmatched: { roots: Object.keys(read.roots).filter((p) => !known.has(p)).sort(), changes: unmatchedChanges },
     waiting: read.waiting,
+    applied,
   };
 }

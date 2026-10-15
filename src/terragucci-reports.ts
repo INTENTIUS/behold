@@ -84,7 +84,41 @@ export interface ReportChange {
   type?: string;
   action: string;
   module?: string;
-  attributes?: { path: string; sensitive?: boolean }[];
+  attributes?: ReportAttribute[];
+}
+
+/** One attribute of a change, as the report states it. A value the plan knows only after apply is `unknown`. */
+export interface ReportAttribute {
+  path: string;
+  sensitive?: boolean;
+  before?: unknown;
+  after?: unknown;
+  unknown?: boolean;
+  /** behold#571: set by behold when a value's JSON ran past VALUE_CAP and was left out. */
+  long?: boolean;
+}
+
+/** behold#571: the longest value, as JSON, an attribute carries to the page; a longer one is left out and flagged `long`. */
+export const VALUE_CAP = 300;
+
+/**
+ * behold#571: an attribute as the page gets it: its path, and its before and
+ * after values when the report states them, for the kiosk's popover. A
+ * sensitive attribute never reaches here (the caller drops it), and a value
+ * past VALUE_CAP is left out with `long` set.
+ */
+export function attributeValues(a: ReportAttribute): ReportAttribute {
+  const out: ReportAttribute = { path: a.path };
+  let long = false;
+  for (const k of ["before", "after"] as const) {
+    if (!(k in a) || a[k] === undefined) continue;
+    const json = JSON.stringify(a[k]);
+    if (json === undefined || json.length > VALUE_CAP) long = true;
+    else out[k] = a[k];
+  }
+  if (a.unknown === true) out.unknown = true;
+  if (long) out.long = true;
+  return out;
 }
 
 /** A root's `terraform_remote_state` read of another root (minor 21, #568). */
@@ -615,7 +649,7 @@ export async function readTerragucci(source: TerragucciSource, opts: ReadOptions
             action: c.action,
             ...(c.type ? { type: c.type } : {}),
             ...(c.module ? { module: c.module } : {}),
-            attributes: (c.attributes ?? []).filter((a) => !a.sensitive).map((a) => ({ path: a.path })),
+            attributes: (c.attributes ?? []).filter((a) => !a.sensitive).map(attributeValues),
           })),
           ...(stage === "tf-apply" && row.approval ? { approval: row.approval } : {}),
           ...(stage === "tf-apply" && row.applied ? { applied: row.applied } : {}),

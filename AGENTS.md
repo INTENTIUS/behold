@@ -71,7 +71,12 @@ and none is the checkout's git remote) adds two reads, in
   Terraform root of the checkout with the newest `plan`, `drift` and `apply`
   run that held it; a missing stage means no report holds that root, which is
   not "no changes". `cards` maps a card id to its marks (`verdict: drift |
-  plan | wave`, terragucci's words, the instance addresses, the run). Nothing
+  plan | wave`, terragucci's words, the instance addresses, the run). Each
+  mark's `values` gives each changed attribute's `before` and `after`, or
+  `unknown: true` for a value known only after apply. A sensitive attribute
+  is never there, and a value longer than 300 characters of JSON is left out
+  with `long: true`. `applied` maps a card id to what its root's newest
+  applied wave wrote. The kiosk's popover reads both (behold#571). Nothing
   sets `_status`: a report is never painted as live. `waiting[]` carries each
   wave's roots, destroys, and the `command` a person runs. `estate` is
   terragucci's own counts when the source has `estate.json`. A key such as a
