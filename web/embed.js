@@ -7,6 +7,8 @@
 //                       panel and the inspect pane start folded
 //   ?theme=<name>       a theme for this frame only (light, dark, or any theme
 //                       name the picker lists); never saved
+//   ?bare=1             with embed: the graph alone, no panel, inspect pane,
+//                       buttons or now line (#569, the kiosk's frame)
 //   ?host=<origin>      the parent's origin. Messages go only there, and only
 //                       messages from there are taken. No host, no messages.
 //
@@ -35,7 +37,8 @@ export function readEmbed(search) {
   }
   const t = (q.get("theme") || "").trim();
   const theme = t ? THEME_ALIASES[t.toLowerCase()] || t : null;
-  return { embed, host, theme };
+  const bare = embed && /^(1|true|on|yes)$/i.test(q.get("bare") || "");
+  return { embed, host, theme, bare };
 }
 
 /** The message a pick sends the parent. `node` is null when a member's box was
@@ -61,9 +64,9 @@ export function viewFromMessage(event, host) {
       if (typeof v === "boolean") want.radial = v;
       continue;
     }
-    if (k === "env" || k === "gates") {
+    if (k === "env" || k === "gates" || k === "focus") {
       // env: null or "" is the source graph. gates: null or "" hands the
-      // gate strip back to the graph's env.
+      // gate strip back to the graph's env. focus: null or "" brings nothing forward.
       if (v === null || v === "") want[k] = null;
       else if (typeof v === "string") want[k] = v;
       continue;

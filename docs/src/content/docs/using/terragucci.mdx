@@ -429,7 +429,10 @@ kiosk reads it from the top of the `--terragucci` source (for the demo,
 by every open kiosk for 2 seconds. A `demo.json` that is missing, refused or
 not in the demo's format is said on the page, which waits for the next one.
 
-The kiosk shows:
+The kiosk is one screen: a status bar with the narration, behold's own view
+of the change filling the rest (the same page as `/`, framed with
+`?embed=1&bare=1`, so nothing in it opens or writes), and a line of facts under
+it. In the bar:
 
 - The scenario, numbered as terragucci numbers it, with the title the driver
   wrote. A scenario id behold doesn't know shows the title alone.
@@ -447,15 +450,31 @@ The kiosk shows:
   actor and key are placeholders, never a path. The wave's digest from the run
   view is shown beside it, so a viewer sees which plan is approved. There is no
   copy button: nobody watching needs to run it.
-- The newest run that is this step's. Before the merge, the pull request's
-  plan (the one `demo.json` names): the reads between roots, the waves, the
-  totals, the cost and the roots it did not plan. From the merge on, the run
-  view's waves (on the commit `demo.json` names, or written since the cycle
-  started). A wave that failed or refused names the waves before it that
-  applied and stay applied. Until the reports hold the step's run, the kiosk
-  says it isn't written yet rather than show the last cycle's.
-- At a reset, that the states are back on the base, and then the next cycle
-  from the start.
+- Until the reports hold the step's run, that it isn't written yet.
+
+In the framed view, which is behold's resources view of the repo, and draws
+the same in the full app:
+
+- Each root is a box. Its border and the badge on it say its wave and that
+  wave's state: planned (blue), applying (teal, pulsing), waiting for an
+  approval (yellow), applied (green), failed or refused (red), not started or
+  not in the change (outlined). Under a box, its facts: the plan a waiting
+  wave approves, its changes, that it plans again once an earlier wave
+  applies. A wave that failed leaves the waves before it green: what applied
+  stays applied. A composed run that failed part way shows each root's own
+  part.
+- Each read between roots is an arrow from the reader's data block to the root
+  it reads, dashed while it reads planned values and yellow when it reads a
+  value unknown until its upstream applies, with what it reads written beside
+  it.
+- A caption says which run all of it comes from: the pull request's plan before
+  the merge, the run view from the merge on.
+- The kiosk brings the roots each step is about forward with a `behold:view`
+  message (`focus`): the pull request's roots while it is planned, then the
+  wave that waits, applies or failed, then everything once applied.
+
+Under it: the pull request's totals, its blast radius, the roots it does not
+touch and its cost.
 
 The kiosk asks for `demo.json` every 3 seconds, and for the reports and the run
 view when the step moves or the event stream says they did. Everything it asks

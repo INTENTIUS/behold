@@ -105,12 +105,18 @@ export function readTag(e) {
   return `reads ${e.to} · ${e.composed !== undefined ? "in the composed run" : e.outputs}${e.unknown.length ? ` · ${e.unknown.length} unknown` : ""}`;
 }
 
-/** The checkout's card id for a reader's data block, for each kind of block that reads another root. */
+/**
+ * The checkout's card id for a reader's data block, for each kind of block
+ * that reads another root. The run view names no data block (#569): there the
+ * block named after the root it reads is tried, and the caller falls back to
+ * the reader's box when the checkout has none.
+ */
 export function readCardIds(answer, e) {
-  if (!e.data || !answer || !answer.roots) return [];
+  const data = e.data || (e.stage === "apply" ? e.to : null);
+  if (!data || !answer || !answer.roots) return [];
   const r = answer.roots.find((x) => x.path === e.from);
   if (!r) return [];
-  return [`${r.member}/${r.name}/data.terraform_remote_state.${e.data}`, `${r.member}/${r.name}/data.terraform_estate_outputs.${e.data}`];
+  return [`${r.member}/${r.name}/data.terraform_remote_state.${data}`, `${r.member}/${r.name}/data.terraform_estate_outputs.${data}`];
 }
 
 /** "5 create · 1 update", no-ops and zeros left out; "no changes" when nothing moves. */
@@ -420,4 +426,109 @@ export function changeSection(answer, progress, now, ui) {
     if (b && b.unplanned.length) add("tg-legend", `not planned by this pull request: ${list(b.unplanned)}`);
   }
   return box;
+}
+
+// ---------------------------------------------------------------------------
+// #569: the change drawn on the view itself, so the graph says what the panel
+// says: each root's wave and its state on its box, each read between roots as
+// a labelled line, and which run all of it comes from.
+
+/** The colour a state is drawn in: one word per channel, mapped to a theme token in app.js. */
+export const STATE_TONE = {
+  planned: "plan",
+  "not-started": "idle",
+  waiting: "wait",
+  applying: "busy",
+  applied: "ok",
+  refused: "bad",
+  failed: "bad",
+  outside: "idle",
+};
+
+/** A member of a composed run, once it ended, as a root state. */
+const MEMBER_STATE = { applied: "applied", partial: "failed", failed: "failed", "not-started": "not-started", "no-changes": "applied" };
+
+/**
+ * Each root's wave and state, for its box on the view. `roots` maps a root's
+ * path to `{ wave, state, tone, words, facts }`: "wave 2 · waiting for an
+ * approval", with the facts under it (the plan's digest it waits on, its
+ * changes, that it plans again after an earlier wave). A root the change
+ * doesn't plan, or the run doesn't apply, is `outside`. A root in a composed
+ * run that failed part way takes its own part's outcome: what applied says
+ * applied.
+ */
+export function rootStates(answer, progress) {
+  const stage = changeStage(answer, progress);
+  const roots = {};
+  const known = (answer && answer.roots ? answer.roots.map((r) => r.path) : []).filter(Boolean);
+  if (stage === "pull-request") {
+    const pr = answer.pull_request;
+    for (const w of pr.waves) {
+      const c = w.composed;
+      const members = c ? c.members.map((m) => m.root) : [];
+      for (const root of [...new Set([...w.roots, ...members])]) {
+        const facts = [];
+        if (w.replans_after && w.replans_after.length) facts.push(`plans again once wave ${list(w.replans_after)} applies`);
+        else if (w.review_digest || w.set_digest) facts.push(`plan ${short(w.review_digest || w.set_digest)}`);
+        if (c && c.held_by_unknown && c.held_by_unknown.includes(root)) facts.push("reads a value unknown when planned");
+        if (w.waits) facts.push("will wait for an approval");
+        roots[root] = { wave: w.number, state: "planned", tone: STATE_TONE.planned, words: `wave ${w.number} · planned${c ? ", composed" : ""}`, facts };
+      }
+    }
+    for (const root of known) if (!roots[root]) roots[root] = { wave: null, state: "outside", tone: STATE_TONE.outside, words: "not in this change", facts: [] };
+    return { stage, roots };
+  }
+  if (stage === "apply") {
+    const composedOf = new Map(progress.reads.filter((r) => r.composed).map((r) => [r.root, r.composed.wave]));
+    for (const w of progress.states) {
+      const c = w.composed;
+      const inRun = [...composedOf].filter(([, n]) => n === w.number).map(([r]) => r);
+      for (const root of [...new Set([...w.roots, ...(c ? c.roots : []), ...inRun])]) {
+        const m = c && c.members ? c.members.find((x) => x.root === root) : null;
+        const state = m && m.apply ? MEMBER_STATE[m.apply] || w.state : w.state;
+        const facts = [];
+        if (state === "waiting" && w.digest) facts.push(`approve plan ${short(w.digest)}`);
+        if (state === "waiting" && c && c.unknown && c.unknown.includes(root)) facts.push("read a value unknown when planned");
+        const totals = totalsLine(w.totals);
+        const together = new Set([...w.roots, ...(c ? c.roots : []), ...inRun]).size > 1;
+        const composedHere = !!c && (c.roots.includes(root) || inRun.includes(root));
+        if (m && m.apply) facts.push(memberApplyLine(m).replace(`${root}: `, "")); // this root's own part, not the wave's
+        else if (c && !composedHere) {
+          // Beside a composed run in its wave: the wave's figures are the run's, not this root's.
+        } else if (totals && state !== "not-started") facts.push(totals === "no changes" ? `${together ? "the wave: " : ""}no changes` : `${together ? "the wave " : ""}${state === "applied" ? "applied" : state === "failed" || state === "refused" ? "planned" : "plans"} ${totals}`);
+        if (state === "failed" || state === "refused") {
+          const before = progress.states.filter((x) => x.number < w.number && x.state === "applied").map((x) => x.number);
+          if (before.length) facts.push(`wave ${list(before)} stays applied`);
+        }
+        const words = `wave ${w.number} · ${STATE_WORDS[state] || state}${composedHere ? ", composed" : ""}`;
+        roots[root] = { wave: w.number, state, tone: STATE_TONE[state] || "idle", words, facts };
+      }
+    }
+    for (const root of known) if (!roots[root]) roots[root] = { wave: null, state: "outside", tone: STATE_TONE.outside, words: "not in this run", facts: [] };
+    return { stage, roots };
+  }
+  return { stage, roots };
+}
+
+/** The short label on a read's line: "reads network's planned http_proxy_port, unknown until network applies". */
+export function readLabel(e) {
+  if (e.composed !== undefined) {
+    return `reads ${e.to} in wave ${e.composed}'s composed run${e.unknown.length ? `: ${list(e.unknown)} known once ${e.to}'s part applies` : ""}`;
+  }
+  if (e.outputs === "planned") return e.unknown.length ? `reads ${list(e.unknown)} from ${e.to}: unknown until ${e.to} applies` : `reads ${e.to}'s planned outputs`;
+  return `reads ${e.to}'s applied state`;
+}
+
+/** Which run the view's marks come from, dated: "the plan of pull request #201, 03:11 UTC". */
+export function viewCaption(answer, progress, now = new Date()) {
+  const stage = changeStage(answer, progress);
+  if (stage === "pull-request") {
+    const r = answer.pull_request.run;
+    return `the plan of pull request #${r.pull_request} at ${clock(r.finished, now)}: not merged yet, nothing applied`;
+  }
+  if (stage === "apply") {
+    const r = progress.run;
+    return `the run of merge ${r.commit.slice(0, 8)}, as of ${clock(r.updated, now)}`;
+  }
+  return null;
 }

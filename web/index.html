@@ -412,6 +412,13 @@
       .embed #panel.collapsed #panel-tabs button[data-tab] { display: none; }
       .embed #panel.collapsed { width: auto; }
       .embed #panel.collapsed #panel-tabs { gap: 4px; padding: 2px 4px; }
+      /* #569: ?embed=1&bare=1, the kiosk's frame: the graph alone. Nothing to
+         open, nothing to press, and no backdrop of its own: the page's. */
+      .bare #panel, .bare #inspect, .bare #inspect-reopen, .bare #zoom-toggle, .bare #back-to-infra,
+      .bare #nowline, .bare #ws-gates, .bare #loading-overlay { display: none !important; }
+      .bare #app { grid-template-columns: 1fr 0 !important; }
+      .bare #graph svg > rect[fill^="url(#pin-"] { display: none; }
+      .bare #graph svg { cursor: default; }
       #panel-tabs #hintk { flex: none; align-self: center; padding: 2px 6px; margin-left: 2px; }
       #panel-collapse { flex: none; align-self: center; background: none; border: none; color: var(--muted);
         font-size: var(--t-body); cursor: pointer; line-height: 1; padding: 2px 4px; }

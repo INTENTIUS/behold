@@ -20,48 +20,59 @@
         --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       }
       * { box-sizing: border-box; }
-      html, body { margin: 0; background: var(--bg); color: var(--fg); font: 18px/1.45 var(--font-ui); }
-      #kiosk { max-width: 1100px; margin: 0 auto; padding: 2rem 1rem 3rem; display: grid; gap: 1.25rem; }
-      .k-kicker { font: 600 0.8rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
-      .k-title { margin: 0.2rem 0; font-size: 2rem; line-height: 1.2; }
-      .k-muted { color: var(--muted); margin: 0.25rem 0; }
-      section { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 1rem 1.25rem; }
-      .k-strip { list-style: none; display: flex; flex-wrap: wrap; gap: 0.4rem; padding: 0; margin: 0; }
-      .k-stop { font: 0.85rem var(--font-mono); padding: 0.3rem 0.7rem; border-radius: 999px; border: 1px solid var(--rule); color: var(--muted); }
+      /* #569 step 3: one screen. The bar is the narration, the frame is
+         behold's own view of the change, the foot is the plan's facts. Sizes
+         follow the screen's width, so a TV reads it from across a room. */
+      html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: clamp(14px, 0.95vw, 22px)/1.4 var(--font-ui); overflow: hidden; }
+      body { display: grid; grid-template-rows: auto 1fr auto; }
+      #bar { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 1.6em; align-items: start;
+        padding: 1em 1.6em 0.9em; background: var(--panel); border-bottom: 1px solid var(--rule); }
+      #bar > .k-empty { grid-column: 1 / -1; }
+      .k-kicker { display: flex; gap: 1.2em; font: 600 0.78em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+      .k-cycle { text-transform: none; letter-spacing: 0; font-weight: 400; }
+      .k-title { margin: 0.1em 0 0.35em; font-size: 1.75em; line-height: 1.15; }
+      .k-muted { color: var(--muted); margin: 0.25em 0; }
+      .k-step { border-left: 4px solid var(--pending); padding: 0.1em 0 0.1em 0.8em; }
+      .k-step-word { font: 600 0.75em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+      .k-label { font-size: 1.12em; margin: 0.1em 0 0; }
+      .k-step-waiting { border-left-color: var(--foreign); }
+      .k-step-failed, .k-step-stalled { border-left-color: var(--degraded); }
+      .k-step-applied { border-left-color: var(--managed); }
+      .k-step-reset { border-left-color: var(--neutral); }
+      .k-right { display: grid; gap: 0.6em; align-content: start; }
+      .k-strip { list-style: none; display: flex; flex-wrap: wrap; gap: 0.35em; padding: 0; margin: 0; }
+      .k-stop { font: 0.82em var(--font-mono); padding: 0.25em 0.7em; border-radius: 999px; border: 1px solid var(--rule); color: var(--muted); }
       .k-done { color: var(--fg); border-color: var(--managed); }
       .k-current { color: var(--bg); background: var(--pending); border-color: var(--pending); font-weight: 600; }
       .k-failed { color: var(--bg); background: var(--degraded); border-color: var(--degraded); font-weight: 600; }
-      .k-label { font-size: 1.35rem; margin: 0.4rem 0 0; }
-      .k-step-waiting { border-color: var(--foreign); }
-      .k-step-failed, .k-step-stalled { border-color: var(--degraded); }
-      .k-step-applied { border-color: var(--managed); }
-      .k-next-line { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: baseline; margin: 0.4rem 0 0; font-size: 1.2rem; }
+      .k-next { display: flex; flex-wrap: wrap; gap: 0.3em 0.8em; align-items: baseline; font-size: 1.05em; }
+      .k-next-word { font: 600 0.72em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
       .k-action { font-family: var(--font-mono); }
       .k-when { color: var(--foreign); font-family: var(--font-mono); }
-      .k-approve { margin-top: 0.75rem; }
-      .k-command { display: block; padding: 0.6rem 0.8rem; background: var(--well); border-radius: 6px; font: 0.95rem var(--font-mono); overflow-wrap: anywhere; user-select: none; }
-      .k-read { font-family: var(--font-mono); font-size: 0.95rem; margin: 0.3rem 0; }
+      .k-approve { border-left: 4px solid var(--foreign); padding-left: 0.8em; }
+      .k-approve p { margin: 0.15em 0; }
+      .k-approve-head, .k-approve-then { color: var(--muted); font-size: 0.92em; }
+      .k-command { display: block; margin: 0.25em 0; padding: 0.45em 0.7em; background: var(--well); border-radius: 6px; font: 0.88em var(--font-mono); overflow-wrap: anywhere; user-select: none; }
+      .k-inline { font-family: var(--font-mono); color: var(--fg); background: var(--well); padding: 0.05em 0.35em; border-radius: 4px; user-select: none; }
+      .k-note { color: var(--muted); margin: 0; font-size: 0.92em; }
       .k-unknown { color: var(--foreign); }
-      .k-unreviewed { margin: 0.4rem 0; padding-left: 0.6rem; border-left: 3px solid var(--foreign); }
-      .k-waves { list-style: none; padding: 0; margin: 0.6rem 0; display: grid; gap: 0.5rem; }
-      .k-wave { border: 1px solid var(--rule); border-left-width: 4px; border-radius: 6px; padding: 0.5rem 0.8rem; background: var(--bg); }
-      .k-wave-title { font-family: var(--font-mono); }
-      .k-wave-fact { color: var(--muted); font-size: 0.9rem; }
-      .k-tone-ok { border-left-color: var(--managed); }
-      .k-tone-wave { border-left-color: var(--foreign); }
-      .k-tone-failed { border-left-color: var(--degraded); }
-      .k-tone-plan { border-left-color: var(--pending); }
-      .k-tone-none { border-left-color: var(--neutral); }
-      .k-foot { font-size: 0.8rem; }
+      #view { display: block; width: 100%; height: 100%; border: 0; background: var(--bg); }
+      #foot { display: flex; flex-wrap: wrap; gap: 0.2em 1.6em; padding: 0.55em 1.6em; border-top: 1px solid var(--rule); background: var(--panel); font-size: 0.85em; }
+      .k-legend { color: var(--muted); flex-basis: 100%; }
+      .k-fact { color: var(--fg); }
+      .k-source { color: var(--muted); margin-left: auto; }
+      @media (max-width: 900px) { #bar { grid-template-columns: 1fr; } }
     </style>
   </head>
   <body>
-    <main id="kiosk" aria-live="polite"></main>
+    <header id="bar" aria-live="polite"></header>
+    <iframe id="view" title="behold's view of the change"></iframe>
+    <footer id="foot"></footer>
     <script type="module">
       import { initTheme } from "/theme.js";
       import { startKiosk } from "/kiosk.js";
       initTheme();
-      startKiosk(document.getElementById("kiosk"));
+      startKiosk({ bar: document.getElementById("bar"), frame: document.getElementById("view"), foot: document.getElementById("foot") });
     </script>
   </body>
 </html>

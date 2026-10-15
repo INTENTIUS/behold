@@ -18,7 +18,7 @@ import { renderLane } from "./terragucci-lifecycle.js";
 import { renderReleases } from "./releases.js";
 import { renderYodelLane } from "./sql-yodeler-lane.js";
 import { initTerragucciEstate } from "./terragucci-estate.js";
-import { changeSection as tgChangeSection, readCardIds as tgReadCardIds, readEdges as tgReadEdges, readLine as tgReadLine, readTag as tgReadTag } from "./terragucci-change.js";
+import { changeSection as tgChangeSection, readCardIds as tgReadCardIds, readEdges as tgReadEdges, readLabel as tgReadLabel, readLine as tgReadLine, readTag as tgReadTag, rootStates as tgRootStates, viewCaption as tgViewCaption } from "./terragucci-change.js";
 import { auditLines as yrAuditLines, cornerText as yrCorner, datedWords as yrDated, environmentLines as yrEnvLines, joinMarks as yrJoin, legend as yrLegend, markLine as yrMarkLine } from "./yodel-report.js";
 import { cardProgress as tgCardProgress, progressLines as tgProgressLines, progressSection as tgProgressSection, stampProgress as tgStampProgress } from "./terragucci-progress.js";
 import { seconds, whyQuery, whyView } from "./why.js";
@@ -108,6 +108,7 @@ initTheme();
 const embedOpts = readEmbed(location.search);
 if (embedOpts.theme && !setTheme(embedOpts.theme, { persist: false })) console.warn(`behold: no theme named ${embedOpts.theme}`);
 if (embedOpts.embed) document.documentElement.classList.add("embed");
+if (embedOpts.embed && embedOpts.bare) document.documentElement.classList.add("bare"); // #569: the graph alone, for a kiosk
 initPanel({ embed: embedOpts.embed });
 mountThemePicker(document.getElementById("panel-theme"));
 
@@ -1580,7 +1581,7 @@ function wire(ir) {
 // member (#475) is the estate member the view is on: a host opens behold with
 // ?member=, and picking a card or a member box moves it. It changes no fetch;
 // the graph is the whole estate, framed on that member's box.
-const view = { member: null, env: null, gates: null, detail: 2, components: true, logical: false, runtime: false, ops: false, tier: null, target: null, stack: null, radial: false, collapse: false, compareTo: null };
+const view = { member: null, env: null, gates: null, focus: null, detail: 2, components: true, logical: false, runtime: false, ops: false, tier: null, target: null, stack: null, radial: false, collapse: false, compareTo: null };
 
 // #182: `components` is the boot default, but a project that declares no
 // components renders it as ZERO nodes — the first screen was a blank graph
@@ -2473,6 +2474,7 @@ function applyWantedView(want) {
   if (apply.lens) colourMode = apply.lens; // not written to localStorage: the link's pick, not yours
   if ("radial" in apply) view.radial = apply.radial;
   if ("gates" in apply) view.gates = apply.gates;
+  if ("focus" in apply) view.focus = apply.focus; // #569: drawn by drawTgReads, no new read
   if (want.member === null) {
     view.member = null;
     selectedNodeId = null;
@@ -2496,7 +2498,9 @@ window.addEventListener("message", (e) => {
   if (!want) return;
   const lensBefore = colourMode;
   const gatesBefore = view.gates;
+  const focusBefore = view.focus;
   const moved = applyWantedView(want);
+  if (view.focus !== focusBefore && !moved) drawTgReads(); // #569
   // #477: the host's env for the gate strip moved. Read it now, not on the
   // next `changed`; renderStatusbar below writes it into the URL.
   if (view.gates !== gatesBefore) loadWorkspaceGates({ force: true });
@@ -2735,6 +2739,7 @@ function syncViewUrl() {
     node: place.node || selectedNodeId,
     radial: view.radial && !view.components && !view.logical && !view.ops,
     gates: view.gates,
+    focus: view.focus,
   };
   const defaults = { env: (projectInfo && projectInfo.currentEnv) || null, lens: savedColourMode };
   const next = location.pathname + writeViewQuery(location.search, state, defaults) + location.hash;
@@ -3413,19 +3418,36 @@ function paintTgProgress() {
   drawTgReads(); // #568: the run view's reads, once the change merged
   renderTerragucciPanel();
 }
-// #568: the reads edges between roots of one repo, drawn over the card view:
-// a dashed line from the reader (its data card when the checkout draws one,
-// else its root's cards) to the root it reads, behind the cards, plus a tag on
-// the reader's data card ("reads network · planned · 1 unknown"). From the
-// pull request's plan, or from the run view once merged. Not live; redrawn on
-// each render, so a card dragged since moves its line on the next one.
+// #568: the reads edges between roots of one repo, drawn over the card view.
+// #569: drawn so the view shows the change without the panel: each read is a
+// line from the reader (its data card when the checkout draws one, else its
+// root's box) to the box of the root it reads, ending at the box's border,
+// arrowed, over the boxes, with what it reads written on it; each root's box
+// carries its wave and that wave's state, in the state's colour; a caption
+// says which run all of it comes from. `view.focus` brings some roots forward
+// and dims the rest. From the pull request's plan, or from the run view once
+// merged. Not live; redrawn on each render and each read.
+const TG_TONE = { plan: "var(--pending)", wait: "var(--foreign)", busy: "var(--runtime)", ok: "var(--managed)", bad: "var(--degraded)", idle: "var(--neutral)" };
 function drawTgReads() {
   const svg = document.querySelector("#graph svg");
   if (!svg) return;
   for (const old of svg.querySelectorAll("[data-tg-reads]")) old.remove();
+  for (const old of svg.querySelectorAll("[data-tg-root]")) old.remove();
+  for (const r of svg.querySelectorAll("rect[data-tg-stroke0]")) {
+    r.setAttribute("stroke", r.getAttribute("data-tg-stroke0"));
+    r.setAttribute("stroke-width", r.getAttribute("data-tg-width0") || "1.2");
+    r.removeAttribute("data-tg-stroke0");
+    r.removeAttribute("data-tg-width0");
+  }
+  for (const t of svg.querySelectorAll("[data-tg-hid]")) {
+    t.removeAttribute("data-tg-hid");
+    t.removeAttribute("visibility");
+  }
+  for (const g of svg.querySelectorAll("[data-tg-dim]")) {
+    g.removeAttribute("data-tg-dim");
+    g.style.opacity = "";
+  }
   if (!tgAnswer || tgAnswer.error || !tgAnswer.roots) return;
-  const edges = tgReadEdges(tgAnswer, tgProgress);
-  if (!edges.length) return;
   const toSvg = svg.getScreenCTM && svg.getScreenCTM();
   if (!toSvg) return;
   const inv = toSvg.inverse();
@@ -3444,54 +3466,226 @@ function drawTgReads() {
     return { x: Math.min(pts[0].x, pts[1].x), y: Math.min(pts[0].y, pts[1].y), x2: Math.max(pts[0].x, pts[1].x), y2: Math.max(pts[0].y, pts[1].y) };
   };
   const union = (boxes) => (boxes.length ? { x: Math.min(...boxes.map((b) => b.x)), y: Math.min(...boxes.map((b) => b.y)), x2: Math.max(...boxes.map((b) => b.x2)), y2: Math.max(...boxes.map((b) => b.y2)) } : null);
-  const rootBox = (path) => {
-    const r = tgAnswer.roots.find((x) => x.path === path);
-    if (!r) return null;
+  const rootOf = (path) => tgAnswer.roots.find((x) => x.path === path) || null;
+  const groupRect = (path) => {
+    const r = rootOf(path);
+    return r ? svg.querySelector(`rect[data-group-id="${CSS.escape(r.name)}"]`) : null;
+  };
+  const cardsOf = (path) => {
+    const r = rootOf(path);
+    if (!r) return [];
     const prefix = `${r.member}/${r.name}/`;
-    return union([...svg.querySelectorAll("[data-node-id]")].filter((g) => (g.getAttribute("data-node-id") || "").startsWith(prefix)).map(boxOf).filter(Boolean));
+    return [...svg.querySelectorAll("[data-node-id]")].filter((g) => (g.getAttribute("data-node-id") || "").startsWith(prefix));
+  };
+  const rootBox = (path) => {
+    const rect = groupRect(path);
+    return (rect && boxOf(rect)) || union(cardsOf(path).map(boxOf).filter(Boolean));
   };
   const NS = "http://www.w3.org/2000/svg";
-  const layer = document.createElementNS(NS, "g");
-  layer.setAttribute("data-tg-reads", "1");
-  layer.setAttribute("pointer-events", "none");
+  const make = (tag, attrs, text) => {
+    const n = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, String(v));
+    if (text !== undefined) n.textContent = text;
+    return n;
+  };
+  const layer = make("g", { "data-tg-reads": "1", "pointer-events": "none" });
+  svg.appendChild(layer); // over the boxes and cards: the lines end at the borders, and the labels carry a background
+  // A pill of text with a background, centred on (cx, cy); measured once it is in the svg.
+  const pill = (parent, cx, cy, text, { stroke, fill = "var(--panel)", color = "var(--fg)", size = 13, weight = 600, anchor = "middle", cls = "" } = {}) => {
+    const g = make("g", cls ? { class: cls } : {});
+    const rect = make("rect", { rx: 6, fill, stroke: stroke || "var(--rule)", "stroke-width": 1.5 });
+    const t = make("text", { x: cx, y: cy, "text-anchor": anchor, "dominant-baseline": "central", "font-size": size, "font-weight": weight, fill: color }, text);
+    g.append(rect, t);
+    parent.appendChild(g);
+    let w = text.length * size * 0.58;
+    try {
+      w = t.getComputedTextLength() || w;
+    } catch {
+      /* not laid out: the estimate stands */
+    }
+    const padX = 8;
+    const h = size + 10;
+    const left = anchor === "end" ? cx - w : anchor === "start" ? cx : cx - w / 2;
+    rect.setAttribute("x", String(left - padX));
+    rect.setAttribute("y", String(cy - h / 2));
+    rect.setAttribute("width", String(w + 2 * padX));
+    rect.setAttribute("height", String(h));
+    return { g, w: w + 2 * padX, h };
+  };
+
+  // The roots: each box's wave and state, in its colour.
+  const states = tgRootStates(tgAnswer, tgProgress);
+  const focus = view.focus ? new Set(view.focus.split(",")) : null;
+  const boxes = [];
+  for (const r of tgAnswer.roots) {
+    const rect = groupRect(r.path);
+    const st = states.roots[r.path];
+    const b = rootBox(r.path);
+    if (b) boxes.push(b);
+    if (focus && !focus.has(r.path) && !focus.has(r.name)) {
+      for (const el of [rect && rect.parentElement, ...cardsOf(r.path)]) {
+        if (!el) continue;
+        el.setAttribute("data-tg-dim", "1");
+        el.style.opacity = "0.5";
+      }
+    }
+    if (!rect || !st || !b) continue;
+    const tone = TG_TONE[st.tone] || TG_TONE.idle;
+    rect.setAttribute("data-tg-stroke0", rect.getAttribute("stroke") || "");
+    rect.setAttribute("data-tg-width0", rect.getAttribute("stroke-width") || "1.2");
+    if (st.state !== "outside") {
+      rect.setAttribute("stroke", tone);
+      rect.setAttribute("stroke-width", focus && (focus.has(r.path) || focus.has(r.name)) ? "4" : "2.5");
+    }
+    const mark = make("g", { "data-tg-root": r.path, "pointer-events": "none" });
+    if (focus && !focus.has(r.path) && !focus.has(r.name)) mark.style.opacity = "0.6";
+    layer.parentNode.insertBefore(mark, layer);
+    // The badge: on the box's top border, right-aligned, like a tab; the "N
+    // resources" count in the header row under it gives way.
+    const local = rect.getBBox();
+    const headY = local.y + 23;
+    const tabY = local.y;
+    for (const t of svg.querySelectorAll("text")) {
+      if (t.closest("[data-node-id]") || t.closest("[data-tg-root]") || t.closest("[data-tg-reads]")) continue;
+      const tb = t.getBBox();
+      if (/^\d+ resources?$/.test((t.textContent || "").trim()) && Math.abs(tb.y + tb.height / 2 - headY) < 12 && tb.x > local.x && tb.x < local.x + local.width) {
+        t.setAttribute("visibility", "hidden");
+        t.setAttribute("data-tg-hid", "1");
+      }
+    }
+    // Filled when something happened or waits on the root; an outline when nothing has yet.
+    const solid = st.state !== "outside" && st.state !== "not-started";
+    const badge = pill(mark, local.x + local.width - 16, tabY, st.words, { stroke: tone, fill: solid ? tone : "var(--panel)", color: solid ? "var(--bg)" : "var(--fg)", size: 14, weight: 700, anchor: "end", cls: st.state === "applying" ? "pin-pulse" : "" });
+    badge.g.appendChild(make("title", {}, [st.words, ...st.facts].join("\n") + "\n(from terragucci's reports, not live)"));
+    // The facts under it, at the box's bottom right: the plan a wave waits on, its changes.
+    // Packed into at most two lines that fit the box; what doesn't fit is in the badge's tooltip.
+    if (st.facts.length) {
+      const room = local.width - 28;
+      const fill = st.state === "waiting" ? tone : "var(--muted)";
+      const probe = make("text", { "font-size": 12.5, "font-weight": 600 });
+      mark.appendChild(probe);
+      const width = (t) => {
+        probe.textContent = t;
+        try {
+          return probe.getComputedTextLength();
+        } catch {
+          return t.length * 7;
+        }
+      };
+      const lines = [];
+      let cur = "";
+      for (const f of st.facts) {
+        const next = cur ? `${cur} · ${f}` : f;
+        if (!cur || width(next) <= room) cur = next;
+        else {
+          lines.push(cur);
+          cur = f;
+        }
+      }
+      if (cur) lines.push(cur);
+      probe.remove();
+      const shown = lines.slice(0, 2);
+      if (lines.length > 2) shown[1] += " …";
+      shown.forEach((t, i) => {
+        mark.appendChild(make("text", { x: local.x + local.width - 14, y: local.y + local.height - 10 - (shown.length - 1 - i) * 15, "text-anchor": "end", "font-size": 12.5, "font-weight": 600, fill }, t));
+      });
+    }
+  }
+
+  // The reads.
+  const edges = tgReadEdges(tgAnswer, tgProgress);
+  const centre = (b) => ({ x: (b.x + b.x2) / 2, y: (b.y + b.y2) / 2 });
+  // Where the ray from b's centre along (dx, dy) leaves b.
+  const exitOf = (b, dx, dy) => {
+    const c = centre(b);
+    const hx = (b.x2 - b.x) / 2;
+    const hy = (b.y2 - b.y) / 2;
+    const t = Math.min(dx ? hx / Math.abs(dx) : Infinity, dy ? hy / Math.abs(dy) : Infinity);
+    return { x: c.x + dx * t, y: c.y + dy * t };
+  };
+  const defs = svg.querySelector("defs") || svg.insertBefore(make("defs", {}), svg.firstChild);
+  for (const [id, color] of [["tg-arrow-unknown", "var(--foreign)"], ["tg-arrow-planned", "var(--pending)"], ["tg-arrow-applied", "var(--focus)"]]) {
+    if (svg.querySelector(`#${id}`)) continue;
+    const m = make("marker", { id, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse", "data-tg-reads": "marker" });
+    m.appendChild(make("path", { d: "M0,0 L10,5 L0,10 z", fill: color }));
+    defs.appendChild(m);
+  }
+  const labels = [];
   for (const e of edges) {
     const card = tgReadCardIds(tgAnswer, e).map((id) => svg.querySelector('[data-node-id="' + CSS.escape(id) + '"]')).find(Boolean);
-    const from = (card && boxOf(card)) || rootBox(e.from);
-    const to = rootBox(e.to);
+    const kind = e.unknown.length ? "unknown" : e.outputs === "planned" ? "planned" : "applied";
+    const color = kind === "unknown" ? "var(--foreign)" : kind === "planned" ? "var(--pending)" : "var(--focus)";
     if (card) {
-      const tag = document.createElementNS(NS, "text");
-      tag.setAttribute("data-tg-reads", "tag");
+      // The tag on the reader's card, at its bottom right, clear of the card's own "root:" line.
       const rect = card.querySelector("rect");
       const local = rect && rect.getBBox ? rect.getBBox() : null;
-      tag.setAttribute("x", String((local ? local.x : 0) + 10));
-      tag.setAttribute("y", String((local ? local.y + local.height : 60) - 9));
-      tag.setAttribute("font-size", "11");
-      tag.setAttribute("font-weight", "600");
-      tag.setAttribute("fill", e.unknown.length ? "var(--pending)" : "var(--muted)");
-      tag.textContent = tgReadTag(e);
-      const t = document.createElementNS(NS, "title");
-      t.setAttribute("data-tg-reads", "title");
-      t.textContent = tgReadLine(e) + "\n(from terragucci reports, not live)";
-      card.append(t, tag);
+      const tag = make("text", { "data-tg-reads": "tag", x: (local ? local.x + local.width : 150) - 10, y: (local ? local.y + local.height : 60) - 9, "text-anchor": "end", "font-size": 11, "font-weight": 700, fill: (card.querySelector("text") && card.querySelector("text").getAttribute("fill")) || "var(--fg)", opacity: 0.8 }, tgReadTag(e));
+      card.append(make("title", { "data-tg-reads": "title" }, tgReadLine(e) + "\n(from terragucci reports, not live)"), tag);
     }
-    if (!from || !to) continue;
-    const line = document.createElementNS(NS, "line");
-    line.setAttribute("x1", String((from.x + from.x2) / 2));
-    line.setAttribute("y1", String((from.y + from.y2) / 2));
-    line.setAttribute("x2", String((to.x + to.x2) / 2));
-    line.setAttribute("y2", String((to.y + to.y2) / 2));
-    line.setAttribute("stroke", e.unknown.length ? "var(--pending)" : "var(--muted)");
-    line.setAttribute("stroke-width", "2");
-    line.setAttribute("stroke-dasharray", e.outputs === "planned" ? "6 4" : "2 4");
-    line.setAttribute("data-tg-read-from", e.from);
-    line.setAttribute("data-tg-read-to", e.to);
-    const t = document.createElementNS(NS, "title");
-    t.textContent = tgReadLine(e);
-    line.appendChild(t);
+    const fromBox = (card && boxOf(card)) || rootBox(e.from);
+    const toBox = rootBox(e.to);
+    if (!fromBox || !toBox) continue;
+    const a = centre(fromBox);
+    const z = centre(toBox);
+    const dx = z.x - a.x;
+    const dy = z.y - a.y;
+    if (!dx && !dy) continue;
+    const p0 = exitOf(fromBox, dx, dy);
+    const p1 = exitOf(toBox, -dx, -dy);
+    const line = make("line", { x1: p0.x, y1: p0.y, x2: p1.x, y2: p1.y, stroke: color, "stroke-width": 3, "stroke-dasharray": e.outputs === "planned" ? "9 6" : "none", "marker-end": `url(#tg-arrow-${kind})`, "data-tg-read-from": e.from, "data-tg-read-to": e.to });
+    line.appendChild(make("title", {}, tgReadLine(e)));
+    if (focus && !(focus.has(e.from) || focus.has(e.to))) line.style.opacity = "0.5";
     layer.appendChild(line);
+    labels.push({ e, p0, p1, color, kind });
   }
-  // Behind every card: first in the svg.
-  svg.insertBefore(layer, svg.firstChild);
+  // Each read's words beside its line, where they cover the fewest cards: the
+  // boxes sit close, so a label on the line would hide the line.
+  const cardBoxes = [...svg.querySelectorAll("[data-node-id]")].map(boxOf).filter(Boolean);
+  // What a label must not cover: cards, each box's header row (its name, its
+  // badge) and its facts line, the other labels; and, lightly, a box's inside.
+  const headers = boxes.map((b) => ({ x: b.x, y: b.y - 14, x2: b.x2, y2: b.y + 36 }));
+  const facts = [...svg.querySelectorAll("[data-tg-root] text, [data-tg-root] rect")].map(boxOf).filter(Boolean);
+  const placed = [];
+  const overlap = (r, b) => Math.max(0, Math.min(r.x2, b.x2) - Math.max(r.x, b.x)) * Math.max(0, Math.min(r.y2, b.y2) - Math.max(r.y, b.y));
+  const sum = (r, list, k) => list.reduce((a, b) => a + k * overlap(r, b), 0);
+  for (const l of labels) {
+    const words = `${l.e.from} ${tgReadLabel(l.e)}`;
+    const size = 13;
+    const w = words.length * size * 0.56 + 16;
+    const h = size + 10;
+    const dx = l.p1.x - l.p0.x;
+    const dy = l.p1.y - l.p0.y;
+    let best = null;
+    for (const t of [0.5, 0.3, 0.7]) {
+      const m = { x: l.p0.x + dx * t, y: l.p0.y + dy * t };
+      // Beside the line (left or right of it) or off it (above or below), never on it.
+      for (const c of [
+        { x: m.x + w / 2 + 12, y: m.y },
+        { x: m.x - w / 2 - 12, y: m.y },
+        { x: m.x, y: m.y - h / 2 - 10 },
+        { x: m.x, y: m.y + h / 2 + 10 },
+      ]) {
+        const r = { x: c.x - w / 2, y: c.y - h / 2, x2: c.x + w / 2, y2: c.y + h / 2 };
+        let onLine = 0;
+        for (let i = 0; i <= 20; i++) {
+          const q = { x: l.p0.x + (dx * i) / 20, y: l.p0.y + (dy * i) / 20 };
+          if (q.x > r.x && q.x < r.x2 && q.y > r.y && q.y < r.y2) onLine++;
+        }
+        const score = sum(r, cardBoxes, 1) + sum(r, headers, 1.5) + sum(r, facts, 2) + sum(r, placed, 4) + sum(r, boxes, 0.15) + onLine * 400 + Math.abs(t - 0.5) * 300;
+        if (!best || score < best.score) best = { c, r, score };
+      }
+    }
+    placed.push(best.r);
+    const p = pill(layer, best.c.x, best.c.y, words, { stroke: l.color, fill: "var(--bg)", color: "var(--fg)", size, weight: 600 });
+    if (focus && !(focus.has(l.e.from) || focus.has(l.e.to))) p.g.style.opacity = "0.5";
+  }
+
+  // Which run the marks come from, above the boxes.
+  const caption = tgViewCaption(tgAnswer, tgProgress, new Date());
+  const all = union(boxes);
+  if (caption && all) {
+    layer.appendChild(make("text", { "data-tg-reads": "caption", x: all.x, y: all.y - 22, "font-size": 16, "font-weight": 600, fill: "var(--muted)" }, `Showing ${caption}`));
+  }
 }
 function markTerragucciCards() {
   const svg = document.querySelector("#graph svg");
