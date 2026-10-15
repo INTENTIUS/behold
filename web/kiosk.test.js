@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { focusRoots, frameSrc, factLines, matchingPull, pendingApproval, runPanel, runPin } from "./kiosk.js";
+import { aboutRows, focusRoots, frameSrc, factLines, matchingPull, pendingApproval, renderKiosk, runPanel, runPin } from "./kiosk.js";
 
 const demo = (step, extra = {}) => ({ cycle: 1, scenario: "a-output", title: "t", step, label: "", started_at: "2026-10-15T03:00:00Z", next: null, pull: 7, commit: "abc12345", ...extra });
 const answer = {
@@ -86,5 +86,61 @@ describe("before the merge, no other cycle's plan (#569)", () => {
   it("from the merge on, takes the plan by its number: demo.json's commit is the merge's", () => {
     expect(matchingPull(ours, demo("merged", { pull: 989, commit: "53c1e5d2" }))).toBe(ours.pull_request);
     expect(matchingPull(older, demo("merged", { pull: 989, commit: "53c1e5d2" }))).toBe(null);
+  });
+});
+
+describe("the scenario's card under the title (behold#571)", () => {
+  const about = { changes: "Network's port goes from 8080 to 9090.", watch: "Wave 2 fails partway.", shows: "Nothing here is atomic." };
+
+  it("has three rows in order, labelled as the kiosk draws them", () => {
+    expect(aboutRows(demo("failed", { about }))).toEqual([
+      { label: "What changes", text: about.changes },
+      { label: "Watch for", text: about.watch },
+      { label: "Shows", text: about.shows },
+    ]);
+  });
+
+  it("has no rows when demo.json has no card", () => {
+    expect(aboutRows(demo("reset", { scenario: "base", about: null }))).toEqual([]);
+    expect(aboutRows(demo("reset"))).toEqual([]);
+  });
+
+  // A DOM just big enough for renderKiosk: elements with a class, text and children.
+  const fakeDocument = () => {
+    const make = (tag) => {
+      const n = { tagName: tag, className: "", textContent: "", children: [] };
+      n.appendChild = (c) => (n.children.push(c), c);
+      n.append = (...cs) => cs.forEach((c) => n.children.push(typeof c === "string" ? { tagName: "#text", textContent: c, children: [] } : c));
+      n.replaceChildren = () => (n.children = []);
+      return n;
+    };
+    return { createElement: make };
+  };
+  const find = (n, cls) => (n.className.split(" ").includes(cls) ? [n] : []).concat(...(n.children || []).map((c) => (c.className !== undefined ? find(c, cls) : [])));
+
+  it("draws the card right under the title, and none without about", () => {
+    const was = globalThis.document;
+    globalThis.document = fakeDocument();
+    try {
+      const bar = document.createElement("header");
+      const s = { demo: { source: "fx", read: "2026-10-15T03:00:00Z", demo: demo("failed", { scenario: "failure", about }) }, answer: null, progress: null };
+      renderKiosk(bar, s, new Date("2026-10-15T03:01:00Z"));
+      const left = find(bar, "k-left")[0];
+      const kinds = left.children.map((c) => c.className.split(" ")[0]);
+      expect(kinds.indexOf("k-about")).toBe(kinds.indexOf("k-title") + 1);
+      const card = find(bar, "k-about")[0];
+      expect(card.tagName).toBe("dl");
+      expect(card.children.map((c) => [c.tagName, c.textContent])).toEqual([
+        ["dt", "What changes"], ["dd", about.changes],
+        ["dt", "Watch for"], ["dd", about.watch],
+        ["dt", "Shows"], ["dd", about.shows],
+      ]);
+
+      s.demo.demo = demo("reset", { scenario: "base", about: null });
+      renderKiosk(bar, s, new Date("2026-10-15T03:01:00Z"));
+      expect(find(bar, "k-about")).toEqual([]);
+    } finally {
+      globalThis.document = was;
+    }
   });
 });

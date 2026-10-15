@@ -316,7 +316,7 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
   host.replaceChildren();
   if (!answer || answer.error || answer.absent || !answer.doc) {
     host.appendChild(el("p", "r-note", answer ? answer.absent || answer.error : "Reading the run…"));
-    return { log: null };
+    return { log: null, steps: null, key: null };
   }
   const run = mergeRun(entry, answer.doc);
   const head = el("div", "r-head");
@@ -355,7 +355,7 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
   if (skipped.length) jobsBox.appendChild(el("li", "r-job r-job-skipped", `${skipped.length} skipped, not for this event: ${skipped.map((j) => j.name).join(", ")}`));
   host.appendChild(jobsBox);
 
-  if (!job) return { log: null };
+  if (!job) return { log: null, steps: null, key: null };
   host.appendChild(el("div", "r-label", "Steps of the job, with its log"));
   const stepsBox = el("div", "r-steps");
   const sh = el("div", "r-steps-head");
@@ -395,7 +395,31 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
     stepsBox.appendChild(row);
   });
   host.appendChild(stepsBox);
-  return { log: logEl, live: LIVE.has(job.status) };
+  return { log: logEl, steps: stepsBox, key: logEl ? logKey(run.id, job.name, open) : null, live: LIVE.has(job.status) };
+}
+
+/** Which log is open: the run, the job and the step. A new key means a different log, which the pane follows from its end. */
+export function logKey(runId, job, step) {
+  return `${runId}|${job}|${step}`;
+}
+
+/** How close to the end, in log lines, still counts as at the end: a viewer back within it is followed again. */
+export const FOLLOW_LINES = 3;
+
+/** Whether a scroller's view ends within `slack` pixels of its content's end. */
+export function nearEnd({ scrollTop, clientHeight, scrollHeight }, slack) {
+  return scrollTop + clientHeight >= scrollHeight - slack;
+}
+
+/**
+ * Whether the log pane follows its end after a redraw, the way a CI page's
+ * log does: always when a different log opened (another run, job or step,
+ * as when the next step starts); otherwise as the viewer left it, following
+ * unless they scrolled up away from the end.
+ */
+export function followsLog(prevKey, key, wasFollowing) {
+  if (key !== prevKey) return true;
+  return wasFollowing;
 }
 
 /** How long a viewer's pick holds before the kiosk follows the live run again. */
@@ -410,6 +434,9 @@ export function startRuns({ side, main }, { fetchJson, now = () => new Date(), s
   const s = { index: null, run: null, selected: null, picked: 0, ui: { job: null, open: null } };
   let follow = true;
   let lastRunKey = "";
+  // The open log and whether the pane follows its end; a viewer who scrolls up stops it until they come back.
+  let logShown = null;
+  let logFollow = true;
   const following = () => follow || now().getTime() - s.picked > PICK_HOLD_MS;
   const selectedId = () => {
     const runs = s.index && s.index.doc ? s.index.doc.runs : [];
@@ -427,10 +454,11 @@ export function startRuns({ side, main }, { fetchJson, now = () => new Date(), s
     // One merged read of the selected run for both the sidebar and its page.
     const merged = ans && ans.doc ? mergeRun(entry, ans.doc) : null;
     renderSidebar(side, s.index, id, { now: now(), scenarios, pick, merged });
-    // Keep the log's scroll unless it was at the bottom, so a live log follows.
+    // The redraw replaces the scrollers: keep where a viewer left them.
     const old = main.querySelector(".r-log");
-    const atBottom = !old || old.scrollTop + old.clientHeight >= old.scrollHeight - 8;
+    const oldSteps = main.querySelector(".r-steps");
     const prevTop = old ? old.scrollTop : 0;
+    const prevStepsTop = oldSteps ? oldSteps.scrollTop : 0;
     const drawn = renderRun(main, ans, s.ui, {
       now: now(),
       entry,
@@ -445,7 +473,34 @@ export function startRuns({ side, main }, { fetchJson, now = () => new Date(), s
         draw();
       },
     });
-    if (drawn.log) drawn.log.scrollTop = atBottom ? drawn.log.scrollHeight : prevTop;
+    logFollow = followsLog(logShown, drawn.key, logFollow);
+    const sameLog = drawn.key !== null && drawn.key === logShown;
+    logShown = drawn.key;
+    if (!drawn.log) {
+      if (drawn.steps) drawn.steps.scrollTop = prevStepsTop;
+      return;
+    }
+    const log = drawn.log;
+    const steps = drawn.steps;
+    if (logFollow) {
+      log.scrollTop = log.scrollHeight;
+      // The steps list scrolls too: bring the log's end into its view.
+      steps.scrollTop = sameLog ? prevStepsTop : 0;
+      const below = log.getBoundingClientRect().bottom - steps.getBoundingClientRect().bottom;
+      if (below > 0) steps.scrollTop += below + 8;
+    } else {
+      log.scrollTop = prevTop;
+      steps.scrollTop = prevStepsTop;
+    }
+    // A viewer scrolling either list decides whether the pane follows: near the log's end it does again.
+    const line = log.querySelector(".r-log-line");
+    const slack = (line ? line.getBoundingClientRect().height || 18 : 18) * FOLLOW_LINES;
+    const onScroll = () => {
+      const logEnd = log.getBoundingClientRect().bottom - steps.getBoundingClientRect().bottom;
+      logFollow = nearEnd(log, slack) && logEnd <= slack;
+    };
+    log.addEventListener("scroll", onScroll, { passive: true });
+    steps.addEventListener("scroll", onScroll, { passive: true });
   };
   const hold = () => {
     follow = false;

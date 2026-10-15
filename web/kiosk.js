@@ -59,6 +59,24 @@ export function scenarioHead(demo) {
   return { kicker: `scenario ${known.n} · ${known.name}`, title: demo.title };
 }
 
+/** The card's rows under the title, in order, with the labels the kiosk draws (behold#571). */
+export const ABOUT_ROWS = [
+  { field: "changes", label: "What changes" },
+  { field: "watch", label: "Watch for" },
+  { field: "shows", label: "Shows" },
+];
+
+/**
+ * behold#571: the scenario's card, always open under the title so a TV or a
+ * link opened cold reads it without a click. The text is demo.json's `about`,
+ * as terragucci wrote it; no card when it has none.
+ */
+export function aboutRows(demo) {
+  const about = demo && demo.about;
+  if (!about) return [];
+  return ABOUT_ROWS.filter((r) => typeof about[r.field] === "string" && about[r.field]).map((r) => ({ label: r.label, text: about[r.field] }));
+}
+
 /** The strip: each stop, and whether it is done, current or ahead. A stalled cycle marks no stop current. */
 export function stripStops(step) {
   const at = STRIP.findIndex((s) => s.steps.includes(step));
@@ -327,6 +345,12 @@ export function renderKiosk(bar, s, now = new Date(), foot = null) {
   kick.append(el("span", null, head.kicker), el("span", "k-cycle", cycleWords(demo, now)));
   left.appendChild(kick);
   left.appendChild(el("h1", "k-title", head.title));
+  const rows = aboutRows(demo);
+  if (rows.length) {
+    const card = el("dl", "k-about");
+    for (const r of rows) card.append(el("dt", "k-about-label", r.label), el("dd", "k-about-text", r.text));
+    left.appendChild(card);
+  }
   const said = el("div", `k-step k-step-${demo.step}`);
   said.appendChild(el("span", "k-step-word", STEP_WORDS[demo.step] || demo.step));
   said.appendChild(el("p", "k-label", demo.label));
