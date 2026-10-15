@@ -1,0 +1,121 @@
+{
+  "schema": "terragucci.components/v1",
+  "generated_by": "terragucci 0.4.9 (hand-written fixture)",
+  "roots": {
+    "network": {
+      "dir": "network"
+    },
+    "app": {
+      "dir": "app"
+    },
+    "edge": {
+      "dir": "edge"
+    },
+    "other": {
+      "dir": "other"
+    }
+  },
+  "components": [
+    {
+      "name": "network",
+      "dependsOn": [],
+      "deploy": [
+        {
+          "phase": "Apply",
+          "steps": [
+            {
+              "kind": "terraform-apply",
+              "root": "network"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "other",
+      "dependsOn": [],
+      "deploy": [
+        {
+          "phase": "Apply",
+          "steps": [
+            {
+              "kind": "terraform-apply",
+              "root": "other"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "app",
+      "dependsOn": [
+        "network"
+      ],
+      "deploy": [
+        {
+          "phase": "Apply",
+          "steps": [
+            {
+              "kind": "terraform-apply",
+              "root": "app"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "edge",
+      "dependsOn": [
+        "app"
+      ],
+      "deploy": [
+        {
+          "phase": "Apply",
+          "steps": [
+            {
+              "kind": "terraform-apply",
+              "root": "edge"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pipeline": {
+    "path": ".forgejo/workflows/terragucci.yml",
+    "forge": "forgejo",
+    "jobs": [
+      {
+        "name": "apply-wave-1",
+        "needs": [
+          "check"
+        ],
+        "wave": 1,
+        "applies": [
+          "network",
+          "other"
+        ]
+      },
+      {
+        "name": "apply-wave-2",
+        "needs": [
+          "apply-wave-1"
+        ],
+        "wave": 2,
+        "applies": [
+          "app"
+        ]
+      },
+      {
+        "name": "apply-wave-3",
+        "needs": [
+          "apply-wave-2"
+        ],
+        "wave": 3,
+        "applies": [
+          "edge"
+        ]
+      }
+    ]
+  }
+}

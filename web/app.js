@@ -1221,9 +1221,14 @@ function inspect(node) {
     // The heading names the forge the pipeline was actually generated for
     // (#164) — it used to say GitLab whatever the project targeted.
     const ci = section(`CI (${{ gitlab: "GitLab", github: "GitHub Actions", forgejo: "Forgejo" }[ciForge] || ciForge || "pipeline"})`);
-    ci("stage", job.stage);
+    // #571: a terragucci repo's declared job names the job and its wave; a
+    // chant-generated pipeline names a stage and the script it runs.
+    if (job.jobName) ci("job", job.jobName);
+    if (job.wave !== undefined) ci("wave", String(job.wave));
+    if (job.stage) ci("stage", job.stage);
     ci("needs", job.needs.length ? job.needs.join(", ") : "(none)");
-    ci("runs", job.script.length ? job.script.join(" && ") : `chant run --components ${node.id}`);
+    if (job.alsoIn && job.alsoIn.length) ci("also in", job.alsoIn.join(", "));
+    if (job.script) ci("runs", job.script.length ? job.script.join(" && ") : `chant run --components ${node.id}`);
     // The last pipeline run of this session, when one touched this component
     // (#164) — the server joins it as `_ciJob`/`ci` on the node.
     if (node.attrs && node.attrs._ciJob) ci("last run", `${node.attrs._ciJob}: ${node.attrs.ci}`);
@@ -1241,7 +1246,7 @@ function inspect(node) {
   if (resources) {
     const res = section("resources");
     if (!resources.length) {
-      res("", "(none found under this component's source directory)");
+      res("", terragucciComponentsRepo ? "(none in this component's root)" : "(none found under this component's source directory)");
     } else {
       for (const r of resources) {
         res(r.kind, r.physicalId ? `${r.id} (${r.physicalId})` : r.id);
@@ -1614,7 +1619,12 @@ let autoZoomFallback = true;
 // order), so the decision is made from what the server already knows rather
 // than from a zero-node answer. A chant member anywhere in the estate keeps
 // #182's behaviour exactly, and picking components later still shows the note.
-function bootZoom(memberKinds) {
+//
+// #571: a terragucci repo that declares its roots as components
+// (`terragucci.components.json`, /api/project's `terragucciComponents`) does
+// have a components picture, so it opens there whatever its member kind.
+function bootZoom(memberKinds, terragucciComponents) {
+  if (terragucciComponents) return "components";
   return memberKinds && memberKinds.length && !memberKinds.includes("chant") ? "resources" : "components";
 }
 
@@ -4275,9 +4285,26 @@ function lensParams(params) {
 // it synchronously. Component-DAG mode only — cleared otherwise.
 let ciByComponent = new Map();
 let ciForge = null; // the forge the pipeline was generated for (#164) — heads the inspect section
+// #571: the served repo declares its components in terragucci.components.json.
+// Its CI and resources facets then ride the components graph response
+// (`meta.terragucciComponents`, see takeTerragucciFacets), which a public view
+// can read, so the two facet fetches below are skipped.
+let terragucciComponentsRepo = false;
+
+/** #571: the CI and resources facets from a terragucci repo's components
+ * graph: component -> its declared job ({jobName, needs, wave, alsoIn}), and
+ * component -> the resources its root holds. */
+function takeTerragucciFacets(m) {
+  const tg = m && m.terragucciComponents;
+  if (!tg) return;
+  ciByComponent = new Map((tg.jobs || []).map((job) => [job.component, job]));
+  ciForge = tg.forge || null;
+  resourcesByComponent = tg.resources || {};
+}
 
 async function loadCi() {
   if (publicMode) return; // #569: /api/ci is refused in a public view
+  if (terragucciComponentsRepo) return; // #571: carried on the graph response
   try {
     const q = lensParams(new URLSearchParams(view.env ? { env: view.env } : {}));
     const res = await apiFetch(`/api/ci?${q}`);
@@ -4303,6 +4330,7 @@ let resourcesByComponent = {};
 
 async function loadResources() {
   if (publicMode) return; // #569: /api/resources is refused in a public view
+  if (terragucciComponentsRepo) return; // #571: carried on the graph response
   try {
     const q = lensParams(new URLSearchParams(view.env ? { env: view.env } : {}));
     const res = await apiFetch(`/api/resources?${q}`);
@@ -5053,7 +5081,7 @@ function render(ir, svg, m) {
     // Mark each wave lane as a GitLab CI stage when the CI projection is loaded
     // (components view only) — waves ARE the pipeline's stages (`chant build
     // --components --generate gitlab`, see loadCi / #58).
-    if (view.components && ciByComponent.size) addGitlabWaveBadges(svgEl);
+    if (view.components && ciByComponent.size && !terragucciComponentsRepo) addGitlabWaveBadges(svgEl);
   }
   ensureZoomControls(g);
   ensureBackToInfra(g);
@@ -6201,6 +6229,7 @@ async function loadOnce(opts = {}, isCurrent = () => true) {
     // "still reading" claim on screen.
     pendingMembers = body.meta && body.meta.mode === "progressive" ? [...(body.meta.pending || [])] : [];
     pendingTotal = pendingMembers.length;
+    if (view.components) takeTerragucciFacets(body.meta);
     render(body.ir, body.svg, body.meta);
     afterPaint(body.ir);
   } catch (err) {
@@ -6320,7 +6349,8 @@ async function initPickers() {
   // estate never paints the components apology on its way to a picture.
   runtimeCapable = !!info.runtimeCapable;
   stacksCapable = !!info.stacksCapable;
-  const boot = bootZoom(info.memberKinds);
+  terragucciComponentsRepo = !!info.terragucciComponents;
+  const boot = bootZoom(info.memberKinds, terragucciComponentsRepo);
   if (boot !== "components") {
     applyZoom(boot);
     autoZoomFallback = false;

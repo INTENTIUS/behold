@@ -111,3 +111,42 @@ export function resourcesByComponent(ir: GraphIR, known?: Set<string>): Record<s
   }
   return byComponent;
 }
+
+/** The Terraform block classes that are estate: what a root creates or reads.
+ * Outputs, variables, locals and the terraform/provider blocks are settings
+ * or values, and are not listed as a component's resources. */
+const TERRAFORM_ESTATE_BLOCKS = new Set(["resource", "data", "module"]);
+
+/** A Terraform node's block class: `attrs.block` once src/terraform-lens.ts's
+ * `normalizeTerraformNodes` has run, the `Terraform::<Block>` kind before. */
+function terraformBlockOf(n: GraphIR["nodes"][number]): string | undefined {
+  const block = (n.attrs as Record<string, unknown> | undefined)?.block;
+  if (typeof block === "string") return block;
+  return n.kind.startsWith("Terraform::") ? n.kind.slice("Terraform::".length).toLowerCase() : undefined;
+}
+
+/**
+ * Group a Terraform estate's nodes by the component that applies their root
+ * (#571): a node belongs to a component when the root it was declared in
+ * (`attrs.root`, the lexicon's own field) is the root that component's
+ * `terraform-apply` step names. `rootOf` is component -> root
+ * (src/terragucci-components.ts `componentRootMap`). Every component gets an
+ * entry, empty when its root holds nothing to list. Pure.
+ */
+export function resourcesByRoot(ir: GraphIR, rootOf: Readonly<Record<string, string>>): Record<string, ComponentResource[]> {
+  const byComponent: Record<string, ComponentResource[]> = {};
+  const componentsOf = new Map<string, string[]>();
+  for (const [component, root] of Object.entries(rootOf)) {
+    byComponent[component] = [];
+    componentsOf.set(root, [...(componentsOf.get(root) ?? []), component]);
+  }
+  for (const n of ir.nodes) {
+    const root = (n.attrs as Record<string, unknown> | undefined)?.root;
+    const block = terraformBlockOf(n);
+    if (typeof root !== "string" || (block !== undefined && !TERRAFORM_ESTATE_BLOCKS.has(block))) continue;
+    for (const component of componentsOf.get(root) ?? []) {
+      byComponent[component]!.push({ id: n.id, kind: n.kind, lexicon: n.lexicon, physicalId: n.physicalId, ownership: n.ownership });
+    }
+  }
+  return byComponent;
+}
