@@ -114,7 +114,18 @@
       .k-inline { font-family: var(--font-mono); color: var(--fg); background: var(--well); padding: 0.05em 0.35em; border-radius: 4px; user-select: none; }
       .k-note { color: var(--muted); margin: 0; font-size: 0.92em; }
       .k-unknown { color: var(--foreign); }
-      #view { display: block; width: 100%; height: 100%; border: 0; background: var(--bg); }
+      #view-pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+      #view { display: block; width: 100%; flex: 1; min-height: 0; border: 0; background: var(--bg); }
+      /* #571: the toggle between the two views, over the frame by the view's caption. */
+      #views { display: flex; align-items: center; gap: 0.9em; padding: 0.45em 1em; border-bottom: 1px solid var(--rule); background: var(--panel); }
+      #views[hidden] { display: none; }
+      .k-views { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; overflow: hidden; }
+      .k-view { font: 600 0.85em var(--font-ui); color: var(--muted); background: transparent; border: 0; padding: 0.3em 0.95em; cursor: pointer; }
+      .k-view + .k-view { border-left: 1px solid var(--rule); }
+      .k-view:hover { color: var(--fg); }
+      .k-view-on { color: var(--bg); background: var(--pending); }
+      .k-view-on:hover { color: var(--bg); }
+      .k-view-note { color: var(--muted); font-size: 0.8em; }
       #foot { display: flex; flex-wrap: wrap; gap: 0.2em 1.6em; padding: 0.55em 1.6em; border-top: 1px solid var(--rule); background: var(--panel); font-size: 0.85em; }
       .k-legend { color: var(--muted); flex-basis: 100%; }
       .k-fact { color: var(--fg); }
@@ -127,14 +138,17 @@
     <div id="stage">
       <nav id="runs-side" aria-label="pipeline runs"></nav>
       <section id="runs-main" aria-live="polite"></section>
-      <iframe id="view" title="behold's view of the change"></iframe>
+      <section id="view-pane">
+        <div id="views" hidden></div>
+        <iframe id="view" title="behold's view of the change"></iframe>
+      </section>
     </div>
     <footer id="foot"></footer>
     <script type="module">
       import { initTheme } from "/theme.js";
       import { startKiosk } from "/kiosk.js";
       initTheme();
-      startKiosk({ bar: document.getElementById("bar"), frame: document.getElementById("view"), foot: document.getElementById("foot"), side: document.getElementById("runs-side"), main: document.getElementById("runs-main") });
+      startKiosk({ bar: document.getElementById("bar"), frame: document.getElementById("view"), foot: document.getElementById("foot"), side: document.getElementById("runs-side"), main: document.getElementById("runs-main"), views: document.getElementById("views") });
     </script>
   </body>
 </html>

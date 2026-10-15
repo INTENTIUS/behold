@@ -13,7 +13,7 @@
 // A wave that failed says which waves applied before it and stay applied.
 // Nothing here is all-or-nothing, and nothing says so.
 
-import { startRuns } from "./kiosk-runs.js";
+import { PICK_HOLD_MS, startRuns } from "./kiosk-runs.js";
 import { STATE_WORDS, changingRoots, costLine, pinsCommit, planFitsPin, pullPin, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
 
 /** The scenarios terragucci#1014 numbers. An id not here is shown by the title demo.json carries. */
@@ -294,10 +294,105 @@ export function runPin(demo) {
   return demo.commit || "none";
 }
 
-/** The framed view's address: behold's own page, bare, at the resources zoom, told who its host is. */
-export function frameSrc(origin) {
-  const q = new URLSearchParams({ embed: "1", bare: "1", zoom: "resources", host: origin });
+/** The framed view's address: behold's own page, bare, at a zoom (the resources zoom unless told), told who its host is. */
+export function frameSrc(origin, zoom = "resources") {
+  const q = new URLSearchParams({ embed: "1", bare: "1", zoom, host: origin });
   return `/?${q.toString()}`;
+}
+
+// ---------------------------------------------------------------------------
+// #571: which of behold's two views the frame shows. Before the merge, the
+// resources zoom: what the pull request changes and the reads it plans
+// before their values are known. From the merge on, the components zoom of a
+// terragucci repo (`terragucci.components.json`): one card per root in a box
+// per wave, titled with the job that applies it, in step with the jobs pane.
+// A viewer's click on the toggle holds a view for PICK_HOLD_MS after their
+// last click, as a run picked in the sidebar does; then the step leads again.
+
+/** The two views the toggle offers, with behold's zoom for each. */
+export const VIEWS = [
+  { id: "resources", words: "Resources", zoom: "resources" },
+  { id: "components", words: "Roots by wave", zoom: "components" },
+];
+
+/**
+ * The view a step shows: the pull request's steps the resources (what
+ * changes, the unknown reads), every step from the merge on the components
+ * (the jobs running), and the reset the components at rest. A step behold
+ * doesn't know, and `stalled`, keep the components: the jobs pane says where
+ * the pipeline stopped.
+ */
+export const STEP_VIEW = {
+  "pull-request": "resources",
+  planned: "resources",
+  merged: "components",
+  applying: "components",
+  waiting: "components",
+  approved: "components",
+  failed: "components",
+  resumed: "components",
+  applied: "components",
+  reset: "components",
+  stalled: "components",
+};
+
+/** The view for a step. */
+export function stepView(step) {
+  return Object.prototype.hasOwnProperty.call(STEP_VIEW, step) ? STEP_VIEW[step] : "components";
+}
+
+/**
+ * The view the frame shows, and why: `{ view, pinned, secs }`. Only the
+ * resources view when the repo offers no components zoom (no
+ * `terragucci.components.json`). A viewer's pick (`{ view, at }`, `at` in ms)
+ * holds until PICK_HOLD_MS after it; `secs` is how long it still holds.
+ * Without a demo step yet, the resources view.
+ */
+export function kioskView(demo, { components = false, pick = null, now = Date.now() } = {}) {
+  if (!components) return { view: "resources", pinned: false, secs: null };
+  if (pick && VIEWS.some((v) => v.id === pick.view)) {
+    const left = pick.at + PICK_HOLD_MS - now;
+    if (left > 0) return { view: pick.view, pinned: true, secs: Math.ceil(left / 1000) };
+  }
+  return { view: demo ? stepView(demo.step) : "resources", pinned: false, secs: null };
+}
+
+/** The line under the view saying how to read it, for the view shown. */
+export function legendWords(view) {
+  if (view === "components") {
+    return "Each card is a Terraform root with its own state, in a box per wave titled with the pipeline job that applies it; an arrow is one root reading another's outputs, dashed while it reads planned values. A wave applies its roots together, after the waves it reads.";
+  }
+  return "Each box is a Terraform root with its own state; an arrow is one root reading another's outputs, dashed while it reads planned values. A wave applies its roots together, after the waves it reads.";
+}
+
+/** The behold zoom for a view. */
+export function viewZoom(view) {
+  const v = VIEWS.find((x) => x.id === view);
+  return v ? v.zoom : "resources";
+}
+
+/**
+ * The toggle, "Resources | Roots by wave", over the frame: the view shown
+ * pressed, and a line saying whether the step leads or a click holds it.
+ * Not drawn at all when the repo offers no components zoom.
+ */
+export function renderViewToggle(host, shown, { components = false, onPick = () => {} } = {}) {
+  if (!host) return;
+  host.replaceChildren();
+  host.hidden = !components;
+  if (!components) return;
+  const group = el("div", "k-views");
+  group.setAttribute("role", "group");
+  group.setAttribute("aria-label", "the view");
+  for (const v of VIEWS) {
+    const b = el("button", `k-view${v.id === shown.view ? " k-view-on" : ""}`, v.words);
+    b.type = "button";
+    b.setAttribute("aria-pressed", String(v.id === shown.view));
+    b.addEventListener("click", () => onPick(v.id));
+    group.appendChild(b);
+  }
+  host.appendChild(group);
+  host.appendChild(el("span", "k-view-note", shown.pinned ? `held by a click; the step leads again in ${shown.secs} s` : "follows the step"));
 }
 
 /** The one-line facts under the view: the pull request's totals, cost and blast radius, as #568 has them. */
@@ -392,7 +487,7 @@ export function renderKiosk(bar, s, now = new Date(), foot = null) {
   bar.appendChild(right);
 
   if (foot) {
-    foot.appendChild(el("span", "k-legend", "Each box is a Terraform root with its own state; an arrow is one root reading another's outputs, dashed while it reads planned values. A wave applies its roots together, after the waves it reads."));
+    foot.appendChild(el("span", "k-legend", legendWords(s.view || "resources")));
     for (const f of factLines(demo, s.answer)) foot.appendChild(el("span", "k-fact", f));
     foot.appendChild(
       el("span", "k-source", `narration read ${clockOf(s.demo.read)} from ${s.demo.source}${demo.pull !== null ? ` · pull request #${demo.pull}` : ""}${demo.commit ? ` · commit ${demo.commit.slice(0, 8)}` : ""} · nothing here writes`),
@@ -415,34 +510,50 @@ export const DEMO_POLL_MS = 3_000;
  * countdown. When the roots the step is about change, move the framed view
  * with a `behold:view` message; the frame takes them only from this origin.
  */
-export function startKiosk({ bar, frame, foot, side, main }, { fetchJson = defaultFetch, now = () => new Date(), origin = location.origin } = {}) {
-  const s = { demo: null, answer: null, progress: null };
+export function startKiosk({ bar, frame, foot, side, main, views }, { fetchJson = defaultFetch, now = () => new Date(), origin = location.origin } = {}) {
+  const s = { demo: null, answer: null, progress: null, components: false, pick: null, view: "resources" };
   let lastKey = "";
   let lastFocus;
+  const shownView = () => kioskView(s.demo && s.demo.demo, { components: s.components, pick: s.pick, now: now().getTime() });
   const tellFrame = (force) => {
     const d = s.demo && s.demo.demo;
     if (!d) return; // nothing said yet: the frame keeps its default until the narration is read
     const roots = focusRoots(d, s.answer, s.progress);
     const focus = roots ? roots.join(",") : null;
     const run = runPin(d);
-    const key = `${focus}|${run}`;
+    const zoom = viewZoom(shownView().view);
+    const key = `${focus}|${run}|${zoom}`;
     if (!force && key === lastFocus) return;
     lastFocus = key;
-    if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: "behold:view", member: null, focus, run }, origin);
+    if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: "behold:view", member: null, focus, run, zoom }, origin);
+  };
+  const pickView = (view) => {
+    s.pick = { view, at: now().getTime() };
+    draw();
   };
   const draw = () => {
+    const shown = shownView();
+    s.view = shown.view;
     renderKiosk(bar, s, now(), foot);
+    renderViewToggle(views, shown, { components: s.components, onPick: pickView });
     tellFrame(false);
   };
   // #569: the pipeline's runs beside the view, CI-page style.
   if (side && main) startRuns({ side, main }, { fetchJson, now, scenarios: SCENARIOS });
-  if (frame) {
-    frame.src = frameSrc(origin);
+  // #571: whether the repo offers the components zoom (a terragucci.components.json), read before the frame opens so it opens on the step's view.
+  const openFrame = () => {
+    if (!frame) return;
+    frame.src = frameSrc(origin, viewZoom(shownView().view));
     // The frame reads its graph after load; tell it again once it has had the time.
     frame.addEventListener("load", () => {
       for (const ms of [1500, 4000, 8000]) setTimeout(() => tellFrame(true), ms);
     });
-  }
+  };
+  void fetchJson("/api/project").then((p) => {
+    s.components = !!(p && !p.error && p.terragucciComponents);
+    openFrame();
+    draw();
+  });
 
   const reports = async (fresh) => {
     s.answer = await fetchJson(`/api/terragucci${fresh ? "?fresh=1" : ""}`);

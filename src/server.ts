@@ -2184,6 +2184,9 @@ export function createApp(
           ...(decl.pipeline.forge ? { forge: decl.pipeline.forge } : {}),
           ...(decl.pipeline.path ? { pipeline: decl.pipeline.path } : {}),
           jobs: Object.values(componentJobs(decl)),
+          // component -> the root it applies: the live marks' join onto the
+          // reports' and run view's roots (web/terragucci-components-live.js).
+          roots: componentRootMap(decl),
           waveTitles: titles,
           resources: await terragucciResources(decl, opts),
         },
