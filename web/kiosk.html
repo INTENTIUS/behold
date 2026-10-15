@@ -16,20 +16,29 @@
         --edge: #56596d; --managed: #a6e3a1; --foreign: #f9e2af; --pending: #89b4fa;
         --degraded: #f38ba8; --neutral: #6d7187; --runtime: #94e2d5;
         --rule: #4e4f64; --focus: #a3b4d0; --active: #3d4660; --well: #11101f; --shadow: #050507;
+        /* behold#571: the kiosk's surfaces and ink (theme.js kioskSurfaces), the default theme's until initTheme() runs. */
+        --surface-box: #252536; --surface-pane-a: #2b2b3c; --surface-pane-b: #313142; --zebra: #cdd6f4; --soft: #cdd6f4; --muted-ink: #808395;
+        --managed-ink: #a6e3a1; --foreign-ink: #f9e2af; --pending-ink: #89b4fa; --degraded-ink: #f38ba8; --runtime-ink: #94e2d5;
         --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
         --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       }
       * { box-sizing: border-box; }
+      /* behold#571: the kiosk's text is the softened ink, its secondary text and state colours the ones held legible on every surface. */
+      body { --fg: var(--soft); --muted: var(--muted-ink); --managed: var(--managed-ink); --foreign: var(--foreign-ink); --pending: var(--pending-ink); --degraded: var(--degraded-ink); --runtime: var(--runtime-ink); --zebra-row: color-mix(in srgb, var(--zebra) 3.5%, transparent); }
       /* #569 step 3: one screen. The bar is the narration, the frame is
          behold's own view of the change, the foot is the plan's facts. Sizes
          follow the screen's width, so a TV reads it from across a room. */
       html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: clamp(13px, 0.82vw, 20px)/1.4 var(--font-ui); overflow: hidden; }
       body { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+      #k-head { position: relative; }
       /* #569: the pipeline's runs (left), the selected run's jobs, steps and
          log (middle), behold's view of the change (right). */
-      #stage { display: grid; grid-template-columns: minmax(15em, 18%) minmax(26em, 34%) minmax(0, 1fr); min-height: 0; }
-      #runs-side { overflow-y: auto; border-right: 1px solid var(--rule); background: var(--panel); }
-      #runs-main { overflow: hidden; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--rule); }
+      /* behold#571: each pane its own surface, a gap of the page between them. */
+      #stage { display: grid; grid-template-columns: minmax(15em, 18%) minmax(26em, 34%) minmax(0, 1fr); gap: 5px; padding: 0 5px; min-height: 0; background: var(--bg); }
+      #runs-side { overflow-y: auto; background: var(--surface-pane-b); border-radius: 6px 6px 0 0; }
+      #runs-main { overflow: hidden; display: flex; flex-direction: column; min-height: 0; background: var(--surface-pane-a); border-radius: 6px 6px 0 0; }
+      #k-runs-toggle { display: none; }
+      .r-run:nth-child(even of .r-run), .r-job:nth-child(even of .r-job), .r-log-line:nth-child(even of .r-log-line) { background: var(--zebra-row); }
       .r-side-head { padding: 0.8em 1em 0.5em; }
       .r-side-title { font-weight: 700; font-size: 1.05em; }
       .r-side-note { color: var(--muted); font-size: 0.82em; margin-top: 0.15em; }
@@ -73,7 +82,7 @@
       .r-caret { color: var(--muted); width: 0.8em; font-size: 0.8em; }
       .r-step-name { font-size: 0.88em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .r-open > .r-step-line { background: color-mix(in srgb, var(--active) 60%, transparent); }
-      .r-log { margin: 0.2em 0.6em 0.4em 1.6em; padding: 0.5em 0; background: var(--well); border-radius: 6px; font: 0.76em/1.45 var(--font-mono);
+      .r-log { margin: 0.2em 0.6em 0.4em 1.6em; padding: 0.5em 0; background: var(--surface-pane-b); border-radius: 6px; font: 0.76em/1.45 var(--font-mono);
         white-space: pre-wrap; overflow-wrap: anywhere; overflow-y: auto; max-height: 52vh; min-height: 6em; }
       .r-log-line { display: grid; grid-template-columns: 3.2em 1fr; gap: 0.8em; padding: 0 0.8em 0 0; }
       .r-ln { color: var(--muted); text-align: right; user-select: none; opacity: 0.7; }
@@ -86,26 +95,65 @@
       @media (prefers-reduced-motion: no-preference) { .r-log-live { animation: r-blink 1s steps(2) infinite; } }
       @keyframes r-blink { 50% { opacity: 0; } }
       .r-note { color: var(--muted); padding: 0 1em; font-size: 0.88em; }
-      #bar { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 0.45em 1.6em; align-items: start;
-        padding: 0.55em 1.4em 0.6em; background: var(--panel); border-bottom: 1px solid var(--rule); }
+      /* behold#571: a log line's feature: an outlined chip on its first line in the job, a faint dot after; its note opens under the line. */
+      .r-ann { font: 600 0.82em var(--font-ui); color: var(--fg); background: transparent; border: 1px solid var(--rule); border-radius: 999px; padding: 0 0.55em; margin-left: 0.3em; cursor: pointer; white-space: nowrap; vertical-align: 0.05em; }
+      .r-ann:hover, .r-ann:focus-visible { border-color: var(--focus); }
+      .r-ann-dot { display: inline-block; width: 0.55em; height: 0.55em; padding: 0; margin-left: 0.45em; border-radius: 50%; border: 0; background: var(--muted); opacity: 0.55; cursor: pointer; vertical-align: 0.1em; }
+      .r-ann-dot:hover { opacity: 1; }
+      .r-ann-terragucci { border-color: color-mix(in srgb, var(--pending) 70%, transparent); }
+      .r-ann-chant { border-color: color-mix(in srgb, var(--runtime) 70%, transparent); }
+      .r-ann-choudoufu, .r-ann-behold { border-color: color-mix(in srgb, var(--foreign) 70%, transparent); }
+      .r-ann-dot.r-ann-terragucci { background: var(--pending); } .r-ann-dot.r-ann-chant { background: var(--runtime); }
+      .r-ann-note { grid-column: 2; margin: 0.25em 0 0.45em; padding: 0.45em 0.7em; border-left: 3px solid var(--focus); background: var(--surface-box); border-radius: 0 6px 6px 0; font: 1.12em/1.4 var(--font-ui); white-space: normal; }
+      .r-ann-note-head { font: 600 0.8em var(--font-mono); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); border: 0; }
+      .r-ann-note-text { margin: 0.15em 0 0.2em; color: var(--fg); }
+      .r-ann-more { color: var(--pending); }
+      .r-flash { background: color-mix(in srgb, var(--focus) 30%, transparent) !important; }
+      @media (prefers-reduced-motion: no-preference) { .r-flash { transition: background 0.6s; } }
+      .r-feats { padding: 0.1em 1em 0.45em; border-bottom: 1px solid var(--rule); max-height: 6.2em; overflow-y: auto; scrollbar-width: thin; }
+      .r-feats-label { padding: 0.3em 0 0.15em; }
+      .r-feats-group { display: flex; flex-wrap: wrap; gap: 0.25em 0.35em; align-items: baseline; margin: 0.12em 0; }
+      .r-feats-product { font: 600 0.7em var(--font-mono); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); min-width: 7.5em; border: 0; }
+      .r-feat { font: 0.8em var(--font-ui); color: var(--fg); background: transparent; border: 1px solid var(--rule); border-radius: 999px; padding: 0.05em 0.6em; cursor: pointer; }
+      .r-feat:hover, .r-feat:focus-visible { border-color: var(--focus); background: var(--zebra-row); }
+      /*
+       * behold#571: the header in fixed boxes. The title, the card, the step
+       * line, and the hold's box each have a height that holds their text
+       * budget at 1600x1000 and 1920x1080 (terragucci#1061: the card's fields
+       * 120, 220 and 120 characters, the step 200); more scrolls inside the
+       * box, with a fade at the edge, so the panes below never move.
+       */
+      #bar { position: relative; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 0.4em 0.9em; align-items: stretch;
+        padding: 0.45em 1em 0.5em; background: var(--bg); }
       #bar > .k-empty { grid-column: 1 / -1; }
-      /* behold#571: the problem the demo solves, always on, across the bar's top. */
-      .k-intro { grid-column: 1 / -1; margin: 0; font-size: 1em; line-height: 1.35; color: var(--fg); }
+      .k-left { display: grid; grid-template-rows: var(--k-title-h) var(--k-card-h) var(--k-step-h); gap: 0.35em; min-width: 0; }
+      :root { --k-title-h: 1.8em; --k-card-h: 6.2em; --k-step-h: 3.35em; }
+      .k-box { min-height: 0; overflow-y: auto; scrollbar-width: thin; background: var(--surface-box); border-radius: 6px; padding: 0.35em 0.7em; }
+      .k-box.k-more-below { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.3em), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 1.3em), transparent); }
+      .k-box.k-more-above { -webkit-mask-image: linear-gradient(to top, #000 calc(100% - 1.3em), transparent); mask-image: linear-gradient(to top, #000 calc(100% - 1.3em), transparent); }
+      .k-box.k-more-above.k-more-below { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 1.3em, #000 calc(100% - 1.3em), transparent); mask-image: linear-gradient(to bottom, transparent, #000 1.3em, #000 calc(100% - 1.3em), transparent); }
+      .k-box-title { background: transparent; padding: 0.1em 0.1em 0; overflow: hidden; }
+      /* behold#571: between scenarios the card's box carries what the demo is about. */
+      .k-intro { margin: 0; font-size: 1.12em; line-height: 1.4; color: var(--fg); }
+      .k-intro-head { display: block; font: 600 0.62em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 0.15em; }
       .k-kicker { font: 600 0.58em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-right: 0.9em; vertical-align: 0.2em; white-space: nowrap; }
       .k-cycle { color: var(--muted); font: 0.78em var(--font-mono); white-space: nowrap; }
-      .k-title { margin: 0 0 0.2em; font-size: 1.35em; line-height: 1.2; }
+      .k-title { margin: 0; font-size: 1.3em; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       /* behold#571: the scenario's card, three labelled rows under the title. */
-      .k-about { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.08em 0.9em; align-items: baseline; margin: 0 0 0.35em; font-size: 0.88em; line-height: 1.25; }
+      .k-about { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.08em 0.9em; align-items: baseline; margin: 0; font-size: 0.88em; line-height: 1.25; }
       .k-about-label { font: 600 0.74em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
       .k-about-text { margin: 0; color: var(--fg); }
       .k-muted { color: var(--muted); margin: 0.25em 0; }
-      .k-step { border-left: 4px solid var(--pending); padding: 0.1em 0 0.1em 0.8em; margin: 0; font-size: 0.95em; line-height: 1.3; }
+      .k-step { border-left: 4px solid var(--pending); padding: 0 0 0 0.7em; margin: 0; font-size: 0.95em; line-height: 1.3; }
       .k-step-word { font: 600 0.72em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-right: 0.7em; }
       .k-step-waiting { border-left-color: var(--foreign); }
       .k-step-failed, .k-step-stalled { border-left-color: var(--degraded); }
       .k-step-applied { border-left-color: var(--managed); }
       .k-step-reset { border-left-color: var(--neutral); }
-      .k-right { display: grid; gap: 0.45em; align-content: start; }
+      /* The right column takes the left's height and never sets it: its hold box scrolls instead. */
+      .k-right { display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 0.35em; min-width: 0; min-height: 0; contain: size; }
+      .k-where { padding-right: 13em; flex-wrap: nowrap; }
+      .k-next .k-cycle { margin-left: auto; }
       .k-where { display: flex; flex-wrap: wrap; gap: 0.35em 1em; align-items: center; }
       .k-strip { list-style: none; display: flex; flex-wrap: wrap; gap: 0.35em; padding: 0; margin: 0; }
       .k-stop { font: 0.82em var(--font-mono); padding: 0.25em 0.7em; border-radius: 999px; border: 1px solid var(--rule); color: var(--muted); }
@@ -117,6 +165,20 @@
       .k-action { font-family: var(--font-mono); }
       .k-when { color: var(--foreign); font-family: var(--font-mono); }
       .k-approve { border-left: 4px solid var(--foreign); padding-left: 0.8em; }
+      /* behold#571: "How this hold ends": four rows that light from the records. */
+      .k-ap-head { font: 600 0.7em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 0.1em; }
+      .k-ap-head .k-ap-plan { text-transform: none; letter-spacing: 0; color: var(--fg); font-weight: 400; }
+      .k-ap-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.05em; }
+      .k-ap-row { display: grid; grid-template-columns: 1em 6.4em minmax(0, 1fr); gap: 0 0.35em; align-items: baseline; font-size: 0.84em; line-height: 1.28; }
+      .k-ap-mark { width: 0.75em; height: 0.75em; border-radius: 50%; border: 2px solid var(--muted); display: inline-block; align-self: start; margin-top: 0.25em; }
+      .k-ap-lit .k-ap-mark { background: var(--managed); border-color: var(--managed); }
+      .k-ap-going .k-ap-mark { border-color: var(--foreign); background: linear-gradient(90deg, var(--foreign) 50%, transparent 50%); }
+      .k-ap-label { font: 600 0.82em var(--font-mono); text-transform: uppercase; letter-spacing: 0.04em; color: var(--fg); }
+      .k-ap-dim .k-ap-label, .k-ap-dim .k-ap-text { color: var(--muted); }
+      .k-ap-facts { color: var(--muted); font-size: 0.92em; margin-left: 0.35em; }
+      .k-ap-bad { color: var(--degraded); }
+      .k-ap-row .k-command { grid-column: 3; margin: 0.1em 0; padding: 0.25em 0.6em; font-size: 0.92em; }
+      .k-ap .r-ann { font-size: 0.78em; }
       .k-approve p { margin: 0.15em 0; }
       .k-approve-gloss { color: var(--fg); font-size: 0.92em; }
       .k-approve-then { color: var(--muted); font-size: 0.92em; }
@@ -127,7 +189,7 @@
       #view-pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
       #view { display: block; width: 100%; flex: 1; min-height: 0; border: 0; background: var(--bg); }
       /* #571: the toggle between the two views, over the frame by the view's caption. */
-      #views { display: flex; align-items: center; gap: 0.9em; padding: 0.45em 1em; border-bottom: 1px solid var(--rule); background: var(--panel); }
+      #views { display: flex; align-items: center; gap: 0.9em; padding: 0.45em 1em; border-bottom: 1px solid var(--rule); background: var(--surface-pane-a); border-radius: 6px 6px 0 0; }
       #views[hidden] { display: none; }
       .k-views { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; overflow: hidden; }
       .k-view { font: 600 0.85em var(--font-ui); color: var(--muted); background: transparent; border: 0; padding: 0.3em 0.95em; cursor: pointer; }
@@ -136,13 +198,25 @@
       .k-view-on { color: var(--bg); background: var(--pending); }
       .k-view-on:hover { color: var(--bg); }
       .k-view-note { color: var(--muted); font-size: 0.8em; }
-      #foot { display: flex; flex-wrap: wrap; gap: 0.2em 1.6em; padding: 0.55em 1.6em; border-top: 1px solid var(--rule); background: var(--panel); font-size: 0.85em; }
+      #foot { display: flex; flex-wrap: wrap; gap: 0.2em 1.6em; padding: 0.5em 1.6em; border-top: 1px solid var(--rule); background: var(--surface-box); font-size: 0.85em; }
       .k-legend { color: var(--muted); flex-basis: 100%; }
       /* behold#571: a tool's page. Its name (and logo where allowed) before the scenario, the replay's banner, the credit. */
       .k-brand { display: inline-flex; align-items: center; gap: 0.35em; margin-right: 0.8em; color: var(--fg); text-decoration: none; font-weight: 700; vertical-align: 0.05em; }
       .k-brand:hover .k-brand-name { text-decoration: underline; }
       .k-brand-logo { width: 1.25em; height: 1.25em; }
-      .k-replay { grid-column: 1 / -1; margin: 0; padding: 0.25em 0.7em; border-left: 4px solid var(--neutral); background: var(--well); color: var(--fg); font-size: 0.92em; }
+      .k-replay { grid-column: 1 / -1; margin: 0; padding: 0.2em 0.7em; padding-right: 16em; border-left: 4px solid var(--neutral); background: var(--surface-box); color: var(--fg); font-size: 0.92em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      /* behold#571: "What is this?" and the theme, at the header's top right, outside the boxes that redraw. */
+      #k-tools { position: absolute; top: 0.4em; right: 1em; z-index: 5; display: flex; gap: 0.7em; align-items: center; font-size: 0.8em; }
+      .k-what { font: inherit; color: var(--pending); background: transparent; border: 0; padding: 0.1em 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+      #k-what-pop { position: absolute; top: 1.8em; right: 0; width: min(34em, calc(100vw - 32px)); padding: 0.7em 0.9em; background: var(--surface-pane-b); color: var(--fg); border: 1px solid var(--focus);
+        border-radius: 8px; box-shadow: 0 6px 24px color-mix(in srgb, var(--shadow) 70%, transparent); font-size: 1.15em; line-height: 1.45; }
+      #k-what-pop[hidden] { display: none; }
+      #k-what-pop p { margin: 0; }
+      .k-menu summary { cursor: pointer; color: var(--muted); list-style: none; }
+      .k-menu summary::-webkit-details-marker { display: none; }
+      .k-menu summary::after { content: " ▾"; }
+      .k-menu[open] summary { color: var(--fg); }
+      .k-menu-body { position: absolute; right: 0; top: 1.8em; padding: 0.5em; background: var(--surface-pane-b); border: 1px solid var(--rule); border-radius: 8px; }
       .k-credit { color: var(--muted); flex-basis: 100%; }
       .k-credit-link { color: var(--fg); }
       .k-nograph-note { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 0.88em; }
@@ -150,14 +224,56 @@
       body.k-nograph #stage { grid-template-columns: minmax(15em, 22%) minmax(0, 1fr); }
       body.k-nograph #view-pane { display: none; }
       .k-fact { color: var(--fg); }
-      @media (max-width: 900px) { #bar { grid-template-columns: 1fr; } #stage, body.k-nograph #stage { grid-template-columns: 1fr; } }
+      @media (max-width: 900px) and (min-width: 601px) { #bar { grid-template-columns: 1fr; } #stage, body.k-nograph #stage { grid-template-columns: 1fr; } }
+      /*
+       * behold#571: a phone. One column that scrolls as a page: the header
+       * (its boxes as tall as their text), the graph, then the runs and their
+       * logs behind "Runs and logs". Nothing wider than the screen.
+       */
+      @media (max-width: 600px) {
+        html, body { height: auto; overflow-x: hidden; overflow-y: auto; font-size: 14px; }
+        body { display: block; }
+        #bar { display: block; padding: 0.5em 16px 0.6em; }
+        #bar > * + * { margin-top: 0.45em; }
+        .k-left, .k-right { display: block; contain: none; }
+        .k-left > * + *, .k-right > * + * { margin-top: 0.4em; }
+        .k-box { height: auto; max-height: none; overflow: visible; -webkit-mask-image: none !important; mask-image: none !important; }
+        .k-title { white-space: normal; }
+        .k-where { padding-right: 0; }
+        .k-replay { padding-right: 0.7em; white-space: normal; }
+        #k-tools { position: static; justify-content: flex-end; margin: 0; padding: 0.4em 16px 0; }
+        #k-what-pop { right: 16px; left: 16px; width: auto; top: 2.2em; }
+        .k-ap-row { grid-template-columns: 1.1em 5.6em minmax(0, 1fr); }
+        #stage, body.k-nograph #stage { display: flex; flex-direction: column; padding: 0; gap: 0; }
+        #view-pane { order: 1; height: 64vh; }
+        body.k-nograph #view-pane { display: none; }
+        #k-runs-toggle { order: 2; display: block; margin: 0.6em 16px; padding: 0.6em 1em; font: 600 1em var(--font-ui); color: var(--fg); background: var(--surface-pane-b); border: 1px solid var(--rule); border-radius: 8px; cursor: pointer; text-align: left; }
+        #k-runs-toggle::after { content: " ▸"; }
+        body.k-runs-open #k-runs-toggle::after { content: " ▾"; }
+        #runs-side { order: 3; display: none; max-height: 50vh; border-radius: 0; }
+        #runs-main { order: 4; display: none; height: 85vh; border-radius: 0; }
+        body.k-runs-open #runs-side, body.k-runs-open #runs-main { display: flex; flex-direction: column; }
+        body.k-runs-open #runs-side { display: block; }
+        .r-log { margin-left: 0.4em; max-height: 60vh; }
+        .r-log-line { grid-template-columns: 2.4em 1fr; gap: 0.5em; }
+        .r-ann-note { grid-column: 1 / -1; }
+        #foot { padding: 0.5em 16px; }
+      }
     </style>
   </head>
   <body>
-    <header id="bar" aria-live="polite"></header>
+    <div id="k-head">
+      <div id="k-tools">
+        <button type="button" class="k-what" aria-expanded="false" aria-controls="k-what-pop">What is this?</button>
+        <details class="k-menu"><summary>Theme</summary><div class="k-menu-body" id="k-theme"></div></details>
+        <div id="k-what-pop" role="dialog" aria-label="What is this?" hidden></div>
+      </div>
+      <header id="bar" aria-live="polite"></header>
+    </div>
     <div id="stage">
       <nav id="runs-side" aria-label="pipeline runs"></nav>
       <section id="runs-main" aria-live="polite"></section>
+      <button type="button" id="k-runs-toggle" aria-expanded="false">Runs and logs</button>
       <section id="view-pane">
         <div id="views" hidden></div>
         <iframe id="view" title="behold's view of the change"></iframe>
@@ -171,7 +287,10 @@
       initTheme();
       // behold#571: /<tool> serves this page with its tool in a meta tag; /kiosk has none.
       startKiosk(
-        { bar: document.getElementById("bar"), frame: document.getElementById("view"), foot: document.getElementById("foot"), side: document.getElementById("runs-side"), main: document.getElementById("runs-main"), views: document.getElementById("views") },
+        {
+          bar: document.getElementById("bar"), frame: document.getElementById("view"), foot: document.getElementById("foot"), side: document.getElementById("runs-side"), main: document.getElementById("runs-main"), views: document.getElementById("views"),
+          tools: { what: document.querySelector(".k-what"), pop: document.getElementById("k-what-pop"), theme: document.getElementById("k-theme"), runsToggle: document.getElementById("k-runs-toggle") },
+        },
         { tool: pageTool(document) },
       );
     </script>

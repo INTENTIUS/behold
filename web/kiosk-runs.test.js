@@ -183,3 +183,43 @@ describe("the runs for a viewer new to the demo (behold#571)", () => {
     expect(logRows(own.log)).toEqual(own.log.map((text, i) => ({ n: i + 1, text })));
   });
 });
+
+describe("an artifact's upload and download fold with the set-up (behold#571)", () => {
+  it("knows upload-artifact's and download-artifact's lines", () => {
+    for (const l of [
+      "With the provided path, there will be 9 files uploaded",
+      "Starting artifact upload",
+      "For more detailed logs during the artifact upload process, enable step-debugging: https://docs.github.com/actions/monitoring-and-troubleshooting-workflows/enabling-debug-logging#enabling-step-debug-logging",
+      "Artifact name is valid!",
+      'Container for artifact "terragucci-report-apply-wave-1" successfully created. Starting upload of file(s)',
+      "Total size of all the files uploaded is 10011 bytes",
+      "File upload process has finished. Finalizing the artifact upload",
+      "Artifact has been finalized. All files have been successfully uploaded!",
+      "The raw size of all the files that were specified for upload is 38546 bytes",
+      "The size of all the files that were uploaded is 10011 bytes. This takes into account any gzip compression used to reduce the upload size, time and storage",
+      "Note: The size of downloaded zips can differ significantly from the reported size. For more information see: https://github.com/actions/upload-artifact#zipped-artifact-downloads ",
+      "Artifact terragucci-report-apply-wave-1 has been successfully uploaded!",
+      "Starting download for terragucci-report",
+      "Directory structure has been setup for the artifact",
+      "Total number of files that will be downloaded: 16",
+      "Artifact terragucci-report was downloaded to /workspace/terragucci-admin/demo/terragucci-report",
+      "Artifact download has finished successfully",
+    ]) expect(setupLine(l), l).toBe(true);
+    expect(setupLine("wave 2: report copied to demo/forgejo:3000/x/tf-apply-wave-2")).toBe(false);
+  });
+
+  it("folds a whole upload step, its blank lines with it, into the one row", () => {
+    const keep = run(444).jobs.find((j) => j.name === "apply-wave-1").steps.find((s) => s.name === "Keep the apply report");
+    const rows = logRows(keep.log);
+    expect(rows).toEqual([{ setup: keep.log.length, open: false }]);
+  });
+
+  it("keeps a blank line that follows terragucci's own lines", () => {
+    expect(logRows(["3 members: 3 groups, 0 destroys or replacements.", "", "Group b6b888372b35: 1 member (outlier), change:"]).map((r) => r.n)).toEqual([1, 2, 3]);
+  });
+
+  it("never opens an upload step by default, even when it has the most lines", () => {
+    const check = run(444).jobs.find((j) => j.name === "check").steps;
+    expect(check[defaultStep(check)].name).toBe("Format check and validate, every root");
+  });
+});

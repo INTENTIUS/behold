@@ -13,7 +13,7 @@ import { createRefreshQueue } from "./refresh-queue.js";
 import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine } from "./view-url.js";
 import { quietCardLines, readEmbed, selectMessage, viewFromMessage } from "./embed.js";
 import { WORDS as POP_WORDS, cardRoot as popCardRoot, placePopover, popReduce, popState, resourcePopover, rootPopover } from "./kiosk-popover.js";
-import { cssString, hoverCss, hoverFromMessage, hoverLinks, hoverMessage, isLightBg, rootColour, rootText } from "./kiosk-roots.js";
+import { cssString, hoverCss, hoverFromMessage, hoverLinks, hoverMessage, isLightBg, rootPaint, rootText } from "./kiosk-roots.js";
 import { gateCards } from "./workspace-gates.js";
 import { cornerOf, estateLine, hrefOf as tgHref, legend as tgLegend, markLine, rootRows as tgRootRows, waveCards } from "./terragucci.js";
 import { laneElement as tgLane, rootOfCard as tgRootOfCard, historyElement as tgHistoryLane } from "./terragucci-timeline.js";
@@ -4180,7 +4180,7 @@ function kioskDots(svg) {
   if (!roots.length) return;
   const light = kioskLight();
   const dotBy = (text, root) => {
-    const colour = rootColour(root, roots, { light });
+    const colour = rootPaint(root, roots, { light });
     if (!colour) return;
     let bb;
     try {
@@ -4195,7 +4195,8 @@ function kioskDots(svg) {
     c.setAttribute("cx", String(bb.x + bb.width + 9));
     c.setAttribute("cy", String(bb.y + bb.height / 2));
     c.setAttribute("r", "5.5");
-    c.setAttribute("fill", colour);
+    // The theme's own root colour (--root-<i>): a style, since a fill attribute takes no var().
+    c.style.fill = colour;
     c.setAttribute("pointer-events", "none");
     text.parentNode.insertBefore(c, text.nextSibling);
   };
@@ -4293,7 +4294,9 @@ function kioskPopRender() {
     }
     if (content.more > 0) ul.appendChild(Object.assign(document.createElement("li"), { className: "k-pop-more", textContent: `and ${content.more} more` }));
   }
-  add("p", "k-pop-hint", kioskPop.pinned ? POP_WORDS.pinnedHint : POP_WORDS.pinHint);
+  // behold#571: a finger opens the popover with a tap, so a touch screen reads the tap's words.
+  const touchOnly = typeof matchMedia === "function" && matchMedia("(hover: none)").matches;
+  add("p", "k-pop-hint", kioskPop.pinned ? (touchOnly ? POP_WORDS.tapPinnedHint : POP_WORDS.pinnedHint) : POP_WORDS.pinHint);
   pop.hidden = false;
   const cb = card.getBoundingClientRect();
   const pb = pop.getBoundingClientRect();
@@ -4340,6 +4343,8 @@ function wireKioskFrame() {
   window.addEventListener("message", (e) => {
     if (!embedOpts.host || e.origin !== embedOpts.host) return;
     if (e.data && e.data.type === "behold:unpin") return kioskPopEvent({ type: "outside" });
+    // behold#571: the kiosk's theme picker moved; follow it here without a reload.
+    if (e.data && e.data.type === "behold:theme" && typeof e.data.name === "string") return void setTheme(e.data.name, { persist: false });
     const h = hoverFromMessage(e.data);
     if (h === undefined) return;
     kioskHostHover = h;
@@ -5983,6 +5988,54 @@ function ensureZoomControls(host) {
     },
     { passive: false },
   );
+  // behold#571: on a touch screen (the kiosk on a phone), one finger pans and two pinch to zoom.
+  let touch = null;
+  const touchPoints = (e) => [...e.touches].map((t) => ({ x: t.clientX, y: t.clientY }));
+  host.addEventListener(
+    "touchstart",
+    (e) => {
+      if (!vb) return;
+      touch = { pts: touchPoints(e), moved: false };
+    },
+    { passive: true },
+  );
+  host.addEventListener(
+    "touchmove",
+    (e) => {
+      const s = currentSvg();
+      if (!touch || !vb || !s) return;
+      const pts = touchPoints(e);
+      const r = s.getBoundingClientRect();
+      e.preventDefault();
+      if (pts.length >= 2 && touch.pts.length >= 2) {
+        const dist = (p) => Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1;
+        const mid = (p) => ({ x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2 });
+        const f = dist(touch.pts) / dist(pts);
+        const m = mid(pts);
+        const m0 = mid(touch.pts);
+        const cx = vb[0] + ((m.x - r.left) / r.width) * vb[2];
+        const cy = vb[1] + ((m.y - r.top) / r.height) * vb[3];
+        const nw = Math.min(vbInit[2] * 3, Math.max(vbInit[2] / 60, vb[2] * f));
+        const nh = nw * (vb[3] / vb[2]);
+        vb[0] = cx - ((cx - vb[0]) * nw) / vb[2] - ((m.x - m0.x) / r.width) * nw;
+        vb[1] = cy - ((cy - vb[1]) * nh) / vb[3] - ((m.y - m0.y) / r.height) * nh;
+        vb[2] = nw;
+        vb[3] = nh;
+      } else if (pts.length === 1 && touch.pts.length === 1) {
+        vb[0] -= ((pts[0].x - touch.pts[0].x) / r.width) * vb[2];
+        vb[1] -= ((pts[0].y - touch.pts[0].y) / r.height) * vb[3];
+      }
+      if (!touch.moved && touch.pts.length && Math.abs(pts[0].x - touch.pts[0].x) + Math.abs(pts[0].y - touch.pts[0].y) > 3) touch.moved = true;
+      if (touch.moved) panMoved = true;
+      touch.pts = pts;
+      vbAtFit = false;
+      applyVB();
+    },
+    { passive: false },
+  );
+  host.addEventListener("touchend", (e) => {
+    touch = e.touches.length ? { pts: touchPoints(e), moved: !!(touch && touch.moved) } : null;
+  });
   let drag = false;
   let px = 0;
   let py = 0;
@@ -6479,6 +6532,8 @@ function ensureLayoutDrag(host) {
   layoutWired = true;
   host.addEventListener("pointerdown", (e) => {
     if (e.button !== 0 || !layoutIndex) return;
+    // behold#571: in the kiosk's bare frame a finger pans the graph; it never moves a card.
+    if (e.pointerType === "touch" && embedOpts.bare) return;
     const t = layoutTargetOf(e);
     if (!t || !currentSvg()) return;
     layoutDrag = { ...t, x0: e.clientX, y0: e.clientY, base: layoutDeltas[t.id] || {}, moved: false };

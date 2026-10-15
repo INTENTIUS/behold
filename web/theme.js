@@ -186,6 +186,114 @@ export function tokensFor(th) {
     // pending change).
     runtime: th.palette[6],   // cyan   — runtime child (expected, not drift)
     cat: [1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14].map((i) => th.palette[i]),
+    ...kioskSurfaces(th),
+  };
+}
+
+// --- the kiosk's surfaces (behold#571) -------------------------------------
+// The kiosk lays several panes side by side; on one flat near-black they run
+// together. Each region gets its own calm level instead: the page, a step up
+// for the header's boxes, and two alternating pane levels, with a zebra tint
+// for list rows and softened ink for text. All derived from the palette, so
+// every theme gets them; theme.test.js holds the floors across the corpus.
+
+/** The zebra row's tint: this share of --fg over the row's surface. */
+export const ZEBRA = 0.035;
+/** The surfaces' steps in OKLCH lightness from --bg, toward --fg's side. */
+export const SURFACE_STEPS = { box: 0.03, paneA: 0.055, paneB: 0.08 };
+/** How bright body ink may get against --bg: softer than a pure white on near-black. */
+export const SOFT_CEILING = 13;
+/** The least OKLCH lightness between two neighbouring levels, so each reads as its own box. */
+export const MIN_STEP = 0.02;
+
+/** The root dots' hues, by theme (behold#571): violet, orange, orchid, silver, tan. Never a state's. */
+export const ROOT_HUES = {
+  dark: ["#b392f0", "#ff9f5a", "#e66ce8", "#e4e4e4", "#c89b6d"],
+  light: ["#7c3aed", "#c2410c", "#a21caf", "#334155", "#8b5a2b"],
+};
+
+/** A colour pushed until it clears `floor` against every one of `against` (worst first). */
+function pushAll(hex, against, floor, dark) {
+  let out = hex;
+  for (let i = 0; i < 4; i++) {
+    const worst = against.reduce((w, b) => (contrast(out, b) < contrast(out, w) ? b : w), against[0]);
+    if (contrast(out, worst) >= floor) return out;
+    out = pushForContrast(out, worst, floor, dark);
+  }
+  return out;
+}
+
+/**
+ * The surfaces and the ink that reads on them: `surfaceBox` (the header's
+ * boxes), `surfacePaneA` and `surfacePaneB` (the panes, alternating), each a
+ * step further from --bg in OKLCH lightness (lighter on a dark theme, darker
+ * on a light one; the other way where the palette leaves no room), `zebra`
+ * (the tint list rows alternate with), `soft` (body ink: --fg, eased toward
+ * --bg where it would glare, and never under 4.5:1 on any surface or zebra
+ * row), `mutedInk` (secondary ink, 3:1 on all of them), each state colour's
+ * `*Ink` (3:1 on all of them) and `roots` (the root dots, 3:1 on all of them).
+ */
+export function kioskSurfaces(th) {
+  const b = hexToOklch(th.bg);
+  const f = hexToOklch(th.fg);
+  // Toward fg's side (lighter on a dark theme), unless that runs out of room or
+  // eats the text's headroom on a mid-tone ground (Blue Dolphin, Hot Dog Stand).
+  // The ink's side: --fg's, unless even the far end of it can't clear 4.5:1 with
+  // room to spare (white on Hot Dog Stand's red): then the other side.
+  let inkUp = f.L >= b.L;
+  if (contrast(inkUp ? "#ffffff" : "#000000", th.bg) < 5.5) inkUp = !inkUp;
+  const fgSide = inkUp === f.L >= b.L;
+  const towardInk = inkUp ? 1 : -1;
+  const roomFor = (d) => (d > 0 ? b.L + 0.12 <= 0.97 : b.L - 0.12 >= 0.03);
+  const want = fgSide && contrast(th.fg, th.bg) >= 7 ? towardInk : -towardInk;
+  const dir = roomFor(want) ? want : -want;
+  // Each level at least MIN_STEP of OKLCH lightness past the one before, as the
+  // colour rounds to 8 bits (near black, small steps all round to #000000).
+  const levels = [];
+  let prev = b.L;
+  for (const dl of [SURFACE_STEPS.box, SURFACE_STEPS.paneA - SURFACE_STEPS.box, SURFACE_STEPS.paneB - SURFACE_STEPS.paneA]) {
+    let want = prev + dir * dl;
+    let hex = oklchToHex({ ...b, L: clamp(want, 0, 1) });
+    for (let i = 0; i < 40 && Math.abs(hexToOklch(hex).L - prev) < MIN_STEP; i++) {
+      want += dir * 0.005;
+      hex = oklchToHex({ ...b, L: clamp(want, 0, 1) });
+    }
+    levels.push(hex);
+    prev = hexToOklch(hex).L;
+  }
+  const [surfaceBox, surfacePaneA, surfacePaneB] = levels;
+  const surfaces = [th.bg, surfaceBox, surfacePaneA, surfacePaneB];
+  const grounds = [...surfaces, ...surfaces.map((s) => mix(s, th.fg, ZEBRA))];
+  const lightInk = inkUp;
+  // Body ink: --fg eased toward --bg until it sits at SOFT_CEILING, then held at 4.5:1 on every ground.
+  let soft = fgSide ? th.fg : inkUp ? "#ffffff" : "#000000";
+  if (fgSide && contrast(th.fg, th.bg) > SOFT_CEILING) {
+    let lo = 0, hi = 1;
+    for (let i = 0; i < 20; i++) {
+      const t = (lo + hi) / 2;
+      if (contrast(mix(th.fg, th.bg, t), th.bg) > SOFT_CEILING) lo = t;
+      else hi = t;
+    }
+    soft = mix(th.fg, th.bg, lo);
+  }
+  soft = pushAll(soft, grounds, 4.5, lightInk);
+  const muted = pushAll(desaturate(mix(th.bg, th.fg, 0.5), 0.75), grounds, 3, lightInk);
+  const P = th.palette;
+  const ink = (c) => pushAll(c, grounds, 3, lightInk);
+  const hues = th.dark ? ROOT_HUES.dark : ROOT_HUES.light;
+  return {
+    surfaceBox,
+    surfacePaneA,
+    surfacePaneB,
+    zebra: th.fg,
+    soft,
+    mutedInk: muted,
+    managedInk: ink(P[2]),
+    foreignInk: ink(P[3]),
+    pendingInk: ink(P[4]),
+    degradedInk: ink(P[1]),
+    runtimeInk: ink(P[6]),
+    roots: hues.map(ink),
   };
 }
 
@@ -193,6 +301,8 @@ export function tokensFor(th) {
 // block in index.html mirrors these for the DEFAULT theme — smoke/ui-smoke.mjs
 // recomputes it from here and fails if the two ever drift apart.
 const CSS_VARS = ["bg", "panel", "line", "fg", "muted", "edge", "managed", "foreign", "pending", "degraded", "neutral", "runtime", "rule", "focus", "active", "well", "shadow"];
+// behold#571: the kiosk's surfaces and ink, as --surface-box, --soft, --managed-ink and the like; the root dots as --root-0 … --root-4.
+const KIOSK_VARS = { surfaceBox: "surface-box", surfacePaneA: "surface-pane-a", surfacePaneB: "surface-pane-b", zebra: "zebra", soft: "soft", mutedInk: "muted-ink", managedInk: "managed-ink", foreignInk: "foreign-ink", pendingInk: "pending-ink", degradedInk: "degraded-ink", runtimeInk: "runtime-ink" };
 
 // pinhole (the graph painter) reads its OWN vars, `--pin-<token>` (emitted as
 // `var(--pin-token, <baked default>)`). Derive them from the active Ghostty theme so the graph
@@ -249,6 +359,8 @@ export function applyTheme(tokens = _tokens) {
   if (!tokens || typeof document === "undefined") return;
   const root = document.documentElement;
   for (const k of CSS_VARS) root.style.setProperty("--" + k, tokens[k]);
+  for (const [k, v] of Object.entries(KIOSK_VARS)) if (tokens[k]) root.style.setProperty("--" + v, tokens[k]);
+  (tokens.roots || []).forEach((c, i) => root.style.setProperty(`--root-${i}`, c));
   if (_active) { const pin = pinTokensFor(_active); for (const k of PIN_VARS) root.style.setProperty("--pin-" + k, pin[k]); }
   root.style.setProperty("color-scheme", tokens.dark ? "dark" : "light");
 }

@@ -18,6 +18,8 @@ describe("repoUrl", () => {
     expect(repoUrl("/api/project", "demo-terragrunt")).toBe("/api/project?repo=demo-terragrunt");
     expect(repoUrl("/api/terragucci?fresh=1", "demo-terragrunt")).toBe("/api/terragucci?fresh=1&repo=demo-terragrunt");
     expect(repoUrl("/api/terragucci/progress?commit=abc", "demo")).toBe("/api/terragucci/progress?commit=abc&repo=demo");
+    expect(repoUrl("/api/terragucci/lifecycle", "demo")).toBe("/api/terragucci/lifecycle?repo=demo");
+    expect(repoUrl("/api/lifecycle/history?limit=200", "demo")).toBe("/api/lifecycle/history?limit=200&repo=demo");
     expect(repoUrl("/api/terragucci/demo", "demo")).toBe("/api/terragucci/demo");
     expect(repoUrl("/api/terragucci/runs/4", "demo")).toBe("/api/terragucci/runs/4");
     expect(repoUrl("/api/project", null)).toBe("/api/project");
