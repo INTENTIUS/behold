@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { STEP_VIEW, STEP_WORDS, aboutRows, focusRoots, frameSrc, factLines, kioskView, legendWords, matchingPull, pendingApproval, renderKiosk, renderViewToggle, runPanel, runPin, stepView, viewZoom } from "./kiosk.js";
+import { STEP_VIEW, STEP_WORDS, aboutRows, approveGloss, focusRoots, introText, scenarioHead, frameSrc, factLines, kioskView, legendWords, matchingPull, pendingApproval, renderKiosk, renderViewToggle, runPanel, runPin, stepView, viewZoom } from "./kiosk.js";
 import { PICK_HOLD_MS } from "./kiosk-runs.js";
 
 const demo = (step, extra = {}) => ({ cycle: 1, scenario: "a-output", title: "t", step, label: "", started_at: "2026-10-15T03:00:00Z", next: null, pull: 7, commit: "abc12345", ...extra });
@@ -215,6 +215,85 @@ describe("which view the frame shows (#571)", () => {
       renderViewToggle(host, { view: "resources", pinned: false, secs: null }, { components: false });
       expect(host.hidden).toBe(true);
       expect(host.children).toEqual([]);
+    } finally {
+      globalThis.document = was;
+    }
+  });
+});
+
+describe("the kiosk for a viewer new to the demo (behold#571)", () => {
+  const intro = "One change can touch many Terraform states; this demo shows how terragucci applies them in order.";
+  const fakeDocument = () => {
+    const make = (tag) => {
+      const n = { tagName: tag, className: "", textContent: "", children: [] };
+      n.appendChild = (c) => (n.children.push(c), c);
+      n.append = (...cs) => cs.forEach((c) => n.children.push(typeof c === "string" ? { tagName: "#text", textContent: c, children: [] } : c));
+      n.replaceChildren = () => (n.children = []);
+      return n;
+    };
+    return { createElement: make };
+  };
+  const find = (n, cls) => (n.className.split(" ").includes(cls) ? [n] : []).concat(...(n.children || []).map((c) => (c.className !== undefined ? find(c, cls) : [])));
+  const draw = (d) => {
+    const was = globalThis.document;
+    globalThis.document = fakeDocument();
+    try {
+      const bar = document.createElement("header");
+      const foot = document.createElement("footer");
+      renderKiosk(bar, { demo: { source: "s3://demo-reports/demo", read: "2026-10-15T03:00:00Z", demo: d }, answer: null, progress: null }, new Date("2026-10-15T03:01:00Z"), foot);
+      return { bar, foot };
+    } finally {
+      globalThis.document = was;
+    }
+  };
+
+  it("shows the intro first in the bar, and none without one", () => {
+    const { bar } = draw(demo("planned", { intro }));
+    expect(bar.children[0].className).toBe("k-intro");
+    expect(bar.children[0].textContent).toBe(intro);
+    expect(find(draw(demo("planned")).bar, "k-intro")).toEqual([]);
+    expect(find(draw(demo("planned", { intro: null })).bar, "k-intro")).toEqual([]);
+    expect(introText(demo("planned", { intro: "   " }))).toBe(null);
+  });
+
+  it("says which scenario of how many, with the title and no short label", () => {
+    expect(scenarioHead(demo("planned", { index: 2, scenarios: 5, title: "The same change, read once it is built" }))).toEqual({ kicker: "Scenario 2 of 5", title: "The same change, read once it is built" });
+    const { bar } = draw(demo("planned", { index: 2, scenarios: 5, title: "The same change, read once it is built" }));
+    expect(find(bar, "k-kicker")[0].textContent).toBe("Scenario 2 of 5");
+    expect(find(bar, "k-title-text")[0].textContent).toBe("The same change, read once it is built");
+  });
+
+  it("leaves the count out when scenarios is missing, 0 or less than the index", () => {
+    expect(scenarioHead(demo("planned", { index: 2, title: "t" })).kicker).toBe("Scenario 2");
+    expect(scenarioHead(demo("planned", { index: 2, scenarios: 0, title: "t" })).kicker).toBe("Scenario 2");
+    expect(scenarioHead(demo("planned", { index: 6, scenarios: 5, title: "t" })).kicker).toBe("Scenario 6");
+  });
+
+  it("falls back to the short label without an index, demo.json's name before the table's", () => {
+    expect(scenarioHead(demo("planned", { title: "t" }))).toEqual({ kicker: "scenario 2 · A, read through .output", title: "t" });
+    expect(scenarioHead(demo("planned", { index: 0, scenarios: 5 })).kicker).toBe("scenario 2 · A, read through .output");
+    expect(scenarioHead(demo("planned", { index: null, scenarios: 0, name: "the same change, read late" })).kicker).toBe("scenario 2 · the same change, read late");
+    expect(scenarioHead(demo("reset", { scenario: "base", title: "The base", index: null, scenarios: 0, name: null }))).toEqual({ kicker: "The base", title: "The base" });
+    expect(scenarioHead(demo("planned", { scenario: "new-one", title: "A new one" }))).toEqual({ kicker: "scenario new-one", title: "A new one" });
+  });
+
+  it("has no line on where the narration was read from", () => {
+    const { foot } = draw(demo("planned", { intro }));
+    expect(JSON.stringify(foot)).not.toMatch(/narration read|s3:\/\/|nothing here writes/);
+  });
+
+  it("says who the driver is before the command it runs", () => {
+    expect(approveGloss({ wave: 2, roots: ["app"], digest: "jcs1-sha256:0accc105ba06" })).toBe("The driver stands in for a person: it approves wave 2 (app) with its own signing key.");
+    expect(approveGloss({ wave: 3, roots: [], digest: null })).toBe("The driver stands in for a person: it approves wave 3 with its own signing key.");
+    const p = progress([{ number: 2, state: "waiting", roots: ["app"], reads: [], digest: "jcs1-sha256:0accc105ba06" }]);
+    const was = globalThis.document;
+    globalThis.document = fakeDocument();
+    try {
+      const bar = document.createElement("header");
+      renderKiosk(bar, { demo: { source: "fx", read: "2026-10-15T03:00:00Z", demo: demo("waiting", { next: { action: "approve wave-2", at: null } }) }, answer: null, progress: p }, new Date("2026-10-15T03:01:00Z"));
+      const card = find(bar, "k-approve")[0];
+      expect(card.children.map((c) => c.className)).toEqual(["k-approve-gloss", "k-command", "k-approve-then"]);
+      expect(card.children[1].textContent).toBe("chant approve tf-apply wave-2 --actor <driver> --sign <driver key>");
     } finally {
       globalThis.document = was;
     }

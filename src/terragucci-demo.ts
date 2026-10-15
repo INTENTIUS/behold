@@ -18,7 +18,11 @@
  * scenario's card, which the driver reads from the scenario's about.json in
  * terragucci's example-demo/; a demo.json without it, or with null, shows no
  * card. A scenario id behold doesn't know is shown by the title the driver
- * wrote.
+ * wrote. `intro`, `name`, `scenarios` and `index` (behold#571, terragucci#1050)
+ * are optional too: the paragraph on the problem the demo solves, the
+ * scenario's short label in plain words, and how many scenarios the loop runs
+ * and which one this is (0 or null for the base). One of them of the wrong type is left out
+ * (null), never a refusal of the whole narration.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -54,6 +58,14 @@ export interface Demo {
   commit: string | null;
   /** Null when demo.json has no card for the scenario (the base, or a driver before behold#571). */
   about: DemoAbout | null;
+  /** One paragraph, the problem the demo solves (behold#571); null without one. */
+  intro: string | null;
+  /** The scenario's short label in plain words, "a new subnet" (terragucci#1050); null without one. */
+  name: string | null;
+  /** How many scenarios the loop runs (behold#571); null without it, or 0. */
+  scenarios: number | null;
+  /** This scenario's place in the loop, 1-based (behold#571); null without it. */
+  index: number | null;
 }
 
 export type DemoAnswer =
@@ -65,6 +77,8 @@ const UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const str = (v: unknown): v is string => typeof v === "string";
 const int = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v);
+
+const positive = (v: unknown): number | null => (int(v) && v > 0 ? v : null);
 
 /** What is wrong with a demo.json, or undefined when it is the fixed format. */
 export function demoProblem(doc: unknown): string | undefined {
@@ -124,6 +138,10 @@ export async function readDemo(source: TerragucciSource, now: Date = new Date())
       pull: d.pull,
       commit: d.commit,
       about: d.about ? { changes: d.about.changes, watch: d.about.watch, shows: d.about.shows } : null,
+      intro: str(d.intro) && d.intro.trim() ? d.intro.trim() : null,
+      name: str(d.name) && d.name.trim() ? d.name.trim() : null,
+      scenarios: positive(d.scenarios),
+      index: positive(d.index),
     },
   };
 }

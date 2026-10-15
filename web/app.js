@@ -10,7 +10,7 @@
 // renderPanelView never rewrites, so the select mounts once and survives re-renders).
 import { createRefreshQueue } from "./refresh-queue.js";
 import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine } from "./view-url.js";
-import { readEmbed, selectMessage, viewFromMessage } from "./embed.js";
+import { quietCardLines, readEmbed, selectMessage, viewFromMessage } from "./embed.js";
 import { gateCards } from "./workspace-gates.js";
 import { cornerOf, estateLine, hrefOf as tgHref, legend as tgLegend, markLine, rootRows as tgRootRows, waveCards } from "./terragucci.js";
 import { laneElement as tgLane, rootOfCard as tgRootOfCard, historyElement as tgHistoryLane } from "./terragucci-timeline.js";
@@ -3502,7 +3502,7 @@ function drawTgReads() {
   }
   for (const t of svg.querySelectorAll("[data-tg-hid]")) {
     t.removeAttribute("data-tg-hid");
-    t.removeAttribute("visibility");
+    if (!t.hasAttribute("data-kiosk-quiet")) t.removeAttribute("visibility");
   }
   for (const g of svg.querySelectorAll("[data-tg-dim]")) {
     g.removeAttribute("data-tg-dim");
@@ -5329,6 +5329,8 @@ function render(ir, svg, m) {
     svgEl.removeAttribute("width");
     svgEl.removeAttribute("height");
     svgEl.setAttribute("preserveAspectRatio", "xMidYMid meet");
+    // behold#571: the kiosk's frame drops the cards' kind and meta lines.
+    if (embedOpts.bare) quietCardLines(svgEl);
     setupGraphViewBox(svgEl);
     wireEdgeHighlight(svgEl, ir);
     // Mark each wave lane as a GitLab CI stage when the CI projection is loaded

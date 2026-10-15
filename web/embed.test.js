@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readEmbed, selectMessage, viewFromMessage, THEME_ALIASES } from "./embed.js";
+import { kioskQuietLine, readEmbed, selectMessage, viewFromMessage, THEME_ALIASES } from "./embed.js";
 
 describe("readEmbed (#476)", () => {
   it("reads embed, an exact host origin and a theme", () => {
@@ -61,5 +61,14 @@ describe("viewFromMessage focus (#569)", () => {
     expect(viewFromMessage({ origin: host, data: { type: "behold:view", focus: "network,other" } }, host)).toEqual({ focus: "network,other" });
     expect(viewFromMessage({ origin: host, data: { type: "behold:view", focus: null } }, host)).toEqual({ focus: null });
     expect(viewFromMessage({ origin: host, data: { type: "behold:view", focus: "" } }, host)).toEqual({ focus: null });
+  });
+});
+
+describe("kioskQuietLine (behold#571)", () => {
+  it("leaves out a card's kind and meta lines in the kiosk's frame", () => {
+    for (const t of ["Component · chant", "terraform_data · terraform", "archetype: infra", "wave: 2", " root: app "]) expect(kioskQuietLine(t)).toBe(true);
+  });
+  it("keeps the names, the states and the reads", () => {
+    for (const t of ["network", "terraform_data.http_proxy_port", "waiting", "reads network · planned · 1 unknown", "wave 2 · planned", "", null]) expect(kioskQuietLine(t)).toBe(false);
   });
 });

@@ -39,3 +39,27 @@ describe("demo.json's about (behold#571)", () => {
     expect("error" in a && a.error).toMatch(/not the demo's format: about\.shows/);
   });
 });
+
+describe("demo.json's intro, name, scenarios and index (behold#571)", () => {
+  const intro = "One change can touch many Terraform states, and this demo shows how terragucci applies them in order.";
+  it("reads them when demo.json has them", async () => {
+    const a = await readDemo(source({ ...fixture("demo-waiting.json"), intro: `  ${intro} `, name: "a new subnet", scenarios: 5, index: 2 }));
+    expect(a.demo!.intro).toBe(intro);
+    expect(a.demo!.name).toBe("a new subnet");
+    expect(a.demo!.scenarios).toBe(5);
+    expect(a.demo!.index).toBe(2);
+  });
+  it("reads a demo.json without them as null", async () => {
+    const a = await readDemo(source(fixture("demo-waiting.json")));
+    expect([a.demo!.intro, a.demo!.name, a.demo!.scenarios, a.demo!.index]).toEqual([null, null, null, null]);
+  });
+  it("reads the base's scenarios 0 and index null as none", async () => {
+    const a = await readDemo(source({ ...fixture("demo-reset.json"), scenarios: 0, index: null, name: null }));
+    expect([a.demo!.name, a.demo!.scenarios, a.demo!.index]).toEqual([null, null, null]);
+  });
+  it("leaves out one of the wrong type and keeps the narration", async () => {
+    const a = await readDemo(source({ ...fixture("demo-waiting.json"), intro: "   ", name: 3, scenarios: "5", index: 0 }));
+    expect(a.demo!.step).toBe("waiting");
+    expect([a.demo!.intro, a.demo!.name, a.demo!.scenarios, a.demo!.index]).toEqual([null, null, null, null]);
+  });
+});
