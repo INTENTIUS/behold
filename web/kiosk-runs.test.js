@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { agoWords, defaultJob, defaultStep, durationWords, jobOrder, liveRun, placeWords, sidebarRuns, splitSkipped, STATUS_TONE, triggerWords } from "./kiosk-runs.js";
+import { mergeRun, newerOf, agoWords, defaultJob, defaultStep, durationWords, jobOrder, liveRun, placeWords, sidebarRuns, splitSkipped, STATUS_TONE, triggerWords } from "./kiosk-runs.js";
 
 const FIX = join(import.meta.dirname, "..", "src", "__fixtures__", "terragucci-demo", "runs");
 const run = (id) => JSON.parse(readFileSync(join(FIX, `${id}.json`), "utf8"));
@@ -10,11 +10,12 @@ const index = () => JSON.parse(readFileSync(join(FIX, "index.json"), "utf8"));
 describe("the runs, as a CI page lists them (#569)", () => {
   it("names what started each run", () => {
     expect(triggerWords({ trigger: "plan", pull: 278 })).toBe("Plan of pull request #278");
-    expect(triggerWords({ trigger: "merge", pull: 278 })).toBe("Merge of #278 to main");
-    expect(triggerWords({ trigger: "resume", pull: 278 })).toBe("/terragucci apply on #278");
-    expect(triggerWords({ trigger: "reset", pull: null })).toBe("Reset to the base");
-    expect(triggerWords({ trigger: "base", pull: null })).toBe("The base, pushed");
+    expect(triggerWords({ trigger: "merge", pull: 278, ref: "main" })).toBe("Merge of #278 to main");
+    expect(triggerWords({ trigger: "resume", pull: 278, ref: "main" })).toBe("/terragucci apply on #278");
+    expect(triggerWords({ trigger: "reset", pull: null, ref: "main" })).toBe("Reset main to the base");
+    expect(triggerWords({ trigger: "base", pull: null, ref: "main" })).toBe("The base, pushed to main");
     expect(triggerWords({ trigger: "push", pull: null, ref: "main" })).toBe("Push to main");
+    expect(triggerWords({ trigger: "push", pull: null, ref: "demo-a-known" })).toBe("Push to branch demo-a-known");
   });
   it("never draws a wave held at the gate as a failure", () => {
     expect(STATUS_TONE.waiting).toBe("wait");
@@ -64,5 +65,34 @@ describe("the runs, as a CI page lists them (#569)", () => {
     expect(agoWords("2026-10-15T04:07:00Z", now)).toBe("3 m ago");
     expect(placeWords({ scenario: "a-output", cycle: 90 }, { "a-output": { name: "A, read through .output" } })).toBe("A, read through .output · cycle 90");
     expect(placeWords({ scenario: null, cycle: null }, {})).toBe("");
+  });
+});
+
+describe("one run, from the index and its own document (#569)", () => {
+  // The host's #528: index.json says running on demo-a-known; the run's own
+  // document, written later, says success and carries no ref.
+  const entry = { id: 528, trigger: "push", ref: "demo-a-known", status: "running", started_at: "2026-10-15T04:49:19Z", ended_at: null, jobs: [{ id: 1, name: "check", needs: [], status: "running", started_at: "2026-10-15T04:49:19Z", ended_at: null }] };
+  const doc = { id: 528, trigger: "push", status: "success", started_at: "2026-10-15T04:49:19Z", ended_at: "2026-10-15T04:49:25Z", jobs: [{ id: 1, name: "check", needs: [], status: "success", started_at: "2026-10-15T04:49:19Z", ended_at: "2026-10-15T04:49:25Z", steps: [{ name: "Set up job", status: "success", log: [] }] }] };
+  it("names the run's real ref and takes the newer status", () => {
+    const m = mergeRun(entry, doc);
+    expect(m.ref).toBe("demo-a-known");
+    expect(triggerWords(m)).toBe("Push to branch demo-a-known");
+    expect(m.status).toBe("success");
+    expect(m.ended_at).toBe("2026-10-15T04:49:25Z");
+    expect(m.jobs[0].steps.length).toBe(1);
+  });
+  it("takes the index's status when the document lags it, keeping the document's steps", () => {
+    const lagging = { ...doc, status: "running", ended_at: null, jobs: [{ ...doc.jobs[0], status: "running", ended_at: null }] };
+    const ahead = { ...entry, status: "failure", ended_at: "2026-10-15T04:49:30Z", jobs: [{ ...entry.jobs[0], status: "failure", ended_at: "2026-10-15T04:49:30Z" }] };
+    const m = mergeRun(ahead, lagging);
+    expect(m.status).toBe("failure");
+    expect(m.jobs[0]).toMatchObject({ status: "failure", ended_at: "2026-10-15T04:49:30Z" });
+    expect(m.jobs[0].steps.length).toBe(1);
+  });
+  it("never moves a status back, and a held run is ahead of a running one", () => {
+    expect(newerOf({ status: "success" }, { status: "running" }).status).toBe("success");
+    expect(newerOf({ status: "running" }, { status: "waiting" }).status).toBe("waiting");
+    expect(mergeRun(null, doc)).toBe(doc);
+    expect(mergeRun(entry, null)).toBe(entry);
   });
 });

@@ -31,25 +31,74 @@ const looksLikeAction = (name) => /^[a-z][a-z0-9+.-]*:\/\//i.test(name) || /^[\w
 /** The runner's post step of an action: "Post " and the action's address. */
 const isPostStep = (name) => /^Post /.test(name) && looksLikeAction(name.slice(5));
 
-/** What started a run, in words: "Merge to main", "Plan of pull request #278", "/terragucci apply on #278". */
+/**
+ * What started a run, in words, with the ref it ran on: "Merge of #278 to
+ * main", "Plan of pull request #278", "/terragucci apply on #278", "Push to
+ * branch demo-a-known". The ref comes from the run (index.json carries it; a
+ * run's own document may not, see mergeRun).
+ */
 export function triggerWords(run) {
   const pr = run.pull !== null && run.pull !== undefined ? `#${run.pull}` : null;
+  const ref = run.ref || null;
+  const onMain = !ref || ref === "main" || ref === "master";
   switch (run.trigger) {
     case "plan":
-      return pr ? `Plan of pull request ${pr}` : "Plan of a pull request";
+      return pr ? `Plan of pull request ${pr}` : `Plan of a pull request${ref ? ` from ${ref}` : ""}`;
     case "merge":
-      return pr ? `Merge of ${pr} to main` : "Merge to main";
+      return pr ? `Merge of ${pr} to ${ref || "main"}` : `Merge to ${ref || "main"}`;
     case "resume":
       return pr ? `/terragucci apply on ${pr}` : "/terragucci apply";
     case "reset":
-      return "Reset to the base";
+      return `Reset ${ref || "main"} to the base`;
     case "base":
-      return "The base, pushed";
+      return `The base, pushed to ${ref || "main"}`;
     case "push":
-      return `Push to ${run.ref || "main"}`;
+      return onMain ? `Push to ${ref || "main"}` : `Push to branch ${ref}`;
     default:
-      return run.event ? `${run.event} run` : "a run";
+      return run.event ? `${run.event} run${ref ? ` on ${ref}` : ""}` : "a run";
   }
+}
+
+/** How far along a status is: a run or job only moves up this order, so the higher of two reads is the newer. */
+export const STATUS_RANK = { queued: 0, running: 1, waiting: 2, success: 3, failure: 3, cancelled: 3, skipped: 3 };
+
+/** Of two reads of the same run or job, the one that is further along; the second on a tie. */
+export function newerOf(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  const ra = STATUS_RANK[a.status] ?? -1;
+  const rb = STATUS_RANK[b.status] ?? -1;
+  if (ra !== rb) return ra > rb ? a : b;
+  if (a.ended_at && !b.ended_at) return a;
+  return b;
+}
+
+/**
+ * One run as the kiosk draws it, from its index.json entry and its own
+ * document, read at different moments: every field the document lacks
+ * (`ref`, say) from the entry, and the run's and each job's status and times
+ * from whichever read is further along. The sidebar and the run's page draw
+ * this same object, so they never disagree.
+ */
+export function mergeRun(entry, doc) {
+  if (!doc) return entry || null;
+  if (!entry || entry.id !== doc.id) return doc;
+  const out = { ...doc };
+  for (const [k, v] of Object.entries(entry)) if ((out[k] === undefined || out[k] === null) && k !== "jobs") out[k] = v;
+  const run = newerOf(doc, entry);
+  out.status = run.status;
+  out.started_at = run.started_at ?? doc.started_at ?? entry.started_at ?? null;
+  out.ended_at = run.ended_at ?? null;
+  const ix = new Map((entry.jobs || []).map((j) => [j.id ?? j.name, j]));
+  const jobs = (doc.jobs || []).map((j) => {
+    const e = ix.get(j.id ?? j.name);
+    ix.delete(j.id ?? j.name);
+    const n = newerOf(j, e);
+    return n === j ? j : { ...j, status: n.status, started_at: n.started_at ?? j.started_at, ended_at: n.ended_at ?? null };
+  });
+  for (const e of ix.values()) jobs.push({ ...e, steps: [] });
+  out.jobs = jobs;
+  return out;
 }
 
 /**
@@ -212,7 +261,7 @@ export function statusIcon(status) {
 }
 
 /** The sidebar: the live run pinned, then the recent ones. `pick(id)` selects one; nothing here writes. */
-export function renderSidebar(host, index, selectedId, { now = new Date(), scenarios = {}, pick = () => {} } = {}) {
+export function renderSidebar(host, index, selectedId, { now = new Date(), scenarios = {}, pick = () => {}, merged = null } = {}) {
   host.replaceChildren();
   const head = el("div", "r-side-head");
   head.appendChild(el("div", "r-side-title", "Pipeline runs"));
@@ -222,7 +271,8 @@ export function renderSidebar(host, index, selectedId, { now = new Date(), scena
     host.appendChild(el("p", "r-note", index ? index.absent || index.error : "Reading the runs…"));
     return;
   }
-  const runs = sidebarRuns(index.doc.runs);
+  // The selected run as its page draws it, when its own document is newer than the index.
+  const runs = sidebarRuns(index.doc.runs).map((r) => (merged && merged.id === r.id ? merged : r));
   const live = runs[0];
   const list = el("ol", "r-runs");
   runs.forEach((r, i) => {
@@ -262,13 +312,13 @@ export function renderSidebar(host, index, selectedId, { now = new Date(), scena
  * null for the defaults. Returns what it drew, so the caller can keep a log's
  * scroll.
  */
-export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => {}, toggleStep = () => {} } = {}) {
+export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => {}, toggleStep = () => {}, entry = null } = {}) {
   host.replaceChildren();
   if (!answer || answer.error || answer.absent || !answer.doc) {
     host.appendChild(el("p", "r-note", answer ? answer.absent || answer.error : "Reading the run…"));
     return { log: null };
   }
-  const run = answer.doc;
+  const run = mergeRun(entry, answer.doc);
   const head = el("div", "r-head");
   const t = el("div", "r-head-title");
   t.append(statusIcon(run.status), el("span", null, triggerWords(run)));
@@ -278,6 +328,7 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
   const bits = [
     `#${run.id}`,
     run.status === "waiting" ? "held at a terragucci gate, waiting for an approval" : STATUS_WORDS[run.status] || run.status,
+    run.ref ? `on ${run.ref}` : null,
     run.commit ? `commit ${run.commit.slice(0, 8)}` : null,
     run.started_at ? `started ${agoWords(run.started_at, now)}` : null,
     durationWords(run.started_at, run.ended_at, now),
@@ -371,14 +422,18 @@ export function startRuns({ side, main }, { fetchJson, now = () => new Date(), s
   };
   const draw = () => {
     const id = selectedId();
-    renderSidebar(side, s.index, id, { now: now(), scenarios, pick });
+    const entry = s.index && s.index.doc ? s.index.doc.runs.find((r) => r.id === id) || null : null;
+    const ans = s.run && (!s.run.doc || s.run.doc.id === id) ? s.run : null;
+    // One merged read of the selected run for both the sidebar and its page.
+    const merged = ans && ans.doc ? mergeRun(entry, ans.doc) : null;
+    renderSidebar(side, s.index, id, { now: now(), scenarios, pick, merged });
     // Keep the log's scroll unless it was at the bottom, so a live log follows.
     const old = main.querySelector(".r-log");
     const atBottom = !old || old.scrollTop + old.clientHeight >= old.scrollHeight - 8;
     const prevTop = old ? old.scrollTop : 0;
-    const ans = s.run && (!s.run.doc || s.run.doc.id === id) ? s.run : null;
     const drawn = renderRun(main, ans, s.ui, {
       now: now(),
+      entry,
       pickJob: (name) => {
         s.ui = { job: name, open: null };
         hold();
