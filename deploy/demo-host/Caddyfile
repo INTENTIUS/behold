@@ -19,6 +19,14 @@
 {$DEMO_HOSTNAME:demo.intentius.io} {
 	import /etc/caddy/auth/*.caddy
 
+	# The kiosk is where visitors go. Only the bare root redirects: the kiosk's
+	# own graph frame loads /?embed=1&..., which must reach behold as it is.
+	@bareRoot {
+		path /
+		expression {query} == ""
+	}
+	redir @bareRoot /kiosk 302
+
 	# The view's live updates are server-sent events; send each one on as
 	# it comes rather than buffering.
 	reverse_proxy behold:4600 {
