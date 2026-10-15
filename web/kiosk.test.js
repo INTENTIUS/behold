@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { focusRoots, frameSrc, factLines } from "./kiosk.js";
+import { focusRoots, frameSrc, factLines, pendingApproval } from "./kiosk.js";
 
 const demo = (step, extra = {}) => ({ cycle: 1, scenario: "a-output", title: "t", step, label: "", started_at: "2026-10-15T03:00:00Z", next: null, pull: 7, commit: "abc12345", ...extra });
 const answer = {
@@ -28,6 +28,11 @@ describe("focusRoots (#569)", () => {
       { number: 3, state: "not-started", roots: ["edge"], reads: [2] },
     ]);
     expect(focusRoots(demo("failed"), answer, p)).toEqual(["app", "network", "other"]);
+  });
+  it("leaves a root its wave plans no change in out (#569 review)", () => {
+    const p = progress([{ number: 1, state: "waiting", roots: ["network", "other"], reads: [], digest: "d", totals: { create: 1 }, changed: ["network"] }]);
+    expect(focusRoots(demo("waiting"), answer, p)).toEqual(["network"]);
+    expect(pendingApproval(demo("waiting", { next: { action: "approve wave-1", at: null } }), p).roots).toEqual(["network"]);
   });
   it("takes every root of a composed run", () => {
     const p = progress([{ number: 1, state: "applying", roots: ["network"], reads: [], composed: { roots: ["network", "app", "edge"] } }]);
