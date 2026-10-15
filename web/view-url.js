@@ -12,8 +12,11 @@
  * gate strip reads when it isn't the graph's (#477); it is the view's because
  * a host can move it with `behold:view`, and a reload has to keep that.
  * `focus` (#569) names the boxes the view brings forward, comma-separated
- * (a terragucci repo's roots): the rest are drawn dimmed, nothing is hidden. */
-export const VIEW_KEYS = ["member", "zoom", "env", "tier", "lens", "node", "radial", "gates", "focus"];
+ * (a terragucci repo's roots): the rest are drawn dimmed, nothing is hidden.
+ * `run` (#569) pins which terragucci run the view draws: a commit's run view,
+ * `none` (no run view: the pull request's plan) or `base` (nothing in
+ * flight); absent, the newest. */
+export const VIEW_KEYS = ["member", "zoom", "env", "tier", "lens", "node", "radial", "gates", "focus", "run"];
 
 /** An env name as the server takes one (src/workspace-gates.ts isEnvName). */
 export function isEnvName(env) {
@@ -45,8 +48,8 @@ export function readViewQuery(search) {
       want.env = v || null;
       continue;
     }
-    if (k === "focus") {
-      want.focus = v || null;
+    if (k === "focus" || k === "run") {
+      want[k] = v || null;
       continue;
     }
     if (v) want[k] = v;
@@ -78,6 +81,7 @@ export function writeViewQuery(search, state, defaults = {}) {
   if (s.radial) q.set("radial", "1");
   if (s.gates) q.set("gates", s.gates);
   if (s.focus) q.set("focus", s.focus);
+  if (s.run) q.set("run", s.run);
   const out = q.toString();
   return out ? `?${out}` : "";
 }
@@ -124,6 +128,11 @@ export function settleView(want, offer) {
     const names = want.focus === null ? [] : String(want.focus).split(",").map((x) => x.trim()).filter(Boolean);
     if (names.every((n) => /^[A-Za-z0-9][A-Za-z0-9._\/-]*$/.test(n))) apply.focus = names.length ? names.join(",") : null;
     else refused.push({ key: "focus", value: want.focus, reason: "focus is box names, comma-separated" });
+  }
+  if ("run" in want) {
+    // null: the newest run, as without the key.
+    if (want.run === null || /^([0-9a-f]{7,40}|none|base)$/.test(String(want.run))) apply.run = want.run;
+    else refused.push({ key: "run", value: want.run, reason: "run is a commit sha, none or base" });
   }
   if (want.member) apply.member = want.member;
   if (want.node) apply.node = want.node;

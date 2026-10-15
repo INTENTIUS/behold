@@ -241,6 +241,27 @@ export function focusRoots(demo, answer, progress) {
   return null;
 }
 
+/**
+ * #569: which run the framed view draws for this step, so the graph stays on
+ * the cycle the narration describes while the loop's next runs (the reset's
+ * push back to the base) already go:
+ *
+ * - before the merge, `none`: no run view, the pull request's plan;
+ * - from the merge to `applied`, the cycle's commit (demo.json's `commit`:
+ *   the merge, whose run view the `/terragucci apply` resume rewrites, or
+ *   scenario 5's push);
+ * - at `reset`, and on the base, `base`: nothing in flight.
+ *
+ * Never the reset's or the base's run while the step is before `reset`.
+ */
+export function runPin(demo) {
+  if (!demo) return null;
+  if (demo.scenario === "base" || demo.step === "reset") return "base";
+  if (demo.step === "pull-request" || demo.step === "planned") return "none";
+  if (demo.step === "stalled") return demo.commit ? demo.commit : "none";
+  return demo.commit || "none";
+}
+
 /** The framed view's address: behold's own page, bare, at the resources zoom, told who its host is. */
 export function frameSrc(origin) {
   const q = new URLSearchParams({ embed: "1", bare: "1", zoom: "resources", host: origin });
@@ -362,11 +383,14 @@ export function startKiosk({ bar, frame, foot, side, main }, { fetchJson = defau
   let lastFocus;
   const tellFrame = (force) => {
     const d = s.demo && s.demo.demo;
+    if (!d) return; // nothing said yet: the frame keeps its default until the narration is read
     const roots = focusRoots(d, s.answer, s.progress);
     const focus = roots ? roots.join(",") : null;
-    if (!force && focus === lastFocus) return;
-    lastFocus = focus;
-    if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: "behold:view", member: null, focus }, origin);
+    const run = runPin(d);
+    const key = `${focus}|${run}`;
+    if (!force && key === lastFocus) return;
+    lastFocus = key;
+    if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: "behold:view", member: null, focus, run }, origin);
   };
   const draw = () => {
     renderKiosk(bar, s, now(), foot);
@@ -386,8 +410,18 @@ export function startKiosk({ bar, frame, foot, side, main }, { fetchJson = defau
     s.answer = await fetchJson(`/api/terragucci${fresh ? "?fresh=1" : ""}`);
     draw();
   };
+  // #569: the run view of the cycle's commit, the same one the frame draws.
+  const pinnedCommit = () => {
+    const pin = runPin(s.demo && s.demo.demo);
+    return pin && pin !== "none" && pin !== "base" ? pin : null;
+  };
   const progress = async (fresh) => {
-    s.progress = await fetchJson(`/api/terragucci/progress${fresh ? "?fresh=1" : ""}`);
+    const pin = pinnedCommit();
+    const q = new URLSearchParams();
+    if (pin) q.set("commit", pin);
+    if (fresh) q.set("fresh", "1");
+    const qs = q.toString();
+    s.progress = await fetchJson(`/api/terragucci/progress${qs ? `?${qs}` : ""}`);
     draw();
   };
 
@@ -416,8 +450,14 @@ export function startKiosk({ bar, frame, foot, side, main }, { fetchJson = defau
     es.addEventListener("reports", () => void reports(false));
     es.addEventListener("progress", (e) => {
       try {
-        s.progress = JSON.parse(e.data);
-        draw();
+        const pushed = JSON.parse(e.data);
+        const pin = pinnedCommit();
+        const c = pushed && pushed.run && pushed.run.commit;
+        // The pushed view is the newest run's: take it only when it is the cycle's.
+        if (!pin || (c && (c.startsWith(pin) || pin.startsWith(c)))) {
+          s.progress = pushed;
+          draw();
+        } else void progress(true);
       } catch {
         void progress(false);
       }

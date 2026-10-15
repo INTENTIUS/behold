@@ -321,6 +321,26 @@ describe("GET /api/terragucci/progress (#511)", () => {
     expect(page.status).toBe(200);
   });
 
+  it("reads one commit's run view with ?commit=, not the newest (#569)", async () => {
+    // A newer apply on another commit, as the demo's reset push is newer than the cycle's merge.
+    const b = bucket(readFileSync(APPLYING, "utf8"));
+    const idx = JSON.parse(readFileSync(join(b, "index.json"), "utf8")) as { reports: Record<string, unknown>[] };
+    const later = "f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff00010203";
+    const row = idx.reports.find((r) => r.stage === "tf-apply")!;
+    idx.reports.push({ ...row, commit: later, finished: "2026-10-08T10:00:00.000Z", path: String(row.path).replace(COMMIT, later) });
+    writeFileSync(join(b, "index.json"), JSON.stringify(idx));
+    const app = served(b);
+    const newest = (await (await app.request("/api/terragucci/progress")).json()) as ProgressAnswer;
+    expect(newest.run!.commit).toBe(later);
+    const pinned = (await (await app.request(`/api/terragucci/progress?commit=${COMMIT.slice(0, 10)}`)).json()) as ProgressAnswer;
+    expect(pinned.run).toMatchObject({ commit: COMMIT, present: true });
+    expect(pinned.waves.map((w) => w.number)).toEqual([1, 2]);
+    const none = (await (await app.request("/api/terragucci/progress?commit=c2d3e4f5a6")).json()) as ProgressAnswer;
+    expect(none.run).toBe(null);
+    expect(none.absent).toMatch(/c2d3e4f5a6/);
+    expect((await app.request("/api/terragucci/progress?commit=not-a-sha")).status).toBe(400);
+  });
+
   it("answers 422 terragucci-report for a run view it cannot read", async () => {
     const res = await served(bucket("{not json")).request("/api/terragucci/progress");
     expect(res.status).toBe(422);

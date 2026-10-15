@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { focusRoots, frameSrc, factLines, pendingApproval } from "./kiosk.js";
+import { focusRoots, frameSrc, factLines, pendingApproval, runPin } from "./kiosk.js";
 
 const demo = (step, extra = {}) => ({ cycle: 1, scenario: "a-output", title: "t", step, label: "", started_at: "2026-10-15T03:00:00Z", next: null, pull: 7, commit: "abc12345", ...extra });
 const answer = {
@@ -49,5 +49,17 @@ describe("frameSrc (#569)", () => {
 describe("factLines (#569)", () => {
   it("says the pull request's totals and blast radius", () => {
     expect(factLines(demo("planned"), answer)).toEqual(["pull request #7 changes across 3 roots: 3 update", "blast radius: app, edge, network", "not touched: other"]);
+  });
+});
+
+describe("runPin: the frame stays on the cycle's run (#569)", () => {
+  it("draws the pull request's plan, then the cycle's commit up to applied, then the base", () => {
+    expect(runPin(demo("pull-request"))).toBe("none");
+    expect(runPin(demo("planned"))).toBe("none");
+    for (const step of ["merged", "applying", "waiting", "approved", "failed", "resumed", "applied"]) expect(runPin(demo(step))).toBe("abc12345");
+    expect(runPin(demo("reset"))).toBe("base");
+    expect(runPin(demo("applied", { scenario: "base" }))).toBe("base");
+    expect(runPin(demo("stalled", { commit: null }))).toBe("none");
+    expect(runPin(null)).toBe(null);
   });
 });

@@ -471,12 +471,32 @@ export class TerragucciProgress {
     return p;
   }
 
+  /**
+   * #569: one commit's run view, not the newest: the kiosk keeps the graph on
+   * the cycle its narration is about while the loop's next runs (the reset's
+   * push back to the base) already went. Cached like `answer`, per commit; the
+   * poll's watch stays on the newest.
+   */
+  answerFor(commit: string, fresh = false): Promise<ProgressAnswer> {
+    const key = `${this.o.checkoutProject?.() ?? ""}\u0000${commit}`;
+    const at = Date.now();
+    const hit = this.pinned.get(key);
+    if (!fresh && hit && at - hit.at < PROGRESS_TTL_MS) return hit.answer;
+    for (const [k, v] of this.pinned) if (at - v.at >= PROGRESS_TTL_MS) this.pinned.delete(k);
+    const p = this.read(commit);
+    this.pinned.set(key, { at, answer: p });
+    p.catch(() => this.pinned.delete(key));
+    return p;
+  }
+  private pinned = new Map<string, { at: number; answer: Promise<ProgressAnswer> }>();
+
   /** Drop the cached answer: the index changed, so the newest commit may have. */
   forget(): void {
     this.cached = undefined;
+    this.pinned.clear();
   }
 
-  private async read(): Promise<ProgressAnswer> {
+  private async read(commit?: string): Promise<ProgressAnswer> {
     const v = this.o.validators?.();
     const src = this.o.source;
     let text: string | undefined;
@@ -497,13 +517,13 @@ export class TerragucciProgress {
     const rows = (doc as { reports: IndexRow[] }).reports;
     const checkout = this.o.checkoutProject?.();
     const project = pickProject(rows, { ...(this.o.project ? { project: this.o.project } : {}), ...(checkout ? { checkoutProject: checkout } : {}) }, src);
-    const row = newestApply(rows, project);
+    const row = commit ? newestApply(rows.filter((r) => r.commit === commit || r.commit.startsWith(commit)), project) : newestApply(rows, project);
     if (!row) {
-      this.watch = undefined;
+      if (!commit) this.watch = undefined;
       return {
         ...this.base(project, v?.run.validation),
         run: null,
-        absent: `index.json lists no tf-apply run of ${project} yet, so there is no run view to read.`,
+        absent: commit ? `index.json lists no tf-apply run of ${project} on ${commit.slice(0, 12)} yet, so there is no run view of it to read.` : `index.json lists no tf-apply run of ${project} yet, so there is no run view to read.`,
         states: [],
         reads: [],
         waves: [],
@@ -514,7 +534,7 @@ export class TerragucciProgress {
     }
     const key = runKey(row);
     const a = await this.readRun(project, row.commit, key, v?.run);
-    this.watch = { key, commit: row.commit, project, last: a };
+    if (!commit) this.watch = { key, commit: row.commit, project, last: a };
     return a;
   }
 
@@ -610,11 +630,19 @@ export class TerragucciProgress {
   }
 }
 
-/** `GET /api/terragucci/progress`: read-only, one GET of index.json and one of run.json per read, cached 30 s (`?fresh=1` skips it). */
+/** `GET /api/terragucci/progress`: read-only, one GET of index.json and one of run.json per read, cached 30 s (`?fresh=1` skips it); `?commit=<sha>` reads that commit's run view (#569). */
 export function terragucciProgressRoute(app: Hono, progress: TerragucciProgress): void {
   app.get("/api/terragucci/progress", async (c) => {
     try {
-      return c.json(await progress.answer(new URL(c.req.url).searchParams.get("fresh") === "1"));
+      const q = new URL(c.req.url).searchParams;
+      const fresh = q.get("fresh") === "1";
+      // #569: `?commit=<sha>`, one commit's run view (the kiosk's cycle), not the newest.
+      const commit = q.get("commit");
+      if (commit !== null) {
+        if (!/^[0-9a-f]{7,40}$/.test(commit)) return c.json({ error: "commit is a commit sha, 7 to 40 hex digits", code: "terragucci-progress" }, 400);
+        return c.json(await progress.answerFor(commit, fresh));
+      }
+      return c.json(await progress.answer(fresh));
     } catch (e) {
       if (e instanceof TerragucciReadError) return c.json(e.refusal, 422);
       if (e instanceof ProgressGraphError) return c.json({ error: e.message, code: "terragucci-graph", remedy: "`behold doctor` names what the Terraform read needs." }, 422);

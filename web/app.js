@@ -1594,7 +1594,7 @@ function wire(ir) {
 // member (#475) is the estate member the view is on: a host opens behold with
 // ?member=, and picking a card or a member box moves it. It changes no fetch;
 // the graph is the whole estate, framed on that member's box.
-const view = { member: null, env: null, gates: null, focus: null, detail: 2, components: true, logical: false, runtime: false, ops: false, tier: null, target: null, stack: null, radial: false, collapse: false, compareTo: null };
+const view = { member: null, env: null, gates: null, focus: null, run: null, detail: 2, components: true, logical: false, runtime: false, ops: false, tier: null, target: null, stack: null, radial: false, collapse: false, compareTo: null };
 
 // #182: `components` is the boot default, but a project that declares no
 // components renders it as ZERO nodes — the first screen was a blank graph
@@ -2488,6 +2488,7 @@ function applyWantedView(want) {
   if ("radial" in apply) view.radial = apply.radial;
   if ("gates" in apply) view.gates = apply.gates;
   if ("focus" in apply) view.focus = apply.focus; // #569: drawn by drawTgReads, no new read
+  if ("run" in apply) view.run = apply.run; // #569: which run the view draws; read in the message handler
   if (want.member === null) {
     view.member = null;
     selectedNodeId = null;
@@ -2512,8 +2513,10 @@ window.addEventListener("message", (e) => {
   const lensBefore = colourMode;
   const gatesBefore = view.gates;
   const focusBefore = view.focus;
+  const runBefore = view.run;
   const moved = applyWantedView(want);
-  if (view.focus !== focusBefore && !moved) drawTgReads(); // #569
+  if (view.run !== runBefore) void loadTgProgress({ fresh: true }); // #569: the run the narration is about
+  else if (view.focus !== focusBefore && !moved) drawTgReads(); // #569
   // #477: the host's env for the gate strip moved. Read it now, not on the
   // next `changed`; renderStatusbar below writes it into the URL.
   if (view.gates !== gatesBefore) loadWorkspaceGates({ force: true });
@@ -2753,6 +2756,7 @@ function syncViewUrl() {
     radial: view.radial && !view.components && !view.logical && !view.ops,
     gates: view.gates,
     focus: view.focus,
+    run: view.run,
   };
   const defaults = { env: (projectInfo && projectInfo.currentEnv) || null, lens: savedColourMode };
   const next = location.pathname + writeViewQuery(location.search, state, defaults) + location.hash;
@@ -3385,8 +3389,12 @@ function watchTerragucci() {
   es.addEventListener("reports", () => loadTerragucci({ fresh: true }));
   // #511: the run view moved while a wave applies.
   es.addEventListener("progress", (e) => {
-    tgProgress = JSON.parse(e.data);
-    paintTgProgress();
+    const pushed = JSON.parse(e.data);
+    // #569: the pushed view is the newest run's; a view pinned to another run reads its own again.
+    if (tgPushFits(pushed)) {
+      tgProgress = pushed;
+      paintTgProgress();
+    } else if (view.run && view.run !== "none" && view.run !== "base") void loadTgProgress({ fresh: true });
   });
   es.addEventListener("lifecycle", (e) => {
     tgLifecycle = JSON.parse(e.data);
@@ -3421,10 +3429,34 @@ async function loadTerragucci({ fresh = false } = {}) {
 // #511: /api/terragucci/progress, the newest apply's run view on the cards.
 let tgProgress = null;
 async function loadTgProgress({ fresh = false } = {}) {
-  tgProgress = await apiFetch(`/api/terragucci/progress${fresh ? "?fresh=1" : ""}`)
+  // #569: `run` pins the run view: a commit's, or none at all (the pull request's plan, or the base).
+  const pin = view.run;
+  if (pin === "none" || pin === "base") {
+    tgProgress = null;
+    paintTgProgress();
+    return;
+  }
+  const q = new URLSearchParams();
+  if (pin) q.set("commit", pin);
+  if (fresh) q.set("fresh", "1");
+  const qs = q.toString();
+  const answer = await apiFetch(`/api/terragucci/progress${qs ? `?${qs}` : ""}`)
     .then((r) => r.json())
     .catch((e) => ({ error: String(e) }));
+  if (view.run !== pin) return; // the pin moved while this read ran
+  tgProgress = answer;
   paintTgProgress();
+}
+/** #569: whether a pushed run view is the one the view draws: any, unless `run` pins another. */
+function tgPushFits(answer) {
+  const pin = view.run;
+  if (!pin) return true;
+  if (pin === "none" || pin === "base") return false;
+  return !!(answer && answer.run && answer.run.commit && (answer.run.commit.startsWith(pin) || pin.startsWith(answer.run.commit)));
+}
+/** #569: the reports as the view draws them: at `run=base` nothing is in flight, so no pull request either. */
+function tgAnswerDrawn() {
+  return view.run === "base" && tgAnswer && !tgAnswer.error ? { ...tgAnswer, pull_request: null } : tgAnswer;
 }
 function paintTgProgress() {
   tgStampProgress(document.querySelector("#graph svg"), tgProgress, new Date());
@@ -3527,7 +3559,8 @@ function drawTgReads() {
   };
 
   // The roots: each box's wave and state, in its colour.
-  const states = tgRootStates(tgAnswer, tgProgress);
+  const drawnAnswer = tgAnswerDrawn();
+  const states = tgRootStates(drawnAnswer, tgProgress);
   const focus = view.focus ? new Set(view.focus.split(",")) : null;
   const boxes = [];
   for (const r of tgAnswer.roots) {
@@ -3613,7 +3646,7 @@ function drawTgReads() {
   // on the read root's box border, that crosses no text and as few cards as
   // there are; each label then sits beside its line where it covers no text
   // and crosses no line.
-  const edges = tgReadEdges(tgAnswer, tgProgress);
+  const edges = tgReadEdges(drawnAnswer, tgProgress);
   const centre = (b) => ({ x: (b.x + b.x2) / 2, y: (b.y + b.y2) / 2 });
   const grow = (b, d) => ({ x: b.x - d, y: b.y - d, x2: b.x2 + d, y2: b.y2 + d });
   // Whether the segment p-q passes through the box (Liang-Barsky).
@@ -3750,7 +3783,7 @@ function drawTgReads() {
   }
 
   // Which run the marks come from, above the boxes.
-  const caption = tgViewCaption(tgAnswer, tgProgress, new Date());
+  const caption = view.run === "base" ? "nothing in flight: the states went back to the base" : tgViewCaption(drawnAnswer, tgProgress, new Date());
   const all = union(boxes);
   if (caption && all) {
     layer.appendChild(make("text", { "data-tg-reads": "caption", x: all.x, y: all.y - 22, "font-size": 16, "font-weight": 600, fill: "var(--muted)" }, `Showing ${caption}`));
