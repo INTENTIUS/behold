@@ -3737,7 +3737,10 @@ function drawTgReads() {
       for (const c of spots) {
         const r = { x: c.x - w / 2, y: c.y - h / 2, x2: c.x + w / 2, y2: c.y + h / 2 };
         const lineHits = drawn.filter((d) => crosses(d.p0, d.p1, r)).length;
-        const score = lineHits * 1e6 + sum(r, textBoxes, 50) + sum(r, placed, 50) + sum(r, cardBoxes, 1) + sum(r, headers, 1.5) + sum(r, boxes, 0.15) + Math.abs(t - 0.5) * 300 + c.off * 4;
+        // Outside the boxes' own span the label may leave the drawing when the view is fitted: keep it in.
+        const span = union(boxes);
+        const out = span ? (r.x2 - r.x) * (r.y2 - r.y) - overlap(r, { x: span.x - 40, y: span.y - 60, x2: span.x2 + 40, y2: span.y2 + 40 }) : 0;
+        const score = out * 80 + lineHits * 1e6 + sum(r, textBoxes, 50) + sum(r, placed, 50) + sum(r, cardBoxes, 1) + sum(r, headers, 1.5) + sum(r, boxes, 0.15) + Math.abs(t - 0.5) * 300 + c.off * 4;
         if (!best || score < best.score) best = { c, r, score };
       }
     }
