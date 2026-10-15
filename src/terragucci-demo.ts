@@ -14,8 +14,11 @@
  *   event stream, and writes nothing.
  *
  * The format is terragucci's, fixed in terragucci#1014: every field below,
- * none added or renamed. A scenario id behold doesn't know is shown by the
- * title the driver wrote.
+ * none renamed. `about` (behold#571) came later and is optional: the
+ * scenario's card, which the driver reads from the scenario's about.json in
+ * terragucci's example-demo/; a demo.json without it, or with null, shows no
+ * card. A scenario id behold doesn't know is shown by the title the driver
+ * wrote.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -30,6 +33,15 @@ export const DEMO_READ_TTL_MS = 2_000;
 export const DEMO_STEPS = ["pull-request", "planned", "merged", "applying", "waiting", "approved", "failed", "resumed", "applied", "reset", "stalled"] as const;
 export type DemoStep = (typeof DEMO_STEPS)[number];
 
+/** The scenario's card (behold#571): what the change is, what to watch for, what it shows. */
+export interface DemoAbout {
+  changes: string;
+  watch: string;
+  shows: string;
+}
+
+export const DEMO_ABOUT_FIELDS = ["changes", "watch", "shows"] as const;
+
 export interface Demo {
   cycle: number;
   scenario: string;
@@ -40,6 +52,8 @@ export interface Demo {
   next: { action: string; at: string | null } | null;
   pull: number | null;
   commit: string | null;
+  /** Null when demo.json has no card for the scenario (the base, or a driver before behold#571). */
+  about: DemoAbout | null;
 }
 
 export type DemoAnswer =
@@ -68,6 +82,10 @@ export function demoProblem(doc: unknown): string | undefined {
   }
   if (doc.pull !== null && !int(doc.pull)) return "pull is neither an integer nor null";
   if (doc.commit !== null && !str(doc.commit)) return "commit is neither a string nor null";
+  if (doc.about !== undefined && doc.about !== null) {
+    if (!isRecord(doc.about)) return "about is neither an object nor null";
+    for (const f of DEMO_ABOUT_FIELDS) if (!str(doc.about[f]) || !doc.about[f].trim()) return `about.${f} is not a non-empty string`;
+  }
   return undefined;
 }
 
@@ -105,6 +123,7 @@ export async function readDemo(source: TerragucciSource, now: Date = new Date())
       next: d.next ? { action: d.next.action, at: d.next.at } : null,
       pull: d.pull,
       commit: d.commit,
+      about: d.about ? { changes: d.about.changes, watch: d.about.watch, shows: d.about.shows } : null,
     },
   };
 }

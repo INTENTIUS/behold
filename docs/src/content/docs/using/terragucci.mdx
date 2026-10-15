@@ -439,6 +439,12 @@ it. In the bar:
 
 - The scenario, numbered as terragucci numbers it, with the title the driver
   wrote. A scenario id behold doesn't know shows the title alone.
+- Under the title, the scenario's card, always open so a screen nobody
+  touches reads it: three rows, "What changes", "Watch for" and "Shows",
+  from demo.json's optional `about` (`changes`, `watch` and `shows`, each a
+  non-empty string). terragucci keeps the text beside each scenario, in
+  `example-demo/scenarios/<id>/about.json`. Without `about`, or with null
+  (the base), there is no card.
 - Where the cycle is: pull request, planned, merged, the waves, applied, reset.
   A failed step is marked; a stalled cycle marks none.
 - The driver's words for the step (`label`), as written. Where a value applies
