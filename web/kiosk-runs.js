@@ -658,30 +658,36 @@ export const FEATURE_LINES = 3;
  * behold#571: fold the features strip to FEATURE_LINES whole lines: what
  * would wrap past them is hidden, never cut through, and a "+N more" button
  * on the last line opens the rest. A tool's name left last on a line with
- * none of its features after it goes too. Measures the drawn list.
+ * none of its features after it goes too. Measures the drawn list, so it runs
+ * after layout and again whenever the list's width or its features change.
+ * The button shows only when it hides at least one feature (never "+0 more"),
+ * and opened, only when there is something to fold back.
  */
 export function fitFeatures(list, open, lines = FEATURE_LINES) {
   if (!list) return;
   const more = list.querySelector(".r-feats-more");
   const items = [...list.children].filter((c) => c !== more);
   for (const i of items) i.hidden = false;
-  if (open) {
-    more.hidden = false;
-    return;
-  }
   more.hidden = true;
   const tops = [...new Set(items.map((i) => i.offsetTop))].sort((a, b) => a - b);
   if (tops.length <= lines) return;
   const last = tops[lines - 1];
+  if (open) {
+    // Folded, it would hide a feature: offer to fold it back.
+    more.hidden = !items.some((i) => i.offsetTop > last && i.classList.contains("r-feat"));
+    return;
+  }
   const shown = items.filter((i) => i.offsetTop <= last);
   for (const i of items) if (i.offsetTop > last) i.hidden = true;
-  more.hidden = false;
   const count = () => items.filter((i) => i.hidden && i.classList.contains("r-feat")).length;
-  more.textContent = `+${count()} more`;
-  // The button sits on the last line: hide features from its end until it fits there.
-  while (more.offsetTop > last && shown.length) {
-    shown.pop().hidden = true;
+  if (count() > 0) {
+    more.hidden = false;
     more.textContent = `+${count()} more`;
+    // The button sits on the last line: hide features from its end until it fits there.
+    while (more.offsetTop > last && shown.length) {
+      shown.pop().hidden = true;
+      more.textContent = `+${count()} more`;
+    }
   }
   // A tool's name with none of its features shown after it.
   const vis = items.filter((i) => !i.hidden);
@@ -894,8 +900,21 @@ export function startRuns(
     const line = mark && mark.closest(".r-ann-line");
     return line ? line.dataset.annKey : null;
   };
+  // behold#571: the features strip folds by measuring its drawn lines, so it measures again
+  // when the panel's width changes (a resize, the panel opening) and once the fonts load.
+  const refitFeatures = () => fitFeatures(main.querySelector && main.querySelector(".r-feats-list"), s.featsOpen);
+  if (typeof ResizeObserver !== "undefined" && typeof Element !== "undefined" && main instanceof Element) {
+    let width = -1;
+    new ResizeObserver((entries) => {
+      const w = Math.round(entries[entries.length - 1].contentRect.width);
+      if (w === width) return;
+      width = w;
+      refitFeatures();
+    }).observe(main);
+  }
+  if (typeof document !== "undefined" && document.fonts && document.fonts.ready) document.fonts.ready.then(refitFeatures, () => {});
   if (main.addEventListener) {
-    const seen = () => (lastPointer = now().getTime());
+    const seen =() => (lastPointer = now().getTime());
     for (const ev of ["pointermove", "pointerdown", "touchstart", "wheel", "keydown"]) document.addEventListener(ev, seen, { passive: true });
     main.addEventListener("pointerover", (e) => {
       if (e.pointerType === "touch") return;
