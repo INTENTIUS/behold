@@ -15,6 +15,7 @@
 
 import { PICK_HOLD_MS, startRuns } from "./kiosk-runs.js";
 import { cssString, hoverCss, hoverFromMessage, hoverLinks, hoverMessage, isLightBg, rootSegments, rootText } from "./kiosk-roots.js";
+import { creditLines, filterIndex, keepRun, liveEstimate, liveFor, namesOther, notRunWords, replayAt, replayBanner, replayIndex, rootWord, runAsOf, scrubDemo, servesRepo, vendorOf } from "./kiosk-vendor.js";
 import { STATE_WORDS, changingRoots, costLine, pinsCommit, planFitsPin, pullPin, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
 
 /** The scenarios terragucci#1014 numbers. An id not here is shown by the title demo.json carries. */
@@ -68,7 +69,12 @@ export function scenarioName(demo) {
  * place of SCENARIOS' label when it has one; the driver's title alone for an
  * id behold doesn't know.
  */
-export function scenarioHead(demo) {
+export function scenarioHead(demo, { vendor = null } = {}) {
+  // behold#571: a tool's page numbers nothing, so nothing hints at the loop's other scenarios.
+  if (vendor) {
+    const name = scenarioName(demo);
+    return { kicker: name ? `Scenario · ${name}` : "Scenario", title: demo.title || name || demo.scenario };
+  }
   const known = Object.prototype.hasOwnProperty.call(SCENARIOS, demo.scenario) ? SCENARIOS[demo.scenario] : null;
   const name = scenarioName(demo);
   if (counted(demo.index)) {
@@ -399,11 +405,12 @@ export function kioskView(demo, { components = false, pick = null, now = Date.no
 }
 
 /** The line under the view saying how to read it, for the view shown. */
-export function legendWords(view) {
+export function legendWords(view, tool = null) {
+  const root = rootWord(tool);
   if (view === "components") {
-    return "Each card is a Terraform root with its own state, in a box per wave titled with the pipeline job that applies it; an arrow is one root reading another's outputs, dashed while it reads planned values. A wave applies its roots together, after the waves it reads.";
+    return `Each card is ${root} with its own state, in a box per wave titled with the pipeline job that applies it; an arrow is one root reading another's outputs, dashed while it reads planned values. A wave applies its roots together, after the waves it reads.`;
   }
-  return "Each box is a Terraform root with its own state; an arrow is one root reading another's outputs, dashed while it reads planned values. A wave applies its roots together, after the waves it reads.";
+  return `Each box is ${root} with its own state; an arrow is one root reading another's outputs, dashed while it reads planned values. A wave applies its roots together, after the waves it reads.`;
 }
 
 /** The behold zoom for a view. */
@@ -475,22 +482,45 @@ const elRoots = (tag, cls, text, s) => {
 export function renderKiosk(bar, s, now = new Date(), foot = null) {
   bar.replaceChildren();
   if (foot) foot.replaceChildren();
+  drawBar(bar, s, now, foot);
+  // behold#571: a tool's page ends with who makes the tool, and that they don't endorse the demo.
+  if (foot && vendorOf(s.vendor)) drawCredit(foot, s.vendor);
+}
+
+function drawBar(bar, s, now, foot) {
+  const vendor = vendorOf(s.vendor);
+  if (vendor && s.mode === "none") {
+    // behold#571: the tool's scenario has no cycle yet: its name, its link, and a calm line.
+    const words = notRunWords(vendor);
+    const box = el("div", "k-empty");
+    const title = el("h1", "k-title");
+    title.append(brandEl(vendor), el("span", "k-title-text", words.title));
+    box.append(title, el("p", "k-muted", words.text));
+    bar.appendChild(box);
+    return;
+  }
   if (!s.demo || !s.demo.demo) {
     const box = el("div", "k-empty");
-    box.appendChild(el("h1", "k-title", "Waiting for the demo"));
+    const title = el("h1", "k-title");
+    if (vendor) title.appendChild(brandEl(vendor));
+    title.appendChild(el("span", "k-title-text", "Waiting for the demo"));
+    box.appendChild(title);
     box.appendChild(el("p", "k-muted", s.demo ? s.demo.error || s.demo.absent : "Reading demo.json…"));
     bar.appendChild(box);
     return;
   }
   const demo = s.demo.demo;
-  const head = scenarioHead(demo);
+  const head = scenarioHead(demo, { vendor: s.vendor || null });
 
+  // behold#571: a tool's page says plainly when it replays an earlier run.
+  if (s.replay && s.replay.banner) bar.appendChild(el("p", "k-replay", s.replay.banner));
   const intro = introText(demo);
   if (intro) bar.appendChild(el("p", "k-intro", intro));
 
   // behold#571: the kicker on the title's line, so the bar has room for the intro.
   const left = el("div", "k-left");
   const title = el("h1", "k-title");
+  if (vendor) title.appendChild(brandEl(vendor));
   title.append(el("span", "k-kicker", head.kicker), el("span", "k-title-text", head.title));
   left.appendChild(title);
   const rows = aboutRows(demo);
@@ -527,7 +557,7 @@ export function renderKiosk(bar, s, now = new Date(), foot = null) {
     then.append(`then comments `, el("code", "k-inline", appr.comment), ` on ${appr.on}, and the waves run again.`);
     a.appendChild(then);
     right.appendChild(a);
-  } else {
+  } else if (!s.noReports) {
     const panel = runPanel(demo, s.answer, s.progress);
     if (panel.note) right.appendChild(elRoots("p", "k-note", panel.note, s));
     else if (panel.stage === "pull-request") for (const u of unreviewedLines(s.answer)) right.appendChild(elRoots("p", "k-note k-unknown", u, s));
@@ -535,9 +565,46 @@ export function renderKiosk(bar, s, now = new Date(), foot = null) {
   bar.appendChild(right);
 
   if (foot) {
-    foot.appendChild(el("span", "k-legend", legendWords(s.view || "resources")));
+    // The legend reads the graph; with no graph shown there is nothing for it to explain.
+    if (!s.noReports) foot.appendChild(el("span", "k-legend", legendWords(s.view || "resources", s.vendor || null)));
     // behold#571: no line on where the narration was read from: a viewer new to the demo reads the facts.
-    for (const f of factLines(demo, s.answer)) foot.appendChild(elRoots("span", "k-fact", f, s));
+    if (!s.noReports) for (const f of factLines(demo, s.answer)) foot.appendChild(elRoots("span", "k-fact", f, s));
+  }
+}
+
+/** behold#571: a tool's name, and its logo where its owner allows one, linking to its official site. */
+function brandEl(vendor) {
+  const a = el("a", "k-brand");
+  a.href = vendor.url;
+  a.target = "_blank";
+  a.rel = "noopener";
+  if (vendor.logo) {
+    const img = el("img", "k-brand-logo");
+    img.src = vendor.logo.src;
+    if (vendor.logo.src2x) img.srcset = `${vendor.logo.src2x} 2x`;
+    img.alt = "";
+    a.appendChild(img);
+  }
+  a.appendChild(el("span", "k-brand-name", vendor.name));
+  return a;
+}
+
+/** behold#571: the footer's credit on a tool's page, its names linked to their official sites. */
+function drawCredit(foot, tool) {
+  for (const line of creditLines(tool)) {
+    const p = el("span", "k-credit");
+    for (const seg of line) {
+      if (!seg.url) {
+        p.append(seg.text);
+        continue;
+      }
+      const a = el("a", "k-credit-link", seg.text);
+      a.href = seg.url;
+      a.target = "_blank";
+      a.rel = "noopener";
+      p.appendChild(a);
+    }
+    foot.appendChild(p);
   }
 }
 
@@ -555,8 +622,20 @@ export const DEMO_POLL_MS = 3_000;
  * countdown. When the roots the step is about change, move the framed view
  * with a `behold:view` message; the frame takes them only from this origin.
  */
-export function startKiosk({ bar, frame, foot, side, main, views }, { fetchJson = defaultFetch, now = () => new Date(), origin = location.origin } = {}) {
+export function startKiosk({ bar, frame, foot, side, main, views, noView = null }, { fetchJson = defaultFetch, now = () => new Date(), origin = location.origin, tool = null } = {}) {
   const s = { demo: null, answer: null, progress: null, components: false, pick: null, view: "resources", roots: [], waves: [], light: false, hover: null, frameHover: null };
+  // behold#571: on a tool's page, `live` while its scenario runs, `replay` of its latest cycle otherwise, `none` before it has one.
+  const vendor = vendorOf(tool);
+  s.vendor = vendor ? tool : null;
+  s.mode = vendor ? "loading" : "live";
+  s.replay = null;
+  s.repo = null;
+  s.live = null;
+  if (vendor && typeof document !== "undefined") document.title = `${vendor.name} · terragucci demo`;
+  /** The time the page shows: the replay's, while it replays. */
+  const shownNow = () => (s.mode === "replay" && s.replay && s.replay.at ? s.replay.at : now());
+  /** behold#571: the frame and the plan's facts are the served repo's, so a tool's page shows them only for its own repo. */
+  const frameOk = () => !vendor || servesRepo(s.answer && !s.answer.error ? s.answer.project : null, s.repo);
   let lastKey = "";
   let lastFocus;
   const shownView = () => kioskView(s.demo && s.demo.demo, { components: s.components, pick: s.pick, now: now().getTime() });
@@ -626,20 +705,100 @@ export function startKiosk({ bar, frame, foot, side, main, views }, { fetchJson 
       glow();
     });
   }
+
+  // behold#571: the titles and names demo.json has carried, by scenario, for the runs' subtitles.
+  const titles = {};
+  const names = {};
+  /** Take one narration (demo.json, or a replayed step), and ask for the run it is about when the step moved. */
+  const setDemo = (answer) => {
+    s.demo = answer;
+    const d = answer && answer.demo;
+    if (d && d.scenario && typeof d.title === "string" && d.title) titles[d.scenario] = d.title;
+    if (d && d.scenario && scenarioName(d)) names[d.scenario] = scenarioName(d);
+    const key = d ? `${s.mode}|${d.cycle}|${d.step}|${d.commit}|${d.pull}` : "";
+    if (key !== lastKey) {
+      lastKey = key;
+      // The step moved: the run it is about may be newer than what behold read.
+      const stage = d ? demoStage(d) : "none";
+      if (stage === "pull-request" || stage === "either") void reports(true);
+      if (stage === "apply" || stage === "either") void progress(true);
+    }
+  };
+  // behold#571: the replay's clock, read on every draw.
+  const replayTick = () => {
+    if (s.mode !== "replay" || !s.replay) return;
+    const steps = s.replay.cycle.steps;
+    const r = replayAt(steps, now().getTime() - s.replay.start);
+    s.replay.at = r.at;
+    s.replay.banner = replayBanner(s.replay.cycle, liveEstimate(s.live && s.live.demo, s.replay.cycle, now()));
+    setDemo({ source: "replay", read: steps[r.index].at, demo: scrubDemo(steps[r.index], tool) });
+  };
+
   const draw = () => {
+    replayTick();
     s.light = typeof document !== "undefined" && document.documentElement ? isLightBg(getComputedStyle(document.documentElement).getPropertyValue("--bg")) : false;
     s.rootNames = rootList();
     const shown = shownView();
     s.view = shown.view;
-    renderKiosk(bar, s, now(), foot);
-    renderViewToggle(views, shown, { components: s.components, onPick: pickView });
+    const ok = frameOk();
+    s.noReports = !ok;
+    renderKiosk(bar, s, shownNow(), foot);
+    renderViewToggle(views, shown, { components: s.components && ok, onPick: pickView });
+    if (frame) frame.hidden = !ok || s.mode === "none";
+    if (noView) noView.hidden = !(vendor && (s.mode === "live" || s.mode === "replay") && !ok);
     tellFrame(false);
   };
-  // #569: the pipeline's runs beside the view, CI-page style.
-  // behold#571: the titles and names demo.json has carried, by scenario, for the runs' subtitles.
-  const titles = {};
-  const names = {};
-  if (side && main) startRuns({ side, main }, { fetchJson, now, scenarios: SCENARIOS, titles: () => titles, names: () => names, roots: rootList, waves: () => s.waves, light: () => s.light });
+
+  // behold#571: on a tool's page the runs pane shows the tool's repo alone; in the replay, the cycle's runs as they stood.
+  const runDocs = new Map();
+  const runDoc = (id) => {
+    if (!runDocs.has(id)) runDocs.set(id, fetchJson(`/api/terragucci/runs/${id}`).then((a) => (a && a.doc ? a.doc : null)));
+    return runDocs.get(id);
+  };
+  const replayRuns = async () => {
+    const r = s.replay;
+    if (r.runs) return r.runs;
+    const idx = await fetchJson("/api/terragucci/runs");
+    const listed = new Map((idx && idx.doc && Array.isArray(idx.doc.runs) ? idx.doc.runs : []).map((x) => [x.id, x]));
+    const runs = [];
+    for (const id of r.cycle.runs) {
+      const e = listed.get(id) || (await runDoc(id));
+      if (e) runs.push(e);
+    }
+    r.runs = runs.filter((x) => keepRun(x, { tool, repo: r.cycle.repo }));
+    return r.runs;
+  };
+  const runsSource = () => {
+    if (!vendor || s.mode === "live") return null;
+    if (s.mode !== "replay" || !s.replay) return { index: async () => ({ doc: { schema: "demo.runs/v1", runs: [] } }), run: async () => ({ doc: null, absent: "No run to show yet." }) };
+    return {
+      index: async () => replayIndex(await replayRuns(), shownNow().getTime()),
+      run: async (id) => {
+        const doc = await runDoc(id);
+        return doc ? { doc: runAsOf(doc, shownNow().getTime()) } : { doc: null, absent: `Run #${id} is no longer kept in the reports.` };
+      },
+    };
+  };
+  if (side && main) {
+    startRuns(
+      { side, main },
+      {
+        fetchJson,
+        now,
+        shown: shownNow,
+        scenarios: SCENARIOS,
+        titles: () => titles,
+        names: () => names,
+        roots: rootList,
+        waves: () => s.waves,
+        light: () => s.light,
+        source: runsSource,
+        filter: vendor ? (index) => filterIndex(index, { tool, repo: s.repo }) : (index) => index,
+        replay: () => s.mode === "replay",
+        hideLine: vendor ? (line) => namesOther(line, tool) : null,
+      },
+    );
+  }
   // #571: whether the repo offers the components zoom (a terragucci.components.json), read before the frame opens so it opens on the step's view.
   const openFrame = () => {
     if (!frame) return;
@@ -679,19 +838,45 @@ export function startKiosk({ bar, frame, foot, side, main, views }, { fetchJson 
     draw();
   };
 
-  const demo = async () => {
-    s.demo = await fetchJson("/api/terragucci/demo");
-    const d = s.demo && s.demo.demo;
-    if (d && d.scenario && typeof d.title === "string" && d.title) titles[d.scenario] = d.title;
-    if (d && d.scenario && scenarioName(d)) names[d.scenario] = scenarioName(d);
-    const key = d ? `${d.cycle}|${d.step}|${d.commit}|${d.pull}` : "";
-    if (key !== lastKey) {
-      lastKey = key;
-      // The step moved: the run it is about may be newer than what behold read.
-      const stage = d ? demoStage(d) : "none";
-      if (stage === "pull-request" || stage === "either") void reports(true);
-      if (stage === "apply" || stage === "either") void progress(true);
+  // behold#571: a tool's latest cycle, read when its scenario stops being live, and while it has none yet.
+  let cycleRead = 0;
+  const readCycle = async () => {
+    cycleRead = now().getTime();
+    const a = await fetchJson(`/api/terragucci/cycles/${tool}`);
+    if (s.mode === "live") return; // its scenario started while the read was out
+    if (a && a.cycle) {
+      if (!s.replay || s.replay.cycle.cycle !== a.cycle.cycle) s.replay = { cycle: a.cycle, start: now().getTime(), at: null, banner: null, runs: null };
+      s.mode = "replay";
+      s.repo = a.cycle.repo;
+    } else if (a && a.absent) {
+      s.mode = "none";
+      s.replay = null;
+    } else {
+      s.mode = "error";
+      s.replay = null;
+      s.demo = { demo: null, error: a && a.error ? a.error : "The tool's latest cycle could not be read." };
     }
+  };
+  const CYCLE_REREAD_MS = 60_000;
+
+  const demo = async () => {
+    const live = await fetchJson("/api/terragucci/demo");
+    s.live = live;
+    if (!vendor) {
+      s.repo = live && live.demo ? live.demo.repo : null;
+      setDemo(live);
+      return draw();
+    }
+    const d = live && live.demo;
+    if (liveFor(d, tool, SCENARIOS)) {
+      s.mode = "live";
+      s.replay = null;
+      s.repo = d.repo || s.repo;
+      setDemo({ ...live, demo: scrubDemo(d, tool) });
+      return draw();
+    }
+    // Not this tool's scenario: replay its latest cycle, read again when it went live and ended, or now and then.
+    if (s.mode === "live" || s.mode === "loading" || now().getTime() - cycleRead > CYCLE_REREAD_MS) await readCycle();
     draw();
   };
 

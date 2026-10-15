@@ -425,6 +425,13 @@ log, which the loop driver copies into the bucket under `runs/`. It needs
 `--terragucci`, asks only GETs, and has no control.
 The docs' terragucci page says what it shows.
 
+Each tool in the loop has a page of its own at `/<tool>`: `/terraform`,
+`/terragrunt`, `/cdk-terrain` and `/choudoufu` (behold#571). It shows that
+tool's scenario and runs alone, with a footer saying who makes the tool.
+While another tool's scenario runs, the page replays the tool's latest cycle at
+the pace it ran (`cycles/<tool>/latest.json` beside `demo.json`), and says so in
+a banner. Any other short path answers 404 with a link to `/kiosk`.
+
 In a declared workspace, the gates waiting on a person come from
 `chant workspace status <env> --json`, keyed `member/op/gate` the way arugula's
 workspace block keys them, so the two show the same set. Standalone, a gate's

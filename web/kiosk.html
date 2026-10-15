@@ -138,6 +138,15 @@
       .k-view-note { color: var(--muted); font-size: 0.8em; }
       #foot { display: flex; flex-wrap: wrap; gap: 0.2em 1.6em; padding: 0.55em 1.6em; border-top: 1px solid var(--rule); background: var(--panel); font-size: 0.85em; }
       .k-legend { color: var(--muted); flex-basis: 100%; }
+      /* behold#571: a tool's page. Its name (and logo where allowed) before the scenario, the replay's banner, the credit. */
+      .k-brand { display: inline-flex; align-items: center; gap: 0.35em; margin-right: 0.8em; color: var(--fg); text-decoration: none; font-weight: 700; vertical-align: 0.05em; }
+      .k-brand:hover .k-brand-name { text-decoration: underline; }
+      .k-brand-logo { width: 1.25em; height: 1.25em; }
+      .k-replay { grid-column: 1 / -1; margin: 0; padding: 0.25em 0.7em; border-left: 4px solid var(--neutral); background: var(--well); color: var(--fg); font-size: 0.92em; }
+      .k-credit { color: var(--muted); flex-basis: 100%; }
+      .k-credit-link { color: var(--fg); }
+      #no-view { margin: 2em; color: var(--muted); }
+      #no-view[hidden], #view[hidden] { display: none; }
       .k-fact { color: var(--fg); }
       @media (max-width: 900px) { #bar { grid-template-columns: 1fr; } #stage { grid-template-columns: 1fr; } }
     </style>
@@ -150,14 +159,20 @@
       <section id="view-pane">
         <div id="views" hidden></div>
         <iframe id="view" title="behold's view of the change"></iframe>
+        <p id="no-view" hidden>The graph of this repo isn't shown here: this behold serves a different repo.</p>
       </section>
     </div>
     <footer id="foot"></footer>
     <script type="module">
       import { initTheme } from "/theme.js";
       import { startKiosk } from "/kiosk.js";
+      import { pageTool } from "/kiosk-vendor.js";
       initTheme();
-      startKiosk({ bar: document.getElementById("bar"), frame: document.getElementById("view"), foot: document.getElementById("foot"), side: document.getElementById("runs-side"), main: document.getElementById("runs-main"), views: document.getElementById("views") });
+      // behold#571: /<tool> serves this page with its tool in a meta tag; /kiosk has none.
+      startKiosk(
+        { bar: document.getElementById("bar"), frame: document.getElementById("view"), foot: document.getElementById("foot"), side: document.getElementById("runs-side"), main: document.getElementById("runs-main"), views: document.getElementById("views"), noView: document.getElementById("no-view") },
+        { tool: pageTool(document) },
+      );
     </script>
   </body>
 </html>

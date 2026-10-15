@@ -41,7 +41,7 @@ import { terragucciSource, type AwsRun } from "./terragucci-source.ts";
 import { auditValidator, terragucciTimelineRoute } from "./terragucci-timeline.ts";
 import { indexProbe, terragucciLaneRoutes, type LaneRouteOptions } from "./terragucci-poll.ts";
 import { runValidator, TerragucciProgress, terragucciProgressRoute } from "./terragucci-progress.ts";
-import { terragucciDemoRoute } from "./terragucci-demo.ts";
+import { terragucciCyclesRoute, terragucciDemoRoute } from "./terragucci-demo.ts";
 import { terragucciRunsRoutes } from "./terragucci-runs.ts";
 
 export interface TerragucciOptions {
@@ -207,6 +207,8 @@ export function terragucciRoutes(app: Hono, opts: TerragucciOptions, dirs: () =>
 
   // #569: the looping demo's narration, from demo.json at the same source.
   terragucciDemoRoute(app, source, opts.now ? { now: opts.now } : {});
+  // behold#571: each tool's latest cycle, which its own page replays, beside demo.json.
+  terragucciCyclesRoute(app, source, opts.now ? { now: opts.now } : {});
   // #569: the demo's pipeline runs, as the loop driver copies them from the forge.
   const runsSource = opts.runsSource ? terragucciSource(opts.runsSource, { ...(opts.aws ? { aws: opts.aws } : {}), ...(opts.fetch ? { fetch: opts.fetch } : {}) }) : source;
   terragucciRunsRoutes(app, runsSource, opts.now ? { now: opts.now } : {});

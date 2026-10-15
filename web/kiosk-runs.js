@@ -302,8 +302,16 @@ export function setupLine(line) {
  * opened (`open`), the row heads the whole log in order. Every line keeps
  * its number in the log. A log with no set-up lines is drawn as it came.
  */
-export function logRows(lines, { open = false, from = 0 } = {}) {
-  const all = (lines || []).map((text, i) => ({ n: from + i + 1, text, setup: setupLine(text) }));
+export function logRows(lines, { open = false, from = 0, hide = null } = {}) {
+  // behold#571: a tool's page leaves out a line naming another tool, and says how many it left out.
+  const every = (lines || []).map((text, i) => ({ n: from + i + 1, text, setup: setupLine(text) }));
+  const all = hide ? every.filter((l) => !hide(l.text)) : every;
+  const gone = every.length - all.length;
+  const rows = logRowsOf(all, open);
+  return gone ? [...rows, { hidden: gone }] : rows;
+}
+
+function logRowsOf(all, open) {
   const n = all.filter((l) => l.setup).length;
   if (!n) return all.map(({ n: num, text }) => ({ n: num, text }));
   const head = { setup: n, open };
@@ -355,11 +363,12 @@ export function statusIcon(status) {
 }
 
 /** The sidebar: the live run pinned, then the recent ones. `pick(id)` selects one; nothing here writes. */
-export function renderSidebar(host, index, selectedId, { now = new Date(), scenarios = {}, titles = {}, names = {}, pick = () => {}, merged = null } = {}) {
+export function renderSidebar(host, index, selectedId, { now = new Date(), scenarios = {}, titles = {}, names = {}, pick = () => {}, merged = null, replay = false } = {}) {
   host.replaceChildren();
   const head = el("div", "r-side-head");
   head.appendChild(el("div", "r-side-title", "Pipeline runs"));
-  head.appendChild(el("div", "r-side-note", "Real CI runs of the demo repo, copied from its forge as they go. Newest first."));
+  // behold#571: a tool's page replays an earlier cycle's runs, and says so.
+  head.appendChild(el("div", "r-side-note", replay ? "Real CI runs of the replayed cycle, as they stood at this point in it. Newest first." : "Real CI runs of the demo repo, copied from its forge as they go. Newest first."));
   host.appendChild(head);
   if (!index || index.error || index.absent || !index.doc) {
     host.appendChild(el("p", "r-note", index ? index.absent || index.error : "Reading the runs…"));
@@ -367,11 +376,15 @@ export function renderSidebar(host, index, selectedId, { now = new Date(), scena
   }
   // The selected run as its page draws it, when its own document is newer than the index.
   const runs = sidebarRuns(index.doc.runs).map((r) => (merged && merged.id === r.id ? merged : r));
+  if (!runs.length) {
+    host.appendChild(el("p", "r-note", "No runs to show yet."));
+    return;
+  }
   const live = runs[0];
   const named = scenarioTitles(index.doc.runs, titles);
   const list = el("ol", "r-runs");
   runs.forEach((r, i) => {
-    if (i === 0) list.appendChild(el("li", "r-group", LIVE.has(live.status) ? "Live" : "Latest"));
+    if (i === 0) list.appendChild(el("li", "r-group", replay ? (LIVE.has(live.status) ? "Running in the replay" : "Latest in the replay") : LIVE.has(live.status) ? "Live" : "Latest"));
     if (i === 1) list.appendChild(el("li", "r-group", "Recent"));
     const li = el("li", `r-run${r.id === selectedId ? " r-selected" : ""}`);
     li.tabIndex = 0;
@@ -407,7 +420,7 @@ export function renderSidebar(host, index, selectedId, { now = new Date(), scena
  * null for the defaults. Returns what it drew, so the caller can keep a log's
  * scroll.
  */
-export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => {}, toggleStep = () => {}, toggleSetup = () => {}, entry = null, roots = [], waves = [], light = false } = {}) {
+export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => {}, toggleStep = () => {}, toggleSetup = () => {}, entry = null, roots = [], waves = [], light = false, hideLine = null } = {}) {
   // behold#571: a root's name with its colour's dot, where the line names one.
   const textOf = (cls, text) => {
     if (!roots.length || !rootSegments(text, roots).some((x) => x.root)) return el("span", cls, text);
@@ -499,7 +512,11 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
       const pre = el("pre", "r-log");
       if (s.truncated) pre.appendChild(el("div", "r-log-cut", `… ${s.truncated} earlier lines not kept`));
       const key = logKey(run.id, job.name, i);
-      for (const row of logRows(s.log, { open: ui.setup === key, from: s.truncated || 0 })) {
+      for (const row of logRows(s.log, { open: ui.setup === key, from: s.truncated || 0, hide: hideLine })) {
+        if (row.hidden) {
+          pre.appendChild(el("div", "r-log-cut", `${row.hidden} line${row.hidden === 1 ? "" : "s"} of this log left out on this page`));
+          continue;
+        }
         if (row.setup) {
           const fold = el("div", `r-log-setup${row.open ? " r-log-setup-open" : ""}`, `${row.open ? "▾" : "▸"} setup (${row.setup} line${row.setup === 1 ? "" : "s"})`);
           fold.setAttribute("role", "button");
@@ -560,7 +577,25 @@ export const PICK_HOLD_MS = 90_000;
  * is live), and redraw. The live run is selected until a viewer picks
  * another, and again {@link PICK_HOLD_MS} after their last pick.
  */
-export function startRuns({ side, main }, { fetchJson, now = () => new Date(), scenarios = {}, titles = () => ({}), names = () => ({}), onLive = () => {}, roots = () => [], waves = () => [], light = () => false } = {}) {
+export function startRuns(
+  { side, main },
+  {
+    fetchJson,
+    now = () => new Date(),
+    shown = now,
+    scenarios = {},
+    titles = () => ({}),
+    names = () => ({}),
+    onLive = () => {},
+    roots = () => [],
+    waves = () => [],
+    light = () => false,
+    source = () => null,
+    filter = (index) => index,
+    replay = () => false,
+    hideLine = null,
+  } = {},
+) {
   const s = { index: null, run: null, selected: null, picked: 0, ui: { job: null, open: null, setup: null } };
   let follow = true;
   let lastRunKey = "";
@@ -583,18 +618,19 @@ export function startRuns({ side, main }, { fetchJson, now = () => new Date(), s
     const ans = s.run && (!s.run.doc || s.run.doc.id === id) ? s.run : null;
     // One merged read of the selected run for both the sidebar and its page.
     const merged = ans && ans.doc ? mergeRun(entry, ans.doc) : null;
-    renderSidebar(side, s.index, id, { now: now(), scenarios, titles: titles(), names: names(), pick, merged });
+    renderSidebar(side, s.index, id, { now: shown(), scenarios, titles: titles(), names: names(), pick, merged, replay: replay() });
     // The redraw replaces the scrollers: keep where a viewer left them.
     const old = main.querySelector(".r-log");
     const oldSteps = main.querySelector(".r-steps");
     const prevTop = old ? old.scrollTop : 0;
     const prevStepsTop = oldSteps ? oldSteps.scrollTop : 0;
     const drawn = renderRun(main, ans, s.ui, {
-      now: now(),
+      now: shown(),
       entry,
       roots: roots(),
       waves: waves(),
       light: light(),
+      hideLine,
       pickJob: (name) => {
         s.ui = { job: name, open: null, setup: null };
         hold();
@@ -653,7 +689,9 @@ export function startRuns({ side, main }, { fetchJson, now = () => new Date(), s
     void readRun();
   };
   const readIndex = async () => {
-    s.index = await fetchJson("/api/terragucci/runs");
+    // behold#571: a tool's page reads its replay's runs from `source`, and keeps its own repo's alone.
+    const src = source();
+    s.index = filter(src ? await src.index() : await fetchJson("/api/terragucci/runs"));
     const runs = s.index && s.index.doc ? s.index.doc.runs : [];
     const live = liveRun(runs);
     onLive(live);
@@ -661,14 +699,18 @@ export function startRuns({ side, main }, { fetchJson, now = () => new Date(), s
   };
   const readRun = async () => {
     const id = selectedId();
-    if (id === null) return draw();
+    if (id === null) {
+      if (s.index && s.index.doc) s.run = { doc: null, absent: "No run to show yet." };
+      return draw();
+    }
     const entry = s.index && s.index.doc ? s.index.doc.runs.find((r) => r.id === id) : null;
     // A run that ended reads once; one still going reads on every tick.
-    const key = `${id}|${entry ? entry.status : ""}|${entry ? entry.ended_at : ""}`;
+    const src = source();
+    const key = `${src ? "replay" : "live"}|${id}|${entry ? entry.status : ""}|${entry ? entry.ended_at : ""}`;
     if (key === lastRunKey && entry && !LIVE.has(entry.status) && s.run && s.run.doc && s.run.doc.id === id) return draw();
     if (s.run && s.run.doc && s.run.doc.id !== id) s.ui = { job: null, open: null, setup: null };
     lastRunKey = key;
-    s.run = await fetchJson(`/api/terragucci/runs/${id}`);
+    s.run = src ? await src.run(id) : await fetchJson(`/api/terragucci/runs/${id}`);
     draw();
   };
   void readIndex();
