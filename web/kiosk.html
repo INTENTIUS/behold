@@ -142,9 +142,9 @@
       #bar { position: relative; display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 0.4em 0.7em; align-items: stretch;
         padding: 0.3em 0.6em 0.3em; background: var(--bg); }
       #bar > .k-empty, #bar > .k-replay, #bar > .k-nograph-note { grid-column: 1 / -1; }
-      :root { --k-title-h: 1.9em; --k-beat-h: 3.6em; --k-step-h: 4.66em; --k-progress-h: 1.55em; --k-card-h: 2.3em; --k-facts-h: 1.25em; }
-      /* Wide enough that the step's 200 characters take two lines: its box is two lines tall. */
-      @media (min-width: 1700px) { :root { --k-step-h: 3.22em; } }
+      :root { --k-title-h: 1.82em; --k-beat-h: 3.25em; --k-step-h: 4.45em; --k-progress-h: 1.5em; --k-card-h: 3.3em; --k-facts-h: 1.2em; }
+      /* Wide enough that the step's 200 characters, and Watch for with Shows, take two lines each: their boxes are two lines tall. */
+      @media (min-width: 1700px) { :root { --k-step-h: 3.05em; --k-card-h: 2.3em; } }
       .k-lead { display: grid; grid-template-rows: var(--k-title-h) var(--k-beat-h) var(--k-step-h) var(--k-progress-h) var(--k-card-h) var(--k-facts-h) auto; gap: 0.16em; min-width: 0;
         padding: 0.25em 0.8em 0.3em; background: var(--surface-pane-b); border-radius: 8px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 14%, transparent); }
       .k-box { min-height: 0; overflow-y: auto; scrollbar-width: thin; border-radius: 6px; padding: 0.1em 0.2em; }
@@ -155,15 +155,16 @@
       .k-box-title { overflow: hidden; padding: 0; }
       .k-kicker { font: 600 0.5em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-right: 0.9em; vertical-align: 0.3em; white-space: nowrap; }
       .k-cycle { color: var(--muted); font: 0.78em var(--font-mono); white-space: nowrap; }
-      .k-title { margin: 0; font-size: 1.5em; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .k-title { margin: 0; font-size: 1.5em; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       /* The two beats: the largest text after the title, each with its label first. */
-      .k-beat, .k-intro { margin: 0; font-size: 1.32em; line-height: 1.3; color: var(--fg); }
-      .k-step { margin: 0; font-size: 1.16em; line-height: 1.3; color: var(--fg); }
+      .k-beat, .k-intro { margin: 0; font-size: 1.32em; line-height: 1.22; color: var(--fg); }
+      .k-step { margin: 0; font-size: 1.16em; line-height: 1.25; color: var(--fg); }
       .k-beat-text { font-weight: 600; }
+      .k-box-beat { padding: 0 0.2em; }
       .k-beat-label, .k-step-word, .k-intro-head { font: 700 0.62em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; margin-right: 0.8em; vertical-align: 0.12em; white-space: nowrap; }
       .k-beat-label, .k-intro-head { color: var(--muted); }
       .k-step-word { color: var(--pending); }
-      .k-box-step { border-left: 4px solid var(--pending); border-radius: 0 6px 6px 0; padding-left: 0.65em; background: color-mix(in srgb, var(--pending) 7%, transparent); }
+      .k-box-step { border-left: 4px solid var(--pending); border-radius: 0 6px 6px 0; padding: 0.05em 0.2em 0.05em 0.65em; background: color-mix(in srgb, var(--pending) 7%, transparent); }
       .k-box-step:has(.k-step-waiting) { border-left-color: var(--foreign); }
       .k-box-step:has(.k-step-failed), .k-box-step:has(.k-step-stalled) { border-left-color: var(--degraded); }
       .k-box-step:has(.k-step-applied) { border-left-color: var(--managed); }
