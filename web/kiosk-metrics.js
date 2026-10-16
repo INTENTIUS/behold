@@ -43,6 +43,8 @@ export function secondsWords(secs) {
 export function percentWords(ratio) {
   if (typeof ratio !== "number" || !Number.isFinite(ratio)) return null;
   const p = ratio * 100;
+  // behold#571: a rate above zero but under 0.1% keeps its first figure ("0.02%"), so one failure in thousands doesn't read as none.
+  if (p > 0 && p < 0.1) return `${Number(p.toPrecision(1))}%`;
   return `${Math.round(p * 10) / 10}%`;
 }
 
