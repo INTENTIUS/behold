@@ -44,6 +44,10 @@ export function contrast(a, b) {
   const A = relLuminance(a), B = relLuminance(b);
   return (Math.max(A, B) + 0.05) / (Math.min(A, B) + 0.05);
 }
+// behold#571: white or black, whichever reads better on `bg` by the real ratio
+// above. readableOn's quick coin-flip picks white on a mid-tone ground where
+// black reads better (Grass's and Blue Dolphin's neutral card).
+export function inkOn(bg) { return contrast("#ffffff", bg) >= contrast("#000000", bg) ? "#ffffff" : "#000000"; }
 export function hexToOklch(hex) {
   const [R, G, B] = hexToRgb(hex).map(s2l);
   const l = Math.cbrt(0.4122214708 * R + 0.5363325363 * G + 0.0514459929 * B);
