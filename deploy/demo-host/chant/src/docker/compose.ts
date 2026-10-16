@@ -88,7 +88,7 @@ export const behold = new Service({
     HOME: "/tmp",
     DEMO_HOSTNAME: "${DEMO_HOSTNAME:-demo.intentius.io}",
     DEMO_REPORTS: "${DEMO_REPORTS:-s3://demo-reports/demo}",
-    DEMO_REPOS: "${DEMO_REPOS:-terragucci-admin/demo terragucci-admin/demo-terragrunt}",
+    DEMO_REPOS: "${DEMO_REPOS:-terragucci-admin/demo terragucci-admin/demo-terragrunt terragucci-admin/demo-chant}",
     AWS_ENDPOINT_URL: "http://floci:4566",
     AWS_REGION: "us-east-1",
     AWS_DEFAULT_REGION: "us-east-1",
@@ -128,7 +128,7 @@ export const driver = new Service({
   working_dir: "${DEMO_ROOT:-/opt/demo}/terragucci",
   environment: {
     TERRAGUCCI_SRC: "${DEMO_ROOT:-/opt/demo}/terragucci",
-    DEMO_REPOS: "${DEMO_REPOS:-terragucci-admin/demo terragucci-admin/demo-terragrunt}",
+    DEMO_REPOS: "${DEMO_REPOS:-terragucci-admin/demo terragucci-admin/demo-terragrunt terragucci-admin/demo-chant}",
     DEMO_REPORTS: "${DEMO_REPORTS:-s3://demo-reports/demo}",
     // The scenarios the loop runs, space-separated, as terragucci's
     // stack/demo.sh reads them; empty or unset is its default list.

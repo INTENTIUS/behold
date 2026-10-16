@@ -199,7 +199,7 @@ export function kioskRoute(app: Hono, webRoot: string, enabled: boolean): void {
 // when demo.json's `tool` is it, otherwise a replay of its newest cycle.
 
 /** The tools with a page of their own, in the order the loop runs them. web/kiosk-vendor.js has their names. */
-export const VENDOR_TOOLS = ["terraform", "terragrunt", "cdk-terrain", "choudoufu"] as const;
+export const VENDOR_TOOLS = ["terraform", "terragrunt", "cdk-terrain", "choudoufu", "chant"] as const;
 export type VendorTool = (typeof VENDOR_TOOLS)[number];
 
 export const isVendorTool = (v: string): v is VendorTool => (VENDOR_TOOLS as readonly string[]).includes(v);

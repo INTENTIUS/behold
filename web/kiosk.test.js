@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { INTRO_HEAD, STEP_VIEW, STEP_WORDS, aboutRows, approvalPanel, approveGloss, focusRoots, introText, scenarioHead, frameSrc, factLines, kioskView, legendWords, matchingPull, pendingApproval, renderKiosk, renderViewToggle, runPanel, runPin, stepView, viewZoom } from "./kiosk.js";
+import { INTRO_HEAD, STEP_VIEW, STEP_WORDS, aboutRows, approvalPanel, approveGloss, chantProject, focusRoots, introText, scenarioHead, frameSrc, factLines, kioskView, legendWords, matchingPull, pendingApproval, renderKiosk, renderViewToggle, reportless, runPanel, runPin, stepView, viewZoom } from "./kiosk.js";
+import { VENDORS } from "./kiosk-vendor.js";
 import { PICK_HOLD_MS } from "./kiosk-runs.js";
 
 const demo = (step, extra = {}) => ({ cycle: 1, scenario: "a-output", title: "t", step, label: "", started_at: "2026-10-15T03:00:00Z", next: null, pull: 7, commit: "abc12345", ...extra });
@@ -253,6 +254,19 @@ describe("which view the frame shows (#571)", () => {
       expect(words).toMatch(/one unit reading another's outputs.*applies its units together/);
       expect(words).not.toMatch(/\broots?\b/);
     }
+    // A tool whose pipeline writes no reports: behold's own components graph, with no jobs or planned values in it.
+    expect(legendWords("components", "chant")).toBe(
+      "Components shows the project's components, in a box per wave. Each card is a Terraform root with its own state, and an arrow is one component reading another's outputs.",
+    );
+    expect(legendWords("resources", "chant")).toBe("Each box is a Terraform root with its own state.");
+  });
+
+  it("knows a tool whose pipeline writes no terragucci reports, and a chant project behold draws itself", () => {
+    expect(Object.entries(VENDORS).filter(([, v]) => reportless(v)).map(([id]) => id)).toEqual(["chant"]);
+    expect(reportless(null)).toBe(false);
+    expect(chantProject({ memberKinds: ["chant"] })).toBe(true);
+    expect(chantProject({ memberKinds: ["terraform"] })).toBe(false);
+    expect(chantProject({ error: "nope" })).toBe(false);
   });
 
   // A DOM for the toggle: elements with attributes and click listeners.

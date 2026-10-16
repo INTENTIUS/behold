@@ -346,8 +346,9 @@ in `chant/` waits for that step itself, then waits for the new bootstrap.
   which publishes nothing, and only Caddy reaches it.
 - terragucci `stack/demo.sh up` and `stack/demo.sh loop`
   (INTENTIUS/terragucci#1014). The repos are `terragucci-admin/demo`
-  (Terraform) and `terragucci-admin/demo-terragrunt` (Terragrunt), one per
-  tool (the stack's admin, `$USER/demo` and `$USER/demo-terragrunt`), the
+  (Terraform), `terragucci-admin/demo-terragrunt` (Terragrunt) and
+  `terragucci-admin/demo-chant` (chant), one per tool (the stack's admin,
+  `$USER/demo`, `$USER/demo-terragrunt` and `$USER/demo-chant`), the
   reports are `s3://demo-reports/demo`, and `demo.json` is at
   `demo-reports/demo/demo.json`. The admin token is in
   `stack/.state/forgejo.env`. If any of these change, set `DEMO_REPOS` or

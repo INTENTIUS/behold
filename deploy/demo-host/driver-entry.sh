@@ -21,7 +21,7 @@
 #
 # The demo repos are DEMO_REPOS, space-separated: one forge repo per tool the
 # driver runs (terragucci's stack/demo.sh: <admin>/demo for Terraform,
-# <admin>/demo-terragrunt for Terragrunt). A setting, not read from the
+# <admin>/demo-terragrunt for Terragrunt, <admin>/demo-chant for chant). A setting, not read from the
 # driver: stack/demo.sh keeps its tool-to-repo table in shell functions with
 # no machine-readable output, and the reports' runs index names a repo only
 # once a run of it has been copied, which is after behold needs the checkout.
@@ -35,7 +35,7 @@ set -euo pipefail
 TG="${TERRAGUCCI_SRC:?TERRAGUCCI_SRC names the terragucci checkout}"
 FORGEJO="http://127.0.0.1:${TERRAGUCCI_FORGEJO_PORT:-3300}"
 FLOCI="http://127.0.0.1:${TERRAGUCCI_FLOCI_PORT:-4580}"
-REPOS="${DEMO_REPOS:-terragucci-admin/demo terragucci-admin/demo-terragrunt}"
+REPOS="${DEMO_REPOS:-terragucci-admin/demo terragucci-admin/demo-terragrunt terragucci-admin/demo-chant}"
 REPORTS="${DEMO_REPORTS:-s3://demo-reports/demo}"
 VIEWER="${DEMO_VIEWER_USER:-demo-viewer}"
 STATE=/var/lib/demo-host
