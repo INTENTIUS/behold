@@ -1,15 +1,16 @@
 ---
 // The home page's parts. `part="top"` (the default) is the pixel face, which
 // opens the docs, the wordmark, the mark between two gold hairlines, the
-// tagline and one plain sentence; then the picker (Picker.astro), the setup
-// prompt for a coding agent (its one source is src/prompts.ts), and the
-// feature tiles, each one link. `part="next"` is the read-next table under its
+// tagline and one plain sentence; then the picker (Picker.astro), the live
+// demo (data/live.mjs) beside the setup prompt for a coding agent (its one
+// source is src/prompts.ts), and the feature tiles, each one link. `part="next"` is the read-next table under its
 // section heading in index.mdx. One import keeps index.mdx's prose free of
 // import lines.
 import AgentPrompt from './AgentPrompt.astro';
 import LinkRows from './LinkRows.astro';
 import Picker from './Picker.astro';
 import { setupPrompt } from '../prompts';
+import { LIVE, LIVE_TOOLS } from '../data/live.mjs';
 import { base, docsHref } from '../site';
 
 interface Props {
@@ -39,10 +40,21 @@ const pillars = [
 			<p class="lede">See every substrate of an estate in one graph that drift colours. Act through the gated Ops you already committed.</p>
 		</section>
 		<Picker />
-		<section class="bh-prompt-wrap not-content" aria-label="Hand it to an agent">
-			<AgentPrompt text={setupPrompt} label="Start by handing this to an agent" note="Paste it into Claude Code, or any coding agent with a shell." />
-			<p>The same demo from npm, no clone, with Docker: <code>npx @intentius/behold demo</code></p>
-		</section>
+		<div class="bh-start not-content">
+			<section class="bh-live" aria-labelledby="bh-live-h">
+				<p class="h" id="bh-live-h"><span class="bh-mark" aria-hidden="true"></span>See it live</p>
+				<p>Watch behold follow real terragucci pipelines in a loop. The demo is read-only and needs no install.</p>
+				<a class="go" href={LIVE}>Open the live demo</a>
+				<p class="tools-h">By tool</p>
+				<ul class="tools">
+					{LIVE_TOOLS.map((t) => <li><a href={t.href}>{t.label}</a></li>)}
+				</ul>
+			</section>
+			<section class="bh-prompt-wrap" aria-label="Hand it to an agent">
+				<AgentPrompt text={setupPrompt} label="Start by handing this to an agent" note="Paste it into Claude Code, or any coding agent with a shell." />
+				<p>The same demo from npm, no clone, with Docker: <code>npx @intentius/behold demo</code></p>
+			</section>
+		</div>
 		<ul class="bh-pillars not-content">
 			{pillars.map((p) => (
 				<li>
@@ -57,12 +69,98 @@ const pillars = [
 )}
 
 <style>
+	/* The live demo beside the agent prompt: two ways to start before installing anything. */
+	.bh-start {
+		display: grid;
+		grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+		gap: 0.75rem;
+		align-items: start;
+		max-width: 64rem;
+		margin: 0 auto 2.5rem;
+	}
+	.bh-live {
+		display: grid;
+		justify-items: start;
+		gap: 0.7rem;
+		padding: 1rem 1.15rem;
+		background: var(--bh-panel);
+		border: 1px solid var(--bh-rule);
+		border-top: 1px solid var(--bh-gold);
+		border-radius: 0.6rem;
+		font-size: var(--sl-text-sm);
+		line-height: 1.55;
+		color: var(--sl-color-gray-2);
+	}
+	.bh-live p {
+		margin: 0;
+	}
+	.bh-live .h {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: var(--sl-text-base);
+		font-weight: 600;
+		color: var(--sl-color-white);
+	}
+	.bh-live .go {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.55rem 1rem;
+		font-weight: 600;
+		color: var(--sl-color-black);
+		text-decoration: none;
+		background: var(--bh-accent);
+		border-radius: 0.5rem;
+	}
+	.bh-live .go::after {
+		content: '\2197';
+	}
+	.bh-live .go:hover {
+		filter: brightness(1.1);
+	}
+	.bh-live .tools-h {
+		font-size: 0.68rem;
+		font-weight: 600;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		color: var(--sl-color-gray-3);
+	}
+	.bh-live .tools {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.bh-live .tools li {
+		margin: 0;
+	}
+	.bh-live .tools a {
+		display: inline-block;
+		padding: 0.2rem 0.65rem;
+		color: var(--sl-color-white);
+		text-decoration: none;
+		border: 1px solid var(--bh-rule);
+		border-radius: 999px;
+	}
+	.bh-live .tools a:hover {
+		border-color: var(--bh-gold);
+	}
+	@media (max-width: 50rem) {
+		.bh-start {
+			grid-template-columns: minmax(0, 1fr);
+		}
+	}
 	.bh-prompt-wrap {
 		display: grid;
 		justify-items: center;
 		gap: 0.4rem;
-		max-width: 64rem;
-		margin: 0 auto 2.5rem;
+	}
+	/* Level with the live demo card beside it. */
+	.bh-prompt-wrap :global(.bh-prompt) {
+		margin-top: 0;
 	}
 	.bh-prompt-wrap > p {
 		margin: 0;
