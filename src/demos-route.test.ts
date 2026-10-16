@@ -150,8 +150,8 @@ describe("GET /api/demos — the catalog, with per-entry satisfiability (#268)",
     expect(carve.satisfiable).toBe(true);
     expect(carve.switchable).toBe(false);
     expect(carve.reason).toMatch(/behold demo carve/);
-    // The flag is absent on everything else, not false.
-    expect(demos.filter((d) => d.switchable === false).map((d) => d.name)).toEqual(["carve"]);
+    // The terralith walkthrough is a page of its own too; the flag is absent on everything else, not false.
+    expect(demos.filter((d) => d.switchable === false).map((d) => d.name)).toEqual(["carve", "terralith"]);
   });
 
   // #388: the workbench catalog reaches the panel through the same route, and

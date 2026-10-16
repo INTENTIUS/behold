@@ -65,6 +65,18 @@ describe("demos.json — the committed catalog (#209)", () => {
     expect(tf!.description).toContain("@intentius/chant-lexicon-terraform");
   });
 
+  it("the terralith entry serves its walkthrough, and its copy holds every phase's script and code change", () => {
+    const t = registry.find((e) => e.name === "terralith");
+    expect(t, "no terralith entry in demos.json").toBeTruthy();
+    expect(t!.serve.terralith).toBe(true);
+    expect(t!.requires).toEqual(["docker", "curl", "choudoufu"]);
+    expect(t!.setup).toBe("bash scripts/terralith-up.sh");
+    const dir = join(REPO, t!.dir!);
+    for (const f of ["scripts/terralith-up.sh", "scripts/terralith-step.sh", "scripts/terralith-down.sh", "terralith/main.tf", "phases/adopt/terralith/main.tf", "phases/adopt/migrations/adopt.yml", "phases/split/migrations/split.yml", "phases/split/team-a/main.tf"]) {
+      expect(existsSync(join(dir, f)), f).toBe(true);
+    }
+  });
+
   it("the carve entry names four real paths inside the bundled estate", () => {
     const carve = registry.find((e) => e.name === "carve");
     expect(carve, "no carve entry in demos.json").toBeTruthy();

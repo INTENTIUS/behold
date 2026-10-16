@@ -1,0 +1,24 @@
+{
+  "estate": "terralith",
+  "choudoufu_version": "v0.28.0",
+  "upstream_version": "1.13.0",
+  "bound": [
+    {
+      "addr": "aws_subnet.app",
+      "type": "aws_subnet",
+      "identity": "subnet-719de87e",
+      "source": "marker"
+    },
+    {
+      "addr": "aws_vpc.main",
+      "type": "aws_vpc",
+      "identity": "vpc-737b83d8",
+      "source": "marker"
+    }
+  ],
+  "omissions": [],
+  "unowned": [],
+  "foreign": null,
+  "adoptable": [],
+  "swept": []
+}

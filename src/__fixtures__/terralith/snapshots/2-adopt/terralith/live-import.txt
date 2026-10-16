@@ -1,0 +1,59 @@
+
+Ratifying /private/tmp/claude-501/-Users-alex-Documents-checkouts-intentius-terragucci/fa6c9836-2da9-466f-8cf0-15dfcd2df4d7/scratchpad/run2/copy/terralith/../.terralith/terralith.tfstate for estate "terralith" against the live system. This was read-only: nothing was written.
+
+VERIFIED (11) - verified against the live system:
+  aws_cloudwatch_log_group.team_a_0          aws_cloudwatch_log_group live id: /terralith/team-a/svc-0
+    The live object matches the state's recorded attributes.
+  aws_cloudwatch_log_group.team_a_1          aws_cloudwatch_log_group live id: /terralith/team-a/svc-1
+    The live object matches the state's recorded attributes.
+  aws_cloudwatch_log_group.team_a_2          aws_cloudwatch_log_group live id: /terralith/team-a/svc-2
+    The live object matches the state's recorded attributes.
+  aws_cloudwatch_log_group.team_b_0          aws_cloudwatch_log_group live id: /terralith/team-b/svc-0
+    The live object matches the state's recorded attributes.
+  aws_cloudwatch_log_group.team_b_1          aws_cloudwatch_log_group live id: /terralith/team-b/svc-1
+    The live object matches the state's recorded attributes.
+  aws_cloudwatch_log_group.team_b_2          aws_cloudwatch_log_group live id: /terralith/team-b/svc-2
+    The live object matches the state's recorded attributes.
+  aws_cloudwatch_log_group.team_c_0          aws_cloudwatch_log_group live id: /terralith/team-c/svc-0
+    The live object matches the state's recorded attributes.
+  aws_cloudwatch_log_group.team_c_1          aws_cloudwatch_log_group live id: /terralith/team-c/svc-1
+    The live object matches the state's recorded attributes.
+  aws_cloudwatch_log_group.team_c_2          aws_cloudwatch_log_group live id: /terralith/team-c/svc-2
+    The live object matches the state's recorded attributes.
+  aws_subnet.app                             aws_subnet               live id: subnet-719de87e
+    The live object matches the state's recorded attributes.
+  aws_vpc.main                               aws_vpc                  live id: vpc-737b83d8
+    The live object matches the state's recorded attributes.
+
+DRIFTED (6) - verified, but drifted from the live system:
+  aws_iam_policy.team_a                      aws_iam_policy           live id: arn:aws:iam::000000000000:policy/terralith-team-a-policy
+    The live object differs from the state's recorded attributes: attachment_count (cty.NumberIntVal(0) -> cty.NumberIntVal(1)). Verification does not fix drift; a live-plan after stamping will show it.
+  aws_iam_policy.team_b                      aws_iam_policy           live id: arn:aws:iam::000000000000:policy/terralith-team-b-policy
+    The live object differs from the state's recorded attributes: attachment_count (cty.NumberIntVal(0) -> cty.NumberIntVal(1)). Verification does not fix drift; a live-plan after stamping will show it.
+  aws_iam_policy.team_c                      aws_iam_policy           live id: arn:aws:iam::000000000000:policy/terralith-team-c-policy
+    The live object differs from the state's recorded attributes: attachment_count (cty.NumberIntVal(0) -> cty.NumberIntVal(1)). Verification does not fix drift; a live-plan after stamping will show it.
+  aws_iam_role.team_a                        aws_iam_role             live id: terralith-team-a-role
+    The live object differs from the state's recorded attributes: inline_policy (cty.SetValEmpty(cty.Object(map[string]cty.Type{"name":cty.String, "policy":cty.String})) -> cty.SetVal([]cty.Value{cty.ObjectVal(map[string]cty.Value{"name":cty.StringVal("terralith-team-a-inline"), "policy":c...), managed_policy_arns (cty.SetValEmpty(cty.String) -> cty.SetVal([]cty.Value{cty.StringVal("arn:aws:iam::000000000000:policy/terralith-team-a-policy")})). Verification does not fix drift; a live-plan after stamping will show it.
+  aws_iam_role.team_b                        aws_iam_role             live id: terralith-team-b-role
+    The live object differs from the state's recorded attributes: inline_policy (cty.SetValEmpty(cty.Object(map[string]cty.Type{"name":cty.String, "policy":cty.String})) -> cty.SetVal([]cty.Value{cty.ObjectVal(map[string]cty.Value{"name":cty.StringVal("terralith-team-b-inline"), "policy":c...), managed_policy_arns (cty.SetValEmpty(cty.String) -> cty.SetVal([]cty.Value{cty.StringVal("arn:aws:iam::000000000000:policy/terralith-team-b-policy")})). Verification does not fix drift; a live-plan after stamping will show it.
+  aws_iam_role.team_c                        aws_iam_role             live id: terralith-team-c-role
+    The live object differs from the state's recorded attributes: inline_policy (cty.SetValEmpty(cty.Object(map[string]cty.Type{"name":cty.String, "policy":cty.String})) -> cty.SetVal([]cty.Value{cty.ObjectVal(map[string]cty.Value{"name":cty.StringVal("terralith-team-c-inline"), "policy":c...), managed_policy_arns (cty.SetValEmpty(cty.String) -> cty.SetVal([]cty.Value{cty.StringVal("arn:aws:iam::000000000000:policy/terralith-team-c-policy")})). Verification does not fix drift; a live-plan after stamping will show it.
+
+UNTAGGABLE (6) - outside the taggable subset:
+  aws_iam_role_policy.team_a_inline          aws_iam_role_policy      live id: terralith-team-a-role:terralith-team-a-inline
+    aws_iam_role_policy has no tags argument in the provider's schema, so there is nowhere on it to carry an ownership marker.
+  aws_iam_role_policy.team_b_inline          aws_iam_role_policy      live id: terralith-team-b-role:terralith-team-b-inline
+    aws_iam_role_policy has no tags argument in the provider's schema, so there is nowhere on it to carry an ownership marker.
+  aws_iam_role_policy.team_c_inline          aws_iam_role_policy      live id: terralith-team-c-role:terralith-team-c-inline
+    aws_iam_role_policy has no tags argument in the provider's schema, so there is nowhere on it to carry an ownership marker.
+  aws_iam_role_policy_attachment.team_a      aws_iam_role_policy_attachment live id: terralith-team-a-role/arn:aws:iam::000000000000:policy/terralith-team-a-policy
+    aws_iam_role_policy_attachment has no tags argument in the provider's schema, so there is nowhere on it to carry an ownership marker.
+  aws_iam_role_policy_attachment.team_b      aws_iam_role_policy_attachment live id: terralith-team-b-role/arn:aws:iam::000000000000:policy/terralith-team-b-policy
+    aws_iam_role_policy_attachment has no tags argument in the provider's schema, so there is nowhere on it to carry an ownership marker.
+  aws_iam_role_policy_attachment.team_c      aws_iam_role_policy_attachment live id: terralith-team-c-role/arn:aws:iam::000000000000:policy/terralith-team-c-policy
+    aws_iam_role_policy_attachment has no tags argument in the provider's schema, so there is nowhere on it to carry an ownership marker.
+
+17 of 23 resource instance(s) are eligible for stamping (VERIFIED or DRIFTED).
+
+/private/tmp/claude-501/-Users-alex-Documents-checkouts-intentius-terragucci/fa6c9836-2da9-466f-8cf0-15dfcd2df4d7/scratchpad/run2/copy/terralith/../.terralith/terralith.tfstate was opened once, read-only, and will not be opened again by this run - not to write it, and not to read it a second time.
+No tag has been written. Rerun with -approve to stamp tofu-estate and tofu-address onto every eligible resource above.

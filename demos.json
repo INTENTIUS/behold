@@ -115,6 +115,21 @@
       }
     },
     {
+      "name": "terralith",
+      "description": "A terralith, adopted and split, on a scratch floci. Phase 1 applies one stock Terraform root with 23 resources in one state file. Adopt runs terragucci's backends migration, in which choudoufu live-import stamps its marker on each resource it verifies. Split runs the moves migration, in which live-mv moves each team's resources into the team's own estate with one tag write each, and split.json records it. Each card shows whether its identity comes from its marker or from its name, and the cards glide into the team boxes as they appear. You run each phase's script line, and behold reads what it leaves. It requires choudoufu 0.28.0 or newer (or CHOUDOUFU_BIN) with Docker and curl, and providers download on first init. scripts/terralith-down.sh removes the container.",
+      "source": "bundled",
+      "dir": "example-terralith",
+      "requires": [
+        "docker",
+        "curl",
+        "choudoufu"
+      ],
+      "setup": "bash scripts/terralith-up.sh",
+      "serve": {
+        "terralith": true
+      }
+    },
+    {
       "name": "fountain",
       "description": "The mature estate: self-hosted fountain (a real app) on a throwaway k3d cluster — tiers (try the ha tier picker), seams, drift, runtime Pods. Clones INTENTIUS/fountain-ops; ~5 minutes, mostly image pulls. `just down` in the clone removes the cluster.",
       "source": "git",

@@ -1058,7 +1058,9 @@ only navigates.
 
 A choudoufu estate member (#366) adds no exception. A move there is one tag
 write through choudoufu's own `live-mv`, and behold never makes it: `GET
-/api/choudoufu/moves` reads a plan (`carve.json`) from inside a served member,
+/api/choudoufu/split` (also answered as `/api/choudoufu/moves`, its name before
+the split rename) reads a plan (`split.json`, or the workbench's `carve.json`)
+from inside a served member,
 previews each move with choudoufu's `live-mv -json -dry-run` (the only spelling
 of `live-mv` in the tree, src/choudoufu-moves.ts `dryRunArgs`, asserted by
 test), hands the lines back with copy buttons, and `?receipt=1` reads the

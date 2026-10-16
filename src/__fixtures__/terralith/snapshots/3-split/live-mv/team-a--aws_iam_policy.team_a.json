@@ -1,0 +1,27 @@
+{
+  "resource": {
+    "type": "aws_iam_policy",
+    "live_id": "arn:aws:iam::000000000000:policy/terralith-team-a-policy",
+    "display_name": "terralith-team-a-policy"
+  },
+  "from": {
+    "estate": "terralith",
+    "address": "aws_iam_policy.team_a",
+    "marker": "aws_iam_policy.team_a"
+  },
+  "to": {
+    "estate": "team-a",
+    "address": "aws_iam_policy.team_a",
+    "marker": "aws_iam_policy.team_a"
+  },
+  "followers": [
+    {
+      "address": "aws_iam_role_policy_attachment.team_a",
+      "type": "aws_iam_role_policy_attachment"
+    }
+  ],
+  "dry_run": false,
+  "written": true,
+  "verified": true,
+  "found_by": "LIST"
+}

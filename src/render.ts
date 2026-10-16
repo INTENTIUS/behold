@@ -1000,10 +1000,19 @@ function composeMembersEstate(members: Array<{ title: string; panel: string; ir:
  * The move morph (#371): every member of the estate as a box, and the frame
  * after the plan's moves — each moved card (and its followers) in its
  * destination box, keeping the id it had, so pinhole's FLIP glides it across
- * while the boxes resize. A move whose source or destination is not a member
- * here moves nothing and is left where it is: the morph shows what the served
- * estate can show, never a guess about a box that is not on the picture.
+ * while the boxes resize.
+ *
+ * A destination the plan names that no member serves is a box the split
+ * spawns: it is absent from the first frame and present in the second, so
+ * pinhole fades it in while the cards glide into it (a box keyed by title
+ * that only one view holds fades in place). Its title says it is new; it
+ * holds only the cards the plan moves into it, since nothing else about that
+ * estate is on the picture. A move whose SOURCE is not served moves nothing:
+ * there is no card to glide.
  */
+/** The title of a box the split spawns, for an estate no member serves yet. */
+export const spawnedBoxTitle = (estate: string): string => `${estate} — new estate`;
+
 export function renderMoveMorph(members: MoveMorphMember[], moves: MoveMorphMove[], opts: { title?: string; estateOf?: (member: MoveMorphMember) => string } = {}): string {
   const estateOf = opts.estateOf ?? ((m: MoveMorphMember) => m.panel);
   const prefixed = members.map((m) => {
@@ -1023,10 +1032,25 @@ export function renderMoveMorph(members: MoveMorphMember[], moves: MoveMorphMove
   // After: lift each moved card (and followers) out of its source member and
   // drop it into the destination, same id, ownership repainted.
   const after = prefixed.map((m) => ({ ...m, ir: { ...m.ir, nodes: [...m.ir.nodes], edges: [...m.ir.edges] } }));
+  type Box = (typeof after)[number];
+  const spawned = new Map<string, Box>();
+  const servedBox = (estate: string): Box | undefined => after.find((m) => ![...spawned.values()].includes(m) && estateOf(m) === estate);
+  const destination = (estate: string): Box => {
+    const served = servedBox(estate);
+    if (served) return served;
+    let box = spawned.get(estate);
+    if (!box) {
+      box = { name: `new:${estate}`, title: spawnedBoxTitle(estate), panel: `estate ${estate}`, ir: { nodes: [], edges: [], groups: {} } };
+      spawned.set(estate, box);
+      after.push(box);
+    }
+    return box;
+  };
   for (const mv of moves) {
-    const src = after.find((m) => estateOf(m) === mv.from);
-    const dst = after.find((m) => estateOf(m) === mv.to);
-    if (!src || !dst || src === dst) continue;
+    const src = servedBox(mv.from);
+    if (!src || !src.ir.nodes.some((n) => n.id === `${src.name}/${mv.address}`)) continue;
+    const dst = destination(mv.to);
+    if (src === dst) continue;
     const ids = new Set([mv.address, ...(mv.followers ?? [])].map((a) => `${src.name}/${a}`));
     const moving = src.ir.nodes.filter((n) => ids.has(n.id));
     if (!moving.length) continue;

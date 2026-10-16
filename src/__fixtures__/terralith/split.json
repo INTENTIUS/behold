@@ -1,0 +1,39 @@
+{
+  "from": "terralith",
+  "estates": ["team-a", "team-b", "team-c"],
+  "migration": "migrations/split.yml",
+  "moves": [
+    {"address": "aws_iam_role.team_a", "from": "terralith", "to": "team-a"},
+    {"address": "aws_iam_policy.team_a", "from": "terralith", "to": "team-a"},
+    {"address": "aws_cloudwatch_log_group.team_a_0", "from": "terralith", "to": "team-a"},
+    {"address": "aws_cloudwatch_log_group.team_a_1", "from": "terralith", "to": "team-a"},
+    {"address": "aws_cloudwatch_log_group.team_a_2", "from": "terralith", "to": "team-a"},
+    {"address": "aws_iam_role.team_b", "from": "terralith", "to": "team-b"},
+    {"address": "aws_iam_policy.team_b", "from": "terralith", "to": "team-b"},
+    {"address": "aws_cloudwatch_log_group.team_b_0", "from": "terralith", "to": "team-b"},
+    {"address": "aws_cloudwatch_log_group.team_b_1", "from": "terralith", "to": "team-b"},
+    {"address": "aws_cloudwatch_log_group.team_b_2", "from": "terralith", "to": "team-b"},
+    {"address": "aws_iam_role.team_c", "from": "terralith", "to": "team-c"},
+    {"address": "aws_iam_policy.team_c", "from": "terralith", "to": "team-c"},
+    {"address": "aws_cloudwatch_log_group.team_c_0", "from": "terralith", "to": "team-c"},
+    {"address": "aws_cloudwatch_log_group.team_c_1", "from": "terralith", "to": "team-c"},
+    {"address": "aws_cloudwatch_log_group.team_c_2", "from": "terralith", "to": "team-c"}
+  ],
+  "retags": [
+    {"address": "aws_iam_role.team_a", "from": "terralith", "to": "team-a", "from_estate": "terralith", "to_estate": "team-a", "document": "snapshots/3-split/live-mv/team-a--aws_iam_role.team_a.json"},
+    {"address": "aws_iam_policy.team_a", "from": "terralith", "to": "team-a", "from_estate": "terralith", "to_estate": "team-a", "document": "snapshots/3-split/live-mv/team-a--aws_iam_policy.team_a.json"},
+    {"address": "aws_cloudwatch_log_group.team_a_0", "from": "terralith", "to": "team-a", "from_estate": "terralith", "to_estate": "team-a", "document": "snapshots/3-split/live-mv/team-a--aws_cloudwatch_log_group.team_a_0.json"},
+    {"address": "aws_cloudwatch_log_group.team_a_1", "from": "terralith", "to": "team-a", "from_estate": "terralith", "to_estate": "team-a", "document": "snapshots/3-split/live-mv/team-a--aws_cloudwatch_log_group.team_a_1.json"},
+    {"address": "aws_cloudwatch_log_group.team_a_2", "from": "terralith", "to": "team-a", "from_estate": "terralith", "to_estate": "team-a", "document": "snapshots/3-split/live-mv/team-a--aws_cloudwatch_log_group.team_a_2.json"},
+    {"address": "aws_iam_role.team_b", "from": "terralith", "to": "team-b", "from_estate": "terralith", "to_estate": "team-b", "document": "snapshots/3-split/live-mv/team-b--aws_iam_role.team_b.json"},
+    {"address": "aws_iam_policy.team_b", "from": "terralith", "to": "team-b", "from_estate": "terralith", "to_estate": "team-b", "document": "snapshots/3-split/live-mv/team-b--aws_iam_policy.team_b.json"},
+    {"address": "aws_cloudwatch_log_group.team_b_0", "from": "terralith", "to": "team-b", "from_estate": "terralith", "to_estate": "team-b", "document": "snapshots/3-split/live-mv/team-b--aws_cloudwatch_log_group.team_b_0.json"},
+    {"address": "aws_cloudwatch_log_group.team_b_1", "from": "terralith", "to": "team-b", "from_estate": "terralith", "to_estate": "team-b", "document": "snapshots/3-split/live-mv/team-b--aws_cloudwatch_log_group.team_b_1.json"},
+    {"address": "aws_cloudwatch_log_group.team_b_2", "from": "terralith", "to": "team-b", "from_estate": "terralith", "to_estate": "team-b", "document": "snapshots/3-split/live-mv/team-b--aws_cloudwatch_log_group.team_b_2.json"},
+    {"address": "aws_iam_role.team_c", "from": "terralith", "to": "team-c", "from_estate": "terralith", "to_estate": "team-c", "document": "snapshots/3-split/live-mv/team-c--aws_iam_role.team_c.json"},
+    {"address": "aws_iam_policy.team_c", "from": "terralith", "to": "team-c", "from_estate": "terralith", "to_estate": "team-c", "document": "snapshots/3-split/live-mv/team-c--aws_iam_policy.team_c.json"},
+    {"address": "aws_cloudwatch_log_group.team_c_0", "from": "terralith", "to": "team-c", "from_estate": "terralith", "to_estate": "team-c", "document": "snapshots/3-split/live-mv/team-c--aws_cloudwatch_log_group.team_c_0.json"},
+    {"address": "aws_cloudwatch_log_group.team_c_1", "from": "terralith", "to": "team-c", "from_estate": "terralith", "to_estate": "team-c", "document": "snapshots/3-split/live-mv/team-c--aws_cloudwatch_log_group.team_c_1.json"},
+    {"address": "aws_cloudwatch_log_group.team_c_2", "from": "terralith", "to": "team-c", "from_estate": "terralith", "to_estate": "team-c", "document": "snapshots/3-split/live-mv/team-c--aws_cloudwatch_log_group.team_c_2.json"}
+  ]
+}

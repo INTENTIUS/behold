@@ -729,6 +729,11 @@ async function runDemo(rest: string[]): Promise<void> {
     process.stderr.write(`behold demo ${entry.name}: ${loaded.error}\n`);
     process.exit(1);
   }
+  // The terralith walkthrough reads the copy's snapshots; it serves no project.
+  if (entry.serve.terralith) {
+    await serveTerralithDemo(target, port);
+    return;
+  }
   // #254: a carve demo isn't a project serve at all — it boots the advisor and
   // hands the walkthrough its estate context.
   if (entry.serve.carve) {
@@ -759,6 +764,18 @@ function spawnStep(cmd: string, args: string[], cwd: string): Promise<number> {
     child.on("error", () => res(-1));
     child.on("close", (code) => res(code ?? 1));
   });
+}
+
+/**
+ * `behold demo terralith`: the setup (scripts/terralith-up.sh, run by
+ * loadDemo) has booted the scratch floci and applied phase 1; this serves the
+ * walkthrough over the copy. Every later write is `scripts/terralith-step.sh
+ * <phase>`, which the page shows and a person runs in the copy.
+ */
+async function serveTerralithDemo(target: string, port: number): Promise<void> {
+  const endpoint = `http://127.0.0.1:${process.env.TERRALITH_PORT ?? "4652"}`;
+  process.stdout.write(`behold demo terralith → serving the walkthrough. Next, in ${target}: bash scripts/terralith-step.sh adopt\n`);
+  await startServer({ projectDir: target, terralithDemo: { root: target, endpoint }, port });
 }
 
 /**

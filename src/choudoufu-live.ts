@@ -20,8 +20,8 @@
  * neutral`, mapped from three vocabularies choudoufu deliberately did not
  * unify (`bound[].source`, `gaps[].rung`, the ten omission reasons) — the
  * table in `paintChoudoufu`. Nothing new is invented: a bound instance is
- * `good` whatever bound it (marker versus derived tracks the tagging index's
- * lag, not the estate), an unowned object is the drift case, an absent one is
+ * `good` whatever bound it (marker versus derived is how the plan found the
+ * object, not who owns it; the card's identity mark shows it), an unowned object is the drift case, an absent one is
  * pending, and everything the tool could not answer is `neutral`.
  *
  * Join on the decoded `address`, never the raw `tofu-address` tag (which
@@ -302,16 +302,22 @@ const UNOBSERVED_REASONS = new Set(["FAILED", "CYCLE", "SUPERSEDED", "UNREADABLE
 
 const BOUND_WORDS: Record<string, string> = {
   marker: "by its marker (the estate-wide tag sweep)",
-  // #393 item 8: this is the whole of an unadopted estate's green. 84 of the
-  // terralith's cards are bound this way and none of them carries a marker —
-  // choudoufu matched the live object by the identity the configuration
-  // states, which is correct and is NOT ownership. The card is painted good
-  // and counted bound, per choudoufu; the pane has to say the consequence out
-  // loud, or a reader takes a third of the estate for already adopted.
-  derived: "by derived identity (the name the configuration states) — no marker on the object yet",
+  // #393 item 8 read this as "no marker yet", and that holds only for an
+  // object that carries none. choudoufu binds a named instance (an IAM role,
+  // a log group) by the name the configuration states whether or not a
+  // marker is on it (internal/command/views/live_plan.go,
+  // LivePlanBoundDerived: "no marker sweep and no record store involved"),
+  // and a stamped log group still reads `derived`. Whether the object
+  // carries the marker is live-ls's answer, so it is its own row, `marker`,
+  // below.
+  derived: "by derived identity (the name the configuration states)",
   record: "from the estate's record store",
   cache: "from the local state cache",
 };
+
+/** The `marker` row: what the listing says the object wears. */
+export const MARKER_ON = "on the object (tofu-estate, tofu-address)";
+export const MARKER_NONE = "no marker on the object";
 
 /** The two tags that adopt an unowned object, as the one line a person writes:
  * choudoufu's own composed command when the document carries one, else the
@@ -339,11 +345,21 @@ export function verdictFor(address: string, ls: LiveLsDocument | undefined, plan
   const listing = gap ? { listing: gap.detail } : {};
   if (bound) {
     const id = bound.identity || item?.id;
+    // The marker-vs-derived mark (web/identity-mark.js): how the plan found
+    // the instance, and whether the object wears this estate's marker, which
+    // is whether live-ls lists it under the estate's tag.
+    const marked = !!item;
     return {
       _status: "good",
       ...(id ? { physicalId: id } : {}),
       ownership: "owned",
-      attrs: { bound: BOUND_WORDS[bound.source] ?? bound.source, ...(bound.identity_values ? { identity: bound.identity_values } : {}), ...listing },
+      attrs: {
+        bound: BOUND_WORDS[bound.source] ?? bound.source,
+        marker: marked ? MARKER_ON : MARKER_NONE,
+        _identity: { source: bound.source, marked },
+        ...(bound.identity_values ? { identity: bound.identity_values } : {}),
+        ...listing,
+      },
     };
   }
   if (omission) {
@@ -642,7 +658,7 @@ export function choudoufuDiffNodes(
     const detail = !v
       ? "not mentioned by live-plan or live-ls"
       : typeof v.attrs.bound === "string"
-        ? `bound ${v.attrs.bound}`
+        ? `bound ${v.attrs.bound}${v.attrs.marker === MARKER_NONE ? `; ${MARKER_NONE}` : ""}`
         : typeof v.attrs.omission === "string"
           ? `${v.attrs.omission}: ${String(v.attrs.detail ?? "")}`
           : (v._unobserved ?? (typeof v.attrs.listing === "string" ? v.attrs.listing : undefined));

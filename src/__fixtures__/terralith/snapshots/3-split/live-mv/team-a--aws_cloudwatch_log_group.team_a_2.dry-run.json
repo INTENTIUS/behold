@@ -1,0 +1,20 @@
+{
+  "resource": {
+    "type": "aws_cloudwatch_log_group",
+    "live_id": "/terralith/team-a/svc-2"
+  },
+  "from": {
+    "estate": "terralith",
+    "address": "aws_cloudwatch_log_group.team_a_2",
+    "marker": "aws_cloudwatch_log_group.team_a_2"
+  },
+  "to": {
+    "estate": "team-a",
+    "address": "aws_cloudwatch_log_group.team_a_2",
+    "marker": "aws_cloudwatch_log_group.team_a_2"
+  },
+  "dry_run": true,
+  "written": false,
+  "verified": false,
+  "found_by": "IDENTITY"
+}

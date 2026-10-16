@@ -5,16 +5,16 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   REFUSAL_CODES,
-  discoverCarvePlans,
+  discoverSplitPlans,
   dryRunArgs,
   handoffLine,
   moveMembers,
   moveReceipt,
   movesPayload,
-  parseCarvePlan,
+  parseSplitPlan,
   parseLiveMv,
-  readCarvePlan,
-  type CarvePlan,
+  readSplitPlan,
+  type SplitPlan,
   type MoveMember,
 } from "./choudoufu-moves.ts";
 
@@ -23,12 +23,12 @@ import {
 // live-mv workbench's monolith applied: the cross-estate move of
 // `aws_iam_role.team_a` into a `tlmig-sample-team-a` copy as a dry run and
 // then for real, and a refused move of `aws_iam_role.team_b` into the same
-// destination, which does not declare it. `choudoufu-carve-plan.json` is
+// destination, which does not declare it. `choudoufu-split-plan.json` is
 // hand-written in the workbench planner's shape (`tlmig/carve.py`).
 const HERE = dirname(fileURLToPath(import.meta.url));
 const raw = (name: string): string => readFileSync(join(HERE, "__fixtures__", name), "utf8");
-const plan = (): CarvePlan => {
-  const p = parseCarvePlan(JSON.parse(raw("choudoufu-carve-plan.json")));
+const plan = (): SplitPlan => {
+  const p = parseSplitPlan(JSON.parse(raw("choudoufu-split-plan.json")));
   if (!p.ok) throw new Error(p.refusal.error);
   return p.plan;
 };
@@ -47,27 +47,31 @@ describe("the plan (#371)", () => {
   });
 
   it("fills from and estates from the moves when the file omits them, and refuses what is not a plan", () => {
-    const bare = parseCarvePlan({ moves: [{ address: "aws_vpc.x", from: "a", to: "b" }] });
+    const bare = parseSplitPlan({ moves: [{ address: "aws_vpc.x", from: "a", to: "b" }] });
     expect(bare).toMatchObject({ ok: true, plan: { from: "a", estates: ["b"] } });
-    expect(parseCarvePlan([])).toMatchObject({ ok: false, refusal: { error: expect.stringContaining("not a JSON object") } });
-    expect(parseCarvePlan({ rules: [] })).toMatchObject({ ok: false, refusal: { error: expect.stringContaining("no `moves` array") } });
-    expect(parseCarvePlan({ moves: [{ address: "x" }] })).toMatchObject({ ok: false, refusal: { error: "moves[0] is not a move (needs string `address`, `from` and `to`)." } });
+    expect(parseSplitPlan([])).toMatchObject({ ok: false, refusal: { error: expect.stringContaining("not a JSON object") } });
+    expect(parseSplitPlan({ rules: [] })).toMatchObject({ ok: false, refusal: { error: expect.stringContaining("no `moves` array") } });
+    expect(parseSplitPlan({ moves: [{ address: "x" }] })).toMatchObject({ ok: false, refusal: { error: "moves[0] is not a move (needs string `address`, `from` and `to`)." } });
   });
 
-  it("readCarvePlan refuses an unreadable file and non-JSON politely", () => {
-    expect(readCarvePlan("/nope/carve.json")).toMatchObject({ ok: false, refusal: { error: expect.stringContaining("Couldn't read") } });
-    expect(readCarvePlan("x", () => "{")).toMatchObject({ ok: false, refusal: { error: expect.stringContaining("is not JSON") } });
-    expect(readCarvePlan("x", () => raw("choudoufu-carve-plan.json")).ok).toBe(true);
+  it("readSplitPlan refuses an unreadable file and non-JSON politely", () => {
+    expect(readSplitPlan("/nope/carve.json")).toMatchObject({ ok: false, refusal: { error: expect.stringContaining("Couldn't read") } });
+    expect(readSplitPlan("x", () => "{")).toMatchObject({ ok: false, refusal: { error: expect.stringContaining("is not JSON") } });
+    expect(readSplitPlan("x", () => raw("choudoufu-split-plan.json")).ok).toBe(true);
   });
 
-  it("discovers carve.json at a member's root, relative to the base the SPA hands back", () => {
+  it("discovers split.json, or the workbench's carve.json, at a member's root, relative to the base the SPA hands back", () => {
     const root = mkdtempSync(join(tmpdir(), "behold-plans-"));
     try {
       mkdirSync(join(root, "a"));
       mkdirSync(join(root, "b"));
       writeFileSync(join(root, "a", "carve.json"), "{}");
-      expect(discoverCarvePlans([join(root, "a"), join(root, "b")], join(root, "a"))).toEqual(["carve.json"]);
-      expect(discoverCarvePlans([join(root, "a"), join(root, "b")], join(root, "b"))).toEqual([join("..", "a", "carve.json")]);
+      expect(discoverSplitPlans([join(root, "a"), join(root, "b")], join(root, "a"))).toEqual(["carve.json"]);
+      expect(discoverSplitPlans([join(root, "a"), join(root, "b")], join(root, "b"))).toEqual([join("..", "a", "carve.json")]);
+      // split.json is the name; a root holding both is read by its split.json.
+      writeFileSync(join(root, "a", "split.json"), "{}");
+      writeFileSync(join(root, "b", "split.json"), "{}");
+      expect(discoverSplitPlans([join(root, "a"), join(root, "b")], root)).toEqual([join("a", "split.json"), join("b", "split.json")]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

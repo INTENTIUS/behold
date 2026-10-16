@@ -1,0 +1,12 @@
+# Adopt the terralith: its state moves onto the resources as markers.
+# choudoufu live-import reads the old state once and stamps tofu-estate and
+# tofu-address on every resource it verifies. The old state stays where it is.
+backends:
+  - root: terralith
+    from:
+      backend: s3
+      config:
+        bucket: terralith-state
+        key: terralith/terraform.tfstate
+        region: us-east-1
+        use_lockfile: true

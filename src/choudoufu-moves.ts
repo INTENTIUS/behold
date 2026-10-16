@@ -13,8 +13,13 @@
  * (AGENTS.md, "Invariant"), and `dryRunArgs` is the only way this module
  * spells `live-mv` — always with `-dry-run`, asserted by test.
  *
- * The plan is the live-mv workbench's `carve.json` (`tlmig/carve.py`):
+ * The plan is a split: `split.json` at a member's root, in the live-mv
+ * workbench's shape (`tlmig/carve.py`, which writes it as `carve.json`):
  * `{from, estates[], moves[{address, from, to, new_address?}], rules?}`.
+ * "Split" is choudoufu's own word for dividing an estate by retagging
+ * (live/TERRALITH-MIGRATION.md); behold's "carve" is chant's Terraform-to-chant
+ * carve, a different operation. A `carve.json` is still read, so a plan the
+ * workbench wrote keeps working.
  * `rules` are how the rows were filled and are informational; `moves` is
  * what the executor acts on, and what this reads.
  */
@@ -27,35 +32,35 @@ import { parseLiveLs, type Runner } from "./choudoufu-live.ts";
  * outside these five carries an empty code and prose. */
 export const REFUSAL_CODES = ["nothing_at_old_address", "two_at_old_address", "new_address_claimed", "destination_not_declared", "plan_changes_more_than_tags"] as const;
 
-export interface CarvePlanMove {
+export interface SplitPlanMove {
   address: string;
   from: string;
   to: string;
   new_address?: string;
 }
 
-export interface CarvePlan {
+export interface SplitPlan {
   from: string;
   estates: string[];
-  moves: CarvePlanMove[];
+  moves: SplitPlanMove[];
   rules?: unknown[];
 }
 
-export type CarvePlanParse = { ok: true; plan: CarvePlan } | { ok: false; refusal: ChoudoufuRefusal };
+export type SplitPlanParse = { ok: true; plan: SplitPlan } | { ok: false; refusal: ChoudoufuRefusal };
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const refuse = (error: string, remedy: string): { ok: false; refusal: ChoudoufuRefusal } => ({ ok: false, refusal: { error, code: "choudoufu-live-check", remedy } });
-const HOW_TO_GET_ONE = "A plan is the live-mv workbench's carve.json: `{from, estates[], moves[{address, from, to}]}` — the workbench's plan phase writes one, or write it by hand.";
+const HOW_TO_GET_ONE = "A split plan is split.json: `{from, estates[], moves[{address, from, to}]}`. The live-mv workbench's plan phase writes one as carve.json, which reads the same; or write it by hand.";
 
 /** Validate an already-parsed value as a move plan. Shallow: `moves[]` with
  * string `address`, `from`, `to`; `from` and `estates` as the workbench
  * writes them; `rules` ignored. */
-export function parseCarvePlan(value: unknown): CarvePlanParse {
+export function parseSplitPlan(value: unknown): SplitPlanParse {
   if (!isRecord(value)) return refuse("That file is not a move plan — its top level is not a JSON object.", HOW_TO_GET_ONE);
   if (!Array.isArray(value.moves)) return refuse("That JSON is not a move plan — it has no `moves` array.", HOW_TO_GET_ONE);
   const bad = (value.moves as unknown[]).findIndex((m) => !isRecord(m) || typeof m.address !== "string" || typeof m.from !== "string" || typeof m.to !== "string");
   if (bad >= 0) return refuse(`moves[${bad}] is not a move (needs string \`address\`, \`from\` and \`to\`).`, HOW_TO_GET_ONE);
-  const moves = value.moves as CarvePlanMove[];
+  const moves = value.moves as SplitPlanMove[];
   return {
     ok: true,
     plan: {
@@ -68,7 +73,7 @@ export function parseCarvePlan(value: unknown): CarvePlanParse {
 }
 
 /** Read and parse a plan file, refusing politely on anything unreadable. */
-export function readCarvePlan(path: string, readFile: (p: string) => string = (p) => readFileSync(p, "utf8")): CarvePlanParse {
+export function readSplitPlan(path: string, readFile: (p: string) => string = (p) => readFileSync(p, "utf8")): SplitPlanParse {
   let text: string;
   try {
     text = readFile(path);
@@ -76,24 +81,30 @@ export function readCarvePlan(path: string, readFile: (p: string) => string = (p
     return refuse(`Couldn't read ${path}: ${err instanceof Error ? err.message : String(err)}`, HOW_TO_GET_ONE);
   }
   try {
-    return parseCarvePlan(JSON.parse(text));
+    return parseSplitPlan(JSON.parse(text));
   } catch (err) {
     return refuse(`${path} is not JSON: ${err instanceof Error ? err.message : String(err)}`, HOW_TO_GET_ONE);
   }
 }
 
-/** `carve.json` at a member's root, when there is one — the workbench writes
- * it into the run directory, and a hand-written plan lives beside the
- * estate it moves. Relative to `base` so the SPA can pass it back as
- * `?plan=` and the route can resolve it inside the served members again. */
-export function discoverCarvePlans(memberDirs: readonly string[], base: string): string[] {
+/** The plan file names, in the order a member's root is searched: `split.json`,
+ * then the workbench's `carve.json`, which is the same shape. */
+export const SPLIT_PLAN_FILES = ["split.json", "carve.json"] as const;
+
+/** A split plan at a member's root, when there is one: `split.json`, else the
+ * workbench's `carve.json` (it writes one into the run directory). A
+ * hand-written plan lives beside the estate it moves. Relative to `base` so
+ * the SPA can pass it back as `?plan=` and the route can resolve it inside
+ * the served members again. */
+export function discoverSplitPlans(memberDirs: readonly string[], base: string): string[] {
   const out: string[] = [];
   for (const dir of memberDirs) {
-    const p = join(dir, "carve.json");
-    if (existsSync(p)) out.push(relative(base, p));
+    const file = SPLIT_PLAN_FILES.find((f) => existsSync(join(dir, f)));
+    if (file) out.push(relative(base, join(dir, file)));
   }
   return out;
 }
+
 
 // ---------------------------------------------------------------------------
 // live-mv's document.
@@ -156,13 +167,13 @@ export interface MoveMember {
  * with `-from-estate` finds the object under the source estate's tag and the
  * old address, and rewrites both markers to this configuration's estate and
  * the new address (the same address, for a plain move). */
-export function handoffLine(m: CarvePlanMove): string {
+export function handoffLine(m: SplitPlanMove): string {
   return `choudoufu live-mv -from-estate=${m.from} ${m.address} ${m.new_address ?? m.address}`;
 }
 
 /** The ONLY spelling of `live-mv` this module runs: the preview. `-dry-run`
  * is not an option here, it is the argument list. */
-export function dryRunArgs(m: CarvePlanMove): string[] {
+export function dryRunArgs(m: SplitPlanMove): string[] {
   return ["live-mv", "-json", "-dry-run", `-from-estate=${m.from}`, m.address, m.new_address ?? m.address];
 }
 
@@ -217,7 +228,7 @@ export async function moveMembers(members: readonly { name: string; dir: string 
 
 /** The plan as the panel and the morph read it: one preview per move, the
  * handoff line for each, the dry-run document when asked. */
-export async function movesPayload(plan: CarvePlan, members: readonly MoveMember[], opts: { dryRun?: boolean; run?: Runner } = {}): Promise<MovesPayload> {
+export async function movesPayload(plan: SplitPlan, members: readonly MoveMember[], opts: { dryRun?: boolean; run?: Runner } = {}): Promise<MovesPayload> {
   const run = opts.run ?? captureChoudoufu;
   const byEstate = new Map(members.map((m) => [m.estate, m] as const));
   const moves: MovePreview[] = [];
@@ -263,7 +274,7 @@ export interface MoveReceipt {
  * `-consistent` because the tagging index lags a write by about a minute
  * and this is exactly the read right after one. What the account says, not
  * what the plan said. */
-export async function moveReceipt(plan: CarvePlan, members: readonly MoveMember[], run: Runner = captureChoudoufu): Promise<MoveReceipt> {
+export async function moveReceipt(plan: SplitPlan, members: readonly MoveMember[], run: Runner = captureChoudoufu): Promise<MoveReceipt> {
   const estates: MoveReceipt["estates"] = {};
   const wanted = new Set([plan.from, ...plan.estates, ...plan.moves.flatMap((m) => [m.from, m.to])].filter(Boolean));
   for (const estate of wanted) {

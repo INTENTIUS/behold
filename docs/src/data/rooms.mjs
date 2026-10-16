@@ -242,7 +242,7 @@ export const ROOMS = [
 			{ label: 'Unowned, and adoptable', href: 'using/choudoufu#unowned-and-adoptable' },
 		],
 		reference: [
-			{ label: 'Moves are previewed', href: 'using/choudoufu#moves-are-previewed-never-run' },
+			{ label: 'Splits are previewed', href: 'using/choudoufu#splits-are-previewed-never-run' },
 			{ label: 'choudoufu on GitHub', href: 'https://github.com/INTENTIUS/choudoufu' },
 			{ label: 'choudoufu in the live demo', href: liveTool('choudoufu') },
 		],

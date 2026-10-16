@@ -107,11 +107,39 @@ says which empty it is:
 Reporting the second as the first would be an absence of evidence dressed as
 evidence of absence.
 
-## Moves are previewed, never run
+## A card's tag: marker or derived
 
-`GET /api/choudoufu/moves` reads a `carve.json` plan from inside a served
-member and previews each move with `live-mv -json -dry-run`, handing the lines
-back with copy buttons.
+Each bound card wears a small tag on its top-right edge. The tag is filled when
+the resource wears this estate's marker as `live-ls` lists it. An inline policy
+has no tags argument and so no marker of its own, and its tag is outlined. The tag's tooltip and the inspect pane say how the plan found the
+resource: `marker` when the estate-wide tag sweep bound it, `derived` when the
+configuration names it. choudoufu binds a named resource, such as an IAM role or a
+log group, by its name whether or not a marker is on it, so a stamped log
+group reads `derived` with a filled tag.
+
+## The terralith walkthrough
+
+`npx behold demo terralith` takes one stock Terraform root to four estates on a
+scratch floci. It starts with 23 resources in one state file on S3. The adopt
+phase runs terragucci's `backends` migration. There `choudoufu live-import`
+stamps the marker on each resource it verifies and leaves the state file as it
+was. Split runs the `moves` migration, which adds three team roots while
+`choudoufu live-mv` moves each team's resources into the team's estate.
+`split.json` keeps the record, and the team boxes appear as the cards glide
+into them.
+
+You run each phase's line in the demo copy, and the page at `/terralith` reads
+the documents it leaves in `snapshots/`.
+
+## Splits are previewed, never run
+
+`GET /api/choudoufu/split` reads a `split.json` plan (or the live-mv
+workbench's `carve.json`, which reads the same) from inside a served member and
+previews each move with `live-mv -json -dry-run`, handing the lines back with
+copy buttons. `/choudoufu/split` draws the plan as a morph: every member a box,
+a new box for each estate the plan names that is not served yet, and the moved
+cards gliding into place. The names from before, `/api/choudoufu/moves` and
+`/choudoufu/morph`, keep working.
 
 **There is no `/api/choudoufu/mv`**, and a test asserts it stays absent. A move
 is one tag write against somebody's account. behold previews it and reads the

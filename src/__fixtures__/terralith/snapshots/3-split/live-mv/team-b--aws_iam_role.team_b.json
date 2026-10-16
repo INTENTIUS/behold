@@ -1,0 +1,30 @@
+{
+  "resource": {
+    "type": "aws_iam_role",
+    "live_id": "terralith-team-b-role"
+  },
+  "from": {
+    "estate": "terralith",
+    "address": "aws_iam_role.team_b",
+    "marker": "aws_iam_role.team_b"
+  },
+  "to": {
+    "estate": "team-b",
+    "address": "aws_iam_role.team_b",
+    "marker": "aws_iam_role.team_b"
+  },
+  "followers": [
+    {
+      "address": "aws_iam_role_policy.team_b_inline",
+      "type": "aws_iam_role_policy"
+    },
+    {
+      "address": "aws_iam_role_policy_attachment.team_b",
+      "type": "aws_iam_role_policy_attachment"
+    }
+  ],
+  "dry_run": false,
+  "written": true,
+  "verified": true,
+  "found_by": "IDENTITY"
+}
