@@ -33,7 +33,7 @@ import { seconds, whyQuery, whyView } from "./why.js";
 import { edgeKey, edgeLabel, edgeLegend, edgeTitle, isCiKind, viaIndex } from "./edge-kind.js";
 import { readCostLine } from "./read-cost.js";
 import { mountHistoryPicker } from "./history-picker.js";
-import { applyMemberFrame, pendingLine, stillPending } from "./pending.js";
+import { applyMemberFrame, createMemberFrames, pendingLine, stillPending } from "./pending.js";
 import { initTheme, setTheme, mountThemePicker, readableOn, inkOn, colorForCategory, onThemeChange, getTokens, getTheme, pinTokensFor } from "./theme.js";
 // #399 M2 / #401 M4 of #397: the colour-by modes' arithmetic and the
 // provenance badge's wording — every decision the behaviour overlay makes,
@@ -1701,6 +1701,8 @@ let runtimeCapable = false;
  * overlay's `meta.pending`. Empty on every non-progressive load, which is every
  * single-project serve and every static snapshot. */
 let pendingMembers = [];
+// The frames of the progressive load in flight, replayed once it is drawn.
+const memberFrames = createMemberFrames();
 let pendingTotal = 0;
 /** #426: whether the apply-order stop is worth offering — /api/project's
  * `stacksCapable`, which is false for an estate and for a single-lexicon
@@ -7210,6 +7212,10 @@ function renderPreconditionError(body) {
 const load = createRefreshQueue(loadOnce);
 async function loadOnce(opts = {}, isCurrent = () => true) {
   const meta = document.getElementById("meta");
+  // #422: set when this load asks for the progressive overlay; `frameLoad` is
+  // its turn in memberFrames, so an older load's end never releases a newer one.
+  let progressive = false;
+  let frameLoad = 0;
   // A background settle re-pull (post-apply) shouldn't flash the meta/overlay.
   if (!opts.quiet) {
     meta.textContent = view.env ? `loading overlay for ${view.env}…` : "loading…";
@@ -7272,7 +7278,10 @@ async function loadOnce(opts = {}, isCurrent = () => true) {
       // its own live read lands, instead of a blank canvas until the slowest
       // one finishes. The server only honours it for a composed estate, and
       // never in a static snapshot, where there is no stream to follow.
-      if (!staticMode) q.set("progressive", "1");
+      if (!staticMode) {
+        q.set("progressive", "1");
+        progressive = true;
+      }
       // The runtime tier (#86) descends below the declaration boundary. It is
       // live-only by nature — owner-referenced children exist in the cluster,
       // never in your source — so it rides the overlay and means nothing
@@ -7302,6 +7311,7 @@ async function loadOnce(opts = {}, isCurrent = () => true) {
       ciByComponent = new Map();
       resourcesByComponent = {};
     }
+    if (progressive) frameLoad = memberFrames.begin();
     const res = await apiFetch(`${endpoint}?${q}`);
     const body = await res.json();
     if (!isCurrent()) return; // a newer view/event is pending; do not paint the old result
@@ -7337,6 +7347,7 @@ async function loadOnce(opts = {}, isCurrent = () => true) {
     if (view.components) takeTerragucciFacets(body.meta);
     render(body.ir, body.svg, body.meta);
     afterPaint(body.ir);
+    if (progressive) replayMemberFrames(frameLoad);
   } catch (err) {
     // A background settle poll must not blow away a good graph on a transient error.
     if (!opts.quiet && isCurrent()) {
@@ -7353,7 +7364,23 @@ async function loadOnce(opts = {}, isCurrent = () => true) {
     }
   } finally {
     if (!opts.quiet) hideLoading();
+    // Drawn, refused or superseded: either way nothing waits on this load's
+    // answer any more, so a later frame applies as it lands.
+    if (progressive) memberFrames.cancel(frameLoad);
   }
+}
+
+/** The frames that landed before this load's answer was drawn, folded into it now. */
+function replayMemberFrames(load) {
+  if (!lastGraphIr) return;
+  const r = memberFrames.replay(lastGraphIr, pendingMembers, load);
+  if (!r) return;
+  pendingMembers = r.pending;
+  if (r.failed) nowline(`the estate read failed — ${r.failed}`);
+  if (r.moved.length) recolorNodesByCategory(lastGraphIr);
+  markPendingCards(lastGraphIr);
+  markIdentityCards(lastGraphIr);
+  renderStatusbar();
 }
 
 /**
@@ -7497,6 +7524,9 @@ events.addEventListener("member", (e) => {
   }
   // The live pass itself failed. Say so on the now-line and stop claiming the
   // remaining members are still arriving, because nothing more is coming.
+  // A frame that lands while its load's answer is still on the way waits
+  // for the draw, which replays it (web/pending.js createMemberFrames).
+  if (!memberFrames.note(frame)) return;
   if (frame.error) {
     pendingMembers = [];
     nowline(`the estate read failed — ${frame.error}`);
