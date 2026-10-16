@@ -459,6 +459,30 @@
       #k-result { width: min(30em, 36vw); padding: 0.9em 1.2em 1em; background: color-mix(in srgb, var(--managed) 8%, var(--surface-box)); border: 2px solid var(--bar-managed); border-radius: 12px;
         box-shadow: 0 10px 34px color-mix(in srgb, var(--shadow) 75%, transparent), 0 0 0 6px color-mix(in srgb, var(--managed) 12%, transparent); }
       #k-result[hidden], #k-callout[hidden], #k-drawer[hidden] { display: none; }
+      /* behold#571: a wave's trace, one click from its numbers: its badge, the result card's bars, the drawer. */
+      .k-badge.k-badge-trace { pointer-events: auto; cursor: pointer; border-color: color-mix(in srgb, var(--pending) 60%, var(--rule)); }
+      .k-badge.k-badge-trace:hover { border-color: var(--pending); background: var(--active); }
+      .k-badge-go { margin-left: 0.55em; color: var(--pending); font-weight: 600; }
+      .k-badge-go::after, .k-wf-go::after { content: " ›"; }
+      #k-drawer.k-trace-only .k-drawer-tail, #k-drawer.k-trace-only .k-drawer-body { display: none; }
+      #k-drawer.k-trace-only #k-traces { max-height: 60vh; border-top: 1px solid var(--rule); }
+      #k-drawer.k-trace-only #k-traces:empty::before { content: "Reading the trace from Tempo…"; display: block; padding: 0.8em 1em; color: var(--muted); }
+      #k-drawer.k-trace-only #k-traces:empty { display: block; }
+      .k-wf { margin-top: 0.7em; padding-top: 0.5em; border-top: 1px solid var(--rule); display: grid; gap: 0.25em; }
+      .k-wf-row { display: grid; grid-template-columns: 4.2em minmax(6em, 1fr) auto auto; align-items: center; gap: 0.6em; width: 100%; padding: 0.2em 0.3em; border: 0; border-radius: 6px; background: transparent; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+      .k-wf-row:hover, .k-wf-row:focus-visible { background: var(--active); }
+      .k-wf-wave { font: 600 0.88em var(--font-mono); color: var(--muted); }
+      .k-wf-track { position: relative; height: 0.85em; border-radius: 3px; background: color-mix(in srgb, var(--rule) 45%, transparent); overflow: hidden; }
+      .k-wf-seg { position: absolute; top: 0; bottom: 0; min-width: 2px; }
+      .k-wf-ms { font-size: 0.86em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+      .k-wf-go { font-size: 0.82em; font-weight: 600; color: var(--pending); }
+      .k-wf-plan, .k-wf-apply { background: var(--runtime); }
+      .k-wf-apply { background: color-mix(in srgb, var(--managed) 75%, transparent); }
+      .k-wf-held { background: repeating-linear-gradient(135deg, var(--foreign) 0 4px, color-mix(in srgb, var(--foreign) 45%, transparent) 4px 8px); }
+      .k-wf-gate, .k-wf-report, .k-wf-upload { background: color-mix(in srgb, var(--muted) 70%, transparent); }
+      .k-wf-key { display: flex; flex-wrap: wrap; gap: 0.2em 0.9em; margin: 0.2em 0 0; color: var(--muted); font-size: 0.78em; }
+      .k-wf-key span { display: inline-flex; align-items: center; gap: 0.3em; }
+      .k-wf-sw { display: inline-block; width: 1.2em; height: 0.55em; border-radius: 2px; }
       .k-result-head { margin: 0 0 0.2em; font: 700 1.5em var(--font-ui); color: var(--managed); }
       .k-result-line { margin: 0 0 0.6em; font-size: 1.12em; line-height: 1.35; color: var(--fg); }
       .k-result-counts { list-style: none; margin: 0 0 0.6em; padding: 0; display: flex; flex-wrap: wrap; gap: 0.35em 0.5em; }
@@ -502,6 +526,8 @@
         <div id="k-what-pop" role="dialog" aria-label="What is this?" hidden></div>
       </div>
       <header id="bar" aria-live="polite"></header>
+      <!-- behold#571: event-help's story trail, the cycle's beats as chips. -->
+      <nav id="eh-trail" aria-label="This cycle" hidden></nav>
     </div>
     <div id="stage">
       <nav id="runs-side" aria-label="pipeline runs"></nav>
@@ -528,6 +554,9 @@
         <footer id="k-caption" aria-live="polite"></footer>
       </div>
     </div>
+    <!-- behold#571: event-help's tips and its modal, over everything. -->
+    <div id="eh-tips" aria-live="polite"></div>
+    <div id="eh-modals"></div>
     <script type="module">
       import { initTheme, KIOSK_THEME } from "/theme.js";
       import { startKiosk } from "/kiosk.js";
@@ -538,6 +567,7 @@
         {
           bar: document.getElementById("bar"), frame: document.getElementById("view"), read: document.getElementById("k-read"), side: document.getElementById("runs-side"), main: document.getElementById("runs-main"), views: document.getElementById("views"),
           tools: { what: document.querySelector(".k-what"), pop: document.getElementById("k-what-pop"), theme: document.getElementById("k-theme"), runsToggle: document.getElementById("k-runs-toggle"), mode: document.getElementById("k-mode") },
+          eh: { switchHost: document.getElementById("k-tools"), trailHost: document.getElementById("eh-trail"), tipsHost: document.getElementById("eh-tips"), modalHost: document.getElementById("eh-modals") },
           watch: { layer: document.getElementById("k-watch"), caption: document.getElementById("k-caption"), callout: document.getElementById("k-callout"), drawer: document.getElementById("k-drawer"), badges: document.getElementById("k-badges"), result: document.getElementById("k-result") },
         },
         { tool: pageTool(document) },
