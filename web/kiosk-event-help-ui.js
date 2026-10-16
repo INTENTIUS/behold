@@ -48,7 +48,7 @@ body.k-watch #eh-trail { position: fixed; z-index: 7; left: 5px; right: 5px; pad
   box-shadow: 0 6px 22px color-mix(in srgb, var(--shadow) 70%, transparent); transform-origin: 50% 100%; }
 .eh-tip.eh-tip-go { pointer-events: auto; cursor: pointer; }
 .eh-tip.eh-tip-go:hover { background: var(--active); }
-.eh-tip::after { content: ""; position: absolute; left: calc(50% - 6px); bottom: -7px; width: 12px; height: 12px; background: inherit; border: inherit; border-top: 0; border-left: 0; transform: rotate(45deg); }
+.eh-tip::after { content: ""; position: absolute; left: calc(var(--eh-arrow, 50%) - 6px); bottom: -7px; width: 12px; height: 12px; background: inherit; border: inherit; border-top: 0; border-left: 0; transform: rotate(45deg); }
 .eh-tip.eh-below::after { bottom: auto; top: -7px; transform: rotate(-135deg); }
 .eh-tip[data-eh-tone="ok"] { --bar: var(--bar-managed, var(--managed)); }
 .eh-tip[data-eh-tone="wait"] { --bar: var(--bar-foreign, var(--foreign)); }
@@ -65,6 +65,54 @@ body.k-watch #eh-trail { position: fixed; z-index: 7; left: 5px; right: 5px; pad
 @keyframes eh-pulse { 0%, 100% { outline-color: color-mix(in srgb, var(--eh-glow, var(--focus)) 35%, transparent); } 50% { outline-color: var(--eh-glow, var(--focus)); } }
 @media (max-width: 600px) { #eh-trail { padding: 0.2em 16px; } body.k-watch #eh-trail { position: static; background: transparent; border: 0; } .eh-tip { max-width: 18em; } }
 `;
+
+/**
+ * behold#695: where a tip stands, in the window's coordinates. Above the thing
+ * it points at (`rect`), centred, else below it when there is no room above;
+ * then, when that covers one of the frame's edge labels (`labels`, in the
+ * window's coordinates), the same side moved along to the anchor's left or
+ * right edge or past the label's ends (still over the anchor), then lifted
+ * clear above the labels it covers, then the same below. The first spot
+ * clear of every label wins; with none clear, the one covering least. `arrow` is where the tip's notch sits along it, under
+ * the anchor's middle as far as the tip reaches.
+ */
+export function tipSpot(rect, size, win, labels = []) {
+  const W = win.w || 1600;
+  const w = size.w || 200;
+  const h = size.h || 30;
+  const mid = rect.left + rect.width / 2;
+  const clampX = (x) => Math.max(8, Math.min(x, W - w - 8));
+  // A spot along the anchor: the tip keeps at least 24px over it, so its notch still points at it.
+  const reaches = (x) => Math.min(x + w, rect.left + rect.width) - Math.max(x, rect.left) >= Math.min(24, rect.width);
+  const hits = (p) => labels.filter((l) => p.x < l.x + l.w && p.x + w > l.x && p.y < l.y + l.h && p.y + h > l.y);
+  const covered = (p) => hits(p).reduce((sum, l) => sum + (Math.min(p.x + w, l.x + l.w) - Math.max(p.x, l.x)) * (Math.min(p.y + h, l.y + l.h) - Math.max(p.y, l.y)), 0);
+  const along = (y, below) => {
+    const centred = { x: clampX(mid - w / 2), y, below };
+    const xs = [centred.x, clampX(rect.left), clampX(rect.left + rect.width - w)];
+    for (const l of hits(centred)) xs.push(clampX(l.x - w - 8), clampX(l.x + l.w + 8));
+    return xs.filter((x, i) => xs.indexOf(x) === i && reaches(x)).map((x) => ({ x, y, below }));
+  };
+  const aboveY = rect.top - h - 12;
+  const spots = [];
+  if (aboveY >= 8) {
+    spots.push(...along(aboveY, false));
+    // Lifted: above the labels the centred spot covers.
+    const hit = hits(spots[0]);
+    if (hit.length) {
+      const y = Math.min(...hit.map((l) => l.y)) - h - 6;
+      if (y >= 8) spots.push({ x: spots[0].x, y, below: false });
+    }
+  }
+  spots.push(...along(rect.top + rect.height + 12, true));
+  let best = null;
+  for (const p of spots) {
+    const c = covered(p);
+    if (!best || c < best.c) best = { ...p, c };
+    if (c === 0) break;
+  }
+  const arrow = Math.max(12, Math.min(w - 12, mid - best.x));
+  return { x: Math.round(best.x), y: Math.round(best.y), below: best.below, arrow: Math.round(arrow) };
+}
 
 /** A fact's tone, for its chip, its tip and its modal: the state colours the bars use. */
 export function toneOf(kind) {
@@ -181,17 +229,15 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
   };
 
   // ---- tips ----------------------------------------------------------------
-  const place = (node, rect) => {
-    const W = doc.defaultView ? doc.defaultView.innerWidth : 1600;
-    const w = node.offsetWidth || 200;
-    const hgt = node.offsetHeight || 30;
-    let x = rect.left + rect.width / 2 - w / 2;
-    x = Math.max(8, Math.min(x, W - w - 8));
-    let y = rect.top - hgt - 12;
-    const below = y < 8;
-    if (below) y = rect.top + rect.height + 12;
-    node.classList.toggle("eh-below", below);
-    const at = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+  const place = (node, rect, h) => {
+    const win = { w: doc.defaultView ? doc.defaultView.innerWidth : 1600 };
+    // The frame's edge labels, in the window's coordinates (behold#695).
+    const F = h ? frameRect(h) : null;
+    const labels = F && h.boxes && Array.isArray(h.boxes.labels) ? h.boxes.labels.map((l) => ({ x: F.left + l.x, y: F.top + l.y, w: l.w, h: l.h })) : [];
+    const p = tipSpot(rect, { w: node.offsetWidth || 200, h: node.offsetHeight || 30 }, win, labels);
+    node.classList.toggle("eh-below", p.below);
+    node.style.setProperty("--eh-arrow", `${p.arrow}px`);
+    const at = `translate(${p.x}px, ${p.y}px)`;
     node.style.setProperty("--eh-at", at);
     node.style.transform = at;
   };
@@ -237,7 +283,7 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
         st.nodes.set(event.id, node);
       }
       node.style.visibility = "";
-      place(node, anchors[0].rect);
+      place(node, anchors[0].rect, h);
       if (isNew) {
         // The things it is about glow while it is up, and light together across the panes.
         for (const a of anchors) if (a.el) glowOn(a.el, toneOf(event.kind));
