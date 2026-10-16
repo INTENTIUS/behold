@@ -87,6 +87,7 @@ import {
   straightEdge,
   writeLayout,
 } from "./layout-store.js";
+import { PHONE_QUERY as INSPECT_PHONE_QUERY, inspectStartsFolded } from "./inspect-pane.js";
 // #259: every JSON value this page shows goes through one renderer — pretty
 // printed, collapsible, copyable per subtree. `valueCell`/`pairCell` below are
 // the call-site shorthands: a container becomes the tree, a scalar stays text.
@@ -122,7 +123,7 @@ const embedOpts = readEmbed(location.search);
 if (embedOpts.theme && !setTheme(embedOpts.theme, { persist: false })) console.warn(`behold: no theme named ${embedOpts.theme}`);
 if (embedOpts.embed) document.documentElement.classList.add("embed");
 if (embedOpts.embed && embedOpts.bare) document.documentElement.classList.add("bare"); // #569: the graph alone, for a kiosk
-initPanel({ embed: embedOpts.embed });
+initPanel({ embed: embedOpts.embed, phone: typeof matchMedia === "function" && matchMedia(INSPECT_PHONE_QUERY).matches });
 mountThemePicker(document.getElementById("panel-theme"));
 
 // Colour node fills by category/kind using the theme's FULL palette (spicypath-style, so the
@@ -8603,7 +8604,9 @@ function initInspectPane() {
   } catch {
     /* private mode */
   }
-  if (folded === "1" || (folded === null && embedOpts.embed)) app.classList.add("inspect-collapsed");
+  // behold#696: folded on a phone too, where the pane beside the graph left it a sliver.
+  const phone = typeof matchMedia === "function" && matchMedia(INSPECT_PHONE_QUERY).matches;
+  if (inspectStartsFolded(folded, { embed: embedOpts.embed, phone })) app.classList.add("inspect-collapsed");
 
   document.getElementById("inspect-collapse").addEventListener("click", () => setInspectCollapsed(true));
   document.getElementById("inspect-reopen").addEventListener("click", () => setInspectCollapsed(false));
