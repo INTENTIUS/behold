@@ -109,6 +109,8 @@ import { hasOperator, renderOperator, APPROVED_SEMANTICS } from "./operator.js";
 import { releaseRows } from "./release.js";
 import { danglingFor, danglingRows, danglingHeading, DANGLING_EXPLAINED } from "./dangling.js";
 import { comparisonRow, comparisonSummary } from "./cross-env.js";
+// The marker-vs-derived mark on a choudoufu card: how its identity was found.
+import { identityMark, tagGlyphSvg } from "./identity-mark.js";
 initTheme();
 // #476: framed in a host pane. The flag is a class on <html>, so the CSS that
 // folds the chrome away needs no JS, and the theme is the host's for this
@@ -2010,14 +2012,14 @@ function copyToClipboard(text, el) {
  * The choudoufu move plan (#371), as the scope panel shows it: one row per
  * move (`address: from → to`), the line a person runs in the destination
  * estate's directory with a copy button, and a link to the morph page. The
- * plan is read from `/api/choudoufu/moves`, which previews with choudoufu's
+ * plan is read from `/api/choudoufu/split`, which previews with choudoufu's
  * own `-dry-run` when asked and never runs the write — `apply.note` carries
  * that sentence here verbatim. A no-op when no served member carries a
- * `carve.json`.
+ * `split.json` (or the workbench's `carve.json`).
  */
 function renderChoudoufuMoves(host, info) {
   if (!info || !info.plans || !info.plans.length || staticMode || publicMode) return;
-  host.appendChild(panelHeading("moves (choudoufu)"));
+  host.appendChild(panelHeading("split (choudoufu)"));
   for (const plan of info.plans) {
     const head = document.createElement("div");
     head.className = "count-row";
@@ -2026,15 +2028,15 @@ function renderChoudoufuMoves(host, info) {
     label.textContent = plan;
     const morph = document.createElement("a");
     morph.className = "tag";
-    morph.textContent = "morph ↗";
-    morph.href = "/choudoufu/morph?plan=" + encodeURIComponent(plan);
+    morph.textContent = "split ↗";
+    morph.href = "/choudoufu/split?plan=" + encodeURIComponent(plan);
     morph.target = "_blank";
-    morph.title = "Every member a box, the moved cards gliding to their destination";
+    morph.title = "Every estate a box, the moved cards gliding to their destination";
     head.append(label, morph);
     host.appendChild(head);
     const rows = document.createElement("div");
     host.appendChild(rows);
-    apiFetch("/api/choudoufu/moves?plan=" + encodeURIComponent(plan))
+    apiFetch("/api/choudoufu/split?plan=" + encodeURIComponent(plan))
       .then((r) => r.json())
       .then((body) => {
         if (!body || !Array.isArray(body.moves)) {
@@ -3344,6 +3346,46 @@ function markPendingCards(ir) {
       t.textContent = "still reading this member — not yet observed";
       g.appendChild(t);
     }
+  }
+}
+
+/**
+ * The marker-vs-derived mark on each choudoufu card the live overlay bound
+ * (`attrs._identity`, src/choudoufu-live.ts): a small tag badge on the card's
+ * top-right edge, filled when the object wears the estate's marker and
+ * outlined when it does not. A card has no free corner for words, so they are
+ * the badge's tooltip, and the inspect pane's `bound` and `marker` rows. Same
+ * after-the-render stamp as markCarvedCards(), for the same reason.
+ */
+function markIdentityCards(ir) {
+  const svg = document.querySelector("#graph svg");
+  if (!svg) return;
+  // A member frame merges identities into lastGraphIr (web/pending.js), and a
+  // re-render (a theme change, a fit) may paint from another IR object, so
+  // both are read.
+  const known = new Map();
+  for (const src of [lastGraphIr, ir]) for (const n of (src && src.nodes) || []) if (n.attrs && n.attrs._identity) known.set(n.id, n.attrs._identity);
+  for (const [id, identity] of known) {
+    const n = { id };
+    const mark = identityMark(identity);
+    if (!mark || mark.glyph === "none") continue;
+    const g = svg.querySelector('[data-node-id="' + CSS.escape(n.id) + '"]');
+    if (!g || g.querySelector('[data-identity="1"]')) continue;
+    const rect = g.querySelector("rect");
+    const box = rect && rect.getBBox ? rect.getBBox() : null;
+    const size = 14;
+    const x = (box ? box.x + box.width : 150) - size - 6;
+    const y = (box ? box.y : 0) - size / 2;
+    const wrap = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    wrap.setAttribute("data-identity", "1");
+    wrap.setAttribute("class", "identity-mark");
+    wrap.innerHTML =
+      `<rect x="${x - 3}" y="${y - 2}" width="${size + 6}" height="${size + 4}" rx="5" fill="var(--bg)" stroke="var(--managed)" stroke-width="1"/>` +
+      tagGlyphSvg(mark.glyph, x, y, size, "var(--managed)");
+    const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    title.textContent = `${mark.label}: ${mark.tip}`;
+    wrap.prepend(title);
+    g.appendChild(wrap);
   }
 }
 
@@ -6102,6 +6144,7 @@ function render(ir, svg, m) {
   markCarvedCards(); // #254: the SVG is replaced per render — re-stamp the marker
   markPlayhead(ir); // #284 item 2: same, for the step the run is sitting on
   markOperatorCards(ir); // #234 free rider: same, for the operating loop's home
+  markIdentityCards(ir); // the identity mark: a tag badge on the card's top-right edge
   markDriftedCards(ir); // #404: same, for a bound card the plan would change — after the carve/operator stamps, so it can see and yield to them
   markPendingCards(ir); // #422: and the cards whose member has not answered yet
   markTerragucciCards(); // #490: and what terragucci's reports found, dated
@@ -7465,6 +7508,7 @@ events.addEventListener("member", (e) => {
   pendingMembers = stillPending(pendingMembers, frame);
   if (moved.length) recolorNodesByCategory(lastGraphIr);
   markPendingCards(lastGraphIr);
+  markIdentityCards(lastGraphIr);
   renderStatusbar();
 });
 

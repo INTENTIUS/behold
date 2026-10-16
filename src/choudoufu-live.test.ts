@@ -11,6 +11,8 @@ import {
   adoptLine,
   choudoufuDiffNodes,
   paintChoudoufu,
+  MARKER_NONE,
+  MARKER_ON,
   parseLiveLs,
   parseLivePlan,
   readChoudoufuLive,
@@ -352,18 +354,34 @@ describe("adoptLine — the write a person actually makes", () => {
   });
 });
 
-// #393 item 8: a card bound by derived identity is good and IS bound — and
-// carries no marker yet, which the pane has to say out loud.
-describe("bound by derived identity says the marker is still missing", () => {
-  it("spells the consequence in the card's row and in the diff's health detail", () => {
-    const doc = check("choudoufu-live-check-monolith.json");
-    const listing = ls("choudoufu-live-ls-monolith.json");
-    const planDoc = plan("choudoufu-live-plan-monolith-clean.json");
-    const ir = paintChoudoufu(liveCheckToIr(doc), listing, planDoc);
-    const inline = ir.nodes.find((n) => n.id === "aws_iam_role_policy.team_a_inline")!;
+// #393 item 8: a card bound by derived identity is good and IS bound. Whether
+// the object carries the marker is a separate fact, live-ls's: choudoufu binds
+// a named instance by its name, stamped or not.
+describe("the marker-vs-derived mark", () => {
+  const doc = check("choudoufu-live-check-monolith.json");
+  const listing = ls("choudoufu-live-ls-monolith.json");
+  const planDoc = plan("choudoufu-live-plan-monolith-clean.json");
+  const ir = paintChoudoufu(liveCheckToIr(doc), listing, planDoc);
+  const node = (id: string) => ir.nodes.find((n) => n.id === id)!;
+
+  it("says an untaggable child is derived and wears no marker, in the row and the health detail", () => {
+    const inline = node("aws_iam_role_policy.team_a_inline");
     expect(inline.attrs._status).toBe("good");
-    expect(inline.attrs.bound).toBe("by derived identity (the name the configuration states) — no marker on the object yet");
-    expect(choudoufuDiffNodes(doc, listing, planDoc)["aws_iam_role_policy.team_a_inline"].healthDetail).toContain("no marker on the object yet");
+    expect(inline.attrs.bound).toBe("by derived identity (the name the configuration states)");
+    expect(inline.attrs.marker).toBe(MARKER_NONE);
+    expect(inline.attrs._identity).toEqual({ source: "derived", marked: false });
+    expect(choudoufuDiffNodes(doc, listing, planDoc)["aws_iam_role_policy.team_a_inline"].healthDetail).toContain(MARKER_NONE);
+  });
+
+  it("says a named resource the listing holds is derived and wears the marker", () => {
+    const logs = node("aws_cloudwatch_log_group.team_a_0");
+    expect(logs.attrs._identity).toEqual({ source: "derived", marked: true });
+    expect(logs.attrs.marker).toBe(MARKER_ON);
+    expect(choudoufuDiffNodes(doc, listing, planDoc)["aws_cloudwatch_log_group.team_a_0"].healthDetail).not.toContain(MARKER_NONE);
+  });
+
+  it("says a resource the marker sweep bound is found by its marker", () => {
+    expect(node("aws_iam_policy.team_a").attrs._identity).toEqual({ source: "marker", marked: true });
   });
 });
 

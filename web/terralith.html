@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>behold · terralith</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='none' stroke='%23a6adc8' stroke-width='1.6'/%3E%3Ccircle cx='8' cy='8' r='2.2' fill='%23a6adc8'/%3E%3C/svg%3E"
+    />
+    <style>
+      /* The pre-paint fallback: Sea Shells' tokens (KIOSK_THEME in theme.js), which initTheme() replaces with the viewer's theme. */
+      :root {
+        --bg: #09141b; --panel: #1c2325; --line: #2c2e2d; --fg: #deb88d; --muted: #746a5c;
+        --edge: #4d483f; --managed: #027c9b; --foreign: #fca02f; --pending: #1e4950;
+        --degraded: #d15123; --neutral: #695e4e; --runtime: #50a3b5;
+        --rule: #3d4142; --focus: #364548; --active: #243235; --well: #01070d; --shadow: #010304;
+        --surface-box: #101b22; --surface-pane-a: #152128; --surface-pane-b: #1b272e; --soft: #deb88d; --muted-ink: #7c7365;
+        --managed-ink: #0e7f9e; --foreign-ink: #fca02f; --pending-ink: #567b82; --runtime-ink: #50a3b5;
+        --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        --r-ctl: 6px; --t-body: 13px;
+      }
+      * { box-sizing: border-box; }
+      body { --fg: var(--soft); --muted: var(--muted-ink); --managed: var(--managed-ink); --foreign: var(--foreign-ink); --runtime: var(--runtime-ink); }
+      html, body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.45 var(--font-ui); }
+      main { max-width: 1400px; margin: 0 auto; padding: 18px 20px 40px; }
+      header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-bottom: 14px; }
+      h1 { font-size: 20px; margin: 0; font-weight: 650; letter-spacing: 0.01em; }
+      h1 small { font-weight: 450; color: var(--muted); font-size: 14px; margin-left: 6px; }
+      .t-theme { margin-left: auto; }
+      ol.t-steps { list-style: none; display: flex; gap: 6px; margin: 0; padding: 0; flex-wrap: wrap; }
+      .t-step { display: flex; align-items: center; gap: 7px; padding: 5px 12px 5px 6px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-box); color: var(--muted); font-size: 14px; cursor: default; }
+      .t-step b { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; font: 600 12px var(--font-mono); background: var(--well); color: var(--muted); }
+      .t-step.ran { color: var(--fg); cursor: pointer; }
+      .t-step.ran b { background: color-mix(in srgb, var(--managed) 35%, var(--well)); color: var(--fg); }
+      .t-step.shown { border-color: var(--managed); background: var(--active); }
+      .t-step.next { border-style: dashed; color: var(--fg); }
+      .t-lead { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 24rem); gap: 14px 20px; background: var(--surface-pane-a); border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; }
+      .t-lead h2 { margin: 0 0 4px; font-size: 17px; }
+      .t-lead p { margin: 0 0 6px; }
+      .t-facts { color: var(--fg); font-weight: 550; }
+      .t-legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; align-content: start; font-size: 13.5px; }
+      .t-legend li { display: grid; grid-template-columns: 16px auto; gap: 2px 8px; align-items: center; }
+      .t-legend span { color: var(--muted); grid-column: 2; font-size: 12.5px; }
+      .t-next { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 14px; padding: 10px 14px; border: 1px dashed var(--line); border-radius: 8px; background: var(--surface-box); }
+      .t-next[hidden], .t-notes[hidden] { display: none; }
+      .t-next code { font: 13.5px var(--font-mono); background: var(--well); padding: 4px 8px; border-radius: 5px; overflow-wrap: anywhere; }
+      .t-next .t-why { color: var(--muted); font-size: 13px; flex-basis: 100%; }
+      button.t-copy { font: 13px var(--font-ui); color: var(--fg); background: var(--active); border: 1px solid var(--line); border-radius: var(--r-ctl); padding: 4px 10px; cursor: pointer; }
+      .t-stage { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); gap: 14px; align-items: start; }
+      .t-box { background: var(--surface-pane-b); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 10px 12px; }
+      .t-box.stock { border-style: dashed; }
+      .t-box.spawned { border-color: color-mix(in srgb, var(--managed) 70%, var(--rule)); }
+      .t-box-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin: 0 2px 8px; }
+      .t-box-head h3 { margin: 0; font-size: 15.5px; font: 600 15px var(--font-mono); }
+      .t-box-head span { color: var(--muted); font-size: 12.5px; }
+      .t-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.6rem, 1fr)); gap: 7px; }
+      .t-card { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px 6px; min-width: 0; }
+      .t-card .k { font: 11.5px var(--font-mono); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .t-card .n { font: 600 13.5px var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 1px 0 4px; }
+      .t-card .m { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }
+      .t-card .m svg { flex: none; }
+      .t-card .m.solid { color: var(--managed); }
+      .t-card .m .w { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+      .t-card .news { font-size: 11.5px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .t-card .news.drifted { color: var(--foreign); }
+      .t-card.moved { border-color: color-mix(in srgb, var(--managed) 55%, var(--line)); }
+      .t-empty { color: var(--muted); padding: 30px 0; }
+      .t-notes { color: var(--foreign); font-size: 13px; margin-top: 10px; }
+      .t-foot { color: var(--muted); font-size: 12.5px; margin-top: 18px; }
+      @media (prefers-reduced-motion: no-preference) {
+        .t-box.spawning { animation: t-spawn 700ms cubic-bezier(.2,.7,.2,1) both; }
+        @keyframes t-spawn { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: none; } }
+      }
+      @media (max-width: 720px) {
+        main { padding: 12px 12px 30px; }
+        .t-lead { grid-template-columns: 1fr; padding: 12px; }
+        .t-theme { margin-left: 0; }
+        .t-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Terralith <small>behold demo terralith</small></h1>
+        <ol class="t-steps" id="t-steps" aria-label="Phases"></ol>
+        <div class="t-theme" id="t-theme"></div>
+      </header>
+      <section class="t-lead" id="t-lead" aria-live="polite"></section>
+      <section class="t-next" id="t-next" hidden></section>
+      <section class="t-stage" id="t-stage"></section>
+      <div class="t-notes" id="t-notes" hidden></div>
+      <p class="t-foot">The scripts save choudoufu's own documents under <code>snapshots/</code>, and each phase is drawn from them.</p>
+    </main>
+    <script type="module">
+      import { initTheme, mountThemePicker, KIOSK_THEME } from "/theme.js";
+      import { startTerralith } from "/terralith.js";
+      initTheme(KIOSK_THEME);
+      mountThemePicker(document.getElementById("t-theme"));
+      startTerralith(document);
+    </script>
+  </body>
+</html>

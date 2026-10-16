@@ -52,6 +52,8 @@ export interface DemoServe {
   dirs?: string[];
   /** #254: serve the carve walkthrough instead of a project graph. */
   carve?: DemoCarve;
+  /** Serve the terralith walkthrough (`/terralith`) over the copy's snapshots. */
+  terralith?: boolean;
   /** #372: environment the served estate's choudoufu spawns get — the scratch
    * emulator the demo's setup booted, and the dummy credentials it accepts.
    * Applied through `setChoudoufuSpawnEnv`, never `process.env`. */
@@ -143,6 +145,7 @@ function validEntry(e: unknown): e is DemoEntry {
     (typeof d.serve.spawnEnv !== "object" || d.serve.spawnEnv === null || Array.isArray(d.serve.spawnEnv) || Object.values(d.serve.spawnEnv).some((v) => typeof v !== "string"))
   )
     return false;
+  if (d.serve.terralith !== undefined && typeof d.serve.terralith !== "boolean") return false;
   // #254: a carve entry names four relative paths, and a missing one would
   // mean a walkthrough whose Emit step has nowhere to write — drop the entry
   // rather than serve a half-wired demo. Every path stays relative: it is

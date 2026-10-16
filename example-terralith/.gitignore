@@ -1,0 +1,8 @@
+.terraform/
+.terraform.lock.hcl
+.tofu-records/
+terraform.tfstate*
+/.terralith/
+/snapshots/
+/split.json
+/migrations/

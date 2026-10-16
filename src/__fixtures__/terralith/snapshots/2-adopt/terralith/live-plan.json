@@ -1,0 +1,200 @@
+{
+  "estate": "terralith",
+  "choudoufu_version": "v0.28.0",
+  "upstream_version": "1.13.0",
+  "bound": [
+    {
+      "addr": "aws_cloudwatch_log_group.team_a_0",
+      "type": "aws_cloudwatch_log_group",
+      "identity": "/terralith/team-a/svc-0",
+      "identity_values": {
+        "name": "/terralith/team-a/svc-0"
+      },
+      "source": "derived"
+    },
+    {
+      "addr": "aws_cloudwatch_log_group.team_a_1",
+      "type": "aws_cloudwatch_log_group",
+      "identity": "/terralith/team-a/svc-1",
+      "identity_values": {
+        "name": "/terralith/team-a/svc-1"
+      },
+      "source": "derived"
+    },
+    {
+      "addr": "aws_cloudwatch_log_group.team_a_2",
+      "type": "aws_cloudwatch_log_group",
+      "identity": "/terralith/team-a/svc-2",
+      "identity_values": {
+        "name": "/terralith/team-a/svc-2"
+      },
+      "source": "derived"
+    },
+    {
+      "addr": "aws_cloudwatch_log_group.team_b_0",
+      "type": "aws_cloudwatch_log_group",
+      "identity": "/terralith/team-b/svc-0",
+      "identity_values": {
+        "name": "/terralith/team-b/svc-0"
+      },
+      "source": "derived"
+    },
+    {
+      "addr": "aws_cloudwatch_log_group.team_b_1",
+      "type": "aws_cloudwatch_log_group",
+      "identity": "/terralith/team-b/svc-1",
+      "identity_values": {
+        "name": "/terralith/team-b/svc-1"
+      },
+      "source": "derived"
+    },
+    {
+      "addr": "aws_cloudwatch_log_group.team_b_2",
+      "type": "aws_cloudwatch_log_group",
+      "identity": "/terralith/team-b/svc-2",
+      "identity_values": {
+        "name": "/terralith/team-b/svc-2"
+      },
+      "source": "derived"
+    },
+    {
+      "addr": "aws_cloudwatch_log_group.team_c_0",
+      "type": "aws_cloudwatch_log_group",
+      "identity": "/terralith/team-c/svc-0",
+      "identity_values": {
+        "name": "/terralith/team-c/svc-0"
+      },
+      "source": "derived"
+    },
+    {
+      "addr": "aws_cloudwatch_log_group.team_c_1",
+      "type": "aws_cloudwatch_log_group",
+      "identity": "/terralith/team-c/svc-1",
+      "identity_values": {
+        "name": "/terralith/team-c/svc-1"
+      },
+      "source": "derived"
+    },
+    {
+      "addr": "aws_cloudwatch_log_group.team_c_2",
+      "type": "aws_cloudwatch_log_group",
+      "identity": "/terralith/team-c/svc-2",
+      "identity_values": {
+        "name": "/terralith/team-c/svc-2"
+      },
+      "source": "derived"
+    },
+    {
+      "addr": "aws_iam_policy.team_a",
+      "type": "aws_iam_policy",
+      "identity": "arn:aws:iam::000000000000:policy/terralith-team-a-policy",
+      "source": "marker"
+    },
+    {
+      "addr": "aws_iam_policy.team_b",
+      "type": "aws_iam_policy",
+      "identity": "arn:aws:iam::000000000000:policy/terralith-team-b-policy",
+      "source": "marker"
+    },
+    {
+      "addr": "aws_iam_policy.team_c",
+      "type": "aws_iam_policy",
+      "identity": "arn:aws:iam::000000000000:policy/terralith-team-c-policy",
+      "source": "marker"
+    },
+    {
+      "addr": "aws_iam_role.team_a",
+      "type": "aws_iam_role",
+      "identity": "terralith-team-a-role",
+      "identity_values": {
+        "name": "terralith-team-a-role"
+      },
+      "source": "derived"
+    },
+    {
+      "addr": "aws_iam_role.team_b",
+      "type": "aws_iam_role",
+      "identity": "terralith-team-b-role",
+      "identity_values": {
+        "name": "terralith-team-b-role"
+      },
+      "source": "derived"
+    },
+    {
+      "addr": "aws_iam_role.team_c",
+      "type": "aws_iam_role",
+      "identity": "terralith-team-c-role",
+      "identity_values": {
+        "name": "terralith-team-c-role"
+      },
+      "source": "derived"
+    },
+    {
+      "addr": "aws_iam_role_policy.team_a_inline",
+      "type": "aws_iam_role_policy",
+      "identity": "terralith-team-a-role:terralith-team-a-inline",
+      "identity_values": {
+        "name": "terralith-team-a-inline",
+        "role": "terralith-team-a-role"
+      },
+      "source": "derived"
+    },
+    {
+      "addr": "aws_iam_role_policy.team_b_inline",
+      "type": "aws_iam_role_policy",
+      "identity": "terralith-team-b-role:terralith-team-b-inline",
+      "identity_values": {
+        "name": "terralith-team-b-inline",
+        "role": "terralith-team-b-role"
+      },
+      "source": "derived"
+    },
+    {
+      "addr": "aws_iam_role_policy.team_c_inline",
+      "type": "aws_iam_role_policy",
+      "identity": "terralith-team-c-role:terralith-team-c-inline",
+      "identity_values": {
+        "name": "terralith-team-c-inline",
+        "role": "terralith-team-c-role"
+      },
+      "source": "derived"
+    },
+    {
+      "addr": "aws_iam_role_policy_attachment.team_a",
+      "type": "aws_iam_role_policy_attachment",
+      "identity": "terralith-team-a-role/arn:aws:iam::000000000000:policy/terralith-team-a-policy",
+      "source": "derived"
+    },
+    {
+      "addr": "aws_iam_role_policy_attachment.team_b",
+      "type": "aws_iam_role_policy_attachment",
+      "identity": "terralith-team-b-role/arn:aws:iam::000000000000:policy/terralith-team-b-policy",
+      "source": "derived"
+    },
+    {
+      "addr": "aws_iam_role_policy_attachment.team_c",
+      "type": "aws_iam_role_policy_attachment",
+      "identity": "terralith-team-c-role/arn:aws:iam::000000000000:policy/terralith-team-c-policy",
+      "source": "derived"
+    },
+    {
+      "addr": "aws_subnet.app",
+      "type": "aws_subnet",
+      "identity": "subnet-719de87e",
+      "source": "marker"
+    },
+    {
+      "addr": "aws_vpc.main",
+      "type": "aws_vpc",
+      "identity": "vpc-737b83d8",
+      "source": "marker"
+    }
+  ],
+  "omissions": [],
+  "unowned": [],
+  "foreign": null,
+  "adoptable": [],
+  "swept": [
+    "aws_iam_role"
+  ]
+}

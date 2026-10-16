@@ -37,6 +37,8 @@ export function applyMemberFrame(ir, frame) {
     // and not absent.
     if (frame.unobserved) attrs._unobserved = frame.unobserved;
     else delete attrs._unobserved;
+    // The identity mark (web/identity-mark.js), for a card that carries one.
+    if (frame.identities && frame.identities[node.id]) attrs._identity = frame.identities[node.id];
     if (was !== next) moved.push(node.id);
   }
   return moved;

@@ -3,7 +3,7 @@
 # (the AWS emulator), provider schemas in each estate copy, and the terralith
 # applied — one estate with three teams' worth of IAM and log groups in it,
 # the shape the live-mv workbench splits. The team estates start empty: their
-# declared resources are the monolith's, and the plan in monolith/carve.json
+# declared resources are the monolith's, and the plan in monolith/split.json
 # says which move where.
 #
 # Scratch discipline (behold's src/scratch.ts): the container is named
@@ -80,4 +80,4 @@ else
   echo "→ no 'aws' on PATH, so the adoptable card is skipped; everything else stands up"
 fi
 
-echo "choudoufu-estate demo: up. behold serves it next; the plan in monolith/carve.json moves team-a's resources out."
+echo "choudoufu-estate demo: up. behold serves it next; the plan in monolith/split.json moves team-a's resources out."

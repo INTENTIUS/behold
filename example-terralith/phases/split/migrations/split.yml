@@ -1,0 +1,29 @@
+# Split the terralith: each team's resources move to the team's own estate.
+# choudoufu live-mv -from-estate rewrites each resource's markers, run in
+# the root it moves to. One tag write per resource; the untaggable children
+# (inline policies, attachments) follow their role with no write of their own.
+moves:
+  - from: terralith
+    to: team-a
+    addresses:
+      - aws_iam_role.team_a
+      - aws_iam_policy.team_a
+      - aws_cloudwatch_log_group.team_a_0
+      - aws_cloudwatch_log_group.team_a_1
+      - aws_cloudwatch_log_group.team_a_2
+  - from: terralith
+    to: team-b
+    addresses:
+      - aws_iam_role.team_b
+      - aws_iam_policy.team_b
+      - aws_cloudwatch_log_group.team_b_0
+      - aws_cloudwatch_log_group.team_b_1
+      - aws_cloudwatch_log_group.team_b_2
+  - from: terralith
+    to: team-c
+    addresses:
+      - aws_iam_role.team_c
+      - aws_iam_policy.team_c
+      - aws_cloudwatch_log_group.team_c_0
+      - aws_cloudwatch_log_group.team_c_1
+      - aws_cloudwatch_log_group.team_c_2

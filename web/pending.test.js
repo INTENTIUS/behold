@@ -21,6 +21,13 @@ describe("applyMemberFrame (#422)", () => {
     expect(graph.nodes[2].attrs).toEqual({ _pendingRead: true });
   });
 
+  it("carries a choudoufu card's identity mark when the frame has one", () => {
+    const graph = ir();
+    applyMemberFrame(graph, { member: "team-a", statuses: { "team-a/bucket": "good", "team-a/role": "good" }, identities: { "team-a/role": { source: "derived", marked: true } } });
+    expect(graph.nodes[1].attrs._identity).toEqual({ source: "derived", marked: true });
+    expect(graph.nodes[0].attrs._identity).toBeUndefined();
+  });
+
   it("carries a failed member's reason, which is not the same as pending", () => {
     const graph = ir();
     applyMemberFrame(graph, { member: "team-b", unobserved: "no credentials", statuses: { "team-b/bucket": "neutral" } });

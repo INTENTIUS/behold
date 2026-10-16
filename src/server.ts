@@ -148,7 +148,8 @@ import { addChoudoufuReferenceEdges, liveCheckToIr, readLiveCheck, setChoudoufuR
 import { choudoufuDiffNodes, paintPlanDrift, readChoudoufuLive, type Runner as ChoudoufuRunner } from "./choudoufu-live.ts";
 import { cacheChoudoufuPlan, cachedChoudoufuPlan, readChoudoufuPlan, type PlanResourceDrift } from "./choudoufu-plan.ts";
 import { choudoufuLexiconNote, setEstateLexiconRead, type LexiconRead } from "./choudoufu-refs.ts";
-import { discoverCarvePlans, moveMembers, moveReceipt, movesPayload, readCarvePlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
+import { readTerralith } from "./terralith-demo.ts";
+import { discoverSplitPlans, moveMembers, moveReceipt, movesPayload, readSplitPlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
 import { servedWorkspace, setServedWorkspace, workspaceMemberOf, type Workspace } from "./workspace.ts";
 import { approveArgs, isEnvName, isOverrideGate, localApprover, readWorkspaceGates } from "./workspace-gates.ts";
 import { readWhy, whyRegion } from "./workspace-why.ts";
@@ -265,6 +266,11 @@ export interface ServerOptions {
    * `runDemo` from the directory it just copied, never from a request. See
    * src/carve-actions.ts for the whole write boundary. */
   carveDemo?: CarveDemo;
+  /** `behold demo terralith`: the demo copy this server reads. Its routes
+   * (`/terralith`, `/api/terralith`) read the snapshot files the copy's
+   * scripts write and nothing else; like carve mode, there is no chant
+   * project behind it, so nothing is watched, polled or captured. */
+  terralithDemo?: TerralithDemo;
   /** #228: may this server write the hand-layout sidecar (`.behold/layout.json`
    * in the served project)? Default true for a live `serve`. `runExport` sets
    * it false: a static capture reads the sidecar (to bake it into the snapshot
@@ -535,6 +541,25 @@ async function captureFrame(
     process.stderr.write(`frame capture: ${err instanceof Error ? err.message : String(err)}\n`);
     return null;
   }
+}
+
+/** `behold demo terralith`'s copy, as the CLI booted it. */
+export interface TerralithDemo {
+  /** The demo copy: its `snapshots/` and `split.json` are what the page reads. */
+  root: string;
+  /** The scratch emulator the copy's scripts use, for the banner. */
+  endpoint: string;
+}
+
+/**
+ * The terralith walkthrough's routes: `GET /api/terralith` reads the copy's
+ * snapshots (src/terralith-demo.ts), and `/` and `/terralith` serve the page.
+ * Reads only; every write is a script line the page shows and a person runs.
+ */
+function terralithRoutes(app: Hono, demo: TerralithDemo): void {
+  app.get("/api/terralith", (c) => c.json(readTerralith(demo.root)));
+  app.get("/terralith", serveStatic({ path: join(relative(process.cwd(), webRoot) || ".", "terralith.html") }));
+  app.get("/", (c) => c.redirect("/terralith"));
 }
 
 /**
@@ -1043,6 +1068,9 @@ export function createApp(
     const r = guardedRepo();
     return r?.product === "sql-yodeler" ? dirname(r.config) : undefined;
   });
+
+  // `behold demo terralith`: the walkthrough page and its one read.
+  if (cfg.terralithDemo) terralithRoutes(app, cfg.terralithDemo);
 
   // Carve mode (#252) claims /api/graph, /api/project and friends before the
   // project-shaped handlers are registered — see carveRoutes.
@@ -1659,9 +1687,10 @@ export function createApp(
     // manifest actually says — which Terraform addresses graduated, and how far
     // the others got — beside the estate rather than painted onto it.
     const carveState = carveStatePayload(await carveStatesUnder(estateDirs()));
-    // #371: the move plans the served choudoufu members carry (`carve.json`
-    // at a member's root), as paths the SPA hands back to /api/choudoufu/moves.
-    const plans = discoverCarvePlans(
+    // #371: the split plans the served choudoufu members carry (`split.json`,
+    // or the workbench's `carve.json`, at a member's root), as paths the SPA
+    // hands back to /api/choudoufu/split.
+    const plans = discoverSplitPlans(
       (cfg.projectDirs ?? [cfg.projectDir]).filter((d) => memberKindOf(d) === "choudoufu"),
       cfg.projectDir,
     );
@@ -1915,12 +1944,14 @@ export function createApp(
       // to switch INTO. Carve mode claims `/api/graph` and `/api/project` at
       // app creation (see carveRoutes), so a running server cannot become one;
       // the row stays in the catalog, disabled, saying what to run instead.
-      ...(e.serve.carve ? { switchable: false } : {}),
+      ...(e.serve.carve || e.serve.terralith ? { switchable: false } : {}),
       ...(missing.length
         ? { reason: `needs ${missing.join(", ")} on PATH` }
         : e.serve.carve
           ? { reason: `serves a carve report, not a project — run \`behold demo ${e.name}\`` }
-          : {}),
+          : e.serve.terralith
+            ? { reason: `a walkthrough page of its own — run \`behold demo ${e.name}\`` }
+            : {}),
     };
   };
 
@@ -1958,6 +1989,9 @@ export function createApp(
         },
         400,
       );
+    }
+    if (entry.serve.terralith) {
+      return c.json({ error: `${entry.name} is a walkthrough page of its own, served by its own behold.`, remedy: `Run \`behold demo ${entry.name}\` in a terminal.` }, 400);
     }
     if (loadingDemo) return c.json({ error: `${loadingDemo} is still loading` }, 409);
     loadingDemo = entry.name;
@@ -2152,10 +2186,12 @@ export function createApp(
         { method: "GET", path: "/api/components/compare", desc: "cross-env digest comparison: ?env=&to= — is one env running what the other tested (ledger-only)" },
         {
           method: "GET",
-          path: "/api/choudoufu/moves",
-          desc: "a choudoufu move plan (carve.json) as previews: ?plan=<path inside a served member> [&dryrun=1: choudoufu's own live-mv -dry-run per move] [&receipt=1: the listing after a human ran the lines]. The lines are handed back; there is no endpoint that runs live-mv.",
+          path: "/api/choudoufu/split",
+          desc: "a choudoufu split plan (split.json, or the workbench's carve.json) as previews: ?plan=<path inside a served member> [&dryrun=1: choudoufu's own live-mv -dry-run per move] [&receipt=1: the listing after a human ran the lines]. The lines are handed back; there is no endpoint that runs live-mv.",
         },
-        { method: "GET", path: "/choudoufu/morph", desc: "the move plan as a morph page: every member a box, the moved cards gliding to their destination — ?plan=<path>" },
+        { method: "GET", path: "/api/choudoufu/moves", desc: "the same previews under their name from before the split rename" },
+        { method: "GET", path: "/choudoufu/split", desc: "the split plan as a morph page: every member a box, a box for each estate the plan names that is not served yet, the moved cards gliding to their destination — ?plan=<path>" },
+        { method: "GET", path: "/choudoufu/morph", desc: "redirects to /choudoufu/split, its name from before the split rename" },
         { method: "GET", path: "/api/ci", desc: "generated CI pipeline projection {stages, jobs, forge}" },
         { method: "GET", path: "/api/substrates", desc: "substrate readiness {substrates: [{name, label, status, detail, bringUp?}]}" },
         { method: "GET", path: "/api/ops", desc: "committed Ops + adopt lexicons + apply progress + run playhead" },
@@ -3244,6 +3280,15 @@ export function createApp(
                 statuses: Object.fromEntries(
                   memberIrDoc.nodes.map((n) => [`${name}/${n.id}`, (n.attrs as { _status?: string })?._status ?? "neutral"]),
                 ),
+                // A choudoufu card's marker-vs-derived mark rides the same frame,
+                // only for the cards that carry one.
+                ...(() => {
+                  const ids = memberIrDoc.nodes.flatMap((n) => {
+                    const i = (n.attrs as { _identity?: unknown })?._identity;
+                    return i ? [[`${name}/${n.id}`, i] as const] : [];
+                  });
+                  return ids.length ? { identities: Object.fromEntries(ids) } : {};
+                })(),
               }));
             },
           }).catch((err) => broadcaster.emit("member", JSON.stringify({ error: err instanceof Error ? err.message.split("\n")[0] : String(err) })));
@@ -3802,11 +3847,11 @@ export function createApp(
    * carve morph's `select` follows — nothing from the request reaches the
    * filesystem outside what behold already serves. */
   const choudoufuPlanPath = (plan: string | undefined): { path: string } | { error: string; code: string; remedy: string } => {
-    if (!plan) return { error: "no plan named", code: "choudoufu_no_plan", remedy: "pass ?plan=<path to a carve.json inside a served choudoufu member> — GET /api/project lists the ones found" };
+    if (!plan) return { error: "no plan named", code: "choudoufu_no_plan", remedy: "pass ?plan=<path to a split.json inside a served choudoufu member> — GET /api/project lists the ones found" };
     const abs = resolve(cfg.projectDir, plan);
     const members = (cfg.projectDirs ?? [cfg.projectDir]).filter((d) => memberKindOf(d) === "choudoufu");
     const inside = members.some((d) => abs.startsWith(resolve(d) + sep));
-    if (!inside) return { error: `${plan} is not inside a served choudoufu member`, code: "choudoufu_plan_outside", remedy: "a plan lives in the estate it moves; point ?plan= at a carve.json under one of the served members" };
+    if (!inside) return { error: `${plan} is not inside a served choudoufu member`, code: "choudoufu_plan_outside", remedy: "a plan lives in the estate it moves; point ?plan= at a split.json under one of the served members" };
     return { path: abs };
   };
 
@@ -3816,23 +3861,30 @@ export function createApp(
     return moveMembers(all, run);
   };
 
-  app.get("/api/choudoufu/moves", async (c) => {
+  // The split plan's previews. `/api/choudoufu/moves` is its name from before
+  // the split rename, kept as the same handler so a saved link keeps working.
+  const splitPreviews = async (c: Context) => {
     const q = new URL(c.req.url).searchParams;
     const where = choudoufuPlanPath(q.get("plan") ?? undefined);
     if ("error" in where) return c.json(where, 400);
-    const parsed = readCarvePlan(where.path);
+    const parsed = readSplitPlan(where.path);
     if (!parsed.ok) return c.json(parsed.refusal, 422);
     const members = await choudoufuMembersServed();
     const payload = await movesPayload(parsed.plan, members, { dryRun: q.get("dryrun") === "1", run: cfg.choudoufu?.run });
     const receipt = q.get("receipt") === "1" ? await moveReceipt(parsed.plan, members, cfg.choudoufu?.run) : undefined;
     return c.json({ planPath: relative(cfg.projectDir, where.path), ...payload, ...(receipt ? { receipt } : {}) });
-  });
+  };
+  app.get("/api/choudoufu/split", splitPreviews);
+  app.get("/api/choudoufu/moves", splitPreviews);
 
-  app.get("/choudoufu/morph", async (c) => {
+  // The split as a morph page. `/choudoufu/morph` is its name from before the
+  // split rename, and redirects here with its query intact.
+  app.get("/choudoufu/morph", (c) => c.redirect(`/choudoufu/split${new URL(c.req.url).search}`, 301));
+  app.get("/choudoufu/split", async (c) => {
     const q = new URL(c.req.url).searchParams;
     const where = choudoufuPlanPath(q.get("plan") ?? undefined);
     if ("error" in where) return c.json(where, 400);
-    const parsed = readCarvePlan(where.path);
+    const parsed = readSplitPlan(where.path);
     if (!parsed.ok) return c.json(parsed.refusal, 422);
     const members = await choudoufuMembersServed();
     // Each member's declared graph, through the same spawn seam as the
@@ -3854,7 +3906,7 @@ export function createApp(
       ...(p.newAddress ? { newAddress: p.newAddress } : {}),
       ...(p.dryRun && "followers" in p.dryRun && p.dryRun.followers ? { followers: p.dryRun.followers.map((f) => f.address) } : {}),
     }));
-    const html = renderMoveMorph(morphMembers, moves, { title: `moves — ${relative(cfg.projectDir, where.path)}`, estateOf: (m) => m.panel.replace(/^estate /, "") });
+    const html = renderMoveMorph(morphMembers, moves, { title: `split — ${relative(cfg.projectDir, where.path)}`, estateOf: (m) => m.panel.replace(/^estate /, "") });
     return c.html(html);
   });
 
@@ -4193,7 +4245,7 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   // Carve mode (#252) has no chant project behind it: nothing to watch, nothing
   // to poll, and no baseline frame to capture (`captureFrame` shells `chant
   // graph`, which would fail once a second on a directory that isn't a project).
-  const carve = !!cfg.carveReport;
+  const carve = !!cfg.carveReport || !!cfg.terralithDemo;
   let stopWatch = carve ? () => {} : watchSources(cfg.projectDirs ?? [cfg.projectDir], onMemberSourceChange);
   let pollScopes = new Map<string, string>();
   let stopPoll =
@@ -4262,6 +4314,15 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
   process.on("SIGTERM", shutdown);
   const hostname = cfg.host ?? process.env.BEHOLD_HOST ?? "127.0.0.1";
   const server = serve({ fetch: app.fetch, port: cfg.port, hostname }, (info) => {
+    if (cfg.terralithDemo) {
+      process.stdout.write(
+        `behold → http://localhost:${info.port}/terralith\n` +
+          `  terralith walkthrough: ${cfg.terralithDemo.root}\n` +
+          `  reads snapshots/ in the copy; each phase is a script line you run there.\n` +
+          `  scratch floci: ${cfg.terralithDemo.endpoint}. Ctrl-C stops behold; scripts/terralith-down.sh removes the emulator.\n`,
+      );
+      return;
+    }
     if (carve) {
       process.stdout.write(
         `behold → http://localhost:${info.port}\n` +

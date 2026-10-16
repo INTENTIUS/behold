@@ -18,7 +18,7 @@ in the choudoufu repo), copied:
   the monolith does not, and team-b reads it through a data source filtered
   on team-a's marker tags, the cross-estate reference `live-check -json`
   states, drawn as an edge between the two boxes.
-- **monolith/carve.json.** The plan: team-a's five taggable resources move to
+- **monolith/split.json.** The split plan: team-a's five taggable resources move to
   `tlmig-sample-team-a`. The scope panel shows each move with the
   `choudoufu live-mv` line to run and a link to the morph; behold never runs
   the write.
@@ -41,7 +41,7 @@ choudoufu live-mv -from-estate=tlmig-sample-monolith aws_iam_role.team_a aws_iam
 
 Reload the overlay: the role and its two followers are green in team-a's box,
 the monolith's card for it reads *owned by tlmig-sample-team-a*, and
-`/api/choudoufu/moves?plan=carve.json&receipt=1` says `moved`. Apply team-a
+`/api/choudoufu/split?plan=split.json&receipt=1` says `moved`. Apply team-a
 afterwards to bring its VPC up, and team-b's read resolves.
 
 `bash scripts/choudoufu-down.sh` removes the container. The `.terraform/`

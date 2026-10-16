@@ -1,0 +1,37 @@
+{
+  "estate": "terralith",
+  "region": "us-east-1",
+  "region_source": "provider",
+  "consistent": true,
+  "stabilized": true,
+  "attempts": 2,
+  "config_dir": ".",
+  "schemas": "provider",
+  "items": [
+    {
+      "id": "arn:aws:ec2:us-east-1:000000000000:subnet/subnet-719de87e",
+      "type": "aws_subnet",
+      "address": "aws_subnet.app",
+      "declared": true,
+      "source": "tagging",
+      "tags": {
+        "Name": "terralith-app",
+        "tofu-address": "aws_subnet.app",
+        "tofu-estate": "terralith"
+      }
+    },
+    {
+      "id": "arn:aws:ec2:us-east-1:000000000000:vpc/vpc-737b83d8",
+      "type": "aws_vpc",
+      "address": "aws_vpc.main",
+      "declared": true,
+      "source": "tagging",
+      "tags": {
+        "Name": "terralith-main",
+        "tofu-address": "aws_vpc.main",
+        "tofu-estate": "terralith"
+      }
+    }
+  ],
+  "gaps": []
+}

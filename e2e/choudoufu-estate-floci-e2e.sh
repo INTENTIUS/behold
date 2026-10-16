@@ -16,7 +16,7 @@
 #                              nothing live to discover).
 #   3. the pane (#370)       — /api/diff?env=live carries an entry per composed
 #                              id in renderObserved's vocabulary.
-#   4. the moves (#371)      — /api/choudoufu/moves?plan=carve.json&dryrun=1
+#   4. the moves (#371)      — /api/choudoufu/split?plan=split.json&dryrun=1
 #                              previews five moves through choudoufu's own
 #                              -dry-run, followers named by the tool; no
 #                              /api/choudoufu/mv exists (404).
@@ -94,7 +94,7 @@ jq_assert "$D" '.nodes["monolith/aws_iam_role.team_a"].health == "healthy"' "the
 jq_assert "$D" '.nodes["team-a/aws_iam_role.team_a"].health == "degraded"' "team-a's is degraded (unowned)"
 
 echo "→ 4. the moves"
-M=$(api "/api/choudoufu/moves?plan=carve.json&dryrun=1")
+M=$(api "/api/choudoufu/split?plan=split.json&dryrun=1")
 jq_assert "$M" '.plan.moves == 5' "five moves in the plan"
 jq_assert "$M" '[.moves[] | select(.address == "aws_iam_role.team_a")] | .[0].dryRun.followers | map(.address) | index("aws_iam_role_policy.team_a_inline") != null' "the role's dry run names its inline policy as a follower"
 jq_assert "$M" '.apply.human == true' "the apply boundary is on the wire"
@@ -106,7 +106,7 @@ LINE=$(printf '%s' "$M" | jq -r '.moves[] | select(.address == "aws_iam_role.tea
 ( cd "$TARGET/team-a" && AWS_ENDPOINT_URL=http://127.0.0.1:4650 AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_REGION=us-east-1 \
     ${LINE/choudoufu live-mv/$CHOUDOUFU live-mv -json} | jq -e '.written == true and .verified == true' >/dev/null )
 echo "  ✓ $LINE (written, verified)"
-R=$(api "/api/choudoufu/moves?plan=carve.json&receipt=1")
+R=$(api "/api/choudoufu/split?plan=split.json&receipt=1")
 jq_assert "$R" '[.receipt.moves[] | select(.address == "aws_iam_role.team_a")] | .[0].state == "moved"' "the receipt says moved"
 jq_assert "$R" '[.receipt.moves[] | select(.address == "aws_iam_policy.team_a")] | .[0].state == "pending"' "…and pending for a line not yet run"
 O2=$(api "/api/overlay?env=live&consistent=1")

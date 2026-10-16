@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnedBoxTitle } from "./render.ts";
 import { createApp } from "./server.ts";
 import { Broadcaster } from "./events.ts";
 import { FrameBuffer } from "./frames.ts";
@@ -25,9 +26,9 @@ function estate(): { root: string; mono: string; teamA: string } {
     writeFileSync(join(root, rel), content);
   };
   write("mono/main.tf", 'terraform {\n  live {\n    estate = "tlmig-sample-monolith"\n  }\n}\n');
-  write("mono/carve.json", raw("choudoufu-carve-plan.json"));
+  write("mono/split.json", raw("choudoufu-split-plan.json"));
   write("team-a/main.tf", 'terraform {\n  live {\n    estate = "tlmig-sample-team-a"\n  }\n}\n');
-  write("elsewhere/carve.json", "{}");
+  write("elsewhere/split.json", "{}");
   return { root, mono: join(root, "mono"), teamA: join(root, "team-a") };
 }
 
@@ -80,14 +81,14 @@ function served(spawns: string[][] = []) {
   return { app, mono, teamA };
 }
 
-describe("GET /api/choudoufu/moves (#371)", () => {
+describe("GET /api/choudoufu/split (#371)", () => {
   it("previews the plan: the lines, the destinations, the dry-run documents, the apply note", async () => {
     const spawns: string[][] = [];
     const { app } = served(spawns);
-    const res = await app.request("/api/choudoufu/moves?plan=carve.json&dryrun=1");
+    const res = await app.request("/api/choudoufu/split?plan=split.json&dryrun=1");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { planPath: string; plan: { moves: number }; moves: Array<Record<string, unknown>>; apply: { human: boolean; note: string } };
-    expect(body.planPath).toBe("carve.json");
+    expect(body.planPath).toBe("split.json");
     expect(body.plan.moves).toBe(4);
     expect(body.moves[0]).toMatchObject({
       address: "aws_iam_role.team_a",
@@ -106,9 +107,9 @@ describe("GET /api/choudoufu/moves (#371)", () => {
   it("without dryrun=1 spawns no live-mv at all; with receipt=1 reads the listings -consistent", async () => {
     const spawns: string[][] = [];
     const { app } = served(spawns);
-    await app.request("/api/choudoufu/moves?plan=carve.json");
+    await app.request("/api/choudoufu/split?plan=split.json");
     expect(spawns.some((a) => a[0] === "live-mv")).toBe(false);
-    const res = await app.request("/api/choudoufu/moves?plan=carve.json&receipt=1");
+    const res = await app.request("/api/choudoufu/split?plan=split.json&receipt=1");
     const body = (await res.json()) as { receipt: { moves: Array<{ address: string; state: string }> } };
     expect(body.receipt.moves[0]).toEqual({ address: "aws_iam_role.team_a", to: "tlmig-sample-team-a", state: "moved" });
     expect(spawns.filter((a) => a[0] === "live-ls").every((a) => a.includes("-consistent"))).toBe(true);
@@ -116,11 +117,11 @@ describe("GET /api/choudoufu/moves (#371)", () => {
 
   it("refuses a plan outside the served members, a missing plan, and a plan that is not one", async () => {
     const { app } = served();
-    expect((await app.request("/api/choudoufu/moves")).status).toBe(400);
-    const outside = await app.request("/api/choudoufu/moves?plan=../elsewhere/carve.json");
+    expect((await app.request("/api/choudoufu/split")).status).toBe(400);
+    const outside = await app.request("/api/choudoufu/split?plan=../elsewhere/split.json");
     expect(outside.status).toBe(400);
     expect(((await outside.json()) as { code: string }).code).toBe("choudoufu_plan_outside");
-    const notOne = await app.request("/api/choudoufu/moves?plan=main.tf");
+    const notOne = await app.request("/api/choudoufu/split?plan=main.tf");
     expect(notOne.status).toBe(422);
   });
 
@@ -239,18 +240,29 @@ describe("GET /api/choudoufu/moves (#371)", () => {
   it("is advertised on /api, and /api/project lists the plans found", async () => {
     const { app } = served();
     const api = (await (await app.request("/api")).json()) as { routes: Array<{ path: string }> };
-    expect(api.routes.some((r) => r.path === "/api/choudoufu/moves")).toBe(true);
-    expect(api.routes.some((r) => r.path === "/choudoufu/morph")).toBe(true);
+    for (const path of ["/api/choudoufu/split", "/choudoufu/split", "/api/choudoufu/moves", "/choudoufu/morph"]) expect(api.routes.some((r) => r.path === path)).toBe(true);
     const project = (await (await app.request("/api/project")).json()) as { choudoufu?: { plans: string[] }; environments: string[] };
-    expect(project.choudoufu).toEqual({ plans: ["carve.json"] });
+    expect(project.choudoufu).toEqual({ plans: ["split.json"] });
     expect(project.environments).toEqual(["live"]);
   });
 });
 
-describe("GET /choudoufu/morph (#371)", () => {
+describe("the names from before the split rename", () => {
+  it("answers /api/choudoufu/moves as /api/choudoufu/split, and redirects /choudoufu/morph with its query", async () => {
+    const { app } = served();
+    const old = await app.request("/api/choudoufu/moves?plan=split.json");
+    expect(old.status).toBe(200);
+    expect(((await old.json()) as { planPath: string }).planPath).toBe("split.json");
+    const morph = await app.request("/choudoufu/morph?plan=split.json");
+    expect(morph.status).toBe(301);
+    expect(morph.headers.get("location")).toBe("/choudoufu/split?plan=split.json");
+  });
+});
+
+describe("GET /choudoufu/split (#371)", () => {
   it("renders every member as a box and the moved cards in their destination in the second frame", async () => {
     const { app } = served();
-    const res = await app.request("/choudoufu/morph?plan=carve.json");
+    const res = await app.request("/choudoufu/split?plan=split.json");
     expect(res.status).toBe(200);
     const html = await res.text();
     const VIEWS = JSON.parse(html.match(/const VIEWS = (\[[\s\S]*?\]);\n/)![1].replace(/\\u003c/g, "<")) as Array<{ name: string; boxes: Array<{ key: string; x: number }>; pos: Record<string, { x: number }> }>;
@@ -265,6 +277,20 @@ describe("GET /choudoufu/morph (#371)", () => {
     expect(after).toBeGreaterThan(before);
     expect(after).toBeGreaterThan(teamABox(VIEWS[1]!).x - 1000);
     expect(VIEWS[1]!.pos["mono/aws_iam_role_policy.team_a_inline"]!.x).toBeGreaterThan(VIEWS[0]!.pos["mono/aws_iam_role_policy.team_a_inline"]!.x);
+  });
+});
+
+describe("the split spawns a box for an estate no member serves", () => {
+  it("draws the new box only in the second frame, and the card moves into it", async () => {
+    const { app } = served();
+    const html = await (await app.request("/choudoufu/split?plan=split.json")).text();
+    const VIEWS = JSON.parse(html.match(/const VIEWS = (\[[\s\S]*?\]);\n/)![1].replace(/\\u003c/g, "<")) as Array<{ boxes: Array<{ key: string; x: number; y: number; w: number; h: number }>; pos: Record<string, { x: number; y: number }> }>;
+    const title = spawnedBoxTitle("tlmig-sample-team-b");
+    expect(VIEWS[0]!.boxes.map((b) => b.key)).not.toContain(title);
+    const box = VIEWS[1]!.boxes.find((b) => b.key === title)!;
+    expect(box).toBeDefined();
+    const at = VIEWS[1]!.pos["mono/aws_iam_role.team_b"]!;
+    expect(Math.abs(at.x - box.x)).toBeLessThan(box.w);
   });
 });
 
