@@ -1,6 +1,12 @@
 ---
 title: Look at a terragucci estate
 description: Every root of a terragucci repo as one graph, marked with what the pipeline last found. Local, read-only, dated.
+prompt: |
+  Read https://intentius.io/behold/using/terragucci/.
+  Ask me where the reports bucket is.
+  Serve this repository with `npx @intentius/behold serve . --terragucci <source>` and tell me the URL.
+  List the roots that carry a mark and the date on each.
+  Never deploy with the Deploy button, `POST /api/apply` or `POST /api/ci/dispatch`. Gate approvals stay mine as well (`/api/ops/:name/signal/:gate`, `/api/workspace/gates/approve`, `/api/operator/approve/:op/:gate`). Op runs (`/api/ops/:name/run`) and rollbacks (`/api/rollback`) are mine too. Leave `--auto-sync` off, and keep a `behold preview` or `--public` serve read-only.
 ---
 
 import { Aside } from '@astrojs/starlight/components';

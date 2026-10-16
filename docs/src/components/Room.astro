@@ -1,0 +1,273 @@
+---
+// One room of the site, from data/rooms.mjs: the lede, then three cards
+// (what works, what it needs, the first step), the proof (example projects
+// and end-to-end scripts in the repository, each checked to exist) and the
+// pages to read next as tasks, background and reference. The room's prompt
+// shows under the title (PageTitle.astro). pages/for/[id].astro renders it,
+// with roomMarkdown() as the page's Markdown for "Copy page as Markdown".
+import { Code } from '@astrojs/starlight/components';
+import { room } from '../data/rooms.mjs';
+import { roomProof } from '../data/proof.mjs';
+import { codeHtml, siteHref } from '../data/href.mjs';
+import { base } from '../site';
+
+interface Props {
+	id: string;
+}
+type Link = { label: string; href: string };
+
+const r = room(Astro.props.id);
+const href = (h: string) => siteHref(base, h);
+const first = r.first as { note?: string; command: string; lang?: string; link: Link };
+const proof = roomProof(r);
+const read = [
+	['Tasks', r.tasks],
+	['Background', r.background],
+	['Reference', r.reference],
+] as [string, Link[]][];
+---
+<div class="bh-room not-content">
+	<p class="lede" set:html={codeHtml(r.lede)} />
+	<div class="cols">
+		<section>
+			<h2 id="works">Works</h2>
+			<ul>{(r.works as string[]).map((w) => <li set:html={codeHtml(w)} />)}</ul>
+		</section>
+		<section>
+			<h2 id="needs">Needs</h2>
+			<ul>{(r.needs as string[]).map((n) => <li set:html={codeHtml(n)} />)}</ul>
+		</section>
+		<section class="first">
+			<h2 id="first-step">First step</h2>
+			{first.note && <p set:html={codeHtml(first.note)} />}
+			<Code code={first.command} lang={first.lang ?? 'sh'} />
+			<p><a class="go" href={href(first.link.href)}>{first.link.label}</a></p>
+		</section>
+	</div>
+	<section>
+		<h2 id="proof">Proof</h2>
+		<p class="note">The example projects and end-to-end scripts in the behold repository for this room. The build checks that each one is there.</p>
+		<table>
+			<thead><tr><th>Path</th><th>Where</th></tr></thead>
+			<tbody>
+				{proof.map((e) => (
+					<tr>
+						<td><code>{e.path.split('/').pop()}</code></td>
+						<td><a href={e.href}>{e.path}</a></td>
+					</tr>
+				))}
+			</tbody>
+		</table>
+	</section>
+	<section class="read">
+		<h2 id="then-read">Then read</h2>
+		<dl>
+			{read.filter(([, links]) => links.length).map(([label, links]) => (
+				<>
+					<dt>{label}</dt>
+					<dd>{links.map((l) => <a href={href(l.href)}>{l.label}</a>)}</dd>
+				</>
+			))}
+		</dl>
+	</section>
+</div>
+
+<style>
+	.bh-room {
+		display: grid;
+		gap: 2.25rem;
+		font-size: var(--sl-text-sm);
+		line-height: 1.6;
+		color: var(--sl-color-gray-2);
+	}
+	.lede {
+		margin: 0;
+		font-size: var(--sl-text-base);
+		color: var(--sl-color-gray-2);
+	}
+	.cols {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+		gap: 0.75rem;
+	}
+	.cols .first {
+		grid-column: 1 / -1;
+	}
+	.cols section {
+		min-width: 0;
+		padding: 1rem 1.15rem;
+		border: 1px solid var(--bh-rule);
+		border-top: 1px solid var(--bh-gold);
+		border-radius: 0.6rem;
+		background: var(--bh-panel);
+	}
+	h2 {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin: 0 0 0.7rem;
+		font-size: 0.68rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.1em;
+		color: var(--sl-color-gray-3);
+	}
+	section:not(.cols section) > h2::before {
+		content: '';
+		width: 15px;
+		height: 15px;
+		background-color: var(--bh-gold);
+		-webkit-mask: var(--bh-mark) center / contain no-repeat;
+		mask: var(--bh-mark) center / contain no-repeat;
+	}
+	h3 {
+		margin: 0 0 0.2rem;
+		font-size: var(--sl-text-xs);
+		font-weight: 600;
+		color: var(--sl-color-gray-2);
+	}
+	ul {
+		display: grid;
+		gap: 0.45rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	li {
+		position: relative;
+		margin: 0;
+		padding-left: 2.35rem;
+		color: var(--sl-color-white);
+	}
+	li::before {
+		content: '';
+		position: absolute;
+		left: 0;
+		top: 3px;
+		width: 28px;
+		height: 19px;
+		background-color: var(--bh-ink);
+		-webkit-mask: var(--bh-logo) center / contain no-repeat;
+		mask: var(--bh-logo) center / contain no-repeat;
+	}
+	p {
+		margin: 0 0 0.7rem;
+	}
+	.note {
+		color: var(--sl-color-gray-3);
+	}
+	:global(.bh-room code) {
+		font-size: 0.85em;
+		padding: 0.05em 0.3em;
+		border: 1px solid var(--bh-rule);
+		border-radius: 0.3rem;
+		background: var(--sl-color-gray-6);
+	}
+	:global(.bh-room pre code) {
+		border: 0;
+		padding: 0;
+		background: none;
+	}
+	.cols :global(starlight-tabs) {
+		font-size: var(--sl-text-sm);
+	}
+	.cols :global(starlight-tabs [role='tablist']) {
+		margin-bottom: 0.6rem;
+	}
+	.cols :global(.expressive-code) {
+		margin-bottom: 0.8rem;
+	}
+	a {
+		color: var(--bh-accent);
+		text-decoration: none;
+	}
+	a:hover {
+		text-decoration: underline;
+		text-decoration-color: var(--bh-gold);
+		text-underline-offset: 0.2em;
+	}
+	.go {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.5rem 0.95rem;
+		font-weight: 600;
+		color: var(--sl-color-black);
+		background: var(--bh-accent);
+		border-radius: 0.5rem;
+	}
+	.go::after {
+		content: '\2192';
+	}
+	.go:hover {
+		text-decoration: none;
+		filter: brightness(1.1);
+	}
+	table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.85rem;
+	}
+	th,
+	td {
+		padding: 0.6rem 0.9rem 0.6rem 0;
+		text-align: left;
+		vertical-align: top;
+		border-bottom: 1px solid var(--bh-rule);
+	}
+	th {
+		font-size: 0.68rem;
+		font-weight: 600;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		color: var(--sl-color-gray-3);
+		border-bottom-color: var(--bh-gold);
+	}
+	td:first-child {
+		color: var(--sl-color-white);
+		white-space: nowrap;
+	}
+	dl {
+		display: grid;
+		grid-template-columns: 7rem 1fr;
+		gap: 0.75rem 1.25rem;
+		margin: 0;
+	}
+	dt {
+		font-size: 0.68rem;
+		font-weight: 600;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		color: var(--sl-color-gray-3);
+		padding-top: 0.3rem;
+	}
+	dd {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+		margin: 0;
+	}
+	dd a {
+		padding: 0.2rem 0.65rem;
+		white-space: nowrap;
+		color: var(--sl-color-white);
+		border: 1px solid var(--bh-rule);
+		border-radius: 999px;
+	}
+	dd a:hover {
+		text-decoration: none;
+		border-color: var(--bh-gold);
+	}
+	@media (max-width: 40rem) {
+		dl {
+			grid-template-columns: 1fr;
+			gap: 0.4rem;
+		}
+		dd {
+			margin-bottom: 0.6rem;
+		}
+		dd a {
+			white-space: normal;
+		}
+	}
+</style>

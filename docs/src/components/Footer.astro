@@ -1,0 +1,35 @@
+---
+// Starlight's footer, with the pixel face and the name under it on every
+// page, linking home.
+import Default from '@astrojs/starlight/components/Footer.astro';
+import { base } from '../site';
+---
+<Default />
+<p class="bh-foot not-content">
+	<a href={`${base}/`}><span class="bh-logo" aria-hidden="true"></span><span>behold</span></a>
+</p>
+
+<style>
+	.bh-foot {
+		margin: 2rem 0 1rem;
+		text-align: center;
+	}
+	.bh-foot a {
+		--bh-ink: var(--sl-color-gray-3);
+		display: inline-flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.45rem;
+		font-family: var(--bh-display);
+		font-size: var(--sl-text-xs);
+		font-weight: 600;
+		letter-spacing: 0.2em;
+		padding-left: 0.2em;
+		text-transform: uppercase;
+		color: var(--bh-ink);
+		text-decoration: none;
+	}
+	.bh-foot a:hover {
+		--bh-ink: var(--sl-color-white);
+	}
+</style>
