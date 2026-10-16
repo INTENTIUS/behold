@@ -939,6 +939,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     if (!force && key === lastFocus) return;
     lastFocus = key;
     if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: "behold:view", member: null, focus, run, zoom }, origin);
+    tellHover(s.hover);
   };
   const pickView = (view) => {
     s.pick = { view, at: now().getTime() };
@@ -963,8 +964,10 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       hoverCss({ roots: [], waves: links.waves }, { wave: (w) => `.r-job[data-k-wave="${w}"]` }, HOVER_JOB_RULE),
     ].join("\n");
   };
+  // behold#571: with nothing pointed at, the frame lights the held wave's box, as the hold panel and its job row are lit.
   const tellHover = (h) => {
-    if (frame && frame.contentWindow) frame.contentWindow.postMessage(hoverMessage(h), origin);
+    const lit = h || (Number.isInteger(s.held) ? { wave: s.held } : null);
+    if (frame && frame.contentWindow) frame.contentWindow.postMessage(hoverMessage(lit), origin);
   };
   const hoverAt = (target) => {
     const t = target && target.closest ? target.closest("[data-k-root],[data-k-wave]") : null;
@@ -1083,6 +1086,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     if (held !== s.held) {
       s.held = held;
       glow();
+      tellHover(s.hover);
     }
     whatText();
     renderViewToggle(views, shown, { components: s.components && ok, onPick: pickView });
