@@ -435,7 +435,7 @@ export function readingRows(view, tool = null) {
   }
   const arrows = [
     { mark: "solid", words: "Solid arrow: a read of applied outputs." },
-    { mark: "dashed", words: "Dashed arrow: planned values, read before they apply." },
+    { mark: "dashed", words: "Dashed arrow: planned values, before they apply." },
   ];
   if (view === "components") {
     return [

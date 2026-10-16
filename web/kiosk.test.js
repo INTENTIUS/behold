@@ -283,10 +283,10 @@ describe("which view the frame shows (#571)", () => {
     expect(readingRows("components")[0].words).toBe("Card: a Terraform root with its own state.");
     expect(readingRows("components")[1].words).toBe("Box: a wave, titled with the job that applies it.");
     expect(readingRows("resources")[0].words).toBe("Box: a Terraform root with its own state.");
-    expect(words("components")).toMatch(/Solid arrow: a read of applied outputs\. Dashed arrow: planned values, read before they apply\./);
+    expect(words("components")).toMatch(/Solid arrow: a read of applied outputs\. Dashed arrow: planned values, before they apply\./);
     expect(words("components")).toMatch(/Marks: the forge and the tools a job runs/);
     // Short items, so two to a line keep the open frame a few lines tall.
-    for (const v of ["components", "resources"]) for (const r of readingRows(v, "terragrunt")) expect(r.words.length, r.words).toBeLessThanOrEqual(56);
+    for (const v of ["components", "resources"]) for (const r of readingRows(v, "terragrunt")) expect(r.words.length, r.words).toBeLessThanOrEqual(50);
     // behold#571: a Terragrunt scenario names its units.
     for (const v of ["components", "resources"]) {
       const w = words(v, "terragrunt");
