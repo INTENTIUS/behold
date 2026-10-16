@@ -46,7 +46,7 @@
     "@intentius/chant-k8s-client": "^0.124.24",
     "@intentius/pinhole": "^0.5.0",
     "ajv": "^8.20.0",
-    "hono": "^4.12.34"
+    "hono": "^4.13.13"
   },
   "peerDependencies": {
     "@intentius/chant-lexicon-terraform": "^0.124.0",
