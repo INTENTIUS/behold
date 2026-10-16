@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { JOB_WORDS, componentMarks, jobStatus, runsCommit, waveOfKey, waveTitle } from "./terragucci-components-live.js";
+import { JOB_WORDS, componentMarks, jobStatus, runsCommit, waveOfKey, waveStatus, waveTitle } from "./terragucci-components-live.js";
 
 // #571: the live marks on a terragucci repo's components zoom. The facets are
 // the components graph's (src/__fixtures__/terragucci-components: network and
@@ -53,8 +53,8 @@ describe("a wave job's status from the pipeline's runs (#571)", () => {
       run(10, "0000000", [job("apply-wave-2", "failure")]),
     );
     expect(jobStatus(index, MERGE, "apply-wave-2")).toEqual({ status: "running", words: "running", tone: "busy", run: 12 });
-    // The resume skipped wave 1: the merge's run says how it went.
-    expect(jobStatus(index, MERGE, "apply-wave-1")).toEqual({ status: "success", words: "succeeded", tone: "ok", run: 11 });
+    // The resume skipped wave 1: the merge's run says how it went, and that a later run went on from it.
+    expect(jobStatus(index, MERGE, "apply-wave-1")).toEqual({ status: "success", words: "succeeded", tone: "ok", run: 11, superseded: 12 });
     // A short sha names the same commit.
     expect(jobStatus(index, MERGE.slice(0, 8), "apply-wave-2").run).toBe(12);
   });
@@ -114,6 +114,32 @@ describe("the component marks (#571)", () => {
     expect(m.waves[2].facts[0]).toBe("wave 1 stays applied");
     expect(m.waves[2].title).toBe("apply-wave-2 · failed");
     expect(m.waves[3].title).toBe("apply-wave-3 · skipped");
+  });
+
+  it("titles a wave a re-run applied with the latest run's state, not the merge's failure (behold#571)", () => {
+    // As the demo's failure scenario has them: the merge's run fails wave 2; each
+    // /terragucci apply re-run applies the waves in its apply-comment job and skips the wave jobs.
+    const comment = (id, status) => run(id, MERGE, [job("apply-comment", status), job("apply-wave-1", "skipped"), job("apply-wave-2", "skipped"), job("apply-wave-3", "skipped")]);
+    const merge = run(11, MERGE, [job("apply-comment", "skipped"), job("apply-wave-1", "success"), job("apply-wave-2", "failure"), job("apply-wave-3", "queued")]);
+    const applied = { ...progress("applied"), states: progress("applied").states.map((w) => ({ ...w, state: "applied" })) };
+    const m = componentMarks(answer, applied, facets, { runs: runs(comment(13, "success"), comment(12, "waiting"), merge), pin: MERGE });
+    expect(m.cards.app).toMatchObject({ state: "applied" });
+    expect(m.waves[2]).toMatchObject({ state: "applied", tone: "ok", title: "apply-wave-2 · applied" });
+    expect(m.waves[3].title).toBe("apply-wave-3 · applied");
+    // While the re-run waits at the gate, the box says so.
+    const held = componentMarks(answer, progress("waiting"), facets, { runs: runs(comment(12, "waiting"), merge), pin: MERGE });
+    expect(held.waves[2].title).toBe("apply-wave-2 · held at the gate");
+    // Before any re-run, the merge's own failure.
+    const failed = componentMarks(answer, progress("failed"), facets, { runs: runs(merge), pin: MERGE });
+    expect(failed.waves[2].title).toBe("apply-wave-2 · failed");
+  });
+
+  it("keeps the job's status when no later run took the wave over, or the run view has no state for it", () => {
+    const st = { status: "failure", words: "failed", tone: "bad", run: 11 };
+    expect(waveStatus(st, "applied")).toBe(st);
+    expect(waveStatus({ ...st, superseded: 12 }, null)).toMatchObject({ status: "failure" });
+    expect(waveStatus({ ...st, superseded: 12 }, "applied")).toEqual({ status: "applied", words: "applied", tone: "ok", run: 12 });
+    expect(waveStatus(null, "applied")).toBe(null);
   });
 
   it("draws the pull request's plan before the merge, with no job status", () => {

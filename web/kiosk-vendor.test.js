@@ -183,7 +183,8 @@ describe("the branding table (behold#571)", () => {
     expect(namesOther("runs on choudoufu", "terraform")).toBe(true);
     expect(namesOther("works with OpenTofu", "terraform")).toBe(false);
     expect(rootWord("choudoufu")).toBe("a root");
-    expect(rootWord("terragrunt")).toBe("a Terraform root");
+    expect(rootWord("terragrunt")).toBe("a Terragrunt unit");
+    expect(rootWord("terraform")).toBe("a Terraform root");
   });
   it("never counts a resource address, a bucket or a path as a brand", () => {
     for (const t of ["terraform_data.app", "data.terraform_remote_state.network", "state in demo-terraform-state", "s3://demo-terraform-state/edge.tfstate", "developer.hashicorp.com/terraform", ".terraform.lock.hcl", "terragrunt-cache"]) {

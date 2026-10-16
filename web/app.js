@@ -4173,7 +4173,7 @@ function kioskGlow() {
   };
   style.textContent = hoverCss(links, { root: boxes, wave: (w) => `#graph rect[data-group-id="wave-${w}"]` }, "filter: drop-shadow(0 0 2px var(--focus)) drop-shadow(0 0 7px var(--focus));");
 }
-/** The dots by each root's name: on its box's title (Resources) or its card (Roots by wave). */
+/** The dots by each root's name: on its box's title (Resources) or its card (Components). */
 function kioskDots(svg) {
   for (const d of svg.querySelectorAll("[data-k-dot]")) d.remove();
   const roots = kioskRootList();

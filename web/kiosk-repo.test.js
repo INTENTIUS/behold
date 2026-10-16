@@ -1,6 +1,6 @@
 // behold#571: the kiosk asks for its repo's checkout by name, on a behold that serves several.
 import { describe, expect, it } from "vitest";
-import { repoParam, repoUrl } from "./kiosk-repo.js";
+import { repoParam, repoUrl, stepCheckout } from "./kiosk-repo.js";
 import { frameSrc } from "./kiosk.js";
 import { pageRepo, withRepo } from "./view-repo.js";
 
@@ -23,6 +23,33 @@ describe("repoUrl", () => {
     expect(repoUrl("/api/terragucci/demo", "demo")).toBe("/api/terragucci/demo");
     expect(repoUrl("/api/terragucci/runs/4", "demo")).toBe("/api/terragucci/runs/4");
     expect(repoUrl("/api/project", null)).toBe("/api/project");
+  });
+});
+
+describe("stepCheckout (behold#571)", () => {
+  const served = ["demo", "demo.change", "demo-terragrunt", "demo-terragrunt.change"];
+  const HEAD = "9eec25f7aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const MERGE = "12f512fcbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  const BASE = "0d14834dcccccccccccccccccccccccccccccccc";
+  const commits = { demo: BASE, "demo.change": HEAD, "demo-terragrunt": BASE };
+  const step = (step, commit) => ({ scenario: "b-waves", step, commit });
+  it("draws the checkout at the pull request's head while the step is about it", () => {
+    expect(stepCheckout("demo", step("pull-request", HEAD), served, commits)).toBe("demo.change");
+    expect(stepCheckout("demo", step("planned", HEAD.slice(0, 8)), served, commits)).toBe("demo.change");
+  });
+  it("follows the merge once the driver checked it out, and draws the repo's checkout until then", () => {
+    expect(stepCheckout("demo", step("merged", MERGE), served, commits)).toBe("demo");
+    expect(stepCheckout("demo", step("merged", MERGE), served, { ...commits, "demo.change": MERGE })).toBe("demo.change");
+  });
+  it("draws the repo's own checkout at the reset, on the base, and with no commit or commits", () => {
+    expect(stepCheckout("demo", step("reset", HEAD), served, commits)).toBe("demo");
+    expect(stepCheckout("demo", { scenario: "base", step: "applied", commit: HEAD }, served, commits)).toBe("demo");
+    expect(stepCheckout("demo", step("pull-request", null), served, commits)).toBe("demo");
+    expect(stepCheckout("demo", step("pull-request", HEAD), served, null)).toBe("demo");
+    expect(stepCheckout(null, step("pull-request", HEAD), served, commits)).toBe(null);
+  });
+  it("picks only the repo's own checkouts", () => {
+    expect(stepCheckout("demo-terragrunt", step("pull-request", HEAD), served, commits)).toBe("demo-terragrunt");
   });
 });
 

@@ -65,6 +65,7 @@ import { addCompositeDepsCounted } from "./composite-deps.ts";
 import { notesFor, danglingNote, tierMismatchNote, namespaceMismatchNote, namespaceJoinNote, unchangedZoomNote, type Zoom } from "./zoom-notes.ts";
 import { resourcesByComponent, resourcesByRoot, nonResourceEntities } from "./resources.ts";
 import { TERRAGUCCI_COMPONENTS_FILE, componentJobs, componentRootMap, readTerragucciComponents, waveTitles, type TerragucciComponents } from "./terragucci-components.ts";
+import { hasTerragruntUnits } from "./terragrunt-units.ts";
 import { summarizePlan } from "./reconcile.ts";
 import { renderGraph, renderArchitecture, renderBanded, renderCarveEstate, renderCarveMorph, renderMoveMorph } from "./render.ts";
 import { boxBadges, collapseBoxes, collapseNote } from "./collapse-lens.ts";
@@ -2187,7 +2188,9 @@ export function createApp(
     const titles = waveTitles(ir, decl);
     const { svg } = renderGraph(ir, { waveTitles: titles });
     const waves = Object.keys((ir.groups as { byWave?: Record<string, string[]> }).byWave ?? {}).length;
-    const note = `${ir.nodes.length} root${ir.nodes.length === 1 ? "" : "s"} in ${waves} wave${waves === 1 ? "" : "s"}, from ${TERRAGUCCI_COMPONENTS_FILE}`;
+    // behold#571: a Terragrunt repo's roots are its units.
+    const noun = hasTerragruntUnits(cfg.projectDir) ? "unit" : "root";
+    const note = `${ir.nodes.length} ${noun}${ir.nodes.length === 1 ? "" : "s"} in ${waves} wave${waves === 1 ? "" : "s"}, from ${TERRAGUCCI_COMPONENTS_FILE}`;
     return {
       ir,
       svg,

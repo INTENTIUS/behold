@@ -23,3 +23,21 @@ export function repoUrl(url, repo) {
   q.set("repo", repo);
   return `${path}?${q.toString()}`;
 }
+
+const sameCommit = (a, b) => typeof a === "string" && typeof b === "string" && !!a && !!b && (a.startsWith(b) || b.startsWith(a));
+
+/**
+ * The checkout that holds the step's commit (behold#571). A step names the
+ * commit it is about (demo.json's `commit`: a pull request's head, then its
+ * merge); the repo's own checkout may sit on another one. Of `name` and the
+ * served checkouts named `<name>.<anything>`, the one whose commit
+ * (`/api/project`'s viewCommits) is the step's; `name` when none is, at the
+ * reset and on the base, which draw the base.
+ */
+export function stepCheckout(name, demo, served, commits) {
+  if (!name || !demo || !demo.commit || !commits || !Array.isArray(served)) return name;
+  if (demo.scenario === "base" || demo.step === "reset") return name;
+  const at = (n) => sameCommit(commits[n], demo.commit);
+  if (at(name)) return name;
+  return served.find((n) => n.startsWith(`${name}.`) && at(n)) || name;
+}
