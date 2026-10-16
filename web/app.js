@@ -21,6 +21,7 @@ import { renderLane } from "./terragucci-lifecycle.js";
 import { renderReleases } from "./releases.js";
 import { renderYodelLane } from "./sql-yodeler-lane.js";
 import { initTerragucciEstate } from "./terragucci-estate.js";
+import { noStateFill } from "./frame-fill.js";
 import { componentMarks as tgComponentMarks, runsCommit as tgRunsCommit, waveOfKey as tgWaveOfKey } from "./terragucci-components-live.js";
 import { FORGES, MARK, componentsForge, forgeOfName, iconSvg, markLink, markTitle, waveJobUrl } from "./forge-mark.js";
 import { TOOLS, orderTools } from "./tool-mark.js";
@@ -32,7 +33,7 @@ import { edgeKey, edgeLabel, edgeLegend, edgeTitle, isCiKind, viaIndex } from ".
 import { readCostLine } from "./read-cost.js";
 import { mountHistoryPicker } from "./history-picker.js";
 import { applyMemberFrame, pendingLine, stillPending } from "./pending.js";
-import { initTheme, setTheme, mountThemePicker, readableOn, colorForCategory, onThemeChange, getTokens, getTheme, pinTokensFor } from "./theme.js";
+import { initTheme, setTheme, mountThemePicker, readableOn, inkOn, colorForCategory, onThemeChange, getTokens, getTheme, pinTokensFor } from "./theme.js";
 // #399 M2 / #401 M4 of #397: the colour-by modes' arithmetic and the
 // provenance badge's wording — every decision the behaviour overlay makes,
 // pure and unit-tested beside the file. This module owns the fetches, the SVG
@@ -203,9 +204,13 @@ function colourPlan(graphIr) {
   // #569 review: a terragucci repo's view with no drift read draws each root's
   // wave state on its box, so the cards wear the neutral ground: colour there
   // means a wave's state, never a category hue that reads as an error.
-  if (mode === "drift" && tokens && tgStatesDrawn(graphIr)) {
+  // behold#571: in the kiosk's frame a card's state is its outline, bar and
+  // words, never its fill, so a card with no state yet (before the pull
+  // request's first plan, or reports that name another checkout) wears the
+  // same neutral ground, not a category hue that reads as an error.
+  if (mode === "drift" && tokens && (tgStatesDrawn(graphIr) || noStateFill({ frame: !!embedOpts.bare, live: graphIr.nodes.some((n) => n.attrs && n.attrs._status) }))) {
     const neutral = theme ? pinTokensFor(theme).neutralFill : tokens.neutral;
-    return { mode, fillOf: () => ({ fill: neutral, unpriced: false }) };
+    return { mode, neutral: true, fillOf: () => ({ fill: neutral, unpriced: false }) };
   }
   if (mode === "drift" || !tokens) {
     return { mode, fillOf: (id) => ({ fill: colorForCategory(kindOf.get(id)), unpriced: false }) };
@@ -242,7 +247,8 @@ function recolorNodesByCategory(ir) {
     const kind = kindOf.get(id);
     if (!kind) continue;
     const paint = plan.fillOf(id);
-    const cat = paint.fill, ink = readableOn(cat);
+    // behold#571: on the neutral card ground, the ink that reads best on it (theme.js inkOn).
+    const cat = paint.fill, ink = plan.neutral ? inkOn(cat) : readableOn(cat);
     // #399: an unpriced card is marked, not merely coloured — a hex cannot be
     // read back out into "the engine did not price this", and the legend's
     // unpriced count has to agree with what is on the canvas.
