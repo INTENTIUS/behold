@@ -12,7 +12,7 @@ internet ──443/80──> caddy ──edge network──> behold :4600 (--pub
                                                │ terragucci network
                                                ├─> floci :4566  (reports, demo.json; read-only key)
                                                └─> forgejo :3000 (chant/lifecycle; read-only token)
-driver (host network) ── docker.sock ──> terragucci stack: forgejo, forgejo-runner, floci, job containers
+driver (host network) ── docker.sock ──> terragucci stack: forgejo, forgejo-runner, floci, demo-postgres, job containers
 watchdog (systemd) ── docker + localhost:4580 ──> driver, demo.json, behold's checkout
 ```
 
@@ -31,10 +31,13 @@ watchdog (systemd) ── docker + localhost:4580 ──> driver, demo.json, beh
 | `demo.env.example` | The settings, copied to `/etc/demo-host/demo.env` |
 | `chant/` | The chant project: the AWS resources (`src/aws`), `compose.yaml` and the Dockerfiles (`src/docker`), and the ops (`ops/`) |
 
-Forgejo, the runner and floci aren't in `compose.yaml`. They come from
-terragucci's `stack/docker-compose.yml`, which the driver's bootstrap starts
-the way it does on a laptop. Defining them here as well would make each
-bootstrap recreate them with the other file's settings.
+Forgejo, the runner, floci and `demo-postgres` aren't in `compose.yaml`. They
+come from terragucci's `stack/docker-compose.yml`, which the driver's bootstrap
+starts the way it does on a laptop. `demo-postgres` (profile `demo`) is app's
+database in the failure scenario: app's wave runs a SQL Yodeler migration on
+it, in the job image `terragucci-demo-tofu:local` that the bootstrap builds.
+Defining them here as well would make each bootstrap recreate them with the
+other file's settings.
 
 ## The chant project
 
@@ -204,6 +207,7 @@ What the host keeps:
 | `/var/lib/demo-host/behold/behold-s3.env` | behold's floci key (`s3:GetObject` and `s3:ListBucket` on the reports prefix), new after each bootstrap |
 | `/var/lib/demo-host/viewer.env` | the Forgejo user `demo-viewer`'s generated password and its `read:repository` token |
 | `/opt/demo/terragucci/stack/.state/` | terragucci's own: Forgejo's admin token, the driver's signing key, the base snapshot |
+| Docker volume `terragucci-demo-pgdata` | `demo-postgres`'s data: database `demo`, which SQL Yodeler migrates, and `demo_base`, the base each reset copies back. The bootstrap makes both anew |
 | `/opt/demo/views/<repo name>` | a checkout of each demo repo in `DEMO_REPOS` at its `main` (behold#571), which behold serves: the first by default, another when a page asks for it with `?repo=<name>`. The driver makes them after a bootstrap, and a missing one on its next start; the watchdog moves each to `main` every cycle. `/opt/demo/view`, the single checkout before, is no longer read and is left as it is |
 | `/opt/demo/views/<repo name>.change` | a second checkout of each demo repo, which the driver's loop moves to each step's commit (a pull request's head, then its merge) before it writes the step (behold#571). The kiosk's graph draws it while the step's commit is checked out there, so a pull request's new roots and resources are drawn. The driver makes it beside the first; the watchdog leaves it as it is |
 
@@ -249,9 +253,10 @@ in memory, so after a reboot its states, reports and keys are gone. The
 driver's entry (`driver-entry.sh`) notices: floci has no
 `demo-host/bootstrapped` object for the checkout's commit. It runs
 `stack/demo.sh up` again, which starts Forgejo and floci from terragucci's
-compose file and applies the base. Then it gives behold a new floci key,
-restarts behold, and starts the loop. Forgejo's data is on a volume and
-survives the reboot.
+compose file and applies the base. Before the base, it builds the job image
+and starts `demo-postgres`. Then it gives behold a new floci key, restarts
+behold, and starts the loop. Forgejo's and `demo-postgres`'s data are on
+volumes and survive the reboot.
 
 ## The watchdog
 
