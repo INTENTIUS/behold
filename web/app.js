@@ -102,7 +102,9 @@ import { hasPlayhead, renderPlayhead, waitingFor } from "./run-playhead.js";
 // the lease, the pending gate count) and the converge gate card, whose Approve
 // records a fact for the next tick rather than releasing anything. Same split as
 // the playhead — the decisions are pure in there, the fetches stay here.
-import { hasOperator, renderOperator, APPROVED_SEMANTICS } from "./operator.js";
+import { hasOperator, renderOperator, renderConvergeGateCard, APPROVED_SEMANTICS } from "./operator.js";
+import { modalStyle, openEventModal } from "./event-help-modal.js";
+import { ehStore, ehStored } from "./event-help-store.js";
 // #165: the recorded release on a component — which run put it here, from
 // which commit, approved by whom — and, when the ledger's run id cannot be
 // followed, the reason in words rather than a guessed link.
@@ -4541,12 +4543,24 @@ function kioskTellBoxes() {
       const n = tgWaveOfKey(r.getAttribute("data-group-id"));
       if (n !== null) waves[n] = rect(r.getBoundingClientRect());
     }
+    // behold#571 event-help: each root's cards, where the kiosk's tips about a root point.
+    const roots = {};
+    const named = (tgComponentFacets && tgComponentFacets.roots) || {};
+    for (const g of svg.querySelectorAll("[data-node-id]")) {
+      const id = g.getAttribute("data-node-id");
+      const r = g.getBoundingClientRect();
+      if (!r.width) continue;
+      for (const root of new Set([id, named[id]].filter(Boolean))) {
+        const had = roots[root];
+        roots[root] = had ? { x: Math.min(had.x, Math.round(r.left)), y: Math.min(had.y, Math.round(r.top)), w: Math.round(Math.max(had.x + had.w, r.right) - Math.min(had.x, r.left)), h: Math.round(Math.max(had.y + had.h, r.bottom) - Math.min(had.y, r.top)) } : rect(r);
+      }
+    }
     // The reads' labels too, which the kiosk's callouts keep clear of.
     const labels = [...svg.querySelectorAll("[data-tg-reads] > g")].map((g) => rect(g.getBoundingClientRect())).filter((r) => r.w > 0);
     const host = document.getElementById("graph");
     const pane = host ? rect(host.getBoundingClientRect()) : null;
     try {
-      window.parent.postMessage({ type: "behold:boxes", waves, labels, pane, moving: !!shotAnim }, embedOpts.host);
+      window.parent.postMessage({ type: "behold:boxes", waves, roots, labels, pane, moving: !!shotAnim }, embedOpts.host);
     } catch {
       /* the parent went away */
     }
@@ -4619,6 +4633,27 @@ function wireKioskFrame() {
       else kioskPopEvent({ type: "outside" });
       // behold#571: a click on the graph holds the kiosk's shot where the viewer is reading.
       if (card && kioskShot) kioskViewerMoved();
+      // behold#571: a click on a wave's box (not a card in it) asks the kiosk for that wave's trace, or its log.
+      if (!card && !panMoved && embedOpts.host && window.parent !== window) {
+        const box = e.target.closest && (e.target.closest("rect[data-group-id]") || e.target.closest("[data-group-id]"));
+        let n = box ? tgWaveOfKey(box.getAttribute("data-group-id")) : null;
+        if (n === null) {
+          // A box's title or marks sit over it: find the box the click is inside.
+          const svg = currentSvg();
+          for (const r of svg ? svg.querySelectorAll("rect[data-group-id]") : []) {
+            const b = r.getBoundingClientRect();
+            const w = tgWaveOfKey(r.getAttribute("data-group-id"));
+            if (w !== null && e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom) n = w;
+          }
+        }
+        if (n !== null) {
+          try {
+            window.parent.postMessage({ type: "behold:wave", wave: n }, embedOpts.host);
+          } catch {
+            /* the parent went away */
+          }
+        }
+      }
     },
     true,
   );
@@ -5331,7 +5366,63 @@ function dialArrow() {
   return s;
 }
 
+// --- behold#571: event-help in the full app ---------------------------------
+// A converge gate that waits for a person opens event-help's modal in live
+// mode (web/event-help-modal.js): what the gate covers, behold's own gate
+// card, and an Approve button that calls the route the card's button calls
+// (approveConvergeGate). It waits for the person, and closes when they
+// dismiss it or when the gate leaves the pending list. Only where behold may
+// approve: never framed, in a snapshot, in a preview or in a public view.
+// The Tips switch, the kiosk's too, turns it off.
+const ehApp = { seen: new Set(), modal: null };
+const ehShelf = (() => {
+  try {
+    return localStorage;
+  } catch {
+    return null;
+  }
+})();
+(function wireTips() {
+  modalStyle(document);
+  const label = document.getElementById("panel-tips");
+  const box = label && label.querySelector("input");
+  if (!box) return;
+  box.checked = ehStored(ehShelf);
+  box.addEventListener("change", () => {
+    ehStore(ehShelf, box.checked);
+    if (!box.checked && ehApp.modal) ehApp.modal.api.close();
+  });
+})();
+const ehGateKey = (g) => `${g.op}|${g.gate}|${g.since || ""}`;
+function ehAppGates() {
+  if (embedOpts.embed || staticMode || previewMode || publicMode) return;
+  const gates = (operatorState && operatorState.gates) || [];
+  // The event resolved: the gate left the pending list.
+  if (ehApp.modal && !gates.some((g) => ehGateKey(g) === ehApp.modal.key)) ehApp.modal.api.resolve(APPROVED_SEMANTICS);
+  if (!ehStored(ehShelf)) return;
+  for (const g of gates) {
+    const key = ehGateKey(g);
+    if (ehApp.seen.has(key)) continue;
+    ehApp.seen.add(key);
+    if (ehApp.modal) continue;
+    // behold's own card, without its button: the modal's Approve is the same act.
+    const card = renderConvergeGateCard(g, { approve: () => {} });
+    for (const b of card.querySelectorAll("button")) b.remove();
+    const host = document.getElementById("eh-modals") || document.body;
+    const api = openEventModal(host, {
+      mode: "live",
+      kind: "held",
+      data: { title: `${g.gate} waits for an approval`, lines: [{ text: `${g.op} wants a person's approval before the converge loop applies its change.` }], panel: card, gate: { kind: "converge", op: g.op, gate: g.gate, approve: g.approve }, verbs: { verb: "Record approval", ing: "Recording…", past: "Recorded" } },
+      actions: { approve: () => approveConvergeGate(g.op, g.gate) },
+      reduced: typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches,
+      onClose: () => (ehApp.modal = null),
+    });
+    ehApp.modal = { key, api };
+  }
+}
+
 function renderDial() {
+  ehAppGates();
   const host = document.getElementById("dial");
   if (!view.env) {
     // The dial used to vanish entirely here, with nothing saying why — someone

@@ -604,14 +604,21 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
   if (!job) return { log: null, steps: null, key: null };
   // behold#571: a job with a trace in Tempo offers it beside its steps (web/kiosk-trace.js).
   if (trace && trace.has(job.name)) {
+    // behold#571: the job's header carries the toggle between its steps and its trace, so it reads as a choice, not one more chip.
     const tabs = el("div", "t-tabs");
+    const head = el("span", "t-tabs-job");
+    head.append(statusIcon(job.status), el("span", "r-steps-job", job.name));
+    const seg = el("div", "t-seg");
+    seg.setAttribute("role", "group");
+    seg.setAttribute("aria-label", `${job.name}: steps or trace`);
     for (const [view, words] of [["steps", "Steps"], ["trace", "Trace"]]) {
       const b = el("button", "t-tab", words);
       b.type = "button";
       b.setAttribute("aria-pressed", String((jobView === "trace") === (view === "trace")));
       b.addEventListener("click", () => pickView(view));
-      tabs.appendChild(b);
+      seg.appendChild(b);
     }
+    tabs.append(head, seg);
     host.appendChild(tabs);
     if (jobView === "trace") {
       const box = el("div", "r-steps r-trace");
@@ -1093,6 +1100,16 @@ export function startRuns(
     s.picked = now().getTime();
     s.pending = { run, job, step, n };
     if (s.run && s.run.doc && s.run.doc.id === run) draw();
+    else void readRun();
+  };
+  /** behold#571: a job of a run from elsewhere (Watch's wave boxes, event-help's tips): its steps, or its trace. */
+  s.showJob = (run, job, view = "steps") => {
+    if (run !== null && run !== undefined) s.selected = Number.isNaN(Number(run)) ? run : Number(run);
+    follow = false;
+    s.picked = now().getTime();
+    s.ui = { job, open: null, setup: null };
+    jobView = view;
+    if (s.run && s.run.doc && String(s.run.doc.id) === String(run)) draw();
     else void readRun();
   };
   return s;

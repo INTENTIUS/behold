@@ -192,9 +192,14 @@ export function runStrip(traces) {
 
 const STYLE = `
 .t-trace { padding: 0.2em 0 0.6em; font-size: 0.86em; }
-.t-tabs { display: flex; gap: 0.3em; padding: 0.5em 1em 0.1em; flex-wrap: wrap; }
-.t-tab { font: 600 0.78em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); background: transparent; border: 1px solid var(--rule); border-radius: 999px; padding: 0.2em 0.8em; cursor: pointer; }
-.t-tab[aria-pressed="true"] { color: var(--fg); background: var(--active); border-color: var(--focus); }
+.t-tabs { display: flex; align-items: center; justify-content: space-between; gap: 0.6em; padding: 0.45em 1em 0.35em; flex-wrap: wrap; border-bottom: 1px solid color-mix(in srgb, var(--rule) 55%, transparent); }
+.t-tabs-job { display: inline-flex; align-items: center; gap: 0.5em; min-width: 0; }
+.t-tabs-job .r-icon { margin: 0; }
+.t-seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; overflow: hidden; flex: none; }
+.t-tab { font: 600 0.9em var(--font-ui); color: var(--muted); background: transparent; border: 0; padding: 0.25em 1em; cursor: pointer; }
+.t-tab + .t-tab { border-left: 1px solid var(--rule); }
+.t-tab:hover { color: var(--fg); }
+.t-tab[aria-pressed="true"], .t-tab[aria-pressed="true"]:hover { color: var(--bg); background: var(--pending); }
 .t-sec { font: 600 0.8em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 0.6em 1em 0.25em; }
 .t-strip, .t-rows { display: flex; flex-direction: column; }
 .t-row { display: grid; grid-template-columns: minmax(10em, 38%) minmax(0, 1fr) 4.6em; align-items: center; gap: 0.6em; padding: 0.08em 1em; min-height: 1.55em; cursor: default; }

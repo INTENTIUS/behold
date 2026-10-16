@@ -18,6 +18,8 @@ import { PICK_HOLD_MS, annMark, mergeRun, startRuns, statusIcon } from "./kiosk-
 import { MODES, MODE_STORE, badges as waveBadges, badgeTitle, captionModel, doraLine, modeStored, placeBeside, resultModel, shotFor, stepTone, tailLines } from "./kiosk-watch.js";
 import { shotMessage } from "./kiosk-shot.js";
 import { mountTrace } from "./kiosk-trace.js";
+import { startEventHelp } from "./kiosk-event-help-ui.js";
+import { miniWaterfall, phaseWords, waveTraces } from "./kiosk-wave-traces.js";
 import { PANEL_STEPS, PANEL_TITLE, approvalModel, cycleRuns, digestHex, rowFacts } from "./kiosk-approval.js";
 import { getThemeName, mountThemePicker, onThemeChange } from "./theme.js";
 import { cssString, hoverCss, hoverFromMessage, hoverLinks, hoverMessage, isLightBg, rootSegments, rootText } from "./kiosk-roots.js";
@@ -908,12 +910,48 @@ function drawResult(host, model, s) {
   const counts = el("ul", "k-result-counts");
   for (const c of model.counts) counts.appendChild(el("li", null, c));
   host.appendChild(counts);
-  if (model.waves.length) {
+  // behold#571: each wave's trace as one bar of its phases; a click opens the whole trace. A wave without one keeps its numbers.
+  const rows = miniWaterfall(s.waveTraces || {});
+  const traced = new Set(rows.map((r) => r.wave));
+  const untraced = model.waves.filter((w) => !traced.has(w.wave));
+  if (untraced.length) {
     const list = el("dl", "k-result-waves");
-    for (const w of model.waves) list.append(el("dt", null, `Wave ${w.wave}`), el("dd", null, w.words));
+    for (const w of untraced) list.append(el("dt", null, `Wave ${w.wave}`), el("dd", null, w.words));
     host.appendChild(list);
   }
+  if (rows.length) {
+    const wf = el("div", "k-wf");
+    for (const r of rows) {
+      const row = el("button", "k-wf-row");
+      row.type = "button";
+      const held = r.bars.find((b) => b.phase === "held");
+      row.title = `${TRACE_OPEN_WORDS} · ${r.bars.map(phaseWords).join(" · ")}`;
+      const track = el("span", "k-wf-track");
+      for (const b of r.bars) {
+        const seg = el("i", `k-wf-seg k-wf-${b.phase}`);
+        seg.style.left = `${(b.at * 100).toFixed(2)}%`;
+        seg.style.width = `${Math.max(0.6, b.width * 100).toFixed(2)}%`;
+        seg.title = phaseWords(b);
+        track.appendChild(seg);
+      }
+      row.append(el("span", "k-wf-wave", `Wave ${r.wave}`), track, el("span", "k-wf-ms", held ? phaseWords(held) : r.words), el("span", "k-wf-go", TRACE_LINK_WORDS));
+      row.addEventListener("click", () => s.openWave && s.openWave(r.wave, "trace"));
+      wf.appendChild(row);
+    }
+    const key = el("p", "k-wf-key");
+    for (const [cls, words] of PHASE_KEY) {
+      const k = el("span");
+      k.append(el("i", `k-wf-sw k-wf-${cls}`), words);
+      key.appendChild(k);
+    }
+    wf.appendChild(key);
+    host.appendChild(wf);
+  }
 }
+/** behold#571: the words of a trace's links, and the phases' key. */
+export const TRACE_LINK_WORDS = "Trace";
+export const TRACE_OPEN_WORDS = "Open this wave's trace";
+export const PHASE_KEY = [["plan", "plan"], ["held", "held for an approval"], ["apply", "apply"], ["report", "report and upload"]];
 
 /** behold#571: the head over the intro, in the card's box between scenarios, and the title of "What is this?". */
 export const INTRO_HEAD = "What this demo is about";
@@ -1025,6 +1063,10 @@ function fade(b) {
   b.classList.toggle("k-more-above", b.scrollTop > 1);
 }
 
+/** behold#571: how often a cycle's run's traces are read again, and how long after a run ends they still are. */
+export const TRACE_POLL_MS = 8_000;
+export const TRACE_SETTLE_MS = 90_000;
+
 /** behold#571: the longest a reloaded frame loads out of sight before it swaps in anyway. */
 export const FRAME_SWAP_MS = 30_000;
 /** behold#571: how long the first frame load waits for demo.json, so it opens on the step's checkout. */
@@ -1040,7 +1082,7 @@ export const DEMO_POLL_MS = 3_000;
  * countdown. When the roots the step is about change, move the framed view
  * with a `behold:view` message; the frame takes them only from this origin.
  */
-export function startKiosk({ bar, frame, side, main, views, read = null, tools = null, watch = null }, { fetchJson = defaultFetch, now = () => new Date(), origin = location.origin, tool = null } = {}) {
+export function startKiosk({ bar, frame, side, main, views, read = null, tools = null, watch = null, eh = null }, { fetchJson = defaultFetch, now = () => new Date(), origin = location.origin, tool = null } = {}) {
   const s = { demo: null, answer: null, progress: null, components: false, pick: null, view: "resources", roots: [], waves: [], light: false, hover: null, frameHover: null, held: null };
   // behold#571: Watch or Inspect, the viewer's pick kept in their browser; Watch until they pick Inspect.
   const shelf = typeof localStorage !== "undefined" ? (() => { try { return localStorage; } catch { return null; } })() : null;
@@ -1049,6 +1091,10 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   s.watchHeld = null;
   s.boxes = null;
   s.shot = null;
+  // behold#571: event-help, started further down once what it reads is in place.
+  let ehApi = null;
+  // behold#571: each wave's trace, from Tempo (web/kiosk-wave-traces.js).
+  s.waveTraces = {};
   // behold#571: the frame loading out of sight while the shown one stays up (openFrame), and a message to both.
   let buffer = null;
   const post = (msg) => {
@@ -1133,7 +1179,9 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     }
     const a = hoverLinks(s.hover, s.waves);
     const b = hoverLinks(s.frameHover, s.waves);
-    const links = { roots: [...new Set([...a.roots, ...b.roots])], waves: [...new Set([...a.waves, ...b.waves])] };
+    // behold#571 event-help: an event's things light as a hover lights them, while its tip is up.
+    const c = hoverLinks(s.hover || s.frameHover ? null : s.ehLit, s.waves);
+    const links = { roots: [...new Set([...a.roots, ...b.roots, ...c.roots])], waves: [...new Set([...a.waves, ...b.waves, ...c.waves])] };
     style.textContent = [
       // behold#571: the held wave's job row, lit as the hold panel is; a hover's light comes after it and wins.
       Number.isInteger(s.held) ? `.r-job[data-k-wave="${s.held}"] { ${HELD_JOB_RULE} }` : "",
@@ -1143,7 +1191,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   };
   // behold#571: with nothing pointed at, the frame lights the held wave's box, as the hold panel and its job row are lit.
   const tellHover = (h) => {
-    const lit = h || (Number.isInteger(s.held) ? { wave: s.held } : null);
+    const lit = h || s.ehLit || (Number.isInteger(s.held) ? { wave: s.held } : null);
     post(hoverMessage(lit));
   };
   const hoverAt = (target) => {
@@ -1277,6 +1325,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     }
     tellFrame(false);
     tellShot(false);
+    if (ehApi) ehApi.tick();
   };
 
   // ---------------------------------------------------------------------------
@@ -1287,6 +1336,9 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   let lastShot = null;
   let drawerOpen = false;
   let drawerHover = false;
+  // behold#571: a wave the viewer opened the drawer on, its trace or its log; null follows the step.
+  let drawerWave = null;
+  let drawerView = null;
   const isPhone = () => typeof matchMedia === "function" && matchMedia("(max-width: 600px)").matches;
   const runsParent = main ? main.parentNode : null;
   const runsNext = main ? main.nextSibling : null;
@@ -1325,6 +1377,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     draw();
   };
   s.followSteps = () => {
+    drawerWave = null;
+    drawerView = null;
     watchHoldAt = null;
     s.watchHeld = null;
     lastShot = null;
@@ -1337,16 +1391,25 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       watchHoldAt = null;
       s.watchHeld = null;
       lastShot = null;
+      // The steps lead again: a drawer the viewer opened on a wave folds away with the hold.
+      drawerWave = null;
+      drawerView = null;
       return;
     }
     s.watchHeld = { secs: Math.ceil(left / 1000) };
   }
+  /** behold#571: the caption's top, or event-help's trail's when it sits over the caption. */
+  const captionTop = (cap) => {
+    const trail = eh && eh.trailHost;
+    const r = trail && !trail.hidden && trail.getBoundingClientRect ? trail.getBoundingClientRect() : null;
+    return r && r.height && r.top < cap.top ? r.top : cap.top;
+  };
   /** How much of the frame the overlays cover, in the frame's pixels: the caption below, and the callout, drawer or card beside the shot. */
   const shotInsets = (shot) => {
     if (!watch || !frame || isPhone() || !frame.getBoundingClientRect) return {};
     const f = frame.getBoundingClientRect();
     const cap = watch.caption.getBoundingClientRect();
-    const bottom = Math.max(0, f.bottom - cap.top) + 16;
+    const bottom = Math.max(0, f.bottom - captionTop(cap)) + 16;
     const side = shot.kind === "held" ? watch.callout : shot.kind === "active" ? watch.drawer : shot.kind === "result" ? watch.result : null;
     // The result card sits right beside the graph (placeBeside's gap): an inset of its width and that gap centres the two together.
     const right = side && !side.hidden && side.offsetWidth ? side.offsetWidth + (shot.kind === "result" ? 18 : 44) : 0;
@@ -1380,13 +1443,20 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const call = shot.kind === "held" && gate;
     watch.callout.hidden = !call;
     if (call) drawCallout(watch.callout, s, hold, badgeTitle(nums[hold.wave]));
-    const drawer = shot.kind === "active";
-    const open = drawer && (drawerOpen || drawerHover);
+    const opened = drawerWave !== null;
+    const drawer = shot.kind === "active" || opened;
+    const drawerOn = opened ? drawerWave : shot.waves[0];
+    const open = drawer && (drawerOpen || drawerHover || opened);
     watch.drawer.hidden = !drawer;
     watch.drawer.classList.toggle("k-open", open);
-    if (drawer) drawDrawer(watch.drawer, tailLines(runsApi && runsApi.run ? runsApi.run.doc : null), badgeTitle(nums[shot.waves[0]]), open);
-    if (drawer) traceDrawer(d, shot.waves[0]);
-    const result = shot.kind === "result" ? resultModel(d, s.metrics, s.progress) : null;
+    watch.drawer.classList.toggle("k-trace-only", opened && drawerView === "trace");
+    // A drawer opened on a wave's trace is headed by that wave's job, not the step's.
+    const tr = opened && drawerView === "trace" ? s.waveTraces[drawerOn] : null;
+    const tail = tr ? { job: `Wave ${drawerOn} · ${tr.job}`, status: tr.trace.result === "failed" || tr.trace.result === "refused" ? "failure" : tr.trace.result === "waiting" ? "waiting" : "success", lines: [] } : tailLines(runsApi && runsApi.run ? runsApi.run.doc : null);
+    if (drawer) drawDrawer(watch.drawer, tail, badgeTitle(nums[drawerOn]), open);
+    if (drawer) traceDrawer(d, drawerOn);
+    // A drawer the viewer opened on a wave takes the card's place beside the graph until it folds.
+    const result = shot.kind === "result" && !opened ? resultModel(d, s.metrics, s.progress) : null;
     watch.result.hidden = !result;
     if (result) drawResult(watch.result, result, s);
     // On a phone the delivery numbers stack under the rest, where the header has no room for them.
@@ -1397,13 +1467,20 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     }
     foot.textContent = doraLine(s.metrics) || "";
     watch.badges.replaceChildren();
-    const skip = call ? hold.wave : drawer ? shot.waves[0] : null;
+    const skip = call ? hold.wave : drawer ? drawerOn : null;
     // At applied the result card lists every wave's numbers, so the boxes carry none.
     for (const [n, words] of shot.kind === "result" && result ? [] : Object.entries(nums)) {
       if (Number(n) === skip) continue;
       const b = el("span", "k-badge", words);
       b.dataset.kWave = n;
       b.title = `Wave ${n}: ${badgeTitle(words)}`;
+      // behold#571: a wave whose trace Tempo has opens it from its numbers.
+      if (s.waveTraces[n]) {
+        b.classList.add("k-badge-trace");
+        b.title = `${b.title} · ${TRACE_OPEN_WORDS}`;
+        b.appendChild(el("span", "k-badge-go", TRACE_LINK_WORDS));
+        b.addEventListener("click", () => s.openWave(Number(n), "trace"));
+      }
       watch.badges.appendChild(b);
     }
     placeWatch();
@@ -1418,8 +1495,10 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const host = watch.drawer.querySelector("#k-traces");
     const runDoc = runsApi && runsApi.run ? runsApi.run.doc : null;
     const w = (s.waves || []).find((x) => x.wave === wave);
-    if (!host || !d || !d.repo || !runDoc || !w) return;
-    const target = { project: d.repo, run: String(runDoc.id), job: w.job };
+    const tr = s.waveTraces[wave];
+    if (!host || !d || !d.repo || (!tr && (!runDoc || !w))) return;
+    // The wave's own trace when Tempo has it (its run and job: a resumed run applies waves in one job), else its job in the drawer's run.
+    const target = tr ? { project: d.repo, run: tr.run, job: tr.job } : { project: d.repo, run: String(runDoc.id), job: w.job };
     const key = `${target.project}|${target.run}|${target.job}`;
     if (trace && trace.key === key) return;
     if (trace) trace.api.update(target);
@@ -1436,7 +1515,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     }
     const L = watch.layer.getBoundingClientRect();
     const F = frame.getBoundingClientRect();
-    const capTop = watch.caption.getBoundingClientRect().top - L.top;
+    const capTop = captionTop(watch.caption.getBoundingClientRect()) - L.top;
     const view = { x: F.left - L.left, y: F.top - L.top, w: F.width, h: capTop - (F.top - L.top) };
     const boxOf = (n) => {
       const waves = (s.boxes && s.boxes.waves) || {};
@@ -1466,7 +1545,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       taken.push({ x: p.x, y: p.y, x2: p.x + size.w, y2: p.y + size.h });
     };
     put(watch.callout, s.held);
-    put(watch.drawer, s.shot && s.shot.waves[0]);
+    put(watch.drawer, drawerWave !== null ? drawerWave : s.shot && s.shot.waves[0]);
     put(watch.result, null); // beside the whole graph
     const hits = (r) => taken.some((t) => r.x < t.x2 && r.x2 > t.x && r.y < t.y2 && r.y2 > t.y);
     for (const b of watch.badges.children) {
@@ -1494,6 +1573,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       if (e.data.type === "behold:viewer") return holdShot();
       if (e.data.type !== "behold:boxes") return;
       s.boxes = e.data;
+      if (ehApi) ehApi.follow();
       if (queued) return;
       queued = true;
       requestAnimationFrame(() => {
@@ -1510,6 +1590,13 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const head = watch.drawer && watch.drawer.querySelector(".k-drawer-head");
     if (head) {
       head.addEventListener("click", () => {
+        // A drawer the viewer opened on a wave folds away; the step's drawer folds to its last lines.
+        if (drawerWave !== null) {
+          drawerWave = null;
+          drawerView = null;
+          drawerOpen = false;
+          return draw();
+        }
         drawerOpen = !drawerOpen;
         holdShot();
       });
@@ -1526,6 +1613,121 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       });
     }
   }
+  // ---------------------------------------------------------------------------
+  // behold#571: event-help, the "Tips" (web/kiosk-event-help-ui.js).
+  s.ehLit = null;
+  ehApi = eh && typeof document !== "undefined"
+    ? startEventHelp({
+        doc: document,
+        store: shelf,
+        switchHost: eh.switchHost,
+        trailHost: eh.trailHost,
+        tipsHost: eh.tipsHost,
+        modalHost: eh.modalHost,
+        now: () => now().getTime(),
+        shown: () => shownNow().getTime(),
+        light: (lit) => {
+          s.ehLit = lit;
+          glow();
+          tellHover(s.hover);
+        },
+        openTrace: (wave) => s.openWave(wave, "trace"),
+        // The modal shows behold's own approval panel, as the kiosk draws it.
+        panel: (kind) => (kind === "held" && s.approval ? approvalPanel(s.approval, s) : null),
+        get: () => {
+          const d = s.demo && s.demo.demo;
+          if (!d) return null;
+          const appr = pendingApproval(d, s.progress);
+          return {
+            demo: d,
+            answer: s.answer,
+            progress: s.progress,
+            runDoc: runsApi && runsApi.run ? runsApi.run.doc : null,
+            // The cycle's runs the approval panel reads, for the failures of runs the pane no longer shows.
+            runDocs: ap.list,
+            approval: s.approval && Array.isArray(s.approval.rows) ? s.approval : null,
+            metrics: s.metrics,
+            waves: s.waves,
+            boxes: s.boxes,
+            frame,
+            watch: s.watchMode,
+            caption: watch ? watch.caption : null,
+            replay: s.mode === "replay",
+            approveLine: appr ? appr.approve : null,
+            label: d.label || "",
+            result: resultModel(d, s.metrics, s.progress),
+            waveTraces: s.waveTraces,
+          };
+        },
+      })
+    : null;
+
+  /**
+   * behold#571: open a wave's trace (or its log) from where its numbers are:
+   * its badge, the result card, its box, a tip. In Watch, the drawer on its
+   * box; in Inspect, the job pane on its job.
+   */
+  s.openWave = (n, view = "trace") => {
+    const tr = s.waveTraces[n];
+    const v = view === "trace" && tr ? "trace" : "log";
+    const w = (s.waves || []).find((x) => x.wave === n);
+    if (!s.watchMode) {
+      if (runsApi && runsApi.showJob && (tr || w)) runsApi.showJob(tr && v === "trace" ? tr.run : runsApi.run && runsApi.run.doc ? runsApi.run.doc.id : null, tr && v === "trace" ? tr.job : w.job, v === "trace" ? "trace" : "steps");
+      return;
+    }
+    drawerWave = n;
+    drawerView = v;
+    drawerOpen = true;
+    if (v === "log" && w && runsApi && runsApi.showJob) runsApi.showJob(runsApi.run && runsApi.run.doc ? runsApi.run.doc.id : null, w.job, "steps");
+    holdShot();
+  };
+  if (typeof window !== "undefined" && window.addEventListener) {
+    window.addEventListener("message", (e) => {
+      if (e.origin !== origin || !frame || e.source !== frame.contentWindow || !e.data || e.data.type !== "behold:wave") return;
+      if (Number.isInteger(e.data.wave)) s.openWave(e.data.wave, "trace");
+    });
+  }
+  // behold#571: the cycle's runs' traces, read while the waves run and for a while after each run ends (Tempo has a job's spans seconds to a minute after it finishes).
+  const traceReads = new Map();
+  let tracesBusy = false;
+  let tracesCycle = null;
+  const readTraces = async () => {
+    const d = s.demo && s.demo.demo;
+    // A new cycle starts with none: the last one's traces are not this one's.
+    if (d && d.cycle !== tracesCycle) {
+      tracesCycle = d.cycle;
+      s.waveTraces = {};
+      drawerWave = null;
+      drawerView = null;
+    }
+    if (tracesBusy || !d || !d.repo || !runsApi || !runsApi.index || !runsApi.index.doc) return;
+    if (!["merged", "applying", "waiting", "approved", "failed", "resumed", "applied"].includes(d.step)) return;
+    tracesBusy = true;
+    try {
+      const t = now().getTime();
+      for (const r of cycleRuns(runsApi.index.doc.runs, d)) {
+        if (r.status === "queued") continue;
+        const key = `${d.cycle}|${r.id}`;
+        const had = traceReads.get(key);
+        const ended = r.ended_at ? Date.parse(r.ended_at) : null;
+        // Done: ended a while ago, and read once since.
+        if (had && ended && t - ended > TRACE_SETTLE_MS && had.at > ended + TRACE_SETTLE_MS) continue;
+        if (had && t - had.at < TRACE_POLL_MS) continue;
+        const a = await fetchServed(`/api/traces?project=${encodeURIComponent(d.repo)}&run=${encodeURIComponent(r.id)}`);
+        traceReads.set(key, { at: t, answer: a && !a.error ? a : had ? had.answer : null });
+      }
+      const mine = [...traceReads].filter(([k]) => k.startsWith(`${d.cycle}|`)).map(([, v]) => v.answer);
+      const next = waveTraces(mine);
+      if (JSON.stringify(Object.keys(next).map((k) => [k, next[k].run, next[k].trace.start])) !== JSON.stringify(Object.keys(s.waveTraces).map((k) => [k, s.waveTraces[k].run, s.waveTraces[k].trace.start]))) {
+        s.waveTraces = next;
+        draw();
+      }
+    } finally {
+      tracesBusy = false;
+    }
+  };
+  setInterval(() => void readTraces(), 2_000);
+
   s.setMetrics = (m) => {
     s.metrics = m;
     draw();

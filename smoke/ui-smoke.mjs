@@ -152,6 +152,23 @@ async function launch() {
 
 const server = await startStub(PORT);
 const browser = await launch();
+// behold#571: event-help's Tips open a modal for a gate that waits. Every page
+// here walks the gates by hand, so Tips start off; the event-help block below
+// turns them on for its own page.
+{
+  const newPage = browser.newPage.bind(browser);
+  browser.newPage = async (opts) => {
+    const p = await newPage(opts);
+    await p.addInitScript(() => {
+      try {
+        if (!sessionStorage.getItem("eh-smoke-on")) localStorage.setItem("behold.eventHelp", "off");
+      } catch {
+        /* no storage */
+      }
+    });
+    return p;
+  };
+}
 const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
 // #259: the JSON view's copy control writes to the system clipboard. Grant it,
 // so the write resolves instead of logging a permissions-policy error into the
@@ -1712,6 +1729,52 @@ try {
     }
   }
 
+
+  // behold#571: event-help in the full app. With Tips on (the default), a
+  // converge gate that waits opens the shared modal in live mode: behold's own
+  // gate card, and an Approve that posts the route the card's button posts,
+  // never another. It waits for the person, then shows the gate cleared.
+  {
+    const ehServer = await startStub(PORT + 9);
+    const ehPage = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+    await ehPage.addInitScript(() => {
+      try {
+        sessionStorage.setItem("eh-smoke-on", "1");
+        localStorage.removeItem("behold.eventHelp");
+      } catch {
+        /* no storage */
+      }
+    });
+    const ehErrors = [];
+    ehPage.on("pageerror", (e) => ehErrors.push(String(e)));
+    try {
+      await ehPage.goto(`http://localhost:${PORT + 9}/`);
+      await ehPage.waitForSelector("#graph svg [data-node-id]", { timeout: 20000 });
+      check("the Tips switch is on by default", await ehPage.locator("#panel-tips input").isChecked());
+      if (!(await ehPage.locator(".eh-modal").count())) {
+        await ehPage.click('#panel-tabs button[data-tab="view"]');
+        await ehPage.locator("#panel-zoom button", { hasText: /^ops$/ }).click();
+      }
+      await ehPage.waitForSelector(".eh-modal", { timeout: 10000 });
+      const modal = ehPage.locator(".eh-modal");
+      check("a waiting converge gate opens the live modal", (await modal.locator(".eh-modal-title").innerText()).includes("rollout-gate waits for an approval"));
+      check("…showing behold's own gate card", (await modal.locator(".run-gate.operator-gate").count()) === 1);
+      check("…its button the card's own act, with no countdown", (await modal.locator(".eh-modal-act").innerText()).trim() === "Record approval");
+      await ehPage.waitForTimeout(3000);
+      check("…and it waits for the person", (await ehPage.locator(".eh-modal").count()) === 1);
+      await ehPage.screenshot({ path: join(SHOTS, "eh-live-modal.png") });
+      await modal.locator(".eh-modal-act").click();
+      await ehPage.waitForTimeout(600);
+      check("its Approve posts the converge route and nothing else", ehServer.approvePosts.length === 1 && ehServer.approvePosts[0].path === "/api/operator/approve/fountain-apply/rollout-gate" && !ehServer.signalPosts.length);
+      await ehPage.waitForTimeout(400);
+      await ehPage.screenshot({ path: join(SHOTS, "eh-live-modal-approved.png") });
+      check("no console errors with Tips on", ehErrors.length === 0);
+      if (ehErrors.length) console.error("event-help page errors:", ehErrors);
+    } finally {
+      await ehPage.close();
+      ehServer.close();
+    }
+  }
   // #422: the warm-cache race. The member frame reaches the page before the
   // progressive answer it belongs to (smoke/stub.mjs `warmFrames`); the cards
   // still have to leave pending and take the frame's colour and identity mark,

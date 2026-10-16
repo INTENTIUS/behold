@@ -409,7 +409,7 @@
       /* #476: framed in a host pane. Deploying and the theme are the host's
          business; the panel and the inspect pane start folded (app.js). */
       .embed #panel-tabs button[data-tab="deploy"], .embed #panel-body section[data-tab="deploy"],
-      .embed #panel-body section[data-tab="view"] > h3:has(+ #panel-theme), .embed #panel-theme { display: none !important; }
+      .embed #panel-body section[data-tab="view"] > h3:has(+ #panel-theme), .embed #panel-theme, .embed #panel-tips { display: none !important; }
       /* Folded in a frame, the panel is a small pill (⌘K and the expand
          chevron) in the corner, so the graph has the pane to itself. */
       .embed #panel.collapsed #panel-tabs button[data-tab] { display: none; }
@@ -823,6 +823,9 @@
           <div id="panel-viewtools"></div>
           <h3>theme</h3>
           <div id="panel-theme"></div>
+          <!-- behold#571: event-help, the "Tips" switch the kiosk has too. -->
+          <label id="panel-tips" class="eh-switch" title="A window opens when a gate waits for you, and shows how to approve it"><input type="checkbox" /> Tips</label>
+          <div id="eh-modals"></div>
         </section>
         <section data-tab="scope" id="tab-scope"></section>
         <section data-tab="substrates"><div id="substrates"></div></section>
