@@ -86,7 +86,7 @@ function lineTime(run, f) {
 }
 
 /**
- * The panel's model: `{ wave, digest, rows: [{ id, label, state, … }] }`, or
+ * The panel's model: `{ wave, digest, run, rows: [{ id, label, state, … }] }`, or
  * null when the step is not one the panel shows or no wave of the cycle
  * held. `state` is `lit`, `going` (begun, not done) or `dim`. Inputs:
  *
@@ -178,7 +178,9 @@ export function approvalModel({ demo, runs = [], history = null, lifecycle = nul
     });
   } else Object.assign(spRow, { state: "dim", text: `Once wave ${wave} applies, this approval is used up for good.` });
 
-  return { wave, digest, rows: inferBack([reqRow, apRow, rsRow, spRow], { wave, gateRead, spentLine, resumeRuns }) };
+  // behold#571: the run the hold is in now, for the panel's head: the resume once there is one, else the run that held the wave.
+  const run = resume ? resume.id : holdRun ? holdRun.id : null;
+  return { wave, digest, run, rows: inferBack([reqRow, apRow, rsRow, spRow], { wave, gateRead, spentLine, resumeRuns }) };
 }
 
 /** The words a row lit only because a later one is, by row. Each says it was inferred; none invents a time. */

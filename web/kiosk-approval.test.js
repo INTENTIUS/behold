@@ -115,6 +115,8 @@ describe("the approval panel (behold#571)", () => {
     const m = approvalModel({ demo: demo("applied"), runs: [run(444), resumeless], now: Date.parse("2026-10-15T04:11:00Z") });
     expect(m.rows.map((r) => r.state)).toEqual(["lit", "lit", "lit", "lit"]);
     expect(m.rows[2]).toMatchObject({ inferred: true, runId: 445, at: null });
+    // behold#571: the run the hold panel's head names: the run that held the wave, with no resume run copied.
+    expect(m.run).toBe(444);
     expect(rowFacts(m.rows[2])).toEqual(["inferred from the rows after it", "run #445"]);
     expect(m.rows[1]).toMatchObject({ inferred: true, text: "terragucci-admin approved this plan." });
     expect(inferBack([{ id: "requested", state: "dim" }, { id: "approved", state: "dim" }], { wave: 2 }).map((r) => r.state)).toEqual(["dim", "dim"]);
