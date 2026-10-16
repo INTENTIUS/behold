@@ -170,11 +170,16 @@ export function isPanelCollapsed() {
   return !!state.collapsed;
 }
 
-export function initPanel({ embed = false } = {}) {
+export function initPanel({ embed = false, phone = false } = {}) {
   panel = document.getElementById("panel");
   if (!panel) return;
   if (embed) {
     STORE_KEY = "behold.panel.embed";
+    state.collapsed = true;
+    state.y = 12;
+  }
+  // behold#696: on a phone it starts folded to its bar too, so the graph is what the viewer sees first.
+  if (phone) {
     state.collapsed = true;
     state.y = 12;
   }

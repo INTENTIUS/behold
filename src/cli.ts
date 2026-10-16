@@ -553,7 +553,7 @@ function warnIfNotChantProject(dir: string): void {
     return;
   }
   process.stderr.write(
-    `behold: warning — ${dir} has no chant.config.ts; this doesn't look like a chant project.\n` +
+    `behold: warning — ${dir} has no chant.config.ts or chant.config.json; this doesn't look like a chant project.\n` +
       `        \`behold doctor ${dir}\` says what's missing. No project yet? \`behold demo\` serves a bundled working example (needs Docker).\n`,
   );
 }

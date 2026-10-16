@@ -148,7 +148,7 @@ export function repoTools(dir: string, config?: string, has: { terragrunt?: (d: 
 /** Whether `dir` itself holds a SQL Yodeler project: its yodel.config.ts, the `yodel-waves.json` `yodel ci` renders, or a `migrations/` beside a yodel or chant config. */
 function sqlYodelerProjectIn(dir: string): boolean {
   if (existsSync(join(dir, "yodel.config.ts")) || existsSync(join(dir, "yodel-waves.json"))) return true;
-  return existsSync(join(dir, "migrations")) && (existsSync(join(dir, "chant.config.ts")) || sqlYodelerRepo(dir));
+  return existsSync(join(dir, "migrations")) && (existsSync(join(dir, "chant.config.ts")) || existsSync(join(dir, "chant.config.json")) || sqlYodelerRepo(dir));
 }
 
 const SKIP_DIRS = new Set(["node_modules", ".terraform", ".terragrunt-cache", ".git"]);

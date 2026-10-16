@@ -93,7 +93,14 @@ function scriptBringUp(projectDir: string, relPath: string, label: string): Subs
  * where `detectProject` is neither. */
 export function projectLexicons(projectDir: string): string[] {
   try {
-    const src = readFileSync(join(projectDir, "chant.config.ts"), "utf-8");
+    // behold#697: chant.config.json too, which chant reads when there is no chant.config.ts.
+    const ts = join(projectDir, "chant.config.ts");
+    const json = join(projectDir, "chant.config.json");
+    if (!existsSync(ts) && existsSync(json)) {
+      const doc = JSON.parse(readFileSync(json, "utf-8")) as { lexicons?: unknown };
+      return Array.isArray(doc.lexicons) ? doc.lexicons.filter((l): l is string => typeof l === "string") : [];
+    }
+    const src = readFileSync(ts, "utf-8");
     const m = src.match(/lexicons\s*:\s*\[([^\]]*)\]/);
     if (!m) return [];
     return [...m[1].matchAll(/["']([^"']+)["']/g)].map((x) => x[1]);

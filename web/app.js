@@ -23,7 +23,7 @@ import { renderYodelLane } from "./sql-yodeler-lane.js";
 import { initTerragucciEstate } from "./terragucci-estate.js";
 import { chantComponentMarks } from "./chant-pr-marks.js";
 import { noStateFill } from "./frame-fill.js";
-import { componentMarks as tgComponentMarks, runsCommit as tgRunsCommit, waveOfKey as tgWaveOfKey } from "./terragucci-components-live.js";
+import { componentMarks as tgComponentMarks, runsCommit as tgRunsCommit, statusShort as tgStatusShort, waveOfKey as tgWaveOfKey } from "./terragucci-components-live.js";
 import { FORGES, MARK, componentsForge, forgeOfName, iconSvg, markLink, markTitle, waveJobUrl } from "./forge-mark.js";
 import { TOOLS, orderTools } from "./tool-mark.js";
 import { STATE_WORDS as tgStateWords, changeSection as tgChangeSection, readCardIds as tgReadCardIds, readEdges as tgReadEdges, readLabel as tgReadLabel, readLine as tgReadLine, readTag as tgReadTag, rootStates as tgRootStates, viewCaption as tgViewCaption, pinnedAnswer as tgPinnedAnswer, pinnedCaption as tgPinnedCaption, pinsCommit as tgPinsCommit } from "./terragucci-change.js";
@@ -87,6 +87,7 @@ import {
   straightEdge,
   writeLayout,
 } from "./layout-store.js";
+import { PHONE_QUERY as INSPECT_PHONE_QUERY, inspectStartsFolded } from "./inspect-pane.js";
 // #259: every JSON value this page shows goes through one renderer — pretty
 // printed, collapsible, copyable per subtree. `valueCell`/`pairCell` below are
 // the call-site shorthands: a container becomes the tree, a scalar stays text.
@@ -122,7 +123,7 @@ const embedOpts = readEmbed(location.search);
 if (embedOpts.theme && !setTheme(embedOpts.theme, { persist: false })) console.warn(`behold: no theme named ${embedOpts.theme}`);
 if (embedOpts.embed) document.documentElement.classList.add("embed");
 if (embedOpts.embed && embedOpts.bare) document.documentElement.classList.add("bare"); // #569: the graph alone, for a kiosk
-initPanel({ embed: embedOpts.embed });
+initPanel({ embed: embedOpts.embed, phone: typeof matchMedia === "function" && matchMedia(INSPECT_PHONE_QUERY).matches });
 mountThemePicker(document.getElementById("panel-theme"));
 
 // Colour node fills by category/kind using the theme's FULL palette (spicypath-style, so the
@@ -4111,6 +4112,9 @@ function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints
       const cy = (tb.y + tb.y2) / 2;
       // Right after the title, as "apply-wave-2 · held at the gate"; else alone at the right of the title's line.
       const spots = [{ words: `· ${w.status.words}`, at: () => tb.x2 + 6 }, { words: w.status.words, at: (wd) => b.x2 - 16 - wd }];
+      // behold#693: a narrow box whose full words would cross an edge says the short form.
+      const short = tgStatusShort(w.status);
+      if (short && short !== w.status.words) spots.push({ words: `· ${short}`, at: () => tb.x2 + 6 }, { words: short, at: (wd) => b.x2 - 16 - wd });
       for (const { words, at } of spots) {
         const wd = width(words, size, 700);
         const x = at(wd);
@@ -8604,7 +8608,9 @@ function initInspectPane() {
   } catch {
     /* private mode */
   }
-  if (folded === "1" || (folded === null && embedOpts.embed)) app.classList.add("inspect-collapsed");
+  // behold#696: folded on a phone too, where the pane beside the graph left it a sliver.
+  const phone = typeof matchMedia === "function" && matchMedia(INSPECT_PHONE_QUERY).matches;
+  if (inspectStartsFolded(folded, { embed: embedOpts.embed, phone })) app.classList.add("inspect-collapsed");
 
   document.getElementById("inspect-collapse").addEventListener("click", () => setInspectCollapsed(true));
   document.getElementById("inspect-reopen").addEventListener("click", () => setInspectCollapsed(false));

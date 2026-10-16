@@ -272,6 +272,15 @@ describe("detectProjectShape", () => {
     expect(detectProjectShape(make({ "chant.config.mjs": "export default {};" })).kind).toBe("project");
   });
 
+  it("is a project with a chant.config.json, as with a chant.config.ts (behold#697)", async () => {
+    const dir = make({ "chant.config.json": JSON.stringify({ lexicons: ["aws"], environments: ["prod"], sourceDir: "infra" }) });
+    expect(detectProjectShape(dir)).toEqual({ kind: "project", configFile: join(dir, "chant.config.json") });
+    expect(await detectProject(dir)).toEqual({ environments: ["prod"], lexicons: ["aws"], sourceDir: "infra" });
+    // The .ts wins when both are there, as in chant.
+    const both = make({ "chant.config.ts": "export default {};", "chant.config.json": "{}" });
+    expect(detectProjectShape(both).configFile).toBe(join(both, "chant.config.ts"));
+  });
+
   it("is an estate when .behold.json names member projects", () => {
     const dir = make({
       ".behold.json": JSON.stringify({ members: ["a", "b"] }),

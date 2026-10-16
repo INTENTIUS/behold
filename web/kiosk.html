@@ -178,7 +178,7 @@
        * with a fade, inside it) with a rail down its left: neutral, and the
        * step's rail in the step's state colour (theme.js barInks).
        */
-      :root { --k-label-w: 7.6rem; --k-title-h: 3.15em; --k-beat-h: 3em; --k-step-h: 4.45em; --k-next-h: 1.35em; --k-watch-h: 3.75em; --k-shows-h: 2.5em; --k-facts-h: 3.75em; }
+      :root { --k-label-w: 7.6rem; --k-title-h: 3.15em; --k-beat-h: 3em; --k-step-h: 4.45em; --k-next-h: 2.15em; --k-watch-h: 3.75em; --k-shows-h: 2.5em; --k-facts-h: 3.75em; }
       .k-lead { display: grid; grid-template-rows: var(--k-title-h) var(--k-beat-h) var(--k-step-h) var(--k-next-h) var(--k-watch-h) var(--k-shows-h) var(--k-facts-h) auto; gap: 0.2em; min-width: 0;
         padding: 0.25em 0.9em 0.35em; background: var(--surface-pane-b); border-radius: 8px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 14%, transparent); }
       .k-box { min-height: 0; overflow-y: auto; scrollbar-width: thin; border-radius: 6px; padding: 0.1em 0.2em; }
@@ -224,9 +224,10 @@
        * pulses until the step changes; with no deadline a quiet shimmer runs. Under reduced motion
        * the due bar is steady and full, and there is no shimmer.
        */
-      .k-row-next { position: relative; }
-      .k-nbar { position: absolute; left: calc(0.75em + var(--k-label-w) + 0.8em); right: 0.2em; bottom: 0; height: 3px; border-radius: 2px; overflow: hidden; pointer-events: none;
-        background: color-mix(in srgb, var(--rule) 55%, transparent); }
+      /* behold#694: the bar has its own track below the words, with room between, never an underline of them. */
+      .k-row-next { position: relative; padding-bottom: calc(0.45em + 4px); }
+      .k-nbar { position: absolute; left: calc(0.75em + var(--k-label-w) + 0.8em); right: 0.2em; bottom: 0; height: 4px; border-radius: 2px; overflow: hidden; pointer-events: none;
+        background: color-mix(in srgb, var(--muted) 22%, transparent); }
       .k-nbar-none { display: none; }
       .k-nbar-in { position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--k-nbar-fill, 0) * 100%); border-radius: inherit; background: var(--bar, var(--bar-neutral)); }
       .k-nbar-due .k-nbar-in { width: 100%; }
@@ -361,6 +362,7 @@
         .k-row-empty { display: none; }
         .k-row-label { padding-top: 0; }
         .k-nbar { left: 0.75em; right: 0; }
+        .k-row-next { padding-bottom: calc(0.45em + 4px); }
         #views { flex-wrap: wrap; gap: 0.3em 0.9em; }
         .k-strip { flex-wrap: wrap; }
         .k-right > .k-cycle { padding: 0; }
@@ -431,7 +433,7 @@
       .k-cap-next { margin-left: auto; color: var(--muted); font-size: 0.92em; white-space: nowrap; flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; }
       .k-cap-next .k-action { font-family: var(--font-mono); color: var(--fg); }
       .k-cap-next { position: relative; padding-bottom: 6px; }
-      .k-cap-next .k-nbar { left: 0; right: 0; bottom: 0; }
+      .k-cap-next .k-nbar { left: 0; right: 0; bottom: 0; height: 3px; background: color-mix(in srgb, var(--rule) 55%, transparent); }
       /* behold#571: the caption's beats are the lead block's rows: the label in a fixed column, the words beside it (two lines, at most 72ch), a rail down the left; only the step's rail takes its state's colour (theme.js barInks). */
       .k-cap-row { margin: 0; display: grid; grid-template-columns: var(--k-label-w) minmax(0, 1fr); column-gap: 0.8em; align-items: start; align-self: stretch; padding-left: 0.75em; line-height: 1.25; font-size: 1em; color: color-mix(in srgb, var(--fg) 78%, var(--muted)); box-shadow: inset 3px 0 0 var(--bar, var(--bar-neutral)); }
       .k-cap-row:empty { box-shadow: none; }
