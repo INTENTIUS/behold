@@ -98,7 +98,7 @@ describe("the component marks (#571)", () => {
       network: ["applied", "ok", "applied"],
       other: ["outside", "idle", "not in this run"],
       app: ["waiting", "wait", "waiting for an approval"],
-      edge: ["not-started", "idle", "not started"],
+      edge: ["not-started", "idle", "queued"],
     });
     expect(m.cards.app.short).toBe("waiting");
     expect(m.waves[2]).toMatchObject({ job: "apply-wave-2", state: "waiting", tone: "wait", title: "apply-wave-2 · held at the gate" });

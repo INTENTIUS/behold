@@ -457,7 +457,7 @@ export function factLines(demo, answer) {
   if (totals) out.push(`pull request #${pr.run.pull_request} changes ${rootsCount(pr.totals_roots) || "across roots"}: ${totals}`);
   const b = blastRows(answer);
   if (b && b.changed.length) out.push(`blast radius: ${b.changed.join(", ")}${b.downstream.length ? `; downstream, nearest first: ${b.downstream.join(", ")}` : ""}`);
-  if (b && b.unplanned.length) out.push(`not touched: ${b.unplanned.join(", ")}`);
+  if (b && b.unplanned.length) out.push(`unchanged: ${b.unplanned.join(", ")}`);
   const cost = costLine(pr.cost);
   if (cost) out.push(cost);
   return out;

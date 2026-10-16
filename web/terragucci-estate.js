@@ -211,7 +211,7 @@ export function renderEstateSvg(answer, now = new Date(), doc = document) {
     const run = runLine(p, now);
     g.appendChild(titled(doc, svgEl(doc, "text", { x: b.x + PAD, y: b.y + 55, class: `tg-project-run tg-${run.tone}` }, run.text), run.title));
     for (const w of b.waves) {
-      g.appendChild(svgEl(doc, "text", { x: w.x, y: w.y + 14, class: `tg-wave-label tg-wave-${w.state}`, "data-wave": w.number }, `wave ${w.number} · ${w.state === "not-started" ? "not started" : w.state}`));
+      g.appendChild(svgEl(doc, "text", { x: w.x, y: w.y + 14, class: `tg-wave-label tg-wave-${w.state}`, "data-wave": w.number }, `wave ${w.number} · ${w.state === "not-started" ? "queued" : w.state}`));
       for (const r of w.roots) {
         const node = svgEl(doc, "g", { class: "tg-root-node", "data-root": r.root });
         node.appendChild(svgEl(doc, "rect", { x: r.x, y: r.y, width: r.w, height: r.h, rx: 4 }));

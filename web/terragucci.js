@@ -86,7 +86,7 @@ export function stageCell(verdict, stage, now = new Date()) {
     if (verdict.approval === "waiting") return { text: `wave ${verdict.run.wave} waiting, ${age}`, tone: "wave", title };
     return { text: `wave ${verdict.run.wave} ${verdict.applied ? "applied" : verdict.approval || "ran"}, ${age}`, tone: "ok", title };
   }
-  if (verdict.changes === 0) return { text: `${stage === "tf-drift" ? "none" : "no changes"}, ${age}`, tone: "ok", title };
+  if (verdict.changes === 0) return { text: `${stage === "tf-drift" ? "none" : "unchanged"}, ${age}`, tone: "ok", title };
   const noun = stage === "tf-drift" ? "drifted" : `change${verdict.changes === 1 ? "" : "s"}`;
   const pr = verdict.run.pull_request ? ` (PR #${verdict.run.pull_request})` : "";
   return { text: `${verdict.changes} ${noun}${pr}, ${age}`, tone: stage === "tf-drift" ? "drift" : "plan", title };
