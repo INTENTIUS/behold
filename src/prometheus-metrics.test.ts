@@ -36,8 +36,15 @@ const vector = (result: unknown[]) => ({ status: "success", data: { resultType: 
 describe("prometheus-metrics: the queries", () => {
   it("are constant strings over terragucci's gauges, each keeping only the labels behold reads", () => {
     for (const [name, q] of Object.entries(QUERIES)) {
+      if (["deployments", "leadTime", "failureRate", "restore"].includes(name)) continue;
       expect(q, name).toMatch(/^max by \([a-z, ]+\) \(last_over_time\(terragucci_[a-z_]+(\{[^}]*\})?\[\d+[hd]\]\)\)$/);
       expect(q, name).not.toMatch(/project=/);
+    }
+  });
+
+  it("read each DORA gauge's newest value over the week, whichever version's series sent it (behold#571)", () => {
+    for (const name of ["deployments", "leadTime", "failureRate", "restore"] as const) {
+      expect(QUERIES[name], name).toMatch(/^last_over_time\(\(max by \(project\) \(terragucci_dora_[a-z_]+(\{segment="total"\})?\)\)\[7d:1m\]\)$/);
     }
   });
 });

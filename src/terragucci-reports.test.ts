@@ -94,6 +94,19 @@ describe("readTerragucci over terragucci's example bucket (#490)", () => {
     expect(r.roots["envs/staging/orders"]!.drift!.report).toBe("2026/10/5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f/tf-drift/report.html");
   });
 
+  it("takes the waiting waves from the index when estate.json is older than the newest run (behold#571)", async () => {
+    // The demo loop runs terragucci estate once a cycle: the page it wrote
+    // said nothing waits, and a wave of a later run waits now.
+    const d = copy();
+    const estate = JSON.parse(readFileSync(join(d, "estate.json"), "utf8"));
+    estate.generated = "2026-10-08T05:00:00.000Z";
+    for (const p of estate.projects) p.waiting = [];
+    writeFileSync(join(d, "estate.json"), JSON.stringify(estate));
+    const r = await readTerragucci(terragucciSource(d), { roots: ROOTS });
+    expect(r.waiting.map((w) => [w.wave, w.from])).toEqual([[2, "index"]]);
+    expect(r.estate).toMatchObject({ generated: "2026-10-08T05:00:00.000Z", waiting: 0, behind: true });
+  });
+
   it("reads through the operator's aws CLI for an s3:// source, one cp per object", async () => {
     const asked: string[] = [];
     const aws = async (args: string[]) => {

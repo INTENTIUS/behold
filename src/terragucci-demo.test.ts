@@ -63,3 +63,13 @@ describe("demo.json's intro, name, scenarios and index (behold#571)", () => {
     expect([a.demo!.intro, a.demo!.name, a.demo!.scenarios, a.demo!.index]).toEqual([null, null, null, null]);
   });
 });
+
+describe("demo.json's delivery line (behold#571)", () => {
+  const delivery = "Counted from this demo loop's own runs, where the failure scenario fails on purpose each cycle.";
+  it("reads it when demo.json has it, and null without it or of the wrong type", async () => {
+    expect((await readDemo(source({ ...fixture("demo-waiting.json"), delivery: ` ${delivery} ` }))).demo!.delivery).toBe(delivery);
+    expect((await readDemo(source(fixture("demo-waiting.json")))).demo!.delivery).toBeNull();
+    const a = await readDemo(source({ ...fixture("demo-waiting.json"), delivery: 7 }));
+    expect([a.demo!.step, a.demo!.delivery]).toEqual(["waiting", null]);
+  });
+});

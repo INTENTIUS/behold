@@ -93,4 +93,11 @@ describe("a waiting wave is a gate card with a line to copy, never a button (#49
     });
     expect(estateLine({})).toBeNull();
   });
+
+  it("says when a page older than the newest run was written (behold#571)", () => {
+    const now = new Date("2026-10-16T08:30:00Z");
+    expect(estateLine({ files: "../../", estate: { drifted: 0, failed: 0, waiting: 0, html: "estate.html", generated: "2026-10-16T08:24:00Z", behind: true } }, now).text).toBe(
+      "terragucci's estate page, written 6m ago, before the newest run: 0 roots drifted · 0 failed · 0 waves waiting",
+    );
+  });
 });
