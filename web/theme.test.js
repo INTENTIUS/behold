@@ -6,7 +6,7 @@
 // sweeps all 552 palettes for the same assertion; this pins the exact
 // palette the issue was filed against, with no browser involved.
 import { describe, it, expect } from "vitest";
-import { MIN_STEP, SOFT_CEILING, ZEBRA, contrast, desaturate, hexToOklch, mix, tokensFor } from "./theme.js";
+import { FRAME_STATES, MIN_STEP, SOFT_CEILING, ZEBRA, contrast, desaturate, frameGrounds, frameInks, hexToOklch, mix, pinTokensFor, tokensFor } from "./theme.js";
 import { THEMES } from "./themes.js";
 
 describe("tokensFor — the --muted contrast floor (#240)", () => {
@@ -81,5 +81,60 @@ describe("tokensFor — the kiosk's surfaces (behold#571)", () => {
     expect(contrast(t.soft, glare.bg)).toBeLessThan(contrast(glare.fg, glare.bg));
     const mocha = tokensFor(THEMES["Catppuccin Mocha"]);
     expect(mocha.soft).toBe(THEMES["Catppuccin Mocha"].fg);
+  });
+});
+
+// behold#571: the graph frame's state colours, as text and thin lines, in every theme.
+describe("the graph frame's state colours", () => {
+  const all = Object.values(THEMES);
+  const hueGap = (a, b) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
+
+  it("read at WCAG AA (4.5:1) on the ground their words sit on, and 3:1 as a line on every other, in every theme", () => {
+    const short = [];
+    for (const th of all) {
+      const inks = frameInks(th);
+      const g = frameGrounds(th);
+      for (const side of ["box", "card"]) {
+        for (const s of FRAME_STATES) {
+          const c = inks[side][s];
+          for (const gr of g[side]) if (contrast(c, gr) < 4.5) short.push(`${th.name} ${side} ${s} ${c} on ${gr}: ${contrast(c, gr).toFixed(2)}`);
+          // And as a line, 3:1 on every ground of the frame.
+          for (const gr of [...g.box, ...g.card]) if (contrast(c, gr) < 3) short.push(`${th.name} ${side} ${s} line ${c} on ${gr}: ${contrast(c, gr).toFixed(2)}`);
+        }
+      }
+    }
+    expect(short).toEqual([]);
+  });
+
+  it("draw a status outline at 3:1 or better on the background and the wave box, in every theme", () => {
+    const short = [];
+    for (const th of all) {
+      const pin = pinTokensFor(th);
+      for (const k of ["accentStroke", "goodStroke", "warnStroke", "runtimeStroke", "selectedStroke"]) {
+        for (const g of [pin.bg0, pin.bg1]) if (contrast(pin[k], g) < 3) short.push(`${th.name} ${k} ${pin[k]} on ${g}: ${contrast(pin[k], g).toFixed(2)}`);
+      }
+    }
+    expect(short).toEqual([]);
+  });
+
+  it("keep each state's hue where it has one, moving its lightness", () => {
+    const off = [];
+    for (const th of all) {
+      const t = tokensFor(th);
+      const inks = frameInks(th);
+      for (const s of FRAME_STATES) for (const side of ["box", "card"]) {
+        const a = hexToOklch(t[s]);
+        const b = hexToOklch(inks[side][s]);
+        if (a.C < 0.04 || b.C < 0.04) continue;
+        if (hueGap(a.H, b.H) > 20) off.push(`${th.name} ${side} ${s} ${t[s]} -> ${inks[side][s]}`);
+      }
+    }
+    expect(off).toEqual([]);
+  });
+
+  it("fixes Sea Shells' planned text, which read dark blue on a dark card", () => {
+    const th = THEMES["Sea Shells"];
+    expect(contrast(tokensFor(th).pending, pinTokensFor(th).neutralFill)).toBeLessThan(2);
+    expect(contrast(frameInks(th).card.pending, pinTokensFor(th).neutralFill)).toBeGreaterThanOrEqual(4.5);
   });
 });

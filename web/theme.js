@@ -65,6 +65,27 @@ export function oklchToHex({ L, C, H }) {
     l2s(-0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s));
 }
 
+// behold#571: the most chroma an OKLCH lightness and hue holds inside sRGB,
+// so a lightness walk keeps its hue by giving up chroma, not by clipping.
+function oklchInGamut({ L, C, H }) {
+  const h = H * Math.PI / 180, a = C * Math.cos(h), bb = C * Math.sin(h);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * bb) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * bb) ** 3;
+  const s = (L - 0.0894841775 * a - 1.2914855480 * bb) ** 3;
+  const rgb = [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s];
+  return rgb.every((v) => v >= -1e-4 && v <= 1 + 1e-4);
+}
+export function oklchToHexMapped({ L, C, H }) {
+  if (oklchInGamut({ L, C, H })) return oklchToHex({ L, C, H });
+  let lo = 0, hi = C;
+  for (let i = 0; i < 24; i++) {
+    const mid = (lo + hi) / 2;
+    if (oklchInGamut({ L, C: mid, H })) lo = mid;
+    else hi = mid;
+  }
+  return oklchToHex({ L, C: lo, H });
+}
+
 // Drop a colour's chroma without touching its lightness — the chrome's one
 // "quieter" step (#229). Used on the tokens that SURROUND the drift hues, never
 // on the drift hues themselves.
@@ -313,9 +334,26 @@ const KIOSK_VARS = { surfaceBox: "surface-box", surfacePaneA: "surface-pane-a", 
 export function pinTokensFor(th) {
   const P = th.palette, fgMix = (t) => mix(th.bg, th.fg, t);
   const good = P[2], warn = P[1], accent = P[4], runtime = P[6]; // P[6] = the cyan the CSS --runtime var rides
-  const panel = fgMix(0.18);                 // node card base — elevated well off the bg
+  // behold#571: a card a state's words can read on at 4.5:1. A mid-tone palette
+  // (Blue Dolphin, Grass) mixes a card even white or black can't reach that on;
+  // its lightness steps away from the text's side until one of them can.
+  const panel = (() => {
+    const p0 = fgMix(0.18);
+    const best = (c) => Math.max(contrast(c, "#ffffff"), contrast(c, "#000000"));
+    if (best(p0) >= 4.8) return p0;
+    const o = hexToOklch(p0);
+    const dir = contrast(p0, "#ffffff") >= contrast(p0, "#000000") ? -1 : 1;
+    for (let step = 1; step <= 40; step++) {
+      const c = oklchToHexMapped({ ...o, L: clamp(o.L + dir * step * 0.005, 0, 1) });
+      if (best(c) >= 4.8) return c;
+    }
+    return p0;
+  })();                                      // node card base — elevated well off the bg
   const fill = (c) => mix(panel, c, 0.4);    // panel pulled strongly toward the status hue
-  const stroke = (c) => mix(th.bg, c, 0.62);
+  // behold#571: a status outline is a thin line on the background and the wave box: 3:1 on both, its hue kept.
+  const up = hexToOklch(th.bg).L < 0.6;
+  const line = (c) => lightnessFor(c, [th.bg, fgMix(0.045)], 3, up);
+  const stroke = (c) => line(mix(th.bg, c, 0.62));
   return {
     bg0: th.bg, bg1: fgMix(0.045), dots: fgMix(0.12),
     text: th.fg, textMuted: fgMix(0.5), textFaint: fgMix(0.38), edge: fgMix(0.3),
@@ -324,9 +362,62 @@ export function pinTokensFor(th) {
     goodFill: fill(good), goodStroke: stroke(good), goodBar: good,
     warnFill: fill(warn), warnStroke: stroke(warn), warnBar: warn,
     runtimeFill: fill(runtime), runtimeStroke: stroke(runtime), runtimeBar: runtime,
-    selectedStroke: accent,
+    selectedStroke: line(accent),
   };
 }
+/**
+ * behold#571: the state colours as the graph frame draws them as text and thin
+ * lines: a card's state words and its outline, a wave box's job status and
+ * outline, a read's line. Each is the state's hue with its OKLCH lightness
+ * moved until it reads at WCAG AA (4.5:1) on the ground its words sit on, and
+ * at 3:1 (a line's floor) on every other ground of the frame: `box` inks for
+ * the background and the wave boxes, `card` inks for the cards.
+ */
+export const FRAME_STATES = ["managed", "foreign", "pending", "degraded", "runtime", "neutral", "focus", "muted"];
+export function frameGrounds(th) {
+  const pin = pinTokensFor(th);
+  return { box: [th.bg, pin.bg1], card: [pin.neutralFill] };
+}
+const worstOn = (c, grounds) => Math.min(...grounds.map((g) => contrast(c, g)));
+/**
+ * `hex` with its OKLCH lightness walked, its hue kept, until it clears
+ * `floor` on each of `grounds` and `lineFloor` on each of `others`. Chroma
+ * gives way only where sRGB can't hold it at that lightness; a theme whose
+ * grounds leave no room at all gets white or black.
+ */
+function lightnessFor(hex, grounds, floor, up, others = [], lineFloor = 3) {
+  const ok = (c) => worstOn(c, grounds) >= floor && (!others.length || worstOn(c, others) >= lineFloor);
+  if (ok(hex)) return hex;
+  const o = hexToOklch(hex);
+  const walk = (dir) => {
+    for (let step = 1; step <= 200; step++) {
+      const L = clamp(o.L + dir * step * 0.005, 0, 1);
+      const out = oklchToHexMapped({ L, C: o.C, H: o.H });
+      if (ok(out)) return out;
+      if (L === 0 || L === 1) break;
+    }
+    return null;
+  };
+  const found = walk(up ? 1 : -1) || walk(up ? -1 : 1);
+  if (found) return found;
+  const ends = up ? ["#ffffff", "#000000"] : ["#000000", "#ffffff"];
+  return ends.find(ok) || ends.reduce((a, b) => (worstOn(b, grounds) > worstOn(a, grounds) ? b : a));
+}
+export function frameInks(th) {
+  const t = tokensFor(th);
+  const g = frameGrounds(th);
+  const all = [...g.box, ...g.card];
+  // Lighter on a ground that is dark, darker on a light one.
+  const up = (gs) => hexToOklch(gs[0]).L < 0.6;
+  const box = {};
+  const card = {};
+  for (const s of FRAME_STATES) {
+    box[s] = lightnessFor(t[s], g.box, 4.5, up(g.box), all);
+    card[s] = lightnessFor(t[s], g.card, 4.5, up(g.card), all);
+  }
+  return { box, card };
+}
+
 const PIN_VARS = ["bg0", "bg1", "dots", "text", "textMuted", "textFaint", "edge", "neutralFill", "neutralStroke", "neutralBar", "accentFill", "accentStroke", "accentBar", "goodFill", "goodStroke", "goodBar", "warnFill", "warnStroke", "warnBar", "runtimeFill", "runtimeStroke", "runtimeBar", "selectedStroke"];
 
 function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
@@ -362,6 +453,14 @@ export function applyTheme(tokens = _tokens) {
   for (const [k, v] of Object.entries(KIOSK_VARS)) if (tokens[k]) root.style.setProperty("--" + v, tokens[k]);
   (tokens.roots || []).forEach((c, i) => root.style.setProperty(`--root-${i}`, c));
   if (_active) { const pin = pinTokensFor(_active); for (const k of PIN_VARS) root.style.setProperty("--pin-" + k, pin[k]); }
+  // behold#571: the state colours the graph frame draws as text and lines, legible on every ground (frameInks).
+  if (_active) {
+    const inks = frameInks(_active);
+    for (const k of FRAME_STATES) {
+      root.style.setProperty("--frame-" + k, inks.box[k]);
+      root.style.setProperty("--frame-card-" + k, inks.card[k]);
+    }
+  }
   root.style.setProperty("color-scheme", tokens.dark ? "dark" : "light");
 }
 

@@ -3489,7 +3489,10 @@ function paintTgProgress() {
 // says which run all of it comes from. `view.focus` brings some roots forward
 // and dims the rest. From the pull request's plan, or from the run view once
 // merged. Not live; redrawn on each render and each read.
-const TG_TONE = { plan: "var(--pending)", wait: "var(--foreign)", busy: "var(--runtime)", ok: "var(--managed)", bad: "var(--degraded)", idle: "var(--neutral)" };
+// behold#571: the state colours as the frame draws them on cards and boxes, each legible on every ground (theme.js frameInks).
+const TG_TONE = { plan: "var(--frame-pending, var(--pending))", wait: "var(--frame-foreign, var(--foreign))", busy: "var(--frame-runtime, var(--runtime))", ok: "var(--frame-managed, var(--managed))", bad: "var(--frame-degraded, var(--degraded))", idle: "var(--frame-neutral, var(--neutral))" };
+/** The same, for words on a card: read on the card's own ground. */
+const TG_CARD_TONE = Object.fromEntries(Object.entries(TG_TONE).map(([k, v]) => [k, v.replace("--frame-", "--frame-card-")]));
 function drawTgReads() {
   if (embedOpts.bare) queueMicrotask(kioskDecorate); // behold#571: once this draw is done
   watchTgRuns(); // #571: the wave boxes' jobs, while the components zoom is on screen
@@ -3748,7 +3751,7 @@ function drawTgReads() {
   };
   const edgeIn = (r) => edgePoints.filter((p) => p.x >= r.x - 3 && p.x <= r.x2 + 3 && p.y >= r.y - 3 && p.y <= r.y2 + 3).length;
   const defs = svg.querySelector("defs") || svg.insertBefore(make("defs", {}), svg.firstChild);
-  for (const [id, color] of [["tg-arrow-unknown", "var(--foreign)"], ["tg-arrow-planned", "var(--pending)"], ["tg-arrow-applied", "var(--focus)"]]) {
+  for (const [id, color] of [["tg-arrow-unknown", "var(--frame-foreign, var(--foreign))"], ["tg-arrow-planned", "var(--frame-pending, var(--pending))"], ["tg-arrow-applied", "var(--frame-focus, var(--focus))"]]) {
     if (svg.querySelector(`#${id}`)) continue;
     const m = make("marker", { id, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse", "data-tg-reads": "marker" });
     m.appendChild(make("path", { d: "M0,0 L10,5 L0,10 z", fill: color }));
@@ -3759,7 +3762,7 @@ function drawTgReads() {
   for (const e of edges) {
     const card = tgReadCardIds(tgAnswer, e).map((id) => svg.querySelector('[data-node-id="' + CSS.escape(id) + '"]')).find(Boolean);
     const kind = e.unknown.length ? "unknown" : e.outputs === "planned" ? "planned" : "applied";
-    const color = kind === "unknown" ? "var(--foreign)" : kind === "planned" ? "var(--pending)" : "var(--focus)";
+    const color = kind === "unknown" ? "var(--frame-foreign, var(--foreign))" : kind === "planned" ? "var(--frame-pending, var(--pending))" : "var(--frame-focus, var(--focus))";
     if (card) {
       // The tag on the reader's card, at its bottom right, clear of the card's own "root:" line.
       const rect = card.querySelector("rect");
@@ -3800,7 +3803,11 @@ function drawTgReads() {
     drawn.push({ p0, p1 });
     labels.push({ e, p0, p1, color, kind });
   }
-  clearMarksOfReads(svg, drawn); // behold#571: the marks step aside from the read lines
+  // behold#571: the marks step aside from the read lines, and a box lifts its marks off an arrowhead (its box then reaches higher).
+  for (const [rect] of clearMarksOfReads(svg, drawn)) {
+    const now = boxOf(rect);
+    for (const b of boxes) if (now && Math.abs(b.x - now.x) < 0.5 && Math.abs(b.x2 - now.x2) < 0.5 && Math.abs(b.y2 - now.y2) < 0.5) b.y = now.y;
+  }
   // Each read's words beside its line: covering no text, crossing no line,
   // over as few cards and box headers as can be.
   const cardBoxes = cardEls.map((g) => cardBoxOf.get(g)).filter(Boolean);
@@ -3990,7 +3997,7 @@ function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints
     const words = width(m.words, 12, 700) <= room ? m.words : m.short;
     sub.setAttribute("visibility", "hidden");
     sub.setAttribute("data-tg-hid", "1");
-    const t = make("text", { "data-tg-root": "card", x, y, "font-size": 12, "font-weight": 700, fill: quiet ? "var(--muted)" : tone(m.tone) }, words);
+    const t = make("text", { "data-tg-root": "card", x, y, "font-size": 12, "font-weight": 700, fill: quiet ? "var(--frame-card-muted, var(--muted))" : TG_CARD_TONE[m.tone] || TG_CARD_TONE.idle }, words);
     if (m.state === "applying") t.setAttribute("class", "pin-pulse");
     if (!inFocus) t.style.opacity = "0.6";
     t.appendChild(make("title", {}, [`wave ${m.wave} · ${m.words}`, ...m.facts].join("\n") + "\n(from terragucci's reports, not live)"));
@@ -4093,7 +4100,7 @@ function markTerragucciCards() {
     tag.setAttribute("text-anchor", "end");
     tag.setAttribute("font-size", "11");
     tag.setAttribute("font-weight", "600");
-    tag.setAttribute("fill", corner.tone === "drift" ? "var(--degraded)" : corner.tone === "wave" ? "var(--pending)" : "var(--muted)");
+    tag.setAttribute("fill", corner.tone === "drift" ? "var(--frame-card-degraded, var(--degraded))" : corner.tone === "wave" ? "var(--frame-card-pending, var(--pending))" : "var(--frame-card-muted, var(--muted))");
     tag.textContent = `${corner.text} · ${markAge(marks)}`;
     const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
     title.setAttribute("data-tg-mark", "title");
@@ -5695,7 +5702,14 @@ function clearMarksOfReads(svgEl, lines) {
         if (f >= 0 && f <= 1) xs.push(p0.x + (p1.x - p0.x) * f - dx);
       }
     }
-    if (!xs.length) continue;
+    if (xs.length) stepAside(row, xs, own);
+  }
+  return liftOffArrowheads(svgEl, lines);
+}
+
+/** Lay a row out again clear of `xs` too, or leave it as it was where that doesn't fit. */
+function stepAside(row, xs, own) {
+  {
     const was = row.getAttribute("data-pm-avoid") || "";
     row.setAttribute("data-pm-avoid", [was, ...xs.map((x) => x.toFixed(1))].filter(Boolean).join(","));
     // The old places, should the new avoidance not fit.
@@ -5710,6 +5724,70 @@ function clearMarksOfReads(svgEl, lines) {
       }
     }
   }
+}
+
+/** How far a read's arrowhead reaches back from its tip, and how wide it spreads (marker 7 x stroke 3). */
+const ARROWHEAD = { length: 22, half: 11 };
+
+/**
+ * No arrowhead sits on a mark. A read that ends in a box whose marks its head
+ * would cover lifts the box's title and marks a row up, the box growing by
+ * that row, so the head lands on open ground just over the card. Returns each
+ * lifted box as [its rect, the rows it grew by].
+ */
+function liftOffArrowheads(svgEl, lines) {
+  const G = MARK.size + 6;
+  const lifted = [];
+  const hit = (a, b) => a.x < b.x2 && a.x2 > b.x && a.y < b.y2 && a.y2 > b.y;
+  const heads = lines.map(({ p0, p1 }) => {
+    const len = Math.hypot(p1.x - p0.x, p1.y - p0.y) || 1;
+    const bx = p1.x - ((p1.x - p0.x) / len) * ARROWHEAD.length;
+    const by = p1.y - ((p1.y - p0.y) / len) * ARROWHEAD.length;
+    const h = ARROWHEAD.half;
+    return { x: Math.min(p1.x, bx) - h, y: Math.min(p1.y, by) - h, x2: Math.max(p1.x, bx) + h, y2: Math.max(p1.y, by) + h };
+  });
+  for (const row of svgEl.querySelectorAll(".pipeline-marks")) {
+    if (row.style.display === "none") continue;
+    const m = /translate\(\s*([-\d.]+)[\s,]+([-\d.]+)/.exec((row.parentNode.getAttribute && row.parentNode.getAttribute("transform")) || "");
+    const dx = m ? Number(m[1]) : 0;
+    const dy = m ? Number(m[2]) : 0;
+    const boxes = [...row.querySelectorAll(":scope > .pm-mark")]
+      .filter((mk) => mk.style.display !== "none")
+      .map((mk) => {
+        try {
+          const b = mk.getBBox();
+          return { x: b.x + dx - 2, y: b.y + dy - 2, x2: b.x + b.width + dx + 2, y2: b.y + b.height + dy + 2 };
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+    if (!heads.some((h) => boxes.some((b) => hit(h, b)))) continue;
+    const rect = svgEl.querySelector(`rect[data-group-id="wave-${row.getAttribute("data-pm-wave")}"]`);
+    const title = row.nextElementSibling && row.nextElementSibling.tagName.toLowerCase() === "text" ? row.nextElementSibling : null;
+    if (!rect) continue;
+    if (!rect.hasAttribute("data-pm-y0")) {
+      rect.setAttribute("data-pm-y0", rect.getAttribute("y"));
+      rect.setAttribute("data-pm-h0", rect.getAttribute("height"));
+    }
+    if (title && !title.hasAttribute("data-pm-ty0")) title.setAttribute("data-pm-ty0", title.getAttribute("y"));
+    const titleCy = title ? Number(title.getAttribute("y")) : null;
+    rect.setAttribute("y", String(Number(rect.getAttribute("y")) - G));
+    rect.setAttribute("height", String(Number(rect.getAttribute("height")) + G));
+    if (title) title.setAttribute("y", String(titleCy - G));
+    row.setAttribute("data-pm-cy", String(Number(row.getAttribute("data-pm-cy")) - G));
+    for (const n of row.querySelectorAll(".pm-icon, .pm-label")) n.setAttribute("y", String(Number(n.getAttribute("y")) - G));
+    // The job's status rides its title's line.
+    if (title) {
+      const tb = title.getBBox();
+      for (const s of svgEl.querySelectorAll('[data-tg-root="wave-status"]')) {
+        const y = Number(s.getAttribute("y"));
+        if (Math.abs(y - (tb.y + tb.height / 2 + G + dy)) < tb.height) s.setAttribute("y", String(y - G));
+      }
+    }
+    lifted.push([rect, G]);
+  }
+  return lifted;
 }
 
 /** The x's at which the graph's edges cross a band of the svg (`y0`..`y1`), in the svg's own coordinates. */
