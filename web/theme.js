@@ -375,11 +375,15 @@ export function setTheme(nameOrObj, { persist = true } = {}) {
   return true;
 }
 
-// Restore the persisted theme (or default) and apply. Call once on boot.
-export function initTheme() {
+/** behold#571: the kiosk's theme for a viewer who hasn't picked one; the app keeps DEFAULT_THEME. */
+export const KIOSK_THEME = "Sea Shells";
+
+// Restore the persisted theme (or `fallback`, else the default) and apply. Call once on boot.
+export function initTheme(fallback = null) {
   let saved = null;
   try { saved = localStorage.getItem(STORE_KEY); } catch { /* private mode */ }
-  setTheme(saved && THEMES[saved] ? saved : (_active ? _active.name : DEFAULT_THEME), { persist: false });
+  const first = fallback && THEMES[fallback] ? fallback : (_active ? _active.name : DEFAULT_THEME);
+  setTheme(saved && THEMES[saved] ? saved : first, { persist: false });
   return getThemeName();
 }
 
