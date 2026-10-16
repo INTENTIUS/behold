@@ -30,6 +30,9 @@ export const STATUS_WORDS = {
 /** The tone a status is drawn in. `waiting` has its own, never failure's. */
 export const STATUS_TONE = { queued: "idle", running: "busy", waiting: "wait", success: "ok", failure: "bad", cancelled: "idle", skipped: "idle" };
 
+/** behold#571: the tone an item's left bar takes from its status (kiosk.html's `[data-k-tone]` rules). */
+export const toneOf = (status) => STATUS_TONE[status] || "idle";
+
 const LIVE = new Set(["queued", "running", "waiting"]);
 
 /** A step named by an action's address (`https://…/checkout@v4`, `actions/checkout@v4`), not by the workflow. */
@@ -437,6 +440,7 @@ export function renderSidebar(host, index, selectedId, { now = new Date(), scena
     const li = el("li", `r-run${r.id === selectedId ? " r-selected" : ""}`);
     li.tabIndex = 0;
     li.dataset.run = String(r.id);
+    li.dataset.kTone = toneOf(r.status);
     li.appendChild(statusIcon(r.status));
     const body = el("div", "r-run-body");
     body.appendChild(el("div", "r-run-title", triggerWords(r)));
@@ -538,6 +542,7 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
   for (const j of shown) {
     const li = el("li", `r-job${job && j.name === job.name ? " r-selected" : ""}`);
     li.style.setProperty("--depth", String(j.depth));
+    li.dataset.kTone = toneOf(j.status);
     li.appendChild(statusIcon(j.status));
     // behold#571: the tools the job runs, each its logo (where its owner allows) and its name, on a
     // line of their own under the job's name, so the row's line keeps its width.
@@ -634,6 +639,7 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
   const marks = jobMarks(steps, { hide: hideLine });
   steps.forEach((s, i) => {
     const row = el("div", `r-step${i === open ? " r-open" : ""}`);
+    row.dataset.kTone = toneOf(s.status);
     const line = el("div", "r-step-line");
     line.append(el("span", "r-caret", i === open ? "▾" : "▸"), statusIcon(s.status), el("span", "r-step-name", s.name), el("span", "r-dur", durationWords(s.started_at, s.ended_at, now) || ""));
     line.addEventListener("click", () => toggleStep(job.name, i === open ? -1 : i));

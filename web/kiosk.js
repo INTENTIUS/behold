@@ -663,78 +663,60 @@ function drawBar(bar, s, now) {
   if (vendor && s.noReports && (s.mode === "live" || s.mode === "replay")) bar.appendChild(el("p", "k-nograph-note", NO_GRAPH_WORDS));
   const intro = introText(demo);
 
-  // behold#571: the lead block, in fixed boxes: the title, the two beats (what changes, and the step), the progress, the rest of the card, the facts.
+  // behold#571: the lead block, a grid of labelled rows: the title (its tool, kicker and the
+  // scenario's progress on a quiet line over it), then each beat on a row of its own, its label
+  // in a fixed column and its words in the next, each row a fixed box with a rail down its left.
   const left = el("div", "k-left k-lead");
   const titleBox = box("title", "k-box-title");
-  const title = el("h1", "k-title");
+  const over = el("div", "k-over");
   // behold#571: /kiosk names the tool each scenario runs on, as its own page does.
   const shownTool = vendor || (demo.scenario !== "base" ? vendorOf(demo.tool) : null);
-  if (shownTool) title.appendChild(brandEl(shownTool));
-  title.append(el("span", "k-kicker", head.kicker), el("span", "k-title-text", head.title));
+  if (shownTool) over.appendChild(brandEl(shownTool));
+  over.appendChild(el("span", "k-kicker", head.kicker));
+  // The scenario's progress: the strip's stops, at the end of the line over the title.
+  const strip = el("ol", "k-strip");
+  for (const stop of stripStops(demo.step)) strip.appendChild(el("li", `k-stop k-${stop.state}`, stop.words));
+  over.appendChild(strip);
+  const title = el("h1", "k-title");
+  title.appendChild(el("span", "k-title-text", head.title));
   if (title.setAttribute) title.setAttribute("title", `${head.kicker} · ${head.title || ""}`);
-  titleBox.appendChild(title);
+  titleBox.append(over, title);
   left.appendChild(titleBox);
 
   // The first beat: what changes; between scenarios, what the demo is about.
   const rows = aboutRows(demo);
   const changes = rows.find((r) => r.label === BEAT_CHANGES);
-  const beatBox = box("changes", "k-box-beat");
-  if (demo.step === "reset" && intro) {
-    const p = el("p", "k-intro");
-    p.append(el("span", "k-intro-head", INTRO_HEAD), intro);
-    beatBox.appendChild(p);
-  } else if (changes) {
-    const p = el("p", "k-beat");
-    p.append(el("span", "k-beat-label", changes.label), elRoots("span", "k-beat-text", changes.text, s));
-    beatBox.appendChild(p);
-  }
-  left.appendChild(beatBox);
+  if (demo.step === "reset" && intro) left.appendChild(leadRow("changes", "k-row-beat", INTRO_HEAD, el("p", "k-intro", intro)));
+  else if (changes) left.appendChild(leadRow("changes", "k-row-beat", changes.label, elRoots("p", "k-beat", changes.text, s)));
+  else left.appendChild(leadRow("changes", "k-row-beat"));
 
-  // The second beat: the step, what just happened and why it stands where it does.
-  const said = el("p", `k-step k-step-${demo.step}`);
-  said.append(el("span", "k-step-word", STEP_WORDS[demo.step] || demo.step), elRoots("span", "k-label", demo.label, s));
-  const stepBox = box("step", "k-box-step");
-  stepBox.appendChild(said);
-  left.appendChild(stepBox);
+  // The second beat: the step, what just happened and why it stands where it does. Its rail takes the step's state.
+  const stepRow = leadRow("step", `k-row-step k-step-${demo.step}`, STEP_WORDS[demo.step] || demo.step, elRoots("p", "k-step", demo.label, s));
+  if (stepRow.dataset) stepRow.dataset.kTone = stepTone(demo.step);
+  left.appendChild(stepRow);
 
-  // The scenario's progress, with the step: the strip, and the driver's next action with its countdown.
-  const progress = el("div", "k-progress");
-  const strip = el("ol", "k-strip");
-  for (const stop of stripStops(demo.step)) strip.appendChild(el("li", `k-stop k-${stop.state}`, stop.words));
-  progress.appendChild(strip);
+  // Next: the driver's action, with its countdown.
   const nx = nextWords(demo, now);
-  const next = el("div", "k-next");
-  next.appendChild(el("span", "k-next-word", "next, by the driver"));
-  next.appendChild(elRoots("span", "k-action", nx.action, s));
-  next.appendChild(el("span", "k-when", nx.when));
-  // Short of room the action ends in an ellipsis; the whole line is its title.
-  if (next.setAttribute) next.setAttribute("title", `next, by the driver: ${nx.action}`);
-  progress.appendChild(next);
-  left.appendChild(progress);
+  const next = el("p", "k-next");
+  next.append(elRoots("span", "k-action", nx.action, s), " ", el("span", "k-when", nx.when), " ", el("span", "k-next-by", "by the driver"));
+  left.appendChild(leadRow("next", "k-row-next", "Next", next));
 
-  // The rest of the card, quieter: watch for, and what the scenario shows.
-  const moreBox = box("card", "k-box-more");
+  // The rest of the card, quieter: each field on its own row (watch for, then what the scenario shows).
   const more = demo.step === "reset" && intro ? [] : rows.filter((r) => r !== changes);
-  if (more.length) {
-    // One quieter paragraph, each field after its label, so two short fields share a line.
-    const card = el("p", "k-about");
-    for (const r of more) card.append(el("span", "k-about-label", r.label), elRoots("span", "k-about-text", r.text, s), " ");
-    moreBox.appendChild(card);
+  for (const [i, name] of ["watch", "shows"].entries()) {
+    const r = more[i];
+    left.appendChild(r ? leadRow(name, "k-row-more", r.label, elRoots("p", "k-about", r.text, s)) : leadRow(name, "k-row-more"));
   }
-  left.appendChild(moreBox);
 
-  // The pull request's facts, as one line. behold#571: no line on where the narration was read from.
-  const factsBox = box("facts", "k-box-facts");
-  const facts = s.noReports ? "" : factsLine(demo, s.answer, nounTool(s));
-  if (facts) {
-    const p = elRoots("p", "k-facts", facts, s);
-    if (p.setAttribute) p.setAttribute("title", facts);
-    factsBox.appendChild(p);
-  }
-  left.appendChild(factsBox);
+  // The pull request's facts, each a chip that wraps whole; never cut off. behold#571: no line on where the narration was read from.
+  const factParts = s.noReports ? [] : factLines(demo, s.answer, nounTool(s));
+  if (factParts.length) {
+    const p = el("p", "k-facts");
+    for (const part of factParts) p.appendChild(elRoots("span", "k-fact", part, s));
+    left.appendChild(leadRow("facts", "k-row-facts", FACTS_LABEL, p));
+  } else left.appendChild(leadRow("facts", "k-row-facts"));
   // behold#571: a tool's page ends its lead block with who makes the tool, and that they don't endorse the demo.
   if (vendor) drawCredit(left, s.vendor);
-  for (const b of [beatBox, moreBox, factsBox]) if (!b.children.length) b.className += " k-box-empty";
   bar.appendChild(left);
 
   // behold#571: the hold panel, headed with its wave and run, lit as its job row and its wave box are.
@@ -764,6 +746,34 @@ function drawBar(bar, s, now) {
   if (!holdBox.children.length) holdBox.className += " k-box-empty";
   right.appendChild(holdBox);
   bar.appendChild(right);
+}
+
+/** behold#571: the label of the lead block's row of the pull request's facts. */
+export const FACTS_LABEL = "The change";
+
+/** behold#571: the tone the step row's rail takes from the step (kiosk.html's `[data-k-tone]` rules). */
+export function stepTone(step) {
+  if (step === "waiting") return "wait";
+  if (step === "failed" || step === "stalled") return "bad";
+  if (step === "applied") return "ok";
+  if (step === "reset") return "idle";
+  return "busy";
+}
+
+/**
+ * behold#571: a row of the lead block: its label in the fixed column, its
+ * words in a fixed box beside it (they scroll inside it, the page never
+ * moves). With no words, the row keeps its place and draws nothing.
+ */
+function leadRow(name, cls, label = null, content = null) {
+  const row = el("div", `k-row ${cls}${content ? "" : " k-row-empty"}`);
+  if (content) {
+    row.appendChild(el("span", "k-row-label", label));
+    const b = box(name, "k-row-box");
+    b.appendChild(content);
+    row.appendChild(b);
+  }
+  return row;
 }
 
 /** behold#571: the head over the intro, in the card's box between scenarios, and the title of "What is this?". */
@@ -853,11 +863,11 @@ function drawCredit(host, tool) {
   host.appendChild(wrap);
 }
 
-/** behold#571: how a hovered root's name and wave's job row light. A background and a shadow: nothing moves. */
+/** behold#571: how a hovered root's name and wave's job row light: a background and, on the row, its left bar twice as wide. Nothing moves. */
 export const HOVER_ROOT_RULE = "background: color-mix(in srgb, var(--focus) 32%, transparent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus) 32%, transparent); border-radius: 3px;";
-export const HOVER_JOB_RULE = "background: color-mix(in srgb, var(--focus) 24%, transparent); box-shadow: inset 4px 0 0 var(--focus);";
+export const HOVER_JOB_RULE = "background: color-mix(in srgb, var(--focus) 24%, transparent); --bar-w: 6px;";
 /** behold#571: how the held wave's job row lights while the hold panel shows it: the waiting tone its wave box and the panel carry. */
-export const HELD_JOB_RULE = "background: color-mix(in srgb, var(--foreign) 14%, transparent); box-shadow: inset 4px 0 0 var(--foreign);";
+export const HELD_JOB_RULE = "background: color-mix(in srgb, var(--foreign) 14%, transparent); --bar: var(--bar-foreign); --bar-w: 6px;";
 
 /** behold#571: how often the approval panel reads the cycle's runs, and the gate ledger (which the server caches 30 s). */
 export const APPROVAL_POLL_MS = 4_000;

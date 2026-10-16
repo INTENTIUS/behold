@@ -25,6 +25,7 @@
  *    at-a-glance line, the timeline is the thing you go and look at.
  */
 import { waitingFor } from "./run-playhead.js";
+import { barVarFor } from "./theme.js";
 
 // #477: why a gate card has no approve button.
 const NO_APPROVE = {
@@ -338,6 +339,8 @@ export function renderOperator(host, state, actions = {}, history = null) {
     const dot = el("span", "run-dot");
     dot.style.background = LEASE_COLOR[r.lease] || "var(--muted)";
     dot.title = r.leaseText;
+    // behold#571: the op's left bar, in its lease's state.
+    if (row.style.setProperty) row.style.setProperty("--bar", barVarFor(LEASE_COLOR[r.lease]));
     row.appendChild(dot);
 
     const body = el("div", "grow");

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BEAT_CHANGES, INTRO_HEAD, READ_STORE, READ_TITLE, STEP_VIEW, STEP_WORDS, aboutRows, approvalPanel, approveGloss, chantProject, factsLine, focusRoots, holdHead, holdModel, introText, readStored, readingRows, renderReading, scenarioHead, frameSrc, factLines, kioskView, matchingPull, pendingApproval, renderKiosk, renderViewToggle, reportless, runPanel, runPin, stepView, viewZoom } from "./kiosk.js";
+import { stepTone, BEAT_CHANGES, INTRO_HEAD, READ_STORE, READ_TITLE, STEP_VIEW, STEP_WORDS, aboutRows, approvalPanel, approveGloss, chantProject, factsLine, focusRoots, holdHead, holdModel, introText, readStored, readingRows, renderReading, scenarioHead, frameSrc, factLines, kioskView, matchingPull, pendingApproval, renderKiosk, renderViewToggle, reportless, runPanel, runPin, stepView, viewZoom } from "./kiosk.js";
 import { VENDORS } from "./kiosk-vendor.js";
 import { PICK_HOLD_MS } from "./kiosk-runs.js";
 
@@ -150,27 +150,29 @@ describe("the scenario's card under the title (behold#571)", () => {
       const s = { demo: { source: "fx", read: "2026-10-15T03:00:00Z", demo: demo("failed", { scenario: "failure", about }) }, answer: null, progress: null };
       renderKiosk(bar, s, new Date("2026-10-15T03:01:00Z"));
       const left = find(bar, "k-lead")[0];
-      // behold#571: the lead block: the title, the two beats (what changes, the step), the progress, the rest of the card, the facts; each box fixed.
-      expect(left.children.map((c) => c.className)).toEqual(["k-box k-box-title", "k-box k-box-beat", "k-box k-box-step", "k-progress", "k-box k-box-more", "k-box k-box-facts k-box-empty"]);
-      expect(left.children.map((c) => c.children.map((x) => x.className.split(" ")[0]))).toEqual([["k-title"], ["k-beat"], ["k-step"], ["k-strip", "k-next"], ["k-about"], []]);
-      const beat = find(bar, "k-beat")[0];
-      expect(beat.children.map((c) => [c.className, c.textContent])).toEqual([["k-beat-label", BEAT_CHANGES], ["k-beat-text", about.changes]]);
-      // The step's progress sits with the step line: the strip's stops, the driver's next action.
-      expect(find(bar, "k-stop").map((c) => c.textContent)).toEqual(["pull request", "planned", "merged", "waves", "applied", "reset"]);
-      // The rest of the card, one quieter paragraph: each field after its label.
-      const card = find(bar, "k-about")[0];
-      expect(card.tagName).toBe("p");
-      expect(card.children.filter((c) => c.className).map((c) => [c.className, c.textContent])).toEqual([
-        ["k-about-label", "Watch for"], ["k-about-text", about.watch],
-        ["k-about-label", "Shows"], ["k-about-text", about.shows],
+      // behold#571: the lead block, a grid of labelled rows: the title (over it, the tool, the kicker and the
+      // progress), then what changes, the step, next, watch for, shows and the facts; each row a fixed box.
+      expect(left.children.map((c) => c.className)).toEqual([
+        "k-box k-box-title", "k-row k-row-beat", "k-row k-row-step k-step-failed", "k-row k-row-next", "k-row k-row-more", "k-row k-row-more", "k-row k-row-facts k-row-empty",
       ]);
+      expect(left.children.map((c) => c.children.map((x) => x.className.split(" ")[0]))).toEqual([["k-over", "k-title"], ["k-row-label", "k-box"], ["k-row-label", "k-box"], ["k-row-label", "k-box"], ["k-row-label", "k-box"], ["k-row-label", "k-box"], []]);
+      // Each row: its label in the fixed column, its words in the box beside it.
+      const rowsOf = (cls) => find(bar, cls).map((r) => [r.children[0].textContent, r.children[1].children[0].className, r.children[1].children[0].textContent]);
+      expect(rowsOf("k-row-beat")).toEqual([[BEAT_CHANGES, "k-beat", about.changes]]);
+      expect(rowsOf("k-row-step")[0].slice(0, 2)).toEqual([STEP_WORDS.failed, "k-step"]);
+      expect(rowsOf("k-row-more")).toEqual([["Watch for", "k-about", about.watch], ["Shows", "k-about", about.shows]]);
+      expect(find(bar, "k-row-next")[0].children[0].textContent).toBe("Next");
+      // The scenario's progress sits on the quiet line over the title, at its end.
+      const over = find(bar, "k-over")[0];
+      expect(over.children.map((c) => c.className)).toEqual(["k-kicker", "k-strip"]);
+      expect(find(bar, "k-stop").map((c) => c.textContent)).toEqual(["pull request", "planned", "merged", "waves", "applied", "reset"]);
 
       s.demo.demo = demo("reset", { scenario: "base", about: null });
       renderKiosk(bar, s, new Date("2026-10-15T03:01:00Z"));
       expect(find(bar, "k-about")).toEqual([]);
       expect(find(bar, "k-beat")).toEqual([]);
-      // Render what's present: the boxes with nothing in them draw no box.
-      expect(find(bar, "k-box-empty").map((c) => c.className)).toEqual(["k-box k-box-beat k-box-empty", "k-box k-box-more k-box-empty", "k-box k-box-facts k-box-empty"]);
+      // Render what's present: the rows with nothing in them keep their place and draw nothing.
+      expect(find(bar, "k-row-empty").map((c) => c.className)).toEqual(["k-row k-row-beat k-row-empty", "k-row k-row-more k-row-empty", "k-row k-row-more k-row-empty", "k-row k-row-facts k-row-empty"]);
       // On the base, the hold panel holds the run's note, quiet, with no wave to light.
       expect(find(bar, "k-box-hold")[0].className).toBe("k-box k-box-hold k-hold");
 
@@ -184,7 +186,8 @@ describe("the scenario's card under the title (behold#571)", () => {
       renderKiosk(bar, s, new Date("2026-10-15T03:01:00Z"));
       const shown = find(bar, "k-intro");
       expect(shown).toHaveLength(1);
-      expect(shown[0].children.map((c) => c.textContent)).toEqual([INTRO_HEAD, intro]);
+      expect(shown[0].textContent).toBe(intro);
+      expect(find(bar, "k-row-beat")[0].children[0].textContent).toBe(INTRO_HEAD);
       expect(find(bar, "k-about")).toEqual([]);
     } finally {
       globalThis.document = was;
@@ -415,9 +418,11 @@ describe("the kiosk for a viewer new to the demo (behold#571)", () => {
   it("shows the intro in the card's box between scenarios, never as a band, and none without one", () => {
     // behold#571: a live step has no intro band; "What is this?" holds it.
     expect(find(draw(demo("planned", { intro })).bar, "k-intro")).toEqual([]);
-    const shown = find(draw(demo("reset", { intro })).bar, "k-intro");
+    const { bar } = draw(demo("reset", { intro }));
+    const shown = find(bar, "k-intro");
     expect(shown).toHaveLength(1);
-    expect(shown[0].children.map((c) => c.textContent)).toEqual([INTRO_HEAD, intro]);
+    // behold#571: the intro's head is its row's label, its words the row's.
+    expect([find(bar, "k-row-beat")[0].children[0].textContent, shown[0].textContent]).toEqual([INTRO_HEAD, intro]);
     expect(find(draw(demo("reset")).bar, "k-intro")).toEqual([]);
     expect(find(draw(demo("planned", { intro: null })).bar, "k-intro")).toEqual([]);
     expect(introText(demo("planned", { intro: "   " }))).toBe(null);
@@ -468,5 +473,11 @@ describe("the kiosk for a viewer new to the demo (behold#571)", () => {
     } finally {
       globalThis.document = was;
     }
+  });
+});
+
+describe("the lead block's step rail (behold#571)", () => {
+  it("takes the step's state: held amber, failed, applied, the accent while it moves, neutral at the reset", () => {
+    expect(["waiting", "failed", "stalled", "applied", "applying", "planned", "resumed", "reset"].map(stepTone)).toEqual(["wait", "bad", "bad", "ok", "busy", "busy", "busy", "idle"]);
   });
 });

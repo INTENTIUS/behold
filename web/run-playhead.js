@@ -19,6 +19,8 @@
 /** Settled-step tones, in the same token vocabulary the apply progress panel
  * uses (`APPLY_STATUS_COLOR` in app.js) so "green means it worked" reads the
  * same everywhere. */
+import { barVarFor } from "./theme.js";
+
 export const RUN_STEP_COLOR = {
   ok: "var(--managed)",
   fail: "var(--degraded)",
@@ -160,6 +162,8 @@ export function renderPlayhead(host, run, card, actions = {}) {
       const row = el("div", "run-step");
       const dot = el("span", "run-dot");
       dot.style.background = RUN_STEP_COLOR[r.status] || "var(--muted)";
+      // behold#571: the step's left bar, in its status.
+      if (row.style.setProperty) row.style.setProperty("--bar", barVarFor(RUN_STEP_COLOR[r.status]));
       row.appendChild(dot);
       row.appendChild(el("span", "grow", r.label));
       row.appendChild(el("span", "run-took", r.took));

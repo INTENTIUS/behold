@@ -48,7 +48,9 @@ body { background: var(--bg, #1e1e2e); color: var(--fg, #cdd6f4); padding-bottom
   color: var(--fg, #cdd6f4); display: none; }
 #behold-diff h4 { margin: 0 0 6px; font: 600 10.5px/1.4 ui-sans-serif, system-ui, sans-serif;
   text-transform: uppercase; letter-spacing: .07em; color: var(--muted, #777a8c); }
-#behold-diff .a { color: var(--managed, #a6e3a1); } #behold-diff .r { color: var(--degraded, #f38ba8); } #behold-diff .c { color: var(--foreign, #f9e2af); }`;
+#behold-diff .a { color: var(--managed, #a6e3a1); } #behold-diff .r { color: var(--degraded, #f38ba8); } #behold-diff .c { color: var(--foreign, #f9e2af); }
+#behold-diff .a, #behold-diff .r, #behold-diff .c { padding-left: 7px; margin: 1px 0; box-shadow: inset 3px 0 0 var(--bar-neutral, #9a9eb5); }
+#behold-diff .a { box-shadow: inset 3px 0 0 var(--bar-managed, #a6e3a1); } #behold-diff .r { box-shadow: inset 3px 0 0 var(--bar-degraded, #f38ba8); } #behold-diff .c { box-shadow: inset 3px 0 0 var(--bar-foreign, #f9e2af); }`;
 
 /** #198: boot the SPA's own theme engine on this server-rendered page — the
  * persisted behold.theme applies as CSS custom properties on :root (inline
@@ -89,6 +91,8 @@ const LF = ${safeJson(frames)};
     c.clearRect(0, 0, host.clientWidth, H); c.font = "12px ui-sans-serif, system-ui, sans-serif";
     subs.forEach((s, r) => {
       const y = padT + r * rowH + rowH / 2;
+      // behold#571: each substrate's row has its left bar, as every listed item does (theme.js barInks); an offset row's is amber.
+      c.fillStyle = offset[s] ? css("--bar-foreign", "#f9e2af") : css("--bar-neutral", "#9a9eb5"); c.fillRect(0, padT + r * rowH + 2, 3, rowH - 4);
       c.fillStyle = offset[s] ? css("--foreign", "#f9e2af") : css("--muted", "#777a8c"); c.textAlign = "left"; c.fillText(s, 8, y + 4);
       c.strokeStyle = css("--line", "#3b3c4a"); c.beginPath(); c.moveTo(padL, y); c.lineTo(host.clientWidth - padR, y); c.stroke();
       LF.forEach((f, i) => {

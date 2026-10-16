@@ -19,6 +19,8 @@
         /* behold#571: the kiosk's surfaces and ink (theme.js kioskSurfaces), the kiosk's default theme's (KIOSK_THEME, Sea Shells) until initTheme() runs. */
         --surface-box: #101b22; --surface-pane-a: #152128; --surface-pane-b: #1b272e; --zebra: #deb88d; --soft: #deb88d; --muted-ink: #7c7365;
         --managed-ink: #0e7f9e; --foreign-ink: #fca02f; --pending-ink: #567b82; --degraded-ink: #d15123; --runtime-ink: #50a3b5;
+        /* behold#571: the left bars (theme.js barInks), Sea Shells' until initTheme() runs. */
+        --bar-managed: #258dac; --bar-foreign: #fca02f; --bar-pending: #5d8890; --bar-degraded: #da592c; --bar-runtime: #50a3b5; --bar-neutral: #8c8170;
         --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
         --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       }
@@ -39,6 +41,30 @@
       #runs-side { overflow-y: auto; background: var(--surface-pane-b); border-radius: 6px 6px 0 0; }
       #runs-main { overflow: hidden; display: flex; flex-direction: column; min-height: 0; background: var(--surface-pane-a); border-radius: 6px 6px 0 0; }
       #k-runs-toggle { display: none; }
+      /*
+       * behold#571: the left bars. Every listed item (a run, a job, a step and
+       * its log, a wave card, a row of the hold panel, a job on the trace's
+       * strip) has a bar down its left edge, so the eye can part the items
+       * where the zebra barely shows. Its colour is its state's (theme.js
+       * barInks, 3:1 on every ground in every theme): running in the accent,
+       * held in the waiting amber, failed, applied; neutral where it has none.
+       * The selected item's bar, and a hover-linked one's, is twice as wide.
+       * The zebra stays: on a calm theme the bars part the items, and the
+       * zebra still guides the eye along a wide row.
+       */
+      /* Rows that touch get a bar inset 2px top and bottom, so two of one state still read as two. */
+      .r-run, .r-job, .r-step-line, .k-ap-row, .t-strip .t-row { position: relative; }
+      .r-run::before, .r-job::before, .r-step-line::before, .k-ap-row::before, .t-strip .t-row::before { content: ""; position: absolute; left: 0; top: 2px; bottom: 2px; width: var(--bar-w, 3px); border-radius: 0 2px 2px 0; background: var(--bar, var(--bar-neutral)); pointer-events: none; }
+      /* A log block scrolls, and a card stands apart already: their bar is an inset edge. */
+      .r-log, .k-metrics-wave, .k-metrics-dora { box-shadow: inset var(--bar-w, 3px) 0 0 var(--bar, var(--bar-neutral)); }
+      [data-k-tone="busy"] { --bar: var(--bar-pending); }
+      [data-k-tone="wait"] { --bar: var(--bar-foreign); }
+      [data-k-tone="ok"] { --bar: var(--bar-managed); }
+      [data-k-tone="bad"] { --bar: var(--bar-degraded); }
+      [data-k-tone="idle"] { --bar: var(--bar-neutral); }
+      .k-ap-lit { --bar: var(--bar-managed); }
+      .k-ap-going { --bar: var(--bar-foreign); }
+      .r-selected, .t-strip .t-row.t-sel, .r-open > .r-step-line, .r-open > .r-log { --bar-w: 6px; }
       .r-run:nth-child(even of .r-run), .r-job:nth-child(even of .r-job), .r-log-line:nth-child(even of .r-log-line) { background: var(--zebra-row); }
       /* behold#571: the panes step back from the lead block: quieter heads, lighter rules. */
       .r-side-head { padding: 0.7em 1em 0.4em; }
@@ -46,9 +72,9 @@
       .r-side-note { color: var(--muted); font-size: 0.82em; margin-top: 0.15em; }
       .r-runs { list-style: none; margin: 0; padding: 0 0 1em; }
       .r-group { font: 600 0.72em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 0.7em 1em 0.25em; }
-      .r-run { display: grid; grid-template-columns: 1.2em 1fr; gap: 0.6em; padding: 0.5em 1em; cursor: pointer; border-left: 3px solid transparent; }
+      .r-run { display: grid; grid-template-columns: 1.2em 1fr; gap: 0.6em; padding: 0.5em 1em; cursor: pointer; }
       .r-run:hover { background: color-mix(in srgb, var(--active) 50%, transparent); }
-      .r-run.r-selected { background: var(--active); border-left-color: var(--focus); }
+      .r-run.r-selected { background: var(--active); }
       .r-run-title { font-weight: 600; line-height: 1.25; }
       .r-run-place { color: var(--muted); font-size: 0.85em; }
       .r-run-meta { display: flex; flex-wrap: wrap; gap: 0 0.7em; color: var(--muted); font-size: 0.8em; }
@@ -142,55 +168,58 @@
       #bar { position: relative; display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 0.4em 0.7em; align-items: stretch;
         padding: 0.3em 0.6em 0.3em; background: var(--bg); }
       #bar > .k-empty, #bar > .k-replay, #bar > .k-nograph-note { grid-column: 1 / -1; }
-      :root { --k-title-h: 1.82em; --k-beat-h: 3.25em; --k-step-h: 4.45em; --k-progress-h: 1.5em; --k-card-h: 3.3em; --k-facts-h: 1.2em; }
-      /* Wide enough that the step's 200 characters, and Watch for with Shows, take two lines each: their boxes are two lines tall. */
-      @media (min-width: 1700px) { :root { --k-step-h: 3.05em; --k-card-h: 2.3em; } }
-      .k-lead { display: grid; grid-template-rows: var(--k-title-h) var(--k-beat-h) var(--k-step-h) var(--k-progress-h) var(--k-card-h) var(--k-facts-h) auto; gap: 0.16em; min-width: 0;
-        padding: 0.25em 0.8em 0.3em; background: var(--surface-pane-b); border-radius: 8px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 14%, transparent); }
+      /*
+       * behold#571: the lead block is a grid of labelled rows. A quiet line
+       * (the tool, the kicker, the scenario's progress) over the title, then
+       * one beat a row: what changes, the step, next, watch for, shows and the
+       * pull request's facts. Each label sits in a fixed column and the words
+       * in the next, at most 72ch wide, so a wrapped line hangs under the
+       * words and never under the label. Each row is a fixed box (it scrolls,
+       * with a fade, inside it) with a rail down its left: neutral, and the
+       * step's rail in the step's state colour (theme.js barInks).
+       */
+      :root { --k-label-w: 7.6rem; --k-title-h: 3.15em; --k-beat-h: 3em; --k-step-h: 4.45em; --k-next-h: 1.35em; --k-watch-h: 2.5em; --k-shows-h: 2.5em; --k-facts-h: 3.75em; }
+      .k-lead { display: grid; grid-template-rows: var(--k-title-h) var(--k-beat-h) var(--k-step-h) var(--k-next-h) var(--k-watch-h) var(--k-shows-h) var(--k-facts-h) auto; gap: 0.2em; min-width: 0;
+        padding: 0.25em 0.9em 0.35em; background: var(--surface-pane-b); border-radius: 8px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 14%, transparent); }
       .k-box { min-height: 0; overflow-y: auto; scrollbar-width: thin; border-radius: 6px; padding: 0.1em 0.2em; }
       .k-box.k-more-below { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.3em), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 1.3em), transparent); }
       .k-box.k-more-above { -webkit-mask-image: linear-gradient(to top, #000 calc(100% - 1.3em), transparent); mask-image: linear-gradient(to top, #000 calc(100% - 1.3em), transparent); }
       .k-box.k-more-above.k-more-below { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 1.3em, #000 calc(100% - 1.3em), transparent); mask-image: linear-gradient(to bottom, transparent, #000 1.3em, #000 calc(100% - 1.3em), transparent); }
       .k-box-empty { background: transparent; box-shadow: none; }
-      .k-box-title { overflow: hidden; padding: 0; }
-      .k-kicker { font: 600 0.5em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-right: 0.9em; vertical-align: 0.3em; white-space: nowrap; }
       .k-cycle { color: var(--muted); font: 0.78em var(--font-mono); white-space: nowrap; }
-      .k-title { margin: 0; font-size: 1.5em; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      /* The two beats: the largest text after the title, each with its label first. */
-      .k-beat, .k-intro { margin: 0; font-size: 1.32em; line-height: 1.22; color: var(--fg); }
-      .k-step { margin: 0; font-size: 1.16em; line-height: 1.25; color: var(--fg); }
-      .k-beat-text { font-weight: 600; }
-      .k-box-beat { padding: 0 0.2em; }
-      .k-beat-label, .k-step-word, .k-intro-head { font: 700 0.62em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; margin-right: 0.8em; vertical-align: 0.12em; white-space: nowrap; }
-      .k-beat-label, .k-intro-head { color: var(--muted); }
-      .k-step-word { color: var(--pending); }
-      .k-box-step { border-left: 4px solid var(--pending); border-radius: 0 6px 6px 0; padding: 0.05em 0.2em 0.05em 0.65em; background: color-mix(in srgb, var(--pending) 7%, transparent); }
-      .k-box-step:has(.k-step-waiting) { border-left-color: var(--foreign); }
-      .k-box-step:has(.k-step-failed), .k-box-step:has(.k-step-stalled) { border-left-color: var(--degraded); }
-      .k-box-step:has(.k-step-applied) { border-left-color: var(--managed); }
-      .k-box-step:has(.k-step-reset) { border-left-color: var(--neutral); }
-      /* The rest of the card, quieter. */
-      .k-box-more { padding: 0 0.2em; }
-      .k-about { margin: 0; font-size: 0.84em; line-height: 1.3; }
-      .k-about-label { font: 600 0.74em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-right: 0.6em; }
-      .k-about-text { margin-right: 1.2em; color: color-mix(in srgb, var(--fg) 82%, var(--muted)); }
       .k-muted { color: var(--muted); margin: 0.25em 0; }
-      /* The progress, with the step: the strip, the driver's next action, the cycle. */
-      .k-progress { display: flex; flex-wrap: nowrap; gap: 0.3em 0.9em; align-items: center; min-width: 0; overflow: hidden; }
-      .k-progress .k-strip { flex: none; }
-      .k-progress .k-next { flex: 1; }
-      .k-strip { list-style: none; display: flex; flex-wrap: nowrap; gap: 0.3em; padding: 0; margin: 0; }
       .k-stop { font: 0.78em var(--font-mono); padding: 0.18em 0.6em; border-radius: 999px; border: 1px solid var(--rule); color: var(--muted); white-space: nowrap; }
       .k-done { color: var(--fg); border-color: var(--managed); }
       .k-current { color: var(--bg); background: var(--pending); border-color: var(--pending); font-weight: 600; }
       .k-failed { color: var(--bg); background: var(--degraded); border-color: var(--degraded); font-weight: 600; }
-      .k-next { display: flex; gap: 0.3em 0.6em; align-items: baseline; font-size: 0.95em; min-width: 0; white-space: nowrap; }
-      .k-next-word { font: 600 0.72em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
-      .k-action { font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
       .k-when { color: var(--foreign); font-family: var(--font-mono); }
-      /* The pull request's facts, one line; the whole line is its title. */
-      .k-box-facts { overflow: hidden; padding: 0 0.2em; }
-      .k-facts { margin: 0; font-size: 0.86em; line-height: 1.4; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .k-box-title { overflow: hidden; padding: 0; }
+      .k-over { display: flex; align-items: center; gap: 0.3em 0.9em; min-width: 0; height: 1.4em; overflow: hidden; }
+      .k-over .k-brand { margin: 0; font-size: 0.9em; }
+      .k-kicker { font: 600 0.68em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); white-space: nowrap; }
+      .k-over .k-strip { margin-left: auto; }
+      .k-strip { list-style: none; display: flex; flex-wrap: nowrap; gap: 0.3em; padding: 0; margin: 0; }
+      .k-stop { font-size: 0.7em; }
+      .k-title { margin: 0; font-size: 1.45em; line-height: 1.15; text-wrap: balance; overflow: hidden; }
+      .k-row { display: grid; grid-template-columns: var(--k-label-w) minmax(0, 1fr); column-gap: 0.8em; min-height: 0; padding-left: 0.75em; box-shadow: inset 3px 0 0 var(--bar, var(--bar-neutral)); }
+      .k-row-empty { box-shadow: none; }
+      .k-row-label { font: 600 0.66em/1.3 var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding-top: 0.5em; overflow-wrap: normal; }
+      .k-row-box { padding: 0 0.2em 0 0; border-radius: 0; }
+      .k-row-box > p { margin: 0; max-width: 72ch; text-wrap: pretty; overflow-wrap: normal; }
+      /* What changes and the step, at the same strong size; the step's rail colour is what sets it apart. */
+      .k-beat, .k-step, .k-intro { font-size: 1.12em; line-height: 1.3; font-weight: 500; color: var(--fg); }
+      .k-row-step { box-shadow: inset 5px 0 0 var(--bar, var(--bar-neutral)); }
+      .k-row-step .k-row-label { color: var(--bar, var(--muted)); }
+      /* Next, watch for and shows: smaller, quieter. */
+      .k-next, .k-about { font-size: 0.9em; line-height: 1.35; color: color-mix(in srgb, var(--fg) 82%, var(--muted)); }
+      .k-row-next .k-row-label, .k-row-more .k-row-label { padding-top: 0.3em; }
+      .k-action { font-family: var(--font-mono); color: var(--fg); }
+      .k-when { color: var(--foreign); font-family: var(--font-mono); }
+      .k-next-by { color: var(--muted); }
+      /* The pull request's facts, smallest: each part a chip that wraps whole, never cut off. */
+      .k-row-facts .k-row-label { padding-top: 0.25em; }
+      .k-row-box > p.k-facts { display: flex; flex-wrap: wrap; gap: 0 0.5em; max-width: none; font-size: 0.84em; line-height: 1.45; color: var(--fg); }
+      .k-fact:not(:last-child)::after { content: "\00B7"; color: var(--muted); margin-left: 0.5em; }
       .k-credits { margin: 0; color: var(--muted); font-size: 0.78em; line-height: 1.35; }
       /* behold#571: the hold panel, lit in the waiting tone its job row and its wave box carry. */
       .k-right { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 0.3em; min-width: 0; min-height: 0; contain: size; }
@@ -198,14 +227,14 @@
       .k-box-hold { padding: 0.5em 0.9em 0.6em; }
       .k-hold { background: var(--surface-box); border-radius: 8px; }
       .k-hold-head { margin: 0 0 0.3em; font: 700 0.95em var(--font-mono); color: var(--fg); }
-      .k-hold-wave { background: color-mix(in srgb, var(--foreign) 7%, var(--surface-box)); box-shadow: inset 4px 0 0 var(--foreign); padding-left: 1.2em; }
+      .k-hold-wave { background: color-mix(in srgb, var(--foreign) 7%, var(--surface-box)); box-shadow: inset 6px 0 0 var(--bar-foreign); padding-left: 1.2em; }
       .k-hold-wave .k-hold-head { color: var(--foreign); }
       .k-hold > .k-note { margin-top: 0.2em; }
       /* behold#571: "How this hold ends": four rows that light from the records. */
       .k-ap-head { font: 600 0.7em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 0.1em; }
       .k-ap-head .k-ap-plan { text-transform: none; letter-spacing: 0; color: var(--fg); font-weight: 400; }
       .k-ap-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.05em; }
-      .k-ap-row { display: grid; grid-template-columns: 1em 6.4em minmax(0, 1fr); gap: 0 0.35em; align-items: baseline; font-size: 0.84em; line-height: 1.28; }
+      .k-ap-row { display: grid; grid-template-columns: 1em 6.4em minmax(0, 1fr); gap: 0 0.35em; align-items: baseline; font-size: 0.84em; line-height: 1.28; padding: 0.12em 0 0.12em 0.7em; }
       .k-ap-mark { width: 0.75em; height: 0.75em; border-radius: 50%; border: 2px solid var(--muted); display: inline-block; align-self: start; margin-top: 0.25em; }
       .k-ap-lit .k-ap-mark { background: var(--managed); border-color: var(--managed); }
       .k-ap-going .k-ap-mark { border-color: var(--foreign); background: linear-gradient(90deg, var(--foreign) 50%, transparent 50%); }
@@ -298,13 +327,14 @@
         .k-left > * + *, .k-right > * + * { margin-top: 0.4em; }
         .k-box { height: auto; max-height: none; overflow: visible; -webkit-mask-image: none !important; mask-image: none !important; }
         .k-box-empty { display: none; }
-        .k-title { white-space: normal; font-size: 1.4em; }
-        .k-progress { flex-wrap: wrap; overflow: visible; }
-        .k-progress .k-strip { flex: 1 1 100%; }
+        .k-title { font-size: 1.4em; }
+        .k-over { flex-wrap: wrap; height: auto; overflow: visible; }
+        .k-over .k-strip { margin-left: 0; flex: 1 1 100%; }
+        .k-row { grid-template-columns: minmax(0, 1fr); row-gap: 0.1em; padding: 0.1em 0 0.1em 0.75em; }
+        .k-row-empty { display: none; }
+        .k-row-label { padding-top: 0; }
         #views { flex-wrap: wrap; gap: 0.3em 0.9em; }
         .k-strip { flex-wrap: wrap; }
-        .k-next { white-space: normal; flex-wrap: wrap; }
-        .k-facts { white-space: normal; }
         .k-right > .k-cycle { padding: 0; }
         #k-read { padding: 0.2em 16px; }
         .k-read-head { position: static; }

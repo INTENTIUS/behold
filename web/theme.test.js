@@ -6,7 +6,7 @@
 // sweeps all 552 palettes for the same assertion; this pins the exact
 // palette the issue was filed against, with no browser involved.
 import { describe, it, expect } from "vitest";
-import { FRAME_STATES, MIN_STEP, SOFT_CEILING, ZEBRA, contrast, desaturate, frameGrounds, frameInks, hexToOklch, mix, pinTokensFor, tokensFor } from "./theme.js";
+import { BAR_FLOOR, BAR_STATES, FRAME_STATES, MIN_STEP, barGrounds, barInks, barVars, SOFT_CEILING, ZEBRA, contrast, desaturate, frameGrounds, frameInks, hexToOklch, mix, pinTokensFor, tokensFor } from "./theme.js";
 import { THEMES } from "./themes.js";
 
 describe("tokensFor — the --muted contrast floor (#240)", () => {
@@ -136,5 +136,60 @@ describe("the graph frame's state colours", () => {
     const th = THEMES["Sea Shells"];
     expect(contrast(tokensFor(th).pending, pinTokensFor(th).neutralFill)).toBeLessThan(2);
     expect(contrast(frameInks(th).card.pending, pinTokensFor(th).neutralFill)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe("the left bars (behold#571)", () => {
+  const themes = Object.values(THEMES);
+
+  it("clear 3:1 on every ground a bar sits on, in every theme, for every state and the neutral bar", () => {
+    expect(BAR_FLOOR).toBe(3);
+    const bad = [];
+    for (const th of themes) {
+      const grounds = barGrounds(th);
+      const inks = barInks(th);
+      for (const s of BAR_STATES) {
+        const worst = Math.min(...grounds.map((g) => contrast(inks[s], g)));
+        if (worst < BAR_FLOOR) bad.push(`${th.name} ${s} ${inks[s]} ${worst.toFixed(2)}`);
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it("sit on the page, the kiosk's panes, the app's panel and well, their zebra rows and the selected, hovered and held fills", () => {
+    const th = THEMES["Sea Shells"];
+    const t = tokensFor(th);
+    const g = barGrounds(th);
+    for (const c of [th.bg, t.surfaceBox, t.surfacePaneA, t.surfacePaneB, t.panel, t.well, t.active, mix(t.surfacePaneB, th.fg, ZEBRA)]) expect(g).toContain(c);
+  });
+
+  it("keep each state's hue where it has one, moving its lightness", () => {
+    let kept = 0;
+    let total = 0;
+    for (const th of themes) {
+      const t = tokensFor(th);
+      const inks = barInks(th);
+      for (const s of ["managed", "foreign", "pending", "degraded"]) {
+        const a = hexToOklch(t[s]);
+        if (a.C < 0.05) continue;
+        total++;
+        const b = hexToOklch(inks[s]);
+        const dH = Math.abs(((a.H - b.H + 540) % 360) - 180);
+        if (dH < 20 || b.C < 0.02) kept++;
+      }
+    }
+    expect(kept / total).toBeGreaterThan(0.97);
+  });
+
+  it("are emitted as --bar-<state>, one per state", () => {
+    expect(Object.keys(barVars(THEMES["Catppuccin Mocha"]))).toEqual(BAR_STATES.map((s) => `bar-${s}`));
+  });
+
+  it("lift Royal's neutral, which sat at about 1.4:1 on its panes, where the zebra row reads at 1.02:1", () => {
+    const th = THEMES["Royal"];
+    const t = tokensFor(th);
+    expect(contrast(mix(t.surfacePaneB, th.fg, ZEBRA), t.surfacePaneB)).toBeLessThan(1.05);
+    expect(contrast(t.neutral, t.surfacePaneB)).toBeLessThan(1.5);
+    expect(contrast(barInks(th).neutral, t.surfacePaneB)).toBeGreaterThanOrEqual(3);
   });
 });

@@ -422,6 +422,53 @@ export function frameInks(th) {
   return { box, card };
 }
 
+/**
+ * behold#571: the left bars. Every listed item in the kiosk, the app and the
+ * lanes strip (a run, a job, a step, a wave card, a panel row) carries a bar
+ * down its left edge, so the eye can tell one item from the next where the
+ * zebra tint barely shows. An item with a state wears the state's colour
+ * (running in the accent, held in the waiting amber, failed, applied), one
+ * with none the neutral bar. Each is the state's hue with its OKLCH lightness
+ * moved, as frameInks does, until it clears BAR_FLOOR on every ground a bar
+ * sits on (barGrounds): the page, the panes, the app's panel and well, each
+ * with its zebra row, and the selected, hovered and held rows' fills.
+ */
+export const BAR_STATES = ["managed", "foreign", "pending", "degraded", "runtime", "neutral"];
+/** The least WCAG contrast a bar keeps on every ground: a graphical object's floor (1.4.11). */
+export const BAR_FLOOR = 3;
+export function barGrounds(th) {
+  const t = tokensFor(th);
+  const plain = [th.bg, t.surfaceBox, t.surfacePaneA, t.surfacePaneB, t.panel, t.well];
+  return [
+    ...plain,
+    ...plain.map((s) => mix(s, th.fg, ZEBRA)),
+    // A selected or hovered row (--active, whole and half), a hover-linked one (--focus at 24%), a held one (the waiting tone at 14%).
+    ...[t.surfacePaneA, t.surfacePaneB, t.panel].flatMap((s) => [t.active, mix(s, t.active, 0.5), mix(s, t.focus, 0.24), mix(s, t.foreign, 0.14)]),
+  ];
+}
+export function barInks(th) {
+  const t = tokensFor(th);
+  const grounds = barGrounds(th);
+  const up = hexToOklch(th.bg).L < 0.6;
+  const out = {};
+  for (const s of BAR_STATES) out[s] = lightnessFor(t[s], grounds, BAR_FLOOR, up);
+  return out;
+}
+/**
+ * The bar for an item whose state is drawn today as a colour (`var(--managed)`
+ * on its dot, say): that state's bar, or the neutral one for anything else
+ * (--muted, a hex, nothing).
+ */
+export function barVarFor(color) {
+  const m = /^var\(--(\w+)\)$/.exec(String(color || "").trim());
+  return m && BAR_STATES.includes(m[1]) ? `var(--bar-${m[1]})` : "var(--bar-neutral)";
+}
+/** The bars as CSS custom properties: `--bar-managed` … `--bar-neutral`. */
+export function barVars(th) {
+  const inks = barInks(th);
+  return Object.fromEntries(BAR_STATES.map((s) => [`bar-${s}`, inks[s]]));
+}
+
 const PIN_VARS = ["bg0", "bg1", "dots", "text", "textMuted", "textFaint", "edge", "neutralFill", "neutralStroke", "neutralBar", "accentFill", "accentStroke", "accentBar", "goodFill", "goodStroke", "goodBar", "warnFill", "warnStroke", "warnBar", "runtimeFill", "runtimeStroke", "runtimeBar", "selectedStroke"];
 
 function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
@@ -464,6 +511,8 @@ export function applyTheme(tokens = _tokens) {
       root.style.setProperty("--frame-" + k, inks.box[k]);
       root.style.setProperty("--frame-card-" + k, inks.card[k]);
     }
+    // behold#571: the left bars' colours, shared by the app, the kiosk and the lanes strip (barInks).
+    for (const [k, v] of Object.entries(barVars(_active))) root.style.setProperty("--" + k, v);
   }
   root.style.setProperty("color-scheme", tokens.dark ? "dark" : "light");
 }

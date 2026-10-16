@@ -26,6 +26,7 @@
         --edge: #56596d; --managed: #a6e3a1; --foreign: #f9e2af; --pending: #89b4fa;
         --degraded: #f38ba8; --neutral: #6d7187; --runtime: #94e2d5;
         --rule: #4e4f64; --focus: #a3b4d0; --active: #3d4660; --well: #11101f; --shadow: #050507;
+        --bar-managed: #a6e3a1; --bar-foreign: #f9e2af; --bar-pending: #89b4fa; --bar-degraded: #f38ba8; --bar-runtime: #94e2d5; --bar-neutral: #9a9eb5;
       }
       /* The non-colour half of the identity: type and radii. These can't derive
          from a colour theme, so they're the one static token block — but they
@@ -557,7 +558,7 @@
       .run-verdict { font-size: var(--t-caption); }
       /* What behold does NOT know — a lost stream, an unreachable gate query.
          Same voice as the carve refusal: a statement, not an alarm. */
-      .run-lost { border-left: 3px solid var(--foreign); background: var(--well);
+      .run-lost { border-left: 3px solid var(--bar-foreign); background: var(--well);
         border-radius: var(--r-ctl); padding: 4px 8px; color: var(--muted);
         font: var(--t-caption)/1.5 var(--font-mono); }
       .run-steps { display: flex; flex-direction: column; gap: 2px; }
@@ -567,7 +568,7 @@
       .run-took { color: var(--muted); }
       /* A human decision is owed: the same --pending edge the carve
          walkthrough's human refusal wears. */
-      .run-gate { border: 1px solid var(--pending); border-left: 3px solid var(--pending);
+      .run-gate { border: 1px solid var(--pending); border-left: 3px solid var(--bar-foreign);
         border-radius: var(--r-ctl); padding: 6px 8px; background: var(--well);
         display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
       .run-gate-title { font-size: var(--t-body); color: var(--pending); }
@@ -739,6 +740,43 @@
       #graph [data-pending-read] { animation: pending-breathe 2.4s ease-in-out infinite; }
       @keyframes pending-breathe { 0%, 100% { opacity: 0.45; } 50% { opacity: 0.68; } }
     }
+      /*
+       * behold#571: the left bars, as the kiosk draws them. Every listed item
+       * (a panel row, a substrate, a run's step, an op, a converge entry, a
+       * wave or root of a terragucci report, a timeline entry) has a bar down
+       * its left edge, so the eye can part the items on any theme. Its colour
+       * is its state's (theme.js barInks, 3:1 on every ground in every
+       * theme): running in the accent, held in the waiting amber, failed,
+       * applied, the runtime cyan; neutral where it has none. Rows that touch
+       * get a bar inset 2px top and bottom; a card's bar is its inset edge.
+       * The inspect pane's sections each get one, beside their rows.
+       */
+      #panel .count-row, #panel .node-row, #substrates .sub, .run-step, .operator-row, .operator-entry, .apply-wave-row, #tab-terragucci .tg-root, .tg-timeline .tg-entry, #inspect .why-list li, .k-pop-lines li { position: relative; padding-left: 10px; }
+      #panel .count-row::before, #panel .node-row::before, #substrates .sub::before, .run-step::before, .operator-row::before, .operator-entry::before, .apply-wave-row::before, #tab-terragucci .tg-root::before, .tg-timeline .tg-entry::before, #inspect .why-list li::before, .k-pop-lines li::before {
+        content: ""; position: absolute; left: 0; top: 2px; bottom: 2px; width: var(--bar-w, 3px); border-radius: 0 2px 2px 0; background: var(--bar, var(--bar-neutral)); pointer-events: none; }
+      #panel .node-row { padding-left: 12px; }
+      .ws-gate, .tg-progress-wave, #tg-estate .tg-estate-project, #inspect-body > dl, #inspect-body > .tg-inspect, #inspect-body > .why { box-shadow: inset var(--bar-w, 3px) 0 0 var(--bar, var(--bar-neutral)); }
+      #inspect-body > dl, #inspect-body > .tg-inspect, #inspect-body > .why { padding-left: 10px; }
+      #inspect-body > dl { padding-top: 1px; padding-bottom: 2px; }
+      .ws-gate, .tg-progress-wave { padding-left: 11px !important; }
+      #substrates .sub.up { --bar: var(--bar-managed); }
+      #substrates .sub.down { --bar: var(--bar-degraded); }
+      #substrates .sub.on-demand { --bar: var(--bar-pending); }
+      .operator-entry-gate-resolution { --bar: var(--bar-managed); }
+      /* terragucci's tones: held (a wave) amber, failed or drifted, done, planned in the accent. */
+      .tg-wave, .tg-progress-waiting { --bar: var(--bar-foreign); }
+      .tg-failed, .tg-drift, .tg-progress-not-applied { --bar: var(--bar-degraded); }
+      .tg-ok, .tg-progress-done { --bar: var(--bar-managed); }
+      .tg-plan, .tg-progress-in-flight { --bar: var(--bar-pending); }
+      .tg-none { --bar: var(--bar-neutral); }
+      #tab-terragucci .tg-root:has(.tg-plan) { --bar: var(--bar-pending); }
+      #tab-terragucci .tg-root:has(.tg-wave) { --bar: var(--bar-foreign); }
+      #tab-terragucci .tg-root:has(.tg-failed), #tab-terragucci .tg-root:has(.tg-drift) { --bar: var(--bar-degraded); }
+      .tg-change-wave[data-state="planned"], .tg-change-wave[data-state="applying"] { --bar: var(--bar-pending); }
+      .tg-change-wave[data-state="waiting"] { --bar: var(--bar-foreign); }
+      .tg-change-wave[data-state="applied"] { --bar: var(--bar-managed); }
+      .tg-change-wave[data-state="failed"], .tg-change-wave[data-state="refused"] { --bar: var(--bar-degraded); }
+      .k-pop-lines li.k-pop-unknown { --bar: var(--bar-foreign); }
 </style>
   </head>
   <body>
