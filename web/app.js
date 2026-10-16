@@ -4441,6 +4441,12 @@ function kioskShotTarget(svg, shot) {
     const id = g.getAttribute("data-node-id");
     if (roots.has(id) || roots.has(named[id])) boxes.push(userBoxOf(svg, g));
   }
+  // Each card's wave box with it, so a shot never cuts a box's title off.
+  const cards = boxes.filter(Boolean);
+  for (const r of svg.querySelectorAll("rect[data-group-id]")) {
+    const b = userBoxOf(svg, r);
+    if (b && cards.some((c) => (c.x + c.x2) / 2 > b.x && (c.x + c.x2) / 2 < b.x2 && (c.y + c.y2) / 2 > b.y && (c.y + c.y2) / 2 < b.y2)) boxes.push(b);
+  }
   for (const l of svg.querySelectorAll("line[data-tg-read-from]")) {
     if (roots.has(l.getAttribute("data-tg-read-from")) && roots.has(l.getAttribute("data-tg-read-to"))) boxes.push(userBoxOf(svg, l));
   }

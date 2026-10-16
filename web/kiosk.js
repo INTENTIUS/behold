@@ -888,7 +888,10 @@ function drawDrawer(host, tail, nums, open) {
   head.appendChild(el("span", "k-drawer-more", open ? DRAWER_LESS : DRAWER_MORE));
   lines.replaceChildren();
   for (const l of tail ? tail.lines : []) lines.appendChild(el("div", "k-drawer-line", l));
+  if (!lines.children.length) lines.appendChild(el("div", "k-drawer-line k-drawer-quiet", DRAWER_EMPTY));
 }
+/** behold#571: the folded drawer before the job writes a line. */
+export const DRAWER_EMPTY = "The job's lines show here as it writes them.";
 /** behold#571: the drawer's two states, said on its head. */
 export const DRAWER_MORE = "Open the log";
 export const DRAWER_LESS = "Fold it back";
@@ -1634,6 +1637,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     if (frameSrcNow === null) {
       // The frame reads its graph after load; tell it again once it has had the time.
       frame.addEventListener("load", () => {
+        // behold#571: a new frame takes Watch's shot before it draws, so it opens on it and never on the fit.
+        tellShot(true);
         for (const ms of [1500, 4000, 8000]) setTimeout(() => (tellFrame(true), tellShot(true)), ms);
       });
     }
