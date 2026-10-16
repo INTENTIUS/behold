@@ -130,6 +130,9 @@ export const driver = new Service({
     TERRAGUCCI_SRC: "${DEMO_ROOT:-/opt/demo}/terragucci",
     DEMO_REPOS: "${DEMO_REPOS:-terragucci-admin/demo terragucci-admin/demo-terragrunt}",
     DEMO_REPORTS: "${DEMO_REPORTS:-s3://demo-reports/demo}",
+    // The scenarios the loop runs, space-separated, as terragucci's
+    // stack/demo.sh reads them; empty or unset is its default list.
+    DEMO_SCENARIOS: "${DEMO_SCENARIOS:-}",
     DEMO_VIEWER_USER: "${DEMO_VIEWER_USER:-demo-viewer}",
     TERRAGUCCI_FORGEJO_PORT: "${TERRAGUCCI_FORGEJO_PORT:-3300}",
     TERRAGUCCI_FLOCI_PORT: "${TERRAGUCCI_FLOCI_PORT:-4580}",

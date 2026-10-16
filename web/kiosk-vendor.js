@@ -336,12 +336,29 @@ export function replayBanner(cycle, minutes) {
   return Number.isInteger(minutes) && minutes > 0 ? `${head} · live again in about ${minutes} min` : head;
 }
 
-/** The page's words when the tool's scenario has no cycle yet. */
-export function notRunWords(vendor) {
+/** The page's words when the tool's scenario has no cycle yet; with `graph`, they say the graph below is its repo on the base. */
+export function notRunWords(vendor, { graph = false } = {}) {
+  const text = `The ${vendor.name} scenario shows here once it has run through the demo's pipeline.`;
   return {
     title: "This scenario hasn't run yet",
-    text: `The ${vendor.name} scenario shows here once it has run through the demo's pipeline.`,
+    text: graph ? `${text} Below, its repo as it stands on the base.` : text,
   };
+}
+
+/**
+ * The view checkout of a tool's repo, by the names terragucci's demo driver
+ * gives the repos: `demo` for Terraform, `demo-<tool>` for the others. Null
+ * for a tool with no page.
+ */
+export function toolCheckout(tool) {
+  if (!vendorOf(tool)) return null;
+  return tool === "terraform" ? "demo" : `demo-${tool}`;
+}
+
+/** behold#571: the checkout a tool's page shows before its first cycle names its repo: the tool's, when this behold serves it (`/api/project`'s viewRepos); null otherwise. */
+export function notRunRepo(tool, served) {
+  const name = toolCheckout(tool);
+  return name && Array.isArray(served) && served.includes(name) ? name : null;
 }
 
 /** The legend's words, without naming a competing engine on an engine's page. */

@@ -17,7 +17,7 @@ import { PICK_HOLD_MS, annMark, mergeRun, startRuns } from "./kiosk-runs.js";
 import { PANEL_STEPS, PANEL_TITLE, approvalModel, cycleRuns, rowFacts, shortDigest } from "./kiosk-approval.js";
 import { getThemeName, mountThemePicker, onThemeChange } from "./theme.js";
 import { cssString, hoverCss, hoverFromMessage, hoverLinks, hoverMessage, isLightBg, rootSegments, rootText } from "./kiosk-roots.js";
-import { creditLines, filterIndex, keepRun, liveEstimate, liveFor, namesOther, notRunWords, replayAt, replayBanner, replayIndex, rootWord, runAsOf, scrubDemo, servesRepo, vendorOf } from "./kiosk-vendor.js";
+import { creditLines, filterIndex, keepRun, liveEstimate, liveFor, namesOther, notRunRepo, notRunWords, replayAt, replayBanner, replayIndex, rootWord, runAsOf, scrubDemo, servesRepo, vendorOf } from "./kiosk-vendor.js";
 import { repoParam, repoUrl } from "./kiosk-repo.js";
 import { STATE_WORDS, changingRoots, costLine, pinsCommit, planFitsPin, pullPin, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
 
@@ -496,7 +496,7 @@ function drawBar(bar, s, now, foot) {
   const vendor = vendorOf(s.vendor);
   if (vendor && s.mode === "none") {
     // behold#571: the tool's scenario has no cycle yet: its name, its link, and a calm line.
-    const words = notRunWords(vendor);
+    const words = notRunWords(vendor, { graph: !!s.notRunGraph });
     const box = el("div", "k-empty");
     const title = el("h1", "k-title");
     title.append(brandEl(vendor), el("span", "k-title-text", words.title));
@@ -723,13 +723,18 @@ export function startKiosk({ bar, frame, foot, side, main, views, tools = null }
   /** The time the page shows: the replay's, while it replays. */
   const shownNow = () => (s.mode === "replay" && s.replay && s.replay.at ? s.replay.at : now());
   /** behold#571: the frame and the plan's facts are the served repo's, so a tool's page shows them only for its own repo. */
-  const frameOk = () => !vendor || servesRepo(s.answer && !s.answer.error ? s.answer.project : null, s.repo);
+  const frameOk = () => {
+    if (!vendor) return true;
+    // Before the tool's first cycle: its repo's checkout, when this behold serves it.
+    if (s.mode === "none") return !!notRunRepo(tool, s.viewRepos) && s.aimed === notRunRepo(tool, s.viewRepos);
+    return servesRepo(s.answer && !s.answer.error ? s.answer.project : null, s.repo);
+  };
   // behold#571: a behold serving several repos (`serve --repos`) answers the
   // graph's reads from the checkout of the repo the page is about, asked by
   // name. `viewRepos` is what it serves, `aimed` the repo the reads are for.
   s.viewRepos = null;
   s.aimed = null;
-  const wantRepo = () => repoParam(s.repo, s.viewRepos);
+  const wantRepo = () => repoParam(s.repo, s.viewRepos) || (vendor && s.mode === "none" ? notRunRepo(tool, s.viewRepos) : null);
   const fetchServed = fetchJson;
   fetchJson = (url) => fetchServed(repoUrl(url, wantRepo()));
   /** When the page moves to another served repo, read its project, reports and run view again, and point the frame at it. */
@@ -745,11 +750,13 @@ export function startKiosk({ bar, frame, foot, side, main, views, tools = null }
   let lastFocus;
   const shownView = () => kioskView(s.demo && s.demo.demo, { components: s.components, pick: s.pick, now: now().getTime() });
   const tellFrame = (force) => {
-    const d = s.demo && s.demo.demo;
-    if (!d) return; // nothing said yet: the frame keeps its default until the narration is read
-    const roots = focusRoots(d, s.answer, s.progress);
+    // behold#571: before the tool's first cycle the frame draws its repo on the base, with nothing in flight.
+    const notRun = !!vendor && s.mode === "none";
+    const d = notRun ? null : s.demo && s.demo.demo;
+    if (!d && !notRun) return; // nothing said yet: the frame keeps its default until the narration is read
+    const roots = d ? focusRoots(d, s.answer, s.progress) : null;
     const focus = roots ? roots.join(",") : null;
-    const run = runPin(d);
+    const run = d ? runPin(d) : "base";
     const zoom = viewZoom(shownView().view);
     const key = `${focus}|${run}|${zoom}`;
     if (!force && key === lastFocus) return;
@@ -848,6 +855,7 @@ export function startKiosk({ bar, frame, foot, side, main, views, tools = null }
     s.view = shown.view;
     const ok = frameOk();
     s.noReports = !ok;
+    s.notRunGraph = !!vendor && s.mode === "none" && ok;
     s.approval = approvalNow();
     // behold#571: the header's boxes redraw every second; each keeps where a viewer scrolled it.
     const scrolled = Object.fromEntries([...bar.querySelectorAll(".k-box")].map((b) => [b.dataset.box, b.scrollTop]));
@@ -860,7 +868,11 @@ export function startKiosk({ bar, frame, foot, side, main, views, tools = null }
     whatText();
     renderViewToggle(views, shown, { components: s.components && ok, onPick: pickView });
     // behold#571: with no graph to show, the graph pane folds away and the runs and the log take its width.
-    if (typeof document !== "undefined" && document.body && document.body.classList) document.body.classList.toggle("k-nograph", !!vendor && !ok);
+    if (typeof document !== "undefined" && document.body && document.body.classList) {
+      document.body.classList.toggle("k-nograph", !!vendor && !ok);
+      // Before the tool's first cycle there are no runs and no log: those panes fold away, and the graph (when there is one) takes the width.
+      document.body.classList.toggle("k-notyet", !!vendor && s.mode === "none");
+    }
     tellFrame(false);
   };
 

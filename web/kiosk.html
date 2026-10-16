@@ -228,6 +228,9 @@
       /* With no graph to show, the graph pane folds away and the runs and the log take its width. */
       body.k-nograph #stage { grid-template-columns: minmax(15em, 22%) minmax(0, 1fr); }
       body.k-nograph #view-pane { display: none; }
+      /* behold#571: before the tool's first cycle, no runs and no log: those panes fold away, the repo's graph takes the width, or nothing shows below the header. */
+      body.k-notyet #runs-side, body.k-notyet #runs-main, body.k-notyet #k-runs-toggle { display: none !important; }
+      body.k-notyet #stage { grid-template-columns: minmax(0, 1fr); }
       .k-fact { color: var(--fg); }
       @media (max-width: 900px) and (min-width: 601px) { #bar { grid-template-columns: 1fr; } #stage, body.k-nograph #stage { grid-template-columns: 1fr; } }
       /*

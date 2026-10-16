@@ -15,6 +15,7 @@ import {
   liveFor,
   linkSegments,
   namesOther,
+  notRunRepo,
   notRunWords,
   otherTerms,
   replayAt,
@@ -25,6 +26,7 @@ import {
   scrubDemo,
   servesRepo,
   stepDurations,
+  toolCheckout,
 } from "./kiosk-vendor.js";
 
 const demo = (extra = {}) => ({ cycle: 3, scenario: "b-waves", title: "A new subnet", step: "waiting", label: "Wave 2 waits", started_at: "2026-10-20T10:00:00Z", next: { action: "approve wave-2", at: null }, pull: 41, commit: "abc", about: null, intro: null, name: "a new subnet", scenarios: 3, index: 2, ...extra });
@@ -245,6 +247,20 @@ describe("a tool's page, drawn (behold#571)", () => {
     } finally {
       globalThis.document = was;
     }
+  });
+  it("names the checkout of a tool's repo, and offers it before the first cycle only when it is served", () => {
+    expect(toolCheckout("terraform")).toBe("demo");
+    expect(toolCheckout("terragrunt")).toBe("demo-terragrunt");
+    expect(toolCheckout("nope")).toBe(null);
+    expect(notRunRepo("terragrunt", ["demo", "demo-terragrunt"])).toBe("demo-terragrunt");
+    expect(notRunRepo("terragrunt", ["demo"])).toBe(null);
+    expect(notRunRepo("terragrunt", null)).toBe(null);
+    expect(notRunRepo("nope", ["demo"])).toBe(null);
+  });
+  it("says the graph below is the repo on the base only when there is one", () => {
+    expect(notRunWords(VENDORS.terragrunt).text).not.toContain("Below");
+    expect(notRunWords(VENDORS.terragrunt, { graph: true }).text).toContain("Below, its repo as it stands on the base.");
+    expect(notRunWords(VENDORS.terragrunt, { graph: true }).title).toBe("This scenario hasn't run yet");
   });
   it("says calmly that a tool's scenario hasn't run yet, with its name and link", async () => {
     const { renderKiosk } = await import("./kiosk.js");

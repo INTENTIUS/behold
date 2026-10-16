@@ -319,6 +319,20 @@ the driver runs its bootstrap again, which builds the CI images for that tag
 and applies the base. `update` with no flags moves the checkouts to whatever
 refs `demo.env` already names, for example after a fix lands on `main`.
 
+A recreate that failed part-way can leave a container compose made for
+behold or the driver that isn't the one it means to run: one only created or
+stopped (often named `<hash>_demo-host-behold`), which holds the name
+`demo-host-behold` so the next `up` fails with "is already in use", or one
+renamed by hand, which compose (tracking containers by their labels) keeps
+running as the service. Before it starts the services, `update` finds the
+containers labelled as project `demo-host`'s behold or driver service that
+aren't running under the name compose gives them, and for each such service
+runs `docker compose rm --stop --force <service>`. That removes only the
+containers compose made for that service of this project: no volume, image,
+file or other container. The `up` after it makes `demo-host-behold` (and
+`demo-host-driver`) again, and `update` fails if either isn't running under
+that name after. `demo-host.sh clear-strays` does the clearing step alone.
+
 `update` restarts the driver wherever it is in a cycle, so run it while
 `demo.json` says `reset` or `applied`, when no wave is waiting or applying.
 `TERRAGUCCI_REF=v<x.y.z> BEHOLD_REF=behold-v<x.y.z> npx chant run demo-host-update`
@@ -337,6 +351,11 @@ in `chant/` waits for that step itself, then waits for the new bootstrap.
   `demo-reports/demo/demo.json`. The admin token is in
   `stack/.state/forgejo.env`. If any of these change, set `DEMO_REPOS` or
   `DEMO_REPORTS` in `demo.env`.
+- terragucci `stack/demo.sh loop` runs the scenarios in `DEMO_SCENARIOS`
+  (space-separated) when it is set, and its default list when it is empty or
+  unset. `compose.yaml` passes `DEMO_SCENARIOS` from `demo.env` to the
+  driver; to change the loop, set it there and run `demo-host.sh update`,
+  which recreates the driver with it.
 - terragucci `stack/docker-compose.yml`: the network `terragucci`, and Forgejo
   and floci published on 3300 and 4580 with no address.
 - behold's floci key is limited only while floci's IAM enforcement is on.
