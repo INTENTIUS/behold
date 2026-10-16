@@ -126,4 +126,26 @@ describe("the waterfall", () => {
     expect(msWords(6400)).toBe("6.4 s");
     expect(msWords(125_000)).toBe("2 min 5 s");
   });
+
+  it("a gate that spans its hold shows held and check under it, and keeps the plan before the check on the path", () => {
+    // The wave began waiting 40 s before this job; the job planned, checked the approval, then applied.
+    const spans = [
+      sp("s", null, "terragucci tf-apply", 0, 1000, { "terragucci.stage": "tf-apply", "terragucci.wave": 1 }),
+      sp("p", "s", "plan", 100, 400, { "terragucci.phase": "plan" }),
+      sp("r", "p", "root a", 110, 390, { "terragucci.root": "a" }),
+      sp("g", "s", "gate", -40_000, 800, { "terragucci.phase": "gate", "terragucci.gate.status": "approved", "terragucci.gate.held_seconds": 40 }),
+      sp("h", "g", "held", -40_000, 0, { "terragucci.wait": "approval", "terragucci.gate.held_seconds": 40 }),
+      sp("c", "g", "check", 400, 800),
+      sp("a", "s", "apply", 800, 950, { "terragucci.phase": "apply" }),
+    ];
+    const rows = waterfallRows({ spans });
+    const gate = rows.find((r) => r.label === "gate");
+    const held = rows.find((r) => r.label === "held");
+    expect(gate.width).toBeGreaterThan(0.95);
+    expect(held).toMatchObject({ sub: "for an approval", wait: true, critical: true, depth: 2 });
+    expect(rows.find((r) => r.label === "check")).toMatchObject({ sub: "this job's decision", wait: false, critical: true });
+    expect(rows.find((r) => r.label === "plan").critical).toBe(true);
+    expect(rows.find((r) => r.label === "root a").critical).toBe(true);
+  });
 });
+
