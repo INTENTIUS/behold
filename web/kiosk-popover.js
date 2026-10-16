@@ -1,7 +1,7 @@
 // behold#571: the kiosk frame's popover. In the kiosk the graph is framed
 // bare (`?embed=1&bare=1`), with no Inspect pane, so a visitor pointing at a
 // card sees what the plan does to it here instead: in the Resources view, the
-// resource's planned change one attribute a line; in Roots by wave, the
+// resource's planned change one attribute a line; in Components, the
 // root's resources and which of them change. Pure logic: what the popover
 // says, where it goes, and when it stays open. app.js draws it.
 //
@@ -148,7 +148,7 @@ export function resourceCardId(answer, root, resourceId) {
 }
 
 /**
- * What the popover says about one root's card (Roots by wave): its
+ * What the popover says about one root's card (Components): its
  * resources, each "changes", "no change" or "known after apply", and how
  * many change. `resources` is the components zoom's resources facet for the
  * card (`[{ kind, id }]`).

@@ -363,7 +363,7 @@ export function notRunRepo(tool, served) {
 
 /** What a tool calls the thing with its own state: a Terragrunt unit, a root otherwise (behold#571). */
 export function rootNoun(tool) {
-  return tool === "terragrunt" ? { one: "unit", many: "units", Many: "Units" } : { one: "root", many: "roots", Many: "Roots" };
+  return tool === "terragrunt" ? { one: "unit", many: "units" } : { one: "root", many: "roots" };
 }
 
 /** The legend's words, without naming a competing engine on an engine's page. */

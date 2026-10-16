@@ -95,7 +95,7 @@ describe("what the popover says about a resource (behold#571)", () => {
   });
 });
 
-describe("what the popover says about a root, in Roots by wave (behold#571)", () => {
+describe("what the popover says about a root, in Components (behold#571)", () => {
   it("lists its resources, each changes, no change or known after apply, and counts the changes", () => {
     const resources = [
       { kind: "terraform_remote_state", id: "app/data.terraform_remote_state.network" },

@@ -208,18 +208,19 @@ describe("the approval panel's drawing (behold#571)", () => {
 });
 
 describe("which view the frame shows (#571)", () => {
-  it("shows the resources for the pull request's steps and the roots by wave from the merge on", () => {
-    for (const step of ["pull-request", "planned"]) expect(stepView(step)).toBe("resources");
-    for (const step of ["merged", "applying", "waiting", "approved", "failed", "resumed", "applied", "reset"]) expect(stepView(step)).toBe("components");
+  it("shows the components at every step, the pull request's planned waves included", () => {
+    for (const step of ["pull-request", "planned", "merged", "applying", "waiting", "approved", "failed", "resumed", "applied", "reset"]) expect(stepView(step)).toBe("components");
     expect(Object.keys(STEP_VIEW).sort()).toEqual(Object.keys(STEP_WORDS).sort());
   });
 
   it("follows the step, and only the resources when the repo offers no components zoom", () => {
-    expect(kioskView(demo("planned"), { components: true })).toEqual({ view: "resources", pinned: false, secs: null });
+    expect(kioskView(demo("planned"), { components: true })).toEqual({ view: "components", pinned: false, secs: null });
+    expect(kioskView(demo("planned"), { components: true, pick: { view: "resources", at: 0 }, now: 1000 }).view).toBe("resources");
     expect(kioskView(demo("waiting"), { components: true })).toEqual({ view: "components", pinned: false, secs: null });
     expect(kioskView(demo("waiting"), { components: false })).toEqual({ view: "resources", pinned: false, secs: null });
     expect(kioskView(demo("waiting"), { components: false, pick: { view: "components", at: 0 }, now: 1000 }).view).toBe("resources");
-    expect(kioskView(null, { components: true }).view).toBe("resources");
+    expect(kioskView(null, { components: true }).view).toBe("components");
+    expect(kioskView(null, { components: false }).view).toBe("resources");
   });
 
   it("holds a clicked view for 90 s after the last click, then follows the step again", () => {
@@ -243,7 +244,7 @@ describe("which view the frame shows (#571)", () => {
   });
 
   it("says how to read the view shown", () => {
-    expect(legendWords("components")).toMatch(/^Each card is a Terraform root .* titled with the pipeline job that applies it/);
+    expect(legendWords("components")).toMatch(/^Components shows the pipeline's jobs and waves\. Each card is a Terraform root .* titled with the job that applies it/);
     expect(legendWords("resources")).toMatch(/^Each box is a Terraform root/);
     // behold#571: a Terragrunt scenario names its units.
     for (const v of ["components", "resources"]) {
@@ -275,16 +276,14 @@ describe("which view the frame shows (#571)", () => {
       renderViewToggle(host, { view: "components", pinned: false, secs: null }, { components: true, onPick: (v) => picked.push(v) });
       expect(host.hidden).toBe(false);
       const buttons = host.children[0].children;
-      expect(buttons.map((b) => [b.textContent, b.attrs["aria-pressed"]])).toEqual([["Resources", "false"], ["Roots by wave", "true"]]);
-      expect(host.children[1].textContent).toBe("follows the step");
+      expect(buttons.map((b) => [b.textContent, b.attrs["aria-pressed"]])).toEqual([["Resources", "false"], ["Components", "true"]]);
+      expect(host.children[1].textContent).toBe("the pipeline's jobs and waves · follows the step");
+      expect(buttons[1].attrs.title).toBe("the pipeline's jobs and waves");
       buttons[0].listeners.click();
       expect(picked).toEqual(["resources"]);
 
       renderViewToggle(host, { view: "resources", pinned: true, secs: 42 }, { components: true });
-      expect(host.children[1].textContent).toBe("held by a click; the step leads again in 42 s");
-
-      renderViewToggle(host, { view: "resources", pinned: false, secs: null }, { components: true, tool: "terragrunt" });
-      expect(host.children[0].children.map((b) => b.textContent)).toEqual(["Resources", "Units by wave"]);
+      expect(host.children[1].textContent).toBe("each resource the change touches · held by a click; the step leads again in 42 s");
 
       renderViewToggle(host, { view: "resources", pinned: false, secs: null }, { components: false });
       expect(host.hidden).toBe(true);

@@ -353,30 +353,29 @@ export function frameSrc(origin, zoom = "resources", repo = null, theme = null) 
 }
 
 // ---------------------------------------------------------------------------
-// #571: which of behold's two views the frame shows. Before the merge, the
-// resources zoom: what the pull request changes and the reads it plans
-// before their values are known. From the merge on, the components zoom of a
-// terragucci repo (`terragucci.components.json`): one card per root in a box
-// per wave, titled with the job that applies it, in step with the jobs pane.
-// A viewer's click on the toggle holds a view for PICK_HOLD_MS after their
-// last click, as a run picked in the sidebar does; then the step leads again.
+// #571: which of behold's two views the frame shows. On a terragucci repo
+// (`terragucci.components.json`) every step leads to the components zoom:
+// one card per root in a box per wave, titled with the job that applies it,
+// in step with the jobs pane. Before the merge it draws the pull request's
+// planned waves, and from the merge on the run's. Resources, what the change
+// touches resource by resource, is one click away. A viewer's click on the
+// toggle holds a view for PICK_HOLD_MS after their last click, as a run
+// picked in the sidebar does; then the step leads again.
 
-/** The two views the toggle offers, with behold's zoom for each. */
+/** The two views the toggle offers, with behold's zoom for each, and what each shows. */
 export const VIEWS = [
-  { id: "resources", words: "Resources", zoom: "resources" },
-  { id: "components", words: "Roots by wave", zoom: "components" },
+  { id: "resources", words: "Resources", zoom: "resources", shows: "each resource the change touches" },
+  { id: "components", words: "Components", zoom: "components", shows: "the pipeline's jobs and waves" },
 ];
 
 /**
- * The view a step shows: the pull request's steps the resources (what
- * changes, the unknown reads), every step from the merge on the components
- * (the jobs running), and the reset the components at rest. A step behold
- * doesn't know, and `stalled`, keep the components: the jobs pane says where
- * the pipeline stopped.
+ * The view a step shows: the components at every step (behold#571), the
+ * pull request's planned waves before the merge and the run's from it on.
+ * A step behold doesn't know keeps the components too.
  */
 export const STEP_VIEW = {
-  "pull-request": "resources",
-  planned: "resources",
+  "pull-request": "components",
+  planned: "components",
   merged: "components",
   applying: "components",
   waiting: "components",
@@ -406,7 +405,7 @@ export function kioskView(demo, { components = false, pick = null, now = Date.no
     const left = pick.at + PICK_HOLD_MS - now;
     if (left > 0) return { view: pick.view, pinned: true, secs: Math.ceil(left / 1000) };
   }
-  return { view: demo ? stepView(demo.step) : "resources", pinned: false, secs: null };
+  return { view: demo ? stepView(demo.step) : "components", pinned: false, secs: null };
 }
 
 /** The line under the view saying how to read it, for the view shown. */
@@ -415,18 +414,14 @@ export function legendWords(view, tool = null) {
   const n = rootNoun(tool);
   const rest = `an arrow is one ${n.one} reading another's outputs, dashed while it reads planned values. A wave applies its ${n.many} together, after the waves it reads.`;
   if (view === "components") {
-    return `Each card is ${root} with its own state, in a box per wave titled with the pipeline job that applies it; ${rest}`;
+    return `Components shows the pipeline's jobs and waves. Each card is ${root} with its own state, in a box per wave titled with the job that applies it; ${rest}`;
   }
   return `Each box is ${root} with its own state; ${rest}`;
 }
 
-/** The toggle's words for a view, in the tool's own noun ("Units by wave" for Terragrunt). */
-export function viewWords(v, tool = null) {
-  return v.id === "components" ? `${rootNoun(tool).Many} by wave` : v.words;
-}
 
 /** The tool the page shows: its own on a tool's page, else the running scenario's (demo.json `tool`). */
-export function shownTool(s) {
+export function nounTool(s) {
   if (s.vendor) return s.vendor;
   const d = s.demo && s.demo.demo;
   return d && typeof d.tool === "string" ? d.tool : null;
@@ -439,11 +434,11 @@ export function viewZoom(view) {
 }
 
 /**
- * The toggle, "Resources | Roots by wave", over the frame: the view shown
+ * The toggle, "Resources | Components", over the frame: the view shown
  * pressed, and a line saying whether the step leads or a click holds it.
  * Not drawn at all when the repo offers no components zoom.
  */
-export function renderViewToggle(host, shown, { components = false, onPick = () => {}, tool = null } = {}) {
+export function renderViewToggle(host, shown, { components = false, onPick = () => {} } = {}) {
   if (!host) return;
   host.replaceChildren();
   host.hidden = !components;
@@ -452,14 +447,17 @@ export function renderViewToggle(host, shown, { components = false, onPick = () 
   group.setAttribute("role", "group");
   group.setAttribute("aria-label", "the view");
   for (const v of VIEWS) {
-    const b = el("button", `k-view${v.id === shown.view ? " k-view-on" : ""}`, viewWords(v, tool));
+    const b = el("button", `k-view${v.id === shown.view ? " k-view-on" : ""}`, v.words);
     b.type = "button";
+    b.setAttribute("title", v.shows);
     b.setAttribute("aria-pressed", String(v.id === shown.view));
     b.addEventListener("click", () => onPick(v.id));
     group.appendChild(b);
   }
   host.appendChild(group);
-  host.appendChild(el("span", "k-view-note", shown.pinned ? `held by a click; the step leads again in ${shown.secs} s` : "follows the step"));
+  const on = VIEWS.find((v) => v.id === shown.view);
+  const lead = shown.pinned ? `held by a click; the step leads again in ${shown.secs} s` : "follows the step";
+  host.appendChild(el("span", "k-view-note", on ? `${on.shows} · ${lead}` : lead));
 }
 
 /** The one-line facts under the view: the pull request's totals, cost and blast radius, as #568 has them. */
@@ -607,9 +605,9 @@ function drawBar(bar, s, now, foot) {
 
   if (foot) {
     // The legend reads the graph; with no graph shown there is nothing for it to explain.
-    if (!s.noReports) foot.appendChild(el("span", "k-legend", legendWords(s.view || "resources", shownTool(s))));
+    if (!s.noReports) foot.appendChild(el("span", "k-legend", legendWords(s.view || "resources", nounTool(s))));
     // behold#571: no line on where the narration was read from: a viewer new to the demo reads the facts.
-    if (!s.noReports) for (const f of factLines(demo, s.answer, shownTool(s))) foot.appendChild(elRoots("span", "k-fact", f, s));
+    if (!s.noReports) for (const f of factLines(demo, s.answer, nounTool(s))) foot.appendChild(elRoots("span", "k-fact", f, s));
   }
 }
 
@@ -890,7 +888,7 @@ export function startKiosk({ bar, frame, foot, side, main, views, tools = null }
       b.addEventListener("scroll", () => fade(b), { passive: true });
     }
     whatText();
-    renderViewToggle(views, shown, { components: s.components && ok, onPick: pickView, tool: shownTool(s) });
+    renderViewToggle(views, shown, { components: s.components && ok, onPick: pickView });
     // behold#571: with no graph to show, the graph pane folds away and the runs and the log take its width.
     if (typeof document !== "undefined" && document.body && document.body.classList) {
       document.body.classList.toggle("k-nograph", !!vendor && !ok);
