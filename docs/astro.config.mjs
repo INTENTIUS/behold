@@ -2,6 +2,9 @@
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
+const SHARE_IMAGE = 'https://intentius.io/behold/brand/share.png';
+const SHARE_ALT = 'The pixel behold logo above the word BEHOLD and the line: a live infrastructure loop you can watch.';
+
 // Published at intentius.io/behold, the same shape as the chant docs.
 export default defineConfig({
 	site: 'https://intentius.io',
@@ -33,7 +36,19 @@ export default defineConfig({
 			// public/favicon.svg is the logo, drawn by scripts/brand/logo.py; the
 			// PNG is the fallback for browsers without SVG favicons.
 			favicon: '/favicon.svg',
-			head: [{ tag: 'link', attrs: { rel: 'icon', href: '/behold/favicon-48.png', sizes: '48x48', type: 'image/png' } }],
+			// behold#571: link previews (LinkedIn, Slack, X) show the share image,
+			// public/brand/share.png, drawn by scripts/brand/share.mjs. The crawlers
+			// ignore a relative og:image, so it is absolute.
+			head: [
+				{ tag: 'link', attrs: { rel: 'icon', href: '/behold/favicon-48.png', sizes: '48x48', type: 'image/png' } },
+				{ tag: 'meta', attrs: { property: 'og:image', content: SHARE_IMAGE } },
+				{ tag: 'meta', attrs: { property: 'og:image:type', content: 'image/png' } },
+				{ tag: 'meta', attrs: { property: 'og:image:width', content: '1200' } },
+				{ tag: 'meta', attrs: { property: 'og:image:height', content: '630' } },
+				{ tag: 'meta', attrs: { property: 'og:image:alt', content: SHARE_ALT } },
+				{ tag: 'meta', attrs: { name: 'twitter:image', content: SHARE_IMAGE } },
+				{ tag: 'meta', attrs: { name: 'twitter:image:alt', content: SHARE_ALT } },
+			],
 			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/INTENTIUS/behold' }],
 			// Every group starts collapsed; Starlight opens the one holding the
 			// current page. "Your starting point" lists the room pages under /for/

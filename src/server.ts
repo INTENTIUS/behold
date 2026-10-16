@@ -186,7 +186,7 @@ import { productRefusal, refusedWrite, servedProductRepo, terragucciRefusal } fr
 import { repoBase, terragucciRoutes, type TerragucciOptions } from "./terragucci-view.ts";
 import { terragucciSource } from "./terragucci-source.ts";
 import { metricsRoute } from "./prometheus-metrics.ts";
-import { kioskRoute, vendorFallback, vendorRoutes } from "./terragucci-demo.ts";
+import { kioskRoute, shareImageRoute, vendorFallback, vendorRoutes } from "./terragucci-demo.ts";
 import { scopeServedDirs, viewRepoFacts, viewReposMiddleware, type ViewRepos } from "./view-repos.ts";
 import { lifecycleHistoryRoute } from "./lifecycle-history.ts";
 import { hasReleaseLedgerHint, releasesRoutes } from "./lifecycle-releases.ts";
@@ -1156,12 +1156,14 @@ export function createApp(
   app.get("/healthz", (c) => c.json({ ok: true, projectDir: cfg.projectDir, env: cfg.env ?? null, frames: frames.size }));
 
   // #569 step 2: the kiosk, a looping terragucci demo narrated from demo.json.
-  kioskRoute(app, webRoot, !!cfg.terragucci);
+  kioskRoute(app, webRoot, !!cfg.terragucci, guard.allowedHosts);
+  // behold#571: the image link previews show, which the kiosk's og:image names.
+  shareImageRoute(app, webRoot);
   // behold#571: the kiosk's "Pipeline metrics", from Prometheus; dora.json beside the reports when Prometheus has no DORA gauges.
   const doraSource = cfg.terragucci && cfg.prometheus ? terragucciSource(cfg.terragucci.source, { ...(cfg.terragucci.aws ? { aws: cfg.terragucci.aws } : {}), ...(cfg.terragucci.fetch ? { fetch: cfg.terragucci.fetch } : {}) }) : undefined;
   metricsRoute(app, { ...(cfg.prometheus ? { prometheus: cfg.prometheus } : {}), ...(doraSource ? { doraFile: () => doraSource.read("dora.json") } : {}) });
   // behold#571: a page per tool (/terraform, /terragrunt, ...), the kiosk for that tool alone.
-  vendorRoutes(app, webRoot, !!cfg.terragucci);
+  vendorRoutes(app, webRoot, !!cfg.terragucci, guard.allowedHosts);
 
   // Deployment lanes (#5): the captured keyframes as a per-substrate filmstrip.
   app.get("/api/frames", (c) => c.json({ frames: frames.summaries() }));

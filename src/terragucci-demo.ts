@@ -37,6 +37,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Hono } from "hono";
+import { hostName } from "./request-guard.ts";
 import { deniedWords, TerragucciDenied, type TerragucciSource } from "./terragucci-source.ts";
 
 export const DEMO_KEY = "demo.json";
@@ -180,7 +181,7 @@ export function terragucciDemoRoute(app: Hono, source: TerragucciSource, opts: {
 }
 
 const disabledPage =
-  `<!doctype html><meta charset=utf-8><title>behold kiosk</title>` +
+  `<!doctype html><meta charset=utf-8><title>behold · live demo</title>` +
   `<script type="module">import { initTheme } from "/theme.js"; initTheme();</script>` +
   `<body style="font:16px system-ui;background:var(--bg,#1e1e2e);color:var(--fg,#cdd6f4);padding:2rem">` +
   `<h3>The kiosk follows a terragucci demo</h3><p style="color:var(--muted,#777a8c)">Start behold with <code>--terragucci &lt;reports source&gt;</code>; the kiosk reads <code>demo.json</code> there.</p></body>`;
@@ -189,12 +190,96 @@ const disabledPage =
  * `GET /kiosk`: the kiosk page. Without `--terragucci` there is nothing to
  * narrate, and the page says so instead of loading.
  */
-export function kioskRoute(app: Hono, webRoot: string, enabled: boolean): void {
+export function kioskRoute(app: Hono, webRoot: string, enabled: boolean, allowedHosts: string[] = []): void {
   app.get("/kiosk", (c) => {
     if (!enabled) {
       return c.html(disabledPage, 404);
     }
-    return new Response(readFileSync(join(webRoot, "kiosk.html"), "utf8"), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } });
+    const html = sharePage(readFileSync(join(webRoot, "kiosk.html"), "utf8"), {
+      title: "behold · live demo",
+      description: "Watch one change go from pull request to apply across real Terraform states.",
+      origin: shareOrigin(c.req.header("host"), c.req.header("x-forwarded-proto"), allowedHosts),
+      path: "/kiosk",
+    });
+    return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// behold#571: link previews. A link to the demo pasted into LinkedIn, Slack
+// or X shows behold's share image (docs/scripts/brand/share.mjs draws it into
+// web/share.png). The crawlers ignore a relative og:image or og:url, so both
+// are absolute, built from the request's Host. Only a name the serve was
+// told to answer (`--allow-host`, which the demo host sets to its public
+// name) is ever written into the page; any other Host gets the title and
+// description alone.
+
+/** The share image: a static file in web/, its size, and what it shows. */
+export const SHARE_IMAGE = {
+  path: "/share.png",
+  width: 1200,
+  height: 630,
+  alt: "The pixel behold logo above the word BEHOLD and the line: a live infrastructure loop you can watch.",
+} as const;
+
+/** How long a browser or crawler keeps the share image. It changes only with a release. */
+export const SHARE_IMAGE_MAX_AGE_SECS = 86_400;
+
+/**
+ * The origin to write into a page's absolute URLs, or undefined when the
+ * request's Host isn't one of `allowedHosts`. https when the proxy says the
+ * request reached it over https (X-Forwarded-Proto), http otherwise. A port
+ * on the Host is kept only when it is digits.
+ */
+export function shareOrigin(host: string | undefined, forwardedProto: string | undefined, allowedHosts: string[]): string | undefined {
+  if (!host) return undefined;
+  const m = /^([a-z0-9.-]+)(:\d{1,5})?$/.exec(host.trim().toLowerCase());
+  if (!m) return undefined;
+  const name = m[1]!;
+  if (!allowedHosts.some((h) => hostName(h) === name)) return undefined;
+  const proto = (forwardedProto ?? "").split(",")[0]!.trim().toLowerCase() === "https" ? "https" : "http";
+  return `${proto}://${name}${m[2] ?? ""}`;
+}
+
+const attr = (v: string): string => v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/**
+ * kiosk.html with its title and the Open Graph and Twitter tags in place of
+ * its <title>. og:url, og:image and twitter:image only with an `origin`.
+ */
+export function sharePage(html: string, p: { title: string; description: string; origin: string | undefined; path: string }): string {
+  const tags: Array<[string, string, string]> = [
+    ["property", "og:type", "website"],
+    ["property", "og:site_name", "behold"],
+    ["property", "og:title", p.title],
+    ["property", "og:description", p.description],
+    ["name", "description", p.description],
+    ["name", "twitter:card", "summary_large_image"],
+    ["name", "twitter:title", p.title],
+    ["name", "twitter:description", p.description],
+  ];
+  if (p.origin) {
+    const image = `${p.origin}${SHARE_IMAGE.path}`;
+    tags.push(
+      ["property", "og:url", `${p.origin}${p.path}`],
+      ["property", "og:image", image],
+      ["property", "og:image:type", "image/png"],
+      ["property", "og:image:width", String(SHARE_IMAGE.width)],
+      ["property", "og:image:height", String(SHARE_IMAGE.height)],
+      ["property", "og:image:alt", SHARE_IMAGE.alt],
+      ["name", "twitter:image", image],
+      ["name", "twitter:image:alt", SHARE_IMAGE.alt],
+    );
+  }
+  const head = [`<title>${attr(p.title)}</title>`, ...tags.map(([k, n, v]) => `<meta ${k}="${n}" content="${attr(v)}" />`)].join("\n    ");
+  return html.replace(/<title>[^<]*<\/title>/, () => head);
+}
+
+/** `GET /share.png`: the share image, cacheable, in every mode (the public one included). */
+export function shareImageRoute(app: Hono, webRoot: string): void {
+  app.get(SHARE_IMAGE.path, () => {
+    const png = readFileSync(join(webRoot, "share.png"));
+    return new Response(new Uint8Array(png), { headers: { "content-type": "image/png", "cache-control": `public, max-age=${SHARE_IMAGE_MAX_AGE_SECS}` } });
   });
 }
 
@@ -206,6 +291,15 @@ export function kioskRoute(app: Hono, webRoot: string, enabled: boolean): void {
 /** The tools with a page of their own, in the order the loop runs them. web/kiosk-vendor.js has their names. */
 export const VENDOR_TOOLS = ["terraform", "terragrunt", "cdk-terrain", "choudoufu", "chant"] as const;
 export type VendorTool = (typeof VENDOR_TOOLS)[number];
+
+/** Each tool's name as its owner writes it, for the page's title. web/kiosk-vendor.js VENDORS has the same names. */
+export const VENDOR_NAMES: Record<VendorTool, string> = {
+  terraform: "Terraform",
+  terragrunt: "Terragrunt",
+  "cdk-terrain": "CDK Terrain",
+  choudoufu: "choudoufu",
+  chant: "chant",
+};
 
 export const isVendorTool = (v: string): v is VendorTool => (VENDOR_TOOLS as readonly string[]).includes(v);
 
@@ -315,11 +409,18 @@ export function vendorPage(html: string, tool: VendorTool): string {
  * `GET /<tool>` for each of {@link VENDOR_TOOLS}: the kiosk for that tool
  * alone. Without `--terragucci` it says what /kiosk says.
  */
-export function vendorRoutes(app: Hono, webRoot: string, enabled: boolean): void {
+export function vendorRoutes(app: Hono, webRoot: string, enabled: boolean, allowedHosts: string[] = []): void {
   for (const tool of VENDOR_TOOLS) {
     app.get(`/${tool}`, (c) => {
       if (!enabled) return c.html(disabledPage, 404);
-      const html = vendorPage(readFileSync(join(webRoot, "kiosk.html"), "utf8"), tool);
+      const name = VENDOR_NAMES[tool];
+      const shared = sharePage(readFileSync(join(webRoot, "kiosk.html"), "utf8"), {
+        title: `behold · ${name}`,
+        description: `Watch ${name} carry one change from pull request to apply, live.`,
+        origin: shareOrigin(c.req.header("host"), c.req.header("x-forwarded-proto"), allowedHosts),
+        path: `/${tool}`,
+      });
+      const html = vendorPage(shared, tool);
       return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } });
     });
   }
