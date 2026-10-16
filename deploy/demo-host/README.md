@@ -377,5 +377,7 @@ in `chant/` waits for that step itself, then waits for the new bootstrap.
   starts the OpenTelemetry collector and Prometheus on the `terragucci`
   network, and each demo job sends its metrics there. behold reads
   `http://prometheus:9090` (`BEHOLD_PROMETHEUS_URL` in `compose.yaml`) for
-  the kiosk's "Pipeline metrics". Neither publishes a port the security
-  group opens. With Prometheus down or empty, the pane does not show.
+  the kiosk's "Pipeline metrics". The profile's Tempo keeps each job's trace
+  for 24 hours; behold reads `http://tempo:3200` (`BEHOLD_TEMPO_URL`) for the
+  job pane's "Trace" view. None publishes a port the security group opens.
+  With Prometheus or Tempo down or empty, its pane or view does not show.

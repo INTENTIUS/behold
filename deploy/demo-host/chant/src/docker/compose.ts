@@ -96,6 +96,9 @@ export const behold = new Service({
     // (terragucci's observability-lite profile, which stack/demo.sh up starts)
     // on the terragucci network. With it down, the pane does not show.
     BEHOLD_PROMETHEUS_URL: "http://prometheus:9090",
+    // behold#571: each job's trace, for the kiosk's Trace view, from the
+    // stack's Tempo (observability-lite too). With it down, the view does not show.
+    BEHOLD_TEMPO_URL: "http://tempo:3200",
   },
   volumes: [
     // A checkout per demo repo, /view/<repo name> (behold#571): behold's

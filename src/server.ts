@@ -186,6 +186,7 @@ import { productRefusal, refusedWrite, servedProductRepo, terragucciRefusal } fr
 import { repoBase, terragucciRoutes, type TerragucciOptions } from "./terragucci-view.ts";
 import { terragucciSource } from "./terragucci-source.ts";
 import { metricsRoute } from "./prometheus-metrics.ts";
+import { tracesRoute } from "./tempo-traces.ts";
 import { kioskRoute, shareImageRoute, vendorFallback, vendorRoutes } from "./terragucci-demo.ts";
 import { scopeServedDirs, viewRepoFacts, viewReposMiddleware, type ViewRepos } from "./view-repos.ts";
 import { lifecycleHistoryRoute } from "./lifecycle-history.ts";
@@ -226,6 +227,8 @@ export interface ServerOptions {
   terragucci?: TerragucciOptions;
   /** behold#571 `--prometheus`: where /api/metrics reads a pipeline's numbers (src/prometheus-metrics.ts). */
   prometheus?: string;
+  /** behold#571 `--tempo`: where /api/traces reads a pipeline run's traces (src/tempo-traces.ts). */
+  tempo?: string;
   /** behold#571 `--repos <parent>`: the checkouts a request may pick with
    * `?repo=<name>` (src/view-repos.ts). Without one, `projectDir` as given. */
   viewRepos?: ViewRepos;
@@ -1162,6 +1165,8 @@ export function createApp(
   // behold#571: the kiosk's "Pipeline metrics", from Prometheus; dora.json beside the reports when Prometheus has no DORA gauges.
   const doraSource = cfg.terragucci && cfg.prometheus ? terragucciSource(cfg.terragucci.source, { ...(cfg.terragucci.aws ? { aws: cfg.terragucci.aws } : {}), ...(cfg.terragucci.fetch ? { fetch: cfg.terragucci.fetch } : {}) }) : undefined;
   metricsRoute(app, { ...(cfg.prometheus ? { prometheus: cfg.prometheus } : {}), ...(doraSource ? { doraFile: () => doraSource.read("dora.json") } : {}) });
+  // behold#571: a job's trace for the kiosk's Trace view, from Tempo, by fixed queries only.
+  tracesRoute(app, cfg.tempo ? { tempo: cfg.tempo } : {});
   // behold#571: a page per tool (/terraform, /terragrunt, ...), the kiosk for that tool alone.
   vendorRoutes(app, webRoot, !!cfg.terragucci, guard.allowedHosts);
 

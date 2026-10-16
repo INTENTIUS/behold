@@ -14,6 +14,7 @@ import { rootColour, rootPaint, rootSegments, rootText, rootsOfWave, waveOfJob }
 import { TOUR, chipWords, docsUrl, jobMarks, runFeatures } from "./kiosk-annotations.js";
 import { iconSvg } from "./forge-mark.js";
 import { TOOLS, jobTools } from "./tool-mark.js";
+import { traceSource, traceStyle } from "./kiosk-trace.js";
 
 /** The run, job and step statuses, as a viewer reads them. */
 export const STATUS_WORDS = {
@@ -497,7 +498,7 @@ export function toolMarks(job, repoTools = [], { light = false, hideLine = null,
   return box;
 }
 
-export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => {}, toggleStep = () => {}, toggleSetup = () => {}, jump = () => {}, toggleFeats = () => {}, featsOpen = false, note = null, flash = null, entry = null, roots = [], waves = [], tools = [], rootTools = {}, light = false, hideLine = null } = {}) {
+export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => {}, toggleStep = () => {}, toggleSetup = () => {}, jump = () => {}, toggleFeats = () => {}, featsOpen = false, note = null, flash = null, entry = null, roots = [], waves = [], tools = [], rootTools = {}, light = false, hideLine = null, trace = null, jobView = "steps", pickView = () => {} } = {}) {
   // behold#571: a root's name with its colour's dot, where the line names one.
   const textOf = (cls, text) => {
     if (!roots.length || !rootSegments(text, roots).some((x) => x.root)) return el("span", cls, text);
@@ -596,7 +597,24 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
   }
 
   if (!job) return { log: null, steps: null, key: null };
-  host.appendChild(el("div", "r-label", "Steps of the job, with its log"));
+  // behold#571: a job with a trace in Tempo offers it beside its steps (web/kiosk-trace.js).
+  if (trace && trace.has(job.name)) {
+    const tabs = el("div", "t-tabs");
+    for (const [view, words] of [["steps", "Steps of the job, with its log"], ["trace", "Trace"]]) {
+      const b = el("button", "t-tab", words);
+      b.type = "button";
+      b.setAttribute("aria-pressed", String((jobView === "trace") === (view === "trace")));
+      b.addEventListener("click", () => pickView(view));
+      tabs.appendChild(b);
+    }
+    host.appendChild(tabs);
+    if (jobView === "trace") {
+      const box = el("div", "r-steps r-trace");
+      trace.draw(box, job.name);
+      host.appendChild(box);
+      return { log: null, steps: box, key: null };
+    }
+  } else host.appendChild(el("div", "r-label", "Steps of the job, with its log"));
   const stepsBox = el("div", "r-steps");
   const sh = el("div", "r-steps-head");
   sh.append(statusIcon(job.status), el("span", "r-steps-job", job.name), el("span", "r-steps-word", job.status === "waiting" ? "waits for an approval at the gate" : STATUS_WORDS[job.status] || job.status));
@@ -798,6 +816,10 @@ export function startRuns(
   // The open log and whether the pane follows its end; a viewer who scrolls up stops it until they come back.
   let logShown = null;
   let logFollow = true;
+  // behold#571: the job pane's view, its steps or its trace, kept as a viewer moves between jobs.
+  let jobView = "steps";
+  const traces = traceSource({ fetchJson, onChange: () => draw() });
+  if (typeof document !== "undefined") traceStyle(document);
   const following = () => follow || now().getTime() - s.picked > PICK_HOLD_MS;
   const selectedId = () => {
     const runs = s.index && s.index.doc ? s.index.doc.runs : [];
@@ -845,6 +867,13 @@ export function startRuns(
       rootTools: rootTools(),
       light: light(),
       hideLine,
+      trace: traceFor(ans),
+      jobView,
+      pickView: (view) => {
+        jobView = view;
+        hold();
+        draw();
+      },
       note: s.note,
       flash: s.flash ? s.flash.key : null,
       featsOpen: s.featsOpen,
@@ -992,6 +1021,25 @@ export function startRuns(
       }
     });
   }
+  /** The selected run's traces, by the repo and run id its document names. */
+  const traceFor = (ans) => {
+    const doc = ans && ans.doc;
+    if (!doc || !doc.repo) return null;
+    return {
+      has: (job) => traces.has(doc.repo, doc.id, job),
+      draw: (box, job) =>
+        traces.draw(box, {
+          repo: doc.repo,
+          run: doc.id,
+          job,
+          pickJob: (name) => {
+            s.ui = { job: name, open: null, setup: null };
+            hold();
+            draw();
+          },
+        }),
+    };
+  };
   const hold = () => {
     follow = false;
     s.selected = selectedId() ?? s.selected;
