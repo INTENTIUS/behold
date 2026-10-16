@@ -28,6 +28,7 @@ describe("kiosk metrics: the words", () => {
 
   it("reads a ratio as a percent, a rate per week, and changes by action in terragucci's order", () => {
     expect([percentWords(0.1), percentWords(0.0833), percentWords(0)]).toEqual(["10%", "8.3%", "0%"]);
+    expect([percentWords(1 / 4235), percentWords(0.0004), percentWords(0.001)]).toEqual(["0.02%", "0.04%", "0.1%"]);
     expect(perWeekWords(4.54)).toBe("4.5 a week");
     expect(changeWords({ update: 1, create: 2, delete: 0 })).toBe("2 created, 1 updated");
     expect(changeWords({ "no-op": 2, read: 1, replace: 1 })).toBe("1 replaced");
