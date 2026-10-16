@@ -137,7 +137,8 @@ function readMember(v: unknown): MemberDecl | undefined {
   return { dir, kind };
 }
 
-const CONFIG_NAMES = ["chant.config.ts", "chant.config.mts", "chant.config.js", "chant.config.mjs"];
+// behold#697: chant also reads a `chant.config.json` (core/src/config.ts loadChantConfig), after the .ts.
+const CONFIG_NAMES = ["chant.config.ts", "chant.config.mts", "chant.config.js", "chant.config.mjs", "chant.config.json"];
 const BEHOLD_CONFIG_NAME = ".behold.json";
 
 /** The project's chant config file, or undefined when the directory has none —
@@ -280,10 +281,11 @@ export async function detectProject(projectDir: string): Promise<ProjectInfo> {
   const path = chantConfigPath(projectDir);
   if (!path) return { environments: [], lexicons: [] };
 
-  // Authoritative: run the real config.
+  // Authoritative: run the real config, or parse it when it is chant.config.json (behold#697).
   try {
-    const mod = (await import(pathToFileURL(path).href)) as Record<string, unknown>;
-    const cfg = (mod.default ?? mod.config ?? mod) as Record<string, unknown>;
+    const cfg = path.endsWith(".json")
+      ? (JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>)
+      : (((m) => (m.default ?? m.config ?? m) as Record<string, unknown>)((await import(pathToFileURL(path).href)) as Record<string, unknown>));
     const info = readInfo(cfg);
     if (info.environments.length || info.lexicons.length || info.sourceDir || info.stacks?.length) return info;
   } catch {

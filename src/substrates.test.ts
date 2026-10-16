@@ -55,6 +55,11 @@ describe("projectLexicons", () => {
     expect(projectLexicons(dir)).toEqual(["aws", "k8s"]);
     expect(projectLexicons(join(dir, "nope"))).toEqual([]);
   });
+
+  it("reads a chant.config.json's lexicons (behold#697)", () => {
+    writeFileSync(join(dir, "chant.config.json"), JSON.stringify({ lexicons: ["gcp", "k8s"] }));
+    expect(projectLexicons(dir)).toEqual(["gcp", "k8s"]);
+  });
 });
 
 describe("fly pill (#74)", () => {
