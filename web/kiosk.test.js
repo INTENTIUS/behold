@@ -49,7 +49,7 @@ describe("frameSrc (#569)", () => {
 
 describe("factLines (#569)", () => {
   it("says the pull request's totals and blast radius", () => {
-    expect(factLines(demo("planned"), answer)).toEqual(["pull request #7 changes across 3 roots: 3 update", "blast radius: app, edge, network", "not touched: other"]);
+    expect(factLines(demo("planned"), answer)).toEqual(["pull request #7 changes across 3 roots: 3 update", "blast radius: app, edge, network", "unchanged: other"]);
   });
 });
 

@@ -60,7 +60,7 @@ describe("rootStates, a root that plans no change (#569 review)", () => {
     const p = run([{ number: 1, state: "waiting", roots: ["network", "other"], reads: [], digest: "jcs1-sha256:365a4f0d54d7aa", totals: { create: 5 }, changed: ["network"] }], []);
     const { roots: r } = rootStates(prAnswer, p);
     expect(r.network.state).toBe("waiting");
-    expect(r.other).toMatchObject({ state: "unchanged", tone: "idle", words: "wave 1 · no changes", facts: [] });
+    expect(r.other).toMatchObject({ state: "unchanged", tone: "idle", words: "wave 1 · unchanged", facts: [] });
   });
   it("takes a composed member's own no-changes over the wave's state", () => {
     const p = run([{ number: 1, state: "failed", roots: ["network"], reads: [], composed: { roots: ["network", "edge"], members: [{ root: "network", module: "m", apply: "failed" }, { root: "edge", module: "e", apply: "no-changes" }] } }], []);

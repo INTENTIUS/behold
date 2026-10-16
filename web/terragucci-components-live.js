@@ -30,13 +30,13 @@ export const JOB_TONE = { queued: "idle", running: "busy", waiting: "wait", succ
 /** A card's state in one or two words, when the full words don't fit the card. */
 export const SHORT_WORDS = {
   planned: "planned",
-  "not-started": "not started",
+  "not-started": "queued",
   waiting: "waiting",
   applying: "applying",
   applied: "applied",
   refused: "refused",
   failed: "failed",
-  unchanged: "no changes",
+  unchanged: "unchanged",
   outside: "not in this run",
 };
 

@@ -23,7 +23,7 @@
 import { ago, clock, hrefOf } from "./terragucci.js";
 
 export const STATE_WORDS = {
-  "not-started": "not started",
+  "not-started": "queued",
   planned: "planned",
   waiting: "waiting for an approval",
   applying: "applying",
@@ -119,13 +119,13 @@ export function readCardIds(answer, e) {
   return [`${r.member}/${r.name}/data.terraform_remote_state.${data}`, `${r.member}/${r.name}/data.terraform_estate_outputs.${data}`];
 }
 
-/** "5 create · 1 update", no-ops and zeros left out; "no changes" when nothing moves. */
+/** "5 create · 1 update", no-ops and zeros left out; "unchanged" when nothing moves. */
 export function totalsLine(totals) {
   if (!totals) return null;
   const order = ["create", "update", "replace", "delete", "forget", "import", "read"];
   const keys = [...order.filter((k) => k in totals), ...Object.keys(totals).filter((k) => !order.includes(k) && k !== "no-op").sort()];
   const parts = keys.filter((k) => totals[k] > 0).map((k) => `${totals[k]} ${k}`);
-  return parts.length ? parts.join(" · ") : "no changes";
+  return parts.length ? parts.join(" · ") : "unchanged";
 }
 
 /** #568 step 2: "across 3 roots", from `totals_roots` (report minor 35); null on an older report, which has no count. */
@@ -216,7 +216,7 @@ export function composeLine(pr) {
   return null;
 }
 
-const APPLY_WORDS = { applied: "applied", partial: "applied in part", failed: "failed", "not-started": "not started", "no-changes": "no changes" };
+const APPLY_WORDS = { applied: "applied", partial: "applied in part", failed: "failed", "not-started": "queued", "no-changes": "unchanged" };
 const STATE_AS = { written: "state written", unchanged: "state as it was, nothing to write", "not-written": "state not written" };
 
 /** One member of a composed run as planned: "app as module.app: 1 create". */
@@ -494,7 +494,7 @@ export function rootStates(answer, progress) {
         const blast = pr.blast && Array.isArray(pr.blast.roots) ? pr.blast.roots : null;
         const readsUnknown = (pr.reads || []).some((r) => r.root === root && r.unknown && r.unknown.length) || !!(c && c.held_by_unknown && c.held_by_unknown.includes(root));
         if (blast && !blast.includes(root) && !readsUnknown) {
-          roots[root] = { wave: w.number, state: "unchanged", tone: STATE_TONE.unchanged, words: `wave ${w.number} · no changes`, facts: [] };
+          roots[root] = { wave: w.number, state: "unchanged", tone: STATE_TONE.unchanged, words: `wave ${w.number} · unchanged`, facts: [] };
           continue;
         }
         const facts = [];
@@ -515,7 +515,7 @@ export function rootStates(answer, progress) {
       const inRun = [...composedOf].filter(([, n]) => n === w.number).map(([r]) => r);
       for (const root of [...new Set([...w.roots, ...(c ? c.roots : []), ...inRun])]) {
         if (!rootChanges(w, root)) {
-          roots[root] = { wave: w.number, state: "unchanged", tone: STATE_TONE.unchanged, words: `wave ${w.number} · no changes`, facts: [] };
+          roots[root] = { wave: w.number, state: "unchanged", tone: STATE_TONE.unchanged, words: `wave ${w.number} · unchanged`, facts: [] };
           continue;
         }
         const m = c && c.members ? c.members.find((x) => x.root === root) : null;
@@ -529,7 +529,7 @@ export function rootStates(answer, progress) {
         if (m && m.apply) facts.push(memberApplyLine(m).replace(`${root}: `, "")); // this root's own part, not the wave's
         else if (c && !composedHere) {
           // Beside a composed run in its wave: the wave's figures are the run's, not this root's.
-        } else if (totals && state !== "not-started") facts.push(totals === "no changes" ? `${together ? "the wave: " : ""}no changes` : `${together ? "the wave " : ""}${state === "applied" ? "applied" : state === "failed" || state === "refused" ? "planned" : "plans"} ${totals}`);
+        } else if (totals && state !== "not-started") facts.push(totals === "unchanged" ? `${together ? "the wave: " : ""}unchanged` : `${together ? "the wave " : ""}${state === "applied" ? "applied" : state === "failed" || state === "refused" ? "planned" : "plans"} ${totals}`);
         if (state === "failed" || state === "refused") {
           const before = progress.states.filter((x) => x.number < w.number && x.state === "applied").map((x) => x.number);
           if (before.length) facts.push(`wave ${list(before)} stays applied`);
