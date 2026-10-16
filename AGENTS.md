@@ -66,7 +66,9 @@ links a proposed decision to its review in hud.
 behold asks a FIXED set of named queries over terragucci's gauges (each a
 constant string, nothing from the request in it), shares one read for 30 s,
 and picks the repo's series out of the answers: one commit's tf-apply waves
-(each root's plan and apply seconds, the time an approval held the wave at
+(the wave job's own time first, then each root's init, plan and apply
+seconds and any state lock wait, in milliseconds below a second on the
+kiosk, the time an approval held the wave at
 its gate, the changes it applied, when it started waiting) and the DORA four,
 from terragucci estate's gauges or its `dora.json` beside the reports. It
 answers numbers, never a proxy, and a public serve keeps it (GET). Without

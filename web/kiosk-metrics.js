@@ -18,9 +18,10 @@ export const METRICS_POLL_MS = 15_000;
 
 const ACTION_WORDS = { create: "created", update: "updated", delete: "deleted", replace: "replaced", forget: "forgotten", import: "imported", move: "moved" };
 
-/** "6.4 s", "48 s", "2 min 5 s", "1 h 20 min", "3 d 4 h". */
+/** "70 ms", "6.4 s", "48 s", "2 min 5 s", "1 h 20 min", "3 d 4 h". Below a second, milliseconds, so 0.07 s never reads as 0.1. */
 export function secondsWords(secs) {
   if (typeof secs !== "number" || !Number.isFinite(secs) || secs < 0) return null;
+  if (secs < 1) return `${Math.max(1, Math.round(secs * 1000))} ms`;
   if (secs < 10) return `${Math.round(secs * 10) / 10} s`;
   if (secs < 60) return `${Math.round(secs)} s`;
   const m = Math.floor(secs / 60);
@@ -50,7 +51,8 @@ export function perWeekWords(n) {
 /** "2 created, 1 updated", in the order terragucci's actions read; null for none. */
 export function changeWords(changes) {
   const parts = Object.entries(changes || {})
-    .filter(([, n]) => typeof n === "number" && n > 0)
+    // Only what changed a resource: a no-op or a read is not a change.
+    .filter(([a, n]) => a in ACTION_WORDS && typeof n === "number" && n > 0)
     .sort((a, b) => Object.keys(ACTION_WORDS).indexOf(a[0]) - Object.keys(ACTION_WORDS).indexOf(b[0]))
     .map(([a, n]) => `${n} ${ACTION_WORDS[a] || a}`);
   return parts.length ? parts.join(", ") : null;
@@ -75,9 +77,11 @@ export function metricsModel(answer) {
     for (const w of answer.run.waves) {
       const rows = [];
       for (const r of w.roots || []) {
+        const init = secondsWords(r.init_seconds);
+        const lock = r.lock_wait_seconds > 0 ? secondsWords(r.lock_wait_seconds) : null;
         const plan = secondsWords(r.plan_seconds);
         const apply = secondsWords(r.apply_seconds);
-        const parts = [plan && `plan ${plan}`, apply && `apply ${apply}`].filter(Boolean);
+        const parts = [init && `init ${init}`, lock && `lock wait ${lock}`, plan && `plan ${plan}`, apply && `apply ${apply}`].filter(Boolean);
         if (parts.length) rows.push([r.root, parts.join(" · "), r.root]);
       }
       const held = secondsWords(w.held_seconds);
@@ -86,7 +90,9 @@ export function metricsModel(answer) {
       if (since) rows.push(["Waiting since", since]);
       const changed = changeWords(w.changes);
       if (changed) rows.push(["Applied", changed]);
-      if (rows.length) waves.push({ wave: w.wave, head: `Wave ${w.wave}`, rows });
+      // The wave's job time leads: the binary's own runs are a small part of it.
+      const took = secondsWords(w.seconds);
+      if (rows.length || took) waves.push({ wave: w.wave, head: `Wave ${w.wave}`, took: took ? `${took} in all` : null, rows });
     }
     if (waves.length) {
       const c = answer.run.commit ? ` · ${String(answer.run.commit).slice(0, 8)}` : "";
@@ -152,10 +158,12 @@ body.k-has-metrics.k-notyet #view-pane { grid-row: 1; }
 .k-metrics-label { margin: 0.35em 0 0.2em; font: 600 0.72em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
 .k-metrics-waves { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35em; }
 .k-metrics-wave { background: var(--surface-box); border-radius: 6px; padding: 0.3em 0.6em 0.35em; }
-.k-metrics-wave-head { font: 700 0.85em var(--font-mono); color: var(--fg); }
+.k-metrics-wave-head { display: flex; gap: 0.7em; align-items: baseline; font: 700 0.85em var(--font-mono); color: var(--fg); }
+.k-metrics-took { margin-left: auto; font: 600 1.05em var(--font-ui); color: var(--fg); font-variant-numeric: tabular-nums; }
 .k-metrics-rows { display: grid; grid-template-columns: minmax(0, 9.5em) minmax(0, 1fr); gap: 0.05em 0.7em; margin: 0.1em 0 0; }
 .k-metrics-rows dt.k-metrics-root, .k-metrics-rows dt.k-metrics-root + dd { grid-column: 1 / -1; }
-.k-metrics-rows dt.k-metrics-root + dd { padding-left: 0.8em; }
+.k-metrics-rows dt.k-metrics-root + dd { padding-left: 0.8em; white-space: normal; }
+.k-metrics-part { white-space: nowrap; }
 .k-metrics-rows dt { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .k-metrics-rows dt.k-metrics-root { font-family: var(--font-mono); color: var(--fg); }
 .k-metrics-rows dd { margin: 0; color: var(--fg); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -177,7 +185,13 @@ function rowsEl(doc, rows, cls = "k-metrics-rows") {
     const dt = el(doc, "dt", root ? "k-metrics-root" : null, label);
     if (root) dt.dataset.kRoot = root;
     dt.title = label;
-    dl.append(dt, el(doc, "dd", null, value));
+    const dd = el(doc, "dd");
+    // A root's timings wrap between parts, never inside one ("apply 58 ms").
+    value.split(" · ").forEach((part, i) => {
+      if (i) dd.append(" · ");
+      dd.append(el(doc, "span", "k-metrics-part", part));
+    });
+    dl.append(dt, dd);
   }
   return dl;
 }
@@ -203,7 +217,10 @@ export function renderMetrics(host, model, { open = true, onToggle = () => {}, d
     for (const w of model.run.waves) {
       const li = el(doc, "li", "k-metrics-wave");
       li.dataset.kWave = String(w.wave);
-      li.append(el(doc, "div", "k-metrics-wave-head", w.head), rowsEl(doc, w.rows));
+      const head = el(doc, "div", "k-metrics-wave-head", w.head);
+      if (w.took) head.append(el(doc, "span", "k-metrics-took", w.took));
+      li.append(head);
+      if (w.rows.length) li.append(rowsEl(doc, w.rows));
       list.appendChild(li);
     }
     body.appendChild(list);

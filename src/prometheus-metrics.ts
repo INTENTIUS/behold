@@ -46,8 +46,12 @@ export const DORA_WINDOW = "7d";
  * ever put in one. Each keeps only the labels behold reads.
  */
 export const QUERIES = {
+  waveSeconds: `max by (project, commit, run, wave) (last_over_time(terragucci_stage_duration_seconds{stage="tf-apply"}[${RUN_WINDOW}]))`,
+  rootInit: `max by (project, commit, run, wave, root) (last_over_time(terragucci_root_init_seconds{stage="tf-apply"}[${RUN_WINDOW}]))`,
   rootPlan: `max by (project, commit, run, wave, root) (last_over_time(terragucci_root_plan_seconds{stage="tf-apply"}[${RUN_WINDOW}]))`,
   rootApply: `max by (project, commit, run, wave, root) (last_over_time(terragucci_root_apply_seconds{stage="tf-apply"}[${RUN_WINDOW}]))`,
+  // A lock wait carries no wave: a root's wave is found from its other timings in the same run.
+  lockWait: `max by (project, commit, run, root) (last_over_time(terragucci_lock_wait_seconds{stage="tf-apply"}[${RUN_WINDOW}]))`,
   held: `max by (project, commit, run, wave) (last_over_time(terragucci_wave_held_seconds[${RUN_WINDOW}]))`,
   changes: `max by (project, commit, run, wave, action) (last_over_time(terragucci_wave_changes[${RUN_WINDOW}]))`,
   settled: `max by (project, commit, run, wave) (last_over_time(terragucci_wave_settled_seconds[${RUN_WINDOW}]))`,
@@ -68,14 +72,19 @@ export interface Sample {
 
 export interface WaveRoot {
   root: string;
+  init_seconds?: number;
   plan_seconds?: number;
   apply_seconds?: number;
+  /** Time spent waiting for the root's state lock, where the binary reports it (choudoufu). */
+  lock_wait_seconds?: number;
 }
 
 export interface WaveMetrics {
   wave: number;
   /** The pipeline run the numbers are from, when the gauges name it. */
   run: string | null;
+  /** The wave job's own time, from its stage's start to its end. */
+  seconds?: number;
   roots: WaveRoot[];
   /** How long an approval held the wave at its gate. */
   held_seconds?: number;
@@ -154,7 +163,7 @@ const key = (s: Sample) => `${s.labels.commit ?? ""}\u0000${s.labels.run ?? ""}\
  */
 export function runOf(a: Answers, repo: string, commit?: string): RunMetrics | null {
   const mine = (xs: Sample[]) => xs.filter((s) => projectIs(s.labels.project, repo) && /^\d+$/.test(s.labels.wave ?? ""));
-  const rows = { ...a, rootPlan: mine(a.rootPlan), rootApply: mine(a.rootApply), held: mine(a.held), changes: mine(a.changes), settled: mine(a.settled), waiting: mine(a.waiting) };
+  const rows = { ...a, waveSeconds: mine(a.waveSeconds), rootInit: mine(a.rootInit), rootPlan: mine(a.rootPlan), rootApply: mine(a.rootApply), held: mine(a.held), changes: mine(a.changes), settled: mine(a.settled), waiting: mine(a.waiting) };
   // When each (commit, run, wave) last moved: it settled, or it started waiting.
   const moved = new Map<string, { commit: string; run: string; wave: number; at: number }>();
   const note = (s: Sample) => {
@@ -164,7 +173,7 @@ export function runOf(a: Answers, repo: string, commit?: string): RunMetrics | n
   };
   for (const s of [...rows.settled, ...rows.waiting]) note(s);
   // A run whose wave sent only root timings still counts, with no time of its own.
-  for (const s of [...rows.rootPlan, ...rows.rootApply]) if (!moved.has(key(s))) moved.set(key(s), { commit: s.labels.commit ?? "", run: s.labels.run ?? "", wave: Number(s.labels.wave), at: 0 });
+  for (const s of [...rows.waveSeconds, ...rows.rootInit, ...rows.rootPlan, ...rows.rootApply]) if (!moved.has(key(s))) moved.set(key(s), { commit: s.labels.commit ?? "", run: s.labels.run ?? "", wave: Number(s.labels.wave), at: 0 });
   if (moved.size === 0) return null;
   const commits = new Map<string, number>();
   for (const m of moved.values()) commits.set(m.commit, Math.max(commits.get(m.commit) ?? 0, m.at));
@@ -180,8 +189,15 @@ export function runOf(a: Answers, repo: string, commit?: string): RunMetrics | n
   const out: WaveMetrics[] = [];
   for (const [wave, { run }] of [...waves.entries()].sort((x, y) => x[0] - y[0])) {
     const roots = new Map<string, WaveRoot>();
+    const put = (root: string, v: Partial<WaveRoot>) => roots.set(root, { ...(roots.get(root) ?? { root }), ...v });
+    for (const s of of(rows.rootInit, wave, run)) if (s.labels.root) put(s.labels.root, { init_seconds: s.value });
     for (const s of of(rows.rootPlan, wave, run)) if (s.labels.root) roots.set(s.labels.root, { ...(roots.get(s.labels.root) ?? { root: s.labels.root }), plan_seconds: s.value });
     for (const s of of(rows.rootApply, wave, run)) if (s.labels.root) roots.set(s.labels.root, { ...(roots.get(s.labels.root) ?? { root: s.labels.root }), apply_seconds: s.value });
+    for (const s of a.lockWait) {
+      const r = s.labels.root;
+      if (r && roots.has(r) && projectIs(s.labels.project, repo) && (s.labels.commit ?? "") === chosen && (s.labels.run ?? "") === run) put(r, { lock_wait_seconds: s.value });
+    }
+    const wall = of(rows.waveSeconds, wave, run)[0];
     const changes: Record<string, number> = {};
     for (const s of of(rows.changes, wave, run)) if (s.labels.action && s.value > 0) changes[s.labels.action] = s.value;
     const held = of(rows.held, wave, run)[0];
@@ -190,6 +206,7 @@ export function runOf(a: Answers, repo: string, commit?: string): RunMetrics | n
     out.push({
       wave,
       run: run || null,
+      ...(wall ? { seconds: wall.value } : {}),
       roots: [...roots.values()].sort((x, y) => x.root.localeCompare(y.root)),
       ...(held ? { held_seconds: held.value } : {}),
       changes,

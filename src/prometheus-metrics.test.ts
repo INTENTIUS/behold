@@ -15,6 +15,9 @@ const w = (commit: string, run: string, wave: string, extra: Record<string, stri
 /** One cycle as terragucci sends it: wave 2 waited in run 4101 and applied in 4102. An older commit's wave 1 beside it. */
 function cycle(): Answers {
   return {
+    waveSeconds: [s(w(C1, "4101", "1"), 5.36), s(w(C1, "4101", "2"), 4.2), s(w(C1, "4102", "2"), 11.8), s(w(C1, "4102", "3"), 5.6)],
+    rootInit: [s(w(C1, "4101", "1", { root: "network" }), 0.163), s(w(C1, "4102", "2", { root: "app" }), 0.171)],
+    lockWait: [s({ project: P, commit: C1, run: "4102", root: "app" }, 1.5), s({ project: P, commit: C1, run: "4101", root: "app" }, 9)],
     rootPlan: [s(w(C1, "4101", "1", { root: "network" }), 6.4), s(w(C1, "4101", "2", { root: "app" }), 7.9), s(w(C1, "4102", "2", { root: "app" }), 7.2), s(w(C1, "4102", "3", { root: "edge" }), 5.8), s(w(C0, "4000", "1", { root: "network" }), 9)],
     rootApply: [s(w(C1, "4101", "1", { root: "network" }), 2.1), s(w(C1, "4102", "2", { root: "app" }), 3.4), s(w(C1, "4102", "3", { root: "edge" }), 1.6)],
     held: [s(w(C1, "4102", "2"), 95)],
@@ -45,18 +48,18 @@ describe("prometheus-metrics: one run's waves", () => {
     expect(r.commit).toBe(C1);
     expect(r.current).toBe(true);
     expect(r.waves).toEqual([
-      { wave: 1, run: "4101", roots: [{ root: "network", plan_seconds: 6.4, apply_seconds: 2.1 }], changes: { update: 1 }, settled_at: 1000 },
-      { wave: 2, run: "4102", roots: [{ root: "app", plan_seconds: 7.2, apply_seconds: 3.4 }], held_seconds: 95, changes: { update: 1 }, settled_at: 1200 },
-      { wave: 3, run: "4102", roots: [{ root: "edge", plan_seconds: 5.8, apply_seconds: 1.6 }], changes: { update: 1 }, settled_at: 1210 },
+      { wave: 1, run: "4101", seconds: 5.36, roots: [{ root: "network", init_seconds: 0.163, plan_seconds: 6.4, apply_seconds: 2.1 }], changes: { update: 1 }, settled_at: 1000 },
+      { wave: 2, run: "4102", seconds: 11.8, roots: [{ root: "app", init_seconds: 0.171, plan_seconds: 7.2, apply_seconds: 3.4, lock_wait_seconds: 1.5 }], held_seconds: 95, changes: { update: 1 }, settled_at: 1200 },
+      { wave: 3, run: "4102", seconds: 5.6, roots: [{ root: "edge", plan_seconds: 5.8, apply_seconds: 1.6 }], changes: { update: 1 }, settled_at: 1210 },
     ]);
   });
 
   it("a wave still waiting shows when it started waiting, with its plan and no apply", () => {
     const a = cycle();
     a.rootPlan = a.rootPlan.filter((x) => x.labels.run !== "4102");
-    for (const k of ["rootApply", "held", "changes", "settled"] as const) a[k] = a[k].filter((x) => x.labels.run !== "4102");
+    for (const k of ["waveSeconds", "rootInit", "rootApply", "held", "changes", "settled"] as const) a[k] = a[k].filter((x) => x.labels.run !== "4102");
     const wave2 = runOf(a, "terragucci-admin/demo", C1)!.waves.find((x) => x.wave === 2)!;
-    expect(wave2).toEqual({ wave: 2, run: "4101", roots: [{ root: "app", plan_seconds: 7.9 }], changes: {}, waiting_since: 1050 });
+    expect(wave2).toEqual({ wave: 2, run: "4101", seconds: 4.2, roots: [{ root: "app", plan_seconds: 7.9, lock_wait_seconds: 9 }], changes: {}, waiting_since: 1050 });
   });
 
   it("a commit Prometheus has not seen gives the newest one it has, not marked current; a short id finds its commit", () => {
