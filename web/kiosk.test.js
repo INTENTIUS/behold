@@ -157,11 +157,12 @@ describe("the scenario's card under the title (behold#571)", () => {
       expect(beat.children.map((c) => [c.className, c.textContent])).toEqual([["k-beat-label", BEAT_CHANGES], ["k-beat-text", about.changes]]);
       // The step's progress sits with the step line: the strip's stops, the driver's next action.
       expect(find(bar, "k-stop").map((c) => c.textContent)).toEqual(["pull request", "planned", "merged", "waves", "applied", "reset"]);
+      // The rest of the card, one quieter paragraph: each field after its label.
       const card = find(bar, "k-about")[0];
-      expect(card.tagName).toBe("dl");
-      expect(card.children.map((c) => [c.tagName, c.textContent])).toEqual([
-        ["dt", "Watch for"], ["dd", about.watch],
-        ["dt", "Shows"], ["dd", about.shows],
+      expect(card.tagName).toBe("p");
+      expect(card.children.filter((c) => c.className).map((c) => [c.className, c.textContent])).toEqual([
+        ["k-about-label", "Watch for"], ["k-about-text", about.watch],
+        ["k-about-label", "Shows"], ["k-about-text", about.shows],
       ]);
 
       s.demo.demo = demo("reset", { scenario: "base", about: null });
@@ -277,28 +278,29 @@ describe("which view the frame shows (#571)", () => {
 
   it("says how to read the view shown, a row per mark", () => {
     const words = (v, t) => readingRows(v, t).map((r) => r.words).join(" ");
-    expect(readingRows("components").map((r) => r.mark)).toEqual(["card", "box", "solid", "dashed", "marks"]);
+    expect(readingRows("components").map((r) => r.mark)).toEqual(["card", "box", "solid", "dashed", "order", "marks"]);
     expect(readingRows("resources").map((r) => r.mark)).toEqual(["box", "card", "solid", "dashed", "marks"]);
-    expect(readingRows("components")[0].words).toBe("A card is a Terraform root with its own state.");
-    expect(readingRows("components")[1].words).toMatch(/^A box is a wave, titled with the job that applies it/);
-    expect(readingRows("resources")[0].words).toBe("A box is a Terraform root with its own state.");
-    expect(words("components")).toMatch(/A read of planned values is dashed until the root it reads applies/);
-    expect(words("components")).toMatch(/forge that runs its job and the tools the job runs/);
+    expect(readingRows("components")[0].words).toBe("Card: a Terraform root with its own state.");
+    expect(readingRows("components")[1].words).toBe("Box: a wave, titled with the job that applies it.");
+    expect(readingRows("resources")[0].words).toBe("Box: a Terraform root with its own state.");
+    expect(words("components")).toMatch(/Solid arrow: a read of applied outputs\. Dashed arrow: planned values, read before they apply\./);
+    expect(words("components")).toMatch(/Marks: the forge and the tools a job runs/);
+    // Short items, so two to a line keep the open frame a few lines tall.
+    for (const v of ["components", "resources"]) for (const r of readingRows(v, "terragrunt")) expect(r.words.length, r.words).toBeLessThanOrEqual(56);
     // behold#571: a Terragrunt scenario names its units.
     for (const v of ["components", "resources"]) {
       const w = words(v, "terragrunt");
-      expect(w).toMatch(/is a Terragrunt unit with its own state/);
-      expect(w).toMatch(/one unit reading another's applied outputs/);
+      expect(w).toMatch(/a Terragrunt unit with its own state/);
       expect(w).not.toMatch(/\broots?\b/);
     }
-    expect(words("components", "terragrunt")).toMatch(/applies its units together/);
+    expect(words("components", "terragrunt")).toMatch(/Waves apply in order, units in a wave together/);
     // A tool whose pipeline writes no reports: behold's own components graph, with no jobs or planned values in it.
     expect(readingRows("components", "chant")).toEqual([
-      { mark: "card", words: "A card is a Terraform root with its own state." },
-      { mark: "box", words: "A box is a wave of components that apply together." },
-      { mark: "solid", words: "An arrow is one component reading another's outputs." },
+      { mark: "card", words: "Card: a Terraform root with its own state." },
+      { mark: "box", words: "Box: a wave of components that apply together." },
+      { mark: "solid", words: "Arrow: a component reading another's outputs." },
     ]);
-    expect(readingRows("resources", "chant")).toEqual([{ mark: "box", words: "A box is a Terraform root with its own state." }]);
+    expect(readingRows("resources", "chant")).toEqual([{ mark: "box", words: "Box: a Terraform root with its own state." }]);
   });
 
   it("draws 'How to read this' as a header that folds the rows, and keeps the viewer's fold", () => {
@@ -319,7 +321,7 @@ describe("which view the frame shows (#571)", () => {
       expect(host.hidden).toBe(false);
       expect(host.children.map((c) => c.className)).toEqual(["k-read-head", "k-read-rows"]);
       expect(host.children[0].textContent).toBe(READ_TITLE);
-      expect(host.children[1].children.map((li) => li.children[0].className)).toEqual(["k-read-mark k-read-card", "k-read-mark k-read-box", "k-read-mark k-read-solid", "k-read-mark k-read-dashed", "k-read-mark k-read-marks"]);
+      expect(host.children[1].children.map((li) => li.children[0].className)).toEqual(["k-read-mark k-read-card", "k-read-mark k-read-box", "k-read-mark k-read-solid", "k-read-mark k-read-dashed", "k-read-mark k-read-order", "k-read-mark k-read-marks"]);
       host.children[0].listeners.click();
       expect(toggled).toEqual([false]);
       // Folded, the header stays as its one line.

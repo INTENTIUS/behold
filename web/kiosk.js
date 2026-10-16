@@ -416,38 +416,41 @@ export const READ_STORE = "behold.kiosk.read";
 
 /**
  * behold#571: the legend of the view shown, one row per mark: what a card, a
- * box, a solid arrow and a dashed arrow are, and what the forge and tool
- * marks name. `[{ mark, words }]`, `mark` one of card, box, solid, dashed,
- * marks. Its words follow the view and the tool alone, never the step.
+ * box, a solid arrow and a dashed arrow are, the waves' order, and what the
+ * forge and tool marks name. `[{ mark, words }]`, `mark` one of card, box,
+ * solid, dashed, order, marks. Short items, two to a line, so the open
+ * frame stays a few lines over the graph. Its words follow the view and the
+ * tool alone, never the step.
  */
 export function readingRows(view, tool = null) {
   const root = rootWord(tool);
   const n = rootNoun(tool);
   if (reportless(vendorOf(tool))) {
-    if (view !== "components") return [{ mark: "box", words: `A box is ${root} with its own state.` }];
+    if (view !== "components") return [{ mark: "box", words: `Box: ${root} with its own state.` }];
     return [
-      { mark: "card", words: `A card is ${root} with its own state.` },
-      { mark: "box", words: "A box is a wave of components that apply together." },
-      { mark: "solid", words: "An arrow is one component reading another's outputs." },
+      { mark: "card", words: `Card: ${root} with its own state.` },
+      { mark: "box", words: "Box: a wave of components that apply together." },
+      { mark: "solid", words: "Arrow: a component reading another's outputs." },
     ];
   }
   const arrows = [
-    { mark: "solid", words: `A solid arrow is one ${n.one} reading another's applied outputs.` },
-    { mark: "dashed", words: `A read of planned values is dashed until the ${n.one} it reads applies.` },
+    { mark: "solid", words: "Solid arrow: a read of applied outputs." },
+    { mark: "dashed", words: "Dashed arrow: planned values, read before they apply." },
   ];
   if (view === "components") {
     return [
-      { mark: "card", words: `A card is ${root} with its own state.` },
-      { mark: "box", words: `A box is a wave, titled with the job that applies it. A wave applies its ${n.many} together, after the waves it reads.` },
+      { mark: "card", words: `Card: ${root} with its own state.` },
+      { mark: "box", words: "Box: a wave, titled with the job that applies it." },
       ...arrows,
-      { mark: "marks", words: "The marks on a box name the forge that runs its job and the tools the job runs." },
+      { mark: "order", words: `Waves apply in order, ${n.many} in a wave together.` },
+      { mark: "marks", words: "Marks: the forge and the tools a job runs." },
     ];
   }
   return [
-    { mark: "box", words: `A box is ${root} with its own state.` },
-    { mark: "card", words: "A card is one of its resources." },
+    { mark: "box", words: `Box: ${root} with its own state.` },
+    { mark: "card", words: "Card: one of its resources." },
     ...arrows,
-    { mark: "marks", words: "The marks on a job in the jobs pane name the tools it runs." },
+    { mark: "marks", words: "Marks: the tools each job runs, in the jobs pane." },
   ];
 }
 
@@ -712,8 +715,9 @@ function drawBar(bar, s, now) {
   const moreBox = box("card", "k-box-more");
   const more = demo.step === "reset" && intro ? [] : rows.filter((r) => r !== changes);
   if (more.length) {
-    const card = el("dl", "k-about");
-    for (const r of more) card.append(el("dt", "k-about-label", r.label), elRoots("dd", "k-about-text", r.text, s));
+    // One quieter paragraph, each field after its label, so two short fields share a line.
+    const card = el("p", "k-about");
+    for (const r of more) card.append(el("span", "k-about-label", r.label), elRoots("span", "k-about-text", r.text, s), " ");
     moreBox.appendChild(card);
   }
   left.appendChild(moreBox);
@@ -1000,11 +1004,9 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     });
   }
 
-  // behold#571: "How to read this", folded as the viewer last left it; on a phone, folded until they open it.
+  // behold#571: "How to read this", folded until a viewer opens it, then as they last left it.
   const store = typeof localStorage !== "undefined" ? (() => { try { return localStorage; } catch { return null; } })() : null;
-  const phone = () => typeof matchMedia === "function" && matchMedia("(max-width: 600px)").matches;
-  let readOpen = readStored(store);
-  if (readOpen === null) readOpen = !phone();
+  let readOpen = readStored(store) === true;
   let readKey = null;
   const drawReading = (view, ok, force = false) => {
     if (!read) return;
