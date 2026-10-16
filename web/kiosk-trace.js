@@ -257,7 +257,7 @@ export function renderTrace(host, { traces, run = [], job }, { doc = document, t
   const box = el(doc, "div", "t-trace");
   const strip = runStrip(run);
   if (strip.length > 1) {
-    box.appendChild(el(doc, "div", "t-sec", "The run's jobs"));
+    box.appendChild(el(doc, "div", "t-sec", "Jobs"));
     const rows = el(doc, "div", "t-strip");
     for (const r of strip) {
       const row = el(doc, "div", `t-row${pickJob ? " t-can" : ""}${r.job === job ? " t-sel" : ""}${r.result === "failed" ? " t-err" : r.result === "waiting" ? " t-wait" : ""}`);
@@ -271,7 +271,7 @@ export function renderTrace(host, { traces, run = [], job }, { doc = document, t
   }
   traces.forEach((t, i) => {
     const when = new Date(t.start);
-    const head = traces.length > 1 ? `Attempt ${i + 1} of ${traces.length}, ${when.toISOString().slice(11, 19)} UTC` : `This job, ${msWords(t.ms)}`;
+    const head = traces.length > 1 ? `Attempt ${i + 1} of ${traces.length}, ${when.toISOString().slice(11, 19)} UTC` : `This job · ${msWords(t.ms)}`;
     box.appendChild(el(doc, "div", "t-sec", head));
     const rows = el(doc, "div", "t-rows");
     for (const r of waterfallRows(t, { open, shut })) {
