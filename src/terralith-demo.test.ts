@@ -11,8 +11,8 @@ import { snapshotFileFor, snapshotRunner } from "./choudoufu-snapshots.ts";
 // ff46eb8d (choudoufu's live/floci-image pin): terralith-up.sh, then
 // terralith-step.sh adopt, then terralith-step.sh split, then
 // terralith-step.sh plan. The .err files were left out; everything else is as
-// the tool printed it, except two path prefixes in 4-plan's plan logs and
-// set.json: the copy's directory reads /demo-copy, the plugin cache /home/demo.
+// the tool printed it, except two path prefixes: the copy's directory reads
+// /demo-copy, and the plugin cache /home/demo.
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE = join(HERE, "__fixtures__", "terralith");
 

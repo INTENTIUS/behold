@@ -74,7 +74,7 @@
     {
       "severity": "warning",
       "summary": "Values from another estate are as that estate's plan proposes them",
-      "detail": "The value of \"log_retention_days\" was read from estate \"terralith\"'s plan, /private/tmp/claude-501/-Users-alex-Documents-checkouts-intentius-terragucci/fa6c9836-2da9-466f-8cf0-15dfcd2df4d7/scratchpad/p4b/copy/snapshots/4-plan/terralith/plan.json, not from what it recorded at its last apply. A saved plan records this, and \"choudoufu apply\" of it refuses unless \"terralith\" has since applied and recorded these same values."
+      "detail": "The value of \"log_retention_days\" was read from estate \"terralith\"'s plan, /demo-copy/snapshots/4-plan/terralith/plan.json, not from what it recorded at its last apply. A saved plan records this, and \"choudoufu apply\" of it refuses unless \"terralith\" has since applied and recorded these same values."
     }
   ]
 }
