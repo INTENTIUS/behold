@@ -1028,6 +1028,7 @@ export function startKiosk({ bar, frame, foot, side, main, views, tools = null }
         names: () => names,
         roots: rootList,
         waves: () => s.waves,
+        tools: () => s.tools || [],
         light: () => s.light,
         source: runsSource,
         filter: vendor ? (index) => filterIndex(index, { tool, repo: s.repo }) : (index) => index,
@@ -1071,9 +1072,12 @@ export function startKiosk({ bar, frame, foot, side, main, views, tools = null }
     if (p && p.terragucciRoots) {
       s.roots = Array.isArray(p.terragucciRoots.roots) ? p.terragucciRoots.roots : [];
       s.waves = Array.isArray(p.terragucciRoots.waves) ? p.terragucciRoots.waves : [];
+      // behold#571: the tools the repo's jobs run, for a job row whose log isn't read yet.
+      s.tools = Array.isArray(p.terragucciRoots.tools) ? p.terragucciRoots.tools : [];
     } else if (s.aimed) {
       s.roots = [];
       s.waves = [];
+      s.tools = [];
     }
     openFrame();
     draw();

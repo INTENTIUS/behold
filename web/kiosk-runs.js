@@ -12,6 +12,8 @@
 
 import { rootColour, rootPaint, rootSegments, rootText, rootsOfWave, waveOfJob } from "./kiosk-roots.js";
 import { TOUR, chipWords, docsUrl, jobMarks, runFeatures } from "./kiosk-annotations.js";
+import { iconSvg } from "./forge-mark.js";
+import { TOOLS, jobTools } from "./tool-mark.js";
 
 /** The run, job and step statuses, as a viewer reads them. */
 export const STATUS_WORDS = {
@@ -465,7 +467,36 @@ export function renderSidebar(host, index, selectedId, { now = new Date(), scena
  * null for the defaults. Returns what it drew, so the caller can keep a log's
  * scroll.
  */
-export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => {}, toggleStep = () => {}, toggleSetup = () => {}, jump = () => {}, toggleFeats = () => {}, featsOpen = false, note = null, flash = null, entry = null, roots = [], waves = [], light = false, hideLine = null } = {}) {
+/**
+ * behold#571: a job row's tool marks, `<span class="r-job-tools">` of one
+ * `r-tool` per tool (its icon, then its name), or null for none. A tool a
+ * vendor page may not name (`hideLine`) is left out.
+ */
+export function toolMarks(job, repoTools = [], { light = false, hideLine = null, doc = document } = {}) {
+  const ids = jobTools(job, repoTools).filter((t) => !(hideLine && hideLine(TOOLS[t].name)));
+  if (!ids.length) return null;
+  const box = doc.createElement("span");
+  box.className = "r-job-tools";
+  for (const t of ids) {
+    const tool = TOOLS[t];
+    const m = doc.createElement("span");
+    m.className = `r-tool r-tool-${t}`;
+    m.title = `${job.name} runs ${tool.name}`;
+    if (tool.icon) {
+      const icon = iconSvg(doc, tool.icon, 13, { light });
+      icon.setAttribute("class", "r-tool-icon");
+      m.appendChild(icon);
+    }
+    const name = doc.createElement("span");
+    name.className = "r-tool-name";
+    name.textContent = tool.name;
+    m.appendChild(name);
+    box.appendChild(m);
+  }
+  return box;
+}
+
+export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => {}, toggleStep = () => {}, toggleSetup = () => {}, jump = () => {}, toggleFeats = () => {}, featsOpen = false, note = null, flash = null, entry = null, roots = [], waves = [], tools = [], light = false, hideLine = null } = {}) {
   // behold#571: a root's name with its colour's dot, where the line names one.
   const textOf = (cls, text) => {
     if (!roots.length || !rootSegments(text, roots).some((x) => x.root)) return el("span", cls, text);
@@ -507,6 +538,9 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
     li.style.setProperty("--depth", String(j.depth));
     li.appendChild(statusIcon(j.status));
     li.appendChild(el("span", "r-job-name", j.name));
+    // behold#571: the tools the job runs, each its logo (where its owner allows) and its name.
+    const marks = toolMarks(j, tools, { light, hideLine });
+    if (marks) li.appendChild(marks);
     // behold#571: a wave's job row names the roots it applies, each with its dot, and lights its wave box on hover.
     const wave = waveOfJob(j.name, waves);
     const applies = wave !== null ? rootsOfWave(wave, waves).filter((r) => rootColour(r, roots, { light })) : [];
@@ -738,6 +772,7 @@ export function startRuns(
     onLive = () => {},
     roots = () => [],
     waves = () => [],
+    tools = () => [],
     light = () => false,
     source = () => null,
     filter = (index) => index,
@@ -798,6 +833,7 @@ export function startRuns(
       entry,
       roots: roots(),
       waves: waves(),
+      tools: tools(),
       light: light(),
       hideLine,
       note: s.note,

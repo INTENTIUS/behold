@@ -21,7 +21,9 @@ import { renderLane } from "./terragucci-lifecycle.js";
 import { renderReleases } from "./releases.js";
 import { renderYodelLane } from "./sql-yodeler-lane.js";
 import { initTerragucciEstate } from "./terragucci-estate.js";
-import { componentMarks as tgComponentMarks, waveOfKey as tgWaveOfKey } from "./terragucci-components-live.js";
+import { componentMarks as tgComponentMarks, runsCommit as tgRunsCommit, waveOfKey as tgWaveOfKey } from "./terragucci-components-live.js";
+import { FORGES, MARK, componentsForge, forgeOfName, iconSvg, markLink, markTitle, waveJobUrl } from "./forge-mark.js";
+import { TOOLS, orderTools } from "./tool-mark.js";
 import { STATE_WORDS as tgStateWords, changeSection as tgChangeSection, readCardIds as tgReadCardIds, readEdges as tgReadEdges, readLabel as tgReadLabel, readLine as tgReadLine, readTag as tgReadTag, rootStates as tgRootStates, viewCaption as tgViewCaption, pinnedAnswer as tgPinnedAnswer, pinnedCaption as tgPinnedCaption, pinsCommit as tgPinsCommit } from "./terragucci-change.js";
 import { auditLines as yrAuditLines, cornerText as yrCorner, datedWords as yrDated, environmentLines as yrEnvLines, joinMarks as yrJoin, legend as yrLegend, markLine as yrMarkLine } from "./yodel-report.js";
 import { cardProgress as tgCardProgress, progressLines as tgProgressLines, progressSection as tgProgressSection, stampProgress as tgStampProgress } from "./terragucci-progress.js";
@@ -284,7 +286,7 @@ function recolorNodesByCategory(ir) {
     if (bar) bar.setAttribute("fill", "var(--runtime)");
   }
 }
-onThemeChange(() => recolorNodesByCategory());
+onThemeChange(() => (recolorNodesByCategory(), drawTgReads())); // behold#571: drawTgReads redraws the marks in the theme's colours
 
 // #229, the one motion signature behold spends on data: a node whose drift
 // `_status` CHANGED between two renders pulses once in the colour it just
@@ -3493,6 +3495,7 @@ function drawTgReads() {
   watchTgRuns(); // #571: the wave boxes' jobs, while the components zoom is on screen
   const svg = document.querySelector("#graph svg");
   if (!svg) return;
+  drawPipelineMarks(svg); // behold#571: the forge and tool marks, before the wave boxes' status finds room around them
   for (const old of svg.querySelectorAll("[data-tg-reads]")) old.remove();
   for (const old of svg.querySelectorAll("[data-tg-root]")) old.remove();
   for (const r of svg.querySelectorAll("rect[data-tg-stroke0]")) {
@@ -3811,7 +3814,7 @@ function drawTgReads() {
     const dx = l.p1.x - l.p0.x;
     const dy = l.p1.y - l.p0.y;
     let best = null;
-    for (const t of [0.5, 0.35, 0.65, 0.2, 0.8]) {
+    for (const t of [0.5, 0.35, 0.65, 0.2, 0.8, 0.1, 0.9]) {
       const m = { x: l.p0.x + dx * t, y: l.p0.y + dy * t };
       // Beside the line, then farther off it into open ground: the boxes sit close.
       const spots = [];
@@ -3830,7 +3833,8 @@ function drawTgReads() {
         // Outside the boxes' own span the label may leave the drawing when the view is fitted: keep it in.
         const span = union(boxes);
         const out = span ? (r.x2 - r.x) * (r.y2 - r.y) - overlap(r, { x: span.x - 40, y: span.y - 60, x2: span.x2 + 40, y2: span.y2 + 40 }) : 0;
-        const score = out * 80 + lineHits * 1e6 + sum(r, textBoxes, 50) + sum(r, placed, 50) + sum(r, cardBoxes, 1) + sum(r, headers, 1.5) + sum(r, boxes, 0.15) + Math.abs(t - 0.5) * 300 + c.off * 4;
+        // behold#571: a card or a box's title row under the words costs as much as text does, so a label sits on open ground between boxes.
+        const score = out * 80 + lineHits * 1e6 + sum(r, textBoxes, 50) + sum(r, placed, 50) + sum(r, cardBoxes, 50) + sum(r, headers, 40) + sum(r, boxes, 0.15) + Math.abs(t - 0.5) * 300 + c.off * 4;
         if (!best || score < best.score) best = { c, r, score };
       }
     }
@@ -3928,7 +3932,7 @@ function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints
   const hits = (a, b) => a.x < b.x2 && a.x2 > b.x && a.y < b.y2 && a.y2 > b.y;
   const textBoxes = () =>
     [...svg.querySelectorAll("text")]
-      .filter((t) => t.getAttribute("visibility") !== "hidden" && (t.textContent || "").trim() && !t.closest("[data-tg-reads]"))
+      .filter((t) => t.getAttribute("visibility") !== "hidden" && (t.textContent || "").trim() && !t.closest("[data-tg-reads]") && !t.closest(".pipeline-marks"))
       .map(boxOf)
       .filter(Boolean);
   const cardEls = [...svg.querySelectorAll("[data-node-id]")];
@@ -4008,17 +4012,27 @@ function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints
     const tb = title ? boxOf(title) : null;
     const others = () => [...textBoxes(), ...placed].filter((x) => !(tb && sameBox(x, tb)));
     const clear = (r) => r.x >= b.x + 6 && r.x2 <= b.x2 - 6 && !edgeHit(r) && !others().some((x) => hits(grow(x, 2), r)) && !cardBoxes.some((c) => hits(grow(c, 4), r));
+    // behold#571: the wave's forge and tool marks yield to the job's status. The status
+    // goes right after the title, the marks to its right; else the status takes the
+    // right end of the line and the marks stand between it and the title, as fits.
+    const row = svg.querySelector(`.pipeline-marks[data-pm-wave="${n}"]`);
+    const dx = b.x - Number(rect.getAttribute("x"));
+    const rowBox = () => (row && row.style.display !== "none" ? boxOf(row) : null);
     // The job's status: after the title on its line, else at the right of that line.
     if (w.status && tb) {
       const size = 12;
       const cy = (tb.y + tb.y2) / 2;
       // Right after the title, as "apply-wave-2 · held at the gate"; else alone at the right of the title's line.
-      const spots = [{ words: `· ${w.status.words}`, at: () => tb.x2 + 6 }, { words: w.status.words, at: (wd) => b.x2 - 16 - wd }];
-      for (const { words, at } of spots) {
+      const spots = [
+        { words: `· ${w.status.words}`, at: () => tb.x2 + 6, marks: (x, wd) => row && layoutMarkRow(row, x + wd + 10 - dx) },
+        { words: w.status.words, at: (wd) => b.x2 - 16 - wd, marks: (x) => row && layoutMarkRow(row, tb.x2 + 8 - dx, x - 10 - dx) },
+      ];
+      for (const { words, at, marks } of spots) {
         const wd = width(words, size, 700);
         const x = at(wd);
         const r = { x, y: cy - size / 2 - 2, x2: x + wd, y2: cy + size / 2 + 2 };
         if (x < tb.x2 + 4 || !clear(r)) continue;
+        marks(x, wd);
         const t = make("text", { "data-tg-root": "wave-status", x, y: cy, "dominant-baseline": "central", "font-size": size, "font-weight": 700, fill: tone(w.status.tone) }, words);
         if (w.status.status === "running") t.setAttribute("class", "pin-pulse");
         group.appendChild(t);
@@ -4026,6 +4040,8 @@ function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints
         break;
       }
     }
+    const rb = rowBox();
+    if (rb) placed.push(rb);
     if (title) {
       const tip = make("title", { "data-tg-root": "tip" }, [w.title, ...(w.state ? [`wave ${n} ${tgStateWords[w.state] || w.state}`] : []), ...w.facts].join("\n") + "\n(the job's status from the pipeline's runs; the wave's from terragucci's reports)");
       title.appendChild(tip);
@@ -5448,36 +5464,201 @@ function wireEdgeHighlight(svgEl, ir) {
   }
 }
 
-// GitLab's tanuki, one filled silhouette (the widely-used single-path mark),
-// scaled into a small badge. Self-contained (no external URL) so it survives the
-// static export + the CSP.
-const GITLAB_TANUKI =
-  "M23.6004 9.5927l-.0337-.0862L20.3.9814a.851.851 0 00-.3362-.405.8748.8748 0 00-.9997.0539.8748.8748 0 00-.29.4399l-2.2055 6.748H7.5375l-2.2055-6.748a.8573.8573 0 00-.29-.4412.8748.8748 0 00-.9997-.0537.8585.8585 0 00-.3362.405L.4332 9.5065l-.0325.0862a6.0657 6.0657 0 002.0119 7.0105l.0113.0087.03.0213 4.976 3.7264 2.462 1.8633 1.4995 1.1321a1.0085 1.0085 0 001.2197 0l1.4995-1.1321 2.462-1.8633 5.006-3.7489.0125-.01a6.0682 6.0682 0 002.0094-7.003z";
 const SVGNS = "http://www.w3.org/2000/svg";
 
-// Stamp a GitLab tanuki in the top-right corner of each wave lane — a visual cue
-// that the waves ARE the GitLab CI pipeline's stages (job `stage` = `wave-N`).
-// Post-processes the inlined SVG: each wave box is a `<rect>` immediately
-// followed by its `<text>wave-N</text>` title, so the rect gives the corner.
-function addGitlabWaveBadges(svgEl) {
-  const SIZE = 17;
-  for (const text of svgEl.querySelectorAll("text")) {
-    if (!/^wave-/i.test((text.textContent || "").trim())) continue;
-    const rect = text.previousElementSibling;
-    if (!rect || rect.tagName.toLowerCase() !== "rect") continue;
-    const rx = parseFloat(rect.getAttribute("x"));
-    const ry = parseFloat(rect.getAttribute("y"));
-    const rw = parseFloat(rect.getAttribute("width"));
-    const g = document.createElementNS(SVGNS, "g");
-    g.setAttribute("class", "gitlab-wave-badge");
-    g.setAttribute("transform", `translate(${rx + rw - SIZE - 12}, ${ry + 10}) scale(${SIZE / 24})`);
-    const path = document.createElementNS(SVGNS, "path");
-    path.setAttribute("d", GITLAB_TANUKI);
-    path.setAttribute("fill", "#FC6D26"); // GitLab brand orange
-    const title = document.createElementNS(SVGNS, "title");
-    title.textContent = "This wave is a GitLab CI stage (chant → GitLab pipeline)";
-    g.append(title, path);
-    rect.parentNode.insertBefore(g, text);
+// behold#571: the marks on each wave box's title row of the Components view,
+// so the CI projection says which forge runs each wave and which tools its
+// job runs: the forge's mark (linked to the wave's job when a report carried
+// its URL), then each tool's (web/forge-mark.js, web/tool-mark.js). Each is
+// a small icon and the name beside it. Right-aligned in the row after the
+// title; when the row is short the icons go first, then the marks from the
+// end, so a name stays. On chant's own GitLab-generated projection the row
+// holds the forge chant generated for (the tanuki since #58).
+const MARK_STEP = 8; // between two marks in a row
+
+/** What a wave's row says: its forge, its job and its tools; null for no row. */
+function pipelineMarksFor(n) {
+  if (!view.components) return null;
+  if (terragucciComponentsRepo && tgComponentFacets) {
+    const job = (tgComponentFacets.jobs || []).find((j) => j.wave === n);
+    return { forge: componentsForge(tgComponentFacets, tgAnswer), job: job ? job.jobName : null, tools: orderTools(tgComponentFacets.tools || []) };
+  }
+  if (ciByComponent.size) return { forge: forgeOfName(ciForge), job: null, tools: [], projection: true };
+  return null;
+}
+
+/** One mark: an icon and the name, with its tooltip; an `<a>` for the forge so it can link. */
+function markElement(tag, cls, spec, name, tip, light) {
+  const el = document.createElementNS(SVGNS, tag);
+  el.setAttribute("class", `pm-mark ${cls}`);
+  const title = document.createElementNS(SVGNS, "title");
+  title.textContent = tip;
+  el.appendChild(title);
+  if (spec) {
+    const icon = iconSvg(document, spec, MARK.size, { light });
+    icon.setAttribute("class", "pm-icon");
+    el.appendChild(icon);
+  }
+  const text = document.createElementNS(SVGNS, "text");
+  text.setAttribute("class", "pm-label");
+  text.setAttribute("font-size", String(MARK.font));
+  text.setAttribute("font-weight", "600");
+  text.setAttribute("fill", "var(--muted)");
+  text.setAttribute("dominant-baseline", "central");
+  text.textContent = name;
+  el.appendChild(text);
+  return el;
+}
+
+/**
+ * Lay a row out at its box's right edge (or `right`), in what fits between
+ * `left` and there and clear of the edges crossing the row (`data-pm-avoid`, x's in the
+ * box's coordinates): the forge first, then the tools, left to right. Every
+ * mark with its icon, else every name alone, else fewer marks from the end.
+ */
+function layoutMarkRow(row, left, right = Number(row.getAttribute("data-pm-right"))) {
+  const cy = Number(row.getAttribute("data-pm-cy"));
+  const avoid = (row.getAttribute("data-pm-avoid") || "").split(",").filter(Boolean).map(Number);
+  const marks = [...row.querySelectorAll(":scope > .pm-mark")];
+  const label = (m) => m.querySelector(".pm-label");
+  const iconOf = (m) => m.querySelector(".pm-icon");
+  const show = (n, on) => (n.style.display = on ? "" : "none");
+  show(row, true);
+  marks.forEach((m) => show(m, true));
+  const widths = marks.map((m) => {
+    try {
+      return label(m).getComputedTextLength() || label(m).textContent.length * MARK.font * 0.6;
+    } catch {
+      return label(m).textContent.length * MARK.font * 0.6;
+    }
+  });
+  const need = (k, icons) => widths.slice(0, k).reduce((s, w, i) => s + w + (icons && iconOf(marks[i]) ? MARK.size + MARK.gap : 0), 0) + MARK_STEP * (k - 1);
+  // The gaps between the edges crossing the row, rightmost first: the marks take the first that holds them.
+  const cuts = avoid.filter((x) => x > left && x < right).sort((a, b) => a - b);
+  const gaps = [];
+  let at = left;
+  for (const x of cuts) {
+    if (x - 5 > at) gaps.push([at, x - 5]);
+    at = Math.max(at, x + 5);
+  }
+  if (right > at) gaps.push([at, right]);
+  gaps.reverse();
+  let fit = null;
+  for (let k = marks.length; k > 0 && !fit; k--) {
+    for (const icons of [true, false]) {
+      const gap = gaps.find(([a, z]) => z - a >= need(k, icons));
+      if (gap) {
+        fit = { k, icons, end: gap[1] };
+        break;
+      }
+    }
+  }
+  show(row, !!fit);
+  if (!fit) return null;
+  let x = fit.end - need(fit.k, fit.icons);
+  marks.forEach((m, i) => {
+    const shown = i < fit.k;
+    show(m, shown);
+    if (!shown) return;
+    const icon = iconOf(m);
+    const withIcon = fit.icons && !!icon;
+    if (icon) show(icon, withIcon);
+    if (withIcon) {
+      icon.setAttribute("x", x.toFixed(1));
+      icon.setAttribute("y", (cy - MARK.size / 2).toFixed(1));
+      x += MARK.size + MARK.gap;
+    }
+    label(m).setAttribute("x", x.toFixed(1));
+    label(m).setAttribute("y", cy.toFixed(1));
+    x += widths[i] + MARK_STEP;
+  });
+  return fit;
+}
+
+/** The x's at which the graph's edges cross a band of the svg (`y0`..`y1`), in the svg's own coordinates. */
+function edgeXsIn(svgEl, y0, y1) {
+  const xs = [];
+  for (const path of svgEl.querySelectorAll("g[data-edge-from] path, g[data-edge-from] line")) {
+    let len = 0;
+    try {
+      len = path.getTotalLength();
+    } catch {
+      continue;
+    }
+    for (let d = 0; d <= len; d += 3) {
+      const p = path.getPointAtLength(d);
+      if (p.y >= y0 && p.y <= y1) xs.push(p.x);
+    }
+  }
+  return xs;
+}
+
+/** Draw every wave box's row afresh. Before the terragucci marks, which place the job's status around it. */
+function drawPipelineMarks(svgEl) {
+  for (const old of svgEl.querySelectorAll(".pipeline-marks")) old.remove();
+  const light = kioskLight();
+  const pin = view.run || null;
+  const commit = tgRunsCommit(pin, tgProgress);
+  for (const rect of svgEl.querySelectorAll("rect[data-group-id]")) {
+    const key = rect.getAttribute("data-group-id");
+    const n = tgWaveOfKey(key);
+    if (n === null) continue;
+    const what = pipelineMarksFor(n);
+    if (!what) continue;
+    const forge = what.forge && FORGES[what.forge] ? what.forge : null;
+    const tools = what.tools.filter((t) => TOOLS[t]);
+    if (!forge && !tools.length) continue;
+    // The box's title: the text right after its rect (pinhole's order), inside the box's group once wrapped.
+    let title = null;
+    for (let el = rect.nextElementSibling; el; el = el.nextElementSibling) {
+      if (el.tagName.toLowerCase() === "text") {
+        title = el;
+        break;
+      }
+      if (el.tagName.toLowerCase() === "rect") break;
+    }
+    const rx = Number(rect.getAttribute("x"));
+    const ry = Number(rect.getAttribute("y"));
+    const rw = Number(rect.getAttribute("width"));
+    let tb = null;
+    try {
+      tb = title ? title.getBBox() : null;
+    } catch {
+      tb = null;
+    }
+    const cy = tb && tb.height ? tb.y + tb.height / 2 : ry + 10 + MARK.size / 2;
+    const row = document.createElementNS(SVGNS, "g");
+    row.setAttribute("class", "pipeline-marks");
+    row.setAttribute("data-pm-wave", String(n));
+    row.setAttribute("data-pm-right", String(rx + rw - MARK.pad));
+    row.setAttribute("data-pm-cy", String(cy));
+    row.setAttribute("data-pm-left", String(tb && tb.width ? tb.x + tb.width + 8 : rx + 12));
+    if (forge) {
+      const f = FORGES[forge];
+      const url = what.projection ? null : markLink(waveJobUrl(tgAnswer, n, commit), forge);
+      const tip = what.projection ? `${key} is a ${f.label} CI stage of the pipeline chant generates` : markTitle(what.job, forge);
+      const a = markElement("a", `pm-forge pm-forge-${forge}`, f, f.label, tip, light);
+      if (url) {
+        a.setAttribute("href", url);
+        a.setAttribute("target", "_blank");
+        a.setAttribute("rel", "noopener noreferrer");
+      }
+      row.appendChild(a);
+    }
+    for (const t of tools) {
+      const tool = TOOLS[t];
+      row.appendChild(markElement("g", `pm-tool pm-tool-${t}`, tool.icon, tool.name, what.job ? `${what.job} runs ${tool.name}` : `Runs ${tool.name}`, light));
+    }
+    // The edges that run through the title row, so the marks stand clear of them. Pinhole draws edges
+    // in the svg's coordinates and a moved box carries a translate, so their x's are taken back into the box's.
+    const shift = (() => {
+      const m = /translate\(\s*([-\d.]+)/.exec((rect.parentNode.getAttribute && rect.parentNode.getAttribute("transform")) || "");
+      return m ? Number(m[1]) : 0;
+    })();
+    const band = edgeXsIn(svgEl, cy - MARK.size / 2 - 2, cy + MARK.size / 2 + 2).map((x) => x - shift);
+    row.setAttribute("data-pm-avoid", band.filter((x) => x >= rx && x <= rx + rw).map((x) => x.toFixed(1)).join(","));
+    rect.parentNode.insertBefore(row, title || rect.nextSibling);
+    layoutMarkRow(row, Number(row.getAttribute("data-pm-left")));
   }
 }
 
@@ -5603,10 +5784,6 @@ function render(ir, svg, m) {
     if (embedOpts.bare) quietCardLines(svgEl);
     setupGraphViewBox(svgEl);
     wireEdgeHighlight(svgEl, ir);
-    // Mark each wave lane as a GitLab CI stage when the CI projection is loaded
-    // (components view only) — waves ARE the pipeline's stages (`chant build
-    // --components --generate gitlab`, see loadCi / #58).
-    if (view.components && ciByComponent.size && !terragucciComponentsRepo) addGitlabWaveBadges(svgEl);
   }
   ensureZoomControls(g);
   ensureBackToInfra(g);
