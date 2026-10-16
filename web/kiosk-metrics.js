@@ -99,11 +99,13 @@ export function metricsModel(answer, delivery = null) {
       if (changed) rows.push(["Applied", changed]);
       // The wave's job time leads: the binary's own runs are a small part of it.
       const took = secondsWords(w.seconds);
-      if (rows.length || took) waves.push({ wave: w.wave, head: `Wave ${w.wave}`, took: took ? `${took} in all` : null, rows });
+      // behold#571: Watch mode's badge on the wave's box reads the same numbers, short ("1.6 s · held 25 s · 4 created").
+      const badge = { seconds: took, held, changed, secondsRaw: typeof w.seconds === "number" ? w.seconds : null, heldRaw: typeof w.held_seconds === "number" ? w.held_seconds : null, changesRaw: w.changes || null };
+      if (rows.length || took) waves.push({ wave: w.wave, head: `Wave ${w.wave}`, took: took ? `${took} in all` : null, rows, ...badge });
     }
     if (waves.length) {
       const c = answer.run.commit ? ` · ${String(answer.run.commit).slice(0, 8)}` : "";
-      run = { label: `${answer.run.current ? "This run" : "Latest run"}${c}`, waves };
+      run = { label: `${answer.run.current ? "This run" : "Latest run"}${c}`, current: !!answer.run.current, waves };
     }
   }
   let dora = null;
@@ -121,6 +123,25 @@ export function metricsModel(answer, delivery = null) {
   const n = run ? run.waves.length : 0;
   const count = [n ? `${n} ${n === 1 ? "wave" : "waves"}` : null, dora ? `${dora.length} delivery` : null].filter(Boolean).join(" · ");
   const note = dora && typeof delivery === "string" && delivery.trim() ? delivery.trim() : null;
+  return { count, run, dora, ...(note ? { note } : {}) };
+}
+
+/**
+ * behold#571: the pane's presence holds steady through a cycle. Within one
+ * cycle (`same`), or when a read failed (`failed`), an answer with less in it
+ * keeps what the last one showed: no pane that comes and goes as the steps
+ * move, and no section that drops out for one read. A new cycle with nothing
+ * to show shows nothing.
+ */
+export function steadyModel(prev, next, { same = false, failed = false } = {}) {
+  if (!prev) return next;
+  if (!next) return same || failed ? prev : null;
+  if (!(same || failed)) return next;
+  const run = next.run || prev.run;
+  const dora = next.dora || prev.dora;
+  const note = next.note || (next.dora ? null : prev.note) || null;
+  const n = run ? run.waves.length : 0;
+  const count = [n ? `${n} ${n === 1 ? "wave" : "waves"}` : null, dora ? `${dora.length} delivery` : null].filter(Boolean).join(" · ");
   return { count, run, dora, ...(note ? { note } : {}) };
 }
 
@@ -258,7 +279,7 @@ async function defaultFetch(url) {
  * Start the pane in `host`. `tool` is the tool of a tool's page, null on
  * /kiosk. Returns `{ stop }`.
  */
-export function startMetrics(host, { tool = null, fetchJson = defaultFetch, store = null, setTimer = setInterval, clearTimer = clearInterval, doc = document } = {}) {
+export function startMetrics(host, { tool = null, fetchJson = defaultFetch, store = null, setTimer = setInterval, clearTimer = clearInterval, doc = document, onModel = () => {} } = {}) {
   if (!host) return { stop() {} };
   if (doc.head && !doc.getElementById("k-metrics-style")) {
     const style = el(doc, "style");
@@ -270,6 +291,7 @@ export function startMetrics(host, { tool = null, fetchJson = defaultFetch, stor
   let open = metricsStored(shelf);
   if (open === null) open = !(typeof matchMedia === "function" && matchMedia("(max-width: 600px)").matches);
   let model = null;
+  let cycle = null;
   let busy = false;
   const draw = () =>
     renderMetrics(host, model, {
@@ -290,12 +312,19 @@ export function startMetrics(host, { tool = null, fetchJson = defaultFetch, stor
     busy = true;
     try {
       const demo = await fetchJson("/api/terragucci/demo");
-      const cycle = tool && !(demo && demo.demo && demo.demo.tool === tool) ? await fetchJson(`/api/terragucci/cycles/${tool}`) : null;
-      const target = metricsTarget(demo, cycle, tool);
-      const next = target ? metricsModel(await fetchJson(metricsUrl(target)), demo && demo.demo ? demo.demo.delivery : null) : null;
+      const latest = tool && !(demo && demo.demo && demo.demo.tool === tool) ? await fetchJson(`/api/terragucci/cycles/${tool}`) : null;
+      const target = metricsTarget(demo, latest, tool);
+      const answer = target ? await fetchJson(metricsUrl(target)) : null;
+      // behold#571: which cycle this read is of; a read that failed keeps the pane as it was.
+      const d = demo && demo.demo;
+      const now = d ? `${d.repo}|${d.cycle}` : latest && latest.cycle ? `${latest.cycle.repo}|${latest.cycle.cycle}` : null;
+      const failed = !demo || !!demo.error || !target || !answer || !!answer.error;
+      const next = steadyModel(model, target ? metricsModel(answer, d ? d.delivery : null) : null, { same: now !== null && now === cycle, failed });
+      if (now !== null && !failed) cycle = now;
       if (JSON.stringify(next) !== JSON.stringify(model)) {
         model = next;
         draw();
+        onModel(model);
       }
     } finally {
       busy = false;
@@ -304,5 +333,5 @@ export function startMetrics(host, { tool = null, fetchJson = defaultFetch, stor
   draw();
   void tick();
   const timer = setTimer(() => void tick(), METRICS_POLL_MS);
-  return { stop: () => clearTimer(timer), tick };
+  return { stop: () => clearTimer(timer), tick, model: () => model };
 }
