@@ -333,7 +333,7 @@ The other stores, as measured on 2026-10-16:
 | Prometheus (an anonymous volume at `/prometheus`) | its default 15-day retention; 17 MB after 11 hours |
 | Tempo (`terragucci-tempo-lite-data`) | 24 hours (`block_retention` in terragucci's `stack/observability/tempo-lite.yaml`); 42 MB |
 | `terragucci-job-cache` | one OpenTofu binary and provider set per version in use; empty today, since the jobs run in the CI images |
-| Forgejo's Actions artifacts and logs (287 MB and 6 MB) | the driver deletes each repo's runs past the newest 100 at each reset (terragucci#1047); Forgejo removes their artifacts and logs at its `cleanup_actions` task, which the driver now also starts hourly (terragucci, `scripts/demo-pulls.ts`) |
+| Forgejo's Actions artifacts and logs (287 MB and 6 MB) | the driver deletes each repo's runs past the newest 100 at each reset (terragucci#1047). A run's logs go with it, and its artifacts at Forgejo's `cleanup_actions` task, which the driver now also starts hourly (terragucci, `scripts/demo-pulls.ts`) |
 | Forgejo's pull requests and `refs/pull/*` | the driver deletes each repo's closed pull requests past the newest 50 at each reset, and runs Forgejo's `git_gc_repos` hourly (terragucci, `scripts/demo-pulls.ts`) |
 | Forgejo's LFS, attachments, packages, archives | LFS is off; the rest are empty, and archives go at Forgejo's daily `archive_cleanup` |
 | Forgejo runner (`terragucci-forgejo-runner-data`) | its cache server is off (`cache.enabled: false`); 6 MB |
