@@ -754,7 +754,23 @@ function behaviourIr(variant) {
   };
 }
 
-export function startStub(port, { carve = false, nonChant = false, choudoufu = false, behaviour = null, why = false } = {}) {
+/**
+ * The warm-cache race (#422's progressive overlay): with the overlay cache
+ * warm, the server's live pass settles before its answer reaches the page, so
+ * the `member` frame is on the stream BEFORE the pending picture is drawn. The
+ * `warmFrames` stub answers in exactly that order.
+ */
+export const WARM_FRAME = {
+  member: "terralith-4",
+  statuses: { "terralith-4/aws_ecs_cluster.main": "good", "terralith-4/aws_cloudwatch_log_group.extra": "warn", "terralith-4/aws_iam_role.quiet": "neutral" },
+  identities: { "terralith-4/aws_ecs_cluster.main": { source: "derived", marked: true } },
+};
+export const WARM_ANSWER_DELAY_MS = 400;
+
+export function startStub(port, { carve = false, nonChant = false, choudoufu = false, behaviour = null, why = false, warmFrames = false } = {}) {
+  if (warmFrames) choudoufu = true;
+  /** warmFrames: the open /api/events streams, so the stub can write a frame to them. */
+  const streams = [];
   // #471: the why estate is the choudoufu estate served as a declared
   // workspace, whose member is terralith-4.
   if (why) choudoufu = true;
@@ -943,6 +959,17 @@ export function startStub(port, { carve = false, nonChant = false, choudoufu = f
         res.end(JSON.stringify(body));
       };
       if (path === "/api/project") return json(why ? { ...CHOUDOUFU_PROJECT, workspace: WHY_WORKSPACE } : CHOUDOUFU_PROJECT);
+      if (warmFrames && path === "/api/overlay" && url.searchParams.get("progressive") === "1") {
+        // The frame first, on every open stream; the pending answer after it.
+        for (const stream of streams) stream.write(`event: member\ndata: ${JSON.stringify(WARM_FRAME)}\n\n`);
+        await new Promise((r) => setTimeout(r, WARM_ANSWER_DELAY_MS));
+        const pending = { ...CHOUDOUFU_IR, nodes: CHOUDOUFU_IR.nodes.map((n) => ({ ...n, attrs: { estate: n.attrs.estate, _pendingRead: true } })) };
+        return json({
+          ir: pending,
+          svg: CHOUDOUFU_SVG,
+          meta: { projectDir: CHOUDOUFU_PROJECT.projectDir, env: "live", tier: null, target: null, estate: 1, mode: "progressive", pending: ["terralith-4"], vocabulary: CHOUDOUFU_VOCABULARY },
+        });
+      }
       if (path === "/api/graph" || path === "/api/overlay") {
         // #404: the plan read is opt-in, so the mark and the count exist only
         // on the request that asked for them.
@@ -1054,7 +1081,9 @@ export function startStub(port, { carve = false, nonChant = false, choudoufu = f
     }
     if (path === "/api/events") {
       res.writeHead(200, { "content-type": "text/event-stream" });
-      return; // held open — the SPA's EventSource stays quiet
+      res.write(": open\n\n");
+      streams.push(res);
+      return; // held open — the SPA's EventSource stays quiet, except for a warmFrames stub
     }
     // #284 item 2 — the delegated gate signal the pending card's Approve button
     // performs, and the gateState re-read it does straight after. The re-read
