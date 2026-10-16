@@ -21,6 +21,7 @@ services:
       AWS_REGION: us-east-1
       AWS_DEFAULT_REGION: us-east-1
       BEHOLD_PROMETHEUS_URL: http://prometheus:9090
+      BEHOLD_TEMPO_URL: http://tempo:3200
     volumes:
       - '${DEMO_ROOT:-/opt/demo}/views:/view'
       - /var/lib/demo-host/behold:/run/demo-host:ro
