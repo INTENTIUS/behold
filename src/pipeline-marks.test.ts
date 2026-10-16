@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { atmosRepo, sqlYodelerRepo, configKeys, forgeOfName, forgeOfPipelinePath, pipelineForge, repoTools, toolOfBinary } from "./pipeline-marks.ts";
+import { atmosRepo, declaredRootTools, rootTools, sqlYodelerRepo, configKeys, forgeOfName, forgeOfPipelinePath, pipelineForge, repoTools, toolOfBinary } from "./pipeline-marks.ts";
 import type { TerragucciComponents } from "./terragucci-components.ts";
 
 // behold#571: the forge and the tools of a terragucci repo, from its files.
@@ -85,5 +85,43 @@ describe("repoTools", () => {
     const dir = repo({ "terragucci.ts": 'export default { forge: "forgejo", binary: "terraform" };\n' });
     expect(configKeys(join(dir, "terragucci.ts"))).toEqual({ forge: "forgejo", binary: "terraform" });
     expect(configKeys(join(dir, "missing.yml"))).toEqual({});
+  });
+});
+
+// terragucci#1080: example-demo's app root carries a SQL Yodeler project at app/schema/,
+// which app's apply runs with `chant run wave --spec yodel-waves.json`.
+describe("rootTools", () => {
+  const demo = () =>
+    repo({
+      "network/main.tf": 'resource "terraform_data" "n" {}\n',
+      "app/main.tf": 'resource "terraform_data" "a" {}\n',
+      "app/schema.tf": "",
+      "app/schema/chant.config.ts": "export default {};\n",
+      "app/schema/yodel.config.ts": "export default {};\n",
+      "app/schema/yodel-waves.json": '{"name":"yodel-apply"}\n',
+      "app/schema/package.json": '{"dependencies":{"@intentius/sql-yodeler":"0.9.0"}}\n',
+      "app/schema/migrations/20261016T0521-init/migration.json": "{}\n",
+      "app/schema/migrations/20261016T0521-init/migration.sql": "CREATE TABLE users (id int);\n",
+      "app/schema/ops/migrate-dev.op.ts": "",
+      "edge/main.tf": "",
+    });
+
+  it("finds the SQL Yodeler project inside app, and none in the other roots", () => {
+    const dir = demo();
+    expect(rootTools(dir, "app")).toEqual(["sql-yodeler"]);
+    expect(rootTools(dir, "network")).toEqual([]);
+    expect(declaredRootTools(dir, { network: { dir: "network" }, app: { dir: "./app/" }, edge: { dir: "edge" } })).toEqual({ app: ["sql-yodeler"] });
+  });
+
+  it("finds one by its yodel-waves.json alone, or its migrations beside a chant config", () => {
+    expect(rootTools(repo({ "app/db/yodel-waves.json": "{}" }), "app")).toEqual(["sql-yodeler"]);
+    expect(rootTools(repo({ "app/db/chant.config.ts": "", "app/db/migrations/0001/migration.sql": "" }), "app")).toEqual(["sql-yodeler"]);
+    expect(rootTools(repo({ "app/modules/migrations/0001.sql": "" }), "app")).toEqual([]);
+  });
+
+  it("looks no deeper than two levels, and never into node_modules", () => {
+    expect(rootTools(repo({ "app/a/b/c/yodel.config.ts": "" }), "app")).toEqual([]);
+    expect(rootTools(repo({ "app/node_modules/x/yodel.config.ts": "" }), "app")).toEqual([]);
+    expect(rootTools(repo({}), "missing")).toEqual([]);
   });
 });

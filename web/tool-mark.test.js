@@ -45,6 +45,15 @@ describe("tool detection", () => {
     expect(TOOLS[jobTools(j)[0]].icon.image).toBe("vendors/sql-yodeler-160.png");
   });
 
+  it("gives the wave that applies a root carrying SQL Yodeler the hat beside its engine, on a successful run too (terragucci#1080)", () => {
+    // A successful run's log has the apply summary only.
+    const ok = job(["image=ghcr.io/intentius/terragucci-demo-tofu:local", "Apply complete! Resources: 1 added, 0 changed, 0 destroyed."]);
+    expect(jobTools(ok, [], ["sql-yodeler"])).toEqual(["opentofu", "sql-yodeler"]);
+    expect(jobTools({ name: "apply-wave-2" }, ["opentofu"], ["sql-yodeler"])).toEqual(["opentofu", "sql-yodeler"]);
+    // A failed run's log shows the wave command.
+    expect(toolsOfLog(job(["+ chant run wave --spec yodel-waves.json --wave 1"]))).toEqual(["sql-yodeler"]);
+  });
+
   it("takes the repo's tools for a job whose log isn't read, and none for a log that names none", () => {
     expect(jobTools({ name: "apply-wave-1", status: "queued" }, ["opentofu", "terragrunt"])).toEqual(["terragrunt", "opentofu"]);
     expect(jobTools({ name: "plan-note", steps: [{ name: "x", log: [] }] }, ["opentofu"])).toEqual(["opentofu"]);
@@ -60,7 +69,7 @@ describe("tool detection", () => {
 
 describe("the marks", () => {
   it("name every tool as its owner writes it", () => {
-    expect(Object.values(TOOLS).map((t) => t.name)).toEqual(["Terragrunt", "CDK Terrain", "Atmos", "chant", "SQL Yodeler", "OpenTofu", "Terraform", "choudoufu"]);
+    expect(Object.values(TOOLS).map((t) => t.name)).toEqual(["Terragrunt", "CDK Terrain", "Atmos", "chant", "OpenTofu", "Terraform", "choudoufu", "SQL Yodeler"]);
   });
 
   it("draw Terraform by its name alone, and the rest with their own inline logo", () => {

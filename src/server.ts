@@ -64,7 +64,7 @@ import { projectTopology } from "./logical.ts";
 import { addCompositeDepsCounted } from "./composite-deps.ts";
 import { notesFor, danglingNote, tierMismatchNote, namespaceMismatchNote, namespaceJoinNote, unchangedZoomNote, type Zoom } from "./zoom-notes.ts";
 import { resourcesByComponent, resourcesByRoot, nonResourceEntities } from "./resources.ts";
-import { pipelineForge, repoTools } from "./pipeline-marks.ts";
+import { declaredRootTools, pipelineForge, repoTools } from "./pipeline-marks.ts";
 import { TERRAGUCCI_COMPONENTS_FILE, componentJobs, componentRootMap, readTerragucciComponents, waveTitles, type TerragucciComponents } from "./terragucci-components.ts";
 import { hasTerragruntUnits } from "./terragrunt-units.ts";
 import { summarizePlan } from "./reconcile.ts";
@@ -1704,13 +1704,15 @@ export function createApp(
       ...(servedTerragucciComponents() ? { terragucciComponents: true } : {}),
       // behold#571: the declared roots and the wave jobs that apply them, so
       // the kiosk gives each root its colour and ties a job row to its roots.
-      ...((): { terragucciRoots?: { roots: string[]; waves: { job: string; wave: number; roots: string[] }[]; tools?: string[] } } => {
+      ...((): { terragucciRoots?: { roots: string[]; waves: { job: string; wave: number; roots: string[] }[]; tools?: string[]; rootTools?: Record<string, string[]> } } => {
         const decl = servedTerragucciComponents();
         if (!decl) return {};
         const waves = decl.pipeline.jobs.filter((j) => typeof j.wave === "number").map((j) => ({ job: j.name, wave: j.wave as number, roots: [...j.applies] }));
         // behold#571: the tools the jobs run, for a job row whose log names no image (web/tool-mark.js).
         const tools = repoTools(cfg.projectDir, tgConfig());
-        return { terragucciRoots: { roots: Object.keys(decl.roots).sort(), waves, ...(tools.length ? { tools } : {}) } };
+        // And what each root carries inside it (a SQL Yodeler project), for the job that applies it.
+        const rootTools = declaredRootTools(cfg.projectDir, decl.roots);
+        return { terragucciRoots: { roots: Object.keys(decl.roots).sort(), waves, ...(tools.length ? { tools } : {}), ...(Object.keys(rootTools).length ? { rootTools } : {}) } };
       })(),
       // #517: a SQL Yodeler repo is migrated by its pipeline; same contract.
       ...((): { sqlYodeler?: { config: string; error: string; code: string; remedy: string } } => {
@@ -2192,6 +2194,7 @@ export function createApp(
     // behold#571: the forge and the tools, for each wave box's marks (src/pipeline-marks.ts).
     const forge = pipelineForge(decl, cfg.projectDir, tgConfig());
     const tools = repoTools(cfg.projectDir, tgConfig());
+    const rootToolsByName = declaredRootTools(cfg.projectDir, decl.roots);
     const { svg } = renderGraph(ir, { waveTitles: titles });
     const waves = Object.keys((ir.groups as { byWave?: Record<string, string[]> }).byWave ?? {}).length;
     // behold#571: a Terragrunt repo's roots are its units.
@@ -2213,6 +2216,8 @@ export function createApp(
           // behold#571: the forge, and what said so, for each wave box's mark (web/forge-mark.js).
           ...(forge ? { forge: forge.forge, forgeFrom: forge.from } : decl.pipeline.forge ? { forge: decl.pipeline.forge } : {}),
           ...(tools.length ? { tools } : {}),
+          // behold#571: the tools a root carries inside it (a SQL Yodeler project), by root name.
+          ...(Object.keys(rootToolsByName).length ? { rootTools: rootToolsByName } : {}),
           ...(decl.pipeline.path ? { pipeline: decl.pipeline.path } : {}),
           jobs: Object.values(componentJobs(decl)),
           // component -> the root it applies: the live marks' join onto the

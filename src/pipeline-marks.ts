@@ -16,7 +16,7 @@
  * Read-only and parse-only. Whatever is unknown is left out, and the page then
  * draws no mark for it.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { parseYAMLDocument } from "@intentius/chant/yaml";
 import type { TerragucciComponents } from "./terragucci-components.ts";
@@ -27,7 +27,7 @@ export type PipelineForge = (typeof PIPELINE_FORGES)[number];
 export type ForgeFrom = "declared" | "config" | "pipeline-path" | "workflow-dir";
 
 /** The tools a job mark can name. Keep in step with TOOLS in web/tool-mark.js. */
-export const PIPELINE_TOOLS = ["terragrunt", "cdk-terrain", "atmos", "chant", "sql-yodeler", "opentofu", "terraform", "choudoufu"] as const;
+export const PIPELINE_TOOLS = ["terragrunt", "cdk-terrain", "atmos", "chant", "opentofu", "terraform", "choudoufu", "sql-yodeler"] as const;
 export type PipelineTool = (typeof PIPELINE_TOOLS)[number];
 
 const WORKFLOW_PLACES: [PipelineForge, string][] = [
@@ -142,5 +142,44 @@ export function repoTools(dir: string, config?: string, has: { terragrunt?: (d: 
   if (sqlYodelerRepo(dir)) out.push("sql-yodeler");
   const engine = toolOfBinary(configKeys(config).binary);
   if (engine) out.push(engine);
+  return out;
+}
+
+/** Whether `dir` itself holds a SQL Yodeler project: its yodel.config.ts, the `yodel-waves.json` `yodel ci` renders, or a `migrations/` beside a yodel or chant config. */
+function sqlYodelerProjectIn(dir: string): boolean {
+  if (existsSync(join(dir, "yodel.config.ts")) || existsSync(join(dir, "yodel-waves.json"))) return true;
+  return existsSync(join(dir, "migrations")) && (existsSync(join(dir, "chant.config.ts")) || sqlYodelerRepo(dir));
+}
+
+const SKIP_DIRS = new Set(["node_modules", ".terraform", ".terragrunt-cache", ".git"]);
+
+/**
+ * The tools a Terraform root carries inside it, beside the engine that
+ * applies it: a SQL Yodeler project in the root or a directory under it, two
+ * levels down at most (terragucci's demo keeps one at `app/schema/`, which
+ * app's apply runs with `chant run wave --spec yodel-waves.json`). The wave
+ * that applies the root runs them, whatever its log shows.
+ */
+export function rootTools(repo: string, rootDir: string): PipelineTool[] {
+  const top = join(repo, rootDir);
+  const dirs = [top];
+  const kids = (d: string): string[] => {
+    try {
+      return readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory() && !SKIP_DIRS.has(e.name) && e.name !== "migrations").map((e) => join(d, e.name));
+    } catch {
+      return [];
+    }
+  };
+  for (const k of kids(top)) dirs.push(k, ...kids(k));
+  return dirs.some(sqlYodelerProjectIn) ? ["sql-yodeler"] : [];
+}
+
+/** Each declared root's own tools (see {@link rootTools}), keyed by root name; roots with none are left out. */
+export function declaredRootTools(repo: string, roots: Record<string, { dir: string }>): Record<string, PipelineTool[]> {
+  const out: Record<string, PipelineTool[]> = {};
+  for (const [name, r] of Object.entries(roots)) {
+    const tools = rootTools(repo, r.dir.replace(/^\.\/+/, "").replace(/\/+$/, "") || ".");
+    if (tools.length) out[name] = tools;
+  }
   return out;
 }

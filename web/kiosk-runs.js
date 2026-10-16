@@ -469,11 +469,12 @@ export function renderSidebar(host, index, selectedId, { now = new Date(), scena
  */
 /**
  * behold#571: a job row's tool marks, `<span class="r-job-tools">` of one
- * `r-tool` per tool (its icon, then its name), or null for none. A tool a
- * vendor page may not name (`hideLine`) is left out.
+ * `r-tool` per tool (its icon, then its name), or null for none. `carried`
+ * are the tools the roots the job applies carry inside them. A tool a vendor
+ * page may not name (`hideLine`) is left out.
  */
-export function toolMarks(job, repoTools = [], { light = false, hideLine = null, doc = document } = {}) {
-  const ids = jobTools(job, repoTools).filter((t) => !(hideLine && hideLine(TOOLS[t].name)));
+export function toolMarks(job, repoTools = [], { light = false, hideLine = null, doc = document, carried = [] } = {}) {
+  const ids = jobTools(job, repoTools, carried).filter((t) => !(hideLine && hideLine(TOOLS[t].name)));
   if (!ids.length) return null;
   const box = doc.createElement("span");
   box.className = "r-job-tools";
@@ -496,7 +497,7 @@ export function toolMarks(job, repoTools = [], { light = false, hideLine = null,
   return box;
 }
 
-export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => {}, toggleStep = () => {}, toggleSetup = () => {}, jump = () => {}, toggleFeats = () => {}, featsOpen = false, note = null, flash = null, entry = null, roots = [], waves = [], tools = [], light = false, hideLine = null } = {}) {
+export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => {}, toggleStep = () => {}, toggleSetup = () => {}, jump = () => {}, toggleFeats = () => {}, featsOpen = false, note = null, flash = null, entry = null, roots = [], waves = [], tools = [], rootTools = {}, light = false, hideLine = null } = {}) {
   // behold#571: a root's name with its colour's dot, where the line names one.
   const textOf = (cls, text) => {
     if (!roots.length || !rootSegments(text, roots).some((x) => x.root)) return el("span", cls, text);
@@ -539,7 +540,9 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
     li.appendChild(statusIcon(j.status));
     // behold#571: the tools the job runs, each its logo (where its owner allows) and its name, on a
     // line of their own under the job's name, so the row's line keeps its width.
-    const marks = toolMarks(j, tools, { light, hideLine });
+    const jobWave = waveOfJob(j.name, waves);
+    const carried = jobWave !== null ? rootsOfWave(jobWave, waves).flatMap((r) => rootTools[r] || []) : [];
+    const marks = toolMarks(j, tools, { light, hideLine, carried });
     if (marks) {
       const head = el("span", "r-job-head");
       head.append(el("span", "r-job-name", j.name), marks);
@@ -777,6 +780,7 @@ export function startRuns(
     roots = () => [],
     waves = () => [],
     tools = () => [],
+    rootTools = () => ({}),
     light = () => false,
     source = () => null,
     filter = (index) => index,
@@ -838,6 +842,7 @@ export function startRuns(
       roots: roots(),
       waves: waves(),
       tools: tools(),
+      rootTools: rootTools(),
       light: light(),
       hideLine,
       note: s.note,

@@ -12,12 +12,14 @@
 //    server read them (src/pipeline-marks.ts): an orchestrator from the
 //    repo's files (Terragrunt units, cdktf.json, atmos.yaml, a chant
 //    workspace with members, SQL Yodeler's yodel.config.ts or migrations/),
-//    then the engine terragucci.yml's `binary:` names.
+//    then the engine terragucci.yml's `binary:` names;
+// 3. always, what the roots a job applies carry inside them: a SQL Yodeler
+//    project under a root (yodel.config.ts, yodel-waves.json, migrations/).
 //
 // Nothing known is no mark.
 
 /**
- * The tools, orchestrators before engines. `icon` is a spec for
+ * The tools, orchestrators, then engines, then SQL Yodeler. `icon` is a spec for
  * forge-mark.js's iconSvg, or null for the name alone. Each logo decision
  * rests on its owner's published words, quoted beside it.
  */
@@ -50,10 +52,6 @@ export const TOOLS = {
   // (https://github.com/INTENTIUS/chant/blob/main/docs/public/brand/mark.svg),
   // in the gold chant's site draws it in (styles/chant.css `--ch-gold`).
   chant: { name: "chant", kind: "orchestrator", icon: { viewBox: "0 0 15 15", fill: { dark: "#c9a96e", light: "#9a7b3f" }, attrs: { "shape-rendering": "crispEdges" }, shapes: [{"tag": "rect", "x": 10, "y": 1, "width": 1, "height": 1}, {"tag": "rect", "x": 11, "y": 2, "width": 1, "height": 1}, {"tag": "rect", "x": 6, "y": 3, "width": 1, "height": 1}, {"tag": "rect", "x": 11, "y": 3, "width": 1, "height": 1}, {"tag": "rect", "x": 7, "y": 4, "width": 1, "height": 1}, {"tag": "rect", "x": 11, "y": 4, "width": 1, "height": 1}, {"tag": "rect", "x": 2, "y": 5, "width": 1, "height": 1}, {"tag": "rect", "x": 7, "y": 5, "width": 1, "height": 1}, {"tag": "rect", "x": 11, "y": 5, "width": 1, "height": 1}, {"tag": "rect", "x": 3, "y": 6, "width": 1, "height": 1}, {"tag": "rect", "x": 7, "y": 6, "width": 1, "height": 1}, {"tag": "rect", "x": 11, "y": 6, "width": 1, "height": 1}, {"tag": "rect", "x": 3, "y": 7, "width": 1, "height": 1}, {"tag": "rect", "x": 7, "y": 7, "width": 1, "height": 1}, {"tag": "rect", "x": 11, "y": 7, "width": 1, "height": 1}, {"tag": "rect", "x": 3, "y": 8, "width": 1, "height": 1}, {"tag": "rect", "x": 7, "y": 8, "width": 1, "height": 1}, {"tag": "rect", "x": 11, "y": 8, "width": 1, "height": 1}, {"tag": "rect", "x": 2, "y": 9, "width": 1, "height": 1}, {"tag": "rect", "x": 7, "y": 9, "width": 1, "height": 1}, {"tag": "rect", "x": 11, "y": 9, "width": 1, "height": 1}, {"tag": "rect", "x": 7, "y": 10, "width": 1, "height": 1}, {"tag": "rect", "x": 11, "y": 10, "width": 1, "height": 1}, {"tag": "rect", "x": 6, "y": 11, "width": 1, "height": 1}, {"tag": "rect", "x": 11, "y": 11, "width": 1, "height": 1}, {"tag": "rect", "x": 11, "y": 12, "width": 1, "height": 1}, {"tag": "rect", "x": 10, "y": 13, "width": 1, "height": 1}] } },
-  // SQL Yodeler: ours, its cowboy hat from SQL Yodeler's docs
-  // (sql-yodeler docs-site/public/brand/hat-small.png and hat-160.png), served
-  // as /vendors/sql-yodeler-44.png and -160.png; the larger one draws the mark.
-  "sql-yodeler": { name: "SQL Yodeler", kind: "database", icon: { image: "vendors/sql-yodeler-160.png" } },
   // OpenTofu: the color icon from cncf/artwork,
   // https://github.com/cncf/artwork/blob/bd7f51052b704482f03f7dcb40b09a02b2cc9e7f/projects/opentofu/icon/color/opentofu-icon-color.svg,
   // geometry and colours as published (the classes inlined as fills). "All
@@ -71,6 +69,11 @@ export const TOOLS = {
   terraform: { name: "Terraform", kind: "engine", icon: null },
   // choudoufu: ours, the PNG the kiosk's choudoufu page already shows. Relative, so a static export finds it.
   choudoufu: { name: "choudoufu", kind: "engine", icon: { image: "vendors/choudoufu-128.png" } },
+  // SQL Yodeler: ours, its cowboy hat from SQL Yodeler's docs
+  // (sql-yodeler docs-site/public/brand/hat-small.png and hat-160.png), served
+  // as /vendors/sql-yodeler-44.png and -160.png; the larger one draws the mark. After
+  // the engines, so the hat stands beside the engine of the root that carries it.
+  "sql-yodeler": { name: "SQL Yodeler", kind: "database", icon: { image: "vendors/sql-yodeler-160.png" } },
 };
 
 const ORDER = Object.keys(TOOLS);
@@ -116,6 +119,8 @@ const COMMANDS = [
   ["cdk-terrain", /(^|[\s/])(cdktn|cdktf)\s+(synth|deploy|diff|plan)\b/],
   ["choudoufu", /(^|[\s/])choudoufu\s+(plan|apply|live-check)\b/],
   ["sql-yodeler", /(^|[\s/])yodel\s+(apply|plan|lint|status|approve|drift|new|ci)\b/],
+  // SQL Yodeler's waves, as `yodel ci` renders them and a root's apply runs them.
+  ["sql-yodeler", /(^|[\s/])chant\s+run\s+wave\b.*\byodel-waves\.json\b/],
   // `atmos terraform plan` is Atmos's subcommand, not a terraform run.
   ["opentofu", /(^|[\s/])(?<!atmos\s)tofu\s+(plan|apply|init|validate)\b/],
   ["terraform", /(^|[\s/])(?<!atmos\s)terraform\s+(plan|apply|init|validate)\b/],
@@ -135,17 +140,19 @@ export function toolsOfLog(job) {
 /**
  * The tools a job runs: its image's and its log's commands, or, for a job
  * whose log holds no line yet, the repo's (`repo`). A job whose log was read
- * and names none gets none.
+ * and names none gets none. `carried` are the tools the roots it applies
+ * carry inside them (a SQL Yodeler project under app/), which it runs
+ * whatever its log shows: a successful run's log has only the summary.
  */
-export function jobTools(job, repo = []) {
+export function jobTools(job, repo = [], carried = []) {
   const seen = (job && job.steps ? job.steps : []).some((s) => (s.log || []).length);
-  if (!seen) return orderTools(repo);
+  if (!seen) return orderTools([...repo, ...carried]);
   const engines = (ids) => ids.filter((t) => TOOLS[t].kind === "engine");
   const fromImage = toolsOfImage(jobImage(job));
   const fromLog = toolsOfLog(job);
   // The image's engine wins; the log adds an orchestrator the image doesn't name.
   const all = engines(fromImage).length ? [...fromImage, ...fromLog.filter((t) => TOOLS[t].kind !== "engine")] : [...fromImage, ...fromLog];
-  return orderTools(all);
+  return orderTools([...all, ...carried]);
 }
 
 /** A tool's name, or null for an unknown id. */
