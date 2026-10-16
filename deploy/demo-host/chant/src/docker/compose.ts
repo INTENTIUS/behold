@@ -92,6 +92,10 @@ export const behold = new Service({
     AWS_ENDPOINT_URL: "http://floci:4566",
     AWS_REGION: "us-east-1",
     AWS_DEFAULT_REGION: "us-east-1",
+    // behold#571: the kiosk's "Pipeline metrics" read the stack's Prometheus
+    // (terragucci's observability-lite profile, which stack/demo.sh up starts)
+    // on the terragucci network. With it down, the pane does not show.
+    BEHOLD_PROMETHEUS_URL: "http://prometheus:9090",
   },
   volumes: [
     // A checkout per demo repo, /view/<repo name> (behold#571): behold's

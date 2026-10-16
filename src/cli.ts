@@ -19,6 +19,7 @@ import { isAutoSyncMode, type AutoSyncMode } from "./autosync.ts";
 import { detectProjectShape, loadBeholdConfig } from "./project.ts";
 import { drawnMembers, hasDeclaration, readWorkspace, undrawnMembers, unreadableMembers, type Workspace } from "./workspace.ts";
 import { hudAddress } from "./workspace-why.ts";
+import { prometheusAddress } from "./prometheus-metrics.ts";
 import { servesAsEstate } from "./member-kind.ts";
 import { setChoudoufuSpawnEnv } from "./choudoufu-member.ts";
 import { readCarveReport } from "./carve-lens.ts";
@@ -128,6 +129,12 @@ Options:
   --hud <url>         serve only: where hud reviews this workspace's records
                       (BEHOLD_HUD_URL too). A proposed decision in a member's
                       or a card's "why" links to its review there (#471).
+  --prometheus <url>  serve only: the Prometheus behold reads a pipeline's
+                      numbers from (BEHOLD_PROMETHEUS_URL too), with a fixed
+                      set of queries of terragucci's gauges: each wave's plan
+                      and apply seconds, its time at the gate and its changes,
+                      and the DORA metrics. /api/metrics?project=<owner>/<name>
+                      answers them, and the kiosk shows them (behold#571).
   --terragucci <src>  serve/export: paint a terragucci estate from its reports
                       (#490). <src> is a report directory (a synced bucket
                       prefix, or <prefix>/<project>), s3://bucket/prefix (read
@@ -280,6 +287,7 @@ export async function run(argv: string[]): Promise<void> {
   let local = false;
   let host: string | undefined;
   let hudArg: string | undefined = process.env.BEHOLD_HUD_URL || undefined;
+  let prometheusArg: string | undefined = process.env.BEHOLD_PROMETHEUS_URL || undefined;
   let terragucci: string | undefined;
   let terragucciProject: string | undefined;
   let terragucciPoll: number | undefined;
@@ -295,6 +303,7 @@ export async function run(argv: string[]): Promise<void> {
     else if (a === "--host") host = rest[++i];
     else if (a === "--allow-host") allowHosts.push(...(rest[++i] ?? "").split(","));
     else if (a === "--hud") hudArg = rest[++i];
+    else if (a === "--prometheus") prometheusArg = rest[++i];
     else if (a === "--terragucci") terragucci = rest[++i];
     else if (a === "--terragucci-project") terragucciProject = rest[++i];
     else if (a === "--terragucci-poll") terragucciPoll = Number(rest[++i]);
@@ -343,6 +352,11 @@ export async function run(argv: string[]): Promise<void> {
     process.exit(2);
   }
   const hud = hudAddress(hudArg);
+  const prometheus = prometheusAddress(prometheusArg);
+  if (prometheusArg && !prometheus) {
+    process.stderr.write(`behold serve: --prometheus must be an http or https address with no query, not ${JSON.stringify(prometheusArg)}\n`);
+    process.exit(2);
+  }
   if (hudArg && !hud) {
     process.stderr.write(`behold serve: --hud must be an http or https address, not ${JSON.stringify(hudArg)}\n`);
     process.exit(2);
@@ -413,6 +427,7 @@ export async function run(argv: string[]): Promise<void> {
     ...(allowHosts.length ? { allowedHosts: allowHosts } : {}),
     ...(isPublic ? { public: true, layoutWrites: false } : {}),
     ...(target.workspace && hud ? { hud } : {}),
+    ...(prometheus ? { prometheus } : {}),
     ...(yodelReport ? { yodelReport: resolve(yodelReport) } : {}),
     ...(terragucci ? { terragucci: { source: terragucci, ...(terragucciProject ? { project: terragucciProject } : {}), ...(terragucciPoll !== undefined ? { pollSecs: terragucciPoll } : {}), ...(terragucciRuns ? { runsSource: terragucciRuns } : {}) } } : {}),
   });

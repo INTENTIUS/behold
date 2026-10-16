@@ -290,6 +290,7 @@
     <div id="stage">
       <nav id="runs-side" aria-label="pipeline runs"></nav>
       <section id="runs-main" aria-live="polite"></section>
+      <aside id="k-metrics" aria-label="Pipeline metrics" hidden></aside>
       <button type="button" id="k-runs-toggle" aria-expanded="false">Runs and logs</button>
       <section id="view-pane">
         <div id="views" hidden></div>
@@ -310,6 +311,8 @@
         },
         { tool: pageTool(document) },
       );
+      // behold#571: the repo's numbers from Prometheus, a pane of its own (web/kiosk-metrics.js).
+      import("/kiosk-metrics.js").then((m) => m.startMetrics(document.getElementById("k-metrics"), { tool: pageTool(document) }));
     </script>
   </body>
 </html>
