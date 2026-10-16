@@ -25,3 +25,12 @@ used under Apache-2.0. The Flux, Argo and Helm marks are each project's own artw
 project's resources. Both are vendored at pinned revisions with their licenses retained
 verbatim under [`licenses/`](./licenses); see [`THIRD_PARTY.md`](./THIRD_PARTY.md) for the
 revisions, the trademark notices, and exactly what the vendoring changes.
+
+## Forge and tool marks
+
+The forge and tool marks on the Components view's wave boxes and the kiosk's job rows
+(behold#571) are their owners' own: the **Forgejo** logo by Caesar Schinas (CC BY-SA 4.0),
+GitHub's **Octicons** `mark-github` (MIT), GitLab's tanuki, Gruntwork's logomark for
+**Terragrunt**, the **CDK Terrain** mark from cdktn.io, Cloud Posse's mark for **Atmos**, and
+the **OpenTofu** icon from cncf/artwork. [`THIRD_PARTY.md`](./THIRD_PARTY.md) gives each
+source and the rule each rests on.

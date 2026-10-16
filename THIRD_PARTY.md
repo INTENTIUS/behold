@@ -73,3 +73,39 @@ drawn for.
 
 See [`CREDITS.md`](./CREDITS.md) for prior-art acknowledgements, including the theme engine this
 one is adopted from.
+
+## Forge and tool marks (`web/forge-mark.js`, `web/tool-mark.js`)
+
+Each wave box of the Components view, and each job row of the kiosk's runs pane, names the
+forge that runs the pipeline and the tools the job runs, as text, with the owner's own mark
+beside the name where the owner's published rules allow that use (behold#571). Each mark is
+inline SVG geometry in the module, or a PNG under `web/vendors/`; nothing is fetched. The
+module comments quote the rule each decision rests on.
+
+- **Forgejo**: the official logo by Caesar Schinas, **CC BY-SA 4.0**, from
+  [codeberg.org/forgejo/meta](https://codeberg.org/forgejo/meta/src/branch/readme/branding)
+  (`logo/forgejo.svg`), geometry and colours as published. The same licence applies to this
+  copy.
+- **GitHub**: Octicons `mark-github` (16px), **MIT**, from
+  [primer/octicons](https://github.com/primer/octicons/blob/ea8e6bb79894cc7e85564ee9b53d86b418738d04/icons/mark-github-16.svg),
+  filled in the text colour. The licence is retained at
+  [`licenses/octicons-LICENSE`](./licenses/octicons-LICENSE).
+- **GitLab**: the tanuki behold has drawn since #58.
+- **Terragrunt**: Gruntwork's logomark,
+  [gruntwork.io](https://gruntwork.io/_assets/media/gruntwork-logomark-white.svg), filled in
+  the text colour, per Gruntwork's [Website Terms](https://gruntwork.io/legal/website-terms).
+- **CDK Terrain**: the mark [cdktn.io](https://cdktn.io/favicon.svg) publishes.
+- **Atmos**: Cloud Posse's mark, from
+  [cloudposse/atmos](https://github.com/cloudposse/atmos/blob/ee2aa74cfef0a677422d556ef5b54f59416f29cf/website/static/img/slides/atmos-intro/cloudposse-logo.svg),
+  in Cloud Posse's own white and dark colours.
+- **OpenTofu**: the colour icon from
+  [cncf/artwork](https://github.com/cncf/artwork/blob/bd7f51052b704482f03f7dcb40b09a02b2cc9e7f/projects/opentofu/icon/color/opentofu-icon-color.svg),
+  under the Linux Foundation trademark usage guidelines, as the Flux, Argo and Helm marks above.
+- **Terraform**: the name alone. HashiCorp's
+  [trademark policy](https://www.hashicorp.com/trademark-policy) asks for written approval of
+  this use of its logos.
+- **chant**, **choudoufu** and **SQL Yodeler**: Intentius's own marks.
+
+Each name and mark belongs to its owner and is used only to say which forge runs a pipeline
+or which tool a job runs. Its appearance here implies no affiliation with, sponsorship by, or
+endorsement from its owner.
