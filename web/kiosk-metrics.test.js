@@ -12,7 +12,7 @@ const answer = () => ({
     commit: C1,
     current: true,
     waves: [
-      { wave: 1, run: "4101", roots: [{ root: "network", plan_seconds: 6.4, apply_seconds: 2.1 }], changes: { update: 1 }, settled_at: 1000 },
+      { wave: 1, run: "4101", seconds: 5.36, roots: [{ root: "network", init_seconds: 0.163, plan_seconds: 0.07, apply_seconds: 0.06 }], changes: { update: 1 }, settled_at: 1000 },
       { wave: 2, run: "4102", roots: [{ root: "app", plan_seconds: 7.2, apply_seconds: 3.4 }], held_seconds: 95, changes: { update: 1, create: 2 }, settled_at: 1200 },
     ],
   },
@@ -21,7 +21,7 @@ const answer = () => ({
 
 describe("kiosk metrics: the words", () => {
   it("reads seconds with their unit, short", () => {
-    expect([6.44, 48.4, 125, 120, 4800, 3600, 97200].map(secondsWords)).toEqual(["6.4 s", "48 s", "2 min 5 s", "2 min", "1 h 20 min", "1 h", "1 d 3 h"]);
+    expect([0.07, 0.0004, 0.999, 6.44, 48.4, 125, 120, 4800, 3600, 97200].map(secondsWords)).toEqual(["70 ms", "1 ms", "999 ms", "6.4 s", "48 s", "2 min 5 s", "2 min", "1 h 20 min", "1 h", "1 d 3 h"]);
     expect(secondsWords(undefined)).toBeNull();
     expect(secondsWords(-1)).toBeNull();
   });
@@ -30,6 +30,8 @@ describe("kiosk metrics: the words", () => {
     expect([percentWords(0.1), percentWords(0.0833), percentWords(0)]).toEqual(["10%", "8.3%", "0%"]);
     expect(perWeekWords(4.54)).toBe("4.5 a week");
     expect(changeWords({ update: 1, create: 2, delete: 0 })).toBe("2 created, 1 updated");
+    expect(changeWords({ "no-op": 2, read: 1, replace: 1 })).toBe("1 replaced");
+    expect(changeWords({ "no-op": 2 })).toBeNull();
     expect(changeWords({})).toBeNull();
   });
 });
@@ -40,8 +42,8 @@ describe("kiosk metrics: what the pane shows", () => {
     expect(m.count).toBe("2 waves · 3 delivery");
     expect(m.run.label).toBe("This run · 9f3c2a71");
     expect(m.run.waves).toEqual([
-      { wave: 1, head: "Wave 1", rows: [["network", "plan 6.4 s · apply 2.1 s", "network"], ["Applied", "1 updated"]] },
-      { wave: 2, head: "Wave 2", rows: [["app", "plan 7.2 s · apply 3.4 s", "app"], ["Held at the gate", "1 min 35 s"], ["Applied", "2 created, 1 updated"]] },
+      { wave: 1, head: "Wave 1", took: "5.4 s in all", rows: [["network", "init 163 ms · plan 70 ms · apply 60 ms", "network"], ["Applied", "1 updated"]] },
+      { wave: 2, head: "Wave 2", took: null, rows: [["app", "plan 7.2 s · apply 3.4 s", "app"], ["Held at the gate", "1 min 35 s"], ["Applied", "2 created, 1 updated"]] },
     ]);
     expect(m.dora).toEqual([["Deploys", "30 a week"], ["Lead time", "15 min"], ["Change failure rate", "10%"]]);
   });
@@ -56,8 +58,8 @@ describe("kiosk metrics: what the pane shows", () => {
 
   it("a waiting wave says since when, by the viewer's clock", () => {
     const a = answer();
-    a.run.waves = [{ wave: 2, run: "4101", roots: [{ root: "app", plan_seconds: 7.9 }], changes: {}, waiting_since: Date.parse("2026-10-16T14:05:00") / 1000 }];
-    expect(metricsModel(a).run.waves[0].rows).toEqual([["app", "plan 7.9 s", "app"], ["Waiting since", "14:05"]]);
+    a.run.waves = [{ wave: 2, run: "4101", roots: [{ root: "app", plan_seconds: 7.9, lock_wait_seconds: 1.5 }], changes: {}, waiting_since: Date.parse("2026-10-16T14:05:00") / 1000 }];
+    expect(metricsModel(a).run.waves[0].rows).toEqual([["app", "lock wait 1.5 s · plan 7.9 s", "app"], ["Waiting since", "14:05"]]);
   });
 
   it("shows no pane for no answer, a refusal, or nothing for the repo; a part with no number is left out", () => {
