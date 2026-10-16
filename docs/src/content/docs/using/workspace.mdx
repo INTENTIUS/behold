@@ -1,6 +1,12 @@
 ---
 title: Serve a chant workspace
 description: Serve a directory that holds a chant.workspace.json, and convert an estate that lists its members in .behold.json.
+prompt: |
+  Read https://intentius.io/behold/using/workspace/.
+  Serve this directory with `npx @intentius/behold serve .` and tell me the URL.
+  Name each member that draws as one card, and the reason code on it.
+  If it does not serve, show me what `npx @intentius/behold doctor .` reports.
+  Never deploy with the Deploy button, `POST /api/apply` or `POST /api/ci/dispatch`. Gate approvals stay mine as well (`/api/ops/:name/signal/:gate`, `/api/workspace/gates/approve`, `/api/operator/approve/:op/:gate`). Op runs (`/api/ops/:name/run`) and rollbacks (`/api/rollback`) are mine too. Leave `--auto-sync` off, and keep a `behold preview` or `--public` serve read-only.
 ---
 
 import { Aside } from '@astrojs/starlight/components';

@@ -6,9 +6,10 @@
   "scripts": {
     "dev": "astro dev",
     "start": "astro dev",
-    "build": "astro build",
+    "build": "node scripts/lint-prompts.mjs > /dev/null && astro build && node scripts/check-rooms.mjs",
     "preview": "astro preview",
-    "astro": "astro"
+    "astro": "astro",
+    "lint:prompts": "node scripts/lint-prompts.mjs"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.41.7",

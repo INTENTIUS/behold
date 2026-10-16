@@ -1,0 +1,190 @@
+---
+// The home page's parts. `part="top"` (the default) is the pixel face, which
+// opens the docs, the wordmark, the mark between two gold hairlines, the
+// tagline and one plain sentence; then the picker (Picker.astro), the setup
+// prompt for a coding agent (its one source is src/prompts.ts), and the
+// feature tiles, each one link. `part="next"` is the read-next table under its
+// section heading in index.mdx. One import keeps index.mdx's prose free of
+// import lines.
+import AgentPrompt from './AgentPrompt.astro';
+import LinkRows from './LinkRows.astro';
+import Picker from './Picker.astro';
+import { setupPrompt } from '../prompts';
+import { base, docsHref } from '../site';
+
+interface Props {
+	part?: 'top' | 'next';
+}
+const { part = 'top' } = Astro.props;
+
+const pillars = [
+	{ title: 'One graph, every substrate', href: '/start/what-it-is/#the-mixed-estate-is-the-point' },
+	{ title: 'Coloured by what the estate holds', href: '/using/reading-the-graph/#the-colours' },
+	{ title: 'A zoom dial down to single fields', href: '/using/reading-the-graph/#the-zoom-dial' },
+	{ title: 'Field ownership on Kubernetes', href: '/using/reading-the-graph/#field-ownership-on-kubernetes' },
+	{ title: 'Writes start the Ops you committed', href: '/using/acting/' },
+	{ title: 'Unobserved reads as a hole', href: '/using/reading-the-graph/#the-colours' },
+	{ title: 'A static snapshot anyone can open', href: '/using/export/' },
+	{ title: 'Every pane as JSON for an agent', href: '/using/agents/' },
+];
+---
+{part === 'next' && <LinkRows />}
+{part === 'top' && (
+	<>
+		<section class="bh-landing not-content">
+			<a class="hero-link" href={docsHref} aria-label="The docs"><span class="bh-logo hero-logo" aria-hidden="true"></span></a>
+			<h1 class="wordmark">BEHOLD</h1>
+			<span class="rule" aria-hidden="true"><span class="bh-mark"></span></span>
+			<p class="claim">A live control plane on chant</p>
+			<p class="lede">See every substrate of an estate in one graph that drift colours. Act through the gated Ops you already committed.</p>
+		</section>
+		<Picker />
+		<section class="bh-prompt-wrap not-content" aria-label="Hand it to an agent">
+			<AgentPrompt text={setupPrompt} label="Start by handing this to an agent" note="Paste it into Claude Code, or any coding agent with a shell." />
+			<p>The same demo from npm, no clone, with Docker: <code>npx @intentius/behold demo</code></p>
+		</section>
+		<ul class="bh-pillars not-content">
+			{pillars.map((p) => (
+				<li>
+					<a href={`${base}${p.href}`}>
+						<span class="bh-logo" aria-hidden="true"></span>
+						<span>{p.title}</span>
+					</a>
+				</li>
+			))}
+		</ul>
+	</>
+)}
+
+<style>
+	.bh-prompt-wrap {
+		display: grid;
+		justify-items: center;
+		gap: 0.4rem;
+		max-width: 64rem;
+		margin: 0 auto 2.5rem;
+	}
+	.bh-prompt-wrap > p {
+		margin: 0;
+		max-width: 44rem;
+		font-size: var(--sl-text-sm);
+		color: var(--sl-color-gray-2);
+		text-align: center;
+	}
+	.bh-prompt-wrap code {
+		font-size: 0.85em;
+		padding: 0.05em 0.3em;
+		border: 1px solid var(--bh-rule);
+		border-radius: 0.3rem;
+		background: var(--sl-color-gray-6);
+	}
+	.bh-landing {
+		display: grid;
+		justify-items: center;
+		gap: 0.9rem;
+		padding-block: clamp(1.5rem, 4vw, 2.5rem) 1.25rem;
+		text-align: center;
+	}
+	.hero-link {
+		line-height: 0;
+		transition: transform 0.2s;
+	}
+	.hero-link:hover {
+		transform: translateY(-2px);
+	}
+	/* Four screen pixels per art pixel, so every square stays sharp. The face
+	   is symmetric, so the image's centre is the face's. */
+	.hero-logo {
+		width: 112px;
+		height: 76px;
+	}
+	.wordmark {
+		margin: 0.4rem 0 0;
+		font-family: var(--bh-display);
+		font-weight: 500;
+		font-size: clamp(1.4rem, 3.8vw, 1.8rem);
+		letter-spacing: 0.4em;
+		line-height: 1;
+		color: var(--sl-color-white);
+	}
+	/* The mark between two gold hairlines, under the wordmark. */
+	.rule {
+		display: flex;
+		align-items: center;
+		gap: 0.9rem;
+	}
+	.rule::before,
+	.rule::after {
+		content: '';
+		width: 2.6rem;
+		height: 1px;
+		background: var(--bh-gold);
+	}
+	.claim {
+		margin: 0;
+		font-family: var(--bh-display);
+		font-size: 0.78rem;
+		line-height: 1.3;
+		letter-spacing: 0.22em;
+		text-transform: uppercase;
+		color: var(--sl-color-gray-3);
+	}
+	@media (max-width: 30rem) {
+		.claim {
+			letter-spacing: 0.14em;
+		}
+	}
+	.lede {
+		margin: 0.4rem 0 0;
+		max-width: 40rem;
+		font-size: var(--sl-text-lg);
+		line-height: 1.5;
+		color: var(--sl-color-gray-1);
+		text-wrap: pretty;
+	}
+	.bh-pillars {
+		list-style: none;
+		max-width: 64rem;
+		margin: 0 auto;
+		padding: 0;
+		display: grid;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 0.75rem;
+	}
+	.bh-pillars li {
+		margin: 0;
+		min-width: 0;
+	}
+	.bh-pillars a {
+		display: grid;
+		gap: 0.75rem;
+		justify-items: start;
+		height: 100%;
+		padding: 1.1rem 1.15rem;
+		font-family: var(--bh-display);
+		font-size: var(--sl-text-sm);
+		font-weight: 600;
+		line-height: 1.3;
+		color: var(--sl-color-white);
+		text-decoration: none;
+		border: 1px solid var(--bh-rule);
+		border-top: 1px solid var(--bh-gold);
+		border-radius: 0.5rem;
+		background: var(--bh-panel);
+		transition: border-color 0.15s;
+	}
+	.bh-pillars a:hover,
+	.bh-pillars a:focus-visible {
+		border-color: var(--bh-gold);
+	}
+	@media (max-width: 50rem) {
+		.bh-pillars {
+			grid-template-columns: repeat(2, 1fr);
+			gap: 0.5rem;
+		}
+		.bh-pillars a {
+			padding: 0.85rem;
+			font-size: var(--sl-text-xs);
+		}
+	}
+</style>

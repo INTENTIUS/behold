@@ -1,0 +1,338 @@
+---
+// The home page's first choice: what the reader points behold at, as tiles
+// (a chant workspace, Terraform, terragucci, SQL Yodeler, choudoufu, a
+// carve-out, and the demo for no project yet), and the roles as a line of
+// chips. Two cards then say what works for that pick and the first step (the
+// command, and the page to follow). Every list comes from data/rooms.mjs, the
+// room pages' source. behold reads estates rather than running on a forge, so
+// there is no second switch.
+//
+// The first pick is rendered here, so the cards read the same without
+// script. Each tile is a link to its room: with script, a click on a tile
+// that is not picked picks it instead, and a click on the picked one opens
+// the room. The script keeps the pick in localStorage.
+import { ROLES, TILES, room } from '../data/rooms.mjs';
+import { codeHtml, siteHref } from '../data/href.mjs';
+import { base } from '../site';
+
+const tiles = TILES.map((t) => {
+	const r = room(t.room);
+	return {
+		id: t.id,
+		label: t.label,
+		blurb: t.blurb,
+		room: `${base}/for/${t.room}/`,
+		title: r.title,
+		works: r.works,
+		note: r.first.note ?? '',
+		command: r.first.command,
+		first: { label: r.first.link.label, href: siteHref(base, r.first.link.href) },
+	};
+});
+const data = { tiles };
+const [tile] = tiles;
+---
+<section class="bh-picker not-content" aria-label="Where to start">
+	<p class="ask">What are you pointing behold at?</p>
+	<nav class="tiles" aria-label="What behold looks at">
+		{tiles.map((t, i) => (
+			<a class="tile" href={t.room} data-tile={t.id} aria-current={i === 0 ? 'true' : undefined}>
+				<span class="bh-logo" aria-hidden="true"></span>
+				<b>{t.label}</b>
+				<small>{t.blurb}</small>
+			</a>
+		))}
+	</nav>
+	<nav class="roles" aria-label="By role">
+		<span>Or start from your role:</span>
+		{ROLES.map((r) => <a class="role" href={`${base}/for/${r.room}/`}><span class="bh-logo" aria-hidden="true"></span>{r.label}</a>)}
+	</nav>
+	<div class="cards" aria-live="polite">
+		<div class="card">
+			<p class="h">Works</p>
+			<ul class="logo-list" data-works>
+				{tile.works.map((w) => <li set:html={codeHtml(w)} />)}
+			</ul>
+		</div>
+		<div class="card">
+			<p class="h">First step</p>
+			<p class="note" data-note hidden={!tile.note} set:html={codeHtml(tile.note)} />
+			<pre><code data-command>{tile.command}</code></pre>
+			<a class="go" data-first href={tile.first.href}>{tile.first.label}</a>
+			<p class="more">See <a data-room href={tile.room}>{tile.title}</a> for the rest.</p>
+		</div>
+	</div>
+	<script type="application/json" data-picker-data set:html={JSON.stringify(data).replace(/</g, '\\u003c')} />
+</section>
+
+<script is:inline>
+	(() => {
+		// `code` spans as <code>, the rest escaped: the same as data/href.mjs codeHtml().
+		const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+		const code = (t) => esc(t).replace(/`([^`]+)`/g, '<code>$1</code>');
+		const key = 'bh-picker';
+		for (const section of document.querySelectorAll('.bh-picker')) {
+			const data = JSON.parse(section.querySelector('[data-picker-data]').textContent);
+			const pick = { tile: data.tiles[0].id };
+			try {
+				const saved = JSON.parse(localStorage.getItem(key) || '{}');
+				if (data.tiles.some((t) => t.id === saved.tile)) pick.tile = saved.tile;
+			} catch {}
+			const $ = (sel) => section.querySelector(sel);
+			const show = () => {
+				const tile = data.tiles.find((t) => t.id === pick.tile) || data.tiles[0];
+				for (const t of section.querySelectorAll('[data-tile]')) {
+					if (t.dataset.tile === tile.id) t.setAttribute('aria-current', 'true');
+					else t.removeAttribute('aria-current');
+				}
+				$('[data-works]').innerHTML = tile.works.map((w) => `<li>${code(w)}</li>`).join('');
+				$('[data-note]').innerHTML = code(tile.note);
+				$('[data-note]').hidden = !tile.note;
+				$('[data-command]').textContent = tile.command;
+				$('[data-first]').href = tile.first.href;
+				$('[data-first]').textContent = tile.first.label;
+				$('[data-room]').href = tile.room;
+				$('[data-room]').textContent = tile.title;
+				try {
+					localStorage.setItem(key, JSON.stringify(pick));
+				} catch {}
+			};
+			section.addEventListener('click', (e) => {
+				const t = e.target.closest('[data-tile]');
+				if (!t || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+				// The picked tile opens its room; another one is picked first.
+				if (t.dataset.tile === pick.tile) return;
+				e.preventDefault();
+				pick.tile = t.dataset.tile;
+				show();
+			});
+			show();
+		}
+	})();
+</script>
+
+<style>
+	.bh-picker {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 1.1rem;
+		max-width: 64rem;
+		margin: 0.5rem auto 2.5rem;
+		font-size: var(--sl-text-sm);
+		overflow-wrap: anywhere;
+	}
+	.ask {
+		margin: 0;
+		text-align: center;
+		font-size: 0.68rem;
+		font-weight: 600;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		color: var(--sl-color-gray-3);
+	}
+	.tiles {
+		display: grid;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		gap: 0.5rem;
+	}
+	.tile {
+		--bh-ink: var(--sl-color-gray-4);
+		position: relative;
+		display: grid;
+		gap: 0.45rem;
+		align-content: start;
+		padding: 0.85rem 0.9rem;
+		color: var(--sl-color-white);
+		text-decoration: none;
+		background: var(--bh-panel);
+		border: 1px solid var(--bh-rule);
+		border-top: 2px solid var(--bh-rule);
+		border-radius: 0.6rem;
+		transition: border-color 0.15s;
+	}
+	.tile .bh-logo {
+		width: 28px;
+		height: 19px;
+	}
+	.tile b {
+		line-height: 1.3;
+	}
+	.tile small {
+		font-size: var(--sl-text-xs);
+		line-height: 1.35;
+		color: var(--sl-color-gray-3);
+	}
+	.tile:hover {
+		--bh-ink: var(--sl-color-gray-2);
+		border-color: var(--bh-gold);
+	}
+	/* The picked tile: a gold edge, the logo in full ink, and the mark in its corner. */
+	.tile[aria-current='true'] {
+		--bh-ink: var(--sl-color-white);
+		border-color: var(--bh-rule);
+		border-top-color: var(--bh-gold);
+		box-shadow: inset 0 0 0 1px var(--bh-gold);
+	}
+	.tile[aria-current='true']::after {
+		content: '';
+		position: absolute;
+		top: 0.6rem;
+		right: 0.6rem;
+		width: 15px;
+		height: 15px;
+		background-color: var(--bh-gold);
+		-webkit-mask: var(--bh-mark) center / contain no-repeat;
+		mask: var(--bh-mark) center / contain no-repeat;
+	}
+	.roles {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	.roles > span {
+		margin-right: 0.25rem;
+		font-size: var(--sl-text-xs);
+		color: var(--sl-color-gray-3);
+	}
+	.role {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.35rem 0.8rem 0.35rem 0.55rem;
+		font-weight: 500;
+		color: var(--sl-color-white);
+		text-decoration: none;
+		background: var(--bh-panel);
+		border: 1px solid var(--bh-rule);
+		border-radius: 0.5rem;
+	}
+	.role .bh-logo {
+		width: 28px;
+		height: 19px;
+	}
+	.role:hover,
+	.role:focus-visible {
+		border-color: var(--bh-gold);
+	}
+	.cards {
+		display: grid;
+		grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+		gap: 0.75rem;
+	}
+	.card {
+		display: grid;
+		align-content: start;
+		gap: 0.7rem;
+		padding: 1rem 1.15rem;
+		background: var(--bh-panel);
+		border: 1px solid var(--bh-rule);
+		border-top: 1px solid var(--bh-gold);
+		border-radius: 0.6rem;
+		color: var(--sl-color-gray-2);
+		line-height: 1.55;
+	}
+	.card p {
+		margin: 0;
+	}
+	.h {
+		font-size: 0.68rem;
+		font-weight: 600;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		color: var(--sl-color-gray-3);
+	}
+	.logo-list {
+		display: grid;
+		gap: 0.45rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.logo-list :global(li) {
+		position: relative;
+		margin: 0;
+		padding-left: 2.35rem;
+		color: var(--sl-color-white);
+	}
+	.logo-list :global(li)::before {
+		content: '';
+		position: absolute;
+		left: 0;
+		top: 3px;
+		width: 28px;
+		height: 19px;
+		background-color: var(--bh-ink);
+		-webkit-mask: var(--bh-logo) center / contain no-repeat;
+		mask: var(--bh-logo) center / contain no-repeat;
+	}
+	.card :global(code) {
+		font-size: 0.85em;
+		padding: 0.05em 0.3em;
+		border: 1px solid var(--bh-rule);
+		border-radius: 0.3rem;
+		background: var(--sl-color-gray-6);
+	}
+	.card pre {
+		margin: 0;
+		padding: 0.65rem 0.8rem;
+		overflow-x: auto;
+		font-family: var(--sl-font-mono);
+		font-size: var(--sl-text-xs);
+		white-space: pre-wrap;
+		color: var(--sl-color-gray-1);
+		border: 1px solid var(--bh-rule);
+		border-radius: 0.45rem;
+		background: var(--sl-color-black);
+	}
+	.card pre code {
+		border: 0;
+		padding: 0;
+		background: none;
+	}
+	.proof {
+		padding-top: 0.75rem;
+		border-top: 1px solid var(--bh-rule);
+		font-size: var(--sl-text-xs);
+		color: var(--sl-color-gray-3);
+	}
+	.proof a,
+	.more a {
+		color: var(--bh-accent);
+	}
+	.go {
+		justify-self: start;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.55rem 1rem;
+		font-weight: 600;
+		color: var(--sl-color-black);
+		text-decoration: none;
+		background: var(--bh-accent);
+		border-radius: 0.5rem;
+	}
+	.go::after {
+		content: '\2192';
+	}
+	.go:hover {
+		filter: brightness(1.1);
+	}
+	.more {
+		font-size: var(--sl-text-xs);
+		color: var(--sl-color-gray-3);
+	}
+	@media (max-width: 56rem) {
+		.tiles {
+			grid-template-columns: repeat(3, minmax(0, 1fr));
+		}
+		.cards {
+			grid-template-columns: minmax(0, 1fr);
+		}
+	}
+	@media (max-width: 36rem) {
+		.tiles {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+	}
+</style>

@@ -1,6 +1,12 @@
 ---
 title: Look at a SQL Yodeler project
 description: Which schema each environment holds, and what SQL Yodeler's report and drift files say, drawn on the project's schema. Local, read-only, dated.
+prompt: |
+  Read https://intentius.io/behold/using/sql-yodeler/.
+  Serve this SQL Yodeler project with `npx @intentius/behold serve .` and tell me the URL.
+  List the environments the Releases tab shows.
+  For each gate that waits, show me the `yodel approve` line to run myself.
+  Never deploy with the Deploy button, `POST /api/apply` or `POST /api/ci/dispatch`. Gate approvals stay mine as well (`/api/ops/:name/signal/:gate`, `/api/workspace/gates/approve`, `/api/operator/approve/:op/:gate`). Op runs (`/api/ops/:name/run`) and rollbacks (`/api/rollback`) are mine too. Leave `--auto-sync` off, and keep a `behold preview` or `--public` serve read-only.
 ---
 
 [SQL Yodeler](https://intentius.io/sql-yodeler/) plans and applies database

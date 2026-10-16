@@ -1,6 +1,12 @@
 ---
 title: Look at a Terraform estate
 description: Draw a multi-root Terraform estate. What behold reads, what it refuses to infer, and where the live half is not.
+prompt: |
+  Read https://intentius.io/behold/using/terraform/.
+  Install the two packages the page names beside behold.
+  Serve this repository's Terraform with `npx @intentius/behold serve <dir>` and tell me the URL.
+  List the roots it found and each directory it skipped, and why.
+  Never deploy with the Deploy button, `POST /api/apply` or `POST /api/ci/dispatch`. Gate approvals stay mine as well (`/api/ops/:name/signal/:gate`, `/api/workspace/gates/approve`, `/api/operator/approve/:op/:gate`). Op runs (`/api/ops/:name/run`) and rollbacks (`/api/rollback`) are mine too. Leave `--auto-sync` off, and keep a `behold preview` or `--public` serve read-only.
 ---
 
 import { Aside } from '@astrojs/starlight/components';

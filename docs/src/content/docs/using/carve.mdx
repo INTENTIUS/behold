@@ -1,6 +1,12 @@
 ---
 title: Look at a Terraform carve-out
 description: Render a chant peelability report as a graph. What is cheap to move off Terraform, and what it would cost.
+prompt: |
+  Read https://intentius.io/behold/using/carve/.
+  Run `chant carve advise --from <terraform dir> --report carve.json`.
+  Then serve the report with `npx behold carve carve.json` and tell me the URL.
+  List the resources in the carve now band, and hand me the runbook commands to run myself.
+  Never deploy with the Deploy button, `POST /api/apply` or `POST /api/ci/dispatch`. Gate approvals stay mine as well (`/api/ops/:name/signal/:gate`, `/api/workspace/gates/approve`, `/api/operator/approve/:op/:gate`). Op runs (`/api/ops/:name/run`) and rollbacks (`/api/rollback`) are mine too. Leave `--auto-sync` off, and keep a `behold preview` or `--public` serve read-only.
 ---
 
 `chant carve advise` reads a Terraform estate and ranks each resource by **peelability**: how cleanly it could be carved into native chant source. `behold carve` draws that ranking.
