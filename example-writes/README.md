@@ -69,7 +69,7 @@ npm run dev -- serve example-writes --env prod
 
 `prod-apply` here is additive and ungated, so Sync applies in one click. Make it
 gated and Sync starts the Op but **pauses** at an approval gate — behold then shows
-an **Approve** button that signals the gate (a durable Temporal wait). Authority for
+an **Approve** button that signals the gate (a durable wait in the run). Authority for
 the destructive step stays with a human:
 
 ```ts

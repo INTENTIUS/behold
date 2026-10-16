@@ -128,7 +128,7 @@ describe("GET /api/graph?ops=1 (#284)", () => {
     const body = (await res.json()) as { error: string; code: string; remedy: string };
     expect(body.code).toBe("op-ir");
     expect(body.error).toContain("dist/ops/<name>/op.json");
-    expect(body.remedy).toContain("chant build --lexicon temporal");
+    expect(body.remedy).toContain("`chant build`");
   });
 
   it("refuses the whole view on one unreadable op.json rather than drawing a partial track", async () => {
