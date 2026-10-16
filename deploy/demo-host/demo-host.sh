@@ -29,6 +29,9 @@
 #   demo-host.sh open       launch morning: take the password off the site
 #   demo-host.sh close      put the password back
 #   demo-host.sh status     containers, demo.json and the last stalls
+#   demo-host.sh cleanup    run the disk cleanup now (cleanup.sh), as
+#                           demo-host-cleanup.timer does daily and update does
+#                           after it succeeds
 #
 # bootstrap's pieces, one at a time, for the demo-host-bootstrap op
 # (chant/ops/bootstrap.op.ts), which runs them over ssh in this order:
@@ -39,7 +42,8 @@
 #   configure [--secrets <file>]
 #                           /etc/demo-host/demo.env and Caddy's password
 #   checkouts               terragucci and behold at the refs in demo.env
-#   units                   install and enable the systemd units
+#   units                   install and enable the systemd units, start the
+#                           cleanup timer, and cap the journal (DEMO_JOURNAL_MAX)
 #   build                   build the behold and driver images
 #   start-driver            start (the driver alone on a fresh host) and the watchdog
 #   wait-bootstrap          wait for the driver's bootstrap to record its base
@@ -224,11 +228,25 @@ checkouts() {
 
 install_units() {
   local u
-  for u in demo-host.service demo-host-watchdog.service; do
+  for u in demo-host.service demo-host-watchdog.service demo-host-cleanup.service demo-host-cleanup.timer; do
     sed "s#@DEMO_ROOT@#$ROOT#g" "$HERE/systemd/$u" > "$UNIT_DIR/$u"
   done
   systemctl daemon-reload
   systemctl enable demo-host.service demo-host-watchdog.service
+  systemctl enable --now demo-host-cleanup.timer
+  journal_cap
+}
+
+# The journal's cap, so it never grows to journald's default of a tenth of
+# the disk. cleanup.sh vacuums to the same size each day.
+journal_cap() {
+  local f=/etc/systemd/journald.conf.d/demo-host.conf want
+  want="$(printf '# Written by demo-host.sh from DEMO_JOURNAL_MAX in demo.env.\n[Journal]\nSystemMaxUse=%s\n' "$(conf DEMO_JOURNAL_MAX 500M)")"
+  [ "$(cat "$f" 2>/dev/null)" != "$want" ] || return 0
+  mkdir -p "$(dirname "$f")"
+  printf '%s\n' "$want" > "$f"
+  systemctl restart systemd-journald
+  log "the journal is capped at $(conf DEMO_JOURNAL_MAX 500M) ($f)"
 }
 
 wait_bootstrap() { # the driver's first bootstrap: until floci holds the marker driver-entry.sh writes
@@ -418,6 +436,13 @@ cmd_update_rest() {
   cmd_reload_caddy
   running_as_named
   log "updated: terragucci $(conf TERRAGUCCI_REF main), behold $(conf BEHOLD_REF main)"
+  # The images of the release before are no longer needed: clean up now, in
+  # the background (journalctl -u demo-host-cleanup), rather than at 04:00.
+  systemctl start --no-block demo-host-cleanup.service || log "could not start demo-host-cleanup.service"
+}
+
+cmd_cleanup() {
+  "$HERE/cleanup.sh"
 }
 
 cmd_open() {
@@ -471,6 +496,7 @@ main() {
     up) need_root; cmd_up ;;
     reload-caddy) need_root; cmd_reload_caddy ;;
     clear-strays) need_root; clear_strays ;;
+    cleanup) need_root; cmd_cleanup ;;
     *) sed -n '3,/^set -/p' "$0" | grep '^#' | sed 's/^# \{0,1\}//'; exit 2 ;;
   esac
 }

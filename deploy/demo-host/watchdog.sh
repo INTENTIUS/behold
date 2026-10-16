@@ -19,6 +19,9 @@
 #     origin's main, so behold's cards are main's roots. A /view/<repo
 #     name>.change checkout is left alone: the driver keeps it at the step's
 #     commit.
+#   - /var/lib/demo-host/disk.status, which cleanup.sh writes. When it says
+#     the disk is still over DEMO_DISK_WARN after a cleanup, the watchdog logs
+#     it once, and again each time the cleanup writes it.
 #
 # Clocks start again when the driver starts, so a restart is never counted as
 # a stall of its own.
@@ -93,9 +96,19 @@ last_change="$(now)"
 last_cycle=""
 last_restarts=""
 stalled_noted=""
+last_disk=""
+
+disk_check() {
+  local d
+  d="$(cat "$STATE/disk.status" 2>/dev/null || true)"
+  [ "$d" != "$last_disk" ] || return 0
+  last_disk="$d"
+  case "$d" in over\ *) info "DISK: ${d#over }" ;; esac
+}
 
 while :; do
   sleep "$INTERVAL"
+  disk_check
 
   if [ "$(cat "$STATE/driver-mode" 2>/dev/null || echo running)" = paused ]; then
     continue

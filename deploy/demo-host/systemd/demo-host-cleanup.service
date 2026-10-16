@@ -1,0 +1,18 @@
+# The demo host's disk cleanup (behold#571, #603): old terragucci CI images,
+# dangling images, BuildKit's cache past its cap, old stopped one-off
+# containers and the journal past its cap. Never a volume, a running
+# container or an image a container uses. demo-host-cleanup.timer starts it
+# daily, and `demo-host.sh update` after an update. Installed by demo-host.sh
+# with @DEMO_ROOT@ filled in. It exits 3 when the disk is still over
+# DEMO_DISK_WARN after cleanup, so the unit shows as failed.
+[Unit]
+Description=Demo host: disk cleanup
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=@DEMO_ROOT@/behold/deploy/demo-host/cleanup.sh
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=1800

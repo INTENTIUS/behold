@@ -1,0 +1,13 @@
+# Starts demo-host-cleanup.service every day at 04:00 UTC, and at boot when
+# the machine was off at that time (Persistent). Installed and started by
+# demo-host.sh.
+[Unit]
+Description=Demo host: daily disk cleanup
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 UTC
+Persistent=true
+RandomizedDelaySec=15min
+
+[Install]
+WantedBy=timers.target

@@ -20,14 +20,15 @@ watchdog (systemd) ── docker + localhost:4580 ──> driver, demo.json, beh
 
 | File | What it is |
 |---|---|
-| `demo-host.sh` | Everything done on the host: `bootstrap`, `start`, `pause`, `update`, `open`, `close`, `status` |
+| `demo-host.sh` | Everything done on the host: `bootstrap`, `start`, `pause`, `update`, `open`, `close`, `status`, `cleanup` |
 | `compose.yaml` | Caddy, behold and the driver (project `demo-host`); written by chant |
 | `Caddyfile` | `demo.intentius.io`, the certificate, the password until launch morning |
 | `behold.Dockerfile` | behold built from its checkout at `BEHOLD_REF`; written by chant |
 | `driver.Dockerfile` | node, git and the Docker CLI for terragucci's scripts; written by chant |
 | `driver-entry.sh` | The driver container's entry: bootstrap when floci has no base, behold's keys, then the loop |
 | `watchdog.sh` | Restarts the driver when it exits or stalls, logs stalls, pulls behold's checkout every cycle |
-| `systemd/` | `demo-host.service` (the stack at boot) and `demo-host-watchdog.service` |
+| `cleanup.sh` | The disk cleanup: old terragucci CI images, dangling images, build cache and journal past their caps (see "Disk cleanup") |
+| `systemd/` | `demo-host.service` (the stack at boot), `demo-host-watchdog.service`, and `demo-host-cleanup.service` with its daily `demo-host-cleanup.timer` |
 | `demo.env.example` | The settings, copied to `/etc/demo-host/demo.env` |
 | `chant/` | The chant project: the AWS resources (`src/aws`), `compose.yaml` and the Dockerfiles (`src/docker`), and the ops (`ops/`) |
 
@@ -60,8 +61,8 @@ typechecks and lints the project, and fails when `template.json`,
 `compose.yaml` or either Dockerfile isn't what chant builds.
 
 These stay as files, because chant has no lexicon for them: the `Caddyfile`,
-the systemd units, `demo-host.sh`, `driver-entry.sh`, `watchdog.sh` and
-`demo.env.example`.
+the systemd units, `demo-host.sh`, `driver-entry.sh`, `watchdog.sh`,
+`cleanup.sh` and `demo.env.example`.
 
 ## The machine
 
@@ -280,7 +281,63 @@ nothing is pushed to `main` while a wave waits or applies
 (INTENTIUS/terragucci#1014).
 
 Stalls go to `/var/log/demo-host/stalls.log` and to the journal
-(`journalctl -u demo-host-watchdog`).
+(`journalctl -u demo-host-watchdog`). The watchdog also logs a `DISK:` line
+when the cleanup leaves the disk over its limit (next section).
+
+## Disk cleanup
+
+On 2026-10-16 the root disk reached 80% (49 of 58 GB): the four terragucci CI
+images of 24 releases at 640 to 750 MB each, and 35 GB of BuildKit cache.
+`cleanup.sh` keeps that from happening again. `demo-host-cleanup.timer` runs
+it every day at 04:00 UTC (and at boot if the host was off then), and
+`demo-host.sh update` starts it in the background after an update succeeds.
+`sudo demo-host.sh cleanup` runs it at once. It removes:
+
+- the CI images (`ghcr.io/intentius/terragucci-{tofu,terraform,terragrunt,choudoufu}`)
+  of every terragucci version but the host's. The version is `TERRAGUCCI_REF`
+  when that is a release tag, and the terragucci checkout's
+  `packages/terragucci/package.json` when it is a branch or a commit; when the
+  two differ, both stay. With no version, it removes none;
+- dangling images, the unnamed (`<none>:<none>`) ones no container uses;
+- BuildKit's cache past `DEMO_BUILD_CACHE_MAX` (5GB):
+  `docker builder prune --max-used-space`, or `--keep-storage` on a buildx
+  older than 0.17;
+- stopped containers older than `DEMO_CLEANUP_CONTAINER_AGE` (24h) that no
+  compose project made, such as a job container a runner left;
+- the journal past `DEMO_JOURNAL_MAX` (500M). `demo-host.sh units` also sets
+  journald's `SystemMaxUse` to it (`/etc/systemd/journald.conf.d/demo-host.conf`);
+  journald's default is a tenth of the disk.
+
+It never removes a volume, named or not, a running container or a compose
+service's container, an image any container uses, or a `*:local` image (behold,
+the driver, and the demo's job images). Images go with a plain `docker rmi`,
+never `-f`, so Docker itself refuses one a container uses.
+`src/demo-host-cleanup.test.ts` runs the script against a stub Docker and
+fails if it ever runs `volume prune`, `system prune`, `rmi -f` or
+`image prune -a`, or removes an image a container uses. Volumes no container
+uses are listed in the log and left alone.
+
+Each run logs `df` and `docker system df` before and after, and what it
+removed, to the journal (`journalctl -u demo-host-cleanup`) and
+`/var/log/demo-host/cleanup.log`. When the disk is still over
+`DEMO_DISK_WARN` (85%) after it, it logs a `WARNING: DISK` line, adds it to
+`stalls.log` (which `status` shows), writes it to
+`/var/lib/demo-host/disk.status` for the watchdog to log, and exits 3, so
+`systemctl --failed` lists the unit.
+
+The other stores, as measured on 2026-10-16:
+
+| Store | Bound |
+|---|---|
+| Container logs | Docker's `local` driver, 5 files of 20 MB per container (`/etc/docker/daemon.json`, set by `install`) |
+| Prometheus (an anonymous volume at `/prometheus`) | its default 15-day retention; 17 MB after 11 hours |
+| Tempo (`terragucci-tempo-lite-data`) | 24 hours (`block_retention` in terragucci's `stack/observability/tempo-lite.yaml`); 42 MB |
+| `terragucci-job-cache` | one OpenTofu binary and provider set per version in use; empty today, since the jobs run in the CI images |
+| Forgejo's Actions artifacts and logs (287 MB and 6 MB) | the driver deletes each repo's runs past the newest 100 at each reset (terragucci#1047); Forgejo removes their artifacts and logs at its `cleanup_actions` task, which the driver now also starts hourly (terragucci, `scripts/demo-pulls.ts`) |
+| Forgejo's pull requests and `refs/pull/*` | the driver deletes each repo's closed pull requests past the newest 50 at each reset, and runs Forgejo's `git_gc_repos` hourly (terragucci, `scripts/demo-pulls.ts`) |
+| Forgejo's LFS, attachments, packages, archives | LFS is off; the rest are empty, and archives go at Forgejo's daily `archive_cleanup` |
+| Forgejo runner (`terragucci-forgejo-runner-data`) | its cache server is off (`cache.enabled: false`); 6 MB |
+| floci | in memory, not on disk. Its reports bucket is not bounded yet: 221 MB in 42,839 objects after 42 hours (INTENTIUS/terragucci#1117) |
 
 ## Running it
 
