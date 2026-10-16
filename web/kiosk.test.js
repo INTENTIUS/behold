@@ -225,7 +225,7 @@ describe("the approval panel's drawing (behold#571)", () => {
       };
       const panel = approvalPanel(model, { showLine: (l) => shown.push(l) });
       // behold#571: the wave, the run and the plan head the hold panel; the panel's own head says what its rows are.
-      expect(find(panel, "k-ap-head")[0].textContent).toBe("How this hold ends · times in UTC");
+      expect(find(panel, "k-ap-head")[0].textContent).toBe("Approval · times in UTC");
       expect(holdHead({ wave: model.wave, run: 3605, digest: model.digest })).toBe("Wave 2 · run #3605 · plan 0accc105");
       expect(find(panel, "k-ap-row").map((r) => r.className)).toEqual(["k-ap-row k-ap-lit", "k-ap-row k-ap-dim", "k-ap-row k-ap-dim", "k-ap-row k-ap-dim"]);
       expect(find(panel, "k-ap-facts")[0].textContent).toBe("04:09:41 · ledger 57869649");

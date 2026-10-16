@@ -24,7 +24,7 @@ import { findLine } from "./kiosk-annotations.js";
 export const PANEL_STEPS = ["waiting", "approved", "resumed", "applied"];
 
 /** The panel's title. */
-export const PANEL_TITLE = "How this hold ends";
+export const PANEL_TITLE = "Approval";
 
 /** The rows, in order. */
 export const ROWS = [
