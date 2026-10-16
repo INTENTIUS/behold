@@ -120,7 +120,7 @@ describe("the component marks (#571)", () => {
     const m = componentMarks(answer, null, facets, { runs: runs(run(11, MERGE, [job("apply-wave-2", "waiting")])), pin: `pull-41-a1b2c3d4` });
     expect(m.stage).toBe("pull-request");
     expect(m.cards.network).toMatchObject({ state: "planned", words: "planned" });
-    expect(m.cards.other).toMatchObject({ state: "outside", words: "not in this change" });
+    expect(m.cards.other).toMatchObject({ state: "outside", words: "unchanged" });
     expect(m.waves[2]).toMatchObject({ state: "planned", status: null, title: "apply-wave-2" });
     expect(m.waves[1].facts).toEqual(["plan aaaaaaaaaaaa"]);
   });

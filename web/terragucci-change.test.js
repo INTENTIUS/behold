@@ -23,7 +23,7 @@ describe("rootStates (#569)", () => {
     expect(stage).toBe("pull-request");
     expect(r.network).toMatchObject({ wave: 1, state: "planned", tone: "plan", words: "wave 1 · planned", facts: ["plan f8851fb61921"] });
     expect(r.app.facts).toEqual(["plans again once wave 1 applies", "will wait for an approval"]);
-    expect(r.other).toMatchObject({ state: "outside", words: "not in this change" });
+    expect(r.other).toMatchObject({ state: "outside", words: "unchanged" });
   });
   it("shows a failed wave's roots failed and the waves before it applied", () => {
     const p = run(
@@ -76,7 +76,7 @@ describe("rootStates, a root that plans no change (#569 review)", () => {
 
 describe("readLabel (#569)", () => {
   it("says what is read and when it is known", () => {
-    expect(readLabel({ from: "app", to: "network", outputs: "planned", unknown: ["http_proxy_port"] })).toBe("reads http_proxy_port from network: unknown until network applies");
+    expect(readLabel({ from: "app", to: "network", outputs: "planned", unknown: ["http_proxy_port"] })).toBe("reads http_proxy_port from network, set when network applies");
     expect(readLabel({ from: "app", to: "network", outputs: "planned", unknown: [] })).toBe("reads network's planned outputs");
     expect(readLabel({ from: "app", to: "network", outputs: "applied", unknown: [] })).toBe("reads network's applied state");
     expect(readLabel({ from: "app", to: "network", outputs: "planned", unknown: ["subnet_id"], composed: 1 })).toBe("reads network in wave 1's composed run: subnet_id known once network's part applies");
@@ -93,7 +93,7 @@ describe("readCardIds (#569)", () => {
 describe("viewCaption (#569)", () => {
   it("says which run the marks come from", () => {
     const now = new Date("2026-10-15T03:30:00Z");
-    expect(viewCaption(prAnswer, null, now)).toBe("the plan of pull request #201 at 03:11 UTC: not merged yet, nothing applied");
+    expect(viewCaption(prAnswer, null, now)).toBe("the plan of pull request #201 at 03:11 UTC, before the merge");
     expect(viewCaption(prAnswer, run([{ number: 1, state: "applied", roots: ["network"], reads: [] }], []), now)).toBe("the run of merge 6b9f7e25, as of 03:20 UTC");
   });
 });

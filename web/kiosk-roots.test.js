@@ -38,8 +38,8 @@ describe("a colour per root (behold#571)", () => {
 
 describe("root names in a line (behold#571)", () => {
   it("finds whole-word names, possessives and names in brackets, and keeps the line's text", () => {
-    const line = "app reads subnet_id from network, known only after network applies: the review does not show the value app gets.";
-    expect(names(line)).toEqual(["app", "network", "network", "app"]);
+    const line = "app reads subnet_id from network, set when network applies.";
+    expect(names(line)).toEqual(["app", "network", "network"]);
     expect(rootSegments(line, ROOTS).map((s) => s.text).join("")).toBe(line);
     expect(names("approves wave 2 (app) with network's key")).toEqual(["app", "network"]);
     expect(names("app: Plan: 0 to add, 1 to change, 0 to destroy.")).toEqual(["app"]);
