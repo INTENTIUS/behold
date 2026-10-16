@@ -526,7 +526,9 @@ function drawBar(bar, s, now, foot) {
   const left = el("div", "k-left");
   const titleBox = box("title", "k-box-title");
   const title = el("h1", "k-title");
-  if (vendor) title.appendChild(brandEl(vendor));
+  // behold#571: /kiosk names the tool each scenario runs on, as its own page does.
+  const shownTool = vendor || (demo.scenario !== "base" ? vendorOf(demo.tool) : null);
+  if (shownTool) title.appendChild(brandEl(shownTool));
   title.append(el("span", "k-kicker", head.kicker), el("span", "k-title-text", head.title));
   if (title.setAttribute) title.setAttribute("title", `${head.kicker} · ${head.title || ""}`);
   titleBox.appendChild(title);
