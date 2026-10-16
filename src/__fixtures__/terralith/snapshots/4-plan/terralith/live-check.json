@@ -1,0 +1,33 @@
+{
+  "dir": ".",
+  "estate": "terralith",
+  "blocked": false,
+  "exit_code": 0,
+  "schemas": "provider",
+  "instances": [
+    {
+      "address": "aws_subnet.app",
+      "type": "aws_subnet",
+      "rung": "tag-governable"
+    },
+    {
+      "address": "aws_vpc.main",
+      "type": "aws_vpc",
+      "rung": "tag-governable"
+    }
+  ],
+  "references": [],
+  "refusals": [],
+  "checked": [
+    "lint",
+    "identity",
+    "dataread",
+    "stamp"
+  ],
+  "partial": [
+    "projection (2 of 86 refusals; the rest need a cloud)"
+  ],
+  "unchecked": [
+    "discovery"
+  ]
+}

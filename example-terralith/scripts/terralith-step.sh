@@ -10,6 +10,14 @@
 #           choudoufu live-mv -from-estate rewrites each team resource's
 #           markers, run in the root it moves to. One tag write per resource.
 #           The record is split.json.
+#   plan    a change across the new estates, planned the way terragucci
+#           plans a pull request: the terralith publishes a shared setting as
+#           an output, and each team's first log group reads it. The
+#           terralith plans first; each team root plans its cone with
+#           -estate-outputs-from, so it reads the terralith's PLANNED output
+#           (choudoufu falls back to a full plan there, and says why); the
+#           three team plans run as one live-plan-set, and live-summary folds
+#           the identical changes into one group. Nothing is applied.
 #
 # Each phase ends in a snapshot under snapshots/<n>-<phase>/.
 set -euo pipefail
@@ -82,7 +90,50 @@ case "$phase" in
     finish snapshots/3-split split 3 terralith team-a team-b team-c
     say "split. Four estates, one tag write per resource."
     ;;
+  plan)
+    [ -f snapshots/3-split/phase.json ] || die "split has not run yet. Run scripts/terralith-step.sh split first."
+    [ -f snapshots/4-plan/phase.json ] && { say "plan already ran (snapshots/4-plan)."; exit 0; }
+    command -v git >/dev/null 2>&1 || die "git is not on PATH; the cone is a diff against each root's last commit."
+    out="$PWD/snapshots/4-plan"
+    mkdir -p "$out"
+    # Each estate root keeps its own history, as a split estate's repository
+    # would: the base is the root as the split left it. (A root in a
+    # subdirectory of one shared repository gets no cone from choudoufu 0.28.0:
+    # live-cone lists the base with `git ls-tree` from inside the root, which
+    # git filters to that directory, so the base reads empty.)
+    for root in terralith team-a team-b team-c; do
+      if [ ! -d "$root/.git" ]; then
+        (cd "$root" && git init -q && printf '%s\n' .terraform/ .terraform.lock.hcl .tofu-records/ >.gitignore \
+          && git add -A && git -c user.name=terralith-demo -c user.email=terralith-demo@localhost commit -q -m "the root as the split left it")
+      fi
+    done
+    say "the code change: the terralith outputs log_retention_days, and each team's first log group reads it"
+    for root in terralith team-a team-b team-c; do cp "phases/plan/$root/main.tf" "$root/main.tf"; done
+    say "live-cone: what each change reaches, against the root's last commit"
+    for root in terralith team-a team-b team-c; do
+      mkdir -p "$out/$root"
+      (cd "$root" && "$CHOUDOUFU" live-cone -json HEAD >"$out/$root/cone.json" 2>"$out/$root/cone.err") || true
+    done
+    say "plan the terralith first: its planned output is what the teams read"
+    (cd terralith && "$CHOUDOUFU" plan -input=false -no-color "-out=$PWD/../$WORK/terralith.tfplan" >"$out/terralith/plan.log" 2>&1) \
+      || die "the terralith's plan failed (snapshots/4-plan/terralith/plan.log)"
+    (cd terralith && "$CHOUDOUFU" show -json "$PWD/../$WORK/terralith.tfplan" >"$out/terralith/plan.json")
+    say "live-plan-set: the three team roots, each its cone, reading the terralith's planned output"
+    TF_CLI_ARGS_plan="-cone=HEAD -estate-outputs-from=terralith=$out/terralith/plan.json" \
+      "$CHOUDOUFU" live-plan-set -json "-out-dir=$WORK/plan-set" team-a team-b team-c >"$out/set.json" 2>"$out/set.err" || true
+    for root in team-a team-b team-c; do cp "$WORK/plan-set/$root.log" "$out/$root/plan.log" 2>/dev/null || true; done
+    say "live-summary: the identical changes, folded"
+    "$CHOUDOUFU" live-summary -json "$out/set.json" >"$out/summary.json"
+    "$CHOUDOUFU" live-summary "$out/set.json" | head -8
+    say "snapshot: phase 4"
+    snap snapshots/4-plan terralith
+    for root in team-a team-b team-c; do
+      SNAP_PLAN_ARGS="-estate-outputs-from=terralith=$out/terralith/plan.json" snap snapshots/4-plan "$root"
+    done
+    finish snapshots/4-plan plan 4 terralith team-a team-b team-c
+    say "planned. Nothing was applied: the plans are in .terralith/plan-set."
+    ;;
   *)
-    die "which phase? bash scripts/terralith-step.sh adopt | split"
+    die "which phase? bash scripts/terralith-step.sh adopt | split | plan"
     ;;
 esac

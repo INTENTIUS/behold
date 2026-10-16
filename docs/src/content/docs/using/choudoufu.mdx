@@ -126,7 +126,13 @@ stamps the marker on each resource it verifies and leaves the state file as it
 was. Split runs the `moves` migration, which adds three team roots while
 `choudoufu live-mv` moves each team's resources into the team's estate.
 `split.json` keeps the record, and the team boxes appear as the cards glide
-into them.
+into them. The plan phase changes all four estates in one step and plans it
+without applying anything. The terralith outputs a shared setting, and each
+team root plans against that planned value with `-estate-outputs-from`. The
+page outlines each team's cone, badges a root that planned in full with
+choudoufu's reason, draws an edge for the planned output to each root that
+reads it, and brackets the team boxes whose identical changes `live-summary`
+folds into one group.
 
 You run each phase's line in the demo copy, and the page at `/terralith` reads
 the documents it leaves in `snapshots/`.

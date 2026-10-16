@@ -180,13 +180,13 @@
     {
       "addr": "aws_subnet.app",
       "type": "aws_subnet",
-      "identity": "subnet-719de87e",
+      "identity": "subnet-48526a03",
       "source": "marker"
     },
     {
       "addr": "aws_vpc.main",
       "type": "aws_vpc",
-      "identity": "vpc-737b83d8",
+      "identity": "vpc-95df8725",
       "source": "marker"
     }
   ],

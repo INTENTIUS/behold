@@ -66,6 +66,23 @@
       .t-card .news { font-size: 11.5px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .t-card .news.drifted { color: var(--foreign); }
       .t-card.moved { border-color: color-mix(in srgb, var(--managed) 55%, var(--line)); }
+      .t-stage { position: relative; }
+      .t-stage.planning { padding: 52px 0 40px; }
+      .t-overlay { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+      .t-edge { fill: none; stroke: var(--runtime); stroke-width: 1.6; stroke-dasharray: 5 4; }
+      .t-edge-head { fill: var(--runtime); }
+      .t-edge-label { fill: var(--runtime); font: 12px var(--font-mono); }
+      .t-bracket { fill: none; stroke: var(--foreign); stroke-width: 2; }
+      .t-bracket-label { fill: var(--foreign); font: 12.5px var(--font-mono); }
+      .t-badges { display: flex; flex-wrap: wrap; gap: 5px; flex-basis: 100%; }
+      .t-badge { font-size: 11.5px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+      .t-badge.cone { border-color: var(--managed); color: var(--managed); }
+      .t-badge.full { border-style: dashed; }
+      .t-badge.group { border-color: var(--foreign); color: var(--foreign); }
+      .t-card.in-cone { outline: 2px dashed var(--managed); outline-offset: 2px; }
+      .t-card .news.change { color: var(--foreign); }
+      .t-groups, .t-groups[hidden] { display: none; }
+      .t-group { margin: 0; font: 13px var(--font-mono); color: var(--foreign); overflow-wrap: anywhere; }
       .t-empty { color: var(--muted); padding: 30px 0; }
       .t-notes { color: var(--foreign); font-size: 13px; margin-top: 10px; }
       .t-foot { color: var(--muted); font-size: 12.5px; margin-top: 18px; }
@@ -78,6 +95,8 @@
         .t-lead { grid-template-columns: 1fr; padding: 12px; }
         .t-theme { margin-left: 0; }
         .t-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .t-stage.planning { padding: 0 16px 24px 16px; }
+        .t-groups:not([hidden]) { display: block; margin: 0 0 10px; }
       }
     </style>
   </head>
@@ -90,6 +109,7 @@
       </header>
       <section class="t-lead" id="t-lead" aria-live="polite"></section>
       <section class="t-next" id="t-next" hidden></section>
+      <div class="t-groups" id="t-groups" hidden></div>
       <section class="t-stage" id="t-stage"></section>
       <div class="t-notes" id="t-notes" hidden></div>
       <p class="t-foot">The scripts save choudoufu's own documents under <code>snapshots/</code>, and each phase is drawn from them.</p>

@@ -1,0 +1,80 @@
+{
+  "estate": "team-a",
+  "choudoufu_version": "v0.28.0",
+  "upstream_version": "1.13.0",
+  "bound": [
+    {
+      "addr": "aws_cloudwatch_log_group.team_a_0",
+      "type": "aws_cloudwatch_log_group",
+      "identity": "/terralith/team-a/svc-0",
+      "identity_values": {
+        "name": "/terralith/team-a/svc-0"
+      },
+      "source": "derived"
+    },
+    {
+      "addr": "aws_cloudwatch_log_group.team_a_1",
+      "type": "aws_cloudwatch_log_group",
+      "identity": "/terralith/team-a/svc-1",
+      "identity_values": {
+        "name": "/terralith/team-a/svc-1"
+      },
+      "source": "derived"
+    },
+    {
+      "addr": "aws_cloudwatch_log_group.team_a_2",
+      "type": "aws_cloudwatch_log_group",
+      "identity": "/terralith/team-a/svc-2",
+      "identity_values": {
+        "name": "/terralith/team-a/svc-2"
+      },
+      "source": "derived"
+    },
+    {
+      "addr": "aws_iam_policy.team_a",
+      "type": "aws_iam_policy",
+      "identity": "arn:aws:iam::000000000000:policy/terralith-team-a-policy",
+      "source": "marker"
+    },
+    {
+      "addr": "aws_iam_role.team_a",
+      "type": "aws_iam_role",
+      "identity": "terralith-team-a-role",
+      "identity_values": {
+        "name": "terralith-team-a-role"
+      },
+      "source": "derived"
+    },
+    {
+      "addr": "aws_iam_role_policy.team_a_inline",
+      "type": "aws_iam_role_policy",
+      "identity": "terralith-team-a-role:terralith-team-a-inline",
+      "identity_values": {
+        "name": "terralith-team-a-inline",
+        "role": "terralith-team-a-role"
+      },
+      "source": "derived"
+    },
+    {
+      "addr": "aws_iam_role_policy_attachment.team_a",
+      "type": "aws_iam_role_policy_attachment",
+      "identity": "arn:aws:iam::000000000000:policy/terralith-team-a-policyterralith-team-a-role",
+      "source": "derived"
+    }
+  ],
+  "omissions": [],
+  "unowned": [],
+  "foreign": null,
+  "adoptable": [],
+  "swept": [
+    "aws_iam_policy",
+    "aws_iam_role"
+  ],
+  "diagnostics": [
+    {
+      "severity": "warning",
+      "summary": "Values from another estate are as that estate's plan proposes them",
+      "detail": "The value of \"log_retention_days\" was read from estate \"terralith\"'s plan, /demo-copy/snapshots/4-plan/terralith/plan.json, not from what it recorded at its last apply. A saved plan records this, and \"choudoufu apply\" of it refuses unless \"terralith\" has since applied and recorded these same values."
+    }
+  ]
+}

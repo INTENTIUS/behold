@@ -3,21 +3,23 @@ import { cpSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseRatification, phaseCommand, readTerralith } from "./terralith-demo.ts";
+import { coneFallback, parseRatification, phaseCommand, readTerralith } from "./terralith-demo.ts";
 import { snapshotFileFor, snapshotRunner } from "./choudoufu-snapshots.ts";
 
 // Fixture provenance: src/__fixtures__/terralith is one real run of the demo
 // copy's scripts (example-terralith/scripts), choudoufu v0.28.0 against floci
 // ff46eb8d (choudoufu's live/floci-image pin): terralith-up.sh, then
-// terralith-step.sh adopt, then terralith-step.sh split. The .err files were
-// left out; everything else is as the tool printed it.
+// terralith-step.sh adopt, then terralith-step.sh split, then
+// terralith-step.sh plan. The .err files were left out; everything else is as
+// the tool printed it, except two path prefixes: the copy's directory reads
+// /demo-copy, and the plugin cache /home/demo.
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE = join(HERE, "__fixtures__", "terralith");
 
 /** A copy holding the first `n` phases only. */
 function copyWith(n: number): string {
   const dir = mkdtempSync(join(tmpdir(), "terralith-"));
-  for (const p of ["1-stock", "2-adopt", "3-split"].slice(0, n)) cpSync(join(FIXTURE, "snapshots", p), join(dir, "snapshots", p), { recursive: true });
+  for (const p of ["1-stock", "2-adopt", "3-split", "4-plan"].slice(0, n)) cpSync(join(FIXTURE, "snapshots", p), join(dir, "snapshots", p), { recursive: true });
   if (n >= 3) cpSync(join(FIXTURE, "split.json"), join(dir, "split.json"));
   return dir;
 }
@@ -96,9 +98,59 @@ describe("split", () => {
     expect(split.counts.marked).toBe(17);
   });
 
-  it("reads split.json, and has nothing left to run", () => {
+  it("reads split.json, and names the plan as the next phase", () => {
     expect(model.split).toEqual({ moves: 15, estates: ["team-a", "team-b", "team-c"] });
+    expect(model.next).toEqual({ id: "plan", n: 4, command: "bash scripts/terralith-step.sh plan" });
+  });
+});
+
+describe("plan", () => {
+  const model = readTerralith(copyWith(4));
+  const plan = model.phases[3]!;
+  const box = (id: string) => plan.boxes.find((b) => b.id === id)!;
+  const card = (root: string, id: string) => box(root).cards.find((c) => c.id === id)!;
+
+  it("is the last phase, with the same four boxes and no new ones", () => {
+    expect(plan.boxes.map((b) => [b.id, b.spawned])).toEqual([
+      ["terralith", false],
+      ["team-a", false],
+      ["team-b", false],
+      ["team-c", false],
+    ]);
     expect(model.next).toBeUndefined();
+  });
+
+  it("puts each team's first log group and its data read in the cone, two of eight blocks", () => {
+    expect(box("team-a").plan!.cone).toEqual({ full: false, blocks: 8, coneBlocks: 2 });
+    expect(card("team-a", "aws_cloudwatch_log_group.team_a_0").inCone).toBe(true);
+    expect(card("team-a", "aws_cloudwatch_log_group.team_a_1").inCone).toBeUndefined();
+  });
+
+  it("says why a cone planned in full: the terralith's reaches nothing, the teams read planned outputs", () => {
+    expect(box("terralith").plan!.cone).toMatchObject({ full: true, kind: "empty-cone" });
+    expect(box("team-b").plan!.fallback).toEqual({ kind: "estate-outputs-from", reason: expect.stringContaining("every reader of them is planned") });
+  });
+
+  it("plans one change per team, the retention the terralith's planned output sets", () => {
+    expect(card("team-c", "aws_cloudwatch_log_group.team_c_0").planned).toEqual({ actions: ["update"], attributes: ["retention_in_days"] });
+    expect(plan.counts.planned).toBe(3);
+    expect(box("terralith").plan!.changes).toBe(0);
+  });
+
+  it("folds the three identical changes into one group", () => {
+    expect(plan.plan!.groups).toEqual([{ id: 1, members: ["team-a", "team-b", "team-c"], changes: [{ line: "~ aws_cloudwatch_log_group.<estate>_0: retention_in_days", action: "update" }] }]);
+    expect(box("team-a").plan!.group).toBe(1);
+    expect(box("terralith").plan!.group).toBeUndefined();
+  });
+
+  it("reads the planned output each team root takes from the terralith", () => {
+    expect(plan.plan!.outputs).toEqual([{ estate: "terralith", root: "terralith", name: "log_retention_days", value: 14, known: true, readers: ["team-a", "team-b", "team-c"] }]);
+  });
+
+  it("reads choudoufu's fallback warning out of a plan log", () => {
+    expect(coneFallback("Warning: Cone plan\n\nfine\n")).toBeUndefined();
+    const log = readFileSync(join(FIXTURE, "snapshots", "4-plan", "team-a", "plan.log"), "utf8");
+    expect(coneFallback(log)?.kind).toBe("estate-outputs-from");
   });
 });
 

@@ -1,5 +1,5 @@
 
-Ratifying /private/tmp/claude-501/-Users-alex-Documents-checkouts-intentius-terragucci/fa6c9836-2da9-466f-8cf0-15dfcd2df4d7/scratchpad/run2/copy/terralith/../.terralith/terralith.tfstate for estate "terralith" against the live system. This was read-only: nothing was written.
+Ratifying /demo-copy/terralith/../.terralith/terralith.tfstate for estate "terralith" against the live system. This was read-only: nothing was written.
 
 VERIFIED (11) - verified against the live system:
   aws_cloudwatch_log_group.team_a_0          aws_cloudwatch_log_group live id: /terralith/team-a/svc-0
@@ -20,9 +20,9 @@ VERIFIED (11) - verified against the live system:
     The live object matches the state's recorded attributes.
   aws_cloudwatch_log_group.team_c_2          aws_cloudwatch_log_group live id: /terralith/team-c/svc-2
     The live object matches the state's recorded attributes.
-  aws_subnet.app                             aws_subnet               live id: subnet-719de87e
+  aws_subnet.app                             aws_subnet               live id: subnet-48526a03
     The live object matches the state's recorded attributes.
-  aws_vpc.main                               aws_vpc                  live id: vpc-737b83d8
+  aws_vpc.main                               aws_vpc                  live id: vpc-95df8725
     The live object matches the state's recorded attributes.
 
 DRIFTED (6) - verified, but drifted from the live system:
@@ -55,7 +55,7 @@ UNTAGGABLE (6) - outside the taggable subset:
 
 17 of 23 resource instance(s) are eligible for stamping (VERIFIED or DRIFTED).
 
-/private/tmp/claude-501/-Users-alex-Documents-checkouts-intentius-terragucci/fa6c9836-2da9-466f-8cf0-15dfcd2df4d7/scratchpad/run2/copy/terralith/../.terralith/terralith.tfstate was opened once, read-only, and will not be opened again by this run - not to write it, and not to read it a second time.
+/demo-copy/terralith/../.terralith/terralith.tfstate was opened once, read-only, and will not be opened again by this run - not to write it, and not to read it a second time.
 No tag has been written. Rerun with -approve to stamp tofu-estate and tofu-address onto every eligible resource above.
 
 Approve: stamping tofu-estate and tofu-address on every eligible resource, and seeding the record store for every record-backed one. This was a cloud write, one tags-only apply per stamped resource.

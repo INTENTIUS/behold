@@ -17,6 +17,7 @@ leaves in `snapshots/`, and shows the next phase's line for you to run here.
 | 1. Stock | `bash scripts/terralith-up.sh` (the demo runs it) | a floci on 127.0.0.1:4652, a state bucket, and `terralith/` applied the stock way: 23 resources in one state file |
 | 2. Adopt | `bash scripts/terralith-step.sh adopt` | terragucci's `backends:` migration: the backend block becomes a live block (`phases/adopt/`), `choudoufu live-import` reads the state once and stamps the two tags on each resource it verifies |
 | 3. Split | `bash scripts/terralith-step.sh split` | terragucci's `moves:` migration: three team roots (`phases/split/`), and `choudoufu live-mv -from-estate` moves each team's resources into the team's estate, one tag write each, recorded in `split.json` |
+| 4. Plan | `bash scripts/terralith-step.sh plan` | one change across the estates (`phases/plan/`): the terralith outputs `log_retention_days`, each team's first log group reads it, `live-cone` gives each team's cone, the team roots plan against the terralith's planned output with `-estate-outputs-from` in one `live-plan-set`, and `live-summary` folds the three changes into one group. Nothing is applied |
 
 From adopt on, each card carries a tag. A filled tag means the resource wears the
 marker; an outlined one means it has no tags argument and rides the role it

@@ -1,0 +1,82 @@
+discovering: 1 type scanned so far, 3 live resources found so far (currently on aws_iam_role)
+
+Foreign resources: nothing was swept
+
+No resource type was listed in full during this run, so nothing is known
+about live resources that carry no ownership marker. This is not a report
+that there are none.
+
+This run did not ask which live resources carry no ownership marker at all,
+so 986 admitted types this estate has no record of ever having used were not
+listed. Every resource this estate owns was still swept for. Run "choudoufu
+plan -adoption-only" for the account-wide question.
+
+Not swept for removal: 5 resource types
+
+Finding a resource whose block was deleted means listing its type and reading
+the markers off what comes back, and these types could not be searched. This
+estate may own resources of them that no plan will propose destroying. An
+empty removal list is a statement about the types that were swept and about
+nothing else.
+
+  aws_launch_template [TAG_INDEX_COVERAGE_UNCONFIRMED]
+      live/registry.json records aws_launch_template (Cloud Control type
+      AWS::EC2::LaunchTemplate) as untaggable, but that flag is
+      CloudFormation's claim about whether its own update-tags API writes
+      this type's tags - not a fact about the live object. The provider gives
+      aws_launch_template a tags argument and choudoufu writes this estate's
+      ownership marker onto it, so the estate-wide tag sweep did search for
+      it and the Resource Groups Tagging API returned none of this estate's.
+      Nothing in this run establishes whether that index covers
+      aws_launch_template, so the run claims no coverage for it: if a block
+      of it was deleted, no destroy is proposed for the live resource. Re-run
+      the plan, or remove it by hand.
+  aws_vpc_security_group_egress_rule [TAG_INDEX_COVERAGE_UNCONFIRMED]
+      live/registry.json records aws_vpc_security_group_egress_rule (Cloud
+      Control type AWS::EC2::SecurityGroupEgress) as untaggable, but that
+      flag is CloudFormation's claim about whether its own update-tags API
+      writes this type's tags - not a fact about the live object. The
+      provider gives aws_vpc_security_group_egress_rule a tags argument and
+      choudoufu writes this estate's ownership marker onto it, so the
+      estate-wide tag sweep did search for it and the Resource Groups Tagging
+      API returned none of this estate's. Nothing in this run establishes
+      whether that index covers aws_vpc_security_group_egress_rule, so the
+      run claims no coverage for it: if a block of it was deleted, no destroy
+      is proposed for the live resource. Re-run the plan, or remove it by
+      hand.
+  aws_vpc_security_group_ingress_rule [TAG_INDEX_COVERAGE_UNCONFIRMED]
+      live/registry.json records aws_vpc_security_group_ingress_rule (Cloud
+      Control type AWS::EC2::SecurityGroupIngress) as untaggable, but that
+      flag is CloudFormation's claim about whether its own update-tags API
+      writes this type's tags - not a fact about the live object. The
+      provider gives aws_vpc_security_group_ingress_rule a tags argument and
+      choudoufu writes this estate's ownership marker onto it, so the
+      estate-wide tag sweep did search for it and the Resource Groups Tagging
+      API returned none of this estate's. Nothing in this run establishes
+      whether that index covers aws_vpc_security_group_ingress_rule, so the
+      run claims no coverage for it: if a block of it was deleted, no destroy
+      is proposed for the live resource. Re-run the plan, or remove it by
+      hand.
+2 of them are TYPE_NOT_TAGGABLE: standing facts about what this provider
+version can list and tag, true of every run against it and not something this
+run discovered, so they are named here by count instead of one at a time.
+Rerun with -verbose to print every type by name, or see live/LIMITATIONS.md,
+"Removal coverage is the admission table", for the same list.
+
+Not swept: 2 resource types
+
+A classification is only as wide as the sweep behind it. These resource types
+were not enumerated, so nothing above says whether foreign resources of these
+types exist.
+
+  aws_subnet, aws_vpc [NOT_SCANNED]
+      Nothing of these types needed marker discovery, so none of them was
+      listed on this configuration's behalf. The removal sweep above may have
+      listed them, but a sweep asks the provider for this estate's own
+      resources and no others, so no unclaimed resource of these types ever
+      crossed the wire. Their identities come out of configuration, which
+      says nothing about what else exists in the account.
+
+─────────────────────────────────────────────────────────────────────────────
+
+No changes. Your infrastructure matches the configuration.

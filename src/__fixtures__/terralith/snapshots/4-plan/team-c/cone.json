@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "base": "HEAD",
+  "base_sha": "ff2259c1b9d73445656a72653dae7ba60070d364",
+  "changed": [
+    "aws_cloudwatch_log_group.team_c_0",
+    "data.terraform_estate_outputs.platform"
+  ],
+  "deleted": [],
+  "refactor": [],
+  "widened": [],
+  "reach": [
+    "aws_cloudwatch_log_group.team_c_0",
+    "data.terraform_estate_outputs.platform"
+  ],
+  "targets": [
+    "aws_cloudwatch_log_group.team_c_0",
+    "data.terraform_estate_outputs.platform"
+  ],
+  "blocks": 8,
+  "cone_blocks": 2,
+  "guard": {
+    "full": false
+  }
+}

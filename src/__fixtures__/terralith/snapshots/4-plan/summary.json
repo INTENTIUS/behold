@@ -1,0 +1,26 @@
+{
+  "kind": "set",
+  "units": 3,
+  "failed": [],
+  "groups": [
+    {
+      "id": 1,
+      "members": [
+        "team-a",
+        "team-b",
+        "team-c"
+      ],
+      "outlier": false,
+      "hash": "3328bf37fa7b",
+      "changes": [
+        {
+          "line": "~ aws_cloudwatch_log_group.\u003cestate\u003e_0: retention_in_days",
+          "action": "update",
+          "count": 1
+        }
+      ],
+      "destroys_and_replaces": []
+    }
+  ],
+  "destroys_and_replaces": 0
+}

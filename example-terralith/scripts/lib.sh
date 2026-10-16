@@ -41,7 +41,8 @@ snap() {
     (cd "$root" && "$CHOUDOUFU" show -json -no-color >"$out/state.json" 2>"$out/state.err") || true
   else
     (cd "$root" && "$CHOUDOUFU" live-ls -estate="$estate" -consistent -json . >"$out/live-ls.json" 2>"$out/live-ls.err") || true
-    (cd "$root" && "$CHOUDOUFU" live-plan -json >"$out/live-plan.json" 2>"$out/live-plan.err") || true
+    # SNAP_PLAN_ARGS: extra live-plan flags, such as -estate-outputs-from in the plan phase.
+    (cd "$root" && "$CHOUDOUFU" live-plan -json ${SNAP_PLAN_ARGS:-} >"$out/live-plan.json" 2>"$out/live-plan.err") || true
   fi
 }
 

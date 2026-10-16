@@ -12,6 +12,11 @@
  *   <root>/live-ls.json           an estate: what carries its marker
  *   <root>/live-plan.json         an estate: how each instance was bound
  *   live-mv/<root>--<addr>.json   split: each retag's own document
+ *   <root>/cone.json              plan: `live-cone -json HEAD`, the change's cone
+ *   <root>/plan.log               plan: the plan's own words (a cone that fell back says why)
+ *   terralith/plan.json           plan: `show -json` of the terralith's saved plan
+ *   set.json                      plan: `live-plan-set -json` over the team roots
+ *   summary.json                  plan: `live-summary -json` of set.json, the folded groups
  *
  * This module reads those files and nothing else: no choudoufu spawn, no
  * cloud call, no write. The same files can come from a pipeline, which is
@@ -34,6 +39,7 @@ export const TERRALITH_PHASES = [
   { id: "stock", n: 1, dir: "1-stock" },
   { id: "adopt", n: 2, dir: "2-adopt" },
   { id: "split", n: 3, dir: "3-split" },
+  { id: "plan", n: 4, dir: "4-plan" },
 ] as const;
 
 export type TerralithPhaseId = (typeof TERRALITH_PHASES)[number]["id"];
@@ -58,6 +64,42 @@ export interface TerralithCard {
   ratified?: string;
   /** split: the retag that moved it here. */
   moved?: { from: string; to: string; follows?: string };
+  /** plan: what the root's plan would do to it, and the attributes it changes (names only). */
+  planned?: { actions: string[]; attributes: string[] };
+  /** plan: inside the cone `live-cone` printed for its root. */
+  inCone?: boolean;
+}
+
+/** plan: one root's cone and how its plan ran. */
+export interface RootPlan {
+  /** `live-cone`'s answer: the blocks the change reaches, or the guard's reason to plan in full. */
+  cone?: { full: boolean; kind?: string; reason?: string; blocks: number; coneBlocks: number };
+  /** The plan's own "fell back to a full plan" words, when it did. */
+  fallback?: { kind: string; reason: string };
+  /** The changes the root's plan holds. */
+  changes: number;
+  /** The folded group (summary.json) this root is in. */
+  group?: number;
+}
+
+/** plan: identical changes across roots, as live-summary folds them. */
+export interface PlanGroup {
+  id: number;
+  members: string[];
+  changes: Array<{ line: string; action: string }>;
+}
+
+/** plan: an output one estate plans and others read through terraform_estate_outputs. */
+export interface PlannedOutput {
+  /** The producing estate and the root that holds it. */
+  estate: string;
+  root?: string;
+  name: string;
+  /** The planned value; absent when only known after apply, or sensitive. */
+  value?: unknown;
+  known: boolean;
+  /** The roots that read it. */
+  readers: string[];
 }
 
 export interface TerralithBox {
@@ -69,6 +111,8 @@ export interface TerralithBox {
   /** True when the root was not in the phase before. */
   spawned: boolean;
   cards: TerralithCard[];
+  /** plan: the root's cone and plan. */
+  plan?: RootPlan;
 }
 
 export interface TerralithPhase {
@@ -77,7 +121,9 @@ export interface TerralithPhase {
   at?: string;
   choudoufu?: string;
   boxes: TerralithBox[];
-  counts: { cards: number; marked: number; marker: number; derived: number; state: number; moved: number };
+  counts: { cards: number; marked: number; marker: number; derived: number; state: number; moved: number; planned: number };
+  /** plan: the folded groups and the planned outputs that cross estates. */
+  plan?: { groups: PlanGroup[]; outputs: PlannedOutput[] };
   /** Files in the phase that could not be read, named, with why. */
   notes: string[];
 }
@@ -173,6 +219,43 @@ function retagsOf(dir: string, notes: string[]): Map<string, { from: string; to:
   return out;
 }
 
+/** A plan's resource changes (`show -json`): address -> actions and changed attribute names. */
+function plannedChanges(plan: unknown): Map<string, { actions: string[]; attributes: string[] }> {
+  const out = new Map<string, { actions: string[]; attributes: string[] }>();
+  if (!isRecord(plan) || !Array.isArray(plan.resource_changes)) return out;
+  for (const rc of plan.resource_changes) {
+    if (!isRecord(rc) || typeof rc.address !== "string" || !isRecord(rc.change)) continue;
+    const actions = Array.isArray(rc.change.actions) ? rc.change.actions.filter((a): a is string => typeof a === "string") : [];
+    if (!actions.length || actions.every((a) => a === "no-op" || a === "read")) continue;
+    const before = isRecord(rc.change.before) ? rc.change.before : {};
+    const after = isRecord(rc.change.after) ? rc.change.after : {};
+    const unknown = isRecord(rc.change.after_unknown) ? rc.change.after_unknown : {};
+    const keys = new Set([...Object.keys(before), ...Object.keys(after), ...Object.keys(unknown)]);
+    const attributes = [...keys].filter((k) => unknown[k] === true || JSON.stringify(before[k]) !== JSON.stringify(after[k])).sort();
+    out.set(rc.address, { actions, attributes });
+  }
+  return out;
+}
+
+/** The estates a root's configuration reads outputs of (`data "terraform_estate_outputs"`), with the names. */
+function outputReads(plan: unknown): Array<{ estate: string; names: string[] }> {
+  if (!isRecord(plan) || !isRecord(plan.configuration) || !isRecord(plan.configuration.root_module)) return [];
+  const resources = plan.configuration.root_module.resources;
+  return (Array.isArray(resources) ? resources : []).flatMap((r) => {
+    if (!isRecord(r) || r.mode !== "data" || r.type !== "terraform_estate_outputs" || !isRecord(r.expressions)) return [];
+    const estate = isRecord(r.expressions.estate) ? r.expressions.estate.constant_value : undefined;
+    const names = isRecord(r.expressions.names) ? r.expressions.names.constant_value : undefined;
+    return typeof estate === "string" ? [{ estate, names: Array.isArray(names) ? names.filter((n): n is string => typeof n === "string") : [] }] : [];
+  });
+}
+
+/** A plan log's "Cone plan fell back to a full plan" warning: its guard and its sentence. */
+export function coneFallback(log: string): { kind: string; reason: string } | undefined {
+  const text = log.replace(/\x1b\[[0-9;]*m/g, "").replace(/^[│╷╵ ]+/gm, "");
+  const m = /Cone plan fell back to a full plan\s+This plan covers the whole estate \(guard ([a-z-]+)\):\s*([\s\S]*?)(?:\n\s*\n|$)/.exec(text);
+  return m ? { kind: m[1]!, reason: m[2]!.replace(/\s+/g, " ").trim() } : undefined;
+}
+
 /** One phase directory, read. Undefined when its phase.json is not there yet. */
 export function readTerralithPhase(snapshots: string, phase: (typeof TERRALITH_PHASES)[number], before?: TerralithPhase): TerralithPhase | undefined {
   const dir = join(snapshots, phase.dir);
@@ -181,6 +264,13 @@ export function readTerralithPhase(snapshots: string, phase: (typeof TERRALITH_P
   if (!isRecord(meta)) return undefined;
   const roots = Array.isArray(meta.roots) ? meta.roots.filter((r): r is string => typeof r === "string") : [];
   const retags = retagsOf(dir, notes);
+  // The plan phase's documents: each team root's plan from the set, the terralith's own.
+  const set = readJson(join(dir, "set.json"), notes, "set.json");
+  const setPlans = new Map<string, unknown>();
+  if (isRecord(set) && Array.isArray(set.roots)) {
+    for (const r of set.roots) if (isRecord(r) && typeof r.root === "string") setPlans.set(r.root, r.plan);
+  }
+  const planOf = (root: string): unknown => setPlans.get(root) ?? readJson(join(dir, root, "plan.json"), notes, `${root}/plan.json`);
   const seen = new Set(before?.boxes.map((b) => b.id) ?? []);
   const boxes: TerralithBox[] = roots.map((root) => {
     const at = (f: string) => join(dir, root, f);
@@ -191,6 +281,10 @@ export function readTerralithPhase(snapshots: string, phase: (typeof TERRALITH_P
     const plan = readJson(at("live-plan.json"), notes, `${root}/live-plan.json`);
     const ratified = existsSync(at("live-import.txt")) ? parseRatification(readFileSync(at("live-import.txt"), "utf8")) : new Map();
     const ids = stateIds(state);
+    const cone = readJson(at("cone.json"), notes, `${root}/cone.json`);
+    const planDoc = planOf(root);
+    const changes = plannedChanges(planDoc);
+    const inCone = new Set<string>(isRecord(cone) && isRecord(cone.guard) && cone.guard.full !== true && Array.isArray(cone.targets) ? cone.targets.filter((t): t is string => typeof t === "string") : []);
     const listed = new Map<string, string>();
     if (isRecord(ls) && Array.isArray(ls.items)) {
       for (const i of ls.items) {
@@ -221,11 +315,71 @@ export function readTerralithPhase(snapshots: string, phase: (typeof TERRALITH_P
         ...(liveId ? { liveId } : {}),
         ...(r ? { ratified: r.status } : {}),
         ...(moved && moved.to === estate ? { moved } : {}),
+        ...(changes.has(d.address) ? { planned: changes.get(d.address)! } : {}),
+        ...(inCone.has(d.address) ? { inCone: true } : {}),
       };
     });
     cards.sort(cardOrder);
-    return { id: root, ...(estate ? { estate } : {}), stock: !estate, spawned: !!before && !seen.has(root), cards };
+    const log = existsSync(at("plan.log")) ? readFileSync(at("plan.log"), "utf8") : "";
+    const fallback = log ? coneFallback(log) : undefined;
+    const rootPlan: RootPlan | undefined =
+      isRecord(cone) || planDoc !== undefined
+        ? {
+            ...(isRecord(cone) && isRecord(cone.guard)
+              ? {
+                  cone: {
+                    full: cone.guard.full === true,
+                    ...(typeof cone.guard.kind === "string" ? { kind: cone.guard.kind } : {}),
+                    ...(typeof cone.guard.reason === "string" ? { reason: cone.guard.reason } : {}),
+                    blocks: typeof cone.blocks === "number" ? cone.blocks : 0,
+                    coneBlocks: typeof cone.cone_blocks === "number" ? cone.cone_blocks : 0,
+                  },
+                }
+              : {}),
+            ...(fallback ? { fallback } : {}),
+            changes: changes.size,
+          }
+        : undefined;
+    return { id: root, ...(estate ? { estate } : {}), stock: !estate, spawned: !!before && !seen.has(root), cards, ...(rootPlan ? { plan: rootPlan } : {}) };
   });
+  // The folded groups, and the outputs one estate plans for others to read.
+  const summary = readJson(join(dir, "summary.json"), notes, "summary.json");
+  const groups: PlanGroup[] =
+    isRecord(summary) && Array.isArray(summary.groups)
+      ? summary.groups.flatMap((g) =>
+          isRecord(g) && typeof g.id === "number" && Array.isArray(g.members)
+            ? [
+                {
+                  id: g.id,
+                  members: g.members.filter((m): m is string => typeof m === "string"),
+                  changes: (Array.isArray(g.changes) ? g.changes : []).flatMap((c) => (isRecord(c) && typeof c.line === "string" ? [{ line: c.line, action: String(c.action ?? "") }] : [])),
+                },
+              ]
+            : [],
+        )
+      : [];
+  for (const g of groups) for (const m of g.members) {
+    const box = boxes.find((b) => b.id === m);
+    if (box?.plan) box.plan.group = g.id;
+  }
+  const outputs: PlannedOutput[] = [];
+  for (const box of boxes) {
+    for (const read of outputReads(planOf(box.id))) {
+      const producer = boxes.find((b) => b.estate === read.estate);
+      const planned = producer ? planOf(producer.id) : undefined;
+      const values = isRecord(planned) && isRecord(planned.planned_values) && isRecord(planned.planned_values.outputs) ? planned.planned_values.outputs : {};
+      for (const name of read.names) {
+        let o = outputs.find((x) => x.estate === read.estate && x.name === name);
+        if (!o) {
+          const v = values[name];
+          const known = isRecord(v) && "value" in v && v.sensitive !== true;
+          o = { estate: read.estate, ...(producer ? { root: producer.id } : {}), name, ...(known ? { value: (v as Record<string, unknown>).value } : {}), known, readers: [] };
+          outputs.push(o);
+        }
+        o.readers.push(box.id);
+      }
+    }
+  }
   const all = boxes.flatMap((b) => b.cards);
   return {
     id: phase.id,
@@ -240,7 +394,9 @@ export function readTerralithPhase(snapshots: string, phase: (typeof TERRALITH_P
       derived: all.filter((c) => c.identity.source === "derived").length,
       state: all.filter((c) => c.identity.source === "state").length,
       moved: all.filter((c) => c.moved).length,
+      planned: all.filter((c) => c.planned).length,
     },
+    ...(groups.length || outputs.length ? { plan: { groups, outputs } } : {}),
     notes,
   };
 }
