@@ -171,6 +171,14 @@ export function waterfallRows(trace, { open = new Set(), shut = new Set() } = {}
   return rows;
 }
 
+/** behold#571: the tone a job's strip row's left bar takes from its trace's result. */
+export function stripTone(result) {
+  if (result === "failed" || result === "refused" || result === "changed-after-approval") return "bad";
+  if (result === "waiting") return "wait";
+  if (result === "applied" || result === "planned" || result === "unchanged") return "ok";
+  return "idle";
+}
+
 /** The run's jobs on one time line: each job's newest trace, 0..1 across the run. */
 export function runStrip(traces) {
   const newest = new Map();
@@ -261,6 +269,8 @@ export function renderTrace(host, { traces, run = [], job }, { doc = document, t
     const rows = el(doc, "div", "t-strip");
     for (const r of strip) {
       const row = el(doc, "div", `t-row${pickJob ? " t-can" : ""}${r.job === job ? " t-sel" : ""}${r.result === "failed" ? " t-err" : r.result === "waiting" ? " t-wait" : ""}`);
+      // behold#571: the job's left bar takes its result's tone, as its row in the jobs list does.
+      row.dataset.kTone = stripTone(r.result);
       const name = el(doc, "div", "t-name");
       name.append(el(doc, "span", "t-label", r.job), el(doc, "span", "t-sub", r.result || ""));
       row.append(name, bar(doc, r.at, r.width), el(doc, "div", "t-ms", msWords(r.ms)));

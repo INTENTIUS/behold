@@ -34,7 +34,7 @@ import { edgeKey, edgeLabel, edgeLegend, edgeTitle, isCiKind, viaIndex } from ".
 import { readCostLine } from "./read-cost.js";
 import { mountHistoryPicker } from "./history-picker.js";
 import { applyMemberFrame, createMemberFrames, pendingLine, stillPending } from "./pending.js";
-import { initTheme, setTheme, mountThemePicker, readableOn, inkOn, colorForCategory, onThemeChange, getTokens, getTheme, pinTokensFor } from "./theme.js";
+import { initTheme, setTheme, mountThemePicker, readableOn, inkOn, colorForCategory, onThemeChange, getTokens, getTheme, pinTokensFor, barVarFor } from "./theme.js";
 // #399 M2 / #401 M4 of #397: the colour-by modes' arithmetic and the
 // provenance badge's wording — every decision the behaviour overlay makes,
 // pure and unit-tested beside the file. This module owns the fetches, the SVG
@@ -2457,6 +2457,8 @@ function panelDotRow(color, main, tag, onClick) {
   const dot = document.createElement("span");
   dot.className = "dot";
   dot.style.background = color;
+  // behold#571: the row's left bar, in its dot's state (barVarFor).
+  row.style.setProperty("--bar", barVarFor(color));
   const name = document.createElement("span");
   name.className = "grow";
   name.textContent = main;
@@ -5604,7 +5606,10 @@ function renderApplyProgress(state) {
   }
   for (const w of state.waves) {
     const row = document.createElement("div");
+    row.className = "apply-wave-row";
     row.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap";
+    // behold#571: the wave's left bar, in its status.
+    row.style.setProperty("--bar", barVarFor(APPLY_STATUS_COLOR[w.status]));
     const label = document.createElement("span");
     label.style.cssText = `font-size:var(--t-caption);color:${APPLY_STATUS_COLOR[w.status] || "var(--muted)"};min-width:52px`;
     label.textContent = `wave ${w.wave}`;

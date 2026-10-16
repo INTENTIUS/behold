@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { FEATURE_LINES, fitFeatures, FOLLOW_LINES, followsLog, logKey, nearEnd, mergeRun, newerOf, agoWords, defaultJob, defaultStep, durationWords, jobOrder, liveRun, codeish, logLineWords, logRows, placeWords, scenarioTitles, setupLine, sidebarRuns, splitSkipped, STATUS_TONE, triggerWords } from "./kiosk-runs.js";
+import { FEATURE_LINES, fitFeatures, FOLLOW_LINES, followsLog, logKey, nearEnd, mergeRun, newerOf, agoWords, defaultJob, defaultStep, durationWords, jobOrder, liveRun, codeish, logLineWords, logRows, placeWords, scenarioTitles, setupLine, sidebarRuns, splitSkipped, STATUS_TONE, toneOf, triggerWords } from "./kiosk-runs.js";
 
 const FIX = join(import.meta.dirname, "..", "src", "__fixtures__", "terragucci-demo", "runs");
 const run = (id) => JSON.parse(readFileSync(join(FIX, `${id}.json`), "utf8"));
@@ -284,5 +284,15 @@ describe("the features strip, folded to whole lines (behold#571)", () => {
     const l = list(items, 40);
     fitFeatures(l.el, false);
     expect(items.map((i) => i.hidden)).toEqual([false, false, true, true]);
+  });
+});
+
+describe("the left bar's tone (behold#571)", () => {
+  it("takes a run's, job's or step's status: running in the accent, held amber, failed, succeeded, and neutral for the rest", () => {
+    expect(["running", "waiting", "failure", "success", "queued", "skipped", "cancelled", "mystery"].map(toneOf)).toEqual(["busy", "wait", "bad", "ok", "idle", "idle", "idle", "idle"]);
+  });
+  it("has a bar rule in kiosk.html for every tone a status can take", () => {
+    const html = readFileSync(join(import.meta.dirname, "kiosk.html"), "utf8");
+    for (const tone of new Set(Object.values(STATUS_TONE))) expect(html).toContain(`[data-k-tone="${tone}"]`);
   });
 });

@@ -34,7 +34,7 @@ import {
 } from "./stub.mjs";
 import { readCostLine } from "../web/read-cost.js";
 import { THEMES, DEFAULT_THEME } from "../web/themes.js";
-import { tokensFor, pinTokensFor, colorForCategory, setTheme, hexToOklch, contrast, kioskSurfaces } from "../web/theme.js";
+import { tokensFor, pinTokensFor, colorForCategory, setTheme, hexToOklch, contrast, kioskSurfaces, barVars } from "../web/theme.js";
 import { helmIconFor, PLATE_FILL } from "../src/icon-packs.ts";
 
 const PORT = 4689;
@@ -63,7 +63,8 @@ const dL = (a, b) => Math.abs(hexToOklch(a).L - hexToOklch(b).L);
   const html = readFileSync(join(HERE, "..", "web", "index.html"), "utf8");
   const block = html.match(/:root\s*\{([^}]*)\}/);
   const fallback = Object.fromEntries([...(block ? block[1] : "").matchAll(/--([\w-]+)\s*:\s*(#[0-9a-f]{6})/gi)].map((m) => [m[1], m[2].toLowerCase()]));
-  const want = tokensFor(THEMES[DEFAULT_THEME]);
+  // behold#571: the left bars' colours (barVars) are in the fallback too, as --bar-<state>.
+  const want = { ...tokensFor(THEMES[DEFAULT_THEME]), ...barVars(THEMES[DEFAULT_THEME]) };
   // behold#571: the kiosk's surfaces have their own fallback in kiosk.html; index.html never reads them.
   const kioskOnly = new Set(Object.keys(kioskSurfaces(THEMES[DEFAULT_THEME])));
   const wantKeys = Object.keys(want).filter((k) => k !== "dark" && k !== "cat" && !kioskOnly.has(k));

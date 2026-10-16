@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { OPEN_DEPTH, TRACE_POLL_MS, criticalPath, foldState, msWords, runStrip, spanWords, traceSource, traceUrl, waterfallRows } from "./kiosk-trace.js";
+import { OPEN_DEPTH, TRACE_POLL_MS, criticalPath, foldState, msWords, runStrip, spanWords, stripTone, traceSource, traceUrl, waterfallRows } from "./kiosk-trace.js";
 
 const T = 1_792_166_000_000;
 const sp = (id, parent, name, from, to, attrs = {}, service = "terragucci") => ({ id, parent, name, service, start: T + from, ms: to - from, attrs });
@@ -149,3 +149,9 @@ describe("the waterfall", () => {
   });
 });
 
+
+describe("the strip's left bars (behold#571)", () => {
+  it("take the job's result: failed, waiting, applied, and neutral for none", () => {
+    expect(["failed", "changed-after-approval", "waiting", "applied", "planned", undefined, "other"].map(stripTone)).toEqual(["bad", "bad", "wait", "ok", "ok", "idle", "idle"]);
+  });
+});
