@@ -584,6 +584,8 @@ function drawBar(bar, s, now, foot) {
     if (panel.note) holdBox.appendChild(elRoots("p", "k-note", panel.note, s));
     else if (panel.stage === "pull-request") for (const u of unreviewedLines(s.answer)) holdBox.appendChild(elRoots("p", "k-note k-unknown", u, s));
   }
+  // behold#571: render what's present: an empty hold keeps its place (nothing moves when one comes) but draws no box.
+  if (!holdBox.children.length) holdBox.className += " k-box-empty";
   right.appendChild(holdBox);
   bar.appendChild(right);
 
@@ -691,8 +693,9 @@ export const LEDGER_POLL_MS = 10_000;
 /** behold#571: the approval panel's words for the approval the driver gives next, over its command. */
 export const DRIVER_SIGNS = "Next the driver plays a reviewer with no hand in the change and signs this plan with that reviewer's key:";
 
-/** behold#571: "What is this?" before demo.json says. */
-export const WHAT_FALLBACK = "A demo that runs a real infrastructure change through its pipeline in a loop, and shows each step as it happens.";
+/** behold#571: "What is this?" says what behold is; the demo's own intro stays on the card between scenarios. */
+export const WHAT_TEXT = "This is behold, a live view of infrastructure. It draws the setup as a graph and shows its pipeline runs, their logs and the approvals they wait for, as they happen. Here it watches a demo pipeline that runs one change through several Terraform states in a loop.";
+export const WHAT_DOCS = { text: "behold's documentation", url: "https://intentius.io/behold/" };
 
 /** behold#571: a fade at a box's edge where its text goes on past it. */
 function fade(b) {
@@ -959,14 +962,16 @@ export function startKiosk({ bar, frame, foot, side, main, views, tools = null }
   };
   if (tools && tools.runsToggle) tools.runsToggle.addEventListener("click", () => setRunsOpen(!document.body.classList.contains("k-runs-open")));
 
-  // behold#571: "What is this?" opens the intro over the page (no layout moves); a click elsewhere or Escape closes it.
+  // behold#571: "What is this?" opens what behold is over the page (no layout moves); a click elsewhere or Escape closes it.
   const whatText = () => {
-    if (!tools || !tools.pop) return;
-    const d = s.demo && s.demo.demo;
-    const text = (d && introText(d)) || WHAT_FALLBACK;
-    const p = tools.pop.firstElementChild;
-    if (p && p.textContent === text) return;
-    tools.pop.replaceChildren(el("p", null, text));
+    if (!tools || !tools.pop || tools.pop.firstElementChild) return;
+    const docs = el("a", null, WHAT_DOCS.text);
+    docs.href = WHAT_DOCS.url;
+    docs.target = "_blank";
+    docs.rel = "noopener";
+    const more = el("p", "k-what-more");
+    more.append(docs);
+    tools.pop.replaceChildren(el("p", null, WHAT_TEXT), more);
   };
   if (tools && tools.what && tools.pop) {
     const setWhat = (open) => {

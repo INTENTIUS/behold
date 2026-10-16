@@ -46,6 +46,10 @@ export function watchSource(projectDir: string, onChange: () => void, debounceMs
     clearTimeout(timer);
     timer = setTimeout(onChange, debounceMs);
   });
+  // behold#571: Linux's recursive watch walks every folder, .git too, and a file
+  // it can't read (a pack's .keep, mid-fetch) is an 'error' event; unhandled, it
+  // ended the process. Say so and keep serving.
+  watcher.on("error", (e) => console.warn(`behold: watching ${dir}: ${(e as Error).message}`));
   return () => {
     clearTimeout(timer);
     watcher.close();

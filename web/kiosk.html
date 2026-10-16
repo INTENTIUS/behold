@@ -137,6 +137,7 @@
       .k-box.k-more-below { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.3em), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 1.3em), transparent); }
       .k-box.k-more-above { -webkit-mask-image: linear-gradient(to top, #000 calc(100% - 1.3em), transparent); mask-image: linear-gradient(to top, #000 calc(100% - 1.3em), transparent); }
       .k-box.k-more-above.k-more-below { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 1.3em, #000 calc(100% - 1.3em), transparent); mask-image: linear-gradient(to bottom, transparent, #000 1.3em, #000 calc(100% - 1.3em), transparent); }
+      .k-box-empty { background: transparent; }
       .k-box-title { background: transparent; padding: 0.1em 0.1em 0; overflow: hidden; }
       /* behold#571: between scenarios the card's box carries what the demo is about. */
       .k-intro { margin: 0; font-size: 1.12em; line-height: 1.4; color: var(--fg); }
@@ -217,6 +218,8 @@
         border-radius: 8px; box-shadow: 0 6px 24px color-mix(in srgb, var(--shadow) 70%, transparent); font-size: 1.15em; line-height: 1.45; }
       #k-what-pop[hidden] { display: none; }
       #k-what-pop p { margin: 0; }
+      #k-what-pop .k-what-more { margin-top: 0.5em; }
+      #k-what-pop a { color: var(--focus); }
       .k-menu summary { cursor: pointer; color: var(--muted); list-style: none; }
       .k-menu summary::-webkit-details-marker { display: none; }
       .k-menu summary::after { content: " ▾"; }
