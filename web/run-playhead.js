@@ -74,15 +74,13 @@ export function runVerdict(run) {
   }
   if (run.status === "running") {
     return {
-      text:
-        run.mode === "local"
-          ? `${run.op}: running on the local executor — steps arrive together when it ends`
-          : `${run.op}: running — ${settled}`,
+      text: `${run.op}: running — ${settled}`,
       tone: "running",
     };
   }
   if (run.status === "ok") return { text: `${run.op}: exited cleanly — ${settled}`, tone: "ok" };
   if (run.status === "failed") return { text: `${run.op}: a step failed — ${settled}`, tone: "failed" };
+  if (run.status === "gated") return { text: `${run.op}: stopped at a gate — ${settled}; approve it, then run the Op again`, tone: "running" };
   return { text: `${run.op}: stream lost — frozen at ${settled}`, tone: "lost" };
 }
 
@@ -196,7 +194,7 @@ export function renderGateCard(gate, actions = {}) {
     return box;
   }
   const approve = el("button", "approve", actions.approver ? `Approve ${gate.signalName} as ${actions.approver}` : `Approve ${gate.signalName}`);
-  approve.title = `${gate.approve.method} ${gate.approve.path} — the same delegated signal as chant run signal ${gate.op} ${gate.signalName}. behold never approves on its own.`;
+  approve.title = `${gate.approve.method} ${gate.approve.path} — the same delegated write as chant run approve ${gate.op} ${gate.signalName}. behold never approves on its own.`;
   approve.addEventListener("click", () => actions.approve?.(gate.op, gate.signalName));
   box.appendChild(approve);
   return box;

@@ -472,7 +472,8 @@ preview-locked, and one load runs at a time (409 otherwise).
    `?ops=1` is the ops lens: the project's declared Ops as a phase track, read
    from each emitted `dist/ops/<name>/op.json`, with the current run painted
    over it (`meta.run`, `meta.gate`); `/api/ops/<name>/status` reads that Op's
-   durable run status and pending gate (`chant run status --temporal`). A
+   newest run status and pending gate (`chant run status <name>`; chant
+   removed `--temporal`, #459). A
    `ConvergeOp` also gets one card per rule from its `convergeTick` step's
    `args.rules` (`attrs._step: "rule"`), carrying `when` (chant's JSON predicate,
    rendered as the condition it states), `then`, and the `why` chant requires of
@@ -901,8 +902,11 @@ field and every one of these paths is a no-op.
 
 Two gate cards exist and they are **different acts**:
 
-- The **run gate** — `POST /api/ops/:name/signal/:gate` → `chant run signal`.
-  Releases the waiting Temporal workflow.
+- The **run gate** — `POST /api/ops/:name/signal/:gate` → `chant run approve
+  <op> <gate>` (chant#2121 renamed `chant run signal`, #459). Records the
+  resolution; a runtime that parks a run is woken, and the local one reads it
+  when the Op runs again (behold runs `chant run <op> --progress-json`, which
+  exits 3 at a gate and shows as `gated`).
 - The **converge gate** — `POST /api/operator/approve/:op/:gate` →
   `chant approve <op> <gate>`. **Records a fact and unblocks nothing.** chant's
   gate ledger says it outright: the local executor still refuses a gated op,

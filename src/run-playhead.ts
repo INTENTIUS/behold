@@ -6,17 +6,17 @@
  * Two chant surfaces feed it, both landed in chant 0.51 (chant#1676 /
  * chant#2004):
  *
- *  1. **`StepRecord`** — one per SETTLED step. `chant run <name> --temporal
+ *  1. **`StepRecord`** — one per SETTLED step. `chant run <name>
  *     --progress-json` streams them as NDJSON, one line per record, while the
- *     Op runs; `chant run <name> --json` (the local executor) prints the whole
- *     `OpRunResult` envelope at the end. Same record shape either way, which is
- *     the point of chant#1676 — a consumer renders one way regardless of
- *     executor — so {@link parseRunProgressLine} accepts both framings and
+ *     Op runs; `chant run <name> --json` prints the whole `OpRunResult`
+ *     envelope at the end. Same record shape either way, which is the point of
+ *     chant#1676, so {@link parseRunProgressLine} accepts both framings and
  *     everything downstream sees a flat `StepRecord[]`.
- *  2. **`gateState`** — a generated workflow query answering "which gate, if
- *     any, is this workflow waiting on, and since when". Surfaced on `chant run
- *     status <name> --temporal`, which behold shells beside the `chant run
- *     signal` it already shells to approve one.
+ *  2. **The run's status** — `chant run status <name>` on the resolved runtime
+ *     (chant#2121): the newest run's state, and the gate it stopped at when it
+ *     is `gated`. behold shells it beside the `chant run approve` it shells to
+ *     record a gate's resolution. chant removed `--temporal` with the temporal
+ *     lexicon (chant#2131), so neither read passes it (#459).
  *
  * ## The honesty rules this module exists to keep
  *
@@ -32,8 +32,8 @@
  *    a failure, and otherwise to `lost` — the playhead freezes at last-settled
  *    and says the stream was lost.
  *  - **Absence of a gate signal is never progress.** A gate paints as pending
- *    only when `gateState` NAMED it. When the query can't be reached at all (no
- *    Temporal, no run, an older chant) {@link readRunStatus} returns a refusal
+ *    only when the status read NAMED it. When the read can't be had at all (no
+ *    runtime, no run, an older chant) {@link readRunStatus} returns a refusal
  *    the view states plainly instead of a silently ungated track.
  *  - **behold never signals on its own initiative.** Nothing here writes. The
  *    pending card's approve action is the caller's existing
@@ -79,8 +79,9 @@ export interface OpRunResult {
   ok: boolean;
 }
 
-/** chant's `GateQueryResult` — the `gateState` query's answer when a gate is
- * pending. `since` is an ISO instant the workflow stamped when it began waiting. */
+/** The gate a run stopped at, from `chant run status`'s `Gate` line. `signalName`
+ * is the gate's name (the field keeps its old spelling: the page and the
+ * approve route key on it); `since` is when the run began waiting. */
 export interface GateState {
   signalName: string;
   description?: string;
@@ -120,7 +121,7 @@ function asStepRecord(value: unknown): StepRecord | null {
  *
  * Both framings chant#1676 defines are accepted, because they carry the same
  * record and a reader shouldn't care which executor produced it:
- *  - one NDJSON `StepRecord` per line (`--temporal --progress-json`)
+ *  - one NDJSON `StepRecord` per line (`--progress-json`)
  *  - one whole `OpRunResult` (`--json`, the local executor's end-of-run print)
  */
 export function parseRunProgressLine(line: string): StepRecord[] | null {
@@ -155,30 +156,34 @@ export function recordLine(record: StepRecord): string {
   return `${mark} ${record.phase} · ${record.fn} — ${took}${record.error ? ` — ${record.error}` : ""}`;
 }
 
-// ── `chant run status` — the gateState read ───────────────────────────────────
+// ── `chant run status` — the gate read ────────────────────────────────────────
 
 /** A refusal from the status read: why behold has no run state to show, and
  * what to do about it. #193's structured-error standard, the shape the SPA's
  * precondition card renders. */
 export interface RunStatusRefusal {
   error: string;
-  code: "no-temporal" | "no-run" | "run-status";
+  code: "no-run" | "run-status";
   remedy: string;
 }
 
-/** What `chant run status <name> --temporal` said. `gate: null` means the query
- * answered "nothing pending" (or the Op registers no `gateState` handler at
- * all, which chant reports the same way); a gate object means a human is being
- * waited on right now. */
+/** What `chant run status <name>` said (chant's `renderRuntimeStatus`,
+ * `packages/core/src/cli/handlers/run.ts`). `gate: null` means the newest run
+ * is not waiting on a gate; a gate object means a human is being waited on
+ * right now. */
 export interface RunStatusRead {
   op: string;
-  workflowId?: string;
+  /** The runtime that answered (`local` unless the project names another). */
+  runtime?: string;
   runId?: string;
-  /** Temporal's own execution status word — RUNNING / COMPLETED / FAILED / … */
+  /** chant's `OpRunState`: running / completed / failed / gated / waiting / cancelled. */
   status?: string;
   startedAt?: string;
-  closedAt?: string;
-  activities?: { completed: number; scheduled: number };
+  endedAt?: string;
+  /** `Steps : <settled>/<total> settled`, when the runtime had the records. */
+  steps?: { settled: number; total: number };
+  /** chant's `Error` line for a failed run. */
+  error?: string;
   gate: GateState | null;
 }
 
@@ -203,19 +208,20 @@ function statusFields(stdout: string): Map<string, string> {
 }
 
 /**
- * The `Gate` line, back into the `gateState` result it was printed from.
+ * The `Gate` line, back into the gate it was printed from.
  *
- * chant prints it as, verbatim from `cli/handlers/run.ts`:
+ * chant prints it as, verbatim from `renderRuntimeStatus` in
+ * `packages/core/src/cli/handlers/run.ts`:
  *
- *     `  Gate        : ${gate.signalName}${gate.description ? ` — ${gate.description}` : ""} (waiting since ${gate.since})`
+ *     `  Gate        : ${status.gate.name} (pending since ${status.gate.since})`
  *
- * so the signal name runs to the first ` — ` or ` (waiting since`, whichever
- * comes first, and a description is optional. A line that doesn't match this
- * shape yields nothing rather than a half-read gate: a card that names the
- * wrong signal would send the wrong approval.
+ * A ` — <description>` after the name is still read, since chant printed one
+ * before chant#2121. A line that doesn't match this shape yields nothing
+ * rather than a half-read gate: a card that names the wrong gate would record
+ * the wrong approval.
  */
 export function parseGateLine(line: string): GateState | null {
-  const m = /^(.*?)(?: — (.*?))? \(waiting since (.+)\)$/.exec(line.trim());
+  const m = /^(.*?)(?: — (.*?))? \((?:pending|waiting) since (.+)\)$/.exec(line.trim());
   if (!m) return null;
   const signalName = m[1].trim();
   if (!signalName) return null;
@@ -223,68 +229,57 @@ export function parseGateLine(line: string): GateState | null {
 }
 
 /**
- * Read one `chant run status <name> --temporal` invocation.
+ * Read one `chant run status <name>` invocation.
  *
- * A non-zero exit is a refusal, never an empty run: the two chant authors
- * itself are recognised so the view can say WHY, and everything else is
- * surfaced verbatim under `run-status` rather than being guessed at. That
- * matters more here than anywhere else in behold — a status read that quietly
- * degraded to "no gate pending" would paint an un-signalled gate as progress.
+ * A non-zero exit is a refusal, never an empty run: surfaced verbatim under
+ * `run-status` rather than being guessed at. So is chant's "No run of Op …
+ * is recorded" line, which it prints on stderr with exit 0 and nothing on
+ * stdout: that is a true answer ("this runtime has never run it"), and it is
+ * not "no gate pending". A status read that quietly degraded to "no gate
+ * pending" would paint an un-approved gate as progress.
  */
 export function readRunStatus(op: string, run: { code: number; stdout: string; stderr: string }): RunStatusResult {
+  const err = strip(run.stderr).trim();
+  const firstLine = (m: string): string => m.split("\n")[0].replace(/^error:\s*/, "");
   if (run.code !== 0) {
-    const message = strip(run.stderr).trim() || strip(run.stdout).trim() || `chant run status exited ${run.code}`;
-    // chant's own refusal when the project isn't on the durable path
-    // (`requireTemporalMode`), and when the Temporal client isn't installed.
-    // Both mean the same thing to a reader: there is no durable run to report.
-    if (/not available in local mode|@temporalio\/client is not installed/.test(message)) {
-      return {
-        ok: false,
-        refusal: {
-          error: `No Temporal run state for "${op}" — ${message.split("\n")[0].replace(/^error:\s*/, "")}`,
-          code: "no-temporal",
-          remedy:
-            "Gate state and per-step run records come from a durable run. Configure a Temporal profile in " +
-            "chant.config.ts (and `npm install @temporalio/client`), then run the Op with --temporal.",
-        },
-      };
-    }
-    if (/not found|NotFound/.test(message)) {
-      return {
-        ok: false,
-        refusal: {
-          error: `No run of "${op}" to report — ${message.split("\n")[0].replace(/^error:\s*/, "")}`,
-          code: "no-run",
-          remedy: "Start the Op (Run) and the playhead fills in as each step settles.",
-        },
-      };
-    }
+    const message = err || strip(run.stdout).trim() || `chant run status exited ${run.code}`;
     return {
       ok: false,
       refusal: {
-        error: `chant run status ${op} failed: ${message.split("\n")[0].replace(/^error:\s*/, "")}`,
+        error: `chant run status ${op} failed: ${firstLine(message)}`,
         code: "run-status",
-        remedy: "Run `chant run status " + op + " --temporal` in the project to see the whole error.",
+        remedy: "Run `chant run status " + op + "` in the project to see the whole error.",
       },
     };
   }
 
   const f = statusFields(run.stdout);
-  const activities = /^(\d+)\/(\d+)/.exec(f.get("Activities") ?? "");
+  if (!f.has("State")) {
+    // Exit 0 with no status block: chant's "no run recorded" answer.
+    return {
+      ok: false,
+      refusal: {
+        error: `No run of "${op}" to report — ${firstLine(err) || "chant printed no run status"}`,
+        code: "no-run",
+        remedy: "Start the Op (Run) and the playhead fills in when it settles.",
+      },
+    };
+  }
+  const steps = /^(\d+)\/(\d+)/.exec(f.get("Steps") ?? "");
   const gateLine = f.get("Gate");
   return {
     ok: true,
     read: {
       op,
-      ...(f.get("Workflow ID") ? { workflowId: f.get("Workflow ID") } : {}),
+      ...(f.get("Runtime") ? { runtime: f.get("Runtime") } : {}),
       ...(f.get("Run ID") ? { runId: f.get("Run ID") } : {}),
-      ...(f.get("Status") ? { status: f.get("Status") } : {}),
+      ...(f.get("State") ? { status: f.get("State") } : {}),
       ...(f.get("Started") ? { startedAt: f.get("Started") } : {}),
-      ...(f.get("Closed") ? { closedAt: f.get("Closed") } : {}),
-      ...(activities ? { activities: { completed: Number(activities[1]), scheduled: Number(activities[2]) } } : {}),
-      // No Gate line means chant printed none, which it does both when the
-      // query says "nothing pending" and when the Op registers no handler.
-      // Either way: no gate is waiting on a human right now.
+      ...(f.get("Ended") ? { endedAt: f.get("Ended") } : {}),
+      ...(steps ? { steps: { settled: Number(steps[1]), total: Number(steps[2]) } } : {}),
+      ...(f.get("Error") ? { error: f.get("Error") } : {}),
+      // chant prints a Gate line only for a gated run; no line means no gate is
+      // waiting on a human right now.
       gate: gateLine ? parseGateLine(gateLine) : null,
     },
   };
@@ -298,15 +293,25 @@ export function readRunStatus(op: string, run: { code: number; stdout: string; s
  * `lost` is the honest fourth value: the watched process ended without either a
  * clean exit or a failed step to point at, so behold knows the stream stopped
  * and knows nothing about the run. It is never `ok`.
+ *
+ * `gated`: chant exited {@link GATED_EXIT_CODE}, its "stopped at a gate,
+ * pending approval" outcome. Nothing after the gate ran; the status read names
+ * the gate, and the Op runs again once the approval is recorded.
  */
-export type RunStatus = "idle" | "running" | "ok" | "failed" | "lost";
+export type RunStatus = "idle" | "running" | "ok" | "failed" | "gated" | "lost";
+
+/** chant's exit code for a run that stopped at a gate (`GATED_EXIT_CODE`,
+ * `packages/core/src/cli/handlers/run.ts`, chant#2119). behold never passes
+ * `--gated-exit`, so a gated run always exits with it. */
+export const GATED_EXIT_CODE = 3;
 
 export interface RunState {
   /** The Op being watched, or null when nothing has run this session. */
   op: string | null;
-  /** Which executor's stream this is — `temporal` records arrive live, one per
-   * settled step; `local` records all arrive at once when the run ends. */
-  mode: "temporal" | "local" | null;
+  /** Which executor's stream this is. Only `local` is left since chant removed
+   * the temporal lexicon (#459); `chant run <name> --progress-json` streams one
+   * record per settled step. */
+  mode: "local" | null;
   status: RunStatus;
   /** Settled steps, in the order the stream delivered them. */
   records: StepRecord[];
@@ -335,7 +340,7 @@ export const initialRunState: RunState = {
 
 /** A run behold just triggered. Clears the previous run's terminal state so a
  * reload between trigger and first record can't show the last run's colours. */
-export function runStarted(op: string, mode: "temporal" | "local", at: string): RunState {
+export function runStarted(op: string, mode: "local", at: string): RunState {
   return { ...initialRunState, op, mode, status: "running", startedAt: at };
 }
 
@@ -366,6 +371,9 @@ export function runGate(state: RunState, result: RunStatusResult): RunState {
 export function runEnded(state: RunState, exitCode: number, at: string): RunState {
   if (state.status !== "running") return state;
   if (exitCode === 0) return { ...state, status: "ok", endedAt: at };
+  if (exitCode === GATED_EXIT_CODE && !state.records.some((r) => r.status === "fail")) {
+    return { ...state, status: "gated", endedAt: at };
+  }
   if (state.records.some((r) => r.status === "fail")) return { ...state, status: "failed", endedAt: at };
   return {
     ...state,
@@ -412,7 +420,7 @@ export interface RunJoin {
 }
 
 /** The (phase, fn) slots one Op's cards can absorb records into, in declared
- * order. A gate schedules no activity and has no slot; an effect card absorbs
+ * order. A gate's slot takes chant's `gate:<name>` record; an effect card absorbs
  * the synthesized receipt reads/writes and every nested activity, because chant
  * emits a record per inner step while the lens draws the effect whole. */
 function slotsFor(placed: PlacedStep[]): Array<{ id: string; phase: string; fn: string }> {
@@ -426,6 +434,10 @@ function slotsFor(placed: PlacedStep[]): Array<{ id: string; phase: string; fn: 
         if (nested.kind === "activity") out.push({ id: p.id, phase: p.phase, fn: nested.fn });
       }
       out.push({ id: p.id, phase: p.phase, fn: RECEIPT_WRITE_FN });
+    } else if (p.step.kind === "gate") {
+      // chant's local executor records a gate as `gate:<name>`: `skipped`
+      // while it waits, `ok` once the approval is read (#459).
+      out.push({ id: p.id, phase: p.phase, fn: `gate:${p.step.signalName}` });
     }
   }
   return out;
@@ -645,19 +657,16 @@ export function playheadNote(state: RunState, join: RunJoin | null): string {
   const head =
     state.status === "idle"
       ? `Run state for ${state.op}: no per-step records — this behold session didn't start the run, so only the gate query answers`
-      : `Run: ${state.op} (${state.mode === "temporal" ? "durable" : "local executor"}) — ${settled} step${settled === 1 ? "" : "s"} settled`;
+      : `Run: ${state.op} (local executor) — ${settled} step${settled === 1 ? "" : "s"} settled`;
   if (state.status === "running") {
-    bits.push(
-      state.mode === "local"
-        ? "still running; the local executor reports every step at once when it ends, so the track fills in on completion"
-        : "still running; only settled steps are painted",
-    );
+    bits.push("still running; only settled steps are painted");
   }
   if (state.status === "ok") bits.push("the run exited cleanly");
   if (state.status === "failed") bits.push("a step failed");
+  if (state.status === "gated") bits.push("the run stopped at a gate; nothing after it ran");
   if (state.status === "lost") bits.push(`stream lost — ${state.lost ?? "the progress stream ended without a verdict"}`);
   if (state.gate) {
-    bits.push(`waiting on gate ${state.gate.signalName} since ${state.gate.since} — approve is a delegated signal, behold never signals on its own`);
+    bits.push(`waiting on gate ${state.gate.signalName} since ${state.gate.since} — approve records the resolution (chant run approve) and the Op runs again; behold never approves on its own`);
   } else if (state.gateNote) {
     bits.push(`gate state unavailable — ${state.gateNote}`);
   }

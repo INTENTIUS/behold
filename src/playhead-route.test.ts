@@ -97,7 +97,7 @@ describe("GET /api/graph?ops=1 — run state is additive paint (#284 item 2)", (
 
   it("paints a real streamed run over the same track", async () => {
     const { app, runner } = harness();
-    runner.trigger("playhead-probe", undefined, dir, true);
+    runner.trigger("playhead-probe", undefined, dir);
     for (const line of streamLines) lastOnLine!(line);
 
     const body = (await (await app.request("/api/graph?ops=1")).json()) as OpsBody;
@@ -115,7 +115,7 @@ describe("GET /api/graph?ops=1 — run state is additive paint (#284 item 2)", (
 
   it("a dead stream freezes the playhead and says so — it never reads as completion", async () => {
     const { app, runner } = harness();
-    runner.trigger("playhead-probe", undefined, dir, true);
+    runner.trigger("playhead-probe", undefined, dir);
     for (const line of streamLines.slice(0, 3)) lastOnLine!(line);
     resolveDone(137);
     await Promise.resolve();
@@ -135,28 +135,34 @@ describe("GET /api/graph?ops=1 — run state is additive paint (#284 item 2)", (
   });
 });
 
-describe("GET /api/ops/:name/status — the gateState read", () => {
-  it("shells `chant run status <name> --temporal` and reads the pending gate", async () => {
+/** chant's `renderRuntimeStatus` block for a gated run (`packages/core/src/
+ * cli/handlers/run.ts`), in the same shape as the real
+ * `run-status-gate-pending.txt`, for the op this harness's IR declares. */
+const gatedStatus = (op: string, gate: string, since: string): string =>
+  `\u001b[1mOp: ${op}\u001b[0m\n  Runtime     : local\n  Run ID      : local-1\n  State       : gated\n` +
+  `  Started     : 2026-08-29 18:00:00\n  Ended       : 2026-08-29 18:00:12\n  Gate        : ${gate} (pending since ${since})\n`;
+
+describe("GET /api/ops/:name/status — the gate read", () => {
+  it("shells `chant run status <name>` with no --temporal and reads the pending gate (#459)", async () => {
     const { app } = harness();
     rawReply = { code: 0, stdout: readFileSync(join(RUN_FIXTURES, "run-status-gate-pending.txt"), "utf8"), stderr: "" };
-    const res = await app.request("/api/ops/prod-promote/status");
+    const res = await app.request("/api/ops/gated-probe/status");
     expect(res.status).toBe(200);
-    expect(lastRawArgs).toEqual(["run", "status", "prod-promote", "--temporal"]);
+    expect(lastRawArgs).toEqual(["run", "status", "gated-probe"]);
     const body = (await res.json()) as { gate: { signalName: string; since: string }; status: string };
-    expect(body.status).toBe("RUNNING");
-    expect(body.gate).toMatchObject({ signalName: "approve-promote", since: "2026-08-29T18:00:12.000Z" });
+    expect(body.status).toBe("gated");
+    expect(body.gate).toMatchObject({ signalName: "approve-probe", since: "2026-10-16T23:11:17.223Z" });
   });
 
   it("renders the pending gate as a card, with approve delegated to the EXISTING op-signal route", async () => {
     const { app } = harness();
-    rawReply = { code: 0, stdout: readFileSync(join(RUN_FIXTURES, "run-status-gate-pending.txt"), "utf8"), stderr: "" };
+    rawReply = { code: 0, stdout: gatedStatus("prod-promote", "approve-promote", "2026-08-29T18:00:12.000Z"), stderr: "" };
     await app.request("/api/ops/prod-promote/status");
 
     const body = (await (await app.request("/api/graph?ops=1")).json()) as OpsBody;
     expect(body.meta.gate).toMatchObject({
       op: "prod-promote",
       signalName: "approve-promote",
-      description: "Approve the prod promotion",
       since: "2026-08-29T18:00:12.000Z",
       node: "prod-promote/Approve/gate:approve-promote",
       guards: "awsApply",
@@ -172,23 +178,22 @@ describe("GET /api/ops/:name/status — the gateState read", () => {
       _status: "warn",
       _playhead: true,
     });
-    expect(body.meta.note).toContain("behold never signals on its own");
+    expect(body.meta.note).toContain("behold never approves on its own");
   });
 
-  it("says so plainly when the project isn't on the durable path", async () => {
+  it("states chant's refusal plainly, and its remedy names no removed flag", async () => {
     const { app } = harness();
-    rawReply = { code: 1, stdout: "", stderr: readFileSync(join(RUN_FIXTURES, "run-status-local-mode.txt"), "utf8") };
+    rawReply = { code: 1, stdout: "", stderr: "\u001b[31merror\u001b[0m: Unknown flag: --temporal\n" };
     const res = await app.request("/api/ops/floci-apply/status");
     expect(res.status).toBe(422);
     const body = (await res.json()) as { code: string; error: string; remedy: string };
-    expect(body.code).toBe("no-temporal");
-    expect(body.error).toContain("not available in local mode");
-    expect(body.remedy).toContain("--temporal");
+    expect(body.code).toBe("run-status");
+    expect(body.remedy).not.toContain("--temporal");
   });
 
   it("says so plainly when there is no run — absence of a signal is never progress", async () => {
     const { app } = harness();
-    rawReply = { code: 1, stdout: "", stderr: "error: workflow not found for workflowId: chant-op-prod-promote" };
+    rawReply = { code: 0, stdout: "", stderr: readFileSync(join(RUN_FIXTURES, "run-status-no-run.stderr.txt"), "utf8") };
     const res = await app.request("/api/ops/prod-promote/status");
     expect(res.status).toBe(422);
     const body = (await res.json()) as { code: string; runState: { gate: unknown; gateNote: string } };
@@ -212,10 +217,33 @@ describe("GET /api/ops/:name/status — the gateState read", () => {
   });
 });
 
+describe("POST /api/ops/:name/signal/:gate — recording the approval (#459)", () => {
+  it("shells `chant run approve <op> <gate>`, not the removed `run signal … --temporal`", async () => {
+    const { app } = harness();
+    rawReply = { code: 0, stdout: "", stderr: readFileSync(join(RUN_FIXTURES, "run-approve-local.stderr.txt"), "utf8") };
+    const res = await app.request("/api/ops/gated-probe/signal/approve-probe", { method: "POST" });
+    expect(res.status).toBe(200);
+    expect(lastRawArgs).toEqual(["run", "approve", "gated-probe", "approve-probe"]);
+    const body = (await res.json()) as { approved: boolean; op: string; gate: string; next: string };
+    expect(body).toMatchObject({ approved: true, op: "gated-probe", gate: "approve-probe" });
+    // chant's own next step, ANSI stripped: the local runtime reads the
+    // approval when the Op runs again.
+    expect(body.next).toBe('The "local" runtime reads the resolution when the op next runs — re-run `chant run gated-probe`.');
+  });
+
+  it("500s with chant's own words when the approval is refused", async () => {
+    const { app } = harness();
+    rawReply = { code: 1, stdout: "", stderr: "\u001b[31merror\u001b[0m: no pending gate \"nope\" on \"gated-probe\"\n" };
+    const res = await app.request("/api/ops/gated-probe/signal/nope", { method: "POST" });
+    expect(res.status).toBe(500);
+    expect(((await res.json()) as { error: string }).error).toBe('error: no pending gate "nope" on "gated-probe"');
+  });
+});
+
 describe("GET /api/ops — hydrating a client that arrives mid-run", () => {
   it("carries the playhead so a reload doesn't start blank", async () => {
     const { app, runner } = harness();
-    runner.trigger("playhead-probe", undefined, dir, true);
+    runner.trigger("playhead-probe", undefined, dir);
     for (const line of streamLines.slice(0, 2)) lastOnLine!(line);
 
     const body = (await (await app.request("/api/ops")).json()) as {

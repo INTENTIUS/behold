@@ -1,0 +1,2 @@
+[32mGate "approve-probe" on "gated-probe" resolved by alex at 2026-10-16T23:11:34.033Z (recorded locally (no remote for chant/lifecycle))[0m
+[90mThe "local" runtime reads the resolution when the op next runs — re-run `chant run gated-probe`.[0m
