@@ -416,15 +416,23 @@
       #k-traces:empty { display: none; }
       #k-traces { border-top: 1px solid var(--rule); max-height: 30vh; overflow: auto; }
       #k-drawer:not(.k-open) #k-traces { display: none; }
+      #k-drawer.k-open:has(#k-traces:not(:empty)) .k-drawer-body { height: min(40vh, 26em); border-radius: 0; }
+      #k-drawer.k-open #k-traces { border-radius: 0 0 10px 10px; padding-bottom: 0.4em; }
       /* Each wave's numbers, on its box. */
       .k-badge { position: absolute; left: 0; top: 0; padding: 0.15em 0.65em; border-radius: 999px; background: var(--surface-box); border: 1px solid var(--rule); color: var(--fg); font-size: 0.86em; font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none; visibility: hidden; }
       .k-badge.k-placed { visibility: visible; }
       /* The result, at the end of the run. */
-      #k-result { position: absolute; top: 0.8em; right: 1.1em; width: min(22em, 32vw); padding: 0.7em 1em 0.8em; background: color-mix(in srgb, var(--managed) 8%, var(--surface-box)); border: 1px solid var(--managed); border-radius: 10px; box-shadow: 0 8px 28px color-mix(in srgb, var(--shadow) 70%, transparent); }
+      #k-result { width: min(30em, 36vw); padding: 0.9em 1.2em 1em; background: color-mix(in srgb, var(--managed) 8%, var(--surface-box)); border: 2px solid var(--managed); border-radius: 12px;
+        box-shadow: 0 10px 34px color-mix(in srgb, var(--shadow) 75%, transparent), 0 0 0 6px color-mix(in srgb, var(--managed) 12%, transparent); }
       #k-result[hidden], #k-callout[hidden], #k-drawer[hidden] { display: none; }
-      .k-result-head { margin: 0 0 0.2em; font: 700 0.75em var(--font-mono); text-transform: uppercase; letter-spacing: 0.07em; color: var(--managed); }
-      .k-result-line { margin: 0.1em 0 0; font-size: 1.05em; }
-      .k-result-line:first-of-type { font-size: 1.2em; font-weight: 600; }
+      .k-result-head { margin: 0 0 0.2em; font: 700 1.5em var(--font-ui); color: var(--managed); }
+      .k-result-line { margin: 0 0 0.6em; font-size: 1.12em; line-height: 1.35; color: var(--fg); }
+      .k-result-counts { list-style: none; margin: 0 0 0.6em; padding: 0; display: flex; flex-wrap: wrap; gap: 0.35em 0.5em; }
+      .k-result-counts li { padding: 0.15em 0.65em; border-radius: 999px; background: var(--surface-box); border: 1px solid var(--rule); font-size: 0.95em; font-variant-numeric: tabular-nums; }
+      .k-result-counts li:first-child { border-color: var(--managed); font-weight: 600; }
+      .k-result-waves { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.2em 0.9em; margin: 0; padding-top: 0.5em; border-top: 1px solid var(--rule); }
+      .k-result-waves dt { font: 600 0.9em var(--font-mono); color: var(--muted); }
+      .k-result-waves dd { margin: 0; font-variant-numeric: tabular-nums; }
       @media (max-width: 900px) and (min-width: 601px) { body.k-watch #bar { padding-right: 1em; flex-wrap: wrap; } body.k-watch #k-head { display: flex; flex-direction: column-reverse; } body.k-watch #k-tools { position: static; justify-content: flex-end; padding: 0.4em 1em 0; } }
       .k-w-dora-foot { display: none; }
       /* A phone: a short header, the graph, then the step and the approval under it; the rest stacks below, in the page's flow. */
@@ -482,7 +490,7 @@
           <!-- behold#571: the mount point for the job's trace waterfall (OpenTelemetry traces); empty until that pane mounts here. -->
           <div id="k-traces" data-k-mount="traces"></div>
         </section>
-        <aside id="k-result" aria-label="The result" hidden></aside>
+        <aside id="k-result" class="k-over" aria-label="The result" hidden></aside>
         <footer id="k-caption" aria-live="polite"></footer>
       </div>
     </div>

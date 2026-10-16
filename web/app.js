@@ -3551,6 +3551,7 @@ const TG_CARD_TONE = Object.fromEntries(Object.entries(TG_TONE).map(([k, v]) => 
 function drawTgReads() {
   if (embedOpts.bare) queueMicrotask(kioskDecorate); // behold#571: once this draw is done
   if (embedOpts.bare) queueMicrotask(() => (kioskShot ? applyKioskShot(false) : kioskTellBoxes())); // behold#571: the marks moved the boxes
+  if (embedOpts.bare) queueMicrotask(kioskTellDrawn); // behold#571: the kiosk swaps a reloaded frame in once it has drawn
   watchTgRuns();
   watchChantPr(); // behold#631 // #571: the wave boxes' jobs, while the components zoom is on screen
   const svg = document.querySelector("#graph svg");
@@ -4549,6 +4550,30 @@ function kioskTellBoxes() {
     }
   });
 }
+
+/**
+ * behold#571: tell the kiosk this page has drawn its graph, once: cards on
+ * the canvas and terragucci's marks on them (or their read answered, or
+ * failed). The kiosk loads a new frame out of sight and swaps it in on this,
+ * so the graph pane never shows an empty frame.
+ */
+var drawnTold = false;
+function kioskTellDrawn() {
+  if (drawnTold || !embedOpts.host || window.parent === window) return;
+  const svg = currentSvg();
+  const failed = !!document.querySelector("#graph > .err");
+  if (!failed && !(svg && svg.querySelector("[data-node-id]"))) return;
+  // The marks: terragucci's reports answered (or refused), or chant's loop has its own.
+  if (!failed && terragucciComponentsRepo && !tgAnswer && !chantPrDrawn()) return;
+  drawnTold = true;
+  try {
+    window.parent.postMessage({ type: "behold:drawn", failed }, embedOpts.host);
+  } catch {
+    /* the parent went away */
+  }
+}
+// A graph that failed draws no svg and no reads: say so too, so the kiosk is never left waiting.
+if (embedOpts.bare) setInterval(kioskTellDrawn, 1000);
 
 window.addEventListener("message", (e) => {
   if (!embedOpts.bare) return;

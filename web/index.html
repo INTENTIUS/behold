@@ -115,6 +115,8 @@
          Both are off entirely under prefers-reduced-motion. */
       #graph svg { animation: graph-fade-through .18s ease-out; }
       @keyframes graph-fade-through { from { opacity: 0; } to { opacity: 1; } }
+      /* behold#571: the kiosk's frame re-renders as the steps move; a fade from nothing at each one reads as the pane flashing. It swaps whole frames in once they have drawn instead. */
+      .bare #graph svg { animation: none; }
       #graph [data-node-id].status-changed { animation: status-pulse .85s ease-out 2; }
       @keyframes status-pulse {
         0%, 100% { filter: drop-shadow(0 0 0 var(--pulse, var(--pending))); }

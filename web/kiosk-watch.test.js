@@ -130,12 +130,17 @@ describe("kiosk watch: the numbers", () => {
     expect(doraLine({ dora: null })).toBeNull();
   });
 
-  it("sums the run on the result card: the waves and changes from the run view, the time and the hold from the metrics", () => {
+  it("sums the run on the result card: the step's line, the waves and changes from the run view, the time and the hold from the metrics, each wave's numbers", () => {
     const p = progress([st(1, "applied", ["network"], { update: 1, "no-op": 2 }), st(2, "applied", ["app"], { create: 4 })]);
-    expect(resultModel(demo("applied"), metrics, p)).toEqual({ head: "Applied", lines: ["2 waves applied", "4 created, 1 updated", "11 s of job time", "25 s held for an approval"] });
+    expect(resultModel(demo("applied"), metrics, p)).toEqual({
+      head: "Applied",
+      line: "the applied line",
+      counts: ["2 waves applied", "4 created, 1 updated", "11 s of job time", "25 s held for an approval"],
+      waves: [{ wave: 1, words: "1.6 s · 1 updated" }, { wave: 2, words: "9.5 s · held 25 s · 4 created" }],
+    });
     // Metrics that cover fewer waves than applied say nothing of the time.
     const three = progress([...p.states, st(3, "applied", ["edge"], {})]);
-    expect(resultModel(demo("applied"), metrics, three).lines).toEqual(["3 waves applied", "4 created, 1 updated"]);
+    expect(resultModel(demo("applied"), metrics, three).counts).toEqual(["3 waves applied", "4 created, 1 updated"]);
     expect(resultModel(demo("applying"), metrics, p)).toBeNull();
     expect(resultModel(demo("applied"), null, null)).toBeNull();
   });

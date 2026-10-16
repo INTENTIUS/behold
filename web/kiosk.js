@@ -17,6 +17,7 @@ import { CHANT_PANEL_STEPS, chantApprovalModel } from "./chant-pr-marks.js";
 import { PICK_HOLD_MS, annMark, mergeRun, startRuns, statusIcon } from "./kiosk-runs.js";
 import { MODES, MODE_STORE, badges as waveBadges, badgeTitle, captionModel, doraLine, modeStored, placeBeside, resultModel, shotFor, tailLines } from "./kiosk-watch.js";
 import { shotMessage } from "./kiosk-shot.js";
+import { mountTrace } from "./kiosk-trace.js";
 import { PANEL_STEPS, PANEL_TITLE, approvalModel, cycleRuns, digestHex, rowFacts } from "./kiosk-approval.js";
 import { getThemeName, mountThemePicker, onThemeChange } from "./theme.js";
 import { cssString, hoverCss, hoverFromMessage, hoverLinks, hoverMessage, isLightBg, rootSegments, rootText } from "./kiosk-roots.js";
@@ -896,11 +897,19 @@ export const DRAWER_EMPTY = "The job's lines show here as it writes them.";
 export const DRAWER_MORE = "Open the log";
 export const DRAWER_LESS = "Fold it back";
 
-/** The result card at the end of the run. */
-function drawResult(host, model) {
+/** The result card at the end of the run: the result line, the counts, and each wave's numbers. */
+function drawResult(host, model, s) {
   host.replaceChildren();
   host.appendChild(el("p", "k-result-head", model.head));
-  for (const l of model.lines) host.appendChild(el("p", "k-result-line", l));
+  if (model.line) host.appendChild(elRoots("p", "k-result-line", model.line, s));
+  const counts = el("ul", "k-result-counts");
+  for (const c of model.counts) counts.appendChild(el("li", null, c));
+  host.appendChild(counts);
+  if (model.waves.length) {
+    const list = el("dl", "k-result-waves");
+    for (const w of model.waves) list.append(el("dt", null, `Wave ${w.wave}`), el("dd", null, w.words));
+    host.appendChild(list);
+  }
 }
 
 /** behold#571: the head over the intro, in the card's box between scenarios, and the title of "What is this?". */
@@ -1013,6 +1022,11 @@ function fade(b) {
   b.classList.toggle("k-more-above", b.scrollTop > 1);
 }
 
+/** behold#571: the longest a reloaded frame loads out of sight before it swaps in anyway. */
+export const FRAME_SWAP_MS = 30_000;
+/** behold#571: how long the first frame load waits for demo.json, so it opens on the step's checkout. */
+export const FRAME_BOOT_WAIT_MS = 4_000;
+
 /** How often the kiosk asks for demo.json. The server shares one read between kiosks. */
 export const DEMO_POLL_MS = 3_000;
 
@@ -1032,6 +1046,17 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   s.watchHeld = null;
   s.boxes = null;
   s.shot = null;
+  // behold#571: the frame loading out of sight while the shown one stays up (openFrame), and a message to both.
+  let buffer = null;
+  const post = (msg) => {
+    for (const f of [frame, buffer]) {
+      try {
+        if (f && f.contentWindow) f.contentWindow.postMessage(msg, origin);
+      } catch {
+        /* the frame went away */
+      }
+    }
+  };
   // behold#571: on a tool's page, `live` while its scenario runs, `replay` of its latest cycle otherwise, `none` before it has one.
   const vendor = vendorOf(tool);
   s.vendor = vendor ? tool : null;
@@ -1087,7 +1112,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const key = `${focus}|${run}|${zoom}`;
     if (!force && key === lastFocus) return;
     lastFocus = key;
-    if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: "behold:view", member: null, focus, run, zoom }, origin);
+    post({ type: "behold:view", member: null, focus, run, zoom });
     tellHover(s.hover);
   };
   const pickView = (view) => {
@@ -1116,7 +1141,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   // behold#571: with nothing pointed at, the frame lights the held wave's box, as the hold panel and its job row are lit.
   const tellHover = (h) => {
     const lit = h || (Number.isInteger(s.held) ? { wave: s.held } : null);
-    if (frame && frame.contentWindow) frame.contentWindow.postMessage(hoverMessage(lit), origin);
+    post(hoverMessage(lit));
   };
   const hoverAt = (target) => {
     const t = target && target.closest ? target.closest("[data-k-root],[data-k-wave]") : null;
@@ -1135,7 +1160,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     document.addEventListener("pointerover", (e) => setHover(hoverAt(e.target)));
     document.documentElement.addEventListener("pointerleave", () => setHover(null));
     // A click or Escape anywhere here is a click elsewhere for the frame's pinned popover.
-    const unpin = () => frame && frame.contentWindow && frame.contentWindow.postMessage({ type: "behold:unpin" }, origin);
+    const unpin = () => post({ type: "behold:unpin" });
     document.addEventListener("pointerdown", unpin);
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") unpin();
@@ -1320,7 +1345,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const cap = watch.caption.getBoundingClientRect();
     const bottom = Math.max(0, f.bottom - cap.top) + 16;
     const side = shot.kind === "held" ? watch.callout : shot.kind === "active" ? watch.drawer : shot.kind === "result" ? watch.result : null;
-    const right = side && !side.hidden && side.offsetWidth ? side.offsetWidth + 44 : 0;
+    // The result card sits right beside the graph (placeBeside's gap): an inset of its width and that gap centres the two together.
+    const right = side && !side.hidden && side.offsetWidth ? side.offsetWidth + (shot.kind === "result" ? 18 : 44) : 0;
     return { top: 20, right, bottom, left: 20 };
   };
   function tellShot(force) {
@@ -1328,7 +1354,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     if (!s.watchMode) {
       if (lastShot !== "release") {
         lastShot = "release";
-        frame.contentWindow.postMessage({ type: "behold:shot", release: true }, origin);
+        post({ type: "behold:shot", release: true });
       }
       return;
     }
@@ -1337,7 +1363,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const key = `${s.shot.id}|${insets.right || 0}|${Math.round((insets.bottom || 0) / 12)}|${s.shot.roots.join(",")}`;
     if (!force && key === lastShot) return;
     lastShot = key;
-    frame.contentWindow.postMessage(shotMessage({ roots: s.shot.roots, waves: s.shot.waves, whole: s.shot.whole, insets, id: s.shot.id }), origin);
+    post(shotMessage({ roots: s.shot.roots, waves: s.shot.waves, whole: s.shot.whole, insets, id: s.shot.id }));
   }
   function drawWatch(at) {
     if (!watch || !s.watchMode) return;
@@ -1356,9 +1382,10 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     watch.drawer.hidden = !drawer;
     watch.drawer.classList.toggle("k-open", open);
     if (drawer) drawDrawer(watch.drawer, tailLines(runsApi && runsApi.run ? runsApi.run.doc : null), badgeTitle(nums[shot.waves[0]]), open);
+    if (drawer) traceDrawer(d, shot.waves[0]);
     const result = shot.kind === "result" ? resultModel(d, s.metrics, s.progress) : null;
     watch.result.hidden = !result;
-    if (result) drawResult(watch.result, result);
+    if (result) drawResult(watch.result, result, s);
     // On a phone the delivery numbers stack under the rest, where the header has no room for them.
     let foot = watch.layer.querySelector(":scope > .k-w-dora-foot");
     if (!foot) {
@@ -1368,7 +1395,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     foot.textContent = doraLine(s.metrics) || "";
     watch.badges.replaceChildren();
     const skip = call ? hold.wave : drawer ? shot.waves[0] : null;
-    for (const [n, words] of Object.entries(nums)) {
+    // At applied the result card lists every wave's numbers, so the boxes carry none.
+    for (const [n, words] of shot.kind === "result" && result ? [] : Object.entries(nums)) {
       if (Number(n) === skip) continue;
       const b = el("span", "k-badge", words);
       b.dataset.kWave = n;
@@ -1377,10 +1405,28 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     }
     placeWatch();
   }
+  /**
+   * behold#571: the active wave's job's trace waterfall (web/kiosk-trace.js),
+   * in the drawer's mount point: the job that applies the wave, in the run
+   * the drawer shows. It draws nothing until Tempo has a trace for that job.
+   */
+  let trace = null;
+  function traceDrawer(d, wave) {
+    const host = watch.drawer.querySelector("#k-traces");
+    const runDoc = runsApi && runsApi.run ? runsApi.run.doc : null;
+    const w = (s.waves || []).find((x) => x.wave === wave);
+    if (!host || !d || !d.repo || !runDoc || !w) return;
+    const target = { project: d.repo, run: String(runDoc.id), job: w.job };
+    const key = `${target.project}|${target.run}|${target.job}`;
+    if (trace && trace.key === key) return;
+    if (trace) trace.api.update(target);
+    else trace = { api: mountTrace(host, { ...target, fetchJson: fetchServed }) };
+    trace.key = key;
+  }
   /** Put each overlay by its box, as the frame last said they sit. */
   function placeWatch() {
     if (!watch || !s.watchMode || !frame || !frame.getBoundingClientRect) return;
-    const all = [watch.callout, watch.drawer, ...watch.badges.children];
+    const all = [watch.callout, watch.drawer, watch.result, ...watch.badges.children];
     if (isPhone()) {
       for (const n of all) n.style.transform = "";
       return;
@@ -1407,6 +1453,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       // Before the frame says where the box is: the right of the view, under its top.
       const labels = ((s.boxes && s.boxes.labels) || []).map((r) => ({ x: r.x + view.x, y: r.y + view.y, w: r.w, h: r.h }));
       const p = box ? placeBeside(box, size, view, 18, labels) : { x: view.x + view.w - size.w - 20, y: view.y + 20, side: "below" };
+      // The result card stands level with the middle of the graph it sums up.
+      if (box && node === watch.result) p.y = Math.max(view.y + 8, Math.min(box.y + box.h / 2 - size.h / 2, view.y + view.h - size.h - 8));
       node.style.transform = `translate(${Math.round(p.x)}px, ${Math.round(p.y)}px)`;
       for (const k of ["right", "left", "below"]) node.classList.toggle(`k-side-${k}`, p.side === k);
       node.classList.add("k-placed");
@@ -1416,6 +1464,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     };
     put(watch.callout, s.held);
     put(watch.drawer, s.shot && s.shot.waves[0]);
+    put(watch.result, null); // beside the whole graph
     const hits = (r) => taken.some((t) => r.x < t.x2 && r.x2 > t.x && r.y < t.y2 && r.y2 > t.y);
     for (const b of watch.badges.children) {
       const box = boxOf(Number(b.dataset.kWave));
@@ -1602,7 +1651,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   // behold#571: the theme picker, persisted per viewer as the app does; the frame follows without a reload.
   if (tools && tools.theme) mountThemePicker(tools.theme);
   onThemeChange((th) => {
-    if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: "behold:theme", name: th.name }, origin);
+    post({ type: "behold:theme", name: th.name });
     draw();
   });
 
@@ -1630,21 +1679,84 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   }
   // #571: whether the repo offers the components zoom (a terragucci.components.json), read before the frame opens so it opens on the step's view.
   let frameSrcNow = null;
+  // behold#571: a frame that has drawn its graph stays up while the next one
+  // loads out of sight; the next one swaps in once it says it has drawn
+  // (`behold:drawn`), so the graph pane is never an empty frame: not at the
+  // merge, not at applied, not at a new cycle, in Watch and in Inspect.
+  let frameDrawn = false;
+  let bufferTimer = null;
+  const bootAt = now().getTime();
+  let bootRetry = null;
+  const wireLoad = (el) => {
+    el.addEventListener("load", () => {
+      // A new frame takes Watch's shot before it draws, so it opens on it and never on the fit.
+      tellShot(true);
+      tellFrame(true);
+      // The frame reads its graph after load; tell it again once it has had the time.
+      for (const ms of [1500, 4000, 8000]) setTimeout(() => (tellFrame(true), tellShot(true)), ms);
+    });
+  };
+  const swapFrame = () => {
+    if (!buffer) return;
+    clearTimeout(bufferTimer);
+    const old = frame;
+    buffer.id = old.id;
+    buffer.className = old.className;
+    buffer.removeAttribute("style");
+    buffer.removeAttribute("aria-hidden");
+    buffer.removeAttribute("tabindex");
+    old.remove();
+    frame = buffer;
+    buffer = null;
+    frameDrawn = true;
+    s.boxes = null;
+    lastFocus = undefined;
+    tellFrame(true);
+    tellShot(true);
+    draw();
+  };
   const openFrame = () => {
     if (!frame) return;
+    // The first load waits (a few seconds at most) for the narration, which names the checkout the step is on: one load, not two.
+    if (frameSrcNow === null && !(s.demo && s.demo.demo) && now().getTime() - bootAt < FRAME_BOOT_WAIT_MS) {
+      if (!bootRetry) bootRetry = setTimeout(() => ((bootRetry = null), openFrame()), 400);
+      return;
+    }
     const src = frameSrc(origin, viewZoom(shownView().view), wantRepo(), getThemeName());
     if (src === frameSrcNow) return;
-    if (frameSrcNow === null) {
-      // The frame reads its graph after load; tell it again once it has had the time.
-      frame.addEventListener("load", () => {
-        // behold#571: a new frame takes Watch's shot before it draws, so it opens on it and never on the fit.
-        tellShot(true);
-        for (const ms of [1500, 4000, 8000]) setTimeout(() => (tellFrame(true), tellShot(true)), ms);
-      });
-    }
+    const first = frameSrcNow === null;
     frameSrcNow = src;
-    frame.src = src;
+    if (first) wireLoad(frame);
+    // Nothing drawn yet to keep up (the first load, or a load before the last one drew): load in place.
+    if (first || !frameDrawn || typeof document === "undefined" || !frame.parentNode) {
+      frameDrawn = false;
+      frame.src = src;
+      return;
+    }
+    if (buffer) {
+      clearTimeout(bufferTimer);
+      buffer.remove();
+    }
+    buffer = document.createElement("iframe");
+    buffer.title = frame.title;
+    buffer.className = "k-frame-next";
+    buffer.setAttribute("aria-hidden", "true");
+    buffer.setAttribute("tabindex", "-1");
+    // Over the shown frame, its size, out of sight: it lays out as the shown one does, so it opens on the same fit and shot.
+    Object.assign(buffer.style, { position: "absolute", left: `${frame.offsetLeft}px`, top: `${frame.offsetTop}px`, width: `${frame.offsetWidth}px`, height: `${frame.offsetHeight}px`, opacity: "0", pointerEvents: "none", border: "0" });
+    wireLoad(buffer);
+    buffer.src = src;
+    frame.parentNode.insertBefore(buffer, frame.nextSibling);
+    // A frame that never says it drew still swaps in, late, rather than never.
+    bufferTimer = setTimeout(swapFrame, FRAME_SWAP_MS);
   };
+  if (typeof window !== "undefined" && window.addEventListener) {
+    window.addEventListener("message", (e) => {
+      if (e.origin !== origin || !e.data || e.data.type !== "behold:drawn") return;
+      if (buffer && e.source === buffer.contentWindow) swapFrame();
+      else if (frame && e.source === frame.contentWindow) frameDrawn = true;
+    });
+  }
   /** behold#571: the commit each served checkout holds, read again when a step names a new one. */
   const readCommits = () => fetchJson("/api/project").then((p) => {
     if (p && !p.error && Array.isArray(p.viewRepos)) {

@@ -181,10 +181,11 @@ function roundedWeek(v) {
 }
 
 /**
- * The result card at `applied`: how many waves applied and what they
- * changed, from the run view the graph draws; the job time and the time a
- * person held them, from the pipeline metrics when they cover every wave.
- * Null without this cycle's run, and the caption's step line says the rest.
+ * The result card, the applied shot's focal point: the result line (the
+ * step's own words), the counts (the waves that applied and what they
+ * changed, from the run view the graph draws; the job time and the hold, from
+ * the metrics when they cover every wave), and each wave's numbers as its
+ * badge has them. Null without this cycle's run.
  */
 export function resultModel(demo, metrics, progress = null) {
   if (!demo || demo.step !== "applied") return null;
@@ -193,17 +194,18 @@ export function resultModel(demo, metrics, progress = null) {
   const m = metrics && metrics.run && metrics.run.current ? metrics.run.waves : [];
   const n = states.length || m.length;
   if (!n) return null;
-  const lines = [`${n} ${n === 1 ? "wave" : "waves"} applied`];
+  const counts = [`${n} ${n === 1 ? "wave" : "waves"} applied`];
   const changed = states.length ? mergeChanges(states.map((w) => w.totals)) : mergeChanges(m.map((w) => w.changesRaw));
-  lines.push(changed || "nothing to change");
+  counts.push(changed || "nothing to change");
   // The metrics cover the run when they have a number for each wave that applied.
   if (m.length >= n) {
     const secs = m.reduce((a, w) => a + (Number.isFinite(w.secondsRaw) ? w.secondsRaw : 0), 0);
-    if (secs > 0) lines.push(`${secondsShort(secs)} of job time`);
+    if (secs > 0) counts.push(`${secondsShort(secs)} of job time`);
     const held = m.reduce((a, w) => a + (Number.isFinite(w.heldRaw) ? w.heldRaw : 0), 0);
-    if (held > 0) lines.push(`${secondsShort(held)} held for an approval`);
+    if (held > 0) counts.push(`${secondsShort(held)} held for an approval`);
   }
-  return { head: "Applied", lines };
+  const waves = [...m].sort((a, b) => a.wave - b.wave).map((w) => ({ wave: w.wave, words: badgeWords(w) })).filter((w) => w.words);
+  return { head: "Applied", line: typeof demo.label === "string" ? demo.label : "", counts, waves };
 }
 
 const ACTION_ORDER = ["create", "update", "delete", "replace", "forget", "import", "move"];
