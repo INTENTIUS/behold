@@ -14,7 +14,9 @@
 // Nothing here is all-or-nothing, and nothing says so.
 
 import { CHANT_PANEL_STEPS, chantApprovalModel } from "./chant-pr-marks.js";
-import { PICK_HOLD_MS, annMark, mergeRun, startRuns } from "./kiosk-runs.js";
+import { PICK_HOLD_MS, annMark, mergeRun, startRuns, statusIcon } from "./kiosk-runs.js";
+import { MODES, MODE_STORE, badges as waveBadges, badgeTitle, captionModel, doraLine, modeStored, placeBeside, resultModel, shotFor, tailLines } from "./kiosk-watch.js";
+import { shotMessage } from "./kiosk-shot.js";
 import { PANEL_STEPS, PANEL_TITLE, approvalModel, cycleRuns, digestHex, rowFacts } from "./kiosk-approval.js";
 import { getThemeName, mountThemePicker, onThemeChange } from "./theme.js";
 import { cssString, hoverCss, hoverFromMessage, hoverLinks, hoverMessage, isLightBg, rootSegments, rootText } from "./kiosk-roots.js";
@@ -633,6 +635,8 @@ export function holdModel(s, demo) {
 
 function drawBar(bar, s, now) {
   const vendor = vendorOf(s.vendor);
+  // behold#571: in Watch the header is one quiet line; the narration is the caption over the graph.
+  if (s.watchMode && s.demo && s.demo.demo && !(vendor && s.mode === "none")) return drawWatchHead(bar, s, now);
   if (vendor && s.mode === "none") {
     // behold#571: the tool's scenario has no cycle yet: its name, its link, and a calm line.
     const words = notRunWords(vendor, { graph: !!s.notRunGraph });
@@ -766,6 +770,136 @@ function drawBar(bar, s, now) {
   bar.appendChild(right);
 }
 
+
+// ---------------------------------------------------------------------------
+// behold#571: Watch, the kiosk's default. web/kiosk-watch.js decides what each
+// piece says and where it goes; these draw it.
+
+/** The mode toggle, "Watch | Inspect", in the header's tools. */
+export function renderModeToggle(host, mode, onPick) {
+  if (!host) return;
+  host.replaceChildren();
+  for (const m of MODES) {
+    const b = el("button", `k-mode${m.id === mode ? " k-mode-on" : ""}`, m.words);
+    b.type = "button";
+    b.setAttribute("title", m.shows);
+    b.setAttribute("aria-pressed", String(m.id === mode));
+    b.addEventListener("click", () => onPick(m.id));
+    host.appendChild(b);
+  }
+}
+
+/** behold#571: the words over a held shot, and the button that follows the step again. */
+export function heldWords(secs) {
+  return `Held where you left it · the steps lead again in ${secs} s`;
+}
+export const FOLLOW_WORDS = "Follow the steps";
+
+/** Watch's header: the scenario's place and the strip on the left, the delivery numbers on the right. */
+function drawWatchHead(bar, s, now) {
+  const demo = s.demo.demo;
+  const vendor = vendorOf(s.vendor);
+  const place = el("div", "k-w-place");
+  const shownTool = vendor || (demo.scenario !== "base" ? vendorOf(demo.tool) : null);
+  if (shownTool) place.appendChild(brandEl(shownTool));
+  place.appendChild(el("span", "k-cycle", cycleWords(demo, now)));
+  bar.appendChild(place);
+  const strip = el("ol", "k-strip");
+  for (const stop of stripStops(demo.step)) strip.appendChild(el("li", `k-stop k-${stop.state}`, stop.words));
+  bar.appendChild(strip);
+  if (s.watchHeld) {
+    const p = el("span", "k-w-held", heldWords(s.watchHeld.secs));
+    const b = el("button", null, FOLLOW_WORDS);
+    b.type = "button";
+    b.addEventListener("click", () => s.followSteps && s.followSteps());
+    p.appendChild(b);
+    bar.appendChild(p);
+  }
+  const dora = doraLine(s.metrics);
+  if (dora) {
+    const p = el("p", "k-w-dora", dora);
+    if (p.setAttribute) p.setAttribute("title", s.metrics && s.metrics.note ? `${dora}. ${s.metrics.note}` : dora);
+    bar.appendChild(p);
+  }
+}
+
+/** The caption along the bottom: the title, what changes, the step; one of the two beats leads. */
+function drawCaption(host, s, now) {
+  host.replaceChildren();
+  const demo = s.demo && s.demo.demo;
+  const cap = captionModel(demo, { vendor: s.vendor || null, now });
+  if (!cap) return;
+  const top = el("div", "k-cap-top");
+  const title = el("h1", "k-cap-title");
+  title.append(el("span", "k-kicker", cap.kicker), el("span", "k-title-text", cap.title));
+  if (title.setAttribute) title.setAttribute("title", `${cap.kicker} · ${cap.title}`);
+  top.appendChild(title);
+  if (cap.next) {
+    const nx = el("p", "k-cap-next");
+    nx.append("next, by the driver: ", elRoots("span", "k-action", cap.next.action, s), " ", el("span", "k-when", cap.next.when));
+    if (nx.setAttribute) nx.setAttribute("title", `next, by the driver: ${cap.next.action}`);
+    top.appendChild(nx);
+  }
+  host.appendChild(top);
+  const beat = cap.intro || cap.changes;
+  const changes = el("p", `k-cap-row k-cap-changes${cap.lead === "changes" ? " k-cap-lead" : ""}`);
+  if (beat) {
+    changes.append(el("span", "k-cap-label", beat.label), elRoots("span", "k-cap-text", beat.text, s));
+    if (changes.setAttribute) changes.setAttribute("title", beat.text);
+  }
+  host.appendChild(changes);
+  const step = el("p", `k-cap-row k-cap-step k-tone-${cap.step.tone}${cap.lead === "step" ? " k-cap-lead" : ""}`);
+  step.append(el("span", "k-cap-label", cap.step.word), elRoots("span", "k-cap-text", cap.step.text, s));
+  if (step.setAttribute) step.setAttribute("title", cap.step.text);
+  host.appendChild(step);
+}
+
+/** The approval on the held wave's box: the step's word, the wave, its numbers, and how the hold ends. */
+function drawCallout(host, s, hold, nums) {
+  const keep = host.scrollTop;
+  host.replaceChildren();
+  host.appendChild(el("span", "k-notch"));
+  host.appendChild(el("p", "k-call-word", STEP_WORDS.waiting));
+  if (hold.head) host.appendChild(el("p", "k-call-head", hold.head));
+  if (nums) host.appendChild(el("p", "k-call-nums", nums));
+  if (hold.kind === "approval") host.appendChild(approvalPanel(hold.model, s));
+  else {
+    const appr = hold.appr;
+    const a = el("div", "k-approve");
+    a.appendChild(elRoots("p", "k-approve-gloss", approveGloss(appr), s));
+    a.appendChild(el("code", "k-command", appr.approve));
+    const then = el("p", "k-approve-then");
+    then.append(`then comments `, el("code", "k-inline", appr.comment), ` on ${appr.on}, and the waves run again.`);
+    a.appendChild(then);
+    host.appendChild(a);
+  }
+  host.scrollTop = keep;
+}
+
+/** The drawer's head and folded lines: the job the run is on, its numbers, and the last lines its step wrote. */
+function drawDrawer(host, tail, nums, open) {
+  const head = host.querySelector(".k-drawer-head");
+  const lines = host.querySelector(".k-drawer-tail");
+  head.replaceChildren();
+  if (!host.querySelector(".k-notch")) host.insertBefore(el("span", "k-notch"), head);
+  head.setAttribute("aria-expanded", String(open));
+  if (tail) head.append(statusIcon(tail.status), el("span", "k-drawer-job", tail.job));
+  if (nums) head.appendChild(el("span", "k-drawer-nums", nums));
+  head.appendChild(el("span", "k-drawer-more", open ? DRAWER_LESS : DRAWER_MORE));
+  lines.replaceChildren();
+  for (const l of tail ? tail.lines : []) lines.appendChild(el("div", "k-drawer-line", l));
+}
+/** behold#571: the drawer's two states, said on its head. */
+export const DRAWER_MORE = "Open the log";
+export const DRAWER_LESS = "Fold it back";
+
+/** The result card at the end of the run. */
+function drawResult(host, model) {
+  host.replaceChildren();
+  host.appendChild(el("p", "k-result-head", model.head));
+  for (const l of model.lines) host.appendChild(el("p", "k-result-line", l));
+}
+
 /** behold#571: the head over the intro, in the card's box between scenarios, and the title of "What is this?". */
 export const INTRO_HEAD = "What this demo is about";
 
@@ -886,8 +1020,15 @@ export const DEMO_POLL_MS = 3_000;
  * countdown. When the roots the step is about change, move the framed view
  * with a `behold:view` message; the frame takes them only from this origin.
  */
-export function startKiosk({ bar, frame, side, main, views, read = null, tools = null }, { fetchJson = defaultFetch, now = () => new Date(), origin = location.origin, tool = null } = {}) {
+export function startKiosk({ bar, frame, side, main, views, read = null, tools = null, watch = null }, { fetchJson = defaultFetch, now = () => new Date(), origin = location.origin, tool = null } = {}) {
   const s = { demo: null, answer: null, progress: null, components: false, pick: null, view: "resources", roots: [], waves: [], light: false, hover: null, frameHover: null, held: null };
+  // behold#571: Watch or Inspect, the viewer's pick kept in their browser; Watch until they pick Inspect.
+  const shelf = typeof localStorage !== "undefined" ? (() => { try { return localStorage; } catch { return null; } })() : null;
+  s.metrics = null;
+  s.watchMode = !!watch && modeStored(shelf) === "watch";
+  s.watchHeld = null;
+  s.boxes = null;
+  s.shot = null;
   // behold#571: on a tool's page, `live` while its scenario runs, `replay` of its latest cycle otherwise, `none` before it has one.
   const vendor = vendorOf(tool);
   s.vendor = vendor ? tool : null;
@@ -1092,6 +1233,9 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       tellHover(s.hover);
     }
     whatText();
+    // behold#571: Watch's overlays, then the shot they leave room for.
+    holdTick();
+    drawWatch(shownNow());
     renderViewToggle(views, shown, { components: s.components && ok, onPick: pickView });
     drawReading(shown.view, ok);
     // behold#571: with no graph to show, the graph pane folds away and the runs and the log take its width.
@@ -1101,6 +1245,235 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       document.body.classList.toggle("k-notyet", !!vendor && s.mode === "none");
     }
     tellFrame(false);
+    tellShot(false);
+  };
+
+  // ---------------------------------------------------------------------------
+  // behold#571: Watch. The graph is the stage; the caption, the callout, the
+  // drawer, the badges and the result card ride on it, and the shot moves
+  // with the step. A viewer's click or pan holds the shot for PICK_HOLD_MS.
+  let watchHoldAt = null;
+  let lastShot = null;
+  let drawerOpen = false;
+  let drawerHover = false;
+  const isPhone = () => typeof matchMedia === "function" && matchMedia("(max-width: 600px)").matches;
+  const runsParent = main ? main.parentNode : null;
+  const runsNext = main ? main.nextSibling : null;
+  const applyMode = () => {
+    if (typeof document === "undefined" || !document.body || !document.body.classList) return;
+    document.body.classList.toggle("k-watch", s.watchMode);
+    if (watch && watch.drawer && main) {
+      const body = watch.drawer.querySelector(".k-drawer-body");
+      // The runs pane is the drawer's open state in Watch, and back in its column in Inspect.
+      if (s.watchMode && body && main.parentNode !== body) body.appendChild(main);
+      if (!s.watchMode && runsParent && main.parentNode !== runsParent) runsParent.insertBefore(main, runsNext);
+    }
+    if (watch) renderModeToggle(tools && tools.mode, s.watchMode ? "watch" : "inspect", setMode);
+  };
+  const setMode = (m) => {
+    const next = m === "watch";
+    if (next === s.watchMode) return;
+    s.watchMode = next;
+    try {
+      if (shelf) shelf.setItem(MODE_STORE, m);
+    } catch {
+      /* private mode: the pick lasts this visit */
+    }
+    if (next) s.pick = null; // Watch frames the components: a Resources pick from Inspect ends here
+    watchHoldAt = null;
+    s.watchHeld = null;
+    lastShot = null;
+    applyMode();
+    draw();
+    // The layout moved under the frame: the shot goes again once it has settled.
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => tellShot(true));
+  };
+  const holdShot = () => {
+    if (!s.watchMode) return;
+    watchHoldAt = now().getTime();
+    draw();
+  };
+  s.followSteps = () => {
+    watchHoldAt = null;
+    s.watchHeld = null;
+    lastShot = null;
+    draw();
+  };
+  function holdTick() {
+    if (watchHoldAt === null) return void (s.watchHeld = null);
+    const left = watchHoldAt + PICK_HOLD_MS - now().getTime();
+    if (left <= 0) {
+      watchHoldAt = null;
+      s.watchHeld = null;
+      lastShot = null;
+      return;
+    }
+    s.watchHeld = { secs: Math.ceil(left / 1000) };
+  }
+  /** How much of the frame the overlays cover, in the frame's pixels: the caption below, and the callout, drawer or card beside the shot. */
+  const shotInsets = (shot) => {
+    if (!watch || !frame || isPhone() || !frame.getBoundingClientRect) return {};
+    const f = frame.getBoundingClientRect();
+    const cap = watch.caption.getBoundingClientRect();
+    const bottom = Math.max(0, f.bottom - cap.top) + 16;
+    const side = shot.kind === "held" ? watch.callout : shot.kind === "active" ? watch.drawer : shot.kind === "result" ? watch.result : null;
+    const right = side && !side.hidden && side.offsetWidth ? side.offsetWidth + 44 : 0;
+    return { top: 20, right, bottom, left: 20 };
+  };
+  function tellShot(force) {
+    if (!frame || !frame.contentWindow || !watch) return;
+    if (!s.watchMode) {
+      if (lastShot !== "release") {
+        lastShot = "release";
+        frame.contentWindow.postMessage({ type: "behold:shot", release: true }, origin);
+      }
+      return;
+    }
+    if (s.watchHeld || !s.shot) return;
+    const insets = shotInsets(s.shot);
+    const key = `${s.shot.id}|${insets.right || 0}|${Math.round((insets.bottom || 0) / 12)}|${s.shot.roots.join(",")}`;
+    if (!force && key === lastShot) return;
+    lastShot = key;
+    frame.contentWindow.postMessage(shotMessage({ roots: s.shot.roots, waves: s.shot.waves, whole: s.shot.whole, insets, id: s.shot.id }), origin);
+  }
+  function drawWatch(at) {
+    if (!watch || !s.watchMode) return;
+    const d = s.demo && s.demo.demo;
+    drawCaption(watch.caption, s, at);
+    const hold = d ? holdModel(s, d) : null;
+    const gate = !!hold && (hold.kind === "approval" || hold.kind === "driver");
+    const shot = shotFor(d, { answer: s.answer, progress: s.progress, held: s.held, gate, runDoc: runsApi && runsApi.run ? runsApi.run.doc : null, waves: s.waves });
+    s.shot = shot;
+    const nums = waveBadges(s.metrics);
+    const call = shot.kind === "held" && gate;
+    watch.callout.hidden = !call;
+    if (call) drawCallout(watch.callout, s, hold, badgeTitle(nums[hold.wave]));
+    const drawer = shot.kind === "active";
+    const open = drawer && (drawerOpen || drawerHover);
+    watch.drawer.hidden = !drawer;
+    watch.drawer.classList.toggle("k-open", open);
+    if (drawer) drawDrawer(watch.drawer, tailLines(runsApi && runsApi.run ? runsApi.run.doc : null), badgeTitle(nums[shot.waves[0]]), open);
+    const result = shot.kind === "result" ? resultModel(d, s.metrics, s.progress) : null;
+    watch.result.hidden = !result;
+    if (result) drawResult(watch.result, result);
+    // On a phone the delivery numbers stack under the rest, where the header has no room for them.
+    let foot = watch.layer.querySelector(":scope > .k-w-dora-foot");
+    if (!foot) {
+      foot = el("p", "k-w-dora-foot");
+      watch.layer.appendChild(foot);
+    }
+    foot.textContent = doraLine(s.metrics) || "";
+    watch.badges.replaceChildren();
+    const skip = call ? hold.wave : drawer ? shot.waves[0] : null;
+    for (const [n, words] of Object.entries(nums)) {
+      if (Number(n) === skip) continue;
+      const b = el("span", "k-badge", words);
+      b.dataset.kWave = n;
+      b.title = `Wave ${n}: ${badgeTitle(words)}`;
+      watch.badges.appendChild(b);
+    }
+    placeWatch();
+  }
+  /** Put each overlay by its box, as the frame last said they sit. */
+  function placeWatch() {
+    if (!watch || !s.watchMode || !frame || !frame.getBoundingClientRect) return;
+    const all = [watch.callout, watch.drawer, ...watch.badges.children];
+    if (isPhone()) {
+      for (const n of all) n.style.transform = "";
+      return;
+    }
+    const L = watch.layer.getBoundingClientRect();
+    const F = frame.getBoundingClientRect();
+    const capTop = watch.caption.getBoundingClientRect().top - L.top;
+    const view = { x: F.left - L.left, y: F.top - L.top, w: F.width, h: capTop - (F.top - L.top) };
+    const boxOf = (n) => {
+      const waves = (s.boxes && s.boxes.waves) || {};
+      // No wave named: every wave's box, for a gate on the whole change.
+      const list = n === null || n === undefined ? Object.values(waves) : [waves[n]];
+      const ok = list.filter((b) => b && b.w > 0);
+      if (!ok.length) return null;
+      const x = Math.min(...ok.map((b) => b.x));
+      const y = Math.min(...ok.map((b) => b.y));
+      return { x: x + view.x, y: y + view.y, w: Math.max(...ok.map((b) => b.x + b.w)) - x, h: Math.max(...ok.map((b) => b.y + b.h)) - y };
+    };
+    const taken = [];
+    const put = (node, n) => {
+      if (node.hidden) return;
+      const size = { w: node.offsetWidth, h: node.offsetHeight };
+      const box = boxOf(n);
+      // Before the frame says where the box is: the right of the view, under its top.
+      const labels = ((s.boxes && s.boxes.labels) || []).map((r) => ({ x: r.x + view.x, y: r.y + view.y, w: r.w, h: r.h }));
+      const p = box ? placeBeside(box, size, view, 18, labels) : { x: view.x + view.w - size.w - 20, y: view.y + 20, side: "below" };
+      node.style.transform = `translate(${Math.round(p.x)}px, ${Math.round(p.y)}px)`;
+      for (const k of ["right", "left", "below"]) node.classList.toggle(`k-side-${k}`, p.side === k);
+      node.classList.add("k-placed");
+      const notch = node.querySelector(":scope > .k-notch");
+      if (notch && box) notch.style.top = `${Math.round(Math.max(12, Math.min(size.h - 26, box.y + 22 - p.y)))}px`;
+      taken.push({ x: p.x, y: p.y, x2: p.x + size.w, y2: p.y + size.h });
+    };
+    put(watch.callout, s.held);
+    put(watch.drawer, s.shot && s.shot.waves[0]);
+    const hits = (r) => taken.some((t) => r.x < t.x2 && r.x2 > t.x && r.y < t.y2 && r.y2 > t.y);
+    for (const b of watch.badges.children) {
+      const box = boxOf(Number(b.dataset.kWave));
+      b.classList.remove("k-placed");
+      if (!box) continue;
+      const w = b.offsetWidth;
+      const h = b.offsetHeight;
+      const spots = [
+        { x: box.x + box.w + 10, y: box.y + 8 },
+        { x: box.x - 10 - w, y: box.y + 8 },
+        { x: box.x + box.w - w - 10, y: box.y - h - 6 },
+      ];
+      const spot = spots.find((p) => p.x >= view.x + 6 && p.x + w <= view.x + view.w - 6 && p.y >= view.y + 4 && p.y + h <= view.y + view.h - 4 && !hits({ x: p.x, y: p.y, x2: p.x + w, y2: p.y + h }));
+      if (!spot) continue;
+      b.style.transform = `translate(${Math.round(spot.x)}px, ${Math.round(spot.y)}px)`;
+      b.classList.add("k-placed");
+      taken.push({ x: spot.x, y: spot.y, x2: spot.x + w, y2: spot.y + h });
+    }
+  }
+  if (watch && typeof window !== "undefined" && window.addEventListener) {
+    let queued = false;
+    window.addEventListener("message", (e) => {
+      if (e.origin !== origin || !frame || e.source !== frame.contentWindow || !e.data) return;
+      if (e.data.type === "behold:viewer") return holdShot();
+      if (e.data.type !== "behold:boxes") return;
+      s.boxes = e.data;
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(() => {
+        queued = false;
+        placeWatch();
+      });
+    });
+    window.addEventListener("resize", () => {
+      placeWatch();
+      tellShot(true);
+    });
+    // A click on the approval or the log is a viewer reading it: the shot holds.
+    if (watch.callout) watch.callout.addEventListener("pointerdown", holdShot);
+    const head = watch.drawer && watch.drawer.querySelector(".k-drawer-head");
+    if (head) {
+      head.addEventListener("click", () => {
+        drawerOpen = !drawerOpen;
+        holdShot();
+      });
+    }
+    if (watch.drawer) {
+      watch.drawer.addEventListener("pointerenter", (e) => {
+        if (e.pointerType === "touch") return;
+        drawerHover = true;
+        draw();
+      });
+      watch.drawer.addEventListener("pointerleave", () => {
+        drawerHover = false;
+        draw();
+      });
+    }
+  }
+  s.setMetrics = (m) => {
+    s.metrics = m;
+    draw();
   };
 
   // behold#571: on a tool's page the runs pane shows the tool's repo alone; in the replay, the cycle's runs as they stood.
@@ -1261,7 +1634,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     if (frameSrcNow === null) {
       // The frame reads its graph after load; tell it again once it has had the time.
       frame.addEventListener("load", () => {
-        for (const ms of [1500, 4000, 8000]) setTimeout(() => tellFrame(true), ms);
+        for (const ms of [1500, 4000, 8000]) setTimeout(() => (tellFrame(true), tellShot(true)), ms);
       });
     }
     frameSrcNow = src;
@@ -1365,6 +1738,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     draw();
   };
 
+  applyMode();
   void demo();
   void reports(false);
   void progress(false);
