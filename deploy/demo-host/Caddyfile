@@ -27,7 +27,7 @@
 	}
 	redir @bareRoot /kiosk 302
 	# Each tool's page (/terraform, /terragrunt, /cdk-terrain, /choudoufu,
-	# behold#571) is behold's own route, so it passes through as it is.
+	# /chant, behold#571) is behold's own route, so it passes through as it is.
 
 	# The view's live updates are server-sent events; send each one on as
 	# it comes rather than buffering.

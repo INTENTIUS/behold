@@ -16,7 +16,11 @@
  * null, the name as text), and the footer's credit. `terms` are the words
  * that name the tool or its owner. `kind` is what it competes as (see
  * COMPETES): an `engine` plans and applies, an `orchestrator` drives an
- * engine. Keep the keys in step with VENDOR_TOOLS in src/terragucci-demo.ts.
+ * engine, and a `pipeline` plans and applies a pull request's change with an
+ * engine. `reports: false` marks a tool whose pipeline writes no terragucci
+ * reports or run view: its page draws the checkout behold serves for its repo
+ * (kiosk.js `frameOk`). Keep the keys in step with VENDOR_TOOLS in
+ * src/terragucci-demo.ts.
  *
  * - Terraform: HashiCorp's rules allow the name as text, with the mark noted.
  * - Terragrunt: Gruntwork publishes logo files, but a logo on a page like
@@ -24,6 +28,8 @@
  * - CDK Terrain: the Open Construct Foundation's continuation of CDKTF; its
  *   site, cdktn.io, publishes no rules for its logo, so the name is text.
  * - choudoufu: ours, logo and all.
+ * - chant: ours too. Its docs ship no logo, so the name is text. Its scenario
+ *   runs chant's own pull-request pipeline, which installs OpenTofu.
  */
 export const VENDORS = {
   terraform: {
@@ -67,6 +73,17 @@ export const VENDORS = {
     terms: ["choudoufu"],
     runsWith: [],
   },
+  chant: {
+    name: "chant",
+    owner: "Intentius",
+    url: "https://intentius.io/chant/",
+    logo: null,
+    credit: "chant is made by Intentius, who also make this demo.",
+    kind: "pipeline",
+    terms: ["chant"],
+    runsWith: ["opentofu"],
+    reports: false,
+  },
 };
 
 /** What a tool's scenarios run on, said on its page as the owner's rules allow ("works with OpenTofu"). */
@@ -92,11 +109,13 @@ export const COMPETITORS = {
 /**
  * What competes with what. Engines compete with engines (Terraform, OpenTofu,
  * choudoufu); orchestrators with orchestrators (Terragrunt, CDK Terrain,
- * Atmos, Terramate). An orchestrator runs on an engine, so its page names the
- * engine freely; an engine's page names no other engine, but for the one its
- * scenarios really run with (`runsWith`).
+ * Atmos, Terramate); pipelines with pipelines (chant, and none other has a
+ * page). An orchestrator runs on an engine, so its page names the engine
+ * freely; an engine's page names no other engine, but for the one its
+ * scenarios really run with (`runsWith`). chant is a pipeline, so the engine
+ * and orchestrator pages keep the `chant approve` lines their runs print.
  */
-export const COMPETES = { engine: "engine", orchestrator: "orchestrator" };
+export const COMPETES = { engine: "engine", orchestrator: "orchestrator", pipeline: "pipeline" };
 
 const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 

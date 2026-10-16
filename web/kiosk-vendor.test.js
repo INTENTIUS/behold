@@ -147,8 +147,8 @@ describe("the branding table (behold#571)", () => {
       const v = VENDORS[tool];
       const words = [v.name, ...creditLines(tool).map((l) => l.map((s) => s.text).join("")), ...Object.values(notRunWords(v)), legendWords("components", tool), legendWords("resources", tool)];
       for (const w of words) expect(namesOther(w, tool), `${tool}: ${w}`).toBe(false);
-      // choudoufu is ours: its credit says so instead.
-      if (tool !== "choudoufu") expect(v.credit).toMatch(/(does not|don't) endorse this demo\./);
+      // choudoufu and chant are ours: their credits say so instead.
+      if (tool !== "choudoufu" && tool !== "chant") expect(v.credit).toMatch(/(does not|don't) endorse this demo\./);
     }
     expect(VENDORS.choudoufu.credit).toMatch(/AWS and Kubernetes/);
     expect(VENDORS.choudoufu.credit).not.toMatch(/experimental/i);
@@ -170,8 +170,17 @@ describe("the branding table (behold#571)", () => {
       terragrunt: ["CDK Terrain", "CDKTN", "Open Construct", "Atmos", "Cloud Posse", "Terramate"],
       "cdk-terrain": ["Terragrunt", "Gruntwork", "Atmos", "Cloud Posse", "Terramate"],
       choudoufu: ["Terraform", "HashiCorp", "OpenTofu"],
+      // A pipeline: no other tool with a page is one.
+      chant: [],
     });
     expect(otherTerms(null)).toEqual([]);
+  });
+  it("keeps the chant approve lines on every page, since chant is a pipeline and competes with no engine or orchestrator", () => {
+    for (const tool of VENDOR_TOOLS) expect(namesOther("chant approve tf-apply wave-2 --actor demo-reviewer --sign", tool), tool).toBe(false);
+    expect(VENDORS.chant.url).toBe("https://intentius.io/chant/");
+    expect(VENDORS.chant.owner).toBe("Intentius");
+    expect(creditLines("chant").flat().filter((s) => s.url).map((s) => s.text)).toEqual(["chant", "OpenTofu"]);
+    expect(toolCheckout("chant")).toBe("demo-chant");
   });
   it("lets an orchestrator's page name the engines it runs on, and keeps an engine's page from naming another engine", () => {
     expect(namesOther("Big Terraform setups run on OpenTofu", "terragrunt")).toBe(false);

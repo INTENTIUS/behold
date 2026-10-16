@@ -412,6 +412,12 @@ export function kioskView(demo, { components = false, pick = null, now = Date.no
 export function legendWords(view, tool = null) {
   const root = rootWord(tool);
   const n = rootNoun(tool);
+  // A tool whose pipeline writes no reports: behold's own graph of its components, boxed by the wave each applies in.
+  if (reportless(vendorOf(tool))) {
+    return view === "components"
+      ? `Components shows the project's components, in a box per wave. Each card is ${root} with its own state, and an arrow is one component reading another's outputs.`
+      : `Each box is ${root} with its own state.`;
+  }
   const rest = `an arrow is one ${n.one} reading another's outputs, dashed while it reads planned values. A wave applies its ${n.many} together, after the waves it reads.`;
   if (view === "components") {
     return `Components shows the pipeline's jobs and waves. Each card is ${root} with its own state, in a box per wave titled with the job that applies it; ${rest}`;
@@ -419,6 +425,16 @@ export function legendWords(view, tool = null) {
   return `Each box is ${root} with its own state; ${rest}`;
 }
 
+
+/** Whether a tool's pipeline writes no terragucci reports or run view (VENDORS' `reports: false`). */
+export function reportless(vendor) {
+  return !!vendor && vendor.reports === false;
+}
+
+/** Whether /api/project's answer is a chant project: behold draws its components itself. */
+export function chantProject(p) {
+  return !!p && Array.isArray(p.memberKinds) && p.memberKinds.includes("chant");
+}
 
 /** The tool the page shows: its own on a tool's page, else the running scenario's (demo.json `tool`). */
 export function nounTool(s) {
@@ -593,7 +609,7 @@ function drawBar(bar, s, now, foot) {
     then.append(`then comments `, el("code", "k-inline", appr.comment), ` on ${appr.on}, and the waves run again.`);
     a.appendChild(then);
     holdBox.appendChild(a);
-  } else if (!s.noReports) {
+  } else if (!s.noReports && !reportless(vendor || vendorOf(demo.tool))) {
     const panel = runPanel(demo, s.answer, s.progress);
     if (panel.note) holdBox.appendChild(elRoots("p", "k-note", panel.note, s));
     else if (panel.stage === "pull-request") for (const u of unreviewedLines(s.answer)) holdBox.appendChild(elRoots("p", "k-note k-unknown", u, s));
@@ -744,7 +760,10 @@ export function startKiosk({ bar, frame, foot, side, main, views, tools = null }
     if (!vendor) return true;
     // Before the tool's first cycle: its repo's checkout, when this behold serves it.
     if (s.mode === "none") return !!notRunRepo(tool, s.viewRepos) && s.aimed === notRunRepo(tool, s.viewRepos);
-    return servesRepo(s.answer && !s.answer.error ? s.answer.project : null, s.repo);
+    if (servesRepo(s.answer && !s.answer.error ? s.answer.project : null, s.repo)) return true;
+    // A tool whose pipeline writes no terragucci reports (chant's own loop) has no
+    // reports to name its repo: the frame is its repo's when behold serves that checkout.
+    return reportless(vendor) && !!repoParam(s.repo, s.viewRepos);
   };
   // behold#571: a behold serving several repos (`serve --repos`) answers the
   // graph's reads from the checkout of the repo the page is about, asked by
@@ -1066,7 +1085,8 @@ export function startKiosk({ bar, frame, foot, side, main, views, tools = null }
       s.viewCommits = p.viewCommits || null;
       if (s.aimed === null && p.viewRepo) s.aimed = p.viewRepo;
     }
-    s.components = !!(p && !p.error && p.terragucciComponents);
+    // A chant project's graph is its components (web/app.js bootZoom), so it has that view too.
+    s.components = !!(p && !p.error && (p.terragucciComponents || chantProject(p)));
     // behold#571: the declared roots (their colours' order) and the wave jobs that apply them.
     if (p && p.terragucciRoots) {
       s.roots = Array.isArray(p.terragucciRoots.roots) ? p.terragucciRoots.roots : [];
