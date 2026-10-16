@@ -3565,6 +3565,6 @@
   },
   "digest": "sha256:f644920a0e05ffca98a5c14de483825ee6a01c6f5ffd0b228820363331d857f2",
   "exit_code": 2,
-  "plugin_cache_dir": "/Users/alex/.terraform.d/plugin-cache",
+  "plugin_cache_dir": "/home/demo/.terraform.d/plugin-cache",
   "parallel_estates": 4
 }
