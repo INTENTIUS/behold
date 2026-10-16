@@ -19,7 +19,13 @@
 #                           write the refs given to demo.env, move both
 #                           checkouts to the refs in demo.env, rebuild, and
 #                           restart. The driver bootstraps again when the
-#                           terragucci commit changed.
+#                           terragucci commit changed. Before it starts the
+#                           services, it clears what a failed recreate left
+#                           (clear-strays).
+#   demo-host.sh clear-strays
+#                           remove the containers compose made for behold or
+#                           the driver that aren't running under the name
+#                           compose gives them (demo-host-<service>)
 #   demo-host.sh open       launch morning: take the password off the site
 #   demo-host.sh close      put the password back
 #   demo-host.sh status     containers, demo.json and the last stalls
@@ -239,6 +245,53 @@ wait_bootstrap() { # the driver's first bootstrap: until floci holds the marker 
   die "the driver's bootstrap did not finish within an hour; see docker logs demo-host-driver"
 }
 
+# A recreate that failed part-way can leave a container compose made for a
+# service that isn't the one compose means to run: only created or stopped,
+# named `<hash>_demo-host-<service>` or still holding `demo-host-<service>`, or
+# renamed by hand and running. compose finds a service's containers by their
+# labels, not their names, so the next `up` either fails on the name ("is
+# already in use") or keeps running the renamed one as the service.
+#
+# For each of behold and the driver with such a container, clear_strays runs
+# `docker compose rm --stop --force <service>` for this project. That stops
+# and removes the containers compose labelled as that service of project
+# demo-host, the strays and the current one, and nothing else: no volume (no
+# -v), no image, no file, no container of another project or of no project.
+# The `up` after it makes `demo-host-<service>` again from the image. A
+# container named demo-host-<service> that compose didn't make is left alone,
+# and `up` says so.
+strays() { # service: "<id> <name> <state>" for each container compose made for it that isn't running as demo-host-<service>
+  local id name state
+  docker ps -a --no-trunc \
+    --filter "label=com.docker.compose.project=demo-host" \
+    --filter "label=com.docker.compose.service=$1" \
+    --filter "label=com.docker.compose.oneoff=False" \
+    --format '{{.ID}} {{.Names}} {{.State}}' |
+    while read -r id name state; do
+      if [ "$state" != running ] || [ "$name" != "demo-host-$1" ]; then echo "$id $name $state"; fi
+    done
+}
+
+clear_strays() {
+  local svc found
+  for svc in behold driver; do
+    found="$(strays "$svc")"
+    [ -n "$found" ] || continue
+    log "containers compose made for $svc that aren't running as demo-host-$svc (id, name, state):"
+    printf '%s\n' "$found" | sed 's/^/  /' >&2
+    log "removing $svc's containers in project demo-host (docker compose rm --stop --force $svc); up makes demo-host-$svc again"
+    compose rm --stop --force "$svc"
+  done
+}
+
+running_as_named() { # after up: each service runs as demo-host-<service>
+  local svc
+  for svc in behold driver; do
+    [ "$(docker inspect -f '{{.State.Running}}' "demo-host-$svc" 2>/dev/null)" = true ] \
+      || die "demo-host-$svc is not running after up; '$0 status' shows the containers"
+  done
+}
+
 # ── commands ─────────────────────────────────────────────────────────────────
 
 cmd_start() {
@@ -358,10 +411,12 @@ cmd_update() {
 cmd_update_rest() {
   install_units
   compose build
+  clear_strays
   # A new terragucci commit makes driver-entry.sh run the bootstrap again.
   compose up -d --force-recreate driver
   compose up -d
   cmd_reload_caddy
+  running_as_named
   log "updated: terragucci $(conf TERRAGUCCI_REF main), behold $(conf BEHOLD_REF main)"
 }
 
@@ -415,6 +470,7 @@ main() {
     wait-bootstrap) need_root; wait_bootstrap ;;
     up) need_root; cmd_up ;;
     reload-caddy) need_root; cmd_reload_caddy ;;
+    clear-strays) need_root; clear_strays ;;
     *) sed -n '3,/^set -/p' "$0" | grep '^#' | sed 's/^# \{0,1\}//'; exit 2 ;;
   esac
 }
