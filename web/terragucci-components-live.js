@@ -104,6 +104,12 @@ export function waveStatus(status, state) {
   return { status: state, words: WAVE_WORDS[state], tone: toneOf(state), run: status.superseded };
 }
 
+/** A status's words in a narrow box, where the full words cross an edge (behold#693): "held" for a wave held at its gate. */
+export function statusShort(status) {
+  if (!status) return null;
+  return status.status === "waiting" ? "held" : status.words;
+}
+
 /** "apply-wave-2 · held at the gate", or the job alone without a status. */
 export function waveTitle(jobName, status) {
   return status ? `${jobName} · ${status.words}` : jobName;

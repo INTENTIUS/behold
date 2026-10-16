@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { JOB_WORDS, componentMarks, jobStatus, runsCommit, waveOfKey, waveStatus, waveTitle } from "./terragucci-components-live.js";
+import { JOB_WORDS, componentMarks, jobStatus, runsCommit, statusShort, waveOfKey, waveStatus, waveTitle } from "./terragucci-components-live.js";
 
 // #571: the live marks on a terragucci repo's components zoom. The facets are
 // the components graph's (src/__fixtures__/terragucci-components: network and
@@ -152,6 +152,10 @@ describe("the component marks (#571)", () => {
     expect(waveStatus({ ...st, superseded: 12, held: true }, "failed")).toEqual({ status: "waiting", words: "held at the gate", tone: "wait", run: 12, held: true });
     expect(waveStatus({ ...st, superseded: 12, held: true }, null)).toMatchObject({ words: "held at the gate" });
     expect(waveStatus({ ...st, superseded: 12, held: true }, "applied")).toMatchObject({ words: "applied" });
+    // In a box too narrow for the full words, "held".
+    expect(statusShort(waveStatus({ ...st, superseded: 12, held: true }, "failed"))).toBe("held");
+    expect(statusShort(st)).toBe("failed");
+    expect(statusShort(null)).toBe(null);
   });
 
   it("draws the pull request's plan before the merge, with no job status", () => {
