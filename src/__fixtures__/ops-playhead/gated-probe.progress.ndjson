@@ -1,0 +1,2 @@
+{"phase":"Before","fn":"shellCmd","args":{"cmd":"echo before"},"status":"ok","durationMs":3}
+{"phase":"Approve","fn":"gate:approve-probe","args":{},"status":"skipped","durationMs":137}

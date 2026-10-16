@@ -188,15 +188,23 @@ describe("OpRunner.trigger — the run playhead", () => {
     lastOnLine = undefined;
   });
 
-  it("asks the durable path to stream StepRecords, and the local one to print them", () => {
+  it("streams StepRecords with --progress-json and never passes the removed --temporal (#459)", () => {
     const runner = makeRunner(() => {});
-    runner.trigger("prod-promote", "prod", "/proj", true);
-    expect(lastArgs).toEqual(["run", "prod-promote", "--temporal", "--progress-json"]);
-    resolveDone(0);
+    runner.trigger("prod-promote", "prod", "/proj");
+    expect(lastArgs).toEqual(["run", "prod-promote", "--progress-json"]);
+    expect(lastArgs).not.toContain("--temporal");
+    expect(runner.runState.mode).toBe("local");
+  });
 
-    const other = makeRunner(() => {});
-    other.trigger("floci-apply");
-    expect(lastArgs).toEqual(["run", "floci-apply", "--json"]);
+  it("reads chant's exit 3 as a run stopped at its gate (#459)", async () => {
+    const runner = makeRunner(() => {});
+    runner.trigger("gated-probe");
+    lastOnLine!('{"phase":"Before","fn":"shellCmd","args":{"cmd":"echo before"},"status":"ok","durationMs":3}');
+    lastOnLine!('{"phase":"Approve","fn":"gate:approve-probe","args":{},"status":"skipped","durationMs":137}');
+    resolveDone(3);
+    await Promise.resolve();
+    expect(runner.runState.status).toBe("gated");
+    expect(runner.runState.records).toHaveLength(2);
   });
 
   it("folds one NDJSON StepRecord and broadcasts the whole playhead as a `run` event", () => {
@@ -205,7 +213,7 @@ describe("OpRunner.trigger — the run playhead", () => {
     const seen: Array<{ type: string; data: string }> = [];
     broadcaster.subscribe((type, data) => seen.push({ type, data }));
 
-    runner.trigger("playhead-probe", undefined, undefined, true);
+    runner.trigger("playhead-probe");
     lastOnLine!('{"phase":"Build","fn":"chantBuild","status":"ok","durationMs":1000}');
 
     expect(runner.runState.records).toEqual([{ phase: "Build", fn: "chantBuild", status: "ok", durationMs: 1000 }]);
@@ -224,7 +232,7 @@ describe("OpRunner.trigger — the run playhead", () => {
       if (type === "op") seen.push(data);
     });
 
-    runner.trigger("playhead-probe", undefined, undefined, true);
+    runner.trigger("playhead-probe");
     lastOnLine!('{"phase":"Deploy","fn":"shellCmd","status":"ok","durationMs":5}');
     expect(seen).toContain("✓ Deploy · shellCmd — 5ms");
     // ...and the raw JSON line itself never reaches the now-line.
@@ -247,14 +255,14 @@ describe("OpRunner.trigger — the run playhead", () => {
 
   it("a clean exit reads as completion; a verdictless one reads as a lost stream", async () => {
     const runner = makeRunner(() => {});
-    runner.trigger("playhead-probe", undefined, undefined, true);
+    runner.trigger("playhead-probe");
     lastOnLine!('{"phase":"Build","fn":"chantBuild","status":"ok","durationMs":1000}');
     resolveDone(0);
     await Promise.resolve();
     expect(runner.runState.status).toBe("ok");
 
     const lost = makeRunner(() => {});
-    lost.trigger("playhead-probe", undefined, undefined, true);
+    lost.trigger("playhead-probe");
     lastOnLine!('{"phase":"Build","fn":"chantBuild","status":"ok","durationMs":1000}');
     resolveDone(137);
     await Promise.resolve();
@@ -264,18 +272,18 @@ describe("OpRunner.trigger — the run playhead", () => {
 
   it("a rejected trigger (guard busy) leaves the playhead on screen untouched", () => {
     const runner = makeRunner(() => {});
-    runner.trigger("playhead-probe", undefined, undefined, true);
+    runner.trigger("playhead-probe");
     lastOnLine!('{"phase":"Build","fn":"chantBuild","status":"ok","durationMs":1000}');
     expect(runner.trigger("other")).toBe(false);
     expect(runner.runState.op).toBe("playhead-probe");
     expect(runner.runState.records).toHaveLength(1);
   });
 
-  it("folds a gateState read, and adopts an Op nothing has run this session", () => {
+  it("folds a status read, and adopts an Op nothing has run this session", () => {
     const runner = makeRunner(() => {});
     const gate = { signalName: "approve-promote", since: "2026-08-29T18:00:12.000Z" };
     const state = runner.noteGate("prod-promote", { ok: true, read: { op: "prod-promote", gate } });
-    expect(state).toMatchObject({ op: "prod-promote", mode: "temporal", gate });
+    expect(state).toMatchObject({ op: "prod-promote", mode: "local", gate });
 
     // A read for a DIFFERENT Op doesn't re-point the playhead at it.
     runner.noteGate("other-op", { ok: true, read: { op: "other-op", gate: null } });
@@ -287,9 +295,9 @@ describe("OpRunner.trigger — the run playhead", () => {
     const runner = makeRunner(() => {});
     runner.noteGate("prod-promote", {
       ok: false,
-      refusal: { error: 'No Temporal run state for "prod-promote" — nope', code: "no-temporal", remedy: "r" },
+      refusal: { error: 'No run of "prod-promote" to report — nope', code: "no-run", remedy: "r" },
     });
     expect(runner.runState.gate).toBeNull();
-    expect(runner.runState.gateNote).toContain("No Temporal run state");
+    expect(runner.runState.gateNote).toContain("No run of");
   });
 });

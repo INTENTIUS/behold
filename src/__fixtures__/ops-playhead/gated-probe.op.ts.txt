@@ -1,0 +1,10 @@
+import { Op, phase, gate, shell } from "@intentius/chant/op";
+export default Op({
+  name: "gated-probe",
+  overview: "a gate between two echoes",
+  phases: [
+    phase("Before", [shell("echo before")]),
+    phase("Approve", [gate("approve-probe", { description: "Approve the probe" })]),
+    phase("After", [shell("echo after")]),
+  ],
+});

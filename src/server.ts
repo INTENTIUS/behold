@@ -96,6 +96,7 @@ import {
   type CarveDemo,
 } from "./carve-actions.ts";
 import { teardownScratchFloci } from "./carve-live.ts";
+import { stripAnsi } from "./ansi.ts";
 import { discoverEstateOps, discoverOpIrs } from "./ops.ts";
 import { readOpIr, opsToIr, opsNote, joinStepEntities, HOW_TO_EMIT, type OpIr } from "./ops-lens.ts";
 import { readRunStatus, joinRun, paintPlayhead, playheadNote, pendingGateCard } from "./run-playhead.ts";
@@ -1255,7 +1256,7 @@ export function createApp(
     // its own `.behold.json`, and the primary's says nothing about it.
     const designatedEnv = info.kind === "apply" ? executorDesignation(info.dir, info.env) : undefined;
     if (designatedEnv && info.env) return c.json(forgeRefusal(info.env, designatedEnv, `running ${name}`), 409);
-    if (!runner.trigger(name, info.env, info.dir, Boolean(info.gate))) {
+    if (!runner.trigger(name, info.env, info.dir)) {
       return c.json({ error: `an Op is already running (${runner.running})` }, 409);
     }
     return c.json({ started: true, name });
@@ -1318,11 +1319,12 @@ export function createApp(
     return c.json({ started: true, ran: "local-down + local-up" });
   });
 
-  // The run playhead's gate read (#284 item 2, chant#1676). `gateState` is a
-  // workflow QUERY, not part of the `--progress-json` record stream, so it can
-  // only be reached by asking: `chant run status <name> --temporal` prints the
-  // pending gate's signal name, description and since-when. Always durable, for
-  // the same reason the signal below is — a gate only exists on a Temporal run.
+  // The run playhead's gate read (#284 item 2, chant#1676). The gate a run
+  // stopped at is not in the `--json` record stream, so it is reached by
+  // asking: `chant run status <name>` prints the newest run's state and, for a
+  // gated run, the gate's name and since-when (chant#2121). No `--temporal`:
+  // chant removed it with the temporal lexicon, and every run is on the
+  // project's resolved runtime (#459).
   //
   // Read-only, and pull rather than push: behold asks when a client is looking
   // at the ops lens, instead of holding a background poll against Temporal for
@@ -1333,7 +1335,7 @@ export function createApp(
   app.get("/api/ops/:name/status", async (c) => {
     const name = c.req.param("name");
     const info = estateOps().find((o) => o.name === name);
-    const run = await runChantRaw(["run", "status", name, "--temporal"], info?.dir ?? cfg.projectDir);
+    const run = await runChantRaw(["run", "status", name], info?.dir ?? cfg.projectDir);
     const result = readRunStatus(name, run);
     // Fold it into the playhead so the graph and the pending card agree, and so
     // every subscribed client sees the same answer (the `run` SSE event).
@@ -1500,17 +1502,22 @@ export function createApp(
     return c.json({ recorded: true, op, gate, semantics: APPROVE_SEMANTICS });
   });
 
-  // Approve a gated apply: signal the Op's wait-for-approval gate, in its own dir.
+  // Approve a gated apply: record the gate's resolution, in the Op's own dir.
+  // The route keeps its `/signal/` path for the pages that post to it; the
+  // command is `chant run approve <op> <gate>`, chant#2121's rename of `chant
+  // run signal`, which chant now refuses (`runOpSignalRenamed`), and it takes
+  // no `--temporal` (#459). The approval is a fact on the gate ledger: a
+  // runtime that can wake a parked run is told; the local one reads it when
+  // the Op runs next, and chant says so on stderr, which comes back as `next`.
   app.post("/api/ops/:name/signal/:gate", async (c) => {
     if (cfg.previewMode) return c.json({ error: "approving is disabled in preview mode", code: "preview" }, 403);
     const { name, gate } = c.req.param();
     const info = estateOps().find((o) => o.name === name);
-    broadcaster.emit("op", `✎ signal ${name} ${gate}`);
-    // Always durable: a gate only exists on a Temporal run (chant refuses gated
-    // Ops in local mode), so the signal that approves one is Temporal-only too.
-    const { code, stderr } = await runChantRaw(["run", "signal", name, gate, "--temporal"], info?.dir ?? cfg.projectDir);
-    if (code !== 0) return c.json({ error: stderr.trim() || `signal exited ${code}` }, 500);
-    return c.json({ signalled: true });
+    broadcaster.emit("op", `✎ approve ${name} ${gate}`);
+    const { code, stderr, stdout } = await runChantRaw(["run", "approve", name, gate], info?.dir ?? cfg.projectDir);
+    if (code !== 0) return c.json({ error: stripAnsi(stderr).trim() || stripAnsi(stdout).trim() || `approve exited ${code}` }, 500);
+    const next = stripAnsi(stderr).trim().split("\n").filter(Boolean).at(-1) ?? null;
+    return c.json({ approved: true, op: name, gate, next });
   });
 
   // #477: a declared workspace's waiting gates, from `chant workspace status
@@ -4235,7 +4242,7 @@ export async function startServer(cfg: ServerOptions): Promise<void> {
     // different design than the one #105 specified.
     for (const { op, lexicons } of picks) {
       const scope = lexicons.join("+");
-      if (runner.trigger(op.name, op.env, op.dir, Boolean(op.gate))) {
+      if (runner.trigger(op.name, op.env, op.dir)) {
         broadcaster.emit("op", `⟳ auto-sync (${autoSync})${memberTag(dir)} ${scope} → ${op.name}`);
       } else {
         broadcaster.emit("op", `⟳ auto-sync (${autoSync})${memberTag(dir)} ${scope} → ${op.name} waiting — ${runner.running} is running`);

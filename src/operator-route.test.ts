@@ -339,8 +339,9 @@ describe("POST /api/operator/approve/:op/:gate (#234 join 1)", () => {
     spawned.mockReturnValue(fakeProc(0, ""));
     const { app } = appFor(withLoop);
     await app.request("/api/operator/approve/fountain-apply/rollout-gate", { method: "POST" });
-    // `chant run signal … --temporal` releases a waiting workflow; `chant
-    // approve` records a fact. Confusing the two is exactly what #234's
+    // An Op run's gate goes through `chant run approve` (the
+    // /api/ops/:name/signal route, #459); this one is `chant approve`, a
+    // converge gate's fact. Confusing the two is exactly what #234's
     // inventory says the issue text did.
     expect(calls()[0]).not.toContain("signal");
     expect(calls()[0]).not.toContain("--temporal");

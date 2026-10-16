@@ -43,9 +43,10 @@
  *
  * behold now draws two gate cards and they are different things:
  *
- *  - The **Temporal run gate** (`src/run-playhead.ts`) — a `gateState` query on
- *    a durable workflow, resolved by `chant run signal <op> <gate>`, which
- *    actually releases the waiting workflow. That is #284 item 2's card.
+ *  - The **run gate** (`src/run-playhead.ts`) — the gate `chant run status`
+ *    names for a gated run, resolved by `chant run approve <op> <gate>`, which
+ *    the Op's next run reads (#459; chant#2121 renamed `chant run signal`).
+ *    That is #284 item 2's card.
  *  - The **converge gate** (this module) — a `ConvergeRuleOutcome` with
  *    `action: "gated"`, resolved by `chant approve <op> <gate>`, which writes a
  *    fact to the gate ledger and **does not unblock anything**. chant's own
