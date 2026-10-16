@@ -61,4 +61,6 @@ export const PREAMBLE = `# behold
 
 An agent driving behold starts with ${SITE}/using/agents/. Every pane is plain JSON over HTTP, and \`GET /api\` lists the routes. A person new to it starts with ${SITE}/start/run-it/.
 
+A read-only live demo of behold on real terragucci pipelines runs at https://demo.intentius.io/kiosk. Each tool has its own page there, such as https://demo.intentius.io/terraform.
+
 Each page under /for/ is a starting point for one kind of estate or one role. A page with a prompt carries it under "Optional: hand this page to your coding agent", and llms.txt lists it under the page. Every prompt ends with the same line, which keeps each write with the person.`;

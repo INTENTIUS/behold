@@ -17,6 +17,9 @@
 // own address and ends with the never-line (scripts/lint-prompts.mjs).
 
 import { SITE, neverLine, setupPrompt } from '../prompts.ts';
+import { LIVE, LIVE_TOOLS } from './live.mjs';
+
+const liveTool = (label) => LIVE_TOOLS.find((t) => t.label === label).href;
 
 /** @typedef {{ label: string, href: string }} Link */
 
@@ -122,6 +125,7 @@ export const ROOMS = [
 		reference: [
 			{ label: 'Export a snapshot', href: 'using/export' },
 			{ label: 'Driving it from an agent', href: 'using/agents' },
+			{ label: 'The live Terraform demo', href: liveTool('Terraform') },
 		],
 	},
 	{
@@ -152,6 +156,7 @@ export const ROOMS = [
 		],
 		proof: ['example-terragucci-reports', 'e2e/terragucci-e2e.sh'],
 		tasks: [
+			{ label: 'Watch the live demo', href: LIVE },
 			{ label: 'Look at a terragucci estate', href: 'using/terragucci' },
 			{ label: 'Publish a view', href: 'using/terragucci#publish-a-view-beside-the-estate-page' },
 			{ label: 'Export a terragucci estate', href: 'using/export#a-terragucci-estate' },
@@ -239,6 +244,7 @@ export const ROOMS = [
 		reference: [
 			{ label: 'Moves are previewed', href: 'using/choudoufu#moves-are-previewed-never-run' },
 			{ label: 'choudoufu on GitHub', href: 'https://github.com/INTENTIUS/choudoufu' },
+			{ label: 'choudoufu in the live demo', href: liveTool('choudoufu') },
 		],
 	},
 	{
@@ -281,7 +287,7 @@ export const ROOMS = [
 	{
 		id: 'demo',
 		title: 'behold with no project yet',
-		lede: 'The bundled demo deploys an S3 bucket to a local emulator. Its cards turn green once behold observes it.',
+		lede: 'The bundled demo deploys an S3 bucket to a local emulator. Its cards turn green once behold observes it. To watch behold first, open the live demo, which needs no install.',
 		works: [
 			'An S3 bucket and its TLS policy on a local Floci emulator',
 			'Deploy on the control panel streams each phase as it runs',
@@ -300,6 +306,7 @@ export const ROOMS = [
 		],
 		proof: ['example-writes', 'example-k8s'],
 		tasks: [
+			{ label: 'Watch the live demo', href: LIVE },
 			{ label: 'Run it in five minutes', href: 'start/run-it' },
 			{ label: 'Open your own project', href: 'start/your-project' },
 		],

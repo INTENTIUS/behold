@@ -16,6 +16,9 @@ drift for a Terraform or OpenTofu repo in your CI, and keeps every run's
 report in a bucket. behold reads those reports and draws the repo's roots as
 one graph, each card marked with what the newest run found about it.
 
+[The live demo](https://demo.intentius.io/kiosk) shows behold on real
+terragucci pipelines. It runs in a loop and is read-only.
+
 ```sh
 npx @intentius/behold serve . --terragucci s3://acme-terragucci-reports
 npx @intentius/behold serve . --terragucci ./reports         # an `aws s3 sync` of the prefix
