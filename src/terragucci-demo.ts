@@ -24,7 +24,9 @@
  * and which one this is (0 or null for the base). One of them of the wrong type is left out
  * (null), never a refusal of the whole narration. `tool` and `repo` (behold#571)
  * are optional the same way: the tool the scenario shows and the forge repo
- * its cycle runs on, which the per-tool pages read.
+ * its cycle runs on, which the per-tool pages read. `delivery` (behold#571) is
+ * optional the same way: the line the kiosk's metrics pane shows over the
+ * delivery (DORA) numbers, which says whose numbers they are.
  *
  * Per-tool pages (behold#571): `GET /<tool>` for each of {@link VENDOR_TOOLS}
  * serves the kiosk page for that tool alone, and `GET
@@ -78,6 +80,8 @@ export interface Demo {
   tool: string | null;
   /** The forge repo the cycle runs on, "<admin>/demo-terragrunt" (behold#571); null from a driver before it. */
   repo: string | null;
+  /** The line over the delivery (DORA) numbers: they are the demo loop's own (behold#571); null from a driver before it. */
+  delivery: string | null;
 }
 
 export type DemoAnswer =
@@ -160,6 +164,7 @@ export function demoOf(d: Demo): Demo {
     index: positive(d.index),
     tool: text(d.tool),
     repo: text(d.repo),
+    delivery: text(d.delivery),
   };
 }
 

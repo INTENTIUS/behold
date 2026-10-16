@@ -40,6 +40,18 @@ export const METRICS_TTL_MS = 30_000;
 export const RUN_WINDOW = "3h";
 /** How far back the estate's DORA gauges are looked for: terragucci estate sends them when it runs. */
 export const DORA_WINDOW = "7d";
+/**
+ * The step the DORA gauges are looked at over that window. terragucci
+ * estate's gauges are a series per terragucci version (the collector turns
+ * `service.version` into a label), and the collector keeps serving a series
+ * for five minutes after its last point. The newest step that has any series
+ * holds the newest run's numbers, so a version's old numbers go five minutes
+ * after a new version sends its own, where the largest over the window kept
+ * them for the whole week. One minute is well inside those five.
+ */
+export const DORA_STEP = "1m";
+/** The newest value of a DORA gauge per project, whichever run and version sent it (behold#571). */
+const newest = (selector: string): string => `last_over_time((max by (project) (${selector}))[${DORA_WINDOW}:${DORA_STEP}])`;
 
 /**
  * The queries behold asks, by name. Constant: nothing a request carries is
@@ -56,10 +68,11 @@ export const QUERIES = {
   changes: `max by (project, commit, run, wave, action) (last_over_time(terragucci_wave_changes[${RUN_WINDOW}]))`,
   settled: `max by (project, commit, run, wave) (last_over_time(terragucci_wave_settled_seconds[${RUN_WINDOW}]))`,
   waiting: `max by (project, commit, run, wave) (last_over_time(terragucci_wave_waiting_since_seconds[${RUN_WINDOW}]))`,
-  deployments: `max by (project) (last_over_time(terragucci_dora_deployments_per_week[${DORA_WINDOW}]))`,
-  leadTime: `max by (project) (last_over_time(terragucci_dora_lead_time_seconds{segment="total"}[${DORA_WINDOW}]))`,
-  failureRate: `max by (project) (last_over_time(terragucci_dora_change_failure_ratio[${DORA_WINDOW}]))`,
-  restore: `max by (project) (last_over_time(terragucci_dora_restore_seconds[${DORA_WINDOW}]))`,
+  // behold#571: the newest gauge, never the largest over the window, so a rate that fell reads as it is now.
+  deployments: newest("terragucci_dora_deployments_per_week"),
+  leadTime: newest(`terragucci_dora_lead_time_seconds{segment="total"}`),
+  failureRate: newest("terragucci_dora_change_failure_ratio"),
+  restore: newest("terragucci_dora_restore_seconds"),
 } as const;
 
 export type QueryName = keyof typeof QUERIES;

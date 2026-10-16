@@ -4415,7 +4415,7 @@ function renderTerragucciPanel() {
   head.textContent = lg.text;
   head.title = lg.title;
   host.appendChild(head);
-  const est = estateLine(a);
+  const est = estateLine(a, now);
   if (est) {
     const line = document.createElement("div");
     line.className = "tg-estate";

@@ -127,12 +127,13 @@ export function waveCards(answer, now = new Date()) {
   }));
 }
 
-/** terragucci's own counts, as its estate page shows them, with the page's link. */
-export function estateLine(answer) {
+/** terragucci's own counts, as its estate page shows them, with the page's link. A page older than the newest run says when it was written. */
+export function estateLine(answer, now = new Date()) {
   if (!answer.estate) return null;
   const e = answer.estate;
+  const when = e.behind ? `, written ${ago(e.generated, now)}, before the newest run` : "";
   return {
-    text: `terragucci's estate page: ${e.drifted} root${e.drifted === 1 ? "" : "s"} drifted · ${e.failed} failed · ${e.waiting} wave${e.waiting === 1 ? "" : "s"} waiting`,
+    text: `terragucci's estate page${when}: ${e.drifted} root${e.drifted === 1 ? "" : "s"} drifted · ${e.failed} failed · ${e.waiting} wave${e.waiting === 1 ? "" : "s"} waiting`,
     href: hrefOf(answer, e.html),
   };
 }

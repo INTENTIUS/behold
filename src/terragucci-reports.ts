@@ -524,8 +524,12 @@ export interface TerragucciRead {
   waiting: WaitingWave[];
   /** #568: the newest pull request's plan, when the index holds one. */
   pull_request?: PullRequestPlan;
-  /** terragucci's estate page for this project, when the source has one: the counts it shows, as it shows them. */
-  estate?: { generated: string; html: string; drifted: number; failed: number; waiting: number; status: string };
+  /**
+   * terragucci's estate page for this project, when the source has one: the counts it shows, as it shows them.
+   * `behind` when the index holds a run of the project finished after the page was generated: the counts are
+   * older than the newest run, and `waiting` came from the index instead (behold#571).
+   */
+  estate?: { generated: string; html: string; drifted: number; failed: number; waiting: number; status: string; behind?: true };
 }
 
 export interface ReadOptions {
@@ -667,11 +671,18 @@ export async function readTerragucci(source: TerragucciSource, opts: ReadOptions
   // The estate page lives at the top of the prefix; a project directory has none.
   const estateDoc = await readDoc<Estate>(source, "estate.json", "estate", v);
   const estateProject = estateDoc?.projects.find((p) => p.project === project);
+  // behold#571: estate.json is terragucci's view as of the moment `terragucci
+  // estate` ran. A run indexed after that is newer than the page (the demo
+  // loop runs estate once a cycle, so the next cycle's waves wait and apply
+  // after the page was written): the waiting waves then come from the index,
+  // by terragucci's own rule, and the page's counts carry `behind`.
+  const behind = !!estateProject && rows.length > 0 && (Date.parse(rows[0]!.finished) || 0) > (Date.parse(estateDoc!.generated) || 0);
+  const fromEstate = !!estateProject && !behind;
 
   const waiting: WaitingWave[] = [];
   const waitingRows: { row: IndexRow; since: string }[] = [];
-  if (estateProject) {
-    for (const w of estateProject.waiting) {
+  if (fromEstate) {
+    for (const w of estateProject!.waiting) {
       const row = rows.find((r) => r.stage === "tf-apply" && r.commit === w.commit && r.wave === w.wave);
       if (row) waitingRows.push({ row, since: w.since });
     }
@@ -701,7 +712,7 @@ export async function readTerragucci(source: TerragucciSource, opts: ReadOptions
       report: under(row.path, "report.html"),
       ...(row.job_url ? { job_url: row.job_url } : {}),
       command: terragucciApproveCommand(row.wave!, digest),
-      from: estateProject ? "estate" : "index",
+      from: fromEstate ? "estate" : "index",
     });
   }
 
@@ -724,6 +735,7 @@ export async function readTerragucci(source: TerragucciSource, opts: ReadOptions
             failed: estateProject.failed,
             waiting: estateProject.waiting.length,
             status: estateProject.status,
+            ...(behind ? { behind: true } : {}),
           },
         }
       : {}),

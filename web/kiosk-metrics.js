@@ -9,6 +9,10 @@
 //
 // The pane reads on its own: demo.json for the repo and commit the kiosk is
 // on (on a tool's page, that tool's repo), then the metrics. All GET.
+//
+// The delivery numbers on the demo are the loop's own (terragucci's
+// stack/demo.sh runs terragucci estate after each cycle's audit): demo.json's
+// `delivery` line says so over them, and the section shows no line without one.
 
 /** The localStorage key of the viewer's fold. */
 export const METRICS_STORE = "behold.kiosk.metrics";
@@ -67,9 +71,10 @@ export function clockWords(unix) {
 
 /**
  * What the pane shows, from one /api/metrics answer, or null for no pane:
- * `{ count, run: { label, waves: [{ head, rows: [[label, value, root?]] }] } | null, dora: [[label, value]] | null }`.
+ * `{ count, run: { label, waves: [{ head, rows: [[label, value, root?]] }] } | null, dora: [[label, value]] | null, note? }`.
+ * `note` is the line over the delivery numbers, demo.json's `delivery`, when there are numbers and a line.
  */
-export function metricsModel(answer) {
+export function metricsModel(answer, delivery = null) {
   if (!answer || answer.error) return null;
   let run = null;
   if (answer.run && Array.isArray(answer.run.waves)) {
@@ -113,7 +118,8 @@ export function metricsModel(answer) {
   if (!run && !dora) return null;
   const n = run ? run.waves.length : 0;
   const count = [n ? `${n} ${n === 1 ? "wave" : "waves"}` : null, dora ? `${dora.length} delivery` : null].filter(Boolean).join(" · ");
-  return { count, run, dora };
+  const note = dora && typeof delivery === "string" && delivery.trim() ? delivery.trim() : null;
+  return { count, run, dora, ...(note ? { note } : {}) };
 }
 
 /** The viewer's fold: true open, false folded, null when they never chose. */
@@ -168,6 +174,7 @@ body.k-has-metrics.k-notyet #view-pane { grid-row: 1; }
 .k-metrics-rows dt.k-metrics-root { font-family: var(--font-mono); color: var(--fg); }
 .k-metrics-rows dd { margin: 0; color: var(--fg); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .k-metrics-dora { background: var(--surface-box); border-radius: 6px; padding: 0.3em 0.6em 0.35em; }
+.k-metrics-note { margin: 0 0 0.3em; color: var(--muted); font-size: 0.92em; line-height: 1.35; }
 @media (max-width: 900px) and (min-width: 601px) { body.k-has-metrics #runs-main, body.k-has-metrics #view-pane { grid-row: auto; } body.k-has-metrics #k-metrics { grid-row: auto; grid-column: auto; } body.k-has-metrics #stage { grid-template-rows: none; } }
 @media (max-width: 600px) { #k-metrics, body.k-has-metrics #k-metrics { order: 2; margin: 0.6em 16px 0; max-height: none; } }
 `;
@@ -227,6 +234,7 @@ export function renderMetrics(host, model, { open = true, onToggle = () => {}, d
   }
   if (model.dora) {
     body.appendChild(el(doc, "h3", "k-metrics-label", "Delivery (DORA)"));
+    if (model.note) body.appendChild(el(doc, "p", "k-metrics-note", model.note));
     const box = el(doc, "div", "k-metrics-dora");
     box.appendChild(rowsEl(doc, model.dora));
     body.appendChild(box);
@@ -282,7 +290,7 @@ export function startMetrics(host, { tool = null, fetchJson = defaultFetch, stor
       const demo = await fetchJson("/api/terragucci/demo");
       const cycle = tool && !(demo && demo.demo && demo.demo.tool === tool) ? await fetchJson(`/api/terragucci/cycles/${tool}`) : null;
       const target = metricsTarget(demo, cycle, tool);
-      const next = target ? metricsModel(await fetchJson(metricsUrl(target))) : null;
+      const next = target ? metricsModel(await fetchJson(metricsUrl(target)), demo && demo.demo ? demo.demo.delivery : null) : null;
       if (JSON.stringify(next) !== JSON.stringify(model)) {
         model = next;
         draw();

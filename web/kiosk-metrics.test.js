@@ -70,6 +70,16 @@ describe("kiosk metrics: what the pane shows", () => {
     const onlyDora = metricsModel({ run: null, dora: { from: "dora.json", restore_seconds: 600 } });
     expect(onlyDora).toEqual({ count: "1 delivery", run: null, dora: [["Time to restore", "10 min"]] });
   });
+
+  it("puts demo.json's delivery line over the delivery numbers, and only when there are numbers (behold#571)", () => {
+    const line = "Counted from this demo loop's own runs, where the failure scenario fails on purpose each cycle.";
+    expect(metricsModel(answer(), ` ${line}`).note).toBe(line);
+    expect(metricsModel(answer(), null).note).toBeUndefined();
+    expect(metricsModel(answer(), "  ").note).toBeUndefined();
+    const noDora = { ...answer(), dora: null };
+    expect(metricsModel(noDora, line).note).toBeUndefined();
+    expect(metricsModel(noDora, line).dora).toBeNull();
+  });
 });
 
 describe("kiosk metrics: which repo, and the fold", () => {
