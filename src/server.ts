@@ -64,7 +64,8 @@ import { projectTopology } from "./logical.ts";
 import { addCompositeDepsCounted } from "./composite-deps.ts";
 import { notesFor, danglingNote, tierMismatchNote, namespaceMismatchNote, namespaceJoinNote, unchangedZoomNote, type Zoom } from "./zoom-notes.ts";
 import { resourcesByComponent, resourcesByRoot, nonResourceEntities } from "./resources.ts";
-import { declaredRootTools, pipelineForge, repoTools } from "./pipeline-marks.ts";
+import { configKeys, declaredRootTools, pipelineForge, repoTools, toolOfBinary } from "./pipeline-marks.ts";
+import { chantPrFacets, chantPrRoute } from "./chant-pr.ts";
 import { TERRAGUCCI_COMPONENTS_FILE, componentJobs, componentRootMap, readTerragucciComponents, waveTitles, type TerragucciComponents } from "./terragucci-components.ts";
 import { hasTerragruntUnits } from "./terragrunt-units.ts";
 import { summarizePlan } from "./reconcile.ts";
@@ -120,7 +121,7 @@ import {
   type OperatorLogMalformed,
 } from "./operator.ts";
 import { LIVE_IMPORT_LEXICONS } from "./adopt.ts";
-import { detectProject, loadBeholdConfig, executorDesignation, type ExecutorDesignation } from "./project.ts";
+import { chantConfigPath, detectProject, loadBeholdConfig, executorDesignation, type ExecutorDesignation } from "./project.ts";
 
 /** What `/api/project` says about a designated env (#165): whether Deploy can
  * dispatch it right now, and if not, why — the SPA renders the reason on a
@@ -1031,6 +1032,12 @@ export function createApp(
   if (cfg.yodelReport) yodelReportRoute(app, cfg.yodelReport, () => cfg.projectDirs ?? [cfg.projectDir]);
   // #522: gate history from chant/lifecycle through chant's gate-audit, any product.
   lifecycleHistoryRoute(app, () => repoBase(cfg.projectDirs ?? [cfg.projectDir]));
+  // behold#631: a chant project's pull-request loop (chant components pr-plan, pr-apply), from its reports, run logs and gate ledger.
+  {
+    const t = cfg.terragucci;
+    const runs = t ? terragucciSource(t.runsSource ?? t.source, { ...(t.aws ? { aws: t.aws } : {}), ...(t.fetch ? { fetch: t.fetch } : {}) }) : undefined;
+    chantPrRoute(app, () => cfg.projectDir, runs ? { source: runs } : {});
+  }
   // #524: a SQL Yodeler repo's lane over its migrate and wave gates on chant/lifecycle.
   sqlYodelerLaneRoute(app, () => {
     const r = guardedRepo();
@@ -2839,6 +2846,12 @@ export function createApp(
           target: opts.target ?? null,
           ...(multi ? { estate: cfg.projectDirs!.length } : {}),
           ...(!multi && components ? { components: true } : {}),
+          // behold#631: a repo whose CI runs chant's pull-request loop: the facets its wave boxes and marks are drawn from.
+          ...((): { chantPr?: ReturnType<typeof chantPrFacets> } => {
+            if (multi || !components) return {};
+            const f = chantPrFacets(cfg.projectDir, ir, toolOfBinary(configKeys(chantConfigPath(cfg.projectDir)).binary));
+            return f ? { chantPr: f } : {};
+          })(),
           ...(mode ? { mode } : {}),
         },
       });
