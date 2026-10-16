@@ -81,7 +81,7 @@ describe("before the merge, no other cycle's plan (#569)", () => {
       expect(matchingPull(ours, now(step))).toBe(ours.pull_request);
       expect(focusRoots(now(step), older, null)).toBe(null);
       expect(factLines(now(step), older)).toEqual([]);
-      expect(runPanel(now(step), older, null).note).toBe("The plan of pull request #989 isn't in the reports yet: the pipeline is planning it.");
+      expect(runPanel(now(step), older, null).note).toBe("The pipeline is planning pull request #989.");
     }
   });
   it("from the merge on, takes the plan by its number: demo.json's commit is the merge's", () => {

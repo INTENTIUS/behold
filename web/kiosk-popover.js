@@ -31,9 +31,9 @@ export const ACTION_HEAD = {
 
 export const WORDS = {
   same: "The plan leaves this resource as it is.",
-  untouched: "This plan does not touch its root, so nothing changes here.",
+  untouched: "This plan leaves its root as it is.",
   noPlan: "No plan yet for this resource.",
-  unknown: "known after apply, so no review shows this value",
+  unknown: "known after apply",
   long: "too long to show here",
   noneYet: "none yet",
   gone: "gone",

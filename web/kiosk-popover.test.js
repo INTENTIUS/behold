@@ -49,11 +49,11 @@ describe("what the popover says about a resource (behold#571)", () => {
     expect(p.applied).toBeNull();
   });
 
-  it("says an attribute known only after apply in the unknown tone, and that no review shows it", () => {
+  it("says an attribute known only after apply in the unknown tone", () => {
     const p = resourcePopover(answer(), "repo/app/terraform_data.listener_port");
     expect(p.unknown).toBe(true);
-    expect(p.lines).toEqual([{ text: "input: 8070 -> known after apply, so no review shows this value", tone: "unknown" }]);
-    expect(attributeLine({ path: "input", unknown: true })).toEqual({ text: "input: known after apply, so no review shows this value", tone: "unknown" });
+    expect(p.lines).toEqual([{ text: "input: 8070 -> known after apply", tone: "unknown" }]);
+    expect(attributeLine({ path: "input", unknown: true })).toEqual({ text: "input: known after apply", tone: "unknown" });
   });
 
   it("says no change for a card the plan leaves alone, and that a root the plan does not hold is untouched", () => {

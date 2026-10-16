@@ -123,7 +123,7 @@ export const ANNOTATIONS = [
   {
     id: "T12", product: "chant", feature: "Waiting for approval",
     pattern: String.raw`^Nothing in wave \d+ or after it ran\. (?:Read the plans, then|It waits on .+\.) approve: (chant approve \S+ \S+ --plan \S+) \(with --resume, the approval also starts this job again\)$`,
-    note: "The job ended without applying this wave or any later one; the printed chant approve command records the approval and can restart the job.",
+    note: "The job ends at this wave; the printed chant approve command records the approval and can restart the job.",
     docs: { product: "chant", path: "/guide/op-waves/#resume-the-waiting-job" },
     source: "chant:packages/core/src/op/op-waves-run.ts:1587",
     sample: "Nothing in wave 2 or after it ran. Read the plans, then approve: chant approve tf-apply wave-2 --plan jcs1-sha256:95b79f4946fffd67b2d3da8971084852c4182623d8223b4a307f7067375fe37a (with --resume, the approval also starts this job again)",
@@ -163,7 +163,7 @@ export const ANNOTATIONS = [
   {
     id: "T17", product: "terragucci", feature: "Changed after approval",
     pattern: String.raw`^wave \d+ changed after it was approved, so nothing in it was applied\. approved: (\S+); planned now: (\S+)\. `,
-    note: "The wave planned to a different digest than the one approved, so nothing applied; the new plan needs its own approval.",
+    note: "The wave planned to a different digest than the one approved; the new plan needs its own approval.",
     docs: { product: "terragucci", path: "/guides/fix-a-refused-wave/" },
     source: "terragucci:packages/terragucci/src/apply.ts:2983",
     sample: "wave 1 changed after it was approved, so nothing in it was applied. approved: jcs1-sha256:c7d57fcf0bf559242e2104f4d0ed562888f6bd99ed8c5af350db462771169877; planned now: jcs1-sha256:0be8353d2143e463577e05eca00b62cabd51791aaa383051930e384340812052. Read the new plan, then approve it: terragucci approve wave-1 --plan jcs1-sha256:0be8353d2143e463577e05eca00b62cabd51791aaa383051930e384340812052",
@@ -171,7 +171,7 @@ export const ANNOTATIONS = [
   {
     id: "T18", product: "terragucci", feature: "Changed after approval",
     pattern: String.raw`^wave \d+ of \d+: approved by (\S+), but these roots planned differently since: (.+)$`,
-    note: "Names the roots whose plans differ from the approved ones, which is why the approval no longer covers the wave.",
+    note: "Names the roots whose plans differ from the approved ones, so the wave needs a new approval.",
     docs: { product: "terragucci", path: "/tutorial/changed-wave/" },
     source: "terragucci:packages/terragucci/src/apply.ts:2984",
     sample: "wave 1 of 3: approved by terragucci-admin, but these roots planned differently since: network",
@@ -187,7 +187,7 @@ export const ANNOTATIONS = [
   {
     id: "T20", product: "terragucci", feature: "Unreviewed outputs",
     pattern: String.raw`^wave \d+ of \d+: nobody reviewed the plan it made on those outputs, so it waits for an approval of it(?: although gate is \S+)?$`,
-    note: "This wave planned on outputs nobody could see in review, so it waits for an approval even when its gate would let it through.",
+    note: "This wave planned on outputs that got their values during the apply, so a person approves it even when its gate would let it through.",
     docs: { product: "terragucci", path: "/concepts/waves-and-approvals/#linked-roots" },
     source: "terragucci:packages/terragucci/src/apply.ts:2562",
     sample: "wave 1 of 3: nobody reviewed the plan it made on those outputs, so it waits for an approval of it although gate is on-destructive",
@@ -203,7 +203,7 @@ export const ANNOTATIONS = [
   {
     id: "T22", product: "terragucci", feature: "Unreviewed outputs",
     pattern: String.raw`^wave \d+ of \d+: (\S+) reads? no output of (\S+) that (.+) left unknown$`,
-    note: "Every output this root reads was already known when it was planned, so its plan holds no values nobody reviewed.",
+    note: "Every output this root reads was known when it was planned, so its plan holds only reviewed values.",
     docs: { product: "terragucci", path: "/concepts/waves-and-approvals/#linked-roots" },
     source: "terragucci:packages/terragucci/src/unknown-reads.ts:142",
     sample: "wave 2 of 3: app reads no output of network that wave 1's plan of network in this push (2026/10/e8863ee426177316d84499a5b8401c4b6adfb546/tf-apply-wave-1) left unknown",
@@ -235,7 +235,7 @@ export const ANNOTATIONS = [
   {
     id: "T26", product: "terragucci", feature: "Unreviewed outputs",
     pattern: String.raw`^wave \d+ of \d+: (\S+) reads (.+), unknown at plan time and computed in this apply$`,
-    note: "Inside a composed run this root reads a value that only gets computed during the apply, so nobody saw it in the plan.",
+    note: "Inside a composed run this root reads a value computed during the apply.",
     docs: { product: "terragucci", path: "/concepts/waves-and-approvals/#approval" },
     source: "terragucci:packages/terragucci/src/apply.ts:2022",
     sample: "wave 1 of 3: app reads subnet_id of network, unknown at plan time and computed in this apply",
@@ -275,7 +275,7 @@ export const ANNOTATIONS = [
   {
     id: "T31", product: "chant", feature: "Apply failed",
     pattern: String.raw`^wave \d+ \(([^)]+)\): apply failed, so none of (.+) counts as applied$`,
-    note: "The wave's apply failed. None of its roots count as applied and later waves do not run.",
+    note: "The wave's apply failed. Its roots and the later waves wait for a re-run.",
     docs: { product: "terragucci", path: "/reference/responses/#apply-failed" },
     source: "chant:packages/core/src/op/op-waves-run.ts:2092",
     sample: "wave 2 (wave-2): apply failed, so none of app counts as applied",
@@ -379,7 +379,7 @@ export const ANNOTATIONS = [
   {
     id: "T44", product: "terragucci", feature: "Eligible approvers",
     pattern: String.raw`^wave \d+ of \d+: (\S+) (.+), so \1's (approval|review) doesn't count$`,
-    note: "This person had a hand in the change. Their approval or review does not count toward the gate.",
+    note: "This person worked on the change, so the gate counts approvals from someone else.",
     docs: { product: "terragucci", path: "/guides/approve-a-wave/#eligible-approvers" },
     source: "terragucci:packages/terragucci/src/involved.ts:175",
     sample: "wave 2 of 3: demo-author opened pull request 1086, so demo-author's review doesn't count", // made from the source, no run printed it yet
@@ -387,7 +387,7 @@ export const ANNOTATIONS = [
   {
     id: "T45", product: "terragucci", feature: "Eligible approvers",
     pattern: String.raw`^wave \d+ of \d+: an approval counts only from someone who had no hand in the change, so not from (.+)$`,
-    note: "An approval from the people named here does not count because they had a hand in the change.",
+    note: "The people named here worked on the change, so the gate counts approvals from someone else.",
     docs: { product: "terragucci", path: "/guides/approve-a-wave/#eligible-approvers" },
     source: "terragucci:packages/terragucci/src/apply.ts:3001",
     sample: "wave 2 of 3: an approval counts only from someone who had no hand in the change, so not from demo-author", // made from the source, no run printed it yet
