@@ -312,19 +312,23 @@
       .k-brand-logo { width: 1.25em; height: 1.25em; }
       .k-replay { margin: 0; padding: 0.2em 0.7em; padding-right: 16em; border-left: 4px solid var(--neutral); background: var(--surface-box); color: var(--fg); font-size: 0.92em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       /* behold#571: "What is this?" and the theme, at the header's top right, outside the boxes that redraw. */
-      #k-tools { position: absolute; top: 0.4em; right: 1em; z-index: 5; display: flex; gap: 0.7em; align-items: center; font-size: 0.8em; }
-      .k-what { font: inherit; color: var(--pending); background: transparent; border: 0; padding: 0.1em 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+      #k-tools { position: absolute; top: 0.35em; right: 1em; z-index: 5; display: flex; gap: 0.6em; align-items: center; font-size: 1em; }
+      /* behold#571: the header's controls read as controls: one pill shape, full-size type. */
+      .k-pill, .k-menu summary, .eh-switch { display: inline-flex; align-items: center; gap: 0.4em; height: 2em; padding: 0 0.85em; border: 1px solid var(--rule); border-radius: 999px; background: var(--surface-pane-a); color: var(--fg); font: 600 0.92em var(--font-ui); cursor: pointer; }
+      .k-menu summary:hover, .eh-switch:hover { border-color: var(--focus); }
+      .eh-switch input { accent-color: var(--pending); margin: 0; width: 1em; height: 1em; }
+      .k-what { font: 600 0.92em var(--font-ui); color: var(--pending); background: transparent; border: 0; padding: 0.1em 0.2em; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
       #k-what-pop { position: absolute; top: 1.8em; right: 0; width: min(34em, calc(100vw - 32px)); padding: 0.7em 0.9em; background: var(--surface-pane-b); color: var(--fg); border: 1px solid var(--focus);
         border-radius: 8px; box-shadow: 0 6px 24px color-mix(in srgb, var(--shadow) 70%, transparent); font-size: 1.15em; line-height: 1.45; }
       #k-what-pop[hidden] { display: none; }
       #k-what-pop p { margin: 0; }
       #k-what-pop .k-what-more { margin-top: 0.5em; }
       #k-what-pop a { color: var(--focus); }
-      .k-menu summary { cursor: pointer; color: var(--muted); list-style: none; }
+      .k-menu summary { list-style: none; gap: 0; }
       .k-menu summary::-webkit-details-marker { display: none; }
       .k-menu summary::after { content: " ▾"; }
-      .k-menu[open] summary { color: var(--fg); }
-      .k-menu-body { position: absolute; right: 0; top: 1.8em; padding: 0.5em; background: var(--surface-pane-b); border: 1px solid var(--rule); border-radius: 8px; }
+      .k-menu[open] summary { border-color: var(--focus); }
+      .k-menu-body { position: absolute; right: 0; top: 2.4em; padding: 0.5em; background: var(--surface-pane-b); border: 1px solid var(--rule); border-radius: 8px; }
       .k-credit { color: var(--muted); }
       .k-credit-link { color: var(--fg); }
       .k-nograph-note { margin: 0; color: var(--muted); font-size: 0.88em; }
@@ -365,7 +369,9 @@
         .k-read-rows { position: static; grid-template-columns: 1fr; border-radius: 6px; box-shadow: none; margin-bottom: 0.3em; }
         #views { padding-right: 1em; }
         .k-replay { padding-right: 0.7em; white-space: normal; }
-        #k-tools { position: static; justify-content: flex-end; margin: 0; padding: 0.4em 16px 0; }
+        #k-tools { position: static; justify-content: flex-end; flex-wrap: wrap; row-gap: 0.4em; margin: 0; padding: 0.4em 16px 0; }
+        .k-theme-n { display: none; }
+        .k-what { white-space: nowrap; }
         #k-what-pop { right: 16px; left: 16px; width: auto; top: 2.2em; }
         .k-ap-row { grid-template-columns: 1.1em 5.6em minmax(0, 1fr); }
         #stage, body.k-nograph #stage { display: flex; flex-direction: column; padding: 0; gap: 0; }
@@ -393,8 +399,8 @@
        * result a card at the end. The header is one quiet line. Inspect is
        * the layout above, one click away.
        */
-      .k-modes { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; overflow: hidden; }
-      .k-mode { font: 600 0.95em var(--font-ui); color: var(--muted); background: transparent; border: 0; padding: 0.25em 0.9em; cursor: pointer; }
+      .k-modes { display: inline-flex; height: 2em; border: 1px solid var(--rule); border-radius: 999px; overflow: hidden; background: var(--surface-pane-a); }
+      .k-mode { font: 600 0.92em var(--font-ui); color: var(--muted); background: transparent; border: 0; padding: 0 1.1em; cursor: pointer; }
       .k-mode + .k-mode { border-left: 1px solid var(--rule); }
       .k-mode:hover { color: var(--fg); }
       .k-mode-on, .k-mode-on:hover { color: var(--bg); background: var(--pending); }
@@ -407,7 +413,7 @@
       body.k-watch #view-pane { position: absolute; inset: 0 5px 5px; border-radius: 8px; overflow: hidden; background: var(--bg); }
       body.k-watch #view { height: 100%; }
       /* The header, one line: the scenario's place, the steps, the delivery numbers. */
-      body.k-watch #bar { display: flex; align-items: center; gap: 0.5em 1.2em; min-height: 2.6em; padding: 0.35em 1em; padding-right: 24em; }
+      body.k-watch #bar { display: flex; align-items: center; gap: 0.5em 1.2em; min-height: 2.6em; padding: 0.35em 1em; padding-right: calc(var(--k-tools-w, 30em) + 2em); }
       .k-w-place { display: flex; align-items: baseline; gap: 0.7em; flex: none; white-space: nowrap; }
       body.k-watch #bar .k-strip { flex: none; }
       .k-w-place .k-brand { margin: 0; }
@@ -550,7 +556,7 @@
       <div id="k-tools">
         <div id="k-mode" class="k-modes" role="group" aria-label="Layout"></div>
         <button type="button" class="k-what" aria-expanded="false" aria-controls="k-what-pop">What is this?</button>
-        <details class="k-menu"><summary>Theme</summary><div class="k-menu-body" id="k-theme"></div></details>
+        <details class="k-menu"><summary id="k-theme-name">Theme</summary><div class="k-menu-body" id="k-theme"></div></details>
         <div id="k-what-pop" role="dialog" aria-label="What is this?" hidden></div>
       </div>
       <header id="bar" aria-live="polite"></header>
@@ -586,10 +592,18 @@
     <div id="eh-tips" aria-live="polite"></div>
     <div id="eh-modals"></div>
     <script type="module">
-      import { initTheme, KIOSK_THEME } from "/theme.js";
+      import { initTheme, KIOSK_THEME, getThemeName, onThemeChange } from "/theme.js";
       import { startKiosk } from "/kiosk.js";
       import { pageTool } from "/kiosk-vendor.js";
       initTheme(KIOSK_THEME);
+      // behold#571: the theme control names the theme in use.
+      const themeName = document.getElementById("k-theme-name");
+      const nameTheme = () => { if (!themeName) return; const n = document.createElement("span"); n.className = "k-theme-n"; n.textContent = `: ${getThemeName()}`; themeName.replaceChildren("Theme", n); };
+      nameTheme();
+      onThemeChange(nameTheme);
+      // behold#571: the header keeps clear of the controls at the top right, however wide they are.
+      const toolsEl = document.getElementById("k-tools");
+      if (toolsEl && typeof ResizeObserver === "function") new ResizeObserver(() => document.documentElement.style.setProperty("--k-tools-w", `${toolsEl.offsetWidth}px`)).observe(toolsEl);
       // behold#571: /<tool> serves this page with its tool in a meta tag; /kiosk has none.
       const kiosk = startKiosk(
         {
