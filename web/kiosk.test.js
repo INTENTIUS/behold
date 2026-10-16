@@ -50,6 +50,7 @@ describe("frameSrc (#569)", () => {
 describe("factLines (#569)", () => {
   it("says the pull request's totals and blast radius", () => {
     expect(factLines(demo("planned"), answer)).toEqual(["pull request #7 changes across 3 roots: 3 update", "blast radius: app, edge, network", "unchanged: other"]);
+    expect(factLines(demo("planned"), answer, "terragrunt")[0]).toBe("pull request #7 changes across 3 units: 3 update");
   });
 });
 
@@ -244,6 +245,13 @@ describe("which view the frame shows (#571)", () => {
   it("says how to read the view shown", () => {
     expect(legendWords("components")).toMatch(/^Each card is a Terraform root .* titled with the pipeline job that applies it/);
     expect(legendWords("resources")).toMatch(/^Each box is a Terraform root/);
+    // behold#571: a Terragrunt scenario names its units.
+    for (const v of ["components", "resources"]) {
+      const words = legendWords(v, "terragrunt");
+      expect(words).toMatch(/is a Terragrunt unit with its own state/);
+      expect(words).toMatch(/one unit reading another's outputs.*applies its units together/);
+      expect(words).not.toMatch(/\broots?\b/);
+    }
   });
 
   // A DOM for the toggle: elements with attributes and click listeners.
@@ -274,6 +282,9 @@ describe("which view the frame shows (#571)", () => {
 
       renderViewToggle(host, { view: "resources", pinned: true, secs: 42 }, { components: true });
       expect(host.children[1].textContent).toBe("held by a click; the step leads again in 42 s");
+
+      renderViewToggle(host, { view: "resources", pinned: false, secs: null }, { components: true, tool: "terragrunt" });
+      expect(host.children[0].children.map((b) => b.textContent)).toEqual(["Resources", "Units by wave"]);
 
       renderViewToggle(host, { view: "resources", pinned: false, secs: null }, { components: false });
       expect(host.hidden).toBe(true);

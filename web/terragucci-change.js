@@ -129,9 +129,9 @@ export function totalsLine(totals) {
 }
 
 /** #568 step 2: "across 3 roots", from `totals_roots` (report minor 35); null on an older report, which has no count. */
-export function rootsCount(n) {
+export function rootsCount(n, noun = { one: "root", many: "roots" }) {
   if (n === undefined || n === null) return null;
-  return `across ${n} ${n === 1 ? "root" : "roots"}`;
+  return `across ${n} ${n === 1 ? noun.one : noun.many}`;
 }
 
 const money = (n) => (n === null || n === undefined ? "no figure" : n.toFixed(2));

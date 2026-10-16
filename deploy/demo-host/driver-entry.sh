@@ -13,9 +13,10 @@
 #   3. After a bootstrap, gives behold what it reads with: floci keys that may
 #      only GetObject and ListBucket on the reports prefix (enforced once
 #      floci's IAM enforcement is on; see compose.yaml), a Forgejo token that
-#      may only read the demo repos, and a view checkout of each demo repo
-#      (/view/<repo name>) with that token in origin. On any other start, a
-#      demo repo with no view checkout yet gets one (behold#571).
+#      may only read the demo repos, and two view checkouts of each demo repo
+#      with that token in origin: /view/<repo name> at main, and
+#      /view/<repo name>.change, which the loop moves to each step's commit.
+#      On any other start, a demo repo missing either gets them (behold#571).
 #   4. Hands over to the loop: `exec stack/demo.sh loop`.
 #
 # The demo repos are DEMO_REPOS, space-separated: one forge repo per tool the
@@ -163,8 +164,8 @@ viewer_token() { # prints a working read:repository token for $VIEWER, making th
   printf '%s' "$token"
 }
 
-view_checkout() { # token, repo: /view/<repo name> at the repo's main
-  local repo="$2" dir="$VIEW/${2##*/}"
+view_checkout() { # token, repo, [dir]: a checkout of the repo's main, /view/<repo name> unless told
+  local repo="$2" dir="${3:-$VIEW/${2##*/}}"
   local here="http://$VIEWER:$1@127.0.0.1:${TERRAGUCCI_FORGEJO_PORT:-3300}/$repo.git"
   # behold's own fetch of chant/lifecycle goes over terragucci's network.
   local there="http://$VIEWER:$1@forgejo:3000/$repo.git"
@@ -187,6 +188,7 @@ view_checkouts() { # token: a view checkout of each demo repo Forgejo has
   for repo in $REPOS; do
     if curl -fsS -o /dev/null -H "Authorization: token $1" "$FORGEJO/api/v1/repos/$repo" 2>/dev/null; then
       view_checkout "$1" "$repo"
+      view_checkout "$1" "$repo" "$VIEW/${repo##*/}.change"
     else
       log "Forgejo has no $repo; no view checkout of it"
     fi
@@ -195,7 +197,9 @@ view_checkouts() { # token: a view checkout of each demo repo Forgejo has
 
 missing_views() { # the demo repos with no view checkout yet, if any
   local repo
-  for repo in $REPOS; do [ -d "$VIEW/${repo##*/}/.git" ] || echo "$repo"; done
+  for repo in $REPOS; do
+    [ -d "$VIEW/${repo##*/}/.git" ] && [ -d "$VIEW/${repo##*/}.change/.git" ] || echo "$repo"
+  done
 }
 
 # ── 2. the driver's bootstrap, when floci has no base for this commit ──────
@@ -231,5 +235,10 @@ if [ "$have" = "$HEAD_SHA" ] && [ -n "$missing" ]; then
 fi
 
 # ── 4. the loop ────────────────────────────────────────────────────────────
+# behold#571: the loop checks out each step's commit (a pull request's head,
+# then its merge) in /view/<repo name>.change before it writes the step, so
+# the kiosk's graph draws the change. DEMO_VIEWS is where those checkouts are,
+# and DEMO_VIEW_OWNER the owner they keep: behold's.
+export DEMO_VIEWS="$VIEW" DEMO_VIEW_OWNER="$BEHOLD_UID:$BEHOLD_UID"
 log "starting the loop"
 exec stack/demo.sh loop

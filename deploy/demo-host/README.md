@@ -205,6 +205,7 @@ What the host keeps:
 | `/var/lib/demo-host/viewer.env` | the Forgejo user `demo-viewer`'s generated password and its `read:repository` token |
 | `/opt/demo/terragucci/stack/.state/` | terragucci's own: Forgejo's admin token, the driver's signing key, the base snapshot |
 | `/opt/demo/views/<repo name>` | a checkout of each demo repo in `DEMO_REPOS` at its `main` (behold#571), which behold serves: the first by default, another when a page asks for it with `?repo=<name>`. The driver makes them after a bootstrap, and a missing one on its next start; the watchdog moves each to `main` every cycle. `/opt/demo/view`, the single checkout before, is no longer read and is left as it is |
+| `/opt/demo/views/<repo name>.change` | a second checkout of each demo repo, which the driver's loop moves to each step's commit (a pull request's head, then its merge) before it writes the step (behold#571). The kiosk's graph draws it while the step's commit is checked out there, so a pull request's new roots and resources are drawn. The driver makes it beside the first; the watchdog leaves it as it is |
 
 ## Bring it up
 

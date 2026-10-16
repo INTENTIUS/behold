@@ -1,10 +1,10 @@
 // behold#571 `serve --repos`: one checkout per request, by name, and nothing else.
 import { afterAll, describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
-import { listCheckouts, repoName, scopeServedDirs, viewRepoFacts, viewReposMiddleware, type ViewRepos } from "./view-repos.ts";
+import { checkoutCommit, listCheckouts, repoName, scopeServedDirs, viewRepoFacts, viewReposMiddleware, type ViewRepos } from "./view-repos.ts";
 
 const made: string[] = [];
 afterAll(() => {
@@ -32,6 +32,34 @@ describe("listCheckouts", () => {
     mkdirSync(join(parent, "demo-terragrunt", ".git"), { recursive: true });
     mkdirSync(join(parent, "not-a-checkout"));
     expect(listCheckouts(parent).map((c) => c.name)).toEqual(["demo", "demo-terragrunt"]);
+  });
+});
+
+describe("checkoutCommit (behold#571)", () => {
+  const A = "a".repeat(40);
+  const B = "b".repeat(40);
+  const repo = (head: string, files: Record<string, string> = {}) => {
+    const dir = mkdtempSync(join(tmpdir(), "behold-commit-test-"));
+    made.push(dir);
+    mkdirSync(join(dir, ".git", "refs", "heads"), { recursive: true });
+    writeFileSync(join(dir, ".git", "HEAD"), head);
+    for (const [f, text] of Object.entries(files)) writeFileSync(join(dir, ".git", f), text);
+    return dir;
+  };
+  it("reads a detached HEAD, a branch's loose ref and a packed one", () => {
+    expect(checkoutCommit(repo(`${A}\n`))).toBe(A);
+    expect(checkoutCommit(repo("ref: refs/heads/main\n", { "refs/heads/main": `${B}\n` }))).toBe(B);
+    expect(checkoutCommit(repo("ref: refs/heads/main\n", { "packed-refs": `# pack-refs with: peeled\n${A} refs/heads/main\n` }))).toBe(A);
+  });
+  it("is undefined for what it can't read", () => {
+    expect(checkoutCommit(repo("ref: refs/heads/gone\n"))).toBeUndefined();
+    expect(checkoutCommit(repo("ref: refs/../../etc/passwd\n"))).toBeUndefined();
+    expect(checkoutCommit(join(tmpdir(), "behold-no-such-checkout"))).toBeUndefined();
+  });
+  it("is on /api/project for each served checkout it can read", () => {
+    const one = repo(`${A}\n`);
+    const repos: ViewRepos = { parent: "/", repos: new Map([["demo", { projectDir: one }], ["demo.change", { projectDir: "/nowhere" }]]) };
+    expect(viewRepoFacts(repos, one)).toEqual({ viewRepo: "demo", viewRepos: ["demo", "demo.change"], viewCommits: { demo: A } });
   });
 });
 

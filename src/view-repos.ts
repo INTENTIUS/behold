@@ -26,7 +26,7 @@
  * route runs, and nothing from the request reaches the filesystem.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Hono } from "hono";
 
@@ -116,9 +116,50 @@ export function viewReposMiddleware(app: Hono, repos: ViewRepos): void {
   });
 }
 
-/** What `/api/project` says about the repos: the one this request reads, and every one there is. */
-export function viewRepoFacts(repos: ViewRepos | undefined, servedDir: string): { viewRepo?: string; viewRepos?: string[] } {
+const SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
+
+/**
+ * The commit a checkout has checked out, read from its `.git` files: a
+ * detached HEAD's sha, or the branch's from its ref file or `packed-refs`.
+ * Undefined when it can't be read (no checkout, a worktree's `.git` file).
+ */
+export function checkoutCommit(dir: string): string | undefined {
+  const read = (f: string): string | undefined => {
+    try {
+      return readFileSync(join(dir, ".git", f), "utf8");
+    } catch {
+      return undefined;
+    }
+  };
+  const head = read("HEAD")?.trim();
+  if (!head) return undefined;
+  if (SHA.test(head)) return head;
+  const ref = /^ref: (refs\/[^\s]+)$/.exec(head)?.[1];
+  if (!ref || ref.split("/").includes("..")) return undefined;
+  const loose = read(ref)?.trim();
+  if (loose && SHA.test(loose)) return loose;
+  for (const line of (read("packed-refs") ?? "").split("\n")) {
+    const [sha, name] = line.trim().split(" ");
+    if (name === ref && sha && SHA.test(sha)) return sha;
+  }
+  return undefined;
+}
+
+/**
+ * What `/api/project` says about the repos: the one this request reads, every
+ * one there is, and the commit each has checked out (behold#571: a page that
+ * follows a change picks the checkout at that change's commit).
+ */
+export function viewRepoFacts(
+  repos: ViewRepos | undefined,
+  servedDir: string,
+): { viewRepo?: string; viewRepos?: string[]; viewCommits?: Record<string, string> } {
   if (!repos) return {};
   const here = [...repos.repos].find(([, t]) => t.projectDir === servedDir)?.[0];
-  return { ...(here ? { viewRepo: here } : {}), viewRepos: [...repos.repos.keys()] };
+  const commits: Record<string, string> = {};
+  for (const [name, t] of repos.repos) {
+    const sha = checkoutCommit(t.projectDir);
+    if (sha) commits[name] = sha;
+  }
+  return { ...(here ? { viewRepo: here } : {}), viewRepos: [...repos.repos.keys()], ...(Object.keys(commits).length ? { viewCommits: commits } : {}) };
 }

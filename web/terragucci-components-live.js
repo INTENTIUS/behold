@@ -62,14 +62,34 @@ export function runsCommit(pin, progress) {
 export function jobStatus(index, commit, jobName) {
   const runs = index && index.doc && Array.isArray(index.doc.runs) ? index.doc.runs : [];
   let skipped = null;
+  // behold#571: a newer run on the commit that skipped this job but ran
+  // another (a /terragucci apply re-run applies every wave in its
+  // apply-comment job) is the latest run for the wave.
+  let later = null;
   for (const run of runs) {
     if (!sameSha(run.commit, commit)) continue;
     const job = (run.jobs || []).find((j) => j.name === jobName);
     if (!job) continue;
-    if (job.status !== "skipped") return { status: job.status, words: JOB_WORDS[job.status] || job.status, tone: JOB_TONE[job.status] || "idle", run: run.id };
+    if (job.status !== "skipped") {
+      return { status: job.status, words: JOB_WORDS[job.status] || job.status, tone: JOB_TONE[job.status] || "idle", run: run.id, ...(later ? { superseded: later } : {}) };
+    }
+    if (!later && (run.jobs || []).some((j) => j.status !== "skipped")) later = run.id;
     skipped = skipped || { status: "skipped", words: JOB_WORDS.skipped, tone: "idle", run: run.id };
   }
   return skipped;
+}
+
+/** A wave's state from the run view, as a box's title says it after a re-run. */
+export const WAVE_WORDS = { waiting: "held at the gate", applying: "running", applied: "applied", failed: "failed", refused: "refused" };
+
+/**
+ * The status a wave's box shows: its job's, unless a later run on the commit
+ * took the wave over (`superseded`); then the run view's state for the wave,
+ * which is the latest run's.
+ */
+export function waveStatus(status, state) {
+  if (!status || !status.superseded || !state || !WAVE_WORDS[state]) return status;
+  return { status: state, words: WAVE_WORDS[state], tone: toneOf(state), run: status.superseded };
 }
 
 /** "apply-wave-2 · held at the gate", or the job alone without a status. */
@@ -122,9 +142,9 @@ export function componentMarks(answer, progress, facets, { runs = null, pin = nu
   const waveNumbers = [...new Set(jobs.map((j) => j.wave).filter((n) => typeof n === "number"))].sort((a, b) => a - b);
   for (const n of waveNumbers) {
     const jobName = jobs.find((j) => j.wave === n).jobName;
-    const status = commit ? jobStatus(runs, commit, jobName) : null;
     const members = jobs.filter((j) => j.wave === n).map((j) => cards[j.component]).filter(Boolean);
     const w = waveState(answer, progress, stage, n);
+    const status = commit ? waveStatus(jobStatus(runs, commit, jobName), w) : null;
     const facts = [];
     for (const m of members) for (const f of m.facts) if (!facts.includes(f)) facts.push(f);
     // The plan a waiting wave is approved for first, as it's what the approval

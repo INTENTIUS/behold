@@ -16,7 +16,9 @@
 #     the base), the limit is DEMO_WATCHDOG_BOOT seconds instead.
 #   - the cycle in demo.json. When it changes, each view checkout behold serves
 #     (/view/<repo name>, one per demo repo, behold#571) is moved to its
-#     origin's main, so behold's cards are main's roots.
+#     origin's main, so behold's cards are main's roots. A /view/<repo
+#     name>.change checkout is left alone: the driver keeps it at the step's
+#     commit.
 #
 # Clocks start again when the driver starts, so a restart is never counted as
 # a stall of its own.
@@ -77,7 +79,7 @@ restart_driver() { # why
 
 pull_view() { # cycle
   # Every checkout is tried; the exit status says whether any one failed.
-  if docker exec "$BEHOLD" sh -c 'ok=0; n=0; for d in /view/*/; do [ -d "$d.git" ] || continue; n=$((n+1)); git -C "$d" fetch -q origin "+refs/heads/*:refs/remotes/origin/*" && git -C "$d" reset -q --hard origin/main || ok=1; done; [ "$n" -gt 0 ] && exit $ok; exit 1' 2>/dev/null; then
+  if docker exec "$BEHOLD" sh -c 'ok=0; n=0; for d in /view/*/; do [ -d "$d.git" ] || continue; case "$d" in *.change/) continue ;; esac; n=$((n+1)); git -C "$d" fetch -q origin "+refs/heads/*:refs/remotes/origin/*" && git -C "$d" reset -q --hard origin/main || ok=1; done; [ "$n" -gt 0 ] && exit $ok; exit 1' 2>/dev/null; then
     info "cycle $1: the view checkouts are at origin/main"
   else
     info "cycle $1: could not move every view checkout to origin/main (behold not up yet?)"

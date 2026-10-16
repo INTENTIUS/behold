@@ -17,8 +17,8 @@ import { PICK_HOLD_MS, annMark, mergeRun, startRuns } from "./kiosk-runs.js";
 import { PANEL_STEPS, PANEL_TITLE, approvalModel, cycleRuns, rowFacts, shortDigest } from "./kiosk-approval.js";
 import { getThemeName, mountThemePicker, onThemeChange } from "./theme.js";
 import { cssString, hoverCss, hoverFromMessage, hoverLinks, hoverMessage, isLightBg, rootSegments, rootText } from "./kiosk-roots.js";
-import { creditLines, filterIndex, keepRun, liveEstimate, liveFor, namesOther, notRunRepo, notRunWords, replayAt, replayBanner, replayIndex, rootWord, runAsOf, scrubDemo, servesRepo, vendorOf } from "./kiosk-vendor.js";
-import { repoParam, repoUrl } from "./kiosk-repo.js";
+import { creditLines, filterIndex, keepRun, liveEstimate, liveFor, namesOther, notRunRepo, notRunWords, replayAt, replayBanner, replayIndex, rootNoun, rootWord, runAsOf, scrubDemo, servesRepo, vendorOf } from "./kiosk-vendor.js";
+import { repoParam, repoUrl, stepCheckout } from "./kiosk-repo.js";
 import { STATE_WORDS, changingRoots, costLine, pinsCommit, planFitsPin, pullPin, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
 
 /** The scenarios terragucci#1014 numbers. An id not here is shown by the title demo.json carries. */
@@ -412,10 +412,24 @@ export function kioskView(demo, { components = false, pick = null, now = Date.no
 /** The line under the view saying how to read it, for the view shown. */
 export function legendWords(view, tool = null) {
   const root = rootWord(tool);
+  const n = rootNoun(tool);
+  const rest = `an arrow is one ${n.one} reading another's outputs, dashed while it reads planned values. A wave applies its ${n.many} together, after the waves it reads.`;
   if (view === "components") {
-    return `Each card is ${root} with its own state, in a box per wave titled with the pipeline job that applies it; an arrow is one root reading another's outputs, dashed while it reads planned values. A wave applies its roots together, after the waves it reads.`;
+    return `Each card is ${root} with its own state, in a box per wave titled with the pipeline job that applies it; ${rest}`;
   }
-  return `Each box is ${root} with its own state; an arrow is one root reading another's outputs, dashed while it reads planned values. A wave applies its roots together, after the waves it reads.`;
+  return `Each box is ${root} with its own state; ${rest}`;
+}
+
+/** The toggle's words for a view, in the tool's own noun ("Units by wave" for Terragrunt). */
+export function viewWords(v, tool = null) {
+  return v.id === "components" ? `${rootNoun(tool).Many} by wave` : v.words;
+}
+
+/** The tool the page shows: its own on a tool's page, else the running scenario's (demo.json `tool`). */
+export function shownTool(s) {
+  if (s.vendor) return s.vendor;
+  const d = s.demo && s.demo.demo;
+  return d && typeof d.tool === "string" ? d.tool : null;
 }
 
 /** The behold zoom for a view. */
@@ -429,7 +443,7 @@ export function viewZoom(view) {
  * pressed, and a line saying whether the step leads or a click holds it.
  * Not drawn at all when the repo offers no components zoom.
  */
-export function renderViewToggle(host, shown, { components = false, onPick = () => {} } = {}) {
+export function renderViewToggle(host, shown, { components = false, onPick = () => {}, tool = null } = {}) {
   if (!host) return;
   host.replaceChildren();
   host.hidden = !components;
@@ -438,7 +452,7 @@ export function renderViewToggle(host, shown, { components = false, onPick = () 
   group.setAttribute("role", "group");
   group.setAttribute("aria-label", "the view");
   for (const v of VIEWS) {
-    const b = el("button", `k-view${v.id === shown.view ? " k-view-on" : ""}`, v.words);
+    const b = el("button", `k-view${v.id === shown.view ? " k-view-on" : ""}`, viewWords(v, tool));
     b.type = "button";
     b.setAttribute("aria-pressed", String(v.id === shown.view));
     b.addEventListener("click", () => onPick(v.id));
@@ -449,12 +463,12 @@ export function renderViewToggle(host, shown, { components = false, onPick = () 
 }
 
 /** The one-line facts under the view: the pull request's totals, cost and blast radius, as #568 has them. */
-export function factLines(demo, answer) {
+export function factLines(demo, answer, tool = null) {
   const pr = demo ? matchingPull(answer, demo) : null;
   if (!pr) return [];
   const out = [];
   const totals = totalsLine(pr.totals);
-  if (totals) out.push(`pull request #${pr.run.pull_request} changes ${rootsCount(pr.totals_roots) || "across roots"}: ${totals}`);
+  if (totals) out.push(`pull request #${pr.run.pull_request} changes ${rootsCount(pr.totals_roots, rootNoun(tool)) || `across ${rootNoun(tool).many}`}: ${totals}`);
   const b = blastRows(answer);
   if (b && b.changed.length) out.push(`blast radius: ${b.changed.join(", ")}${b.downstream.length ? `; downstream, nearest first: ${b.downstream.join(", ")}` : ""}`);
   if (b && b.unplanned.length) out.push(`unchanged: ${b.unplanned.join(", ")}`);
@@ -593,9 +607,9 @@ function drawBar(bar, s, now, foot) {
 
   if (foot) {
     // The legend reads the graph; with no graph shown there is nothing for it to explain.
-    if (!s.noReports) foot.appendChild(el("span", "k-legend", legendWords(s.view || "resources", s.vendor || null)));
+    if (!s.noReports) foot.appendChild(el("span", "k-legend", legendWords(s.view || "resources", shownTool(s))));
     // behold#571: no line on where the narration was read from: a viewer new to the demo reads the facts.
-    if (!s.noReports) for (const f of factLines(demo, s.answer)) foot.appendChild(elRoots("span", "k-fact", f, s));
+    if (!s.noReports) for (const f of factLines(demo, s.answer, shownTool(s))) foot.appendChild(elRoots("span", "k-fact", f, s));
   }
 }
 
@@ -739,7 +753,10 @@ export function startKiosk({ bar, frame, foot, side, main, views, tools = null }
   // name. `viewRepos` is what it serves, `aimed` the repo the reads are for.
   s.viewRepos = null;
   s.aimed = null;
-  const wantRepo = () => repoParam(s.repo, s.viewRepos) || (vendor && s.mode === "none" ? notRunRepo(tool, s.viewRepos) : null);
+  s.viewCommits = null;
+  const repoNamed = () => repoParam(s.repo, s.viewRepos) || (vendor && s.mode === "none" ? notRunRepo(tool, s.viewRepos) : null);
+  // behold#571: the checkout at the step's commit, so a pull request's new roots and resources are drawn.
+  const wantRepo = () => stepCheckout(repoNamed(), s.demo && s.demo.demo, s.viewRepos, s.viewCommits);
   const fetchServed = fetchJson;
   fetchJson = (url) => fetchServed(repoUrl(url, wantRepo()));
   /** When the page moves to another served repo, read its project, reports and run view again, and point the frame at it. */
@@ -839,6 +856,8 @@ export function startKiosk({ bar, frame, foot, side, main, views, tools = null }
       const stage = d ? demoStage(d) : "none";
       if (stage === "pull-request" || stage === "either") void reports(true);
       if (stage === "apply" || stage === "either") void progress(true);
+      // behold#571: a commit no served checkout was on when last asked; the driver may have checked it out since.
+      if (d && d.commit && s.viewRepos && !Object.values(s.viewCommits || {}).some((c) => c.startsWith(d.commit) || d.commit.startsWith(c))) void readCommits();
     }
   };
   // behold#571: the replay's clock, read on every draw.
@@ -871,7 +890,7 @@ export function startKiosk({ bar, frame, foot, side, main, views, tools = null }
       b.addEventListener("scroll", () => fade(b), { passive: true });
     }
     whatText();
-    renderViewToggle(views, shown, { components: s.components && ok, onPick: pickView });
+    renderViewToggle(views, shown, { components: s.components && ok, onPick: pickView, tool: shownTool(s) });
     // behold#571: with no graph to show, the graph pane folds away and the runs and the log take its width.
     if (typeof document !== "undefined" && document.body && document.body.classList) {
       document.body.classList.toggle("k-nograph", !!vendor && !ok);
@@ -1034,10 +1053,19 @@ export function startKiosk({ bar, frame, foot, side, main, views, tools = null }
     frameSrcNow = src;
     frame.src = src;
   };
+  /** behold#571: the commit each served checkout holds, read again when a step names a new one. */
+  const readCommits = () => fetchJson("/api/project").then((p) => {
+    if (p && !p.error && Array.isArray(p.viewRepos)) {
+      s.viewRepos = p.viewRepos;
+      s.viewCommits = p.viewCommits || null;
+      draw();
+    }
+  });
   const readProject = () => fetchJson("/api/project").then((p) => {
     // behold#571: the repos this behold serves, and which one this answer is.
     if (p && !p.error && Array.isArray(p.viewRepos)) {
       s.viewRepos = p.viewRepos;
+      s.viewCommits = p.viewCommits || null;
       if (s.aimed === null && p.viewRepo) s.aimed = p.viewRepo;
     }
     s.components = !!(p && !p.error && p.terragucciComponents);
