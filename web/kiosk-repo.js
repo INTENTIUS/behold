@@ -4,8 +4,8 @@
 // and asks for that checkout by name with `?repo=`; the server answers from
 // it, or refuses a name it doesn't serve.
 
-/** The reads that depend on the served checkout: the project, the reports' marks, the run view, and (behold#571's approval panel) the gate ledger read from its chant/lifecycle. */
-const REPO_READS = new Set(["/api/project", "/api/terragucci", "/api/terragucci/progress", "/api/terragucci/lifecycle", "/api/lifecycle/history"]);
+/** The reads that depend on the served checkout: the project, the reports' marks, the run view, (behold#571's approval panel) the gate ledger read from its chant/lifecycle, and (behold#631) a chant repo's pull-request loop. */
+const REPO_READS = new Set(["/api/project", "/api/terragucci", "/api/terragucci/progress", "/api/terragucci/lifecycle", "/api/lifecycle/history", "/api/chant/pr"]);
 
 /** The checkout name for `repo` ("<owner>/<name>") when the server serves it; null otherwise. */
 export function repoParam(repo, served) {

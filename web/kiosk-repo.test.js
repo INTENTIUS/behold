@@ -20,6 +20,8 @@ describe("repoUrl", () => {
     expect(repoUrl("/api/terragucci/progress?commit=abc", "demo")).toBe("/api/terragucci/progress?commit=abc&repo=demo");
     expect(repoUrl("/api/terragucci/lifecycle", "demo")).toBe("/api/terragucci/lifecycle?repo=demo");
     expect(repoUrl("/api/lifecycle/history?limit=200", "demo")).toBe("/api/lifecycle/history?limit=200&repo=demo");
+    // behold#631: the hold panel's read of a chant repo's gate is that repo's, not the default checkout's.
+    expect(repoUrl("/api/chant/pr?pin=a157c47f", "demo-chant")).toBe("/api/chant/pr?pin=a157c47f&repo=demo-chant");
     expect(repoUrl("/api/terragucci/demo", "demo")).toBe("/api/terragucci/demo");
     expect(repoUrl("/api/terragucci/runs/4", "demo")).toBe("/api/terragucci/runs/4");
     expect(repoUrl("/api/project", null)).toBe("/api/project");

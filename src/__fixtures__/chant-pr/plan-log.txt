@@ -1,0 +1,12 @@
+    }
+
+Plan: 1 to add, 0 to change, 0 to destroy.
+
+pr-plan: 3 member(s), planned
+  app                  planned      create 1 update 0 replace 0 delete 0
+  edge                 planned      create 1 update 0 replace 0 delete 0
+  network              planned      create 1 update 0 replace 0 delete 0
+plan    : jcs1-sha256:909bbc5e4f02021bdff9d852c8253f215383a2489eee464ace2adb0fda138553
+approve : chant approve pr-13 pr-apply --plan jcs1-sha256:909bbc5e4f02021bdff9d852c8253f215383a2489eee464ace2adb0fda138553 --approver <you> --sign
+With the provided path, there will be 3 files uploaded
+Starting artifact upload
