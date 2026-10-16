@@ -172,6 +172,64 @@ export function countdownWords(secs) {
   return `in ${Math.floor(secs / 60)} m ${String(secs % 60).padStart(2, "0")} s`;
 }
 
+/**
+ * behold#571: how far the driver's wait for its next action has gone, for the
+ * bar under "next, by the driver". The bar fills from `next.from` (when the
+ * driver started waiting; an older driver leaves it out) to `next.at`. Without `from`
+ * it fills from `seen`, when this page first saw that deadline; null when the
+ * page joined the countdown midway, and then there is no bar, only the words.
+ *
+ * kind is "fill" (fraction 0..1), "due" (the deadline passed: a full bar that
+ * pulses until the step changes), "wait" (no deadline: the driver waits on the
+ * pipeline, a quiet shimmer) or "none" (no bar).
+ */
+export function nextProgress(next, now = new Date(), seen = null) {
+  if (!next) return { kind: "none", fraction: null };
+  if (!next.at) return { kind: "wait", fraction: null };
+  const at = Date.parse(next.at);
+  if (Number.isNaN(at)) return { kind: "none", fraction: null };
+  const t = now.getTime();
+  if (t >= at) return { kind: "due", fraction: 1 };
+  const parsed = next.from ? Date.parse(next.from) : NaN;
+  const from = Number.isNaN(parsed) ? seen : parsed;
+  if (typeof from !== "number" || !Number.isFinite(from) || from >= at) return { kind: "none", fraction: null };
+  return { kind: "fill", fraction: Math.min(1, Math.max(0, (t - from) / (at - from))) };
+}
+
+/**
+ * behold#571: when this page first saw each deadline, for nextProgress's
+ * `seen`. The deadline on screen when the page loaded, or when the mode
+ * changed (live, replay), was seen midway: its `seen` is null. One that came
+ * after is seen at `nowMs`. `next` is demo.json's next (null when it has
+ * none), or undefined while no demo.json has been read. Returns the memo to
+ * keep for the next call.
+ */
+export function nextSeen(memo, next, mode, nowMs) {
+  // No demo.json read yet: nothing watched.
+  if (next === undefined) return memo;
+  const key = next && next.at ? `${next.action}|${next.at}` : null;
+  if (memo && memo.mode === mode && memo.key === key) return memo;
+  return { key, mode, seen: memo && memo.mode === mode && key ? nowMs : null };
+}
+
+/** The period of the due bar's pulse and the shimmer's sweep; the redraw rebuilds the bar each second, so it carries its phase. */
+export const NEXT_BAR_MS = 2400;
+
+/** behold#571: the bar under "next, by the driver", in the step's tone (theme.js barInks). It never takes room: CSS places it. */
+function nextBar(demo, now, s) {
+  const p = nextProgress(demo.next, now, s && s.nextSeen ? s.nextSeen.seen : null);
+  const bar = el("span", `k-nbar k-nbar-${p.kind}`);
+  if (bar.dataset) bar.dataset.kTone = stepTone(demo.step);
+  if (bar.setAttribute) bar.setAttribute("aria-hidden", "true");
+  const fill = el("span", "k-nbar-in");
+  if (fill.style && fill.style.setProperty) {
+    if (p.fraction !== null) fill.style.setProperty("--k-nbar-fill", String(Math.round(p.fraction * 1000) / 1000));
+    fill.style.setProperty("--k-nbar-phase", `-${Date.now() % NEXT_BAR_MS}ms`);
+  }
+  bar.appendChild(fill);
+  return bar;
+}
+
 /** The driver's next action, as the kiosk says it. */
 export function nextWords(demo, now = new Date()) {
   if (!demo.next) return { action: "reset and start the next cycle", when: "the driver stalled; it resets and starts the next cycle", secs: null };
@@ -737,7 +795,9 @@ function drawBar(bar, s, now) {
   const nx = nextWords(demo, now);
   const next = el("p", "k-next");
   next.append(elRoots("span", "k-action", nx.action, s), " ", el("span", "k-when", nx.when), " ", el("span", "k-next-by", "by the driver"));
-  left.appendChild(leadRow("next", "k-row-next", "Next", next));
+  const nextRow = leadRow("next", "k-row-next", "Next", next);
+  nextRow.appendChild(nextBar(demo, now, s));
+  left.appendChild(nextRow);
 
   // The rest of the card, quieter: each field on its own row (watch for, then what the scenario shows).
   const more = demo.step === "reset" && intro ? [] : rows.filter((r) => r !== changes);
@@ -875,6 +935,7 @@ function drawCaption(host, s, now) {
     const nx = el("p", "k-cap-next");
     nx.append("next, by the driver: ", elRoots("span", "k-action", cap.next.action, s), " ", el("span", "k-when", cap.next.when));
     if (nx.setAttribute) nx.setAttribute("title", `next, by the driver: ${cap.next.action}`);
+    nx.appendChild(nextBar(demo, now, s));
     top.appendChild(nx);
   }
   host.appendChild(top);
@@ -1308,6 +1369,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   const setDemo = (answer) => {
     s.demo = answer;
     const d = answer && answer.demo;
+    // behold#571: when this page first saw the driver's deadline, for the next bar when demo.json has no next.from.
+    s.nextSeen = nextSeen(s.nextSeen, d ? d.next || null : undefined, s.mode, shownNow().getTime());
     if (d && d.scenario && typeof d.title === "string" && d.title) titles[d.scenario] = d.title;
     if (d && d.scenario && scenarioName(d)) names[d.scenario] = scenarioName(d);
     const key = d ? `${s.mode}|${d.cycle}|${d.step}|${d.commit}|${d.pull}` : "";
