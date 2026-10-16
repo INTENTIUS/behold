@@ -417,9 +417,9 @@ export function statusIcon(status) {
 export function renderSidebar(host, index, selectedId, { now = new Date(), scenarios = {}, titles = {}, names = {}, pick = () => {}, merged = null, replay = false } = {}) {
   host.replaceChildren();
   const head = el("div", "r-side-head");
-  head.appendChild(el("div", "r-side-title", "Pipeline runs"));
+  head.appendChild(el("div", "r-side-title", "Runs"));
   // behold#571: a tool's page replays an earlier cycle's runs, and says so.
-  head.appendChild(el("div", "r-side-note", replay ? "Real CI runs of the replayed cycle, as they stood at this point in it. Newest first." : "Real CI runs of the demo repo, copied from its forge as they go. Newest first."));
+  head.appendChild(el("div", "r-side-note", replay ? "The replayed cycle's runs, newest first." : "From the forge, newest first."));
   host.appendChild(head);
   if (!index || index.error || index.absent || !index.doc) {
     host.appendChild(el("p", "r-note", index ? index.absent || index.error : "Reading the runs…"));
@@ -537,7 +537,7 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
   const ordered = jobOrder(run.jobs);
   const { shown, skipped } = splitSkipped(ordered);
   const job = (ui.job && run.jobs.find((j) => j.name === ui.job)) || defaultJob(shown.length ? shown : run.jobs);
-  host.appendChild(el("div", "r-label", "Jobs, in the order they run"));
+  host.appendChild(el("div", "r-label", "Jobs"));
   const jobsBox = el("ol", "r-jobs");
   for (const j of shown) {
     const li = el("li", `r-job${job && j.name === job.name ? " r-selected" : ""}`);
@@ -581,7 +581,7 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
   const feats = runFeatures(shown, { hide: hideLine });
   if (feats.length) {
     const box = el("div", `r-feats${featsOpen ? " r-feats-open" : ""}`);
-    box.appendChild(el("div", "r-label r-feats-label", "Features in this run"));
+    box.appendChild(el("div", "r-label r-feats-label", "Features"));
     const list = el("div", "r-feats-list");
     for (const g of feats) {
       list.appendChild(el("span", `r-feats-product r-ann-${g.product}`, g.product));
@@ -605,7 +605,7 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
   // behold#571: a job with a trace in Tempo offers it beside its steps (web/kiosk-trace.js).
   if (trace && trace.has(job.name)) {
     const tabs = el("div", "t-tabs");
-    for (const [view, words] of [["steps", "Steps of the job, with its log"], ["trace", "Trace"]]) {
+    for (const [view, words] of [["steps", "Steps"], ["trace", "Trace"]]) {
       const b = el("button", "t-tab", words);
       b.type = "button";
       b.setAttribute("aria-pressed", String((jobView === "trace") === (view === "trace")));
@@ -619,7 +619,7 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
       host.appendChild(box);
       return { log: null, steps: box, key: null };
     }
-  } else host.appendChild(el("div", "r-label", "Steps of the job, with its log"));
+  } else host.appendChild(el("div", "r-label", "Steps"));
   const stepsBox = el("div", "r-steps");
   const sh = el("div", "r-steps-head");
   sh.append(statusIcon(job.status), el("span", "r-steps-job", job.name), el("span", "r-steps-word", job.status === "waiting" ? "waits for an approval at the gate" : STATUS_WORDS[job.status] || job.status));

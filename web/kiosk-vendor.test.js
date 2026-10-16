@@ -240,7 +240,7 @@ describe("a tool's page, drawn (behold#571)", () => {
       renderKiosk(bar, s, new Date("2026-10-20T10:01:00Z"), foot);
       expect(bar.children[0].className).toBe("k-replay");
       // behold#571: the tool and the kicker on the quiet line over the title, the scenario's progress at its end.
-      const over = all(bar).find((n) => n.className === "k-over");
+      const over = all(bar).find((n) => n.className === "k-overline");
       expect(over.children.map((c) => c.className)).toEqual(["k-brand", "k-kicker", "k-strip"]);
       expect(all(bar).find((n) => n.className === "k-title").children.map((c) => c.className)).toEqual(["k-title-text"]);
       const brand = over.children[0];

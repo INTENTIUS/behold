@@ -194,12 +194,13 @@
       .k-failed { color: var(--bg); background: var(--degraded); border-color: var(--degraded); font-weight: 600; }
       .k-when { color: var(--foreign); font-family: var(--font-mono); }
       .k-box-title { overflow: hidden; padding: 0; }
-      .k-over { display: flex; align-items: center; gap: 0.3em 0.9em; min-width: 0; height: 1.4em; overflow: hidden; }
-      .k-over .k-brand { margin: 0; font-size: 0.9em; }
-      .k-kicker { font: 600 0.68em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); white-space: nowrap; }
-      .k-over .k-strip { margin-left: auto; }
+      .k-overline { display: flex; align-items: center; gap: 0.3em 0.9em; min-width: 0; height: 1.4em; overflow: hidden; }
+      .k-overline .k-brand { margin: 0; font-size: 0.9em; }
+      .k-kicker { font: 600 0.5em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-right: 0.9em; vertical-align: 0.3em; white-space: nowrap; }
+      .k-overline .k-kicker { font-size: 0.68em; margin: 0; vertical-align: 0; }
+      .k-overline .k-strip { margin-left: auto; }
       .k-strip { list-style: none; display: flex; flex-wrap: nowrap; gap: 0.3em; padding: 0; margin: 0; }
-      .k-stop { font-size: 0.7em; }
+      .k-overline .k-stop { font-size: 0.7em; }
       .k-title { margin: 0; font-size: 1.45em; line-height: 1.15; text-wrap: balance; overflow: hidden; }
       .k-row { display: grid; grid-template-columns: var(--k-label-w) minmax(0, 1fr); column-gap: 0.8em; min-height: 0; padding-left: 0.75em; box-shadow: inset 3px 0 0 var(--bar, var(--bar-neutral)); }
       .k-row-empty { box-shadow: none; }
@@ -328,8 +329,8 @@
         .k-box { height: auto; max-height: none; overflow: visible; -webkit-mask-image: none !important; mask-image: none !important; }
         .k-box-empty { display: none; }
         .k-title { font-size: 1.4em; }
-        .k-over { flex-wrap: wrap; height: auto; overflow: visible; }
-        .k-over .k-strip { margin-left: 0; flex: 1 1 100%; }
+        .k-overline { flex-wrap: wrap; height: auto; overflow: visible; }
+        .k-overline .k-strip { margin-left: 0; flex: 1 1 100%; }
         .k-row { grid-template-columns: minmax(0, 1fr); row-gap: 0.1em; padding: 0.1em 0 0.1em 0.75em; }
         .k-row-empty { display: none; }
         .k-row-label { padding-top: 0; }
@@ -360,11 +361,142 @@
         .r-log-line { grid-template-columns: 2.4em 1fr; gap: 0.5em; }
         .r-ann-note { grid-column: 1 / -1; }
       }
+
+      /*
+       * behold#571: Watch, the default. The Components graph fills the stage,
+       * and the rest rides on it: the caption along the bottom, the approval
+       * a callout on the held wave's box, the running job's log a drawer from
+       * the active wave's box, each wave's numbers a badge on its box, the
+       * result a card at the end. The header is one quiet line. Inspect is
+       * the layout above, one click away.
+       */
+      .k-modes { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; overflow: hidden; }
+      .k-mode { font: 600 0.95em var(--font-ui); color: var(--muted); background: transparent; border: 0; padding: 0.25em 0.9em; cursor: pointer; }
+      .k-mode + .k-mode { border-left: 1px solid var(--rule); }
+      .k-mode:hover { color: var(--fg); }
+      .k-mode-on, .k-mode-on:hover { color: var(--bg); background: var(--pending); }
+      #k-watch { display: none; }
+      body.k-watch #k-watch { display: block; position: absolute; inset: 0; pointer-events: none; z-index: 6; }
+      body.k-watch #k-watch > * { pointer-events: auto; }
+      body.k-watch { grid-template-columns: minmax(0, 1fr); }
+      body.k-watch #stage { display: block; position: relative; padding: 0 5px 5px; }
+      body.k-watch #runs-side, body.k-watch #k-metrics, body.k-watch #k-runs-toggle, body.k-watch #views, body.k-watch #k-read { display: none !important; }
+      body.k-watch #view-pane { position: absolute; inset: 0 5px 5px; border-radius: 8px; overflow: hidden; background: var(--bg); }
+      body.k-watch #view { height: 100%; }
+      /* The header, one line: the scenario's place, the steps, the delivery numbers. */
+      body.k-watch #bar { display: flex; align-items: center; gap: 0.5em 1.2em; min-height: 2.6em; padding: 0.35em 1em; padding-right: 24em; }
+      .k-w-place { display: flex; align-items: baseline; gap: 0.7em; flex: none; white-space: nowrap; }
+      body.k-watch #bar .k-strip { flex: none; }
+      .k-w-place .k-brand { margin: 0; }
+      .k-w-kicker { font: 600 0.78em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+      .k-w-dora { margin-left: auto; color: var(--muted); font-size: 0.88em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+      .k-w-dora b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+      .k-w-held { color: var(--foreign); font-size: 0.85em; white-space: nowrap; }
+      .k-w-held button { font: inherit; color: var(--pending); background: transparent; border: 0; padding: 0 0 0 0.4em; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+      /* The caption: the title, what changes, the step. One of the two beats leads. */
+      #k-caption { position: absolute; left: 5px; right: 5px; bottom: 5px; display: grid; grid-template-rows: auto calc(2 * 1.25em * 1.3) calc(2 * 1.25em * 1.3); gap: 0.25em; padding: 0.7em 1.4em 0.8em;
+        background: var(--surface-pane-b); border-top: 1px solid var(--rule); border-radius: 0 0 8px 8px; box-shadow: 0 -10px 30px color-mix(in srgb, var(--bg) 70%, transparent); }
+      .k-cap-top { display: flex; align-items: baseline; gap: 0.8em; min-width: 0; }
+      .k-cap-title { margin: 0; font-size: 1.55em; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+      .k-cap-title .k-brand { vertical-align: 0; }
+      .k-cap-next { margin-left: auto; color: var(--muted); font-size: 0.92em; white-space: nowrap; flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; }
+      .k-cap-next .k-action { font-family: var(--font-mono); color: var(--fg); }
+      /* behold#571: the caption's beats are the lead block's rows: the label in a fixed column, the words beside it (two lines, at most 72ch), a rail down the left; only the step's rail takes its state's colour (theme.js barInks). */
+      .k-cap-row { margin: 0; display: grid; grid-template-columns: var(--k-label-w) minmax(0, 1fr); column-gap: 0.8em; align-items: start; align-self: stretch; padding-left: 0.75em; line-height: 1.25; font-size: 1em; color: color-mix(in srgb, var(--fg) 78%, var(--muted)); box-shadow: inset 3px 0 0 var(--bar, var(--bar-neutral)); }
+      .k-cap-row:empty { box-shadow: none; }
+      .k-cap-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; max-width: 72ch; text-wrap: pretty; }
+      .k-cap-label { font: 600 0.66rem/1.3 var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding-top: 0.35em; }
+      .k-cap-step { --bar: var(--bar-pending); box-shadow: inset 5px 0 0 var(--bar); }
+      .k-cap-step .k-cap-label { color: var(--bar); }
+      .k-cap-step.k-tone-wait { --bar: var(--bar-foreign); }
+      .k-cap-step.k-tone-bad { --bar: var(--bar-degraded); }
+      .k-cap-step.k-tone-ok { --bar: var(--bar-managed); }
+      .k-cap-step.k-tone-idle { --bar: var(--bar-neutral); }
+      /* The beat that leads is larger and full ink; the other steps back. Both keep their rows, so nothing moves. */
+      .k-cap-lead { font-size: 1.3em; color: var(--fg); font-weight: 600; }
+      .k-cap-lead .k-cap-label { padding-top: 0.6em; }
+      /* The approval, on the held wave's box. */
+      .k-over { position: absolute; left: 0; top: 0; visibility: hidden; }
+      .k-over.k-placed { visibility: visible; }
+      @media (prefers-reduced-motion: no-preference) { .k-over.k-placed { transition: opacity 0.4s; } }
+      #k-callout { width: min(30em, 40vw); padding: 0.8em 1em 0.9em; background: color-mix(in srgb, var(--foreign) 6%, var(--surface-box)); border: 2px solid var(--bar-foreign); border-radius: 10px;
+        box-shadow: 0 10px 34px color-mix(in srgb, var(--shadow) 75%, transparent), 0 0 0 6px color-mix(in srgb, var(--foreign) 12%, transparent); }
+      .k-call-word { margin: 0; font: 700 0.72em var(--font-mono); text-transform: uppercase; letter-spacing: 0.07em; color: var(--foreign); }
+      .k-call-head { margin: 0.15em 0 0.1em; font: 700 1.15em var(--font-mono); color: var(--fg); }
+      .k-call-nums { margin: 0 0 0.45em; color: var(--muted); font-size: 0.88em; }
+      #k-callout .k-ap-row { font-size: 0.92em; }
+      #k-callout .k-approve-gloss { font-size: 1em; }
+      .k-notch { position: absolute; width: 14px; height: 14px; background: inherit; border: inherit; transform: rotate(45deg); top: 1.4em; }
+      .k-side-right > .k-notch { left: -9px; border-top: 0; border-right: 0; }
+      .k-side-left > .k-notch { right: -9px; border-bottom: 0; border-left: 0; }
+      .k-side-below > .k-notch { display: none; }
+      /* The running job's log, a drawer from the active wave's box: folded to its last lines, open on a hover or a click. */
+      #k-drawer { width: min(34em, 46vw); background: var(--surface-pane-a); border: 2px solid color-mix(in srgb, var(--pending) 80%, var(--fg)); border-radius: 10px; box-shadow: 0 10px 34px color-mix(in srgb, var(--shadow) 75%, transparent); display: flex; flex-direction: column; }
+      .k-drawer-head { display: flex; align-items: center; gap: 0.55em; width: 100%; padding: 0.55em 0.9em 0.35em; background: transparent; border: 0; color: var(--fg); cursor: pointer; text-align: left; font: inherit; }
+      .k-drawer-head .r-icon { margin: 0; }
+      .k-drawer-job { font: 700 1em var(--font-mono); }
+      .k-drawer-nums { color: var(--muted); font-size: 0.85em; }
+      .k-drawer-more { margin-left: auto; color: var(--pending); font-size: 0.82em; white-space: nowrap; }
+      .k-drawer-tail { margin: 0 0.7em 0.7em; padding: 0.45em 0.7em; background: var(--well); border-radius: 6px; font: 0.86em/1.45 var(--font-mono); min-height: calc(2 * 1.45em + 0.9em); }
+      .k-drawer-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .k-drawer-line:last-child { color: var(--fg); }
+      .k-drawer-line.k-drawer-quiet { color: var(--muted); font-family: var(--font-ui); }
+      .k-drawer-line:not(:last-child) { color: var(--muted); }
+      .k-drawer-body { display: none; min-height: 0; }
+      #k-drawer.k-open .k-drawer-tail { display: none; }
+      #k-drawer.k-open .k-drawer-body { display: flex; flex-direction: column; height: min(62vh, 40em); border-top: 1px solid var(--rule); overflow: hidden; border-radius: 0 0 10px 10px; }
+      #k-drawer.k-open .k-drawer-body #runs-main { flex: 1; border-radius: 0; }
+      /* behold#571: where the job's trace waterfall mounts (OpenTelemetry traces), once that pane is built. Empty, it takes no room. */
+      #k-traces:empty { display: none; }
+      #k-traces { border-top: 1px solid var(--rule); max-height: 30vh; overflow: auto; }
+      #k-drawer:not(.k-open) #k-traces { display: none; }
+      #k-drawer.k-open:has(#k-traces:not(:empty)) .k-drawer-body { height: min(40vh, 26em); border-radius: 0; }
+      #k-drawer.k-open #k-traces { border-radius: 0 0 10px 10px; padding-bottom: 0.4em; }
+      /* Each wave's numbers, on its box. */
+      .k-badge { position: absolute; left: 0; top: 0; padding: 0.15em 0.65em; border-radius: 999px; background: var(--surface-box); border: 1px solid var(--rule); color: var(--fg); font-size: 0.86em; font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none; visibility: hidden; }
+      .k-badge.k-placed { visibility: visible; }
+      /* The result, at the end of the run. */
+      #k-result { width: min(30em, 36vw); padding: 0.9em 1.2em 1em; background: color-mix(in srgb, var(--managed) 8%, var(--surface-box)); border: 2px solid var(--bar-managed); border-radius: 12px;
+        box-shadow: 0 10px 34px color-mix(in srgb, var(--shadow) 75%, transparent), 0 0 0 6px color-mix(in srgb, var(--managed) 12%, transparent); }
+      #k-result[hidden], #k-callout[hidden], #k-drawer[hidden] { display: none; }
+      .k-result-head { margin: 0 0 0.2em; font: 700 1.5em var(--font-ui); color: var(--managed); }
+      .k-result-line { margin: 0 0 0.6em; font-size: 1.12em; line-height: 1.35; color: var(--fg); }
+      .k-result-counts { list-style: none; margin: 0 0 0.6em; padding: 0; display: flex; flex-wrap: wrap; gap: 0.35em 0.5em; }
+      .k-result-counts li { padding: 0.15em 0.65em; border-radius: 999px; background: var(--surface-box); border: 1px solid var(--rule); font-size: 0.95em; font-variant-numeric: tabular-nums; }
+      .k-result-counts li:first-child { border-color: var(--managed); font-weight: 600; }
+      .k-result-waves { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.2em 0.9em; margin: 0; padding-top: 0.5em; border-top: 1px solid var(--rule); }
+      .k-result-waves dt { font: 600 0.9em var(--font-mono); color: var(--muted); }
+      .k-result-waves dd { margin: 0; font-variant-numeric: tabular-nums; }
+      @media (max-width: 900px) and (min-width: 601px) { body.k-watch #bar { padding-right: 1em; flex-wrap: wrap; } body.k-watch #k-head { display: flex; flex-direction: column-reverse; } body.k-watch #k-tools { position: static; justify-content: flex-end; padding: 0.4em 1em 0; } }
+      .k-w-dora-foot { display: none; }
+      /* A phone: a short header, the graph, then the step and the approval under it; the rest stacks below, in the page's flow. */
+      @media (max-width: 600px) {
+        body.k-watch #bar { display: flex; flex-wrap: wrap; gap: 0.2em 0.8em; padding: 0.3em 16px 0.4em; min-height: 0; }
+        body.k-watch #bar .k-strip, body.k-watch #bar .k-w-dora { display: none; }
+        body.k-watch #stage { display: flex; flex-direction: column; padding: 0; }
+        body.k-watch #view-pane { position: relative; inset: auto; order: 1; height: 40vh; border-radius: 0; }
+        body.k-watch #k-watch { position: static; display: flex; flex-direction: column; order: 2; pointer-events: auto; gap: 0.6em; padding: 0 0 1.2em; }
+        body.k-watch #k-caption { position: static; order: 1; display: flex; flex-direction: column; gap: 0.35em; border-radius: 0; box-shadow: none; padding: 0.6em 16px 0.7em; }
+        .k-cap-top { order: 1; flex-wrap: wrap; }
+        .k-cap-step { order: 2; } .k-cap-changes { order: 3; }
+        .k-cap-title { white-space: normal; font-size: 1.12em; }
+        .k-cap-title .k-kicker { display: block; margin-bottom: 0.1em; }
+        .k-cap-next { display: none; }
+        .k-cap-row { grid-template-columns: minmax(0, 1fr); row-gap: 0.1em; } .k-cap-text { -webkit-line-clamp: unset; display: block; } .k-cap-label { padding-top: 0; }
+        .k-cap-lead { font-size: 1.12em; }
+        .k-over, #k-result { position: static; visibility: visible; width: auto; margin: 0 16px; max-height: none; transform: none !important; }
+        #k-callout, #k-drawer, #k-result { width: auto; }
+        #k-callout { order: 2; padding: 0.6em 0.8em; } #k-drawer { order: 3; } #k-result { order: 4; }
+        #k-callout .k-ap-row { grid-template-columns: 1em 5.4em minmax(0, 1fr); }
+        .k-notch, .k-badge { display: none; }
+        .k-w-dora-foot { display: block; order: 5; margin: 0 16px; color: var(--muted); font-size: 0.9em; }
+      }
     </style>
   </head>
   <body>
     <div id="k-head">
       <div id="k-tools">
+        <div id="k-mode" class="k-modes" role="group" aria-label="Layout"></div>
         <button type="button" class="k-what" aria-expanded="false" aria-controls="k-what-pop">What is this?</button>
         <details class="k-menu"><summary>Theme</summary><div class="k-menu-body" id="k-theme"></div></details>
         <div id="k-what-pop" role="dialog" aria-label="What is this?" hidden></div>
@@ -381,6 +513,20 @@
         <section id="k-read" aria-label="How to read this" hidden></section>
         <iframe id="view" title="behold's view of the change"></iframe>
       </section>
+      <!-- behold#571: Watch mode's overlays, over the graph; web/kiosk-watch.js says what each holds and where it goes. -->
+      <div id="k-watch">
+        <div id="k-badges" aria-hidden="true"></div>
+        <aside id="k-callout" class="k-over" aria-label="The approval" hidden></aside>
+        <section id="k-drawer" class="k-over" aria-label="The running job's log" hidden>
+          <button type="button" class="k-drawer-head" aria-expanded="false"></button>
+          <div class="k-drawer-tail"></div>
+          <div class="k-drawer-body"></div>
+          <!-- behold#571: the mount point for the job's trace waterfall (OpenTelemetry traces); empty until that pane mounts here. -->
+          <div id="k-traces" data-k-mount="traces"></div>
+        </section>
+        <aside id="k-result" class="k-over" aria-label="The result" hidden></aside>
+        <footer id="k-caption" aria-live="polite"></footer>
+      </div>
     </div>
     <script type="module">
       import { initTheme, KIOSK_THEME } from "/theme.js";
@@ -388,15 +534,16 @@
       import { pageTool } from "/kiosk-vendor.js";
       initTheme(KIOSK_THEME);
       // behold#571: /<tool> serves this page with its tool in a meta tag; /kiosk has none.
-      startKiosk(
+      const kiosk = startKiosk(
         {
           bar: document.getElementById("bar"), frame: document.getElementById("view"), read: document.getElementById("k-read"), side: document.getElementById("runs-side"), main: document.getElementById("runs-main"), views: document.getElementById("views"),
-          tools: { what: document.querySelector(".k-what"), pop: document.getElementById("k-what-pop"), theme: document.getElementById("k-theme"), runsToggle: document.getElementById("k-runs-toggle") },
+          tools: { what: document.querySelector(".k-what"), pop: document.getElementById("k-what-pop"), theme: document.getElementById("k-theme"), runsToggle: document.getElementById("k-runs-toggle"), mode: document.getElementById("k-mode") },
+          watch: { layer: document.getElementById("k-watch"), caption: document.getElementById("k-caption"), callout: document.getElementById("k-callout"), drawer: document.getElementById("k-drawer"), badges: document.getElementById("k-badges"), result: document.getElementById("k-result") },
         },
         { tool: pageTool(document) },
       );
-      // behold#571: the repo's numbers from Prometheus, a pane of its own (web/kiosk-metrics.js).
-      import("/kiosk-metrics.js").then((m) => m.startMetrics(document.getElementById("k-metrics"), { tool: pageTool(document) }));
+      // behold#571: the repo's numbers from Prometheus, a pane of its own in Inspect (web/kiosk-metrics.js), and Watch's badges and delivery line.
+      import("/kiosk-metrics.js").then((m) => m.startMetrics(document.getElementById("k-metrics"), { tool: pageTool(document), onModel: (model) => kiosk.setMetrics(model) }));
     </script>
   </body>
 </html>

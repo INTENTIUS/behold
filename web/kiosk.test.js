@@ -155,7 +155,7 @@ describe("the scenario's card under the title (behold#571)", () => {
       expect(left.children.map((c) => c.className)).toEqual([
         "k-box k-box-title", "k-row k-row-beat", "k-row k-row-step k-step-failed", "k-row k-row-next", "k-row k-row-more", "k-row k-row-more", "k-row k-row-facts k-row-empty",
       ]);
-      expect(left.children.map((c) => c.children.map((x) => x.className.split(" ")[0]))).toEqual([["k-over", "k-title"], ["k-row-label", "k-box"], ["k-row-label", "k-box"], ["k-row-label", "k-box"], ["k-row-label", "k-box"], ["k-row-label", "k-box"], []]);
+      expect(left.children.map((c) => c.children.map((x) => x.className.split(" ")[0]))).toEqual([["k-overline", "k-title"], ["k-row-label", "k-box"], ["k-row-label", "k-box"], ["k-row-label", "k-box"], ["k-row-label", "k-box"], ["k-row-label", "k-box"], []]);
       // Each row: its label in the fixed column, its words in the box beside it.
       const rowsOf = (cls) => find(bar, cls).map((r) => [r.children[0].textContent, r.children[1].children[0].className, r.children[1].children[0].textContent]);
       expect(rowsOf("k-row-beat")).toEqual([[BEAT_CHANGES, "k-beat", about.changes]]);
@@ -163,7 +163,7 @@ describe("the scenario's card under the title (behold#571)", () => {
       expect(rowsOf("k-row-more")).toEqual([["Watch for", "k-about", about.watch], ["Shows", "k-about", about.shows]]);
       expect(find(bar, "k-row-next")[0].children[0].textContent).toBe("Next");
       // The scenario's progress sits on the quiet line over the title, at its end.
-      const over = find(bar, "k-over")[0];
+      const over = find(bar, "k-overline")[0];
       expect(over.children.map((c) => c.className)).toEqual(["k-kicker", "k-strip"]);
       expect(find(bar, "k-stop").map((c) => c.textContent)).toEqual(["pull request", "planned", "merged", "waves", "applied", "reset"]);
 
@@ -228,7 +228,7 @@ describe("the approval panel's drawing (behold#571)", () => {
       };
       const panel = approvalPanel(model, { showLine: (l) => shown.push(l) });
       // behold#571: the wave, the run and the plan head the hold panel; the panel's own head says what its rows are.
-      expect(find(panel, "k-ap-head")[0].textContent).toBe("How this hold ends · times in UTC");
+      expect(find(panel, "k-ap-head")[0].textContent).toBe("Approval · times in UTC");
       expect(holdHead({ wave: model.wave, run: 3605, digest: model.digest })).toBe("Wave 2 · run #3605 · plan 0accc105");
       expect(find(panel, "k-ap-row").map((r) => r.className)).toEqual(["k-ap-row k-ap-lit", "k-ap-row k-ap-dim", "k-ap-row k-ap-dim", "k-ap-row k-ap-dim"]);
       expect(find(panel, "k-ap-facts")[0].textContent).toBe("04:09:41 · ledger 57869649");

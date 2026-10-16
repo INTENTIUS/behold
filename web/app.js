@@ -111,6 +111,7 @@ import { danglingFor, danglingRows, danglingHeading, DANGLING_EXPLAINED } from "
 import { comparisonRow, comparisonSummary } from "./cross-env.js";
 // The marker-vs-derived mark on a choudoufu card: how its identity was found.
 import { identityMark, tagGlyphSvg } from "./identity-mark.js";
+import { shotFromMessage, shotViewBox, tweenViewBox, unionBox, sameViewBox } from "./kiosk-shot.js"; // behold#571: Watch's camera
 initTheme();
 // #476: framed in a host pane. The flag is a class on <html>, so the CSS that
 // folds the chrome away needs no JS, and the theme is the host's for this
@@ -3551,6 +3552,8 @@ const TG_TONE = { plan: "var(--frame-pending, var(--pending))", wait: "var(--fra
 const TG_CARD_TONE = Object.fromEntries(Object.entries(TG_TONE).map(([k, v]) => [k, v.replace("--frame-", "--frame-card-")]));
 function drawTgReads() {
   if (embedOpts.bare) queueMicrotask(kioskDecorate); // behold#571: once this draw is done
+  if (embedOpts.bare) queueMicrotask(() => (kioskShot ? applyKioskShot(false) : kioskTellBoxes())); // behold#571: the marks moved the boxes
+  if (embedOpts.bare) queueMicrotask(kioskTellDrawn); // behold#571: the kiosk swaps a reloaded frame in once it has drawn
   watchTgRuns();
   watchChantPr(); // behold#631 // #571: the wave boxes' jobs, while the components zoom is on screen
   const svg = document.querySelector("#graph svg");
@@ -3797,6 +3800,8 @@ function drawTgReads() {
     .map(boxOf)
     .filter(Boolean)
     .map((b) => grow(b, 3));
+  // behold#571: a box's title grows as the view zooms out (scaleBoxLabels), so it is kept clear at the largest it gets.
+  textBoxes.push(...boxTitlesAtMost(svg, boxOf).map((b) => grow(b, 3)));
   const cardEls = [...svg.querySelectorAll("[data-node-id]")];
   const cardBoxOf = new Map(cardEls.map((g) => [g, boxOf(g)]));
   // #571: how many of the components graph's own edge points a segment runs over, so a read never hides a dependency line.
@@ -3851,9 +3856,12 @@ function drawTgReads() {
         if (crosses({ x: a.x + ux * 4, y: a.y + uy * 4 }, { x: a.x + ux * 4, y: a.y + uy * 4 }, fromBox)) continue;
         if (crosses({ x: z.x - ux * 4, y: z.y - uy * 4 }, { x: z.x - ux * 4, y: z.y - uy * 4 }, toBox)) continue;
         const texts = textBoxes.filter((t) => crosses(a, z, t)).length;
+        // behold#571: the arrowhead, not only the line, ends clear of every title and mark: a head over text costs most of all.
+        const head = arrowheadBox(p0, p1);
+        const heads = textBoxes.filter((t) => head.x < t.x2 && head.x2 > t.x && head.y < t.y2 && head.y2 > t.y).length;
         const cards = others.filter((c) => crosses(a, z, c)).length;
         const lines = drawn.filter((d) => crosses(a, z, grow({ x: Math.min(d.p0.x, d.p1.x), y: Math.min(d.p0.y, d.p1.y), x2: Math.max(d.p0.x, d.p1.x), y2: Math.max(d.p0.y, d.p1.y) }, 0)) && Math.hypot(d.p1.x - p1.x, d.p1.y - p1.y) < 30).length;
-        const score = texts * 10000 + cards * 2000 + lines * 500 + nearEdge(a, z) * 400 + len;
+        const score = heads * 30000 + texts * 10000 + cards * 2000 + lines * 500 + nearEdge(a, z) * 400 + len;
         if (!best || score < best.score) best = { p0, p1, score };
       }
     }
@@ -4392,6 +4400,198 @@ function kioskPopRender() {
   pop.style.top = `${Math.round(at.top)}px`;
 }
 /** Wire the frame's pointer once: the popover, and the hover links to the kiosk. Bare frames only. */
+// --- behold#571: the kiosk's Watch mode -------------------------------------
+// The kiosk sends a `behold:shot` (web/kiosk-shot.js) with each step: the
+// roots or waves the step is about, or the whole graph, and how much of the
+// pane its caption and callouts cover. The frame pans and zooms there, calm
+// and short, and holds the shot through re-renders and resizes. It tells the
+// kiosk where each wave box sits after every move (`behold:boxes`), so the
+// callouts, the log drawer and the badges ride the boxes they describe. A
+// viewer's own pan or zoom drops the shot and says so (`behold:viewer`).
+var kioskShot = null; // var: read by the viewBox code, which may run before this line is reached
+var shotAnim = null;
+var boxesQueued = false;
+const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/** An element's box in the svg's user units, whatever transform sits over it. */
+function userBoxOf(svg, el) {
+  let b;
+  try {
+    b = el.getBBox();
+  } catch {
+    return null;
+  }
+  const ctm = el.getCTM && el.getCTM();
+  const root = svg.getCTM && svg.getCTM();
+  if (!ctm || !root || !(b.width > 0 || b.height > 0)) return null;
+  const m = root.inverse().multiply(ctm);
+  const pts = [[b.x, b.y], [b.x + b.width, b.y + b.height]].map(([x, y]) => new DOMPoint(x, y).matrixTransform(m));
+  return { x: Math.min(pts[0].x, pts[1].x), y: Math.min(pts[0].y, pts[1].y), x2: Math.max(pts[0].x, pts[1].x), y2: Math.max(pts[0].y, pts[1].y) };
+}
+
+/** What a shot frames, in svg units: its roots' cards and the reads between them, its waves' boxes, else the whole graph. */
+function kioskShotTarget(svg, shot) {
+  if (!vbInit) return null;
+  const boxes = [];
+  if (shot.whole) {
+    // The whole graph is what is drawn: the boxes, the cards and the reads, not pinhole's margins round them.
+    for (const n of svg.querySelectorAll("rect[data-group-id], [data-node-id], [data-tg-reads] > g, line[data-tg-read-from], text[data-tg-reads='caption']")) boxes.push(userBoxOf(svg, n));
+    return unionBox(boxes) || { x: vbInit[0], y: vbInit[1], x2: vbInit[0] + vbInit[2], y2: vbInit[1] + vbInit[3] };
+  }
+  const named = (tgComponentFacets && tgComponentFacets.roots) || {};
+  const roots = new Set(shot.roots);
+  for (const g of svg.querySelectorAll("[data-node-id]")) {
+    const id = g.getAttribute("data-node-id");
+    if (roots.has(id) || roots.has(named[id])) boxes.push(userBoxOf(svg, g));
+  }
+  // Each card's wave box with it, so a shot never cuts a box's title off.
+  const cards = boxes.filter(Boolean);
+  for (const r of svg.querySelectorAll("rect[data-group-id]")) {
+    const b = userBoxOf(svg, r);
+    if (b && cards.some((c) => (c.x + c.x2) / 2 > b.x && (c.x + c.x2) / 2 < b.x2 && (c.y + c.y2) / 2 > b.y && (c.y + c.y2) / 2 < b.y2)) boxes.push(b);
+  }
+  for (const l of svg.querySelectorAll("line[data-tg-read-from]")) {
+    if (roots.has(l.getAttribute("data-tg-read-from")) && roots.has(l.getAttribute("data-tg-read-to"))) boxes.push(userBoxOf(svg, l));
+  }
+  for (const n of shot.waves) {
+    const r = svg.querySelector(`rect[data-group-id="wave-${n}"]`);
+    if (r) boxes.push(userBoxOf(svg, r));
+  }
+  const u = unionBox(boxes);
+  return u || { x: vbInit[0], y: vbInit[1], x2: vbInit[0] + vbInit[2], y2: vbInit[1] + vbInit[3] };
+}
+
+/** The viewBox of the kiosk's shot, at the pane's size now; the insets are the frame's window's, so the pane's own offset comes off them. */
+function kioskShotBox() {
+  const svg = currentSvg();
+  const host = document.getElementById("graph");
+  if (!svg || !host || !kioskShot) return null;
+  const pane = host.getBoundingClientRect();
+  const i = kioskShot.insets;
+  const insets = {
+    top: Math.max(0, i.top - pane.top),
+    left: Math.max(0, i.left - pane.left),
+    bottom: Math.max(0, i.bottom - (window.innerHeight - pane.bottom)),
+    right: Math.max(0, i.right - (window.innerWidth - pane.right)),
+  };
+  return shotViewBox(kioskShotTarget(svg, kioskShot), pane, insets);
+}
+
+/** Move to the shot: a pan and zoom over its time, or at once (a re-render, a resize, reduced motion). */
+function applyKioskShot(animate) {
+  const to = kioskShotBox();
+  if (!to || !vb) return kioskTellBoxes();
+  if (shotAnim && !animate) {
+    shotAnim.to = to; // a move under way lands on the shot as it is now
+    return;
+  }
+  if (sameViewBox(vb, to)) return kioskTellBoxes();
+  vbAtFit = false;
+  const ms = kioskShot.ms;
+  if (!animate || reducedMotion() || !(ms > 0)) {
+    if (shotAnim) cancelAnimationFrame(shotAnim.raf);
+    shotAnim = null;
+    vb = to;
+    applyVB();
+    return;
+  }
+  if (shotAnim) cancelAnimationFrame(shotAnim.raf);
+  const from = vb.slice();
+  const start = performance.now();
+  shotAnim = { to, raf: 0 };
+  const step = (t) => {
+    if (!shotAnim) return;
+    const f = Math.min(1, (t - start) / ms);
+    vb = tweenViewBox(from, shotAnim.to, f);
+    applyVB();
+    if (f < 1) shotAnim.raf = requestAnimationFrame(step);
+    else shotAnim = null;
+  };
+  shotAnim.raf = requestAnimationFrame(step);
+}
+
+/** A viewer moved the graph: the shot goes, and the kiosk holds the view. */
+var viewerToldAt = 0;
+function kioskViewerMoved() {
+  if (!embedOpts.bare) return;
+  if (shotAnim) cancelAnimationFrame(shotAnim.raf);
+  shotAnim = null;
+  kioskShot = null;
+  const t = Date.now();
+  if (t - viewerToldAt < 400 || !embedOpts.host || window.parent === window) return;
+  viewerToldAt = t;
+  try {
+    window.parent.postMessage({ type: "behold:viewer" }, embedOpts.host);
+  } catch {
+    /* the parent went away */
+  }
+}
+
+/** Tell the kiosk where each wave box sits in the frame's window, once a frame. */
+function kioskTellBoxes() {
+  if (!embedOpts.bare || !embedOpts.host || window.parent === window || boxesQueued) return;
+  boxesQueued = true;
+  requestAnimationFrame(() => {
+    boxesQueued = false;
+    const svg = currentSvg();
+    if (!svg) return;
+    const waves = {};
+    const rect = (r) => ({ x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) });
+    for (const r of svg.querySelectorAll("rect[data-group-id]")) {
+      const n = tgWaveOfKey(r.getAttribute("data-group-id"));
+      if (n !== null) waves[n] = rect(r.getBoundingClientRect());
+    }
+    // The reads' labels too, which the kiosk's callouts keep clear of.
+    const labels = [...svg.querySelectorAll("[data-tg-reads] > g")].map((g) => rect(g.getBoundingClientRect())).filter((r) => r.w > 0);
+    const host = document.getElementById("graph");
+    const pane = host ? rect(host.getBoundingClientRect()) : null;
+    try {
+      window.parent.postMessage({ type: "behold:boxes", waves, labels, pane, moving: !!shotAnim }, embedOpts.host);
+    } catch {
+      /* the parent went away */
+    }
+  });
+}
+
+/**
+ * behold#571: tell the kiosk this page has drawn its graph, once: cards on
+ * the canvas and terragucci's marks on them (or their read answered, or
+ * failed). The kiosk loads a new frame out of sight and swaps it in on this,
+ * so the graph pane never shows an empty frame.
+ */
+var drawnTold = false;
+function kioskTellDrawn() {
+  if (drawnTold || !embedOpts.host || window.parent === window) return;
+  const svg = currentSvg();
+  const failed = !!document.querySelector("#graph > .err");
+  if (!failed && !(svg && svg.querySelector("[data-node-id]"))) return;
+  // The marks: terragucci's reports answered (or refused), or chant's loop has its own.
+  if (!failed && terragucciComponentsRepo && !tgAnswer && !chantPrDrawn()) return;
+  drawnTold = true;
+  try {
+    window.parent.postMessage({ type: "behold:drawn", failed }, embedOpts.host);
+  } catch {
+    /* the parent went away */
+  }
+}
+// A graph that failed draws no svg and no reads: say so too, so the kiosk is never left waiting.
+if (embedOpts.bare) setInterval(kioskTellDrawn, 1000);
+
+window.addEventListener("message", (e) => {
+  if (!embedOpts.bare) return;
+  const shot = shotFromMessage(e, embedOpts.host);
+  if (!shot) return;
+  if (shot.release) {
+    if (shotAnim) cancelAnimationFrame(shotAnim.raf);
+    shotAnim = null;
+    kioskShot = null;
+    fitGraph();
+    return;
+  }
+  kioskShot = shot;
+  applyKioskShot(true);
+});
+
 function wireKioskFrame() {
   if (!embedOpts.bare) return;
   const graph = document.getElementById("graph");
@@ -4417,6 +4617,8 @@ function wireKioskFrame() {
       const card = e.target.closest && e.target.closest("[data-node-id]");
       if (card) kioskPopEvent({ type: "click", id: card.getAttribute("data-node-id") });
       else kioskPopEvent({ type: "outside" });
+      // behold#571: a click on the graph holds the kiosk's shot where the viewer is reading.
+      if (card && kioskShot) kioskViewerMoved();
     },
     true,
   );
@@ -5829,6 +6031,39 @@ function stepAside(row, xs, own) {
 /** How far a read's arrowhead reaches back from its tip, and how wide it spreads (marker 7 x stroke 3). */
 const ARROWHEAD = { length: 22, half: 11 };
 
+/** behold#571: the box an arrowhead drawn from p0 to p1 covers, in the svg's units. */
+function arrowheadBox(p0, p1) {
+  const len = Math.hypot(p1.x - p0.x, p1.y - p0.y) || 1;
+  const bx = p1.x - ((p1.x - p0.x) / len) * ARROWHEAD.length;
+  const by = p1.y - ((p1.y - p0.y) / len) * ARROWHEAD.length;
+  const h = ARROWHEAD.half;
+  return { x: Math.min(p1.x, bx) - h, y: Math.min(p1.y, by) - h, x2: Math.max(p1.x, bx) + h, y2: Math.max(p1.y, by) + h };
+}
+
+/**
+ * behold#571: each box title's box at the largest size scaleBoxLabels gives
+ * it (a zoomed-out view draws it bigger), grown from its anchor, so a line or
+ * an arrowhead placed clear of it stays clear at every zoom.
+ */
+function boxTitlesAtMost(svg, boxOf) {
+  const out = [];
+  for (const l of boxLabelsOf(svg)) {
+    const b = boxOf(l.el);
+    if (!b) continue;
+    const chars = Math.max(4, (l.el.textContent || "").length);
+    const cap = Math.max(l.base, Math.min(l.box.h / BOX_LABEL_MAX_H, l.box.w / (chars * BOX_LABEL_EM)));
+    const now = parseFloat(l.el.getAttribute("font-size")) || l.base;
+    const f = cap / now;
+    if (!(f > 1)) continue;
+    const w = (b.x2 - b.x) * f;
+    const h = (b.y2 - b.y) * f;
+    const anchor = l.el.getAttribute("text-anchor");
+    const x = anchor === "end" ? b.x2 - w : anchor === "middle" ? (b.x + b.x2) / 2 - w / 2 : b.x;
+    out.push({ x, y: b.y2 - h, x2: x + w, y2: b.y2 });
+  }
+  return out;
+}
+
 /**
  * No arrowhead sits on a mark. A read that ends in a box whose marks its head
  * would cover lifts the box's title and marks a row up, the box growing by
@@ -5862,9 +6097,18 @@ function liftOffArrowheads(svgEl, lines) {
         }
       })
       .filter(Boolean);
+    const title = row.nextElementSibling && row.nextElementSibling.tagName.toLowerCase() === "text" ? row.nextElementSibling : null;
+    // behold#571: the box's title is a mark too: a head over it lifts the row as well.
+    if (title) {
+      try {
+        const b = title.getBBox();
+        boxes.push({ x: b.x + dx - 2, y: b.y + dy - 2, x2: b.x + b.width + dx + 2, y2: b.y + b.height + dy + 2 });
+      } catch {
+        /* not laid out */
+      }
+    }
     if (!heads.some((h) => boxes.some((b) => hit(h, b)))) continue;
     const rect = svgEl.querySelector(`rect[data-group-id="wave-${row.getAttribute("data-pm-wave")}"]`);
-    const title = row.nextElementSibling && row.nextElementSibling.tagName.toLowerCase() === "text" ? row.nextElementSibling : null;
     if (!rect) continue;
     if (!rect.hasAttribute("data-pm-y0")) {
       rect.setAttribute("data-pm-y0", rect.getAttribute("y"));
@@ -6259,6 +6503,8 @@ function setupGraphViewBox(svg) {
     vb = fittedViewBox() || a.slice();
     vbAtFit = true;
     applyVB();
+    // behold#571: in the kiosk's Watch mode a re-render keeps the shot the kiosk asked for.
+    if (kioskShot) queueMicrotask(() => applyKioskShot(false));
   } else {
     vbInit = vb = null;
   }
@@ -6270,6 +6516,7 @@ function applyVB() {
   const s = currentSvg();
   if (s && vb) s.setAttribute("viewBox", vb.join(" "));
   scaleBoxLabels(); // #396 item 7b: box titles/badges keep a legible size at every zoom
+  kioskTellBoxes(); // behold#571: the kiosk's overlays ride the boxes they describe
 }
 
 // #396 item 2: the panel is `position: fixed` and floats OVER the graph pane
@@ -6333,6 +6580,7 @@ function fittedViewBox() {
 
 function fitGraph() {
   if (!vbInit) return;
+  if (kioskShot) return applyKioskShot(false); // behold#571: the kiosk's shot stands in for the fit
   vb = fittedViewBox() || vbInit.slice();
   vbAtFit = true;
   applyVB();
@@ -6349,7 +6597,8 @@ let vbAtFit = false;
 function watchPaneForFit(host) {
   if (typeof ResizeObserver === "undefined") return;
   new ResizeObserver(() => {
-    if (vbAtFit) fitGraph();
+    if (kioskShot) applyKioskShot(false);
+    else if (vbAtFit) fitGraph();
   }).observe(host);
 }
 
@@ -6522,6 +6771,7 @@ function ensureZoomControls(host) {
       vb[3] = nh;
       vbAtFit = false;
       applyVB();
+      kioskViewerMoved();
     },
     { passive: false },
   );
@@ -6567,6 +6817,7 @@ function ensureZoomControls(host) {
       touch.pts = pts;
       vbAtFit = false;
       applyVB();
+      if (touch.moved || pts.length >= 2) kioskViewerMoved();
     },
     { passive: false },
   );
@@ -6605,6 +6856,7 @@ function ensureZoomControls(host) {
     px = e.clientX;
     py = e.clientY;
     applyVB();
+    if (panMoved) kioskViewerMoved();
   });
   window.addEventListener("mouseup", () => {
     drag = false;
