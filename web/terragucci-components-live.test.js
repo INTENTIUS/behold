@@ -129,6 +129,14 @@ describe("the component marks (#571)", () => {
     // While the re-run waits at the gate, the box says so.
     const held = componentMarks(answer, progress("waiting"), facets, { runs: runs(comment(12, "waiting"), merge), pin: MERGE });
     expect(held.waves[2].title).toBe("apply-wave-2 · held at the gate");
+    // behold#693: the run view still holds the merge's failure while the re-run
+    // waits for its approval; the box reads the gate, not the failure.
+    const gated = componentMarks(answer, progress("failed"), facets, { runs: runs(comment(12, "waiting"), merge), pin: MERGE });
+    expect(gated.waves[2]).toMatchObject({ title: "apply-wave-2 · held at the gate", tone: "wait" });
+    expect(gated.waves[1].title).toBe("apply-wave-1 · applied");
+    // Once a later re-run has gone past its gate, the run view's state again.
+    const after = componentMarks(answer, progress("failed"), facets, { runs: runs(comment(13, "failure"), comment(12, "waiting"), merge), pin: MERGE });
+    expect(after.waves[2]).toMatchObject({ title: "apply-wave-2 · failed", tone: "bad" });
     // Before any re-run, the merge's own failure.
     const failed = componentMarks(answer, progress("failed"), facets, { runs: runs(merge), pin: MERGE });
     expect(failed.waves[2].title).toBe("apply-wave-2 · failed");
@@ -140,6 +148,10 @@ describe("the component marks (#571)", () => {
     expect(waveStatus({ ...st, superseded: 12 }, null)).toMatchObject({ status: "failure" });
     expect(waveStatus({ ...st, superseded: 12 }, "applied")).toEqual({ status: "applied", words: "applied", tone: "ok", run: 12 });
     expect(waveStatus(null, "applied")).toBe(null);
+    // behold#693: a later run waiting at its gate holds a failed wave, never an applied one.
+    expect(waveStatus({ ...st, superseded: 12, held: true }, "failed")).toEqual({ status: "waiting", words: "held at the gate", tone: "wait", run: 12, held: true });
+    expect(waveStatus({ ...st, superseded: 12, held: true }, null)).toMatchObject({ words: "held at the gate" });
+    expect(waveStatus({ ...st, superseded: 12, held: true }, "applied")).toMatchObject({ words: "applied" });
   });
 
   it("draws the pull request's plan before the merge, with no job status", () => {

@@ -66,14 +66,20 @@ export function jobStatus(index, commit, jobName) {
   // another (a /terragucci apply re-run applies every wave in its
   // apply-comment job) is the latest run for the wave.
   let later = null;
+  // behold#693: and whether that run waits at its gate, which the run view
+  // doesn't say until the approval: the reports still hold the failure.
+  let held = false;
   for (const run of runs) {
     if (!sameSha(run.commit, commit)) continue;
     const job = (run.jobs || []).find((j) => j.name === jobName);
     if (!job) continue;
     if (job.status !== "skipped") {
-      return { status: job.status, words: JOB_WORDS[job.status] || job.status, tone: JOB_TONE[job.status] || "idle", run: run.id, ...(later ? { superseded: later } : {}) };
+      return { status: job.status, words: JOB_WORDS[job.status] || job.status, tone: JOB_TONE[job.status] || "idle", run: run.id, ...(later ? { superseded: later } : {}), ...(later && held ? { held: true } : {}) };
     }
-    if (!later && (run.jobs || []).some((j) => j.status !== "skipped")) later = run.id;
+    if (!later && (run.jobs || []).some((j) => j.status !== "skipped")) {
+      later = run.id;
+      held = run.status === "waiting" || (run.jobs || []).some((j) => j.status === "waiting");
+    }
     skipped = skipped || { status: "skipped", words: JOB_WORDS.skipped, tone: "idle", run: run.id };
   }
   return skipped;
@@ -85,10 +91,16 @@ export const WAVE_WORDS = { waiting: "held at the gate", applying: "running", ap
 /**
  * The status a wave's box shows: its job's, unless a later run on the commit
  * took the wave over (`superseded`); then the run view's state for the wave,
- * which is the latest run's.
+ * which is the latest run's. While that later run waits at its gate (`held`),
+ * a wave its job failed reads "held at the gate": the run view keeps the
+ * failure until the approval lets the re-run write (behold#693).
  */
 export function waveStatus(status, state) {
-  if (!status || !status.superseded || !state || !WAVE_WORDS[state]) return status;
+  if (!status || !status.superseded) return status;
+  const undone = state !== "applied" && state !== "applying";
+  const failed = status.status === "failure" || status.status === "cancelled" || state === "failed" || state === "refused";
+  if (status.held && undone && failed) return { status: "waiting", words: WAVE_WORDS.waiting, tone: toneOf("waiting"), run: status.superseded, held: true };
+  if (!state || !WAVE_WORDS[state]) return status;
   return { status: state, words: WAVE_WORDS[state], tone: toneOf(state), run: status.superseded };
 }
 
@@ -155,7 +167,8 @@ export function componentMarks(answer, progress, facets, { runs = null, pin = nu
       number: n,
       job: jobName,
       state: w,
-      tone: w ? toneOf(w) : status ? status.tone : "idle",
+      // A re-run held at its gate (behold#693) tones the box as its title says.
+      tone: status && status.held && status.status === "waiting" ? status.tone : w ? toneOf(w) : status ? status.tone : "idle",
       status,
       title: waveTitle(jobName, status),
       facts,
