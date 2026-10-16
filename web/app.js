@@ -4012,27 +4012,21 @@ function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints
     const tb = title ? boxOf(title) : null;
     const others = () => [...textBoxes(), ...placed].filter((x) => !(tb && sameBox(x, tb)));
     const clear = (r) => r.x >= b.x + 6 && r.x2 <= b.x2 - 6 && !edgeHit(r) && !others().some((x) => hits(grow(x, 2), r)) && !cardBoxes.some((c) => hits(grow(c, 4), r));
-    // behold#571: the wave's forge and tool marks yield to the job's status. The status
-    // goes right after the title, the marks to its right; else the status takes the
-    // right end of the line and the marks stand between it and the title, as fits.
+    // behold#571: the wave's forge and tool marks (drawPipelineMarks) left the job's status its room after the title.
     const row = svg.querySelector(`.pipeline-marks[data-pm-wave="${n}"]`);
-    const dx = b.x - Number(rect.getAttribute("x"));
-    const rowBox = () => (row && row.style.display !== "none" ? boxOf(row) : null);
+    const rb = row && row.style.display !== "none" ? boxOf(row) : null;
+    if (rb) placed.push(rb);
     // The job's status: after the title on its line, else at the right of that line.
     if (w.status && tb) {
       const size = 12;
       const cy = (tb.y + tb.y2) / 2;
       // Right after the title, as "apply-wave-2 · held at the gate"; else alone at the right of the title's line.
-      const spots = [
-        { words: `· ${w.status.words}`, at: () => tb.x2 + 6, marks: (x, wd) => row && layoutMarkRow(row, x + wd + 10 - dx) },
-        { words: w.status.words, at: (wd) => b.x2 - 16 - wd, marks: (x) => row && layoutMarkRow(row, tb.x2 + 8 - dx, x - 10 - dx) },
-      ];
-      for (const { words, at, marks } of spots) {
+      const spots = [{ words: `· ${w.status.words}`, at: () => tb.x2 + 6 }, { words: w.status.words, at: (wd) => b.x2 - 16 - wd }];
+      for (const { words, at } of spots) {
         const wd = width(words, size, 700);
         const x = at(wd);
         const r = { x, y: cy - size / 2 - 2, x2: x + wd, y2: cy + size / 2 + 2 };
         if (x < tb.x2 + 4 || !clear(r)) continue;
-        marks(x, wd);
         const t = make("text", { "data-tg-root": "wave-status", x, y: cy, "dominant-baseline": "central", "font-size": size, "font-weight": 700, fill: tone(w.status.tone) }, words);
         if (w.status.status === "running") t.setAttribute("class", "pin-pulse");
         group.appendChild(t);
@@ -4040,8 +4034,6 @@ function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints
         break;
       }
     }
-    const rb = rowBox();
-    if (rb) placed.push(rb);
     if (title) {
       const tip = make("title", { "data-tg-root": "tip" }, [w.title, ...(w.state ? [`wave ${n} ${tgStateWords[w.state] || w.state}`] : []), ...w.facts].join("\n") + "\n(the job's status from the pipeline's runs; the wave's from terragucci's reports)");
       title.appendChild(tip);
@@ -5474,7 +5466,7 @@ const SVGNS = "http://www.w3.org/2000/svg";
 // title; when the row is short the icons go first, then the marks from the
 // end, so a name stays. On chant's own GitLab-generated projection the row
 // holds the forge chant generated for (the tanuki since #58).
-const MARK_STEP = 8; // between two marks in a row
+const MARK_STEP = 6; // between two marks in a row
 
 /** What a wave's row says: its forge, its job and its tools; null for no row. */
 function pipelineMarksFor(n) {
@@ -5510,31 +5502,54 @@ function markElement(tag, cls, spec, name, tip, light) {
   return el;
 }
 
-/**
- * Lay a row out at its box's right edge (or `right`), in what fits between
- * `left` and there and clear of the edges crossing the row (`data-pm-avoid`, x's in the
- * box's coordinates): the forge first, then the tools, left to right. Every
- * mark with its icon, else every name alone, else fewer marks from the end.
- */
-function layoutMarkRow(row, left, right = Number(row.getAttribute("data-pm-right"))) {
-  const cy = Number(row.getAttribute("data-pm-cy"));
-  const avoid = (row.getAttribute("data-pm-avoid") || "").split(",").filter(Boolean).map(Number);
-  const marks = [...row.querySelectorAll(":scope > .pm-mark")];
-  const label = (m) => m.querySelector(".pm-label");
-  const iconOf = (m) => m.querySelector(".pm-icon");
-  const show = (n, on) => (n.style.display = on ? "" : "none");
-  show(row, true);
-  marks.forEach((m) => show(m, true));
-  const widths = marks.map((m) => {
+/** Each mark's label width, measured. */
+function markWidths(marks) {
+  return marks.map((m) => {
+    const label = m.querySelector(".pm-label");
     try {
-      return label(m).getComputedTextLength() || label(m).textContent.length * MARK.font * 0.6;
+      return label.getComputedTextLength() || label.textContent.length * MARK.font * 0.6;
     } catch {
-      return label(m).textContent.length * MARK.font * 0.6;
+      return label.textContent.length * MARK.font * 0.6;
     }
   });
-  const need = (k, icons) => widths.slice(0, k).reduce((s, w, i) => s + w + (icons && iconOf(marks[i]) ? MARK.size + MARK.gap : 0), 0) + MARK_STEP * (k - 1);
-  // The gaps between the edges crossing the row, rightmost first: the marks take the first that holds them.
-  const cuts = avoid.filter((x) => x > left && x < right).sort((a, b) => a - b);
+}
+
+/** Put a row's marks at `xs` (each mark's left), `icons` with or without their icon; marks past `k` hidden. */
+function placeMarks(row, marks, widths, xs, icons, k) {
+  const cy = Number(row.getAttribute("data-pm-cy"));
+  const show = (n, on) => (n.style.display = on ? "" : "none");
+  show(row, k > 0);
+  marks.forEach((m, i) => {
+    show(m, i < k);
+    if (i >= k) return;
+    const icon = m.querySelector(".pm-icon");
+    const label = m.querySelector(".pm-label");
+    let x = xs[i];
+    if (icon) show(icon, icons);
+    if (icon && icons) {
+      icon.setAttribute("x", x.toFixed(1));
+      icon.setAttribute("y", (cy - MARK.size / 2).toFixed(1));
+      x += MARK.size + MARK.gap;
+    }
+    label.setAttribute("x", x.toFixed(1));
+    label.setAttribute("y", cy.toFixed(1));
+  });
+}
+
+/** One mark's width, with or without its icon. */
+const markWidth = (m, w, icons) => w + (icons && m.querySelector(".pm-icon") ? MARK.size + MARK.gap : 0);
+
+/**
+ * The title row: every mark with its icon, right-aligned in the rightmost
+ * gap between `left` and the box's right edge that the edges crossing the
+ * row (`data-pm-avoid`) leave. True when they fit; else nothing is placed.
+ */
+function titleRowFits(row, left) {
+  const right = Number(row.getAttribute("data-pm-right"));
+  const marks = [...row.querySelectorAll(":scope > .pm-mark")];
+  const widths = markWidths(marks);
+  const need = marks.reduce((s, m, i) => s + markWidth(m, widths[i], true), 0) + MARK_STEP * (marks.length - 1);
+  const cuts = (row.getAttribute("data-pm-avoid") || "").split(",").filter(Boolean).map(Number).filter((x) => x > left && x < right).sort((a, b) => a - b);
   const gaps = [];
   let at = left;
   for (const x of cuts) {
@@ -5542,37 +5557,62 @@ function layoutMarkRow(row, left, right = Number(row.getAttribute("data-pm-right
     at = Math.max(at, x + 5);
   }
   if (right > at) gaps.push([at, right]);
-  gaps.reverse();
-  let fit = null;
-  for (let k = marks.length; k > 0 && !fit; k--) {
-    for (const icons of [true, false]) {
-      const gap = gaps.find(([a, z]) => z - a >= need(k, icons));
-      if (gap) {
-        fit = { k, icons, end: gap[1] };
-        break;
-      }
-    }
-  }
-  show(row, !!fit);
-  if (!fit) return null;
-  let x = fit.end - need(fit.k, fit.icons);
+  const gap = gaps.reverse().find(([a, z]) => z - a >= need);
+  if (!gap) return false;
+  const xs = [];
+  let x = gap[1] - need;
   marks.forEach((m, i) => {
-    const shown = i < fit.k;
-    show(m, shown);
-    if (!shown) return;
-    const icon = iconOf(m);
-    const withIcon = fit.icons && !!icon;
-    if (icon) show(icon, withIcon);
-    if (withIcon) {
-      icon.setAttribute("x", x.toFixed(1));
-      icon.setAttribute("y", (cy - MARK.size / 2).toFixed(1));
-      x += MARK.size + MARK.gap;
-    }
-    label(m).setAttribute("x", x.toFixed(1));
-    label(m).setAttribute("y", cy.toFixed(1));
-    x += widths[i] + MARK_STEP;
+    xs.push(x);
+    x += markWidth(m, widths[i], true) + MARK_STEP;
   });
-  return fit;
+  placeMarks(row, marks, widths, xs, true, marks.length);
+  row.setAttribute("data-pm-mode", "title");
+  return true;
+}
+
+/**
+ * The marks' own row, just under the title: the box grows upward by a row
+ * and its title moves up into it, so no card moves and none is covered. The
+ * marks run left to right from the title's left, stepping past an edge where
+ * they can. Short of room they keep their icons and the last marks go; only
+ * at phone width do the icons go first.
+ */
+function marksOwnRow(row, rect, title) {
+  const grow = MARK.size + 6;
+  rect.setAttribute("y", String(Number(rect.getAttribute("y")) - grow));
+  rect.setAttribute("height", String(Number(rect.getAttribute("height")) + grow));
+  if (title) title.setAttribute("y", String(Number(title.getAttribute("y")) - grow));
+  // The row runs the box's width, inset as the cards are.
+  const left = Number(row.getAttribute("data-pm-start"));
+  const right = Number(row.getAttribute("data-pm-end"));
+  const avoid = (row.getAttribute("data-pm-avoid") || "").split(",").filter(Boolean).map(Number);
+  const marks = [...row.querySelectorAll(":scope > .pm-mark")];
+  const widths = markWidths(marks);
+  // Left to right, a mark that would sit on an edge steps past it; null when they run out of room.
+  const lay = (k, icons, step) => {
+    const xs = [];
+    let x = left;
+    for (let i = 0; i < k; i++) {
+      const w = markWidth(marks[i], widths[i], icons);
+      if (step) for (const e of avoid.filter((e) => e > x - 4 && e < x + w + 4).sort((a, b) => a - b)) x = Math.max(x, e + 6);
+      if (x + w > right) return null;
+      xs.push(x);
+      x += w + MARK_STEP;
+    }
+    return xs;
+  };
+  const phone = typeof matchMedia === "function" && matchMedia("(max-width: 600px)").matches;
+  const tries = [];
+  for (let k = marks.length; k > 0; k--) {
+    tries.push([k, true, true], [k, true, false]);
+    if (phone) tries.push([k, false, true], [k, false, false]);
+  }
+  row.setAttribute("data-pm-mode", "row");
+  for (const [k, icons, step] of tries) {
+    const xs = lay(k, icons, step);
+    if (xs) return placeMarks(row, marks, widths, xs, icons, k);
+  }
+  placeMarks(row, marks, widths, [], true, 0);
 }
 
 /** The x's at which the graph's edges cross a band of the svg (`y0`..`y1`), in the svg's own coordinates. */
@@ -5593,9 +5633,45 @@ function edgeXsIn(svgEl, y0, y1) {
   return xs;
 }
 
-/** Draw every wave box's row afresh. Before the terragucci marks, which place the job's status around it. */
+/** The width of the job's status words a terragucci wave box will say after its title, or 0. */
+function waveStatusRoom(svgEl, n) {
+  if (!(terragucciComponentsRepo && tgComponentFacets && tgAnswer && !tgAnswer.error)) return 0;
+  let w;
+  try {
+    w = tgComponentMarks(tgAnswerDrawn(), tgProgress, tgComponentFacets, { runs: tgRuns, pin: view.run || null }).waves[n];
+  } catch {
+    return 0;
+  }
+  if (!w || !w.status) return 0;
+  const probe = document.createElementNS(SVGNS, "text");
+  probe.setAttribute("font-size", "12");
+  probe.setAttribute("font-weight", "700");
+  probe.textContent = `· ${w.status.words}`;
+  svgEl.appendChild(probe);
+  let len = 0;
+  try {
+    len = probe.getComputedTextLength();
+  } catch {
+    len = probe.textContent.length * 7;
+  }
+  probe.remove();
+  return len + 6 + 10;
+}
+
+/** Draw every wave box's row afresh: in the title row when the marks fit there with their icons, else in their own row under it. */
 function drawPipelineMarks(svgEl) {
   for (const old of svgEl.querySelectorAll(".pipeline-marks")) old.remove();
+  // A box an earlier draw grew for its marks' row goes back as pinhole drew it.
+  for (const r of svgEl.querySelectorAll("rect[data-pm-y0]")) {
+    r.setAttribute("y", r.getAttribute("data-pm-y0"));
+    r.setAttribute("height", r.getAttribute("data-pm-h0"));
+    r.removeAttribute("data-pm-y0");
+    r.removeAttribute("data-pm-h0");
+  }
+  for (const tx of svgEl.querySelectorAll("text[data-pm-ty0]")) {
+    tx.setAttribute("y", tx.getAttribute("data-pm-ty0"));
+    tx.removeAttribute("data-pm-ty0");
+  }
   const light = kioskLight();
   const pin = view.run || null;
   const commit = tgRunsCommit(pin, tgProgress);
@@ -5632,7 +5708,8 @@ function drawPipelineMarks(svgEl) {
     row.setAttribute("data-pm-wave", String(n));
     row.setAttribute("data-pm-right", String(rx + rw - MARK.pad));
     row.setAttribute("data-pm-cy", String(cy));
-    row.setAttribute("data-pm-left", String(tb && tb.width ? tb.x + tb.width + 8 : rx + 12));
+    row.setAttribute("data-pm-start", String(rx + 12));
+    row.setAttribute("data-pm-end", String(rx + rw - 10));
     if (forge) {
       const f = FORGES[forge];
       const url = what.projection ? null : markLink(waveJobUrl(tgAnswer, n, commit), forge);
@@ -5658,7 +5735,13 @@ function drawPipelineMarks(svgEl) {
     const band = edgeXsIn(svgEl, cy - MARK.size / 2 - 2, cy + MARK.size / 2 + 2).map((x) => x - shift);
     row.setAttribute("data-pm-avoid", band.filter((x) => x >= rx && x <= rx + rw).map((x) => x.toFixed(1)).join(","));
     rect.parentNode.insertBefore(row, title || rect.nextSibling);
-    layoutMarkRow(row, Number(row.getAttribute("data-pm-left")));
+    // The title row holds the title, the job's status after it, then the marks; else the marks take their own row.
+    const left = (tb && tb.width ? tb.x + tb.width : rx + 12) + 8 + waveStatusRoom(svgEl, n);
+    if (titleRowFits(row, left)) continue;
+    rect.setAttribute("data-pm-y0", rect.getAttribute("y"));
+    rect.setAttribute("data-pm-h0", rect.getAttribute("height"));
+    if (title) title.setAttribute("data-pm-ty0", title.getAttribute("y"));
+    marksOwnRow(row, rect, title);
   }
 }
 

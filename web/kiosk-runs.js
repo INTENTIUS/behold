@@ -483,7 +483,7 @@ export function toolMarks(job, repoTools = [], { light = false, hideLine = null,
     m.className = `r-tool r-tool-${t}`;
     m.title = `${job.name} runs ${tool.name}`;
     if (tool.icon) {
-      const icon = iconSvg(doc, tool.icon, 13, { light });
+      const icon = iconSvg(doc, tool.icon, 11, { light });
       icon.setAttribute("class", "r-tool-icon");
       m.appendChild(icon);
     }
@@ -537,10 +537,14 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
     const li = el("li", `r-job${job && j.name === job.name ? " r-selected" : ""}`);
     li.style.setProperty("--depth", String(j.depth));
     li.appendChild(statusIcon(j.status));
-    li.appendChild(el("span", "r-job-name", j.name));
-    // behold#571: the tools the job runs, each its logo (where its owner allows) and its name.
+    // behold#571: the tools the job runs, each its logo (where its owner allows) and its name, on a
+    // line of their own under the job's name, so the row's line keeps its width.
     const marks = toolMarks(j, tools, { light, hideLine });
-    if (marks) li.appendChild(marks);
+    if (marks) {
+      const head = el("span", "r-job-head");
+      head.append(el("span", "r-job-name", j.name), marks);
+      li.appendChild(head);
+    } else li.appendChild(el("span", "r-job-name", j.name));
     // behold#571: a wave's job row names the roots it applies, each with its dot, and lights its wave box on hover.
     const wave = waveOfJob(j.name, waves);
     const applies = wave !== null ? rootsOfWave(wave, waves).filter((r) => rootColour(r, roots, { light })) : [];

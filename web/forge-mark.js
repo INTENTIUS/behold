@@ -69,7 +69,7 @@ export const FORGES = {
 };
 
 /** The icon's size and the label's, in the svg's units: about the tanuki's 17px. */
-export const MARK = { size: 17, font: 11, gap: 5, pad: 12 };
+export const MARK = { size: 17, font: 11, gap: 4, pad: 12 };
 
 /** A forge named outright ("forgejo", "GitHub Actions", "gitlab-ci"), or null. */
 export function forgeOfName(name) {
