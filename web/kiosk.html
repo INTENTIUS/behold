@@ -217,6 +217,28 @@
       .k-action { font-family: var(--font-mono); color: var(--fg); }
       .k-when { color: var(--foreign); font-family: var(--font-mono); }
       .k-next-by { color: var(--muted); }
+      /*
+       * behold#571: the bar under "next, by the driver", in both layouts: how far the driver's wait
+       * has gone (kiosk.js nextProgress), in the step's tone (theme.js barInks, 3:1 in every theme).
+       * It is placed, never in the flow, so no row moves when it comes or goes. At the deadline it
+       * pulses until the step changes; with no deadline a quiet shimmer runs. Under reduced motion
+       * the due bar is steady and full, and there is no shimmer.
+       */
+      .k-row-next { position: relative; }
+      .k-nbar { position: absolute; left: calc(0.75em + var(--k-label-w) + 0.8em); right: 0.2em; bottom: 0; height: 3px; border-radius: 2px; overflow: hidden; pointer-events: none;
+        background: color-mix(in srgb, var(--rule) 55%, transparent); }
+      .k-nbar-none { display: none; }
+      .k-nbar-in { position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--k-nbar-fill, 0) * 100%); border-radius: inherit; background: var(--bar, var(--bar-neutral)); }
+      .k-nbar-due .k-nbar-in { width: 100%; }
+      .k-nbar-wait { background: transparent; }
+      .k-nbar-wait .k-nbar-in { width: 30%; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--bar, var(--bar-neutral)) 60%, transparent), transparent); }
+      @media (prefers-reduced-motion: no-preference) {
+        .k-nbar-due .k-nbar-in { animation: k-nbar-pulse 2.4s ease-in-out var(--k-nbar-phase, 0ms) infinite; }
+        .k-nbar-wait .k-nbar-in { animation: k-nbar-sweep 2.4s linear var(--k-nbar-phase, 0ms) infinite; }
+      }
+      @media (prefers-reduced-motion: reduce) { .k-nbar-wait { display: none; } }
+      @keyframes k-nbar-pulse { 50% { opacity: 0.5; } }
+      @keyframes k-nbar-sweep { from { transform: translateX(-100%); } to { transform: translateX(334%); } }
       /* The pull request's facts, smallest: each part a chip that wraps whole, never cut off. */
       .k-row-facts .k-row-label { padding-top: 0.25em; }
       .k-row-box > p.k-facts { display: flex; flex-wrap: wrap; gap: 0 0.5em; max-width: none; font-size: 0.84em; line-height: 1.45; color: var(--fg); }
@@ -334,6 +356,7 @@
         .k-row { grid-template-columns: minmax(0, 1fr); row-gap: 0.1em; padding: 0.1em 0 0.1em 0.75em; }
         .k-row-empty { display: none; }
         .k-row-label { padding-top: 0; }
+        .k-nbar { left: 0.75em; right: 0; }
         #views { flex-wrap: wrap; gap: 0.3em 0.9em; }
         .k-strip { flex-wrap: wrap; }
         .k-right > .k-cycle { padding: 0; }
@@ -401,6 +424,8 @@
       .k-cap-title .k-brand { vertical-align: 0; }
       .k-cap-next { margin-left: auto; color: var(--muted); font-size: 0.92em; white-space: nowrap; flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; }
       .k-cap-next .k-action { font-family: var(--font-mono); color: var(--fg); }
+      .k-cap-next { position: relative; padding-bottom: 6px; }
+      .k-cap-next .k-nbar { left: 0; right: 0; bottom: 0; }
       /* behold#571: the caption's beats are the lead block's rows: the label in a fixed column, the words beside it (two lines, at most 72ch), a rail down the left; only the step's rail takes its state's colour (theme.js barInks). */
       .k-cap-row { margin: 0; display: grid; grid-template-columns: var(--k-label-w) minmax(0, 1fr); column-gap: 0.8em; align-items: start; align-self: stretch; padding-left: 0.75em; line-height: 1.25; font-size: 1em; color: color-mix(in srgb, var(--fg) 78%, var(--muted)); box-shadow: inset 3px 0 0 var(--bar, var(--bar-neutral)); }
       .k-cap-row:empty { box-shadow: none; }
@@ -508,7 +533,7 @@
         .k-cap-step { order: 2; } .k-cap-changes { order: 3; }
         .k-cap-title { white-space: normal; font-size: 1.12em; }
         .k-cap-title .k-kicker { display: block; margin-bottom: 0.1em; }
-        .k-cap-next { display: none; }
+        .k-cap-next { margin-left: 0; flex: 1 1 100%; max-width: none; white-space: normal; }
         .k-cap-row { grid-template-columns: minmax(0, 1fr); row-gap: 0.1em; } .k-cap-text { -webkit-line-clamp: unset; display: block; } .k-cap-label { padding-top: 0; }
         .k-cap-lead { font-size: 1.12em; }
         .k-over, #k-result { position: static; visibility: visible; width: auto; margin: 0 16px; max-height: none; transform: none !important; }

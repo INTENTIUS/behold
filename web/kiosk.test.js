@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stepTone, BEAT_CHANGES, INTRO_HEAD, READ_STORE, READ_TITLE, STEP_VIEW, STEP_WORDS, aboutRows, approvalPanel, approveGloss, chantProject, factsLine, focusRoots, holdHead, holdModel, introText, readStored, readingRows, renderReading, scenarioHead, frameSrc, factLines, kioskView, matchingPull, pendingApproval, renderKiosk, renderViewToggle, reportless, runPanel, runPin, stepView, viewZoom } from "./kiosk.js";
+import { stepTone, nextProgress, nextSeen, BEAT_CHANGES, INTRO_HEAD, READ_STORE, READ_TITLE, STEP_VIEW, STEP_WORDS, aboutRows, approvalPanel, approveGloss, chantProject, factsLine, focusRoots, holdHead, holdModel, introText, readStored, readingRows, renderReading, scenarioHead, frameSrc, factLines, kioskView, matchingPull, pendingApproval, renderKiosk, renderViewToggle, reportless, runPanel, runPin, stepView, viewZoom } from "./kiosk.js";
 import { VENDORS } from "./kiosk-vendor.js";
 import { PICK_HOLD_MS } from "./kiosk-runs.js";
 
@@ -155,7 +155,10 @@ describe("the scenario's card under the title (behold#571)", () => {
       expect(left.children.map((c) => c.className)).toEqual([
         "k-box k-box-title", "k-row k-row-beat", "k-row k-row-step k-step-failed", "k-row k-row-next", "k-row k-row-more", "k-row k-row-more", "k-row k-row-facts k-row-empty",
       ]);
-      expect(left.children.map((c) => c.children.map((x) => x.className.split(" ")[0]))).toEqual([["k-overline", "k-title"], ["k-row-label", "k-box"], ["k-row-label", "k-box"], ["k-row-label", "k-box"], ["k-row-label", "k-box"], ["k-row-label", "k-box"], []]);
+      expect(left.children.map((c) => c.children.map((x) => x.className.split(" ")[0]))).toEqual([["k-overline", "k-title"], ["k-row-label", "k-box"], ["k-row-label", "k-box"], ["k-row-label", "k-box", "k-nbar"], ["k-row-label", "k-box"], ["k-row-label", "k-box"], []]);
+      // The next row's bar is placed by CSS, in the step's tone; a stalled driver's next has none.
+      const nbar = find(bar, "k-nbar")[0];
+      expect(nbar.className).toBe("k-nbar k-nbar-none");
       // Each row: its label in the fixed column, its words in the box beside it.
       const rowsOf = (cls) => find(bar, cls).map((r) => [r.children[0].textContent, r.children[1].children[0].className, r.children[1].children[0].textContent]);
       expect(rowsOf("k-row-beat")).toEqual([[BEAT_CHANGES, "k-beat", about.changes]]);
@@ -497,5 +500,61 @@ describe("kiosk: the strip in a scenario's own order (behold#571, #631)", async 
     expect(stripFromSteps([])).toBeNull();
     // A run that applied in one go (no wait at all) still shows its waves stop.
     expect(stripFromSteps(["pull-request", "planned", "merged", "applying", "applied", "reset"]).map((x) => x.id)).toEqual(STRIP.map((x) => x.id));
+  });
+});
+
+// behold#571: the bar under "next, by the driver".
+describe("nextProgress and nextSeen", () => {
+  const at = "2026-10-16T22:34:35Z";
+  const t = (iso) => new Date(iso);
+  const ms = (iso) => Date.parse(iso);
+
+  it("fills from next.from to next.at", () => {
+    const next = { action: "approve wave-2", from: "2026-10-16T22:34:15Z", at };
+    expect(nextProgress(next, t("2026-10-16T22:34:15Z"))).toEqual({ kind: "fill", fraction: 0 });
+    expect(nextProgress(next, t("2026-10-16T22:34:20Z"))).toEqual({ kind: "fill", fraction: 0.25 });
+    expect(nextProgress(next, t("2026-10-16T22:34:30Z"))).toEqual({ kind: "fill", fraction: 0.75 });
+    // A clock a little behind the driver's never draws below empty.
+    expect(nextProgress(next, t("2026-10-16T22:34:10Z")).fraction).toBe(0);
+    // from wins over when the page saw it.
+    expect(nextProgress(next, t("2026-10-16T22:34:30Z"), ms("2026-10-16T22:34:25Z")).fraction).toBe(0.75);
+  });
+
+  it("is due at and past the deadline, whatever from says", () => {
+    expect(nextProgress({ action: "x", from: "2026-10-16T22:34:15Z", at }, t(at))).toEqual({ kind: "due", fraction: 1 });
+    expect(nextProgress({ action: "x", at }, t("2026-10-16T22:40:00Z"))).toEqual({ kind: "due", fraction: 1 });
+  });
+
+  it("fills from when the page first saw the deadline when from is missing, and draws no bar when it joined midway", () => {
+    const next = { action: "approve wave-2", at };
+    expect(nextProgress(next, t("2026-10-16T22:34:25Z"), ms("2026-10-16T22:34:15Z"))).toEqual({ kind: "fill", fraction: 0.5 });
+    expect(nextProgress(next, t("2026-10-16T22:34:25Z"), null)).toEqual({ kind: "none", fraction: null });
+    // A from that cannot be read falls back the same way.
+    expect(nextProgress({ ...next, from: "soon" }, t("2026-10-16T22:34:25Z"), ms("2026-10-16T22:34:15Z")).fraction).toBe(0.5);
+    expect(nextProgress({ ...next, from: "2026-10-16T22:34:35Z" }, t("2026-10-16T22:34:25Z"))).toEqual({ kind: "none", fraction: null });
+  });
+
+  it("shimmers with no deadline, and draws nothing when there is no next", () => {
+    expect(nextProgress({ action: "follow the waves", from: "2026-10-16T22:34:15Z", at: null }, t(at))).toEqual({ kind: "wait", fraction: null });
+    expect(nextProgress(null, t(at))).toEqual({ kind: "none", fraction: null });
+    expect(nextProgress({ action: "x", at: "not a time" }, t(at))).toEqual({ kind: "none", fraction: null });
+  });
+
+  it("remembers when the page first saw each deadline: midway for the one on screen at load or after a mode change", () => {
+    const a = { action: "approve wave-2", at };
+    const b = { action: "merge pull request 41", at: "2026-10-16T22:35:40Z" };
+    let m = nextSeen(undefined, a, "live", 1000);
+    expect(m.seen).toBeNull();
+    expect(nextSeen(m, a, "live", 2000)).toBe(m);
+    m = nextSeen(m, { action: "follow the waves", at: null }, "live", 3000);
+    expect(m.seen).toBeNull();
+    m = nextSeen(m, b, "live", 4000);
+    expect(m.seen).toBe(4000);
+    expect(nextSeen(m, b, "live", 5000).seen).toBe(4000);
+    expect(nextSeen(m, b, "replay", 5000).seen).toBeNull();
+    // Until demo.json is read (undefined), the page has watched nothing: the first deadline it reads was joined midway.
+    expect(nextSeen(nextSeen(undefined, undefined, "live", 0), a, "live", 6000).seen).toBeNull();
+    // Once read, a deadline that comes after a step with none is seen to begin.
+    expect(nextSeen(nextSeen(undefined, null, "live", 0), a, "live", 6000).seen).toBe(6000);
   });
 });
