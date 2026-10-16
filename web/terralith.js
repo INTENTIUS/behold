@@ -4,7 +4,7 @@
 // the split spawned, while that box fades in. Decisions live in
 // terralith-steps.js and identity-mark.js; this file only draws.
 
-import { PHASES, boxSubtitle, cardFace, cardNews, flipDelta, legendFor, phaseById, shownPhase, stepperItems } from "./terralith-steps.js";
+import { PHASES, boxSubtitle, cardFace, cardNews, flipDelta, groupLabel, legendFor, oneRow, outputLabel, phaseById, planBadges, shownPhase, stepperItems } from "./terralith-steps.js";
 import { identityMark, tagGlyphSvg } from "./identity-mark.js";
 
 const POLL_MS = 3000;
@@ -90,7 +90,7 @@ function renderNext(host, model) {
 function cardEl(card, phaseId) {
   const face = cardFace(card);
   const mark = identityMark(card.identity);
-  const c = el("div", `t-card${phaseId === "split" && card.moved ? " moved" : ""}`);
+  const c = el("div", `t-card${phaseId === "split" && card.moved ? " moved" : ""}${phaseId === "plan" && card.inCone ? " in-cone" : ""}${phaseId === "plan" && card.planned ? " planned" : ""}`);
   c.dataset.card = card.id;
   c.title = [card.id, card.liveId ? `live id: ${card.liveId}` : "", mark ? mark.tip : ""].filter(Boolean).join("\n");
   c.append(el("div", "k", face.kind), el("div", "n", face.name));
@@ -102,22 +102,105 @@ function cardEl(card, phaseId) {
     c.appendChild(m);
   }
   const news = cardNews(card, phaseId);
-  if (news) c.appendChild(el("div", news === "drifted" ? "news drifted" : "news", news));
+  if (news) c.appendChild(el("div", news === "drifted" ? "news drifted" : phaseId === "plan" && card.planned ? "news change" : "news", news));
   return c;
 }
 
 function renderStage(host, phase) {
   host.replaceChildren();
+  host.classList.toggle("planning", !!phase.plan);
   for (const box of phase.boxes) {
     const b = el("section", `t-box${box.stock ? " stock" : ""}${box.spawned ? " spawned" : ""}`);
     b.dataset.box = box.id;
     const head = el("div", "t-box-head");
     head.append(el("h3", null, box.id), el("span", null, `${boxSubtitle(box)} · ${box.cards.length}`));
+    const badges = planBadges(box);
+    if (badges.length) {
+      const row = el("div", "t-badges");
+      for (const bd of badges) {
+        const chip = el("span", `t-badge ${bd.kind}`, bd.text);
+        chip.title = bd.tip;
+        row.appendChild(chip);
+      }
+      if (box.plan && box.plan.group) row.appendChild(el("span", "t-badge group", `group ${box.plan.group}`));
+      head.appendChild(row);
+    }
     const cards = el("div", "t-cards");
     for (const card of box.cards) cards.appendChild(cardEl(card, phase.id));
     b.append(head, cards);
     host.appendChild(b);
   }
+}
+
+const SVGNS = "http://www.w3.org/2000/svg";
+
+/**
+ * The plan's overlay on the stage: a bracket under the boxes of each folded
+ * group, with its one change, and an edge from the box that plans an output
+ * to each box that reads it. In one row (wide screens) the edges arc over the
+ * boxes and the bracket runs under them; stacked (a phone) both run down the
+ * gutters beside the boxes.
+ */
+function drawPlanOverlay(stage, phase) {
+  const old = stage.querySelector(".t-overlay");
+  if (old) old.remove();
+  if (!phase.plan) return;
+  const host = stage.getBoundingClientRect();
+  const rectOf = (id) => {
+    const n = stage.querySelector(`[data-box="${CSS.escape(id)}"]`);
+    if (!n) return null;
+    const r = n.getBoundingClientRect();
+    return { left: r.left - host.left, top: r.top - host.top, right: r.right - host.left, bottom: r.bottom - host.top, width: r.width, height: r.height };
+  };
+  const svg = document.createElementNS(SVGNS, "svg");
+  svg.setAttribute("class", "t-overlay");
+  svg.setAttribute("width", String(host.width));
+  svg.setAttribute("height", String(host.height));
+  svg.setAttribute("aria-hidden", "true");
+  const add = (tag, attrs, text) => {
+    const n = document.createElementNS(SVGNS, tag);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, String(v));
+    if (text != null) n.textContent = text;
+    svg.appendChild(n);
+    return n;
+  };
+  const all = phase.boxes.map((b) => rectOf(b.id)).filter(Boolean);
+  const row = oneRow(all);
+  for (const o of phase.plan.outputs) {
+    const from = o.root && rectOf(o.root);
+    if (!from) continue;
+    const readers = o.readers.map(rectOf).filter(Boolean);
+    readers.forEach((to, i) => {
+      if (row) {
+        const x0 = from.left + from.width * 0.45 + i * 18, y0 = from.top;
+        const x1 = to.left + 26, y1 = to.top;
+        const lift = 14 + i * 11;
+        add("path", { class: "t-edge", d: `M${x0},${y0} C${x0},${y0 - lift} ${x1},${y1 - lift} ${x1},${y1}` });
+        add("polygon", { class: "t-edge-head", points: `${x1 - 4},${y1 - 7} ${x1 + 4},${y1 - 7} ${x1},${y1}` });
+      } else {
+        const gx = 6, y0 = from.bottom - 14, y1 = to.top + 20;
+        add("path", { class: "t-edge", d: `M${from.left},${y0} H${gx} V${y1} H${to.left}` });
+        add("polygon", { class: "t-edge-head", points: `${to.left - 7},${y1 - 4} ${to.left - 7},${y1 + 4} ${to.left},${y1}` });
+      }
+    });
+    const label = outputLabel(o);
+    if (row) add("text", { class: "t-edge-label", x: from.left + 4, y: from.top - 0.75 * (14 + (readers.length - 1) * 11) - 8 }, label);
+    else add("text", { class: "t-edge-label", x: from.left + 2, y: from.bottom + 14 }, label);
+  }
+  for (const g of phase.plan.groups) {
+    const rs = g.members.map(rectOf).filter(Boolean);
+    if (!rs.length) continue;
+    const label = groupLabel(g);
+    if (row) {
+      const left = Math.min(...rs.map((r) => r.left)), right = Math.max(...rs.map((r) => r.right)), y = Math.max(...rs.map((r) => r.bottom)) + 10;
+      add("path", { class: "t-bracket", d: `M${left + 4},${y - 6} V${y} H${right - 4} V${y - 6}` });
+      add("text", { class: "t-bracket-label", x: (left + right) / 2, y: y + 18, "text-anchor": "middle" }, label);
+    } else {
+      const x = host.width - 7, top = Math.min(...rs.map((r) => r.top)) + 6, bottom = Math.max(...rs.map((r) => r.bottom)) - 6;
+      add("path", { class: "t-bracket", d: `M${x - 6},${top} H${x} V${bottom} H${x - 6}` });
+    }
+  }
+  stage.appendChild(svg);
 }
 
 /** Where every card and box is now, by id. */
@@ -163,6 +246,9 @@ export function startTerralith(doc) {
   const next = doc.getElementById("t-next");
   const stage = doc.getElementById("t-stage");
   const notes = doc.getElementById("t-notes");
+  const groups = doc.getElementById("t-groups");
+  let lastShown = null;
+  addEventListener("resize", () => lastShown && drawPlanOverlay(stage, lastShown));
   let model = null;
   let shownId = null;
   let lastKey = "";
@@ -181,6 +267,10 @@ export function startTerralith(doc) {
     setUrl(phase.id);
     renderLead(lead, phase);
     renderStage(stage, phase);
+    groups.replaceChildren(...((phase.plan && phase.plan.groups) || []).map((g) => el("p", "t-group", `Group ${g.id}: ${groupLabel(g)}`)));
+    groups.hidden = !(phase.plan && phase.plan.groups.length);
+    drawPlanOverlay(stage, phase);
+    lastShown = phase;
     notes.hidden = !phase.notes.length;
     notes.textContent = phase.notes.length ? `Some files could not be read: ${phase.notes.join("; ")}` : "";
     play(stage, before);

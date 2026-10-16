@@ -1,0 +1,3570 @@
+{
+  "format_version": "1",
+  "roots": [
+    {
+      "root": "team-a",
+      "estate": "team-a",
+      "status": "planned",
+      "error": "",
+      "changes": true,
+      "plan_file": ".terralith/plan-set/team-a.tfplan",
+      "log_file": ".terralith/plan-set/team-a.log",
+      "duration_ms": 2017,
+      "plan": {
+        "format_version": "1.2",
+        "terraform_version": "1.13.0",
+        "planned_values": {
+          "root_module": {
+            "resources": [
+              {
+                "address": "aws_cloudwatch_log_group.team_a_0",
+                "mode": "managed",
+                "type": "aws_cloudwatch_log_group",
+                "name": "team_a_0",
+                "provider_name": "registry.opentofu.org/hashicorp/aws",
+                "schema_version": 0,
+                "values": {
+                  "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-a/svc-0",
+                  "deletion_protection_enabled": false,
+                  "id": "/terralith/team-a/svc-0",
+                  "kms_key_id": "",
+                  "log_group_class": "",
+                  "name": "/terralith/team-a/svc-0",
+                  "name_prefix": "",
+                  "region": "us-east-1",
+                  "retention_in_days": 14,
+                  "skip_destroy": false,
+                  "tags": {
+                    "tofu-address": "aws_cloudwatch_log_group.team_a_0",
+                    "tofu-estate": "team-a"
+                  },
+                  "tags_all": {
+                    "tofu-address": "aws_cloudwatch_log_group.team_a_0",
+                    "tofu-estate": "team-a"
+                  }
+                },
+                "sensitive_values": {
+                  "tags": {},
+                  "tags_all": {}
+                },
+                "identity": {
+                  "account_id": null,
+                  "name": "/terralith/team-a/svc-0",
+                  "region": null
+                },
+                "identity_schema_version": 0
+              },
+              {
+                "address": "aws_cloudwatch_log_group.team_a_1",
+                "mode": "managed",
+                "type": "aws_cloudwatch_log_group",
+                "name": "team_a_1",
+                "provider_name": "registry.opentofu.org/hashicorp/aws",
+                "schema_version": 0,
+                "values": {
+                  "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-a/svc-1",
+                  "deletion_protection_enabled": false,
+                  "id": "/terralith/team-a/svc-1",
+                  "kms_key_id": "",
+                  "log_group_class": "",
+                  "name": "/terralith/team-a/svc-1",
+                  "name_prefix": "",
+                  "region": "us-east-1",
+                  "retention_in_days": 7,
+                  "skip_destroy": false,
+                  "tags": {
+                    "tofu-address": "aws_cloudwatch_log_group.team_a_1",
+                    "tofu-estate": "team-a"
+                  },
+                  "tags_all": {
+                    "tofu-address": "aws_cloudwatch_log_group.team_a_1",
+                    "tofu-estate": "team-a"
+                  }
+                },
+                "sensitive_values": {
+                  "tags": {},
+                  "tags_all": {}
+                },
+                "identity": {
+                  "account_id": null,
+                  "name": "/terralith/team-a/svc-1",
+                  "region": null
+                },
+                "identity_schema_version": 0
+              },
+              {
+                "address": "aws_cloudwatch_log_group.team_a_2",
+                "mode": "managed",
+                "type": "aws_cloudwatch_log_group",
+                "name": "team_a_2",
+                "provider_name": "registry.opentofu.org/hashicorp/aws",
+                "schema_version": 0,
+                "values": {
+                  "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-a/svc-2",
+                  "deletion_protection_enabled": false,
+                  "id": "/terralith/team-a/svc-2",
+                  "kms_key_id": "",
+                  "log_group_class": "",
+                  "name": "/terralith/team-a/svc-2",
+                  "name_prefix": "",
+                  "region": "us-east-1",
+                  "retention_in_days": 7,
+                  "skip_destroy": false,
+                  "tags": {
+                    "tofu-address": "aws_cloudwatch_log_group.team_a_2",
+                    "tofu-estate": "team-a"
+                  },
+                  "tags_all": {
+                    "tofu-address": "aws_cloudwatch_log_group.team_a_2",
+                    "tofu-estate": "team-a"
+                  }
+                },
+                "sensitive_values": {
+                  "tags": {},
+                  "tags_all": {}
+                },
+                "identity": {
+                  "account_id": null,
+                  "name": "/terralith/team-a/svc-2",
+                  "region": null
+                },
+                "identity_schema_version": 0
+              },
+              {
+                "address": "aws_iam_policy.team_a",
+                "mode": "managed",
+                "type": "aws_iam_policy",
+                "name": "team_a",
+                "provider_name": "registry.opentofu.org/hashicorp/aws",
+                "schema_version": 0,
+                "values": {
+                  "arn": "arn:aws:iam::000000000000:policy/terralith-team-a-policy",
+                  "attachment_count": 1,
+                  "delay_after_policy_creation_in_ms": null,
+                  "description": "",
+                  "id": "arn:aws:iam::000000000000:policy/terralith-team-a-policy",
+                  "name": "terralith-team-a-policy",
+                  "name_prefix": "",
+                  "path": "/",
+                  "policy": "{\"Statement\":[{\"Action\":[\"logs:PutLogEvents\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}],\"Version\":\"2012-10-17\"}",
+                  "policy_id": "ANPAWQQ3LQNEY220WX9M",
+                  "tags": {
+                    "tofu-address": "aws_iam_policy.team_a",
+                    "tofu-estate": "team-a"
+                  },
+                  "tags_all": {
+                    "tofu-address": "aws_iam_policy.team_a",
+                    "tofu-estate": "team-a"
+                  }
+                },
+                "sensitive_values": {
+                  "tags": {},
+                  "tags_all": {}
+                },
+                "identity": {
+                  "arn": "arn:aws:iam::000000000000:policy/terralith-team-a-policy"
+                },
+                "identity_schema_version": 0
+              },
+              {
+                "address": "aws_iam_role.team_a",
+                "mode": "managed",
+                "type": "aws_iam_role",
+                "name": "team_a",
+                "provider_name": "registry.opentofu.org/hashicorp/aws",
+                "schema_version": 0,
+                "values": {
+                  "arn": "arn:aws:iam::000000000000:role/terralith-team-a-role",
+                  "assume_role_policy": "{\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"ec2.amazonaws.com\"}}],\"Version\":\"2012-10-17\"}",
+                  "create_date": "2026-10-16T12:05:15Z",
+                  "description": "",
+                  "force_detach_policies": false,
+                  "id": "terralith-team-a-role",
+                  "inline_policy": [
+                    {
+                      "name": "terralith-team-a-inline",
+                      "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"logs:CreateLogStream\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}]}"
+                    }
+                  ],
+                  "managed_policy_arns": [
+                    "arn:aws:iam::000000000000:policy/terralith-team-a-policy"
+                  ],
+                  "max_session_duration": 3600,
+                  "name": "terralith-team-a-role",
+                  "name_prefix": "",
+                  "path": "/",
+                  "permissions_boundary": "",
+                  "tags": {
+                    "tofu-address": "aws_iam_role.team_a",
+                    "tofu-estate": "team-a"
+                  },
+                  "tags_all": {
+                    "tofu-address": "aws_iam_role.team_a",
+                    "tofu-estate": "team-a"
+                  },
+                  "unique_id": "AROA9S1JT4CLG9NZWK2I"
+                },
+                "sensitive_values": {
+                  "inline_policy": [
+                    {}
+                  ],
+                  "managed_policy_arns": [
+                    false
+                  ],
+                  "tags": {},
+                  "tags_all": {}
+                },
+                "identity": {
+                  "account_id": null,
+                  "name": "terralith-team-a-role"
+                },
+                "identity_schema_version": 0
+              },
+              {
+                "address": "aws_iam_role_policy.team_a_inline",
+                "mode": "managed",
+                "type": "aws_iam_role_policy",
+                "name": "team_a_inline",
+                "provider_name": "registry.opentofu.org/hashicorp/aws",
+                "schema_version": 0,
+                "values": {
+                  "id": "terralith-team-a-role:terralith-team-a-inline",
+                  "name": "terralith-team-a-inline",
+                  "name_prefix": "",
+                  "policy": "{\"Statement\":[{\"Action\":[\"logs:CreateLogStream\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}],\"Version\":\"2012-10-17\"}",
+                  "role": "terralith-team-a-role"
+                },
+                "sensitive_values": {},
+                "identity": {
+                  "account_id": null,
+                  "name": "terralith-team-a-inline",
+                  "role": "terralith-team-a-role"
+                },
+                "identity_schema_version": 0
+              },
+              {
+                "address": "aws_iam_role_policy_attachment.team_a",
+                "mode": "managed",
+                "type": "aws_iam_role_policy_attachment",
+                "name": "team_a",
+                "provider_name": "registry.opentofu.org/hashicorp/aws",
+                "schema_version": 0,
+                "values": {
+                  "id": "terralith-team-a-role/arn:aws:iam::000000000000:policy/terralith-team-a-policy",
+                  "policy_arn": "arn:aws:iam::000000000000:policy/terralith-team-a-policy",
+                  "role": "terralith-team-a-role"
+                },
+                "sensitive_values": {},
+                "identity": {
+                  "account_id": null,
+                  "policy_arn": "arn:aws:iam::000000000000:policy/terralith-team-a-policy",
+                  "role": "terralith-team-a-role"
+                },
+                "identity_schema_version": 0
+              }
+            ]
+          }
+        },
+        "resource_changes": [
+          {
+            "address": "aws_cloudwatch_log_group.team_a_0",
+            "mode": "managed",
+            "type": "aws_cloudwatch_log_group",
+            "name": "team_a_0",
+            "provider_name": "registry.opentofu.org/hashicorp/aws",
+            "change": {
+              "actions": [
+                "update"
+              ],
+              "before": {
+                "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-a/svc-0",
+                "deletion_protection_enabled": false,
+                "id": "/terralith/team-a/svc-0",
+                "kms_key_id": "",
+                "log_group_class": "",
+                "name": "/terralith/team-a/svc-0",
+                "name_prefix": "",
+                "region": "us-east-1",
+                "retention_in_days": 7,
+                "skip_destroy": false,
+                "tags": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_a_0",
+                  "tofu-estate": "team-a"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_a_0",
+                  "tofu-estate": "team-a"
+                }
+              },
+              "after": {
+                "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-a/svc-0",
+                "deletion_protection_enabled": false,
+                "id": "/terralith/team-a/svc-0",
+                "kms_key_id": "",
+                "log_group_class": "",
+                "name": "/terralith/team-a/svc-0",
+                "name_prefix": "",
+                "region": "us-east-1",
+                "retention_in_days": 14,
+                "skip_destroy": false,
+                "tags": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_a_0",
+                  "tofu-estate": "team-a"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_a_0",
+                  "tofu-estate": "team-a"
+                }
+              },
+              "after_unknown": {},
+              "before_sensitive": {
+                "tags": {},
+                "tags_all": {}
+              },
+              "after_sensitive": {
+                "tags": {},
+                "tags_all": {}
+              },
+              "before_identity": {
+                "account_id": null,
+                "name": "/terralith/team-a/svc-0",
+                "region": null
+              },
+              "after_identity": {
+                "account_id": null,
+                "name": "/terralith/team-a/svc-0",
+                "region": null
+              }
+            }
+          },
+          {
+            "address": "aws_cloudwatch_log_group.team_a_1",
+            "mode": "managed",
+            "type": "aws_cloudwatch_log_group",
+            "name": "team_a_1",
+            "provider_name": "registry.opentofu.org/hashicorp/aws",
+            "change": {
+              "actions": [
+                "no-op"
+              ],
+              "before": {
+                "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-a/svc-1",
+                "deletion_protection_enabled": false,
+                "id": "/terralith/team-a/svc-1",
+                "kms_key_id": "",
+                "log_group_class": "",
+                "name": "/terralith/team-a/svc-1",
+                "name_prefix": "",
+                "region": "us-east-1",
+                "retention_in_days": 7,
+                "skip_destroy": false,
+                "tags": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_a_1",
+                  "tofu-estate": "team-a"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_a_1",
+                  "tofu-estate": "team-a"
+                }
+              },
+              "after": {
+                "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-a/svc-1",
+                "deletion_protection_enabled": false,
+                "id": "/terralith/team-a/svc-1",
+                "kms_key_id": "",
+                "log_group_class": "",
+                "name": "/terralith/team-a/svc-1",
+                "name_prefix": "",
+                "region": "us-east-1",
+                "retention_in_days": 7,
+                "skip_destroy": false,
+                "tags": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_a_1",
+                  "tofu-estate": "team-a"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_a_1",
+                  "tofu-estate": "team-a"
+                }
+              },
+              "after_unknown": {},
+              "before_sensitive": {
+                "tags": {},
+                "tags_all": {}
+              },
+              "after_sensitive": {
+                "tags": {},
+                "tags_all": {}
+              },
+              "before_identity": {
+                "account_id": null,
+                "name": "/terralith/team-a/svc-1",
+                "region": null
+              },
+              "after_identity": {
+                "account_id": null,
+                "name": "/terralith/team-a/svc-1",
+                "region": null
+              }
+            }
+          },
+          {
+            "address": "aws_cloudwatch_log_group.team_a_2",
+            "mode": "managed",
+            "type": "aws_cloudwatch_log_group",
+            "name": "team_a_2",
+            "provider_name": "registry.opentofu.org/hashicorp/aws",
+            "change": {
+              "actions": [
+                "no-op"
+              ],
+              "before": {
+                "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-a/svc-2",
+                "deletion_protection_enabled": false,
+                "id": "/terralith/team-a/svc-2",
+                "kms_key_id": "",
+                "log_group_class": "",
+                "name": "/terralith/team-a/svc-2",
+                "name_prefix": "",
+                "region": "us-east-1",
+                "retention_in_days": 7,
+                "skip_destroy": false,
+                "tags": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_a_2",
+                  "tofu-estate": "team-a"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_a_2",
+                  "tofu-estate": "team-a"
+                }
+              },
+              "after": {
+                "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-a/svc-2",
+                "deletion_protection_enabled": false,
+                "id": "/terralith/team-a/svc-2",
+                "kms_key_id": "",
+                "log_group_class": "",
+                "name": "/terralith/team-a/svc-2",
+                "name_prefix": "",
+                "region": "us-east-1",
+                "retention_in_days": 7,
+                "skip_destroy": false,
+                "tags": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_a_2",
+                  "tofu-estate": "team-a"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_a_2",
+                  "tofu-estate": "team-a"
+                }
+              },
+              "after_unknown": {},
+              "before_sensitive": {
+                "tags": {},
+                "tags_all": {}
+              },
+              "after_sensitive": {
+                "tags": {},
+                "tags_all": {}
+              },
+              "before_identity": {
+                "account_id": null,
+                "name": "/terralith/team-a/svc-2",
+                "region": null
+              },
+              "after_identity": {
+                "account_id": null,
+                "name": "/terralith/team-a/svc-2",
+                "region": null
+              }
+            }
+          },
+          {
+            "address": "aws_iam_policy.team_a",
+            "mode": "managed",
+            "type": "aws_iam_policy",
+            "name": "team_a",
+            "provider_name": "registry.opentofu.org/hashicorp/aws",
+            "change": {
+              "actions": [
+                "no-op"
+              ],
+              "before": {
+                "arn": "arn:aws:iam::000000000000:policy/terralith-team-a-policy",
+                "attachment_count": 1,
+                "delay_after_policy_creation_in_ms": null,
+                "description": "",
+                "id": "arn:aws:iam::000000000000:policy/terralith-team-a-policy",
+                "name": "terralith-team-a-policy",
+                "name_prefix": "",
+                "path": "/",
+                "policy": "{\"Statement\":[{\"Action\":[\"logs:PutLogEvents\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}],\"Version\":\"2012-10-17\"}",
+                "policy_id": "ANPAWQQ3LQNEY220WX9M",
+                "tags": {
+                  "tofu-address": "aws_iam_policy.team_a",
+                  "tofu-estate": "team-a"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_iam_policy.team_a",
+                  "tofu-estate": "team-a"
+                }
+              },
+              "after": {
+                "arn": "arn:aws:iam::000000000000:policy/terralith-team-a-policy",
+                "attachment_count": 1,
+                "delay_after_policy_creation_in_ms": null,
+                "description": "",
+                "id": "arn:aws:iam::000000000000:policy/terralith-team-a-policy",
+                "name": "terralith-team-a-policy",
+                "name_prefix": "",
+                "path": "/",
+                "policy": "{\"Statement\":[{\"Action\":[\"logs:PutLogEvents\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}],\"Version\":\"2012-10-17\"}",
+                "policy_id": "ANPAWQQ3LQNEY220WX9M",
+                "tags": {
+                  "tofu-address": "aws_iam_policy.team_a",
+                  "tofu-estate": "team-a"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_iam_policy.team_a",
+                  "tofu-estate": "team-a"
+                }
+              },
+              "after_unknown": {},
+              "before_sensitive": {
+                "tags": {},
+                "tags_all": {}
+              },
+              "after_sensitive": {
+                "tags": {},
+                "tags_all": {}
+              },
+              "before_identity": {
+                "arn": "arn:aws:iam::000000000000:policy/terralith-team-a-policy"
+              },
+              "after_identity": {
+                "arn": "arn:aws:iam::000000000000:policy/terralith-team-a-policy"
+              }
+            }
+          },
+          {
+            "address": "aws_iam_role.team_a",
+            "mode": "managed",
+            "type": "aws_iam_role",
+            "name": "team_a",
+            "provider_name": "registry.opentofu.org/hashicorp/aws",
+            "change": {
+              "actions": [
+                "no-op"
+              ],
+              "before": {
+                "arn": "arn:aws:iam::000000000000:role/terralith-team-a-role",
+                "assume_role_policy": "{\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"ec2.amazonaws.com\"}}],\"Version\":\"2012-10-17\"}",
+                "create_date": "2026-10-16T12:05:15Z",
+                "description": "",
+                "force_detach_policies": false,
+                "id": "terralith-team-a-role",
+                "inline_policy": [
+                  {
+                    "name": "terralith-team-a-inline",
+                    "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"logs:CreateLogStream\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}]}"
+                  }
+                ],
+                "managed_policy_arns": [
+                  "arn:aws:iam::000000000000:policy/terralith-team-a-policy"
+                ],
+                "max_session_duration": 3600,
+                "name": "terralith-team-a-role",
+                "name_prefix": "",
+                "path": "/",
+                "permissions_boundary": "",
+                "tags": {
+                  "tofu-address": "aws_iam_role.team_a",
+                  "tofu-estate": "team-a"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_iam_role.team_a",
+                  "tofu-estate": "team-a"
+                },
+                "unique_id": "AROA9S1JT4CLG9NZWK2I"
+              },
+              "after": {
+                "arn": "arn:aws:iam::000000000000:role/terralith-team-a-role",
+                "assume_role_policy": "{\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"ec2.amazonaws.com\"}}],\"Version\":\"2012-10-17\"}",
+                "create_date": "2026-10-16T12:05:15Z",
+                "description": "",
+                "force_detach_policies": false,
+                "id": "terralith-team-a-role",
+                "inline_policy": [
+                  {
+                    "name": "terralith-team-a-inline",
+                    "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"logs:CreateLogStream\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}]}"
+                  }
+                ],
+                "managed_policy_arns": [
+                  "arn:aws:iam::000000000000:policy/terralith-team-a-policy"
+                ],
+                "max_session_duration": 3600,
+                "name": "terralith-team-a-role",
+                "name_prefix": "",
+                "path": "/",
+                "permissions_boundary": "",
+                "tags": {
+                  "tofu-address": "aws_iam_role.team_a",
+                  "tofu-estate": "team-a"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_iam_role.team_a",
+                  "tofu-estate": "team-a"
+                },
+                "unique_id": "AROA9S1JT4CLG9NZWK2I"
+              },
+              "after_unknown": {},
+              "before_sensitive": {
+                "inline_policy": [
+                  {}
+                ],
+                "managed_policy_arns": [
+                  false
+                ],
+                "tags": {},
+                "tags_all": {}
+              },
+              "after_sensitive": {
+                "inline_policy": [
+                  {}
+                ],
+                "managed_policy_arns": [
+                  false
+                ],
+                "tags": {},
+                "tags_all": {}
+              },
+              "before_identity": {
+                "account_id": null,
+                "name": "terralith-team-a-role"
+              },
+              "after_identity": {
+                "account_id": null,
+                "name": "terralith-team-a-role"
+              }
+            }
+          },
+          {
+            "address": "aws_iam_role_policy.team_a_inline",
+            "mode": "managed",
+            "type": "aws_iam_role_policy",
+            "name": "team_a_inline",
+            "provider_name": "registry.opentofu.org/hashicorp/aws",
+            "change": {
+              "actions": [
+                "no-op"
+              ],
+              "before": {
+                "id": "terralith-team-a-role:terralith-team-a-inline",
+                "name": "terralith-team-a-inline",
+                "name_prefix": "",
+                "policy": "{\"Statement\":[{\"Action\":[\"logs:CreateLogStream\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}],\"Version\":\"2012-10-17\"}",
+                "role": "terralith-team-a-role"
+              },
+              "after": {
+                "id": "terralith-team-a-role:terralith-team-a-inline",
+                "name": "terralith-team-a-inline",
+                "name_prefix": "",
+                "policy": "{\"Statement\":[{\"Action\":[\"logs:CreateLogStream\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}],\"Version\":\"2012-10-17\"}",
+                "role": "terralith-team-a-role"
+              },
+              "after_unknown": {},
+              "before_sensitive": {},
+              "after_sensitive": {},
+              "before_identity": {
+                "account_id": null,
+                "name": "terralith-team-a-inline",
+                "role": "terralith-team-a-role"
+              },
+              "after_identity": {
+                "account_id": null,
+                "name": "terralith-team-a-inline",
+                "role": "terralith-team-a-role"
+              }
+            }
+          },
+          {
+            "address": "aws_iam_role_policy_attachment.team_a",
+            "mode": "managed",
+            "type": "aws_iam_role_policy_attachment",
+            "name": "team_a",
+            "provider_name": "registry.opentofu.org/hashicorp/aws",
+            "change": {
+              "actions": [
+                "no-op"
+              ],
+              "before": {
+                "id": "terralith-team-a-role/arn:aws:iam::000000000000:policy/terralith-team-a-policy",
+                "policy_arn": "arn:aws:iam::000000000000:policy/terralith-team-a-policy",
+                "role": "terralith-team-a-role"
+              },
+              "after": {
+                "id": "terralith-team-a-role/arn:aws:iam::000000000000:policy/terralith-team-a-policy",
+                "policy_arn": "arn:aws:iam::000000000000:policy/terralith-team-a-policy",
+                "role": "terralith-team-a-role"
+              },
+              "after_unknown": {},
+              "before_sensitive": {},
+              "after_sensitive": {},
+              "before_identity": {
+                "account_id": null,
+                "policy_arn": "arn:aws:iam::000000000000:policy/terralith-team-a-policy",
+                "role": "terralith-team-a-role"
+              },
+              "after_identity": {
+                "account_id": null,
+                "policy_arn": "arn:aws:iam::000000000000:policy/terralith-team-a-policy",
+                "role": "terralith-team-a-role"
+              }
+            }
+          }
+        ],
+        "prior_state": {
+          "format_version": "1.0",
+          "terraform_version": "1.13.0",
+          "values": {
+            "root_module": {
+              "resources": [
+                {
+                  "address": "data.terraform_estate_outputs.platform",
+                  "mode": "data",
+                  "type": "terraform_estate_outputs",
+                  "name": "platform",
+                  "provider_name": "terraform.io/builtin/terraform",
+                  "schema_version": 0,
+                  "values": {
+                    "estate": "terralith",
+                    "names": [
+                      "log_retention_days"
+                    ],
+                    "values": {
+                      "log_retention_days": 14
+                    }
+                  },
+                  "sensitive_values": {
+                    "names": [
+                      false
+                    ],
+                    "values": {}
+                  }
+                },
+                {
+                  "address": "aws_cloudwatch_log_group.team_a_0",
+                  "mode": "managed",
+                  "type": "aws_cloudwatch_log_group",
+                  "name": "team_a_0",
+                  "provider_name": "registry.opentofu.org/hashicorp/aws",
+                  "schema_version": 0,
+                  "values": {
+                    "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-a/svc-0",
+                    "deletion_protection_enabled": false,
+                    "id": "/terralith/team-a/svc-0",
+                    "kms_key_id": "",
+                    "log_group_class": "",
+                    "name": "/terralith/team-a/svc-0",
+                    "name_prefix": "",
+                    "region": "us-east-1",
+                    "retention_in_days": 7,
+                    "skip_destroy": false,
+                    "tags": {
+                      "tofu-address": "aws_cloudwatch_log_group.team_a_0",
+                      "tofu-estate": "team-a"
+                    },
+                    "tags_all": {
+                      "tofu-address": "aws_cloudwatch_log_group.team_a_0",
+                      "tofu-estate": "team-a"
+                    }
+                  },
+                  "sensitive_values": {
+                    "tags": {},
+                    "tags_all": {}
+                  },
+                  "identity": {
+                    "account_id": null,
+                    "name": "/terralith/team-a/svc-0",
+                    "region": null
+                  },
+                  "identity_schema_version": 0
+                },
+                {
+                  "address": "aws_cloudwatch_log_group.team_a_1",
+                  "mode": "managed",
+                  "type": "aws_cloudwatch_log_group",
+                  "name": "team_a_1",
+                  "provider_name": "registry.opentofu.org/hashicorp/aws",
+                  "schema_version": 0,
+                  "values": {
+                    "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-a/svc-1",
+                    "deletion_protection_enabled": false,
+                    "id": "/terralith/team-a/svc-1",
+                    "kms_key_id": "",
+                    "log_group_class": "",
+                    "name": "/terralith/team-a/svc-1",
+                    "name_prefix": "",
+                    "region": "us-east-1",
+                    "retention_in_days": 7,
+                    "skip_destroy": false,
+                    "tags": {
+                      "tofu-address": "aws_cloudwatch_log_group.team_a_1",
+                      "tofu-estate": "team-a"
+                    },
+                    "tags_all": {
+                      "tofu-address": "aws_cloudwatch_log_group.team_a_1",
+                      "tofu-estate": "team-a"
+                    }
+                  },
+                  "sensitive_values": {
+                    "tags": {},
+                    "tags_all": {}
+                  },
+                  "identity": {
+                    "account_id": null,
+                    "name": "/terralith/team-a/svc-1",
+                    "region": null
+                  },
+                  "identity_schema_version": 0
+                },
+                {
+                  "address": "aws_cloudwatch_log_group.team_a_2",
+                  "mode": "managed",
+                  "type": "aws_cloudwatch_log_group",
+                  "name": "team_a_2",
+                  "provider_name": "registry.opentofu.org/hashicorp/aws",
+                  "schema_version": 0,
+                  "values": {
+                    "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-a/svc-2",
+                    "deletion_protection_enabled": false,
+                    "id": "/terralith/team-a/svc-2",
+                    "kms_key_id": "",
+                    "log_group_class": "",
+                    "name": "/terralith/team-a/svc-2",
+                    "name_prefix": "",
+                    "region": "us-east-1",
+                    "retention_in_days": 7,
+                    "skip_destroy": false,
+                    "tags": {
+                      "tofu-address": "aws_cloudwatch_log_group.team_a_2",
+                      "tofu-estate": "team-a"
+                    },
+                    "tags_all": {
+                      "tofu-address": "aws_cloudwatch_log_group.team_a_2",
+                      "tofu-estate": "team-a"
+                    }
+                  },
+                  "sensitive_values": {
+                    "tags": {},
+                    "tags_all": {}
+                  },
+                  "identity": {
+                    "account_id": null,
+                    "name": "/terralith/team-a/svc-2",
+                    "region": null
+                  },
+                  "identity_schema_version": 0
+                },
+                {
+                  "address": "aws_iam_policy.team_a",
+                  "mode": "managed",
+                  "type": "aws_iam_policy",
+                  "name": "team_a",
+                  "provider_name": "registry.opentofu.org/hashicorp/aws",
+                  "schema_version": 0,
+                  "values": {
+                    "arn": "arn:aws:iam::000000000000:policy/terralith-team-a-policy",
+                    "attachment_count": 1,
+                    "delay_after_policy_creation_in_ms": null,
+                    "description": "",
+                    "id": "arn:aws:iam::000000000000:policy/terralith-team-a-policy",
+                    "name": "terralith-team-a-policy",
+                    "name_prefix": "",
+                    "path": "/",
+                    "policy": "{\"Statement\":[{\"Action\":[\"logs:PutLogEvents\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}],\"Version\":\"2012-10-17\"}",
+                    "policy_id": "ANPAWQQ3LQNEY220WX9M",
+                    "tags": {
+                      "tofu-address": "aws_iam_policy.team_a",
+                      "tofu-estate": "team-a"
+                    },
+                    "tags_all": {
+                      "tofu-address": "aws_iam_policy.team_a",
+                      "tofu-estate": "team-a"
+                    }
+                  },
+                  "sensitive_values": {
+                    "tags": {},
+                    "tags_all": {}
+                  },
+                  "identity": {
+                    "arn": "arn:aws:iam::000000000000:policy/terralith-team-a-policy"
+                  },
+                  "identity_schema_version": 0
+                },
+                {
+                  "address": "aws_iam_role.team_a",
+                  "mode": "managed",
+                  "type": "aws_iam_role",
+                  "name": "team_a",
+                  "provider_name": "registry.opentofu.org/hashicorp/aws",
+                  "schema_version": 0,
+                  "values": {
+                    "arn": "arn:aws:iam::000000000000:role/terralith-team-a-role",
+                    "assume_role_policy": "{\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"ec2.amazonaws.com\"}}],\"Version\":\"2012-10-17\"}",
+                    "create_date": "2026-10-16T12:05:15Z",
+                    "description": "",
+                    "force_detach_policies": false,
+                    "id": "terralith-team-a-role",
+                    "inline_policy": [
+                      {
+                        "name": "terralith-team-a-inline",
+                        "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"logs:CreateLogStream\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}]}"
+                      }
+                    ],
+                    "managed_policy_arns": [
+                      "arn:aws:iam::000000000000:policy/terralith-team-a-policy"
+                    ],
+                    "max_session_duration": 3600,
+                    "name": "terralith-team-a-role",
+                    "name_prefix": "",
+                    "path": "/",
+                    "permissions_boundary": "",
+                    "tags": {
+                      "tofu-address": "aws_iam_role.team_a",
+                      "tofu-estate": "team-a"
+                    },
+                    "tags_all": {
+                      "tofu-address": "aws_iam_role.team_a",
+                      "tofu-estate": "team-a"
+                    },
+                    "unique_id": "AROA9S1JT4CLG9NZWK2I"
+                  },
+                  "sensitive_values": {
+                    "inline_policy": [
+                      {}
+                    ],
+                    "managed_policy_arns": [
+                      false
+                    ],
+                    "tags": {},
+                    "tags_all": {}
+                  },
+                  "identity": {
+                    "account_id": null,
+                    "name": "terralith-team-a-role"
+                  },
+                  "identity_schema_version": 0
+                },
+                {
+                  "address": "aws_iam_role_policy.team_a_inline",
+                  "mode": "managed",
+                  "type": "aws_iam_role_policy",
+                  "name": "team_a_inline",
+                  "provider_name": "registry.opentofu.org/hashicorp/aws",
+                  "schema_version": 0,
+                  "values": {
+                    "id": "terralith-team-a-role:terralith-team-a-inline",
+                    "name": "terralith-team-a-inline",
+                    "name_prefix": "",
+                    "policy": "{\"Statement\":[{\"Action\":[\"logs:CreateLogStream\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}],\"Version\":\"2012-10-17\"}",
+                    "role": "terralith-team-a-role"
+                  },
+                  "sensitive_values": {},
+                  "depends_on": [
+                    "aws_iam_role.team_a"
+                  ],
+                  "identity": {
+                    "account_id": null,
+                    "name": "terralith-team-a-inline",
+                    "role": "terralith-team-a-role"
+                  },
+                  "identity_schema_version": 0
+                },
+                {
+                  "address": "aws_iam_role_policy_attachment.team_a",
+                  "mode": "managed",
+                  "type": "aws_iam_role_policy_attachment",
+                  "name": "team_a",
+                  "provider_name": "registry.opentofu.org/hashicorp/aws",
+                  "schema_version": 0,
+                  "values": {
+                    "id": "terralith-team-a-role/arn:aws:iam::000000000000:policy/terralith-team-a-policy",
+                    "policy_arn": "arn:aws:iam::000000000000:policy/terralith-team-a-policy",
+                    "role": "terralith-team-a-role"
+                  },
+                  "sensitive_values": {},
+                  "depends_on": [
+                    "aws_iam_policy.team_a",
+                    "aws_iam_role.team_a"
+                  ],
+                  "identity": {
+                    "account_id": null,
+                    "policy_arn": "arn:aws:iam::000000000000:policy/terralith-team-a-policy",
+                    "role": "terralith-team-a-role"
+                  },
+                  "identity_schema_version": 0
+                }
+              ]
+            }
+          }
+        },
+        "configuration": {
+          "provider_config": {
+            "aws": {
+              "name": "aws",
+              "full_name": "registry.opentofu.org/hashicorp/aws",
+              "version_constraint": "6.59.0",
+              "expressions": {
+                "region": {
+                  "constant_value": "us-east-1"
+                }
+              }
+            },
+            "terraform": {
+              "name": "terraform",
+              "full_name": "terraform.io/builtin/terraform"
+            }
+          },
+          "root_module": {
+            "resources": [
+              {
+                "address": "aws_cloudwatch_log_group.team_a_0",
+                "mode": "managed",
+                "type": "aws_cloudwatch_log_group",
+                "name": "team_a_0",
+                "provider_config_key": "aws",
+                "expressions": {
+                  "name": {
+                    "constant_value": "/terralith/team-a/svc-0"
+                  },
+                  "retention_in_days": {
+                    "references": [
+                      "data.terraform_estate_outputs.platform.values.log_retention_days",
+                      "data.terraform_estate_outputs.platform.values",
+                      "data.terraform_estate_outputs.platform"
+                    ]
+                  }
+                },
+                "schema_version": 0
+              },
+              {
+                "address": "aws_cloudwatch_log_group.team_a_1",
+                "mode": "managed",
+                "type": "aws_cloudwatch_log_group",
+                "name": "team_a_1",
+                "provider_config_key": "aws",
+                "expressions": {
+                  "name": {
+                    "constant_value": "/terralith/team-a/svc-1"
+                  },
+                  "retention_in_days": {
+                    "constant_value": 7
+                  }
+                },
+                "schema_version": 0
+              },
+              {
+                "address": "aws_cloudwatch_log_group.team_a_2",
+                "mode": "managed",
+                "type": "aws_cloudwatch_log_group",
+                "name": "team_a_2",
+                "provider_config_key": "aws",
+                "expressions": {
+                  "name": {
+                    "constant_value": "/terralith/team-a/svc-2"
+                  },
+                  "retention_in_days": {
+                    "constant_value": 7
+                  }
+                },
+                "schema_version": 0
+              },
+              {
+                "address": "aws_iam_policy.team_a",
+                "mode": "managed",
+                "type": "aws_iam_policy",
+                "name": "team_a",
+                "provider_config_key": "aws",
+                "expressions": {
+                  "name": {
+                    "constant_value": "terralith-team-a-policy"
+                  },
+                  "policy": {}
+                },
+                "schema_version": 0
+              },
+              {
+                "address": "aws_iam_role.team_a",
+                "mode": "managed",
+                "type": "aws_iam_role",
+                "name": "team_a",
+                "provider_config_key": "aws",
+                "expressions": {
+                  "assume_role_policy": {},
+                  "name": {
+                    "constant_value": "terralith-team-a-role"
+                  }
+                },
+                "schema_version": 0
+              },
+              {
+                "address": "aws_iam_role_policy.team_a_inline",
+                "mode": "managed",
+                "type": "aws_iam_role_policy",
+                "name": "team_a_inline",
+                "provider_config_key": "aws",
+                "expressions": {
+                  "name": {
+                    "constant_value": "terralith-team-a-inline"
+                  },
+                  "policy": {},
+                  "role": {
+                    "references": [
+                      "aws_iam_role.team_a.id",
+                      "aws_iam_role.team_a"
+                    ]
+                  }
+                },
+                "schema_version": 0
+              },
+              {
+                "address": "aws_iam_role_policy_attachment.team_a",
+                "mode": "managed",
+                "type": "aws_iam_role_policy_attachment",
+                "name": "team_a",
+                "provider_config_key": "aws",
+                "expressions": {
+                  "policy_arn": {
+                    "references": [
+                      "aws_iam_policy.team_a.arn",
+                      "aws_iam_policy.team_a"
+                    ]
+                  },
+                  "role": {
+                    "references": [
+                      "aws_iam_role.team_a.name",
+                      "aws_iam_role.team_a"
+                    ]
+                  }
+                },
+                "schema_version": 0
+              },
+              {
+                "address": "data.terraform_estate_outputs.platform",
+                "mode": "data",
+                "type": "terraform_estate_outputs",
+                "name": "platform",
+                "provider_config_key": "terraform",
+                "expressions": {
+                  "estate": {
+                    "constant_value": "terralith"
+                  },
+                  "names": {
+                    "constant_value": [
+                      "log_retention_days"
+                    ]
+                  }
+                },
+                "schema_version": 0
+              }
+            ]
+          }
+        },
+        "relevant_attributes": [
+          {
+            "resource": "data.terraform_estate_outputs.platform",
+            "attribute": [
+              "values",
+              "log_retention_days"
+            ]
+          }
+        ],
+        "timestamp": "2026-10-16T12:06:55Z",
+        "errored": false
+      },
+      "digest": "sha256:be85842a83a5dfcad581b52c80effe66f8bcc1878ae01f6efdfbd3f916c75625"
+    },
+    {
+      "root": "team-b",
+      "estate": "team-b",
+      "status": "planned",
+      "error": "",
+      "changes": true,
+      "plan_file": ".terralith/plan-set/team-b.tfplan",
+      "log_file": ".terralith/plan-set/team-b.log",
+      "duration_ms": 2021,
+      "plan": {
+        "format_version": "1.2",
+        "terraform_version": "1.13.0",
+        "planned_values": {
+          "root_module": {
+            "resources": [
+              {
+                "address": "aws_cloudwatch_log_group.team_b_0",
+                "mode": "managed",
+                "type": "aws_cloudwatch_log_group",
+                "name": "team_b_0",
+                "provider_name": "registry.opentofu.org/hashicorp/aws",
+                "schema_version": 0,
+                "values": {
+                  "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-b/svc-0",
+                  "deletion_protection_enabled": false,
+                  "id": "/terralith/team-b/svc-0",
+                  "kms_key_id": "",
+                  "log_group_class": "",
+                  "name": "/terralith/team-b/svc-0",
+                  "name_prefix": "",
+                  "region": "us-east-1",
+                  "retention_in_days": 14,
+                  "skip_destroy": false,
+                  "tags": {
+                    "tofu-address": "aws_cloudwatch_log_group.team_b_0",
+                    "tofu-estate": "team-b"
+                  },
+                  "tags_all": {
+                    "tofu-address": "aws_cloudwatch_log_group.team_b_0",
+                    "tofu-estate": "team-b"
+                  }
+                },
+                "sensitive_values": {
+                  "tags": {},
+                  "tags_all": {}
+                },
+                "identity": {
+                  "account_id": null,
+                  "name": "/terralith/team-b/svc-0",
+                  "region": null
+                },
+                "identity_schema_version": 0
+              },
+              {
+                "address": "aws_cloudwatch_log_group.team_b_1",
+                "mode": "managed",
+                "type": "aws_cloudwatch_log_group",
+                "name": "team_b_1",
+                "provider_name": "registry.opentofu.org/hashicorp/aws",
+                "schema_version": 0,
+                "values": {
+                  "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-b/svc-1",
+                  "deletion_protection_enabled": false,
+                  "id": "/terralith/team-b/svc-1",
+                  "kms_key_id": "",
+                  "log_group_class": "",
+                  "name": "/terralith/team-b/svc-1",
+                  "name_prefix": "",
+                  "region": "us-east-1",
+                  "retention_in_days": 7,
+                  "skip_destroy": false,
+                  "tags": {
+                    "tofu-address": "aws_cloudwatch_log_group.team_b_1",
+                    "tofu-estate": "team-b"
+                  },
+                  "tags_all": {
+                    "tofu-address": "aws_cloudwatch_log_group.team_b_1",
+                    "tofu-estate": "team-b"
+                  }
+                },
+                "sensitive_values": {
+                  "tags": {},
+                  "tags_all": {}
+                },
+                "identity": {
+                  "account_id": null,
+                  "name": "/terralith/team-b/svc-1",
+                  "region": null
+                },
+                "identity_schema_version": 0
+              },
+              {
+                "address": "aws_cloudwatch_log_group.team_b_2",
+                "mode": "managed",
+                "type": "aws_cloudwatch_log_group",
+                "name": "team_b_2",
+                "provider_name": "registry.opentofu.org/hashicorp/aws",
+                "schema_version": 0,
+                "values": {
+                  "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-b/svc-2",
+                  "deletion_protection_enabled": false,
+                  "id": "/terralith/team-b/svc-2",
+                  "kms_key_id": "",
+                  "log_group_class": "",
+                  "name": "/terralith/team-b/svc-2",
+                  "name_prefix": "",
+                  "region": "us-east-1",
+                  "retention_in_days": 7,
+                  "skip_destroy": false,
+                  "tags": {
+                    "tofu-address": "aws_cloudwatch_log_group.team_b_2",
+                    "tofu-estate": "team-b"
+                  },
+                  "tags_all": {
+                    "tofu-address": "aws_cloudwatch_log_group.team_b_2",
+                    "tofu-estate": "team-b"
+                  }
+                },
+                "sensitive_values": {
+                  "tags": {},
+                  "tags_all": {}
+                },
+                "identity": {
+                  "account_id": null,
+                  "name": "/terralith/team-b/svc-2",
+                  "region": null
+                },
+                "identity_schema_version": 0
+              },
+              {
+                "address": "aws_iam_policy.team_b",
+                "mode": "managed",
+                "type": "aws_iam_policy",
+                "name": "team_b",
+                "provider_name": "registry.opentofu.org/hashicorp/aws",
+                "schema_version": 0,
+                "values": {
+                  "arn": "arn:aws:iam::000000000000:policy/terralith-team-b-policy",
+                  "attachment_count": 1,
+                  "delay_after_policy_creation_in_ms": null,
+                  "description": "",
+                  "id": "arn:aws:iam::000000000000:policy/terralith-team-b-policy",
+                  "name": "terralith-team-b-policy",
+                  "name_prefix": "",
+                  "path": "/",
+                  "policy": "{\"Statement\":[{\"Action\":[\"logs:PutLogEvents\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}],\"Version\":\"2012-10-17\"}",
+                  "policy_id": "ANPAPP5TVNH11S4ZH234",
+                  "tags": {
+                    "tofu-address": "aws_iam_policy.team_b",
+                    "tofu-estate": "team-b"
+                  },
+                  "tags_all": {
+                    "tofu-address": "aws_iam_policy.team_b",
+                    "tofu-estate": "team-b"
+                  }
+                },
+                "sensitive_values": {
+                  "tags": {},
+                  "tags_all": {}
+                },
+                "identity": {
+                  "arn": "arn:aws:iam::000000000000:policy/terralith-team-b-policy"
+                },
+                "identity_schema_version": 0
+              },
+              {
+                "address": "aws_iam_role.team_b",
+                "mode": "managed",
+                "type": "aws_iam_role",
+                "name": "team_b",
+                "provider_name": "registry.opentofu.org/hashicorp/aws",
+                "schema_version": 0,
+                "values": {
+                  "arn": "arn:aws:iam::000000000000:role/terralith-team-b-role",
+                  "assume_role_policy": "{\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"ec2.amazonaws.com\"}}],\"Version\":\"2012-10-17\"}",
+                  "create_date": "2026-10-16T12:05:15Z",
+                  "description": "",
+                  "force_detach_policies": false,
+                  "id": "terralith-team-b-role",
+                  "inline_policy": [
+                    {
+                      "name": "terralith-team-b-inline",
+                      "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"logs:CreateLogStream\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}]}"
+                    }
+                  ],
+                  "managed_policy_arns": [
+                    "arn:aws:iam::000000000000:policy/terralith-team-b-policy"
+                  ],
+                  "max_session_duration": 3600,
+                  "name": "terralith-team-b-role",
+                  "name_prefix": "",
+                  "path": "/",
+                  "permissions_boundary": "",
+                  "tags": {
+                    "tofu-address": "aws_iam_role.team_b",
+                    "tofu-estate": "team-b"
+                  },
+                  "tags_all": {
+                    "tofu-address": "aws_iam_role.team_b",
+                    "tofu-estate": "team-b"
+                  },
+                  "unique_id": "AROA4RFHNT2WOLTNESC8"
+                },
+                "sensitive_values": {
+                  "inline_policy": [
+                    {}
+                  ],
+                  "managed_policy_arns": [
+                    false
+                  ],
+                  "tags": {},
+                  "tags_all": {}
+                },
+                "identity": {
+                  "account_id": null,
+                  "name": "terralith-team-b-role"
+                },
+                "identity_schema_version": 0
+              },
+              {
+                "address": "aws_iam_role_policy.team_b_inline",
+                "mode": "managed",
+                "type": "aws_iam_role_policy",
+                "name": "team_b_inline",
+                "provider_name": "registry.opentofu.org/hashicorp/aws",
+                "schema_version": 0,
+                "values": {
+                  "id": "terralith-team-b-role:terralith-team-b-inline",
+                  "name": "terralith-team-b-inline",
+                  "name_prefix": "",
+                  "policy": "{\"Statement\":[{\"Action\":[\"logs:CreateLogStream\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}],\"Version\":\"2012-10-17\"}",
+                  "role": "terralith-team-b-role"
+                },
+                "sensitive_values": {},
+                "identity": {
+                  "account_id": null,
+                  "name": "terralith-team-b-inline",
+                  "role": "terralith-team-b-role"
+                },
+                "identity_schema_version": 0
+              },
+              {
+                "address": "aws_iam_role_policy_attachment.team_b",
+                "mode": "managed",
+                "type": "aws_iam_role_policy_attachment",
+                "name": "team_b",
+                "provider_name": "registry.opentofu.org/hashicorp/aws",
+                "schema_version": 0,
+                "values": {
+                  "id": "terralith-team-b-role/arn:aws:iam::000000000000:policy/terralith-team-b-policy",
+                  "policy_arn": "arn:aws:iam::000000000000:policy/terralith-team-b-policy",
+                  "role": "terralith-team-b-role"
+                },
+                "sensitive_values": {},
+                "identity": {
+                  "account_id": null,
+                  "policy_arn": "arn:aws:iam::000000000000:policy/terralith-team-b-policy",
+                  "role": "terralith-team-b-role"
+                },
+                "identity_schema_version": 0
+              }
+            ]
+          }
+        },
+        "resource_changes": [
+          {
+            "address": "aws_cloudwatch_log_group.team_b_0",
+            "mode": "managed",
+            "type": "aws_cloudwatch_log_group",
+            "name": "team_b_0",
+            "provider_name": "registry.opentofu.org/hashicorp/aws",
+            "change": {
+              "actions": [
+                "update"
+              ],
+              "before": {
+                "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-b/svc-0",
+                "deletion_protection_enabled": false,
+                "id": "/terralith/team-b/svc-0",
+                "kms_key_id": "",
+                "log_group_class": "",
+                "name": "/terralith/team-b/svc-0",
+                "name_prefix": "",
+                "region": "us-east-1",
+                "retention_in_days": 7,
+                "skip_destroy": false,
+                "tags": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_b_0",
+                  "tofu-estate": "team-b"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_b_0",
+                  "tofu-estate": "team-b"
+                }
+              },
+              "after": {
+                "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-b/svc-0",
+                "deletion_protection_enabled": false,
+                "id": "/terralith/team-b/svc-0",
+                "kms_key_id": "",
+                "log_group_class": "",
+                "name": "/terralith/team-b/svc-0",
+                "name_prefix": "",
+                "region": "us-east-1",
+                "retention_in_days": 14,
+                "skip_destroy": false,
+                "tags": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_b_0",
+                  "tofu-estate": "team-b"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_b_0",
+                  "tofu-estate": "team-b"
+                }
+              },
+              "after_unknown": {},
+              "before_sensitive": {
+                "tags": {},
+                "tags_all": {}
+              },
+              "after_sensitive": {
+                "tags": {},
+                "tags_all": {}
+              },
+              "before_identity": {
+                "account_id": null,
+                "name": "/terralith/team-b/svc-0",
+                "region": null
+              },
+              "after_identity": {
+                "account_id": null,
+                "name": "/terralith/team-b/svc-0",
+                "region": null
+              }
+            }
+          },
+          {
+            "address": "aws_cloudwatch_log_group.team_b_1",
+            "mode": "managed",
+            "type": "aws_cloudwatch_log_group",
+            "name": "team_b_1",
+            "provider_name": "registry.opentofu.org/hashicorp/aws",
+            "change": {
+              "actions": [
+                "no-op"
+              ],
+              "before": {
+                "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-b/svc-1",
+                "deletion_protection_enabled": false,
+                "id": "/terralith/team-b/svc-1",
+                "kms_key_id": "",
+                "log_group_class": "",
+                "name": "/terralith/team-b/svc-1",
+                "name_prefix": "",
+                "region": "us-east-1",
+                "retention_in_days": 7,
+                "skip_destroy": false,
+                "tags": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_b_1",
+                  "tofu-estate": "team-b"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_b_1",
+                  "tofu-estate": "team-b"
+                }
+              },
+              "after": {
+                "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-b/svc-1",
+                "deletion_protection_enabled": false,
+                "id": "/terralith/team-b/svc-1",
+                "kms_key_id": "",
+                "log_group_class": "",
+                "name": "/terralith/team-b/svc-1",
+                "name_prefix": "",
+                "region": "us-east-1",
+                "retention_in_days": 7,
+                "skip_destroy": false,
+                "tags": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_b_1",
+                  "tofu-estate": "team-b"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_b_1",
+                  "tofu-estate": "team-b"
+                }
+              },
+              "after_unknown": {},
+              "before_sensitive": {
+                "tags": {},
+                "tags_all": {}
+              },
+              "after_sensitive": {
+                "tags": {},
+                "tags_all": {}
+              },
+              "before_identity": {
+                "account_id": null,
+                "name": "/terralith/team-b/svc-1",
+                "region": null
+              },
+              "after_identity": {
+                "account_id": null,
+                "name": "/terralith/team-b/svc-1",
+                "region": null
+              }
+            }
+          },
+          {
+            "address": "aws_cloudwatch_log_group.team_b_2",
+            "mode": "managed",
+            "type": "aws_cloudwatch_log_group",
+            "name": "team_b_2",
+            "provider_name": "registry.opentofu.org/hashicorp/aws",
+            "change": {
+              "actions": [
+                "no-op"
+              ],
+              "before": {
+                "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-b/svc-2",
+                "deletion_protection_enabled": false,
+                "id": "/terralith/team-b/svc-2",
+                "kms_key_id": "",
+                "log_group_class": "",
+                "name": "/terralith/team-b/svc-2",
+                "name_prefix": "",
+                "region": "us-east-1",
+                "retention_in_days": 7,
+                "skip_destroy": false,
+                "tags": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_b_2",
+                  "tofu-estate": "team-b"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_b_2",
+                  "tofu-estate": "team-b"
+                }
+              },
+              "after": {
+                "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-b/svc-2",
+                "deletion_protection_enabled": false,
+                "id": "/terralith/team-b/svc-2",
+                "kms_key_id": "",
+                "log_group_class": "",
+                "name": "/terralith/team-b/svc-2",
+                "name_prefix": "",
+                "region": "us-east-1",
+                "retention_in_days": 7,
+                "skip_destroy": false,
+                "tags": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_b_2",
+                  "tofu-estate": "team-b"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_b_2",
+                  "tofu-estate": "team-b"
+                }
+              },
+              "after_unknown": {},
+              "before_sensitive": {
+                "tags": {},
+                "tags_all": {}
+              },
+              "after_sensitive": {
+                "tags": {},
+                "tags_all": {}
+              },
+              "before_identity": {
+                "account_id": null,
+                "name": "/terralith/team-b/svc-2",
+                "region": null
+              },
+              "after_identity": {
+                "account_id": null,
+                "name": "/terralith/team-b/svc-2",
+                "region": null
+              }
+            }
+          },
+          {
+            "address": "aws_iam_policy.team_b",
+            "mode": "managed",
+            "type": "aws_iam_policy",
+            "name": "team_b",
+            "provider_name": "registry.opentofu.org/hashicorp/aws",
+            "change": {
+              "actions": [
+                "no-op"
+              ],
+              "before": {
+                "arn": "arn:aws:iam::000000000000:policy/terralith-team-b-policy",
+                "attachment_count": 1,
+                "delay_after_policy_creation_in_ms": null,
+                "description": "",
+                "id": "arn:aws:iam::000000000000:policy/terralith-team-b-policy",
+                "name": "terralith-team-b-policy",
+                "name_prefix": "",
+                "path": "/",
+                "policy": "{\"Statement\":[{\"Action\":[\"logs:PutLogEvents\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}],\"Version\":\"2012-10-17\"}",
+                "policy_id": "ANPAPP5TVNH11S4ZH234",
+                "tags": {
+                  "tofu-address": "aws_iam_policy.team_b",
+                  "tofu-estate": "team-b"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_iam_policy.team_b",
+                  "tofu-estate": "team-b"
+                }
+              },
+              "after": {
+                "arn": "arn:aws:iam::000000000000:policy/terralith-team-b-policy",
+                "attachment_count": 1,
+                "delay_after_policy_creation_in_ms": null,
+                "description": "",
+                "id": "arn:aws:iam::000000000000:policy/terralith-team-b-policy",
+                "name": "terralith-team-b-policy",
+                "name_prefix": "",
+                "path": "/",
+                "policy": "{\"Statement\":[{\"Action\":[\"logs:PutLogEvents\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}],\"Version\":\"2012-10-17\"}",
+                "policy_id": "ANPAPP5TVNH11S4ZH234",
+                "tags": {
+                  "tofu-address": "aws_iam_policy.team_b",
+                  "tofu-estate": "team-b"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_iam_policy.team_b",
+                  "tofu-estate": "team-b"
+                }
+              },
+              "after_unknown": {},
+              "before_sensitive": {
+                "tags": {},
+                "tags_all": {}
+              },
+              "after_sensitive": {
+                "tags": {},
+                "tags_all": {}
+              },
+              "before_identity": {
+                "arn": "arn:aws:iam::000000000000:policy/terralith-team-b-policy"
+              },
+              "after_identity": {
+                "arn": "arn:aws:iam::000000000000:policy/terralith-team-b-policy"
+              }
+            }
+          },
+          {
+            "address": "aws_iam_role.team_b",
+            "mode": "managed",
+            "type": "aws_iam_role",
+            "name": "team_b",
+            "provider_name": "registry.opentofu.org/hashicorp/aws",
+            "change": {
+              "actions": [
+                "no-op"
+              ],
+              "before": {
+                "arn": "arn:aws:iam::000000000000:role/terralith-team-b-role",
+                "assume_role_policy": "{\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"ec2.amazonaws.com\"}}],\"Version\":\"2012-10-17\"}",
+                "create_date": "2026-10-16T12:05:15Z",
+                "description": "",
+                "force_detach_policies": false,
+                "id": "terralith-team-b-role",
+                "inline_policy": [
+                  {
+                    "name": "terralith-team-b-inline",
+                    "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"logs:CreateLogStream\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}]}"
+                  }
+                ],
+                "managed_policy_arns": [
+                  "arn:aws:iam::000000000000:policy/terralith-team-b-policy"
+                ],
+                "max_session_duration": 3600,
+                "name": "terralith-team-b-role",
+                "name_prefix": "",
+                "path": "/",
+                "permissions_boundary": "",
+                "tags": {
+                  "tofu-address": "aws_iam_role.team_b",
+                  "tofu-estate": "team-b"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_iam_role.team_b",
+                  "tofu-estate": "team-b"
+                },
+                "unique_id": "AROA4RFHNT2WOLTNESC8"
+              },
+              "after": {
+                "arn": "arn:aws:iam::000000000000:role/terralith-team-b-role",
+                "assume_role_policy": "{\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"ec2.amazonaws.com\"}}],\"Version\":\"2012-10-17\"}",
+                "create_date": "2026-10-16T12:05:15Z",
+                "description": "",
+                "force_detach_policies": false,
+                "id": "terralith-team-b-role",
+                "inline_policy": [
+                  {
+                    "name": "terralith-team-b-inline",
+                    "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"logs:CreateLogStream\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}]}"
+                  }
+                ],
+                "managed_policy_arns": [
+                  "arn:aws:iam::000000000000:policy/terralith-team-b-policy"
+                ],
+                "max_session_duration": 3600,
+                "name": "terralith-team-b-role",
+                "name_prefix": "",
+                "path": "/",
+                "permissions_boundary": "",
+                "tags": {
+                  "tofu-address": "aws_iam_role.team_b",
+                  "tofu-estate": "team-b"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_iam_role.team_b",
+                  "tofu-estate": "team-b"
+                },
+                "unique_id": "AROA4RFHNT2WOLTNESC8"
+              },
+              "after_unknown": {},
+              "before_sensitive": {
+                "inline_policy": [
+                  {}
+                ],
+                "managed_policy_arns": [
+                  false
+                ],
+                "tags": {},
+                "tags_all": {}
+              },
+              "after_sensitive": {
+                "inline_policy": [
+                  {}
+                ],
+                "managed_policy_arns": [
+                  false
+                ],
+                "tags": {},
+                "tags_all": {}
+              },
+              "before_identity": {
+                "account_id": null,
+                "name": "terralith-team-b-role"
+              },
+              "after_identity": {
+                "account_id": null,
+                "name": "terralith-team-b-role"
+              }
+            }
+          },
+          {
+            "address": "aws_iam_role_policy.team_b_inline",
+            "mode": "managed",
+            "type": "aws_iam_role_policy",
+            "name": "team_b_inline",
+            "provider_name": "registry.opentofu.org/hashicorp/aws",
+            "change": {
+              "actions": [
+                "no-op"
+              ],
+              "before": {
+                "id": "terralith-team-b-role:terralith-team-b-inline",
+                "name": "terralith-team-b-inline",
+                "name_prefix": "",
+                "policy": "{\"Statement\":[{\"Action\":[\"logs:CreateLogStream\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}],\"Version\":\"2012-10-17\"}",
+                "role": "terralith-team-b-role"
+              },
+              "after": {
+                "id": "terralith-team-b-role:terralith-team-b-inline",
+                "name": "terralith-team-b-inline",
+                "name_prefix": "",
+                "policy": "{\"Statement\":[{\"Action\":[\"logs:CreateLogStream\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}],\"Version\":\"2012-10-17\"}",
+                "role": "terralith-team-b-role"
+              },
+              "after_unknown": {},
+              "before_sensitive": {},
+              "after_sensitive": {},
+              "before_identity": {
+                "account_id": null,
+                "name": "terralith-team-b-inline",
+                "role": "terralith-team-b-role"
+              },
+              "after_identity": {
+                "account_id": null,
+                "name": "terralith-team-b-inline",
+                "role": "terralith-team-b-role"
+              }
+            }
+          },
+          {
+            "address": "aws_iam_role_policy_attachment.team_b",
+            "mode": "managed",
+            "type": "aws_iam_role_policy_attachment",
+            "name": "team_b",
+            "provider_name": "registry.opentofu.org/hashicorp/aws",
+            "change": {
+              "actions": [
+                "no-op"
+              ],
+              "before": {
+                "id": "terralith-team-b-role/arn:aws:iam::000000000000:policy/terralith-team-b-policy",
+                "policy_arn": "arn:aws:iam::000000000000:policy/terralith-team-b-policy",
+                "role": "terralith-team-b-role"
+              },
+              "after": {
+                "id": "terralith-team-b-role/arn:aws:iam::000000000000:policy/terralith-team-b-policy",
+                "policy_arn": "arn:aws:iam::000000000000:policy/terralith-team-b-policy",
+                "role": "terralith-team-b-role"
+              },
+              "after_unknown": {},
+              "before_sensitive": {},
+              "after_sensitive": {},
+              "before_identity": {
+                "account_id": null,
+                "policy_arn": "arn:aws:iam::000000000000:policy/terralith-team-b-policy",
+                "role": "terralith-team-b-role"
+              },
+              "after_identity": {
+                "account_id": null,
+                "policy_arn": "arn:aws:iam::000000000000:policy/terralith-team-b-policy",
+                "role": "terralith-team-b-role"
+              }
+            }
+          }
+        ],
+        "prior_state": {
+          "format_version": "1.0",
+          "terraform_version": "1.13.0",
+          "values": {
+            "root_module": {
+              "resources": [
+                {
+                  "address": "data.terraform_estate_outputs.platform",
+                  "mode": "data",
+                  "type": "terraform_estate_outputs",
+                  "name": "platform",
+                  "provider_name": "terraform.io/builtin/terraform",
+                  "schema_version": 0,
+                  "values": {
+                    "estate": "terralith",
+                    "names": [
+                      "log_retention_days"
+                    ],
+                    "values": {
+                      "log_retention_days": 14
+                    }
+                  },
+                  "sensitive_values": {
+                    "names": [
+                      false
+                    ],
+                    "values": {}
+                  }
+                },
+                {
+                  "address": "aws_cloudwatch_log_group.team_b_0",
+                  "mode": "managed",
+                  "type": "aws_cloudwatch_log_group",
+                  "name": "team_b_0",
+                  "provider_name": "registry.opentofu.org/hashicorp/aws",
+                  "schema_version": 0,
+                  "values": {
+                    "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-b/svc-0",
+                    "deletion_protection_enabled": false,
+                    "id": "/terralith/team-b/svc-0",
+                    "kms_key_id": "",
+                    "log_group_class": "",
+                    "name": "/terralith/team-b/svc-0",
+                    "name_prefix": "",
+                    "region": "us-east-1",
+                    "retention_in_days": 7,
+                    "skip_destroy": false,
+                    "tags": {
+                      "tofu-address": "aws_cloudwatch_log_group.team_b_0",
+                      "tofu-estate": "team-b"
+                    },
+                    "tags_all": {
+                      "tofu-address": "aws_cloudwatch_log_group.team_b_0",
+                      "tofu-estate": "team-b"
+                    }
+                  },
+                  "sensitive_values": {
+                    "tags": {},
+                    "tags_all": {}
+                  },
+                  "identity": {
+                    "account_id": null,
+                    "name": "/terralith/team-b/svc-0",
+                    "region": null
+                  },
+                  "identity_schema_version": 0
+                },
+                {
+                  "address": "aws_cloudwatch_log_group.team_b_1",
+                  "mode": "managed",
+                  "type": "aws_cloudwatch_log_group",
+                  "name": "team_b_1",
+                  "provider_name": "registry.opentofu.org/hashicorp/aws",
+                  "schema_version": 0,
+                  "values": {
+                    "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-b/svc-1",
+                    "deletion_protection_enabled": false,
+                    "id": "/terralith/team-b/svc-1",
+                    "kms_key_id": "",
+                    "log_group_class": "",
+                    "name": "/terralith/team-b/svc-1",
+                    "name_prefix": "",
+                    "region": "us-east-1",
+                    "retention_in_days": 7,
+                    "skip_destroy": false,
+                    "tags": {
+                      "tofu-address": "aws_cloudwatch_log_group.team_b_1",
+                      "tofu-estate": "team-b"
+                    },
+                    "tags_all": {
+                      "tofu-address": "aws_cloudwatch_log_group.team_b_1",
+                      "tofu-estate": "team-b"
+                    }
+                  },
+                  "sensitive_values": {
+                    "tags": {},
+                    "tags_all": {}
+                  },
+                  "identity": {
+                    "account_id": null,
+                    "name": "/terralith/team-b/svc-1",
+                    "region": null
+                  },
+                  "identity_schema_version": 0
+                },
+                {
+                  "address": "aws_cloudwatch_log_group.team_b_2",
+                  "mode": "managed",
+                  "type": "aws_cloudwatch_log_group",
+                  "name": "team_b_2",
+                  "provider_name": "registry.opentofu.org/hashicorp/aws",
+                  "schema_version": 0,
+                  "values": {
+                    "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-b/svc-2",
+                    "deletion_protection_enabled": false,
+                    "id": "/terralith/team-b/svc-2",
+                    "kms_key_id": "",
+                    "log_group_class": "",
+                    "name": "/terralith/team-b/svc-2",
+                    "name_prefix": "",
+                    "region": "us-east-1",
+                    "retention_in_days": 7,
+                    "skip_destroy": false,
+                    "tags": {
+                      "tofu-address": "aws_cloudwatch_log_group.team_b_2",
+                      "tofu-estate": "team-b"
+                    },
+                    "tags_all": {
+                      "tofu-address": "aws_cloudwatch_log_group.team_b_2",
+                      "tofu-estate": "team-b"
+                    }
+                  },
+                  "sensitive_values": {
+                    "tags": {},
+                    "tags_all": {}
+                  },
+                  "identity": {
+                    "account_id": null,
+                    "name": "/terralith/team-b/svc-2",
+                    "region": null
+                  },
+                  "identity_schema_version": 0
+                },
+                {
+                  "address": "aws_iam_policy.team_b",
+                  "mode": "managed",
+                  "type": "aws_iam_policy",
+                  "name": "team_b",
+                  "provider_name": "registry.opentofu.org/hashicorp/aws",
+                  "schema_version": 0,
+                  "values": {
+                    "arn": "arn:aws:iam::000000000000:policy/terralith-team-b-policy",
+                    "attachment_count": 1,
+                    "delay_after_policy_creation_in_ms": null,
+                    "description": "",
+                    "id": "arn:aws:iam::000000000000:policy/terralith-team-b-policy",
+                    "name": "terralith-team-b-policy",
+                    "name_prefix": "",
+                    "path": "/",
+                    "policy": "{\"Statement\":[{\"Action\":[\"logs:PutLogEvents\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}],\"Version\":\"2012-10-17\"}",
+                    "policy_id": "ANPAPP5TVNH11S4ZH234",
+                    "tags": {
+                      "tofu-address": "aws_iam_policy.team_b",
+                      "tofu-estate": "team-b"
+                    },
+                    "tags_all": {
+                      "tofu-address": "aws_iam_policy.team_b",
+                      "tofu-estate": "team-b"
+                    }
+                  },
+                  "sensitive_values": {
+                    "tags": {},
+                    "tags_all": {}
+                  },
+                  "identity": {
+                    "arn": "arn:aws:iam::000000000000:policy/terralith-team-b-policy"
+                  },
+                  "identity_schema_version": 0
+                },
+                {
+                  "address": "aws_iam_role.team_b",
+                  "mode": "managed",
+                  "type": "aws_iam_role",
+                  "name": "team_b",
+                  "provider_name": "registry.opentofu.org/hashicorp/aws",
+                  "schema_version": 0,
+                  "values": {
+                    "arn": "arn:aws:iam::000000000000:role/terralith-team-b-role",
+                    "assume_role_policy": "{\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"ec2.amazonaws.com\"}}],\"Version\":\"2012-10-17\"}",
+                    "create_date": "2026-10-16T12:05:15Z",
+                    "description": "",
+                    "force_detach_policies": false,
+                    "id": "terralith-team-b-role",
+                    "inline_policy": [
+                      {
+                        "name": "terralith-team-b-inline",
+                        "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"logs:CreateLogStream\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}]}"
+                      }
+                    ],
+                    "managed_policy_arns": [
+                      "arn:aws:iam::000000000000:policy/terralith-team-b-policy"
+                    ],
+                    "max_session_duration": 3600,
+                    "name": "terralith-team-b-role",
+                    "name_prefix": "",
+                    "path": "/",
+                    "permissions_boundary": "",
+                    "tags": {
+                      "tofu-address": "aws_iam_role.team_b",
+                      "tofu-estate": "team-b"
+                    },
+                    "tags_all": {
+                      "tofu-address": "aws_iam_role.team_b",
+                      "tofu-estate": "team-b"
+                    },
+                    "unique_id": "AROA4RFHNT2WOLTNESC8"
+                  },
+                  "sensitive_values": {
+                    "inline_policy": [
+                      {}
+                    ],
+                    "managed_policy_arns": [
+                      false
+                    ],
+                    "tags": {},
+                    "tags_all": {}
+                  },
+                  "identity": {
+                    "account_id": null,
+                    "name": "terralith-team-b-role"
+                  },
+                  "identity_schema_version": 0
+                },
+                {
+                  "address": "aws_iam_role_policy.team_b_inline",
+                  "mode": "managed",
+                  "type": "aws_iam_role_policy",
+                  "name": "team_b_inline",
+                  "provider_name": "registry.opentofu.org/hashicorp/aws",
+                  "schema_version": 0,
+                  "values": {
+                    "id": "terralith-team-b-role:terralith-team-b-inline",
+                    "name": "terralith-team-b-inline",
+                    "name_prefix": "",
+                    "policy": "{\"Statement\":[{\"Action\":[\"logs:CreateLogStream\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}],\"Version\":\"2012-10-17\"}",
+                    "role": "terralith-team-b-role"
+                  },
+                  "sensitive_values": {},
+                  "depends_on": [
+                    "aws_iam_role.team_b"
+                  ],
+                  "identity": {
+                    "account_id": null,
+                    "name": "terralith-team-b-inline",
+                    "role": "terralith-team-b-role"
+                  },
+                  "identity_schema_version": 0
+                },
+                {
+                  "address": "aws_iam_role_policy_attachment.team_b",
+                  "mode": "managed",
+                  "type": "aws_iam_role_policy_attachment",
+                  "name": "team_b",
+                  "provider_name": "registry.opentofu.org/hashicorp/aws",
+                  "schema_version": 0,
+                  "values": {
+                    "id": "terralith-team-b-role/arn:aws:iam::000000000000:policy/terralith-team-b-policy",
+                    "policy_arn": "arn:aws:iam::000000000000:policy/terralith-team-b-policy",
+                    "role": "terralith-team-b-role"
+                  },
+                  "sensitive_values": {},
+                  "depends_on": [
+                    "aws_iam_policy.team_b",
+                    "aws_iam_role.team_b"
+                  ],
+                  "identity": {
+                    "account_id": null,
+                    "policy_arn": "arn:aws:iam::000000000000:policy/terralith-team-b-policy",
+                    "role": "terralith-team-b-role"
+                  },
+                  "identity_schema_version": 0
+                }
+              ]
+            }
+          }
+        },
+        "configuration": {
+          "provider_config": {
+            "aws": {
+              "name": "aws",
+              "full_name": "registry.opentofu.org/hashicorp/aws",
+              "version_constraint": "6.59.0",
+              "expressions": {
+                "region": {
+                  "constant_value": "us-east-1"
+                }
+              }
+            },
+            "terraform": {
+              "name": "terraform",
+              "full_name": "terraform.io/builtin/terraform"
+            }
+          },
+          "root_module": {
+            "resources": [
+              {
+                "address": "aws_cloudwatch_log_group.team_b_0",
+                "mode": "managed",
+                "type": "aws_cloudwatch_log_group",
+                "name": "team_b_0",
+                "provider_config_key": "aws",
+                "expressions": {
+                  "name": {
+                    "constant_value": "/terralith/team-b/svc-0"
+                  },
+                  "retention_in_days": {
+                    "references": [
+                      "data.terraform_estate_outputs.platform.values.log_retention_days",
+                      "data.terraform_estate_outputs.platform.values",
+                      "data.terraform_estate_outputs.platform"
+                    ]
+                  }
+                },
+                "schema_version": 0
+              },
+              {
+                "address": "aws_cloudwatch_log_group.team_b_1",
+                "mode": "managed",
+                "type": "aws_cloudwatch_log_group",
+                "name": "team_b_1",
+                "provider_config_key": "aws",
+                "expressions": {
+                  "name": {
+                    "constant_value": "/terralith/team-b/svc-1"
+                  },
+                  "retention_in_days": {
+                    "constant_value": 7
+                  }
+                },
+                "schema_version": 0
+              },
+              {
+                "address": "aws_cloudwatch_log_group.team_b_2",
+                "mode": "managed",
+                "type": "aws_cloudwatch_log_group",
+                "name": "team_b_2",
+                "provider_config_key": "aws",
+                "expressions": {
+                  "name": {
+                    "constant_value": "/terralith/team-b/svc-2"
+                  },
+                  "retention_in_days": {
+                    "constant_value": 7
+                  }
+                },
+                "schema_version": 0
+              },
+              {
+                "address": "aws_iam_policy.team_b",
+                "mode": "managed",
+                "type": "aws_iam_policy",
+                "name": "team_b",
+                "provider_config_key": "aws",
+                "expressions": {
+                  "name": {
+                    "constant_value": "terralith-team-b-policy"
+                  },
+                  "policy": {}
+                },
+                "schema_version": 0
+              },
+              {
+                "address": "aws_iam_role.team_b",
+                "mode": "managed",
+                "type": "aws_iam_role",
+                "name": "team_b",
+                "provider_config_key": "aws",
+                "expressions": {
+                  "assume_role_policy": {},
+                  "name": {
+                    "constant_value": "terralith-team-b-role"
+                  }
+                },
+                "schema_version": 0
+              },
+              {
+                "address": "aws_iam_role_policy.team_b_inline",
+                "mode": "managed",
+                "type": "aws_iam_role_policy",
+                "name": "team_b_inline",
+                "provider_config_key": "aws",
+                "expressions": {
+                  "name": {
+                    "constant_value": "terralith-team-b-inline"
+                  },
+                  "policy": {},
+                  "role": {
+                    "references": [
+                      "aws_iam_role.team_b.id",
+                      "aws_iam_role.team_b"
+                    ]
+                  }
+                },
+                "schema_version": 0
+              },
+              {
+                "address": "aws_iam_role_policy_attachment.team_b",
+                "mode": "managed",
+                "type": "aws_iam_role_policy_attachment",
+                "name": "team_b",
+                "provider_config_key": "aws",
+                "expressions": {
+                  "policy_arn": {
+                    "references": [
+                      "aws_iam_policy.team_b.arn",
+                      "aws_iam_policy.team_b"
+                    ]
+                  },
+                  "role": {
+                    "references": [
+                      "aws_iam_role.team_b.name",
+                      "aws_iam_role.team_b"
+                    ]
+                  }
+                },
+                "schema_version": 0
+              },
+              {
+                "address": "data.terraform_estate_outputs.platform",
+                "mode": "data",
+                "type": "terraform_estate_outputs",
+                "name": "platform",
+                "provider_config_key": "terraform",
+                "expressions": {
+                  "estate": {
+                    "constant_value": "terralith"
+                  },
+                  "names": {
+                    "constant_value": [
+                      "log_retention_days"
+                    ]
+                  }
+                },
+                "schema_version": 0
+              }
+            ]
+          }
+        },
+        "relevant_attributes": [
+          {
+            "resource": "data.terraform_estate_outputs.platform",
+            "attribute": [
+              "values",
+              "log_retention_days"
+            ]
+          }
+        ],
+        "timestamp": "2026-10-16T12:06:55Z",
+        "errored": false
+      },
+      "digest": "sha256:a9c2ac0e996245d535e871e304770cb43d12095303af08c36177abf03afbc1f1"
+    },
+    {
+      "root": "team-c",
+      "estate": "team-c",
+      "status": "planned",
+      "error": "",
+      "changes": true,
+      "plan_file": ".terralith/plan-set/team-c.tfplan",
+      "log_file": ".terralith/plan-set/team-c.log",
+      "duration_ms": 2021,
+      "plan": {
+        "format_version": "1.2",
+        "terraform_version": "1.13.0",
+        "planned_values": {
+          "root_module": {
+            "resources": [
+              {
+                "address": "aws_cloudwatch_log_group.team_c_0",
+                "mode": "managed",
+                "type": "aws_cloudwatch_log_group",
+                "name": "team_c_0",
+                "provider_name": "registry.opentofu.org/hashicorp/aws",
+                "schema_version": 0,
+                "values": {
+                  "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-c/svc-0",
+                  "deletion_protection_enabled": false,
+                  "id": "/terralith/team-c/svc-0",
+                  "kms_key_id": "",
+                  "log_group_class": "",
+                  "name": "/terralith/team-c/svc-0",
+                  "name_prefix": "",
+                  "region": "us-east-1",
+                  "retention_in_days": 14,
+                  "skip_destroy": false,
+                  "tags": {
+                    "tofu-address": "aws_cloudwatch_log_group.team_c_0",
+                    "tofu-estate": "team-c"
+                  },
+                  "tags_all": {
+                    "tofu-address": "aws_cloudwatch_log_group.team_c_0",
+                    "tofu-estate": "team-c"
+                  }
+                },
+                "sensitive_values": {
+                  "tags": {},
+                  "tags_all": {}
+                },
+                "identity": {
+                  "account_id": null,
+                  "name": "/terralith/team-c/svc-0",
+                  "region": null
+                },
+                "identity_schema_version": 0
+              },
+              {
+                "address": "aws_cloudwatch_log_group.team_c_1",
+                "mode": "managed",
+                "type": "aws_cloudwatch_log_group",
+                "name": "team_c_1",
+                "provider_name": "registry.opentofu.org/hashicorp/aws",
+                "schema_version": 0,
+                "values": {
+                  "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-c/svc-1",
+                  "deletion_protection_enabled": false,
+                  "id": "/terralith/team-c/svc-1",
+                  "kms_key_id": "",
+                  "log_group_class": "",
+                  "name": "/terralith/team-c/svc-1",
+                  "name_prefix": "",
+                  "region": "us-east-1",
+                  "retention_in_days": 7,
+                  "skip_destroy": false,
+                  "tags": {
+                    "tofu-address": "aws_cloudwatch_log_group.team_c_1",
+                    "tofu-estate": "team-c"
+                  },
+                  "tags_all": {
+                    "tofu-address": "aws_cloudwatch_log_group.team_c_1",
+                    "tofu-estate": "team-c"
+                  }
+                },
+                "sensitive_values": {
+                  "tags": {},
+                  "tags_all": {}
+                },
+                "identity": {
+                  "account_id": null,
+                  "name": "/terralith/team-c/svc-1",
+                  "region": null
+                },
+                "identity_schema_version": 0
+              },
+              {
+                "address": "aws_cloudwatch_log_group.team_c_2",
+                "mode": "managed",
+                "type": "aws_cloudwatch_log_group",
+                "name": "team_c_2",
+                "provider_name": "registry.opentofu.org/hashicorp/aws",
+                "schema_version": 0,
+                "values": {
+                  "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-c/svc-2",
+                  "deletion_protection_enabled": false,
+                  "id": "/terralith/team-c/svc-2",
+                  "kms_key_id": "",
+                  "log_group_class": "",
+                  "name": "/terralith/team-c/svc-2",
+                  "name_prefix": "",
+                  "region": "us-east-1",
+                  "retention_in_days": 7,
+                  "skip_destroy": false,
+                  "tags": {
+                    "tofu-address": "aws_cloudwatch_log_group.team_c_2",
+                    "tofu-estate": "team-c"
+                  },
+                  "tags_all": {
+                    "tofu-address": "aws_cloudwatch_log_group.team_c_2",
+                    "tofu-estate": "team-c"
+                  }
+                },
+                "sensitive_values": {
+                  "tags": {},
+                  "tags_all": {}
+                },
+                "identity": {
+                  "account_id": null,
+                  "name": "/terralith/team-c/svc-2",
+                  "region": null
+                },
+                "identity_schema_version": 0
+              },
+              {
+                "address": "aws_iam_policy.team_c",
+                "mode": "managed",
+                "type": "aws_iam_policy",
+                "name": "team_c",
+                "provider_name": "registry.opentofu.org/hashicorp/aws",
+                "schema_version": 0,
+                "values": {
+                  "arn": "arn:aws:iam::000000000000:policy/terralith-team-c-policy",
+                  "attachment_count": 1,
+                  "delay_after_policy_creation_in_ms": null,
+                  "description": "",
+                  "id": "arn:aws:iam::000000000000:policy/terralith-team-c-policy",
+                  "name": "terralith-team-c-policy",
+                  "name_prefix": "",
+                  "path": "/",
+                  "policy": "{\"Statement\":[{\"Action\":[\"logs:PutLogEvents\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}],\"Version\":\"2012-10-17\"}",
+                  "policy_id": "ANPAECRV0UHJMLRZEE0B",
+                  "tags": {
+                    "tofu-address": "aws_iam_policy.team_c",
+                    "tofu-estate": "team-c"
+                  },
+                  "tags_all": {
+                    "tofu-address": "aws_iam_policy.team_c",
+                    "tofu-estate": "team-c"
+                  }
+                },
+                "sensitive_values": {
+                  "tags": {},
+                  "tags_all": {}
+                },
+                "identity": {
+                  "arn": "arn:aws:iam::000000000000:policy/terralith-team-c-policy"
+                },
+                "identity_schema_version": 0
+              },
+              {
+                "address": "aws_iam_role.team_c",
+                "mode": "managed",
+                "type": "aws_iam_role",
+                "name": "team_c",
+                "provider_name": "registry.opentofu.org/hashicorp/aws",
+                "schema_version": 0,
+                "values": {
+                  "arn": "arn:aws:iam::000000000000:role/terralith-team-c-role",
+                  "assume_role_policy": "{\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"ec2.amazonaws.com\"}}],\"Version\":\"2012-10-17\"}",
+                  "create_date": "2026-10-16T12:05:15Z",
+                  "description": "",
+                  "force_detach_policies": false,
+                  "id": "terralith-team-c-role",
+                  "inline_policy": [
+                    {
+                      "name": "terralith-team-c-inline",
+                      "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"logs:CreateLogStream\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}]}"
+                    }
+                  ],
+                  "managed_policy_arns": [
+                    "arn:aws:iam::000000000000:policy/terralith-team-c-policy"
+                  ],
+                  "max_session_duration": 3600,
+                  "name": "terralith-team-c-role",
+                  "name_prefix": "",
+                  "path": "/",
+                  "permissions_boundary": "",
+                  "tags": {
+                    "tofu-address": "aws_iam_role.team_c",
+                    "tofu-estate": "team-c"
+                  },
+                  "tags_all": {
+                    "tofu-address": "aws_iam_role.team_c",
+                    "tofu-estate": "team-c"
+                  },
+                  "unique_id": "AROA2HS1SDEIB0UXOGB9"
+                },
+                "sensitive_values": {
+                  "inline_policy": [
+                    {}
+                  ],
+                  "managed_policy_arns": [
+                    false
+                  ],
+                  "tags": {},
+                  "tags_all": {}
+                },
+                "identity": {
+                  "account_id": null,
+                  "name": "terralith-team-c-role"
+                },
+                "identity_schema_version": 0
+              },
+              {
+                "address": "aws_iam_role_policy.team_c_inline",
+                "mode": "managed",
+                "type": "aws_iam_role_policy",
+                "name": "team_c_inline",
+                "provider_name": "registry.opentofu.org/hashicorp/aws",
+                "schema_version": 0,
+                "values": {
+                  "id": "terralith-team-c-role:terralith-team-c-inline",
+                  "name": "terralith-team-c-inline",
+                  "name_prefix": "",
+                  "policy": "{\"Statement\":[{\"Action\":[\"logs:CreateLogStream\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}],\"Version\":\"2012-10-17\"}",
+                  "role": "terralith-team-c-role"
+                },
+                "sensitive_values": {},
+                "identity": {
+                  "account_id": null,
+                  "name": "terralith-team-c-inline",
+                  "role": "terralith-team-c-role"
+                },
+                "identity_schema_version": 0
+              },
+              {
+                "address": "aws_iam_role_policy_attachment.team_c",
+                "mode": "managed",
+                "type": "aws_iam_role_policy_attachment",
+                "name": "team_c",
+                "provider_name": "registry.opentofu.org/hashicorp/aws",
+                "schema_version": 0,
+                "values": {
+                  "id": "terralith-team-c-role/arn:aws:iam::000000000000:policy/terralith-team-c-policy",
+                  "policy_arn": "arn:aws:iam::000000000000:policy/terralith-team-c-policy",
+                  "role": "terralith-team-c-role"
+                },
+                "sensitive_values": {},
+                "identity": {
+                  "account_id": null,
+                  "policy_arn": "arn:aws:iam::000000000000:policy/terralith-team-c-policy",
+                  "role": "terralith-team-c-role"
+                },
+                "identity_schema_version": 0
+              }
+            ]
+          }
+        },
+        "resource_changes": [
+          {
+            "address": "aws_cloudwatch_log_group.team_c_0",
+            "mode": "managed",
+            "type": "aws_cloudwatch_log_group",
+            "name": "team_c_0",
+            "provider_name": "registry.opentofu.org/hashicorp/aws",
+            "change": {
+              "actions": [
+                "update"
+              ],
+              "before": {
+                "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-c/svc-0",
+                "deletion_protection_enabled": false,
+                "id": "/terralith/team-c/svc-0",
+                "kms_key_id": "",
+                "log_group_class": "",
+                "name": "/terralith/team-c/svc-0",
+                "name_prefix": "",
+                "region": "us-east-1",
+                "retention_in_days": 7,
+                "skip_destroy": false,
+                "tags": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_c_0",
+                  "tofu-estate": "team-c"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_c_0",
+                  "tofu-estate": "team-c"
+                }
+              },
+              "after": {
+                "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-c/svc-0",
+                "deletion_protection_enabled": false,
+                "id": "/terralith/team-c/svc-0",
+                "kms_key_id": "",
+                "log_group_class": "",
+                "name": "/terralith/team-c/svc-0",
+                "name_prefix": "",
+                "region": "us-east-1",
+                "retention_in_days": 14,
+                "skip_destroy": false,
+                "tags": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_c_0",
+                  "tofu-estate": "team-c"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_c_0",
+                  "tofu-estate": "team-c"
+                }
+              },
+              "after_unknown": {},
+              "before_sensitive": {
+                "tags": {},
+                "tags_all": {}
+              },
+              "after_sensitive": {
+                "tags": {},
+                "tags_all": {}
+              },
+              "before_identity": {
+                "account_id": null,
+                "name": "/terralith/team-c/svc-0",
+                "region": null
+              },
+              "after_identity": {
+                "account_id": null,
+                "name": "/terralith/team-c/svc-0",
+                "region": null
+              }
+            }
+          },
+          {
+            "address": "aws_cloudwatch_log_group.team_c_1",
+            "mode": "managed",
+            "type": "aws_cloudwatch_log_group",
+            "name": "team_c_1",
+            "provider_name": "registry.opentofu.org/hashicorp/aws",
+            "change": {
+              "actions": [
+                "no-op"
+              ],
+              "before": {
+                "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-c/svc-1",
+                "deletion_protection_enabled": false,
+                "id": "/terralith/team-c/svc-1",
+                "kms_key_id": "",
+                "log_group_class": "",
+                "name": "/terralith/team-c/svc-1",
+                "name_prefix": "",
+                "region": "us-east-1",
+                "retention_in_days": 7,
+                "skip_destroy": false,
+                "tags": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_c_1",
+                  "tofu-estate": "team-c"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_c_1",
+                  "tofu-estate": "team-c"
+                }
+              },
+              "after": {
+                "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-c/svc-1",
+                "deletion_protection_enabled": false,
+                "id": "/terralith/team-c/svc-1",
+                "kms_key_id": "",
+                "log_group_class": "",
+                "name": "/terralith/team-c/svc-1",
+                "name_prefix": "",
+                "region": "us-east-1",
+                "retention_in_days": 7,
+                "skip_destroy": false,
+                "tags": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_c_1",
+                  "tofu-estate": "team-c"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_c_1",
+                  "tofu-estate": "team-c"
+                }
+              },
+              "after_unknown": {},
+              "before_sensitive": {
+                "tags": {},
+                "tags_all": {}
+              },
+              "after_sensitive": {
+                "tags": {},
+                "tags_all": {}
+              },
+              "before_identity": {
+                "account_id": null,
+                "name": "/terralith/team-c/svc-1",
+                "region": null
+              },
+              "after_identity": {
+                "account_id": null,
+                "name": "/terralith/team-c/svc-1",
+                "region": null
+              }
+            }
+          },
+          {
+            "address": "aws_cloudwatch_log_group.team_c_2",
+            "mode": "managed",
+            "type": "aws_cloudwatch_log_group",
+            "name": "team_c_2",
+            "provider_name": "registry.opentofu.org/hashicorp/aws",
+            "change": {
+              "actions": [
+                "no-op"
+              ],
+              "before": {
+                "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-c/svc-2",
+                "deletion_protection_enabled": false,
+                "id": "/terralith/team-c/svc-2",
+                "kms_key_id": "",
+                "log_group_class": "",
+                "name": "/terralith/team-c/svc-2",
+                "name_prefix": "",
+                "region": "us-east-1",
+                "retention_in_days": 7,
+                "skip_destroy": false,
+                "tags": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_c_2",
+                  "tofu-estate": "team-c"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_c_2",
+                  "tofu-estate": "team-c"
+                }
+              },
+              "after": {
+                "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-c/svc-2",
+                "deletion_protection_enabled": false,
+                "id": "/terralith/team-c/svc-2",
+                "kms_key_id": "",
+                "log_group_class": "",
+                "name": "/terralith/team-c/svc-2",
+                "name_prefix": "",
+                "region": "us-east-1",
+                "retention_in_days": 7,
+                "skip_destroy": false,
+                "tags": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_c_2",
+                  "tofu-estate": "team-c"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_cloudwatch_log_group.team_c_2",
+                  "tofu-estate": "team-c"
+                }
+              },
+              "after_unknown": {},
+              "before_sensitive": {
+                "tags": {},
+                "tags_all": {}
+              },
+              "after_sensitive": {
+                "tags": {},
+                "tags_all": {}
+              },
+              "before_identity": {
+                "account_id": null,
+                "name": "/terralith/team-c/svc-2",
+                "region": null
+              },
+              "after_identity": {
+                "account_id": null,
+                "name": "/terralith/team-c/svc-2",
+                "region": null
+              }
+            }
+          },
+          {
+            "address": "aws_iam_policy.team_c",
+            "mode": "managed",
+            "type": "aws_iam_policy",
+            "name": "team_c",
+            "provider_name": "registry.opentofu.org/hashicorp/aws",
+            "change": {
+              "actions": [
+                "no-op"
+              ],
+              "before": {
+                "arn": "arn:aws:iam::000000000000:policy/terralith-team-c-policy",
+                "attachment_count": 1,
+                "delay_after_policy_creation_in_ms": null,
+                "description": "",
+                "id": "arn:aws:iam::000000000000:policy/terralith-team-c-policy",
+                "name": "terralith-team-c-policy",
+                "name_prefix": "",
+                "path": "/",
+                "policy": "{\"Statement\":[{\"Action\":[\"logs:PutLogEvents\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}],\"Version\":\"2012-10-17\"}",
+                "policy_id": "ANPAECRV0UHJMLRZEE0B",
+                "tags": {
+                  "tofu-address": "aws_iam_policy.team_c",
+                  "tofu-estate": "team-c"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_iam_policy.team_c",
+                  "tofu-estate": "team-c"
+                }
+              },
+              "after": {
+                "arn": "arn:aws:iam::000000000000:policy/terralith-team-c-policy",
+                "attachment_count": 1,
+                "delay_after_policy_creation_in_ms": null,
+                "description": "",
+                "id": "arn:aws:iam::000000000000:policy/terralith-team-c-policy",
+                "name": "terralith-team-c-policy",
+                "name_prefix": "",
+                "path": "/",
+                "policy": "{\"Statement\":[{\"Action\":[\"logs:PutLogEvents\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}],\"Version\":\"2012-10-17\"}",
+                "policy_id": "ANPAECRV0UHJMLRZEE0B",
+                "tags": {
+                  "tofu-address": "aws_iam_policy.team_c",
+                  "tofu-estate": "team-c"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_iam_policy.team_c",
+                  "tofu-estate": "team-c"
+                }
+              },
+              "after_unknown": {},
+              "before_sensitive": {
+                "tags": {},
+                "tags_all": {}
+              },
+              "after_sensitive": {
+                "tags": {},
+                "tags_all": {}
+              },
+              "before_identity": {
+                "arn": "arn:aws:iam::000000000000:policy/terralith-team-c-policy"
+              },
+              "after_identity": {
+                "arn": "arn:aws:iam::000000000000:policy/terralith-team-c-policy"
+              }
+            }
+          },
+          {
+            "address": "aws_iam_role.team_c",
+            "mode": "managed",
+            "type": "aws_iam_role",
+            "name": "team_c",
+            "provider_name": "registry.opentofu.org/hashicorp/aws",
+            "change": {
+              "actions": [
+                "no-op"
+              ],
+              "before": {
+                "arn": "arn:aws:iam::000000000000:role/terralith-team-c-role",
+                "assume_role_policy": "{\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"ec2.amazonaws.com\"}}],\"Version\":\"2012-10-17\"}",
+                "create_date": "2026-10-16T12:05:15Z",
+                "description": "",
+                "force_detach_policies": false,
+                "id": "terralith-team-c-role",
+                "inline_policy": [
+                  {
+                    "name": "terralith-team-c-inline",
+                    "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"logs:CreateLogStream\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}]}"
+                  }
+                ],
+                "managed_policy_arns": [
+                  "arn:aws:iam::000000000000:policy/terralith-team-c-policy"
+                ],
+                "max_session_duration": 3600,
+                "name": "terralith-team-c-role",
+                "name_prefix": "",
+                "path": "/",
+                "permissions_boundary": "",
+                "tags": {
+                  "tofu-address": "aws_iam_role.team_c",
+                  "tofu-estate": "team-c"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_iam_role.team_c",
+                  "tofu-estate": "team-c"
+                },
+                "unique_id": "AROA2HS1SDEIB0UXOGB9"
+              },
+              "after": {
+                "arn": "arn:aws:iam::000000000000:role/terralith-team-c-role",
+                "assume_role_policy": "{\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"ec2.amazonaws.com\"}}],\"Version\":\"2012-10-17\"}",
+                "create_date": "2026-10-16T12:05:15Z",
+                "description": "",
+                "force_detach_policies": false,
+                "id": "terralith-team-c-role",
+                "inline_policy": [
+                  {
+                    "name": "terralith-team-c-inline",
+                    "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"logs:CreateLogStream\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}]}"
+                  }
+                ],
+                "managed_policy_arns": [
+                  "arn:aws:iam::000000000000:policy/terralith-team-c-policy"
+                ],
+                "max_session_duration": 3600,
+                "name": "terralith-team-c-role",
+                "name_prefix": "",
+                "path": "/",
+                "permissions_boundary": "",
+                "tags": {
+                  "tofu-address": "aws_iam_role.team_c",
+                  "tofu-estate": "team-c"
+                },
+                "tags_all": {
+                  "tofu-address": "aws_iam_role.team_c",
+                  "tofu-estate": "team-c"
+                },
+                "unique_id": "AROA2HS1SDEIB0UXOGB9"
+              },
+              "after_unknown": {},
+              "before_sensitive": {
+                "inline_policy": [
+                  {}
+                ],
+                "managed_policy_arns": [
+                  false
+                ],
+                "tags": {},
+                "tags_all": {}
+              },
+              "after_sensitive": {
+                "inline_policy": [
+                  {}
+                ],
+                "managed_policy_arns": [
+                  false
+                ],
+                "tags": {},
+                "tags_all": {}
+              },
+              "before_identity": {
+                "account_id": null,
+                "name": "terralith-team-c-role"
+              },
+              "after_identity": {
+                "account_id": null,
+                "name": "terralith-team-c-role"
+              }
+            }
+          },
+          {
+            "address": "aws_iam_role_policy.team_c_inline",
+            "mode": "managed",
+            "type": "aws_iam_role_policy",
+            "name": "team_c_inline",
+            "provider_name": "registry.opentofu.org/hashicorp/aws",
+            "change": {
+              "actions": [
+                "no-op"
+              ],
+              "before": {
+                "id": "terralith-team-c-role:terralith-team-c-inline",
+                "name": "terralith-team-c-inline",
+                "name_prefix": "",
+                "policy": "{\"Statement\":[{\"Action\":[\"logs:CreateLogStream\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}],\"Version\":\"2012-10-17\"}",
+                "role": "terralith-team-c-role"
+              },
+              "after": {
+                "id": "terralith-team-c-role:terralith-team-c-inline",
+                "name": "terralith-team-c-inline",
+                "name_prefix": "",
+                "policy": "{\"Statement\":[{\"Action\":[\"logs:CreateLogStream\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}],\"Version\":\"2012-10-17\"}",
+                "role": "terralith-team-c-role"
+              },
+              "after_unknown": {},
+              "before_sensitive": {},
+              "after_sensitive": {},
+              "before_identity": {
+                "account_id": null,
+                "name": "terralith-team-c-inline",
+                "role": "terralith-team-c-role"
+              },
+              "after_identity": {
+                "account_id": null,
+                "name": "terralith-team-c-inline",
+                "role": "terralith-team-c-role"
+              }
+            }
+          },
+          {
+            "address": "aws_iam_role_policy_attachment.team_c",
+            "mode": "managed",
+            "type": "aws_iam_role_policy_attachment",
+            "name": "team_c",
+            "provider_name": "registry.opentofu.org/hashicorp/aws",
+            "change": {
+              "actions": [
+                "no-op"
+              ],
+              "before": {
+                "id": "terralith-team-c-role/arn:aws:iam::000000000000:policy/terralith-team-c-policy",
+                "policy_arn": "arn:aws:iam::000000000000:policy/terralith-team-c-policy",
+                "role": "terralith-team-c-role"
+              },
+              "after": {
+                "id": "terralith-team-c-role/arn:aws:iam::000000000000:policy/terralith-team-c-policy",
+                "policy_arn": "arn:aws:iam::000000000000:policy/terralith-team-c-policy",
+                "role": "terralith-team-c-role"
+              },
+              "after_unknown": {},
+              "before_sensitive": {},
+              "after_sensitive": {},
+              "before_identity": {
+                "account_id": null,
+                "policy_arn": "arn:aws:iam::000000000000:policy/terralith-team-c-policy",
+                "role": "terralith-team-c-role"
+              },
+              "after_identity": {
+                "account_id": null,
+                "policy_arn": "arn:aws:iam::000000000000:policy/terralith-team-c-policy",
+                "role": "terralith-team-c-role"
+              }
+            }
+          }
+        ],
+        "prior_state": {
+          "format_version": "1.0",
+          "terraform_version": "1.13.0",
+          "values": {
+            "root_module": {
+              "resources": [
+                {
+                  "address": "data.terraform_estate_outputs.platform",
+                  "mode": "data",
+                  "type": "terraform_estate_outputs",
+                  "name": "platform",
+                  "provider_name": "terraform.io/builtin/terraform",
+                  "schema_version": 0,
+                  "values": {
+                    "estate": "terralith",
+                    "names": [
+                      "log_retention_days"
+                    ],
+                    "values": {
+                      "log_retention_days": 14
+                    }
+                  },
+                  "sensitive_values": {
+                    "names": [
+                      false
+                    ],
+                    "values": {}
+                  }
+                },
+                {
+                  "address": "aws_cloudwatch_log_group.team_c_0",
+                  "mode": "managed",
+                  "type": "aws_cloudwatch_log_group",
+                  "name": "team_c_0",
+                  "provider_name": "registry.opentofu.org/hashicorp/aws",
+                  "schema_version": 0,
+                  "values": {
+                    "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-c/svc-0",
+                    "deletion_protection_enabled": false,
+                    "id": "/terralith/team-c/svc-0",
+                    "kms_key_id": "",
+                    "log_group_class": "",
+                    "name": "/terralith/team-c/svc-0",
+                    "name_prefix": "",
+                    "region": "us-east-1",
+                    "retention_in_days": 7,
+                    "skip_destroy": false,
+                    "tags": {
+                      "tofu-address": "aws_cloudwatch_log_group.team_c_0",
+                      "tofu-estate": "team-c"
+                    },
+                    "tags_all": {
+                      "tofu-address": "aws_cloudwatch_log_group.team_c_0",
+                      "tofu-estate": "team-c"
+                    }
+                  },
+                  "sensitive_values": {
+                    "tags": {},
+                    "tags_all": {}
+                  },
+                  "identity": {
+                    "account_id": null,
+                    "name": "/terralith/team-c/svc-0",
+                    "region": null
+                  },
+                  "identity_schema_version": 0
+                },
+                {
+                  "address": "aws_cloudwatch_log_group.team_c_1",
+                  "mode": "managed",
+                  "type": "aws_cloudwatch_log_group",
+                  "name": "team_c_1",
+                  "provider_name": "registry.opentofu.org/hashicorp/aws",
+                  "schema_version": 0,
+                  "values": {
+                    "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-c/svc-1",
+                    "deletion_protection_enabled": false,
+                    "id": "/terralith/team-c/svc-1",
+                    "kms_key_id": "",
+                    "log_group_class": "",
+                    "name": "/terralith/team-c/svc-1",
+                    "name_prefix": "",
+                    "region": "us-east-1",
+                    "retention_in_days": 7,
+                    "skip_destroy": false,
+                    "tags": {
+                      "tofu-address": "aws_cloudwatch_log_group.team_c_1",
+                      "tofu-estate": "team-c"
+                    },
+                    "tags_all": {
+                      "tofu-address": "aws_cloudwatch_log_group.team_c_1",
+                      "tofu-estate": "team-c"
+                    }
+                  },
+                  "sensitive_values": {
+                    "tags": {},
+                    "tags_all": {}
+                  },
+                  "identity": {
+                    "account_id": null,
+                    "name": "/terralith/team-c/svc-1",
+                    "region": null
+                  },
+                  "identity_schema_version": 0
+                },
+                {
+                  "address": "aws_cloudwatch_log_group.team_c_2",
+                  "mode": "managed",
+                  "type": "aws_cloudwatch_log_group",
+                  "name": "team_c_2",
+                  "provider_name": "registry.opentofu.org/hashicorp/aws",
+                  "schema_version": 0,
+                  "values": {
+                    "arn": "arn:aws:logs:us-east-1:000000000000:log-group:/terralith/team-c/svc-2",
+                    "deletion_protection_enabled": false,
+                    "id": "/terralith/team-c/svc-2",
+                    "kms_key_id": "",
+                    "log_group_class": "",
+                    "name": "/terralith/team-c/svc-2",
+                    "name_prefix": "",
+                    "region": "us-east-1",
+                    "retention_in_days": 7,
+                    "skip_destroy": false,
+                    "tags": {
+                      "tofu-address": "aws_cloudwatch_log_group.team_c_2",
+                      "tofu-estate": "team-c"
+                    },
+                    "tags_all": {
+                      "tofu-address": "aws_cloudwatch_log_group.team_c_2",
+                      "tofu-estate": "team-c"
+                    }
+                  },
+                  "sensitive_values": {
+                    "tags": {},
+                    "tags_all": {}
+                  },
+                  "identity": {
+                    "account_id": null,
+                    "name": "/terralith/team-c/svc-2",
+                    "region": null
+                  },
+                  "identity_schema_version": 0
+                },
+                {
+                  "address": "aws_iam_policy.team_c",
+                  "mode": "managed",
+                  "type": "aws_iam_policy",
+                  "name": "team_c",
+                  "provider_name": "registry.opentofu.org/hashicorp/aws",
+                  "schema_version": 0,
+                  "values": {
+                    "arn": "arn:aws:iam::000000000000:policy/terralith-team-c-policy",
+                    "attachment_count": 1,
+                    "delay_after_policy_creation_in_ms": null,
+                    "description": "",
+                    "id": "arn:aws:iam::000000000000:policy/terralith-team-c-policy",
+                    "name": "terralith-team-c-policy",
+                    "name_prefix": "",
+                    "path": "/",
+                    "policy": "{\"Statement\":[{\"Action\":[\"logs:PutLogEvents\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}],\"Version\":\"2012-10-17\"}",
+                    "policy_id": "ANPAECRV0UHJMLRZEE0B",
+                    "tags": {
+                      "tofu-address": "aws_iam_policy.team_c",
+                      "tofu-estate": "team-c"
+                    },
+                    "tags_all": {
+                      "tofu-address": "aws_iam_policy.team_c",
+                      "tofu-estate": "team-c"
+                    }
+                  },
+                  "sensitive_values": {
+                    "tags": {},
+                    "tags_all": {}
+                  },
+                  "identity": {
+                    "arn": "arn:aws:iam::000000000000:policy/terralith-team-c-policy"
+                  },
+                  "identity_schema_version": 0
+                },
+                {
+                  "address": "aws_iam_role.team_c",
+                  "mode": "managed",
+                  "type": "aws_iam_role",
+                  "name": "team_c",
+                  "provider_name": "registry.opentofu.org/hashicorp/aws",
+                  "schema_version": 0,
+                  "values": {
+                    "arn": "arn:aws:iam::000000000000:role/terralith-team-c-role",
+                    "assume_role_policy": "{\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"ec2.amazonaws.com\"}}],\"Version\":\"2012-10-17\"}",
+                    "create_date": "2026-10-16T12:05:15Z",
+                    "description": "",
+                    "force_detach_policies": false,
+                    "id": "terralith-team-c-role",
+                    "inline_policy": [
+                      {
+                        "name": "terralith-team-c-inline",
+                        "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"logs:CreateLogStream\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}]}"
+                      }
+                    ],
+                    "managed_policy_arns": [
+                      "arn:aws:iam::000000000000:policy/terralith-team-c-policy"
+                    ],
+                    "max_session_duration": 3600,
+                    "name": "terralith-team-c-role",
+                    "name_prefix": "",
+                    "path": "/",
+                    "permissions_boundary": "",
+                    "tags": {
+                      "tofu-address": "aws_iam_role.team_c",
+                      "tofu-estate": "team-c"
+                    },
+                    "tags_all": {
+                      "tofu-address": "aws_iam_role.team_c",
+                      "tofu-estate": "team-c"
+                    },
+                    "unique_id": "AROA2HS1SDEIB0UXOGB9"
+                  },
+                  "sensitive_values": {
+                    "inline_policy": [
+                      {}
+                    ],
+                    "managed_policy_arns": [
+                      false
+                    ],
+                    "tags": {},
+                    "tags_all": {}
+                  },
+                  "identity": {
+                    "account_id": null,
+                    "name": "terralith-team-c-role"
+                  },
+                  "identity_schema_version": 0
+                },
+                {
+                  "address": "aws_iam_role_policy.team_c_inline",
+                  "mode": "managed",
+                  "type": "aws_iam_role_policy",
+                  "name": "team_c_inline",
+                  "provider_name": "registry.opentofu.org/hashicorp/aws",
+                  "schema_version": 0,
+                  "values": {
+                    "id": "terralith-team-c-role:terralith-team-c-inline",
+                    "name": "terralith-team-c-inline",
+                    "name_prefix": "",
+                    "policy": "{\"Statement\":[{\"Action\":[\"logs:CreateLogStream\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}],\"Version\":\"2012-10-17\"}",
+                    "role": "terralith-team-c-role"
+                  },
+                  "sensitive_values": {},
+                  "depends_on": [
+                    "aws_iam_role.team_c"
+                  ],
+                  "identity": {
+                    "account_id": null,
+                    "name": "terralith-team-c-inline",
+                    "role": "terralith-team-c-role"
+                  },
+                  "identity_schema_version": 0
+                },
+                {
+                  "address": "aws_iam_role_policy_attachment.team_c",
+                  "mode": "managed",
+                  "type": "aws_iam_role_policy_attachment",
+                  "name": "team_c",
+                  "provider_name": "registry.opentofu.org/hashicorp/aws",
+                  "schema_version": 0,
+                  "values": {
+                    "id": "terralith-team-c-role/arn:aws:iam::000000000000:policy/terralith-team-c-policy",
+                    "policy_arn": "arn:aws:iam::000000000000:policy/terralith-team-c-policy",
+                    "role": "terralith-team-c-role"
+                  },
+                  "sensitive_values": {},
+                  "depends_on": [
+                    "aws_iam_policy.team_c",
+                    "aws_iam_role.team_c"
+                  ],
+                  "identity": {
+                    "account_id": null,
+                    "policy_arn": "arn:aws:iam::000000000000:policy/terralith-team-c-policy",
+                    "role": "terralith-team-c-role"
+                  },
+                  "identity_schema_version": 0
+                }
+              ]
+            }
+          }
+        },
+        "configuration": {
+          "provider_config": {
+            "aws": {
+              "name": "aws",
+              "full_name": "registry.opentofu.org/hashicorp/aws",
+              "version_constraint": "6.59.0",
+              "expressions": {
+                "region": {
+                  "constant_value": "us-east-1"
+                }
+              }
+            },
+            "terraform": {
+              "name": "terraform",
+              "full_name": "terraform.io/builtin/terraform"
+            }
+          },
+          "root_module": {
+            "resources": [
+              {
+                "address": "aws_cloudwatch_log_group.team_c_0",
+                "mode": "managed",
+                "type": "aws_cloudwatch_log_group",
+                "name": "team_c_0",
+                "provider_config_key": "aws",
+                "expressions": {
+                  "name": {
+                    "constant_value": "/terralith/team-c/svc-0"
+                  },
+                  "retention_in_days": {
+                    "references": [
+                      "data.terraform_estate_outputs.platform.values.log_retention_days",
+                      "data.terraform_estate_outputs.platform.values",
+                      "data.terraform_estate_outputs.platform"
+                    ]
+                  }
+                },
+                "schema_version": 0
+              },
+              {
+                "address": "aws_cloudwatch_log_group.team_c_1",
+                "mode": "managed",
+                "type": "aws_cloudwatch_log_group",
+                "name": "team_c_1",
+                "provider_config_key": "aws",
+                "expressions": {
+                  "name": {
+                    "constant_value": "/terralith/team-c/svc-1"
+                  },
+                  "retention_in_days": {
+                    "constant_value": 7
+                  }
+                },
+                "schema_version": 0
+              },
+              {
+                "address": "aws_cloudwatch_log_group.team_c_2",
+                "mode": "managed",
+                "type": "aws_cloudwatch_log_group",
+                "name": "team_c_2",
+                "provider_config_key": "aws",
+                "expressions": {
+                  "name": {
+                    "constant_value": "/terralith/team-c/svc-2"
+                  },
+                  "retention_in_days": {
+                    "constant_value": 7
+                  }
+                },
+                "schema_version": 0
+              },
+              {
+                "address": "aws_iam_policy.team_c",
+                "mode": "managed",
+                "type": "aws_iam_policy",
+                "name": "team_c",
+                "provider_config_key": "aws",
+                "expressions": {
+                  "name": {
+                    "constant_value": "terralith-team-c-policy"
+                  },
+                  "policy": {}
+                },
+                "schema_version": 0
+              },
+              {
+                "address": "aws_iam_role.team_c",
+                "mode": "managed",
+                "type": "aws_iam_role",
+                "name": "team_c",
+                "provider_config_key": "aws",
+                "expressions": {
+                  "assume_role_policy": {},
+                  "name": {
+                    "constant_value": "terralith-team-c-role"
+                  }
+                },
+                "schema_version": 0
+              },
+              {
+                "address": "aws_iam_role_policy.team_c_inline",
+                "mode": "managed",
+                "type": "aws_iam_role_policy",
+                "name": "team_c_inline",
+                "provider_config_key": "aws",
+                "expressions": {
+                  "name": {
+                    "constant_value": "terralith-team-c-inline"
+                  },
+                  "policy": {},
+                  "role": {
+                    "references": [
+                      "aws_iam_role.team_c.id",
+                      "aws_iam_role.team_c"
+                    ]
+                  }
+                },
+                "schema_version": 0
+              },
+              {
+                "address": "aws_iam_role_policy_attachment.team_c",
+                "mode": "managed",
+                "type": "aws_iam_role_policy_attachment",
+                "name": "team_c",
+                "provider_config_key": "aws",
+                "expressions": {
+                  "policy_arn": {
+                    "references": [
+                      "aws_iam_policy.team_c.arn",
+                      "aws_iam_policy.team_c"
+                    ]
+                  },
+                  "role": {
+                    "references": [
+                      "aws_iam_role.team_c.name",
+                      "aws_iam_role.team_c"
+                    ]
+                  }
+                },
+                "schema_version": 0
+              },
+              {
+                "address": "data.terraform_estate_outputs.platform",
+                "mode": "data",
+                "type": "terraform_estate_outputs",
+                "name": "platform",
+                "provider_config_key": "terraform",
+                "expressions": {
+                  "estate": {
+                    "constant_value": "terralith"
+                  },
+                  "names": {
+                    "constant_value": [
+                      "log_retention_days"
+                    ]
+                  }
+                },
+                "schema_version": 0
+              }
+            ]
+          }
+        },
+        "relevant_attributes": [
+          {
+            "resource": "data.terraform_estate_outputs.platform",
+            "attribute": [
+              "values",
+              "log_retention_days"
+            ]
+          }
+        ],
+        "timestamp": "2026-10-16T12:06:55Z",
+        "errored": false
+      },
+      "digest": "sha256:7f292af30a944ea8e32077d8f1111fddfcefdb9853f4d345e6a23f3e6e237ccd"
+    }
+  ],
+  "summary": {
+    "roots": 3,
+    "planned": 3,
+    "changed": 3,
+    "failed": 0
+  },
+  "digest": "sha256:f644920a0e05ffca98a5c14de483825ee6a01c6f5ffd0b228820363331d857f2",
+  "exit_code": 2,
+  "plugin_cache_dir": "/Users/alex/.terraform.d/plugin-cache",
+  "parallel_estates": 4
+}

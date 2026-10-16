@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "base": "HEAD",
+  "base_sha": "f7318ae053b31e401546a4d05b47807542cbe701",
+  "changed": [
+    "output.log_retention_days"
+  ],
+  "deleted": [],
+  "refactor": [],
+  "widened": [],
+  "reach": [
+    "output.log_retention_days"
+  ],
+  "targets": [],
+  "blocks": 2,
+  "cone_blocks": 0,
+  "guard": {
+    "full": true,
+    "kind": "empty-cone",
+    "reason": "the diff reaches no resource, data source or module call"
+  }
+}

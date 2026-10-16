@@ -72,7 +72,7 @@ describe("demos.json — the committed catalog (#209)", () => {
     expect(t!.requires).toEqual(["docker", "curl", "choudoufu"]);
     expect(t!.setup).toBe("bash scripts/terralith-up.sh");
     const dir = join(REPO, t!.dir!);
-    for (const f of ["scripts/terralith-up.sh", "scripts/terralith-step.sh", "scripts/terralith-down.sh", "terralith/main.tf", "phases/adopt/terralith/main.tf", "phases/adopt/migrations/adopt.yml", "phases/split/migrations/split.yml", "phases/split/team-a/main.tf"]) {
+    for (const f of ["scripts/terralith-up.sh", "scripts/terralith-step.sh", "scripts/terralith-down.sh", "terralith/main.tf", "phases/adopt/terralith/main.tf", "phases/adopt/migrations/adopt.yml", "phases/split/migrations/split.yml", "phases/split/team-a/main.tf", "phases/plan/terralith/main.tf", "phases/plan/team-a/main.tf"]) {
       expect(existsSync(join(dir, f)), f).toBe(true);
     }
   });

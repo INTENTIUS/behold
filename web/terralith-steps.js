@@ -38,6 +38,18 @@ export const PHASES = [
       return `${p.counts.moved} resources moved into ${fresh} new estate${fresh === 1 ? "" : "s"}. The terralith keeps the network.`;
     },
   },
+  {
+    id: "plan",
+    n: 4,
+    label: "Plan",
+    title: "Plan across the estates",
+    lead: "One pull request touches all four estates. The terralith publishes a shared setting as an output, and each team's first log group reads it through terraform_estate_outputs. It plans first. With -estate-outputs-from, each team root then plans against that planned value, so nothing waits for an apply. Last, live-summary folds the identical team changes into one group.",
+    facts: (p) => {
+      const groups = (p.plan && p.plan.groups) || [];
+      const folded = groups.reduce((n, g) => n + g.members.length, 0);
+      return `${p.counts.planned} planned changes in ${folded} estates, folded into ${groups.length} group${groups.length === 1 ? "" : "s"}. Nothing is applied.`;
+    },
+  },
 ];
 
 export const phaseById = (id) => PHASES.find((p) => p.id === id) || null;
@@ -66,6 +78,7 @@ export function cardFace(card) {
 export function cardNews(card, phaseId) {
   if (phaseId === "adopt" && card.ratified) return card.ratified;
   if (phaseId === "split" && card.moved) return card.moved.follows ? "follows its role" : `from ${card.moved.from}`;
+  if (phaseId === "plan" && card.planned) return `${card.planned.actions.includes("update") ? "~" : card.planned.actions.join("/")} ${card.planned.attributes.join(", ")}`;
   return "";
 }
 
@@ -90,4 +103,40 @@ export function flipDelta(before, after) {
   const dx = before.left - after.left;
   const dy = before.top - after.top;
   return Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5 ? null : { dx, dy };
+}
+
+/** Short words for a guard that planned a root in full, by choudoufu's guard kind. */
+const FULL_PLAN_WORDS = {
+  "empty-cone": "planned in full: the change reaches no resource",
+  "estate-outputs-from": "planned in full: it reads planned outputs",
+};
+
+/** A box's plan badges: the cone, and the full plan when there was one. */
+export function planBadges(box) {
+  const plan = box && box.plan;
+  if (!plan) return [];
+  const out = [];
+  if (plan.cone && !plan.cone.full) out.push({ kind: "cone", text: `cone ${plan.cone.coneBlocks} of ${plan.cone.blocks} blocks`, tip: "live-cone: the blocks this change reaches against the root's last commit." });
+  const full = plan.fallback || (plan.cone && plan.cone.full ? { kind: plan.cone.kind, reason: plan.cone.reason } : null);
+  if (full) out.push({ kind: "full", text: FULL_PLAN_WORDS[full.kind] || "planned in full", tip: full.reason || "" });
+  return out;
+}
+
+/** The folded group's one line, as live-summary prints it. */
+export function groupLabel(group) {
+  const n = group.members.length;
+  const change = group.changes.length === 1 ? group.changes[0].line : `${group.changes.length} changes`;
+  return `${n} estates, one change: ${change}`;
+}
+
+/** A planned output's edge label. */
+export function outputLabel(o) {
+  return o.known ? `${o.name} = ${JSON.stringify(o.value)} · planned` : `${o.name} · known after apply`;
+}
+
+/** Are these rects one row (the desktop layout) or stacked (the phone's)? */
+export function oneRow(rects) {
+  if (rects.length < 2) return true;
+  const top = rects[0].top;
+  return rects.every((r) => Math.abs(r.top - top) < 4);
 }

@@ -1,0 +1,7 @@
+{
+  "phase": "plan",
+  "n": 4,
+  "at": "2026-10-16T12:07:28Z",
+  "choudoufu": "choudoufu v0.28.0 (based on OpenTofu v1.13.0)",
+  "roots": ["terralith", "team-a", "team-b", "team-c"]
+}

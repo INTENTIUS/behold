@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { PHASES, boxSubtitle, cardFace, cardNews, flipDelta, legendFor, shownPhase, stepperItems } from "./terralith-steps.js";
+import { PHASES, boxSubtitle, cardFace, cardNews, flipDelta, groupLabel, legendFor, oneRow, outputLabel, planBadges, shownPhase, stepperItems } from "./terralith-steps.js";
 
 const card = (id, identity, extra = {}) => ({ id, type: id.split(".")[0], root: "terralith", identity, ...extra });
 const phase = (id, boxes, counts = {}) => ({ id, n: PHASES.find((p) => p.id === id).n, boxes, counts: { cards: 0, marked: 0, moved: 0, ...counts }, notes: [] });
@@ -22,6 +22,7 @@ describe("the walkthrough's phases", () => {
       ["stock", true, false, false],
       ["adopt", true, true, false],
       ["split", false, false, true],
+      ["plan", false, false, false],
     ]);
   });
 
@@ -67,5 +68,30 @@ describe("FLIP", () => {
     expect(flipDelta({ left: 10, top: 20 }, { left: 110, top: 20 })).toEqual({ dx: -100, dy: 0 });
     expect(flipDelta({ left: 10, top: 20 }, { left: 10.2, top: 20 })).toBeNull();
     expect(flipDelta(undefined, { left: 0, top: 0 })).toBeNull();
+  });
+});
+
+describe("the plan phase", () => {
+  it("badges a team root with its cone and the full plan it fell back to", () => {
+    const box = { plan: { cone: { full: false, blocks: 8, coneBlocks: 2 }, fallback: { kind: "estate-outputs-from", reason: "every reader of them is planned" }, changes: 1 } };
+    expect(planBadges(box).map((b) => [b.kind, b.text])).toEqual([
+      ["cone", "cone 2 of 8 blocks"],
+      ["full", "planned in full: it reads planned outputs"],
+    ]);
+    expect(planBadges({ plan: { cone: { full: true, kind: "empty-cone", reason: "the diff reaches no resource", blocks: 2, coneBlocks: 0 }, changes: 0 } }).map((b) => b.text)).toEqual(["planned in full: the change reaches no resource"]);
+    expect(planBadges({})).toEqual([]);
+  });
+
+  it("says a folded group once, and a planned output with its value", () => {
+    expect(groupLabel({ members: ["team-a", "team-b", "team-c"], changes: [{ line: "~ aws_cloudwatch_log_group.<estate>_0: retention_in_days" }] })).toBe(
+      "3 estates, one change: ~ aws_cloudwatch_log_group.<estate>_0: retention_in_days",
+    );
+    expect(outputLabel({ name: "log_retention_days", value: 14, known: true })).toBe("log_retention_days = 14 · planned");
+    expect(cardNews({ id: "x", planned: { actions: ["update"], attributes: ["retention_in_days"] } }, "plan")).toBe("~ retention_in_days");
+  });
+
+  it("tells a row of boxes from a stack", () => {
+    expect(oneRow([{ top: 10 }, { top: 11 }])).toBe(true);
+    expect(oneRow([{ top: 10 }, { top: 300 }])).toBe(false);
   });
 });

@@ -174,7 +174,7 @@
       }
     },
     {
-      "id": "arn:aws:ec2:us-east-1:000000000000:subnet/subnet-719de87e",
+      "id": "arn:aws:ec2:us-east-1:000000000000:subnet/subnet-48526a03",
       "type": "aws_subnet",
       "address": "aws_subnet.app",
       "declared": true,
@@ -186,7 +186,7 @@
       }
     },
     {
-      "id": "arn:aws:ec2:us-east-1:000000000000:vpc/vpc-737b83d8",
+      "id": "arn:aws:ec2:us-east-1:000000000000:vpc/vpc-95df8725",
       "type": "aws_vpc",
       "address": "aws_vpc.main",
       "declared": true,
