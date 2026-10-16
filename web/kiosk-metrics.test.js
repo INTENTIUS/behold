@@ -1,7 +1,7 @@
 // behold#571: the kiosk's "Pipeline metrics" pane, as words. No DOM: the
 // model decides what shows, and an answer with nothing in it shows no pane.
 import { describe, expect, it } from "vitest";
-import { changeWords, METRICS_STORE, metricsModel, metricsStored, metricsTarget, metricsUrl, percentWords, perWeekWords, secondsWords } from "./kiosk-metrics.js";
+import { changeWords, METRICS_STORE, metricsModel, metricsStored, metricsTarget, metricsUrl, percentWords, perWeekWords, secondsWords, steadyModel, startMetrics } from "./kiosk-metrics.js";
 
 const C1 = "9f3c2a71d04e5b8c6a1f2e3d4c5b6a7980716253";
 const answer = () => ({
@@ -43,8 +43,8 @@ describe("kiosk metrics: what the pane shows", () => {
     expect(m.count).toBe("2 waves · 3 delivery");
     expect(m.run.label).toBe("This run · 9f3c2a71");
     expect(m.run.waves).toEqual([
-      { wave: 1, head: "Wave 1", took: "5.4 s in all", rows: [["network", "init 163 ms · plan 70 ms · apply 60 ms", "network"], ["Applied", "1 updated"]] },
-      { wave: 2, head: "Wave 2", took: null, rows: [["app", "plan 7.2 s · apply 3.4 s", "app"], ["Held at the gate", "1 min 35 s"], ["Applied", "2 created, 1 updated"]] },
+      { wave: 1, head: "Wave 1", took: "5.4 s in all", rows: [["network", "init 163 ms · plan 70 ms · apply 60 ms", "network"], ["Applied", "1 updated"]], seconds: "5.4 s", held: null, changed: "1 updated", secondsRaw: 5.36, heldRaw: null, changesRaw: { update: 1 } },
+      { wave: 2, head: "Wave 2", took: null, rows: [["app", "plan 7.2 s · apply 3.4 s", "app"], ["Held at the gate", "1 min 35 s"], ["Applied", "2 created, 1 updated"]], seconds: null, held: "1 min 35 s", changed: "2 created, 1 updated", secondsRaw: null, heldRaw: 95, changesRaw: { update: 1, create: 2 } },
     ]);
     expect(m.dora).toEqual([["Deploys", "30 a week"], ["Lead time", "15 min"], ["Change failure rate", "10%"]]);
   });
@@ -103,5 +103,54 @@ describe("kiosk metrics: which repo, and the fold", () => {
     expect(metricsStored(shelf("closed"))).toBe(false);
     expect(metricsStored(shelf(null))).toBeNull();
     expect(metricsStored({ getItem: () => { throw new Error("denied"); } })).toBeNull();
+  });
+});
+
+describe("kiosk metrics: a pane that stays put through a cycle (behold#571)", () => {
+  const full = () => metricsModel(answer());
+  const doraOnly = () => metricsModel({ ...answer(), run: null });
+
+  it("keeps the last model when a read in the same cycle, or a failed read, has less in it", () => {
+    expect(steadyModel(full(), null, { same: true })).toEqual(full());
+    expect(steadyModel(full(), null, { failed: true })).toEqual(full());
+    const kept = steadyModel(full(), doraOnly(), { same: true });
+    expect(kept.run).toEqual(full().run);
+    expect(kept.count).toBe("2 waves · 3 delivery");
+  });
+
+  it("takes a new cycle's model as it comes, nothing included", () => {
+    expect(steadyModel(full(), null, { same: false })).toBeNull();
+    expect(steadyModel(full(), doraOnly(), { same: false })).toEqual(doraOnly());
+    expect(steadyModel(null, doraOnly(), { same: true })).toEqual(doraOnly());
+  });
+
+  it("never hides the pane between the steps of one cycle, whatever the reads answer", async () => {
+    const C2 = "1111111111111111111111111111111111111111";
+    // Cycle 7 steps through a pull request (no run of its commit yet), a failed read, and the merge's run.
+    const reads = [
+      { step: "pull-request", commit: C2, metrics: { ...answer(), run: { ...answer().run, current: false } } },
+      { step: "planned", commit: C2, metrics: { error: "/api/metrics answered 502" } },
+      { step: "merged", commit: C1, metrics: { ...answer(), run: null, dora: null } },
+      { step: "applying", commit: C1, metrics: answer() },
+    ];
+    let i = 0;
+    const fetchJson = async (url) => {
+      const r = reads[Math.min(i, reads.length - 1)];
+      if (url === "/api/terragucci/demo") return { demo: { repo: "terragucci-admin/demo", cycle: 7, step: r.step, commit: r.commit } };
+      return r.metrics;
+    };
+    const shown = [];
+    const host = { hidden: true, replaceChildren() {}, appendChild() {}, classList: { toggle() {} } };
+    const doc = { createElement: () => ({ classList: { toggle() {} }, dataset: {}, setAttribute() {}, addEventListener() {}, append() {}, appendChild() {} }), body: null, head: null, getElementById: () => null };
+    const m = startMetrics(host, { fetchJson, store: { getItem: () => "closed", setItem() {} }, setTimer: () => 0, clearTimer() {}, doc });
+    await new Promise((r) => setTimeout(r)); // the first read, which the pane starts by itself
+    shown.push(m.model() !== null);
+    for (i = 1; i < reads.length; i++) {
+      await m.tick();
+      shown.push(m.model() !== null);
+    }
+    expect(shown).toEqual([true, true, true, true]);
+    // Before: the failed read and the merge's empty answer each hid the pane for a step.
+    expect(m.model().run.current).toBe(true);
   });
 });
