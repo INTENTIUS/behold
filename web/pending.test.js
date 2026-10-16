@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyMemberFrame, pendingLine, stillPending } from "./pending.js";
+import { applyMemberFrame, createMemberFrames, pendingLine, stillPending } from "./pending.js";
 
 const ir = () => ({
   nodes: [
@@ -65,5 +65,44 @@ describe("what is still arriving", () => {
   it("says nothing once nothing is pending", () => {
     expect(pendingLine([], 5)).toBeNull();
     expect(pendingLine(undefined, 5)).toBeNull();
+  });
+});
+
+describe("createMemberFrames: frames that land before the draw (#422)", () => {
+  const frame = { member: "team-a", statuses: { "team-a/bucket": "good", "team-a/role": "warn" } };
+
+  it("holds a frame that lands while the answer is on the way, and replays it onto the drawn picture", () => {
+    const frames = createMemberFrames();
+    const turn = frames.begin();
+    expect(frames.note(frame)).toBe(false);
+    const graph = ir();
+    const r = frames.replay(graph, ["team-a", "team-b"], turn);
+    expect(r.moved.sort()).toEqual(["team-a/bucket", "team-a/role"]);
+    expect(r.pending).toEqual(["team-b"]);
+    expect(graph.nodes[0].attrs).toEqual({ _status: "good" });
+    // Once drawn, a later frame applies as it lands.
+    expect(frames.note({ member: "team-b", statuses: {} })).toBe(true);
+  });
+
+  it("keeps the newest frame per member, and a failed pass clears the pending list", () => {
+    const frames = createMemberFrames();
+    const turn = frames.begin();
+    frames.note({ member: "team-a", statuses: { "team-a/bucket": "warn" } });
+    frames.note({ member: "team-a", statuses: { "team-a/bucket": "good" } });
+    frames.note({ error: "live-plan exited 1" });
+    const graph = ir();
+    const r = frames.replay(graph, ["team-a", "team-b"], turn);
+    expect(graph.nodes[0].attrs._status).toBe("good");
+    expect(r).toMatchObject({ pending: [], failed: "live-plan exited 1" });
+  });
+
+  it("leaves a newer load's frames alone when an older load ends", () => {
+    const frames = createMemberFrames();
+    const older = frames.begin();
+    const newer = frames.begin();
+    frames.cancel(older);
+    expect(frames.note(frame)).toBe(false);
+    expect(frames.replay(ir(), [], older)).toBeNull();
+    expect(frames.replay(ir(), ["team-a"], newer).pending).toEqual([]);
   });
 });

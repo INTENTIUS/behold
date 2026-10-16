@@ -30,6 +30,7 @@ import {
   WHY_DELAY_MS,
   WHY_HUD,
   WHY_PROPOSED,
+  WARM_ANSWER_DELAY_MS,
 } from "./stub.mjs";
 import { readCostLine } from "../web/read-cost.js";
 import { THEMES, DEFAULT_THEME } from "../web/themes.js";
@@ -1707,6 +1708,35 @@ try {
     } finally {
       await whyPage.close();
       whyServer.close();
+    }
+  }
+
+  // #422: the warm-cache race. The member frame reaches the page before the
+  // progressive answer it belongs to (smoke/stub.mjs `warmFrames`); the cards
+  // still have to leave pending and take the frame's colour and identity mark,
+  // in the full page and in the kiosk's bare frame.
+  {
+    const warmServer = await startStub(PORT + 8, { warmFrames: true });
+    const warmPage = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+    const warmErrors = [];
+    warmPage.on("pageerror", (e) => warmErrors.push(String(e)));
+    try {
+      for (const [label, query] of [["the page", "?env=live"], ["the kiosk frame", "?env=live&embed=1&bare=1"]]) {
+        await warmPage.goto(`http://localhost:${PORT + 8}/${query}`);
+        await warmPage.waitForSelector("#graph svg [data-node-id]", { timeout: 20000 });
+        await warmPage.waitForTimeout(WARM_ANSWER_DELAY_MS + 1200);
+        const state = await warmPage.evaluate(() => ({
+          pending: document.querySelectorAll("#graph svg [data-node-id][data-pending-read]").length,
+          marks: document.querySelectorAll('#graph svg [data-identity="1"]').length,
+        }));
+        check(`${label}: a frame that lands before the draw still clears pending`, state.pending === 0);
+        check(`${label}: …and still draws its identity mark`, state.marks === 1);
+      }
+      check("no console errors on the warm-cache estate", warmErrors.length === 0);
+      if (warmErrors.length) console.error("warm page errors:", warmErrors);
+    } finally {
+      await warmPage.close();
+      warmServer.close();
     }
   }
 

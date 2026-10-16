@@ -67,3 +67,55 @@ export function pendingLine(pending, total) {
   const who = pending.length <= 3 ? ` — waiting on ${pending.join(", ")}` : "";
   return `${scope}${who}`;
 }
+
+/**
+ * The frames of one progressive load, kept from the moment its request goes
+ * out until the answer is drawn.
+ *
+ * The live pass starts when the server takes the request, and with the
+ * overlay cache warm it can settle and broadcast every member before the
+ * answer reaches the page. A frame that lands then has no picture to fold
+ * into: the answer, drawn a moment later, paints every card pending again.
+ * So every frame is noted here (the newest per member wins), applied at once
+ * only when the picture it belongs to is already up, and replayed onto the
+ * picture right after it is drawn. A failed live pass is noted the same way.
+ */
+export function createMemberFrames() {
+  let frames = new Map();
+  let failed = null;
+  let drawing = false;
+  let load = 0;
+  return {
+    /** A progressive request is going out: its frames start here. Returns the load's turn. */
+    begin() {
+      frames = new Map();
+      failed = null;
+      drawing = true;
+      return ++load;
+    },
+    /** Note a frame. True when it can be applied now, false when it waits for the draw. */
+    note(frame) {
+      if (!frame) return false;
+      if (frame.error) failed = frame.error;
+      else if (frame.member) frames.set(frame.member, frame);
+      return !drawing;
+    },
+    /** Load `turn`'s answer is drawn: fold every noted frame into it. Null when a newer load took over. */
+    replay(ir, pending, turn = load) {
+      if (turn !== load) return null;
+      drawing = false;
+      const moved = [];
+      let still = Array.isArray(pending) ? [...pending] : [];
+      for (const frame of frames.values()) {
+        moved.push(...applyMemberFrame(ir, frame));
+        still = stillPending(still, frame);
+      }
+      if (failed) still = [];
+      return { moved, pending: still, failed };
+    },
+    /** Load `turn` ended without drawing (an error, a newer view): stop holding frames back, unless a newer load holds them. */
+    cancel(turn = load) {
+      if (turn === load) drawing = false;
+    },
+  };
+}
