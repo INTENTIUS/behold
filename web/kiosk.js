@@ -137,7 +137,7 @@ export function countdownWords(secs) {
 
 /** The driver's next action, as the kiosk says it. */
 export function nextWords(demo, now = new Date()) {
-  if (!demo.next) return { action: "nothing until the driver resets", when: "the driver stalled; it resets and starts the next cycle", secs: null };
+  if (!demo.next) return { action: "reset and start the next cycle", when: "the driver stalled; it resets and starts the next cycle", secs: null };
   const secs = secondsUntil(demo.next.at, now);
   return {
     action: demo.next.action,
@@ -198,9 +198,9 @@ export function runPanel(demo, answer, progress) {
   if (run) return { stage: "apply", run };
   if (pr) return { stage: "pull-request", pr };
   if (stage === "pull-request") {
-    return { stage: "pull-request", note: demo.pull === null ? "The pull request isn't open yet." : `The plan of pull request #${demo.pull} isn't in the reports yet: the pipeline is planning it.` };
+    return { stage: "pull-request", note: demo.pull === null ? "The pull request opens next." : `The pipeline is planning pull request #${demo.pull}.` };
   }
-  return { stage: "apply", note: demo.commit ? `The run view of ${demo.commit.slice(0, 8)} isn't in the reports yet: the pipeline writes it as the waves start.` : "No run yet." };
+  return { stage: "apply", note: demo.commit ? `The pipeline writes the run view of ${demo.commit.slice(0, 8)} as the waves start.` : "The first run starts next." };
 }
 
 /** The pull request's waves and reads, when the panel shows its plan. */
@@ -644,7 +644,7 @@ export function approvalPanel(model, s = {}) {
 }
 
 /** behold#571: the header's line when this behold serves another repo than the page's. */
-export const NO_GRAPH_WORDS = "This page shows the runs and their logs; the graph of this repo isn't served here.";
+export const NO_GRAPH_WORDS = "This page shows the runs and their logs.";
 
 /** behold#571: a tool's name, and its logo where its owner allows one, linking to its official site. */
 function brandEl(vendor) {
@@ -691,7 +691,7 @@ export const APPROVAL_POLL_MS = 4_000;
 export const LEDGER_POLL_MS = 10_000;
 
 /** behold#571: the approval panel's words for the approval the driver gives next, over its command. */
-export const DRIVER_SIGNS = "Next the driver plays a reviewer with no hand in the change and signs this plan with that reviewer's key:";
+export const DRIVER_SIGNS = "Next the driver plays a reviewer outside the change and signs this plan with that reviewer's key:";
 
 /** behold#571: "What is this?" says what behold is; the demo's own intro stays on the card between scenarios. */
 export const WHAT_TEXT = "This is behold, a live view of infrastructure. It draws the setup as a graph and shows its pipeline runs, their logs and the approvals they wait for, as they happen. Here it watches a demo pipeline that runs one change through several Terraform states in a loop.";

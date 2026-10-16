@@ -123,7 +123,7 @@ export function approvalModel({ demo, runs = [], history = null, lifecycle = nul
       commit: requested && requested.source ? requested.source.commit || null : null,
       line: reqLine,
     });
-  } else Object.assign(reqRow, { state: "dim", text: `Wave ${wave} has not asked for an approval yet.` });
+  } else Object.assign(reqRow, { state: "dim", text: `Wave ${wave} asks for an approval when it reaches its gate.` });
 
   // Approved.
   const apRow = { id: "approved", label: "Approved" };
@@ -159,7 +159,7 @@ export function approvalModel({ demo, runs = [], history = null, lifecycle = nul
       line: start2 ? { run: resume.id, ...start2 } : found,
     });
   } else if (resume) {
-    Object.assign(rsRow, { state: "going", text: `/terragucci apply started the waves again; wave ${wave} has not reached its gate yet.`, at: resume.started_at || resume.created_at, runId: resume.id, line: start2 ? { run: resume.id, ...start2 } : null });
+    Object.assign(rsRow, { state: "going", text: `/terragucci apply started the waves again; wave ${wave} reaches its gate next.`, at: resume.started_at || resume.created_at, runId: resume.id, line: start2 ? { run: resume.id, ...start2 } : null });
   } else {
     Object.assign(rsRow, { state: "dim", text: driver && driver.comment ? `Then a comment of ${driver.comment} on ${driver.on} starts the waves again.` : "A comment of /terragucci apply starts the waves again." });
   }
