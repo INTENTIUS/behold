@@ -73,3 +73,21 @@ describe("demo.json's delivery line (behold#571)", () => {
     expect([a.demo!.step, a.demo!.delivery]).toEqual(["waiting", null]);
   });
 });
+
+describe("demo.json's next.from (behold#571)", () => {
+  const next = { action: "approve wave-2", from: "2026-10-20T10:04:00Z", at: "2026-10-20T10:04:20Z" };
+
+  it("passes from through, so the kiosk's bar fills from when the driver started waiting", async () => {
+    const a = await readDemo(source({ ...fixture("demo-failed.json"), next }));
+    expect(a.demo!.next).toEqual(next);
+  });
+
+  it("reads a next without from (drivers before terragucci 0.4.34) as before", async () => {
+    const a = await readDemo(source({ ...fixture("demo-failed.json"), next: { action: next.action, at: next.at } }));
+    expect(a.demo!.next).toEqual({ action: next.action, at: next.at });
+  });
+
+  it("refuses a from that is not a UTC time", () => {
+    expect(demoProblem({ ...fixture("demo-failed.json"), next: { ...next, from: "soon" } })).toMatch(/next\.from/);
+  });
+});
