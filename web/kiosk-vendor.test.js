@@ -239,9 +239,11 @@ describe("a tool's page, drawn (behold#571)", () => {
       const s = { vendor: "terragrunt", mode: "replay", replay: { banner: "Replay of the run at 14:05 UTC" }, noReports: true, demo: { demo: scrubDemo(demo({ tool: "terragrunt", intro: "Big Terraform setups", about }), "terragrunt") }, answer: null, progress: null };
       renderKiosk(bar, s, new Date("2026-10-20T10:01:00Z"), foot);
       expect(bar.children[0].className).toBe("k-replay");
-      const title = all(bar).find((n) => n.className === "k-title");
-      expect(title.children.map((c) => c.className)).toEqual(["k-brand", "k-kicker", "k-title-text"]);
-      const brand = title.children[0];
+      // behold#571: the tool and the kicker on the quiet line over the title, the scenario's progress at its end.
+      const over = all(bar).find((n) => n.className === "k-over");
+      expect(over.children.map((c) => c.className)).toEqual(["k-brand", "k-kicker", "k-strip"]);
+      expect(all(bar).find((n) => n.className === "k-title").children.map((c) => c.className)).toEqual(["k-title-text"]);
+      const brand = over.children[0];
       expect([brand.href, brand.target, brand.rel, text(brand)]).toEqual([VENDORS.terragrunt.url, "_blank", "noopener", "Terragrunt"]);
       expect(text(bar)).not.toMatch(/of 3|Terramate/);
       // behold#571: no intro band at a live step; the intro fills the card's box at reset.
