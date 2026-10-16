@@ -198,6 +198,8 @@ const STYLE = `
 .t-seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; overflow: hidden; flex: none; }
 .t-tab { font: 600 0.9em var(--font-ui); color: var(--muted); background: transparent; border: 0; padding: 0.25em 1em; cursor: pointer; }
 .t-tab + .t-tab { border-left: 1px solid var(--rule); }
+.t-attempts { display: flex; align-items: center; justify-content: space-between; gap: 0.6em; }
+.t-seg-small .t-tab { font: 600 0.85em var(--font-mono); padding: 0.05em 0.7em; letter-spacing: 0; }
 .t-tab:hover { color: var(--fg); }
 .t-tab[aria-pressed="true"], .t-tab[aria-pressed="true"]:hover { color: var(--bg); background: var(--pending); }
 .t-sec { font: 600 0.8em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 0.6em 1em 0.25em; }
@@ -265,7 +267,34 @@ function bar(doc, at, width) {
  * the viewer's folds (`open`, `shut`, sets of span ids) and calls `toggle(id)`
  * and `pickJob(name)`.
  */
-export function renderTrace(host, { traces, run = [], job }, { doc = document, toggle = () => {}, pickJob = null, open = new Set(), shut = new Set() } = {}) {
+/**
+ * behold#571: which of a job's traces is the one asked about: the trace that
+ * started at `start` (the wave's own, as the kiosk picked it), else the
+ * newest of `wave`'s, else the newest. A resumed run's job applies several
+ * waves, and a wave may run twice, so its traces are attempts.
+ */
+export function attemptFor(traces, { wave = null, start = null } = {}) {
+  if (!traces || !traces.length) return -1;
+  if (start !== null) {
+    const i = traces.findIndex((t) => Math.abs(t.start - start) < 1);
+    if (i >= 0) return i;
+  }
+  if (wave !== null) {
+    let best = -1;
+    traces.forEach((t, i) => {
+      if (Number(t.wave) === Number(wave) && (best < 0 || traces[best].start < t.start)) best = i;
+    });
+    if (best >= 0) return best;
+  }
+  return traces.reduce((b, t, i) => (traces[b].start < t.start ? i : b), 0);
+}
+
+/** behold#571: the words over one attempt of several, and the switch's label. */
+export function attemptWords(i, n, start) {
+  return `Attempt ${i + 1} of ${n}, started at ${new Date(start).toISOString().slice(11, 16)} UTC`;
+}
+
+export function renderTrace(host, { traces, run = [], job }, { doc = document, toggle = () => {}, pickJob = null, open = new Set(), shut = new Set(), attempt = null, pickAttempt = null } = {}) {
   traceStyle(doc);
   const box = el(doc, "div", "t-trace");
   const strip = runStrip(run);
@@ -284,10 +313,29 @@ export function renderTrace(host, { traces, run = [], job }, { doc = document, t
     }
     box.appendChild(rows);
   }
-  traces.forEach((t, i) => {
-    const when = new Date(t.start);
-    const head = traces.length > 1 ? `Attempt ${i + 1} of ${traces.length}, ${when.toISOString().slice(11, 19)} UTC` : `This job · ${msWords(t.ms)}`;
-    box.appendChild(el(doc, "div", "t-sec", head));
+  // behold#571: asked about one attempt of several, it shows that one, with a switch to the others.
+  const one = attempt !== null && attempt >= 0 && attempt < traces.length && traces.length > 1;
+  const shown = one ? [traces[attempt]] : traces;
+  shown.forEach((t, k) => {
+    const i = one ? attempt : k;
+    const head = traces.length > 1 ? attemptWords(i, traces.length, t.start) : `This job · ${msWords(t.ms)}`;
+    if (one) {
+      const sec = el(doc, "div", "t-sec t-attempts");
+      sec.appendChild(el(doc, "span", null, head));
+      const seg = el(doc, "span", "t-seg t-seg-small");
+      seg.setAttribute("role", "group");
+      seg.setAttribute("aria-label", "attempt");
+      traces.forEach((x, j) => {
+        const b = el(doc, "button", "t-tab", String(j + 1));
+        b.type = "button";
+        b.title = attemptWords(j, traces.length, x.start);
+        b.setAttribute("aria-pressed", String(j === i));
+        if (pickAttempt) b.addEventListener("click", () => pickAttempt(j));
+        seg.appendChild(b);
+      });
+      sec.appendChild(seg);
+      box.appendChild(sec);
+    } else box.appendChild(el(doc, "div", "t-sec", head));
     const rows = el(doc, "div", "t-rows");
     for (const r of waterfallRows(t, { open, shut })) {
       const cls = ["t-row", r.kids ? "t-can" : "", r.service !== "terragucci" ? "t-bin" : "", r.critical ? "t-crit" : "", r.wait ? "t-wait" : "", r.error ? "t-err" : ""].filter(Boolean).join(" ");
@@ -377,8 +425,8 @@ export function traceSource({ fetchJson, onChange = () => {}, now = () => Date.n
     has: (repo, run, job) => of(repo, run, job).length > 0,
     traces: of,
     all: (repo, run) => (read(repo, run) || { traces: [] }).traces,
-    draw(host, { repo, run, job, pickJob = null, doc = document }) {
-      return renderTrace(host, { traces: of(repo, run, job), run: this.all(repo, run), job }, { doc, pickJob, open: folds.open, shut: folds.shut, toggle: (id, depth) => { folds.toggle(id, depth); onChange(); } });
+    draw(host, { repo, run, job, pickJob = null, doc = document, attempt = null, pickAttempt = null }) {
+      return renderTrace(host, { traces: of(repo, run, job), run: this.all(repo, run), job }, { doc, pickJob, attempt, pickAttempt, open: folds.open, shut: folds.shut, toggle: (id, depth) => { folds.toggle(id, depth); onChange(); } });
     },
   };
 }
@@ -389,19 +437,25 @@ export function traceSource({ fetchJson, onChange = () => {}, now = () => Date.n
  * it at another job; `stop` ends its reads. With no trace for the job it
  * draws nothing.
  */
-export function mountTrace(host, { project, run, job, fetchJson = defaultFetch, doc = document, setTimer = setInterval, clearTimer = clearInterval, pickJob = null } = {}) {
-  let target = { project, run, job };
+export function mountTrace(host, { project, run, job, wave = null, start = null, fetchJson = defaultFetch, doc = document, setTimer = setInterval, clearTimer = clearInterval, pickJob = null } = {}) {
+  let target = { project, run, job, wave, start };
+  // behold#571: with a wave named, the attempt that is its; a viewer's pick of another holds until the target moves.
+  let picked = null;
   const draw = () => {
     host.replaceChildren();
     if (!source.has(target.project, target.run, target.job)) return;
-    source.draw(host, { repo: target.project, run: target.run, job: target.job, pickJob, doc });
+    const traces = source.traces(target.project, target.run, target.job);
+    const attempt = target.wave === null && target.start === null ? null : picked !== null && picked < traces.length ? picked : attemptFor(traces, target);
+    source.draw(host, { repo: target.project, run: target.run, job: target.job, pickJob, doc, attempt, pickAttempt: (i) => ((picked = i), draw()) });
   };
   const source = traceSource({ fetchJson, onChange: draw });
   draw();
   const timer = setTimer(draw, TRACE_POLL_MS);
   return {
     update(next) {
+      const was = JSON.stringify(target);
       target = { ...target, ...next };
+      if (JSON.stringify(target) !== was) picked = null;
       draw();
     },
     stop() {

@@ -190,9 +190,11 @@ function roundedWeek(v) {
 export function resultModel(demo, metrics, progress = null) {
   if (!demo || demo.step !== "applied") return null;
   const run = matchingRun(progress, demo);
-  const states = run ? (progress.states || []).filter((w) => w.state === "applied") : [];
+  // The step says the run applied: every wave the run view names counts, even one a read has not caught up on yet.
+  const all = run ? progress.states || [] : [];
+  const states = all.filter((w) => w.state === "applied");
   const m = metrics && metrics.run && metrics.run.current ? metrics.run.waves : [];
-  const n = states.length || m.length;
+  const n = all.length || m.length;
   if (!n) return null;
   const counts = [`${n} ${n === 1 ? "wave" : "waves"} applied`];
   const changed = states.length ? mergeChanges(states.map((w) => w.totals)) : mergeChanges(m.map((w) => w.changesRaw));
@@ -204,8 +206,46 @@ export function resultModel(demo, metrics, progress = null) {
     const held = m.reduce((a, w) => a + (Number.isFinite(w.heldRaw) ? w.heldRaw : 0), 0);
     if (held > 0) counts.push(`${secondsShort(held)} held for an approval`);
   }
-  const waves = [...m].sort((a, b) => a.wave - b.wave).map((w) => ({ wave: w.wave, words: badgeWords(w) })).filter((w) => w.words);
+  // A row for every wave, its numbers when they have landed; never fewer rows than the count says.
+  const numbers = new Map(m.map((w) => [w.wave, badgeWords(w)]));
+  const numbered = [...new Set([...all.map((w) => w.number), ...m.map((w) => w.wave)])].sort((a, b) => a - b);
+  const waves = numbered.map((w) => ({ wave: w, words: numbers.get(w) || null }));
   return { head: "Applied", line: typeof demo.label === "string" ? demo.label : "", counts, waves };
+}
+
+/**
+ * behold#571: the run view as the cycle has seen it, for the result card and
+ * the trail. Reads land one by one and a read can lag behind the last: within
+ * one cycle's commit, a wave once read as applied stays applied, a wave a
+ * read leaves out keeps what it was, and the run stays the last one that
+ * matched. `{ memo, progress }`; pass the memo back in with the next read.
+ */
+export function steadyRun(memo, progress, demo) {
+  const key = demo ? `${demo.cycle}|${demo.commit}` : null;
+  const run = demo ? matchingRun(progress, demo) : null;
+  const was = memo && memo.key === key ? memo : { key, run: null, states: {} };
+  const next = { key, run: run || was.run, states: { ...was.states } };
+  if (run) {
+    for (const st of progress.states || []) {
+      const had = next.states[st.number];
+      if (had && had.state === "applied" && st.state !== "applied") continue;
+      // A re-run's run view says nothing changed for a wave an earlier run applied: the change stays the one that landed.
+      if (had && had.state === "applied" && st.state === "applied" && changeCount(had.totals) > 0 && changeCount(st.totals) === 0) continue;
+      next.states[st.number] = st;
+    }
+  }
+  const states = Object.values(next.states).sort((a, b) => a.number - b.number);
+  if (!next.run || !states.length) return { memo: next, progress };
+  return { memo: next, progress: { ...(run ? progress : {}), reads: run ? progress.reads || [] : [], run: next.run, states } };
+}
+
+const changeCount = (totals) => ACTION_ORDER.reduce((a, k) => a + (totals && typeof totals[k] === "number" ? totals[k] : 0), 0);
+
+/** behold#571: whether a run view is behind the step: the step says applied, and a wave in it still says otherwise. */
+export function behindStep(demo, progress) {
+  if (!demo || demo.step !== "applied") return false;
+  const run = matchingRun(progress, demo);
+  return !!run && (progress.states || []).some((w) => w.state !== "applied");
 }
 
 const ACTION_ORDER = ["create", "update", "delete", "replace", "forget", "import", "move"];

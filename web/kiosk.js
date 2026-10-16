@@ -15,7 +15,7 @@
 
 import { CHANT_PANEL_STEPS, chantApprovalModel } from "./chant-pr-marks.js";
 import { PICK_HOLD_MS, annMark, mergeRun, startRuns, statusIcon } from "./kiosk-runs.js";
-import { MODES, MODE_STORE, badges as waveBadges, badgeTitle, captionModel, doraLine, modeStored, placeBeside, resultModel, shotFor, stepTone, tailLines } from "./kiosk-watch.js";
+import { MODES, MODE_STORE, badges as waveBadges, badgeTitle, behindStep, steadyRun, captionModel, doraLine, modeStored, placeBeside, resultModel, shotFor, stepTone, tailLines } from "./kiosk-watch.js";
 import { shotMessage } from "./kiosk-shot.js";
 import { mountTrace } from "./kiosk-trace.js";
 import { startEventHelp } from "./kiosk-event-help-ui.js";
@@ -120,9 +120,40 @@ export function aboutRows(demo) {
 }
 
 /** The strip: each stop, and whether it is done, current or ahead. A stalled cycle marks no stop current. */
-export function stripStops(step) {
-  const at = STRIP.findIndex((s) => s.steps.includes(step));
-  return STRIP.map((s, i) => ({ id: s.id, words: s.words, state: at < 0 ? "ahead" : i < at ? "done" : i === at ? (step === "failed" ? "failed" : "current") : "ahead" }));
+export function stripStops(step, strip = STRIP) {
+  const at = strip.findIndex((s) => s.steps.includes(step));
+  return strip.map((s, i) => ({ id: s.id, words: s.words, state: at < 0 ? "ahead" : i < at ? "done" : i === at ? (step === "failed" ? "failed" : "current") : "ahead" }));
+}
+
+/** behold#571 (#631): the words of the strip's approval stop, a gate before the merge. */
+export const APPROVAL_STOP = { id: "approval", words: "approval" };
+
+/**
+ * behold#571 (#631): the strip in a scenario's own order, from the steps its
+ * tool's recorded cycle went through (/api/terragucci/cycles/<tool>). A wait
+ * for an approval before the merge (chant's pull-request loop gates the plan
+ * before it merges) is a stop of its own between "planned" and "merged"; after
+ * the merge it is part of the waves, as terragucci's waves are. Null when the
+ * steps say nothing, so the default strip stands.
+ */
+export function stripFromSteps(steps) {
+  if (!Array.isArray(steps) || !steps.length) return null;
+  const words = Object.fromEntries(STRIP.map((x) => [x.id, x.words]));
+  const stops = [];
+  let merged = false;
+  for (const step of steps) {
+    if (step === "merged") merged = true;
+    const id = ["pull-request", "planned", "merged", "applied", "reset"].includes(step) ? step : (step === "waiting" || step === "approved") && !merged ? APPROVAL_STOP.id : "waves";
+    let stop = stops.find((x) => x.id === id);
+    if (!stop) {
+      stop = { id, words: id === APPROVAL_STOP.id ? APPROVAL_STOP.words : words[id] || id, steps: [] };
+      stops.push(stop);
+    }
+    if (!stop.steps.includes(step)) stop.steps.push(step);
+  }
+  // A stop the default strip has and these steps never reached (the waves of a run that applied in one go) keeps its place.
+  for (const d of STRIP) if (!stops.some((x) => x.id === d.id)) stops.splice(Math.min(stops.length, STRIP.indexOf(d)), 0, { id: d.id, words: d.words, steps: d.steps.filter((st) => !stops.some((x) => x.steps.includes(st))) });
+  return stops;
 }
 
 /** Seconds from now until `at`, never below 0; null when there is no time. */
@@ -682,7 +713,7 @@ function drawBar(bar, s, now) {
   over.appendChild(el("span", "k-kicker", head.kicker));
   // The scenario's progress: the strip's stops, at the end of the line over the title.
   const strip = el("ol", "k-strip");
-  for (const stop of stripStops(demo.step)) strip.appendChild(el("li", `k-stop k-${stop.state}`, stop.words));
+  for (const stop of stripStops(demo.step, s.strip || STRIP)) strip.appendChild(el("li", `k-stop k-${stop.state}`, stop.words));
   over.appendChild(strip);
   const title = el("h1", "k-title");
   title.appendChild(el("span", "k-title-text", head.title));
@@ -811,7 +842,7 @@ function drawWatchHead(bar, s, now) {
   place.appendChild(el("span", "k-cycle", cycleWords(demo, now)));
   bar.appendChild(place);
   const strip = el("ol", "k-strip");
-  for (const stop of stripStops(demo.step)) strip.appendChild(el("li", `k-stop k-${stop.state}`, stop.words));
+  for (const stop of stripStops(demo.step, s.strip || STRIP)) strip.appendChild(el("li", `k-stop k-${stop.state}`, stop.words));
   bar.appendChild(strip);
   if (s.watchHeld) {
     const p = el("span", "k-w-held", heldWords(s.watchHeld.secs));
@@ -910,18 +941,21 @@ function drawResult(host, model, s) {
   const counts = el("ul", "k-result-counts");
   for (const c of model.counts) counts.appendChild(el("li", null, c));
   host.appendChild(counts);
-  // behold#571: each wave's trace as one bar of its phases; a click opens the whole trace. A wave without one keeps its numbers.
-  const rows = miniWaterfall(s.waveTraces || {});
-  const traced = new Set(rows.map((r) => r.wave));
-  const untraced = model.waves.filter((w) => !traced.has(w.wave));
-  if (untraced.length) {
-    const list = el("dl", "k-result-waves");
-    for (const w of untraced) list.append(el("dt", null, `Wave ${w.wave}`), el("dd", null, w.words));
-    host.appendChild(list);
-  }
-  if (rows.length) {
+  // behold#571: a row for every wave, in wave order: its trace as one bar of its phases (a click opens the whole trace),
+  // else its numbers, else a quiet line until they land. Never fewer rows than the count says.
+  const bars = new Map(miniWaterfall(s.waveTraces || {}).map((r) => [r.wave, r]));
+  const order = [...new Set([...model.waves.map((w) => w.wave), ...bars.keys()])].sort((x, y) => x - y);
+  if (order.length) {
     const wf = el("div", "k-wf");
-    for (const r of rows) {
+    for (const n of order) {
+      const r = bars.get(n);
+      const w = model.waves.find((x) => x.wave === n);
+      if (!r) {
+        const row = el("div", "k-wf-row k-wf-plain");
+        row.append(el("span", "k-wf-wave", `Wave ${n}`), el("span", w && w.words ? "k-wf-words" : "k-wf-words k-result-soon", w && w.words ? w.words : NUMBERS_SOON));
+        wf.appendChild(row);
+        continue;
+      }
       const row = el("button", "k-wf-row");
       row.type = "button";
       const held = r.bars.find((b) => b.phase === "held");
@@ -938,16 +972,20 @@ function drawResult(host, model, s) {
       row.addEventListener("click", () => s.openWave && s.openWave(r.wave, "trace"));
       wf.appendChild(row);
     }
-    const key = el("p", "k-wf-key");
-    for (const [cls, words] of PHASE_KEY) {
-      const k = el("span");
-      k.append(el("i", `k-wf-sw k-wf-${cls}`), words);
-      key.appendChild(k);
+    if (bars.size) {
+      const key = el("p", "k-wf-key");
+      for (const [cls, words] of PHASE_KEY) {
+        const k = el("span");
+        k.append(el("i", `k-wf-sw k-wf-${cls}`), words);
+        key.appendChild(k);
+      }
+      wf.appendChild(key);
     }
-    wf.appendChild(key);
     host.appendChild(wf);
   }
 }
+/** behold#571: a wave's row on the result card before its numbers land. */
+export const NUMBERS_SOON = "its numbers land in a moment";
 /** behold#571: the words of a trace's links, and the phases' key. */
 export const TRACE_LINK_WORDS = "Trace";
 export const TRACE_OPEN_WORDS = "Open this wave's trace";
@@ -1063,6 +1101,11 @@ function fade(b) {
   b.classList.toggle("k-more-above", b.scrollTop > 1);
 }
 
+/** behold#571 (#631): how often a tool's recorded step order is read again. */
+export const STRIP_REREAD_MS = 600_000;
+
+/** behold#571: how often a run view that is behind the step is read again. */
+export const FRESH_RUN_MS = 4_000;
 /** behold#571: how often a cycle's run's traces are read again, and how long after a run ends they still are. */
 export const TRACE_POLL_MS = 8_000;
 export const TRACE_SETTLE_MS = 90_000;
@@ -1093,6 +1136,10 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   s.shot = null;
   // behold#571: event-help, started further down once what it reads is in place.
   let ehApi = null;
+  // behold#571: the run view as the cycle has seen it (steadyRun), and when a read behind the step last asked again.
+  let runMemo = null;
+  let freshAt = 0;
+  s.steady = null;
   // behold#571: each wave's trace, from Tempo (web/kiosk-wave-traces.js).
   s.waveTraces = {};
   // behold#571: the frame loading out of sight while the shown one stays up (openFrame), and a message to both.
@@ -1312,6 +1359,14 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       tellHover(s.hover);
     }
     whatText();
+    // behold#571: the run view as the cycle has seen it, for the result card and the trail; a read behind the step asks again.
+    const sr = steadyRun(runMemo, s.progress, s.demo && s.demo.demo);
+    runMemo = sr.memo;
+    s.steady = sr.progress;
+    if (behindStep(s.demo && s.demo.demo, s.progress) && now().getTime() - freshAt > FRESH_RUN_MS) {
+      freshAt = now().getTime();
+      void progress(true);
+    }
     // behold#571: Watch's overlays, then the shot they leave room for.
     holdTick();
     drawWatch(shownNow());
@@ -1456,7 +1511,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     if (drawer) drawDrawer(watch.drawer, tail, badgeTitle(nums[drawerOn]), open);
     if (drawer) traceDrawer(d, drawerOn);
     // A drawer the viewer opened on a wave takes the card's place beside the graph until it folds.
-    const result = shot.kind === "result" && !opened ? resultModel(d, s.metrics, s.progress) : null;
+    const result = shot.kind === "result" && !opened ? resultModel(d, s.metrics, s.steady) : null;
     watch.result.hidden = !result;
     if (result) drawResult(watch.result, result, s);
     // On a phone the delivery numbers stack under the rest, where the header has no room for them.
@@ -1498,8 +1553,9 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const tr = s.waveTraces[wave];
     if (!host || !d || !d.repo || (!tr && (!runDoc || !w))) return;
     // The wave's own trace when Tempo has it (its run and job: a resumed run applies waves in one job), else its job in the drawer's run.
-    const target = tr ? { project: d.repo, run: tr.run, job: tr.job } : { project: d.repo, run: String(runDoc.id), job: w.job };
-    const key = `${target.project}|${target.run}|${target.job}`;
+    // The wave's own attempt of its job: a resumed run's job applies several waves, and a wave may run twice.
+    const target = tr ? { project: d.repo, run: tr.run, job: tr.job, wave, start: tr.trace.start } : { project: d.repo, run: String(runDoc.id), job: w.job, wave, start: null };
+    const key = `${target.project}|${target.run}|${target.job}|${target.wave}|${target.start}`;
     if (trace && trace.key === key) return;
     if (trace) trace.api.update(target);
     else trace = { api: mountTrace(host, { ...target, fetchJson: fetchServed }) };
@@ -1641,7 +1697,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
           return {
             demo: d,
             answer: s.answer,
-            progress: s.progress,
+            progress: s.steady,
             runDoc: runsApi && runsApi.run ? runsApi.run.doc : null,
             // The cycle's runs the approval panel reads, for the failures of runs the pane no longer shows.
             runDocs: ap.list,
@@ -1655,8 +1711,10 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
             replay: s.mode === "replay",
             approveLine: appr ? appr.approve : null,
             label: d.label || "",
-            result: resultModel(d, s.metrics, s.progress),
+            result: resultModel(d, s.metrics, s.steady),
             waveTraces: s.waveTraces,
+            strip: s.stripReady() ? s.strip : null,
+            stripReady: s.stripReady(),
           };
         },
       })
@@ -1727,6 +1785,38 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     }
   };
   setInterval(() => void readTraces(), 2_000);
+
+  // behold#571 (#631): the strip in the running tool's own order, from its recorded cycle's steps; the default until it is read.
+  const strips = new Map();
+  s.strip = null;
+  /** Whether the running tool's step order has been read (or there is none to read), so the story can be told in it. */
+  s.stripReady = () => {
+    const d = s.demo && s.demo.demo;
+    const t = vendor ? tool : d && typeof d.tool === "string" ? d.tool : null;
+    const r = t ? strips.get(t) : null;
+    if (r && r.done) s.strip = r.strip;
+    return !t || !!(r && r.done);
+  };
+  const readStrip = async () => {
+    const d = s.demo && s.demo.demo;
+    const t = vendor ? tool : d && typeof d.tool === "string" ? d.tool : null;
+    if (!t) return;
+    const had = strips.get(t);
+    if (had && now().getTime() - had.at < STRIP_REREAD_MS) {
+      if (s.strip !== had.strip) {
+        s.strip = had.strip;
+        draw();
+      }
+      return;
+    }
+    strips.set(t, { at: now().getTime(), strip: had ? had.strip : null, done: had ? had.done : false });
+    const a = await fetchServed(`/api/terragucci/cycles/${encodeURIComponent(t)}`);
+    const strip = a && a.cycle && Array.isArray(a.cycle.steps) ? stripFromSteps(a.cycle.steps.map((x) => x.step)) : null;
+    strips.set(t, { at: now().getTime(), strip: strip || (had ? had.strip : null), done: true });
+    s.strip = strips.get(t).strip;
+    draw();
+  };
+  setInterval(() => void readStrip(), 2_000);
 
   s.setMetrics = (m) => {
     s.metrics = m;

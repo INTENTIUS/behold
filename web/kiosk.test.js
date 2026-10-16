@@ -481,3 +481,21 @@ describe("the lead block's step rail (behold#571)", () => {
     expect(["waiting", "failed", "stalled", "applied", "applying", "planned", "resumed", "reset"].map(stepTone)).toEqual(["wait", "bad", "bad", "ok", "busy", "busy", "busy", "idle"]);
   });
 });
+
+describe("kiosk: the strip in a scenario's own order (behold#571, #631)", async () => {
+  const { stripFromSteps, stripStops, STRIP } = await import("./kiosk.js");
+  it("puts chant's approval between planned and merged, and lights it while the plan waits", () => {
+    const chant = stripFromSteps(["pull-request", "planned", "waiting", "approved", "merged", "applying", "applied", "reset"]);
+    expect(chant.map((x) => x.words)).toEqual(["pull request", "planned", "approval", "merged", "waves", "applied", "reset"]);
+    expect(stripStops("waiting", chant).find((x) => x.state === "current").words).toBe("approval");
+    expect(stripStops("applying", chant).find((x) => x.state === "current").words).toBe("waves");
+  });
+  it("keeps terragucci's waves, a hold after the merge part of them, and the default strip without steps", () => {
+    const tg = stripFromSteps(["pull-request", "planned", "merged", "applying", "failed", "resumed", "waiting", "approved", "resumed", "applied", "reset"]);
+    expect(tg.map((x) => x.id)).toEqual(STRIP.map((x) => x.id));
+    expect(stripStops("waiting", tg).find((x) => x.state === "current").words).toBe("waves");
+    expect(stripFromSteps([])).toBeNull();
+    // A run that applied in one go (no wait at all) still shows its waves stop.
+    expect(stripFromSteps(["pull-request", "planned", "merged", "applying", "applied", "reset"]).map((x) => x.id)).toEqual(STRIP.map((x) => x.id));
+  });
+});
