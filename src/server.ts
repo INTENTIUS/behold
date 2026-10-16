@@ -1155,8 +1155,14 @@ export function createApp(
   // streams the phases as the now-line. It holds no apply creds.
   // Ops are discovered across every served project (#31): an Op lives in its own
   // project and `chant run` executes it there.
-  const estateDirs = cfg.projectDirs ?? [cfg.projectDir];
-  const estateOps = () => discoverEstateOps(estateDirs);
+  // behold#631: read per request, never once at start. Under `serve --repos`,
+  // `?repo=` scopes cfg.projectDir to that checkout for the request, and a
+  // list taken here kept the default checkout's: every repo answered
+  // /api/project with the first checkout's member kinds, so a chant repo
+  // served beside a Terraform one read as Terraform and the kiosk hid its
+  // Components view.
+  const estateDirs = (): string[] => cfg.projectDirs ?? [cfg.projectDir];
+  const estateOps = () => discoverEstateOps(estateDirs());
 
   app.get("/api/ops", (c) =>
     c.json({
@@ -1304,7 +1310,7 @@ export function createApp(
   const convergeDirs = (): { dirs: string[]; declared: ReturnType<typeof declaredConvergeOps> } => {
     const dirs: string[] = [];
     const declared: ReturnType<typeof declaredConvergeOps> = [];
-    for (const f of discoverOpIrs(estateDirs)) {
+    for (const f of discoverOpIrs(estateDirs())) {
       const parsed = readOpIr(f.path, (p) => readFileSync(p, "utf8"));
       if (!parsed.ok) continue; // the lens itself refuses on an unreadable op.json; this read only counts loops
       const mine = declaredConvergeOps([parsed.ir]);
@@ -1632,7 +1638,7 @@ export function createApp(
     // Read at request time, like everything else here: a project built while
     // the tab is open grows the ops stop on the next /api/project, without a
     // restart.
-    const emittedOps = discoverOpIrs(estateDirs).length;
+    const emittedOps = discoverOpIrs(estateDirs()).length;
     // #230 M3 (item 4): a real project whose directory carries `*.carve.json`
     // manifests surfaces its carve state with none of the demo scaffolding —
     // no report, no stepper, no write actions, just what chant recorded. Read
@@ -1645,7 +1651,7 @@ export function createApp(
     // means claiming two things are one resource. So this publishes what the
     // manifest actually says — which Terraform addresses graduated, and how far
     // the others got — beside the estate rather than painted onto it.
-    const carveState = carveStatePayload(await carveStatesUnder(estateDirs));
+    const carveState = carveStatePayload(await carveStatesUnder(estateDirs()));
     // #371: the move plans the served choudoufu members carry (`carve.json`
     // at a member's root), as paths the SPA hands back to /api/choudoufu/moves.
     const plans = discoverCarvePlans(
@@ -1663,7 +1669,7 @@ export function createApp(
     // instead; an explicit later pick of components still gets the honest note.
     // An unclaimed directory reads `chant`, exactly as `estateMembers` resolves
     // it — chant is the reader for a directory no kind claims.
-    const memberKinds = [...new Set(estateMembers(estateDirs).map((m) => m.kind))];
+    const memberKinds = [...new Set(estateMembers(estateDirs()).map((m) => m.kind))];
     // #393 item 2: whether `runtime` is a zoom this estate can answer. The
     // tier below the declaration boundary is the owner-referenced children a
     // substrate maintains — chant stamps `runtimeOwner` on exactly those
@@ -1674,7 +1680,7 @@ export function createApp(
     // member, not off a live read: a stop must exist or not before anyone picks
     // it. Chant members only — a non-chant kind declares no lexicons at all.
     const memberLexicons = await Promise.all(
-      estateDirs.map((d) => (memberKindOf(d) === "chant" ? detectProject(d).then((p) => p.lexicons).catch(() => []) : Promise.resolve([] as string[]))),
+      estateDirs().map((d) => (memberKindOf(d) === "chant" ? detectProject(d).then((p) => p.lexicons).catch(() => []) : Promise.resolve([] as string[]))),
     );
     const runtimeCapable = memberLexicons.flat().some((l) => RUNTIME_LEXICONS.has(l));
     return c.json({
@@ -2295,7 +2301,7 @@ export function createApp(
         }
       }
       if (url.searchParams.get("ops") === "1") {
-        const files = discoverOpIrs(estateDirs);
+        const files = discoverOpIrs(estateDirs());
         if (!files.length) {
           return c.json(
             {
@@ -2798,7 +2804,7 @@ export function createApp(
       // renders the resources picture, and until now said nothing — three
       // picker rows, one image. One clause, through the same module every
       // other caption comes from.
-      const sameNote = unchangedZoomNote(srcZoom, estateMembers(estateDirs).map((m) => m.kind));
+      const sameNote = unchangedZoomNote(srcZoom, estateMembers(estateDirs()).map((m) => m.kind));
       const ownNote = [estateLensNote, tf.note, cdNote, sameNote].filter(Boolean).join(" · ");
       // #554: notesFor counts the references to undeclared targets itself.
       // When it is not consulted (an estate, or a note above took its place),
@@ -3163,7 +3169,7 @@ export function createApp(
     // per read, and carried on the meta beside the counts the SPA computes off
     // the IR. The colours are unchanged; only the naming is. A mixed estate
     // keeps chant's words and says why (src/status-vocabulary.ts).
-    const vocabulary = statusVocabulary(estateMembers(estateDirs).map((m) => m.kind));
+    const vocabulary = statusVocabulary(estateMembers(estateDirs()).map((m) => m.kind));
     try {
       // #189: the estate-wide overlay. The single-project pipeline below only
       // ever observed the primary, so an N-project estate was coloured 1/N —
