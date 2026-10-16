@@ -5583,9 +5583,10 @@ function titleRowFits(row, left) {
 /**
  * The marks' own row, just under the title: the box grows upward by a row
  * and its title moves up into it, so no card moves and none is covered. The
- * marks run left to right from the box's left, stepping past an edge where
- * they can, and keep their icons: short of room they run onto another row,
- * and the box grows by that one too. Only at phone width do the icons go
+ * marks stay one cluster, the forge first, at the row's start or end where
+ * no edge crosses it, else at its start with the edge behind. They keep
+ * their icons: short of room the cluster runs onto another row, and the box
+ * grows by that one too. Only at phone width do the icons go
  * first, while one row of names alone holds them.
  */
 function marksOwnRow(row, rect, title, grown = 0) {
@@ -5596,31 +5597,43 @@ function marksOwnRow(row, rect, title, grown = 0) {
   const avoid = (row.getAttribute("data-pm-avoid") || "").split(",").filter(Boolean).map(Number);
   const marks = [...row.querySelectorAll(":scope > .pm-mark")];
   const widths = markWidths(marks);
-  // Left to right in rows, a mark that would sit on an edge stepping past it.
-  const lay = (icons, step, maxRows) => {
-    const xs = [];
-    const rowOf = [];
-    let r = 0;
-    let x = left;
+  // One cluster, the forge first, then the tools: in rows when one row can't hold it, each row's
+  // part together. A part goes at the row's start or its end, whichever an edge doesn't cross
+  // (`clear`); else at the start, any edge passing behind it.
+  const lay = (icons, clear, maxRows) => {
+    const parts = [[]];
+    let used = 0;
     for (let i = 0; i < marks.length; i++) {
       const w = markWidth(marks[i], widths[i], icons);
-      const at = (x0) => {
-        let p = x0;
-        if (step) for (const e of avoid.filter((e) => e > p - 4 && e < p + w + 4).sort((a, b) => a - b)) p = Math.max(p, e + 6);
-        return p;
-      };
-      let p = at(x);
-      if (p + w > right && x > left) {
-        r++;
-        x = left;
-        p = at(x);
+      const part = parts[parts.length - 1];
+      const need = used + (part.length ? MARK_STEP : 0) + w;
+      if (part.length && need > right - left) {
+        parts.push([i]);
+        used = w;
+      } else {
+        part.push(i);
+        used = need;
       }
-      if (p + w > right || r >= maxRows) return null;
-      xs.push(p);
-      rowOf.push(r);
-      x = p + w + MARK_STEP;
+      if (w > right - left || parts.length > maxRows) return null;
     }
-    return { xs, rowOf, rows: r + 1 };
+    const xs = [];
+    const rowOf = [];
+    for (const [r, part] of parts.entries()) {
+      const width = part.reduce((s, i) => s + markWidth(marks[i], widths[i], icons), 0) + MARK_STEP * (part.length - 1);
+      const crosses = (x0) => avoid.some((e) => e > x0 - 4 && e < x0 + width + 4);
+      let x0 = left;
+      if (clear) {
+        const spot = [left, right - width].find((x) => !crosses(x));
+        if (spot === undefined) return null;
+        x0 = spot;
+      }
+      for (const i of part) {
+        xs[i] = x0;
+        rowOf[i] = r;
+        x0 += markWidth(marks[i], widths[i], icons) + MARK_STEP;
+      }
+    }
+    return { xs, rowOf, rows: parts.length };
   };
   // Phone width is the viewer's screen: the kiosk frames this page narrow on a wide one.
   const phone = (() => {
