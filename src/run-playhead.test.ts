@@ -18,6 +18,7 @@ import {
   paintPlayhead,
   playheadNote,
   pendingGateCard,
+  GATED_EXIT_CODE,
   type OpRunResult,
 } from "./run-playhead.ts";
 
@@ -90,19 +91,21 @@ const read = (name: string): string => readFileSync(join(F, name), "utf8");
  *    local checkout — not committed, since it isn't part of behold's build;
  *    reproducible from `op-progress.ts`'s exported `extractIndexedStepRecords`
  *    / `stepRecordEmitter` and the durations in `playhead-probe.local-run.json`.
- *  - `run-status-local-mode.txt` / `run-status-no-client.txt` — **real** chant
- *    stderr, captured by running `chant run status playhead-probe` and
- *    `... --temporal` in that scratch project (ANSI colour included, because
- *    chant colours its stdout when it isn't a TTY, which is how behold gets it).
- *  - `run-status-gate-pending.txt` / `run-status-no-gate.txt` — the only
- *    derived fixtures. Reaching a real pending gate needs a live Temporal
- *    server and a worker; these are chant's own format string, verbatim from
- *    `packages/core/src/cli/handlers/run.ts`:
- *
- *        `  Gate        : ${gate.signalName}${gate.description ? ` — ${gate.description}` : ""} (waiting since ${gate.since})`
- *
- *    with values matching chant's own #1676 test (`run.test.ts`, "a pending
- *    gate prints a Gate line via the gateState query").
+ *  - `run-status-gate-pending.txt`, `run-status-no-gate.txt`,
+ *    `run-status-no-run.stderr.txt`, `gated-probe.progress.ndjson` and
+ *    `run-approve-local.stderr.txt` — **real** chant 0.124.24 output (#459),
+ *    from a scratch project holding only `gated-probe.op.ts.txt` (two echoes
+ *    with `gate("approve-probe")` between them) and `chant.config.ts` with no
+ *    lexicons, in a fresh git repo: `chant run gated-probe --progress-json`
+ *    (exit 3, gated), `chant run status gated-probe` (stdout), `chant run
+ *    approve gated-probe approve-probe` (stderr), `chant run gated-probe
+ *    --progress-json` again (exit 0), `chant run status gated-probe` (stdout,
+ *    the no-gate one), and `chant run status never-ran` (stderr, exit 0).
+ *    ANSI colour included, because chant colours its output when it isn't a
+ *    TTY, which is how behold gets it.
+ *  - `run-status-local-mode.txt` / `run-status-no-client.txt` — real stderr
+ *    from chant 0.52's temporal path, which chant no longer has; kept as the
+ *    shape of an arbitrary non-zero refusal.
  */
 const probe = JSON.parse(read("playhead-probe.op.json")) as OpIr;
 const localRun = JSON.parse(read("playhead-probe.local-run.json")) as OpRunResult;
@@ -368,59 +371,50 @@ describe("paintPlayhead", () => {
 const ok = (stdout: string) => ({ code: 0, stdout, stderr: "" });
 
 describe("readRunStatus", () => {
-  it("reads a pending gate off the Gate line", () => {
-    const r = readRunStatus("prod-promote", ok(read("run-status-gate-pending.txt")));
+  it("reads a pending gate off the Gate line (real chant 0.124 stdout, #459)", () => {
+    const r = readRunStatus("gated-probe", ok(read("run-status-gate-pending.txt")));
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.read).toMatchObject({
-      op: "prod-promote",
-      workflowId: "chant-op-prod-promote",
-      status: "RUNNING",
-      activities: { completed: 1, scheduled: 1 },
-      gate: {
-        signalName: "approve-promote",
-        description: "Approve the prod promotion",
-        since: "2026-08-29T18:00:12.000Z",
-      },
+      op: "gated-probe",
+      runtime: "local",
+      runId: "local-1792192277209",
+      status: "gated",
+      startedAt: "2026-10-16 23:11:17",
+      endedAt: "2026-10-16 23:11:17",
+      gate: { signalName: "approve-probe", since: "2026-10-16T23:11:17.223Z" },
     });
   });
 
-  it("reads no Gate line as no gate pending — chant prints none either way", () => {
-    const r = readRunStatus("prod-promote", ok(read("run-status-no-gate.txt")));
+  it("reads no Gate line as no gate pending", () => {
+    const r = readRunStatus("gated-probe", ok(read("run-status-no-gate.txt")));
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.read.gate).toBeNull();
-    expect(r.read.status).toBe("COMPLETED");
-    expect(r.read.closedAt).toBe("2026-08-29T18:04:31.000Z");
+    expect(r.read.status).toBe("completed");
   });
 
-  it("refuses plainly when the project isn't on the durable path (real chant stderr)", () => {
-    const r = readRunStatus("playhead-probe", { code: 1, stdout: "", stderr: read("run-status-local-mode.txt") });
-    expect(r.ok).toBe(false);
-    if (r.ok) return;
-    expect(r.refusal.code).toBe("no-temporal");
-    expect(r.refusal.error).toContain("not available in local mode");
-    expect(r.refusal.remedy).toContain("--temporal");
-  });
-
-  it("refuses plainly when Temporal is absent entirely (real chant stderr)", () => {
-    const r = readRunStatus("playhead-probe", { code: 1, stdout: "", stderr: read("run-status-no-client.txt") });
-    expect(r.ok).toBe(false);
-    if (r.ok) return;
-    expect(r.refusal.code).toBe("no-temporal");
-    expect(r.refusal.error).toContain("@temporalio/client is not installed");
-  });
-
-  it("refuses plainly when there is no run", () => {
-    const r = readRunStatus("prod-promote", {
-      code: 1,
-      stdout: "",
-      stderr: "error: workflow not found for workflowId: chant-op-prod-promote",
-    });
+  it("refuses with no-run on chant's exit-0 'No run of Op … is recorded' (real chant stderr)", () => {
+    const r = readRunStatus("never-ran", { code: 0, stdout: "", stderr: read("run-status-no-run.stderr.txt") });
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.refusal.code).toBe("no-run");
+    expect(r.refusal.error).toContain('No run of Op "never-ran" is recorded on the "local" runtime.');
+    expect(r.refusal.error).not.toContain("\u001b");
     expect(r.refusal.remedy).toContain("Start the Op");
+  });
+
+  it("surfaces chant's refusal of the removed flag verbatim, and never suggests it", () => {
+    const r = readRunStatus("floci-apply", {
+      code: 1,
+      stdout: "",
+      stderr: '\u001b[31merror\u001b[0m: Unknown flag: --temporal\nRun "chant --help" to see supported flags.\n',
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.refusal.code).toBe("run-status");
+    expect(r.refusal.error).toBe("chant run status floci-apply failed: Unknown flag: --temporal");
+    expect(r.refusal.remedy).toBe("Run `chant run status floci-apply` in the project to see the whole error.");
   });
 
   it("surfaces anything else verbatim rather than guessing at it", () => {
@@ -439,8 +433,16 @@ describe("readRunStatus", () => {
 
 describe("parseGateLine", () => {
   it("reads a gate with no description", () => {
-    expect(parseGateLine("approve-promote (waiting since 2026-08-29T18:00:12.000Z)")).toEqual({
+    expect(parseGateLine("approve-probe (pending since 2026-10-16T23:11:17.223Z)")).toEqual({
+      signalName: "approve-probe",
+      since: "2026-10-16T23:11:17.223Z",
+    });
+  });
+
+  it("still reads the pre-chant#2121 spelling, with its description", () => {
+    expect(parseGateLine("approve-promote — Approve the prod promotion (waiting since 2026-08-29T18:00:12.000Z)")).toEqual({
       signalName: "approve-promote",
+      description: "Approve the prod promotion",
       since: "2026-08-29T18:00:12.000Z",
     });
   });
@@ -461,18 +463,18 @@ describe("the run state", () => {
   it("starts blank and clears the previous run's terminal state", () => {
     expect(initialRunState.status).toBe("idle");
     const done = runEnded(runStarted("a", "local", AT), 0, AT2);
-    expect(runStarted("b", "temporal", AT2)).toMatchObject({ op: "b", status: "running", records: [], gate: null });
+    expect(runStarted("b", "local", AT2)).toMatchObject({ op: "b", status: "running", records: [], gate: null });
     expect(done.status).toBe("ok");
   });
 
   it("a clean exit is the only thing that reads as completion", () => {
-    let s = runStarted("playhead-probe", "temporal", AT);
+    let s = runStarted("playhead-probe", "local", AT);
     for (const r of streamRecords) s = runRecord(s, r);
     expect(runEnded(s, 0, AT2).status).toBe("ok");
   });
 
   it("a non-zero exit with a failed step in the stream reads as failed — the stream said so", () => {
-    let s = runStarted("playhead-probe", "temporal", AT);
+    let s = runStarted("playhead-probe", "local", AT);
     for (const r of streamRecords) s = runRecord(s, r);
     const ended = runEnded(s, 1, AT2);
     expect(ended.status).toBe("failed");
@@ -480,7 +482,7 @@ describe("the run state", () => {
   });
 
   it("a stream that dies mid-run is `lost`, frozen at last-settled, never completion", () => {
-    let s = runStarted("playhead-probe", "temporal", AT);
+    let s = runStarted("playhead-probe", "local", AT);
     for (const r of streamRecords.slice(0, 3)) s = runRecord(s, r);
     const ended = runEnded(s, 137, AT2);
     expect(ended.status).toBe("lost");
@@ -492,19 +494,35 @@ describe("the run state", () => {
   });
 
   it("an outright dead stream carries the caller's reason", () => {
-    const s = runLost(runStarted("a", "temporal", AT), "the chant process was killed", AT2);
+    const s = runLost(runStarted("a", "local", AT), "the chant process was killed", AT2);
     expect(s).toMatchObject({ status: "lost", lost: "the chant process was killed" });
     // And a run that already ended isn't re-labelled by a late signal.
     expect(runLost(runEnded(runStarted("a", "local", AT), 0, AT2), "late", AT2).status).toBe("ok");
   });
 
   it("folds a gate answer, and a refusal's reason instead of a silent 'no gate'", () => {
-    const s = runStarted("prod-promote", "temporal", AT);
-    const withGate = runGate(s, readRunStatus("prod-promote", ok(read("run-status-gate-pending.txt"))));
-    expect(withGate.gate?.signalName).toBe("approve-promote");
-    const refused = runGate(s, readRunStatus("prod-promote", { code: 1, stdout: "", stderr: read("run-status-local-mode.txt") }));
+    const s = runStarted("gated-probe", "local", AT);
+    const withGate = runGate(s, readRunStatus("gated-probe", ok(read("run-status-gate-pending.txt"))));
+    expect(withGate.gate?.signalName).toBe("approve-probe");
+    const refused = runGate(s, readRunStatus("gated-probe", { code: 1, stdout: "", stderr: read("run-status-local-mode.txt") }));
     expect(refused.gate).toBeNull();
     expect(refused.gateNote).toContain("not available in local mode");
+  });
+
+  it("reads chant's exit 3 as gated, not lost, and folds the real gated stream (#459)", () => {
+    let s = runStarted("gated-probe", "local", AT);
+    for (const line of read("gated-probe.progress.ndjson").trim().split("\n")) {
+      for (const r of parseRunProgressLine(line) ?? []) s = runRecord(s, r);
+    }
+    expect(s.records.map((r) => `${r.phase} ${r.fn} ${r.status}`)).toEqual([
+      "Before shellCmd ok",
+      "Approve gate:approve-probe skipped",
+    ]);
+    const ended = runEnded(s, GATED_EXIT_CODE, AT2);
+    expect(ended).toMatchObject({ status: "gated", endedAt: AT2, lost: null });
+    expect(playheadNote(ended, null)).toContain("stopped at a gate");
+    // A failed step outranks the exit code: a run that failed is not "gated".
+    expect(runEnded(runRecord(s, { phase: "X", fn: "y", status: "fail", durationMs: 1 }), GATED_EXIT_CODE, AT2).status).toBe("failed");
   });
 });
 
@@ -516,29 +534,30 @@ describe("playheadNote", () => {
   });
 
   it("never says 'finished' about a lost stream", () => {
-    let s = runStarted("playhead-probe", "temporal", AT);
+    let s = runStarted("playhead-probe", "local", AT);
     for (const r of streamRecords.slice(0, 2)) s = runRecord(s, r);
     const note = playheadNote(runEnded(s, 9, AT2), joinRun(probe, s.records, null));
     expect(note).toContain("stream lost");
     expect(note).not.toMatch(/complete|finished/i);
   });
 
-  it("names the gate and says who does the signalling", () => {
-    let s = runStarted("prod-promote", "temporal", AT);
-    s = runGate(s, readRunStatus("prod-promote", ok(read("run-status-gate-pending.txt"))));
+  it("names the gate and says who does the approving", () => {
+    let s = runStarted("gated-probe", "local", AT);
+    s = runGate(s, readRunStatus("gated-probe", ok(read("run-status-gate-pending.txt"))));
     const note = playheadNote(s, null);
-    expect(note).toContain("waiting on gate approve-promote");
-    expect(note).toContain("behold never signals on its own");
+    expect(note).toContain("waiting on gate approve-probe");
+    expect(note).toContain("chant run approve");
+    expect(note).toContain("behold never approves on its own");
   });
 
   it("says when the gate could not be asked at all", () => {
-    let s = runStarted("playhead-probe", "temporal", AT);
+    let s = runStarted("playhead-probe", "local", AT);
     s = runGate(s, readRunStatus("playhead-probe", { code: 1, stdout: "", stderr: read("run-status-no-client.txt") }));
     expect(playheadNote(s, null)).toContain("gate state unavailable");
   });
 
   it("owns up to records it could not place", () => {
-    let s = runStarted("playhead-probe", "temporal", AT);
+    let s = runStarted("playhead-probe", "local", AT);
     for (const r of streamRecords) s = runRecord(s, r);
     const note = playheadNote(runEnded(s, 1, AT2), joinRun(probe, streamRecords, null));
     expect(note).toContain("1 record matched no declared step");
@@ -552,12 +571,12 @@ describe("playheadNote", () => {
     // The `noteGate`-adopted case: a run behold didn't start, so there are no
     // records to have missed — and the note must not read as "0 steps settled".
     const adopted = runGate(
-      { ...initialRunState, op: "prod-promote", mode: "temporal" },
-      readRunStatus("prod-promote", ok(read("run-status-gate-pending.txt"))),
+      { ...initialRunState, op: "gated-probe", mode: "local" },
+      readRunStatus("gated-probe", ok(read("run-status-gate-pending.txt"))),
     );
     const note = playheadNote(adopted, null);
     expect(note).toContain("didn't start the run");
-    expect(note).toContain("waiting on gate approve-promote");
+    expect(note).toContain("waiting on gate approve-probe");
     expect(note).not.toContain("0 steps settled");
   });
 });

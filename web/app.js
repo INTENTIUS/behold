@@ -8012,13 +8012,9 @@ loadSubstrates();
 // Poll readiness so pills update as things come up on their own (Docker
 // starting, a bring-up provisioning) without needing a `changed` event.
 setInterval(loadSubstrates, 5000);
-// #284 item 2: while a DURABLE run is in flight, a gate can open at any moment
-// — and the record stream falls silent exactly when it does, so a stalled
-// playhead is not evidence of anything. Ask. Only while a run is actually
-// running, so an idle behold shells nothing.
-setInterval(() => {
-  if (runState && runState.status === "running" && runState.mode === "temporal") pollRunStatus();
-}, 5000);
+// #284 item 2, #459: every run is local now, and a gated one exits at its gate
+// (status `gated`), so there is nothing to poll while one runs. The `run`
+// event below asks for the gate once the run stops there.
 // #234 join 3: the operating loop ticks on its own schedule (chant's operator
 // defaults to a 60s round, a CronJob to whatever it declares), so the strip goes
 // stale without anyone clicking. Same discipline as the gate tick above rather
@@ -8149,11 +8145,15 @@ events.addEventListener("apply", (e) => {
 // re-pull the graph only when the ops lens is what's on screen, since that's
 // the view the run state paints over.
 events.addEventListener("run", (e) => {
+  let wasGated = false;
   try {
+    wasGated = !!runState && runState.status === "gated";
     runState = JSON.parse(e.data);
   } catch {
     return;
   }
+  // #459: a run that just stopped at its gate: ask which gate, once.
+  if (runState && runState.status === "gated" && !runState.gate && !wasGated) pollRunStatus();
   renderDial();
   if (view.ops) load({ quiet: true });
 });
@@ -8194,9 +8194,8 @@ function pollRunStatus() {
   if (staticMode || publicMode || runStatusInFlight) return; // #569: a public serve refuses the op tools
   const name = runStatusTarget();
   if (!name) return;
-  // Only a durable run has gate state at all. A local run's playhead is
-  // complete without it, so don't shell chant to be told so.
-  if (runState && runState.mode === "local") return;
+  // A run still in flight has no settled status to read yet (#459).
+  if (runState && runState.status === "running") return;
   runStatusInFlight = true;
   apiFetch(`/api/ops/${encodeURIComponent(name)}/status`)
     .then((r) => r.json())
@@ -8330,7 +8329,9 @@ function signal(name, gate) {
         showToast(`✗ approve ${gate}: ${j.error}`, false);
         nowline("✗ " + j.error);
       } else {
-        showToast(`✓ approved ${gate}`, true);
+        // #459: the local runtime reads the approval when the Op runs again;
+        // chant's own line says so, and comes back as `next`.
+        showToast(`✓ approved ${gate}${j.next ? ` — ${j.next}` : ""}`, true);
       }
       // #284 item 2: re-ask gateState either way. On success the gate should be
       // gone (the pending card must not linger as if a human were still owed);
@@ -8545,7 +8546,7 @@ async function initActions() {
     bar.appendChild(deploy);
     if (opsApply.gate) {
       const approve = button(`Approve ${opsApply.gate}`, "approve", () => signal(opsApply.name, opsApply.gate));
-      approve.title = `chant run signal ${opsApply.name} ${opsApply.gate} — releases the Op's human gate.`;
+      approve.title = `chant run approve ${opsApply.name} ${opsApply.gate} — records the gate's resolution; the Op runs on from it.`;
       bar.appendChild(approve);
     }
   } else if (opsInitialEnv || view.env) {

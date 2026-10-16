@@ -63,8 +63,15 @@ describe("runVerdict", () => {
     expect(runVerdict({ ...withRecords(2), status: "failed" }).text).toContain("a step failed");
   });
 
-  it("explains why a local run shows nothing until it ends", () => {
-    expect(runVerdict({ ...base, mode: "local" }).text).toContain("steps arrive together when it ends");
+  it("counts settled steps while a local run streams them (#459: --progress-json)", () => {
+    expect(runVerdict({ ...withRecords(1), mode: "local" }).text).toContain("running — 1 step settled");
+  });
+
+  it("says a gated run stopped at its gate and runs again after approval (#459)", () => {
+    const v = runVerdict({ ...withRecords(1), status: "gated" });
+    expect(v.text).toContain("stopped at a gate");
+    expect(v.text).toContain("run the Op again");
+    expect(v.text).not.toMatch(/lost|failed/);
   });
 
   it("doesn't claim to have watched a run it didn't start", () => {

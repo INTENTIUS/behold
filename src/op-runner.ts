@@ -101,7 +101,7 @@ export class OpRunner {
    */
   noteGate(op: string, result: RunStatusResult): RunState {
     if (this.lastRunState.op !== null && this.lastRunState.op !== op) return this.lastRunState;
-    const base = this.lastRunState.op === op ? this.lastRunState : { ...initialRunState, op, mode: "temporal" as const };
+    const base = this.lastRunState.op === op ? this.lastRunState : { ...initialRunState, op, mode: "local" as const };
     const next = runGate(base, result);
     // Broadcast only a CHANGED answer. A client asks when it opens the ops lens,
     // and the broadcast is what makes it re-pull that lens — so an unchanged
@@ -117,23 +117,21 @@ export class OpRunner {
    * sync path). `cwd` is the Op's own project dir (#31 multi-estate); defaults to
    * the primary. Returns true if it started, false if busy.
    *
-   * `temporal` — pass `--temporal` so the run gets the durable runtime. Callers
-   * set it from the Op's declared gate: chant refuses a gated Op outright in
-   * local mode ("gates and schedules need a durable runtime"), so without the
-   * flag a gated Op could never run from behold at all.
+   * Every run is `chant run <name> --progress-json` on the project's resolved
+   * runtime. chant removed `--temporal` with the temporal lexicon (chant#2131),
+   * and a gated Op now runs locally too: it stops at its gate and exits 3,
+   * which `runEnded` reads as `gated` (#459).
    *
-   * Either way the run is asked for structured per-step records (#284 item 2,
-   * chant#1676) — `--progress-json` streams one NDJSON `StepRecord` per settled
-   * step on the durable path; `--json` prints the whole `OpRunResult` at the end
-   * on the local one. Same record shape, which is what lets one playhead render
-   * both. `--json` replaces chant's own human per-step summary on the local
-   * path, so each parsed record is re-emitted to the `op` now-line
-   * ({@link recordLine}) and the operator loses no narration.
+   * `--progress-json` streams one NDJSON `StepRecord` per settled step on
+   * stdout (#284 item 2, chant#1676), and chant's human summary goes to
+   * stderr. Not `--json`: chant's `--json` now prints the run's ledger record
+   * (`phases[].steps[]`), which carries no `StepRecord`s for the playhead.
+   * Each parsed record is re-emitted to the `op` now-line ({@link recordLine}).
    */
-  trigger(name: string, opEnv?: string, cwd?: string, temporal?: boolean): boolean {
+  trigger(name: string, opEnv?: string, cwd?: string): boolean {
     if (this.current) return false;
-    const mode = temporal ? "temporal" : "local";
-    const args = temporal ? ["run", name, "--temporal", "--progress-json"] : ["run", name, "--json"];
+    const mode = "local" as const;
+    const args = ["run", name, "--progress-json"];
     this.lastRunState = runStarted(name, mode, new Date().toISOString());
     this.emitRun();
     return this.start(
