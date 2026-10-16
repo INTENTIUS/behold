@@ -895,7 +895,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   s.replay = null;
   s.repo = null;
   s.live = null;
-  if (vendor && typeof document !== "undefined") document.title = `${vendor.name} · terragucci demo`;
+  if (vendor && typeof document !== "undefined") document.title = `behold · ${vendor.name}`;
   /** The time the page shows: the replay's, while it replays. */
   const shownNow = () => (s.mode === "replay" && s.replay && s.replay.at ? s.replay.at : now());
   /** behold#571: the frame and the plan's facts are the served repo's, so a tool's page shows them only for its own repo. */
