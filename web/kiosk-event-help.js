@@ -63,7 +63,7 @@ const jobLines = (job) => (job && Array.isArray(job.steps) ? job.steps.flatMap((
  * `waves` is the declared waves (`{ job, wave, roots }`), so a job names its
  * wave and a wave its roots.
  */
-export function ehSnapshot({ demo = null, answer = null, progress = null, runDoc = null, runDocs = [], approval = null, metrics = null, waveTraces = {}, waves = [], failed = [] } = {}) {
+export function ehSnapshot({ demo = null, answer = null, progress = null, runDoc = null, runDocs = [], approval = null, metrics = null, waveTraces = {}, waves = [], failed = [], strip = null } = {}) {
   if (!demo) return null;
   const pr = matchingPull(answer, demo) || (answer && !answer.error && answer.pull_request && demo.pull !== null && String(answer.pull_request.run && answer.pull_request.run.pull_request) === String(demo.pull) ? answer.pull_request : null);
   const run = matchingRun(progress, demo);
@@ -78,10 +78,12 @@ export function ehSnapshot({ demo = null, answer = null, progress = null, runDoc
     run: runDoc ? { id: runDoc.id, jobs: jobs.map((j) => ({ name: j.name, status: j.status, wave: waveOfJob(j.name, waves), refusal: j.status === "failure" ? yodelRefusal(jobLines(j)) : null, step: j.steps ? defaultStep(j.steps) : -1 })) } : null,
     approval: approval && Array.isArray(approval.rows) ? { wave: approval.wave, rows: approval.rows.filter((r) => r.state === "lit").map((r) => ({ id: r.id, at: r.at || null, actor: r.id === "approved" ? actorOf(r.text) : null, signed: !!(r.seal && /^signed/.test(r.seal.text || "")) })) } : null,
     // The numbers of this cycle's merge only: from the merge on, and only for its commit.
-    metrics: metrics && metrics.run && metrics.run.current && stepRank(demo.step) >= 2 && (!demo.commit || String(metrics.run.label || "").includes(String(demo.commit).slice(0, 8))) ? metrics.run.waves.map((w) => ({ wave: w.wave, words: [w.seconds, w.held ? `held ${w.held}` : null, w.changed].filter(Boolean).join(" · ") })).filter((w) => w.words) : [],
+    metrics: metrics && metrics.run && metrics.run.current && stepRank(demo.step, strip) >= stepRank("merged", strip) && (!demo.commit || String(metrics.run.label || "").includes(String(demo.commit).slice(0, 8))) ? metrics.run.waves.map((w) => ({ wave: w.wave, words: [w.seconds, w.held ? `held ${w.held}` : null, w.changed].filter(Boolean).join(" · ") })).filter((w) => w.words) : [],
     // Each wave's trace, once Tempo has it (web/kiosk-wave-traces.js): `{ wave, run, job, words }`.
     traces: Object.keys(waveTraces || {}).map(Number).sort((a, b) => a - b).map((w) => ({ wave: w, run: waveTraces[w].run, job: waveTraces[w].job, words: traceReadyWords(w, waveTraces[w].trace) })).filter((t) => t.words),
     waves,
+    // The scenario's own step order (kiosk.js stripFromSteps), so the story keeps the order the steps had: chant gates before its merge.
+    strip: Array.isArray(strip) && strip.length ? strip : STRIP,
     // The waves this cycle saw fail, kept by the kiosk: a re-run is news only against a failure seen before it.
     failed: [...new Set(failed)],
     // The cycle's earlier runs' failures (the approval panel reads them): a viewer who arrives after the re-run still gets the refusal.
@@ -108,7 +110,7 @@ const actorOf = (text) => {
 };
 
 /** The strip's order of a step: 0 for the pull request, up to 5 for the reset; -1 for one the strip doesn't know. */
-const stepRank = (step) => STRIP.findIndex((s) => s.steps.includes(step));
+const stepRank = (step, strip = STRIP) => (strip || STRIP).findIndex((s) => s.steps.includes(step));
 
 /**
  * Everything the snapshot says has happened in its cycle, as facts in the
@@ -122,15 +124,17 @@ export function cycleFacts(snap) {
   if (!snap) return [];
   const out = [];
   const add = (f) => out.push({ subjects: { roots: [], wave: null, job: null, run: null }, trail: true, critical: false, ...f, subjects: { roots: [], wave: null, job: null, run: null, ...(f.subjects || {}) } });
-  const at = stepRank(snap.step);
+  const strip = snap.strip || STRIP;
+  const at = stepRank(snap.step, strip);
+  const rank = (step) => stepRank(step, strip);
   const c = snap.cycle;
   const runId = snap.run ? snap.run.id : null;
   // The pull request and its plan.
   if (snap.pull !== null && snap.pull !== undefined && at >= 0) add({ id: `${c}|pr`, kind: "pull-request", text: `pull request #${snap.pull} opened`, order: 0, subjects: { roots: snap.plan ? snap.plan.roots : [] } });
-  if (snap.plan && snap.plan.totals && at >= 1) {
+  if (snap.plan && snap.plan.totals && at >= rank("planned")) {
     add({ id: `${c}|plan`, kind: "planned", text: planWords(snap.plan.totals), order: 1, subjects: { roots: snap.plan.roots } });
   }
-  if (at >= 2 && snap.pull !== null && snap.pull !== undefined) add({ id: `${c}|merged`, kind: "merged", text: `pull request #${snap.pull} merged`, order: 2 });
+  if (at >= rank("merged") && snap.pull !== null && snap.pull !== undefined) add({ id: `${c}|merged`, kind: "merged", text: `pull request #${snap.pull} merged`, order: 2 });
   // Each wave, from the run view; a wave's job, from the pipeline's run.
   const jobOf = (n) => (snap.run ? snap.run.jobs.find((j) => j.wave === n) : null);
   const approved = snap.approval ? snap.approval.rows.find((r) => r.id === "approved") : null;
@@ -178,16 +182,30 @@ export function cycleFacts(snap) {
   for (const m of snap.metrics) add({ id: `${c}|metrics|${m.wave}`, kind: "metrics", text: `wave ${m.wave}: ${m.words}`, order: 10 + m.wave * 10 + 9, subjects: { roots: rootsOfWave(m.wave, snap.waves, states), wave: m.wave, run: runId }, trail: false });
   // A wave's trace, once Tempo has it: a beat of the story, and a tip that opens it.
   for (const t of snap.traces) add({ id: `${c}|trace|w${t.wave}`, kind: "trace", text: t.words, order: 10 + t.wave * 10 + 9, subjects: { roots: rootsOfWave(t.wave, snap.waves, states), wave: t.wave, job: t.job, run: t.run } });
+  // A gate on the whole change (chant's pull-request loop): its approval, no wave named.
+  if (snap.approval && !Number.isInteger(snap.approval.wave)) {
+    if (snap.approval.rows.some((r) => r.id === "requested" || r.id === "approved")) add({ id: `${c}|held`, kind: "held", text: "the plan waits for an approval", order: 9, critical: true });
+    const ok = snap.approval.rows.find((r) => r.id === "approved");
+    if (ok) add({ id: `${c}|approved`, kind: "approved", text: ok.actor ? `approved by ${ok.actor}${ok.signed ? ", signed" : ""}` : "approved, signed", order: 9.5 });
+  }
   // A gate on the whole change (chant's pull-request loop): the plan waits, no wave named.
   // A repo with declared waves names its held wave once the run view has it; this is for a repo without them.
   if (snap.step === "waiting" && !(snap.waves || []).length && !out.some((f) => f.kind === "held")) add({ id: `${c}|held`, kind: "held", text: "the plan waits for an approval", order: 9, critical: true });
-  const applied = states.filter((s) => s.state === "applied").length;
-  if (snap.step === "applied") add({ id: `${c}|applied`, kind: "applied", text: !states.length ? "the change applied" : applied === states.length ? `all ${applied} waves applied` : `${applied} of ${states.length} waves applied`, order: 990, critical: true });
+  // The step says the run applied: every wave the run view names, even one a read has not caught up on.
+  if (snap.step === "applied") add({ id: `${c}|applied`, kind: "applied", text: !states.length ? "the change applied" : states.length === 1 ? "the wave applied" : `all ${states.length} waves applied`, order: 990, critical: true });
   if (snap.step === "reset") add({ id: `${c}|reset`, kind: "reset", text: "states back on the base", order: 995 });
-  // One fact per id (a wave's hold is said by the run view and the approval rows alike), in the cycle's order.
+  // One fact per id (a wave's hold is said by the run view and the approval rows alike).
   const byId = new Map();
   for (const f of out) if (!byId.has(f.id)) byId.set(f.id, f);
-  return [...byId.values()].sort((a, b) => a.order - b.order);
+  // behold#571 (#631): in the order the scenario's steps went: each fact at its stop of the strip, then in its order within it.
+  // An approval before the merge (chant's gate) is its own stop; after it, part of the waves.
+  const stopIndex = (id) => {
+    const i = strip.findIndex((x) => x.id === id);
+    return i >= 0 ? i : strip.findIndex((x) => x.id === "waves");
+  };
+  const gateStop = strip.some((x) => x.id === "approval") ? "approval" : "waves";
+  const stopOf = (f) => (["pull-request", "planned", "merged", "applied", "reset"].includes(f.kind) ? f.kind : f.kind === "pull-request" ? "pull-request" : ["held", "approved", "resumed"].includes(f.kind) && !Number.isInteger(f.subjects.wave) ? gateStop : "waves");
+  return [...byId.values()].map((f) => ({ ...f, stop: stopOf(f), order: Math.max(0, stopIndex(stopOf(f))) * 1000 + f.order })).sort((a, b) => a.order - b.order);
 }
 
 /** The story trail: the cycle's facts that are beats of its story. */

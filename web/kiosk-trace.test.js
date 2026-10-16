@@ -155,3 +155,17 @@ describe("the strip's left bars (behold#571)", () => {
     expect(["failed", "changed-after-approval", "waiting", "applied", "planned", undefined, "other"].map(stripTone)).toEqual(["bad", "bad", "wait", "ok", "ok", "idle", "idle"]);
   });
 });
+
+describe("kiosk trace: one attempt of several (behold#571)", () => {
+  const t = (wave, start) => ({ wave, start, ms: 10, spans: [] });
+  it("picks the attempt that is the asked-about wave's: its own start, else that wave's newest, else the newest", async () => {
+    const { attemptFor, attemptWords } = await import("./kiosk-trace.js");
+    const traces = [t(1, 100), t(2, 200), t(2, 300)];
+    expect(attemptFor(traces, { wave: 2, start: 200 })).toBe(1);
+    expect(attemptFor(traces, { wave: 2 })).toBe(2);
+    expect(attemptFor(traces, { wave: 1 })).toBe(0);
+    expect(attemptFor(traces, { wave: 9 })).toBe(2);
+    expect(attemptFor([], { wave: 1 })).toBe(-1);
+    expect(attemptWords(0, 2, Date.parse("2026-10-16T19:25:38Z"))).toBe("Attempt 1 of 2, started at 19:25 UTC");
+  });
+});

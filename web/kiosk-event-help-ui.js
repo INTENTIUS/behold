@@ -279,7 +279,7 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
   const drawTrail = (h) => {
     if (!trailHost) return;
     const facts = [...st.trail.values()].sort((a, b) => a.order - b.order);
-    const key = facts.map((f) => f.id).join(",");
+    const key = facts.map((f) => `${f.id}=${f.text}`).join(",");
     trailHost.hidden = !facts.length;
     if (h.watch && h.caption && trailHost.style) {
       const c = h.caption.getBoundingClientRect();
@@ -347,7 +347,15 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
   const tick = () => {
     const h = get();
     if (!h || !h.demo) return;
-    const facts = cycleFacts(ehSnapshot({ demo: h.demo, answer: h.answer, progress: h.progress, runDoc: h.runDoc, runDocs: h.runDocs || [], approval: h.approval, metrics: h.metrics, waveTraces: h.waveTraces || {}, waves: h.waves || [], failed: [...st.failed] }));
+    // behold#571 (#631): the story is told in the tool's own step order; until that is read, nothing is said in another's.
+    if (h.stripReady === false) return;
+    const stripKey = JSON.stringify((h.strip || []).map((x) => x.id));
+    if (stripKey !== st.stripKey) {
+      // Another tool's order: the trail is told again in it.
+      st.stripKey = stripKey;
+      st.trail.clear();
+    }
+    const facts = cycleFacts(ehSnapshot({ demo: h.demo, answer: h.answer, progress: h.progress, runDoc: h.runDoc, runDocs: h.runDocs || [], approval: h.approval, metrics: h.metrics, waveTraces: h.waveTraces || {}, strip: h.strip || null, waves: h.waves || [], failed: [...st.failed] }));
     if (h.demo.cycle !== st.cycle) {
       // A new cycle: a new story. Its first look is the trail so far, not news.
       // The first look at a page sees a cycle already under way: no news. A cycle that turns while the page is open is all news.

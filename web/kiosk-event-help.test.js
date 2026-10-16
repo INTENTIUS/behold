@@ -2,6 +2,7 @@
 // told as facts in order, the news since the last look, the Tips switch, and
 // the queues that keep tips and modals calm.
 import { describe, expect, it } from "vitest";
+import { stripFromSteps } from "./kiosk.js";
 import { EH_STORE, cycleFacts, ehSnapshot, ehStore, ehStored, modalQueue, newEvents, storyTrail, tipsQueue, yodelRefusal } from "./kiosk-event-help.js";
 
 const C = "9f3c2a71d04e5b8c6a1f2e3d4c5b6a7980716253";
@@ -60,6 +61,23 @@ describe("event-help: a cycle told in order", () => {
     expect(cycleFacts(ehSnapshot({ demo: demo("waiting"), answer })).find((f) => f.kind === "held")).toMatchObject({ text: "the plan waits for an approval", critical: true });
     // A repo with declared waves waits for the run view to name the held wave: no second, vaguer hold first.
     expect(facts("waiting").some((f) => f.kind === "held")).toBe(false);
+  });
+
+  it("counts every wave at applied, even one the run view has not caught up on (behold#571)", () => {
+    const behind = facts("applied", [st(1, "applied", ["network", "other"]), st(2, "applied", ["app"]), st(3, "not-started", ["edge"])]);
+    expect(behind.find((f) => f.kind === "applied").text).toBe("all 3 waves applied");
+    expect(facts("applied", [st(1, "applied", ["network", "other"])]).find((f) => f.kind === "applied").text).toBe("the wave applied");
+  });
+
+  it("tells chant's pull-request loop in its own order: the approval before the merge (#631)", () => {
+    const strip = stripFromSteps(["pull-request", "planned", "waiting", "approved", "merged", "applying", "applied", "reset"]);
+    const chant = (step, approval = null) => cycleFacts(ehSnapshot({ demo: { ...demo(step), scenario: "chant-pr-loop", tool: "chant" }, answer: null, approval, strip }));
+    // Waiting for the approval: the pull request is open, not merged.
+    expect(storyTrail(chant("waiting")).map((f) => f.text)).toEqual(["pull request #12 opened", "the plan waits for an approval"]);
+    const approval = { wave: null, rows: [{ id: "approved", state: "lit", text: "demo-reviewer approved exactly this plan.", seal: { ok: true, text: "signed; matches the repo's allowed signers" } }] };
+    expect(storyTrail(chant("applied", approval)).map((f) => f.text)).toEqual(["pull request #12 opened", "the plan waits for an approval", "approved by demo-reviewer, signed", "pull request #12 merged", "the change applied"]);
+    // terragucci's waves keep theirs: a wave's hold after the merge.
+    expect(storyTrail(facts("waiting", [st(1, "applied", ["network", "other"]), st(2, "waiting", ["app"])])).map((f) => f.kind)).toEqual(["pull-request", "planned", "merged", "applied-wave", "known", "held"]);
   });
 
   it("names each event's subjects, so the kiosk can place it", () => {

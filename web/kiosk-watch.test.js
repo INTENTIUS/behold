@@ -2,7 +2,7 @@
 // takes, what the caption leads with, the badges, the delivery line, the
 // result card, the drawer's folded lines, and where an overlay goes.
 import { describe, expect, it } from "vitest";
-import { MODE_STORE, activeWave, badgeTitle, badgeWords, badges, captionModel, changeRoots, doraLine, modeStored, placeBeside, resultModel, shotFor, stepTone, tailLines } from "./kiosk-watch.js";
+import { MODE_STORE, activeWave, badgeTitle, badgeWords, badges, behindStep, steadyRun, captionModel, changeRoots, doraLine, modeStored, placeBeside, resultModel, shotFor, stepTone, tailLines } from "./kiosk-watch.js";
 
 const C = "9f3c2a71d04e5b8c6a1f2e3d4c5b6a7980716253";
 const P = "1111111111111111111111111111111111111111";
@@ -143,6 +143,36 @@ describe("kiosk watch: the numbers", () => {
     expect(resultModel(demo("applied"), metrics, three).counts).toEqual(["3 waves applied", "4 created, 1 updated"]);
     expect(resultModel(demo("applying"), metrics, p)).toBeNull();
     expect(resultModel(demo("applied"), null, null)).toBeNull();
+  });
+
+  it("never counts fewer waves than the step says, nor lists fewer than it counts (behold#571)", () => {
+    // The step says applied while the run view still has wave 3 queued: three waves applied, three rows, the third's numbers to come.
+    const behind = progress([st(1, "applied", ["network"], { update: 1 }), st(2, "applied", ["app"], { create: 4 }), st(3, "not-started", ["edge"])]);
+    const r = resultModel(demo("applied"), metrics, behind);
+    expect(r.counts[0]).toBe("3 waves applied");
+    expect(r.waves).toEqual([{ wave: 1, words: "1.6 s · 1 updated" }, { wave: 2, words: "9.5 s · held 25 s · 4 created" }, { wave: 3, words: null }]);
+    expect(behindStep(demo("applied"), behind)).toBe(true);
+    expect(behindStep(demo("applied"), progress([st(1, "applied", ["network"])]))).toBe(false);
+    expect(behindStep(demo("applying"), behind)).toBe(false);
+  });
+
+  it("keeps the run view as the cycle has seen it: an applied wave stays applied, a wave a read leaves out stays, a read for another run is set aside", () => {
+    const d = demo("applied");
+    let { memo, progress: p1 } = steadyRun(null, progress([st(1, "applied", ["network"]), st(2, "applied", ["app"]), st(3, "applied", ["edge"])]), d);
+    expect(p1.states.map((w) => w.state)).toEqual(["applied", "applied", "applied"]);
+    // A lagging read: the resume's run view, not yet caught up.
+    const lag = steadyRun(memo, progress([st(1, "applied", ["network"]), st(2, "not-started", ["app"])]), d);
+    expect(lag.progress.states.map((w) => [w.number, w.state])).toEqual([[1, "applied"], [2, "applied"], [3, "applied"]]);
+    // A read of another commit (the reset's push): the cycle's run stays.
+    const other = steadyRun(lag.memo, { run: { present: true, commit: "0000000000000000000000000000000000000000", updated: "2026-10-16T09:00:00Z" }, states: [st(1, "planned", ["network"])], reads: [] }, d);
+    expect(other.progress.states).toHaveLength(3);
+    expect(resultModel(d, null, other.progress).counts[0]).toBe("3 waves applied");
+    // The resume's run view says the waves an earlier run applied changed nothing now: the changes that landed stay.
+    const first = steadyRun(null, progress([st(1, "applied", ["network"], { update: 1 }), st(2, "applied", ["app"], { create: 4 })]), d);
+    const resumed = steadyRun(first.memo, progress([st(1, "applied", ["network"], { "no-op": 3 }), st(2, "applied", ["app"], { create: 4 })]), d);
+    expect(resultModel(d, null, resumed.progress).counts).toEqual(["2 waves applied", "4 created, 1 updated"]);
+    // A new cycle starts over.
+    expect(steadyRun(other.memo, null, demo("pull-request", { cycle: 13 })).progress).toBeNull();
   });
 });
 

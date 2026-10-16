@@ -470,7 +470,9 @@
       #k-drawer.k-trace-only #k-traces:empty { display: block; }
       .k-wf { margin-top: 0.7em; padding-top: 0.5em; border-top: 1px solid var(--rule); display: grid; gap: 0.25em; }
       .k-wf-row { display: grid; grid-template-columns: 4.2em minmax(6em, 1fr) auto auto; align-items: center; gap: 0.6em; width: 100%; padding: 0.2em 0.3em; border: 0; border-radius: 6px; background: transparent; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
-      .k-wf-row:hover, .k-wf-row:focus-visible { background: var(--active); }
+      .k-wf-row:not(.k-wf-plain):hover, .k-wf-row:focus-visible { background: var(--active); }
+      .k-wf-row.k-wf-plain { grid-template-columns: 4.2em minmax(0, 1fr); cursor: default; }
+      .k-wf-words { font-size: 0.9em; font-variant-numeric: tabular-nums; }
       .k-wf-wave { font: 600 0.88em var(--font-mono); color: var(--muted); }
       .k-wf-track { position: relative; height: 0.85em; border-radius: 3px; background: color-mix(in srgb, var(--rule) 45%, transparent); overflow: hidden; }
       .k-wf-seg { position: absolute; top: 0; bottom: 0; min-width: 2px; }
@@ -491,6 +493,7 @@
       .k-result-waves { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.2em 0.9em; margin: 0; padding-top: 0.5em; border-top: 1px solid var(--rule); }
       .k-result-waves dt { font: 600 0.9em var(--font-mono); color: var(--muted); }
       .k-result-waves dd { margin: 0; font-variant-numeric: tabular-nums; }
+      .k-result-waves dd.k-result-soon { color: var(--muted); font-style: italic; }
       @media (max-width: 900px) and (min-width: 601px) { body.k-watch #bar { padding-right: 1em; flex-wrap: wrap; } body.k-watch #k-head { display: flex; flex-direction: column-reverse; } body.k-watch #k-tools { position: static; justify-content: flex-end; padding: 0.4em 1em 0; } }
       .k-w-dora-foot { display: none; }
       /* A phone: a short header, the graph, then the step and the approval under it; the rest stacks below, in the page's flow. */
