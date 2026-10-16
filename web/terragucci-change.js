@@ -333,7 +333,7 @@ export function changeHead(answer, progress, now = new Date()) {
   const stage = changeStage(answer, progress);
   if (stage === "pull-request") {
     const r = answer.pull_request.run;
-    return { text: `pull request #${r.pull_request}, planned ${clock(r.finished, now)}, ${ago(r.finished, now)}; not merged yet, so no run view`, href: hrefOf(answer, r.report), pr: r.pull_request_url || null };
+    return { text: `pull request #${r.pull_request}, planned ${clock(r.finished, now)}, ${ago(r.finished, now)}; the run view follows the merge`, href: hrefOf(answer, r.report), pr: r.pull_request_url || null };
   }
   if (stage === "apply") {
     const r = progress.run;
@@ -505,7 +505,7 @@ export function rootStates(answer, progress) {
         roots[root] = { wave: w.number, state: "planned", tone: STATE_TONE.planned, words: `wave ${w.number} · planned${c ? ", composed" : ""}`, facts };
       }
     }
-    for (const root of known) if (!roots[root]) roots[root] = { wave: null, state: "outside", tone: STATE_TONE.outside, words: "not in this change", facts: [] };
+    for (const root of known) if (!roots[root]) roots[root] = { wave: null, state: "outside", tone: STATE_TONE.outside, words: "unchanged", facts: [] };
     return { stage, roots };
   }
   if (stage === "apply") {
@@ -544,12 +544,12 @@ export function rootStates(answer, progress) {
   return { stage, roots };
 }
 
-/** The short label on a read's line: "reads network's planned http_proxy_port, unknown until network applies". */
+/** The short label on a read's line: "reads network's planned http_proxy_port, set when network applies". */
 export function readLabel(e) {
   if (e.composed !== undefined) {
     return `reads ${e.to} in wave ${e.composed}'s composed run${e.unknown.length ? `: ${list(e.unknown)} known once ${e.to}'s part applies` : ""}`;
   }
-  if (e.outputs === "planned") return e.unknown.length ? `reads ${list(e.unknown)} from ${e.to}: unknown until ${e.to} applies` : `reads ${e.to}'s planned outputs`;
+  if (e.outputs === "planned") return e.unknown.length ? `reads ${list(e.unknown)} from ${e.to}, set when ${e.to} applies` : `reads ${e.to}'s planned outputs`;
   return `reads ${e.to}'s applied state`;
 }
 
@@ -607,7 +607,7 @@ export function viewCaption(answer, progress, now = new Date()) {
   const stage = changeStage(answer, progress);
   if (stage === "pull-request") {
     const r = answer.pull_request.run;
-    return `the plan of pull request #${r.pull_request} at ${clock(r.finished, now)}: not merged yet, nothing applied`;
+    return `the plan of pull request #${r.pull_request} at ${clock(r.finished, now)}, before the merge`;
   }
   if (stage === "apply") {
     const r = progress.run;

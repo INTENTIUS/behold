@@ -223,7 +223,7 @@ export function unreviewedLines(answer) {
   if (!pr) return [];
   return pr.reads
     .filter((r) => r.outputs === "planned" && r.unknown && r.unknown.length)
-    .map((r) => `${r.root} reads ${r.unknown.join(", ")} from ${r.upstream}, known only after ${r.upstream} applies: the review does not show the value ${r.root} gets.`);
+    .map((r) => `${r.root} reads ${r.unknown.join(", ")} from ${r.upstream}, set when ${r.upstream} applies.`);
 }
 
 /**
