@@ -71,6 +71,14 @@ describe("trimTrace", () => {
     expect(JSON.stringify(t)).not.toContain("someone");
   });
 
+  it("times the job by its stage span, though a gate's hold reaches back before it", () => {
+    const body = waveTrace();
+    body.trace.resourceSpans[0]!.scopeSpans[0]!.spans.push(span("8", "5", "held", -40_000, 0, [["terragucci.wait", "approval"]]));
+    const t = trimTrace("11".repeat(16), body, "terragucci-admin/demo")!;
+    expect(t.ms).toBe(1000);
+    expect(t.spans.find((s) => s.name === "held")!.attrs).toEqual({ "terragucci.wait": "approval" });
+  });
+
   it("keeps a trace of another repo out", () => {
     expect(trimTrace("11".repeat(16), waveTrace({ project: "forgejo:3000/someone/else" }), "terragucci-admin/demo")).toBeNull();
     expect(trimTrace("11".repeat(16), { trace: {} }, "terragucci-admin/demo")).toBeNull();

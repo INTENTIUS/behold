@@ -74,6 +74,7 @@ export const KEPT_ATTRIBUTES = [
   "terragucci.gate.held_seconds",
   "terragucci.gate.waiting_since",
   "terragucci.gate.approved_at",
+  "terragucci.wait",
   "process.exit.code",
   "opentofu.resource_instance.address",
   "opentofu.resource_instance.action",
@@ -218,8 +219,9 @@ export function trimTrace(traceId: string, body: unknown, repo: string, maxSpans
   if (!own || !projectIs(String(own["terragucci.project"]), repo) || spans.length === 0) return null;
   spans.sort((a, b) => a.start - b.start);
   const stage = spans.find((s) => s.parent === null && typeof s.attrs["terragucci.stage"] === "string") ?? spans.find((s) => s.parent === null) ?? spans[0]!;
-  const start = Math.min(...spans.map((s) => s.start));
-  const end = Math.max(...spans.map((s) => s.start + s.ms));
+  // The job's own time is its stage span's: a gate's hold, which began in an earlier job, reaches before it.
+  const start = stage.parent === null ? stage.start : Math.min(...spans.map((s) => s.start));
+  const end = stage.parent === null ? stage.start + stage.ms : Math.max(...spans.map((s) => s.start + s.ms));
   // Past the budget, the deepest spans go first: the run's shape stays whole.
   let kept = spans;
   if (spans.length > maxSpans) {
