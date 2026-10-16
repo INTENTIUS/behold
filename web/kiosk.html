@@ -247,7 +247,8 @@
       .k-credits { margin: 0; color: var(--muted); font-size: 0.78em; line-height: 1.35; }
       /* behold#571: the hold panel, lit in the waiting tone its job row and its wave box carry. */
       .k-right { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 0.3em; min-width: 0; min-height: 0; contain: size; }
-      .k-right > .k-cycle { margin: 0; padding: 0.25em 13em 0 0.3em; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; }
+      /* behold#571: the cycle line sits under the header's controls (#688 made them full size), not beneath them. */
+      .k-right > .k-cycle { margin: 0; padding: 2.6em 0.3em 0; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .k-box-hold { padding: 0.5em 0.9em 0.6em; }
       .k-hold { background: var(--surface-box); border-radius: 8px; }
       .k-hold-head { margin: 0 0 0.3em; font: 700 0.95em var(--font-mono); color: var(--fg); }
