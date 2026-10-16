@@ -81,7 +81,7 @@ export function criticalPath(spans) {
       // A child still running at the point, or starting after it, is not what the point waited on.
       if (c.start >= t - EPS || end(c) > t + EPS) continue;
       walk(c, t);
-      t = c.start;
+      t = resumeAt(c, kids);
     }
   };
   for (const s of tops) walk(s, Infinity);
@@ -90,7 +90,18 @@ export function criticalPath(spans) {
 
 /** Whether a span is a wait: the wave's gate, or a state lock. */
 export function isWait(s) {
-  return s.attrs["terragucci.phase"] === "gate" || s.name === "State lock wait";
+  return s.attrs["terragucci.phase"] === "gate" || !!s.attrs["terragucci.wait"] || s.name === "State lock wait";
+}
+
+/**
+ * Where the critical path goes on from after `s`: its start, or for a wait
+ * that holds work of this job (a gate's check after its hold), the start of
+ * that work, so what ran before the check stays on the path.
+ */
+function resumeAt(s, kids) {
+  if (!isWait(s)) return s.start;
+  const work = (kids.get(s.id) || []).filter((c) => !isWait(c));
+  return work.length ? Math.min(...work.map((c) => c.start)) : s.start;
 }
 
 /** A span's label and the words after it. */
@@ -107,6 +118,8 @@ export function spanWords(s) {
     return { label: "gate", sub };
   }
   if (a["terragucci.phase"]) return { label: String(a["terragucci.phase"]), sub: "" };
+  if (a["terragucci.wait"] === "approval") return { label: "held", sub: "for an approval" };
+  if (s.name === "check" && s.service === "terragucci") return { label: "check", sub: "this job's decision" };
   if (a["terragucci.root"] && s.name.startsWith("root ")) return { label: s.name, sub: a["terragucci.status"] ? String(a["terragucci.status"]) : "" };
   const address = a["opentofu.resource_instance.address"] || a["opentofu.resource.address"];
   if (address) {
@@ -182,7 +195,8 @@ const STYLE = `
 .t-row.t-can:hover, .t-row.t-sel { background: var(--active); }
 .t-name { display: flex; gap: 0.35em; align-items: baseline; min-width: 0; padding-left: calc(var(--d, 0) * 0.85em); }
 .t-caret { color: var(--muted); width: 0.8em; flex: none; font-size: 0.85em; }
-.t-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); }
+.t-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); flex: 0 1 auto; min-width: 2.5em; }
+.t-name .t-sub { flex: 0 100 auto; }
 .t-sub { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.9em; }
 .t-track { position: relative; height: 0.8em; border-radius: 3px; background: color-mix(in srgb, var(--rule) 45%, transparent); }
 .t-bar { position: absolute; top: 0; bottom: 0; min-width: 2px; border-radius: 3px; background: color-mix(in srgb, var(--muted) 75%, transparent); }
