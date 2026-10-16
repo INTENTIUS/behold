@@ -9,16 +9,16 @@
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='none' stroke='%23a6adc8' stroke-width='1.6'/%3E%3Ccircle cx='8' cy='8' r='2.2' fill='%23a6adc8'/%3E%3C/svg%3E"
     />
     <style>
-      /* #569 step 2. The pre-paint fallback is index.html's: the default
-         theme's tokens, which initTheme() replaces with the viewer's theme. */
+      /* #569 step 2. The pre-paint fallback: the kiosk's default theme's
+         tokens (KIOSK_THEME in theme.js), which initTheme() replaces with the viewer's theme. */
       :root {
-        --bg: #1e1e2e; --panel: #2e2f40; --line: #3b3c4a; --fg: #cdd6f4; --muted: #777a8c;
-        --edge: #56596d; --managed: #a6e3a1; --foreign: #f9e2af; --pending: #89b4fa;
-        --degraded: #f38ba8; --neutral: #6d7187; --runtime: #94e2d5;
-        --rule: #4e4f64; --focus: #a3b4d0; --active: #3d4660; --well: #11101f; --shadow: #050507;
-        /* behold#571: the kiosk's surfaces and ink (theme.js kioskSurfaces), the default theme's until initTheme() runs. */
-        --surface-box: #252536; --surface-pane-a: #2b2b3c; --surface-pane-b: #313142; --zebra: #cdd6f4; --soft: #cdd6f4; --muted-ink: #808395;
-        --managed-ink: #a6e3a1; --foreign-ink: #f9e2af; --pending-ink: #89b4fa; --degraded-ink: #f38ba8; --runtime-ink: #94e2d5;
+        --bg: #09141b; --panel: #1c2325; --line: #2c2e2d; --fg: #deb88d; --muted: #746a5c;
+        --edge: #4d483f; --managed: #027c9b; --foreign: #fca02f; --pending: #1e4950;
+        --degraded: #d15123; --neutral: #695e4e; --runtime: #50a3b5;
+        --rule: #3d4142; --focus: #364548; --active: #243235; --well: #01070d; --shadow: #010304;
+        /* behold#571: the kiosk's surfaces and ink (theme.js kioskSurfaces), the kiosk's default theme's (KIOSK_THEME, Sea Shells) until initTheme() runs. */
+        --surface-box: #101b22; --surface-pane-a: #152128; --surface-pane-b: #1b272e; --zebra: #deb88d; --soft: #deb88d; --muted-ink: #7c7365;
+        --managed-ink: #0e7f9e; --foreign-ink: #fca02f; --pending-ink: #567b82; --degraded-ink: #d15123; --runtime-ink: #50a3b5;
         --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
         --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       }
@@ -298,10 +298,10 @@
     </div>
     <footer id="foot"></footer>
     <script type="module">
-      import { initTheme } from "/theme.js";
+      import { initTheme, KIOSK_THEME } from "/theme.js";
       import { startKiosk } from "/kiosk.js";
       import { pageTool } from "/kiosk-vendor.js";
-      initTheme();
+      initTheme(KIOSK_THEME);
       // behold#571: /<tool> serves this page with its tool in a meta tag; /kiosk has none.
       startKiosk(
         {
