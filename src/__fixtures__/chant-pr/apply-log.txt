@@ -1,0 +1,12 @@
+terraform_data.route: Creation complete after 0s [id=958d0fe4-8e18-f014-95f9-cc4c86f78c59]
+
+Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
+
+pr-apply: applied
+  app                  applied      create 1 update 0 replace 0 delete 0
+  edge                 applied      create 1 update 0 replace 0 delete 0
+  network              applied      create 1 update 0 replace 0 delete 0
+applied the plan jcs1-sha256:909bbc5e4f02021bdff9d852c8253f215383a2489eee464ace2adb0fda138553 approved by forgejo@forgejo:3000:demo-reviewer
+[warning]Cache action is only supported on GHES version >= 3.5. If you are on version >=3.5 Please check with GHES admin if Actions cache service is enabled or not.
+Otherwise please upgrade to GHES version >= 3.5 and If you are also using Github Connect, please unretire the actions/cache namespace before upgrade (see https://docs.github.com/en/enterprise-server@3.5/admin/github-actions/managing-access-to-actions-from-githubcom/enabling-automatic-access-to-githubcom-actions-using-github-connect#automatic-retirement-of-namespaces-for-actions-accessed-on-githubcom)
+(node:439) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.

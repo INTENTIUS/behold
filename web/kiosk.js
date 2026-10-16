@@ -13,6 +13,7 @@
 // A wave that failed says which waves applied before it and stay applied.
 // Nothing here is all-or-nothing, and nothing says so.
 
+import { CHANT_PANEL_STEPS, chantApprovalModel } from "./chant-pr-marks.js";
 import { PICK_HOLD_MS, annMark, mergeRun, startRuns } from "./kiosk-runs.js";
 import { PANEL_STEPS, PANEL_TITLE, approvalModel, cycleRuns, digestHex, rowFacts } from "./kiosk-approval.js";
 import { getThemeName, mountThemePicker, onThemeChange } from "./theme.js";
@@ -1136,7 +1137,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   const ap = { runs: new Map(), list: [], lifecycle: null, history: null, at: 0, ledgerAt: 0, busy: false };
   const readApproval = async () => {
     const d = s.demo && s.demo.demo;
-    if (!d || !PANEL_STEPS.includes(d.step) || ap.busy) return;
+    if (!d || !(PANEL_STEPS.includes(d.step) || (s.chantLoop && CHANT_PANEL_STEPS.includes(d.step))) || ap.busy) return;
     const t = now().getTime();
     if (t - ap.at < APPROVAL_POLL_MS) return;
     ap.busy = true;
@@ -1160,6 +1161,12 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
         ap.lifecycle = lifecycle && !lifecycle.error ? lifecycle : null;
         ap.history = history && !history.error ? history : null;
       }
+      // behold#631: a chant repo's pull-request gate, from chant's records at the step's run.
+      if (s.chantLoop) {
+        const pin = runPin(d);
+        const a = await fetchJson(`/api/chant/pr${pin ? `?pin=${encodeURIComponent(pin)}` : ""}`);
+        ap.chant = a && !a.error && a.loop ? a : null;
+      }
     } finally {
       ap.busy = false;
     }
@@ -1167,6 +1174,9 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   };
   const approvalNow = () => {
     const d = s.demo && s.demo.demo;
+    // behold#631: chant's gate, one per pull request on the plan's digest, when the repo runs chant's loop.
+    const chant = s.chantLoop && ap.chant ? chantApprovalModel({ demo: d, answer: ap.chant }) : null;
+    if (chant) return chant;
     if (!d || !PANEL_STEPS.includes(d.step)) return null;
     const appr = pendingApproval(d, s.progress);
     const driver = appr && s.mode !== "replay" ? { gloss: DRIVER_SIGNS, approve: appr.approve, comment: appr.comment, on: appr.on } : null;
@@ -1274,6 +1284,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     }
     // A chant project's graph is its components (web/app.js bootZoom), so it has that view too.
     s.components = !!(p && !p.error && (p.terragucciComponents || chantProject(p)));
+    // behold#631: a chant project may run chant's pull-request loop; /api/chant/pr says (its `loop`).
+    s.chantLoop = !!(p && !p.error && !p.terragucciComponents && chantProject(p));
     // behold#571: the declared roots (their colours' order) and the wave jobs that apply them.
     if (p && p.terragucciRoots) {
       s.roots = Array.isArray(p.terragucciRoots.roots) ? p.terragucciRoots.roots : [];

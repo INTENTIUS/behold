@@ -1,0 +1,244 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/pr-report/v1/pr-report.schema.json",
+  "contract": 1,
+  "stage": "plan",
+  "pr": 13,
+  "env": "demo",
+  "base": "937b527623d9a2b5c3709469b631f8ed3d1960c2",
+  "head": "facafb9e9f0a5a30ea1b8453e5e8774710a615cf",
+  "op": "pr-13",
+  "gate": "pr-apply",
+  "digest": "jcs1-sha256:909bbc5e4f02021bdff9d852c8253f215383a2489eee464ace2adb0fda138553",
+  "status": "planned",
+  "approval": {
+    "status": "pending"
+  },
+  "selection": {
+    "changed": [
+      "network",
+      "app",
+      "edge"
+    ],
+    "dependents": [],
+    "unclaimed": [],
+    "indeterminate": [],
+    "waves": [
+      [
+        "network"
+      ],
+      [
+        "app"
+      ],
+      [
+        "edge"
+      ]
+    ]
+  },
+  "members": [
+    {
+      "member": "app",
+      "component": "app",
+      "planDigest": "jcs1-sha256:a75c070936ae5d38dc6a27321988043727a6032ddc8952a610151ac021c4f288",
+      "status": "planned",
+      "counts": {
+        "create": 1,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      }
+    },
+    {
+      "member": "edge",
+      "component": "edge",
+      "planDigest": "jcs1-sha256:106a43c3fe9dcb8446f48627c49c5621364d2e6adbdb2f137d672a9bb8b7f794",
+      "status": "planned",
+      "counts": {
+        "create": 1,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      }
+    },
+    {
+      "member": "network",
+      "component": "network",
+      "planDigest": "jcs1-sha256:64728b6b8ab046e4ef4e3fe7eb81c1789ddefbd4ca178b39b244320f99bac2c7",
+      "status": "planned",
+      "counts": {
+        "create": 1,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      }
+    }
+  ],
+  "changeSet": {
+    "$schema": "https://intentius.io/chant/schemas/workspace/change-set/v1/change-set.schema.json",
+    "contract": 1,
+    "digest": "jcs1-sha256:909bbc5e4f02021bdff9d852c8253f215383a2489eee464ace2adb0fda138553",
+    "members": [
+      {
+        "member": "app",
+        "lexicon": "terraform",
+        "planner": "tofu",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:a75c070936ae5d38dc6a27321988043727a6032ddc8952a610151ac021c4f288",
+        "holes": []
+      },
+      {
+        "member": "edge",
+        "lexicon": "terraform",
+        "planner": "tofu",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:106a43c3fe9dcb8446f48627c49c5621364d2e6adbdb2f137d672a9bb8b7f794",
+        "holes": []
+      },
+      {
+        "member": "network",
+        "lexicon": "terraform",
+        "planner": "tofu",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:64728b6b8ab046e4ef4e3fe7eb81c1789ddefbd4ca178b39b244320f99bac2c7",
+        "holes": []
+      }
+    ],
+    "entries": [
+      {
+        "member": "app",
+        "lexicon": "terraform",
+        "planner": "tofu",
+        "address": "terraform_data.health_check",
+        "type": "terraform_data",
+        "name": "health_check",
+        "action": "create",
+        "attributes": [
+          {
+            "path": "id",
+            "unknown": true
+          },
+          {
+            "path": "input",
+            "after": "http://app:9080/healthz"
+          },
+          {
+            "path": "output",
+            "unknown": true
+          }
+        ]
+      },
+      {
+        "member": "app",
+        "lexicon": "terraform",
+        "planner": "tofu",
+        "address": "terraform_data.listener_port",
+        "type": "terraform_data",
+        "name": "listener_port",
+        "action": "no-op",
+        "attributes": []
+      },
+      {
+        "member": "edge",
+        "lexicon": "terraform",
+        "planner": "tofu",
+        "address": "terraform_data.route",
+        "type": "terraform_data",
+        "name": "route",
+        "action": "create",
+        "attributes": [
+          {
+            "path": "id",
+            "unknown": true
+          },
+          {
+            "path": "input",
+            "after": "http://app:9080/"
+          },
+          {
+            "path": "output",
+            "unknown": true
+          }
+        ]
+      },
+      {
+        "member": "edge",
+        "lexicon": "terraform",
+        "planner": "tofu",
+        "address": "terraform_data.upstream",
+        "type": "terraform_data",
+        "name": "upstream",
+        "action": "no-op",
+        "attributes": []
+      },
+      {
+        "member": "network",
+        "lexicon": "terraform",
+        "planner": "tofu",
+        "address": "terraform_data.http_proxy_port",
+        "type": "terraform_data",
+        "name": "http_proxy_port",
+        "action": "no-op",
+        "attributes": []
+      },
+      {
+        "member": "network",
+        "lexicon": "terraform",
+        "planner": "tofu",
+        "address": "terraform_data.subnet",
+        "type": "terraform_data",
+        "name": "subnet",
+        "action": "create",
+        "attributes": [
+          {
+            "path": "id",
+            "unknown": true
+          },
+          {
+            "path": "input",
+            "after": "10.0.1.0/24"
+          },
+          {
+            "path": "output",
+            "unknown": true
+          }
+        ]
+      }
+    ],
+    "summary": {
+      "members": 3,
+      "entries": 6,
+      "actions": {
+        "create": 3,
+        "update": 0,
+        "replace": 0,
+        "delete": 0,
+        "read": 0,
+        "no-op": 3,
+        "forget": 0
+      },
+      "types": {
+        "terraform_data": {
+          "create": 3,
+          "no-op": 3
+        }
+      },
+      "byMember": {
+        "app": {
+          "create": 1,
+          "no-op": 1
+        },
+        "edge": {
+          "create": 1,
+          "no-op": 1
+        },
+        "network": {
+          "no-op": 1,
+          "create": 1
+        }
+      },
+      "deletes": [],
+      "replacements": [],
+      "failed": [],
+      "holes": 0
+    }
+  }
+}

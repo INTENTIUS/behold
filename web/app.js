@@ -21,6 +21,7 @@ import { renderLane } from "./terragucci-lifecycle.js";
 import { renderReleases } from "./releases.js";
 import { renderYodelLane } from "./sql-yodeler-lane.js";
 import { initTerragucciEstate } from "./terragucci-estate.js";
+import { chantComponentMarks } from "./chant-pr-marks.js";
 import { noStateFill } from "./frame-fill.js";
 import { componentMarks as tgComponentMarks, runsCommit as tgRunsCommit, waveOfKey as tgWaveOfKey } from "./terragucci-components-live.js";
 import { FORGES, MARK, componentsForge, forgeOfName, iconSvg, markLink, markTitle, waveJobUrl } from "./forge-mark.js";
@@ -2537,7 +2538,10 @@ window.addEventListener("message", (e) => {
   const focusBefore = view.focus;
   const runBefore = view.run;
   const moved = applyWantedView(want);
-  if (view.run !== runBefore) void loadTgProgress({ fresh: true }); // #569: the run the narration is about
+  if (view.run !== runBefore) {
+    void loadTgProgress({ fresh: true }); // #569: the run the narration is about
+    if (chantFacets) void loadChantPr(); // behold#631
+  }
   else if (view.focus !== focusBefore && !moved) drawTgReads(); // #569
   // #477: the host's env for the gate strip moved. Read it now, not on the
   // next `changed`; renderStatusbar below writes it into the URL.
@@ -3501,7 +3505,8 @@ const TG_TONE = { plan: "var(--frame-pending, var(--pending))", wait: "var(--fra
 const TG_CARD_TONE = Object.fromEntries(Object.entries(TG_TONE).map(([k, v]) => [k, v.replace("--frame-", "--frame-card-")]));
 function drawTgReads() {
   if (embedOpts.bare) queueMicrotask(kioskDecorate); // behold#571: once this draw is done
-  watchTgRuns(); // #571: the wave boxes' jobs, while the components zoom is on screen
+  watchTgRuns();
+  watchChantPr(); // behold#631 // #571: the wave boxes' jobs, while the components zoom is on screen
   const svg = document.querySelector("#graph svg");
   if (!svg) return;
   drawPipelineMarks(svg); // behold#571: the forge and tool marks, before the wave boxes' status finds room around them
@@ -3525,7 +3530,9 @@ function drawTgReads() {
     g.removeAttribute("data-tg-dim");
     g.style.opacity = "";
   }
-  if (!tgAnswer || tgAnswer.error || !tgAnswer.roots) return;
+  // behold#631: a chant repo's pull-request loop marks its components from chant's records, not terragucci's reports.
+  const chantMode = chantPrDrawn();
+  if (!chantMode && (!tgAnswer || tgAnswer.error || !tgAnswer.roots)) return;
   const toSvg = svg.getScreenCTM && svg.getScreenCTM();
   if (!toSvg) return;
   const inv = toSvg.inverse();
@@ -3577,6 +3584,10 @@ function drawTgReads() {
     if (text !== undefined) n.textContent = text;
     return n;
   };
+  if (chantMode) {
+    drawTgComponentMarks(svg, { marks: chantComponentMarks(chantPrAnswer, chantFacets), focus: null, boxOf, make, edgePoints: chantEdgePoints(svg) });
+    return;
+  }
   const layer = make("g", { "data-tg-reads": "1", "pointer-events": "none" });
   svg.appendChild(layer); // over the boxes and cards: the lines end at the borders, and the labels carry a background
   // A pill of text with a background, centred on (cx, cy); measured once it is in the svg.
@@ -3943,8 +3954,11 @@ function watchTgRuns() {
  * spot that is clear, in the words that fit, else only in the tooltip.
  * Returns the wave boxes, in the svg's coordinates.
  */
-function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints }) {
-  const marks = tgComponentMarks(drawnAnswer, tgProgress, tgComponentFacets, { runs: tgRuns, pin: view.run || null });
+function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints, marks: given = null }) {
+  const marks = given || tgComponentMarks(drawnAnswer, tgProgress, tgComponentFacets, { runs: tgRuns, pin: view.run || null });
+  // behold#631: where the marks came from, said in each tooltip.
+  const cardSource = marks.source || "(from terragucci's reports, not live)";
+  const boxSource = marks.source || "(the job's status from the pipeline's runs; the wave's from terragucci's reports)";
   const group = make("g", { "data-tg-root": "components", "pointer-events": "none" });
   svg.appendChild(group);
   const grow = (b, d) => ({ x: b.x - d, y: b.y - d, x2: b.x2 + d, y2: b.y2 + d });
@@ -4006,7 +4020,7 @@ function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints
     const t = make("text", { "data-tg-root": "card", x, y, "font-size": 12, "font-weight": 700, fill: quiet ? "var(--frame-card-muted, var(--muted))" : TG_CARD_TONE[m.tone] || TG_CARD_TONE.idle }, words);
     if (m.state === "applying") t.setAttribute("class", "pin-pulse");
     if (!inFocus) t.style.opacity = "0.6";
-    t.appendChild(make("title", {}, [`wave ${m.wave} · ${m.words}`, ...m.facts].join("\n") + "\n(from terragucci's reports, not live)"));
+    t.appendChild(make("title", {}, [`wave ${m.wave} · ${m.words}`, ...m.facts].join("\n") + "\n" + cardSource));
     g.appendChild(t);
   }
 
@@ -4054,7 +4068,7 @@ function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints
       }
     }
     if (title) {
-      const tip = make("title", { "data-tg-root": "tip" }, [w.title, ...(w.state ? [`wave ${n} ${tgStateWords[w.state] || w.state}`] : []), ...w.facts].join("\n") + "\n(the job's status from the pipeline's runs; the wave's from terragucci's reports)");
+      const tip = make("title", { "data-tg-root": "tip" }, [w.title, ...(w.state ? [`wave ${n} ${tgStateWords[w.state] || w.state}`] : []), ...w.facts].join("\n") + "\n" + boxSource);
       title.appendChild(tip);
     }
     // The wave's first fact (a waiting wave's plan digest) in the box's bottom padding, where it fits.
@@ -4839,11 +4853,40 @@ let ciForge = null; // the forge the pipeline was generated for (#164) — heads
 let terragucciComponentsRepo = false;
 // #571: the components graph's facets (jobs, component -> root), for the live marks drawTgReads puts on it.
 let tgComponentFacets = null;
+// behold#631: a chant repo's pull-request loop: the graph's `meta.chantPr` and /api/chant/pr's answer at the view's run pin.
+let chantFacets = null;
+let chantPrAnswer = null;
+let chantPrTimer = null;
+function chantPrDrawn() {
+  return !!(view.components && chantFacets && !terragucciComponentsRepo && chantPrAnswer && !chantPrAnswer.error && chantPrAnswer.loop);
+}
+async function loadChantPr() {
+  const pin = view.run || "";
+  const was = JSON.stringify(chantPrAnswer);
+  const answer = await apiFetch(`/api/chant/pr${pin ? `?pin=${encodeURIComponent(pin)}` : ""}`)
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null);
+  if ((view.run || "") !== pin) return; // the pin moved while this read ran
+  chantPrAnswer = answer;
+  if (JSON.stringify(answer) !== was) drawTgReads();
+}
+/** Read the loop every few seconds while a chant repo's components view is on screen. */
+function watchChantPr() {
+  const on = !staticMode && !!(view.components && chantFacets && !terragucciComponentsRepo);
+  if (on && !chantPrTimer) {
+    void loadChantPr();
+    chantPrTimer = setInterval(() => void loadChantPr(), 3_000);
+  } else if (!on && chantPrTimer) {
+    clearInterval(chantPrTimer);
+    chantPrTimer = null;
+  }
+}
 
 /** #571: the CI and resources facets from a terragucci repo's components
  * graph: component -> its declared job ({jobName, needs, wave, alsoIn}), and
  * component -> the resources its root holds. */
 function takeTerragucciFacets(m) {
+  chantFacets = (m && m.chantPr) || null; // behold#631
   const tg = m && m.terragucciComponents;
   tgComponentFacets = tg || null;
   if (!tg) return;
@@ -5497,6 +5540,8 @@ function pipelineMarksFor(n) {
     const carried = roots.flatMap((r) => (tgComponentFacets.rootTools && tgComponentFacets.rootTools[r]) || []);
     return { forge: componentsForge(tgComponentFacets, tgAnswer), job: jobs[0] ? jobs[0].jobName : null, tools: orderTools([...(tgComponentFacets.tools || []), ...carried]) };
   }
+  // behold#631: a chant repo's pull-request loop: its forge and chant, with the engine its roots run.
+  if (chantFacets) return { forge: forgeOfName(chantFacets.forge), job: chantFacets.workflow, tools: orderTools(chantFacets.tools || []), loop: true };
   if (ciByComponent.size) return { forge: forgeOfName(ciForge), job: null, tools: [], projection: true };
   return null;
 }
