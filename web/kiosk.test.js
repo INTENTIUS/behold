@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INTRO_HEAD, STEP_VIEW, STEP_WORDS, aboutRows, approvalPanel, approveGloss, chantProject, focusRoots, introText, scenarioHead, frameSrc, factLines, kioskView, legendWords, matchingPull, pendingApproval, renderKiosk, renderViewToggle, reportless, runPanel, runPin, stepView, viewZoom } from "./kiosk.js";
+import { BEAT_CHANGES, INTRO_HEAD, READ_STORE, READ_TITLE, STEP_VIEW, STEP_WORDS, aboutRows, approvalPanel, approveGloss, chantProject, factsLine, focusRoots, holdHead, holdModel, introText, readStored, readingRows, renderReading, scenarioHead, frameSrc, factLines, kioskView, matchingPull, pendingApproval, renderKiosk, renderViewToggle, reportless, runPanel, runPin, stepView, viewZoom } from "./kiosk.js";
 import { VENDORS } from "./kiosk-vendor.js";
 import { PICK_HOLD_MS } from "./kiosk-runs.js";
 
@@ -42,6 +42,25 @@ describe("focusRoots (#569)", () => {
   });
 });
 
+describe("the hold panel (behold#571)", () => {
+  it("heads the panel with its wave, its run and its plan, else what its note is about", () => {
+    expect(holdHead({ wave: 2, run: 3605, digest: "jcs1-sha256:02812a1b9999" })).toBe("Wave 2 · run #3605 · plan 02812a1b");
+    expect(holdHead({ wave: 3 })).toBe("Wave 3");
+    expect(holdHead({ pull: 7 })).toBe("Pull request #7");
+    expect(holdHead({ commit: "abc12345ffff" })).toBe("Merge abc12345");
+    expect(holdHead({})).toBe(null);
+  });
+  it("holds how the hold ends, else the driver's approval, else the run's note, and nothing past that", () => {
+    const model = { wave: 2, digest: "sha256:02812a1b", run: 3605, rows: [] };
+    expect(holdModel({ approval: model }, demo("waiting"))).toMatchObject({ kind: "approval", wave: 2, head: "Wave 2 · run #3605 · plan 02812a1b" });
+    const p = progress([{ number: 2, state: "waiting", roots: ["app"], reads: [], digest: "jcs1-sha256:0accc105ba06" }]);
+    expect(holdModel({ progress: p }, demo("waiting", { next: { action: "approve wave-2", at: null } }))).toMatchObject({ kind: "driver", wave: 2, head: "Wave 2 · plan 0accc105" });
+    expect(holdModel({ answer: null, progress: null }, demo("planned", { pull: 989 }))).toEqual({ kind: "note", wave: null, head: "Pull request #989", lines: [{ cls: "k-note", text: "The pipeline is planning pull request #989." }] });
+    expect(holdModel({ noReports: true }, demo("planned"))).toBe(null);
+    expect(holdModel({ answer, progress: null }, demo("planned"))).toBe(null);
+  });
+});
+
 describe("frameSrc (#569)", () => {
   it("frames behold's own view, bare, told its host", () => {
     expect(frameSrc("http://localhost:4700")).toBe("/?embed=1&bare=1&zoom=resources&host=http%3A%2F%2Flocalhost%3A4700");
@@ -51,6 +70,8 @@ describe("frameSrc (#569)", () => {
 describe("factLines (#569)", () => {
   it("says the pull request's totals and blast radius", () => {
     expect(factLines(demo("planned"), answer)).toEqual(["pull request #7 changes across 3 roots: 3 update", "blast radius: app, edge, network", "unchanged: other"]);
+    // behold#571: the lead block shows them as one line.
+    expect(factsLine(demo("planned"), answer)).toBe("pull request #7 changes across 3 roots: 3 update · blast radius: app, edge, network · unchanged: other");
     expect(factLines(demo("planned"), answer, "terragrunt")[0]).toBe("pull request #7 changes across 3 units: 3 update");
   });
 });
@@ -128,27 +149,37 @@ describe("the scenario's card under the title (behold#571)", () => {
       const bar = document.createElement("header");
       const s = { demo: { source: "fx", read: "2026-10-15T03:00:00Z", demo: demo("failed", { scenario: "failure", about }) }, answer: null, progress: null };
       renderKiosk(bar, s, new Date("2026-10-15T03:01:00Z"));
-      const left = find(bar, "k-left")[0];
-      // behold#571: the title, the card and the step, each in its own fixed box.
-      expect(left.children.map((c) => c.className.split(" ")[0])).toEqual(["k-box", "k-box", "k-box"]);
-      expect(left.children.map((c) => c.children.map((x) => x.className.split(" ")[0]))).toEqual([["k-title"], ["k-about"], ["k-step"]]);
+      const left = find(bar, "k-lead")[0];
+      // behold#571: the lead block: the title, the two beats (what changes, the step), the progress, the rest of the card, the facts; each box fixed.
+      expect(left.children.map((c) => c.className)).toEqual(["k-box k-box-title", "k-box k-box-beat", "k-box k-box-step", "k-progress", "k-box k-box-more", "k-box k-box-facts k-box-empty"]);
+      expect(left.children.map((c) => c.children.map((x) => x.className.split(" ")[0]))).toEqual([["k-title"], ["k-beat"], ["k-step"], ["k-strip", "k-next"], ["k-about"], []]);
+      const beat = find(bar, "k-beat")[0];
+      expect(beat.children.map((c) => [c.className, c.textContent])).toEqual([["k-beat-label", BEAT_CHANGES], ["k-beat-text", about.changes]]);
+      // The step's progress sits with the step line: the strip's stops, the driver's next action.
+      expect(find(bar, "k-stop").map((c) => c.textContent)).toEqual(["pull request", "planned", "merged", "waves", "applied", "reset"]);
+      // The rest of the card, one quieter paragraph: each field after its label.
       const card = find(bar, "k-about")[0];
-      expect(card.tagName).toBe("dl");
-      expect(card.children.map((c) => [c.tagName, c.textContent])).toEqual([
-        ["dt", "What changes"], ["dd", about.changes],
-        ["dt", "Watch for"], ["dd", about.watch],
-        ["dt", "Shows"], ["dd", about.shows],
+      expect(card.tagName).toBe("p");
+      expect(card.children.filter((c) => c.className).map((c) => [c.className, c.textContent])).toEqual([
+        ["k-about-label", "Watch for"], ["k-about-text", about.watch],
+        ["k-about-label", "Shows"], ["k-about-text", about.shows],
       ]);
 
       s.demo.demo = demo("reset", { scenario: "base", about: null });
       renderKiosk(bar, s, new Date("2026-10-15T03:01:00Z"));
       expect(find(bar, "k-about")).toEqual([]);
+      expect(find(bar, "k-beat")).toEqual([]);
+      // Render what's present: the boxes with nothing in them draw no box.
+      expect(find(bar, "k-box-empty").map((c) => c.className)).toEqual(["k-box k-box-beat k-box-empty", "k-box k-box-more k-box-empty", "k-box k-box-facts k-box-empty"]);
+      // On the base, the hold panel holds the run's note, quiet, with no wave to light.
+      expect(find(bar, "k-box-hold")[0].className).toBe("k-box k-box-hold k-hold");
 
       // behold#571: no intro band at a live step; between scenarios the intro takes the card's box.
       const intro = "Terraform keeps what it built in a state file.";
       s.demo.demo = demo("waiting", { scenario: "failure", about, intro });
       renderKiosk(bar, s, new Date("2026-10-15T03:01:00Z"));
       expect(find(bar, "k-intro")).toEqual([]);
+      expect(find(bar, "k-beat")).toHaveLength(1);
       s.demo.demo = demo("reset", { scenario: "failure", about, intro });
       renderKiosk(bar, s, new Date("2026-10-15T03:01:00Z"));
       const shown = find(bar, "k-intro");
@@ -193,8 +224,9 @@ describe("the approval panel's drawing (behold#571)", () => {
         ],
       };
       const panel = approvalPanel(model, { showLine: (l) => shown.push(l) });
-      const head = find(panel, "k-ap-head")[0];
-      expect([head.textContent, ...head.children.map((c) => c.textContent)].join("")).toBe("How this hold ends · wave 2 plan 0accc105ba06 · times in UTC");
+      // behold#571: the wave, the run and the plan head the hold panel; the panel's own head says what its rows are.
+      expect(find(panel, "k-ap-head")[0].textContent).toBe("How this hold ends · times in UTC");
+      expect(holdHead({ wave: model.wave, run: 3605, digest: model.digest })).toBe("Wave 2 · run #3605 · plan 0accc105");
       expect(find(panel, "k-ap-row").map((r) => r.className)).toEqual(["k-ap-row k-ap-lit", "k-ap-row k-ap-dim", "k-ap-row k-ap-dim", "k-ap-row k-ap-dim"]);
       expect(find(panel, "k-ap-facts")[0].textContent).toBe("04:09:41 · ledger 57869649");
       expect(find(panel, "k-command")[0].textContent).toBe("chant approve tf-apply wave-2");
@@ -244,21 +276,67 @@ describe("which view the frame shows (#571)", () => {
     expect(viewZoom("nonsense")).toBe("resources");
   });
 
-  it("says how to read the view shown", () => {
-    expect(legendWords("components")).toMatch(/^Components shows the pipeline's jobs and waves\. Each card is a Terraform root .* titled with the job that applies it/);
-    expect(legendWords("resources")).toMatch(/^Each box is a Terraform root/);
+  it("says how to read the view shown, a row per mark", () => {
+    const words = (v, t) => readingRows(v, t).map((r) => r.words).join(" ");
+    expect(readingRows("components").map((r) => r.mark)).toEqual(["card", "box", "solid", "dashed", "order", "marks"]);
+    expect(readingRows("resources").map((r) => r.mark)).toEqual(["box", "card", "solid", "dashed", "marks"]);
+    expect(readingRows("components")[0].words).toBe("Card: a Terraform root with its own state.");
+    expect(readingRows("components")[1].words).toBe("Box: a wave, titled with the job that applies it.");
+    expect(readingRows("resources")[0].words).toBe("Box: a Terraform root with its own state.");
+    expect(words("components")).toMatch(/Solid arrow: a read of applied outputs\. Dashed arrow: planned values, before they apply\./);
+    expect(words("components")).toMatch(/Marks: the forge and the tools a job runs/);
+    // Short items, so two to a line keep the open frame a few lines tall.
+    for (const v of ["components", "resources"]) for (const r of readingRows(v, "terragrunt")) expect(r.words.length, r.words).toBeLessThanOrEqual(50);
     // behold#571: a Terragrunt scenario names its units.
     for (const v of ["components", "resources"]) {
-      const words = legendWords(v, "terragrunt");
-      expect(words).toMatch(/is a Terragrunt unit with its own state/);
-      expect(words).toMatch(/one unit reading another's outputs.*applies its units together/);
-      expect(words).not.toMatch(/\broots?\b/);
+      const w = words(v, "terragrunt");
+      expect(w).toMatch(/a Terragrunt unit with its own state/);
+      expect(w).not.toMatch(/\broots?\b/);
     }
+    expect(words("components", "terragrunt")).toMatch(/Waves apply in order, units in a wave together/);
     // A tool whose pipeline writes no reports: behold's own components graph, with no jobs or planned values in it.
-    expect(legendWords("components", "chant")).toBe(
-      "Components shows the project's components, in a box per wave. Each card is a Terraform root with its own state, and an arrow is one component reading another's outputs.",
-    );
-    expect(legendWords("resources", "chant")).toBe("Each box is a Terraform root with its own state.");
+    expect(readingRows("components", "chant")).toEqual([
+      { mark: "card", words: "Card: a Terraform root with its own state." },
+      { mark: "box", words: "Box: a wave of components that apply together." },
+      { mark: "solid", words: "Arrow: a component reading another's outputs." },
+    ]);
+    expect(readingRows("resources", "chant")).toEqual([{ mark: "box", words: "Box: a Terraform root with its own state." }]);
+  });
+
+  it("draws 'How to read this' as a header that folds the rows, and keeps the viewer's fold", () => {
+    const was = globalThis.document;
+    globalThis.document = { createElement: (tag) => {
+      const n = { tagName: tag, className: "", textContent: "", children: [], attrs: {}, listeners: {} };
+      n.appendChild = (c) => (n.children.push(c), c);
+      n.append = (...cs) => cs.forEach((c) => n.children.push(c));
+      n.replaceChildren = () => (n.children = []);
+      n.setAttribute = (k, v) => (n.attrs[k] = v);
+      n.addEventListener = (k, f) => (n.listeners[k] = f);
+      return n;
+    } };
+    try {
+      const host = document.createElement("section");
+      const toggled = [];
+      renderReading(host, "components", null, { open: true, onToggle: (o) => toggled.push(o) });
+      expect(host.hidden).toBe(false);
+      expect(host.children.map((c) => c.className)).toEqual(["k-read-head", "k-read-rows"]);
+      expect(host.children[0].textContent).toBe(READ_TITLE);
+      expect(host.children[1].children.map((li) => li.children[0].className)).toEqual(["k-read-mark k-read-card", "k-read-mark k-read-box", "k-read-mark k-read-solid", "k-read-mark k-read-dashed", "k-read-mark k-read-order", "k-read-mark k-read-marks"]);
+      host.children[0].listeners.click();
+      expect(toggled).toEqual([false]);
+      // Folded, the header stays as its one line.
+      renderReading(host, "components", null, { open: false });
+      expect(host.children.map((c) => c.className)).toEqual(["k-read-head"]);
+      expect(host.children[0].attrs["aria-expanded"]).toBe("false");
+    } finally {
+      globalThis.document = was;
+    }
+    const store = (v) => ({ getItem: (k) => (k === READ_STORE ? v : null) });
+    expect(readStored(store("open"))).toBe(true);
+    expect(readStored(store("closed"))).toBe(false);
+    expect(readStored(store(null))).toBe(null);
+    expect(readStored({ getItem: () => { throw new Error("blocked"); } })).toBe(null);
+    expect(readStored(null)).toBe(null);
   });
 
   it("knows a tool whose pipeline writes no terragucci reports, and a chant project behold draws itself", () => {
@@ -383,6 +461,10 @@ describe("the kiosk for a viewer new to the demo (behold#571)", () => {
       const card = find(bar, "k-approve")[0];
       expect(card.children.map((c) => c.className)).toEqual(["k-approve-gloss", "k-command", "k-approve-then"]);
       expect(card.children[1].textContent).toBe("chant approve tf-apply wave-2 --actor <reviewer> --sign <reviewer key>");
+      // behold#571: the hold panel is headed with its wave and plan, and lit as its wave's job row is.
+      const hold = find(bar, "k-box-hold")[0];
+      expect(hold.className).toBe("k-box k-box-hold k-hold k-hold-wave");
+      expect(hold.children[0].textContent).toBe("Wave 2 · plan 0accc105");
     } finally {
       globalThis.document = was;
     }

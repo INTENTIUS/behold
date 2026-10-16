@@ -14,7 +14,7 @@
 // Nothing here is all-or-nothing, and nothing says so.
 
 import { PICK_HOLD_MS, annMark, mergeRun, startRuns } from "./kiosk-runs.js";
-import { PANEL_STEPS, PANEL_TITLE, approvalModel, cycleRuns, rowFacts, shortDigest } from "./kiosk-approval.js";
+import { PANEL_STEPS, PANEL_TITLE, approvalModel, cycleRuns, digestHex, rowFacts } from "./kiosk-approval.js";
 import { getThemeName, mountThemePicker, onThemeChange } from "./theme.js";
 import { cssString, hoverCss, hoverFromMessage, hoverLinks, hoverMessage, isLightBg, rootSegments, rootText } from "./kiosk-roots.js";
 import { creditLines, filterIndex, keepRun, liveEstimate, liveFor, namesOther, notRunRepo, notRunWords, replayAt, replayBanner, replayIndex, rootNoun, rootWord, runAsOf, scrubDemo, servesRepo, vendorOf } from "./kiosk-vendor.js";
@@ -408,23 +408,88 @@ export function kioskView(demo, { components = false, pick = null, now = Date.no
   return { view: demo ? stepView(demo.step) : "components", pinned: false, secs: null };
 }
 
-/** The line under the view saying how to read it, for the view shown. */
-export function legendWords(view, tool = null) {
+/** behold#571: the static frame's title, over the legend; collapsed, its one line. */
+export const READ_TITLE = "How to read this";
+
+/** behold#571: where a viewer's choice to fold "How to read this" is kept, in their own browser. */
+export const READ_STORE = "behold.kiosk.read";
+
+/**
+ * behold#571: the legend of the view shown, one row per mark: what a card, a
+ * box, a solid arrow and a dashed arrow are, the waves' order, and what the
+ * forge and tool marks name. `[{ mark, words }]`, `mark` one of card, box,
+ * solid, dashed, order, marks. Short items, two to a line, so the open
+ * frame stays a few lines over the graph. Its words follow the view and the
+ * tool alone, never the step.
+ */
+export function readingRows(view, tool = null) {
   const root = rootWord(tool);
   const n = rootNoun(tool);
-  // A tool whose pipeline writes no reports: behold's own graph of its components, boxed by the wave each applies in.
   if (reportless(vendorOf(tool))) {
-    return view === "components"
-      ? `Components shows the project's components, in a box per wave. Each card is ${root} with its own state, and an arrow is one component reading another's outputs.`
-      : `Each box is ${root} with its own state.`;
+    if (view !== "components") return [{ mark: "box", words: `Box: ${root} with its own state.` }];
+    return [
+      { mark: "card", words: `Card: ${root} with its own state.` },
+      { mark: "box", words: "Box: a wave of components that apply together." },
+      { mark: "solid", words: "Arrow: a component reading another's outputs." },
+    ];
   }
-  const rest = `an arrow is one ${n.one} reading another's outputs, dashed while it reads planned values. A wave applies its ${n.many} together, after the waves it reads.`;
+  const arrows = [
+    { mark: "solid", words: "Solid arrow: a read of applied outputs." },
+    { mark: "dashed", words: "Dashed arrow: planned values, before they apply." },
+  ];
   if (view === "components") {
-    return `Components shows the pipeline's jobs and waves. Each card is ${root} with its own state, in a box per wave titled with the job that applies it; ${rest}`;
+    return [
+      { mark: "card", words: `Card: ${root} with its own state.` },
+      { mark: "box", words: "Box: a wave, titled with the job that applies it." },
+      ...arrows,
+      { mark: "order", words: `Waves apply in order, ${n.many} in a wave together.` },
+      { mark: "marks", words: "Marks: the forge and the tools a job runs." },
+    ];
   }
-  return `Each box is ${root} with its own state; ${rest}`;
+  return [
+    { mark: "box", words: `Box: ${root} with its own state.` },
+    { mark: "card", words: "Card: one of its resources." },
+    ...arrows,
+    { mark: "marks", words: "Marks: the tools each job runs, in the jobs pane." },
+  ];
 }
 
+/**
+ * behold#571: "How to read this", the graph pane's static frame. A header
+ * that folds it, and the legend of the view shown. Drawn again only when the
+ * view or the tool changes (the caller keys it), never per step.
+ */
+export function renderReading(host, view, tool, { open = true, onToggle = () => {} } = {}) {
+  if (!host) return;
+  host.replaceChildren();
+  host.hidden = false;
+  const head = el("button", "k-read-head", READ_TITLE);
+  head.type = "button";
+  if (head.setAttribute) head.setAttribute("aria-expanded", String(open));
+  if (head.addEventListener) head.addEventListener("click", () => onToggle(!open));
+  host.appendChild(head);
+  if (host.classList) host.classList.toggle("k-read-open", open);
+  if (!open) return;
+  const list = el("ul", "k-read-rows");
+  for (const r of readingRows(view, tool)) {
+    const li = el("li", "k-read-row");
+    const mark = el("span", `k-read-mark k-read-${r.mark}`);
+    if (mark.setAttribute) mark.setAttribute("aria-hidden", "true");
+    li.append(mark, el("span", "k-read-words", r.words));
+    list.appendChild(li);
+  }
+  host.appendChild(list);
+}
+
+/** behold#571: the viewer's fold of "How to read this": true open, false folded, null when they never chose. */
+export function readStored(store) {
+  try {
+    const v = store && store.getItem(READ_STORE);
+    return v === "open" ? true : v === "closed" ? false : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Whether a tool's pipeline writes no terragucci reports or run view (VENDORS' `reports: false`). */
 export function reportless(vendor) {
@@ -511,16 +576,61 @@ const elRoots = (tag, cls, text, s) => {
   return n;
 };
 
-/** Draw the bar and the foot from what the kiosk holds. Pure over its arguments, but for the DOM. */
-export function renderKiosk(bar, s, now = new Date(), foot = null) {
+/**
+ * Draw the header from what the kiosk holds. Pure over its arguments, but for
+ * the DOM. behold#571: the lead block on the left (the scenario, its two
+ * beats, its progress, the pull request's facts and, on a tool's page, the
+ * credit), the hold panel on the right. The page has no footer: the legend is
+ * the graph pane's "How to read this". `_foot` is ignored, kept for callers.
+ */
+export function renderKiosk(bar, s, now = new Date(), _foot = null) {
   bar.replaceChildren();
-  if (foot) foot.replaceChildren();
-  drawBar(bar, s, now, foot);
-  // behold#571: a tool's page ends with who makes the tool, and that they don't endorse the demo.
-  if (foot && vendorOf(s.vendor)) drawCredit(foot, s.vendor);
+  if (_foot) _foot.replaceChildren();
+  drawBar(bar, s, now);
 }
 
-function drawBar(bar, s, now, foot) {
+/** behold#571: the card's first beat, as the lead block labels it. */
+export const BEAT_CHANGES = "What changes";
+
+/** behold#571: the lead block's line of the pull request's facts: factLines, as one line. */
+export function factsLine(demo, answer, tool = null) {
+  return factLines(demo, answer, tool).join(" · ");
+}
+
+/**
+ * behold#571: the hold panel's head: its wave, its run and its plan, as
+ * "Wave 2 · run #3605 · plan 02812a1b". Without a wave, the pull request or
+ * the commit the note is about. Null when it knows none of these.
+ */
+export function holdHead({ wave = null, run = null, digest = null, pull = null, commit = null } = {}) {
+  const parts = [];
+  if (Number.isInteger(wave)) parts.push(`Wave ${wave}`);
+  if (Number.isInteger(run)) parts.push(`run #${run}`);
+  if (digest && digestHex(digest)) parts.push(`plan ${digestHex(digest).slice(0, 8)}`);
+  if (!parts.length && pull !== null && pull !== undefined && pull !== "") parts.push(`Pull request #${pull}`);
+  if (!parts.length && commit) parts.push(`Merge ${String(commit).slice(0, 8)}`);
+  return parts.length ? parts.join(" · ") : null;
+}
+
+/**
+ * behold#571: what the hold panel holds, or null for nothing: how the hold
+ * ends (from the records), else the driver's approval, else the run's note.
+ * `{ kind, wave, head, … }`; `wave` is the wave it lights, when it has one.
+ */
+export function holdModel(s, demo) {
+  const vendor = vendorOf(s.vendor);
+  if (s.approval) return { kind: "approval", wave: s.approval.wave, head: holdHead({ wave: s.approval.wave, run: s.approval.run, digest: s.approval.digest }), model: s.approval };
+  const appr = pendingApproval(demo, s.progress);
+  if (appr) return { kind: "driver", wave: appr.wave, head: holdHead({ wave: appr.wave, digest: appr.digest }), appr };
+  if (s.noReports || reportless(vendor || vendorOf(demo.tool))) return null;
+  const panel = runPanel(demo, s.answer, s.progress);
+  const lines = panel.note ? [{ cls: "k-note", text: panel.note }] : panel.stage === "pull-request" ? unreviewedLines(s.answer).map((u) => ({ cls: "k-note k-unknown", text: u })) : [];
+  if (!lines.length) return null;
+  const head = holdHead(panel.stage === "pull-request" ? { pull: demo.pull } : { commit: demo.commit });
+  return { kind: "note", wave: null, head, lines };
+}
+
+function drawBar(bar, s, now) {
   const vendor = vendorOf(s.vendor);
   if (vendor && s.mode === "none") {
     // behold#571: the tool's scenario has no cycle yet: its name, its link, and a calm line.
@@ -529,6 +639,7 @@ function drawBar(bar, s, now, foot) {
     const title = el("h1", "k-title");
     title.append(brandEl(vendor), el("span", "k-title-text", words.title));
     box.append(title, el("p", "k-muted", words.text));
+    drawCredit(box, s.vendor);
     bar.appendChild(box);
     return;
   }
@@ -539,6 +650,7 @@ function drawBar(bar, s, now, foot) {
     title.appendChild(el("span", "k-title-text", "Waiting for the demo"));
     box.appendChild(title);
     box.appendChild(el("p", "k-muted", s.demo ? s.demo.error || s.demo.absent : "Reading demo.json…"));
+    if (vendor) drawCredit(box, s.vendor);
     bar.appendChild(box);
     return;
   }
@@ -550,8 +662,8 @@ function drawBar(bar, s, now, foot) {
   if (vendor && s.noReports && (s.mode === "live" || s.mode === "replay")) bar.appendChild(el("p", "k-nograph-note", NO_GRAPH_WORDS));
   const intro = introText(demo);
 
-  // behold#571: the left column in fixed boxes: the title, the card (the intro between scenarios), the step.
-  const left = el("div", "k-left");
+  // behold#571: the lead block, in fixed boxes: the title, the two beats (what changes, and the step), the progress, the rest of the card, the facts.
+  const left = el("div", "k-left k-lead");
   const titleBox = box("title", "k-box-title");
   const title = el("h1", "k-title");
   // behold#571: /kiosk names the tool each scenario runs on, as its own page does.
@@ -561,70 +673,96 @@ function drawBar(bar, s, now, foot) {
   if (title.setAttribute) title.setAttribute("title", `${head.kicker} · ${head.title || ""}`);
   titleBox.appendChild(title);
   left.appendChild(titleBox);
-  const cardBox = box("card");
+
+  // The first beat: what changes; between scenarios, what the demo is about.
   const rows = aboutRows(demo);
+  const changes = rows.find((r) => r.label === BEAT_CHANGES);
+  const beatBox = box("changes", "k-box-beat");
   if (demo.step === "reset" && intro) {
-    // Between scenarios nothing else happens: the card's box says what the demo is about.
     const p = el("p", "k-intro");
     p.append(el("span", "k-intro-head", INTRO_HEAD), intro);
-    cardBox.appendChild(p);
-  } else if (rows.length) {
-    const card = el("dl", "k-about");
-    for (const r of rows) card.append(el("dt", "k-about-label", r.label), elRoots("dd", "k-about-text", r.text, s));
-    cardBox.appendChild(card);
+    beatBox.appendChild(p);
+  } else if (changes) {
+    const p = el("p", "k-beat");
+    p.append(el("span", "k-beat-label", changes.label), elRoots("span", "k-beat-text", changes.text, s));
+    beatBox.appendChild(p);
   }
-  left.appendChild(cardBox);
+  left.appendChild(beatBox);
+
+  // The second beat: the step, what just happened and why it stands where it does.
   const said = el("p", `k-step k-step-${demo.step}`);
   said.append(el("span", "k-step-word", STEP_WORDS[demo.step] || demo.step), elRoots("span", "k-label", demo.label, s));
-  const stepBox = box("step");
+  const stepBox = box("step", "k-box-step");
   stepBox.appendChild(said);
   left.appendChild(stepBox);
-  bar.appendChild(left);
 
-  const right = el("div", "k-right");
+  // The scenario's progress, with the step: the strip, and the driver's next action with its countdown.
+  const progress = el("div", "k-progress");
   const strip = el("ol", "k-strip");
   for (const stop of stripStops(demo.step)) strip.appendChild(el("li", `k-stop k-${stop.state}`, stop.words));
-  const where = el("div", "k-where");
-  where.appendChild(strip);
-  right.appendChild(where);
-
+  progress.appendChild(strip);
   const nx = nextWords(demo, now);
   const next = el("div", "k-next");
   next.appendChild(el("span", "k-next-word", "next, by the driver"));
   next.appendChild(elRoots("span", "k-action", nx.action, s));
   next.appendChild(el("span", "k-when", nx.when));
-  next.appendChild(el("span", "k-cycle", cycleWords(demo, now)));
-  right.appendChild(next);
+  // Short of room the action ends in an ellipsis; the whole line is its title.
+  if (next.setAttribute) next.setAttribute("title", `next, by the driver: ${nx.action}`);
+  progress.appendChild(next);
+  left.appendChild(progress);
 
-  // behold#571: the hold's box: how the hold ends, from the records; else the driver's approval, or the run's note.
-  const holdBox = box("hold");
-  const appr = pendingApproval(demo, s.progress);
-  if (s.approval) {
-    holdBox.appendChild(approvalPanel(s.approval, s));
-  } else if (appr) {
-    const a = el("div", "k-approve");
-    a.appendChild(elRoots("p", "k-approve-gloss", approveGloss(appr), s));
-    a.appendChild(el("code", "k-command", appr.approve));
-    const then = el("p", "k-approve-then");
-    then.append(`then comments `, el("code", "k-inline", appr.comment), ` on ${appr.on}, and the waves run again.`);
-    a.appendChild(then);
-    holdBox.appendChild(a);
-  } else if (!s.noReports && !reportless(vendor || vendorOf(demo.tool))) {
-    const panel = runPanel(demo, s.answer, s.progress);
-    if (panel.note) holdBox.appendChild(elRoots("p", "k-note", panel.note, s));
-    else if (panel.stage === "pull-request") for (const u of unreviewedLines(s.answer)) holdBox.appendChild(elRoots("p", "k-note k-unknown", u, s));
+  // The rest of the card, quieter: watch for, and what the scenario shows.
+  const moreBox = box("card", "k-box-more");
+  const more = demo.step === "reset" && intro ? [] : rows.filter((r) => r !== changes);
+  if (more.length) {
+    // One quieter paragraph, each field after its label, so two short fields share a line.
+    const card = el("p", "k-about");
+    for (const r of more) card.append(el("span", "k-about-label", r.label), elRoots("span", "k-about-text", r.text, s), " ");
+    moreBox.appendChild(card);
+  }
+  left.appendChild(moreBox);
+
+  // The pull request's facts, as one line. behold#571: no line on where the narration was read from.
+  const factsBox = box("facts", "k-box-facts");
+  const facts = s.noReports ? "" : factsLine(demo, s.answer, nounTool(s));
+  if (facts) {
+    const p = elRoots("p", "k-facts", facts, s);
+    if (p.setAttribute) p.setAttribute("title", facts);
+    factsBox.appendChild(p);
+  }
+  left.appendChild(factsBox);
+  // behold#571: a tool's page ends its lead block with who makes the tool, and that they don't endorse the demo.
+  if (vendor) drawCredit(left, s.vendor);
+  for (const b of [beatBox, moreBox, factsBox]) if (!b.children.length) b.className += " k-box-empty";
+  bar.appendChild(left);
+
+  // behold#571: the hold panel, headed with its wave and run, lit as its job row and its wave box are.
+  const right = el("div", "k-right");
+  // The cycle, quiet over the hold panel: how long this run of the scenario has gone.
+  right.appendChild(el("p", "k-cycle", cycleWords(demo, now)));
+  const holdBox = box("hold", "k-box-hold");
+  const hold = holdModel(s, demo);
+  if (hold) {
+    // A wave held lights in the waiting tone; a run's note stays quiet.
+    holdBox.className += hold.wave !== null ? " k-hold k-hold-wave" : " k-hold";
+    if (hold.wave !== null && holdBox.dataset) holdBox.dataset.kWave = String(hold.wave);
+    if (hold.head) holdBox.appendChild(el("p", "k-hold-head", hold.head));
+    if (hold.kind === "approval") holdBox.appendChild(approvalPanel(hold.model, s));
+    else if (hold.kind === "driver") {
+      const appr = hold.appr;
+      const a = el("div", "k-approve");
+      a.appendChild(elRoots("p", "k-approve-gloss", approveGloss(appr), s));
+      a.appendChild(el("code", "k-command", appr.approve));
+      const then = el("p", "k-approve-then");
+      then.append(`then comments `, el("code", "k-inline", appr.comment), ` on ${appr.on}, and the waves run again.`);
+      a.appendChild(then);
+      holdBox.appendChild(a);
+    } else for (const l of hold.lines) holdBox.appendChild(elRoots("p", l.cls, l.text, s));
   }
   // behold#571: render what's present: an empty hold keeps its place (nothing moves when one comes) but draws no box.
   if (!holdBox.children.length) holdBox.className += " k-box-empty";
   right.appendChild(holdBox);
   bar.appendChild(right);
-
-  if (foot) {
-    // The legend reads the graph; with no graph shown there is nothing for it to explain.
-    if (!s.noReports) foot.appendChild(el("span", "k-legend", legendWords(s.view || "resources", nounTool(s))));
-    // behold#571: no line on where the narration was read from: a viewer new to the demo reads the facts.
-    if (!s.noReports) for (const f of factLines(demo, s.answer, nounTool(s))) foot.appendChild(elRoots("span", "k-fact", f, s));
-  }
 }
 
 /** behold#571: the head over the intro, in the card's box between scenarios, and the title of "What is this?". */
@@ -644,10 +782,8 @@ function box(name, cls = "") {
  */
 export function approvalPanel(model, s = {}) {
   const wrap = el("div", "k-ap");
-  const head = el("p", "k-ap-head", `${PANEL_TITLE} · wave ${model.wave} `);
-  if (model.digest) head.appendChild(el("span", "k-ap-plan", `plan ${shortDigest(model.digest)}`));
-  head.append(" · times in UTC");
-  wrap.appendChild(head);
+  // behold#571: the hold panel's head names the wave, the run and the plan; this one says what the rows are.
+  wrap.appendChild(el("p", "k-ap-head", `${PANEL_TITLE} · times in UTC`));
   const list = el("ol", "k-ap-rows");
   for (const r of model.rows) {
     const li = el("li", `k-ap-row k-ap-${r.state}`);
@@ -693,9 +829,12 @@ function brandEl(vendor) {
   return a;
 }
 
-/** behold#571: the footer's credit on a tool's page, its names linked to their official sites. */
-function drawCredit(foot, tool) {
-  for (const line of creditLines(tool)) {
+/** behold#571: the credit on a tool's page, one quiet line at the lead block's foot, its names linked to their official sites. */
+function drawCredit(host, tool) {
+  const lines = creditLines(tool);
+  if (!lines.length) return;
+  const wrap = el("p", "k-credits");
+  for (const line of lines) {
     const p = el("span", "k-credit");
     for (const seg of line) {
       if (!seg.url) {
@@ -708,13 +847,16 @@ function drawCredit(foot, tool) {
       a.rel = "noopener";
       p.appendChild(a);
     }
-    foot.appendChild(p);
+    wrap.append(p, " ");
   }
+  host.appendChild(wrap);
 }
 
 /** behold#571: how a hovered root's name and wave's job row light. A background and a shadow: nothing moves. */
 export const HOVER_ROOT_RULE = "background: color-mix(in srgb, var(--focus) 32%, transparent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus) 32%, transparent); border-radius: 3px;";
 export const HOVER_JOB_RULE = "background: color-mix(in srgb, var(--focus) 24%, transparent); box-shadow: inset 4px 0 0 var(--focus);";
+/** behold#571: how the held wave's job row lights while the hold panel shows it: the waiting tone its wave box and the panel carry. */
+export const HELD_JOB_RULE = "background: color-mix(in srgb, var(--foreign) 14%, transparent); box-shadow: inset 4px 0 0 var(--foreign);";
 
 /** behold#571: how often the approval panel reads the cycle's runs, and the gate ledger (which the server caches 30 s). */
 export const APPROVAL_POLL_MS = 4_000;
@@ -737,14 +879,14 @@ function fade(b) {
 export const DEMO_POLL_MS = 3_000;
 
 /**
- * Boot the kiosk: the bar, the frame and the foot. Ask demo.json every few
+ * Boot the kiosk: the bar, the frame and the graph pane's legend. Ask demo.json every few
  * seconds, the reports and the run view when the step, cycle or commit moves
  * or the event stream says they did, and redraw every second for the
  * countdown. When the roots the step is about change, move the framed view
  * with a `behold:view` message; the frame takes them only from this origin.
  */
-export function startKiosk({ bar, frame, foot, side, main, views, tools = null }, { fetchJson = defaultFetch, now = () => new Date(), origin = location.origin, tool = null } = {}) {
-  const s = { demo: null, answer: null, progress: null, components: false, pick: null, view: "resources", roots: [], waves: [], light: false, hover: null, frameHover: null };
+export function startKiosk({ bar, frame, side, main, views, read = null, tools = null }, { fetchJson = defaultFetch, now = () => new Date(), origin = location.origin, tool = null } = {}) {
+  const s = { demo: null, answer: null, progress: null, components: false, pick: null, view: "resources", roots: [], waves: [], light: false, hover: null, frameHover: null, held: null };
   // behold#571: on a tool's page, `live` while its scenario runs, `replay` of its latest cycle otherwise, `none` before it has one.
   const vendor = vendorOf(tool);
   s.vendor = vendor ? tool : null;
@@ -801,6 +943,7 @@ export function startKiosk({ bar, frame, foot, side, main, views, tools = null }
     if (!force && key === lastFocus) return;
     lastFocus = key;
     if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: "behold:view", member: null, focus, run, zoom }, origin);
+    tellHover(s.hover);
   };
   const pickView = (view) => {
     s.pick = { view, at: now().getTime() };
@@ -819,12 +962,16 @@ export function startKiosk({ bar, frame, foot, side, main, views, tools = null }
     const b = hoverLinks(s.frameHover, s.waves);
     const links = { roots: [...new Set([...a.roots, ...b.roots])], waves: [...new Set([...a.waves, ...b.waves])] };
     style.textContent = [
+      // behold#571: the held wave's job row, lit as the hold panel is; a hover's light comes after it and wins.
+      Number.isInteger(s.held) ? `.r-job[data-k-wave="${s.held}"] { ${HELD_JOB_RULE} }` : "",
       hoverCss({ roots: links.roots, waves: [] }, { root: (r) => `.k-root[data-k-root=${cssString(r)}]` }, HOVER_ROOT_RULE),
       hoverCss({ roots: [], waves: links.waves }, { wave: (w) => `.r-job[data-k-wave="${w}"]` }, HOVER_JOB_RULE),
     ].join("\n");
   };
+  // behold#571: with nothing pointed at, the frame lights the held wave's box, as the hold panel and its job row are lit.
   const tellHover = (h) => {
-    if (frame && frame.contentWindow) frame.contentWindow.postMessage(hoverMessage(h), origin);
+    const lit = h || (Number.isInteger(s.held) ? { wave: s.held } : null);
+    if (frame && frame.contentWindow) frame.contentWindow.postMessage(hoverMessage(lit), origin);
   };
   const hoverAt = (target) => {
     const t = target && target.closest ? target.closest("[data-k-root],[data-k-wave]") : null;
@@ -856,6 +1003,35 @@ export function startKiosk({ bar, frame, foot, side, main, views, tools = null }
       glow();
     });
   }
+
+  // behold#571: "How to read this", folded until a viewer opens it, then as they last left it.
+  const store = typeof localStorage !== "undefined" ? (() => { try { return localStorage; } catch { return null; } })() : null;
+  let readOpen = readStored(store) === true;
+  let readKey = null;
+  const drawReading = (view, ok, force = false) => {
+    if (!read) return;
+    const t = nounTool(s);
+    const key = `${view}|${t}|${ok}|${readOpen}`;
+    if (!force && key === readKey) return;
+    readKey = key;
+    if (!ok) {
+      read.replaceChildren();
+      read.hidden = true;
+      return;
+    }
+    renderReading(read, view, t, {
+      open: readOpen,
+      onToggle: (open) => {
+        readOpen = open;
+        try {
+          if (store) store.setItem(READ_STORE, open ? "open" : "closed");
+        } catch {
+          /* private mode: the fold lasts this visit */
+        }
+        drawReading(view, ok, true);
+      },
+    });
+  };
 
   // behold#571: the titles and names demo.json has carried, by scenario, for the runs' subtitles.
   const titles = {};
@@ -900,14 +1076,23 @@ export function startKiosk({ bar, frame, foot, side, main, views, tools = null }
     s.approval = approvalNow();
     // behold#571: the header's boxes redraw every second; each keeps where a viewer scrolled it.
     const scrolled = Object.fromEntries([...bar.querySelectorAll(".k-box")].map((b) => [b.dataset.box, b.scrollTop]));
-    renderKiosk(bar, s, shownNow(), foot);
+    renderKiosk(bar, s, shownNow());
     for (const b of bar.querySelectorAll(".k-box")) {
       if (scrolled[b.dataset.box]) b.scrollTop = scrolled[b.dataset.box];
       fade(b);
       b.addEventListener("scroll", () => fade(b), { passive: true });
     }
+    // behold#571: the wave the hold panel shows, whose job row lights with it.
+    const hold = s.demo && s.demo.demo ? holdModel(s, s.demo.demo) : null;
+    const held = hold && Number.isInteger(hold.wave) ? hold.wave : null;
+    if (held !== s.held) {
+      s.held = held;
+      glow();
+      tellHover(s.hover);
+    }
     whatText();
     renderViewToggle(views, shown, { components: s.components && ok, onPick: pickView });
+    drawReading(shown.view, ok);
     // behold#571: with no graph to show, the graph pane folds away and the runs and the log take its width.
     if (typeof document !== "undefined" && document.body && document.body.classList) {
       document.body.classList.toggle("k-nograph", !!vendor && !ok);

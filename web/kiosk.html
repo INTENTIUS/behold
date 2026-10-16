@@ -26,10 +26,11 @@
       /* behold#571: the kiosk's text is the softened ink, its secondary text and state colours the ones held legible on every surface. */
       body { --fg: var(--soft); --muted: var(--muted-ink); --managed: var(--managed-ink); --foreign: var(--foreign-ink); --pending: var(--pending-ink); --degraded: var(--degraded-ink); --runtime: var(--runtime-ink); --zebra-row: color-mix(in srgb, var(--zebra) 3.5%, transparent); }
       /* #569 step 3: one screen. The bar is the narration, the frame is
-         behold's own view of the change, the foot is the plan's facts. Sizes
-         follow the screen's width, so a TV reads it from across a room. */
+         behold's own view of the change. behold#571: no footer; the plan's
+         facts are in the lead block, the legend over the graph. Sizes follow
+         the screen's width, so a TV reads it from across a room. */
       html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: clamp(13px, 0.82vw, 20px)/1.4 var(--font-ui); overflow: hidden; }
-      body { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+      body { display: grid; grid-template-rows: auto minmax(0, 1fr); }
       #k-head { position: relative; }
       /* #569: the pipeline's runs (left), the selected run's jobs, steps and
          log (middle), behold's view of the change (right). */
@@ -39,8 +40,9 @@
       #runs-main { overflow: hidden; display: flex; flex-direction: column; min-height: 0; background: var(--surface-pane-a); border-radius: 6px 6px 0 0; }
       #k-runs-toggle { display: none; }
       .r-run:nth-child(even of .r-run), .r-job:nth-child(even of .r-job), .r-log-line:nth-child(even of .r-log-line) { background: var(--zebra-row); }
-      .r-side-head { padding: 0.8em 1em 0.5em; }
-      .r-side-title { font-weight: 700; font-size: 1.05em; }
+      /* behold#571: the panes step back from the lead block: quieter heads, lighter rules. */
+      .r-side-head { padding: 0.7em 1em 0.4em; }
+      .r-side-title { font-weight: 600; font-size: 0.95em; color: var(--muted); }
       .r-side-note { color: var(--muted); font-size: 0.82em; margin-top: 0.15em; }
       .r-runs { list-style: none; margin: 0; padding: 0 0 1em; }
       .r-group { font: 600 0.72em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 0.7em 1em 0.25em; }
@@ -55,13 +57,13 @@
       .r-word.r-idle { color: var(--muted); }
       @media (prefers-reduced-motion: no-preference) { .r-spin { animation: r-spin 1s linear infinite; } }
       @keyframes r-spin { to { transform: rotate(360deg); } }
-      .r-head { padding: 0.8em 1em 0.6em; border-bottom: 1px solid var(--rule); }
-      .r-head-title { display: flex; gap: 0.5em; align-items: center; font-weight: 700; font-size: 1.15em; }
+      .r-head { padding: 0.7em 1em 0.5em; border-bottom: 1px solid color-mix(in srgb, var(--rule) 55%, transparent); }
+      .r-head-title { display: flex; gap: 0.5em; align-items: center; font-weight: 600; font-size: 1em; }
       .r-head-title .r-icon { margin: 0; }
       .r-head-sub { color: var(--fg); font-size: 0.88em; margin-top: 0.15em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .r-head-meta { color: var(--muted); font-size: 0.82em; }
       .r-label { font: 600 0.7em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 0.6em 1em 0; }
-      .r-jobs { list-style: none; margin: 0; padding: 0.3em 0 0.5em; border-bottom: 1px solid var(--rule); }
+      .r-jobs { list-style: none; margin: 0; padding: 0.3em 0 0.5em; border-bottom: 1px solid color-mix(in srgb, var(--rule) 55%, transparent); }
       .r-job { display: flex; gap: 0.5em; align-items: center; padding: 0.22em 1em 0.22em calc(1em + var(--depth, 0) * 0.9em); cursor: pointer; }
       .r-job .r-icon { margin: 0; }
       .r-job.r-selected { background: var(--active); }
@@ -117,7 +119,7 @@
       .r-flash { background: color-mix(in srgb, var(--focus) 30%, transparent) !important; }
       @media (prefers-reduced-motion: no-preference) { .r-flash { transition: background 0.6s; } }
       /* behold#571: folded, whole lines only (fitFeatures); opened, it scrolls inside a bounded box. */
-      .r-feats { padding: 0.1em 1em 0.45em; border-bottom: 1px solid var(--rule); }
+      .r-feats { padding: 0.1em 1em 0.45em; border-bottom: 1px solid color-mix(in srgb, var(--rule) 55%, transparent); }
       .r-feats-open .r-feats-list { max-height: 12em; overflow-y: auto; scrollbar-width: thin; }
       .r-feats-label { padding: 0.3em 0 0.15em; }
       .r-feats-list { display: flex; flex-wrap: wrap; gap: 0.3em 0.35em; align-items: center; }
@@ -128,55 +130,77 @@
       .r-feats-more { color: var(--pending); border-style: dashed; }
       .r-feat:hover, .r-feat:focus-visible { border-color: var(--focus); background: var(--zebra-row); }
       /*
-       * behold#571: the header in fixed boxes. The title, the card, the step
-       * line, and the hold's box each have a height that holds their text
-       * budget at 1600x1000 and 1920x1080 (terragucci#1061: the card's fields
-       * 120, 220 and 120 characters, the step 200); more scrolls inside the
-       * box, with a fade at the edge, so the panes below never move.
+       * behold#571: the header in fixed boxes. The lead block on the left is
+       * the page's lead: the title, the two beats (what changes, and the step:
+       * what just happened and why), the progress, the rest of the card and
+       * the pull request's facts, each in a box whose height holds its text
+       * budget at 1440x900 and 1920x1080 (terragucci#1061: the card's fields
+       * 120, 220 and 120 characters, the step 200). More scrolls inside the
+       * box, with a fade at the edge, so the panes below never move. The hold
+       * panel on the right takes the lead's height and never sets it.
        */
-      #bar { position: relative; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 0.4em 0.9em; align-items: stretch;
-        padding: 0.45em 1em 0.5em; background: var(--bg); }
-      #bar > .k-empty { grid-column: 1 / -1; }
-      .k-left { display: grid; grid-template-rows: var(--k-title-h) var(--k-card-h) var(--k-step-h); gap: 0.35em; min-width: 0; }
-      :root { --k-title-h: 1.8em; --k-card-h: 6.2em; --k-step-h: 3.35em; }
-      .k-box { min-height: 0; overflow-y: auto; scrollbar-width: thin; background: var(--surface-box); border-radius: 6px; padding: 0.35em 0.7em; }
+      #bar { position: relative; display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 0.4em 0.7em; align-items: stretch;
+        padding: 0.3em 0.6em 0.3em; background: var(--bg); }
+      #bar > .k-empty, #bar > .k-replay, #bar > .k-nograph-note { grid-column: 1 / -1; }
+      :root { --k-title-h: 1.82em; --k-beat-h: 3.25em; --k-step-h: 4.45em; --k-progress-h: 1.5em; --k-card-h: 3.3em; --k-facts-h: 1.2em; }
+      /* Wide enough that the step's 200 characters, and Watch for with Shows, take two lines each: their boxes are two lines tall. */
+      @media (min-width: 1700px) { :root { --k-step-h: 3.05em; --k-card-h: 2.3em; } }
+      .k-lead { display: grid; grid-template-rows: var(--k-title-h) var(--k-beat-h) var(--k-step-h) var(--k-progress-h) var(--k-card-h) var(--k-facts-h) auto; gap: 0.16em; min-width: 0;
+        padding: 0.25em 0.8em 0.3em; background: var(--surface-pane-b); border-radius: 8px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 14%, transparent); }
+      .k-box { min-height: 0; overflow-y: auto; scrollbar-width: thin; border-radius: 6px; padding: 0.1em 0.2em; }
       .k-box.k-more-below { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.3em), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 1.3em), transparent); }
       .k-box.k-more-above { -webkit-mask-image: linear-gradient(to top, #000 calc(100% - 1.3em), transparent); mask-image: linear-gradient(to top, #000 calc(100% - 1.3em), transparent); }
       .k-box.k-more-above.k-more-below { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 1.3em, #000 calc(100% - 1.3em), transparent); mask-image: linear-gradient(to bottom, transparent, #000 1.3em, #000 calc(100% - 1.3em), transparent); }
-      .k-box-empty { background: transparent; }
-      .k-box-title { background: transparent; padding: 0.1em 0.1em 0; overflow: hidden; }
-      /* behold#571: between scenarios the card's box carries what the demo is about. */
-      .k-intro { margin: 0; font-size: 1.12em; line-height: 1.4; color: var(--fg); }
-      .k-intro-head { display: block; font: 600 0.62em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 0.15em; }
-      .k-kicker { font: 600 0.58em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-right: 0.9em; vertical-align: 0.2em; white-space: nowrap; }
+      .k-box-empty { background: transparent; box-shadow: none; }
+      .k-box-title { overflow: hidden; padding: 0; }
+      .k-kicker { font: 600 0.5em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-right: 0.9em; vertical-align: 0.3em; white-space: nowrap; }
       .k-cycle { color: var(--muted); font: 0.78em var(--font-mono); white-space: nowrap; }
-      .k-title { margin: 0; font-size: 1.3em; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      /* behold#571: the scenario's card, three labelled rows under the title. */
-      .k-about { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.08em 0.9em; align-items: baseline; margin: 0; font-size: 0.88em; line-height: 1.25; }
-      .k-about-label { font: 600 0.74em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
-      .k-about-text { margin: 0; color: var(--fg); }
+      .k-title { margin: 0; font-size: 1.5em; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      /* The two beats: the largest text after the title, each with its label first. */
+      .k-beat, .k-intro { margin: 0; font-size: 1.32em; line-height: 1.22; color: var(--fg); }
+      .k-step { margin: 0; font-size: 1.16em; line-height: 1.25; color: var(--fg); }
+      .k-beat-text { font-weight: 600; }
+      .k-box-beat { padding: 0 0.2em; }
+      .k-beat-label, .k-step-word, .k-intro-head { font: 700 0.62em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; margin-right: 0.8em; vertical-align: 0.12em; white-space: nowrap; }
+      .k-beat-label, .k-intro-head { color: var(--muted); }
+      .k-step-word { color: var(--pending); }
+      .k-box-step { border-left: 4px solid var(--pending); border-radius: 0 6px 6px 0; padding: 0.05em 0.2em 0.05em 0.65em; background: color-mix(in srgb, var(--pending) 7%, transparent); }
+      .k-box-step:has(.k-step-waiting) { border-left-color: var(--foreign); }
+      .k-box-step:has(.k-step-failed), .k-box-step:has(.k-step-stalled) { border-left-color: var(--degraded); }
+      .k-box-step:has(.k-step-applied) { border-left-color: var(--managed); }
+      .k-box-step:has(.k-step-reset) { border-left-color: var(--neutral); }
+      /* The rest of the card, quieter. */
+      .k-box-more { padding: 0 0.2em; }
+      .k-about { margin: 0; font-size: 0.84em; line-height: 1.3; }
+      .k-about-label { font: 600 0.74em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-right: 0.6em; }
+      .k-about-text { margin-right: 1.2em; color: color-mix(in srgb, var(--fg) 82%, var(--muted)); }
       .k-muted { color: var(--muted); margin: 0.25em 0; }
-      .k-step { border-left: 4px solid var(--pending); padding: 0 0 0 0.7em; margin: 0; font-size: 0.95em; line-height: 1.3; }
-      .k-step-word { font: 600 0.72em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-right: 0.7em; }
-      .k-step-waiting { border-left-color: var(--foreign); }
-      .k-step-failed, .k-step-stalled { border-left-color: var(--degraded); }
-      .k-step-applied { border-left-color: var(--managed); }
-      .k-step-reset { border-left-color: var(--neutral); }
-      /* The right column takes the left's height and never sets it: its hold box scrolls instead. */
-      .k-right { display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 0.35em; min-width: 0; min-height: 0; contain: size; }
-      .k-where { padding-right: 13em; flex-wrap: nowrap; }
-      .k-next .k-cycle { margin-left: auto; }
-      .k-where { display: flex; flex-wrap: wrap; gap: 0.35em 1em; align-items: center; }
-      .k-strip { list-style: none; display: flex; flex-wrap: wrap; gap: 0.35em; padding: 0; margin: 0; }
-      .k-stop { font: 0.82em var(--font-mono); padding: 0.25em 0.7em; border-radius: 999px; border: 1px solid var(--rule); color: var(--muted); }
+      /* The progress, with the step: the strip, the driver's next action, the cycle. */
+      .k-progress { display: flex; flex-wrap: nowrap; gap: 0.3em 0.9em; align-items: center; min-width: 0; overflow: hidden; }
+      .k-progress .k-strip { flex: none; }
+      .k-progress .k-next { flex: 1; }
+      .k-strip { list-style: none; display: flex; flex-wrap: nowrap; gap: 0.3em; padding: 0; margin: 0; }
+      .k-stop { font: 0.78em var(--font-mono); padding: 0.18em 0.6em; border-radius: 999px; border: 1px solid var(--rule); color: var(--muted); white-space: nowrap; }
       .k-done { color: var(--fg); border-color: var(--managed); }
       .k-current { color: var(--bg); background: var(--pending); border-color: var(--pending); font-weight: 600; }
       .k-failed { color: var(--bg); background: var(--degraded); border-color: var(--degraded); font-weight: 600; }
-      .k-next { display: flex; flex-wrap: wrap; gap: 0.3em 0.8em; align-items: baseline; font-size: 1.05em; }
+      .k-next { display: flex; gap: 0.3em 0.6em; align-items: baseline; font-size: 0.95em; min-width: 0; white-space: nowrap; }
       .k-next-word { font: 600 0.72em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
-      .k-action { font-family: var(--font-mono); }
+      .k-action { font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
       .k-when { color: var(--foreign); font-family: var(--font-mono); }
-      .k-approve { border-left: 4px solid var(--foreign); padding-left: 0.8em; }
+      /* The pull request's facts, one line; the whole line is its title. */
+      .k-box-facts { overflow: hidden; padding: 0 0.2em; }
+      .k-facts { margin: 0; font-size: 0.86em; line-height: 1.4; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .k-credits { margin: 0; color: var(--muted); font-size: 0.78em; line-height: 1.35; }
+      /* behold#571: the hold panel, lit in the waiting tone its job row and its wave box carry. */
+      .k-right { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 0.3em; min-width: 0; min-height: 0; contain: size; }
+      .k-right > .k-cycle { margin: 0; padding: 0.25em 13em 0 0.3em; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; }
+      .k-box-hold { padding: 0.5em 0.9em 0.6em; }
+      .k-hold { background: var(--surface-box); border-radius: 8px; }
+      .k-hold-head { margin: 0 0 0.3em; font: 700 0.95em var(--font-mono); color: var(--fg); }
+      .k-hold-wave { background: color-mix(in srgb, var(--foreign) 7%, var(--surface-box)); box-shadow: inset 4px 0 0 var(--foreign); padding-left: 1.2em; }
+      .k-hold-wave .k-hold-head { color: var(--foreign); }
+      .k-hold > .k-note { margin-top: 0.2em; }
       /* behold#571: "How this hold ends": four rows that light from the records. */
       .k-ap-head { font: 600 0.7em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 0.1em; }
       .k-ap-head .k-ap-plan { text-transform: none; letter-spacing: 0; color: var(--fg); font-weight: 400; }
@@ -210,13 +234,31 @@
       .k-view-on { color: var(--bg); background: var(--pending); }
       .k-view-on:hover { color: var(--bg); }
       .k-view-note { color: var(--muted); font-size: 0.8em; }
-      #foot { display: flex; flex-wrap: wrap; gap: 0.2em 1.6em; padding: 0.5em 1.6em; border-top: 1px solid var(--rule); background: var(--surface-box); font-size: 0.85em; }
-      .k-legend { color: var(--muted); flex-basis: 100%; }
+      /* behold#571: "How to read this", the graph pane's static frame: the legend of the view shown, folded to its header on request. */
+      #view-pane { position: relative; }
+      #views { padding-right: 11em; }
+      /* Folded, its header sits in the toggle's row; open, its rows lie over the top of the graph, two to a line. */
+      #k-read { font-size: 0.82em; }
+      #k-read[hidden] { display: none; }
+      .k-read-head { position: absolute; top: 0.55em; right: 1.1em; z-index: 5; font: 600 0.82em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); background: transparent; border: 0; padding: 0.35em 0; cursor: pointer; }
+      .k-read-head::after { content: " ▸"; }
+      .k-read-open .k-read-head::after { content: " ▾"; }
+      .k-read-head:hover { color: var(--fg); }
+      .k-read-rows { position: absolute; top: 2.85em; left: 0.7em; right: 0.7em; z-index: 4; list-style: none; margin: 0; padding: 0.45em 0.9em; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.25em 1.4em;
+        background: var(--surface-pane-b); border: 1px solid var(--rule); border-radius: 8px; box-shadow: 0 6px 22px color-mix(in srgb, var(--shadow) 60%, transparent); }
+      .k-read-row { display: grid; grid-template-columns: 2.2em minmax(0, 1fr); gap: 0.5em; align-items: center; color: var(--fg); line-height: 1.3; }
+      .k-read-mark { display: inline-block; justify-self: center; }
+      .k-read-card { width: 1.7em; height: 0.95em; border-radius: 3px; background: var(--panel); box-shadow: inset 3px 0 0 var(--muted); border: 1px solid var(--edge); }
+      .k-read-box { width: 1.9em; height: 1.05em; border-radius: 4px; border: 1.5px solid var(--muted); }
+      .k-read-solid, .k-read-dashed { width: 2em; height: 0; border-top: 2px solid var(--fg); }
+      .k-read-dashed { border-top-style: dashed; }
+      .k-read-order { width: 1.9em; height: 1em; background: linear-gradient(var(--muted), var(--muted)) 0 0 / 0.5em 100% no-repeat, linear-gradient(var(--muted), var(--muted)) 0.7em 25% / 0.5em 75% no-repeat, linear-gradient(var(--muted), var(--muted)) 1.4em 50% / 0.5em 50% no-repeat; opacity: 0.8; }
+      .k-read-marks { width: 1.5em; height: 0.75em; background: radial-gradient(circle at 25% 50%, var(--foreign) 0 0.3em, transparent 0.32em), radial-gradient(circle at 75% 50%, var(--runtime) 0 0.3em, transparent 0.32em); }
       /* behold#571: a tool's page. Its name (and logo where allowed) before the scenario, the replay's banner, the credit. */
       .k-brand { display: inline-flex; align-items: center; gap: 0.35em; margin-right: 0.8em; color: var(--fg); text-decoration: none; font-weight: 700; vertical-align: 0.05em; }
       .k-brand:hover .k-brand-name { text-decoration: underline; }
       .k-brand-logo { width: 1.25em; height: 1.25em; }
-      .k-replay { grid-column: 1 / -1; margin: 0; padding: 0.2em 0.7em; padding-right: 16em; border-left: 4px solid var(--neutral); background: var(--surface-box); color: var(--fg); font-size: 0.92em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .k-replay { margin: 0; padding: 0.2em 0.7em; padding-right: 16em; border-left: 4px solid var(--neutral); background: var(--surface-box); color: var(--fg); font-size: 0.92em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       /* behold#571: "What is this?" and the theme, at the header's top right, outside the boxes that redraw. */
       #k-tools { position: absolute; top: 0.4em; right: 1em; z-index: 5; display: flex; gap: 0.7em; align-items: center; font-size: 0.8em; }
       .k-what { font: inherit; color: var(--pending); background: transparent; border: 0; padding: 0.1em 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
@@ -231,9 +273,9 @@
       .k-menu summary::after { content: " ▾"; }
       .k-menu[open] summary { color: var(--fg); }
       .k-menu-body { position: absolute; right: 0; top: 1.8em; padding: 0.5em; background: var(--surface-pane-b); border: 1px solid var(--rule); border-radius: 8px; }
-      .k-credit { color: var(--muted); flex-basis: 100%; }
+      .k-credit { color: var(--muted); }
       .k-credit-link { color: var(--fg); }
-      .k-nograph-note { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 0.88em; }
+      .k-nograph-note { margin: 0; color: var(--muted); font-size: 0.88em; }
       /* With no graph to show, the graph pane folds away and the runs and the log take its width. */
       body.k-nograph #stage { grid-template-columns: minmax(15em, 22%) minmax(0, 1fr); }
       body.k-nograph #view-pane { display: none; }
@@ -241,7 +283,7 @@
       body.k-notyet #runs-side, body.k-notyet #runs-main, body.k-notyet #k-runs-toggle { display: none !important; }
       body.k-notyet #stage { grid-template-columns: minmax(0, 1fr); }
       .k-fact { color: var(--fg); }
-      @media (max-width: 900px) and (min-width: 601px) { #bar { grid-template-columns: 1fr; } #stage, body.k-nograph #stage { grid-template-columns: 1fr; } }
+      @media (max-width: 900px) and (min-width: 601px) { #bar { grid-template-columns: 1fr; } .k-right { contain: none; } .k-box-hold { max-height: 16em; } #stage, body.k-nograph #stage { grid-template-columns: 1fr; } }
       /*
        * behold#571: a phone. One column that scrolls as a page: the header
        * (its boxes as tall as their text), the graph, then the runs and their
@@ -255,14 +297,27 @@
         .k-left, .k-right { display: block; contain: none; }
         .k-left > * + *, .k-right > * + * { margin-top: 0.4em; }
         .k-box { height: auto; max-height: none; overflow: visible; -webkit-mask-image: none !important; mask-image: none !important; }
-        .k-title { white-space: normal; }
-        .k-where { padding-right: 0; }
+        .k-box-empty { display: none; }
+        .k-title { white-space: normal; font-size: 1.4em; }
+        .k-progress { flex-wrap: wrap; overflow: visible; }
+        .k-progress .k-strip { flex: 1 1 100%; }
+        #views { flex-wrap: wrap; gap: 0.3em 0.9em; }
+        .k-strip { flex-wrap: wrap; }
+        .k-next { white-space: normal; flex-wrap: wrap; }
+        .k-facts { white-space: normal; }
+        .k-right > .k-cycle { padding: 0; }
+        #k-read { padding: 0.2em 16px; }
+        .k-read-head { position: static; }
+        .k-read-rows { position: static; grid-template-columns: 1fr; border-radius: 6px; box-shadow: none; margin-bottom: 0.3em; }
+        #views { padding-right: 1em; }
         .k-replay { padding-right: 0.7em; white-space: normal; }
         #k-tools { position: static; justify-content: flex-end; margin: 0; padding: 0.4em 16px 0; }
         #k-what-pop { right: 16px; left: 16px; width: auto; top: 2.2em; }
         .k-ap-row { grid-template-columns: 1.1em 5.6em minmax(0, 1fr); }
         #stage, body.k-nograph #stage { display: flex; flex-direction: column; padding: 0; gap: 0; }
         #view-pane { order: 1; height: 64vh; }
+        #view-pane:has(#k-read.k-read-open) { height: auto; }
+        #view-pane:has(#k-read.k-read-open) #view { height: 56vh; flex: none; }
         body.k-nograph #view-pane { display: none; }
         #k-runs-toggle { order: 2; display: block; margin: 0.6em 16px; padding: 0.6em 1em; font: 600 1em var(--font-ui); color: var(--fg); background: var(--surface-pane-b); border: 1px solid var(--rule); border-radius: 8px; cursor: pointer; text-align: left; }
         #k-runs-toggle::after { content: " ▸"; }
@@ -274,7 +329,6 @@
         .r-log { margin-left: 0.4em; max-height: 60vh; }
         .r-log-line { grid-template-columns: 2.4em 1fr; gap: 0.5em; }
         .r-ann-note { grid-column: 1 / -1; }
-        #foot { padding: 0.5em 16px; }
       }
     </style>
   </head>
@@ -293,10 +347,10 @@
       <button type="button" id="k-runs-toggle" aria-expanded="false">Runs and logs</button>
       <section id="view-pane">
         <div id="views" hidden></div>
+        <section id="k-read" aria-label="How to read this" hidden></section>
         <iframe id="view" title="behold's view of the change"></iframe>
       </section>
     </div>
-    <footer id="foot"></footer>
     <script type="module">
       import { initTheme, KIOSK_THEME } from "/theme.js";
       import { startKiosk } from "/kiosk.js";
@@ -305,7 +359,7 @@
       // behold#571: /<tool> serves this page with its tool in a meta tag; /kiosk has none.
       startKiosk(
         {
-          bar: document.getElementById("bar"), frame: document.getElementById("view"), foot: document.getElementById("foot"), side: document.getElementById("runs-side"), main: document.getElementById("runs-main"), views: document.getElementById("views"),
+          bar: document.getElementById("bar"), frame: document.getElementById("view"), read: document.getElementById("k-read"), side: document.getElementById("runs-side"), main: document.getElementById("runs-main"), views: document.getElementById("views"),
           tools: { what: document.querySelector(".k-what"), pop: document.getElementById("k-what-pop"), theme: document.getElementById("k-theme"), runsToggle: document.getElementById("k-runs-toggle") },
         },
         { tool: pageTool(document) },

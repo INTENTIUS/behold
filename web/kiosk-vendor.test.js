@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { VENDOR_TOOLS } from "../src/terragucci-demo.ts";
 import { logRows } from "./kiosk-runs.js";
-import { NO_GRAPH_WORDS, SCENARIOS, legendWords, scenarioHead } from "./kiosk.js";
+import { NO_GRAPH_WORDS, SCENARIOS, readingRows, scenarioHead } from "./kiosk.js";
 import {
   REPLAY_LAST_HOLD_MS,
   RUNS_WITH,
@@ -145,7 +145,7 @@ describe("the branding table (behold#571)", () => {
   it("says on each page who makes the tool and that they don't endorse the demo, naming no other tool or maker", () => {
     for (const tool of VENDOR_TOOLS) {
       const v = VENDORS[tool];
-      const words = [v.name, ...creditLines(tool).map((l) => l.map((s) => s.text).join("")), ...Object.values(notRunWords(v)), legendWords("components", tool), legendWords("resources", tool)];
+      const words = [v.name, ...creditLines(tool).map((l) => l.map((s) => s.text).join("")), ...Object.values(notRunWords(v)), ...readingRows("components", tool).map((r) => r.words), ...readingRows("resources", tool).map((r) => r.words)];
       for (const w of words) expect(namesOther(w, tool), `${tool}: ${w}`).toBe(false);
       // choudoufu and chant are ours: their credits say so instead.
       if (tool !== "choudoufu" && tool !== "chant") expect(v.credit).toMatch(/(does not|don't) endorse this demo\./);
@@ -153,7 +153,7 @@ describe("the branding table (behold#571)", () => {
     expect(VENDORS.choudoufu.credit).toMatch(/AWS and Kubernetes/);
     expect(VENDORS.choudoufu.credit).not.toMatch(/experimental/i);
   });
-  it("links each name in the footer, the tool's to its site and OpenTofu's where its scenarios run on it", () => {
+  it("links each name in the credit, the tool's to its site and OpenTofu's where its scenarios run on it", () => {
     const tf = creditLines("terraform");
     expect(tf.flat().filter((s) => s.url).map((s) => [s.text, s.url])).toEqual([
       ["Terraform", VENDORS.terraform.url],
@@ -228,7 +228,7 @@ describe("a tool's page, drawn (behold#571)", () => {
   };
   const text = (n) => (n.children && n.children.length ? n.children.map(text).join("") : n.textContent || "");
   const all = (n) => [n, ...(n.children || []).flatMap(all)];
-  it("puts the tool's name before the scenario, the banner over it, and the credit in the foot, with no count", async () => {
+  it("puts the tool's name before the scenario, the banner over it, and the credit at the lead block's foot, with no count", async () => {
     const { renderKiosk } = await import("./kiosk.js");
     const was = globalThis.document;
     globalThis.document = fakeDocument();
@@ -253,7 +253,11 @@ describe("a tool's page, drawn (behold#571)", () => {
       expect(text(bar2)).toContain("Big Terraform setups");
       // No graph of this repo here: one line in the header says so.
       expect(all(bar).filter((n) => n.className === "k-nograph-note").map(text)).toEqual([NO_GRAPH_WORDS]);
-      expect(all(foot).filter((n) => n.className === "k-credit").map(text)).toEqual([VENDORS.terragrunt.credit]);
+      // behold#571: no footer: the credit is the lead block's last line.
+      const lead = all(bar).find((n) => n.className === "k-left k-lead");
+      expect(lead.children[lead.children.length - 1].className).toBe("k-credits");
+      expect(all(bar).filter((n) => n.className === "k-credit").map(text)).toEqual([VENDORS.terragrunt.credit]);
+      expect(foot.children).toEqual([]);
     } finally {
       globalThis.document = was;
     }
@@ -283,6 +287,8 @@ describe("a tool's page, drawn (behold#571)", () => {
       expect(text(bar)).toContain("This scenario hasn't run yet");
       const brand = all(bar).find((n) => n.className === "k-brand");
       expect(brand.href).toBe(VENDORS.choudoufu.url);
+      // The credit shows on every tool page, before its first cycle too.
+      expect(all(bar).filter((n) => n.className === "k-credit").map(text)).toEqual([VENDORS.choudoufu.credit]);
       expect(all(brand).some((n) => n.className === "k-brand-logo" && n.src === VENDORS.choudoufu.logo.src)).toBe(true);
     } finally {
       globalThis.document = was;
