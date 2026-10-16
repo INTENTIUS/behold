@@ -64,7 +64,8 @@ export interface Demo {
   step: DemoStep;
   label: string;
   started_at: string;
-  next: { action: string; at: string | null } | null;
+  /** from: when the driver started waiting for this action (terragucci 0.4.34 on); absent from older drivers. */
+  next: { action: string; from?: string; at: string | null } | null;
   pull: number | null;
   commit: string | null;
   /** Null when demo.json has no card for the scenario (the base, or a driver before behold#571). */
@@ -110,6 +111,7 @@ export function demoProblem(doc: unknown): string | undefined {
     if (!isRecord(doc.next)) return "next is neither an object nor null";
     if (!str(doc.next.action)) return "next.action is not a string";
     if (doc.next.at !== null && !(str(doc.next.at) && UTC.test(doc.next.at))) return "next.at is neither a UTC time nor null";
+    if (doc.next.from !== undefined && !(str(doc.next.from) && UTC.test(doc.next.from))) return "next.from is not a UTC time";
   }
   if (doc.pull !== null && !int(doc.pull)) return "pull is neither an integer nor null";
   if (doc.commit !== null && !str(doc.commit)) return "commit is neither a string nor null";
@@ -155,7 +157,7 @@ export function demoOf(d: Demo): Demo {
     step: d.step,
     label: d.label,
     started_at: d.started_at,
-    next: d.next ? { action: d.next.action, at: d.next.at } : null,
+    next: d.next ? { action: d.next.action, ...(d.next.from ? { from: d.next.from } : {}), at: d.next.at } : null,
     pull: d.pull,
     commit: d.commit,
     about: d.about ? { changes: d.about.changes, watch: d.about.watch, shows: d.about.shows } : null,
