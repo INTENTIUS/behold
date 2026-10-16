@@ -59,6 +59,21 @@ a scheduled read: it holds a slot in the read budget, has the read deadline,
 and stops when the request does. `serve --hud <url>` (or `BEHOLD_HUD_URL`)
 links a proposed decision to its review in hud.
 
+## A pipeline's numbers, from Prometheus (behold#571)
+
+`behold serve --prometheus <url>` (or `BEHOLD_PROMETHEUS_URL`) adds `GET
+/api/metrics?project=<owner>/<name>[&commit=<sha>]` (src/prometheus-metrics.ts).
+behold asks a FIXED set of named queries over terragucci's gauges (each a
+constant string, nothing from the request in it), shares one read for 30 s,
+and picks the repo's series out of the answers: one commit's tf-apply waves
+(each root's plan and apply seconds, the time an approval held the wave at
+its gate, the changes it applied, when it started waiting) and the DORA four,
+from terragucci estate's gauges or its `dora.json` beside the reports. It
+answers numbers, never a proxy, and a public serve keeps it (GET). Without
+an address it answers 404. The kiosk's "Pipeline metrics" pane
+(web/kiosk-metrics.js) shows only what it returns, and no pane when it
+returns nothing for the repo.
+
 ## A terragucci estate, from its reports (#490)
 
 `behold serve <repo> --terragucci <dir|s3://bucket/prefix|https://…>`

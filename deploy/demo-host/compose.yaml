@@ -20,6 +20,7 @@ services:
       AWS_ENDPOINT_URL: http://floci:4566
       AWS_REGION: us-east-1
       AWS_DEFAULT_REGION: us-east-1
+      BEHOLD_PROMETHEUS_URL: http://prometheus:9090
     volumes:
       - '${DEMO_ROOT:-/opt/demo}/views:/view'
       - /var/lib/demo-host/behold:/run/demo-host:ro

@@ -373,3 +373,9 @@ in `chant/` waits for that step itself, then waits for the new bootstrap.
   starts with enforcement off, and behold's key, like any key, can do anything
   in floci. Under enforcement, `test` (the jobs' and the driver's key) passes
   as floci's account root, and unsigned S3 requests are not refused.
+- terragucci's `observability-lite` profile (behold#571): `stack/demo.sh up`
+  starts the OpenTelemetry collector and Prometheus on the `terragucci`
+  network, and each demo job sends its metrics there. behold reads
+  `http://prometheus:9090` (`BEHOLD_PROMETHEUS_URL` in `compose.yaml`) for
+  the kiosk's "Pipeline metrics". Neither publishes a port the security
+  group opens. With Prometheus down or empty, the pane does not show.
