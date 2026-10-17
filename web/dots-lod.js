@@ -61,7 +61,7 @@ export function morphPoint(card, slot, disc, tCard, tDisc) {
  * resources cover as dots, so area stays proportional to the count.
  */
 export function discRadius(count, pitch) {
-  return Math.sqrt(Math.max(0, count) / Math.PI) * pitch * 2.2;
+  return Math.sqrt(Math.max(0, count) / Math.PI) * pitch * 1.8;
 }
 
 /** What the marks on screen are, from the card morph and every box's disc morph. */

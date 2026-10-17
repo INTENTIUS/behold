@@ -18,7 +18,7 @@
 
 import { unitsOf, unitOf, packBlock, blockWidth, shelfPack } from "./dots-layout.js";
 
-export const CHOREO = { duration: 75_000, flight: 1_100, stagger: 45, lead: 1_500, tail: 3_000 };
+export const CHOREO = { duration: 90_000, flight: 1_300, stagger: 28, lead: 2_500, tail: 3_000 };
 export const BOX = { pad: 1.5, title: 3, gap: 5 };
 
 /** A show's own time -> replay ms, linear over [t0, t1]. */
@@ -61,21 +61,22 @@ export function choreograph(show, opts = {}) {
     if (!kids.has(parent)) kids.set(parent, []);
     kids.get(parent).push(child);
   }
-  const total = writes.length;
   const flights = [];
-  let done = 0;
+  // Each unit lifts off as one flock: its dots a short stagger apart, the
+  // flocks evenly spaced, so one team's cluster leaves together.
+  const gap = (b - a) / Math.max(1, keys.length);
   keys.forEach((k, fi) => {
     const ws = flocks.get(k).sort((x, y) => (order.get(x.address) ?? 0) - (order.get(y.address) ?? 0));
-    const t = a + ((b - a) * done) / total;
-    done += ws.length;
+    const t = a + gap * fi;
     ws.forEach((w, j) => {
       const start = t + j * o.stagger;
-      const base = { from: w.from, to: w.to, ok: w.ok, flock: fi, start, end: start + o.flight };
-      flights.push({ ...base, address: w.address, ...(w.refusal ? { refusal: w.refusal } : {}) });
+      // `at`: when the recording says the move happened, for a viewer who asks.
+      const base = { from: w.from, to: w.to, ok: w.ok, flock: fi, start, end: start + o.flight, at: w.t };
+      flights.push({ ...base, address: w.address, ...(w.refusal ? { refusal: w.refusal } : {}), ...(w.refusalSummary ? { refusalSummary: w.refusalSummary } : {}) });
       const followers = new Set(w.followers ?? []);
       if (w.ok) for (const c of kids.get(w.address) ?? []) followers.add(c);
       [...followers].forEach((f, m) => {
-        const s = start + 12 + (m % 4) * 10;
+        const s = start + (m % 3) * 8;
         flights.push({ ...base, start: s, end: s + o.flight, address: f, parent: w.address });
       });
     });

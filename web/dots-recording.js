@@ -47,6 +47,7 @@ export function readCarve(text) {
         to: m.estate,
         ok: m.exit === 0 && !!m.doc && m.doc.written !== false,
         refusal: m.doc?.refusal?.code ?? (m.exit !== 0 ? "exit" : undefined),
+        ...(m.doc?.refusal?.summary ? { refusalSummary: m.doc.refusal.summary } : {}),
         followers: (m.doc?.followers ?? []).map((f) => f.address),
       };
     })
@@ -96,6 +97,7 @@ export function carveShow(rec, parents) {
     to: m.to,
     ok: m.ok,
     ...(m.refusal ? { refusal: m.refusal } : {}),
+    ...(m.refusalSummary ? { refusalSummary: m.refusalSummary } : {}),
     seq: m.seq,
   }));
   const t0 = Math.min(rec.keyframes[0].t, ...events.map((e) => e.start));
@@ -103,6 +105,7 @@ export function carveShow(rec, parents) {
   return {
     kind: "carve",
     title: rec.header.source,
+    recordedAt: Date.parse(rec.header.t) || t0,
     source: rec.header.source,
     estates: rec.estates,
     roster: rec.roster,
@@ -190,6 +193,7 @@ export function walkthroughShow(model) {
   return {
     kind: "walkthrough",
     title: `${source} walkthrough`,
+    recordedAt: times[0],
     source,
     estates,
     roster,

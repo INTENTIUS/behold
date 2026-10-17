@@ -362,3 +362,15 @@ committed terralith-14 recording at 1,041 dots, Chrome with the CPU slowed 4x,
 the lights on their borders, discs) takes 2.5 to 2.7 ms at p50 and 6 to 8 ms
 at p95 during the replay, and 2.4 ms at the disc level. The one frame over
 budget in each run is the first after a seek, when the layout cache is cold.
+
+### The recorded carve as a static page
+
+The kiosk promises that everything on it is happening now, so the recorded
+carve is not a kiosk scenario: the live carve joins the kiosk through #711.
+The recording is published as a static page instead. `npm run export:carve`
+writes `dist-carve/index.html`, one file holding the card SVG, the recording
+(gzipped) and one script with the dots layer, the theme and the narration. It
+needs no behold server and opens from disk. It says plainly that it is a
+recording ("recorded", naming the source). It replays by itself and loops,
+holding on the result. The camera follows the flock until a person takes it,
+and the rail steps aside while the camera is following.

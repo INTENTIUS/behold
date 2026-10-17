@@ -15,6 +15,7 @@ import { buildScene, takeoffsBy, firstLandings, flightPoint, easeInOut, replayCl
 import { cardMorph, discMorph, discRadius, levelOf, caption, railMarks, railPos, lerp } from "./dots-lod.js";
 import { perimeter, pointAt, nearestS, segment } from "./dots-border.js";
 import { getTokens, onThemeChange, contrast, hexToOklch, oklchToHex } from "./theme.js";
+import { LOOP, carveStory, beatAt, tipsBetween, directorFocus, shortName as shortOf } from "./dots-kiosk.js";
 
 let S = null;
 let styleAdded = false;
@@ -45,7 +46,10 @@ export function unmountDots() {
   for (const el of [S.canvas, S.ui]) el.remove();
   S.host.classList.remove("dots-on");
   S.host.style.removeProperty("--dots-card-a");
-  if (S.svg) S.svg.style.visibility = "";
+  if (S.svg) {
+    S.svg.style.visibility = "";
+    S.svg.style.display = "";
+  }
   S = null;
 }
 
@@ -76,6 +80,15 @@ function addStyle() {
   .dots-bar input[type=range] { width: min(320px, 40vw); accent-color: var(--focus); }
   .dots-time { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 12em; }
   .dots-caption { padding: 3px 10px; border-radius: 6px; background: color-mix(in srgb, var(--bg) 80%, transparent); color: var(--fg); white-space: nowrap; max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; }
+  .dots-kiosk .dots-caption { display: none; }
+  /* The kiosk's replay runs and loops by itself, like a live scenario: no playback head. */
+  .dots-kiosk:not(.dots-keep-bar) .dots-bar { display: none; }
+  .dots-keep-bar .dots-bar { opacity: 0.55; transition: opacity 0.2s; }
+  .dots-rail { transition: opacity 0.4s; }
+  .dots-directing .dots-rail { opacity: 0; pointer-events: none; }
+  .dots-keep-bar .dots-bar:hover, .dots-keep-bar .dots-bar:focus-within { opacity: 1; }
+  /* In Watch the director holds the camera; the rail is Inspect's. */
+  .dots-kiosk.dots-watch:not(.dots-keep-bar) .dots-rail { display: none; }
   .dots-tip { position: absolute; pointer-events: none; padding: 3px 7px; border-radius: 5px; background: var(--panel); border: 1px solid var(--line); white-space: nowrap; display: none; font-size: 12px; }
   @media (max-width: 640px) {
     .dots-rail { top: 52px; transform: none; width: 84px; height: 112px; right: 6px; padding: 4px 6px 4px 2px; }
@@ -158,15 +171,19 @@ function rgba(hex, a) {
  * host: #graph; svg: the card SVG on the page; meta: /api/graph's meta;
  * getVB / setVB: the app's viewBox camera.
  */
-export async function mountDots({ host, svg, meta, getVB, setVB, vbInit }) {
+export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source = null, auto = null }) {
   const name = meta.dots.source;
   let show = S && S.name === name ? S.show : null;
   const keep = S && S.name === name ? { t: S.t, playing: S.playing, speed: S.speed } : null;
   unmountDots();
   if (!show) {
-    const res = await fetch(`/api/dots/source?name=${encodeURIComponent(name)}`);
-    const src = await res.json();
-    if (!res.ok) throw new Error(src.error || "dots source unreadable");
+    // A static export hands the source in; the preview server answers it.
+    let src = source;
+    if (!src) {
+      const res = await fetch(`/api/dots/source?name=${encodeURIComponent(name)}`);
+      src = await res.json();
+      if (!res.ok) throw new Error(src.error || "dots source unreadable");
+    }
     if (src.kind === "carve") {
       const rec = readCarve(src.text);
       show = carveShow(rec, parentsOf(rec.roster));
@@ -284,7 +301,14 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit }) {
   const params = new URLSearchParams(location.search);
   // Past a few hundred cards the fit is already below card size, so a large
   // source opens on its resources; the rail and the fit button still go to cards.
-  if (!keep && !params.has("dotsAt") && show.roster.length > 300) flyNow("resources");
+  // #712: in the kiosk's frame the replay loops by itself and the director frames it.
+  // `auto` (the static carve export): the same loop and director, narrated in the page itself.
+  S.kiosk = params.get("dotsKiosk") === "1" || !!auto;
+  S.narrate = auto && auto.narrate ? auto.narrate : null;
+  S.auto = !!auto;
+  S.keepBar = !!(auto && auto.bar);
+  if (S.kiosk) startKiosk();
+  else if (!keep && !params.has("dotsAt") && show.roster.length > 300) flyNow("resources");
   if (params.has("dotsAt")) flyNow(params.get("dotsAt"));
   if (params.has("dotsT")) seek(Number(params.get("dotsT")) || 0);
   if (params.get("dotsPlay") === "1") play(true);
@@ -308,8 +332,11 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit }) {
     S.setVB([cx - w / 2, cy - h / 2, w, h]);
   };
   // The same, by the size a card would be on screen.
-  const zoomCardPx = (px) => zoomTo((S.svg.getBoundingClientRect().width * S.cardW) / px, true);
-  window.__dots = { seek, play, step, zoomTo, zoomCardPx, pause: () => play(false), fly, setSpeed, stats: () => S && S.stats, length: () => S && S.clock.length, marks: () => S && currentMarks(), state: () => S && { t: S.t, level: S.level, reduced: S.reduced, cardPx: S.cardPx, pitchPx: S.pitchPx } };
+  const zoomCardPx = (px) => zoomTo((paneRect().width * S.cardW) / px, true);
+  const setInsets = (ins) => {
+    if (S) S.insets = { top: Number(ins.top) || 0, bottom: Number(ins.bottom) || 0 };
+  };
+  window.__dots = { seek, play, step, zoomTo, zoomCardPx, setInsets, pause: () => play(false), fly, setSpeed, stats: () => S && S.stats, length: () => S && S.clock.length, marks: () => S && currentMarks(), state: () => S && { t: S.t, level: S.level, reduced: S.reduced, cardPx: S.cardPx, pitchPx: S.pitchPx }, debug: () => S && { band: (({ left, right, w }) => ({ left, right, w }))(band()), svg: S.svg.getBoundingClientRect().toJSON(), rail: S.ui.querySelector('.dots-rail').getBoundingClientRect().toJSON(), vb: S.getVB(), dir: S.dir, directing: S.directing, focusBox: S.dir && focusBox(S.dir.focus), want: S.dir && frameBox(focusBox(S.dir.focus)), pitch: S.pitch, origin: S.origin }, story: () => S && S.story && { start: S.story.start, end: S.story.end, firstRefusal: S.story.firstRefusal ? S.story.firstRefusal.end : null } };
   const loop = (wall) => {
     if (!S) return;
     S.raf = requestAnimationFrame(loop);
@@ -321,6 +348,7 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit }) {
       if (S.t >= S.clock.length) play(false);
       S.dirty = true;
     }
+    if (S.kiosk) kioskTick(wall, dt);
     if (!S.dirty && !S.settling) return;
     S.stats.frame.push(dt);
     const t0 = performance.now();
@@ -339,7 +367,14 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit }) {
 
 function seek(t) {
   if (!S) return;
+  // In the kiosk a seek keeps the loop playing.
+  if (S.kiosk && t < S.clock.length) {
+    S.holdUntil = null;
+    S.playing = true;
+  }
   S.t = Math.max(0, Math.min(S.clock.length, t));
+  // Tips fire for what plays, not for what a seek skips.
+  S.tipFrom = S.t;
   S.snap = true;
   S.dirty = true;
   syncUi();
@@ -359,8 +394,15 @@ function setSpeed(v) {
 
 // --- camera ----------------------------------------------------------------
 
+/** Where the card SVG sits on the page. Read off the SVG while it shows; once it is
+ * out of the paint the host stands in for it (the SVG fills it), so a moving camera
+ * never makes the browser lay a 1,041-card SVG out just to be measured. */
+function paneRect() {
+  return S.svgHidden && S.svgGone ? S.host.getBoundingClientRect() : S.svg.getBoundingClientRect();
+}
+
 function camera() {
-  const r = S.svg.getBoundingClientRect();
+  const r = paneRect();
   const hr = S.host.getBoundingClientRect();
   const vb = S.getVB();
   const s = Math.min(r.width / vb[2], r.height / vb[3]);
@@ -371,7 +413,7 @@ function camera() {
 
 /** The pane's width not covered by the floating panel, and how much it covers. */
 function band() {
-  const r = S.svg.getBoundingClientRect();
+  const r = paneRect();
   const pe = document.getElementById("panel");
   let left = 0;
   if (pe && !pe.classList.contains("collapsed") && getComputedStyle(pe).display !== "none") {
@@ -542,6 +584,8 @@ function updateUiFrame(counts, level) {
   if (S.timeEl.textContent !== label) S.timeEl.textContent = label;
   if (S.playing && Math.abs(Number(S.range.value) - S.t) > 100) S.range.value = String(Math.round(S.t));
   const marks = currentMarks();
+  // The zoom goes out a little past the estates mark and no further.
+  S.zoomOut = Math.max(3, (marks.estates * 1.4) / Math.max(1, S.vbInit[2]));
   const sub = { cards: `${fmt(S.show.roster.length)} cards`, resources: `${fmt(S.show.roster.length)} resources`, estates: `${estatesNow} estate${estatesNow === 1 ? "" : "s"}` };
   for (const k of Object.keys(S.railMarks)) {
     const sm = S.railMarks[k].querySelector("small");
@@ -652,8 +696,12 @@ function draw(dt) {
   if (S.host.style.getPropertyValue("--dots-card-a") !== cardA) S.host.style.setProperty("--dots-card-a", cardA);
   const hide = tc >= 1;
   if (hide !== S.svgHidden) {
-    S.svg.style.visibility = hide ? "hidden" : "";
+    // The export owns its camera and measures the host, so it takes the SVG out of
+    // layout altogether; the app's own wheel handler measures the SVG, so there it stays in layout.
+    if (S.auto) S.svg.style.display = hide ? "none" : "";
+    else S.svg.style.visibility = hide ? "hidden" : "";
     S.svgHidden = hide;
+    S.svgGone = hide && !!S.auto;
   }
 
   const k = takeoffsBy(scene, t);
@@ -691,6 +739,8 @@ function draw(dt) {
     td.set(e, discMorph(size * P * s, { reduced }));
   }
   const level = levelOf(tc, td.values());
+  // Reaching the estate level by hand fits the estates, so they are not a speck in a corner.
+  if (level === "discs" && S.level && S.level !== "discs" && !S.fly && !S.directing) queueMicrotask(() => fly("estates"));
   S.level = level;
   const dotLayerA = tc;
 
@@ -1153,5 +1203,165 @@ function draw(dt) {
   ctx.globalAlpha = 1;
   S.snap = false;
   S.settling = moving;
+  S.boxPx = new Map([...boxes].map(([e, b]) => [e, boxPx(b)]));
   updateUiFrame(counts, level);
+}
+
+// --- the kiosk (#712) ----------------------------------------------------------
+
+function toParent(msg) {
+  if (S && S.narrate) return S.narrate(msg);
+  try {
+    if (window.parent && window.parent !== window) window.parent.postMessage(msg, location.origin);
+  } catch {
+    /* no parent */
+  }
+}
+
+function startKiosk() {
+  S.story = carveStory(S.scene);
+  S.mode = "watch";
+  S.insets = { top: 0, bottom: 0 };
+  S.ui.classList.add("dots-kiosk", "dots-watch");
+  if (S.keepBar) S.ui.classList.add("dots-keep-bar");
+  S.userUntil = 0;
+  S.holdUntil = null;
+  S.tipFrom = -1;
+  S.lastPost = 0;
+  S.dir = null;
+  const onMsg = (e) => {
+    if (!S || e.origin !== location.origin || !e.data) return;
+    if (e.data.type === "behold:dots-speed") {
+      setSpeed(Number(e.data.speed) || 1);
+      return;
+    }
+    if (e.data.type !== "behold:dots-mode") return;
+    S.mode = e.data.mode === "inspect" ? "inspect" : "watch";
+    S.ui.classList.toggle("dots-watch", S.mode === "watch");
+    if (e.data.insets) S.insets = { top: Number(e.data.insets.top) || 0, bottom: Number(e.data.insets.bottom) || 0 };
+    S.dirty = true;
+  };
+  window.addEventListener("message", onMsg);
+  S.off.push(() => window.removeEventListener("message", onMsg));
+  // The director never moves while a person has the graph in hand.
+  const touched = () => {
+    if (S) S.userUntil = performance.now() + 8_000;
+  };
+  for (const ev of ["wheel", "mousedown", "touchstart"]) {
+    S.host.addEventListener(ev, touched, { passive: true });
+    S.off.push(() => S && S.host.removeEventListener(ev, touched));
+  }
+  S.camAt = null;
+  play(true);
+  toParent({ type: "behold:dots-ready", source: S.name });
+}
+
+/** A box in scene pitches, as the viewBox that frames it clear of the rail and the parent's caption. */
+function frameBox(b) {
+  const { r, left, right } = band();
+  const P = S.pitch;
+  const pad = 3.5;
+  const bx = S.origin.x + (b.x - pad) * P;
+  const by = S.origin.y + (b.y - pad) * P;
+  const bw = (b.w + 2 * pad) * P;
+  const bh = (b.h + 2 * pad) * P;
+  const top = S.insets.top + 8;
+  // The quiet controls at the foot, when the page keeps them, are furniture the boxes stay clear of.
+  const foot = S.keepBar ? (S.ui.querySelector(".dots-bottom")?.offsetHeight ?? 0) + 12 : 0;
+  const bottom = S.insets.bottom + 8 + foot;
+  const aw = Math.max(40, r.width - left - right - 16);
+  const ah = Math.max(40, r.height - top - bottom);
+  // Never so close that a card shows again: dots stay dots.
+  let s = Math.min(aw / bw, ah / bh, 20 / S.cardW);
+  const vw = r.width / s;
+  const vh = r.height / s;
+  const vx = bx + bw / 2 - (left + 8 + aw / 2) / s;
+  const vy = by + bh / 2 - (top + ah / 2) / s;
+  return [vx, vy, vw, vh];
+}
+
+function unionBox(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  const x = Math.min(a.x, b.x);
+  const y = Math.min(a.y, b.y);
+  return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
+}
+
+function focusBox(focus) {
+  const sc = S.scene;
+  const now = sc.layoutAt(takeoffsBy(sc, S.t)).boxes;
+  const fin = sc.layoutAt(sc.landing.length).boxes;
+  const src = now.get(sc.source) || sc.layoutAt(0).boxes.get(sc.source);
+  if (focus.kind === "all") return { x: 0, y: 0, w: sc.extent.w, h: sc.extent.h };
+  if (focus.kind === "source" || focus.estate === sc.source) return src;
+  // The estate receiving the flock, with the box it leaves, so the flight is in the shot.
+  return unionBox(src, fin.get(focus.estate) || now.get(focus.estate));
+}
+
+function kioskTick(wall, dt) {
+  // The loop: play, hold on the result, start again.
+  if (S.t >= S.clock.length) {
+    if (S.holdUntil === null) S.holdUntil = wall + LOOP.holdMs;
+    else if (wall >= S.holdUntil) {
+      S.holdUntil = null;
+      seek(0);
+      S.tipFrom = -1;
+      play(true);
+    }
+  }
+  const beat = beatAt(S.story, S.scene, S.t);
+  // The director: what the beat is about, eased in, never against a person's hand.
+  S.directing = wall >= S.userUntil;
+  // While the director holds the camera the rail steps aside, so no box is ever under it;
+  // it comes back the moment a person takes the camera.
+  S.ui.classList.toggle("dots-directing", S.directing);
+  if (S.directing) {
+    S.dir = directorFocus(S.dir, beat.focus, wall);
+    const want = frameBox(focusBox(S.dir.focus));
+    const cur = S.getVB();
+    const k = S.camAt === null || S.reduced ? 1 : 1 - Math.exp(-dt / 650);
+    S.camAt = wall;
+    const w = Math.exp(lerp(Math.log(cur[2]), Math.log(want[2]), k));
+    const h = (w * cur[3]) / cur[2];
+    const cx = lerp(cur[0] + cur[2] / 2, want[0] + want[2] / 2, k);
+    const cy = lerp(cur[1] + cur[3] / 2, want[1] + want[3] / 2, k);
+    if (Math.abs(w - cur[2]) / cur[2] > 0.0005 || Math.abs(cx - cur[0] - cur[2] / 2) > cur[2] * 0.0005 || Math.abs(cy - cur[1] - cur[3] / 2) > cur[3] * 0.0005) {
+      S.setVB([cx - w / 2, cy - h / 2, w, h]);
+    }
+  }
+  // Tips for what has just played.
+  const tips = S.playing || S.t >= S.clock.length ? tipsBetween(S.story, S.tipFrom, S.t) : [];
+  S.tipFrom = S.t;
+  if (wall - S.lastPost < 200 && !tips.length) return;
+  S.lastPost = wall;
+  const rects = {};
+  for (const [e, b] of S.boxPx || []) rects[e] = { left: b.x + (S.canvas.offsetLeft || 0), top: b.y + (S.canvas.offsetTop || 0), width: b.w, height: b.h };
+  const counts = {};
+  for (const [e, c] of countsNowMap()) counts[e] = c;
+  const moves = S.story.moves;
+  const done = moves.filter((f) => f.end <= S.t);
+  toParent({
+    type: "behold:dots-state",
+    source: S.name,
+    src: S.scene.source,
+    t: S.t,
+    length: S.clock.length,
+    playing: S.playing,
+    speed: S.speed,
+    holdLeft: S.holdUntil === null ? null : Math.max(0, Math.ceil((S.holdUntil - wall) / 1000)),
+    beat,
+    counts,
+    names: Object.fromEntries(S.scene.estates.map((e) => [e, shortOf(e, S.scene.source)])),
+    recording: { kind: S.show.kind, resources: S.show.roster.length, recordedAt: S.show.recordedAt || null },
+    colours: Object.fromEntries([...S.col.estate]),
+    totals: { moves: moves.length, done: done.length, refused: done.filter((f) => !f.ok).length, estates: S.story.dests.length },
+    log: done.slice(-14).reverse().map((f) => ({ address: f.address, to: shortOf(f.to, S.scene.source), ok: f.ok, refusal: f.refusal || null })),
+    rects,
+    tips,
+  });
+}
+
+function countsNowMap() {
+  return S.ownersNow ? [...S.ownersNow.values()].reduce((m, e) => m.set(e, (m.get(e) ?? 0) + 1), new Map()) : new Map();
 }

@@ -1,11 +1,13 @@
-// `npm run preview:dots` (#712): the dots preview on http://127.0.0.1:4712/,
+// `npm run preview:dots` (#712): the dots preview on http://127.0.0.1:4713/,
 // local only. It serves behold's own page over two committed sources, a carve
 // recording (scripts/dot-bench/) and the terralith walkthrough's snapshots
 // (src/__fixtures__/terralith), and reads nothing else: no chant, no account,
 // no emulator. Read-only: it builds no Op runner.
 //
-//   http://127.0.0.1:4712/?dots=carve:carve-terralith-14   the 1,041-resource carve
-//   http://127.0.0.1:4712/?dots=terralith                   the 23-resource walkthrough
+//   http://127.0.0.1:4713/?dots=carve:carve-terralith-14   the 1,041-resource carve
+//   http://127.0.0.1:4713/?dots=terralith                   the 23-resource walkthrough
+//
+// The static carve export (`npm run preview:carve`) takes port 4712.
 //
 // --port <n> picks another port.
 
@@ -18,7 +20,7 @@ import { ReadOnlyRunner } from "../src/public-mode.ts";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const at = args.indexOf("--port");
-const port = at >= 0 ? Number(args[at + 1]) : 4712;
+const port = at >= 0 ? Number(args[at + 1]) : 4713;
 const host = "127.0.0.1";
 
 const app = createApp(
