@@ -592,6 +592,10 @@
       :focus-visible { outline: 2px solid var(--frame-focus, var(--focus)); outline-offset: 2px; }
       /* Numbers in the sans keep one width a digit, so a count or a clock doesn't jitter as it ticks. */
       .r-run-meta, .r-dur, .r-head-meta, .r-job-needs, .k-w-dora, .k-w-held, .k-w-dora-foot, .k-cap-next, .k-drawer-nums, .k-call-nums, .k-ap-row, .k-facts, .k-view-note { font-variant-numeric: tabular-nums; }
+      /* The stopped-updating cue (kiosk.js, web/kiosk-link.js): over the header, in the page's flow, so a phone shows it too. */
+      .k-link { margin: 0; padding: var(--s1) var(--s4); background: var(--bg); box-shadow: inset 4px 0 0 var(--bar-foreign); color: var(--frame-foreign, var(--foreign)); font: 600 0.92em/1.4 var(--font-ui); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+      .k-link[hidden] { display: none; }
+      @media (max-width: 600px) { .k-link { padding: var(--s1) 16px; } }
       /* web/motion.js marks the page while its tab is hidden: every animation holds where it is. */
       :root[data-motion="paused"] *, :root[data-motion="paused"] *::before, :root[data-motion="paused"] *::after { animation-play-state: paused !important; }
     </style>
