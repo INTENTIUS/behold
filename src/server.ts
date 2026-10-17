@@ -153,7 +153,8 @@ import { readTerralith } from "./terralith-demo.ts";
 import { discoverSplitPlans, moveMembers, moveReceipt, movesPayload, readSplitPlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
 import { servedWorkspace, setServedWorkspace, workspaceMemberOf, type Workspace } from "./workspace.ts";
 import { approveArgs, isEnvName, isOverrideGate, localApprover, readWorkspaceGates } from "./workspace-gates.ts";
-import { readWhy, whyRegion } from "./workspace-why.ts";
+import { readWhy, whyRegion, WHY_CHANT_FLOOR } from "./workspace-why.ts";
+import { floorFor, floorMet, floorRefusal } from "./chant-floors.ts";
 import { allowedHostsFrom, guardRequest } from "./request-guard.ts";
 import { applyMemberPasses, memberKindOf, memberKindSpec, memberPassNote, servesAsEstate, type MemberPassRun } from "./member-kind.ts";
 import { TerraformReadError, terraformMemberProject, terraformReaderState, terraformVia } from "./terraform-member.ts";
@@ -1548,6 +1549,13 @@ export function createApp(
     if (!ws) return c.json({ workspace: false, error: "behold isn't serving a declared chant workspace, so there is no why to read.", code: "no-workspace" });
     const ask = whyRegion(ws, { member: c.req.query("member") || null, node: c.req.query("node") || null });
     if (!ask.ok) return c.json({ workspace: true, ...ask.refusal }, 400);
+    // #691: a chant below the why floor is refused here, before the slow read
+    // is spawned; the pane says what is missing and the rest of behold works.
+    const whyFloor = floorFor(WHY_CHANT_FLOOR);
+    const whyChant = resolveChant(ws.root).version;
+    if (!floorMet(whyFloor, whyChant)) {
+      return c.json({ workspace: true, member: ask.member, region: ask.region, ms: 0, refusal: floorRefusal(whyFloor, whyChant) });
+    }
     const started = Date.now();
     let read: Awaited<ReturnType<typeof readWhy>>;
     try {

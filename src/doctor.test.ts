@@ -7,6 +7,8 @@ import type { Kubeconfig } from "./k8s-target.ts";
 import type { Substrate } from "./substrates.ts";
 import { discoverTerraformRoots as realRoots } from "./terraform-member.ts";
 import { chantFloor } from "./chant.ts";
+import { CHANT_FLOORS } from "./chant-floors.ts";
+import { WHY_CHANT_FLOOR } from "./workspace-why.ts";
 
 // Fixtures are built in the OS tmpdir rather than pointed at the bundled
 // examples: example-writes' node_modules is intentionally absent in a fresh
@@ -89,7 +91,7 @@ describe("diagnose", () => {
 
     expect(report.ok).toBe(true);
     expect(report.kind).toBe("project");
-    expect(report.checks.map((c) => c.status)).toEqual(["pass", "pass", "pass", "pass", "pass", "pass", "pass", "pass"]);
+    expect(report.checks.map((c) => c.status)).toEqual(Array(8 + CHANT_FLOORS.length).fill("pass"));
     expect(by(report, "chant").detail).toContain(`chant ${AT_FLOOR}`);
     expect(by(report, "lexicons").detail).toContain("aws 0.61.0");
     expect(by(report, "envs").detail).toContain("prod");
@@ -117,6 +119,39 @@ describe("diagnose", () => {
     // Both numbers, because "upgrade chant" without saying to what is not a fix.
     expect(chant.detail).toContain("0.1.0");
     expect(chant.detail).toContain(`below behold's floor ${chantFloor()}`);
+  });
+
+  it("lists each chant read with the project's chant version and whether its floor is met (#691)", async () => {
+    const stale = fixture({
+      "chant.config.ts": `export default { lexicons: ["aws"], environments: ["prod"], sourceDir: "src" };`,
+      "package.json": JSON.stringify({ name: "stale", dependencies: { "@intentius/chant": "^0.95.0" } }),
+      "src/main.ts": "",
+      ...installed("@intentius/chant", "0.95.0", "bin/chant"),
+    });
+    const report = await diagnose(stale, probes({ detectSubstrates: async () => up }));
+    const floors = report.checks.filter((c) => c.name === "floor");
+    expect(floors).toHaveLength(CHANT_FLOORS.length);
+    const why = floors.find((c) => c.detail.startsWith("why:"))!;
+    // 0.95.0 is below WHY_CHANT_FLOOR (0.102.0): named, with the project's version.
+    expect(why.status).toBe("warn");
+    expect(why.detail).toContain(`needs chant ${WHY_CHANT_FLOOR}`);
+    expect(why.detail).toContain("chant 0.95.0");
+    expect(why.detail).toContain("not met");
+    expect(why.fix).toContain(WHY_CHANT_FLOOR);
+    // The workspace contract floor (0.81.0) is met by the same chant.
+    const contract = floors.find((c) => c.detail.startsWith("workspace read contract:"))!;
+    expect(contract.status).toBe("pass");
+    expect(contract.detail).toMatch(/, met$/);
+    expect(formatReport(report)).toContain("why: needs chant");
+
+    const current = fixture({
+      "chant.config.ts": `export default { lexicons: ["aws"], environments: ["prod"], sourceDir: "src" };`,
+      "package.json": JSON.stringify({ name: "fresh", dependencies: { "@intentius/chant": "^99.0.0" } }),
+      "src/main.ts": "",
+      ...installed("@intentius/chant", "99.0.0", "bin/chant"),
+    });
+    const ok = await diagnose(current, probes({ detectSubstrates: async () => up }));
+    expect(ok.checks.filter((c) => c.name === "floor").every((c) => c.status === "pass")).toBe(true);
   });
 
   it("fails with one line, and the fix, for a directory that is no project at all (#193's dead end)", async () => {
@@ -446,7 +481,7 @@ describe("--json", () => {
     expect(round.dir).toBe(dir);
     expect(round.kind).toBe("project");
     expect(round.ok).toBe(true);
-    expect(round.checks.map((c) => c.name)).toEqual(["project", "chant", "lexicons", "targets", "envs", "kube", "substrates", "ops"]);
+    expect(round.checks.map((c) => c.name)).toEqual(["project", "chant", ...CHANT_FLOORS.map(() => "floor"), "lexicons", "targets", "envs", "kube", "substrates", "ops"]);
     for (const c of round.checks) {
       expect(Object.keys(c).filter((k) => k !== "fix")).toEqual(["name", "status", "detail"]);
       expect(["pass", "warn", "fail"]).toContain(c.status);

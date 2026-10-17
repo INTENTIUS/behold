@@ -1138,7 +1138,8 @@ export function convergeGateCards(rows: readonly OpStatusLine[]): ConvergeGateCa
  * subcommand. That is a happy accident of flag ordering, not a guarantee, and it
  * is not what behold relies on.)
  */
-export const OPERATOR_LOG_FLOOR = "0.53.1";
+import { OPERATOR_LOG_FLOOR } from "./chant-floors.ts";
+export { OPERATOR_LOG_FLOOR };
 
 /** How many timeline entries behold asks for when nothing says otherwise. */
 export const OPERATOR_LOG_LIMIT = 50;

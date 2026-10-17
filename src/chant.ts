@@ -151,10 +151,9 @@ export function envOverridesFor(opts: GraphOptions): Record<string, string> | un
   return Object.keys(overrides).length ? overrides : undefined;
 }
 
-/** The first chant whose `graph` takes `--traffic` (chant#2377). An older one
- * rejects an unknown flag outright (chant#1127), so the flag is never sent
- * hopefully. */
-export const TRAFFIC_FLOOR = "0.75.0";
+/** The first chant whose `graph` takes `--traffic` (chant#2377); see src/chant-floors.ts. */
+import { TRAFFIC_FLOOR } from "./chant-floors.ts";
+export { TRAFFIC_FLOOR };
 
 /** Does this member's own read take `--traffic` (#402)? A chant member does
  * when its own chant has the flag; a terraform member is read by behold's

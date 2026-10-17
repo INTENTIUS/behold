@@ -26,8 +26,9 @@ import { runChantRaw } from "./chant.ts";
 
 /** The read contract version behold reads (chant's `reference/workspace-read-contract`). */
 export const WORKSPACE_CONTRACT = 1;
-/** The first chant that writes contract 1. An older one has no `workspace` command at all. */
-export const WORKSPACE_CHANT_FLOOR = "0.81.0";
+/** The first chant that writes contract 1 (see src/chant-floors.ts). */
+import { WORKSPACE_CHANT_FLOOR } from "./chant-floors.ts";
+export { WORKSPACE_CHANT_FLOOR };
 
 /** The read-contract commands behold reads, named the way chant's conformance suite names them. */
 export const BEHOLD_READS = ["ls", "graph", "status", "graph --intent"] as const;
