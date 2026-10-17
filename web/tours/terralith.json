@@ -1,7 +1,7 @@
 {
   "schema": "behold.tour/v1",
   "name": "terralith",
-  "title": "The terralith's story",
+  "title": "Carving a shared root into team estates",
   "match": {
     "tool": "terralith"
   },
@@ -16,6 +16,13 @@
     "resumed",
     "applied"
   ],
+  "replay": {
+    "maxGapMs": 3000,
+    "keepMs": 800,
+    "chapterMinMs": 6000,
+    "endHoldMs": 8000,
+    "flightMs": 1800
+  },
   "runs": {
     "stock": {
       "repo": "{repo}",
@@ -130,7 +137,7 @@
       "trigger": {
         "beat": "stock"
       },
-      "title": "One state for everything",
+      "title": "One shared root holds everything",
       "text": [
         "Every resource lives in one state file.",
         "Any change plans {planned} of {of} and waits on one lock."
@@ -172,7 +179,7 @@
       },
       "title": "Team B moves out, and nothing is recreated",
       "text": [
-        "Team B's resources move to an estate of their own by a tag write. The other teams stay in the terralith for now.",
+        "Team B's resources move to an estate of their own by a tag write. The other teams stay in the shared root for now.",
         "{moved} resources moved, {refused} refused."
       ],
       "focus": {
@@ -219,8 +226,8 @@
       },
       "title": "A change across estates",
       "text": [
-        "The terralith publishes a value, and team B reads it.",
-        "Wave 1 plans the terralith; wave 2 plans team B with log_retention_days = {value}."
+        "The shared root publishes a value, and team B reads it.",
+        "Wave 1 plans the shared root; wave 2 plans team B with log_retention_days = {value}."
       ],
       "focus": {
         "boxes": "all"
@@ -273,7 +280,7 @@
       },
       "title": "This cycle, in numbers",
       "text": [
-        "Then the reset: the next cycle starts from a new terralith."
+        "After the reset, the next cycle starts again from a new shared root."
       ],
       "focus": {
         "boxes": "all"

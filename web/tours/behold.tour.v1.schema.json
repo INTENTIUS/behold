@@ -27,6 +27,18 @@
       "items": { "type": "string" },
       "maxItems": 20
     },
+    "replay": {
+      "description": "How a recorded cycle of this tour plays condensed (web/cycle-replay.js), each in ms: an idle stretch longer than maxGapMs plays as keepMs and is marked on the timeline with the real gap; each chapter stays up at least chapterMinMs; a write's flight plays whole for flightMs; the last chapter holds endHoldMs before the replay starts again.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxGapMs": { "type": "integer", "minimum": 500, "maximum": 600000 },
+        "keepMs": { "type": "integer", "minimum": 0, "maximum": 60000 },
+        "chapterMinMs": { "type": "integer", "minimum": 0, "maximum": 120000 },
+        "endHoldMs": { "type": "integer", "minimum": 0, "maximum": 120000 },
+        "flightMs": { "type": "integer", "minimum": 0, "maximum": 30000 }
+      }
+    },
     "runs": {
       "description": "Named runs of the cycle, each found in the reports' index or by a migration record's commit.",
       "type": "object",

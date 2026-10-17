@@ -14,32 +14,51 @@ export const GAPS = { maxGap: 10_000, keep: 2_000 };
 
 /**
  * The replay's clock over a recording whose events happened at `times` (ms),
- * from `t0` to `t1`: { length, toReplay(real), toReal(p), breaks, t0, t1 }.
+ * from `t0` to `t1`: { length, toReplay(real), toReal(p), breaks, holds, t0, t1 }.
  * Each break is { p, real0, real1, skipped } in replay ms and wall-clock ms.
+ *
+ * `holds` ([{ at, ms }]): at wall-clock time `at` the replay stands still for
+ * `ms` replay ms, so a chapter too short to read stays up long enough. A
+ * hold is the one place replay time runs and recorded time does not; each is
+ * returned as { p, real, ms }.
  */
-export function recordedClock(times, t0, t1, { maxGap = GAPS.maxGap, keep = GAPS.keep } = {}) {
-  const ts = [...new Set([t0, ...times.filter((x) => Number.isFinite(x) && x >= t0 && x <= t1), t1])].sort((a, b) => a - b);
-  const segs = []; // { r0, r1, p0 }: wall-clock [r0, r1] plays from replay p0, one to one
+export function recordedClock(times, t0, t1, { maxGap = GAPS.maxGap, keep = GAPS.keep, holds = [] } = {}) {
+  const hold = new Map();
+  for (const h of holds || []) if (h && Number.isFinite(h.at) && h.ms > 0 && h.at >= t0 && h.at <= t1) hold.set(h.at, (hold.get(h.at) ?? 0) + h.ms);
+  const ts = [...new Set([t0, ...times.filter((x) => Number.isFinite(x) && x >= t0 && x <= t1), ...hold.keys(), t1])].sort((a, b) => a - b);
+  const segs = []; // { r0, r1, p0 }: wall-clock [r0, r1] plays from replay p0, one to one; a hold is { r0 = r1, p0, hold }
   const breaks = [];
+  const held = [];
   let p = 0;
   let r0 = ts[0];
-  for (let i = 1; i < ts.length; i++) {
-    const a = ts[i - 1];
-    const b = ts[i];
-    if (b - a > maxGap) {
+  const close = (r1) => {
+    segs.push({ r0, r1, p0: p });
+    p += r1 - r0;
+  };
+  for (let i = 0; i < ts.length; i++) {
+    const a = ts[i];
+    if (hold.has(a)) {
+      close(a);
+      const ms = hold.get(a);
+      segs.push({ r0: a, r1: a, p0: p, hold: ms });
+      held.push({ p, real: a, ms });
+      p += ms;
+      r0 = a;
+    }
+    const b = ts[i + 1];
+    if (b !== undefined && b - a > maxGap) {
       // Play up to a, then the gap as `keep` ms, the first half before the break and the second after.
-      segs.push({ r0, r1: a + keep / 2, p0: p });
-      p += a + keep / 2 - r0;
+      close(a + keep / 2);
       breaks.push({ p, real0: a + keep / 2, real1: b - keep / 2, skipped: b - a - keep });
       r0 = b - keep / 2;
     }
   }
-  segs.push({ r0, r1: ts[ts.length - 1], p0: p });
-  p += ts[ts.length - 1] - r0;
+  close(ts[ts.length - 1]);
   const length = Math.max(1, p);
   const toReplay = (real) => {
     if (real <= segs[0].r0) return 0;
     for (const s of segs) {
+      if (s.hold) continue;
       if (real <= s.r1) return real < s.r0 ? s.p0 : s.p0 + (real - s.r0);
     }
     return length;
@@ -49,7 +68,7 @@ export function recordedClock(times, t0, t1, { maxGap = GAPS.maxGap, keep = GAPS
     for (const x of segs) if (x.p0 <= q) s = x;
     return Math.min(s.r1, s.r0 + Math.max(0, q - s.p0));
   };
-  return { length, toReplay, toReal, breaks, segs, t0: ts[0], t1: ts[ts.length - 1] };
+  return { length, toReplay, toReal, breaks, holds: held, segs, t0: ts[0], t1: ts[ts.length - 1] };
 }
 
 const pad = (n) => String(n).padStart(2, "0");
@@ -63,10 +82,11 @@ const STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600].map((s) 
 
 /** The wall-clock ticks: round times inside the played stretches, about `want` of them, each { p, real, label }. */
 export function wallTicks(clock, want = 7) {
-  const played = clock.segs.reduce((s, x) => s + (x.r1 - x.r0), 0);
+  const played = clock.segs.reduce((s, x) => s + (x.hold ? 0 : x.r1 - x.r0), 0);
   const step = STEPS.find((s) => played / s <= want) ?? STEPS[STEPS.length - 1];
   const out = [];
   for (const s of clock.segs) {
+    if (s.hold || s.r1 <= s.r0) continue;
     for (let r = Math.ceil(s.r0 / step) * step; r <= s.r1; r += step) out.push({ p: s.p0 + (r - s.r0), real: r, label: clockWords(r, step < 60_000) });
   }
   return out;

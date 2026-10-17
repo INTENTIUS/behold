@@ -68,15 +68,17 @@
  * {@link CARVE_IDLE_TTL_MS} otherwise, the way demo.json's read is shared.
  */
 import type { Hono } from "hono";
-import { readDemo } from "./terragucci-demo.ts";
+import { readCycle, readDemo, isRecordedTool, type Cycle, type Demo } from "./terragucci-demo.ts";
 import { TerragucciDenied, type TerragucciSource } from "./terragucci-source.ts";
 import { findTour, resolveTour, type TourAnswer, type TourMigration } from "./terragucci-tour.ts";
-import { RUNS_INDEX_KEY } from "./terragucci-runs.ts";
+import { RUNS_INDEX_KEY, runKey } from "./terragucci-runs.ts";
 
 /** How long one read is shared while a migration runs: the page polls every 2 s, so a move shows within a few seconds of its write. */
 export const CARVE_READ_TTL_MS = 1_500;
 /** And while none runs. */
 export const CARVE_IDLE_TTL_MS = 10_000;
+/** How long one recorded cycle's read is kept: its records are final, bar a report the reset's hold writes late. */
+export const RECORDED_READ_TTL_MS = 60_000;
 /** The most rosters one read takes, so a large estate list cannot turn one poll into hundreds of GETs. */
 export const MAX_ROSTERS = 64;
 /** The most migrations one read follows. */
@@ -178,6 +180,8 @@ export type CarveAnswer =
       running: boolean;
       /** The tour of this cycle (behold.tour/v1), when one matches demo.json: chapters, facts and visuals from records. */
       tour?: TourAnswer;
+      /** Set on a recorded cycle's read: the cycle, its steps and its runs. */
+      recorded?: CarveRecorded;
       problems: string[];
     };
 
@@ -226,7 +230,7 @@ export function progressLine(v: unknown): CarveLine | undefined {
  * last one may be half written while the job appends, so it is left out
  * without a word, and any other is counted.
  */
-export function readProgress(text: string, from: string | null = null): { lines: CarveLine[]; bad: number; counts: CarveCounts | null } {
+export function readProgress(text: string, from: string | null = null, until: number | null = null): { lines: CarveLine[]; bad: number; counts: CarveCounts | null } {
   // A line from before the cycle started is an earlier cycle's run of the same migration: the record is rewritten
   // when this cycle's runs again, and the progress file keeps the old lines until this one's arrive.
   const since = from ? Date.parse(from) : NaN;
@@ -246,6 +250,8 @@ export function readProgress(text: string, from: string | null = null): { lines:
     }
     const line = progressLine(doc);
     if (line && !Number.isNaN(since) && Date.parse(line.at) < since) return;
+    // A recorded cycle's read: a line after the cycle ended is a later cycle's run of the same migration.
+    if (line && until !== null && Date.parse(line.at) > until) return;
     if (line) {
       lines.push(line);
       counts = countsIn(isRecord(doc) ? doc.counts : undefined) ?? counts;
@@ -324,6 +330,28 @@ export interface CarveReadOptions {
   now?: Date;
   /** Where tours are looked for besides the ones behold ships (a served repo's `.behold/tours`), and the runs' source. */
   tour?: { dirs: () => string[]; runs?: TerragucciSource };
+  /**
+   * A recorded cycle (demo.cycle/v1) to read instead of demo.json's: its last
+   * step stands for demo.json, every line, roster and run between its start
+   * and its end (plus {@link RECORDED_SLACK_MS}) is its, and the tour's beat
+   * events are each of its steps.
+   */
+  recorded?: Cycle;
+}
+
+/** How long after a recorded cycle's reset its last writes may still land: the reset's at is written before the hold's work ends. */
+export const RECORDED_SLACK_MS = 120_000;
+
+/** A recorded cycle as the answer carries it, for the page's condensed clock (web/cycle-replay.js). */
+export interface CarveRecorded {
+  tool: string;
+  cycle: number;
+  scenario: string;
+  repo: string;
+  started: string | null;
+  ended: string | null;
+  steps: { step: string; beat: string | null; label: string; title: string; at: string; repo: string | null; pull: number | null; commit: string | null }[];
+  runs: number[];
 }
 
 async function readText(source: TerragucciSource, k: string, problems: string[]): Promise<string | undefined> {
@@ -407,9 +435,9 @@ export function carvedEntries(
  * demo.json's `started_at` is drawn. With no `started_at` (no demo.json), the
  * newest estate of each root.
  */
-export function currentCycle(entries: readonly EstateEntry[], startedAt: string | null): EstateEntry[] {
+export function currentCycle(entries: readonly EstateEntry[], startedAt: string | null, until: number | null = null): EstateEntry[] {
   const from = startedAt ? Date.parse(startedAt) : NaN;
-  if (!Number.isNaN(from)) return entries.filter((e) => e.at !== null && Date.parse(e.at) >= from);
+  if (!Number.isNaN(from)) return entries.filter((e) => e.at !== null && Date.parse(e.at) >= from && (until === null || Date.parse(e.at) <= until));
   const newest = new Map<string, EstateEntry>();
   for (const e of entries) {
     const k = e.root !== null ? `${e.project ?? ""}\u0000${e.root}` : `\u0001${e.estate}`;
@@ -546,15 +574,17 @@ export async function readCarve(source: TerragucciSource, opts: CarveReadOptions
   if (estatesDoc !== undefined && !isEstates) problems.push(`${ESTATES_KEY} is not a ${ESTATES_SCHEMA} document`);
   const all = isEstates ? estateEntries(estatesDoc) : [];
 
-  const demoAnswer = await readDemo(source, now);
-  const d = demoAnswer.demo;
+  const rec = opts.recorded ?? null;
+  const until = rec && rec.ended ? Date.parse(rec.ended) + RECORDED_SLACK_MS : null;
+  // A recorded cycle stands in for demo.json: its last step, with the cycle's own start.
+  const d: Demo | null = rec ? { ...rec.steps[rec.steps.length - 1]!, started_at: rec.started ?? rec.steps[0]!.started_at, next: null } : (await readDemo(source, now)).demo;
   const demo: CarveDemo | null = d
     ? { cycle: d.cycle, scenario: d.scenario, title: d.title, step: d.step, label: d.label, next: d.next ? d.next.action : null, beat: d.beat ?? null, started_at: d.started_at, tool: d.tool, repo: d.repo, pull: d.pull, next_from: d.next && d.next.from ? d.next.from : null }
     : null;
-  const named = demoMigration(demo?.next);
+  const named = rec ? null : demoMigration(demo?.next);
   const repo = d?.repo ?? null;
 
-  const wanted = new Set<string>(opts.remembered ?? []);
+  const wanted = new Set<string>(rec ? [] : (opts.remembered ?? []));
   if (named) {
     wanted.add(named);
     opts.remembered?.add(named);
@@ -611,11 +641,13 @@ export async function readCarve(source: TerragucciSource, opts: CarveReadOptions
         break;
       }
     }
-    const { lines, bad, counts: lineCounts } = text !== undefined ? readProgress(text, startedAt) : { lines: [], bad: 0, counts: null };
+    const { lines, bad, counts: lineCounts } = text !== undefined ? readProgress(text, startedAt, until) : { lines: [], bad: 0, counts: null };
     const status = isRecord(record) && str(record.status) ? record.status : null;
     const finished = isRecord(record) && str(record.finished) ? record.finished : null;
     // A listed migration is followed when it belongs to this cycle: a line, its finish or its record's write at or after started_at.
     if (f.listed && !inCycle(startedAt!, lines, finished, f.listed.modified)) continue;
+    // A recorded cycle's migration has its lines in the cycle: a record rewritten by a later cycle has none left.
+    if (rec && !lines.length) continue;
     if (home !== null && !f.listed) opts.places?.set(m.name, home);
     if (bad) problems.push(`${progress}: ${bad} line${bad === 1 ? " is" : "s are"} not a progress record`);
     const counts = recordCounts(record) ?? lineCounts ?? countLines(lines);
@@ -628,7 +660,7 @@ export async function readCarve(source: TerragucciSource, opts: CarveReadOptions
       const into = adoptedInto(record, lines);
       if (into) adoptions.push({ ...into, project: home, migration: m.name });
     }
-    const running = !done && (lines.length > 0 || named === m.name);
+    const running = !rec && !done && (lines.length > 0 || named === m.name);
     migrations.push({ name: m.name, progress, lines, counts, status, finished, running, change: isRecord(record) && str(record.change) ? record.change : null });
     if (home !== null) followed.push({ name: m.name, home, record, lines, running });
   }
@@ -637,7 +669,7 @@ export async function readCarve(source: TerragucciSource, opts: CarveReadOptions
   const carved = carvedEntries(all, { repo: ofRepo, homes: [...homes], targets });
   // And only this cycle's: an earlier cycle's estates stay in estates.json under their own prefix.
   // A stock root its adoption replaced is one box with the estate it became, not two.
-  const { entries, adopted } = replaceAdopted(currentCycle(carved.entries, d?.started_at ?? null), adoptions);
+  const { entries, adopted } = replaceAdopted(currentCycle(carved.entries, d?.started_at ?? null, until), adoptions);
   // With a repo named, the gate is that repo's carve: its projects hold choudoufu roots, or one of its migrations was found.
   // The served checkout is not the demo's repo, so it does not open the gate there.
   const choudoufu = ofRepo !== null ? homes.size > 0 || entries.some(choudoufuEntry) : opts.choudoufu();
@@ -679,16 +711,19 @@ export async function readCarve(source: TerragucciSource, opts: CarveReadOptions
       } catch {
         problems.push(`${RUNS_INDEX_KEY} is not JSON`);
       }
+      // A recorded cycle's waves are its own runs: the index's rows for them, else each run's copy.
+      if (rec) runsIndex = await recordedRuns(opts.tour.runs ?? source, rec, runsIndex, problems);
       const known = [...new Set([...entryProjects, ...(ofRepo ?? [])])];
       tour = await resolveTour(
         source,
         loaded,
         {
           demo: { cycle: d.cycle, beat: d.beat ?? null, step: d.step, started_at: d.started_at, repo: d.repo, pull: d.pull, next_from: d.next && d.next.from ? d.next.from : null },
-          entries: currentCycle(all, d.started_at).map((e) => ({ estate: e.estate, project: e.project, root: e.root })),
+          entries: currentCycle(all, d.started_at, until).map((e) => ({ estate: e.estate, project: e.project, root: e.root })),
           migrations: followed,
           known,
-          now,
+          now: rec && rec.ended ? new Date(rec.ended) : now,
+          ...(rec ? { beats: rec.steps.map((x) => ({ beat: x.beat ?? null, step: x.step, at: Date.parse(x.at) })), ...(until !== null ? { until } : {}) } : {}),
         },
         runsIndex,
       );
@@ -708,8 +743,40 @@ export async function readCarve(source: TerragucciSource, opts: CarveReadOptions
     demo,
     running: migrations.some((m) => m.running),
     ...(tour ? { tour } : {}),
+    ...(rec ? { recorded: recordedOf(rec) } : {}),
     problems,
   };
+}
+
+/** A recorded cycle as the answer carries it: its steps cut to what the page's clock and narration read. */
+export function recordedOf(c: Cycle): CarveRecorded {
+  return {
+    tool: c.tool,
+    cycle: c.cycle,
+    scenario: c.scenario,
+    repo: c.repo,
+    started: c.started,
+    ended: c.ended,
+    steps: c.steps.map((x) => ({ step: x.step, beat: x.beat ?? null, label: x.label, title: x.title, at: x.at, repo: x.repo, pull: x.pull, commit: x.commit })),
+    runs: [...c.runs],
+  };
+}
+
+/** The runs index a recorded cycle's tour reads: the cycle's runs, from the index where it still lists them, else each run's own copy. */
+async function recordedRuns(source: TerragucciSource, c: Cycle, index: unknown, problems: string[]): Promise<unknown> {
+  const listed = new Map<number, unknown>();
+  for (const r of isRecord(index) && Array.isArray(index.runs) ? index.runs.filter(isRecord) : []) if (typeof r.id === "number") listed.set(r.id, r);
+  const runs: unknown[] = [];
+  for (const id of c.runs.slice(0, 64)) {
+    const hit = listed.get(id);
+    if (hit) {
+      runs.push(hit);
+      continue;
+    }
+    const doc = parse(await readText(source, runKey(id), problems), runKey(id), problems);
+    if (isRecord(doc)) runs.push(doc);
+  }
+  return { runs };
 }
 
 /** `GET /api/terragucci/carve`: the live carve's one read, shared between pages. */
@@ -718,7 +785,35 @@ export function terragucciCarveRoute(app: Hono, source: TerragucciSource, opts: 
   const remembered = new Set<string>();
   const places = new Map<string, string | null>();
   let cycle: number | null = null;
+  // A recorded cycle's carve (`?cycle=<tool>`, and `&n=<cycle>` for one cycle): its records are written once, so each
+  // cycle's read is kept a while and shared, the newest few.
+  const recorded = new Map<string, { at: number; read: Promise<CarveAnswer | { error: string; code: string; absent?: boolean }> }>();
   app.get("/api/terragucci/carve", async (c) => {
+    const tool = c.req.query("cycle");
+    if (tool !== undefined) {
+      if (!isRecordedTool(tool)) return c.json({ error: `no tool "${tool.slice(0, 40)}" has recorded cycles`, code: "terragucci-carve" }, 404);
+      const raw = c.req.query("n");
+      const n = raw !== undefined && /^\d{1,9}$/.test(raw) ? Number(raw) : null;
+      const k = `${tool}|${n ?? "latest"}`;
+      const at = Date.now();
+      const hit = recorded.get(k);
+      const ttl = n === null ? CARVE_IDLE_TTL_MS : RECORDED_READ_TTL_MS;
+      const read =
+        hit && at - hit.at < ttl
+          ? hit.read
+          : (async () => {
+              const now = opts.now ? opts.now() : new Date();
+              const cy = await readCycle(source, tool, now, n);
+              if (!cy.cycle) return { error: "error" in cy ? cy.error : cy.absent, code: "terragucci-cycle", ...("absent" in cy ? { absent: true } : {}) };
+              return readCarve(source, { choudoufu: opts.choudoufu, ...(opts.tour ? { tour: opts.tour } : {}), now, recorded: cy.cycle });
+            })();
+      if (read !== hit?.read) {
+        recorded.set(k, { at, read });
+        while (recorded.size > 6) recorded.delete(recorded.keys().next().value as string);
+      }
+      const a = await read;
+      return c.json(a, "error" in a && !("live" in a) ? ("absent" in a && a.absent ? 404 : 502) : 200, { "cache-control": "no-store" });
+    }
     const at = Date.now();
     if (!cached || at - cached.at >= cached.ttl) {
       const read = readCarve(source, { choudoufu: opts.choudoufu, remembered, places, ...(opts.now ? { now: opts.now() } : {}), ...(opts.tour ? { tour: opts.tour } : {}) });

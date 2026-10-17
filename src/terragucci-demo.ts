@@ -308,7 +308,17 @@ export const VENDOR_NAMES: Record<VendorTool, string> = {
 
 export const isVendorTool = (v: string): v is VendorTool => (VENDOR_TOOLS as readonly string[]).includes(v);
 
-export const cycleKey = (tool: VendorTool): string => `cycles/${tool}/latest.json`;
+/**
+ * The tools whose cycles the loop driver records: each tool with a page, and
+ * the terralith's carve, which has no page of its own and is replayed in the
+ * kiosk (`/kiosk?replay=terralith`) on its condensed clock (web/cycle-replay.js).
+ */
+export const RECORDED_TOOLS = [...VENDOR_TOOLS, "terralith"] as const;
+export type RecordedTool = (typeof RECORDED_TOOLS)[number];
+export const isRecordedTool = (v: string): v is RecordedTool => (RECORDED_TOOLS as readonly string[]).includes(v);
+
+/** A tool's latest cycle, or with `n` its cycle n, as the driver stores them. */
+export const cycleKey = (tool: RecordedTool, n: number | null = null): string => `cycles/${tool}/${n === null ? "latest" : n}.json`;
 
 /** How long one read of a tool's latest cycle is shared. It changes once a cycle, at its reset. */
 export const CYCLE_READ_TTL_MS = 10_000;
@@ -355,9 +365,9 @@ export function cycleProblem(doc: unknown, tool: string): string | undefined {
 }
 
 /** One read of `cycles/<tool>/latest.json`. Never throws. */
-export async function readCycle(source: TerragucciSource, tool: VendorTool, now: Date = new Date()): Promise<CycleAnswer> {
+export async function readCycle(source: TerragucciSource, tool: RecordedTool, now: Date = new Date(), n: number | null = null): Promise<CycleAnswer> {
   const base = { source: source.location, read: now.toISOString() };
-  const key = cycleKey(tool);
+  const key = cycleKey(tool, n);
   let body: string | undefined;
   try {
     body = await source.read(key);
@@ -395,7 +405,7 @@ export function terragucciCyclesRoute(app: Hono, source: TerragucciSource, opts:
   const cache = new Map<string, { at: number; read: Promise<CycleAnswer> }>();
   app.get("/api/terragucci/cycles/:tool", async (c) => {
     const tool = c.req.param("tool");
-    if (!isVendorTool(tool)) return c.json({ error: `no tool "${tool.slice(0, 40)}" has a page; the tools are ${VENDOR_TOOLS.join(", ")}`, code: "terragucci-cycle" }, 404);
+    if (!isRecordedTool(tool)) return c.json({ error: `no tool "${tool.slice(0, 40)}" has recorded cycles; the tools are ${RECORDED_TOOLS.join(", ")}`, code: "terragucci-cycle" }, 404);
     const at = Date.now();
     const hit = cache.get(tool);
     const read = hit && at - hit.at < CYCLE_READ_TTL_MS ? hit.read : readCycle(source, tool, opts.now ? opts.now() : new Date());

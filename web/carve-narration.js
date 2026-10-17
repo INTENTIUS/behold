@@ -61,6 +61,8 @@ export function recordedWords(state) {
     const m = r.migration ? `; migration ${r.migration}` : "";
     return `live carve of ${state.src}${n}, drawn from the estate rosters and the migration's progress as terragucci writes them${r.from ? ` to ${r.from}` : ""}${m}`;
   }
+  // behold#571: a recorded demo cycle, replayed on its condensed clock: when and from what, as its timeline says.
+  if (r.kind === "cycle" && state.cycle) return `${state.cycle.label}; it plays condensed, and the timeline marks each stretch it skips`;
   const what = r.kind === "walkthrough" ? "recorded walkthrough" : "recorded carve";
   const n = r.resources ? `, ${fmt(r.resources)} resources` : "";
   const when = r.recordedAt ? `, recorded ${new Date(r.recordedAt).toISOString().slice(0, 10)}` : "";
@@ -243,10 +245,17 @@ export function createNarration({ bar, caption, tipsHost, modalHost, origin, qui
     caption.replaceChildren();
     caption.classList.add("cx-tour");
     const top = el("div", "cx-top cx-tour-top");
-    const badge = liveBadge({ ...state, recording: { ...(state.recording || {}), kind: "live" } }, pageStaleness());
+    // behold#571: a recorded cycle says so the whole time: the RECORDED badge, and when it was recorded and from what.
+    const cyc = state.cycle || null;
+    const badge = cyc ? { word: "recorded", cls: "cx-badge-recorded", lag: null } : liveBadge({ ...state, recording: { ...(state.recording || {}), kind: "live" } }, pageStaleness());
     const rec = el("span", `cx-rec ${badge.cls}`, badge.word);
     rec.title = badge.word === "stale" ? STALE_WORDS : recordedWords(state);
     top.appendChild(rec);
+    if (cyc) {
+      const when = el("span", "cx-recorded");
+      when.append(el("span", "cx-recorded-long", cyc.label), el("span", "cx-recorded-short", cyc.short || cyc.label));
+      top.appendChild(when);
+    }
     const lag = badge.lag;
     if (lag) top.appendChild(el("span", `cx-lag${lag === "waiting for the job" ? " cx-lag-wait" : ""}`, lag));
     const rail = el("ol", "cx-rail");

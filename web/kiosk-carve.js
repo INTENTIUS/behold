@@ -46,6 +46,10 @@ body.k-carving.k-watch #k-carve { display: grid; }
 #k-carve .cx-tone-ok { --bar: var(--bar-managed); }
 #k-carve .cx-tone-bad { --bar: var(--bar-degraded); }
 #k-carve .cx-tone-idle { --bar: var(--bar-neutral); }
+/* behold#571: a recorded cycle's reminder beside its badge: when it was recorded and from what, the whole time it plays. */
+#k-carve .cx-recorded { font: max(11.5px, 0.8rem) var(--font-mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+#k-carve .cx-recorded-short { display: none; }
+@media (max-width: 600px) { #k-carve .cx-recorded-long { display: none; } #k-carve .cx-recorded-short { display: inline; } }
 /* The live badge's lag: how long since the newest write (web/tour-player.js lagText). */
 #k-carve .cx-lag { font: 600 max(11.5px, 0.8rem) var(--font-mono); color: var(--muted); margin-right: 8px; vertical-align: 0.15em; white-space: nowrap; }
 #k-carve .cx-lag-wait { color: var(--bar-pending); }

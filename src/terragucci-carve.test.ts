@@ -412,3 +412,53 @@ describe("cycle 5's adoption: found by listing, and one box with its stock root"
     expect(a.migrations[0]!.running).toBe(true);
   });
 });
+
+describe("a recorded cycle's carve (behold#571)", () => {
+  const step = (o: Record<string, unknown>) => ({ cycle: 3, scenario: "terralith", tool: "terralith", title: "Carving", label: "", started_at: "2026-10-16T09:58:00Z", next: null, pull: null, commit: null, about: null, intro: null, name: null, scenarios: null, index: null, repo: "demo/terralith", delivery: null, beat: null, ...o });
+  const cycle = {
+    tool: "terralith",
+    repo: "demo/terralith",
+    scenario: "terralith",
+    cycle: 3,
+    started: "2026-10-16T09:58:00Z",
+    ended: "2026-10-16T10:01:00Z",
+    steps: [step({ step: "applying", beat: "split", at: "2026-10-16T09:58:00Z" }), step({ step: "reset", at: "2026-10-16T10:01:00Z" })],
+    runs: [],
+  };
+  const recorded = (): string => {
+    const dir = bucket();
+    // demo.json has moved on to another scenario: the recorded read never asks it.
+    put(dir, "demo.json", JSON.stringify({ cycle: 9, scenario: "s1", title: "Another", step: "planned", label: "", started_at: "2026-10-16T11:00:00Z", next: null, pull: null, commit: null }));
+    // A line a later cycle's run of the same migration appended, after this cycle ended.
+    const pk = `${PROJECT}/migrations/carve/progress.jsonl`;
+    put(dir, pk, readFileSync(join(dir, ...pk.split("/")), "utf8").replace(/\n[^\n]*$/, "") + "\n" + line({ at: "2026-10-16T10:40:00Z", address: "module.team_b.aws_iam_role.app", live_id: "role-b", estate_to: "team-b", outcome: "moved" }, { moved: 2, stamped: 0, refused: 0, skipped: 0, left: 0 }));
+    put(dir, "cycles/terralith/3.json", JSON.stringify({ schema: "demo.cycle/v1", ...cycle }));
+    return dir;
+  };
+
+  it("reads the cycle's own lines, none of a later run, and nothing is running", async () => {
+    const a = await readCarve(terragucciSource(recorded()), { choudoufu: () => false, recorded: cycle as never });
+    if (!a.live) throw new Error(`shut: ${a.reason}`);
+    expect(a.recorded?.cycle).toBe(3);
+    expect(a.recorded?.steps.map((x) => x.step)).toEqual(["applying", "reset"]);
+    expect(a.demo?.cycle).toBe(3);
+    const m = a.migrations.find((x) => x.name === "carve")!;
+    expect(m.lines.map((l) => l.at)).toEqual(["2026-10-16T10:00:00Z", "2026-10-16T10:00:02Z"]);
+    expect(m.running).toBe(false);
+    expect(a.running).toBe(false);
+  });
+
+  it("is served by cycle number, and a tool with no recorded cycles is refused", async () => {
+    const dir = join(tmp("behold-carve-cycle-"), "repo");
+    mkdirSync(join(dir, ".git"), { recursive: true });
+    const broadcaster = new Broadcaster();
+    const app = createApp({ projectDir: dir, projectDirs: [dir], port: 0, terragucci: { source: recorded() } }, broadcaster, new FrameBuffer(), new OpRunner({ projectDir: dir, broadcaster, onDone: () => {} }));
+    const res = await app.request("/api/terragucci/carve?cycle=terralith&n=3");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { live: boolean; recorded?: { cycle: number } };
+    expect(body.live).toBe(true);
+    expect(body.recorded?.cycle).toBe(3);
+    expect((await app.request("/api/terragucci/carve?cycle=terralith&n=4")).status).toBe(404);
+    expect((await app.request("/api/terragucci/carve?cycle=pulumi")).status).toBe(404);
+  });
+});

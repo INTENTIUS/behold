@@ -20,6 +20,7 @@ one it defines). behold ships `web/tours/terralith.json`.
 |---|---|
 | `match` | the demo cycles it narrates: demo.json's `tool` and/or `scenario` |
 | `steps` | demo.json's steps in the order a beat walks them, for how far a chapter has got |
+| `replay` | how a recorded cycle plays condensed, in ms: `maxGapMs` and `keepMs` (an idle stretch longer than the first plays as the second), `chapterMinMs`, `endHoldMs`, `flightMs` |
 | `runs` | named runs of the cycle: a report index row by repo (`{repo}` is demo.json's), stage, wave, no pull request, `after` another named run, first or last; or a migration's apply run, by its record's commit |
 | `facts` | named values: a run's `planned`, `changed`, `recreated`, `job` or an `output`'s planned value; a migration record's counts, `writes`, `version_id` or `approved_by`; a `sum` of facts; `approvals`; a `duration` from `started_at` to a run's finish |
 | `chapters` | each with a `trigger`, a `title`, up to two lines of `text` naming facts as `{name}`, an optional `focus` (`source`, `all`, or the box its lights are in) and `show`, its visuals |
@@ -43,9 +44,25 @@ every fact and visual, and the cycle's events (demo.json's beat and step,
 each migration's first and last line, each wave's job from `runs/index.json`).
 The page's player (`web/tour-player.js`) is pure: the tour and an event stream
 in, the chapter, its progress and its visuals out. The current chapter is the
-last one in the file whose trigger has fired. The live carve feeds it now
-(`/api/terragucci/carve`'s `tour`); a recorded cycle (`cycles/<tool>/<n>.json`)
-or a bundle can feed the same events later, with the replay's clock as `t`.
+last one in the file whose trigger has fired. The live carve feeds it
+(`/api/terragucci/carve`'s `tour`), and so does a recorded cycle.
+
+## A recorded cycle, condensed
+
+`/kiosk?replay=<tool>` plays the tool's latest recorded cycle
+(`cycles/<tool>/latest.json`) whether or not its scenario runs live; a tool's
+page replays its own the same way whenever its scenario is not live.
+`/api/terragucci/carve?cycle=<tool>&n=<cycle>` reads that cycle's carve: its
+rosters, every progress line between its start and its end, and its tour,
+with one beat event per step it wrote. `web/cycle-replay.js` builds the one
+clock everything runs on: recorded time one to one, an idle stretch longer
+than `maxGapMs` played as `keepMs` and drawn on the timeline as a break with
+its real gap, each write's flight and each chapter's first `chapterMinMs`
+never cut, a chapter still too short held at its start, and `endHoldMs` on
+the closing chapter before the loop starts again. The kiosk holds the
+playhead and tells the frame where it is; a seek, a pause or a speed in the
+frame's timeline moves the kiosk's. A newer latest cycle starts at the loop's
+end. The shipped tour's settings play a 425 s cycle of 31 steps in about 85 s.
 
 ## Where tour files live
 

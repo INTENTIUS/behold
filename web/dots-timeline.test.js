@@ -34,6 +34,16 @@ describe("the recorded clock", () => {
     expect(skippedWords(125_000)).toBe("+2 min 5 s skipped");
   });
 
+  it("holds at a time for the ms asked, and recorded time stands still there", () => {
+    const c = recordedClock([T + 1_000, T + 61_000], T, T + 62_000, { holds: [{ at: T + 1_000, ms: 5_000 }] });
+    expect(c.holds).toEqual([{ p: 1_000, real: T + 1_000, ms: 5_000 }]);
+    expect(c.toReal(1_000)).toBe(T + 1_000);
+    expect(c.toReal(4_000)).toBe(T + 1_000);
+    expect(c.toReal(6_500)).toBe(T + 1_500);
+    expect(c.toReplay(T + 1_000)).toBe(1_000);
+    expect(c.length).toBe(62_000 - c.breaks[0].skipped + 5_000);
+  });
+
   it("ticks at the recording's own wall-clock times, never 0:00", () => {
     // A write every 5 s for ten minutes: no stretch is idle, so none is skipped.
     const c = recordedClock(Array.from({ length: 120 }, (_, i) => T + i * 5_000), T, T + 10 * 60_000);

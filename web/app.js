@@ -3481,11 +3481,21 @@ let liveGateTimer = 0;
 const LIVE_GATE_MS = 30_000;
 // The gate is open but nothing is drawable yet (a cycle's start, before the stock roster lands): ask again soon (#711).
 const LIVE_GATE_OPEN_MS = 5_000;
+// A recorded cycle instead of the live carve (`?cycle=<tool>&cycleN=<n>`, the kiosk's frame while it replays one,
+// behold#571): the carve read of that cycle, drawn on its condensed clock (web/cycle-replay.js), never the live one.
+const recordedCycle = (() => {
+  const q = new URLSearchParams(location.search);
+  const tool = q.get("cycle");
+  if (!tool || !/^[a-z][a-z0-9-]{0,40}$/.test(tool)) return null;
+  const n = q.get("cycleN");
+  return { tool, n: n && /^\d{1,9}$/.test(n) ? n : null };
+})();
 async function liveCarveGate() {
   clearTimeout(liveGateTimer);
   let a = null;
   try {
-    a = await apiFetch("/api/terragucci/carve").then((r) => r.json());
+    const url = recordedCycle ? `/api/terragucci/carve?cycle=${encodeURIComponent(recordedCycle.tool)}${recordedCycle.n ? `&n=${recordedCycle.n}` : ""}` : "/api/terragucci/carve";
+    a = await apiFetch(url).then((r) => r.json());
   } catch {
     a = null;
   }
@@ -3512,6 +3522,7 @@ function mountLiveCarve(g, svgEl) {
       applyVB();
     },
     live: liveCarve,
+    cycle: !!(recordedCycle && liveCarve && liveCarve.recorded),
     kiosk: !!embedOpts.bare,
     // The kiosk's shot waits while the carve directs, and takes the camera back after.
     onCarving: (on) => {

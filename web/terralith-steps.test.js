@@ -33,7 +33,7 @@ describe("the walkthrough's phases", () => {
     );
     const split = PHASES.find((p) => p.id === "split");
     const boxes = [{ spawned: false }, { spawned: true }, { spawned: true }, { spawned: true }];
-    expect(split.facts(phase("split", boxes, { moved: 21 }))).toBe("21 resources moved into 3 new estates. The terralith keeps the network.");
+    expect(split.facts(phase("split", boxes, { moved: 21 }))).toBe("21 resources moved into 3 new estates. The shared root keeps the network.");
   });
 });
 

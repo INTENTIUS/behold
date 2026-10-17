@@ -80,6 +80,15 @@ export interface TourChapter {
   show?: TourShow[];
 }
 
+/** A recorded cycle's condensed clock: an idle stretch over `maxGapMs` plays as `keepMs`, each chapter stays up `chapterMinMs`, the last holds `endHoldMs`, a write's flight `flightMs` plays whole. */
+export interface TourReplay {
+  maxGapMs?: number;
+  keepMs?: number;
+  chapterMinMs?: number;
+  endHoldMs?: number;
+  flightMs?: number;
+}
+
 export interface TourFile {
   schema: typeof TOUR_SCHEMA_ID;
   name: string;
@@ -93,6 +102,8 @@ export interface TourFile {
    */
   home?: string;
   steps?: string[];
+  /** How a recorded cycle of this tour is condensed (web/cycle-replay.js): each in ms. */
+  replay?: TourReplay;
   runs?: Record<string, TourRun>;
   facts?: Record<string, TourFact>;
   chapters: TourChapter[];
@@ -228,6 +239,10 @@ export interface TourContext {
   /** This cycle's estates.json entries: which estate each root of each project is. */
   entries: { estate: string; project: string | null; root: string | null }[];
   migrations: TourMigration[];
+  /** A recorded cycle's beats, every step it wrote and when; without them, demo.json's beat now is the one beat event. */
+  beats?: { beat: string | null; step: string; at: number }[];
+  /** A recorded cycle's end: a migration still writing after it is not this cycle's. */
+  until?: number;
   /** The projects known (estates.json's, the reports index's), for a repo's project. */
   known: string[];
   now: Date;
@@ -365,6 +380,8 @@ export interface TourAnswer {
   steps: string[];
   step: string;
   beat: string | null;
+  /** The tour file's `replay`, for a recorded cycle's condensed clock; null when the file has none. */
+  replay: TourReplay | null;
   facts: Record<string, string | number>;
   chapters: (Omit<TourChapter, "show" | "trigger"> & { trigger: unknown; show: Record<string, unknown>[] })[];
   events: { kind: string; at: number; [k: string]: unknown }[];
@@ -405,7 +422,7 @@ export async function resolveTour(source: TerragucciSource, loaded: LoadedTour, 
     }
     const list = (isRecord(doc) && Array.isArray(doc.reports) ? doc.reports : [])
       .map(tourRow)
-      .filter((r): r is TourRow => !!r && (Number.isNaN(from) || Date.parse(r.finished) >= from))
+      .filter((r): r is TourRow => !!r && (Number.isNaN(from) || Date.parse(r.finished) >= from) && (ctx.until === undefined || Date.parse(r.finished) <= ctx.until))
       .sort((a, b) => Date.parse(a.finished) - Date.parse(b.finished));
     rows.set(project, list);
     return list;
@@ -633,8 +650,8 @@ export async function resolveTour(source: TerragucciSource, loaded: LoadedTour, 
 
   // Events: demo.json's beat and step now, each migration's first and last line, each wave's job starting and ending.
   const events: TourAnswer["events"] = [];
-  const beatAt = Date.parse(ctx.demo.next_from ?? "") || ctx.now.getTime();
-  events.push({ kind: "beat", beat: ctx.demo.beat, step: ctx.demo.step, at: beatAt });
+  if (ctx.beats) for (const b of ctx.beats) events.push({ kind: "beat", beat: b.beat, step: b.step, at: b.at });
+  else events.push({ kind: "beat", beat: ctx.demo.beat, step: ctx.demo.step, at: Date.parse(ctx.demo.next_from ?? "") || ctx.now.getTime() });
   for (const m of ctx.migrations) {
     const ats = m.lines.map((l) => Date.parse(l.at)).filter((x) => !Number.isNaN(x));
     if (!ats.length) continue;
@@ -686,6 +703,7 @@ export async function resolveTour(source: TerragucciSource, loaded: LoadedTour, 
     steps: t.steps ?? [],
     step: ctx.demo.step,
     beat: ctx.demo.beat,
+    replay: t.replay ?? null,
     facts,
     chapters,
     events,

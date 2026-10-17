@@ -13,7 +13,7 @@ export const PHASES = [
     id: "stock",
     n: 1,
     label: "Stock",
-    title: "A stock terralith",
+    title: "One shared root holds everything",
     lead: "One Terraform root holds a network and the IAM and logging of three teams. All 23 resources sit in one state file on S3, which is where each one's identity lives.",
     facts: (p) => `${p.counts.cards} resources, ready to adopt.`,
   },
@@ -35,7 +35,7 @@ export const PHASES = [
     lead: "This is terragucci's moves migration. Three team roots appear, and in each one choudoufu live-mv rewrites the tags on that team's resources so they belong to the team's estate. Each resource takes one tag write. Inline policies and attachments follow their role with no write of their own, and split.json holds the record.",
     facts: (p) => {
       const fresh = p.boxes.filter((b) => b.spawned).length;
-      return `${p.counts.moved} resources moved into ${fresh} new estate${fresh === 1 ? "" : "s"}. The terralith keeps the network.`;
+      return `${p.counts.moved} resources moved into ${fresh} new estate${fresh === 1 ? "" : "s"}. The shared root keeps the network.`;
     },
   },
   {
@@ -43,7 +43,7 @@ export const PHASES = [
     n: 4,
     label: "Plan",
     title: "Plan across the estates",
-    lead: "One pull request touches all four estates. The terralith publishes a shared setting as an output, and each team's first log group reads it through terraform_estate_outputs. It plans first. With -estate-outputs-from, each team root then plans against that planned value, so nothing waits for an apply. Last, live-summary folds the identical team changes into one group.",
+    lead: "One pull request touches all four estates. The shared root publishes a common setting as an output, and each team's first log group reads it through terraform_estate_outputs. It plans first. With -estate-outputs-from, each team root then plans against that planned value, so nothing waits for an apply. Last, live-summary folds the identical team changes into one group.",
     facts: (p) => {
       const groups = (p.plan && p.plan.groups) || [];
       const folded = groups.reduce((n, g) => n + g.members.length, 0);

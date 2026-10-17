@@ -13,12 +13,16 @@ import { chapterAt, shownAt, railOf, chapterLines, cardRows, firedBy } from "./t
 
 const fmt = (n) => Number(n).toLocaleString("en-US");
 
-/** The tour's chapter and its visuals now, from the answer's events; null with no tour. */
-export function tourNow(answer) {
+/**
+ * The tour's chapter and its visuals at recorded time `t`, from the answer's
+ * events; null with no tour. Live, `t` is now (every event so far); a recorded
+ * cycle's replay hands its clock's time and the step it was at then.
+ */
+export function tourNow(answer, t = Infinity, step = null) {
   const tour = answer && answer.tour;
   if (!tour) return null;
-  const at = chapterAt(tour, tour.events, Infinity, tour.step);
-  return { tour, at, shown: at ? shownAt(at.chapter, tour.events) : [] };
+  const at = chapterAt(tour, tour.events, t, step ?? tour.step);
+  return { tour, at, t, shown: at ? shownAt(at.chapter, tour.events, t) : [] };
 }
 
 /** The box an estate is drawn in: an adopted estate is drawn in its stock root's box (the answer's `adopted`). */
@@ -84,7 +88,7 @@ export function tourFx(tn, { ids, owners, names, adopted, source }) {
       }
       if (threads.length) fx.travel = { threads, value: s.value ?? null, output: s.output, at: s.at };
     } else if (s.kind === "state") {
-      const last = firedBy({ migration: s.migration, line: "last" }, tn.tour.events);
+      const last = firedBy({ migration: s.migration, line: "last" }, tn.tour.events, tn.t ?? Infinity);
       fx.state = { box: box(s.estates) ?? source, version: s.version_id, unchanged: !!(last && s.finished) };
     } else if (s.kind === "checks") {
       for (const c of s.checks) {
@@ -120,7 +124,7 @@ export function tourMessage(tn, { counts, names, adopted, source, short = (e) =>
       const what = s.stage === "tf-plan" ? (s.pull ? `pull request ${s.pull}'s plan` : "the plan") : s.wave ? `wave ${s.wave}'s plan` : "the plan";
       notes.push(`lit: the ${fmt(s.lit.length)} resources in ${what}${s.changed && s.changed < s.lit.length ? `, ${fmt(s.changed)} of them changed` : ""}${job ? ` · ${job}` : ""}`);
     } else if (s.kind === "state") {
-      const last = firedBy({ migration: s.migration, line: "last" }, tour.events);
+      const last = firedBy({ migration: s.migration, line: "last" }, tour.events, tn.t ?? Infinity);
       notes.push(`state file version ${String(s.version_id).slice(0, 8)}${last && s.finished ? ", unchanged" : ""}`);
     } else if (s.kind === "counts") {
       const parts = [...counts].filter(([e, n]) => e !== source && n > 0).sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([e, n]) => `${short(e)} ${fmt(n)}`);

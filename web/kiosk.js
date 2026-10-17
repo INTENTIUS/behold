@@ -24,7 +24,8 @@ import { miniWaterfall, phaseWords, waveTraces } from "./kiosk-wave-traces.js";
 import { PANEL_STEPS, PANEL_TITLE, approvalModel, cycleRuns, digestHex, rowFacts } from "./kiosk-approval.js";
 import { getThemeName, mountThemePicker, onThemeChange } from "./theme.js";
 import { cssString, hoverCss, hoverFromMessage, hoverLinks, hoverMessage, isLightBg, rootSegments, rootText } from "./kiosk-roots.js";
-import { creditLines, filterIndex, keepRun, liveEstimate, liveFor, namesOther, notRunRepo, notRunWords, replayAt, replayBanner, replayIndex, rootNoun, rootWord, runAsOf, scrubDemo, servesRepo, vendorOf } from "./kiosk-vendor.js";
+import { creditLines, filterIndex, keepRun, liveEstimate, liveFor, namesOther, notRunRepo, notRunWords, replayBanner, replayIndex, rootNoun, rootWord, runAsOf, scrubDemo, servesRepo, vendorOf } from "./kiosk-vendor.js";
+import { createPlayhead, cycleClock, replayFrame } from "./cycle-replay.js";
 import { repoParam, repoUrl, stepCheckout } from "./kiosk-repo.js";
 import { startKioskCarve } from "./kiosk-carve.js";
 import { STATE_WORDS, changingRoots, costLine, pinsCommit, planFitsPin, pullPin, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
@@ -442,11 +443,28 @@ export function runPin(demo) {
 }
 
 /** The framed view's address: behold's own page, bare, at a zoom (the resources zoom unless told), told who its host is. */
-export function frameSrc(origin, zoom = "resources", repo = null, theme = null) {
+export function frameSrc(origin, zoom = "resources", repo = null, theme = null, cycle = null) {
   const q = new URLSearchParams({ embed: "1", bare: "1", zoom, host: origin });
   if (repo) q.set("repo", repo); // behold#571: the checkout the frame draws, on a behold that serves several
   if (theme) q.set("theme", theme); // behold#571: the kiosk's theme, which the frame follows
+  // behold#571: while the kiosk replays a recorded cycle with a carve, the frame draws that cycle's carve, not the live one.
+  if (cycle && cycle.tool && Number.isInteger(cycle.n)) {
+    q.set("cycle", cycle.tool);
+    q.set("cycleN", String(cycle.n));
+  }
   return `/?${q.toString()}`;
+}
+
+/**
+ * behold#571: `?replay=<tool>` on the kiosk: play that tool's latest recorded
+ * cycle, condensed, whether or not its scenario runs live now. The demo host
+ * shows the terralith's this way (`/kiosk?replay=terralith`); a tool's page
+ * (`/<tool>?replay=<tool>`) is forced to its replay the same way. Null for
+ * anything that is no tool's name.
+ */
+export function replayParam(search) {
+  const v = new URLSearchParams(search || "").get("replay");
+  return v && /^[a-z][a-z0-9-]{0,40}$/.test(v) ? v : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1215,7 +1233,7 @@ export const DEMO_POLL_MS = 3_000;
  * countdown. When the roots the step is about change, move the framed view
  * with a `behold:view` message; the frame takes them only from this origin.
  */
-export function startKiosk({ bar, frame, side, main, views, read = null, tools = null, watch = null, eh = null }, { fetchJson = defaultFetch, now = () => new Date(), origin = location.origin, tool = null } = {}) {
+export function startKiosk({ bar, frame, side, main, views, read = null, tools = null, watch = null, eh = null }, { fetchJson = defaultFetch, now = () => new Date(), origin = location.origin, tool = null, replay = null } = {}) {
   const s = { demo: null, answer: null, progress: null, components: false, pick: null, view: "resources", roots: [], waves: [], light: false, hover: null, frameHover: null, held: null };
   // behold#571: Watch or Inspect, the viewer's pick kept in their browser; Watch until they pick Inspect.
   const shelf = typeof localStorage !== "undefined" ? (() => { try { return localStorage; } catch { return null; } })() : null;
@@ -1248,8 +1266,15 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   // behold#571: on a tool's page, `live` while its scenario runs, `replay` of its latest cycle otherwise, `none` before it has one.
   const vendor = vendorOf(tool);
   s.vendor = vendor ? tool : null;
-  s.mode = vendor ? "loading" : "live";
+  // behold#571: `?replay=<tool>` plays that tool's latest recorded cycle even while its scenario is live; a tool's page
+  // replays its own tool's whenever its scenario is not live. Either way the replay runs on the condensed clock.
+  const forced = replay && (!vendor || replay === tool) ? replay : null;
+  const replayTool = forced || (vendor ? tool : null);
+  s.forced = !!forced;
+  s.mode = replayTool ? "loading" : "live";
   s.replay = null;
+  // A newer latest cycle, read while one plays: it starts at the loop's end, never in the middle.
+  s.replayNext = null;
   s.repo = null;
   s.live = null;
   if (vendor && typeof document !== "undefined") document.title = `behold · ${vendor.name}`;
@@ -1415,15 +1440,54 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       if (d && d.commit && s.viewRepos && !Object.values(s.viewCommits || {}).some((c) => c.startsWith(d.commit) || d.commit.startsWith(c))) void readCommits();
     }
   };
-  // behold#571: the replay's clock, read on every draw.
+  // behold#571: the replay's clock, read on every draw. The playhead moves with the page's time on the cycle's
+  // condensed clock (web/cycle-replay.js); everything the page shows reads the recorded time it stands for, and the
+  // frame's dots layer is told where it is. At the loop's end a newer latest cycle, if one was read, takes over.
   const replayTick = () => {
     if (s.mode !== "replay" || !s.replay) return;
-    const steps = s.replay.cycle.steps;
-    const r = replayAt(steps, now().getTime() - s.replay.start);
-    s.replay.at = r.at;
-    s.replay.banner = replayBanner(s.replay.cycle, liveEstimate(s.live && s.live.demo, s.replay.cycle, now()));
-    setDemo({ source: "replay", read: steps[r.index].at, demo: scrubDemo(steps[r.index], tool) });
+    const f = replayFrame(s.replay, s.replayNext, now().getTime());
+    s.replay = f.replay;
+    s.replayNext = f.next;
+    if (f.swapped) {
+      s.repo = s.replay.cycle.repo;
+      openFrame();
+    }
+    const r = s.replay;
+    const i = f.index;
+    r.p = f.p;
+    r.at = new Date(f.real);
+    r.banner = replayWords(r, s.forced ? null : liveEstimate(s.live && s.live.demo, r.cycle, now()));
+    setDemo({ source: "replay", read: r.cycle.steps[i].at, demo: scrubDemo(r.cycle.steps[i], replayTool) });
+    tellCycle();
   };
+  /** The replay's banner: when it was recorded, and that it plays condensed with each cut marked. */
+  const replayWords = (r, minutes) => {
+    const real = Math.round((r.cc.t1 - r.cc.t0) / 1000);
+    const played = Math.round(r.cc.condensed / 1000);
+    return `${replayBanner(r.cycle, minutes)} · ${real} s of it play in ${played} s, and the timeline marks each cut`;
+  };
+  /** Tell the frame where the replay's playhead is, so the dots layer draws the same moment. */
+  const tellCycle = () => {
+    const r = s.mode === "replay" ? s.replay : null;
+    if (!r || !r.carve) return;
+    post({ type: "behold:dots-cycle", cycle: r.cycle.cycle, p: r.p ?? 0, speed: r.player.speed, playing: r.player.playing });
+  };
+  /** The cycle the frame draws: the replay's, when its carve was read. */
+  const frameCycle = () => (s.mode === "replay" && s.replay && s.replay.carve ? { tool: replayTool, n: s.replay.cycle.cycle } : null);
+  if (typeof window !== "undefined" && window.addEventListener) {
+    window.addEventListener("message", (e) => {
+      if (e.origin !== origin || !e.data || !s.replay || s.mode !== "replay") return;
+      // A frame that has just drawn the cycle asks where the playhead is; a seek, a pause or a speed there moves it here.
+      if (e.data.type === "behold:dots-ready" && e.data.cycle === s.replay.cycle.cycle) return void tellCycle();
+      if (e.data.type !== "behold:dots-cycle-set" || (frame && e.source !== frame.contentWindow)) return;
+      const w = now().getTime();
+      const pl = s.replay.player;
+      if (Number.isFinite(e.data.speed) && e.data.speed > 0 && e.data.speed !== pl.speed) pl.setSpeed(e.data.speed, w);
+      if (typeof e.data.playing === "boolean" && e.data.playing !== pl.playing) pl.play(e.data.playing, w);
+      if (Number.isFinite(e.data.p)) pl.seek(e.data.p, w);
+      draw();
+    });
+  }
 
   const draw = () => {
     followRepo();
@@ -1942,11 +2006,13 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       const e = listed.get(id) || (await runDoc(id));
       if (e) runs.push(e);
     }
-    r.runs = runs.filter((x) => keepRun(x, { tool, repo: r.cycle.repo }));
+    // A tool's page keeps its own repo's runs; a forced replay on /kiosk shows every run the cycle started (the
+    // terralith's run on its team repos too).
+    r.runs = vendor ? runs.filter((x) => keepRun(x, { tool, repo: r.cycle.repo })) : runs;
     return r.runs;
   };
   const runsSource = () => {
-    if (!vendor || s.mode === "live") return null;
+    if (!replayTool || s.mode === "live") return null;
     if (s.mode !== "replay" || !s.replay) return { index: async () => ({ doc: { schema: "demo.runs/v1", runs: [] } }), run: async () => ({ doc: null, absent: "No run to show yet." }) };
     return {
       index: async () => replayIndex(await replayRuns(), shownNow().getTime()),
@@ -2120,7 +2186,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       if (!bootRetry) bootRetry = setTimeout(() => ((bootRetry = null), openFrame()), 400);
       return;
     }
-    const src = frameSrc(origin, viewZoom(shownView().view), wantRepo(), getThemeName());
+    const src = frameSrc(origin, viewZoom(shownView().view), wantRepo(), getThemeName(), frameCycle());
     if (src === frameSrcNow) return;
     const first = frameSrcNow === null;
     frameSrcNow = src;
@@ -2150,7 +2216,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   };
   // #715: a frame drawing a live carve tells the kiosk what to say; one that does not says nothing, and nothing here changes.
   if (typeof window !== "undefined" && window.addEventListener && watch) carveCtl = startKioskCarve({ frame: () => frame, watch, eh, origin, isWatch: () => s.watchMode });
-  s.slowedControl = () => (carveCtl ? carveCtl.slowedControl() : null);
+  // The live carve's slowed control; a recorded cycle's speed is its timeline's own, in the frame.
+  s.slowedControl = () => (carveCtl && s.mode !== "replay" ? carveCtl.slowedControl() : null);
   if (typeof window !== "undefined" && window.addEventListener) {
     window.addEventListener("message", (e) => {
       if (e.origin !== origin || !e.data || e.data.type !== "behold:drawn") return;
@@ -2216,14 +2283,31 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
 
   // behold#571: a tool's latest cycle, read when its scenario stops being live, and while it has none yet.
   let cycleRead = 0;
+  /** A recorded cycle, ready to play: its carve when it has one (a tour's cycle), and its condensed clock. */
+  const replayOf = async (cycle) => {
+    const c = await fetchJson(`/api/terragucci/carve?cycle=${encodeURIComponent(replayTool)}&n=${cycle.cycle}`);
+    const carve = c && c.live === true && c.recorded && c.recorded.cycle === cycle.cycle ? c : null;
+    const cc = cycleClock(cycle, carve);
+    return { cycle, carve, cc, player: createPlayhead(cc.length, { at: now().getTime() }), p: 0, at: null, banner: null, runs: null };
+  };
   const readCycle = async () => {
     cycleRead = now().getTime();
-    const a = await fetchJson(`/api/terragucci/cycles/${tool}`);
+    const a = await fetchJson(`/api/terragucci/cycles/${replayTool}`);
     if (s.mode === "live") return; // its scenario started while the read was out
     if (a && a.cycle) {
-      if (!s.replay || s.replay.cycle.cycle !== a.cycle.cycle) s.replay = { cycle: a.cycle, start: now().getTime(), at: null, banner: null, runs: null };
+      if (!s.replay) {
+        s.replay = await replayOf(a.cycle);
+        if (s.mode === "live") return void (s.replay = null);
+        s.mode = "replay";
+        s.repo = s.replay.cycle.repo;
+        openFrame();
+      } else if (s.replay.cycle.cycle !== a.cycle.cycle && (!s.replayNext || s.replayNext.cycle.cycle !== a.cycle.cycle)) {
+        // A newer latest cycle: it plays from the next loop on (replayTick), never from the middle of this one.
+        s.replayNext = await replayOf(a.cycle);
+      }
       s.mode = "replay";
-      s.repo = a.cycle.repo;
+    } else if (s.replay && s.mode === "replay") {
+      // A read that failed while a cycle plays: the cycle plays on, and the next read asks again.
     } else if (a && a.absent) {
       s.mode = "none";
       s.replay = null;
@@ -2298,17 +2382,21 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     noteRead(link, "poll", !readFailed(live), now());
     paintLink();
     s.live = live;
-    if (!vendor) {
+    if (!replayTool) {
       s.repo = live && live.demo ? live.demo.repo : null;
       setDemo(live);
       return draw();
     }
     const d = live && live.demo;
-    if (liveFor(d, tool, SCENARIOS)) {
+    if (!forced && liveFor(d, tool, SCENARIOS)) {
+      const was = s.mode;
       s.mode = "live";
       s.replay = null;
+      s.replayNext = null;
       s.repo = d.repo || s.repo;
       setDemo({ ...live, demo: scrubDemo(d, tool) });
+      // The frame drew the replayed cycle's carve: it goes back to the live one.
+      if (was === "replay") openFrame();
       return draw();
     }
     // Not this tool's scenario: replay its latest cycle, read again when it went live and ended, or now and then.

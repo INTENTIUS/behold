@@ -117,7 +117,7 @@ configuration names it. choudoufu binds a named resource, such as an IAM role or
 log group, by its name whether or not a marker is on it, so a stamped log
 group reads `derived` with a filled tag.
 
-## The terralith walkthrough
+## The shared-root walkthrough
 
 `npx behold demo terralith` takes one stock Terraform root to four estates on a
 scratch floci. It starts with 23 resources in one state file on S3. The adopt
@@ -127,7 +127,7 @@ was. Split runs the `moves` migration, which adds three team roots while
 `choudoufu live-mv` moves each team's resources into the team's estate.
 `split.json` keeps the record, and the team boxes appear as the cards glide
 into them. The plan phase changes all four estates in one step and plans it
-without applying anything. The terralith outputs a shared setting, and each
+without applying anything. The shared root outputs a common setting, and each
 team root plans against that planned value with `-estate-outputs-from`. The
 page outlines each team's cone, badges a root that planned in full with
 choudoufu's reason, draws an edge for the planned output to each root that

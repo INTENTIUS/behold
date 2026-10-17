@@ -31,6 +31,7 @@ import { liveShow, stampArrivals, showKey, currentMigration, boxName, playedCoun
 import { provenanceText, migrationTool, stepMsFor } from "./tour-player.js";
 import { tourNow, tourFocus, tourFx, fxKey, tourMessage } from "./dots-tour.js";
 import { wallTicks, recordedLabel, recordedMarks, speedWords, skippedWords, clockWords, RECORDED_SPEEDS } from "./dots-timeline.js";
+import { cycleClock, cycleMarks, cycleSource, stepIndexAt, cycleSteps } from "./cycle-replay.js";
 import { GRID, cardLabel, cardShape, cardText, cardTextAlpha, pickMark, cardsMark, cardsFrame, cardsEstate, middleCard, gridScale, gridSlots, cardSize, cardNeed, rosterLod, unitKeyOf, minViewWidth, tipSpot, CARD_TEXT } from "./dots-cards.js";
 
 /** #715: how often the live layer asks for the carve. The route shares one read for 1.5 s while a migration runs. */
@@ -162,6 +163,9 @@ function addStyle() {
   .dots-kiosk .dots-caption { display: none; }
   /* #715: a live carve has no playback head: it plays as it is written. */
   .dots-live .dots-bar { display: none; }
+  /* behold#571: a recorded cycle has one: its timeline says it is a recording, on its condensed clock, the whole time. */
+  .dots-live.dots-cycle .dots-bar { display: flex; background: var(--panel); }
+  .dots-tl-cut { font-weight: 400; color: var(--muted); }
   .dots-live.dots-carving .dots-caption { display: none; }
   /* The kiosk's replay runs and loops by itself, like a live scenario: no playback head. */
   .dots-kiosk:not(.dots-keep-bar) .dots-bar { display: none; }
@@ -281,14 +285,24 @@ function rgba(hex, a) {
  * host: #graph; svg: the card SVG on the page; meta: /api/graph's meta;
  * getVB / setVB: the app's viewBox camera.
  */
-export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source = null, auto = null, live = null, kiosk = false, onCarving = null }) {
+export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source = null, auto = null, live = null, cycle = false, kiosk = false, onCarving = null }) {
   const name = live ? "live" : meta.dots.source;
   let show = S && S.name === name && !live ? S.show : null;
   const keep = S && S.name === name && !live ? { t: S.t, playing: S.playing, speed: S.speed } : null;
+  const keptCycle = S && S.cyc ? { n: S.cyc.cycle.cycle, sync: S.cyc.sync } : null;
   unmountDots();
   // A remount (the graph re-rendered) starts from the newest read, not the one the page was given.
-  if (live && liveMemo && liveMemo.answer) live = liveMemo.answer;
-  if (live) {
+  if (live && !cycle && liveMemo && liveMemo.answer) live = liveMemo.answer;
+  // behold#571: a recorded cycle's carve, played on its condensed clock (web/cycle-replay.js): each line at its own time.
+  let cyc = null;
+  if (live && cycle && live.recorded) {
+    const cc = cycleClock(live.recorded, live);
+    const seen = stampArrivals(live, new Map(), cc.t0, { first: true });
+    show = liveShow(live, seen, cc.t1, { t0: cc.t0 });
+    // A remount (the graph re-rendered) keeps the playhead where it was.
+    const kept = keptCycle && keptCycle.n === live.recorded.cycle ? keptCycle.sync : null;
+    cyc = { cc, seen, cycle: live.recorded, marks: cycleMarks(cc, live.recorded, live), sync: kept || { p: 0, wall: performance.now(), speed: 1, playing: true }, ended: new Set(), lastT: -Infinity };
+  } else if (live) {
     // Arrivals keep the times they were first seen across a remount; the first read's lines are the past.
     const now = Date.now();
     const seen = stampArrivals(live, liveMemo ? liveMemo.seen : new Map(), now, { first: !liveMemo, stepMs: stepMsFor(liveSlowed) });
@@ -391,6 +405,7 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source 
     origin,
     mbox,
     live: !!live,
+    cyc,
     answer: live,
     onCarving,
     carving: false,
@@ -522,7 +537,13 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source 
     const dt = S.lastWall ? Math.min(100, wall - S.lastWall) : 16;
     S.lastWall = wall;
     if (S.fly) stepFly(wall);
-    if (S.live) {
+    if (S.cyc) {
+      // A recorded cycle: the condensed clock's time, from the kiosk's playhead (or this layer's own, alone).
+      const t = cycleT();
+      if (t !== S.t) S.dirty = true;
+      S.t = t;
+      liveTick(wall, dt);
+    } else if (S.live) {
       // The live clock is the wall's: a line flies from when it was seen.
       S.t = Date.now() - S.show.t0;
       S.clock.length = Math.max(S.clock.length, S.t);
@@ -550,8 +571,40 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source 
 
 // --- playback --------------------------------------------------------------
 
+/**
+ * behold#571: a recorded cycle's playhead, in replay ms on its condensed clock. In the kiosk's frame the kiosk
+ * holds the playhead and says where it is (`behold:dots-cycle`); between its words this one moves on at its speed,
+ * up to the end, where the kiosk starts the loop again. Alone (the app's `?cycle=`), it loops by itself.
+ */
+function cycleP() {
+  const c = S.cyc;
+  const w = performance.now();
+  const p = c.sync.p + (c.sync.playing ? (w - c.sync.wall) * c.sync.speed : 0);
+  if (p < c.cc.length) return Math.max(0, p);
+  if (S.kioskLive) return c.cc.length;
+  c.sync = { ...c.sync, p: 0, wall: w };
+  return 0;
+}
+/** The show time (ms after the show's t0) the cycle's playhead stands for. */
+function cycleT() {
+  return S.cyc.cc.real(cycleP()) - S.show.t0;
+}
+/** Move a recorded cycle's playhead, and tell the kiosk, which holds it. */
+function cycleSync(change) {
+  const c = S.cyc;
+  const w = performance.now();
+  c.sync = { ...c.sync, p: cycleP(), wall: w, ...change };
+  S.t = cycleT();
+  S.tipFrom = S.t;
+  S.snap = true;
+  S.dirty = true;
+  toParent({ type: "behold:dots-cycle-set", p: c.sync.p, speed: c.sync.speed, playing: c.sync.playing });
+  syncUi();
+}
+
 function seek(t) {
   if (!S) return;
+  if (S.cyc) return cycleSync({ p: Math.max(0, Math.min(S.cyc.cc.length, t)) });
   // In the kiosk a seek keeps the loop playing.
   if (S.kiosk && t < S.clock.length) {
     S.holdUntil = null;
@@ -566,6 +619,7 @@ function seek(t) {
 }
 function play(on) {
   if (!S) return;
+  if (S.cyc) return cycleSync({ playing: !!on, ...(on && cycleP() >= S.cyc.cc.length ? { p: 0 } : {}) });
   if (on && S.t >= S.clock.length) seek(0);
   S.playing = !!on;
   S.dirty = true;
@@ -574,6 +628,7 @@ function play(on) {
 function setSpeed(v) {
   if (!S) return;
   S.speed = v;
+  if (S.cyc) return cycleSync({ speed: v > 0 ? v : 1 });
   syncUi();
 }
 
@@ -772,44 +827,58 @@ function buildUi() {
   S.range = el("input");
   S.range.type = "range";
   S.range.min = "0";
-  S.range.max = String(Math.round(S.clock.length));
+  S.range.max = String(Math.round(S.cyc ? S.cyc.cc.length : S.clock.length));
   S.range.step = "10";
   S.range.setAttribute("aria-label", "Replay position");
   S.range.addEventListener("input", () => seek(Number(S.range.value)));
   S.timeEl = el("span", "dots-time");
-  if (S.clock.recorded) {
+  if (S.clock.recorded || S.cyc) {
     // A recording of a real event stream: the timeline says so, on itself, with the recording's wall-clock times,
     // its marks (each a line of the recording), its breaks (each idle stretch it compresses, with the real gap), and the
-    // speed beside the playhead, always in words.
+    // speed beside the playhead, always in words. A recorded cycle (behold#571) the same, on its condensed clock.
     bar.classList.add("dots-bar-rec");
     const rec = S.show.records || {};
+    const tl = S.cyc ? S.cyc.cc.clock : S.show.timeline;
     const lab = el("div", "dots-tl-label");
-    const facts = { t0: S.show.timeline.t0, t1: S.show.timeline.t1, source: rec.header ? rec.header.source : null, plan: rec.header ? rec.header.plan : null };
+    const facts = S.cyc ? { t0: S.cyc.cc.t0, t1: S.cyc.cc.t1, source: cycleSource(S.cyc.cycle) } : { t0: tl.t0, t1: tl.t1, source: rec.header ? rec.header.source : null, plan: rec.header ? rec.header.plan : null };
     lab.append(el("span", "dots-tl-long", recordedLabel(facts)), el("span", "dots-tl-short", recordedLabel(facts, { short: true })));
     const track = el("div", "dots-tl-track");
-    const L = S.clock.length;
+    const L = S.cyc ? S.cyc.cc.length : S.clock.length;
     const at = (p) => `${((p / L) * 100).toFixed(3)}%`;
     const narrow = typeof innerWidth === "number" && innerWidth < 640;
     // The track's width on screen, near enough to keep labels apart: the bar less the play and speed buttons.
     const trackW = Math.max(160, Math.min(860, (typeof innerWidth === "number" ? innerWidth : 1200) - 48) - (narrow ? 24 : 230));
     const px = (p) => (p / L) * trackW;
-    const breaks = S.show.timeline.breaks;
+    const breaks = tl.breaks;
     // A tick label that would sit under a break's hatch or label is left out; its time is still on the track.
-    for (const tk of wallTicks(S.show.timeline, narrow ? 3 : 7)) {
+    for (const tk of wallTicks(tl, narrow ? 3 : 7)) {
       if (breaks.some((b) => Math.abs(px(tk.p) - px(b.p)) < 26)) continue;
       const t = el("span", "dots-tl-tick", tk.label);
       t.style.left = at(tk.p);
       track.appendChild(t);
     }
+    // Every break is drawn and says its real gap; where breaks crowd (a condensed cycle cuts dozens), only one label
+    // in each 44 px is written on the track, and each hatch keeps its words as its tooltip and its name.
+    let labelled = -Infinity;
     for (const b of breaks) {
       const k = el("span", `dots-tl-break${b.p / L > 0.9 ? " dots-tl-break-end" : ""}`);
       k.style.left = at(b.p);
-      k.title = `${skippedWords(b.skipped)}: from ${clockWords(b.real0, true)} to ${clockWords(b.real1, true)} UTC nothing was written, and the replay skips it`;
-      k.appendChild(el("small", "", skippedWords(b.skipped).replace(/ skipped$/, "")));
+      k.title = `${skippedWords(b.skipped)}: from ${clockWords(b.real0, true)} to ${clockWords(b.real1, true)} UTC ${S.cyc ? "nothing new was recorded" : "nothing was written"}, and the replay skips it`;
+      k.setAttribute("role", "img");
+      k.setAttribute("aria-label", skippedWords(b.skipped));
+      if (px(b.p) - labelled >= 44) {
+        k.appendChild(el("small", "", skippedWords(b.skipped).replace(/ skipped$/, "")));
+        labelled = px(b.p);
+      }
       track.appendChild(k);
     }
+    if (S.cyc && breaks.length) {
+      // The label says how much the cuts add up to, so the timeline never reads as the cycle's real length.
+      const cut = breaks.reduce((n, b) => n + b.skipped, 0);
+      lab.appendChild(el("span", "dots-tl-cut", ` · ${breaks.length} cut${breaks.length === 1 ? "" : "s"}, ${skippedWords(cut).replace(/^\+/, "")} in all`));
+    }
     const file = S.name ? `${String(S.name).replace(/^carve:/, "")}.jsonl` : "the recording";
-    for (const m of recordedMarks(S.show, S.show.timeline, file)) {
+    for (const m of S.cyc ? S.cyc.marks : recordedMarks(S.show, tl, file)) {
       const b = el("button", `dots-tl-mark dots-tl-${m.kind}`);
       b.type = "button";
       b.style.left = at(m.p);
@@ -837,8 +906,12 @@ function buildUi() {
   S.tip.addEventListener("click", (e) => {
     if (!S || S.tipSeek === null || S.tipSeek === undefined) return;
     e.stopPropagation();
-    seek(S.clock.at(S.tipSeek));
-    play(false);
+    // A recorded cycle's provenance seeks on the condensed clock; the kiosk holds that playhead too.
+    if (S.cyc) cycleSync({ p: S.cyc.cc.at(S.tipSeek), playing: false });
+    else {
+      seek(S.clock.at(S.tipSeek));
+      play(false);
+    }
   });
   S.tip.addEventListener("pointerup", (e) => e.stopPropagation());
   ui.appendChild(S.tip);
@@ -875,6 +948,15 @@ const fmt = (n) => n.toLocaleString("en-US");
 
 function syncUi() {
   if (!S || !S.playBtn) return;
+  if (S.cyc) {
+    // A recorded cycle's controls show its playhead: replay ms on the condensed clock, and the kiosk's speed.
+    const c = S.cyc.sync;
+    S.speed = c.speed;
+    S.playBtn.textContent = c.playing ? "Pause" : "Play";
+    if (S.speedBtn && S.speedBtn.textContent !== speedWords(c.speed)) S.speedBtn.textContent = speedWords(c.speed);
+    S.range.value = String(Math.round(cycleP()));
+    return;
+  }
   S.playBtn.textContent = S.playing ? "Pause" : S.t >= S.clock.length ? "Replay" : "Play";
   S.speedSel.value = String(S.speed);
   if (S.speedBtn && S.speedBtn.textContent !== speedWords(S.speed)) S.speedBtn.textContent = speedWords(S.speed);
@@ -909,7 +991,10 @@ function updateUiFrame(counts, level) {
     label = `${p ? p.id : "stock"} · ${label}`;
   }
   if (S.timeEl.textContent !== label) S.timeEl.textContent = label;
-  if (S.playing && Math.abs(Number(S.range.value) - S.t) > 100) S.range.value = String(Math.round(S.t));
+  if (S.cyc) {
+    const p = cycleP();
+    if (Math.abs(Number(S.range.value) - p) > 100) S.range.value = String(Math.round(p));
+  } else if (S.playing && Math.abs(Number(S.range.value) - S.t) > 100) S.range.value = String(Math.round(S.t));
   const marks = currentMarks();
   // The zoom goes out a little past the estates mark and no further.
   S.zoomOut = Math.max(3, (marks.estates * 1.4) / Math.max(1, S.vbInit[2]));
@@ -957,7 +1042,9 @@ function provenanceOf(id) {
   if (!w) return null;
   const m = ((S.answer && S.answer.migrations) || []).find((x) => x.name === w.migration);
   const run = m && m.run ? m.run : null;
-  return { text: provenanceText({ ...w, tool: run ? run.tool : migrationTool(m && m.change), job: run ? run.job : null }), url: run && run.job_url ? run.job_url : null };
+  const at = Date.parse(w.at);
+  // In a recorded cycle a click on the provenance moves the playhead to the write.
+  return { text: provenanceText({ ...w, tool: run ? run.tool : migrationTool(m && m.change), job: run ? run.job : null }), url: run && run.job_url ? run.job_url : null, ...(S.cyc && Number.isFinite(at) ? { seek: at } : {}) };
 }
 
 /** A recorded dot's provenance: the move line of the recording that landed it, with its line and time, and where the playhead goes on a click. */
@@ -1979,7 +2066,7 @@ function frameBox(b) {
   const bh = (b.h + 2 * pad) * P;
   const top = S.insets.top + 8;
   // The quiet controls at the foot, when the page keeps them, are furniture the boxes stay clear of.
-  const foot = S.keepBar ? (S.ui.querySelector(".dots-bottom")?.offsetHeight ?? 0) + 12 : 0;
+  const foot = S.keepBar || S.cyc ? (S.ui.querySelector(".dots-bottom")?.offsetHeight ?? 0) + 12 : 0;
   const bottom = S.insets.bottom + 8 + foot;
   const aw = Math.max(40, r.width - left - right - 16);
   const ah = Math.max(40, r.height - top - bottom);
@@ -2091,8 +2178,15 @@ function countsNowMap() {
 /** Start following /api/terragucci/carve. `kiosk`: in the kiosk's frame, direct the camera while a migration runs. */
 function startLive(kiosk) {
   S.ui.classList.add("dots-live");
-  S.tipFrom = S.t = Date.now() - S.show.t0;
-  S.clock.length = Math.max(S.clock.length, S.t);
+  // behold#571: a recorded cycle runs on its condensed clock, never the wall's: no poll, and its timeline shows.
+  if (S.cyc) {
+    S.ui.classList.add("dots-cycle");
+    S.tipFrom = S.t = cycleT();
+    S.clock.length = Math.max(S.clock.length, S.cyc.cc.t1 - S.show.t0);
+  } else {
+    S.tipFrom = S.t = Date.now() - S.show.t0;
+    S.clock.length = Math.max(S.clock.length, S.t);
+  }
   S.kioskLive = !!kiosk;
   S.liveEndAt = null;
   // What the first read holds already ended happened before the page looked: no end tip for it.
@@ -2107,8 +2201,10 @@ function startLive(kiosk) {
   S.lastPost = 0;
   S.pendingTips = [];
   busy();
-  const poll = setInterval(() => void readLive(), LIVE_POLL_MS);
-  S.off.push(() => clearInterval(poll));
+  if (!S.cyc) {
+    const poll = setInterval(() => void readLive(), LIVE_POLL_MS);
+    S.off.push(() => clearInterval(poll));
+  }
   if (S.kioskLive) {
     const onMsg = (e) => {
       if (!S || e.origin !== location.origin || !e.data) return;
@@ -2116,16 +2212,28 @@ function startLive(kiosk) {
         liveSlowed = Number(e.data.n) || 1;
         return;
       }
+      // behold#571: the kiosk's playhead over a recorded cycle: where it is, at what speed, and whether it plays.
+      if (e.data.type === "behold:dots-cycle") {
+        if (!S.cyc || e.data.cycle !== S.cyc.cycle.cycle || !Number.isFinite(e.data.p)) return;
+        S.cyc.sync = { p: e.data.p, wall: performance.now(), speed: Number(e.data.speed) > 0 ? Number(e.data.speed) : 1, playing: e.data.playing !== false };
+        syncUi();
+        return;
+      }
       if (e.data.type !== "behold:dots-mode") return;
       S.mode = e.data.mode === "inspect" ? "inspect" : "watch";
       if (e.data.insets) S.insets = { top: Number(e.data.insets.top) || 0, bottom: Number(e.data.insets.bottom) || 0 };
+      // The recorded cycle's timeline sits over the kiosk's caption's top edge, never under it.
+      if (S.cyc) {
+        const foot = S.ui.querySelector(".dots-bottom");
+        if (foot) foot.style.bottom = `${S.insets.bottom + 12}px`;
+      }
       S.dirty = true;
     };
     window.addEventListener("message", onMsg);
     S.off.push(() => window.removeEventListener("message", onMsg));
     // The director never moves while a person has the graph in hand.
     watchViewer();
-    toParent({ type: "behold:dots-ready", source: S.name, live: true });
+    toParent({ type: "behold:dots-ready", source: S.name, live: true, ...(S.cyc ? { cycle: S.cyc.cycle.cycle } : {}) });
   }
 }
 
@@ -2191,10 +2299,12 @@ function takeLive(answer) {
 /** Each frame of a live carve: whether the director has the camera, and what the kiosk is told. */
 function liveTick(wall, dt) {
   const answer = S.answer || {};
-  const m = currentMigration(answer);
+  // behold#571: a recorded cycle is told at the time its condensed clock stands for, never the wall's.
+  const cy = S.cyc ? cycleNow(answer) : null;
+  const m = cy ? cy.m : currentMigration(answer);
   const now = Date.now();
   // A migration that stopped running ends its beat: Watch holds on the result, then hands the camera back.
-  for (const x of answer.migrations || []) {
+  for (const x of cy ? [] : answer.migrations || []) {
     const was = S.wasRunning.get(x.name);
     if (was && !x.running && !S.ended.has(x.name)) {
       S.ended.add(x.name);
@@ -2203,13 +2313,14 @@ function liveTick(wall, dt) {
     }
     S.wasRunning.set(x.name, x.running);
   }
-  const running = !!(answer.running || (m && m.running));
+  if (cy) for (const x of cy.ends) S.pendingTips.push(liveEndTip(x, S.t));
+  const running = cy ? cy.running : !!(answer.running || (m && m.running));
   // Lines still playing count as running: an adoption on floci writes its 82 lines in under a second, and the record
   // says applied by the read that brings them, so the beat is the 50 ms pacing of those lines (web/dots-live.js).
   const playing = S.t < (S.busyUntil ?? 0);
   const active = running || playing;
   // When the last of it has played, Watch holds on the result, then hands the camera back.
-  if (S.wasActive && !active) {
+  if (!cy && S.wasActive && !active) {
     S.liveEndAt = now;
     // A migration that was done by the read that brought its lines ends here, once they have played.
     for (const x of answer.migrations || []) {
@@ -2220,10 +2331,11 @@ function liveTick(wall, dt) {
   }
   S.wasActive = active;
   // The tour (behold.tour/v1), in Watch: the chapter the cycle's events have reached. While it runs, the carve keeps the camera.
-  const tn = tourNow(answer);
+  const tn = cy ? tourNow(answer, cy.real, cy.step) : tourNow(answer);
   S.tourOn = !!(S.kioskLive && tn && tn.at && S.mode === "watch");
   S.tn = tn;
-  const carving = S.kioskLive && (S.tourOn || active || (S.liveEndAt !== null && now - S.liveEndAt < LIVE_HOLD_MS));
+  // A recorded cycle has the stage the whole time it plays: there is no live hold to wait out.
+  const carving = S.kioskLive && (!!cy || S.tourOn || active || (S.liveEndAt !== null && now - S.liveEndAt < LIVE_HOLD_MS));
   if (carving !== S.carving) {
     S.carving = carving;
     S.ui.classList.toggle("dots-carving", carving);
@@ -2234,8 +2346,8 @@ function liveTick(wall, dt) {
   if (!S.kioskLive) return;
   // The counts the page has played so far: the caption, the next line and the tally all follow the paced lines,
   // and show the record's own once every line has played.
-  const shown = m ? playedCounts(m, liveMemo ? liveMemo.seen : new Map(), S.show.t0 + S.t) : null;
-  const beat = liveBeat(S.scene, S.t, { demo: answer.demo, migration: m, shown });
+  const shown = m ? playedCounts(m, cy ? S.cyc.seen : liveMemo ? liveMemo.seen : new Map(), S.show.t0 + S.t) : null;
+  const beat = liveBeat(S.scene, S.t, { demo: cy ? cy.demo : answer.demo, migration: m, shown });
   // In Inspect too: while a migration runs its boxes and dots are the story, so the director frames them there as well,
   // unless a person has the graph in hand.
   S.directing = carving && performance.now() >= S.userUntil;
@@ -2284,13 +2396,17 @@ function liveTick(wall, dt) {
     src: S.scene.source,
     t: S.t,
     length: S.clock.length,
-    playing: true,
-    speed: 1,
+    playing: cy ? S.cyc.sync.playing : true,
+    speed: cy ? S.cyc.sync.speed : 1,
     holdLeft: null,
     beat,
     counts,
     names: Object.fromEntries(S.scene.estates.map((e) => [e, shortOf(e, S.scene.source)])),
-    recording: { kind: "live", resources: S.show.roster.length, recordedAt: null, from: answer.source || null, migration: m ? m.name : null },
+    recording: cy
+      ? { kind: "cycle", resources: S.show.roster.length, recordedAt: S.cyc.cc.t0, from: answer.source || null, migration: m ? m.name : null }
+      : { kind: "live", resources: S.show.roster.length, recordedAt: null, from: answer.source || null, migration: m ? m.name : null },
+    // behold#571: the recorded cycle's playhead and its "Recorded ..." words, for the caption's reminder.
+    ...(cy ? { cycle: { n: S.cyc.cycle.cycle, p: cy.p, length: S.cyc.cc.length, condensed: S.cyc.cc.condensed, label: recordedLabel({ t0: S.cyc.cc.t0, t1: S.cyc.cc.t1, source: cycleSource(S.cyc.cycle) }), short: recordedLabel({ t0: S.cyc.cc.t0, t1: S.cyc.cc.t1 }, { short: true }) } } : {}),
     colours: Object.fromEntries([...S.col.estate]),
     totals: mc
       ? { moves: mc.moved + mc.stamped + mc.refused + mc.skipped + (mc.left ?? 0), done: mc.moved + mc.stamped + mc.refused + mc.skipped, refused: mc.refused, estates: story.dests.length, moved: mc.moved, stamped: mc.stamped, skipped: mc.skipped }
@@ -2299,7 +2415,7 @@ function liveTick(wall, dt) {
     rects,
     tips,
     // The live badge's lag: the newest line's time, and whether a migration runs (web/tour-player.js lagText).
-    lastWriteAt: newestLineAt(answer),
+    lastWriteAt: newestLineAt(answer, cy ? cy.real : Infinity),
     running,
     slowed: liveSlowed,
     ...(S.tourOn ? { tour: tourMessage(tn, { counts: countsNowMap(), names: S.scene.estates, adopted: answer.adopted, source: S.scene.source, short: tourShort }) } : {}),
@@ -2316,15 +2432,53 @@ function tourShort(e) {
   return cut > 0 && nm.length > cut + 1 ? nm.slice(cut + 1) : nm;
 }
 
-/** The newest progress line's time across the cycle's migrations, in ms; null with none. */
-function newestLineAt(answer) {
+/** The newest progress line's time across the cycle's migrations, in ms, at or before `upto`; null with none. */
+function newestLineAt(answer, upto = Infinity) {
   let at = null;
   for (const m of (answer && answer.migrations) || [])
     for (const l of m.lines) {
       const t = Date.parse(l.at);
-      if (!Number.isNaN(t) && (at === null || t > at)) at = t;
+      if (!Number.isNaN(t) && t <= upto && (at === null || t > at)) at = t;
     }
   return at;
+}
+
+/**
+ * behold#571: a recorded cycle at its playhead: the time it stands for, the step then, the migration whose writes
+ * are landing or last landed, whether one is still landing, and each migration whose last write has just played
+ * (its end Tip). A loop back to the start lets the ends be told again.
+ */
+function cycleNow(answer) {
+  const c = S.cyc;
+  const p = cycleP();
+  const real = S.show.t0 + S.t;
+  if (real < c.lastT) c.ended.clear();
+  c.lastT = real;
+  const steps = cycleSteps(c.cycle);
+  const st = steps[stepIndexAt(c.cycle, real)] || null;
+  const flight = c.cc.set.flightMs;
+  let m = null;
+  let mFirst = -Infinity;
+  let running = false;
+  const ends = [];
+  for (const x of answer.migrations || []) {
+    const ts = x.lines.map((l) => Date.parse(l.at)).filter(Number.isFinite);
+    if (!ts.length) continue;
+    const a = Math.min(...ts);
+    const b = Math.max(...ts);
+    if (a > real) continue;
+    if (a >= mFirst) {
+      m = x;
+      mFirst = a;
+    }
+    if (real <= b + flight) running = true;
+    else if (!c.ended.has(x.name)) {
+      c.ended.add(x.name);
+      ends.push(x);
+    }
+  }
+  const demo = st ? { title: st.title, step: st.step, label: st.label, beat: st.beat ?? null, next: null } : answer.demo;
+  return { p, real, step: st ? st.step : null, m: m ? { ...m, running } : null, running, ends, demo };
 }
 
 /** The tour's visuals for this frame, rebuilt only when the chapter, its visuals or the dots' owners change. */
@@ -2370,6 +2524,8 @@ function drawTour(ctx, fx, boxes, boxPx, centre, sx, sy, dotLayerA, td, discR) {
   if (!fx || dotLayerA < 0.3) return;
   const col = S.col;
   const now = Date.now();
+  // The value's travel runs from its event in the show's own time: the wall's live, the condensed clock's in a recorded cycle.
+  const showNow = S.cyc ? S.show.t0 + S.t : now;
   // A box drawn as its disc (far out, or a phone) takes its marks beside the disc.
   const disc = (e) => (td.get(e) ?? 0) >= 0.5;
   const discSpot = (e) => {
@@ -2416,7 +2572,7 @@ function drawTour(ctx, fx, boxes, boxPx, centre, sx, sy, dotLayerA, td, discR) {
       ctx.setLineDash([]);
       if (fx.travel.value === null || fx.travel.value === undefined) continue;
       // From when the wave's job ended (its event), 1.8 s along the thread; then it rests at the reader.
-      const u = S.reduced || fx.travel.at === null ? 1 : Math.max(0, Math.min(1, (now - fx.travel.at) / 1800));
+      const u = S.reduced || fx.travel.at === null ? 1 : Math.max(0, Math.min(1, (showNow - fx.travel.at) / 1800));
       const e = easeInOut(u);
       const x = sx(lerp(a.x, b.x, e));
       const y = sy(lerp(a.y, b.y, e));
