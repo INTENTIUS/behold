@@ -172,10 +172,11 @@ export function createNarration({ bar, caption, tipsHost, modalHost, origin }) {
       const tot = state.totals;
       const tally = el("p", "cx-row cx-tone-idle");
       const estatesN = Object.values(state.counts).filter((n) => n > 0).length;
+      const estatesW = `${estatesN} estate${estatesN === 1 ? "" : "s"}`;
       const tallyText =
         state.recording && state.recording.kind === "live" && tot.moved !== undefined
-          ? `${fmt(tot.moved)} moved · ${fmt(tot.stamped)} stamped · ${tot.refused} refused${tot.skipped ? ` · ${tot.skipped} skipped` : ""} · ${estatesN} estates`
-          : `${fmt(tot.done)} of ${fmt(tot.moves)} flown · ${tot.refused} refused · ${estatesN} estates`;
+          ? `${fmt(tot.moved)} moved · ${fmt(tot.stamped)} stamped · ${tot.refused} refused${tot.skipped ? ` · ${tot.skipped} skipped` : ""} · ${estatesW}`
+          : `${fmt(tot.done)} of ${fmt(tot.moves)} flown · ${tot.refused} refused · ${estatesW}`;
       tally.append(el("span", "cx-label", "moves"), el("span", "cx-text", tallyText));
       caption.appendChild(tally);
     }

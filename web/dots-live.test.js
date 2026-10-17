@@ -190,3 +190,22 @@ describe("a destination roster written after the move", () => {
     expect(show.owners0.get("aws_iam_role.r")).toBe("tl8-terralith");
   });
 });
+
+// The live run's cycle 11: the adoption's stamps, then the split, then wave 1's team rosters with no live ids. The
+// boxes read 26 for team rosters of 13: the stamps had made each resource's dot and the team roster made another.
+describe("an adoption, a split, and the team rosters written after it", () => {
+  it("draws each resource once, so a team's box counts what its roster holds", () => {
+    const addrs = ["aws_iam_role.r", "aws_iam_role_policy.p", "aws_cloudwatch_log_group.l"];
+    const left = { estate: "tl11-terralith", at: at(30), count: 1, resources: [{ address: "aws_vpc.main", type: "aws_vpc", live_id: "vpc-1", marked: true }] };
+    const team = { estate: "tl11-team-a", at: at(40), count: 3, resources: addrs.map((address) => ({ address, type: address.split(".")[0], marked: false })) };
+    const ids = { "aws_iam_role.r": "role-r", "aws_iam_role_policy.p": "role-r:p", "aws_cloudwatch_log_group.l": "logs", "aws_vpc.main": "vpc-1" };
+    const adoptM = { name: "adopt", running: false, counts: { moved: 0, stamped: 3, refused: 0, skipped: 1, left: 0 }, lines: [...addrs, "aws_vpc.main"].map((address) => ({ at: at(5), estate_from: "tl11-terralith", estate_to: "tl11-terralith", address, live_id: ids[address], outcome: address.includes("policy") ? "skipped" : "stamped" })) };
+    const splitM = { name: "split", running: false, counts: { moved: 3, stamped: 0, refused: 0, skipped: 0, left: 0 }, lines: addrs.map((address) => ({ at: at(20), estate_from: "tl11-terralith", estate_to: "tl11-team-a", address, ...(address.includes("policy") ? { follows: "aws_iam_role.r" } : { live_id: ids[address] }), outcome: "moved" })) };
+    const a = { ...answer([adoptM, splitM], [left, team]), adopted: [{ from: "terralith", to: "tl11-terralith" }] };
+    const show = liveShow(a, stampArrivals(a, new Map(), T + 60_000, { first: true }), T + 60_000);
+    expect(show.roster.map((r) => r.address).sort()).toEqual([...addrs, "aws_vpc.main"].sort());
+    const ends = {};
+    for (const e of show.ownersEnd.values()) ends[e] = (ends[e] ?? 0) + 1;
+    expect(ends).toEqual({ "tl11-team-a": 3, terralith: 1 });
+  });
+});

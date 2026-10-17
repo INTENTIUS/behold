@@ -77,7 +77,7 @@ export function beatAt(story, scene, t) {
     const kept = counts.get(src) ?? 0;
     return {
       phase: "settled",
-      title: `Carved: ${n} estates`,
+      title: `Carved: ${n} estate${n === 1 ? "" : "s"}`,
       line: {
         label: "done",
         text: `${fmt(story.resourcesMoved)} resources moved, nothing recreated` + (story.refused ? `; ${story.refused} moves refused, so ${fmt(kept)} stay in ${src}` : ""),
@@ -125,7 +125,7 @@ export function tipsBetween(story, from, to) {
     const why = r.refusalSummary ? r.refusalSummary.replace(/\.$/, "").toLowerCase() : r.refusal || "refused";
     out.push({ key: "refused", at: r.end, recordedAt: r.at, estate: src, address: r.address, tone: "bad", title: "A move is refused", text: `${r.address} is refused: ${why}. Nothing was written, so it stays in ${src}.` });
   }
-  if (inWin(story.end)) out.push({ key: "end", at: story.end, recordedAt: story.moves.reduce((m, f) => Math.max(m, f.at || 0), 0) || null, estate: null, tone: "ok", title: "Carved", text: `Carved into ${story.dests.length} estates by tag writes alone: ${fmt(story.resourcesMoved)} resources moved, none recreated.` });
+  if (inWin(story.end)) out.push({ key: "end", at: story.end, recordedAt: story.moves.reduce((m, f) => Math.max(m, f.at || 0), 0) || null, estate: null, tone: "ok", title: "Carved", text: `Carved into ${story.dests.length} estate${story.dests.length === 1 ? "" : "s"} by tag writes alone: ${fmt(story.resourcesMoved)} resources moved, none recreated.` });
   return out.sort((a, b) => a.at - b.at);
 }
 
@@ -176,14 +176,25 @@ export function liveBeat(scene, t, ctx = {}) {
   const counts = countsNow(scene, t);
   const m = ctx.migration || null;
   const demo = ctx.demo || null;
-  const c = m ? m.counts : null;
+  // The counts as played (web/dots-live.js playedCounts): the caption and the next line say the same numbers.
+  const shown = ctx.shown || null;
+  const c = m ? (shown ? shown.counts : m.counts) : null;
   const total = c ? c.moved + c.stamped + c.refused + c.skipped + (c.left ?? 0) : story.moves.length;
   const doneN = c ? c.moved + c.stamped + c.refused + c.skipped : story.moves.filter((f) => f.end <= t).length;
-  const nextText = demo && demo.next ? demo.next : m ? `${m.name}: ${fmt(c.moved + c.stamped)} of ${fmt(total)} ${c.stamped && !c.moved ? "stamped" : "moved"}` : "no migration running";
+  // demo.json's next line names the migration with the driver's count, read when it last looked; the page's own count replaces it.
+  const named = demo && demo.next ? /^\s*([^:\s]+):\s+\d+\s+of\s+\d+\s+(?:moved|stamped)\b/.exec(demo.next) : null;
+  const ours = !!(shown && m && (!demo || !demo.next || (named && named[1] === m.name)));
+  const nextText = ours
+    ? `${m.name}: ${fmt(doneN)} of ${fmt(total)} ${c.stamped && !c.moved ? "stamped" : "moved"}`
+    : demo && demo.next
+      ? demo.next
+      : m
+        ? `${m.name}: ${fmt(c.moved + c.stamped)} of ${fmt(total)} ${c.stamped && !c.moved ? "stamped" : "moved"}`
+        : "no migration running";
   const next = { text: nextText, fraction: total ? Math.min(1, doneN / total) : 0 };
   const title = demo && demo.title ? demo.title : m ? `Carving ${src}: ${m.name}` : src;
   const ev = latestEvent(scene, t);
-  const running = !!(m && m.running);
+  const running = !!(m && (m.running || (shown && shown.playing)));
   if (!ev) {
     return {
       phase: running ? "start" : "stock",

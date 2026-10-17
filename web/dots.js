@@ -27,7 +27,7 @@ import { cardMorph, discMorph, discRadius, levelOf, caption, railMarks, railPos,
 import { perimeter, pointAt, nearestS, segment } from "./dots-border.js";
 import { getTokens, onThemeChange, contrast, hexToOklch, oklchToHex } from "./theme.js";
 import { LOOP, carveStory, beatAt, tipsBetween, directorFocus, shortName as shortOf, liveBeat, liveTipsBetween, liveEndTip, LIVE_HOLD_MS } from "./dots-kiosk.js";
-import { liveShow, stampArrivals, showKey, currentMigration, boxName } from "./dots-live.js";
+import { liveShow, stampArrivals, showKey, currentMigration, boxName, playedCounts } from "./dots-live.js";
 
 /** #715: how often the live layer asks for the carve. The route shares one read for 1.5 s while a migration runs. */
 export const LIVE_POLL_MS = 2_000;
@@ -250,7 +250,7 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source 
     ? { x: +boxEl.getAttribute("x"), y: +boxEl.getAttribute("y"), w: +boxEl.getAttribute("width"), h: +boxEl.getAttribute("height") }
     : { x: vbInit[0], y: vbInit[1], w: vbInit[2], h: vbInit[3] };
   // The source estate's box takes its cards' box's place and shape on the page.
-  const scene = buildScene(show, { sourceAspect: mbox.w / Math.max(1, mbox.h) });
+  const scene = buildScene(show, { sourceAspect: mbox.w / Math.max(1, mbox.h), ...labelRoom(host) });
   const src = scene.sourceBox;
   // One dot pitch is a fixed share of a card's width, so a dot is legible exactly
   // when its card stops being: at the dot size a pitch is about 8 px, whatever
@@ -448,6 +448,26 @@ function setSpeed(v) {
 /** Where the card SVG sits on the page. Read off the SVG while it shows; once it is
  * out of the paint the host stands in for it (the SVG fills it), so a moving camera
  * never makes the browser lay a 1,041-card SVG out just to be measured. */
+/**
+ * What the scene's layout needs to leave each box's label room (web/dots-scene.js): the label's width on screen, in
+ * the face the boxes are labelled in, and the screen area the director frames the boxes in.
+ */
+function labelRoom(host) {
+  if (typeof document === "undefined" || !host || !host.getBoundingClientRect) return {};
+  const r = host.getBoundingClientRect();
+  if (!r.width || !r.height) return {};
+  const cv = document.createElement("canvas").getContext("2d");
+  if (!cv) return {};
+  const font = (S && S.font) || getComputedStyle(document.body).fontFamily || "sans-serif";
+  cv.font = `700 11.5px ${font}`;
+  const ins = S && S.insets ? S.insets : { top: 0, bottom: 0 };
+  return {
+    labelPx: (e) => cv.measureText(`${e} 000`).width + 12,
+    labelH: 18,
+    avail: { w: r.width * 0.72, h: Math.max(80, r.height - (ins.top || 0) - (ins.bottom || 0) - 32) },
+  };
+}
+
 function paneRect() {
   return S.svgHidden && S.svgGone ? S.host.getBoundingClientRect() : S.svg.getBoundingClientRect();
 }
@@ -832,6 +852,8 @@ function draw(dt) {
   }
   // --- boxes: fill, outline, the lights on their borders ---
   const titlePx = BOX.title * P * s;
+  // Where each box's label went, so a Tips bubble keeps off it (web/carve-narration.js).
+  const labelPx = new Map();
   for (const [e, b] of boxes) {
     const a = dotLayerA * (1 - (td.get(e) ?? 0));
     if (a <= 0.01) continue;
@@ -891,25 +913,46 @@ function draw(dt) {
       ctx.font = `700 ${fs}px ${S.font}`;
       ctx.textBaseline = "middle";
       ctx.textAlign = "left";
-      const nm = shortName(e);
+      let nm = shortName(e);
       const cnt = fmt(Math.max(0, counts.get(e) ?? 0));
-      const nw = ctx.measureText(nm).width;
-      const tw = nw + fs * 0.5 + ctx.measureText(cnt).width;
+      let nw = ctx.measureText(nm).width;
+      const cw = ctx.measureText(cnt).width;
+      const tw = nw + fs * 0.5 + cw;
       const inside = titlePx >= fs * 1.5 && tw + fs * 1.6 <= bp.w;
       const lx = bp.x + (inside ? fs * 0.8 : 1);
-      let ly = inside ? bp.y + titlePx * 0.55 : bp.y - fs * 0.75;
-      let ok = claim(lx, ly - fs * 0.6, tw, fs * 1.2);
+      // Outside the box, a label runs no further than the next box along its row, with a gap, so two never touch.
+      let room = Infinity;
+      if (!inside) {
+        for (const [o, ob] of boxes) {
+          if (o === e) continue;
+          const op = boxPx(ob);
+          if (op.x > bp.x + 1 && op.y < bp.y + fs && op.y + op.h > bp.y - fs * 2.4) room = Math.min(room, op.x - lx - fs);
+        }
+      }
+      // Too wide for its room: the count goes under the name, and a name still too wide is shortened.
+      const stacked = !inside && tw > room;
+      if (stacked && nw > room) {
+        while (nm.length > 4 && ctx.measureText(`${nm}…`).width > room) nm = nm.slice(0, -1);
+        nm = `${nm}…`;
+        nw = ctx.measureText(nm).width;
+      }
+      const lw = stacked ? Math.max(nw, cw) : tw;
+      const lh = stacked ? fs * 2.4 : fs * 1.2;
+      let ly = inside ? bp.y + titlePx * 0.55 : bp.y - fs * 0.75 - (stacked ? fs * 1.2 : 0);
+      let ok = claim(lx, ly - fs * 0.6, lw, lh);
       // No room above: try just below the outline.
       if (!ok && !inside) {
         ly = bp.y + bp.h + fs * 0.8;
-        ok = claim(lx, ly - fs * 0.6, tw, fs * 1.2);
+        ok = claim(lx, ly - fs * 0.6, lw, lh);
       }
       if (ok) {
         ctx.globalAlpha = a * drawIn;
         ctx.fillStyle = c;
         ctx.fillText(nm, lx, ly);
         ctx.fillStyle = col.muted;
-        ctx.fillText(cnt, lx + nw + fs * 0.5, ly);
+        if (stacked) ctx.fillText(cnt, lx, ly + fs * 1.2);
+        else ctx.fillText(cnt, lx + nw + fs * 0.5, ly);
+        labelPx.set(e, { x: lx, y: ly - fs * 0.6, w: lw, h: lh });
       }
     }
   }
@@ -1258,10 +1301,21 @@ function draw(dt) {
   S.snap = false;
   S.settling = moving;
   S.boxPx = new Map([...boxes].map(([e, b]) => [e, boxPx(b)]));
+  S.labelPx = labelPx;
   updateUiFrame(counts, level);
 }
 
 // --- the kiosk (#712) ----------------------------------------------------------
+
+/** A box and its label on the page, in the kiosk frame's pixels: a Tips bubble points at it and keeps off it. */
+function boxRect(e, b) {
+  const l = S.labelPx && S.labelPx.get(e);
+  const x0 = l ? Math.min(b.x, l.x) : b.x;
+  const y0 = l ? Math.min(b.y, l.y) : b.y;
+  const x1 = l ? Math.max(b.x + b.w, l.x + l.w) : b.x + b.w;
+  const y1 = l ? Math.max(b.y + b.h, l.y + l.h) : b.y + b.h;
+  return { left: x0 + (S.canvas.offsetLeft || 0), top: y0 + (S.canvas.offsetTop || 0), width: x1 - x0, height: y1 - y0 };
+}
 
 function toParent(msg) {
   if (S && S.narrate) return S.narrate(msg);
@@ -1390,7 +1444,7 @@ function kioskTick(wall, dt) {
   if (wall - S.lastPost < 200 && !tips.length) return;
   S.lastPost = wall;
   const rects = {};
-  for (const [e, b] of S.boxPx || []) rects[e] = { left: b.x + (S.canvas.offsetLeft || 0), top: b.y + (S.canvas.offsetTop || 0), width: b.w, height: b.h };
+  for (const [e, b] of S.boxPx || []) rects[e] = boxRect(e, b);
   const counts = {};
   for (const [e, c] of countsNowMap()) counts[e] = c;
   const moves = S.story.moves;
@@ -1499,7 +1553,7 @@ function takeLive(answer) {
     S.show.t1 = now;
     return;
   }
-  const scene = buildScene(show, { sourceAspect: S.mbox.w / Math.max(1, S.mbox.h) });
+  const scene = buildScene(show, { sourceAspect: S.mbox.w / Math.max(1, S.mbox.h), ...labelRoom(S.host) });
   const n = show.roster.length;
   const src = scene.sourceBox;
   S.show = show;
@@ -1559,7 +1613,10 @@ function liveTick(wall, dt) {
     if (S.onCarving) S.onCarving(carving);
   }
   if (!S.kioskLive) return;
-  const beat = liveBeat(S.scene, S.t, { demo: answer.demo, migration: m });
+  // The counts the page has played so far: the caption, the next line and the tally all follow the paced lines,
+  // and show the record's own once every line has played.
+  const shown = m ? playedCounts(m, liveMemo ? liveMemo.seen : new Map(), S.show.t0 + S.t) : null;
+  const beat = liveBeat(S.scene, S.t, { demo: answer.demo, migration: m, shown });
   // In Inspect too: while a migration runs its boxes and dots are the story, so the director frames them there as well,
   // unless a person has the graph in hand.
   S.directing = carving && performance.now() >= S.userUntil;
@@ -1584,12 +1641,12 @@ function liveTick(wall, dt) {
   if (wall - S.lastPost < 250 && !tips.length) return;
   S.lastPost = wall;
   const rects = {};
-  for (const [e, b] of S.boxPx || []) rects[e] = { left: b.x + (S.canvas.offsetLeft || 0), top: b.y + (S.canvas.offsetTop || 0), width: b.w, height: b.h };
+  for (const [e, b] of S.boxPx || []) rects[e] = boxRect(e, b);
   const counts = {};
   for (const [e, c] of countsNowMap()) counts[e] = c;
   const story = carveStory(S.scene);
   const done = story.moves.filter((f) => f.end <= S.t);
-  const mc = m ? m.counts : null;
+  const mc = shown ? shown.counts : null;
   toParent({
     type: "behold:dots-state",
     live: true,
