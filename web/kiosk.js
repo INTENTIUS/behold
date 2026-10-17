@@ -993,7 +993,7 @@ function drawDrawer(host, tail, nums, open) {
 export const DRAWER_EMPTY = "The job's lines show here as it writes them.";
 /** behold#571: the drawer's two states, said on its head. */
 export const DRAWER_MORE = "Open the log";
-export const DRAWER_LESS = "Fold it back";
+export const DRAWER_LESS = "Close";
 
 /** The result card at the end of the run: the result line, the counts, and each wave's numbers. */
 function drawResult(host, model, s) {
