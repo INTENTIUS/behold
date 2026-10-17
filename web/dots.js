@@ -31,6 +31,7 @@ import { liveShow, stampArrivals, showKey, currentMigration, boxName, playedCoun
 import { provenanceText, migrationTool, stepMsFor } from "./tour-player.js";
 import { tourNow, tourFocus, tourFx, fxKey, tourMessage } from "./dots-tour.js";
 import { wallTicks, recordedLabel, recordedMarks, speedWords, skippedWords, clockWords, RECORDED_SPEEDS } from "./dots-timeline.js";
+import { rosterCardSize, cardLabel, cardShape, cardText, cardTextAlpha, pickMark, cardsMark, cardsFrame, CARD_TEXT } from "./dots-cards.js";
 
 /** #715: how often the live layer asks for the carve. The route shares one read for 1.5 s while a migration runs. */
 export const LIVE_POLL_MS = 2_000;
@@ -46,6 +47,8 @@ const RIPPLE_MS = 650;
 const PULSE_MS = 520;
 const DRAW_MS = 650;
 const LINGER_MS = 2600;
+/** A viewer's hand on the camera (a wheel, a pinch, a drag, a rail mark) holds the director and the tour off until this long after their last input. */
+export const VIEWER_HOLD_MS = 8_000;
 
 export function dotsActive() {
   return !!S;
@@ -86,6 +89,8 @@ function addStyle() {
   const st = document.createElement("style");
   st.textContent = `
   .dots-on > svg { position: relative; z-index: 1; background: transparent; }
+  /* Once the cards are out of the paint a touch lands on the host: a pinch there is the camera's, never the page's zoom. */
+  .dots-on { touch-action: none; }
   .dots-on > svg > rect[fill^="url(#pin-"] { display: none; }
   .dots-on > svg [data-node-id], .dots-on > svg rect[data-group-id], .dots-on > svg text { opacity: var(--dots-card-a, 1); }
   #dots-canvas { position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none; }
@@ -100,6 +105,8 @@ function addStyle() {
   .dots-rail-mark small { display: block; color: var(--muted); font-size: 11.5px; }
   .dots-rail-mark i { width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--muted); background: var(--bg); flex: none; margin-right: 4px; }
   .dots-rail-mark:hover i, .dots-rail-mark:focus-visible i { border-color: var(--focus); }
+  .dots-rail-mark:disabled { cursor: default; color: var(--muted); }
+  .dots-rail-mark:disabled:hover i { border-color: var(--muted); }
   .dots-bottom { position: absolute; left: 50%; transform: translateX(-50%); bottom: 12px; display: flex; flex-direction: column; align-items: center; gap: 6px; max-width: calc(100% - 24px); pointer-events: none; }
   .dots-bottom > * { pointer-events: auto; }
   .dots-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: calc(100% - 24px); background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; box-sizing: border-box; }
@@ -261,10 +268,13 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source 
   // carve's cards are the served roots' (`<member>/<address>`), joined by address.
   const cards = new Map();
   const widths = [];
+  // The cards the SVG draws of its own: what the card level shows when none of them is a resource's.
+  let svgCards = 0;
   for (const g of svg.querySelectorAll("[data-node-id]")) {
     const id = g.getAttribute("data-node-id");
     const r = g.querySelector("rect");
     if (!r) continue;
+    svgCards++;
     const slash = id.indexOf("/");
     if (live ? slash < 0 : !id.startsWith(prefix)) continue;
     const addr = live ? id.slice(slash + 1) : id.slice(prefix.length);
@@ -315,6 +325,14 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source 
     cards,
     cardW,
     pitch,
+    // No SVG card is a resource's (a live carve at the Components zoom draws one per root): the canvas draws the roster's.
+    seedless: cards.size === 0,
+    svgCards,
+    rc: rosterCardSize(pitch),
+    ownA: 0,
+    own: false,
+    labels: new Map(),
+    fits: new Map(),
     origin,
     mbox,
     live: !!live,
@@ -343,6 +361,8 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source 
     px: new Float32Array(n),
     py: new Float32Array(n),
     pvis: new Uint8Array(n),
+    pw: new Float32Array(n),
+    ph: new Float32Array(n),
     stats: { draw: [], frame: [] },
     snap: true,
     fly: null,
@@ -439,7 +459,7 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source 
   const setInsets = (ins) => {
     if (S) S.insets = { top: Number(ins.top) || 0, bottom: Number(ins.bottom) || 0 };
   };
-  window.__dots = { select: (id) => selectDot(id), landed: () => S && landedIds(), seek, play, step, zoomTo, zoomCardPx, setInsets, pause: () => play(false), fly, setSpeed, stats: () => S && S.stats, length: () => S && S.clock.length, marks: () => S && currentMarks(), state: () => S && { t: S.t, level: S.level, reduced: S.reduced, cardPx: S.cardPx, pitchPx: S.pitchPx }, debug: () => S && { band: (({ left, right, w }) => ({ left, right, w }))(band()), svg: S.svg.getBoundingClientRect().toJSON(), rail: S.ui.querySelector('.dots-rail').getBoundingClientRect().toJSON(), vb: S.getVB(), dir: S.dir, directing: S.directing, focusBox: S.dir && focusBox(S.dir.focus), want: S.dir && frameBox(focusBox(S.dir.focus)), pitch: S.pitch, origin: S.origin }, story: () => S && S.story && { start: S.story.start, end: S.story.end, firstRefusal: S.story.firstRefusal ? S.story.firstRefusal.end : null } };
+  window.__dots = { select: (id) => selectDot(id), landed: () => S && landedIds(), seek, play, step, zoomTo, zoomCardPx, setInsets, pause: () => play(false), fly, setSpeed, stats: () => S && S.stats, length: () => S && S.clock.length, marks: () => S && currentMarks(), state: () => S && { t: S.t, level: S.level, reduced: S.reduced, cardPx: S.cardPx, pitchPx: S.pitchPx, rosterCards: S.own, rosterCardPx: S.rosterCardPx, directing: !!S.directing }, debug: () => S && { band: (({ left, right, w }) => ({ left, right, w }))(band()), svg: S.svg.getBoundingClientRect().toJSON(), rail: S.ui.querySelector('.dots-rail').getBoundingClientRect().toJSON(), vb: S.getVB(), dir: S.dir, directing: S.directing, focusBox: S.dir && focusBox(S.dir.focus), want: S.dir && frameBox(focusBox(S.dir.focus)), pitch: S.pitch, origin: S.origin }, story: () => S && S.story && { start: S.story.start, end: S.story.end, firstRefusal: S.story.firstRefusal ? S.story.firstRefusal.end : null } };
   const loop = (wall) => {
     if (!S) return;
     S.raf = requestAnimationFrame(loop);
@@ -570,7 +590,8 @@ function currentMarks() {
   const sorted = [...sizes].sort((a, b) => a - b);
   const typical = sorted.length ? sorted[sorted.length >> 1] : 0;
   const P = S.pitch;
-  return railMarks({ paneW: bw, paneH: r.height || 1, cardW: S.cardW, sceneW: S.scene.extent.w * P, sceneH: S.scene.extent.h * P, smallestBox: Number.isFinite(small) ? small * P : 0, largestBox: big * P, typicalBox: typical * P });
+  // The card level is where the cards that draw are legible: the roster's own when the canvas draws them.
+  return railMarks({ paneW: bw, paneH: r.height || 1, cardW: S.own ? S.rc.w : S.cardW, sceneW: S.scene.extent.w * P, sceneH: S.scene.extent.h * P, smallestBox: Number.isFinite(small) ? small * P : 0, largestBox: big * P, typicalBox: typical * P });
 }
 
 /** Fly the camera to a rail mark, centred on the scene (or the cards for Cards). */
@@ -582,6 +603,19 @@ function fly(mark) {
   const vb = S.getVB();
   const ext = S.scene.extent;
   const P = S.pitch;
+  if (mark === "cards" && S.own) {
+    // The roster's cards: centred on the estate the director frames, else on the source estate.
+    const sc = S.scene;
+    const now = sc.layoutAt(takeoffsBy(sc, S.t)).boxes;
+    const f = S.dir && S.dir.focus;
+    const b = (f && f.kind === "estate" && now.get(f.estate)) || now.get(sc.source) || sc.layoutAt(0).boxes.get(sc.source) || { x: 0, y: 0, w: ext.w, h: ext.h };
+    const { r, left, right } = band();
+    const to = cardsFrame({ x: S.origin.x + b.x * P, y: S.origin.y + (b.y + BOX.title) * P, w: b.w * P, h: Math.max(1, b.h - BOX.title) * P }, w, vb[3] / vb[2]);
+    to[0] -= (((left - right) / 2) * w) / Math.max(1, r.width);
+    if (S.reduced) S.setVB(to);
+    else S.fly = { from: vb.slice(), to, start: performance.now(), dur: 900 };
+    return;
+  }
   const cx = mark === "cards" ? Math.max(S.origin.x + w / 2, Math.min(vb[0] + vb[2] / 2, S.origin.x + S.scene.sourceBox.w * P - w / 2)) : S.origin.x + (ext.w * P) / 2;
   const cy = mark === "cards" ? Math.max(S.origin.y + (w * vb[3]) / vb[2] / 2, Math.min(vb[1] + vb[3] / 2, S.origin.y + S.scene.sourceBox.h * P)) : S.origin.y + (ext.h * P) / 2;
   // Centre in the part of the pane the floating panel leaves uncovered.
@@ -644,6 +678,8 @@ function buildUi() {
     b.title = `Fly to ${label.toLowerCase()}`;
     b.addEventListener("click", (e) => {
       e.stopPropagation();
+      // A mark is a viewer's hand on the camera: the director waits while it flies and reads.
+      viewerHold();
       fly(k);
     });
     b.addEventListener("mousedown", (e) => e.stopPropagation());
@@ -813,7 +849,13 @@ function updateUiFrame(counts, level) {
   const marks = currentMarks();
   // The zoom goes out a little past the estates mark and no further.
   S.zoomOut = Math.max(3, (marks.estates * 1.4) / Math.max(1, S.vbInit[2]));
-  const sub = { cards: `${fmt(S.show.roster.length)} cards`, resources: `${fmt(S.show.roster.length)} resources`, estates: `${estatesNow} estate${estatesNow === 1 ? "" : "s"}` };
+  // The Cards mark counts the cards that can draw at its zoom, never more.
+  const cm = cardsMark({ resources: S.show.roster.length, seeded: S.cards.size, svgCards: S.svgCards, own: S.own });
+  if (S.railMarks.cards.disabled === cm.enabled) {
+    S.railMarks.cards.disabled = !cm.enabled;
+    S.railMarks.cards.title = cm.enabled ? "Fly to cards" : "No cards draw here";
+  }
+  const sub = { cards: cm.words, resources: `${fmt(S.show.roster.length)} resources`, estates: `${estatesNow} estate${estatesNow === 1 ? "" : "s"}` };
   for (const k of Object.keys(S.railMarks)) {
     const sm = S.railMarks[k].querySelector("small");
     if (sm.textContent !== sub[k]) sm.textContent = sub[k];
@@ -834,21 +876,13 @@ function hoverAt(e) {
     S.tip.style.display = "none";
     return;
   }
-  let best = -1;
-  let bd = 100;
-  for (let i = 0; i < S.addrs.length; i++) {
-    if (!S.pvis[i]) continue;
-    const d = (S.px[i] - x) ** 2 + (S.py[i] - y) ** 2;
-    if (d < bd) {
-      bd = d;
-      best = i;
-    }
-  }
+  // A roster card is hit anywhere on it; a dot within 10 px of its centre.
+  const best = pickMark(x, y, S, { within: 10 });
   if (best < 0) {
     S.tip.style.display = "none";
     return;
   }
-  showTip(S.addrs[best], x, y);
+  showTip(S.addrs[best], x, S.ph[best] > 0 ? S.py[best] + S.ph[best] : y);
 }
 
 /** A landed dot's provenance: what its newest write was, from its progress line and the migration's run; null for a dot no line names. */
@@ -922,7 +956,7 @@ function selectDot(id) {
     S.provLink.hidden = !(prov && prov.url);
     if (prov && prov.url) S.provLink.href = prov.url;
   }
-  if (i !== undefined && S.pvis[i]) showTip(id, S.px[i], S.py[i]);
+  if (i !== undefined && S.pvis[i]) showTip(id, S.px[i], S.py[i] + S.ph[i]);
   S.dirty = true;
 }
 
@@ -930,17 +964,8 @@ function nearestDot(e, within = 100) {
   const hr = S.host.getBoundingClientRect();
   const x = e.clientX - hr.left + S.host.scrollLeft;
   const y = e.clientY - hr.top + S.host.scrollTop;
-  let best = -1;
-  let bd = within;
-  for (let i = 0; i < S.addrs.length; i++) {
-    if (!S.pvis[i]) continue;
-    const d = (S.px[i] - x) ** 2 + (S.py[i] - y) ** 2;
-    if (d < bd) {
-      bd = d;
-      best = i;
-    }
-  }
-  return best;
+  // `within` is a squared distance, as it always was here.
+  return pickMark(x, y, S, { within: Math.sqrt(within) });
 }
 
 // --- drawing -----------------------------------------------------------------
@@ -966,6 +991,120 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
   if (ctx.roundRect) ctx.roundRect(x, y, w, h, rr);
   else ctx.rect(x, y, w, h);
+}
+
+/** A roster row's card words, from its address and type alone (web/dots-cards.js). */
+function labelOf(a) {
+  let l = S.labels.get(a);
+  if (!l) {
+    l = cardLabel(S.scene.rosterBy.get(a) || { address: a });
+    S.labels.set(a, l);
+  }
+  return l;
+}
+
+/** A card's lines at its size now, kept by size: fitting a name measures it several times. */
+function linesOf(ctx, a, sh) {
+  const key = `${a}|${Math.round(sh.w)}|${Math.round(sh.h)}`;
+  let lines = S.fits.get(key);
+  if (!lines) {
+    lines = cardText(labelOf(a), sh, (txt, px, weight) => {
+      ctx.font = `${weight} ${px}px ${S.font}`;
+      return ctx.measureText(txt).width;
+    });
+    if (S.fits.size > 4000) S.fits.clear();
+    S.fits.set(key, lines);
+  }
+  return lines;
+}
+
+/**
+ * A resource's roster card, `u` of the way from its dot (0) to its card (1): the dot's disc grows into a rounded
+ * rect in its estate's colour, which pales to a tint on the page's surface as the name and the type fade in. The
+ * marks a dot wears (a tour's light, the adoption's ring, the selection, a takeoff) go round the card.
+ */
+function drawRosterCard(ctx, a, sh, u, { vis, colour, glow, ring, selected, takeoff }) {
+  const col = S.col;
+  const round = (o) => roundRect(ctx, sh.x - o, sh.y - o, sh.w + 2 * o, sh.h + 2 * o, sh.r + o);
+  if (glow) {
+    ctx.globalAlpha = vis * glow.a * 0.7;
+    ctx.strokeStyle = glow.colour;
+    ctx.lineWidth = 3;
+    round(3);
+    ctx.stroke();
+  }
+  round(0);
+  ctx.globalAlpha = vis * Math.min(1, u * 2);
+  ctx.fillStyle = col.surface || col.bg;
+  ctx.fill();
+  ctx.globalAlpha = vis * lerp(1, 0.12, u);
+  ctx.fillStyle = colour;
+  ctx.fill();
+  ctx.globalAlpha = vis * Math.min(1, u * 1.5);
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+  const ta = cardTextAlpha(u);
+  if (u > 0.5) {
+    ctx.save();
+    round(0);
+    ctx.clip();
+    ctx.globalAlpha = vis;
+    ctx.fillStyle = colour;
+    ctx.fillRect(sh.x, sh.y, CARD_TEXT.bar, sh.h);
+    const lines = ta > 0 ? linesOf(ctx, a, sh) : [];
+    if (lines.length) {
+      const total = lines.reduce((n, l) => n + l.size * 1.25, 0);
+      let y = sh.y + (sh.h - total) / 2;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.globalAlpha = vis * ta;
+      for (const l of lines) {
+        ctx.font = `${l.weight} ${l.size}px ${S.font}`;
+        ctx.fillStyle = l.ink === "muted" ? col.muted : col.fg;
+        ctx.fillText(l.text, sh.x + CARD_TEXT.bar + CARD_TEXT.pad, y + l.size * 0.625);
+        y += l.size * 1.25;
+      }
+    }
+    ctx.restore();
+  }
+  if (ring) {
+    // It wears its estate's tags now: a ring round the dot, a tag on the card's corner.
+    ctx.globalAlpha = vis;
+    if (u < 0.5) {
+      ctx.strokeStyle = col.managed;
+      ctx.lineWidth = 1.2;
+      round(2);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = col.managed;
+      ctx.beginPath();
+      ctx.arc(sh.x + sh.w - 6, sh.y + 6, Math.max(2, Math.min(3.5, sh.h * 0.08)), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  if (glow && glow.ring) {
+    ctx.globalAlpha = vis;
+    ctx.strokeStyle = glow.colour;
+    ctx.lineWidth = 2;
+    round(5);
+    ctx.stroke();
+  }
+  if (selected) {
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = col.fg;
+    ctx.lineWidth = 1.6;
+    round(4);
+    ctx.stroke();
+  }
+  if (takeoff < 0.2) {
+    ctx.globalAlpha = vis * (1 - takeoff / 0.2);
+    ctx.strokeStyle = col.pending;
+    ctx.lineWidth = 1.4;
+    round(2 + takeoff * 20);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
 }
 
 function polyline(ctx, pts) {
@@ -1005,11 +1144,25 @@ function draw(dt) {
   const tc = cardMorph(S.cardW * s, { reduced });
   S.cardPx = S.cardW * s;
   S.pitchPx = P * s;
-  S.cardA = 1 - tc;
+  // With no SVG card for any resource, the canvas draws the roster's cards: while the carve holds the stage (a live
+  // carve's director or tour), or always for a recording. The SVG's own cards (a live carve's roots) stay out of the
+  // paint then, and come back, eased, when the stage is theirs again.
+  const ownWant = S.seedless && (!S.live || S.carving) ? 1 : 0;
+  S.ownA = S.snap || reduced ? ownWant : lerp(S.ownA, ownWant, 1 - Math.exp(-dt / 300));
+  if (Math.abs(S.ownA - ownWant) < 0.01) S.ownA = ownWant;
+  const ownA = S.ownA;
+  S.own = ownA >= 0.5;
+  // The roster's cards grow from the dots in their slots: their own size on screen picks their form, as a card's does.
+  const rcW = S.rc.w * s;
+  const rcH = S.rc.h * s;
+  S.rosterCardPx = rcW;
+  const tr = cardMorph(rcW, { reduced });
+  const layerA = lerp(tc, 1, ownA);
+  S.cardA = 1 - layerA;
   // Cards fade faster than the dots grow, so the dots under them read by the middle of the morph.
-  const cardA = Math.pow(1 - tc, 2).toFixed(3);
+  const cardA = (Math.pow(1 - tc, 2) * (1 - ownA)).toFixed(3);
   if (S.host.style.getPropertyValue("--dots-card-a") !== cardA) S.host.style.setProperty("--dots-card-a", cardA);
-  const hide = tc >= 1;
+  const hide = tc >= 1 || ownA >= 1;
   if (hide !== S.svgHidden) {
     // The export owns its camera and measures the host, so it takes the SVG out of
     // layout altogether; the app's own wheel handler measures the SVG, so there it stays in layout.
@@ -1053,11 +1206,14 @@ function draw(dt) {
     const size = Math.max(b.w, b.h, fin ? Math.max(fin.w, fin.h) : 0);
     td.set(e, discMorph(size * P * s, { reduced }));
   }
-  const level = levelOf(tc, td.values());
+  const level = levelOf(S.own ? tr : tc, td.values());
   // Reaching the estate level by hand fits the estates, so they are not a speck in a corner.
   if (level === "discs" && S.level && S.level !== "discs" && !S.fly && !S.directing) queueMicrotask(() => fly("estates"));
   S.level = level;
-  const dotLayerA = tc;
+  const dotLayerA = layerA;
+  // How far a resource with no SVG card has grown into its roster card: 0 its dot, 1 its card.
+  const rosterU = ownA * (1 - tr);
+  if (ownA !== ownWant) moving = true;
 
   // Activity per estate: dots in the air toward it (or leaving it), for the running light.
   const act = new Map();
@@ -1150,7 +1306,7 @@ function draw(dt) {
     // and the box have room, else just above the outline (it may run past a
     // narrow box's edge), so a label never sits on the dots.
     const fs = 11.5;
-    if (tc > 0.6 && (td.get(e) ?? 0) < 0.5) {
+    if (dotLayerA > 0.6 && (td.get(e) ?? 0) < 0.5) {
       ctx.font = `700 ${fs}px ${S.font}`;
       ctx.textBaseline = "middle";
       ctx.textAlign = "left";
@@ -1352,10 +1508,21 @@ function draw(dt) {
     S.px[i] = q.x;
     S.py[i] = q.y;
     S.pvis[i] = vis > 0.2 ? 1 : 0;
-    if (q.x < -20 || q.y < -20 || q.x > W + 20 || q.y > H + 20) continue;
+    // A resource the SVG has no card for grows into its roster card where its dot is.
+    const u = card ? 0 : rosterU * (1 - tdE);
+    const flying = f && f.ok && !reduced;
+    const shape = u > 0.01 ? cardShape(q.x, q.y, u, { dotR: flying ? rDot * 1.6 : rDot, cardW: rcW, cardH: rcH }) : null;
+    S.pw[i] = shape ? shape.w / 2 : 0;
+    S.ph[i] = shape ? shape.h / 2 : 0;
+    const margin = shape ? 20 + shape.w / 2 : 20;
+    if (q.x < -margin || q.y < -margin || q.x > W + margin || q.y > H + margin) continue;
     const g = glow.get(a);
     if (f || g) markLit(est);
     if (vis <= 0.01) continue;
+    if (shape) {
+      drawRosterCard(ctx, a, shape, u, { vis, colour, glow: g, ring: rings.has(a), selected: a === S.selected, takeoff: flying ? (t - f.start) / (f.end - f.start) : 1 });
+      continue;
+    }
     if (g) {
       ctx.globalAlpha = vis * g.a * 0.6;
       ctx.fillStyle = g.colour;
@@ -1363,7 +1530,6 @@ function draw(dt) {
       ctx.arc(q.x, q.y, rDot * 2.6, 0, Math.PI * 2);
       ctx.fill();
     }
-    const flying = f && f.ok && !reduced;
     if (flying) {
       // A dot in the air is lifted: larger, with a soft halo in the colour it is turning.
       ctx.globalAlpha = vis * 0.25;
@@ -1429,8 +1595,14 @@ function draw(dt) {
         ctx.strokeStyle = col.estate.get(f.to) || col.neutral;
         ctx.globalAlpha = a * (1 - u);
         ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.arc(qx, qy, rDot * (1.2 + u * 5), 0, Math.PI * 2);
+        if (S.pw[i] > 0) {
+          // A card's landing: its outline swells and fades.
+          const grow = 2 + u * 10;
+          roundRect(ctx, qx - S.pw[i] - grow, qy - S.ph[i] - grow, 2 * (S.pw[i] + grow), 2 * (S.ph[i] + grow), 6 + grow / 2);
+        } else {
+          ctx.beginPath();
+          ctx.arc(qx, qy, rDot * (1.2 + u * 5), 0, Math.PI * 2);
+        }
         ctx.stroke();
       }
       const b = boxes.get(f.to);
@@ -1456,15 +1628,25 @@ function draw(dt) {
     const qx = S.px[i];
     const qy = S.py[i];
     const u = Math.min(1, (t - f.end) / PULSE_MS);
-    ctx.globalAlpha = dotLayerA * (0.35 + 0.4 * (1 - u));
-    ctx.fillStyle = col.degraded;
-    ctx.beginPath();
-    ctx.arc(qx, qy, rDot * (2.2 + 1.5 * (1 - u)), 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = dotLayerA;
-    ctx.beginPath();
-    ctx.arc(qx, qy, rDot, 0, Math.PI * 2);
-    ctx.fill();
+    if (S.pw[i] > 0) {
+      // A refused card: its outline in the failure colour, so its words stay readable.
+      const out = 2 + 3 * (1 - u);
+      ctx.globalAlpha = dotLayerA * (0.6 + 0.4 * (1 - u));
+      ctx.strokeStyle = col.degraded;
+      ctx.lineWidth = 2.2;
+      roundRect(ctx, qx - S.pw[i] - out, qy - S.ph[i] - out, 2 * (S.pw[i] + out), 2 * (S.ph[i] + out), 7);
+      ctx.stroke();
+    } else {
+      ctx.globalAlpha = dotLayerA * (0.35 + 0.4 * (1 - u));
+      ctx.fillStyle = col.degraded;
+      ctx.beginPath();
+      ctx.arc(qx, qy, rDot * (2.2 + 1.5 * (1 - u)), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = dotLayerA;
+      ctx.beginPath();
+      ctx.arc(qx, qy, rDot, 0, Math.PI * 2);
+      ctx.fill();
+    }
     const b = boxes.get(owners.get(f.address) ?? scene.source);
     if (b) {
       const bp = boxPx(b);
@@ -1618,16 +1800,30 @@ function startKiosk() {
   window.addEventListener("message", onMsg);
   S.off.push(() => window.removeEventListener("message", onMsg));
   // The director never moves while a person has the graph in hand.
-  const touched = () => {
-    if (S) S.userUntil = performance.now() + 8_000;
-  };
-  for (const ev of ["wheel", "mousedown", "touchstart"]) {
-    S.host.addEventListener(ev, touched, { passive: true });
-    S.off.push(() => S && S.host.removeEventListener(ev, touched));
-  }
+  watchViewer();
   S.camAt = null;
   play(true);
   toParent({ type: "behold:dots-ready", source: S.name });
+}
+
+/** A viewer has the camera: the director and the tour's framing wait until VIEWER_HOLD_MS after their last input, then ease back. */
+function viewerHold() {
+  if (S) S.userUntil = performance.now() + VIEWER_HOLD_MS;
+}
+
+/**
+ * The director never moves while a person has the graph in hand: every input that moves the camera holds it, a wheel
+ * or a trackpad pinch (a wheel with ctrlKey), a touch and each move of a pinch, a press and each move of a drag.
+ */
+function watchViewer() {
+  const host = S.host;
+  const dragging = (e) => {
+    if (e.buttons) viewerHold();
+  };
+  for (const [ev, f] of [["wheel", viewerHold], ["pointerdown", viewerHold], ["mousedown", viewerHold], ["touchstart", viewerHold], ["touchmove", viewerHold], ["pointermove", dragging]]) {
+    host.addEventListener(ev, f, { passive: true });
+    S.off.push(() => host.removeEventListener(ev, f));
+  }
 }
 
 /** A box in scene pitches, as the viewBox that frames it clear of the rail and the parent's caption. */
@@ -1780,13 +1976,7 @@ function startLive(kiosk) {
     window.addEventListener("message", onMsg);
     S.off.push(() => window.removeEventListener("message", onMsg));
     // The director never moves while a person has the graph in hand.
-    const touched = () => {
-      if (S) S.userUntil = performance.now() + 8_000;
-    };
-    for (const ev of ["wheel", "mousedown", "touchstart"]) {
-      S.host.addEventListener(ev, touched, { passive: true });
-      S.off.push(() => S && S.host.removeEventListener(ev, touched));
-    }
+    watchViewer();
     toParent({ type: "behold:dots-ready", source: S.name, live: true });
   }
 }
@@ -1841,6 +2031,10 @@ function takeLive(answer) {
   S.px = new Float32Array(n);
   S.py = new Float32Array(n);
   S.pvis = new Uint8Array(n);
+  S.pw = new Float32Array(n);
+  S.ph = new Float32Array(n);
+  // A later read may name a type the first did not.
+  S.labels.clear();
   S.col = readColours();
   busy();
   S.dirty = true;
