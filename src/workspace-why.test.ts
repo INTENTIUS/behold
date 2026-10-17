@@ -256,7 +256,7 @@ describe("a chant below WHY_CHANT_FLOOR (#691)", () => {
 
   it("is registered, and the check names the read and the floor", () => {
     expect(CHANT_FLOORS.map((f) => f.floor)).toContain(WHY_CHANT_FLOOR);
-    const f = floorFor(WHY_CHANT_FLOOR);
+    const f = floorFor("why");
     expect(floorMet(f, "0.95.0")).toBe(false);
     expect(floorMet(f, WHY_CHANT_FLOOR)).toBe(true);
     expect(floorMet(f, undefined)).toBe(true);

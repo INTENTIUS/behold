@@ -76,9 +76,10 @@ export function floorRefusal(f: ChantFloor, version: string | undefined): { erro
   };
 }
 
-/** The registry's entry for a floor value. Throws on a floor not registered, so a typo fails a test. */
-export function floorFor(floor: string): ChantFloor {
-  const f = CHANT_FLOORS.find((x) => x.floor === floor);
-  if (!f) throw new Error(`no chant floor ${floor} in src/chant-floors.ts`);
+/** The registry's entry for a read, by its `read` name. Several reads can share one floor version, so the
+ * lookup is by name. Throws on a read not registered, so a typo fails a test. */
+export function floorFor(read: string): ChantFloor {
+  const f = CHANT_FLOORS.find((x) => x.read === read);
+  if (!f) throw new Error(`no chant floor for the read "${read}" in src/chant-floors.ts`);
   return f;
 }
