@@ -36,9 +36,17 @@
  * A migration is looked for under the repo's project; with no repo named,
  * under every estate's project, else the reports index's (`index.json`).
  *
+ * Of those, only the current cycle's: an estate whose roster was written at
+ * or after demo.json's `started_at`, else the newest estate of each root, since
+ * each terralith cycle makes new estates (`tl1-*`, `tl2-*`) and the old ones
+ * stay in estates.json.
+ *
  * The gate: with a repo named, the answer is `live: true` only when its
  * projects hold choudoufu roots (an estate that is a live block's name, not a
- * stock root's path) or one of its estate migrations was found. The served
+ * stock root's path) or one of its estate migrations was found, or the
+ * scenario is the terralith's: demo.json's `tool` is `terralith`, or the
+ * repo's only roster this cycle is a stock root at its top. The terralith's
+ * story opens on its stock root, before the adoption exists. The served
  * checkout does not open it, so while the demo runs a Terraform scenario the
  * layer stays off. With no repo named, it is `live: true` when the served
  * estate has choudoufu roots (a choudoufu member, or a terragucci config whose
@@ -355,6 +363,28 @@ export function carvedEntries(
   return { entries: entries.filter((e) => (e.project !== null && projects.has(e.project)) || scope.targets.has(e.estate)), projects: [...projects].sort() };
 }
 
+/**
+ * The current cycle's estates. Each terralith cycle makes new estates under
+ * its own prefix (`tl1-*`, `tl2-*`), and the previous cycle's stay in
+ * estates.json, so only an estate whose roster was written at or after
+ * demo.json's `started_at` is drawn. With no `started_at` (no demo.json), the
+ * newest estate of each root.
+ */
+export function currentCycle(entries: readonly EstateEntry[], startedAt: string | null): EstateEntry[] {
+  const from = startedAt ? Date.parse(startedAt) : NaN;
+  if (!Number.isNaN(from)) return entries.filter((e) => e.at !== null && Date.parse(e.at) >= from);
+  const newest = new Map<string, EstateEntry>();
+  for (const e of entries) {
+    const k = e.root !== null ? `${e.project ?? ""}\u0000${e.root}` : `\u0001${e.estate}`;
+    const held = newest.get(k);
+    if (!held || (e.at !== null && (held.at === null || Date.parse(e.at) > Date.parse(held.at)))) newest.set(k, e);
+  }
+  return entries.filter((e) => [...newest.values()].includes(e));
+}
+
+/** A stock root at the repo's top: a terralith before its adoption. */
+const stockTop = (e: EstateEntry): boolean => e.root !== null && !choudoufuEntry(e) && stockEstate(e.root) === "root";
+
 /** One read of the live carve. Never throws: a key it cannot read is a problem the answer names. */
 export async function readCarve(source: TerragucciSource, opts: CarveReadOptions): Promise<CarveAnswer> {
   const now = opts.now ?? new Date();
@@ -435,11 +465,15 @@ export async function readCarve(source: TerragucciSource, opts: CarveReadOptions
 
   // Only the carved project's estates: the demo's prefix holds every demo repo's roots.
   const carved = carvedEntries(all, { repo: ofRepo, homes: [...homes], targets });
-  const entries = carved.entries;
+  // And only this cycle's: an earlier cycle's estates stay in estates.json under their own prefix.
+  const entries = currentCycle(carved.entries, d?.started_at ?? null);
   // With a repo named, the gate is that repo's carve: its projects hold choudoufu roots, or one of its migrations was found.
   // The served checkout is not the demo's repo, so it does not open the gate there.
   const choudoufu = ofRepo !== null ? homes.size > 0 || entries.some(choudoufuEntry) : opts.choudoufu();
-  const open = ofRepo !== null ? choudoufu : choudoufu || entries.length > 0;
+  // The terralith's story opens on its stock root, before the adoption exists: the terralith tool, or a repo whose
+  // only roster this cycle is one stock root at its top, opens the layer from the start.
+  const terralith = d?.tool === "terralith" || (entries.length === 1 && stockTop(entries[0]!));
+  const open = ofRepo !== null ? choudoufu || terralith : choudoufu || entries.length > 0;
   if (!open) {
     const reason =
       ofRepo !== null

@@ -470,10 +470,18 @@ terragucci#1133 for the migrations), and no others:
   `-team-c`) join after the split and stay drawn in the team beat, when
   `demo.json` names team B's repo. With no repo named and no migration found,
   every estate is drawn, as for a plain `behold serve` of one estate.
+- Of those, only the current cycle's estates: each terralith cycle makes new
+  estates under its own prefix (`tl1-*`, `tl2-*`) and the previous cycle's
+  stay in estates.json, so an estate is drawn when its `at` is at or after
+  `demo.json`'s `started_at`. With no `started_at`, the newest estate of each
+  root.
 - With a repo named, the layer is offered only when its projects hold a
-  choudoufu root (an estate named by a live block, not a stock root's path) or
-  one of its migrations was found; the served checkout does not count. While
-  the demo runs a Terraform scenario, the carve route answers `live: false`.
+  choudoufu root (an estate named by a live block, not a stock root's path),
+  one of its migrations was found, or the scenario is the terralith's:
+  `demo.json`'s `tool` is `terralith`, or the repo's only roster this cycle is
+  a stock root at its top. The terralith's story opens on its stock root, before
+  the adoption exists. The served checkout does not count. While the demo runs
+  a Terraform scenario, the carve route answers `live: false`.
 - A stamp's line has an empty `estate_from` (the resource had no estate); it
   reads as from the estate it is stamped into.
 - A line in the first read happened before the page looked: its dot is drawn

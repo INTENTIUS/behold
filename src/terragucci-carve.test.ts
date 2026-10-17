@@ -18,7 +18,7 @@ import { Broadcaster } from "./events.ts";
 import { FrameBuffer } from "./frames.ts";
 import { OpRunner } from "./op-runner.ts";
 import { terragucciSource } from "./terragucci-source.ts";
-import { countLines, demoMigration, estateEntries, progressLine, readCarve, readProgress, recordCounts } from "./terragucci-carve.ts";
+import { countLines, currentCycle, demoMigration, estateEntries, progressLine, readCarve, readProgress, recordCounts } from "./terragucci-carve.ts";
 
 const HERE = import.meta.dirname;
 const BUCKET = join(HERE, "..", "example-terragucci-reports");
@@ -240,7 +240,7 @@ describe("the carve draws the carved project's estates, not the whole prefix", (
     JSON.stringify({ cycle: 7, scenario: "terralith", title: "t", step: "applying", label: "l", started_at: "2026-10-16T09:58:00Z", next: null, pull: null, commit: null, ...o });
 
   /** Every demo repo's roots in one prefix: Terraform's, Terragrunt's, chant's and the terralith's, and after a split the team repos'. */
-  function mixed(opts: { teams?: boolean } = {}): string {
+  function mixed(opts: { teams?: boolean; stock?: boolean; old?: boolean } = {}): string {
     const dir = tmp("behold-carve-mixed-");
     const estates = [
       entry("app", `${F}/demo`, "app"),
@@ -249,11 +249,14 @@ describe("the carve draws the carved project's estates, not the whole prefix", (
       entry("other", `${F}/demo`, "other"),
       entry("units/vpc", `${F}/demo-terragrunt`, "units/vpc"),
       entry("components/api", `${F}/demo-chant`, "components/api"),
-      entry("tl7-terralith", TL, "."),
+      // The stock beat: the terralith's one stock root, before the adoption names an estate.
+      opts.stock ? entry("root", TL, ".") : entry("tl7-terralith", TL, "."),
       ...(opts.teams ? ["a", "b", "c"].map((t) => entry(`tl7-team-${t}`, `${TL}-team-${t}`, ".")) : []),
+      // The cycle before: its estates stay in estates.json, written before this cycle started.
+      ...(opts.old ? [{ ...entry("tl6-terralith", TL, "."), at: "2026-10-16T09:00:00Z" }, ...["a", "b", "c"].map((t) => ({ ...entry(`tl6-team-${t}`, `${TL}-team-${t}`, "."), at: "2026-10-16T09:10:00Z" }))] : []),
     ];
     put(dir, "estates.json", JSON.stringify({ schema: "terragucci.estates/v1", estates }));
-    for (const e of estates) put(dir, e.roster, roster(e.estate, e.estate.startsWith("tl7-") ? "aws_iam_role.r" : "terraform_data.d", e.estate.startsWith("tl7-")));
+    for (const e of estates) put(dir, e.roster, roster(e.estate, /^tl\d+-|^root$/.test(e.estate) ? "aws_iam_role.r" : "terraform_data.d", /^tl\d+-/.test(e.estate)));
     return dir;
   }
 
@@ -299,6 +302,30 @@ describe("the carve draws the carved project's estates, not the whole prefix", (
     const b = await readCarve(terragucciSource(dir), { choudoufu: () => false, remembered, places });
     if (!b.live) throw new Error(`shut: ${b.reason}`);
     expect(b.estates.map((e) => e.estate).sort()).toEqual(drawn);
+  });
+
+  it("draws only this cycle's estates, not the cycle before's", async () => {
+    const dir = mixed({ teams: true, old: true });
+    put(dir, "demo.json", demoJson({ tool: "terralith", repo: "admin/demo-terralith", next: { action: "split: 2 of 3 moved", at: null } }));
+    put(dir, `${TL}/migrations/split.json`, JSON.stringify({ name: "split", status: "waiting", moves: ["a", "b", "c"].map((t) => ({ from_estate: "tl7-terralith", to_estate: `tl7-team-${t}` })) }));
+    const a = await readCarve(terragucciSource(dir), { choudoufu: () => false });
+    if (!a.live) throw new Error(`shut: ${a.reason}`);
+    expect(a.estates.map((e) => e.estate).sort()).toEqual(["tl7-team-a", "tl7-team-b", "tl7-team-c", "tl7-terralith"]);
+    // With no started_at, the newest estate of each root.
+    const entries = estateEntries(JSON.parse(readFileSync(join(dir, "estates.json"), "utf8")));
+    expect(currentCycle(entries, null).map((e) => e.estate).filter((e) => e.startsWith("tl")).sort()).toEqual(["tl7-team-a", "tl7-team-b", "tl7-team-c", "tl7-terralith"]);
+  });
+
+  it("opens on the terralith's stock root, before the adoption exists", async () => {
+    const dir = mixed({ stock: true });
+    put(dir, "demo.json", demoJson({ tool: "terralith", repo: "admin/demo-terralith", step: "applied" }));
+    const a = await readCarve(terragucciSource(dir), { choudoufu: () => false });
+    if (!a.live) throw new Error(`shut: ${a.reason}`);
+    expect(a.estates.map((e) => [e.estate, e.resources.every((r) => !r.marked)])).toEqual([["root", true]]);
+    expect(a.migrations).toEqual([]);
+    // A driver that writes no tool: the repo's one stock roster at its top opens it too.
+    put(dir, "demo.json", demoJson({ repo: "admin/demo-terralith", step: "applied" }));
+    expect((await readCarve(terragucciSource(dir), { choudoufu: () => false })).live).toBe(true);
   });
 
   it("draws every estate for a plain serve: no repo named and no migration found", async () => {
