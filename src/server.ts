@@ -17,6 +17,7 @@ import { resolveSubstrateTargets } from "./targets.ts";
 import { loadKubeconfig, resolveK8sTarget, type K8sTarget } from "./k8s-target.ts";
 import { streamSSE } from "hono/streaming";
 import { serveStatic } from "@hono/node-server/serve-static";
+import { dotsPreviewRoutes, type DotsPreviewOptions } from "./dots-preview.ts";
 import { serve } from "@hono/node-server";
 import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
@@ -209,6 +210,8 @@ const execFileP = async (cmd: string, args: string[]): Promise<string> =>
   (await promisify(execFile)(cmd, args, { encoding: "utf8", timeout: 10_000 })).stdout;
 
 export interface ServerOptions {
+  /** #712: the local dots preview's sources (scripts/dots-preview.ts); never set by the CLI. */
+  dotsPreview?: DotsPreviewOptions;
   /** The address to bind. 127.0.0.1 unless given (`--host`, BEHOLD_HOST). */
   host?: string;
   /** Names besides loopback that behold answers to (`--allow-host`,
@@ -1089,6 +1092,10 @@ export function createApp(
   // Carve mode (#252) claims /api/graph, /api/project and friends before the
   // project-shaped handlers are registered — see carveRoutes.
   if (cfg.carveReport) carveRoutes(app, cfg.carveReport, cfg.carveDemo);
+
+  // The dots preview (#712) claims /api/graph and /api/project the same way;
+  // only scripts/dots-preview.ts sets it, never `behold serve`.
+  if (cfg.dotsPreview) dotsPreviewRoutes(app, cfg.dotsPreview);
 
   // behold's own project-root config (#70) — `.behold.json`'s `tiers` block,
   // if any (src/project.ts `loadBeholdConfig`). Read once at app creation

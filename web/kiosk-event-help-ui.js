@@ -28,6 +28,8 @@ export const TIPS_TITLE = "Short notes on what just happened, beside the things 
 /** The trail's label. */
 export const TRAIL_WORDS = "This cycle";
 
+/** The Tips CSS, for a page that draws Tips of its own (web/kiosk-dots.js, #712). */
+export const TIPS_STYLE_ID = "eh-style";
 const STYLE = `
 #eh-trail { display: flex; flex-wrap: nowrap; align-items: center; gap: 0.35em; overflow-x: auto; scrollbar-width: none; contain: inline-size; min-width: 0; padding: 0.15em 0.9em 0.3em; font-size: 0.78em; color: var(--muted); min-height: 1.9em; }
 #eh-trail::-webkit-scrollbar { display: none; }
@@ -76,6 +78,10 @@ body.k-watch #eh-trail { position: fixed; z-index: 7; left: 5px; right: 5px; pad
  * clear of every label wins; with none clear, the one covering least. `arrow` is where the tip's notch sits along it, under
  * the anchor's middle as far as the tip reaches.
  */
+export function tipsStyle() {
+  return STYLE;
+}
+
 export function tipSpot(rect, size, win, labels = []) {
   const W = win.w || 1600;
   const w = size.w || 200;

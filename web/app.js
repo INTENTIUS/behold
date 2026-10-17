@@ -115,6 +115,10 @@ import { comparisonRow, comparisonSummary } from "./cross-env.js";
 // The marker-vs-derived mark on a choudoufu card: how its identity was found.
 import { identityMark, tagGlyphSvg } from "./identity-mark.js";
 import { shotFromMessage, shotViewBox, tweenViewBox, unionBox, sameViewBox } from "./kiosk-shot.js"; // behold#571: Watch's camera
+// #712: the dots preview's canvas layer. Mounted only when /api/graph's meta
+// carries `dots` (the local preview server, scripts/dots-preview.ts); every
+// other serve leaves it unmounted, and its hooks below are no-ops.
+import { mountDots, unmountDots, dotsCamera, dotsZoomOutFactor } from "./dots.js";
 initTheme();
 // #476: framed in a host pane. The flag is a class on <html>, so the CSS that
 // folds the chrome away needs no JS, and the theme is the host's for this
@@ -6483,6 +6487,10 @@ function render(ir, svg, m) {
     setupGraphViewBox(svgEl);
     wireEdgeHighlight(svgEl, ir);
   }
+  // #712: only the dots preview's meta carries `dots`.
+  if (svgEl && m && m.dots) {
+    mountDots({ host: g, svg: svgEl, meta: m, vbInit: vbInit.slice(), getVB: () => vb, setVB: (a) => { vb = a.slice(); vbAtFit = false; applyVB(); } }).catch((err) => console.warn("dots preview:", err));
+  } else unmountDots();
   ensureZoomControls(g);
   ensureBackToInfra(g);
   wire(ir);
@@ -6611,6 +6619,7 @@ function applyVB() {
   const s = currentSvg();
   if (s && vb) s.setAttribute("viewBox", vb.join(" "));
   scaleBoxLabels(); // #396 item 7b: box titles/badges keep a legible size at every zoom
+  dotsCamera(); // #712: a no-op unless the dots preview is mounted
   kioskTellBoxes(); // behold#571: the kiosk's overlays ride the boxes they describe
 }
 
@@ -6857,7 +6866,7 @@ function ensureZoomControls(host) {
       const cy = vb[1] + ((e.clientY - r.top) / r.height) * vb[3];
       const f = Math.exp(e.deltaY * 0.0025); // scroll up → f<1 → zoom in
       const minW = vbInit[2] / 60;
-      const maxW = vbInit[2] * 3;
+      const maxW = vbInit[2] * (dotsZoomOutFactor() ?? 3); // #712: the dots preview zooms out further
       const nw = Math.min(maxW, Math.max(minW, vb[2] * f));
       const nh = nw * (vb[3] / vb[2]);
       vb[0] = cx - ((cx - vb[0]) * nw) / vb[2];
@@ -6897,7 +6906,7 @@ function ensureZoomControls(host) {
         const m0 = mid(touch.pts);
         const cx = vb[0] + ((m.x - r.left) / r.width) * vb[2];
         const cy = vb[1] + ((m.y - r.top) / r.height) * vb[3];
-        const nw = Math.min(vbInit[2] * 3, Math.max(vbInit[2] / 60, vb[2] * f));
+        const nw = Math.min(vbInit[2] * (dotsZoomOutFactor() ?? 3), Math.max(vbInit[2] / 60, vb[2] * f));
         const nh = nw * (vb[3] / vb[2]);
         vb[0] = cx - ((cx - vb[0]) * nw) / vb[2] - ((m.x - m0.x) / r.width) * nw;
         vb[1] = cy - ((cy - vb[1]) * nh) / vb[3] - ((m.y - m0.y) / r.height) * nh;
@@ -7578,6 +7587,8 @@ async function loadOnce(opts = {}, isCurrent = () => true) {
   try {
     let q = lensParams(new URLSearchParams({ detail: String(view.detail) }));
     let endpoint = "/api/graph";
+    // #712: the dots preview's source rides along; absent from every other page's URL.
+    const dotsSource = new URLSearchParams(location.search).get("dots");
     if (view.components) {
       // M1.1 (#57): the component DAG stays on /api/graph even with an env
       // picked — the server joins live per-component status onto it there
@@ -7664,6 +7675,7 @@ async function loadOnce(opts = {}, isCurrent = () => true) {
       resourcesByComponent = {};
     }
     if (progressive) frameLoad = memberFrames.begin();
+    if (dotsSource) q.set("dots", dotsSource);
     const res = await apiFetch(`${endpoint}?${q}`);
     const body = await res.json();
     if (!isCurrent()) return; // a newer view/event is pending; do not paint the old result

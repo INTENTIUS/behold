@@ -328,3 +328,49 @@ AWS_ENDPOINT_URL=http://127.0.0.1:4658 AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_
 # the replay, screenshotted
 node scripts/dot-bench/replay-shots.mjs scripts/dot-bench/carve-terralith-14.jsonl.gz /tmp/shots
 ```
+
+## Decided after the prototype (#712): each estate has its own box
+
+The local prototype (`npm run preview:dots`) changes section 2's rule. At the
+dot level each estate is drawn as its own box, a rounded outline with the
+estate's name and a live count, so a carved dot leaves the terralith's box and
+lands in its estate's. Position now depends on the owner, by the maintainer's
+call: a split reads as dots moving house, which recolouring in place did not
+show.
+
+What stays from section 2:
+
+- Inside a box, a dot's slot is keyed by its address and grouped by unit, so
+  it is stable within its estate.
+- Boxes have stable slots. The source keeps the place its cards had on the
+  page. The new estates sit in a grid beside it in name order, each cell sized
+  for what the estate holds at the end of the recording, so a reset or a
+  replay lays out the same way.
+- The source is packed from its last unit backwards, so units leaving in unit
+  order never move the ones that stay: its box loses rows from the top.
+
+The carve is flown by unit, the order this note already recommended for the
+recorder. One team's cluster lifts off as a flock with a short stagger, flies
+an eased arc with a fading trail and recolours mid-flight. Untaggable children
+fly with their parent and keep orbiting it. A refused move takes off, comes
+back to its slot and leaves a red flare. What moves, where to and whether it
+landed are the recording's; the order and timing are the replay's.
+
+At the farthest zoom a box still condenses into its disc. Measured on the
+committed terralith-14 recording at 1,041 dots, Chrome with the CPU slowed 4x,
+1440 by 900 at a device pixel ratio of 2: the whole paint pass (dots, boxes,
+the lights on their borders, discs) takes 2.5 to 2.7 ms at p50 and 6 to 8 ms
+at p95 during the replay, and 2.4 ms at the disc level. The one frame over
+budget in each run is the first after a seek, when the layout cache is cold.
+
+### The recorded carve as a static page
+
+The kiosk promises that everything on it is happening now, so the recorded
+carve is not a kiosk scenario: the live carve joins the kiosk through #711.
+The recording is published as a static page instead. `npm run export:carve`
+writes `dist-carve/index.html`, one file holding the card SVG, the recording
+(gzipped) and one script with the dots layer, the theme and the narration. It
+needs no behold server and opens from disk. It says plainly that it is a
+recording ("recorded", naming the source). It replays by itself and loops,
+holding on the result. The camera follows the flock until a person takes it,
+and the rail steps aside while the camera is following.
