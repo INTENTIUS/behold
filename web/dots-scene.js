@@ -145,11 +145,33 @@ export function buildScene(show, opts = {}) {
   const src = finalSize.get(source) ?? { w: 10, h: 10 };
   const dests = estates.filter((e) => e !== source && finalSize.has(e)).sort();
   const area = dests.reduce((s, e) => s + finalSize.get(e).w * finalSize.get(e).h, 0);
-  const gridW = Math.max(Math.sqrt(area) * 1.25, ...dests.map((e) => finalSize.get(e).w));
-  const cells = shelfPack(
-    dests.map((e) => ({ key: e, ...finalSize.get(e) })),
-    { width: gridW, gap: BOX.gap },
-  );
+  // A box's label sits over its outline and may be wider than the box: each cell leaves room for it, so two labels
+  // never touch. `labelPx(e)` is the label's width on screen and `avail` the screen area the boxes are framed in; the
+  // pitch on screen follows from the extent, so it is found in a few passes.
+  const labelRoom = (ppp) => (e) => (o.labelPx && ppp ? o.labelPx(e) / ppp + 1 : 0);
+  const pack = (ppp) => {
+    const room = labelRoom(ppp);
+    const ws = dests.map((e) => Math.max(finalSize.get(e).w, room(e)));
+    const gridW = Math.max(Math.sqrt(area) * 1.25, ...ws);
+    // A row's labels sit in the gap above it.
+    const gap = Math.max(BOX.gap, o.labelPx && ppp ? (o.labelH ?? 18) / ppp + 1 : 0);
+    const cells = shelfPack(
+      dests.map((e, i) => ({ key: e, w: ws[i], h: finalSize.get(e).h })),
+      { width: gridW, gap },
+    );
+    let h = src.h;
+    for (const e of dests) h = Math.max(h, cells.get(e).y + finalSize.get(e).h);
+    return { gridW, cells, w: src.w + BOX.gap * 3 + gridW, h };
+  };
+  let packed = pack(null);
+  if (o.labelPx && o.avail && o.avail.w > 0 && o.avail.h > 0) {
+    for (let i = 0; i < 3; i++) {
+      // The director's widest shot frames the whole extent, with its padding: the smallest pitch a label must fit.
+      const ppp = Math.min(o.avail.w / (packed.w + 7), o.avail.h / (packed.h + 7));
+      packed = pack(ppp);
+    }
+  }
+  const { gridW, cells } = packed;
   const destX = src.w + BOX.gap * 3;
   const origin = new Map([[source, { x: 0, y: 0 }]]);
   for (const e of dests) origin.set(e, { x: destX + cells.get(e).x, y: cells.get(e).y });
