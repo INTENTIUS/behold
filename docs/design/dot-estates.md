@@ -438,21 +438,28 @@ otherwise, and the page polls every 2 s, so a move shows within a few seconds
 of its write. It reads at most 64 rosters and 8 migrations a time. Paging and
 per-estate reads on demand are for scale 14, not this build.
 
-### What the build codes against
+### What the build reads
 
-terragucci#1129 and #1130 were being written alongside, so behold reads the
-shapes their issues give, and these choices of its own:
+The keys are the ones terragucci writes (terragucci#1132 for the estates,
+terragucci#1133 for the migrations), and no others:
 
-- The estate list is `index.json`'s `estates` (`[{estate, count, at?,
-  roster?}]`), else `estates/index.json` holding the same list.
-- A migration is followed when `index.json` lists it under `migrations`, or
-  when `demo.json`'s `next.action` names it ("carve: 36 of 79 moved"). A name
+- `estates.json` at the top of the prefix, schema `terragucci.estates/v1`:
+  `{estates: [{estate, count, at, project, root, roster}]}`, where `roster`
+  is the roster's key relative to estates.json
+  (`estates/<estate>/roster.json`). behold reads it first, then each entry's
+  roster, 64 at most.
+- A migration is followed when `demo.json`'s `next.action` names it:
+  "carve: 36 of 79 moved", or "adopt: 3 of 4 stamped" for an adoption. A name
   seen once is followed for the rest of the demo's cycle, so a finished
   migration stays drawn.
-- Its record is `<project>/migrations/<name>.json`, where terragucci already
-  copies migration records, and its lines `<project>/migrations/<name>/progress.jsonl`
-  beside it, else the same keys at the top of the prefix. The record's
-  `counts` are used when it has them; otherwise the lines are counted.
+- Its record is `<project>/migrations/<name>.json`, with its counts in
+  `progress` (`{moved, stamped, refused, skipped, left}`), and its lines are
+  `<project>/migrations/<name>/progress.jsonl`. Each line is choudoufu's
+  `-progress-json` line with the `migration` and its `counts` so far; until
+  the record has counts, the newest line's are used. The project is an
+  estates.json entry's, else the reports index's.
+- A stamp's line has an empty `estate_from` (the resource had no estate); it
+  reads as from the estate it is stamped into.
 - A line in the first read happened before the page looked: its dot is drawn
   where it ended. A line that arrives later flies from the moment it was seen,
   the lines of one read spread up to 1.6 s apart.

@@ -7,22 +7,25 @@
  * the same reads as the rest of the reports (src/terragucci-source.ts), and
  * nothing from the cloud:
  *
- * - `index.json`: its `estates` entries (terragucci#1130), one per estate
- *   with its resource count, and its `migrations` entries when it has them.
- *   A source whose index carries no `estates` is asked for
- *   `estates/index.json` instead, holding the same list.
- * - `estates/<estate>/roster.json` per entry (terragucci#1130):
+ * - `estates.json` (terragucci#1132, schema `terragucci.estates/v1`): one
+ *   entry per estate, `{estate, count, at, project, root, roster}`, where
+ *   `roster` is the roster's key relative to estates.json.
+ * - Each entry's roster, at most {@link MAX_ROSTERS}:
  *   `{estate, at, resources: [{address, type, live_id?, marked, follows?}]}`.
  *   A stock root has one too, written from its state, under the root's name.
  * - `demo.json`, for the migration a running step names: `next.action` reads
- *   "carve: 36 of 79 moved" while a migration runs (terragucci#1129).
+ *   "carve: 36 of 79 moved", or "adopt: 3 of 4 stamped" for an adoption
+ *   (terragucci#1133).
  * - `<project>/migrations/<name>.json`, the migration's record, for its
- *   counts (moved, stamped, refused, skipped, left) and whether it finished.
- * - `<project>/migrations/<name>/progress.jsonl` (terragucci#1129), appended
- *   while the migration runs, one line per resource:
- *   `{at, estate_from, estate_to, address, live_id, outcome, reason?, follows?}`.
- *   A source that keeps it at the top (`migrations/<name>/progress.jsonl`)
- *   is read there.
+ *   counts (its `progress`: moved, stamped, refused, skipped, left) and
+ *   whether it finished.
+ * - `<project>/migrations/<name>/progress.jsonl` (terragucci#1133), appended
+ *   while the migration runs: each line is choudoufu's `-progress-json` line,
+ *   `{at, estate_from, estate_to, address, live_id, outcome, reason?, follows?}`,
+ *   with the `migration` and its `counts` once that line arrived.
+ *
+ * The project is an estates.json entry's, else the reports index's
+ * (`index.json`, read only when estates.json names none).
  *
  * The gate: the answer is `live: true` only when the served estate has
  * choudoufu roots (a choudoufu member, or a terragucci config whose binary
@@ -128,8 +131,6 @@ export type CarveAnswer =
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const str = (v: unknown): v is string => typeof v === "string" && v.length > 0;
 const count = (v: unknown): number | null => (typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : null);
-/** A name a key may carry: no slash, no dot segment. */
-const SAFE = /^(?!\.{1,2}$)[A-Za-z0-9._~@+-]{1,128}$/;
 const trim = (s: string): string => s.replace(/^\/+|\/+$/g, "");
 const key = (...p: string[]): string => p.map(trim).filter(Boolean).join("/");
 
@@ -145,14 +146,20 @@ export function rosterResource(v: unknown): CarveResource | undefined {
   };
 }
 
-/** One progress line, or undefined when it is not one. */
+/**
+ * One progress line, or undefined when it is not one. choudoufu writes an
+ * empty `estate_from` for an adoption's stamp (the resource had no estate);
+ * the line then reads as from the estate it is stamped into.
+ */
 export function progressLine(v: unknown): CarveLine | undefined {
-  if (!isRecord(v) || !str(v.at) || !str(v.address) || !str(v.estate_from)) return undefined;
+  if (!isRecord(v) || !str(v.at) || !str(v.address)) return undefined;
   if (!(CARVE_OUTCOMES as readonly string[]).includes(v.outcome as string)) return undefined;
+  const to = str(v.estate_to) ? v.estate_to : str(v.estate_from) ? v.estate_from : "";
+  if (!to) return undefined;
   return {
     at: v.at,
-    estate_from: v.estate_from,
-    estate_to: str(v.estate_to) ? v.estate_to : v.estate_from,
+    estate_from: str(v.estate_from) ? v.estate_from : to,
+    estate_to: to,
     address: v.address,
     ...(str(v.live_id) ? { live_id: v.live_id } : {}),
     outcome: v.outcome as CarveOutcome,
@@ -166,10 +173,12 @@ export function progressLine(v: unknown): CarveLine | undefined {
  * last one may be half written while the job appends, so it is left out
  * without a word, and any other is counted.
  */
-export function readProgress(text: string): { lines: CarveLine[]; bad: number } {
+export function readProgress(text: string): { lines: CarveLine[]; bad: number; counts: CarveCounts | null } {
   const raw = text.split("\n");
   const lines: CarveLine[] = [];
   let bad = 0;
+  // Each line carries the migration's counts once it arrived: the last one is the newest.
+  let counts: CarveCounts | null = null;
   raw.forEach((l, i) => {
     if (!l.trim()) return;
     let doc: unknown;
@@ -180,10 +189,12 @@ export function readProgress(text: string): { lines: CarveLine[]; bad: number } 
       return;
     }
     const line = progressLine(doc);
-    if (line) lines.push(line);
-    else bad++;
+    if (line) {
+      lines.push(line);
+      counts = countsIn(isRecord(doc) ? doc.counts : undefined) ?? counts;
+    } else bad++;
   });
-  return { lines, bad };
+  return { lines, bad, counts };
 }
 
 /** The counts the lines say, when the record has none. */
@@ -193,54 +204,48 @@ export function countLines(lines: readonly CarveLine[]): CarveCounts {
   return c;
 }
 
-/** The record's counts, each one it has; null when it has none. */
-export function recordCounts(doc: unknown): CarveCounts | null {
-  const c = isRecord(doc) && isRecord(doc.counts) ? doc.counts : null;
-  if (!c) return null;
+/** A counts object, `{moved, stamped, refused, skipped, left}`; null when it is not one. */
+function countsIn(c: unknown): CarveCounts | null {
+  if (!isRecord(c)) return null;
   return { moved: count(c.moved) ?? 0, stamped: count(c.stamped) ?? 0, refused: count(c.refused) ?? 0, skipped: count(c.skipped) ?? 0, left: count(c.left) };
+}
+
+/** The migration record's counts, its `progress` field (terragucci#1133); null when it has none yet. */
+export function recordCounts(doc: unknown): CarveCounts | null {
+  return isRecord(doc) ? countsIn(doc.progress) : null;
 }
 
 /** The migration demo.json's `next` names while one runs ("carve: 36 of 79 moved"), or null. */
 export function demoMigration(next: string | null | undefined): string | null {
-  const m = typeof next === "string" ? /^\s*([A-Za-z0-9._~@+-]{1,128}):\s+\d+\s+of\s+\d+\b/.exec(next) : null;
+  const m = typeof next === "string" ? /^\s*([A-Za-z0-9._~@+-]{1,128}):\s+\d+\s+of\s+\d+\s+(?:moved|stamped)\b/.exec(next) : null;
   return m ? m[1]! : null;
 }
+
+/** estates.json's schema (terragucci#1132). */
+export const ESTATES_SCHEMA = "terragucci.estates/v1";
+export const ESTATES_KEY = "estates.json";
 
 interface EstateEntry {
   estate: string;
   count: number | null;
   at: string | null;
+  project: string | null;
+  root: string | null;
+  /** The roster's key: relative to estates.json, which sits at the top of the prefix. */
   roster: string;
 }
 
-/** An index's estate entries (terragucci#1130), each with the key its roster is at. */
+/** estates.json's entries, each with the key its roster is at. An entry with no safe roster key is left out. */
 export function estateEntries(doc: unknown): EstateEntry[] {
   const list = isRecord(doc) && Array.isArray(doc.estates) ? doc.estates : [];
   const out: EstateEntry[] = [];
   const seen = new Set<string>();
   for (const e of list) {
-    if (!isRecord(e) || !str(e.estate) || !SAFE.test(e.estate) || seen.has(e.estate)) continue;
+    if (!isRecord(e) || !str(e.estate) || seen.has(e.estate) || !str(e.roster)) continue;
+    const roster = trim(e.roster);
+    if (roster.split("/").some((p) => p === ".." || p === "." || p === "")) continue;
     seen.add(e.estate);
-    const roster = str(e.roster) && !e.roster.split("/").some((s) => s === ".." || s === ".") ? trim(e.roster) : key("estates", e.estate, "roster.json");
-    out.push({ estate: e.estate, count: count(e.count), at: str(e.at) ? e.at : null, roster });
-  }
-  return out;
-}
-
-interface MigrationEntry {
-  name: string;
-  project: string | null;
-  counts: CarveCounts | null;
-  status: string | null;
-}
-
-/** An index's migration entries, when it carries them. */
-export function migrationEntries(doc: unknown): MigrationEntry[] {
-  const list = isRecord(doc) && Array.isArray(doc.migrations) ? doc.migrations : [];
-  const out: MigrationEntry[] = [];
-  for (const m of list) {
-    if (!isRecord(m) || !str(m.name) || !SAFE.test(m.name)) continue;
-    out.push({ name: m.name, project: str(m.project) ? m.project : null, counts: recordCounts(m), status: str(m.status) ? m.status : null });
+    out.push({ estate: e.estate, count: count(e.count), at: str(e.at) ? e.at : null, project: str(e.project) ? e.project : null, root: str(e.root) ? e.root : null, roster });
   }
   return out;
 }
@@ -286,9 +291,10 @@ export async function readCarve(source: TerragucciSource, opts: CarveReadOptions
   const now = opts.now ?? new Date();
   const base = { source: source.location, read: now.toISOString() };
   const problems: string[] = [];
-  const index = parse(await readText(source, "index.json", problems), "index.json", problems);
-  let entries = estateEntries(index);
-  if (!entries.length) entries = estateEntries(parse(await readText(source, "estates/index.json", problems), "estates/index.json", problems));
+  const estatesDoc = parse(await readText(source, ESTATES_KEY, problems), ESTATES_KEY, problems);
+  const isEstates = isRecord(estatesDoc) && estatesDoc.schema === ESTATES_SCHEMA;
+  if (estatesDoc !== undefined && !isEstates) problems.push(`${ESTATES_KEY} is not a ${ESTATES_SCHEMA} document`);
+  const entries = isEstates ? estateEntries(estatesDoc) : [];
   const choudoufu = opts.choudoufu();
   if (!choudoufu && !entries.length) {
     return { ...base, live: false, reason: "The estate has no choudoufu roots and the reports hold no estate rosters, so there is no carve to draw.", problems };
@@ -312,18 +318,20 @@ export async function readCarve(source: TerragucciSource, opts: CarveReadOptions
   const demo: CarveDemo | null = d ? { cycle: d.cycle, scenario: d.scenario, title: d.title, step: d.step, label: d.label, next: d.next ? d.next.action : null } : null;
   const named = demoMigration(demo?.next);
 
-  const wanted = new Map<string, MigrationEntry>();
-  for (const m of migrationEntries(index)) wanted.set(m.name, m);
-  for (const n of opts.remembered ?? []) if (!wanted.has(n)) wanted.set(n, { name: n, project: null, counts: null, status: null });
-  if (named && !wanted.has(named)) wanted.set(named, { name: named, project: null, counts: null, status: null });
-  if (named) opts.remembered?.add(named);
+  const wanted = new Set<string>(opts.remembered ?? []);
+  if (named) {
+    wanted.add(named);
+    opts.remembered?.add(named);
+  }
 
-  const projects = projectsOf(index);
+  // The projects a migration may be under: the estates' own, else the reports index's.
+  let projects = [...new Set(entries.map((e) => e.project).filter((p): p is string => !!p))].sort();
+  if (!projects.length && wanted.size) projects = projectsOf(parse(await readText(source, "index.json", problems), "index.json", problems));
   const migrations: CarveMigration[] = [];
-  for (const m of [...wanted.values()].slice(0, MAX_MIGRATIONS)) {
-    // Where its record and lines are: under its project (terragucci's migration
-    // records are at <project>/migrations/<name>.json), else at the top.
-    const homes = m.project ? [m.project] : [...projects, ""];
+  for (const name of [...wanted].slice(0, MAX_MIGRATIONS)) {
+    const m = { name };
+    // Its record and its lines are under its project: <project>/migrations/<name>.json and <name>/progress.jsonl.
+    const homes = projects;
     const known = opts.places?.get(m.name);
     const tries = known !== undefined && known !== null ? [known] : homes;
     let record: unknown;
@@ -345,10 +353,10 @@ export async function readCarve(source: TerragucciSource, opts: CarveReadOptions
         break;
       }
     }
-    const { lines, bad } = text !== undefined ? readProgress(text) : { lines: [], bad: 0 };
+    const { lines, bad, counts: lineCounts } = text !== undefined ? readProgress(text) : { lines: [], bad: 0, counts: null };
     if (bad) problems.push(`${progress}: ${bad} line${bad === 1 ? " is" : "s are"} not a progress record`);
-    const counts = recordCounts(record) ?? m.counts ?? countLines(lines);
-    const status = isRecord(record) && str(record.status) ? record.status : m.status;
+    const counts = recordCounts(record) ?? lineCounts ?? countLines(lines);
+    const status = isRecord(record) && str(record.status) ? record.status : null;
     const finished = isRecord(record) && str(record.finished) ? record.finished : null;
     const done = !!finished || (status !== null && FINISHED.has(status)) || (counts.left === 0 && lines.length > 0 && named !== m.name);
     if (!lines.length && record === undefined && named !== m.name) continue;

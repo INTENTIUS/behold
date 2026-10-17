@@ -40,7 +40,8 @@ const put = (dir: string, key: string, body: string): void => {
 };
 
 const PROJECT = "github.com/demo/terralith";
-const line = (o: Record<string, unknown>) => JSON.stringify({ at: "2026-10-16T10:00:00Z", estate_from: "terralith", estate_to: "terralith", live_id: undefined, ...o });
+// choudoufu's -progress-json line, with the migration and its counts as terragucci appends it (terragucci#1133).
+const line = (o: Record<string, unknown>, counts: Record<string, number>) => JSON.stringify({ at: "2026-10-16T10:00:00Z", estate_from: "terralith", estate_to: "terralith", live_id: "", ...o, migration: "carve", counts });
 
 /** A reports bucket mid-carve: a stock roster, an adoption that ran, and a split halfway. */
 function bucket(opts: { estates?: boolean; split?: boolean } = { estates: true, split: true }): string {
@@ -51,10 +52,14 @@ function bucket(opts: { estates?: boolean; split?: boolean } = { estates: true, 
     JSON.stringify({
       schema: "terragucci.report-index/v1",
       reports: [{ project: PROJECT, commit: "abc", stage: "tf-apply", wave: 1, finished: "2026-10-16T10:00:00Z", path: `${PROJECT}/abc/tf-apply/wave-1` }],
-      ...(opts.estates ? { estates: [{ estate: "terralith", count: 3 }, { estate: "team-a", count: 1 }] } : {}),
     }),
   );
   if (opts.estates) {
+    // terragucci#1132: the estates index at the top of the prefix, each roster's key relative to it.
+    put(dir, "estates.json", JSON.stringify({ schema: "terragucci.estates/v1", estates: [
+      { estate: "terralith", count: 3, at: "2026-10-16T09:59:00Z", project: PROJECT, root: "terralith", roster: "estates/terralith/roster.json" },
+      { estate: "team-a", count: 1, at: "2026-10-16T10:00:01Z", project: "github.com/demo/team-a", root: "team-a", roster: "estates/team-a/roster.json" },
+    ] }));
     put(dir, "estates/terralith/roster.json", JSON.stringify({ estate: "terralith", at: "2026-10-16T09:59:00Z", resources: [
       { address: "module.team_a.aws_iam_role.app", type: "aws_iam_role", live_id: "role-a", marked: true },
       { address: "module.team_a.aws_iam_role_policy.app", type: "aws_iam_role_policy", marked: false, follows: "module.team_a.aws_iam_role.app" },
@@ -64,13 +69,13 @@ function bucket(opts: { estates?: boolean; split?: boolean } = { estates: true, 
   }
   put(dir, "demo.json", JSON.stringify({ cycle: 3, scenario: "terralith", title: "Carving the terralith", step: "applying", label: "wave 1", started_at: "2026-10-16T09:58:00Z", next: { action: "carve: 1 of 2 moved", at: null }, pull: null, commit: "abc" }));
   if (opts.split) {
-    put(dir, `${PROJECT}/migrations/carve.json`, JSON.stringify({ name: "carve", status: "waiting", counts: { moved: 1, stamped: 0, refused: 1, skipped: 0, left: 1 } }));
+    put(dir, `${PROJECT}/migrations/carve.json`, JSON.stringify({ name: "carve", status: "waiting", progress: { moved: 1, stamped: 0, refused: 1, skipped: 0, left: 1 } }));
     put(
       dir,
       `${PROJECT}/migrations/carve/progress.jsonl`,
       [
-        line({ address: "module.team_a.aws_iam_role.app", live_id: "role-a", estate_to: "team-a", outcome: "moved" }),
-        line({ at: "2026-10-16T10:00:02Z", address: "module.team_b.aws_iam_role.app", live_id: "role-b", estate_to: "team-b", outcome: "refused", reason: "Unexpected changes in the marker rewrite" }),
+        line({ address: "module.team_a.aws_iam_role.app", live_id: "role-a", estate_to: "team-a", outcome: "moved" }, { moved: 1, stamped: 0, refused: 0, skipped: 0, left: 2 }),
+        line({ at: "2026-10-16T10:00:02Z", address: "module.team_b.aws_iam_role.app", live_id: "role-b", estate_to: "team-b", outcome: "refused", reason: "Unexpected changes in the marker rewrite" }, { moved: 1, stamped: 0, refused: 1, skipped: 0, left: 1 }),
         '{"at":"2026-10-16T10:00:03Z","estate_from":"terra', // half written: the job is appending
       ].join("\n"),
     );
@@ -100,6 +105,42 @@ describe("the live carve's read (#715)", () => {
     expect(a.problems).toEqual([]);
   });
 
+  it("takes the counts from the lines while the record has none yet", async () => {
+    const dir = bucket();
+    put(dir, `${PROJECT}/migrations/carve.json`, JSON.stringify({ name: "carve", status: "waiting" }));
+    const a = await readCarve(terragucciSource(dir), { choudoufu: () => false });
+    if (!a.live) throw new Error("shut");
+    expect(a.migrations[0]!.counts).toEqual({ moved: 1, stamped: 0, refused: 1, skipped: 0, left: 1 });
+  });
+
+  it("finds the project in the reports index when no estate names one", async () => {
+    const dir = bucket({ estates: false, split: true });
+    const a = await readCarve(terragucciSource(dir), { choudoufu: () => true });
+    if (!a.live) throw new Error("shut");
+    expect(a.migrations.map((m) => m.progress)).toEqual([`${PROJECT}/migrations/carve/progress.jsonl`]);
+  });
+
+  it("reads an adoption's stamp, whose line has no estate_from", async () => {
+    const dir = bucket({ estates: true, split: false });
+    put(dir, "demo.json", JSON.stringify({ cycle: 3, scenario: "terralith", title: "Adopting", step: "applying", label: "wave 1", started_at: "2026-10-16T09:58:00Z", next: { action: "adopt: 1 of 3 stamped", at: null }, pull: null, commit: "abc" }));
+    put(dir, `${PROJECT}/migrations/adopt/progress.jsonl`, JSON.stringify({ at: "2026-10-16T10:00:00Z", estate_from: "", estate_to: "terralith", address: "aws_vpc.main", live_id: "vpc-1", outcome: "stamped", migration: "adopt", counts: { moved: 0, stamped: 1, refused: 0, skipped: 0, left: 2 } }) + "\n");
+    const a = await readCarve(terragucciSource(dir), { choudoufu: () => false });
+    if (!a.live) throw new Error("shut");
+    const m = a.migrations.find((x) => x.name === "adopt")!;
+    expect(m.lines[0]).toMatchObject({ estate_from: "terralith", estate_to: "terralith", outcome: "stamped", live_id: "vpc-1" });
+    expect(m.counts.stamped).toBe(1);
+    expect(m.running).toBe(true);
+  });
+
+  it("does not read keys terragucci does not write", async () => {
+    const dir = bucket({ estates: false, split: false });
+    // An index carrying an estates list is not where the estates are.
+    put(dir, "index.json", JSON.stringify({ schema: "terragucci.report-index/v1", reports: [], estates: [{ estate: "terralith", roster: "estates/terralith/roster.json" }] }));
+    put(dir, "estates/terralith/roster.json", JSON.stringify({ estate: "terralith", at: "x", resources: [{ address: "aws_vpc.main", type: "aws_vpc", marked: false }] }));
+    const a = await readCarve(terragucciSource(dir), { choudoufu: () => false });
+    expect(a.live).toBe(false);
+  });
+
   it("is open on choudoufu roots alone, before any roster is written", async () => {
     const a = await readCarve(terragucciSource(bucket({ estates: false, split: false })), { choudoufu: () => true });
     expect(a.live).toBe(true);
@@ -117,7 +158,7 @@ describe("the live carve's read (#715)", () => {
     await readCarve(terragucciSource(dir), { choudoufu: () => false, remembered });
     expect([...remembered]).toEqual(["carve"]);
     put(dir, "demo.json", JSON.stringify({ cycle: 3, scenario: "terralith", title: "t", step: "applied", label: "done", started_at: "2026-10-16T09:58:00Z", next: null, pull: null, commit: "abc" }));
-    put(dir, `${PROJECT}/migrations/carve.json`, JSON.stringify({ name: "carve", status: "applied", finished: "2026-10-16T10:01:00Z", counts: { moved: 1, stamped: 0, refused: 1, skipped: 0, left: 0 } }));
+    put(dir, `${PROJECT}/migrations/carve.json`, JSON.stringify({ name: "carve", status: "applied", finished: "2026-10-16T10:01:00Z", progress: { moved: 1, stamped: 0, refused: 1, skipped: 0, left: 0 } }));
     const a = await readCarve(terragucciSource(dir), { choudoufu: () => false, remembered });
     if (!a.live) throw new Error("shut");
     expect(a.migrations[0]!.running).toBe(false);
@@ -126,15 +167,21 @@ describe("the live carve's read (#715)", () => {
 
   it("parses the pieces it is coded against", () => {
     expect(demoMigration("carve: 36 of 79 moved")).toBe("carve");
+    expect(demoMigration("adopt: 3 of 4 stamped")).toBe("adopt");
+    expect(demoMigration("carve: 36 of 79 moved, 2 refused")).toBe("carve");
     expect(demoMigration("approve wave 2")).toBe(null);
     expect(progressLine({ at: "x", estate_from: "a", address: "b", outcome: "teleported" })).toBeUndefined();
     expect(progressLine({ at: "x", estate_from: "a", address: "b", outcome: "stamped" })?.estate_to).toBe("a");
+    expect(progressLine({ at: "x", estate_from: "", estate_to: "", address: "b", outcome: "stamped" })).toBeUndefined();
     const p = readProgress('not json\n{"at":"x","estate_from":"a","address":"b","outcome":"moved"}\n{"at":');
     expect(p.lines).toHaveLength(1);
     expect(p.bad).toBe(1);
     expect(countLines(p.lines)).toEqual({ moved: 1, stamped: 0, refused: 0, skipped: 0, left: null });
-    expect(recordCounts({ counts: { moved: 2, left: 3 } })).toEqual({ moved: 2, stamped: 0, refused: 0, skipped: 0, left: 3 });
-    expect(estateEntries({ estates: [{ estate: "../x" }, { estate: "ok", roster: "../../etc/passwd" }] })).toEqual([{ estate: "ok", count: null, at: null, roster: "estates/ok/roster.json" }]);
+    expect(recordCounts({ progress: { moved: 2, left: 3 } })).toEqual({ moved: 2, stamped: 0, refused: 0, skipped: 0, left: 3 });
+    expect(recordCounts({ status: "waiting" })).toBe(null);
+    expect(estateEntries({ estates: [{ estate: "x" }, { estate: "bad", roster: "../../etc/passwd" }, { estate: "ok", count: 2, project: "p", root: "r", roster: "estates/ok/roster.json" }] })).toEqual([
+      { estate: "ok", count: 2, at: null, project: "p", root: "r", roster: "estates/ok/roster.json" },
+    ]);
   });
 });
 

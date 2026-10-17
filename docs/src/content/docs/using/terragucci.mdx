@@ -440,7 +440,7 @@ by every open kiosk for 2 seconds. A `demo.json` that is missing, refused or
 not in the demo's format is said on the page, which waits for the next one.
 
 When the estate has choudoufu roots, or the reports hold estate rosters
-(`estates/<estate>/roster.json`), the kiosk also draws a carve as it is
+(`estates.json`, each entry naming its roster), the kiosk also draws a carve as it is
 written. It reads each roster and each estate migration's progress
 (`<project>/migrations/<name>/progress.jsonl`, appended while the migration
 runs) through `GET /api/terragucci/carve`, one GET per key, shared for 1.5
