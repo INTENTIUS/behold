@@ -16,7 +16,7 @@
 import { linkState, linkWords, noteBack, noteRead, readFailed, shareLink } from "./kiosk-link.js";
 import { CHANT_PANEL_STEPS, chantApprovalModel } from "./chant-pr-marks.js";
 import { PICK_HOLD_MS, annMark, mergeRun, startRuns, statusIcon } from "./kiosk-runs.js";
-import { MODES, MODE_STORE, badges as waveBadges, badgeTitle, behindStep, steadyRun, captionModel, doraLine, modeStored, placeBeside, resultModel, shotFor, stepTone, tailLines } from "./kiosk-watch.js";
+import { MODES, MODE_STORE, badges as waveBadges, badgeTitle, behindStep, steadyRun, captionModel, doraLine, modeStored, placeBeside, quietWords, recordKey, resultModel, runningStep, shotFor, stepTone, tailLines } from "./kiosk-watch.js";
 import { shotMessage } from "./kiosk-shot.js";
 import { mountTrace } from "./kiosk-trace.js";
 import { startEventHelp } from "./kiosk-event-help-ui.js";
@@ -955,6 +955,15 @@ function drawCaption(host, s, now) {
   step.append(el("span", "k-cap-label", cap.step.word), elRoots("span", "k-cap-text", cap.step.text, s));
   if (step.setAttribute) step.setAttribute("title", cap.step.text);
   host.appendChild(step);
+  // A long step with nothing new coming in: what runs, and for how long (kiosk-watch.js quietWords).
+  if (s.quiet) {
+    const q = el("p", "k-cap-quiet k-quiet", s.quiet.text);
+    if (q.setAttribute) {
+      q.setAttribute("role", "status");
+      q.setAttribute("title", s.quiet.title);
+    }
+    host.appendChild(q);
+  }
 }
 
 /** The approval on the held wave's box: the step's word, the wave, its numbers, and how the hold ends. */
@@ -1439,6 +1448,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     }
     // behold#571: Watch's overlays, then the shot they leave room for.
     holdTick();
+    if (s.quietTick) s.quietTick();
     drawWatch(shownNow());
     renderViewToggle(views, shown, { components: s.components && ok, onPick: pickView });
     drawReading(shown.view, ok);
@@ -2228,6 +2238,37 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     }
     linkLine.hidden = !words;
     linkLine.textContent = words || "";
+  };
+
+  // A quiet step: when nothing new has come in for a while during a step
+  // that runs, the caption says what is running and for how long
+  // (kiosk-watch.js quietWords). A record is the driver's step, a job or
+  // step changing state in the run's view, or a progress line the carve's
+  // frame has drawn. Never on a replay, and never while the link cue is up.
+  let recordWas = null;
+  let recordAt = null;
+  let stepWas = null;
+  let stepSeenAt = null;
+  s.quietTick = () => {
+    const d = s.demo && s.demo.demo;
+    const t = now().getTime();
+    const runDoc = runsApi && runsApi.run ? runsApi.run.doc : null;
+    const run = runningStep(runDoc);
+    const writeAt = carveCtl ? carveCtl.lastWriteAt() : null;
+    const key = recordKey(d, runDoc, writeAt);
+    if (key !== recordWas) {
+      // The first look: the newest record's own time, where one says it, so a page opened in a long step shows the line at once.
+      const known = recordWas === null && d ? [d.next && d.next.from ? Date.parse(d.next.from) : NaN, run ? run.at : NaN, writeAt].filter((x) => typeof x === "number" && Number.isFinite(x) && x <= t) : [];
+      recordWas = key;
+      recordAt = known.length ? Math.max(...known) : t;
+    }
+    const stepKey = d ? `${d.cycle}|${d.step}|${d.label}` : null;
+    if (stepKey !== stepWas) {
+      stepWas = stepKey;
+      stepSeenAt = t;
+    }
+    s.quiet = quietWords(d, { now: t, lastRecordAt: recordAt, run, stepAt: stepSeenAt, replay: s.mode === "replay", stale: !!linkWords(link) });
+    if (carveCtl) carveCtl.setQuiet(s.quiet);
   };
 
   const demo = async () => {

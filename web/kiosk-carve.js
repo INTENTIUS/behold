@@ -77,6 +77,8 @@ body.k-carving.k-watch #k-carve { display: grid; }
 /* behold#725: sentence case. The tour file writes its labels in lower case ("cycle time"), so the label raises its first letter. */
 #k-carve .cx-label::first-letter, #k-carve .cx-follow-label::first-letter, #k-carve .cx-ch-kicker::first-letter, #k-carve .cx-num dt::first-letter { text-transform: uppercase; }
 #k-carve .cx-num dd { margin: 0; font-size: 1.25em; font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; }
+/* The quiet line: what runs while nothing new comes in (web/kiosk-watch.js quietWords). One muted line, no spinner. */
+#k-carve .cx-quiet { margin: 0; padding-left: var(--s3); color: var(--muted); font-size: 0.92em; line-height: 1.35; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #k-carve .cx-notes { margin: 0; font: 12px/1.35 var(--font-mono); color: var(--ink2, var(--muted)); padding-left: var(--s3); overflow-wrap: anywhere; }
 /* A phone: in the page's flow under the graph, where Watch's caption goes (web/kiosk.html). */
 @media (max-width: 600px) {
@@ -96,6 +98,7 @@ body.k-carving.k-watch #k-carve { display: grid; }
   #k-carve .cx-card-title { font-size: 17px; }
   #k-carve .cx-card-line { font-size: 14px; }
   #k-carve .cx-num dd { font-size: 16px; }
+  #k-carve .cx-quiet { white-space: normal; font-size: 13px; }
 }
 /* Slowed playback, in Inspect's quiet rows: off (real time) unless a person picks it. */
 .k-slowed { font: 12px var(--font-ui); background: var(--well, transparent); color: var(--fg); border: 1px solid var(--line); border-radius: 5px; padding: 2px 8px; cursor: pointer; }
@@ -115,13 +118,16 @@ export function liveCarveMessage(e, origin) {
  */
 export function startKioskCarve({ frame, watch, eh, origin = location.origin, isWatch = () => true }) {
   const trail = eh && eh.trailHost ? eh.trailHost : null;
-  if (typeof window === "undefined" || typeof document === "undefined" || !watch || !watch.layer) return { tellMode() {}, caption: () => (watch ? watch.caption : null), slowedControl: () => null };
+  if (typeof window === "undefined" || typeof document === "undefined" || !watch || !watch.layer) return { tellMode() {}, caption: () => (watch ? watch.caption : null), slowedControl: () => null, lastWriteAt: () => null, setQuiet() {} };
   let node = null;
   let narration = null;
   let carving = false;
   // The frame last told the kiosk's mode: a frame swapped in (a new view) is told again.
   let told = null;
   let lastBottom = -1;
+  // The newest progress line the frame has told of, and the quiet line the kiosk works out from it (web/kiosk.js).
+  let writeAt = null;
+  let quiet = null;
   // Slowed playback: a person's choice, real time until then. One button, kept across the header's redraws.
   let slowed = 1;
   let slowedNode = null;
@@ -171,6 +177,7 @@ export function startKioskCarve({ frame, watch, eh, origin = location.origin, is
         const f = frame();
         return f ? f.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
       },
+      quiet: () => quiet,
     });
   };
   const insets = () => {
@@ -208,6 +215,7 @@ export function startKioskCarve({ frame, watch, eh, origin = location.origin, is
       document.body.classList.toggle("k-carving", carving);
       tellMode();
     }
+    writeAt = typeof e.data.lastWriteAt === "number" ? e.data.lastWriteAt : null;
     // The caption shows only while the carve has the camera (body.k-carving); the Tips come either way.
     narration.update(e.data);
     // The caption's height follows its words: the frame keeps the boxes clear of it as it changes.
@@ -221,5 +229,13 @@ export function startKioskCarve({ frame, watch, eh, origin = location.origin, is
   const caption = () => (carving && node && isWatch() ? node : watch.caption);
   /** The slowed control for Inspect's quiet rows, once a frame draws a live carve; null before. */
   const slowedControl = () => (node ? slowedButton() : null);
-  return { tellMode, caption, slowedControl };
+  /** The newest progress line's time the frame has told of, in ms; null before one. */
+  const lastWriteAt = () => writeAt;
+  /** The quiet line from the kiosk, or null: drawn at once when it changes. */
+  const setQuiet = (q) => {
+    const was = quiet ? quiet.text : null;
+    quiet = q || null;
+    if (narration && (quiet ? quiet.text : null) !== was) narration.redraw();
+  };
+  return { tellMode, caption, slowedControl, lastWriteAt, setQuiet };
 }

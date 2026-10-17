@@ -301,3 +301,84 @@ export function placeBeside(box, size, view, gap = 18, avoid = []) {
   const x = Math.max(view.x + 8, Math.min(box.x, view.x + view.w - size.w - 8));
   return { x, y: Math.min(box.y + box.h + gap, view.y + view.h - size.h - 8), side: "below" };
 }
+
+// ---------------------------------------------------------------------------
+// A quiet step: during a long step (a wave planning four roots, live-mv about
+// to start) nothing new may arrive for a minute or more, and the stage holds
+// still. After QUIET_MS with no new record, one quiet line in the caption
+// says what is running and for how long, from demo.json's step and the run's
+// running job and step. Never over a replay, and never while the kiosk can't
+// read from behold: the stopped-updating cue (web/kiosk-link.js) says that.
+
+/** How long with no new record before the quiet line shows. */
+export const QUIET_MS = 10_000;
+
+/** The driver's steps that have something running behind them. A held step (waiting, failed), the end and the reset have their own words. */
+export const QUIET_STEPS = ["pull-request", "planned", "merged", "applying", "approved", "resumed"];
+
+/** "8 s", "1 m 05 s", "1 h 02 m". */
+export function quietDuration(secs) {
+  const s = Math.max(0, Math.floor(secs));
+  if (s < 60) return `${s} s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} m ${String(s % 60).padStart(2, "0")} s`;
+  return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} m`;
+}
+
+/** The first sentence of the driver's label, without its full stop. */
+export function firstSentence(text) {
+  if (typeof text !== "string") return null;
+  const t = text.trim();
+  if (!t) return null;
+  const m = /^(.+?[^.\s])\.(?:\s|$)/.exec(t);
+  return m ? m[1] : t;
+}
+
+/** The job and step running in a run's view, `{ job, step, at }` (`at` the step's start, else the job's, in ms), or null when none runs. */
+export function runningStep(runDoc) {
+  if (!runDoc || !Array.isArray(runDoc.jobs)) return null;
+  const job = runDoc.jobs.find((j) => j && j.status === "running");
+  if (!job) return null;
+  const step = (job.steps || []).find((x) => x && x.status === "running") || null;
+  const at = Date.parse((step && step.started_at) || job.started_at || "");
+  return { job: job.name, step: step ? step.name : null, at: Number.isFinite(at) ? at : null };
+}
+
+/**
+ * What counts as a new record for the quiet line: the driver's step, its
+ * label and its next action; each job's and step's status in the run's view;
+ * the newest progress line. A log line growing inside a step is not one: the
+ * stage does not show it.
+ */
+export function recordKey(demo, runDoc, lastWriteAt = null) {
+  const d = demo ? [demo.step, demo.label, demo.next ? demo.next.action : "", demo.next ? demo.next.from || "" : ""].join("|") : "";
+  const jobs = runDoc && Array.isArray(runDoc.jobs) ? runDoc.jobs.map((j) => `${j.name}:${j.status}:${(j.steps || []).map((x) => x.status).join(",")}`).join(";") : "";
+  return `${d}#${runDoc ? runDoc.id : ""}#${jobs}#${lastWriteAt ?? ""}`;
+}
+
+/**
+ * The quiet line, `{ text, title, since }`, or null when it should not show.
+ * `lastRecordAt`: when the kiosk last saw a new record (ms); `run`:
+ * {@link runningStep}; `stepAt`: when the kiosk first saw this step, for a
+ * driver that writes no `next.from`. It shows only after QUIET_MS with no new
+ * record, on a step with something running, with no countdown of the
+ * driver's own still to run, and never on a replay or while the link is
+ * stale. The time is how long the driver's step has run.
+ */
+export function quietWords(demo, { now = Date.now(), lastRecordAt = null, run = null, stepAt = null, replay = false, stale = false } = {}) {
+  if (replay || stale || !demo || !QUIET_STEPS.includes(demo.step)) return null;
+  if (typeof lastRecordAt !== "number" || now - lastRecordAt <= QUIET_MS) return null;
+  const next = demo.next || null;
+  // A timed hold (the driver merges in 20 s) has its own countdown on the next line.
+  const due = next && next.at ? Date.parse(next.at) : NaN;
+  if (Number.isFinite(due) && due > now) return null;
+  const said = firstSentence(demo.label) || (next && next.action ? `Waiting for ${next.action}` : null);
+  const ran = run && run.job ? `${run.job}${run.step ? `: ${run.step}` : ""}` : null;
+  const what = [said, ran].filter(Boolean).join(" · ");
+  if (!what) return null;
+  const from = next && next.from ? Date.parse(next.from) : NaN;
+  const since = Number.isFinite(from) ? from : typeof stepAt === "number" ? stepAt : run && run.at !== null ? run.at : lastRecordAt;
+  const text = `${what} · ${quietDuration((now - since) / 1000)} so far`;
+  const title = `Nothing new has come in for ${quietDuration((now - lastRecordAt) / 1000)}. ${demo.label || what}${ran ? ` (running: ${ran})` : ""}`;
+  return { text, title, since };
+}
