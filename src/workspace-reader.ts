@@ -87,11 +87,25 @@ export type WorkspaceDocument = Record<string, unknown>;
 export const TRUNK_READS = ["ci list", "release list"] as const;
 export type TrunkReadCommand = (typeof TRUNK_READS)[number];
 
+/**
+ * #681: the stored change-set read, `chant change-set show <digest> --member
+ * <name> --json` (change-set-show.schema.json, chant#4022), run at the
+ * workspace root. Like the trunk reads it is a contract 1 document outside
+ * `chant workspace` that chant's conformance suite does not list, and its
+ * floor is in src/chant-floors.ts.
+ */
+export const CHANGE_SET_READ = "change-set show";
+
+/** The reads named outside `chant workspace`, for a refusal's wording. */
+const OUTSIDE_WORKSPACE: readonly string[] = [...TRUNK_READS, CHANGE_SET_READ];
+
 export interface WorkspaceReader {
   /** Run one contract command with `args`, and return the document chant printed, unchanged. */
   read(command: WorkspaceReadCommand, args: string[]): Promise<WorkspaceDocument>;
   /** Run one trunk read (#680), in member directory `dir` when given, and return the document chant printed, unchanged. */
   readTrunk(command: TrunkReadCommand, args: string[], dir?: string): Promise<WorkspaceDocument>;
+  /** #681: the change set stored under `digest` in `member`'s ledger, as chant printed it. chant exits 1 when none is stored, and still prints the document. */
+  readChangeSet(digest: string, member: string): Promise<WorkspaceDocument>;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -109,7 +123,7 @@ export function contractRefusal(doc: Record<string, unknown>, command: string): 
   if (doc.contract === WORKSPACE_CONTRACT) return undefined;
   const said = doc.contract === undefined ? "no contract version" : `contract ${JSON.stringify(doc.contract)}`;
   return {
-    error: `chant ${(TRUNK_READS as readonly string[]).includes(command) ? command : `workspace ${command}`} wrote a document with ${said}; behold reads contract ${WORKSPACE_CONTRACT}.`,
+    error: `chant ${OUTSIDE_WORKSPACE.includes(command) ? command : `workspace ${command}`} wrote a document with ${said}; behold reads contract ${WORKSPACE_CONTRACT}.`,
     code: "workspace-contract",
     remedy:
       doc.contract === undefined
@@ -124,6 +138,11 @@ const codeFor = (command: WorkspaceReadCommand): string => (command === "graph -
 /** The argv one trunk read runs: `ci list <args> --json`, `release list <args> --json`. */
 export function trunkArgv(command: TrunkReadCommand, args: readonly string[]): string[] {
   return [...command.split(" "), ...args, "--json"];
+}
+
+/** The argv the change-set read runs: `change-set show <digest> --member <member> --json`. */
+export function changeSetArgv(digest: string, member: string): string[] {
+  return ["change-set", "show", digest, "--member", member, "--json"];
 }
 
 /** Check what one run printed: a JSON object written to the contract behold reads. */
@@ -155,6 +174,10 @@ export function workspaceReader(chant: ChantTransport): WorkspaceReader {
       const argv = trunkArgv(command, args);
       const run = await chant.run(argv, dir !== undefined ? { dir } : undefined);
       return documentOf(run, `chant ${argv.join(" ")}${dir !== undefined ? ` (in ${dir})` : ""}`, command.replace(" ", "-"), command);
+    },
+    async readChangeSet(digest, member) {
+      const argv = changeSetArgv(digest, member);
+      return documentOf(await chant.run(argv), `chant ${argv.join(" ")}`, "change-set-show", CHANGE_SET_READ);
     },
   };
 }

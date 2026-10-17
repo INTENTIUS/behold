@@ -20,6 +20,7 @@ import { laneElement as tgLane, rootOfCard as tgRootOfCard, historyElement as tg
 import { renderLane } from "./terragucci-lifecycle.js";
 import { renderReleases } from "./releases.js";
 import { renderTrunkLane } from "./trunk-lane.js";
+import { entriesFor as csEntriesFor, gapLines as csGapLines, inspectHeading as csInspectHeading, nodeMarks as csNodeMarks, offGraph as csOffGraph, overlayHeader as csHeader, overlayLegend as csLegend, PREVIEW_NOTE as CS_PREVIEW_NOTE } from "./change-set-overlay.js";
 import { renderYodelLane } from "./sql-yodeler-lane.js";
 import { initTerragucciEstate } from "./terragucci-estate.js";
 import { chantComponentMarks } from "./chant-pr-marks.js";
@@ -959,6 +960,14 @@ function inspect(node) {
       if (m.run.trace_url) p.append(" · ", tgLink("trace", m.run.trace_url));
       panel.appendChild(p);
     }
+  }
+  // #681: what the open change set would do to this card, entry by entry.
+  const csEntries = csAnswer && csOn ? csEntriesFor(csAnswer, node.id) : [];
+  if (csEntries.length) {
+    const h = document.createElement("h3");
+    h.textContent = csInspectHeading(csAnswer);
+    panel.appendChild(h);
+    for (const e of csEntries) panel.appendChild(csEntryEl(e));
   }
   // #526: SQL Yodeler's drift on this card, each dated by its file.
   const yrMarks = yrJoined && yrJoined.cards[node.id];
@@ -4932,7 +4941,7 @@ async function loadTrunkLane() {
   const a = await apiFetch("/api/workspace/lane")
     .then((r) => r.json())
     .catch((e) => ({ error: String(e) }));
-  renderTrunkLane(laneHost, a, new Date(), { button, link: tgLink, embed: embedOpts.embed, canApprove: !previewMode && !staticMode, approve: approveFromLane });
+  renderTrunkLane(laneHost, a, new Date(), { button, link: tgLink, embed: embedOpts.embed, canApprove: !previewMode && !staticMode, approve: approveFromLane, openChangeSet });
   const again = button("Read again", "", () => loadTrunkLane());
   again.title = "Read the trunk and every environment again.";
   laneHost.appendChild(again);
@@ -4957,6 +4966,155 @@ function approveFromLane(key, env, btn) {
     });
 }
 initTrunkLane();
+
+// --- #681: a waiting gate's change set, on the graph -------------------------
+// Opened from a gate card's "change set" link in the Trunk tab. The server
+// reads the gate from status and the stored change set from chant change-set
+// show; the page draws each entry's node with an outline and a tag above the
+// card, in the drift legend's colours, and lists the entries chant mapped to
+// no node, or whose node this view does not draw, in the Change set tab. The
+// fill stays the live-status channel. Turning the overlay off removes the
+// marks; the tab keeps the change set until another one is opened.
+let csAnswer = null;
+let csOn = true;
+let csHost = null;
+let csAsk = null; // {key, env}: what "Read again" reads
+function openChangeSet(key, env) {
+  csAsk = { key, env };
+  csOn = true;
+  if (!csHost) {
+    csHost = addPanelTab("change-set", "Change set", "A waiting gate's change set, drawn on the graph as a preview: what approving the gate lets chant create, change or delete.");
+    if (!csHost) return;
+    csHost.id = "tab-change-set";
+  }
+  setPanelTab("change-set");
+  loadChangeSet();
+}
+async function loadChangeSet() {
+  if (!csAsk || !csHost) return;
+  const reading = document.createElement("div");
+  reading.className = "tg-legend";
+  reading.textContent = "reading the change set from chant";
+  csHost.replaceChildren(reading);
+  const q = new URLSearchParams({ gate: csAsk.key, env: csAsk.env });
+  csAnswer = await apiFetch(`/api/workspace/change-set?${q}`)
+    .then((r) => r.json())
+    .catch((e) => ({ error: String(e) }));
+  markChangeSetCards();
+}
+/** The node ids the graph draws now. */
+function drawnNodeIds() {
+  const svg = document.querySelector("#graph svg");
+  return new Set(svg ? [...svg.querySelectorAll("[data-node-id]")].map((g) => g.getAttribute("data-node-id")) : []);
+}
+function markChangeSetCards() {
+  const svg = document.querySelector("#graph svg");
+  if (svg) {
+    for (const old of svg.querySelectorAll("[data-cs-mark]")) old.remove();
+    if (csAnswer && csOn) {
+      for (const [id, m] of Object.entries(csNodeMarks(csAnswer))) {
+        const g = svg.querySelector('[data-node-id="' + CSS.escape(id) + '"]');
+        if (!g) continue;
+        const rect = g.querySelector("rect");
+        const box = rect && rect.getBBox ? rect.getBBox() : { x: 0, y: 0, width: 150, height: 60 };
+        const ring = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        ring.setAttribute("data-cs-mark", "ring");
+        for (const [k, v] of Object.entries({ x: box.x - 4, y: box.y - 4, width: box.width + 8, height: box.height + 8, rx: 8, fill: "none", stroke: m.color, "stroke-width": 3, "pointer-events": "none" })) ring.setAttribute(k, String(v));
+        const tag = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        tag.setAttribute("data-cs-mark", "tag");
+        tag.setAttribute("x", String(box.x));
+        tag.setAttribute("y", String(box.y - 9));
+        tag.setAttribute("font-size", "11");
+        tag.setAttribute("font-weight", "700");
+        tag.setAttribute("fill", m.color);
+        tag.textContent = m.tag;
+        const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+        title.setAttribute("data-cs-mark", "title");
+        title.textContent = m.title;
+        g.append(ring, tag, title);
+      }
+    }
+  }
+  renderChangeSetTab();
+}
+function csEntryEl(e) {
+  const row = document.createElement("div");
+  row.className = "cs-entry";
+  row.style.setProperty("--bar", barVarFor(e.color));
+  const head = document.createElement("div");
+  head.className = "cs-entry-head";
+  head.textContent = e.node ? `${e.head} · ${e.node}` : e.head;
+  row.appendChild(head);
+  if (e.facts) {
+    const f = document.createElement("div");
+    f.className = "cs-entry-facts";
+    f.textContent = e.facts;
+    row.appendChild(f);
+  }
+  for (const line of e.fields) {
+    const f = document.createElement("div");
+    f.className = "cs-entry-field";
+    f.textContent = line;
+    row.appendChild(f);
+  }
+  return row;
+}
+function renderChangeSetTab() {
+  if (!csHost || !csAsk) return;
+  csHost.replaceChildren();
+  const line = (cls, text, title) => {
+    const d = document.createElement("div");
+    d.className = cls;
+    d.textContent = text;
+    if (title) d.title = title;
+    csHost.appendChild(d);
+    return d;
+  };
+  const h = csHeader(csAnswer);
+  h.lines.forEach((t, i) => line(h.tone === "refusal" ? "tg-refusal" : i ? "tg-legend" : "cs-title", t, h.title));
+  const refused = !csAnswer || csAnswer.error || csAnswer.refusal;
+  if (!refused) {
+    line("tg-legend", CS_PREVIEW_NOTE);
+    for (const r of csLegend(csAnswer)) {
+      const row = panelDotRow(r.color, r.label, String(r.count));
+      row.title = r.title;
+      csHost.appendChild(row);
+    }
+    for (const g of csGapLines(csAnswer)) line("tg-refusal", g.text, g.title);
+    const toggle = button(csOn ? "Turn off the overlay" : "Turn on the overlay", "", () => {
+      csOn = !csOn;
+      markChangeSetCards();
+    });
+    toggle.title = csOn ? "Remove the change set's marks from the graph. The tab keeps it." : "Draw the change set's marks on the graph again.";
+    csHost.appendChild(toggle);
+    const marks = csNodeMarks(csAnswer);
+    const drawn = drawnNodeIds();
+    const ids = Object.keys(marks).filter((id) => drawn.has(id));
+    if (ids.length) {
+      csHost.appendChild(panelHeading("on the graph"));
+      for (const id of ids) csHost.appendChild(panelDotRow(marks[id].color, id, marks[id].tag, () => selectNode(id)));
+    }
+    const off = csOffGraph(csAnswer, drawn);
+    if (off.noNode.length) {
+      const hd = panelHeading("not on the graph");
+      hd.title = "chant mapped these entries to no graph node, such as a delete of a block the planning commit no longer declares.";
+      csHost.appendChild(hd);
+      for (const e of off.noNode) csHost.appendChild(csEntryEl(e));
+    }
+    if (off.notDrawn.length) {
+      const hd = panelHeading("not in this view");
+      hd.title = "Their nodes are not drawn in the current view. Switch to the workspace graph to see them.";
+      csHost.appendChild(hd);
+      for (const e of off.notDrawn) csHost.appendChild(csEntryEl(e));
+    }
+    if (!csAnswer.entries.length) line("tg-legend", "this change set changes nothing");
+  }
+  if (!staticMode) {
+    const again = button("Read again", "", () => loadChangeSet());
+    again.title = "Read the gate and its change set from chant again.";
+    csHost.appendChild(again);
+  }
+}
 
 
 // --- #526: SQL Yodeler's report and drift, from files ------------------------
@@ -6618,6 +6776,7 @@ function render(ir, svg, m) {
   markPendingCards(ir); // #422: and the cards whose member has not answered yet
   markTerragucciCards(); // #490: and what terragucci's reports found, dated
   markYodelCards(); // #526: and SQL Yodeler's drift, dated
+  if (csAnswer) markChangeSetCards(); // #681: and the change set a gate binds, as a preview
   applyLayout(); // #228: last, so the hand-placed deltas ride on top of every other pass
   drawTgReads(); // #568: after the layout, so the reads lines meet the cards where they now sit
   renderDial();

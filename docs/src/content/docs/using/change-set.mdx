@@ -1,0 +1,93 @@
+---
+title: A change set on the graph
+description: Draw a waiting gate's change set on the graph, so a reviewer approves a picture of what will change.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A gate that binds a change set (a pull request's gate, or a release gate
+planned for an environment) has the plan it approves stored on
+`chant/lifecycle`. behold draws that plan on the graph, so you can see what
+approving the gate lets chant create, change or delete before you click
+**Approve**.
+
+## Opening it
+
+In the [Trunk tab](/behold/using/trunk/), a waiting gate's card says
+`change set 9cf74a6fee02` when chant stored one. Click it. The panel opens a
+**Change set** tab and the graph draws the marks. A release gate's card also
+says `release 1a23268fa8b1`, the release its change set was planned for.
+
+The tab's first lines name what you are looking at:
+
+- `change set 9cf74a6fee02 · gate web/release/promote in prod`
+- `commit a14610e · run run-9 · release 1a23268fa8b1 planned for prod`
+
+The commit is the one the run reached the gate at. Hover for the full digests
+and the `chant approve` line.
+
+## The colours
+
+Each card the change set touches gets an outline and a tag above it naming
+what happens to it (`create`, `update`, `replace`, `2 create, delete`). The
+colours are the graph's own:
+
+| Outline | Legend row | What the change set does to the card |
+|---|---|---|
+| green (managed) | create | creates it |
+| yellow (foreign) | update or replace | updates it in place, or replaces it with a new object |
+| red (degraded) | delete or forget | deletes it, or forgets it (chant stops managing it and leaves the object standing) |
+
+A card with entries of several kinds takes the colour that destroys most: a
+delete over an update, an update over a create. The legend counts entries,
+not cards, and adds a row for entries that change nothing (`no change (not
+drawn)`).
+
+The fill of a card is untouched. It is still the live status, so a preview
+never reads as what is running.
+
+## A card's entries
+
+Click a marked card. The inspect pane lists each entry on it under `change
+set 9cf74a6fee02 (preview, not applied)`: the action and address, the
+resource type and disruption, and the fields where the plan names them:
+
+- `FunctionName: before "cart-v1", after "cart-v2" (forces replacement)`
+- `Tags: before [...], after: known after apply`
+- `Environment: sensitive, not shown`
+
+## What is not on the graph
+
+Some entries have no card. The Change set tab lists them:
+
+- Under `not on the graph`, chant mapped the entry to no graph node, for example a
+  delete of a block the planning commit no longer declares.
+- Under `not in this view`, the entry's node exists, but the current view does not
+  draw it (another lens, or a member not on screen).
+
+When a member failed to plan, or planned with addresses it could not read, the
+tab says so in red: the picture leaves out what that member would change.
+
+## Turning it off
+
+**Turn off the overlay** removes the marks and keeps the change set in the
+tab; **Turn on the overlay** draws them again. **Read again** reads the gate
+and its change set from chant once more. Once the gate is approved, it no
+longer waits, and reading again says so.
+
+## What it reads
+
+| chant command | What the overlay takes from it |
+|---|---|
+| `chant workspace status <env> --json` | the waiting gate, the commit and run that reached it, and the digest of the change set it binds |
+| `chant change-set show <digest> --member <member> --json` | the stored change set: each entry's address, action, fields and graph node |
+
+Both are read contract 1 documents, new in chant 0.124.28. On an older chant
+the tab says `Change set needs chant 0.124.28 or newer` with the project's
+version, and the rest of behold works. `behold doctor` lists the read with its
+floor.
+
+<Aside type="note" title="A component gate has none">
+A component gate in a plain `chant run --components` binds a lifecycle plan,
+and chant stores no change set for it. Its card has no change set link.
+</Aside>

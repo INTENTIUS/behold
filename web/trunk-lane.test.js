@@ -93,11 +93,16 @@ describe("an environment's lane (#680)", () => {
     const card = laneGateCard(gate, answer);
     expect(card).toMatchObject({
       title: "web: web waits at gate promote",
-      facts: "for a14610e (green) · 0 of 1 approval · run run-9 · change set 4b5e57f6eb2f",
+      facts: "for a14610e (green) · 0 of 1 approval · run run-9",
+      changeSet: { text: "change set 4b5e57f6eb2f", title: expect.stringContaining("Draw this change set on the graph") },
       button: { label: "Approve as alex" },
     });
     expect(card.command).toContain("chant change-set show sha256:4b5e57f6");
-    expect(laneGateCard({ ...gate, gitSha: undefined, commitState: null, changeSet: undefined }, answer).facts).toBe("commit unknown · 0 of 1 approval · run run-9");
+    expect(card.changeSet.title).toContain("chant change-set show sha256:4b5e57f6eb2f42b9039b3d1e13929295f231749c510cbe341cd68036d9af97e2 --member web");
+    // #681: a release gate names the release its change set was planned for.
+    expect(laneGateCard({ ...gate, op: "release", releaseDigest: "jcs1-sha256:1a23268fa8b1fc419cffde4c1780f4387ff0346495f97bd9e22b0508bef99f9d" }, answer).facts).toBe("for a14610e (green) · 0 of 1 approval · run run-9 · release 1a23268fa8b1");
+    expect(laneGateCard({ ...gate, gitSha: undefined, commitState: null, changeSet: undefined }, answer)).toMatchObject({ facts: "commit unknown · 0 of 1 approval · run run-9" });
+    expect(laneGateCard({ ...gate, changeSet: undefined }, answer).changeSet).toBeUndefined();
     expect(laneGateCard(gate, answer, { embed: true }).button).toBeUndefined();
   });
   it("lays the environments out in the order the answer gives", () => {

@@ -1019,6 +1019,26 @@ src/chant-floors.ts (0.124.28), and the route refuses a chant below any of them
 before spawning. The panel's Trunk tab (web/trunk-lane.js) reads it when opened
 and approves through `POST /api/workspace/gates/approve`.
 
+## A gate's change set on the graph (#681)
+
+`GET /api/workspace/change-set?gate=<member>/<op>/<gate>&env=<env>`
+(src/change-set-overlay.ts) reads the gate from `chant workspace status <env>
+--json`, never from the page, and the change set it binds (`changeSet`,
+chant#4022) from `chant change-set show <digest> --member <member> --json`
+(`readChangeSet` on the reader, floor `CHANGE_SET_SHOW_CHANT_FLOOR`,
+0.124.28). The answer is that document keyed by graph node: `entries` (those
+that change something, each with `bucket` create, change or delete and `node`,
+or null where chant mapped none), `nodes` (`<member>/<id>` to the strongest
+bucket and the actions on it), `counts`, `unchanged`, `gaps` (members that
+failed to plan or have holes), `gate` (commit, run, `releaseDigest`) and
+`planned` (a release gate's release and environment, chant#4045). An entry
+with no node is kept and listed in the Change set tab, never dropped. The page
+(web/change-set-overlay.js) outlines each card in the drift legend's tokens
+(managed for create, foreign for update or replace, degraded for delete or
+forget) with a tag above it, never a fill; it is opened from the "change set"
+link on a Trunk tab gate card and turned off from its tab. A public view
+refuses the route, as it refuses the lane.
+
 ## Invariant
 
 If a request would have behold write to a cloud or to source directly, it's wrong.

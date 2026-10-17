@@ -69,6 +69,8 @@ describe("every workspace read goes through the reader (#468)", () => {
       if (/\[\s*"workspace"\s*,\s*"(ls|graph|status|records|runs|wip)"/.test(text)) offenders.push(f);
       // #680: the trunk lane's reads go through the reader too.
       if (/\[\s*"(ci|release)"\s*,\s*"list"/.test(text)) offenders.push(f);
+      // #681: and the stored change-set read.
+      if (/\[\s*"change-set"\s*,\s*"show"/.test(text)) offenders.push(f);
     }
     expect(offenders).toEqual([]);
   });
