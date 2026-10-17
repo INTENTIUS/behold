@@ -1,12 +1,12 @@
 {
   "$schema": "https://intentius.io/chant/schemas/workspace/status/v1/status.schema.json",
   "contract": 1,
-  "chant": "0.124.27",
+  "chant": "0.124.28",
   "env": "prod",
   "compareTo": null,
   "lifecycle": {
     "ref": "chant/lifecycle",
-    "commit": "3a11a0ea0b9e67b8fb73234c82a068173d564753"
+    "commit": "2af9945c966908f2b1375ca6dadece72798a5abc"
   },
   "checkout": {
     "branch": "main",
@@ -52,6 +52,8 @@
               "actor": "ci",
               "approver": "github:alice",
               "admission": null,
+              "releaseDigest": "jcs1-sha256:429be72cf20581436c4ffc74788444602ba3c4b25fd231c65ad41b230d094429",
+              "releaseLabel": "v1",
               "flags": [],
               "plan": null
             }
@@ -69,6 +71,35 @@
         "reason": null
       },
       "gates": [
+        {
+          "component": "release",
+          "name": "promote",
+          "env": "prod",
+          "planDigest": "sha256:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+          "releaseDigest": "jcs1-sha256:bbdcfcdab12b9c484ab198b570477b0b568f6a43f4265fd6aef7823d563759b2",
+          "state": "superseded",
+          "recordedAt": "2026-10-04T13:00:00Z",
+          "gitSha": "9c4250fa1ed203aa9c61eca708c8f0bbf4a06ddd",
+          "runId": "run-12",
+          "expiresAt": "2099-01-01T00:00:00Z",
+          "approvals": [],
+          "needed": 1,
+          "signed": null,
+          "approve": "chant approve release promote --env prod --plan sha256:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+          "revoked": {
+            "commit": "9c4250fa1ed203aa9c61eca708c8f0bbf4a06ddd",
+            "tag": "ci/revoked/9c4250fa1ed203aa9c61eca708c8f0bbf4a06ddd",
+            "tagged": "2026-10-05T00:00:00Z",
+            "phase": "test",
+            "run": {
+              "name": "test",
+              "id": 113,
+              "conclusion": "failure",
+              "url": "https://github.com/acme/app/actions/runs/113"
+            },
+            "signer": null
+          }
+        },
         {
           "component": "web",
           "name": "promote",
@@ -101,7 +132,7 @@
       ],
       "releaseCuts": [
         {
-          "releaseDigest": "jcs1-sha256:e3956171ab72fcab2d812cbd3621ef18c04a46c96a9f1e1a8590dae0d9279185",
+          "releaseDigest": "jcs1-sha256:429be72cf20581436c4ffc74788444602ba3c4b25fd231c65ad41b230d094429",
           "label": "v1",
           "commit": "6828a7f5b398ea48543fe27c018ba302ce2aba14",
           "actor": "github:alice",
@@ -114,7 +145,7 @@
           }
         },
         {
-          "releaseDigest": "jcs1-sha256:1a23268fa8b1fc419cffde4c1780f4387ff0346495f97bd9e22b0508bef99f9d",
+          "releaseDigest": "jcs1-sha256:6aafbba83be3cb5e1793979cfcc0b0f684a06eb57bca5c3dd3624769ea7ca71e",
           "label": "v2",
           "commit": "a14610e4f51778c969efcc77694a360412c34d88",
           "actor": "github:alice",
@@ -124,6 +155,19 @@
             "status": "unsigned",
             "key": null,
             "reason": "the cut carries no signature"
+          }
+        },
+        {
+          "releaseDigest": "jcs1-sha256:bbdcfcdab12b9c484ab198b570477b0b568f6a43f4265fd6aef7823d563759b2",
+          "label": "v3",
+          "commit": "9c4250fa1ed203aa9c61eca708c8f0bbf4a06ddd",
+          "actor": "github:alice",
+          "timestamp": "2026-10-04T09:00:00Z",
+          "signature": "-----BEGIN SSH SIGNATURE-----\nbm90IGEgc2lnbmF0dXJl\n-----END SSH SIGNATURE-----",
+          "signatureCheck": {
+            "status": "unverified",
+            "key": null,
+            "reason": "there is no signers file (.chant/allowed_signers) at base to check the cut's signature against"
           }
         }
       ]

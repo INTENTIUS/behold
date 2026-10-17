@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commitRow, laneGateCard, laneLegend, laneView, runsLines, UNDECIDED_NOTE, whereWords, workWords } from "./trunk-lane.js";
+import { commitRow, laneGateCard, laneLegend, laneView, releaseColumnNote, releaseRow, renderTrunkLane, runsLines, signatureWords, supersededLine, UNDECIDED_NOTE, whereWords, workWords } from "./trunk-lane.js";
 
 const NOW = new Date("2026-10-05T10:00:00Z");
 const C1 = "6828a7f5b398ea48543fe27c018ba302ce2aba14";
@@ -45,6 +45,33 @@ const answer = {
     { env: "prod", canary: false, members: ["web"], releases: [{ member: "web", label: "v1", releaseDigest: "jcs1-sha256:e3956171ab72fcab2d812cbd3621ef18c04a46c96a9f1e1a8590dae0d9279185", commit: C1, listed: true, components: ["web"], cutBy: "github:alice", cutAt: "2026-10-02T09:00:00Z", approver: "github:alice" }], deploys: [], waiting: [gate] },
   ],
   releaseRefusals: [],
+};
+
+// #692: the release column of the same workspace (src/trunk-lane-fixture.ts):
+// v1 from C1 running in prod, v2 from C2 with v1's image digest running in
+// staging and waiting in prod, v3 from the revoked C3 with a new one.
+const R1 = `jcs1-sha256:${"1".repeat(64)}`;
+const R2 = `jcs1-sha256:${"2".repeat(64)}`;
+const R3 = `jcs1-sha256:${"3".repeat(64)}`;
+const revocation = { tag: `ci/revoked/${C3}`, tagged: "2026-10-05T00:00:00Z", phase: "test", run: run(113, "failure"), signer: null };
+const ROLLBACK = "chant components rollback staging --component api";
+const unsigned = { status: "unsigned", reason: "the cut carries no signature" };
+const releases = [
+  { member: "web", releaseDigest: R3, label: "v3", commit: C3, listed: true, artifacts: 1, previous: { releaseDigest: R2, label: "v2" }, configOnly: false, cut: { by: "github:alice", at: "2026-10-04T09:00:00Z", signature: { status: "unverified", reason: "there is no signers file (.chant/allowed_signers) at base to check the cut's signature against" } }, revoked: { ...revocation, rollback: [ROLLBACK] }, runs: [{ env: "staging", components: ["api"] }], waits: [{ env: "prod", gate: "web/release/promote", state: "superseded" }], next: null },
+  { member: "web", releaseDigest: R2, label: "v2", commit: C2, listed: true, artifacts: 1, previous: { releaseDigest: R1, label: "v1" }, configOnly: true, cut: { by: "github:alice", at: "2026-10-03T09:00:00Z", signature: unsigned }, revoked: null, runs: [{ env: "staging", components: ["web"] }], waits: [{ env: "prod", gate: "web/web/promote", state: "pending" }], next: "prod" },
+  { member: "web", releaseDigest: R1, label: "v1", commit: C1, listed: true, artifacts: 1, previous: null, configOnly: null, cut: { by: "github:alice", at: "2026-10-02T09:00:00Z", signature: unsigned }, revoked: null, runs: [{ env: "prod", components: ["web"] }], waits: [], next: null },
+];
+const superseded = { key: "web/release/promote", member: "web", op: "release", gate: "promote", env: "prod", releaseDigest: R3, gitSha: C3, runId: "run-12", revoked: revocation };
+const column = {
+  ...answer,
+  chant: "0.124.29",
+  releases,
+  releaseColumn: { full: true, floor: "0.124.29" },
+  commits: answer.commits.map((c, i) => ({ ...c, cuts: [[], [{ member: "web", releaseDigest: R3, label: "v3" }], [{ member: "web", releaseDigest: R2, label: "v2" }], [{ member: "web", releaseDigest: R1, label: "v1" }]][i] })),
+  environments: [
+    { ...answer.environments[0], releases: [{ member: "web", label: "v3", releaseDigest: R3, commit: C3, listed: true, components: ["api"], cutBy: "github:alice", cutAt: "2026-10-04T09:00:00Z", approver: null, rollback: [ROLLBACK] }, { ...answer.environments[0].releases[0], rollback: [] }], superseded: [] },
+    { ...answer.environments[1], superseded: [superseded] },
+  ],
 };
 
 describe("laneLegend (#680)", () => {
@@ -113,5 +140,85 @@ describe("an environment's lane (#680)", () => {
     ]);
     expect(v.notes).toEqual([]);
     expect(laneView({ ...answer, order: "env", environments: [answer.environments[1]] }, NOW).notes).toEqual(["no member declares a promotion order, so this is prod alone"]);
+  });
+});
+
+describe("the release column (#692)", () => {
+  it("names each release with its commit, its cut and its signature check", () => {
+    const v2 = releaseRow(releases[1], NOW);
+    expect(v2).toMatchObject({ head: "v2 · web", cutFrom: "cut from a14610e" });
+    expect(v2.facts.map((f) => f.text)).toEqual(["cut by github:alice 2d ago", "unsigned"]);
+    expect(releaseRow(releases[0], NOW).facts.map((f) => f.text)).toEqual(["cut by github:alice 25h ago", "signature does not count"]);
+    expect(signatureWords({ status: "verified", reason: "" }).text).toBe("signed");
+    expect(signatureWords(null)).toBeNull();
+    expect(releaseRow({ ...releases[2], cut: null, artifacts: 0, listed: false }, NOW)).toMatchObject({ cutFrom: "cut from 6828a7f (older than the trunk list)", facts: [{ text: "no cut recorded" }, { text: "no artifact digests" }] });
+  });
+
+  it("marks a config-only release, and not one whose artifacts changed", () => {
+    expect(releaseRow(releases[1], NOW).marks).toEqual([{ text: "config-only", cls: "lane-config-only", title: "The same artifact digests as v1: only configuration changed." }]);
+    expect(releaseRow(releases[0], NOW).marks.map((m) => m.text)).toEqual(["revoked"]);
+    expect(releaseRow(releases[2], NOW).marks).toEqual([]);
+  });
+
+  it("says where a release runs and waits, and where promotion takes it next", () => {
+    expect(releaseRow(releases[1], NOW).where.map((w) => w.text)).toEqual(["runs in staging", "waits in prod"]);
+    expect(releaseRow({ ...releases[1], waits: [] }, NOW).where.map((w) => w.text)).toEqual(["runs in staging", "next: prod"]);
+    expect(releaseRow({ ...releases[1], runs: [], waits: [], next: "staging" }, NOW).where.map((w) => w.text)).toEqual(["next: staging"]);
+    expect(releaseRow(releases[2], NOW).where.map((w) => w.text)).toEqual(["runs in prod"]);
+    expect(releaseRow({ ...releases[2], runs: [] }, NOW).where.map((w) => w.text)).toEqual(["runs nowhere"]);
+  });
+
+  it("marks a revoked release with what failed and the line that rolls it back, and its gate as superseded", () => {
+    const v3 = releaseRow(releases[0], NOW);
+    expect(v3.revoked).toEqual({ text: "revoked: test failed", run: { text: "test", href: "https://github.com/acme/app/actions/runs/113", title: "test: failure" }, rollback: [`roll back: ${ROLLBACK}`] });
+    expect(v3.where.map((w) => w.text)).toEqual(["runs in staging", "gate in prod superseded"]);
+    expect(supersededLine(superseded, column).text).toBe("web/release/promote superseded: release v3 is revoked (test failed)");
+    expect(runsLines(column.environments[0], NOW)[0]).toMatchObject({ text: "runs v3, cut from 9c4250f · api · revoked", revoked: true, title: expect.stringContaining(`roll back: ${ROLLBACK}`) });
+    const d = { member: "web", component: "api", digest: "sha256:0123456789abcdef", gitSha: C3, listed: true, timestamp: "2026-10-04T10:00:00Z", actor: "ci", approver: null, runId: "r", release: { releaseDigest: R3, label: "v3" }, rollback: ROLLBACK };
+    expect(runsLines({ env: "staging", releases: [], deploys: [d] }, NOW)[0]).toMatchObject({ text: "runs api 0123456789ab from release v3, 9c4250f · revoked", revoked: true });
+  });
+
+  it("names the releases cut from each commit", () => {
+    expect(commitRow(column.commits[2], NOW).facts.map((f) => f.text)).toEqual(["cut as v2"]);
+    expect(commitRow(column.commits[0], NOW).facts.map((f) => f.text)).toEqual(["work task:12"]);
+  });
+
+  it("says when the project's chant is below the column's floor, and nothing at or above it", () => {
+    expect(releaseColumnNote(column)).toBeNull();
+    const old = { ...column, chant: "0.124.28", releaseColumn: { full: false, floor: "0.124.29" }, releases: releases.map((r) => ({ ...r, revoked: null })) };
+    expect(releaseColumnNote(old)).toBe("chant 0.124.28 does not say which releases are revoked; chant 0.124.29 and newer does.");
+    expect(laneView(old, NOW).releases.note).toBe(releaseColumnNote(old));
+    // An answer from before #692 has no column at all.
+    expect(laneView(answer, NOW).releases).toBeNull();
+    expect(laneView({ ...column, releases: [] }, NOW).releases.empty).toBe("no release cut yet");
+  });
+
+  it("draws the column between the trunk's commits and the environments' gates", () => {
+    const make = (tag) => {
+      const el = { tag, children: [], dataset: {}, className: "", textContent: "", title: "", listeners: {} };
+      Object.defineProperty(el, "childNodes", { get: () => el.children });
+      el.appendChild = (c) => (el.children.push(c), c);
+      el.append = (...cs) => cs.forEach((c) => el.children.push(c));
+      el.replaceChildren = () => (el.children = []);
+      el.addEventListener = (k, f) => (el.listeners[k] = f);
+      return el;
+    };
+    const saved = globalThis.document;
+    globalThis.document = { createElement: make, createTextNode: (t) => ({ tag: "#text", textContent: t, children: [] }) };
+    try {
+      const host = make("div");
+      renderTrunkLane(host, column, NOW, {});
+      const heads = host.children.filter((c) => c.tag === "h3").map((c) => c.textContent);
+      expect(heads).toEqual(["trunk", "releases", "staging", "prod"]);
+      const rows = host.children.filter((c) => c.className === "lane-release");
+      expect(rows.map((r) => r.dataset.release)).toEqual([R3, R2, R1]);
+      const text = (el) => (el.textContent || "") + el.children.map(text).join("");
+      expect(text(rows[1])).toBe("v2 · web · cut from a14610e · config-onlycut by github:alice 2d ago · unsignedruns in staging · waits in prod");
+      expect(text(rows[0])).toContain(`roll back: ${ROLLBACK}`);
+      expect(host.children.findIndex((c) => c.className === "lane-release")).toBeGreaterThan(host.children.findIndex((c) => c.className === "lane-commit"));
+      expect(host.children.find((c) => c.className === "lane-superseded").textContent).toBe("web/release/promote superseded: release v3 is revoked (test failed)");
+    } finally {
+      globalThis.document = saved;
+    }
   });
 });

@@ -1047,6 +1047,38 @@ src/chant-floors.ts (0.124.28), and the route refuses a chant below any of them
 before spawning. The panel's Trunk tab (web/trunk-lane.js) reads it when opened
 and approves through `POST /api/workspace/gates/approve`.
 
+The release column (#692) sits between the commits and the environments:
+`releases[]`, every release `release list` names, newest first, each with its
+`commit`, `label` and digest, its newest `cut` (who, when, and chant's
+`signatureCheck`), `runs` (environments in promotion order, with components),
+`waits` (a release gate that binds it, or a gate of its member reached at its
+commit; `pending`, or `superseded`), and `next`, the environment its member's
+promotion order names after the last one that runs it (null in the last one,
+and for a revoked release, which chant never promotes). Each commit carries
+`cuts`, the releases cut from it.
+
+`configOnly` is true when a release carries artifact digests and they equal
+its previous release's. The previous release is the one of the same member
+cut from the nearest older commit: releases are ordered by their commit's
+place in the trunk list (first-parent, newest first), a commit older than the
+list after every listed one, and ties (one commit, or commits outside the
+list) by `release list`'s order, newest cut first. That is how `release cut`
+reuses an unchanged artifact's digest. It is null for the oldest release and
+for a release with no artifact digests (a member with no components).
+
+The revoked fields ship in chant 0.124.29 (`RELEASE_COLUMN_CHANT_FLOOR`,
+chant#4033, chant#4043): `revoked` on a `release list` release (the
+ci/revoked tag, with `rollback`, the lines status gives for each component
+running it), `superseded` on each environment (release gates chant reads as
+superseded, never approvable), `rollback` on an environment's releases, and
+`release` and `rollback` on a deploy record. `releaseColumn: {full, floor}`
+says whether they were read. Below the floor nothing is refused: the column
+comes from `release list` alone with no revoked mark, and the tab says which
+chant would add it. The fixtures in `src/__fixtures__/trunk-lane/` are
+recorded from chant main in the workspace `src/trunk-lane-fixture.ts` makes,
+and `src/trunk-lane-chant.test.ts` reads the same workspace through a real
+chant when `BEHOLD_TEST_CHANT_BIN` names one.
+
 ## A gate's change set on the graph (#681)
 
 `GET /api/workspace/change-set?gate=<member>/<op>/<gate>&env=<env>`

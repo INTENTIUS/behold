@@ -166,7 +166,7 @@ export function floorChecks(root: string, targets: string[], estate: boolean): D
     const behind = resolutions.filter(({ res }) => !floorMet(f, res.version));
     const head = `${f.read}: needs chant ${f.floor} (${f.adds}); ${have}`;
     return behind.length
-      ? { name: "floor", status: "warn", detail: `${head}, not met`, fix: `Upgrade @intentius/chant to ${f.floor} or newer in ${list(behind.map(({ target }) => relative(root, target) || target))}; the pane that needs the ${f.read} stays off until then.` }
+      ? { name: "floor", status: "warn", detail: `${head}, not met`, fix: `Upgrade @intentius/chant to ${f.floor} or newer in ${list(behind.map(({ target }) => relative(root, target) || target))}; ${f.degraded ? `until then ${f.degraded}` : `the pane that needs the ${f.read} stays off until then`}.` }
       : { name: "floor", status: "pass", detail: `${head}, met` };
   });
 }

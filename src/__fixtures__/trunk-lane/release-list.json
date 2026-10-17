@@ -1,14 +1,82 @@
 {
   "$schema": "https://intentius.io/chant/schemas/workspace/releases/v1/releases.schema.json",
   "contract": 1,
-  "chant": "0.124.27",
+  "chant": "0.124.28",
   "member": "web",
   "releases": [
     {
-      "releaseDigest": "jcs1-sha256:1a23268fa8b1fc419cffde4c1780f4387ff0346495f97bd9e22b0508bef99f9d",
+      "releaseDigest": "jcs1-sha256:bbdcfcdab12b9c484ab198b570477b0b568f6a43f4265fd6aef7823d563759b2",
+      "member": "web",
+      "commit": "9c4250fa1ed203aa9c61eca708c8f0bbf4a06ddd",
+      "artifactDigests": [
+        {
+          "component": "web",
+          "kind": "image",
+          "path": "web/Dockerfile",
+          "digest": "sha256:b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3"
+        }
+      ],
+      "targets": [
+        {
+          "env": "prod",
+          "templates": [],
+          "params": []
+        },
+        {
+          "env": "staging",
+          "templates": [],
+          "params": []
+        }
+      ],
+      "label": "v3",
+      "cuts": [
+        {
+          "label": "v3",
+          "actor": "github:alice",
+          "timestamp": "2026-10-04T09:00:00Z",
+          "runOrigin": null,
+          "signature": "-----BEGIN SSH SIGNATURE-----\nbm90IGEgc2lnbmF0dXJl\n-----END SSH SIGNATURE-----",
+          "signatureCheck": {
+            "status": "unverified",
+            "key": null,
+            "reason": "there is no signers file (.chant/allowed_signers) at base to check the cut's signature against"
+          }
+        }
+      ],
+      "environments": [
+        {
+          "env": "staging",
+          "components": [
+            "api"
+          ]
+        }
+      ],
+      "revoked": {
+        "commit": "9c4250fa1ed203aa9c61eca708c8f0bbf4a06ddd",
+        "tag": "ci/revoked/9c4250fa1ed203aa9c61eca708c8f0bbf4a06ddd",
+        "tagged": "2026-10-05T00:00:00Z",
+        "phase": "test",
+        "run": {
+          "name": "test",
+          "id": 113,
+          "conclusion": "failure",
+          "url": "https://github.com/acme/app/actions/runs/113"
+        },
+        "signer": null
+      }
+    },
+    {
+      "releaseDigest": "jcs1-sha256:6aafbba83be3cb5e1793979cfcc0b0f684a06eb57bca5c3dd3624769ea7ca71e",
       "member": "web",
       "commit": "a14610e4f51778c969efcc77694a360412c34d88",
-      "artifactDigests": [],
+      "artifactDigests": [
+        {
+          "component": "web",
+          "kind": "image",
+          "path": "web/Dockerfile",
+          "digest": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+        }
+      ],
       "targets": [
         {
           "env": "prod",
@@ -43,13 +111,21 @@
             "web"
           ]
         }
-      ]
+      ],
+      "revoked": null
     },
     {
-      "releaseDigest": "jcs1-sha256:e3956171ab72fcab2d812cbd3621ef18c04a46c96a9f1e1a8590dae0d9279185",
+      "releaseDigest": "jcs1-sha256:429be72cf20581436c4ffc74788444602ba3c4b25fd231c65ad41b230d094429",
       "member": "web",
       "commit": "6828a7f5b398ea48543fe27c018ba302ce2aba14",
-      "artifactDigests": [],
+      "artifactDigests": [
+        {
+          "component": "web",
+          "kind": "image",
+          "path": "web/Dockerfile",
+          "digest": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+        }
+      ],
       "targets": [
         {
           "env": "prod",
@@ -84,7 +160,8 @@
             "web"
           ]
         }
-      ]
+      ],
+      "revoked": null
     }
   ],
   "reason": null

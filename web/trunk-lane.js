@@ -4,7 +4,10 @@
 // the promotion order chant declares: what the environment runs, and the
 // gates waiting there, each with the approve button the gate strip uses
 // (approveAffordance, #690), and the change set it binds as the link that
-// draws it on the graph (#681). Nothing here is behold's own state.
+// draws it on the graph (#681). Between the two, the releases cut from those
+// commits (#692): each with its cut, a config-only mark, a revoked mark with
+// the rollback line, where it runs and waits, and the environment it is
+// promoted to next. Nothing here is behold's own state.
 
 import { ago, clock } from "./terragucci.js";
 import { approveAffordance, HOST_APPROVES, overrideCard } from "./workspace-gates.js";
@@ -60,6 +63,8 @@ export function commitRow(c, now = new Date()) {
   const facts = [];
   const work = workWords(c.work);
   if (c.revoked) facts.push({ text: `revoked: ${c.revoked.phase || "a phase"} failed`, title: "" });
+  // #692: the releases cut from it.
+  if (c.cuts && c.cuts.length) facts.push({ text: `cut as ${c.cuts.map((x) => x.label || short(x.releaseDigest)).join(", ")}`, title: c.cuts.map((x) => `release ${x.releaseDigest} of ${x.member}`).join("\n") });
   if (work) facts.push(work);
   if (c.ignored && c.ignored.length) facts.push({ text: `${plural(c.ignored.length, "ci tag")} not counted`, title: c.ignored.map((t) => `${t.tag} (${t.status}): ${t.reason}`).join("\n") });
   return {
@@ -78,19 +83,98 @@ export function commitRow(c, now = new Date()) {
 export function runsLines(e, now = new Date()) {
   const lines = [];
   for (const r of e.releases || []) {
+    const rollback = r.rollback || [];
     lines.push({
-      text: `runs ${r.label || short(r.releaseDigest)}, cut from ${sha7(r.commit)}${r.listed ? "" : " (older than the trunk list)"} · ${r.components.join(", ")}`,
-      title: [`release ${r.releaseDigest} of ${r.member}`, r.cutBy ? `cut by ${r.cutBy}${r.cutAt ? ` ${clock(r.cutAt, now)}` : ""}` : "", r.approver ? `deploy approved by ${r.approver}` : ""].filter(Boolean).join("\n"),
+      text: `runs ${r.label || short(r.releaseDigest)}, cut from ${sha7(r.commit)}${r.listed ? "" : " (older than the trunk list)"} · ${r.components.join(", ")}${rollback.length ? " · revoked" : ""}`,
+      title: [
+        `release ${r.releaseDigest} of ${r.member}`,
+        r.cutBy ? `cut by ${r.cutBy}${r.cutAt ? ` ${clock(r.cutAt, now)}` : ""}` : "",
+        r.approver ? `deploy approved by ${r.approver}` : "",
+        ...rollback.map((l) => `roll back: ${l}`),
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      ...(rollback.length ? { revoked: true } : {}),
     });
   }
   for (const d of e.deploys || []) {
+    const from = d.release ? `release ${d.release.label || short(d.release.releaseDigest)}, ` : "";
     lines.push({
-      text: `runs ${d.component} ${short(d.digest)} from ${sha7(d.gitSha)}${d.listed ? "" : " (older than the trunk list)"}`,
-      title: `deploy record of ${d.member}, run ${d.runId}, by ${d.actor} ${ago(d.timestamp, now)}${d.approver ? `, approved by ${d.approver}` : ""}`,
+      text: `runs ${d.component} ${short(d.digest)} from ${from}${sha7(d.gitSha)}${d.listed ? "" : " (older than the trunk list)"}${d.rollback ? " · revoked" : ""}`,
+      title: `deploy record of ${d.member}, run ${d.runId}, by ${d.actor} ${ago(d.timestamp, now)}${d.approver ? `, approved by ${d.approver}` : ""}${d.rollback ? `\nroll back: ${d.rollback}` : ""}`,
+      ...(d.rollback ? { revoked: true } : {}),
     });
   }
   if (!lines.length) lines.push({ text: "no deploy record", title: "chant has no deploy record for this environment, so behold does not say what runs here." });
   return lines;
+}
+
+/** A release's name: its label, else its digest, short. */
+const releaseName = (r) => (r ? r.label || short(r.releaseDigest) : "");
+
+/** A cut's signature in words, from chant's own check of it (chant#4031). */
+export function signatureWords(sig) {
+  if (!sig) return null;
+  if (sig.status === "verified") return { text: "signed", title: sig.reason || "chant verified the cut's signature." };
+  if (sig.status === "unsigned") return { text: "unsigned", title: sig.reason || "The cut carries no signature." };
+  return { text: "signature does not count", title: sig.reason || "" };
+}
+
+/** The note under the releases heading when the project's chant is below the column's floor. */
+export function releaseColumnNote(a) {
+  if (!a || !a.releaseColumn || a.releaseColumn.full) return null;
+  return `chant ${a.chant || "(unknown version)"} does not say which releases are revoked; chant ${a.releaseColumn.floor} and newer does.`;
+}
+
+/**
+ * One release in the column (#692): its name and marks, its cut, where it is
+ * and where it goes next, and, when revoked, what failed and the line that
+ * rolls it back.
+ */
+export function releaseRow(r, now = new Date()) {
+  const marks = [];
+  if (r.configOnly) marks.push({ text: "config-only", cls: "lane-config-only", title: `The same artifact digests as ${releaseName(r.previous)}: only configuration changed.` });
+  if (r.revoked) marks.push({ text: "revoked", cls: "lane-revoked", title: `${r.revoked.tag}${r.revoked.tagged ? `, tagged ${clock(r.revoked.tagged, now)}` : ""}. chant promotes no revoked release and counts no approval of it.` });
+  const facts = [];
+  if (r.cut) {
+    facts.push({ text: `cut by ${r.cut.by} ${ago(r.cut.at, now)}`, title: clock(r.cut.at, now) });
+    const sig = signatureWords(r.cut.signature);
+    if (sig) facts.push(sig);
+  } else facts.push({ text: "no cut recorded", title: "chant stores the release, but no cut names it." });
+  if (r.artifacts === 0) facts.push({ text: "no artifact digests", title: "The member builds no image or asset, so no release of it is config-only." });
+
+  const where = [];
+  for (const x of r.runs) where.push({ text: `runs in ${x.env}`, title: x.components.join(", ") });
+  for (const w of r.waits) where.push(w.state === "superseded" ? { text: `gate in ${w.env} superseded`, title: `${w.gate}: its release is revoked, so no approval of it counts.` } : { text: `waits in ${w.env}`, title: `at gate ${w.gate}` });
+  if (r.next && !r.waits.some((w) => w.env === r.next)) where.push({ text: `next: ${r.next}`, title: "The next environment in the promotion order chant declares." });
+  if (!r.runs.length && !r.waits.length && !r.next) where.push({ text: "runs nowhere", title: "" });
+
+  const revoked = r.revoked
+    ? {
+        text: `revoked: ${r.revoked.phase || "a required phase"} failed`,
+        run: r.revoked.run && r.revoked.run.url ? { text: r.revoked.run.name, href: r.revoked.run.url, title: r.revoked.run.conclusion ? `${r.revoked.run.name}: ${r.revoked.run.conclusion}` : r.revoked.run.name } : null,
+        rollback: r.revoked.rollback.map((l) => `roll back: ${l}`),
+      }
+    : null;
+  return {
+    key: r.releaseDigest,
+    head: `${releaseName(r)} · ${r.member}`,
+    cutFrom: `cut from ${sha7(r.commit)}${r.listed ? "" : " (older than the trunk list)"}`,
+    title: `release ${r.releaseDigest}\ncommit ${r.commit}${r.previous ? `\nprevious release ${releaseName(r.previous)}` : ""}`,
+    marks,
+    facts,
+    where,
+    revoked,
+  };
+}
+
+/** A release gate chant reads as superseded, as a line in its environment. */
+export function supersededLine(g, a) {
+  const r = ((a && a.releases) || []).find((x) => x.releaseDigest === g.releaseDigest);
+  return {
+    text: `${g.key} superseded: release ${r ? releaseName(r) : short(g.releaseDigest)} is revoked (${g.revoked.phase || "a required phase"} failed)`,
+    title: `${g.revoked.tag}\nchant approve refuses this gate, and chant promotes no revoked release.${g.runId ? `\nrun ${g.runId}` : ""}`,
+  };
 }
 
 /** One waiting gate as a card, with the gate strip's approve button (or the note in its place). */
@@ -122,7 +206,7 @@ export function laneGateCard(g, answer, { embed = false } = {}) {
 /** The whole lane as words: the legend, the commits, and a lane per environment. Pure. */
 export function laneView(a, now = new Date(), opts = {}) {
   const legend = laneLegend(a, now);
-  if (!a || a.error || a.refusal) return { legend, notes: [], commits: [], environments: [] };
+  if (!a || a.error || a.refusal) return { legend, notes: [], commits: [], releases: null, environments: [] };
   const notes = [];
   if (a.order === "env" && a.environments.length) notes.push(`no member declares a promotion order, so this is ${a.environments[0].env} alone`);
   for (const r of a.releaseRefusals || []) notes.push(`releases of ${r.member} not read: ${r.refusal.error}`);
@@ -131,11 +215,20 @@ export function laneView(a, now = new Date(), opts = {}) {
     notes,
     commits: (a.commits || []).map((c) => commitRow(c, now)),
     empty: a.trunk && !(a.commits || []).length ? `no commits ${a.trunk.since ? `after ${sha7(a.trunk.since)}` : `within ${a.trunk.window}`}` : null,
+    // #692: null when the answer has no column (an older behold's export).
+    releases: a.releases
+      ? {
+          note: releaseColumnNote(a),
+          empty: !a.releases.length ? "no release cut yet" : null,
+          rows: a.releases.map((r) => releaseRow(r, now)),
+        }
+      : null,
     environments: (a.environments || []).map((e) => ({
       env: e.env,
       heading: e.canary ? `${e.env} (canary)` : e.env,
       refusal: e.refusal ? `not read: ${e.refusal.error}` : null,
       runs: e.refusal ? [] : runsLines(e, now),
+      superseded: (e.superseded || []).map((g) => supersededLine(g, a)),
       gates: (e.waiting || []).filter((g) => g.state === "pending" || g.override).map((g) => laneGateCard(g, a, opts)),
     })),
   };
@@ -160,7 +253,7 @@ export function renderTrunkLane(host, a, now, ui) {
   };
   line(v.legend.tone === "refusal" ? "tg-refusal" : "tg-legend", v.legend.text, v.legend.title);
   for (const n of v.notes) line("tg-legend", n);
-  if (!v.commits.length && !v.environments.length) return;
+  if (!v.commits.length && !v.environments.length && !(v.releases && v.releases.rows.length)) return;
 
   const h = document.createElement("h3");
   h.textContent = "trunk";
@@ -203,12 +296,71 @@ export function renderTrunkLane(host, a, now, ui) {
     host.appendChild(row);
   }
 
+  // #692: the release column, between the commits and the gates.
+  if (v.releases) {
+    const rh = document.createElement("h3");
+    rh.textContent = "releases";
+    host.appendChild(rh);
+    if (v.releases.note) line("tg-legend", v.releases.note);
+    if (v.releases.empty) line("tg-legend", v.releases.empty);
+    for (const r of v.releases.rows) {
+      const row = document.createElement("div");
+      row.className = "lane-release";
+      row.dataset.release = r.key;
+      row.title = r.title;
+      const head = document.createElement("div");
+      const name = document.createElement("span");
+      name.className = "lane-sha";
+      name.textContent = r.head;
+      head.append(name, document.createTextNode(` · ${r.cutFrom}`));
+      for (const m of r.marks) {
+        const mark = document.createElement("span");
+        mark.className = m.cls;
+        mark.textContent = ` · ${m.text}`;
+        mark.title = m.title;
+        head.appendChild(mark);
+      }
+      row.appendChild(head);
+      const parts = (cls, items) => {
+        const d = document.createElement("div");
+        d.className = cls;
+        items.forEach((f, i) => {
+          const sp = document.createElement("span");
+          sp.textContent = `${i ? " · " : ""}${f.text}`;
+          if (f.title) sp.title = f.title;
+          d.appendChild(sp);
+        });
+        row.appendChild(d);
+        return d;
+      };
+      parts("lane-facts", r.facts);
+      if (r.where.length) parts("lane-where", r.where);
+      if (r.revoked) {
+        const rv = parts("lane-revoked-why", [{ text: r.revoked.text }]);
+        if (r.revoked.run) {
+          rv.appendChild(document.createTextNode(" in "));
+          const a = ui && ui.link ? ui.link(r.revoked.run.text, r.revoked.run.href) : document.createTextNode(r.revoked.run.text);
+          if (a.title !== undefined) a.title = r.revoked.run.title;
+          rv.appendChild(a);
+        }
+        for (const l of r.revoked.rollback) {
+          const cmd = document.createElement("div");
+          cmd.className = "lane-rollback";
+          cmd.textContent = l;
+          row.appendChild(cmd);
+        }
+      }
+      host.appendChild(row);
+    }
+  }
+
   for (const e of v.environments) {
     const eh = document.createElement("h3");
     eh.textContent = e.heading;
     host.appendChild(eh);
     if (e.refusal) line("tg-refusal", e.refusal);
-    for (const r of e.runs) line("lane-runs", r.text, r.title);
+    for (const r of e.runs) line(r.revoked ? "lane-runs lane-runs-revoked" : "lane-runs", r.text, r.title);
+    for (const g of e.superseded) line("lane-superseded", g.text, g.title);
     for (const g of e.gates) {
       const box = document.createElement("div");
       box.className = "ws-gate";
