@@ -1,11 +1,13 @@
 ---
 // The header's right side: a Docs link first, so the docs are one click from
-// the home page (whose splash layout has no sidebar), then Starlight's own
-// social icons.
+// the home page (whose splash layout has no sidebar), then the live demo, then
+// Starlight's own social icons.
 import Default from '@astrojs/starlight/components/SocialIcons.astro';
 import { docsHref } from '../site';
+import { LIVE } from '../data/live.mjs';
 ---
 <a class="bh-docs" href={docsHref}>Docs</a>
+<a class="bh-docs bh-demo" href={LIVE}>Demo</a>
 <Default />
 
 <style>
@@ -20,6 +22,9 @@ import { docsHref } from '../site';
 		border-radius: 999px;
 	}
 	.bh-docs:hover {
+		border-color: var(--bh-gold);
+	}
+	.bh-demo {
 		border-color: var(--bh-gold);
 	}
 </style>

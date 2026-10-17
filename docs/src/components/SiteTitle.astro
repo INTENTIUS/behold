@@ -2,8 +2,9 @@
 // The site title: the pixel face beside the name, drawn as a mask over the
 // text colour so it follows the theme (styles/custom.css). On a phone a Docs
 // link sits beside it, since Starlight hides the header's right side (where
-// SocialIcons.astro puts Docs) below its md width.
+// SocialIcons.astro puts Docs and Demo) below its md width, so both sit here.
 import { docsHref } from '../site';
+import { LIVE } from '../data/live.mjs';
 
 const { siteTitle, siteTitleHref } = Astro.locals.starlightRoute;
 ---
@@ -12,6 +13,7 @@ const { siteTitle, siteTitleHref } = Astro.locals.starlightRoute;
 	<span translate="no">{siteTitle}</span>
 </a>
 <a class="bh-docs-phone" href={docsHref}>Docs</a>
+<a class="bh-docs-phone bh-demo-phone" href={LIVE}>Demo</a>
 
 <style>
 	.site-title {
@@ -32,6 +34,10 @@ const { siteTitle, siteTitleHref } = Astro.locals.starlightRoute;
 		border: 1px solid var(--bh-rule);
 		border-radius: 999px;
 		white-space: nowrap;
+	}
+	.bh-demo-phone {
+		margin-left: 0.4rem;
+		border-color: var(--bh-gold);
 	}
 	@media (min-width: 50rem) {
 		.bh-docs-phone {
