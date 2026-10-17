@@ -13,7 +13,7 @@
 // A wave that failed says which waves applied before it and stay applied.
 // Nothing here is all-or-nothing, and nothing says so.
 
-import { linkState, linkWords, noteBack, noteRead, readFailed } from "./kiosk-link.js";
+import { linkState, linkWords, noteBack, noteRead, readFailed, shareLink } from "./kiosk-link.js";
 import { CHANT_PANEL_STEPS, chantApprovalModel } from "./chant-pr-marks.js";
 import { PICK_HOLD_MS, annMark, mergeRun, startRuns, statusIcon } from "./kiosk-runs.js";
 import { MODES, MODE_STORE, badges as waveBadges, badgeTitle, behindStep, steadyRun, captionModel, doraLine, modeStored, placeBeside, resultModel, shotFor, stepTone, tailLines } from "./kiosk-watch.js";
@@ -2213,8 +2213,11 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   // says since when nothing has come in (web/kiosk-link.js).
   const link = linkState();
   let linkLine = null;
+  let linkWas = null;
   const paintLink = () => {
     const words = linkWords(link);
+    // The tour's live badge and its lag follow the cue (web/carve-narration.js liveBadge).
+    if (words !== linkWas) { linkWas = words; shareLink(link); }
     if (!linkLine && !words) return;
     if (!linkLine) {
       const host = bar && bar.parentNode;

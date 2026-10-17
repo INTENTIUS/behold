@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clockUtc, linkState, linkWords, noteBack, noteRead, readFailed } from "./kiosk-link.js";
+import { clockUtc, linkState, linkWords, noteBack, noteRead, onLinkChange, pageStaleness, readFailed, shareLink } from "./kiosk-link.js";
 
 // behold#725: the kiosk's stopped-updating cue.
 describe("the kiosk's link to behold (behold#725)", () => {
@@ -49,5 +49,21 @@ describe("the kiosk's link to behold (behold#725)", () => {
     expect(readFailed(null)).toBe(false);
     expect(readFailed({ error: "terragucci reports are not configured" })).toBe(false);
     expect(readFailed({ demo: null })).toBe(false);
+  });
+
+  it("shares the page's link with the parts that say live, and tells them when it changes", () => {
+    const st = linkState();
+    let told = 0;
+    const stop = onLinkChange(() => told++);
+    shareLink(st);
+    expect(pageStaleness()).toEqual({ stale: false, since: null });
+    noteRead(st, "poll", true, at("04"));
+    noteRead(st, "poll", false, at("09"));
+    shareLink(st);
+    expect(pageStaleness()).toEqual({ stale: true, since: at("04") });
+    expect(told).toBe(2);
+    stop();
+    shareLink(linkState());
+    expect(told).toBe(2);
   });
 });

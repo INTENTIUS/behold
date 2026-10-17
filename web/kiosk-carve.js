@@ -39,6 +39,9 @@ body.k-carving.k-watch #k-carve { display: grid; }
 #k-carve .cx-rec { display: inline-block; font: 700 max(11.5px, 0.8rem) var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg); border: 1px solid var(--rule, var(--line)); border-radius: 999px; padding: 1px 8px; cursor: help; vertical-align: 0.15em; margin-right: 8px; }
 #k-carve .cx-badge-live { color: var(--bar-managed); border-color: var(--bar-managed); }
 #k-carve .cx-badge-live::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: currentColor; margin-right: 6px; vertical-align: 0.05em; }
+/* behold#725: while the kiosk can't read from behold, the live badge says STALE, dimmed, its dot hollow. */
+#k-carve .cx-badge-stale { color: var(--muted); border-style: dashed; }
+#k-carve .cx-badge-stale::before { content: ""; display: inline-block; width: 7px; height: 7px; box-sizing: border-box; border-radius: 50%; border: 1.5px solid currentColor; margin-right: 6px; vertical-align: 0.05em; }
 #k-carve .cx-tone-busy { --bar: var(--bar-pending); }
 #k-carve .cx-tone-ok { --bar: var(--bar-managed); }
 #k-carve .cx-tone-bad { --bar: var(--bar-degraded); }

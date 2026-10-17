@@ -11,6 +11,10 @@ import { tipSpot, tipsStyle, TIPS_STYLE_ID } from "./kiosk-event-help-ui.js";
 import { openEventModal } from "./event-help-modal.js";
 import { TIP } from "./dots-kiosk.js";
 import { lagText } from "./tour-player.js";
+import { onLinkChange, pageStaleness } from "./kiosk-link.js";
+
+/** behold#725: the stale badge's tooltip. */
+export const STALE_WORDS = "The kiosk is not reading from behold right now, so this may be out of date. It keeps retrying.";
 
 const fmt = (n) => Number(n).toLocaleString("en-US");
 
@@ -30,6 +34,23 @@ const STOPS = [
 /** The badge: "live" over a carve being written (#715), "recorded" over a replay. */
 export function badgeText(state) {
   return state.recording && state.recording.kind === "live" ? "live" : "recorded";
+}
+
+/**
+ * behold#725: the live badge and its lag while the kiosk's link may be down.
+ * Live and reading: "live", the lag counting from now. While the kiosk can't
+ * read (`staleness` from web/kiosk-link.js): "stale", and the lag frozen at
+ * the last good read, so the screen never says "live" beside "not updating".
+ * Anything else: the badge as badgeText has it, and no lag.
+ */
+export function liveBadge(state, staleness = { stale: false, since: null }, now = Date.now()) {
+  const word = badgeText(state);
+  if (word !== "live") return { word, cls: `cx-badge-${word}`, lag: null };
+  if (staleness.stale) {
+    const at = staleness.since ? staleness.since.getTime() : null;
+    return { word: "stale", cls: "cx-badge-stale", lag: at === null ? null : lagText(state.lastWriteAt, at, state.running) };
+  }
+  return { word, cls: "cx-badge-live", lag: lagText(state.lastWriteAt, now, state.running) };
 }
 
 /** The badge's tooltip: what the recording is, or where the live carve is read from. */
@@ -155,10 +176,11 @@ export function createNarration({ bar, caption, tipsHost, modalHost, origin }) {
       caption.replaceChildren();
       const top = el("div", "cx-top");
       const h = el("h1", "cx-title");
-      const rec = el("span", `cx-rec cx-badge-${badgeText(state)}`, badgeText(state));
-      rec.title = recordedWords(state);
+      const badge = liveBadge(state, pageStaleness());
+      const rec = el("span", `cx-rec ${badge.cls}`, badge.word);
+      rec.title = badge.word === "stale" ? STALE_WORDS : recordedWords(state);
       h.append(rec);
-      const lag = badgeText(state) === "live" ? lagText(state.lastWriteAt, Date.now(), state.running) : null;
+      const lag = badge.lag;
       if (lag) h.append(el("span", `cx-lag${lag === "waiting for the job" ? " cx-lag-wait" : ""}`, lag));
       h.append(el("span", null, b.title));
       top.appendChild(h);
@@ -195,10 +217,11 @@ export function createNarration({ bar, caption, tipsHost, modalHost, origin }) {
     caption.replaceChildren();
     caption.classList.add("cx-tour");
     const top = el("div", "cx-top cx-tour-top");
-    const rec = el("span", "cx-rec cx-badge-live", "live");
-    rec.title = recordedWords(state);
+    const badge = liveBadge({ ...state, recording: { ...(state.recording || {}), kind: "live" } }, pageStaleness());
+    const rec = el("span", `cx-rec ${badge.cls}`, badge.word);
+    rec.title = badge.word === "stale" ? STALE_WORDS : recordedWords(state);
     top.appendChild(rec);
-    const lag = lagText(state.lastWriteAt, Date.now(), state.running);
+    const lag = badge.lag;
     if (lag) top.appendChild(el("span", `cx-lag${lag === "waiting for the job" ? " cx-lag-wait" : ""}`, lag));
     const rail = el("ol", "cx-rail");
     rail.setAttribute("aria-label", `${tr.title || "The tour"}: chapter ${tr.n} of ${tr.of}`);
@@ -246,6 +269,9 @@ export function createNarration({ bar, caption, tipsHost, modalHost, origin }) {
       caption.appendChild(notes);
     }
   };
+
+  // behold#725: the badge follows the kiosk's link at once, not at the next state from the frame.
+  onLinkChange(() => { if (last) draw(last); });
 
   return {
     update(state) {

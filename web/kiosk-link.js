@@ -46,3 +46,23 @@ export function linkWords(st) {
 export function readFailed(answer) {
   return !!(answer && answer.unreachable === true);
 }
+
+// behold#725: the page's link, shared with the parts of the kiosk that say
+// "live" (the tour's badge and its "last write N s ago"), so they don't claim
+// it while the cue is up. kiosk.js shares its record after every read.
+let shared = null;
+const listeners = new Set();
+/** Share `st` as the page's link and tell every listener. */
+export function shareLink(st) {
+  shared = st;
+  for (const cb of listeners) cb();
+}
+/** Call `cb` whenever the page's link is shared again. Returns a function that stops it. */
+export function onLinkChange(cb) {
+  listeners.add(cb);
+  return () => listeners.delete(cb);
+}
+/** Whether the page's link is failing now, and its last good read (a Date, or null before one). */
+export function pageStaleness() {
+  return shared && shared.failing.size ? { stale: true, since: shared.lastGood } : { stale: false, since: null };
+}
