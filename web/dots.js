@@ -30,6 +30,7 @@ import { LOOP, carveStory, beatAt, tipsBetween, directorFocus, shortName as shor
 import { liveShow, stampArrivals, showKey, currentMigration, boxName, playedCounts, landedWrite } from "./dots-live.js";
 import { provenanceText, migrationTool, stepMsFor } from "./tour-player.js";
 import { tourNow, tourFocus, tourFx, fxKey, tourMessage } from "./dots-tour.js";
+import { wallTicks, recordedLabel, recordedMarks, speedWords, skippedWords, clockWords, RECORDED_SPEEDS } from "./dots-timeline.js";
 
 /** #715: how often the live layer asks for the carve. The route shares one read for 1.5 s while a migration runs. */
 export const LIVE_POLL_MS = 2_000;
@@ -120,6 +121,26 @@ function addStyle() {
   .dots-kiosk.dots-watch:not(.dots-keep-bar) .dots-rail { display: none; }
   .dots-tip { position: absolute; pointer-events: none; padding: 3px 7px; border-radius: 5px; background: var(--panel); border: 1px solid var(--line); white-space: nowrap; display: none; font-size: 12px; max-width: min(560px, calc(100% - 16px)); }
   .dots-tip .dots-prov { white-space: normal; color: var(--muted); font: 11.5px/1.35 var(--font-mono, monospace); margin-top: 2px; }
+  /* A recording's timeline (#711): the label on the timeline itself, wall-clock ticks, the marks the records give, the breaks it skips. */
+  .dots-bar-rec { flex-direction: column; align-items: stretch; gap: 4px; width: min(860px, calc(100vw - 48px)); }
+  .dots-tl-label { font: 600 12px var(--font-ui, system-ui); color: var(--fg); }
+  .dots-tl-short { display: none; }
+  .dots-tl-row { display: flex; align-items: center; gap: 10px; }
+  .dots-tl-track { position: relative; flex: 1; height: 34px; border-bottom: 1px solid var(--line); }
+  .dots-bar input.dots-tl-range { position: absolute; left: 0; right: 0; bottom: -8px; width: 100%; margin: 0; accent-color: var(--focus); background: transparent; }
+  .dots-tl-tick { position: absolute; bottom: 10px; transform: translateX(-50%); font: 10.5px var(--font-mono, monospace); color: var(--muted); white-space: nowrap; pointer-events: none; }
+  .dots-tl-tick::after { content: ""; position: absolute; left: 50%; top: 100%; width: 1px; height: 4px; background: var(--line); }
+  .dots-tl-break { position: absolute; top: 0; bottom: 0; width: 8px; transform: translateX(-50%); background: repeating-linear-gradient(135deg, var(--muted) 0 1.5px, transparent 1.5px 4px); opacity: 0.8; cursor: help; z-index: 1; }
+  .dots-tl-break small { position: absolute; top: -2px; left: 10px; font: 10px var(--font-mono, monospace); color: var(--muted); white-space: nowrap; }
+  .dots-bar .dots-tl-mark { position: absolute; top: 2px; width: 9px; height: 9px; padding: 0; margin-left: -4.5px; transform: rotate(45deg); border: 1.5px solid var(--focus); background: var(--focus); border-radius: 2px; cursor: pointer; z-index: 2; }
+  .dots-bar .dots-tl-keyframe { border-color: var(--muted); background: var(--muted); }
+  /* The reminder that this is a recording stays readable: the timeline never fades with the quiet controls. */
+  .dots-keep-bar .dots-bar.dots-bar-rec { opacity: 1; background: var(--panel); }
+  .dots-bar .dots-tl-first, .dots-bar .dots-tl-last { border-color: var(--bar-managed, var(--focus)); }
+  .dots-speed { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .dots-tip.dots-tip-go { pointer-events: auto; cursor: pointer; border-color: var(--focus); }
+  .dots-prov-go { font: 11px var(--font-ui, system-ui); color: var(--focus); margin-top: 2px; }
+  @media (max-width: 640px) { .dots-tl-long { display: none; } .dots-tl-short { display: inline; } .dots-tl-break small { display: none; } .dots-bar-rec { width: calc(100vw - 24px); } .dots-tl-row { flex-wrap: wrap; } .dots-tl-track { order: -1; flex: 1 1 100%; } }
   .dots-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .dots-keys { position: absolute; left: 8px; top: 8px; opacity: 0; pointer-events: none; font: 12px var(--font-ui, system-ui); background: var(--panel); color: var(--fg); border: 1px solid var(--focus); border-radius: 6px; padding: 3px 8px; }
   .dots-keys:focus-visible { opacity: 1; pointer-events: auto; }
@@ -416,7 +437,7 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source 
   const setInsets = (ins) => {
     if (S) S.insets = { top: Number(ins.top) || 0, bottom: Number(ins.bottom) || 0 };
   };
-  window.__dots = { seek, play, step, zoomTo, zoomCardPx, setInsets, pause: () => play(false), fly, setSpeed, stats: () => S && S.stats, length: () => S && S.clock.length, marks: () => S && currentMarks(), state: () => S && { t: S.t, level: S.level, reduced: S.reduced, cardPx: S.cardPx, pitchPx: S.pitchPx }, debug: () => S && { band: (({ left, right, w }) => ({ left, right, w }))(band()), svg: S.svg.getBoundingClientRect().toJSON(), rail: S.ui.querySelector('.dots-rail').getBoundingClientRect().toJSON(), vb: S.getVB(), dir: S.dir, directing: S.directing, focusBox: S.dir && focusBox(S.dir.focus), want: S.dir && frameBox(focusBox(S.dir.focus)), pitch: S.pitch, origin: S.origin }, story: () => S && S.story && { start: S.story.start, end: S.story.end, firstRefusal: S.story.firstRefusal ? S.story.firstRefusal.end : null } };
+  window.__dots = { select: (id) => selectDot(id), landed: () => S && landedIds(), seek, play, step, zoomTo, zoomCardPx, setInsets, pause: () => play(false), fly, setSpeed, stats: () => S && S.stats, length: () => S && S.clock.length, marks: () => S && currentMarks(), state: () => S && { t: S.t, level: S.level, reduced: S.reduced, cardPx: S.cardPx, pitchPx: S.pitchPx }, debug: () => S && { band: (({ left, right, w }) => ({ left, right, w }))(band()), svg: S.svg.getBoundingClientRect().toJSON(), rail: S.ui.querySelector('.dots-rail').getBoundingClientRect().toJSON(), vb: S.getVB(), dir: S.dir, directing: S.directing, focusBox: S.dir && focusBox(S.dir.focus), want: S.dir && frameBox(focusBox(S.dir.focus)), pitch: S.pitch, origin: S.origin }, story: () => S && S.story && { start: S.story.start, end: S.story.end, firstRefusal: S.story.firstRefusal ? S.story.firstRefusal.end : null } };
   const loop = (wall) => {
     if (!S) return;
     S.raf = requestAnimationFrame(loop);
@@ -654,9 +675,64 @@ function buildUi() {
   S.range.setAttribute("aria-label", "Replay position");
   S.range.addEventListener("input", () => seek(Number(S.range.value)));
   S.timeEl = el("span", "dots-time");
-  bar.append(S.playBtn, S.speedSel, S.range, S.timeEl);
+  if (S.clock.recorded) {
+    // A recording of a real event stream: the timeline says so, on itself, with the recording's wall-clock times,
+    // its marks (each a line of the recording), its breaks (each idle stretch it compresses, with the real gap), and the
+    // speed beside the playhead, always in words.
+    bar.classList.add("dots-bar-rec");
+    const rec = S.show.records || {};
+    const lab = el("div", "dots-tl-label");
+    const facts = { t0: S.show.timeline.t0, t1: S.show.timeline.t1, source: rec.header ? rec.header.source : null, plan: rec.header ? rec.header.plan : null };
+    lab.append(el("span", "dots-tl-long", recordedLabel(facts)), el("span", "dots-tl-short", recordedLabel(facts, { short: true })));
+    const track = el("div", "dots-tl-track");
+    const L = S.clock.length;
+    const at = (p) => `${((p / L) * 100).toFixed(3)}%`;
+    const narrow = typeof innerWidth === "number" && innerWidth < 640;
+    for (const tk of wallTicks(S.show.timeline, narrow ? 3 : 7)) {
+      const t = el("span", "dots-tl-tick", tk.label);
+      t.style.left = at(tk.p);
+      track.appendChild(t);
+    }
+    for (const b of S.show.timeline.breaks) {
+      const k = el("span", "dots-tl-break");
+      k.style.left = at(b.p);
+      k.title = `${skippedWords(b.skipped)}: from ${clockWords(b.real0, true)} to ${clockWords(b.real1, true)} UTC nothing was written, and the replay skips it`;
+      k.appendChild(el("small", "", skippedWords(b.skipped).replace(/ skipped$/, "")));
+      track.appendChild(k);
+    }
+    const file = S.name ? `${String(S.name).replace(/^carve:/, "")}.jsonl` : "the recording";
+    for (const m of recordedMarks(S.show, S.show.timeline, file)) {
+      const b = el("button", `dots-tl-mark dots-tl-${m.kind}`);
+      b.type = "button";
+      b.style.left = at(m.p);
+      b.title = `${m.words} · ${m.record}`;
+      b.setAttribute("aria-label", `${m.words}, ${m.record}`);
+      b.addEventListener("click", () => seek(m.p));
+      track.appendChild(b);
+    }
+    S.range.classList.add("dots-tl-range");
+    track.appendChild(S.range);
+    S.speedBtn = el("button", "dots-speed", speedWords(S.speed));
+    S.speedBtn.type = "button";
+    S.speedBtn.setAttribute("aria-label", "Replay speed");
+    S.speedBtn.addEventListener("click", () => {
+      const i = RECORDED_SPEEDS.indexOf(S.speed);
+      setSpeed(RECORDED_SPEEDS[(i + 1) % RECORDED_SPEEDS.length]);
+    });
+    const row = el("div", "dots-tl-row");
+    row.append(S.playBtn, track, S.speedBtn);
+    bar.append(lab, row, S.timeEl);
+    S.speedSel.hidden = true;
+  } else bar.append(S.playBtn, S.speedSel, S.range, S.timeEl);
   bottom.appendChild(bar);
   S.tip = el("div", "dots-tip");
+  S.tip.addEventListener("click", (e) => {
+    if (!S || S.tipSeek === null || S.tipSeek === undefined) return;
+    e.stopPropagation();
+    seek(S.clock.at(S.tipSeek));
+    play(false);
+  });
+  S.tip.addEventListener("pointerup", (e) => e.stopPropagation());
   ui.appendChild(S.tip);
   // A landed dot's provenance without a pointer: the arrow keys step through the writes, the live region reads each out.
   S.sr = el("div", "dots-sr");
@@ -693,7 +769,15 @@ function syncUi() {
   if (!S || !S.playBtn) return;
   S.playBtn.textContent = S.playing ? "Pause" : S.t >= S.clock.length ? "Replay" : "Play";
   S.speedSel.value = String(S.speed);
+  if (S.speedBtn && S.speedBtn.textContent !== speedWords(S.speed)) S.speedBtn.textContent = speedWords(S.speed);
   S.range.value = String(Math.round(S.t));
+}
+
+/** The show's own time at replay time `t`: the wall clock for a live carve and for a recording with its own clock. */
+function showTime(t) {
+  if (S.live) return S.show.t0 + t;
+  if (S.clock.real) return S.clock.real(t);
+  return S.show.t0 + (t / S.clock.length) * (S.show.t1 - S.show.t0);
 }
 
 function shortName(e) {
@@ -761,12 +845,29 @@ function hoverAt(e) {
 
 /** A landed dot's provenance: what its newest write was, from its progress line and the migration's run; null for a dot no line names. */
 function provenanceOf(id) {
-  if (!S || !S.live) return null;
+  if (!S) return null;
+  if (!S.live) return recordedProvenance(id);
   const w = landedWrite(S.show, id, S.show.t0 + S.t);
   if (!w) return null;
   const m = ((S.answer && S.answer.migrations) || []).find((x) => x.name === w.migration);
   const run = m && m.run ? m.run : null;
   return { text: provenanceText({ ...w, tool: run ? run.tool : migrationTool(m && m.change), job: run ? run.job : null }), url: run && run.job_url ? run.job_url : null };
+}
+
+/** A recorded dot's provenance: the move line of the recording that landed it, with its line and time, and where the playhead goes on a click. */
+function recordedProvenance(id) {
+  if (!S.clock.recorded) return null;
+  const now = showTime(S.t);
+  let best = null;
+  for (const ev of S.show.events) {
+    if (ev.kind !== "write" || ev.t > now) continue;
+    if (ev.address !== id && !(ev.followers || []).includes(id)) continue;
+    if (!best || ev.t >= best.t) best = ev;
+  }
+  if (!best) return null;
+  const file = S.name ? `${String(S.name).replace(/^carve:/, "")}.jsonl` : "the recording";
+  const text = provenanceText({ outcome: best.ok ? "moved" : "refused", tool: "live-mv", address: best.address === id ? id : `${id} (with ${best.address})`, from: best.from, to: best.to, at: best.t, reason: best.refusalSummary || null });
+  return { text: `${text} · ${file}${best.line ? ` line ${best.line}` : ""}`, url: null, seek: best.t };
 }
 
 function showTip(a, x, y) {
@@ -775,7 +876,11 @@ function showTip(a, x, y) {
   if (prov) {
     const p = el("div", "dots-prov", prov.text);
     S.tip.appendChild(p);
+    if (prov.seek !== undefined && S.selected === a) S.tip.appendChild(el("div", "dots-prov-go", "Click to move the playhead to this write"));
   }
+  // A selected recorded dot's tip is a control: a click moves the playhead to its write.
+  S.tip.classList.toggle("dots-tip-go", !!(prov && prov.seek !== undefined && S.selected === a));
+  S.tipSeek = prov && prov.seek !== undefined ? prov.seek : null;
   S.tip.style.display = "block";
   S.tip.style.left = `${Math.max(4, Math.min(x + 12, S.host.clientWidth - S.tip.offsetWidth - 4))}px`;
   S.tip.style.top = `${y + 14}px`;
@@ -784,10 +889,10 @@ function showTip(a, x, y) {
 /** The dots that a write of this cycle landed, in the order they were written: what the keys step through. */
 function landedIds() {
   const out = [];
-  const t = S.show.t0 + S.t;
+  const t = showTime(S.t);
   const seen = new Set();
   for (const ev of S.show.events) {
-    if (!ev.line || ev.before || ev.start > t) continue;
+    if (ev.before || (S.live ? !ev.line || ev.start > t : ev.kind !== "write" || ev.t > t)) continue;
     for (const id of [ev.address, ...(ev.followers || [])]) {
       if (seen.has(id)) continue;
       seen.add(id);
@@ -1087,7 +1192,7 @@ function draw(dt) {
   ctx.globalAlpha = 1;
 
   // --- threads between estates (cross-estate reads), dashes marching reader -> source ---
-  const tShow = S.live ? S.show.t0 + t : S.show.t0 + (t / S.clock.length) * (S.show.t1 - S.show.t0);
+  const tShow = showTime(t);
   const threadsOn = S.show.threads.length && S.show.events.some((ev) => ev.kind === "handoff" && ev.start <= tShow);
   if (threadsOn) {
     ctx.lineWidth = 1.2;
@@ -1147,7 +1252,7 @@ function draw(dt) {
   const fx = currentFx(owners);
   if (fx) for (const [id, l] of fx.lights) {
     const prev = glow.get(id);
-    const g = { colour: col.foreign, a: l.changed ? 1 : 0.7, ring: l.changed };
+    const g = { colour: col.foreign, a: l.changed ? 1 : 0.85, ring: l.changed };
     if (!prev || g.a >= prev.a) glow.set(id, g);
   }
   ctx.globalAlpha = 1;

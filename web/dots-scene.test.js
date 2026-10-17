@@ -41,14 +41,15 @@ describe("the carve choreography (#712)", () => {
     for (const r of rec.roster) expect(owners.get(r.address)).toBe(show.ownersEnd.get(r.address));
     expect(flights.filter((f) => !f.ok && !f.parent)).toHaveLength(14);
   });
-  it("flies a unit as one flock, staggered, inside the replay", () => {
-    const byFlock = new Map();
-    for (const f of flights) if (!f.parent) byFlock.set(f.flock, [...(byFlock.get(f.flock) ?? []), f]);
-    const team = [...byFlock.values()].find((fs) => fs.length >= 3);
-    const starts = team.map((f) => f.start).sort((a, b) => a - b);
-    for (let i = 1; i < starts.length; i++) expect(starts[i] - starts[i - 1]).toBeCloseTo(CHOREO.stagger, 6);
+  it("flies each move when the recording says it was written, on the recording's own clock", () => {
+    const clock = show.timeline;
+    const byAddr = new Map(show.events.map((e) => [e.address, e]));
+    for (const f of flights.filter((x) => !x.parent)) {
+      const w = byAddr.get(f.address);
+      expect(f.start).toBeCloseTo(Math.max(0, clock.toReplay(w.t) - CHOREO.flight), 6);
+    }
     expect(Math.min(...flights.map((f) => f.start))).toBeGreaterThanOrEqual(0);
-    expect(Math.max(...flights.map((f) => f.end))).toBeLessThanOrEqual(CHOREO.duration);
+    expect(Math.max(...flights.map((f) => f.start))).toBeLessThanOrEqual(clock.length);
   });
   it("carries a child with its parent", () => {
     const child = flights.find((f) => f.parent);
