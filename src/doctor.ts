@@ -35,6 +35,7 @@ import {
   type ChantResolution,
 } from "./chant.ts";
 import { registeredMemberKinds } from "./member-kind.ts";
+import { CHANT_FLOORS, floorMet } from "./chant-floors.ts";
 import { CHOUDOUFU_FLOOR, choudoufuBinary, choudoufuMeetsFloor, choudoufuVersion, readLiveCheck, type ChoudoufuVersion, type LiveCheckParse } from "./choudoufu-member.ts";
 import { detectProject, detectProjectShape, loadBeholdConfig, type ProjectKind } from "./project.ts";
 import { terragucciConfig } from "./terragucci-repo.ts";
@@ -59,7 +60,7 @@ export type CheckStatus = "pass" | "warn" | "fail";
  * on it); `detail` is what behold found; `fix` is the single next step, set
  * whenever the status isn't a pass. */
 export interface DoctorCheck {
-  name: "project" | "chant" | "lexicons" | "targets" | "envs" | "kube" | "substrates" | "ops" | "choudoufu" | "terraform";
+  name: "project" | "chant" | "lexicons" | "targets" | "envs" | "kube" | "substrates" | "floor" | "ops" | "choudoufu" | "terraform";
   status: CheckStatus;
   detail: string;
   fix?: string;
@@ -151,6 +152,23 @@ function chantCheck(root: string, targets: string[], estate: boolean): DoctorChe
     };
   }
   return { name: "chant", status: "pass", detail: `${versions}${floor ? ` (behold's floor ${floor})` : ""}` };
+}
+
+/** #691: one line per chant read behold makes (src/chant-floors.ts), each with
+ * the chant version of the project (every chant member of an estate) and
+ * whether the read's floor is met. An unmet floor is a warn: the pane that
+ * needs the read says so and the rest of behold works. */
+export function floorChecks(root: string, targets: string[], estate: boolean): DoctorCheck[] {
+  if (!targets.length) return [];
+  const resolutions = targets.map((t) => ({ target: t, res: resolveChant(t) }));
+  const have = list(resolutions.map(({ target, res }) => `${labelFor(root, target, estate)}chant ${res.version ?? "(unknown version)"}`));
+  return CHANT_FLOORS.map((f): DoctorCheck => {
+    const behind = resolutions.filter(({ res }) => !floorMet(f, res.version));
+    const head = `${f.read}: needs chant ${f.floor} (${f.adds}); ${have}`;
+    return behind.length
+      ? { name: "floor", status: "warn", detail: `${head}, not met`, fix: `Upgrade @intentius/chant to ${f.floor} or newer in ${list(behind.map(({ target }) => relative(root, target) || target))}; the pane that needs the ${f.read} stays off until then.` }
+      : { name: "floor", status: "pass", detail: `${head}, met` };
+  });
 }
 
 /** The lexicons line: what the config declares against what's installed. A
@@ -585,6 +603,7 @@ export async function diagnose(dir: string, probes: DoctorProbes = {}): Promise<
   const checks: DoctorCheck[] = [
     projectCheck,
     chantCheck(root, chantTargets, estate),
+    ...floorChecks(root, chantTargets, estate),
     lexiconCheck(root, declared, estate),
     targetCheck(declared),
     // An estate root is not itself servable — the hint has to name its members

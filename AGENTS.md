@@ -59,6 +59,27 @@ a scheduled read: it holds a slot in the read budget, has the read deadline,
 and stops when the request does. `serve --hud <url>` (or `BEHOLD_HUD_URL`)
 links a proposed decision to its review in hud.
 
+## Chant version floors (behold#691)
+
+behold shells each project's own chant, so a read can reach a chant that
+predates it. Every read has one floor, and every floor lives in
+`src/chant-floors.ts`:
+
+- one constant per read, named after the read (`WHY_CHANT_FLOOR`) and set to the
+  chant release that adds it;
+- one entry in `CHANT_FLOORS` (the read in words, the floor, what adds it in
+  chant), which is what `behold doctor` lists with the project's chant version
+  and whether the floor is met;
+- the code that makes the read checks the project's chant first (`floorMet`,
+  `floorRefusal`) and never sends the read to a chant that would reject it.
+
+On an older chant the pane that needs the read shows `floorRefusal`'s words
+(the read, the chant that adds it, the project's version) and the rest of
+behold works. The why route does this: `GET /api/workspace/why` refuses before
+spawning the read. A new read adds its constant and entry in the issue that
+adds the read, once the chant release is known, and reads through the read
+contract (`src/workspace-reader.ts`), never chant's library.
+
 ## A pipeline's numbers, from Prometheus (behold#571)
 
 `behold serve --prometheus <url>` (or `BEHOLD_PROMETHEUS_URL`) adds `GET

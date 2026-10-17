@@ -24,8 +24,9 @@ import { rootReader, WorkspaceReadError, type WorkspaceDocument, type WorkspaceR
 import type { Workspace } from "./workspace.ts";
 
 export const INTENT_SCHEMA_ID = "https://intentius.io/chant/schemas/workspace/intent/v1/intent.schema.json";
-/** The first chant whose intent document carries `why` (INTENTIUS/chant#3312). */
-export const WHY_CHANT_FLOOR = "0.102.0";
+/** The first chant whose intent document carries `why` (see src/chant-floors.ts). */
+import { WHY_CHANT_FLOOR } from "./chant-floors.ts";
+export { WHY_CHANT_FLOOR };
 
 /** How many commits the answer lists; the rest are counted. */
 export const WHY_COMMITS_SHOWN = 8;

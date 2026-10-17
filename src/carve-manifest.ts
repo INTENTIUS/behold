@@ -347,8 +347,9 @@ function mergeCarveStates(byTarget: Map<string, CarveState>, paths: readonly str
 
 // ── Discovery through chant (chant#2038, chant ≥ 0.54.0) ─────────────────────
 
-/** The chant that first answers `chant carve status`. */
-export const CARVE_STATUS_FLOOR = "0.54.0";
+/** The chant that first answers `chant carve status`; see src/chant-floors.ts. */
+import { CARVE_STATUS_FLOOR } from "./chant-floors.ts";
+export { CARVE_STATUS_FLOOR };
 
 /** One row of `chant carve status --from <dir> --json` — chant's own
  * `CarveStatusRow` (cli/commands/carve-status.ts), reproduced rather than

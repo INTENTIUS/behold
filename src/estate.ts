@@ -332,12 +332,9 @@ export function namespaceRuntimeOwners(name: string, ir: GraphIR): GraphIR {
 // and an object naming its own namespace is untouched.
 // ---------------------------------------------------------------------------
 
-/** The chant that ships `graph --live --namespace <ns>` (chant#1629). Below
- * this the flag is not merely ignored: chant#1127 made an unrecognised `--`
- * flag a hard error, so a member on an older chant is left unjoined rather
- * than sent an invocation its own CLI will refuse — which would turn today's
- * "pending, with the note" into "unobserved", a strictly worse picture. */
-export const NAMESPACE_JOIN_FLOOR = "0.44.5";
+/** The chant that ships `graph --live --namespace <ns>` (chant#1629); see src/chant-floors.ts. */
+import { NAMESPACE_JOIN_FLOOR } from "./chant-floors.ts";
+export { NAMESPACE_JOIN_FLOOR };
 
 type Rec = Record<string, unknown>;
 const rec = (v: unknown): Rec | undefined => (v && typeof v === "object" && !Array.isArray(v) ? (v as Rec) : undefined);

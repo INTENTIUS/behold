@@ -1,10 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createApp } from "./server.ts";
 import { Broadcaster } from "./events.ts";
 import { FrameBuffer } from "./frames.ts";
 import { OpRunner } from "./op-runner.ts";
 import { readWorkspace, setServedWorkspace, type Workspace } from "./workspace.ts";
-import { hudAddress, hudReviewUrl, readWhy, whyFromIntent, whyRegion, WHY_COMMITS_SHOWN } from "./workspace-why.ts";
+import { CHANT_FLOORS, floorFor, floorMet, floorRefusal } from "./chant-floors.ts";
+import { hudAddress, hudReviewUrl, readWhy, whyFromIntent, whyRegion, WHY_CHANT_FLOOR, WHY_COMMITS_SHOWN } from "./workspace-why.ts";
 import { createWhyFixture, type WhyFixture } from "./workspace-why-fixture.ts";
 import { isScheduledRead } from "./chant.ts";
 import { labelRead } from "./read-stats.ts";
@@ -219,4 +223,62 @@ describe("the why of a real workspace (#471)", () => {
     const bad = await app.request("/api/workspace/why?member=..%2F..");
     expect(bad.status).toBe(400);
   }, 120_000);
+});
+
+describe("a chant below WHY_CHANT_FLOOR (#691)", () => {
+  const made: string[] = [];
+  afterAll(() => made.forEach((d) => rmSync(d, { recursive: true, force: true })));
+
+  /** A workspace root whose own chant install is `version`. No chant is spawned. */
+  function rootWithChant(version: string): string {
+    const root = mkdtempSync(join(tmpdir(), "behold-why-floor-"));
+    made.push(root);
+    const pkg = join(root, "node_modules", "@intentius", "chant");
+    mkdirSync(join(pkg, "bin"), { recursive: true });
+    writeFileSync(join(pkg, "package.json"), JSON.stringify({ name: "@intentius/chant", version, main: "index.js", bin: { chant: "bin/chant" } }));
+    writeFileSync(join(pkg, "index.js"), "");
+    writeFileSync(join(pkg, "bin", "chant"), "#!/usr/bin/env node\nprocess.exit(99);\n");
+    return root;
+  }
+
+  const serve = (root: string) => {
+    const w: Workspace = { ...ws([["delivery", "delivery"]]), root, chant: "0.95.0" };
+    setServedWorkspace(w);
+    const broadcaster = new Broadcaster();
+    return createApp(
+      { projectDir: root, workspace: w, port: 0 },
+      broadcaster,
+      new FrameBuffer(),
+      new OpRunner({ projectDir: root, broadcaster, onDone: () => {} }),
+    );
+  };
+  afterAll(() => setServedWorkspace(undefined));
+
+  it("is registered, and the check names the read and the floor", () => {
+    expect(CHANT_FLOORS.map((f) => f.floor)).toContain(WHY_CHANT_FLOOR);
+    const f = floorFor("why");
+    expect(floorMet(f, "0.95.0")).toBe(false);
+    expect(floorMet(f, WHY_CHANT_FLOOR)).toBe(true);
+    expect(floorMet(f, undefined)).toBe(true);
+    expect(floorRefusal(f, "0.95.0")).toEqual({
+      error: "Why needs chant 0.102.0 or newer. This project has chant 0.95.0.",
+      code: "chant-too-old",
+      remedy: "Upgrade @intentius/chant to 0.102.0 or newer in the project.",
+    });
+  });
+
+  it("the why pane shows what is missing without reading, and the rest of behold answers", async () => {
+    const app = serve(rootWithChant("0.95.0"));
+    const res = await app.request("/api/workspace/why?member=delivery");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, any>;
+    expect(body.refusal).toEqual({
+      error: "Why needs chant 0.102.0 or newer. This project has chant 0.95.0.",
+      code: "chant-too-old",
+      remedy: "Upgrade @intentius/chant to 0.102.0 or newer in the project.",
+    });
+    expect(body.ms).toBe(0);
+    // Another route still answers.
+    expect((await app.request("/api/doctor")).status).toBe(200);
+  });
 });
