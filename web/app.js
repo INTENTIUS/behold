@@ -11,7 +11,7 @@
 import "./view-repo.js"; // behold#571: first, so every read carries the page's ?repo=
 import { createRefreshQueue } from "./refresh-queue.js";
 import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine } from "./view-url.js";
-import { quietCardLines, readEmbed, selectMessage, viewFromMessage } from "./embed.js";
+import { quietCardLines, readEmbed, selectMessage, viewFromMessage, wheelPx, wheelZoomsBare } from "./embed.js";
 import { WORDS as POP_WORDS, cardRoot as popCardRoot, placePopover, popReduce, popState, resourcePopover, rootPopover } from "./kiosk-popover.js";
 import { cssString, hoverCss, hoverFromMessage, hoverLinks, hoverMessage, isLightBg, rootPaint, rootText } from "./kiosk-roots.js";
 import { gateCards } from "./workspace-gates.js";
@@ -4713,7 +4713,9 @@ function wireKioskFrame() {
       // behold#571: a click on the graph holds the kiosk's shot where the viewer is reading.
       if (card && kioskShot) kioskViewerMoved();
       // behold#571: a click on a wave's box (not a card in it) asks the kiosk for that wave's trace, or its log.
-      if (!card && !panMoved && embedOpts.host && window.parent !== window) {
+      // While the dots layer has the SVG out of the paint, its wave boxes are not on screen: a tap there is on a dot or a card.
+      const svgShown = !(currentSvg() && currentSvg().style.visibility === "hidden");
+      if (!card && !panMoved && svgShown && embedOpts.host && window.parent !== window) {
         const box = e.target.closest && (e.target.closest("rect[data-group-id]") || e.target.closest("[data-group-id]"));
         let n = box ? tgWaveOfKey(box.getAttribute("data-group-id")) : null;
         if (n === null) {
@@ -7150,15 +7152,16 @@ function ensureZoomControls(host) {
     "wheel",
     (e) => {
       // Trackpad pinch fires wheel+ctrlKey; ⌘/Ctrl+scroll is the explicit gesture.
-      // Plain scroll is left alone (nothing to scroll when fit).
-      if (!vb || !(e.ctrlKey || e.metaKey)) return;
+      // Plain scroll is left alone (nothing to scroll when fit), except in the kiosk's
+      // bare frame: the graph is the whole stage there, so a mouse wheel zooms it, as a map's does.
+      if (!vb || !(e.ctrlKey || e.metaKey || wheelZoomsBare(embedOpts.bare, e))) return;
       e.preventDefault();
       const s = currentSvg();
       if (!s) return;
       const r = s.getBoundingClientRect();
       const cx = vb[0] + ((e.clientX - r.left) / r.width) * vb[2];
       const cy = vb[1] + ((e.clientY - r.top) / r.height) * vb[3];
-      const f = Math.exp(e.deltaY * 0.0025); // scroll up → f<1 → zoom in
+      const f = Math.exp(wheelPx(e) * 0.0025); // scroll up → f<1 → zoom in
       const minW = vbInit[2] / 60;
       const maxW = vbInit[2] * (dotsZoomOutFactor() ?? 3); // #712: the dots preview zooms out further
       const nw = Math.min(maxW, Math.max(minW, vb[2] * f));
