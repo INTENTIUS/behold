@@ -62,6 +62,14 @@ export const CHANGE_SET_SHOW_CHANT_FLOOR = "0.124.28";
  * runs with the older `--progress-json` and says it is in degraded mode, and
  * reads no run it did not start (#679). */
 export const RUN_EVENTS_CHANT_FLOOR = "0.124.28";
+/** The first chant that says which releases are revoked and which release a
+ * deploy was made from: `revoked` on each `release list` release, on a status
+ * release item (with its rollback line) and on a superseded release gate
+ * (INTENTIUS/chant#4033), and `releaseDigest` and `releaseLabel` on a status
+ * release item (INTENTIUS/chant#4043). The trunk lane's release column (#692).
+ * Below it the column is drawn from `release list` alone, with no revoked
+ * mark, and says so; the lane itself still needs only 0.124.28. */
+export const RELEASE_COLUMN_CHANT_FLOOR = "0.124.29";
 
 export interface ChantFloor {
   /** The read, in words: `the why of a member or a card`. */
@@ -70,6 +78,8 @@ export interface ChantFloor {
   floor: string;
   /** What adds it in chant, for the person reading doctor. */
   adds: string;
+  /** Set when the pane works below the floor with less, rather than refusing: what it shows then. */
+  degraded?: string;
 }
 
 /** Every read behold makes of chant that an older chant cannot answer. Add
@@ -86,6 +96,7 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "promotion order", floor: PROMOTION_ORDER_CHANT_FLOOR, adds: "workspace status promotionOrder (chant#4030)" },
   { read: "change set", floor: CHANGE_SET_SHOW_CHANT_FLOOR, adds: "chant change-set show --json (chant#4022, chant#4045)" },
   { read: "run events", floor: RUN_EVENTS_CHANT_FLOOR, adds: "run --events-json and chant run events (chant#4019, chant#4041, chant#4042)" },
+  { read: "release column", floor: RELEASE_COLUMN_CHANT_FLOOR, adds: "revoked releases, and the release a deploy was made from (chant#4033, chant#4043)", degraded: "the Trunk tab draws its releases from chant release list alone, with no revoked mark" },
 ];
 
 /** One read's floor against one chant version. An unknown version meets it

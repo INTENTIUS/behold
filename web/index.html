@@ -258,6 +258,13 @@
       #tab-trunk .ws-gate-facts, #tab-trunk .ws-gate-note { color: var(--muted); overflow-wrap: anywhere; }
       #tab-trunk a { color: inherit; }
       #tab-trunk .lane-change-set { color: var(--pending); }
+      /* #692: the release column. */
+      #tab-trunk .lane-release { border-top: 1px solid var(--rule); padding-top: 3px; }
+      #tab-trunk .lane-release .lane-where { overflow-wrap: anywhere; }
+      #tab-trunk .lane-config-only { color: var(--muted); font-style: italic; }
+      #tab-trunk .lane-revoked-why { color: var(--degraded); overflow-wrap: anywhere; }
+      #tab-trunk .lane-rollback { font-family: var(--font-mono); color: var(--muted); overflow-wrap: anywhere; }
+      #tab-trunk .lane-runs-revoked, #tab-trunk .lane-superseded { color: var(--degraded); overflow-wrap: anywhere; }
       /* #681: a gate's change set, previewed on the graph. */
       #panel-body #tab-change-set.active { display: flex; flex-direction: column; gap: 4px; font-size: var(--t-caption); }
       #tab-change-set h3 { margin: 8px 0 0; font-size: var(--t-caption); }

@@ -19,11 +19,32 @@
  *    environments that run it.
  *
  * behold keeps no state of its own here: the lane is those documents, joined
- * on the commit sha and the environment name, which is all the join there is.
+ * on the commit sha, the release digest and the environment name.
+ *
+ * #692: the release column. Between the commits and the gates, every release
+ * `release list` names, newest first, each with the commit it was cut from,
+ * its cut, where it runs and waits, and the environment its member's promotion
+ * order names next. With chant 0.124.29 and newer
+ * (`RELEASE_COLUMN_CHANT_FLOOR`) also: which releases are revoked (`revoked`
+ * on `release list` and on status release items, with the rollback line), the
+ * release gates chant reads as superseded for it, and the release each deploy
+ * record names (`releaseDigest`, `releaseLabel`). Below it the column comes
+ * from `release list` alone and carries no revoked mark.
+ *
+ * A release is config-only when it carries artifact digests and they are the
+ * same as its previous release's. Its previous release is the one of the same
+ * member cut from the nearest older commit: releases are ordered by their
+ * commit's place in the trunk list (first-parent, newest first), a release
+ * whose commit is older than the list after every listed one, and releases
+ * from the same commit, or from commits outside the list, by `release list`'s
+ * own order (newest cut first). chant cuts a release that way: an artifact
+ * whose source did not change since the release cut from the nearest ancestor
+ * carries that release's digest. A release with no artifact digests (a member
+ * with no components) is never marked, and neither is the oldest.
  * Approving a waiting gate goes through the existing route
  * (`POST /api/workspace/gates/approve`), as the gate strip's button does.
  */
-import { floorFor, floorMet, floorRefusal } from "./chant-floors.ts";
+import { floorFor, floorMet, floorRefusal, RELEASE_COLUMN_CHANT_FLOOR } from "./chant-floors.ts";
 import type { Workspace } from "./workspace.ts";
 import { gatesFromStatus, withOverrides, type WorkspaceGate } from "./workspace-gates.ts";
 import { rootReader, WorkspaceReadError, type WorkspaceDocument, type WorkspaceReader, type WorkspaceRefusal } from "./workspace-reader.ts";
@@ -73,6 +94,8 @@ export interface LaneCommit {
   /** ci tags that do not count, for want of a runner's signature (chant#4031). */
   ignored: { tag: string; status: string; reason: string }[];
   where: CommitPlace[];
+  /** The releases cut from it (#692). */
+  cuts: { member: string; releaseDigest: string; label: string | null }[];
 }
 
 /** A release an environment runs, from `release list`. */
@@ -90,6 +113,8 @@ export interface LaneRelease {
   cutAt: string | null;
   /** Who approved its deploy, from the deploy record of one of its components, when one names somebody. */
   approver: string | null;
+  /** The lines that roll its components back here, when chant says the release is revoked (0.124.29 and newer). */
+  rollback: string[];
 }
 
 /** A deploy record no release covers, from `workspace status <env>`. */
@@ -103,12 +128,64 @@ export interface LaneDeploy {
   actor: string;
   approver: string | null;
   runId: string;
+  /** The release the record names, with its label (chant#4043, 0.124.29 and newer); null when it names none or chant is older. */
+  release: { releaseDigest: string; label: string | null } | null;
+  /** The line that rolls it back, when chant says that release is revoked (chant#4033). */
+  rollback: string | null;
 }
 
 export type LaneGate = Omit<WorkspaceGate, "dir"> & {
   /** The state of the commit the gate waits on, or null when the commit is not in the trunk list or chant recorded none. */
   commitState: CommitState | null;
 };
+
+/** What failed on a revoked release's commit: the ci/revoked tag, as chant#4033 reports it. */
+export interface LaneRevocation {
+  tag: string;
+  tagged: string | null;
+  phase: string | null;
+  run: LaneRun | null;
+  signer: string | null;
+}
+
+/** A release gate chant reads as superseded because its release is revoked (chant#4033): no approval of it counts. */
+export interface LaneSupersededGate {
+  key: string;
+  member: string;
+  op: string;
+  gate: string;
+  env: string;
+  releaseDigest: string;
+  gitSha: string | null;
+  runId: string | null;
+  revoked: LaneRevocation;
+}
+
+/** One release in the release column (#692). */
+export interface LaneReleaseRow {
+  member: string;
+  releaseDigest: string;
+  label: string | null;
+  /** The commit it was cut from, and whether that commit is in the trunk list. */
+  commit: string;
+  listed: boolean;
+  /** How many image and asset digests it carries. */
+  artifacts: number;
+  /** The release before it in its member (see the module's note), or null for the oldest. */
+  previous: { releaseDigest: string; label: string | null } | null;
+  /** Its artifact digests are its previous release's: only the configuration changed. Null when it has no previous release or no artifact digests. */
+  configOnly: boolean | null;
+  /** The newest cut: who, when, and chant's check of its signature. Null for a release stored with no cut. */
+  cut: { by: string; at: string; signature: { status: string; reason: string } | null } | null;
+  /** chant's revoked tag on its commit, with the lines that roll back each component running it. Null when it is not revoked, and on a chant below the floor. */
+  revoked: (LaneRevocation & { rollback: string[] }) | null;
+  /** The environments that run it, in promotion order, with the components. */
+  runs: { env: string; components: string[] }[];
+  /** The gates waiting on it: a release gate that binds it, or a gate of its member reached at its commit. */
+  waits: { env: string; gate: string; state: "pending" | "superseded" }[];
+  /** The environment its member's promotion order names after the last one that runs it; null when it runs in the last one, or it is revoked. */
+  next: string | null;
+}
 
 export interface LaneEnvironment {
   env: string;
@@ -118,6 +195,8 @@ export interface LaneEnvironment {
   releases: LaneRelease[];
   deploys: LaneDeploy[];
   waiting: LaneGate[];
+  /** Release gates chant reads as superseded, their release revoked (chant 0.124.29 and newer). */
+  superseded: LaneSupersededGate[];
   /** Set when this environment's status could not be read. */
   refusal?: WorkspaceRefusal;
 }
@@ -132,6 +211,10 @@ export interface TrunkLane {
   order: "promotion" | "env";
   /** Members whose `release list` could not be read. */
   releaseRefusals: { member: string; refusal: WorkspaceRefusal }[];
+  /** The release column (#692): every release read, newest first. */
+  releases: LaneReleaseRow[];
+  /** `full`: the project's chant meets `floor`, so revoked releases are marked. Otherwise the column is `release list` alone. */
+  releaseColumn: { full: boolean; floor: string };
   read: { at: string };
 }
 
@@ -192,7 +275,7 @@ export function commitsFromCiList(doc: WorkspaceDocument): LaneCommit[] {
     const ignored = arr(c.ignored)
       .filter(isRecord)
       .map((t) => ({ tag: String(t.tag ?? ""), status: String(t.status ?? ""), reason: String(t.reason ?? "") }));
-    out.push({ sha: c.sha, committed: String(c.committed ?? ""), state, phases, revoked: rv, work, ignored, where: [] });
+    out.push({ sha: c.sha, committed: String(c.committed ?? ""), state, phases, revoked: rv, work, ignored, where: [], cuts: [] });
   }
   return out;
 }
@@ -225,8 +308,14 @@ export function releaseMembers(status: WorkspaceDocument): { name: string; dir: 
     .map((m) => ({ name: m.name as string, dir: typeof m.dir === "string" ? m.dir : "." }));
 }
 
-/** One environment's deploy records in a status document, per member. */
-function deployRecords(status: WorkspaceDocument, env: string): Omit<LaneDeploy, "listed">[] {
+/** chant#4033's revocation of a release, from a `release list` release, a status release item or a gate. */
+function revocation(v: unknown): LaneRevocation | null {
+  if (!isRecord(v) || typeof v.tag !== "string") return null;
+  return { tag: v.tag, tagged: str(v.tagged), phase: str(v.phase), run: run(v.run), signer: str(v.signer) };
+}
+
+/** One environment's deploy records in a status document, per member. With `full`, the release each names and its rollback line when revoked. */
+function deployRecords(status: WorkspaceDocument, env: string, full: boolean): Omit<LaneDeploy, "listed">[] {
   const out: Omit<LaneDeploy, "listed">[] = [];
   for (const m of arr(status.members)) {
     if (!isRecord(m) || typeof m.name !== "string") continue;
@@ -243,6 +332,8 @@ function deployRecords(status: WorkspaceDocument, env: string): Omit<LaneDeploy,
           actor: String(r.actor ?? ""),
           approver: str(r.approver),
           runId: String(r.runId ?? ""),
+          release: full && str(r.releaseDigest) ? { releaseDigest: r.releaseDigest as string, label: str(r.releaseLabel) } : null,
+          rollback: full && isRecord(r.revoked) ? str(r.revoked.rollback) : null,
         });
       }
     }
@@ -251,8 +342,8 @@ function deployRecords(status: WorkspaceDocument, env: string): Omit<LaneDeploy,
 }
 
 /** One environment's releases in one member's `release list` document. */
-function releasesIn(doc: WorkspaceDocument, member: string, env: string): Omit<LaneRelease, "listed" | "approver">[] {
-  const out: Omit<LaneRelease, "listed" | "approver">[] = [];
+function releasesIn(doc: WorkspaceDocument, member: string, env: string): Omit<LaneRelease, "listed" | "approver" | "rollback">[] {
+  const out: Omit<LaneRelease, "listed" | "approver" | "rollback">[] = [];
   for (const r of arr(doc.releases)) {
     if (!isRecord(r) || typeof r.releaseDigest !== "string" || typeof r.commit !== "string") continue;
     const here = arr(r.environments).find((e) => isRecord(e) && e.env === env);
@@ -272,6 +363,104 @@ function releasesIn(doc: WorkspaceDocument, member: string, env: string): Omit<L
   return out;
 }
 
+/** The release gates a status document reads as superseded for a revoked release, in one environment (chant#4033). */
+function supersededGates(status: WorkspaceDocument, env: string): LaneSupersededGate[] {
+  const out: LaneSupersededGate[] = [];
+  for (const m of arr(status.members)) {
+    if (!isRecord(m) || typeof m.name !== "string") continue;
+    for (const g of arr(m.gates)) {
+      if (!isRecord(g) || g.state !== "superseded" || g.env !== env) continue;
+      const op = str(g.component);
+      const gate = str(g.name);
+      const releaseDigest = str(g.releaseDigest);
+      const revoked = revocation(g.revoked);
+      if (!op || !gate || !releaseDigest || !revoked) continue;
+      out.push({ key: `${m.name}/${op}/${gate}`, member: m.name, op, gate, env, releaseDigest, gitSha: str(g.gitSha), runId: str(g.runId), revoked });
+    }
+  }
+  return out;
+}
+
+const artifactKey = (v: unknown): string[] =>
+  arr(v)
+    .filter(isRecord)
+    .map((a) => JSON.stringify([String(a.component ?? ""), String(a.kind ?? ""), String(a.path ?? ""), String(a.digest ?? "")]))
+    .sort();
+
+/**
+ * The release column: every release in the documents read, each placed in the
+ * environments. Newest first: by the commit's place in the trunk list, then
+ * member, then `release list`'s order. `previous` and `configOnly` as the
+ * module's note defines them. Pure.
+ */
+export function releaseColumn(
+  docs: { member: string; doc: WorkspaceDocument }[],
+  commits: Pick<LaneCommit, "sha">[],
+  environments: Pick<LaneEnvironment, "env" | "members" | "releases" | "waiting" | "superseded">[],
+  full: boolean,
+): LaneReleaseRow[] {
+  const at = new Map(commits.map((c, i) => [c.sha, i]));
+  const place = (commit: string) => at.get(commit) ?? Number.POSITIVE_INFINITY;
+  const rows: { row: LaneReleaseRow; at: number; i: number }[] = [];
+  for (const { member, doc } of docs) {
+    const items = arr(doc.releases)
+      .map((r, i) => ({ r, i }))
+      .filter((x): x is { r: Record<string, unknown>; i: number } => isRecord(x.r) && typeof x.r.releaseDigest === "string" && typeof x.r.commit === "string")
+      .sort((a, b) => place(a.r.commit as string) - place(b.r.commit as string) || a.i - b.i);
+    const order = environments.filter((e) => e.members.includes(member)).map((e) => e.env);
+    items.forEach(({ r, i }, k) => {
+      const releaseDigest = r.releaseDigest as string;
+      const commit = r.commit as string;
+      const before = items[k + 1]?.r;
+      const artifacts = artifactKey(r.artifactDigests);
+      const cuts = arr(r.cuts).filter(isRecord);
+      const last = cuts.at(-1);
+      const check = last && isRecord(last.signatureCheck) ? last.signatureCheck : null;
+      const ran = arr(r.environments).filter(isRecord);
+      const runs = [
+        ...environments.map((e) => e.env),
+        ...ran.map((e) => String(e.env ?? "")).filter((env) => !environments.some((e) => e.env === env)),
+      ]
+        .map((env) => {
+          const e = ran.find((x) => x.env === env);
+          return e ? { env, components: arr(e.components).filter((c): c is string => typeof c === "string") } : null;
+        })
+        .filter((x): x is { env: string; components: string[] } => x !== null);
+      const waits: LaneReleaseRow["waits"] = [];
+      for (const e of environments) {
+        for (const g of e.waiting) {
+          const mine = g.releaseDigest ? g.releaseDigest === releaseDigest : g.member === member && g.gitSha === commit;
+          if (mine && g.state === "pending") waits.push({ env: e.env, gate: g.key, state: "pending" });
+        }
+        for (const g of e.superseded) if (g.releaseDigest === releaseDigest) waits.push({ env: e.env, gate: g.key, state: "superseded" });
+      }
+      const rv = full ? revocation(r.revoked) : null;
+      const rollback = environments.flatMap((e) => e.releases.filter((x) => x.member === member && x.releaseDigest === releaseDigest).flatMap((x) => x.rollback));
+      const furthest = Math.max(-1, ...runs.map((x) => order.indexOf(x.env)));
+      rows.push({
+        at: place(commit),
+        i,
+        row: {
+          member,
+          releaseDigest,
+          label: str(r.label),
+          commit,
+          listed: at.has(commit),
+          artifacts: artifacts.length,
+          previous: before ? { releaseDigest: before.releaseDigest as string, label: str(before.label) } : null,
+          configOnly: before && artifacts.length ? artifacts.join() === artifactKey(before.artifactDigests).join() : null,
+          cut: last ? { by: String(last.actor ?? ""), at: String(last.timestamp ?? ""), signature: check ? { status: String(check.status ?? ""), reason: String(check.reason ?? "") } : null } : null,
+          revoked: rv ? { ...rv, rollback } : null,
+          runs,
+          waits,
+          next: rv ? null : (order[furthest + 1] ?? null),
+        },
+      });
+    });
+  }
+  return rows.sort((a, b) => a.at - b.at || (a.row.member < b.row.member ? -1 : a.row.member > b.row.member ? 1 : 0) || a.i - b.i).map((x) => x.row);
+}
+
 /** What the lane is joined from: chant's documents, or the refusal a read came back with. */
 export interface LaneInput {
   ci: WorkspaceDocument | WorkspaceRefusal;
@@ -279,6 +468,8 @@ export interface LaneInput {
   statuses: { env: string; canary: boolean; members: string[]; status: WorkspaceDocument | WorkspaceRefusal; gates: WorkspaceGate[] }[];
   releaseLists: { member: string; doc: WorkspaceDocument | WorkspaceRefusal }[];
   order: TrunkLane["order"];
+  /** The project's chant meets `RELEASE_COLUMN_CHANT_FLOOR`, so the 0.124.29 fields are read. */
+  full: boolean;
   at: Date;
 }
 
@@ -320,16 +511,21 @@ export function laneFrom(input: LaneInput): TrunkLane {
 
   const environments: LaneEnvironment[] = input.statuses.map((s) => {
     const base = { env: s.env, canary: s.canary, members: s.members };
-    if (isRefusal(s.status)) return { ...base, releases: [], deploys: [], waiting: [], refusal: s.status };
-    const records = deployRecords(s.status, s.env);
+    if (isRefusal(s.status)) return { ...base, releases: [], deploys: [], waiting: [], superseded: [], refusal: s.status };
+    const records = deployRecords(s.status, s.env, input.full);
     const releases: LaneRelease[] = releaseDocs.flatMap(({ member, doc }) =>
-      releasesIn(doc, member, s.env).map((r) => ({
-        ...r,
-        listed: bySha.has(r.commit),
-        approver: records.find((d) => d.member === member && r.components.includes(d.component) && d.approver)?.approver ?? null,
-      })),
+      releasesIn(doc, member, s.env).map((r) => {
+        const mine = records.filter((d) => d.member === member && r.components.includes(d.component));
+        return {
+          ...r,
+          listed: bySha.has(r.commit),
+          approver: mine.find((d) => d.approver)?.approver ?? null,
+          rollback: mine.map((d) => d.rollback).filter((x): x is string => x !== null),
+        };
+      }),
     );
-    const covered = (d: Omit<LaneDeploy, "listed">) => releases.some((r) => r.member === d.member && r.components.includes(d.component));
+    const covered = (d: Omit<LaneDeploy, "listed">) =>
+      releases.some((r) => r.member === d.member && (r.components.includes(d.component) || r.releaseDigest === d.release?.releaseDigest));
     const deploys: LaneDeploy[] = records.filter((d) => !covered(d)).map((d) => ({ ...d, listed: bySha.has(d.gitSha) }));
     // A gate that records no environment (an Op gate) is listed in every
     // environment's status; it is not a step of the promotion, so the lane
@@ -340,8 +536,11 @@ export function laneFrom(input: LaneInput): TrunkLane {
     for (const r of releases) place(r.commit, { env: s.env, what: "runs" });
     for (const d of deploys) place(d.gitSha, { env: s.env, what: "runs" });
     for (const g of waiting) if (g.gitSha && g.state === "pending") place(g.gitSha, { env: s.env, what: "waits", gate: g.key });
-    return { ...base, releases, deploys, waiting };
+    return { ...base, releases, deploys, waiting, superseded: input.full ? supersededGates(s.status, s.env) : [] };
   });
+
+  const releases = releaseColumn(releaseDocs, commits, environments, input.full);
+  for (const r of releases) bySha.get(r.commit)?.cuts.push({ member: r.member, releaseDigest: r.releaseDigest, label: r.label });
 
   return {
     trunk,
@@ -350,6 +549,8 @@ export function laneFrom(input: LaneInput): TrunkLane {
     environments,
     order: input.order,
     releaseRefusals,
+    releases,
+    releaseColumn: { full: input.full, floor: RELEASE_COLUMN_CHANT_FLOOR },
     read: { at: input.at.toISOString() },
   };
 }
@@ -367,9 +568,12 @@ async function attempt(read: () => Promise<WorkspaceDocument>): Promise<Workspac
 /**
  * Read the lane for a served workspace. `env` is the environment status is
  * first asked about, which also stands alone when no member declares a
- * promotion order. The caller has checked {@link laneFloorRefusal}.
+ * promotion order. The caller has checked {@link laneFloorRefusal}. `chant`
+ * is the project's chant version: below `RELEASE_COLUMN_CHANT_FLOOR` the
+ * release column is read without the 0.124.29 fields (an unknown version
+ * meets it, as it meets every floor).
  */
-export async function readTrunkLane(ws: Workspace, opts: { env: string; reader?: WorkspaceReader; now?: () => Date }): Promise<LaneRead> {
+export async function readTrunkLane(ws: Workspace, opts: { env: string; chant?: string; reader?: WorkspaceReader; now?: () => Date }): Promise<LaneRead> {
   const reader = opts.reader ?? rootReader(ws.root);
   const first = await attempt(() => reader.read("status", [opts.env]));
   if (isRefusal(first)) return { ok: false, refusal: first };
@@ -394,5 +598,6 @@ export async function readTrunkLane(ws: Workspace, opts: { env: string; reader?:
     Promise.all(steps.map(async (s) => ({ ...s, ...(await statusOf(s.env)) }))),
     Promise.all(members.map(async (m) => ({ member: m.name, doc: await attempt(() => reader.readTrunk("release list", [], m.dir)) }))),
   ]);
-  return { ok: true, lane: laneFrom({ ci, statuses, releaseLists, order, at: (opts.now ?? (() => new Date()))() }) };
+  const full = floorMet(floorFor("release column"), opts.chant);
+  return { ok: true, lane: laneFrom({ ci, statuses, releaseLists, order, full, at: (opts.now ?? (() => new Date()))() }) };
 }
