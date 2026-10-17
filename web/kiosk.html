@@ -491,7 +491,11 @@
       .k-cap-lead { font-size: 1.3em; color: var(--fg); font-weight: 600; }
       .k-cap-lead .k-cap-label { padding-top: var(--s3); }
       /* The quiet line (web/kiosk-watch.js quietWords): what runs while nothing new comes in, and for how long. One muted line under the fixed rows, no spinner. */
-      .k-cap-quiet { margin: 0; padding-left: var(--s3); color: var(--muted); font-size: 0.92em; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+      .k-cap-quiet { margin: 0; padding-left: var(--s3); color: var(--muted); font-size: 0.92em; line-height: 1.35; font-variant-numeric: tabular-nums; }
+      /* Both captions' quiet line (here and web/kiosk-carve.js): one line; the driver's words take an ellipsis, the job and the time never do. */
+      .k-quiet { display: flex; min-width: 0; white-space: nowrap; }
+      .k-quiet-said { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+      .k-quiet-sep, .k-quiet-tail { flex: none; white-space: pre; }
       /* The approval, on the held wave's box. */
       .k-over { position: absolute; left: 0; top: 0; visibility: hidden; }
       .k-over.k-placed { visibility: visible; }
@@ -584,7 +588,10 @@
         body.k-watch #k-caption { position: static; order: 1; display: flex; flex-direction: column; gap: var(--s1); border-radius: 0; box-shadow: none; padding: var(--s3) 16px var(--s3); }
         .k-cap-top { order: 1; flex-wrap: wrap; }
         .k-cap-step, .k-cap-quiet { order: 2; } .k-cap-changes { order: 3; }
-        .k-cap-quiet { white-space: normal; }
+        /* Two lines at most: the driver's words on one, cut short; the job and the time on the next. */
+        .k-quiet { flex-wrap: wrap; }
+        .k-quiet-said { flex: 1 1 100%; }
+        .k-quiet-sep { display: none; }
         .k-cap-title { white-space: normal; font-size: 1.12em; }
         .k-cap-title .k-kicker { display: block; margin-bottom: 0.1em; }
         .k-cap-next { margin-left: 0; flex: 1 1 100%; max-width: none; white-space: normal; }

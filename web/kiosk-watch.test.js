@@ -219,10 +219,17 @@ describe("the quiet line", () => {
     expect(q.since).toBe(from);
     expect(q.title).toContain("Nothing new has come in for 28 s.");
   });
-  it("names the run's running job and step beside the driver's words", () => {
-    const run = runningStep({ id: 9, jobs: [{ name: "plan", status: "success", steps: [] }, { name: "wave-1", status: "running", started_at: "2026-10-16T10:00:05Z", steps: [{ name: "setup", status: "success" }, { name: "terragucci plan", status: "running", started_at: "2026-10-16T10:00:09Z" }] }] });
-    expect(run).toEqual({ job: "wave-1", step: "terragucci plan", at: from + 9_000 });
-    expect(quietWords(step(), { now: from + 75_000, lastRecordAt: from + 9_000, run }).text).toBe("Wave 1 is planning the four roots · wave-1: terragucci plan · 1 m 15 s so far");
+  it("names the running job by its name alone, never its step or description, and keeps the job and the time apart from the words that may be cut", () => {
+    const run = runningStep({ id: 9, jobs: [{ name: "plan", status: "success", steps: [] }, { name: "apply-comment", status: "running", started_at: "2026-10-16T10:00:05Z", steps: [{ name: "setup", status: "success" }, { name: "Apply a merged pull request on request, from its merge commit", status: "running", started_at: "2026-10-16T10:00:09Z" }] }] });
+    expect(run).toEqual({ job: "apply-comment", step: "Apply a merged pull request on request, from its merge commit", at: from + 9_000 });
+    const q = quietWords(step({ label: "The driver comments /terragucci apply on pull request 242, and the pipeline runs the waves again." }), { now: from + 37_000, lastRecordAt: from + 9_000, run });
+    expect(q.text).toBe("The driver comments /terragucci apply on pull request 242, and the pipeline runs the waves again · apply-comment · 37 s so far");
+    expect(q.said).toBe("The driver comments /terragucci apply on pull request 242, and the pipeline runs the waves again");
+    expect(q.tail).toBe("apply-comment · 37 s so far");
+  });
+  it("counts from the driver's step, not from the job", () => {
+    const run = { job: "apply-wave-1", step: "plan", at: from + 30_000 };
+    expect(quietWords(step(), { now: from + 75_000, lastRecordAt: from + 2_000, run }).tail).toBe("apply-wave-1 · 1 m 15 s so far");
   });
   it("stays away while records come in, on a replay, while the link is stale, and on a held or ended step", () => {
     expect(quietWords(step(), { now: from + QUIET_MS, lastRecordAt: from })).toBeNull();
@@ -240,11 +247,12 @@ describe("the quiet line", () => {
     const d = step({ label: "", next: { action: "follow the waves", at: null } });
     expect(quietWords(d, { now: from + 40_000, lastRecordAt: from + 5_000, stepAt: from + 2_000 }).text).toBe("Waiting for follow the waves · 38 s so far");
   });
-  it("counts a step, a job's state or a progress line as a record, not a log line", () => {
-    const doc = (log) => ({ id: 3, jobs: [{ name: "wave-1", status: "running", steps: [{ name: "plan", status: "running", log }] }] });
-    expect(recordKey(step(), doc(["a"]), 1)).toBe(recordKey(step(), doc(["a", "b"]), 1));
-    expect(recordKey(step(), doc([]), 1)).not.toBe(recordKey(step(), doc([]), 2));
-    expect(recordKey(step(), doc([]), 1)).not.toBe(recordKey(step({ step: "resumed" }), doc([]), 1));
+  it("restarts its clock only on a new driver step or a new progress line", () => {
+    expect(recordKey(step(), 1)).not.toBe(recordKey(step(), 2));
+    expect(recordKey(step(), 1)).not.toBe(recordKey(step({ step: "resumed" }), 1));
+    expect(recordKey(step(), 1)).not.toBe(recordKey(step({ label: "Live-mv starts." }), 1));
+    // The driver's next action or its time are not a new step.
+    expect(recordKey(step(), 1)).toBe(recordKey(step({ next: { action: "carve: 3 of 14 moved", from: "2026-10-16T10:00:00Z", at: null } }), 1));
   });
   it("words", () => {
     expect(quietDuration(8.9)).toBe("8 s");

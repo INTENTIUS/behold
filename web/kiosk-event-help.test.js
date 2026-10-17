@@ -3,7 +3,7 @@
 // the queues that keep tips and modals calm.
 import { describe, expect, it } from "vitest";
 import { stripFromSteps } from "./kiosk.js";
-import { EH_STORE, cycleFacts, ehSnapshot, ehStore, ehStored, modalQueue, newEvents, storyTrail, tipsQueue, yodelRefusal } from "./kiosk-event-help.js";
+import { EH_STORE, cycleFacts, ehSnapshot, ehStore, ehStored, modalQueue, newEvents, storyKey, storyTrail, tipsQueue, yodelRefusal } from "./kiosk-event-help.js";
 
 const C = "9f3c2a71d04e5b8c6a1f2e3d4c5b6a7980716253";
 const P = "1111111111111111111111111111111111111111";
@@ -158,5 +158,20 @@ describe("event-help: calm queues", () => {
     expect(modalQueue(null, { add: [ev("x"), held], now: 10_000, lastInput: 9_000 })).toEqual({ next: null, waiting: [held] });
     expect(modalQueue({ waiting: [held] }, { add: [held2], now: 30_000 }).next).toBe(held2);
     expect(modalQueue({ waiting: [held] }, { now: 30_000, open: true }).next).toBeNull();
+  });
+});
+
+describe("a cycle told in beats", () => {
+  it("keeps each beat's story apart, so one beat's applied is never another's", () => {
+    const adopt = cycleFacts(ehSnapshot({ demo: demo("applied", { beat: "adopt" }) }));
+    const split = cycleFacts(ehSnapshot({ demo: demo("merged", { beat: "split" }) }));
+    const ids = new Set(adopt.map((f) => f.id));
+    expect(adopt.find((f) => f.kind === "applied").id).toBe("7:adopt|applied");
+    expect(split.some((f) => ids.has(f.id))).toBe(false);
+    expect(split.some((f) => f.kind === "applied")).toBe(false);
+    expect(storyKey({ cycle: 7, beat: "split" })).not.toBe(storyKey({ cycle: 7, beat: "adopt" }));
+    // A scenario with no beats keeps the cycle as its story, as before.
+    expect(storyKey({ cycle: 7, beat: null })).toBe(7);
+    expect(cycleFacts(ehSnapshot({ demo: demo("applied") })).find((f) => f.kind === "applied").id).toBe("7|applied");
   });
 });

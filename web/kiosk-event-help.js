@@ -70,6 +70,8 @@ export function ehSnapshot({ demo = null, answer = null, progress = null, runDoc
   const jobs = runDoc && Array.isArray(runDoc.jobs) && (!demo.cycle || runDoc.cycle === undefined || runDoc.cycle === demo.cycle) ? runDoc.jobs : [];
   return {
     cycle: demo.cycle,
+    // A scenario told in beats (the terralith: stock, adopt, split, team, cross) runs each beat's steps in one cycle.
+    beat: demo.beat || null,
     step: demo.step,
     pull: demo.pull,
     label: demo.label || "",
@@ -120,6 +122,12 @@ const stepRank = (step, strip = STRIP) => (strip || STRIP).findIndex((s) => s.st
  * landing pops a tip but is not a beat of the story); `critical` is a wave
  * held for an approval, a wave that failed, and the cycle applied.
  */
+/** The story a snapshot belongs to: its cycle, and its beat when the scenario is told in beats. */
+export function storyKey(snap) {
+  if (!snap) return null;
+  return snap.beat ? `${snap.cycle}:${snap.beat}` : snap.cycle;
+}
+
 export function cycleFacts(snap) {
   if (!snap) return [];
   const out = [];
@@ -127,7 +135,8 @@ export function cycleFacts(snap) {
   const strip = snap.strip || STRIP;
   const at = stepRank(snap.step, strip);
   const rank = (step) => stepRank(step, strip);
-  const c = snap.cycle;
+  // Each beat of a cycle is a story of its own: the adopt beat's "applied" is not the split's.
+  const c = storyKey(snap);
   const runId = snap.run ? snap.run.id : null;
   // The pull request and its plan.
   if (snap.pull !== null && snap.pull !== undefined && at >= 0) add({ id: `${c}|pr`, kind: "pull-request", text: `pull request #${snap.pull} opened`, order: 0, subjects: { roots: snap.plan ? snap.plan.roots : [] } });

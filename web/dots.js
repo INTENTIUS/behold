@@ -23,7 +23,7 @@
 import { readCarve, carveShow, walkthroughShow, phaseAt } from "./dots-recording.js";
 import { parentsOf } from "./dots-layout.js";
 import { buildScene, takeoffsBy, firstLandings, flightPoint, easeInOut, replayClock, BOX } from "./dots-scene.js";
-import { cardMorph, discMorph, discRadius, levelOf, caption, railMarks, railPos, lerp, LOD } from "./dots-lod.js";
+import { cardMorph, discMorph, discRadius, levelOf, caption, railMarks, railPos, lerp, LOD, directorScale } from "./dots-lod.js";
 import { perimeter, pointAt, nearestS, segment } from "./dots-border.js";
 import { getTokens, onThemeChange, contrast, hexToOklch, oklchToHex } from "./theme.js";
 import { LOOP, carveStory, beatAt, tipsBetween, directorFocus, shortName as shortOf, liveBeat, liveTipsBetween, liveEndTip, LIVE_HOLD_MS } from "./dots-kiosk.js";
@@ -1936,8 +1936,10 @@ function frameBox(b) {
   const bottom = S.insets.bottom + 8 + foot;
   const aw = Math.max(40, r.width - left - right - 16);
   const ah = Math.max(40, r.height - top - bottom);
-  // Never so close that a card shows again: dots stay dots.
-  let s = Math.min(aw / bw, ah / bh, 20 / S.cardW);
+  // Never so close that a card shows again: dots stay dots. Unless the whole shot fits with each roster card wide
+  // enough to read its name (the rail's Cards mark): a few resources are framed as cards, in their estates' boxes.
+  const cardsAt = S.seedless && S.rc && S.rc.w > 0 && S.need > 0 ? (S.need * 1.1) / S.rc.w : null;
+  const s = directorScale({ fit: Math.min(aw / bw, ah / bh), dotsCap: 20 / S.cardW, cardsAt });
   const vw = r.width / s;
   const vh = r.height / s;
   const vx = bx + bw / 2 - (left + 8 + aw / 2) / s;

@@ -159,7 +159,9 @@ export function createNarration({ bar, caption, tipsHost, modalHost, origin, qui
   const quietLine = () => {
     const q = quiet();
     if (!q || !q.text) return null;
-    const p = el("p", "cx-quiet k-quiet", q.text);
+    const p = el("p", "cx-quiet k-quiet");
+    if (q.said) p.append(el("span", "k-quiet-said", q.said), el("span", "k-quiet-sep", " · "));
+    p.append(el("span", "k-quiet-tail", q.tail || q.text));
     p.setAttribute("role", "status");
     if (q.title) p.title = q.title;
     return p;

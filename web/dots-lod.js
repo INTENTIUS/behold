@@ -120,3 +120,20 @@ export function railPos(vbW, marks) {
   if (vbW <= marks.resources) return Math.max(0, Math.min(0.5, (0.5 * (l(vbW) - l(marks.cards))) / (l(marks.resources) - l(marks.cards))));
   return Math.max(0.5, Math.min(1, 0.5 + (0.5 * (l(vbW) - l(marks.resources))) / (l(marks.estates) - l(marks.resources))));
 }
+
+/** How much past the legible card size the director may frame a small stage: enough to fill it, not so much that a card is a poster. */
+export const CARDS_FRAME_GROW = 1.6;
+
+/**
+ * The director's zoom (screen px per viewBox unit) for a box it frames.
+ * `fit`: the zoom that fits the box in the stage; `dotsCap`: the closest it
+ * goes while dots must stay dots; `cardsAt`: the zoom at which each card is
+ * wide enough to read its name (the rail's Cards mark), or null when the
+ * layer draws no cards. A few resources fit the stage at that zoom: the
+ * director frames them as cards, up to CARDS_FRAME_GROW past it. A big
+ * estate does not fit, and keeps the dots framing.
+ */
+export function directorScale({ fit, dotsCap, cardsAt = null, grow = CARDS_FRAME_GROW }) {
+  if (cardsAt > 0 && fit >= cardsAt) return Math.min(fit, cardsAt * grow);
+  return Math.min(fit, dotsCap);
+}

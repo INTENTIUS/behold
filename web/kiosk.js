@@ -957,13 +957,28 @@ function drawCaption(host, s, now) {
   host.appendChild(step);
   // A long step with nothing new coming in: what runs, and for how long (kiosk-watch.js quietWords).
   if (s.quiet) {
-    const q = el("p", "k-cap-quiet k-quiet", s.quiet.text);
+    const q = quietEl("k-cap-quiet", s.quiet);
     if (q.setAttribute) {
       q.setAttribute("role", "status");
       q.setAttribute("title", s.quiet.title);
     }
     host.appendChild(q);
   }
+}
+
+/** The corner the framed graph's own controls take at its top right (⤢ fit at 8 px, ↺ layout at 66 px from the right edge, web/index.html), in px. Watch's overlays stay out of it. */
+export const FRAME_CONTROLS = { w: 240, h: 44 };
+
+/**
+ * The quiet line's element: the driver's words, which may be cut short with an
+ * ellipsis, then the running job and the time, always whole. A phone puts the
+ * job and the time on a second line.
+ */
+export function quietEl(cls, q) {
+  const p = el("p", `${cls} k-quiet`);
+  if (q.said) p.append(el("span", "k-quiet-said", q.said), el("span", "k-quiet-sep", " · "));
+  p.append(el("span", "k-quiet-tail", q.tail || q.text));
+  return p;
 }
 
 /** The approval on the held wave's box: the step's word, the wave, its numbers, and how the hold ends. */
@@ -1674,8 +1689,10 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       const size = { w: node.offsetWidth, h: node.offsetHeight };
       const box = carvingNow ? null : boxOf(n);
       // Before the frame says where the box is: the right of the view, under its top.
-      const labels = ((s.boxes && s.boxes.labels) || []).map((r) => ({ x: r.x + view.x, y: r.y + view.y, w: r.w, h: r.h }));
-      const p = box ? placeBeside(box, size, view, 18, labels) : { x: view.x + view.w - size.w - 20, y: view.y + 20, side: "below" };
+      // The frame's own controls at its top right (⤢ fit, ↺ layout: web/index.html) are kept clear too.
+      const chrome = { x: view.x + view.w - FRAME_CONTROLS.w, y: view.y, w: FRAME_CONTROLS.w, h: FRAME_CONTROLS.h };
+      const labels = [...((s.boxes && s.boxes.labels) || []).map((r) => ({ x: r.x + view.x, y: r.y + view.y, w: r.w, h: r.h })), chrome];
+      const p = box ? placeBeside(box, size, view, 18, labels) : { x: view.x + view.w - size.w - 20, y: view.y + FRAME_CONTROLS.h + 8, side: "below" };
       // The result card stands level with the middle of the graph it sums up.
       if (box && node === watch.result) p.y = Math.max(view.y + 8, Math.min(box.y + box.h / 2 - size.h / 2, view.y + view.h - size.h - 8));
       node.style.transform = `translate(${Math.round(p.x)}px, ${Math.round(p.y)}px)`;
@@ -2247,25 +2264,30 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   // frame has drawn. Never on a replay, and never while the link cue is up.
   let recordWas = null;
   let recordAt = null;
-  let stepWas = null;
   let stepSeenAt = null;
+  // The last driver step read and the newest progress line seen: a failed poll or a frame between carves does not count as a new record.
+  let quietDemo = null;
+  let writeSeen = null;
   s.quietTick = () => {
-    const d = s.demo && s.demo.demo;
     const t = now().getTime();
+    const read = s.demo && s.demo.demo;
+    if (read) quietDemo = read;
+    else if (s.mode !== "live") quietDemo = null;
+    const d = quietDemo;
     const runDoc = runsApi && runsApi.run ? runsApi.run.doc : null;
     const run = runningStep(runDoc);
-    const writeAt = carveCtl ? carveCtl.lastWriteAt() : null;
-    const key = recordKey(d, runDoc, writeAt);
+    const w = carveCtl ? carveCtl.lastWriteAt() : null;
+    if (typeof w === "number" && (writeSeen === null || w > writeSeen)) writeSeen = w;
+    // Only a new driver step or a new progress line restarts the clock; a job or step changing state only changes the words.
+    const key = recordKey(d, writeSeen);
     if (key !== recordWas) {
+      const first = recordWas === null;
+      const stepChanged = !first && recordWas.split("#")[0] !== key.split("#")[0];
       // The first look: the newest record's own time, where one says it, so a page opened in a long step shows the line at once.
-      const known = recordWas === null && d ? [d.next && d.next.from ? Date.parse(d.next.from) : NaN, run ? run.at : NaN, writeAt].filter((x) => typeof x === "number" && Number.isFinite(x) && x <= t) : [];
+      const known = first && d ? [d.next && d.next.from ? Date.parse(d.next.from) : NaN, writeSeen].filter((x) => typeof x === "number" && Number.isFinite(x) && x <= t) : [];
+      if (first || stepChanged) stepSeenAt = t;
       recordWas = key;
       recordAt = known.length ? Math.max(...known) : t;
-    }
-    const stepKey = d ? `${d.cycle}|${d.step}|${d.label}` : null;
-    if (stepKey !== stepWas) {
-      stepWas = stepKey;
-      stepSeenAt = t;
     }
     s.quiet = quietWords(d, { now: t, lastRecordAt: recordAt, run, stepAt: stepSeenAt, replay: s.mode === "replay", stale: !!linkWords(link) });
     if (carveCtl) carveCtl.setQuiet(s.quiet);

@@ -307,7 +307,7 @@ export function placeBeside(box, size, view, gap = 18, avoid = []) {
 // to start) nothing new may arrive for a minute or more, and the stage holds
 // still. After QUIET_MS with no new record, one quiet line in the caption
 // says what is running and for how long, from demo.json's step and the run's
-// running job and step. Never over a replay, and never while the kiosk can't
+// running job. Never over a replay, and never while the kiosk can't
 // read from behold: the stopped-updating cue (web/kiosk-link.js) says that.
 
 /** How long with no new record before the quiet line shows. */
@@ -345,25 +345,27 @@ export function runningStep(runDoc) {
 }
 
 /**
- * What counts as a new record for the quiet line: the driver's step, its
- * label and its next action; each job's and step's status in the run's view;
- * the newest progress line. A log line growing inside a step is not one: the
- * stage does not show it.
+ * What restarts the quiet line's clock: a new driver step (its step or its
+ * label) or a new progress line. Nothing else does: a job or a step changing
+ * state in the run's view only changes the line's words, and a log line
+ * growing inside a step is not a record at all.
  */
-export function recordKey(demo, runDoc, lastWriteAt = null) {
-  const d = demo ? [demo.step, demo.label, demo.next ? demo.next.action : "", demo.next ? demo.next.from || "" : ""].join("|") : "";
-  const jobs = runDoc && Array.isArray(runDoc.jobs) ? runDoc.jobs.map((j) => `${j.name}:${j.status}:${(j.steps || []).map((x) => x.status).join(",")}`).join(";") : "";
-  return `${d}#${runDoc ? runDoc.id : ""}#${jobs}#${lastWriteAt ?? ""}`;
+export function recordKey(demo, lastWriteAt = null) {
+  const d = demo ? [demo.cycle, demo.beat || "", demo.step, demo.label].join("|") : "";
+  return `${d}#${lastWriteAt ?? ""}`;
 }
 
 /**
- * The quiet line, `{ text, title, since }`, or null when it should not show.
- * `lastRecordAt`: when the kiosk last saw a new record (ms); `run`:
- * {@link runningStep}; `stepAt`: when the kiosk first saw this step, for a
- * driver that writes no `next.from`. It shows only after QUIET_MS with no new
- * record, on a step with something running, with no countdown of the
- * driver's own still to run, and never on a replay or while the link is
- * stale. The time is how long the driver's step has run.
+ * The quiet line, `{ said, tail, text, title, since }`, or null when it
+ * should not show. `said` is the driver label's first sentence (the part that
+ * may be cut short), `tail` the running job's name and the time, always shown
+ * whole. `lastRecordAt`: when the kiosk last saw a new record (ms), by
+ * {@link recordKey}; `run`: {@link runningStep}, of which only the job's name
+ * is said; `stepAt`: when the kiosk first saw this step, for a driver that
+ * writes no `next.from`. It shows after QUIET_MS with no new record, on a step
+ * with something running, with no countdown of the driver's own still to run,
+ * and never on a replay or while the link is stale. The time is how long the
+ * driver's step has run.
  */
 export function quietWords(demo, { now = Date.now(), lastRecordAt = null, run = null, stepAt = null, replay = false, stale = false } = {}) {
   if (replay || stale || !demo || !QUIET_STEPS.includes(demo.step)) return null;
@@ -373,12 +375,12 @@ export function quietWords(demo, { now = Date.now(), lastRecordAt = null, run = 
   const due = next && next.at ? Date.parse(next.at) : NaN;
   if (Number.isFinite(due) && due > now) return null;
   const said = firstSentence(demo.label) || (next && next.action ? `Waiting for ${next.action}` : null);
-  const ran = run && run.job ? `${run.job}${run.step ? `: ${run.step}` : ""}` : null;
-  const what = [said, ran].filter(Boolean).join(" · ");
-  if (!what) return null;
+  const job = run && run.job ? run.job : null;
+  if (!said && !job) return null;
   const from = next && next.from ? Date.parse(next.from) : NaN;
-  const since = Number.isFinite(from) ? from : typeof stepAt === "number" ? stepAt : run && run.at !== null ? run.at : lastRecordAt;
-  const text = `${what} · ${quietDuration((now - since) / 1000)} so far`;
-  const title = `Nothing new has come in for ${quietDuration((now - lastRecordAt) / 1000)}. ${demo.label || what}${ran ? ` (running: ${ran})` : ""}`;
-  return { text, title, since };
+  const since = Number.isFinite(from) ? from : typeof stepAt === "number" ? stepAt : lastRecordAt;
+  const tail = [job, `${quietDuration((now - since) / 1000)} so far`].filter(Boolean).join(" · ");
+  const text = said ? `${said} · ${tail}` : tail;
+  const title = `Nothing new has come in for ${quietDuration((now - lastRecordAt) / 1000)}. ${demo.label || said || ""}${job ? ` Running: ${job}${run.step ? `, ${run.step}` : ""}.` : ""}`.trim();
+  return { said, tail, text, title, since };
 }

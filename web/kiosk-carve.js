@@ -78,7 +78,7 @@ body.k-carving.k-watch #k-carve { display: grid; }
 #k-carve .cx-label::first-letter, #k-carve .cx-follow-label::first-letter, #k-carve .cx-ch-kicker::first-letter, #k-carve .cx-num dt::first-letter { text-transform: uppercase; }
 #k-carve .cx-num dd { margin: 0; font-size: 1.25em; font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; }
 /* The quiet line: what runs while nothing new comes in (web/kiosk-watch.js quietWords). One muted line, no spinner. */
-#k-carve .cx-quiet { margin: 0; padding-left: var(--s3); color: var(--muted); font-size: 0.92em; line-height: 1.35; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#k-carve .cx-quiet { margin: 0; padding-left: var(--s3); color: var(--muted); font-size: 0.92em; line-height: 1.35; font-variant-numeric: tabular-nums; }
 #k-carve .cx-notes { margin: 0; font: 12px/1.35 var(--font-mono); color: var(--ink2, var(--muted)); padding-left: var(--s3); overflow-wrap: anywhere; }
 /* A phone: in the page's flow under the graph, where Watch's caption goes (web/kiosk.html). */
 @media (max-width: 600px) {
@@ -98,7 +98,7 @@ body.k-carving.k-watch #k-carve { display: grid; }
   #k-carve .cx-card-title { font-size: 17px; }
   #k-carve .cx-card-line { font-size: 14px; }
   #k-carve .cx-num dd { font-size: 16px; }
-  #k-carve .cx-quiet { white-space: normal; font-size: 13px; }
+  #k-carve .cx-quiet { font-size: 13px; }
 }
 /* Slowed playback, in Inspect's quiet rows: off (real time) unless a person picks it. */
 .k-slowed { font: 12px var(--font-ui); background: var(--well, transparent); color: var(--fg); border: 1px solid var(--line); border-radius: 5px; padding: 2px 8px; cursor: pointer; }
