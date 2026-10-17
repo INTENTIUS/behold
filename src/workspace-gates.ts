@@ -56,6 +56,12 @@ export interface WorkspaceGate {
   state: "pending" | "approved";
   /** Set on a policy denial (#519): drawn as an override card, never approved by behold. */
   override?: PolicyOverride;
+  /** The commit the run reached the gate at (chant#4020, chant 0.124.28 and newer). Absent when chant recorded none. */
+  gitSha?: string;
+  /** The run that reached the gate (chant#4020). */
+  runId?: string;
+  /** The change set the gate binds, when chant stored one (chant#4022): `chant change-set show <changeSet>` prints it. */
+  changeSet?: string;
 }
 
 export type GatesRead = { ok: true; env: string; gates: WorkspaceGate[] } | { ok: false; refusal: WorkspaceRefusal };
@@ -132,6 +138,9 @@ export function gatesFromStatus(doc: WorkspaceDocument, root: string): GatesRead
         // line built here needs it added.
         state: keepApproved ? "approved" : "pending",
         approve: str(g.approve) ?? ["chant", ...approveArgs({ op, gate, env, planDigest }), ...(isRecord(g.signed) ? ["--sign"] : [])].join(" "),
+        ...(str(g.gitSha) ? { gitSha: str(g.gitSha)! } : {}),
+        ...(str(g.runId) ? { runId: str(g.runId)! } : {}),
+        ...(str(g.changeSet) ? { changeSet: str(g.changeSet)! } : {}),
       });
     }
   }

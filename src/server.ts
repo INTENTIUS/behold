@@ -194,6 +194,7 @@ import { kioskRoute, shareImageRoute, vendorFallback, vendorRoutes } from "./ter
 import { scopeServedDirs, viewRepoFacts, viewReposMiddleware, type ViewRepos } from "./view-repos.ts";
 import { lifecycleHistoryRoute } from "./lifecycle-history.ts";
 import { hasReleaseLedgerHint, releasesRoutes } from "./lifecycle-releases.ts";
+import { laneFloorRefusal, readTrunkLane } from "./trunk-lane.ts";
 import { sqlYodelerLaneRoute } from "./sql-yodeler-lane.ts";
 import { controlRepoInfo, terragucciEstateRoutes } from "./terragucci-estate.ts";
 import { yodelReportRoute } from "./yodel-report.ts";
@@ -1560,6 +1561,30 @@ export function createApp(
     return c.json({ workspace: true, env, gates: read.gates.map(({ dir: _dir, ...g }) => g), ...approver });
   });
 
+  // #680: the trunk lane. Per environment, in the promotion order chant
+  // declares (chant#4030): the trunk's commits from `chant ci list`, the gates
+  // waiting on one of them, and the release each environment runs, from
+  // `workspace status` and `release list`. Everything is read through the read
+  // contract on each request; behold keeps none of it. A chant below a floor
+  // of these reads is refused here, before anything is spawned, and the rest of
+  // behold works. The approver fields are the gate strip's (#690), so the
+  // lane's approve button says who it records.
+  app.get("/api/workspace/lane", async (c) => {
+    const ws = servedWorkspace();
+    const who = approverOf(c);
+    const approver = who.ok
+      ? { approver: who.approver.principal, approverIdentity: approverView(who.approver) }
+      : { approver: null, approverRefusal: who.refusal };
+    if (!ws) return c.json({ workspace: false, ...approver });
+    const version = resolveChant(ws.root).version;
+    const tooOld = laneFloorRefusal(version);
+    if (tooOld) return c.json({ workspace: true, chant: version ?? null, refusal: tooOld, ...approver });
+    const env = cfg.env || "local";
+    const read = await readTrunkLane(ws, { env });
+    if (!read.ok) return c.json({ workspace: true, chant: version ?? null, refusal: read.refusal, ...approver });
+    return c.json({ workspace: true, chant: version ?? null, ...read.lane, ...approver });
+  });
+
   // #471: why a member or a node is the way it is, from `chant workspace graph
   // --intent <region> --json`. Read when the page asks (a click on "why"),
   // never at boot: on a large repository it takes tens of seconds. It is a
@@ -2264,6 +2289,7 @@ export function createApp(
         { method: "POST", path: "/api/ops/:name/run", desc: "run a committed Op (delegated write)" },
         { method: "POST", path: "/api/ops/:name/signal/:gate", desc: "approve an Op's gate (releases the waiting run)" },
         { method: "GET", path: "/api/workspace/gates", desc: "a declared workspace's waiting gates from chant workspace status <env> --json (?env=), keyed member/op/gate, with the approver behold would record (#477) as approver and approverIdentity {principal, source, forge, signs}, or approver null and approverRefusal (#690); a policy-override gate carries override {subject, rules, plan, digest, state, spentAt, product, command, source} and no approve path (#519)" },
+        { method: "GET", path: "/api/workspace/lane", desc: "the trunk lane (#680): per environment in the members' promotion order, the trunk's commits from chant ci list --json (green, revoked or undecided, with phases, runs and work items), the gates waiting on one, and the releases and deploy records each environment runs, from chant workspace status <env> --json and chant release list --json; approver fields as /api/workspace/gates; a chant below 0.124.28 is refused with refusal code chant-too-old" },
         { method: "GET", path: "/api/workspace/why", desc: "why a member (?member=) or a node (?node=<member>/<id>) is the way it is: the decisions covering it, the runs and commits behind it, from chant workspace graph --intent <region> --json; read on demand, cancelled with the request (#471)" },
         { method: "POST", path: "/api/workspace/gates/approve", desc: "approve one workspace gate: JSON body {key, env}; env and plan come from a fresh status read; recorded as the request's approver with --actor and --note, a signed gate signed with that person's key or refused 422 code signed (#690); preview-locked (#477); a policy-override gate answers 422 code override with its command (#519)" },
         { method: "POST", path: "/api/operator/approve/:op/:gate", desc: "record a converge gate's resolution (chant approve — a fact for the next tick, not an unblock)" },

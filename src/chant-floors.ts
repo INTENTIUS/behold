@@ -40,6 +40,16 @@ export const WHY_CHANT_FLOOR = "0.102.0";
 export const OPERATOR_LOG_FLOOR = "0.53.1";
 /** The chant that first answers `chant carve status` (chant#2038). */
 export const CARVE_STATUS_FLOOR = "0.54.0";
+/** The first chant that answers `chant ci list --json`, each commit with its
+ * work items (INTENTIUS/chant#4021, INTENTIUS/chant#4029). The trunk lane (#680). */
+export const CI_LIST_CHANT_FLOOR = "0.124.28";
+/** The first chant that answers `chant release list --json`, each release with
+ * the environments that run it (INTENTIUS/chant#4026). The trunk lane (#680). */
+export const RELEASE_LIST_CHANT_FLOOR = "0.124.28";
+/** The first chant whose `workspace status` carries each member's
+ * `promotionOrder` (INTENTIUS/chant#4030), and each gate's `gitSha`, `runId`
+ * and `changeSet` (INTENTIUS/chant#4020, INTENTIUS/chant#4022). The trunk lane (#680). */
+export const PROMOTION_ORDER_CHANT_FLOOR = "0.124.28";
 
 export interface ChantFloor {
   /** The read, in words: `the why of a member or a card`. */
@@ -59,6 +69,9 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "operator log", floor: OPERATOR_LOG_FLOOR, adds: "chant operator log (chant#2029)" },
   { read: "graph traffic", floor: TRAFFIC_FLOOR, adds: "graph --traffic (chant#2377)" },
   { read: "namespace join", floor: NAMESPACE_JOIN_FLOOR, adds: "graph --live --namespace (chant#1629)" },
+  { read: "trunk commits", floor: CI_LIST_CHANT_FLOOR, adds: "chant ci list --json (chant#4021, chant#4029)" },
+  { read: "release list", floor: RELEASE_LIST_CHANT_FLOOR, adds: "chant release list --json (chant#4026)" },
+  { read: "promotion order", floor: PROMOTION_ORDER_CHANT_FLOOR, adds: "workspace status promotionOrder (chant#4030)" },
 ];
 
 /** One read's floor against one chant version. An unknown version meets it

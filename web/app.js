@@ -19,6 +19,7 @@ import { cornerOf, estateLine, hrefOf as tgHref, legend as tgLegend, markLine, r
 import { laneElement as tgLane, rootOfCard as tgRootOfCard, historyElement as tgHistoryLane } from "./terragucci-timeline.js";
 import { renderLane } from "./terragucci-lifecycle.js";
 import { renderReleases } from "./releases.js";
+import { renderTrunkLane } from "./trunk-lane.js";
 import { renderYodelLane } from "./sql-yodeler-lane.js";
 import { initTerragucciEstate } from "./terragucci-estate.js";
 import { chantComponentMarks } from "./chant-pr-marks.js";
@@ -4839,6 +4840,60 @@ async function loadReleases({ fresh = false } = {}) {
   }
 }
 initReleases();
+
+// --- #680: the trunk lane ---------------------------------------------------
+// /api/workspace/lane: the trunk's commits, then per environment in promotion
+// order what runs and what waits at a gate. A served workspace gets the tab;
+// the lane is read when the tab is opened (and on "Read again"), never at boot,
+// since it asks chant once per environment. Approving posts to the gate
+// strip's route, then both are read again.
+let laneHost = null;
+let laneRead = false;
+async function initTrunkLane() {
+  if (staticMode || publicMode) return; // #569: /api/workspace/* is refused in a public view
+  const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
+  if (!project.workspace) return;
+  laneHost = addPanelTab("trunk", "Trunk", "The trunk's recent commits and, per environment in promotion order, what runs there and what waits at a gate. Read from chant when you open the tab.");
+  if (!laneHost) return;
+  laneHost.id = "tab-trunk";
+  const tab = document.querySelector('#panel-tabs button[data-tab="trunk"]');
+  if (tab) tab.addEventListener("click", () => laneRead || loadTrunkLane());
+  if (laneHost.classList.contains("active")) loadTrunkLane();
+}
+async function loadTrunkLane() {
+  laneRead = true;
+  const reading = document.createElement("div");
+  reading.className = "tg-legend";
+  reading.textContent = "reading the trunk from chant";
+  laneHost.replaceChildren(reading);
+  const a = await apiFetch("/api/workspace/lane")
+    .then((r) => r.json())
+    .catch((e) => ({ error: String(e) }));
+  renderTrunkLane(laneHost, a, new Date(), { button, link: tgLink, embed: embedOpts.embed, canApprove: !previewMode && !staticMode, approve: approveFromLane });
+  const again = button("Read again", "", () => loadTrunkLane());
+  again.title = "Read the trunk and every environment again.";
+  laneHost.appendChild(again);
+}
+function approveFromLane(key, env, btn) {
+  if (btn) btn.disabled = true;
+  fetch("/api/workspace/gates/approve", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key, env }) })
+    .then((r) => r.json())
+    .then((j) => {
+      if (j.error) {
+        showToast(`✗ approve ${key}: ${j.error}`, false);
+        nowline("✗ " + j.error);
+      } else {
+        showToast(`✓ ${key} approved as ${j.approver}${j.signed ? ", signed" : ""}`, true);
+      }
+      loadTrunkLane();
+      loadWorkspaceGates({ force: true });
+    })
+    .catch((e) => showToast(`✗ approve ${key}: ${e}`, false))
+    .finally(() => {
+      if (btn) btn.disabled = false;
+    });
+}
+initTrunkLane();
 
 
 // --- #526: SQL Yodeler's report and drift, from files ------------------------

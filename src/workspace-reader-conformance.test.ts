@@ -67,6 +67,8 @@ describe("every workspace read goes through the reader (#468)", () => {
       if (!f.endsWith(".ts") || f.endsWith(".test.ts") || f === "workspace-reader.ts") continue;
       const text = readFileSync(join(src, f), "utf8");
       if (/\[\s*"workspace"\s*,\s*"(ls|graph|status|records|runs|wip)"/.test(text)) offenders.push(f);
+      // #680: the trunk lane's reads go through the reader too.
+      if (/\[\s*"(ci|release)"\s*,\s*"list"/.test(text)) offenders.push(f);
     }
     expect(offenders).toEqual([]);
   });

@@ -1,0 +1,91 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/releases/v1/releases.schema.json",
+  "contract": 1,
+  "chant": "0.124.27",
+  "member": "web",
+  "releases": [
+    {
+      "releaseDigest": "jcs1-sha256:1a23268fa8b1fc419cffde4c1780f4387ff0346495f97bd9e22b0508bef99f9d",
+      "member": "web",
+      "commit": "a14610e4f51778c969efcc77694a360412c34d88",
+      "artifactDigests": [],
+      "targets": [
+        {
+          "env": "prod",
+          "templates": [],
+          "params": []
+        },
+        {
+          "env": "staging",
+          "templates": [],
+          "params": []
+        }
+      ],
+      "label": "v2",
+      "cuts": [
+        {
+          "label": "v2",
+          "actor": "github:alice",
+          "timestamp": "2026-10-03T09:00:00Z",
+          "runOrigin": null,
+          "signature": null,
+          "signatureCheck": {
+            "status": "unsigned",
+            "key": null,
+            "reason": "the cut carries no signature"
+          }
+        }
+      ],
+      "environments": [
+        {
+          "env": "staging",
+          "components": [
+            "web"
+          ]
+        }
+      ]
+    },
+    {
+      "releaseDigest": "jcs1-sha256:e3956171ab72fcab2d812cbd3621ef18c04a46c96a9f1e1a8590dae0d9279185",
+      "member": "web",
+      "commit": "6828a7f5b398ea48543fe27c018ba302ce2aba14",
+      "artifactDigests": [],
+      "targets": [
+        {
+          "env": "prod",
+          "templates": [],
+          "params": []
+        },
+        {
+          "env": "staging",
+          "templates": [],
+          "params": []
+        }
+      ],
+      "label": "v1",
+      "cuts": [
+        {
+          "label": "v1",
+          "actor": "github:alice",
+          "timestamp": "2026-10-02T09:00:00Z",
+          "runOrigin": null,
+          "signature": null,
+          "signatureCheck": {
+            "status": "unsigned",
+            "key": null,
+            "reason": "the cut carries no signature"
+          }
+        }
+      ],
+      "environments": [
+        {
+          "env": "prod",
+          "components": [
+            "web"
+          ]
+        }
+      ]
+    }
+  ],
+  "reason": null
+}

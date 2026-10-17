@@ -317,7 +317,13 @@ checkout declares no Terraform root (`controlRepo` in
 `GET /api/lifecycle/releases[?fresh=1]` (src/lifecycle-releases.ts) reads
 `<env>/releases.jsonl` on the served checkout's `chant/lifecycle` with chant's
 own reader (`listReleaseEnvironments`, `readReleaseLedger`,
-`latestPerComponent`, `recordsForDigest`). The branch is fetched into the
+`latestPerComponent`, `recordsForDigest`). This one still imports
+`@intentius/chant/lifecycle/release-ledger`: no read-contract command lists a
+project's per-environment ledger outside a declared workspace (`workspace
+status` needs a declaration, and `release list` lists cut releases, not the
+`components release` records SQL Yodeler writes), so dropping the import would
+blank the tab for every SQL Yodeler project. The trunk lane (#680) reads
+releases through the contract only. The branch is fetched into the
 same bare cache the terragucci lane uses (`fetchIntoCache` in
 src/terragucci-lifecycle.ts). When that fetch fails, the checkout's
 `refs/remotes/origin/chant/lifecycle` is fetched into a second cache of
@@ -983,6 +989,35 @@ otherwise. The key path never reaches a page: `GET /api/workspace/gates`
 carries `approverIdentity: {principal, source, forge, signs}`, or `approver:
 null` and `approverRefusal`. `src/approver-chant.test.ts` runs the whole path
 against chant with a throwaway key and workspace.
+
+## The trunk lane (#680)
+
+`GET /api/workspace/lane` (src/trunk-lane.ts) answers "what is in flight and
+where is it?" for a served workspace, read through the reader on every request
+and kept nowhere:
+
+- `chant ci list --json` at the root: the trunk's commits within ci.green's
+  window, each `green`, `revoked` or `undecided`, with its phases and runs
+  and its work items (`work`, chant#4029). It reads local tags only, so a
+  commit that failed without ever being green reads `undecided`.
+- `chant workspace status <env> --json` once per environment, in the order the
+  members' `promotionOrder` gives (merged in member order): the gates with
+  `env` equal to that environment, with `gitSha`, `runId` and `changeSet`, and
+  the deploy records.
+- `chant release list --json` in each member whose promotion order is not
+  empty: the releases, each with its commit and the environments that run it.
+
+The answer: `trunk` (or `trunkRefusal`), `commits[]` with `where` (`runs` or
+`waits` per environment), `environments[]` with `releases`, `deploys` (records
+no release covers) and `waiting` (each gate with `commitState`),
+`order` (`promotion`, or `env` when no member declares one), `releaseRefusals`,
+and the gate strip's approver fields. Gates with no environment stay in the
+gate strip. The three reads are `ci list` and `release list` through
+`readTrunk` on the reader (they are contract 1 documents outside `chant
+workspace`) and `status` through `read`; each has its floor in
+src/chant-floors.ts (0.124.28), and the route refuses a chant below any of them
+before spawning. The panel's Trunk tab (web/trunk-lane.js) reads it when opened
+and approves through `POST /api/workspace/gates/approve`.
 
 ## Invariant
 

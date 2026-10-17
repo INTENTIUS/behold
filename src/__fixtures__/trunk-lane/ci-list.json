@@ -1,0 +1,146 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/ci-list/v1/ci-list.schema.json",
+  "contract": 1,
+  "chant": "0.124.27",
+  "workspace": {
+    "name": "acme",
+    "root": ".",
+    "file": "chant.workspace.json"
+  },
+  "branch": "main",
+  "ref": "refs/heads/main",
+  "window": "3650d",
+  "since": null,
+  "require": [
+    "test"
+  ],
+  "commits": [
+    {
+      "sha": "0c7c85ae8cca01463f304a3bd69bc3e977899d5f",
+      "committed": "2026-10-04T10:00:00Z",
+      "state": "undecided",
+      "green": null,
+      "revoked": null,
+      "phases": [
+        {
+          "phase": "test",
+          "result": "unrecorded",
+          "runs": []
+        }
+      ],
+      "work": {
+        "state": "linked",
+        "ids": [
+          "task:12"
+        ],
+        "problems": []
+      },
+      "ignored": []
+    },
+    {
+      "sha": "9c4250fa1ed203aa9c61eca708c8f0bbf4a06ddd",
+      "committed": "2026-10-03T10:00:00Z",
+      "state": "revoked",
+      "green": {
+        "tag": "ci/green/9c4250fa1ed203aa9c61eca708c8f0bbf4a06ddd",
+        "tagged": "2026-10-04T10:00:00Z",
+        "signer": null
+      },
+      "revoked": {
+        "tag": "ci/revoked/9c4250fa1ed203aa9c61eca708c8f0bbf4a06ddd",
+        "tagged": "2026-10-04T10:00:00Z",
+        "phase": "test",
+        "run": {
+          "name": "test",
+          "id": 113,
+          "conclusion": "failure",
+          "url": "https://github.com/acme/app/actions/runs/113"
+        },
+        "signer": null
+      },
+      "phases": [
+        {
+          "phase": "test",
+          "result": "fail",
+          "runs": [
+            {
+              "name": "test",
+              "id": 113,
+              "conclusion": "failure",
+              "url": "https://github.com/acme/app/actions/runs/113"
+            }
+          ]
+        }
+      ],
+      "work": {
+        "state": "unlinked",
+        "ids": [],
+        "problems": []
+      },
+      "ignored": []
+    },
+    {
+      "sha": "a14610e4f51778c969efcc77694a360412c34d88",
+      "committed": "2026-10-02T10:00:00Z",
+      "state": "green",
+      "green": {
+        "tag": "ci/green/a14610e4f51778c969efcc77694a360412c34d88",
+        "tagged": "2026-10-04T10:00:00Z",
+        "signer": null
+      },
+      "revoked": null,
+      "phases": [
+        {
+          "phase": "test",
+          "result": "pass",
+          "runs": [
+            {
+              "name": "test",
+              "id": 102,
+              "conclusion": "success",
+              "url": "https://github.com/acme/app/actions/runs/102"
+            }
+          ]
+        }
+      ],
+      "work": {
+        "state": "wrong",
+        "ids": [],
+        "problems": [
+          {
+            "trailer": "Chant-Record: task:99",
+            "message": "no task record 99 exists"
+          }
+        ]
+      },
+      "ignored": []
+    },
+    {
+      "sha": "6828a7f5b398ea48543fe27c018ba302ce2aba14",
+      "committed": "2026-10-01T10:00:00Z",
+      "state": "green",
+      "green": {
+        "tag": "ci/green/6828a7f5b398ea48543fe27c018ba302ce2aba14",
+        "tagged": "2026-10-04T10:00:00Z",
+        "signer": null
+      },
+      "revoked": null,
+      "phases": [
+        {
+          "phase": "test",
+          "result": "pass",
+          "runs": [
+            {
+              "name": "test",
+              "id": 101,
+              "conclusion": "success",
+              "url": "https://github.com/acme/app/actions/runs/101"
+            }
+          ]
+        }
+      ],
+      "work": null,
+      "ignored": []
+    }
+  ]
+}

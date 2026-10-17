@@ -242,6 +242,21 @@
       /* #506: the audit record's lane, in the tab and in a card's inspect pane. */
       #tab-terragucci .tg-timeline-title { font-weight: 600; border-top: 1px solid var(--rule); padding-top: 6px; }
       .tg-timeline { display: flex; flex-direction: column; gap: 3px; font-size: var(--t-caption); }
+      /* #680: the trunk lane. */
+      #panel-body #tab-trunk.active { display: flex; flex-direction: column; gap: 4px; font-size: var(--t-caption); }
+      #tab-trunk h3 { margin: 8px 0 0; font-size: var(--t-caption); }
+      #tab-trunk .tg-legend { color: var(--muted); overflow-wrap: anywhere; }
+      #tab-trunk .tg-refusal { color: var(--degraded); font-weight: 600; overflow-wrap: anywhere; }
+      #tab-trunk .lane-commit { border-top: 1px solid var(--rule); padding-top: 3px; }
+      #tab-trunk .lane-sha { font-family: var(--font-mono); }
+      #tab-trunk .lane-revoked { color: var(--degraded); font-weight: 600; }
+      #tab-trunk .lane-undecided { color: var(--muted); }
+      #tab-trunk .lane-where { color: var(--pending); }
+      #tab-trunk .lane-facts, #tab-trunk .lane-runs { color: var(--muted); overflow-wrap: anywhere; }
+      #tab-trunk .ws-gate { border: 1px solid var(--pending, var(--rule)); border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 3px; }
+      #tab-trunk .ws-gate-title { font-weight: 600; }
+      #tab-trunk .ws-gate-facts, #tab-trunk .ws-gate-note { color: var(--muted); overflow-wrap: anywhere; }
+      #tab-trunk a { color: inherit; }
       .rel-strip { border-collapse: collapse; margin: 6px 0; font-size: 12px; }
       .rel-strip th, .rel-strip td { padding: 3px 6px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--neutral); }
       .rel-strip .rel-component { font-family: var(--font-mono); overflow-wrap: anywhere; }

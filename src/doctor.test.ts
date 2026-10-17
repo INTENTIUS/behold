@@ -7,7 +7,7 @@ import type { Kubeconfig } from "./k8s-target.ts";
 import type { Substrate } from "./substrates.ts";
 import { discoverTerraformRoots as realRoots } from "./terraform-member.ts";
 import { chantFloor } from "./chant.ts";
-import { CHANT_FLOORS } from "./chant-floors.ts";
+import { CHANT_FLOORS, floorMet } from "./chant-floors.ts";
 import { WHY_CHANT_FLOOR } from "./workspace-why.ts";
 
 // Fixtures are built in the OS tmpdir rather than pointed at the bundled
@@ -91,12 +91,15 @@ describe("diagnose", () => {
 
     expect(report.ok).toBe(true);
     expect(report.kind).toBe("project");
-    expect(report.checks.map((c) => c.status)).toEqual(Array(8 + CHANT_FLOORS.length).fill("pass"));
+    // A read whose floor is above behold's own chant floor warns until behold's
+    // dependency reaches it: the trunk lane's reads (#680) are new in 0.124.28.
+    const floorStatus = CHANT_FLOORS.map((f) => (floorMet(f, AT_FLOOR) ? "pass" : "warn"));
+    expect(report.checks.map((c) => c.status)).toEqual(["pass", "pass", ...floorStatus, ...Array(6).fill("pass")]);
     expect(by(report, "chant").detail).toContain(`chant ${AT_FLOOR}`);
     expect(by(report, "lexicons").detail).toContain("aws 0.61.0");
     expect(by(report, "envs").detail).toContain("prod");
     expect(by(report, "ops").detail).toContain("prod-apply (apply)");
-    expect(report.checks.every((c) => c.fix === undefined)).toBe(true);
+    expect(report.checks.every((c) => c.status === "warn" || c.fix === undefined)).toBe(true);
   });
 
   // Until the 0.61 -> 0.75 bump this branch had no test of its own: three
