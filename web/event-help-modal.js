@@ -103,7 +103,7 @@ export const MODAL_STYLE = `
   border: 2px solid var(--bar, var(--focus)); box-shadow: 0 16px 48px color-mix(in srgb, var(--shadow) 80%, transparent); font-size: 1.05em; }
 .eh-modal-held { --bar: var(--bar-foreign, var(--foreign)); } .eh-modal-failed { --bar: var(--bar-degraded, var(--degraded)); } .eh-modal-applied { --bar: var(--bar-managed, var(--managed)); }
 .eh-modal-close { position: absolute; top: 0.4em; right: 0.5em; font-size: 1.3em; background: transparent; border: 0; color: var(--muted); cursor: pointer; }
-.eh-modal-mode { margin: 0 2em 0.3em 0; font: 600 0.78em var(--font-mono); text-transform: uppercase; letter-spacing: 0.05em; color: var(--bar, var(--muted)); }
+.eh-modal-mode { margin: 0 2em 0.3em 0; font: 600 0.8em var(--font-ui); font-variant-numeric: tabular-nums; color: var(--bar, var(--muted)); }
 .eh-modal-title { margin: 0 0 0.5em; font-size: 1.35em; }
 .eh-modal-line { margin: 0.2em 0; color: color-mix(in srgb, var(--fg) 82%, var(--muted)); }
 .eh-modal-line.eh-lit { color: var(--fg); font-family: var(--font-mono); font-size: 0.9em; padding: 0.35em 0.6em; border-radius: 6px; background: color-mix(in srgb, var(--bar, var(--focus)) 14%, var(--well, transparent)); box-shadow: inset 3px 0 0 var(--bar, var(--focus)); }

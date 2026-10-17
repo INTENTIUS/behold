@@ -202,7 +202,7 @@ const STYLE = `
 .t-seg-small .t-tab { font: 600 0.85em var(--font-mono); padding: 0.05em 0.7em; letter-spacing: 0; }
 .t-tab:hover { color: var(--fg); }
 .t-tab[aria-pressed="true"], .t-tab[aria-pressed="true"]:hover { color: var(--bg); background: var(--pending); }
-.t-sec { font: 600 0.8em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 0.6em 1em 0.25em; }
+.t-sec { font: 600 0.8em var(--font-ui); color: var(--muted); padding: 0.6em 1em 0.25em; }
 .t-strip, .t-rows { display: flex; flex-direction: column; }
 .t-row { display: grid; grid-template-columns: minmax(10em, 38%) minmax(0, 1fr) 4.6em; align-items: center; gap: 0.6em; padding: 0.08em 1em; min-height: 1.55em; cursor: default; }
 .t-row:nth-child(odd) { background: var(--zebra-row); }

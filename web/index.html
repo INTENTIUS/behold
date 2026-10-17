@@ -3,6 +3,23 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- behold#725: the stored theme, before the first frame. theme.js derives
+         a theme in a module, which runs after the page has painted once, so a
+         viewer's own theme would open on the default below for a moment.
+         applyTheme() keeps what it last painted under behold.theme.paint; this
+         applies that record when it belongs to the stored theme. A blocked or
+         empty store leaves the default as it is. -->
+    <script>
+      try {
+        var beholdTheme = localStorage.getItem("behold.theme");
+        var beholdPaint = beholdTheme && JSON.parse(localStorage.getItem("behold.theme.paint") || "null");
+        if (beholdPaint && beholdPaint.name === beholdTheme && beholdPaint.vars) {
+          var beholdRoot = document.documentElement;
+          for (var k in beholdPaint.vars) if (k.slice(0, 2) === "--") beholdRoot.style.setProperty(k, beholdPaint.vars[k]);
+          if (beholdPaint.scheme) beholdRoot.style.setProperty("color-scheme", beholdPaint.scheme);
+        }
+      } catch (e) { /* private mode or a bad record: the default paints */ }
+    </script>
     <title>behold</title>
     <!-- #393: "nothing in the browser console" includes the 404 every page
          load has always fetched for itself. behold ships no icon file and its
@@ -22,11 +39,11 @@
          live in this block; smoke/ui-smoke.mjs recomputes them from theme.js
          and fails if the two drift apart. */
       :root {
-        --bg: #1e1e2e; --panel: #2e2f40; --line: #3b3c4a; --fg: #cdd6f4; --muted: #777a8c;
+        --bg: #1e1e2e; --panel: #2e2f40; --line: #3b3c4a; --fg: #cdd6f4; --muted: #9598aa; --ink2: #c4cbe4;
         --edge: #56596d; --managed: #a6e3a1; --foreign: #f9e2af; --pending: #89b4fa;
         --degraded: #f38ba8; --neutral: #6d7187; --runtime: #94e2d5;
         --rule: #4e4f64; --focus: #a3b4d0; --active: #3d4660; --well: #11101f; --shadow: #050507;
-        --bar-managed: #a6e3a1; --bar-foreign: #f9e2af; --bar-pending: #89b4fa; --bar-degraded: #f38ba8; --bar-runtime: #94e2d5; --bar-neutral: #9a9eb5;
+        --bar-managed: #a6e3a1; --bar-foreign: #f9e2af; --bar-pending: #89b4fa; --bar-degraded: #f38ba8; --bar-runtime: #94e2d5; --bar-neutral: #9b9fb7;
       }
       /* The non-colour half of the identity: type and radii. These can't derive
          from a colour theme, so they're the one static token block — but they
@@ -42,10 +59,16 @@
         --font-mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Code", "JetBrains Mono", "IBM Plex Mono", Menlo, Consolas, monospace;
         --t-display: 15px;
         --t-body: 12.5px;
-        --t-caption: 10.5px;
-        --t-caps: .07em;
+        --t-caption: 11.5px;
         --r-ctl: 3px;
         --r-shell: 10px;
+        /* behold#725: the spacing steps. Every padding, margin and gap between
+           a hairline and 16px takes the nearest one. */
+        --s1: 4px; --s2: 6px; --s3: 8px; --s4: 12px; --s5: 16px;
+        /* behold#725: the one period every looping animation runs on, so they
+           keep time with each other; web/motion.js pauses them all while the
+           tab is hidden. */
+        --beat: 1.2s;
       }
       * { box-sizing: border-box; }
       html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
@@ -66,21 +89,22 @@
       }
       #graph { grid-row: 1; grid-column: 1; overflow: auto; position: relative; }
       #inspect { grid-row: 1; grid-column: 2; border-left: 1px solid var(--rule); background: var(--panel);
-        padding: 14px; overflow: auto; position: relative; }
-      /* Section labels are the sans voice: small caps, tracked, muted. Every
-         heading in this pane (identity, live, drift, field ownership — app.js
-         appends them) is styled here rather than inline, so the scale stays in
-         one place. */
-      #inspect h2, #inspect h3 { color: var(--muted); font-size: var(--t-caption); font-weight: 600;
-        text-transform: uppercase; letter-spacing: var(--t-caps); }
-      #inspect h2 { margin: 0 0 10px; }
-      #inspect h3 { margin: 16px 0 6px; }
+        padding: var(--s4); overflow: auto; position: relative; }
+      /* Section labels are the sans voice: sentence case, 600, muted
+         (behold#725; they were tracked capitals). Every heading in this pane
+         (identity, live, drift, field ownership — app.js appends them) is
+         styled here rather than inline, so the scale stays in one place.
+         app.js writes most of them in lower case, so their first letter is
+         raised with ::first-letter (the behold#725 block at the end). */
+      #inspect h2, #inspect h3 { color: var(--muted); font: 600 var(--t-caption)/1.4 var(--font-ui); }
+      #inspect h2 { margin: 0 0 var(--s3); }
+      #inspect h3 { margin: var(--s5) 0 var(--s2); }
       /* Declared/identity: key ABOVE value, value full-width — long ARNs wrap
          readably instead of being crushed into a squeezed right column. The
          VALUE is data — an id, an ARN, a physical id, a status — so it's mono;
          the key stays sans. */
       #inspect dl { margin: 0; }
-      #inspect dt { color: var(--muted); font-size: var(--t-caption); margin-top: 9px; }
+      #inspect dt { color: var(--muted); font-size: var(--t-caption); margin-top: var(--s3); }
       #inspect dd { margin: 2px 0 0; font: var(--t-body)/1.45 var(--font-mono); overflow-wrap: anywhere; }
       #inspect p { font-size: var(--t-body); }
       /* #192: the queried-address diagnosis line — a request path, so mono. */
@@ -94,8 +118,8 @@
       #inspect-collapse:hover { color: var(--fg); }
       #inspect-reopen { position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 30; display: none;
         background: var(--panel); color: var(--muted); border: 1px solid var(--rule); border-right: none;
-        border-radius: var(--r-ctl) 0 0 var(--r-ctl); padding: 10px 5px; cursor: pointer;
-        writing-mode: vertical-rl; font-size: var(--t-caption); letter-spacing: var(--t-caps); }
+        border-radius: var(--r-ctl) 0 0 var(--r-ctl); padding: var(--s3) var(--s1); cursor: pointer;
+        writing-mode: vertical-rl; font-size: var(--t-caption); }
       #inspect-reopen:hover { color: var(--fg); border-color: var(--focus); }
       #app.inspect-collapsed #inspect-reopen { display: block; }
       /* The graph SVG is pinhole's, self-styled. It fills the pane; behold drives
@@ -132,6 +156,8 @@
       }
       @media (prefers-reduced-motion: reduce) {
         #graph svg, #graph [data-node-id].status-changed { animation: none; }
+        /* behold#725: the load spinner holds still; its ring and the message under it still say it is loading. */
+        #loading-overlay .spinner { animation: none; }
         #graph g[data-edge-from] .pin-edge-line { transition: none; }
         #graph [data-layout-resize] { transition: none; }
       }
@@ -172,48 +198,48 @@
       #graph g[data-edge-kind="includes"] rect, #graph g[data-edge-kind="extends"] rect { stroke: var(--muted); }
       /* #477: a declared workspace's waiting gates, over the top of the graph
          pane (same grid cell, so #graph's re-renders never take it with them). */
-      #ws-gates { grid-row: 1; grid-column: 1; align-self: start; justify-self: center; z-index: 3; margin-top: 8px;
-        max-width: min(560px, 70%); display: flex; flex-direction: column; gap: 6px; }
+      #ws-gates { grid-row: 1; grid-column: 1; align-self: start; justify-self: center; z-index: 3; margin-top: var(--s3);
+        max-width: min(560px, 70%); display: flex; flex-direction: column; gap: var(--s2); }
       #ws-gates[hidden] { display: none; }
       #ws-gates .ws-gate { background: var(--panel); border: 1px solid var(--warn, var(--rule)); border-radius: var(--r-ctl);
-        padding: 6px 10px; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+        padding: var(--s2) var(--s3); box-shadow: 0 2px 8px rgba(0,0,0,.12); }
       #ws-gates .ws-gate-title { font-weight: 600; }
       #ws-gates .ws-gate-facts, #ws-gates .ws-gate-note { color: var(--muted); font-size: var(--t-caption); }
-      #ws-gates .ws-gate button { margin-top: 4px; }
+      #ws-gates .ws-gate button { margin-top: var(--s1); }
       /* #526: SQL Yodeler's report and drift, from files, dated. Never a fill. */
-      #panel-body #tab-yodel.active { display: flex; flex-direction: column; gap: 4px; font-size: var(--t-caption); }
-      #tab-yodel h3 { margin: 8px 0 0; font-size: var(--t-caption); }
+      #panel-body #tab-yodel.active { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--t-caption); }
+      #tab-yodel h3 { margin: var(--s3) 0 0; font-size: var(--t-caption); }
       #tab-yodel .tg-legend { color: var(--muted); overflow-wrap: anywhere; }
       #tab-yodel .tg-inspect { overflow-wrap: anywhere; }
       #tab-yodel .tg-refusal { color: var(--degraded); font-weight: 600; }
       /* #524: SQL Yodeler's gates on chant/lifecycle, dated. A Copy button is the only control. */
-      #panel-body #tab-yodel-lane.active { display: flex; flex-direction: column; gap: 6px; font-size: var(--t-caption); }
-      #tab-yodel-lane h3 { margin: 8px 0 0; font-size: var(--t-caption); }
+      #panel-body #tab-yodel-lane.active { display: flex; flex-direction: column; gap: var(--s2); font-size: var(--t-caption); }
+      #tab-yodel-lane h3 { margin: var(--s3) 0 0; font-size: var(--t-caption); }
       #tab-yodel-lane .tg-legend { color: var(--muted); overflow-wrap: anywhere; }
       #tab-yodel-lane .tg-refusal { color: var(--degraded); font-weight: 600; }
-      #tab-yodel-lane .ws-gate { border: 1px solid var(--rule); border-radius: 6px; padding: 6px 8px; }
+      #tab-yodel-lane .ws-gate { border: 1px solid var(--rule); border-radius: 6px; padding: var(--s2) var(--s3); }
       #tab-yodel-lane .ws-gate-title { font-weight: 600; }
       #tab-yodel-lane .ws-gate-facts, #tab-yodel-lane .ws-gate-note { color: var(--muted); overflow-wrap: anywhere; }
-      #tab-yodel-lane .tg-command { display: block; font-family: var(--font-mono); overflow-wrap: anywhere; margin: 4px 0; }
+      #tab-yodel-lane .tg-command { display: block; font-family: var(--font-mono); overflow-wrap: anywhere; margin: var(--s1) 0; }
       /* #490: terragucci's reports, dated. Never a fill. */
-      #panel-body #tab-terragucci.active { display: flex; flex-direction: column; gap: 8px; font-size: var(--t-caption); }
+      #panel-body #tab-terragucci.active { display: flex; flex-direction: column; gap: var(--s3); font-size: var(--t-caption); }
       #tab-terragucci .tg-legend, #tab-terragucci .tg-estate { color: var(--muted); }
       #tab-terragucci .tg-refusal { color: var(--degraded); font-weight: 600; }
-      #tab-terragucci .ws-gate { background: var(--panel); border: 1px solid var(--pending, var(--rule)); border-radius: var(--r-ctl); padding: 6px 8px; display: flex; flex-direction: column; gap: 3px; }
+      #tab-terragucci .ws-gate { background: var(--panel); border: 1px solid var(--pending, var(--rule)); border-radius: var(--r-ctl); padding: var(--s2) var(--s3); display: flex; flex-direction: column; gap: 3px; }
       #tab-terragucci .ws-gate-title { font-weight: 600; }
       #tab-terragucci .ws-gate-facts, #tab-terragucci .ws-gate-note { color: var(--muted); overflow-wrap: anywhere; }
-      #inspect-body .tg-inspect { font-size: var(--t-caption); margin: 2px 0 6px; overflow-wrap: anywhere; }
+      #inspect-body .tg-inspect { font-size: var(--t-caption); margin: 2px 0 var(--s2); overflow-wrap: anywhere; }
       #inspect-body .tg-inspect a { color: inherit; }
       #tab-terragucci .tg-command { font-family: var(--font-mono); overflow-wrap: anywhere; }
-      #tab-terragucci .tg-root { border-top: 1px solid var(--rule); padding-top: 4px; }
+      #tab-terragucci .tg-root { border-top: 1px solid var(--rule); padding-top: var(--s1); }
       #tab-terragucci .tg-path { font-family: var(--font-mono); }
-      #tab-terragucci .tg-cells { display: flex; flex-wrap: wrap; gap: 0 10px; }
+      #tab-terragucci .tg-cells { display: flex; flex-wrap: wrap; gap: 0 var(--s3); }
       #tab-terragucci .tg-cells > span::before { content: attr(data-stage) ": "; color: var(--muted); }
       #tab-terragucci .tg-drift, #tab-terragucci .tg-failed { color: var(--degraded); }
       #tab-terragucci .tg-wave { color: var(--pending); }
       /* #509: a control repo's projects, over the empty graph area. Dated, never live. */
-      #tg-estate { grid-row: 1; grid-column: 1; z-index: 2; overflow: auto; background: var(--bg); padding: 10px 14px; display: flex; flex-direction: column; gap: 10px; font-size: var(--t-caption); }
-      #tg-estate .tg-estate-head { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; }
+      #tg-estate { grid-row: 1; grid-column: 1; z-index: 2; overflow: auto; background: var(--bg); padding: var(--s3) var(--s4); display: flex; flex-direction: column; gap: var(--s3); font-size: var(--t-caption); }
+      #tg-estate .tg-estate-head { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); align-items: baseline; }
       #tg-estate .tg-legend, #tg-estate .tg-none, #tg-estate .ws-gate-facts, #tg-estate .ws-gate-note { color: var(--muted); overflow-wrap: anywhere; }
       #tg-estate .tg-refusal, #tg-estate .tg-bad { color: var(--degraded); font-weight: 600; }
       #tg-estate a { color: inherit; }
@@ -230,21 +256,21 @@
       #tg-estate .tg-root-node text { font-family: var(--font-mono); }
       #tg-estate .tg-edge { fill: none; stroke: var(--edge); stroke-width: 1.3; }
       #tg-estate .tg-edge-cross { stroke-dasharray: 5 4; stroke: var(--pending); }
-      #tg-estate .tg-estate-projects { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
-      #tg-estate .tg-estate-project { border: 1px solid var(--rule); border-radius: var(--r-ctl); padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; }
+      #tg-estate .tg-estate-projects { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--s3); }
+      #tg-estate .tg-estate-project { border: 1px solid var(--rule); border-radius: var(--r-ctl); padding: var(--s2) var(--s3); display: flex; flex-direction: column; gap: var(--s1); }
       #tg-estate .tg-estate-title { font-weight: 600; overflow-wrap: anywhere; }
-      #tg-estate .ws-gate { border: 1px solid var(--pending, var(--rule)); border-radius: var(--r-ctl); padding: 4px 6px; }
-      #tg-estate .tg-estate-cmd { display: flex; gap: 6px; align-items: center; }
+      #tg-estate .ws-gate { border: 1px solid var(--pending, var(--rule)); border-radius: var(--r-ctl); padding: var(--s1) var(--s2); }
+      #tg-estate .tg-estate-cmd { display: flex; gap: var(--s2); align-items: center; }
       #tg-estate .tg-command { font-family: var(--font-mono); overflow-wrap: anywhere; }
       #tab-terragucci .tg-plan { color: var(--fg); }
       #tab-terragucci .tg-none, #tab-terragucci .tg-ok { color: var(--muted); }
       #tab-terragucci a { color: inherit; }
       /* #506: the audit record's lane, in the tab and in a card's inspect pane. */
-      #tab-terragucci .tg-timeline-title { font-weight: 600; border-top: 1px solid var(--rule); padding-top: 6px; }
+      #tab-terragucci .tg-timeline-title { font-weight: 600; border-top: 1px solid var(--rule); padding-top: var(--s2); }
       .tg-timeline { display: flex; flex-direction: column; gap: 3px; font-size: var(--t-caption); }
       /* #680: the trunk lane. */
-      #panel-body #tab-trunk.active { display: flex; flex-direction: column; gap: 4px; font-size: var(--t-caption); }
-      #tab-trunk h3 { margin: 8px 0 0; font-size: var(--t-caption); }
+      #panel-body #tab-trunk.active { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--t-caption); }
+      #tab-trunk h3 { margin: var(--s3) 0 0; font-size: var(--t-caption); }
       #tab-trunk .tg-legend { color: var(--muted); overflow-wrap: anywhere; }
       #tab-trunk .tg-refusal { color: var(--degraded); font-weight: 600; overflow-wrap: anywhere; }
       #tab-trunk .lane-commit { border-top: 1px solid var(--rule); padding-top: 3px; }
@@ -253,23 +279,23 @@
       #tab-trunk .lane-undecided { color: var(--muted); }
       #tab-trunk .lane-where { color: var(--pending); }
       #tab-trunk .lane-facts, #tab-trunk .lane-runs { color: var(--muted); overflow-wrap: anywhere; }
-      #tab-trunk .ws-gate { border: 1px solid var(--pending, var(--rule)); border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 3px; }
+      #tab-trunk .ws-gate { border: 1px solid var(--pending, var(--rule)); border-radius: 6px; padding: var(--s2) var(--s3); display: flex; flex-direction: column; gap: 3px; }
       #tab-trunk .ws-gate-title { font-weight: 600; }
       #tab-trunk .ws-gate-facts, #tab-trunk .ws-gate-note { color: var(--muted); overflow-wrap: anywhere; }
       #tab-trunk a { color: inherit; }
       #tab-trunk .lane-change-set { color: var(--pending); }
       /* #681: a gate's change set, previewed on the graph. */
-      #panel-body #tab-change-set.active { display: flex; flex-direction: column; gap: 4px; font-size: var(--t-caption); }
-      #tab-change-set h3 { margin: 8px 0 0; font-size: var(--t-caption); }
+      #panel-body #tab-change-set.active { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--t-caption); }
+      #tab-change-set h3 { margin: var(--s3) 0 0; font-size: var(--t-caption); }
       #tab-change-set .cs-title { font-weight: 600; font-family: var(--font-mono); overflow-wrap: anywhere; }
       #tab-change-set .tg-legend { color: var(--muted); overflow-wrap: anywhere; }
       #tab-change-set .tg-refusal { color: var(--degraded); font-weight: 600; overflow-wrap: anywhere; }
-      .cs-entry { position: relative; padding: 2px 0 2px 10px; font-size: var(--t-caption); overflow-wrap: anywhere; }
+      .cs-entry { position: relative; padding: 2px 0 2px var(--s3); font-size: var(--t-caption); overflow-wrap: anywhere; }
       .cs-entry::before { content: ""; position: absolute; left: 0; top: 3px; bottom: 3px; width: 3px; border-radius: 2px; background: var(--bar, var(--bar-neutral)); }
       .cs-entry-head { font-family: var(--font-mono); font-weight: 600; }
       .cs-entry-facts, .cs-entry-field { color: var(--muted); font-family: var(--font-mono); }
-      .rel-strip { border-collapse: collapse; margin: 6px 0; font-size: 12px; }
-      .rel-strip th, .rel-strip td { padding: 3px 6px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--neutral); }
+      .rel-strip { border-collapse: collapse; margin: var(--s2) 0; font-size: 12px; }
+      .rel-strip th, .rel-strip td { padding: 3px var(--s2); text-align: left; vertical-align: top; border-bottom: 1px solid var(--neutral); }
       .rel-strip .rel-component { font-family: var(--font-mono); overflow-wrap: anywhere; }
       .rel-strip .rel-cell { font-family: var(--font-mono); }
       .rel-strip .rel-empty { color: var(--muted); }
@@ -284,14 +310,14 @@
       .tg-timeline a { color: inherit; }
       /* Fit reset + a zoom hint, floating top-right of the graph pane. */
       #zoom-toggle { position: absolute; top: 8px; right: 8px; z-index: 2; background: var(--panel);
-        color: var(--muted); border: 1px solid var(--rule); border-radius: var(--r-ctl); padding: 4px 10px;
+        color: var(--muted); border: 1px solid var(--rule); border-radius: var(--r-ctl); padding: var(--s1) var(--s3);
         font: var(--t-caption)/1.3 var(--font-mono); cursor: pointer; }
       #zoom-toggle:hover { border-color: var(--focus); color: var(--fg); }
       /* Hand layout (#228): the escape hatch, beside ⤢ fit. Hidden by app.js
          until something on this lens is actually hand-placed — it is both the
          reset and the only indication that dagre isn't the whole story here. */
       #layout-reset { position: absolute; top: 8px; right: 66px; z-index: 2; background: var(--panel);
-        color: var(--muted); border: 1px solid var(--rule); border-radius: var(--r-ctl); padding: 4px 10px;
+        color: var(--muted); border: 1px solid var(--rule); border-radius: var(--r-ctl); padding: var(--s1) var(--s3);
         font: var(--t-caption)/1.3 var(--font-mono); cursor: pointer; }
       #layout-reset:hover { border-color: var(--focus); color: var(--fg); }
       /* A containment box's title moves it and its corner handle resizes it.
@@ -302,13 +328,13 @@
       /* The way out of waves view, floating top-LEFT so it sits where the eye
          already is when observe drops you into the wave-laned graph. */
       #back-to-infra { position: absolute; top: 8px; left: 8px; z-index: 2; background: var(--panel);
-        color: var(--muted); border: 1px solid var(--rule); border-radius: var(--r-ctl); padding: 4px 10px;
+        color: var(--muted); border: 1px solid var(--rule); border-radius: var(--r-ctl); padding: var(--s1) var(--s3);
         font: var(--t-caption)/1.3 var(--font-mono); cursor: pointer; }
       #back-to-infra:hover { border-color: var(--focus); color: var(--fg); }
       /* Blocking load scrim: covers everything (clicks can't pass through) while
          a live view change is in flight. */
       #loading-overlay { position: fixed; inset: 0; z-index: 100; display: flex;
-        flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+        flex-direction: column; align-items: center; justify-content: center; gap: var(--s4);
         background: color-mix(in srgb, var(--bg) 72%, transparent); backdrop-filter: blur(1.5px);
         cursor: progress; }
       #loading-overlay[hidden] { display: none; }
@@ -320,7 +346,7 @@
       #loading-overlay #loading-cost:empty { display: none; }
       #loading-overlay .spinner { width: 34px; height: 34px; border-radius: 50%;
         border: 3px solid var(--line); border-top-color: var(--focus);
-        animation: spin 0.7s linear infinite; }
+        animation: spin calc(var(--beat) / 2) linear infinite; }
       @keyframes spin { to { transform: rotate(360deg); } }
       /* Selection is one of the few places the FULL accent still shows — the
          drift hues own saturation now, and "which node am I looking at" earns
@@ -333,26 +359,25 @@
          are usually expected states on a real (imperfect) project, not bugs.
          Generalizes the old M2 (#54) tier-only `.tier-note`. */
       .precondition-error { padding: 24px; max-width: 640px; }
-      .precondition-error-title { color: var(--fg); font-size: var(--t-display); font-weight: 600; margin-bottom: 10px; }
-      .precondition-error-message { color: var(--muted); white-space: pre-wrap; font: var(--t-body)/1.55 var(--font-mono); }
-      .precondition-error-remedy { color: var(--pending); margin-top: 14px; font: var(--t-body)/1.5 var(--font-mono); }
+      .precondition-error-title { color: var(--fg); font-size: var(--t-display); font-weight: 600; margin-bottom: var(--s3); }
+      .precondition-error-message { color: var(--ink2); white-space: pre-wrap; font: var(--t-body)/1.55 var(--font-mono); }
+      .precondition-error-remedy { color: var(--pending); margin-top: var(--s4); font: var(--t-body)/1.5 var(--font-mono); }
       .precondition-error-remedy::before { content: "→ "; }
       /* #259: the raw /api payload behind the card, collapsed. */
-      .precondition-error-raw { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 10px; }
-      .precondition-error-rawlabel { color: var(--muted); font-size: var(--t-caption); text-transform: uppercase;
-        letter-spacing: var(--t-caps); margin-bottom: 5px; }
+      .precondition-error-raw { margin-top: 18px; border-top: 1px solid var(--line); padding-top: var(--s3); }
+      .precondition-error-rawlabel { color: var(--muted); font: 600 var(--t-caption)/1.4 var(--font-ui); margin-bottom: var(--s1); }
       #actions button, #inspect button { background: var(--panel); color: var(--fg); border: 1px solid var(--rule);
-        border-radius: var(--r-ctl); padding: 4px 12px; font-size: var(--t-body); cursor: pointer; }
+        border-radius: var(--r-ctl); padding: var(--s1) var(--s4); font-size: var(--t-body); cursor: pointer; }
       #actions button:hover, #inspect button:hover { border-color: var(--focus); }
       #actions button.approve { border-color: var(--managed); color: var(--managed); }
       #inspect button { border-color: var(--foreign); color: var(--foreign); }
       /* #471: the why section. Its buttons read, they change nothing, so they
          don't wear the foreign hue the pane's write buttons do. */
-      #inspect button.why-read { border-color: var(--rule); color: var(--fg); margin: 6px 6px 0 0; }
-      #inspect .why-headline { margin: 0 0 6px; }
-      #inspect .why-head { color: var(--muted); font-size: var(--t-caption); margin-top: 10px; }
+      #inspect button.why-read { border-color: var(--rule); color: var(--fg); margin: var(--s2) var(--s2) 0 0; }
+      #inspect .why-headline { margin: 0 0 var(--s2); }
+      #inspect .why-head { color: var(--muted); font-size: var(--t-caption); margin-top: var(--s3); }
       #inspect .why-list { list-style: none; margin: 2px 0 0; padding: 0; }
-      #inspect .why-list li { margin: 6px 0 0; font-size: var(--t-body); overflow-wrap: anywhere; }
+      #inspect .why-list li { margin: var(--s2) 0 0; font-size: var(--t-body); overflow-wrap: anywhere; }
       #inspect .why-list code { font: var(--t-body)/1.45 var(--font-mono); }
       #inspect .why-meta { color: var(--muted); font-size: var(--t-caption); }
       #inspect .why-gap, #inspect .why-refusal { color: var(--pending); }
@@ -382,7 +407,7 @@
          keyboard focus is inside it — a tree of visible "copy" links reads as
          chrome, not as data. */
       .jsonv-copy, .jsonv-more { color: var(--muted); font-size: var(--t-caption); cursor: pointer;
-        margin-left: 8px; user-select: none; }
+        margin-left: var(--s3); user-select: none; }
       .jsonv-copy { opacity: 0; }
       .jsonv-line:hover > .jsonv-copy, .jsonv-copy:focus-visible, .jsonv-copy[data-copied] { opacity: 1; }
       .jsonv-copy:hover, .jsonv-more:hover { color: var(--fg); }
@@ -395,7 +420,7 @@
       #inspect dd > .jsonv { margin-top: 1px; }
       /* A value PAIR (was/now, declared/live, baseline/live) whose sides are
          trees rather than scalars — see pairCell() in app.js. */
-      #inspect .pair-row { display: flex; align-items: baseline; gap: 6px; margin-top: 3px; }
+      #inspect .pair-row { display: flex; align-items: baseline; gap: var(--s2); margin-top: 3px; }
       #inspect .pair-row > .jsonv { flex: 1; min-width: 0; }
       #inspect .pair-label { color: var(--muted); font-size: var(--t-caption); flex: none; }
       /* The op log's JSON lines (#259): a report chant emitted as an object
@@ -431,12 +456,12 @@
       #panel-tabs { display: flex; align-items: stretch; border-bottom: 1px solid var(--line);
         background: color-mix(in srgb, var(--well) 45%, var(--panel));
         border-radius: calc(var(--r-shell) - 1px) calc(var(--r-shell) - 1px) 0 0;
-        cursor: grab; padding: 3px 4px 3px 3px; gap: 2px; }
+        cursor: grab; padding: 3px var(--s1) 3px 3px; gap: 2px; }
       #panel.dragging #panel-tabs { cursor: grabbing; }
       #panel.collapsed #panel-tabs { border-bottom: none; border-radius: calc(var(--r-shell) - 1px); }
       #panel.collapsed #panel-body { display: none; }
       #panel-tabs button[data-tab] { flex: 1; background: none; border: none; border-radius: var(--r-ctl);
-        color: var(--muted); font: var(--t-caption)/1 var(--font-ui); padding: 6px 0; cursor: pointer; }
+        color: var(--muted); font: var(--t-caption)/1 var(--font-ui); padding: var(--s2) 0; cursor: pointer; }
       #panel-tabs button[data-tab]:hover { color: var(--fg); }
       #panel-tabs button[data-tab].active { color: var(--fg); background: var(--active); font-weight: 600; }
       /* #476: framed in a host pane. Deploying and the theme are the host's
@@ -447,7 +472,7 @@
          chevron) in the corner, so the graph has the pane to itself. */
       .embed #panel.collapsed #panel-tabs button[data-tab] { display: none; }
       .embed #panel.collapsed { width: auto; }
-      .embed #panel.collapsed #panel-tabs { gap: 4px; padding: 2px 4px; }
+      .embed #panel.collapsed #panel-tabs { gap: var(--s1); padding: 2px var(--s1); }
       /* #569: ?embed=1&bare=1, the kiosk's frame: the graph alone. Nothing to
          open, nothing to press, and no backdrop of its own: the page's. */
       .bare #panel, .bare #inspect, .bare #inspect-reopen, .bare #zoom-toggle, .bare #back-to-infra,
@@ -473,33 +498,32 @@
       .k-pop-lines li { overflow-wrap: anywhere; }
       .k-pop-unknown, .k-pop-unknown.k-pop-state { color: var(--foreign); }
       .k-pop-more { color: var(--muted); }
-      .k-pop-note { color: var(--muted); font-size: 0.92em; }
+      .k-pop-note { color: var(--ink2); font-size: 0.92em; }
       .k-pop-hint { color: var(--muted); font-size: 0.85em; border-top: 1px solid var(--rule); padding-top: 0.35em; margin-top: 0.4em !important; }
       .k-pop-state { margin-left: 0.4em; font-family: var(--font-ui); font-weight: 600; white-space: nowrap; }
       .k-pop-change { color: var(--pending); }
       .k-pop-same { color: var(--muted); }
       .k-root::before { content: ""; display: inline-block; width: 0.6em; height: 0.6em; border-radius: 50%; background: var(--k-root); margin: 0 0.3em 0.1em 0.05em; vertical-align: middle; }
-      #panel-tabs #hintk { flex: none; align-self: center; padding: 2px 6px; margin-left: 2px; }
+      #panel-tabs #hintk { flex: none; align-self: center; padding: 2px var(--s2); margin-left: 2px; }
       #panel-collapse { flex: none; align-self: center; background: none; border: none; color: var(--muted);
-        font-size: var(--t-body); cursor: pointer; line-height: 1; padding: 2px 4px; }
+        font-size: var(--t-body); cursor: pointer; line-height: 1; padding: 2px var(--s1); }
       #panel-collapse:hover { color: var(--fg); }
-      #panel-body { overflow-y: auto; max-height: min(62vh, 540px); padding: 10px 12px;
+      #panel-body { overflow-y: auto; max-height: min(62vh, 540px); padding: var(--s3) var(--s4);
         font-size: var(--t-body); user-select: text; }
       #panel-body section { display: none; }
       #panel-body section.active { display: block; }
-      #panel h3 { margin: 14px 0 6px; font-size: var(--t-caption); text-transform: uppercase;
-        letter-spacing: var(--t-caps); color: var(--muted); font-weight: 600; }
+      #panel h3 { margin: var(--s4) 0 var(--s2); font: 600 var(--t-caption)/1.4 var(--font-ui); color: var(--muted); }
       #panel h3:first-child { margin-top: 0; }
-      #panel .panel-muted { color: var(--muted); font: var(--t-caption)/1.5 var(--font-mono);
-        margin: 4px 0; overflow-wrap: anywhere; }
-      #panel .prow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 2px 0; }
+      #panel .panel-muted { color: var(--ink2); font: var(--t-caption)/1.5 var(--font-mono);
+        margin: var(--s1) 0; overflow-wrap: anywhere; }
+      #panel .prow { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; padding: 2px 0; }
       /* A radio-like option row: the current value is FILLED, with a hairline of
          the full accent down its leading edge — the one saturated mark in the
          chrome, so the eye finds the current lens without the whole row
          shouting in accent-coloured text. */
       #panel .opt { display: block; width: 100%; text-align: left; background: none;
         border: 1px solid transparent; border-radius: var(--r-ctl); color: var(--fg);
-        font-size: var(--t-body); padding: 4px 8px; cursor: pointer; }
+        font-size: var(--t-body); padding: var(--s1) var(--s3); cursor: pointer; }
       #panel .opt:hover:not(:disabled) { border-color: var(--line); }
       /* #268: a demo whose prerequisites are missing stays visible and says why
          — dimmed and unclickable, not removed from the catalog. */
@@ -507,19 +531,19 @@
       #panel .opt.active { background: var(--active); border-color: var(--rule); color: var(--fg);
         box-shadow: inset 2px 0 0 var(--pending); }
       #panel select { width: 100%; background: var(--well); color: var(--fg); border: 1px solid var(--line);
-        border-radius: var(--r-ctl); padding: 4px 8px; font-size: var(--t-body); cursor: pointer; }
+        border-radius: var(--r-ctl); padding: var(--s1) var(--s3); font-size: var(--t-body); cursor: pointer; }
       #panel select:hover { border-color: var(--focus); }
       #panel button.act { background: var(--well); color: var(--fg); border: 1px solid var(--rule);
-        border-radius: var(--r-ctl); padding: 3px 10px; font-size: var(--t-caption); cursor: pointer; }
+        border-radius: var(--r-ctl); padding: 3px var(--s3); font-size: var(--t-caption); cursor: pointer; }
       #panel button.act:hover { border-color: var(--focus); }
       #panel input.panel-input { flex: 1; min-width: 0; background: var(--well); color: var(--fg);
-        border: 1px solid var(--line); border-radius: var(--r-ctl); padding: 4px 8px;
+        border: 1px solid var(--line); border-radius: var(--r-ctl); padding: var(--s1) var(--s3);
         font: var(--t-caption)/1.4 var(--font-mono); }
       #panel input.panel-input:focus { border-color: var(--focus); outline: none; }
       /* Model tab rows: legend counts (static) and clickable node rows. Node
          ids are data — mono, so they align and scan like a terminal listing. */
-      #panel .count-row, #panel .node-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
-      #panel .node-row { cursor: pointer; border-radius: var(--r-ctl); padding: 3px 6px;
+      #panel .count-row, #panel .node-row { display: flex; align-items: center; gap: var(--s3); padding: 2px 0; }
+      #panel .node-row { cursor: pointer; border-radius: var(--r-ctl); padding: 3px var(--s2);
         font: var(--t-caption)/1.5 var(--font-mono); }
       #panel .node-row:hover { background: var(--well); }
       #panel .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
@@ -535,11 +559,11 @@
          styled for both. `help` cursor: the hover carries "modeled, not
          billed", which is the sentence #397 turns on. */
       .behaviour-badge { color: var(--muted); font: var(--t-caption)/1.4 var(--font-mono);
-        border: 1px solid var(--line); border-radius: var(--r-ctl); padding: 0 5px;
+        border: 1px solid var(--line); border-radius: var(--r-ctl); padding: 0 var(--s1);
         white-space: nowrap; cursor: help; flex: none; }
       #panel .behaviour-total { display: flex; flex-direction: column; gap: 1px; padding: 3px 0;
         font: var(--t-caption)/1.5 var(--font-mono); }
-      #panel .behaviour-ramp { margin: 4px 0 2px; }
+      #panel .behaviour-ramp { margin: var(--s1) 0 2px; }
       /* A card nothing priced keeps the drift overlay's neutral fill (#399) —
          and says so, faintly, so the grey is legible as "not looked at" rather
          than as the low end of the scale. */
@@ -556,7 +580,7 @@
          reset / run pipeline) visible inline again. #73 moved those into ⌘K;
          they remain there too — same actions, two surfaces. */
       #substrates { display: flex; flex-direction: column; gap: 2px; }
-      .sub { display: flex; align-items: center; gap: 8px; padding: 3px 0;
+      .sub { display: flex; align-items: center; gap: var(--s3); padding: 3px 0;
         font: var(--t-caption)/1.6 var(--font-mono); }
       .sub .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
       .sub.up .dot { background: var(--managed); }
@@ -569,27 +593,27 @@
       /* The observe → reconcile → apply dial (M2, #54): where the selected
          target sits on the lifecycle progression. Lives on the panel's Deploy
          tab now, stacked vertically under the deploy actions. */
-      #actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-      #dial { display: none; flex-direction: column; align-items: stretch; gap: 8px;
-        font-size: var(--t-body); margin-top: 10px; }
-      .dial-track { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+      #actions { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
+      #dial { display: none; flex-direction: column; align-items: stretch; gap: var(--s3);
+        font-size: var(--t-body); margin-top: var(--s3); }
+      .dial-track { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
       .dial-arrow { color: var(--muted); }
       /* The lifecycle steps are controls, so they take the control radius too —
          the pill shape was the last soft edge left inside the shell. */
       .dial-step { background: var(--well); color: var(--fg); border: 1px solid var(--rule);
-        border-radius: var(--r-ctl); padding: 3px 12px; font-size: var(--t-body); cursor: pointer; }
+        border-radius: var(--r-ctl); padding: 3px var(--s4); font-size: var(--t-body); cursor: pointer; }
       .dial-step:hover:not(:disabled) { border-color: var(--focus); }
       .dial-step.active { background: var(--active); border-color: var(--rule); color: var(--fg);
         box-shadow: inset 2px 0 0 var(--pending); }
       .dial-step:disabled { opacity: .5; cursor: not-allowed; }
-      .dial-detail { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--muted);
+      .dial-detail { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s4); color: var(--muted);
         font: var(--t-caption)/1.6 var(--font-mono); }
 
       /* The run playhead (#284 item 2) — the Op run's verdict, the pending gate
          card (#234), and the steps that have actually settled. Sits under the
          dial's apply progress, in the same tokens, so "green means it worked"
          reads the same in both. */
-      .run-playhead { display: flex; flex-direction: column; gap: 6px; width: 100%; margin-top: 6px; }
+      .run-playhead { display: flex; flex-direction: column; gap: var(--s2); width: 100%; margin-top: var(--s2); }
       .run-verdict { font-size: var(--t-caption); }
       /* #679: where the steps came from (chant's run events, a degraded older
          stream, or a best-effort log read). Inline colour sets the tone. */
@@ -597,33 +621,33 @@
       /* What behold does NOT know — a lost stream, an unreachable gate query.
          Same voice as the carve refusal: a statement, not an alarm. */
       .run-lost { border-left: 3px solid var(--bar-foreign); background: var(--well);
-        border-radius: var(--r-ctl); padding: 4px 8px; color: var(--muted);
+        border-radius: var(--r-ctl); padding: var(--s1) var(--s3); color: var(--muted);
         font: var(--t-caption)/1.5 var(--font-mono); }
       .run-steps { display: flex; flex-direction: column; gap: 2px; }
-      .run-step { display: flex; align-items: center; gap: 6px;
+      .run-step { display: flex; align-items: center; gap: var(--s2);
         font: var(--t-caption)/1.6 var(--font-mono); color: var(--fg); }
       .run-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
       .run-took { color: var(--muted); }
       /* A human decision is owed: the same --pending edge the carve
          walkthrough's human refusal wears. */
       .run-gate { border: 1px solid var(--pending); border-left: 3px solid var(--bar-foreign);
-        border-radius: var(--r-ctl); padding: 6px 8px; background: var(--well);
+        border-radius: var(--r-ctl); padding: var(--s2) var(--s3); background: var(--well);
         display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
       .run-gate-title { font-size: var(--t-body); color: var(--pending); }
       .run-gate-desc { font-size: var(--t-caption); }
       .run-gate-meta { font: var(--t-caption)/1.5 var(--font-mono); color: var(--muted);
         overflow-wrap: anywhere; }
       .run-gate button.approve { margin-top: 3px; background: var(--well); color: var(--managed);
-        border: 1px solid var(--managed); border-radius: var(--r-ctl); padding: 3px 12px;
+        border: 1px solid var(--managed); border-radius: var(--r-ctl); padding: 3px var(--s4);
         font-size: var(--t-body); cursor: pointer; }
       /* The operator strip (#234 join 3) — one honestly-dated tick per
          ConvergeOp, its lease, its pending gates. Sits above the run playhead in
          the same tokens: both are "what is happening to this project's Ops", and
          the loop is the one that never stopped. */
-      .operator-strip { display: flex; flex-direction: column; gap: 6px; width: 100%; margin-top: 6px; }
+      .operator-strip { display: flex; flex-direction: column; gap: var(--s2); width: 100%; margin-top: var(--s2); }
       .operator-title { font-size: var(--t-caption); color: var(--pending); }
-      .operator-rows { display: flex; flex-direction: column; gap: 4px; }
-      .operator-row { display: flex; align-items: flex-start; gap: 6px; }
+      .operator-rows { display: flex; flex-direction: column; gap: var(--s1); }
+      .operator-row { display: flex; align-items: flex-start; gap: var(--s2); }
       .operator-op { font-size: var(--t-body); color: var(--fg); }
       /* chant's own tick line, verbatim — mono, because it is a log line. */
       .operator-log { font: var(--t-caption)/1.5 var(--font-mono); color: var(--fg);
@@ -634,18 +658,18 @@
       /* Why one line is all the strip has, and where the rest is (chant#2029).
          A statement, not an alarm — the same voice .run-lost uses for what
          behold does not know. */
-      .operator-caveat { font-size: var(--t-caption); color: var(--muted); }
+      .operator-caveat { font-size: var(--t-caption); color: var(--ink2); }
       /* The converge history (chant#2029) — the timeline the strip is NOT,
          reached from it. Closed by default and read on the click that opens it,
          so this whole block is inert until a human asks for it. */
-      .operator-history { display: flex; flex-direction: column; gap: 4px; }
+      .operator-history { display: flex; flex-direction: column; gap: var(--s1); }
       .operator-history-toggle { align-self: flex-start; background: none; color: var(--pending);
         border: none; padding: 0; font-size: var(--t-caption); cursor: pointer; }
       .operator-history-head { font: var(--t-caption)/1.5 var(--font-mono); color: var(--muted); }
       /* Ticks and gate resolutions, oldest first — chant's own order. The rule
          down the left is the lane: one column of time, read forward. */
-      .operator-timeline { display: flex; flex-direction: column; gap: 6px;
-        border-left: 1px solid var(--rule); padding-left: 8px; max-height: 320px; overflow-y: auto; }
+      .operator-timeline { display: flex; flex-direction: column; gap: var(--s2);
+        border-left: 1px solid var(--rule); padding-left: var(--s3); max-height: 320px; overflow-y: auto; }
       .operator-entry { display: flex; flex-direction: column; gap: 1px; }
       /* A resolution is the human's half of the loop, so it wears the gate's own
          colour rather than the tick's. */
@@ -682,16 +706,16 @@
          same track the deploy dial uses, so "where am I in this" reads the same
          way in both places; below it, the step's own panel. Every colour here is
          a shared token, so all 552 palettes get it for free. */
-      #tab-carve { display: flex; flex-direction: column; gap: 10px; }
-      #tab-carve .dial-track { gap: 4px; }
-      .carve-step { padding: 3px 8px; font-size: var(--t-caption); }
+      #tab-carve { display: flex; flex-direction: column; gap: var(--s3); }
+      #tab-carve .dial-track { gap: var(--s1); }
+      .carve-step { padding: 3px var(--s3); font-size: var(--t-caption); }
       .carve-step.done { color: var(--managed); border-color: color-mix(in srgb, var(--managed) 45%, var(--rule)); }
       .carve-step.blocked { opacity: .55; }
-      .carve-body { display: flex; flex-direction: column; gap: 6px; }
+      .carve-body { display: flex; flex-direction: column; gap: var(--s2); }
       /* Data — chant's output, a file, a command — is mono and boxed; prose
          about it stays in the panel's own voice. */
       .carve-pre { margin: 0; background: var(--well); border: 1px solid var(--line);
-        border-radius: var(--r-ctl); padding: 6px 8px; max-height: 240px; overflow: auto;
+        border-radius: var(--r-ctl); padding: var(--s2) var(--s3); max-height: 240px; overflow: auto;
         font: var(--t-caption)/1.5 var(--font-mono); color: var(--fg); white-space: pre-wrap;
         overflow-wrap: anywhere; }
       .carve-pre.carve-cmd { color: var(--muted); }
@@ -701,16 +725,16 @@
       /* The one thing the walkthrough will not do for you, and the refusals it
          hands back — same card, because they are the same kind of statement. */
       .carve-refusal { border: 1px solid var(--degraded); border-left: 3px solid var(--degraded);
-        border-radius: var(--r-ctl); padding: 6px 8px; background: var(--well); }
+        border-radius: var(--r-ctl); padding: var(--s2) var(--s3); background: var(--well); }
       .carve-refusal.carve-human { border-color: var(--pending); border-left-color: var(--pending); }
       .carve-refusal-title { font-size: var(--t-body); margin-bottom: 2px; }
-      .carve-cmd-row { align-items: center; gap: 6px; }
+      .carve-cmd-row { align-items: center; gap: var(--s2); }
       .carve-cmd-text { font: var(--t-caption)/1.6 var(--font-mono); background: var(--well);
-        border: 1px solid var(--line); border-radius: var(--r-ctl); padding: 3px 6px;
+        border: 1px solid var(--line); border-radius: var(--r-ctl); padding: 3px var(--s2);
         overflow-wrap: anywhere; }
       .carve-cmd-note, .carve-section { margin: 2px 0; }
       .carve-endcard { border: 1px solid var(--managed); border-left: 3px solid var(--managed);
-        border-radius: var(--r-ctl); padding: 6px 8px; background: var(--well); }
+        border-radius: var(--r-ctl); padding: var(--s2) var(--s3); background: var(--well); }
       .carve-endcard-title { font-size: var(--t-body); margin-bottom: 2px; }
       .carve-caveat > summary { cursor: pointer; color: var(--muted);
         font: var(--t-caption)/1.6 var(--font-mono); }
@@ -719,7 +743,7 @@
       #graph [data-node-id].carved rect:first-of-type { stroke: var(--managed); stroke-width: 2; }
 
       #nowline { grid-column: 1 / 3; grid-row: 2; margin: 0; max-height: 160px; overflow: auto; display: none;
-        background: var(--well); border-top: 1px solid var(--rule); padding: 8px 12px;
+        background: var(--well); border-top: 1px solid var(--rule); padding: var(--s3) var(--s4);
         font: var(--t-caption)/1.6 var(--font-mono); color: var(--fg); white-space: pre-wrap; }
       /* #186: the panel's footer — the state the removed header carried. The
          statusbar (#73 "hide controls, never state": current zoom + env +
@@ -727,7 +751,7 @@
          Hidden when the panel collapses, like the body. */
       /* Counts, env, zoom, tier — all of it is state read at a glance, so the
          whole footer is mono. */
-      #panel-foot { border-top: 1px solid var(--line); padding: 7px 12px;
+      #panel-foot { border-top: 1px solid var(--line); padding: var(--s2) var(--s4);
         display: flex; flex-direction: column; gap: 3px;
         font: var(--t-caption)/1.5 var(--font-mono); }
       #panel.collapsed #panel-foot { display: none; }
@@ -737,7 +761,7 @@
          italic so it reads as a caption on the state rather than more state. */
       .statusbar-note { font-style: italic; opacity: 0.85; }
       #hintk { color: var(--muted); border: 1px solid var(--rule); border-radius: var(--r-ctl);
-        padding: 2px 8px; font: var(--t-caption)/1.4 var(--font-mono); cursor: pointer; white-space: nowrap; }
+        padding: 2px var(--s3); font: var(--t-caption)/1.4 var(--font-mono); cursor: pointer; white-space: nowrap; }
       #hintk:hover { border-color: var(--focus); color: var(--fg); }
       /* Command palette (⌘K / Ctrl+K, #73) — ported from spicypath's FG-036
          pattern (../spicypath/src/index.html), theme vars mapped onto behold's
@@ -756,10 +780,10 @@
       /* You type commands here — mono, at the one display size, is the whole
          point of the surface. */
       #pal-input { width: 100%; box-sizing: border-box; background: var(--well); color: var(--fg);
-        border: 0; border-bottom: 1px solid var(--rule); padding: 12px 14px;
+        border: 0; border-bottom: 1px solid var(--rule); padding: var(--s4) var(--s4);
         font: var(--t-display)/1.3 var(--font-mono); outline: none; }
-      #pal-list { max-height: 50vh; overflow: auto; padding: 5px; }
-      #pal-list .row { padding: 7px 11px; border-radius: var(--r-ctl); color: var(--fg);
+      #pal-list { max-height: 50vh; overflow: auto; padding: var(--s1); }
+      #pal-list .row { padding: var(--s2) var(--s4); border-radius: var(--r-ctl); color: var(--fg);
         font: var(--t-body)/1.5 var(--font-mono);
         cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       #pal-list .row.sel { background: var(--pending); color: var(--pal-sel-fg, var(--fg)); }
@@ -767,7 +791,7 @@
          tells two same-named addresses in two members apart. Inherits the row's
          colour so the selected row stays readable on --pending. */
       #pal-list .row .sub { font-size: var(--t-caption); opacity: 0.66; margin-top: 1px; }
-      #pal-list .empty { padding: 8px 11px; color: var(--muted); font-size: var(--t-body); }
+      #pal-list .empty { padding: var(--s3) var(--s4); color: var(--muted); font-size: var(--t-body); }
     
     /* #422: a card whose member is still being read. Dashed and dimmed, never
        filled — the fill is the status channel and this card has no status yet,
@@ -775,7 +799,7 @@
     #graph [data-pending-read] { opacity: 0.55; }
     #graph [data-pending-read] rect { stroke-dasharray: 4 3; }
     @media (prefers-reduced-motion: no-preference) {
-      #graph [data-pending-read] { animation: pending-breathe 2.4s ease-in-out infinite; }
+      #graph [data-pending-read] { animation: pending-breathe calc(var(--beat) * 2) ease-in-out infinite; }
       @keyframes pending-breathe { 0%, 100% { opacity: 0.45; } 50% { opacity: 0.68; } }
     }
       /*
@@ -789,14 +813,14 @@
        * get a bar inset 2px top and bottom; a card's bar is its inset edge.
        * The inspect pane's sections each get one, beside their rows.
        */
-      #panel .count-row, #panel .node-row, #substrates .sub, .run-step, .operator-row, .operator-entry, .apply-wave-row, #tab-terragucci .tg-root, .tg-timeline .tg-entry, #inspect .why-list li, .k-pop-lines li { position: relative; padding-left: 10px; }
+      #panel .count-row, #panel .node-row, #substrates .sub, .run-step, .operator-row, .operator-entry, .apply-wave-row, #tab-terragucci .tg-root, .tg-timeline .tg-entry, #inspect .why-list li, .k-pop-lines li { position: relative; padding-left: var(--s3); }
       #panel .count-row::before, #panel .node-row::before, #substrates .sub::before, .run-step::before, .operator-row::before, .operator-entry::before, .apply-wave-row::before, #tab-terragucci .tg-root::before, .tg-timeline .tg-entry::before, #inspect .why-list li::before, .k-pop-lines li::before {
         content: ""; position: absolute; left: 0; top: 2px; bottom: 2px; width: var(--bar-w, 3px); border-radius: 0 2px 2px 0; background: var(--bar, var(--bar-neutral)); pointer-events: none; }
-      #panel .node-row { padding-left: 12px; }
+      #panel .node-row { padding-left: var(--s4); }
       .ws-gate, .tg-progress-wave, #tg-estate .tg-estate-project, #inspect-body > dl, #inspect-body > .tg-inspect, #inspect-body > .why { box-shadow: inset var(--bar-w, 3px) 0 0 var(--bar, var(--bar-neutral)); }
-      #inspect-body > dl, #inspect-body > .tg-inspect, #inspect-body > .why { padding-left: 10px; }
+      #inspect-body > dl, #inspect-body > .tg-inspect, #inspect-body > .why { padding-left: var(--s3); }
       #inspect-body > dl { padding-top: 1px; padding-bottom: 2px; }
-      .ws-gate, .tg-progress-wave { padding-left: 11px !important; }
+      .ws-gate, .tg-progress-wave { padding-left: var(--s4) !important; }
       #substrates .sub.up { --bar: var(--bar-managed); }
       #substrates .sub.down { --bar: var(--bar-degraded); }
       #substrates .sub.on-demand { --bar: var(--bar-pending); }
@@ -815,6 +839,33 @@
       .tg-change-wave[data-state="applied"] { --bar: var(--bar-managed); }
       .tg-change-wave[data-state="failed"], .tg-change-wave[data-state="refused"] { --bar: var(--bar-degraded); }
       .k-pop-lines li.k-pop-unknown { --bar: var(--bar-foreign); }
+      /*
+       * behold#725: the readability pass.
+       * Headings are sentence case. app.js writes most of them in lower case,
+       * so the heading raises its first letter.
+       */
+      #inspect h2::first-letter, #inspect h3::first-letter, #panel h3::first-letter, .precondition-error-rawlabel::first-letter { text-transform: uppercase; }
+      /* Sentences under a heading read in --ink2 (7:1); --muted stays for keys, counts and captions. */
+      #ws-gates .ws-gate-note, #tab-yodel-lane .ws-gate-note, #tab-terragucci .ws-gate-note, #tg-estate .ws-gate-note, #tab-trunk .ws-gate-note,
+      #tab-yodel .tg-legend, #tab-yodel-lane .tg-legend, #tab-terragucci .tg-legend, #tg-estate .tg-legend, #tab-trunk .tg-legend, #tab-change-set .tg-legend, .tg-timeline .tg-legend { color: var(--ink2); }
+      /* One focus ring for every control, drawn for the keyboard only, in the focus colour held at 4.5:1 (theme.js frameInks). */
+      :focus-visible { outline: 2px solid var(--frame-focus, var(--focus)); outline-offset: 2px; }
+      /* Numbers in the sans keep one width a digit, so a count doesn't jitter as it changes. */
+      #panel .count-row, #ws-gates .ws-gate-facts, #tab-terragucci .tg-cells, .run-verdict, .operator-caveat, .rel-strip, .cs-entry { font-variant-numeric: tabular-nums; }
+      /* A node's address in a list is cut from the front, so its last segment
+         (the name) stays in view; the row's title holds the whole address.
+         The marks either side keep the address's own punctuation in place
+         inside the right-to-left box. */
+      #panel .node-row .grow { direction: rtl; text-align: left; }
+      #panel .node-row .grow::before, #panel .node-row .grow::after { content: "\200E"; }
+      /* The shared tooltip (web/tooltip.js): fixed, so a scrolling pane never clips it. */
+      #b-tip { position: fixed; left: 0; top: 0; z-index: 120; max-width: min(28em, calc(100vw - var(--s5))); padding: var(--s2) var(--s3);
+        background: var(--panel); color: var(--fg); border: 1px solid var(--rule); border-radius: var(--r-ctl);
+        box-shadow: 0 6px 20px color-mix(in srgb, var(--shadow) 60%, transparent); font: var(--t-body)/1.45 var(--font-ui);
+        white-space: pre-line; overflow-wrap: anywhere; pointer-events: none; }
+      #b-tip[hidden] { display: none; }
+      /* web/motion.js marks the page while its tab is hidden: every animation holds where it is. */
+      :root[data-motion="paused"] *, :root[data-motion="paused"] *::before, :root[data-motion="paused"] *::after { animation-play-state: paused !important; }
 </style>
   </head>
   <body>
@@ -829,9 +880,9 @@
       <aside id="inspect">
         <div id="inspect-resize" title="Drag to resize"></div>
         <button id="inspect-collapse" title="Collapse panel">›</button>
-        <div id="inspect-body"><h2>inspect</h2><p style="color:var(--muted)">click a node</p></div>
+        <div id="inspect-body"><h2>Inspect</h2><p style="color:var(--ink2)">Click a node</p></div>
       </aside>
-      <button id="inspect-reopen" title="Show inspect panel">inspect ‹</button>
+      <button id="inspect-reopen" title="Show inspect panel">Inspect ‹</button>
       <pre id="nowline"></pre>
     </div>
     <!-- The floating control panel (see the #panel CSS comment above). The
@@ -857,7 +908,7 @@
         <section data-tab="view" class="active">
           <div id="panel-zoom"></div>
           <div id="panel-viewtools"></div>
-          <h3>theme</h3>
+          <h3>Theme</h3>
           <div id="panel-theme"></div>
           <!-- behold#571: event-help, the "Tips" switch the kiosk has too. -->
           <label id="panel-tips" class="eh-switch" title="A window opens when a gate waits for you, and shows how to approve it"><input type="checkbox" /> Tips</label>
@@ -883,5 +934,12 @@
          by app.js's paletteCommands()/palRender()/openPalette()/closePalette(). -->
     <div id="palette"><div class="box"><input id="pal-input" placeholder="type a command, or an address…   (Esc to close)" autocomplete="off"><div id="pal-list"></div></div></div>
     <script type="module" src="./app.js"></script>
+    <!-- behold#725: the shared beat paused in a hidden tab, and the shared tooltip for the graph's badges. -->
+    <script type="module">
+      import { installMotion } from "./motion.js";
+      import { installTooltips } from "./tooltip.js";
+      installMotion();
+      installTooltips(document);
+    </script>
   </body>
 </html>
