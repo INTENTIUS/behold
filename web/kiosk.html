@@ -447,14 +447,24 @@
       body.k-watch #view-pane { position: absolute; inset: 0 5px 5px; border-radius: 8px; overflow: hidden; background: var(--bg); }
       body.k-watch #view { height: 100%; }
       /* The header, one line: the scenario's place, the steps, the delivery numbers. */
-      body.k-watch #bar { display: flex; align-items: center; gap: var(--s2) var(--s5); min-height: 2.6em; padding: var(--s1) var(--s4); padding-right: calc(var(--k-tools-w, 30em) + 2em); }
-      .k-w-place { display: flex; align-items: baseline; gap: var(--s3); flex: none; white-space: nowrap; }
-      body.k-watch #bar .k-strip { flex: none; }
+      /* The header and the controls share one row: the header takes what the controls leave and wraps inside it, so nothing runs under them at any width. */
+      body.k-watch #bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s5); min-width: 0; min-height: 2.6em; padding: var(--s1) var(--s4); }
+      @media (min-width: 901px) {
+        body.k-watch #k-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+        body.k-watch #k-head > .k-link { grid-row: 1; grid-column: 1 / -1; }
+        body.k-watch #bar { grid-row: 2; grid-column: 1; }
+        body.k-watch #k-tools { grid-row: 2; grid-column: 2; position: relative; top: auto; right: auto; padding: 0.35em 1em 0.35em 0; flex-wrap: wrap; justify-content: flex-end; row-gap: var(--s2); }
+      }
+      /* The place truncates and the steps wrap before either reaches the controls; with no room left on the line, the steps take a line of their own. */
+      .k-w-place { display: flex; align-items: baseline; gap: var(--s3); flex: 0 1 auto; min-width: 0; white-space: nowrap; }
+      .k-w-place .k-brand { flex: none; }
+      .k-w-place .k-cycle { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+      body.k-watch #bar .k-strip { flex: 0 1 auto; flex-wrap: wrap; row-gap: var(--s1); min-width: 0; }
       .k-w-place .k-brand { margin: 0; }
       .k-w-kicker { font: 600 0.8em var(--font-ui); color: var(--muted); }
       .k-w-dora { margin-left: auto; color: var(--muted); font-size: 0.88em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
       .k-w-dora b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
-      .k-w-held { color: var(--foreign); font-size: 0.85em; white-space: nowrap; }
+      .k-w-held { color: var(--foreign); font-size: 0.85em; min-width: 0; }
       .k-w-held button { font: inherit; color: var(--pending); background: transparent; border: 0; padding: 0 0 0 var(--s2); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
       /* The caption: the title, what changes, the step. One of the two beats leads. */
       #k-caption { position: absolute; left: 5px; right: 5px; bottom: 5px; display: grid; grid-template-rows: auto calc(2 * 1.25em * 1.3) calc(2 * 1.25em * 1.3); gap: 0.25em; padding: var(--s3) 1.4em var(--s4);
@@ -480,6 +490,12 @@
       /* The beat that leads is larger and full ink; the other steps back. Both keep their rows, so nothing moves. */
       .k-cap-lead { font-size: 1.3em; color: var(--fg); font-weight: 600; }
       .k-cap-lead .k-cap-label { padding-top: var(--s3); }
+      /* The quiet line (web/kiosk-watch.js quietWords): what runs while nothing new comes in, and for how long. One muted line under the fixed rows, no spinner. */
+      .k-cap-quiet { margin: 0; padding-left: var(--s3); color: var(--muted); font-size: 0.92em; line-height: 1.35; font-variant-numeric: tabular-nums; }
+      /* Both captions' quiet line (here and web/kiosk-carve.js): one line; the driver's words take an ellipsis, the job and the time never do. */
+      .k-quiet { display: flex; min-width: 0; white-space: nowrap; }
+      .k-quiet-said { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+      .k-quiet-sep, .k-quiet-tail { flex: none; white-space: pre; }
       /* The approval, on the held wave's box. */
       .k-over { position: absolute; left: 0; top: 0; visibility: hidden; }
       .k-over.k-placed { visibility: visible; }
@@ -559,18 +575,23 @@
       .k-result-waves dt { font: 600 0.9em var(--font-mono); color: var(--muted); }
       .k-result-waves dd { margin: 0; font-variant-numeric: tabular-nums; }
       .k-result-waves dd.k-result-soon { color: var(--muted); font-style: italic; }
-      @media (max-width: 900px) and (min-width: 601px) { body.k-watch #bar { padding-right: var(--s4); flex-wrap: wrap; } body.k-watch #k-head { display: flex; flex-direction: column-reverse; } body.k-watch #k-tools { position: static; justify-content: flex-end; padding: var(--s2) var(--s4) 0; } }
+      @media (max-width: 900px) and (min-width: 601px) { body.k-watch #k-head { display: flex; flex-direction: column-reverse; } body.k-watch #k-tools { position: static; justify-content: flex-end; padding: var(--s2) var(--s4) 0; } }
       .k-w-dora-foot { display: none; }
       /* A phone: a short header, the graph, then the step and the approval under it; the rest stacks below, in the page's flow. */
       @media (max-width: 600px) {
         body.k-watch #bar { display: flex; flex-wrap: wrap; gap: 0.2em var(--s4); padding: var(--s1) 16px var(--s2); min-height: 0; }
         body.k-watch #bar .k-strip, body.k-watch #bar .k-w-dora { display: none; }
+        .k-w-place, .k-w-place .k-cycle { flex-wrap: wrap; white-space: normal; overflow: visible; }
         body.k-watch #stage { display: flex; flex-direction: column; padding: 0; }
         body.k-watch #view-pane { position: relative; inset: auto; order: 1; height: 40vh; border-radius: 0; }
         body.k-watch #k-watch { position: static; display: flex; flex-direction: column; order: 2; pointer-events: auto; gap: var(--s3); padding: 0 0 var(--s5); }
         body.k-watch #k-caption { position: static; order: 1; display: flex; flex-direction: column; gap: var(--s1); border-radius: 0; box-shadow: none; padding: var(--s3) 16px var(--s3); }
         .k-cap-top { order: 1; flex-wrap: wrap; }
-        .k-cap-step { order: 2; } .k-cap-changes { order: 3; }
+        .k-cap-step, .k-cap-quiet { order: 2; } .k-cap-changes { order: 3; }
+        /* Two lines at most: the driver's words on one, cut short; the job and the time on the next. */
+        .k-quiet { flex-wrap: wrap; }
+        .k-quiet-said { flex: 1 1 100%; }
+        .k-quiet-sep { display: none; }
         .k-cap-title { white-space: normal; font-size: 1.12em; }
         .k-cap-title .k-kicker { display: block; margin-bottom: 0.1em; }
         .k-cap-next { margin-left: 0; flex: 1 1 100%; max-width: none; white-space: normal; }
@@ -655,9 +676,6 @@
       const nameTheme = () => { if (!themeName) return; const n = document.createElement("span"); n.className = "k-theme-n"; n.textContent = `: ${getThemeName()}`; themeName.replaceChildren("Theme", n); };
       nameTheme();
       onThemeChange(nameTheme);
-      // behold#571: the header keeps clear of the controls at the top right, however wide they are.
-      const toolsEl = document.getElementById("k-tools");
-      if (toolsEl && typeof ResizeObserver === "function") new ResizeObserver(() => document.documentElement.style.setProperty("--k-tools-w", `${toolsEl.offsetWidth}px`)).observe(toolsEl);
       // behold#571: /<tool> serves this page with its tool in a meta tag; /kiosk has none.
       const kiosk = startKiosk(
         {

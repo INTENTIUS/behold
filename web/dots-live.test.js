@@ -3,7 +3,13 @@
 // ring, a move flies, a refusal bounces; lines play from when they were seen.
 import { describe, it, expect } from "vitest";
 import { liveShow, stampArrivals, lineKey, showKey, currentMigration, carveDrawable, boxName, LIVE } from "./dots-live.js";
-import { buildScene, takeoffsBy } from "./dots-scene.js";
+import { buildScene, takeoffsBy, cardGridShape, focusRect, cardsReadable, BOX } from "./dots-scene.js";
+import { directorScale } from "./dots-lod.js";
+import { tourFocus } from "./dots-tour.js";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { gridScale, gridSlots, unitKeyOf, GRID } from "./dots-cards.js";
+import { SMALL_STAGE, tourGlow } from "./dots.js";
 import { liveBeat, liveTipsBetween, liveEndTip } from "./dots-kiosk.js";
 import { dotsCarving, dotsActive } from "./dots.js";
 
@@ -216,5 +222,149 @@ describe("an adoption, a split, and the team rosters written after it", () => {
     const ends = {};
     for (const e of show.ownersEnd.values()) ends[e] = (ends[e] ?? 0) + 1;
     expect(ends).toEqual({ "tl11-team-a": 3, terralith: 1 });
+  });
+});
+
+describe("a small stage, laid out for its cards", () => {
+  it("picks the columns that bring a card grid nearest the stage's shape", () => {
+    const g = cardGridShape(14, { cell: 6, aspect: 3.2, target: 1.9 });
+    expect([g.cols, g.h]).toEqual([3, 30]);
+    expect(g.w).toBeCloseTo(57.6);
+    expect(cardGridShape(14, { cell: 6, aspect: 3.2, target: 0.9 }).cols).toBe(2);
+    expect(cardGridShape(0, { cell: 6, aspect: 3.2 }).cols).toBe(1);
+  });
+  it("gives each box its whole card grid at the small stage's cell, which holds through the carve", () => {
+    const a = answer([adopt, split([moveA, followA, refuseB])]);
+    const show = liveShow(a, stampArrivals(a, new Map(), T + 20_000, { first: true }), T + 20_000);
+    const wide = buildScene(show, { sourceAspect: 1, cardGrid: SMALL_STAGE, avail: { w: 1600, h: 500 } });
+    const plain = buildScene(show, { sourceAspect: 1 });
+    const src = wide.layoutAt(0).boxes.get(show.source);
+    // Wider than the dots alone need, in the stage's shape.
+    expect(src.w).toBeGreaterThan(plain.layoutAt(0).boxes.get(show.source).w);
+    expect(src.w / src.h).toBeGreaterThan(1);
+    const n = wide.landing.length;
+    const layouts = [0, n].map((k) => wide.layoutAt(k));
+    expect(gridScale(layouts, unitKeyOf(wide.rosterBy), { maxK: SMALL_STAGE.cell })).toBeCloseTo(SMALL_STAGE.cell);
+    // The source box keeps its size as resources leave, so no card moves for a box resizing.
+    const end = wide.layoutAt(n).boxes.get(show.source);
+    expect([end.w, end.h]).toEqual([src.w, src.h]);
+    // Every card's cell sits inside its box.
+    for (const L of layouts) {
+      const slots = gridSlots(L, SMALL_STAGE.cell, unitKeyOf(wide.rosterBy));
+      for (const [addr, p] of slots) {
+        const b = L.boxes.get(L.owners.get(addr));
+        expect(p.x).toBeGreaterThanOrEqual(b.x + BOX.pad);
+        expect(p.x).toBeLessThanOrEqual(b.x + b.w - BOX.pad);
+        expect(p.y).toBeLessThanOrEqual(b.y + b.h);
+      }
+    }
+    expect(SMALL_STAGE.aspect).toBe(GRID.aspect);
+  });
+  it("leaves a big estate's boxes as the dots need them", () => {
+    const big = { ...stock, count: 60, resources: Array.from({ length: 60 }, (_, i) => ({ address: `aws_s3_bucket.b${i}`, type: "aws_s3_bucket", marked: false })) };
+    const a = answer([], [big]);
+    const show = liveShow(a, stampArrivals(a, new Map(), T, { first: true }), T);
+    const g = buildScene(show, { sourceAspect: 1, cardGrid: SMALL_STAGE, avail: { w: 1600, h: 500 } });
+    const p = buildScene(show, { sourceAspect: 1 });
+    expect(g.layoutAt(0).boxes.get(show.source)).toEqual(p.layoutAt(0).boxes.get(show.source));
+  });
+});
+
+describe("every chapter of the terralith tour frames a small carve as cards", () => {
+  // The thin terralith (terragucci#1155): 14 resources, team B's 5 carved out alone.
+  const team = ["aws_iam_role.app", "aws_iam_role_policy.inline", "aws_cloudwatch_log_group.app", "aws_s3_bucket.data", "aws_sqs_queue.jobs"].map((a) => `module.team_b.${a}`);
+  const rest = Array.from({ length: 9 }, (_, i) => `aws_s3_bucket.shared_${i}`);
+  const thin = { estate: "terralith", at: at(-60), count: 14, resources: [...rest, ...team].map((address) => ({ address, type: address.split(".").slice(-2)[0], marked: false })) };
+  const carve = { name: "split", running: false, counts: { moved: 5, stamped: 0, refused: 0, skipped: 0, left: 0 }, lines: team.map((address, i) => ({ at: at(10 + i), estate_from: "terralith", estate_to: "team-b", address, live_id: `b-${i}`, outcome: "moved" })) };
+  const tour = JSON.parse(readFileSync(fileURLToPath(new URL("./tours/terralith.json", import.meta.url)), "utf8"));
+  // Watch at 1280x800 (the frame's measurements on the live loop): the stage the director frames in, and the area
+  // the scene is laid out for, both clear of the tour's caption; a card name's width; one pitch's px at the dots cap.
+  const stage = { w: 1088, h: 494 };
+  const avail = { w: 914, h: 478 };
+  const need = 150;
+  const dotsCapPP = 7;
+  const cardWP = SMALL_STAGE.cell * (GRID.aspect - GRID.gap);
+  it("in each chapter's focus, at each beat's start and end", () => {
+    const a = answer([carve], [thin]);
+    const show = liveShow(a, stampArrivals(a, new Map(), T + 30_000, { first: true }), T + 30_000);
+    expect(show.roster.length).toBeLessThanOrEqual(SMALL_STAGE.max);
+    const scene = buildScene(show, { sourceAspect: 1, cardGrid: SMALL_STAGE, avail });
+    // A beat's start (nothing moved yet) and its end (every move landed).
+    const ends = [0, 1e15];
+    for (const ch of tour.chapters) {
+      // The chapter's visuals as the tour has them once fired: a light lit on team B's resources, the changed one first.
+      const shown = (ch.show || []).filter((s) => s.light).map(() => ({ kind: "light", lit: team.map((address, i) => ({ address, estates: ["team-b"], changed: i === 1 })) }));
+      const focus = tourFocus({ at: { chapter: ch }, shown }, scene.estates, []);
+      expect(["all", "source", "box"]).toContain(focus.kind);
+      if (ch.id === "team") expect(focus).toEqual({ kind: "box", estate: "team-b" });
+      for (const t of ends) {
+        for (const f of [focus, { kind: "estate", estate: "team-b" }, { kind: "source" }]) {
+          const r = focusRect(scene, f, t);
+          const fit = Math.min(stage.w / (r.w + 7), stage.h / (r.h + 7));
+          const s = directorScale({ fit, dotsCap: dotsCapPP, cardsAt: (need * 1.1) / cardWP, small: true });
+          // Framed past the dots cap, with each card wide enough to read its name, or nearly.
+          expect(s, `${ch.id} ${f.kind} at ${t}`).toBeGreaterThan(dotsCapPP);
+          expect(s * cardWP, `${ch.id} ${f.kind} at ${t}`).toBeGreaterThan(need * 0.85);
+        }
+      }
+    }
+  });
+  it("lights the team beat's changed card and dims the rest of what the plan planned", () => {
+    expect(tourGlow({ changed: true }, true, "c")).toEqual({ colour: "c", a: 1, ring: true, dim: false });
+    expect(tourGlow({ changed: false }, true, "c")).toMatchObject({ dim: true, ring: false });
+    expect(tourGlow({ changed: false }, true, "c").a).toBeLessThan(tourGlow({ changed: false }, false, "c").a);
+    // A plan that changes nothing it planned: every planned card lit alike.
+    expect(tourGlow({ changed: false }, false, "c")).toMatchObject({ dim: false, a: 0.85 });
+  });
+  it("spreads each dot to its card's cell, never piled in a corner of the box, at a beat's start and end", () => {
+    const a = answer([carve], [thin]);
+    const show = liveShow(a, stampArrivals(a, new Map(), T + 30_000, { first: true }), T + 30_000);
+    const scene = buildScene(show, { sourceAspect: 1, cardGrid: SMALL_STAGE, avail });
+    for (const k of [0, scene.landing.length]) {
+      const L = scene.layoutAt(k);
+      const by = new Map();
+      for (const [addr, s] of L.slots) {
+        const e = L.owners.get(addr);
+        const b = L.boxes.get(e);
+        expect(s.x).toBeGreaterThan(b.x);
+        expect(s.x).toBeLessThan(b.x + b.w);
+        expect(s.y).toBeGreaterThan(b.y);
+        expect(s.y).toBeLessThan(b.y + b.h);
+        if (!by.has(e)) by.set(e, []);
+        by.get(e).push(s);
+      }
+      for (const [e, list] of by) {
+        // One cell apart at least, and the cluster spans the box, not a corner of it.
+        for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) expect(Math.hypot(list[i].x - list[j].x, list[i].y - list[j].y)).toBeGreaterThanOrEqual(SMALL_STAGE.cell - 1e-6);
+        const b = L.boxes.get(e);
+        const xs = list.map((s) => s.x);
+        const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+        expect(Math.abs(cx - (b.x + b.w / 2))).toBeLessThan(SMALL_STAGE.cell);
+      }
+      // The cards land on the dots' own cells: no slide inside the box.
+      const cards = gridSlots(L, SMALL_STAGE.cell, unitKeyOf(scene.rosterBy));
+      for (const [addr, c] of cards) {
+        expect(c.x).toBeCloseTo(L.slots.get(addr).x);
+        expect(c.y).toBeCloseTo(L.slots.get(addr).y);
+      }
+    }
+  });
+  it("keeps the dots on a stage too narrow for the cards to read: a phone, the in-between widths", () => {
+    const a = answer([carve], [thin]);
+    const show = liveShow(a, stampArrivals(a, new Map(), T + 30_000, { first: true }), T + 30_000);
+    const scene = buildScene(show, { sourceAspect: 1, cardGrid: SMALL_STAGE, avail });
+    // The Watch stage at 1280x800 and 1920x1080 reads; a phone (390 wide, its graph 40vh) and a 768 tablet do not.
+    expect(cardsReadable(scene, { w: 1088, h: 494 }, need)).toBe(true);
+    expect(cardsReadable(scene, { w: 1738, h: 700 }, need)).toBe(true);
+    expect(cardsReadable(scene, { w: 208, h: 320 }, need)).toBe(false);
+    expect(cardsReadable(scene, { w: 586, h: 420 }, need)).toBe(false);
+    // The width where it turns follows from the card's readable width, not a breakpoint: longer names need more.
+    let w = 200;
+    while (!cardsReadable(scene, { w, h: 2000 }, need)) w += 10;
+    let w2 = 200;
+    while (!cardsReadable(scene, { w: w2, h: 2000 }, need * 1.4)) w2 += 10;
+    expect(w2).toBeGreaterThan(w);
+    // A scene laid out for the dots alone is never a small stage.
+    expect(cardsReadable(buildScene(show, { sourceAspect: 1 }), { w: 4000, h: 4000 }, need)).toBe(false);
   });
 });

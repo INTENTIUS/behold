@@ -122,6 +122,59 @@ export function choreograph(show, opts = {}) {
 }
 
 /**
+ * The inner rect a small estate's card grid needs, in pitches: `n` cells
+ * `aspect` cell heights wide and `cell` pitches high, in the number of
+ * columns that brings the grid nearest `target` (width / height). `{ w, h, cols }`.
+ */
+export function cardGridShape(n, { cell, aspect, target = 1.6 }) {
+  const m = Math.max(1, n);
+  let best = null;
+  for (let c = 1; c <= m; c++) {
+    const w = c * aspect * cell;
+    const h = Math.ceil(m / c) * cell;
+    const off = Math.abs(Math.log(w / h / target));
+    if (!best || off < best.off - 1e-9) best = { w, h, cols: c, off };
+  }
+  return { w: best.w, h: best.h, cols: best.cols };
+}
+
+/**
+ * A small stage's card cells for an estate's resources, in pitches: rows of
+ * cells `aspect * cell` wide and `cell` high, centred in the inner rect `r`,
+ * in unit order then address, as web/dots-cards.js gridSlots lays the cards.
+ */
+export function gridCells(rows, r, { cell, aspect }) {
+  const out = new Map();
+  const list = [...rows].sort((a, b) => {
+    const ka = unitOf(a.address, a.type);
+    const kb = unitOf(b.address, b.type);
+    return ka < kb ? -1 : ka > kb ? 1 : a.address < b.address ? -1 : a.address > b.address ? 1 : 0;
+  });
+  const n = list.length;
+  if (!n) return out;
+  const cw = aspect * cell;
+  const cols = Math.max(1, Math.min(n, Math.floor(r.w / cw + 1e-9)));
+  const nr = Math.ceil(n / cols);
+  const x0 = r.x + (r.w - cols * cw) / 2;
+  const y0 = r.y + Math.max(0, (r.h - nr * cell) / 2);
+  list.forEach((m, i) => out.set(m.address, { x: x0 + ((i % cols) + 0.5) * cw, y: y0 + (Math.floor(i / cols) + 0.5) * cell }));
+  return out;
+}
+
+/**
+ * Whether a small stage's cards read on a stage of `stage` px: the whole
+ * scene framed (the widest shot a tour takes), its cards at least `share` of
+ * the width a card's name needs (`need`, px). Too narrow a stage (a phone, two
+ * boxes side by side) keeps the dots.
+ */
+export function cardsReadable(scene, stage, need, { pad = 3.5, gap = 0.12, share = 0.7 } = {}) {
+  const g = scene && scene.cardGrid;
+  if (!g || !stage || !(stage.w > 0) || !(stage.h > 0) || !(need > 0)) return false;
+  const pp = Math.min(stage.w / (scene.extent.w + 2 * pad), stage.h / (scene.extent.h + 2 * pad));
+  return pp * g.cell * (g.aspect - gap) >= need * share;
+}
+
+/**
  * The scene: the flights, and the layout after every takeoff, in pitches.
  * `layoutAt(k)` is the layout once the first k landing flights have taken off
  * (a dot in flight already holds its slot in the box it is flying to).
@@ -139,14 +192,28 @@ export function buildScene(show, opts = {}) {
   // Fixed widths: the source's from its first members, each estate's from its last.
   const width = new Map();
   const finalSize = new Map();
+  // A small stage (`cardGrid`: at most `max` resources, the layer drawing its own cards) is read at the Cards level:
+  // each box is as big as its card grid, in the stage's shape, so the director can frame readable cards. The boxes
+  // never change size as the carve moves resources, so a card never moves for a box resizing.
+  const grid = o.cardGrid && show.roster.length <= o.cardGrid.max ? o.cardGrid : null;
+  const minInner = new Map();
+  const stageAspect = o.avail && o.avail.w > 0 && o.avail.h > 0 ? o.avail.w / o.avail.h : 1.6;
   for (const e of estates) {
     const first = e === source ? membersOf(show.owners0, e) : membersOf(end, e);
     if (!first.length && e !== source) continue;
     const us = unitsOf(first);
     // The source's box takes its cards' shape on the page, so a card's dot has a short way to go.
-    width.set(e, blockWidth(us, e === source && o.sourceAspect ? o.sourceAspect : 1.3));
-    const p = packBlock(us, { width: width.get(e), fromEnd: e === source });
-    finalSize.set(e, { w: p.w + 2 * BOX.pad, h: p.h + 2 * BOX.pad + BOX.title });
+    let wd = blockWidth(us, e === source && o.sourceAspect ? o.sourceAspect : 1.3);
+    if (grid) {
+      // Each box in the stage's own shape: the director frames one box at a time more often than all of them (the source, a landing).
+      const g = cardGridShape(first.length, { cell: grid.cell, aspect: grid.aspect, target: stageAspect });
+      minInner.set(e, g);
+      wd = Math.max(wd, g.w);
+    }
+    width.set(e, wd);
+    const p = packBlock(us, { width: wd, fromEnd: e === source });
+    const mi = minInner.get(e);
+    finalSize.set(e, { w: Math.max(p.w, mi ? mi.w : 0) + 2 * BOX.pad, h: Math.max(p.h, mi ? mi.h : 0) + 2 * BOX.pad + BOX.title });
   }
   const src = finalSize.get(source) ?? { w: 10, h: 10 };
   const dests = estates.filter((e) => e !== source && finalSize.has(e)).sort();
@@ -201,23 +268,33 @@ export function buildScene(show, opts = {}) {
       const fromEnd = e === source;
       const p = packBlock(unitsOf(ms), { width: width.get(e), fromEnd });
       const o = origin.get(e);
+      const mi = minInner.get(e);
+      const ih = Math.max(p.h, mi ? mi.h : 0);
       let bx;
       let by;
       if (fromEnd) {
         // Bottom edge fixed: the source loses its top rows as units leave.
         bx = o.x;
-        by = o.y + src.h - (p.h + 2 * BOX.pad + BOX.title);
+        by = o.y + src.h - (ih + 2 * BOX.pad + BOX.title);
       } else {
         bx = o.x;
         by = o.y;
       }
       const ix = bx + BOX.pad;
-      const iy = by + BOX.pad + BOX.title + (fromEnd ? p.h : 0);
-      for (const [addr, s] of p.slots) slots.set(addr, { x: ix + s.x, y: iy + s.y, ...(s.parent ? { parent: s.parent } : {}) });
+      const iy = by + BOX.pad + BOX.title + (fromEnd ? ih : 0);
+      if (mi && ms.length) {
+        // A small stage's box is its card grid: each dot sits at its card's cell (web/dots-cards.js gridSlots, the
+        // same order and cells), spread over the box at every zoom, never piled in a corner at the dots' pitch.
+        const cells = gridCells(ms, { x: ix, y: by + BOX.pad + BOX.title, w: Math.max(p.w, mi.w), h: ih }, grid);
+        for (const [addr, c] of cells) {
+          const s = p.slots.get(addr);
+          slots.set(addr, { x: c.x, y: c.y, ...(s && s.parent ? { parent: s.parent } : {}) });
+        }
+      } else for (const [addr, s] of p.slots) slots.set(addr, { x: ix + s.x, y: iy + s.y, ...(s.parent ? { parent: s.parent } : {}) });
       // The source's box narrows to the dots it still holds once its last row is partial.
       let x0 = bx;
-      let w = Math.max(p.w, ms.length ? 0 : 4) + 2 * BOX.pad;
-      if (fromEnd && ms.length) {
+      let w = Math.max(p.w, ms.length ? 0 : 4, mi ? mi.w : 0) + 2 * BOX.pad;
+      if (fromEnd && ms.length && !mi) {
         let lo = Infinity;
         for (const [, sl] of p.slots) lo = Math.min(lo, sl.x);
         const cellHalf = 1.5;
@@ -225,14 +302,37 @@ export function buildScene(show, opts = {}) {
         x0 = bx + left;
         w = p.w - left + 2 * BOX.pad;
       }
-      boxes.set(e, { x: x0, y: by, w, h: p.h + 2 * BOX.pad + BOX.title, members: ms.length });
+      boxes.set(e, { x: x0, y: by, w, h: ih + 2 * BOX.pad + BOX.title, members: ms.length });
     }
     const out = { k: kk, slots, boxes, owners };
     if (cache.size > 2000) cache.clear();
     cache.set(kk, out);
     return out;
   };
-  return { show, flights, landing, estates, source, layoutAt, extent: { w: extentW, h: extentH }, sourceBox: src, finalSize, rosterBy };
+  return { show, flights, landing, estates, source, layoutAt, extent: { w: extentW, h: extentH }, sourceBox: src, finalSize, rosterBy, cardGrid: grid };
+}
+
+function unionBox(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  const x = Math.min(a.x, b.x);
+  const y = Math.min(a.y, b.y);
+  return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
+}
+
+/**
+ * The box the director frames for `focus` at show time `t`, in pitches: the
+ * whole scene ("all"), the source's box ("source"), or an estate's box (an
+ * "estate" the flock flies to, a tour chapter's "box") with the source's, so
+ * the flight is in the shot.
+ */
+export function focusRect(scene, focus, t) {
+  const now = scene.layoutAt(takeoffsBy(scene, t)).boxes;
+  const fin = scene.layoutAt(scene.landing.length).boxes;
+  const src = now.get(scene.source) || scene.layoutAt(0).boxes.get(scene.source);
+  if (focus.kind === "all") return { x: 0, y: 0, w: scene.extent.w, h: scene.extent.h };
+  if (focus.kind === "source" || focus.estate === scene.source) return src;
+  return unionBox(src, fin.get(focus.estate) || now.get(focus.estate));
 }
 
 /** How many landing flights have taken off by replay time `t` (binary search). */

@@ -77,6 +77,8 @@ body.k-carving.k-watch #k-carve { display: grid; }
 /* behold#725: sentence case. The tour file writes its labels in lower case ("cycle time"), so the label raises its first letter. */
 #k-carve .cx-label::first-letter, #k-carve .cx-follow-label::first-letter, #k-carve .cx-ch-kicker::first-letter, #k-carve .cx-num dt::first-letter { text-transform: uppercase; }
 #k-carve .cx-num dd { margin: 0; font-size: 1.25em; font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; }
+/* The quiet line: what runs while nothing new comes in (web/kiosk-watch.js quietWords). One muted line, no spinner. */
+#k-carve .cx-quiet { margin: 0; padding-left: var(--s3); color: var(--muted); font-size: 0.92em; line-height: 1.35; font-variant-numeric: tabular-nums; }
 #k-carve .cx-notes { margin: 0; font: 12px/1.35 var(--font-mono); color: var(--ink2, var(--muted)); padding-left: var(--s3); overflow-wrap: anywhere; }
 /* A phone: in the page's flow under the graph, where Watch's caption goes (web/kiosk.html). */
 @media (max-width: 600px) {
@@ -96,11 +98,24 @@ body.k-carving.k-watch #k-carve { display: grid; }
   #k-carve .cx-card-title { font-size: 17px; }
   #k-carve .cx-card-line { font-size: 14px; }
   #k-carve .cx-num dd { font-size: 16px; }
+  #k-carve .cx-quiet { font-size: 13px; }
 }
+/* While the carve has the stage in Watch, event-help's modal (web/event-help-modal.js) docks at the stage's top left,
+   under the top row and clear of the frame's zoom rail and its top-right controls, with no backdrop; the frame is
+   told its height as a top inset, so the director frames the boxes under it, never behind it. A phone keeps it centred. */
+@media (min-width: 601px) {
+  body.k-carving.k-watch .eh-modal-wrap { inset: auto; top: var(--k-dock-top, 4em); left: var(--k-dock-left, 16px); display: block; background: transparent; pointer-events: none; }
+  body.k-carving.k-watch .eh-modal { pointer-events: auto; width: min(30em, var(--k-dock-w, 40vw)); max-height: 34vh; }
+}
+.eh-tip.eh-tip-dock::after { display: none; }
 /* Slowed playback, in Inspect's quiet rows: off (real time) unless a person picks it. */
 .k-slowed { font: 12px var(--font-ui); background: var(--well, transparent); color: var(--fg); border: 1px solid var(--line); border-radius: 5px; padding: 2px 8px; cursor: pointer; }
 .k-slowed[aria-pressed="true"] { border-color: var(--bar-pending); }
 `;
+
+/** The docked modal's gap from the stage's edges, and the room it leaves at the stage's right for the frame's zoom rail and controls, in px. */
+export const DOCK_GAP = 12;
+export const DOCK_RIGHT = 240;
 
 /** Whether a message is the framed dots layer's live state, from this origin. */
 export function liveCarveMessage(e, origin) {
@@ -115,13 +130,16 @@ export function liveCarveMessage(e, origin) {
  */
 export function startKioskCarve({ frame, watch, eh, origin = location.origin, isWatch = () => true }) {
   const trail = eh && eh.trailHost ? eh.trailHost : null;
-  if (typeof window === "undefined" || typeof document === "undefined" || !watch || !watch.layer) return { tellMode() {}, caption: () => (watch ? watch.caption : null), slowedControl: () => null };
+  if (typeof window === "undefined" || typeof document === "undefined" || !watch || !watch.layer) return { tellMode() {}, caption: () => (watch ? watch.caption : null), slowedControl: () => null, lastWriteAt: () => null, setQuiet() {} };
   let node = null;
   let narration = null;
   let carving = false;
   // The frame last told the kiosk's mode: a frame swapped in (a new view) is told again.
   let told = null;
-  let lastBottom = -1;
+  let lastBottom = "";
+  // The newest progress line the frame has told of, and the quiet line the kiosk works out from it (web/kiosk.js).
+  let writeAt = null;
+  let quiet = null;
   // Slowed playback: a person's choice, real time until then. One button, kept across the header's redraws.
   let slowed = 1;
   let slowedNode = null;
@@ -171,7 +189,31 @@ export function startKioskCarve({ frame, watch, eh, origin = location.origin, is
         const f = frame();
         return f ? f.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
       },
+      quiet: () => quiet,
+      docked: () => carving && isWatch() && !phone(),
     });
+  };
+  const phone = () => typeof matchMedia === "function" && matchMedia("(max-width: 600px)").matches;
+  /** Where event-help's modal docks while the carve has the stage: the stage's top left, in the window's px. */
+  const dock = () => {
+    const f = frame();
+    if (!f) return;
+    const g = f.getBoundingClientRect();
+    const root = document.documentElement;
+    root.style.setProperty("--k-dock-top", `${Math.round(g.top + DOCK_GAP)}px`);
+    root.style.setProperty("--k-dock-left", `${Math.round(g.left + DOCK_GAP)}px`);
+    // Clear of the frame's zoom rail and its top-right controls (web/kiosk.js FRAME_CONTROLS).
+    root.style.setProperty("--k-dock-w", `${Math.max(240, Math.round(g.width - DOCK_RIGHT - 2 * DOCK_GAP))}px`);
+  };
+  /** The lowest edge of what is docked at the stage's top (event-help's modal, an end bubble) below the stage's top, in px; 0 with none up or on a phone. */
+  const dockedBelow = (g) => {
+    if (phone() || !isWatch()) return 0;
+    let low = 0;
+    for (const m of document.querySelectorAll(".eh-modal-wrap .eh-modal, .eh-tip.eh-tip-dock")) {
+      const r = m.getBoundingClientRect();
+      if (r.height) low = Math.max(low, Math.round(r.bottom - g.top + DOCK_GAP));
+    }
+    return low;
   };
   const insets = () => {
     const f = frame();
@@ -182,7 +224,7 @@ export function startKioskCarve({ frame, watch, eh, origin = location.origin, is
     const tr = trail && !trail.hidden ? trail.getBoundingClientRect() : null;
     const top = tr && tr.height && tr.top < c.top && tr.bottom >= c.top - 2 ? tr.top : c.top;
     const over = c.height && top < g.bottom && c.bottom > g.top ? g.bottom - top : 0;
-    return { top: 0, bottom: Math.max(0, Math.round(over)) };
+    return { top: dockedBelow(g), bottom: Math.max(0, Math.round(over)) };
   };
   const tellMode = () => {
     const f = frame();
@@ -208,12 +250,15 @@ export function startKioskCarve({ frame, watch, eh, origin = location.origin, is
       document.body.classList.toggle("k-carving", carving);
       tellMode();
     }
+    writeAt = typeof e.data.lastWriteAt === "number" ? e.data.lastWriteAt : null;
     // The caption shows only while the carve has the camera (body.k-carving); the Tips come either way.
     narration.update(e.data);
     // The caption's height follows its words: the frame keeps the boxes clear of it as it changes.
+    if (carving) dock();
     const ins = insets();
-    if (ins.bottom !== lastBottom) {
-      lastBottom = ins.bottom;
+    const key = `${ins.top}|${ins.bottom}`;
+    if (key !== lastBottom) {
+      lastBottom = key;
       tellMode();
     }
   });
@@ -221,5 +266,13 @@ export function startKioskCarve({ frame, watch, eh, origin = location.origin, is
   const caption = () => (carving && node && isWatch() ? node : watch.caption);
   /** The slowed control for Inspect's quiet rows, once a frame draws a live carve; null before. */
   const slowedControl = () => (node ? slowedButton() : null);
-  return { tellMode, caption, slowedControl };
+  /** The newest progress line's time the frame has told of, in ms; null before one. */
+  const lastWriteAt = () => writeAt;
+  /** The quiet line from the kiosk, or null: drawn at once when it changes. */
+  const setQuiet = (q) => {
+    const was = quiet ? quiet.text : null;
+    quiet = q || null;
+    if (narration && (quiet ? quiet.text : null) !== was) narration.redraw();
+  };
+  return { tellMode, caption, slowedControl, lastWriteAt, setQuiet };
 }

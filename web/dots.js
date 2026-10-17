@@ -22,8 +22,8 @@
 
 import { readCarve, carveShow, walkthroughShow, phaseAt } from "./dots-recording.js";
 import { parentsOf } from "./dots-layout.js";
-import { buildScene, takeoffsBy, firstLandings, flightPoint, easeInOut, replayClock, BOX } from "./dots-scene.js";
-import { cardMorph, discMorph, discRadius, levelOf, caption, railMarks, railPos, lerp, LOD } from "./dots-lod.js";
+import { buildScene, takeoffsBy, firstLandings, flightPoint, easeInOut, replayClock, focusRect, cardsReadable, BOX } from "./dots-scene.js";
+import { cardMorph, discMorph, discRadius, levelOf, caption, railMarks, railPos, lerp, LOD, directorScale } from "./dots-lod.js";
 import { perimeter, pointAt, nearestS, segment } from "./dots-border.js";
 import { getTokens, onThemeChange, contrast, hexToOklch, oklchToHex } from "./theme.js";
 import { LOOP, carveStory, beatAt, tipsBetween, directorFocus, shortName as shortOf, liveBeat, liveTipsBetween, liveEndTip, LIVE_HOLD_MS } from "./dots-kiosk.js";
@@ -31,7 +31,7 @@ import { liveShow, stampArrivals, showKey, currentMigration, boxName, playedCoun
 import { provenanceText, migrationTool, stepMsFor } from "./tour-player.js";
 import { tourNow, tourFocus, tourFx, fxKey, tourMessage } from "./dots-tour.js";
 import { wallTicks, recordedLabel, recordedMarks, speedWords, skippedWords, clockWords, RECORDED_SPEEDS } from "./dots-timeline.js";
-import { cardLabel, cardShape, cardText, cardTextAlpha, pickMark, cardsMark, cardsFrame, cardsEstate, middleCard, gridScale, gridSlots, cardSize, cardNeed, rosterLod, unitKeyOf, minViewWidth, tipSpot, CARD_TEXT } from "./dots-cards.js";
+import { GRID, cardLabel, cardShape, cardText, cardTextAlpha, pickMark, cardsMark, cardsFrame, cardsEstate, middleCard, gridScale, gridSlots, cardSize, cardNeed, rosterLod, unitKeyOf, minViewWidth, tipSpot, CARD_TEXT } from "./dots-cards.js";
 
 /** #715: how often the live layer asks for the carve. The route shares one read for 1.5 s while a migration runs. */
 export const LIVE_POLL_MS = 2_000;
@@ -49,6 +49,42 @@ const DRAW_MS = 650;
 const LINGER_MS = 2600;
 /** A viewer's hand on the camera (a wheel, a pinch, a drag, a rail mark) holds the director and the tour off until this long after their last input. */
 export const VIEWER_HOLD_MS = 8_000;
+/**
+ * A small stage: a carve of at most `max` resources, on a layer that draws its own cards, is read at the Cards
+ * level. Each estate's box is laid out as its card grid, cells `cell` pitches high and `aspect` wide, in the
+ * stage's shape (web/dots-scene.js cardGridShape), and the director frames it at the zoom that fits, up to
+ * CARDS_FRAME_GROW past the legible card size (web/dots-lod.js directorScale). A bigger estate keeps the dots.
+ */
+export const SMALL_STAGE = { max: 40, cell: 6, aspect: GRID.aspect };
+
+/** Whether the scene on stage is a small one: laid out as SMALL_STAGE's card grid (sceneFor). */
+function smallStage() {
+  return !!(S && S.seedless && S.scene && S.scene.cardGrid);
+}
+
+/**
+ * The scene for a show: a small stage's card grid when the layer draws its own cards, the show is small, and its
+ * cards read on this stage at the widest shot (dots-scene.js cardsReadable); else the dots' own layout, as before.
+ */
+function sceneFor(show, opts, seedless) {
+  if (seedless && show.roster.length <= SMALL_STAGE.max && opts.stage) {
+    const sc = buildScene(show, { ...opts, cardGrid: SMALL_STAGE });
+    if (cardsReadable(sc, opts.stage, rosterNeed(show.roster))) return sc;
+  }
+  return buildScene(show, opts);
+}
+
+/** The card width a roster's names need (dots-cards.js cardNeed), measured before the layer has a canvas of its own. */
+function rosterNeed(roster) {
+  if (typeof document === "undefined") return 0;
+  const cv = document.createElement("canvas").getContext("2d");
+  if (!cv) return 0;
+  const font = (S && S.font) || getComputedStyle(document.body).fontFamily || "sans-serif";
+  return cardNeed(roster.map((r) => cardLabel(r)), (txt, px, weight) => {
+    cv.font = `${weight} ${px}px ${font}`;
+    return cv.measureText(txt).width;
+  });
+}
 
 export function dotsActive() {
   return !!S;
@@ -297,12 +333,16 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source 
   }
   widths.sort((a, b) => a - b);
   const cardW = widths[widths.length >> 1] || 200;
+  // A small live stage reads as the roster's own cards in their estates' boxes, whichever view is served under it:
+  // a team repo's view (the team beat) draws its roots' resources as cards of its own, which would otherwise be the
+  // card level, at their places on the page, and the director would keep the stage at the dots. They keep the pitch.
+  if (live && show.roster.length <= SMALL_STAGE.max) cards.clear();
   const boxEl = svg.querySelector(`rect[data-group-id="${CSS.escape(show.source)}"]`) || svg.querySelector("rect[data-group-id]");
   const mbox = boxEl
     ? { x: +boxEl.getAttribute("x"), y: +boxEl.getAttribute("y"), w: +boxEl.getAttribute("width"), h: +boxEl.getAttribute("height") }
     : { x: vbInit[0], y: vbInit[1], w: vbInit[2], h: vbInit[3] };
   // The source estate's box takes its cards' box's place and shape on the page.
-  const scene = buildScene(show, { sourceAspect: mbox.w / Math.max(1, mbox.h), ...labelRoom(host) });
+  const scene = sceneFor(show, { sourceAspect: mbox.w / Math.max(1, mbox.h), ...labelRoom(host) }, cards.size === 0);
   const src = scene.sourceBox;
   // One dot pitch is a fixed share of a card's width, so a dot is legible exactly
   // when its card stops being: at the dot size a pitch is about 8 px, whatever
@@ -475,7 +515,7 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source 
   const setInsets = (ins) => {
     if (S) S.insets = { top: Number(ins.top) || 0, bottom: Number(ins.bottom) || 0 };
   };
-  window.__dots = { select: (id) => selectDot(id), landed: () => S && landedIds(), seek, play, step, zoomTo, zoomCardPx, setInsets, pause: () => play(false), fly, setSpeed, stats: () => S && S.stats, length: () => S && S.clock.length, marks: () => S && currentMarks(), state: () => S && { t: S.t, level: S.level, reduced: S.reduced, cardPx: S.cardPx, pitchPx: S.pitchPx, rosterCards: S.own, rosterCardPx: S.rosterCardPx, directing: !!S.directing }, debug: () => S && { band: (({ left, right, w }) => ({ left, right, w }))(band()), svg: S.svg.getBoundingClientRect().toJSON(), rail: S.ui.querySelector('.dots-rail').getBoundingClientRect().toJSON(), vb: S.getVB(), dir: S.dir, directing: S.directing, focusBox: S.dir && focusBox(S.dir.focus), want: S.dir && frameBox(focusBox(S.dir.focus)), pitch: S.pitch, origin: S.origin }, story: () => S && S.story && { start: S.story.start, end: S.story.end, firstRefusal: S.story.firstRefusal ? S.story.firstRefusal.end : null } };
+  window.__dots = { select: (id) => selectDot(id), landed: () => S && landedIds(), seek, play, step, zoomTo, zoomCardPx, setInsets, pause: () => play(false), fly, setSpeed, stats: () => S && S.stats, length: () => S && S.clock.length, marks: () => S && currentMarks(), state: () => S && { t: S.t, level: S.level, reduced: S.reduced, cardPx: S.cardPx, pitchPx: S.pitchPx, rosterCards: S.own, rosterCardPx: S.rosterCardPx, directing: !!S.directing }, debug: () => S && { band: (({ left, right, w }) => ({ left, right, w }))(band()), svg: S.svg.getBoundingClientRect().toJSON(), rail: S.ui.querySelector('.dots-rail').getBoundingClientRect().toJSON(), vb: S.getVB(), dir: S.dir, directing: S.directing, focusBox: S.dir && focusBox(S.dir.focus), want: S.dir && frameBox(focusBox(S.dir.focus)), pitch: S.pitch, origin: S.origin, frame: S.frameNums || null, smallStage: smallStage(), roster: S.show.roster.length }, story: () => S && S.story && { start: S.story.start, end: S.story.end, firstRefusal: S.story.firstRefusal ? S.story.firstRefusal.end : null } };
   const loop = (wall) => {
     if (!S) return;
     S.raf = requestAnimationFrame(loop);
@@ -559,6 +599,8 @@ function labelRoom(host) {
     labelPx: (e) => cv.measureText(`${e} 000`).width + 12,
     labelH: 18,
     avail: { w: r.width * 0.72, h: Math.max(80, r.height - (ins.top || 0) - (ins.bottom || 0) - 32) },
+    // The stage the director frames in: the pane less the zoom rail's band and its margins, clear of the caption.
+    stage: { w: Math.max(40, r.width - 182), h: Math.max(40, r.height - (ins.top || 0) - (ins.bottom || 0) - 16) },
   };
 }
 
@@ -1033,7 +1075,7 @@ function fitRosterCards() {
   const n = sc.landing.length;
   const ks = new Set([0, n]);
   for (let j = 1; j < 40; j++) ks.add(Math.round((n * j) / 40));
-  S.gridK = gridScale([...ks].map((k) => sc.layoutAt(k)), S.unitKey);
+  S.gridK = gridScale([...ks].map((k) => sc.layoutAt(k)), S.unitKey, smallStage() ? { maxK: SMALL_STAGE.cell } : {});
   const c = cardSize(S.gridK);
   S.rc = { w: c.w * S.pitch, h: c.h * S.pitch };
   const ctx = S.ctx;
@@ -1110,14 +1152,16 @@ function linesOf(ctx, a, sh) {
  * rect in its estate's colour, which pales to a tint on the page's surface as the name and the type fade in. The
  * marks a dot wears (a tour's light, the adoption's ring, the selection, a takeoff) go round the card.
  */
-function drawRosterCard(ctx, a, sh, u, { vis, colour, glow, ring, selected, takeoff }) {
+function drawRosterCard(ctx, a, sh, u, { vis: vis0, colour, glow, ring, selected, takeoff }) {
   const col = S.col;
   const round = (o) => roundRect(ctx, sh.x - o, sh.y - o, sh.w + 2 * o, sh.h + 2 * o, sh.r + o);
+  // A card the plan planned but does not change steps back beside the one it changes.
+  const vis = glow && glow.dim ? vis0 * 0.55 : vis0;
   if (glow) {
-    ctx.globalAlpha = vis * glow.a * 0.7;
+    ctx.globalAlpha = vis * glow.a * (glow.ring ? 1 : 0.7);
     ctx.strokeStyle = glow.colour;
-    ctx.lineWidth = 3;
-    round(3);
+    ctx.lineWidth = glow.ring ? 4.5 : 3;
+    round(glow.ring ? 4 : 3);
     ctx.stroke();
   }
   round(0);
@@ -1501,9 +1545,12 @@ function draw(dt) {
   }
   // The tour's lights: each resource the chapter's plan planned, brighter where the plan changes it.
   const fx = currentFx(owners);
+  // A plan that changes some of what it planned (the team beat: one inline policy of team B's five resources) lights
+  // the changed cards and dims the rest, so "only this changes" reads on the cards.
+  const anyChanged = !!fx && [...fx.lights.values()].some((l) => l.changed);
   if (fx) for (const [id, l] of fx.lights) {
     const prev = glow.get(id);
-    const g = { colour: col.foreign, a: l.changed ? 1 : 0.85, ring: l.changed };
+    const g = tourGlow(l, anyChanged, col.foreign);
     if (!prev || g.a >= prev.a) glow.set(id, g);
   }
   ctx.globalAlpha = 1;
@@ -1936,8 +1983,11 @@ function frameBox(b) {
   const bottom = S.insets.bottom + 8 + foot;
   const aw = Math.max(40, r.width - left - right - 16);
   const ah = Math.max(40, r.height - top - bottom);
-  // Never so close that a card shows again: dots stay dots.
-  let s = Math.min(aw / bw, ah / bh, 20 / S.cardW);
+  // Never so close that a card shows again: dots stay dots. Unless the whole shot fits with each roster card wide
+  // enough to read its name (the rail's Cards mark): a few resources are framed as cards, in their estates' boxes.
+  const f = frameNumbers(aw / bw, ah / bh);
+  S.frameNums = f;
+  const s = f.s;
   const vw = r.width / s;
   const vh = r.height / s;
   const vx = bx + bw / 2 - (left + 8 + aw / 2) / s;
@@ -1945,23 +1995,26 @@ function frameBox(b) {
   return [vx, vy, vw, vh];
 }
 
-function unionBox(a, b) {
-  if (!a) return b;
-  if (!b) return a;
-  const x = Math.min(a.x, b.x);
-  const y = Math.min(a.y, b.y);
-  return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
+/**
+ * A tour light's glow on a dot or a card: a changed resource full and ringed; one the plan only planned, beside a
+ * changed one, faint and dimmed; with nothing changed, every planned one lit alike.
+ */
+export function tourGlow(light, anyChanged, colour) {
+  if (light.changed) return { colour, a: 1, ring: true, dim: false };
+  return anyChanged ? { colour, a: 0.4, ring: false, dim: true } : { colour, a: 0.85, ring: false, dim: false };
+}
+
+/** The director's zoom and what it is made of, for frameBox and __dots.debug(). */
+function frameNumbers(fitW, fitH) {
+  const fit = Math.min(fitW, fitH);
+  const cardsAt = S.seedless && S.rc && S.rc.w > 0 && S.need > 0 ? (S.need * 1.1) / S.rc.w : null;
+  const dotsCap = 20 / S.cardW;
+  const small = smallStage();
+  return { fit, cardsAt, dotsCap, small, need: S.need ?? null, rc: S.rc ?? null, gridK: S.gridK ?? null, s: directorScale({ fit, dotsCap, cardsAt, small }) };
 }
 
 function focusBox(focus) {
-  const sc = S.scene;
-  const now = sc.layoutAt(takeoffsBy(sc, S.t)).boxes;
-  const fin = sc.layoutAt(sc.landing.length).boxes;
-  const src = now.get(sc.source) || sc.layoutAt(0).boxes.get(sc.source);
-  if (focus.kind === "all") return { x: 0, y: 0, w: sc.extent.w, h: sc.extent.h };
-  if (focus.kind === "source" || focus.estate === sc.source) return src;
-  // The estate receiving the flock, with the box it leaves, so the flight is in the shot.
-  return unionBox(src, fin.get(focus.estate) || now.get(focus.estate));
+  return focusRect(S.scene, focus, S.t);
 }
 
 function kioskTick(wall, dt) {
@@ -2111,7 +2164,7 @@ function takeLive(answer) {
     S.show.t1 = now;
     return;
   }
-  const scene = buildScene(show, { sourceAspect: S.mbox.w / Math.max(1, S.mbox.h), ...labelRoom(S.host) });
+  const scene = sceneFor(show, { sourceAspect: S.mbox.w / Math.max(1, S.mbox.h), ...labelRoom(S.host) }, S.seedless);
   const n = show.roster.length;
   const src = scene.sourceBox;
   S.show = show;

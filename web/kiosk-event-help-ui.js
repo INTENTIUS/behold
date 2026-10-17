@@ -16,7 +16,7 @@
 // lights, the glows and the modals off; the trail stays, since it is the
 // record.
 
-import { EH_STORE, LATE_ORDER, TIP_MS, cycleFacts, ehSnapshot, ehStore, ehStored, modalQueue, newEvents, storyTrail, tipsQueue } from "./kiosk-event-help.js";
+import { EH_STORE, LATE_ORDER, TIP_MS, cycleFacts, storyKey, ehSnapshot, ehStore, ehStored, modalQueue, newEvents, storyTrail, tipsQueue } from "./kiosk-event-help.js";
 
 /** How long after the page opens (or the cycle turns) what arrives is the story so far, not news: the reads land one by one. */
 export const SETTLE_MS = 8_000;
@@ -408,12 +408,14 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
       st.trail.clear();
     }
     const facts = cycleFacts(ehSnapshot({ demo: h.demo, answer: h.answer, progress: h.progress, runDoc: h.runDoc, runDocs: h.runDocs || [], approval: h.approval, metrics: h.metrics, waveTraces: h.waveTraces || {}, strip: h.strip || null, waves: h.waves || [], failed: [...st.failed] }));
-    if (h.demo.cycle !== st.cycle) {
+    // A new cycle, or a new beat of one (web/kiosk-event-help.js storyKey): a new story.
+    const story = storyKey({ cycle: h.demo.cycle, beat: h.demo.beat || null });
+    if (story !== st.cycle) {
       // A new cycle: a new story. Its first look is the trail so far, not news.
       // The first look at a page sees a cycle already under way: no news. A cycle that turns while the page is open is all news.
       if (st.cycle !== null) st.seen = new Set();
       else st.seen = null;
-      st.cycle = h.demo.cycle;
+      st.cycle = story;
       st.maxOrder = -Infinity;
       st.trail.clear();
       st.failed.clear();

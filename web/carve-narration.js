@@ -79,7 +79,7 @@ export function mergeLandings(tips, names = {}) {
  * bar, caption: elements to draw into; tipsHost, modalHost: where bubbles and
  * modals go; origin(): the page offset of the layer the state's box rects are in.
  */
-export function createNarration({ bar, caption, tipsHost, modalHost, origin }) {
+export function createNarration({ bar, caption, tipsHost, modalHost, origin, quiet = () => null, docked = () => false }) {
   if (!document.getElementById(TIPS_STYLE_ID)) {
     const st = el("style");
     st.id = TIPS_STYLE_ID;
@@ -100,6 +100,17 @@ export function createNarration({ bar, caption, tipsHost, modalHost, origin }) {
   };
   const placeTip = (state) => {
     if (!tip) return;
+    // A bubble about no one estate (the end), while the kiosk docks them: at the stage's top left, where the frame
+    // keeps the boxes clear of it (web/kiosk-carve.js), never over the middle of the stage.
+    const dockIt = !tip.t.estate && docked();
+    tip.node.classList.toggle("eh-tip-dock", dockIt);
+    if (dockIt) {
+      const o = origin();
+      const at = `translate(${Math.round(o.left + 12)}px, ${Math.round(o.top + 12)}px)`;
+      tip.node.style.setProperty("--eh-at", at);
+      tip.node.style.transform = at;
+      return;
+    }
     const size = { w: tip.node.offsetWidth, h: tip.node.offsetHeight };
     const win = { w: window.innerWidth, h: window.innerHeight };
     let p;
@@ -155,6 +166,18 @@ export function createNarration({ bar, caption, tipsHost, modalHost, origin }) {
     placeTip(state);
   };
 
+  /** The quiet line (web/kiosk-watch.js quietWords), from the kiosk; nothing from a page that gives none, such as the static export's replay. */
+  const quietLine = () => {
+    const q = quiet();
+    if (!q || !q.text) return null;
+    const p = el("p", "cx-quiet k-quiet");
+    if (q.said) p.append(el("span", "k-quiet-said", q.said), el("span", "k-quiet-sep", " · "));
+    p.append(el("span", "k-quiet-tail", q.tail || q.text));
+    p.setAttribute("role", "status");
+    if (q.title) p.title = q.title;
+    return p;
+  };
+
   let lastChapter = null;
   const draw = (state) => {
     if (caption && state.tour) return drawTour(state);
@@ -208,6 +231,9 @@ export function createNarration({ bar, caption, tipsHost, modalHost, origin }) {
           : `${fmt(tot.done)} of ${fmt(tot.moves)} flown · ${tot.refused} refused · ${estatesW}`;
       tally.append(el("span", "cx-label", "moves"), el("span", "cx-text", tallyText));
       caption.appendChild(tally);
+      // Under the caption's fixed rows, so they keep their places.
+      const q = quietLine();
+      if (q) caption.appendChild(q);
     }
   };
 
@@ -254,6 +280,8 @@ export function createNarration({ bar, caption, tipsHost, modalHost, origin }) {
     card.appendChild(h);
     for (const line of tr.lines) card.appendChild(el("p", "cx-card-line", line));
     caption.appendChild(card);
+    const q = quietLine();
+    if (q) caption.appendChild(q);
     if (tr.card && tr.card.length) {
       const grid = el("dl", "cx-numbers");
       for (const r of tr.card) {
@@ -274,6 +302,10 @@ export function createNarration({ bar, caption, tipsHost, modalHost, origin }) {
   onLinkChange(() => { if (last) draw(last); });
 
   return {
+    /** Draw again with what the frame last said: the quiet line changes between the frame's states. */
+    redraw() {
+      if (last) draw(last);
+    },
     update(state) {
       if (state.type !== "behold:dots-state") {
         if (state.type === "behold:dots-ready") shown.clear();

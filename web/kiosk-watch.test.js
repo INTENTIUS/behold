@@ -2,7 +2,7 @@
 // takes, what the caption leads with, the badges, the delivery line, the
 // result card, the drawer's folded lines, and where an overlay goes.
 import { describe, expect, it } from "vitest";
-import { MODE_STORE, activeWave, badgeTitle, badgeWords, badges, behindStep, steadyRun, captionModel, changeRoots, doraLine, modeStored, placeBeside, resultModel, shotFor, stepTone, tailLines } from "./kiosk-watch.js";
+import { MODE_STORE, QUIET_MS, activeWave, badgeTitle, badgeWords, badges, behindStep, firstSentence, steadyRun, captionModel, changeRoots, doraLine, modeStored, placeBeside, quietDuration, quietWords, recordKey, resultModel, runningStep, shotFor, stepTone, tailLines } from "./kiosk-watch.js";
 
 const C = "9f3c2a71d04e5b8c6a1f2e3d4c5b6a7980716253";
 const P = "1111111111111111111111111111111111111111";
@@ -207,5 +207,57 @@ describe("kiosk watch: where an overlay goes", () => {
     expect(placeBeside({ x: 400, y: 200, w: 300, h: 200 }, { w: 400, h: 300 }, view, 18, [{ x: 600, y: 450, w: 200, h: 24 }])).toEqual({ x: 809, y: 200, side: "right" });
     // A box low in the view: the overlay rises to stay in it.
     expect(placeBeside({ x: 400, y: 700, w: 300, h: 80 }, { w: 400, h: 300 }, view).y).toBe(492);
+  });
+});
+
+describe("the quiet line", () => {
+  const from = Date.parse("2026-10-16T10:00:00Z");
+  const step = (more = {}) => demo("applying", { label: "Wave 1 is planning the four roots. Then live-mv moves each team's resources.", next: { action: "follow the waves", from: "2026-10-16T10:00:00Z", at: null }, ...more });
+  it("says what runs and for how long once nothing new has come in for QUIET_MS", () => {
+    const q = quietWords(step(), { now: from + 48_000, lastRecordAt: from + 20_000 });
+    expect(q.text).toBe("Wave 1 is planning the four roots · 48 s so far");
+    expect(q.since).toBe(from);
+    expect(q.title).toContain("Nothing new has come in for 28 s.");
+  });
+  it("names the running job by its name alone, never its step or description, and keeps the job and the time apart from the words that may be cut", () => {
+    const run = runningStep({ id: 9, jobs: [{ name: "plan", status: "success", steps: [] }, { name: "apply-comment", status: "running", started_at: "2026-10-16T10:00:05Z", steps: [{ name: "setup", status: "success" }, { name: "Apply a merged pull request on request, from its merge commit", status: "running", started_at: "2026-10-16T10:00:09Z" }] }] });
+    expect(run).toEqual({ job: "apply-comment", step: "Apply a merged pull request on request, from its merge commit", at: from + 9_000 });
+    const q = quietWords(step({ label: "The driver comments /terragucci apply on pull request 242, and the pipeline runs the waves again." }), { now: from + 37_000, lastRecordAt: from + 9_000, run });
+    expect(q.text).toBe("The driver comments /terragucci apply on pull request 242, and the pipeline runs the waves again · apply-comment · 37 s so far");
+    expect(q.said).toBe("The driver comments /terragucci apply on pull request 242, and the pipeline runs the waves again");
+    expect(q.tail).toBe("apply-comment · 37 s so far");
+  });
+  it("counts from the driver's step, not from the job", () => {
+    const run = { job: "apply-wave-1", step: "plan", at: from + 30_000 };
+    expect(quietWords(step(), { now: from + 75_000, lastRecordAt: from + 2_000, run }).tail).toBe("apply-wave-1 · 1 m 15 s so far");
+  });
+  it("stays away while records come in, on a replay, while the link is stale, and on a held or ended step", () => {
+    expect(quietWords(step(), { now: from + QUIET_MS, lastRecordAt: from })).toBeNull();
+    expect(quietWords(step(), { now: from + 60_000, lastRecordAt: from, replay: true })).toBeNull();
+    expect(quietWords(step(), { now: from + 60_000, lastRecordAt: from, stale: true })).toBeNull();
+    for (const s of ["waiting", "failed", "applied", "reset", "stalled"]) expect(quietWords(step({ step: s }), { now: from + 60_000, lastRecordAt: from })).toBeNull();
+    expect(quietWords(step(), { now: from + 60_000, lastRecordAt: null })).toBeNull();
+  });
+  it("leaves a timed hold to its own countdown, and speaks once the hold is overdue", () => {
+    const hold = step({ step: "planned", next: { action: "merge pull request 7", from: "2026-10-16T10:00:00Z", at: "2026-10-16T10:01:00Z" } });
+    expect(quietWords(hold, { now: from + 30_000, lastRecordAt: from })).toBeNull();
+    expect(quietWords(hold, { now: from + 90_000, lastRecordAt: from }).text).toBe("Wave 1 is planning the four roots · 1 m 30 s so far");
+  });
+  it("falls back to the next action, then to when the kiosk first saw the step", () => {
+    const d = step({ label: "", next: { action: "follow the waves", at: null } });
+    expect(quietWords(d, { now: from + 40_000, lastRecordAt: from + 5_000, stepAt: from + 2_000 }).text).toBe("Waiting for follow the waves · 38 s so far");
+  });
+  it("restarts its clock only on a new driver step or a new progress line", () => {
+    expect(recordKey(step(), 1)).not.toBe(recordKey(step(), 2));
+    expect(recordKey(step(), 1)).not.toBe(recordKey(step({ step: "resumed" }), 1));
+    expect(recordKey(step(), 1)).not.toBe(recordKey(step({ label: "Live-mv starts." }), 1));
+    // The driver's next action or its time are not a new step.
+    expect(recordKey(step(), 1)).toBe(recordKey(step({ next: { action: "carve: 3 of 14 moved", from: "2026-10-16T10:00:00Z", at: null } }), 1));
+  });
+  it("words", () => {
+    expect(quietDuration(8.9)).toBe("8 s");
+    expect(quietDuration(3725)).toBe("1 h 02 m");
+    expect(firstSentence("Network is already done, and app's migration runs again.")).toBe("Network is already done, and app's migration runs again");
+    expect(firstSentence("main moved to 1234abcd: port 8080 -> 9090. Wave 1 plans again")).toBe("main moved to 1234abcd: port 8080 -> 9090");
   });
 });

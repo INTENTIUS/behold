@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { LOD, bandT, smooth, cardMorph, discMorph, morphPoint, discRadius, levelOf, caption, railMarks, railPos } from "./dots-lod.js";
+import { CARDS_FRAME_GROW, LOD, bandT, smooth, cardMorph, discMorph, morphPoint, discRadius, levelOf, caption, railMarks, railPos, directorScale } from "./dots-lod.js";
 
 describe("dots level of detail (#712)", () => {
   it("is a card at or above the card size and a dot at or below the dot size", () => {
@@ -74,5 +74,23 @@ describe("dots level of detail (#712)", () => {
     expect(railPos(m.resources, m)).toBeCloseTo(0.5, 6);
     expect(railPos(m.estates, m)).toBe(1);
     expect(railPos(m.estates * 10, m)).toBe(1);
+  });
+});
+
+describe("the director's zoom", () => {
+  it("frames a stage that fits at the Cards level as cards, and a big one as dots", () => {
+    // 14 resources: the boxes fit at 3x, the cards read from 1.2x.
+    expect(directorScale({ fit: 3, dotsCap: 0.4, cardsAt: 1.2 })).toBeCloseTo(1.2 * CARDS_FRAME_GROW);
+    expect(directorScale({ fit: 1.5, dotsCap: 0.4, cardsAt: 1.2 })).toBe(1.5);
+    // A big estate only fits far out: dots, as before.
+    expect(directorScale({ fit: 0.3, dotsCap: 0.4, cardsAt: 1.2 })).toBe(0.3);
+    expect(directorScale({ fit: 0.9, dotsCap: 0.4, cardsAt: 1.2 })).toBe(0.4);
+    // No cards drawn: the dots cap holds.
+    expect(directorScale({ fit: 3, dotsCap: 0.4, cardsAt: null })).toBe(0.4);
+    // A small stage whose cards don't quite reach legible size is framed at the zoom that fits, not a third of it
+    // (the live terralith: fit 0.33, dots cap 0.1, cards legible at 0.41).
+    expect(directorScale({ fit: 0.33, dotsCap: 0.1, cardsAt: 0.41, small: true })).toBe(0.33);
+    expect(directorScale({ fit: 0.33, dotsCap: 0.1, cardsAt: 0.41 })).toBe(0.1);
+    expect(directorScale({ fit: 3, dotsCap: 0.1, cardsAt: 0.41, small: true })).toBeCloseTo(0.41 * CARDS_FRAME_GROW);
   });
 });
