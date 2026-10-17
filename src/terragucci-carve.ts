@@ -70,6 +70,8 @@
 import type { Hono } from "hono";
 import { readDemo } from "./terragucci-demo.ts";
 import { TerragucciDenied, type TerragucciSource } from "./terragucci-source.ts";
+import { findTour, resolveTour, type TourAnswer, type TourMigration } from "./terragucci-tour.ts";
+import { RUNS_INDEX_KEY } from "./terragucci-runs.ts";
 
 /** How long one read is shared while a migration runs: the page polls every 2 s, so a move shows within a few seconds of its write. */
 export const CARVE_READ_TTL_MS = 1_500;
@@ -133,6 +135,10 @@ export interface CarveMigration {
   finished: string | null;
   /** Still writing: not finished, and either lines have come or the demo names it. */
   running: boolean;
+  /** The record's `change` (adopt, retag), when one was read. */
+  change: string | null;
+  /** The run that wrote it: its job, from the report row of the record's commit, for a landed dot's provenance. */
+  run?: { job: number | null; job_url: string | null; tool: string };
 }
 
 export interface CarveDemo {
@@ -142,6 +148,14 @@ export interface CarveDemo {
   step: string;
   label: string;
   next: string | null;
+  /** The beat of a scenario told in beats (terralith: stock, adopt, split, team, cross); null otherwise. */
+  beat: string | null;
+  started_at: string;
+  tool: string | null;
+  repo: string | null;
+  pull: number | null;
+  /** When the driver started waiting for `next`, which is when this step was written. */
+  next_from: string | null;
 }
 
 export type CarveAnswer =
@@ -162,6 +176,8 @@ export type CarveAnswer =
       migrations: CarveMigration[];
       demo: CarveDemo | null;
       running: boolean;
+      /** The tour of this cycle (behold.tour/v1), when one matches demo.json: chapters, facts and visuals from records. */
+      tour?: TourAnswer;
       problems: string[];
     };
 
@@ -306,6 +322,8 @@ export interface CarveReadOptions {
   /** Where each migration's files were found, so the next read asks one key, not every candidate. */
   places?: Map<string, string | null>;
   now?: Date;
+  /** Where tours are looked for besides the ones behold ships (a served repo's `.behold/tours`), and the runs' source. */
+  tour?: { dirs: () => string[]; runs?: TerragucciSource };
 }
 
 async function readText(source: TerragucciSource, k: string, problems: string[]): Promise<string | undefined> {
@@ -530,7 +548,9 @@ export async function readCarve(source: TerragucciSource, opts: CarveReadOptions
 
   const demoAnswer = await readDemo(source, now);
   const d = demoAnswer.demo;
-  const demo: CarveDemo | null = d ? { cycle: d.cycle, scenario: d.scenario, title: d.title, step: d.step, label: d.label, next: d.next ? d.next.action : null } : null;
+  const demo: CarveDemo | null = d
+    ? { cycle: d.cycle, scenario: d.scenario, title: d.title, step: d.step, label: d.label, next: d.next ? d.next.action : null, beat: d.beat ?? null, started_at: d.started_at, tool: d.tool, repo: d.repo, pull: d.pull, next_from: d.next && d.next.from ? d.next.from : null }
+    : null;
   const named = demoMigration(demo?.next);
   const repo = d?.repo ?? null;
 
@@ -561,6 +581,7 @@ export async function readCarve(source: TerragucciSource, opts: CarveReadOptions
   const homes = new Set<string>();
   const targets = new Set<string>();
   const adoptions: CarveAdoption[] = [];
+  const followed: TourMigration[] = [];
   const follows: { name: string; tries: string[]; listed: CarveListed | null }[] = [];
   for (const name of [...wanted].slice(0, MAX_MIGRATIONS)) {
     const known = opts.places?.get(name);
@@ -607,7 +628,9 @@ export async function readCarve(source: TerragucciSource, opts: CarveReadOptions
       const into = adoptedInto(record, lines);
       if (into) adoptions.push({ ...into, project: home, migration: m.name });
     }
-    migrations.push({ name: m.name, progress, lines, counts, status, finished, running: !done && (lines.length > 0 || named === m.name) });
+    const running = !done && (lines.length > 0 || named === m.name);
+    migrations.push({ name: m.name, progress, lines, counts, status, finished, running, change: isRecord(record) && str(record.change) ? record.change : null });
+    if (home !== null) followed.push({ name: m.name, home, record, lines, running });
   }
 
   // Only the carved project's estates: the demo's prefix holds every demo repo's roots.
@@ -643,6 +666,37 @@ export async function readCarve(source: TerragucciSource, opts: CarveReadOptions
   }
   if (entries.length > MAX_ROSTERS) problems.push(`the index lists ${entries.length} estates; the first ${MAX_ROSTERS} are drawn`);
 
+  // The tour of this cycle, when a tour file matches demo.json's tool or scenario.
+  let tour: TourAnswer | undefined;
+  if (d && opts.tour) {
+    const tp: string[] = [];
+    const loaded = findTour(d, opts.tour.dirs(), tp);
+    if (loaded) {
+      let runsIndex: unknown;
+      const runsText = await readText(opts.tour.runs ?? source, RUNS_INDEX_KEY, problems);
+      try {
+        runsIndex = runsText ? JSON.parse(runsText) : undefined;
+      } catch {
+        problems.push(`${RUNS_INDEX_KEY} is not JSON`);
+      }
+      const known = [...new Set([...entryProjects, ...(ofRepo ?? [])])];
+      tour = await resolveTour(
+        source,
+        loaded,
+        {
+          demo: { cycle: d.cycle, beat: d.beat ?? null, step: d.step, started_at: d.started_at, repo: d.repo, pull: d.pull, next_from: d.next && d.next.from ? d.next.from : null },
+          entries: currentCycle(all, d.started_at).map((e) => ({ estate: e.estate, project: e.project, root: e.root })),
+          migrations: followed,
+          known,
+          now,
+        },
+        runsIndex,
+      );
+      for (const m of migrations) if (tour.migrationRuns[m.name]) m.run = tour.migrationRuns[m.name];
+    }
+    problems.push(...tp);
+  }
+
   return {
     ...base,
     live: true,
@@ -653,12 +707,13 @@ export async function readCarve(source: TerragucciSource, opts: CarveReadOptions
     migrations,
     demo,
     running: migrations.some((m) => m.running),
+    ...(tour ? { tour } : {}),
     problems,
   };
 }
 
 /** `GET /api/terragucci/carve`: the live carve's one read, shared between pages. */
-export function terragucciCarveRoute(app: Hono, source: TerragucciSource, opts: { choudoufu: () => boolean; now?: () => Date }): void {
+export function terragucciCarveRoute(app: Hono, source: TerragucciSource, opts: { choudoufu: () => boolean; now?: () => Date; tour?: CarveReadOptions["tour"] }): void {
   let cached: { at: number; read: Promise<CarveAnswer>; ttl: number } | undefined;
   const remembered = new Set<string>();
   const places = new Map<string, string | null>();
@@ -666,7 +721,7 @@ export function terragucciCarveRoute(app: Hono, source: TerragucciSource, opts: 
   app.get("/api/terragucci/carve", async (c) => {
     const at = Date.now();
     if (!cached || at - cached.at >= cached.ttl) {
-      const read = readCarve(source, { choudoufu: opts.choudoufu, remembered, places, ...(opts.now ? { now: opts.now() } : {}) });
+      const read = readCarve(source, { choudoufu: opts.choudoufu, remembered, places, ...(opts.now ? { now: opts.now() } : {}), ...(opts.tour ? { tour: opts.tour } : {}) });
       const entry = { at, read, ttl: CARVE_READ_TTL_MS };
       cached = entry;
       void read.then((a) => {

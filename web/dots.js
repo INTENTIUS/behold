@@ -27,12 +27,16 @@ import { cardMorph, discMorph, discRadius, levelOf, caption, railMarks, railPos,
 import { perimeter, pointAt, nearestS, segment } from "./dots-border.js";
 import { getTokens, onThemeChange, contrast, hexToOklch, oklchToHex } from "./theme.js";
 import { LOOP, carveStory, beatAt, tipsBetween, directorFocus, shortName as shortOf, liveBeat, liveTipsBetween, liveEndTip, LIVE_HOLD_MS } from "./dots-kiosk.js";
-import { liveShow, stampArrivals, showKey, currentMigration, boxName, playedCounts } from "./dots-live.js";
+import { liveShow, stampArrivals, showKey, currentMigration, boxName, playedCounts, landedWrite } from "./dots-live.js";
+import { provenanceText, migrationTool, stepMsFor } from "./tour-player.js";
+import { tourNow, tourFocus, tourFx, fxKey, tourMessage } from "./dots-tour.js";
 
 /** #715: how often the live layer asks for the carve. The route shares one read for 1.5 s while a migration runs. */
 export const LIVE_POLL_MS = 2_000;
 /** The live carve as last read, kept across a remount (a graph re-render), so arrivals keep their times. */
 let liveMemo = null;
+/** Slowed playback (the kiosk's "slowed ×N"): 1 is real time, the default; kept across a remount, never stored. */
+let liveSlowed = 1;
 
 let S = null;
 let styleAdded = false;
@@ -114,7 +118,13 @@ function addStyle() {
   .dots-keep-bar .dots-bar:hover, .dots-keep-bar .dots-bar:focus-within { opacity: 1; }
   /* In Watch the director holds the camera; the rail is Inspect's. */
   .dots-kiosk.dots-watch:not(.dots-keep-bar) .dots-rail { display: none; }
-  .dots-tip { position: absolute; pointer-events: none; padding: 3px 7px; border-radius: 5px; background: var(--panel); border: 1px solid var(--line); white-space: nowrap; display: none; font-size: 12px; }
+  .dots-tip { position: absolute; pointer-events: none; padding: 3px 7px; border-radius: 5px; background: var(--panel); border: 1px solid var(--line); white-space: nowrap; display: none; font-size: 12px; max-width: min(560px, calc(100% - 16px)); }
+  .dots-tip .dots-prov { white-space: normal; color: var(--muted); font: 11.5px/1.35 var(--font-mono, monospace); margin-top: 2px; }
+  .dots-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .dots-keys { position: absolute; left: 8px; top: 8px; opacity: 0; pointer-events: none; font: 12px var(--font-ui, system-ui); background: var(--panel); color: var(--fg); border: 1px solid var(--focus); border-radius: 6px; padding: 3px 8px; }
+  .dots-keys:focus-visible { opacity: 1; pointer-events: auto; }
+  .dots-prov-link { position: absolute; left: 8px; bottom: 8px; font: 12px var(--font-ui, system-ui); color: var(--focus); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; }
+  .dots-prov-link[hidden] { display: none; }
   @media (max-width: 640px) {
     .dots-rail { top: 52px; transform: none; width: 84px; height: 112px; right: 6px; padding: 4px 6px 4px 2px; }
     .dots-rail-mark { font-size: 11px; }
@@ -206,7 +216,7 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source 
   if (live) {
     // Arrivals keep the times they were first seen across a remount; the first read's lines are the past.
     const now = Date.now();
-    const seen = stampArrivals(live, liveMemo ? liveMemo.seen : new Map(), now, { first: !liveMemo });
+    const seen = stampArrivals(live, liveMemo ? liveMemo.seen : new Map(), now, { first: !liveMemo, stepMs: stepMsFor(liveSlowed) });
     show = liveShow(live, seen, now, { t0: liveMemo ? liveMemo.t0 : null });
     liveMemo = { seen, answer: live, t0: show.t0 };
   } else if (!show) {
@@ -339,9 +349,34 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source 
   const ext = scene.extent;
   S.zoomOut = Math.max(3, (Math.max(ext.w, ext.h) * pitch * 40) / Math.max(1, vbInit[2]) / 8);
   buildUi();
-  const onMove = (e) => hoverAt(e);
+  const onMove = (e) => {
+    if (S && S.selected) return;
+    hoverAt(e);
+  };
   host.addEventListener("mousemove", onMove);
   S.off.push(() => host.removeEventListener("mousemove", onMove));
+  // A tap (or a click) on a landed dot selects it: its tip stays, and its line is read out. A tap elsewhere lets it go.
+  let down = null;
+  const onDown = (e) => {
+    down = { x: e.clientX, y: e.clientY };
+  };
+  const onUp = (e) => {
+    if (!S || !down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6 || S.cardA > 0.5) return;
+    const i = nearestDot(e, 144);
+    if (i < 0) {
+      S.selected = null;
+      S.tip.style.display = "none";
+      if (S.provLink) S.provLink.hidden = true;
+      return;
+    }
+    selectDot(S.addrs[i]);
+  };
+  host.addEventListener("pointerdown", onDown);
+  host.addEventListener("pointerup", onUp);
+  S.off.push(() => {
+    host.removeEventListener("pointerdown", onDown);
+    host.removeEventListener("pointerup", onUp);
+  });
   const params = new URLSearchParams(location.search);
   if (S.live) startLive(kiosk);
   // Past a few hundred cards the fit is already below card size, so a large
@@ -623,6 +658,32 @@ function buildUi() {
   bottom.appendChild(bar);
   S.tip = el("div", "dots-tip");
   ui.appendChild(S.tip);
+  // A landed dot's provenance without a pointer: the arrow keys step through the writes, the live region reads each out.
+  S.sr = el("div", "dots-sr");
+  S.sr.setAttribute("aria-live", "polite");
+  S.sr.setAttribute("role", "status");
+  ui.appendChild(S.sr);
+  const keys = el("button", "dots-keys", "← → the writes that landed");
+  keys.type = "button";
+  keys.setAttribute("aria-label", "Step through the writes that landed with the left and right arrow keys; each is read out");
+  keys.addEventListener("keydown", (e) => {
+    if (!S || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+    e.preventDefault();
+    const ids = landedIds();
+    if (!ids.length) {
+      S.sr.textContent = "No write has landed yet in this cycle.";
+      return;
+    }
+    const at = ids.indexOf(S.selected);
+    const next = at < 0 ? (e.key === "ArrowRight" ? 0 : ids.length - 1) : (at + (e.key === "ArrowRight" ? 1 : -1) + ids.length) % ids.length;
+    selectDot(ids[next]);
+  });
+  ui.appendChild(keys);
+  S.provLink = el("a", "dots-prov-link", "Open the job");
+  S.provLink.target = "_blank";
+  S.provLink.rel = "noopener";
+  S.provLink.hidden = true;
+  ui.appendChild(S.provLink);
   syncUi();
 }
 
@@ -695,11 +756,78 @@ function hoverAt(e) {
     S.tip.style.display = "none";
     return;
   }
-  const a = S.addrs[best];
-  S.tip.textContent = `${a} · ${shortName(S.ownersNow.get(a) ?? S.scene.source)}`;
+  showTip(S.addrs[best], x, y);
+}
+
+/** A landed dot's provenance: what its newest write was, from its progress line and the migration's run; null for a dot no line names. */
+function provenanceOf(id) {
+  if (!S || !S.live) return null;
+  const w = landedWrite(S.show, id, S.show.t0 + S.t);
+  if (!w) return null;
+  const m = ((S.answer && S.answer.migrations) || []).find((x) => x.name === w.migration);
+  const run = m && m.run ? m.run : null;
+  return { text: provenanceText({ ...w, tool: run ? run.tool : migrationTool(m && m.change), job: run ? run.job : null }), url: run && run.job_url ? run.job_url : null };
+}
+
+function showTip(a, x, y) {
+  const prov = provenanceOf(a);
+  S.tip.replaceChildren(el("div", "", `${a} · ${shortName(S.ownersNow.get(a) ?? S.scene.source)}`));
+  if (prov) {
+    const p = el("div", "dots-prov", prov.text);
+    S.tip.appendChild(p);
+  }
   S.tip.style.display = "block";
-  S.tip.style.left = `${Math.min(x + 12, S.host.clientWidth - S.tip.offsetWidth - 4)}px`;
+  S.tip.style.left = `${Math.max(4, Math.min(x + 12, S.host.clientWidth - S.tip.offsetWidth - 4))}px`;
   S.tip.style.top = `${y + 14}px`;
+}
+
+/** The dots that a write of this cycle landed, in the order they were written: what the keys step through. */
+function landedIds() {
+  const out = [];
+  const t = S.show.t0 + S.t;
+  const seen = new Set();
+  for (const ev of S.show.events) {
+    if (!ev.line || ev.before || ev.start > t) continue;
+    for (const id of [ev.address, ...(ev.followers || [])]) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push(id);
+    }
+  }
+  return out;
+}
+
+/** Select a dot: its tip stays up, and its provenance is read out in the live region, for a reader without a pointer. */
+function selectDot(id) {
+  if (!S) return;
+  S.selected = id;
+  const i = S.idx.get(id);
+  const prov = provenanceOf(id);
+  const words = prov ? prov.text : `${id} · ${shortName(S.ownersNow.get(id) ?? S.scene.source)}`;
+  if (S.sr && S.sr.textContent !== words) S.sr.textContent = words;
+  if (S.provLink) {
+    S.provLink.hidden = !(prov && prov.url);
+    if (prov && prov.url) S.provLink.href = prov.url;
+  }
+  if (i !== undefined && S.pvis[i]) showTip(id, S.px[i], S.py[i]);
+  S.dirty = true;
+}
+
+function nearestDot(e, within = 100) {
+  const hr = S.host.getBoundingClientRect();
+  const x = e.clientX - hr.left + S.host.scrollLeft;
+  const y = e.clientY - hr.top + S.host.scrollTop;
+  let best = -1;
+  let bd = within;
+  for (let i = 0; i < S.addrs.length; i++) {
+    if (!S.pvis[i]) continue;
+    const d = (S.px[i] - x) ** 2 + (S.py[i] - y) ** 2;
+    if (d < bd) {
+      bd = d;
+      best = i;
+    }
+  }
+  return best;
 }
 
 // --- drawing -----------------------------------------------------------------
@@ -1015,6 +1143,13 @@ function draw(dt) {
       if (!prev || g.a > prev.a) glow.set(ev.address, g);
     }
   }
+  // The tour's lights: each resource the chapter's plan planned, brighter where the plan changes it.
+  const fx = currentFx(owners);
+  if (fx) for (const [id, l] of fx.lights) {
+    const prev = glow.get(id);
+    const g = { colour: col.foreign, a: l.changed ? 1 : 0.7, ring: l.changed };
+    if (!prev || g.a >= prev.a) glow.set(id, g);
+  }
   ctx.globalAlpha = 1;
   const refusedLit = [];
   for (let i = 0; i < addrs.length; i++) {
@@ -1129,6 +1264,23 @@ function draw(dt) {
     ctx.beginPath();
     ctx.arc(q.x, q.y, flying ? rDot * 1.6 : rDot, 0, Math.PI * 2);
     ctx.fill();
+    if (g && g.ring) {
+      ctx.globalAlpha = vis;
+      ctx.strokeStyle = g.colour;
+      ctx.lineWidth = Math.max(1.2, rDot * 0.45);
+      ctx.beginPath();
+      ctx.arc(q.x, q.y, rDot * 2.3, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    if (a === S.selected) {
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = col.fg;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.arc(q.x, q.y, rDot * 2.8, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = vis;
+    }
     if (rings.has(a)) {
       ctx.strokeStyle = col.managed;
       ctx.lineWidth = Math.max(1, rDot * 0.35);
@@ -1297,6 +1449,7 @@ function draw(dt) {
     ctx.fill();
     moving = true;
   }
+  drawTour(ctx, fx, boxes, boxPx, centre, sx, sy, dotLayerA, td, (e) => Math.max(2.5, discRadius(Math.max(1, counts.get(e) ?? 0), P) * s));
   ctx.globalAlpha = 1;
   S.snap = false;
   S.settling = moving;
@@ -1499,7 +1652,12 @@ function startLive(kiosk) {
   S.off.push(() => clearInterval(poll));
   if (S.kioskLive) {
     const onMsg = (e) => {
-      if (!S || e.origin !== location.origin || !e.data || e.data.type !== "behold:dots-mode") return;
+      if (!S || e.origin !== location.origin || !e.data) return;
+      if (e.data.type === "behold:dots-slowed") {
+        liveSlowed = Number(e.data.n) || 1;
+        return;
+      }
+      if (e.data.type !== "behold:dots-mode") return;
       S.mode = e.data.mode === "inspect" ? "inspect" : "watch";
       if (e.data.insets) S.insets = { top: Number(e.data.insets.top) || 0, bottom: Number(e.data.insets.bottom) || 0 };
       S.dirty = true;
@@ -1544,7 +1702,7 @@ async function readLive() {
 /** A new read of the carve: stamp what arrived, and rebuild the scene when the show changed. */
 function takeLive(answer) {
   const now = Date.now();
-  const seen = stampArrivals(answer, liveMemo ? liveMemo.seen : new Map(), now);
+  const seen = stampArrivals(answer, liveMemo ? liveMemo.seen : new Map(), now, { stepMs: stepMsFor(liveSlowed) });
   const show = liveShow(answer, seen, now, { t0: S.show.t0 });
   liveMemo = { seen, answer, t0: show.t0 };
   S.answer = answer;
@@ -1604,7 +1762,11 @@ function liveTick(wall, dt) {
     }
   }
   S.wasActive = active;
-  const carving = S.kioskLive && (active || (S.liveEndAt !== null && now - S.liveEndAt < LIVE_HOLD_MS));
+  // The tour (behold.tour/v1), in Watch: the chapter the cycle's events have reached. While it runs, the carve keeps the camera.
+  const tn = tourNow(answer);
+  S.tourOn = !!(S.kioskLive && tn && tn.at && S.mode === "watch");
+  S.tn = tn;
+  const carving = S.kioskLive && (S.tourOn || active || (S.liveEndAt !== null && now - S.liveEndAt < LIVE_HOLD_MS));
   if (carving !== S.carving) {
     S.carving = carving;
     S.ui.classList.toggle("dots-carving", carving);
@@ -1622,7 +1784,9 @@ function liveTick(wall, dt) {
   S.directing = carving && performance.now() >= S.userUntil;
   S.ui.classList.toggle("dots-directing", S.directing);
   if (S.directing) {
-    S.dir = directorFocus(S.dir, beat.focus, wall);
+    // On a tour, the chapter says what to frame, except while a migration's writes are landing: the flock leads then.
+    const focus = S.tourOn && !active ? tourFocus(tn, S.scene.estates, answer.adopted) : beat.focus;
+    S.dir = directorFocus(S.dir, focus, wall);
     const want = frameBox(focusBox(S.dir.focus));
     const cur = S.getVB();
     const k = S.camAt === null || S.reduced ? 1 : 1 - Math.exp(-dt / 650);
@@ -1635,6 +1799,8 @@ function liveTick(wall, dt) {
       S.setVB([cx - w / 2, cy - h / 2, w, h]);
     }
   }
+  // A tour's pulses and travelling values animate: draw every frame while one is on.
+  if (S.tourOn && S.fx && (S.fx.pulses.length || S.fx.travel)) S.dirty = true;
   // Tips for what has just been written: never for what the first read already held.
   const tips = [...liveTipsBetween(S.scene, S.tipFrom, S.t), ...S.pendingTips.splice(0)];
   S.tipFrom = S.t;
@@ -1669,5 +1835,160 @@ function liveTick(wall, dt) {
     log: done.slice(-14).reverse().map((f) => ({ address: f.address, to: shortOf(f.to, S.scene.source), ok: f.ok, refusal: f.refusal || null })),
     rects,
     tips,
+    // The live badge's lag: the newest line's time, and whether a migration runs (web/tour-player.js lagText).
+    lastWriteAt: newestLineAt(answer),
+    running,
+    slowed: liveSlowed,
+    ...(S.tourOn ? { tour: tourMessage(tn, { counts: countsNowMap(), names: S.scene.estates, adopted: answer.adopted, source: S.scene.source, short: tourShort }) } : {}),
   });
+}
+
+/** A box's name in the tour's notes: as the box shows it, less the prefix every box's name shares (a cycle's `tl56-`). */
+function tourShort(e) {
+  const shown = S.scene.estates.map((x) => shortName(x));
+  const nm = shortName(e);
+  let pre = shown.length > 1 ? shown[0] : "";
+  for (const x of shown) while (pre && !x.startsWith(pre)) pre = pre.slice(0, -1);
+  const cut = pre.lastIndexOf("-");
+  return cut > 0 && nm.length > cut + 1 ? nm.slice(cut + 1) : nm;
+}
+
+/** The newest progress line's time across the cycle's migrations, in ms; null with none. */
+function newestLineAt(answer) {
+  let at = null;
+  for (const m of (answer && answer.migrations) || [])
+    for (const l of m.lines) {
+      const t = Date.parse(l.at);
+      if (!Number.isNaN(t) && (at === null || t > at)) at = t;
+    }
+  return at;
+}
+
+/** The tour's visuals for this frame, rebuilt only when the chapter, its visuals or the dots' owners change. */
+function currentFx(owners) {
+  if (!S.tourOn || !S.tn) return null;
+  const key = fxKey(S.tn, `${S.show.events.length}|${S.scene.estates.join(",")}|${[...countsNowOf(owners)].join(",")}`);
+  if (S.fxKey !== key) {
+    S.fx = tourFx(S.tn, { ids: S.addrs, owners, names: S.scene.estates, adopted: S.answer && S.answer.adopted, source: S.scene.source });
+    S.fxKey = key;
+  }
+  return S.fx;
+}
+
+function countsNowOf(owners) {
+  const m = new Map();
+  for (const e of owners.values()) m.set(e, (m.get(e) ?? 0) + 1);
+  return m;
+}
+
+/** A small chip in the canvas: a rounded box with words, in a colour; returns its width. */
+function chip(ctx, x, y, words, colour, { align = "left", fg = null } = {}) {
+  ctx.font = `600 11px ${S.font}`;
+  const w = ctx.measureText(words).width + 14;
+  const h = 18;
+  const x0 = align === "right" ? x - w : x;
+  ctx.globalAlpha = 0.92;
+  roundRect(ctx, x0, y, w, h, 5);
+  ctx.fillStyle = S.col.bg;
+  ctx.fill();
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = fg || colour;
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "left";
+  ctx.fillText(words, x0 + 7, y + h / 2 + 0.5);
+  return w;
+}
+
+/** The tour's own marks over the boxes: a wave's pulse, the value along the read threads, the state file, the checks. */
+function drawTour(ctx, fx, boxes, boxPx, centre, sx, sy, dotLayerA, td, discR) {
+  if (!fx || dotLayerA < 0.3) return;
+  const col = S.col;
+  const now = Date.now();
+  // A box drawn as its disc (far out, or a phone) takes its marks beside the disc.
+  const disc = (e) => (td.get(e) ?? 0) >= 0.5;
+  const discSpot = (e) => {
+    const c = centre(e);
+    return { x: sx(c.x) + discR(e) + 6, y: sy(c.y) - 9 };
+  };
+  // A wave's pulse: the box's outline breathes in the in-progress colour while its plan runs.
+  for (const e of fx.pulses) {
+    const b = boxes.get(e);
+    if (!b) continue;
+    const bp = boxPx(b);
+    const u = S.reduced ? 0.6 : 0.5 + 0.5 * Math.sin(now / 260);
+    if (disc(e)) {
+      const c = centre(e);
+      ctx.globalAlpha = 0.35 + 0.55 * u;
+      ctx.strokeStyle = col.pending;
+      ctx.lineWidth = 2 + 2 * u;
+      ctx.beginPath();
+      ctx.arc(sx(c.x), sy(c.y), discR(e) + 5, 0, Math.PI * 2);
+      ctx.stroke();
+      continue;
+    }
+    ctx.globalAlpha = 0.35 + 0.55 * u;
+    ctx.strokeStyle = col.pending;
+    ctx.lineWidth = 2 + 2.5 * u;
+    roundRect(ctx, bp.x - 3, bp.y - 3, bp.w + 6, bp.h + 6, 14);
+    ctx.stroke();
+  }
+  // The read threads, reader to source, and the output's planned value travelling along them to each reader.
+  if (fx.travel) {
+    for (const th of fx.travel.threads) {
+      if (!boxes.has(th.from) || !boxes.has(th.to)) continue;
+      const a = centre(th.from);
+      const b = centre(th.to);
+      ctx.globalAlpha = 0.6;
+      ctx.strokeStyle = col.runtime;
+      ctx.lineWidth = 1.4;
+      ctx.setLineDash([6, 6]);
+      ctx.lineDashOffset = S.reduced ? 0 : -((performance.now() / 40) % 12);
+      ctx.beginPath();
+      ctx.moveTo(sx(a.x), sy(a.y));
+      ctx.lineTo(sx(b.x), sy(b.y));
+      ctx.stroke();
+      ctx.setLineDash([]);
+      if (fx.travel.value === null || fx.travel.value === undefined) continue;
+      // From when the wave's job ended (its event), 1.8 s along the thread; then it rests at the reader.
+      const u = S.reduced || fx.travel.at === null ? 1 : Math.max(0, Math.min(1, (now - fx.travel.at) / 1800));
+      const e = easeInOut(u);
+      const x = sx(lerp(a.x, b.x, e));
+      const y = sy(lerp(a.y, b.y, e));
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = col.runtime;
+      ctx.beginPath();
+      ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      chip(ctx, x + 8, y - 9, String(fx.travel.value), col.runtime, { fg: col.fg });
+    }
+  }
+  // The state file the adoption bound: its version id, and "unchanged" once the stamps are done.
+  if (fx.state) {
+    const b = boxes.get(fx.state.box);
+    if (b) {
+      const bp = boxPx(b);
+      const words = `state file · ${String(fx.state.version).slice(0, 8)}${fx.state.unchanged ? " · unchanged" : ""}`;
+      if (disc(fx.state.box)) {
+        const p = discSpot(fx.state.box);
+        chip(ctx, p.x, p.y, words, fx.state.unchanged ? col.managed : col.muted, { fg: col.fg });
+      } else chip(ctx, bp.x + bp.w, bp.y - 24, words, fx.state.unchanged ? col.managed : col.muted, { align: "right", fg: col.fg });
+    }
+  }
+  // The post-write check: each root that plans no change after the write.
+  for (const [e, ok] of fx.checks) {
+    const b = boxes.get(e);
+    if (!b) continue;
+    const bp = boxPx(b);
+    if (disc(e)) {
+      const p = discSpot(e);
+      chip(ctx, p.x, p.y + 20, ok ? "✓" : "✗", ok ? col.managed : col.degraded, { fg: col.fg });
+      continue;
+    }
+    // Inside the box's foot, so it never sits on the box below.
+    chip(ctx, bp.x + 6, bp.y + bp.h - 24, ok ? "✓ plans no change" : "plans a change", ok ? col.managed : col.degraded, { fg: col.fg });
+  }
+  ctx.globalAlpha = 1;
 }

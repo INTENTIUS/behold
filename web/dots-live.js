@@ -15,13 +15,14 @@
 //   refused  the move is refused: the dot bounces back and stays lit red;
 //   skipped  nothing to draw; it is counted.
 //
-// Lines play as they arrive. A line already in the first answer happened
-// before the page looked, so it is drawn where it ended, with no flight; a
-// line that arrives later plays from the moment it was seen. Lines that
-// arrive in one batch are paced `stepMs` apart, queued after the last one
-// still to play: an adoption on floci stamps 82 resources in under a second,
-// so its lines come in one read, and 50 ms a line keeps the beat watchable
-// (about 4 s for 82). A recording's replay paces itself (web/dots-scene.js).
+// Lines play as they arrive, in real time. A line already in the first
+// answer happened before the page looked, so it is drawn where it ended, with
+// no flight; a line that arrives later plays from the moment it was read. An
+// adoption on floci stamps 82 resources in under a second, so its lines come
+// in one read and play as the one burst they were. Slowed playback is a
+// person's choice (the kiosk's "slowed ×N", web/tour-player.js SLOWED): the
+// lines of one read are then drawn `stepMs` apart, queued after the last one
+// still to play. A recording's replay paces itself (web/dots-scene.js).
 //
 // An adoption turns a stock root into an estate (the answer's `adopted`
 // pairs them). That is one box changing its name, not two boxes: the
@@ -29,8 +30,8 @@
 // ring the dots where they are, and the box takes the estate's name when the
 // first stamp plays.
 
-/** How far apart the lines of one batch play, and how far ahead of a line its flight may start. */
-export const LIVE = { stepMs: 50, lead: 2_500 };
+/** How far apart the lines of one read play by default (0: real time, as read), and how far ahead of a line its flight may start. */
+export const LIVE = { stepMs: 0, lead: 2_500 };
 
 /** A progress line's key: the same line in two reads is the same event. */
 export function lineKey(migration, line) {
@@ -108,7 +109,7 @@ export function liveShow(answer, seen, now, { t0: start = null } = {}) {
   const alias = new Map(((answer && answer.adopted) || []).map((a) => [a.to, a.from]));
   const as = (e) => alias.get(e) ?? e;
   const estates = ((answer && answer.estates) || []).map((e) => ({ ...e, estate: as(e.estate) }));
-  const migrations = ((answer && answer.migrations) || []).map((m) => ({ ...m, lines: m.lines.map((l) => ({ ...l, estate_from: as(l.estate_from), estate_to: as(l.estate_to), key: lineKey(m.name, l), into: l.estate_to })) }));
+  const migrations = ((answer && answer.migrations) || []).map((m) => ({ ...m, lines: m.lines.map((l) => ({ ...l, estate_from: as(l.estate_from), estate_to: as(l.estate_to), key: lineKey(m.name, l), into: l.estate_to, rawFrom: l.estate_from })) }));
   // 1. A stock root's resources, which only an address names.
   for (const e of estates) for (const r of e.resources) if (!r.live_id && !find(e.estate, r)) addDot(e.estate, r);
   // 2. Each line in time order, finding its dot by live id, else where it came from.
@@ -185,6 +186,7 @@ export function liveShow(answer, seen, now, { t0: start = null } = {}) {
   // Events.
   const events = [];
   const writeOf = new Map(); // `${migration}|${parent id}` -> its write, for followers
+  const followerLines = new Map(); // dot id -> the line of a follower that flew with its parent
   let t0 = now;
   for (const d of dots.values()) if (d.marked && !lines.some((x) => x.dot === d && x.l.outcome === "stamped")) events.push({ kind: "adopt", t: -Infinity, start: -Infinity, address: d.id, before: true });
   for (const x of lines) {
@@ -192,7 +194,7 @@ export function liveShow(answer, seen, now, { t0: start = null } = {}) {
     t0 = Math.min(t0, t);
     if (l.outcome === "skipped") continue;
     if (l.outcome === "stamped") {
-      events.push({ kind: "adopt", t: t + 300, start: t, address: dot.id, migration: x.m, at: Date.parse(l.at) || t });
+      events.push({ kind: "adopt", t: t + 300, start: t, address: dot.id, migration: x.m, at: Date.parse(l.at) || t, line: { outcome: "stamped", address: l.address, from: l.rawFrom, to: l.into, at: l.at } });
       if (l.estate_to === l.estate_from) continue;
     }
     const ok = l.outcome !== "refused";
@@ -200,9 +202,11 @@ export function liveShow(answer, seen, now, { t0: start = null } = {}) {
     const pw = parent && writeOf.get(`${x.m}|${parent}`);
     if (pw && ok && pw.ok) {
       pw.followers.push(dot.id);
+      // A follower's own line, for its provenance: it moved with its parent's write.
+      followerLines.set(dot.id, { outcome: l.outcome, address: l.address, from: l.rawFrom, to: l.into, at: l.at, migration: x.m, start: t, follows: l.follows });
       continue;
     }
-    const w = { kind: "write", t: t + 1, start: t, address: dot.id, followers: [], from: l.estate_from, to: l.estate_to, ok, migration: x.m, at: Date.parse(l.at) || t, ...(ok ? {} : { refusal: "refused", refusalSummary: l.reason || "the move was refused" }) };
+    const w = { kind: "write", t: t + 1, start: t, address: dot.id, followers: [], from: l.estate_from, to: l.estate_to, ok, migration: x.m, at: Date.parse(l.at) || t, line: { outcome: l.outcome, address: l.address, from: l.rawFrom, to: l.into, at: l.at, reason: l.reason || null }, ...(ok ? {} : { refusal: "refused", refusalSummary: l.reason || "the move was refused" }) };
     writeOf.set(`${x.m}|${dot.id}`, w);
     events.push(w);
   }
@@ -244,8 +248,27 @@ export function liveShow(answer, seen, now, { t0: start = null } = {}) {
     t1: now,
     spaced: false,
     renames,
+    followerLines,
     counts: Object.fromEntries(estates.map((e) => [e.estate, e.count])),
   };
+}
+
+/**
+ * The write that landed a dot by show time `t`, as provenance reads it: the
+ * newest move, refusal or stamp of that dot that has played, with the
+ * migration that wrote it. Null when no line of this cycle names the dot.
+ */
+export function landedWrite(show, id, t) {
+  let best = null;
+  for (const ev of (show && show.events) || []) {
+    if (!ev.line || ev.before || ev.start > t) continue;
+    const mine = ev.address === id;
+    if (!mine) continue;
+    if (!best || ev.start >= best.start) best = { ...ev.line, migration: ev.migration, start: ev.start };
+  }
+  const f = show && show.followerLines ? show.followerLines.get(id) : null;
+  if (f && f.start <= t && (!best || f.start >= best.start)) best = f;
+  return best;
 }
 
 /** What changed between two shows, so the layer rebuilds only when it must. */

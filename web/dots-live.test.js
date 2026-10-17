@@ -136,22 +136,31 @@ describe("an adoption as one box changing its name", () => {
   const adoptM = { name: "adopt", running: true, counts: { moved: 0, stamped: 41, refused: 0, skipped: 41, left: 0 }, lines: stamps };
   const mid = { ...answer([adoptM], [stockRoster]), adopted: [{ from: "terralith", to: "tl5-terralith" }] };
 
-  it("paces a batch of lines 50 ms apart, after any still waiting to play", () => {
+  it("draws a batch of lines in real time: the whole read at once, as the burst it was", () => {
     const now = T + 10_000;
     const seen = stampArrivals(mid, new Map(), now);
+    const times = stamps.map((l) => seen.get(lineKey("adopt", l)));
+    expect(LIVE.stepMs).toBe(0);
+    expect(new Set(times)).toEqual(new Set([now]));
+  });
+
+  it("slowed, paces a batch stepMs apart, after any still waiting to play", () => {
+    const now = T + 10_000;
+    const stepMs = 50;
+    const seen = stampArrivals(mid, new Map(), now, { stepMs });
     const times = stamps.map((l) => seen.get(lineKey("adopt", l))).sort((a, b) => a - b);
     expect(times[0]).toBe(now);
-    expect(times[N - 1]).toBe(now + (N - 1) * LIVE.stepMs);
+    expect(times[N - 1]).toBe(now + (N - 1) * stepMs);
     // A line of the next read waits behind the batch.
     const more = { ...mid, migrations: [{ ...adoptM, lines: [...stamps, { ...stamps[0], at: at(2), address: "aws_s3_bucket.late" }] }] };
-    const next = stampArrivals(more, seen, now + 500);
-    expect(next.get(lineKey("adopt", { ...stamps[0], at: at(2), address: "aws_s3_bucket.late" }))).toBe(now + N * LIVE.stepMs);
+    const next = stampArrivals(more, seen, now + 500, { stepMs });
+    expect(next.get(lineKey("adopt", { ...stamps[0], at: at(2), address: "aws_s3_bucket.late" }))).toBe(now + N * stepMs);
   });
 
   it("rings the stock root's dots in place, in one box that takes the estate's name with the first stamp", () => {
     const now = T + 10_000;
     const seen = stampArrivals(mid, new Map(), now);
-    const show = liveShow(mid, seen, now + N * LIVE.stepMs);
+    const show = liveShow(mid, seen, now + 1);
     expect(show.roster).toHaveLength(N);
     expect(show.estates).toEqual(["terralith"]);
     expect(show.events.filter((e) => e.kind === "write")).toHaveLength(0);
