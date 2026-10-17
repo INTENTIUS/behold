@@ -1,0 +1,58 @@
+{
+  "formatVersion": "1.0",
+  "taskQueue": "behold-writes",
+  "depends": [],
+  "searchAttributes": {},
+  "onFailure": [],
+  "activityProfiles": {},
+  "name": "fail-probe",
+  "overview": "a step that fails between two that pass",
+  "phases": [
+    {
+      "name": "Build",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "shellCmd",
+          "args": {
+            "cmd": "echo build-a"
+          }
+        },
+        {
+          "kind": "activity",
+          "fn": "shellCmd",
+          "args": {
+            "cmd": "echo build-b"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Deploy",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "shellCmd",
+          "args": {
+            "cmd": "exit 7"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Verify",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "shellCmd",
+          "args": {
+            "cmd": "echo verify"
+          }
+        }
+      ]
+    }
+  ]
+}

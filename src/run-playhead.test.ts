@@ -3,14 +3,13 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { opsToIr, type OpIr } from "./ops-lens.ts";
+import { readRunLine, foldRunEvents, type StepView } from "./run-events.ts";
 import {
-  parseRunProgressLine,
-  recordLine,
+  stepLine,
   parseGateLine,
   readRunStatus,
   initialRunState,
   runStarted,
-  runRecord,
   runEnded,
   runLost,
   runGate,
@@ -19,8 +18,28 @@ import {
   playheadNote,
   pendingGateCard,
   GATED_EXIT_CODE,
-  type OpRunResult,
+  type RunState,
 } from "./run-playhead.ts";
+
+// #679: these fixtures are the older stream (`--progress-json` StepRecords and
+// the local `--json` envelope), which behold now reads only in degraded mode,
+// through the same boundary as chant's run events (src/run-events.ts). behold
+// keeps no copy of chant's record type: the shape below is only what these
+// fixture files hold. The run-event path is src/run-events.test.ts.
+type LegacyRecord = { phase: string; fn: string; status: "ok" | "fail" | "skipped"; durationMs: number; args?: Record<string, unknown>; error?: string };
+type OpRunResult = { op: string; records: LegacyRecord[]; totalMs: number; ok: boolean };
+/** One line of the older stream, read through the boundary, as steps. */
+function parseRunProgressLine(line: string): StepView[] | null {
+  const r = readRunLine(line);
+  if (r?.kind !== "legacy") return null;
+  const steps = foldRunEvents(r.events).steps;
+  return steps.length ? steps : null;
+}
+const step = (r: LegacyRecord): StepView => parseRunProgressLine(JSON.stringify(r))![0];
+const steps = (rs: LegacyRecord[]): StepView[] => rs.map(step);
+const runRecord = (s: RunState, st: StepView): RunState => ({ ...s, steps: [...s.steps, st] });
+/** A degraded-mode run: the older stream's exit-code rules. */
+const legacyStarted = (op: string, at: string): RunState => runStarted(op, "local", at, "progress");
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const F = join(HERE, "__fixtures__", "ops-playhead");
@@ -131,17 +150,17 @@ describe("the real chant-emitted fixtures", () => {
   });
 });
 
-describe("parseRunProgressLine", () => {
-  it("reads one NDJSON StepRecord — the durable path's per-settled-step line", () => {
+describe("the older stream, read through the run-event boundary (degraded mode)", () => {
+  it("reads one NDJSON StepRecord as one settled step", () => {
     expect(parseRunProgressLine(streamLines[0])).toEqual([
-      { phase: "Build", fn: "chantBuild", status: "ok", durationMs: 1000 },
+      { component: null, phase: "Build", step: "chantBuild", state: "ok", durationMs: 1000 },
     ]);
   });
 
   it("reads the whole OpRunResult envelope — the local executor's end-of-run print", () => {
     const records = parseRunProgressLine(read("playhead-probe.local-run.json").replace(/\n\s*/g, ""));
     expect(records).toHaveLength(localRun.records.length);
-    expect(records?.[5]).toMatchObject({ phase: "Verify", fn: "httpCheck", status: "fail" });
+    expect(records?.[5]).toMatchObject({ phase: "Verify", step: "httpCheck", state: "failed" });
   });
 
   it("returns null for a line that isn't progress, so the raw-log fallback keeps it", () => {
@@ -163,14 +182,12 @@ describe("parseRunProgressLine", () => {
   });
 });
 
-describe("recordLine", () => {
-  it("narrates a settled step, so switching to --json costs no now-line output", () => {
-    expect(recordLine(localRun.records[1])).toBe("✓ Deploy · shellCmd — 5ms");
-    expect(recordLine(localRun.records[0])).toBe("✓ Build · chantBuild — 1.1s");
-    expect(recordLine(localRun.records[5])).toContain("✗ Verify · httpCheck");
-    expect(recordLine({ phase: "Never", fn: "httpCheck", status: "skipped", durationMs: 0 })).toBe(
-      "• Never · httpCheck — skipped",
-    );
+describe("stepLine", () => {
+  it("narrates a settled step, so the structured stream costs no now-line output", () => {
+    expect(stepLine(step(localRun.records[1]))).toBe("✓ Deploy · shellCmd: 5ms");
+    expect(stepLine(step(localRun.records[0]))).toBe("✓ Build · chantBuild: 1.1s");
+    expect(stepLine(step(localRun.records[5]))).toContain("✗ Verify · httpCheck");
+    expect(stepLine(step({ phase: "Never", fn: "httpCheck", status: "skipped", durationMs: 0 }))).toBe("• Never · httpCheck: skipped");
   });
 });
 
@@ -188,7 +205,7 @@ describe("joinRun", () => {
       "playhead-probe/Deploy/shellCmd#2": "ok",
       "playhead-probe/Fanout/shellCmd": "ok",
       "playhead-probe/Fanout/shellCmd#2": "ok",
-      "playhead-probe/Verify/httpCheck": "fail",
+      "playhead-probe/Verify/httpCheck": "failed",
       "playhead-probe/Rollback/shellCmd": "ok",
     });
     // Every id is a card the lens actually draws — the join is to the picture,
@@ -212,7 +229,7 @@ describe("joinRun", () => {
     // emitted it.
     expect(streamLines.filter((l) => JSON.parse(l).phase === "Rollback")).toHaveLength(2);
     const join = joinRun(probe, streamRecords, null);
-    expect(join.unplaced).toEqual([{ phase: "Rollback", fn: "shellCmd", status: "ok", durationMs: 1000 }]);
+    expect(join.unplaced).toEqual([{ component: null, phase: "Rollback", step: "shellCmd", state: "ok", durationMs: 1000 }]);
     expect(join.byNode.get("playhead-probe/Rollback/shellCmd")?.records).toBe(1);
     // And the phase the run never reached stays unpainted rather than green.
     expect(join.byNode.has("playhead-probe/Never/httpCheck")).toBe(false);
@@ -234,12 +251,12 @@ describe("joinRun", () => {
   });
 
   it("lands the local executor's records on the same ids — one playhead, two executors", () => {
-    const join = joinRun(probe, localRun.records, null);
+    const join = joinRun(probe, steps(localRun.records), null);
     expect([...join.byNode.keys()].sort()).toEqual(
       [...joinRun(probe, streamRecords, null).byNode.keys()].sort(),
     );
     expect(join.byNode.get("playhead-probe/Verify/httpCheck")).toMatchObject({
-      status: "fail",
+      status: "failed",
       error: "httpCheck failed for http://127.0.0.1:1/: fetch failed",
     });
     expect(join.unplaced).toEqual([]);
@@ -249,7 +266,7 @@ describe("joinRun", () => {
     const partial = streamRecords.slice(0, 3); // Build, Deploy a, Deploy b
     const join = joinRun(probe, partial, null);
     expect(join.at).toBe("playhead-probe/Fanout/shellCmd");
-    expect(join.atReason).toBe("reached — not settled yet");
+    expect(join.atReason).toBe("reached, not settled yet");
   });
 
   it("has no playhead at all before anything settles — nothing is 'in flight' on evidence-free", () => {
@@ -268,7 +285,7 @@ describe("joinRun", () => {
   it("a named pending gate wins the position outright — it is the one confirmed one", () => {
     const gated = JSON.parse(read("../ops-example-writes/prod-promote.op.json")) as OpIr;
     const gate = { signalName: "approve-promote", description: "Approve the prod promotion", since: "2026-08-29T18:00:12.000Z" };
-    const join = joinRun(gated, [{ phase: "Plan", fn: "lifecycleDiff", status: "ok", durationMs: 900 }], gate);
+    const join = joinRun(gated, steps([{ phase: "Plan", fn: "lifecycleDiff", status: "ok", durationMs: 900 }]), gate);
     expect(join.at).toBe("prod-promote/Approve/gate:approve-promote");
     expect(join.atReason).toBe("waiting for approve-promote since 2026-08-29T18:00:12.000Z");
   });
@@ -293,15 +310,15 @@ describe("joinRun", () => {
     };
     const join = joinRun(
       withEffect,
-      [
+      steps([
         { phase: "Converge", fn: "receiptRead", status: "ok", durationMs: 10 },
         { phase: "Converge", fn: "awsApply", status: "fail", durationMs: 200, error: "boom" },
         { phase: "Converge", fn: "receiptWrite", status: "ok", durationMs: 5 },
-      ],
+      ]),
       null,
     );
     expect(join.byNode.get("eff/Converge/effect:bucket")).toEqual({
-      status: "fail",
+      status: "failed",
       durationMs: 215,
       error: "boom",
       records: 3,
@@ -342,7 +359,7 @@ describe("paintPlayhead", () => {
     const join = joinRun(probe, streamRecords.slice(0, 1), null);
     const painted = paintPlayhead(declared, join, null);
     const here = painted.nodes.find((n) => n.id === "playhead-probe/Deploy/shellCmd");
-    expect(here?.attrs).toMatchObject({ _status: "accent", _playhead: true, run: "reached — not settled yet" });
+    expect(here?.attrs).toMatchObject({ _status: "accent", _playhead: true, run: "reached, not settled yet" });
   });
 
   it("a pending gate keeps `warn` and names who it waits on — a human decision, not a step in flight", () => {
@@ -462,19 +479,19 @@ const AT2 = "2026-08-29T18:05:00.000Z";
 describe("the run state", () => {
   it("starts blank and clears the previous run's terminal state", () => {
     expect(initialRunState.status).toBe("idle");
-    const done = runEnded(runStarted("a", "local", AT), 0, AT2);
-    expect(runStarted("b", "local", AT2)).toMatchObject({ op: "b", status: "running", records: [], gate: null });
+    const done = runEnded(legacyStarted("a", AT), 0, AT2);
+    expect(runStarted("b", "local", AT2)).toMatchObject({ op: "b", status: "running", steps: [], gate: null, source: "events" });
     expect(done.status).toBe("ok");
   });
 
-  it("a clean exit is the only thing that reads as completion", () => {
-    let s = runStarted("playhead-probe", "local", AT);
+  it("on the older stream, a clean exit is the only thing that reads as completion", () => {
+    let s = legacyStarted("playhead-probe", AT);
     for (const r of streamRecords) s = runRecord(s, r);
     expect(runEnded(s, 0, AT2).status).toBe("ok");
   });
 
   it("a non-zero exit with a failed step in the stream reads as failed — the stream said so", () => {
-    let s = runStarted("playhead-probe", "local", AT);
+    let s = legacyStarted("playhead-probe", AT);
     for (const r of streamRecords) s = runRecord(s, r);
     const ended = runEnded(s, 1, AT2);
     expect(ended.status).toBe("failed");
@@ -482,22 +499,22 @@ describe("the run state", () => {
   });
 
   it("a stream that dies mid-run is `lost`, frozen at last-settled, never completion", () => {
-    let s = runStarted("playhead-probe", "local", AT);
+    let s = legacyStarted("playhead-probe", AT);
     for (const r of streamRecords.slice(0, 3)) s = runRecord(s, r);
     const ended = runEnded(s, 137, AT2);
     expect(ended.status).toBe("lost");
-    expect(ended.records).toHaveLength(3);
+    expect(ended.steps).toHaveLength(3);
     expect(ended.lost).toContain("3 settled steps");
     expect(ended.lost).toContain("does not know");
     // The join off that state still stops where the records stopped.
-    expect(joinRun(probe, ended.records, null).byNode.size).toBe(3);
+    expect(joinRun(probe, ended.steps, null).byNode.size).toBe(3);
   });
 
   it("an outright dead stream carries the caller's reason", () => {
     const s = runLost(runStarted("a", "local", AT), "the chant process was killed", AT2);
     expect(s).toMatchObject({ status: "lost", lost: "the chant process was killed" });
     // And a run that already ended isn't re-labelled by a late signal.
-    expect(runLost(runEnded(runStarted("a", "local", AT), 0, AT2), "late", AT2).status).toBe("ok");
+    expect(runLost(runEnded(legacyStarted("a", AT), 0, AT2), "late", AT2).status).toBe("ok");
   });
 
   it("folds a gate answer, and a refusal's reason instead of a silent 'no gate'", () => {
@@ -510,11 +527,11 @@ describe("the run state", () => {
   });
 
   it("reads chant's exit 3 as gated, not lost, and folds the real gated stream (#459)", () => {
-    let s = runStarted("gated-probe", "local", AT);
+    let s = legacyStarted("gated-probe", AT);
     for (const line of read("gated-probe.progress.ndjson").trim().split("\n")) {
       for (const r of parseRunProgressLine(line) ?? []) s = runRecord(s, r);
     }
-    expect(s.records.map((r) => `${r.phase} ${r.fn} ${r.status}`)).toEqual([
+    expect(s.steps.map((r) => `${r.phase} ${r.step} ${r.state}`)).toEqual([
       "Before shellCmd ok",
       "Approve gate:approve-probe skipped",
     ]);
@@ -522,7 +539,7 @@ describe("the run state", () => {
     expect(ended).toMatchObject({ status: "gated", endedAt: AT2, lost: null });
     expect(playheadNote(ended, null)).toContain("stopped at a gate");
     // A failed step outranks the exit code: a run that failed is not "gated".
-    expect(runEnded(runRecord(s, { phase: "X", fn: "y", status: "fail", durationMs: 1 }), GATED_EXIT_CODE, AT2).status).toBe("failed");
+    expect(runEnded(runRecord(s, step({ phase: "X", fn: "y", status: "fail", durationMs: 1 })), GATED_EXIT_CODE, AT2).status).toBe("failed");
   });
 });
 
@@ -534,9 +551,9 @@ describe("playheadNote", () => {
   });
 
   it("never says 'finished' about a lost stream", () => {
-    let s = runStarted("playhead-probe", "local", AT);
+    let s = legacyStarted("playhead-probe", AT);
     for (const r of streamRecords.slice(0, 2)) s = runRecord(s, r);
-    const note = playheadNote(runEnded(s, 9, AT2), joinRun(probe, s.records, null));
+    const note = playheadNote(runEnded(s, 9, AT2), joinRun(probe, s.steps, null));
     expect(note).toContain("stream lost");
     expect(note).not.toMatch(/complete|finished/i);
   });
@@ -556,15 +573,18 @@ describe("playheadNote", () => {
     expect(playheadNote(s, null)).toContain("gate state unavailable");
   });
 
-  it("owns up to records it could not place", () => {
-    let s = runStarted("playhead-probe", "local", AT);
+  it("owns up to steps it could not place", () => {
+    let s = legacyStarted("playhead-probe", AT);
     for (const r of streamRecords) s = runRecord(s, r);
     const note = playheadNote(runEnded(s, 1, AT2), joinRun(probe, streamRecords, null));
-    expect(note).toContain("1 record matched no declared step");
+    expect(note).toContain("1 step matched no declared step");
   });
 
-  it("explains why a local run's track fills in all at once", () => {
-    expect(playheadNote(runStarted("floci-apply", "local", AT), null)).toContain("local executor");
+  it("names where the run state came from: chant's run events, or the older stream in degraded mode (#679)", () => {
+    expect(playheadNote(runStarted("floci-apply", "local", AT), null)).toContain("from chant's run events");
+    const old = runStarted("floci-apply", "local", AT, "progress", "degraded: this project's chant (0.124.24) is older than 0.124.28");
+    expect(playheadNote(old, null)).toContain("older progress stream (degraded)");
+    expect(playheadNote(old, null)).toContain("degraded: this project's chant (0.124.24)");
   });
 
   it("doesn't count zero steps as a watched run when only the gate query answered", () => {

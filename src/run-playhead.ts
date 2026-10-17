@@ -1,87 +1,53 @@
 /**
- * The run playhead (#284 item 2) — live run state painted over the declared op
+ * The run playhead (#284 item 2): live run state painted over the declared op
  * track the ops lens (#284 item 1, src/ops-lens.ts) already draws, plus a
  * pending gate as a first-class card (#234's shape).
  *
- * Two chant surfaces feed it, both landed in chant 0.51 (chant#1676 /
- * chant#2004):
+ * Two chant surfaces feed it:
  *
- *  1. **`StepRecord`** — one per SETTLED step. `chant run <name>
- *     --progress-json` streams them as NDJSON, one line per record, while the
- *     Op runs; `chant run <name> --json` prints the whole `OpRunResult`
- *     envelope at the end. Same record shape either way, which is the point of
- *     chant#1676, so {@link parseRunProgressLine} accepts both framings and
- *     everything downstream sees a flat `StepRecord[]`.
- *  2. **The run's status** — `chant run status <name>` on the resolved runtime
- *     (chant#2121): the newest run's state, and the gate it stopped at when it
- *     is `gated`. behold shells it beside the `chant run approve` it shells to
- *     record a gate's resolution. chant removed `--temporal` with the temporal
- *     lexicon (chant#2131), so neither read passes it (#459).
+ *  1. **The run's events** (#679, INTENTIUS/chant#4019): `chant run <name>
+ *     --events-json` streams every step's start and settle, each skip with its
+ *     reason, a cache hit, and the gate or decision point a run waits on, as
+ *     it happens. A run behold did not start is read with `chant run events
+ *     <run> --json --follow`. src/run-events.ts validates and folds the lines;
+ *     the state below keeps the fold's {@link StepView}s. Below chant 0.124.28
+ *     behold starts the run with the older `--progress-json` (one line per
+ *     settled step, translated at the same boundary) and says it is degraded.
+ *  2. **The run's status**: `chant run status <name>` on the resolved runtime
+ *     (chant#2121): the newest run's state, its id, and the gate it stopped at
+ *     when it is `gated`. behold shells it beside the `chant run approve` it
+ *     shells to record a gate's resolution.
  *
  * ## The honesty rules this module exists to keep
  *
  *  - **Run state is strictly additive paint.** {@link paintPlayhead} takes the
  *    lens's own `GraphIR` and returns a new one; with no run data it returns the
  *    input untouched, so the declared track renders exactly as it did before.
- *  - **Only settled steps are painted as settled.** A `StepRecord` exists only
- *    for a step that completed or failed. The step AFTER the last settled one is
- *    marked as the playhead position and says "reached, not settled" — it is
- *    never coloured as done.
- *  - **A dead stream is never completion.** {@link runEnded} promotes a run to
- *    `ok` only on a clean exit, to `failed` only when a record actually reports
- *    a failure, and otherwise to `lost` — the playhead freezes at last-settled
- *    and says the stream was lost.
+ *  - **Only settled steps are painted as settled.** A step chant says started
+ *    is painted running; on the older stream, which says nothing until a step
+ *    settles, the step AFTER the last settled one is marked as the playhead
+ *    position and says "reached, not settled". Neither is coloured as done.
+ *  - **A dead stream is never completion.** The run's verdict is the stream's
+ *    own `run-settle`. A process that ends without one is `lost`: the playhead
+ *    freezes at last-settled and says the stream was lost.
  *  - **Absence of a gate signal is never progress.** A gate paints as pending
- *    only when the status read NAMED it. When the read can't be had at all (no
- *    runtime, no run, an older chant) {@link readRunStatus} returns a refusal
- *    the view states plainly instead of a silently ungated track.
+ *    only when chant NAMED it (`gate-waiting`, or the status read). When the
+ *    read can't be had at all (no runtime, no run, an older chant)
+ *    {@link readRunStatus} returns a refusal the view states plainly instead
+ *    of a silently ungated track.
  *  - **behold never signals on its own initiative.** Nothing here writes. The
  *    pending card's approve action is the caller's existing
- *    `POST /api/ops/:name/signal/:gate` — the same delegated write the current
+ *    `POST /api/ops/:name/signal/:gate`, the same delegated write the current
  *    gate button already uses.
  */
 import type { GraphIR, IRNode } from "@intentius/chant";
-import { opPlacedSteps, type OpIr, type PlacedStep } from "./ops-lens.ts";
+import { opPlacedSteps, receiptName, type OpIr, type PlacedStep } from "./ops-lens.ts";
+import type { RunEventFold, StepView, WaitingOn } from "./run-events.ts";
 
-// ── The chant shapes, mirrored ────────────────────────────────────────────────
-//
-// `StepRecord` and the `gateState` result are chant's own types (its core's
-// `op/local-executor.ts` and `cli/handlers/op-progress.ts`) and neither is
-// re-exported from `@intentius/chant`'s public index — only the deep
-// `./cli/handlers/op-progress` path carries the gate one. Mirrored here
-// field-for-field on src/apply.ts's precedent for `RunProgressEvent`: don't
-// reach past a package's declared public export surface for an internal type.
-
-/**
- * One settled step of an Op run — chant's `StepRecord`
- * (`packages/core/src/op/local-executor.ts`), verified against chant 0.51's
- * definition.
- *
- * `args` is present on a local-executor record and absent on one reconstructed
- * from Temporal workflow history: chant doesn't decode an activity's scheduled
- * input there, and omits the field rather than filling it with a guess.
- */
-export interface StepRecord {
-  phase: string;
-  fn: string;
-  args?: Record<string, unknown>;
-  status: "ok" | "fail" | "skipped";
-  durationMs: number;
-  outcome?: { name: string; value: unknown };
-  error?: string;
-}
-
-/** The whole-run envelope `chant run <name> --json` prints on the local path. */
-export interface OpRunResult {
-  op: string;
-  records: StepRecord[];
-  totalMs: number;
-  ok: boolean;
-}
-
-/** The gate a run stopped at, from `chant run status`'s `Gate` line. `signalName`
- * is the gate's name (the field keeps its old spelling: the page and the
- * approve route key on it); `since` is when the run began waiting. */
+/** The gate a run stopped at: from chant's `gate-waiting` event, or the
+ * status read's `Gate` line. `signalName` is the gate's name (the field keeps
+ * its old spelling: the page and the approve route key on it); `since` is
+ * when the run began waiting. */
 export interface GateState {
   signalName: string;
   description?: string;
@@ -89,71 +55,17 @@ export interface GateState {
 }
 
 /** The two synthesized step names an effect step's read-compare-run-write
- * compiles to (chant's temporal serializer emits `receiptRead` before and
- * `receiptWrite` after the inner steps). Duplicated here for the same reason
- * chant's own op-progress.ts duplicates them: this module stays lexicon-free.
- * They arrive as records but have no card of their own — the effect card owns
- * them ({@link slotsFor}). */
+ * compiles to (`receiptRead` before and `receiptWrite` after the inner steps).
+ * Kept here so this module stays lexicon-free. They arrive as steps but have
+ * no card of their own: the effect card owns them ({@link slotsFor}). */
 const RECEIPT_READ_FN = "receiptRead";
 const RECEIPT_WRITE_FN = "receiptWrite";
 
-const STEP_STATUSES = new Set<StepRecord["status"]>(["ok", "fail", "skipped"]);
-
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
-
-function asStepRecord(value: unknown): StepRecord | null {
-  if (!isRecord(value)) return null;
-  if (typeof value.phase !== "string" || typeof value.fn !== "string") return null;
-  if (typeof value.status !== "string" || !STEP_STATUSES.has(value.status as StepRecord["status"])) return null;
-  if (typeof value.durationMs !== "number") return null;
-  return value as unknown as StepRecord;
-}
-
-/**
- * Parse one streamed line of a `chant run` as run progress.
- *
- * Returns the records it carried, or null for anything else — a non-JSON line
- * (an activity's own stdout, a warning, chant's human summary), or JSON that
- * isn't a StepRecord. Never throws: src/op-runner.ts feeds EVERY streamed line
- * here to decide whether it is structured progress or a raw log line, exactly
- * as it already does with `parseProgressLine` for the components driver.
- *
- * Both framings chant#1676 defines are accepted, because they carry the same
- * record and a reader shouldn't care which executor produced it:
- *  - one NDJSON `StepRecord` per line (`--progress-json`)
- *  - one whole `OpRunResult` (`--json`, the local executor's end-of-run print)
- */
-export function parseRunProgressLine(line: string): StepRecord[] | null {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(line);
-  } catch {
-    return null;
-  }
-  const one = asStepRecord(parsed);
-  if (one) return [one];
-  if (isRecord(parsed) && typeof parsed.op === "string" && Array.isArray(parsed.records)) {
-    const records = parsed.records.map(asStepRecord).filter((r): r is StepRecord => r !== null);
-    // An envelope whose `records` held nothing recognizable is not progress —
-    // answering `[]` would make src/op-runner.ts swallow the line's raw-log
-    // fallback for no gain.
-    return records.length ? records : null;
-  }
-  return null;
-}
-
-/** A settled record as one now-line, so switching an Op run onto the structured
- * flags doesn't cost the operator chant's own per-step narration. */
-export function recordLine(record: StepRecord): string {
-  const mark = record.status === "ok" ? "✓" : record.status === "fail" ? "✗" : "•";
-  const took =
-    record.status === "skipped"
-      ? "skipped"
-      : record.durationMs < 1000
-        ? `${record.durationMs}ms`
-        : `${(record.durationMs / 1000).toFixed(1)}s`;
-  return `${mark} ${record.phase} · ${record.fn} — ${took}${record.error ? ` — ${record.error}` : ""}`;
+/** A settled step as one now-line, for a step the older stream reported. */
+export function stepLine(step: StepView): string {
+  const mark = step.state === "ok" ? "✓" : step.state === "failed" ? "✗" : "•";
+  const took = step.durationMs == null ? step.state : step.state === "skipped" ? "skipped" : tookLabel(step.durationMs);
+  return `${mark} ${step.phase} · ${step.step}: ${took}${step.error ? `: ${step.error}` : ""}`;
 }
 
 // ── `chant run status` — the gate read ────────────────────────────────────────
@@ -290,248 +202,325 @@ export function readRunStatus(op: string, run: { code: number; stdout: string; s
 /**
  * How a run ended, from behold's side of the stream.
  *
- * `lost` is the honest fourth value: the watched process ended without either a
- * clean exit or a failed step to point at, so behold knows the stream stopped
- * and knows nothing about the run. It is never `ok`.
+ * `lost` is the honest extra value: the watched stream ended without chant's
+ * `run-settle` (or, on the older stream, without a clean exit or a failed step
+ * to point at), so behold knows the stream stopped and knows nothing about
+ * the run. It is never `ok`.
  *
- * `gated`: chant exited {@link GATED_EXIT_CODE}, its "stopped at a gate,
- * pending approval" outcome. Nothing after the gate ran; the status read names
- * the gate, and the Op runs again once the approval is recorded.
+ * `gated`: the run stopped at a gate nobody has approved (`run-settle` says
+ * so, or chant exited {@link GATED_EXIT_CODE} on the older stream). `waiting`:
+ * it stopped at a decision point nobody has answered. Nothing after either ran.
  */
-export type RunStatus = "idle" | "running" | "ok" | "failed" | "gated" | "lost";
+export type RunStatus = "idle" | "running" | "ok" | "failed" | "gated" | "waiting" | "lost";
 
 /** chant's exit code for a run that stopped at a gate (`GATED_EXIT_CODE`,
  * `packages/core/src/cli/handlers/run.ts`, chant#2119). behold never passes
  * `--gated-exit`, so a gated run always exits with it. */
 export const GATED_EXIT_CODE = 3;
 
+/** Where the run state came from: chant's run events, or the older
+ * `--progress-json` stream of a chant below the run-events floor (degraded). */
+export type RunSource = "events" | "progress";
+
 export interface RunState {
   /** The Op being watched, or null when nothing has run this session. */
   op: string | null;
   /** Which executor's stream this is. Only `local` is left since chant removed
-   * the temporal lexicon (#459); `chant run <name> --progress-json` streams one
-   * record per settled step. */
+   * the temporal lexicon (#459). */
   mode: "local" | null;
   status: RunStatus;
-  /** Settled steps, in the order the stream delivered them. */
-  records: StepRecord[];
-  /** The last `gateState` answer: a gate object (a human is being waited on),
-   * or null (nothing pending / never asked — `gateNote` says which). */
+  /** The run's steps as chant reported them: started, then settled in place. */
+  steps: StepView[];
+  /** The gate the run waits on (a human is being waited on), or null (nothing
+   * pending, or never asked: `gateNote` says which). */
   gate: GateState | null;
   /** Why there is no gate answer, when there isn't one to be had. */
   gateNote: string | null;
+  /** The decision point the run waits on, from `gate-waiting` with no gate. */
+  point: { id: string; since: string; message?: string } | null;
   startedAt: string | null;
   endedAt: string | null;
-  /** Set with `status: "lost"` — what behold knows, and stops claiming. */
+  /** Set with `status: "lost"`: what behold knows, and stops claiming. */
   lost: string | null;
+  /** Where the steps came from; null before any run. */
+  source: RunSource | null;
+  /** Why the state is less than chant's run events (degraded mode, a steward
+   * run with no events on this host), when it is. */
+  sourceNote: string | null;
+  /** The run's id and runtime, from the event envelope or the status read. */
+  runId: string | null;
+  runtime: string | null;
+  /** True while behold follows a run it did not start (`chant run events
+   * --follow`). */
+  following: boolean;
 }
 
 export const initialRunState: RunState = {
   op: null,
   mode: null,
   status: "idle",
-  records: [],
+  steps: [],
   gate: null,
   gateNote: null,
+  point: null,
   startedAt: null,
   endedAt: null,
   lost: null,
+  source: null,
+  sourceNote: null,
+  runId: null,
+  runtime: null,
+  following: false,
 };
 
 /** A run behold just triggered. Clears the previous run's terminal state so a
- * reload between trigger and first record can't show the last run's colours. */
-export function runStarted(op: string, mode: "local", at: string): RunState {
-  return { ...initialRunState, op, mode, status: "running", startedAt: at };
+ * reload between trigger and first event can't show the last run's colours. */
+export function runStarted(op: string, mode: "local", at: string, source: RunSource = "events", sourceNote: string | null = null): RunState {
+  return { ...initialRunState, op, mode, status: "running", startedAt: at, source, sourceNote };
 }
 
-/** Fold one settled step in. Records are appended in arrival order; the join to
- * cards ({@link joinRun}) is positional, so a stream that repeats a record —
- * whatever emitted it — can't shift the whole track. */
-export function runRecord(state: RunState, record: StepRecord): RunState {
-  return { ...state, records: [...state.records, record] };
+/** The gate a `gate-waiting` names, as the card's shape. */
+function gateOf(w: WaitingOn): GateState | null {
+  return w.gate ? { signalName: w.gate, since: w.since, ...(w.message ? { description: w.message } : {}) } : null;
 }
 
-/** Fold the `gateState` read in — an answer, or the refusal's reason. */
+/**
+ * The run state after the fold moved. The steps are the fold's; the gate is
+ * the one chant's `gate-waiting` named, or, when the stream named none, the
+ * last status read's (kept, since the status read is the only gate source on
+ * the older stream). A settled run takes the stream's verdict.
+ */
+export function runFromFold(state: RunState, fold: RunEventFold): RunState {
+  const waiting = fold.waitingOn;
+  const status: RunStatus = fold.settled ? (fold.status as RunStatus) : state.status === "idle" ? "running" : state.status;
+  return {
+    ...state,
+    status,
+    steps: fold.steps,
+    // On the events path the stream names the gate (gate-waiting) and clears
+    // it (gate-resolved, or a run that settled ok or failed). The older
+    // stream names none, so the status read's answer stays.
+    gate: state.source === "events" ? (waiting ? gateOf(waiting) : null) : state.gate,
+    point: waiting && !waiting.gate && waiting.point ? { id: waiting.point, since: waiting.since, ...(waiting.message ? { message: waiting.message } : {}) } : null,
+    ...(waiting?.gate ? { gateNote: null } : {}),
+    runId: fold.runId ?? state.runId,
+    runtime: fold.runtime ?? state.runtime,
+    ...(fold.settled && !state.endedAt ? { endedAt: new Date().toISOString() } : {}),
+  };
+}
+
+/** Fold the status read in: an answer, or the refusal's reason. A gate the
+ * stream named stays: the stream saw it happen. */
 export function runGate(state: RunState, result: RunStatusResult): RunState {
-  return result.ok
-    ? { ...state, gate: result.read.gate, gateNote: null }
-    : { ...state, gate: null, gateNote: result.refusal.error };
+  if (!result.ok) return { ...state, gate: state.source === "events" && state.gate ? state.gate : null, gateNote: result.refusal.error };
+  return {
+    ...state,
+    gate: result.read.gate ?? (state.source === "events" && state.status === "gated" ? state.gate : null),
+    gateNote: null,
+    runId: state.runId ?? result.read.runId ?? null,
+    runtime: state.runtime ?? result.read.runtime ?? null,
+  };
 }
 
 /**
  * The watched process ended.
  *
- * A clean exit is the only thing that reads as completion. A non-zero exit with
- * a failed step in the stream reads as a failed run — the stream said so. A
- * non-zero exit with NOTHING to point at is `lost`: chant may have failed, the
- * Op may have failed, the process may have been killed, and behold cannot tell
- * which — so the playhead stays exactly where the last settled record put it
- * and says the stream was lost rather than inferring an ending.
+ * On the events path the stream's own `run-settle` is the verdict, and a
+ * process that ended without one is `lost`: chant always closes the stream,
+ * so a missing settle means the process died (a SIGKILL writes none).
+ *
+ * On the older stream (degraded mode), a clean exit is the only thing that
+ * reads as completion. A non-zero exit with a failed step reads as a failed
+ * run. Exit 3 with none is a gate. A non-zero exit with NOTHING to point at
+ * is `lost`.
  */
-export function runEnded(state: RunState, exitCode: number, at: string): RunState {
-  if (state.status !== "running") return state;
-  if (exitCode === 0) return { ...state, status: "ok", endedAt: at };
-  if (exitCode === GATED_EXIT_CODE && !state.records.some((r) => r.status === "fail")) {
-    return { ...state, status: "gated", endedAt: at };
+export function runEnded(state: RunState, exitCode: number, at: string, settled = false): RunState {
+  if (state.status !== "running") return state.endedAt ? state : { ...state, endedAt: at };
+  const n = state.steps.filter((s) => s.state !== "running").length;
+  const failed = state.steps.some((s) => s.state === "failed");
+  if (state.source !== "progress") {
+    if (settled) return { ...state, endedAt: at };
+    return {
+      ...state,
+      status: "lost",
+      endedAt: at,
+      lost:
+        `the run-event stream ended (exit ${exitCode}) after ${n} settled step${n === 1 ? "" : "s"} without run-settle, ` +
+        `so behold does not know how the run ended; the playhead stays at the last settled step.`,
+    };
   }
-  if (state.records.some((r) => r.status === "fail")) return { ...state, status: "failed", endedAt: at };
+  if (exitCode === 0) return { ...state, status: "ok", endedAt: at };
+  if (exitCode === GATED_EXIT_CODE && !failed) return { ...state, status: "gated", endedAt: at };
+  if (failed) return { ...state, status: "failed", endedAt: at };
   return {
     ...state,
     status: "lost",
     endedAt: at,
     lost:
-      `the progress stream ended (exit ${exitCode}) after ${state.records.length} settled ` +
-      `step${state.records.length === 1 ? "" : "s"} without a failed step — behold does not know whether the Op ` +
-      `failed or the stream broke, so the playhead stays at the last settled step.`,
+      `the progress stream ended (exit ${exitCode}) after ${n} settled ` +
+      `step${n === 1 ? "" : "s"} without a failed step, so behold does not know whether the Op ` +
+      `failed or the stream broke; the playhead stays at the last settled step.`,
   };
 }
 
-/** The stream died outright (a spawn error, a killed process). Same rule as a
- * verdictless exit, with the caller's reason. */
+/** The stream died outright (a spawn error, a killed process, a follow that
+ * went silent). Same rule as a verdictless exit, with the caller's reason. */
 export function runLost(state: RunState, reason: string, at: string): RunState {
-  return state.status === "running" ? { ...state, status: "lost", endedAt: at, lost: reason } : state;
+  return state.status === "running" || state.following
+    ? { ...state, status: state.status === "running" ? "lost" : state.status, endedAt: at, lost: reason, following: false }
+    : state;
 }
 
-// ── Joining records to the cards the ops lens drew ────────────────────────────
+// ── Joining steps to the cards the ops lens drew ──────────────────────────────
 
 /** What one card learned from the run. */
 export interface StepRun {
-  status: StepRecord["status"];
+  status: Exclude<StepView["state"], "running">;
   durationMs: number;
+  /** With `skipped`: chant's reason. */
+  skip?: string | null;
   error?: string;
-  outcome?: string;
-  /** How many records landed on this card (an effect card owns several). */
+  message?: string;
+  approvedBy?: string;
+  /** How many steps this card took (an effect card owns several). */
   records: number;
 }
 
 export interface RunJoin {
-  /** node id → what settled there. */
+  /** node id, then what settled there. */
   byNode: Map<string, StepRun>;
-  /** The node the playhead sits on: the first main-track step after the last
-   * settled one, or the gate `gateState` named. Null when nothing has settled
-   * and no gate is pending. */
+  /** The node the playhead sits on: the step chant says is running, the gate
+   * a run waits on, or (on the older stream) the first main-track step after
+   * the last settled one. Null when nothing has happened yet. */
   at: string | null;
-  /** Why {@link at} is where it is — stated on the card, never inferred by the
+  /** Why {@link at} is where it is, stated on the card, never inferred by the
    * reader. */
   atReason: string | null;
-  /** Records that matched no card. A stream that outruns the declared track is
+  /** Steps that matched no card. A stream that outruns the declared track is
    * a fact worth showing, not one to silently drop. */
-  unplaced: StepRecord[];
+  unplaced: StepView[];
 }
 
-/** The (phase, fn) slots one Op's cards can absorb records into, in declared
- * order. A gate's slot takes chant's `gate:<name>` record; an effect card absorbs
- * the synthesized receipt reads/writes and every nested activity, because chant
- * emits a record per inner step while the lens draws the effect whole. */
+/** The (phase, step) slots one Op's cards can absorb steps into, in declared
+ * order. A gate's slot takes chant's `gate:<name>` step; an effect card absorbs
+ * its own `effect:<receipt>` step, the synthesized receipt reads and writes and
+ * every nested activity, because chant reports each while the lens draws the
+ * effect whole. */
 function slotsFor(placed: PlacedStep[]): Array<{ id: string; phase: string; fn: string }> {
   const out: Array<{ id: string; phase: string; fn: string }> = [];
   for (const p of placed) {
     if (p.step.kind === "activity") {
       out.push({ id: p.id, phase: p.phase, fn: p.step.fn });
     } else if (p.step.kind === "effect") {
+      out.push({ id: p.id, phase: p.phase, fn: `effect:${receiptName(p.step)}` });
       out.push({ id: p.id, phase: p.phase, fn: RECEIPT_READ_FN });
       for (const nested of p.step.steps ?? []) {
         if (nested.kind === "activity") out.push({ id: p.id, phase: p.phase, fn: nested.fn });
       }
       out.push({ id: p.id, phase: p.phase, fn: RECEIPT_WRITE_FN });
     } else if (p.step.kind === "gate") {
-      // chant's local executor records a gate as `gate:<name>`: `skipped`
-      // while it waits, `ok` once the approval is read (#459).
+      // chant's executor names a gate step `gate:<name>`.
       out.push({ id: p.id, phase: p.phase, fn: `gate:${p.step.signalName}` });
     }
   }
   return out;
 }
 
-/** Merge a record onto a card that may already hold one (an effect's several).
- * A failure outranks an ok, and an ok outranks a skip: the card must not read
- * green because the LAST of its inner steps happened to succeed. */
-function mergeRun(prev: StepRun | undefined, record: StepRecord): StepRun {
-  const rank = { fail: 3, ok: 2, skipped: 1 } as const;
-  const keepPrev = prev && rank[prev.status] >= rank[record.status];
+/** Which of two outcomes a card shows when several steps fall on it: a
+ * failure outranks a stop at a gate, which outranks an ok, which outranks a
+ * cache hit and a skip. The card must not read green because the LAST of its
+ * inner steps happened to succeed. */
+const RANK: Record<StepRun["status"], number> = { failed: 6, gated: 5, waiting: 5, ok: 3, cached: 2, skipped: 1 };
+
+function mergeRun(prev: StepRun | undefined, step: StepView): StepRun {
+  const status = step.state as StepRun["status"];
+  const keepPrev = prev && RANK[prev.status] >= RANK[status];
+  const top = keepPrev ? prev : undefined;
   return {
-    status: keepPrev ? prev.status : record.status,
-    durationMs: (prev?.durationMs ?? 0) + record.durationMs,
-    ...(keepPrev && prev.error ? { error: prev.error } : record.error ? { error: record.error } : {}),
-    ...(keepPrev && prev.outcome
-      ? { outcome: prev.outcome }
-      : record.outcome
-        ? { outcome: `${record.outcome.name}=${String(record.outcome.value)}` }
-        : {}),
+    status: top ? top.status : status,
+    durationMs: (prev?.durationMs ?? 0) + (step.durationMs ?? 0),
+    ...(top ? (top.skip !== undefined ? { skip: top.skip } : {}) : status === "skipped" ? { skip: step.skip ?? null } : {}),
+    ...(top?.error ? { error: top.error } : step.error ? { error: step.error } : {}),
+    ...(top?.message ? { message: top.message } : step.message ? { message: step.message } : {}),
+    ...(prev?.approvedBy ? { approvedBy: prev.approvedBy } : step.approvedBy ? { approvedBy: step.approvedBy } : {}),
     records: (prev?.records ?? 0) + 1,
   };
 }
 
 /**
- * Join a run's records to the ops lens's own node ids.
+ * Join a run's steps to the ops lens's own node ids.
  *
- * Positional, per (phase, fn), in declared order — the same rule chant uses to
- * build the records in the first place (its per-fn FIFO queue over scheduled
- * events), so the two agree by construction. A record for a (phase, fn) whose
- * slots are already used lands in `unplaced` rather than shifting the track:
- * defense-in-depth against any emitter repeating a record, not a workaround
- * for a live bug. chant 0.52.1's `--progress-json` did repeat one this way —
- * its poll-loop watermark counted emitted records, and the terminal pass
- * inserting a `skipped` record mid-list shifted what the count pointed at
- * (chant#2032) — fixed in chant 0.53.1 (chant PR #2041, declared-step
- * identity, not a count). The join still refuses to let a
- * repeat shift the track, because a blind append would paint every later
- * step one position early and a stream is an external input whatever
- * produces it; src/run-playhead.test.ts keeps the pre-fix chant#2032 stream
- * as the fixture that exercises this.
+ * Positional, per (phase, step), in declared order: the same rule chant uses
+ * to build the steps in the first place, so the two agree by construction. A
+ * step for a (phase, step) whose slots are already used goes to `unplaced`
+ * rather than shifting the track: defense-in-depth against any emitter
+ * repeating a step (chant 0.52.1's `--progress-json` did, chant#2032, fixed in
+ * 0.53.1). src/run-playhead.test.ts keeps that pre-fix stream as a fixture.
+ *
+ * `guessNext: false` (a run read from chant's run events) turns off the
+ * reached-not-settled marker: the events name the running step themselves.
  */
-export function joinRun(op: OpIr, records: StepRecord[], gate: GateState | null): RunJoin {
+export function joinRun(op: OpIr, steps: StepView[], gate: GateState | null, opts: { guessNext?: boolean } = {}): RunJoin {
   const placed = opPlacedSteps(op);
   const slots = slotsFor(placed);
   const byKey = new Map<string, Array<{ id: string }>>();
   for (const s of slots) {
-    const key = `${s.phase} ${s.fn}`;
+    const key = JSON.stringify([s.phase, s.fn]);
     if (!byKey.has(key)) byKey.set(key, []);
     byKey.get(key)!.push({ id: s.id });
   }
 
   const cursor = new Map<string, number>();
   const byNode = new Map<string, StepRun>();
-  const unplaced: StepRecord[] = [];
-  /** The last card, in declared order, that any record settled on. */
+  const unplaced: StepView[] = [];
+  /** The last card, in declared order, that any step settled on. */
   let lastSettledIndex = -1;
+  /** The card chant says is running now. */
+  let running: { id: string; since?: string } | null = null;
   const indexOf = new Map(placed.map((p, i) => [p.id, i]));
 
-  for (const record of records) {
-    const key = `${record.phase} ${record.fn}`;
+  for (const step of steps) {
+    const key = JSON.stringify([step.phase, step.step]);
     const list = byKey.get(key);
     const i = cursor.get(key) ?? 0;
     const slot = list?.[i];
     if (!slot) {
-      unplaced.push(record);
+      unplaced.push(step);
       continue;
     }
     cursor.set(key, i + 1);
-    byNode.set(slot.id, mergeRun(byNode.get(slot.id), record));
-    if (record.status !== "skipped") {
+    if (step.state === "running") {
+      running = { id: slot.id, ...(step.startedAt ? { since: step.startedAt } : {}) };
+      continue;
+    }
+    byNode.set(slot.id, mergeRun(byNode.get(slot.id), step));
+    if (step.state !== "skipped" && step.state !== "cached") {
       lastSettledIndex = Math.max(lastSettledIndex, indexOf.get(slot.id) ?? -1);
     }
   }
 
-  // Where the playhead sits. A named pending gate wins outright — it is the one
-  // position chant actually CONFIRMS. Otherwise it is the next declared step on
-  // the main track, labelled as reached-not-settled so nobody reads it as done.
+  // Where the playhead sits. A named pending gate wins outright: it is the one
+  // position chant CONFIRMS a human owes. Then the step chant says is running.
+  // Otherwise (the older stream, which says nothing until a step settles) it is
+  // the next declared step on the main track, labelled reached-not-settled so
+  // nobody reads it as done.
   if (gate) {
     const gateNode = placed.find((p) => p.step.kind === "gate" && p.step.signalName === gate.signalName);
     if (gateNode) {
-      return {
-        byNode,
-        at: gateNode.id,
-        atReason: `waiting for ${gate.signalName} since ${gate.since}`,
-        unplaced,
-      };
+      return { byNode, at: gateNode.id, atReason: `waiting for ${gate.signalName} since ${gate.since}`, unplaced };
     }
   }
-  const next = placed.find((p, i) => i > lastSettledIndex && p.when === "phases");
+  if (running) {
+    return { byNode, at: running.id, atReason: running.since ? `running since ${running.since}` : "running", unplaced };
+  }
+  // Run events say which step runs; with none running there is no position to
+  // guess, so only the older stream (`guessNext`) gets the reached marker.
+  if (opts.guessNext === false) return { byNode, at: null, atReason: null, unplaced };
+  const next = placed.find((p, i) => i > lastSettledIndex && p.when === "phases" && !byNode.has(p.id));
   return {
     byNode,
     at: lastSettledIndex >= 0 && next ? next.id : null,
-    atReason: lastSettledIndex >= 0 && next ? "reached — not settled yet" : null,
+    atReason: lastSettledIndex >= 0 && next ? "reached, not settled yet" : null,
     unplaced,
   };
 }
@@ -540,18 +529,27 @@ export function joinRun(op: OpIr, records: StepRecord[], gate: GateState | null)
 
 /**
  * How a settled step paints, in the drift palette every other behold view uses
- * (src/overlay.ts documents the same enum): `good` = it did what it said,
- * `warn` = it failed, `neutral` = it never ran. The playhead position is
- * `accent` — the same "in progress, nothing observed yet" tone the entity
- * overlay gives a declared-but-unobserved node.
+ * (src/overlay.ts documents the same enum): `good` = it did what it said (or a
+ * cache hit stood in for it), `warn` = it failed or holds the run for a
+ * person, `neutral` = it never ran. The playhead position is `accent`, the
+ * same "in progress, nothing observed yet" tone the entity overlay gives a
+ * declared-but-unobserved node.
  */
-const TONE: Record<StepRecord["status"], "good" | "warn" | "neutral"> = {
+const TONE: Record<StepRun["status"], "good" | "warn" | "neutral"> = {
   ok: "good",
-  fail: "warn",
+  cached: "good",
+  failed: "warn",
+  gated: "warn",
+  waiting: "warn",
   skipped: "neutral",
 };
 
-const RAN = { ok: "ok", fail: "failed", skipped: "skipped" } as const;
+/** One card's run line: `ok · 1.0s`, `skipped (receipt)`, `gated`. */
+export function runLabel(run: StepRun): string {
+  if (run.status === "skipped") return `skipped${run.skip ? ` (${run.skip})` : ""}`;
+  if (run.status === "gated" || run.status === "waiting" || run.status === "cached") return run.status;
+  return `${run.status} · ${tookLabel(run.durationMs)}`;
+}
 
 function tookLabel(ms: number): string {
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
@@ -562,8 +560,9 @@ function tookLabel(ms: number): string {
  *
  * Additive by construction: nodes with nothing to say come back byte-identical,
  * and an empty join returns the input IR itself. Everything a run knows lands
- * in attrs (`run`, `ran`, `error`, `outcome`, `_playhead`), so the inspect pane
- * shows it without a second data path, and `_status` moves so the picture does.
+ * in attrs (`run`, `ran`, `skip`, `error`, `message`, `approvedBy`,
+ * `_playhead`), so the inspect pane shows it without a second data path, and
+ * `_status` moves so the picture does.
  */
 export function paintPlayhead(ir: GraphIR, join: RunJoin, gate: GateState | null): GraphIR {
   if (!join.byNode.size && !join.at) return ir;
@@ -575,16 +574,18 @@ export function paintPlayhead(ir: GraphIR, join: RunJoin, gate: GateState | null
     const attrs: Record<string, unknown> = { ...node.attrs };
     if (run) {
       attrs._status = TONE[run.status];
-      attrs.run = run.status === "skipped" ? "skipped" : `${RAN[run.status]} · ${tookLabel(run.durationMs)}`;
+      attrs.run = runLabel(run);
       attrs.ran = tookLabel(run.durationMs);
+      if (run.skip) attrs.skip = run.skip;
       if (run.error) attrs.error = run.error;
-      if (run.outcome) attrs.outcome = run.outcome;
+      if (run.message) attrs.message = run.message;
+      if (run.approvedBy) attrs.approvedBy = run.approvedBy;
       if (run.records > 1) attrs.runRecords = run.records;
     }
     if (here) {
       attrs._playhead = true;
-      // A pending gate keeps `warn` — it is a human decision, not a step in
-      // flight — and says who it is waiting on and since when.
+      // A pending gate keeps `warn`: it is a human decision, not a step in
+      // flight, and says who it is waiting on and since when.
       attrs._status = isGate && gate ? "warn" : "accent";
       attrs.run = isGate && gate ? `waiting for approval since ${gate.since}` : (join.atReason ?? "here");
       if (isGate && gate?.description) attrs.gateDescription = gate.description;
@@ -636,8 +637,13 @@ export function pendingGateCard(op: string, gate: GateState, ir: GraphIR): Pendi
 
 // ── The statusbar sentence ────────────────────────────────────────────────────
 
+/** How many steps settled, a skipped or cached one included. */
+export function settledCount(steps: StepView[]): number {
+  return steps.filter((s) => s.state !== "running").length;
+}
+
 /**
- * What the playhead adds to the ops lens's own note — appended to
+ * What the playhead adds to the ops lens's own note, appended to
  * {@link import("./ops-lens.ts").opsNote}, never replacing it, because the
  * declared track's honesty (no estate cross-links, read-only) still holds.
  *
@@ -648,34 +654,37 @@ export function playheadNote(state: RunState, join: RunJoin | null): string {
   if (!state.op) {
     return "No run state: nothing has been run from this behold session, so every step paints as declared.";
   }
-  const settled = join ? join.byNode.size : state.records.length;
+  const settled = join ? join.byNode.size : settledCount(state.steps);
   const bits: string[] = [];
-  // `idle` with an Op named means the gate query adopted a run behold did NOT
-  // start (src/op-runner.ts's `noteGate`): there is a run, and no per-step
-  // record of it — say exactly that rather than counting zero steps as if the
-  // stream had been watched from the beginning.
+  // `idle` with an Op named means the status read adopted a run behold did NOT
+  // start and has no events for (src/op-runner.ts's `noteGate`): say exactly
+  // that rather than counting zero steps as if the stream had been watched.
+  const from = state.source === "events" ? "chant's run events" : "chant's older progress stream (degraded)";
   const head =
     state.status === "idle"
-      ? `Run state for ${state.op}: no per-step records — this behold session didn't start the run, so only the gate query answers`
-      : `Run: ${state.op} (local executor) — ${settled} step${settled === 1 ? "" : "s"} settled`;
+      ? `Run state for ${state.op}: no per-step events; this behold session didn't start the run, so only the status read answers`
+      : `Run: ${state.op} (${state.runtime ?? "local"}, from ${from}${state.following ? ", followed" : ""}): ${settled} step${settled === 1 ? "" : "s"} settled`;
   if (state.status === "running") {
-    bits.push("still running; only settled steps are painted");
+    bits.push(state.source === "events" ? "still running; a running step paints as running and only settled steps paint as settled" : "still running; only settled steps are painted");
   }
-  if (state.status === "ok") bits.push("the run exited cleanly");
+  if (state.status === "ok") bits.push("the run settled ok");
   if (state.status === "failed") bits.push("a step failed");
   if (state.status === "gated") bits.push("the run stopped at a gate; nothing after it ran");
-  if (state.status === "lost") bits.push(`stream lost — ${state.lost ?? "the progress stream ended without a verdict"}`);
+  if (state.status === "waiting") bits.push("the run stopped at a decision point nobody has answered; nothing after it ran");
+  if (state.status === "lost") bits.push(`stream lost: ${state.lost ?? "the stream ended without a verdict"}`);
   if (state.gate) {
-    bits.push(`waiting on gate ${state.gate.signalName} since ${state.gate.since} — approve records the resolution (chant run approve) and the Op runs again; behold never approves on its own`);
+    bits.push(`waiting on gate ${state.gate.signalName} since ${state.gate.since}; approve records the resolution (chant run approve) and the Op runs again; behold never approves on its own`);
+  } else if (state.point) {
+    bits.push(`waiting on decision point ${state.point.id} since ${state.point.since}; it is answered with chant workspace points answer`);
   } else if (state.gateNote) {
-    bits.push(`gate state unavailable — ${state.gateNote}`);
+    bits.push(`gate state unavailable: ${state.gateNote}`);
   }
+  if (state.sourceNote) bits.push(state.sourceNote);
   if (join?.unplaced.length) {
     bits.push(
-      `${join.unplaced.length} record${join.unplaced.length === 1 ? "" : "s"} matched no declared step and ${join.unplaced.length === 1 ? "is" : "are"} not painted`,
+      `${join.unplaced.length} step${join.unplaced.length === 1 ? "" : "s"} matched no declared step and ${join.unplaced.length === 1 ? "is" : "are"} not painted`,
     );
   }
   if (!bits.length) return `${head}.`;
-  const rest = bits.join("; ");
-  return `${head} — ${rest}.`;
+  return `${head}; ${bits.join("; ")}.`;
 }

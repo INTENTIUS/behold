@@ -843,13 +843,40 @@ behold does not apply. To change the estate:
 Every mutation is a gated, durable Temporal workflow with a human-confirmable gate
 and saga rollback. There is no behold endpoint that mutates the cloud.
 
-A run behold triggered is asked for structured per-step records (chant#1676:
-`--progress-json` on the durable path, `--json` on the local one), so the ops
-lens paints the run over the declared track and a pending gate renders as a card
-with an Approve button. That button is `op-signal`, the same delegated write —
-and nothing else about the run is behold's to decide: a stream that dies leaves
-the playhead at the last settled step and says so, and a gate paints as pending
-only when chant's `gateState` query named it.
+A run behold triggered is asked for chant's run events (#679, chant#4019:
+`chant run <op> --events-json`, `chant run <target> --components --env <env>
+--events-json`), so the ops lens and the dial show each step's start and settle,
+a skip with chant's reason, a cache hit, and the gate or decision point a run
+waits on, as they happen, and a pending gate renders as a card with an Approve
+button. That button is `op-signal`, the same delegated write, and nothing else
+about the run is behold's to decide: the verdict is the stream's own
+`run-settle`, a stream that ends without one leaves the playhead at the last
+settled step and says it was lost, and a gate paints as pending only when chant
+named it (`gate-waiting`, or `chant run status`).
+
+`src/run-events.ts` is the one boundary every run line crosses. It validates
+each line against chant's `run-event.schema.json` (vendored in
+`src/run-event-schema/`, its source commit in `RUN_EVENT_SCHEMA_SOURCE`) and
+refuses a line that fails it; it folds the stream into what the dial and the
+ops lens render. behold copies none of chant's types: once @intentius/chant
+0.124.28 is published, behold imports `RunEvent` from it (the TODO in that
+file) and keeps the schema check.
+
+A run behold did not start is followed when the status read names it: `chant
+run events <run> --json --follow` replays what chant kept on this host and tails
+it to `run-settle`. A run killed outright writes no settle, so a follow that is
+silent for `BEHOLD_RUN_EVENTS_IDLE_MS` (60 s) asks `chant run status` whether it
+still runs, and ends as lost when it does not or after
+`BEHOLD_RUN_EVENTS_MAX_IDLE_MS` (30 min) of silence. A steward run keeps no
+events here, and the playhead says so.
+
+The read has a floor, `RUN_EVENTS_CHANT_FLOOR` (0.124.28). Below it behold
+starts runs with the older `--progress-json` (degraded mode: settled steps
+only, no skip reasons, cache hits or gate events, and no follow), translates
+those lines at the same boundary, and the dial and the playhead say they are
+degraded. A local pipeline run (gitlab-ci-local, a forgejo runner) is the one
+path that still reads a log, because chant does not run it; the dial labels it
+best-effort, and only its exit code is certain (src/ci-run.ts).
 
 ### The executor contract (#165, #61)
 
@@ -932,8 +959,8 @@ Two gate cards exist and they are **different acts**:
 - The **run gate** — `POST /api/ops/:name/signal/:gate` → `chant run approve
   <op> <gate>` (chant#2121 renamed `chant run signal`, #459). Records the
   resolution; a runtime that parks a run is woken, and the local one reads it
-  when the Op runs again (behold runs `chant run <op> --progress-json`, which
-  exits 3 at a gate and shows as `gated`).
+  when the Op runs again (behold runs `chant run <op> --events-json`, which
+  says `gate-waiting`, settles `gated` and exits 3).
 - The **converge gate** — `POST /api/operator/approve/:op/:gate` →
   `chant approve <op> <gate>`. **Records a fact and unblocks nothing.** chant's
   gate ledger says it outright: the local executor still refuses a gated op,
