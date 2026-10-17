@@ -84,6 +84,13 @@ export interface TourFile {
   name: string;
   title?: string;
   match?: { tool?: string; scenario?: string };
+  /**
+   * The repo `{repo}` names, by its name under demo.json's repo's owner: a
+   * cycle told in beats moves demo.json's `repo` between repos (the team beat
+   * runs on demo-terralith-team-b), and the tour's runs stay on the home one.
+   * Without it, `{repo}` is demo.json's repo.
+   */
+  home?: string;
   steps?: string[];
   runs?: Record<string, TourRun>;
   facts?: Record<string, TourFact>;
@@ -355,7 +362,8 @@ export async function resolveTour(source: TerragucciSource, loaded: LoadedTour, 
   const t = loaded.tour;
   const problems: string[] = [];
   const from = Date.parse(ctx.demo.started_at);
-  const repo = ctx.demo.repo ?? "";
+  const owner = (ctx.demo.repo ?? "").includes("/") ? (ctx.demo.repo ?? "").slice(0, (ctx.demo.repo ?? "").lastIndexOf("/") + 1) : "";
+  const repo = t.home ? `${owner}${t.home}` : (ctx.demo.repo ?? "");
   const projectOf = (tpl: string): string | null => {
     const name = tpl.replace(/\{repo\}/g, repo);
     return name ? (repoProjects(name, ctx.known)[0] ?? null) : null;
@@ -603,7 +611,8 @@ export async function resolveTour(source: TerragucciSource, loaded: LoadedTour, 
   events.sort((a, b) => a.at - b.at);
 
   // Follow along: the newest row of the demo's repo now that names its pull request, and the newest job.
-  const nowProject = projectOf("{repo}");
+  // The repo demo.json names now, which is the one the step's pull request and job are on.
+  const nowProject = ctx.demo.repo ? (repoProjects(ctx.demo.repo, ctx.known)[0] ?? null) : null;
   let pull: TourAnswer["links"]["pull"] = null;
   let job: TourAnswer["links"]["job"] = null;
   if (nowProject) {

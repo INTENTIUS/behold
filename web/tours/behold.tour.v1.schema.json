@@ -16,6 +16,11 @@
       "minProperties": 1,
       "properties": { "tool": { "type": "string" }, "scenario": { "type": "string" } }
     },
+    "home": {
+      "description": "The repo {repo} names, under demo.json's repo's owner; without it, demo.json's repo.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,100}$"
+    },
     "steps": {
       "description": "demo.json steps in the order a beat walks them, for how far a chapter has got.",
       "type": "array",

@@ -3,6 +3,7 @@
   "name": "terralith",
   "title": "The terralith's story",
   "match": { "tool": "terralith" },
+  "home": "demo-terralith",
   "steps": ["pull-request", "planned", "merged", "applying", "waiting", "approved", "resumed", "applied"],
   "runs": {
     "stock": { "repo": "{repo}", "stage": "tf-apply", "pull": null, "pick": "first" },

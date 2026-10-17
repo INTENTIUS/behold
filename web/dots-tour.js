@@ -117,8 +117,8 @@ export function tourMessage(tn, { counts, names, adopted, source, short = (e) =>
   for (const s of tn.shown) {
     const job = s.job ? `job #${s.job}` : null;
     if (s.kind === "light") {
-      const what = s.stage === "tf-plan" ? (s.pull ? `pull request ${s.pull}'s plan` : "the plan") : s.wave ? `wave ${s.wave}'s plan` : "the push's plan";
-      notes.push(`lit: the ${fmt(s.lit.length)} resources ${what} planned${s.changed && s.changed < s.lit.length ? `, ${fmt(s.changed)} to change` : ""}${job ? ` · ${job}` : ""}`);
+      const what = s.stage === "tf-plan" ? (s.pull ? `pull request ${s.pull}'s plan` : "the plan") : s.wave ? `wave ${s.wave}'s plan` : "the plan";
+      notes.push(`lit: the ${fmt(s.lit.length)} resources in ${what}${s.changed && s.changed < s.lit.length ? `, ${fmt(s.changed)} of them changed` : ""}${job ? ` · ${job}` : ""}`);
     } else if (s.kind === "state") {
       const last = firedBy({ migration: s.migration, line: "last" }, tour.events);
       notes.push(`state file version ${String(s.version_id).slice(0, 8)}${last && s.finished ? ", unchanged" : ""}`);
