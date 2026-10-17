@@ -25,6 +25,7 @@ import { getThemeName, mountThemePicker, onThemeChange } from "./theme.js";
 import { cssString, hoverCss, hoverFromMessage, hoverLinks, hoverMessage, isLightBg, rootSegments, rootText } from "./kiosk-roots.js";
 import { creditLines, filterIndex, keepRun, liveEstimate, liveFor, namesOther, notRunRepo, notRunWords, replayAt, replayBanner, replayIndex, rootNoun, rootWord, runAsOf, scrubDemo, servesRepo, vendorOf } from "./kiosk-vendor.js";
 import { repoParam, repoUrl, stepCheckout } from "./kiosk-repo.js";
+import { startKioskCarve } from "./kiosk-carve.js";
 import { STATE_WORDS, changingRoots, costLine, pinsCommit, planFitsPin, pullPin, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
 
 /** The scenarios terragucci#1014 numbers. An id not here is shown by the title demo.json carries. */
@@ -1197,6 +1198,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   s.shot = null;
   // behold#571: event-help, started further down once what it reads is in place.
   let ehApi = null;
+  // #715: the live carve's caption and Tips, when the frame draws one (web/kiosk-carve.js).
+  let carveCtl = null;
   // behold#571: the run view as the cycle has seen it (steadyRun), and when a read behind the step last asked again.
   let runMemo = null;
   let freshAt = 0;
@@ -1470,6 +1473,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       if (!s.watchMode && runsParent && main.parentNode !== runsParent) runsParent.insertBefore(main, runsNext);
     }
     if (watch) renderModeToggle(tools && tools.mode, s.watchMode ? "watch" : "inspect", setMode);
+    if (carveCtl) carveCtl.tellMode();
   };
   const setMode = (m) => {
     const next = m === "watch";
@@ -2108,6 +2112,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     // A frame that never says it drew still swaps in, late, rather than never.
     bufferTimer = setTimeout(swapFrame, FRAME_SWAP_MS);
   };
+  // #715: a frame drawing a live carve tells the kiosk what to say; one that does not says nothing, and nothing here changes.
+  if (typeof window !== "undefined" && window.addEventListener && watch) carveCtl = startKioskCarve({ frame: () => frame, watch, eh, origin, isWatch: () => s.watchMode });
   if (typeof window !== "undefined" && window.addEventListener) {
     window.addEventListener("message", (e) => {
       if (e.origin !== origin || !e.data || e.data.type !== "behold:drawn") return;

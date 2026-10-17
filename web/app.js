@@ -115,10 +115,13 @@ import { comparisonRow, comparisonSummary } from "./cross-env.js";
 // The marker-vs-derived mark on a choudoufu card: how its identity was found.
 import { identityMark, tagGlyphSvg } from "./identity-mark.js";
 import { shotFromMessage, shotViewBox, tweenViewBox, unionBox, sameViewBox } from "./kiosk-shot.js"; // behold#571: Watch's camera
-// #712: the dots preview's canvas layer. Mounted only when /api/graph's meta
-// carries `dots` (the local preview server, scripts/dots-preview.ts); every
-// other serve leaves it unmounted, and its hooks below are no-ops.
-import { mountDots, unmountDots, dotsCamera, dotsZoomOutFactor } from "./dots.js";
+// #712, #715: the dots layer, the zoom past the cards. Mounted for a live
+// carve when the estate has choudoufu roots or estate rosters
+// (/api/terragucci/carve, liveCarveGate below), or when /api/graph's meta
+// carries `dots` (the local preview server, scripts/dots-preview.ts). With
+// neither it stays unmounted, and its hooks below are no-ops.
+import { mountDots, unmountDots, dotsCamera, dotsZoomOutFactor, dotsCarving } from "./dots.js";
+import { carveDrawable } from "./dots-live.js";
 initTheme();
 // #476: framed in a host pane. The flag is a class on <html>, so the CSS that
 // folds the chrome away needs no JS, and the theme is the host's for this
@@ -3449,12 +3452,66 @@ async function initTerragucci() {
   const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
   kioskRoots = project.terragucciRoots || null; // behold#571
   if (!project.terragucciReports) return;
+  // #715: the live carve's gate, asked beside the reports; closed, nothing below changes.
+  if (!staticMode) void liveCarveGate();
   await loadTerragucci();
   // #505: the chant/lifecycle lane, and what moved while this page is open.
   if (staticMode) return;
   await loadTerragucciLane();
   watchTerragucci();
 }
+// --- #715: the live carve ------------------------------------------------------
+// /api/terragucci/carve answers `live: true` only when the estate has
+// choudoufu roots or the reports hold estate rosters. Until it does (and has a
+// resource to draw), the dots layer is never mounted and the page is as it
+// was; the gate is asked again now and then, since the first wave's rosters
+// may land after the page opened.
+var liveCarve = null; // var: render() may run before this line is reached
+let liveGateTimer = 0;
+const LIVE_GATE_MS = 30_000;
+async function liveCarveGate() {
+  clearTimeout(liveGateTimer);
+  let a = null;
+  try {
+    a = await apiFetch("/api/terragucci/carve").then((r) => r.json());
+  } catch {
+    a = null;
+  }
+  if (carveDrawable(a)) {
+    liveCarve = a;
+    const g = document.getElementById("graph");
+    const svgEl = currentSvg();
+    if (g && svgEl) mountLiveCarve(g, svgEl);
+    return;
+  }
+  liveGateTimer = setTimeout(() => void liveCarveGate(), LIVE_GATE_MS);
+}
+function mountLiveCarve(g, svgEl) {
+  if (!vbInit) return;
+  mountDots({
+    host: g,
+    svg: svgEl,
+    meta: {},
+    vbInit: vbInit.slice(),
+    getVB: () => vb,
+    setVB: (a) => {
+      vb = a.slice();
+      vbAtFit = false;
+      applyVB();
+    },
+    live: liveCarve,
+    kiosk: !!embedOpts.bare,
+    // The kiosk's shot waits while the carve directs, and takes the camera back after.
+    onCarving: (on) => {
+      if (on && shotAnim) {
+        cancelAnimationFrame(shotAnim.raf);
+        shotAnim = null;
+      }
+      if (!on && kioskShot) queueMicrotask(() => applyKioskShot(true));
+    },
+  }).catch((err) => console.warn("live carve:", err));
+}
+
 let tgLifecycle = null;
 let tgPolled = null;
 async function loadTerragucciLane({ fresh = false } = {}) {
@@ -4489,6 +4546,8 @@ function kioskShotBox() {
 
 /** Move to the shot: a pan and zoom over its time, or at once (a re-render, a resize, reduced motion). */
 function applyKioskShot(animate) {
+  // #715: while a live carve runs, its director has the camera; the shot waits for it to end.
+  if (dotsCarving()) return kioskTellBoxes();
   const to = kioskShotBox();
   if (!to || !vb) return kioskTellBoxes();
   if (shotAnim && !animate) {
@@ -6487,10 +6546,11 @@ function render(ir, svg, m) {
     setupGraphViewBox(svgEl);
     wireEdgeHighlight(svgEl, ir);
   }
-  // #712: only the dots preview's meta carries `dots`.
+  // #712: only the dots preview's meta carries `dots`. #715: a live carve, when the gate opened.
   if (svgEl && m && m.dots) {
     mountDots({ host: g, svg: svgEl, meta: m, vbInit: vbInit.slice(), getVB: () => vb, setVB: (a) => { vb = a.slice(); vbAtFit = false; applyVB(); } }).catch((err) => console.warn("dots preview:", err));
-  } else unmountDots();
+  } else if (svgEl && liveCarve) mountLiveCarve(g, svgEl);
+  else unmountDots();
   ensureZoomControls(g);
   ensureBackToInfra(g);
   wire(ir);

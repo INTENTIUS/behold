@@ -1,4 +1,4 @@
-// The dots preview's scene (#712): where every dot and every estate box is at
+// The dots layer's scene (#712, #715): where every dot and every estate box is at
 // any moment of a replay, and the choreography of the carve.
 //
 // Each estate has its own box at the dot level. A dot's slot is its unit's
@@ -23,6 +23,8 @@ export const BOX = { pad: 1.5, title: 3, gap: 5 };
 
 /** A show's own time -> replay ms, linear over [t0, t1]. */
 export function replayClock(show, duration = CHOREO.duration) {
+  // #715: a live carve's clock is the show's own, one to one; its length grows as the page runs.
+  if (show.kind === "live") return { length: Math.max(1, show.t1 - show.t0), at: (t) => t - show.t0, live: true };
   const span = Math.max(1, show.t1 - show.t0);
   return { length: duration, at: (t) => ((t - show.t0) / span) * duration };
 }
@@ -44,6 +46,32 @@ export function choreograph(show, opts = {}) {
   if (show.kind !== "carve") {
     a = clock.at(Math.min(...writes.map((e) => e.start)));
     b = Math.max(a + o.flight, clock.at(Math.max(...writes.map((e) => e.t))) - o.flight);
+  }
+  // Children that move with a parent but that no follower record names.
+  const kidsOf = new Map();
+  for (const [child, parent] of show.parents ?? []) {
+    if (!kidsOf.has(parent)) kidsOf.set(parent, []);
+    kidsOf.get(parent).push(child);
+  }
+  // #715: a live carve flies each write when it was seen, in the show's own
+  // time (its clock is one to one), never regrouped: the order and the timing
+  // are the job's.
+  if (show.kind === "live") {
+    const out = [];
+    for (const w of writes) {
+      const start = w.start - show.t0;
+      const base = { from: w.from, to: w.to, ok: w.ok, flock: 0, start, end: start + o.flight, at: w.at ?? w.t };
+      out.push({ ...base, address: w.address, ...(w.refusal ? { refusal: w.refusal } : {}), ...(w.refusalSummary ? { refusalSummary: w.refusalSummary } : {}) });
+      const followers = new Set(w.followers ?? []);
+      if (w.ok) for (const c of kidsOf.get(w.address) ?? []) followers.add(c);
+      [...followers].forEach((f, m) => {
+        const s = start + (m % 3) * 8;
+        out.push({ ...base, start: s, end: s + o.flight, address: f, parent: w.address });
+      });
+    }
+    // A resource may move twice (adopted into one estate, then split into another); the same write read twice flies once.
+    const seen = new Set();
+    return out.sort((x, y) => x.start - y.start).filter((f) => !seen.has(`${f.address}@${f.start}`) && seen.add(`${f.address}@${f.start}`));
   }
   const typeOf = new Map(show.roster.map((r) => [r.address, r.type]));
   const order = new Map(show.roster.map((r, i) => [r.address, i]));

@@ -374,3 +374,90 @@ needs no behold server and opens from disk. It says plainly that it is a
 recording ("recorded", naming the source). It replays by itself and loops,
 holding on the result. The camera follows the flock until a person takes it,
 and the rail steps aside while the camera is following.
+
+## The live carve (#715): #462's questions, settled where the build needs them
+
+#715 draws a carve as terragucci writes it, from the estate rosters
+(terragucci#1130) and each migration's progress lines (terragucci#1129). The
+prototype's parts are now the app's own: the level-of-detail switch
+(`web/dots-lod.js`), the canvas layer (`web/dots.js`), the estate boxes and the
+lights on their borders (`web/dots-scene.js`, `web/dots-border.js`) and the
+zoom rail. Two drivers feed the one layer: a recording
+(`web/dots-recording.js`, for `npm run preview:dots` and the static export) and
+the live carve (`web/dots-live.js`). Each decision below is the one the build
+depends on; the rest of #462 stays open.
+
+**1. Where server-side painting stops.** The cards stay server-painted:
+`/api/graph` answers `{ir, svg, meta}` exactly as before, and the hand-layout
+sidecar, the static bundle and a saved picture all stay on the cards. The dots,
+boxes and discs are painted in the browser, on a canvas under the SVG, from two
+inputs: each card's position on the page (the seed a dot starts from) and the
+rosters and progress lines. No route that paints changes. One route is added,
+`GET /api/terragucci/carve` (`src/terragucci-carve.ts`), and it only reads. A
+picture of the dot level is the static carve export's answer, not the app's.
+
+**2. When the layer is offered.** By the estate, not by a count: the layer
+mounts when the estate has choudoufu roots (a choudoufu member, or a terragucci
+config whose `binary:` is choudoufu) or the reports hold estate rosters, and
+the carve route has a resource to draw. With neither, `/api/terragucci/carve`
+answers `live: false`, the layer is never mounted, and the kiosk and the app
+behave as they did before (`src/terragucci-carve.test.ts` covers it). Once
+mounted, the cards are still the view at the fit; zooming out past them is
+where the dots are, and the rail says so.
+
+**3. What one dot is.** One resource instance a roster or a progress line
+names, keyed by its live id. A stock root's roster comes from its state and has
+no live ids, so its dots are keyed by estate and address until an adoption's
+stamp names the live id; a later move finds the dot by that id, whatever
+address the receiving root gives it. A dot joins its card by address. A
+`count`-expanded block is one dot per instance, because the roster lists
+instances.
+
+**4. Colour.** Hue is the owning estate, spread in OKLCH at the lightness and
+chroma of the theme's own state colours and lifted to 3:1 on the page, so it
+follows all of behold's themes. State is a second channel, never a hue: a ring
+for an adopted resource (it wears its tags), a red flare for a refused move,
+the in-progress colour for a dot in flight. Past about ten estates the hues stop
+being told apart; the boxes' names carry the meaning there.
+
+**5. Without a pointer.** The kiosk's live caption is a live region
+(`aria-live="polite"`) that names each move, refusal and stamp as it lands, and
+the rail's marks are buttons. Keyboard traversal over units is not built.
+
+**6. How it composes.** Selection, the inspect pane and the SSE refresh stay on
+the cards; the canvas takes no pointer events, so a click at the card level is
+what it was. `?collapse=1`, `?detail=` and the lens parameters shape the cards
+and therefore the seeds, never the dots. In the kiosk's frame the carve's
+director holds the camera only while a migration runs (and for a short hold
+after it ends); the kiosk's own shots wait, then take the camera back.
+
+**7. The read.** No `chant graph` read and no `live-ls`: the rosters are written
+by the jobs that already list the estate, and behold reads them with one GET
+each. The route shares one read for 1.5 s while a migration runs and 10 s
+otherwise, and the page polls every 2 s, so a move shows within a few seconds
+of its write. It reads at most 64 rosters and 8 migrations a time. Paging and
+per-estate reads on demand are for scale 14, not this build.
+
+### What the build codes against
+
+terragucci#1129 and #1130 were being written alongside, so behold reads the
+shapes their issues give, and these choices of its own:
+
+- The estate list is `index.json`'s `estates` (`[{estate, count, at?,
+  roster?}]`), else `estates/index.json` holding the same list.
+- A migration is followed when `index.json` lists it under `migrations`, or
+  when `demo.json`'s `next.action` names it ("carve: 36 of 79 moved"). A name
+  seen once is followed for the rest of the demo's cycle, so a finished
+  migration stays drawn.
+- Its record is `<project>/migrations/<name>.json`, where terragucci already
+  copies migration records, and its lines `<project>/migrations/<name>/progress.jsonl`
+  beside it, else the same keys at the top of the prefix. The record's
+  `counts` are used when it has them; otherwise the lines are counted.
+- A line in the first read happened before the page looked: its dot is drawn
+  where it ended. A line that arrives later flies from the moment it was seen,
+  the lines of one read spread up to 1.6 s apart.
+- A `stamped` line leaves a ring; it is also a move when its `estate_to` names
+  another estate. A `moved` line with `follows` flies with its parent's move.
+  A `skipped` line draws nothing.
+- Destination boxes are sized by what each estate holds so far, so a box grows
+  as a migration lands in it; a recording sizes them by its end instead.

@@ -1,7 +1,18 @@
-// The dots preview's page layer (#712). Mounted only when /api/graph's meta
-// carries `dots`, which only the local preview server (scripts/dots-preview.ts)
-// sends; everywhere else every export here is a no-op and the app behaves as
-// it always has.
+// The dots layer (#712, #715): the zoom past the cards, where each resource
+// is a dot in its estate's box and each estate, further out, a disc. It is
+// mounted by two drivers and nothing else:
+//
+// - live (#715): the estate has choudoufu roots or estate rosters, and
+//   /api/terragucci/carve answers its rosters and migration progress
+//   (web/dots-live.js). The layer polls that route and plays each line as it
+//   arrives. In the kiosk's frame it also directs the camera while a
+//   migration runs and tells the kiosk what to say (web/kiosk-carve.js).
+// - a recording: the local preview server's meta carries `dots`
+//   (scripts/dots-preview.ts), or the static carve export hands one in
+//   (web/carve-export.js).
+//
+// With neither, every export here is a no-op and the app behaves as it always
+// has.
 //
 // Cards stay in pinhole's SVG. Dots, estate boxes and discs are drawn on one
 // Canvas 2D layer under it, through the same viewBox camera. Each mark picks
@@ -15,7 +26,13 @@ import { buildScene, takeoffsBy, firstLandings, flightPoint, easeInOut, replayCl
 import { cardMorph, discMorph, discRadius, levelOf, caption, railMarks, railPos, lerp } from "./dots-lod.js";
 import { perimeter, pointAt, nearestS, segment } from "./dots-border.js";
 import { getTokens, onThemeChange, contrast, hexToOklch, oklchToHex } from "./theme.js";
-import { LOOP, carveStory, beatAt, tipsBetween, directorFocus, shortName as shortOf } from "./dots-kiosk.js";
+import { LOOP, carveStory, beatAt, tipsBetween, directorFocus, shortName as shortOf, liveBeat, liveTipsBetween, liveEndTip, LIVE_HOLD_MS } from "./dots-kiosk.js";
+import { liveShow, stampArrivals, showKey, currentMigration } from "./dots-live.js";
+
+/** #715: how often the live layer asks for the carve. The route shares one read for 1.5 s while a migration runs. */
+export const LIVE_POLL_MS = 2_000;
+/** The live carve as last read, kept across a remount (a graph re-render), so arrivals keep their times. */
+let liveMemo = null;
 
 let S = null;
 let styleAdded = false;
@@ -32,6 +49,11 @@ export function dotsActive() {
 /** How far past the fit the zoom may go out, as a multiple of the fit's width; null when not mounted. */
 export function dotsZoomOutFactor() {
   return S ? S.zoomOut : null;
+}
+
+/** #715: whether the live carve's director holds the camera (a migration is running in the kiosk's frame). */
+export function dotsCarving() {
+  return !!(S && S.live && S.carving);
 }
 
 /** The camera moved: draw at the new zoom. */
@@ -81,6 +103,9 @@ function addStyle() {
   .dots-time { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 12em; }
   .dots-caption { padding: 3px 10px; border-radius: 6px; background: color-mix(in srgb, var(--bg) 80%, transparent); color: var(--fg); white-space: nowrap; max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; }
   .dots-kiosk .dots-caption { display: none; }
+  /* #715: a live carve has no playback head: it plays as it is written. */
+  .dots-live .dots-bar { display: none; }
+  .dots-live.dots-carving .dots-caption { display: none; }
   /* The kiosk's replay runs and loops by itself, like a live scenario: no playback head. */
   .dots-kiosk:not(.dots-keep-bar) .dots-bar { display: none; }
   .dots-keep-bar .dots-bar { opacity: 0.55; transition: opacity 0.2s; }
@@ -171,12 +196,20 @@ function rgba(hex, a) {
  * host: #graph; svg: the card SVG on the page; meta: /api/graph's meta;
  * getVB / setVB: the app's viewBox camera.
  */
-export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source = null, auto = null }) {
-  const name = meta.dots.source;
-  let show = S && S.name === name ? S.show : null;
-  const keep = S && S.name === name ? { t: S.t, playing: S.playing, speed: S.speed } : null;
+export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source = null, auto = null, live = null, kiosk = false, onCarving = null }) {
+  const name = live ? "live" : meta.dots.source;
+  let show = S && S.name === name && !live ? S.show : null;
+  const keep = S && S.name === name && !live ? { t: S.t, playing: S.playing, speed: S.speed } : null;
   unmountDots();
-  if (!show) {
+  // A remount (the graph re-rendered) starts from the newest read, not the one the page was given.
+  if (live && liveMemo && liveMemo.answer) live = liveMemo.answer;
+  if (live) {
+    // Arrivals keep the times they were first seen across a remount; the first read's lines are the past.
+    const now = Date.now();
+    const seen = stampArrivals(live, liveMemo ? liveMemo.seen : new Map(), now, { first: !liveMemo });
+    show = liveShow(live, seen, now, { t0: liveMemo ? liveMemo.t0 : null });
+    liveMemo = { seen, answer: live, t0: show.t0 };
+  } else if (!show) {
     // A static export hands the source in; the preview server answers it.
     let src = source;
     if (!src) {
@@ -191,18 +224,23 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source 
   }
   addStyle();
   const prefix = `${show.source}/`;
-  // Seeds: each card's centre, read from where pinhole painted it.
+  // Seeds: each card's centre, read from where pinhole painted it. A live
+  // carve's cards are the served roots' (`<member>/<address>`), joined by address.
   const cards = new Map();
   const widths = [];
   for (const g of svg.querySelectorAll("[data-node-id]")) {
     const id = g.getAttribute("data-node-id");
     const r = g.querySelector("rect");
-    if (!r || !id.startsWith(prefix)) continue;
+    if (!r) continue;
+    const slash = id.indexOf("/");
+    if (live ? slash < 0 : !id.startsWith(prefix)) continue;
+    const addr = live ? id.slice(slash + 1) : id.slice(prefix.length);
+    if (live && cards.has(addr)) continue;
     const x = +r.getAttribute("x");
     const y = +r.getAttribute("y");
     const w = +r.getAttribute("width");
     const h = +r.getAttribute("height");
-    cards.set(id.slice(prefix.length), { x: x + w / 2, y: y + h / 2 });
+    cards.set(addr, { x: x + w / 2, y: y + h / 2 });
     widths.push(w);
   }
   widths.sort((a, b) => a - b);
@@ -219,6 +257,7 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source 
   // the estate's size. The source box sits centred on its cards' box.
   const pitch = cardW * 0.35;
   const origin = { x: mbox.x + (mbox.w - src.w * pitch) / 2, y: mbox.y + (mbox.h - src.h * pitch) / 2 };
+  if (!show.roster.length) return;
 
   const canvas = document.createElement("canvas");
   canvas.id = "dots-canvas";
@@ -244,6 +283,11 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source 
     cardW,
     pitch,
     origin,
+    mbox,
+    live: !!live,
+    answer: live,
+    onCarving,
+    carving: false,
     getVB,
     setVB,
     vbInit,
@@ -299,16 +343,17 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source 
   host.addEventListener("mousemove", onMove);
   S.off.push(() => host.removeEventListener("mousemove", onMove));
   const params = new URLSearchParams(location.search);
+  if (S.live) startLive(kiosk);
   // Past a few hundred cards the fit is already below card size, so a large
   // source opens on its resources; the rail and the fit button still go to cards.
   // #712: in the kiosk's frame the replay loops by itself and the director frames it.
   // `auto` (the static carve export): the same loop and director, narrated in the page itself.
-  S.kiosk = params.get("dotsKiosk") === "1" || !!auto;
+  S.kiosk = !S.live && (params.get("dotsKiosk") === "1" || !!auto);
   S.narrate = auto && auto.narrate ? auto.narrate : null;
   S.auto = !!auto;
   S.keepBar = !!(auto && auto.bar);
   if (S.kiosk) startKiosk();
-  else if (!keep && !params.has("dotsAt") && show.roster.length > 300) flyNow("resources");
+  else if (!S.live && !keep && !params.has("dotsAt") && show.roster.length > 300) flyNow("resources");
   if (params.has("dotsAt")) flyNow(params.get("dotsAt"));
   if (params.has("dotsT")) seek(Number(params.get("dotsT")) || 0);
   if (params.get("dotsPlay") === "1") play(true);
@@ -343,7 +388,13 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source 
     const dt = S.lastWall ? Math.min(100, wall - S.lastWall) : 16;
     S.lastWall = wall;
     if (S.fly) stepFly(wall);
-    if (S.playing) {
+    if (S.live) {
+      // The live clock is the wall's: a line flies from when it was seen.
+      S.t = Date.now() - S.show.t0;
+      S.clock.length = Math.max(S.clock.length, S.t);
+      if (S.t <= S.busyUntil) S.dirty = true;
+      liveTick(wall, dt);
+    } else if (S.playing) {
       S.t = Math.min(S.clock.length, S.t + dt * S.speed);
       if (S.t >= S.clock.length) play(false);
       S.dirty = true;
@@ -862,7 +913,7 @@ function draw(dt) {
   ctx.globalAlpha = 1;
 
   // --- threads between estates (cross-estate reads), dashes marching reader -> source ---
-  const tShow = S.show.t0 + (t / S.clock.length) * (S.show.t1 - S.show.t0);
+  const tShow = S.live ? S.show.t0 + t : S.show.t0 + (t / S.clock.length) * (S.show.t1 - S.show.t0);
   const threadsOn = S.show.threads.length && S.show.events.some((ev) => ev.kind === "handoff" && ev.start <= tShow);
   if (threadsOn) {
     ctx.lineWidth = 1.2;
@@ -1364,4 +1415,180 @@ function kioskTick(wall, dt) {
 
 function countsNowMap() {
   return S.ownersNow ? [...S.ownersNow.values()].reduce((m, e) => m.set(e, (m.get(e) ?? 0) + 1), new Map()) : new Map();
+}
+
+// --- the live carve (#715) -------------------------------------------------------
+
+/** Start following /api/terragucci/carve. `kiosk`: in the kiosk's frame, direct the camera while a migration runs. */
+function startLive(kiosk) {
+  S.ui.classList.add("dots-live");
+  S.tipFrom = S.t = Date.now() - S.show.t0;
+  S.clock.length = Math.max(S.clock.length, S.t);
+  S.kioskLive = !!kiosk;
+  S.liveEndAt = null;
+  S.ended = new Set();
+  S.wasRunning = new Map((S.answer.migrations || []).map((m) => [m.name, m.running]));
+  S.userUntil = 0;
+  S.insets = { top: 0, bottom: 0 };
+  S.mode = "watch";
+  S.dir = null;
+  S.camAt = null;
+  S.lastPost = 0;
+  S.pendingTips = [];
+  busy();
+  const poll = setInterval(() => void readLive(), LIVE_POLL_MS);
+  S.off.push(() => clearInterval(poll));
+  if (S.kioskLive) {
+    const onMsg = (e) => {
+      if (!S || e.origin !== location.origin || !e.data || e.data.type !== "behold:dots-mode") return;
+      S.mode = e.data.mode === "inspect" ? "inspect" : "watch";
+      if (e.data.insets) S.insets = { top: Number(e.data.insets.top) || 0, bottom: Number(e.data.insets.bottom) || 0 };
+      S.dirty = true;
+    };
+    window.addEventListener("message", onMsg);
+    S.off.push(() => window.removeEventListener("message", onMsg));
+    // The director never moves while a person has the graph in hand.
+    const touched = () => {
+      if (S) S.userUntil = performance.now() + 8_000;
+    };
+    for (const ev of ["wheel", "mousedown", "touchstart"]) {
+      S.host.addEventListener(ev, touched, { passive: true });
+      S.off.push(() => S && S.host.removeEventListener(ev, touched));
+    }
+    toParent({ type: "behold:dots-ready", source: S.name, live: true });
+  }
+}
+
+/** Until when something is in the air or about to be: the loop draws every frame until then. */
+function busy() {
+  let until = 0;
+  for (const f of S.scene.flights) until = Math.max(until, f.end + 700);
+  for (const e of S.show.events) if (e.kind === "adopt" && !e.before) until = Math.max(until, e.t - S.show.t0 + 400);
+  S.busyUntil = until;
+}
+
+let liveReading = false;
+async function readLive() {
+  if (!S || !S.live || liveReading) return;
+  liveReading = true;
+  try {
+    const res = await fetch("/api/terragucci/carve", { headers: { accept: "application/json" } });
+    const a = await res.json();
+    if (S && S.live && a && a.live === true) takeLive(a);
+  } catch {
+    /* the next poll asks again */
+  } finally {
+    liveReading = false;
+  }
+}
+
+/** A new read of the carve: stamp what arrived, and rebuild the scene when the show changed. */
+function takeLive(answer) {
+  const now = Date.now();
+  const seen = stampArrivals(answer, liveMemo ? liveMemo.seen : new Map(), now);
+  const show = liveShow(answer, seen, now, { t0: S.show.t0 });
+  liveMemo = { seen, answer, t0: show.t0 };
+  S.answer = answer;
+  if (!show.roster.length) return;
+  if (showKey(show) === showKey(S.show) && show.t0 === S.show.t0) {
+    S.show.t1 = now;
+    return;
+  }
+  const scene = buildScene(show, { sourceAspect: S.mbox.w / Math.max(1, S.mbox.h) });
+  const n = show.roster.length;
+  const src = scene.sourceBox;
+  S.show = show;
+  S.scene = scene;
+  S.clock = replayClock(show);
+  S.t = now - show.t0;
+  S.clock.length = Math.max(S.clock.length, S.t);
+  S.origin = { x: S.mbox.x + (S.mbox.w - src.w * S.pitch) / 2, y: S.mbox.y + (S.mbox.h - src.h * S.pitch) / 2 };
+  S.firsts = firstLandings(scene);
+  S.addrs = show.roster.map((r) => r.address);
+  S.idx = new Map(show.roster.map((r, i) => [r.address, i]));
+  S.px = new Float32Array(n);
+  S.py = new Float32Array(n);
+  S.pvis = new Uint8Array(n);
+  S.col = readColours();
+  busy();
+  S.dirty = true;
+}
+
+/** Each frame of a live carve: whether the director has the camera, and what the kiosk is told. */
+function liveTick(wall, dt) {
+  const answer = S.answer || {};
+  const m = currentMigration(answer);
+  const now = Date.now();
+  // A migration that stopped running ends its beat: Watch holds on the result, then hands the camera back.
+  for (const x of answer.migrations || []) {
+    const was = S.wasRunning.get(x.name);
+    if (was && !x.running && !S.ended.has(x.name)) {
+      S.ended.add(x.name);
+      S.liveEndAt = now;
+      S.pendingTips.push(liveEndTip(x, S.t));
+    }
+    S.wasRunning.set(x.name, x.running);
+  }
+  const running = !!(answer.running || (m && m.running));
+  const carving = S.kioskLive && (running || (S.liveEndAt !== null && now - S.liveEndAt < LIVE_HOLD_MS));
+  if (carving !== S.carving) {
+    S.carving = carving;
+    S.ui.classList.toggle("dots-carving", carving);
+    S.dir = null;
+    S.camAt = null;
+    if (S.onCarving) S.onCarving(carving);
+  }
+  if (!S.kioskLive) return;
+  const beat = liveBeat(S.scene, S.t, { demo: answer.demo, migration: m });
+  S.directing = carving && S.mode === "watch" && performance.now() >= S.userUntil;
+  S.ui.classList.toggle("dots-directing", S.directing);
+  if (S.directing) {
+    S.dir = directorFocus(S.dir, beat.focus, wall);
+    const want = frameBox(focusBox(S.dir.focus));
+    const cur = S.getVB();
+    const k = S.camAt === null || S.reduced ? 1 : 1 - Math.exp(-dt / 650);
+    S.camAt = wall;
+    const w = Math.exp(lerp(Math.log(cur[2]), Math.log(want[2]), k));
+    const h = (w * cur[3]) / cur[2];
+    const cx = lerp(cur[0] + cur[2] / 2, want[0] + want[2] / 2, k);
+    const cy = lerp(cur[1] + cur[3] / 2, want[1] + want[3] / 2, k);
+    if (Math.abs(w - cur[2]) / cur[2] > 0.0005 || Math.abs(cx - cur[0] - cur[2] / 2) > cur[2] * 0.0005 || Math.abs(cy - cur[1] - cur[3] / 2) > cur[3] * 0.0005) {
+      S.setVB([cx - w / 2, cy - h / 2, w, h]);
+    }
+  }
+  // Tips for what has just been written: never for what the first read already held.
+  const tips = [...liveTipsBetween(S.scene, S.tipFrom, S.t), ...S.pendingTips.splice(0)];
+  S.tipFrom = S.t;
+  if (wall - S.lastPost < 250 && !tips.length) return;
+  S.lastPost = wall;
+  const rects = {};
+  for (const [e, b] of S.boxPx || []) rects[e] = { left: b.x + (S.canvas.offsetLeft || 0), top: b.y + (S.canvas.offsetTop || 0), width: b.w, height: b.h };
+  const counts = {};
+  for (const [e, c] of countsNowMap()) counts[e] = c;
+  const story = carveStory(S.scene);
+  const done = story.moves.filter((f) => f.end <= S.t);
+  const mc = m ? m.counts : null;
+  toParent({
+    type: "behold:dots-state",
+    live: true,
+    carving,
+    source: S.name,
+    src: S.scene.source,
+    t: S.t,
+    length: S.clock.length,
+    playing: true,
+    speed: 1,
+    holdLeft: null,
+    beat,
+    counts,
+    names: Object.fromEntries(S.scene.estates.map((e) => [e, shortOf(e, S.scene.source)])),
+    recording: { kind: "live", resources: S.show.roster.length, recordedAt: null, from: answer.source || null, migration: m ? m.name : null },
+    colours: Object.fromEntries([...S.col.estate]),
+    totals: mc
+      ? { moves: mc.moved + mc.stamped + mc.refused + mc.skipped + (mc.left ?? 0), done: mc.moved + mc.stamped + mc.refused + mc.skipped, refused: mc.refused, estates: story.dests.length, moved: mc.moved, stamped: mc.stamped, skipped: mc.skipped }
+      : { moves: story.moves.length, done: done.length, refused: done.filter((f) => !f.ok).length, estates: story.dests.length },
+    log: done.slice(-14).reverse().map((f) => ({ address: f.address, to: shortOf(f.to, S.scene.source), ok: f.ok, refusal: f.refusal || null })),
+    rects,
+    tips,
+  });
 }

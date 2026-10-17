@@ -1,4 +1,4 @@
-// Level of detail for the dots preview (#712): each mark picks its form from
+// Level of detail for the dots layer (#712, #715): each mark picks its form from
 // how many pixels it covers at the current zoom, and the morph between two
 // forms follows the zoom position, never a clock. Stopping halfway stays
 // halfway; zooming back in runs it backwards. Pure.

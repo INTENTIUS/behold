@@ -1,6 +1,8 @@
-// The narration around the static carve export (#712): the header, the
-// Watch-style caption with its next line and progress bar, and the Tips
-// bubbles on the boxes. The dots layer (web/dots.js, in its `auto` mode)
+// The narration around a carve (#712, #715): the header, the Watch-style
+// caption with its next line and progress bar, and the Tips bubbles on the
+// boxes. The static export narrates a recording with it, under a "recorded"
+// badge; the kiosk narrates the live carve with it (web/kiosk-carve.js), under
+// a "live" badge. The dots layer (web/dots.js, in its `auto` mode)
 // replays the recording, directs the camera, and hands this a state twice a
 // second: the beat (web/dots-kiosk.js), the counts, and where each estate's
 // box is on the page. A click on a bubble opens it in Tips' replay modal.
@@ -24,9 +26,19 @@ const STOPS = [
   { id: "settled", words: "carved" },
 ];
 
-/** The recorded badge's tooltip: what the recording is. */
+/** The badge: "live" over a carve being written (#715), "recorded" over a replay. */
+export function badgeText(state) {
+  return state.recording && state.recording.kind === "live" ? "live" : "recorded";
+}
+
+/** The badge's tooltip: what the recording is, or where the live carve is read from. */
 export function recordedWords(state) {
   const r = state.recording || {};
+  if (r.kind === "live") {
+    const n = r.resources ? `, ${fmt(r.resources)} resources` : "";
+    const m = r.migration ? `; migration ${r.migration}` : "";
+    return `live carve of ${state.src}${n}, drawn from the estate rosters and the migration's progress as terragucci writes them${r.from ? ` to ${r.from}` : ""}${m}`;
+  }
   const what = r.kind === "walkthrough" ? "recorded walkthrough" : "recorded carve";
   const n = r.resources ? `, ${fmt(r.resources)} resources` : "";
   const when = r.recordedAt ? `, recorded ${new Date(r.recordedAt).toISOString().slice(0, 10)}` : "";
@@ -122,7 +134,7 @@ export function createNarration({ bar, caption, tipsHost, modalHost, origin }) {
     if (bar) {
       bar.replaceChildren();
       const place = el("div", "cx-place");
-      const rec = el("span", "cx-rec", "recorded");
+      const rec = el("span", `cx-rec cx-badge-${badgeText(state)}`, badgeText(state));
       rec.title = recordedWords(state);
       place.append(rec, el("span", "cx-src", state.src));
       bar.appendChild(place);
@@ -135,12 +147,13 @@ export function createNarration({ bar, caption, tipsHost, modalHost, origin }) {
       caption.replaceChildren();
       const top = el("div", "cx-top");
       const h = el("h1", "cx-title");
-      const rec = el("span", "cx-rec", "recorded");
+      const rec = el("span", `cx-rec cx-badge-${badgeText(state)}`, badgeText(state));
       rec.title = recordedWords(state);
       h.append(rec, el("span", null, b.title));
       top.appendChild(h);
       const hold = state.holdLeft !== null && state.holdLeft !== undefined;
       const nx = el("p", "cx-next");
+      if (!b.next) b.next = { text: "", fraction: 0 };
       nx.append(el("span", null, hold ? `starting again in ${state.holdLeft} s` : b.next.text));
       const nbar = el("span", `cx-nbar cx-tone-${hold ? "idle" : b.phase === "settled" ? "ok" : "busy"}`);
       const fill = el("span", "cx-nbar-in");
@@ -154,7 +167,12 @@ export function createNarration({ bar, caption, tipsHost, modalHost, origin }) {
       caption.appendChild(line);
       const tot = state.totals;
       const tally = el("p", "cx-row cx-tone-idle");
-      tally.append(el("span", "cx-label", "moves"), el("span", "cx-text", `${fmt(tot.done)} of ${fmt(tot.moves)} flown · ${tot.refused} refused · ${Object.values(state.counts).filter((n) => n > 0).length} estates`));
+      const estatesN = Object.values(state.counts).filter((n) => n > 0).length;
+      const tallyText =
+        state.recording && state.recording.kind === "live" && tot.moved !== undefined
+          ? `${fmt(tot.moved)} moved · ${fmt(tot.stamped)} stamped · ${tot.refused} refused${tot.skipped ? ` · ${tot.skipped} skipped` : ""} · ${estatesN} estates`
+          : `${fmt(tot.done)} of ${fmt(tot.moves)} flown · ${tot.refused} refused · ${estatesN} estates`;
+      tally.append(el("span", "cx-label", "moves"), el("span", "cx-text", tallyText));
       caption.appendChild(tally);
     }
   };

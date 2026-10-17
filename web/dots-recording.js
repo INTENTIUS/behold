@@ -1,4 +1,4 @@
-// The dots preview's data (#712): a carve recording (#457's JSON Lines,
+// The dots layer's recorded data (#712; the live driver is web/dots-live.js, #715): a carve recording (#457's JSON Lines,
 // scripts/dot-bench/record-carve.mjs) or the terralith walkthrough's
 // snapshots (src/terralith-demo.ts readTerralith), read into one "show":
 //

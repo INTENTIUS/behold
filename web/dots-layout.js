@@ -1,4 +1,4 @@
-// The dots preview's layout (#712, after #457's scripts/dot-bench/layout.js).
+// The dots layer's layout (#712, #715, after #457's scripts/dot-bench/layout.js).
 //
 // Inside an estate's box, a dot's slot is a function of what the resource is:
 // its unit (module path, block stem without its role suffix, count index),

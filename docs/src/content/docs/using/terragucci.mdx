@@ -439,6 +439,20 @@ kiosk reads it from the top of the `--terragucci` source (for the demo,
 by every open kiosk for 2 seconds. A `demo.json` that is missing, refused or
 not in the demo's format is said on the page, which waits for the next one.
 
+When the estate has choudoufu roots, or the reports hold estate rosters
+(`estates/<estate>/roster.json`), the kiosk also draws a carve as it is
+written. It reads each roster and each estate migration's progress
+(`<project>/migrations/<name>/progress.jsonl`, appended while the migration
+runs) through `GET /api/terragucci/carve`, one GET per key, shared for 1.5
+seconds while a migration runs. Zoomed out, every resource is a dot in its
+estate's box: an adoption's stamp leaves a ring, a move flies the dot to its
+new estate, and a refused move bounces back and stays lit red. While a
+migration runs, Watch frames the source estate, then the estate receiving
+moves, then the whole set, under a caption with a "live" badge, and Tips mark
+each estate's first landing, the first refusal and the end. With neither
+choudoufu roots nor rosters the route answers `live: false` and the kiosk is
+as described here.
+
 The kiosk is one screen: a status bar with the narration; under it, the
 pipeline's runs the way a CI page shows them (a sidebar of recent runs with
 the live one pinned on top, the selected run's jobs in their `needs` order,

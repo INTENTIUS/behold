@@ -1,0 +1,124 @@
+// #715: the dots layer's live driver. The route's answer (src/terragucci-carve.ts)
+// becomes a show: one dot per resource, keyed by live id; a stamp leaves a
+// ring, a move flies, a refusal bounces; lines play from when they were seen.
+import { describe, it, expect } from "vitest";
+import { liveShow, stampArrivals, lineKey, showKey, currentMigration, carveDrawable, LIVE } from "./dots-live.js";
+import { buildScene, takeoffsBy } from "./dots-scene.js";
+import { liveBeat, liveTipsBetween, liveEndTip } from "./dots-kiosk.js";
+import { dotsCarving, dotsActive } from "./dots.js";
+
+const T = Date.parse("2026-10-16T10:00:00Z");
+const at = (s) => new Date(T + s * 1000).toISOString();
+
+// A stock terralith (addresses only), adopted (stamped), then split: two moves and a refusal.
+const stock = {
+  estate: "terralith",
+  at: at(-60),
+  count: 4,
+  resources: [
+    { address: "module.team_a.aws_iam_role.app", type: "aws_iam_role", marked: false },
+    { address: "module.team_a.aws_iam_role_policy.app", type: "aws_iam_role_policy", marked: false, follows: "module.team_a.aws_iam_role.app" },
+    { address: "module.team_b.aws_iam_role.app", type: "aws_iam_role", marked: false },
+    { address: "aws_vpc.main", type: "aws_vpc", marked: false },
+  ],
+};
+const adopt = {
+  name: "adopt",
+  running: false,
+  counts: { moved: 0, stamped: 3, refused: 0, skipped: 1, left: 0 },
+  lines: [
+    { at: at(0), estate_from: "terralith", estate_to: "terralith", address: "module.team_a.aws_iam_role.app", live_id: "role-a", outcome: "stamped" },
+    { at: at(1), estate_from: "terralith", estate_to: "terralith", address: "module.team_b.aws_iam_role.app", live_id: "role-b", outcome: "stamped" },
+    { at: at(2), estate_from: "terralith", estate_to: "terralith", address: "aws_vpc.main", live_id: "vpc-1", outcome: "stamped" },
+    { at: at(3), estate_from: "terralith", estate_to: "terralith", address: "module.team_a.aws_iam_role_policy.app", outcome: "skipped" },
+  ],
+};
+const split = (lines) => ({ name: "carve", running: true, counts: { moved: 1, stamped: 0, refused: lines.length > 2 ? 1 : 0, skipped: 0, left: 1 }, lines });
+const moveA = { at: at(10), estate_from: "terralith", estate_to: "team-a", address: "module.team_a.aws_iam_role.app", live_id: "role-a", outcome: "moved" };
+const followA = { at: at(10), estate_from: "terralith", estate_to: "team-a", address: "module.team_a.aws_iam_role_policy.app", outcome: "moved", follows: "module.team_a.aws_iam_role.app" };
+const refuseB = { at: at(11), estate_from: "terralith", estate_to: "team-b", address: "module.team_b.aws_iam_role.app", live_id: "role-b", outcome: "refused", reason: "Unexpected changes in the marker rewrite" };
+const answer = (migrations, estates = [stock]) => ({ live: true, source: "/tmp/reports", estates, migrations, demo: { title: "Carving the terralith", next: "carve: 1 of 2 moved" }, running: migrations.some((m) => m.running) });
+
+describe("the live carve as a show (#715)", () => {
+  it("keys a dot by live id once a stamp names it, and plays stock, adopt, split in order", () => {
+    const a = answer([adopt, split([moveA, followA, refuseB])]);
+    const seen = stampArrivals(a, new Map(), T + 20_000, { first: true });
+    const show = liveShow(a, seen, T + 20_000);
+    expect(show.kind).toBe("live");
+    expect(show.source).toBe("terralith");
+    expect(show.roster).toHaveLength(4);
+    expect([...show.owners0.values()].every((e) => e === "terralith")).toBe(true);
+    expect(show.ownersEnd.get("module.team_a.aws_iam_role.app")).toBe("team-a");
+    // The policy follows its role.
+    expect(show.ownersEnd.get("module.team_a.aws_iam_role_policy.app")).toBe("team-a");
+    // The refused move leaves it where it was.
+    expect(show.ownersEnd.get("module.team_b.aws_iam_role.app")).toBe("terralith");
+    expect(show.events.filter((e) => e.kind === "adopt")).toHaveLength(3);
+    const writes = show.events.filter((e) => e.kind === "write");
+    expect(writes.map((w) => w.ok)).toEqual([true, false]);
+    expect(writes[0].followers).toEqual(["module.team_a.aws_iam_role_policy.app"]);
+    expect(writes[1].refusalSummary).toMatch(/marker rewrite/);
+  });
+
+  it("joins a destination roster's resource to its dot by live id, not as a second dot", () => {
+    const teamA = { estate: "team-a", at: at(12), count: 1, resources: [{ address: "aws_iam_role.app", type: "aws_iam_role", live_id: "role-a", marked: true }] };
+    const a = answer([adopt, split([moveA])], [stock, teamA]);
+    const show = liveShow(a, stampArrivals(a, new Map(), T + 20_000, { first: true }), T + 20_000);
+    expect(show.roster).toHaveLength(4);
+    expect(show.estates).toContain("team-a");
+  });
+
+  it("draws the first read's lines where they ended, and flies a later line from when it was seen", () => {
+    const first = answer([adopt]);
+    const seen0 = stampArrivals(first, new Map(), T + 5_000, { first: true });
+    expect(seen0.get(lineKey("adopt", adopt.lines[0]))).toBe(T);
+    const later = answer([adopt, split([moveA, refuseB])]);
+    const now = T + 30_000;
+    const seen1 = stampArrivals(later, seen0, now);
+    expect(seen1.get(lineKey("carve", moveA))).toBe(now);
+    expect(seen1.get(lineKey("carve", refuseB))).toBeGreaterThan(now);
+    expect(seen1.get(lineKey("carve", refuseB))).toBeLessThanOrEqual(now + LIVE.spreadMs);
+    const show0 = liveShow(first, seen0, T + 5_000);
+    const show1 = liveShow(later, seen1, now, { t0: show0.t0 });
+    expect(show1.t0).toBe(show0.t0);
+    expect(showKey(show1)).not.toBe(showKey(show0));
+    const scene = buildScene(show1);
+    const flight = scene.flights.find((f) => f.address === "module.team_a.aws_iam_role.app");
+    // One to one: the flight starts at its arrival, in the show's own clock.
+    expect(flight.start).toBe(now - show1.t0);
+    expect(takeoffsBy(scene, now - show1.t0 - 1)).toBe(0);
+    expect(takeoffsBy(scene, now - show1.t0 + 1)).toBe(1);
+  });
+
+  it("says what is happening from demo.json and the newest line, and tips the first landing and refusal", () => {
+    const a = answer([adopt, split([moveA, followA, refuseB])]);
+    const seen = stampArrivals(a, new Map(), T, { first: true });
+    const show = liveShow(a, seen, T + 20_000);
+    const scene = buildScene(show);
+    const m = currentMigration(a);
+    expect(m.name).toBe("carve");
+    const mid = liveBeat(scene, T + 11_500 - show.t0, { demo: a.demo, migration: m });
+    expect(mid.title).toBe("Carving the terralith");
+    expect(mid.next.text).toBe("carve: 1 of 2 moved");
+    expect(mid.line.tone).toBe("bad");
+    const tips = liveTipsBetween(scene, -1, T + 20_000 - show.t0);
+    expect(tips.map((t) => t.key).sort()).toEqual(["land:team-a", "refused"]);
+    const done = liveBeat(scene, T + 20_000 - show.t0, { demo: null, migration: { ...m, running: false } });
+    expect(done.phase).toBe("settled");
+    expect(done.focus).toEqual({ kind: "all" });
+    expect(liveEndTip(m, 0).key).toBe("end:carve");
+  });
+});
+
+describe("the gate, in the page (#715)", () => {
+  it("draws nothing for a shut gate or an empty carve", () => {
+    expect(carveDrawable(null)).toBe(false);
+    expect(carveDrawable({ live: false, reason: "no choudoufu roots" })).toBe(false);
+    expect(carveDrawable({ live: true, estates: [], migrations: [] })).toBe(false);
+    expect(carveDrawable(answer([], [stock]))).toBe(true);
+  });
+  it("leaves the layer unmounted, with no director and no zoom limit of its own", () => {
+    expect(dotsActive()).toBe(false);
+    expect(dotsCarving()).toBe(false);
+  });
+});

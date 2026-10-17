@@ -19,6 +19,9 @@
  *   which the kiosk narrates (src/terragucci-demo.ts).
  * - `GET /api/terragucci/runs` and `/api/terragucci/runs/:id` (#569): the
  *   demo's pipeline runs, which the kiosk lists (src/terragucci-runs.ts).
+ * - `GET /api/terragucci/carve` (#715): each estate's roster and each estate
+ *   migration's progress, for the dots layer's live carve
+ *   (src/terragucci-carve.ts). Gated on choudoufu roots or estate rosters.
  * - `GET /api/terragucci/lifecycle` and `GET /api/terragucci/events` (#505):
  *   the gates and locks on `chant/lifecycle`, and the poll that pushes what
  *   moved while a page is open (src/terragucci-poll.ts).
@@ -43,6 +46,10 @@ import { indexProbe, terragucciLaneRoutes, type LaneRouteOptions } from "./terra
 import { runValidator, TerragucciProgress, terragucciProgressRoute } from "./terragucci-progress.ts";
 import { terragucciCyclesRoute, terragucciDemoRoute } from "./terragucci-demo.ts";
 import { terragucciRunsRoutes } from "./terragucci-runs.ts";
+import { terragucciCarveRoute } from "./terragucci-carve.ts";
+import { memberKindOf } from "./member-kind.ts";
+import { configKeys, toolOfBinary } from "./pipeline-marks.ts";
+import { readFileSync } from "node:fs";
 
 export interface TerragucciOptions {
   /** `--terragucci`: a directory, `s3://bucket/prefix`, or an http(s) address serving the bucket. */
@@ -118,6 +125,26 @@ export function checkoutRoots(dirs: readonly string[], base: string = repoBase(d
     }
   }
   return out;
+}
+
+/**
+ * #715: whether the served estate has choudoufu roots: a served member that is
+ * a choudoufu estate, or a terragucci config whose `binary:` (anywhere in it,
+ * a root's own included) is choudoufu.
+ */
+export function servedChoudoufu(dirs: readonly string[]): boolean {
+  if (dirs.some((d) => memberKindOf(d) === "choudoufu")) return true;
+  for (const d of dirs) {
+    const cfg = terragucciConfig(d);
+    if (!cfg) continue;
+    if (toolOfBinary(configKeys(cfg).binary) === "choudoufu") return true;
+    try {
+      if (/\bbinary\s*:\s*["']?[^\s"',}]*choudoufu\b/.test(readFileSync(cfg, "utf8"))) return true;
+    } catch {
+      /* unreadable: not choudoufu as far as this says */
+    }
+  }
+  return false;
 }
 
 /** A key under the source: relative, no `.` or `..` segment, and a report file's extension. */
@@ -213,6 +240,9 @@ export function terragucciRoutes(app: Hono, opts: TerragucciOptions, dirs: () =>
   // #569: the demo's pipeline runs, as the loop driver copies them from the forge.
   const runsSource = opts.runsSource ? terragucciSource(opts.runsSource, { ...(opts.aws ? { aws: opts.aws } : {}), ...(opts.fetch ? { fetch: opts.fetch } : {}) }) : source;
   terragucciRunsRoutes(app, runsSource, opts.now ? { now: opts.now } : {});
+
+  // #715: the live carve, from the estate rosters and the migrations' progress at the same source.
+  terragucciCarveRoute(app, source, { choudoufu: () => servedChoudoufu(dirs()), ...(opts.now ? { now: opts.now } : {}) });
 
   // #506: the timeline lane, from the audit record at the same source.
   terragucciTimelineRoute(app, source, {
