@@ -399,7 +399,9 @@ picture of the dot level is the static carve export's answer, not the app's.
 **2. When the layer is offered.** By the estate, not by a count: the layer
 mounts when the estate has choudoufu roots (a choudoufu member, or a terragucci
 config whose `binary:` is choudoufu) or the reports hold estate rosters, and
-the carve route has a resource to draw. With neither, `/api/terragucci/carve`
+the carve route has a resource to draw. When `demo.json` names the repo being
+carved, it is that repo's projects that must hold choudoufu roots or a
+migration (see "What the build reads"). With neither, `/api/terragucci/carve`
 answers `live: false`, the layer is never mounted, and the kiosk and the app
 behave as they did before (`src/terragucci-carve.test.ts` covers it). Once
 mounted, the cards are still the view at the fit; zooming out past them is
@@ -456,8 +458,22 @@ terragucci#1133 for the migrations), and no others:
   `progress` (`{moved, stamped, refused, skipped, left}`), and its lines are
   `<project>/migrations/<name>/progress.jsonl`. Each line is choudoufu's
   `-progress-json` line with the `migration` and its `counts` so far; until
-  the record has counts, the newest line's are used. The project is an
-  estates.json entry's, else the reports index's.
+  the record has counts, the newest line's are used. The project is the repo
+  demo.json names; with none named, an estates.json entry's, else the reports
+  index's.
+- Only the carved project's estates are drawn, since the demo's prefix holds
+  every demo repo's roots. `demo.json`'s `repo` (`<admin>/demo-terralith`)
+  picks the estates.json project that ends in it
+  (`forgejo:3000/<admin>/demo-terralith`). Each followed migration adds its own
+  project and the projects of the estates its record and lines name as
+  `estate_to`, so the team repos (`demo-terralith-team-a`, `-team-b`,
+  `-team-c`) join after the split and stay drawn in the team beat, when
+  `demo.json` names team B's repo. With no repo named and no migration found,
+  every estate is drawn, as for a plain `behold serve` of one estate.
+- With a repo named, the layer is offered only when its projects hold a
+  choudoufu root (an estate named by a live block, not a stock root's path) or
+  one of its migrations was found; the served checkout does not count. While
+  the demo runs a Terraform scenario, the carve route answers `live: false`.
 - A stamp's line has an empty `estate_from` (the resource had no estate); it
   reads as from the estate it is stamped into.
 - A line in the first read happened before the page looked: its dot is drawn

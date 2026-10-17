@@ -24,14 +24,26 @@
  *   `{at, estate_from, estate_to, address, live_id, outcome, reason?, follows?}`,
  *   with the `migration` and its `counts` once that line arrived.
  *
- * The project is an estates.json entry's, else the reports index's
- * (`index.json`, read only when estates.json names none).
+ * Which estates are drawn: the carved project's, since the demo's prefix
+ * holds every demo repo's roots. demo.json's `repo` names the repo
+ * (`<admin>/demo-terralith`), whose project is the estates.json project that
+ * ends in it (`forgejo:3000/<admin>/demo-terralith`). To it are added each
+ * followed migration's own project and the projects of the estates its
+ * record and lines move resources into (`estate_to`), so the team repos
+ * (`demo-terralith-team-a`, ...) join after a split, and stay in the team
+ * beat, when demo.json names a team's repo. With no repo named and no
+ * migration found, every estate is drawn, as for a plain `behold serve`.
+ * A migration is looked for under the repo's project; with no repo named,
+ * under every estate's project, else the reports index's (`index.json`).
  *
- * The gate: the answer is `live: true` only when the served estate has
- * choudoufu roots (a choudoufu member, or a terragucci config whose binary
- * is choudoufu) or the reports hold estate rosters. With neither, it is
- * `live: false` and the page mounts nothing: the kiosk and the app draw
- * exactly what they drew before.
+ * The gate: with a repo named, the answer is `live: true` only when its
+ * projects hold choudoufu roots (an estate that is a live block's name, not a
+ * stock root's path) or one of its estate migrations was found. The served
+ * checkout does not open it, so while the demo runs a Terraform scenario the
+ * layer stays off. With no repo named, it is `live: true` when the served
+ * estate has choudoufu roots (a choudoufu member, or a terragucci config whose
+ * binary is choudoufu) or the reports hold estate rosters. Shut, the page
+ * mounts nothing: the kiosk and the app draw exactly what they drew before.
  *
  * `GET /api/terragucci/carve` answers it. One read is shared between pages
  * for {@link CARVE_READ_TTL_MS} while a migration runs, and for
@@ -121,6 +133,8 @@ export type CarveAnswer =
       read: string;
       live: true;
       gate: { choudoufu: boolean; rosters: number };
+      /** The projects whose estates are drawn, or null when every estate is (no repo named and no migration found). */
+      projects: string[] | null;
       estates: CarveRoster[];
       migrations: CarveMigration[];
       demo: CarveDemo | null;
@@ -286,6 +300,61 @@ function parse(text: string | undefined, k: string, problems: string[]): unknown
   }
 }
 
+/** A stock root's estate name, as terragucci writes it (report/roster.ts stockEstate): its path, or `root` for the repo's top. */
+export const stockEstate = (root: string): string => root.replace(/^\.(\/+|$)/, "").replace(/\/+$/, "") || "root";
+
+/** Whether an estates.json entry is a choudoufu root's: its estate is a live block's name, not the stock root's path. */
+const choudoufuEntry = (e: EstateEntry): boolean => e.root !== null && e.estate !== stockEstate(e.root);
+
+/**
+ * The projects a forge repo's reports are under, from the projects known:
+ * `forgejo:3000/<admin>/demo-terralith` for `<admin>/demo-terralith`. With
+ * none known, the repo under each forge host a known project names, so a
+ * migration's files are found before the repo's first roster is written.
+ */
+export function repoProjects(repo: string, known: readonly string[]): string[] {
+  const r = trim(repo).toLowerCase();
+  const hit = known.filter((p) => p.toLowerCase() === r || p.toLowerCase().endsWith(`/${r}`));
+  if (hit.length) return [...new Set(hit)].sort();
+  const owners = r.split("/").length;
+  const hosts = known.map((p) => p.split("/")).filter((s) => s.length > owners).map((s) => s.slice(0, s.length - owners).join("/"));
+  return [...new Set(hosts.map((h) => key(h, trim(repo))))].sort();
+}
+
+/** The estates a migration record moves resources into: each `estate_to` (or `to_estate`) it holds, at any depth. */
+export function recordTargets(doc: unknown): string[] {
+  const out = new Set<string>();
+  const walk = (v: unknown, depth: number): void => {
+    if (depth > 6 || out.size >= 256) return;
+    if (Array.isArray(v)) for (const x of v) walk(x, depth + 1);
+    else if (isRecord(v))
+      for (const [k, x] of Object.entries(v)) {
+        if ((k === "estate_to" || k === "to_estate") && str(x)) out.add(x);
+        else walk(x, depth + 1);
+      }
+  };
+  walk(doc, 0);
+  return [...out];
+}
+
+/**
+ * The estates to draw: the carved project's, not every project the prefix
+ * holds (the demo's prefix holds every demo repo's roots). The projects are
+ * the repo demo.json names, each followed migration's own project, and the
+ * projects of the estates its record and lines move resources into, so the
+ * team repos join after a split. With no repo named and no migration found,
+ * every estate, as for a plain `behold serve` of one estate.
+ */
+export function carvedEntries(
+  entries: readonly EstateEntry[],
+  scope: { repo: string[] | null; homes: readonly string[]; targets: ReadonlySet<string> },
+): { entries: EstateEntry[]; projects: string[] | null } {
+  if (scope.repo === null && !scope.homes.length) return { entries: [...entries], projects: null };
+  const projects = new Set<string>([...(scope.repo ?? []), ...scope.homes]);
+  for (const e of entries) if (e.project && scope.targets.has(e.estate)) projects.add(e.project);
+  return { entries: entries.filter((e) => (e.project !== null && projects.has(e.project)) || scope.targets.has(e.estate)), projects: [...projects].sort() };
+}
+
 /** One read of the live carve. Never throws: a key it cannot read is a problem the answer names. */
 export async function readCarve(source: TerragucciSource, opts: CarveReadOptions): Promise<CarveAnswer> {
   const now = opts.now ?? new Date();
@@ -294,10 +363,89 @@ export async function readCarve(source: TerragucciSource, opts: CarveReadOptions
   const estatesDoc = parse(await readText(source, ESTATES_KEY, problems), ESTATES_KEY, problems);
   const isEstates = isRecord(estatesDoc) && estatesDoc.schema === ESTATES_SCHEMA;
   if (estatesDoc !== undefined && !isEstates) problems.push(`${ESTATES_KEY} is not a ${ESTATES_SCHEMA} document`);
-  const entries = isEstates ? estateEntries(estatesDoc) : [];
-  const choudoufu = opts.choudoufu();
-  if (!choudoufu && !entries.length) {
-    return { ...base, live: false, reason: "The estate has no choudoufu roots and the reports hold no estate rosters, so there is no carve to draw.", problems };
+  const all = isEstates ? estateEntries(estatesDoc) : [];
+
+  const demoAnswer = await readDemo(source, now);
+  const d = demoAnswer.demo;
+  const demo: CarveDemo | null = d ? { cycle: d.cycle, scenario: d.scenario, title: d.title, step: d.step, label: d.label, next: d.next ? d.next.action : null } : null;
+  const named = demoMigration(demo?.next);
+  const repo = d?.repo ?? null;
+
+  const wanted = new Set<string>(opts.remembered ?? []);
+  if (named) {
+    wanted.add(named);
+    opts.remembered?.add(named);
+  }
+
+  // The projects a migration may be under: the named repo's, else every estate's, else the reports index's.
+  const entryProjects = [...new Set(all.map((e) => e.project).filter((p): p is string => !!p))].sort();
+  let indexProjects: string[] | undefined;
+  const index = async (): Promise<string[]> => (indexProjects ??= projectsOf(parse(await readText(source, "index.json", problems), "index.json", problems)));
+  let ofRepo: string[] | null = null;
+  if (repo) {
+    ofRepo = repoProjects(repo, entryProjects);
+    if (!ofRepo.some((p) => entryProjects.includes(p)) && wanted.size) ofRepo = repoProjects(repo, [...entryProjects, ...(await index())]);
+  }
+  let projects = ofRepo ?? entryProjects;
+  if (!projects.length && wanted.size) projects = await index();
+
+  const migrations: CarveMigration[] = [];
+  const homes = new Set<string>();
+  const targets = new Set<string>();
+  for (const name of [...wanted].slice(0, MAX_MIGRATIONS)) {
+    const m = { name };
+    // Its record and its lines are under its project: <project>/migrations/<name>.json and <name>/progress.jsonl.
+    const known = opts.places?.get(m.name);
+    const tries = known !== undefined && known !== null ? [known] : projects;
+    let record: unknown;
+    let progress: string | null = null;
+    let text: string | undefined;
+    let home: string | null = null;
+    for (const h of tries) {
+      const pk = key(h, "migrations", m.name, "progress.jsonl");
+      text = await readText(source, pk, problems);
+      if (text !== undefined) {
+        progress = pk;
+        record = parse(await readText(source, key(h, "migrations", `${m.name}.json`), problems), key(h, "migrations", `${m.name}.json`), problems);
+        home = h;
+        break;
+      }
+      const rk = key(h, "migrations", `${m.name}.json`);
+      record = parse(await readText(source, rk, problems), rk, problems);
+      if (record !== undefined) {
+        home = h;
+        break;
+      }
+    }
+    if (home !== null) opts.places?.set(m.name, home);
+    const { lines, bad, counts: lineCounts } = text !== undefined ? readProgress(text) : { lines: [], bad: 0, counts: null };
+    if (bad) problems.push(`${progress}: ${bad} line${bad === 1 ? " is" : "s are"} not a progress record`);
+    const counts = recordCounts(record) ?? lineCounts ?? countLines(lines);
+    const status = isRecord(record) && str(record.status) ? record.status : null;
+    const finished = isRecord(record) && str(record.finished) ? record.finished : null;
+    const done = !!finished || (status !== null && FINISHED.has(status)) || (counts.left === 0 && lines.length > 0 && named !== m.name);
+    if (!lines.length && record === undefined && named !== m.name) continue;
+    if (home !== null && (lines.length || record !== undefined)) {
+      homes.add(home);
+      for (const l of lines) targets.add(l.estate_to);
+      for (const t of recordTargets(record)) targets.add(t);
+    }
+    migrations.push({ name: m.name, progress, lines, counts, status, finished, running: !done && (lines.length > 0 || named === m.name) });
+  }
+
+  // Only the carved project's estates: the demo's prefix holds every demo repo's roots.
+  const carved = carvedEntries(all, { repo: ofRepo, homes: [...homes], targets });
+  const entries = carved.entries;
+  // With a repo named, the gate is that repo's carve: its projects hold choudoufu roots, or one of its migrations was found.
+  // The served checkout is not the demo's repo, so it does not open the gate there.
+  const choudoufu = ofRepo !== null ? homes.size > 0 || entries.some(choudoufuEntry) : opts.choudoufu();
+  const open = ofRepo !== null ? choudoufu : choudoufu || entries.length > 0;
+  if (!open) {
+    const reason =
+      ofRepo !== null
+        ? `demo.json names ${repo}, whose projects hold no choudoufu roots and no estate migration, so there is no carve to draw.`
+        : "The estate has no choudoufu roots and the reports hold no estate rosters, so there is no carve to draw.";
+    return { ...base, live: false, reason, problems };
   }
 
   const estates: CarveRoster[] = [];
@@ -313,60 +461,11 @@ export async function readCarve(source: TerragucciSource, opts: CarveReadOptions
   }
   if (entries.length > MAX_ROSTERS) problems.push(`the index lists ${entries.length} estates; the first ${MAX_ROSTERS} are drawn`);
 
-  const demoAnswer = await readDemo(source, now);
-  const d = demoAnswer.demo;
-  const demo: CarveDemo | null = d ? { cycle: d.cycle, scenario: d.scenario, title: d.title, step: d.step, label: d.label, next: d.next ? d.next.action : null } : null;
-  const named = demoMigration(demo?.next);
-
-  const wanted = new Set<string>(opts.remembered ?? []);
-  if (named) {
-    wanted.add(named);
-    opts.remembered?.add(named);
-  }
-
-  // The projects a migration may be under: the estates' own, else the reports index's.
-  let projects = [...new Set(entries.map((e) => e.project).filter((p): p is string => !!p))].sort();
-  if (!projects.length && wanted.size) projects = projectsOf(parse(await readText(source, "index.json", problems), "index.json", problems));
-  const migrations: CarveMigration[] = [];
-  for (const name of [...wanted].slice(0, MAX_MIGRATIONS)) {
-    const m = { name };
-    // Its record and its lines are under its project: <project>/migrations/<name>.json and <name>/progress.jsonl.
-    const homes = projects;
-    const known = opts.places?.get(m.name);
-    const tries = known !== undefined && known !== null ? [known] : homes;
-    let record: unknown;
-    let progress: string | null = null;
-    let text: string | undefined;
-    for (const h of tries) {
-      const pk = key(h, "migrations", m.name, "progress.jsonl");
-      text = await readText(source, pk, problems);
-      if (text !== undefined) {
-        progress = pk;
-        record = parse(await readText(source, key(h, "migrations", `${m.name}.json`), problems), key(h, "migrations", `${m.name}.json`), problems);
-        opts.places?.set(m.name, h);
-        break;
-      }
-      const rk = key(h, "migrations", `${m.name}.json`);
-      record = parse(await readText(source, rk, problems), rk, problems);
-      if (record !== undefined) {
-        opts.places?.set(m.name, h);
-        break;
-      }
-    }
-    const { lines, bad, counts: lineCounts } = text !== undefined ? readProgress(text) : { lines: [], bad: 0, counts: null };
-    if (bad) problems.push(`${progress}: ${bad} line${bad === 1 ? " is" : "s are"} not a progress record`);
-    const counts = recordCounts(record) ?? lineCounts ?? countLines(lines);
-    const status = isRecord(record) && str(record.status) ? record.status : null;
-    const finished = isRecord(record) && str(record.finished) ? record.finished : null;
-    const done = !!finished || (status !== null && FINISHED.has(status)) || (counts.left === 0 && lines.length > 0 && named !== m.name);
-    if (!lines.length && record === undefined && named !== m.name) continue;
-    migrations.push({ name: m.name, progress, lines, counts, status, finished, running: !done && (lines.length > 0 || named === m.name) });
-  }
-
   return {
     ...base,
     live: true,
     gate: { choudoufu, rosters: estates.length },
+    projects: carved.projects,
     estates,
     migrations,
     demo,
