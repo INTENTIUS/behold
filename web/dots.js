@@ -22,7 +22,7 @@
 
 import { readCarve, carveShow, walkthroughShow, phaseAt } from "./dots-recording.js";
 import { parentsOf } from "./dots-layout.js";
-import { buildScene, takeoffsBy, firstLandings, flightPoint, easeInOut, replayClock, focusRect, BOX } from "./dots-scene.js";
+import { buildScene, takeoffsBy, firstLandings, flightPoint, easeInOut, replayClock, focusRect, cardsReadable, BOX } from "./dots-scene.js";
 import { cardMorph, discMorph, discRadius, levelOf, caption, railMarks, railPos, lerp, LOD, directorScale } from "./dots-lod.js";
 import { perimeter, pointAt, nearestS, segment } from "./dots-border.js";
 import { getTokens, onThemeChange, contrast, hexToOklch, oklchToHex } from "./theme.js";
@@ -57,9 +57,33 @@ export const VIEWER_HOLD_MS = 8_000;
  */
 export const SMALL_STAGE = { max: 40, cell: 6, aspect: GRID.aspect };
 
-/** Whether the scene on stage is a small one (SMALL_STAGE). */
+/** Whether the scene on stage is a small one: laid out as SMALL_STAGE's card grid (sceneFor). */
 function smallStage() {
-  return !!(S && S.seedless && S.show && S.show.roster.length <= SMALL_STAGE.max);
+  return !!(S && S.seedless && S.scene && S.scene.cardGrid);
+}
+
+/**
+ * The scene for a show: a small stage's card grid when the layer draws its own cards, the show is small, and its
+ * cards read on this stage at the widest shot (dots-scene.js cardsReadable); else the dots' own layout, as before.
+ */
+function sceneFor(show, opts, seedless) {
+  if (seedless && show.roster.length <= SMALL_STAGE.max && opts.stage) {
+    const sc = buildScene(show, { ...opts, cardGrid: SMALL_STAGE });
+    if (cardsReadable(sc, opts.stage, rosterNeed(show.roster))) return sc;
+  }
+  return buildScene(show, opts);
+}
+
+/** The card width a roster's names need (dots-cards.js cardNeed), measured before the layer has a canvas of its own. */
+function rosterNeed(roster) {
+  if (typeof document === "undefined") return 0;
+  const cv = document.createElement("canvas").getContext("2d");
+  if (!cv) return 0;
+  const font = (S && S.font) || getComputedStyle(document.body).fontFamily || "sans-serif";
+  return cardNeed(roster.map((r) => cardLabel(r)), (txt, px, weight) => {
+    cv.font = `${weight} ${px}px ${font}`;
+    return cv.measureText(txt).width;
+  });
 }
 
 export function dotsActive() {
@@ -318,7 +342,7 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source 
     ? { x: +boxEl.getAttribute("x"), y: +boxEl.getAttribute("y"), w: +boxEl.getAttribute("width"), h: +boxEl.getAttribute("height") }
     : { x: vbInit[0], y: vbInit[1], w: vbInit[2], h: vbInit[3] };
   // The source estate's box takes its cards' box's place and shape on the page.
-  const scene = buildScene(show, { sourceAspect: mbox.w / Math.max(1, mbox.h), ...labelRoom(host), ...(cards.size === 0 ? { cardGrid: SMALL_STAGE } : {}) });
+  const scene = sceneFor(show, { sourceAspect: mbox.w / Math.max(1, mbox.h), ...labelRoom(host) }, cards.size === 0);
   const src = scene.sourceBox;
   // One dot pitch is a fixed share of a card's width, so a dot is legible exactly
   // when its card stops being: at the dot size a pitch is about 8 px, whatever
@@ -575,6 +599,8 @@ function labelRoom(host) {
     labelPx: (e) => cv.measureText(`${e} 000`).width + 12,
     labelH: 18,
     avail: { w: r.width * 0.72, h: Math.max(80, r.height - (ins.top || 0) - (ins.bottom || 0) - 32) },
+    // The stage the director frames in: the pane less the zoom rail's band and its margins, clear of the caption.
+    stage: { w: Math.max(40, r.width - 182), h: Math.max(40, r.height - (ins.top || 0) - (ins.bottom || 0) - 16) },
   };
 }
 
@@ -2138,7 +2164,7 @@ function takeLive(answer) {
     S.show.t1 = now;
     return;
   }
-  const scene = buildScene(show, { sourceAspect: S.mbox.w / Math.max(1, S.mbox.h), ...labelRoom(S.host), ...(S.seedless ? { cardGrid: SMALL_STAGE } : {}) });
+  const scene = sceneFor(show, { sourceAspect: S.mbox.w / Math.max(1, S.mbox.h), ...labelRoom(S.host) }, S.seedless);
   const n = show.roster.length;
   const src = scene.sourceBox;
   S.show = show;

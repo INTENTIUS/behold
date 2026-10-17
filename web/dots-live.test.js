@@ -3,7 +3,7 @@
 // ring, a move flies, a refusal bounces; lines play from when they were seen.
 import { describe, it, expect } from "vitest";
 import { liveShow, stampArrivals, lineKey, showKey, currentMigration, carveDrawable, boxName, LIVE } from "./dots-live.js";
-import { buildScene, takeoffsBy, cardGridShape, focusRect, BOX } from "./dots-scene.js";
+import { buildScene, takeoffsBy, cardGridShape, focusRect, cardsReadable, BOX } from "./dots-scene.js";
 import { directorScale } from "./dots-lod.js";
 import { tourFocus } from "./dots-tour.js";
 import { readFileSync } from "node:fs";
@@ -315,5 +315,56 @@ describe("every chapter of the terralith tour frames a small carve as cards", ()
     expect(tourGlow({ changed: false }, true, "c").a).toBeLessThan(tourGlow({ changed: false }, false, "c").a);
     // A plan that changes nothing it planned: every planned card lit alike.
     expect(tourGlow({ changed: false }, false, "c")).toMatchObject({ dim: false, a: 0.85 });
+  });
+  it("spreads each dot to its card's cell, never piled in a corner of the box, at a beat's start and end", () => {
+    const a = answer([carve], [thin]);
+    const show = liveShow(a, stampArrivals(a, new Map(), T + 30_000, { first: true }), T + 30_000);
+    const scene = buildScene(show, { sourceAspect: 1, cardGrid: SMALL_STAGE, avail });
+    for (const k of [0, scene.landing.length]) {
+      const L = scene.layoutAt(k);
+      const by = new Map();
+      for (const [addr, s] of L.slots) {
+        const e = L.owners.get(addr);
+        const b = L.boxes.get(e);
+        expect(s.x).toBeGreaterThan(b.x);
+        expect(s.x).toBeLessThan(b.x + b.w);
+        expect(s.y).toBeGreaterThan(b.y);
+        expect(s.y).toBeLessThan(b.y + b.h);
+        if (!by.has(e)) by.set(e, []);
+        by.get(e).push(s);
+      }
+      for (const [e, list] of by) {
+        // One cell apart at least, and the cluster spans the box, not a corner of it.
+        for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) expect(Math.hypot(list[i].x - list[j].x, list[i].y - list[j].y)).toBeGreaterThanOrEqual(SMALL_STAGE.cell - 1e-6);
+        const b = L.boxes.get(e);
+        const xs = list.map((s) => s.x);
+        const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+        expect(Math.abs(cx - (b.x + b.w / 2))).toBeLessThan(SMALL_STAGE.cell);
+      }
+      // The cards land on the dots' own cells: no slide inside the box.
+      const cards = gridSlots(L, SMALL_STAGE.cell, unitKeyOf(scene.rosterBy));
+      for (const [addr, c] of cards) {
+        expect(c.x).toBeCloseTo(L.slots.get(addr).x);
+        expect(c.y).toBeCloseTo(L.slots.get(addr).y);
+      }
+    }
+  });
+  it("keeps the dots on a stage too narrow for the cards to read: a phone, the in-between widths", () => {
+    const a = answer([carve], [thin]);
+    const show = liveShow(a, stampArrivals(a, new Map(), T + 30_000, { first: true }), T + 30_000);
+    const scene = buildScene(show, { sourceAspect: 1, cardGrid: SMALL_STAGE, avail });
+    // The Watch stage at 1280x800 and 1920x1080 reads; a phone (390 wide, its graph 40vh) and a 768 tablet do not.
+    expect(cardsReadable(scene, { w: 1088, h: 494 }, need)).toBe(true);
+    expect(cardsReadable(scene, { w: 1738, h: 700 }, need)).toBe(true);
+    expect(cardsReadable(scene, { w: 208, h: 320 }, need)).toBe(false);
+    expect(cardsReadable(scene, { w: 586, h: 420 }, need)).toBe(false);
+    // The width where it turns follows from the card's readable width, not a breakpoint: longer names need more.
+    let w = 200;
+    while (!cardsReadable(scene, { w, h: 2000 }, need)) w += 10;
+    let w2 = 200;
+    while (!cardsReadable(scene, { w: w2, h: 2000 }, need * 1.4)) w2 += 10;
+    expect(w2).toBeGreaterThan(w);
+    // A scene laid out for the dots alone is never a small stage.
+    expect(cardsReadable(buildScene(show, { sourceAspect: 1 }), { w: 4000, h: 4000 }, need)).toBe(false);
   });
 });

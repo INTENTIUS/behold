@@ -139,6 +139,42 @@ export function cardGridShape(n, { cell, aspect, target = 1.6 }) {
 }
 
 /**
+ * A small stage's card cells for an estate's resources, in pitches: rows of
+ * cells `aspect * cell` wide and `cell` high, centred in the inner rect `r`,
+ * in unit order then address, as web/dots-cards.js gridSlots lays the cards.
+ */
+export function gridCells(rows, r, { cell, aspect }) {
+  const out = new Map();
+  const list = [...rows].sort((a, b) => {
+    const ka = unitOf(a.address, a.type);
+    const kb = unitOf(b.address, b.type);
+    return ka < kb ? -1 : ka > kb ? 1 : a.address < b.address ? -1 : a.address > b.address ? 1 : 0;
+  });
+  const n = list.length;
+  if (!n) return out;
+  const cw = aspect * cell;
+  const cols = Math.max(1, Math.min(n, Math.floor(r.w / cw + 1e-9)));
+  const nr = Math.ceil(n / cols);
+  const x0 = r.x + (r.w - cols * cw) / 2;
+  const y0 = r.y + Math.max(0, (r.h - nr * cell) / 2);
+  list.forEach((m, i) => out.set(m.address, { x: x0 + ((i % cols) + 0.5) * cw, y: y0 + (Math.floor(i / cols) + 0.5) * cell }));
+  return out;
+}
+
+/**
+ * Whether a small stage's cards read on a stage of `stage` px: the whole
+ * scene framed (the widest shot a tour takes), its cards at least `share` of
+ * the width a card's name needs (`need`, px). Too narrow a stage (a phone, two
+ * boxes side by side) keeps the dots.
+ */
+export function cardsReadable(scene, stage, need, { pad = 3.5, gap = 0.12, share = 0.7 } = {}) {
+  const g = scene && scene.cardGrid;
+  if (!g || !stage || !(stage.w > 0) || !(stage.h > 0) || !(need > 0)) return false;
+  const pp = Math.min(stage.w / (scene.extent.w + 2 * pad), stage.h / (scene.extent.h + 2 * pad));
+  return pp * g.cell * (g.aspect - gap) >= need * share;
+}
+
+/**
  * The scene: the flights, and the layout after every takeoff, in pitches.
  * `layoutAt(k)` is the layout once the first k landing flights have taken off
  * (a dot in flight already holds its slot in the box it is flying to).
@@ -246,7 +282,15 @@ export function buildScene(show, opts = {}) {
       }
       const ix = bx + BOX.pad;
       const iy = by + BOX.pad + BOX.title + (fromEnd ? ih : 0);
-      for (const [addr, s] of p.slots) slots.set(addr, { x: ix + s.x, y: iy + s.y, ...(s.parent ? { parent: s.parent } : {}) });
+      if (mi && ms.length) {
+        // A small stage's box is its card grid: each dot sits at its card's cell (web/dots-cards.js gridSlots, the
+        // same order and cells), spread over the box at every zoom, never piled in a corner at the dots' pitch.
+        const cells = gridCells(ms, { x: ix, y: by + BOX.pad + BOX.title, w: Math.max(p.w, mi.w), h: ih }, grid);
+        for (const [addr, c] of cells) {
+          const s = p.slots.get(addr);
+          slots.set(addr, { x: c.x, y: c.y, ...(s && s.parent ? { parent: s.parent } : {}) });
+        }
+      } else for (const [addr, s] of p.slots) slots.set(addr, { x: ix + s.x, y: iy + s.y, ...(s.parent ? { parent: s.parent } : {}) });
       // The source's box narrows to the dots it still holds once its last row is partial.
       let x0 = bx;
       let w = Math.max(p.w, ms.length ? 0 : 4, mi ? mi.w : 0) + 2 * BOX.pad;
@@ -265,7 +309,7 @@ export function buildScene(show, opts = {}) {
     cache.set(kk, out);
     return out;
   };
-  return { show, flights, landing, estates, source, layoutAt, extent: { w: extentW, h: extentH }, sourceBox: src, finalSize, rosterBy };
+  return { show, flights, landing, estates, source, layoutAt, extent: { w: extentW, h: extentH }, sourceBox: src, finalSize, rosterBy, cardGrid: grid };
 }
 
 function unionBox(a, b) {
