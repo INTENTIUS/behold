@@ -22,7 +22,7 @@
 
 import { readCarve, carveShow, walkthroughShow, phaseAt } from "./dots-recording.js";
 import { parentsOf } from "./dots-layout.js";
-import { buildScene, takeoffsBy, firstLandings, flightPoint, easeInOut, replayClock, BOX } from "./dots-scene.js";
+import { buildScene, takeoffsBy, firstLandings, flightPoint, easeInOut, replayClock, focusRect, BOX } from "./dots-scene.js";
 import { cardMorph, discMorph, discRadius, levelOf, caption, railMarks, railPos, lerp, LOD, directorScale } from "./dots-lod.js";
 import { perimeter, pointAt, nearestS, segment } from "./dots-border.js";
 import { getTokens, onThemeChange, contrast, hexToOklch, oklchToHex } from "./theme.js";
@@ -309,6 +309,10 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source 
   }
   widths.sort((a, b) => a - b);
   const cardW = widths[widths.length >> 1] || 200;
+  // A small live stage reads as the roster's own cards in their estates' boxes, whichever view is served under it:
+  // a team repo's view (the team beat) draws its roots' resources as cards of its own, which would otherwise be the
+  // card level, at their places on the page, and the director would keep the stage at the dots. They keep the pitch.
+  if (live && show.roster.length <= SMALL_STAGE.max) cards.clear();
   const boxEl = svg.querySelector(`rect[data-group-id="${CSS.escape(show.source)}"]`) || svg.querySelector("rect[data-group-id]");
   const mbox = boxEl
     ? { x: +boxEl.getAttribute("x"), y: +boxEl.getAttribute("y"), w: +boxEl.getAttribute("width"), h: +boxEl.getAttribute("height") }
@@ -1122,14 +1126,16 @@ function linesOf(ctx, a, sh) {
  * rect in its estate's colour, which pales to a tint on the page's surface as the name and the type fade in. The
  * marks a dot wears (a tour's light, the adoption's ring, the selection, a takeoff) go round the card.
  */
-function drawRosterCard(ctx, a, sh, u, { vis, colour, glow, ring, selected, takeoff }) {
+function drawRosterCard(ctx, a, sh, u, { vis: vis0, colour, glow, ring, selected, takeoff }) {
   const col = S.col;
   const round = (o) => roundRect(ctx, sh.x - o, sh.y - o, sh.w + 2 * o, sh.h + 2 * o, sh.r + o);
+  // A card the plan planned but does not change steps back beside the one it changes.
+  const vis = glow && glow.dim ? vis0 * 0.55 : vis0;
   if (glow) {
-    ctx.globalAlpha = vis * glow.a * 0.7;
+    ctx.globalAlpha = vis * glow.a * (glow.ring ? 1 : 0.7);
     ctx.strokeStyle = glow.colour;
-    ctx.lineWidth = 3;
-    round(3);
+    ctx.lineWidth = glow.ring ? 4.5 : 3;
+    round(glow.ring ? 4 : 3);
     ctx.stroke();
   }
   round(0);
@@ -1513,9 +1519,12 @@ function draw(dt) {
   }
   // The tour's lights: each resource the chapter's plan planned, brighter where the plan changes it.
   const fx = currentFx(owners);
+  // A plan that changes some of what it planned (the team beat: one inline policy of team B's five resources) lights
+  // the changed cards and dims the rest, so "only this changes" reads on the cards.
+  const anyChanged = !!fx && [...fx.lights.values()].some((l) => l.changed);
   if (fx) for (const [id, l] of fx.lights) {
     const prev = glow.get(id);
-    const g = { colour: col.foreign, a: l.changed ? 1 : 0.85, ring: l.changed };
+    const g = tourGlow(l, anyChanged, col.foreign);
     if (!prev || g.a >= prev.a) glow.set(id, g);
   }
   ctx.globalAlpha = 1;
@@ -1960,6 +1969,15 @@ function frameBox(b) {
   return [vx, vy, vw, vh];
 }
 
+/**
+ * A tour light's glow on a dot or a card: a changed resource full and ringed; one the plan only planned, beside a
+ * changed one, faint and dimmed; with nothing changed, every planned one lit alike.
+ */
+export function tourGlow(light, anyChanged, colour) {
+  if (light.changed) return { colour, a: 1, ring: true, dim: false };
+  return anyChanged ? { colour, a: 0.4, ring: false, dim: true } : { colour, a: 0.85, ring: false, dim: false };
+}
+
 /** The director's zoom and what it is made of, for frameBox and __dots.debug(). */
 function frameNumbers(fitW, fitH) {
   const fit = Math.min(fitW, fitH);
@@ -1969,23 +1987,8 @@ function frameNumbers(fitW, fitH) {
   return { fit, cardsAt, dotsCap, small, need: S.need ?? null, rc: S.rc ?? null, gridK: S.gridK ?? null, s: directorScale({ fit, dotsCap, cardsAt, small }) };
 }
 
-function unionBox(a, b) {
-  if (!a) return b;
-  if (!b) return a;
-  const x = Math.min(a.x, b.x);
-  const y = Math.min(a.y, b.y);
-  return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
-}
-
 function focusBox(focus) {
-  const sc = S.scene;
-  const now = sc.layoutAt(takeoffsBy(sc, S.t)).boxes;
-  const fin = sc.layoutAt(sc.landing.length).boxes;
-  const src = now.get(sc.source) || sc.layoutAt(0).boxes.get(sc.source);
-  if (focus.kind === "all") return { x: 0, y: 0, w: sc.extent.w, h: sc.extent.h };
-  if (focus.kind === "source" || focus.estate === sc.source) return src;
-  // The estate receiving the flock, with the box it leaves, so the flight is in the shot.
-  return unionBox(src, fin.get(focus.estate) || now.get(focus.estate));
+  return focusRect(S.scene, focus, S.t);
 }
 
 function kioskTick(wall, dt) {

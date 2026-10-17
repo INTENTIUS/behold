@@ -3,9 +3,13 @@
 // ring, a move flies, a refusal bounces; lines play from when they were seen.
 import { describe, it, expect } from "vitest";
 import { liveShow, stampArrivals, lineKey, showKey, currentMigration, carveDrawable, boxName, LIVE } from "./dots-live.js";
-import { buildScene, takeoffsBy, cardGridShape, BOX } from "./dots-scene.js";
+import { buildScene, takeoffsBy, cardGridShape, focusRect, BOX } from "./dots-scene.js";
+import { directorScale } from "./dots-lod.js";
+import { tourFocus } from "./dots-tour.js";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { gridScale, gridSlots, unitKeyOf, GRID } from "./dots-cards.js";
-import { SMALL_STAGE } from "./dots.js";
+import { SMALL_STAGE, tourGlow } from "./dots.js";
 import { liveBeat, liveTipsBetween, liveEndTip } from "./dots-kiosk.js";
 import { dotsCarving, dotsActive } from "./dots.js";
 
@@ -263,5 +267,53 @@ describe("a small stage, laid out for its cards", () => {
     const g = buildScene(show, { sourceAspect: 1, cardGrid: SMALL_STAGE, avail: { w: 1600, h: 500 } });
     const p = buildScene(show, { sourceAspect: 1 });
     expect(g.layoutAt(0).boxes.get(show.source)).toEqual(p.layoutAt(0).boxes.get(show.source));
+  });
+});
+
+describe("every chapter of the terralith tour frames a small carve as cards", () => {
+  // The thin terralith (terragucci#1155): 14 resources, team B's 5 carved out alone.
+  const team = ["aws_iam_role.app", "aws_iam_role_policy.inline", "aws_cloudwatch_log_group.app", "aws_s3_bucket.data", "aws_sqs_queue.jobs"].map((a) => `module.team_b.${a}`);
+  const rest = Array.from({ length: 9 }, (_, i) => `aws_s3_bucket.shared_${i}`);
+  const thin = { estate: "terralith", at: at(-60), count: 14, resources: [...rest, ...team].map((address) => ({ address, type: address.split(".").slice(-2)[0], marked: false })) };
+  const carve = { name: "split", running: false, counts: { moved: 5, stamped: 0, refused: 0, skipped: 0, left: 0 }, lines: team.map((address, i) => ({ at: at(10 + i), estate_from: "terralith", estate_to: "team-b", address, live_id: `b-${i}`, outcome: "moved" })) };
+  const tour = JSON.parse(readFileSync(fileURLToPath(new URL("./tours/terralith.json", import.meta.url)), "utf8"));
+  // Watch at 1280x800 (the frame's measurements on the live loop): the stage the director frames in, and the area
+  // the scene is laid out for, both clear of the tour's caption; a card name's width; one pitch's px at the dots cap.
+  const stage = { w: 1088, h: 494 };
+  const avail = { w: 914, h: 478 };
+  const need = 150;
+  const dotsCapPP = 7;
+  const cardWP = SMALL_STAGE.cell * (GRID.aspect - GRID.gap);
+  it("in each chapter's focus, at each beat's start and end", () => {
+    const a = answer([carve], [thin]);
+    const show = liveShow(a, stampArrivals(a, new Map(), T + 30_000, { first: true }), T + 30_000);
+    expect(show.roster.length).toBeLessThanOrEqual(SMALL_STAGE.max);
+    const scene = buildScene(show, { sourceAspect: 1, cardGrid: SMALL_STAGE, avail });
+    // A beat's start (nothing moved yet) and its end (every move landed).
+    const ends = [0, 1e15];
+    for (const ch of tour.chapters) {
+      // The chapter's visuals as the tour has them once fired: a light lit on team B's resources, the changed one first.
+      const shown = (ch.show || []).filter((s) => s.light).map(() => ({ kind: "light", lit: team.map((address, i) => ({ address, estates: ["team-b"], changed: i === 1 })) }));
+      const focus = tourFocus({ at: { chapter: ch }, shown }, scene.estates, []);
+      expect(["all", "source", "box"]).toContain(focus.kind);
+      if (ch.id === "team") expect(focus).toEqual({ kind: "box", estate: "team-b" });
+      for (const t of ends) {
+        for (const f of [focus, { kind: "estate", estate: "team-b" }, { kind: "source" }]) {
+          const r = focusRect(scene, f, t);
+          const fit = Math.min(stage.w / (r.w + 7), stage.h / (r.h + 7));
+          const s = directorScale({ fit, dotsCap: dotsCapPP, cardsAt: (need * 1.1) / cardWP, small: true });
+          // Framed past the dots cap, with each card wide enough to read its name, or nearly.
+          expect(s, `${ch.id} ${f.kind} at ${t}`).toBeGreaterThan(dotsCapPP);
+          expect(s * cardWP, `${ch.id} ${f.kind} at ${t}`).toBeGreaterThan(need * 0.85);
+        }
+      }
+    }
+  });
+  it("lights the team beat's changed card and dims the rest of what the plan planned", () => {
+    expect(tourGlow({ changed: true }, true, "c")).toEqual({ colour: "c", a: 1, ring: true, dim: false });
+    expect(tourGlow({ changed: false }, true, "c")).toMatchObject({ dim: true, ring: false });
+    expect(tourGlow({ changed: false }, true, "c").a).toBeLessThan(tourGlow({ changed: false }, false, "c").a);
+    // A plan that changes nothing it planned: every planned card lit alike.
+    expect(tourGlow({ changed: false }, false, "c")).toMatchObject({ dim: false, a: 0.85 });
   });
 });

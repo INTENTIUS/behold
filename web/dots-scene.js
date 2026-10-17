@@ -268,6 +268,29 @@ export function buildScene(show, opts = {}) {
   return { show, flights, landing, estates, source, layoutAt, extent: { w: extentW, h: extentH }, sourceBox: src, finalSize, rosterBy };
 }
 
+function unionBox(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  const x = Math.min(a.x, b.x);
+  const y = Math.min(a.y, b.y);
+  return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
+}
+
+/**
+ * The box the director frames for `focus` at show time `t`, in pitches: the
+ * whole scene ("all"), the source's box ("source"), or an estate's box (an
+ * "estate" the flock flies to, a tour chapter's "box") with the source's, so
+ * the flight is in the shot.
+ */
+export function focusRect(scene, focus, t) {
+  const now = scene.layoutAt(takeoffsBy(scene, t)).boxes;
+  const fin = scene.layoutAt(scene.landing.length).boxes;
+  const src = now.get(scene.source) || scene.layoutAt(0).boxes.get(scene.source);
+  if (focus.kind === "all") return { x: 0, y: 0, w: scene.extent.w, h: scene.extent.h };
+  if (focus.kind === "source" || focus.estate === scene.source) return src;
+  return unionBox(src, fin.get(focus.estate) || now.get(focus.estate));
+}
+
 /** How many landing flights have taken off by replay time `t` (binary search). */
 export function takeoffsBy(scene, t) {
   const l = scene.landing;
