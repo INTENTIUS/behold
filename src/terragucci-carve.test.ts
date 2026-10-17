@@ -382,6 +382,21 @@ describe("cycle 5's adoption: found by listing, and one box with its stock root"
     expect(m.progress).toBe(`${P}/migrations/adopt/progress.jsonl`);
   });
 
+  it("drops the cycle before's lines while this cycle's record of the same migration waits", async () => {
+    // Cycle 8 on the live run: adopt.json rewritten as waiting, progress.jsonl still the cycle before's 82 lines.
+    const dir = cycle5({ estate: false, lines: N, finished: false });
+    put(dir, "demo.json", JSON.stringify({ cycle: 6, scenario: "terralith", title: "t", step: "waiting", label: "l", started_at: "2026-10-17T08:30:00Z", next: { action: "approve migration adopt", at: null }, pull: 4, commit: "def", tool: "terralith", repo: "terragucci-admin/demo-terralith" }));
+    put(dir, `${P}/migrations/adopt.json`, JSON.stringify({ name: "adopt", change: "adopt", status: "waiting" }));
+    mtime(dir, `${P}/migrations/adopt.json`, "2026-10-17T08:31:00Z");
+    put(dir, "estates.json", JSON.stringify({ schema: "terragucci.estates/v1", estates: [{ estate: "terralith", count: N, at: "2026-10-17T08:30:30Z", project: P, root: "terralith", roster: "estates/terralith/roster.json" }] }));
+    const a = await readCarve(terragucciSource(dir), { choudoufu: () => false });
+    if (!a.live) throw new Error(`shut: ${a.reason}`);
+    const m = a.migrations.find((x) => x.name === "adopt");
+    expect(m?.lines ?? []).toEqual([]);
+    expect(readProgress(JSON.stringify(stamp(0)), "2026-10-17T08:30:00Z").lines).toEqual([]);
+    expect(readProgress(JSON.stringify(stamp(0)), "2026-10-17T08:00:00Z").lines).toHaveLength(1);
+  });
+
   it("draws the adopted estate in place of its stock root, as one box", async () => {
     const a = await readCarve(terragucciSource(cycle5()), { choudoufu: () => false });
     if (!a.live) throw new Error(`shut: ${a.reason}`);

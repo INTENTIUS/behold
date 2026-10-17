@@ -210,7 +210,10 @@ export function progressLine(v: unknown): CarveLine | undefined {
  * last one may be half written while the job appends, so it is left out
  * without a word, and any other is counted.
  */
-export function readProgress(text: string): { lines: CarveLine[]; bad: number; counts: CarveCounts | null } {
+export function readProgress(text: string, from: string | null = null): { lines: CarveLine[]; bad: number; counts: CarveCounts | null } {
+  // A line from before the cycle started is an earlier cycle's run of the same migration: the record is rewritten
+  // when this cycle's runs again, and the progress file keeps the old lines until this one's arrive.
+  const since = from ? Date.parse(from) : NaN;
   const raw = text.split("\n");
   const lines: CarveLine[] = [];
   let bad = 0;
@@ -226,6 +229,7 @@ export function readProgress(text: string): { lines: CarveLine[]; bad: number; c
       return;
     }
     const line = progressLine(doc);
+    if (line && !Number.isNaN(since) && Date.parse(line.at) < since) return;
     if (line) {
       lines.push(line);
       counts = countsIn(isRecord(doc) ? doc.counts : undefined) ?? counts;
@@ -586,7 +590,7 @@ export async function readCarve(source: TerragucciSource, opts: CarveReadOptions
         break;
       }
     }
-    const { lines, bad, counts: lineCounts } = text !== undefined ? readProgress(text) : { lines: [], bad: 0, counts: null };
+    const { lines, bad, counts: lineCounts } = text !== undefined ? readProgress(text, startedAt) : { lines: [], bad: 0, counts: null };
     const status = isRecord(record) && str(record.status) ? record.status : null;
     const finished = isRecord(record) && str(record.finished) ? record.finished : null;
     // A listed migration is followed when it belongs to this cycle: a line, its finish or its record's write at or after started_at.

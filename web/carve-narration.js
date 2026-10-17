@@ -81,11 +81,15 @@ export function createNarration({ bar, caption, tipsHost, modalHost, origin }) {
     const size = { w: tip.node.offsetWidth, h: tip.node.offsetHeight };
     const win = { w: window.innerWidth, h: window.innerHeight };
     let p;
+    // The other boxes are what the bubble keeps off: it points at one estate, never sits on another's box or the source's.
+    const o = origin();
+    const others = Object.entries(state.rects || {})
+      .filter(([e]) => e !== tip.t.estate)
+      .map(([, r]) => ({ x: o.left + r.left, y: o.top + r.top, w: r.width, h: r.height }));
     try {
-      p = tipSpot(anchorOf(tip.t, state), size, win);
+      p = tipSpot(anchorOf(tip.t, state), size, win, others);
     } catch {
       // A box off the page has no spot beside it: the bubble goes over the middle.
-      const o = origin();
       p = tipSpot({ left: o.left + o.width / 2 - 60, top: o.top + o.height / 2, width: 120, height: 10 }, size, win);
     }
     tip.node.style.setProperty("--eh-at", `translate(${p.x}px, ${p.y}px)`);
