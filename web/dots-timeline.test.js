@@ -35,7 +35,9 @@ describe("the recorded clock", () => {
   });
 
   it("ticks at the recording's own wall-clock times, never 0:00", () => {
-    const c = recordedClock([], T, T + 10 * 60_000);
+    // A write every 5 s for ten minutes: no stretch is idle, so none is skipped.
+    const c = recordedClock(Array.from({ length: 120 }, (_, i) => T + i * 5_000), T, T + 10 * 60_000);
+    expect(c.breaks).toEqual([]);
     const ticks = wallTicks(c, 6);
     expect(ticks.length).toBeGreaterThan(2);
     expect(ticks[0].label).toMatch(/^16:\d\d$/);
