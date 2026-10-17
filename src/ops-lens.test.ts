@@ -317,7 +317,7 @@ describe("parseOpIr / readOpIr — refusals (#193)", () => {
     expect(p.ok).toBe(false);
     if (!p.ok) {
       expect(p.refusal.error).toContain("string `name` and a `phases` array");
-      expect(p.refusal.remedy).toContain("chant build --lexicon temporal");
+      expect(p.refusal.remedy).toContain("`chant build`");
     }
   });
 

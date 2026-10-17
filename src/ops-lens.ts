@@ -249,8 +249,8 @@ const refuse = (error: string, remedy: string): OpIrParse => ({ ok: false, refus
 
 /** The remedy every shape refusal ends with — where a real op.json comes from. */
 export const HOW_TO_EMIT =
-  "Build the project with a chant >= 0.50 (`chant build --lexicon temporal`), which writes " +
-  "`dist/ops/<name>/op.json` beside each Op's generated workflow.";
+  "Build the project with `chant build`, which writes " +
+  "`dist/ops/<name>/op.json` for each Op.";
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
