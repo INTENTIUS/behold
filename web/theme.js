@@ -148,10 +148,23 @@ function pushForContrast(hex, against, floor, dark) {
 // actual message, so everything around them gives up chroma to let them land.
 // Every one of them is still DERIVED: no chrome constant is a fixed colour, and
 // all 552 palettes have to come out of here legible.
+/** behold#725: the least contrast --muted and --muted-ink keep on the grounds they sit on (WCAG AA). */
+export const MUTED_FLOOR = 4.5;
+/** behold#725: the least contrast --ink2, the secondary prose ink, keeps on every ground (WCAG AAA). */
+export const INK2_FLOOR = 7;
+/** behold#725: how far --ink2 starts from --fg toward --bg before the floor holds it. */
+export const INK2_EASE = 0.22;
+
 export function tokensFor(th) {
   const fgMix = (t) => mix(th.bg, th.fg, t);
   const P = th.palette;
   const panel = fgMix(0.09);
+  const kiosk = kioskSurfaces(th);
+  // The recessed ground (see `well` below), computed first so --ink2 can be held on it.
+  const well = (() => {
+    const b = hexToOklch(th.bg);
+    return oklchToHex({ ...b, L: clamp(b.L + (b.L < 0.16 ? 0.06 : -0.06), 0, 1) });
+  })();
   // The active-control fill (tab strip, the picked option) — the panel pulled
   // toward the accent, then pushed AWAY from the panel's own lightness so the
   // fill is visible even on a palette whose blue slot happens to sit exactly at
@@ -173,8 +186,9 @@ export function tokensFor(th) {
     // #240: secondary text needs an actual floor, not just "quieter than
     // fg" — a handful of low-range palettes (Darkermatrix and friends) mix
     // fg/panel close enough that the quieted 0.5 mix reads at ~1.25:1.
-    // Push its OKLCH L away from --panel's until it clears 3:1.
-    muted: pushForContrast(desaturate(fgMix(0.5), 0.75), panel, 3, th.dark),
+    // Push its OKLCH L away from --panel's until it clears MUTED_FLOOR
+    // (behold#725: 4.5:1, WCAG AA for body text; it was 3:1).
+    muted: pushForContrast(desaturate(fgMix(0.5), 0.75), panel, MUTED_FLOOR, th.dark),
     edge: fgMix(0.32),
     // The structural border — the panel shell, the pane edge, the footer rule.
     // Tinted by the palette's OWN bright-black slot instead of being one more
@@ -190,10 +204,7 @@ export function tokensFor(th) {
     // off the background (down, or UP on the near-black palettes where there is
     // no "darker" left), keeping the bg's own hue so it never reads as a patch
     // of a different theme.
-    well: (() => {
-      const b = hexToOklch(th.bg);
-      return oklchToHex({ ...b, L: clamp(b.L + (b.L < 0.16 ? 0.06 : -0.06), 0, 1) });
-    })(),
+    well,
     // Shadow/scrim base, used through color-mix() at the call site — a light
     // theme's drop shadow must not be the same slab of black a dark one wants.
     shadow: mix(th.bg, "#000000", th.dark ? 0.85 : 0.6),
@@ -211,8 +222,35 @@ export function tokensFor(th) {
     // pending change).
     runtime: th.palette[6],   // cyan   — runtime child (expected, not drift)
     cat: [1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14].map((i) => th.palette[i]),
-    ...kioskSurfaces(th),
+    ...kiosk,
+    ink2: ink2For(th, ink2Grounds(th, { panel, well, kiosk })),
   };
+}
+
+/**
+ * behold#725: every ground --ink2 is read on: the page, the app's panel and
+ * well, the kiosk's surfaces, and each of those under the zebra tint.
+ */
+export function ink2Grounds(th, { panel, well, kiosk }) {
+  const plain = [th.bg, panel, well, kiosk.surfaceBox, kiosk.surfacePaneA, kiosk.surfacePaneB];
+  return [...plain, ...plain.map((g) => mix(g, th.fg, ZEBRA))];
+}
+
+/**
+ * behold#725: the secondary prose ink. Sentences that sit under a heading or
+ * beside a value read in it, where --muted stays for keys and captions. It is
+ * --fg eased INK2_EASE of the way toward --bg, then pushed back until it
+ * clears INK2_FLOOR on every ground. Where --fg itself sits under the floor
+ * (a low-contrast palette), the push goes past --fg, as far as the gamut
+ * allows.
+ */
+function ink2For(th, grounds) {
+  const up = hexToOklch(th.fg).L >= hexToOklch(th.bg).L;
+  const pushed = pushAll(mix(th.fg, th.bg, INK2_EASE), grounds, INK2_FLOOR, up);
+  if (worstOn(pushed, grounds) >= INK2_FLOOR) return pushed;
+  // A mid-tone palette (Grass, Hot Dog Stand and nine others) where not even
+  // white or black reaches the floor on every ground: the best of the three.
+  return [pushed, "#ffffff", "#000000"].reduce((a, b) => (worstOn(b, grounds) > worstOn(a, grounds) + 0.01 ? b : a));
 }
 
 // --- the kiosk's surfaces (behold#571) -------------------------------------
@@ -230,6 +268,12 @@ export const SURFACE_STEPS = { box: 0.03, paneA: 0.055, paneB: 0.08 };
 export const SOFT_CEILING = 13;
 /** The least OKLCH lightness between two neighbouring levels, so each reads as its own box. */
 export const MIN_STEP = 0.02;
+/**
+ * behold#725: the share of --bg's OKLCH chroma the derived surfaces keep. A
+ * saturated ground (a deep blue or red) stacked three steps high reads loud;
+ * the surfaces keep its hue at under half its colour. --bg itself is left alone.
+ */
+export const SURFACE_CHROMA = 0.4;
 
 /** The root dots' hues, by theme (behold#571): violet, orange, orchid, silver, tan. Never a state's. */
 export const ROOT_HUES = {
@@ -255,7 +299,8 @@ function pushAll(hex, against, floor, dark) {
  * on a light one; the other way where the palette leaves no room), `zebra`
  * (the tint list rows alternate with), `soft` (body ink: --fg, eased toward
  * --bg where it would glare, and never under 4.5:1 on any surface or zebra
- * row), `mutedInk` (secondary ink, 3:1 on all of them), each state colour's
+ * row), `mutedInk` (keys and captions, MUTED_FLOOR on all of them; behold#725
+ * raised it from 3:1), each state colour's
  * `*Ink` (3:1 on all of them) and `roots` (the root dots, 3:1 on all of them).
  */
 export function kioskSurfaces(th) {
@@ -275,13 +320,14 @@ export function kioskSurfaces(th) {
   // Each level at least MIN_STEP of OKLCH lightness past the one before, as the
   // colour rounds to 8 bits (near black, small steps all round to #000000).
   const levels = [];
+  const ground = { ...b, C: b.C * SURFACE_CHROMA };
   let prev = b.L;
   for (const dl of [SURFACE_STEPS.box, SURFACE_STEPS.paneA - SURFACE_STEPS.box, SURFACE_STEPS.paneB - SURFACE_STEPS.paneA]) {
     let want = prev + dir * dl;
-    let hex = oklchToHex({ ...b, L: clamp(want, 0, 1) });
+    let hex = oklchToHex({ ...ground, L: clamp(want, 0, 1) });
     for (let i = 0; i < 40 && Math.abs(hexToOklch(hex).L - prev) < MIN_STEP; i++) {
       want += dir * 0.005;
-      hex = oklchToHex({ ...b, L: clamp(want, 0, 1) });
+      hex = oklchToHex({ ...ground, L: clamp(want, 0, 1) });
     }
     levels.push(hex);
     prev = hexToOklch(hex).L;
@@ -302,7 +348,7 @@ export function kioskSurfaces(th) {
     soft = mix(th.fg, th.bg, lo);
   }
   soft = pushAll(soft, grounds, 4.5, lightInk);
-  const muted = pushAll(desaturate(mix(th.bg, th.fg, 0.5), 0.75), grounds, 3, lightInk);
+  const muted = pushAll(desaturate(mix(th.bg, th.fg, 0.5), 0.75), grounds, MUTED_FLOOR, lightInk);
   const P = th.palette;
   const ink = (c) => pushAll(c, grounds, 3, lightInk);
   const hues = th.dark ? ROOT_HUES.dark : ROOT_HUES.light;
@@ -325,7 +371,7 @@ export function kioskSurfaces(th) {
 // CSS custom properties behold's chrome (:root) reads. The pre-paint fallback
 // block in index.html mirrors these for the DEFAULT theme — smoke/ui-smoke.mjs
 // recomputes it from here and fails if the two ever drift apart.
-const CSS_VARS = ["bg", "panel", "line", "fg", "muted", "edge", "managed", "foreign", "pending", "degraded", "neutral", "runtime", "rule", "focus", "active", "well", "shadow"];
+const CSS_VARS = ["bg", "panel", "line", "fg", "muted", "ink2", "edge", "managed", "foreign", "pending", "degraded", "neutral", "runtime", "rule", "focus", "active", "well", "shadow"];
 // behold#571: the kiosk's surfaces and ink, as --surface-box, --soft, --managed-ink and the like; the root dots as --root-0 … --root-4.
 const KIOSK_VARS = { surfaceBox: "surface-box", surfacePaneA: "surface-pane-a", surfacePaneB: "surface-pane-b", zebra: "zebra", soft: "soft", mutedInk: "muted-ink", managedInk: "managed-ink", foreignInk: "foreign-ink", pendingInk: "pending-ink", degradedInk: "degraded-ink", runtimeInk: "runtime-ink" };
 
@@ -497,24 +543,51 @@ export function getTokens() { return _tokens; }
 export function getThemeName() { return _active && _active.name; }
 export function onThemeChange(cb) { _subs.add(cb); return () => _subs.delete(cb); }
 
+/**
+ * behold#725: every custom property applyTheme sets for `tokens`, as
+ * { "--name": value }. One list, so the page and the pre-paint copy
+ * (paintFor) can't drift apart.
+ */
+export function themeVars(tokens, th = _active) {
+  const vars = {};
+  for (const k of CSS_VARS) vars["--" + k] = tokens[k];
+  for (const [k, v] of Object.entries(KIOSK_VARS)) if (tokens[k]) vars["--" + v] = tokens[k];
+  (tokens.roots || []).forEach((c, i) => { vars[`--root-${i}`] = c; });
+  if (th) {
+    const pin = pinTokensFor(th);
+    for (const k of PIN_VARS) vars["--pin-" + k] = pin[k];
+    // behold#571: the state colours the graph frame draws as text and lines, legible on every ground (frameInks).
+    const inks = frameInks(th);
+    for (const k of FRAME_STATES) {
+      vars["--frame-" + k] = inks.box[k];
+      vars["--frame-card-" + k] = inks.card[k];
+    }
+    // behold#571: the left bars' colours, shared by the app, the kiosk and the lanes strip (barInks).
+    for (const [k, v] of Object.entries(barVars(th))) vars["--" + k] = v;
+  }
+  return vars;
+}
+
+/**
+ * behold#725: where applyTheme keeps the last theme it painted, for the
+ * inline script at the top of index.html and kiosk.html. theme.js is a module
+ * and runs after the first frame, so a viewer's own theme would open on the
+ * page's default for a moment. That script reads this record first and
+ * applies it when it belongs to the stored theme.
+ */
+export const PAINT_KEY = "behold.theme.paint";
+/** The record applyTheme keeps under PAINT_KEY. */
+export function paintFor(tokens, th = _active) {
+  return { name: th ? th.name : null, scheme: tokens.dark ? "dark" : "light", vars: themeVars(tokens, th) };
+}
+
 export function applyTheme(tokens = _tokens) {
   if (!tokens || typeof document === "undefined") return;
   const root = document.documentElement;
-  for (const k of CSS_VARS) root.style.setProperty("--" + k, tokens[k]);
-  for (const [k, v] of Object.entries(KIOSK_VARS)) if (tokens[k]) root.style.setProperty("--" + v, tokens[k]);
-  (tokens.roots || []).forEach((c, i) => root.style.setProperty(`--root-${i}`, c));
-  if (_active) { const pin = pinTokensFor(_active); for (const k of PIN_VARS) root.style.setProperty("--pin-" + k, pin[k]); }
-  // behold#571: the state colours the graph frame draws as text and lines, legible on every ground (frameInks).
-  if (_active) {
-    const inks = frameInks(_active);
-    for (const k of FRAME_STATES) {
-      root.style.setProperty("--frame-" + k, inks.box[k]);
-      root.style.setProperty("--frame-card-" + k, inks.card[k]);
-    }
-    // behold#571: the left bars' colours, shared by the app, the kiosk and the lanes strip (barInks).
-    for (const [k, v] of Object.entries(barVars(_active))) root.style.setProperty("--" + k, v);
-  }
-  root.style.setProperty("color-scheme", tokens.dark ? "dark" : "light");
+  const paint = paintFor(tokens, _active);
+  for (const [k, v] of Object.entries(paint.vars)) root.style.setProperty(k, v);
+  root.style.setProperty("color-scheme", paint.scheme);
+  try { localStorage.setItem(PAINT_KEY, JSON.stringify(paint)); } catch { /* private mode or a full store: the next load opens on the default first */ }
 }
 
 export function setTheme(nameOrObj, { persist = true } = {}) {

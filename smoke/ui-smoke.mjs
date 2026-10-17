@@ -82,9 +82,10 @@ const dL = (a, b) => Math.abs(hexToOklch(a).L - hexToOklch(b).L);
     "--focus reads against the panel": (t) => dL(t.focus, t.panel) >= 0.05,
     "--well is distinguishable from the background": (t, th) => dL(t.well, th.bg) >= 0.02,
     "--fg stays legible on the --active fill": (t) => contrast(t.fg, t.active) >= contrast(t.fg, t.panel) * 0.6,
-    // #240: secondary text (--muted on --panel) clears a real 3:1 WCAG floor
+    // #240: secondary text (--muted on --panel) clears a real WCAG floor
     // — surfaced by this exact sweep as Darkermatrix landing at 1.25:1.
-    "--muted clears the 3:1 floor on --panel": (t) => contrast(t.muted, t.panel) >= 3,
+    // behold#725 raised it from 3:1 to 4.5:1.
+    "--muted clears the 4.5:1 floor on --panel": (t) => contrast(t.muted, t.panel) >= 4.5,
   };
   const n = Object.keys(THEMES).length;
   for (const [name, rule] of Object.entries(RULES)) {
