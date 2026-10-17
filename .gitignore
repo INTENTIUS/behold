@@ -24,3 +24,6 @@ behold-demos/
 
 # Astro build cache
 docs/.astro/
+
+# The static carve export (#712, `npm run export:carve`)
+dist-carve/

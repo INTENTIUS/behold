@@ -653,6 +653,41 @@ export function renderBanded(ir: GraphIR, opts: { theme?: string } = {}): Render
   return { svg };
 }
 
+/**
+ * The dots preview's card view (#712): every card in one titled box, in the
+ * order given (unit order, so a team's cards sit together), wrapped into a
+ * landscape grid. The browser seeds each dot from where its card is painted
+ * here, so the order is what makes the card-to-dot morph read.
+ */
+export function renderGrid(irIn: GraphIR, order: readonly string[], title: string, opts: { theme?: string } = {}): RenderResult {
+  // The cards say their address and what the box does not, as every member box's cards do (#393 item 9).
+  const face = cardFaces(irIn, { [title]: [...order] });
+  const ir = face.ir;
+  const shown = (id: string) => face.display.get(id) ?? id;
+  const size = footprints(ir, face.overrides);
+  const ids = order.map(shown).filter((id) => size.has(id));
+  const cellW = Math.max(NODE_W, ...ids.map((id) => size.get(id)!.w));
+  const cellH = Math.max(NODE_H, ...ids.map((id) => size.get(id)!.h));
+  const cols = Math.max(1, Math.round(Math.sqrt((ids.length * (cellH + GAP) * 1.7) / (cellW + GAP))));
+  const rows = Math.ceil(ids.length / cols);
+  const boxW = cols * cellW + (cols - 1) * GAP + PAD * 2;
+  const boxH = TITLE + PAD + rows * cellH + (rows - 1) * GAP + PAD;
+  const height = boxH;
+  const nodes = ids.map((id, i) => ({
+    id,
+    x: PAD + (i % cols) * (cellW + GAP) + cellW / 2,
+    y: height - (TITLE + PAD + Math.floor(i / cols) * (cellH + GAP) + cellH / 2),
+  }));
+  const svg = renderSvg(ir, { width: boxW, height, nodes } as Layout, {
+    fit: true,
+    hideTitle: true,
+    overrides: face.overrides,
+    groups: [{ id: title, title, x: boxW / 2, y: height - boxH / 2, w: boxW, h: boxH }],
+    ...(opts.theme ? { theme: opts.theme as never } : {}),
+  });
+  return { svg: face.restore(svg) };
+}
+
 // Shared metrics for the banded grid and the estate frame that wraps it.
 const GAP = 28; // between cards
 const PAD = 24; // panel inner padding
