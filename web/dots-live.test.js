@@ -2,7 +2,7 @@
 // becomes a show: one dot per resource, keyed by live id; a stamp leaves a
 // ring, a move flies, a refusal bounces; lines play from when they were seen.
 import { describe, it, expect } from "vitest";
-import { liveShow, stampArrivals, lineKey, showKey, currentMigration, carveDrawable, LIVE } from "./dots-live.js";
+import { liveShow, stampArrivals, lineKey, showKey, currentMigration, carveDrawable, boxName, LIVE } from "./dots-live.js";
 import { buildScene, takeoffsBy } from "./dots-scene.js";
 import { liveBeat, liveTipsBetween, liveEndTip } from "./dots-kiosk.js";
 import { dotsCarving, dotsActive } from "./dots.js";
@@ -77,7 +77,7 @@ describe("the live carve as a show (#715)", () => {
     const seen1 = stampArrivals(later, seen0, now);
     expect(seen1.get(lineKey("carve", moveA))).toBe(now);
     expect(seen1.get(lineKey("carve", refuseB))).toBeGreaterThan(now);
-    expect(seen1.get(lineKey("carve", refuseB))).toBeLessThanOrEqual(now + LIVE.spreadMs);
+    expect(seen1.get(lineKey("carve", refuseB))).toBe(now + LIVE.stepMs);
     const show0 = liveShow(first, seen0, T + 5_000);
     const show1 = liveShow(later, seen1, now, { t0: show0.t0 });
     expect(show1.t0).toBe(show0.t0);
@@ -122,5 +122,52 @@ describe("the gate, in the page (#715)", () => {
   it("leaves the layer unmounted, with no director and no zoom limit of its own", () => {
     expect(dotsActive()).toBe(false);
     expect(dotsCarving()).toBe(false);
+  });
+});
+
+// The live local run's cycle 5: the adoption's 82 lines came in one read, all
+// within a second. The stock root and the estate it became are one box.
+describe("an adoption as one box changing its name", () => {
+  const N = 82;
+  const addr = (i) => `aws_iam_role.r${String(i).padStart(2, "0")}`;
+  const stockRoster = { estate: "terralith", at: at(-120), count: N, resources: Array.from({ length: N }, (_, i) => ({ address: addr(i), type: "aws_iam_role", marked: false })) };
+  // As the route gives them: a stamp's empty estate_from reads as the estate it is stamped into.
+  const stamps = Array.from({ length: N }, (_, i) => ({ at: at(1), estate_from: "tl5-terralith", estate_to: "tl5-terralith", address: addr(i), ...(i % 2 ? {} : { live_id: `role-${i}` }), outcome: i % 2 ? "skipped" : "stamped" }));
+  const adoptM = { name: "adopt", running: true, counts: { moved: 0, stamped: 41, refused: 0, skipped: 41, left: 0 }, lines: stamps };
+  const mid = { ...answer([adoptM], [stockRoster]), adopted: [{ from: "terralith", to: "tl5-terralith" }] };
+
+  it("paces a batch of lines 50 ms apart, after any still waiting to play", () => {
+    const now = T + 10_000;
+    const seen = stampArrivals(mid, new Map(), now);
+    const times = stamps.map((l) => seen.get(lineKey("adopt", l))).sort((a, b) => a - b);
+    expect(times[0]).toBe(now);
+    expect(times[N - 1]).toBe(now + (N - 1) * LIVE.stepMs);
+    // A line of the next read waits behind the batch.
+    const more = { ...mid, migrations: [{ ...adoptM, lines: [...stamps, { ...stamps[0], at: at(2), address: "aws_s3_bucket.late" }] }] };
+    const next = stampArrivals(more, seen, now + 500);
+    expect(next.get(lineKey("adopt", { ...stamps[0], at: at(2), address: "aws_s3_bucket.late" }))).toBe(now + N * LIVE.stepMs);
+  });
+
+  it("rings the stock root's dots in place, in one box that takes the estate's name with the first stamp", () => {
+    const now = T + 10_000;
+    const seen = stampArrivals(mid, new Map(), now);
+    const show = liveShow(mid, seen, now + N * LIVE.stepMs);
+    expect(show.roster).toHaveLength(N);
+    expect(show.estates).toEqual(["terralith"]);
+    expect(show.events.filter((e) => e.kind === "write")).toHaveLength(0);
+    expect(show.events.filter((e) => e.kind === "adopt")).toHaveLength(41);
+    expect(boxName(show, "terralith", now - 1)).toBe("terralith");
+    expect(boxName(show, "terralith", now)).toBe("tl5-terralith");
+  });
+
+  it("after the adoption, draws the estate's roster in the same box, with the same dots", () => {
+    const estate = { estate: "tl5-terralith", at: at(12), count: N, resources: stockRoster.resources.map((r, i) => ({ ...r, ...(i % 2 ? {} : { live_id: `role-${i}` }), marked: i % 2 === 0 })) };
+    const done = { ...answer([{ ...adoptM, running: false }], [estate]), adopted: [{ from: "terralith", to: "tl5-terralith" }] };
+    // A page loaded after it: the lines are the past, the box has the estate's name.
+    const show = liveShow(done, stampArrivals(done, new Map(), T + 60_000, { first: true }), T + 60_000);
+    expect(show.roster).toHaveLength(N);
+    expect(show.estates).toEqual(["terralith"]);
+    expect(boxName(show, "terralith", T + 60_000)).toBe("tl5-terralith");
+    expect([...show.ownersEnd.values()].every((e) => e === "terralith")).toBe(true);
   });
 });

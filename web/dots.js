@@ -27,7 +27,7 @@ import { cardMorph, discMorph, discRadius, levelOf, caption, railMarks, railPos,
 import { perimeter, pointAt, nearestS, segment } from "./dots-border.js";
 import { getTokens, onThemeChange, contrast, hexToOklch, oklchToHex } from "./theme.js";
 import { LOOP, carveStory, beatAt, tipsBetween, directorFocus, shortName as shortOf, liveBeat, liveTipsBetween, liveEndTip, LIVE_HOLD_MS } from "./dots-kiosk.js";
-import { liveShow, stampArrivals, showKey, currentMigration } from "./dots-live.js";
+import { liveShow, stampArrivals, showKey, currentMigration, boxName } from "./dots-live.js";
 
 /** #715: how often the live layer asks for the carve. The route shares one read for 1.5 s while a migration runs. */
 export const LIVE_POLL_MS = 2_000;
@@ -617,6 +617,9 @@ function syncUi() {
 
 function shortName(e) {
   const src = S.scene.source;
+  // An adopted stock root's box takes its estate's name once the first stamp plays (web/dots-live.js).
+  const nm = boxName(S.show, e, S.show.t0 + S.t);
+  if (nm !== e) return nm;
   return e !== src && e.startsWith(`${src}-`) ? e.slice(src.length + 1) : e;
 }
 

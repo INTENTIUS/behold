@@ -7,14 +7,17 @@
  * otherwise (a laptop's profile or SSO).
  *
  * Every read is one GET of one object by its key under the prefix: the same
- * keys terragucci's reference page "The reports bucket" names, and no list
- * call, so a read-only identity needs `GetObject` and nothing else. Through
+ * keys terragucci's reference page "The reports bucket" names, so a read-only
+ * identity needs `GetObject` and nothing else. One caller lists: the live
+ * carve lists `<project>/migrations/` to find the cycle's migrations
+ * (`list`, which needs `s3:ListBucket`); a refused or unsupported list is
+ * left out, and the carve falls back to the migration demo.json names. Through
  * the CLI (`aws s3 cp <key> -`) it uses whatever profile and region the
  * shell already has; with environment credentials it signs the GET itself
  * (src/s3-object.ts). behold keeps no credentials and ships no SDK.
  */
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { hasEnvCredentials, S3Error, S3Object, s3FromEnv } from "./s3-object.ts";
 
@@ -26,6 +29,21 @@ export interface TerragucciSource {
   location: string;
   /** The object at `key` (relative to the prefix), or undefined when there is none. Throws on any other failure. */
   read(key: string): Promise<string | undefined>;
+  /**
+   * The keys one level under `prefix` (relative to the source's prefix, ending
+   * in `/`), at most `max`: each object with its last-modified time when the
+   * source knows it, and each sub-prefix. Keys come back relative to the
+   * source's prefix. Absent on an http(s) source, which cannot list. Throws
+   * {@link TerragucciDenied} when the listing is refused.
+   */
+  list?(prefix: string, max: number): Promise<SourceListing>;
+}
+
+export interface SourceListing {
+  objects: { key: string; modified: string | null }[];
+  prefixes: string[];
+  /** More keys were under the prefix than `max`. */
+  truncated: boolean;
 }
 
 /**
@@ -108,6 +126,17 @@ export function terragucciSource(spec: string, opts: { cwd?: string; aws?: AwsRu
             throw e;
           }
         },
+        async list(under, max) {
+          const p = `${joinKey(prefix, under)}/`;
+          try {
+            return relative(await client.list(p, max), prefix);
+          } catch (e) {
+            if (e instanceof S3Error && (e.status === 403 || e.code === "AccessDenied")) {
+              throw new TerragucciDenied(trim(under), `s3://${joinKey(bucket, p)}`, `${e.status ?? 403}${e.code ? ` ${e.code}` : ""}`);
+            }
+            throw e;
+          }
+        },
       };
     }
     const aws = opts.aws ?? realAws;
@@ -123,6 +152,24 @@ export function terragucciSource(spec: string, opts: { cwd?: string; aws?: AwsRu
         // #523: a refused read is its own answer, so an optional read can degrade.
         if (/\b(403|AccessDenied|Forbidden)\b|Access Denied/i.test(r.stderr)) throw new TerragucciDenied(trim(key), url, /AccessDenied/i.test(r.stderr) ? "AccessDenied" : "403");
         throw new Error(r.code === -1 ? `could not run aws to read ${url}: ${r.stderr.trim()}` : `aws s3 cp ${url} failed: ${r.stderr.trim() || `exit ${r.code}`}`);
+      },
+      async list(under, max) {
+        const p = `${joinKey(prefix, under)}/`;
+        const n = String(Math.max(1, Math.floor(max)));
+        const r = await aws(["s3api", "list-objects-v2", "--bucket", bucket, "--prefix", p, "--delimiter", "/", "--max-items", n, "--page-size", n, "--output", "json"]);
+        if (r.code !== 0) {
+          if (/\b(403|AccessDenied|Forbidden)\b|Access Denied/i.test(r.stderr)) throw new TerragucciDenied(trim(under), `s3://${joinKey(bucket, p)}`, "AccessDenied");
+          throw new Error(r.code === -1 ? `could not run aws to list s3://${joinKey(bucket, p)}: ${r.stderr.trim()}` : `aws s3api list-objects-v2 s3://${joinKey(bucket, p)} failed: ${r.stderr.trim() || `exit ${r.code}`}`);
+        }
+        const doc = (r.stdout.trim() ? JSON.parse(r.stdout) : {}) as { Contents?: { Key?: string; LastModified?: string }[]; CommonPrefixes?: { Prefix?: string }[]; NextToken?: string };
+        return relative(
+          {
+            objects: (doc.Contents ?? []).filter((c) => typeof c.Key === "string").map((c) => ({ key: c.Key!, modified: typeof c.LastModified === "string" ? c.LastModified : null })),
+            prefixes: (doc.CommonPrefixes ?? []).map((c) => c.Prefix).filter((x): x is string => typeof x === "string"),
+            truncated: !!doc.NextToken,
+          },
+          prefix,
+        );
       },
     };
   }
@@ -155,5 +202,30 @@ export function terragucciSource(spec: string, opts: { cwd?: string; aws?: AwsRu
         throw e;
       }
     },
+    async list(under, max) {
+      const at = join(dir, ...trim(under).split("/"));
+      let names;
+      try {
+        names = await readdir(at, { withFileTypes: true });
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code === "ENOENT") return { objects: [], prefixes: [], truncated: false };
+        throw e;
+      }
+      names.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+      const out: SourceListing = { objects: [], prefixes: [], truncated: names.length > max };
+      for (const n of names.slice(0, max)) {
+        const k = joinKey(under, n.name);
+        if (n.isDirectory()) out.prefixes.push(`${k}/`);
+        else if (n.isFile()) out.objects.push({ key: k, modified: (await stat(join(at, n.name))).mtime.toISOString() });
+      }
+      return out;
+    },
   };
+}
+
+/** A listing's full keys made relative to the source's prefix. */
+function relative(l: SourceListing, prefix: string): SourceListing {
+  const cut = prefix ? `${prefix}/` : "";
+  const rel = (k: string): string => (cut && k.startsWith(cut) ? k.slice(cut.length) : k);
+  return { objects: l.objects.map((o) => ({ ...o, key: rel(o.key) })), prefixes: l.prefixes.map(rel), truncated: l.truncated };
 }

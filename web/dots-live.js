@@ -17,11 +17,20 @@
 //
 // Lines play as they arrive. A line already in the first answer happened
 // before the page looked, so it is drawn where it ended, with no flight; a
-// line that arrives later flies from the moment it was seen, the lines of one
-// read spread a little apart so a burst reads as a flock.
+// line that arrives later plays from the moment it was seen. Lines that
+// arrive in one batch are paced `stepMs` apart, queued after the last one
+// still to play: an adoption on floci stamps 82 resources in under a second,
+// so its lines come in one read, and 50 ms a line keeps the beat watchable
+// (about 4 s for 82). A recording's replay paces itself (web/dots-scene.js).
+//
+// An adoption turns a stock root into an estate (the answer's `adopted`
+// pairs them). That is one box changing its name, not two boxes: the
+// estate's resources and lines are drawn in the stock root's box, the stamps
+// ring the dots where they are, and the box takes the estate's name when the
+// first stamp plays.
 
-/** How the arrivals of one read are spread, and how far ahead of a line its flight may start. */
-export const LIVE = { spreadMs: 1_600, stepMs: 140, lead: 2_500 };
+/** How far apart the lines of one batch play, and how far ahead of a line its flight may start. */
+export const LIVE = { stepMs: 50, lead: 2_500 };
 
 /** A progress line's key: the same line in two reads is the same event. */
 export function lineKey(migration, line) {
@@ -30,11 +39,12 @@ export function lineKey(migration, line) {
 
 /**
  * When each line is drawn from: `seen` maps a line's key to that time. Lines
- * of the first read keep their own `at` (the past); a line new in a later read
- * gets `now`, the read's new lines spread `stepMs` apart within `spreadMs`.
- * Returns a new map; `seen` is not changed.
+ * of the first read keep their own `at` (the past); the lines new in a later
+ * read play `stepMs` apart in the order they were written, from `now`, or
+ * after the last line of an earlier batch still waiting to play. Returns a new
+ * map; `seen` is not changed.
  */
-export function stampArrivals(answer, seen, now, { first = false, spreadMs = LIVE.spreadMs, stepMs = LIVE.stepMs } = {}) {
+export function stampArrivals(answer, seen, now, { first = false, stepMs = LIVE.stepMs } = {}) {
   const out = new Map(seen);
   const fresh = [];
   for (const m of answer && answer.migrations ? answer.migrations : []) {
@@ -42,12 +52,27 @@ export function stampArrivals(answer, seen, now, { first = false, spreadMs = LIV
       const k = lineKey(m.name, l);
       if (out.has(k)) continue;
       if (first) out.set(k, Date.parse(l.at) || now);
-      else fresh.push(k);
+      else fresh.push({ k, at: Date.parse(l.at) || 0 });
     }
   }
-  const step = fresh.length > 1 ? Math.min(stepMs, spreadMs / fresh.length) : 0;
-  fresh.forEach((k, i) => out.set(k, now + i * step));
+  fresh.sort((a, b) => a.at - b.at);
+  let queued = -Infinity;
+  for (const t of seen.values()) if (t > queued) queued = t;
+  let next = Math.max(now, queued + stepMs);
+  for (const f of fresh) {
+    out.set(f.k, next);
+    next += stepMs;
+  }
   return out;
+}
+
+/**
+ * The name an estate's box carries at show time `t`: a stock root an
+ * adoption replaced takes its estate's name once the first stamp plays.
+ */
+export function boxName(show, estate, t) {
+  const r = show && show.renames ? show.renames.get(estate) : undefined;
+  return r && t >= r.at ? r.to : estate;
 }
 
 const unknownType = (address) => {
@@ -79,13 +104,16 @@ export function liveShow(answer, seen, now, { t0: start = null } = {}) {
   };
   const find = (estate, r) => (r.live_id && byLive.get(r.live_id)) || byAddr.get(place(estate, r.address));
 
-  const estates = (answer && answer.estates) || [];
-  const migrations = (answer && answer.migrations) || [];
+  // An adopted stock root and its estate are one box, keyed by the stock root's name.
+  const alias = new Map(((answer && answer.adopted) || []).map((a) => [a.to, a.from]));
+  const as = (e) => alias.get(e) ?? e;
+  const estates = ((answer && answer.estates) || []).map((e) => ({ ...e, estate: as(e.estate) }));
+  const migrations = ((answer && answer.migrations) || []).map((m) => ({ ...m, lines: m.lines.map((l) => ({ ...l, estate_from: as(l.estate_from), estate_to: as(l.estate_to), key: lineKey(m.name, l), into: l.estate_to })) }));
   // 1. A stock root's resources, which only an address names.
   for (const e of estates) for (const r of e.resources) if (!r.live_id && !find(e.estate, r)) addDot(e.estate, r);
   // 2. Each line in time order, finding its dot by live id, else where it came from.
   const lines = [];
-  for (const m of migrations) for (const l of m.lines) lines.push({ m: m.name, l, t: seen.get(lineKey(m.name, l)) ?? (Date.parse(l.at) || now) });
+  for (const m of migrations) for (const l of m.lines) lines.push({ m: m.name, l, t: seen.get(l.key) ?? (Date.parse(l.at) || now) });
   lines.sort((a, b) => a.t - b.t);
   for (const x of lines) {
     const { l } = x;
@@ -166,6 +194,13 @@ export function liveShow(answer, seen, now, { t0: start = null } = {}) {
   }
   for (const [child, parent] of parents) if (!events.some((e) => e.address === child)) ownersEnd.set(child, ownersEnd.get(parent) ?? ownersEnd.get(child));
 
+  // The box's new name plays with the first stamp into the estate; with none, it has the estate's name already.
+  const renames = new Map();
+  for (const [to, from] of alias) {
+    const stamps = lines.filter((x) => x.l.outcome === "stamped" && x.l.into === to).map((x) => x.t);
+    renames.set(from, { to, at: stamps.length ? Math.min(...stamps) : -Infinity });
+  }
+
   const roster = [...dots.values()].map((d) => ({ address: d.id, type: d.type, taggable: d.taggable, ...(d.live_id ? { live_id: d.live_id } : {}) }));
   const names = [...new Set([source, ...estates.map((e) => e.estate), ...ownersEnd.values()])];
   return {
@@ -184,6 +219,7 @@ export function liveShow(answer, seen, now, { t0: start = null } = {}) {
     t0,
     t1: now,
     spaced: false,
+    renames,
     counts: Object.fromEntries(estates.map((e) => [e.estate, e.count])),
   };
 }

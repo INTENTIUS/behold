@@ -13,9 +13,17 @@
  * - Each entry's roster, at most {@link MAX_ROSTERS}:
  *   `{estate, at, resources: [{address, type, live_id?, marked, follows?}]}`.
  *   A stock root has one too, written from its state, under the root's name.
- * - `demo.json`, for the migration a running step names: `next.action` reads
- *   "carve: 36 of 79 moved", or "adopt: 3 of 4 stamped" for an adoption
- *   (terragucci#1133).
+ * - A listing of `<project>/migrations/` for each carved project (one
+ *   ListObjectsV2, delimiter `/`, at most {@link MAX_LISTED_KEYS} keys, on at
+ *   most {@link MAX_LISTED_PROJECTS} projects): each `<name>.json` record, and
+ *   its `progress.jsonl`, is followed when its lines, its finish or its last
+ *   write are at or after demo.json's `started_at`. An adoption on floci
+ *   stamps 82 resources in under a second, between two of demo.json's
+ *   writes, so demo.json never names it. Needs `s3:ListBucket`; a refused
+ *   listing is a problem the answer names, and the read goes on.
+ * - `demo.json`, for the migration a running step names, a hint the listing
+ *   does not need: `next.action` reads "carve: 36 of 79 moved", or "adopt: 3
+ *   of 4 stamped" for an adoption (terragucci#1133).
  * - `<project>/migrations/<name>.json`, the migration's record, for its
  *   counts (its `progress`: moved, stamped, refused, skipped, left) and
  *   whether it finished.
@@ -39,7 +47,9 @@
  * Of those, only the current cycle's: an estate whose roster was written at
  * or after demo.json's `started_at`, else the newest estate of each root, since
  * each terralith cycle makes new estates (`tl1-*`, `tl2-*`) and the old ones
- * stay in estates.json.
+ * stay in estates.json. A stock root its adoption replaced (a later estate
+ * of the same project and root) is not drawn beside its estate: the answer's
+ * `adopted` pairs them, and the page draws one box that changes its name.
  *
  * The gate: with a repo named, the answer is `live: true` only when its
  * projects hold choudoufu roots (an estate that is a live block's name, not a
@@ -143,6 +153,11 @@ export type CarveAnswer =
       gate: { choudoufu: boolean; rosters: number };
       /** The projects whose estates are drawn, or null when every estate is (no repo named and no migration found). */
       projects: string[] | null;
+      /**
+       * Each stock root an adoption made an estate: the page draws them as one box that changes its name
+       * from `from` to `to` (web/dots-live.js), so the stamps ring the dots where they are.
+       */
+      adopted: { from: string; to: string }[];
       estates: CarveRoster[];
       migrations: CarveMigration[];
       demo: CarveDemo | null;
@@ -385,6 +400,120 @@ export function currentCycle(entries: readonly EstateEntry[], startedAt: string 
 /** A stock root at the repo's top: a terralith before its adoption. */
 const stockTop = (e: EstateEntry): boolean => e.root !== null && !choudoufuEntry(e) && stockEstate(e.root) === "root";
 
+/** The most projects one read lists for migrations, and the most keys each listing takes. */
+export const MAX_LISTED_PROJECTS = 8;
+export const MAX_LISTED_KEYS = 200;
+
+interface CarveListed {
+  name: string;
+  home: string;
+  /** The record's last write, when the listing names it. */
+  modified: string | null;
+}
+
+/** An adoption: the estate its stamps go into, and the stock root they come from. */
+interface CarveAdoption {
+  estate: string;
+  /** The adopted root, when the record names it. */
+  root: string | null;
+  project: string;
+  migration: string;
+}
+
+const MIGRATION_NAME = /^[A-Za-z0-9._~@+-]{1,128}$/;
+
+/**
+ * The migrations under each project's `migrations/` that may belong to the
+ * cycle: one listing per project. A record last written before `startedAt` is
+ * an earlier cycle's and left out; one known only by its progress prefix is
+ * kept, for its lines to say. Newest first. A refused or unsupported listing
+ * is left out: demo.json's `next` still names a running migration.
+ */
+export async function listMigrations(source: TerragucciSource, projects: readonly string[], startedAt: string, skip: ReadonlySet<string>, problems: string[]): Promise<CarveListed[]> {
+  if (!source.list) return [];
+  const from = Date.parse(startedAt);
+  const out: CarveListed[] = [];
+  for (const home of projects) {
+    const under = key(home, "migrations");
+    let l;
+    try {
+      l = await source.list(under, MAX_LISTED_KEYS);
+    } catch (e) {
+      problems.push(e instanceof TerragucciDenied ? `${e.url} cannot be listed with these credentials, so only the migration demo.json names is followed` : `behold could not list ${under}/ in ${source.location}: ${e instanceof Error ? e.message : String(e)}`);
+      continue;
+    }
+    if (l.truncated) problems.push(`${under}/ holds more than ${MAX_LISTED_KEYS} keys; the first ${MAX_LISTED_KEYS} are looked at`);
+    const names = new Map<string, string | null>();
+    for (const o of l.objects) {
+      const n = o.key.slice(under.length + 1);
+      if (!n.endsWith(".json") || n.includes("/")) continue;
+      const name = n.slice(0, -".json".length);
+      if (!MIGRATION_NAME.test(name)) continue;
+      names.set(name, o.modified);
+    }
+    for (const p of l.prefixes) {
+      const name = trim(p.slice(under.length + 1));
+      if (MIGRATION_NAME.test(name) && !names.has(name)) names.set(name, null);
+    }
+    for (const [name, modified] of names) {
+      if (skip.has(name)) continue;
+      if (modified !== null && !Number.isNaN(from) && Date.parse(modified) < from) continue;
+      out.push({ name, home, modified });
+    }
+  }
+  return out.sort((a, b) => (Date.parse(b.modified ?? "") || Infinity) - (Date.parse(a.modified ?? "") || Infinity) || (a.name < b.name ? -1 : 1));
+}
+
+/** Whether a listed migration belongs to the cycle that started at `startedAt`. */
+function inCycle(startedAt: string, lines: readonly CarveLine[], finished: string | null, modified: string | null): boolean {
+  const from = Date.parse(startedAt);
+  if (Number.isNaN(from)) return true;
+  const after = (t: string | null): boolean => t !== null && Date.parse(t) >= from;
+  return lines.some((l) => after(l.at)) || after(finished) || after(modified);
+}
+
+/** The estate an adoption stamps into, and its root: the record's stamps, else its stamped lines. Null when it is no adoption, or names several. */
+export function adoptedInto(record: unknown, lines: readonly CarveLine[]): { estate: string; root: string | null } | null {
+  const stamps = isRecord(record) && Array.isArray(record.stamps) ? record.stamps.filter(isRecord) : [];
+  const pairs = new Set(stamps.filter((x) => str(x.estate)).map((x) => `${x.estate as string}\u0000${str(x.root) ? x.root : ""}`));
+  if (pairs.size === 1) {
+    const [estate, root] = [...pairs][0]!.split("\u0000");
+    return { estate: estate!, root: root || null };
+  }
+  if (pairs.size > 1) return null;
+  const into = new Set(lines.filter((l) => l.outcome === "stamped").map((l) => l.estate_to));
+  if (into.size !== 1) return null;
+  const roots = isRecord(record) && Array.isArray(record.roots) ? record.roots.filter(isRecord).map((r) => r.root).filter(str) : [];
+  return { estate: [...into][0]!, root: roots.length === 1 ? roots[0]! : null };
+}
+
+/**
+ * A stock root its adoption replaced. When a stock entry and an estate entry
+ * share a project and root and the estate's roster is the later, only the
+ * estate is drawn. While the adoption writes, before the estate's roster
+ * exists, the stock root is drawn and named as the estate it becomes. Either
+ * way the answer's `adopted` pairs them, for the page to draw one box that
+ * changes its name.
+ */
+export function replaceAdopted(entries: readonly EstateEntry[], adoptions: readonly CarveAdoption[]): { entries: EstateEntry[]; adopted: { from: string; to: string }[] } {
+  const isStock = (e: EstateEntry): boolean => e.root !== null && !choudoufuEntry(e);
+  const adopted = new Map<string, string>();
+  const drop = new Set<EstateEntry>();
+  for (const s of entries.filter(isStock)) {
+    const later = entries.filter((e) => e !== s && choudoufuEntry(e) && e.project === s.project && e.root === s.root && e.at !== null && s.at !== null && Date.parse(e.at) > Date.parse(s.at));
+    if (!later.length) continue;
+    const e = later.sort((a, b) => Date.parse(b.at!) - Date.parse(a.at!))[0]!;
+    drop.add(s);
+    adopted.set(s.estate, e.estate);
+  }
+  for (const a of adoptions) {
+    if ([...adopted.values()].includes(a.estate)) continue;
+    const stock = entries.filter((e) => isStock(e) && !drop.has(e) && e.project === a.project && (a.root === null || e.root === a.root));
+    if (stock.length === 1) adopted.set(stock[0]!.estate, a.estate);
+  }
+  return { entries: entries.filter((e) => !drop.has(e)), adopted: [...adopted].map(([from, to]) => ({ from, to })).sort((x, y) => (x.from < y.from ? -1 : 1)) };
+}
+
 /** One read of the live carve. Never throws: a key it cannot read is a problem the answer names. */
 export async function readCarve(source: TerragucciSource, opts: CarveReadOptions): Promise<CarveAnswer> {
   const now = opts.now ?? new Date();
@@ -419,19 +548,29 @@ export async function readCarve(source: TerragucciSource, opts: CarveReadOptions
   let projects = ofRepo ?? entryProjects;
   if (!projects.length && wanted.size) projects = await index();
 
+  // The cycle's migrations, found by listing each project's migrations/: a migration that ran too fast for
+  // demo.json to name it (an adoption on floci stamps 82 resources in under a second) is still followed.
+  const startedAt = d?.started_at ?? null;
+  const found = startedAt ? await listMigrations(source, (ofRepo ?? entryProjects).slice(0, MAX_LISTED_PROJECTS), startedAt, wanted, problems) : [];
+
   const migrations: CarveMigration[] = [];
   const homes = new Set<string>();
   const targets = new Set<string>();
+  const adoptions: CarveAdoption[] = [];
+  const follows: { name: string; tries: string[]; listed: CarveListed | null }[] = [];
   for (const name of [...wanted].slice(0, MAX_MIGRATIONS)) {
-    const m = { name };
+    const known = opts.places?.get(name);
+    follows.push({ name, tries: known !== undefined && known !== null ? [known] : projects, listed: null });
+  }
+  for (const f of found.slice(0, Math.max(0, MAX_MIGRATIONS - follows.length))) follows.push({ name: f.name, tries: [f.home], listed: f });
+  for (const f of follows) {
+    const m = { name: f.name };
     // Its record and its lines are under its project: <project>/migrations/<name>.json and <name>/progress.jsonl.
-    const known = opts.places?.get(m.name);
-    const tries = known !== undefined && known !== null ? [known] : projects;
     let record: unknown;
     let progress: string | null = null;
     let text: string | undefined;
     let home: string | null = null;
-    for (const h of tries) {
+    for (const h of f.tries) {
       const pk = key(h, "migrations", m.name, "progress.jsonl");
       text = await readText(source, pk, problems);
       if (text !== undefined) {
@@ -447,18 +586,22 @@ export async function readCarve(source: TerragucciSource, opts: CarveReadOptions
         break;
       }
     }
-    if (home !== null) opts.places?.set(m.name, home);
     const { lines, bad, counts: lineCounts } = text !== undefined ? readProgress(text) : { lines: [], bad: 0, counts: null };
-    if (bad) problems.push(`${progress}: ${bad} line${bad === 1 ? " is" : "s are"} not a progress record`);
-    const counts = recordCounts(record) ?? lineCounts ?? countLines(lines);
     const status = isRecord(record) && str(record.status) ? record.status : null;
     const finished = isRecord(record) && str(record.finished) ? record.finished : null;
+    // A listed migration is followed when it belongs to this cycle: a line, its finish or its record's write at or after started_at.
+    if (f.listed && !inCycle(startedAt!, lines, finished, f.listed.modified)) continue;
+    if (home !== null && !f.listed) opts.places?.set(m.name, home);
+    if (bad) problems.push(`${progress}: ${bad} line${bad === 1 ? " is" : "s are"} not a progress record`);
+    const counts = recordCounts(record) ?? lineCounts ?? countLines(lines);
     const done = !!finished || (status !== null && FINISHED.has(status)) || (counts.left === 0 && lines.length > 0 && named !== m.name);
     if (!lines.length && record === undefined && named !== m.name) continue;
     if (home !== null && (lines.length || record !== undefined)) {
       homes.add(home);
       for (const l of lines) targets.add(l.estate_to);
       for (const t of recordTargets(record)) targets.add(t);
+      const into = adoptedInto(record, lines);
+      if (into) adoptions.push({ ...into, project: home, migration: m.name });
     }
     migrations.push({ name: m.name, progress, lines, counts, status, finished, running: !done && (lines.length > 0 || named === m.name) });
   }
@@ -466,7 +609,8 @@ export async function readCarve(source: TerragucciSource, opts: CarveReadOptions
   // Only the carved project's estates: the demo's prefix holds every demo repo's roots.
   const carved = carvedEntries(all, { repo: ofRepo, homes: [...homes], targets });
   // And only this cycle's: an earlier cycle's estates stay in estates.json under their own prefix.
-  const entries = currentCycle(carved.entries, d?.started_at ?? null);
+  // A stock root its adoption replaced is one box with the estate it became, not two.
+  const { entries, adopted } = replaceAdopted(currentCycle(carved.entries, d?.started_at ?? null), adoptions);
   // With a repo named, the gate is that repo's carve: its projects hold choudoufu roots, or one of its migrations was found.
   // The served checkout is not the demo's repo, so it does not open the gate there.
   const choudoufu = ofRepo !== null ? homes.size > 0 || entries.some(choudoufuEntry) : opts.choudoufu();
@@ -500,6 +644,7 @@ export async function readCarve(source: TerragucciSource, opts: CarveReadOptions
     live: true,
     gate: { choudoufu, rosters: estates.length },
     projects: carved.projects,
+    adopted,
     estates,
     migrations,
     demo,

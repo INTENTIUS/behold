@@ -443,17 +443,27 @@ per-estate reads on demand are for scale 14, not this build.
 ### What the build reads
 
 The keys are the ones terragucci writes (terragucci#1132 for the estates,
-terragucci#1133 for the migrations), and no others:
+terragucci#1133 for the migrations), and no others, plus one listing per
+carved project:
 
 - `estates.json` at the top of the prefix, schema `terragucci.estates/v1`:
   `{estates: [{estate, count, at, project, root, roster}]}`, where `roster`
   is the roster's key relative to estates.json
   (`estates/<estate>/roster.json`). behold reads it first, then each entry's
   roster, 64 at most.
-- A migration is followed when `demo.json`'s `next.action` names it:
-  "carve: 36 of 79 moved", or "adopt: 3 of 4 stamped" for an adoption. A name
-  seen once is followed for the rest of the demo's cycle, so a finished
-  migration stays drawn.
+- The cycle's migrations are found by listing `<project>/migrations/` for
+  each carved project: one ListObjectsV2 with that prefix and delimiter `/`,
+  200 keys at most, on 8 projects at most, which needs `s3:ListBucket`. Each
+  `<name>.json` record and its `progress.jsonl` is followed when its lines,
+  its `finished` or its last write are at or after `demo.json`'s
+  `started_at`; a record last written before it is an earlier cycle's. A
+  refused listing is a problem the answer names, and an http(s) source does
+  not list.
+- `demo.json`'s `next.action` is a hint the listing does not need: "carve: 36
+  of 79 moved", or "adopt: 3 of 4 stamped" for an adoption. A name seen once
+  is followed for the rest of the demo's cycle, so a finished migration stays
+  drawn. demo.json may never name one: an adoption on floci stamps 82
+  resources in under a second, between two of its writes.
 - Its record is `<project>/migrations/<name>.json`, with its counts in
   `progress` (`{moved, stamped, refused, skipped, left}`), and its lines are
   `<project>/migrations/<name>/progress.jsonl`. Each line is choudoufu's
@@ -484,9 +494,22 @@ terragucci#1133 for the migrations), and no others:
   a Terraform scenario, the carve route answers `live: false`.
 - A stamp's line has an empty `estate_from` (the resource had no estate); it
   reads as from the estate it is stamped into.
+- An adoption turns a stock root into an estate, and that is one box changing
+  its name, not two boxes. When a stock entry and an estate entry share a
+  project and root and the estate's `at` is later, only the estate is drawn.
+  While the adoption writes, before the estate's roster exists, the stock root
+  is drawn and paired with the estate its stamps go into (the record's
+  `stamps`, else its stamped lines). The answer's `adopted` lists each pair;
+  the page draws the estate in the stock root's box, the stamps ring the dots
+  where they are, and the box takes the estate's name when the first stamp
+  plays, whether the page watched the lines arrive or loaded mid-migration.
 - A line in the first read happened before the page looked: its dot is drawn
-  where it ended. A line that arrives later flies from the moment it was seen,
-  the lines of one read spread up to 1.6 s apart.
+  where it ended. A line that arrives later plays from the moment it was seen.
+  The lines of one read play 50 ms apart, queued after any line of an earlier
+  read still waiting. On floci an adoption's 82 lines land within a second and
+  arrive in one read, so without pacing the adopt beat is one burst; at 50 ms a
+  line it takes about 4 s and can be watched. Only the live driver paces this
+  way; a recording's replay has its own pacing.
 - A `stamped` line leaves a ring; it is also a move when its `estate_to` names
   another estate. A `moved` line with `follows` flies with its parent's move.
   A `skipped` line draws nothing.
