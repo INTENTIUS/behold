@@ -89,6 +89,7 @@ export default defineConfig({
 						{ label: 'Acting on it', slug: 'using/acting' },
 						{ label: 'Approving a gate', slug: 'using/approving' },
 						{ label: 'The trunk lane', slug: 'using/trunk' },
+						{ label: 'A change set on the graph', slug: 'using/change-set' },
 						{ label: 'Export a snapshot', slug: 'using/export' },
 						{ label: 'Driving it from an agent', slug: 'using/agents' },
 					],

@@ -1,0 +1,101 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/status/v1/status.schema.json",
+  "contract": 1,
+  "chant": "0.124.27",
+  "env": "prod",
+  "compareTo": null,
+  "lifecycle": {
+    "ref": "chant/lifecycle",
+    "commit": "ca4e4f0534244e745ada9f81ca895affc04337aa"
+  },
+  "checkout": {
+    "branch": "main",
+    "head": "a14610e4f51778c969efcc77694a360412c34d88",
+    "base": "a14610e4f51778c969efcc77694a360412c34d88",
+    "baseFrom": "main"
+  },
+  "workspace": {
+    "name": "acme",
+    "root": ".",
+    "file": "chant.workspace.json"
+  },
+  "plantable": {
+    "plantable": false,
+    "box": null,
+    "reason": {
+      "code": "box-none",
+      "message": "no member's box block declares services, so there is no box to plant"
+    }
+  },
+  "members": [
+    {
+      "name": "web",
+      "dir": "web",
+      "kind": "chant",
+      "fields": null,
+      "environments": [
+        {
+          "env": "prod",
+          "ledger": {
+            "layout": "members",
+            "path": "_members/web/prod/releases.jsonl",
+            "shared": false
+          },
+          "releases": [],
+          "reason": null
+        }
+      ],
+      "compare": null,
+      "readable": true,
+      "gateLedger": {
+        "layout": "members",
+        "path": "_members/web/_gates",
+        "shared": false,
+        "malformed": 0,
+        "reason": null
+      },
+      "gates": [
+        {
+          "component": "release",
+          "name": "promote",
+          "env": "prod",
+          "planDigest": "jcs1-sha256:9cf74a6fee021fb5775b684f76149d3e14a901574e7685471dd3e7987b16f66e",
+          "releaseDigest": "jcs1-sha256:1a23268fa8b1fc419cffde4c1780f4387ff0346495f97bd9e22b0508bef99f9d",
+          "state": "pending",
+          "recordedAt": "2026-10-04T00:00:00Z",
+          "gitSha": "a14610e4f51778c969efcc77694a360412c34d88",
+          "runId": "run-9",
+          "expiresAt": "2099-01-01T00:00:00Z",
+          "approvals": [],
+          "needed": 1,
+          "signed": null,
+          "approve": "chant approve release promote --env prod --plan jcs1-sha256:9cf74a6fee021fb5775b684f76149d3e14a901574e7685471dd3e7987b16f66e",
+          "changeSet": "jcs1-sha256:9cf74a6fee021fb5775b684f76149d3e14a901574e7685471dd3e7987b16f66e"
+        }
+      ],
+      "box": null,
+      "stewards": [],
+      "stewardReasons": [],
+      "promotionOrder": [
+        {
+          "name": "staging",
+          "canary": false
+        },
+        {
+          "name": "prod",
+          "canary": false
+        }
+      ],
+      "releaseCuts": []
+    }
+  ],
+  "leases": [],
+  "acceptance": [],
+  "replication": null,
+  "summary": {
+    "members": 1,
+    "released": 0,
+    "unreadable": 0,
+    "differing": null
+  }
+}

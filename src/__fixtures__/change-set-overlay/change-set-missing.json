@@ -1,0 +1,9 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/change-set-show/v1/change-set-show.schema.json",
+  "contract": 1,
+  "chant": "0.124.27",
+  "member": "web",
+  "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "changeSet": null,
+  "reason": null
+}

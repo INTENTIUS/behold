@@ -1,0 +1,178 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/change-set-show/v1/change-set-show.schema.json",
+  "contract": 1,
+  "chant": "0.124.27",
+  "member": "web",
+  "digest": "jcs1-sha256:9cf74a6fee021fb5775b684f76149d3e14a901574e7685471dd3e7987b16f66e",
+  "changeSet": {
+    "$schema": "https://intentius.io/chant/schemas/workspace/change-set/v1/change-set.schema.json",
+    "contract": 1,
+    "chant": "0.124.28",
+    "digest": "jcs1-sha256:9cf74a6fee021fb5775b684f76149d3e14a901574e7685471dd3e7987b16f66e",
+    "releaseDigest": "jcs1-sha256:1a23268fa8b1fc419cffde4c1780f4387ff0346495f97bd9e22b0508bef99f9d",
+    "environment": "prod",
+    "members": [
+      {
+        "member": "web",
+        "lexicon": "aws",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "holes": []
+      }
+    ],
+    "entries": [
+      {
+        "member": "web",
+        "lexicon": "aws",
+        "planner": "chant",
+        "address": "AppBucket",
+        "type": "AWS::S3::Bucket",
+        "action": "update",
+        "disruption": "in-place",
+        "attributes": [
+          {
+            "path": "VersioningConfiguration",
+            "before": {
+              "Status": "Suspended"
+            },
+            "after": {
+              "Status": "Enabled"
+            }
+          },
+          {
+            "path": "Tags",
+            "before": [
+              {
+                "Key": "team",
+                "Value": "cart"
+              }
+            ],
+            "unknown": true
+          }
+        ],
+        "node": "web/AppBucket"
+      },
+      {
+        "member": "web",
+        "lexicon": "aws",
+        "planner": "chant",
+        "address": "AppFunction",
+        "type": "AWS::Lambda::Function",
+        "action": "replace",
+        "disruption": "replace",
+        "attributes": [
+          {
+            "path": "FunctionName",
+            "before": "cart-v1",
+            "after": "cart-v2",
+            "forcesReplacement": true
+          },
+          {
+            "path": "Environment",
+            "sensitive": true
+          }
+        ],
+        "node": "web/AppFunction"
+      },
+      {
+        "member": "web",
+        "lexicon": "aws",
+        "planner": "chant",
+        "address": "AppQueue",
+        "type": "AWS::SQS::Queue",
+        "action": "create",
+        "attributes": [
+          {
+            "path": "VisibilityTimeout",
+            "after": 30
+          }
+        ],
+        "node": "web/AppQueue"
+      },
+      {
+        "member": "web",
+        "lexicon": "aws",
+        "planner": "chant",
+        "address": "AppRole",
+        "type": "AWS::IAM::Role",
+        "action": "no-op",
+        "attributes": [],
+        "node": "web/AppRole"
+      },
+      {
+        "member": "web",
+        "lexicon": "aws",
+        "planner": "chant",
+        "address": "LegacyTopic",
+        "type": "AWS::SNS::Topic",
+        "action": "delete",
+        "disruption": "destroy",
+        "attributes": [],
+        "node": null
+      }
+    ],
+    "summary": {
+      "members": 1,
+      "entries": 5,
+      "actions": {
+        "create": 1,
+        "update": 1,
+        "replace": 1,
+        "delete": 1,
+        "read": 0,
+        "no-op": 1,
+        "forget": 0
+      },
+      "types": {
+        "AWS::IAM::Role": {
+          "no-op": 1
+        },
+        "AWS::Lambda::Function": {
+          "replace": 1
+        },
+        "AWS::S3::Bucket": {
+          "update": 1
+        },
+        "AWS::SNS::Topic": {
+          "delete": 1
+        },
+        "AWS::SQS::Queue": {
+          "create": 1
+        }
+      },
+      "byMember": {
+        "web": {
+          "update": 1,
+          "replace": 1,
+          "create": 1,
+          "no-op": 1,
+          "delete": 1
+        }
+      },
+      "deletes": [
+        {
+          "member": "web",
+          "address": "LegacyTopic",
+          "type": "AWS::SNS::Topic",
+          "disruption": "destroy"
+        }
+      ],
+      "replacements": [
+        {
+          "member": "web",
+          "address": "AppFunction",
+          "type": "AWS::Lambda::Function",
+          "disruption": "replace"
+        }
+      ],
+      "failed": [],
+      "holes": 0
+    },
+    "graph": {
+      "member": "web",
+      "at": "a14610e4f51778c969efcc77694a360412c34d88"
+    }
+  },
+  "reason": null
+}

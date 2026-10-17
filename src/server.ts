@@ -196,6 +196,7 @@ import { scopeServedDirs, viewRepoFacts, viewReposMiddleware, type ViewRepos } f
 import { lifecycleHistoryRoute } from "./lifecycle-history.ts";
 import { hasReleaseLedgerHint, releasesRoutes } from "./lifecycle-releases.ts";
 import { laneFloorRefusal, readTrunkLane } from "./trunk-lane.ts";
+import { overlayFloorRefusal, readChangeSetOverlay } from "./change-set-overlay.ts";
 import { sqlYodelerLaneRoute } from "./sql-yodeler-lane.ts";
 import { controlRepoInfo, terragucciEstateRoutes } from "./terragucci-estate.ts";
 import { yodelReportRoute } from "./yodel-report.ts";
@@ -1592,6 +1593,26 @@ export function createApp(
     return c.json({ workspace: true, chant: version ?? null, ...read.lane, ...approver });
   });
 
+  // #681: a waiting gate's change set, as a preview on the graph. The gate
+  // (by key, in ?env=) and the digest it binds come from a fresh status read,
+  // never from the page; the change set from `chant change-set show <digest>
+  // --member <member> --json`. Both reads go through the read contract, and a
+  // chant below either floor is refused before anything is spawned.
+  app.get("/api/workspace/change-set", async (c) => {
+    const ws = servedWorkspace();
+    if (!ws) return c.json({ workspace: false, refusal: { error: "behold isn't serving a declared chant workspace, so there is no gate to read a change set for.", code: "no-workspace", remedy: "Serve the directory that holds chant.workspace.json." } }, 404);
+    const key = c.req.query("gate") || "";
+    const env = c.req.query("env") || cfg.env || "local";
+    if (!key || key.split("/").length !== 3) return c.json({ workspace: true, refusal: { error: "name the gate as ?gate=<member>/<op>/<gate>", code: "gate", remedy: "Open the change set from a gate card in the Trunk tab." } }, 400);
+    if (!isEnvName(env)) return c.json({ workspace: true, refusal: { error: `${JSON.stringify(env)} isn't an env name`, code: "env", remedy: "Pass the environment the gate waits in as ?env=." } }, 400);
+    const version = resolveChant(ws.root).version;
+    const tooOld = overlayFloorRefusal(version);
+    if (tooOld) return c.json({ workspace: true, chant: version ?? null, refusal: tooOld });
+    const read = await readChangeSetOverlay(ws, { key, env });
+    if (!read.ok) return c.json({ workspace: true, chant: version ?? null, refusal: read.refusal }, (read.status ?? 200) as 200);
+    return c.json({ workspace: true, chant: version ?? null, ...read.overlay });
+  });
+
   // #471: why a member or a node is the way it is, from `chant workspace graph
   // --intent <region> --json`. Read when the page asks (a click on "why"),
   // never at boot: on a large repository it takes tens of seconds. It is a
@@ -2297,6 +2318,7 @@ export function createApp(
         { method: "POST", path: "/api/ops/:name/signal/:gate", desc: "approve an Op's gate (releases the waiting run)" },
         { method: "GET", path: "/api/workspace/gates", desc: "a declared workspace's waiting gates from chant workspace status <env> --json (?env=), keyed member/op/gate, with the approver behold would record (#477) as approver and approverIdentity {principal, source, forge, signs}, or approver null and approverRefusal (#690); a policy-override gate carries override {subject, rules, plan, digest, state, spentAt, product, command, source} and no approve path (#519)" },
         { method: "GET", path: "/api/workspace/lane", desc: "the trunk lane (#680): per environment in the members' promotion order, the trunk's commits from chant ci list --json (green, revoked or undecided, with phases, runs and work items), the gates waiting on one, and the releases and deploy records each environment runs, from chant workspace status <env> --json and chant release list --json; approver fields as /api/workspace/gates; a chant below 0.124.28 is refused with refusal code chant-too-old" },
+        { method: "GET", path: "/api/workspace/change-set", desc: "a waiting gate's stored change set for the graph overlay (#681): ?gate=<member>/<op>/<gate>&env=<env>; the gate and its digest from chant workspace status <env> --json, the change set from chant change-set show <digest> --member <member> --json; gate {key, gitSha, runId, releaseDigest}, digest, planned {releaseDigest, environment} for a release gate, graph {member, at}, entries [{address, action, bucket create|change|delete, node or null, attributes}], nodes {<id>: {bucket, actions}}, counts, gaps; a chant below 0.124.28 is refused with refusal code chant-too-old" },
         { method: "GET", path: "/api/workspace/why", desc: "why a member (?member=) or a node (?node=<member>/<id>) is the way it is: the decisions covering it, the runs and commits behind it, from chant workspace graph --intent <region> --json; read on demand, cancelled with the request (#471)" },
         { method: "POST", path: "/api/workspace/gates/approve", desc: "approve one workspace gate: JSON body {key, env}; env and plan come from a fresh status read; recorded as the request's approver with --actor and --note, a signed gate signed with that person's key or refused 422 code signed (#690); preview-locked (#477); a policy-override gate answers 422 code override with its command (#519)" },
         { method: "POST", path: "/api/operator/approve/:op/:gate", desc: "record a converge gate's resolution (chant approve — a fact for the next tick, not an unblock)" },

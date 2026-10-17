@@ -50,6 +50,11 @@ export const RELEASE_LIST_CHANT_FLOOR = "0.124.28";
  * `promotionOrder` (INTENTIUS/chant#4030), and each gate's `gitSha`, `runId`
  * and `changeSet` (INTENTIUS/chant#4020, INTENTIUS/chant#4022). The trunk lane (#680). */
 export const PROMOTION_ORDER_CHANT_FLOOR = "0.124.28";
+/** The first chant that answers `chant change-set show <digest> --json`, the
+ * change set a gate binds with each entry's graph node (INTENTIUS/chant#4022),
+ * and a release gate's change set with its release and environment
+ * (INTENTIUS/chant#4045). The change-set overlay (#681). */
+export const CHANGE_SET_SHOW_CHANT_FLOOR = "0.124.28";
 
 export interface ChantFloor {
   /** The read, in words: `the why of a member or a card`. */
@@ -72,6 +77,7 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "trunk commits", floor: CI_LIST_CHANT_FLOOR, adds: "chant ci list --json (chant#4021, chant#4029)" },
   { read: "release list", floor: RELEASE_LIST_CHANT_FLOOR, adds: "chant release list --json (chant#4026)" },
   { read: "promotion order", floor: PROMOTION_ORDER_CHANT_FLOOR, adds: "workspace status promotionOrder (chant#4030)" },
+  { read: "change set", floor: CHANGE_SET_SHOW_CHANT_FLOOR, adds: "chant change-set show --json (chant#4022, chant#4045)" },
 ];
 
 /** One read's floor against one chant version. An unknown version meets it

@@ -3,7 +3,8 @@
 // work items and runs and where it is now. Then one lane per environment in
 // the promotion order chant declares: what the environment runs, and the
 // gates waiting there, each with the approve button the gate strip uses
-// (approveAffordance, #690). Nothing here is behold's own state.
+// (approveAffordance, #690), and the change set it binds as the link that
+// draws it on the graph (#681). Nothing here is behold's own state.
 
 import { ago, clock } from "./terragucci.js";
 import { approveAffordance, HOST_APPROVES, overrideCard } from "./workspace-gates.js";
@@ -102,14 +103,17 @@ export function laneGateCard(g, answer, { embed = false } = {}) {
   facts.push(g.gitSha ? `for ${sha7(g.gitSha)}${g.commitState ? ` (${g.commitState})` : ""}` : "commit unknown");
   facts.push(`${g.approvals.length} of ${plural(g.needed, "approval")}`);
   if (g.runId) facts.push(`run ${g.runId}`);
-  if (g.changeSet) facts.push(`change set ${short(g.changeSet)}`);
+  if (g.releaseDigest) facts.push(`release ${short(g.releaseDigest)}`);
   if (g.approvals.length) facts.push(`approved by ${g.approvals.map((a) => a.principal).join(", ")}`);
+  const show = g.changeSet ? `chant change-set show ${g.changeSet} --member ${g.member}` : null;
   const card = {
     key: g.key,
     title: `${g.member}: ${g.op} waits at gate ${g.gate}`,
     facts: facts.join(" · "),
-    command: g.changeSet ? `${g.approve}\nchant change-set show ${g.changeSet} --member ${g.member}` : g.approve,
+    command: show ? `${g.approve}\n${show}` : g.approve,
   };
+  // #681: the change set is a link that draws it on the graph.
+  if (g.changeSet) card.changeSet = { text: `change set ${short(g.changeSet)}`, title: `Draw this change set on the graph, as a preview.\n${show}` };
   if (embed) card.note = HOST_APPROVES;
   else Object.assign(card, approveAffordance(g, answer));
   return card;
@@ -140,7 +144,8 @@ export function laneView(a, now = new Date(), opts = {}) {
 /**
  * Render into `host`. `ui.button(label, cls, onClick)` and `ui.link(text,
  * href)` are app.js's; `ui.approve(key, env, button)` posts the approval;
- * `ui.embed` and `ui.canApprove` say whether a button may be drawn.
+ * `ui.embed` and `ui.canApprove` say whether a button may be drawn;
+ * `ui.openChangeSet(key, env)` draws a gate's change set on the graph (#681).
  */
 export function renderTrunkLane(host, a, now, ui) {
   host.replaceChildren();
@@ -215,6 +220,22 @@ export function renderTrunkLane(host, a, now, ui) {
       facts.className = "ws-gate-facts";
       facts.textContent = g.facts;
       facts.title = g.command;
+      // #681: the change set the gate binds, as the link that opens the overlay.
+      if (g.changeSet) {
+        facts.appendChild(document.createTextNode(" · "));
+        if (ui && ui.openChangeSet) {
+          const a = document.createElement("a");
+          a.href = "#";
+          a.className = "lane-change-set";
+          a.textContent = g.changeSet.text;
+          a.title = g.changeSet.title;
+          a.addEventListener("click", (ev) => {
+            ev.preventDefault();
+            ui.openChangeSet(g.key, e.env);
+          });
+          facts.appendChild(a);
+        } else facts.appendChild(document.createTextNode(g.changeSet.text));
+      }
       box.append(title, facts);
       if (g.note) {
         const note = document.createElement("div");

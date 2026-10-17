@@ -62,6 +62,8 @@ export interface WorkspaceGate {
   runId?: string;
   /** The change set the gate binds, when chant stored one (chant#4022): `chant change-set show <changeSet>` prints it. */
   changeSet?: string;
+  /** The release a release gate binds (op `release`, chant#4045): its change set was planned for this release and `env`. */
+  releaseDigest?: string;
 }
 
 export type GatesRead = { ok: true; env: string; gates: WorkspaceGate[] } | { ok: false; refusal: WorkspaceRefusal };
@@ -141,6 +143,7 @@ export function gatesFromStatus(doc: WorkspaceDocument, root: string): GatesRead
         ...(str(g.gitSha) ? { gitSha: str(g.gitSha)! } : {}),
         ...(str(g.runId) ? { runId: str(g.runId)! } : {}),
         ...(str(g.changeSet) ? { changeSet: str(g.changeSet)! } : {}),
+        ...(str(g.releaseDigest) ? { releaseDigest: str(g.releaseDigest)! } : {}),
       });
     }
   }
