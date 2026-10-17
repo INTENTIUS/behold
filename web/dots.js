@@ -97,16 +97,16 @@ function addStyle() {
   .dots-rail-mark { position: absolute; right: 0; transform: translateY(-50%); display: flex; align-items: center; gap: 6px; background: none; border: 0; color: var(--fg); cursor: pointer; padding: 3px 0; text-align: right; font: inherit; }
   .dots-rail-mark span { display: block; }
   .dots-rail-mark b { display: block; font-weight: 600; }
-  .dots-rail-mark small { display: block; color: var(--muted); font-size: 11px; }
+  .dots-rail-mark small { display: block; color: var(--muted); font-size: 11.5px; }
   .dots-rail-mark i { width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--muted); background: var(--bg); flex: none; margin-right: 4px; }
   .dots-rail-mark:hover i, .dots-rail-mark:focus-visible i { border-color: var(--focus); }
   .dots-bottom { position: absolute; left: 50%; transform: translateX(-50%); bottom: 12px; display: flex; flex-direction: column; align-items: center; gap: 6px; max-width: calc(100% - 24px); pointer-events: none; }
   .dots-bottom > * { pointer-events: auto; }
-  .dots-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: calc(100% - 24px); background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; box-sizing: border-box; }
+  .dots-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: calc(100% - 24px); background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; box-sizing: border-box; }
   .dots-bar button, .dots-bar select { background: var(--well); color: var(--fg); border: 1px solid var(--line); border-radius: 5px; padding: 3px 8px; font: inherit; cursor: pointer; }
   .dots-bar input[type=range] { width: min(320px, 40vw); accent-color: var(--focus); }
   .dots-time { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 12em; }
-  .dots-caption { padding: 3px 10px; border-radius: 6px; background: color-mix(in srgb, var(--bg) 80%, transparent); color: var(--fg); white-space: nowrap; max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; }
+  .dots-caption { padding: 3px 8px; border-radius: 6px; background: color-mix(in srgb, var(--bg) 80%, transparent); color: var(--fg); white-space: nowrap; max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; }
   .dots-kiosk .dots-caption { display: none; }
   /* #715: a live carve has no playback head: it plays as it is written. */
   .dots-live .dots-bar { display: none; }
@@ -119,20 +119,20 @@ function addStyle() {
   .dots-keep-bar .dots-bar:hover, .dots-keep-bar .dots-bar:focus-within { opacity: 1; }
   /* In Watch the director holds the camera; the rail is Inspect's. */
   .dots-kiosk.dots-watch:not(.dots-keep-bar) .dots-rail { display: none; }
-  .dots-tip { position: absolute; pointer-events: none; padding: 3px 7px; border-radius: 5px; background: var(--panel); border: 1px solid var(--line); white-space: nowrap; display: none; font-size: 12px; max-width: min(560px, calc(100% - 16px)); }
-  .dots-tip .dots-prov { white-space: normal; color: var(--muted); font: 11.5px/1.35 var(--font-mono, monospace); margin-top: 2px; }
+  .dots-tip { position: absolute; pointer-events: none; padding: 3px 6px; border-radius: 5px; background: var(--panel); border: 1px solid var(--line); white-space: nowrap; display: none; font-size: 12px; max-width: min(560px, calc(100% - 16px)); }
+  .dots-tip .dots-prov { white-space: normal; color: var(--ink2, var(--muted)); font: 11.5px/1.35 var(--font-mono, monospace); margin-top: 2px; }
   /* A recording's timeline (#711): the label on the timeline itself, wall-clock ticks, the marks the records give, the breaks it skips. */
   .dots-bar-rec { flex-direction: column; align-items: stretch; gap: 4px; width: min(860px, calc(100vw - 48px)); }
   .dots-tl-label { font: 600 12px var(--font-ui, system-ui); color: var(--fg); }
   .dots-tl-short { display: none; }
   .dots-tl-row { display: flex; align-items: flex-end; gap: 16px; }
   /* Break labels sit in their own row above the track; tick labels sit in the track, so the two never meet. */
-  .dots-tl-track { position: relative; flex: 1; height: 30px; margin-top: 15px; border-bottom: 1px solid var(--line); }
+  .dots-tl-track { position: relative; flex: 1; height: 30px; margin-top: 16px; border-bottom: 1px solid var(--line); }
   .dots-bar input.dots-tl-range { position: absolute; left: 0; right: 0; bottom: -8px; width: 100%; margin: 0; accent-color: var(--focus); background: transparent; }
-  .dots-tl-tick { position: absolute; bottom: 10px; transform: translateX(-50%); font: 10.5px var(--font-mono, monospace); color: var(--muted); white-space: nowrap; pointer-events: none; }
+  .dots-tl-tick { position: absolute; bottom: 10px; transform: translateX(-50%); font: 11.5px var(--font-mono, monospace); color: var(--muted); white-space: nowrap; pointer-events: none; }
   .dots-tl-tick::after { content: ""; position: absolute; left: 50%; top: 100%; width: 1px; height: 4px; background: var(--line); }
   .dots-tl-break { position: absolute; top: 0; bottom: 0; width: 8px; transform: translateX(-50%); background: repeating-linear-gradient(135deg, var(--muted) 0 1.5px, transparent 1.5px 4px); opacity: 0.8; cursor: help; z-index: 1; }
-  .dots-tl-break small { position: absolute; bottom: calc(100% + 2px); left: 50%; transform: translateX(-50%); font: 10px var(--font-mono, monospace); color: var(--muted); white-space: nowrap; }
+  .dots-tl-break small { position: absolute; bottom: calc(100% + 2px); left: 50%; transform: translateX(-50%); font: 11.5px var(--font-mono, monospace); color: var(--muted); white-space: nowrap; }
   .dots-tl-break-end small { left: auto; right: 0; transform: none; }
   .dots-bar .dots-tl-mark { position: absolute; top: 2px; width: 9px; height: 9px; padding: 0; margin-left: -4.5px; transform: rotate(45deg); border: 1.5px solid var(--focus); background: var(--focus); border-radius: 2px; cursor: pointer; z-index: 2; }
   .dots-bar .dots-tl-keyframe { border-color: var(--muted); background: var(--muted); }
@@ -141,7 +141,7 @@ function addStyle() {
   .dots-bar .dots-tl-first, .dots-bar .dots-tl-last { border-color: var(--bar-managed, var(--focus)); }
   .dots-speed { white-space: nowrap; font-variant-numeric: tabular-nums; }
   .dots-tip.dots-tip-go { pointer-events: auto; cursor: pointer; border-color: var(--focus); }
-  .dots-prov-go { font: 11px var(--font-ui, system-ui); color: var(--focus); margin-top: 2px; }
+  .dots-prov-go { font: 11.5px var(--font-ui, system-ui); color: var(--focus); margin-top: 2px; }
   @media (max-width: 640px) { .dots-tl-long { display: none; } .dots-tl-short { display: inline; } .dots-tl-break small { display: none; } .dots-bar-rec { width: calc(100vw - 24px); } .dots-tl-row { flex-wrap: wrap; } .dots-tl-track { order: -1; flex: 1 1 100%; } }
   .dots-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .dots-keys { position: absolute; left: 8px; top: 8px; opacity: 0; pointer-events: none; font: 12px var(--font-ui, system-ui); background: var(--panel); color: var(--fg); border: 1px solid var(--focus); border-radius: 6px; padding: 3px 8px; }
@@ -153,7 +153,7 @@ function addStyle() {
     .dots-rail-mark { font-size: 11px; }
     .dots-rail-mark small { display: none; }
     .dots-bottom { bottom: 6px; }
-    .dots-bar { gap: 6px; padding: 5px 8px; }
+    .dots-bar { gap: 6px; padding: 4px 8px; }
     .dots-bar input[type=range] { width: 100%; order: 9; }
     .dots-time { min-width: 0; }
     .dots-caption { font-size: 12px; white-space: normal; text-align: center; }
