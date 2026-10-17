@@ -3,7 +3,7 @@
 // roots and no rosters the route answers `live: false`, and the page mounts
 // nothing, so the kiosk and the app are as they were.
 import { describe, it, expect, vi, afterAll, beforeEach } from "vitest";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { GraphIR } from "@intentius/chant";
@@ -335,5 +335,65 @@ describe("the carve draws the carved project's estates, not the whole prefix", (
     if (!a.live) throw new Error("shut");
     expect(a.estates).toHaveLength(7);
     expect(a.projects).toBe(null);
+  });
+});
+
+// The live local run, cycle 5 (floci, s3://demo-reports/demo): the adoption
+// stamped all 82 resources within a second, between two of demo.json's
+// writes, so demo.json never named it; and estates.json holds both the stock
+// roster and the estate it became, in the same project and root.
+describe("cycle 5's adoption: found by listing, and one box with its stock root", () => {
+  const P = "forgejo:3000/terragucci-admin/demo-terralith";
+  const START = "2026-10-17T08:05:00Z";
+  const N = 82;
+  const addr = (i: number) => `aws_iam_role.r${String(i).padStart(2, "0")}`;
+  const stamp = (i: number) => ({ at: "2026-10-17T08:11:21.77Z", estate_from: "", estate_to: "tl5-terralith", address: addr(i), live_id: i % 2 ? "" : `role-${i}`, outcome: i % 2 ? "skipped" : "stamped", migration: "adopt" });
+  const mtime = (dir: string, k: string, iso: string) => utimesSync(join(dir, ...k.split("/")), new Date(iso), new Date(iso));
+
+  function cycle5(opts: { estate?: boolean; lines?: number; finished?: boolean } = {}): string {
+    const dir = tmp("behold-carve-c5-");
+    const lines = opts.lines ?? N;
+    const stock = { estate: "terralith", count: N, at: "2026-10-17T08:09:15Z", project: P, root: "terralith", roster: "estates/terralith/roster.json" };
+    const adopted = { estate: "tl5-terralith", count: N, at: "2026-10-17T08:11:32Z", project: P, root: "terralith", roster: "estates/tl5-terralith/roster.json" };
+    put(dir, "estates.json", JSON.stringify({ schema: "terragucci.estates/v1", estates: opts.estate === false ? [stock] : [stock, adopted] }));
+    put(dir, stock.roster, JSON.stringify({ estate: "terralith", at: stock.at, resources: Array.from({ length: N }, (_, i) => ({ address: addr(i), type: "aws_iam_role", marked: false })) }));
+    put(dir, adopted.roster, JSON.stringify({ estate: "tl5-terralith", at: adopted.at, resources: Array.from({ length: N }, (_, i) => ({ address: addr(i), type: "aws_iam_role", ...(i % 2 ? {} : { live_id: `role-${i}` }), marked: i % 2 === 0 })) }));
+    // demo.json went from "wait for the plan note" to applied: it never named the adoption.
+    put(dir, "demo.json", JSON.stringify({ cycle: 5, scenario: "terralith", title: "t", step: "applied", label: "l", started_at: START, next: null, pull: 3, commit: "abc", tool: "terralith", repo: "terragucci-admin/demo-terralith" }));
+    const done = opts.finished !== false;
+    put(dir, `${P}/migrations/adopt.json`, JSON.stringify({ name: "adopt", change: "adopt", status: done ? "applied" : "waiting", ...(done ? { finished: "2026-10-17T08:11:22Z" } : {}), progress: { moved: 0, stamped: Math.ceil(lines / 2), refused: 0, skipped: Math.floor(lines / 2), left: N - lines } }));
+    put(dir, `${P}/migrations/adopt/progress.jsonl`, Array.from({ length: lines }, (_, i) => JSON.stringify(stamp(i))).join("\n") + "\n");
+    mtime(dir, `${P}/migrations/adopt.json`, "2026-10-17T08:11:23Z");
+    // The cycle before's migration: its record and its lines are older than this cycle's start.
+    put(dir, `${P}/migrations/split.json`, JSON.stringify({ name: "split", status: "applied", finished: "2026-10-17T07:40:00Z" }));
+    put(dir, `${P}/migrations/split/progress.jsonl`, JSON.stringify({ at: "2026-10-17T07:39:00Z", estate_from: "tl4-terralith", estate_to: "tl4-team-a", address: addr(0), live_id: "x", outcome: "moved" }) + "\n");
+    mtime(dir, `${P}/migrations/split.json`, "2026-10-17T07:40:01Z");
+    return dir;
+  }
+
+  it("follows the adoption demo.json never named, found by listing the project's migrations, and not the cycle before's", async () => {
+    const a = await readCarve(terragucciSource(cycle5()), { choudoufu: () => false });
+    if (!a.live) throw new Error(`shut: ${a.reason}`);
+    expect(a.migrations.map((m) => m.name)).toEqual(["adopt"]);
+    const m = a.migrations[0]!;
+    expect(m.lines).toHaveLength(N);
+    expect(m.counts).toEqual({ moved: 0, stamped: 41, refused: 0, skipped: 41, left: 0 });
+    expect(m.running).toBe(false);
+    expect(m.progress).toBe(`${P}/migrations/adopt/progress.jsonl`);
+  });
+
+  it("draws the adopted estate in place of its stock root, as one box", async () => {
+    const a = await readCarve(terragucciSource(cycle5()), { choudoufu: () => false });
+    if (!a.live) throw new Error(`shut: ${a.reason}`);
+    expect(a.estates.map((e) => e.estate)).toEqual(["tl5-terralith"]);
+    expect(a.adopted).toEqual([{ from: "terralith", to: "tl5-terralith" }]);
+  });
+
+  it("mid-adoption, before the estate's roster exists, draws the stock root and pairs it with the estate its stamps go into", async () => {
+    const a = await readCarve(terragucciSource(cycle5({ estate: false, lines: 30, finished: false })), { choudoufu: () => false });
+    if (!a.live) throw new Error(`shut: ${a.reason}`);
+    expect(a.estates.map((e) => e.estate)).toEqual(["terralith"]);
+    expect(a.adopted).toEqual([{ from: "terralith", to: "tl5-terralith" }]);
+    expect(a.migrations[0]!.running).toBe(true);
   });
 });

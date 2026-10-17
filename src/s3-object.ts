@@ -1,7 +1,8 @@
 /**
  * The little of S3 behold needs (#491): read one object, write one, and
- * delete one (#500), signed with AWS Signature Version 4 from `node:crypto`.
- * No SDK, no list call.
+ * delete one (#500), and list the keys one level under a prefix (the live
+ * carve's migrations), signed with AWS Signature Version 4 from
+ * `node:crypto`. No SDK.
  *
  * Ported from terragucci's report store (INTENTIUS/terragucci,
  * packages/terragucci/src/report/s3.ts, Apache-2.0), so behold reads a
@@ -70,6 +71,21 @@ const xmlText = (xml: string, tag: string): string | undefined => {
   const m = new RegExp(`<${tag}>([^<]*)</${tag}>`).exec(xml);
   return m?.[1]!.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&").trim();
 };
+
+/** A ListObjectsV2 answer's keys, their LastModified, and its common prefixes. */
+export function listingOf(xml: string): { objects: { key: string; modified: string | null }[]; prefixes: string[]; truncated: boolean } {
+  const objects: { key: string; modified: string | null }[] = [];
+  for (const m of xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)) {
+    const k = xmlText(m[1]!, "Key");
+    if (k) objects.push({ key: k, modified: xmlText(m[1]!, "LastModified") ?? null });
+  }
+  const prefixes: string[] = [];
+  for (const m of xml.matchAll(/<CommonPrefixes>([\s\S]*?)<\/CommonPrefixes>/g)) {
+    const p = xmlText(m[1]!, "Prefix");
+    if (p) prefixes.push(p);
+  }
+  return { objects, prefixes, truncated: xmlText(xml, "IsTruncated") === "true" };
+}
 
 /** Whether the environment holds credentials this client can sign with. */
 export function hasEnvCredentials(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -206,6 +222,22 @@ export class S3Object {
       const text = await res.text();
       throw new S3Error(`PUT s3://${t.bucket}/${key}: ${res.status} ${text.slice(0, 300)}`, { status: res.status, body: text });
     }
+  }
+
+  /**
+   * ListObjectsV2 of the keys one level under `prefix` (delimiter `/`), at
+   * most `max`: each object's key and LastModified, and each common prefix.
+   * Needs s3:ListBucket on the bucket.
+   */
+  async list(prefix: string, max: number): Promise<{ objects: { key: string; modified: string | null }[]; prefixes: string[]; truncated: boolean }> {
+    const t = await this.signer();
+    const base = t.endpoint ? `${t.endpoint}/${t.bucket}` : `https://${t.bucket}.s3.${t.region}.amazonaws.com/`;
+    const query = [`delimiter=${encodeStrict("/")}`, "list-type=2", `max-keys=${Math.max(1, Math.min(1000, Math.floor(max)))}`, `prefix=${encodeStrict(prefix)}`].join("&");
+    const url = `${base}?${query}`;
+    const res = await this.fetchFn(url, { method: "GET", headers: sign(t, "GET", url, {}, sha256(""), this.now()) });
+    const xml = await res.text();
+    if (!res.ok) throw new S3Error(`LIST s3://${t.bucket}/${prefix}: ${res.status} ${xml.slice(0, 300)}`, { status: res.status, body: xml });
+    return listingOf(xml);
   }
 
   /** Delete an object. A missing one is not an error. */
