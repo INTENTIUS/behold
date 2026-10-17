@@ -115,7 +115,9 @@
       .r-head-title .r-icon { margin: 0; }
       .r-head-sub { color: var(--fg); font-size: 0.88em; margin-top: 0.15em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .r-head-meta { color: var(--muted); font-size: 0.82em; }
-      .r-label { font: 600 0.8em/1.3 var(--font-ui); color: var(--muted); padding: var(--s3) var(--s4) 0; }
+      /* behold#725: a section heading (Jobs, Features, Steps) keeps a line of its own: the pane is a flex column, and nothing in it but the steps may shrink. */
+      .r-label { display: block; flex: none; position: static; font: 600 0.8em/1.3 var(--font-ui); color: var(--muted); padding: var(--s3) var(--s4) var(--s1); }
+      #runs-main > :not(.r-steps) { flex: none; }
       .r-jobs { list-style: none; margin: 0; padding: var(--s1) 0 var(--s2); border-bottom: 1px solid color-mix(in srgb, var(--rule) 55%, transparent); }
       .r-job { display: flex; gap: var(--s2); align-items: center; padding: 0.22em 1em 0.22em calc(1em + var(--depth, 0) * 0.9em); cursor: pointer; }
       .r-job .r-icon { margin: 0; }
@@ -134,7 +136,7 @@
       .r-dur { margin-left: auto; color: var(--muted); font-size: 0.8em; white-space: nowrap; }
       .r-job-skipped { color: var(--muted); font-size: 0.8em; cursor: default; }
       .r-steps { display: flex; flex-direction: column; min-height: 0; flex: 1; overflow-y: auto; padding-bottom: var(--s2); }
-      .r-steps-head { display: flex; gap: var(--s2); align-items: center; padding: var(--s1) var(--s4) var(--s1); }
+      .r-steps-head { flex: none; display: flex; gap: var(--s2); align-items: center; padding: var(--s1) var(--s4) var(--s1); }
       .r-steps-head .r-icon { margin: 0; }
       .r-steps-job { font: 700 0.95em var(--font-mono); }
       .r-steps-word { color: var(--muted); font-size: 0.85em; }
