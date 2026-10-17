@@ -3,8 +3,17 @@
 //
 // One approve path per gate. Framed in a host (#476), behold draws the gate
 // and no button: the host knows who is looking and records it. Standalone, the
-// button stays, and the card says the approval is recorded as the user running
-// behold, since behold has no other identity to give chant.
+// button stays, and its label names who chant records the approval as (#690):
+// the person behold's proxy signed in, the one `--as` names, or else the user
+// running behold. A gate that needs a signed approval gets a button only when
+// behold holds that person's key.
+
+/** Where the approver's name came from, in the words a button's tooltip uses. */
+const SOURCE_WORDS = {
+  header: "from your sign-in",
+  configured: "set when behold started",
+  process: "the user running behold",
+};
 
 /** The words a framed card uses instead of a button. */
 export const HOST_APPROVES = "approve in the host that framed this graph";
@@ -31,12 +40,28 @@ export function gateCards(answer, { embed = false, member = null } = {}) {
       command: g.approve,
     };
     if (embed) card.note = HOST_APPROVES;
-    else if (g.signed) card.note = `wants a signed approval; run ${g.approve}`;
-    else card.button = { label: `Approve as ${answer.approver || "you"}`, title: `${g.approve}, run by behold. chant records the approval as ${answer.approver || "the user running behold"}.` };
+    else Object.assign(card, approveAffordance(g, answer));
     return card;
   });
   const elsewhere = all.length - shown.length;
   return { cards, elsewhere, refusal: (answer && answer.refusal) || null };
+}
+
+/**
+ * #690: the button, or the note in its place, for a standalone card. The label
+ * says who the approval is recorded as before the click.
+ */
+export function approveAffordance(g, answer) {
+  const refusal = answer && answer.approverRefusal;
+  if (refusal) return { note: `can't approve here: ${refusal.error}. Run ${g.approve}` };
+  const id = (answer && answer.approverIdentity) || null;
+  const who = (answer && answer.approver) || "you";
+  const from = SOURCE_WORDS[id ? id.source : "process"] || SOURCE_WORDS.process;
+  if (g.signed) {
+    if (!id || !id.signs) return { note: `needs a signed approval, and behold has no key for ${who}. Run ${g.approve}` };
+    return { button: { label: `Approve as ${who}, signed`, title: `behold runs ${g.approve} with ${who}'s key. chant records ${who}, ${from}.` } };
+  }
+  return { button: { label: `Approve as ${who}`, title: `behold runs ${g.approve}. chant records ${who}, ${from}.` } };
 }
 
 /**

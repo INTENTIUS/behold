@@ -152,7 +152,8 @@ import { choudoufuLexiconNote, setEstateLexiconRead, type LexiconRead } from "./
 import { readTerralith } from "./terralith-demo.ts";
 import { discoverSplitPlans, moveMembers, moveReceipt, movesPayload, readSplitPlan, type MoveMorphMoveInput } from "./choudoufu-moves.ts";
 import { servedWorkspace, setServedWorkspace, workspaceMemberOf, type Workspace } from "./workspace.ts";
-import { approveArgs, isEnvName, isOverrideGate, localApprover, readWorkspaceGates } from "./workspace-gates.ts";
+import { approveArgs, isEnvName, isOverrideGate, readWorkspaceGates } from "./workspace-gates.ts";
+import { approverFlags, approverFor, approverView, type ApproverOptions, type ApproverRead } from "./approver.ts";
 import { readWhy, whyRegion } from "./workspace-why.ts";
 import { floorFor, floorMet, floorRefusal } from "./chant-floors.ts";
 import { allowedHostsFrom, guardRequest } from "./request-guard.ts";
@@ -239,6 +240,10 @@ export interface ServerOptions {
   /** #471: hud's address (`--hud`, BEHOLD_HUD_URL). A proposed decision in a
    * "why" links to its review there; without it the decision is named by id. */
   hud?: string;
+  /** #690: who an approval is recorded as, and the keys behold signs with
+   * (`--as`, `--signing-key`, `--identity-header`, `.behold.json`'s
+   * `approver`; src/approver.ts). Absent: chant's own fallback, as before. */
+  approver?: ApproverOptions;
   /** All served project dirs (#31 multi-estate). Present with length > 1 only when
    * composing several projects; the source graph then merges them. */
   projectDirs?: string[];
@@ -1028,6 +1033,10 @@ export function createApp(
   // #464: the declared workspace this app serves, if any — the estate code asks
   // it which member a directory is and what the declaration names it.
   setServedWorkspace(cfg.workspace);
+  // #690: the person a request approves as, from the trusted header, `--as`,
+  // or chant's own fallback (src/approver.ts).
+  const approverOf = (c: { req: { header(name: string): string | undefined } }): ApproverRead =>
+    approverFor(cfg.approver ?? {}, (name) => c.req.header(name));
   app.use("/api/*", async (c, next) => {
     if (c.req.method === "GET") return withReadSignal(c.req.raw.signal, next);
     await next();
@@ -1495,8 +1504,11 @@ export function createApp(
     // name for exactly that reason), so run in that op's own project dir — the
     // same lookup the signal route makes.
     const info = estateOps().find((o) => o.name === op);
-    broadcaster.emit("op", `✎ approve ${op} ${gate} — records a fact; the next tick acts on it`);
-    const { code, stderr, stdout } = await runChantRaw(["approve", op, gate], info?.dir ?? cfg.projectDir);
+    // #690: recorded as the request's approver, as the workspace gates are.
+    const who = approverOf(c);
+    if (!who.ok) return c.json({ error: who.refusal.error, code: who.refusal.code, remedy: who.refusal.remedy }, 403);
+    broadcaster.emit("op", `✎ approve ${op} ${gate} as ${who.approver.principal} — records a fact; the next tick acts on it`);
+    const { code, stderr, stdout } = await runChantRaw(["approve", op, gate, ...approverFlags(who.approver)], info?.dir ?? cfg.projectDir);
     if (code !== 0) {
       return c.json({ error: stderr.trim() || stdout.trim() || `approve exited ${code}`, code: "approve" }, 500);
     }
@@ -1514,8 +1526,11 @@ export function createApp(
     if (cfg.previewMode) return c.json({ error: "approving is disabled in preview mode", code: "preview" }, 403);
     const { name, gate } = c.req.param();
     const info = estateOps().find((o) => o.name === name);
-    broadcaster.emit("op", `✎ approve ${name} ${gate}`);
-    const { code, stderr, stdout } = await runChantRaw(["run", "approve", name, gate], info?.dir ?? cfg.projectDir);
+    // #690: recorded as the request's approver (`--approver`, the flag `chant run approve` reads first).
+    const who = approverOf(c);
+    if (!who.ok) return c.json({ error: who.refusal.error, code: who.refusal.code, remedy: who.refusal.remedy }, 403);
+    broadcaster.emit("op", `✎ approve ${name} ${gate} as ${who.approver.principal}`);
+    const { code, stderr, stdout } = await runChantRaw(["run", "approve", name, gate, ...approverFlags(who.approver, { flag: "--approver" })], info?.dir ?? cfg.projectDir);
     if (code !== 0) return c.json({ error: stripAnsi(stderr).trim() || stripAnsi(stdout).trim() || `approve exited ${code}` }, 500);
     const next = stripAnsi(stderr).trim().split("\n").filter(Boolean).at(-1) ?? null;
     return c.json({ approved: true, op: name, gate, next });
@@ -1526,15 +1541,23 @@ export function createApp(
   // them, so a framed behold and the block show the same set. No env picked is
   // the served env, then `local` (the block's default). Not a workspace: an
   // empty list, so the page has nothing to draw.
+  // #690: `approver` is who this request's approval would be recorded as
+  // (null when behold can't tell, with `approverRefusal` saying why), and
+  // `approverIdentity` adds where that came from and whether behold holds the
+  // person's key, so a card says it before the click.
   app.get("/api/workspace/gates", async (c) => {
     const ws = servedWorkspace();
     const env = c.req.query("env") || cfg.env || "local";
     if (!isEnvName(env)) return c.json({ error: `${JSON.stringify(env)} isn't an env name`, code: "env" }, 400);
-    if (!ws) return c.json({ workspace: false, env, gates: [], approver: localApprover() });
+    const who = approverOf(c);
+    const approver = who.ok
+      ? { approver: who.approver.principal, approverIdentity: approverView(who.approver) }
+      : { approver: null, approverRefusal: who.refusal };
+    if (!ws) return c.json({ workspace: false, env, gates: [], ...approver });
     const read = await readWorkspaceGates(ws, env);
-    if (!read.ok) return c.json({ workspace: true, env, gates: [], refusal: read.refusal, approver: localApprover() });
+    if (!read.ok) return c.json({ workspace: true, env, gates: [], refusal: read.refusal, ...approver });
     // dir stays on the server: approving looks it up again.
-    return c.json({ workspace: true, env, gates: read.gates.map(({ dir: _dir, ...g }) => g), approver: localApprover() });
+    return c.json({ workspace: true, env, gates: read.gates.map(({ dir: _dir, ...g }) => g), ...approver });
   });
 
   // #471: why a member or a node is the way it is, from `chant workspace graph
@@ -1572,9 +1595,13 @@ export function createApp(
   });
 
   // #477: approve one workspace gate, by key. The member's directory, env and
-  // plan digest come from a fresh status read, never from the page. Recorded as
-  // whoever runs behold, which the card says before the click; a framed behold
-  // draws no button and leaves this to its host (#476).
+  // plan digest come from a fresh status read, never from the page. A framed
+  // behold draws no button and leaves this to its host (#476).
+  // #690: recorded as the request's approver (`--actor`, src/approver.ts) with
+  // `--note "approved in behold"`, which the card says before the click. A
+  // gate that needs a signed approval is signed with the person's key when
+  // behold holds one (`--sign <key>`), and refused with the line to run
+  // otherwise.
   app.post("/api/workspace/gates/approve", async (c) => {
     if (cfg.previewMode) return c.json({ error: "approving is disabled in preview mode", code: "preview" }, 403);
     // JSON only, as /api/layout: a cross-origin page can't send this content
@@ -1594,13 +1621,18 @@ export function createApp(
     if (!g) return c.json({ error: `no gate ${key} is waiting in ${env}`, code: "no-gate" }, 404);
     // #519: a person overrides a policy denial with its rules and a reason; behold never approves one.
     if (isOverrideGate(g)) return c.json({ error: `${key} is a policy denial, which behold never overrides. Run, with your reason: ${g.approve}`, code: "override" }, 422);
-    if (g.signed) return c.json({ error: `${key} wants a signed approval, which behold can't make. Run: ${g.approve}`, code: "signed" }, 422);
-    const approver = localApprover();
-    broadcaster.emit("op", `✎ approve ${g.key} as ${approver}`);
-    const { code, stderr, stdout } = await runChantRaw(approveArgs(g), g.dir);
-    if (code !== 0) return c.json({ error: stderr.trim() || stdout.trim() || `approve exited ${code}`, code: "approve" }, 500);
+    const who = approverOf(c);
+    if (!who.ok) return c.json({ error: who.refusal.error, code: who.refusal.code, remedy: who.refusal.remedy }, 403);
+    const approver = who.approver.principal;
+    if (g.signed && !who.approver.key) {
+      return c.json({ error: `${key} needs a signed approval, and behold holds no key for ${approver}. Run: ${g.approve}`, code: "signed" }, 422);
+    }
+    const signed = g.signed && !!who.approver.key;
+    broadcaster.emit("op", `✎ approve ${g.key} as ${approver}${signed ? ", signed" : ""}`);
+    const { code, stderr, stdout } = await runChantRaw([...approveArgs(g), ...approverFlags(who.approver, { sign: g.signed })], g.dir);
+    if (code !== 0) return c.json({ error: stripAnsi(stderr).trim() || stripAnsi(stdout).trim() || `approve exited ${code}`, code: "approve" }, 500);
     broadcaster.emit("changed", "");
-    return c.json({ recorded: true, key: g.key, approver });
+    return c.json({ recorded: true, key: g.key, approver, signed });
   });
 
   // Live updates (#3): SSE stream the SPA subscribes to. On a "changed" event
@@ -1802,8 +1834,12 @@ export function createApp(
       // #525: a SQL Yodeler checkout; the page asks /api/lifecycle/releases.
       ...(hasReleaseLedgerHint(cfg.projectDir) ? { releaseLedger: true } : {}),
       // #477: who `chant approve` records when behold runs it. The approve
-      // buttons say it before the click.
-      approver: localApprover(),
+      // buttons say it before the click. #690: this request's approver; null
+      // when behold can't tell who is asking.
+      ...((): { approver: string | null } => {
+        const who = approverOf(c);
+        return { approver: who.ok ? who.approver.principal : null };
+      })(),
       // #471: the declared workspace's members, so the inspect pane offers a
       // member's or a card's "why" only where chant can answer it.
       ...(servedWorkspace()
@@ -2227,9 +2263,9 @@ export function createApp(
         { method: "POST", path: "/api/apply", desc: "delegated apply: ?env=&component=<name|all> (guarded, preview-locked)" },
         { method: "POST", path: "/api/ops/:name/run", desc: "run a committed Op (delegated write)" },
         { method: "POST", path: "/api/ops/:name/signal/:gate", desc: "approve an Op's gate (releases the waiting run)" },
-        { method: "GET", path: "/api/workspace/gates", desc: "a declared workspace's waiting gates from chant workspace status <env> --json (?env=), keyed member/op/gate, with the approver behold would record (#477); a policy-override gate carries override {subject, rules, plan, digest, state, spentAt, product, command, source} and no approve path (#519)" },
+        { method: "GET", path: "/api/workspace/gates", desc: "a declared workspace's waiting gates from chant workspace status <env> --json (?env=), keyed member/op/gate, with the approver behold would record (#477) as approver and approverIdentity {principal, source, forge, signs}, or approver null and approverRefusal (#690); a policy-override gate carries override {subject, rules, plan, digest, state, spentAt, product, command, source} and no approve path (#519)" },
         { method: "GET", path: "/api/workspace/why", desc: "why a member (?member=) or a node (?node=<member>/<id>) is the way it is: the decisions covering it, the runs and commits behind it, from chant workspace graph --intent <region> --json; read on demand, cancelled with the request (#471)" },
-        { method: "POST", path: "/api/workspace/gates/approve", desc: "approve one workspace gate: JSON body {key, env}; env and plan come from a fresh status read; recorded as the user running behold; preview-locked (#477); a policy-override gate answers 422 code override with its command (#519)" },
+        { method: "POST", path: "/api/workspace/gates/approve", desc: "approve one workspace gate: JSON body {key, env}; env and plan come from a fresh status read; recorded as the request's approver with --actor and --note, a signed gate signed with that person's key or refused 422 code signed (#690); preview-locked (#477); a policy-override gate answers 422 code override with its command (#519)" },
         { method: "POST", path: "/api/operator/approve/:op/:gate", desc: "record a converge gate's resolution (chant approve — a fact for the next tick, not an unblock)" },
         { method: "POST", path: "/api/rollback", desc: "open a rollback PR: ?to=<sha>" },
         { method: "POST", path: "/api/substrates/:name/up", desc: "bring a substrate up" },

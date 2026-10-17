@@ -475,7 +475,7 @@ export function renderConvergeGateCard(gate, actions = {}) {
     box.appendChild(el("div", "run-gate-meta", NO_APPROVE[actions.why] || NO_APPROVE.host));
     return box;
   }
-  // Standalone, chant records whoever runs behold. Said before the click.
+  // Standalone, chant records the approver /api/project names (#690). Said before the click.
   const approve = el("button", "approve", actions.approver ? `Record approval as ${actions.approver}` : "Record approval");
   approve.title =
     `${(gate.approve && gate.approve.method) || "POST"} ${(gate.approve && gate.approve.path) || ""} — ` +

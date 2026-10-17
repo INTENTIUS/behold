@@ -1,0 +1,110 @@
+---
+title: Approving a gate
+description: Who chant records when you approve a gate from behold, and how behold signs a gate that needs a signed approval.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A gate's card in behold has an approve button. behold does not write the
+approval itself: it runs `chant approve` in the member's directory, and chant
+records it on `chant/lifecycle`. chant never signs a person in, so behold tells
+chant who is approving with `--actor`. The button says who that is before you
+click it:
+
+| Button | What it means |
+|---|---|
+| **Approve as github:alice** | chant records `github:alice` |
+| **Approve as github:alice, signed** | the gate needs a signed approval, and behold signs it with alice's key |
+| no button, and the line to run | the gate needs a signed approval and behold has no key for you, or behold can't tell who you are |
+
+Hover the button to see the command behold runs and where the name came from.
+Every approval behold makes also carries `--note "approved in behold"`, so the
+ledger line says where it was made.
+
+## Who you approve as
+
+behold learns who you are in one of three ways. The first that applies wins.
+
+| You run behold | Start it with | chant records |
+|---|---|---|
+| behind a proxy that signs people in through the forge or OIDC | `--identity-header X-Forwarded-User` | the person the proxy names, such as `github:alice` |
+| for yourself | `--as github:alice` | `github:alice` |
+| with neither | nothing | the user running behold, from `GITHUB_ACTOR`, `GITLAB_USER_LOGIN` or `USER` |
+
+```sh
+npx @intentius/behold serve ./estate --as github:alice
+```
+
+`--as` takes a forge identity: `github:<login>`, `gitlab:<login>`, or
+`<forge>@<host>:<login>` for Forgejo, Gitea or a self-hosted GitHub or GitLab,
+such as `forgejo@codeberg.org:alice`. It also takes any principal your
+workspace's `.chant/allowed_signers` lists. `BEHOLD_APPROVER` sets the same
+thing, and so does the `approver` block in `.behold.json`:
+
+```json
+{ "approver": { "as": "github:alice", "signingKey": "~/.ssh/id_ed25519" } }
+```
+
+A workspace whose `chant.workspace.json` sets `identity.attribution` to
+`identified` refuses a plain user name, so on such a workspace start behold with
+`--as` or behind a signing-in proxy. Without either, chant refuses the approval
+and the card shows chant's reason.
+
+### Behind a proxy
+
+When a team opens one behold, put a proxy in front of it that signs people in
+(oauth2-proxy, or your forge's own), and tell behold which header names the
+person:
+
+```sh
+npx @intentius/behold serve ./estate --identity-header X-Forwarded-User --identity-forge github
+```
+
+A bare login in the header, such as `alice`, is read as an account on
+`--identity-forge`: `github` unless you set it, `gitlab`, or
+`<forge>@<host>`. A header that already holds a forge identity is taken as it
+is. A request without the header gets no button.
+
+<Aside type="caution" title="Only behind the proxy">
+behold trusts the header because the proxy sets it. Anyone who reaches behold's
+port directly could send it too, so `--identity-header` needs behold bound to
+`127.0.0.1` (the default) with the proxy on the same machine, and behold refuses
+to start with it on any other `--host`. Without `--identity-header`, behold
+refuses an approval from a request that carries `X-Forwarded-User` or a header
+like it, rather than recording someone other than the person it names.
+</Aside>
+
+## Signed gates
+
+A gate the workspace names in `identity.gates` counts only an approval signed
+with an ssh key that `.chant/allowed_signers` lists for the approver. behold
+signs such a gate when it holds your key:
+
+```sh
+npx @intentius/behold serve ./estate --as github:alice --signing-key ~/.ssh/id_ed25519
+```
+
+behold then runs `chant approve <op> <gate> --plan <digest> --actor
+github:alice --note "approved in behold" --sign ~/.ssh/id_ed25519`, and chant
+checks the seal against the signers at base before it writes anything.
+`BEHOLD_SIGNING_KEY` sets the same key. Behind a proxy, list a key per person in
+`.behold.json`:
+
+```json
+{ "approver": { "header": "x-forwarded-user", "keys": { "github:alice": "/srv/keys/alice", "github:bob": "/srv/keys/bob" } } }
+```
+
+The key file stays on the machine behold runs on. The page is told only
+whether behold holds a key for you. A key with a passphrase needs the ssh agent
+to hold it, since behold can't type the passphrase. Without a key, the card
+shows the `chant approve ... --sign` line to run at your own shell.
+
+The converge gate and the Op run gate on the Deploy tab record the same person
+with `--actor`, but behold does not sign them.
+
+## What behold never approves
+
+A policy denial (a gate of op `policy-override`) needs the denied rules and
+your reason, so its card shows the command and no button. A framed behold
+leaves approving to the page that framed it, which knows who is looking.
+behold never approves a gate on its own, and auto-sync never approves one.

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { GraphIR } from "@intentius/chant";
+import type { ApproverOptions } from "./approver.ts";
 
 // The HTTP half of the run playhead (#284 item 2). src/run-playhead.test.ts
 // covers the parsing/join/paint against chant's real record shapes; this proves
@@ -63,10 +64,10 @@ beforeAll(() => {
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-function harness() {
+function harness(approver?: ApproverOptions) {
   const broadcaster = new Broadcaster();
   const runner = new OpRunner({ projectDir: dir, broadcaster, onDone: () => {} });
-  const app = createApp({ projectDir: dir, port: 0 }, broadcaster, new FrameBuffer(), runner);
+  const app = createApp({ projectDir: dir, port: 0, ...(approver ? { approver } : {}) }, broadcaster, new FrameBuffer(), runner);
   return { app, runner, broadcaster };
 }
 
@@ -223,12 +224,20 @@ describe("POST /api/ops/:name/signal/:gate — recording the approval (#459)", (
     rawReply = { code: 0, stdout: "", stderr: readFileSync(join(RUN_FIXTURES, "run-approve-local.stderr.txt"), "utf8") };
     const res = await app.request("/api/ops/gated-probe/signal/approve-probe", { method: "POST" });
     expect(res.status).toBe(200);
-    expect(lastRawArgs).toEqual(["run", "approve", "gated-probe", "approve-probe"]);
+    expect(lastRawArgs).toEqual(["run", "approve", "gated-probe", "approve-probe", "--note", "approved in behold"]);
     const body = (await res.json()) as { approved: boolean; op: string; gate: string; next: string };
     expect(body).toMatchObject({ approved: true, op: "gated-probe", gate: "approve-probe" });
     // chant's own next step, ANSI stripped: the local runtime reads the
     // approval when the Op runs again.
     expect(body.next).toBe('The "local" runtime reads the resolution when the op next runs — re-run `chant run gated-probe`.');
+  });
+
+  it("records the person behold's proxy signed in, as --approver (#690)", async () => {
+    const { app } = harness({ header: "x-forwarded-user" });
+    rawReply = { code: 0, stdout: "", stderr: "" };
+    const res = await app.request("/api/ops/gated-probe/signal/approve-probe", { method: "POST", headers: { "x-forwarded-user": "alice" } });
+    expect(res.status).toBe(200);
+    expect(lastRawArgs).toEqual(["run", "approve", "gated-probe", "approve-probe", "--approver", "github:alice", "--note", "approved in behold"]);
   });
 
   it("500s with chant's own words when the approval is refused", async () => {

@@ -1364,6 +1364,15 @@ describe("GET /api/workspace/gates (#477)", () => {
     expect(body).toMatchObject({ workspace: false, env: "local", gates: [] });
     expect(typeof body.approver).toBe("string");
   });
+  it("says who this request approves as, and why not when behold can't tell (#690)", async () => {
+    const app = (approver: object) => createApp({ projectDir: "/proj", port: 0, approver }, new Broadcaster(), new FrameBuffer(), new OpRunner({ projectDir: "/proj", broadcaster: new Broadcaster(), onDone: () => {} }));
+    const signedIn = await (await app({ header: "x-forwarded-user" }).request("/api/workspace/gates", { headers: { "x-forwarded-user": "alice" } })).json();
+    expect(signedIn).toMatchObject({ approver: "github:alice", approverIdentity: { principal: "github:alice", source: "header", forge: true, signs: false } });
+    const anonymous = await (await app({ header: "x-forwarded-user" }).request("/api/workspace/gates")).json();
+    expect(anonymous).toMatchObject({ approver: null, approverRefusal: { code: "no-identity" } });
+    const spoofed = await (await app({ as: "github:alice" }).request("/api/workspace/gates", { headers: { "x-forwarded-user": "mallory" } })).json();
+    expect(spoofed).toMatchObject({ approver: null, approverRefusal: { code: "identity-header" } });
+  });
 });
 
 describe("who may talk to behold", () => {
