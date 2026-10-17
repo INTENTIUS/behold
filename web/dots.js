@@ -1429,7 +1429,9 @@ function startLive(kiosk) {
   S.clock.length = Math.max(S.clock.length, S.t);
   S.kioskLive = !!kiosk;
   S.liveEndAt = null;
-  S.ended = new Set();
+  // What the first read holds already ended happened before the page looked: no end tip for it.
+  S.ended = new Set((S.answer.migrations || []).filter((m) => !m.running).map((m) => m.name));
+  S.wasActive = false;
   S.wasRunning = new Map((S.answer.migrations || []).map((m) => [m.name, m.running]));
   S.userUntil = 0;
   S.insets = { top: 0, bottom: 0 };
@@ -1533,7 +1535,22 @@ function liveTick(wall, dt) {
     S.wasRunning.set(x.name, x.running);
   }
   const running = !!(answer.running || (m && m.running));
-  const carving = S.kioskLive && (running || (S.liveEndAt !== null && now - S.liveEndAt < LIVE_HOLD_MS));
+  // Lines still playing count as running: an adoption on floci writes its 82 lines in under a second, and the record
+  // says applied by the read that brings them, so the beat is the 50 ms pacing of those lines (web/dots-live.js).
+  const playing = S.t < (S.busyUntil ?? 0);
+  const active = running || playing;
+  // When the last of it has played, Watch holds on the result, then hands the camera back.
+  if (S.wasActive && !active) {
+    S.liveEndAt = now;
+    // A migration that was done by the read that brought its lines ends here, once they have played.
+    for (const x of answer.migrations || []) {
+      if (x.running || S.ended.has(x.name) || !x.lines.length) continue;
+      S.ended.add(x.name);
+      S.pendingTips.push(liveEndTip(x, S.t));
+    }
+  }
+  S.wasActive = active;
+  const carving = S.kioskLive && (active || (S.liveEndAt !== null && now - S.liveEndAt < LIVE_HOLD_MS));
   if (carving !== S.carving) {
     S.carving = carving;
     S.ui.classList.toggle("dots-carving", carving);
@@ -1543,7 +1560,9 @@ function liveTick(wall, dt) {
   }
   if (!S.kioskLive) return;
   const beat = liveBeat(S.scene, S.t, { demo: answer.demo, migration: m });
-  S.directing = carving && S.mode === "watch" && performance.now() >= S.userUntil;
+  // In Inspect too: while a migration runs its boxes and dots are the story, so the director frames them there as well,
+  // unless a person has the graph in hand.
+  S.directing = carving && performance.now() >= S.userUntil;
   S.ui.classList.toggle("dots-directing", S.directing);
   if (S.directing) {
     S.dir = directorFocus(S.dir, beat.focus, wall);

@@ -171,3 +171,22 @@ describe("an adoption as one box changing its name", () => {
     expect([...show.ownersEnd.values()].every((e) => e === "terralith")).toBe(true);
   });
 });
+
+// The live run's cycle 8: after the split, wave 1 writes each team's roster from its plan, with no live ids, so the
+// team's resources are named by address only. They are the dots the split's lines moved there, not a second set.
+describe("a destination roster written after the move", () => {
+  it("joins the moved dots by address, so the team's box holds each resource once", () => {
+    const left = { estate: "tl8-terralith", at: at(30), count: 1, resources: [{ address: "aws_vpc.main", type: "aws_vpc", live_id: "vpc-1", marked: true }] };
+    const team = { estate: "tl8-team-a", at: at(40), count: 3, resources: ["aws_iam_role.r", "aws_iam_role_policy.p", "aws_cloudwatch_log_group.l"].map((address) => ({ address, type: address.split(".")[0], marked: false })) };
+    const mv = (address, o = {}) => ({ at: at(20), estate_from: "tl8-terralith", estate_to: "tl8-team-a", address, outcome: "moved", ...o });
+    const splitM = { name: "split", running: false, counts: { moved: 3, stamped: 0, refused: 0, skipped: 0, left: 0 }, lines: [mv("aws_iam_role.r", { live_id: "role-r" }), mv("aws_iam_role_policy.p", { follows: "aws_iam_role.r" }), mv("aws_cloudwatch_log_group.l", { live_id: "logs" })] };
+    const a = answer([splitM], [left, team]);
+    const show = liveShow(a, stampArrivals(a, new Map(), T + 60_000, { first: true }), T + 60_000);
+    expect(show.roster).toHaveLength(4);
+    const ends = {};
+    for (const e of show.ownersEnd.values()) ends[e] = (ends[e] ?? 0) + 1;
+    expect(ends).toEqual({ "tl8-team-a": 3, "tl8-terralith": 1 });
+    // They start in the terralith, where the lines say they came from.
+    expect(show.owners0.get("aws_iam_role.r")).toBe("tl8-terralith");
+  });
+});

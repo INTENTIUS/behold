@@ -115,15 +115,27 @@ export function liveShow(answer, seen, now, { t0: start = null } = {}) {
   const lines = [];
   for (const m of migrations) for (const l of m.lines) lines.push({ m: m.name, l, t: seen.get(l.key) ?? (Date.parse(l.at) || now) });
   lines.sort((a, b) => a.t - b.t);
+  const claimed = new Set();
   for (const x of lines) {
     const { l } = x;
     let d = find(l.estate_from, l);
+    // A destination roster written after the move (a wave's, from planned values, so with no live ids) already drew
+    // the resource in the estate it moved to: the line moves that dot, from where it came, never a second one.
+    if (!d) {
+      const there = byAddr.get(place(l.estate_to, l.address));
+      if (there && !claimed.has(there) && there.estate0 === l.estate_to) {
+        d = there;
+        d.estate0 = l.estate_from;
+        byAddr.set(place(l.estate_from, l.address), d);
+      }
+    }
     if (!d) d = addDot(l.estate_from, { address: l.address, type: "", live_id: l.live_id, follows: l.follows });
     if (l.live_id && !d.live_id) {
       d.live_id = l.live_id;
       byLive.set(l.live_id, d);
     }
     byAddr.set(place(l.estate_to, l.address), d);
+    claimed.add(d);
     x.dot = d;
   }
   // 3. Every other estate's resources: by live id, else by address, else a dot of their own.

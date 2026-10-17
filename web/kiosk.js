@@ -1520,6 +1520,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     }
     s.watchHeld = { secs: Math.ceil(left / 1000) };
   }
+  /** The caption shown now: Watch's own, or the live carve's while it has the camera (#715). */
+  const shownCaption = () => (carveCtl && carveCtl.caption ? carveCtl.caption() || watch.caption : watch.caption);
   /** behold#571: the caption's top, or event-help's trail's when it sits over the caption. */
   const captionTop = (cap) => {
     const trail = eh && eh.trailHost;
@@ -1530,7 +1532,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   const shotInsets = (shot) => {
     if (!watch || !frame || isPhone() || !frame.getBoundingClientRect) return {};
     const f = frame.getBoundingClientRect();
-    const cap = watch.caption.getBoundingClientRect();
+    const cap = shownCaption().getBoundingClientRect();
     const bottom = Math.max(0, f.bottom - captionTop(cap)) + 16;
     const side = shot.kind === "held" ? watch.callout : shot.kind === "active" ? watch.drawer : shot.kind === "result" ? watch.result : null;
     // The result card sits right beside the graph (placeBeside's gap): an inset of its width and that gap centres the two together.
@@ -1638,7 +1640,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     }
     const L = watch.layer.getBoundingClientRect();
     const F = frame.getBoundingClientRect();
-    const capTop = captionTop(watch.caption.getBoundingClientRect()) - L.top;
+    const capTop = captionTop(shownCaption().getBoundingClientRect()) - L.top;
     const view = { x: F.left - L.left, y: F.top - L.top, w: F.width, h: capTop - (F.top - L.top) };
     const boxOf = (n) => {
       const waves = (s.boxes && s.boxes.waves) || {};
@@ -1774,7 +1776,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
             boxes: s.boxes,
             frame,
             watch: s.watchMode,
-            caption: watch ? watch.caption : null,
+            // The caption shown now: the live carve's while it has the camera (web/kiosk-carve.js).
+            caption: watch ? shownCaption() : null,
             replay: s.mode === "replay",
             approveLine: appr ? appr.approve : null,
             label: d.label || "",
