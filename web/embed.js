@@ -99,3 +99,19 @@ export function quietCardLines(svg) {
     t.setAttribute("data-kiosk-quiet", "1");
   }
 }
+
+/**
+ * Whether a plain wheel (no ctrl or meta key) zooms the graph: in the kiosk's
+ * bare frame it does, since the graph is the whole stage and there is nothing
+ * of the frame to scroll. A sideways-only scroll is left to the page.
+ */
+export function wheelZoomsBare(bare, e) {
+  return !!bare && !!e && Math.abs(Number(e.deltaY) || 0) > 0;
+}
+
+/** A wheel event's vertical delta in px, whatever its unit: a line is 16 px, a page 800. */
+export function wheelPx(e) {
+  const d = Number(e && e.deltaY) || 0;
+  const mode = e && e.deltaMode;
+  return mode === 1 ? d * 16 : mode === 2 ? d * 800 : d;
+}

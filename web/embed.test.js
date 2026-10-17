@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { kioskQuietLine, readEmbed, selectMessage, viewFromMessage, THEME_ALIASES } from "./embed.js";
+import { kioskQuietLine, readEmbed, selectMessage, viewFromMessage, THEME_ALIASES, wheelPx, wheelZoomsBare } from "./embed.js";
 
 describe("readEmbed (#476)", () => {
   it("reads embed, an exact host origin and a theme", () => {
@@ -70,5 +70,23 @@ describe("kioskQuietLine (behold#571)", () => {
   });
   it("keeps the names, the states and the reads", () => {
     for (const t of ["network", "terraform_data.http_proxy_port", "waiting", "reads network · planned · 1 unknown", "wave 2 · planned", "", null]) expect(kioskQuietLine(t)).toBe(false);
+  });
+});
+
+describe("the wheel in the kiosk's bare frame", () => {
+  it("zooms on a plain mouse wheel there, and only there", () => {
+    expect(wheelZoomsBare(true, { deltaY: 100 })).toBe(true);
+    expect(wheelZoomsBare(true, { deltaY: -3 })).toBe(true);
+    expect(wheelZoomsBare(false, { deltaY: 100 })).toBe(false);
+  });
+  it("leaves a sideways-only scroll to the page", () => {
+    expect(wheelZoomsBare(true, { deltaX: 40, deltaY: 0 })).toBe(false);
+    expect(wheelZoomsBare(true, null)).toBe(false);
+  });
+  it("reads the delta in px whatever its unit", () => {
+    expect(wheelPx({ deltaY: 100, deltaMode: 0 })).toBe(100);
+    expect(wheelPx({ deltaY: 3, deltaMode: 1 })).toBe(48);
+    expect(wheelPx({ deltaY: 1, deltaMode: 2 })).toBe(800);
+    expect(wheelPx({})).toBe(0);
   });
 });
