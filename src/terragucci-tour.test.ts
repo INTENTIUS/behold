@@ -4,7 +4,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { TOURS_DIR, durationWords, findTour, jobOf, planAddresses, planCounts, plannedOutput, tourProblem, tourRow } from "./terragucci-tour.ts";
+import { TOURS_DIR, distinctResources, taggedResources, durationWords, findTour, jobOf, planAddresses, planCounts, plannedOutput, tourProblem, tourRow } from "./terragucci-tour.ts";
 
 const shipped = JSON.parse(readFileSync(join(TOURS_DIR, "terralith.json"), "utf8"));
 const dirs: string[] = [];
@@ -89,3 +89,27 @@ describe("numbers from a run's report and plan", () => {
     expect(durationWords(42_400)).toBe("42 s");
   });
 });
+
+describe("counts of resources, not lines", () => {
+  // A team's custom attachment follows both its role and its policy, so it has two moved lines (terragucci#1146).
+  const split = [
+    { at: "t", address: "aws_iam_role.r", live_id: "r", outcome: "moved" },
+    { at: "t", address: "aws_iam_policy.p", live_id: "p", outcome: "moved" },
+    { at: "t", address: "aws_iam_role_policy_attachment.a", outcome: "moved", follows: "aws_iam_role.r" },
+    { at: "t", address: "aws_iam_role_policy_attachment.a", outcome: "moved", follows: "aws_iam_policy.p" },
+  ];
+  const adopt = [
+    { at: "t", address: "aws_iam_role.r", live_id: "r", outcome: "stamped" },
+    { at: "t", address: "aws_iam_policy.p", live_id: "p", outcome: "stamped" },
+    { at: "t", address: "aws_iam_role_policy_attachment.a", outcome: "skipped" },
+  ];
+  it("counts a resource moved once, however many lines name it", () => {
+    expect(split).toHaveLength(4);
+    expect(distinctResources(split, "moved")).toBe(3);
+    expect(distinctResources(adopt, "stamped")).toBe(2);
+  });
+  it("counts the resources a tag write landed on once across migrations, and never a follower", () => {
+    expect(taggedResources([adopt, split])).toBe(2);
+  });
+});
+

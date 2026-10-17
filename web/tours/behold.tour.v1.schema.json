@@ -84,8 +84,15 @@
           "required": ["migration", "value"],
           "properties": {
             "migration": { "type": "string" },
-            "value": { "enum": ["stamped", "moved", "refused", "skipped", "writes", "version_id", "approved_by"] }
+            "value": { "enum": ["stamped", "moved", "refused", "skipped", "writes", "version_id", "approved_by", "moved_resources", "stamped_resources", "refused_resources"] }
           }
+        },
+        {
+          "description": "The distinct resources a tag write landed on across these migrations' progress lines.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tagged"],
+          "properties": { "tagged": { "type": "array", "minItems": 1, "items": { "type": "string" } } }
         },
         { "type": "object", "additionalProperties": false, "required": ["sum"], "properties": { "sum": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/name" } } } },
         { "type": "object", "additionalProperties": false, "required": ["approvals"], "properties": { "approvals": { "const": true } } },

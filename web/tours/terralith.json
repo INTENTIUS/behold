@@ -71,15 +71,15 @@
     },
     "stamped": {
       "migration": "adopt",
-      "value": "stamped"
+      "value": "stamped_resources"
     },
     "moved": {
       "migration": "split",
-      "value": "moved"
+      "value": "moved_resources"
     },
     "refused": {
       "migration": "split",
-      "value": "refused"
+      "value": "refused_resources"
     },
     "teamPlanned": {
       "run": "team",
@@ -93,12 +93,6 @@
       "run": "crossPlan",
       "value": "output",
       "output": "log_retention_days"
-    },
-    "writes": {
-      "sum": [
-        "stamped",
-        "moved"
-      ]
     },
     "adoptRecreated": {
       "run": "adopt",
@@ -122,6 +116,12 @@
         "from": "started_at",
         "to": "cross2"
       }
+    },
+    "tagged": {
+      "tagged": [
+        "adopt",
+        "split"
+      ]
     }
   },
   "chapters": [
@@ -154,7 +154,7 @@
       "title": "Adopt: claim every resource without touching it",
       "text": [
         "Each resource gets its owner's tags. Nothing is rebuilt.",
-        "{stamped} stamped, and the state file stays as it was."
+        "{stamped} resources tagged, and the state file stays as it was."
       ],
       "focus": {
         "boxes": "source"
@@ -173,7 +173,7 @@
       "title": "Split: move ownership, not resources",
       "text": [
         "Each team's resources move to its own estate by a tag write.",
-        "{moved} moved, {refused} refused."
+        "{moved} resources moved, {refused} refused."
       ],
       "focus": {
         "boxes": "all"
@@ -307,8 +307,8 @@
               "text": "{cycleTime}"
             },
             {
-              "label": "tag writes",
-              "text": "{writes}"
+              "label": "resources tagged",
+              "text": "{tagged}"
             },
             {
               "label": "resources recreated",

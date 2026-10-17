@@ -125,13 +125,15 @@ function addStyle() {
   .dots-bar-rec { flex-direction: column; align-items: stretch; gap: 4px; width: min(860px, calc(100vw - 48px)); }
   .dots-tl-label { font: 600 12px var(--font-ui, system-ui); color: var(--fg); }
   .dots-tl-short { display: none; }
-  .dots-tl-row { display: flex; align-items: center; gap: 10px; }
-  .dots-tl-track { position: relative; flex: 1; height: 34px; border-bottom: 1px solid var(--line); }
+  .dots-tl-row { display: flex; align-items: flex-end; gap: 16px; }
+  /* Break labels sit in their own row above the track; tick labels sit in the track, so the two never meet. */
+  .dots-tl-track { position: relative; flex: 1; height: 30px; margin-top: 15px; border-bottom: 1px solid var(--line); }
   .dots-bar input.dots-tl-range { position: absolute; left: 0; right: 0; bottom: -8px; width: 100%; margin: 0; accent-color: var(--focus); background: transparent; }
   .dots-tl-tick { position: absolute; bottom: 10px; transform: translateX(-50%); font: 10.5px var(--font-mono, monospace); color: var(--muted); white-space: nowrap; pointer-events: none; }
   .dots-tl-tick::after { content: ""; position: absolute; left: 50%; top: 100%; width: 1px; height: 4px; background: var(--line); }
   .dots-tl-break { position: absolute; top: 0; bottom: 0; width: 8px; transform: translateX(-50%); background: repeating-linear-gradient(135deg, var(--muted) 0 1.5px, transparent 1.5px 4px); opacity: 0.8; cursor: help; z-index: 1; }
-  .dots-tl-break small { position: absolute; top: -2px; left: 10px; font: 10px var(--font-mono, monospace); color: var(--muted); white-space: nowrap; }
+  .dots-tl-break small { position: absolute; bottom: calc(100% + 2px); left: 50%; transform: translateX(-50%); font: 10px var(--font-mono, monospace); color: var(--muted); white-space: nowrap; }
+  .dots-tl-break-end small { left: auto; right: 0; transform: none; }
   .dots-bar .dots-tl-mark { position: absolute; top: 2px; width: 9px; height: 9px; padding: 0; margin-left: -4.5px; transform: rotate(45deg); border: 1.5px solid var(--focus); background: var(--focus); border-radius: 2px; cursor: pointer; z-index: 2; }
   .dots-bar .dots-tl-keyframe { border-color: var(--muted); background: var(--muted); }
   /* The reminder that this is a recording stays readable: the timeline never fades with the quiet controls. */
@@ -688,13 +690,19 @@ function buildUi() {
     const L = S.clock.length;
     const at = (p) => `${((p / L) * 100).toFixed(3)}%`;
     const narrow = typeof innerWidth === "number" && innerWidth < 640;
+    // The track's width on screen, near enough to keep labels apart: the bar less the play and speed buttons.
+    const trackW = Math.max(160, Math.min(860, (typeof innerWidth === "number" ? innerWidth : 1200) - 48) - (narrow ? 24 : 230));
+    const px = (p) => (p / L) * trackW;
+    const breaks = S.show.timeline.breaks;
+    // A tick label that would sit under a break's hatch or label is left out; its time is still on the track.
     for (const tk of wallTicks(S.show.timeline, narrow ? 3 : 7)) {
+      if (breaks.some((b) => Math.abs(px(tk.p) - px(b.p)) < 26)) continue;
       const t = el("span", "dots-tl-tick", tk.label);
       t.style.left = at(tk.p);
       track.appendChild(t);
     }
-    for (const b of S.show.timeline.breaks) {
-      const k = el("span", "dots-tl-break");
+    for (const b of breaks) {
+      const k = el("span", `dots-tl-break${b.p / L > 0.9 ? " dots-tl-break-end" : ""}`);
       k.style.left = at(b.p);
       k.title = `${skippedWords(b.skipped)}: from ${clockWords(b.real0, true)} to ${clockWords(b.real1, true)} UTC nothing was written, and the replay skips it`;
       k.appendChild(el("small", "", skippedWords(b.skipped).replace(/ skipped$/, "")));
@@ -1677,6 +1685,8 @@ function kioskTick(wall, dt) {
     }
   }
   const beat = beatAt(S.story, S.scene, S.t);
+  // On a phone the scene is framed whole, so no estate sits under the timeline (estates compact to discs there).
+  if (typeof innerWidth === "number" && innerWidth < 640) beat.focus = { kind: "all" };
   // The director: what the beat is about, eased in, never against a person's hand.
   S.directing = wall >= S.userUntil;
   // While the director holds the camera the rail steps aside, so no box is ever under it;
@@ -2085,7 +2095,13 @@ function drawTour(ctx, fx, boxes, boxPx, centre, sx, sy, dotLayerA, td, discR) {
       if (disc(fx.state.box)) {
         const p = discSpot(fx.state.box);
         chip(ctx, p.x, p.y, words, fx.state.unchanged ? col.managed : col.muted, { fg: col.fg });
-      } else chip(ctx, bp.x + bp.w, bp.y - 24, words, fx.state.unchanged ? col.managed : col.muted, { align: "right", fg: col.fg });
+      } else {
+        // Above the box's right end when there is room beside its label; else under the box, so it never covers the label.
+        ctx.font = `600 11px ${S.font}`;
+        const room = ctx.measureText(words).width + 14 <= bp.w * 0.55;
+        if (room) chip(ctx, bp.x + bp.w, bp.y - 24, words, fx.state.unchanged ? col.managed : col.muted, { align: "right", fg: col.fg });
+        else chip(ctx, bp.x, bp.y + bp.h + 6, words, fx.state.unchanged ? col.managed : col.muted, { fg: col.fg });
+      }
     }
   }
   // The post-write check: each root that plans no change after the write.

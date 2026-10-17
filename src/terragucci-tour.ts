@@ -52,7 +52,8 @@ export interface TourRun {
 
 export type TourFact =
   | { run: string; value: "planned" | "changed" | "recreated" | "output" | "job"; output?: string }
-  | { migration: string; value: "stamped" | "moved" | "refused" | "skipped" | "writes" | "version_id" | "approved_by" }
+  | { migration: string; value: "stamped" | "moved" | "refused" | "skipped" | "writes" | "version_id" | "approved_by" | "moved_resources" | "stamped_resources" | "refused_resources" }
+  | { tagged: string[] }
   | { sum: string[] }
   | { approvals: true }
   | { duration: { from: "started_at"; to: string } };
@@ -210,7 +211,7 @@ export interface TourMigration {
   name: string;
   home: string;
   record: unknown;
-  lines: { at: string }[];
+  lines: { at: string; address?: string; live_id?: string; outcome?: string; follows?: string }[];
   running: boolean;
 }
 
@@ -315,6 +316,23 @@ export function plannedOutput(plan: unknown, name: string): string | number | bo
   if (!isRecord(o) || o.after_unknown === true || o.after_sensitive === true) return undefined;
   const v = o.after;
   return typeof v === "string" || typeof v === "number" || typeof v === "boolean" ? v : undefined;
+}
+
+/** The distinct resources a migration's progress lines name with `outcome`: by live id, else address. */
+export function distinctResources(lines: readonly { address?: string; live_id?: string; outcome?: string }[], outcome: string): number {
+  return new Set(lines.filter((l) => l.outcome === outcome && (l.live_id || l.address)).map((l) => l.live_id || l.address)).size;
+}
+
+/**
+ * The distinct resources a tag write landed on across migrations: each
+ * stamp, and each move of a resource that wears its own tags (a line with no
+ * `follows`; a follower moves with its parent and carries none). A resource
+ * stamped in one migration and retagged in the next counts once.
+ */
+export function taggedResources(sets: readonly (readonly { address?: string; live_id?: string; outcome?: string; follows?: string }[])[]): number {
+  const out = new Set<string>();
+  for (const lines of sets) for (const l of lines) if ((l.outcome === "stamped" || (l.outcome === "moved" && !l.follows)) && (l.live_id || l.address)) out.add((l.live_id || l.address)!);
+  return out.size;
 }
 
 /** "9 min 21 s". */
@@ -483,7 +501,14 @@ export async function resolveTour(source: TerragucciSource, loaded: LoadedTour, 
         const root = Array.isArray(rec.roots) ? rec.roots.find((x) => isRecord(x) && isRecord(x.source) && str(x.source.version_id)) : undefined;
         if (isRecord(root) && isRecord(root.source)) v = root.source.version_id as string;
       } else if (f.value === "approved_by") v = str(rec.approved_by) ? rec.approved_by : undefined;
-      else if (p) v = f.value === "writes" ? (num(p.moved) ?? 0) + (num(p.stamped) ?? 0) : (num(p[f.value]) ?? undefined);
+      else if (f.value === "moved_resources" || f.value === "stamped_resources" || f.value === "refused_resources") {
+        // Resources, not lines: a follower that follows two parents has a line under each (terragucci#1146).
+        const m = ctx.migrations.find((x) => x.name === f.migration);
+        if (m && m.lines.length) v = distinctResources(m.lines, f.value.slice(0, -"_resources".length));
+      } else if (p) v = f.value === "writes" ? (num(p.moved) ?? 0) + (num(p.stamped) ?? 0) : (num(p[f.value]) ?? undefined);
+    } else if ("tagged" in f) {
+      const sets = f.tagged.map((n) => ctx.migrations.find((x) => x.name === n)).filter((m): m is TourMigration => !!m && m.lines.length > 0);
+      if (sets.length) v = taggedResources(sets.map((m) => m.lines));
     } else if ("sum" in f) {
       if (f.sum.every((x) => typeof facts[x] === "number")) v = f.sum.reduce((s, x) => s + (facts[x] as number), 0);
     } else if ("approvals" in f) {
@@ -512,6 +537,8 @@ export async function resolveTour(source: TerragucciSource, loaded: LoadedTour, 
   const resolveShow = async (s: TourShow): Promise<Record<string, unknown> | null> => {
     const base = s.when ? { when: trig(s.when) } : {};
     if (s.light) {
+      // The first of the named runs that planned anything: the cross beat's wave 2 apply report has no roots
+      // (terragucci#1145), so the pull request's plan of wave 2 stands in, and the caption names it.
       for (const n of s.light) {
         const r = found.get(n);
         if (!r) continue;
