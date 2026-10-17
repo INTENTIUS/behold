@@ -1801,6 +1801,12 @@ function liveTick(wall, dt) {
   }
   // A tour's pulses and travelling values animate: draw every frame while one is on.
   if (S.tourOn && S.fx && (S.fx.pulses.length || S.fx.travel)) S.dirty = true;
+  // A chapter or visual that has just fired is drawn now, not at the next camera move.
+  const tk = S.tourOn ? fxKey(tn) : "";
+  if (tk !== S.tourKey) {
+    S.tourKey = tk;
+    S.dirty = true;
+  }
   // Tips for what has just been written: never for what the first read already held.
   const tips = [...liveTipsBetween(S.scene, S.tipFrom, S.t), ...S.pendingTips.splice(0)];
   S.tipFrom = S.t;

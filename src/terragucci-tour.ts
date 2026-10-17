@@ -427,9 +427,28 @@ export async function resolveTour(source: TerragucciSource, loaded: LoadedTour, 
     return isRecord(rep) && Array.isArray(rep.roots) ? rep.roots.filter(isRecord) : [];
   };
   /** The estates a project's root is: this cycle's estates.json entries for it. */
+  // A root's estate as the cycle's migration records name it: a retag's `to` and `to_estate`, a stamp's `root` and `estate`.
+  // A team root that later moved to its own repo is found this way, though estates.json lists it under that repo.
+  const recordEstates = new Map<string, Set<string>>();
+  const note = (project: string, root: unknown, estate: unknown): void => {
+    if (!str(root) || !str(estate)) return;
+    const k = `${project}\u0000${rootPath(root)}`;
+    if (!recordEstates.has(k)) recordEstates.set(k, new Set());
+    recordEstates.get(k)!.add(estate);
+  };
+  for (const m of ctx.migrations) {
+    const rec = isRecord(m.record) ? m.record : null;
+    if (!rec) continue;
+    for (const r of Array.isArray(rec.retags) ? rec.retags.filter(isRecord) : []) {
+      note(m.home, r.to, r.to_estate);
+      note(m.home, r.from, r.from_estate);
+    }
+    for (const r of Array.isArray(rec.stamps) ? rec.stamps.filter(isRecord) : []) note(m.home, r.root, r.estate);
+  }
   const estatesOf = (project: string, root: string): string[] => {
     const rp = rootPath(root);
-    return [...new Set(ctx.entries.filter((e) => e.project === project && e.root !== null && rootPath(e.root) === rp).map((e) => e.estate))];
+    const listed = ctx.entries.filter((e) => e.project === project && e.root !== null && rootPath(e.root) === rp).map((e) => e.estate);
+    return [...new Set([...listed, ...(recordEstates.get(`${project}\u0000${rp}`) ?? [])])];
   };
 
   // Facts.
