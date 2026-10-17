@@ -10,6 +10,7 @@
 import { tipSpot, tipsStyle, TIPS_STYLE_ID } from "./kiosk-event-help-ui.js";
 import { openEventModal } from "./event-help-modal.js";
 import { TIP } from "./dots-kiosk.js";
+import { lagText } from "./tour-player.js";
 
 const fmt = (n) => Number(n).toLocaleString("en-US");
 
@@ -133,7 +134,10 @@ export function createNarration({ bar, caption, tipsHost, modalHost, origin }) {
     placeTip(state);
   };
 
+  let lastChapter = null;
   const draw = (state) => {
+    if (caption && state.tour) return drawTour(state);
+    if (caption) caption.classList.remove("cx-tour");
     const b = state.beat;
     if (bar) {
       bar.replaceChildren();
@@ -153,7 +157,10 @@ export function createNarration({ bar, caption, tipsHost, modalHost, origin }) {
       const h = el("h1", "cx-title");
       const rec = el("span", `cx-rec cx-badge-${badgeText(state)}`, badgeText(state));
       rec.title = recordedWords(state);
-      h.append(rec, el("span", null, b.title));
+      h.append(rec);
+      const lag = badgeText(state) === "live" ? lagText(state.lastWriteAt, Date.now(), state.running) : null;
+      if (lag) h.append(el("span", `cx-lag${lag === "waiting for the job" ? " cx-lag-wait" : ""}`, lag));
+      h.append(el("span", null, b.title));
       top.appendChild(h);
       const hold = state.holdLeft !== null && state.holdLeft !== undefined;
       const nx = el("p", "cx-next");
@@ -179,6 +186,64 @@ export function createNarration({ bar, caption, tipsHost, modalHost, origin }) {
           : `${fmt(tot.done)} of ${fmt(tot.moves)} flown · ${tot.refused} refused · ${estatesW}`;
       tally.append(el("span", "cx-label", "moves"), el("span", "cx-text", tallyText));
       caption.appendChild(tally);
+    }
+  };
+
+  /** The tour's caption: the live badge and its lag, the chapter rail, the chapter's card, what each visual stands on, the links. */
+  const drawTour = (state) => {
+    const tr = state.tour;
+    caption.replaceChildren();
+    caption.classList.add("cx-tour");
+    const top = el("div", "cx-top cx-tour-top");
+    const rec = el("span", "cx-rec cx-badge-live", "live");
+    rec.title = recordedWords(state);
+    top.appendChild(rec);
+    const lag = lagText(state.lastWriteAt, Date.now(), state.running);
+    if (lag) top.appendChild(el("span", `cx-lag${lag === "waiting for the job" ? " cx-lag-wait" : ""}`, lag));
+    const rail = el("ol", "cx-rail");
+    rail.setAttribute("aria-label", `${tr.title || "The tour"}: chapter ${tr.n} of ${tr.of}`);
+    for (const c of tr.rail) {
+      const li = el("li", `cx-ch cx-ch-${c.state}`);
+      li.title = `${c.n}. ${c.title}`;
+      li.appendChild(el("span", "cx-ch-n", String(c.n)));
+      if (c.state === "current") li.appendChild(el("span", "cx-ch-name", c.title));
+      const bar = el("i", "cx-ch-bar");
+      bar.style.setProperty("--p", String(c.progress));
+      li.appendChild(bar);
+      if (c.state === "current") li.setAttribute("aria-current", "step");
+      rail.appendChild(li);
+    }
+    top.appendChild(rail);
+    const links = el("p", "cx-follow");
+    const l = tr.links || {};
+    if (l.pull || l.job) {
+      links.appendChild(el("span", "cx-follow-label", "follow along"));
+      if (l.pull) links.appendChild(Object.assign(el("a", null, `pull request #${l.pull.n}`), { href: l.pull.url, target: "_blank", rel: "noopener" }));
+      if (l.job) links.appendChild(Object.assign(el("a", null, `job #${l.job.n}`), { href: l.job.url, target: "_blank", rel: "noopener" }));
+      top.appendChild(links);
+    }
+    caption.appendChild(top);
+    // The chapter's card, docked in the caption: it slides in when the chapter changes.
+    const card = el("div", `cx-card${lastChapter !== tr.id ? " cx-enter" : ""}`);
+    lastChapter = tr.id;
+    const h = el("h1", "cx-title cx-card-title");
+    h.append(el("span", "cx-ch-kicker", `${tr.n} of ${tr.of}`), el("span", null, tr.heading));
+    card.appendChild(h);
+    for (const line of tr.lines) card.appendChild(el("p", "cx-card-line", line));
+    caption.appendChild(card);
+    if (tr.card && tr.card.length) {
+      const grid = el("dl", "cx-numbers");
+      for (const r of tr.card) {
+        const d = el("div", "cx-num");
+        d.append(el("dt", null, r.label), el("dd", null, r.text));
+        grid.appendChild(d);
+      }
+      caption.appendChild(grid);
+    }
+    if (tr.notes.length) {
+      const notes = el("p", "cx-notes");
+      notes.textContent = tr.notes.join(" · ");
+      caption.appendChild(notes);
     }
   };
 

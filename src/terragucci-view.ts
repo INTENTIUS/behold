@@ -242,7 +242,8 @@ export function terragucciRoutes(app: Hono, opts: TerragucciOptions, dirs: () =>
   terragucciRunsRoutes(app, runsSource, opts.now ? { now: opts.now } : {});
 
   // #715: the live carve, from the estate rosters and the migrations' progress at the same source.
-  terragucciCarveRoute(app, source, { choudoufu: () => servedChoudoufu(dirs()), ...(opts.now ? { now: opts.now } : {}) });
+  // A tour of the cycle (behold.tour/v1): behold's own, or one in a served repo's .behold/tours.
+  terragucciCarveRoute(app, source, { choudoufu: () => servedChoudoufu(dirs()), ...(opts.now ? { now: opts.now } : {}), tour: { dirs: () => [...new Set([repoBase(dirs()), ...dirs()])], runs: runsSource } });
 
   // #506: the timeline lane, from the audit record at the same source.
   terragucciTimelineRoute(app, source, {

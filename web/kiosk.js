@@ -806,6 +806,9 @@ function drawBar(bar, s, now) {
     const r = more[i];
     left.appendChild(r ? leadRow(name, "k-row-more", r.label, elRoots("p", "k-about", r.text, s)) : leadRow(name, "k-row-more"));
   }
+  // The live carve's slowed playback, a quiet row of its own once the frame draws one: real time unless a person slows it.
+  const slowed = s.slowedControl ? s.slowedControl() : null;
+  if (slowed) left.appendChild(leadRow("slowed", "k-row-more", "Playback", slowed));
 
   // The pull request's facts, each a chip that wraps whole; never cut off. behold#571: no line on where the narration was read from.
   const factParts = s.noReports ? [] : factLines(demo, s.answer, nounTool(s));
@@ -1653,10 +1656,12 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       return { x: x + view.x, y: y + view.y, w: Math.max(...ok.map((b) => b.x + b.w)) - x, h: Math.max(...ok.map((b) => b.y + b.h)) - y };
     };
     const taken = [];
+    // While the live carve has the camera, the graph shows dots, not the wave boxes: the panes sit at the view's top right.
+    const carvingNow = shownCaption() !== watch.caption;
     const put = (node, n) => {
       if (node.hidden) return;
       const size = { w: node.offsetWidth, h: node.offsetHeight };
-      const box = boxOf(n);
+      const box = carvingNow ? null : boxOf(n);
       // Before the frame says where the box is: the right of the view, under its top.
       const labels = ((s.boxes && s.boxes.labels) || []).map((r) => ({ x: r.x + view.x, y: r.y + view.y, w: r.w, h: r.h }));
       const p = box ? placeBeside(box, size, view, 18, labels) : { x: view.x + view.w - size.w - 20, y: view.y + 20, side: "below" };
@@ -1674,7 +1679,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     put(watch.result, null); // beside the whole graph
     const hits = (r) => taken.some((t) => r.x < t.x2 && r.x2 > t.x && r.y < t.y2 && r.y2 > t.y);
     for (const b of watch.badges.children) {
-      const box = boxOf(Number(b.dataset.kWave));
+      const box = carvingNow ? null : boxOf(Number(b.dataset.kWave));
       b.classList.remove("k-placed");
       if (!box) continue;
       const w = b.offsetWidth;
@@ -2117,6 +2122,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   };
   // #715: a frame drawing a live carve tells the kiosk what to say; one that does not says nothing, and nothing here changes.
   if (typeof window !== "undefined" && window.addEventListener && watch) carveCtl = startKioskCarve({ frame: () => frame, watch, eh, origin, isWatch: () => s.watchMode });
+  s.slowedControl = () => (carveCtl ? carveCtl.slowedControl() : null);
   if (typeof window !== "undefined" && window.addEventListener) {
     window.addEventListener("message", (e) => {
       if (e.origin !== origin || !e.data || e.data.type !== "behold:drawn") return;
