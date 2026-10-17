@@ -130,10 +130,13 @@ export const CARDS_FRAME_GROW = 1.6;
  * goes while dots must stay dots; `cardsAt`: the zoom at which each card is
  * wide enough to read its name (the rail's Cards mark), or null when the
  * layer draws no cards. A few resources fit the stage at that zoom: the
- * director frames them as cards, up to CARDS_FRAME_GROW past it. A big
- * estate does not fit, and keeps the dots framing.
+ * director frames them as cards, up to CARDS_FRAME_GROW past it. `small`: a
+ * small stage (web/dots.js SMALL_STAGE), framed at the zoom that fits even
+ * when its cards are still part way to dots, never at the dots cap, which
+ * would leave it a third of the size that fits. A big estate keeps the dots
+ * framing.
  */
-export function directorScale({ fit, dotsCap, cardsAt = null, grow = CARDS_FRAME_GROW }) {
-  if (cardsAt > 0 && fit >= cardsAt) return Math.min(fit, cardsAt * grow);
+export function directorScale({ fit, dotsCap, cardsAt = null, small = false, grow = CARDS_FRAME_GROW }) {
+  if (cardsAt > 0 && (small || fit >= cardsAt)) return Math.min(fit, cardsAt * grow);
   return Math.min(fit, dotsCap);
 }

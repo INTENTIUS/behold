@@ -31,7 +31,7 @@ import { liveShow, stampArrivals, showKey, currentMigration, boxName, playedCoun
 import { provenanceText, migrationTool, stepMsFor } from "./tour-player.js";
 import { tourNow, tourFocus, tourFx, fxKey, tourMessage } from "./dots-tour.js";
 import { wallTicks, recordedLabel, recordedMarks, speedWords, skippedWords, clockWords, RECORDED_SPEEDS } from "./dots-timeline.js";
-import { cardLabel, cardShape, cardText, cardTextAlpha, pickMark, cardsMark, cardsFrame, cardsEstate, middleCard, gridScale, gridSlots, cardSize, cardNeed, rosterLod, unitKeyOf, minViewWidth, tipSpot, CARD_TEXT } from "./dots-cards.js";
+import { GRID, cardLabel, cardShape, cardText, cardTextAlpha, pickMark, cardsMark, cardsFrame, cardsEstate, middleCard, gridScale, gridSlots, cardSize, cardNeed, rosterLod, unitKeyOf, minViewWidth, tipSpot, CARD_TEXT } from "./dots-cards.js";
 
 /** #715: how often the live layer asks for the carve. The route shares one read for 1.5 s while a migration runs. */
 export const LIVE_POLL_MS = 2_000;
@@ -49,6 +49,18 @@ const DRAW_MS = 650;
 const LINGER_MS = 2600;
 /** A viewer's hand on the camera (a wheel, a pinch, a drag, a rail mark) holds the director and the tour off until this long after their last input. */
 export const VIEWER_HOLD_MS = 8_000;
+/**
+ * A small stage: a carve of at most `max` resources, on a layer that draws its own cards, is read at the Cards
+ * level. Each estate's box is laid out as its card grid, cells `cell` pitches high and `aspect` wide, in the
+ * stage's shape (web/dots-scene.js cardGridShape), and the director frames it at the zoom that fits, up to
+ * CARDS_FRAME_GROW past the legible card size (web/dots-lod.js directorScale). A bigger estate keeps the dots.
+ */
+export const SMALL_STAGE = { max: 40, cell: 6, aspect: GRID.aspect };
+
+/** Whether the scene on stage is a small one (SMALL_STAGE). */
+function smallStage() {
+  return !!(S && S.seedless && S.show && S.show.roster.length <= SMALL_STAGE.max);
+}
 
 export function dotsActive() {
   return !!S;
@@ -302,7 +314,7 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source 
     ? { x: +boxEl.getAttribute("x"), y: +boxEl.getAttribute("y"), w: +boxEl.getAttribute("width"), h: +boxEl.getAttribute("height") }
     : { x: vbInit[0], y: vbInit[1], w: vbInit[2], h: vbInit[3] };
   // The source estate's box takes its cards' box's place and shape on the page.
-  const scene = buildScene(show, { sourceAspect: mbox.w / Math.max(1, mbox.h), ...labelRoom(host) });
+  const scene = buildScene(show, { sourceAspect: mbox.w / Math.max(1, mbox.h), ...labelRoom(host), ...(cards.size === 0 ? { cardGrid: SMALL_STAGE } : {}) });
   const src = scene.sourceBox;
   // One dot pitch is a fixed share of a card's width, so a dot is legible exactly
   // when its card stops being: at the dot size a pitch is about 8 px, whatever
@@ -475,7 +487,7 @@ export async function mountDots({ host, svg, meta, getVB, setVB, vbInit, source 
   const setInsets = (ins) => {
     if (S) S.insets = { top: Number(ins.top) || 0, bottom: Number(ins.bottom) || 0 };
   };
-  window.__dots = { select: (id) => selectDot(id), landed: () => S && landedIds(), seek, play, step, zoomTo, zoomCardPx, setInsets, pause: () => play(false), fly, setSpeed, stats: () => S && S.stats, length: () => S && S.clock.length, marks: () => S && currentMarks(), state: () => S && { t: S.t, level: S.level, reduced: S.reduced, cardPx: S.cardPx, pitchPx: S.pitchPx, rosterCards: S.own, rosterCardPx: S.rosterCardPx, directing: !!S.directing }, debug: () => S && { band: (({ left, right, w }) => ({ left, right, w }))(band()), svg: S.svg.getBoundingClientRect().toJSON(), rail: S.ui.querySelector('.dots-rail').getBoundingClientRect().toJSON(), vb: S.getVB(), dir: S.dir, directing: S.directing, focusBox: S.dir && focusBox(S.dir.focus), want: S.dir && frameBox(focusBox(S.dir.focus)), pitch: S.pitch, origin: S.origin }, story: () => S && S.story && { start: S.story.start, end: S.story.end, firstRefusal: S.story.firstRefusal ? S.story.firstRefusal.end : null } };
+  window.__dots = { select: (id) => selectDot(id), landed: () => S && landedIds(), seek, play, step, zoomTo, zoomCardPx, setInsets, pause: () => play(false), fly, setSpeed, stats: () => S && S.stats, length: () => S && S.clock.length, marks: () => S && currentMarks(), state: () => S && { t: S.t, level: S.level, reduced: S.reduced, cardPx: S.cardPx, pitchPx: S.pitchPx, rosterCards: S.own, rosterCardPx: S.rosterCardPx, directing: !!S.directing }, debug: () => S && { band: (({ left, right, w }) => ({ left, right, w }))(band()), svg: S.svg.getBoundingClientRect().toJSON(), rail: S.ui.querySelector('.dots-rail').getBoundingClientRect().toJSON(), vb: S.getVB(), dir: S.dir, directing: S.directing, focusBox: S.dir && focusBox(S.dir.focus), want: S.dir && frameBox(focusBox(S.dir.focus)), pitch: S.pitch, origin: S.origin, frame: S.frameNums || null, smallStage: smallStage(), roster: S.show.roster.length }, story: () => S && S.story && { start: S.story.start, end: S.story.end, firstRefusal: S.story.firstRefusal ? S.story.firstRefusal.end : null } };
   const loop = (wall) => {
     if (!S) return;
     S.raf = requestAnimationFrame(loop);
@@ -1033,7 +1045,7 @@ function fitRosterCards() {
   const n = sc.landing.length;
   const ks = new Set([0, n]);
   for (let j = 1; j < 40; j++) ks.add(Math.round((n * j) / 40));
-  S.gridK = gridScale([...ks].map((k) => sc.layoutAt(k)), S.unitKey);
+  S.gridK = gridScale([...ks].map((k) => sc.layoutAt(k)), S.unitKey, smallStage() ? { maxK: SMALL_STAGE.cell } : {});
   const c = cardSize(S.gridK);
   S.rc = { w: c.w * S.pitch, h: c.h * S.pitch };
   const ctx = S.ctx;
@@ -1938,13 +1950,23 @@ function frameBox(b) {
   const ah = Math.max(40, r.height - top - bottom);
   // Never so close that a card shows again: dots stay dots. Unless the whole shot fits with each roster card wide
   // enough to read its name (the rail's Cards mark): a few resources are framed as cards, in their estates' boxes.
-  const cardsAt = S.seedless && S.rc && S.rc.w > 0 && S.need > 0 ? (S.need * 1.1) / S.rc.w : null;
-  const s = directorScale({ fit: Math.min(aw / bw, ah / bh), dotsCap: 20 / S.cardW, cardsAt });
+  const f = frameNumbers(aw / bw, ah / bh);
+  S.frameNums = f;
+  const s = f.s;
   const vw = r.width / s;
   const vh = r.height / s;
   const vx = bx + bw / 2 - (left + 8 + aw / 2) / s;
   const vy = by + bh / 2 - (top + ah / 2) / s;
   return [vx, vy, vw, vh];
+}
+
+/** The director's zoom and what it is made of, for frameBox and __dots.debug(). */
+function frameNumbers(fitW, fitH) {
+  const fit = Math.min(fitW, fitH);
+  const cardsAt = S.seedless && S.rc && S.rc.w > 0 && S.need > 0 ? (S.need * 1.1) / S.rc.w : null;
+  const dotsCap = 20 / S.cardW;
+  const small = smallStage();
+  return { fit, cardsAt, dotsCap, small, need: S.need ?? null, rc: S.rc ?? null, gridK: S.gridK ?? null, s: directorScale({ fit, dotsCap, cardsAt, small }) };
 }
 
 function unionBox(a, b) {
@@ -2113,7 +2135,7 @@ function takeLive(answer) {
     S.show.t1 = now;
     return;
   }
-  const scene = buildScene(show, { sourceAspect: S.mbox.w / Math.max(1, S.mbox.h), ...labelRoom(S.host) });
+  const scene = buildScene(show, { sourceAspect: S.mbox.w / Math.max(1, S.mbox.h), ...labelRoom(S.host), ...(S.seedless ? { cardGrid: SMALL_STAGE } : {}) });
   const n = show.roster.length;
   const src = scene.sourceBox;
   S.show = show;

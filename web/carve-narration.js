@@ -79,7 +79,7 @@ export function mergeLandings(tips, names = {}) {
  * bar, caption: elements to draw into; tipsHost, modalHost: where bubbles and
  * modals go; origin(): the page offset of the layer the state's box rects are in.
  */
-export function createNarration({ bar, caption, tipsHost, modalHost, origin, quiet = () => null }) {
+export function createNarration({ bar, caption, tipsHost, modalHost, origin, quiet = () => null, docked = () => false }) {
   if (!document.getElementById(TIPS_STYLE_ID)) {
     const st = el("style");
     st.id = TIPS_STYLE_ID;
@@ -100,6 +100,17 @@ export function createNarration({ bar, caption, tipsHost, modalHost, origin, qui
   };
   const placeTip = (state) => {
     if (!tip) return;
+    // A bubble about no one estate (the end), while the kiosk docks them: at the stage's top left, where the frame
+    // keeps the boxes clear of it (web/kiosk-carve.js), never over the middle of the stage.
+    const dockIt = !tip.t.estate && docked();
+    tip.node.classList.toggle("eh-tip-dock", dockIt);
+    if (dockIt) {
+      const o = origin();
+      const at = `translate(${Math.round(o.left + 12)}px, ${Math.round(o.top + 12)}px)`;
+      tip.node.style.setProperty("--eh-at", at);
+      tip.node.style.transform = at;
+      return;
+    }
     const size = { w: tip.node.offsetWidth, h: tip.node.offsetHeight };
     const win = { w: window.innerWidth, h: window.innerHeight };
     let p;

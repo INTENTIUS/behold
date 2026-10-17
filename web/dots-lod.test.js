@@ -87,5 +87,10 @@ describe("the director's zoom", () => {
     expect(directorScale({ fit: 0.9, dotsCap: 0.4, cardsAt: 1.2 })).toBe(0.4);
     // No cards drawn: the dots cap holds.
     expect(directorScale({ fit: 3, dotsCap: 0.4, cardsAt: null })).toBe(0.4);
+    // A small stage whose cards don't quite reach legible size is framed at the zoom that fits, not a third of it
+    // (the live terralith: fit 0.33, dots cap 0.1, cards legible at 0.41).
+    expect(directorScale({ fit: 0.33, dotsCap: 0.1, cardsAt: 0.41, small: true })).toBe(0.33);
+    expect(directorScale({ fit: 0.33, dotsCap: 0.1, cardsAt: 0.41 })).toBe(0.1);
+    expect(directorScale({ fit: 3, dotsCap: 0.1, cardsAt: 0.41, small: true })).toBeCloseTo(0.41 * CARDS_FRAME_GROW);
   });
 });

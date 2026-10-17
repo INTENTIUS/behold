@@ -3,7 +3,9 @@
 // ring, a move flies, a refusal bounces; lines play from when they were seen.
 import { describe, it, expect } from "vitest";
 import { liveShow, stampArrivals, lineKey, showKey, currentMigration, carveDrawable, boxName, LIVE } from "./dots-live.js";
-import { buildScene, takeoffsBy } from "./dots-scene.js";
+import { buildScene, takeoffsBy, cardGridShape, BOX } from "./dots-scene.js";
+import { gridScale, gridSlots, unitKeyOf, GRID } from "./dots-cards.js";
+import { SMALL_STAGE } from "./dots.js";
 import { liveBeat, liveTipsBetween, liveEndTip } from "./dots-kiosk.js";
 import { dotsCarving, dotsActive } from "./dots.js";
 
@@ -216,5 +218,50 @@ describe("an adoption, a split, and the team rosters written after it", () => {
     const ends = {};
     for (const e of show.ownersEnd.values()) ends[e] = (ends[e] ?? 0) + 1;
     expect(ends).toEqual({ "tl11-team-a": 3, terralith: 1 });
+  });
+});
+
+describe("a small stage, laid out for its cards", () => {
+  it("picks the columns that bring a card grid nearest the stage's shape", () => {
+    const g = cardGridShape(14, { cell: 6, aspect: 3.2, target: 1.9 });
+    expect([g.cols, g.h]).toEqual([3, 30]);
+    expect(g.w).toBeCloseTo(57.6);
+    expect(cardGridShape(14, { cell: 6, aspect: 3.2, target: 0.9 }).cols).toBe(2);
+    expect(cardGridShape(0, { cell: 6, aspect: 3.2 }).cols).toBe(1);
+  });
+  it("gives each box its whole card grid at the small stage's cell, which holds through the carve", () => {
+    const a = answer([adopt, split([moveA, followA, refuseB])]);
+    const show = liveShow(a, stampArrivals(a, new Map(), T + 20_000, { first: true }), T + 20_000);
+    const wide = buildScene(show, { sourceAspect: 1, cardGrid: SMALL_STAGE, avail: { w: 1600, h: 500 } });
+    const plain = buildScene(show, { sourceAspect: 1 });
+    const src = wide.layoutAt(0).boxes.get(show.source);
+    // Wider than the dots alone need, in the stage's shape.
+    expect(src.w).toBeGreaterThan(plain.layoutAt(0).boxes.get(show.source).w);
+    expect(src.w / src.h).toBeGreaterThan(1);
+    const n = wide.landing.length;
+    const layouts = [0, n].map((k) => wide.layoutAt(k));
+    expect(gridScale(layouts, unitKeyOf(wide.rosterBy), { maxK: SMALL_STAGE.cell })).toBeCloseTo(SMALL_STAGE.cell);
+    // The source box keeps its size as resources leave, so no card moves for a box resizing.
+    const end = wide.layoutAt(n).boxes.get(show.source);
+    expect([end.w, end.h]).toEqual([src.w, src.h]);
+    // Every card's cell sits inside its box.
+    for (const L of layouts) {
+      const slots = gridSlots(L, SMALL_STAGE.cell, unitKeyOf(wide.rosterBy));
+      for (const [addr, p] of slots) {
+        const b = L.boxes.get(L.owners.get(addr));
+        expect(p.x).toBeGreaterThanOrEqual(b.x + BOX.pad);
+        expect(p.x).toBeLessThanOrEqual(b.x + b.w - BOX.pad);
+        expect(p.y).toBeLessThanOrEqual(b.y + b.h);
+      }
+    }
+    expect(SMALL_STAGE.aspect).toBe(GRID.aspect);
+  });
+  it("leaves a big estate's boxes as the dots need them", () => {
+    const big = { ...stock, count: 60, resources: Array.from({ length: 60 }, (_, i) => ({ address: `aws_s3_bucket.b${i}`, type: "aws_s3_bucket", marked: false })) };
+    const a = answer([], [big]);
+    const show = liveShow(a, stampArrivals(a, new Map(), T, { first: true }), T);
+    const g = buildScene(show, { sourceAspect: 1, cardGrid: SMALL_STAGE, avail: { w: 1600, h: 500 } });
+    const p = buildScene(show, { sourceAspect: 1 });
+    expect(g.layoutAt(0).boxes.get(show.source)).toEqual(p.layoutAt(0).boxes.get(show.source));
   });
 });
