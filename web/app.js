@@ -2673,7 +2673,7 @@ function approveWorkspaceGate(key, btn) {
         showToast(`✗ approve ${key}: ${j.error}`, false);
         nowline("✗ " + j.error);
       } else {
-        showToast(`✓ ${key} approved as ${j.approver}`, true);
+        showToast(`✓ ${key} approved as ${j.approver}${j.signed ? ", signed" : ""}`, true);
       }
       loadWorkspaceGates({ force: true });
     })

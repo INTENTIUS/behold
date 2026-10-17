@@ -456,8 +456,12 @@ a banner. Any other short path answers 404 with a link to `/kiosk`.
 In a declared workspace, the gates waiting on a person come from
 `chant workspace status <env> --json`, keyed `member/op/gate` the way arugula's
 workspace block keys them, so the two show the same set. Standalone, a gate's
-button says who chant will record (the user running behold) before the click.
-Every approve route refuses in preview mode.
+button says who chant will record before the click: the person `--as` names
+(`--as github:<login>`), the person an authenticating proxy names in the header
+`--identity-header` trusts, or else the user running behold. A gate the
+workspace names in `identity.gates` is signed with that person's key when
+`--signing-key` (or `.behold.json`'s `approver.keys`) gives one, and sent to the
+command line otherwise (#690). Every approve route refuses in preview mode.
 
 In a declared workspace, the inspect pane of a member's box or a card has a
 "why" section. "Read why" asks `chant workspace graph --intent <member dir or

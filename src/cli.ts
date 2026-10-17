@@ -19,6 +19,7 @@ import { isAutoSyncMode, type AutoSyncMode } from "./autosync.ts";
 import { detectProjectShape, loadBeholdConfig } from "./project.ts";
 import { drawnMembers, hasDeclaration, readWorkspace, undrawnMembers, unreadableMembers, type Workspace } from "./workspace.ts";
 import { hudAddress } from "./workspace-why.ts";
+import { approverOptionsProblem, isForgeIdentity, resolveApproverOptions } from "./approver.ts";
 import { prometheusAddress } from "./prometheus-metrics.ts";
 import { tempoAddress } from "./tempo-traces.ts";
 import { servesAsEstate } from "./member-kind.ts";
@@ -130,6 +131,27 @@ Options:
   --hud <url>         serve only: where hud reviews this workspace's records
                       (BEHOLD_HUD_URL too). A proposed decision in a member's
                       or a card's "why" links to its review there (#471).
+  --as <principal>    serve only: who behold approves a gate as (BEHOLD_APPROVER,
+                      or .behold.json's approver.as), passed to chant as
+                      --actor: a forge identity such as github:<login>, or a
+                      principal .chant/allowed_signers lists. Without it chant
+                      records the user running behold (#690).
+  --signing-key <file>
+                      serve only, with --as: the ssh key that person signs
+                      with (BEHOLD_SIGNING_KEY). A gate the workspace names in
+                      identity.gates is approved with chant approve --sign
+                      <file>; without a key behold refuses such a gate.
+  --identity-header <name>
+                      serve only: behold sits behind a proxy that signs people
+                      in through the forge or OIDC and names the person in
+                      this header (BEHOLD_IDENTITY_HEADER). Each approval is
+                      recorded as that person. Off by default, and only with
+                      behold bound to 127.0.0.1, since anyone who reaches the
+                      port could send the header.
+  --identity-forge <forge>
+                      serve only, with --identity-header: the forge a bare
+                      login in the header is an account on: github (default),
+                      gitlab, or <forge>@<host> such as forgejo@codeberg.org.
   --prometheus <url>  serve only: the Prometheus behold reads a pipeline's
                       numbers from (BEHOLD_PROMETHEUS_URL too), with a fixed
                       set of queries of terragucci's gauges: each wave's plan
@@ -304,6 +326,7 @@ export async function run(argv: string[]): Promise<void> {
   let isPublic = false;
   let reposParent: string | undefined;
   const allowHosts: string[] = [];
+  const approverFlags: { as?: string; signingKey?: string; header?: string; headerForge?: string } = {};
 
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
@@ -311,6 +334,10 @@ export async function run(argv: string[]): Promise<void> {
     else if (a === "--host") host = rest[++i];
     else if (a === "--allow-host") allowHosts.push(...(rest[++i] ?? "").split(","));
     else if (a === "--hud") hudArg = rest[++i];
+    else if (a === "--as") approverFlags.as = rest[++i];
+    else if (a === "--signing-key") approverFlags.signingKey = rest[++i];
+    else if (a === "--identity-header") approverFlags.header = rest[++i];
+    else if (a === "--identity-forge") approverFlags.headerForge = rest[++i];
     else if (a === "--prometheus") prometheusArg = rest[++i];
     else if (a === "--tempo") tempoArg = rest[++i];
     else if (a === "--terragucci") terragucci = rest[++i];
@@ -427,6 +454,22 @@ export async function run(argv: string[]): Promise<void> {
     process.exit(2);
   }
   const dirs = projectDirs.map((d) => resolve(d));
+  // #690: who an approval is recorded as. Checked before anything is read.
+  for (const [flag, v] of Object.entries({ "--as": approverFlags.as, "--signing-key": approverFlags.signingKey, "--identity-header": approverFlags.header, "--identity-forge": approverFlags.headerForge })) {
+    if (v !== undefined && (!v || v.startsWith("--"))) {
+      process.stderr.write(`behold serve: ${flag} needs a value\n`);
+      process.exit(2);
+    }
+  }
+  const approver = resolveApproverOptions(approverFlags, dirs[0]);
+  const approverProblem = approverOptionsProblem(approver, host ?? process.env.BEHOLD_HOST);
+  if (approverProblem) {
+    process.stderr.write(`behold serve: ${approverProblem}\n`);
+    process.exit(2);
+  }
+  if (approver.as && !isForgeIdentity(approver.as)) {
+    process.stderr.write(`behold: ${approver.as} is not a forge identity; a workspace with identity.attribution identified takes it only if .chant/allowed_signers lists it\n`);
+  }
   const target = await serveTarget(dirs, "serve");
   const viewRepos = reposParent !== undefined ? await serveRepos(resolve(reposParent), target) : undefined;
   await startServer({
@@ -441,6 +484,7 @@ export async function run(argv: string[]): Promise<void> {
     ...(allowHosts.length ? { allowedHosts: allowHosts } : {}),
     ...(isPublic ? { public: true, layoutWrites: false } : {}),
     ...(target.workspace && hud ? { hud } : {}),
+    ...(Object.keys(approver).length ? { approver } : {}),
     ...(prometheus ? { prometheus } : {}),
     ...(tempo ? { tempo } : {}),
     ...(yodelReport ? { yodelReport: resolve(yodelReport) } : {}),

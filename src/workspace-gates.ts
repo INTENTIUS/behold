@@ -9,9 +9,10 @@
  *
  * Approving goes through `chant approve` in the member's directory with the
  * gate's env and plan digest, both taken from a fresh read rather than from
- * the page. The approver is whoever runs behold (chant's own fallback:
- * GITHUB_ACTOR, GITLAB_USER_LOGIN, then USER), which is why the page says so,
- * and why a framed behold leaves approving to its host, which knows who is
+ * the page. The approver is the person src/approver.ts names for the request
+ * (#690): a trusted proxy header, `--as`, or else chant's own fallback
+ * (GITHUB_ACTOR, GITLAB_USER_LOGIN, then USER). The page says who before the
+ * click, and a framed behold leaves approving to its host, which knows who is
  * looking (#476).
  *
  * A gate of op `policy-override` is a policy denial (#519). It is never
@@ -47,7 +48,7 @@ export interface WorkspaceGate {
   needed: number;
   recordedAt: string | null;
   expiresAt: string | null;
-  /** The gate wants a signed approval, which behold can't make. */
+  /** The gate wants a signed approval: behold signs it only with the approver's key (#690). */
   signed: boolean;
   /** The line chant says approving runs, or the same built from the gate. For a policy denial, the override command. */
   approve: string;

@@ -950,6 +950,40 @@ appears in the entity graph. behold names it there, the Namespace as the loop's
 home, each CronJob as a converge tick — off chant's own
 `app.kubernetes.io/component: converge-tick` labels, never a naming convention.
 
+## Who an approval is recorded as (#690)
+
+chant never signs a person in (ws-052); the surface that does passes the person
+to chant as `--actor` (ws-080). behold has no login, so `src/approver.ts` names
+the person for each request, in this order:
+
+- `--identity-header <name>` (BEHOLD_IDENTITY_HEADER, `.behold.json`
+  `approver.header`): behold sits behind a proxy that signed the person in
+  through the forge or OIDC, and the header names them. A bare login is an
+  account on `--identity-forge` (github unless set). A request without the
+  header approves nothing (`403 no-identity`). Refused at startup with a
+  `--host` other than loopback, since anyone reaching the port could send it.
+- `--as <principal>` (BEHOLD_APPROVER, `.behold.json` `approver.as`): one
+  person runs behold and names themselves, `github:<login>` or a principal the
+  signers file lists.
+- Neither: chant's own fallback (GITHUB_ACTOR, GITLAB_USER_LOGIN, USER), and
+  behold passes no `--actor`.
+
+Without a trusted header, a request carrying a usual proxy identity header
+(`PROXY_IDENTITY_HEADERS`, such as `X-Forwarded-User`) is refused with `403
+identity-header` on every approve route, rather than recorded as someone else.
+Every approve route (`/api/workspace/gates/approve`, the converge gate's
+`/api/operator/approve`, the run gate's `/api/ops/:name/signal`) adds
+`--actor` (`--approver` on `chant run approve`) and `--note "approved in
+behold"`. chant's ledger has no channel for a surface (its `origin` is `cli`,
+`mcp` or `acp`), so the note is where behold is named. A workspace gate that
+status marks `signed` is approved with `--sign <key>` when behold holds the
+person's key (`--signing-key` beside `--as`, or `.behold.json`'s
+`approver.keys` by principal) and refused `422 signed` with the line to run
+otherwise. The key path never reaches a page: `GET /api/workspace/gates`
+carries `approverIdentity: {principal, source, forge, signs}`, or `approver:
+null` and `approverRefusal`. `src/approver-chant.test.ts` runs the whole path
+against chant with a throwaway key and workspace.
+
 ## Invariant
 
 If a request would have behold write to a cloud or to source directly, it's wrong.

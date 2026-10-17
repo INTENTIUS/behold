@@ -42,6 +42,7 @@ function fakeProc(code: number, stdout = "", stderr = ""): ReturnType<typeof spa
 }
 
 import { createApp } from "./server.ts";
+import type { ApproverOptions } from "./approver.ts";
 import { Broadcaster } from "./events.ts";
 import { FrameBuffer } from "./frames.ts";
 import { OpRunner } from "./op-runner.ts";
@@ -89,12 +90,12 @@ function project(names: string[], chantVersion?: string): string {
   return dir;
 }
 
-function appFor(dir: string) {
+function appFor(dir: string, approver?: ApproverOptions) {
   const broadcaster = new Broadcaster();
   const events: Array<{ type: string; data: string }> = [];
   broadcaster.subscribe((type, data) => events.push({ type, data }));
   const runner = new OpRunner({ projectDir: dir, broadcaster, onDone: () => {} });
-  return { app: createApp({ projectDir: dir, port: 0 }, broadcaster, new FrameBuffer(), runner), events, runner };
+  return { app: createApp({ projectDir: dir, port: 0, ...(approver ? { approver } : {}) }, broadcaster, new FrameBuffer(), runner), events, runner };
 }
 
 const spawned = vi.mocked(spawnMock);
@@ -323,7 +324,7 @@ describe("POST /api/operator/approve/:op/:gate (#234 join 1)", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { recorded: boolean; semantics: string };
 
-    expect(calls()).toEqual([["approve", "fountain-apply", "rollout-gate"]]);
+    expect(calls()).toEqual([["approve", "fountain-apply", "rollout-gate", "--note", "approved in behold"]]);
     expect(body.recorded).toBe(true);
     // chant's own gate-ledger doc: this writes a fact and "is not itself the
     // unblock". The response says so, and the card renders it.
@@ -345,6 +346,23 @@ describe("POST /api/operator/approve/:op/:gate (#234 join 1)", () => {
     // inventory says the issue text did.
     expect(calls()[0]).not.toContain("signal");
     expect(calls()[0]).not.toContain("--temporal");
+  });
+
+  it("records the person `--as` names (#690)", async () => {
+    spawned.mockReturnValue(fakeProc(0, ""));
+    const { app, events } = appFor(withLoop, { as: "github:alice" });
+    const res = await app.request("/api/operator/approve/fountain-apply/rollout-gate", { method: "POST" });
+    expect(res.status).toBe(200);
+    expect(calls()).toEqual([["approve", "fountain-apply", "rollout-gate", "--actor", "github:alice", "--note", "approved in behold"]]);
+    expect(events.find((e) => e.type === "op")?.data).toMatch(/as github:alice/);
+  });
+
+  it("refuses a request that names a person in a header behold doesn't trust (#690)", async () => {
+    const { app } = appFor(withLoop);
+    const res = await app.request("/api/operator/approve/fountain-apply/rollout-gate", { method: "POST", headers: { "x-forwarded-user": "mallory" } });
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe("identity-header");
+    expect(spawned).not.toHaveBeenCalled();
   });
 
   it("500s with chant's own message when the write fails", async () => {

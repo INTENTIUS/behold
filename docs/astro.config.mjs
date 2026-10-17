@@ -87,6 +87,7 @@ export default defineConfig({
 					items: [
 						{ label: 'Reading the graph', slug: 'using/reading-the-graph' },
 						{ label: 'Acting on it', slug: 'using/acting' },
+						{ label: 'Approving a gate', slug: 'using/approving' },
 						{ label: 'Export a snapshot', slug: 'using/export' },
 						{ label: 'Driving it from an agent', slug: 'using/agents' },
 					],
