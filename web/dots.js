@@ -1993,8 +1993,11 @@ function drawTour(ctx, fx, boxes, boxPx, centre, sx, sy, dotLayerA, td, discR) {
       chip(ctx, p.x, p.y + 20, ok ? "✓" : "✗", ok ? col.managed : col.degraded, { fg: col.fg });
       continue;
     }
-    // Inside the box's foot, so it never sits on the box below.
-    chip(ctx, bp.x + 6, bp.y + bp.h - 24, ok ? "✓ plans no change" : "plans a change", ok ? col.managed : col.degraded, { fg: col.fg });
+    // Inside the box's foot, so it never sits on the box below; a box too narrow for the words takes the mark alone.
+    ctx.font = `600 11px ${S.font}`;
+    const words = ok ? "✓ plans no change" : "plans a change";
+    const fits = ctx.measureText(words).width + 26 <= bp.w;
+    chip(ctx, bp.x + 6, bp.y + bp.h - 24, fits ? words : ok ? "✓" : "✗", ok ? col.managed : col.degraded, { fg: col.fg });
   }
   ctx.globalAlpha = 1;
 }

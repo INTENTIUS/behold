@@ -2,94 +2,326 @@
   "schema": "behold.tour/v1",
   "name": "terralith",
   "title": "The terralith's story",
-  "match": { "tool": "terralith" },
+  "match": {
+    "tool": "terralith"
+  },
   "home": "demo-terralith",
-  "steps": ["pull-request", "planned", "merged", "applying", "waiting", "approved", "resumed", "applied"],
+  "steps": [
+    "pull-request",
+    "planned",
+    "merged",
+    "applying",
+    "waiting",
+    "approved",
+    "resumed",
+    "applied"
+  ],
   "runs": {
-    "stock": { "repo": "{repo}", "stage": "tf-apply", "pull": null, "pick": "first" },
-    "adopt": { "migration": "adopt" },
-    "split": { "migration": "split" },
-    "team": { "repo": "{repo}-team-b", "stage": "tf-plan", "pick": "first" },
-    "teamApply": { "repo": "{repo}-team-b", "stage": "tf-apply", "pick": "first" },
-    "crossPlan": { "repo": "{repo}", "stage": "tf-plan", "after": "teamApply", "pick": "last" },
-    "cross1": { "repo": "{repo}", "stage": "tf-apply", "wave": 1, "after": "crossPlan", "pick": "last" },
-    "cross2": { "repo": "{repo}", "stage": "tf-apply", "wave": 2, "after": "crossPlan", "pick": "last" }
+    "stock": {
+      "repo": "{repo}",
+      "stage": "tf-apply",
+      "pull": null,
+      "pick": "first"
+    },
+    "adopt": {
+      "migration": "adopt"
+    },
+    "split": {
+      "migration": "split"
+    },
+    "team": {
+      "repo": "{repo}-team-b",
+      "stage": "tf-plan",
+      "pick": "first"
+    },
+    "teamApply": {
+      "repo": "{repo}-team-b",
+      "stage": "tf-apply",
+      "pick": "first"
+    },
+    "crossPlan": {
+      "repo": "{repo}",
+      "stage": "tf-plan",
+      "after": "teamApply",
+      "pick": "last"
+    },
+    "cross1": {
+      "repo": "{repo}",
+      "stage": "tf-apply",
+      "wave": 1,
+      "after": "crossPlan",
+      "pick": "last"
+    },
+    "cross2": {
+      "repo": "{repo}",
+      "stage": "tf-apply",
+      "wave": 2,
+      "after": "crossPlan",
+      "pick": "last"
+    }
   },
   "facts": {
-    "planned": { "run": "stock", "value": "planned" },
-    "of": { "run": "stock", "value": "planned" },
-    "stamped": { "migration": "adopt", "value": "stamped" },
-    "moved": { "migration": "split", "value": "moved" },
-    "refused": { "migration": "split", "value": "refused" },
-    "teamPlanned": { "run": "team", "value": "planned" },
-    "teamChanged": { "run": "team", "value": "changed" },
-    "value": { "run": "crossPlan", "value": "output", "output": "log_retention_days" },
-    "writes": { "sum": ["stamped", "moved"] },
-    "adoptRecreated": { "run": "adopt", "value": "recreated" },
-    "splitRecreated": { "run": "split", "value": "recreated" },
-    "recreated": { "sum": ["adoptRecreated", "splitRecreated"] },
-    "approvals": { "approvals": true },
-    "cycleTime": { "duration": { "from": "started_at", "to": "cross2" } }
+    "planned": {
+      "run": "stock",
+      "value": "planned"
+    },
+    "of": {
+      "run": "stock",
+      "value": "planned"
+    },
+    "stamped": {
+      "migration": "adopt",
+      "value": "stamped"
+    },
+    "moved": {
+      "migration": "split",
+      "value": "moved"
+    },
+    "refused": {
+      "migration": "split",
+      "value": "refused"
+    },
+    "teamPlanned": {
+      "run": "team",
+      "value": "planned"
+    },
+    "teamChanged": {
+      "run": "team",
+      "value": "changed"
+    },
+    "value": {
+      "run": "crossPlan",
+      "value": "output",
+      "output": "log_retention_days"
+    },
+    "writes": {
+      "sum": [
+        "stamped",
+        "moved"
+      ]
+    },
+    "adoptRecreated": {
+      "run": "adopt",
+      "value": "recreated"
+    },
+    "splitRecreated": {
+      "run": "split",
+      "value": "recreated"
+    },
+    "recreated": {
+      "sum": [
+        "adoptRecreated",
+        "splitRecreated"
+      ]
+    },
+    "approvals": {
+      "approvals": true
+    },
+    "cycleTime": {
+      "duration": {
+        "from": "started_at",
+        "to": "cross2"
+      }
+    }
   },
   "chapters": [
     {
       "id": "stock",
-      "trigger": { "beat": "stock" },
+      "trigger": {
+        "beat": "stock"
+      },
       "title": "One state for everything",
-      "text": ["Every resource lives in one state file.", "Any change plans {planned} of {of} and waits on one lock."],
-      "focus": { "boxes": "source" },
-      "show": [{ "light": ["stock"] }]
+      "text": [
+        "Every resource lives in one state file.",
+        "Any change plans {planned} of {of} and waits on one lock."
+      ],
+      "focus": {
+        "boxes": "source"
+      },
+      "show": [
+        {
+          "light": [
+            "stock"
+          ]
+        }
+      ]
     },
     {
       "id": "adopt",
-      "trigger": { "beat": "adopt" },
+      "trigger": {
+        "beat": "adopt"
+      },
       "title": "Adopt: claim every resource without touching it",
-      "text": ["Each resource gets its owner's tags. Nothing is rebuilt.", "{stamped} stamped, and the state file stays as it was."],
-      "focus": { "boxes": "source" },
-      "show": [{ "state": "adopt" }]
+      "text": [
+        "Each resource gets its owner's tags. Nothing is rebuilt.",
+        "{stamped} stamped, and the state file stays as it was."
+      ],
+      "focus": {
+        "boxes": "source"
+      },
+      "show": [
+        {
+          "state": "adopt"
+        }
+      ]
     },
     {
       "id": "split",
-      "trigger": { "beat": "split" },
+      "trigger": {
+        "beat": "split"
+      },
       "title": "Split: move ownership, not resources",
-      "text": ["Each team's resources move to its own estate by a tag write.", "{moved} moved, {refused} refused."],
-      "focus": { "boxes": "all" },
-      "show": [{ "counts": "estates" }, { "checks": "split", "when": { "migration": "split", "line": "last" } }]
+      "text": [
+        "Each team's resources move to its own estate by a tag write.",
+        "{moved} moved, {refused} refused."
+      ],
+      "focus": {
+        "boxes": "all"
+      },
+      "show": [
+        {
+          "counts": "estates"
+        },
+        {
+          "checks": "split",
+          "when": {
+            "migration": "split",
+            "line": "last"
+          }
+        }
+      ]
     },
     {
       "id": "team",
-      "trigger": { "beat": "team" },
+      "trigger": {
+        "beat": "team"
+      },
       "title": "A small change stays small",
-      "text": ["Team B changes one policy, and only team B is planned.", "Planned {teamPlanned} of {of} · chapter 1: {planned} of {of}"],
-      "focus": { "boxes": "lit" },
-      "show": [{ "light": ["team"] }]
+      "text": [
+        "Team B changes one policy, and only team B is planned.",
+        "Planned {teamPlanned} of {of} · chapter 1: {planned} of {of}"
+      ],
+      "focus": {
+        "boxes": "lit"
+      },
+      "show": [
+        {
+          "light": [
+            "team"
+          ]
+        }
+      ]
     },
     {
       "id": "cross",
-      "trigger": { "beat": "cross" },
+      "trigger": {
+        "beat": "cross"
+      },
       "title": "A change across estates",
-      "text": ["The terralith publishes a value, and each team reads it.", "Wave 1 plans the terralith; wave 2 plans the teams on {value}."],
-      "focus": { "boxes": "all" },
+      "text": [
+        "The terralith publishes a value, and each team reads it.",
+        "Wave 1 plans the terralith; wave 2 plans the teams on {value}."
+      ],
+      "focus": {
+        "boxes": "all"
+      },
       "show": [
-        { "pulse": "crossPlan", "wave": 1, "when": { "wave": 1, "edge": "start", "after": "crossPlan" } },
-        { "travel": "crossPlan", "output": "log_retention_days", "when": { "wave": 1, "edge": "end", "after": "crossPlan" } },
-        { "light": ["cross2", "crossPlan"], "wave": 2, "when": { "wave": 2, "edge": "start", "after": "crossPlan" } }
+        {
+          "pulse": "crossPlan",
+          "wave": 1,
+          "when": {
+            "wave": 1,
+            "edge": "start",
+            "after": "crossPlan"
+          }
+        },
+        {
+          "travel": "crossPlan",
+          "output": "log_retention_days",
+          "when": {
+            "wave": 1,
+            "edge": "end",
+            "after": "crossPlan"
+          }
+        },
+        {
+          "light": [
+            "cross2",
+            "crossPlan"
+          ],
+          "wave": 2,
+          "when": {
+            "wave": 2,
+            "edge": "start",
+            "after": "crossPlan"
+          }
+        }
       ]
     },
     {
       "id": "epilogue",
-      "trigger": { "any": [{ "beat": "cross", "step": "applied" }, { "step": "reset" }] },
+      "trigger": {
+        "any": [
+          {
+            "beat": "cross",
+            "step": "applied"
+          },
+          {
+            "step": "reset"
+          }
+        ]
+      },
       "title": "This cycle, in numbers",
-      "text": ["Then the reset: the next cycle starts from a new terralith."],
-      "focus": { "boxes": "all" },
+      "text": [
+        "Then the reset: the next cycle starts from a new terralith."
+      ],
+      "focus": {
+        "boxes": "all"
+      },
       "show": [
         {
+          "travel": "crossPlan",
+          "output": "log_retention_days",
+          "when": {
+            "wave": 1,
+            "edge": "end",
+            "after": "crossPlan"
+          }
+        },
+        {
+          "light": [
+            "cross2",
+            "crossPlan"
+          ],
+          "wave": 2,
+          "when": {
+            "wave": 2,
+            "edge": "start",
+            "after": "crossPlan"
+          }
+        },
+        {
           "card": [
-            { "label": "cycle time", "text": "{cycleTime}" },
-            { "label": "tag writes", "text": "{writes}" },
-            { "label": "resources recreated", "text": "{recreated}" },
-            { "label": "approvals", "text": "{approvals}" },
-            { "label": "planned per change", "text": "{planned} before, {teamPlanned} after" }
+            {
+              "label": "cycle time",
+              "text": "{cycleTime}"
+            },
+            {
+              "label": "tag writes",
+              "text": "{writes}"
+            },
+            {
+              "label": "resources recreated",
+              "text": "{recreated}"
+            },
+            {
+              "label": "approvals",
+              "text": "{approvals}"
+            },
+            {
+              "label": "planned per change",
+              "text": "{planned} before, {teamPlanned} after"
+            }
           ]
         }
       ]

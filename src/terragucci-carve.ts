@@ -729,7 +729,9 @@ export function terragucciCarveRoute(app: Hono, source: TerragucciSource, opts: 
           entry.ttl = CARVE_IDLE_TTL_MS;
           return;
         }
-        entry.ttl = a.running ? CARVE_READ_TTL_MS : CARVE_IDLE_TTL_MS;
+        // A tour's waves land in seconds (the cross beat's two waves take about 12 s): while its run applies, read as often as for a migration.
+        const applying = !!a.tour && !!a.demo && ["merged", "applying", "resumed", "approved"].includes(a.demo.step);
+        entry.ttl = a.running || applying ? CARVE_READ_TTL_MS : CARVE_IDLE_TTL_MS;
         // A new cycle of the demo's loop starts from its own migrations.
         if (a.demo && cycle !== null && a.demo.cycle !== cycle) {
           remembered.clear();
