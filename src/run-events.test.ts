@@ -7,9 +7,9 @@
 //    gated-probe approve-probe`, run again: the gate resolves and it settles ok.
 //  - fail-probe.events.ndjson: `chant run fail-probe --events-json`
 //    (fail-probe.op.ts.txt), a step that exits 7 between two that pass.
-// All three were recorded from chant main (54a030213's emitters, af9e261ad)
-// in a throwaway git repository; that build reports itself as 0.124.27, the
-// version before the release that ships the stream.
+// All three were recorded from chant main (af9e261ad's emitters) in a
+// throwaway git repository; that build reports itself as 0.124.27, the
+// version before the release (0.124.28) that ships the stream.
 //  - components-gated.events.ndjson: a component run (skipped with a receipt,
 //    a cache hit, a gate, a step not run) written through chant's own writer,
 //    `createRunEventWriter` from packages/core/src/run-event.ts, since a real
@@ -22,7 +22,8 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import schema from "./run-event-schema/run-event.schema.json" with { type: "json" };
-import { readRunLine, foldRunEvents, foldRunEvent, initialFold, runEventLine, legacyRunLine, RUN_EVENT_SCHEMA_ID, RUN_EVENT_SCHEMA_SOURCE, type RunEventLine } from "./run-events.ts";
+import type { RunEvent } from "@intentius/chant";
+import { readRunLine, foldRunEvents, foldRunEvent, initialFold, runEventLine, legacyRunLine, RUN_EVENT_SCHEMA_ID, RUN_EVENT_SCHEMA_SOURCE } from "./run-events.ts";
 import { applyProgressOf, applyEnded } from "./apply.ts";
 import { joinRun, paintPlayhead, playheadNote, runFromFold, runStarted, runEnded, type RunState } from "./run-playhead.ts";
 import { opsToIr, readOpIr, type OpIr } from "./ops-lens.ts";
@@ -30,7 +31,7 @@ import { opsToIr, readOpIr, type OpIr } from "./ops-lens.ts";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIX = join(HERE, "__fixtures__", "run-events");
 const lines = (name: string): string[] => readFileSync(join(FIX, name), "utf8").trim().split("\n");
-const events = (name: string): RunEventLine[] =>
+const events = (name: string): RunEvent[] =>
   lines(name).map((l) => {
     const r = readRunLine(l);
     if (r?.kind !== "event") throw new Error(`not an event: ${l}`);

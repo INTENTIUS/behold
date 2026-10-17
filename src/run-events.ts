@@ -11,66 +11,59 @@
  * validated against the schema before anything reads a field of it, and a
  * line that names the schema but fails it is refused out loud, never folded.
  *
- * ## The schema, vendored
+ * ## Types and schema
  *
- * `./run-event-schema/run-event.schema.json` is chant's file, copied
- * unchanged from {@link RUN_EVENT_SCHEMA_SOURCE}. chant exports the matching
- * TypeScript types (`RunEvent*` from `@intentius/chant`) from 0.124.28, which
- * is not published yet, so behold does not copy them by hand: it validates
- * against the schema and reads each validated event's fields through the
- * small accessors below.
- *
- * TODO(chant 0.124.28, behold#679): once @intentius/chant 0.124.28 is on npm,
- * bump behold's dependency, import `RunEvent` and `RunEventBody` from
- * `@intentius/chant` as `RunEventLine`'s type, drop the accessors, and keep
- * the schema check at the boundary.
+ * The event types are chant's own (`RunEvent`, `RunEventBody` and friends,
+ * exported from `@intentius/chant` since 0.124.28), imported as types only:
+ * behold loads none of chant's library at runtime. The lines come from the
+ * project's chant, which may be a different version from behold's, so the
+ * runtime check is the schema: `./run-event-schema/run-event.schema.json` is
+ * chant's file, copied unchanged from {@link RUN_EVENT_SCHEMA_SOURCE}, and is
+ * what {@link readRunLine} validates every line against before it is typed.
  *
  * ## The older streams, behind the floor
  *
- * A chant older than {@link RUN_EVENTS_CHANT_FLOOR} has no `--events-json`.
- * behold starts it with `--progress-json` (degraded mode, src/op-runner.ts),
- * and {@link legacyRunLine} translates each of that stream's lines into the
- * same event shape at this boundary, the way chant's own `runEventOfProgress`
+ * A chant older than `RUN_EVENTS_CHANT_FLOOR` has no `--events-json`. behold
+ * starts it with `--progress-json` (degraded mode, src/op-runner.ts), and
+ * {@link legacyRunLine} translates each of that stream's lines into chant's
+ * run-event bodies at this boundary, the way chant's own `runEventOfProgress`
  * and `runEventsOfStepRecord` do, so one fold renders both. The old shapes
- * have no types here: the translation reads their fields by name.
- *
- * Pure apart from the schema compile. No chant library import.
+ * are read field by field; behold keeps no type for them.
  */
 import { Ajv2020 } from "ajv/dist/2020.js";
+import type {
+  RunEvent,
+  RunEventBody,
+  RunEventSettleStatus,
+  RunEventStepStatus,
+  RunEventStepSettle,
+} from "@intentius/chant";
 import runEventSchema from "./run-event-schema/run-event.schema.json" with { type: "json" };
 
-/** Where the vendored schema comes from. The schema file last changed in
- * chant at af9e261ad (#4057); it is unchanged at the commit named here. */
+/** Where the vendored schema comes from: the file @intentius/chant 0.124.28
+ * publishes (`workspace/run-event.schema.json`), chant tag chant-v0.124.28
+ * (bc251b54ec0c9edd1e6b2af02df4e8a79b3bec40). It last changed in chant at
+ * 8f444d454 (#4064, the `empty` gate approval). */
 export const RUN_EVENT_SCHEMA_SOURCE = {
   repo: "INTENTIUS/chant",
   path: "packages/core/src/workspace/run-event.schema.json",
-  commit: "54a03021356381611d94cfbe267935420a497182",
+  commit: "bc251b54ec0c9edd1e6b2af02df4e8a79b3bec40",
   release: "0.124.28",
 } as const;
 
-/** The schema's `$id`, which every event carries as `$schema`. */
+/** The schema's `$id`, which every event carries as `$schema`. Read from the
+ * vendored schema rather than chant's `RUN_EVENT_SCHEMA_ID`, which is a value
+ * and would load chant's library. */
 export const RUN_EVENT_SCHEMA_ID: string = runEventSchema.$id;
 
 /** The run-event contract version behold reads. */
 export const RUN_EVENT_CONTRACT = 1;
 
-/**
- * One validated line of a run's stream: the envelope (`runId`, `kind`,
- * `name`, `runtime`, `seq`, `at` ...) and the body, as chant wrote them. Read
- * its fields through {@link str}, {@link num} and friends.
- *
- * TODO(chant 0.124.28, behold#679): this becomes chant's exported `RunEvent`.
- */
-export type RunEventLine = { readonly type: string; readonly [field: string]: unknown };
+/** What the fold takes: a validated event (envelope and body), or a body
+ * translated from the older stream, which has no envelope. */
+export type RunLine = RunEvent | RunEventBody;
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-
-/** A string field, or undefined. */
-export const str = (e: RunEventLine, k: string): string | undefined => (typeof e[k] === "string" ? (e[k] as string) : undefined);
-/** A string-or-null field (`component`, `gate`, `point`, `gitSha`), with null kept. */
-export const strOrNull = (e: RunEventLine, k: string): string | null => (typeof e[k] === "string" ? (e[k] as string) : null);
-/** A number field, or undefined. */
-export const num = (e: RunEventLine, k: string): number | undefined => (typeof e[k] === "number" ? (e[k] as number) : undefined);
 
 // ── Validation at the boundary ────────────────────────────────────────────────
 
@@ -88,12 +81,12 @@ function validate(v: unknown): string | null {
 /** What one line of a run's output was. */
 export type RunLineRead =
   /** A contract-1 run event that passed the schema. */
-  | { kind: "event"; event: RunEventLine }
+  | { kind: "event"; event: RunEvent }
   /** A line that names the run-event schema but fails it, or names another
    * contract. It is not folded; the reason goes on the now-line. */
   | { kind: "refused"; reason: string }
   /** An older `--progress-json` line (degraded mode), translated. */
-  | { kind: "legacy"; events: RunEventLine[] };
+  | { kind: "legacy"; events: RunEventBody[] };
 
 /**
  * Read one streamed line. `null` for anything that is not run progress: a
@@ -117,7 +110,7 @@ export function readRunLine(line: string): RunLineRead | null {
     }
     const why = validate(parsed);
     if (why) return { kind: "refused", reason: `a run event that does not match chant's run-event schema: ${why}` };
-    return { kind: "event", event: parsed as RunEventLine };
+    return { kind: "event", event: parsed as unknown as RunEvent };
   }
   const legacy = legacyRunLine(parsed);
   return legacy ? { kind: "legacy", events: legacy } : null;
@@ -125,7 +118,8 @@ export function readRunLine(line: string): RunLineRead | null {
 
 // ── The older streams, translated (degraded mode) ─────────────────────────────
 
-const LEGACY_SETTLE = new Set(["ok", "failed", "gated"]);
+const LEGACY_SETTLE: ReadonlySet<string> = new Set(["ok", "failed", "gated"]);
+const settleOf = (v: unknown): RunEventSettleStatus | null => (typeof v === "string" && LEGACY_SETTLE.has(v) ? (v as RunEventSettleStatus) : null);
 
 /**
  * One parsed line of an older `--progress-json` stream, as run-event bodies:
@@ -136,22 +130,24 @@ const LEGACY_SETTLE = new Set(["ok", "failed", "gated"]);
  * `runEventsOfStepRecord`; a step record never says why it skipped, so a
  * translated skip carries `skip: null`.
  */
-export function legacyRunLine(v: Record<string, unknown>): RunEventLine[] | null {
+export function legacyRunLine(v: Record<string, unknown>): RunEventBody[] | null {
   const t = v.type;
   const s = (k: string): string | undefined => (typeof v[k] === "string" ? (v[k] as string) : undefined);
   const component = s("component") ?? null;
+  const phase = s("phase");
   if (typeof t === "string") {
     switch (t) {
       case "run-start":
-        return Array.isArray(v.waves) ? [{ type: "run-start", waves: v.waves }] : null;
+        return Array.isArray(v.waves) ? [{ type: "run-start", waves: v.waves.filter(Array.isArray).map((w: unknown[]) => w.filter((c): c is string => typeof c === "string")) }] : null;
       case "wave-start":
-        return typeof v.wave === "number" && Array.isArray(v.components) ? [{ type: "wave-start", wave: v.wave, components: v.components }] : null;
+        return typeof v.wave === "number" && Array.isArray(v.components)
+          ? [{ type: "wave-start", wave: v.wave, components: v.components.filter((c): c is string => typeof c === "string") }]
+          : null;
       case "component-start":
         return typeof v.wave === "number" && component ? [{ type: "component-start", wave: v.wave, component }] : null;
       case "phase-start":
-        return s("phase") ? [{ type: "phase-start", component, phase: s("phase") }] : null;
+        return phase ? [{ type: "phase-start", component, phase }] : null;
       case "step": {
-        const phase = s("phase");
         const step = s("step");
         const status = s("status");
         if (!phase || !step || !status) return null;
@@ -159,14 +155,22 @@ export function legacyRunLine(v: Record<string, unknown>): RunEventLine[] | null
         if (status !== "ok" && status !== "failed") return null;
         return [{ type: "step-settle", component, phase, step, status, durationMs: null, ...(s("error") ? { error: s("error") } : {}) }];
       }
-      case "phase-done":
-        return s("phase") && LEGACY_SETTLE.has(s("status") ?? "") ? [{ type: "phase-settle", component, phase: s("phase"), status: s("status") }] : null;
-      case "component-done":
-        return component && LEGACY_SETTLE.has(s("status") ?? "") ? [{ type: "component-settle", wave: v.wave, component, status: s("status") }] : null;
-      case "wave-done":
-        return typeof v.wave === "number" && LEGACY_SETTLE.has(s("status") ?? "") ? [{ type: "wave-settle", wave: v.wave, status: s("status") }] : null;
-      case "run-done":
-        return LEGACY_SETTLE.has(s("status") ?? "") ? [{ type: "run-settle", status: s("status"), durationMs: null }] : null;
+      case "phase-done": {
+        const status = settleOf(v.status);
+        return phase && status ? [{ type: "phase-settle", component, phase, status }] : null;
+      }
+      case "component-done": {
+        const status = settleOf(v.status);
+        return component && status && typeof v.wave === "number" ? [{ type: "component-settle", wave: v.wave, component, status }] : null;
+      }
+      case "wave-done": {
+        const status = settleOf(v.status);
+        return typeof v.wave === "number" && status ? [{ type: "wave-settle", wave: v.wave, status }] : null;
+      }
+      case "run-done": {
+        const status = settleOf(v.status);
+        return status ? [{ type: "run-settle", status, durationMs: null }] : null;
+      }
       default:
         return null;
     }
@@ -174,15 +178,15 @@ export function legacyRunLine(v: Record<string, unknown>): RunEventLine[] | null
   const one = legacyStepRecord(v);
   if (one) return [one];
   if (typeof v.op === "string" && Array.isArray(v.records)) {
-    const all = v.records.filter(isRecord).map(legacyStepRecord).filter((r): r is RunEventLine => r !== null);
+    const all = v.records.filter(isRecord).map(legacyStepRecord).filter((r): r is RunEventStepSettle => r !== null);
     return all.length ? all : null;
   }
   return null;
 }
 
-const LEGACY_RECORD_STATUS: Record<string, string> = { ok: "ok", fail: "failed", skipped: "skipped" };
+const LEGACY_RECORD_STATUS: Record<string, RunEventStepStatus> = { ok: "ok", fail: "failed", skipped: "skipped" };
 
-function legacyStepRecord(v: Record<string, unknown>): RunEventLine | null {
+function legacyStepRecord(v: Record<string, unknown>): RunEventStepSettle | null {
   if (typeof v.phase !== "string" || typeof v.fn !== "string" || typeof v.durationMs !== "number") return null;
   const status = typeof v.status === "string" ? LEGACY_RECORD_STATUS[v.status] : undefined;
   if (!status) return null;
@@ -202,7 +206,7 @@ function legacyStepRecord(v: Record<string, unknown>): RunEventLine | null {
 
 /** How one step stands. `running` is a step-start not yet settled; the rest
  * are chant's step-settle statuses. */
-export type StepState = "running" | "ok" | "failed" | "skipped" | "cached" | "gated" | "waiting";
+export type StepState = "running" | RunEventStepStatus;
 
 /** One step as behold draws it: started, then settled in place. */
 export interface StepView {
@@ -237,9 +241,9 @@ export interface WaitingOn {
 }
 
 /** A run's verdict as the stream states it: `running` until run-settle. */
-export type FoldStatus = "idle" | "running" | "ok" | "failed" | "gated" | "waiting";
+export type FoldStatus = "idle" | "running" | RunEventSettleStatus;
 /** A wave's or a component's state. */
-export type UnitStatus = "pending" | "running" | "ok" | "failed" | "gated" | "waiting";
+export type UnitStatus = "pending" | "running" | RunEventSettleStatus;
 
 export interface RunEventFold {
   /** The run's identity, from the envelope (absent on a translated older line). */
@@ -293,28 +297,24 @@ function componentFromStep(prev: UnitStatus, state: StepState): UnitStatus {
  * Fold one event into the run. Pure; returns a new fold. Events the fold has
  * no use for (a phase start or settle) only move the sequence.
  */
-export function foldRunEvent(fold: RunEventFold, e: RunEventLine): RunEventFold {
+export function foldRunEvent(fold: RunEventFold, e: RunLine): RunEventFold {
   let next: RunEventFold = { ...fold };
-  const seq = num(e, "seq");
-  if (seq !== undefined) {
-    if (next.lastSeq !== null && seq > next.lastSeq + 1) next.missed += seq - next.lastSeq - 1;
-    next.lastSeq = seq;
+  let at: string | undefined;
+  if ("seq" in e) {
+    // A validated event: the envelope names the run and the moment.
+    if (next.lastSeq !== null && e.seq > next.lastSeq + 1) next.missed += e.seq - next.lastSeq - 1;
+    next.lastSeq = e.seq;
+    next.runId = e.runId;
+    next.kind = e.kind;
+    next.name = e.name;
+    next.runtime = e.runtime;
+    if (e.runOrigin.url) next.url = e.runOrigin.url;
+    at = e.at;
   }
-  if (str(e, "runId")) next.runId = str(e, "runId")!;
-  if (str(e, "kind")) next.kind = str(e, "kind")!;
-  if (str(e, "name")) next.name = str(e, "name")!;
-  if (str(e, "runtime")) next.runtime = str(e, "runtime")!;
-  const origin = e.runOrigin;
-  if (isRecord(origin) && typeof origin.url === "string") next.url = origin.url;
-  const at = str(e, "at");
-  const component = strOrNull(e, "component");
-  const phase = str(e, "phase") ?? "";
-  const step = str(e, "step") ?? "";
-  const index = num(e, "index");
 
   switch (e.type) {
     case "run-start": {
-      const waves = Array.isArray(e.waves) ? (e.waves as unknown[]).filter(Array.isArray).map((w) => (w as unknown[]).filter((c): c is string => typeof c === "string")) : [];
+      const waves = e.waves ?? [];
       next = {
         ...next,
         status: "running",
@@ -328,61 +328,59 @@ export function foldRunEvent(fold: RunEventFold, e: RunEventLine): RunEventFold 
       next.waves = next.waves.map((w) => (w.wave === e.wave ? { ...w, status: "running" } : w));
       break;
     case "wave-settle":
-      next.waves = next.waves.map((w) => (w.wave === e.wave ? { ...w, status: (str(e, "status") ?? "ok") as UnitStatus } : w));
+      next.waves = next.waves.map((w) => (w.wave === e.wave ? { ...w, status: e.status } : w));
       break;
     case "component-start":
-      next.components = next.components.map((c) => (c.component === component ? { ...c, status: "running" } : c));
+      next.components = next.components.map((c) => (c.component === e.component ? { ...c, status: "running" } : c));
       break;
     case "component-settle":
-      next.components = next.components.map((c) => (c.component === component ? { ...c, status: (str(e, "status") ?? "ok") as UnitStatus } : c));
+      next.components = next.components.map((c) => (c.component === e.component ? { ...c, status: e.status } : c));
       break;
     case "step-start": {
-      next.steps = [...next.steps, { component, phase, step, ...(index !== undefined ? { index } : {}), state: "running", ...(at ? { startedAt: at } : {}) }];
-      next.components = next.components.map((c) => (c.component === component && c.status === "pending" ? { ...c, status: "running" } : c));
+      next.steps = [...next.steps, { component: e.component, phase: e.phase, step: e.step, ...(e.index !== undefined ? { index: e.index } : {}), state: "running", ...(at ? { startedAt: at } : {}) }];
+      next.components = next.components.map((c) => (c.component === e.component && c.status === "pending" ? { ...c, status: "running" } : c));
       break;
     }
     case "step-settle": {
-      const state = (str(e, "status") ?? "ok") as StepState;
+      const state: StepState = e.status;
       const settled: Partial<StepView> = {
         state,
-        ...("skip" in e ? { skip: (e.skip as string | null) ?? null } : {}),
-        ...("durationMs" in e ? { durationMs: (e.durationMs as number | null) ?? null } : {}),
-        ...(str(e, "error") ? { error: str(e, "error") } : {}),
-        ...(str(e, "message") ? { message: str(e, "message") } : {}),
+        ...(e.skip !== undefined ? { skip: e.skip } : {}),
+        durationMs: e.durationMs,
+        ...(e.error ? { error: e.error } : {}),
+        ...(e.message ? { message: e.message } : {}),
         ...(at ? { settledAt: at } : {}),
       };
-      const i = next.steps.findIndex((s) => s.state === "running" && sameStep(s, component, phase, step, index));
+      const i = next.steps.findIndex((s) => s.state === "running" && sameStep(s, e.component, e.phase, e.step, e.index));
       next.steps =
         i >= 0
           ? next.steps.map((s, j) => (j === i ? { ...s, ...settled } : s))
-          : [...next.steps, { component, phase, step, ...(index !== undefined ? { index } : {}), state, ...settled }];
-      if (component !== null) next.components = next.components.map((c) => (c.component === component ? { ...c, status: componentFromStep(c.status, state) } : c));
+          : [...next.steps, { component: e.component, phase: e.phase, step: e.step, ...(e.index !== undefined ? { index: e.index } : {}), state, ...settled }];
+      if (e.component !== null) next.components = next.components.map((c) => (c.component === e.component ? { ...c, status: componentFromStep(c.status, state) } : c));
       break;
     }
     case "gate-waiting":
       next.waitingOn = {
-        op: str(e, "op") ?? next.name ?? "",
-        gate: strOrNull(e, "gate"),
-        point: strOrNull(e, "point"),
-        component,
-        phase,
-        step,
+        op: e.op,
+        gate: e.gate,
+        point: e.point,
+        component: e.component,
+        phase: e.phase,
+        step: e.step,
         since: at ?? "",
-        ...(str(e, "message") ? { message: str(e, "message") } : {}),
+        ...(e.message ? { message: e.message } : {}),
       };
       break;
     case "gate-resolved": {
       next.waitingOn = null;
-      const who = str(e, "resolvedBy");
-      const i = next.steps.findIndex((s) => s.state === "running" && sameStep(s, component, phase, step, index));
-      if (i >= 0 && who) next.steps = next.steps.map((s, j) => (j === i ? { ...s, approvedBy: who } : s));
+      const i = next.steps.findIndex((s) => s.state === "running" && sameStep(s, e.component, e.phase, e.step, e.index));
+      if (i >= 0) next.steps = next.steps.map((s, j) => (j === i ? { ...s, approvedBy: e.resolvedBy } : s));
       break;
     }
     case "run-settle": {
-      const status = (str(e, "status") ?? "ok") as FoldStatus;
-      next = { ...next, status, settled: true, ...(str(e, "error") ? { error: str(e, "error") } : {}) };
+      next = { ...next, status: e.status, settled: true, ...(e.error ? { error: e.error } : {}) };
       // A run that settled ok or failed waits on nobody.
-      if (status === "ok" || status === "failed") next.waitingOn = null;
+      if (e.status === "ok" || e.status === "failed") next.waitingOn = null;
       break;
     }
     default:
@@ -392,7 +390,7 @@ export function foldRunEvent(fold: RunEventFold, e: RunEventLine): RunEventFold 
 }
 
 /** Fold a whole stream, e.g. a recorded fixture or a replay. */
-export function foldRunEvents(events: Iterable<RunEventLine>, from: RunEventFold = initialFold): RunEventFold {
+export function foldRunEvents(events: Iterable<RunLine>, from: RunEventFold = initialFold): RunEventFold {
   let f = from;
   for (const e of events) f = foldRunEvent(f, e);
   return f;
@@ -401,25 +399,24 @@ export function foldRunEvents(events: Iterable<RunEventLine>, from: RunEventFold
 /** A step as one now-line, so reading the structured stream costs the
  * operator none of chant's per-step narration. Null for an event with no
  * line of its own. */
-export function runEventLine(e: RunEventLine): string | null {
-  const where = [str(e, "component"), str(e, "phase"), str(e, "step")].filter(Boolean).join(" · ");
-  const took = (ms: unknown): string => (typeof ms !== "number" ? "" : ms < 1000 ? ` (${ms}ms)` : ` (${(ms / 1000).toFixed(1)}s)`);
+export function runEventLine(e: RunLine): string | null {
+  const parts = (x: { component?: string | null; phase?: string; step?: string }): string => [x.component, x.phase, x.step].filter(Boolean).join(" · ");
+  const took = (ms: number | null): string => (ms === null ? "" : ms < 1000 ? ` (${ms}ms)` : ` (${(ms / 1000).toFixed(1)}s)`);
   switch (e.type) {
     case "step-start":
-      return `▶ ${where}`;
+      return `▶ ${parts(e)}`;
     case "step-settle": {
-      const status = str(e, "status");
-      const mark = status === "ok" ? "✓" : status === "failed" ? "✗" : status === "gated" || status === "waiting" ? "⏸" : "•";
-      const why = status === "skipped" && typeof e.skip === "string" ? ` (${e.skip})` : "";
-      const tail = str(e, "error") ?? str(e, "message");
-      return `${mark} ${where}: ${status}${why}${status === "ok" || status === "failed" ? took(e.durationMs) : ""}${tail ? `: ${tail}` : ""}`;
+      const mark = e.status === "ok" ? "✓" : e.status === "failed" ? "✗" : e.status === "gated" || e.status === "waiting" ? "⏸" : "•";
+      const why = e.status === "skipped" && e.skip ? ` (${e.skip})` : "";
+      const tail = e.error ?? e.message;
+      return `${mark} ${parts(e)}: ${e.status}${why}${e.status === "ok" || e.status === "failed" ? took(e.durationMs) : ""}${tail ? `: ${tail}` : ""}`;
     }
     case "gate-waiting":
-      return `⏸ ${where}: waiting on ${e.gate ? `gate ${String(e.gate)}` : `decision point ${String(e.point)}`}`;
+      return `⏸ ${parts(e)}: waiting on ${e.gate ? `gate ${e.gate}` : `decision point ${e.point}`}`;
     case "gate-resolved":
-      return `✓ ${where}: gate ${String(e.gate)} approved by ${String(e.resolvedBy)}`;
+      return `✓ ${parts(e)}: gate ${e.gate} approved by ${e.resolvedBy}`;
     case "run-settle":
-      return `■ run ${str(e, "status")}${str(e, "error") ? `: ${str(e, "error")}` : ""}`;
+      return `■ run ${e.status}${e.error ? `: ${e.error}` : ""}`;
     default:
       return null;
   }

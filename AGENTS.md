@@ -856,11 +856,12 @@ named it (`gate-waiting`, or `chant run status`).
 
 `src/run-events.ts` is the one boundary every run line crosses. It validates
 each line against chant's `run-event.schema.json` (vendored in
-`src/run-event-schema/`, its source commit in `RUN_EVENT_SCHEMA_SOURCE`) and
-refuses a line that fails it; it folds the stream into what the dial and the
-ops lens render. behold copies none of chant's types: once @intentius/chant
-0.124.28 is published, behold imports `RunEvent` from it (the TODO in that
-file) and keeps the schema check.
+`src/run-event-schema/` from @intentius/chant 0.124.28, its source commit in
+`RUN_EVENT_SCHEMA_SOURCE`), since the line comes from the project's chant,
+not behold's, and refuses a line that fails it; it folds the stream into what
+the dial and the ops lens render. The event types are chant's own `RunEvent`
+and `RunEventBody`, imported as types only. `src/run-events-chant.test.ts`
+runs the whole path against a real chant when `BEHOLD_TEST_CHANT_BIN` is set.
 
 A run behold did not start is followed when the status read names it: `chant
 run events <run> --json --follow` replays what chant kept on this host and tails

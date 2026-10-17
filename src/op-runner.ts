@@ -14,7 +14,7 @@ import { extractPrUrl } from "./adopt.ts";
 import { applyProgressOf, applyEnded, initialApplyProgress, type ApplyProgressState } from "./apply.ts";
 import { pipelineProgress, foldPipelineLine, finishPipelineProgress, type PipelineProgressState } from "./ci-run.ts";
 import { floorFor, floorMet } from "./chant-floors.ts";
-import { readRunLine, foldRunEvent, runEventLine, initialFold, type RunEventFold, type RunEventLine } from "./run-events.ts";
+import { readRunLine, foldRunEvent, runEventLine, initialFold, type RunEventFold, type RunLine } from "./run-events.ts";
 import {
   stepLine,
   initialRunState,
@@ -123,7 +123,7 @@ export class OpRunner {
       this.deps.broadcaster.emit("op", `⚠ behold did not read ${read.reason}`);
       return { fold, consumed: true };
     }
-    const events: RunEventLine[] = read.kind === "event" ? [read.event] : read.events;
+    const events: RunLine[] = read.kind === "event" ? [read.event] : read.events;
     let next = fold;
     for (const e of events) {
       next = foldRunEvent(next, e);
