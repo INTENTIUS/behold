@@ -92,7 +92,8 @@ describe("diagnose", () => {
     expect(report.ok).toBe(true);
     expect(report.kind).toBe("project");
     // A read whose floor is above behold's own chant floor warns until behold's
-    // dependency reaches it: the trunk lane's reads (#680) are new in 0.124.28.
+    // dependency reaches it: the trunk lane (#680), the change set (#681) and
+    // the run events (#679) reads are new in 0.124.28.
     const floorStatus = CHANT_FLOORS.map((f) => (floorMet(f, AT_FLOOR) ? "pass" : "warn"));
     expect(report.checks.map((c) => c.status)).toEqual(["pass", "pass", ...floorStatus, ...Array(6).fill("pass")]);
     expect(by(report, "chant").detail).toContain(`chant ${AT_FLOOR}`);

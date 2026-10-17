@@ -1,38 +1,37 @@
 import { describe, it, expect } from "vitest";
-import {
-  parseProgressLine,
-  applyProgressReducer,
-  initialApplyProgress,
-  type RunProgressEvent,
-  type ApplyProgressState,
-} from "./apply.ts";
+import { applyProgressOf, initialApplyProgress, type ApplyProgressState } from "./apply.ts";
+import { readRunLine, foldRunEvent, initialFold, type RunEventFold } from "./run-events.ts";
 
-describe("parseProgressLine", () => {
-  it("parses a well-formed RunProgressEvent line", () => {
-    expect(parseProgressLine('{"type":"run-start","waves":[["a"]]}')).toEqual({
-      type: "run-start",
-      waves: [["a"]],
-    });
-    expect(parseProgressLine('{"type":"run-done","status":"ok"}')).toEqual({ type: "run-done", status: "ok" });
+// Degraded mode (#679): a chant below 0.124.28 streams the older
+// `--progress-json` lines, which src/run-events.ts translates into run events
+// at the boundary. These transcripts are that older shape, so this file proves
+// the degraded path still renders the dial the way it always did. The run-event
+// path itself is src/run-events.test.ts, fed recorded streams.
+type LegacyLine = Record<string, unknown>;
+
+describe("readRunLine on the older stream", () => {
+  it("translates a well-formed progress line", () => {
+    expect(readRunLine('{"type":"run-start","waves":[["a"]]}')).toEqual({ kind: "legacy", events: [{ type: "run-start", waves: [["a"]] }] });
+    expect(readRunLine('{"type":"run-done","status":"ok"}')).toEqual({ kind: "legacy", events: [{ type: "run-settle", status: "ok", durationMs: null }] });
   });
 
-  it("returns null for non-JSON — chant's human summary, warnings, blank-ish lines", () => {
-    expect(parseProgressLine("Spawning worker for component...")).toBeNull();
-    expect(parseProgressLine("✓ Component \"svc\" completed successfully.")).toBeNull();
-    expect(parseProgressLine("")).toBeNull();
+  it("returns null for non-JSON: chant's human summary, warnings, blank-ish lines", () => {
+    expect(readRunLine("Spawning worker for component...")).toBeNull();
+    expect(readRunLine("✓ Component \"svc\" completed successfully.")).toBeNull();
+    expect(readRunLine("")).toBeNull();
   });
 
   it("returns null for JSON with no recognized `type`", () => {
-    expect(parseProgressLine('{"hello":"world"}')).toBeNull();
-    expect(parseProgressLine('{"type":"something-else"}')).toBeNull();
-    expect(parseProgressLine("42")).toBeNull(); // valid JSON, not an object
-    expect(parseProgressLine("null")).toBeNull();
-    expect(parseProgressLine('["a","b"]')).toBeNull(); // valid JSON, an array not an object
+    expect(readRunLine('{"hello":"world"}')).toBeNull();
+    expect(readRunLine('{"type":"something-else"}')).toBeNull();
+    expect(readRunLine("42")).toBeNull();
+    expect(readRunLine("null")).toBeNull();
+    expect(readRunLine('["a","b"]')).toBeNull();
   });
 
   it("never throws on garbage input", () => {
-    expect(() => parseProgressLine("{not json")).not.toThrow();
-    expect(parseProgressLine("{not json")).toBeNull();
+    expect(() => readRunLine("{not json")).not.toThrow();
+    expect(readRunLine("{not json")).toBeNull();
   });
 });
 
@@ -40,7 +39,7 @@ describe("parseProgressLine", () => {
 // m1-cli-notes.md Q1): wave 1 = [loom-cognito, shared-foundation] (no deps),
 // wave 2 = [loom-db] (depends on shared-foundation). Two components across two
 // waves is enough to exercise wave/component sequencing without a huge fixture.
-const CLEAN_RUN: RunProgressEvent[] = [
+const CLEAN_RUN: LegacyLine[] = [
   { type: "run-start", waves: [["loom-cognito", "shared-foundation"], ["loom-db"]] },
   { type: "wave-start", wave: 1, components: ["loom-cognito", "shared-foundation"] },
   { type: "component-start", wave: 1, component: "loom-cognito" },
@@ -71,7 +70,7 @@ const CLEAN_RUN: RunProgressEvent[] = [
 // notes) — re-applying it fails at the cfn-deploy step. Same shape as
 // CLEAN_RUN's wave 2, but the step reports failed with an error, and the run
 // never reaches wave-done/run-done "ok".
-const FAILED_RUN: RunProgressEvent[] = [
+const FAILED_RUN: LegacyLine[] = [
   { type: "run-start", waves: [["shared-foundation"], ["loom-db"]] },
   { type: "wave-start", wave: 1, components: ["shared-foundation"] },
   { type: "component-start", wave: 1, component: "shared-foundation" },
@@ -99,18 +98,28 @@ const FAILED_RUN: RunProgressEvent[] = [
   { type: "run-done", status: "failed" },
 ];
 
-function replay(events: RunProgressEvent[]): ApplyProgressState {
-  return events.reduce(applyProgressReducer, initialApplyProgress);
+function foldLines(lines: LegacyLine[], from: RunEventFold = initialFold): RunEventFold {
+  let fold = from;
+  for (const l of lines) {
+    const read = readRunLine(JSON.stringify(l));
+    if (read?.kind !== "legacy") continue;
+    for (const e of read.events) fold = foldRunEvent(fold, e);
+  }
+  return fold;
+}
+function replay(lines: LegacyLine[]): ApplyProgressState {
+  return applyProgressOf(foldLines(lines), "progress");
 }
 
-describe("applyProgressReducer", () => {
+describe("the dial's model, from the older stream", () => {
   it("starts idle", () => {
     expect(initialApplyProgress).toEqual({ status: "idle", waves: [], components: [] });
   });
 
   it("run-start seeds every wave/component as pending, in wave order", () => {
-    const state = applyProgressReducer(initialApplyProgress, CLEAN_RUN[0]!);
+    const state = replay(CLEAN_RUN.slice(0, 1));
     expect(state.status).toBe("running");
+    expect(state.source).toBe("progress");
     expect(state.waves).toEqual([
       { wave: 1, components: ["loom-cognito", "shared-foundation"], status: "pending" },
       { wave: 2, components: ["loom-db"], status: "pending" },
@@ -126,30 +135,26 @@ describe("applyProgressReducer", () => {
     const state = replay(CLEAN_RUN);
     expect(state.status).toBe("ok");
     expect(state.waves.map((w) => w.status)).toEqual(["ok", "ok"]);
-    expect(state.components.map((c) => ({ component: c.component, status: c.status, phase: c.phase, step: c.step }))).toEqual([
-      { component: "loom-cognito", status: "ok", phase: "Apply", step: "cfn-deploy" },
-      { component: "shared-foundation", status: "ok", phase: "Apply", step: "cfn-deploy" },
-      { component: "loom-db", status: "ok", phase: "Apply", step: "cfn-deploy" },
+    expect(state.components.map((c) => ({ component: c.component, status: c.status, phase: c.phase, step: c.step, stepState: c.stepState }))).toEqual([
+      { component: "loom-cognito", status: "ok", phase: "Apply", step: "cfn-deploy", stepState: "ok" },
+      { component: "shared-foundation", status: "ok", phase: "Apply", step: "cfn-deploy", stepState: "ok" },
+      { component: "loom-db", status: "ok", phase: "Apply", step: "cfn-deploy", stepState: "ok" },
     ]);
   });
 
   it("tracks phase/step live as component-start/phase-start/step events arrive mid-run", () => {
-    // Replay only up through loom-cognito's running step (not yet done) —
-    // the DoD's "each component showing its phase/step and a status".
-    const upToRunning = CLEAN_RUN.slice(0, 6); // through the first "running" step event
-    const state = replay(upToRunning);
+    const state = replay(CLEAN_RUN.slice(0, 6)); // through the first "running" step event
     const cognito = state.components.find((c) => c.component === "loom-cognito")!;
     expect(cognito.status).toBe("running");
     expect(cognito.phase).toBe("Apply");
     expect(cognito.step).toBe("cfn-deploy");
-    // Not yet started — still pending, not accidentally marked running/ok.
+    expect(cognito.stepState).toBe("running");
     const db = state.components.find((c) => c.component === "loom-db")!;
     expect(db.status).toBe("pending");
   });
 
-  it("a failed step marks its component failed IMMEDIATELY — not silently green until component-done", () => {
-    const upToFailedStep = FAILED_RUN.slice(0, 14); // through the failed `step` event, before phase-done
-    const state = replay(upToFailedStep);
+  it("a failed step marks its component failed IMMEDIATELY, not silently green until component-done", () => {
+    const state = replay(FAILED_RUN.slice(0, 14)); // through the failed `step` event, before phase-done
     const db = state.components.find((c) => c.component === "loom-db")!;
     expect(db.status).toBe("failed");
     expect(db.error).toMatch(/UPDATE_ROLLBACK_COMPLETE/);
@@ -158,30 +163,24 @@ describe("applyProgressReducer", () => {
   it("replays a full failed run: the failed component/wave/run all read failed, the healthy wave stays ok", () => {
     const state = replay(FAILED_RUN);
     expect(state.status).toBe("failed");
-    const wave1 = state.waves.find((w) => w.wave === 1)!;
-    const wave2 = state.waves.find((w) => w.wave === 2)!;
-    expect(wave1.status).toBe("ok");
-    expect(wave2.status).toBe("failed");
-    const foundation = state.components.find((c) => c.component === "shared-foundation")!;
-    expect(foundation.status).toBe("ok");
+    expect(state.waves.find((w) => w.wave === 1)!.status).toBe("ok");
+    expect(state.waves.find((w) => w.wave === 2)!.status).toBe("failed");
+    expect(state.components.find((c) => c.component === "shared-foundation")!.status).toBe("ok");
     const db = state.components.find((c) => c.component === "loom-db")!;
     expect(db.status).toBe("failed");
     expect(db.error).toBeDefined();
   });
 
-  it("ignores an event for a component/wave not in the current run (defensive — no crash, no phantom entry)", () => {
-    const state = applyProgressReducer(initialApplyProgress, {
-      type: "component-start",
-      wave: 1,
-      component: "ghost",
-    });
-    expect(state).toEqual(initialApplyProgress);
+  it("ignores an event for a component not in the current run (no crash, no phantom entry)", () => {
+    const state = replay([{ type: "component-start", wave: 1, component: "ghost" }]);
+    expect(state.status).toBe("idle");
+    expect(state.components).toEqual([]);
   });
 
-  it("is a pure function — never mutates the input state", () => {
-    const before = replay(CLEAN_RUN.slice(0, 3));
+  it("folding is pure: it never mutates the fold it was handed", () => {
+    const before = foldLines(CLEAN_RUN.slice(0, 3));
     const snapshot = JSON.parse(JSON.stringify(before));
-    applyProgressReducer(before, CLEAN_RUN[3]!);
+    foldLines(CLEAN_RUN.slice(3, 4), before);
     expect(before).toEqual(snapshot);
   });
 });

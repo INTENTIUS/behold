@@ -679,11 +679,15 @@ describe("pins chant's ReleaseRecord key union (chant#2045)", () => {
     promotedFrom: true,
     redeploys: true,
     restores: true,
+    // The ^0.124.28 bump (#679): a release's admission and its release digest
+    // (chant#4064). Passed through in `_release`, not read yet.
+    admission: true,
+    releaseDigest: true,
   } satisfies Record<keyof ReleaseRecord, true>;
 
   it("the floor's ReleaseRecord has exactly these keys — runOrigin is read as chant's own type", () => {
     expect(Object.keys(KEYS).sort()).toEqual([
-      "actor", "approver", "component", "digest", "env", "flags", "gitSha", "inputDigest", "manifestDigest", "profileOverride", "promotedFrom", "redeploys", "restores", "runId", "runOrigin", "timestamp", "version",
+      "actor", "admission", "approver", "component", "digest", "env", "flags", "gitSha", "inputDigest", "manifestDigest", "profileOverride", "promotedFrom", "redeploys", "releaseDigest", "restores", "runId", "runOrigin", "timestamp", "version",
     ]);
   });
 });

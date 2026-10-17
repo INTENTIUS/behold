@@ -316,24 +316,31 @@ const JSON_ROUTES = {
   // an Op named is the real "behold restarted while a gate was still pending"
   // case — the gate query answered, no per-step records were streamed to THIS
   // session — so the smoke drives the pending card without needing a live
-  // Temporal run. The two records are the shape chant#1676 emits.
+  // Temporal run. The two steps are the shape src/run-events.ts folds chant's
+  // run events into (#679).
   "/api/ops": {
     ops: [],
     adoptLexicons: [],
     autoSync: "off",
     runState: {
       op: "prod-promote",
-      mode: "temporal",
+      mode: "local",
       status: "idle",
-      records: [
-        { phase: "Plan", fn: "lifecycleDiff", status: "ok", durationMs: 1400 },
-        { phase: "Build", fn: "chantBuild", status: "ok", durationMs: 900 },
+      steps: [
+        { component: null, phase: "Plan", step: "lifecycleDiff", state: "ok", durationMs: 1400 },
+        { component: null, phase: "Build", step: "chantBuild", state: "ok", durationMs: 900 },
       ],
       gate: { signalName: "approve-promote", description: "Approve the prod promotion", since: "2026-08-29T18:00:12.000Z" },
       gateNote: null,
+      point: null,
       startedAt: null,
       endedAt: null,
       lost: null,
+      source: "events",
+      sourceNote: null,
+      runId: null,
+      runtime: null,
+      following: false,
     },
   },
   "/api/ci": { jobs: [], forge: "github" },

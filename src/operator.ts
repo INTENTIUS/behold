@@ -113,8 +113,9 @@ import type { GlyphSpec } from "@intentius/pinhole";
 // `cli/handlers/operator.ts` (the first isn't exported at all);
 // `ConvergeTickRecord` and `GateResolutionRecord` live under `lifecycle/` and
 // aren't on `@intentius/chant`'s public index either. Mirrored here
-// field-for-field on src/run-playhead.ts's precedent for `StepRecord`: don't
-// reach past a package's declared public export surface for an internal type.
+// field-for-field: don't reach past a package's declared public export surface
+// for an internal type. (The run playhead's step records were mirrored the same
+// way until #679 moved them onto chant's run-event schema.)
 // Verified against chant `d8a0dd35` (chant-v0.53.1).
 
 /** One rule's outcome within a tick — chant's `ConvergeRuleOutcome`. */

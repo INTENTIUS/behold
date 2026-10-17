@@ -100,7 +100,7 @@ import { fetchDemos, demoLabel, demoTitle, demoProgress } from "./demos.js";
 // #284 item 2: the run playhead's panel — the verdict wording, the pending gate
 // card and the settled-step rows. Everything it DECIDES is pure in there; the
 // fetches, the SSE subscription and the graph re-pull stay here.
-import { hasPlayhead, renderPlayhead, waitingFor } from "./run-playhead.js";
+import { hasPlayhead, renderPlayhead, waitingFor, sourceLabel, applyChipText, waitingLine, RUN_STATUS_COLOR } from "./run-playhead.js";
 // #234 joins 3 + 1: the operator strip (one honestly-dated tick per ConvergeOp,
 // the lease, the pending gate count) and the converge gate card, whose Approve
 // records a fact for the next tick rather than releasing anything. Same split as
@@ -5509,11 +5509,11 @@ async function loadResources() {
 // demand, like #27's live diff), cached until the env/tier/target lens
 // changes. `apply` (M3) is a REAL delegated write: click opens a small
 // component/all picker, confirm triggers `POST /api/apply`
-// (`chant run <target> --components --env <env> --progress-json` — behold
+// (`chant run <target> --components --env <env> --events-json`: behold
 // triggers, chant executes), and the structured wave/phase progress it
-// streams back (see applyProgressReducer in src/apply.ts, broadcast as the
-// `apply` SSE event) renders live below the dial — the primary surface for
-// an apply, not the raw now-line.
+// streams back (chant's run events, folded by src/run-events.ts into
+// src/apply.ts's model, broadcast as the `apply` SSE event, #679) renders
+// live below the dial: the primary surface for an apply, not the raw now-line.
 let reconcileCache = null; // last ReconcileSummary for the current env/tier/target, or null
 let applyProgress = null; // last ApplyProgressState (src/apply.ts) for the current env, or null — hydrated from /api/ops on load, then kept live by the `apply` SSE event
 let applyPicker = false; // whether the inline "apply <component|all> →" prompt is open
@@ -5775,7 +5775,7 @@ function renderDial() {
         renderDial();
       },
     );
-    applyBtn.title = `Delegated write: chant run <component|all> --components --env ${view.env} --progress-json — behold triggers, chant executes.`;
+    applyBtn.title = `Delegated write: chant run <component|all> --components --env ${view.env} --events-json. behold triggers, chant executes.`;
     track.appendChild(applyBtn);
   }
 
@@ -5839,7 +5839,7 @@ function renderApplyPicker() {
   const go = button("Apply →", "", () => {
     const component = sel.value;
     const what = component === "all" ? "ALL components" : component;
-    if (!window.confirm(`Apply ${what} to ${view.env}?\nThis is a real write — chant run --components --progress-json.`)) return;
+    if (!window.confirm(`Apply ${what} to ${view.env}?\nThis is a real write: chant run --components --events-json.`)) return;
     applyPicker = false;
     runApply(component);
   });
@@ -5918,7 +5918,7 @@ async function confirmApplyAll() {
     : "";
   if (
     !window.confirm(
-      `${brokenNote}${reapplyNote}Apply ALL components to ${env}?\nReal write — chant run --components all --env ${env} --progress-json.\nLive progress appears in the dial.`,
+      `${brokenNote}${reapplyNote}Apply ALL components to ${env}?\nReal write: chant run --components all --env ${env} --events-json.\nLive progress appears in the dial.`,
     )
   )
     return;
@@ -5947,11 +5947,12 @@ function runApply(component) {
 // ok, pending=running, degraded=failed, muted=not-yet-reached). Replaces the
 // raw-log-tail now-line as the thing you actually watch during a deploy; the
 // now-line still gets chant's human summary + any non-progress line as a
-// fallback (src/op-runner.ts's apply() only filters OUT recognized
-// RunProgressEvent lines from that channel).
+// fallback (src/op-runner.ts's apply() only filters OUT the run-event lines,
+// and an older chant's progress lines, from that channel).
 // `lost` (#165 §6): the CI follow stream died without a verdict — same tone
 // as the run playhead's lost (RUN_STATUS_COLOR), because it is the same fact.
-const APPLY_STATUS_COLOR = { pending: "var(--muted)", running: "var(--pending)", ok: "var(--managed)", failed: "var(--degraded)", lost: "var(--foreign)" };
+// #679: `gated` and `waiting` wait on a person, in the pending tone, never red.
+const APPLY_STATUS_COLOR = { pending: "var(--muted)", running: "var(--pending)", ok: "var(--managed)", failed: "var(--degraded)", gated: "var(--pending)", waiting: "var(--pending)", lost: "var(--foreign)" };
 
 function renderApplyProgress(state) {
   const wrap = document.createElement("div");
@@ -5962,6 +5963,24 @@ function renderApplyProgress(state) {
   // executor — and says so instead of claiming to be an apply.
   summary.textContent = `${state.kind || "apply"}: ${state.status}`;
   wrap.appendChild(summary);
+  // #679: where the progress came from. A pipeline chant did not run is read
+  // from its runner's log, and the dial says that is best-effort; an older
+  // chant's run says it is degraded.
+  const from = sourceLabel(state.source, null);
+  if (from) {
+    const src = document.createElement("div");
+    src.className = "apply-source";
+    src.style.cssText = `font-size:var(--t-caption);color:${RUN_STATUS_COLOR[from.tone] || "var(--muted)"}`;
+    src.textContent = from.text;
+    wrap.appendChild(src);
+  }
+  for (const text of [state.lost, waitingLine(state.waitingOn)]) {
+    if (!text) continue;
+    const line = document.createElement("div");
+    line.style.cssText = "font-size:var(--t-caption);color:var(--muted)";
+    line.textContent = text;
+    wrap.appendChild(line);
+  }
   // #165: a dispatched run's own page — the one place an environment
   // protection rule's approval can be granted. A link, never a button: behold
   // holds no identity that could clear a forge gate, and must not acquire one.
@@ -5990,8 +6009,7 @@ function renderApplyProgress(state) {
       const color = APPLY_STATUS_COLOR[c.status] || "var(--muted)";
       const chip = document.createElement("span");
       chip.style.cssText = `border:1px solid ${color};color:${color};border-radius:var(--r-ctl);padding:2px 8px;font-size:var(--t-caption)`;
-      const detail = [c.phase, c.step].filter(Boolean).join(" · ");
-      chip.textContent = `${cname}${detail ? " · " + detail : ""} (${c.status})`;
+      chip.textContent = applyChipText(cname, c);
       if (c.error) chip.title = c.error;
       row.appendChild(chip);
     }
@@ -8363,7 +8381,7 @@ async function refreshReadCost() {
 }
 
 // #259: the op stream is chant's own stdout, and an Op that reports as JSON
-// (a plan summary, a run report, an unrecognized `--progress-json` line that
+// (a plan summary, a run report, a structured line that
 // src/op-runner.ts didn't filter out) used to land here as one unbroken line.
 // Parse it; if it IS a JSON object or array, show the collapsible tree instead.
 // Anything else — every ordinary human log line — is untouched text.
@@ -8412,8 +8430,8 @@ function showToast(msg, ok) {
 }
 
 // Structured apply progress (M3, #54): the server broadcasts the full
-// ApplyProgressState (src/apply.ts) after every recognized RunProgressEvent —
-// see src/op-runner.ts's apply(). Re-render the dial's progress panel each
+// ApplyProgressState (src/apply.ts) after every run event chant streams
+// (#679); see src/op-runner.ts's apply(). Re-render the dial's progress panel each
 // time; renderDial() is cheap (rebuilds a small DOM subtree) so no diffing.
 events.addEventListener("apply", (e) => {
   try {
@@ -8426,7 +8444,7 @@ events.addEventListener("apply", (e) => {
 
 // #284 item 2 — the run playhead. Same channel and same shape as `apply` above:
 // the server broadcasts the whole RunState (src/run-playhead.ts) after every
-// settled StepRecord and every gateState read, so a client that (re)subscribes
+// run event (a step's start and settle, a gate) and every status read, so a client that (re)subscribes
 // mid-run renders correctly from the very next event. Repaint the dial always;
 // re-pull the graph only when the ops lens is what's on screen, since that's
 // the view the run state paints over.
@@ -8846,7 +8864,7 @@ async function initActions() {
       renderDial();
       setPanelTab("deploy"); // the dial lives on the panel's Deploy tab
     });
-    deploy.title = `chant run <component|all> --components --env ${view.env || opsInitialEnv} --progress-json — opens the component picker on the dial. behold triggers, chant executes.`;
+    deploy.title = `chant run <component|all> --components --env ${view.env || opsInitialEnv} --events-json: opens the component picker on the dial. behold triggers, chant executes.`;
     bar.appendChild(deploy);
   }
 

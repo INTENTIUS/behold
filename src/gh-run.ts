@@ -243,7 +243,7 @@ export function ghJobStatus(job: { status?: string; conclusion?: string }): Appl
  * status riding on top.
  */
 export function runViewToProgress(pipeline: CiPipeline, view: GhRunView): PipelineProgressState {
-  let state = pipelineProgress(pipeline);
+  let state = pipelineProgress(pipeline, "forge");
   const byName = new Map((view.jobs ?? []).map((j) => [j.name, j]));
   state = {
     ...state,
@@ -340,7 +340,7 @@ export async function dispatchAndFollow(
     deps.onLine(`✗ dispatch failed: ${dispatched.out.trim().split("\n")[0] ?? `exit ${dispatched.code}`}`);
     return dispatched.code || 1;
   }
-  deps.onProgress(pipelineProgress(pipeline));
+  deps.onProgress(pipelineProgress(pipeline, "forge"));
 
   let runId: number | undefined;
   const deadline = Date.now() + appearTimeoutMs;
@@ -389,7 +389,7 @@ export async function followRun(
 
   let urlSaid = false;
   let waitingSaid = false;
-  let state = pipelineProgress(pipeline);
+  let state = pipelineProgress(pipeline, "forge");
   let consecutiveFailures = 0;
 
   const lose = (why: string): number => {

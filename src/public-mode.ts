@@ -49,6 +49,10 @@ export class ReadOnlyRunner implements Runner {
   trigger(): boolean {
     return false;
   }
+  follow(): boolean {
+    return false;
+  }
+  stopFollow(): void {}
   run(): boolean {
     return false;
   }

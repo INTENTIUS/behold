@@ -5,13 +5,13 @@
 // approve button POSTs) is a function from data to data; the DOM half is
 // smoke/ui-smoke.mjs's job.
 import { describe, it, expect } from "vitest";
-import { runVerdict, stepRows, gateCardFrom, hasPlayhead, took, waitingFor } from "./run-playhead.js";
+import { runVerdict, stepRows, gateCardFrom, hasPlayhead, took, waitingFor, stepTook, sourceLabel, pointLine, applyChipText, waitingLine } from "./run-playhead.js";
 
 const base = {
   op: "playhead-probe",
   mode: "temporal",
   status: "running",
-  records: [],
+  steps: [],
   gate: null,
   gateNote: null,
   startedAt: "2026-08-29T18:00:00.000Z",
@@ -20,7 +20,7 @@ const base = {
 };
 const withRecords = (n) => ({
   ...base,
-  records: Array.from({ length: n }, (_, i) => ({ phase: "P", fn: `f${i}`, status: "ok", durationMs: 1000 })),
+  steps: Array.from({ length: n }, (_, i) => ({ component: null, phase: "P", step: `f${i}`, state: "ok", durationMs: 1000 })),
 });
 
 describe("took", () => {
@@ -48,7 +48,7 @@ describe("waitingFor", () => {
 describe("runVerdict", () => {
   it("has nothing to say before anything has run", () => {
     expect(runVerdict(null)).toBeNull();
-    expect(runVerdict({ op: null, status: "idle", records: [] })).toBeNull();
+    expect(runVerdict({ op: null, status: "idle", steps: [] })).toBeNull();
   });
 
   it("never calls a lost stream finished", () => {
@@ -63,8 +63,16 @@ describe("runVerdict", () => {
     expect(runVerdict({ ...withRecords(2), status: "failed" }).text).toContain("a step failed");
   });
 
-  it("counts settled steps while a local run streams them (#459: --progress-json)", () => {
-    expect(runVerdict({ ...withRecords(1), mode: "local" }).text).toContain("running — 1 step settled");
+  it("counts settled steps while a local run streams them, not the one running (#679)", () => {
+    const run = { ...withRecords(1), steps: [...withRecords(1).steps, { component: null, phase: "P", step: "g", state: "running" }] };
+    expect(runVerdict(run).text).toContain("running, 1 step settled");
+    expect(runVerdict({ ...run, following: true }).text).toContain("running (followed)");
+  });
+
+  it("says a run waiting on a decision point waits on a person, not that it failed (#679)", () => {
+    const v = runVerdict({ ...withRecords(1), status: "waiting" });
+    expect(v.text).toContain("waiting on a decision point");
+    expect(v.tone).toBe("waiting");
   });
 
   it("says a gated run stopped at its gate and runs again after approval (#459)", () => {
@@ -84,10 +92,10 @@ describe("runVerdict", () => {
 describe("stepRows", () => {
   it("keeps arrival order and labels a skip as a skip, not a duration", () => {
     const rows = stepRows({
-      records: [
-        { phase: "Build", fn: "chantBuild", status: "ok", durationMs: 1062 },
-        { phase: "Verify", fn: "httpCheck", status: "fail", durationMs: 15164, error: "fetch failed" },
-        { phase: "Never", fn: "httpCheck", status: "skipped", durationMs: 0 },
+      steps: [
+        { component: null, phase: "Build", step: "chantBuild", state: "ok", durationMs: 1062 },
+        { component: null, phase: "Verify", step: "httpCheck", state: "failed", durationMs: 15164, error: "fetch failed" },
+        { component: null, phase: "Never", step: "httpCheck", state: "skipped", durationMs: 0 },
       ],
     });
     expect(rows.map((r) => `${r.label} ${r.took}`)).toEqual([
@@ -135,7 +143,69 @@ describe("gateCardFrom", () => {
 describe("hasPlayhead", () => {
   it("is false on a fresh session and true once an Op is being watched", () => {
     expect(hasPlayhead(null)).toBe(false);
-    expect(hasPlayhead({ op: null, records: [] })).toBe(false);
+    expect(hasPlayhead({ op: null, steps: [] })).toBe(false);
     expect(hasPlayhead(base)).toBe(true);
+  });
+});
+
+// #679: every state chant's run events report, as it happens.
+describe("stepTook", () => {
+  it("reads each state chant reports, and says why a step skipped", () => {
+    expect(stepTook({ state: "running" })).toBe("running");
+    expect(stepTook({ state: "ok", durationMs: 6 })).toBe("6ms");
+    expect(stepTook({ state: "skipped", skip: "receipt" })).toBe("skipped: already applied (receipt)");
+    expect(stepTook({ state: "skipped", skip: "not-run" })).toBe("skipped: not run: an earlier step stopped the run (not-run)");
+    expect(stepTook({ state: "skipped", skip: null })).toBe("skipped");
+    expect(stepTook({ state: "cached", durationMs: 3 })).toBe("cached");
+    expect(stepTook({ state: "gated", durationMs: 680 })).toBe("gated");
+    expect(stepTook({ state: "waiting" })).toBe("waiting");
+    // The older stream's component steps carry no timing.
+    expect(stepTook({ state: "ok", durationMs: null })).toBe("ok");
+  });
+
+  it("names the component and who approved a gate on a row", () => {
+    const [row] = stepRows({ steps: [{ component: "db", phase: "Apply", step: "gate:approve-db", state: "ok", durationMs: 40, approvedBy: "alex" }] });
+    expect(row.label).toBe("db · Apply · gate:approve-db");
+    expect(row.approvedBy).toBe("alex");
+  });
+});
+
+describe("sourceLabel", () => {
+  it("labels the classifier path best-effort, and a degraded run with the server's reason", () => {
+    expect(sourceLabel("classifier").text).toMatch(/^best-effort: chant did not run this pipeline/);
+    expect(sourceLabel("classifier").text).toContain("only the exit code is certain");
+    expect(sourceLabel("progress", "degraded: this project's chant (0.124.24) is older than 0.124.28").text).toContain("0.124.24");
+    expect(sourceLabel("progress").text).toMatch(/^degraded/);
+    expect(sourceLabel("events").text).toBe("from chant's run events");
+    expect(sourceLabel("forge").text).toContain("forge");
+    expect(sourceLabel(undefined)).toBeNull();
+    expect(sourceLabel(null, "a steward run keeps no events on this host").text).toContain("steward");
+  });
+});
+
+describe("pointLine", () => {
+  it("names a decision point and the command that answers it", () => {
+    expect(pointLine({ point: { id: "pt-1", since: "2026-10-17T04:24:48.329Z" } })).toBe(
+      "waiting on decision point pt-1 since 2026-10-17T04:24:48.329Z; answer it with chant workspace points answer pt-1",
+    );
+    expect(pointLine({ point: null })).toBeNull();
+  });
+});
+
+describe("applyChipText", () => {
+  it("shows the step a component is on and how it stands, as it happens", () => {
+    expect(applyChipText("loom-db", { status: "running", phase: "Apply", step: "cfn-deploy", stepState: "running" })).toBe("loom-db · Apply · cfn-deploy (running)");
+    expect(applyChipText("sf", { status: "ok", phase: "Apply", step: "cfn-deploy", stepState: "skipped", skip: "receipt" })).toBe("sf · Apply · cfn-deploy skipped: already applied (receipt) (ok)");
+    expect(applyChipText("sf", { status: "running", phase: "Apply", step: "cfn-outputs", stepState: "cached" })).toBe("sf · Apply · cfn-outputs cached (running)");
+    expect(applyChipText("db", { status: "gated", phase: "Apply", step: "gate:approve-db", stepState: "gated" })).toBe("db · Apply · gate:approve-db (gated)");
+    expect(applyChipText("db", { status: "pending" })).toBe("db (pending)");
+  });
+});
+
+describe("waitingLine", () => {
+  it("names the gate or decision point a component run waits on", () => {
+    expect(waitingLine({ gate: "approve-db", point: null, component: "loom-db", since: "t" })).toBe("waiting on gate approve-db (loom-db) since t");
+    expect(waitingLine({ gate: null, point: "pt-1", component: null, since: "t", message: "which region?" })).toBe("waiting on decision point pt-1 since t: which region?");
+    expect(waitingLine(null)).toBeNull();
   });
 });

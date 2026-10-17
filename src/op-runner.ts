@@ -1,25 +1,31 @@
 /**
- * OpRunner — the single place a delegated Op (or write) is triggered. The HTTP
+ * OpRunner: the single place a delegated Op (or write) is triggered. The HTTP
  * routes (Sync/Adopt/rollback/apply) and the auto-sync loop (#29) all go
  * through it, so they share one "something is already running" guard and one
  * post-run capture path. behold never applies directly; it runs `chant run
- * <op>` (or, since M3, `chant run <target> --components --progress-json`) on
- * the executor and streams the phases.
+ * <op> --events-json` (or, since M3, `chant run <target> --components
+ * --events-json`) on the executor and renders chant's run events (#679,
+ * src/run-events.ts). Below chant 0.124.28 it asks for the older
+ * `--progress-json` instead and labels the run degraded.
  */
-import { runChantStream, runCommandStream, applyArgs } from "./chant.ts";
+import { runChantStream, runCommandStream, runChantRaw, applyArgs, opRunArgs, runEventsArgs, resolveChant, type RunStream } from "./chant.ts";
 import type { CiPipeline } from "./chant.ts";
 import { extractPrUrl } from "./adopt.ts";
-import { parseProgressLine, applyProgressReducer, initialApplyProgress, type ApplyProgressState } from "./apply.ts";
+import { applyProgressOf, applyEnded, initialApplyProgress, type ApplyProgressState } from "./apply.ts";
 import { pipelineProgress, foldPipelineLine, finishPipelineProgress, type PipelineProgressState } from "./ci-run.ts";
+import { floorFor, floorMet } from "./chant-floors.ts";
+import { readRunLine, foldRunEvent, runEventLine, initialFold, type RunEventFold, type RunLine } from "./run-events.ts";
 import {
-  parseRunProgressLine,
-  recordLine,
+  stepLine,
   initialRunState,
   runStarted,
-  runRecord,
+  runFromFold,
   runEnded,
   runGate,
+  runLost,
+  readRunStatus,
   type RunState,
+  type RunStatusRead,
   type RunStatusResult,
 } from "./run-playhead.ts";
 import {
@@ -31,11 +37,36 @@ import {
 } from "./operator.ts";
 import type { Broadcaster } from "./events.ts";
 
+/** How long a followed run may be silent before behold asks whether it is
+ * still running (`chant run status`), and how long it may be silent at all.
+ * A run killed with SIGKILL never writes `run-settle` (chant#4042), so a
+ * follow does not end on its own; these end it. Overridable for tests and
+ * for estates with long silent steps. */
+export const FOLLOW_IDLE_MS = Number(process.env.BEHOLD_RUN_EVENTS_IDLE_MS) || 60_000;
+export const FOLLOW_MAX_IDLE_MS = Number(process.env.BEHOLD_RUN_EVENTS_MAX_IDLE_MS) || 30 * 60_000;
+/** How long behold waits before asking again for a run chant kept no events for. */
+const FOLLOW_RETRY_MS = 60_000;
+
+/** Why a run renders from the older stream: the project's chant is below the
+ * run-events floor. Said on the playhead and the dial. */
+export function degradedNote(version: string | undefined): string {
+  const f = floorFor("run events");
+  return `degraded: this project's chant (${version ?? "unknown version"}) is older than ${f.floor}, so behold reads the older --progress-json stream, which has no step starts, skip reasons, cache hits or gate events, and cannot read a run it did not start`;
+}
+
 export interface OpRunnerDeps {
   projectDir: string;
   broadcaster: Broadcaster;
   /** After an op finishes: capture a lanes frame for the op's env (#25). */
   onDone: (opEnv: string | undefined) => Promise<unknown> | void;
+  /** The chant version a directory resolves, for the run-events floor.
+   * Defaults to src/chant.ts's `resolveChant`. */
+  chantVersion?: (dir: string) => string | undefined;
+  /** Is a followed run still running? Asked when its stream has been silent
+   * for {@link FOLLOW_IDLE_MS}. Defaults to `chant run status <op>`. */
+  liveness?: (op: string, cwd: string) => Promise<boolean>;
+  followIdleMs?: number;
+  followMaxIdleMs?: number;
 }
 
 export class OpRunner {
@@ -61,8 +92,46 @@ export class OpRunner {
    * reason `lastRunState` is — it is a durable status read, not a run, and a
    * client opening the ops lens hydrates from it instead of starting blank. */
   private lastOperatorState: OperatorState = initialOperatorState;
+  /** The run events folded so far for the playhead's run and for the apply. */
+  private runFold: RunEventFold = initialFold;
+  private applyFold: RunEventFold = initialFold;
+  /** Stops the follow of a run behold did not start, while one is open. */
+  private followStop: (() => void) | null = null;
+  /** Runs chant kept no events for, and when behold last asked, so a status
+   * poll does not spawn a follow for the same answer every time. */
+  private followRefused = new Map<string, number>();
 
   constructor(private deps: OpRunnerDeps) {}
+
+  /** Which stream to ask `dir`'s chant for (#679): run events at or above the
+   * floor, the older progress stream below it. */
+  private streamFor(dir: string): { stream: RunStream; version: string | undefined } {
+    const version = (this.deps.chantVersion ?? ((d: string) => resolveChant(d).version))(dir);
+    return { stream: floorMet(floorFor("run events"), version) ? "events" : "progress", version };
+  }
+
+  /**
+   * Read one streamed line of a run as run progress, folding it into `fold`.
+   * Returns the new fold and whether the line was progress (consumed), and
+   * says on the now-line what each event did. A line that names the run-event
+   * schema and fails it is refused on the now-line and not folded.
+   */
+  private foldLine(fold: RunEventFold, line: string): { fold: RunEventFold; consumed: boolean } {
+    const read = readRunLine(line);
+    if (!read) return { fold, consumed: false };
+    if (read.kind === "refused") {
+      this.deps.broadcaster.emit("op", `⚠ behold did not read ${read.reason}`);
+      return { fold, consumed: true };
+    }
+    const events: RunLine[] = read.kind === "event" ? [read.event] : read.events;
+    let next = fold;
+    for (const e of events) {
+      next = foldRunEvent(next, e);
+      const said = read.kind === "event" ? runEventLine(e) : e.type === "step-settle" ? stepLine(next.steps.at(-1)!) : null;
+      if (said) this.deps.broadcaster.emit("op", said);
+    }
+    return { fold: next, consumed: true };
+  }
 
   /** #195: re-point delegated writes at a switched project. The runner reads
    * `deps.projectDir` at trigger time, so this is the whole retarget. */
@@ -101,7 +170,7 @@ export class OpRunner {
    */
   noteGate(op: string, result: RunStatusResult): RunState {
     if (this.lastRunState.op !== null && this.lastRunState.op !== op) return this.lastRunState;
-    const base = this.lastRunState.op === op ? this.lastRunState : { ...initialRunState, op, mode: "local" as const };
+    const base: RunState = this.lastRunState.op === op ? this.lastRunState : { ...initialRunState, op, mode: "local" as const };
     const next = runGate(base, result);
     // Broadcast only a CHANGED answer. A client asks when it opens the ops lens,
     // and the broadcast is what makes it re-pull that lens — so an unchanged
@@ -117,43 +186,197 @@ export class OpRunner {
    * sync path). `cwd` is the Op's own project dir (#31 multi-estate); defaults to
    * the primary. Returns true if it started, false if busy.
    *
-   * Every run is `chant run <name> --progress-json` on the project's resolved
-   * runtime. chant removed `--temporal` with the temporal lexicon (chant#2131),
-   * and a gated Op now runs locally too: it stops at its gate and exits 3,
-   * which `runEnded` reads as `gated` (#459).
-   *
-   * `--progress-json` streams one NDJSON `StepRecord` per settled step on
-   * stdout (#284 item 2, chant#1676), and chant's human summary goes to
-   * stderr. Not `--json`: chant's `--json` now prints the run's ledger record
-   * (`phases[].steps[]`), which carries no `StepRecord`s for the playhead.
-   * Each parsed record is re-emitted to the `op` now-line ({@link recordLine}).
+   * Every run is `chant run <name> --events-json` on the project's resolved
+   * runtime (#679): chant's run events on stdout, one JSON line per event, and
+   * its human summary on stderr. A gated Op runs locally too: it stops at its
+   * gate, says so in `gate-waiting` and `run-settle`, and exits 3 (#459).
+   * Below chant 0.124.28 the run is `--progress-json` (one line per settled
+   * step) and the state says it is degraded. Each event is re-said on the
+   * `op` now-line ({@link runEventLine}).
    */
   trigger(name: string, opEnv?: string, cwd?: string): boolean {
     if (this.current) return false;
+    this.stopFollow();
     const mode = "local" as const;
-    const args = ["run", name, "--progress-json"];
-    this.lastRunState = runStarted(name, mode, new Date().toISOString());
+    const { stream, version } = this.streamFor(cwd ?? this.deps.projectDir);
+    this.runFold = initialFold;
+    this.lastRunState = runStarted(name, mode, new Date().toISOString(), stream, stream === "progress" ? degradedNote(version) : null);
     this.emitRun();
     return this.start(
-      args,
+      opRunArgs(name, stream),
       name,
       opEnv,
       cwd,
       (line) => {
-        const records = parseRunProgressLine(line);
-        if (!records) return false; // not progress — start() broadcasts it as a raw "op" line
-        for (const record of records) {
-          this.lastRunState = runRecord(this.lastRunState, record);
-          this.deps.broadcaster.emit("op", recordLine(record));
+        const { fold, consumed } = this.foldLine(this.runFold, line);
+        if (!consumed) return false; // not progress: start() broadcasts it as a raw "op" line
+        if (fold !== this.runFold) {
+          this.runFold = fold;
+          this.lastRunState = runFromFold(this.lastRunState, fold);
+          this.emitRun();
         }
-        this.emitRun();
-        return true; // consumed — start() skips the raw "op" broadcast for this line
+        return true; // consumed: start() skips the raw "op" broadcast for this line
       },
       (code) => {
-        this.lastRunState = runEnded(this.lastRunState, code, new Date().toISOString());
+        this.lastRunState = runEnded(this.lastRunState, code, new Date().toISOString(), this.runFold.settled);
         this.emitRun();
       },
     );
+  }
+
+  /**
+   * Follow a run behold did not start (#679): `chant run events <run> --json
+   * --follow` replays the events chant kept for it on this host and tails it
+   * until `run-settle`. `read` is the status read that named the run.
+   *
+   * It is a read, not a write, so it takes no running-guard. It does not
+   * start when the playhead already shows that run from its events, when the
+   * playhead belongs to another Op's run, when the project's chant is below
+   * the floor, or when the run ran off this host (a steward run keeps no
+   * events here); the last two say so on the state. A run killed with SIGKILL
+   * never writes `run-settle`, so a follow that goes silent asks whether the
+   * run is still running and ends as `lost` when it is not, or when it has
+   * been silent too long. Returns true when it started.
+   *
+   * With no run id (`chant run status` records a local run only once it
+   * settles, so a run in progress elsewhere is "no run" to it), `byName`
+   * follows the Op's newest run by name, which `chant run events` accepts.
+   */
+  follow(op: string, read: Pick<RunStatusRead, "runId" | "runtime" | "status">, cwd?: string, opts: { byName?: boolean } = {}): boolean {
+    const state = this.lastRunState;
+    if (state.op !== null && state.op !== op) return false;
+    if (this.current && state.op === op) return false;
+    if (state.following && state.op === op && (!read.runId || state.runId === read.runId)) return false;
+    const runId = read.runId ?? (opts.byName ? op : undefined);
+    if (!runId) return false;
+    if (state.runId === runId && state.source === "events") return false;
+    const refusedAt = this.followRefused.get(runId);
+    if (refusedAt !== undefined && Date.now() - refusedAt < FOLLOW_RETRY_MS) return false;
+    const dir = cwd ?? this.deps.projectDir;
+    const { stream, version } = this.streamFor(dir);
+    const base: RunState = state.op === op ? state : { ...initialRunState, op, mode: "local" };
+    if (stream === "progress") {
+      this.setRun({ ...base, runId: read.runId ?? base.runId, sourceNote: degradedNote(version) });
+      return false;
+    }
+    if (read.runtime && read.runtime !== "local") {
+      this.setRun({
+        ...base,
+        runId: read.runId ?? base.runId,
+        runtime: read.runtime,
+        sourceNote: `this run ran on ${read.runtime}; a steward run keeps no events on this host, so only the status read answers`,
+      });
+      return false;
+    }
+    this.stopFollow();
+    this.runFold = initialFold;
+    this.lastRunState = {
+      ...initialRunState,
+      op,
+      mode: "local",
+      // Followed by name, there may be no run at all until an event says so.
+      status: read.runId ? "running" : "idle",
+      source: "events",
+      runId: read.runId ?? null,
+      runtime: read.runtime ?? "local",
+      following: true,
+      startedAt: new Date().toISOString(),
+      gate: base.gate,
+      // The status read's "no run" is the reason behold looked by name; the
+      // stream answers now, so it is not repeated as a gate refusal.
+      gateNote: read.runId ? base.gateNote : null,
+    };
+    this.emitRun();
+
+    const { broadcaster } = this.deps;
+    broadcaster.emit("op", `▶ chant ${runEventsArgs(runId).join(" ")}`);
+    let lastHeard = Date.now();
+    let stopped = false;
+    const child = runChantStream(runEventsArgs(runId), dir, (line) => {
+      lastHeard = Date.now();
+      const { fold, consumed } = this.foldLine(this.runFold, line);
+      if (!consumed) {
+        broadcaster.emit("op", line);
+        return;
+      }
+      if (fold !== this.runFold && !stopped) {
+        this.runFold = fold;
+        this.lastRunState = runFromFold(this.lastRunState, fold);
+        this.emitRun();
+      }
+    });
+    const idleMs = this.deps.followIdleMs ?? FOLLOW_IDLE_MS;
+    const maxIdleMs = this.deps.followMaxIdleMs ?? FOLLOW_MAX_IDLE_MS;
+    const alive = this.deps.liveness ?? defaultLiveness;
+    let asking = false;
+    const timer = setInterval(() => {
+      if (stopped || asking || Date.now() - lastHeard < idleMs) return;
+      asking = true;
+      void alive(op, dir)
+        .catch(() => false)
+        .then((running) => {
+          asking = false;
+          if (stopped) return;
+          const silent = Date.now() - lastHeard;
+          if (running && silent < maxIdleMs) return;
+          const why = running
+            ? `the run's events have been silent for ${Math.round(silent / 1000)}s, longer than behold follows a silent run`
+            : `the run's events stopped without run-settle and chant run status no longer reports it running (a run killed outright writes no settle)`;
+          stop();
+          child.kill();
+          this.lastRunState = runLost(this.lastRunState, `${why}; the playhead stays at the last settled step.`, new Date().toISOString());
+          this.emitRun();
+        });
+    }, Math.max(50, Math.min(idleMs, 5_000)));
+    (timer as { unref?: () => void }).unref?.();
+    const stop = (): void => {
+      stopped = true;
+      clearInterval(timer);
+      if (this.followStop === stopAndKill) this.followStop = null;
+    };
+    const stopAndKill = (): void => {
+      stop();
+      child.kill();
+    };
+    this.followStop = stopAndKill;
+    void child.done.then((code) => {
+      if (stopped) return;
+      stop();
+      const at = new Date().toISOString();
+      if (this.runFold.settled) {
+        this.lastRunState = { ...runFromFold(this.lastRunState, this.runFold), following: false, endedAt: this.lastRunState.endedAt ?? at };
+      } else if (this.runFold.lastSeq === null) {
+        // chant kept no events for the run (an older run, --no-record, or a
+        // run that started before chant 0.124.28): say so, and keep the run
+        // as the status read left it.
+        this.followRefused.set(runId, Date.now());
+        this.lastRunState = {
+          ...this.lastRunState,
+          status: "idle",
+          following: false,
+          source: null,
+          runId: read.runId ?? null,
+          sourceNote: `chant keeps no events for ${read.runId ? `run ${runId}` : `a run of ${op}`} on this host (chant run events exited ${code}), so only the status read answers`,
+        };
+      } else {
+        this.lastRunState = runLost(this.lastRunState, `the follow ended (exit ${code}) without run-settle; the playhead stays at the last settled step.`, at);
+      }
+      this.emitRun();
+    });
+    return true;
+  }
+
+  /** Stop following a run behold did not start, if one is being followed. */
+  stopFollow(): void {
+    this.followStop?.();
+    this.followStop = null;
+    if (this.lastRunState.following) this.lastRunState = { ...this.lastRunState, following: false };
+  }
+
+  private setRun(next: RunState): void {
+    const changed = JSON.stringify(next) !== JSON.stringify(this.lastRunState);
+    this.lastRunState = next;
+    if (changed) this.emitRun();
   }
 
   private emitRun(): void {
@@ -209,36 +432,54 @@ export class OpRunner {
 
   /**
    * Delegated write (M3, #54's apply step): `chant run <target> --components
-   * --env <env> --progress-json`, guarded the same way as `trigger`/`run` —
+   * --env <env> --events-json`, guarded the same way as `trigger`/`run`:
    * only one write in flight at a time; returns false (the caller answers
    * 409) when something else is already running. `target` is a component
    * name or `"all"`.
    *
-   * Each streamed line is checked with `parseProgressLine`: a recognized
-   * `RunProgressEvent` folds into the structured progress model
-   * (`applyProgressReducer`) and broadcasts as an `apply` SSE event — the
-   * primary surface the SPA renders (web/app.js's live wave/phase view).
-   * Everything else (chant's human-readable driver summary, a warning, a
-   * release-record line) still reaches the `op` channel as a raw-log
-   * fallback, exactly like any other Op — `start()`'s default behaviour,
-   * skipped only for the lines this consumes.
+   * Each streamed line is read by src/run-events.ts: a run event (or, below
+   * chant 0.124.28, an older `--progress-json` line, translated) folds into
+   * the run, and the dial's model (`applyProgressOf`) broadcasts as an `apply`
+   * SSE event. Everything else (chant's human-readable driver summary, a
+   * warning, a release-record line) still reaches the `op` channel as a
+   * raw-log fallback, exactly like any other Op. A process that ends without
+   * `run-settle` leaves the dial `lost`, never green.
    */
   apply(target: string, env: string): boolean {
     // Guard first, THEN reset: a rejected call (something else already running)
-    // must leave whatever progress is currently on screen untouched — only a
+    // must leave whatever progress is currently on screen untouched; only a
     // write that actually STARTS gets to clear the previous run's terminal
     // state. `start()` re-checks `this.current` itself right after (same
-    // synchronous tick, so it can't have changed) — this is just to sequence
-    // the reset correctly, not a second real guard.
+    // synchronous tick, so it can't have changed); this only sequences the reset.
     if (this.current) return false;
+    const { stream, version } = this.streamFor(this.deps.projectDir);
+    const source = stream === "events" ? "events" : "progress";
+    this.applyFold = initialFold;
     this.lastApplyProgress = initialApplyProgress;
-    return this.start(applyArgs(target, env), `apply ${target}`, env, undefined, (line) => {
-      const event = parseProgressLine(line);
-      if (!event) return false; // not progress — start() broadcasts it as a raw "op" line
-      this.lastApplyProgress = applyProgressReducer(this.lastApplyProgress, event);
-      this.deps.broadcaster.emit("apply", JSON.stringify(this.lastApplyProgress));
-      return true; // consumed — start() skips the raw "op" broadcast for this line
-    });
+    if (stream === "progress") this.deps.broadcaster.emit("op", `⚠ ${degradedNote(version)}`);
+    return this.start(
+      applyArgs(target, env, stream),
+      `apply ${target}`,
+      env,
+      undefined,
+      (line) => {
+        const { fold, consumed } = this.foldLine(this.applyFold, line);
+        if (!consumed) return false; // not progress: start() broadcasts it as a raw "op" line
+        if (fold !== this.applyFold) {
+          this.applyFold = fold;
+          this.lastApplyProgress = applyProgressOf(fold, source);
+          this.deps.broadcaster.emit("apply", JSON.stringify(this.lastApplyProgress));
+        }
+        return true; // consumed: start() skips the raw "op" broadcast for this line
+      },
+      (code) => {
+        const next = applyEnded(this.lastApplyProgress, this.applyFold.settled, code);
+        if (next !== this.lastApplyProgress) {
+          this.lastApplyProgress = next;
+          this.deps.broadcaster.emit("apply", JSON.stringify(next));
+        }
+      },
+    );
   }
 
   /**
@@ -392,4 +633,11 @@ export class OpRunner {
     });
     return true;
   }
+}
+
+/** Is `op`'s newest run still running, by `chant run status`? A read that
+ * fails answers no: a follow that cannot confirm the run is alive ends. */
+async function defaultLiveness(op: string, cwd: string): Promise<boolean> {
+  const result = readRunStatus(op, await runChantRaw(["run", "status", op], cwd));
+  return result.ok && (result.read.status === "running" || result.read.status === "waiting");
 }

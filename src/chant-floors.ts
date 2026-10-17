@@ -55,6 +55,13 @@ export const PROMOTION_ORDER_CHANT_FLOOR = "0.124.28";
  * and a release gate's change set with its release and environment
  * (INTENTIUS/chant#4045). The change-set overlay (#681). */
 export const CHANGE_SET_SHOW_CHANT_FLOOR = "0.124.28";
+/** The first chant that streams a run's events (contract 1): `--events-json`
+ * on `chant run`, `run --components`, promote, rollback, redeploy, fan-out and
+ * pr-plan/pr-apply (INTENTIUS/chant#4019, INTENTIUS/chant#4041), and `chant run
+ * events <run> --json --follow` (INTENTIUS/chant#4042). Below it behold starts
+ * runs with the older `--progress-json` and says it is in degraded mode, and
+ * reads no run it did not start (#679). */
+export const RUN_EVENTS_CHANT_FLOOR = "0.124.28";
 
 export interface ChantFloor {
   /** The read, in words: `the why of a member or a card`. */
@@ -78,6 +85,7 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "release list", floor: RELEASE_LIST_CHANT_FLOOR, adds: "chant release list --json (chant#4026)" },
   { read: "promotion order", floor: PROMOTION_ORDER_CHANT_FLOOR, adds: "workspace status promotionOrder (chant#4030)" },
   { read: "change set", floor: CHANGE_SET_SHOW_CHANT_FLOOR, adds: "chant change-set show --json (chant#4022, chant#4045)" },
+  { read: "run events", floor: RUN_EVENTS_CHANT_FLOOR, adds: "run --events-json and chant run events (chant#4019, chant#4041, chant#4042)" },
 ];
 
 /** One read's floor against one chant version. An unknown version meets it

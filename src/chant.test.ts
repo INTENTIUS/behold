@@ -555,8 +555,12 @@ describe("lifecyclePlanArgs", () => {
 });
 
 describe("applyArgs", () => {
-  it("builds `run <target> --components --env <env> --progress-json` (M3, #54)", () => {
-    expect(applyArgs("all", "local")).toEqual(["run", "all", "--components", "--env", "local", "--progress-json"]);
+  it("builds `run <target> --components --env <env> --events-json` (M3, #54, #679)", () => {
+    expect(applyArgs("all", "local")).toEqual(["run", "all", "--components", "--env", "local", "--events-json"]);
+  });
+
+  it("asks for the older --progress-json below the run-events floor (degraded mode, #679)", () => {
+    expect(applyArgs("all", "local", "progress")).toEqual(["run", "all", "--components", "--env", "local", "--progress-json"]);
   });
 
   it("threads a single component name through as the target, verbatim", () => {
@@ -566,7 +570,7 @@ describe("applyArgs", () => {
       "--components",
       "--env",
       "prod",
-      "--progress-json",
+      "--events-json",
     ]);
   });
 });

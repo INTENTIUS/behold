@@ -6,7 +6,7 @@
  * executor reports, holding no apply creds itself — `/api/ops/:name/run` (Sync/
  * Adopt, your committed `*.op.ts` Ops), `/api/rollback` (a `lifecycle rollback`
  * PR), and, since M3 (#54), `/api/apply` (`chant run <target> --components
- * --env <env> --progress-json` — the observe→reconcile→apply dial's write
+ * --env <env> --events-json`, the observe, reconcile, apply dial's write
  * step). All three share one running-guard (src/op-runner.ts's OpRunner) — at
  * most one delegated action in flight at a time. See README "Read-only core,
  * delegated gated writes".
@@ -1246,8 +1246,8 @@ export function createApp(
       // after that. `status: "idle"` (initialApplyProgress) when nothing has
       // applied yet this session.
       applyProgress: runner.applyProgress,
-      // The run playhead (#284 item 2): the settled StepRecords of the Op this
-      // session last triggered, so a client opening (or reloading) mid-run
+      // The run playhead (#284 item 2): the steps of the Op run this session
+      // last triggered or followed (#679), so a client opening (or reloading) mid-run
       // hydrates the playhead instead of starting blank — the `run` SSE event
       // carries every update after that. `status: "idle"` when nothing has run.
       runState: runner.runState,
@@ -1358,7 +1358,18 @@ export function createApp(
     const result = readRunStatus(name, run);
     // Fold it into the playhead so the graph and the pending card agree, and so
     // every subscribed client sees the same answer (the `run` SSE event).
-    const runState = runner.noteGate(name, result);
+    runner.noteGate(name, result);
+    // #679: a run this session did not start renders from its own events:
+    // `chant run events <run> --json --follow` replays what chant kept on this
+    // host and tails it to run-settle. The runner declines (and says why on
+    // the state) below the floor, for a steward run, or for a run it already
+    // shows from its events.
+    // `chant run status` records a local run only once it settles, so a run in
+    // progress elsewhere on this host reads as "no run": follow the Op's
+    // newest run by name, which `chant run events` accepts.
+    if (result.ok) runner.follow(name, result.read, info?.dir ?? cfg.projectDir);
+    else if (result.refusal.code === "no-run") runner.follow(name, {}, info?.dir ?? cfg.projectDir, { byName: true });
+    const runState = runner.runState;
     if (!result.ok) return c.json({ ...result.refusal, runState }, 422);
     return c.json({ ...result.read, runState });
   });
@@ -2502,7 +2513,7 @@ export function createApp(
         // is strictly additive paint.
         const runState = runner.runState;
         const ranOp = runState.op ? parsedOps.find((o) => o.name === runState.op) : undefined;
-        const join = ranOp ? joinRun(ranOp, runState.records, runState.gate) : null;
+        const join = ranOp ? joinRun(ranOp, runState.steps, runState.gate, { guessNext: runState.source !== "events" }) : null;
         const opsIr = join ? paintPlayhead(declaredIr, join, runState.gate) : declaredIr;
         // `boxes: "byStack"` is the same explicit opt-in the composed estate
         // makes (see renderGraph's doc): one box per `<op> · <phase>`, so the
@@ -4093,17 +4104,18 @@ export function createApp(
     return c.json({ started: true, to });
   });
 
-  // Apply (M3, #54 — the dial's write step): trigger `chant run <component>
-  // --components --env <env> --progress-json` under the SAME running-guard as
+  // Apply (M3, #54, the dial's write step): trigger `chant run <component>
+  // --components --env <env> --events-json` (`--progress-json` below chant
+  // 0.124.28, degraded) under the SAME running-guard as
   // Sync/Adopt/rollback (one delegated write at a time — 409 if something else
   // is running, exactly like /api/rollback above). This is a REAL write —
   // behold was read-only through M2; chant's local executor does the actual
   // deploy, behold only shells the command and streams what it reports.
   // `?component=` is a component name or `all` (defaults to `all`); `?env=`
   // falls back to the launch `--env`. Structured progress streams as `apply`
-  // SSE events (src/apply.ts's NDJSON→state reducer, wired in
-  // src/op-runner.ts's `apply()`); raw log lines still reach the existing `op`
-  // now-line channel as a fallback for anything progress-json doesn't cover.
+  // SSE events (chant's run events folded by src/run-events.ts into
+  // src/apply.ts's model, wired in src/op-runner.ts's `apply()`); raw log
+  // lines still reach the existing `op` now-line channel.
   app.post("/api/apply", async (c) => {
     const url = new URL(c.req.url);
     const env = url.searchParams.get("env") ?? cfg.env;
