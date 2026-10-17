@@ -76,8 +76,8 @@ describe("the live carve as a show (#715)", () => {
     const now = T + 30_000;
     const seen1 = stampArrivals(later, seen0, now);
     expect(seen1.get(lineKey("carve", moveA))).toBe(now);
-    expect(seen1.get(lineKey("carve", refuseB))).toBeGreaterThan(now);
-    expect(seen1.get(lineKey("carve", refuseB))).toBe(now + LIVE.stepMs);
+    // Real time: a line of the same read is drawn when it is read, with no pacing.
+    expect(seen1.get(lineKey("carve", refuseB))).toBe(now);
     const show0 = liveShow(first, seen0, T + 5_000);
     const show1 = liveShow(later, seen1, now, { t0: show0.t0 });
     expect(show1.t0).toBe(show0.t0);
