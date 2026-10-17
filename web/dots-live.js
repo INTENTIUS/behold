@@ -134,6 +134,18 @@ export function liveShow(answer, seen, now, { t0: start = null } = {}) {
       d.live_id = l.live_id;
       byLive.set(l.live_id, d);
     }
+    // The destination's roster named this resource by address only (a wave's roster, written after the move), and
+    // an earlier line of the cycle (the adoption's stamp) already made its dot: one dot, under the plain address.
+    const old = byAddr.get(place(l.estate_to, l.address));
+    if (old && old !== d && !claimed.has(old) && old.estate0 === l.estate_to && !old.live_id) {
+      dots.delete(old.id);
+      if (d.id !== old.id) {
+        dots.delete(d.id);
+        usedAddr.delete(d.id);
+        d.id = d.address = old.id;
+        dots.set(d.id, d);
+      }
+    }
     byAddr.set(place(l.estate_to, l.address), d);
     claimed.add(d);
     x.dot = d;
@@ -257,4 +269,25 @@ export function currentMigration(answer) {
 export function carveDrawable(answer) {
   if (!answer || answer.live !== true) return false;
   return (answer.estates || []).some((e) => e.resources.length > 0) || (answer.migrations || []).some((m) => m.lines.length > 0);
+}
+
+/**
+ * A migration's counts as the page has played them by show time `t`: each
+ * line counts once its paced time has come. While lines are still to play,
+ * the counts are those lines' and the rest are left; once all have played,
+ * the record's own counts. `playing` says which.
+ */
+export function playedCounts(migration, seen, t) {
+  const c = { moved: 0, stamped: 0, refused: 0, skipped: 0 };
+  let n = 0;
+  for (const l of migration.lines) {
+    const at = seen.get(lineKey(migration.name, l)) ?? (Date.parse(l.at) || 0);
+    if (at > t) continue;
+    c[l.outcome] = (c[l.outcome] ?? 0) + 1;
+    n++;
+  }
+  if (n === migration.lines.length) return { counts: migration.counts, playing: false };
+  const r = migration.counts;
+  const total = r.moved + r.stamped + r.refused + r.skipped + (r.left ?? 0);
+  return { counts: { ...c, left: Math.max(0, Math.max(total, migration.lines.length) - n) }, playing: true };
 }
