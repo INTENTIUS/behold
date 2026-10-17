@@ -636,16 +636,33 @@ export interface OpRun {
   done: Promise<number>;
 }
 
+/**
+ * Hand a stream to `onLine` one whole line at a time. A pipe delivers chunks,
+ * not lines, so a line that straddles two chunks is held until its newline
+ * (#679: a run event is one JSON line, and half of one is not JSON). Whatever
+ * is left when the stream ends is the last line. Blank lines are dropped.
+ * Exported for testing.
+ */
+export function pipeLines(stream: NodeJS.ReadableStream, onLine: (line: string) => void): void {
+  let rest = "";
+  stream.on("data", (buf: Buffer | string) => {
+    const parts = (rest + String(buf)).split(/\r?\n/);
+    rest = parts.pop() ?? "";
+    for (const line of parts) if (line.trim()) onLine(line);
+  });
+  stream.on("end", () => {
+    if (rest.trim()) onLine(rest);
+    rest = "";
+  });
+}
+
 /** Spawn `chant <args>` in the project and stream stdout+stderr per line to
  * `onLine` — used for `chant run <op>` (the delegated apply/reconcile), where the
  * phase output is the now-line. behold triggers; the executor does the work. */
 export function runChantStream(args: string[], projectDir: string, onLine: (line: string) => void): OpRun {
   const proc = spawn(chantBin(projectDir), args, { cwd: projectDir, stdio: ["ignore", "pipe", "pipe"] });
-  const feed = (buf: Buffer): void => {
-    for (const line of String(buf).split(/\r?\n/)) if (line.trim()) onLine(line);
-  };
-  proc.stdout.on("data", feed);
-  proc.stderr.on("data", feed);
+  pipeLines(proc.stdout, onLine);
+  pipeLines(proc.stderr, onLine);
   const done = new Promise<number>((res) => proc.on("close", (c) => res(c ?? 1)));
   return { pid: proc.pid ?? -1, kill: () => proc.kill(), done };
 }
@@ -657,11 +674,8 @@ export function runChantStream(args: string[], projectDir: string, onLine: (line
  * bin. A missing binary rejects `done` via the "error" path (code 127). */
 export function runCommandStream(cmd: string, args: string[], cwd: string, onLine: (line: string) => void): OpRun {
   const proc = spawn(cmd, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
-  const feed = (buf: Buffer): void => {
-    for (const line of String(buf).split(/\r?\n/)) if (line.trim()) onLine(line);
-  };
-  proc.stdout.on("data", feed);
-  proc.stderr.on("data", feed);
+  pipeLines(proc.stdout, onLine);
+  pipeLines(proc.stderr, onLine);
   const done = new Promise<number>((res) => {
     proc.on("error", () => res(127)); // command not found / not executable
     proc.on("close", (c) => res(c ?? 1));
@@ -1382,22 +1396,40 @@ export async function helmRenderDiffLive(
 }
 
 // ---------------------------------------------------------------------------
-// Apply facet (M3, epic #54's observe→reconcile→apply dial) — behold's first
-// delegated WRITE. `chant run <target> --components --env <env>
-// --progress-json` (chant 0.18.30) deploys the named component (or every
-// component, `target: "all"`) through chant's own interpret driver on the
-// local executor, streaming one NDJSON `RunProgressEvent` per line while it
-// runs (src/apply.ts parses that stream into a structured progress model;
+// Apply facet (M3, epic #54's observe, reconcile, apply dial): behold's first
+// delegated WRITE. `chant run <target> --components --env <env> --events-json`
+// deploys the named component (or every component, `target: "all"`) through
+// chant's own interpret driver on the local executor, streaming chant's run
+// events while it runs (#679; src/run-events.ts folds the stream, and
 // src/op-runner.ts's `apply()` runs the command itself, under the same
-// running-guard as Sync/rollback). behold never applies itself — it shells
-// this command and streams what chant reports.
+// running-guard as Sync/rollback). Below chant 0.124.28 the run is started with
+// the older `--progress-json` instead (degraded mode). behold never applies
+// itself: it shells this command and streams what chant reports.
 // ---------------------------------------------------------------------------
 
-/** Build the `chant run <target> --components --env <env> --progress-json`
- * argv. `target` is a component name or `"all"` — chant's own selector
- * convention for `run --components` (the generated CI script this same
- * module already parses, `parseCiPipeline`, runs the single-component form).
- * Pure; exported for testing. */
-export function applyArgs(target: string, env: string): string[] {
-  return ["run", target, "--components", "--env", env, "--progress-json"];
+/** Which stream behold asks a `chant run` for: chant's run events (contract
+ * 1, chant 0.124.28), or the older `--progress-json` lines below that floor. */
+export type RunStream = "events" | "progress";
+
+const streamFlag = (stream: RunStream): string => (stream === "events" ? "--events-json" : "--progress-json");
+
+/** Build the `chant run <target> --components --env <env> --events-json`
+ * argv (`--progress-json` in degraded mode). `target` is a component name or
+ * `"all"`, chant's own selector convention for `run --components`. Pure;
+ * exported for testing. */
+export function applyArgs(target: string, env: string, stream: RunStream = "events"): string[] {
+  return ["run", target, "--components", "--env", env, streamFlag(stream)];
+}
+
+/** Build the `chant run <op> --events-json` argv (`--progress-json` in
+ * degraded mode). Never `--temporal` (chant#2131, #459). Pure. */
+export function opRunArgs(name: string, stream: RunStream = "events"): string[] {
+  return ["run", name, streamFlag(stream)];
+}
+
+/** Build `chant run events <run> --json --follow` (INTENTIUS/chant#4042): the
+ * events a run on this host kept, replayed, then tailed until `run-settle`.
+ * `run` is a run id, or an Op name for its newest run. Pure. */
+export function runEventsArgs(run: string): string[] {
+  return ["run", "events", run, "--json", "--follow"];
 }

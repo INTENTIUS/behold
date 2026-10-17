@@ -16,6 +16,12 @@
  *
  * ## The classifier is best-effort, the exit code is the truth
  *
+ * chant does not run these pipelines: the runner (gitlab-ci-local, a forgejo
+ * runner) does, and it writes no run events (#679). So this is the one path
+ * left that reads a log, and the state says so (`source: "classifier"`), which
+ * the dial shows as a best-effort label beside the run. A chant run always
+ * renders from chant's run-event stream instead (src/run-events.ts).
+ *
  * A local runner's stdout is not a protocol. The line classifier recognizes
  * the common shapes (`starting <job>`, `<job> > …`, `PASS/FAIL <job>`) to
  * move jobs through pending → running → ok/failed as the log streams; any
@@ -41,8 +47,10 @@ export type PipelineProgressState = ApplyProgressState & {
 };
 
 /** The initial running state for a known pipeline: stages as waves, jobs as
- * entries (keyed by job name — see the module doc), components in `phase`. */
-export function pipelineProgress(pipeline: CiPipeline): PipelineProgressState {
+ * entries (keyed by job name; see the module doc), components in `phase`.
+ * `source` is where the job states will come from: the log classifier here,
+ * or a forge's own job states (src/gh-run.ts). */
+export function pipelineProgress(pipeline: CiPipeline, source: "classifier" | "forge" = "classifier"): PipelineProgressState {
   const stageIndex = new Map(pipeline.stages.map((s, i) => [s, i + 1]));
   const components = pipeline.jobs.map((j) => ({
     component: j.jobName,
@@ -55,7 +63,7 @@ export function pipelineProgress(pipeline: CiPipeline): PipelineProgressState {
     components: pipeline.jobs.filter((j) => j.stage === stage).map((j) => j.jobName),
     status: "pending" as ApplyStatus,
   }));
-  return { kind: "pipeline", status: "running", waves, components };
+  return { kind: "pipeline", status: "running", waves, components, source };
 }
 
 /** Move one job's status; waves derive from their members. Pure. */

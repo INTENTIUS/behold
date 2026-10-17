@@ -313,7 +313,7 @@ export function readOpIr(path: string, readFile: (p: string) => string): OpIrPar
 // ── Step naming ───────────────────────────────────────────────────────────────
 
 /** The receipt an effect step writes, however the IR spells it. */
-function receiptName(step: OpIrEffectStep): string {
+export function receiptName(step: OpIrEffectStep): string {
   const r = step.receipt;
   if (typeof r === "string") return r;
   return (r && typeof r.name === "string" && r.name) || "effect";
@@ -419,7 +419,7 @@ function placeSteps(op: OpIr): Placed[] {
  * step sits in the Op.
  *
  * Exported so the run playhead (#284 item 2, src/run-playhead.ts) joins a run's
- * StepRecords to the very ids this lens draws instead of recomputing the id
+ * steps to the very ids this lens draws instead of recomputing the id
  * rule and drifting from it. `phase` is flattened to its name (the run records
  * carry a phase NAME, not the phase object) and `parallel` rides along, because
  * a parallel phase's steps settle in no guaranteed order.

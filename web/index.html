@@ -591,6 +591,9 @@
          reads the same in both. */
       .run-playhead { display: flex; flex-direction: column; gap: 6px; width: 100%; margin-top: 6px; }
       .run-verdict { font-size: var(--t-caption); }
+      /* #679: where the steps came from (chant's run events, a degraded older
+         stream, or a best-effort log read). Inline colour sets the tone. */
+      .run-source { font-size: var(--t-caption); color: var(--muted); }
       /* What behold does NOT know — a lost stream, an unreachable gate query.
          Same voice as the carve refusal: a statement, not an alarm. */
       .run-lost { border-left: 3px solid var(--bar-foreign); background: var(--well);

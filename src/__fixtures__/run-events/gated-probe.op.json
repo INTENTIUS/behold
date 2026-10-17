@@ -1,0 +1,49 @@
+{
+  "formatVersion": "1.0",
+  "taskQueue": "behold-writes",
+  "depends": [],
+  "searchAttributes": {},
+  "onFailure": [],
+  "activityProfiles": {},
+  "name": "gated-probe",
+  "overview": "a gate between two echoes",
+  "phases": [
+    {
+      "name": "Before",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "shellCmd",
+          "args": {
+            "cmd": "echo before"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Approve",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "gate",
+          "signalName": "approve-probe",
+          "description": "Approve the probe"
+        }
+      ]
+    },
+    {
+      "name": "After",
+      "parallel": false,
+      "steps": [
+        {
+          "kind": "activity",
+          "fn": "shellCmd",
+          "args": {
+            "cmd": "echo after"
+          }
+        }
+      ]
+    }
+  ]
+}

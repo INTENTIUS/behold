@@ -19,12 +19,14 @@ let resolveDone: (code: number) => void;
 let lastOnLine: ((line: string) => void) | undefined;
 let rawReply: { code: number; stdout: string; stderr: string } = { code: 0, stdout: "", stderr: "" };
 let lastRawArgs: string[] = [];
+let lastStreamArgs: string[] = [];
 
 vi.mock("./chant.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./chant.ts")>();
   return {
     ...actual,
-    runChantStream: (_args: string[], _cwd: string, onLine: (line: string) => void) => {
+    runChantStream: (args: string[], _cwd: string, onLine: (line: string) => void) => {
+      lastStreamArgs = args;
       lastOnLine = onLine;
       return { pid: 1, kill: vi.fn(), done: new Promise<number>((res) => { resolveDone = res; }) };
     },
@@ -43,6 +45,7 @@ const { OpRunner } = await import("./op-runner.ts");
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OPS_FIXTURES = join(HERE, "__fixtures__", "ops-example-writes");
 const RUN_FIXTURES = join(HERE, "__fixtures__", "ops-playhead");
+const EVENT_FIXTURES = join(HERE, "__fixtures__", "run-events");
 
 const streamLines = readFileSync(join(RUN_FIXTURES, "playhead-probe.progress.ndjson"), "utf8").trim().split("\n");
 
@@ -55,6 +58,8 @@ function project(): string {
   cpSync(join(RUN_FIXTURES, "playhead-probe.op.json"), join(dir, "dist", "ops", "playhead-probe", "op.json"));
   mkdirSync(join(dir, "dist", "ops", "prod-promote"), { recursive: true });
   cpSync(join(OPS_FIXTURES, "prod-promote.op.json"), join(dir, "dist", "ops", "prod-promote", "op.json"));
+  mkdirSync(join(dir, "dist", "ops", "gated-probe"), { recursive: true });
+  cpSync(join(EVENT_FIXTURES, "gated-probe.op.json"), join(dir, "dist", "ops", "gated-probe", "op.json"));
   return dir;
 }
 
@@ -64,22 +69,29 @@ beforeAll(() => {
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-function harness(approver?: ApproverOptions) {
+/** The record streams below are the older `--progress-json` shape, so the
+ * harness's project is on a chant below the run-events floor (degraded mode,
+ * #679) unless a test asks for a current one. */
+const OLD_CHANT = (): string => "0.124.24";
+const CURRENT_CHANT = (): string => "0.124.28";
+
+function harness(approver?: ApproverOptions, chantVersion: () => string = OLD_CHANT) {
   const broadcaster = new Broadcaster();
-  const runner = new OpRunner({ projectDir: dir, broadcaster, onDone: () => {} });
+  const runner = new OpRunner({ projectDir: dir, broadcaster, onDone: () => {}, chantVersion });
   const app = createApp({ projectDir: dir, port: 0, ...(approver ? { approver } : {}) }, broadcaster, new FrameBuffer(), runner);
   return { app, runner, broadcaster };
 }
 
 type OpsBody = {
   ir: GraphIR;
-  meta: { note: string; run: { status: string; op: string | null; records: unknown[] }; gate: Record<string, unknown> | null };
+  meta: { note: string; run: { status: string; op: string | null; steps: unknown[] }; gate: Record<string, unknown> | null };
 };
 const attrsOf = (body: OpsBody, id: string) => body.ir.nodes.find((n) => n.id === id)?.attrs ?? {};
 
 beforeEach(() => {
   lastOnLine = undefined;
   lastRawArgs = [];
+  lastStreamArgs = [];
   rawReply = { code: 0, stdout: "", stderr: "" };
 });
 
@@ -130,7 +142,7 @@ describe("GET /api/graph?ops=1 — run state is additive paint (#284 item 2)", (
     expect(attrsOf(body, "playhead-probe/Fanout/shellCmd")).toMatchObject({
       _status: "accent",
       _playhead: true,
-      run: "reached — not settled yet",
+      run: "reached, not settled yet",
     });
     expect(attrsOf(body, "playhead-probe/Verify/httpCheck")._status).toBe("neutral");
   });
@@ -256,9 +268,56 @@ describe("GET /api/ops — hydrating a client that arrives mid-run", () => {
     for (const line of streamLines.slice(0, 2)) lastOnLine!(line);
 
     const body = (await (await app.request("/api/ops")).json()) as {
-      runState: { op: string; status: string; records: unknown[] };
+      runState: { op: string; status: string; steps: unknown[] };
     };
     expect(body.runState).toMatchObject({ op: "playhead-probe", status: "running" });
-    expect(body.runState.records).toHaveLength(2);
+    expect(body.runState.steps).toHaveLength(2);
+  });
+});
+
+// #679: on a current chant the playhead renders from chant's run events.
+describe("the ops lens from chant's run events (#679)", () => {
+  const recorded = (name: string): string[] => readFileSync(join(EVENT_FIXTURES, name), "utf8").trim().split("\n");
+
+  it("paints a recorded gated run, with the gate named by the stream and no status read", async () => {
+    const { app, runner } = harness(undefined, CURRENT_CHANT);
+    runner.trigger("gated-probe", undefined, dir);
+    expect(lastStreamArgs).toEqual(["run", "gated-probe", "--events-json"]);
+    for (const line of recorded("gated-probe.gated.events.ndjson")) lastOnLine!(line);
+    resolveDone(3);
+    await Promise.resolve();
+
+    const body = (await (await app.request("/api/graph?ops=1")).json()) as OpsBody;
+    expect(lastRawArgs).toEqual([]); // no chant run status was needed
+    expect(attrsOf(body, "gated-probe/Before/shellCmd")).toMatchObject({ _status: "good" });
+    expect(attrsOf(body, "gated-probe/Approve/gate:approve-probe")).toMatchObject({ _status: "warn", _playhead: true });
+    expect(body.meta.run.status).toBe("gated");
+    expect(body.meta.gate).toMatchObject({ op: "gated-probe", signalName: "approve-probe" });
+    expect(body.meta.note).toContain("from chant's run events");
+    expect(body.meta.note).not.toContain("degraded");
+  });
+
+  it("follows a run this session didn't start, named by the status read", async () => {
+    const { app, runner } = harness(undefined, CURRENT_CHANT);
+    rawReply = { code: 0, stdout: readFileSync(join(RUN_FIXTURES, "run-status-gate-pending.txt"), "utf8"), stderr: "" };
+    await app.request("/api/ops/gated-probe/status");
+    expect(lastStreamArgs).toEqual(["run", "events", "local-1792192277209", "--json", "--follow"]);
+    expect(runner.runState).toMatchObject({ op: "gated-probe", following: true, source: "events" });
+    for (const line of recorded("gated-probe.gated.events.ndjson")) lastOnLine!(line);
+    resolveDone(3);
+    await Promise.resolve();
+    const body = (await (await app.request("/api/graph?ops=1")).json()) as OpsBody;
+    expect(attrsOf(body, "gated-probe/Before/shellCmd")).toMatchObject({ _status: "good" });
+    expect(body.meta.run.status).toBe("gated");
+  });
+
+  it("on an older chant the same lens says it is degraded and follows nothing", async () => {
+    const { app, runner } = harness();
+    rawReply = { code: 0, stdout: readFileSync(join(RUN_FIXTURES, "run-status-gate-pending.txt"), "utf8"), stderr: "" };
+    await app.request("/api/ops/gated-probe/status");
+    expect(lastStreamArgs).toEqual([]);
+    expect(runner.runState.sourceNote).toContain("degraded");
+    const body = (await (await app.request("/api/graph?ops=1")).json()) as OpsBody;
+    expect(body.meta.note).toContain("degraded");
   });
 });

@@ -1,0 +1,10 @@
+import { Op, phase, shell } from "@intentius/chant/op";
+export default Op({
+  name: "fail-probe",
+  overview: "a step that fails between two that pass",
+  phases: [
+    phase("Build", [shell("echo build-a"), shell("echo build-b")]),
+    phase("Deploy", [shell("exit 7")]),
+    phase("Verify", [shell("echo verify")]),
+  ],
+});
