@@ -6,7 +6,7 @@
 // sweeps all 552 palettes for the same assertion; this pins the exact
 // palette the issue was filed against, with no browser involved.
 import { describe, it, expect } from "vitest";
-import { BAR_FLOOR, BAR_STATES, FRAME_STATES, MIN_STEP, barGrounds, barInks, barVars, SOFT_CEILING, ZEBRA, contrast, desaturate, frameGrounds, frameInks, hexToOklch, mix, pinTokensFor, tokensFor } from "./theme.js";
+import { BAR_FLOOR, BAR_STATES, FRAME_STATES, INK2_FLOOR, MIN_STEP, MUTED_FLOOR, SURFACE_CHROMA, barGrounds, barInks, barVars, SOFT_CEILING, ZEBRA, contrast, desaturate, frameGrounds, frameInks, hexToOklch, ink2Grounds, mix, PAINT_KEY, paintFor, pinTokensFor, tokensFor } from "./theme.js";
 import { THEMES } from "./themes.js";
 
 describe("tokensFor — the --muted contrast floor (#240)", () => {
@@ -21,16 +21,48 @@ describe("tokensFor — the --muted contrast floor (#240)", () => {
     expect(ratio).toBeLessThan(1.3);
   });
 
-  it("clears the 3:1 floor on Darkermatrix after the push", () => {
+  // behold#725 raised the floor from 3:1 to 4.5:1.
+  it("clears the 4.5:1 floor on Darkermatrix after the push", () => {
+    expect(MUTED_FLOOR).toBe(4.5);
     const t = tokensFor(THEMES["Darkermatrix"]);
-    expect(contrast(t.muted, t.panel)).toBeGreaterThanOrEqual(3);
+    expect(contrast(t.muted, t.panel)).toBeGreaterThanOrEqual(4.5);
   });
 
   it("holds the floor across every shipped palette, not just the one reported", () => {
+    const short = Object.values(THEMES).map((th) => [th.name, tokensFor(th)]).filter(([, t]) => contrast(t.muted, t.panel) < 4.5).map(([n, t]) => `${n} ${contrast(t.muted, t.panel).toFixed(2)}`);
+    expect(short).toEqual([]);
+  });
+});
+
+// behold#725: --ink2, the secondary prose ink, between --fg and --muted.
+describe("tokensFor — the --ink2 level (behold#725)", () => {
+  const worst = (c, gs) => Math.min(...gs.map((g) => contrast(c, g)));
+
+  it("reads at 7:1 or better on every ground, or, where neither white nor black can, as well as the better of them", () => {
+    expect(INK2_FLOOR).toBe(7);
+    const bad = [];
     for (const th of Object.values(THEMES)) {
       const t = tokensFor(th);
-      expect(contrast(t.muted, t.panel)).toBeGreaterThanOrEqual(3);
+      const gs = ink2Grounds(th, { panel: t.panel, well: t.well, kiosk: t });
+      const w = worst(t.ink2, gs);
+      const reach = Math.max(worst("#ffffff", gs), worst("#000000", gs));
+      if (w < 7 && w < reach - 0.05) bad.push(`${th.name} ${t.ink2} ${w.toFixed(2)} (white or black reach ${reach.toFixed(2)})`);
     }
+    expect(bad).toEqual([]);
+  });
+
+  it("sits between --muted and --fg on Catppuccin Mocha, quieter than --fg and louder than --muted", () => {
+    const t = tokensFor(THEMES["Catppuccin Mocha"]);
+    expect(t.ink2).not.toBe(t.fg);
+    expect(contrast(t.ink2, t.panel)).toBeLessThan(contrast(t.fg, t.panel));
+    expect(contrast(t.ink2, t.panel)).toBeGreaterThan(contrast(t.muted, t.panel));
+  });
+
+  it("is held on the page, the app's panel and well, the kiosk's surfaces and their zebra rows", () => {
+    const th = THEMES["Sea Shells"];
+    const t = tokensFor(th);
+    const gs = ink2Grounds(th, { panel: t.panel, well: t.well, kiosk: t });
+    for (const g of [th.bg, t.panel, t.well, t.surfaceBox, t.surfacePaneA, t.surfacePaneB, mix(t.surfacePaneB, th.fg, ZEBRA)]) expect(gs).toContain(g);
   });
 });
 
@@ -55,8 +87,21 @@ describe("tokensFor — the kiosk's surfaces (behold#571)", () => {
     expect(each((t, _th, { grounds }) => grounds.filter((g) => contrast(t.soft, g) < 4.5).map((g) => `${t.soft} on ${g} is ${contrast(t.soft, g).toFixed(2)}`)[0])).toEqual([]);
   });
 
-  it("keeps secondary ink at 3:1 or better on every surface and zebra row", () => {
-    expect(each((t, _th, { grounds }) => grounds.filter((g) => contrast(t.mutedInk, g) < 3).map((g) => `${t.mutedInk} on ${g} is ${contrast(t.mutedInk, g).toFixed(2)}`)[0])).toEqual([]);
+  // behold#725 raised the floor from 3:1 to 4.5:1.
+  it("keeps secondary ink at 4.5:1 or better on every surface and zebra row", () => {
+    expect(each((t, _th, { grounds }) => grounds.filter((g) => contrast(t.mutedInk, g) < 4.5).map((g) => `${t.mutedInk} on ${g} is ${contrast(t.mutedInk, g).toFixed(2)}`)[0])).toEqual([]);
+  });
+
+  // behold#725: a saturated ground stacked three levels high reads loud, so the surfaces keep under half its colour.
+  it("keeps at most SURFACE_CHROMA of --bg's chroma on each derived surface, and leaves --bg alone", () => {
+    expect(SURFACE_CHROMA).toBe(0.4);
+    expect(each((t, th) => {
+      expect(t.bg).toBe(th.bg);
+      const c = hexToOklch(th.bg).C;
+      // 8-bit rounding moves chroma a little, most of all near black.
+      const over = [t.surfaceBox, t.surfacePaneA, t.surfacePaneB].find((s) => hexToOklch(s).C > c * SURFACE_CHROMA + 0.012);
+      return over ? `${over} keeps ${hexToOklch(over).C.toFixed(3)} of ${c.toFixed(3)}` : null;
+    })).toEqual([]);
   });
 
   it("keeps the state colours and the root colours at 3:1 or better on every surface and zebra row", () => {
@@ -191,5 +236,24 @@ describe("the left bars (behold#571)", () => {
     expect(contrast(mix(t.surfacePaneB, th.fg, ZEBRA), t.surfacePaneB)).toBeLessThan(1.05);
     expect(contrast(t.neutral, t.surfacePaneB)).toBeLessThan(1.5);
     expect(contrast(barInks(th).neutral, t.surfacePaneB)).toBeGreaterThanOrEqual(3);
+  });
+});
+
+// behold#725: the record the pre-paint script in index.html and kiosk.html applies before theme.js runs.
+describe("paintFor — the theme before first paint (behold#725)", () => {
+  it("names the theme, its colour scheme and every custom property applyTheme sets, --ink2 and the bars among them", () => {
+    const th = THEMES["Sea Shells"];
+    const t = tokensFor(th);
+    const p = paintFor(t, th);
+    expect(PAINT_KEY).toBe("behold.theme.paint");
+    expect(p.name).toBe("Sea Shells");
+    expect(p.scheme).toBe(th.dark ? "dark" : "light");
+    expect(p.vars["--ink2"]).toBe(t.ink2);
+    expect(p.vars["--muted"]).toBe(t.muted);
+    expect(p.vars["--surface-pane-a"]).toBe(t.surfacePaneA);
+    expect(p.vars["--bar-neutral"]).toBe(barInks(th).neutral);
+    expect(p.vars["--frame-focus"]).toBe(frameInks(th).box.focus);
+    expect(Object.keys(p.vars).every((k) => k.startsWith("--"))).toBe(true);
+    expect(JSON.parse(JSON.stringify(p))).toEqual(p);
   });
 });

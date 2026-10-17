@@ -13,6 +13,7 @@
 // A wave that failed says which waves applied before it and stay applied.
 // Nothing here is all-or-nothing, and nothing says so.
 
+import { linkState, linkWords, noteBack, noteRead, readFailed, shareLink } from "./kiosk-link.js";
 import { CHANT_PANEL_STEPS, chantApprovalModel } from "./chant-pr-marks.js";
 import { PICK_HOLD_MS, annMark, mergeRun, startRuns, statusIcon } from "./kiosk-runs.js";
 import { MODES, MODE_STORE, badges as waveBadges, badgeTitle, behindStep, steadyRun, captionModel, doraLine, modeStored, placeBeside, resultModel, shotFor, stepTone, tailLines } from "./kiosk-watch.js";
@@ -2207,8 +2208,32 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   };
   const CYCLE_REREAD_MS = 60_000;
 
+  // behold#725: the stopped-updating cue. The demo poll and the event stream
+  // report whether they came back; while one fails, a line over the header
+  // says since when nothing has come in (web/kiosk-link.js).
+  const link = linkState();
+  let linkLine = null;
+  let linkWas = null;
+  const paintLink = () => {
+    const words = linkWords(link);
+    // The tour's live badge and its lag follow the cue (web/carve-narration.js liveBadge).
+    if (words !== linkWas) { linkWas = words; shareLink(link); }
+    if (!linkLine && !words) return;
+    if (!linkLine) {
+      const host = bar && bar.parentNode;
+      if (!host || typeof document === "undefined" || !host.insertBefore) return;
+      linkLine = el("p", "k-link");
+      linkLine.setAttribute("role", "status");
+      host.insertBefore(linkLine, bar);
+    }
+    linkLine.hidden = !words;
+    linkLine.textContent = words || "";
+  };
+
   const demo = async () => {
     const live = await fetchJson("/api/terragucci/demo");
+    noteRead(link, "poll", !readFailed(live), now());
+    paintLink();
     s.live = live;
     if (!vendor) {
       s.repo = live && live.demo ? live.demo.repo : null;
@@ -2238,6 +2263,17 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
 
   if (typeof EventSource !== "undefined") {
     const es = new EventSource("/api/terragucci/events");
+    // behold#725: the browser retries a dropped stream by itself (CONNECTING);
+    // one it closed for good (a 404, say) leaves the polls to carry the cue.
+    es.addEventListener("open", () => { noteBack(link, "stream"); paintLink(); });
+    es.addEventListener("error", () => {
+      if (es.readyState === 2) noteBack(link, "stream");
+      else noteRead(link, "stream", false, now());
+      paintLink();
+    });
+    const heard = () => { noteRead(link, "stream", true, now()); paintLink(); };
+    es.addEventListener("reports", heard);
+    es.addEventListener("progress", heard);
     es.addEventListener("reports", () => void reports(false));
     es.addEventListener("progress", (e) => {
       try {
@@ -2257,13 +2293,20 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   return s;
 }
 
+// behold#725: `unreachable` marks a read that never got an answer, or got a
+// server error, so the stopped-updating cue can tell it from a source that
+// answered with an error of its own (kiosk-link.js readFailed).
 async function defaultFetch(url) {
   try {
     const r = await fetch(url, { headers: { accept: "application/json" } });
+    if (r.status >= 500) {
+      const body = await r.json().catch(() => ({}));
+      return { error: body.error || `${url} answered ${r.status}`, ...body, unreachable: true };
+    }
     const body = await r.json();
     return r.ok ? body : { error: body.error || `${url} answered ${r.status}`, ...body };
   } catch (e) {
-    return { error: `${url}: ${e instanceof Error ? e.message : String(e)}` };
+    return { error: `${url}: ${e instanceof Error ? e.message : String(e)}`, unreachable: true };
   }
 }
 

@@ -34,7 +34,7 @@ const STYLE = `
 #eh-trail { display: flex; flex-wrap: nowrap; align-items: center; gap: 0.35em; overflow-x: auto; scrollbar-width: none; contain: inline-size; min-width: 0; padding: 0.15em 0.9em 0.3em; font-size: 0.78em; color: var(--muted); min-height: 1.9em; }
 #eh-trail::-webkit-scrollbar { display: none; }
 #eh-trail[hidden] { display: none; }
-.eh-trail-label { font: 600 0.85em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; margin-right: 0.3em; white-space: nowrap; }
+.eh-trail-label { font: 600 0.85em var(--font-ui); margin-right: 0.3em; white-space: nowrap; }
 .eh-chip { flex: none; white-space: nowrap; padding: 0.05em 0.6em; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--rule) 80%, transparent); background: transparent; color: var(--muted); font: inherit; cursor: pointer; box-shadow: inset 3px 0 0 var(--bar, var(--bar-neutral, var(--muted))); }
 .eh-chip:hover, .eh-chip:focus-visible { color: var(--fg); border-color: var(--focus); }
 .eh-chip:last-of-type { color: var(--fg); }
