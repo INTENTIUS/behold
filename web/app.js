@@ -122,7 +122,7 @@ import { shotFromMessage, shotViewBox, tweenViewBox, unionBox, sameViewBox } fro
 // (/api/terragucci/carve, liveCarveGate below), or when /api/graph's meta
 // carries `dots` (the local preview server, scripts/dots-preview.ts). With
 // neither it stays unmounted, and its hooks below are no-ops.
-import { mountDots, unmountDots, dotsCamera, dotsZoomOutFactor, dotsCarving } from "./dots.js";
+import { mountDots, unmountDots, dotsCamera, dotsZoomOutFactor, dotsCarving, dotsMinViewWidth } from "./dots.js";
 import { carveDrawable } from "./dots-live.js";
 initTheme();
 // #476: framed in a host pane. The flag is a class on <html>, so the CSS that
@@ -7162,7 +7162,8 @@ function ensureZoomControls(host) {
       const cx = vb[0] + ((e.clientX - r.left) / r.width) * vb[2];
       const cy = vb[1] + ((e.clientY - r.top) / r.height) * vb[3];
       const f = Math.exp(wheelPx(e) * 0.0025); // scroll up → f<1 → zoom in
-      const minW = vbInit[2] / 60;
+      // While the dots layer draws the roster's cards, no further in than a little past them: past that is an empty stage.
+      const minW = Math.max(vbInit[2] / 60, dotsMinViewWidth() ?? 0);
       const maxW = vbInit[2] * (dotsZoomOutFactor() ?? 3); // #712: the dots preview zooms out further
       const nw = Math.min(maxW, Math.max(minW, vb[2] * f));
       const nh = nw * (vb[3] / vb[2]);
@@ -7203,7 +7204,7 @@ function ensureZoomControls(host) {
         const m0 = mid(touch.pts);
         const cx = vb[0] + ((m.x - r.left) / r.width) * vb[2];
         const cy = vb[1] + ((m.y - r.top) / r.height) * vb[3];
-        const nw = Math.min(vbInit[2] * (dotsZoomOutFactor() ?? 3), Math.max(vbInit[2] / 60, vb[2] * f));
+        const nw = Math.min(vbInit[2] * (dotsZoomOutFactor() ?? 3), Math.max(vbInit[2] / 60, dotsMinViewWidth() ?? 0, vb[2] * f));
         const nh = nw * (vb[3] / vb[2]);
         vb[0] = cx - ((cx - vb[0]) * nw) / vb[2] - ((m.x - m0.x) / r.width) * nw;
         vb[1] = cy - ((cy - vb[1]) * nh) / vb[3] - ((m.y - m0.y) / r.height) * nh;
