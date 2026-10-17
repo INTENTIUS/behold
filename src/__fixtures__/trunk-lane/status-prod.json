@@ -1,0 +1,141 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/status/v1/status.schema.json",
+  "contract": 1,
+  "chant": "0.124.27",
+  "env": "prod",
+  "compareTo": null,
+  "lifecycle": {
+    "ref": "chant/lifecycle",
+    "commit": "3a11a0ea0b9e67b8fb73234c82a068173d564753"
+  },
+  "checkout": {
+    "branch": "main",
+    "head": "0c7c85ae8cca01463f304a3bd69bc3e977899d5f",
+    "base": "0c7c85ae8cca01463f304a3bd69bc3e977899d5f",
+    "baseFrom": "main"
+  },
+  "workspace": {
+    "name": "acme",
+    "root": ".",
+    "file": "chant.workspace.json"
+  },
+  "plantable": {
+    "plantable": false,
+    "box": null,
+    "reason": {
+      "code": "box-none",
+      "message": "no member's box block declares services, so there is no box to plant"
+    }
+  },
+  "members": [
+    {
+      "name": "web",
+      "dir": "web",
+      "kind": "chant",
+      "fields": null,
+      "environments": [
+        {
+          "env": "prod",
+          "ledger": {
+            "layout": "members",
+            "path": "_members/web/prod/releases.jsonl",
+            "shared": false
+          },
+          "releases": [
+            {
+              "component": "web",
+              "digest": "sha256:4b5e57f6eb2f42b9039b3d1e13929295f231749c510cbe341cd68036d9af97e2",
+              "gitSha": "6828a7f5b398ea48543fe27c018ba302ce2aba14",
+              "inputDigest": null,
+              "runId": "run-1",
+              "timestamp": "2026-10-02T12:00:00Z",
+              "actor": "ci",
+              "approver": "github:alice",
+              "admission": null,
+              "flags": [],
+              "plan": null
+            }
+          ],
+          "reason": null
+        }
+      ],
+      "compare": null,
+      "readable": true,
+      "gateLedger": {
+        "layout": "members",
+        "path": "_members/web/_gates",
+        "shared": false,
+        "malformed": 0,
+        "reason": null
+      },
+      "gates": [
+        {
+          "component": "web",
+          "name": "promote",
+          "env": "prod",
+          "planDigest": "sha256:4b5e57f6eb2f42b9039b3d1e13929295f231749c510cbe341cd68036d9af97e2",
+          "state": "pending",
+          "recordedAt": "2026-10-04T00:00:00Z",
+          "gitSha": "a14610e4f51778c969efcc77694a360412c34d88",
+          "runId": "run-9",
+          "expiresAt": "2099-01-01T00:00:00Z",
+          "approvals": [],
+          "needed": 1,
+          "signed": null,
+          "approve": "chant approve web promote --env prod --plan sha256:4b5e57f6eb2f42b9039b3d1e13929295f231749c510cbe341cd68036d9af97e2",
+          "changeSet": "sha256:4b5e57f6eb2f42b9039b3d1e13929295f231749c510cbe341cd68036d9af97e2"
+        }
+      ],
+      "box": null,
+      "stewards": [],
+      "stewardReasons": [],
+      "promotionOrder": [
+        {
+          "name": "staging",
+          "canary": false
+        },
+        {
+          "name": "prod",
+          "canary": false
+        }
+      ],
+      "releaseCuts": [
+        {
+          "releaseDigest": "jcs1-sha256:e3956171ab72fcab2d812cbd3621ef18c04a46c96a9f1e1a8590dae0d9279185",
+          "label": "v1",
+          "commit": "6828a7f5b398ea48543fe27c018ba302ce2aba14",
+          "actor": "github:alice",
+          "timestamp": "2026-10-02T09:00:00Z",
+          "signature": null,
+          "signatureCheck": {
+            "status": "unsigned",
+            "key": null,
+            "reason": "the cut carries no signature"
+          }
+        },
+        {
+          "releaseDigest": "jcs1-sha256:1a23268fa8b1fc419cffde4c1780f4387ff0346495f97bd9e22b0508bef99f9d",
+          "label": "v2",
+          "commit": "a14610e4f51778c969efcc77694a360412c34d88",
+          "actor": "github:alice",
+          "timestamp": "2026-10-03T09:00:00Z",
+          "signature": null,
+          "signatureCheck": {
+            "status": "unsigned",
+            "key": null,
+            "reason": "the cut carries no signature"
+          }
+        }
+      ]
+    }
+  ],
+  "leases": [],
+  "acceptance": [],
+  "replication": null,
+  "summary": {
+    "members": 1,
+    "released": 1,
+    "unreadable": 0,
+    "differing": null
+  }
+}

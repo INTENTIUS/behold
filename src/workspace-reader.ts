@@ -22,6 +22,7 @@
  * refused whole, as {@link WorkspaceReadError}: within a version chant only
  * adds fields, and a new version can change what one means.
  */
+import { resolve } from "node:path";
 import { runChantRaw } from "./chant.ts";
 
 /** The read contract version behold reads (chant's `reference/workspace-read-contract`). */
@@ -69,14 +70,28 @@ export interface TransportRun {
 
 /** How the reader reaches chant. Shaped like the conformance suite's `ChantTransport`. */
 export interface ChantTransport {
-  run(argv: string[]): Promise<TransportRun>;
+  /** `dir`, when given, is a member's directory relative to the workspace root, for a read chant answers per member. */
+  run(argv: string[], options?: { dir?: string }): Promise<TransportRun>;
 }
 
 export type WorkspaceDocument = Record<string, unknown>;
 
+/**
+ * #680: the trunk lane's reads. They are read contract 1 documents too
+ * (ci-list.schema.json, releases.schema.json), but chant names them outside
+ * `chant workspace`: `ci list` runs at the workspace root, `release list` in
+ * one member's directory. chant's reader conformance suite does not list them,
+ * so they are not in {@link BEHOLD_READS}; each one still checks its floor in
+ * src/chant-floors.ts before it is sent.
+ */
+export const TRUNK_READS = ["ci list", "release list"] as const;
+export type TrunkReadCommand = (typeof TRUNK_READS)[number];
+
 export interface WorkspaceReader {
   /** Run one contract command with `args`, and return the document chant printed, unchanged. */
   read(command: WorkspaceReadCommand, args: string[]): Promise<WorkspaceDocument>;
+  /** Run one trunk read (#680), in member directory `dir` when given, and return the document chant printed, unchanged. */
+  readTrunk(command: TrunkReadCommand, args: string[], dir?: string): Promise<WorkspaceDocument>;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -94,7 +109,7 @@ export function contractRefusal(doc: Record<string, unknown>, command: string): 
   if (doc.contract === WORKSPACE_CONTRACT) return undefined;
   const said = doc.contract === undefined ? "no contract version" : `contract ${JSON.stringify(doc.contract)}`;
   return {
-    error: `chant workspace ${command} wrote a document with ${said}; behold reads contract ${WORKSPACE_CONTRACT}.`,
+    error: `chant ${(TRUNK_READS as readonly string[]).includes(command) ? command : `workspace ${command}`} wrote a document with ${said}; behold reads contract ${WORKSPACE_CONTRACT}.`,
     code: "workspace-contract",
     remedy:
       doc.contract === undefined
@@ -106,28 +121,40 @@ export function contractRefusal(doc: Record<string, unknown>, command: string): 
 /** The refusal code for a command: `workspace-ls`, `workspace-graph`, `workspace-intent`. */
 const codeFor = (command: WorkspaceReadCommand): string => (command === "graph --intent" ? "workspace-intent" : `workspace-${command}`);
 
+/** The argv one trunk read runs: `ci list <args> --json`, `release list <args> --json`. */
+export function trunkArgv(command: TrunkReadCommand, args: readonly string[]): string[] {
+  return [...command.split(" "), ...args, "--json"];
+}
+
+/** Check what one run printed: a JSON object written to the contract behold reads. */
+function documentOf(run: TransportRun, shown: string, code: string, command: string): WorkspaceDocument {
+  if (!run.stdout.trim()) {
+    const said = run.stderr.trim().split("\n").slice(-3).join(" ");
+    throw new WorkspaceReadError({ error: `${shown} printed nothing (exit ${run.status ?? "killed"})${said ? `: ${said}` : ""}`, code, remedy: `Run \`${shown}\` in the workspace root to see what it says.` });
+  }
+  let doc: unknown;
+  try {
+    doc = JSON.parse(run.stdout);
+  } catch {
+    throw new WorkspaceReadError({ error: `${shown} printed something that is not JSON.`, code, remedy: `Run \`${shown}\` in the workspace root to see what it says.` });
+  }
+  if (!isRecord(doc)) throw new WorkspaceReadError({ error: `${shown} printed JSON that is not an object.`, code, remedy: `Run \`${shown}\` in the workspace root.` });
+  const refused = contractRefusal(doc, command);
+  if (refused) throw new WorkspaceReadError(refused);
+  return doc;
+}
+
 /** The reader over `chant`. One read is one chant call. */
 export function workspaceReader(chant: ChantTransport): WorkspaceReader {
   return {
     async read(command, args) {
       const argv = readArgv(command, args);
-      const shown = `chant ${argv.join(" ")}`;
-      const run = await chant.run(argv);
-      const code = codeFor(command);
-      if (!run.stdout.trim()) {
-        const said = run.stderr.trim().split("\n").slice(-3).join(" ");
-        throw new WorkspaceReadError({ error: `${shown} printed nothing (exit ${run.status ?? "killed"})${said ? `: ${said}` : ""}`, code, remedy: `Run \`${shown}\` in the workspace root to see what it says.` });
-      }
-      let doc: unknown;
-      try {
-        doc = JSON.parse(run.stdout);
-      } catch {
-        throw new WorkspaceReadError({ error: `${shown} printed something that is not JSON.`, code, remedy: `Run \`${shown}\` in the workspace root to see what it says.` });
-      }
-      if (!isRecord(doc)) throw new WorkspaceReadError({ error: `${shown} printed JSON that is not an object.`, code, remedy: `Run \`${shown}\` in the workspace root.` });
-      const refused = contractRefusal(doc, command);
-      if (refused) throw new WorkspaceReadError(refused);
-      return doc;
+      return documentOf(await chant.run(argv), `chant ${argv.join(" ")}`, codeFor(command), command);
+    },
+    async readTrunk(command, args, dir) {
+      const argv = trunkArgv(command, args);
+      const run = await chant.run(argv, dir !== undefined ? { dir } : undefined);
+      return documentOf(run, `chant ${argv.join(" ")}${dir !== undefined ? ` (in ${dir})` : ""}`, command.replace(" ", "-"), command);
     },
   };
 }
@@ -139,8 +166,8 @@ export function workspaceReader(chant: ChantTransport): WorkspaceReader {
  */
 export function rootTransport(root: string, env?: Record<string, string>): ChantTransport {
   return {
-    async run(argv) {
-      const r = await runChantRaw(argv, root, env);
+    async run(argv, options) {
+      const r = await runChantRaw(argv, options?.dir !== undefined ? resolve(root, options.dir) : root, env);
       return { status: r.code, stdout: r.stdout, stderr: r.stderr };
     },
   };

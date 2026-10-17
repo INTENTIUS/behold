@@ -1,0 +1,85 @@
+---
+title: The trunk lane
+description: What is in flight and where it is. The trunk's recent commits, and per environment what runs there and what waits at a gate, with approve.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+When behold serves a chant workspace, the panel has a **Trunk** tab. It answers
+"what is in flight, and where is it?" without a pull request list or a forge
+page. behold reads it from chant when you open the tab, and again when you
+press **Read again**. It keeps nothing of its own.
+
+## What it shows
+
+At the top, the trunk: the first-parent commits of the branch your
+workspace's `ci.green` names, newest first, within its window. Each commit
+says:
+
+| Part | What it means |
+|---|---|
+| `a14610e green` | every required phase passed, and `chant ci tick` tagged it `ci/green/<sha>` |
+| `9c4250f revoked` | it was green and a required phase failed later; the line names the phase |
+| `0c7c85a undecided` | no ci tag yet |
+| `runs in staging`, `waits in prod` | where the commit is now: an environment runs a release cut from it, or a gate there waits on it |
+| `work task:12` | the work item its `Chant-Record` or `Chant-Lease` trailer names |
+| `no work item` | no trailer names one |
+| `names a work item that does not exist` | a trailer names one that isn't there; hover for which |
+| `test` | a link to each run behind the state |
+
+Then one lane per environment, in the order your members' `chant.config.ts`
+lists their `environments` (a member's promotion order). Each lane says what
+the environment runs:
+
+- `runs v1, cut from 6828a7f · web`: the release labelled `v1`, cut from that
+  commit, which the latest deploy record of `web` names. Hover for who cut it
+  and who approved the deploy.
+- `runs web 4b5e57f6eb2f from 6828a7f`: a deploy record that names no release.
+- `no deploy record`: chant has none for the environment, so behold does not
+  guess what runs there. A project with no components can cut releases that
+  no deploy record names, and they show this way.
+
+Below that, each gate waiting in the environment, as a card: the commit it
+waits on and that commit's state, the approvals it has and needs, the run that
+reached it, and the change set it binds. Hover the card's facts for the
+`chant approve` line and `chant change-set show <digest>`.
+
+## Approving from the lane
+
+A waiting gate's card has the same button as the gate strip, through the same
+route, so it says who chant records before you click: **Approve as
+github:alice**. See [Approving a gate](/behold/using/approving/) for where that
+name comes from and how a signed gate is signed. After the approval the lane is
+read again, and the gate leaves it once chant counts the approval.
+
+<Aside type="note" title="The channel says cli">
+chant records the channel an approval came through, and it has no channel for
+behold. An approval made from the lane shows `channel: "cli"` in `chant
+workspace status`, with the note `approved in behold` on the ledger line. The
+principal is the person, as above.
+</Aside>
+
+## What it reads
+
+| chant command | What the lane takes from it |
+|---|---|
+| `chant ci list --json` | the commits, their state, phases, runs and work items |
+| `chant workspace status <env> --json`, once per environment | each member's promotion order, the gates waiting there with their commit, run and change set, and the deploy records |
+| `chant release list --json`, in each member that declares environments | each release, the commit it was cut from, and the environments that run it |
+
+These are read contract 1 documents, and they are new in chant 0.124.28. On an
+older chant the tab says `Trunk commits needs chant 0.124.28 or newer` with the
+project's version, and the rest of behold works. `behold doctor` lists the
+three reads with the floor each needs.
+
+## Limits
+
+- `chant ci list` reads the checkout's own tags and never asks the forge. A
+  commit that failed without ever going green has no tag, so it reads
+  `undecided`. Fetch tags (`git fetch --tags`) to see what CI decided.
+- A workspace with no `ci.green` declaration has no trunk to list: the tab says
+  `trunk not read` with chant's reason, and still draws the environments.
+- A gate that records no environment, such as an Op's gate, is not a step of
+  the promotion. It stays in the gate strip and is not in the lane.
+- A workspace whose members declare no environments has no promotion order.
+  The lane then shows the one environment behold serves (`--env`), and says so.
