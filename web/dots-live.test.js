@@ -87,7 +87,9 @@ describe("the live carve as a show (#715)", () => {
     // One to one: the flight starts at its arrival, in the show's own clock.
     expect(flight.start).toBe(now - show1.t0);
     expect(takeoffsBy(scene, now - show1.t0 - 1)).toBe(0);
-    expect(takeoffsBy(scene, now - show1.t0 + 1)).toBe(1);
+    // The role and its policy, which follows it, take off together.
+    expect(takeoffsBy(scene, now - show1.t0 + 1)).toBe(2);
+    expect(scene.flights.find((f) => f.address === "module.team_a.aws_iam_role_policy.app").parent).toBe("module.team_a.aws_iam_role.app");
   });
 
   it("says what is happening from demo.json and the newest line, and tips the first landing and refusal", () => {
