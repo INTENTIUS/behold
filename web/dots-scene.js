@@ -9,11 +9,12 @@
 // estate holds at the end of the recording. A reset or a replay lays out the
 // same way.
 //
-// The choreography: the recording's moves are flown by unit, the order #457
-// recommends ("the recorder should take a move order, and by unit should be
-// its default"), so one team's cluster lifts off together as a flock. What
-// moves, where to, and whether it landed are the recording's; the order and
-// the timing are the replay's. Pure: show in, plain data out. Units are in
+// The choreography: a carve recording plays on its own clock (#711): each move
+// flies when the recording says it was written, and an idle stretch plays as a
+// break the timeline names (web/dots-timeline.js). A show without its own
+// clock (the walkthrough) is flown by unit, the order #457 recommends, so one
+// team's cluster lifts off together as a flock; what moves, where to, and
+// whether it landed are its records', and the order and timing the replay's. Pure: show in, plain data out. Units are in
 // pitches (one dot spacing); the page scales them into the viewBox.
 
 import { unitsOf, unitOf, packBlock, blockWidth, shelfPack } from "./dots-layout.js";
@@ -25,6 +26,8 @@ export const BOX = { pad: 1.5, title: 3, gap: 5 };
 export function replayClock(show, duration = CHOREO.duration) {
   // #715: a live carve's clock is the show's own, one to one; its length grows as the page runs.
   if (show.kind === "live") return { length: Math.max(1, show.t1 - show.t0), at: (t) => t - show.t0, live: true };
+  // A recording of a real event stream plays on its own clock: wall-clock time, with its idle stretches drawn as breaks (web/dots-timeline.js).
+  if (show.timeline) return { length: show.timeline.length, at: (t) => show.timeline.toReplay(t), real: (p) => show.timeline.toReal(p), recorded: true };
   const span = Math.max(1, show.t1 - show.t0);
   return { length: duration, at: (t) => ((t - show.t0) / span) * duration };
 }
@@ -56,10 +59,11 @@ export function choreograph(show, opts = {}) {
   // #715: a live carve flies each write when it was seen, in the show's own
   // time (its clock is one to one), never regrouped: the order and the timing
   // are the job's.
-  if (show.kind === "live") {
+  // A recording with its own clock flies each write when the recording says it was written, the same way.
+  if (show.kind === "live" || show.timeline) {
     const out = [];
     for (const w of writes) {
-      const start = w.start - show.t0;
+      const start = show.kind === "live" ? w.start - show.t0 : Math.max(0, clock.at(w.t) - o.flight);
       const base = { from: w.from, to: w.to, ok: w.ok, flock: 0, start, end: start + o.flight, at: w.at ?? w.t };
       out.push({ ...base, address: w.address, ...(w.refusal ? { refusal: w.refusal } : {}), ...(w.refusalSummary ? { refusalSummary: w.refusalSummary } : {}) });
       const followers = new Set(w.followers ?? []);
@@ -70,8 +74,10 @@ export function choreograph(show, opts = {}) {
       });
     }
     // A resource may move twice (adopted into one estate, then split into another); the same write read twice flies once.
+    // A recording's follower named by two moves goes with the first, as the flocks do.
     const seen = new Set();
-    return out.sort((x, y) => x.start - y.start).filter((f) => !seen.has(`${f.address}@${f.start}`) && seen.add(`${f.address}@${f.start}`));
+    const keyOf = (f) => (show.kind === "live" ? `${f.address}@${f.start}` : f.address);
+    return out.sort((x, y) => x.start - y.start).filter((f) => !seen.has(keyOf(f)) && seen.add(keyOf(f)));
   }
   const typeOf = new Map(show.roster.map((r) => [r.address, r.type]));
   const order = new Map(show.roster.map((r, i) => [r.address, i]));

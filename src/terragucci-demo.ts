@@ -84,6 +84,8 @@ export interface Demo {
   repo: string | null;
   /** The line over the delivery (DORA) numbers: they are the demo loop's own (behold#571); null from a driver before it. */
   delivery: string | null;
+  /** The beat of a scenario told in several (terralith: stock, adopt, split, team, cross); null otherwise (terragucci#1131). */
+  beat: string | null;
 }
 
 export type DemoAnswer =
@@ -168,6 +170,7 @@ export function demoOf(d: Demo): Demo {
     tool: text(d.tool),
     repo: text(d.repo),
     delivery: text(d.delivery),
+    beat: text(d.beat),
   };
 }
 

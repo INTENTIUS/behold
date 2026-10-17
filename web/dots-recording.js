@@ -9,12 +9,15 @@
 // time per phase, so their events are spaced evenly inside it and the show
 // says so (`spaced: true`). Pure: text or JSON in, plain data out.
 
+import { recordedClock } from "./dots-timeline.js";
+
 /** A carve recording's lines -> { header, end, roster, estates, keyframes, timeline } (after #457's recording.js). */
 export function readCarve(text) {
+  // Each record keeps its line in the file, for a timeline mark or a dot's provenance to name it.
   const lines = text
     .split("\n")
-    .filter((l) => l.trim())
-    .map((l) => JSON.parse(l));
+    .map((l, i) => (l.trim() ? { ...JSON.parse(l), line: i + 1 } : null))
+    .filter(Boolean);
   const header = lines.find((l) => l.kind === "header");
   const keyframes = lines.filter((l) => l.kind === "keyframe");
   if (!header || !keyframes.length) throw new Error("not a carve recording: no header or no keyframe");
@@ -49,6 +52,7 @@ export function readCarve(text) {
         refusal: m.doc?.refusal?.code ?? (m.exit !== 0 ? "exit" : undefined),
         ...(m.doc?.refusal?.summary ? { refusalSummary: m.doc.refusal.summary } : {}),
         followers: (m.doc?.followers ?? []).map((f) => f.address),
+        line: m.line,
       };
     })
     .sort((a, b) => a.seq - b.seq);
@@ -57,7 +61,7 @@ export function readCarve(text) {
     end: lines.find((l) => l.kind === "end"),
     roster: [...byAddress.values()],
     estates: [header.source, ...(header.destinations ?? [])],
-    keyframes: keyframes.map((k) => ({ seq: k.seq, t: Date.parse(k.t), owners: owners(k) })),
+    keyframes: keyframes.map((k) => ({ seq: k.seq, t: Date.parse(k.t), owners: owners(k), line: k.line })),
     timeline,
   };
 }
@@ -99,6 +103,7 @@ export function carveShow(rec, parents) {
     ...(m.refusal ? { refusal: m.refusal } : {}),
     ...(m.refusalSummary ? { refusalSummary: m.refusalSummary } : {}),
     seq: m.seq,
+    line: m.line,
   }));
   const t0 = Math.min(rec.keyframes[0].t, ...events.map((e) => e.start));
   const t1 = Math.max(last.t, ...events.map((e) => e.t));
@@ -118,6 +123,13 @@ export function carveShow(rec, parents) {
     t0,
     t1,
     spaced: false,
+    // A recording of a real event stream: its replay runs on the recording's own clock (web/dots-timeline.js).
+    timeline: recordedClock(events.flatMap((e) => [e.start, e.t]).concat(rec.keyframes.map((k) => k.t)), t0, t1),
+    records: {
+      header: { t: Date.parse(rec.header.t) || null, line: rec.header.line, source: rec.header.source || null, plan: rec.header.plan || null },
+      keyframes: rec.keyframes.map((k) => ({ t: k.t, line: k.line })),
+      end: rec.end && Date.parse(rec.end.t) ? { t: Date.parse(rec.end.t), line: rec.end.line } : null,
+    },
   };
 }
 

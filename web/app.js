@@ -3479,6 +3479,8 @@ async function initTerragucci() {
 var liveCarve = null; // var: render() may run before this line is reached
 let liveGateTimer = 0;
 const LIVE_GATE_MS = 30_000;
+// The gate is open but nothing is drawable yet (a cycle's start, before the stock roster lands): ask again soon (#711).
+const LIVE_GATE_OPEN_MS = 5_000;
 async function liveCarveGate() {
   clearTimeout(liveGateTimer);
   let a = null;
@@ -3494,7 +3496,7 @@ async function liveCarveGate() {
     if (g && svgEl) mountLiveCarve(g, svgEl);
     return;
   }
-  liveGateTimer = setTimeout(() => void liveCarveGate(), LIVE_GATE_MS);
+  liveGateTimer = setTimeout(() => void liveCarveGate(), a && a.live === true ? LIVE_GATE_OPEN_MS : LIVE_GATE_MS);
 }
 function mountLiveCarve(g, svgEl) {
   if (!vbInit) return;

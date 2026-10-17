@@ -17,6 +17,7 @@
 // is as it was.
 
 import { createNarration } from "./carve-narration.js";
+import { SLOWED } from "./tour-player.js";
 
 const STYLE = `
 #k-carve { display: none; }
@@ -41,6 +42,36 @@ body.k-carving.k-watch #k-carve { display: grid; }
 #k-carve .cx-tone-ok { --bar: var(--bar-managed); }
 #k-carve .cx-tone-bad { --bar: var(--bar-degraded); }
 #k-carve .cx-tone-idle { --bar: var(--bar-neutral); }
+/* The live badge's lag: how long since the newest write (web/tour-player.js lagText). */
+#k-carve .cx-lag { font: 600 11px var(--font-mono); color: var(--muted); margin-right: 10px; vertical-align: 0.15em; white-space: nowrap; }
+#k-carve .cx-lag-wait { color: var(--bar-pending); }
+/* The tour (behold.tour/v1): the rail, the chapter's card docked in the caption, the numbers, the notes. */
+#k-carve.cx-tour { grid-template-rows: auto auto auto auto; gap: 0.35em; }
+#k-carve .cx-tour-top { align-items: center; flex-wrap: wrap; gap: 0.5em 0.8em; }
+#k-carve .cx-tour-top .cx-rec { margin-right: 0; }
+#k-carve .cx-rail { list-style: none; margin: 0; padding: 0; display: flex; gap: 6px; align-items: center; min-width: 0; }
+#k-carve .cx-ch { position: relative; display: flex; align-items: baseline; gap: 6px; padding: 2px 8px 5px; border: 1px solid var(--rule, var(--line)); border-radius: 6px; font: 600 11px var(--font-mono); color: var(--muted); white-space: nowrap; }
+#k-carve .cx-ch-done { color: color-mix(in srgb, var(--fg) 70%, var(--muted)); }
+#k-carve .cx-ch-current { color: var(--fg); border-color: var(--bar-pending); }
+#k-carve .cx-ch-name { font: 600 11px var(--font-ui); max-width: 26ch; overflow: hidden; text-overflow: ellipsis; }
+#k-carve .cx-ch-bar { position: absolute; left: 6px; right: 6px; bottom: 2px; height: 2px; border-radius: 1px; background: color-mix(in srgb, var(--rule, var(--line)) 60%, transparent); overflow: hidden; }
+#k-carve .cx-ch-bar::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--p, 0) * 100%); background: var(--bar-managed); }
+#k-carve .cx-ch-current .cx-ch-bar::after { background: var(--bar-pending); }
+#k-carve .cx-follow { margin: 0 0 0 auto; display: flex; gap: 10px; align-items: baseline; font: 12px var(--font-ui); color: var(--muted); white-space: nowrap; }
+#k-carve .cx-follow-label { font: 600 0.66rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; }
+#k-carve .cx-follow a { color: var(--focus, var(--fg)); }
+#k-carve .cx-card { padding-left: 0.75em; box-shadow: inset 5px 0 0 var(--bar-pending); }
+#k-carve .cx-card.cx-enter { animation: cx-dock 0.45s ease-out; }
+@keyframes cx-dock { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { #k-carve .cx-card.cx-enter { animation: none; } }
+#k-carve .cx-card-title { white-space: normal; font-size: 1.4em; }
+#k-carve .cx-ch-kicker { font: 600 0.5em var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-right: 0.8em; vertical-align: 0.3em; }
+#k-carve .cx-card-line { margin: 0.15em 0 0; color: color-mix(in srgb, var(--fg) 85%, var(--muted)); line-height: 1.35; max-width: 90ch; }
+#k-carve .cx-numbers { margin: 0.2em 0 0; display: flex; flex-wrap: wrap; gap: 6px 22px; }
+#k-carve .cx-num { display: flex; flex-direction: column; }
+#k-carve .cx-num dt { font: 600 0.66rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+#k-carve .cx-num dd { margin: 0; font-size: 1.25em; font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; }
+#k-carve .cx-notes { margin: 0; font: 12px/1.35 var(--font-mono); color: var(--muted); padding-left: 0.75em; overflow-wrap: anywhere; }
 /* A phone: in the page's flow under the graph, where Watch's caption goes (web/kiosk.html). */
 @media (max-width: 600px) {
   body.k-watch #k-carve { position: static; order: 1; flex-direction: column; gap: 4px; border-radius: 0; box-shadow: none; border: 0; border-top: 1px solid var(--line); padding: 8px 12px 10px; }
@@ -53,7 +84,16 @@ body.k-carving.k-watch #k-carve { display: grid; }
   #k-carve .cx-label { font-size: 11px; padding-top: 3px; }
   #k-carve .cx-lead { font-size: 14px; }
   #k-carve .cx-text { -webkit-line-clamp: unset; display: block; }
+  #k-carve .cx-rail { flex-wrap: wrap; }
+  #k-carve .cx-ch-name { display: none; }
+  #k-carve .cx-follow { margin-left: 0; flex-wrap: wrap; white-space: normal; }
+  #k-carve .cx-card-title { font-size: 17px; }
+  #k-carve .cx-card-line { font-size: 14px; }
+  #k-carve .cx-num dd { font-size: 16px; }
 }
+/* Slowed playback, in Inspect's quiet rows: off (real time) unless a person picks it. */
+.k-slowed { font: 12px var(--font-ui); background: var(--well, transparent); color: var(--fg); border: 1px solid var(--line); border-radius: 5px; padding: 2px 8px; cursor: pointer; }
+.k-slowed[aria-pressed="true"] { border-color: var(--bar-pending); }
 `;
 
 /** Whether a message is the framed dots layer's live state, from this origin. */
@@ -69,13 +109,41 @@ export function liveCarveMessage(e, origin) {
  */
 export function startKioskCarve({ frame, watch, eh, origin = location.origin, isWatch = () => true }) {
   const trail = eh && eh.trailHost ? eh.trailHost : null;
-  if (typeof window === "undefined" || typeof document === "undefined" || !watch || !watch.layer) return { tellMode() {}, caption: () => (watch ? watch.caption : null) };
+  if (typeof window === "undefined" || typeof document === "undefined" || !watch || !watch.layer) return { tellMode() {}, caption: () => (watch ? watch.caption : null), slowedControl: () => null };
   let node = null;
   let narration = null;
   let carving = false;
   // The frame last told the kiosk's mode: a frame swapped in (a new view) is told again.
   let told = null;
   let lastBottom = -1;
+  // Slowed playback: a person's choice, real time until then. One button, kept across the header's redraws.
+  let slowed = 1;
+  let slowedNode = null;
+  const slowedButton = () => {
+    if (slowedNode || typeof document === "undefined") return slowedNode;
+    slowedNode = document.createElement("button");
+    slowedNode.type = "button";
+    slowedNode.className = "k-slowed";
+    const label = () => {
+      const at = SLOWED.find((x) => x.n === slowed) || SLOWED[0];
+      slowedNode.textContent = at.words;
+      slowedNode.setAttribute("aria-pressed", String(slowed !== 1));
+      slowedNode.title = slowed === 1 ? "Writes draw as they are read. Click to slow them down." : `Each read's writes are drawn ${at.stepMs} ms apart. Click for the next speed.`;
+    };
+    label();
+    slowedNode.addEventListener("click", () => {
+      const i = SLOWED.findIndex((x) => x.n === slowed);
+      slowed = SLOWED[(i + 1) % SLOWED.length].n;
+      label();
+      const f = frame();
+      try {
+        if (f && f.contentWindow) f.contentWindow.postMessage({ type: "behold:dots-slowed", n: slowed }, origin);
+      } catch {
+        /* the frame went away */
+      }
+    });
+    return slowedNode;
+  };
   const ensure = () => {
     if (node) return;
     const st = document.createElement("style");
@@ -145,5 +213,7 @@ export function startKioskCarve({ frame, watch, eh, origin = location.origin, is
   });
   /** The caption shown now: the carve's while it has the camera, so the trail and the shot stay clear of it. */
   const caption = () => (carving && node && isWatch() ? node : watch.caption);
-  return { tellMode, caption };
+  /** The slowed control for Inspect's quiet rows, once a frame draws a live carve; null before. */
+  const slowedControl = () => (node ? slowedButton() : null);
+  return { tellMode, caption, slowedControl };
 }

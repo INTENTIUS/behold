@@ -206,14 +206,15 @@ export function liveBeat(scene, t, ctx = {}) {
   }
   if (!running && m) {
     const kept = counts.get(src) ?? 0;
+    const r = resourceCounts(m);
     const n = [...counts.entries()].filter(([e, v]) => v > 0 && e !== src).length;
     return {
       phase: "settled",
       title,
       line: {
         label: "done",
-        text: `${m.name}: ${fmt(c.moved)} moved, ${fmt(c.stamped)} stamped, nothing recreated` + (c.refused ? `; ${c.refused} refused, so ${fmt(kept)} stay in ${src}` : "") + (n ? ` · ${n} estate${n === 1 ? "" : "s"} beside ${src}` : ""),
-        tone: c.refused ? "bad" : "ok",
+        text: `${m.name}: ${fmt(r.moved)} resources moved, ${fmt(r.stamped)} stamped, nothing recreated` + (r.refused ? `; ${r.refused} refused, so ${fmt(kept)} stay in ${src}` : "") + (n ? ` · ${n} estate${n === 1 ? "" : "s"} beside ${src}` : ""),
+        tone: r.refused ? "bad" : "ok",
       },
       next: { ...next, fraction: 1 },
       focus: { kind: "all" },
@@ -251,9 +252,21 @@ export function liveTipsBetween(scene, from, to) {
   return out.sort((a, b) => a.at - b.at);
 }
 
+/**
+ * A migration's counts in resources, not lines: a follower of two parents has
+ * a moved line under each (terragucci#1146), so the record's line counts can
+ * say 45 where 39 resources moved. With no lines, the record's own counts.
+ */
+export function resourceCounts(migration) {
+  const lines = (migration && migration.lines) || [];
+  if (!lines.length) return migration ? migration.counts : null;
+  const n = (o) => new Set(lines.filter((l) => l.outcome === o).map((l) => l.live_id || l.address)).size;
+  return { ...migration.counts, moved: n("moved"), stamped: n("stamped"), refused: n("refused"), skipped: n("skipped") };
+}
+
 /** The Tip for a migration that has just finished. */
 export function liveEndTip(migration, t) {
-  const c = migration.counts;
+  const c = resourceCounts(migration);
   return {
     key: `end:${migration.name}`,
     at: t,
@@ -261,6 +274,6 @@ export function liveEndTip(migration, t) {
     estate: null,
     tone: c.refused ? "bad" : "ok",
     title: `${migration.name}: done`,
-    text: `${migration.name} is done: ${fmt(c.moved)} moved and ${fmt(c.stamped)} stamped by tag writes alone, none recreated${c.refused ? `; ${c.refused} refused, left where they were` : ""}.`,
+    text: `${migration.name} is done: ${fmt(c.moved)} resources moved and ${fmt(c.stamped)} stamped by tag writes alone, none recreated${c.refused ? `; ${c.refused} refused, left where they were` : ""}.`,
   };
 }

@@ -375,6 +375,24 @@ recording ("recorded", naming the source). It replays by itself and loops,
 holding on the result. The camera follows the flock until a person takes it,
 and the rail steps aside while the camera is following.
 
+### A recording's timeline says it is a recording (#711)
+
+A replay of a recording (the static export, `npm run preview:dots`) plays on
+the recording's own clock (`web/dots-timeline.js`): each move flies when its
+line says it was written, and wall-clock time runs one to one, except that an
+idle stretch over 10 s plays as 2 s and the timeline draws a break there with
+the real gap ("+45 s skipped"). The timeline carries the reminder itself:
+"Recorded 22 Sept 2026, 16:38:15–17:12:59 UTC from behold-terralith-14 · plan
+domains", from the recording's header and times ("Recorded 16:38–17:12 UTC"
+on a phone). Its ticks are the recording's wall-clock times, and its marks
+are lines of the recording (the first and last move, each keyframe, the end),
+each naming its file, line and time on hover. The speed sits beside the
+playhead and always says its state ("1x real time", "slowed ×10", "sped up
+×4"). A selected dot's provenance names its move line, and a click on it
+moves the playhead to that write. The live carve has no playhead: it shows
+the LIVE badge and the lag only. The walkthrough, whose events are spaced
+evenly inside each phase, keeps its plain bar.
+
 ## The live carve (#715): #462's questions, settled where the build needs them
 
 #715 draws a carve as terragucci writes it, from the estate rosters
@@ -504,12 +522,23 @@ carved project:
   where they are, and the box takes the estate's name when the first stamp
   plays, whether the page watched the lines arrive or loaded mid-migration.
 - A line in the first read happened before the page looked: its dot is drawn
-  where it ended. A line that arrives later plays from the moment it was seen.
-  The lines of one read play 50 ms apart, queued after any line of an earlier
-  read still waiting. On floci an adoption's 82 lines land within a second and
-  arrive in one read, so without pacing the adopt beat is one burst; at 50 ms a
-  line it takes about 4 s and can be watched. Only the live driver paces this
-  way; a recording's replay has its own pacing.
+  where it ended. A line that arrives later plays from the moment it was read,
+  in real time: on floci an adoption's 82 lines land within a second and arrive
+  in one read, so the adopt beat is the burst it was. Slowed playback is a
+  person's choice, a "slowed ×N" button in Inspect's quiet rows, off by
+  default: the lines of one read are then drawn `stepMs` apart, queued after any
+  line of an earlier read still waiting. A recording's replay has its own
+  pacing, and says it is recorded.
+- A landed dot's provenance, on hover or a tap: "live-mv retagged `<address>`
+  from `<estate>` to `<estate>` at `<time>` · job #`<n>`", from its progress
+  line and the run whose report row carries the migration record's commit,
+  with a link to that job when the report names its URL. Without a pointer,
+  the arrow keys on the layer step through the writes that landed, and a live
+  region reads each one out.
+- The live badge's lag: "last write N s ago" from the newest line's `at` and the
+  page's clock, and "waiting for the job" once the gap passes 60 s while a
+  migration runs.
+- The terralith's guided tour is a tour file the layer plays (docs/design/tours.md).
 - A `stamped` line leaves a ring; it is also a move when its `estate_to` names
   another estate. A `moved` line with `follows` flies with its parent's move.
   A `skipped` line draws nothing.
