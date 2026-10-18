@@ -54,7 +54,7 @@ const R1 = `jcs1-sha256:${"1".repeat(64)}`;
 const R2 = `jcs1-sha256:${"2".repeat(64)}`;
 const R3 = `jcs1-sha256:${"3".repeat(64)}`;
 const revocation = { tag: `ci/revoked/${C3}`, tagged: "2026-10-05T00:00:00Z", phase: "test", run: run(113, "failure"), signer: null };
-const ROLLBACK = "chant components rollback staging --component api";
+const ROLLBACK = "chant components rollback staging --release v2";
 const unsigned = { status: "unsigned", reason: "the cut carries no signature" };
 const releases = [
   { member: "web", releaseDigest: R3, label: "v3", commit: C3, listed: true, artifacts: 1, previous: { releaseDigest: R2, label: "v2" }, configOnly: false, cut: { by: "github:alice", at: "2026-10-04T09:00:00Z", signature: { status: "unverified", reason: "there is no signers file (.chant/allowed_signers) at base to check the cut's signature against" } }, revoked: { ...revocation, rollback: [ROLLBACK] }, runs: [{ env: "staging", components: ["api"] }], waits: [{ env: "prod", gate: "web/release/promote", state: "superseded" }], next: null },

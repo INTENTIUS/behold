@@ -29,7 +29,10 @@ import statusSchema from "./trunk-lane-schemas/status.schema.json" with { type: 
 // three commits (chant#4029 needs a declared work kind to write them). The
 // schemas in src/trunk-lane-schemas/ are chant's, from the same commit.
 // status.schema.json was refreshed from chant main at 0689d28f0 for #683,
-// which only adds featureFlags.
+// which only adds featureFlags, and status-staging.json and status-prod.json
+// were recorded again from that commit: since chant#4072 the revoked v3's
+// rollback line names the release to restore (`--release v2`), and staging
+// carries `mixed`; both also carry `featureFlags: []`.
 
 const FIX = join(import.meta.dirname, "__fixtures__", "trunk-lane");
 const fixture = (name: string): WorkspaceDocument => JSON.parse(readFileSync(join(FIX, name), "utf8")) as WorkspaceDocument;
@@ -124,7 +127,7 @@ describe("laneFrom (#680)", () => {
     expect(staging).toMatchObject({
       env: "staging",
       releases: [
-        { member: "web", label: "v3", commit: C3, listed: true, components: ["api"], cutBy: "github:alice", approver: null, rollback: ["chant components rollback staging --component api"] },
+        { member: "web", label: "v3", commit: C3, listed: true, components: ["api"], cutBy: "github:alice", approver: null, rollback: ["chant components rollback staging --release v2"] },
         { member: "web", label: "v2", commit: C2, listed: true, components: ["web"], cutBy: "github:alice", approver: null, rollback: [] },
       ],
       deploys: [],
@@ -243,7 +246,7 @@ describe("the release column (#692)", () => {
       phase: "test",
       run: { name: "test", url: "https://github.com/acme/app/actions/runs/113", conclusion: "failure" },
       signer: null,
-      rollback: ["chant components rollback staging --component api"],
+      rollback: ["chant components rollback staging --release v2"],
     });
     expect(v3).toMatchObject({ next: null, waits: [{ env: "prod", gate: "web/release/promote", state: "superseded" }], cut: { signature: { status: "unverified" } } });
     const prod = l.environments[1];
