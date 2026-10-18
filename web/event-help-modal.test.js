@@ -3,7 +3,7 @@
 // real event arrives, narrated and replayed modals never write, and live mode
 // writes only through the app's existing approve route, or waits on the ledger.
 import { describe, expect, it, vi } from "vitest";
-import { approveRoute, buttonState, modeLine, openEventModal, secondsLeft } from "./event-help-modal.js";
+import { approveRoute, buttonState, modalSpot, modeLine, openEventModal, secondsLeft } from "./event-help-modal.js";
 
 /** Just enough of a DOM for the modal: elements with children, text, attributes and listeners. */
 function fakeDoc() {
@@ -176,5 +176,23 @@ describe("event-help modal: live mode", () => {
     expect(m.state.outcome).toBe("approved by demo-reviewer, signed");
     expect(fetchSpy).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
+  });
+});
+
+// behold#631: the "Wave 2 failed" modal sat right on cluster-a.
+describe("a modal kept off the cards it is about", () => {
+  const win = { w: 1920, h: 1080 };
+  const size = { w: 576, h: 240 };
+  it("stays in the centre when nothing is under it", () => {
+    expect(modalSpot(win, size, [{ left: 100, top: 100, width: 130, height: 66 }])).toBeNull();
+    expect(modalSpot(win, size, [])).toBeNull();
+  });
+  it("moves off a failed card in the centre, and off the cards it blocked", () => {
+    const failed = { left: 900, top: 500, width: 130, height: 66 };
+    const blocked = [{ left: 20, top: 20, width: 600, height: 300 }];
+    const spot = modalSpot(win, size, [failed, ...blocked]);
+    expect(spot).not.toBeNull();
+    const hit = (a) => spot.left < a.left + a.width && spot.left + size.w > a.left && spot.top < a.top + a.height && spot.top + size.h > a.top;
+    expect([failed, ...blocked].some(hit)).toBe(false);
   });
 });

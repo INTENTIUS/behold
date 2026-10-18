@@ -99,6 +99,7 @@ export const MODAL_STYLE = `
 .eh-switch input { margin: 0; accent-color: var(--pending); }
 .eh-switch:hover { color: var(--fg); }
 .eh-modal-wrap { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--bg) 35%, transparent); }
+.eh-modal-wrap.eh-modal-placed { align-items: flex-start; justify-content: flex-start; }
 .eh-modal { position: relative; width: min(36em, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow-y: auto; padding: 1em 1.2em 1.1em; border-radius: 12px; background: var(--surface-pane-b, var(--panel)); color: var(--fg);
   border: 2px solid var(--bar, var(--focus)); box-shadow: 0 16px 48px color-mix(in srgb, var(--shadow) 80%, transparent); font-size: 1.05em; }
 .eh-modal-held { --bar: var(--bar-foreign, var(--foreign)); } .eh-modal-failed { --bar: var(--bar-degraded, var(--degraded)); } .eh-modal-applied { --bar: var(--bar-managed, var(--managed)); }
@@ -126,6 +127,42 @@ export function modalStyle(doc) {
   style.id = "eh-modal-style";
   style.textContent = MODAL_STYLE;
   doc.head.appendChild(style);
+}
+
+/**
+ * behold#631: where a modal of `size` goes in a window of `win` so it covers
+ * none of `avoid` (rects in window coordinates: `{ left, top, width, height }`),
+ * or null when the centre already does. Tries the centre, then the corners,
+ * the sides' middles and the top and bottom middles, each `margin` in from
+ * the edge; when every spot covers something, the one that covers least.
+ */
+export function modalSpot(win, size, avoid, margin = 16) {
+  const rects = (avoid || []).filter((a) => a && a.width > 0 && a.height > 0).map((a) => ({ x0: a.left - 12, y0: a.top - 12, x1: a.left + a.width + 12, y1: a.top + a.height + 12 }));
+  const w = Math.min(size.w, win.w - 2 * margin);
+  const h = Math.min(size.h, win.h - 2 * margin);
+  const cx = (win.w - w) / 2;
+  const cy = (win.h - h) / 2;
+  const right = win.w - w - margin;
+  const bottom = win.h - h - margin;
+  const spots = [
+    { left: cx, top: cy, centre: true },
+    { left: margin, top: margin },
+    { left: right, top: margin },
+    { left: margin, top: bottom },
+    { left: right, top: bottom },
+    { left: margin, top: cy },
+    { left: right, top: cy },
+    { left: cx, top: margin },
+    { left: cx, top: bottom },
+  ];
+  const cover = (s) => rects.reduce((sum, r) => sum + Math.max(0, Math.min(s.left + w, r.x1) - Math.max(s.left, r.x0)) * Math.max(0, Math.min(s.top + h, r.y1) - Math.max(s.top, r.y0)), 0);
+  let best = null;
+  for (const s of spots) {
+    const c = cover(s);
+    if (c === 0) return s.centre ? null : { left: s.left, top: s.top };
+    if (!best || c < best.c) best = { s, c };
+  }
+  return best.s.centre ? null : { left: best.s.left, top: best.s.top };
 }
 
 /**
@@ -190,7 +227,11 @@ export function openEventModal(host, { mode, kind, data = {}, actions = {}, doc 
     const line = modeLine(mode, kind, { at: data.at, now: t, resolved: st.resolved, outcome: st.outcome, replayAt: data.replayAt, action: data.action });
     if (line) box.appendChild(el("p", `eh-modal-mode eh-modal-${mode}`, line));
     box.appendChild(el("h2", "eh-modal-title", data.title || ""));
-    for (const l of data.lines || []) box.appendChild(el("p", `eh-modal-line${l.lit ? " eh-lit" : ""}`, l.text));
+    for (const l of data.lines || []) {
+      const p = el("p", `eh-modal-line${l.lit ? " eh-lit" : ""}`, l.text);
+      if (l.title) p.title = l.title;
+      box.appendChild(p);
+    }
     if (data.panel) box.appendChild(data.panel);
     const routed = mode === "live" && approveRoute(data.gate);
     // The panel, when there is one, already carries the command.
@@ -249,15 +290,28 @@ export function openEventModal(host, { mode, kind, data = {}, actions = {}, doc 
     watchTimer = setTimer(() => void look(), LEDGER_WATCH_MS);
     void look();
   }
+  // behold#631: a modal that must keep things in view (a failed card and the cards it blocked) moves off them.
+  const placeClear = () => {
+    if (typeof data.avoid !== "function" || !box.getBoundingClientRect || !doc.defaultView) return;
+    const r = box.getBoundingClientRect();
+    if (!r.width) return;
+    const win = { w: doc.defaultView.innerWidth, h: doc.defaultView.innerHeight };
+    const spot = modalSpot(win, { w: r.width, h: r.height }, data.avoid() || []);
+    wrap.classList.toggle("eh-modal-placed", !!spot);
+    box.style.marginLeft = spot ? `${Math.round(spot.left)}px` : "";
+    box.style.marginTop = spot ? `${Math.round(spot.top)}px` : "";
+  };
   const tick = () => {
     if (st.closed) return;
     if (st.closeAt !== null && !st.hovered && now() >= st.closeAt) return close();
     render();
+    placeClear();
   };
   const timer = setTimer(tick, 250);
   // The result needs no event to wait for: it closes on its own after its time.
   if (kind === "applied" && mode !== "live") st.closeAt = now() + MODAL_CLOSE_MS;
   render();
+  placeClear();
 
   const api = {
     state: st,

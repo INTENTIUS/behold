@@ -204,7 +204,8 @@ export function cycleFacts(snap) {
     const subjects = { roots: w.components || [], wave: n, run: runId };
     if (["running", "applied", "failed"].includes(w.state)) add({ id: `${c}|w${n}|start`, kind: "started", text: `wave ${n} started`, order: base, subjects, trail: false });
     for (const f of w.failed || []) {
-      add({ id: `${c}|w${n}|failed|${f.component}`, kind: "failed", text: f.reason ? `${f.component} failed: ${f.reason}` : `${f.component} failed`, order: base + 1, subjects: { ...subjects, roots: [f.component] }, critical: true });
+      // The raw error rides along for a tooltip; the roots are the failed card and what it blocked, which a modal must not cover.
+      add({ id: `${c}|w${n}|failed|${f.component}`, kind: "failed", text: f.reason ? `${f.component} failed: ${f.reason}` : `${f.component} failed`, order: base + 1, subjects: { ...subjects, roots: [f.component, ...(f.blocks || [])] }, critical: true, chant: true, ...(f.error ? { raw: `${f.component} failed: ${f.error}` } : {}) });
     }
     if (w.state === "applied" || (w.state === "failed" && w.applied)) {
       add({ id: `${c}|w${n}|applied`, kind: "applied-wave", text: w.state === "failed" ? `wave ${n}: ${w.applied} applied` : w.blocked ? `wave ${n} applied ${w.applied}; ${w.blocked} blocked` : `wave ${n} applied`, order: base + 7, subjects });

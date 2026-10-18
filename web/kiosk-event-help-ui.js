@@ -372,14 +372,23 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     if (event.kind === "held") {
       data = { title: Number.isInteger(event.subjects.wave) ? `Wave ${event.subjects.wave} waits for an approval` : "The plan waits for an approval", lines: [{ text: event.text }], panel: panel("held"), command: h.approveLine || null, at: d && d.step === "waiting" && /approve/.test((d.next && d.next.action) || "") ? nextAt : null, from: t, replayAt: t };
     } else if (event.kind === "failed" || event.kind === "refused") {
-      data = { title: `Wave ${event.subjects.wave} failed`, lines: [{ text: event.text, lit: true }, ...(h.label ? [{ text: h.label }] : [])], action: d && d.next ? d.next.action : null, at: nextAt, from: t, replayAt: t };
+      // behold#631: a chant failure's own line is the error chant printed. When the step's label already says why, the label is the line and
+      // the error goes in its tooltip; otherwise the error's most specific part, with the whole of it in the tooltip.
+      const lines = event.chant
+        ? h.label
+          ? [{ text: h.label, ...(event.raw || event.text ? { title: event.raw || event.text } : {}) }]
+          : [{ text: event.text, lit: true, ...(event.raw ? { title: event.raw } : {}) }]
+        : [{ text: event.text, lit: true }, ...(h.label ? [{ text: h.label }] : [])];
+      data = { title: `Wave ${event.subjects.wave} failed`, lines, action: d && d.next ? d.next.action : null, at: nextAt, from: t, replayAt: t };
     } else {
       const r = h.result;
       data = { title: "Applied", lines: [...(h.label ? [{ text: h.label }] : []), ...(r ? r.counts.map((c) => ({ text: c })) : [])], replayAt: t };
     }
     const kind = event.kind === "refused" ? "failed" : event.kind;
+    // behold#631: a chant failure's modal keeps clear of the failed card and the cards it blocked.
+    if (event.chant) data.avoid = () => event.subjects.roots.map((r) => fromFrame(h, h.boxes && h.boxes.roots ? h.boxes.roots[r] : null)).filter(Boolean);
     const api = openEventModal(modalHost, { mode, kind, data, doc, now: shown, reduced: reduced(), onClose: () => (st.modal = null) });
-    st.modal = { api, event, kind, step: d ? d.step : null, cycle: d ? d.cycle : null };
+    st.modal = { api, event, kind, step: d ? d.step : null, cycle: d ? d.cycle : null, pull: d ? d.pull : null };
   };
   /** The modal's real event: the approval landed, the waves ran again, the cycle moved on. */
   const settleModal = (h, facts) => {
@@ -392,6 +401,8 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
       else if (d && (d.cycle !== m.cycle || !["waiting", "approved"].includes(d.step))) m.api.resolve(d.cycle === m.cycle ? "approved; the waves run again" : null);
     } else if (m.kind === "failed") {
       if (d && (d.cycle !== m.cycle || ["resumed", "applying", "waiting", "applied"].includes(d.step))) m.api.resolve(d.cycle === m.cycle ? "the waves run again" : null);
+      // behold#631: a chant failure's modal goes once the cycle moves on, to a new pull request or a new step (the fix's plan, its wait).
+      if (m.event.chant && d && (d.cycle !== m.cycle || d.pull !== m.pull || d.step !== m.step)) m.api.close();
     }
   };
 
