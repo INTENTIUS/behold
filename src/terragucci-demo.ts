@@ -86,6 +86,30 @@ export interface Demo {
   delivery: string | null;
   /** The beat of a scenario told in several (terralith: stock, adopt, split, team, cross); null otherwise (terragucci#1131). */
   beat: string | null;
+  /**
+   * behold#631: the chapter of the story this step is in (a chant fan-out's
+   * four: the change goes out, cluster-a breaks, the fix, done), with its
+   * headline and, when the driver writes one, a short name for the track.
+   * Absent from drivers and scenarios without chapters.
+   */
+  chapter?: DemoChapter;
+}
+
+export interface DemoChapter {
+  n: number;
+  of: number;
+  headline: string;
+  short?: string;
+}
+
+/** A demo.json `chapter`, or undefined when it is not one. */
+export function chapterOf(v: unknown): DemoChapter | undefined {
+  if (!isRecord(v)) return undefined;
+  const n = v.n;
+  const of = v.of;
+  if (!int(n) || !int(of) || n < 1 || of < n || !str(v.headline) || !v.headline.trim()) return undefined;
+  const short = text(v.short) ?? text(v.name) ?? text(v.title);
+  return { n, of, headline: v.headline.trim(), ...(short ? { short } : {}) };
 }
 
 export type DemoAnswer =
@@ -171,6 +195,10 @@ export function demoOf(d: Demo): Demo {
     repo: text(d.repo),
     delivery: text(d.delivery),
     beat: text(d.beat),
+    ...((): { chapter?: DemoChapter } => {
+      const ch = chapterOf((d as { chapter?: unknown }).chapter);
+      return ch ? { chapter: ch } : {};
+    })(),
   };
 }
 

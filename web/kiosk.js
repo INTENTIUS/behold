@@ -130,6 +130,19 @@ export function stripStops(step, strip = STRIP) {
   return strip.map((s, i) => ({ id: s.id, words: s.words, state: at < 0 ? "ahead" : i < at ? "done" : i === at ? (step === "failed" ? "failed" : "current") : "ahead" }));
 }
 
+/** behold#631: the chapter headline's look: it fades in when the chapter turns (no motion under reduced motion), the point small under it. */
+function chapterStyle() {
+  if (typeof document === "undefined" || !document.head || document.getElementById("k-chapter-style")) return;
+  const st = document.createElement("style");
+  st.id = "k-chapter-style";
+  st.textContent = `.k-cap-point { margin: 0.1em 0 0.35em; font: 600 0.95em var(--font-ui); color: var(--muted); }
+@media (prefers-reduced-motion: no-preference) {
+  .k-chapter-head.k-chapter-in { animation: k-chapter-in 0.8s ease-out both; }
+  @keyframes k-chapter-in { from { opacity: 0; } to { opacity: 1; } }
+}`;
+  document.head.appendChild(st);
+}
+
 /** behold#631: a chant kiosk's one line naming what it shows: "chant fan-out, run by terragucci · live demo". */
 export const TOOL_WORDS = { "chant-fanout": "chant fan-out", chant: "chant" };
 export function whatLine(demo) {
@@ -963,9 +976,30 @@ function drawCaption(host, s, now) {
   const top = el("div", "k-cap-top");
   const title = el("h1", "k-cap-title");
   // behold#631: a chant kiosk with its track drops "Scenario 1 of 1": the track says where the cycle is.
+  const ch = s.chantLoop && demo && demo.chapter && Number.isInteger(demo.chapter.n) ? demo.chapter : null;
   if (!(s.chantLoop && s.trackOn)) title.append(el("span", "k-kicker", cap.kicker));
-  title.append(el("span", "k-title-text", cap.title));
-  if (title.setAttribute) title.setAttribute("title", `${cap.kicker} · ${cap.title}`);
+  if (ch) {
+    // behold#631: the story's chapter is the headline, "1 of 4 · A change to the shared network goes out to all 15 stacks",
+    // fading in when the chapter turns; the scenario's point stays under it as one constant small line.
+    chapterStyle();
+    const words = `${ch.n} of ${ch.of} · ${ch.headline}`;
+    const head = el("span", "k-title-text k-chapter-head", words);
+    if (s.capChapter !== words) {
+      s.capChapter = words;
+      s.capChapterAt = now.getTime ? now.getTime() : Date.now();
+    }
+    const t = now.getTime ? now.getTime() : Date.now();
+    // A redraw mid-fade carries on from where the fade is, never from the start.
+    if (t - (s.capChapterAt || 0) < 900 && head.classList) {
+      head.classList.add("k-chapter-in");
+      if (head.style) head.style.animationDelay = `-${t - s.capChapterAt}ms`;
+    }
+    title.append(head);
+    if (title.setAttribute) title.setAttribute("title", words);
+  } else {
+    title.append(el("span", "k-title-text", cap.title));
+    if (title.setAttribute) title.setAttribute("title", `${cap.kicker} · ${cap.title}`);
+  }
   top.appendChild(title);
   if (cap.next) {
     const nx = el("p", "k-cap-next");
@@ -984,6 +1018,7 @@ function drawCaption(host, s, now) {
     top.appendChild(nx);
   }
   host.appendChild(top);
+  if (ch && cap.title) host.appendChild(el("p", "k-cap-point", cap.title));
   const beat = cap.intro || cap.changes;
   const changes = el("p", `k-cap-row k-cap-changes${cap.lead === "changes" ? " k-cap-lead" : ""}`);
   if (beat) {

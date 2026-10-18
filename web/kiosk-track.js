@@ -47,19 +47,31 @@ export function cycleTrack(cycle) {
   const end = typeof cycle.ended === "string" ? cycle.ended : null;
   const pulls = [];
   const chapters = [];
+  // behold#631: a cycle whose steps carry their story's chapter ({ n, of, headline }) is told in those chapters; else one per pull request.
+  const byStory = steps.every((s) => s.chapter && Number.isInteger(s.chapter.n));
   steps.forEach((s, i) => {
     const next = steps[i + 1];
     const took = next ? ms(s.at, next.at) : end ? ms(s.at, end) : 3_000;
-    // A step with no pull request of its own (the reset) closes the chapter it follows.
-    let ci = Number.isInteger(s.pull) ? pulls.indexOf(s.pull) : chapters.length - 1;
-    if (ci < 0) {
-      pulls.push(s.pull);
-      ci = pulls.length - 1;
-      chapters.push({ index: ci, lastPull: s.pull, segments: [] });
+    // Which pull request of the cycle this is: a later one's open is the fix's.
+    if (Number.isInteger(s.pull) && !pulls.includes(s.pull)) pulls.push(s.pull);
+    const pi = Number.isInteger(s.pull) ? pulls.indexOf(s.pull) : pulls.length - 1;
+    let ci;
+    if (byStory) {
+      ci = chapters.findIndex((c) => c.n === s.chapter.n);
+      if (ci < 0) {
+        chapters.push({ index: chapters.length, n: s.chapter.n, of: s.chapter.of, headline: s.chapter.headline, short: s.chapter.short || shortOf(s.chapter.headline), segments: [] });
+        ci = chapters.length - 1;
+      }
+    } else {
+      // A step with no pull request of its own (the reset) closes the chapter it follows.
+      ci = Number.isInteger(s.pull) ? pi : chapters.length - 1;
+      if (ci < 0 || ci >= chapters.length) {
+        chapters.push({ index: chapters.length, lastPull: s.pull, segments: [] });
+        ci = chapters.length - 1;
+      }
     }
-    if (ci < 0) return;
     const chapter = chapters[ci];
-    const label = s.step === "pull-request" && ci > 0 ? "fix opened" : LABELS[s.step] || s.step;
+    const label = s.step === "pull-request" && pi > 0 ? "fix opened" : LABELS[s.step] || s.step;
     const last = chapter.segments[chapter.segments.length - 1];
     if (last && last.label === label) {
       last.steps.push(s.step);
@@ -69,7 +81,15 @@ export function cycleTrack(cycle) {
     chapter.segments.push({ label, steps: [s.step], ms: took, labelText: s.label || "" });
   });
   const total = chapters.reduce((sum, c) => sum + c.segments.reduce((a, g) => a + g.ms, 0), 0) || 1;
-  return { chapters, total, cycle: cycle.cycle };
+  return { chapters, total, cycle: cycle.cycle, byStory };
+}
+
+/** A chapter's short name for the track, from its headline when the driver gives none: up to its first comma, colon or dash, at most five words. */
+export function shortOf(headline) {
+  if (typeof headline !== "string") return "";
+  const head = headline.split(/[,:;·]|\s[—–-]\s/)[0].trim();
+  const words = head.split(/\s+/);
+  return words.length > 5 ? words.slice(0, 5).join(" ") : head;
 }
 
 /** "The change (PR #12)", "The fix (PR #13)": the current cycle's numbers once known, the chapter's role alone before. */
@@ -86,8 +106,11 @@ export function chapterTitle(index, pull) {
  */
 export function trackModel(track, { demo, pulls = [], since = null, now = Date.now(), waves = null } = {}) {
   if (!track || !demo) return null;
-  // Where the cycle is: the chapter of the current pull request (the reset, the last), the segment holding the step.
-  const ci = demo.step === "reset" || !Number.isInteger(demo.pull) ? track.chapters.length - 1 : Math.max(0, pulls.indexOf(demo.pull));
+  // Where the cycle is: the step's own story chapter when told in them; else the chapter of the current pull request
+  // (the reset, the last). Then the segment holding the step.
+  const ci = track.byStory && demo.chapter && Number.isInteger(demo.chapter.n)
+    ? Math.max(0, track.chapters.findIndex((c) => c.n === demo.chapter.n))
+    : demo.step === "reset" || !Number.isInteger(demo.pull) ? track.chapters.length - 1 : Math.max(0, pulls.indexOf(demo.pull));
   const chapter = track.chapters[Math.min(ci, track.chapters.length - 1)];
   const si = chapter ? chapter.segments.findIndex((g) => g.steps.includes(demo.step)) : -1;
   const at = { chapter: Math.min(ci, track.chapters.length - 1), segment: si };
@@ -98,7 +121,7 @@ export function trackModel(track, { demo, pulls = [], since = null, now = Date.n
   const fill = current ? (expected > 0 ? Math.min(FILL_CAP, elapsed / expected) : FILL_CAP) : 0;
   const share = (g) => Math.max(MIN_SHARE, g.ms / track.total);
   const chapters = track.chapters.map((c, i) => ({
-    title: chapterTitle(i, pulls[i]),
+    title: track.byStory ? `${c.n} ${c.short}` : chapterTitle(i, pulls[i]),
     state: i < at.chapter ? "done" : i === at.chapter ? "current" : "ahead",
     segments: c.segments.map((g, j) => {
       const state = i < at.chapter || (i === at.chapter && j < at.segment) ? "done" : i === at.chapter && j === at.segment ? "current" : "ahead";
@@ -114,7 +137,7 @@ export function trackModel(track, { demo, pulls = [], since = null, now = Date.n
       };
     }),
   }));
-  const nowLine = nowWords({ demo, segment: current, expected, elapsed, overrun, waves, now, fix: at.chapter > 0 });
+  const nowLine = nowWords({ demo, segment: current, expected, elapsed, overrun, waves, now, fix: track.byStory ? pulls.indexOf(demo.pull) > 0 : at.chapter > 0 });
   return { chapters, at, elapsed, expected, overrun, now: nowLine };
 }
 
@@ -195,6 +218,7 @@ body.k-watch #k-track { position: fixed; z-index: 7; left: 5px; right: 5px; }
 #k-track .kt-chapter { display: flex; flex-direction: column; gap: 0.15em; min-width: min-content; }
 #k-track .kt-chapter-title { font-size: 0.85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg); }
 #k-track .kt-chapter.kt-ahead .kt-chapter-title { color: var(--muted); }
+#k-track .kt-chapter.kt-current .kt-chapter-title { color: var(--pending); }
 #k-track .kt-segs { display: flex; gap: 3px; }
 #k-track .kt-seg { position: relative; height: 1.7em; border-radius: 5px; border: 1.5px solid color-mix(in srgb, var(--muted) 60%, transparent); overflow: hidden; min-width: 0; flex-shrink: 1; }
 #k-track .kt-seg .kt-fill { position: absolute; inset: 0 auto 0 0; background: color-mix(in srgb, var(--pending) 55%, transparent); }

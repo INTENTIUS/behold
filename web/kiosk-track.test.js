@@ -92,6 +92,36 @@ describe("the projected cycle track (behold#631)", () => {
   });
 });
 
+describe("the track in the story's four chapters (behold#631)", () => {
+  const ch = (n, headline, short) => ({ n, of: 4, headline, ...(short ? { short } : {}) });
+  const chapters = [ch(1, "A change to the shared network goes out to all 15 stacks", "The change goes out"), ch(2, "cluster-a breaks, and only its six apps wait", "cluster-a breaks"), ch(3, "The fix applies only the seven left", "The fix"), ch(4, "All fifteen are in", "Done")];
+  const of = (step) => (["failed"].includes(step) ? chapters[1] : ["applied", "reset"].includes(step) ? chapters[3] : null);
+  const told = { ...cycle, steps: cycle.steps.map((s, i) => ({ ...s, chapter: of(s.step) || (i < 6 ? chapters[0] : chapters[2]) })) };
+  const track = cycleTrack(told);
+  it("groups the segments by chapter, each titled with its number and short name", () => {
+    expect(track.byStory).toBe(true);
+    expect(track.chapters.map((c) => [c.n, c.short, c.segments.map((g) => g.label)])).toEqual([
+      [1, "The change goes out", ["opened", "planned", "review", "merged", "applying"]],
+      [2, "cluster-a breaks", ["failed"]],
+      [3, "The fix", ["fix opened", "planned", "review", "merged", "applying"]],
+      [4, "Done", ["done", "reset"]],
+    ]);
+  });
+  it("finds where the cycle is by the step's own chapter, and lights that chapter's title", () => {
+    const now = Date.parse(T("40:00"));
+    const m = trackModel(track, { demo: { step: "applying", pull: 13, chapter: chapters[2] }, pulls: [12, 13], since: now - 2_000, now });
+    expect(m.chapters.map((c) => [c.title, c.state])).toEqual([["1 The change goes out", "done"], ["2 cluster-a breaks", "done"], ["3 The fix", "current"], ["4 Done", "ahead"]]);
+    expect(m.chapters[2].segments[4]).toMatchObject({ label: "applying", state: "current" });
+  });
+  it("names a chapter from its headline when the driver gives no short name", () => {
+    const plain = cycleTrack({ ...cycle, steps: told.steps.map((s) => ({ ...s, chapter: { n: s.chapter.n, of: 4, headline: s.chapter.headline } })) });
+    expect(plain.chapters[1].short).toBe("cluster-a breaks");
+  });
+  it("keeps one chapter per pull request for a cycle whose steps carry no chapter", () => {
+    expect(cycleTrack(cycle).byStory).toBe(false);
+  });
+});
+
 describe("the Waiting on… modal (behold#631)", () => {
   const track = cycleTrack(cycle);
   const now = Date.parse(T("40:00"));
