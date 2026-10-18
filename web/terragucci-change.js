@@ -30,6 +30,8 @@ export const STATE_WORDS = {
   applied: "applied",
   refused: "refused",
   failed: "failed",
+  // behold#741 (terragucci#1161): a wave none of whose roots ran, since an upstream of each did not apply.
+  blocked: "blocked",
 };
 
 const short = (digest) => (digest ? digest.replace(/^jcs1-sha256:/, "").slice(0, 12) : "");
@@ -313,11 +315,13 @@ export function waveRows(answer, progress, now = new Date()) {
         facts.push(before.length ? `wave ${list(before)} applied before it and stays applied` : "no wave before it applied");
       }
       const roots = !w.roots.length && moved.length ? "no roots of its own" : list(w.roots);
+      // behold#741: a wave that blocked roots says how it came out: "wave 3 · 3 applied, 6 blocked by cluster-a: …".
+      const header = blockedHeader(w.roots, blockedOf(answer, progress), w.state);
       return {
         number: w.number,
         state: w.state,
-        tone: w.state === "failed" || w.state === "refused" ? "failed" : w.state === "waiting" || w.state === "applying" ? "wave" : w.state === "applied" ? "ok" : "none",
-        text: `wave ${w.number} ${STATE_WORDS[w.state] || w.state}: ${roots}${c ? ", composed" : ""}`,
+        tone: w.state === "failed" || w.state === "refused" ? "failed" : w.state === "waiting" || w.state === "applying" ? "wave" : w.state === "applied" ? "ok" : w.state === "blocked" ? "wave" : "none",
+        text: header ? `wave ${w.number} · ${header}: ${roots}${c ? ", composed" : ""}` : `wave ${w.number} ${STATE_WORDS[w.state] || w.state}: ${roots}${c ? ", composed" : ""}`,
         ...(c ? { composed: true } : {}),
         facts,
         ...(w.command ? { command: w.command } : {}),
@@ -444,7 +448,55 @@ export const STATE_TONE = {
   failed: "bad",
   outside: "idle",
   unchanged: "idle",
+  // behold#741: the tone chant's blocked cards carry (web/chant-pr-marks.js).
+  blocked: "wait",
 };
+
+const sameCommit = (a, b) => !!a && !!b && (a.startsWith(b) || b.startsWith(a));
+
+/**
+ * behold#741 (terragucci#1161): the roots the run view's run blocked, each
+ * with its wave and the root whose failure held it (`by`), from the wave
+ * reports' `waves[].blocked` (/api/terragucci's `blocked`, report minor 41)
+ * when they are of the run view's commit. A wave the run view says is
+ * `blocked` holds every root of it, by the root its report names, or by
+ * nobody named when its report is not read yet. Empty for older reports
+ * and run views, which carry neither: they read exactly as before.
+ */
+export function blockedOf(answer, progress) {
+  const out = new Map();
+  const run = progress && !progress.error && progress.run && progress.run.present ? progress.run : null;
+  const b = answer && !answer.error && answer.blocked && answer.blocked.roots && typeof answer.blocked.roots === "object" ? answer.blocked : null;
+  // A wave the run view has not started yet has no report to block anything (a paced view holds it there too).
+  const notStarted = new Set((progress && Array.isArray(progress.states) ? progress.states : []).filter((w) => w.state === "not-started").map((w) => w.number));
+  if (b && (!run || !run.commit || sameCommit(b.commit, run.commit))) {
+    for (const [root, x] of Object.entries(b.roots)) if (x && typeof x.by === "string" && x.by && !(Number.isInteger(x.wave) && notStarted.has(x.wave))) out.set(root, { wave: Number.isInteger(x.wave) ? x.wave : null, by: x.by });
+  }
+  for (const w of progress && Array.isArray(progress.states) ? progress.states : []) {
+    if (w.state !== "blocked") continue;
+    for (const root of w.roots || []) if (!out.has(root)) out.set(root, { wave: w.number, by: null });
+  }
+  return out;
+}
+
+/** behold#741: "blocked by cluster-a", or "blocked" when the report names no root. */
+export const blockedWords = (x) => (x && x.by ? `blocked by ${x.by}` : "blocked");
+
+/**
+ * behold#741: a wave's outcome as its header says it once some of its roots
+ * are blocked: "3 applied, 6 blocked by cluster-a", "6 blocked by cluster-a"
+ * when none ran, with each blocker named when there are several. Null when
+ * none of its roots is blocked.
+ */
+export function blockedHeader(roots, blocked, state) {
+  const held = roots.filter((r) => blocked.has(r));
+  if (!held.length) return null;
+  const by = [...new Set(held.map((r) => blocked.get(r).by).filter(Boolean))].sort();
+  const words = `${held.length} blocked${by.length ? ` by ${and(by)}` : ""}`;
+  const ran = roots.length - held.length;
+  if (!ran || state === "blocked") return words;
+  return state === "applied" ? `${ran} applied, ${words}` : `${ran} ${STATE_WORDS[state] || state}, ${words}`;
+}
 
 /**
  * #569 review: whether a root of a run-view wave plans a change. A root its
@@ -510,10 +562,18 @@ export function rootStates(answer, progress) {
   }
   if (stage === "apply") {
     const composedOf = new Map(progress.reads.filter((r) => r.composed).map((r) => [r.root, r.composed.wave]));
+    // behold#741: the roots the run blocked; none for reports and run views before terragucci#1161.
+    const blocked = blockedOf(answer, progress);
     for (const w of progress.states) {
       const c = w.composed;
       const inRun = [...composedOf].filter(([, n]) => n === w.number).map(([r]) => r);
       for (const root of [...new Set([...w.roots, ...(c ? c.roots : []), ...inRun])]) {
+        // A blocked root never planned, so its wave's `changed` leaves it out: it is blocked, not unchanged.
+        const held = blocked.get(root);
+        if (held) {
+          roots[root] = { wave: w.number, state: "blocked", tone: STATE_TONE.blocked, words: `wave ${w.number} · ${blockedWords(held)}`, facts: [held.by ? `did not run: ${held.by} did not apply, and this depends on it` : "did not run: something it depends on did not apply"], ...(held.by ? { blockedBy: held.by } : {}) };
+          continue;
+        }
         if (!rootChanges(w, root)) {
           roots[root] = { wave: w.number, state: "unchanged", tone: STATE_TONE.unchanged, words: `wave ${w.number} · unchanged`, facts: [] };
           continue;

@@ -27,6 +27,7 @@ import { renderYodelLane } from "./sql-yodeler-lane.js";
 import { initTerragucciEstate } from "./terragucci-estate.js";
 import { chantComponentMarks } from "./chant-pr-marks.js";
 import { createLivePacer } from "./chant-live-pace.js";
+import { createProgressPacer } from "./terragucci-live-pace.js";
 import { noStateFill } from "./frame-fill.js";
 import { componentMarks as tgComponentMarks, runsCommit as tgRunsCommit, statusShort as tgStatusShort, waveOfKey as tgWaveOfKey } from "./terragucci-components-live.js";
 import { FORGES, MARK, componentsForge, forgeOfName, iconSvg, markLink, markTitle, waveJobUrl } from "./forge-mark.js";
@@ -3796,16 +3797,7 @@ function drawTgReads() {
   };
   if (chantMode) {
     // behold#631: a kiosk passer-by can't place a card's type glyph (it reads as a checkbox): a chant repo's kiosk hides it.
-    if (embedOpts.bare) {
-      for (const card of svg.querySelectorAll("[data-node-id]")) {
-        const icon = card.querySelector(":scope > g[transform]");
-        if (!icon || card.hasAttribute("data-kiosk-glyph")) continue;
-        icon.setAttribute("visibility", "hidden");
-        // The name and the state line take the glyph's room, so the bigger state words fit.
-        card.setAttribute("data-kiosk-glyph", "1");
-        for (const t of card.querySelectorAll(":scope > text")) t.setAttribute("x", String(Number(t.getAttribute("x")) - 30));
-      }
-    }
+    if (embedOpts.bare) kioskCardGlyphs(svg);
     const chantMarks = chantComponentMarks(chantPaced(), chantFacets, { kiosk: !!embedOpts.bare });
     if (embedOpts.bare) chantKioskWaves(svg, boxOf, chantMarks.waveFont || 18);
     drawTgComponentMarks(svg, { marks: chantMarks, focus: null, boxOf, make, edgePoints: chantEdgePoints(svg) });
@@ -3928,7 +3920,17 @@ function drawTgReads() {
   const edgePoints = compMode ? chantEdgePoints(svg) : [];
   if (compMode) {
     boxes.length = 0;
-    boxes.push(...drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints }));
+    // behold#741: a kiosk telling a chapter-carrying scenario looks as chant's loop does: no type glyph, the waves
+    // read bottom to top, the bigger words, and the reach wedge. Without a chapter, today's marks alone.
+    const story = tgStoryMarks();
+    if (story) kioskCardGlyphs(svg);
+    const marks = story ? tgComponentMarks(drawnAnswer, tgPacedProgress(), tgComponentFacets, { runs: tgRuns, pin: view.run || null, story }) : null;
+    if (marks) {
+      tgStoryRemember(marks);
+      chantKioskWaves(svg, boxOf, marks.waveFont || 18);
+    }
+    boxes.push(...drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints, ...(marks ? { marks } : {}) }));
+    if (marks) drawReach(svg, marks.reach || null, boxOf, marks.waveFont || 18, marks.needs || {});
   }
 
   // The reads. #569 review: no line or label crosses text. Each line is the
@@ -4183,6 +4185,17 @@ function watchTgRuns() {
  * spot that is clear, in the words that fit, else only in the tooltip.
  * Returns the wave boxes, in the svg's coordinates.
  */
+/** behold#631: a kiosk passer-by can't place a card's type glyph (it reads as a checkbox): hide it, once per card. */
+function kioskCardGlyphs(svg) {
+  for (const card of svg.querySelectorAll("[data-node-id]")) {
+    const icon = card.querySelector(":scope > g[transform]");
+    if (!icon || card.hasAttribute("data-kiosk-glyph")) continue;
+    icon.setAttribute("visibility", "hidden");
+    // The name and the state line take the glyph's room, so the bigger state words fit.
+    card.setAttribute("data-kiosk-glyph", "1");
+    for (const t of card.querySelectorAll(":scope > text")) t.setAttribute("x", String(Number(t.getAttribute("x")) - 30));
+  }
+}
 /** The convex hull of points (monotone chain), counter-clockwise. */
 function hullOf(points) {
   const p = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
@@ -4232,7 +4245,7 @@ const REACH_TONE = { plan: "var(--frame-pending, var(--pending))", bad: "var(--f
  * and then rests faint, with its words at its upper edge. A new reach
  * crossfades the old one out; the same one redrawn only follows the cards.
  */
-function drawReach(svg, reach, boxOf, size = 18) {
+function drawReach(svg, reach, boxOf, size = 18, needs = null) {
   // Its words inside it, beside its apex: just right of the root card, in the open space between the root's wave box and the one above.
   const labelAt = (shapes) => {
     const at = shapes[0];
@@ -4269,7 +4282,8 @@ function drawReach(svg, reach, boxOf, size = 18) {
   const pad = 16;
   const shapes = [];
   const covered = new Set(reach.covered);
-  const needsOf = (chantFacets && chantFacets.needs) || {};
+  // behold#741: a terragucci repo's marks carry their own edges (the plan report's reads, the run view's).
+  const needsOf = needs || (chantFacets && chantFacets.needs) || {};
   for (const root of reach.roots) {
     const rb = box(root);
     if (!rb) continue;
@@ -5179,6 +5193,15 @@ function wireKioskFrame() {
     if (e.data && e.data.type === "behold:unpin") return kioskPopEvent({ type: "outside" });
     // behold#571: the kiosk's theme picker moved; follow it here without a reload.
     if (e.data && e.data.type === "behold:theme" && typeof e.data.name === "string") return void setTheme(e.data.name, { persist: false });
+    // behold#741: the scenario carries chapters (or stopped carrying them): the kiosk's look, and the wave blocks, follow.
+    if (e.data && e.data.type === "behold:story") {
+      const on = e.data.on === true;
+      const cycle = Number.isInteger(e.data.cycle) ? e.data.cycle : null;
+      const was = tgStoryOn();
+      tgStory = { on, cycle };
+      if (tgStoryOn() !== was && view.components && terragucciComponentsRepo) load({ quiet: true });
+      return;
+    }
     const h = hoverFromMessage(e.data);
     if (h === undefined) return;
     kioskHostHover = h;
@@ -6161,6 +6184,54 @@ let ciForge = null; // the forge the pipeline was generated for (#164) — heads
 // (`meta.terragucciComponents`, see takeTerragucciFacets), which a public view
 // can read, so the two facet fetches below are skipped.
 let terragucciComponentsRepo = false;
+/**
+ * behold#741: the kiosk's word that the scenario it shows carries chapters (demo.json's step `chapter`), with the
+ * cycle: `{ on, cycle }` from a `behold:story` message, null until one comes. Only a kiosk frame (bare) of a
+ * terragucci repo's components zoom acts on it; b-waves, failure and tg-planned-outputs send `on: false`.
+ */
+let tgStory = null;
+function tgStoryOn() {
+  return !!(embedOpts.bare && tgStory && tgStory.on && terragucciComponentsRepo);
+}
+// behold#741: what landed in this cycle's earlier apply, and what its failure left, for the next pull request's cards.
+let tgStoryEarlier = { cycle: null, earlier: new Set(), lastStates: {} };
+function tgStoryMarks() {
+  if (!tgStoryOn() || !view.components) return null;
+  if (tgStoryEarlier.cycle !== tgStory.cycle || view.run === "base") tgStoryEarlier = { cycle: tgStory.cycle, earlier: new Set(), lastStates: {} };
+  return { kiosk: true, earlier: tgStoryEarlier.earlier, lastStates: tgStoryEarlier.lastStates };
+}
+/** Keep what an apply's cards say: applied roots land in `earlier`; a failed or blocked one keeps that state until it applies. */
+function tgStoryRemember(marks) {
+  if (!marks || marks.stage !== "apply") return;
+  for (const c of Object.values(marks.cards)) {
+    if (c.state === "applied") {
+      tgStoryEarlier.earlier.add(c.root);
+      delete tgStoryEarlier.lastStates[c.root];
+    } else if (c.state === "failed" || c.state === "blocked") tgStoryEarlier.lastStates[c.root] = { state: c.state, words: c.words, ...(c.blockedBy ? { blockedBy: c.blockedBy } : {}) };
+  }
+}
+// behold#741: the run view's waves at the pace chant's are played (web/terragucci-live-pace.js), while the story is on.
+const tgPacer = createProgressPacer();
+let tgPaceTimer = null;
+function tgPacedProgress() {
+  const p = tgPacer.progress(tgProgress);
+  if (tgPacer.pending && !tgPaceTimer) {
+    let was = JSON.stringify(p && p.states);
+    tgPaceTimer = setInterval(() => {
+      const next = tgPacer.progress(tgProgress);
+      const now = JSON.stringify(next && next.states);
+      if (now !== was) {
+        was = now;
+        drawTgReads();
+      }
+      if (!tgPacer.pending) {
+        clearInterval(tgPaceTimer);
+        tgPaceTimer = null;
+      }
+    }, 400);
+  }
+  return p;
+}
 // #571: the components graph's facets (jobs, component -> root), for the live marks drawTgReads puts on it.
 let tgComponentFacets = null;
 // behold#631: a chant repo's pull-request loop: the graph's `meta.chantPr` and /api/chant/pr's answer at the view's run pin.
@@ -8690,6 +8761,8 @@ async function loadOnce(opts = {}, isCurrent = () => true) {
       // cross-substrate entity overlay, which components never use.
       q.set("components", "1");
       if (view.env) q.set("env", view.env);
+      // behold#741: a chapter-carrying scenario's fan-out wave as one block per parent, as chant's loop lays it out.
+      if (tgStoryOn()) q.set("blocks", "1");
     } else if (view.stacks) {
       // The apply-order lens (#426): chant's cross-stack ordering, built fresh
       // for the same reason the ops lens is — it reads none of the entity

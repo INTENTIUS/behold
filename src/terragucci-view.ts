@@ -229,6 +229,8 @@ export function terragucciRoutes(app: Hono, opts: TerragucciOptions, dirs: () =>
       ...(r.estate ? { estate: r.estate } : {}),
       // #568: the pull request stage, read from the newest tf-plan of a pull request.
       ...(r.pull_request ? { pull_request: r.pull_request } : {}),
+      // behold#741: the roots the newest apply's waves blocked (report minor 41), absent when none.
+      ...(r.blocked ? { blocked: r.blocked } : {}),
       ...marks,
     });
   });

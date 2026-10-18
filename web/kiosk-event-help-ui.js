@@ -268,7 +268,8 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
       if (up.has(id)) continue;
       st.nodes.delete(id);
       // behold#631: on a chant kiosk a tip that goes leaves at once: no shrinking ghost under the next wave.
-      if (st.chant) {
+      // behold#741: so on a terragucci kiosk telling a chapter-carrying scenario (st.story).
+      if (st.story) {
         node.remove();
         continue;
       }
@@ -345,7 +346,7 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
   let trailKey = "";
   const drawTrail = (h) => {
     if (!trailHost) return;
-    if (trailHost.classList) trailHost.classList.toggle("eh-trail-fade", !!h.chant);
+    if (trailHost.classList) trailHost.classList.toggle("eh-trail-fade", !!(h.chant || h.story));
     const facts = [...st.trail.values()].sort((a, b) => a.order - b.order);
     const key = facts.map((f) => `${f.id}=${f.text}`).join(",");
     // behold#631: a chant kiosk's projected track stands in its place.
@@ -411,9 +412,12 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     const kind = event.kind === "refused" ? "failed" : event.kind;
     // behold#631: a chant failure's modal keeps clear of the failed card and the cards it blocked.
     // It must leave the failed wave and the wave after it in view (`avoid`), and covers as few other cards as it can.
-    if (event.chant) {
+    // behold#741: a terragucci story's modals do the same: off the cards they are about (a held wave's, a failed one's),
+    // covering as few others as they can, above the bottom band.
+    if (event.chant || (st.story && !st.chant)) {
       const box = (r) => fromFrame(h, h.boxes && h.boxes.roots ? h.boxes.roots[r] : null);
-      const must = event.avoid || event.subjects.roots;
+      const wave = Number.isInteger(event.subjects.wave) ? (h.waves || []).find((w) => w.wave === event.subjects.wave) : null;
+      const must = event.avoid || (event.subjects.roots && event.subjects.roots.length ? event.subjects.roots : wave && Array.isArray(wave.roots) ? wave.roots : []);
       data.avoid = () => must.map(box).filter(Boolean);
       data.prefer = () => Object.keys((h.boxes && h.boxes.roots) || {}).filter((r) => !must.includes(r)).map(box).filter(Boolean);
       data.bounds = () => graphArea(h);
@@ -445,7 +449,7 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     const d = h.demo;
     const api = openEventModal(modalHost, { mode: "narrated", kind: "waiting", data: waitingData(w, h), doc, now, reduced: reduced(), onClose: () => (st.modal = null) });
     st.modal = { api, event: { kind: "waiting", subjects: { roots: [], wave: null } }, kind: "waiting", key: w.key, step: d ? d.step : null, cycle: d ? d.cycle : null, pull: d ? d.pull : null };
-    if (st.chant) for (const n of st.nodes.values()) n.style.visibility = "hidden";
+    if (st.story) for (const n of st.nodes.values()) n.style.visibility = "hidden";
   };
   /** The modal's real event: the approval landed, the waves ran again, the cycle moved on. */
   const settleModal = (h, facts) => {
@@ -515,13 +519,15 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
       if (done.size) st.tips = { shown: st.tips.shown.filter((x) => !(x.event.kind === "started" && done.has(x.event.subjects.wave))), waiting: st.tips.waiting.filter((e) => !(e.kind === "started" && done.has(e.subjects.wave))) };
     }
     // A chant kiosk shows one tip at a time: two placed on one wave box land on each other.
-    st.tipsMax = h.chant ? 1 : undefined;
+    // behold#741: so does a terragucci kiosk telling a chapter-carrying scenario (`h.story`); its story order stays its own.
+    st.tipsMax = h.chant || h.story ? 1 : undefined;
     st.chant = !!h.chant;
+    st.story = !!(h.chant || h.story);
     if (news.length) st.tips = tipsQueue(st.tips, { add: news, now: now(), ...(st.tipsMax ? { max: st.tipsMax } : {}) });
     // While a modal is up, the tips wait their turn behind it.
     if (!st.modal) showTips(h);
     // behold#631: on a chant kiosk no tip shows at all while a modal is open, not even one already up.
-    else if (st.chant) for (const n of st.nodes.values()) n.style.visibility = "hidden";
+    else if (st.story) for (const n of st.nodes.values()) n.style.visibility = "hidden";
     ageGlows();
     // behold#631: the "Waiting on…" modal goes the moment anything new arrives, or what it waits on changes;
     // a critical modal (the failure) always wins over it.
@@ -537,7 +543,7 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     if (st.modals.next && stillNow(st.modals.next, h.demo)) {
       openModal(st.modals.next, h);
       // The tip put up this same tick goes under too.
-      if (st.chant) for (const n of st.nodes.values()) n.style.visibility = "hidden";
+      if (st.story) for (const n of st.nodes.values()) n.style.visibility = "hidden";
     }
     // behold#631: a quiet stretch on a chant kiosk: "Waiting on …", when no other modal is up or due.
     const held = st.waitingHold && h.waiting && st.waitingHold.key === h.waiting.key && now() < st.waitingHold.until;
@@ -547,7 +553,7 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
   const stillNow = (e, d) => (e.kind === "held" ? d.step === "waiting" : e.kind === "failed" || e.kind === "refused" ? d.step === "failed" : e.kind === "applied" ? d.step === "applied" : false);
   /** Keep the tips on their things while the graph moves (a shot, a pan). */
   const follow = () => {
-    if (st.on && st.tips && st.tips.shown.length && !(st.chant && st.modal)) showTips(get());
+    if (st.on && st.tips && st.tips.shown.length && !(st.story && st.modal)) showTips(get());
   };
   return { tick, follow, state: st, store: EH_STORE };
 }

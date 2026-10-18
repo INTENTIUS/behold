@@ -1922,7 +1922,7 @@ export function createApp(
       ...(servedTerragucciComponents() ? { terragucciComponents: true } : {}),
       // behold#571: the declared roots and the wave jobs that apply them, so
       // the kiosk gives each root its colour and ties a job row to its roots.
-      ...((): { terragucciRoots?: { roots: string[]; waves: { job: string; wave: number; roots: string[] }[]; tools?: string[]; rootTools?: Record<string, string[]> } } => {
+      ...((): { terragucciRoots?: { roots: string[]; waves: { job: string; wave: number; roots: string[] }[]; tools?: string[]; rootTools?: Record<string, string[]>; forge?: string } } => {
         const decl = servedTerragucciComponents();
         if (!decl) return {};
         const waves = decl.pipeline.jobs.filter((j) => typeof j.wave === "number").map((j) => ({ job: j.name, wave: j.wave as number, roots: [...j.applies] }));
@@ -1930,7 +1930,9 @@ export function createApp(
         const tools = repoTools(cfg.projectDir, tgConfig());
         // And what each root carries inside it (a SQL Yodeler project), for the job that applies it.
         const rootTools = declaredRootTools(cfg.projectDir, decl.roots);
-        return { terragucciRoots: { roots: Object.keys(decl.roots).sort(), waves, ...(tools.length ? { tools } : {}), ...(Object.keys(rootTools).length ? { rootTools } : {}) } };
+        // behold#741: the forge the pipeline runs on, for a chapter-carrying scenario's title line.
+        const forge = pipelineForge(decl, cfg.projectDir, tgConfig())?.forge ?? decl.pipeline.forge;
+        return { terragucciRoots: { roots: Object.keys(decl.roots).sort(), waves, ...(tools.length ? { tools } : {}), ...(Object.keys(rootTools).length ? { rootTools } : {}), ...(forge ? { forge } : {}) } };
       })(),
       // #517: a SQL Yodeler repo is migrated by its pipeline; same contract.
       ...((): { sqlYodeler?: { config: string; error: string; code: string; remedy: string } } => {
@@ -2418,7 +2420,7 @@ export function createApp(
   };
 
   /** #571: the components picture of a terragucci repo — see the graph route. */
-  const terragucciComponentsGraph = async (decl: TerragucciComponents, opts: GraphOptions) => {
+  const terragucciComponentsGraph = async (decl: TerragucciComponents, opts: GraphOptions, childBlocks = false) => {
     const state = terraformReaderState();
     if (state.refusal) throw new TerraformReadError(state.refusal, cfg.projectDir);
     const { project } = terraformMemberProject(cfg.projectDir);
@@ -2428,7 +2430,8 @@ export function createApp(
     const forge = pipelineForge(decl, cfg.projectDir, tgConfig());
     const tools = repoTools(cfg.projectDir, tgConfig());
     const rootToolsByName = declaredRootTools(cfg.projectDir, decl.roots);
-    const { svg } = renderGraph(ir, { waveTitles: titles });
+    // behold#741: one block per parent in a fan-out wave, only when the kiosk asks (a step that carries a chapter).
+    const { svg } = renderGraph(ir, { waveTitles: titles, ...(childBlocks ? { childBlocks: true } : {}) });
     const waves = Object.keys((ir.groups as { byWave?: Record<string, string[]> }).byWave ?? {}).length;
     // behold#571: a Terragrunt repo's roots are its units.
     const noun = hasTerragruntUnits(cfg.projectDir) ? "unit" : "root";
@@ -2679,7 +2682,8 @@ export function createApp(
       // declaration is all there is to read, so no env, tier or live join runs
       // here, which is also what lets a public view draw it.
       const tgDecl = components ? servedTerragucciComponents() : undefined;
-      if (tgDecl) return c.json(await terragucciComponentsGraph(tgDecl, opts));
+      // behold#741: a kiosk telling a chapter-carrying scenario's story asks for its wave blocks (`blocks=1`), as chant's loop does.
+      if (tgDecl) return c.json(await terragucciComponentsGraph(tgDecl, opts, url.searchParams.get("blocks") === "1"));
       let ir: GraphIR;
       let mode: "component-status" | undefined;
       let metaEnv = cfg.env ?? null;

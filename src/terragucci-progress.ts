@@ -54,7 +54,8 @@ export const PROGRESS_TTL_MS = 30_000;
 
 export type ProgressStatus = "done" | "in-flight" | "waiting" | "not-applied";
 export const PROGRESS_STATUSES: readonly ProgressStatus[] = ["done", "in-flight", "waiting", "not-applied"];
-type WaveState = "not-started" | "planned" | "waiting" | "applying" | "applied" | "refused" | "failed";
+/** `blocked` (terragucci#1161): a wave none of whose roots ran, since an upstream of each did not apply in the run. */
+type WaveState = "not-started" | "planned" | "waiting" | "applying" | "applied" | "refused" | "failed" | "blocked";
 
 /** The run view, as far as behold reads it. Every other field is ignored, as terragucci's v1 contract asks of a reader. */
 export interface RunView {
@@ -322,7 +323,10 @@ export function unsettled(run: Pick<RunView, "waves">): boolean {
   // #568: a wave waiting at its gate, or a wave not started behind an applied
   // one with nothing failed or refused, moves next without a new report.
   if (run.waves.some((w) => w.state === "waiting")) return true;
-  if (run.waves.some((w) => w.state === "failed" || w.state === "refused")) return false;
+  // behold#741 (terragucci#1161): a run that blocks roots goes on past a failure, so a wave not started after a
+  // blocked one still moves. A run view without a blocked wave reads as before: a failure ends it.
+  const blocks = run.waves.some((w) => w.state === "blocked");
+  if (!blocks && run.waves.some((w) => w.state === "failed" || w.state === "refused")) return false;
   return run.waves.some((w) => w.state === "applied") && run.waves.some((w) => w.state === "not-started");
 }
 
