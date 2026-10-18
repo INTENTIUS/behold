@@ -30,8 +30,6 @@ export const STATE_WORDS = {
   applied: "applied",
   refused: "refused",
   failed: "failed",
-  // behold#741 (terragucci#1161): a wave none of whose roots ran, since an upstream of each did not apply.
-  blocked: "blocked",
 };
 
 const short = (digest) => (digest ? digest.replace(/^jcs1-sha256:/, "").slice(0, 12) : "");
@@ -315,13 +313,11 @@ export function waveRows(answer, progress, now = new Date()) {
         facts.push(before.length ? `wave ${list(before)} applied before it and stays applied` : "no wave before it applied");
       }
       const roots = !w.roots.length && moved.length ? "no roots of its own" : list(w.roots);
-      // behold#741: a wave that blocked roots says how it came out: "wave 3 · 3 applied, 6 blocked by cluster-a: …".
-      const header = blockedHeader(w.roots, blockedOf(answer, progress), w.state);
       return {
         number: w.number,
         state: w.state,
-        tone: w.state === "failed" || w.state === "refused" ? "failed" : w.state === "waiting" || w.state === "applying" ? "wave" : w.state === "applied" ? "ok" : w.state === "blocked" ? "wave" : "none",
-        text: header ? `wave ${w.number} · ${header}: ${roots}${c ? ", composed" : ""}` : `wave ${w.number} ${STATE_WORDS[w.state] || w.state}: ${roots}${c ? ", composed" : ""}`,
+        tone: w.state === "failed" || w.state === "refused" ? "failed" : w.state === "waiting" || w.state === "applying" ? "wave" : w.state === "applied" ? "ok" : "none",
+        text: `wave ${w.number} ${STATE_WORDS[w.state] || w.state}: ${roots}${c ? ", composed" : ""}`,
         ...(c ? { composed: true } : {}),
         facts,
         ...(w.command ? { command: w.command } : {}),
@@ -448,9 +444,10 @@ export const STATE_TONE = {
   failed: "bad",
   outside: "idle",
   unchanged: "idle",
-  // behold#741: the tone chant's blocked cards carry (web/chant-pr-marks.js).
-  blocked: "wait",
 };
+
+/** behold#741: the tone chant's blocked cards carry (web/chant-pr-marks.js), on a story's blocked root. */
+export const BLOCKED_TONE = "wait";
 
 const sameCommit = (a, b) => !!a && !!b && (a.startsWith(b) || b.startsWith(a));
 
@@ -475,6 +472,26 @@ export function blockedOf(answer, progress) {
   for (const w of progress && Array.isArray(progress.states) ? progress.states : []) {
     if (w.state !== "blocked") continue;
     for (const root of w.roots || []) if (!out.has(root)) out.set(root, { wave: w.number, by: null });
+  }
+  return out;
+}
+
+/**
+ * behold#741: each root's own apply outcome in its wave (`applied`,
+ * `unchanged` or `failed`, with the error), from the wave reports
+ * (/api/terragucci's `outcomes`) of the run view's commit, for a wave the run
+ * view has started. Empty for reports without one.
+ */
+export function outcomesOf(answer, progress) {
+  const out = new Map();
+  const run = progress && !progress.error && progress.run && progress.run.present ? progress.run : null;
+  const o = answer && !answer.error && answer.outcomes && answer.outcomes.roots && typeof answer.outcomes.roots === "object" ? answer.outcomes : null;
+  if (!o || (run && run.commit && !sameCommit(o.commit, run.commit))) return out;
+  const notStarted = new Set((progress && Array.isArray(progress.states) ? progress.states : []).filter((w) => w.state === "not-started").map((w) => w.number));
+  for (const [root, x] of Object.entries(o.roots)) {
+    if (!x || !["applied", "unchanged", "failed"].includes(x.outcome)) continue;
+    if (Number.isInteger(x.wave) && notStarted.has(x.wave)) continue;
+    out.set(root, { wave: Number.isInteger(x.wave) ? x.wave : null, outcome: x.outcome, ...(typeof x.error === "string" && x.error ? { error: x.error } : {}) });
   }
   return out;
 }
@@ -531,7 +548,7 @@ const MEMBER_STATE = { applied: "applied", partial: "failed", failed: "failed", 
  * run that failed part way takes its own part's outcome: what applied says
  * applied.
  */
-export function rootStates(answer, progress) {
+export function rootStates(answer, progress, { story = false } = {}) {
   const stage = changeStage(answer, progress);
   const roots = {};
   const known = (answer && answer.roots ? answer.roots.map((r) => r.path) : []).filter(Boolean);
@@ -563,7 +580,9 @@ export function rootStates(answer, progress) {
   if (stage === "apply") {
     const composedOf = new Map(progress.reads.filter((r) => r.composed).map((r) => [r.root, r.composed.wave]));
     // behold#741: the roots the run blocked; none for reports and run views before terragucci#1161.
-    const blocked = blockedOf(answer, progress);
+    // Only on a kiosk telling a chapter-carrying scenario (`story`): every other view reads the states exactly as before.
+    const blocked = story ? blockedOf(answer, progress) : new Map();
+    const outcomes = story ? outcomesOf(answer, progress) : new Map();
     for (const w of progress.states) {
       const c = w.composed;
       const inRun = [...composedOf].filter(([, n]) => n === w.number).map(([r]) => r);
@@ -571,16 +590,20 @@ export function rootStates(answer, progress) {
         // A blocked root never planned, so its wave's `changed` leaves it out: it is blocked, not unchanged.
         const held = blocked.get(root);
         if (held) {
-          roots[root] = { wave: w.number, state: "blocked", tone: STATE_TONE.blocked, words: `wave ${w.number} · ${blockedWords(held)}`, facts: [held.by ? `did not run: ${held.by} did not apply, and this depends on it` : "did not run: something it depends on did not apply"], ...(held.by ? { blockedBy: held.by } : {}) };
+          roots[root] = { wave: w.number, state: "blocked", tone: BLOCKED_TONE, words: `wave ${w.number} · ${blockedWords(held)}`, facts: [held.by ? `did not run: ${held.by} did not apply, and this depends on it` : "did not run: something it depends on did not apply"], ...(held.by ? { blockedBy: held.by } : {}) };
           continue;
         }
-        if (!rootChanges(w, root)) {
+        // behold#741: a root's own outcome in its wave, where the report says it: cluster-b applied beside a failed cluster-a.
+        // Only once its wave has settled as the (paced) run view shows it: never ahead of the play.
+        const own = ["applied", "failed", "refused", "blocked"].includes(w.state) ? outcomes.get(root) : undefined;
+        if (!rootChanges(w, root) || (own && own.outcome === "unchanged")) {
           roots[root] = { wave: w.number, state: "unchanged", tone: STATE_TONE.unchanged, words: `wave ${w.number} · unchanged`, facts: [] };
           continue;
         }
         const m = c && c.members ? c.members.find((x) => x.root === root) : null;
-        const state = m && m.apply ? MEMBER_STATE[m.apply] || w.state : w.state;
+        const state = m && m.apply ? MEMBER_STATE[m.apply] || w.state : own ? own.outcome : w.state;
         const facts = [];
+        if (own && own.outcome === "failed" && own.error) facts.push(`failed: ${own.error}`);
         if (state === "waiting" && w.digest) facts.push(`approve plan ${short(w.digest)}`);
         if (state === "waiting" && c && c.unknown && c.unknown.includes(root)) facts.push("read a value unknown when planned");
         const totals = totalsLine(w.totals);
@@ -595,7 +618,7 @@ export function rootStates(answer, progress) {
           if (before.length) facts.push(`wave ${list(before)} stays applied`);
         }
         const words = `wave ${w.number} · ${STATE_WORDS[state] || state}${composedHere ? ", composed" : ""}`;
-        roots[root] = { wave: w.number, state, tone: STATE_TONE[state] || "idle", words, facts };
+        roots[root] = { wave: w.number, state, tone: STATE_TONE[state] || "idle", words, facts, ...(own && own.outcome === "failed" && own.error ? { error: own.error } : {}) };
       }
     }
     for (const root of known) if (!roots[root]) roots[root] = { wave: null, state: "outside", tone: STATE_TONE.outside, words: "not in this run", facts: [] };

@@ -231,6 +231,8 @@ export function terragucciRoutes(app: Hono, opts: TerragucciOptions, dirs: () =>
       ...(r.pull_request ? { pull_request: r.pull_request } : {}),
       // behold#741: the roots the newest apply's waves blocked (report minor 41), absent when none.
       ...(r.blocked ? { blocked: r.blocked } : {}),
+      // behold#741: each root's own outcome in the newest apply's waves, absent when no report carries one.
+      ...(r.outcomes ? { outcomes: r.outcomes } : {}),
       ...marks,
     });
   });

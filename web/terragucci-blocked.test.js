@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { blockedHeader, blockedOf, rootStates, waveRows } from "./terragucci-change.js";
+import { blockedHeader, blockedOf, outcomesOf, rootStates, waveRows } from "./terragucci-change.js";
 import { componentMarks, tgReachOf } from "./terragucci-components-live.js";
 import { createProgressPacer, trackWaves } from "./terragucci-live-pace.js";
 
@@ -8,7 +8,9 @@ import { createProgressPacer, trackWaves } from "./terragucci-live-pace.js";
 // which /api/terragucci answers as `blocked: { commit, roots }`, and the run
 // view a wave state `blocked` for a wave none of whose roots ran. A fan-out:
 // network in wave 1; cluster-a and cluster-b in wave 2; app-01..03 under
-// cluster-a and app-04..06 under cluster-b in wave 3.
+// cluster-a and app-04..06 under cluster-b in wave 3. All of it is a story's
+// alone (a kiosk telling a chapter-carrying scenario): without one, the
+// states read exactly as on main, whatever the reports carry.
 const MERGE = "c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00";
 const apps = ["app-01", "app-02", "app-03", "app-04", "app-05", "app-06"];
 const all = ["network", "cluster-a", "cluster-b", ...apps];
@@ -37,11 +39,12 @@ const progress = (w2, w3, w3changed = ["app-04", "app-05", "app-06"]) => ({
   ],
   reads,
 });
+const story = { story: true };
 const blocked = (commit = MERGE) => ({ commit, roots: Object.fromEntries(apps.slice(0, 3).map((a) => [a, { wave: 3, by: "cluster-a" }])) });
 
 describe("a blocked root, from the wave reports (behold#741)", () => {
   it("reads blocked and blocked_by when the reports carry them", () => {
-    const st = rootStates({ ...base, blocked: blocked() }, progress("failed", "applied"));
+    const st = rootStates({ ...base, blocked: blocked() }, progress("failed", "applied"), story);
     expect(st.roots["app-01"]).toMatchObject({ wave: 3, state: "blocked", tone: "wait", words: "wave 3 · blocked by cluster-a", blockedBy: "cluster-a" });
     // The roots its failure did not reach apply.
     expect(st.roots["app-04"]).toMatchObject({ state: "applied" });
@@ -52,8 +55,18 @@ describe("a blocked root, from the wave reports (behold#741)", () => {
     expect(blockedOf({ blocked: b }, progress("blocked", "blocked")).get("app-01")).toEqual({ wave: 3, by: "network" });
   });
 
+  it("is nothing without a story, even on reports that carry the field (b-waves, failure, tg-planned-outputs)", () => {
+    const data = { ...base, blocked: blocked() };
+    const p = progress("failed", "applied");
+    expect(rootStates(data, p)).toEqual(rootStates(base, p));
+    expect(componentMarks(data, p, facets)).toEqual(componentMarks(base, p, facets));
+    // The run view's own blocked state reads as main reads it: its word, in the idle tone.
+    expect(rootStates(base, progress("failed", "blocked")).roots["app-05"]).toMatchObject({ state: "blocked", tone: "idle", words: "wave 3 · blocked" });
+    expect(waveRows(data, p)[2].text).toBe("wave 3 applied: app-01, app-02, app-03, app-04, app-05, app-06");
+  });
+
   it("is nothing for an older report without the field: the states read exactly as before", () => {
-    const before = rootStates(base, progress("failed", "not-started"));
+    const before = rootStates(base, progress("failed", "not-started"), story);
     expect(Object.values(before.roots).some((r) => r.state === "blocked")).toBe(false);
     expect(blockedOf(base, progress("failed", "not-started")).size).toBe(0);
     // And the components' marks carry no blocked header.
@@ -69,8 +82,8 @@ describe("a blocked root, from the wave reports (behold#741)", () => {
   });
 
   it("holds every root of a wave the run view says is blocked, by nobody named until its report is read", () => {
-    const st = rootStates(base, progress("failed", "blocked"));
-    expect(st.roots["app-05"]).toMatchObject({ state: "blocked", words: "wave 3 · blocked" });
+    const st = rootStates(base, progress("failed", "blocked"), story);
+    expect(st.roots["app-05"]).toMatchObject({ state: "blocked", tone: "wait", words: "wave 3 · blocked" });
   });
 
   it("says the wave's header as N applied, N blocked by X, and a blocked wave as blocked by X", () => {
@@ -78,18 +91,42 @@ describe("a blocked root, from the wave reports (behold#741)", () => {
     expect(blockedHeader(apps, b, "applied")).toBe("3 applied, 3 blocked by cluster-a");
     expect(blockedHeader(apps.slice(0, 3), b, "blocked")).toBe("3 blocked by cluster-a");
     expect(blockedHeader(["network"], b, "applied")).toBe(null);
-    const m = componentMarks({ ...base, blocked: blocked() }, progress("failed", "applied"), facets);
+    const m = componentMarks({ ...base, blocked: blocked() }, progress("failed", "applied"), facets, { story: {} });
     expect(m.waves[3].status).toMatchObject({ status: "done", words: "3 applied, 3 blocked by cluster-a" });
     expect(m.waves[3].title).toBe("apply-wave-3 · 3 applied, 3 blocked by cluster-a");
     expect(m.cards["app-02"]).toMatchObject({ state: "blocked", words: "blocked by cluster-a", short: "blocked", tone: "wait", blockedBy: "cluster-a" });
-    const rows = waveRows({ ...base, blocked: blocked() }, progress("failed", "applied"));
-    expect(rows[2].text).toBe("wave 3 · 3 applied, 3 blocked by cluster-a: app-01, app-02, app-03, app-04, app-05, app-06");
   });
 
   it("says a wave none of whose roots ran as blocked by X", () => {
     const b = { commit: MERGE, roots: Object.fromEntries(apps.map((a) => [a, { wave: 3, by: "network" }])) };
-    const m = componentMarks({ ...base, blocked: b }, progress("blocked", "blocked"), facets);
+    const m = componentMarks({ ...base, blocked: b }, progress("blocked", "blocked"), facets, { story: {} });
     expect(m.waves[3]).toMatchObject({ state: "blocked", tone: "wait", status: { status: "blocked", words: "6 blocked by network" } });
+  });
+});
+
+// behold#741: each root's own outcome in its wave, asked of terragucci#1164 in
+// one of two shapes until its field is named (src/terragucci-reports.ts
+// waveOutcomes), and answered by /api/terragucci as `outcomes`.
+describe("a root's own outcome in a failed wave (behold#741)", () => {
+  const outcomes = { commit: MERGE, roots: { "cluster-a": { wave: 2, outcome: "failed", error: "Error: creating EKS cluster cluster-a: InvalidParameterException: subnet is full" }, "cluster-b": { wave: 2, outcome: "applied" } } };
+  it("reads cluster-b applied beside a failed cluster-a, and the failure's error as chant's cards say it", () => {
+    const m = componentMarks({ ...base, blocked: blocked(), outcomes }, progress("failed", "applied"), facets, { story: { kiosk: true } });
+    expect(m.cards["cluster-b"]).toMatchObject({ state: "applied", tone: "ok", words: "applied" });
+    expect(m.cards["cluster-a"]).toMatchObject({ state: "failed", tone: "bad" });
+    expect(m.cards["cluster-a"].words).toMatch(/^failed: /);
+    expect(m.cards["cluster-a"].facts[0]).toBe("failed: Error: creating EKS cluster cluster-a: InvalidParameterException: subnet is full");
+    expect(m.waves[2].status).toMatchObject({ status: "failed", words: "1 failed, 1 applied", tone: "bad" });
+    expect(m.waves[2].facts[0]).toMatch(/^cluster-a failed: /);
+    // The reach now starts at the one root that failed.
+    expect(m.reach).toMatchObject({ roots: ["cluster-a"], covered: ["app-01", "app-02", "app-03"] });
+  });
+  it("waits for the wave to settle, and is nothing without a story or another commit's", () => {
+    const p = progress("failed", "applied");
+    expect(outcomesOf({ outcomes }, { ...p, states: p.states.map((w) => (w.number === 2 ? { ...w, state: "applying" } : w)) }).size).toBe(2);
+    expect(rootStates({ ...base, outcomes }, { ...p, states: p.states.map((w) => (w.number === 2 ? { ...w, state: "applying" } : w)) }, story).roots["cluster-b"].state).toBe("applying");
+    expect(rootStates({ ...base, outcomes }, p).roots["cluster-b"].state).toBe("failed");
+    expect(outcomesOf({ outcomes: { ...outcomes, commit: "deadbeef" } }, p).size).toBe(0);
+    expect(outcomesOf(base, p).size).toBe(0);
   });
 });
 

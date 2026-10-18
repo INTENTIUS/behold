@@ -11,7 +11,8 @@
 // wave that failed says the waves before it stay applied, and nothing here is
 // all-or-nothing.
 
-import { blockedHeader, blockedOf, pinsCommit, rootStates, totalsLine } from "./terragucci-change.js";
+import { BLOCKED_TONE, blockedHeader, blockedOf, pinsCommit, rootStates, totalsLine } from "./terragucci-change.js";
+import { shortReason } from "./chant-pr-marks.js";
 
 /** A job's status as its wave box says it. A job held at a terragucci gate is never a failure. */
 export const JOB_WORDS = {
@@ -142,7 +143,8 @@ export function waveOfKey(key) {
 export function componentMarks(answer, progress, facets, { runs = null, pin = null, story = null } = {}) {
   const jobs = facets && Array.isArray(facets.jobs) ? facets.jobs : [];
   const rootOf = (c) => (facets && facets.roots && facets.roots[c]) || c;
-  const states = rootStates(answer, progress);
+  // behold#741: blocked roots and each root's own outcome are a story's alone; every other view reads as before.
+  const states = rootStates(answer, progress, { story: !!story });
   const stage = states.stage;
   const commit = runsCommit(pin, progress);
   const cards = {};
@@ -163,19 +165,23 @@ export function componentMarks(answer, progress, facets, { runs = null, pin = nu
     // behold#741: a story's plan says each root's own counts, from the plan report.
     const counts = story && stage === "pull-request" && st.state === "planned" && answer.pull_request.counts ? totalsLine(answer.pull_request.counts[root]) : null;
     if (counts) facts.push(`plans ${counts}`);
+    // behold#741: a story's failed root says its error the way chant's cards do: "failed: <its specific part>",
+    // a shorter middle form for a narrow card, and the whole error in the tooltip.
+    const reason = st.state === "failed" && st.error ? shortReason(st.error) : null;
     cards[j.component] = {
       root,
       wave: j.wave ?? st.wave,
       state: st.state,
       tone: st.tone,
-      words: st.words.replace(/^wave \d+ · /, ""),
+      words: reason ? `failed: ${reason}` : st.words.replace(/^wave \d+ · /, ""),
+      ...(reason ? { mid: `failed: ${shortReason(st.error, 16)}`, reason } : {}),
       short: SHORT_WORDS[st.state] || st.state,
       facts,
       ...(st.blockedBy ? { blockedBy: st.blockedBy } : {}),
     };
   }
   // behold#741: a wave's header once some of its roots are blocked (terragucci#1161); none for older reports.
-  const blocked = stage === "apply" ? blockedOf(answer, progress) : new Map();
+  const blocked = story && stage === "apply" ? blockedOf(answer, progress) : new Map();
   const waves = {};
   const waveNumbers = [...new Set(jobs.map((j) => j.wave).filter((n) => typeof n === "number"))].sort((a, b) => a - b);
   for (const n of waveNumbers) {
@@ -192,17 +198,31 @@ export function componentMarks(answer, progress, facets, { runs = null, pin = nu
     // behold#741: "3 applied, 6 blocked by cluster-a", or "blocked by cluster-a" for a wave none of whose roots ran:
     // its job exits 1 for the roots it held, which is no failure of the wave's own.
     const wr = stage === "apply" && progress && Array.isArray(progress.states) ? progress.states.find((x) => x.number === n) : null;
-    const header = wr && blocked.size ? blockedHeader(wr.roots || [], blocked, w) : null;
-    const shown = header ? { status: w === "blocked" ? "blocked" : "done", words: header, tone: w === "blocked" ? "wait" : toneOf(w), ...(status && status.run ? { run: status.run } : {}) } : status;
+    let header = wr && blocked.size ? blockedHeader(wr.roots || [], blocked, w) : null;
+    let headerTone = w === "blocked" ? BLOCKED_TONE : toneOf(w);
+    // behold#741: a story's failed wave says how each root came out, as chant's does: "1 failed, 1 applied", the
+    // failure's reason first among its facts, shorter forms of it for a narrow box.
+    const failedHere = story && w === "failed" ? members.filter((m) => m.state === "failed") : [];
+    const factShort = [];
+    if (failedHere.length) {
+      const applied = members.filter((m) => m.state === "applied").length;
+      header = `${failedHere.length} failed${applied ? `, ${applied} applied` : ""}`;
+      headerTone = "bad";
+      facts.unshift(...failedHere.map((m) => (m.reason ? `${m.root} failed: ${m.reason}` : `${m.root} failed`)));
+      const first = failedHere[0];
+      if (first.reason) factShort.push(`${first.root} failed: ${shortReason(first.reason, 36)}`, `${first.root} failed`);
+    }
+    const shown = header ? { status: w === "blocked" ? "blocked" : w === "failed" ? "failed" : "done", words: header, tone: headerTone, ...(status && status.run ? { run: status.run } : {}) } : status;
     waves[n] = {
       number: n,
       job: jobName,
       state: w,
       // A re-run held at its gate (behold#693) tones the box as its title says.
-      tone: shown && shown.held && shown.status === "waiting" ? shown.tone : w ? toneOf(w) : shown ? shown.tone : "idle",
+      tone: header ? headerTone : shown && shown.held && shown.status === "waiting" ? shown.tone : w ? toneOf(w) : shown ? shown.tone : "idle",
       status: shown,
       title: waveTitle(jobName, shown),
       facts,
+      ...(factShort.length ? { factShort } : {}),
     };
   }
   if (!story) return { stage, cards, waves, commit };
@@ -212,7 +232,7 @@ export function componentMarks(answer, progress, facets, { runs = null, pin = nu
   return { stage, cards, waves, commit, needs, ...(reach ? { reach } : {}), ...(story.kiosk ? { statusRight: true, cardFont: 15, waveFont: 18 } : {}) };
 }
 
-const toneOf = (state) => ({ planned: "plan", waiting: "wait", applying: "busy", applied: "ok", failed: "bad", refused: "bad", blocked: "wait" })[state] || "idle";
+const toneOf = (state) => ({ planned: "plan", waiting: "wait", applying: "busy", applied: "ok", failed: "bad", refused: "bad" })[state] || "idle";
 
 /**
  * behold#741: each component's upstream components, from the plan report's

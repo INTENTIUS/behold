@@ -323,10 +323,7 @@ export function unsettled(run: Pick<RunView, "waves">): boolean {
   // #568: a wave waiting at its gate, or a wave not started behind an applied
   // one with nothing failed or refused, moves next without a new report.
   if (run.waves.some((w) => w.state === "waiting")) return true;
-  // behold#741 (terragucci#1161): a run that blocks roots goes on past a failure, so a wave not started after a
-  // blocked one still moves. A run view without a blocked wave reads as before: a failure ends it.
-  const blocks = run.waves.some((w) => w.state === "blocked");
-  if (!blocks && run.waves.some((w) => w.state === "failed" || w.state === "refused")) return false;
+  if (run.waves.some((w) => w.state === "failed" || w.state === "refused")) return false;
   return run.waves.some((w) => w.state === "applied") && run.waves.some((w) => w.state === "not-started");
 }
 
