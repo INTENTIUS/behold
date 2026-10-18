@@ -16,6 +16,8 @@
 import { linkState, linkWords, noteBack, noteRead, readFailed, shareLink } from "./kiosk-link.js";
 import { CHANT_PANEL_STEPS, chantApprovalModel, chantResultModel } from "./chant-pr-marks.js";
 import { createLivePacer } from "./chant-live-pace.js";
+import { cycleTrack, drawTrack, trackModel, waitingSpec } from "./kiosk-track.js";
+import { graphWaves } from "./chant-pr-marks.js";
 import { PICK_HOLD_MS, annMark, mergeRun, startRuns, statusIcon } from "./kiosk-runs.js";
 import { MODES, MODE_STORE, badges as waveBadges, badgeTitle, behindStep, steadyRun, captionModel, doraLine, modeStored, placeBeside, quietWords, recordKey, resultModel, runningStep, shotFor, stepTone, tailLines } from "./kiosk-watch.js";
 import { shotMessage } from "./kiosk-shot.js";
@@ -919,7 +921,8 @@ function drawWatchHead(bar, s, now) {
   // behold#631: a chant pull request's wait for its approval comes before its merge. Without a stop of its own on the
   // strip it shows as "planned", for the fix's pull request as for the first.
   for (const stop of stripStops(railStep(s, demo), s.strip || STRIP)) strip.appendChild(el("li", `k-stop k-${stop.state}`, stop.words));
-  bar.appendChild(strip);
+  // behold#631: a chant kiosk's projected track says where the cycle is; the rail goes.
+  if (!s.trackOn) bar.appendChild(strip);
   if (s.watchHeld) {
     const p = el("span", "k-w-held", heldWords(s.watchHeld.secs));
     const b = el("button", null, FOLLOW_WORDS);
@@ -1575,9 +1578,11 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   }
   /** The caption shown now: Watch's own, or the live carve's while it has the camera (#715). */
   const shownCaption = () => (carveCtl && carveCtl.caption ? carveCtl.caption() || watch.caption : watch.caption);
+  /** behold#631: a chant kiosk's projected track (drawChantTrack), in the trail's place. */
+  let trackHost = null;
   /** behold#571: the caption's top, or event-help's trail's when it sits over the caption. */
   const captionTop = (cap) => {
-    const trail = eh && eh.trailHost;
+    const trail = trackHost && !trackHost.hidden ? trackHost : eh && eh.trailHost;
     const r = trail && !trail.hidden && trail.getBoundingClientRect ? trail.getBoundingClientRect() : null;
     return r && r.height && r.top < cap.top ? r.top : cap.top;
   };
@@ -1610,10 +1615,51 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     lastShot = key;
     post(shotMessage({ roots: s.shot.roots, waves: s.shot.waves, whole: s.shot.whole, insets, id: s.shot.id }));
   }
+  // behold#631: the projected cycle track, a chant kiosk's bottom band in place of the chip strip and the rail.
+  const trackState = { cycle: null, pulls: [], key: null, since: null };
+  function drawChantTrack(d, at) {
+    if (!trackHost && eh && eh.trailHost && eh.trailHost.parentNode && typeof document !== "undefined") {
+      trackHost = document.createElement("div");
+      trackHost.id = "k-track";
+      trackHost.hidden = true;
+      eh.trailHost.parentNode.insertBefore(trackHost, eh.trailHost);
+    }
+    const t = at instanceof Date ? at.getTime() : now().getTime();
+    const track = s.chantLoop && d ? cycleTrack(s.lastCycle()) : null;
+    s.trackOn = !!track;
+    if (!trackHost) return;
+    if (!track) {
+      s.trackModel = null;
+      drawTrack(trackHost, null);
+      return;
+    }
+    // This cycle's pull requests in the order it opened them; the reset closes the last.
+    if (trackState.cycle !== d.cycle) Object.assign(trackState, { cycle: d.cycle, pulls: [], key: null, since: null });
+    if (Number.isInteger(d.pull) && !trackState.pulls.includes(d.pull)) trackState.pulls.push(d.pull);
+    const live = s.chantWavesNow ? s.chantWavesNow(d) : null;
+    // When the current segment began: the step's own start where demo.json says it, else when the kiosk first saw it.
+    const probe = trackModel(track, { demo: d, pulls: trackState.pulls, since: t, now: t });
+    const key = probe ? `${probe.at.chapter}|${probe.at.segment}` : null;
+    if (key !== trackState.key) {
+      const from = d.next && d.next.from ? Date.parse(d.next.from) : NaN;
+      trackState.key = key;
+      trackState.since = Number.isFinite(from) && from <= t && t - from < 600_000 ? from : t;
+    }
+    const model = trackModel(track, { demo: d, pulls: trackState.pulls, since: trackState.since, now: t, waves: live ? live.waves : null });
+    s.trackModel = model;
+    drawTrack(trackHost, model);
+    // In the trail's place: over the caption.
+    const cap = shownCaption().getBoundingClientRect();
+    if (trackHost.style) trackHost.style.bottom = cap.height ? `${Math.round((typeof window !== "undefined" ? window.innerHeight : 0) - cap.top)}px` : "";
+    // The "Waiting on…" modal: a quiet stretch on a step that waits on something, never while the apply's events come in.
+    const applyLive = !!(live && live.live && !live.live.settled && live.waves.some((w) => w.state !== "waiting"));
+    s.waitingNow = waitingSpec(model, { quietMs: s.quietFor || 0, applyLive });
+  }
   function drawWatch(at) {
     if (!watch || !s.watchMode) return;
     const d = s.demo && s.demo.demo;
     drawCaption(watch.caption, s, at);
+    drawChantTrack(d, at);
     const hold = d ? holdModel(s, d) : null;
     const gate = !!hold && (hold.kind === "approval" || hold.kind === "driver");
     const shot = shotFor(d, { answer: s.answer, progress: s.progress, held: s.held, gate, runDoc: runsApi && runsApi.run ? runsApi.run.doc : null, waves: s.waves });
@@ -1835,6 +1881,10 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
             boxes: s.boxes,
             // behold#631: a chant repo's pull-request loop, whose story Tips tell its own way.
             chant: !!s.chantLoop,
+            // Its projected track replaces the chip strip, and its quiet stretches get a "Waiting on…" modal,
+            // which the approval card beside the graph wins over.
+            hideTrail: !!(s.chantLoop && s.trackOn && s.watchMode),
+            waiting: s.chantLoop && s.watchMode && !(watch && watch.callout && !watch.callout.hidden) ? s.waitingNow || null : null,
             frame,
             watch: s.watchMode,
             // The caption shown now: the live carve's while it has the camera (web/kiosk-carve.js).
@@ -1920,6 +1970,13 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   // behold#571 (#631): the strip in the running tool's own order, from its recorded cycle's steps; the default until it is read.
   const strips = new Map();
   s.strip = null;
+  /** behold#631: the running tool's last finished cycle, when one is published. */
+  s.lastCycle = () => {
+    const d = s.demo && s.demo.demo;
+    const t = vendor ? tool : d && typeof d.tool === "string" ? d.tool : null;
+    const r = t ? strips.get(t) : null;
+    return r && r.cycle ? r.cycle : null;
+  };
   /** Whether the running tool's step order has been read (or there is none to read), so the story can be told in it. */
   s.stripReady = () => {
     const d = s.demo && s.demo.demo;
@@ -1940,10 +1997,11 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       }
       return;
     }
-    strips.set(t, { at: now().getTime(), strip: had ? had.strip : null, done: had ? had.done : false });
+    strips.set(t, { at: now().getTime(), strip: had ? had.strip : null, done: had ? had.done : false, cycle: had ? had.cycle : null });
     const a = await fetchServed(`/api/terragucci/cycles/${encodeURIComponent(t)}`);
     const strip = a && a.cycle && Array.isArray(a.cycle.steps) ? stripFromSteps(a.cycle.steps.map((x) => x.step)) : null;
-    strips.set(t, { at: now().getTime(), strip: strip || (had ? had.strip : null), done: true });
+    // behold#631: the cycle itself too, for a chant kiosk's projected track.
+    strips.set(t, { at: now().getTime(), strip: strip || (had ? had.strip : null), done: true, cycle: a && a.cycle ? a.cycle : had ? had.cycle : null });
     s.strip = strips.get(t).strip;
     draw();
   };
@@ -2036,6 +2094,13 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   // behold#631: a chant repo's failed and applied steps are told by the graph's paced play: the caption's step line waits
   // for the play to reach them, and shows the step before until then. The strip still moves.
   let capShown = null;
+  /** behold#631: the apply's waves as the paced graph shows them now, for the track's ticks; null for another pull request's apply. */
+  s.chantWavesNow = (demo) => {
+    if (!s.chantLoop || !ap.chant || !ap.chant.live || !ap.chant.live.apply) return null;
+    if (demo && Number.isInteger(demo.pull) && Number.isInteger(ap.chant.pull) && demo.pull !== ap.chant.pull) return null;
+    const a = chantPacer.answer(ap.chant);
+    return { waves: graphWaves(a.live.apply).map((w) => ({ wave: w.wave, state: w.state })), live: a.live.apply };
+  };
   s.chantCaptionStep = (demo, step) => {
     const held = s.chantLoop && ap.chant && ap.chant.live && ap.chant.live.apply && demo && ["failed", "applied"].includes(demo.step);
     if (held) {
@@ -2341,6 +2406,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       recordAt = known.length ? Math.max(...known) : t;
     }
     s.quiet = quietWords(d, { now: t, lastRecordAt: recordAt, run, stepAt: stepSeenAt, replay: s.mode === "replay", stale: !!linkWords(link) });
+    // behold#631: how long nothing new has come in, for the "Waiting on…" modal.
+    s.quietFor = typeof recordAt === "number" ? t - recordAt : 0;
     // behold#631: a chant kiosk's "· N s so far" counts only while a job of the step runs; a step that is done has no timer.
     if (s.chantLoop && s.quiet && !(run && run.job)) s.quiet = null;
     if (carveCtl) carveCtl.setQuiet(s.quiet);

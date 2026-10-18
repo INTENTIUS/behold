@@ -69,6 +69,8 @@ const utc = (ms) => new Date(ms).toISOString().slice(11, 16);
  * and when; replay says which run it replays; live says nothing extra.
  */
 export function modeLine(mode, kind, { at = null, now = 0, resolved = false, outcome = null, replayAt = null, action = null, fix = false } = {}) {
+  // behold#631: a "Waiting on…" modal says what it waits on in its title; it has no mode line.
+  if (kind === "waiting") return null;
   if (mode === "replay") return `Replay of the run at ${utc(Number.isFinite(replayAt) ? replayAt : now)} UTC`;
   if (mode !== "narrated") return null;
   if (resolved) return outcome ? `Live · ${outcome}` : "Live";
@@ -122,6 +124,9 @@ export const MODAL_STYLE = `
 .eh-modal-act.eh-pressed { background: var(--bar, var(--pending)); color: var(--bg); transform: translateY(1px); }
 .eh-mode-live .eh-modal-act:not(.eh-pressed) { cursor: pointer; }
 .eh-modal .k-ap { margin-top: 0.4em; }
+.eh-modal-progress { position: relative; height: 6px; margin-top: 0.7em; border-radius: 3px; background: color-mix(in srgb, var(--muted) 30%, transparent); overflow: hidden; }
+.eh-modal-progress-fill { position: absolute; inset: 0 auto 0 0; background: var(--pending); border-radius: 3px; transition: width 0.9s linear; }
+@media (prefers-reduced-motion: reduce) { .eh-modal-progress-fill { transition: none; } }
 `;
 
 /** Put the modal's style in `doc` once. */
@@ -238,6 +243,16 @@ export function openEventModal(host, { mode, kind, data = {}, actions = {}, doc 
       box.appendChild(p);
     }
     if (data.panel) box.appendChild(data.panel);
+    // behold#631: a waiting modal's bar: how far into its usual time the step is, and that time in words.
+    if (data.progress) {
+      const bar = el("div", "eh-modal-progress");
+      const fill = el("i", "eh-modal-progress-fill");
+      if (fill.style && Number.isFinite(data.progress.fraction)) fill.style.width = `${Math.round(data.progress.fraction * 1000) / 10}%`;
+      bar.appendChild(fill);
+      box.appendChild(bar);
+      if (data.progress.words) box.appendChild(el("p", "eh-modal-note", data.progress.words));
+    }
+    if (kind === "waiting") return;
     const routed = mode === "live" && approveRoute(data.gate);
     // The panel, when there is one, already carries the command.
     if (data.command && !routed && !(data.panel && mode !== "live")) {

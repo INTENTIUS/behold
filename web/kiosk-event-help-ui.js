@@ -340,7 +340,8 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     if (trailHost.classList) trailHost.classList.toggle("eh-trail-fade", !!h.chant);
     const facts = [...st.trail.values()].sort((a, b) => a.order - b.order);
     const key = facts.map((f) => `${f.id}=${f.text}`).join(",");
-    trailHost.hidden = !facts.length;
+    // behold#631: a chant kiosk's projected track stands in its place.
+    trailHost.hidden = !facts.length || !!h.hideTrail;
     if (h.watch && h.caption && trailHost.style) {
       const c = h.caption.getBoundingClientRect();
       trailHost.style.bottom = c.height ? `${Math.round((doc.defaultView ? doc.defaultView.innerHeight : 0) - c.top)}px` : "";
@@ -410,6 +411,21 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     }
     const api = openEventModal(modalHost, { mode, kind, data, doc, now: shown, reduced: reduced(), onClose: () => (st.modal = null) });
     st.modal = { api, event, kind, step: d ? d.step : null, cycle: d ? d.cycle : null, pull: d ? d.pull : null };
+  };
+  /** behold#631: the "Waiting on…" modal's words: what is waited on, why it matters, and how long it usually takes. */
+  const waitingData = (w, h) => ({
+    title: `Waiting on ${w.what}`,
+    lines: w.why ? [{ text: w.why }] : [],
+    progress: { fraction: w.fraction, words: w.words },
+    // Never over a card: any card of the graph is to stay in view.
+    avoid: () => Object.keys((h.boxes && h.boxes.roots) || {}).map((r) => fromFrame(h, h.boxes.roots[r])).filter(Boolean),
+    bounds: () => frameRect(h),
+  });
+  const openWaiting = (w, h) => {
+    const d = h.demo;
+    const api = openEventModal(modalHost, { mode: "narrated", kind: "waiting", data: waitingData(w, h), doc, now: shown, reduced: reduced(), onClose: () => (st.modal = null) });
+    st.modal = { api, event: { kind: "waiting", subjects: { roots: [], wave: null } }, kind: "waiting", key: w.key, step: d ? d.step : null, cycle: d ? d.cycle : null, pull: d ? d.pull : null };
+    if (st.chant) for (const n of st.nodes.values()) n.style.visibility = "hidden";
   };
   /** The modal's real event: the approval landed, the waves ran again, the cycle moved on. */
   const settleModal = (h, facts) => {
@@ -487,6 +503,13 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     // behold#631: on a chant kiosk no tip shows at all while a modal is open, not even one already up.
     else if (st.chant) for (const n of st.nodes.values()) n.style.visibility = "hidden";
     ageGlows();
+    // behold#631: the "Waiting on…" modal goes the moment anything new arrives, or what it waits on changes;
+    // a critical modal (the failure) always wins over it.
+    if (st.modal && st.modal.kind === "waiting" && (news.length || !h.waiting || h.waiting.key !== st.modal.key)) {
+      // News closed it: the same wait does not come straight back over the news.
+      if (news.length && h.waiting) st.waitingHold = { key: h.waiting.key, until: now() + 4_000 };
+      st.modal.api.close();
+    }
     // behold#631: a chant repo's approval is the card beside the graph; a modal over it would hide it, so its hold opens none.
     // Its result is the Applied card beside the graph; a modal would say it twice, over the cards.
     st.modals = modalQueue(st.modals, { add: h.chant ? news.filter((f) => f.kind !== "held" && f.kind !== "applied") : news, now: now(), lastInput: st.lastInput, open: !!st.modal });
@@ -496,6 +519,10 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
       // The tip put up this same tick goes under too.
       if (st.chant) for (const n of st.nodes.values()) n.style.visibility = "hidden";
     }
+    // behold#631: a quiet stretch on a chant kiosk: "Waiting on …", when no other modal is up or due.
+    const held = st.waitingHold && h.waiting && st.waitingHold.key === h.waiting.key && now() < st.waitingHold.until;
+    if (h.waiting && st.on && !held && !st.modal && !(st.modals && st.modals.next)) openWaiting(h.waiting, h);
+    else if (h.waiting && st.modal && st.modal.kind === "waiting") st.modal.api.update(waitingData(h.waiting, h));
   };
   const stillNow = (e, d) => (e.kind === "held" ? d.step === "waiting" : e.kind === "failed" || e.kind === "refused" ? d.step === "failed" : e.kind === "applied" ? d.step === "applied" : false);
   /** Keep the tips on their things while the graph moves (a shot, a pan). */

@@ -308,7 +308,14 @@ export const VENDOR_NAMES: Record<VendorTool, string> = {
 
 export const isVendorTool = (v: string): v is VendorTool => (VENDOR_TOOLS as readonly string[]).includes(v);
 
-export const cycleKey = (tool: VendorTool): string => `cycles/${tool}/latest.json`;
+export const cycleKey = (tool: string): string => `cycles/${tool}/latest.json`;
+
+/**
+ * behold#631: a tool name a cycle may be read for: a vendor page's, or any
+ * demo.json `tool` (`chant-fanout`), which has no page of its own but whose
+ * kiosk draws the cycle track from its last cycle. Lower-case words and dashes.
+ */
+export const cycleToolName = (v: string): boolean => isVendorTool(v) || /^[a-z0-9][a-z0-9-]{0,40}$/.test(v);
 
 /** How long one read of a tool's latest cycle is shared. It changes once a cycle, at its reset. */
 export const CYCLE_READ_TTL_MS = 10_000;
@@ -355,7 +362,7 @@ export function cycleProblem(doc: unknown, tool: string): string | undefined {
 }
 
 /** One read of `cycles/<tool>/latest.json`. Never throws. */
-export async function readCycle(source: TerragucciSource, tool: VendorTool, now: Date = new Date()): Promise<CycleAnswer> {
+export async function readCycle(source: TerragucciSource, tool: string, now: Date = new Date()): Promise<CycleAnswer> {
   const base = { source: source.location, read: now.toISOString() };
   const key = cycleKey(tool);
   let body: string | undefined;
@@ -395,7 +402,7 @@ export function terragucciCyclesRoute(app: Hono, source: TerragucciSource, opts:
   const cache = new Map<string, { at: number; read: Promise<CycleAnswer> }>();
   app.get("/api/terragucci/cycles/:tool", async (c) => {
     const tool = c.req.param("tool");
-    if (!isVendorTool(tool)) return c.json({ error: `no tool "${tool.slice(0, 40)}" has a page; the tools are ${VENDOR_TOOLS.join(", ")}`, code: "terragucci-cycle" }, 404);
+    if (!cycleToolName(tool)) return c.json({ error: `no tool "${tool.slice(0, 40)}" has a page; the tools are ${VENDOR_TOOLS.join(", ")}`, code: "terragucci-cycle" }, 404);
     const at = Date.now();
     const hit = cache.get(tool);
     const read = hit && at - hit.at < CYCLE_READ_TTL_MS ? hit.read : readCycle(source, tool, opts.now ? opts.now() : new Date());
