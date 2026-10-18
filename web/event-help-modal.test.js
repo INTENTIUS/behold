@@ -235,6 +235,27 @@ describe("a chant modal kept above the bottom band (#631)", () => {
   });
 });
 
+describe("a placed modal and the read pills (behold#744)", () => {
+  it("keeps off a read pill the frame shows, as off a card", () => {
+    const win = { w: 1920, h: 1080 };
+    const size = { w: 594, h: 160 };
+    const bounds = { left: 5, top: 42, width: 1910, height: 690 };
+    // fan-out-tofu's wave 3 under Watch's camera, and app-03's pill above its card, where the "Waiting on" modal sat.
+    const card = (left, top) => ({ left, top, width: 165, height: 80 });
+    const cards = [0, 1, 2, 3, 4, 5].flatMap((i) => [card(72 + i * 210, 302), card(72 + i * 210, 420)]);
+    const pill = { left: 402, top: 238, width: 296, height: 26 };
+    // The wave box, and the reads running down to wave 2 under it: the modal goes above the box, by the pill.
+    const prefer = [{ left: 60, top: 270, width: 1240, height: 245 }, { left: 0, top: 540, width: 1920, height: 200 }];
+    const without = modalSpot(win, size, cards, { bounds, prefer });
+    const hit = (s, a) => s.left < a.left + a.width + 12 && s.left + size.w > a.left - 12 && s.top < a.top + a.height + 12 && s.top + size.h > a.top - 12;
+    expect(without && hit(without, pill)).toBe(true);
+    const spot = modalSpot(win, size, [...cards, pill], { bounds, prefer });
+    expect(spot).not.toBeNull();
+    expect(hit(spot, pill)).toBe(false);
+    expect(cards.some((c) => hit(spot, c))).toBe(false);
+  });
+});
+
 describe("a placed modal and the pointer (behold#744)", () => {
   it("lets the pointer through its sheet to the graph, and keeps it on the modal itself", () => {
     expect(MODAL_STYLE).toMatch(/\.eh-modal-wrap\.eh-modal-placed \{[^}]*pointer-events: none;/);
