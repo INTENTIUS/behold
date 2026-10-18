@@ -219,7 +219,11 @@ export function cycleFacts(snap) {
       add({ id: `${c}|w${n}|failed|${f.component}`, kind: "failed", text: said || `${f.component} failed`, order: base + 1, subjects: { ...subjects, roots: [f.component, ...(f.blocks || [])] }, critical: true, chant: true, avoid: [...new Set([f.component, ...(f.blocks || []), ...inView])], ...(f.error ? { raw: `${f.component} failed: ${f.error}` } : {}) });
     }
     if (w.state === "applied" || (w.state === "failed" && w.applied)) {
-      add({ id: `${c}|w${n}|applied`, kind: "applied-wave", text: w.state === "failed" ? `wave ${n}: ${w.applied} applied` : w.blocked ? `wave ${n} applied ${w.applied}; ${w.blocked} blocked` : `wave ${n} applied`, order: base + 7, subjects });
+      // A wave with a failure says both halves, by name when there are few: "wave 2: cluster-b applied, cluster-a failed".
+      const failedNames = (w.failed || []).map((f) => f.component);
+      const appliedNames = w.appliedNames || [];
+      const both = appliedNames.length && appliedNames.length <= 2 && failedNames.length <= 2 ? `wave ${n}: ${list(appliedNames)} applied, ${list(failedNames)} failed` : `wave ${n}: ${w.applied} applied, ${failedNames.length} failed`;
+      add({ id: `${c}|w${n}|applied`, kind: "applied-wave", text: w.state === "failed" ? both : w.blocked ? `wave ${n} applied ${w.applied}; ${w.blocked} blocked` : `wave ${n} applied`, order: base + 7, subjects });
     }
     if (w.blocked) {
       const by = w.blockedBy && w.blockedBy.length ? ` by ${list(w.blockedBy)}` : "";

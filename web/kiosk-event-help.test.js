@@ -111,7 +111,10 @@ describe("event-help: a cycle told in order", () => {
     expect(f.find((x) => x.kind === "failed").avoid).toEqual(["cluster-a", "cluster-b", "app-01", "app-07"]);
     expect(f.find((x) => x.id === "7|w3|applied")).toMatchObject({ kind: "applied-wave", text: "wave 3 applied 6; 6 blocked" });
     expect(f.find((x) => x.kind === "blocked")).toMatchObject({ text: "6 in wave 3 blocked by cluster-a: they did not run", subjects: { wave: 3 } });
-    expect(f.find((x) => x.id === "7|w2|applied")).toMatchObject({ text: "wave 2: 1 applied" });
+    // A wave with a failure says both halves; by name when the wave says them.
+    expect(f.find((x) => x.id === "7|w2|applied")).toMatchObject({ text: "wave 2: 1 applied, 1 failed" });
+    const named = cycleFacts(ehSnapshot({ demo: { ...demo("failed"), scenario: "fan-out", tool: "chant" }, answer: null, approval: { ...approval, chantWaves: chantWaves.map((w) => (w.wave === 2 ? { ...w, appliedNames: ["cluster-b"] } : w)) }, strip }));
+    expect(named.find((x) => x.id === "7|w2|applied").text).toBe("wave 2: cluster-b applied, cluster-a failed");
     // With the step's label giving the reason, the chip says it in the label's words.
     const said = cycleFacts(ehSnapshot({ demo: { ...demo("failed"), label: "cluster-a failed: SQS refuses a FIFO queue whose name lacks .fifo. Its six apps are held." }, answer: null, approval, strip }));
     expect(said.find((x) => x.kind === "failed").text).toBe("cluster-a failed: SQS refuses a FIFO queue whose name lacks .fifo");

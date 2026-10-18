@@ -128,6 +128,12 @@ export function stripStops(step, strip = STRIP) {
   return strip.map((s, i) => ({ id: s.id, words: s.words, state: at < 0 ? "ahead" : i < at ? "done" : i === at ? (step === "failed" ? "failed" : "current") : "ahead" }));
 }
 
+/** behold#631: the step a chant kiosk's strip lights: a wait for approval before the merge is "planned" when the strip has no approval stop. */
+export function railStep(s, demo) {
+  const strip = s.strip || STRIP;
+  return s.chantLoop && ["waiting", "approved"].includes(demo.step) && !strip.some((x) => x.id === APPROVAL_STOP.id) ? "planned" : demo.step;
+}
+
 /** behold#571 (#631): the words of the strip's approval stop, a gate before the merge. */
 export const APPROVAL_STOP = { id: "approval", words: "approval" };
 
@@ -774,7 +780,9 @@ function drawBar(bar, s, now) {
   over.appendChild(el("span", "k-kicker", head.kicker));
   // The scenario's progress: the strip's stops, at the end of the line over the title.
   const strip = el("ol", "k-strip");
-  for (const stop of stripStops(demo.step, s.strip || STRIP)) strip.appendChild(el("li", `k-stop k-${stop.state}`, stop.words));
+  // behold#631: a chant pull request's wait for its approval comes before its merge. Without a stop of its own on the
+  // strip it shows as "planned", for the fix's pull request as for the first.
+  for (const stop of stripStops(railStep(s, demo), s.strip || STRIP)) strip.appendChild(el("li", `k-stop k-${stop.state}`, stop.words));
   over.appendChild(strip);
   const title = el("h1", "k-title");
   title.appendChild(el("span", "k-title-text", head.title));
@@ -908,7 +916,9 @@ function drawWatchHead(bar, s, now) {
   place.appendChild(el("span", "k-cycle", cycleWords(demo, now)));
   bar.appendChild(place);
   const strip = el("ol", "k-strip");
-  for (const stop of stripStops(demo.step, s.strip || STRIP)) strip.appendChild(el("li", `k-stop k-${stop.state}`, stop.words));
+  // behold#631: a chant pull request's wait for its approval comes before its merge. Without a stop of its own on the
+  // strip it shows as "planned", for the fix's pull request as for the first.
+  for (const stop of stripStops(railStep(s, demo), s.strip || STRIP)) strip.appendChild(el("li", `k-stop k-${stop.state}`, stop.words));
   bar.appendChild(strip);
   if (s.watchHeld) {
     const p = el("span", "k-w-held", heldWords(s.watchHeld.secs));
@@ -940,12 +950,17 @@ function drawCaption(host, s, now) {
   top.appendChild(title);
   if (cap.next) {
     const nx = el("p", "k-cap-next");
-    // behold#631: a chant kiosk says what comes next in plain words: the demo is scripted, and "plan note" is chant's own term.
-    const chantNext = !!s.chantLoop;
-    const action = chantNext ? cap.next.action.replace(/\bplan note\b/g, "plan") : cap.next.action;
-    const lead = chantNext ? "next (scripted): " : "next, by the driver: ";
-    nx.append(lead, elRoots("span", "k-action", action, s), " ", el("span", "k-when", cap.next.when));
-    if (nx.setAttribute) nx.setAttribute("title", `${lead}${action}`);
+    // behold#631: a chant kiosk says what comes next as one plain sentence in one font: the demo is scripted, and
+    // "plan note" and "the plan's digest" are chant's own terms. A failure's next step reads as the modal's does.
+    if (s.chantLoop) {
+      const action = demo && demo.step === "failed" && /\bfix\b/.test(cap.next.action) ? "the fix opens" : cap.next.action.replace(/\bplan note\b/g, "plan").replace(/\bthe plan's digest\b/g, "the plan");
+      const sentence = `next (scripted): ${action}${/^when\b/.test(cap.next.when) ? ", " : " "}${cap.next.when}`.replace(/\s+/g, " ").trim();
+      nx.append(sentence);
+      if (nx.setAttribute) nx.setAttribute("title", sentence);
+    } else {
+      nx.append("next, by the driver: ", elRoots("span", "k-action", cap.next.action, s), " ", el("span", "k-when", cap.next.when));
+      if (nx.setAttribute) nx.setAttribute("title", `next, by the driver: ${cap.next.action}`);
+    }
     nx.appendChild(nextBar(demo, now, s));
     top.appendChild(nx);
   }

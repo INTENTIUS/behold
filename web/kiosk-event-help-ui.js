@@ -65,6 +65,8 @@ body.k-watch #eh-trail { position: fixed; z-index: 7; left: 5px; right: 5px; pad
 @media (prefers-reduced-motion: reduce) { .eh-tip.eh-out { opacity: 0; } }
 @keyframes eh-pop { from { opacity: 0; transform: var(--eh-at) translateY(6px) scale(0.92); } to { opacity: 1; transform: var(--eh-at); } }
 @keyframes eh-pulse { 0%, 100% { outline-color: color-mix(in srgb, var(--eh-glow, var(--focus)) 35%, transparent); } 50% { outline-color: var(--eh-glow, var(--focus)); } }
+/* behold#631: a chant kiosk's strip fades in at its left edge, so a chip scrolled past it never reads as a word cut short. */
+#eh-trail.eh-trail-fade { -webkit-mask-image: linear-gradient(to right, transparent 0, #000 72px); mask-image: linear-gradient(to right, transparent 0, #000 72px); }
 @media (max-width: 600px) { #eh-trail { padding: 0.2em 16px; } body.k-watch #eh-trail { position: static; background: transparent; border: 0; } .eh-tip { max-width: 18em; } }
 `;
 
@@ -335,6 +337,7 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
   let trailKey = "";
   const drawTrail = (h) => {
     if (!trailHost) return;
+    if (trailHost.classList) trailHost.classList.toggle("eh-trail-fade", !!h.chant);
     const facts = [...st.trail.values()].sort((a, b) => a.order - b.order);
     const key = facts.map((f) => `${f.id}=${f.text}`).join(",");
     trailHost.hidden = !facts.length;
@@ -463,9 +466,16 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     drawTrail(h);
     settleModal(h, facts);
     if (!st.on) return;
-    // behold#631: a chant wave's start is history once its outcome is news: its tip goes, so the tags follow the paced graph.
+    // behold#631: a new pull request of a chant cycle (the fix) starts with no tip of the one before.
+    if (h.chant && st.tipsPull !== undefined && st.tipsPull !== h.demo.pull) {
+      for (const n of st.nodes.values()) n.remove();
+      st.nodes.clear();
+      st.tips = null;
+    }
+    st.tipsPull = h.demo.pull;
+    // A chant wave's start is history once the wave has settled, outcome tip or not: its tip goes, so the tags follow the paced graph.
     if (h.chant && st.tips) {
-      const done = new Set(news.filter((f) => ["failed", "applied-wave", "blocked"].includes(f.kind) && Number.isInteger(f.subjects.wave)).map((f) => f.subjects.wave));
+      const done = new Set(facts.filter((f) => ["failed", "applied-wave", "blocked"].includes(f.kind) && Number.isInteger(f.subjects.wave)).map((f) => f.subjects.wave));
       if (done.size) st.tips = { shown: st.tips.shown.filter((x) => !(x.event.kind === "started" && done.has(x.event.subjects.wave))), waiting: st.tips.waiting.filter((e) => !(e.kind === "started" && done.has(e.subjects.wave))) };
     }
     // A chant kiosk shows one tip at a time: two placed on one wave box land on each other.

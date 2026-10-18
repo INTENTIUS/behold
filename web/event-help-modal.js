@@ -74,8 +74,8 @@ export function modeLine(mode, kind, { at = null, now = 0, resolved = false, out
   if (resolved) return outcome ? `Live · ${outcome}` : "Live";
   const left = secondsLeft(at, now);
   if (kind === "held") return left === null ? "Live · the driver plays the reviewer" : left > 0 ? `Live · the driver plays the reviewer and approves in ${left} s` : "Live · the driver plays the reviewer and approves now";
-  // The countdown is the modal's own line (`fix opens in N s`); this says who does it.
-  if (kind === "failed" && fix) return "Live · next, the demo opens a fix";
+  // behold#631: in the kiosk's own words for what comes next, the same as its caption's: the demo is scripted.
+  if (kind === "failed" && fix) return left === null ? "next (scripted): the fix opens" : left > 0 ? `next (scripted): the fix opens in ${left} s` : "next (scripted): the fix opens now";
   if (kind === "failed") return left === null ? "Live · the driver fixes it and runs it again" : left > 0 ? `Live · the driver fixes it and runs it again in ${left} s` : "Live · the driver fixes it and runs it again now";
   return "Live";
 }
@@ -264,11 +264,8 @@ export function openEventModal(host, { mode, kind, data = {}, actions = {}, doc 
     if (kind === "applied" && !routed) return;
     if (mode === "live" && !routed) return; // a gate behold can't clear: the command is the action
     // behold#631: a chant failure's countdown is text, not a control: nothing here is for the viewer to press.
-    if (data.fix) {
-      const left = secondsLeft(mode === "live" ? null : data.at, t);
-      box.appendChild(el("p", "eh-modal-note eh-modal-count", st.resolved ? "the fix is open" : left === null ? "a fix opens next" : left > 0 ? `fix opens in ${left} s` : "the fix opens now"));
-      return;
-    }
+    // Its countdown is the mode line's; there is nothing here to press.
+    if (data.fix) return;
     const b = buttonState(kind, { at: mode === "live" ? null : data.at, from: data.from, now: t, resolved: st.resolved || st.pressing, reduced, verbs: data.verbs || null });
     const btn = el("button", `eh-modal-act${b.pressed ? " eh-pressed" : ""}`, b.label);
     btn.type = "button";
