@@ -80,6 +80,48 @@ describe("event-help: a cycle told in order", () => {
     expect(storyTrail(facts("waiting", [st(1, "applied", ["network", "other"]), st(2, "waiting", ["app"])])).map((f) => f.kind)).toEqual(["pull-request", "planned", "merged", "applied-wave", "known", "held"]);
   });
 
+  it("tells a chant cycle's pull requests in turn: the gate before the merge, the reviewer by name, the fix's beats after the first's (#631)", () => {
+    // The strip as the kiosk had it: no approval stop of its own.
+    const approval = { wave: null, rows: [{ id: "approved", state: "lit", text: "forgejo@forgejo:3000:demo-reviewer approved this exact digest.", seal: { ok: null, text: "signed" } }] };
+    const chant = (step, pull) => cycleFacts(ehSnapshot({ demo: { ...demo(step), pull, scenario: "fan-out", tool: "chant" }, answer: null, approval, chant: true }));
+    const first = chant("merged", 7);
+    expect(storyTrail(first).map((f) => f.text)).toEqual(["pull request #7 opened", "the plan waits for an approval", "approved by demo-reviewer", "pull request #7 merged"]);
+    // The fix's gate waits before its merge: no merge chip for it yet.
+    expect(chant("waiting", 8).some((f) => f.kind === "merged")).toBe(false);
+    const fix = chant("planned", 8);
+    expect(fix.find((f) => f.kind === "pull-request")).toMatchObject({ id: "7|pr8|pr", text: "pull request #8 opened", pull: 8 });
+    // Every beat of the fix sorts after every beat of the first.
+    expect(Math.min(...fix.map((f) => f.order))).toBeGreaterThan(Math.max(...first.map((f) => f.order)));
+    // A terragucci cycle keeps its ids and words.
+    expect(cycleFacts(ehSnapshot({ demo: demo("merged"), answer, approval })).find((f) => f.kind === "approved").text).toBe("approved by forgejo@forgejo:3000:demo-reviewer, signed");
+  });
+
+  it("tells chant's apply wave by wave from its run events: the failure with its reason, and what it left blocked (#631)", () => {
+    const strip = stripFromSteps(["pull-request", "planned", "waiting", "approved", "merged", "applying", "failed", "applied", "reset"]);
+    const chantWaves = [
+      { wave: 1, state: "applied", components: ["network"], applied: 1, failed: [], blocked: 0, blockedBy: [] },
+      { wave: 2, state: "failed", components: ["cluster-a", "cluster-b"], applied: 1, failed: [{ component: "cluster-a", reason: "The name of a FIFO queue can only end with '.fifo'" }], blocked: 0, blockedBy: [] },
+      { wave: 3, state: "applied", components: ["app-01", "app-07"], applied: 6, failed: [], blocked: 6, blockedBy: ["cluster-a"] },
+    ];
+    const approval = { wave: null, rows: [{ id: "approved", state: "lit", text: "demo-reviewer approved this exact digest.", seal: { ok: null, text: "signed" } }], chantWaves };
+    const f = cycleFacts(ehSnapshot({ demo: { ...demo("failed"), scenario: "fan-out", tool: "chant" }, answer: null, approval, strip }));
+    // The step's label does not give the reason here, so the chip says the failure alone; CloudFormation's words never reach it.
+    expect(f.find((x) => x.kind === "failed")).toMatchObject({ text: "cluster-a failed", critical: true, chant: true, subjects: { wave: 2, roots: ["cluster-a"] } });
+    // A modal for it must leave wave 2 and wave 3 in view.
+    expect(f.find((x) => x.kind === "failed").avoid).toEqual(["cluster-a", "cluster-b", "app-01", "app-07"]);
+    expect(f.find((x) => x.id === "7|w3|applied")).toMatchObject({ kind: "applied-wave", text: "wave 3 applied 6; 6 blocked" });
+    expect(f.find((x) => x.kind === "blocked")).toMatchObject({ text: "6 in wave 3 blocked by cluster-a: they did not run", subjects: { wave: 3 } });
+    // A wave with a failure says both halves; by name when the wave says them.
+    expect(f.find((x) => x.id === "7|w2|applied")).toMatchObject({ text: "wave 2: 1 applied, 1 failed" });
+    const named = cycleFacts(ehSnapshot({ demo: { ...demo("failed"), scenario: "fan-out", tool: "chant" }, answer: null, approval: { ...approval, chantWaves: chantWaves.map((w) => (w.wave === 2 ? { ...w, appliedNames: ["cluster-b"] } : w)) }, strip }));
+    expect(named.find((x) => x.id === "7|w2|applied").text).toBe("wave 2: cluster-b applied, cluster-a failed");
+    // With the step's label giving the reason, the chip says it in the label's words.
+    const said = cycleFacts(ehSnapshot({ demo: { ...demo("failed"), label: "cluster-a failed: SQS refuses a FIFO queue whose name lacks .fifo. Its six apps are held." }, answer: null, approval, strip }));
+    expect(said.find((x) => x.kind === "failed").text).toBe("cluster-a failed: SQS refuses a FIFO queue whose name lacks .fifo");
+    // A terragucci repo's approval carries no chant waves, so none of these.
+    expect(cycleFacts(ehSnapshot({ demo: demo("failed"), answer, waves })).some((x) => x.kind === "blocked")).toBe(false);
+  });
+
   it("names each event's subjects, so the kiosk can place it", () => {
     const held = facts("waiting", [st(1, "applied", ["network", "other"]), st(2, "waiting", ["app"])], { runDoc: { id: 4801, cycle: 7, jobs: [{ name: "apply-wave-2", status: "waiting", steps: [] }] } });
     expect(held.find((f) => f.kind === "held")).toMatchObject({ critical: true, subjects: { roots: ["app"], wave: 2, job: "apply-wave-2", run: 4801 } });

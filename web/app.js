@@ -26,6 +26,7 @@ import { flagMarks as flFlagMarks, flagRow as flFlagRow, flagsFor as flFlagsFor,
 import { renderYodelLane } from "./sql-yodeler-lane.js";
 import { initTerragucciEstate } from "./terragucci-estate.js";
 import { chantComponentMarks } from "./chant-pr-marks.js";
+import { createLivePacer } from "./chant-live-pace.js";
 import { noStateFill } from "./frame-fill.js";
 import { componentMarks as tgComponentMarks, runsCommit as tgRunsCommit, statusShort as tgStatusShort, waveOfKey as tgWaveOfKey } from "./terragucci-components-live.js";
 import { FORGES, MARK, componentsForge, forgeOfName, iconSvg, markLink, markTitle, waveJobUrl } from "./forge-mark.js";
@@ -3794,7 +3795,21 @@ function drawTgReads() {
     return n;
   };
   if (chantMode) {
-    drawTgComponentMarks(svg, { marks: chantComponentMarks(chantPrAnswer, chantFacets), focus: null, boxOf, make, edgePoints: chantEdgePoints(svg) });
+    // behold#631: a kiosk passer-by can't place a card's type glyph (it reads as a checkbox): a chant repo's kiosk hides it.
+    if (embedOpts.bare) {
+      for (const card of svg.querySelectorAll("[data-node-id]")) {
+        const icon = card.querySelector(":scope > g[transform]");
+        if (!icon || card.hasAttribute("data-kiosk-glyph")) continue;
+        icon.setAttribute("visibility", "hidden");
+        // The name and the state line take the glyph's room, so the bigger state words fit.
+        card.setAttribute("data-kiosk-glyph", "1");
+        for (const t of card.querySelectorAll(":scope > text")) t.setAttribute("x", String(Number(t.getAttribute("x")) - 30));
+      }
+    }
+    const chantMarks = chantComponentMarks(chantPaced(), chantFacets, { kiosk: !!embedOpts.bare });
+    if (embedOpts.bare) chantKioskWaves(svg, boxOf, chantMarks.waveFont || 18);
+    drawTgComponentMarks(svg, { marks: chantMarks, focus: null, boxOf, make, edgePoints: chantEdgePoints(svg) });
+    drawReach(svg, chantMarks.reach || null, boxOf, chantMarks.waveFont || 18);
     return;
   }
   const layer = make("g", { "data-tg-reads": "1", "pointer-events": "none" });
@@ -4168,6 +4183,318 @@ function watchTgRuns() {
  * spot that is clear, in the words that fit, else only in the tooltip.
  * Returns the wave boxes, in the svg's coordinates.
  */
+/** The convex hull of points (monotone chain), counter-clockwise. */
+function hullOf(points) {
+  const p = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
+  if (p.length < 3) return p;
+  const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower = [];
+  for (const q of p) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], q) <= 0) lower.pop();
+    lower.push(q);
+  }
+  const upper = [];
+  for (const q of [...p].reverse()) {
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], q) <= 0) upper.pop();
+    upper.push(q);
+  }
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+}
+/** A closed path through a hull, each corner rounded by at most `r`, the `sharp` point (the apex) left a point. */
+function smoothPath(h, sharp = null, r = 28) {
+  if (h.length < 3) return "";
+  const f = (n) => Math.round(n * 10) / 10;
+  const toward = (p, q, d) => {
+    const len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+    return { x: p.x + ((q.x - p.x) / len) * d, y: p.y + ((q.y - p.y) / len) * d };
+  };
+  let d = "";
+  h.forEach((p, i) => {
+    const prev = h[(i - 1 + h.length) % h.length];
+    const next = h[(i + 1) % h.length];
+    if (sharp && p.x === sharp.x && p.y === sharp.y) {
+      d += `${i ? "L" : "M"}${f(p.x)},${f(p.y)} `;
+      return;
+    }
+    const k = Math.min(r, Math.hypot(prev.x - p.x, prev.y - p.y) / 2, Math.hypot(next.x - p.x, next.y - p.y) / 2);
+    const a = toward(p, prev, k);
+    const b = toward(p, next, k);
+    d += `${i ? "L" : "M"}${f(a.x)},${f(a.y)} Q${f(p.x)},${f(p.y)} ${f(b.x)},${f(b.y)} `;
+  });
+  return `${d}Z`;
+}
+const REACH_TONE = { plan: "var(--frame-pending, var(--pending))", bad: "var(--frame-degraded, var(--degraded))" };
+/**
+ * behold#631: what a change reaches, drawn on a chant repo's components graph:
+ * a soft wedge per root, from the root card's top centre up over the cards
+ * downstream of it, padded, behind the cards and in front of the wave boxes.
+ * It grows from the root outward over about 1.2 s (none under reduced motion)
+ * and then rests faint, with its words at its upper edge. A new reach
+ * crossfades the old one out; the same one redrawn only follows the cards.
+ */
+function drawReach(svg, reach, boxOf, size = 18) {
+  // Its words inside it, beside its apex: just right of the root card, in the open space between the root's wave box and the one above.
+  const labelAt = (shapes) => {
+    const at = shapes[0];
+    const waveBoxes = [...svg.querySelectorAll("rect[data-group-id]")].map((r) => boxOf(r)).filter(Boolean);
+    const inBox = waveBoxes.find((b) => at.root.x >= b.x && at.root.x2 <= b.x2 && at.root.y >= b.y && at.root.y2 <= b.y2) || null;
+    const above = inBox ? waveBoxes.filter((b) => b.y2 <= inBox.y + 1).sort((a, b) => b.y2 - a.y2)[0] : null;
+    return { x: at.root.x2 + 14, y: inBox && above ? (inBox.y + above.y2) / 2 : at.root.y - 24 };
+  };
+  const NS = "http://www.w3.org/2000/svg";
+  const old = svg.querySelector("g[data-reach]");
+  const key = reach ? reach.key : null;
+  const fadeOut = (g) => {
+    if (!g) return;
+    // Its words, drawn on top in their own group, go with it.
+    const words = svg.querySelector(`g[data-reach-words="${CSS.escape(g.getAttribute("data-reach") || "")}"]`);
+    if (words) {
+      words.removeAttribute("data-reach-words");
+      words.style.transition = "opacity 0.5s ease-out";
+      words.style.opacity = "0";
+      setTimeout(() => words.remove(), 600);
+    }
+    g.removeAttribute("data-reach");
+    g.setAttribute("data-reach-old", "1");
+    g.style.transition = "opacity 0.5s ease-out";
+    g.style.opacity = "0";
+    setTimeout(() => g.remove(), 600);
+  };
+  if (!reach) return fadeOut(old);
+  const card = (id) => svg.querySelector(`[data-node-id="${CSS.escape(id)}"]`);
+  const box = (id) => {
+    const g = card(id);
+    return g ? boxOf(g) : null;
+  };
+  const pad = 16;
+  const shapes = [];
+  const covered = new Set(reach.covered);
+  const needsOf = (chantFacets && chantFacets.needs) || {};
+  for (const root of reach.roots) {
+    const rb = box(root);
+    if (!rb) continue;
+    // This root's own reach: the covered cards downstream of it.
+    const mine = [...covered].filter((c) => c !== root && (reach.roots.length === 1 || reachesFrom(root, c, needsOf)));
+    const boxes = mine.map(box).filter(Boolean);
+    if (!boxes.length) continue;
+    // The apex just below the root card's bottom centre; the root card itself inside, so the shape comes out of it.
+    const apex = { x: (rb.x + rb.x2) / 2, y: rb.y2 + pad + 10 };
+    const pts = [apex];
+    for (const b of [rb, ...boxes]) pts.push({ x: b.x - pad, y: b.y - pad }, { x: b.x2 + pad, y: b.y - pad }, { x: b.x - pad, y: b.y2 + pad }, { x: b.x2 + pad, y: b.y2 + pad });
+    const top = Math.min(...boxes.map((b) => b.y)) - pad;
+    shapes.push({ d: smoothPath(hullOf(pts), apex), apex, root: rb, top, cx: (Math.min(...boxes.map((b) => b.x)) + Math.max(...boxes.map((b) => b.x2))) / 2, reachR: Math.max(...pts.map((p) => Math.hypot(p.x - apex.x, p.y - apex.y))) });
+  }
+  if (!shapes.length) return fadeOut(old);
+  const tone = REACH_TONE[reach.tone] || REACH_TONE.plan;
+  if (old && old.getAttribute("data-reach") === key) {
+    // The same reach: follow the cards, no new growth, and never left part-grown (a frame drawn while hidden pauses its animation).
+    old.querySelectorAll("path[data-reach-shape], path[data-reach-edge]").forEach((p) => {
+      const i = Number(p.getAttribute("data-reach-i"));
+      if (shapes[i]) p.setAttribute("d", shapes[i].d);
+    });
+    reachFinal(old, shapes, labelAt(shapes));
+    return;
+  }
+  fadeOut(old);
+  const g = document.createElementNS(NS, "g");
+  g.setAttribute("data-reach", key);
+  g.setAttribute("pointer-events", "none");
+  const reduce = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const id = `reach-${Date.now().toString(36)}`;
+  // The growth: each wedge revealed by a circle from its apex, widening out and up as if along the edges.
+  const defs = document.createElementNS(NS, "defs");
+  const clip = document.createElementNS(NS, "clipPath");
+  clip.setAttribute("id", id);
+  for (const sh of shapes) {
+    const c = document.createElementNS(NS, "circle");
+    c.setAttribute("cx", String(sh.apex.x));
+    c.setAttribute("cy", String(sh.apex.y));
+    c.setAttribute("r", reduce ? String(sh.reachR) : "0");
+    if (!reduce) {
+      const a = document.createElementNS(NS, "animate");
+      for (const [k, v] of Object.entries({ attributeName: "r", from: "0", to: String(sh.reachR), dur: "1.2s", fill: "freeze", calcMode: "spline", keyTimes: "0;1", keySplines: "0.16 1 0.3 1" })) a.setAttribute(k, v);
+      c.appendChild(a);
+    }
+    clip.appendChild(c);
+  }
+  defs.appendChild(clip);
+  g.appendChild(defs);
+  // One fill for all the wedges, so where two roots' wedges meet they merge rather than darken.
+  const fill = document.createElementNS(NS, "g");
+  fill.setAttribute("clip-path", `url(#${id})`);
+  fill.setAttribute("opacity", "0.13");
+  const edge = document.createElementNS(NS, "g");
+  edge.setAttribute("clip-path", `url(#${id})`);
+  for (const sh of shapes) {
+    const p = document.createElementNS(NS, "path");
+    p.setAttribute("d", sh.d);
+    p.setAttribute("fill", tone);
+    p.setAttribute("data-reach-shape", "1");
+    p.setAttribute("data-reach-i", String(shapes.indexOf(sh)));
+    fill.appendChild(p);
+    const e = document.createElementNS(NS, "path");
+    e.setAttribute("d", sh.d);
+    e.setAttribute("fill", "none");
+    e.setAttribute("stroke", tone);
+    e.setAttribute("stroke-opacity", "0.55");
+    e.setAttribute("stroke-width", "1.5");
+    e.setAttribute("data-reach-edge", "1");
+    e.setAttribute("data-reach-i", String(shapes.indexOf(sh)));
+    edge.appendChild(e);
+  }
+  g.append(fill, edge);
+  const where = labelAt(shapes);
+  const label = document.createElementNS(NS, "text");
+  for (const [k, v] of Object.entries({ x: String(where.x), y: String(where.y), "text-anchor": "start", "dominant-baseline": "central", "font-size": String(size), "font-weight": "700", fill: tone, stroke: "var(--bg)", "stroke-width": "5", "paint-order": "stroke", "stroke-linejoin": "round", "data-reach-label": "1" })) label.setAttribute(k, v);
+  label.textContent = reach.label;
+  if (!reduce) {
+    label.style.opacity = "0";
+    label.style.transition = "opacity 0.4s ease-out 1s";
+    requestAnimationFrame(() => (label.style.opacity = "1"));
+  }
+  // The shape lies under everything, a shadow on the stage floor: before the wave boxes, the edges and the cards.
+  // Its words sit on top, in their own group, so they stay readable.
+  const words = document.createElementNS(NS, "g");
+  words.setAttribute("data-reach-words", key);
+  words.setAttribute("pointer-events", "none");
+  words.appendChild(label);
+  // Above the stage's own backdrop (pinhole's gradient and dot pattern), under all else.
+  const backdrop = (n) => n.tagName.toLowerCase() === "rect" && !n.hasAttribute("data-group-id") && /^url\(#pin-/.test(n.getAttribute("fill") || "");
+  const floor = [...svg.children].find((n) => !["defs", "style", "title"].includes(n.tagName.toLowerCase()) && !backdrop(n) && !n.hasAttribute("data-reach-old"));
+  if (floor) svg.insertBefore(g, floor);
+  else svg.appendChild(g);
+  svg.appendChild(words);
+  // Whatever the animation did (a hidden frame pauses it), the reach ends whole, its words up.
+  setTimeout(() => g.isConnected && reachFinal(g, shapes, labelAt(shapes)), reduce ? 0 : 1_400);
+}
+/**
+ * behold#631: a chant kiosk reads its waves bottom to top. Each wave box's
+ * title says "wave N" at the header's size in a readable tone, each edge
+ * carries an arrowhead at its dependent's end (so up reads as "then"), and
+ * the bottom box says once that the waves apply from the bottom up.
+ */
+function chantKioskWaves(svg, boxOf, size) {
+  const NS = "http://www.w3.org/2000/svg";
+  let relabelled = false;
+  for (const rect of svg.querySelectorAll("rect[data-group-id]")) {
+    const n = tgWaveOfKey(rect.getAttribute("data-group-id"));
+    if (n === null) continue;
+    let title = null;
+    for (let el = rect.nextElementSibling; el; el = el.nextElementSibling) {
+      if (el.tagName.toLowerCase() === "text") {
+        title = el;
+        break;
+      }
+      if (el.tagName.toLowerCase() === "rect") break;
+    }
+    // The reach lies under the boxes: on a chant kiosk their fill lets it show through faintly; the border stays.
+    if (!rect.hasAttribute("data-kiosk-fill")) {
+      rect.setAttribute("data-kiosk-fill", rect.getAttribute("fill-opacity") || "");
+      rect.setAttribute("fill-opacity", "0.3");
+    }
+    if (!title || title.hasAttribute("data-kiosk-wave")) continue;
+    title.setAttribute("data-kiosk-wave", "1");
+    title.textContent = `wave ${n}`;
+    title.setAttribute("font-size", String(size));
+    title.dataset.pinFont = String(size);
+    title.setAttribute("fill", "var(--fg)");
+    relabelled = true;
+  }
+  // scaleBoxLabels indexed the titles at pinhole's size: index them again at this one.
+  if (relabelled) {
+    boxLabelCache = { svg: null, labels: [] };
+    boxLabelScale = null;
+  }
+  // Arrowheads: one marker, at the end of each edge that meets its dependent (the edge's `from`, consumer -> producer).
+  if (!svg.querySelector("#k-then-arrow")) {
+    const defs = svg.querySelector("defs") || svg.insertBefore(document.createElementNS(NS, "defs"), svg.firstChild);
+    const m = document.createElementNS(NS, "marker");
+    for (const [k, v] of Object.entries({ id: "k-then-arrow", viewBox: "0 0 10 10", refX: "9", refY: "5", markerWidth: "7", markerHeight: "7", markerUnits: "userSpaceOnUse", orient: "auto-start-reverse" })) m.setAttribute(k, v);
+    const p = document.createElementNS(NS, "path");
+    p.setAttribute("d", "M0,0 L10,5 L0,10 z");
+    p.setAttribute("fill", "var(--muted)");
+    m.appendChild(p);
+    defs.appendChild(m);
+  }
+  for (const g of svg.querySelectorAll("g[data-edge-from]")) {
+    const path = g.querySelector("path.pin-edge-line") || g.querySelector("path");
+    if (!path || path.hasAttribute("data-kiosk-then")) continue;
+    path.setAttribute("data-kiosk-then", "1");
+    const from = svg.querySelector(`[data-node-id="${CSS.escape(g.getAttribute("data-edge-from"))}"]`);
+    const fb = from ? boxOf(from) : null;
+    let start = null;
+    let end = null;
+    try {
+      const len = path.getTotalLength();
+      start = path.getPointAtLength(0);
+      end = path.getPointAtLength(len);
+    } catch {
+      continue;
+    }
+    if (!fb || !start || !end) continue;
+    const near = (p) => Math.hypot(p.x - (fb.x + fb.x2) / 2, p.y - (fb.y + fb.y2) / 2);
+    // The arrow points into the dependent: at whichever end of the path meets it.
+    if (near(start) < near(end)) path.setAttribute("marker-start", "url(#k-then-arrow)");
+    else path.setAttribute("marker-end", "url(#k-then-arrow)");
+  }
+  // The bottom box says which way the waves go, once.
+  if (!svg.querySelector("text[data-kiosk-upward]")) {
+    const boxes = [...svg.querySelectorAll("rect[data-group-id]")].filter((r) => tgWaveOfKey(r.getAttribute("data-group-id")) !== null);
+    const low = boxes.map((r) => ({ r, b: boxOf(r) })).filter((x) => x.b).sort((a, b) => b.b.y2 - a.b.y2)[0];
+    if (low) {
+      const t = document.createElementNS(NS, "text");
+      for (const [k, v] of Object.entries({ x: String(low.b.x + 18), y: String(low.b.y2 - 12), "font-size": "13", "font-weight": "600", fill: "var(--muted)", "data-kiosk-upward": "1" })) t.setAttribute(k, v);
+      t.textContent = "the waves apply from the bottom up";
+      svg.appendChild(t);
+    }
+  }
+}
+/** A reach at its end state: each clip circle at full radius on its apex, no animation left, its words shown where they go. */
+function reachFinal(g, shapes, where) {
+  const svgEl = g.ownerSVGElement || g.parentNode;
+  g.querySelectorAll("clipPath circle").forEach((c, i) => {
+    for (const a of c.querySelectorAll("animate")) a.remove();
+    const sh = shapes[i];
+    if (!sh) return;
+    c.setAttribute("cx", String(sh.apex.x));
+    c.setAttribute("cy", String(sh.apex.y));
+    c.setAttribute("r", String(sh.reachR));
+  });
+  const key = g.getAttribute("data-reach") || "";
+  const words = svgEl && svgEl.querySelector ? svgEl.querySelector(`g[data-reach-words="${CSS.escape(key)}"]`) : null;
+  const label = (words && words.querySelector("text[data-reach-label]")) || g.querySelector("text[data-reach-label]");
+  if (label) {
+    label.setAttribute("x", String(where.x));
+    label.setAttribute("y", String(where.y));
+    label.style.transition = "";
+    label.style.opacity = "1";
+  }
+}
+/** Whether `c` is downstream of `root` along `needs`. */
+function reachesFrom(root, c, needs) {
+  const seen = new Set();
+  const up = (n) => {
+    for (const d of needs[n] || []) {
+      if (d === root) return true;
+      if (seen.has(d)) continue;
+      seen.add(d);
+      if (up(d)) return true;
+    }
+    return false;
+  };
+  return up(c);
+}
+/** behold#631: the "working" outline pulse, once per document; no motion under prefers-reduced-motion. */
+function ensureWorkingStyle() {
+  if (document.getElementById("k-working-style")) return;
+  const st = document.createElement("style");
+  st.id = "k-working-style";
+  st.textContent = `@media (prefers-reduced-motion: no-preference) {
+  rect.k-working { animation: k-working 1.6s ease-in-out infinite; stroke: var(--frame-runtime, var(--runtime)); }
+  @keyframes k-working { 0%, 100% { stroke-opacity: 0.35; stroke-width: 1.5; } 50% { stroke-opacity: 1; stroke-width: 3; } }
+}`;
+  document.head.appendChild(st);
+}
 function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints, marks: given = null }) {
   const marks = given || tgComponentMarks(drawnAnswer, tgProgress, tgComponentFacets, { runs: tgRuns, pin: view.run || null });
   // behold#631: where the marks came from, said in each tooltip.
@@ -4183,6 +4510,8 @@ function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints
       .map(boxOf)
       .filter(Boolean);
   const cardEls = [...svg.querySelectorAll("[data-node-id]")];
+  // behold#631: last draw's "working" pulse goes; this draw's marks say which cards still have it.
+  for (const r of svg.querySelectorAll("rect.k-working")) r.setAttribute("class", (r.getAttribute("class") || "").replace(/\bk-working\b/g, "").trim());
   const cardBoxes = cardEls.map(boxOf).filter(Boolean);
   const edgeHit = (r) => edgePoints.some((p) => p.x >= r.x - 4 && p.x <= r.x2 + 4 && p.y >= r.y - 4 && p.y <= r.y2 + 4);
   const probe = make("text", { "font-size": 12, "font-weight": 700 });
@@ -4222,16 +4551,26 @@ function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints
       bar.setAttribute("data-tg-fill0", bar.getAttribute("fill") || "");
       bar.setAttribute("fill", tone(m.tone));
     }
+    // behold#631: a card the pipeline is about to work on, between events, pulses its outline (none under reduced motion).
+    if (body) {
+      if (m.working) body.setAttribute("class", `${body.getAttribute("class") || ""} k-working`.trim());
+      else if ((body.getAttribute("class") || "").includes("k-working")) body.setAttribute("class", (body.getAttribute("class") || "").replace(/\bk-working\b/g, "").trim());
+      if (m.working) ensureWorkingStyle();
+    }
+    if (!m.words && m.working) continue;
     const texts = [...g.querySelectorAll(":scope > text")];
     const sub = texts.find((t) => /^Component\b/.test((t.textContent || "").trim())) || texts[1];
     if (!sub || !body) continue;
     const x = Number(sub.getAttribute("x"));
     const y = Number(sub.getAttribute("y"));
     const room = Number(body.getAttribute("x")) + Number(body.getAttribute("width")) - 10 - x;
-    const words = width(m.words, 12, 700) <= room ? m.words : m.short;
+    // behold#631: a middle form (a failure's first words, a blocker's name) before the one-word short.
+    // behold#631: a chant kiosk says a card's state at the size of its name, readable from a few feet.
+    const cardFont = marks.cardFont || 12;
+    const words = width(m.words, cardFont, 700) <= room ? m.words : m.mid && width(m.mid, cardFont, 700) <= room ? m.mid : m.short;
     sub.setAttribute("visibility", "hidden");
     sub.setAttribute("data-tg-hid", "1");
-    const t = make("text", { "data-tg-root": "card", x, y, "font-size": 12, "font-weight": 700, fill: quiet ? "var(--frame-card-muted, var(--muted))" : TG_CARD_TONE[m.tone] || TG_CARD_TONE.idle }, words);
+    const t = make("text", { "data-tg-root": "card", x, y: marks.cardFont ? y + 4 : y, "font-size": cardFont, "font-weight": 700, fill: quiet ? "var(--frame-card-muted, var(--muted))" : TG_CARD_TONE[m.tone] || TG_CARD_TONE.idle }, words);
     if (m.state === "applying") t.setAttribute("class", "pin-pulse");
     if (!inFocus) t.style.opacity = "0.6";
     t.appendChild(make("title", {}, [`wave ${m.wave} · ${m.words}`, ...m.facts].join("\n") + "\n" + cardSource));
@@ -4265,10 +4604,13 @@ function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints
     if (rb) placed.push(rb);
     // The job's status: after the title on its line, else at the right of that line.
     if (w.status && tb) {
-      const size = 12;
+      // behold#631: a chant kiosk's wave words half again as big.
+      const size = marks.waveFont || 12;
       const cy = (tb.y + tb.y2) / 2;
       // Right after the title, as "apply-wave-2 · held at the gate"; else alone at the right of the title's line.
       const spots = [{ words: `· ${w.status.words}`, at: () => tb.x2 + 6 }, { words: w.status.words, at: (wd) => b.x2 - 16 - wd }];
+      // behold#631: a chant kiosk's box titles grow with the fit (scaleBoxLabels), which would run into words set just after them: the right of the line first.
+      if (marks.statusRight) spots.reverse();
       // behold#693: a narrow box whose full words would cross an edge says the short form.
       const short = tgStatusShort(w.status);
       if (short && short !== w.status.words) spots.push({ words: `· ${short}`, at: () => tb.x2 + 6 }, { words: short, at: (wd) => b.x2 - 16 - wd });
@@ -4293,7 +4635,8 @@ function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints
     if (fact) {
       const size = 12.5;
       const digest = /^approve plan (\S+)/.exec(fact);
-      const say = digest ? [fact, `plan ${digest[1]}`, `plan ${digest[1].slice(0, 8)}`, digest[1].slice(0, 8)] : [fact];
+      // behold#631: a fact may carry shorter forms of itself (a failure's reason, cut), tried in turn.
+      const say = digest ? [fact, `plan ${digest[1]}`, `plan ${digest[1].slice(0, 8)}`, digest[1].slice(0, 8)] : [fact, ...(Array.isArray(w.factShort) ? w.factShort : [])];
       const fill = w.state === "waiting" ? tone(w.tone) : "var(--muted)";
       let done = false;
       for (const words of say) {
@@ -4744,6 +5087,8 @@ function kioskTellDrawn() {
   if (!failed && !(svg && svg.querySelector("[data-node-id]"))) return;
   // The marks: terragucci's reports answered (or refused), or chant's loop has its own.
   if (!failed && terragucciComponentsRepo && !tgAnswer && !chantPrDrawn()) return;
+  // behold#631: a chant repo's loop: its first read of /api/chant/pr, answered or not.
+  if (!failed && !terragucciComponentsRepo && view.components && chantFacets && !staticMode && !chantPrRead) return;
   drawnTold = true;
   try {
     window.parent.postMessage({ type: "behold:drawn", failed }, embedOpts.host);
@@ -5822,17 +6167,62 @@ let tgComponentFacets = null;
 let chantFacets = null;
 let chantPrAnswer = null;
 let chantPrTimer = null;
+/** Whether /api/chant/pr has answered (or failed) once since the components view drew, so a kiosk frame swaps in with its marks on. */
+let chantPrRead = false;
+// behold#631: a fast apply played at a pace a viewer can follow (web/chant-live-pace.js).
+const chantPacer = createLivePacer();
+let chantPaceTimer = null;
+let chantPacedWas = null;
+/** The answer as the pacer shows it now; while it is behind the stream, redraw as it plays. */
+function chantPaced() {
+  const a = chantPacer.answer(chantPrAnswer);
+  chantPacedWas = JSON.stringify(a && a.live ? a.live.apply : null);
+  if (chantPacer.pending && !chantPaceTimer) {
+    chantPaceTimer = setInterval(() => {
+      const next = chantPacer.answer(chantPrAnswer);
+      const was = chantPacedWas;
+      if (JSON.stringify(next && next.live ? next.live.apply : null) !== was) drawTgReads();
+      if (!chantPacer.pending) {
+        clearInterval(chantPaceTimer);
+        chantPaceTimer = null;
+      }
+    }, 400);
+  }
+  return a;
+}
 function chantPrDrawn() {
   return !!(view.components && chantFacets && !terragucciComponentsRepo && chantPrAnswer && !chantPrAnswer.error && chantPrAnswer.loop);
 }
 async function loadChantPr() {
   const pin = view.run || "";
   const was = JSON.stringify(chantPrAnswer);
-  const answer = await apiFetch(`/api/chant/pr${pin ? `?pin=${encodeURIComponent(pin)}` : ""}`)
+  let answer = await apiFetch(`/api/chant/pr${pin ? `?pin=${encodeURIComponent(pin)}` : ""}`)
     .then((r) => (r.ok ? r.json() : null))
     .catch(() => null);
   if ((view.run || "") !== pin) return; // the pin moved while this read ran
+  // behold#631: at the merge, before the apply's run is listed, the merge commit names no pull request yet and the
+  // answer comes back empty: the cards keep the plan they had until the apply's own records replace it.
+  const nothing = (a) => a && !a.error && !a.plan && !a.apply && !a.running && !(a.live && (a.live.apply || a.live.plan));
+  if (nothing(answer) && chantPrAnswer && chantPrAnswer.plan && pin && pin !== "base" && pin !== "none" && !/^pull/.test(pin)) answer = { ...answer, pull: chantPrAnswer.pull, plan: chantPrAnswer.plan, gate: chantPrAnswer.gate, ...(chantPrAnswer.live ? { live: { ...chantPrAnswer.live, apply: null, plan: null } } : {}), carried: true };
+  // behold#631: a new pull request of the cycle (the fix) that has no plan yet: its cards keep what they were.
+  // What landed reads applied earlier; a failed or blocked card keeps that state until the fix's plan says otherwise.
+  const noPlanYet = (a) => a && !a.error && !a.plan && !a.apply && !(a.live && (a.live.apply || a.live.plan));
+  if (noPlanYet(answer) && /^pull/.test(pin) && chantPrAnswer && chantFacets) {
+    const prev = chantPrAnswer;
+    let lastStates = prev.lastStates && prev.pull === answer.pull ? prev.lastStates : null;
+    let landed = new Set(prev.live && prev.live.earlier ? prev.live.earlier.applied : []);
+    if (!lastStates && (prev.plan || (prev.live && prev.live.apply)) && prev.pull !== answer.pull) {
+      const cards = chantComponentMarks(chantPacer.answer(prev), chantFacets).cards;
+      lastStates = {};
+      for (const [c, m] of Object.entries(cards)) {
+        if (m.state === "failed" || m.state === "blocked") lastStates[c] = m.state;
+        else if (m.state === "applied" || m.state === "already-applied" || m.state === "applied-earlier") landed.add(c);
+      }
+    }
+    if (lastStates) answer = { ...answer, lastStates, live: { ...(answer.live || { reportUrl: null, via: "pipeline" }), plan: null, apply: null, earlier: { runs: (answer.live && answer.live.earlier && answer.live.earlier.runs) || [], applied: [...new Set([...landed, ...((answer.live && answer.live.earlier && answer.live.earlier.applied) || [])])] } } };
+  }
   chantPrAnswer = answer;
+  chantPrRead = true;
   if (JSON.stringify(answer) !== was) drawTgReads();
 }
 /** Read the loop every few seconds while a chant repo's components view is on screen. */
@@ -6985,10 +7375,16 @@ function drawPipelineMarks(svgEl) {
   const light = kioskLight();
   const pin = view.run || null;
   const commit = tgRunsCommit(pin, tgProgress);
+  // behold#631: on a kiosk, a chant repo's forge and tool are named once, with their logos, in the kiosk's title line:
+  // the wave boxes carry no marks of their own there. Inspect keeps them.
+  const chantKiosk = !!(embedOpts.bare && view.components && chantFacets && !terragucciComponentsRepo);
+  if (chantKiosk) return;
+  const onlyWave = null;
   for (const rect of svgEl.querySelectorAll("rect[data-group-id]")) {
     const key = rect.getAttribute("data-group-id");
     const n = tgWaveOfKey(key);
     if (n === null) continue;
+    if (onlyWave !== null && n !== onlyWave) continue;
     const what = pipelineMarksFor(n);
     if (!what) continue;
     const forge = what.forge && FORGES[what.forge] ? what.forge : null;

@@ -35,7 +35,7 @@ set -euo pipefail
 TG="${TERRAGUCCI_SRC:?TERRAGUCCI_SRC names the terragucci checkout}"
 FORGEJO="http://127.0.0.1:${TERRAGUCCI_FORGEJO_PORT:-3300}"
 FLOCI="http://127.0.0.1:${TERRAGUCCI_FLOCI_PORT:-4580}"
-REPOS="${DEMO_REPOS:-terragucci-admin/demo terragucci-admin/demo-terragrunt terragucci-admin/demo-chant}"
+REPOS="${DEMO_REPOS:-terragucci-admin/demo terragucci-admin/demo-terragrunt terragucci-admin/demo-chant terragucci-admin/demo-chant-fanout}"
 REPORTS="${DEMO_REPORTS:-s3://demo-reports/demo}"
 VIEWER="${DEMO_VIEWER_USER:-demo-viewer}"
 STATE=/var/lib/demo-host

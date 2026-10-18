@@ -14,7 +14,12 @@
 // Nothing here is all-or-nothing, and nothing says so.
 
 import { linkState, linkWords, noteBack, noteRead, readFailed, shareLink } from "./kiosk-link.js";
-import { CHANT_PANEL_STEPS, chantApprovalModel } from "./chant-pr-marks.js";
+import { CHANT_PANEL_STEPS, chantApprovalModel, chantResultModel } from "./chant-pr-marks.js";
+import { createLivePacer } from "./chant-live-pace.js";
+import { cycleTrack, drawTrack, trackModel, waitingSpec } from "./kiosk-track.js";
+import { FORGES, iconSvg } from "./forge-mark.js";
+import { TOOLS } from "./tool-mark.js";
+import { graphWaves } from "./chant-pr-marks.js";
 import { PICK_HOLD_MS, annMark, mergeRun, startRuns, statusIcon } from "./kiosk-runs.js";
 import { MODES, MODE_STORE, badges as waveBadges, badgeTitle, behindStep, steadyRun, captionModel, doraLine, modeStored, placeBeside, quietWords, recordKey, resultModel, runningStep, shotFor, stepTone, tailLines } from "./kiosk-watch.js";
 import { shotMessage } from "./kiosk-shot.js";
@@ -125,6 +130,87 @@ export function aboutRows(demo) {
 export function stripStops(step, strip = STRIP) {
   const at = strip.findIndex((s) => s.steps.includes(step));
   return strip.map((s, i) => ({ id: s.id, words: s.words, state: at < 0 ? "ahead" : i < at ? "done" : i === at ? (step === "failed" ? "failed" : "current") : "ahead" }));
+}
+
+/** behold#631: the chapter headline's look: it fades in when the chapter turns (no motion under reduced motion), the point small under it. */
+function chapterStyle() {
+  if (typeof document === "undefined" || !document.head || document.getElementById("k-chapter-style")) return;
+  const st = document.createElement("style");
+  st.id = "k-chapter-style";
+  st.textContent = `.k-cap-point { margin: 0.1em 0 0.35em; font: 600 0.95em var(--font-ui); color: var(--muted); }
+@media (prefers-reduced-motion: no-preference) {
+  .k-chapter-head.k-chapter-in { animation: k-chapter-in 0.8s ease-out both; }
+  @keyframes k-chapter-in { from { opacity: 0; } to { opacity: 1; } }
+}`;
+  document.head.appendChild(st);
+}
+
+/** behold#631: a chant kiosk's one line naming what it shows: the pipeline is chant's own; terragucci runs the demo around it. */
+export const SCENARIO_WORDS = { "fan-out": "fan-out" };
+export function whatLine(demo, forge = null) {
+  return whatParts(demo, forge).map((p) => p.text).join(" · ");
+}
+/**
+ * The line's parts, each `{ text, short, logo? }`: a logo (a mark behold ships) only where a product is named,
+ * chant's beside chant, the forge's beside the forge. `short` is the phone's words.
+ */
+export function whatParts(demo, forge = null) {
+  const sc = demo && typeof demo.scenario === "string" ? demo.scenario : null;
+  const f = forge && FORGES[forge] ? FORGES[forge] : null;
+  return [
+    { text: "chant's pull-request pipeline", short: "chant pipeline", logo: "chant" },
+    ...(f ? [{ text: `on ${f.label}`, short: f.label, logo: forge }] : []),
+    ...(sc ? [{ text: SCENARIO_WORDS[sc] || sc.replace(/-/g, " "), short: SCENARIO_WORDS[sc] || sc.replace(/-/g, " ") }] : []),
+    { text: "live demo", short: "live" },
+  ];
+}
+/** The line drawn: each part's logo at the words' height, at its own aspect (the marks are square), then the words. */
+function whatLineEl(demo, forge) {
+  const line = el("span", "k-cycle k-what-line");
+  const light = typeof document !== "undefined" && typeof getComputedStyle === "function" ? isLightBg(getComputedStyle(document.documentElement).getPropertyValue("--bg")) : false;
+  whatParts(demo, forge).forEach((p, i) => {
+    if (i) line.appendChild(el("span", "k-what-sep", "·"));
+    const part = el("span", "k-what-part");
+    const spec = p.logo === "chant" ? TOOLS.chant && TOOLS.chant.icon : p.logo && FORGES[p.logo] ? FORGES[p.logo] : null;
+    if (spec && typeof document !== "undefined" && document.createElementNS) {
+      const icon = iconSvg(document, spec, 22, { light });
+      icon.setAttribute("class", `k-what-logo k-what-logo-${p.logo}`);
+      // A mark drawn in its theme's one colour (chant's gold) carries it inline, so no stylesheet's fill greys it.
+      if (spec.fill) {
+        const gold = light ? spec.fill.light : spec.fill.dark;
+        for (const n of icon.querySelectorAll("rect, path, circle, polygon, g")) n.style.fill = gold;
+      }
+      part.appendChild(icon);
+    }
+    part.append(el("span", "k-what-full", p.text), el("span", "k-what-short", p.short));
+    line.appendChild(part);
+  });
+  if (line.setAttribute) line.setAttribute("title", WHAT_TITLE);
+  whatStyle();
+  return line;
+}
+/** The line's look: half again the old size; on a phone the logos stay and the words shorten. */
+function whatStyle() {
+  if (typeof document === "undefined" || !document.head || document.getElementById("k-what-style")) return;
+  const st = document.createElement("style");
+  st.id = "k-what-style";
+  st.textContent = `.k-what-line { display: inline-flex; align-items: center; gap: 0.45em; font-size: 1.5em; font-weight: 600; color: var(--fg); }
+.k-what-part { display: inline-flex; align-items: center; gap: 0.3em; white-space: nowrap; }
+.k-what-logo { width: 1.25em; height: 1.25em; flex: none; }
+/* chant's mark is pixel-sparse in its square: drawn larger, it carries the weight of Forgejo's. */
+.k-what-logo-chant { width: 1.7em; height: 1.7em; }
+.k-what-sep { color: var(--muted); }
+.k-what-short { display: none; }
+@media (max-width: 600px) { .k-what-line { font-size: 1.1em; } .k-what-full { display: none; } .k-what-short { display: inline; } }`;
+  document.head.appendChild(st);
+}
+/** Its tooltip: whose pipeline it is, and whose demo. */
+export const WHAT_TITLE = "The pipeline is chant's (chant components pr-plan / pr-apply on Forgejo). The demo stack and its driver are terragucci's.";
+
+/** behold#631: the step a chant kiosk's strip lights: a wait for approval before the merge is "planned" when the strip has no approval stop. */
+export function railStep(s, demo) {
+  const strip = s.strip || STRIP;
+  return s.chantLoop && ["waiting", "approved"].includes(demo.step) && !strip.some((x) => x.id === APPROVAL_STOP.id) ? "planned" : demo.step;
 }
 
 /** behold#571 (#631): the words of the strip's approval stop, a gate before the merge. */
@@ -773,7 +859,9 @@ function drawBar(bar, s, now) {
   over.appendChild(el("span", "k-kicker", head.kicker));
   // The scenario's progress: the strip's stops, at the end of the line over the title.
   const strip = el("ol", "k-strip");
-  for (const stop of stripStops(demo.step, s.strip || STRIP)) strip.appendChild(el("li", `k-stop k-${stop.state}`, stop.words));
+  // behold#631: a chant pull request's wait for its approval comes before its merge. Without a stop of its own on the
+  // strip it shows as "planned", for the fix's pull request as for the first.
+  for (const stop of stripStops(railStep(s, demo), s.strip || STRIP)) strip.appendChild(el("li", `k-stop k-${stop.state}`, stop.words));
   over.appendChild(strip);
   const title = el("h1", "k-title");
   title.appendChild(el("span", "k-title-text", head.title));
@@ -903,12 +991,20 @@ function drawWatchHead(bar, s, now) {
   const vendor = vendorOf(s.vendor);
   const place = el("div", "k-w-place");
   const shownTool = vendor || (demo.scenario !== "base" ? vendorOf(demo.tool) : null);
-  if (shownTool) place.appendChild(brandEl(shownTool));
-  place.appendChild(el("span", "k-cycle", cycleWords(demo, now)));
+  if (s.chantLoop && s.trackOn) {
+    // behold#631: a chant kiosk names what this is in one line; the cycle number and its clock are Inspect's.
+    place.appendChild(whatLineEl(demo, s.chantForge ? s.chantForge() : null));
+  } else {
+    if (shownTool) place.appendChild(brandEl(shownTool));
+    place.appendChild(el("span", "k-cycle", cycleWords(demo, now)));
+  }
   bar.appendChild(place);
   const strip = el("ol", "k-strip");
-  for (const stop of stripStops(demo.step, s.strip || STRIP)) strip.appendChild(el("li", `k-stop k-${stop.state}`, stop.words));
-  bar.appendChild(strip);
+  // behold#631: a chant pull request's wait for its approval comes before its merge. Without a stop of its own on the
+  // strip it shows as "planned", for the fix's pull request as for the first.
+  for (const stop of stripStops(railStep(s, demo), s.strip || STRIP)) strip.appendChild(el("li", `k-stop k-${stop.state}`, stop.words));
+  // behold#631: a chant kiosk's projected track says where the cycle is; the rail goes.
+  if (!s.trackOn) bar.appendChild(strip);
   if (s.watchHeld) {
     const p = el("span", "k-w-held", heldWords(s.watchHeld.secs));
     const b = el("button", null, FOLLOW_WORDS);
@@ -931,19 +1027,54 @@ function drawCaption(host, s, now) {
   const demo = s.demo && s.demo.demo;
   const cap = captionModel(demo, { vendor: s.vendor || null, now });
   if (!cap) return;
+  if (s.chantCaptionStep) cap.step = s.chantCaptionStep(demo, cap.step);
   const top = el("div", "k-cap-top");
   const title = el("h1", "k-cap-title");
-  title.append(el("span", "k-kicker", cap.kicker), el("span", "k-title-text", cap.title));
-  if (title.setAttribute) title.setAttribute("title", `${cap.kicker} · ${cap.title}`);
+  // behold#631: a chant kiosk with its track drops "Scenario 1 of 1": the track says where the cycle is.
+  const told = s.storyDemo ? s.storyDemo(demo) : demo;
+  const ch = s.chantLoop && told && told.chapter && Number.isInteger(told.chapter.n) ? told.chapter : null;
+  if (!(s.chantLoop && s.trackOn)) title.append(el("span", "k-kicker", cap.kicker));
+  if (ch) {
+    // behold#631: the story's chapter is the headline, "1 of 4 · A change to the shared network goes out to all 15 stacks",
+    // fading in when the chapter turns; the scenario's point stays under it as one constant small line.
+    chapterStyle();
+    const words = `${ch.n} of ${ch.of} · ${ch.headline}`;
+    const head = el("span", "k-title-text k-chapter-head", words);
+    if (s.capChapter !== words) {
+      s.capChapter = words;
+      s.capChapterAt = now.getTime ? now.getTime() : Date.now();
+    }
+    const t = now.getTime ? now.getTime() : Date.now();
+    // A redraw mid-fade carries on from where the fade is, never from the start.
+    if (t - (s.capChapterAt || 0) < 900 && head.classList) {
+      head.classList.add("k-chapter-in");
+      if (head.style) head.style.animationDelay = `-${t - s.capChapterAt}ms`;
+    }
+    title.append(head);
+    if (title.setAttribute) title.setAttribute("title", words);
+  } else {
+    title.append(el("span", "k-title-text", cap.title));
+    if (title.setAttribute) title.setAttribute("title", `${cap.kicker} · ${cap.title}`);
+  }
   top.appendChild(title);
   if (cap.next) {
     const nx = el("p", "k-cap-next");
-    nx.append("next, by the driver: ", elRoots("span", "k-action", cap.next.action, s), " ", el("span", "k-when", cap.next.when));
-    if (nx.setAttribute) nx.setAttribute("title", `next, by the driver: ${cap.next.action}`);
+    // behold#631: a chant kiosk says what comes next as one plain sentence in one font: the demo is scripted, and
+    // "plan note" and "the plan's digest" are chant's own terms. A failure's next step reads as the modal's does.
+    if (s.chantLoop) {
+      const action = demo && demo.step === "failed" && /\bfix\b/.test(cap.next.action) ? "the fix opens" : cap.next.action.replace(/\bplan note\b/g, "plan").replace(/\bthe plan's digest\b/g, "the plan");
+      const sentence = `next (scripted): ${action}${/^when\b/.test(cap.next.when) ? ", " : " "}${cap.next.when}`.replace(/\s+/g, " ").trim();
+      nx.append(sentence);
+      if (nx.setAttribute) nx.setAttribute("title", sentence);
+    } else {
+      nx.append("next, by the driver: ", elRoots("span", "k-action", cap.next.action, s), " ", el("span", "k-when", cap.next.when));
+      if (nx.setAttribute) nx.setAttribute("title", `next, by the driver: ${cap.next.action}`);
+    }
     nx.appendChild(nextBar(demo, now, s));
     top.appendChild(nx);
   }
   host.appendChild(top);
+  if (ch && cap.title) host.appendChild(el("p", "k-cap-point", cap.title));
   const beat = cap.intro || cap.changes;
   const changes = el("p", `k-cap-row k-cap-changes${cap.lead === "changes" ? " k-cap-lead" : ""}`);
   if (beat) {
@@ -1099,7 +1230,8 @@ function box(name, cls = "") {
 export function approvalPanel(model, s = {}) {
   const wrap = el("div", "k-ap");
   // behold#571: the hold panel's head names the wave, the run and the plan; this one says what the rows are.
-  wrap.appendChild(el("p", "k-ap-head", `${PANEL_TITLE} · times in UTC`));
+  // behold#631: a chant kiosk's rows carry no times, so its head says none.
+  wrap.appendChild(el("p", "k-ap-head", model.kiosk ? PANEL_TITLE : `${PANEL_TITLE} · times in UTC`));
   const list = el("ol", "k-ap-rows");
   for (const r of model.rows) {
     const li = el("li", `k-ap-row k-ap-${r.state}`);
@@ -1176,6 +1308,8 @@ export const HELD_JOB_RULE = "background: color-mix(in srgb, var(--foreign) 14%,
 
 /** behold#571: how often the approval panel reads the cycle's runs, and the gate ledger (which the server caches 30 s). */
 export const APPROVAL_POLL_MS = 4_000;
+/** behold#631: how often a chant kiosk reads its loop while the apply runs: as often as the graph's frame does. */
+export const CHANT_APPLY_POLL_MS = 1_500;
 export const LEDGER_POLL_MS = 10_000;
 
 /** behold#571: the approval panel's words for the approval the driver gives next, over its command. */
@@ -1207,6 +1341,8 @@ export const FRAME_BOOT_WAIT_MS = 4_000;
 
 /** How often the kiosk asks for demo.json. The server shares one read between kiosks. */
 export const DEMO_POLL_MS = 3_000;
+/** behold#631: the room a chant cycle's graph always leaves at its right for the side panels (the approval card, the result card), in px. */
+export const CHANT_SIDE_ROOM = 520;
 
 /**
  * Boot the kiosk: the bar, the frame and the graph pane's legend. Ask demo.json every few
@@ -1495,6 +1631,12 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   const applyMode = () => {
     if (typeof document === "undefined" || !document.body || !document.body.classList) return;
     document.body.classList.toggle("k-watch", s.watchMode);
+    // behold#631: the theme picker a chant kiosk hides in Watch is back in Inspect.
+    {
+      const themeMenu = document.getElementById("k-theme-name");
+      const menu = themeMenu && themeMenu.closest ? themeMenu.closest("details") : null;
+      if (menu && !s.watchMode) menu.hidden = false;
+    }
     if (watch && watch.drawer && main) {
       const body = watch.drawer.querySelector(".k-drawer-body");
       // The runs pane is the drawer's open state in Watch, and back in its column in Inspect.
@@ -1551,9 +1693,11 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   }
   /** The caption shown now: Watch's own, or the live carve's while it has the camera (#715). */
   const shownCaption = () => (carveCtl && carveCtl.caption ? carveCtl.caption() || watch.caption : watch.caption);
+  /** behold#631: a chant kiosk's projected track (drawChantTrack), in the trail's place. */
+  let trackHost = null;
   /** behold#571: the caption's top, or event-help's trail's when it sits over the caption. */
   const captionTop = (cap) => {
-    const trail = eh && eh.trailHost;
+    const trail = trackHost && !trackHost.hidden ? trackHost : eh && eh.trailHost;
     const r = trail && !trail.hidden && trail.getBoundingClientRect ? trail.getBoundingClientRect() : null;
     return r && r.height && r.top < cap.top ? r.top : cap.top;
   };
@@ -1565,7 +1709,9 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const bottom = Math.max(0, f.bottom - captionTop(cap)) + 16;
     const side = shot.kind === "held" ? watch.callout : shot.kind === "active" ? watch.drawer : shot.kind === "result" ? watch.result : null;
     // The result card sits right beside the graph (placeBeside's gap): an inset of its width and that gap centres the two together.
-    const right = side && !side.hidden && side.offsetWidth ? side.offsetWidth + (shot.kind === "result" ? 18 : 44) : 0;
+    const measured = side && !side.hidden && side.offsetWidth ? side.offsetWidth + (shot.kind === "result" ? 18 : 44) : 0;
+    // behold#631: a chant cycle keeps one framing from start to end: the side panel's room is kept whether or not one is up, so the graph never shifts.
+    const right = s.chantLoop ? Math.max(measured, CHANT_SIDE_ROOM) : measured;
     return { top: 20, right, bottom, left: 20 };
   };
   function tellShot(force) {
@@ -1584,10 +1730,60 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     lastShot = key;
     post(shotMessage({ roots: s.shot.roots, waves: s.shot.waves, whole: s.shot.whole, insets, id: s.shot.id }));
   }
+  // behold#631: the projected cycle track, a chant kiosk's bottom band in place of the chip strip and the rail.
+  const trackState = { cycle: null, pulls: [], key: null, since: null };
+  function drawChantTrack(d, at) {
+    if (!trackHost && eh && eh.trailHost && eh.trailHost.parentNode && typeof document !== "undefined") {
+      trackHost = document.createElement("div");
+      trackHost.id = "k-track";
+      trackHost.hidden = true;
+      eh.trailHost.parentNode.insertBefore(trackHost, eh.trailHost);
+    }
+    const t = at instanceof Date ? at.getTime() : now().getTime();
+    const track = s.chantLoop && d ? cycleTrack(s.lastCycle()) : null;
+    s.trackOn = !!track;
+    if (!trackHost) return;
+    if (!track) {
+      s.trackModel = null;
+      drawTrack(trackHost, null);
+      return;
+    }
+    // This cycle's pull requests in the order it opened them; the reset closes the last.
+    if (trackState.cycle !== d.cycle) Object.assign(trackState, { cycle: d.cycle, pulls: [], key: null, since: null });
+    // The story's step, which may be a chapter ahead of demo.json's (s.storyDemo).
+    d = s.storyDemo ? s.storyDemo(d) : d;
+    if (Number.isInteger(d.pull) && !trackState.pulls.includes(d.pull)) trackState.pulls.push(d.pull);
+    const live = s.chantWavesNow ? s.chantWavesNow(d) : null;
+    // When the current segment began: the step's own start where demo.json says it, else when the kiosk first saw it.
+    const probe = trackModel(track, { demo: d, pulls: trackState.pulls, since: t, now: t });
+    const key = probe ? `${probe.at.chapter}|${probe.at.segment}` : null;
+    if (key !== trackState.key) {
+      const from = !d.storyAhead && d.next && d.next.from ? Date.parse(d.next.from) : NaN;
+      trackState.key = key;
+      trackState.since = Number.isFinite(from) && from <= t && t - from < 600_000 ? from : t;
+    }
+    const model = trackModel(track, { demo: d, pulls: trackState.pulls, since: trackState.since, now: t, waves: live ? live.waves : null });
+    s.trackModel = model;
+    drawTrack(trackHost, model);
+    // In the trail's place: over the caption.
+    const cap = shownCaption().getBoundingClientRect();
+    if (trackHost.style) trackHost.style.bottom = cap.height ? `${Math.round((typeof window !== "undefined" ? window.innerHeight : 0) - cap.top)}px` : "";
+    // The "Waiting on…" modal: a quiet stretch on a step that waits on something, never while the apply's events come in.
+    // Once the play shows anything of this run under way (a wave or a card), nothing waits on the apply to start.
+    const applyLive = !!(live && live.live && (live.waves.some((w) => w.state !== "waiting") || Object.values(live.live.components || {}).some((c) => !["waiting", "planned", "planning"].includes(c.state))));
+    s.waitingNow = waitingSpec(model, { quietMs: s.quietFor || 0, applyLive });
+  }
   function drawWatch(at) {
     if (!watch || !s.watchMode) return;
     const d = s.demo && s.demo.demo;
+    // behold#631: a chant kiosk hides the theme picker; Inspect keeps it.
+    if (typeof document !== "undefined") {
+      const themeMenu = document.getElementById("k-theme-name");
+      const menu = themeMenu && themeMenu.closest ? themeMenu.closest("details") : null;
+      if (menu) menu.hidden = !!(s.chantLoop && s.trackOn);
+    }
     drawCaption(watch.caption, s, at);
+    drawChantTrack(d, at);
     const hold = d ? holdModel(s, d) : null;
     const gate = !!hold && (hold.kind === "approval" || hold.kind === "driver");
     const shot = shotFor(d, { answer: s.answer, progress: s.progress, held: s.held, gate, runDoc: runsApi && runsApi.run ? runsApi.run.doc : null, waves: s.waves });
@@ -1609,7 +1805,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     if (drawer) drawDrawer(watch.drawer, tail, badgeTitle(nums[drawerOn]), open);
     if (drawer) traceDrawer(d, drawerOn);
     // A drawer the viewer opened on a wave takes the card's place beside the graph until it folds.
-    const result = shot.kind === "result" && !opened ? resultModel(d, s.metrics, s.steady) : null;
+    const result = shot.kind === "result" && !opened ? resultModel(d, s.metrics, s.steady) || (s.chantResult ? s.chantResult(d) : null) : null;
     watch.result.hidden = !result;
     if (result) drawResult(watch.result, result, s);
     // On a phone the delivery numbers stack under the rest, where the header has no room for them.
@@ -1807,6 +2003,12 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
             metrics: s.metrics,
             waves: s.waves,
             boxes: s.boxes,
+            // behold#631: a chant repo's pull-request loop, whose story Tips tell its own way.
+            chant: !!s.chantLoop,
+            // Its projected track replaces the chip strip, and its quiet stretches get a "Waiting on…" modal,
+            // which the approval card beside the graph wins over.
+            hideTrail: !!(s.chantLoop && s.trackOn && s.watchMode),
+            waiting: s.chantLoop && s.watchMode && !(watch && watch.callout && !watch.callout.hidden) ? s.waitingNow || null : null,
             frame,
             watch: s.watchMode,
             // The caption shown now: the live carve's while it has the camera (web/kiosk-carve.js).
@@ -1814,7 +2016,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
             replay: s.mode === "replay",
             approveLine: appr ? appr.approve : null,
             label: d.label || "",
-            result: resultModel(d, s.metrics, s.steady),
+            result: resultModel(d, s.metrics, s.steady) || (s.chantResult ? s.chantResult(d) : null),
             waveTraces: s.waveTraces,
             strip: s.stripReady() ? s.strip : null,
             stripReady: s.stripReady(),
@@ -1892,6 +2094,13 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   // behold#571 (#631): the strip in the running tool's own order, from its recorded cycle's steps; the default until it is read.
   const strips = new Map();
   s.strip = null;
+  /** behold#631: the running tool's last finished cycle, when one is published. */
+  s.lastCycle = () => {
+    const d = s.demo && s.demo.demo;
+    const t = vendor ? tool : d && typeof d.tool === "string" ? d.tool : null;
+    const r = t ? strips.get(t) : null;
+    return r && r.cycle ? r.cycle : null;
+  };
   /** Whether the running tool's step order has been read (or there is none to read), so the story can be told in it. */
   s.stripReady = () => {
     const d = s.demo && s.demo.demo;
@@ -1912,10 +2121,11 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       }
       return;
     }
-    strips.set(t, { at: now().getTime(), strip: had ? had.strip : null, done: had ? had.done : false });
+    strips.set(t, { at: now().getTime(), strip: had ? had.strip : null, done: had ? had.done : false, cycle: had ? had.cycle : null });
     const a = await fetchServed(`/api/terragucci/cycles/${encodeURIComponent(t)}`);
     const strip = a && a.cycle && Array.isArray(a.cycle.steps) ? stripFromSteps(a.cycle.steps.map((x) => x.step)) : null;
-    strips.set(t, { at: now().getTime(), strip: strip || (had ? had.strip : null), done: true });
+    // behold#631: the cycle itself too, for a chant kiosk's projected track.
+    strips.set(t, { at: now().getTime(), strip: strip || (had ? had.strip : null), done: true, cycle: a && a.cycle ? a.cycle : had ? had.cycle : null });
     s.strip = strips.get(t).strip;
     draw();
   };
@@ -1962,7 +2172,12 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const d = s.demo && s.demo.demo;
     if (!d || !(PANEL_STEPS.includes(d.step) || (s.chantLoop && CHANT_PANEL_STEPS.includes(d.step))) || ap.busy) return;
     const t = now().getTime();
-    if (t - ap.at < APPROVAL_POLL_MS) return;
+    // behold#631: a new step reads at once (the applied step's card shows the moment the play ends, not a poll later).
+    const stepKey = `${d.cycle}|${d.pull}|${d.step}`;
+    // While a chant apply runs, read every CHANT_APPLY_POLL_MS so the panel, the track and the waiting modal follow the graph's play.
+    const every = s.chantLoop && ["merged", "applying", "resumed"].includes(d.step) ? CHANT_APPLY_POLL_MS : APPROVAL_POLL_MS;
+    if (t - ap.at < every && !(s.chantLoop && ap.stepKey !== stepKey)) return;
+    ap.stepKey = stepKey;
     ap.busy = true;
     ap.at = t;
     try {
@@ -1995,10 +2210,75 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     }
     draw();
   };
+  // behold#631: a fast chant apply played at the pace the graph plays it (web/chant-live-pace.js).
+  const chantPacer = createLivePacer();
+  // behold#631: the result card at a chant repo's applied step, from the apply's run events.
+  s.chantResult = (d) => {
+    if (!s.chantLoop || !ap.chant) return null;
+    const a = chantPacer.answer(ap.chant);
+    // Held, as the caption is, until the paced play reaches the end: never a card that counts "0 applied this run".
+    if (chantPacer.pending || !(a.live && a.live.apply && a.live.apply.settled)) return null;
+    return chantResultModel(d, a);
+  };
+  // behold#631: a chant repo's failed and applied steps are told by the graph's paced play: the caption's step line waits
+  // for the play to reach them, and shows the step before until then. The strip still moves.
+  let capShown = null;
+  /** behold#631: the apply's waves as the paced graph shows them now, for the track's ticks; null for another pull request's apply. */
+  s.chantWavesNow = (demo) => {
+    if (!s.chantLoop || !ap.chant || !ap.chant.live || !ap.chant.live.apply) return null;
+    if (demo && Number.isInteger(demo.pull) && Number.isInteger(ap.chant.pull) && demo.pull !== ap.chant.pull) return null;
+    const a = chantPacer.answer(ap.chant);
+    return { waves: graphWaves(a.live.apply).map((w) => ({ wave: w.wave, state: w.state })), live: a.live.apply };
+  };
+  /**
+   * behold#631: the step as the story tells it now. The driver writes the failed step only once the apply job ends,
+   * seconds after the paced graph has shown the failure, and the applied step after the fix's apply ends. So when the
+   * play reaches a failure, or finishes the fix's apply, while demo.json still names the apply's chapter, the story
+   * moves to the next chapter of the last cycle (its headline, and its first step for the track). demo.json catches
+   * up; the story never goes back within a cycle.
+   */
+  const story = { cycle: null, n: 0, chapter: null, step: null };
+  /** behold#631: the forge chant's pipeline runs on, from its loop as /api/chant/pr read it. */
+  s.chantForge = () => (ap.chant && ap.chant.loop && ap.chant.loop.forge) || null;
+  s.storyDemo = (d) => {
+    if (!s.chantLoop || !d || !d.chapter || !Number.isInteger(d.chapter.n)) return d;
+    if (story.cycle !== d.cycle) Object.assign(story, { cycle: d.cycle, n: 0, chapter: null, step: null });
+    const steps = (s.lastCycle() || {}).steps || [];
+    const first = (n) => steps.find((x) => x.chapter && x.chapter.n === n) || null;
+    let n = d.chapter.n;
+    let chapter = d.chapter;
+    let step = d.step;
+    const w = ["applying", "merged", "resumed"].includes(d.step) && s.chantWavesNow ? s.chantWavesNow(d) : null;
+    const comps = w && w.live && w.live.components ? Object.values(w.live.components) : [];
+    const ahead = first(n + 1);
+    if (ahead && (comps.some((c) => c.state === "failed") || (w && w.live && w.live.settled && w.live.status === "ok" && !w.live.paced))) {
+      n = ahead.chapter.n;
+      chapter = ahead.chapter;
+      step = ahead.step;
+    }
+    // Never back: a chapter the story has told stays told until demo.json moves past it.
+    if (n > story.n) Object.assign(story, { n, chapter, step });
+    else if (story.n > n && story.chapter) {
+      n = story.n;
+      chapter = story.chapter;
+      step = story.step;
+    }
+    return chapter === d.chapter && step === d.step ? d : { ...d, chapter, step, storyAhead: true };
+  };
+  s.chantCaptionStep = (demo, step) => {
+    const held = s.chantLoop && ap.chant && ap.chant.live && ap.chant.live.apply && demo && ["failed", "applied"].includes(demo.step);
+    if (held) {
+      chantPacer.answer(ap.chant);
+      if (chantPacer.pending && capShown && capShown.id !== demo.step) return capShown;
+    }
+    capShown = step;
+    return step;
+  };
   const approvalNow = () => {
     const d = s.demo && s.demo.demo;
     // behold#631: chant's gate, one per pull request on the plan's digest, when the repo runs chant's loop.
-    const chant = s.chantLoop && ap.chant ? chantApprovalModel({ demo: d, answer: ap.chant }) : null;
+    // The kiosk's card names the plan by its short id; the approve command is Inspect's.
+    const chant = s.chantLoop && ap.chant ? chantApprovalModel({ demo: d, answer: chantPacer.answer(ap.chant), kiosk: true }) : null;
     if (chant) return chant;
     if (!d || !PANEL_STEPS.includes(d.step)) return null;
     const appr = pendingApproval(d, s.progress);
@@ -2290,6 +2570,11 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       recordAt = known.length ? Math.max(...known) : t;
     }
     s.quiet = quietWords(d, { now: t, lastRecordAt: recordAt, run, stepAt: stepSeenAt, replay: s.mode === "replay", stale: !!linkWords(link) });
+    // behold#631: how long nothing new has come in, for the "Waiting on…" modal.
+    s.quietFor = typeof recordAt === "number" ? t - recordAt : 0;
+    // behold#631: a chant kiosk's "· N s so far" counts only while a job of the step runs; a step that is done has no timer.
+    // With the projected track up, its now line says it: the caption's quiet line goes.
+    if (s.chantLoop && s.quiet && (!(run && run.job) || s.trackOn)) s.quiet = null;
     if (carveCtl) carveCtl.setQuiet(s.quiet);
   };
 

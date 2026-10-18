@@ -36,6 +36,8 @@ export const VERBS = {
   failed: { verb: "Run again", ing: "Running again…", past: "Running again" },
   applied: { verb: "Close", ing: "Close", past: "Close" },
 };
+/** behold#631: a chant failure's button: the driver opens a fix's pull request. */
+export const FIX_VERBS = { verb: "Fix", ing: "Opening the fix…", past: "Fix opened" };
 
 /** Whole seconds until `at` (ms), never below 0; null without a time. */
 export function secondsLeft(at, now) {
@@ -66,12 +68,16 @@ const utc = (ms) => new Date(ms).toISOString().slice(11, 16);
  * The line that says which mode this is. Narrated says what the driver does
  * and when; replay says which run it replays; live says nothing extra.
  */
-export function modeLine(mode, kind, { at = null, now = 0, resolved = false, outcome = null, replayAt = null, action = null } = {}) {
+export function modeLine(mode, kind, { at = null, now = 0, resolved = false, outcome = null, replayAt = null, action = null, fix = false } = {}) {
+  // behold#631: a "Waiting on…" modal says what it waits on in its title; it has no mode line.
+  if (kind === "waiting") return null;
   if (mode === "replay") return `Replay of the run at ${utc(Number.isFinite(replayAt) ? replayAt : now)} UTC`;
   if (mode !== "narrated") return null;
   if (resolved) return outcome ? `Live · ${outcome}` : "Live";
   const left = secondsLeft(at, now);
   if (kind === "held") return left === null ? "Live · the driver plays the reviewer" : left > 0 ? `Live · the driver plays the reviewer and approves in ${left} s` : "Live · the driver plays the reviewer and approves now";
+  // behold#631: in the kiosk's own words for what comes next, the same as its caption's: the demo is scripted.
+  if (kind === "failed" && fix) return left === null ? "next (scripted): the fix opens" : left > 0 ? `next (scripted): the fix opens in ${left} s` : "next (scripted): the fix opens now";
   if (kind === "failed") return left === null ? "Live · the driver fixes it and runs it again" : left > 0 ? `Live · the driver fixes it and runs it again in ${left} s` : "Live · the driver fixes it and runs it again now";
   return "Live";
 }
@@ -99,6 +105,7 @@ export const MODAL_STYLE = `
 .eh-switch input { margin: 0; accent-color: var(--pending); }
 .eh-switch:hover { color: var(--fg); }
 .eh-modal-wrap { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--bg) 35%, transparent); }
+.eh-modal-wrap.eh-modal-placed { align-items: flex-start; justify-content: flex-start; }
 .eh-modal { position: relative; width: min(36em, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow-y: auto; padding: 1em 1.2em 1.1em; border-radius: 12px; background: var(--surface-pane-b, var(--panel)); color: var(--fg);
   border: 2px solid var(--bar, var(--focus)); box-shadow: 0 16px 48px color-mix(in srgb, var(--shadow) 80%, transparent); font-size: 1.05em; }
 .eh-modal-held { --bar: var(--bar-foreign, var(--foreign)); } .eh-modal-failed { --bar: var(--bar-degraded, var(--degraded)); } .eh-modal-applied { --bar: var(--bar-managed, var(--managed)); }
@@ -117,6 +124,9 @@ export const MODAL_STYLE = `
 .eh-modal-act.eh-pressed { background: var(--bar, var(--pending)); color: var(--bg); transform: translateY(1px); }
 .eh-mode-live .eh-modal-act:not(.eh-pressed) { cursor: pointer; }
 .eh-modal .k-ap { margin-top: 0.4em; }
+.eh-modal-progress { position: relative; height: 6px; margin-top: 0.7em; border-radius: 3px; background: color-mix(in srgb, var(--muted) 30%, transparent); overflow: hidden; }
+.eh-modal-progress-fill { position: absolute; inset: 0 auto 0 0; background: var(--pending); border-radius: 3px; transition: width 0.9s linear; }
+@media (prefers-reduced-motion: reduce) { .eh-modal-progress-fill { transition: none; } }
 `;
 
 /** Put the modal's style in `doc` once. */
@@ -126,6 +136,46 @@ export function modalStyle(doc) {
   style.id = "eh-modal-style";
   style.textContent = MODAL_STYLE;
   doc.head.appendChild(style);
+}
+
+/**
+ * behold#631: where a modal of `size` goes in a window of `win` so it covers
+ * none of `avoid` (rects in window coordinates: `{ left, top, width, height }`),
+ * or null when the centre does. `prefer` are the other cards: of the spots
+ * that clear `avoid`, the one covering none of them (else the least) wins, the
+ * nearest the centre on a tie. Spots are tried on a grid inside `bounds` (the
+ * graph's frame) when given, else the window. When no spot clears `avoid`,
+ * the one that covers least of it.
+ */
+export function modalSpot(win, size, avoid, { prefer = [], bounds = null, margin = 16, step = 24 } = {}) {
+  const grow = (a) => ({ x0: a.left - 12, y0: a.top - 12, x1: a.left + a.width + 12, y1: a.top + a.height + 12 });
+  const rects = (avoid || []).filter((a) => a && a.width > 0 && a.height > 0).map(grow);
+  const others = (prefer || []).filter((a) => a && a.width > 0 && a.height > 0).map(grow);
+  const area = bounds && bounds.width > 0 ? { x0: bounds.left, y0: bounds.top, x1: bounds.left + bounds.width, y1: bounds.top + bounds.height } : { x0: 0, y0: 0, x1: win.w, y1: win.h };
+  const w = Math.min(size.w, win.w - 2 * margin);
+  const h = Math.min(size.h, win.h - 2 * margin);
+  const cx = (win.w - w) / 2;
+  const cy = (win.h - h) / 2;
+  const cover = (list, x, y) => list.reduce((sum, r) => sum + Math.max(0, Math.min(x + w, r.x1) - Math.max(x, r.x0)) * Math.max(0, Math.min(y + h, r.y1) - Math.max(y, r.y0)), 0);
+  // The centre stands only when it is inside the area a modal may use (a chant kiosk keeps its bottom band clear).
+  const inArea = (x, y) => x >= area.x0 - 0.5 && y >= area.y0 - 0.5 && x + w <= area.x1 + 0.5 && y + h <= area.y1 + 0.5;
+  const centreOk = !bounds || inArea(cx, cy);
+  if (centreOk && !cover(rects, cx, cy) && !cover(others, cx, cy)) return null;
+  const x0 = Math.max(margin, area.x0 + margin);
+  const y0 = Math.max(margin, area.y0 + margin);
+  const x1 = Math.max(x0, Math.min(win.w - margin, area.x1 - margin) - w);
+  const y1 = Math.max(y0, Math.min(win.h - margin, area.y1 - margin) - h);
+  let best = null;
+  for (let y = y0; y <= y1 + 0.5; y += step) {
+    for (let x = x0; x <= x1 + 0.5; x += step) {
+      const score = [cover(rects, x, y), cover(others, x, y), Math.hypot(x - cx, y - cy)];
+      if (!best || score[0] < best.score[0] || (score[0] === best.score[0] && (score[1] < best.score[1] || (score[1] === best.score[1] && score[2] < best.score[2])))) best = { x, y, score };
+    }
+  }
+  if (!best) return null;
+  // The centre is as good as any: stay there.
+  if (centreOk && best.score[0] >= cover(rects, cx, cy) && best.score[1] >= cover(others, cx, cy)) return null;
+  return { left: best.x, top: best.y };
 }
 
 /**
@@ -187,11 +237,25 @@ export function openEventModal(host, { mode, kind, data = {}, actions = {}, doc 
     x.setAttribute("aria-label", "Close");
     x.addEventListener("click", close);
     box.appendChild(x);
-    const line = modeLine(mode, kind, { at: data.at, now: t, resolved: st.resolved, outcome: st.outcome, replayAt: data.replayAt, action: data.action });
+    const line = modeLine(mode, kind, { at: data.at, now: t, resolved: st.resolved, outcome: st.outcome, replayAt: data.replayAt, action: data.action, fix: !!data.fix });
     if (line) box.appendChild(el("p", `eh-modal-mode eh-modal-${mode}`, line));
     box.appendChild(el("h2", "eh-modal-title", data.title || ""));
-    for (const l of data.lines || []) box.appendChild(el("p", `eh-modal-line${l.lit ? " eh-lit" : ""}`, l.text));
+    for (const l of data.lines || []) {
+      const p = el("p", `eh-modal-line${l.lit ? " eh-lit" : ""}`, l.text);
+      if (l.title) p.title = l.title;
+      box.appendChild(p);
+    }
     if (data.panel) box.appendChild(data.panel);
+    // behold#631: a waiting modal's bar: how far into its usual time the step is, and that time in words.
+    if (data.progress) {
+      const bar = el("div", "eh-modal-progress");
+      const fill = el("i", "eh-modal-progress-fill");
+      if (fill.style && Number.isFinite(data.progress.fraction)) fill.style.width = `${Math.round(data.progress.fraction * 1000) / 10}%`;
+      bar.appendChild(fill);
+      box.appendChild(bar);
+      if (data.progress.words) box.appendChild(el("p", "eh-modal-note", data.progress.words));
+    }
+    if (kind === "waiting") return;
     const routed = mode === "live" && approveRoute(data.gate);
     // The panel, when there is one, already carries the command.
     if (data.command && !routed && !(data.panel && mode !== "live")) {
@@ -217,6 +281,9 @@ export function openEventModal(host, { mode, kind, data = {}, actions = {}, doc 
     if (st.resolved && st.outcome) box.appendChild(el("p", "eh-modal-outcome", st.outcome));
     if (kind === "applied" && !routed) return;
     if (mode === "live" && !routed) return; // a gate behold can't clear: the command is the action
+    // behold#631: a chant failure's countdown is text, not a control: nothing here is for the viewer to press.
+    // Its countdown is the mode line's; there is nothing here to press.
+    if (data.fix) return;
     const b = buttonState(kind, { at: mode === "live" ? null : data.at, from: data.from, now: t, resolved: st.resolved || st.pressing, reduced, verbs: data.verbs || null });
     const btn = el("button", `eh-modal-act${b.pressed ? " eh-pressed" : ""}`, b.label);
     btn.type = "button";
@@ -249,15 +316,28 @@ export function openEventModal(host, { mode, kind, data = {}, actions = {}, doc 
     watchTimer = setTimer(() => void look(), LEDGER_WATCH_MS);
     void look();
   }
+  // behold#631: a modal that must keep things in view (a failed card and the cards it blocked) moves off them.
+  const placeClear = () => {
+    if (typeof data.avoid !== "function" || !box.getBoundingClientRect || !doc.defaultView) return;
+    const r = box.getBoundingClientRect();
+    if (!r.width) return;
+    const win = { w: doc.defaultView.innerWidth, h: doc.defaultView.innerHeight };
+    const spot = modalSpot(win, { w: r.width, h: r.height }, data.avoid() || [], { prefer: typeof data.prefer === "function" ? data.prefer() || [] : [], bounds: typeof data.bounds === "function" ? data.bounds() : null });
+    wrap.classList.toggle("eh-modal-placed", !!spot);
+    box.style.marginLeft = spot ? `${Math.round(spot.left)}px` : "";
+    box.style.marginTop = spot ? `${Math.round(spot.top)}px` : "";
+  };
   const tick = () => {
     if (st.closed) return;
     if (st.closeAt !== null && !st.hovered && now() >= st.closeAt) return close();
     render();
+    placeClear();
   };
   const timer = setTimer(tick, 250);
   // The result needs no event to wait for: it closes on its own after its time.
   if (kind === "applied" && mode !== "live") st.closeAt = now() + MODAL_CLOSE_MS;
   render();
+  placeClear();
 
   const api = {
     state: st,

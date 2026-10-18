@@ -22,7 +22,7 @@ export const beholdImage = new Dockerfile({
     // ("Cannot read properties of null (reading 'edgesOut')"), so they install
     // in a directory of their own and are copied in, chant at the version the
     // lexicon asks for included.
-    { run: "mkdir /opt/lexicon && cd /opt/lexicon && npm init -y >/dev/null && npm install --no-audit --no-fund @intentius/chant-lexicon-terraform@^0.124.0 @cdktn/hcl2json@^0.24.0 && cp -R /opt/lexicon/node_modules/. /app/node_modules/ && test -d /app/node_modules/@intentius/chant-lexicon-terraform && test -d /app/node_modules/@cdktn/hcl2json" },
+    { run: "mkdir /opt/lexicon && cd /opt/lexicon && npm init -y >/dev/null && npm install --no-audit --no-fund @intentius/chant-lexicon-terraform@^0.124.0 @intentius/chant-lexicon-aws@^0.124.0 @cdktn/hcl2json@^0.24.0 && cp -R /opt/lexicon/node_modules/. /app/node_modules/ && test -d /app/node_modules/@intentius/chant-lexicon-terraform && test -d /app/node_modules/@intentius/chant-lexicon-aws && test -d /app/node_modules/@cdktn/hcl2json" },
     { user: "node" },
     { expose: 4600 },
   ],

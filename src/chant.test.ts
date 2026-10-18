@@ -9,6 +9,7 @@ import {
   graphFlags,
   graphArgs,
   graphPath,
+  componentGraphPath,
   componentStatusArgs,
   ciPipelineArgs,
   ciForgeFor,
@@ -832,5 +833,39 @@ describe("resolveChant / resolveLexicons", () => {
 describe("ciWorkflowName", () => {
   it("is chant's own naming — chant-components-<env>", () => {
     expect(ciWorkflowName("prod")).toBe("chant-components-prod");
+  });
+});
+
+// A multi-stack project declares its components at the root, beside
+// chant.config.ts; each stack's src holds only that stack's resources
+// (chant's examples/fan-out-estate). The component DAG reads the root.
+describe("componentGraphPath", () => {
+  const made: string[] = [];
+  const make = (files: Record<string, string>): string => {
+    const dir = mkdtempSync(join(tmpdir(), "behold-componentpath-"));
+    made.push(dir);
+    for (const [rel, content] of Object.entries(files)) {
+      const p = join(dir, rel);
+      mkdirSync(join(p, ".."), { recursive: true });
+      writeFileSync(p, content);
+    }
+    return dir;
+  };
+  afterEach(() => {
+    made.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true }));
+  });
+
+  it("reads a multi-stack project's components from its root, not the first stack's src", async () => {
+    const dir = make({
+      "chant.config.ts": `export default { lexicons: ["aws"], stacks: [{ name: "network", src: "src/network" }, { name: "app-01", src: "src/app-01" }] };`,
+      "network.component.ts": "export {};",
+    });
+    expect(await componentGraphPath(dir)).toBe(dir);
+    expect(await componentGraphPath(dir, { stack: "app-01" })).toBe(dir);
+  });
+
+  it("no-regression: a single-stack project reads the same path as the resource graph", async () => {
+    const dir = make({ "chant.config.ts": `export default { lexicons: ["aws"], sourceDir: "infra" };` });
+    expect(await componentGraphPath(dir)).toBe(await graphPath(dir));
   });
 });

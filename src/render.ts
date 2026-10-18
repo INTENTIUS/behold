@@ -375,6 +375,10 @@ export function renderGraph(
      * terragucci repo titles each wave with the job that applies it. The
      * box keeps its key as `id`, as a pipeline box does. */
     waveTitles?: Readonly<Record<string, string>>;
+    /** behold#631: lay a wave's cards out as one block per parent in the
+     * wave before it, when each depends on exactly one ({@link alignChildBlocks}).
+     * A chant repo's pull-request loop asks for it; nothing else does. */
+    childBlocks?: boolean;
   } = {},
 ): RenderResult {
   const groupsIn = irIn.groups as ExtraGroups;
@@ -406,6 +410,7 @@ export function renderGraph(
   else if (!boxes) packComponents(layout as unknown as RadialLayout, ir);
   // The after-passes, the same ones the logical lens runs (#396 finding 1).
   packEstateBoxes(layout, face, { members: boxKey === "byStack", ...(opts.groupBadges ? { badges: opts.groupBadges } : {}) });
+  if (boxKey === "byWave" && opts.childBlocks && boxes) alignChildBlocks(layout as unknown as RadialLayout & { groups?: GroupBox[] }, ir, boxes, footprints(ir, face.overrides));
   // A pipeline box keeps its key as `id` (the SPA stores a hand-set box size
   // under `data-group-id`) and only its painted title changes. Nested in a
   // member box (#564), a key with no named workflow drops the member prefix
@@ -1832,4 +1837,135 @@ function moduleBandOf(ir: GraphIR): ((id: string) => string | undefined) | undef
     const slash = id.indexOf("/");
     return moduleInstanceOf(slash >= 0 ? id.slice(slash + 1) : id);
   };
+}
+
+/** The gap between two cards of a child block, and between two blocks. */
+const BLOCK_CARD_GAP = 40;
+const BLOCK_GAP = 96;
+
+/**
+ * behold#631: a wave whose every card depends on exactly one card of the
+ * wave before it, laid out as one block per parent, side by side, each block
+ * lined up with its parent: chant's fan-out estate's app-01..06 as 3 x 2
+ * under cluster-a and app-07..12 under cluster-b, so the cards one failure
+ * blocks sit together under it. A wave that does not have that shape, or
+ * whose blocks would need a taller box than it has, keeps the layout it had.
+ *
+ * A post-layout move, as `packBoxComponents` is: the cards move, the boxes
+ * are drawn again around them, and the edges are painted from where the
+ * cards end up. When every card of the parent wave is a parent, the parents
+ * move too, each to its block's centre, so the two lines up exactly.
+ */
+export function alignChildBlocks(
+  layout: RadialLayout & { groups?: GroupBox[] },
+  ir: GraphIR,
+  boxes: Readonly<Record<string, readonly string[]>>,
+  size: ReadonlyMap<string, { w: number; h: number }>,
+): number {
+  const groupBoxes = layout.groups ?? [];
+  const byId = new Map(layout.nodes.map((n) => [n.id, n]));
+  const boxByKey = new Map(groupBoxes.flatMap((b) => (b.id === undefined ? [] : [[b.id, b] as const])));
+  const waveKeys = Object.keys(boxes)
+    .map((k) => ({ k, n: /^wave-(\d+)$/.exec(k) }))
+    .filter((x): x is { k: string; n: RegExpExecArray } => !!x.n)
+    .map((x) => ({ key: x.k, n: Number(x.n[1]) }))
+    .sort((a, b) => a.n - b.n);
+  const halfW = (id: string): number => (size.get(id)?.w ?? NODE_W) / 2;
+  const halfH = (id: string): number => (size.get(id)?.h ?? NODE_H) / 2;
+  /** A box drawn again round its cards, across: its height and place up and down stay. */
+  const fit = (box: GroupBox, ids: readonly string[]) => {
+    const ns = ids.flatMap((id) => byId.get(id) ?? []);
+    if (!ns.length) return;
+    const x0 = Math.min(...ns.map((n) => n.x - halfW(n.id))) - BAND_PAD;
+    const x1 = Math.max(...ns.map((n) => n.x + halfW(n.id))) + BAND_PAD;
+    box.x = (x0 + x1) / 2;
+    box.w = x1 - x0;
+  };
+  let moved = 0;
+  for (let i = 1; i < waveKeys.length; i++) {
+    const prev = waveKeys[i - 1]!;
+    const cur = waveKeys[i]!;
+    if (prev.n !== cur.n - 1) continue;
+    const box = boxByKey.get(cur.key);
+    const parentBox = boxByKey.get(prev.key);
+    const members = (boxes[cur.key] ?? []).filter((id) => byId.has(id));
+    const inPrev = new Set((boxes[prev.key] ?? []).filter((id) => byId.has(id)));
+    if (!box || !parentBox || members.length < 2) continue;
+    // Each member's one parent (consumer -> producer), or no blocks.
+    const parentOf = new Map<string, string>();
+    let shaped = true;
+    for (const m of members) {
+      const ps = [...new Set(ir.edges.filter((e) => e.from === m && inPrev.has(e.to)).map((e) => e.to))];
+      if (ps.length !== 1) {
+        shaped = false;
+        break;
+      }
+      parentOf.set(m, ps[0]!);
+    }
+    if (!shaped) continue;
+    const parents = [...new Set(parentOf.values())].sort((a, b) => byId.get(a)!.x - byId.get(b)!.x);
+    if (parents.length < 2) continue;
+    const cell = members.reduce((c, id) => ({ w: Math.max(c.w, halfW(id) * 2), h: Math.max(c.h, halfH(id) * 2) }), { w: 0, h: 0 });
+    const blocks = parents.map((p) => {
+      const ids = members.filter((m) => parentOf.get(m) === p).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      const rows = Math.max(1, Math.round(Math.sqrt(ids.length / 1.5)));
+      const cols = Math.ceil(ids.length / rows);
+      return { parent: p, ids, rows, cols, w: cols * cell.w + (cols - 1) * BLOCK_CARD_GAP };
+    });
+    const rows = Math.max(...blocks.map((b) => b.rows));
+    const needH = rows * cell.h + (rows - 1) * BLOCK_CARD_GAP + TITLE + BAND_PAD;
+    if (needH > box.h + 1) continue; // taller than the box: keep the layout it had
+
+    // Where each block goes: side by side, the row of them centred on the parents.
+    const total = blocks.reduce((s, b) => s + b.w, 0) + (blocks.length - 1) * BLOCK_GAP;
+    const parentXs = parents.map((p) => byId.get(p)!.x);
+    const moveParents = [...inPrev].every((id) => parents.includes(id));
+    let x = (Math.min(...parentXs) + Math.max(...parentXs)) / 2 - total / 2;
+    const starts = blocks.map((b) => {
+      const at = x;
+      x += b.w + BLOCK_GAP;
+      return at;
+    });
+    if (!moveParents) {
+      // The parents stay: each block as near under its parent as the one before it allows.
+      let end = -Infinity;
+      blocks.forEach((b, j) => {
+        const want = byId.get(b.parent)!.x - b.w / 2;
+        starts[j] = Math.max(want, end + BLOCK_GAP);
+        end = starts[j]! + b.w;
+      });
+    }
+    // The cards. Layout coordinates are y-up: the first row is the box's top, under its title.
+    const top = box.y + box.h / 2 - TITLE;
+    blocks.forEach((b, j) => {
+      b.ids.forEach((id, k) => {
+        const n = byId.get(id)!;
+        const r = Math.floor(k / b.cols);
+        const c = k % b.cols;
+        n.x = starts[j]! + c * (cell.w + BLOCK_CARD_GAP) + cell.w / 2;
+        n.y = top - r * (cell.h + BLOCK_CARD_GAP) - cell.h / 2;
+        moved++;
+      });
+      if (moveParents) byId.get(b.parent)!.x = starts[j]! + b.w / 2;
+    });
+    fit(box, members);
+    // Fewer rows than the wrap gave: the box ends under its last row, its top where it was.
+    const boxTop = box.y + box.h / 2;
+    const bottom = Math.min(...members.map((id) => byId.get(id)!.y - halfH(id))) - BAND_PAD;
+    if (bottom > box.y - box.h / 2) {
+      box.h = boxTop - bottom;
+      box.y = boxTop - box.h / 2;
+    }
+    if (moveParents) fit(parentBox, [...inPrev]);
+  }
+  if (!moved) return 0;
+
+  // Re-normalise, as packBoxComponents does: everything moves as one block so the canvas holds what is on it.
+  const nodes = layout.nodes;
+  const pad = 40;
+  const minX = Math.min(...nodes.map((n) => n.x - halfW(n.id)), ...groupBoxes.map((b) => b.x - b.w / 2));
+  for (const n of nodes) n.x += pad - minX;
+  for (const b of groupBoxes) b.x += pad - minX;
+  layout.width = Math.max(...nodes.map((n) => n.x + halfW(n.id)), ...groupBoxes.map((b) => b.x + b.w / 2)) + pad;
+  return moved;
 }

@@ -63,13 +63,15 @@ const jobLines = (job) => (job && Array.isArray(job.steps) ? job.steps.flatMap((
  * `waves` is the declared waves (`{ job, wave, roots }`), so a job names its
  * wave and a wave its roots.
  */
-export function ehSnapshot({ demo = null, answer = null, progress = null, runDoc = null, runDocs = [], approval = null, metrics = null, waveTraces = {}, waves = [], failed = [], strip = null } = {}) {
+export function ehSnapshot({ demo = null, answer = null, progress = null, runDoc = null, runDocs = [], approval = null, metrics = null, waveTraces = {}, waves = [], failed = [], strip = null, chant = false } = {}) {
   if (!demo) return null;
   const pr = matchingPull(answer, demo) || (answer && !answer.error && answer.pull_request && demo.pull !== null && String(answer.pull_request.run && answer.pull_request.run.pull_request) === String(demo.pull) ? answer.pull_request : null);
   const run = matchingRun(progress, demo);
   const jobs = runDoc && Array.isArray(runDoc.jobs) && (!demo.cycle || runDoc.cycle === undefined || runDoc.cycle === demo.cycle) ? runDoc.jobs : [];
   return {
     cycle: demo.cycle,
+    // behold#631: a chant repo's pull-request loop: a cycle may hold a fix's pull request after the first, each told as its own run of beats.
+    chant: !!chant,
     // A scenario told in beats (the terralith: stock, adopt, split, team, cross) runs each beat's steps in one cycle.
     beat: demo.beat || null,
     step: demo.step,
@@ -78,7 +80,7 @@ export function ehSnapshot({ demo = null, answer = null, progress = null, runDoc
     plan: pr ? { totals: pr.totals || null, roots: pr.roots || [], reads: pr.reads || [] } : null,
     states: run ? progress.states || [] : [],
     run: runDoc ? { id: runDoc.id, jobs: jobs.map((j) => ({ name: j.name, status: j.status, wave: waveOfJob(j.name, waves), refusal: j.status === "failure" ? yodelRefusal(jobLines(j)) : null, step: j.steps ? defaultStep(j.steps) : -1 })) } : null,
-    approval: approval && Array.isArray(approval.rows) ? { wave: approval.wave, rows: approval.rows.filter((r) => r.state === "lit").map((r) => ({ id: r.id, at: r.at || null, actor: r.id === "approved" ? actorOf(r.text) : null, signed: !!(r.seal && /^signed/.test(r.seal.text || "")) })) } : null,
+    approval: approval && Array.isArray(approval.rows) ? { wave: approval.wave, rows: approval.rows.filter((r) => r.state === "lit").map((r) => ({ id: r.id, at: r.at || null, actor: r.id === "approved" ? actorOf(r.text) : null, signed: !!(r.seal && /^signed/.test(r.seal.text || "")) })), ...(Array.isArray(approval.chantWaves) ? { chantWaves: approval.chantWaves } : {}) } : null,
     // The numbers of this cycle's merge only: from the merge on, and only for its commit.
     metrics: metrics && metrics.run && metrics.run.current && stepRank(demo.step, strip) >= stepRank("merged", strip) && (!demo.commit || String(metrics.run.label || "").includes(String(demo.commit).slice(0, 8))) ? metrics.run.waves.map((w) => ({ wave: w.wave, words: [w.seconds, w.held ? `held ${w.held}` : null, w.changed].filter(Boolean).join(" · ") })).filter((w) => w.words) : [],
     // Each wave's trace, once Tempo has it (web/kiosk-wave-traces.js): `{ wave, run, job, words }`.
@@ -136,14 +138,17 @@ export function cycleFacts(snap) {
   const at = stepRank(snap.step, strip);
   const rank = (step) => stepRank(step, strip);
   // Each beat of a cycle is a story of its own: the adopt beat's "applied" is not the split's.
-  const c = storyKey(snap);
+  // A chant cycle's second pull request (the fix) is its own run of beats: its ids and its place follow the pull request.
+  const c = snap.chant && snap.pull !== null && snap.pull !== undefined ? `${storyKey(snap)}|pr${snap.pull}` : storyKey(snap);
   const runId = snap.run ? snap.run.id : null;
   // The pull request and its plan.
   if (snap.pull !== null && snap.pull !== undefined && at >= 0) add({ id: `${c}|pr`, kind: "pull-request", text: `pull request #${snap.pull} opened`, order: 0, subjects: { roots: snap.plan ? snap.plan.roots : [] } });
   if (snap.plan && snap.plan.totals && at >= rank("planned")) {
     add({ id: `${c}|plan`, kind: "planned", text: planWords(snap.plan.totals), order: 1, subjects: { roots: snap.plan.roots } });
   }
-  if (at >= rank("merged") && snap.pull !== null && snap.pull !== undefined) add({ id: `${c}|merged`, kind: "merged", text: `pull request #${snap.pull} merged`, order: 2 });
+  // chant's gate comes before its merge: there the merge is said only once its step is reached.
+  const merged = snap.chant ? ["merged", "applying", "failed", "resumed", "applied"].includes(snap.step) : at >= rank("merged");
+  if (merged && snap.pull !== null && snap.pull !== undefined) add({ id: `${c}|merged`, kind: "merged", text: `pull request #${snap.pull} merged`, order: 2 });
   // Each wave, from the run view; a wave's job, from the pipeline's run.
   const jobOf = (n) => (snap.run ? snap.run.jobs.find((j) => j.wave === n) : null);
   const approved = snap.approval ? snap.approval.rows.find((r) => r.id === "approved") : null;
@@ -195,7 +200,35 @@ export function cycleFacts(snap) {
   if (snap.approval && !Number.isInteger(snap.approval.wave)) {
     if (snap.approval.rows.some((r) => r.id === "requested" || r.id === "approved")) add({ id: `${c}|held`, kind: "held", text: "the plan waits for an approval", order: 9, critical: true });
     const ok = snap.approval.rows.find((r) => r.id === "approved");
-    if (ok) add({ id: `${c}|approved`, kind: "approved", text: ok.actor ? `approved by ${ok.actor}${ok.signed ? ", signed" : ""}` : "approved, signed", order: 9.5 });
+    // A chant kiosk names the reviewer alone: "forgejo@forgejo:3000:demo-reviewer, signed" is a principal, not a person.
+    if (ok) add({ id: `${c}|approved`, kind: "approved", text: snap.chant ? (ok.actor ? `approved by ${ok.actor.replace(/^.*:/, "")}` : "approved") : ok.actor ? `approved by ${ok.actor}${ok.signed ? ", signed" : ""}` : "approved, signed", order: 9.5 });
+  }
+  // behold#631: chant's pull-request apply, wave by wave from its run events: started, failed with the reason, applied, and what it left blocked.
+  for (const w of snap.approval && Array.isArray(snap.approval.chantWaves) ? snap.approval.chantWaves : []) {
+    const n = w.wave;
+    const base = 10 + n * 10;
+    const subjects = { roots: w.components || [], wave: n, run: runId };
+    if (["running", "applied", "failed"].includes(w.state)) add({ id: `${c}|w${n}|start`, kind: "started", text: `wave ${n} started`, order: base, subjects, trail: false });
+    // The cards of this wave and the next: what a failure's modal must leave in view (the half that went ahead too).
+    const next = snap.approval.chantWaves.find((x) => x.wave === n + 1);
+    const inView = [...(w.components || []), ...(next ? next.components || [] : [])];
+    for (const f of w.failed || []) {
+      // The step's label says why in words ("cluster-a failed: SQS refuses …"); CloudFormation's own words stay in the tooltip.
+      const said = typeof snap.label === "string" && snap.label.startsWith(`${f.component} failed:`) ? snap.label.split(/\.\s/)[0].replace(/\.$/, "") : null;
+      // The raw error rides along for a tooltip; the roots are the failed card and what it blocked.
+      add({ id: `${c}|w${n}|failed|${f.component}`, kind: "failed", text: said || `${f.component} failed`, order: base + 1, subjects: { ...subjects, roots: [f.component, ...(f.blocks || [])] }, critical: true, chant: true, avoid: [...new Set([f.component, ...(f.blocks || []), ...inView])], ...(f.error ? { raw: `${f.component} failed: ${f.error}` } : {}) });
+    }
+    if (w.state === "applied" || (w.state === "failed" && w.applied)) {
+      // A wave with a failure says both halves, by name when there are few: "wave 2: cluster-b applied, cluster-a failed".
+      const failedNames = (w.failed || []).map((f) => f.component);
+      const appliedNames = w.appliedNames || [];
+      const both = appliedNames.length && appliedNames.length <= 2 && failedNames.length <= 2 ? `wave ${n}: ${list(appliedNames)} applied, ${list(failedNames)} failed` : `wave ${n}: ${w.applied} applied, ${failedNames.length} failed`;
+      add({ id: `${c}|w${n}|applied`, kind: "applied-wave", text: w.state === "failed" ? both : w.blocked ? `wave ${n} applied ${w.applied}; ${w.blocked} blocked` : `wave ${n} applied`, order: base + 7, subjects });
+    }
+    if (w.blocked) {
+      const by = w.blockedBy && w.blockedBy.length ? ` by ${list(w.blockedBy)}` : "";
+      add({ id: `${c}|w${n}|blocked`, kind: "blocked", text: `${w.blocked} in wave ${n} blocked${by}: they did not run`, order: base + 8, subjects });
+    }
   }
   // A gate on the whole change (chant's pull-request loop): the plan waits, no wave named.
   // A repo with declared waves names its held wave once the run view has it; this is for a repo without them.
@@ -212,9 +245,14 @@ export function cycleFacts(snap) {
     const i = strip.findIndex((x) => x.id === id);
     return i >= 0 ? i : strip.findIndex((x) => x.id === "waves");
   };
-  const gateStop = strip.some((x) => x.id === "approval") ? "approval" : "waves";
+  // chant's gate comes before the merge: without its own stop it sits with the plan, not after the merge.
+  const gateStop = strip.some((x) => x.id === "approval") ? "approval" : snap.chant ? "planned" : "waves";
   const stopOf = (f) => (["pull-request", "planned", "merged", "applied", "reset"].includes(f.kind) ? f.kind : f.kind === "pull-request" ? "pull-request" : ["held", "approved", "resumed"].includes(f.kind) && !Number.isInteger(f.subjects.wave) ? gateStop : "waves");
-  return [...byId.values()].map((f) => ({ ...f, stop: stopOf(f), order: Math.max(0, stopIndex(stopOf(f))) * 1000 + f.order })).sort((a, b) => a.order - b.order);
+  // A chant cycle's pull requests in turn: each one's beats after the one before's, whatever their stops.
+  const segment = snap.chant && Number.isInteger(snap.pull) ? snap.pull * 100_000 : 0;
+  return [...byId.values()]
+    .map((f) => ({ ...f, stop: stopOf(f), order: segment + Math.max(0, stopIndex(stopOf(f))) * 1000 + f.order, ...(snap.chant ? { pull: snap.pull } : {}) }))
+    .sort((a, b) => a.order - b.order);
 }
 
 /** The story trail: the cycle's facts that are beats of its story. */

@@ -50,7 +50,7 @@ Usage:
                 [--publish s3://<bucket>/<prefix>/views/<name> [--commit <sha>] [--keep <n>]]
   behold serve <project-dir…> [--port <n>] [--host <addr>] [--allow-host <name,…>] [--hud <url>] [--env <name>] [--poll <secs>] [--local]
                 [--public] [--terragucci <src> [--terragucci-project <p>] [--terragucci-poll <secs>] [--terragucci-runs <src>]]
-                [--repos <parent>] [--yodel-report <file|dir>]
+                [--repos <parent>] [--yodel-report <file|dir>] [--chant-report-url <url>]
   behold carve <report.json> [--port <n>]
 
   carve   Render a chant Terraform peelability report — the JSON from
@@ -194,6 +194,13 @@ Options:
                       <owner>/<name>) reads that checkout instead of
                       <project-dir>. Any other name is refused. For a host
                       that keeps one checkout per demo repo (behold#571).
+  --chant-report-url <s3://…|https://…|file://…|dir>
+                      serve only: where a chant repo's pull-request loop
+                      uploads its run events (chant components pr-plan and
+                      pr-apply --report-url, behold#631), when the pipeline
+                      names it through a variable set outside the file.
+                      Without it, behold reads the --report-url the
+                      pipeline's own lines pass.
   --yodel-report <file|dir>
                       serve/export: mark SQL Yodeler's \`yodel report --json\`
                       output and any \`yodel drift <env> --json\` beside it
@@ -323,6 +330,7 @@ export async function run(argv: string[]): Promise<void> {
   let terragucciPoll: number | undefined;
   let terragucciRuns: string | undefined;
   let yodelReport: string | undefined;
+  let chantReportUrl: string | undefined;
   let isPublic = false;
   let reposParent: string | undefined;
   const allowHosts: string[] = [];
@@ -345,6 +353,7 @@ export async function run(argv: string[]): Promise<void> {
     else if (a === "--terragucci-poll") terragucciPoll = Number(rest[++i]);
     else if (a === "--terragucci-runs") terragucciRuns = rest[++i];
     else if (a === "--repos") reposParent = rest[++i];
+    else if (a === "--chant-report-url") chantReportUrl = rest[++i];
     else if (a === "--yodel-report") yodelReport = rest[++i];
     else if (a === "--env") env = rest[++i];
     else if (a === "--poll") pollSecs = Number(rest[++i]);
@@ -441,6 +450,10 @@ export async function run(argv: string[]): Promise<void> {
   }
   // #569: a public view follows a looping run, so it asks more often.
   if (isPublic && terragucci !== undefined && terragucciPoll === undefined) terragucciPoll = PUBLIC_TERRAGUCCI_POLL_SECS;
+  if (chantReportUrl !== undefined && !chantReportUrl) {
+    process.stderr.write("behold serve: --chant-report-url needs s3://bucket/prefix, an https address, file://<path> or a directory\n");
+    process.exit(2);
+  }
   if (yodelReport !== undefined && !yodelReport) {
     process.stderr.write("behold serve: --yodel-report needs the file `yodel report --json` wrote, or the directory holding it\n");
     process.exit(2);
@@ -488,6 +501,7 @@ export async function run(argv: string[]): Promise<void> {
     ...(prometheus ? { prometheus } : {}),
     ...(tempo ? { tempo } : {}),
     ...(yodelReport ? { yodelReport: resolve(yodelReport) } : {}),
+    ...(chantReportUrl ? { chantReportUrl } : {}),
     ...(terragucci ? { terragucci: { source: terragucci, ...(terragucciProject ? { project: terragucciProject } : {}), ...(terragucciPoll !== undefined ? { pollSecs: terragucciPoll } : {}), ...(terragucciRuns ? { runsSource: terragucciRuns } : {}) } } : {}),
   });
 }
@@ -1043,6 +1057,7 @@ async function runExportCmd(rest: string[]): Promise<void> {
   let keepArg: string | undefined;
   let noSource = false;
   let yodelReport: string | undefined;
+  let chantReportUrl: string | undefined;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     if (a === "--out") outDir = resolve(rest[++i]);

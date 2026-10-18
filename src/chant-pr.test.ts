@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
-import { chantPrFacets, chantPrRoute, cycleRunsOf, pinOf, prGate, prLoopIn, prLoopOf, prStageOfReport, prStagesInLog, readChantPr, type RunDoc } from "./chant-pr.ts";
+import { chantPrFacets, chantPrRoute, cycleRunsOf, originRepository, resolveExpressions, pinOf, prGate, prLoopIn, prLoopOf, prStageOfReport, prStagesInLog, readChantPr, type RunDoc } from "./chant-pr.ts";
 import type { HistoryEntry } from "./lifecycle-history.ts";
 import type { TerragucciSource } from "./terragucci-source.ts";
 
@@ -62,7 +62,9 @@ describe("the pull-request loop in a repo's pipeline (behold#631)", () => {
 
   it("gives each component its wave from chant graph --components, and each member its component", () => {
     const ir = { nodes: [{ id: "network", attrs: { wave: 1, liveNames: ["network"] } }, { id: "app", attrs: { liveNames: ["app-root"] } }], groups: { byWave: { "wave-1": ["network"], "wave-2": ["app"] } } };
-    expect(chantPrFacets(repo(), ir, "opentofu")).toEqual({ forge: "forgejo", workflow: ".forgejo/workflows/chant-pr.yml", env: "demo", gate: "pr-apply", tools: ["chant", "opentofu"], waves: { network: 1, app: 2 }, members: { network: "network", "app-root": "app" } });
+    expect(chantPrFacets(repo(), ir, "opentofu")).toEqual({ forge: "forgejo", workflow: ".forgejo/workflows/chant-pr.yml", env: "demo", gate: "pr-apply", tools: ["chant", "opentofu"], waves: { network: 1, app: 2 }, members: { network: "network", "app-root": "app" }, needs: {} });
+    // Each component's dependencies, from the graph's consumer -> producer edges.
+    expect(chantPrFacets(repo(), { ...ir, edges: [{ from: "app", to: "network" }, { from: "app", to: "elsewhere" }] }, "opentofu")!.needs).toEqual({ app: ["network"] });
   });
 });
 
@@ -160,8 +162,103 @@ describe("GET /api/chant/pr (behold#631)", () => {
     expect(a.plan).toMatchObject({ from: "report", waves: [["network"], ["app"], ["edge"]] });
     expect(a.reads.find((r) => r.contract === "pr-report/v1")).toBeTruthy();
   });
+  it("while the merge's apply runs with --report-url: each wave and component from the events it uploaded, and no gap", async () => {
+    const dir = repo();
+    writeFileSync(join(dir, ".forgejo", "workflows", "chant-pr.yml"), WORKFLOW.replace("--require-review", "--require-review --report-url s3://reports/chant"));
+    const ev = (seq: number, body: Record<string, unknown>) =>
+      JSON.stringify({ $schema: "https://intentius.io/chant/schemas/workspace/run-event/v1/run-event.schema.json", contract: 1, chant: "0.124.29", seq, at: "2026-10-17T09:00:00.000Z", runId: "r", kind: "component", name: "pr-apply pr-13", gitSha: MERGE, runtime: "ci", runOrigin: { forge: "github" }, ...body });
+    const events = [
+      ev(0, { type: "run-start", waves: [["network"], ["app"], ["edge"]] }),
+      ev(1, { type: "wave-start", wave: 1, components: ["network"] }),
+      ev(2, { type: "component-start", wave: 1, component: "network" }),
+      ev(3, { type: "component-settle", wave: 1, component: "network", status: "ok" }),
+      ev(4, { type: "wave-settle", wave: 1, status: "ok" }),
+      ev(5, { type: "wave-start", wave: 2, components: ["app"] }),
+      ev(6, { type: "component-start", wave: 2, component: "app" }),
+    ].join("\n");
+    const asked: string[] = [];
+    const reports = { kind: "s3", location: "s3://reports/chant", async read(key: string) { asked.push(key); return key === `13/${MERGE}/pr-apply.events.jsonl` ? events : undefined; } } as TerragucciSource;
+    const running = applyRun({ status: "running", jobs: [{ name: "apply", status: "running", steps: steps("Initializing the backend...") }] });
+    const a = await readChantPr(dir, MERGE, { source: source([running, planRun()]), ...noLedger, reportSource: (url) => (url === "s3://reports/chant" ? reports : (undefined as never)) });
+    expect(a.loop?.reportUrl).toBe("s3://reports/chant");
+    expect(asked).toContain(`13/${MERGE}/pr-apply.events.jsonl`);
+    expect(a.live).toMatchObject({ reportUrl: "s3://reports/chant", via: "pipeline", plan: null });
+    expect(a.live!.apply!.waves.map((w) => [w.wave, w.state])).toEqual([[1, "applied"], [2, "running"], [3, "waiting"]]);
+    expect(a.live!.apply!.components.app!.state).toBe("running");
+    expect(a.gaps.some((g) => /progress per wave/.test(g.what))).toBe(false);
+    expect(a.reads.find((r) => r.contract === "run-event/v1")).toMatchObject({ from: `s3://reports/chant/13/${MERGE}/pr-apply.events.jsonl` });
+    // serve's --chant-report-url over the pipeline's.
+    const b = await readChantPr(dir, MERGE, { source: source([running, planRun()]), ...noLedger, reportUrl: "s3://other/x", reportSource: (url) => (url === "s3://other/x" ? reports : (undefined as never)) });
+    expect(b.live?.via).toBe("serve");
+  });
+  it("names what an earlier apply of the same cycle applied (behold#631: the fix's run shows them applied earlier)", async () => {
+    const dir = repo();
+    writeFileSync(join(dir, ".forgejo", "workflows", "chant-pr.yml"), WORKFLOW.replace("--require-review", "--require-review --report-url s3://reports/chant"));
+    const FIRST = "1111111111111111111111111111111111111111";
+    const ev = (seq: number, body: Record<string, unknown>) =>
+      JSON.stringify({ $schema: "https://intentius.io/chant/schemas/workspace/run-event/v1/run-event.schema.json", contract: 1, chant: "0.124.29", seq, at: "2026-10-17T09:00:00.000Z", runId: "r", kind: "component", name: "pr-apply pr-12", gitSha: FIRST, runtime: "ci", runOrigin: { forge: "github" }, ...body });
+    const firstEvents = [
+      ev(0, { type: "run-start", waves: [["network"], ["app"]] }),
+      ev(1, { type: "wave-start", wave: 1, components: ["network"] }),
+      ev(2, { type: "component-start", wave: 1, component: "network" }),
+      ev(3, { type: "component-settle", wave: 1, component: "network", status: "ok" }),
+      ev(4, { type: "wave-settle", wave: 1, status: "ok" }),
+      ev(5, { type: "wave-start", wave: 2, components: ["app"] }),
+      ev(6, { type: "component-start", wave: 2, component: "app" }),
+      ev(7, { type: "component-settle", wave: 2, component: "app", status: "failed" }),
+      ev(8, { type: "wave-settle", wave: 2, status: "failed" }),
+      ev(9, { type: "run-settle", status: "failed", durationMs: 1 }),
+    ].join("\n");
+    const reports = { kind: "s3", location: "s3://reports/chant", async read(key: string) { return key === `12/${FIRST}/pr-apply.events.jsonl` ? firstEvents : undefined; } } as TerragucciSource;
+    const first = applyRun({ id: 3840, commit: FIRST, pull: 12, cycle: 181, status: "failure" });
+    const fix = applyRun({ cycle: 181 });
+    const other = applyRun({ id: 3700, commit: FIRST, pull: 12, cycle: 180 });
+    const a = await readChantPr(dir, MERGE, { source: source([fix, planRun({ cycle: 181 }), first, other]), ...noLedger, reportSource: () => reports });
+    expect(a.live?.earlier).toEqual({ runs: [3840], applied: ["network"] });
+    expect(a.eventsExpected).toBe(true);
+  });
+  it("keeps live null for a repo whose pipeline passes no --report-url", async () => {
+    const a = await ask([applyRun(), planRun()], MERGE);
+    expect(a.live).toBeNull();
+  });
   it("says nothing for a repo that runs no pull-request loop", async () => {
     const a = await readChantPr(mkdtempSync(join(tmpdir(), "behold-chant-none-")), null, noLedger);
     expect(a).toMatchObject({ loop: null, plan: null, apply: null, gate: null });
+  });
+});
+
+describe("the report URL's forge expressions", () => {
+  const wf = [
+    "env:",
+    "  CHANT_EVENTS_URL: 's3://demo-reports/demo/chant/${{ github.repository }}'",
+    "jobs:",
+    "  apply:",
+    "    steps:",
+    '      - run: chant components pr-apply --env demo --report-url "${CHANT_EVENTS_URL}" --events-json',
+  ].join("\n");
+
+  it("fills ${{ github.repository }} from the checkout's origin", () => {
+    expect(prLoopIn(wf, "forgejo", "w.yml", { repository: "terragucci-admin/demo-chant-fanout" })?.reportUrl).toBe("s3://demo-reports/demo/chant/terragucci-admin/demo-chant-fanout");
+  });
+
+  it("leaves it unresolved, as written, without a repository", () => {
+    const loop = prLoopIn(wf, "forgejo", "w.yml");
+    expect(loop?.reportUrl).toBeUndefined();
+    expect(loop?.reportUrlAs).toBe("${CHANT_EVENTS_URL}");
+  });
+
+  it("fills GitLab's $CI_PROJECT_PATH and the forgejo/gitea contexts", () => {
+    expect(resolveExpressions("s3://b/$CI_PROJECT_PATH", { repository: "g/p" })).toBe("s3://b/g/p");
+    expect(resolveExpressions("s3://b/${{ forgejo.repository }}", { repository: "o/r" })).toBe("s3://b/o/r");
+    expect(resolveExpressions("s3://b/${{ secrets.X }}", { repository: "o/r" })).toBeNull();
+  });
+
+  it("reads owner/name from the checkout's origin remote", () => {
+    const dir = mkdtempSync(join(tmpdir(), "behold-origin-"));
+    mkdirSync(join(dir, ".git"));
+    writeFileSync(join(dir, ".git", "config"), '[core]\n\tbare = false\n[remote "origin"]\n\turl = http://localhost:3300/terragucci-admin/demo-chant-fanout.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n');
+    expect(originRepository(dir)).toBe("terragucci-admin/demo-chant-fanout");
+    writeFileSync(join(dir, ".git", "config"), '[remote "origin"]\n\turl = git@github.com:INTENTIUS/behold.git\n');
+    expect(originRepository(dir)).toBe("INTENTIUS/behold");
   });
 });
