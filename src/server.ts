@@ -66,7 +66,7 @@ import { addCompositeDepsCounted } from "./composite-deps.ts";
 import { notesFor, danglingNote, tierMismatchNote, namespaceMismatchNote, namespaceJoinNote, unchangedZoomNote, type Zoom } from "./zoom-notes.ts";
 import { resourcesByComponent, resourcesByRoot, nonResourceEntities } from "./resources.ts";
 import { configKeys, declaredRootTools, pipelineForge, repoTools, toolOfBinary } from "./pipeline-marks.ts";
-import { chantPrFacets, chantPrRoute, reportSourceOf } from "./chant-pr.ts";
+import { chantPrFacets, chantPrRoute, prLoopOf, reportSourceOf } from "./chant-pr.ts";
 import { TERRAGUCCI_COMPONENTS_FILE, componentJobs, componentRootMap, readTerragucciComponents, waveTitles, type TerragucciComponents } from "./terragucci-components.ts";
 import { hasTerragruntUnits } from "./terragrunt-units.ts";
 import { summarizePlan } from "./reconcile.ts";
@@ -2972,7 +2972,8 @@ export function createApp(
       }
       // The count badges (#393 C) ride on every estate render, collapsed or
       // not: a box of 301 cards has to be able to say so at "fit".
-      const { svg } = renderGraph(ir, multi ? { boxes: "byStack", groupBadges: boxBadges(ir) } : { radial });
+      // behold#631: a chant repo's pull-request loop lays a fan-out wave out as one block per parent.
+      const { svg } = renderGraph(ir, multi ? { boxes: "byStack", groupBadges: boxBadges(ir) } : { radial, ...(components && prLoopOf(cfg.projectDir) ? { childBlocks: true } : {}) });
       // #131: a level that renders empty, or as the level below, says which.
       // Multi-estate composition has its own shape and is left alone.
       const srcZoom: Zoom = components
