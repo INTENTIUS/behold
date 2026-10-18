@@ -976,7 +976,8 @@ function drawCaption(host, s, now) {
   const top = el("div", "k-cap-top");
   const title = el("h1", "k-cap-title");
   // behold#631: a chant kiosk with its track drops "Scenario 1 of 1": the track says where the cycle is.
-  const ch = s.chantLoop && demo && demo.chapter && Number.isInteger(demo.chapter.n) ? demo.chapter : null;
+  const told = s.storyDemo ? s.storyDemo(demo) : demo;
+  const ch = s.chantLoop && told && told.chapter && Number.isInteger(told.chapter.n) ? told.chapter : null;
   if (!(s.chantLoop && s.trackOn)) title.append(el("span", "k-kicker", cap.kicker));
   if (ch) {
     // behold#631: the story's chapter is the headline, "1 of 4 · A change to the shared network goes out to all 15 stacks",
@@ -1692,13 +1693,15 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     }
     // This cycle's pull requests in the order it opened them; the reset closes the last.
     if (trackState.cycle !== d.cycle) Object.assign(trackState, { cycle: d.cycle, pulls: [], key: null, since: null });
+    // The story's step, which may be a chapter ahead of demo.json's (s.storyDemo).
+    d = s.storyDemo ? s.storyDemo(d) : d;
     if (Number.isInteger(d.pull) && !trackState.pulls.includes(d.pull)) trackState.pulls.push(d.pull);
     const live = s.chantWavesNow ? s.chantWavesNow(d) : null;
     // When the current segment began: the step's own start where demo.json says it, else when the kiosk first saw it.
     const probe = trackModel(track, { demo: d, pulls: trackState.pulls, since: t, now: t });
     const key = probe ? `${probe.at.chapter}|${probe.at.segment}` : null;
     if (key !== trackState.key) {
-      const from = d.next && d.next.from ? Date.parse(d.next.from) : NaN;
+      const from = !d.storyAhead && d.next && d.next.from ? Date.parse(d.next.from) : NaN;
       trackState.key = key;
       trackState.since = Number.isFinite(from) && from <= t && t - from < 600_000 ? from : t;
     }
@@ -2166,6 +2169,39 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     if (demo && Number.isInteger(demo.pull) && Number.isInteger(ap.chant.pull) && demo.pull !== ap.chant.pull) return null;
     const a = chantPacer.answer(ap.chant);
     return { waves: graphWaves(a.live.apply).map((w) => ({ wave: w.wave, state: w.state })), live: a.live.apply };
+  };
+  /**
+   * behold#631: the step as the story tells it now. The driver writes the failed step only once the apply job ends,
+   * seconds after the paced graph has shown the failure, and the applied step after the fix's apply ends. So when the
+   * play reaches a failure, or finishes the fix's apply, while demo.json still names the apply's chapter, the story
+   * moves to the next chapter of the last cycle (its headline, and its first step for the track). demo.json catches
+   * up; the story never goes back within a cycle.
+   */
+  const story = { cycle: null, n: 0, chapter: null, step: null };
+  s.storyDemo = (d) => {
+    if (!s.chantLoop || !d || !d.chapter || !Number.isInteger(d.chapter.n)) return d;
+    if (story.cycle !== d.cycle) Object.assign(story, { cycle: d.cycle, n: 0, chapter: null, step: null });
+    const steps = (s.lastCycle() || {}).steps || [];
+    const first = (n) => steps.find((x) => x.chapter && x.chapter.n === n) || null;
+    let n = d.chapter.n;
+    let chapter = d.chapter;
+    let step = d.step;
+    const w = ["applying", "merged", "resumed"].includes(d.step) && s.chantWavesNow ? s.chantWavesNow(d) : null;
+    const comps = w && w.live && w.live.components ? Object.values(w.live.components) : [];
+    const ahead = first(n + 1);
+    if (ahead && (comps.some((c) => c.state === "failed") || (w && w.live && w.live.settled && w.live.status === "ok" && !w.live.paced))) {
+      n = ahead.chapter.n;
+      chapter = ahead.chapter;
+      step = ahead.step;
+    }
+    // Never back: a chapter the story has told stays told until demo.json moves past it.
+    if (n > story.n) Object.assign(story, { n, chapter, step });
+    else if (story.n > n && story.chapter) {
+      n = story.n;
+      chapter = story.chapter;
+      step = story.step;
+    }
+    return chapter === d.chapter && step === d.step ? d : { ...d, chapter, step, storyAhead: true };
   };
   s.chantCaptionStep = (demo, step) => {
     const held = s.chantLoop && ap.chant && ap.chant.live && ap.chant.live.apply && demo && ["failed", "applied"].includes(demo.step);
