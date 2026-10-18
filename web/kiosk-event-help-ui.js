@@ -251,12 +251,17 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
   const showTips = (h) => {
     const t = now();
     const prev = st.tips;
-    st.tips = tipsQueue(st.tips, { now: t });
+    st.tips = tipsQueue(st.tips, { now: t, ...(st.tipsMax ? { max: st.tipsMax } : {}) });
     const up = new Set(st.tips.shown.map((x) => x.event.id));
     // Each tip whose time is up shrinks toward its chip on the trail, then goes.
     for (const [id, node] of st.nodes) {
       if (up.has(id)) continue;
       st.nodes.delete(id);
+      // behold#631: on a chant kiosk a tip that goes leaves at once: no shrinking ghost under the next wave.
+      if (st.chant) {
+        node.remove();
+        continue;
+      }
       const chip = trailChip(id) || (trailHost && trailHost.querySelector(".eh-chip:last-of-type"));
       if (chip && !reduced()) {
         const c = chip.getBoundingClientRect();
@@ -464,12 +469,15 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
       if (done.size) st.tips = { shown: st.tips.shown.filter((x) => !(x.event.kind === "started" && done.has(x.event.subjects.wave))), waiting: st.tips.waiting.filter((e) => !(e.kind === "started" && done.has(e.subjects.wave))) };
     }
     // A chant kiosk shows one tip at a time: two placed on one wave box land on each other.
-    if (news.length) st.tips = tipsQueue(st.tips, { add: news, now: now(), ...(h.chant ? { max: 1 } : {}) });
+    st.tipsMax = h.chant ? 1 : undefined;
+    st.chant = !!h.chant;
+    if (news.length) st.tips = tipsQueue(st.tips, { add: news, now: now(), ...(st.tipsMax ? { max: st.tipsMax } : {}) });
     // While a modal is up, the tips wait their turn behind it.
     if (!st.modal) showTips(h);
     ageGlows();
     // behold#631: a chant repo's approval is the card beside the graph; a modal over it would hide it, so its hold opens none.
-    st.modals = modalQueue(st.modals, { add: h.chant ? news.filter((f) => f.kind !== "held") : news, now: now(), lastInput: st.lastInput, open: !!st.modal });
+    // Its result is the Applied card beside the graph; a modal would say it twice, over the cards.
+    st.modals = modalQueue(st.modals, { add: h.chant ? news.filter((f) => f.kind !== "held" && f.kind !== "applied") : news, now: now(), lastInput: st.lastInput, open: !!st.modal });
     // A modal opens only while its event is still the step's: one that waited out a viewer at the page and went by is history.
     if (st.modals.next && stillNow(st.modals.next, h.demo)) openModal(st.modals.next, h);
   };

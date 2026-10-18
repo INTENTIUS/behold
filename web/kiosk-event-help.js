@@ -146,7 +146,9 @@ export function cycleFacts(snap) {
   if (snap.plan && snap.plan.totals && at >= rank("planned")) {
     add({ id: `${c}|plan`, kind: "planned", text: planWords(snap.plan.totals), order: 1, subjects: { roots: snap.plan.roots } });
   }
-  if (at >= rank("merged") && snap.pull !== null && snap.pull !== undefined) add({ id: `${c}|merged`, kind: "merged", text: `pull request #${snap.pull} merged`, order: 2 });
+  // chant's gate comes before its merge: there the merge is said only once its step is reached.
+  const merged = snap.chant ? ["merged", "applying", "failed", "resumed", "applied"].includes(snap.step) : at >= rank("merged");
+  if (merged && snap.pull !== null && snap.pull !== undefined) add({ id: `${c}|merged`, kind: "merged", text: `pull request #${snap.pull} merged`, order: 2 });
   // Each wave, from the run view; a wave's job, from the pipeline's run.
   const jobOf = (n) => (snap.run ? snap.run.jobs.find((j) => j.wave === n) : null);
   const approved = snap.approval ? snap.approval.rows.find((r) => r.id === "approved") : null;

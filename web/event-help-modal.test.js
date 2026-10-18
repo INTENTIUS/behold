@@ -215,3 +215,9 @@ describe("a chant failure's modal in the graph's empty space (#631)", () => {
     expect(spot.top + size.h).toBeLessThanOrEqual(840);
   });
 });
+
+describe("a chant failure's countdown (#631)", () => {
+  it("is text, not a button: nothing to press", () => {
+    expect(modeLine("narrated", "failed", { at: 10_000, now: 0, fix: true })).toBe("Live · next, the demo opens a fix");
+  });
+});

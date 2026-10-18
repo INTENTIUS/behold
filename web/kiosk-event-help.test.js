@@ -86,6 +86,8 @@ describe("event-help: a cycle told in order", () => {
     const chant = (step, pull) => cycleFacts(ehSnapshot({ demo: { ...demo(step), pull, scenario: "fan-out", tool: "chant" }, answer: null, approval, chant: true }));
     const first = chant("merged", 7);
     expect(storyTrail(first).map((f) => f.text)).toEqual(["pull request #7 opened", "the plan waits for an approval", "approved by demo-reviewer", "pull request #7 merged"]);
+    // The fix's gate waits before its merge: no merge chip for it yet.
+    expect(chant("waiting", 8).some((f) => f.kind === "merged")).toBe(false);
     const fix = chant("planned", 8);
     expect(fix.find((f) => f.kind === "pull-request")).toMatchObject({ id: "7|pr8|pr", text: "pull request #8 opened", pull: 8 });
     // Every beat of the fix sorts after every beat of the first.

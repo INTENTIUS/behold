@@ -940,8 +940,12 @@ function drawCaption(host, s, now) {
   top.appendChild(title);
   if (cap.next) {
     const nx = el("p", "k-cap-next");
-    nx.append("next, by the driver: ", elRoots("span", "k-action", cap.next.action, s), " ", el("span", "k-when", cap.next.when));
-    if (nx.setAttribute) nx.setAttribute("title", `next, by the driver: ${cap.next.action}`);
+    // behold#631: a chant kiosk says what comes next in plain words: the demo is scripted, and "plan note" is chant's own term.
+    const chantNext = !!s.chantLoop;
+    const action = chantNext ? cap.next.action.replace(/\bplan note\b/g, "plan") : cap.next.action;
+    const lead = chantNext ? "next (scripted): " : "next, by the driver: ";
+    nx.append(lead, elRoots("span", "k-action", action, s), " ", el("span", "k-when", cap.next.when));
+    if (nx.setAttribute) nx.setAttribute("title", `${lead}${action}`);
     nx.appendChild(nextBar(demo, now, s));
     top.appendChild(nx);
   }
@@ -1101,7 +1105,8 @@ function box(name, cls = "") {
 export function approvalPanel(model, s = {}) {
   const wrap = el("div", "k-ap");
   // behold#571: the hold panel's head names the wave, the run and the plan; this one says what the rows are.
-  wrap.appendChild(el("p", "k-ap-head", `${PANEL_TITLE} · times in UTC`));
+  // behold#631: a chant kiosk's rows carry no times, so its head says none.
+  wrap.appendChild(el("p", "k-ap-head", model.kiosk ? PANEL_TITLE : `${PANEL_TITLE} · times in UTC`));
   const list = el("ol", "k-ap-rows");
   for (const r of model.rows) {
     const li = el("li", `k-ap-row k-ap-${r.state}`);
@@ -1209,6 +1214,8 @@ export const FRAME_BOOT_WAIT_MS = 4_000;
 
 /** How often the kiosk asks for demo.json. The server shares one read between kiosks. */
 export const DEMO_POLL_MS = 3_000;
+/** behold#631: the room a chant cycle's graph always leaves at its right for the side panels (the approval card, the result card), in px. */
+export const CHANT_SIDE_ROOM = 520;
 
 /**
  * Boot the kiosk: the bar, the frame and the graph pane's legend. Ask demo.json every few
@@ -1567,7 +1574,9 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const bottom = Math.max(0, f.bottom - captionTop(cap)) + 16;
     const side = shot.kind === "held" ? watch.callout : shot.kind === "active" ? watch.drawer : shot.kind === "result" ? watch.result : null;
     // The result card sits right beside the graph (placeBeside's gap): an inset of its width and that gap centres the two together.
-    const right = side && !side.hidden && side.offsetWidth ? side.offsetWidth + (shot.kind === "result" ? 18 : 44) : 0;
+    const measured = side && !side.hidden && side.offsetWidth ? side.offsetWidth + (shot.kind === "result" ? 18 : 44) : 0;
+    // behold#631: a chant cycle keeps one framing from start to end: the side panel's room is kept whether or not one is up, so the graph never shifts.
+    const right = s.chantLoop ? Math.max(measured, CHANT_SIDE_ROOM) : measured;
     return { top: 20, right, bottom, left: 20 };
   };
   function tellShot(force) {
@@ -2311,6 +2320,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       recordAt = known.length ? Math.max(...known) : t;
     }
     s.quiet = quietWords(d, { now: t, lastRecordAt: recordAt, run, stepAt: stepSeenAt, replay: s.mode === "replay", stale: !!linkWords(link) });
+    // behold#631: a chant kiosk's "· N s so far" counts only while a job of the step runs; a step that is done has no timer.
+    if (s.chantLoop && s.quiet && !(run && run.job)) s.quiet = null;
     if (carveCtl) carveCtl.setQuiet(s.quiet);
   };
 
