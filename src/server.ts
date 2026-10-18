@@ -155,7 +155,7 @@ import { discoverSplitPlans, moveMembers, moveReceipt, movesPayload, readSplitPl
 import { servedWorkspace, setServedWorkspace, workspaceMemberOf, type Workspace } from "./workspace.ts";
 import { approveArgs, isEnvName, isOverrideGate, readWorkspaceGates } from "./workspace-gates.ts";
 import { approverFlags, approverFor, approverView, type ApproverOptions, type ApproverRead } from "./approver.ts";
-import { readWhy, whyRegion } from "./workspace-why.ts";
+import { readWhy, whyRegion, withChain } from "./workspace-why.ts";
 import { floorFor, floorMet, floorRefusal } from "./chant-floors.ts";
 import { allowedHostsFrom, guardRequest } from "./request-guard.ts";
 import { applyMemberPasses, memberKindOf, memberKindSpec, memberPassNote, servesAsEstate, type MemberPassRun } from "./member-kind.ts";
@@ -1674,7 +1674,9 @@ export function createApp(
     }
     const ms = Date.now() - started;
     if (!read.ok) return c.json({ workspace: true, member: ask.member, region: ask.region, ms, refusal: read.refusal });
-    return c.json({ workspace: true, member: ask.member, ms, hud: !!cfg.hud, ...read.why });
+    // #682: the chain from work item to release rides on the same read, from
+    // chant 0.124.29; below that the answer keeps today's view and says so.
+    return c.json({ workspace: true, member: ask.member, ms, hud: !!cfg.hud, ...withChain(read.why, whyChant) });
   });
 
   // #477: approve one workspace gate, by key. The member's directory, env and
@@ -2350,7 +2352,7 @@ export function createApp(
         { method: "GET", path: "/api/workspace/lane", desc: "the trunk lane (#680): per environment in the members' promotion order, the trunk's commits from chant ci list --json (green, revoked or undecided, with phases, runs and work items), the gates waiting on one, and the releases and deploy records each environment runs, from chant workspace status <env> --json and chant release list --json; the release column (#692): releases newest first, each with its cut, config-only mark, where it runs and waits and the environment it promotes to next, and from chant 0.124.29 its revoked mark with the rollback line and the release gates chant reads as superseded (releaseColumn.full false below it); approver fields as /api/workspace/gates; a chant below 0.124.28 is refused with refusal code chant-too-old" },
         { method: "GET", path: "/api/workspace/change-set", desc: "a waiting gate's stored change set for the graph overlay (#681): ?gate=<member>/<op>/<gate>&env=<env>; the gate and its digest from chant workspace status <env> --json, the change set from chant change-set show <digest> --member <member> --json; gate {key, gitSha, runId, releaseDigest}, digest, planned {releaseDigest, environment} for a release gate, graph {member, at}, entries [{address, action, bucket create|change|delete, node or null, attributes}], nodes {<id>: {bucket, actions}}, counts, gaps; a chant below 0.124.28 is refused with refusal code chant-too-old" },
         { method: "GET", path: "/api/workspace/flags", desc: "the workspace's feature flags (#683), from chant workspace status <env> --json featureFlags (chant#4024): environments in promotion order, flags [{key, member, id, param, owner, work, implements, stale, kind, path, values, envs {<env>: {value, state on|off|default|set}}, waiting [{env, gate, changeSet, before, after, entries}], turnOn [{env, lines}]}], nodes member (every card of the flag's member), unreadable, refusals; a waiting flip comes from the gate's stored change set (chant change-set show); behold writes no flag record; a chant below 0.124.29 is refused with refusal code chant-too-old and degraded" },
-        { method: "GET", path: "/api/workspace/why", desc: "why a member (?member=) or a node (?node=<member>/<id>) is the way it is: the decisions covering it, the runs and commits behind it, from chant workspace graph --intent <region> --json; read on demand, cancelled with the request (#471)" },
+        { method: "GET", path: "/api/workspace/why", desc: "why a member (?member=) or a node (?node=<member>/<id>) is the way it is: the decisions covering it, the runs and commits behind it, and from chant 0.124.29 the chain from each commit's work item to its green tag, release, gate resolution and deploys (trace, #682), from chant workspace graph --intent <region> --json; read on demand, cancelled with the request (#471)" },
         { method: "POST", path: "/api/workspace/gates/approve", desc: "approve one workspace gate: JSON body {key, env}; env and plan come from a fresh status read; recorded as the request's approver with --actor and --note, a signed gate signed with that person's key or refused 422 code signed (#690); preview-locked (#477); a policy-override gate answers 422 code override with its command (#519)" },
         { method: "POST", path: "/api/operator/approve/:op/:gate", desc: "record a converge gate's resolution (chant approve — a fact for the next tick, not an unblock)" },
         { method: "POST", path: "/api/rollback", desc: "open a rollback PR: ?to=<sha>" },

@@ -1122,6 +1122,34 @@ refusal and `degraded`, and the graph draws no marks. A public view refuses
 the route. `src/feature-flags-chant.test.ts` reads the workspace
 `src/feature-flags-fixture.ts` makes through a real chant when
 `BEHOLD_TEST_CHANT_BIN` names one.
+## The why chain (#682)
+
+From chant 0.124.29 the intent document `GET /api/workspace/why` reads carries
+`trace` (chant#4023): for each commit chant walked, the work items its
+`Chant-Record` or `Chant-Lease` trailer names (judged linked, unlinked, wrong
+or merge), the work items whose window it fell in (listed apart, never a
+link), its ci tag, the release cut from it or containing it, that release's
+gate resolutions (who, channel, when, the plan and the change set stored
+under it) and its deploys per environment. Every link names its source
+record (`source: {ref, field, value}`: a commit, a tag ref, a work record's
+file, or `chant/lifecycle:<path>`), and the pane gives each as the `git show`
+line that opens it, with a copy button. A link chant found nothing for is
+drawn as missing, with chant's reason where it gives one, and `trace.reasons`
+(`ledger-unreadable`, `declaration-invalid`) as partial-read notices. behold
+adds each commit's subject and each work item's title from the same
+document's `nodes` and joins nothing: a commit names its release and deploys
+by id in the same trace. A release gate's change set is shown as `chant
+change-set show <digest> --member <member>`, since the overlay (#681) opens
+only a gate still waiting.
+
+The floor is `WHY_TRACE_CHANT_FLOOR` (0.124.29, read "why chain"). Below it
+nothing is refused: the answer has `trace: null` and `chain: {full: false,
+floor, note}`, and the pane shows the decisions, runs and commits it always
+did with the note. `src/why-trace-schema/intent.schema.json` is chant's
+intent schema at 5d33a48e7; `src/__fixtures__/why-trace/` was recorded from
+chant main at that commit in the workspace `src/why-trace-fixture.ts` makes,
+and `src/why-trace-chant.test.ts` reads the same workspace through a real
+chant when `BEHOLD_TEST_CHANT_BIN` names one.
 
 ## Invariant
 

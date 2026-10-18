@@ -407,6 +407,11 @@
       #inspect .why-list code { font: var(--t-body)/1.45 var(--font-mono); }
       #inspect .why-meta { color: var(--muted); font-size: var(--t-caption); }
       #inspect .why-gap, #inspect .why-refusal { color: var(--pending); }
+      /* #682: the chain. Each link is a row under its commit; a missing one is in the pending colour. */
+      #inspect .why-link { margin: var(--s1) 0 0; }
+      #inspect .why-missing { color: var(--pending); }
+      #inspect .why-source { display: flex; gap: var(--s2); align-items: center; min-width: 0; }
+      #inspect .why-source code { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: var(--t-caption); }
 
       /* ---- Collapsible JSON (#259) -----------------------------------------
          web/json-view.js builds this; nothing else styles it. Two colours and
