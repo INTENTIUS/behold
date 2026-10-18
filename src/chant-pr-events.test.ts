@@ -247,6 +247,22 @@ describe("the merge's apply, folded from chant's run events (behold#631, chant#4
     expect(live.waves[0]!.components).toEqual(["app"]);
   });
 
+  it("keeps every change of state in stream order, for a viewer to play (behold#631 pacing)", () => {
+    const live = readPrLive(stream(failedApply(true)), { stage: "apply", source: "x", dependsOn, componentWaves: { network: 1, "cluster-a": 2, "cluster-b": 2, ...Object.fromEntries([...appsA, ...appsB].map((a) => [a, 3])) } })!;
+    const waveSteps = live.timeline.filter((e) => e.kind === "wave").map((e) => [e.wave, e.state]);
+    expect(waveSteps).toEqual([[1, "waiting"], [2, "waiting"], [3, "waiting"], [1, "running"], [1, "applied"], [2, "running"], [2, "failed"], [3, "running"], [3, "applied"]]);
+    const a = live.timeline.filter((e) => e.component === "cluster-a").map((e) => e.state);
+    expect(a).toEqual(["waiting", "planning", "planned", "running", "failed"]);
+    // cluster-a's apps blocked after wave 2 failed and before wave 3 started.
+    const at = (pred: (e: (typeof live.timeline)[number]) => boolean) => live.timeline.findIndex(pred);
+    const blocked = at((e) => e.component === "app-01" && e.state === "blocked");
+    expect(blocked).toBeGreaterThan(at((e) => e.kind === "wave" && e.wave === 2 && e.state === "failed"));
+    expect(blocked).toBeLessThan(at((e) => e.kind === "wave" && e.wave === 3 && e.state === "running"));
+    // Seq never goes back.
+    expect(live.timeline.every((e, i, all) => i === 0 || e.seq >= all[i - 1]!.seq)).toBe(true);
+    expect(live.components["app-01"]!.graphWave).toBe(3);
+  });
+
   it("is nothing without events", () => {
     expect(foldPrEvents([], { stage: "apply", source: "x" })).toBeNull();
     expect(readPrLive(undefined, { stage: "apply", source: "x" })).toBeNull();

@@ -78,6 +78,8 @@ export interface PrLiveComponent {
   /** Its wave in run-start's waves; for a component run-start does not list (a resume's already-applied), the graph's (`waveFrom: "graph"`). */
   wave: number | null;
   waveFrom?: "graph";
+  /** Its wave in the components graph, when the reader was given the graph's waves: the number its box shows. */
+  graphWave?: number;
   state: PrLiveState;
   /** Failed: what failed, from the event. */
   error?: string;
@@ -124,6 +126,24 @@ export interface PrLive {
   components: Record<string, PrLiveComponent>;
   /** Lines that named the run-event schema and failed it, left out; the first one's reason. */
   refused?: { lines: number; reason?: string };
+  /**
+   * Every change of a component's or a wave's state, in stream order, so a
+   * viewer can play a run that settled faster than it was read (the kiosk's
+   * pacing, web/chant-live-pace.js). Only states the events gave; the
+   * blocks worked out once the run settled come last, at its final seq.
+   */
+  timeline: PrLiveStep[];
+}
+
+export interface PrLiveStep {
+  seq: number;
+  at: string | null;
+  kind: "component" | "wave";
+  /** The component's name, for a component's step. */
+  component?: string;
+  /** The wave, in run-start's numbering: a wave's own, or the component's when it has one. */
+  wave: number | null;
+  state: PrLiveState | PrLiveWaveState;
 }
 
 type Ev = Record<string, unknown> & { type: string };
@@ -200,6 +220,7 @@ export function foldPrEvents(
     status: null,
     waves: [],
     components: {},
+    timeline: [],
   };
   const comps = live.components;
   const waveOf = new Map<number, { state: PrLiveWaveState; components: string[]; started: Set<string> | null }>();
@@ -240,6 +261,21 @@ export function foldPrEvents(
     }
   };
 
+  // The timeline: what each event changed, recorded after it.
+  const lastComp = new Map<string, PrLiveState>();
+  const lastWave = new Map<number, PrLiveWaveState>();
+  const record = (seq: number, at: string | null) => {
+    for (const c of Object.values(comps)) {
+      if (lastComp.get(c.component) === c.state) continue;
+      lastComp.set(c.component, c.state);
+      live.timeline.push({ seq, at, kind: "component", component: c.component, wave: c.wave, state: c.state });
+    }
+    for (const [n, w] of waveOf) {
+      if (lastWave.get(n) === w.state) continue;
+      lastWave.set(n, w.state);
+      live.timeline.push({ seq, at, kind: "wave", wave: n, state: w.state });
+    }
+  };
   for (const e of events) {
     live.seq = Number(e.seq) || live.seq;
     live.at = str(e.at) ?? live.at;
@@ -351,6 +387,7 @@ export function foldPrEvents(
         break;
       }
     }
+    record(Number(e.seq) || 0, str(e.at) ?? null);
   }
 
   // A failure with no error of its own takes its last failed step's, once all are read.
@@ -405,6 +442,14 @@ export function foldPrEvents(
       else if (live.settled && opts.stage === "apply") state = "not-run";
     }
     live.waves.push({ wave: n, state, components: [...w.components], counts });
+  }
+  // What the settle worked out (a block, a run that never reached a component), at the last seq.
+  record(live.seq, live.at);
+  if (opts.componentWaves) {
+    for (const c of Object.values(comps)) {
+      const g = opts.componentWaves[c.component];
+      if (typeof g === "number") c.graphWave = g;
+    }
   }
   return live;
 }

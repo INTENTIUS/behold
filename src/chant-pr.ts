@@ -365,6 +365,8 @@ export interface RunDoc {
   trigger?: string | null;
   commit?: string | null;
   pull?: number | null;
+  /** The demo driver's cycle when it started or saw the run (demo.runs/v1), null when it could not place it. */
+  cycle?: number | null;
   status: string;
   created_at?: string | null;
   started_at?: string | null;
@@ -472,6 +474,8 @@ export interface ChantPrAnswer {
    * while it runs, and after. Null for a repo without events.
    */
   live: ChantPrLive | null;
+  /** Whether the stages upload run events (a report URL, the pipeline's or serve's), so a view can say "starting" before the first upload lands. */
+  eventsExpected: boolean;
 }
 
 export interface ChantPrLive {
@@ -480,6 +484,12 @@ export interface ChantPrLive {
   via: "pipeline" | "serve";
   plan: PrLive | null;
   apply: PrLive | null;
+  /**
+   * What earlier applies of the same cycle applied (the runs index's
+   * `cycle`): a fix's apply runs only what the first left, and the rest
+   * landed then. Absent when there was no earlier apply in the cycle.
+   */
+  earlier?: { runs: number[]; applied: string[] };
 }
 
 export interface ChantPrDeps {
@@ -526,7 +536,7 @@ export async function readChantPr(dir: string, pinRaw: string | null, deps: Chan
   const pin = pinOf(pinRaw);
   const reads: ChantPrAnswer["reads"] = [];
   const gaps: ChantPrAnswer["gaps"] = [];
-  const answer = (rest: Partial<ChantPrAnswer>): ChantPrAnswer => ({ schema: "behold.chant-pr/v1", read: now.toISOString(), loop, pull: null, plan: null, apply: null, running: null, gate: null, reads, gaps, live: null, ...rest });
+  const answer = (rest: Partial<ChantPrAnswer>): ChantPrAnswer => ({ schema: "behold.chant-pr/v1", read: now.toISOString(), loop, pull: null, plan: null, apply: null, running: null, gate: null, reads, gaps, live: null, eventsExpected: !!(loop && (deps.reportUrl ?? loop.reportUrl)), ...rest });
   if (!loop) return answer({});
   if (loop) reads.push({ what: "the pull-request loop", contract: null, from: loop.workflow });
 
@@ -586,7 +596,13 @@ export async function readChantPr(dir: string, pinRaw: string | null, deps: Chan
   const run = (applyDoc && going(applyDoc) && { stage: "apply" as const, ...going(applyDoc)! }) || (!apply && planDoc && going(planDoc) && { stage: "plan" as const, ...going(planDoc)! }) || null;
 
   // The stages' run events, under the report URL at the cycle's pull request and each run's commit.
-  const live = await readLive(dir, loop, deps, cyc.pull ?? pin.pull, cyc.plan, cyc.apply);
+  // The cycle's earlier applies, oldest first: the runs the index places in the same cycle, before this one.
+  const cycleOf = (cyc.apply ?? cyc.plan)?.cycle;
+  const earlierRuns =
+    typeof cycleOf === "number"
+      ? runs.filter((r) => isApplyRun(r) && r.cycle === cycleOf && r !== cyc.apply && (!cyc.apply || r.id < cyc.apply.id) && !!r.commit).sort((a, b) => a.id - b.id).slice(-3)
+      : [];
+  const live = await readLive(dir, loop, deps, cyc.pull ?? pin.pull, cyc.plan, cyc.apply, earlierRuns);
   for (const l of [live?.plan, live?.apply]) if (l) reads.push({ what: `chant components pr-${l.stage}'s run events`, contract: "run-event/v1", from: l.source });
   if (run && run.stage === "apply" && !live?.apply) gaps.push({ what: "progress per wave and component while the apply runs", ...CHANT_GAPS.report });
 
@@ -613,7 +629,7 @@ export async function readChantPr(dir: string, pinRaw: string | null, deps: Chan
  * stage's run, `<pr>` being `unknown` when the cycle has none (chant#4083).
  * Null when there is no URL or neither stage uploaded any. Never throws.
  */
-async function readLive(dir: string, loop: PrLoop, deps: ChantPrDeps, pull: number | null, plan: RunDoc | null, apply: RunDoc | null): Promise<ChantPrLive | null> {
+async function readLive(dir: string, loop: PrLoop, deps: ChantPrDeps, pull: number | null, plan: RunDoc | null, apply: RunDoc | null, earlierRuns: readonly RunDoc[] = []): Promise<ChantPrLive | null> {
   const url = deps.reportUrl ?? loop.reportUrl;
   if (!url) return null;
   let src: TerragucciSource;
@@ -631,20 +647,27 @@ async function readLive(dir: string, loop: PrLoop, deps: ChantPrDeps, pull: numb
   };
   const dependsOn = safely(() => deps.dependsOn?.(dir));
   const componentWaves = safely(() => deps.componentWaves?.(dir));
-  const one = async (stage: "plan" | "apply", r: RunDoc | null): Promise<PrLive | null> => {
+  const one = async (stage: "plan" | "apply", r: RunDoc | null, prOf: number | null = pull): Promise<PrLive | null> => {
     const commit = r?.commit;
     if (!commit) return null;
     try {
-      const key = await eventsKey(src, pull, commit, eventsFileOf(stage));
+      const key = await eventsKey(src, prOf, commit, eventsFileOf(stage));
       const text = await src.read(key);
       return readPrLive(text, { stage, source: `${src.location.replace(/\/+$/, "")}/${key}`, ...(dependsOn ? { dependsOn } : {}), ...(componentWaves ? { componentWaves } : {}) });
     } catch {
       return null;
     }
   };
-  const [p, a] = await Promise.all([one("plan", plan), one("apply", apply)]);
-  if (!p && !a) return null;
-  return { reportUrl: url, via: deps.reportUrl ? "serve" : "pipeline", plan: p, apply: a };
+  const [p, a, ...before] = await Promise.all([one("plan", plan), one("apply", apply), ...earlierRuns.map((r) => one("apply", r, typeof r.pull === "number" ? r.pull : null))]);
+  const landed = new Set<string>();
+  const from: number[] = [];
+  before.forEach((l, i) => {
+    if (!l) return;
+    from.push(earlierRuns[i]!.id);
+    for (const c of Object.values(l.components)) if (c.state === "applied" || c.state === "already-applied") landed.add(c.component);
+  });
+  if (!p && !a && !landed.size) return null;
+  return { reportUrl: url, via: deps.reportUrl ? "serve" : "pipeline", plan: p, apply: a, ...(landed.size ? { earlier: { runs: from, applied: [...landed].sort() } } : {}) };
 }
 
 /**

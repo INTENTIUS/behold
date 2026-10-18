@@ -191,6 +191,32 @@ describe("GET /api/chant/pr (behold#631)", () => {
     const b = await readChantPr(dir, MERGE, { source: source([running, planRun()]), ...noLedger, reportUrl: "s3://other/x", reportSource: (url) => (url === "s3://other/x" ? reports : (undefined as never)) });
     expect(b.live?.via).toBe("serve");
   });
+  it("names what an earlier apply of the same cycle applied (behold#631: the fix's run shows them applied earlier)", async () => {
+    const dir = repo();
+    writeFileSync(join(dir, ".forgejo", "workflows", "chant-pr.yml"), WORKFLOW.replace("--require-review", "--require-review --report-url s3://reports/chant"));
+    const FIRST = "1111111111111111111111111111111111111111";
+    const ev = (seq: number, body: Record<string, unknown>) =>
+      JSON.stringify({ $schema: "https://intentius.io/chant/schemas/workspace/run-event/v1/run-event.schema.json", contract: 1, chant: "0.124.29", seq, at: "2026-10-17T09:00:00.000Z", runId: "r", kind: "component", name: "pr-apply pr-12", gitSha: FIRST, runtime: "ci", runOrigin: { forge: "github" }, ...body });
+    const firstEvents = [
+      ev(0, { type: "run-start", waves: [["network"], ["app"]] }),
+      ev(1, { type: "wave-start", wave: 1, components: ["network"] }),
+      ev(2, { type: "component-start", wave: 1, component: "network" }),
+      ev(3, { type: "component-settle", wave: 1, component: "network", status: "ok" }),
+      ev(4, { type: "wave-settle", wave: 1, status: "ok" }),
+      ev(5, { type: "wave-start", wave: 2, components: ["app"] }),
+      ev(6, { type: "component-start", wave: 2, component: "app" }),
+      ev(7, { type: "component-settle", wave: 2, component: "app", status: "failed" }),
+      ev(8, { type: "wave-settle", wave: 2, status: "failed" }),
+      ev(9, { type: "run-settle", status: "failed", durationMs: 1 }),
+    ].join("\n");
+    const reports = { kind: "s3", location: "s3://reports/chant", async read(key: string) { return key === `12/${FIRST}/pr-apply.events.jsonl` ? firstEvents : undefined; } } as TerragucciSource;
+    const first = applyRun({ id: 3840, commit: FIRST, pull: 12, cycle: 181, status: "failure" });
+    const fix = applyRun({ cycle: 181 });
+    const other = applyRun({ id: 3700, commit: FIRST, pull: 12, cycle: 180 });
+    const a = await readChantPr(dir, MERGE, { source: source([fix, planRun({ cycle: 181 }), first, other]), ...noLedger, reportSource: () => reports });
+    expect(a.live?.earlier).toEqual({ runs: [3840], applied: ["network"] });
+    expect(a.eventsExpected).toBe(true);
+  });
   it("keeps live null for a repo whose pipeline passes no --report-url", async () => {
     const a = await ask([applyRun(), planRun()], MERGE);
     expect(a.live).toBeNull();

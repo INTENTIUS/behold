@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CHANT_PANEL_STEPS, chantApprovalModel, chantComponentMarks, chantLiveWaves, countWords, shortReason } from "./chant-pr-marks.js";
+import { CHANT_PANEL_STEPS, chantApprovalModel, chantComponentMarks, chantLiveWaves, chantResultModel, countWords, graphWaves, shortReason } from "./chant-pr-marks.js";
 
 // behold#631: the marks on a chant repo's components view, from /api/chant/pr's
 // answer, shaped as it answered for cycle 767 of terragucci's demo (scenario
@@ -177,6 +177,52 @@ describe("a chant repo's apply, live from its run events", () => {
     // Wave 3: cluster-b's apps applied before, cluster-a's wait their turn.
     expect(m.waves[3]).toMatchObject({ state: "planned", status: { words: "waiting" } });
     expect(m.cards["app-01"]).toMatchObject({ state: "queued", words: "waiting for wave 3" });
+  });
+
+  it("the fix's apply: what the cycle's first apply landed reads applied earlier, and every card has landed at the end", () => {
+    const live = {
+      stage: "apply",
+      settled: true,
+      status: "ok",
+      waves: [{ ...wave(1, "applied", { applied: 1 }), components: ["cluster-a"] }, { ...wave(2, "applied", { applied: 6 }), components: appsA }],
+      components: comps({ "cluster-a": { state: "applied", wave: 1, graphWave: 2 }, ...Object.fromEntries(appsA.map((a) => [a, { state: "applied", wave: 2, graphWave: 3 }])) }),
+    };
+    const fixPlan = { ...plan, pr: 15, op: "pr-15", members: ["cluster-a", ...appsA].map((c) => member(c, "planned")) };
+    const earlier = { runs: [3901], applied: ["app-07", "app-08", "app-09", "app-10", "app-11", "app-12", "cluster-b", "network"] };
+    const a = answer({ pull: 15, plan: fixPlan, gate: approved, live: { reportUrl: "s3://r", via: "pipeline", plan: null, apply: live, earlier } });
+    const m = chantComponentMarks(a, fan);
+    expect(m.cards.network).toMatchObject({ state: "applied-earlier", words: "applied earlier", tone: "ok" });
+    expect(m.cards["app-09"].state).toBe("applied-earlier");
+    expect(m.cards["cluster-a"].state).toBe("applied");
+    expect(Object.values(m.cards).every((c) => c.state === "applied" || c.state === "applied-earlier")).toBe(true);
+    expect(m.waves[1]).toMatchObject({ state: "applied", status: { words: "applied earlier" } });
+    // The run's waves numbered as the graph's boxes are.
+    expect(graphWaves(live).map((w) => w.wave)).toEqual([2, 3]);
+    // The result card, the one terragucci's scenarios get.
+    const r = chantResultModel({ step: "applied", label: "Done." }, a);
+    expect(r).toMatchObject({ head: "Applied", line: "Done.", counts: ["7 applied this run", "8 applied earlier", "2 waves"] });
+    expect(r.waves).toEqual([{ wave: 2, words: "1 applied" }, { wave: 3, words: "6 applied" }]);
+    expect(chantResultModel({ step: "applying" }, a)).toBeNull();
+    // The plan of the same fix, before it applies: the eight read as landed there too.
+    const planned = chantComponentMarks(answer({ pull: 15, plan: fixPlan, gate: waiting, live: { reportUrl: "s3://r", via: "pipeline", plan: null, apply: null, earlier } }), fan);
+    expect(planned.cards.network.state).toBe("applied-earlier");
+    expect(planned.cards["cluster-a"].state).toBe("planned");
+  });
+
+  it("says starting… while the apply runs and its events have not landed, and never an issue number on a kiosk", () => {
+    const run = { stage: "apply", run: 3901, job: "apply", status: "running", started_at: null };
+    const m = chantComponentMarks(answer({ pull: 14, plan: fanPlan, gate: approved, running: run, eventsExpected: true }), fan);
+    expect(m.waves[2].status).toMatchObject({ words: "starting…", tone: "busy" });
+    expect(JSON.stringify(m)).not.toContain("chant#4007");
+    const kiosk = chantComponentMarks(answer({ pull: 14, plan: fanPlan, gate: approved, running: run }), fan, { kiosk: true });
+    expect(JSON.stringify(kiosk)).not.toContain("chant#4007");
+    // Inspect, with no events at all, still says which issue asks for them.
+    const inspect = chantComponentMarks(answer({ pull: 14, plan: fanPlan, gate: approved, running: run }), fan);
+    expect(inspect.waves[2].facts[0]).toBe("per-wave progress: chant#4007");
+  });
+
+  it("names the specific part of a tool's error, not its prefix or its advice", () => {
+    expect(shortReason('cfn-deploy "cluster-a": stack reached ROLLBACK_COMPLETE — the deploy failed and was rolled back. Inspect the stack events for the resource that failed to create/update.')).toBe("stack reached ROLLBACK_COMPLETE");
   });
 
   it("cuts a long reason at a word", () => {

@@ -14,7 +14,8 @@
 // Nothing here is all-or-nothing, and nothing says so.
 
 import { linkState, linkWords, noteBack, noteRead, readFailed, shareLink } from "./kiosk-link.js";
-import { CHANT_PANEL_STEPS, chantApprovalModel } from "./chant-pr-marks.js";
+import { CHANT_PANEL_STEPS, chantApprovalModel, chantResultModel } from "./chant-pr-marks.js";
+import { createLivePacer } from "./chant-live-pace.js";
 import { PICK_HOLD_MS, annMark, mergeRun, startRuns, statusIcon } from "./kiosk-runs.js";
 import { MODES, MODE_STORE, badges as waveBadges, badgeTitle, behindStep, steadyRun, captionModel, doraLine, modeStored, placeBeside, quietWords, recordKey, resultModel, runningStep, shotFor, stepTone, tailLines } from "./kiosk-watch.js";
 import { shotMessage } from "./kiosk-shot.js";
@@ -1609,7 +1610,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     if (drawer) drawDrawer(watch.drawer, tail, badgeTitle(nums[drawerOn]), open);
     if (drawer) traceDrawer(d, drawerOn);
     // A drawer the viewer opened on a wave takes the card's place beside the graph until it folds.
-    const result = shot.kind === "result" && !opened ? resultModel(d, s.metrics, s.steady) : null;
+    const result = shot.kind === "result" && !opened ? resultModel(d, s.metrics, s.steady) || (s.chantResult ? s.chantResult(d) : null) : null;
     watch.result.hidden = !result;
     if (result) drawResult(watch.result, result, s);
     // On a phone the delivery numbers stack under the rest, where the header has no room for them.
@@ -1814,7 +1815,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
             replay: s.mode === "replay",
             approveLine: appr ? appr.approve : null,
             label: d.label || "",
-            result: resultModel(d, s.metrics, s.steady),
+            result: resultModel(d, s.metrics, s.steady) || (s.chantResult ? s.chantResult(d) : null),
             waveTraces: s.waveTraces,
             strip: s.stripReady() ? s.strip : null,
             stripReady: s.stripReady(),
@@ -1995,10 +1996,14 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     }
     draw();
   };
+  // behold#631: a fast chant apply played at the pace the graph plays it (web/chant-live-pace.js).
+  const chantPacer = createLivePacer();
+  // behold#631: the result card at a chant repo's applied step, from the apply's run events.
+  s.chantResult = (d) => (s.chantLoop && ap.chant ? chantResultModel(d, chantPacer.answer(ap.chant)) : null);
   const approvalNow = () => {
     const d = s.demo && s.demo.demo;
     // behold#631: chant's gate, one per pull request on the plan's digest, when the repo runs chant's loop.
-    const chant = s.chantLoop && ap.chant ? chantApprovalModel({ demo: d, answer: ap.chant }) : null;
+    const chant = s.chantLoop && ap.chant ? chantApprovalModel({ demo: d, answer: chantPacer.answer(ap.chant) }) : null;
     if (chant) return chant;
     if (!d || !PANEL_STEPS.includes(d.step)) return null;
     const appr = pendingApproval(d, s.progress);

@@ -26,6 +26,7 @@ import { flagMarks as flFlagMarks, flagRow as flFlagRow, flagsFor as flFlagsFor,
 import { renderYodelLane } from "./sql-yodeler-lane.js";
 import { initTerragucciEstate } from "./terragucci-estate.js";
 import { chantComponentMarks } from "./chant-pr-marks.js";
+import { createLivePacer } from "./chant-live-pace.js";
 import { noStateFill } from "./frame-fill.js";
 import { componentMarks as tgComponentMarks, runsCommit as tgRunsCommit, statusShort as tgStatusShort, waveOfKey as tgWaveOfKey } from "./terragucci-components-live.js";
 import { FORGES, MARK, componentsForge, forgeOfName, iconSvg, markLink, markTitle, waveJobUrl } from "./forge-mark.js";
@@ -3794,7 +3795,7 @@ function drawTgReads() {
     return n;
   };
   if (chantMode) {
-    drawTgComponentMarks(svg, { marks: chantComponentMarks(chantPrAnswer, chantFacets), focus: null, boxOf, make, edgePoints: chantEdgePoints(svg) });
+    drawTgComponentMarks(svg, { marks: chantComponentMarks(chantPaced(), chantFacets, { kiosk: !!embedOpts.bare }), focus: null, boxOf, make, edgePoints: chantEdgePoints(svg) });
     return;
   }
   const layer = make("g", { "data-tg-reads": "1", "pointer-events": "none" });
@@ -5828,6 +5829,27 @@ let chantPrAnswer = null;
 let chantPrTimer = null;
 /** Whether /api/chant/pr has answered (or failed) once since the components view drew, so a kiosk frame swaps in with its marks on. */
 let chantPrRead = false;
+// behold#631: a fast apply played at a pace a viewer can follow (web/chant-live-pace.js).
+const chantPacer = createLivePacer();
+let chantPaceTimer = null;
+let chantPacedWas = null;
+/** The answer as the pacer shows it now; while it is behind the stream, redraw as it plays. */
+function chantPaced() {
+  const a = chantPacer.answer(chantPrAnswer);
+  chantPacedWas = JSON.stringify(a && a.live ? a.live.apply : null);
+  if (chantPacer.pending && !chantPaceTimer) {
+    chantPaceTimer = setInterval(() => {
+      const next = chantPacer.answer(chantPrAnswer);
+      const was = chantPacedWas;
+      if (JSON.stringify(next && next.live ? next.live.apply : null) !== was) drawTgReads();
+      if (!chantPacer.pending) {
+        clearInterval(chantPaceTimer);
+        chantPaceTimer = null;
+      }
+    }, 400);
+  }
+  return a;
+}
 function chantPrDrawn() {
   return !!(view.components && chantFacets && !terragucciComponentsRepo && chantPrAnswer && !chantPrAnswer.error && chantPrAnswer.loop);
 }
