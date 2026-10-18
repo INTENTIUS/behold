@@ -1,0 +1,78 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/change-set-show/v1/change-set-show.schema.json",
+  "contract": 1,
+  "chant": "0.124.28",
+  "member": "web",
+  "digest": "jcs1-sha256:05c8b35bc9a3b2040cf6f057d5846220ca8b30ba4ec99ac962e90ebde753528f",
+  "changeSet": {
+    "$schema": "https://intentius.io/chant/schemas/workspace/change-set/v1/change-set.schema.json",
+    "contract": 1,
+    "chant": "0.124.28",
+    "digest": "jcs1-sha256:05c8b35bc9a3b2040cf6f057d5846220ca8b30ba4ec99ac962e90ebde753528f",
+    "releaseDigest": "jcs1-sha256:f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1",
+    "environment": "staging",
+    "members": [
+      {
+        "member": "web",
+        "lexicon": "chant",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "sha256:5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+        "holes": []
+      }
+    ],
+    "entries": [
+      {
+        "member": "web",
+        "lexicon": "chant",
+        "planner": "chant",
+        "address": "web",
+        "type": "chant:component",
+        "name": "web",
+        "action": "update",
+        "disruption": "unknown",
+        "scope": "staging",
+        "attributes": [
+          {
+            "path": "param:newCheckout",
+            "before": false,
+            "after": true
+          }
+        ],
+        "node": null
+      }
+    ],
+    "summary": {
+      "members": 1,
+      "entries": 1,
+      "actions": {
+        "create": 0,
+        "update": 1,
+        "replace": 0,
+        "delete": 0,
+        "read": 0,
+        "no-op": 0,
+        "forget": 0
+      },
+      "types": {
+        "chant:component": {
+          "update": 1
+        }
+      },
+      "byMember": {
+        "web": {
+          "update": 1
+        }
+      },
+      "deletes": [],
+      "replacements": [],
+      "failed": [],
+      "holes": 0
+    },
+    "graph": {
+      "member": "web",
+      "at": null
+    }
+  },
+  "reason": null
+}

@@ -90,6 +90,7 @@ export default defineConfig({
 						{ label: 'Approving a gate', slug: 'using/approving' },
 						{ label: 'The trunk lane', slug: 'using/trunk' },
 						{ label: 'A change set on the graph', slug: 'using/change-set' },
+						{ label: 'Feature flags on the graph', slug: 'using/flags' },
 						{ label: 'Export a snapshot', slug: 'using/export' },
 						{ label: 'Driving it from an agent', slug: 'using/agents' },
 					],

@@ -28,6 +28,8 @@ import statusSchema from "./trunk-lane-schemas/status.schema.json" with { type: 
 // superseded. One hand edit, still valid against chant's schema: work items on
 // three commits (chant#4029 needs a declared work kind to write them). The
 // schemas in src/trunk-lane-schemas/ are chant's, from the same commit.
+// status.schema.json was refreshed from chant main at 0689d28f0 for #683,
+// which only adds featureFlags.
 
 const FIX = join(import.meta.dirname, "__fixtures__", "trunk-lane");
 const fixture = (name: string): WorkspaceDocument => JSON.parse(readFileSync(join(FIX, name), "utf8")) as WorkspaceDocument;

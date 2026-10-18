@@ -197,6 +197,7 @@ import { lifecycleHistoryRoute } from "./lifecycle-history.ts";
 import { hasReleaseLedgerHint, releasesRoutes } from "./lifecycle-releases.ts";
 import { laneFloorRefusal, readTrunkLane } from "./trunk-lane.ts";
 import { overlayFloorRefusal, readChangeSetOverlay } from "./change-set-overlay.ts";
+import { flagsFloorRefusal, readFeatureFlags } from "./feature-flags.ts";
 import { sqlYodelerLaneRoute } from "./sql-yodeler-lane.ts";
 import { controlRepoInfo, terragucciEstateRoutes } from "./terragucci-estate.ts";
 import { yodelReportRoute } from "./yodel-report.ts";
@@ -1624,6 +1625,24 @@ export function createApp(
     return c.json({ workspace: true, chant: version ?? null, ...read.overlay });
   });
 
+  // #683: the workspace's feature flags, per environment, for the Flags tab and
+  // the flag marks on the graph. The flags come from `chant workspace status
+  // <env> --json` (featureFlags, chant#4024), the waiting gates from status in
+  // each environment of the promotion order, and a flip waiting at a gate from
+  // that gate's stored change set. behold writes no flag record: turning one on
+  // is a change set to open, or the lines a person runs. Below the floor the
+  // tab shows the refusal and the rest of behold works.
+  app.get("/api/workspace/flags", async (c) => {
+    const ws = servedWorkspace();
+    if (!ws) return c.json({ workspace: false, refusal: { error: "behold isn't serving a declared chant workspace, so there are no flag records to read.", code: "no-workspace", remedy: "Serve the directory that holds chant.workspace.json." } });
+    const version = resolveChant(ws.root).version;
+    const tooOld = flagsFloorRefusal(version);
+    if (tooOld) return c.json({ workspace: true, chant: version ?? null, refusal: tooOld, degraded: floorFor("feature flags").degraded ?? null });
+    const read = await readFeatureFlags(ws, { env: cfg.env || "local" });
+    if (!read.ok) return c.json({ workspace: true, chant: version ?? null, refusal: read.refusal });
+    return c.json({ workspace: true, chant: version ?? null, ...read.flags });
+  });
+
   // #471: why a member or a node is the way it is, from `chant workspace graph
   // --intent <region> --json`. Read when the page asks (a click on "why"),
   // never at boot: on a large repository it takes tens of seconds. It is a
@@ -2330,6 +2349,7 @@ export function createApp(
         { method: "GET", path: "/api/workspace/gates", desc: "a declared workspace's waiting gates from chant workspace status <env> --json (?env=), keyed member/op/gate, with the approver behold would record (#477) as approver and approverIdentity {principal, source, forge, signs}, or approver null and approverRefusal (#690); a policy-override gate carries override {subject, rules, plan, digest, state, spentAt, product, command, source} and no approve path (#519)" },
         { method: "GET", path: "/api/workspace/lane", desc: "the trunk lane (#680): per environment in the members' promotion order, the trunk's commits from chant ci list --json (green, revoked or undecided, with phases, runs and work items), the gates waiting on one, and the releases and deploy records each environment runs, from chant workspace status <env> --json and chant release list --json; the release column (#692): releases newest first, each with its cut, config-only mark, where it runs and waits and the environment it promotes to next, and from chant 0.124.29 its revoked mark with the rollback line and the release gates chant reads as superseded (releaseColumn.full false below it); approver fields as /api/workspace/gates; a chant below 0.124.28 is refused with refusal code chant-too-old" },
         { method: "GET", path: "/api/workspace/change-set", desc: "a waiting gate's stored change set for the graph overlay (#681): ?gate=<member>/<op>/<gate>&env=<env>; the gate and its digest from chant workspace status <env> --json, the change set from chant change-set show <digest> --member <member> --json; gate {key, gitSha, runId, releaseDigest}, digest, planned {releaseDigest, environment} for a release gate, graph {member, at}, entries [{address, action, bucket create|change|delete, node or null, attributes}], nodes {<id>: {bucket, actions}}, counts, gaps; a chant below 0.124.28 is refused with refusal code chant-too-old" },
+        { method: "GET", path: "/api/workspace/flags", desc: "the workspace's feature flags (#683), from chant workspace status <env> --json featureFlags (chant#4024): environments in promotion order, flags [{key, member, id, param, owner, work, implements, stale, kind, path, values, envs {<env>: {value, state on|off|default|set}}, waiting [{env, gate, changeSet, before, after, entries}], turnOn [{env, lines}]}], nodes member (every card of the flag's member), unreadable, refusals; a waiting flip comes from the gate's stored change set (chant change-set show); behold writes no flag record; a chant below 0.124.29 is refused with refusal code chant-too-old and degraded" },
         { method: "GET", path: "/api/workspace/why", desc: "why a member (?member=) or a node (?node=<member>/<id>) is the way it is: the decisions covering it, the runs and commits behind it, from chant workspace graph --intent <region> --json; read on demand, cancelled with the request (#471)" },
         { method: "POST", path: "/api/workspace/gates/approve", desc: "approve one workspace gate: JSON body {key, env}; env and plan come from a fresh status read; recorded as the request's approver with --actor and --note, a signed gate signed with that person's key or refused 422 code signed (#690); preview-locked (#477); a policy-override gate answers 422 code override with its command (#519)" },
         { method: "POST", path: "/api/operator/approve/:op/:gate", desc: "record a converge gate's resolution (chant approve — a fact for the next tick, not an unblock)" },
