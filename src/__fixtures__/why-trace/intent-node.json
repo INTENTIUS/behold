@@ -1,0 +1,641 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/intent/v1/intent.schema.json",
+  "contract": 1,
+  "chant": "0.124.28",
+  "at": null,
+  "workspace": {
+    "name": "shop",
+    "root": "."
+  },
+  "region": "region:delivery/src/app.ts",
+  "history": {
+    "rev": "608ed366e322b0de6fa8e2e7b9510c7df02a779a",
+    "follows": "file",
+    "shallow": false
+  },
+  "kinds": [
+    {
+      "file": "decisions/decision.kind.mjs",
+      "name": "decision",
+      "records": "decision",
+      "joins": null
+    },
+    {
+      "file": "work/work.kind.mjs",
+      "name": "work",
+      "records": "work",
+      "joins": null
+    }
+  ],
+  "nodes": [
+    {
+      "id": "region:delivery/src/app.ts",
+      "kind": "region",
+      "path": "delivery/src/app.ts",
+      "lines": null,
+      "member": "delivery",
+      "at": null,
+      "type": "file",
+      "generated": false,
+      "node": "delivery/appService",
+      "symbol": null
+    },
+    {
+      "id": "member:delivery",
+      "kind": "member",
+      "name": "delivery",
+      "dir": "delivery",
+      "memberKind": "chant"
+    },
+    {
+      "id": "commit:608ed366e322b0de6fa8e2e7b9510c7df02a779a",
+      "kind": "commit",
+      "sha": "608ed366e322b0de6fa8e2e7b9510c7df02a779a",
+      "subject": "serve the app on 8081",
+      "author": {
+        "name": "behold",
+        "email": "behold@localhost"
+      },
+      "date": "2026-10-17T18:49:28-06:00",
+      "trailers": {
+        "Chant-Record": [
+          "work:W-001"
+        ]
+      },
+      "pullRequest": null,
+      "signature": {
+        "level": "unattested",
+        "reason": "no signers file (.chant/allowed_signers) at base; attestation is off"
+      },
+      "lines": null,
+      "state": "undecided",
+      "joins": {
+        "agent": null,
+        "lease": null,
+        "run": null,
+        "records": [
+          {
+            "kind": "work",
+            "id": "W-001",
+            "node": "record:work/W-001"
+          }
+        ],
+        "applied": null
+      }
+    },
+    {
+      "id": "commit:bbad0182dd0693818c90b0b7aa1c80c06bfa8686",
+      "kind": "commit",
+      "sha": "bbad0182dd0693818c90b0b7aa1c80c06bfa8686",
+      "subject": "the shop and W-001",
+      "author": {
+        "name": "behold",
+        "email": "behold@localhost"
+      },
+      "date": "2026-10-17T18:49:28-06:00",
+      "trailers": {},
+      "pullRequest": null,
+      "signature": {
+        "level": "unattested",
+        "reason": "no signers file (.chant/allowed_signers) at base; attestation is off"
+      },
+      "lines": null,
+      "state": "undecided",
+      "joins": {
+        "agent": null,
+        "lease": null,
+        "run": null,
+        "records": [],
+        "applied": null
+      }
+    },
+    {
+      "id": "record:decision/fix-001",
+      "kind": "decision",
+      "recordKind": "decision",
+      "record": "fix-001",
+      "path": "decisions/fix-001-how-the-app-is-deployed.md",
+      "title": "How the app is deployed",
+      "state": "decided",
+      "closed": false,
+      "valid": true,
+      "reasons": [],
+      "provenance": {
+        "level": "unattested",
+        "commit": null,
+        "reason": "no signers file (.chant/allowed_signers) at base 608ed366; attestation is off"
+      },
+      "decided_by": "lex00",
+      "decided_on": "2026-09-24",
+      "decidedIn": {
+        "sha": "bbad0182dd0693818c90b0b7aa1c80c06bfa8686",
+        "date": "2026-10-17T18:49:28-06:00",
+        "subject": "the shop and W-001"
+      },
+      "reviews": {
+        "agree": 0,
+        "dissent": 0,
+        "abstain": 0,
+        "openConcerns": 0
+      },
+      "supersededBy": null,
+      "supersedes": [],
+      "constrains": [
+        {
+          "entry": "member:delivery",
+          "granularity": "member"
+        }
+      ]
+    },
+    {
+      "id": "evidence:https://github.com/INTENTIUS/chant/issues/2679",
+      "kind": "evidence",
+      "ref": "https://github.com/INTENTIUS/chant/issues/2679",
+      "plugin": null,
+      "data": {
+        "title": "INTENTIUS/chant#2679, the reader conformance suite outside the chant repo",
+        "url": "https://github.com/INTENTIUS/chant/issues/2679",
+        "path": null,
+        "as_of": null,
+        "sha256": null
+      }
+    },
+    {
+      "id": "record:work/W-001",
+      "kind": "work",
+      "recordKind": "work",
+      "record": "W-001",
+      "path": "work/W-001-serve-on-8081.md",
+      "title": "Serve the app on 8081",
+      "state": "open",
+      "closed": false,
+      "valid": true,
+      "reasons": [],
+      "provenance": {
+        "level": "unattested",
+        "commit": null,
+        "reason": "no signers file (.chant/allowed_signers) at base 608ed366; attestation is off"
+      },
+      "owner": null,
+      "ready": true,
+      "blockedBy": [],
+      "implements": [],
+      "needs": [],
+      "source": null,
+      "supersededBy": null,
+      "constrains": [
+        {
+          "entry": "path:delivery/src/app.ts",
+          "granularity": "path"
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "id": "finding:intent-commit-undecided:1",
+      "kind": "finding",
+      "code": "intent-commit-undecided",
+      "message": "608ed366 changed the region when no decision constrained delivery/src/app.ts by path",
+      "concerns": [
+        "commit:608ed366e322b0de6fa8e2e7b9510c7df02a779a",
+        "region:delivery/src/app.ts"
+      ],
+      "addressed": false,
+      "addressedBy": []
+    },
+    {
+      "id": "finding:intent-commit-undecided:2",
+      "kind": "finding",
+      "code": "intent-commit-undecided",
+      "message": "bbad0182 changed the region when no decision constrained delivery/src/app.ts by path",
+      "concerns": [
+        "commit:bbad0182dd0693818c90b0b7aa1c80c06bfa8686",
+        "region:delivery/src/app.ts"
+      ],
+      "addressed": false,
+      "addressedBy": []
+    },
+    {
+      "id": "finding:intent-decision-provisional:1",
+      "kind": "finding",
+      "code": "intent-decision-provisional",
+      "message": "the decisions constraining delivery/src/app.ts are decided, and none is in a closed state",
+      "concerns": [
+        "region:delivery/src/app.ts",
+        "record:decision/fix-001"
+      ],
+      "addressed": false,
+      "addressedBy": []
+    },
+    {
+      "id": "finding:intent-constraint-coarse:1",
+      "kind": "finding",
+      "code": "intent-constraint-coarse",
+      "message": "delivery/src/app.ts is constrained only through its member, delivery",
+      "concerns": [
+        "region:delivery/src/app.ts",
+        "record:decision/fix-001"
+      ],
+      "addressed": false,
+      "addressedBy": []
+    },
+    {
+      "id": "finding:intent-evidence-unpinned:1",
+      "kind": "finding",
+      "code": "intent-evidence-unpinned",
+      "message": "fix-001 cites https://github.com/INTENTIUS/chant/issues/2679 with no hash, so what the page said when it was decided can't be checked",
+      "concerns": [
+        "record:decision/fix-001",
+        "evidence:https://github.com/INTENTIUS/chant/issues/2679"
+      ],
+      "addressed": false,
+      "addressedBy": []
+    }
+  ],
+  "edges": [
+    {
+      "kind": "touched-by",
+      "from": "region:delivery/src/app.ts",
+      "to": "commit:608ed366e322b0de6fa8e2e7b9510c7df02a779a",
+      "lines": null
+    },
+    {
+      "kind": "touched-by",
+      "from": "region:delivery/src/app.ts",
+      "to": "commit:bbad0182dd0693818c90b0b7aa1c80c06bfa8686",
+      "lines": null
+    },
+    {
+      "kind": "constrains",
+      "from": "record:decision/fix-001",
+      "to": "region:delivery/src/app.ts",
+      "granularity": "member",
+      "entry": "member:delivery"
+    },
+    {
+      "kind": "cites-evidence",
+      "from": "record:decision/fix-001",
+      "to": "evidence:https://github.com/INTENTIUS/chant/issues/2679"
+    },
+    {
+      "kind": "constrains",
+      "from": "record:work/W-001",
+      "to": "region:delivery/src/app.ts",
+      "granularity": "path",
+      "entry": "path:delivery/src/app.ts"
+    },
+    {
+      "kind": "carries",
+      "from": "commit:608ed366e322b0de6fa8e2e7b9510c7df02a779a",
+      "to": "record:work/W-001"
+    },
+    {
+      "kind": "within",
+      "from": "commit:608ed366e322b0de6fa8e2e7b9510c7df02a779a",
+      "to": "record:work/W-001",
+      "state": "worked"
+    },
+    {
+      "kind": "within",
+      "from": "commit:bbad0182dd0693818c90b0b7aa1c80c06bfa8686",
+      "to": "record:work/W-001",
+      "state": "worked"
+    }
+  ],
+  "reasons": [],
+  "summary": {
+    "commits": 2,
+    "decisions": 1,
+    "artifacts": 0,
+    "findings": 5
+  },
+  "why": {
+    "lines": {
+      "start": 1,
+      "end": 4
+    },
+    "blame": [
+      {
+        "start": 1,
+        "end": 3,
+        "commit": "commit:bbad0182dd0693818c90b0b7aa1c80c06bfa8686",
+        "sha": "bbad0182dd0693818c90b0b7aa1c80c06bfa8686",
+        "runs": [],
+        "narrowedBy": null,
+        "joinedBy": []
+      },
+      {
+        "start": 4,
+        "end": 4,
+        "commit": "commit:608ed366e322b0de6fa8e2e7b9510c7df02a779a",
+        "sha": "608ed366e322b0de6fa8e2e7b9510c7df02a779a",
+        "runs": [],
+        "narrowedBy": null,
+        "joinedBy": []
+      }
+    ],
+    "decisions": [
+      {
+        "decision": "record:decision/fix-001",
+        "relevance": "member",
+        "current": true,
+        "closed": false,
+        "lines": 0
+      }
+    ],
+    "runs": [],
+    "explained": true,
+    "gaps": [
+      {
+        "code": "intent-why-no-run",
+        "message": "no agent run is joined to the commits that made the current lines of delivery/src/app.ts"
+      }
+    ]
+  },
+  "trace": {
+    "commits": [
+      {
+        "commit": "commit:608ed366e322b0de6fa8e2e7b9510c7df02a779a",
+        "sha": "608ed366e322b0de6fa8e2e7b9510c7df02a779a",
+        "work": {
+          "state": "linked",
+          "items": [
+            {
+              "id": "work:W-001",
+              "node": "record:work/W-001",
+              "source": {
+                "ref": "608ed366e322b0de6fa8e2e7b9510c7df02a779a",
+                "field": "Chant-Record",
+                "value": "work:W-001"
+              }
+            }
+          ],
+          "problems": []
+        },
+        "windowMatches": [
+          {
+            "id": "work:W-001",
+            "node": "record:work/W-001",
+            "source": {
+              "ref": "work/W-001-serve-on-8081.md",
+              "field": "window",
+              "value": "worked"
+            }
+          }
+        ],
+        "tag": {
+          "state": "green",
+          "green": {
+            "tag": "ci/green/608ed366e322b0de6fa8e2e7b9510c7df02a779a",
+            "tagged": null,
+            "signer": null,
+            "source": {
+              "ref": "refs/tags/ci/green/608ed366e322b0de6fa8e2e7b9510c7df02a779a",
+              "field": "name",
+              "value": "608ed366e322b0de6fa8e2e7b9510c7df02a779a"
+            }
+          },
+          "revoked": null,
+          "ignored": []
+        },
+        "releases": [
+          {
+            "release": "jcs1-sha256:773f008732ebf081281ccc76d792c222d52bb8969289fbed47c37c43a969eecd",
+            "link": "cut-from",
+            "source": {
+              "ref": "chant/lifecycle:_members/delivery/_releases/jcs1-sha256_773f008732ebf081281ccc76d792c222d52bb8969289fbed47c37c43a969eecd.json",
+              "field": "commit",
+              "value": "608ed366e322b0de6fa8e2e7b9510c7df02a779a"
+            }
+          }
+        ],
+        "deploys": [
+          {
+            "deploy": "deploy:delivery/prod/app/run-9@2026-10-16T10:40:00.000Z",
+            "env": "prod",
+            "link": "built-from",
+            "source": {
+              "ref": "chant/lifecycle:_members/delivery/prod/releases.jsonl",
+              "field": "gitSha",
+              "value": "608ed366e322b0de6fa8e2e7b9510c7df02a779a"
+            }
+          },
+          {
+            "deploy": "deploy:delivery/staging/app/run-1@2026-10-16T09:30:00.000Z",
+            "env": "staging",
+            "link": "built-from",
+            "source": {
+              "ref": "chant/lifecycle:_members/delivery/staging/releases.jsonl",
+              "field": "gitSha",
+              "value": "608ed366e322b0de6fa8e2e7b9510c7df02a779a"
+            }
+          }
+        ]
+      },
+      {
+        "commit": "commit:bbad0182dd0693818c90b0b7aa1c80c06bfa8686",
+        "sha": "bbad0182dd0693818c90b0b7aa1c80c06bfa8686",
+        "work": {
+          "state": "unlinked",
+          "items": [],
+          "problems": []
+        },
+        "windowMatches": [
+          {
+            "id": "work:W-001",
+            "node": "record:work/W-001",
+            "source": {
+              "ref": "work/W-001-serve-on-8081.md",
+              "field": "window",
+              "value": "worked"
+            }
+          }
+        ],
+        "tag": {
+          "state": "none",
+          "green": null,
+          "revoked": null,
+          "ignored": []
+        },
+        "releases": [
+          {
+            "release": "jcs1-sha256:773f008732ebf081281ccc76d792c222d52bb8969289fbed47c37c43a969eecd",
+            "link": "contains",
+            "source": {
+              "ref": "chant/lifecycle:_members/delivery/_releases/jcs1-sha256_773f008732ebf081281ccc76d792c222d52bb8969289fbed47c37c43a969eecd.json",
+              "field": "commit",
+              "value": "608ed366e322b0de6fa8e2e7b9510c7df02a779a"
+            }
+          }
+        ],
+        "deploys": [
+          {
+            "deploy": "deploy:delivery/prod/app/run-9@2026-10-16T10:40:00.000Z",
+            "env": "prod",
+            "link": "contains",
+            "source": {
+              "ref": "chant/lifecycle:_members/delivery/prod/releases.jsonl",
+              "field": "gitSha",
+              "value": "608ed366e322b0de6fa8e2e7b9510c7df02a779a"
+            }
+          },
+          {
+            "deploy": "deploy:delivery/staging/app/run-1@2026-10-16T09:30:00.000Z",
+            "env": "staging",
+            "link": "contains",
+            "source": {
+              "ref": "chant/lifecycle:_members/delivery/staging/releases.jsonl",
+              "field": "gitSha",
+              "value": "608ed366e322b0de6fa8e2e7b9510c7df02a779a"
+            }
+          }
+        ]
+      }
+    ],
+    "releases": [
+      {
+        "releaseDigest": "jcs1-sha256:773f008732ebf081281ccc76d792c222d52bb8969289fbed47c37c43a969eecd",
+        "label": "v1",
+        "member": "delivery",
+        "commit": "608ed366e322b0de6fa8e2e7b9510c7df02a779a",
+        "tag": {
+          "state": "green",
+          "green": {
+            "tag": "ci/green/608ed366e322b0de6fa8e2e7b9510c7df02a779a",
+            "tagged": null,
+            "signer": null,
+            "source": {
+              "ref": "refs/tags/ci/green/608ed366e322b0de6fa8e2e7b9510c7df02a779a",
+              "field": "name",
+              "value": "608ed366e322b0de6fa8e2e7b9510c7df02a779a"
+            }
+          },
+          "revoked": null,
+          "ignored": []
+        },
+        "source": {
+          "ref": "chant/lifecycle:_members/delivery/_releases/jcs1-sha256_773f008732ebf081281ccc76d792c222d52bb8969289fbed47c37c43a969eecd.json",
+          "field": "releaseDigest",
+          "value": "jcs1-sha256:773f008732ebf081281ccc76d792c222d52bb8969289fbed47c37c43a969eecd"
+        },
+        "cuts": [
+          {
+            "label": "v1",
+            "actor": "alice",
+            "timestamp": "2026-10-16T10:00:00.000Z",
+            "signed": false,
+            "runOrigin": null,
+            "source": {
+              "ref": "chant/lifecycle:_members/delivery/_releases/cuts.jsonl",
+              "field": "releaseDigest",
+              "value": "jcs1-sha256:773f008732ebf081281ccc76d792c222d52bb8969289fbed47c37c43a969eecd"
+            }
+          }
+        ],
+        "gates": [
+          {
+            "op": "release",
+            "gate": "prod-release",
+            "environment": "prod",
+            "resolvedBy": "bob",
+            "relayedBy": null,
+            "channel": "cli",
+            "at": "2026-10-16T10:30:00.000Z",
+            "planDigest": "jcs1-sha256:9cf74a6fee021fb5775b684f76149d3e14a901574e7685471dd3e7987b16f66e",
+            "changeSet": "jcs1-sha256:9cf74a6fee021fb5775b684f76149d3e14a901574e7685471dd3e7987b16f66e",
+            "changeSetSource": {
+              "ref": "chant/lifecycle:_members/delivery/_change-sets/jcs1-sha256_9cf74a6fee021fb5775b684f76149d3e14a901574e7685471dd3e7987b16f66e.json",
+              "field": "planDigest",
+              "value": "jcs1-sha256:9cf74a6fee021fb5775b684f76149d3e14a901574e7685471dd3e7987b16f66e"
+            },
+            "empty": false,
+            "sealed": false,
+            "url": null,
+            "source": {
+              "ref": "chant/lifecycle:_members/delivery/_gates/release.jsonl",
+              "field": "releaseDigest",
+              "value": "jcs1-sha256:773f008732ebf081281ccc76d792c222d52bb8969289fbed47c37c43a969eecd"
+            }
+          }
+        ],
+        "deploys": [
+          "deploy:delivery/prod/app/run-9@2026-10-16T10:40:00.000Z"
+        ]
+      }
+    ],
+    "deploys": [
+      {
+        "id": "deploy:delivery/staging/app/run-1@2026-10-16T09:30:00.000Z",
+        "member": "delivery",
+        "env": "staging",
+        "component": "app",
+        "timestamp": "2026-10-16T09:30:00.000Z",
+        "actor": "ci",
+        "approver": null,
+        "runId": "run-1",
+        "runOrigin": null,
+        "gitSha": "608ed366e322b0de6fa8e2e7b9510c7df02a779a",
+        "digest": "sha256:df7a7993aab319692eafe7463fdf2a95c9dc4d9e0a84e82f04c9f3c8bd4b004a",
+        "release": null,
+        "releaseSource": null,
+        "admittedBy": null,
+        "plan": null,
+        "source": {
+          "ref": "chant/lifecycle:_members/delivery/staging/releases.jsonl",
+          "field": "runId",
+          "value": "run-1"
+        }
+      },
+      {
+        "id": "deploy:delivery/prod/app/run-9@2026-10-16T10:40:00.000Z",
+        "member": "delivery",
+        "env": "prod",
+        "component": "app",
+        "timestamp": "2026-10-16T10:40:00.000Z",
+        "actor": "ci",
+        "approver": "bob",
+        "runId": "run-9",
+        "runOrigin": null,
+        "gitSha": "608ed366e322b0de6fa8e2e7b9510c7df02a779a",
+        "digest": "sha256:df7a7993aab319692eafe7463fdf2a95c9dc4d9e0a84e82f04c9f3c8bd4b004a",
+        "release": "jcs1-sha256:773f008732ebf081281ccc76d792c222d52bb8969289fbed47c37c43a969eecd",
+        "releaseSource": {
+          "ref": "chant/lifecycle:_members/delivery/prod/releases.jsonl",
+          "field": "releaseDigest",
+          "value": "jcs1-sha256:773f008732ebf081281ccc76d792c222d52bb8969289fbed47c37c43a969eecd"
+        },
+        "admittedBy": {
+          "op": "release",
+          "gate": "prod-release",
+          "environment": "prod",
+          "resolvedBy": "bob",
+          "relayedBy": null,
+          "channel": "cli",
+          "at": "2026-10-16T10:30:00.000Z",
+          "planDigest": "jcs1-sha256:9cf74a6fee021fb5775b684f76149d3e14a901574e7685471dd3e7987b16f66e",
+          "changeSet": "jcs1-sha256:9cf74a6fee021fb5775b684f76149d3e14a901574e7685471dd3e7987b16f66e",
+          "changeSetSource": {
+            "ref": "chant/lifecycle:_members/delivery/_change-sets/jcs1-sha256_9cf74a6fee021fb5775b684f76149d3e14a901574e7685471dd3e7987b16f66e.json",
+            "field": "planDigest",
+            "value": "jcs1-sha256:9cf74a6fee021fb5775b684f76149d3e14a901574e7685471dd3e7987b16f66e"
+          },
+          "empty": false,
+          "sealed": false,
+          "url": null,
+          "source": {
+            "ref": "chant/lifecycle:_members/delivery/_gates/release.jsonl",
+            "field": "releaseDigest",
+            "value": "jcs1-sha256:773f008732ebf081281ccc76d792c222d52bb8969289fbed47c37c43a969eecd"
+          }
+        },
+        "plan": null,
+        "source": {
+          "ref": "chant/lifecycle:_members/delivery/prod/releases.jsonl",
+          "field": "runId",
+          "value": "run-9"
+        }
+      }
+    ],
+    "reasons": []
+  }
+}

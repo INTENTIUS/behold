@@ -695,7 +695,7 @@ function renderWhySection(panel, ask) {
     box.replaceChildren();
     const p = document.createElement("p");
     p.className = "queried";
-    p.textContent = note || `The decisions that cover ${ask.node ? "this card" : `member ${memberName}`}, and the runs and commits behind it, from chant workspace graph --intent. Reading walks the repository's history; on a large one it takes a while.`;
+    p.textContent = note || `The decisions that cover ${ask.node ? "this card" : `member ${memberName}`}, the runs and commits behind it, and the chain from each commit's work item to its release, from chant workspace graph --intent. Reading walks the repository's history; on a large one it takes a while.`;
     box.append(p, button("Read why", "Ask chant now. Nothing is read until you click.", read));
   };
   const read = async () => {
@@ -796,6 +796,7 @@ function paintWhy(box, answer, again) {
       return li(lead, c.subject, c.meta);
     });
     for (const g of v.gaps) para(g, "why-gap");
+    if (v.chain) paintChain(box, v.chain, para);
   }
   if (v.footer) para(v.footer, "queried");
   const b = document.createElement("button");
@@ -805,6 +806,61 @@ function paintWhy(box, answer, again) {
   b.title = "Ask chant again, for changes since this read.";
   b.addEventListener("click", again);
   box.appendChild(b);
+}
+
+/**
+ * #682: the chain under the why, one entry per commit chant walked, each link
+ * a row: what it is, chant's words for it, and the git line that opens its
+ * source record with a copy button. A missing link is drawn as missing, in
+ * the pending colour, with chant's reason.
+ */
+function paintChain(box, chain, para) {
+  const t = document.createElement("div");
+  t.className = "why-head";
+  t.textContent = `chain, from work item to release${chain.more ? ` · ${chain.commits.length} of ${chain.commits.length + chain.more} commits` : ""}`;
+  box.appendChild(t);
+  for (const r of chain.reasons) para(r, "why-gap");
+  if (chain.note) {
+    para(chain.note, "why-gap");
+    return;
+  }
+  const ul = document.createElement("ul");
+  ul.className = "why-list why-chain";
+  for (const c of chain.commits) {
+    const li = document.createElement("li");
+    const top = document.createElement("div");
+    const sha = document.createElement("code");
+    sha.textContent = c.sha;
+    top.append(sha, c.subject ? ` ${c.subject}` : "");
+    li.appendChild(top);
+    for (const row of c.rows) {
+      const el = document.createElement("div");
+      el.className = row.missing ? "why-link why-missing" : "why-link";
+      const label = document.createElement("span");
+      label.className = "why-meta";
+      label.textContent = `${row.label} `;
+      el.append(label, row.text);
+      if (row.meta) {
+        const m = document.createElement("div");
+        m.className = "why-meta";
+        m.textContent = row.meta;
+        el.appendChild(m);
+      }
+      if (row.source) {
+        const src = document.createElement("div");
+        src.className = "why-source";
+        const line = document.createElement("code");
+        line.textContent = row.source.open;
+        line.title = row.source.title;
+        const copy = actButton("copy", () => copyToClipboard(row.source.open, copy), `Copy the line that opens this link's source record:\n${row.source.open}`);
+        src.append(line, copy);
+        el.appendChild(src);
+      }
+      li.appendChild(el);
+    }
+    ul.appendChild(li);
+  }
+  box.appendChild(ul);
 }
 
 /** A member's box was picked: what the declaration says of it, and its why. */

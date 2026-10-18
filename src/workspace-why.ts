@@ -24,9 +24,9 @@ import { rootReader, WorkspaceReadError, type WorkspaceDocument, type WorkspaceR
 import type { Workspace } from "./workspace.ts";
 
 export const INTENT_SCHEMA_ID = "https://intentius.io/chant/schemas/workspace/intent/v1/intent.schema.json";
-/** The first chant whose intent document carries `why` (see src/chant-floors.ts). */
-import { WHY_CHANT_FLOOR } from "./chant-floors.ts";
-export { WHY_CHANT_FLOOR };
+/** The first chant whose intent document carries `why`, and the first that carries `trace` (see src/chant-floors.ts). */
+import { floorFor, floorMet, floorRefusal, WHY_CHANT_FLOOR, WHY_TRACE_CHANT_FLOOR } from "./chant-floors.ts";
+export { WHY_CHANT_FLOOR, WHY_TRACE_CHANT_FLOOR };
 
 /** How many commits the answer lists; the rest are counted. */
 export const WHY_COMMITS_SHOWN = 8;
@@ -79,6 +79,121 @@ export interface WhyGap {
   message: string;
 }
 
+/**
+ * #682: the why chain, `trace` in the intent document (chant#4023, chant
+ * 0.124.29), as chant printed it. behold adds two things looked up in the same
+ * document's `nodes`, as it does for the rest of the answer: each commit's
+ * `subject` and each work item's `title`. Nothing is joined: a commit's
+ * `releases[].release` and `deploys[].deploy` name entries of `releases` and
+ * `deploys` here, and the page follows those names.
+ */
+export interface TraceSource {
+  /** A commit sha, a tag ref, a work record's file from the repository root, or `chant/lifecycle:<path>`. */
+  ref: string;
+  /** The trailer, field or edge that joins. */
+  field: string;
+  value: string;
+}
+
+export interface TraceWork {
+  /** `<kind>:<id>`, `work:W-001`. */
+  id: string;
+  node: string | null;
+  /** The work record's title, from `nodes`, when chant read the record. */
+  title: string | null;
+  source: TraceSource;
+}
+
+export interface TraceTagView {
+  tag: string;
+  tagged: string | null;
+  signer: string | null;
+  phase?: string | null;
+  source: TraceSource;
+}
+
+export interface TraceTag {
+  state: "green" | "revoked" | "none";
+  green: TraceTagView | null;
+  revoked: TraceTagView | null;
+  ignored: { tag: string; status: string; reason: string }[];
+}
+
+export interface TraceGate {
+  op: string;
+  gate: string;
+  environment: string | null;
+  resolvedBy: string;
+  relayedBy: string | null;
+  channel: string | null;
+  at: string;
+  planDigest: string | null;
+  changeSet: string | null;
+  changeSetSource: TraceSource | null;
+  empty: boolean;
+  sealed: boolean;
+  url: string | null;
+  source: TraceSource;
+}
+
+export interface TraceCommit {
+  commit: string;
+  sha: string;
+  /** The commit's subject, from `nodes`. */
+  subject: string | null;
+  work: { state: "linked" | "unlinked" | "wrong" | "merge"; items: TraceWork[]; problems: { trailer: string; message: string }[] } | null;
+  windowMatches: TraceWork[];
+  tag: TraceTag;
+  releases: { release: string; link: "cut-from" | "contains"; source: TraceSource }[];
+  deploys: { deploy: string; env: string; link: "built-from" | "contains"; source: TraceSource }[];
+}
+
+export interface TraceRelease {
+  releaseDigest: string;
+  label: string | null;
+  member: string | null;
+  commit: string;
+  tag: TraceTag;
+  source: TraceSource;
+  cuts: { label: string | null; actor: string; timestamp: string; signed: boolean; source: TraceSource }[];
+  gates: TraceGate[];
+  deploys: string[];
+}
+
+export interface TraceDeploy {
+  id: string;
+  member: string | null;
+  env: string;
+  component: string;
+  timestamp: string;
+  actor: string;
+  approver: string | null;
+  runId: string;
+  gitSha: string;
+  digest: string;
+  release: string | null;
+  releaseSource: TraceSource | null;
+  admittedBy: TraceGate | null;
+  plan: { document: Record<string, unknown>; source: TraceSource } | null;
+  source: TraceSource;
+}
+
+export interface WhyTrace {
+  commits: TraceCommit[];
+  releases: TraceRelease[];
+  deploys: TraceDeploy[];
+  /** Parts of the chain chant could not read (`ledger-unreadable`, `declaration-invalid`); the rest stands. */
+  reasons: { code: string; message: string }[];
+}
+
+/** Whether the answer carries the chain, and the chant that adds it. */
+export interface WhyChain {
+  full: boolean;
+  floor: string;
+  /** Why there is no chain, in words, when `full` is false. */
+  note: string | null;
+}
+
 export interface WhyAnswer {
   /** The region chant read, as it names it (`region:delivery/src/app.ts`). */
   region: string;
@@ -99,6 +214,8 @@ export interface WhyAnswer {
   /** Lines not committed yet, from blame spans with no commit. */
   uncommittedLines: number;
   gaps: WhyGap[];
+  /** The why chain (#682), or null when chant wrote none: a chant older than {@link WHY_TRACE_CHANT_FLOOR}. */
+  trace: WhyTrace | null;
 }
 
 export type WhyRead = { ok: true; why: WhyAnswer } | { ok: false; refusal: WorkspaceRefusal };
@@ -165,7 +282,7 @@ export function whyFromIntent(doc: WorkspaceDocument, hud: string | null = null)
   };
   const why = doc.why;
   if (!isRecord(why)) {
-    return { ok: true, why: { ...base, answered: false, explained: false, decisions: [], runs: [], commits: [], commitsTotal: 0, uncommittedLines: 0, gaps: [] } };
+    return { ok: true, why: { ...base, answered: false, explained: false, decisions: [], runs: [], commits: [], commitsTotal: 0, uncommittedLines: 0, gaps: [], trace: null } };
   }
 
   const decisions: WhyDecision[] = [];
@@ -256,8 +373,51 @@ export function whyFromIntent(doc: WorkspaceDocument, hud: string | null = null)
       commitsTotal: commits.length,
       uncommittedLines,
       gaps: (Array.isArray(why.gaps) ? why.gaps : []).filter(isRecord).map((g) => ({ code: String(g.code ?? ""), message: String(g.message ?? "") })),
+      trace: traceFromIntent(doc.trace, nodes),
     },
   };
+}
+
+const records = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? v.filter(isRecord) : []);
+
+/**
+ * The chain as chant printed it (#682), or null when the document has none.
+ * Each commit gets its subject and each work item its title from `nodes`;
+ * everything else is chant's, field for field.
+ */
+export function traceFromIntent(raw: unknown, nodes: Map<string, Record<string, unknown>>): WhyTrace | null {
+  if (!isRecord(raw)) return null;
+  const work = (w: Record<string, unknown>): TraceWork => ({ ...(w as unknown as TraceWork), title: typeof w.node === "string" ? str(nodes.get(w.node)?.title) : null });
+  const commits = records(raw.commits).map((c) => {
+    const judged = isRecord(c.work) ? c.work : null;
+    return {
+      ...(c as unknown as TraceCommit),
+      subject: typeof c.commit === "string" ? str(nodes.get(c.commit)?.subject) : null,
+      work: judged ? { ...(judged as unknown as NonNullable<TraceCommit["work"]>), items: records(judged.items).map(work), problems: records(judged.problems) as unknown as { trailer: string; message: string }[] } : null,
+      windowMatches: records(c.windowMatches).map(work),
+      releases: records(c.releases) as unknown as TraceCommit["releases"],
+      deploys: records(c.deploys) as unknown as TraceCommit["deploys"],
+    };
+  });
+  return {
+    commits,
+    releases: records(raw.releases).map((r) => ({ ...(r as unknown as TraceRelease), cuts: records(r.cuts) as unknown as TraceRelease["cuts"], gates: records(r.gates) as unknown as TraceGate[], deploys: strings(r.deploys) })),
+    deploys: records(raw.deploys) as unknown as TraceDeploy[],
+    reasons: records(raw.reasons).map((x) => ({ code: String(x.code ?? ""), message: String(x.message ?? "") })),
+  };
+}
+
+/**
+ * The answer as the page gets it for a project whose chant is `version`: the
+ * chain only when that chant meets {@link WHY_TRACE_CHANT_FLOOR}, and `chain`
+ * saying whether it is there. Below the floor nothing is refused; the pane
+ * keeps the decisions, runs and commits and says which chant adds the chain.
+ */
+export function withChain(why: WhyAnswer, version: string | undefined): WhyAnswer & { chain: WhyChain } {
+  const f = floorFor("why chain");
+  if (!floorMet(f, version)) return { ...why, trace: null, chain: { full: false, floor: f.floor, note: floorRefusal(f, version).error } };
+  if (!why.trace) return { ...why, chain: { full: false, floor: f.floor, note: `chant ${why.chant || version || "(unknown version)"} wrote no chain from work item to release; it needs chant ${f.floor} or newer.` } };
+  return { ...why, chain: { full: true, floor: f.floor, note: null } };
 }
 
 /** Ask the workspace's chant why `region` is the way it is, through the reader. */
