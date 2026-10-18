@@ -47,7 +47,7 @@ describe("the vendored schema", () => {
   it("is chant's run-event schema, contract 1, with its source named", () => {
     expect(schema.$id).toBe(RUN_EVENT_SCHEMA_ID);
     expect(RUN_EVENT_SCHEMA_ID).toBe("https://intentius.io/chant/schemas/workspace/run-event/v1/run-event.schema.json");
-    expect(RUN_EVENT_SCHEMA_SOURCE.release).toBe("0.124.28");
+    expect(RUN_EVENT_SCHEMA_SOURCE.release).toBe("0.124.29");
   });
 
   it("every recorded line validates against it", () => {
