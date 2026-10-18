@@ -36,6 +36,8 @@ export const VERBS = {
   failed: { verb: "Run again", ing: "Running again…", past: "Running again" },
   applied: { verb: "Close", ing: "Close", past: "Close" },
 };
+/** behold#631: a chant failure's button: the driver opens a fix's pull request. */
+export const FIX_VERBS = { verb: "Fix", ing: "Opening the fix…", past: "Fix opened" };
 
 /** Whole seconds until `at` (ms), never below 0; null without a time. */
 export function secondsLeft(at, now) {
@@ -66,12 +68,13 @@ const utc = (ms) => new Date(ms).toISOString().slice(11, 16);
  * The line that says which mode this is. Narrated says what the driver does
  * and when; replay says which run it replays; live says nothing extra.
  */
-export function modeLine(mode, kind, { at = null, now = 0, resolved = false, outcome = null, replayAt = null, action = null } = {}) {
+export function modeLine(mode, kind, { at = null, now = 0, resolved = false, outcome = null, replayAt = null, action = null, fix = false } = {}) {
   if (mode === "replay") return `Replay of the run at ${utc(Number.isFinite(replayAt) ? replayAt : now)} UTC`;
   if (mode !== "narrated") return null;
   if (resolved) return outcome ? `Live · ${outcome}` : "Live";
   const left = secondsLeft(at, now);
   if (kind === "held") return left === null ? "Live · the driver plays the reviewer" : left > 0 ? `Live · the driver plays the reviewer and approves in ${left} s` : "Live · the driver plays the reviewer and approves now";
+  if (kind === "failed" && fix) return left === null ? "Live · the driver opens a fix" : left > 0 ? `Live · the driver opens a fix in ${left} s` : "Live · the driver opens a fix now";
   if (kind === "failed") return left === null ? "Live · the driver fixes it and runs it again" : left > 0 ? `Live · the driver fixes it and runs it again in ${left} s` : "Live · the driver fixes it and runs it again now";
   return "Live";
 }
@@ -132,37 +135,38 @@ export function modalStyle(doc) {
 /**
  * behold#631: where a modal of `size` goes in a window of `win` so it covers
  * none of `avoid` (rects in window coordinates: `{ left, top, width, height }`),
- * or null when the centre already does. Tries the centre, then the corners,
- * the sides' middles and the top and bottom middles, each `margin` in from
- * the edge; when every spot covers something, the one that covers least.
+ * or null when the centre does. `prefer` are the other cards: of the spots
+ * that clear `avoid`, the one covering none of them (else the least) wins, the
+ * nearest the centre on a tie. Spots are tried on a grid inside `bounds` (the
+ * graph's frame) when given, else the window. When no spot clears `avoid`,
+ * the one that covers least of it.
  */
-export function modalSpot(win, size, avoid, margin = 16) {
-  const rects = (avoid || []).filter((a) => a && a.width > 0 && a.height > 0).map((a) => ({ x0: a.left - 12, y0: a.top - 12, x1: a.left + a.width + 12, y1: a.top + a.height + 12 }));
+export function modalSpot(win, size, avoid, { prefer = [], bounds = null, margin = 16, step = 24 } = {}) {
+  const grow = (a) => ({ x0: a.left - 12, y0: a.top - 12, x1: a.left + a.width + 12, y1: a.top + a.height + 12 });
+  const rects = (avoid || []).filter((a) => a && a.width > 0 && a.height > 0).map(grow);
+  const others = (prefer || []).filter((a) => a && a.width > 0 && a.height > 0).map(grow);
+  const area = bounds && bounds.width > 0 ? { x0: bounds.left, y0: bounds.top, x1: bounds.left + bounds.width, y1: bounds.top + bounds.height } : { x0: 0, y0: 0, x1: win.w, y1: win.h };
   const w = Math.min(size.w, win.w - 2 * margin);
   const h = Math.min(size.h, win.h - 2 * margin);
   const cx = (win.w - w) / 2;
   const cy = (win.h - h) / 2;
-  const right = win.w - w - margin;
-  const bottom = win.h - h - margin;
-  const spots = [
-    { left: cx, top: cy, centre: true },
-    { left: margin, top: margin },
-    { left: right, top: margin },
-    { left: margin, top: bottom },
-    { left: right, top: bottom },
-    { left: margin, top: cy },
-    { left: right, top: cy },
-    { left: cx, top: margin },
-    { left: cx, top: bottom },
-  ];
-  const cover = (s) => rects.reduce((sum, r) => sum + Math.max(0, Math.min(s.left + w, r.x1) - Math.max(s.left, r.x0)) * Math.max(0, Math.min(s.top + h, r.y1) - Math.max(s.top, r.y0)), 0);
+  const cover = (list, x, y) => list.reduce((sum, r) => sum + Math.max(0, Math.min(x + w, r.x1) - Math.max(x, r.x0)) * Math.max(0, Math.min(y + h, r.y1) - Math.max(y, r.y0)), 0);
+  if (!cover(rects, cx, cy) && !cover(others, cx, cy)) return null;
+  const x0 = Math.max(margin, area.x0 + margin);
+  const y0 = Math.max(margin, area.y0 + margin);
+  const x1 = Math.max(x0, Math.min(win.w - margin, area.x1 - margin) - w);
+  const y1 = Math.max(y0, Math.min(win.h - margin, area.y1 - margin) - h);
   let best = null;
-  for (const s of spots) {
-    const c = cover(s);
-    if (c === 0) return s.centre ? null : { left: s.left, top: s.top };
-    if (!best || c < best.c) best = { s, c };
+  for (let y = y0; y <= y1 + 0.5; y += step) {
+    for (let x = x0; x <= x1 + 0.5; x += step) {
+      const score = [cover(rects, x, y), cover(others, x, y), Math.hypot(x - cx, y - cy)];
+      if (!best || score[0] < best.score[0] || (score[0] === best.score[0] && (score[1] < best.score[1] || (score[1] === best.score[1] && score[2] < best.score[2])))) best = { x, y, score };
+    }
   }
-  return best.s.centre ? null : { left: best.s.left, top: best.s.top };
+  if (!best) return null;
+  // The centre is as good as any: stay there.
+  if (best.score[0] >= cover(rects, cx, cy) && best.score[1] >= cover(others, cx, cy)) return null;
+  return { left: best.x, top: best.y };
 }
 
 /**
@@ -224,7 +228,7 @@ export function openEventModal(host, { mode, kind, data = {}, actions = {}, doc 
     x.setAttribute("aria-label", "Close");
     x.addEventListener("click", close);
     box.appendChild(x);
-    const line = modeLine(mode, kind, { at: data.at, now: t, resolved: st.resolved, outcome: st.outcome, replayAt: data.replayAt, action: data.action });
+    const line = modeLine(mode, kind, { at: data.at, now: t, resolved: st.resolved, outcome: st.outcome, replayAt: data.replayAt, action: data.action, fix: !!data.fix });
     if (line) box.appendChild(el("p", `eh-modal-mode eh-modal-${mode}`, line));
     box.appendChild(el("h2", "eh-modal-title", data.title || ""));
     for (const l of data.lines || []) {
@@ -296,7 +300,7 @@ export function openEventModal(host, { mode, kind, data = {}, actions = {}, doc 
     const r = box.getBoundingClientRect();
     if (!r.width) return;
     const win = { w: doc.defaultView.innerWidth, h: doc.defaultView.innerHeight };
-    const spot = modalSpot(win, { w: r.width, h: r.height }, data.avoid() || []);
+    const spot = modalSpot(win, { w: r.width, h: r.height }, data.avoid() || [], { prefer: typeof data.prefer === "function" ? data.prefer() || [] : [], bounds: typeof data.bounds === "function" ? data.bounds() : null });
     wrap.classList.toggle("eh-modal-placed", !!spot);
     box.style.marginLeft = spot ? `${Math.round(spot.left)}px` : "";
     box.style.marginTop = spot ? `${Math.round(spot.top)}px` : "";

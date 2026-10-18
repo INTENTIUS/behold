@@ -932,6 +932,7 @@ function drawCaption(host, s, now) {
   const demo = s.demo && s.demo.demo;
   const cap = captionModel(demo, { vendor: s.vendor || null, now });
   if (!cap) return;
+  if (s.chantCaptionStep) cap.step = s.chantCaptionStep(demo, cap.step);
   const top = el("div", "k-cap-top");
   const title = el("h1", "k-cap-title");
   title.append(el("span", "k-kicker", cap.kicker), el("span", "k-title-text", cap.title));
@@ -1808,6 +1809,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
             metrics: s.metrics,
             waves: s.waves,
             boxes: s.boxes,
+            // behold#631: a chant repo's pull-request loop, whose story Tips tell its own way.
+            chant: !!s.chantLoop,
             frame,
             watch: s.watchMode,
             // The caption shown now: the live carve's while it has the camera (web/kiosk-carve.js).
@@ -2000,10 +2003,23 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   const chantPacer = createLivePacer();
   // behold#631: the result card at a chant repo's applied step, from the apply's run events.
   s.chantResult = (d) => (s.chantLoop && ap.chant ? chantResultModel(d, chantPacer.answer(ap.chant)) : null);
+  // behold#631: a chant repo's failed and applied steps are told by the graph's paced play: the caption's step line waits
+  // for the play to reach them, and shows the step before until then. The strip still moves.
+  let capShown = null;
+  s.chantCaptionStep = (demo, step) => {
+    const held = s.chantLoop && ap.chant && ap.chant.live && ap.chant.live.apply && demo && ["failed", "applied"].includes(demo.step);
+    if (held) {
+      chantPacer.answer(ap.chant);
+      if (chantPacer.pending && capShown && capShown.id !== demo.step) return capShown;
+    }
+    capShown = step;
+    return step;
+  };
   const approvalNow = () => {
     const d = s.demo && s.demo.demo;
     // behold#631: chant's gate, one per pull request on the plan's digest, when the repo runs chant's loop.
-    const chant = s.chantLoop && ap.chant ? chantApprovalModel({ demo: d, answer: chantPacer.answer(ap.chant) }) : null;
+    // The kiosk's card names the plan by its short id; the approve command is Inspect's.
+    const chant = s.chantLoop && ap.chant ? chantApprovalModel({ demo: d, answer: chantPacer.answer(ap.chant), kiosk: true }) : null;
     if (chant) return chant;
     if (!d || !PANEL_STEPS.includes(d.step)) return null;
     const appr = pendingApproval(d, s.progress);

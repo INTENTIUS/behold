@@ -196,3 +196,22 @@ describe("a modal kept off the cards it is about", () => {
     expect([failed, ...blocked].some(hit)).toBe(false);
   });
 });
+
+describe("a chant failure's modal in the graph's empty space (#631)", () => {
+  const win = { w: 1920, h: 1080 };
+  const size = { w: 576, h: 200 };
+  // Wave 3's twelve cards across the top, wave 2's two in the middle, network below; the frame above the caption.
+  const card = (left, top) => ({ left, top, width: 130, height: 66 });
+  const wave3 = [0, 1, 2, 3, 4, 5].flatMap((i) => [card(480 + i * 160, 115), card(480 + i * 160, 210)]);
+  const wave2 = [card(640, 540), card(1160, 540)];
+  const network = card(890, 715);
+  const bounds = { left: 0, top: 0, width: 1920, height: 840 };
+  it("covers no card of the failed wave or the next, and no other card when there is room", () => {
+    const spot = modalSpot(win, size, [...wave2, ...wave3], { prefer: [network], bounds });
+    expect(spot).not.toBeNull();
+    const hit = (a) => spot.left < a.left + a.width + 12 && spot.left + size.w > a.left - 12 && spot.top < a.top + a.height + 12 && spot.top + size.h > a.top - 12;
+    expect([...wave2, ...wave3, network].some(hit)).toBe(false);
+    // Inside the graph's frame, above the caption.
+    expect(spot.top + size.h).toBeLessThanOrEqual(840);
+  });
+});
