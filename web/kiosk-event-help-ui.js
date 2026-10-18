@@ -484,17 +484,23 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     if (news.length) st.tips = tipsQueue(st.tips, { add: news, now: now(), ...(st.tipsMax ? { max: st.tipsMax } : {}) });
     // While a modal is up, the tips wait their turn behind it.
     if (!st.modal) showTips(h);
+    // behold#631: on a chant kiosk no tip shows at all while a modal is open, not even one already up.
+    else if (st.chant) for (const n of st.nodes.values()) n.style.visibility = "hidden";
     ageGlows();
     // behold#631: a chant repo's approval is the card beside the graph; a modal over it would hide it, so its hold opens none.
     // Its result is the Applied card beside the graph; a modal would say it twice, over the cards.
     st.modals = modalQueue(st.modals, { add: h.chant ? news.filter((f) => f.kind !== "held" && f.kind !== "applied") : news, now: now(), lastInput: st.lastInput, open: !!st.modal });
     // A modal opens only while its event is still the step's: one that waited out a viewer at the page and went by is history.
-    if (st.modals.next && stillNow(st.modals.next, h.demo)) openModal(st.modals.next, h);
+    if (st.modals.next && stillNow(st.modals.next, h.demo)) {
+      openModal(st.modals.next, h);
+      // The tip put up this same tick goes under too.
+      if (st.chant) for (const n of st.nodes.values()) n.style.visibility = "hidden";
+    }
   };
   const stillNow = (e, d) => (e.kind === "held" ? d.step === "waiting" : e.kind === "failed" || e.kind === "refused" ? d.step === "failed" : e.kind === "applied" ? d.step === "applied" : false);
   /** Keep the tips on their things while the graph moves (a shot, a pan). */
   const follow = () => {
-    if (st.on && st.tips && st.tips.shown.length) showTips(get());
+    if (st.on && st.tips && st.tips.shown.length && !(st.chant && st.modal)) showTips(get());
   };
   return { tick, follow, state: st, store: EH_STORE };
 }

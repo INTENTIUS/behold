@@ -2026,7 +2026,13 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   // behold#631: a fast chant apply played at the pace the graph plays it (web/chant-live-pace.js).
   const chantPacer = createLivePacer();
   // behold#631: the result card at a chant repo's applied step, from the apply's run events.
-  s.chantResult = (d) => (s.chantLoop && ap.chant ? chantResultModel(d, chantPacer.answer(ap.chant)) : null);
+  s.chantResult = (d) => {
+    if (!s.chantLoop || !ap.chant) return null;
+    const a = chantPacer.answer(ap.chant);
+    // Held, as the caption is, until the paced play reaches the end: never a card that counts "0 applied this run".
+    if (chantPacer.pending || !(a.live && a.live.apply && a.live.apply.settled)) return null;
+    return chantResultModel(d, a);
+  };
   // behold#631: a chant repo's failed and applied steps are told by the graph's paced play: the caption's step line waits
   // for the play to reach them, and shows the step before until then. The strip still moves.
   let capShown = null;
