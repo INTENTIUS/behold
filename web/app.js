@@ -4246,6 +4246,14 @@ function drawReach(svg, reach, boxOf, size = 18) {
   const key = reach ? reach.key : null;
   const fadeOut = (g) => {
     if (!g) return;
+    // Its words, drawn on top in their own group, go with it.
+    const words = svg.querySelector(`g[data-reach-words="${CSS.escape(g.getAttribute("data-reach") || "")}"]`);
+    if (words) {
+      words.removeAttribute("data-reach-words");
+      words.style.transition = "opacity 0.5s ease-out";
+      words.style.opacity = "0";
+      setTimeout(() => words.remove(), 600);
+    }
     g.removeAttribute("data-reach");
     g.setAttribute("data-reach-old", "1");
     g.style.transition = "opacity 0.5s ease-out";
@@ -4344,13 +4352,20 @@ function drawReach(svg, reach, boxOf, size = 18) {
     label.style.transition = "opacity 0.4s ease-out 1s";
     requestAnimationFrame(() => (label.style.opacity = "1"));
   }
-  g.appendChild(label);
+  // The shape lies under everything, a shadow on the stage floor: before the wave boxes, the edges and the cards.
+  // Its words sit on top, in their own group, so they stay readable.
+  const words = document.createElementNS(NS, "g");
+  words.setAttribute("data-reach-words", key);
+  words.setAttribute("pointer-events", "none");
+  words.appendChild(label);
+  // Above the stage's own backdrop (pinhole's gradient and dot pattern), under all else.
+  const backdrop = (n) => n.tagName.toLowerCase() === "rect" && !n.hasAttribute("data-group-id") && /^url\(#pin-/.test(n.getAttribute("fill") || "");
+  const floor = [...svg.children].find((n) => !["defs", "style", "title"].includes(n.tagName.toLowerCase()) && !backdrop(n) && !n.hasAttribute("data-reach-old"));
+  if (floor) svg.insertBefore(g, floor);
+  else svg.appendChild(g);
+  svg.appendChild(words);
   // Whatever the animation did (a hidden frame pauses it), the reach ends whole, its words up.
   setTimeout(() => g.isConnected && reachFinal(g, shapes, labelAt(shapes)), reduce ? 0 : 1_400);
-  // Behind the cards, in front of the wave boxes.
-  const first = svg.querySelector("[data-node-id]");
-  if (first && first.parentNode) first.parentNode.insertBefore(g, first);
-  else svg.appendChild(g);
 }
 /**
  * behold#631: a chant kiosk reads its waves bottom to top. Each wave box's
@@ -4371,6 +4386,11 @@ function chantKioskWaves(svg, boxOf, size) {
         break;
       }
       if (el.tagName.toLowerCase() === "rect") break;
+    }
+    // The reach lies under the boxes: on a chant kiosk their fill lets it show through faintly; the border stays.
+    if (!rect.hasAttribute("data-kiosk-fill")) {
+      rect.setAttribute("data-kiosk-fill", rect.getAttribute("fill-opacity") || "");
+      rect.setAttribute("fill-opacity", "0.3");
     }
     if (!title || title.hasAttribute("data-kiosk-wave")) continue;
     title.setAttribute("data-kiosk-wave", "1");
@@ -4431,6 +4451,7 @@ function chantKioskWaves(svg, boxOf, size) {
 }
 /** A reach at its end state: each clip circle at full radius on its apex, no animation left, its words shown where they go. */
 function reachFinal(g, shapes, where) {
+  const svgEl = g.ownerSVGElement || g.parentNode;
   g.querySelectorAll("clipPath circle").forEach((c, i) => {
     for (const a of c.querySelectorAll("animate")) a.remove();
     const sh = shapes[i];
@@ -4439,7 +4460,9 @@ function reachFinal(g, shapes, where) {
     c.setAttribute("cy", String(sh.apex.y));
     c.setAttribute("r", String(sh.reachR));
   });
-  const label = g.querySelector("text[data-reach-label]");
+  const key = g.getAttribute("data-reach") || "";
+  const words = svgEl && svgEl.querySelector ? svgEl.querySelector(`g[data-reach-words="${CSS.escape(key)}"]`) : null;
+  const label = (words && words.querySelector("text[data-reach-label]")) || g.querySelector("text[data-reach-label]");
   if (label) {
     label.setAttribute("x", String(where.x));
     label.setAttribute("y", String(where.y));
