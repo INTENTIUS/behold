@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { readCarve, carveShow } from "./dots-recording.js";
 import { parentsOf, unitsOf, unitOf, packBlock, ringsOf } from "./dots-layout.js";
 import { choreograph, buildScene, takeoffsBy, countsAt, flightPoint, CHOREO } from "./dots-scene.js";
+import { liveShow, stampArrivals } from "./dots-live.js";
 
 const text = gunzipSync(readFileSync(fileURLToPath(new URL("../scripts/dot-bench/carve-terralith-14.jsonl.gz", import.meta.url)))).toString("utf8");
 const rec = readCarve(text);
@@ -114,5 +115,45 @@ describe("a flight's path (#712)", () => {
     expect(back.x).toBeCloseTo(0, 9);
     expect(back.y).toBeCloseTo(0, 9);
     expect(flightPoint(a, b, 0.5, { ok: false }).x).toBeGreaterThan(10);
+  });
+});
+
+describe("a box a flock leaves holds still until the flock lands (behold#571)", () => {
+  // A small stage: 14 cards in one shared root, team B's 5 move out 1 s apart, so their flights overlap.
+  const T = Date.parse("2026-10-16T18:05:00Z");
+  const names = ["main", "subnet", "vpc", ...Array.from({ length: 4 }, (_, i) => `team_a_${i}`), ...Array.from({ length: 5 }, (_, i) => `team_b_${i}`), "team_c_0", "team_c_1"];
+  const resources = names.map((n) => ({ address: `aws_iam_role.${n}`, type: "aws_iam_role", live_id: `id-${n}`, marked: true }));
+  const lines = names.filter((n) => n.startsWith("team_b")).map((n, i) => ({ at: new Date(T + 10_000 + i * 1_000).toISOString(), estate_from: "tl1-shared", estate_to: "tl1-team-b", address: `aws_iam_role.${n}`, live_id: `id-${n}`, outcome: "moved" }));
+  const answer = { live: true, adopted: [], estates: [{ estate: "tl1-shared", count: 14, resources }], migrations: [{ name: "split", lines, counts: { moved: 5, stamped: 0, refused: 0, skipped: 0, left: 0 }, running: false }] };
+  const seen = stampArrivals(answer, new Map(), T, { first: true });
+  const show = liveShow(answer, seen, T + 30_000, { t0: T });
+  const scene = buildScene(show, { cardGrid: { max: 40, cell: 6, aspect: 3.2 } });
+  const src = scene.source;
+  const fl = scene.landing;
+  const before = scene.layoutAt(0);
+  const after = scene.layoutAt(fl.length);
+  const end = Math.max(...fl.map((f) => f.end));
+  const stayers = names.filter((n) => !n.startsWith("team_b")).map((n) => `aws_iam_role.${n}`);
+
+  it("is one flock: every flight leaves from the layout before the first took off", () => {
+    expect(scene.flocks).toHaveLength(1);
+    for (const f of fl) expect(f.i0).toBe(0);
+  });
+
+  it("keeps the source's box and every card it still holds where it was, at every moment of the flock", () => {
+    for (let t = fl[0].start; t < end; t += 50) {
+      const L = scene.layoutNow(t);
+      expect(L.boxes.get(src)).toEqual(before.boxes.get(src));
+      for (const a of stayers) expect(L.slots.get(a)).toEqual(before.slots.get(a));
+      // No two cards of the source share a cell, the departing ones' cells included.
+      const cells = [...before.slots].filter(([a]) => before.owners.get(a) === src).map(([, s]) => `${s.x.toFixed(3)},${s.y.toFixed(3)}`);
+      expect(new Set(cells).size).toBe(cells.length);
+    }
+  });
+
+  it("re-packs the box once, after the last card lands", () => {
+    const L = scene.layoutNow(end);
+    expect(L.boxes.get(src)).toEqual(after.boxes.get(src));
+    for (const a of stayers) expect(L.slots.get(a)).toEqual(after.slots.get(a));
   });
 });

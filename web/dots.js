@@ -694,7 +694,7 @@ function currentMarks() {
   let small = Infinity;
   // Every box the replay will draw: the ones on screen now and each estate's final one.
   const sizes = [];
-  for (const b of S.scene.layoutAt(takeoffsBy(S.scene, S.t)).boxes.values()) if (b.members) sizes.push(Math.max(b.w, b.h));
+  for (const b of S.scene.layoutNow(S.t).boxes.values()) if (b.members) sizes.push(Math.max(b.w, b.h));
   for (const [e, f] of S.scene.finalSize) if (e !== S.scene.source) sizes.push(Math.max(f.w, f.h));
   for (const v of sizes) {
     big = Math.max(big, v);
@@ -720,7 +720,7 @@ function fly(mark) {
     // The roster's cards: the one nearest the middle of the director's estate's cards, else the source estate's, else
     // the fullest estate's, at the width where a card is just fully drawn.
     const sc = S.scene;
-    const L = sc.layoutAt(takeoffsBy(sc, S.t));
+    const L = sc.layoutNow(S.t);
     const grid = gridOf(L);
     const counts = new Map();
     for (const a of grid.keys()) counts.set(L.owners.get(a), (counts.get(L.owners.get(a)) ?? 0) + 1);
@@ -1181,6 +1181,11 @@ function gridOf(layout) {
   let g = S.grids.get(layout);
   if (!g) {
     g = gridSlots(layout, S.gridK, S.unitKey);
+    // A box a flock is leaving keeps the cells of the layout it took off from (web/dots-scene.js layoutNow).
+    if (layout.held) {
+      const h = gridOf(layout.held);
+      for (const [a, c] of h) if (layout.from.has(layout.held.owners.get(a)) && layout.owners.get(a) === layout.held.owners.get(a)) g.set(a, c);
+    }
     S.grids.set(layout, g);
   }
   return g;
@@ -1192,7 +1197,7 @@ function gridOf(layout) {
  */
 function cellOf(a, f, L, t, ease) {
   if (f && f.ok) {
-    const from = gridOf(S.scene.layoutAt(f.k - 1)).get(a);
+    const from = gridOf(S.scene.layoutAt(f.i0 ?? f.k - 1)).get(a);
     const to = gridOf(S.scene.layoutAt(f.k)).get(a) ?? from;
     if (!from) return to ?? null;
     const uf = (t - f.start) / (f.end - f.start);
@@ -1390,8 +1395,8 @@ function draw(dt) {
     S.svgGone = hide && !!S.auto;
   }
 
-  const k = takeoffsBy(scene, t);
-  const L = scene.layoutAt(k);
+  // The boxes a flock is leaving hold still until it has landed, then re-pack once (web/dots-scene.js layoutNow).
+  const L = scene.layoutNow(t);
   const near = flightsNear(t);
   const inAir = new Map();
   for (const f of near) if (t < f.end) inAir.set(f.address, f);
@@ -1652,7 +1657,7 @@ function draw(dt) {
     let alpha = 1;
     let est = owner;
     if (f && f.ok && !reduced) {
-      const Lb = scene.layoutAt(f.k - 1);
+      const Lb = scene.layoutAt(f.i0 ?? f.k - 1);
       const La = scene.layoutAt(f.k);
       const from = slotOf(Lb, a) ?? slotOf(L, a);
       const to = slotOf(La, a) ?? from;
@@ -1660,7 +1665,7 @@ function draw(dt) {
       if (f.parent && inAir.get(f.parent)) {
         // A child keeps orbiting its parent along the parent's arc.
         const pf = inAir.get(f.parent);
-        const pFrom = slotOf(scene.layoutAt(pf.k - 1), f.parent) ?? from;
+        const pFrom = slotOf(scene.layoutAt(pf.i0 ?? pf.k - 1), f.parent) ?? from;
         const pTo = slotOf(scene.layoutAt(pf.k), f.parent) ?? to;
         const pu = (t - pf.start) / (pf.end - pf.start);
         const pp = flightPoint(pFrom, pTo, pu);
@@ -1694,7 +1699,7 @@ function draw(dt) {
     } else if (f && f.ok && reduced) {
       // No flight: out of the old slot, into the new one.
       const u = (t - f.start) / (f.end - f.start);
-      const from = slotOf(scene.layoutAt(f.k - 1), a) ?? slotOf(L, a);
+      const from = slotOf(scene.layoutAt(f.i0 ?? f.k - 1), a) ?? slotOf(L, a);
       const to = slotOf(scene.layoutAt(f.k), a) ?? from;
       p = u < 0.5 ? from : to;
       alpha = u < 0.5 ? 1 - u * 2 : (u - 0.5) * 2;

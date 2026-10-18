@@ -309,7 +309,41 @@ export function buildScene(show, opts = {}) {
     cache.set(kk, out);
     return out;
   };
-  return { show, flights, landing, estates, source, layoutAt, extent: { w: extentW, h: extentH }, sourceBox: src, finalSize, rosterBy, cardGrid: grid };
+  // A box a flock leaves holds still while it flies: each card it still holds keeps its slot, and the box re-packs
+  // once, after the last of the flock lands. A flock is a run of flights whose time in the air overlaps; each flight
+  // knows the layout its flock took off from (`i0`), so it leaves from the slot it sat in.
+  const flocks = [];
+  for (const f of landing) {
+    const last = flocks[flocks.length - 1];
+    if (last && f.start <= last.end) last.end = Math.max(last.end, f.end);
+    else flocks.push({ i0: f.k - 1, start: f.start, end: f.end });
+    f.i0 = flocks[flocks.length - 1].i0;
+  }
+  const held = new Map();
+  /**
+   * The layout drawn at show time `t`: the boxes flights land in as at `layoutAt(k)` (a card in the air already holds
+   * its slot there), and each box a flock in the air is leaving as it was when the flock took off. `held` is that
+   * take-off layout and `from` the boxes it holds.
+   */
+  const layoutNow = (t) => {
+    const k = takeoffsBy({ landing }, t);
+    const c = flocks.find((x) => x.start <= t && t < x.end);
+    if (!c || c.i0 >= k) return layoutAt(k);
+    const key = `${c.i0}|${k}`;
+    if (held.has(key)) return held.get(key);
+    const Ls = layoutAt(c.i0);
+    const Lk = layoutAt(k);
+    const from = new Set(landing.slice(c.i0, k).map((f) => f.from));
+    const boxes = new Map(Lk.boxes);
+    for (const e of from) if (Ls.boxes.has(e)) boxes.set(e, Ls.boxes.get(e));
+    const slots = new Map(Lk.slots);
+    for (const [a, s] of Ls.slots) if (from.has(Ls.owners.get(a)) && Lk.owners.get(a) === Ls.owners.get(a)) slots.set(a, s);
+    const out = { k, slots, boxes, owners: Lk.owners, held: Ls, from };
+    if (held.size > 2000) held.clear();
+    held.set(key, out);
+    return out;
+  };
+  return { show, flights, landing, estates, source, layoutAt, layoutNow, flocks, extent: { w: extentW, h: extentH }, sourceBox: src, finalSize, rosterBy, cardGrid: grid };
 }
 
 function unionBox(a, b) {
@@ -327,7 +361,7 @@ function unionBox(a, b) {
  * the flight is in the shot.
  */
 export function focusRect(scene, focus, t) {
-  const now = scene.layoutAt(takeoffsBy(scene, t)).boxes;
+  const now = (scene.layoutNow ? scene.layoutNow(t) : scene.layoutAt(takeoffsBy(scene, t))).boxes;
   const fin = scene.layoutAt(scene.landing.length).boxes;
   const src = now.get(scene.source) || scene.layoutAt(0).boxes.get(scene.source);
   if (focus.kind === "all") return { x: 0, y: 0, w: scene.extent.w, h: scene.extent.h };
