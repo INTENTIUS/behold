@@ -3808,7 +3808,7 @@ function drawTgReads() {
     }
     const chantMarks = chantComponentMarks(chantPaced(), chantFacets, { kiosk: !!embedOpts.bare });
     drawTgComponentMarks(svg, { marks: chantMarks, focus: null, boxOf, make, edgePoints: chantEdgePoints(svg) });
-    drawReach(svg, chantMarks.reach || null, boxOf);
+    drawReach(svg, chantMarks.reach || null, boxOf, chantMarks.waveFont || 18);
     return;
   }
   const layer = make("g", { "data-tg-reads": "1", "pointer-events": "none" });
@@ -4199,17 +4199,25 @@ function hullOf(points) {
   }
   return [...lower.slice(0, -1), ...upper.slice(0, -1)];
 }
-/** A closed path through a hull with its corners rounded (each corner a quadratic curve between its edges' midpoints). */
-function smoothPath(h) {
+/** A closed path through a hull, each corner rounded by at most `r`, the `sharp` point (the apex) left a point. */
+function smoothPath(h, sharp = null, r = 28) {
   if (h.length < 3) return "";
-  const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
   const f = (n) => Math.round(n * 10) / 10;
+  const toward = (p, q, d) => {
+    const len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+    return { x: p.x + ((q.x - p.x) / len) * d, y: p.y + ((q.y - p.y) / len) * d };
+  };
   let d = "";
   h.forEach((p, i) => {
     const prev = h[(i - 1 + h.length) % h.length];
     const next = h[(i + 1) % h.length];
-    const a = mid(prev, p);
-    const b = mid(p, next);
+    if (sharp && p.x === sharp.x && p.y === sharp.y) {
+      d += `${i ? "L" : "M"}${f(p.x)},${f(p.y)} `;
+      return;
+    }
+    const k = Math.min(r, Math.hypot(prev.x - p.x, prev.y - p.y) / 2, Math.hypot(next.x - p.x, next.y - p.y) / 2);
+    const a = toward(p, prev, k);
+    const b = toward(p, next, k);
     d += `${i ? "L" : "M"}${f(a.x)},${f(a.y)} Q${f(p.x)},${f(p.y)} ${f(b.x)},${f(b.y)} `;
   });
   return `${d}Z`;
@@ -4223,7 +4231,7 @@ const REACH_TONE = { plan: "var(--frame-pending, var(--pending))", bad: "var(--f
  * and then rests faint, with its words at its upper edge. A new reach
  * crossfades the old one out; the same one redrawn only follows the cards.
  */
-function drawReach(svg, reach, boxOf) {
+function drawReach(svg, reach, boxOf, size = 18) {
   const NS = "http://www.w3.org/2000/svg";
   const old = svg.querySelector("g[data-reach]");
   const key = reach ? reach.key : null;
@@ -4252,17 +4260,21 @@ function drawReach(svg, reach, boxOf) {
     const mine = [...covered].filter((c) => c !== root && (reach.roots.length === 1 || reachesFrom(root, c, needsOf)));
     const boxes = mine.map(box).filter(Boolean);
     if (!boxes.length) continue;
-    const apex = { x: (rb.x + rb.x2) / 2, y: rb.y };
+    // The apex just below the root card's bottom centre; the root card itself inside, so the shape comes out of it.
+    const apex = { x: (rb.x + rb.x2) / 2, y: rb.y2 + pad + 10 };
     const pts = [apex];
-    for (const b of boxes) pts.push({ x: b.x - pad, y: b.y - pad }, { x: b.x2 + pad, y: b.y - pad }, { x: b.x - pad, y: b.y2 + pad }, { x: b.x2 + pad, y: b.y2 + pad });
+    for (const b of [rb, ...boxes]) pts.push({ x: b.x - pad, y: b.y - pad }, { x: b.x2 + pad, y: b.y - pad }, { x: b.x - pad, y: b.y2 + pad }, { x: b.x2 + pad, y: b.y2 + pad });
     const top = Math.min(...boxes.map((b) => b.y)) - pad;
-    shapes.push({ d: smoothPath(hullOf(pts)), apex, top, cx: (Math.min(...boxes.map((b) => b.x)) + Math.max(...boxes.map((b) => b.x2))) / 2, reachR: Math.max(...pts.map((p) => Math.hypot(p.x - apex.x, p.y - apex.y))) });
+    shapes.push({ d: smoothPath(hullOf(pts), apex), apex, root: rb, top, cx: (Math.min(...boxes.map((b) => b.x)) + Math.max(...boxes.map((b) => b.x2))) / 2, reachR: Math.max(...pts.map((p) => Math.hypot(p.x - apex.x, p.y - apex.y))) });
   }
   if (!shapes.length) return fadeOut(old);
   const tone = REACH_TONE[reach.tone] || REACH_TONE.plan;
   if (old && old.getAttribute("data-reach") === key) {
     // The same reach: follow the cards, no new growth.
-    old.querySelectorAll("path[data-reach-shape]").forEach((p, i) => shapes[i] && p.setAttribute("d", shapes[i].d));
+    old.querySelectorAll("path[data-reach-shape], path[data-reach-edge]").forEach((p) => {
+      const i = Number(p.getAttribute("data-reach-i"));
+      if (shapes[i]) p.setAttribute("d", shapes[i].d);
+    });
     return;
   }
   fadeOut(old);
@@ -4300,6 +4312,7 @@ function drawReach(svg, reach, boxOf) {
     p.setAttribute("d", sh.d);
     p.setAttribute("fill", tone);
     p.setAttribute("data-reach-shape", "1");
+    p.setAttribute("data-reach-i", String(shapes.indexOf(sh)));
     fill.appendChild(p);
     const e = document.createElementNS(NS, "path");
     e.setAttribute("d", sh.d);
@@ -4307,13 +4320,19 @@ function drawReach(svg, reach, boxOf) {
     e.setAttribute("stroke", tone);
     e.setAttribute("stroke-opacity", "0.55");
     e.setAttribute("stroke-width", "1.5");
+    e.setAttribute("data-reach-edge", "1");
+    e.setAttribute("data-reach-i", String(shapes.indexOf(sh)));
     edge.appendChild(e);
   }
   g.append(fill, edge);
-  // Its words at its upper edge, over the widest wedge.
-  const top = shapes.reduce((a, b) => (b.top < a.top ? b : a));
+  // Its words inside it, beside its apex: just right of the root card, in the open space between the root's wave box and the one above.
+  const at = shapes[0];
+  const waveBoxes = [...svg.querySelectorAll("rect[data-group-id]")].map((r) => boxOf(r)).filter(Boolean);
+  const inBox = waveBoxes.find((b) => at.root.x >= b.x && at.root.x2 <= b.x2 && at.root.y >= b.y && at.root.y2 <= b.y2) || null;
+  const above = inBox ? waveBoxes.filter((b) => b.y2 <= inBox.y + 1).sort((a, b) => b.y2 - a.y2)[0] : null;
+  const ly = inBox && above ? (inBox.y + above.y2) / 2 : at.root.y - 24;
   const label = document.createElementNS(NS, "text");
-  for (const [k, v] of Object.entries({ x: String(top.cx), y: String(top.top - 6), "text-anchor": "middle", "font-size": "16", "font-weight": "700", fill: tone, "data-reach-label": "1" })) label.setAttribute(k, v);
+  for (const [k, v] of Object.entries({ x: String(at.root.x2 + 14), y: String(ly), "text-anchor": "start", "dominant-baseline": "central", "font-size": String(size), "font-weight": "700", fill: tone, stroke: "var(--bg)", "stroke-width": "5", "paint-order": "stroke", "stroke-linejoin": "round", "data-reach-label": "1" })) label.setAttribute(k, v);
   label.textContent = reach.label;
   if (!reduce) {
     label.style.opacity = "0";

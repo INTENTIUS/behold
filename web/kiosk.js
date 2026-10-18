@@ -2409,7 +2409,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     // behold#631: how long nothing new has come in, for the "Waiting on…" modal.
     s.quietFor = typeof recordAt === "number" ? t - recordAt : 0;
     // behold#631: a chant kiosk's "· N s so far" counts only while a job of the step runs; a step that is done has no timer.
-    if (s.chantLoop && s.quiet && !(run && run.job)) s.quiet = null;
+    // With the projected track up, its now line says it: the caption's quiet line goes.
+    if (s.chantLoop && s.quiet && (!(run && run.job) || s.trackOn)) s.quiet = null;
     if (carveCtl) carveCtl.setQuiet(s.quiet);
   };
 

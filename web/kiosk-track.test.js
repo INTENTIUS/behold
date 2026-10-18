@@ -55,7 +55,11 @@ describe("the projected cycle track (behold#631)", () => {
 
   it("caps the fill and says so when a step runs long", () => {
     const now = Date.parse(T("40:00"));
-    const m = trackModel(track, { demo: { step: "pull-request", pull: 12 }, pulls: [12], since: now - 60_000, now });
+    // 12 s usual: still "usually" at 19 s (under 12 + 8), long at 21 s.
+    const early = trackModel(track, { demo: { step: "pull-request", pull: 12 }, pulls: [12], since: now - 19_000, now });
+    expect(early.chapters[0].segments[0].fill).toBe(FILL_CAP);
+    expect(early.now.text).toBe("The pipeline is starting the plan job · usually about 12 s");
+    const m = trackModel(track, { demo: { step: "pull-request", pull: 12 }, pulls: [12], since: now - 21_000, now });
     expect(m.chapters[0].segments[0].fill).toBe(FILL_CAP);
     expect(m.now.text).toBe("The pipeline is starting the plan job · taking longer than usual…");
   });
@@ -104,6 +108,8 @@ describe("the Waiting on… modal (behold#631)", () => {
     expect(waitingSpec(at({ step: "merged", pull: 12 }, 1_000), { quietMs: 5_000 }).what).toBe("the pipeline to start the apply");
     expect(waitingSpec(at({ step: "failed", pull: 12 }, 1_000), { quietMs: 5_000 }).what).toBe("the fix to open");
     expect(waitingSpec(at({ step: "waiting", pull: 12 }, 60_000), { quietMs: 5_000 }).words).toBe("taking longer than usual");
+    // Not before half again its usual time and 8 s past it: 14 s into a 13 s review is still usual.
+    expect(waitingSpec(at({ step: "waiting", pull: 12 }, 14_000), { quietMs: 5_000 }).words).toBe("usually about 13 s");
   });
   it("never during an apply that is receiving events, or a step that waits on nothing", () => {
     expect(waitingSpec(at({ step: "applying", pull: 12 }, 1_000), { quietMs: 5_000, applyLive: true })).toBeNull();

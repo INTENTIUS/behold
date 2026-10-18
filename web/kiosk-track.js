@@ -18,6 +18,13 @@
 
 /** A segment's label, by the step it shows. A later pull request's open is the fix's. */
 const LABELS = { "pull-request": "opened", planned: "planned", waiting: "review", approved: "review", merged: "merged", applying: "applying", resumed: "applying", failed: "failed", applied: "done", reset: "reset" };
+/** A label's short form, said when the whole word does not fit its segment. */
+export const SHORT = { opened: "open", planned: "plan", review: "review", merged: "merge", applying: "apply", failed: "fail", "fix opened": "fix", done: "done", reset: "reset" };
+/**
+ * When a step counts as running long: past half again its usual time, and at
+ * least 8 s past it. Before that the fill holds and the usual time stands.
+ */
+export const overrunAfter = (expected) => Math.max(1.5 * expected, expected + 8_000);
 /** The share of a step the fill reaches before the step really ends. */
 export const FILL_CAP = 0.95;
 /** A segment's least share of the track, so its label fits. */
@@ -87,7 +94,7 @@ export function trackModel(track, { demo, pulls = [], since = null, now = Date.n
   const elapsed = typeof since === "number" ? Math.max(0, now - since) : 0;
   const current = chapter && si >= 0 ? chapter.segments[si] : null;
   const expected = current ? current.ms : 0;
-  const overrun = !!current && expected > 0 && elapsed > expected;
+  const overrun = !!current && expected > 0 && elapsed > overrunAfter(expected);
   const fill = current ? (expected > 0 ? Math.min(FILL_CAP, elapsed / expected) : FILL_CAP) : 0;
   const share = (g) => Math.max(MIN_SHARE, g.ms / track.total);
   const chapters = track.chapters.map((c, i) => ({
@@ -98,6 +105,7 @@ export function trackModel(track, { demo, pulls = [], since = null, now = Date.n
       const tone = g.label === "failed" && state !== "ahead" ? "bad" : g.label === "done" && state !== "ahead" ? "ok" : state === "ahead" ? "ahead" : "past";
       return {
         label: g.label,
+        short: SHORT[g.label] || g.label,
         share: share(g),
         state,
         tone,
@@ -184,11 +192,11 @@ export const TRACK_STYLE = `
 #k-track { display: flex; flex-direction: column; gap: 0.25em; padding: 0.35em 1.4em 0.4em; font: 600 0.8em var(--font-ui); color: var(--muted); background: var(--surface-pane-b); border-top: 1px solid color-mix(in srgb, var(--rule) 60%, transparent); border-radius: 8px 8px 0 0; }
 body.k-watch #k-track { position: fixed; z-index: 7; left: 5px; right: 5px; }
 #k-track .kt-row { display: flex; gap: 0.6em; align-items: stretch; min-width: 0; }
-#k-track .kt-chapter { display: flex; flex-direction: column; gap: 0.15em; min-width: 0; }
+#k-track .kt-chapter { display: flex; flex-direction: column; gap: 0.15em; min-width: min-content; }
 #k-track .kt-chapter-title { font-size: 0.85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg); }
 #k-track .kt-chapter.kt-ahead .kt-chapter-title { color: var(--muted); }
 #k-track .kt-segs { display: flex; gap: 3px; }
-#k-track .kt-seg { position: relative; height: 1.7em; border-radius: 5px; border: 1.5px solid color-mix(in srgb, var(--muted) 60%, transparent); overflow: hidden; min-width: 0; }
+#k-track .kt-seg { position: relative; height: 1.7em; border-radius: 5px; border: 1.5px solid color-mix(in srgb, var(--muted) 60%, transparent); overflow: hidden; min-width: 0; flex-shrink: 1; }
 #k-track .kt-seg .kt-fill { position: absolute; inset: 0 auto 0 0; background: color-mix(in srgb, var(--pending) 55%, transparent); }
 #k-track .kt-seg.kt-past .kt-fill { background: color-mix(in srgb, var(--neutral, var(--muted)) 45%, transparent); }
 #k-track .kt-seg.kt-ok { border-color: var(--frame-managed, var(--managed)); }
@@ -241,12 +249,15 @@ export function drawTrack(host, model, doc = typeof document !== "undefined" ? d
   for (const c of model.chapters) {
     const share = c.segments.reduce((a, g) => a + g.share, 0) / total;
     const ch = el("div", `kt-chapter kt-${c.state}`);
-    ch.style.flex = `${share} 1 0`;
+    // Grow factors summing to well over 1: below 1 a flex row leaves the rest of its width empty.
+    ch.style.flex = `${Math.round(share * 1000)} 1 0`;
     ch.appendChild(el("div", "kt-chapter-title", c.title));
     const segs = el("div", "kt-segs");
     for (const g of c.segments) {
       const seg = el("div", `kt-seg kt-${g.state} kt-${g.tone}`);
-      seg.style.flex = `${g.share} 1 0`;
+      seg.style.flex = `${Math.round(g.share * 1000)} 1 0`;
+      // Never narrower than its short label, whole.
+      seg.style.minWidth = `${(g.short.length * 0.62 + 1).toFixed(2)}em`;
       seg.title = g.label;
       const fill = el("div", "kt-fill");
       fill.style.width = `${Math.round(g.fill * 1000) / 10}%`;
@@ -260,7 +271,9 @@ export function drawTrack(host, model, doc = typeof document !== "undefined" ? d
           seg.appendChild(tick);
         });
       }
-      seg.appendChild(el("span", "kt-label", g.label));
+      const lab = el("span", "kt-label", g.label);
+      lab.dataset.short = g.short;
+      seg.appendChild(lab);
       segs.appendChild(seg);
     }
     ch.appendChild(segs);
@@ -268,4 +281,8 @@ export function drawTrack(host, model, doc = typeof document !== "undefined" ? d
   }
   host.appendChild(row);
   if (model.now && model.now.text) host.appendChild(el("p", "kt-now", model.now.text));
+  // A label its segment cannot hold whole says its short form ("plan", "merge"); never a clipped word.
+  for (const lab of host.querySelectorAll ? host.querySelectorAll(".kt-label") : []) {
+    if (lab.scrollWidth > lab.clientWidth + 1 && lab.dataset.short) lab.textContent = lab.dataset.short;
+  }
 }

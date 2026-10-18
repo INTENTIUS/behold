@@ -417,8 +417,18 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     title: `Waiting on ${w.what}`,
     lines: w.why ? [{ text: w.why }] : [],
     progress: { fraction: w.fraction, words: w.words },
-    // Never over a card: any card of the graph is to stay in view.
+    // Never over a card: any card of the graph is to stay in view. Then, where it can, off the graph altogether
+    // (its wave boxes and the space between them, where a reach is drawn): the space beside it first.
     avoid: () => Object.keys((h.boxes && h.boxes.roots) || {}).map((r) => fromFrame(h, h.boxes.roots[r])).filter(Boolean),
+    prefer: () => {
+      const waves = Object.values((h.boxes && h.boxes.waves) || {}).map((b) => fromFrame(h, b)).filter(Boolean);
+      if (!waves.length) return [];
+      const left = Math.min(...waves.map((b) => b.left));
+      const top = Math.min(...waves.map((b) => b.top));
+      const right = Math.max(...waves.map((b) => b.left + b.width));
+      const bottom = Math.max(...waves.map((b) => b.top + b.height));
+      return [{ left, top, width: right - left, height: bottom - top }];
+    },
     bounds: () => frameRect(h),
   });
   const openWaiting = (w, h) => {
