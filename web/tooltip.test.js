@@ -190,4 +190,19 @@ describe("installTooltips (behold#725)", () => {
     expect(t.queue.length).toBe(0);
     expect(g.badgeTitle.textContent).toContain("wave 2");
   });
+
+  it("shows an edge's words in a kiosk frame too, by the pointer (behold#744)", () => {
+    const g = graph();
+    const path = g.edge.appendChild(new El("path"));
+    const doc = fakeDoc(g.body, { bare: true });
+    const t = timers();
+    installTooltips(doc, t);
+    doc.fire("pointerover", { target: path, clientX: 300, clientY: 200 });
+    t.run();
+    const tip = doc.getElementById(TIP_ID);
+    expect(tip.hidden).toBe(false);
+    expect(tip.textContent).toBe("data dependency");
+    // Under the pointer, not under the edge's whole box.
+    expect(tip.style.top).toBe("214px");
+  });
 });

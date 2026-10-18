@@ -204,6 +204,11 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     const right = Math.min(r.left + r.width, F.right);
     return bottom - top > 8 && right - left > 8 ? { left, top, width: right - left, height: bottom - top, right, bottom } : null;
   };
+  /** behold#744: the read pills the frame shows now (its `labels`, read fresh at each placement), which a modal keeps off. */
+  const pillRects = (h) => {
+    const now = (get && get()) || h;
+    return ((now && now.boxes && now.boxes.labels) || []).map((l) => fromFrame(now, l)).filter(Boolean);
+  };
   /** behold#631: the graph's area above the bottom band (the track or trail, and the caption): where a chant modal may go. */
   const graphArea = (h) => {
     const F = frameRect(h);
@@ -418,7 +423,7 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
       const box = (r) => fromFrame(h, h.boxes && h.boxes.roots ? h.boxes.roots[r] : null);
       const wave = Number.isInteger(event.subjects.wave) ? (h.waves || []).find((w) => w.wave === event.subjects.wave) : null;
       const must = event.avoid || (event.subjects.roots && event.subjects.roots.length ? event.subjects.roots : wave && Array.isArray(wave.roots) ? wave.roots : []);
-      data.avoid = () => must.map(box).filter(Boolean);
+      data.avoid = () => [...must.map(box).filter(Boolean), ...pillRects(h)];
       data.prefer = () => Object.keys((h.boxes && h.boxes.roots) || {}).filter((r) => !must.includes(r)).map(box).filter(Boolean);
       data.bounds = () => graphArea(h);
     }
@@ -433,7 +438,8 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     progress: { fraction: w.fraction, words: w.words },
     // Never over a card: any card of the graph is to stay in view. Then, where it can, off the graph altogether
     // (its wave boxes and the space between them, where a reach is drawn): the space beside it first.
-    avoid: () => Object.keys((h.boxes && h.boxes.roots) || {}).map((r) => fromFrame(h, h.boxes.roots[r])).filter(Boolean),
+    // behold#744: nor over a read pill the frame shows.
+    avoid: () => [...Object.keys((h.boxes && h.boxes.roots) || {}).map((r) => fromFrame(h, h.boxes.roots[r])).filter(Boolean), ...pillRects(h)],
     prefer: () => {
       const waves = Object.values((h.boxes && h.boxes.waves) || {}).map((b) => fromFrame(h, b)).filter(Boolean);
       if (!waves.length) return [];

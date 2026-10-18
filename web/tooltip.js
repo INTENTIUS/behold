@@ -93,9 +93,19 @@ export function reachBadges(root) {
 }
 
 /**
+ * behold#744: an edge, or a line drawn over the graph, whose tooltip goes by
+ * the pointer: its own box can span the drawing. The edges are also all a
+ * kiosk frame shows a tooltip for: its cards have the frame's popover.
+ */
+export function isLine(node) {
+  return !!(node && node.hasAttribute && (node.hasAttribute("data-edge-from") || node.hasAttribute("data-tg-read-hit")));
+}
+
+/**
  * Wire the tooltip into `doc`. `scope` names the part of the page whose SVG
  * badges get tab stops as they are drawn. A kiosk frame (the root's .bare) has
- * its own popover and nothing to focus, so it gets neither.
+ * its own popover and nothing to focus, so it gets neither, save a tooltip on
+ * an edge (behold#744), which the browser's own shows late or not at all.
  */
 export function installTooltips(doc = typeof document !== "undefined" ? document : null, { scope = "#graph", setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
   if (!doc || !doc.documentElement || !doc.body) return () => {};
@@ -118,7 +128,8 @@ export function installTooltips(doc = typeof document !== "undefined" ? document
     const t = ensureTip();
     t.textContent = current.text;
     t.hidden = false;
-    const r = current.host.getBoundingClientRect();
+    const at0 = current.at;
+    const r = at0 ? { left: at0.x - 6, right: at0.x + 6, top: at0.y - 6, bottom: at0.y + 6 } : current.host.getBoundingClientRect();
     const s = t.getBoundingClientRect();
     const view = { width: (win && win.innerWidth) || doc.documentElement.clientWidth, height: (win && win.innerHeight) || doc.documentElement.clientHeight };
     const at = placeTip(r, { width: s.width, height: s.height }, view);
@@ -142,7 +153,7 @@ export function installTooltips(doc = typeof document !== "undefined" ? document
     else host.removeAttribute("aria-describedby");
     current = null;
   };
-  const enter = (host, delay) => {
+  const enter = (host, delay, at = null) => {
     if (current && current.host === host) return;
     leave();
     const title = host.hasAttribute("data-tip") ? null : ownTitle(host);
@@ -150,16 +161,17 @@ export function installTooltips(doc = typeof document !== "undefined" ? document
     if (!text) return;
     // Emptied now, before the browser's own tooltip can rise.
     if (title) title.textContent = "";
-    current = { host, title, text, timer: null };
+    current = { host, title, text, timer: null, at };
     if (delay > 0) current.timer = setTimer(show, delay);
     else show();
   };
   const inside = (outer, node) => { for (let n = node; n; n = n.parentNode) if (n === outer) return true; return false; };
 
   const onOver = (e) => {
-    if (off()) return;
-    const host = tipHost(e.target, current && current.host);
-    if (host) enter(host, HOVER_MS);
+    let host = tipHost(e.target, current && current.host);
+    if (off() && !isLine(host)) host = null; // behold#744: a kiosk frame's edges only
+    const at = isLine(host) && typeof e.clientX === "number" ? { x: e.clientX, y: e.clientY } : null;
+    if (host) enter(host, HOVER_MS, at);
     else if (current && !inside(current.host, e.target)) leave();
   };
   const onOut = (e) => { if (current && !inside(current.host, e.relatedTarget)) leave(); };

@@ -128,6 +128,7 @@ import { shotFromMessage, shotViewBox, tweenViewBox, unionBox, sameViewBox } fro
 // neither it stays unmounted, and its hooks below are no-ops.
 import { mountDots, unmountDots, dotsCamera, dotsZoomOutFactor, dotsCarving, dotsMinViewWidth } from "./dots.js";
 import { carveDrawable } from "./dots-live.js";
+import { FLASH_MS as TG_FLASH_MS, createReadFlash, hotReads as tgHotReads, nearestOn as tgNearestOn, pillSpots as tgPillSpots, readKey as tgReadKey, readerStates as tgReaderStates } from "./tg-read-pills.js"; // behold#744
 initTheme();
 // #476: framed in a host pane. The flag is a class on <html>, so the CSS that
 // folds the chrome away needs no JS, and the theme is the host's for this
@@ -3722,6 +3723,7 @@ function drawTgReads() {
   if (!svg) return;
   drawPipelineMarks(svg); // behold#571: the forge and tool marks, before the wave boxes' status finds room around them
   for (const old of svg.querySelectorAll("[data-tg-reads]")) old.remove();
+  tgReadEdgesNow = []; // behold#744
   for (const old of svg.querySelectorAll("[data-tg-root]")) old.remove();
   for (const r of svg.querySelectorAll("rect[data-tg-stroke0]")) {
     r.setAttribute("stroke", r.getAttribute("data-tg-stroke0"));
@@ -3802,13 +3804,19 @@ function drawTgReads() {
     if (embedOpts.bare) chantKioskWaves(svg, boxOf, chantMarks.waveFont || 18);
     drawTgComponentMarks(svg, { marks: chantMarks, focus: null, boxOf, make, edgePoints: chantEdgePoints(svg) });
     drawReach(svg, chantMarks.reach || null, boxOf, chantMarks.waveFont || 18);
+    tipComponentEdges(svg); // behold#744
     return;
   }
   const layer = make("g", { "data-tg-reads": "1", "pointer-events": "none" });
   svg.appendChild(layer); // over the boxes and cards: the lines end at the borders, and the labels carry a background
+  // behold#744: the read lines' pointer targets, under the cards (a line crossing a card leaves the card its pointer) and over the edges.
+  const hits = make("g", { "data-tg-reads": "hits" });
+  let under = svg.querySelector("[data-node-id]");
+  while (under && under.parentNode !== svg) under = under.parentNode;
+  svg.insertBefore(hits, under || layer);
   // A pill of text with a background, centred on (cx, cy); measured once it is in the svg.
-  const pill = (parent, cx, cy, text, { stroke, fill = "var(--panel)", color = "var(--fg)", size = 13, weight = 600, anchor = "middle", cls = "" } = {}) => {
-    const g = make("g", cls ? { class: cls } : {});
+  const pill = (parent, cx, cy, text, { stroke, fill = "var(--panel)", color = "var(--fg)", size = 13, weight = 600, anchor = "middle", cls = "", attrs = {} } = {}) => {
+    const g = make("g", { ...(cls ? { class: cls } : {}), ...attrs }); // behold#744: a read's pill is hidden from its first style, never faded out
     const rect = make("rect", { rx: 6, fill, stroke: stroke || "var(--rule)", "stroke-width": 1.5 });
     const t = make("text", { x: cx, y: cy, "text-anchor": anchor, "dominant-baseline": "central", "font-size": size, "font-weight": weight, fill: color }, text);
     g.append(rect, t);
@@ -3918,6 +3926,7 @@ function drawTgReads() {
 
   // #571: the components zoom's own marks; its wave boxes are the boxes the caption and the labels keep clear of.
   const edgePoints = compMode ? chantEdgePoints(svg) : [];
+  let readMarks = null; // behold#744: the cards' and waves' states (a story's paced) that a read's pill flashes on
   if (compMode) {
     boxes.length = 0;
     // behold#741: a kiosk telling a chapter-carrying scenario looks as chant's loop does: no type glyph, the waves
@@ -3926,6 +3935,7 @@ function drawTgReads() {
     if (story) kioskCardGlyphs(svg);
     const marks = story ? tgComponentMarks(drawnAnswer, tgPacedProgress(), tgComponentFacets, { runs: tgRuns, pin: view.run || null, story }) : null;
     if (marks) {
+      readMarks = marks;
       tgStoryRemember(marks);
       chantKioskWaves(svg, boxOf, marks.waveFont || 18);
     }
@@ -3939,6 +3949,7 @@ function drawTgReads() {
   // there are; each label then sits beside its line where it covers no text
   // and crosses no line.
   const edges = tgReadEdges(drawnAnswer, tgProgress);
+  if (compMode) tipComponentEdges(svg, edges); // behold#744
   const centre = (b) => ({ x: (b.x + b.x2) / 2, y: (b.y + b.y2) / 2 });
   const grow = (b, d) => ({ x: b.x - d, y: b.y - d, x2: b.x2 + d, y2: b.y2 + d });
   // Whether the segment p-q passes through the box (Liang-Barsky).
@@ -4044,65 +4055,81 @@ function drawTgReads() {
     }
     if (!best) continue;
     const { p0, p1 } = best;
-    const line = make("line", { x1: p0.x, y1: p0.y, x2: p1.x, y2: p1.y, stroke: color, "stroke-width": 3, "stroke-dasharray": e.outputs === "planned" ? "9 6" : "none", "marker-end": `url(#tg-arrow-${kind})`, "data-tg-read-from": e.from, "data-tg-read-to": e.to });
-    line.appendChild(make("title", {}, tgReadLine(e)));
+    const key = tgReadKey(e);
+    const line = make("line", { x1: p0.x, y1: p0.y, x2: p1.x, y2: p1.y, stroke: color, "stroke-width": 3, "stroke-dasharray": e.outputs === "planned" ? "9 6" : "none", "marker-end": `url(#tg-arrow-${kind})`, "data-tg-read-from": e.from, "data-tg-read-to": e.to, "data-tg-read": key });
     if (focus && !(focus.has(e.from) || focus.has(e.to))) line.style.opacity = "0.5";
     layer.appendChild(line);
+    // behold#744: a wide clear stroke along the line takes the pointer (the drawn layer lets it through): pointing at it shows the
+    // read's pill; outside a kiosk frame the shared tooltip adds the whole sentence (data-tip, no <title>: no second, native one).
+    hits.appendChild(make("line", { x1: p0.x, y1: p0.y, x2: p1.x, y2: p1.y, stroke: "transparent", "stroke-width": 16, "pointer-events": "stroke", "data-tg-read-hit": key, ...(embedOpts.bare ? {} : { "data-tip": tgReadLine(e) }) }));
     drawn.push({ p0, p1 });
-    labels.push({ e, p0, p1, color, kind });
+    labels.push({ e, p0, p1, color, kind, key, fromBox });
   }
   // behold#571: the marks step aside from the read lines, and a box lifts its marks off an arrowhead (its box then reaches higher).
   for (const [rect] of clearMarksOfReads(svg, drawn)) {
     const now = boxOf(rect);
     for (const b of boxes) if (now && Math.abs(b.x - now.x) < 0.5 && Math.abs(b.x2 - now.x2) < 0.5 && Math.abs(b.y2 - now.y2) < 0.5) b.y = now.y;
   }
-  // Each read's words beside its line: covering no text, crossing no line,
-  // over as few cards and box headers as can be.
+  // behold#744: each read's words in a pill at the reader's end of its line, beside the reader's card and joined to it by a
+  // short leader in the line's colour: covering no text where it can, never out in open ground. Drawn hidden; the pointer
+  // (on the reader, the root it reads or the line), a kiosk's flash or an Inspect focus shows it (tgReadShow).
   const cardBoxes = cardEls.map((g) => cardBoxOf.get(g)).filter(Boolean);
   const headers = boxes.map((b) => ({ x: b.x, y: b.y - 14, x2: b.x2, y2: b.y + 36 }));
   const placed = [];
   const overlap = (r, b) => Math.max(0, Math.min(r.x2, b.x2) - Math.max(r.x, b.x)) * Math.max(0, Math.min(r.y2, b.y2) - Math.max(r.y, b.y));
   const sum = (r, list, k) => list.reduce((a, b) => a + k * overlap(r, b), 0);
-  for (const l of labels) {
+  const span = union(boxes);
+  // A kiosk with no chapters flashes on the marks drawTgComponentMarks drew from the same reads (wave jobs' status included).
+  if (embedOpts.bare && compMode && !readMarks) readMarks = tgComponentMarks(drawnAnswer, tgProgress, tgComponentFacets, { runs: tgRuns, pin: view.run || null });
+  const flash = embedOpts.bare ? new Map(tgReadFlash.live(edges, tgReaderStates(readMarks, states.roots)).map((f) => [f.key, f.age])) : new Map();
+  // The flashing pills first: they show together, so each keeps clear of the others; a hidden one only shows with its own root's.
+  const lit = [];
+  for (const l of [...labels].sort((a, b) => Number(flash.has(b.key)) - Number(flash.has(a.key)))) {
     const words = `${l.e.from} ${tgReadLabel(l.e)}`;
-    const size = 13;
-    const w = words.length * size * 0.56 + 16;
-    const h = size + 10;
-    const dx = l.p1.x - l.p0.x;
-    const dy = l.p1.y - l.p0.y;
-    let best = null;
-    // behold#571: the label's own line may run under it; every other read line may not.
+    const size = embedOpts.bare ? 15 : 13; // a kiosk's card words are bigger too
+    const p = pill(layer, 0, 0, words, { stroke: l.color, fill: "var(--bg)", color: "var(--fg)", size, weight: 600, attrs: { "data-tg-read-pill": "1", "data-tg-read": l.key } });
+    const { w, h } = p;
+    // The pill's own line may run under it; every other read line costs, though only a few pills show at once.
     const others = drawn.filter((d) => !(d.p0 === l.p0 && d.p1 === l.p1));
-    for (const t of [0.5, 0.35, 0.65, 0.2, 0.8, 0.1, 0.9]) {
-      const m = { x: l.p0.x + dx * t, y: l.p0.y + dy * t };
-      // On the line itself, slid along its width; then beside the line, then farther off it into open ground: the boxes sit close.
-      const spots = [-0.35, -0.2, 0, 0.2, 0.35].map((f) => ({ x: m.x + f * w, y: m.y, off: 1 + Math.abs(f) * 4 }));
-      for (let k = 0; k < 6; k++) {
-        const off = k * (h + 6);
-        spots.push(
-          { x: m.x + w / 2 + 12 + off, y: m.y, off },
-          { x: m.x - w / 2 - 12 - off, y: m.y, off },
-          { x: m.x, y: m.y - h / 2 - 10 - off, off },
-          { x: m.x, y: m.y + h / 2 + 10 + off, off },
-        );
-      }
-      for (const c of spots) {
-        const r = { x: c.x - w / 2, y: c.y - h / 2, x2: c.x + w / 2, y2: c.y + h / 2 };
-        const lineHits = others.filter((d) => crosses(d.p0, d.p1, r)).length;
-        // Outside the boxes' own span the label may leave the drawing when the view is fitted: keep it in.
-        // behold#571: never above the top box, where the caption says which run the marks are from.
-        const span = union(boxes);
-        const out = span ? (r.x2 - r.x) * (r.y2 - r.y) - overlap(r, { x: span.x - 40, y: span.y, x2: span.x2 + 40, y2: span.y2 + 40 }) : 0;
-        // behold#571: a card or a box's title row under the words costs as much as text does, so a label sits on open ground between boxes.
-        // A dependency line under a label costs less than a card or text does, and far less than another read's line.
-        const score = out * 80 + lineHits * 1e6 + edgeIn(r) * 30 + Math.hypot(c.x - m.x, c.y - m.y) * 2 + sum(r, textBoxes, 50) + sum(r, placed, 50) + sum(r, cardBoxes, 50) + sum(r, headers, 40) + sum(r, boxes, 0.15) + Math.abs(t - 0.5) * 300 + c.off * 4;
-        if (!best || score < best.score) best = { c, r, score };
-      }
+    let best = null;
+    // A kiosk frame's popover opens to the right of a pointed card (placePopover): the pill keeps out from under it.
+    const fb = l.fromBox;
+    const popRoom = embedOpts.bare ? [{ x: fb.x2, y: fb.y, x2: fb.x2 + 3 * (fb.x2 - fb.x), y2: fb.y + 3 * (fb.y2 - fb.y) }] : [];
+    // A kiosk's camera (Watch's shot) frames part of the graph: a pill stays inside what it shows.
+    const vb = embedOpts.bare && svg.viewBox && svg.viewBox.baseVal && svg.viewBox.baseVal.width ? svg.viewBox.baseVal : null;
+    const seen = vb ? { x: vb.x + 8, y: vb.y + 8, x2: vb.x + vb.width - 8, y2: vb.y + vb.height - 8 } : null;
+    for (const s of tgPillSpots(fb, l.p0, w, h)) {
+      const r = s.r;
+      const lineHits = others.filter((d) => crosses(d.p0, d.p1, r)).length;
+      // Outside the boxes' own span the pill may leave the drawing when the view is fitted: keep it in, and never above the
+      // top box, where the caption says which run the marks are from (behold#571).
+      const out = span ? (r.x2 - r.x) * (r.y2 - r.y) - overlap(r, { x: span.x - 40, y: span.y, x2: span.x2 + 40, y2: span.y2 + 40 }) : 0;
+      const unseen = seen ? (r.x2 - r.x) * (r.y2 - r.y) - overlap(r, seen) : 0;
+      const score = out * 80 + unseen * 80 + lineHits * 2000 + edgeIn(r) * 30 + sum(r, textBoxes, 50) + sum(r, lit, 200) + sum(r, placed, 50) + sum(r, cardBoxes, 50) + sum(r, headers, 20) + sum(r, popRoom, 4) + s.far * 12 + s.gap * 3 + s.round * 150;
+      if (!best || score < best.score) best = { s, score };
     }
-    placed.push(best.r);
-    const p = pill(layer, best.c.x, best.c.y, words, { stroke: l.color, fill: "var(--bg)", color: "var(--fg)", size, weight: 600 });
-    if (focus && !(focus.has(l.e.from) || focus.has(l.e.to))) p.g.style.opacity = "0.5";
+    if (!best) {
+      p.g.remove();
+      continue;
+    }
+    const { c, r } = best.s;
+    (flash.has(l.key) ? lit : placed).push(r);
+    p.g.setAttribute("transform", `translate(${c.x} ${c.y})`);
+    // The leader: from the line's start on the card's border to the pill's nearest edge, with a dot where it leaves the card.
+    const q = tgNearestOn(r, l.p0);
+    p.g.insertBefore(make("line", { x1: l.p0.x - c.x, y1: l.p0.y - c.y, x2: q.x - c.x, y2: q.y - c.y, stroke: l.color, "stroke-width": 2.5 }), p.g.firstChild);
+    p.g.insertBefore(make("circle", { cx: l.p0.x - c.x, cy: l.p0.y - c.y, r: 4, fill: l.color }), p.g.firstChild);
+    if (flash.has(l.key)) {
+      // A kiosk's flash: TG_FLASH_MS from when its reader came into the state, so a redraw midway carries on where it was.
+      p.g.classList.add("tg-flash");
+      p.g.style.animationDuration = `${TG_FLASH_MS}ms`;
+      p.g.style.animationDelay = `-${Math.round(flash.get(l.key))}ms`;
+    }
+    // Inspect's focus keeps the focused roots' reads in words, as every read was before.
+    if (!embedOpts.bare && focus && (focus.has(l.e.from) || focus.has(l.e.to))) p.g.classList.add("tg-shown");
   }
+  tgReadEdgesNow = edges;
+  tgReadShow(svg);
 
   // Which run the marks come from, above the boxes.
   // #569: a pin that holds the view off every plan says why in its own words.
@@ -4128,6 +4155,75 @@ function drawTgReads() {
   }
 }
 const sameBox = (a, b) => !!a && !!b && Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5 && Math.abs(a.x2 - b.x2) < 0.5 && Math.abs(a.y2 - b.y2) < 0.5;
+
+/**
+ * behold#744: on the components zoom an edge says what it means, not only "app-01 → cluster-a": the one depends on the
+ * other, which applies first, and what it reads of it. In its <title>, which the shared tooltip shows (a kiosk frame's too).
+ */
+function tipComponentEdges(svg, edges = []) {
+  for (const g of svg.querySelectorAll("g[data-edge-from]")) {
+    const from = g.getAttribute("data-edge-from");
+    const to = g.getAttribute("data-edge-to");
+    const title = [...g.children].find((c) => c.localName === "title");
+    if (!from || !to || !title) continue;
+    const read = edges.find((e) => (e.from === from || e.from.endsWith(`/${from}`)) && (e.to === to || e.to.endsWith(`/${to}`)));
+    title.textContent = `${from} → ${to}\n${from} depends on ${to}, so ${to} applies first${read ? `\n${tgReadLine(read)}` : ""}`;
+  }
+}
+
+// behold#744: the reads' pills show while they matter (web/tg-read-pills.js): the pointer's, a kiosk's flash, Inspect's focus.
+const tgReadFlash = createReadFlash();
+let tgReadEdgesNow = [];
+let tgReadHot = [];
+/** The reads the pointer (or the focus) on `target` lights: a read's line, or a card or box of a root that reads or is read. */
+function tgReadHotOf(target) {
+  if (!target || !target.closest || !target.closest("#graph svg") || !tgReadEdgesNow.length) return [];
+  const hit = target.closest("[data-tg-read-hit]");
+  if (hit) return tgHotReads(tgReadEdgesNow, { key: hit.getAttribute("data-tg-read-hit") });
+  const h = kioskHoverOf(target);
+  return h && h.root ? tgHotReads(tgReadEdgesNow, { root: h.root }) : [];
+}
+function tgReadSetHot(keys) {
+  if (keys.length === tgReadHot.length && keys.every((k, i) => k === tgReadHot[i])) return;
+  tgReadHot = keys;
+  const svg = document.querySelector("#graph svg");
+  if (svg) tgReadShow(svg);
+}
+/** Light the hot reads' pills and lines, the lit pills last in their layer so they sit over the rest. */
+function tgReadShow(svg) {
+  ensureTgReadStyle();
+  const hot = new Set(tgReadHot);
+  for (const el of svg.querySelectorAll("[data-tg-read]")) el.classList.toggle("tg-hot", hot.has(el.getAttribute("data-tg-read")));
+  for (const g of svg.querySelectorAll("g[data-tg-read-pill].tg-hot")) g.parentNode.appendChild(g);
+}
+let tgReadWired = false;
+function wireTgReadHover() {
+  if (tgReadWired || typeof document === "undefined") return;
+  tgReadWired = true;
+  document.addEventListener("pointerover", (e) => tgReadSetHot(tgReadHotOf(e.target)));
+  document.addEventListener("pointerout", (e) => !e.relatedTarget && tgReadSetHot([]));
+  document.addEventListener("focusin", (e) => tgReadSetHot(tgReadHotOf(e.target)));
+  document.addEventListener("focusout", (e) => !e.relatedTarget && tgReadSetHot([]));
+}
+/** The pills' looks, once per document: hidden until lit; a flash shows and fades; no fade under prefers-reduced-motion. */
+function ensureTgReadStyle() {
+  wireTgReadHover();
+  if (document.getElementById("tg-read-style")) return;
+  const st = document.createElement("style");
+  st.id = "tg-read-style";
+  st.textContent = `#graph g[data-tg-read-pill] { opacity: 0; }
+#graph g[data-tg-read-pill].tg-hot, #graph g[data-tg-read-pill].tg-shown { opacity: 1 !important; }
+#graph g[data-tg-read-pill].tg-hot { transition: opacity .15s ease; }
+#graph g[data-tg-read-pill].tg-flash { animation: tg-read-flash 6s linear both; }
+#graph line[data-tg-read].tg-hot { stroke-width: 5; filter: drop-shadow(0 0 3px var(--bg)); }
+@keyframes tg-read-flash { 0% { opacity: 0; } 4%, 80% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes tg-read-flash-step { 0%, 99.9% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  #graph g[data-tg-read-pill].tg-hot { transition: none; }
+  #graph g[data-tg-read-pill].tg-flash { animation-name: tg-read-flash-step; animation-timing-function: step-end; }
+}`;
+  document.head.appendChild(st);
+}
 
 /** #571: points along the components graph's own edges, in the svg's coordinates, every few units. */
 function chantEdgePoints(svg) {
@@ -4955,7 +5051,8 @@ function kioskShotTarget(svg, shot) {
   const boxes = [];
   if (shot.whole) {
     // The whole graph is what is drawn: the boxes, the cards and the reads, not pinhole's margins round them.
-    for (const n of svg.querySelectorAll("rect[data-group-id], [data-node-id], [data-tg-reads] > g, line[data-tg-read-from], text[data-tg-reads='caption']")) boxes.push(userBoxOf(svg, n));
+    // behold#744: not the reads' pills, which show and go while the shot stays.
+    for (const n of svg.querySelectorAll("rect[data-group-id], [data-node-id], [data-tg-reads] > g:not([data-tg-read-pill]), line[data-tg-read-from], text[data-tg-reads='caption']")) boxes.push(userBoxOf(svg, n));
     return unionBox(boxes) || { x: vbInit[0], y: vbInit[1], x2: vbInit[0] + vbInit[2], y2: vbInit[1] + vbInit[3] };
   }
   const named = (tgComponentFacets && tgComponentFacets.roots) || {};
@@ -5076,7 +5173,8 @@ function kioskTellBoxes() {
       }
     }
     // The reads' labels too, which the kiosk's callouts keep clear of.
-    const labels = [...svg.querySelectorAll("[data-tg-reads] > g")].map((g) => rect(g.getBoundingClientRect())).filter((r) => r.w > 0);
+    // behold#744: a read's pill only while it shows.
+    const labels = [...svg.querySelectorAll("[data-tg-reads] > g:not([data-tg-read-pill]), [data-tg-reads] > g.tg-flash, [data-tg-reads] > g.tg-hot, [data-tg-reads] > g.tg-shown")].map((g) => rect(g.getBoundingClientRect())).filter((r) => r.w > 0);
     const host = document.getElementById("graph");
     const pane = host ? rect(host.getBoundingClientRect()) : null;
     try {
@@ -7005,7 +7103,8 @@ function wireEdgeHighlight(svgEl, ir) {
     title.textContent = edgeTitle(from, to, { kind, via, cross });
     g.insertBefore(title, g.firstChild);
   }
-  const raise = (g) => g.parentNode && g.parentNode.appendChild(g);
+  // behold#744: raised under the terragucci reads' layer, whose lines and pills stay over every edge.
+  const raise = (g) => g.parentNode && g.parentNode.insertBefore(g, g.parentNode.querySelector(":scope > [data-tg-reads]"));
   // Delegated: raise whichever edge the pointer is over (its hit-path catches it).
   svgEl.addEventListener("mouseover", (e) => {
     const g = e.target.closest && e.target.closest("g[data-edge-from]");
