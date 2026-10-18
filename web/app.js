@@ -7375,10 +7375,11 @@ function drawPipelineMarks(svgEl) {
   const light = kioskLight();
   const pin = view.run || null;
   const commit = tgRunsCommit(pin, tgProgress);
-  // behold#631: on a kiosk, a chant repo's forge and tool marks are said once, on the top wave's box, not on every box.
+  // behold#631: on a kiosk, a chant repo's forge and tool are named once, with their logos, in the kiosk's title line:
+  // the wave boxes carry no marks of their own there. Inspect keeps them.
   const chantKiosk = !!(embedOpts.bare && view.components && chantFacets && !terragucciComponentsRepo);
-  const waveNs = [...svgEl.querySelectorAll("rect[data-group-id]")].map((r) => tgWaveOfKey(r.getAttribute("data-group-id"))).filter((x) => x !== null);
-  const onlyWave = chantKiosk && waveNs.length ? Math.max(...waveNs) : null;
+  if (chantKiosk) return;
+  const onlyWave = null;
   for (const rect of svgEl.querySelectorAll("rect[data-group-id]")) {
     const key = rect.getAttribute("data-group-id");
     const n = tgWaveOfKey(key);

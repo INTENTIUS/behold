@@ -17,6 +17,8 @@ import { linkState, linkWords, noteBack, noteRead, readFailed, shareLink } from 
 import { CHANT_PANEL_STEPS, chantApprovalModel, chantResultModel } from "./chant-pr-marks.js";
 import { createLivePacer } from "./chant-live-pace.js";
 import { cycleTrack, drawTrack, trackModel, waitingSpec } from "./kiosk-track.js";
+import { FORGES, iconSvg } from "./forge-mark.js";
+import { TOOLS } from "./tool-mark.js";
 import { graphWaves } from "./chant-pr-marks.js";
 import { PICK_HOLD_MS, annMark, mergeRun, startRuns, statusIcon } from "./kiosk-runs.js";
 import { MODES, MODE_STORE, badges as waveBadges, badgeTitle, behindStep, steadyRun, captionModel, doraLine, modeStored, placeBeside, quietWords, recordKey, resultModel, runningStep, shotFor, stepTone, tailLines } from "./kiosk-watch.js";
@@ -145,9 +147,55 @@ function chapterStyle() {
 
 /** behold#631: a chant kiosk's one line naming what it shows: the pipeline is chant's own; terragucci runs the demo around it. */
 export const SCENARIO_WORDS = { "fan-out": "fan-out" };
-export function whatLine(demo) {
+export function whatLine(demo, forge = null) {
+  return whatParts(demo, forge).map((p) => p.text).join(" · ");
+}
+/**
+ * The line's parts, each `{ text, short, logo? }`: a logo (a mark behold ships) only where a product is named,
+ * chant's beside chant, the forge's beside the forge. `short` is the phone's words.
+ */
+export function whatParts(demo, forge = null) {
   const sc = demo && typeof demo.scenario === "string" ? demo.scenario : null;
-  return ["chant's pull-request pipeline", sc ? SCENARIO_WORDS[sc] || sc.replace(/-/g, " ") : null, "live demo"].filter(Boolean).join(" · ");
+  const f = forge && FORGES[forge] ? FORGES[forge] : null;
+  return [
+    { text: "chant's pull-request pipeline", short: "chant pipeline", logo: "chant" },
+    ...(f ? [{ text: `on ${f.label}`, short: f.label, logo: forge }] : []),
+    ...(sc ? [{ text: SCENARIO_WORDS[sc] || sc.replace(/-/g, " "), short: SCENARIO_WORDS[sc] || sc.replace(/-/g, " ") }] : []),
+    { text: "live demo", short: "live" },
+  ];
+}
+/** The line drawn: each part's logo at the words' height, at its own aspect (the marks are square), then the words. */
+function whatLineEl(demo, forge) {
+  const line = el("span", "k-cycle k-what-line");
+  const light = typeof document !== "undefined" && typeof getComputedStyle === "function" ? isLightBg(getComputedStyle(document.documentElement).getPropertyValue("--bg")) : false;
+  whatParts(demo, forge).forEach((p, i) => {
+    if (i) line.appendChild(el("span", "k-what-sep", "·"));
+    const part = el("span", "k-what-part");
+    const spec = p.logo === "chant" ? TOOLS.chant && TOOLS.chant.icon : p.logo && FORGES[p.logo] ? FORGES[p.logo] : null;
+    if (spec && typeof document !== "undefined" && document.createElementNS) {
+      const icon = iconSvg(document, spec, 22, { light });
+      icon.setAttribute("class", "k-what-logo");
+      part.appendChild(icon);
+    }
+    part.append(el("span", "k-what-full", p.text), el("span", "k-what-short", p.short));
+    line.appendChild(part);
+  });
+  if (line.setAttribute) line.setAttribute("title", WHAT_TITLE);
+  whatStyle();
+  return line;
+}
+/** The line's look: half again the old size; on a phone the logos stay and the words shorten. */
+function whatStyle() {
+  if (typeof document === "undefined" || !document.head || document.getElementById("k-what-style")) return;
+  const st = document.createElement("style");
+  st.id = "k-what-style";
+  st.textContent = `.k-what-line { display: inline-flex; align-items: center; gap: 0.45em; font-size: 1.5em; font-weight: 600; color: var(--fg); }
+.k-what-part { display: inline-flex; align-items: center; gap: 0.3em; white-space: nowrap; }
+.k-what-logo { width: 1.25em; height: 1.25em; flex: none; }
+.k-what-sep { color: var(--muted); }
+.k-what-short { display: none; }
+@media (max-width: 600px) { .k-what-line { font-size: 1.1em; } .k-what-full { display: none; } .k-what-short { display: inline; } }`;
+  document.head.appendChild(st);
 }
 /** Its tooltip: whose pipeline it is, and whose demo. */
 export const WHAT_TITLE = "The pipeline is chant's (chant components pr-plan / pr-apply on Forgejo). The demo stack and its driver are terragucci's.";
@@ -938,9 +986,7 @@ function drawWatchHead(bar, s, now) {
   const shownTool = vendor || (demo.scenario !== "base" ? vendorOf(demo.tool) : null);
   if (s.chantLoop && s.trackOn) {
     // behold#631: a chant kiosk names what this is in one line; the cycle number and its clock are Inspect's.
-    const what = el("span", "k-cycle k-what-line", whatLine(demo));
-    if (what.setAttribute) what.setAttribute("title", WHAT_TITLE);
-    place.appendChild(what);
+    place.appendChild(whatLineEl(demo, s.chantForge ? s.chantForge() : null));
   } else {
     if (shownTool) place.appendChild(brandEl(shownTool));
     place.appendChild(el("span", "k-cycle", cycleWords(demo, now)));
@@ -2180,6 +2226,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
    * up; the story never goes back within a cycle.
    */
   const story = { cycle: null, n: 0, chapter: null, step: null };
+  /** behold#631: the forge chant's pipeline runs on, from its loop as /api/chant/pr read it. */
+  s.chantForge = () => (ap.chant && ap.chant.loop && ap.chant.loop.forge) || null;
   s.storyDemo = (d) => {
     if (!s.chantLoop || !d || !d.chapter || !Number.isInteger(d.chapter.n)) return d;
     if (story.cycle !== d.cycle) Object.assign(story, { cycle: d.cycle, n: 0, chapter: null, step: null });
