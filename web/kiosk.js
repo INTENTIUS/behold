@@ -174,7 +174,12 @@ function whatLineEl(demo, forge) {
     const spec = p.logo === "chant" ? TOOLS.chant && TOOLS.chant.icon : p.logo && FORGES[p.logo] ? FORGES[p.logo] : null;
     if (spec && typeof document !== "undefined" && document.createElementNS) {
       const icon = iconSvg(document, spec, 22, { light });
-      icon.setAttribute("class", "k-what-logo");
+      icon.setAttribute("class", `k-what-logo k-what-logo-${p.logo}`);
+      // A mark drawn in its theme's one colour (chant's gold) carries it inline, so no stylesheet's fill greys it.
+      if (spec.fill) {
+        const gold = light ? spec.fill.light : spec.fill.dark;
+        for (const n of icon.querySelectorAll("rect, path, circle, polygon, g")) n.style.fill = gold;
+      }
       part.appendChild(icon);
     }
     part.append(el("span", "k-what-full", p.text), el("span", "k-what-short", p.short));
@@ -192,6 +197,8 @@ function whatStyle() {
   st.textContent = `.k-what-line { display: inline-flex; align-items: center; gap: 0.45em; font-size: 1.5em; font-weight: 600; color: var(--fg); }
 .k-what-part { display: inline-flex; align-items: center; gap: 0.3em; white-space: nowrap; }
 .k-what-logo { width: 1.25em; height: 1.25em; flex: none; }
+/* chant's mark is pixel-sparse in its square: drawn larger, it carries the weight of Forgejo's. */
+.k-what-logo-chant { width: 1.7em; height: 1.7em; }
 .k-what-sep { color: var(--muted); }
 .k-what-short { display: none; }
 @media (max-width: 600px) { .k-what-line { font-size: 1.1em; } .k-what-full { display: none; } .k-what-short { display: inline; } }`;
@@ -1301,6 +1308,8 @@ export const HELD_JOB_RULE = "background: color-mix(in srgb, var(--foreign) 14%,
 
 /** behold#571: how often the approval panel reads the cycle's runs, and the gate ledger (which the server caches 30 s). */
 export const APPROVAL_POLL_MS = 4_000;
+/** behold#631: how often a chant kiosk reads its loop while the apply runs: as often as the graph's frame does. */
+export const CHANT_APPLY_POLL_MS = 1_500;
 export const LEDGER_POLL_MS = 10_000;
 
 /** behold#571: the approval panel's words for the approval the driver gives next, over its command. */
@@ -1760,7 +1769,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const cap = shownCaption().getBoundingClientRect();
     if (trackHost.style) trackHost.style.bottom = cap.height ? `${Math.round((typeof window !== "undefined" ? window.innerHeight : 0) - cap.top)}px` : "";
     // The "Waiting on…" modal: a quiet stretch on a step that waits on something, never while the apply's events come in.
-    const applyLive = !!(live && live.live && !live.live.settled && live.waves.some((w) => w.state !== "waiting"));
+    // Once the play shows anything of this run under way (a wave or a card), nothing waits on the apply to start.
+    const applyLive = !!(live && live.live && (live.waves.some((w) => w.state !== "waiting") || Object.values(live.live.components || {}).some((c) => !["waiting", "planned", "planning"].includes(c.state))));
     s.waitingNow = waitingSpec(model, { quietMs: s.quietFor || 0, applyLive });
   }
   function drawWatch(at) {
@@ -2164,7 +2174,9 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const t = now().getTime();
     // behold#631: a new step reads at once (the applied step's card shows the moment the play ends, not a poll later).
     const stepKey = `${d.cycle}|${d.pull}|${d.step}`;
-    if (t - ap.at < APPROVAL_POLL_MS && !(s.chantLoop && ap.stepKey !== stepKey)) return;
+    // While a chant apply runs, read every CHANT_APPLY_POLL_MS so the panel, the track and the waiting modal follow the graph's play.
+    const every = s.chantLoop && ["merged", "applying", "resumed"].includes(d.step) ? CHANT_APPLY_POLL_MS : APPROVAL_POLL_MS;
+    if (t - ap.at < every && !(s.chantLoop && ap.stepKey !== stepKey)) return;
     ap.stepKey = stepKey;
     ap.busy = true;
     ap.at = t;
