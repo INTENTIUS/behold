@@ -209,11 +209,18 @@ export interface ReportCostSums {
   over?: boolean;
 }
 
-export type ReportWaveState = "planned" | "waiting" | "applying" | "applied" | "refused" | "failed";
+/** `blocked` (minor 41, terragucci#1161): a tf-apply wave none of whose roots ran, since an upstream of each did not apply in the run. */
+export type ReportWaveState = "planned" | "waiting" | "applying" | "applied" | "refused" | "failed" | "blocked";
 
 export interface ReportWave {
   number: number;
-  roots: string[];
+  /**
+   * The wave's roots by path. behold#741: a tf-apply wave may name each root
+   * with its own apply outcome instead (`{ root, outcome, error }`, one of the
+   * two shapes asked of terragucci#1164; see {@link waveOutcomes}): read
+   * through {@link waveRootNames}.
+   */
+  roots: (string | ReportRootOutcome)[];
   set_digest: string | null;
   approval: string;
   waiting_since?: string;
@@ -231,6 +238,50 @@ export interface ReportWave {
   replans_after?: number[];
   /** #568 step 3, minor 38 (INTENTIUS/terragucci#1013): on the wave that carries the composed run. */
   composed?: ReportComposedRun;
+  /**
+   * minor 41 (terragucci#1161): a tf-apply wave's roots that did not run
+   * because an upstream did not apply in this run, each with the root whose
+   * failure held it (past any root blocked in between). These roots are not
+   * in `roots`. Absent when none is blocked.
+   */
+  blocked?: { root: string; blocked_by: string }[];
+  /** behold#741: each root's own apply outcome, the other shape asked of terragucci#1164 (see {@link waveOutcomes}). */
+  outcomes?: ReportRootOutcome[];
+}
+
+/** behold#741: a root's own apply outcome in its wave, with its error when it failed. */
+export interface ReportRootOutcome {
+  root?: string;
+  path?: string;
+  outcome?: string;
+  error?: string;
+}
+
+export type RootOutcome = "applied" | "unchanged" | "failed";
+const OUTCOMES: readonly string[] = ["applied", "unchanged", "failed"];
+
+/** A wave's roots by path, whether it names them as paths or with their outcomes. Pure. */
+export function waveRootNames(w: Pick<ReportWave, "roots"> | undefined): string[] {
+  return (w && Array.isArray(w.roots) ? w.roots : []).flatMap((r) => (str(r) ? [r] : isRecord(r) && str(r.root ?? r.path) ? [String(r.root ?? r.path)] : []));
+}
+
+/**
+ * behold#741: each root's own apply outcome in a tf-apply wave, so a root
+ * that applied beside a failed one reads applied. terragucci#1164 adds it to
+ * the published report; until its field is named, both shapes asked for are
+ * read: `waves[].roots[].outcome` and `waves[].outcomes: [{ root, outcome,
+ * error }]`. Other outcomes, and malformed rows, are skipped. Pure.
+ */
+export function waveOutcomes(w: Pick<ReportWave, "roots" | "outcomes"> | undefined): { root: string; outcome: RootOutcome; error?: string }[] {
+  const rows = [...(w && Array.isArray(w.roots) ? w.roots : []), ...(w && Array.isArray(w.outcomes) ? w.outcomes : [])];
+  const out = new Map<string, { root: string; outcome: RootOutcome; error?: string }>();
+  for (const r of rows) {
+    if (!isRecord(r)) continue;
+    const root = r.root ?? r.path;
+    if (!str(root) || !root || !str(r.outcome) || !OUTCOMES.includes(r.outcome) || out.has(root)) continue;
+    out.set(root, { root, outcome: r.outcome as RootOutcome, ...(r.outcome === "failed" && str(r.error) && r.error ? { error: r.error } : {}) });
+  }
+  return [...out.values()];
 }
 
 /** A changed resource and the resources that depend on it, nearest first (minor 31, #568). */
@@ -508,6 +559,33 @@ export interface PullRequestPlan {
   totals_roots?: number;
   cost?: ReportCost;
   blast?: ReportBlast;
+  /** behold#741: each planned root's changes by action, as its plan counts them; absent when no root carries counts. */
+  counts?: Record<string, Record<string, number>>;
+  /** behold#741: each planned root's upstreams, the roots it reads and its `dependencies` (minor 23); absent when none has any. */
+  upstreams?: Record<string, string[]>;
+}
+
+/**
+ * behold#741 (terragucci#1161): the roots the newest tf-apply commit's waves
+ * blocked, each with its wave and the root whose failure held it, from each
+ * wave's newest report. Absent when no wave blocked a root, and always from
+ * reports older than minor 41, which carry no `blocked`.
+ */
+export interface BlockedRead {
+  commit: string;
+  roots: Record<string, { wave: number; by: string }>;
+}
+
+/** behold#741: each root's own apply outcome in the newest tf-apply commit's waves, each wave by its newest report. */
+export interface OutcomesRead {
+  commit: string;
+  roots: Record<string, { wave: number; outcome: RootOutcome; error?: string }>;
+}
+
+/** A wave's `blocked` rows, each as `{ root, by }`; malformed rows are skipped, and a wave without the field has none. Pure. */
+export function waveBlocked(w: Pick<ReportWave, "blocked"> | undefined): { root: string; by: string }[] {
+  const rows = w && Array.isArray(w.blocked) ? w.blocked : [];
+  return rows.flatMap((b) => (isRecord(b) && str(b.root) && b.root && str(b.blocked_by) && b.blocked_by ? [{ root: b.root, by: b.blocked_by }] : []));
 }
 
 export interface TerragucciRead {
@@ -530,6 +608,10 @@ export interface TerragucciRead {
    * older than the newest run, and `waiting` came from the index instead (behold#571).
    */
   estate?: { generated: string; html: string; drifted: number; failed: number; waiting: number; status: string; behind?: true };
+  /** behold#741: the roots the newest apply's waves blocked (report minor 41); absent when none. */
+  blocked?: BlockedRead;
+  /** behold#741: each root's own outcome in the newest apply's waves; absent when no report carries one. */
+  outcomes?: OutcomesRead;
 }
 
 export interface ReadOptions {
@@ -706,7 +788,7 @@ export async function readTerragucci(source: TerragucciSource, opts: ReadOptions
       wave: row.wave!,
       commit: row.commit,
       since,
-      roots: wave?.roots ?? [],
+      roots: waveRootNames(wave),
       set_digest: digest,
       destroys: (doc?.named ?? []).filter((n) => n.action === "delete" || n.action === "replace").map((n) => `${n.root}: ${n.address ?? ""} (${n.action})`),
       report: under(row.path, "report.html"),
@@ -714,6 +796,27 @@ export async function readTerragucci(source: TerragucciSource, opts: ReadOptions
       command: terragucciApproveCommand(row.wave!, digest),
       from: fromEstate ? "estate" : "index",
     });
+  }
+
+  // behold#741 (terragucci#1161): the roots the newest apply's waves blocked, each wave by its newest report.
+  let blocked: BlockedRead | undefined;
+  let outcomes: OutcomesRead | undefined;
+  {
+    const applies = rows.filter((r) => r.stage === "tf-apply");
+    const commit = applies[0]?.commit;
+    const seen = new Set<number>();
+    const found: BlockedRead["roots"] = {};
+    const own: OutcomesRead["roots"] = {};
+    for (const r of applies.filter((a) => a.commit === commit)) {
+      if (r.wave === undefined || seen.has(r.wave)) continue;
+      seen.add(r.wave);
+      const doc = await report(r);
+      const wave = doc?.waves.find((w) => w.number === r.wave) ?? doc?.waves[0];
+      for (const b of waveBlocked(wave)) if (!found[b.root]) found[b.root] = { wave: r.wave, by: b.by };
+      for (const o of waveOutcomes(wave)) if (!own[o.root]) own[o.root] = { wave: r.wave, outcome: o.outcome, ...(o.error ? { error: o.error } : {}) };
+    }
+    if (commit && Object.keys(found).length) blocked = { commit, roots: found };
+    if (commit && Object.keys(own).length) outcomes = { commit, roots: own };
   }
 
   return {
@@ -739,6 +842,8 @@ export async function readTerragucci(source: TerragucciSource, opts: ReadOptions
           },
         }
       : {}),
+    ...(blocked ? { blocked } : {}),
+    ...(outcomes ? { outcomes } : {}),
   };
 }
 
@@ -767,7 +872,7 @@ export function pullRequestPlan(doc: Report, report: string): PullRequestPlan {
     roots: doc.roots.map((r) => r.path),
     waves: doc.waves.map((w) => ({
       number: w.number,
-      roots: w.roots,
+      roots: waveRootNames(w),
       ...(w.state ? { state: w.state } : {}),
       // A wave that plans again has no digest a review binds until it does.
       set_digest: w.replans_after?.length ? null : w.set_digest,
@@ -794,5 +899,16 @@ export function pullRequestPlan(doc: Report, report: string): PullRequestPlan {
     ...(doc.totals_roots !== undefined ? { totals_roots: doc.totals_roots } : {}),
     ...(doc.cost ? { cost: doc.cost } : {}),
     ...(doc.blast ? { blast: doc.blast } : {}),
+    ...((): Pick<PullRequestPlan, "counts" | "upstreams"> => {
+      // behold#741: per root, for the kiosk's reach and its cards' counts.
+      const counts: Record<string, Record<string, number>> = {};
+      const upstreams: Record<string, string[]> = {};
+      for (const r of doc.roots) {
+        if (r.counts && Object.keys(r.counts).length) counts[r.path] = { ...r.counts };
+        const ups = [...new Set([...(r.reads ?? []).map((x) => x.upstream), ...(r.dependencies ?? [])])].filter((u) => typeof u === "string" && u && u !== r.path).sort();
+        if (ups.length) upstreams[r.path] = ups;
+      }
+      return { ...(Object.keys(counts).length ? { counts } : {}), ...(Object.keys(upstreams).length ? { upstreams } : {}) };
+    })(),
   };
 }

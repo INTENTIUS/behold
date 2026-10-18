@@ -11,7 +11,8 @@
 // wave that failed says the waves before it stay applied, and nothing here is
 // all-or-nothing.
 
-import { pinsCommit, rootStates } from "./terragucci-change.js";
+import { BLOCKED_TONE, blockedHeader, blockedOf, pinsCommit, rootStates, totalsLine } from "./terragucci-change.js";
+import { shortReason } from "./chant-pr-marks.js";
 
 /** A job's status as its wave box says it. A job held at a terragucci gate is never a failure. */
 export const JOB_WORDS = {
@@ -38,6 +39,10 @@ export const SHORT_WORDS = {
   failed: "failed",
   unchanged: "unchanged",
   outside: "not in this run",
+  // behold#741 (terragucci#1161): a root an upstream that did not apply held.
+  blocked: "blocked",
+  // behold#741: a story's later pull request (the fix) leaves out what landed before it.
+  "applied-earlier": "applied earlier",
 };
 
 const sameSha = (a, b) => !!a && !!b && (a.startsWith(b) || b.startsWith(a));
@@ -135,27 +140,48 @@ export function waveOfKey(key) {
  * (component -> job and wave) and `roots` (component -> the root it applies;
  * a component without one is taken to be its root's name).
  */
-export function componentMarks(answer, progress, facets, { runs = null, pin = null } = {}) {
+export function componentMarks(answer, progress, facets, { runs = null, pin = null, story = null } = {}) {
   const jobs = facets && Array.isArray(facets.jobs) ? facets.jobs : [];
   const rootOf = (c) => (facets && facets.roots && facets.roots[c]) || c;
-  const states = rootStates(answer, progress);
+  // behold#741: blocked roots and each root's own outcome are a story's alone; every other view reads as before.
+  const states = rootStates(answer, progress, { story: !!story });
   const stage = states.stage;
   const commit = runsCommit(pin, progress);
   const cards = {};
+  // behold#741: a kiosk telling a chapter-carrying scenario (`story`): what landed earlier in the cycle, and what a
+  // failure left, carry over to the next pull request's cards (the fix) where its plan says nothing of them.
+  const earlier = story && story.earlier instanceof Set ? story.earlier : new Set();
+  const lastStates = story && story.lastStates ? story.lastStates : null;
   for (const j of jobs) {
     const root = rootOf(j.component);
-    const st = states.roots[root];
+    let st = states.roots[root];
+    if (story && (!st || st.state === "unchanged" || st.state === "outside")) {
+      const last = lastStates && stage !== "apply" ? lastStates[root] : null;
+      if (last && (last.state === "failed" || last.state === "blocked")) st = { wave: st ? st.wave : j.wave, state: last.state, tone: last.state === "failed" ? "bad" : "wait", words: last.words || SHORT_WORDS[last.state], facts: [], ...(last.blockedBy ? { blockedBy: last.blockedBy } : {}) };
+      else if (earlier.has(root)) st = { wave: st ? st.wave : j.wave, state: "applied-earlier", tone: "ok", words: "applied earlier", facts: [] };
+    }
     if (!st) continue;
+    const facts = [...st.facts];
+    // behold#741: a story's plan says each root's own counts, from the plan report.
+    const counts = story && stage === "pull-request" && st.state === "planned" && answer.pull_request.counts ? totalsLine(answer.pull_request.counts[root]) : null;
+    if (counts) facts.push(`plans ${counts}`);
+    // behold#741: a story's failed root says its error the way chant's cards do: "failed: <its specific part>",
+    // a shorter middle form for a narrow card, and the whole error in the tooltip.
+    const reason = st.state === "failed" && st.error ? shortReason(st.error) : null;
     cards[j.component] = {
       root,
       wave: j.wave ?? st.wave,
       state: st.state,
       tone: st.tone,
-      words: st.words.replace(/^wave \d+ · /, ""),
+      words: reason ? `failed: ${reason}` : st.words.replace(/^wave \d+ · /, ""),
+      ...(reason ? { mid: `failed: ${shortReason(st.error, 16)}`, reason } : {}),
       short: SHORT_WORDS[st.state] || st.state,
-      facts: st.facts,
+      facts,
+      ...(st.blockedBy ? { blockedBy: st.blockedBy } : {}),
     };
   }
+  // behold#741: a wave's header once some of its roots are blocked (terragucci#1161); none for older reports.
+  const blocked = story && stage === "apply" ? blockedOf(answer, progress) : new Map();
   const waves = {};
   const waveNumbers = [...new Set(jobs.map((j) => j.wave).filter((n) => typeof n === "number"))].sort((a, b) => a - b);
   for (const n of waveNumbers) {
@@ -169,21 +195,123 @@ export function componentMarks(answer, progress, facets, { runs = null, pin = nu
     // names; then, for a wave that failed, the waves before it that stay applied.
     const rank = (f) => (/^approve plan /.test(f) ? 0 : / stays applied$/.test(f) ? 1 : 2);
     facts.sort((a, b) => rank(a) - rank(b));
+    // behold#741: "3 applied, 6 blocked by cluster-a", or "blocked by cluster-a" for a wave none of whose roots ran:
+    // its job exits 1 for the roots it held, which is no failure of the wave's own.
+    const wr = stage === "apply" && progress && Array.isArray(progress.states) ? progress.states.find((x) => x.number === n) : null;
+    let header = wr && blocked.size ? blockedHeader(wr.roots || [], blocked, w) : null;
+    let headerTone = w === "blocked" ? BLOCKED_TONE : toneOf(w);
+    // behold#741: a story's failed wave says how each root came out, as chant's does: "1 failed, 1 applied", the
+    // failure's reason first among its facts, shorter forms of it for a narrow box.
+    const failedHere = story && w === "failed" ? members.filter((m) => m.state === "failed") : [];
+    const factShort = [];
+    if (failedHere.length) {
+      const applied = members.filter((m) => m.state === "applied").length;
+      header = `${failedHere.length} failed${applied ? `, ${applied} applied` : ""}`;
+      headerTone = "bad";
+      facts.unshift(...failedHere.map((m) => (m.reason ? `${m.root} failed: ${m.reason}` : `${m.root} failed`)));
+      const first = failedHere[0];
+      if (first.reason) factShort.push(`${first.root} failed: ${shortReason(first.reason, 36)}`, `${first.root} failed`);
+    }
+    const shown = header ? { status: w === "blocked" ? "blocked" : w === "failed" ? "failed" : "done", words: header, tone: headerTone, ...(status && status.run ? { run: status.run } : {}) } : status;
     waves[n] = {
       number: n,
       job: jobName,
       state: w,
       // A re-run held at its gate (behold#693) tones the box as its title says.
-      tone: status && status.held && status.status === "waiting" ? status.tone : w ? toneOf(w) : status ? status.tone : "idle",
-      status,
-      title: waveTitle(jobName, status),
+      tone: header ? headerTone : shown && shown.held && shown.status === "waiting" ? shown.tone : w ? toneOf(w) : shown ? shown.tone : "idle",
+      status: shown,
+      title: waveTitle(jobName, shown),
       facts,
+      ...(factShort.length ? { factShort } : {}),
     };
   }
-  return { stage, cards, waves, commit };
+  if (!story) return { stage, cards, waves, commit };
+  // behold#741: the chant kiosk's look for a chapter-carrying scenario: the wedge, and the bigger card and wave words.
+  const needs = rootNeeds(answer, progress, stage, jobs, rootOf);
+  const reach = tgReachOf(cards, { stage, answer, needs, earlier });
+  return { stage, cards, waves, commit, needs, ...(reach ? { reach } : {}), ...(story.kiosk ? { statusRight: true, cardFont: 15, waveFont: 18 } : {}) };
 }
 
 const toneOf = (state) => ({ planned: "plan", waiting: "wait", applying: "busy", applied: "ok", failed: "bad", refused: "bad" })[state] || "idle";
+
+/**
+ * behold#741: each component's upstream components, from the plan report's
+ * reads and dependencies while a pull request plans (`upstreams`), and from
+ * the run view's reads from the merge on: the edges terragucci layers its
+ * waves by (rootOrder).
+ */
+export function rootNeeds(answer, progress, stage, jobs, rootOf) {
+  const compsOf = new Map();
+  for (const j of jobs) {
+    const r = rootOf(j.component);
+    compsOf.set(r, [...(compsOf.get(r) || []), j.component]);
+  }
+  const ups = {};
+  if (stage === "pull-request" && answer && answer.pull_request) {
+    const pr = answer.pull_request;
+    for (const [root, us] of Object.entries(pr.upstreams || {})) ups[root] = [...us];
+    for (const r of pr.reads || []) ups[r.root] = [...new Set([...(ups[r.root] || []), r.upstream])];
+  } else if (progress && Array.isArray(progress.reads)) {
+    for (const r of progress.reads) ups[r.root] = [...new Set([...(ups[r.root] || []), ...(r.reads || [])])];
+  }
+  const needs = {};
+  for (const [root, us] of Object.entries(ups)) {
+    const from = compsOf.get(root) || [root];
+    const to = us.flatMap((u) => compsOf.get(u) || [u]);
+    for (const c of from) needs[c] = [...new Set([...(needs[c] || []), ...to])].filter((x) => x !== c).sort();
+  }
+  return needs;
+}
+
+/** The components downstream of `roots` along `needs` (a component -> what it needs), within `within` when given. */
+function downstreamOf(roots, needs, within = null) {
+  const out = new Set();
+  const users = {};
+  for (const [c, ds] of Object.entries(needs)) for (const d of ds) (users[d] = users[d] || []).push(c);
+  const walk = (n) => {
+    for (const u of users[n] || []) {
+      if (out.has(u) || roots.includes(u) || (within && !within.has(u))) continue;
+      out.add(u);
+      walk(u);
+    }
+  };
+  for (const r of roots) walk(r);
+  return [...out];
+}
+
+/**
+ * behold#741: what a change reaches, for app.js drawReach, as chant's
+ * reachOf (web/chant-pr-marks.js) says it, from terragucci's reports:
+ *
+ * - once a root failed: the failed root(s), covering the cards they block,
+ *   "6 blocked";
+ * - while a pull request's plan stands: the changed root(s) (the plan's
+ *   blast roots, else the planned roots that read no other planned one) as
+ *   the apex, covering the planned roots downstream of them, "reaches 15
+ *   roots", or for a later pull request of the cycle "the fix reaches 7";
+ * - nothing from the merge on, until a failure.
+ */
+export function tgReachOf(cards, { stage, answer, needs = {}, earlier = new Set() } = {}) {
+  const failed = Object.entries(cards).filter(([, c]) => c.state === "failed").map(([id]) => id);
+  if (failed.length && stage === "apply") {
+    const failedRoots = new Set(failed.map((id) => cards[id].root));
+    const held = new Set(Object.entries(cards).filter(([, c]) => c.state === "blocked" && (!c.blockedBy || failedRoots.has(c.blockedBy))).map(([id]) => id));
+    for (const d of downstreamOf(failed, needs)) if (cards[d] && cards[d].state === "blocked") held.add(d);
+    if (!held.size) return null;
+    const names = [...held].sort();
+    return { key: `failed|${failed.sort().join(",")}|${names.length}`, roots: failed, covered: names, tone: "bad", label: `${names.length} blocked` };
+  }
+  if (stage !== "pull-request" || !answer || !answer.pull_request) return null;
+  const members = new Set(Object.entries(cards).filter(([, c]) => c.state === "planned").map(([id]) => id));
+  if (!members.size) return null;
+  const blast = answer.pull_request.blast && Array.isArray(answer.pull_request.blast.roots) ? new Set(answer.pull_request.blast.roots) : null;
+  const changed = blast ? [...members].filter((id) => blast.has(cards[id].root) && !(needs[id] || []).some((d) => members.has(d) && blast.has(cards[d].root))) : [];
+  const roots = (changed.length ? changed : [...members].filter((id) => !(needs[id] || []).some((d) => members.has(d)))).sort();
+  if (!roots.length) return null;
+  const covered = [...new Set([...roots, ...downstreamOf(roots, needs, members)])].sort();
+  const fix = earlier.size > 0;
+  return { key: `plan|${roots.join(",")}|${covered.length}|${fix ? "fix" : "change"}`, roots, covered, tone: "plan", label: fix ? `the fix reaches ${covered.length}` : `reaches ${covered.length} ${covered.length === 1 ? "root" : "roots"}` };
+}
 
 /** A wave's own state: the run view's once merged, `planned` while a pull request plans it. */
 function waveState(answer, progress, stage, n) {

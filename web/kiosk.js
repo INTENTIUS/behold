@@ -20,6 +20,7 @@ import { cycleTrack, drawTrack, trackModel, waitingSpec } from "./kiosk-track.js
 import { FORGES, iconSvg } from "./forge-mark.js";
 import { TOOLS } from "./tool-mark.js";
 import { graphWaves } from "./chant-pr-marks.js";
+import { createProgressPacer, trackWaves } from "./terragucci-live-pace.js";
 import { PICK_HOLD_MS, annMark, mergeRun, startRuns, statusIcon } from "./kiosk-runs.js";
 import { MODES, MODE_STORE, badges as waveBadges, badgeTitle, behindStep, steadyRun, captionModel, doraLine, modeStored, placeBeside, quietWords, recordKey, resultModel, runningStep, shotFor, stepTone, tailLines } from "./kiosk-watch.js";
 import { shotMessage } from "./kiosk-shot.js";
@@ -145,33 +146,61 @@ function chapterStyle() {
   document.head.appendChild(st);
 }
 
+/**
+ * behold#741: whether a kiosk tells its scenario the way #631 built for chant's loop (the projected track, the
+ * chapter headline, the reach wedge, the waiting modal, paced waves, the wave blocks, applied earlier, one tip at a
+ * time and the title line): a chant repo's loop, or a terragucci repo whose demo.json step carries `chapter`.
+ * b-waves, failure and tg-planned-outputs carry none, so they take today's path.
+ */
+export function storyGate({ chantLoop = false, terragucciRepo = false, demo = null } = {}) {
+  if (chantLoop) return "chant";
+  if (terragucciRepo && demo && demo.chapter && Number.isInteger(demo.chapter.n)) return "terragucci";
+  return null;
+}
+const storyOn = (s) => !!(s.chantLoop || s.tgStory);
+
 /** behold#631: a chant kiosk's one line naming what it shows: the pipeline is chant's own; terragucci runs the demo around it. */
 export const SCENARIO_WORDS = { "fan-out": "fan-out" };
-export function whatLine(demo, forge = null) {
-  return whatParts(demo, forge).map((p) => p.text).join(" · ");
+export function whatLine(demo, forge = null, tg = null) {
+  return whatParts(demo, forge, tg).map((p) => p.text).join(" · ");
 }
 /**
  * The line's parts, each `{ text, short, logo? }`: a logo (a mark behold ships) only where a product is named,
  * chant's beside chant, the forge's beside the forge. `short` is the phone's words.
  */
-export function whatParts(demo, forge = null) {
+export function whatParts(demo, forge = null, tg = null) {
   const sc = demo && typeof demo.scenario === "string" ? demo.scenario : null;
   const f = forge && FORGES[forge] ? FORGES[forge] : null;
+  // behold#741: a terragucci repo's line: terragucci (behold ships no terragucci mark, so its name alone), the engine
+  // its jobs run with its mark where behold ships one (OpenTofu's; Terraform's name alone), then the same as chant's.
+  const tool = tg ? whatTool(tg.tools) : null;
+  const head = tg
+    ? [{ text: "terragucci", short: "terragucci" }, ...(tool ? [{ text: tool.name, short: tool.name, ...(tool.logo ? { logo: tool.logo } : {}) }] : [])]
+    : [{ text: "chant's pull-request pipeline", short: "chant pipeline", logo: "chant" }];
   return [
-    { text: "chant's pull-request pipeline", short: "chant pipeline", logo: "chant" },
+    ...head,
     ...(f ? [{ text: `on ${f.label}`, short: f.label, logo: forge }] : []),
     ...(sc ? [{ text: SCENARIO_WORDS[sc] || sc.replace(/-/g, " "), short: SCENARIO_WORDS[sc] || sc.replace(/-/g, " ") }] : []),
     { text: "live demo", short: "live" },
   ];
 }
+/** behold#741: the engine a terragucci repo's jobs run, from its declared tools: OpenTofu with its mark, Terraform by name alone. */
+export function whatTool(tools) {
+  const ts = Array.isArray(tools) ? tools : [];
+  for (const id of ["opentofu", "terraform"]) {
+    if (!ts.includes(id) || !TOOLS[id]) continue;
+    return { id, name: TOOLS[id].name, ...(TOOLS[id].icon && !TOOLS[id].icon.image ? { logo: id } : {}) };
+  }
+  return null;
+}
 /** The line drawn: each part's logo at the words' height, at its own aspect (the marks are square), then the words. */
-function whatLineEl(demo, forge) {
+function whatLineEl(demo, forge, tg = null) {
   const line = el("span", "k-cycle k-what-line");
   const light = typeof document !== "undefined" && typeof getComputedStyle === "function" ? isLightBg(getComputedStyle(document.documentElement).getPropertyValue("--bg")) : false;
-  whatParts(demo, forge).forEach((p, i) => {
+  whatParts(demo, forge, tg).forEach((p, i) => {
     if (i) line.appendChild(el("span", "k-what-sep", "·"));
     const part = el("span", "k-what-part");
-    const spec = p.logo === "chant" ? TOOLS.chant && TOOLS.chant.icon : p.logo && FORGES[p.logo] ? FORGES[p.logo] : null;
+    const spec = p.logo && TOOLS[p.logo] && TOOLS[p.logo].icon ? TOOLS[p.logo].icon : p.logo && FORGES[p.logo] ? FORGES[p.logo] : null;
     if (spec && typeof document !== "undefined" && document.createElementNS) {
       const icon = iconSvg(document, spec, 22, { light });
       icon.setAttribute("class", `k-what-logo k-what-logo-${p.logo}`);
@@ -185,7 +214,7 @@ function whatLineEl(demo, forge) {
     part.append(el("span", "k-what-full", p.text), el("span", "k-what-short", p.short));
     line.appendChild(part);
   });
-  if (line.setAttribute) line.setAttribute("title", WHAT_TITLE);
+  if (line.setAttribute) line.setAttribute("title", tg ? WHAT_TITLE_TG : WHAT_TITLE);
   whatStyle();
   return line;
 }
@@ -206,6 +235,8 @@ function whatStyle() {
 }
 /** Its tooltip: whose pipeline it is, and whose demo. */
 export const WHAT_TITLE = "The pipeline is chant's (chant components pr-plan / pr-apply on Forgejo). The demo stack and its driver are terragucci's.";
+/** behold#741: a terragucci repo's: the pipeline, the stack and the driver are all terragucci's. */
+export const WHAT_TITLE_TG = "The pipeline is terragucci's (its waves, one job per wave). The demo stack and its driver are terragucci's.";
 
 /** behold#631: the step a chant kiosk's strip lights: a wait for approval before the merge is "planned" when the strip has no approval stop. */
 export function railStep(s, demo) {
@@ -991,9 +1022,11 @@ function drawWatchHead(bar, s, now) {
   const vendor = vendorOf(s.vendor);
   const place = el("div", "k-w-place");
   const shownTool = vendor || (demo.scenario !== "base" ? vendorOf(demo.tool) : null);
-  if (s.chantLoop && s.trackOn) {
+  if (storyOn(s) && s.trackOn) {
     // behold#631: a chant kiosk names what this is in one line; the cycle number and its clock are Inspect's.
-    place.appendChild(whatLineEl(demo, s.chantForge ? s.chantForge() : null));
+    // behold#741: a terragucci repo's chapter-carrying scenario names terragucci, its engine and its forge.
+    if (s.chantLoop) place.appendChild(whatLineEl(demo, s.chantForge ? s.chantForge() : null));
+    else place.appendChild(whatLineEl(demo, s.tgForge || null, { tools: s.tools || [] }));
   } else {
     if (shownTool) place.appendChild(brandEl(shownTool));
     place.appendChild(el("span", "k-cycle", cycleWords(demo, now)));
@@ -1032,8 +1065,8 @@ function drawCaption(host, s, now) {
   const title = el("h1", "k-cap-title");
   // behold#631: a chant kiosk with its track drops "Scenario 1 of 1": the track says where the cycle is.
   const told = s.storyDemo ? s.storyDemo(demo) : demo;
-  const ch = s.chantLoop && told && told.chapter && Number.isInteger(told.chapter.n) ? told.chapter : null;
-  if (!(s.chantLoop && s.trackOn)) title.append(el("span", "k-kicker", cap.kicker));
+  const ch = storyOn(s) && told && told.chapter && Number.isInteger(told.chapter.n) ? told.chapter : null;
+  if (!(storyOn(s) && s.trackOn)) title.append(el("span", "k-kicker", cap.kicker));
   if (ch) {
     // behold#631: the story's chapter is the headline, "1 of 4 · A change to the shared network goes out to all 15 stacks",
     // fading in when the chapter turns; the scenario's point stays under it as one constant small line.
@@ -1564,6 +1597,12 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   const draw = () => {
     followRepo();
     replayTick();
+    // behold#741: the story gate for this step, and the frame told so (it draws the wedge, the blocks and the paced waves).
+    {
+      const d = s.demo && s.demo.demo;
+      s.tgStory = storyGate({ chantLoop: s.chantLoop, terragucciRepo: s.tgRepo, demo: d }) === "terragucci";
+      if (s.tgRepo) post({ type: "behold:story", on: s.tgStory, cycle: d && Number.isInteger(d.cycle) ? d.cycle : null });
+    }
     s.light = typeof document !== "undefined" && document.documentElement ? isLightBg(getComputedStyle(document.documentElement).getPropertyValue("--bg")) : false;
     s.rootNames = rootList();
     const shown = shownView();
@@ -1740,7 +1779,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       eh.trailHost.parentNode.insertBefore(trackHost, eh.trailHost);
     }
     const t = at instanceof Date ? at.getTime() : now().getTime();
-    const track = s.chantLoop && d ? cycleTrack(s.lastCycle()) : null;
+    const track = storyOn(s) && d ? cycleTrack(s.lastCycle()) : null;
     s.trackOn = !!track;
     if (!trackHost) return;
     if (!track) {
@@ -1753,7 +1792,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     // The story's step, which may be a chapter ahead of demo.json's (s.storyDemo).
     d = s.storyDemo ? s.storyDemo(d) : d;
     if (Number.isInteger(d.pull) && !trackState.pulls.includes(d.pull)) trackState.pulls.push(d.pull);
-    const live = s.chantWavesNow ? s.chantWavesNow(d) : null;
+    const live = s.chantLoop ? (s.chantWavesNow ? s.chantWavesNow(d) : null) : s.tgWavesNow ? s.tgWavesNow(d) : null;
     // When the current segment began: the step's own start where demo.json says it, else when the kiosk first saw it.
     const probe = trackModel(track, { demo: d, pulls: trackState.pulls, since: t, now: t });
     const key = probe ? `${probe.at.chapter}|${probe.at.segment}` : null;
@@ -1770,7 +1809,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     if (trackHost.style) trackHost.style.bottom = cap.height ? `${Math.round((typeof window !== "undefined" ? window.innerHeight : 0) - cap.top)}px` : "";
     // The "Waiting on…" modal: a quiet stretch on a step that waits on something, never while the apply's events come in.
     // Once the play shows anything of this run under way (a wave or a card), nothing waits on the apply to start.
-    const applyLive = !!(live && live.live && (live.waves.some((w) => w.state !== "waiting") || Object.values(live.live.components || {}).some((c) => !["waiting", "planned", "planning"].includes(c.state))));
+    // behold#741: a terragucci apply is under way once any wave of its run view has moved.
+    const applyLive = !!(live && (live.live ? live.waves.some((w) => w.state !== "waiting") || Object.values(live.live.components || {}).some((c) => !["waiting", "planned", "planning"].includes(c.state)) : live.tg && live.waves.some((w) => w.state !== "waiting")));
     s.waitingNow = waitingSpec(model, { quietMs: s.quietFor || 0, applyLive });
   }
   function drawWatch(at) {
@@ -1780,7 +1820,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     if (typeof document !== "undefined") {
       const themeMenu = document.getElementById("k-theme-name");
       const menu = themeMenu && themeMenu.closest ? themeMenu.closest("details") : null;
-      if (menu) menu.hidden = !!(s.chantLoop && s.trackOn);
+      if (menu) menu.hidden = !!(storyOn(s) && s.trackOn);
     }
     drawCaption(watch.caption, s, at);
     drawChantTrack(d, at);
@@ -1995,7 +2035,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
           return {
             demo: d,
             answer: s.answer,
-            progress: s.steady,
+            // behold#741: told at the pace the graph plays the waves, while a terragucci story is on.
+            progress: s.tgStory && s.tgPaced ? s.tgPaced() : s.steady,
             runDoc: runsApi && runsApi.run ? runsApi.run.doc : null,
             // The cycle's runs the approval panel reads, for the failures of runs the pane no longer shows.
             runDocs: ap.list,
@@ -2005,10 +2046,13 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
             boxes: s.boxes,
             // behold#631: a chant repo's pull-request loop, whose story Tips tell its own way.
             chant: !!s.chantLoop,
+            // behold#741: a terragucci repo's chapter-carrying scenario gets the kiosk's look (one tip at a time, modals
+            // off the cards and above the band) but keeps its own story order: its gates come after the merge.
+            story: storyOn(s),
             // Its projected track replaces the chip strip, and its quiet stretches get a "Waiting on…" modal,
             // which the approval card beside the graph wins over.
-            hideTrail: !!(s.chantLoop && s.trackOn && s.watchMode),
-            waiting: s.chantLoop && s.watchMode && !(watch && watch.callout && !watch.callout.hidden) ? s.waitingNow || null : null,
+            hideTrail: !!(storyOn(s) && s.trackOn && s.watchMode),
+            waiting: storyOn(s) && s.watchMode && !(watch && watch.callout && !watch.callout.hidden) ? s.waitingNow || null : null,
             frame,
             watch: s.watchMode,
             // The caption shown now: the live carve's while it has the camera (web/kiosk-carve.js).
@@ -2230,6 +2274,22 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const a = chantPacer.answer(ap.chant);
     return { waves: graphWaves(a.live.apply).map((w) => ({ wave: w.wave, state: w.state })), live: a.live.apply };
   };
+  // behold#741: a terragucci story's run view, its waves played at the pace chant's are (web/terragucci-live-pace.js).
+  const tgPacer = createProgressPacer();
+  s.tgPaced = () => tgPacer.progress(s.steady);
+  /** behold#741: the run view's waves as the paced graph shows them now, for the track's ticks; null off a terragucci story. */
+  s.tgWavesNow = (demo) => {
+    if (!s.tgStory || !demo || !["merged", "applying", "resumed", "waiting", "approved", "failed", "applied"].includes(demo.step)) return null;
+    const p = s.tgPaced();
+    // Another commit's run view (the change's, while the fix's apply starts) says nothing of this step's.
+    const c = p && p.run && typeof p.run.commit === "string" ? p.run.commit : null;
+    if (c && typeof demo.commit === "string" && demo.commit && !(c.startsWith(demo.commit) || demo.commit.startsWith(c))) return null;
+    const waves = trackWaves(p);
+    if (!waves || !waves.length) return null;
+    const failed = waves.some((w) => w.state === "failed");
+    const done = !tgPacer.pending && !!p && p.watching === false && waves.every((w) => w.state === "applied");
+    return { waves, live: null, tg: true, failed, done };
+  };
   /**
    * behold#631: the step as the story tells it now. The driver writes the failed step only once the apply job ends,
    * seconds after the paced graph has shown the failure, and the applied step after the fix's apply ends. So when the
@@ -2241,17 +2301,20 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   /** behold#631: the forge chant's pipeline runs on, from its loop as /api/chant/pr read it. */
   s.chantForge = () => (ap.chant && ap.chant.loop && ap.chant.loop.forge) || null;
   s.storyDemo = (d) => {
-    if (!s.chantLoop || !d || !d.chapter || !Number.isInteger(d.chapter.n)) return d;
+    if (!storyOn(s) || !d || !d.chapter || !Number.isInteger(d.chapter.n)) return d;
     if (story.cycle !== d.cycle) Object.assign(story, { cycle: d.cycle, n: 0, chapter: null, step: null });
     const steps = (s.lastCycle() || {}).steps || [];
     const first = (n) => steps.find((x) => x.chapter && x.chapter.n === n) || null;
     let n = d.chapter.n;
     let chapter = d.chapter;
     let step = d.step;
-    const w = ["applying", "merged", "resumed"].includes(d.step) && s.chantWavesNow ? s.chantWavesNow(d) : null;
+    const applyStep = ["applying", "merged", "resumed"].includes(d.step);
+    const w = applyStep && s.chantLoop && s.chantWavesNow ? s.chantWavesNow(d) : null;
     const comps = w && w.live && w.live.components ? Object.values(w.live.components) : [];
+    // behold#741: a terragucci story moves on when the paced run view shows a failure, or every wave applied.
+    const tw = applyStep && !s.chantLoop && s.tgWavesNow ? s.tgWavesNow(d) : null;
     const ahead = first(n + 1);
-    if (ahead && (comps.some((c) => c.state === "failed") || (w && w.live && w.live.settled && w.live.status === "ok" && !w.live.paced))) {
+    if (ahead && (comps.some((c) => c.state === "failed") || (w && w.live && w.live.settled && w.live.status === "ok" && !w.live.paced) || (tw && (tw.failed || tw.done)))) {
       n = ahead.chapter.n;
       chapter = ahead.chapter;
       step = ahead.step;
@@ -2270,6 +2333,11 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     if (held) {
       chantPacer.answer(ap.chant);
       if (chantPacer.pending && capShown && capShown.id !== demo.step) return capShown;
+    }
+    // behold#741: a terragucci story's failed and applied steps wait, as chant's do, for the paced waves to reach them.
+    if (s.tgStory && demo && ["failed", "applied"].includes(demo.step) && s.tgPaced) {
+      s.tgPaced();
+      if (tgPacer.pending && capShown && capShown.id !== demo.step) return capShown;
     }
     capShown = step;
     return step;
@@ -2457,6 +2525,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     s.components = !!(p && !p.error && (p.terragucciComponents || chantProject(p)));
     // behold#631: a chant project may run chant's pull-request loop; /api/chant/pr says (its `loop`).
     s.chantLoop = !!(p && !p.error && !p.terragucciComponents && chantProject(p));
+    // behold#741: a terragucci repo, whose chapter-carrying scenarios get the same look (storyGate).
+    s.tgRepo = !!(p && !p.error && p.terragucciComponents);
     // behold#571: the declared roots (their colours' order) and the wave jobs that apply them.
     if (p && p.terragucciRoots) {
       s.roots = Array.isArray(p.terragucciRoots.roots) ? p.terragucciRoots.roots : [];
@@ -2464,6 +2534,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       // behold#571: the tools the repo's jobs run, for a job row whose log isn't read yet.
       s.tools = Array.isArray(p.terragucciRoots.tools) ? p.terragucciRoots.tools : [];
       s.rootTools = p.terragucciRoots.rootTools && typeof p.terragucciRoots.rootTools === "object" ? p.terragucciRoots.rootTools : {};
+      // behold#741: the forge, for a chapter-carrying scenario's title line.
+      s.tgForge = typeof p.terragucciRoots.forge === "string" ? p.terragucciRoots.forge : null;
     } else if (s.aimed) {
       s.roots = [];
       s.waves = [];
@@ -2575,6 +2647,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     // behold#631: a chant kiosk's "· N s so far" counts only while a job of the step runs; a step that is done has no timer.
     // With the projected track up, its now line says it: the caption's quiet line goes.
     if (s.chantLoop && s.quiet && (!(run && run.job) || s.trackOn)) s.quiet = null;
+    // behold#741: with the projected track up on a terragucci story, its now line says it too.
+    else if (s.tgStory && s.quiet && s.trackOn) s.quiet = null;
     if (carveCtl) carveCtl.setQuiet(s.quiet);
   };
 

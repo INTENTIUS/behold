@@ -54,7 +54,8 @@ export const PROGRESS_TTL_MS = 30_000;
 
 export type ProgressStatus = "done" | "in-flight" | "waiting" | "not-applied";
 export const PROGRESS_STATUSES: readonly ProgressStatus[] = ["done", "in-flight", "waiting", "not-applied"];
-type WaveState = "not-started" | "planned" | "waiting" | "applying" | "applied" | "refused" | "failed";
+/** `blocked` (terragucci#1161): a wave none of whose roots ran, since an upstream of each did not apply in the run. */
+type WaveState = "not-started" | "planned" | "waiting" | "applying" | "applied" | "refused" | "failed" | "blocked";
 
 /** The run view, as far as behold reads it. Every other field is ignored, as terragucci's v1 contract asks of a reader. */
 export interface RunView {
