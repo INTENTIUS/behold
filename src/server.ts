@@ -66,7 +66,7 @@ import { addCompositeDepsCounted } from "./composite-deps.ts";
 import { notesFor, danglingNote, tierMismatchNote, namespaceMismatchNote, namespaceJoinNote, unchangedZoomNote, type Zoom } from "./zoom-notes.ts";
 import { resourcesByComponent, resourcesByRoot, nonResourceEntities } from "./resources.ts";
 import { configKeys, declaredRootTools, pipelineForge, repoTools, toolOfBinary } from "./pipeline-marks.ts";
-import { chantPrFacets, chantPrRoute } from "./chant-pr.ts";
+import { chantPrFacets, chantPrRoute, reportSourceOf } from "./chant-pr.ts";
 import { TERRAGUCCI_COMPONENTS_FILE, componentJobs, componentRootMap, readTerragucciComponents, waveTitles, type TerragucciComponents } from "./terragucci-components.ts";
 import { hasTerragruntUnits } from "./terragrunt-units.ts";
 import { summarizePlan } from "./reconcile.ts";
@@ -244,6 +244,8 @@ export interface ServerOptions {
   viewRepos?: ViewRepos;
   /** #526: `--yodel-report`: SQL Yodeler's report and drift JSON, drawn as dated marks (src/yodel-report.ts). */
   yodelReport?: string;
+  /** behold#631 `--chant-report-url`: where a chant repo's pull-request stages upload their run events, over the pipeline's `--report-url`. */
+  chantReportUrl?: string;
   /** #471: hud's address (`--hud`, BEHOLD_HUD_URL). A proposed decision in a
    * "why" links to its review there; without it the decision is named by id. */
   hud?: string;
@@ -1006,6 +1008,8 @@ export function createApp(
         onDone: (opEnv) => captureFrame(cfg.projectDir, opEnv ?? cfg.env, frames, broadcaster),
       });
   const app = new Hono();
+  // behold#631: each checkout's component -> dependencies, from its components graph's last draw, for /api/chant/pr.
+  const chantNeeds = new Map<string, Record<string, string[]>>();
   // Only this machine, and only behold's own pages, may write (src/request-guard.ts).
   // #569: a public serve lets no one write.
   const guard = {
@@ -1081,8 +1085,16 @@ export function createApp(
   // behold#631: a chant project's pull-request loop (chant components pr-plan, pr-apply), from its reports, run logs and gate ledger.
   {
     const t = cfg.terragucci;
-    const runs = t ? terragucciSource(t.runsSource ?? t.source, { ...(t.aws ? { aws: t.aws } : {}), ...(t.fetch ? { fetch: t.fetch } : {}) }) : undefined;
-    chantPrRoute(app, () => cfg.projectDir, runs ? { source: runs } : {});
+    const via = { ...(t?.aws ? { aws: t.aws } : {}), ...(t?.fetch ? { fetch: t.fetch } : {}) };
+    const runs = t ? terragucciSource(t.runsSource ?? t.source, via) : undefined;
+    chantPrRoute(app, () => cfg.projectDir, {
+      ...(runs ? { source: runs } : {}),
+      ...(cfg.chantReportUrl ? { reportUrl: cfg.chantReportUrl } : {}),
+      // The report URL is read through the same S3 client and endpoint handling as --terragucci's.
+      reportSource: (url) => reportSourceOf(url, via),
+      // A blocked component's blocker, from the edges of the components graph last drawn for the checkout.
+      dependsOn: (d) => chantNeeds.get(d),
+    });
   }
   // #524: a SQL Yodeler repo's lane over its migrate and wave gates on chant/lifecycle.
   sqlYodelerLaneRoute(app, () => {
@@ -3050,6 +3062,7 @@ export function createApp(
           ...((): { chantPr?: ReturnType<typeof chantPrFacets> } => {
             if (multi || !components) return {};
             const f = chantPrFacets(cfg.projectDir, ir, toolOfBinary(configKeys(chantConfigPath(cfg.projectDir)).binary));
+            if (f) chantNeeds.set(cfg.projectDir, f.needs);
             return f ? { chantPr: f } : {};
           })(),
           ...(mode ? { mode } : {}),

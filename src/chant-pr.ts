@@ -25,19 +25,27 @@
  *   approved which digest and when. A report's `approval` stands in when the
  *   ledger cannot be read.
  *
- * Nothing here writes, and nothing is inferred that the records do not say:
- * an apply that is running shows as running, with no wave or component
- * marked until chant's report says how each ended (chant#4007 asks for
- * progress per wave and component).
+ * - The stage's run events (chant#4007, run-event/v1), when its pipeline
+ *   line passes `--report-url <s3://… | file://…>` (chant 0.124.29): the
+ *   stage uploads `events.jsonl` under `<url>/<pr>/<commit>/` after every
+ *   wave, component and run settles. Folded by src/chant-pr-events.ts into
+ *   per-wave and per-component state, in the answer's `live`, so an apply
+ *   that runs shows each wave and component as it lands. A repo without
+ *   events keeps the run log's summary, read at the end of the step.
+ *
+ * Nothing here writes. Without events, nothing is inferred that the records
+ * do not say: an apply that is running shows as running, with no wave or
+ * component marked until the summary says how each ended.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { Hono } from "hono";
 import { stripAnsi } from "./ansi.ts";
+import { chantReportKey, EVENTS_FILE, readPrLive, type PrLive } from "./chant-pr-events.ts";
 import { readHistory, historyFromLogs, type HistoryEntry, type HistoryRead } from "./lifecycle-history.ts";
 import { realGit, type GitRun } from "./terragucci-lifecycle.ts";
 import { readRun, readRunsIndex } from "./terragucci-runs.ts";
-import type { TerragucciSource } from "./terragucci-source.ts";
+import { terragucciSource, type TerragucciSource } from "./terragucci-source.ts";
 
 /** The pull-request report contract chant writes (chant `pr-loop.ts`, PR_REPORT_SCHEMA_ID). */
 export const PR_REPORT_SCHEMA = "https://intentius.io/chant/schemas/workspace/pr-report/v1/pr-report.schema.json";
@@ -61,6 +69,16 @@ export interface PrLoop {
   gate: string;
   output: string;
   stages: ("plan" | "apply")[];
+  /**
+   * `--report-url` on a stage's line (chant 0.124.29): where the stage
+   * uploads its events and reports. A `$VAR` or `${VAR}` is resolved from
+   * the pipeline's own `VAR: value` lines; absent when no line passes it or
+   * the variable is set outside the file (`reportUrlAs` then keeps it as written).
+   */
+  reportUrl?: string;
+  reportUrlAs?: string;
+  /** A stage's line passes `--events-json`. */
+  events?: boolean;
 }
 
 const flag = (line: string, name: string): string | null => {
@@ -68,13 +86,53 @@ const flag = (line: string, name: string): string | null => {
   return m ? m[1]!.replace(/^["']|["']$/g, "") : null;
 };
 
+/**
+ * A flag's value with its `$VAR` / `${VAR}` references filled from the
+ * pipeline's own `VAR: value` lines (an `env:` block), or null when one is
+ * set nowhere in the file (a secret, a repository variable, the runner's).
+ */
+export function resolveVars(value: string, text: string): string | null {
+  let unresolved = false;
+  const out = value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (_m, a: string | undefined, b: string | undefined) => {
+    const name = (a ?? b)!;
+    const m = new RegExp(`^\\s*${name}\\s*:\\s*(.+?)\\s*$`, "m").exec(text);
+    const v = m ? m[1]!.replace(/^["']|["']$/g, "") : null;
+    if (!v || v.includes("$")) {
+      unresolved = true;
+      return "";
+    }
+    return v;
+  });
+  return unresolved ? null : out;
+}
+
 /** The loop in one pipeline file's text, or undefined when it runs no `chant components pr-plan|pr-apply`. */
 export function prLoopIn(text: string, forge: PrForge, workflow: string): PrLoop | undefined {
   const lines = text.split("\n").filter((l) => /\bchant components pr-(plan|apply)\b/.test(l));
   if (!lines.length) return undefined;
   const stages = [...new Set(lines.map((l) => (/pr-plan\b/.test(l) ? "plan" : "apply") as "plan" | "apply"))];
   const first = (name: string) => lines.map((l) => flag(l, name)).find((v) => v && !v.startsWith("$")) ?? null;
-  return { forge, workflow, env: first("env"), gate: first("gate") ?? "pr-apply", output: first("output") ?? PR_OUTPUT_DIR, stages };
+  // The apply's line first: it is the one that uploads after every wave.
+  const byApply = [...lines].sort((a, b) => Number(/pr-plan\b/.test(a)) - Number(/pr-plan\b/.test(b)));
+  const urlAs = byApply.map((l) => flag(l, "report-url")).find((v) => !!v) ?? null;
+  const reportUrl = urlAs ? resolveVars(urlAs, text) : null;
+  const events = lines.some((l) => /--events-json\b/.test(l));
+  return {
+    forge,
+    workflow,
+    env: first("env"),
+    gate: first("gate") ?? "pr-apply",
+    output: first("output") ?? PR_OUTPUT_DIR,
+    stages,
+    ...(reportUrl ? { reportUrl } : {}),
+    ...(urlAs && urlAs !== reportUrl ? { reportUrlAs: urlAs } : {}),
+    ...(events ? { events } : {}),
+  };
+}
+
+/** The source a report URL names: `s3://bucket/prefix`, an http(s) address, `file://<path>` or a plain path. */
+export function reportSourceOf(url: string, opts: Parameters<typeof terragucciSource>[1] = {}): TerragucciSource {
+  return terragucciSource(url.startsWith("file://") ? decodeURIComponent(url.slice("file://".length)) : url, opts);
 }
 
 /** The repo's pull-request loop: the first pipeline file that runs it. */
@@ -362,6 +420,20 @@ export interface ChantPrAnswer {
   reads: { what: string; contract: string | null; from: string }[];
   /** What chant does not record yet that the view would draw, with the issue that asks for it. */
   gaps: { what: string; issue: string; url: string }[];
+  /**
+   * Each stage's run events folded (src/chant-pr-events.ts), when the stage
+   * uploaded them under the report URL: per-wave and per-component state
+   * while it runs, and after. Null for a repo without events.
+   */
+  live: ChantPrLive | null;
+}
+
+export interface ChantPrLive {
+  /** Where the events were looked for, and whether that came from the pipeline or serve's `--chant-report-url`. */
+  reportUrl: string;
+  via: "pipeline" | "serve";
+  plan: PrLive | null;
+  apply: PrLive | null;
 }
 
 export interface ChantPrDeps {
@@ -371,6 +443,12 @@ export interface ChantPrDeps {
   git?: GitRun;
   now?: () => Date;
   readFile?: (path: string) => string | undefined;
+  /** serve's `--chant-report-url`: where the stages upload their events, over what the pipeline says. */
+  reportUrl?: string;
+  /** The source a report URL is read through; defaults to {@link reportSourceOf}. */
+  reportSource?: (url: string) => TerragucciSource;
+  /** Component -> the components it depends on, from the components graph, for a blocked component's blocker when chant's events don't name it. */
+  dependsOn?: (dir: string) => Record<string, readonly string[]> | undefined;
 }
 
 const readText = (p: string): string | undefined => {
@@ -400,7 +478,7 @@ export async function readChantPr(dir: string, pinRaw: string | null, deps: Chan
   const pin = pinOf(pinRaw);
   const reads: ChantPrAnswer["reads"] = [];
   const gaps: ChantPrAnswer["gaps"] = [];
-  const answer = (rest: Partial<ChantPrAnswer>): ChantPrAnswer => ({ schema: "behold.chant-pr/v1", read: now.toISOString(), loop, pull: null, plan: null, apply: null, running: null, gate: null, reads, gaps, ...rest });
+  const answer = (rest: Partial<ChantPrAnswer>): ChantPrAnswer => ({ schema: "behold.chant-pr/v1", read: now.toISOString(), loop, pull: null, plan: null, apply: null, running: null, gate: null, reads, gaps, live: null, ...rest });
   if (!loop) return answer({});
   if (loop) reads.push({ what: "the pull-request loop", contract: null, from: loop.workflow });
 
@@ -458,7 +536,11 @@ export async function readChantPr(dir: string, pinRaw: string | null, deps: Chan
     gaps.push({ what: "the pull-request report a reader can fetch", ...CHANT_GAPS.report });
   }
   const run = (applyDoc && going(applyDoc) && { stage: "apply" as const, ...going(applyDoc)! }) || (!apply && planDoc && going(planDoc) && { stage: "plan" as const, ...going(planDoc)! }) || null;
-  if (run && run.stage === "apply") gaps.push({ what: "progress per wave and component while the apply runs", ...CHANT_GAPS.report });
+
+  // The stages' run events, under the report URL at the cycle's pull request and each run's commit.
+  const live = await readLive(dir, loop, deps, cyc.pull ?? pin.pull, cyc.plan, cyc.apply);
+  for (const l of [live?.plan, live?.apply]) if (l) reads.push({ what: `chant components pr-${l.stage}'s run events`, contract: "run-event/v1", from: l.source });
+  if (run && run.stage === "apply" && !live?.apply) gaps.push({ what: "progress per wave and component while the apply runs", ...CHANT_GAPS.report });
 
   // The gate's ledger, through chant's gate-audit.
   let entries: HistoryEntry[] = [];
@@ -474,7 +556,59 @@ export async function readChantPr(dir: string, pinRaw: string | null, deps: Chan
     }
   }
   const pull = plan?.pr ?? apply?.pr ?? cyc.pull ?? pin.pull ?? null;
-  return answer({ pull, plan, apply, running: run, gate: prGate(plan, apply, entries, loop, pull) });
+  return answer({ pull, plan, apply, running: run, gate: prGate(plan, apply, entries, loop, pull), live });
+}
+
+/**
+ * Each stage's events.jsonl under the report URL (serve's override, else the
+ * pipeline's `--report-url`), at `<pr>/<commit>/` of the stage's run. Null
+ * when there is no URL or neither stage uploaded any. Never throws.
+ */
+async function readLive(dir: string, loop: PrLoop, deps: ChantPrDeps, pull: number | null, plan: RunDoc | null, apply: RunDoc | null): Promise<ChantPrLive | null> {
+  const url = deps.reportUrl ?? loop.reportUrl;
+  if (!url || pull === null) return null;
+  let src: TerragucciSource;
+  try {
+    src = (deps.reportSource ?? ((u: string) => reportSourceOf(u)))(url);
+  } catch {
+    return null;
+  }
+  let dependsOn: Record<string, readonly string[]> | undefined;
+  try {
+    dependsOn = deps.dependsOn?.(dir);
+  } catch {
+    dependsOn = undefined;
+  }
+  const one = async (stage: "plan" | "apply", r: RunDoc | null): Promise<PrLive | null> => {
+    const commit = r?.commit;
+    if (!commit) return null;
+    try {
+      const key = await eventsKey(src, pull, commit);
+      const text = await src.read(key);
+      return readPrLive(text, { stage, source: `${src.location.replace(/\/+$/, "")}/${key}`, ...(dependsOn ? { dependsOn } : {}) });
+    } catch {
+      return null;
+    }
+  };
+  const [p, a] = await Promise.all([one("plan", plan), one("apply", apply)]);
+  if (!p && !a) return null;
+  return { reportUrl: url, via: deps.reportUrl ? "serve" : "pipeline", plan: p, apply: a };
+}
+
+/**
+ * The events' key for the pull request at `commit`: the full commit's,
+ * else, when the run named a shortened commit and the source can list, the
+ * one commit directory under `<pr>/` it starts.
+ */
+async function eventsKey(src: TerragucciSource, pull: number, commit: string): Promise<string> {
+  if (commit.length >= 40 || !src.list) return chantReportKey(pull, commit, EVENTS_FILE);
+  try {
+    const l = await src.list(`${pull}`, 200);
+    const hit = l.prefixes.map((p) => p.replace(/\/+$/, "").split("/").pop() ?? "").find((c) => sameSha(c, commit));
+    return chantReportKey(pull, hit ?? commit, EVENTS_FILE);
+  } catch {
+    return chantReportKey(pull, commit, EVENTS_FILE);
+  }
 }
 
 /** `GET /api/chant/pr?pin=<run pin>`: the served chant project's pull-request loop at the pin. Read-only. */
@@ -505,6 +639,8 @@ export interface ChantPrFacets {
   tools: string[];
   waves: Record<string, number>;
   members: Record<string, string>;
+  /** Component -> the components it depends on (the graph's `dependsOn` edges), for naming a blocked component's blocker. */
+  needs: Record<string, string[]>;
 }
 
 /**
@@ -512,7 +648,7 @@ export interface ChantPrFacets {
  * IR: `groups.byWave`, and each component's `attrs.liveNames`, the members
  * its steps deploy). Undefined when the repo runs no pull-request loop.
  */
-export function chantPrFacets(dir: string, ir: { nodes: readonly { id: string; attrs?: Record<string, unknown> }[]; groups?: object }, engine?: string): ChantPrFacets | undefined {
+export function chantPrFacets(dir: string, ir: { nodes: readonly { id: string; attrs?: Record<string, unknown> }[]; edges?: readonly { from: string; to: string }[]; groups?: object }, engine?: string): ChantPrFacets | undefined {
   const loop = prLoopOf(dir);
   if (!loop) return undefined;
   const waves: Record<string, number> = {};
@@ -527,5 +663,13 @@ export function chantPrFacets(dir: string, ir: { nodes: readonly { id: string; a
     const names = Array.isArray(n.attrs?.liveNames) ? (n.attrs!.liveNames as unknown[]).filter((x): x is string => typeof x === "string") : [];
     for (const name of names.length ? names : [n.id]) members[name] = n.id;
   }
-  return { forge: loop.forge, workflow: loop.workflow, env: loop.env, gate: loop.gate, tools: ["chant", ...(engine ? [engine] : [])], waves, members };
+  // Consumer -> producer, between components.
+  const ids = new Set(ir.nodes.map((n) => n.id));
+  const needs: Record<string, string[]> = {};
+  for (const e of ir.edges ?? []) {
+    if (!ids.has(e.from) || !ids.has(e.to) || e.from === e.to) continue;
+    const list = (needs[e.from] ??= []);
+    if (!list.includes(e.to)) list.push(e.to);
+  }
+  return { forge: loop.forge, workflow: loop.workflow, env: loop.env, gate: loop.gate, tools: ["chant", ...(engine ? [engine] : [])], waves, members, needs };
 }

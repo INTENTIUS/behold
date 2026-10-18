@@ -122,7 +122,7 @@ export function tipSpot(rect, size, win, labels = []) {
 
 /** A fact's tone, for its chip, its tip and its modal: the state colours the bars use. */
 export function toneOf(kind) {
-  if (kind === "held") return "wait";
+  if (kind === "held" || kind === "blocked") return "wait";
   if (kind === "failed" || kind === "refused") return "bad";
   if (kind === "applied" || kind === "applied-wave" || kind === "approved" || kind === "known") return "ok";
   return "busy";

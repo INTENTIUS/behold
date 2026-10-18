@@ -78,7 +78,7 @@ export function ehSnapshot({ demo = null, answer = null, progress = null, runDoc
     plan: pr ? { totals: pr.totals || null, roots: pr.roots || [], reads: pr.reads || [] } : null,
     states: run ? progress.states || [] : [],
     run: runDoc ? { id: runDoc.id, jobs: jobs.map((j) => ({ name: j.name, status: j.status, wave: waveOfJob(j.name, waves), refusal: j.status === "failure" ? yodelRefusal(jobLines(j)) : null, step: j.steps ? defaultStep(j.steps) : -1 })) } : null,
-    approval: approval && Array.isArray(approval.rows) ? { wave: approval.wave, rows: approval.rows.filter((r) => r.state === "lit").map((r) => ({ id: r.id, at: r.at || null, actor: r.id === "approved" ? actorOf(r.text) : null, signed: !!(r.seal && /^signed/.test(r.seal.text || "")) })) } : null,
+    approval: approval && Array.isArray(approval.rows) ? { wave: approval.wave, rows: approval.rows.filter((r) => r.state === "lit").map((r) => ({ id: r.id, at: r.at || null, actor: r.id === "approved" ? actorOf(r.text) : null, signed: !!(r.seal && /^signed/.test(r.seal.text || "")) })), ...(Array.isArray(approval.chantWaves) ? { chantWaves: approval.chantWaves } : {}) } : null,
     // The numbers of this cycle's merge only: from the merge on, and only for its commit.
     metrics: metrics && metrics.run && metrics.run.current && stepRank(demo.step, strip) >= stepRank("merged", strip) && (!demo.commit || String(metrics.run.label || "").includes(String(demo.commit).slice(0, 8))) ? metrics.run.waves.map((w) => ({ wave: w.wave, words: [w.seconds, w.held ? `held ${w.held}` : null, w.changed].filter(Boolean).join(" · ") })).filter((w) => w.words) : [],
     // Each wave's trace, once Tempo has it (web/kiosk-wave-traces.js): `{ wave, run, job, words }`.
@@ -196,6 +196,23 @@ export function cycleFacts(snap) {
     if (snap.approval.rows.some((r) => r.id === "requested" || r.id === "approved")) add({ id: `${c}|held`, kind: "held", text: "the plan waits for an approval", order: 9, critical: true });
     const ok = snap.approval.rows.find((r) => r.id === "approved");
     if (ok) add({ id: `${c}|approved`, kind: "approved", text: ok.actor ? `approved by ${ok.actor}${ok.signed ? ", signed" : ""}` : "approved, signed", order: 9.5 });
+  }
+  // behold#631: chant's pull-request apply, wave by wave from its run events: started, failed with the reason, applied, and what it left blocked.
+  for (const w of snap.approval && Array.isArray(snap.approval.chantWaves) ? snap.approval.chantWaves : []) {
+    const n = w.wave;
+    const base = 10 + n * 10;
+    const subjects = { roots: w.components || [], wave: n, run: runId };
+    if (["running", "applied", "failed"].includes(w.state)) add({ id: `${c}|w${n}|start`, kind: "started", text: `wave ${n} started`, order: base, subjects, trail: false });
+    for (const f of w.failed || []) {
+      add({ id: `${c}|w${n}|failed|${f.component}`, kind: "failed", text: f.reason ? `${f.component} failed: ${f.reason}` : `${f.component} failed`, order: base + 1, subjects: { ...subjects, roots: [f.component] }, critical: true });
+    }
+    if (w.state === "applied" || (w.state === "failed" && w.applied)) {
+      add({ id: `${c}|w${n}|applied`, kind: "applied-wave", text: w.state === "failed" ? `wave ${n}: ${w.applied} applied` : w.blocked ? `wave ${n} applied ${w.applied}; ${w.blocked} blocked` : `wave ${n} applied`, order: base + 7, subjects });
+    }
+    if (w.blocked) {
+      const by = w.blockedBy && w.blockedBy.length ? ` by ${list(w.blockedBy)}` : "";
+      add({ id: `${c}|w${n}|blocked`, kind: "blocked", text: `${w.blocked} in wave ${n} blocked${by}: they did not run`, order: base + 8, subjects });
+    }
   }
   // A gate on the whole change (chant's pull-request loop): the plan waits, no wave named.
   // A repo with declared waves names its held wave once the run view has it; this is for a repo without them.

@@ -4228,7 +4228,8 @@ function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints
     const x = Number(sub.getAttribute("x"));
     const y = Number(sub.getAttribute("y"));
     const room = Number(body.getAttribute("x")) + Number(body.getAttribute("width")) - 10 - x;
-    const words = width(m.words, 12, 700) <= room ? m.words : m.short;
+    // behold#631: a middle form (a failure's first words, a blocker's name) before the one-word short.
+    const words = width(m.words, 12, 700) <= room ? m.words : m.mid && width(m.mid, 12, 700) <= room ? m.mid : m.short;
     sub.setAttribute("visibility", "hidden");
     sub.setAttribute("data-tg-hid", "1");
     const t = make("text", { "data-tg-root": "card", x, y, "font-size": 12, "font-weight": 700, fill: quiet ? "var(--frame-card-muted, var(--muted))" : TG_CARD_TONE[m.tone] || TG_CARD_TONE.idle }, words);
@@ -4293,7 +4294,8 @@ function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints
     if (fact) {
       const size = 12.5;
       const digest = /^approve plan (\S+)/.exec(fact);
-      const say = digest ? [fact, `plan ${digest[1]}`, `plan ${digest[1].slice(0, 8)}`, digest[1].slice(0, 8)] : [fact];
+      // behold#631: a fact may carry shorter forms of itself (a failure's reason, cut), tried in turn.
+      const say = digest ? [fact, `plan ${digest[1]}`, `plan ${digest[1].slice(0, 8)}`, digest[1].slice(0, 8)] : [fact, ...(Array.isArray(w.factShort) ? w.factShort : [])];
       const fill = w.state === "waiting" ? tone(w.tone) : "var(--muted)";
       let done = false;
       for (const words of say) {
@@ -4744,6 +4746,8 @@ function kioskTellDrawn() {
   if (!failed && !(svg && svg.querySelector("[data-node-id]"))) return;
   // The marks: terragucci's reports answered (or refused), or chant's loop has its own.
   if (!failed && terragucciComponentsRepo && !tgAnswer && !chantPrDrawn()) return;
+  // behold#631: a chant repo's loop: its first read of /api/chant/pr, answered or not.
+  if (!failed && !terragucciComponentsRepo && view.components && chantFacets && !staticMode && !chantPrRead) return;
   drawnTold = true;
   try {
     window.parent.postMessage({ type: "behold:drawn", failed }, embedOpts.host);
@@ -5822,6 +5826,8 @@ let tgComponentFacets = null;
 let chantFacets = null;
 let chantPrAnswer = null;
 let chantPrTimer = null;
+/** Whether /api/chant/pr has answered (or failed) once since the components view drew, so a kiosk frame swaps in with its marks on. */
+let chantPrRead = false;
 function chantPrDrawn() {
   return !!(view.components && chantFacets && !terragucciComponentsRepo && chantPrAnswer && !chantPrAnswer.error && chantPrAnswer.loop);
 }
@@ -5833,6 +5839,7 @@ async function loadChantPr() {
     .catch(() => null);
   if ((view.run || "") !== pin) return; // the pin moved while this read ran
   chantPrAnswer = answer;
+  chantPrRead = true;
   if (JSON.stringify(answer) !== was) drawTgReads();
 }
 /** Read the loop every few seconds while a chant repo's components view is on screen. */

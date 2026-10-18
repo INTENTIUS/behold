@@ -80,6 +80,23 @@ describe("event-help: a cycle told in order", () => {
     expect(storyTrail(facts("waiting", [st(1, "applied", ["network", "other"]), st(2, "waiting", ["app"])])).map((f) => f.kind)).toEqual(["pull-request", "planned", "merged", "applied-wave", "known", "held"]);
   });
 
+  it("tells chant's apply wave by wave from its run events: the failure with its reason, and what it left blocked (#631)", () => {
+    const strip = stripFromSteps(["pull-request", "planned", "waiting", "approved", "merged", "applying", "failed", "applied", "reset"]);
+    const chantWaves = [
+      { wave: 1, state: "applied", components: ["network"], applied: 1, failed: [], blocked: 0, blockedBy: [] },
+      { wave: 2, state: "failed", components: ["cluster-a", "cluster-b"], applied: 1, failed: [{ component: "cluster-a", reason: "The name of a FIFO queue can only end with '.fifo'" }], blocked: 0, blockedBy: [] },
+      { wave: 3, state: "applied", components: ["app-01", "app-07"], applied: 6, failed: [], blocked: 6, blockedBy: ["cluster-a"] },
+    ];
+    const approval = { wave: null, rows: [{ id: "approved", state: "lit", text: "demo-reviewer approved this exact digest.", seal: { ok: null, text: "signed" } }], chantWaves };
+    const f = cycleFacts(ehSnapshot({ demo: { ...demo("failed"), scenario: "fan-out", tool: "chant" }, answer: null, approval, strip }));
+    expect(f.find((x) => x.kind === "failed")).toMatchObject({ text: "cluster-a failed: The name of a FIFO queue can only end with '.fifo'", critical: true, subjects: { wave: 2, roots: ["cluster-a"] } });
+    expect(f.find((x) => x.id === "7|w3|applied")).toMatchObject({ kind: "applied-wave", text: "wave 3 applied 6; 6 blocked" });
+    expect(f.find((x) => x.kind === "blocked")).toMatchObject({ text: "6 in wave 3 blocked by cluster-a: they did not run", subjects: { wave: 3 } });
+    expect(f.find((x) => x.id === "7|w2|applied")).toMatchObject({ text: "wave 2: 1 applied" });
+    // A terragucci repo's approval carries no chant waves, so none of these.
+    expect(cycleFacts(ehSnapshot({ demo: demo("failed"), answer, waves })).some((x) => x.kind === "blocked")).toBe(false);
+  });
+
   it("names each event's subjects, so the kiosk can place it", () => {
     const held = facts("waiting", [st(1, "applied", ["network", "other"]), st(2, "waiting", ["app"])], { runDoc: { id: 4801, cycle: 7, jobs: [{ name: "apply-wave-2", status: "waiting", steps: [] }] } });
     expect(held.find((f) => f.kind === "held")).toMatchObject({ critical: true, subjects: { roots: ["app"], wave: 2, job: "apply-wave-2", run: 4801 } });
