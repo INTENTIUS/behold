@@ -807,13 +807,31 @@ export async function graphLayout(projectDir: string, opts: GraphOptions = {}): 
  * "chant changes" #3); behold's own pinned `@intentius/chant` predates it, so
  * this only resolves against a served project's own (newer) chant. */
 export async function componentGraphIr(projectDir: string, opts: GraphOptions = {}): Promise<GraphIR> {
-  const src = await graphPath(projectDir, opts);
+  const src = await componentGraphPath(projectDir, opts);
   return runChantJson<GraphIR>(graphArgs(src, "ir", opts, true), projectDir, envOverridesFor(opts));
+}
+
+/**
+ * Where the component DAG is read from. A multi-stack project (`stacks:` in
+ * chant.config.ts) declares its components in `*.component.ts` at the project
+ * root, beside the config, and each stack's `src` holds only that stack's
+ * resources: `chant graph <stack src> --components` finds no components there
+ * (chant's examples/fan-out-estate). So the root, for those; otherwise the
+ * same path as the resource graph.
+ */
+export async function componentGraphPath(projectDir: string, opts: GraphOptions = {}): Promise<string> {
+  try {
+    const info = await detectProject(projectDir);
+    if (info.stacks?.length) return resolve(projectDir);
+  } catch {
+    // Fall through to the resource graph's path.
+  }
+  return graphPath(projectDir, opts);
 }
 
 /** Node positions for the component DAG (`chant graph --components --format layout`). */
 export async function componentGraphLayout(projectDir: string, opts: GraphOptions = {}): Promise<Layout> {
-  const src = await graphPath(projectDir, opts);
+  const src = await componentGraphPath(projectDir, opts);
   return runChantJson<Layout>(graphArgs(src, "layout", opts, true), projectDir, envOverridesFor(opts));
 }
 

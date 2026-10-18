@@ -87,28 +87,71 @@ const flag = (line: string, name: string): string | null => {
   return m ? m[1]!.replace(/^["']|["']$/g, "") : null;
 };
 
+/** What a pipeline expression can be filled from: the checkout's own repository, as `owner/name`. */
+export interface PipelineContext {
+  repository?: string;
+}
+
+/**
+ * The forge's expressions for the repository a pipeline runs in, filled from
+ * the checkout's origin: `${{ github.repository }}` (GitHub, and Forgejo,
+ * which accepts the github context), `${{ forgejo.repository }}` /
+ * `${{ gitea.repository }}`, and GitLab's `$CI_PROJECT_PATH`. Null when the
+ * value still holds an expression it cannot fill.
+ */
+export function resolveExpressions(value: string, ctx: PipelineContext = {}): string | null {
+  let unresolved = false;
+  const out = value
+    .replace(/\$\{\{\s*([A-Za-z_.]+)\s*\}\}/g, (_m, expr: string) => {
+      if (ctx.repository && /^(github|forgejo|gitea)\.repository$/.test(expr)) return ctx.repository;
+      unresolved = true;
+      return "";
+    })
+    .replace(/\$\{?CI_PROJECT_PATH\}?/g, () => ctx.repository ?? ((unresolved = true), ""));
+  return unresolved ? null : out;
+}
+
 /**
  * A flag's value with its `$VAR` / `${VAR}` references filled from the
- * pipeline's own `VAR: value` lines (an `env:` block), or null when one is
- * set nowhere in the file (a secret, a repository variable, the runner's).
+ * pipeline's own `VAR: value` lines (an `env:` block), and the forge's
+ * repository expressions from `ctx` ({@link resolveExpressions}), or null
+ * when one is set nowhere in the file (a secret, a repository variable, the
+ * runner's).
  */
-export function resolveVars(value: string, text: string): string | null {
+export function resolveVars(value: string, text: string, ctx: PipelineContext = {}): string | null {
   let unresolved = false;
   const out = value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (_m, a: string | undefined, b: string | undefined) => {
     const name = (a ?? b)!;
+    if (name === "CI_PROJECT_PATH" && ctx.repository) return ctx.repository;
     const m = new RegExp(`^\\s*${name}\\s*:\\s*(.+?)\\s*$`, "m").exec(text);
-    const v = m ? m[1]!.replace(/^["']|["']$/g, "") : null;
+    const raw = m ? m[1]!.replace(/^["']|["']$/g, "") : null;
+    const v = raw === null ? null : resolveExpressions(raw, ctx);
     if (!v || v.includes("$")) {
       unresolved = true;
       return "";
     }
     return v;
   });
-  return unresolved ? null : out;
+  if (unresolved) return null;
+  return resolveExpressions(out, ctx);
+}
+
+/** `owner/name` from the checkout's `origin` remote in `.git/config`, or undefined. */
+export function originRepository(dir: string): string | undefined {
+  try {
+    const cfg = readFileSync(join(dir, ".git", "config"), "utf8");
+    const m = /\[remote "origin"\][^[]*?\burl\s*=\s*(\S+)/.exec(cfg);
+    if (!m) return undefined;
+    const path = m[1]!.replace(/\.git$/, "").replace(/^[a-z+]+:\/\/[^/]+\//, "").replace(/^[^@]+@[^:]+:/, "");
+    const parts = path.split("/").filter(Boolean);
+    return parts.length >= 2 ? parts.slice(-2).join("/") : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** The loop in one pipeline file's text, or undefined when it runs no `chant components pr-plan|pr-apply`. */
-export function prLoopIn(text: string, forge: PrForge, workflow: string): PrLoop | undefined {
+export function prLoopIn(text: string, forge: PrForge, workflow: string, ctx: PipelineContext = {}): PrLoop | undefined {
   const lines = text.split("\n").filter((l) => /\bchant components pr-(plan|apply)\b/.test(l));
   if (!lines.length) return undefined;
   const stages = [...new Set(lines.map((l) => (/pr-plan\b/.test(l) ? "plan" : "apply") as "plan" | "apply"))];
@@ -116,7 +159,7 @@ export function prLoopIn(text: string, forge: PrForge, workflow: string): PrLoop
   // The apply's line first: it is the one that uploads after every wave.
   const byApply = [...lines].sort((a, b) => Number(/pr-plan\b/.test(a)) - Number(/pr-plan\b/.test(b)));
   const urlAs = byApply.map((l) => flag(l, "report-url")).find((v) => !!v) ?? null;
-  const reportUrl = urlAs ? resolveVars(urlAs, text) : null;
+  const reportUrl = urlAs ? resolveVars(urlAs, text, ctx) : null;
   const events = lines.some((l) => /--events-json\b/.test(l));
   return {
     forge,
@@ -138,6 +181,8 @@ export function reportSourceOf(url: string, opts: Parameters<typeof terragucciSo
 
 /** The repo's pull-request loop: the first pipeline file that runs it. */
 export function prLoopOf(dir: string): PrLoop | undefined {
+  const repository = originRepository(dir);
+  const ctx: PipelineContext = repository ? { repository } : {};
   const dirs: [string, PrForge][] = [
     [".forgejo/workflows", "forgejo"],
     [".gitea/workflows", "forgejo"],
@@ -159,14 +204,14 @@ export function prLoopOf(dir: string): PrLoop | undefined {
       } catch {
         continue;
       }
-      const loop = prLoopIn(text, forge, `${d}/${n}`);
+      const loop = prLoopIn(text, forge, `${d}/${n}`, ctx);
       if (loop) return loop;
     }
   }
   const gl = join(dir, ".gitlab-ci.yml");
   if (existsSync(gl)) {
     try {
-      return prLoopIn(readFileSync(gl, "utf8"), "gitlab", ".gitlab-ci.yml");
+      return prLoopIn(readFileSync(gl, "utf8"), "gitlab", ".gitlab-ci.yml", ctx);
     } catch {
       return undefined;
     }

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
-import { chantPrFacets, chantPrRoute, cycleRunsOf, pinOf, prGate, prLoopIn, prLoopOf, prStageOfReport, prStagesInLog, readChantPr, type RunDoc } from "./chant-pr.ts";
+import { chantPrFacets, chantPrRoute, cycleRunsOf, originRepository, resolveExpressions, pinOf, prGate, prLoopIn, prLoopOf, prStageOfReport, prStagesInLog, readChantPr, type RunDoc } from "./chant-pr.ts";
 import type { HistoryEntry } from "./lifecycle-history.ts";
 import type { TerragucciSource } from "./terragucci-source.ts";
 
@@ -198,5 +198,41 @@ describe("GET /api/chant/pr (behold#631)", () => {
   it("says nothing for a repo that runs no pull-request loop", async () => {
     const a = await readChantPr(mkdtempSync(join(tmpdir(), "behold-chant-none-")), null, noLedger);
     expect(a).toMatchObject({ loop: null, plan: null, apply: null, gate: null });
+  });
+});
+
+describe("the report URL's forge expressions", () => {
+  const wf = [
+    "env:",
+    "  CHANT_EVENTS_URL: 's3://demo-reports/demo/chant/${{ github.repository }}'",
+    "jobs:",
+    "  apply:",
+    "    steps:",
+    '      - run: chant components pr-apply --env demo --report-url "${CHANT_EVENTS_URL}" --events-json',
+  ].join("\n");
+
+  it("fills ${{ github.repository }} from the checkout's origin", () => {
+    expect(prLoopIn(wf, "forgejo", "w.yml", { repository: "terragucci-admin/demo-chant-fanout" })?.reportUrl).toBe("s3://demo-reports/demo/chant/terragucci-admin/demo-chant-fanout");
+  });
+
+  it("leaves it unresolved, as written, without a repository", () => {
+    const loop = prLoopIn(wf, "forgejo", "w.yml");
+    expect(loop?.reportUrl).toBeUndefined();
+    expect(loop?.reportUrlAs).toBe("${CHANT_EVENTS_URL}");
+  });
+
+  it("fills GitLab's $CI_PROJECT_PATH and the forgejo/gitea contexts", () => {
+    expect(resolveExpressions("s3://b/$CI_PROJECT_PATH", { repository: "g/p" })).toBe("s3://b/g/p");
+    expect(resolveExpressions("s3://b/${{ forgejo.repository }}", { repository: "o/r" })).toBe("s3://b/o/r");
+    expect(resolveExpressions("s3://b/${{ secrets.X }}", { repository: "o/r" })).toBeNull();
+  });
+
+  it("reads owner/name from the checkout's origin remote", () => {
+    const dir = mkdtempSync(join(tmpdir(), "behold-origin-"));
+    mkdirSync(join(dir, ".git"));
+    writeFileSync(join(dir, ".git", "config"), '[core]\n\tbare = false\n[remote "origin"]\n\turl = http://localhost:3300/terragucci-admin/demo-chant-fanout.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n');
+    expect(originRepository(dir)).toBe("terragucci-admin/demo-chant-fanout");
+    writeFileSync(join(dir, ".git", "config"), '[remote "origin"]\n\turl = git@github.com:INTENTIUS/behold.git\n');
+    expect(originRepository(dir)).toBe("INTENTIUS/behold");
   });
 });
