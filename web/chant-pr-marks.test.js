@@ -32,10 +32,17 @@ describe("a chant repo's components, marked from its pull-request loop (behold#6
 
   it("on a kiosk: the plan by its short id, the box's words at the right of its title line, and no approve command on the card", () => {
     const m = chantComponentMarks(answer({ plan, gate: waiting }), facets, { kiosk: true });
-    expect(m.waves[1].facts).toEqual(["approve plan 909bbc5e"]);
-    expect(m.statusRight).toBe(true);
+    // The approval card names the plan; the boxes don't repeat it on a kiosk.
+    expect(m.waves[1].facts).toEqual([]);
+    expect(m).toMatchObject({ statusRight: true, cardFont: 15, waveFont: 18 });
     const panel = chantApprovalModel({ demo: { step: "waiting", pull: 13 }, answer: answer({ plan, gate: waiting }), kiosk: true });
     expect(panel.rows[0].command).toBeUndefined();
+    // No run numbers and plain words for what comes next.
+    expect(panel.run).toBeNull();
+    expect(panel.rows.every((r) => !r.runId)).toBe(true);
+    expect(panel.rows.map((r) => r.text).slice(1)).toEqual(["A reviewer approves this exact plan.", "The merge applies it only if it still matches."]);
+    // An answer read for the cycle's first pull request is not the fix's.
+    expect(chantApprovalModel({ demo: { step: "waiting", pull: 14 }, answer: answer({ plan, gate: waiting }), kiosk: true })).toBeNull();
     // Inspect keeps both.
     expect(chantComponentMarks(answer({ plan, gate: waiting }), facets).statusRight).toBeUndefined();
     expect(chantApprovalModel({ demo: { step: "waiting", pull: 13 }, answer: answer({ plan, gate: waiting }) }).rows[0].command).toBe(waiting.approveCommand);
@@ -151,7 +158,7 @@ describe("a chant repo's apply, live from its run events", () => {
     expect(m.cards["app-09"].state).toBe("applied");
     expect(m.waves[2]).toMatchObject({ state: "failed", status: { words: "1 failed, 1 applied" } });
     expect(m.waves[2].facts[0]).toBe("cluster-a failed: The name of a FIFO queue can only end with '.fifo'");
-    expect(m.waves[3]).toMatchObject({ state: "blocked", status: { words: "done, 6 blocked by cluster-a" } });
+    expect(m.waves[3]).toMatchObject({ state: "blocked", status: { words: "6 applied, 6 blocked by cluster-a" } });
     expect(m.source).toMatch(/run events/);
     // The gate's panel stays up on the failed step, and says how far the apply got.
     expect(CHANT_PANEL_STEPS).toContain("failed");
@@ -215,7 +222,7 @@ describe("a chant repo's apply, live from its run events", () => {
     expect(graphWaves(live).map((w) => w.wave)).toEqual([2, 3]);
     // The result card, the one terragucci's scenarios get.
     const r = chantResultModel({ step: "applied", label: "Done." }, a);
-    expect(r).toMatchObject({ head: "Applied", line: "Done.", counts: ["7 applied this run", "8 applied earlier", "2 waves"] });
+    expect(r).toMatchObject({ head: "Applied", line: "Done.", counts: ["7 applied this run", "8 applied earlier", "the fix ran 2 waves"] });
     expect(r.waves).toEqual([{ wave: 2, words: "1 applied" }, { wave: 3, words: "6 applied" }]);
     expect(chantResultModel({ step: "applying" }, a)).toBeNull();
     // The plan of the same fix, before it applies: the eight read as landed there too.

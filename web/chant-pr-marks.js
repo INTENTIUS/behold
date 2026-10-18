@@ -251,7 +251,7 @@ export function chantComponentMarks(answer, facets, opts = {}) {
         status = { status: "blocked", words: blockedBy.length === 1 ? `blocked by ${blockedBy[0]}` : "blocked", tone: "wait" };
       } else if (cnt.applied) {
         state = blockedWords ? "blocked" : "applied";
-        status = { status: "done", words: blockedWords ? `done, ${blockedWords}` : "done", tone: "ok" };
+        status = { status: "done", words: blockedWords ? `${cnt.applied} applied, ${blockedWords}` : "done", tone: "ok" };
       } else {
         state = "not-started";
         status = { status: "not-run", words: "did not run", tone: "idle" };
@@ -269,7 +269,8 @@ export function chantComponentMarks(answer, facets, opts = {}) {
     if (status && running && status.run === undefined) status.run = running.run;
     const f = [];
     // A kiosk names the plan by its short id; Inspect keeps the whole digest.
-    if (state === "waiting" && gate && gate.digest && !inRun.length) f.push(`approve plan ${opts.kiosk ? short8(gate.digest) : hexOf(gate.digest)}`);
+    // The kiosk's approval card names the plan; its boxes don't repeat it. Inspect keeps the whole digest on them.
+    if (state === "waiting" && gate && gate.digest && !inRun.length && !opts.kiosk) f.push(`approve plan ${hexOf(gate.digest)}`);
     else if (state === "planned" && gate && gate.state === "approved") f.push(gate.by ? `approved by ${gate.by.replace(/^.*:/, "")}` : "approved");
     // A box whose cards all landed in an earlier apply did not apply this run's plan.
     if (state === "applied" && stage && stage.digest && !earlierOnly) f.push(`applied plan ${short8(stage.digest)}`);
@@ -286,7 +287,7 @@ export function chantComponentMarks(answer, facets, opts = {}) {
     const factShort = firstFailed && firstFailed.reason ? [`${firstFailed.root} failed: ${shortReason(firstFailed.reason, 36)}`, `${firstFailed.root} failed`] : [];
     waves[n] = { number: n, job, state, tone: state ? toneOf(state) : status ? status.tone : "idle", status, title: status ? `wave-${n} · ${status.words}` : `wave-${n}`, facts: f, ...(factShort.length ? { factShort } : {}) };
   }
-  return { stage: live ? "apply" : stage ? stage.stage : livePlan ? "plan" : null, cards, waves, source: sourceWords(answer), ...(opts.kiosk ? { statusRight: true } : {}) };
+  return { stage: live ? "apply" : stage ? stage.stage : livePlan ? "plan" : null, cards, waves, source: sourceWords(answer), ...(opts.kiosk ? { statusRight: true, cardFont: 15, waveFont: 18 } : {}) };
 }
 
 /** Where the marks came from, for each tooltip. */
@@ -400,6 +401,8 @@ function partialWords(answer) {
  */
 export function chantApprovalModel({ demo, answer, sealCheck = null, kiosk = false }) {
   if (!demo || !CHANT_PANEL_STEPS.includes(demo.step) || !answer || !answer.gate || !answer.plan) return null;
+  // An answer read for another pull request of the cycle (the first, while the fix's is still to come) is not this one's.
+  if (Number.isInteger(demo.pull) && Number.isInteger(answer.pull) && demo.pull !== answer.pull) return null;
   const g = answer.gate;
   const plan = answer.plan;
   const apply = answer.apply;
@@ -418,7 +421,7 @@ export function chantApprovalModel({ demo, answer, sealCheck = null, kiosk = fal
     });
   } else if (g.state === "changed" || g.state === "refused") {
     rows.push({ id: "approved", label: "Approved", state: "dim", text: g.state === "changed" ? "The plan moved after review and needs a fresh approval." : `The apply refused (${g.refusal || "no approval"}).` });
-  } else rows.push({ id: "approved", label: "Approved", state: "dim", text: "Next, a reviewer approves the digest." });
+  } else rows.push({ id: "approved", label: "Approved", state: "dim", text: kiosk ? "A reviewer approves this exact plan." : "Next, a reviewer approves the digest." });
   const live = answer.live && answer.live.apply;
   const failedApply = (apply && apply.status === "failed") || (live && live.settled && live.status === "failed");
   if (apply && apply.status === "applied") rows.push({ id: "spent", label: "Applied", state: "lit", text: "The merge planned again and applied this digest.", runId: apply.run || null });
@@ -430,10 +433,12 @@ export function chantApprovalModel({ demo, answer, sealCheck = null, kiosk = fal
     const at = gw.filter((w) => w.state === "running").map((w) => w.wave);
     const of = gw.length;
     rows.push({ id: "spent", label: "Applied", state: "going", text: at.length && of ? `chant is applying this digest on merge now: wave ${at.join(", ")}.` : "chant is applying this digest on merge now.", runId: answer.running.run });
-  } else rows.push({ id: "spent", label: "Applied", state: "dim", text: "On merge, chant applies the plan when it matches." });
+  } else rows.push({ id: "spent", label: "Applied", state: "dim", text: kiosk ? "The merge applies it only if it still matches." : "On merge, chant applies the plan when it matches." });
   const run = apply ? apply.run : answer.running ? answer.running.run : plan.run;
   const chantWaves = chantLiveWaves(answer);
-  return { wave: null, digest: g.digest, run: run || null, rows, ...(chantWaves ? { chantWaves } : {}) };
+  // A kiosk names no run numbers: a passer-by can't place them. Inspect keeps them.
+  if (kiosk) for (const r of rows) r.runId = null;
+  return { wave: null, digest: g.digest, run: kiosk ? null : run || null, rows, ...(kiosk ? { kiosk: true } : {}), ...(chantWaves ? { chantWaves } : {}) };
 }
 
 /**
@@ -455,7 +460,9 @@ export function chantResultModel(demo, answer) {
   const waves = graphWaves(live);
   const counts = [`${now} applied this run`];
   if (before.size) counts.push(`${before.size} applied earlier`);
-  counts.push(`${waves.length} ${waves.length === 1 ? "wave" : "waves"}`);
+  // A later run of the cycle (the fix) ran only what was left: say so, or "2 waves" reads as a miscount of the three.
+  const wavesWords = `${waves.length} ${waves.length === 1 ? "wave" : "waves"}`;
+  counts.push(earlierList.length ? `the fix ran ${wavesWords}` : wavesWords);
   const failed = comps.filter((c) => c.state === "failed").length;
   const blocked = comps.filter((c) => c.state === "blocked").length;
   if (failed) counts.push(`${failed} failed`);

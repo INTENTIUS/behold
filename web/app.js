@@ -3796,7 +3796,16 @@ function drawTgReads() {
   };
   if (chantMode) {
     // behold#631: a kiosk passer-by can't place a card's type glyph (it reads as a checkbox): a chant repo's kiosk hides it.
-    if (embedOpts.bare) for (const icon of svg.querySelectorAll("[data-node-id] > g[transform]")) icon.setAttribute("visibility", "hidden");
+    if (embedOpts.bare) {
+      for (const card of svg.querySelectorAll("[data-node-id]")) {
+        const icon = card.querySelector(":scope > g[transform]");
+        if (!icon || card.hasAttribute("data-kiosk-glyph")) continue;
+        icon.setAttribute("visibility", "hidden");
+        // The name and the state line take the glyph's room, so the bigger state words fit.
+        card.setAttribute("data-kiosk-glyph", "1");
+        for (const t of card.querySelectorAll(":scope > text")) t.setAttribute("x", String(Number(t.getAttribute("x")) - 30));
+      }
+    }
     drawTgComponentMarks(svg, { marks: chantComponentMarks(chantPaced(), chantFacets, { kiosk: !!embedOpts.bare }), focus: null, boxOf, make, edgePoints: chantEdgePoints(svg) });
     return;
   }
@@ -4232,10 +4241,12 @@ function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints
     const y = Number(sub.getAttribute("y"));
     const room = Number(body.getAttribute("x")) + Number(body.getAttribute("width")) - 10 - x;
     // behold#631: a middle form (a failure's first words, a blocker's name) before the one-word short.
-    const words = width(m.words, 12, 700) <= room ? m.words : m.mid && width(m.mid, 12, 700) <= room ? m.mid : m.short;
+    // behold#631: a chant kiosk says a card's state at the size of its name, readable from a few feet.
+    const cardFont = marks.cardFont || 12;
+    const words = width(m.words, cardFont, 700) <= room ? m.words : m.mid && width(m.mid, cardFont, 700) <= room ? m.mid : m.short;
     sub.setAttribute("visibility", "hidden");
     sub.setAttribute("data-tg-hid", "1");
-    const t = make("text", { "data-tg-root": "card", x, y, "font-size": 12, "font-weight": 700, fill: quiet ? "var(--frame-card-muted, var(--muted))" : TG_CARD_TONE[m.tone] || TG_CARD_TONE.idle }, words);
+    const t = make("text", { "data-tg-root": "card", x, y: marks.cardFont ? y + 4 : y, "font-size": cardFont, "font-weight": 700, fill: quiet ? "var(--frame-card-muted, var(--muted))" : TG_CARD_TONE[m.tone] || TG_CARD_TONE.idle }, words);
     if (m.state === "applying") t.setAttribute("class", "pin-pulse");
     if (!inFocus) t.style.opacity = "0.6";
     t.appendChild(make("title", {}, [`wave ${m.wave} · ${m.words}`, ...m.facts].join("\n") + "\n" + cardSource));
@@ -4269,7 +4280,8 @@ function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints
     if (rb) placed.push(rb);
     // The job's status: after the title on its line, else at the right of that line.
     if (w.status && tb) {
-      const size = 12;
+      // behold#631: a chant kiosk's wave words half again as big.
+      const size = marks.waveFont || 12;
       const cy = (tb.y + tb.y2) / 2;
       // Right after the title, as "apply-wave-2 · held at the gate"; else alone at the right of the title's line.
       const spots = [{ words: `· ${w.status.words}`, at: () => tb.x2 + 6 }, { words: w.status.words, at: (wd) => b.x2 - 16 - wd }];
@@ -5860,10 +5872,14 @@ function chantPrDrawn() {
 async function loadChantPr() {
   const pin = view.run || "";
   const was = JSON.stringify(chantPrAnswer);
-  const answer = await apiFetch(`/api/chant/pr${pin ? `?pin=${encodeURIComponent(pin)}` : ""}`)
+  let answer = await apiFetch(`/api/chant/pr${pin ? `?pin=${encodeURIComponent(pin)}` : ""}`)
     .then((r) => (r.ok ? r.json() : null))
     .catch(() => null);
   if ((view.run || "") !== pin) return; // the pin moved while this read ran
+  // behold#631: at the merge, before the apply's run is listed, the merge commit names no pull request yet and the
+  // answer comes back empty: the cards keep the plan they had until the apply's own records replace it.
+  const nothing = (a) => a && !a.error && !a.plan && !a.apply && !a.running && !(a.live && (a.live.apply || a.live.plan));
+  if (nothing(answer) && chantPrAnswer && chantPrAnswer.plan && pin && pin !== "base" && pin !== "none" && !/^pull/.test(pin)) answer = { ...answer, pull: chantPrAnswer.pull, plan: chantPrAnswer.plan, gate: chantPrAnswer.gate, ...(chantPrAnswer.live ? { live: { ...chantPrAnswer.live, apply: null, plan: null } } : {}), carried: true };
   chantPrAnswer = answer;
   chantPrRead = true;
   if (JSON.stringify(answer) !== was) drawTgReads();
