@@ -1151,6 +1151,31 @@ chant main at that commit in the workspace `src/why-trace-fixture.ts` makes,
 and `src/why-trace-chant.test.ts` reads the same workspace through a real
 chant when `BEHOLD_TEST_CHANT_BIN` names one.
 
+## Collision marks (#684)
+
+`GET /api/workspace/collisions` (src/collision-marks.ts) reads `overlap` from
+`chant workspace status <env> --json` (chant#4025, floor `OVERLAP_CHANT_FLOOR`,
+0.124.29): the in-flight work items with a linked commit, and each pair of
+them that changed one file or that a waiting gate's change set reaches at one
+entry. An entry names its graph node (`<member>/<id>`), and that node is what
+the graph marks (`nodes`, each with the items colliding there and the entries
+behind it). Files two items both changed have no node, and neither does an
+entry chant mapped to none: both go in a side list (`files`, `unplaced`).
+`items` holds every in-flight item with `with`, the items it collides with
+(empty for most). `overlap` absent is an older chant (`no-overlap`), and
+`null` is no work kind declared or a failed read (`overlap-unavailable`); both
+are refusals worded apart. One status read, through the read contract. behold
+records, locks and refuses nothing. The page (web/collision-marks.js) is the
+Collisions tab, a dashed ring and a tag under each marked card, and the
+filter, "Show only colliding work": it hides every card that is not a marked
+node and every edge with an unmarked end, and lists only the items that
+collide. Below the floor the route answers the refusal and `degraded`, and
+the graph draws no marks. A public view refuses the route.
+`src/collision-marks-chant.test.ts` reads the workspace
+`src/collision-fixture.ts` makes through a real chant when
+`BEHOLD_TEST_CHANT_BIN` names one. `status.schema.json` in
+src/trunk-lane-schemas/ is chant main at e9c996e93.
+
 ## Invariant
 
 If a request would have behold write to a cloud or to source directly, it's wrong.

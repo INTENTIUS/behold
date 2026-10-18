@@ -43,7 +43,7 @@ export const FLAG_GATE = "web/release/promote";
 const git = (cwd: string, args: string[], input?: string, env?: Record<string, string>): string =>
   execFileSync("git", ["-c", "commit.gpgsign=false", ...args], { cwd, encoding: "utf8", input, env: { ...process.env, ...env }, stdio: ["pipe", "pipe", "pipe"] }).trim();
 
-const DECISION_KIND = `export const recordKind = {
+export const DECISION_KIND = `export const recordKind = {
   name: "decision",
   location: { dir: ".", match: "^d-[0-9]{3}-.+\\\\.md$" },
   format: "markdown-front-matter",
@@ -55,14 +55,14 @@ const DECISION_KIND = `export const recordKind = {
   supersedes: { field: "supersedes" },
 };
 `;
-const DECISION_SCHEMA = {
+export const DECISION_SCHEMA = {
   $schema: "http://json-schema.org/draft-07/schema#",
   $id: "urn:test:decision:1",
   type: "object",
   required: ["id", "state"],
   properties: { id: { type: "string" }, state: { type: "string" }, supersedes: { type: "array", items: { type: "string" } } },
 };
-const WORK_KIND = `export const recordKind = {
+export const WORK_KIND = `export const recordKind = {
   name: "work",
   location: { dir: ".", match: "^W-[0-9]{3,}-.+\\\\.md$" },
   format: "markdown-front-matter",
@@ -74,7 +74,7 @@ const WORK_KIND = `export const recordKind = {
   work: { needs: "needs", implements: "implements", decisions: "../decisions/decision.kind.mjs", open: "open", done: "done", closedOn: "closed_on" },
 };
 `;
-const WORK_SCHEMA = {
+export const WORK_SCHEMA = {
   $schema: "http://json-schema.org/draft-07/schema#",
   $id: "urn:test:work:1",
   type: "object",
@@ -117,7 +117,7 @@ const FLAG_SCHEMA = {
   },
 };
 
-const front = (data: Record<string, unknown>, body: string) => `---\n${JSON.stringify(data, null, 2)}\n---\n\n${body}\n`;
+export const front = (data: Record<string, unknown>, body: string) => `---\n${JSON.stringify(data, null, 2)}\n---\n\n${body}\n`;
 
 const FILES: Record<string, string> = {
   "chant.workspace.json": `{ "name": "acme", "schema": 1, "minReader": "0.108.0",

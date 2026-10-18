@@ -82,6 +82,13 @@ export const FEATURE_FLAGS_CHANT_FLOOR = "0.124.29";
  * The why pane's chain (#682). Below it the pane shows the decisions, runs and
  * commits it always did, and says the chain needs this chant. */
 export const WHY_TRACE_CHANT_FLOOR = "0.124.29";
+/** The first chant whose `workspace status` lists `overlap`: the in-flight
+ * work items that changed the same files, and the entries of a waiting gate's
+ * change set that two of them reach, each with its graph node
+ * (INTENTIUS/chant#4025). The collision marks on the graph and the
+ * Collisions tab (#684). Below it the graph draws no collision marks and the
+ * tab says which chant adds them. */
+export const OVERLAP_CHANT_FLOOR = "0.124.29";
 
 export interface ChantFloor {
   /** The read, in words: `the why of a member or a card`. */
@@ -111,6 +118,7 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "release column", floor: RELEASE_COLUMN_CHANT_FLOOR, adds: "revoked releases, and the release a deploy was made from (chant#4033, chant#4043)", degraded: "the Trunk tab draws its releases from chant release list alone, with no revoked mark" },
   { read: "feature flags", floor: FEATURE_FLAGS_CHANT_FLOOR, adds: "workspace status featureFlags (chant#4024)", degraded: "the graph draws no flag marks, and the Flags tab says which chant adds them" },
   { read: "why chain", floor: WHY_TRACE_CHANT_FLOOR, adds: "graph --intent writes a trace, the why chain (chant#4023)", degraded: "the why pane shows decisions, runs and commits without the chain from work item to release" },
+  { read: "work overlap", floor: OVERLAP_CHANT_FLOOR, adds: "workspace status overlap (chant#4025)", degraded: "the graph draws no collision marks, and the Collisions tab says which chant adds them" },
 ];
 
 /** One read's floor against one chant version. An unknown version meets it
