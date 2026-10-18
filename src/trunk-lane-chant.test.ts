@@ -27,6 +27,10 @@ import { C1, C2, C3, C4, DIGEST, makeLaneWorkspace, R1, R2, R3 } from "./trunk-l
 // config and the ledger live in them.
 
 const CHANT = process.env.BEHOLD_TEST_CHANT_BIN;
+/** The rollback line for v3 in staging. Since chant#4072 it names the release
+ * to restore (`--release v2`) when a kept, unrevoked earlier one exists, and the
+ * component (`--component api`) otherwise; either is chant's line to show. */
+const ROLLBACK = /^chant components rollback staging --(release|component) \S+$/;
 
 const made: string[] = [];
 const saved: Record<string, string | undefined> = {};
@@ -91,7 +95,7 @@ describe.skipIf(!CHANT || !existsSync(CHANT))("the trunk lane, through chant (#6
     expect(lane.environments.map((e: any) => e.env)).toEqual(["staging", "prod"]);
     const [staging, prod] = lane.environments;
     expect(staging.releases).toEqual([
-      expect.objectContaining({ label: "v3", commit: C3, components: ["api"], rollback: ["chant components rollback staging --component api"] }),
+      expect.objectContaining({ label: "v3", commit: C3, components: ["api"], rollback: [expect.stringMatching(ROLLBACK)] }),
       expect.objectContaining({ label: "v2", commit: C2, components: ["web"], rollback: [] }),
     ]);
     expect(prod.releases).toEqual([expect.objectContaining({ label: "v1", commit: C1, approver: "github:alice" })]);
@@ -105,7 +109,7 @@ describe.skipIf(!CHANT || !existsSync(CHANT))("the trunk lane, through chant (#6
     // #692: the column, newest first.
     expect(lane.releaseColumn).toEqual({ full: true, floor: "0.124.29" });
     expect(lane.releases.map((r: any) => [r.label, r.releaseDigest, r.configOnly, r.next, r.revoked?.rollback ?? null])).toEqual([
-      ["v3", R3, false, null, ["chant components rollback staging --component api"]],
+      ["v3", R3, false, null, [expect.stringMatching(ROLLBACK)]],
       ["v2", R2, true, "prod", null],
       ["v1", R1, null, null, null],
     ]);

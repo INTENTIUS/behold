@@ -21,6 +21,7 @@ import { renderLane } from "./terragucci-lifecycle.js";
 import { renderReleases } from "./releases.js";
 import { renderTrunkLane } from "./trunk-lane.js";
 import { entriesFor as csEntriesFor, gapLines as csGapLines, inspectHeading as csInspectHeading, nodeMarks as csNodeMarks, offGraph as csOffGraph, overlayHeader as csHeader, overlayLegend as csLegend, PREVIEW_NOTE as CS_PREVIEW_NOTE } from "./change-set-overlay.js";
+import { flagMarks as flFlagMarks, flagRow as flFlagRow, flagsFor as flFlagsFor, flagsHeader as flHeader, gapLines as flGapLines, NODES_NOTE as FL_NODES_NOTE, pickEnv as flPickEnv, STALE_COLOR as FL_STALE_COLOR, TURN_ON_NOTE as FL_TURN_ON_NOTE } from "./feature-flags.js";
 import { renderYodelLane } from "./sql-yodeler-lane.js";
 import { initTerragucciEstate } from "./terragucci-estate.js";
 import { chantComponentMarks } from "./chant-pr-marks.js";
@@ -968,6 +969,19 @@ function inspect(node) {
     h.textContent = csInspectHeading(csAnswer);
     panel.appendChild(h);
     for (const e of csEntries) panel.appendChild(csEntryEl(e));
+  }
+  // #683: the feature flags of this card's member, in the environment the Flags tab draws.
+  const flRows = flAnswer && flOn ? flFlagsFor(flAnswer, nodeMember(node.id), flEnv) : [];
+  if (flRows.length) {
+    const h = document.createElement("h3");
+    h.textContent = "feature flags";
+    h.title = FL_NODES_NOTE;
+    panel.appendChild(h);
+    for (const r of flRows) {
+      const row = panelDotRow(r.color, r.text, "");
+      row.title = r.title;
+      panel.appendChild(row);
+    }
   }
   // #526: SQL Yodeler's drift on this card, each dated by its file.
   const yrMarks = yrJoined && yrJoined.cards[node.id];
@@ -4971,6 +4985,168 @@ function approveFromLane(key, env, btn) {
 }
 initTrunkLane();
 
+// --- #683: feature flags, on or off per environment ---------------------------
+// The Flags tab reads /api/workspace/flags when it is opened: each flag of the
+// workspace with its owner, work item and value per environment, a flip
+// waiting at a gate as the link that opens that gate's change set (#681), and
+// otherwise the lines a person runs to turn it on. behold changes no flag. The
+// tab picks an environment, and every card of a flagged member gets a tag under
+// it, since chant names no node that reads a build parameter.
+let flAnswer = null;
+let flOn = true;
+let flEnv = null;
+let flHost = null;
+let flRead = false;
+async function initFlags() {
+  if (staticMode || publicMode) return; // /api/workspace/* is refused in a public view
+  const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
+  if (!project.workspace) return;
+  flHost = addPanelTab("flags", "Flags", "The workspace's feature flags, on or off per environment, with their owner and work item. Read from chant when you open the tab.");
+  if (!flHost) return;
+  flHost.id = "tab-flags";
+  const tab = document.querySelector('#panel-tabs button[data-tab="flags"]');
+  if (tab) tab.addEventListener("click", () => flRead || loadFlags());
+  if (flHost.classList.contains("active")) loadFlags();
+}
+async function loadFlags() {
+  flRead = true;
+  const reading = document.createElement("div");
+  reading.className = "tg-legend";
+  reading.textContent = "reading the flags from chant";
+  flHost.replaceChildren(reading);
+  flAnswer = await apiFetch("/api/workspace/flags")
+    .then((r) => r.json())
+    .catch((e) => ({ error: String(e) }));
+  flEnv = flPickEnv(flAnswer, flEnv || view.env);
+  markFlagCards();
+}
+function markFlagCards() {
+  const svg = document.querySelector("#graph svg");
+  if (svg) {
+    for (const old of svg.querySelectorAll("[data-fl-mark]")) old.remove();
+    if (flAnswer && flOn) {
+      const ids = [...svg.querySelectorAll("[data-node-id]")].map((g) => g.getAttribute("data-node-id"));
+      for (const [id, m] of Object.entries(flFlagMarks(flAnswer, flEnv, ids, nodeMember))) {
+        const g = svg.querySelector('[data-node-id="' + CSS.escape(id) + '"]');
+        if (!g) continue;
+        const rect = g.querySelector("rect");
+        const box = rect && rect.getBBox ? rect.getBBox() : { x: 0, y: 0, width: 150, height: 60 };
+        const tag = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        tag.setAttribute("data-fl-mark", "tag");
+        tag.setAttribute("x", String(box.x));
+        tag.setAttribute("y", String(box.y + box.height + 13));
+        tag.setAttribute("font-size", "11");
+        tag.setAttribute("font-weight", "700");
+        tag.setAttribute("fill", m.stale ? FL_STALE_COLOR : m.color);
+        tag.textContent = m.tag;
+        const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+        title.setAttribute("data-fl-mark", "title");
+        title.textContent = m.title;
+        tag.appendChild(title);
+        g.append(tag);
+      }
+    }
+  }
+  renderFlagsTab();
+}
+function renderFlagsTab() {
+  if (!flHost) return;
+  flHost.replaceChildren();
+  const line = (cls, text, title, host = flHost) => {
+    const d = document.createElement("div");
+    d.className = cls;
+    d.textContent = text;
+    if (title) d.title = title;
+    host.appendChild(d);
+    return d;
+  };
+  const h = flHeader(flAnswer);
+  line(h.tone === "refusal" ? "tg-refusal" : "fl-title", h.text, h.title);
+  const refused = !flAnswer || flAnswer.error || flAnswer.refusal;
+  if (refused && flAnswer && flAnswer.degraded) line("tg-legend", `Without it, ${flAnswer.degraded}.`);
+  if (!refused) {
+    line("tg-legend", FL_NODES_NOTE);
+    if (flAnswer.environments.length) {
+      const pick = document.createElement("div");
+      pick.className = "fl-envs";
+      const label = document.createElement("span");
+      label.textContent = "on the graph in";
+      pick.appendChild(label);
+      for (const env of flAnswer.environments) {
+        const b = button(env, env === flEnv ? "fl-env on" : "fl-env", () => {
+          flEnv = env;
+          markFlagCards();
+        });
+        b.setAttribute("aria-pressed", String(env === flEnv));
+        b.title = `Mark each flagged card with its flags' values in ${env}.`;
+        pick.appendChild(b);
+      }
+      flHost.appendChild(pick);
+    }
+    for (const g of flGapLines(flAnswer)) line("tg-refusal", g.text, g.title);
+    const toggle = button(flOn ? "Turn off the marks" : "Turn on the marks", "", () => {
+      flOn = !flOn;
+      markFlagCards();
+    });
+    toggle.title = flOn ? "Remove the flag marks from the graph. The tab keeps the flags." : "Mark the flagged cards on the graph again.";
+    flHost.appendChild(toggle);
+    if (!flAnswer.flags.length) line("tg-legend", "no member has a feature flag");
+    for (const f of flAnswer.flags) {
+      const r = flFlagRow(f, flEnv);
+      const box = document.createElement("div");
+      box.className = "fl-flag";
+      const title = line("fl-flag-title", r.title, r.path, box);
+      if (r.stale) {
+        const s = document.createElement("span");
+        s.className = "fl-stale";
+        s.textContent = ` · ${r.stale.text}`;
+        s.title = r.stale.title;
+        title.appendChild(s);
+      }
+      line("fl-facts", r.facts, "", box);
+      const values = document.createElement("div");
+      values.className = "fl-values";
+      for (const v of r.values) {
+        const span = document.createElement("span");
+        span.className = v.current ? "fl-value current" : "fl-value";
+        span.style.setProperty("--dot", v.color);
+        span.textContent = v.text;
+        values.appendChild(span);
+      }
+      box.appendChild(values);
+      for (const w of r.waiting) {
+        const d = line("fl-waiting", `${w.text} · `, "", box);
+        const a = document.createElement("a");
+        a.href = "#";
+        a.className = "lane-change-set";
+        a.textContent = w.link;
+        a.title = w.title;
+        a.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          openChangeSet(w.gate, w.env);
+        });
+        d.appendChild(a);
+      }
+      for (const t of r.turnOn) {
+        line("fl-turn-on", t.head, FL_TURN_ON_NOTE, box);
+        const pre = document.createElement("pre");
+        pre.className = "fl-lines";
+        pre.textContent = t.lines.join("\n");
+        pre.title = FL_TURN_ON_NOTE;
+        box.appendChild(pre);
+      }
+      flHost.appendChild(box);
+    }
+    if (flAnswer.flags.some((f) => f.turnOn.length)) line("tg-legend", FL_TURN_ON_NOTE);
+  }
+  if (!staticMode) {
+    const again = button("Read again", "", () => loadFlags());
+    again.title = "Read the flags and every environment's gates from chant again.";
+    flHost.appendChild(again);
+  }
+}
+initFlags();
+
 // --- #681: a waiting gate's change set, on the graph -------------------------
 // Opened from a gate card's "change set" link in the Trunk tab. The server
 // reads the gate from status and the stored change set from chant change-set
@@ -6799,6 +6975,7 @@ function render(ir, svg, m) {
   markTerragucciCards(); // #490: and what terragucci's reports found, dated
   markYodelCards(); // #526: and SQL Yodeler's drift, dated
   if (csAnswer) markChangeSetCards(); // #681: and the change set a gate binds, as a preview
+  if (flAnswer) markFlagCards(); // #683: and the feature flags of each flagged member
   applyLayout(); // #228: last, so the hand-placed deltas ride on top of every other pass
   drawTgReads(); // #568: after the layout, so the reads lines meet the cards where they now sit
   renderDial();

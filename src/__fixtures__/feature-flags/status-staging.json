@@ -1,0 +1,149 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/status/v1/status.schema.json",
+  "contract": 1,
+  "chant": "0.124.28",
+  "env": "staging",
+  "compareTo": null,
+  "lifecycle": {
+    "ref": "chant/lifecycle",
+    "commit": "730a64535e8e7f5222a8e9036907b4e89094f765"
+  },
+  "checkout": {
+    "branch": "main",
+    "head": "07b5fa8e574ece9a0780b8aec23be492e82154eb",
+    "base": "07b5fa8e574ece9a0780b8aec23be492e82154eb",
+    "baseFrom": "main"
+  },
+  "workspace": {
+    "name": "acme",
+    "root": ".",
+    "file": "chant.workspace.json"
+  },
+  "plantable": {
+    "plantable": false,
+    "box": null,
+    "reason": {
+      "code": "box-none",
+      "message": "no member's box block declares services, so there is no box to plant"
+    }
+  },
+  "members": [
+    {
+      "name": "web",
+      "dir": "web",
+      "kind": "chant",
+      "fields": null,
+      "environments": [
+        {
+          "env": "staging",
+          "ledger": {
+            "layout": "members",
+            "path": "_members/web/staging/releases.jsonl",
+            "shared": false
+          },
+          "releases": [],
+          "reason": null
+        }
+      ],
+      "compare": null,
+      "readable": true,
+      "gateLedger": {
+        "layout": "members",
+        "path": "_members/web/_gates",
+        "shared": false,
+        "malformed": 0,
+        "reason": null
+      },
+      "gates": [
+        {
+          "component": "release",
+          "name": "promote",
+          "env": "staging",
+          "planDigest": "jcs1-sha256:05c8b35bc9a3b2040cf6f057d5846220ca8b30ba4ec99ac962e90ebde753528f",
+          "releaseDigest": "jcs1-sha256:f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1",
+          "state": "pending",
+          "recordedAt": "2026-10-02T00:00:00Z",
+          "gitSha": "07b5fa8e574ece9a0780b8aec23be492e82154eb",
+          "runId": "run-21",
+          "expiresAt": "2099-01-01T00:00:00Z",
+          "approvals": [],
+          "needed": 1,
+          "signed": null,
+          "approve": "chant approve release promote --env staging --plan jcs1-sha256:05c8b35bc9a3b2040cf6f057d5846220ca8b30ba4ec99ac962e90ebde753528f",
+          "changeSet": "jcs1-sha256:05c8b35bc9a3b2040cf6f057d5846220ca8b30ba4ec99ac962e90ebde753528f"
+        }
+      ],
+      "box": null,
+      "stewards": [],
+      "stewardReasons": [],
+      "promotionOrder": [
+        {
+          "name": "staging",
+          "canary": false
+        },
+        {
+          "name": "prod",
+          "canary": false
+        }
+      ],
+      "releaseCuts": [],
+      "featureFlags": [
+        {
+          "id": "new-checkout",
+          "param": "newCheckout",
+          "owner": "alice",
+          "values": {
+            "staging": true,
+            "prod": false
+          },
+          "work": {
+            "id": "W-002",
+            "state": "in-progress"
+          },
+          "implements": [
+            {
+              "id": "d-002",
+              "state": "decided",
+              "confirmed": false
+            }
+          ],
+          "stale": false,
+          "kind": "flags/flag.kind.mjs",
+          "path": "flags/new-checkout.flag.md"
+        },
+        {
+          "id": "old-banner",
+          "param": "banner",
+          "owner": "bob",
+          "values": {
+            "staging": true,
+            "prod": true
+          },
+          "work": {
+            "id": "W-001",
+            "state": "done"
+          },
+          "implements": [
+            {
+              "id": "d-001",
+              "state": "confirmed",
+              "confirmed": true
+            }
+          ],
+          "stale": true,
+          "kind": "flags/flag.kind.mjs",
+          "path": "flags/old-banner.flag.md"
+        }
+      ]
+    }
+  ],
+  "leases": [],
+  "acceptance": [],
+  "replication": null,
+  "summary": {
+    "members": 1,
+    "released": 0,
+    "unreadable": 0,
+    "differing": null
+  }
+}

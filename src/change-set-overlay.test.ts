@@ -26,6 +26,8 @@ import statusSchema from "./trunk-lane-schemas/status.schema.json" with { type: 
 // with each entry's node: a create, an update, a replace, a no-op, and a
 // delete of a block the planning commit no longer declares (`node: null`).
 // The schemas in src/trunk-lane-schemas/ are chant's, from the same commit.
+// status.schema.json was refreshed from chant main at 0689d28f0 for #683,
+// which only adds featureFlags.
 
 const FIX = join(import.meta.dirname, "__fixtures__", "change-set-overlay");
 const fixture = (name: string): WorkspaceDocument => JSON.parse(readFileSync(join(FIX, name), "utf8")) as WorkspaceDocument;

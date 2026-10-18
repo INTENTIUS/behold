@@ -1099,6 +1099,30 @@ forget) with a tag above it, never a fill; it is opened from the "change set"
 link on a Trunk tab gate card and turned off from its tab. A public view
 refuses the route, as it refuses the lane.
 
+## Feature flags on the graph (#683)
+
+`GET /api/workspace/flags` (src/feature-flags.ts) reads each member's
+`featureFlags` from `chant workspace status <env> --json` (chant#4024, floor
+`FEATURE_FLAGS_CHANT_FLOOR`, 0.124.29): per flag its `param`, `owner`, `work`
+with its state, `values` per environment and `stale`, the stale-flag lint's
+verdict (WSP118). It reads status in each environment of the promotion order
+for the waiting gates, and for each gate of a flagged member with a stored
+change set, `chant change-set show`, keeping the entries whose attribute
+`param:<param>` moves the flag's parameter (`waiting`, with before, after and
+the node chant mapped, which is null for a release's `chant:component`
+entry). chant names no graph node that reads a build parameter, so a flag
+marks every card of its member (`nodes: "member"`); behold infers no finer
+mapping. behold writes no flag record and has no flag write route: a waiting
+flip opens #681's change-set overlay for its gate, and otherwise `turnOn`
+carries the lines a person runs (`chant workspace records amend <id> --kind
+<kind> --set -` with the new values, then `git commit` of the record). The
+page (web/feature-flags.js) is the Flags tab and a tag under each flagged
+card in the environment the tab picks. Below the floor the route answers the
+refusal and `degraded`, and the graph draws no marks. A public view refuses
+the route. `src/feature-flags-chant.test.ts` reads the workspace
+`src/feature-flags-fixture.ts` makes through a real chant when
+`BEHOLD_TEST_CHANT_BIN` names one.
+
 ## Invariant
 
 If a request would have behold write to a cloud or to source directly, it's wrong.

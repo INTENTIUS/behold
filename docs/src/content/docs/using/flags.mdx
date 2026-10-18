@@ -1,0 +1,74 @@
+---
+title: Feature flags on the graph
+description: See each feature flag on or off per environment, with its owner and work item, and open a flip waiting at a gate as its change set.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A feature flag in a chant workspace is a record that names a member, the
+build parameter of that member it sets, an owner, the work item it hides and
+a value per environment ([chant's guide](https://intentius.io/chant/guide/feature-flags/)).
+Turning one on is a reviewed commit that changes the record, and the release
+cut from that commit carries the new value through the environment's gate.
+behold shows where each flag stands and never changes one.
+
+## The Flags tab
+
+When behold serves a declared workspace, the panel has a **Flags** tab. It
+reads the flags from chant when you open it. Each flag shows:
+
+- its member and id, `web/new-checkout`, with the record's path on hover;
+- `param newCheckout · owner alice · work W-002 (in-progress)`;
+- its value in each environment, in promotion order: `staging on`, `prod off`.
+  An environment the record leaves out reads `unset`, and builds with the
+  parameter's default.
+
+A flag the stale-flag lint reports (`chant workspace check`, WSP118) says
+`due for removal (WSP118)` after its name. Hover for the work item's decisions:
+every one is confirmed, so the record and the parameter can go.
+
+## On the graph
+
+Pick an environment under `on the graph in`. Every card of a flagged member gets
+a tag under it with the flag's value there: `new-checkout: on` in green,
+`new-checkout: off` in grey, a value that is not true or false in blue. A
+member with several flags reads `2 flags: 1 on`. A stale flag adds `stale` to
+the tag, in red. The tag's tooltip lists each flag.
+
+<Aside type="note" title="Why every card of the member">
+chant does not say which resources read a build parameter: the graph carries
+no parameter reads. So a flag marks every card of its member, and the tab says
+so.
+</Aside>
+
+**Turn off the marks** removes the tags and keeps the tab. Click a card to see
+its member's flags in the inspect pane.
+
+## Turning a flag on
+
+There is no toggle. A change to a flag is previewed as a change set:
+
+- When a release that moves the flag's parameter waits at an environment's
+  gate, the flag says so, `newCheckout false to true waits at gate
+  web/release/promote in staging`, with a `change set 05c8b35bc9a3` link. Click it
+  to draw that change set on the graph, as the
+  [Trunk tab's link](/behold/using/change-set/) does. A release's entry is the
+  component, `web`, which is no node of the graph, so the Change set tab lists
+  it under `not on the graph`.
+- Where the flag is off and nothing waits, the tab shows the lines that turn it
+  on: a `chant workspace records amend` of the record's values, and the `git
+  commit` of the record. Once that commit is green, a release cut from it and
+  promoted to the environment waits at the environment's gate, and its change
+  set opens from here.
+
+## What it reads
+
+| chant command | What the tab takes from it |
+|---|---|
+| `chant workspace status <env> --json` | each member's `featureFlags`, the promotion order, and in each environment the gates waiting there with the change set they bind |
+| `chant change-set show <digest> --member <member> --json` | for a waiting gate of a flagged member, the entries whose `param:<name>` attribute moves the flag's parameter |
+
+`featureFlags` is new in chant 0.124.29. On an older chant the tab says
+`Feature flags needs chant 0.124.29 or newer` with the project's version, the
+graph draws no flag marks, and the rest of behold works. `behold doctor` lists
+the read with its floor.

@@ -6,7 +6,7 @@
   "compareTo": null,
   "lifecycle": {
     "ref": "chant/lifecycle",
-    "commit": "2af9945c966908f2b1375ca6dadece72798a5abc"
+    "commit": "75ff7f92aebab080e59e4c7a94bc1d344e6a84ee"
   },
   "checkout": {
     "branch": "main",
@@ -170,7 +170,8 @@
             "reason": "there is no signers file (.chant/allowed_signers) at base to check the cut's signature against"
           }
         }
-      ]
+      ],
+      "featureFlags": []
     }
   ],
   "leases": [],

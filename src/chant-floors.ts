@@ -70,6 +70,12 @@ export const RUN_EVENTS_CHANT_FLOOR = "0.124.28";
  * Below it the column is drawn from `release list` alone, with no revoked
  * mark, and says so; the lane itself still needs only 0.124.28. */
 export const RELEASE_COLUMN_CHANT_FLOOR = "0.124.29";
+/** The first chant whose `workspace status` lists each member's feature flags
+ * as `featureFlags`, with their values per environment, owner, work item and
+ * the stale-flag lint's verdict (INTENTIUS/chant#4024). The Flags tab and the
+ * flag marks on the graph (#683). Below it the graph draws no flag marks and
+ * the tab says which chant adds them. */
+export const FEATURE_FLAGS_CHANT_FLOOR = "0.124.29";
 
 export interface ChantFloor {
   /** The read, in words: `the why of a member or a card`. */
@@ -97,6 +103,7 @@ export const CHANT_FLOORS: readonly ChantFloor[] = [
   { read: "change set", floor: CHANGE_SET_SHOW_CHANT_FLOOR, adds: "chant change-set show --json (chant#4022, chant#4045)" },
   { read: "run events", floor: RUN_EVENTS_CHANT_FLOOR, adds: "run --events-json and chant run events (chant#4019, chant#4041, chant#4042)" },
   { read: "release column", floor: RELEASE_COLUMN_CHANT_FLOOR, adds: "revoked releases, and the release a deploy was made from (chant#4033, chant#4043)", degraded: "the Trunk tab draws its releases from chant release list alone, with no revoked mark" },
+  { read: "feature flags", floor: FEATURE_FLAGS_CHANT_FLOOR, adds: "workspace status featureFlags (chant#4024)", degraded: "the graph draws no flag marks, and the Flags tab says which chant adds them" },
 ];
 
 /** One read's floor against one chant version. An unknown version meets it
