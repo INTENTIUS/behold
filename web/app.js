@@ -3806,7 +3806,9 @@ function drawTgReads() {
         for (const t of card.querySelectorAll(":scope > text")) t.setAttribute("x", String(Number(t.getAttribute("x")) - 30));
       }
     }
-    drawTgComponentMarks(svg, { marks: chantComponentMarks(chantPaced(), chantFacets, { kiosk: !!embedOpts.bare }), focus: null, boxOf, make, edgePoints: chantEdgePoints(svg) });
+    const chantMarks = chantComponentMarks(chantPaced(), chantFacets, { kiosk: !!embedOpts.bare });
+    drawTgComponentMarks(svg, { marks: chantMarks, focus: null, boxOf, make, edgePoints: chantEdgePoints(svg) });
+    drawReach(svg, chantMarks.reach || null, boxOf);
     return;
   }
   const layer = make("g", { "data-tg-reads": "1", "pointer-events": "none" });
@@ -4180,6 +4182,175 @@ function watchTgRuns() {
  * spot that is clear, in the words that fit, else only in the tooltip.
  * Returns the wave boxes, in the svg's coordinates.
  */
+/** The convex hull of points (monotone chain), counter-clockwise. */
+function hullOf(points) {
+  const p = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
+  if (p.length < 3) return p;
+  const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower = [];
+  for (const q of p) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], q) <= 0) lower.pop();
+    lower.push(q);
+  }
+  const upper = [];
+  for (const q of [...p].reverse()) {
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], q) <= 0) upper.pop();
+    upper.push(q);
+  }
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+}
+/** A closed path through a hull with its corners rounded (each corner a quadratic curve between its edges' midpoints). */
+function smoothPath(h) {
+  if (h.length < 3) return "";
+  const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  const f = (n) => Math.round(n * 10) / 10;
+  let d = "";
+  h.forEach((p, i) => {
+    const prev = h[(i - 1 + h.length) % h.length];
+    const next = h[(i + 1) % h.length];
+    const a = mid(prev, p);
+    const b = mid(p, next);
+    d += `${i ? "L" : "M"}${f(a.x)},${f(a.y)} Q${f(p.x)},${f(p.y)} ${f(b.x)},${f(b.y)} `;
+  });
+  return `${d}Z`;
+}
+const REACH_TONE = { plan: "var(--frame-pending, var(--pending))", bad: "var(--frame-degraded, var(--degraded))" };
+/**
+ * behold#631: what a change reaches, drawn on a chant repo's components graph:
+ * a soft wedge per root, from the root card's top centre up over the cards
+ * downstream of it, padded, behind the cards and in front of the wave boxes.
+ * It grows from the root outward over about 1.2 s (none under reduced motion)
+ * and then rests faint, with its words at its upper edge. A new reach
+ * crossfades the old one out; the same one redrawn only follows the cards.
+ */
+function drawReach(svg, reach, boxOf) {
+  const NS = "http://www.w3.org/2000/svg";
+  const old = svg.querySelector("g[data-reach]");
+  const key = reach ? reach.key : null;
+  const fadeOut = (g) => {
+    if (!g) return;
+    g.removeAttribute("data-reach");
+    g.setAttribute("data-reach-old", "1");
+    g.style.transition = "opacity 0.5s ease-out";
+    g.style.opacity = "0";
+    setTimeout(() => g.remove(), 600);
+  };
+  if (!reach) return fadeOut(old);
+  const card = (id) => svg.querySelector(`[data-node-id="${CSS.escape(id)}"]`);
+  const box = (id) => {
+    const g = card(id);
+    return g ? boxOf(g) : null;
+  };
+  const pad = 16;
+  const shapes = [];
+  const covered = new Set(reach.covered);
+  const needsOf = (chantFacets && chantFacets.needs) || {};
+  for (const root of reach.roots) {
+    const rb = box(root);
+    if (!rb) continue;
+    // This root's own reach: the covered cards downstream of it.
+    const mine = [...covered].filter((c) => c !== root && (reach.roots.length === 1 || reachesFrom(root, c, needsOf)));
+    const boxes = mine.map(box).filter(Boolean);
+    if (!boxes.length) continue;
+    const apex = { x: (rb.x + rb.x2) / 2, y: rb.y };
+    const pts = [apex];
+    for (const b of boxes) pts.push({ x: b.x - pad, y: b.y - pad }, { x: b.x2 + pad, y: b.y - pad }, { x: b.x - pad, y: b.y2 + pad }, { x: b.x2 + pad, y: b.y2 + pad });
+    const top = Math.min(...boxes.map((b) => b.y)) - pad;
+    shapes.push({ d: smoothPath(hullOf(pts)), apex, top, cx: (Math.min(...boxes.map((b) => b.x)) + Math.max(...boxes.map((b) => b.x2))) / 2, reachR: Math.max(...pts.map((p) => Math.hypot(p.x - apex.x, p.y - apex.y))) });
+  }
+  if (!shapes.length) return fadeOut(old);
+  const tone = REACH_TONE[reach.tone] || REACH_TONE.plan;
+  if (old && old.getAttribute("data-reach") === key) {
+    // The same reach: follow the cards, no new growth.
+    old.querySelectorAll("path[data-reach-shape]").forEach((p, i) => shapes[i] && p.setAttribute("d", shapes[i].d));
+    return;
+  }
+  fadeOut(old);
+  const g = document.createElementNS(NS, "g");
+  g.setAttribute("data-reach", key);
+  g.setAttribute("pointer-events", "none");
+  const reduce = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const id = `reach-${Date.now().toString(36)}`;
+  // The growth: each wedge revealed by a circle from its apex, widening out and up as if along the edges.
+  const defs = document.createElementNS(NS, "defs");
+  const clip = document.createElementNS(NS, "clipPath");
+  clip.setAttribute("id", id);
+  for (const sh of shapes) {
+    const c = document.createElementNS(NS, "circle");
+    c.setAttribute("cx", String(sh.apex.x));
+    c.setAttribute("cy", String(sh.apex.y));
+    c.setAttribute("r", reduce ? String(sh.reachR) : "0");
+    if (!reduce) {
+      const a = document.createElementNS(NS, "animate");
+      for (const [k, v] of Object.entries({ attributeName: "r", from: "0", to: String(sh.reachR), dur: "1.2s", fill: "freeze", calcMode: "spline", keyTimes: "0;1", keySplines: "0.16 1 0.3 1" })) a.setAttribute(k, v);
+      c.appendChild(a);
+    }
+    clip.appendChild(c);
+  }
+  defs.appendChild(clip);
+  g.appendChild(defs);
+  // One fill for all the wedges, so where two roots' wedges meet they merge rather than darken.
+  const fill = document.createElementNS(NS, "g");
+  fill.setAttribute("clip-path", `url(#${id})`);
+  fill.setAttribute("opacity", "0.13");
+  const edge = document.createElementNS(NS, "g");
+  edge.setAttribute("clip-path", `url(#${id})`);
+  for (const sh of shapes) {
+    const p = document.createElementNS(NS, "path");
+    p.setAttribute("d", sh.d);
+    p.setAttribute("fill", tone);
+    p.setAttribute("data-reach-shape", "1");
+    fill.appendChild(p);
+    const e = document.createElementNS(NS, "path");
+    e.setAttribute("d", sh.d);
+    e.setAttribute("fill", "none");
+    e.setAttribute("stroke", tone);
+    e.setAttribute("stroke-opacity", "0.55");
+    e.setAttribute("stroke-width", "1.5");
+    edge.appendChild(e);
+  }
+  g.append(fill, edge);
+  // Its words at its upper edge, over the widest wedge.
+  const top = shapes.reduce((a, b) => (b.top < a.top ? b : a));
+  const label = document.createElementNS(NS, "text");
+  for (const [k, v] of Object.entries({ x: String(top.cx), y: String(top.top - 6), "text-anchor": "middle", "font-size": "16", "font-weight": "700", fill: tone, "data-reach-label": "1" })) label.setAttribute(k, v);
+  label.textContent = reach.label;
+  if (!reduce) {
+    label.style.opacity = "0";
+    label.style.transition = "opacity 0.4s ease-out 1s";
+    requestAnimationFrame(() => (label.style.opacity = "1"));
+  }
+  g.appendChild(label);
+  // Behind the cards, in front of the wave boxes.
+  const first = svg.querySelector("[data-node-id]");
+  if (first && first.parentNode) first.parentNode.insertBefore(g, first);
+  else svg.appendChild(g);
+}
+/** Whether `c` is downstream of `root` along `needs`. */
+function reachesFrom(root, c, needs) {
+  const seen = new Set();
+  const up = (n) => {
+    for (const d of needs[n] || []) {
+      if (d === root) return true;
+      if (seen.has(d)) continue;
+      seen.add(d);
+      if (up(d)) return true;
+    }
+    return false;
+  };
+  return up(c);
+}
+/** behold#631: the "working" outline pulse, once per document; no motion under prefers-reduced-motion. */
+function ensureWorkingStyle() {
+  if (document.getElementById("k-working-style")) return;
+  const st = document.createElement("style");
+  st.id = "k-working-style";
+  st.textContent = `@media (prefers-reduced-motion: no-preference) {
+  rect.k-working { animation: k-working 1.6s ease-in-out infinite; stroke: var(--frame-runtime, var(--runtime)); }
+  @keyframes k-working { 0%, 100% { stroke-opacity: 0.35; stroke-width: 1.5; } 50% { stroke-opacity: 1; stroke-width: 3; } }
+}`;
+  document.head.appendChild(st);
+}
 function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints, marks: given = null }) {
   const marks = given || tgComponentMarks(drawnAnswer, tgProgress, tgComponentFacets, { runs: tgRuns, pin: view.run || null });
   // behold#631: where the marks came from, said in each tooltip.
@@ -4195,6 +4366,8 @@ function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints
       .map(boxOf)
       .filter(Boolean);
   const cardEls = [...svg.querySelectorAll("[data-node-id]")];
+  // behold#631: last draw's "working" pulse goes; this draw's marks say which cards still have it.
+  for (const r of svg.querySelectorAll("rect.k-working")) r.setAttribute("class", (r.getAttribute("class") || "").replace(/\bk-working\b/g, "").trim());
   const cardBoxes = cardEls.map(boxOf).filter(Boolean);
   const edgeHit = (r) => edgePoints.some((p) => p.x >= r.x - 4 && p.x <= r.x2 + 4 && p.y >= r.y - 4 && p.y <= r.y2 + 4);
   const probe = make("text", { "font-size": 12, "font-weight": 700 });
@@ -4234,6 +4407,13 @@ function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints
       bar.setAttribute("data-tg-fill0", bar.getAttribute("fill") || "");
       bar.setAttribute("fill", tone(m.tone));
     }
+    // behold#631: a card the pipeline is about to work on, between events, pulses its outline (none under reduced motion).
+    if (body) {
+      if (m.working) body.setAttribute("class", `${body.getAttribute("class") || ""} k-working`.trim());
+      else if ((body.getAttribute("class") || "").includes("k-working")) body.setAttribute("class", (body.getAttribute("class") || "").replace(/\bk-working\b/g, "").trim());
+      if (m.working) ensureWorkingStyle();
+    }
+    if (!m.words && m.working) continue;
     const texts = [...g.querySelectorAll(":scope > text")];
     const sub = texts.find((t) => /^Component\b/.test((t.textContent || "").trim())) || texts[1];
     if (!sub || !body) continue;

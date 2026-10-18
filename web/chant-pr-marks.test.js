@@ -264,6 +264,29 @@ describe("a chant repo's apply, live from its run events", () => {
     expect(JSON.stringify(m)).not.toContain("plan queued");
   });
 
+  it("draws what a change reaches: the plan from network over all fifteen, the failure from cluster-a over its six apps, the fix over its seven", () => {
+    const planned = chantComponentMarks(answer({ pull: 14, plan: fanPlan, gate: waiting }), fan);
+    expect(planned.reach).toMatchObject({ roots: ["network"], tone: "plan", label: "reaches 15 stacks" });
+    expect(planned.reach.covered).toHaveLength(15);
+    const live = {
+      stage: "apply",
+      settled: true,
+      status: "failed",
+      waves: [wave(1, "applied"), wave(2, "failed"), wave(3, "applied")],
+      components: comps({ network: "applied", "cluster-a": "failed", "cluster-b": "applied", ...Object.fromEntries(appsA.map((a) => [a, { state: "blocked", blockedBy: "cluster-a" }])), ...Object.fromEntries(appsB.map((a) => [a, "applied"])) }),
+    };
+    const failed = chantComponentMarks(answer({ pull: 14, plan: fanPlan, gate: approved, live: { reportUrl: "s3://r", via: "pipeline", plan: null, apply: live } }), fan);
+    expect(failed.reach).toMatchObject({ roots: ["cluster-a"], covered: appsA, tone: "bad", label: "holds back 6 apps" });
+    const fixPlan = { ...plan, pr: 15, op: "pr-15", members: ["cluster-a", ...appsA].map((c) => member(c, "planned")) };
+    const earlier = { runs: [3901], applied: ["network", "cluster-b", ...appsB] };
+    const fix = chantComponentMarks(answer({ pull: 15, plan: fixPlan, gate: waiting, live: { reportUrl: "s3://r", via: "pipeline", plan: null, apply: null, earlier } }), fan);
+    expect(fix.reach).toMatchObject({ roots: ["cluster-a"], label: "the fix reaches 7" });
+    expect(fix.reach.covered).toEqual(["app-01", "app-02", "app-03", "app-04", "app-05", "app-06", "cluster-a"]);
+    // Once the apply has started a wave, and at the end, nothing.
+    const going = { stage: "apply", settled: false, status: null, waves: [wave(1, "running")], components: comps({ network: "running" }) };
+    expect(chantComponentMarks(answer({ pull: 14, plan: fanPlan, gate: approved, live: { reportUrl: "s3://r", via: "pipeline", plan: null, apply: going } }), fan).reach).toBeUndefined();
+  });
+
   it("cuts a long reason at a word", () => {
     expect(shortReason("error: one two three four five six seven", 20)).toBe("one two three four…");
     expect(shortReason("")).toBeNull();

@@ -221,6 +221,14 @@ export function chantComponentMarks(answer, facets, opts = {}) {
     const mid = cardMid(s.state, x);
     cards[c] = { root: c, wave: s.wave, state: s.state, tone: toneOf(s.state), words, ...(mid && mid !== words ? { mid } : {}), short: CHANT_SHORT[s.state] || s.state, facts: facts(s.state, s.m, x), ...(s.blockedBy ? { blockedBy: s.blockedBy } : {}), ...(x.reason ? { reason: x.reason } : {}) };
   }
+  // behold#631: the cards the pipeline is about to work on while it is between events: all of a pull request's
+  // cards before its plan, wave 1's before the apply's first wave. They pulse so the stage never looks frozen.
+  if (running && running.stage === "plan" && !stage) {
+    for (const card of Object.values(cards)) if (card.state !== "applied-earlier" && card.state !== "unchanged") card.working = true;
+    if (!Object.values(cards).some((c) => c.working)) for (const [c, n] of Object.entries(facets.waves)) if (!cards[c]) cards[c] = { root: c, wave: n, state: "unchanged", tone: "idle", words: "", short: "", facts: [], working: true };
+  }
+  const firstWave = waveNumbers.find((n) => Object.values(cards).some((c) => c.wave === n && c.state !== "unchanged" && c.state !== "applied-earlier"));
+  if (running && running.stage === "apply" && !live && firstWave !== undefined) for (const card of Object.values(cards)) if (card.wave === firstWave && card.state !== "applied-earlier") card.working = true;
   for (const n of waveNumbers) {
     const members = Object.entries(facets.waves).filter(([, w]) => w === n).map(([c]) => cards[c]).filter(Boolean);
     const touched = members.filter((m) => m.state !== "unchanged");
@@ -294,7 +302,8 @@ export function chantComponentMarks(answer, facets, opts = {}) {
     const factShort = firstFailed && firstFailed.reason ? [`${firstFailed.root} failed: ${shortReason(firstFailed.reason, 36)}`, `${firstFailed.root} failed`] : [];
     waves[n] = { number: n, job, state, tone: state ? toneOf(state) : status ? status.tone : "idle", status, title: status ? `wave-${n} · ${status.words}` : `wave-${n}`, facts: f, ...(factShort.length ? { factShort } : {}) };
   }
-  return { stage: live ? "apply" : stage ? stage.stage : livePlan ? "plan" : null, cards, waves, source: sourceWords(answer), ...(opts.kiosk ? { statusRight: true, cardFont: 15, waveFont: 18 } : {}) };
+  const reach = reachOf(cards, facets, { stage, live, answer, earlier });
+  return { stage: live ? "apply" : stage ? stage.stage : livePlan ? "plan" : null, cards, waves, source: sourceWords(answer), ...(reach ? { reach } : {}), ...(opts.kiosk ? { statusRight: true, cardFont: 15, waveFont: 18 } : {}) };
 }
 
 /** Where the marks came from, for each tooltip. */
@@ -485,4 +494,60 @@ export function chantResultModel(demo, answer) {
       return { wave: w.wave, words: parts.length ? parts.join(", ") : null };
     }),
   };
+}
+
+/** Everything downstream of `roots` along the graph's `needs` (consumer -> producer), transitively, within `allowed` when given. */
+export function downstreamOf(roots, needs, allowed = null) {
+  const users = new Map();
+  for (const [c, deps] of Object.entries(needs || {})) for (const d of deps) (users.get(d) || users.set(d, []).get(d)).push(c);
+  const out = new Set();
+  const walk = (n) => {
+    for (const u of users.get(n) || []) {
+      if (out.has(u) || (allowed && !allowed.has(u))) continue;
+      out.add(u);
+      walk(u);
+    }
+  };
+  for (const r of roots) walk(r);
+  return out;
+}
+
+/**
+ * behold#631: what a change reaches on the components graph, drawn as a soft
+ * wedge from its root(s) up over everything downstream (app.js
+ * drawReach). `{ key, roots, covered, tone, label }`, or null:
+ *
+ * - while a plan stands and its apply has not started a wave: the plan's
+ *   roots (members with no dependency inside the plan), covering the plan;
+ *   "reaches 15 stacks", or for a later pull request of the cycle (the fix)
+ *   "the fix reaches 7";
+ * - once a component failed (as the paced graph shows it): the failed
+ *   component(s), covering what they hold back, "holds back 6 apps";
+ * - nothing once the apply runs, has applied, or at the reset.
+ *
+ * The viewer's words say "reaches" and "holds back".
+ */
+export function reachOf(cards, facets, { stage, live, answer, earlier = new Set() } = {}) {
+  const needs = facets && facets.needs ? facets.needs : {};
+  const failed = Object.values(cards).filter((c) => c.state === "failed").map((c) => c.root);
+  // The failure's reach lasts until the fix opens (the fix's cards then carry their last state, `lastStates`).
+  if (failed.length && !(answer && answer.lastStates)) {
+    const blocked = Object.values(cards).filter((c) => c.state === "blocked");
+    const held = new Set(blocked.filter((c) => !c.blockedBy || failed.includes(c.blockedBy)).map((c) => c.root));
+    for (const d of downstreamOf(failed, needs)) if (cards[d] && cards[d].state === "blocked") held.add(d);
+    if (!held.size) return null;
+    const names = [...held];
+    const noun = names.every((n) => /^app-/.test(n)) ? (names.length === 1 ? "app" : "apps") : names.length === 1 ? "stack" : "stacks";
+    return { key: `failed|${failed.sort().join(",")}|${names.length}`, roots: failed, covered: names.sort(), tone: "bad", label: `holds back ${names.length} ${noun}` };
+  }
+  if (!stage || stage.stage !== "plan" || !answer || answer.apply) return null;
+  // Once the apply has started a wave, the applying cards carry the story.
+  if (live && Object.values(live.components || {}).some((c) => c.state !== "waiting" && c.state !== "planned" && c.state !== "planning")) return null;
+  const members = new Set(Object.values(cards).filter((c) => c.state === "planned" || c.state === "queued").map((c) => c.root));
+  if (!members.size) return null;
+  const roots = [...members].filter((c) => !(needs[c] || []).some((d) => members.has(d))).sort();
+  if (!roots.length) return null;
+  const covered = [...new Set([...roots, ...downstreamOf(roots, needs, members)])].sort();
+  const fix = earlier.size > 0;
+  return { key: `plan|${roots.join(",")}|${covered.length}|${fix ? "fix" : "change"}`, roots, covered, tone: "plan", label: fix ? `the fix reaches ${covered.length}` : `reaches ${covered.length} ${covered.length === 1 ? "stack" : "stacks"}` };
 }
