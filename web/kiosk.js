@@ -143,12 +143,14 @@ function chapterStyle() {
   document.head.appendChild(st);
 }
 
-/** behold#631: a chant kiosk's one line naming what it shows: "chant fan-out, run by terragucci · live demo". */
-export const TOOL_WORDS = { "chant-fanout": "chant fan-out", chant: "chant" };
+/** behold#631: a chant kiosk's one line naming what it shows: the pipeline is chant's own; terragucci runs the demo around it. */
+export const SCENARIO_WORDS = { "fan-out": "fan-out" };
 export function whatLine(demo) {
-  const t = demo && typeof demo.tool === "string" ? demo.tool : "chant";
-  return `${TOOL_WORDS[t] || t.replace(/-/g, " ")}, run by terragucci · live demo`;
+  const sc = demo && typeof demo.scenario === "string" ? demo.scenario : null;
+  return ["chant's pull-request pipeline", sc ? SCENARIO_WORDS[sc] || sc.replace(/-/g, " ") : null, "live demo"].filter(Boolean).join(" · ");
 }
+/** Its tooltip: whose pipeline it is, and whose demo. */
+export const WHAT_TITLE = "The pipeline is chant's (chant components pr-plan / pr-apply on Forgejo). The demo stack and its driver are terragucci's.";
 
 /** behold#631: the step a chant kiosk's strip lights: a wait for approval before the merge is "planned" when the strip has no approval stop. */
 export function railStep(s, demo) {
@@ -937,7 +939,7 @@ function drawWatchHead(bar, s, now) {
   if (s.chantLoop && s.trackOn) {
     // behold#631: a chant kiosk names what this is in one line; the cycle number and its clock are Inspect's.
     const what = el("span", "k-cycle k-what-line", whatLine(demo));
-    if (what.setAttribute && typeof demo.intro === "string") what.setAttribute("title", demo.intro);
+    if (what.setAttribute) what.setAttribute("title", WHAT_TITLE);
     place.appendChild(what);
   } else {
     if (shownTool) place.appendChild(brandEl(shownTool));
