@@ -3795,6 +3795,8 @@ function drawTgReads() {
     return n;
   };
   if (chantMode) {
+    // behold#631: a kiosk passer-by can't place a card's type glyph (it reads as a checkbox): a chant repo's kiosk hides it.
+    if (embedOpts.bare) for (const icon of svg.querySelectorAll("[data-node-id] > g[transform]")) icon.setAttribute("visibility", "hidden");
     drawTgComponentMarks(svg, { marks: chantComponentMarks(chantPaced(), chantFacets, { kiosk: !!embedOpts.bare }), focus: null, boxOf, make, edgePoints: chantEdgePoints(svg) });
     return;
   }
@@ -4271,6 +4273,8 @@ function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints
       const cy = (tb.y + tb.y2) / 2;
       // Right after the title, as "apply-wave-2 · held at the gate"; else alone at the right of the title's line.
       const spots = [{ words: `· ${w.status.words}`, at: () => tb.x2 + 6 }, { words: w.status.words, at: (wd) => b.x2 - 16 - wd }];
+      // behold#631: a chant kiosk's box titles grow with the fit (scaleBoxLabels), which would run into words set just after them: the right of the line first.
+      if (marks.statusRight) spots.reverse();
       // behold#693: a narrow box whose full words would cross an edge says the short form.
       const short = tgStatusShort(w.status);
       if (short && short !== w.status.words) spots.push({ words: `· ${short}`, at: () => tb.x2 + 6 }, { words: short, at: (wd) => b.x2 - 16 - wd });
@@ -7014,10 +7018,15 @@ function drawPipelineMarks(svgEl) {
   const light = kioskLight();
   const pin = view.run || null;
   const commit = tgRunsCommit(pin, tgProgress);
+  // behold#631: on a kiosk, a chant repo's forge and tool marks are said once, on the top wave's box, not on every box.
+  const chantKiosk = !!(embedOpts.bare && view.components && chantFacets && !terragucciComponentsRepo);
+  const waveNs = [...svgEl.querySelectorAll("rect[data-group-id]")].map((r) => tgWaveOfKey(r.getAttribute("data-group-id"))).filter((x) => x !== null);
+  const onlyWave = chantKiosk && waveNs.length ? Math.max(...waveNs) : null;
   for (const rect of svgEl.querySelectorAll("rect[data-group-id]")) {
     const key = rect.getAttribute("data-group-id");
     const n = tgWaveOfKey(key);
     if (n === null) continue;
+    if (onlyWave !== null && n !== onlyWave) continue;
     const what = pipelineMarksFor(n);
     if (!what) continue;
     const forge = what.forge && FORGES[what.forge] ? what.forge : null;

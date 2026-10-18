@@ -30,6 +30,17 @@ describe("a chant repo's components, marked from its pull-request loop (behold#6
     expect(m.source).toBe("(from chant pr-plan's summary in run #3843)");
   });
 
+  it("on a kiosk: the plan by its short id, the box's words at the right of its title line, and no approve command on the card", () => {
+    const m = chantComponentMarks(answer({ plan, gate: waiting }), facets, { kiosk: true });
+    expect(m.waves[1].facts).toEqual(["approve plan 909bbc5e"]);
+    expect(m.statusRight).toBe(true);
+    const panel = chantApprovalModel({ demo: { step: "waiting", pull: 13 }, answer: answer({ plan, gate: waiting }), kiosk: true });
+    expect(panel.rows[0].command).toBeUndefined();
+    // Inspect keeps both.
+    expect(chantComponentMarks(answer({ plan, gate: waiting }), facets).statusRight).toBeUndefined();
+    expect(chantApprovalModel({ demo: { step: "waiting", pull: 13 }, answer: answer({ plan, gate: waiting }) }).rows[0].command).toBe(waiting.approveCommand);
+  });
+
   it("approved: the waves planned, and who approved", () => {
     const m = chantComponentMarks(answer({ plan, gate: approved }), facets);
     expect(m.waves[2]).toMatchObject({ state: "planned", facts: ["approved by demo-reviewer"] });
@@ -115,6 +126,8 @@ describe("a chant repo's apply, live from its run events", () => {
     const m = chantComponentMarks(answer({ pull: 14, plan: fanPlan, gate: approved, running, live: { reportUrl: "s3://r", via: "pipeline", plan: null, apply: live } }), fan);
     expect(m.waves[1]).toMatchObject({ state: "applied", status: { words: "done" } });
     expect(m.waves[2]).toMatchObject({ state: "applying", tone: "busy", status: { status: "running", words: "applying" } });
+    // A wave the run has not reached is waiting, never "held".
+    expect(m.waves[3].status).toMatchObject({ status: "queued", words: "waiting" });
     expect(m.cards["cluster-a"]).toMatchObject({ state: "applying", words: "applying", tone: "busy" });
     expect(m.cards["app-01"]).toMatchObject({ state: "queued", words: "waiting for wave 3" });
     expect(JSON.stringify(m)).not.toContain("chant#4007");
@@ -196,6 +209,8 @@ describe("a chant repo's apply, live from its run events", () => {
     expect(m.cards["cluster-a"].state).toBe("applied");
     expect(Object.values(m.cards).every((c) => c.state === "applied" || c.state === "applied-earlier")).toBe(true);
     expect(m.waves[1]).toMatchObject({ state: "applied", status: { words: "applied earlier" } });
+    // Network landed in the first apply: its box claims none of this run's plan.
+    expect(m.waves[1].facts.some((f) => /^applied plan/.test(f))).toBe(false);
     // The run's waves numbered as the graph's boxes are.
     expect(graphWaves(live).map((w) => w.wave)).toEqual([2, 3]);
     // The result card, the one terragucci's scenarios get.
@@ -212,7 +227,10 @@ describe("a chant repo's apply, live from its run events", () => {
   it("says starting… while the apply runs and its events have not landed, and never an issue number on a kiosk", () => {
     const run = { stage: "apply", run: 3901, job: "apply", status: "running", started_at: null };
     const m = chantComponentMarks(answer({ pull: 14, plan: fanPlan, gate: approved, running: run, eventsExpected: true }), fan);
-    expect(m.waves[2].status).toMatchObject({ words: "starting…", tone: "busy" });
+    // Only the wave the apply starts with says so; the ones after it wait.
+    expect(m.waves[1].status).toMatchObject({ words: "starting…", tone: "busy" });
+    expect(m.waves[2].status).toMatchObject({ status: "queued", words: "waiting" });
+    expect(m.waves[3].status).toMatchObject({ status: "queued", words: "waiting" });
     expect(JSON.stringify(m)).not.toContain("chant#4007");
     const kiosk = chantComponentMarks(answer({ pull: 14, plan: fanPlan, gate: approved, running: run }), fan, { kiosk: true });
     expect(JSON.stringify(kiosk)).not.toContain("chant#4007");

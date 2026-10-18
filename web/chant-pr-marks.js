@@ -169,6 +169,8 @@ export function chantComponentMarks(answer, facets, opts = {}) {
   const starting = progressUnknown && !!answer.eventsExpected;
   // The issue number is for Inspect: never on a kiosk, never while events are on their way.
   const issueNote = progressUnknown && !starting && !opts.kiosk;
+  // The wave the apply starts with: the first one this change touches.
+  const startingWave = starting ? waveNumbers.find((n) => Object.entries(facets.waves).some(([c, w]) => w === n && (!stage || memberState(stage.members.find((x) => componentOf(x) === c) || null, stage) !== "unchanged"))) ?? null : null;
 
   const facts = (state, m, x) => {
     const out = [];
@@ -236,7 +238,8 @@ export function chantComponentMarks(answer, facets, opts = {}) {
         status = { status: "running", words: "applying", tone: "busy" };
       } else if (cnt.queued === inRun.length || (cnt.queued && !live.settled)) {
         state = "planned";
-        status = { status: "waiting", words: "waiting", tone: "idle" };
+        // "queued", not "waiting": a box's short form of waiting is "held", which reads as a failure word.
+        status = { status: "queued", words: "waiting", tone: "idle" };
       } else if (cnt.failed) {
         state = "failed";
         status = { status: "failed", words: `${cnt.failed} failed${cnt.applied ? `, ${cnt.applied} applied` : ""}`, tone: "bad" };
@@ -265,20 +268,25 @@ export function chantComponentMarks(answer, facets, opts = {}) {
     if (!status && running && !(live && live.settled)) status = { status: running.status, words: `${running.job} ${running.status}`, tone: running.status === "running" ? "busy" : "idle", run: running.run };
     if (status && running && status.run === undefined) status.run = running.run;
     const f = [];
-    if (state === "waiting" && gate && gate.digest && !inRun.length) f.push(`approve plan ${hexOf(gate.digest)}`);
+    // A kiosk names the plan by its short id; Inspect keeps the whole digest.
+    if (state === "waiting" && gate && gate.digest && !inRun.length) f.push(`approve plan ${opts.kiosk ? short8(gate.digest) : hexOf(gate.digest)}`);
     else if (state === "planned" && gate && gate.state === "approved") f.push(gate.by ? `approved by ${gate.by.replace(/^.*:/, "")}` : "approved");
-    if (state === "applied" && stage && stage.digest) f.push(`applied plan ${short8(stage.digest)}`);
+    // A box whose cards all landed in an earlier apply did not apply this run's plan.
+    if (state === "applied" && stage && stage.digest && !earlierOnly) f.push(`applied plan ${short8(stage.digest)}`);
     if (state === "failed") for (const m of members.filter((x) => x.state === "failed")) f.push(m.reason ? `${m.root} failed: ${m.reason}` : `${m.root} failed`);
     // While pr-apply runs without events, chant has said nothing per wave yet: that first, with the issue that asks for it.
     if (issueNote && touched.length && state !== "applied") f.unshift(`per-wave progress: ${PROGRESS_ISSUE}`);
-    if (starting && touched.length && state !== "applied") status = { status: "running", words: "starting…", tone: "busy", ...(running ? { run: running.run } : {}) };
+    // Only the wave the apply is starting says so; the ones after it wait their turn.
+    if (starting && touched.length && state !== "applied") {
+      status = n === startingWave ? { status: "running", words: "starting…", tone: "busy", ...(running ? { run: running.run } : {}) } : { status: "queued", words: "waiting", tone: "idle", ...(running ? { run: running.run } : {}) };
+    }
     const job = running ? running.job : null;
     // A failed wave's first fact, shorter, for a narrow box: the reason cut, then the component alone.
     const firstFailed = state === "failed" ? members.find((x) => x.state === "failed") : null;
     const factShort = firstFailed && firstFailed.reason ? [`${firstFailed.root} failed: ${shortReason(firstFailed.reason, 36)}`, `${firstFailed.root} failed`] : [];
     waves[n] = { number: n, job, state, tone: state ? toneOf(state) : status ? status.tone : "idle", status, title: status ? `wave-${n} · ${status.words}` : `wave-${n}`, facts: f, ...(factShort.length ? { factShort } : {}) };
   }
-  return { stage: live ? "apply" : stage ? stage.stage : livePlan ? "plan" : null, cards, waves, source: sourceWords(answer) };
+  return { stage: live ? "apply" : stage ? stage.stage : livePlan ? "plan" : null, cards, waves, source: sourceWords(answer), ...(opts.kiosk ? { statusRight: true } : {}) };
 }
 
 /** Where the marks came from, for each tooltip. */
@@ -390,13 +398,13 @@ function partialWords(answer) {
  * approve line pr-plan printed), the ledger's approval of that digest, and
  * pr-apply applying under it. Null when the answer has no gate.
  */
-export function chantApprovalModel({ demo, answer, sealCheck = null }) {
+export function chantApprovalModel({ demo, answer, sealCheck = null, kiosk = false }) {
   if (!demo || !CHANT_PANEL_STEPS.includes(demo.step) || !answer || !answer.gate || !answer.plan) return null;
   const g = answer.gate;
   const plan = answer.plan;
   const apply = answer.apply;
   const rows = [];
-  rows.push({ id: "requested", label: "Requested", state: "lit", text: `Pull request #${answer.pull} asks a reviewer to approve its plan.`, runId: plan.run || null, ...(g.approveCommand && g.state === "waiting" ? { command: g.approveCommand } : {}) });
+  rows.push({ id: "requested", label: "Requested", state: "lit", text: `Pull request #${answer.pull} asks a reviewer to approve its plan.`, runId: plan.run || null, ...(g.approveCommand && g.state === "waiting" && !kiosk ? { command: g.approveCommand } : {}) });
   if (g.state === "approved") {
     const signed = g.seal === "sealed";
     rows.push({
