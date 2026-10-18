@@ -3,7 +3,7 @@
 // real event arrives, narrated and replayed modals never write, and live mode
 // writes only through the app's existing approve route, or waits on the ledger.
 import { describe, expect, it, vi } from "vitest";
-import { approveRoute, buttonState, modalSpot, modeLine, openEventModal, secondsLeft } from "./event-help-modal.js";
+import { MODAL_STYLE, approveRoute, buttonState, modalSpot, modeLine, openEventModal, secondsLeft } from "./event-help-modal.js";
 
 /** Just enough of a DOM for the modal: elements with children, text, attributes and listeners. */
 function fakeDoc() {
@@ -232,5 +232,12 @@ describe("a chant modal kept above the bottom band (#631)", () => {
     const spot = modalSpot(win, size, [], { bounds: { left: 0, top: 0, width: 1920, height: 600 } });
     expect(spot).not.toBeNull();
     expect(spot.top + size.h).toBeLessThanOrEqual(600);
+  });
+});
+
+describe("a placed modal and the pointer (behold#744)", () => {
+  it("lets the pointer through its sheet to the graph, and keeps it on the modal itself", () => {
+    expect(MODAL_STYLE).toMatch(/\.eh-modal-wrap\.eh-modal-placed \{[^}]*pointer-events: none;/);
+    expect(MODAL_STYLE).toMatch(/\.eh-modal-wrap\.eh-modal-placed > \.eh-modal \{ pointer-events: auto; \}/);
   });
 });

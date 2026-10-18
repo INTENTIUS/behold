@@ -105,7 +105,9 @@ export const MODAL_STYLE = `
 .eh-switch input { margin: 0; accent-color: var(--pending); }
 .eh-switch:hover { color: var(--fg); }
 .eh-modal-wrap { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--bg) 35%, transparent); }
-.eh-modal-wrap.eh-modal-placed { align-items: flex-start; justify-content: flex-start; }
+/* behold#744: a modal placed off the cards leaves the graph to the pointer (hover a card or a line), not under a sheet that swallows it. */
+.eh-modal-wrap.eh-modal-placed { align-items: flex-start; justify-content: flex-start; pointer-events: none; }
+.eh-modal-wrap.eh-modal-placed > .eh-modal { pointer-events: auto; }
 .eh-modal { position: relative; width: min(36em, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow-y: auto; padding: 1em 1.2em 1.1em; border-radius: 12px; background: var(--surface-pane-b, var(--panel)); color: var(--fg);
   border: 2px solid var(--bar, var(--focus)); box-shadow: 0 16px 48px color-mix(in srgb, var(--shadow) 80%, transparent); font-size: 1.05em; }
 .eh-modal-held { --bar: var(--bar-foreign, var(--foreign)); } .eh-modal-failed { --bar: var(--bar-degraded, var(--degraded)); } .eh-modal-applied { --bar: var(--bar-managed, var(--managed)); }
