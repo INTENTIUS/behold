@@ -203,40 +203,42 @@ export function chantComponentMarks(answer, facets) {
     const mid = cardMid(s.state, x);
     cards[c] = { root: c, wave: s.wave, state: s.state, tone: toneOf(s.state), words, ...(mid && mid !== words ? { mid } : {}), short: CHANT_SHORT[s.state] || s.state, facts: facts(s.state, s.m, x), ...(s.blockedBy ? { blockedBy: s.blockedBy } : {}), ...(x.reason ? { reason: x.reason } : {}) };
   }
-  const liveWave = (n) => (live && Array.isArray(live.waves) ? live.waves.find((w) => w.wave === n) || null : null);
   for (const n of waveNumbers) {
     const members = Object.entries(facets.waves).filter(([, w]) => w === n).map(([c]) => cards[c]).filter(Boolean);
     const touched = members.filter((m) => m.state !== "unchanged");
-    const lw = liveWave(n);
+    // Live: the graph's wave by its components' names, since run-start's
+    // wave numbers are re-layered on a resume and are not the boxes'.
+    const inRun = live ? members.filter((m) => states[m.root] && states[m.root].l) : [];
     let state = null;
     let status = null;
-    if (lw) {
-      // Live: the wave as chant's events say it, and the box's words.
-      const cnt = lw.counts || {};
-      const blockedBy = [...new Set(members.filter((m) => m.state === "blocked" && m.blockedBy).map((m) => m.blockedBy))];
+    if (inRun.length) {
+      const count = (...st) => inRun.filter((m) => st.includes(m.state)).length;
+      const cnt = { applied: count("applied", "already-applied"), failed: count("failed"), blocked: count("blocked"), applying: count("applying"), queued: count("queued"), gated: count("refused"), notRun: count("not-started") };
+      const blockedBy = [...new Set(inRun.filter((m) => m.state === "blocked" && m.blockedBy).map((m) => m.blockedBy))];
       const blockedWords = cnt.blocked ? `${cnt.blocked} blocked${blockedBy.length === 1 ? ` by ${blockedBy[0]}` : ""}` : null;
-      if (lw.state === "running") {
+      // Settled in this run (a resume's already-applied did not run in it).
+      const fresh = count("applied", "failed", "blocked");
+      if (cnt.applying || (cnt.queued && fresh > 0 && !live.settled)) {
         state = "applying";
         status = { status: "running", words: "applying", tone: "busy" };
-      } else if (lw.state === "applied") {
-        state = blockedWords ? "blocked" : "applied";
-        status = { status: "done", words: blockedWords ? `done, ${blockedWords}` : "done", tone: "ok" };
-      } else if (lw.state === "failed") {
-        state = "failed";
-        const ok = (cnt.applied || 0) + (cnt.alreadyApplied || 0);
-        status = { status: "failed", words: `${cnt.failed || 1} failed${ok ? `, ${ok} applied` : ""}`, tone: "bad" };
-      } else if (lw.state === "blocked") {
-        state = "blocked";
-        status = { status: "blocked", words: blockedBy.length === 1 ? `blocked by ${blockedBy[0]}` : "blocked", tone: "wait" };
-      } else if (lw.state === "gated") {
-        state = "waiting";
-        status = { status: "waiting", words: "held at a gate", tone: "wait" };
-      } else if (lw.state === "not-run") {
-        state = "not-started";
-        status = { status: "not-run", words: "did not run", tone: "idle" };
-      } else {
+      } else if (cnt.queued === inRun.length || (cnt.queued && !live.settled)) {
         state = "planned";
         status = { status: "waiting", words: "waiting", tone: "idle" };
+      } else if (cnt.failed) {
+        state = "failed";
+        status = { status: "failed", words: `${cnt.failed} failed${cnt.applied ? `, ${cnt.applied} applied` : ""}`, tone: "bad" };
+      } else if (cnt.gated) {
+        state = "waiting";
+        status = { status: "waiting", words: "held at a gate", tone: "wait" };
+      } else if (cnt.blocked === inRun.length) {
+        state = "blocked";
+        status = { status: "blocked", words: blockedBy.length === 1 ? `blocked by ${blockedBy[0]}` : "blocked", tone: "wait" };
+      } else if (cnt.applied) {
+        state = blockedWords ? "blocked" : "applied";
+        status = { status: "done", words: blockedWords ? `done, ${blockedWords}` : "done", tone: "ok" };
+      } else {
+        state = "not-started";
+        status = { status: "not-run", words: "did not run", tone: "idle" };
       }
     } else if (touched.length) {
       if (touched.some((m) => m.state === "failed")) state = "failed";
@@ -249,7 +251,7 @@ export function chantComponentMarks(answer, facets) {
     if (!status && running && !(live && live.settled)) status = { status: running.status, words: `${running.job} ${running.status}`, tone: running.status === "running" ? "busy" : "idle", run: running.run };
     if (status && running && status.run === undefined) status.run = running.run;
     const f = [];
-    if (state === "waiting" && gate && gate.digest && !lw) f.push(`approve plan ${hexOf(gate.digest)}`);
+    if (state === "waiting" && gate && gate.digest && !inRun.length) f.push(`approve plan ${hexOf(gate.digest)}`);
     else if (state === "planned" && gate && gate.state === "approved") f.push(gate.by ? `approved by ${gate.by.replace(/^.*:/, "")}` : "approved");
     if (state === "applied" && stage && stage.digest) f.push(`applied plan ${short8(stage.digest)}`);
     if (state === "failed") for (const m of members.filter((x) => x.state === "failed")) f.push(m.reason ? `${m.root} failed: ${m.reason}` : `${m.root} failed`);

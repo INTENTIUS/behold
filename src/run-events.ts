@@ -40,15 +40,16 @@ import type {
 } from "@intentius/chant";
 import runEventSchema from "./run-event-schema/run-event.schema.json" with { type: "json" };
 
-/** Where the vendored schema comes from: the file @intentius/chant 0.124.28
- * publishes (`workspace/run-event.schema.json`), chant tag chant-v0.124.28
- * (bc251b54ec0c9edd1e6b2af02df4e8a79b3bec40). It last changed in chant at
- * 8f444d454 (#4064, the `empty` gate approval). */
+/** Where the vendored schema comes from: chant's `workspace/run-event.schema.json`
+ * as chant#4083 (#4007, for 0.124.29) changes it, at bf7a596203cc on
+ * feat/4007-pr-progress: the 0.124.28 file (chant-v0.124.28, bc251b54ec0c) plus
+ * component-settle's two additive statuses, `blocked` (with `blockedBy`) and
+ * `already-applied`. Re-copy from the release tag once 0.124.29 ships. */
 export const RUN_EVENT_SCHEMA_SOURCE = {
   repo: "INTENTIUS/chant",
   path: "packages/core/src/workspace/run-event.schema.json",
-  commit: "bc251b54ec0c9edd1e6b2af02df4e8a79b3bec40",
-  release: "0.124.28",
+  commit: "bf7a596203ccea24daa53572e9d50c20d31faf2b",
+  release: "0.124.29",
 } as const;
 
 /** The schema's `$id`, which every event carries as `$schema`. Read from the

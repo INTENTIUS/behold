@@ -177,16 +177,16 @@ describe("GET /api/chant/pr (behold#631)", () => {
       ev(6, { type: "component-start", wave: 2, component: "app" }),
     ].join("\n");
     const asked: string[] = [];
-    const reports = { kind: "s3", location: "s3://reports/chant", async read(key: string) { asked.push(key); return key === `13/${MERGE}/events.jsonl` ? events : undefined; } } as TerragucciSource;
+    const reports = { kind: "s3", location: "s3://reports/chant", async read(key: string) { asked.push(key); return key === `13/${MERGE}/pr-apply.events.jsonl` ? events : undefined; } } as TerragucciSource;
     const running = applyRun({ status: "running", jobs: [{ name: "apply", status: "running", steps: steps("Initializing the backend...") }] });
     const a = await readChantPr(dir, MERGE, { source: source([running, planRun()]), ...noLedger, reportSource: (url) => (url === "s3://reports/chant" ? reports : (undefined as never)) });
     expect(a.loop?.reportUrl).toBe("s3://reports/chant");
-    expect(asked).toContain(`13/${MERGE}/events.jsonl`);
+    expect(asked).toContain(`13/${MERGE}/pr-apply.events.jsonl`);
     expect(a.live).toMatchObject({ reportUrl: "s3://reports/chant", via: "pipeline", plan: null });
     expect(a.live!.apply!.waves.map((w) => [w.wave, w.state])).toEqual([[1, "applied"], [2, "running"], [3, "waiting"]]);
     expect(a.live!.apply!.components.app!.state).toBe("running");
     expect(a.gaps.some((g) => /progress per wave/.test(g.what))).toBe(false);
-    expect(a.reads.find((r) => r.contract === "run-event/v1")).toMatchObject({ from: `s3://reports/chant/13/${MERGE}/events.jsonl` });
+    expect(a.reads.find((r) => r.contract === "run-event/v1")).toMatchObject({ from: `s3://reports/chant/13/${MERGE}/pr-apply.events.jsonl` });
     // serve's --chant-report-url over the pipeline's.
     const b = await readChantPr(dir, MERGE, { source: source([running, planRun()]), ...noLedger, reportUrl: "s3://other/x", reportSource: (url) => (url === "s3://other/x" ? reports : (undefined as never)) });
     expect(b.live?.via).toBe("serve");

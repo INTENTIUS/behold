@@ -1,9 +1,9 @@
 /**
  * A chant pull-request stage's run events (chant#4007, run-event/v1), read
  * while the stage runs: what `pr-plan` and `pr-apply` stream under
- * `--events-json` and, from chant 0.124.29, upload under `--report-url`
- * after every wave-settle, component-settle and run-settle (one
- * `events.jsonl`, overwritten each time, then a final upload).
+ * `--events-json` and, from chant 0.124.29 (chant#4083), upload under
+ * `--report-url` after every wave-settle, component-settle and run-settle
+ * (`pr-<stage>.events.jsonl`, overwritten each time, then a final upload).
  *
  * Folded here into per-wave and per-component state, so the components view
  * can show waves landing instead of one "running" for the whole merge.
@@ -16,8 +16,13 @@
  *   depends on failed (chant's fan-out blocks a failed component's
  *   dependents and nothing else).
  * - `component-settle.status`: ok, failed, gated or waiting; from 0.124.29
- *   also `blocked` (with `blockedBy`) and `already-applied` (a resume's
- *   skip). Both are read when present. When they are absent, a component
+ *   also `blocked` (with `blockedBy`), right after the wave whose failure
+ *   held it back, and `already-applied` (a resume's skip), after run-start
+ *   and before the first wave. Neither has a component-start. An
+ *   already-applied settle's `wave` is the one it had in the earlier
+ *   attempt, which a resumed fan-out may have re-layered, so a component is
+ *   placed by name: in run-start's waves, else the components graph's
+ *   (`componentWaves`), never by that number. When they are absent, a component
  *   that never started is blocked once its wave started without it or the
  *   run settled, and its blocker is the failed component its dependencies
  *   lead back to (`dependsOn`, from the components graph's edges); without
@@ -26,26 +31,26 @@
  *   writes one, else its last failed step's `error`.
  *
  * Each line crosses the same boundary as every run event behold reads
- * (src/run-events.ts `readRunLine`, chant's schema). The one exception is a
- * component-settle whose status is one of 0.124.29's two additive ones,
- * which the vendored 0.124.28 schema's closed set refuses: it is read, and
- * any other refused line is counted and left out.
+ * (src/run-events.ts `readRunLine`, chant's schema, vendored with the two
+ * additive statuses). A refused line is counted and left out.
  *
  * Pure: no reads. The reader (src/chant-pr.ts) fetches the object.
  */
-import { readRunLine, RUN_EVENT_CONTRACT, RUN_EVENT_SCHEMA_ID } from "./run-events.ts";
+import { readRunLine, RUN_EVENT_SCHEMA_ID } from "./run-events.ts";
 
 /** The run-event contract chant writes (`run-event.schema.json`, `$id`). */
 export const RUN_EVENT_SCHEMA: string = RUN_EVENT_SCHEMA_ID;
-/** component-settle statuses chant 0.124.29 adds within contract 1 (chant#4007). */
-export const ADDITIVE_SETTLE = new Set(["blocked", "already-applied"]);
 
-/** Where the stage uploads its events under `--report-url`: `<url>/<pr>/<commit>/<file>`. One place, since chant has not fixed the keys yet. */
-export function chantReportKey(pr: number, commit: string, file: string): string {
-  return `${pr}/${commit}/${file}`;
+/**
+ * A stage's file under `--report-url` (chant#4083, chant's `reportKey`):
+ * `<pr>/<commit>[/<member>]/<file>`, `<pr>` being `unknown` when chant found
+ * no pull request, and `<member>` a workspace member's loop (`--member`).
+ */
+export function chantReportKey(pr: number | null, commit: string, file: string, member?: string): string {
+  return [pr === null ? "unknown" : String(pr), commit, ...(member ? [member] : []), file].join("/");
 }
-/** The events file's name under the stage's key. */
-export const EVENTS_FILE = "events.jsonl";
+/** A stage's events file: one per stage, since a fast-forward merge runs both on one commit. */
+export const eventsFileOf = (stage: "plan" | "apply"): string => `pr-${stage}.events.jsonl`;
 
 /** A component's state in the stage, as far as the events say. */
 export type PrLiveState =
@@ -70,7 +75,9 @@ export type PrLiveState =
 
 export interface PrLiveComponent {
   component: string;
+  /** Its wave in run-start's waves; for a component run-start does not list (a resume's already-applied), the graph's (`waveFrom: "graph"`). */
   wave: number | null;
+  waveFrom?: "graph";
   state: PrLiveState;
   /** Failed: what failed, from the event. */
   error?: string;
@@ -112,6 +119,7 @@ export interface PrLive {
   error?: string;
   /** The gate phase, when the stream reached it. */
   gate?: { state: "waiting" | "resolved"; by?: string; message?: string };
+  /** run-start's waves, numbered as run-start numbers them (on a resume, re-layered over what is left; not the graph's numbers). */
   waves: PrLiveWave[];
   components: Record<string, PrLiveComponent>;
   /** Lines that named the run-event schema and failed it, left out; the first one's reason. */
@@ -133,16 +141,6 @@ export function parseRunEvents(text: string): { events: Ev[]; refused: number; r
       continue;
     }
     if (r.kind === "refused") {
-      let o: Ev | null = null;
-      try {
-        o = JSON.parse(line.trim()) as Ev;
-      } catch {
-        o = null;
-      }
-      if (o && o.type === "component-settle" && o.contract === RUN_EVENT_CONTRACT && ADDITIVE_SETTLE.has(String(o.status))) {
-        events.push(o);
-        continue;
-      }
       refused++;
       reason ??= r.reason;
     }
@@ -183,7 +181,10 @@ export function blockerOf(name: string, dependsOn: Record<string, readonly strin
  * depends on (the components graph's edges), used only when chant's events
  * carry no `blocked` status.
  */
-export function foldPrEvents(events: readonly Ev[], opts: { stage: "plan" | "apply"; source: string; dependsOn?: Record<string, readonly string[]> }): PrLive | null {
+export function foldPrEvents(
+  events: readonly Ev[],
+  opts: { stage: "plan" | "apply"; source: string; dependsOn?: Record<string, readonly string[]>; componentWaves?: Record<string, number> },
+): PrLive | null {
   if (!events.length) return null;
   const first = events[0]!;
   const live: PrLive = {
@@ -212,6 +213,21 @@ export function foldPrEvents(events: readonly Ev[], opts: { stage: "plan" | "app
     let w = waveOf.get(n);
     if (!w) waveOf.set(n, (w = { state: "waiting", components: [], started: null }));
     return w;
+  };
+  /**
+   * A component by name: its wave in run-start, else the graph's. A
+   * component run-start does not list joins none of `waves`, which number
+   * run-start's (re-layered on a resume) waves, not the graph's.
+   */
+  const place = (name: string): PrLiveComponent => {
+    for (const [n, w] of waveOf) if (w.components.includes(name)) return comp(name, n);
+    const g = opts.componentWaves?.[name];
+    const c = comp(name, null);
+    if (c.wave === null && typeof g === "number" && Number.isInteger(g)) {
+      c.wave = g;
+      c.waveFrom = "graph";
+    }
+    return c;
   };
   /** Errors from failed steps, by component, for a settle that carries none. */
   const stepError = new Map<string, { error: string; phase: string }>();
@@ -270,7 +286,10 @@ export function foldPrEvents(events: readonly Ev[], opts: { stage: "plan" | "app
         break;
       }
       case "component-settle": {
-        const c = comp(String(e.component), Number(e.wave) || null);
+        const s0 = String(e.status);
+        // blocked and already-applied have no component-start, and an
+        // already-applied wave is the earlier attempt's: placed by name.
+        const c = s0 === "blocked" || s0 === "already-applied" ? place(String(e.component)) : comp(String(e.component), Number(e.wave) || null);
         c.settledAt = str(e.at);
         const s = String(e.status);
         // What chant says settles it, over a block behold inferred.
@@ -390,7 +409,7 @@ export function foldPrEvents(events: readonly Ev[], opts: { stage: "plan" | "app
   return live;
 }
 
-/** The text of an events.jsonl folded, or null when it holds no run event. */
+/** The text of a `pr-<stage>.events.jsonl` folded, or null when it holds no run event. */
 export function readPrLive(text: string | undefined, opts: Parameters<typeof foldPrEvents>[1]): PrLive | null {
   if (!text) return null;
   const p = parseRunEvents(text);

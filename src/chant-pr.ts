@@ -27,7 +27,7 @@
  *
  * - The stage's run events (chant#4007, run-event/v1), when its pipeline
  *   line passes `--report-url <s3://… | file://…>` (chant 0.124.29): the
- *   stage uploads `events.jsonl` under `<url>/<pr>/<commit>/` after every
+ *   stage uploads `pr-<stage>.events.jsonl` under `<url>/<pr>/<commit>/` after every
  *   wave, component and run settles. Folded by src/chant-pr-events.ts into
  *   per-wave and per-component state, in the answer's `live`, so an apply
  *   that runs shows each wave and component as it lands. A repo without
@@ -39,9 +39,10 @@
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Hono } from "hono";
 import { stripAnsi } from "./ansi.ts";
-import { chantReportKey, EVENTS_FILE, readPrLive, type PrLive } from "./chant-pr-events.ts";
+import { chantReportKey, eventsFileOf, readPrLive, type PrLive } from "./chant-pr-events.ts";
 import { readHistory, historyFromLogs, type HistoryEntry, type HistoryRead } from "./lifecycle-history.ts";
 import { realGit, type GitRun } from "./terragucci-lifecycle.ts";
 import { readRun, readRunsIndex } from "./terragucci-runs.ts";
@@ -132,7 +133,7 @@ export function prLoopIn(text: string, forge: PrForge, workflow: string): PrLoop
 
 /** The source a report URL names: `s3://bucket/prefix`, an http(s) address, `file://<path>` or a plain path. */
 export function reportSourceOf(url: string, opts: Parameters<typeof terragucciSource>[1] = {}): TerragucciSource {
-  return terragucciSource(url.startsWith("file://") ? decodeURIComponent(url.slice("file://".length)) : url, opts);
+  return terragucciSource(url.startsWith("file://") ? fileURLToPath(url) : url, opts);
 }
 
 /** The repo's pull-request loop: the first pipeline file that runs it. */
@@ -449,6 +450,8 @@ export interface ChantPrDeps {
   reportSource?: (url: string) => TerragucciSource;
   /** Component -> the components it depends on, from the components graph, for a blocked component's blocker when chant's events don't name it. */
   dependsOn?: (dir: string) => Record<string, readonly string[]> | undefined;
+  /** Component -> its wave in the components graph, for placing a component the run's own waves do not list (a resume's already-applied). */
+  componentWaves?: (dir: string) => Record<string, number> | undefined;
 }
 
 const readText = (p: string): string | undefined => {
@@ -560,32 +563,36 @@ export async function readChantPr(dir: string, pinRaw: string | null, deps: Chan
 }
 
 /**
- * Each stage's events.jsonl under the report URL (serve's override, else the
- * pipeline's `--report-url`), at `<pr>/<commit>/` of the stage's run. Null
- * when there is no URL or neither stage uploaded any. Never throws.
+ * Each stage's `pr-<stage>.events.jsonl` under the report URL (serve's
+ * override, else the pipeline's `--report-url`), at `<pr>/<commit>/` of the
+ * stage's run, `<pr>` being `unknown` when the cycle has none (chant#4083).
+ * Null when there is no URL or neither stage uploaded any. Never throws.
  */
 async function readLive(dir: string, loop: PrLoop, deps: ChantPrDeps, pull: number | null, plan: RunDoc | null, apply: RunDoc | null): Promise<ChantPrLive | null> {
   const url = deps.reportUrl ?? loop.reportUrl;
-  if (!url || pull === null) return null;
+  if (!url) return null;
   let src: TerragucciSource;
   try {
     src = (deps.reportSource ?? ((u: string) => reportSourceOf(u)))(url);
   } catch {
     return null;
   }
-  let dependsOn: Record<string, readonly string[]> | undefined;
-  try {
-    dependsOn = deps.dependsOn?.(dir);
-  } catch {
-    dependsOn = undefined;
-  }
+  const safely = <T,>(f: () => T): T | undefined => {
+    try {
+      return f();
+    } catch {
+      return undefined;
+    }
+  };
+  const dependsOn = safely(() => deps.dependsOn?.(dir));
+  const componentWaves = safely(() => deps.componentWaves?.(dir));
   const one = async (stage: "plan" | "apply", r: RunDoc | null): Promise<PrLive | null> => {
     const commit = r?.commit;
     if (!commit) return null;
     try {
-      const key = await eventsKey(src, pull, commit);
+      const key = await eventsKey(src, pull, commit, eventsFileOf(stage));
       const text = await src.read(key);
-      return readPrLive(text, { stage, source: `${src.location.replace(/\/+$/, "")}/${key}`, ...(dependsOn ? { dependsOn } : {}) });
+      return readPrLive(text, { stage, source: `${src.location.replace(/\/+$/, "")}/${key}`, ...(dependsOn ? { dependsOn } : {}), ...(componentWaves ? { componentWaves } : {}) });
     } catch {
       return null;
     }
@@ -600,14 +607,14 @@ async function readLive(dir: string, loop: PrLoop, deps: ChantPrDeps, pull: numb
  * else, when the run named a shortened commit and the source can list, the
  * one commit directory under `<pr>/` it starts.
  */
-async function eventsKey(src: TerragucciSource, pull: number, commit: string): Promise<string> {
-  if (commit.length >= 40 || !src.list) return chantReportKey(pull, commit, EVENTS_FILE);
+async function eventsKey(src: TerragucciSource, pull: number | null, commit: string, file: string): Promise<string> {
+  if (commit.length >= 40 || !src.list) return chantReportKey(pull, commit, file);
   try {
-    const l = await src.list(`${pull}`, 200);
+    const l = await src.list(pull === null ? "unknown" : `${pull}`, 200);
     const hit = l.prefixes.map((p) => p.replace(/\/+$/, "").split("/").pop() ?? "").find((c) => sameSha(c, commit));
-    return chantReportKey(pull, hit ?? commit, EVENTS_FILE);
+    return chantReportKey(pull, hit ?? commit, file);
   } catch {
-    return chantReportKey(pull, commit, EVENTS_FILE);
+    return chantReportKey(pull, commit, file);
   }
 }
 

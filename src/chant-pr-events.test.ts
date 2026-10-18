@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { blockerOf, chantReportKey, foldPrEvents, parseRunEvents, readPrLive } from "./chant-pr-events.ts";
+import { blockerOf, chantReportKey, eventsFileOf, foldPrEvents, parseRunEvents, readPrLive } from "./chant-pr-events.ts";
 import { prLoopIn, resolveVars } from "./chant-pr.ts";
 
 // chant's examples/fan-out-estate, as terragucci's fan-out scenario runs it
@@ -90,7 +90,7 @@ function failedApply(blocked: boolean): Record<string, unknown>[] {
 describe("the merge's apply, folded from chant's run events (behold#631, chant#4007)", () => {
   for (const blocked of [true, false]) {
     it(`three waves, cluster-a failing and its six apps blocked, ${blocked ? "with chant's blocked status" : "without it (worked out from the graph)"}`, () => {
-      const live = readPrLive(stream(failedApply(blocked)), { stage: "apply", source: "s3://reports/chant/14/x/events.jsonl", dependsOn })!;
+      const live = readPrLive(stream(failedApply(blocked)), { stage: "apply", source: "s3://reports/chant/14/x/pr-apply.events.jsonl", dependsOn })!;
       expect(live).toMatchObject({ stage: "apply", contract: "run-event/v1", settled: true, status: "failed", runId: "pr-14-1760691600000", gitSha: SHA });
       expect(live.refused).toBeUndefined();
       expect(live.gate).toEqual({ state: "resolved", by: "forgejo@forgejo:3000:demo-reviewer" });
@@ -196,6 +196,57 @@ describe("the merge's apply, folded from chant's run events (behold#631, chant#4
     expect(blockerOf("c", undefined, comps)).toBeUndefined();
   });
 
+  // The two settles exactly as chant#4083 writes them (envelope added by `stream`).
+  it("reads chant's blocked settle as written: right after the failed wave, no component-start, valid against the schema", () => {
+    const text = stream([
+      { type: "run-start", waves: [["net"], ["app"]] },
+      { type: "wave-start", wave: 1, components: ["net"] },
+      ...comp(1, "net", "failed"),
+      { type: "wave-settle", wave: 1, status: "failed" },
+      { type: "component-settle", wave: 2, component: "app", status: "blocked", blockedBy: "net" },
+      { type: "run-settle", status: "failed", durationMs: 10 },
+    ]);
+    expect(parseRunEvents(text).refused).toBe(0);
+    const live = readPrLive(text, { stage: "apply", source: "x" })!;
+    expect(live.refused).toBeUndefined();
+    expect(live.components.app).toMatchObject({ state: "blocked", blockedBy: "net", blockedFrom: "event", wave: 2 });
+    expect(live.components.app!.startedAt).toBeUndefined();
+    expect(live.waves.map((w) => [w.wave, w.state])).toEqual([[1, "failed"], [2, "blocked"]]);
+  });
+
+  it("reads chant's already-applied settle as written: after run-start, before the first wave, placed by name and not by its wave", () => {
+    // A resumed fan-out: run-start re-layers what is left, so app is its wave 1; net applied in the earlier attempt, where it was wave 1.
+    const text = stream([
+      { type: "run-start", waves: [["app"]] },
+      { type: "component-settle", wave: 1, component: "net", status: "already-applied" },
+      { type: "wave-start", wave: 1, components: ["app"] },
+      ...comp(1, "app", "ok"),
+      { type: "wave-settle", wave: 1, status: "ok" },
+      { type: "run-settle", status: "ok", durationMs: 10 },
+    ]);
+    expect(parseRunEvents(text).refused).toBe(0);
+    const live = readPrLive(text, { stage: "apply", source: "x", componentWaves: { net: 1, app: 2 } })!;
+    expect(live.components.net).toMatchObject({ state: "already-applied", wave: 1, waveFrom: "graph" });
+    expect(live.components.app).toMatchObject({ state: "applied", wave: 1 });
+    // run-start's wave 1 is app's alone: net, whose event says wave 1, did not join it.
+    expect(live.waves).toHaveLength(1);
+    expect(live.waves[0]).toMatchObject({ wave: 1, state: "applied", components: ["app"], counts: { applied: 1, alreadyApplied: 0 } });
+    // Without the graph it has no wave: the event's number is never used.
+    expect(readPrLive(text, { stage: "apply", source: "x" })!.components.net!.wave).toBeNull();
+  });
+
+  it("places an already-applied component by run-start's waves when its event's wave disagrees", () => {
+    const text = stream([
+      { type: "run-start", waves: [["app"], ["net"]] },
+      { type: "component-settle", wave: 1, component: "net", status: "already-applied" },
+    ]);
+    const live = readPrLive(text, { stage: "apply", source: "x", componentWaves: { net: 3 } })!;
+    expect(live.components.net).toMatchObject({ state: "already-applied", wave: 2 });
+    expect(live.components.net!.waveFrom).toBeUndefined();
+    expect(live.waves[1]).toMatchObject({ wave: 2, components: ["net"], counts: { alreadyApplied: 1 } });
+    expect(live.waves[0]!.components).toEqual(["app"]);
+  });
+
   it("is nothing without events", () => {
     expect(foldPrEvents([], { stage: "apply", source: "x" })).toBeNull();
     expect(readPrLive(undefined, { stage: "apply", source: "x" })).toBeNull();
@@ -203,9 +254,13 @@ describe("the merge's apply, folded from chant's run events (behold#631, chant#4
   });
 });
 
-describe("where the stages upload their events", () => {
-  it("is <pr>/<commit>/events.jsonl under the report URL", () => {
-    expect(chantReportKey(14, SHA, "events.jsonl")).toBe(`14/${SHA}/events.jsonl`);
+describe("where the stages upload their events (chant#4083)", () => {
+  it("is <pr>/<commit>[/<member>]/pr-<stage>.events.jsonl under the report URL, <pr> unknown without one", () => {
+    expect(eventsFileOf("apply")).toBe("pr-apply.events.jsonl");
+    expect(eventsFileOf("plan")).toBe("pr-plan.events.jsonl");
+    expect(chantReportKey(14, SHA, eventsFileOf("apply"))).toBe(`14/${SHA}/pr-apply.events.jsonl`);
+    expect(chantReportKey(null, SHA, eventsFileOf("apply"))).toBe(`unknown/${SHA}/pr-apply.events.jsonl`);
+    expect(chantReportKey(14, SHA, "pr-plan.json", "infra")).toBe(`14/${SHA}/infra/pr-plan.json`);
   });
   it("is read off the pipeline's --report-url, a literal or a variable its env sets", () => {
     const wf = (url: string, env = "") => `${env}jobs:

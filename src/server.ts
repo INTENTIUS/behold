@@ -1008,8 +1008,8 @@ export function createApp(
         onDone: (opEnv) => captureFrame(cfg.projectDir, opEnv ?? cfg.env, frames, broadcaster),
       });
   const app = new Hono();
-  // behold#631: each checkout's component -> dependencies, from its components graph's last draw, for /api/chant/pr.
-  const chantNeeds = new Map<string, Record<string, string[]>>();
+  // behold#631: each checkout's component -> dependencies and wave, from its components graph's last draw, for /api/chant/pr.
+  const chantNeeds = new Map<string, { needs: Record<string, string[]>; waves: Record<string, number> }>();
   // Only this machine, and only behold's own pages, may write (src/request-guard.ts).
   // #569: a public serve lets no one write.
   const guard = {
@@ -1093,7 +1093,8 @@ export function createApp(
       // The report URL is read through the same S3 client and endpoint handling as --terragucci's.
       reportSource: (url) => reportSourceOf(url, via),
       // A blocked component's blocker, from the edges of the components graph last drawn for the checkout.
-      dependsOn: (d) => chantNeeds.get(d),
+      dependsOn: (d) => chantNeeds.get(d)?.needs,
+      componentWaves: (d) => chantNeeds.get(d)?.waves,
     });
   }
   // #524: a SQL Yodeler repo's lane over its migrate and wave gates on chant/lifecycle.
@@ -3062,7 +3063,7 @@ export function createApp(
           ...((): { chantPr?: ReturnType<typeof chantPrFacets> } => {
             if (multi || !components) return {};
             const f = chantPrFacets(cfg.projectDir, ir, toolOfBinary(configKeys(chantConfigPath(cfg.projectDir)).binary));
-            if (f) chantNeeds.set(cfg.projectDir, f.needs);
+            if (f) chantNeeds.set(cfg.projectDir, { needs: f.needs, waves: f.waves });
             return f ? { chantPr: f } : {};
           })(),
           ...(mode ? { mode } : {}),

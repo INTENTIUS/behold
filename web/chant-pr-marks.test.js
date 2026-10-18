@@ -154,6 +154,31 @@ describe("a chant repo's apply, live from its run events", () => {
     expect(m.cards["app-01"]).toMatchObject({ state: "blocked", blockedBy: "cluster-a", words: "blocked by cluster-a" });
   });
 
+  it("a resume's boxes follow the graph's waves by name, not run-start's re-layered numbers", () => {
+    // run-start re-layered what was left: cluster-a is its wave 1, cluster-a's apps its wave 2.
+    const live = {
+      stage: "apply",
+      settled: false,
+      status: null,
+      waves: [{ ...wave(1, "running", { running: 1 }), components: ["cluster-a"] }, { ...wave(2, "waiting", { waiting: 6 }), components: appsA }],
+      components: comps({
+        network: { state: "already-applied", wave: 1, waveFrom: "graph" },
+        "cluster-b": { state: "already-applied", wave: 2, waveFrom: "graph" },
+        ...Object.fromEntries(appsB.map((a) => [a, { state: "already-applied", wave: 3, waveFrom: "graph" }])),
+        "cluster-a": { state: "running", wave: 1 },
+        ...Object.fromEntries(appsA.map((a) => [a, { state: "planned", wave: 2 }])),
+      }),
+    };
+    const m = chantComponentMarks(answer({ pull: 15, plan: fanPlan, gate: approved, running, live: { reportUrl: "s3://r", via: "pipeline", plan: null, apply: live } }), fan);
+    expect(m.cards.network).toMatchObject({ state: "already-applied", words: "applied before", tone: "ok" });
+    // The graph's wave 1 (network) is done though run-start's wave 1 (cluster-a) runs.
+    expect(m.waves[1]).toMatchObject({ state: "applied", status: { words: "done" } });
+    expect(m.waves[2]).toMatchObject({ state: "applying", status: { words: "applying" } });
+    // Wave 3: cluster-b's apps applied before, cluster-a's wait their turn.
+    expect(m.waves[3]).toMatchObject({ state: "planned", status: { words: "waiting" } });
+    expect(m.cards["app-01"]).toMatchObject({ state: "queued", words: "waiting for wave 3" });
+  });
+
   it("cuts a long reason at a word", () => {
     expect(shortReason("error: one two three four five six seven", 20)).toBe("one two three four…");
     expect(shortReason("")).toBeNull();
