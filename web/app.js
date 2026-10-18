@@ -5880,6 +5880,23 @@ async function loadChantPr() {
   // answer comes back empty: the cards keep the plan they had until the apply's own records replace it.
   const nothing = (a) => a && !a.error && !a.plan && !a.apply && !a.running && !(a.live && (a.live.apply || a.live.plan));
   if (nothing(answer) && chantPrAnswer && chantPrAnswer.plan && pin && pin !== "base" && pin !== "none" && !/^pull/.test(pin)) answer = { ...answer, pull: chantPrAnswer.pull, plan: chantPrAnswer.plan, gate: chantPrAnswer.gate, ...(chantPrAnswer.live ? { live: { ...chantPrAnswer.live, apply: null, plan: null } } : {}), carried: true };
+  // behold#631: a new pull request of the cycle (the fix) that has no plan yet: its cards keep what they were.
+  // What landed reads applied earlier; a failed or blocked card keeps that state until the fix's plan says otherwise.
+  const noPlanYet = (a) => a && !a.error && !a.plan && !a.apply && !(a.live && (a.live.apply || a.live.plan));
+  if (noPlanYet(answer) && /^pull/.test(pin) && chantPrAnswer && chantFacets) {
+    const prev = chantPrAnswer;
+    let lastStates = prev.lastStates && prev.pull === answer.pull ? prev.lastStates : null;
+    let landed = new Set(prev.live && prev.live.earlier ? prev.live.earlier.applied : []);
+    if (!lastStates && (prev.plan || (prev.live && prev.live.apply)) && prev.pull !== answer.pull) {
+      const cards = chantComponentMarks(chantPacer.answer(prev), chantFacets).cards;
+      lastStates = {};
+      for (const [c, m] of Object.entries(cards)) {
+        if (m.state === "failed" || m.state === "blocked") lastStates[c] = m.state;
+        else if (m.state === "applied" || m.state === "already-applied" || m.state === "applied-earlier") landed.add(c);
+      }
+    }
+    if (lastStates) answer = { ...answer, lastStates, live: { ...(answer.live || { reportUrl: null, via: "pipeline" }), plan: null, apply: null, earlier: { runs: (answer.live && answer.live.earlier && answer.live.earlier.runs) || [], applied: [...new Set([...landed, ...((answer.live && answer.live.earlier && answer.live.earlier.applied) || [])])] } } };
+  }
   chantPrAnswer = answer;
   chantPrRead = true;
   if (JSON.stringify(answer) !== was) drawTgReads();

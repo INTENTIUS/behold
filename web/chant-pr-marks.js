@@ -162,7 +162,9 @@ export function chantComponentMarks(answer, facets, opts = {}) {
   const componentOf = (m) => m.component || (facets.members && facets.members[m.member]) || m.member;
   const earlier = new Set(answer.live && answer.live.earlier && Array.isArray(answer.live.earlier.applied) ? answer.live.earlier.applied : []);
   const waveNumbers = [...new Set(Object.values(facets.waves))].filter(Number.isInteger).sort((a, b) => a - b);
-  if (!stage && !running && !liveRun) return empty;
+  // A fix just opened has no plan yet, and still its cards say what they were: applied earlier, or their last state.
+  const carried = !!answer.lastStates || earlier.size > 0;
+  if (!stage && !running && !liveRun && !carried) return empty;
   // Without the apply's events, its job running is all a box knows.
   const progressUnknown = !!(running && running.stage === "apply" && !live);
   // Events are coming (the stage uploads them) but none landed yet: the boxes say it is starting.
@@ -203,6 +205,8 @@ export function chantComponentMarks(answer, facets, opts = {}) {
     if (l && m && answer.apply && (m.status === "applied" || m.status === "failed" || m.status === "blocked") && (state === "queued" || state === "applying")) state = memberState(m, stage);
     // Not in this run, and an earlier apply of the cycle applied it: it landed then.
     if (state === "unchanged" && earlier.has(c)) state = "applied-earlier";
+    // A new pull request with no plan yet (the fix just opened): what it will touch keeps its last state.
+    if ((state === "unchanged" || state === "queued") && answer.lastStates && answer.lastStates[c]) state = answer.lastStates[c];
     states[c] = { state, wave: n, m, l, blockedBy: l && l.blockedBy ? l.blockedBy : null };
   }
   const stateOf = (c) => states[c] || null;
@@ -210,7 +214,7 @@ export function chantComponentMarks(answer, facets, opts = {}) {
     if (s.state === "blocked" && !s.blockedBy) s.blockedBy = blockerOf(c, facets.needs, stateOf);
   }
   for (const [c, s] of Object.entries(states)) {
-    if (!stage && !liveRun) continue;
+    if (!stage && !liveRun && !carried) continue;
     const error = (s.l && s.l.error) || (s.m && s.m.error) || (livePlan && livePlan.components && livePlan.components[c] && livePlan.components[c].error) || null;
     const x = { reason: shortReason(error), error, blockedBy: s.blockedBy, failedIn: s.l ? s.l.failedIn : null, wave: s.wave };
     const words = cardWords(s.state, s.m, gate, x);
@@ -265,15 +269,18 @@ export function chantComponentMarks(answer, facets, opts = {}) {
       else state = gate && gate.state === "waiting" && !answer.apply ? "waiting" : "planned";
     }
     if (!status && earlierOnly) status = { status: "done", words: "applied earlier", tone: "ok" };
-    if (!status && running && !(live && live.settled)) status = { status: running.status, words: `${running.job} ${running.status}`, tone: running.status === "running" ? "busy" : "idle", run: running.run };
+    // A kiosk says the plan job in words a passer-by reads ("planning", not "plan queued").
+    const jobWords = opts.kiosk && running && running.stage === "plan" ? (running.status === "running" ? "planning" : "waiting to plan") : running ? `${running.job} ${running.status}` : null;
+    if (!status && running && !(live && live.settled)) status = { status: running.status, words: jobWords, tone: running.status === "running" ? "busy" : "idle", run: running.run };
     if (status && running && status.run === undefined) status.run = running.run;
     const f = [];
     // A kiosk names the plan by its short id; Inspect keeps the whole digest.
     // The kiosk's approval card names the plan; its boxes don't repeat it. Inspect keeps the whole digest on them.
     if (state === "waiting" && gate && gate.digest && !inRun.length && !opts.kiosk) f.push(`approve plan ${hexOf(gate.digest)}`);
-    else if (state === "planned" && gate && gate.state === "approved") f.push(gate.by ? `approved by ${gate.by.replace(/^.*:/, "")}` : "approved");
+    // On a kiosk the approval card says who approved which plan; the boxes don't repeat it. Inspect keeps both.
+    else if (state === "planned" && gate && gate.state === "approved" && !opts.kiosk) f.push(gate.by ? `approved by ${gate.by.replace(/^.*:/, "")}` : "approved");
     // A box whose cards all landed in an earlier apply did not apply this run's plan.
-    if (state === "applied" && stage && stage.digest && !earlierOnly) f.push(`applied plan ${short8(stage.digest)}`);
+    if (state === "applied" && stage && stage.digest && !earlierOnly && !opts.kiosk) f.push(`applied plan ${short8(stage.digest)}`);
     if (state === "failed") for (const m of members.filter((x) => x.state === "failed")) f.push(m.reason ? `${m.root} failed: ${m.reason}` : `${m.root} failed`);
     // While pr-apply runs without events, chant has said nothing per wave yet: that first, with the issue that asks for it.
     if (issueNote && touched.length && state !== "applied") f.unshift(`per-wave progress: ${PROGRESS_ISSUE}`);
@@ -319,6 +326,7 @@ export function chantLiveWaves(answer) {
       state: w.state,
       components: [...w.components],
       applied: of("applied").length + of("already-applied").length,
+      appliedNames: [...of("applied"), ...of("already-applied")].map((c) => c.component),
       failed: of("failed").map((c) => ({
         component: c.component,
         reason: shortReason(c.error),

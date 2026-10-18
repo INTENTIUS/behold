@@ -250,6 +250,20 @@ describe("a chant repo's apply, live from its run events", () => {
     expect(shortReason('cfn-deploy "cluster-a": stack reached ROLLBACK_COMPLETE — the deploy failed and was rolled back. Inspect the stack events for the resource that failed to create/update.')).toBe("stack reached ROLLBACK_COMPLETE");
   });
 
+  it("a fix just opened, with no plan yet: what landed reads applied earlier, a failed or blocked card keeps its state, nothing blank", () => {
+    const run = { stage: "plan", run: 3950, job: "plan", status: "queued", started_at: null };
+    const lastStates = { "cluster-a": "failed", ...Object.fromEntries(appsA.map((a) => [a, "blocked"])) };
+    const earlier = { runs: [], applied: ["network", "cluster-b", ...appsB] };
+    const m = chantComponentMarks(answer({ pull: 15, plan: null, gate: null, running: run, lastStates, live: { reportUrl: null, via: "pipeline", plan: null, apply: null, earlier } }), fan, { kiosk: true });
+    expect(m.cards.network.state).toBe("applied-earlier");
+    expect(m.cards["cluster-a"].state).toBe("failed");
+    expect(m.cards["app-02"]).toMatchObject({ state: "blocked", blockedBy: "cluster-a" });
+    expect(Object.values(m.cards).every((c) => c.state !== "unchanged")).toBe(true);
+    // Network's box is not part of the fix: it says applied earlier, never the plan job.
+    expect(m.waves[1].status.words).toBe("applied earlier");
+    expect(JSON.stringify(m)).not.toContain("plan queued");
+  });
+
   it("cuts a long reason at a word", () => {
     expect(shortReason("error: one two three four five six seven", 20)).toBe("one two three four…");
     expect(shortReason("")).toBeNull();
