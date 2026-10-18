@@ -1,0 +1,47 @@
+---
+title: Collision marks
+description: See which graph nodes two or more in-flight work items touch, and filter the graph down to the colliding work.
+---
+
+Two people or two agents can work on the same resource under two different
+work items, and nothing in a work lease compares them. chant does: since
+chant 0.124.29, `chant workspace status --json` reports an `overlap` between
+the in-flight work items. behold draws it. It reports and nothing more. It
+locks no item and refuses no change; the people on the two items sort it out.
+
+## What counts
+
+A work item is in flight unless it implements a decision and every decision it
+implements is confirmed. Its commits are the ones that carry a
+`Chant-Record: <work kind>:<id>` trailer, read from every local and
+remote-tracking branch. A node is marked when a waiting gate's change set has
+an entry on it, and a commit of each of two items changed the file that
+declares the node.
+
+## The Collisions tab
+
+When behold serves a declared workspace, the panel has a **Collisions** tab. It
+reads from chant when you open it:
+
+- the nodes touched by two or more work items, with the items;
+- under **no graph node**, the files two items both changed, and any shared
+  entry chant mapped to no node;
+- each in-flight work item with its state, record, commits and the items it
+  collides with.
+
+## On the graph
+
+Each marked card gets a dashed ring and a tag under it, `collision: W-001,
+W-002`. Hover the tag for the items and the entries behind it. Click the card
+and the inspect pane lists the colliding work.
+
+**Show only colliding work** hides every card that is not a marked node, and
+every edge with an unmarked end, and lists only the items that collide.
+**Show all work** brings them back. **Turn off the marks** removes the rings
+and tags.
+
+## When there is nothing to show
+
+On a chant older than 0.124.29 the tab says which chant adds the read, and the
+graph draws no marks. If the workspace declares no work record kind, or chant
+could not read the work records or the history, the tab says so.

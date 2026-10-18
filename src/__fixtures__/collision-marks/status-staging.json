@@ -1,0 +1,147 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/status/v1/status.schema.json",
+  "contract": 1,
+  "chant": "0.124.28",
+  "env": "staging",
+  "compareTo": null,
+  "lifecycle": {
+    "ref": "chant/lifecycle",
+    "commit": "102506d8d281212f7be781d6d722cb1af7ea3657"
+  },
+  "checkout": {
+    "branch": "main",
+    "head": "b539ba26065bb9cb6c61865c18df5e3ab7e2bb5e",
+    "base": "b539ba26065bb9cb6c61865c18df5e3ab7e2bb5e",
+    "baseFrom": "main"
+  },
+  "workspace": {
+    "name": "acme",
+    "root": ".",
+    "file": "chant.workspace.json"
+  },
+  "plantable": {
+    "plantable": false,
+    "box": null,
+    "reason": {
+      "code": "box-none",
+      "message": "no member's box block declares services, so there is no box to plant"
+    }
+  },
+  "members": [
+    {
+      "name": "web",
+      "dir": "web",
+      "kind": "chant",
+      "fields": null,
+      "environments": [
+        {
+          "env": "staging",
+          "ledger": {
+            "layout": "members",
+            "path": "_members/web/staging/releases.jsonl",
+            "shared": false
+          },
+          "releases": [],
+          "reason": null
+        }
+      ],
+      "compare": null,
+      "readable": true,
+      "gateLedger": {
+        "layout": "members",
+        "path": "_members/web/_gates",
+        "shared": false,
+        "malformed": 0,
+        "reason": null
+      },
+      "gates": [
+        {
+          "component": "release",
+          "name": "promote",
+          "env": "staging",
+          "planDigest": "jcs1-sha256:05c8b35bc9a3b2040cf6f057d5846220ca8b30ba4ec99ac962e90ebde753528f",
+          "releaseDigest": "jcs1-sha256:f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1",
+          "state": "pending",
+          "recordedAt": "2026-10-05T00:00:00Z",
+          "gitSha": "f8347a56c4331f876e943abb23fef12e839fb62b",
+          "runId": "run-21",
+          "expiresAt": "2099-01-01T00:00:00Z",
+          "approvals": [],
+          "needed": 1,
+          "signed": null,
+          "approve": "chant approve release promote --env staging --plan jcs1-sha256:05c8b35bc9a3b2040cf6f057d5846220ca8b30ba4ec99ac962e90ebde753528f",
+          "changeSet": "jcs1-sha256:05c8b35bc9a3b2040cf6f057d5846220ca8b30ba4ec99ac962e90ebde753528f"
+        }
+      ],
+      "box": null,
+      "stewards": [],
+      "stewardReasons": [],
+      "promotionOrder": [
+        {
+          "name": "staging",
+          "canary": false
+        },
+        {
+          "name": "prod",
+          "canary": false
+        }
+      ],
+      "releaseCuts": [],
+      "featureFlags": []
+    }
+  ],
+  "leases": [],
+  "acceptance": [],
+  "replication": null,
+  "overlap": {
+    "items": [
+      {
+        "item": "work:W-001",
+        "path": "work/W-001-the-queue.md",
+        "state": "in-progress",
+        "commits": [
+          "a94356175aef6d0cfeccfa9dadb238d3d6125a19"
+        ]
+      },
+      {
+        "item": "work:W-002",
+        "path": "work/W-002-the-queue-again.md",
+        "state": "in-progress",
+        "commits": [
+          "c4a58fcddba4096dd5f9e7fc64fcf0c6c7946008"
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "items": [
+          "work:W-001",
+          "work:W-002"
+        ],
+        "files": [
+          "web/queue.ts"
+        ],
+        "addresses": [
+          {
+            "changeSet": "jcs1-sha256:05c8b35bc9a3b2040cf6f057d5846220ca8b30ba4ec99ac962e90ebde753528f",
+            "ledgerMember": "web",
+            "member": "web",
+            "address": "web",
+            "node": "web/Queue",
+            "source": "web/queue.ts"
+          }
+        ]
+      }
+    ],
+    "changeSets": [
+      "jcs1-sha256:05c8b35bc9a3b2040cf6f057d5846220ca8b30ba4ec99ac962e90ebde753528f"
+    ],
+    "unattributed": 0
+  },
+  "summary": {
+    "members": 1,
+    "released": 0,
+    "unreadable": 0,
+    "differing": null
+  }
+}

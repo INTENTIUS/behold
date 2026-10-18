@@ -92,7 +92,7 @@ const REFUSED_READS: Array<[RegExp, string]> = [
   [/^\/api\/doctor$/, "it probes this machine's tools"],
   [/^\/api\/substrates$/, "it probes this machine's tools"],
   [/^\/api\/history$/, "it runs git against the checkout"],
-  [/^\/api\/workspace\/(gates|why|lane|change-set|flags)$/, "it runs chant against the workspace"],
+  [/^\/api\/workspace\/(gates|why|lane|change-set|flags|collisions)$/, "it runs chant against the workspace"],
   [/^\/api\/choudoufu\/(moves|split)$/, "it runs choudoufu"],
   [/^\/choudoufu\/(morph|split)$/, "it runs choudoufu"],
   [/^\/api\/sql-yodeler\/lifecycle$/, "a public view shows a terragucci repo"],

@@ -91,6 +91,7 @@ export default defineConfig({
 						{ label: 'The trunk lane', slug: 'using/trunk' },
 						{ label: 'A change set on the graph', slug: 'using/change-set' },
 						{ label: 'Feature flags on the graph', slug: 'using/flags' },
+						{ label: 'Collision marks', slug: 'using/collisions' },
 						{ label: 'Export a snapshot', slug: 'using/export' },
 						{ label: 'Driving it from an agent', slug: 'using/agents' },
 					],

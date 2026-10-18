@@ -21,6 +21,7 @@ import { renderLane } from "./terragucci-lifecycle.js";
 import { renderReleases } from "./releases.js";
 import { renderTrunkLane } from "./trunk-lane.js";
 import { entriesFor as csEntriesFor, gapLines as csGapLines, inspectHeading as csInspectHeading, nodeMarks as csNodeMarks, offGraph as csOffGraph, overlayHeader as csHeader, overlayLegend as csLegend, PREVIEW_NOTE as CS_PREVIEW_NOTE } from "./change-set-overlay.js";
+import { collisionFilter as coFilter, collisionHeader as coHeader, collisionMarks as coMarks, collisionsFor as coFor, COLLISION_NOTE as CO_NOTE, FILES_NOTE as CO_FILES_NOTE, FILTER_OFF as CO_FILTER_OFF, FILTER_ON as CO_FILTER_ON, gapLines as coGapLines, hideEdge as coHideEdge, itemRow as coItemRow, nodeRow as coNodeRow, sideLines as coSideLines } from "./collision-marks.js";
 import { flagMarks as flFlagMarks, flagRow as flFlagRow, flagsFor as flFlagsFor, flagsHeader as flHeader, gapLines as flGapLines, NODES_NOTE as FL_NODES_NOTE, pickEnv as flPickEnv, STALE_COLOR as FL_STALE_COLOR, TURN_ON_NOTE as FL_TURN_ON_NOTE } from "./feature-flags.js";
 import { renderYodelLane } from "./sql-yodeler-lane.js";
 import { initTerragucciEstate } from "./terragucci-estate.js";
@@ -1034,6 +1035,19 @@ function inspect(node) {
     h.title = FL_NODES_NOTE;
     panel.appendChild(h);
     for (const r of flRows) {
+      const row = panelDotRow(r.color, r.text, "");
+      row.title = r.title;
+      panel.appendChild(row);
+    }
+  }
+  // #684: the in-flight work items colliding on this card.
+  const coRows = coAnswer && coOn ? coFor(coAnswer, node.id) : [];
+  if (coRows.length) {
+    const h = document.createElement("h3");
+    h.textContent = "colliding work";
+    h.title = CO_NOTE;
+    panel.appendChild(h);
+    for (const r of coRows) {
       const row = panelDotRow(r.color, r.text, "");
       row.title = r.title;
       panel.appendChild(row);
@@ -5203,6 +5217,158 @@ function renderFlagsTab() {
 }
 initFlags();
 
+// --- #684: collision marks, nodes touched by two in-flight work items --------
+// The Collisions tab reads /api/workspace/collisions when it is opened: the
+// in-flight work items chant reports (workspace status overlap, chant#4025),
+// the nodes two of them reach through a waiting gate's change set (a ring and
+// a tag on each card), and on the side the files they both changed, which
+// have no node. The filter keeps only colliding work: the other cards and the
+// edges that touch them are hidden. behold records and locks nothing.
+let coAnswer = null;
+let coOn = true;
+let coOnly = false;
+let coHost = null;
+let coRead = false;
+async function initCollisions() {
+  if (staticMode || publicMode) return; // /api/workspace/* is refused in a public view
+  const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
+  if (!project.workspace) return;
+  coHost = addPanelTab("collisions", "Collisions", "In-flight work items that touch the same resource, marked on the graph. Read from chant when you open the tab.");
+  if (!coHost) return;
+  coHost.id = "tab-collisions";
+  const tab = document.querySelector('#panel-tabs button[data-tab="collisions"]');
+  if (tab) tab.addEventListener("click", () => coRead || loadCollisions());
+  if (coHost.classList.contains("active")) loadCollisions();
+}
+async function loadCollisions() {
+  coRead = true;
+  const reading = document.createElement("div");
+  reading.className = "tg-legend";
+  reading.textContent = "reading the work overlap from chant";
+  coHost.replaceChildren(reading);
+  coAnswer = await apiFetch("/api/workspace/collisions")
+    .then((r) => r.json())
+    .catch((e) => ({ error: String(e) }));
+  markCollisionCards();
+}
+function markCollisionCards() {
+  const svg = document.querySelector("#graph svg");
+  if (svg) {
+    for (const old of svg.querySelectorAll("[data-co-mark]")) old.remove();
+    for (const h of svg.querySelectorAll("[data-co-hidden]")) {
+      h.removeAttribute("data-co-hidden");
+      h.style.display = "";
+    }
+    if (coAnswer && coOn) {
+      const ids = [...svg.querySelectorAll("[data-node-id]")].map((g) => g.getAttribute("data-node-id"));
+      for (const [id, m] of Object.entries(coMarks(coAnswer, ids))) {
+        const g = svg.querySelector('[data-node-id="' + CSS.escape(id) + '"]');
+        if (!g) continue;
+        const rect = g.querySelector("rect");
+        const box = rect && rect.getBBox ? rect.getBBox() : { x: 0, y: 0, width: 150, height: 60 };
+        const ring = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        ring.setAttribute("data-co-mark", "ring");
+        ring.setAttribute("x", String(box.x - 3));
+        ring.setAttribute("y", String(box.y - 3));
+        ring.setAttribute("width", String(box.width + 6));
+        ring.setAttribute("height", String(box.height + 6));
+        ring.setAttribute("rx", "8");
+        ring.setAttribute("fill", "none");
+        ring.setAttribute("stroke", m.color);
+        ring.setAttribute("stroke-width", "2");
+        ring.setAttribute("stroke-dasharray", "5 3");
+        ring.setAttribute("pointer-events", "none");
+        const tag = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        tag.setAttribute("data-co-mark", "tag");
+        tag.setAttribute("x", String(box.x));
+        tag.setAttribute("y", String(box.y + box.height + 26));
+        tag.setAttribute("font-size", "11");
+        tag.setAttribute("font-weight", "700");
+        tag.setAttribute("fill", m.color);
+        tag.textContent = m.tag;
+        const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+        title.setAttribute("data-co-mark", "title");
+        title.textContent = m.title;
+        tag.appendChild(title);
+        g.append(ring, tag);
+      }
+      if (coOnly) {
+        for (const id of coFilter(coAnswer, ids, true).hide) {
+          const g = svg.querySelector('[data-node-id="' + CSS.escape(id) + '"]');
+          if (g) {
+            g.setAttribute("data-co-hidden", "true");
+            g.style.display = "none";
+          }
+        }
+        for (const e of svg.querySelectorAll("g[data-edge-from]")) {
+          if (!coHideEdge(coAnswer, e.getAttribute("data-edge-from"), e.getAttribute("data-edge-to"), true)) continue;
+          e.setAttribute("data-co-hidden", "true");
+          e.style.display = "none";
+        }
+      }
+    }
+  }
+  renderCollisionsTab();
+}
+function renderCollisionsTab() {
+  if (!coHost) return;
+  coHost.replaceChildren();
+  const line = (cls, text, title, host = coHost) => {
+    const d = document.createElement("div");
+    d.className = cls;
+    d.textContent = text;
+    if (title) d.title = title;
+    host.appendChild(d);
+    return d;
+  };
+  const h = coHeader(coAnswer);
+  line(h.tone === "refusal" ? "tg-refusal" : "fl-title", h.text, h.title);
+  const refused = !coAnswer || coAnswer.error || coAnswer.refusal;
+  if (refused && coAnswer && coAnswer.degraded) line("tg-legend", `Without it, ${coAnswer.degraded}.`);
+  if (!refused) {
+    for (const g of coGapLines(coAnswer)) line("tg-legend", g.text, g.title);
+    const filter = button(coOnly ? CO_FILTER_ON : CO_FILTER_OFF, "", () => {
+      coOnly = !coOnly;
+      markCollisionCards();
+    });
+    filter.setAttribute("aria-pressed", String(coOnly));
+    filter.title = coOnly ? "Draw every card and every work item again." : "Hide the cards that no two work items touch, and the work items that collide with none.";
+    coHost.appendChild(filter);
+    const toggle = button(coOn ? "Turn off the marks" : "Turn on the marks", "", () => {
+      coOn = !coOn;
+      markCollisionCards();
+    });
+    toggle.title = coOn ? "Remove the collision marks from the graph. The tab keeps the work items." : "Mark the colliding cards on the graph again.";
+    coHost.appendChild(toggle);
+    const ids = [...document.querySelectorAll("#graph svg [data-node-id]")].map((g) => g.getAttribute("data-node-id"));
+    const shown = coFilter(coAnswer, ids, coOnly);
+    if (shown.nodes.length) {
+      line("fl-title", "nodes touched by two or more work items", CO_NOTE);
+      for (const n of shown.nodes.map(coNodeRow)) line("fl-facts", n.text, n.title);
+    }
+    const side = coSideLines(coAnswer);
+    if (side.length) {
+      line("fl-title", "no graph node", CO_FILES_NOTE);
+      for (const s of side) line("fl-facts", s.text, s.title);
+    }
+    if (!shown.items.length) line("tg-legend", coOnly ? "no work item collides with another" : "no in-flight work item has a linked commit");
+    for (const i of shown.items.map(coItemRow)) {
+      const box = document.createElement("div");
+      box.className = "fl-flag";
+      line("fl-flag-title", i.title, "", box);
+      line("fl-facts", i.facts, "", box);
+      line(i.colliding ? "fl-stale" : "fl-facts", i.with, "", box);
+      coHost.appendChild(box);
+    }
+  }
+  if (!staticMode) {
+    const again = button("Read again", "", () => loadCollisions());
+    again.title = "Read the work overlap from chant again.";
+    coHost.appendChild(again);
+  }
+}
+initCollisions();
+
 // --- #681: a waiting gate's change set, on the graph -------------------------
 // Opened from a gate card's "change set" link in the Trunk tab. The server
 // reads the gate from status and the stored change set from chant change-set
@@ -7032,6 +7198,7 @@ function render(ir, svg, m) {
   markYodelCards(); // #526: and SQL Yodeler's drift, dated
   if (csAnswer) markChangeSetCards(); // #681: and the change set a gate binds, as a preview
   if (flAnswer) markFlagCards(); // #683: and the feature flags of each flagged member
+  if (coAnswer) markCollisionCards(); // #684: and the nodes two in-flight work items touch
   applyLayout(); // #228: last, so the hand-placed deltas ride on top of every other pass
   drawTgReads(); // #568: after the layout, so the reads lines meet the cards where they now sit
   renderDial();
