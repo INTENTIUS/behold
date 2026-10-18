@@ -204,6 +204,14 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     const right = Math.min(r.left + r.width, F.right);
     return bottom - top > 8 && right - left > 8 ? { left, top, width: right - left, height: bottom - top, right, bottom } : null;
   };
+  /** behold#631: the graph's area above the bottom band (the track or trail, and the caption): where a chant modal may go. */
+  const graphArea = (h) => {
+    const F = frameRect(h);
+    if (!F) return null;
+    const band = [doc.getElementById ? doc.getElementById("k-track") : null, trailHost, h.caption].filter((n) => n && !n.hidden && n.getBoundingClientRect).map((n) => n.getBoundingClientRect()).filter((r) => r.height > 0);
+    const bottom = Math.min(F.bottom, ...band.map((r) => r.top)) - 8;
+    return { left: F.left, top: F.top, width: F.width, height: Math.max(0, bottom - F.top) };
+  };
   const q = (sel) => [...doc.querySelectorAll(sel)].find((n) => visible(n.getBoundingClientRect()) && !n.closest("[hidden]"));
   /** The things an event is about, the one its tip points at first. */
   const anchorsOf = (ev, h) => {
@@ -392,7 +400,8 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
           ? [{ text: h.label, ...(event.raw || event.text ? { title: event.raw || event.text } : {}) }]
           : [{ text: event.text, lit: true, ...(event.raw ? { title: event.raw } : {}) }]
         : [{ text: event.text, lit: true }, ...(h.label ? [{ text: h.label }] : [])];
-      data = { title: `Wave ${event.subjects.wave} failed`, lines, action: d && d.next ? d.next.action : null, at: nextAt, from: t, replayAt: t };
+      // A chant failure is the component's: half of its wave went ahead.
+      data = { title: event.chant && event.subjects.roots && event.subjects.roots[0] ? `${event.subjects.roots[0]} failed` : `Wave ${event.subjects.wave} failed`, lines, action: d && d.next ? d.next.action : null, at: nextAt, from: t, replayAt: t };
       // What follows a chant failure is a fix's pull request, not a re-run.
       if (event.chant) Object.assign(data, { fix: true, verbs: FIX_VERBS });
     } else {
@@ -407,9 +416,10 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
       const must = event.avoid || event.subjects.roots;
       data.avoid = () => must.map(box).filter(Boolean);
       data.prefer = () => Object.keys((h.boxes && h.boxes.roots) || {}).filter((r) => !must.includes(r)).map(box).filter(Boolean);
-      data.bounds = () => frameRect(h);
+      data.bounds = () => graphArea(h);
     }
-    const api = openEventModal(modalHost, { mode, kind, data, doc, now: shown, reduced: reduced(), onClose: () => (st.modal = null) });
+    // A chant kiosk counts down on the clock its track and caption use, so all three say the same second.
+    const api = openEventModal(modalHost, { mode, kind, data, doc, now: event.chant ? now : shown, reduced: reduced(), onClose: () => (st.modal = null) });
     st.modal = { api, event, kind, step: d ? d.step : null, cycle: d ? d.cycle : null, pull: d ? d.pull : null };
   };
   /** behold#631: the "Waiting on…" modal's words: what is waited on, why it matters, and how long it usually takes. */
@@ -429,11 +439,11 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
       const bottom = Math.max(...waves.map((b) => b.top + b.height));
       return [{ left, top, width: right - left, height: bottom - top }];
     },
-    bounds: () => frameRect(h),
+    bounds: () => graphArea(h),
   });
   const openWaiting = (w, h) => {
     const d = h.demo;
-    const api = openEventModal(modalHost, { mode: "narrated", kind: "waiting", data: waitingData(w, h), doc, now: shown, reduced: reduced(), onClose: () => (st.modal = null) });
+    const api = openEventModal(modalHost, { mode: "narrated", kind: "waiting", data: waitingData(w, h), doc, now, reduced: reduced(), onClose: () => (st.modal = null) });
     st.modal = { api, event: { kind: "waiting", subjects: { roots: [], wave: null } }, kind: "waiting", key: w.key, step: d ? d.step : null, cycle: d ? d.cycle : null, pull: d ? d.pull : null };
     if (st.chant) for (const n of st.nodes.values()) n.style.visibility = "hidden";
   };

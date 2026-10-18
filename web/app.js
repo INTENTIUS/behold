@@ -3807,6 +3807,7 @@ function drawTgReads() {
       }
     }
     const chantMarks = chantComponentMarks(chantPaced(), chantFacets, { kiosk: !!embedOpts.bare });
+    if (embedOpts.bare) chantKioskWaves(svg, boxOf, chantMarks.waveFont || 18);
     drawTgComponentMarks(svg, { marks: chantMarks, focus: null, boxOf, make, edgePoints: chantEdgePoints(svg) });
     drawReach(svg, chantMarks.reach || null, boxOf, chantMarks.waveFont || 18);
     return;
@@ -4232,6 +4233,14 @@ const REACH_TONE = { plan: "var(--frame-pending, var(--pending))", bad: "var(--f
  * crossfades the old one out; the same one redrawn only follows the cards.
  */
 function drawReach(svg, reach, boxOf, size = 18) {
+  // Its words inside it, beside its apex: just right of the root card, in the open space between the root's wave box and the one above.
+  const labelAt = (shapes) => {
+    const at = shapes[0];
+    const waveBoxes = [...svg.querySelectorAll("rect[data-group-id]")].map((r) => boxOf(r)).filter(Boolean);
+    const inBox = waveBoxes.find((b) => at.root.x >= b.x && at.root.x2 <= b.x2 && at.root.y >= b.y && at.root.y2 <= b.y2) || null;
+    const above = inBox ? waveBoxes.filter((b) => b.y2 <= inBox.y + 1).sort((a, b) => b.y2 - a.y2)[0] : null;
+    return { x: at.root.x2 + 14, y: inBox && above ? (inBox.y + above.y2) / 2 : at.root.y - 24 };
+  };
   const NS = "http://www.w3.org/2000/svg";
   const old = svg.querySelector("g[data-reach]");
   const key = reach ? reach.key : null;
@@ -4270,11 +4279,12 @@ function drawReach(svg, reach, boxOf, size = 18) {
   if (!shapes.length) return fadeOut(old);
   const tone = REACH_TONE[reach.tone] || REACH_TONE.plan;
   if (old && old.getAttribute("data-reach") === key) {
-    // The same reach: follow the cards, no new growth.
+    // The same reach: follow the cards, no new growth, and never left part-grown (a frame drawn while hidden pauses its animation).
     old.querySelectorAll("path[data-reach-shape], path[data-reach-edge]").forEach((p) => {
       const i = Number(p.getAttribute("data-reach-i"));
       if (shapes[i]) p.setAttribute("d", shapes[i].d);
     });
+    reachFinal(old, shapes, labelAt(shapes));
     return;
   }
   fadeOut(old);
@@ -4325,14 +4335,9 @@ function drawReach(svg, reach, boxOf, size = 18) {
     edge.appendChild(e);
   }
   g.append(fill, edge);
-  // Its words inside it, beside its apex: just right of the root card, in the open space between the root's wave box and the one above.
-  const at = shapes[0];
-  const waveBoxes = [...svg.querySelectorAll("rect[data-group-id]")].map((r) => boxOf(r)).filter(Boolean);
-  const inBox = waveBoxes.find((b) => at.root.x >= b.x && at.root.x2 <= b.x2 && at.root.y >= b.y && at.root.y2 <= b.y2) || null;
-  const above = inBox ? waveBoxes.filter((b) => b.y2 <= inBox.y + 1).sort((a, b) => b.y2 - a.y2)[0] : null;
-  const ly = inBox && above ? (inBox.y + above.y2) / 2 : at.root.y - 24;
+  const where = labelAt(shapes);
   const label = document.createElementNS(NS, "text");
-  for (const [k, v] of Object.entries({ x: String(at.root.x2 + 14), y: String(ly), "text-anchor": "start", "dominant-baseline": "central", "font-size": String(size), "font-weight": "700", fill: tone, stroke: "var(--bg)", "stroke-width": "5", "paint-order": "stroke", "stroke-linejoin": "round", "data-reach-label": "1" })) label.setAttribute(k, v);
+  for (const [k, v] of Object.entries({ x: String(where.x), y: String(where.y), "text-anchor": "start", "dominant-baseline": "central", "font-size": String(size), "font-weight": "700", fill: tone, stroke: "var(--bg)", "stroke-width": "5", "paint-order": "stroke", "stroke-linejoin": "round", "data-reach-label": "1" })) label.setAttribute(k, v);
   label.textContent = reach.label;
   if (!reduce) {
     label.style.opacity = "0";
@@ -4340,10 +4345,107 @@ function drawReach(svg, reach, boxOf, size = 18) {
     requestAnimationFrame(() => (label.style.opacity = "1"));
   }
   g.appendChild(label);
+  // Whatever the animation did (a hidden frame pauses it), the reach ends whole, its words up.
+  setTimeout(() => g.isConnected && reachFinal(g, shapes, labelAt(shapes)), reduce ? 0 : 1_400);
   // Behind the cards, in front of the wave boxes.
   const first = svg.querySelector("[data-node-id]");
   if (first && first.parentNode) first.parentNode.insertBefore(g, first);
   else svg.appendChild(g);
+}
+/**
+ * behold#631: a chant kiosk reads its waves bottom to top. Each wave box's
+ * title says "wave N" at the header's size in a readable tone, each edge
+ * carries an arrowhead at its dependent's end (so up reads as "then"), and
+ * the bottom box says once that the waves apply from the bottom up.
+ */
+function chantKioskWaves(svg, boxOf, size) {
+  const NS = "http://www.w3.org/2000/svg";
+  let relabelled = false;
+  for (const rect of svg.querySelectorAll("rect[data-group-id]")) {
+    const n = tgWaveOfKey(rect.getAttribute("data-group-id"));
+    if (n === null) continue;
+    let title = null;
+    for (let el = rect.nextElementSibling; el; el = el.nextElementSibling) {
+      if (el.tagName.toLowerCase() === "text") {
+        title = el;
+        break;
+      }
+      if (el.tagName.toLowerCase() === "rect") break;
+    }
+    if (!title || title.hasAttribute("data-kiosk-wave")) continue;
+    title.setAttribute("data-kiosk-wave", "1");
+    title.textContent = `wave ${n}`;
+    title.setAttribute("font-size", String(size));
+    title.dataset.pinFont = String(size);
+    title.setAttribute("fill", "var(--fg)");
+    relabelled = true;
+  }
+  // scaleBoxLabels indexed the titles at pinhole's size: index them again at this one.
+  if (relabelled) {
+    boxLabelCache = { svg: null, labels: [] };
+    boxLabelScale = null;
+  }
+  // Arrowheads: one marker, at the end of each edge that meets its dependent (the edge's `from`, consumer -> producer).
+  if (!svg.querySelector("#k-then-arrow")) {
+    const defs = svg.querySelector("defs") || svg.insertBefore(document.createElementNS(NS, "defs"), svg.firstChild);
+    const m = document.createElementNS(NS, "marker");
+    for (const [k, v] of Object.entries({ id: "k-then-arrow", viewBox: "0 0 10 10", refX: "9", refY: "5", markerWidth: "7", markerHeight: "7", markerUnits: "userSpaceOnUse", orient: "auto-start-reverse" })) m.setAttribute(k, v);
+    const p = document.createElementNS(NS, "path");
+    p.setAttribute("d", "M0,0 L10,5 L0,10 z");
+    p.setAttribute("fill", "var(--muted)");
+    m.appendChild(p);
+    defs.appendChild(m);
+  }
+  for (const g of svg.querySelectorAll("g[data-edge-from]")) {
+    const path = g.querySelector("path.pin-edge-line") || g.querySelector("path");
+    if (!path || path.hasAttribute("data-kiosk-then")) continue;
+    path.setAttribute("data-kiosk-then", "1");
+    const from = svg.querySelector(`[data-node-id="${CSS.escape(g.getAttribute("data-edge-from"))}"]`);
+    const fb = from ? boxOf(from) : null;
+    let start = null;
+    let end = null;
+    try {
+      const len = path.getTotalLength();
+      start = path.getPointAtLength(0);
+      end = path.getPointAtLength(len);
+    } catch {
+      continue;
+    }
+    if (!fb || !start || !end) continue;
+    const near = (p) => Math.hypot(p.x - (fb.x + fb.x2) / 2, p.y - (fb.y + fb.y2) / 2);
+    // The arrow points into the dependent: at whichever end of the path meets it.
+    if (near(start) < near(end)) path.setAttribute("marker-start", "url(#k-then-arrow)");
+    else path.setAttribute("marker-end", "url(#k-then-arrow)");
+  }
+  // The bottom box says which way the waves go, once.
+  if (!svg.querySelector("text[data-kiosk-upward]")) {
+    const boxes = [...svg.querySelectorAll("rect[data-group-id]")].filter((r) => tgWaveOfKey(r.getAttribute("data-group-id")) !== null);
+    const low = boxes.map((r) => ({ r, b: boxOf(r) })).filter((x) => x.b).sort((a, b) => b.b.y2 - a.b.y2)[0];
+    if (low) {
+      const t = document.createElementNS(NS, "text");
+      for (const [k, v] of Object.entries({ x: String(low.b.x + 18), y: String(low.b.y2 - 12), "font-size": "13", "font-weight": "600", fill: "var(--muted)", "data-kiosk-upward": "1" })) t.setAttribute(k, v);
+      t.textContent = "the waves apply from the bottom up";
+      svg.appendChild(t);
+    }
+  }
+}
+/** A reach at its end state: each clip circle at full radius on its apex, no animation left, its words shown where they go. */
+function reachFinal(g, shapes, where) {
+  g.querySelectorAll("clipPath circle").forEach((c, i) => {
+    for (const a of c.querySelectorAll("animate")) a.remove();
+    const sh = shapes[i];
+    if (!sh) return;
+    c.setAttribute("cx", String(sh.apex.x));
+    c.setAttribute("cy", String(sh.apex.y));
+    c.setAttribute("r", String(sh.reachR));
+  });
+  const label = g.querySelector("text[data-reach-label]");
+  if (label) {
+    label.setAttribute("x", String(where.x));
+    label.setAttribute("y", String(where.y));
+    label.style.transition = "";
+    label.style.opacity = "1";
+  }
 }
 /** Whether `c` is downstream of `root` along `needs`. */
 function reachesFrom(root, c, needs) {

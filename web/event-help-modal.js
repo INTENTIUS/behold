@@ -157,7 +157,10 @@ export function modalSpot(win, size, avoid, { prefer = [], bounds = null, margin
   const cx = (win.w - w) / 2;
   const cy = (win.h - h) / 2;
   const cover = (list, x, y) => list.reduce((sum, r) => sum + Math.max(0, Math.min(x + w, r.x1) - Math.max(x, r.x0)) * Math.max(0, Math.min(y + h, r.y1) - Math.max(y, r.y0)), 0);
-  if (!cover(rects, cx, cy) && !cover(others, cx, cy)) return null;
+  // The centre stands only when it is inside the area a modal may use (a chant kiosk keeps its bottom band clear).
+  const inArea = (x, y) => x >= area.x0 - 0.5 && y >= area.y0 - 0.5 && x + w <= area.x1 + 0.5 && y + h <= area.y1 + 0.5;
+  const centreOk = !bounds || inArea(cx, cy);
+  if (centreOk && !cover(rects, cx, cy) && !cover(others, cx, cy)) return null;
   const x0 = Math.max(margin, area.x0 + margin);
   const y0 = Math.max(margin, area.y0 + margin);
   const x1 = Math.max(x0, Math.min(win.w - margin, area.x1 - margin) - w);
@@ -171,7 +174,7 @@ export function modalSpot(win, size, avoid, { prefer = [], bounds = null, margin
   }
   if (!best) return null;
   // The centre is as good as any: stay there.
-  if (best.score[0] >= cover(rects, cx, cy) && best.score[1] >= cover(others, cx, cy)) return null;
+  if (centreOk && best.score[0] >= cover(rects, cx, cy) && best.score[1] >= cover(others, cx, cy)) return null;
   return { left: best.x, top: best.y };
 }
 

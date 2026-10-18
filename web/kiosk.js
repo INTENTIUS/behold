@@ -130,6 +130,13 @@ export function stripStops(step, strip = STRIP) {
   return strip.map((s, i) => ({ id: s.id, words: s.words, state: at < 0 ? "ahead" : i < at ? "done" : i === at ? (step === "failed" ? "failed" : "current") : "ahead" }));
 }
 
+/** behold#631: a chant kiosk's one line naming what it shows: "chant fan-out, run by terragucci · live demo". */
+export const TOOL_WORDS = { "chant-fanout": "chant fan-out", chant: "chant" };
+export function whatLine(demo) {
+  const t = demo && typeof demo.tool === "string" ? demo.tool : "chant";
+  return `${TOOL_WORDS[t] || t.replace(/-/g, " ")}, run by terragucci · live demo`;
+}
+
 /** behold#631: the step a chant kiosk's strip lights: a wait for approval before the merge is "planned" when the strip has no approval stop. */
 export function railStep(s, demo) {
   const strip = s.strip || STRIP;
@@ -914,8 +921,15 @@ function drawWatchHead(bar, s, now) {
   const vendor = vendorOf(s.vendor);
   const place = el("div", "k-w-place");
   const shownTool = vendor || (demo.scenario !== "base" ? vendorOf(demo.tool) : null);
-  if (shownTool) place.appendChild(brandEl(shownTool));
-  place.appendChild(el("span", "k-cycle", cycleWords(demo, now)));
+  if (s.chantLoop && s.trackOn) {
+    // behold#631: a chant kiosk names what this is in one line; the cycle number and its clock are Inspect's.
+    const what = el("span", "k-cycle k-what-line", whatLine(demo));
+    if (what.setAttribute && typeof demo.intro === "string") what.setAttribute("title", demo.intro);
+    place.appendChild(what);
+  } else {
+    if (shownTool) place.appendChild(brandEl(shownTool));
+    place.appendChild(el("span", "k-cycle", cycleWords(demo, now)));
+  }
   bar.appendChild(place);
   const strip = el("ol", "k-strip");
   // behold#631: a chant pull request's wait for its approval comes before its merge. Without a stop of its own on the
@@ -948,7 +962,9 @@ function drawCaption(host, s, now) {
   if (s.chantCaptionStep) cap.step = s.chantCaptionStep(demo, cap.step);
   const top = el("div", "k-cap-top");
   const title = el("h1", "k-cap-title");
-  title.append(el("span", "k-kicker", cap.kicker), el("span", "k-title-text", cap.title));
+  // behold#631: a chant kiosk with its track drops "Scenario 1 of 1": the track says where the cycle is.
+  if (!(s.chantLoop && s.trackOn)) title.append(el("span", "k-kicker", cap.kicker));
+  title.append(el("span", "k-title-text", cap.title));
   if (title.setAttribute) title.setAttribute("title", `${cap.kicker} · ${cap.title}`);
   top.appendChild(title);
   if (cap.next) {
@@ -1522,6 +1538,12 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   const applyMode = () => {
     if (typeof document === "undefined" || !document.body || !document.body.classList) return;
     document.body.classList.toggle("k-watch", s.watchMode);
+    // behold#631: the theme picker a chant kiosk hides in Watch is back in Inspect.
+    {
+      const themeMenu = document.getElementById("k-theme-name");
+      const menu = themeMenu && themeMenu.closest ? themeMenu.closest("details") : null;
+      if (menu && !s.watchMode) menu.hidden = false;
+    }
     if (watch && watch.drawer && main) {
       const body = watch.drawer.querySelector(".k-drawer-body");
       // The runs pane is the drawer's open state in Watch, and back in its column in Inspect.
@@ -1658,6 +1680,12 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   function drawWatch(at) {
     if (!watch || !s.watchMode) return;
     const d = s.demo && s.demo.demo;
+    // behold#631: a chant kiosk hides the theme picker; Inspect keeps it.
+    if (typeof document !== "undefined") {
+      const themeMenu = document.getElementById("k-theme-name");
+      const menu = themeMenu && themeMenu.closest ? themeMenu.closest("details") : null;
+      if (menu) menu.hidden = !!(s.chantLoop && s.trackOn);
+    }
     drawCaption(watch.caption, s, at);
     drawChantTrack(d, at);
     const hold = d ? holdModel(s, d) : null;
@@ -2048,7 +2076,10 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const d = s.demo && s.demo.demo;
     if (!d || !(PANEL_STEPS.includes(d.step) || (s.chantLoop && CHANT_PANEL_STEPS.includes(d.step))) || ap.busy) return;
     const t = now().getTime();
-    if (t - ap.at < APPROVAL_POLL_MS) return;
+    // behold#631: a new step reads at once (the applied step's card shows the moment the play ends, not a poll later).
+    const stepKey = `${d.cycle}|${d.pull}|${d.step}`;
+    if (t - ap.at < APPROVAL_POLL_MS && !(s.chantLoop && ap.stepKey !== stepKey)) return;
+    ap.stepKey = stepKey;
     ap.busy = true;
     ap.at = t;
     try {

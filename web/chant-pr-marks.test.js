@@ -276,7 +276,7 @@ describe("a chant repo's apply, live from its run events", () => {
       components: comps({ network: "applied", "cluster-a": "failed", "cluster-b": "applied", ...Object.fromEntries(appsA.map((a) => [a, { state: "blocked", blockedBy: "cluster-a" }])), ...Object.fromEntries(appsB.map((a) => [a, "applied"])) }),
     };
     const failed = chantComponentMarks(answer({ pull: 14, plan: fanPlan, gate: approved, live: { reportUrl: "s3://r", via: "pipeline", plan: null, apply: live } }), fan);
-    expect(failed.reach).toMatchObject({ roots: ["cluster-a"], covered: appsA, tone: "bad", label: "holds back 6 apps" });
+    expect(failed.reach).toMatchObject({ roots: ["cluster-a"], covered: appsA, tone: "bad", label: "6 apps blocked" });
     const fixPlan = { ...plan, pr: 15, op: "pr-15", members: ["cluster-a", ...appsA].map((c) => member(c, "planned")) };
     const earlier = { runs: [3901], applied: ["network", "cluster-b", ...appsB] };
     const fix = chantComponentMarks(answer({ pull: 15, plan: fixPlan, gate: waiting, live: { reportUrl: "s3://r", via: "pipeline", plan: null, apply: null, earlier } }), fan);

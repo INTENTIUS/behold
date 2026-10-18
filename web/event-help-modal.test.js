@@ -222,3 +222,15 @@ describe("a chant failure's countdown (#631)", () => {
     expect(modeLine("narrated", "failed", { now: 0, fix: true })).toBe("next (scripted): the fix opens");
   });
 });
+
+describe("a chant modal kept above the bottom band (#631)", () => {
+  it("leaves the centre when the centre reaches into the band, and stays inside the graph's area", () => {
+    const win = { w: 1920, h: 1080 };
+    const size = { w: 576, h: 240 };
+    // The graph's area ends at 780: the centre (420..660) fits; at 600 it would not.
+    expect(modalSpot(win, size, [], { bounds: { left: 0, top: 0, width: 1920, height: 780 } })).toBeNull();
+    const spot = modalSpot(win, size, [], { bounds: { left: 0, top: 0, width: 1920, height: 600 } });
+    expect(spot).not.toBeNull();
+    expect(spot.top + size.h).toBeLessThanOrEqual(600);
+  });
+});

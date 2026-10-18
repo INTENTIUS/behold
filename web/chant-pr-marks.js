@@ -121,7 +121,7 @@ function cardWords(state, m, gate, x = {}) {
   if (state === "unchanged") return "unchanged";
   if (state === "failed") {
     const what = (m && m.status === "plan-failed") || x.failedIn === "plan" ? "plan failed" : "failed";
-    return x.reason ? `${what}: ${x.reason}` : what === "failed" ? "apply failed" : what;
+    return x.reason ? `${what}: ${x.reason}` : what === "failed" ? (x.kiosk ? "failed" : "apply failed") : what;
   }
   if (state === "blocked") return x.blockedBy ? `blocked by ${x.blockedBy}` : "blocked by an earlier failure";
   if (state === "not-started") return "did not run";
@@ -216,7 +216,7 @@ export function chantComponentMarks(answer, facets, opts = {}) {
   for (const [c, s] of Object.entries(states)) {
     if (!stage && !liveRun && !carried) continue;
     const error = (s.l && s.l.error) || (s.m && s.m.error) || (livePlan && livePlan.components && livePlan.components[c] && livePlan.components[c].error) || null;
-    const x = { reason: shortReason(error), error, blockedBy: s.blockedBy, failedIn: s.l ? s.l.failedIn : null, wave: s.wave };
+    const x = { reason: shortReason(error), error, blockedBy: s.blockedBy, failedIn: s.l ? s.l.failedIn : null, wave: s.wave, kiosk: !!opts.kiosk };
     const words = cardWords(s.state, s.m, gate, x);
     const mid = cardMid(s.state, x);
     cards[c] = { root: c, wave: s.wave, state: s.state, tone: toneOf(s.state), words, ...(mid && mid !== words ? { mid } : {}), short: CHANT_SHORT[s.state] || s.state, facts: facts(s.state, s.m, x), ...(s.blockedBy ? { blockedBy: s.blockedBy } : {}), ...(x.reason ? { reason: x.reason } : {}) };
@@ -300,7 +300,9 @@ export function chantComponentMarks(answer, facets, opts = {}) {
     // A failed wave's first fact, shorter, for a narrow box: the reason cut, then the component alone.
     const firstFailed = state === "failed" ? members.find((x) => x.state === "failed") : null;
     const factShort = firstFailed && firstFailed.reason ? [`${firstFailed.root} failed: ${shortReason(firstFailed.reason, 36)}`, `${firstFailed.root} failed`] : [];
-    waves[n] = { number: n, job, state, tone: state ? toneOf(state) : status ? status.tone : "idle", status, title: status ? `wave-${n} · ${status.words}` : `wave-${n}`, facts: f, ...(factShort.length ? { factShort } : {}) };
+    // On a kiosk a wave waiting on the approval is outlined in the plan's tone: the warning tone is "blocked"'s alone.
+    const waveTone = state === "waiting" && opts.kiosk ? "plan" : state ? toneOf(state) : status ? status.tone : "idle";
+    waves[n] = { number: n, job, state, tone: waveTone, status, title: status ? `wave-${n} · ${status.words}` : `wave-${n}`, facts: f, ...(factShort.length ? { factShort } : {}) };
   }
   const reach = reachOf(cards, facets, { stage, live, answer, earlier });
   return { stage: live ? "apply" : stage ? stage.stage : livePlan ? "plan" : null, cards, waves, source: sourceWords(answer), ...(reach ? { reach } : {}), ...(opts.kiosk ? { statusRight: true, cardFont: 15, waveFont: 18 } : {}) };
@@ -522,10 +524,10 @@ export function downstreamOf(roots, needs, allowed = null) {
  *   "reaches 15 stacks", or for a later pull request of the cycle (the fix)
  *   "the fix reaches 7";
  * - once a component failed (as the paced graph shows it): the failed
- *   component(s), covering what they hold back, "holds back 6 apps";
+ *   component(s), covering what they block, "6 apps blocked";
  * - nothing once the apply runs, has applied, or at the reset.
  *
- * The viewer's words say "reaches" and "holds back".
+ * The viewer's words say "reaches" and "blocked", the cards' own word.
  */
 export function reachOf(cards, facets, { stage, live, answer, earlier = new Set() } = {}) {
   const needs = facets && facets.needs ? facets.needs : {};
@@ -538,7 +540,8 @@ export function reachOf(cards, facets, { stage, live, answer, earlier = new Set(
     if (!held.size) return null;
     const names = [...held];
     const noun = names.every((n) => /^app-/.test(n)) ? (names.length === 1 ? "app" : "apps") : names.length === 1 ? "stack" : "stacks";
-    return { key: `failed|${failed.sort().join(",")}|${names.length}`, roots: failed, covered: names.sort(), tone: "bad", label: `holds back ${names.length} ${noun}` };
+    // One word for one state: the cards say "blocked", so does this.
+    return { key: `failed|${failed.sort().join(",")}|${names.length}`, roots: failed, covered: names.sort(), tone: "bad", label: `${names.length} ${noun} blocked` };
   }
   if (!stage || stage.stage !== "plan" || !answer || answer.apply) return null;
   // Once the apply has started a wave, the applying cards carry the story.
