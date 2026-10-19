@@ -130,7 +130,7 @@ import { mountDots, unmountDots, dotsCamera, dotsZoomOutFactor, dotsCarving, dot
 // Report minor 34: a cone plan's lights, on the cards and the dots (web/cone.js).
 import { cardRoot as coneCardRoot, coneLights, coneOf, resourceLight as coneResourceLight, rootLight as coneRootLight, wrapWords } from "./cone.js";
 import { carveDrawable } from "./dots-live.js";
-import { FLASH_MS as TG_FLASH_MS, createReadFlash, hotReads as tgHotReads, nearestOn as tgNearestOn, pillSpots as tgPillSpots, readKey as tgReadKey, readerStates as tgReaderStates } from "./tg-read-pills.js"; // behold#744
+import { FLASH_MS as TG_FLASH_MS, coveredEdges as tgCoveredEdges, createReadFlash, dependsLine as tgDependsLine, hotReads as tgHotReads, nearestOn as tgNearestOn, pillSpots as tgPillSpots, readKey as tgReadKey, readerStates as tgReaderStates } from "./tg-read-pills.js"; // behold#744
 import { outsideCard as tgOutsideCard, outsideModel as tgOutsideModel, outsideSpots as tgOutsideSpots } from "./tg-outside.js"; // behold#743
 initTheme();
 // #476: framed in a host pane. The flag is a class on <html>, so the CSS that
@@ -3769,6 +3769,8 @@ function drawTgReads() {
   drawPipelineMarks(svg); // behold#571: the forge and tool marks, before the wave boxes' status finds room around them
   for (const old of svg.querySelectorAll("[data-tg-reads]")) old.remove();
   tgReadEdgesNow = []; // behold#744
+  // behold#762: an edge a read line stood for comes back; this draw hides the ones its own lines stand for.
+  for (const g of svg.querySelectorAll("g[data-tg-read-covers]")) g.removeAttribute("data-tg-read-covers");
   for (const old of svg.querySelectorAll("[data-tg-root]")) old.remove();
   for (const r of svg.querySelectorAll("rect[data-tg-stroke0]")) {
     r.setAttribute("stroke", r.getAttribute("data-tg-stroke0"));
@@ -3979,6 +3981,13 @@ function drawTgReads() {
   // Report minor 34: a cone plan lights what it planned and dims the rest, never hiding it (web/cone.js).
   drawConeLights(svg, { stage: states.stage, drawnAnswer, compMode, componentsOfRoot, rootOf });
 
+  // behold#762: one line per pair. Where a read joins the two cards a dependency edge joins (either way round), the read's
+  // line says both, so the edge is hidden (not removed: the layout and every index of the edges stay as they were), before
+  // the read lines are routed clear of the edges that still show. An edge whose read draws no line shows again below.
+  const edges = tgReadEdges(drawnAnswer, tgProgress);
+  const depEdges = compMode ? [...svg.querySelectorAll("g[data-edge-from]")] : [];
+  tgCoveredEdges(edges, depEdges.map((g) => ({ from: g.getAttribute("data-edge-from"), to: g.getAttribute("data-edge-to") }))).forEach((key, i) => key && depEdges[i].setAttribute("data-tg-read-covers", key));
+  if (depEdges.length) ensureTgReadStyle();
   // #571: the components zoom's own marks; its wave boxes are the boxes the caption and the labels keep clear of.
   const edgePoints = compMode ? chantEdgePoints(svg) : [];
   let readMarks = null; // behold#744: the cards' and waves' states (a story's paced) that a read's pill flashes on
@@ -4003,7 +4012,6 @@ function drawTgReads() {
   // on the read root's box border, that crosses no text and as few cards as
   // there are; each label then sits beside its line where it covers no text
   // and crosses no line.
-  const edges = tgReadEdges(drawnAnswer, tgProgress);
   if (compMode) tipComponentEdges(svg, edges); // behold#744
   const centre = (b) => ({ x: (b.x + b.x2) / 2, y: (b.y + b.y2) / 2 });
   const grow = (b, d) => ({ x: b.x - d, y: b.y - d, x2: b.x2 + d, y2: b.y2 + d });
@@ -4116,10 +4124,16 @@ function drawTgReads() {
     layer.appendChild(line);
     // behold#744: a wide clear stroke along the line takes the pointer (the drawn layer lets it through): pointing at it shows the
     // read's pill; outside a kiosk frame the shared tooltip adds the whole sentence (data-tip, no <title>: no second, native one).
-    hits.appendChild(make("line", { x1: p0.x, y1: p0.y, x2: p1.x, y2: p1.y, stroke: "transparent", "stroke-width": 16, "pointer-events": "stroke", "data-tg-read-hit": key, ...(embedOpts.bare ? {} : { "data-tip": tgReadLine(e) }) }));
+    // behold#762: a line that stands for a hidden dependency edge says what the edge said too, in a kiosk frame as well.
+    const stands = depEdges.filter((g) => g.getAttribute("data-tg-read-covers") === key).map((g) => tgDependsLine({ from: g.getAttribute("data-edge-from"), to: g.getAttribute("data-edge-to") }));
+    const tip = stands.length ? [...stands, tgReadLine(e)].join("\n") : embedOpts.bare ? null : tgReadLine(e);
+    hits.appendChild(make("line", { x1: p0.x, y1: p0.y, x2: p1.x, y2: p1.y, stroke: "transparent", "stroke-width": 16, "pointer-events": "stroke", "data-tg-read-hit": key, ...(tip ? { "data-tip": tip } : {}) }));
     drawn.push({ p0, p1 });
     labels.push({ e, p0, p1, color, kind, key, fromBox });
   }
+  // behold#762: a read that found no route (or no card) drew no line: its pair keeps the dependency edge.
+  const lined = new Set(labels.map((l) => l.key));
+  for (const g of depEdges) if (g.hasAttribute("data-tg-read-covers") && !lined.has(g.getAttribute("data-tg-read-covers"))) g.removeAttribute("data-tg-read-covers");
   // behold#571: the marks step aside from the read lines, and a box lifts its marks off an arrowhead (its box then reaches higher).
   for (const [rect] of clearMarksOfReads(svg, drawn)) {
     const now = boxOf(rect);
@@ -4506,6 +4520,7 @@ function ensureTgReadStyle() {
 #graph g[data-tg-read-pill].tg-hot { transition: opacity .15s ease; }
 #graph g[data-tg-read-pill].tg-flash { animation: tg-read-flash 6s linear both; }
 #graph line[data-tg-read].tg-hot { stroke-width: 5; filter: drop-shadow(0 0 3px var(--bg)); }
+#graph g[data-tg-read-covers] { display: none !important; }
 @keyframes tg-read-flash { 0% { opacity: 0; } 4%, 80% { opacity: 1; } 100% { opacity: 0; } }
 @keyframes tg-read-flash-step { 0%, 99.9% { opacity: 1; } 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
@@ -4522,6 +4537,7 @@ function chantEdgePoints(svg) {
   const inv = toSvg.inverse();
   const out = [];
   for (const path of svg.querySelectorAll("path.pin-edge-line")) {
+    if (path.closest("[data-tg-read-covers]")) continue; // behold#762: hidden, a read line stands for it
     let len = 0;
     try {
       len = path.getTotalLength();

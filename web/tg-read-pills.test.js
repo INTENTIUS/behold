@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FLASH_MAX, FLASH_MS, createReadFlash, hotReads, nearestOn, pillSpots, readKey, readerStates } from "./tg-read-pills.js";
+import { FLASH_MAX, FLASH_MS, coveredEdges, createReadFlash, dependsLine, hotReads, nearestOn, pillSpots, readKey, readerStates } from "./tg-read-pills.js";
 
 // behold#744: the tofu fan-out's reads: cluster-a and cluster-b read network; app-01..06 read cluster-a.
 const apps = ["app-01", "app-02", "app-03", "app-04", "app-05", "app-06"];
@@ -113,5 +113,46 @@ describe("where a pill goes (behold#744)", () => {
   it("meets the pill's nearest edge with its leader", () => {
     expect(nearestOn({ x: 0, y: 0, x2: 10, y2: 10 }, { x: 5, y: 20 })).toEqual({ x: 5, y: 10 });
     expect(nearestOn({ x: 0, y: 0, x2: 10, y2: 10 }, { x: -4, y: -4 })).toEqual({ x: 0, y: 0 });
+  });
+});
+
+describe("a read line stands for the dependency edge on its pair (behold#762)", () => {
+  // The tofu fan-out's dependency edges as pinhole draws them: each app on its cluster, each cluster on network.
+  const deps = [
+    { from: "cluster-a", to: "network" },
+    { from: "cluster-b", to: "network" },
+    ...apps.map((a) => ({ from: a, to: "cluster-a" })),
+  ];
+
+  it("covers every edge whose pair has a read, and names the read", () => {
+    expect(coveredEdges(edges, deps)).toEqual(deps.map((d) => readKey(d)));
+  });
+
+  it("leaves an edge with no read on its pair to draw itself", () => {
+    const reads = edges.filter((e) => e.from !== "app-03" && e.to !== "network");
+    const out = coveredEdges(reads, deps);
+    expect(out[0]).toBeNull();
+    expect(out[1]).toBeNull();
+    expect(out[deps.findIndex((d) => d.from === "app-03")]).toBeNull();
+    expect(out.filter(Boolean)).toHaveLength(5);
+  });
+
+  it("matches the pair in either direction", () => {
+    expect(coveredEdges([{ from: "app-01", to: "cluster-a" }], [{ from: "cluster-a", to: "app-01" }])).toEqual(["app-01→cluster-a"]);
+  });
+
+  it("matches a read named by its root's path to a card named after the root, and no other card", () => {
+    const reads = [{ from: "apps/app-01", to: "clusters/cluster-a" }];
+    expect(coveredEdges(reads, [{ from: "app-01", to: "cluster-a" }, { from: "app-1", to: "cluster-a" }, { from: "pp-01", to: "cluster-a" }])).toEqual(["apps/app-01→clusters/cluster-a", null, null]);
+  });
+
+  it("covers nothing without reads (a chant repo) or without edges", () => {
+    expect(coveredEdges([], deps)).toEqual(deps.map(() => null));
+    expect(coveredEdges(undefined, deps)).toEqual(deps.map(() => null));
+    expect(coveredEdges(edges, [])).toEqual([]);
+  });
+
+  it("says what the hidden edge meant", () => {
+    expect(dependsLine({ from: "app-01", to: "cluster-a" })).toBe("app-01 → cluster-a\napp-01 depends on cluster-a, so cluster-a applies first");
   });
 });
