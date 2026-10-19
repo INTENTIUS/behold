@@ -138,7 +138,18 @@ export function trackModel(track, { demo, pulls = [], since = null, now = Date.n
     }),
   }));
   const nowLine = nowWords({ demo, segment: current, expected, elapsed, overrun, waves, now, fix: track.byStory ? pulls.indexOf(demo.pull) > 0 : at.chapter > 0 });
-  return { chapters, at, elapsed, expected, overrun, now: nowLine };
+  return { chapters, at, elapsed, expected, overrun, now: nowLine, here: hereWords(chapters, at) };
+}
+
+/**
+ * behold#778: the current step by name, "Step: applying, in 3 The fix", for a
+ * phone, whose segments are too narrow for their labels. Null when the cycle
+ * stands at no segment.
+ */
+export function hereWords(chapters, at) {
+  const c = chapters && at ? chapters[at.chapter] : null;
+  const g = c && at.segment >= 0 ? c.segments[at.segment] : null;
+  return g ? `Step: ${g.label}, in ${c.title}` : null;
 }
 
 const typical = (expected, overrun) => (overrun ? "taking longer than usual…" : expected > 0 ? `usually about ${secs(expected)} s` : null);
@@ -240,10 +251,17 @@ body.k-watch #k-track { position: fixed; z-index: 7; left: 5px; right: 5px; }
   #k-track .kt-seg.kt-current .kt-fill::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, color-mix(in srgb, white 28%, transparent), transparent); background-size: 50% 100%; background-repeat: no-repeat; animation: kt-sheen 2.4s ease-in-out infinite; }
   @keyframes kt-sheen { from { background-position: -60% 0; } to { background-position: 160% 0; } }
 }
+#k-track .kt-here { display: none; }
+/* behold#778: a phone's segments are too narrow for their labels, so a line names the current step, and the chapters wrap to a new line instead of running off the right edge. */
 @media (max-width: 600px) {
   body.k-watch #k-track { position: static; }
+  #k-track { font-size: 1em; padding: 0.35em 16px 0.4em; }
+  #k-track .kt-row { flex-wrap: wrap; row-gap: 0.4em; }
+  #k-track .kt-chapter-title { font-size: 0.88em; }
   #k-track .kt-segs .kt-label { display: none; }
-  #k-track .kt-seg { height: 0.8em; }
+  #k-track .kt-seg { height: 0.8em; min-width: 0.6em !important; }
+  #k-track .kt-here { display: block; margin: 0; color: var(--pending); font-size: 0.92em; }
+  #k-track .kt-now { font-size: 0.92em; white-space: normal; }
 }
 `;
 
@@ -304,6 +322,7 @@ export function drawTrack(host, model, doc = typeof document !== "undefined" ? d
     row.appendChild(ch);
   }
   host.appendChild(row);
+  if (model.here) host.appendChild(el("p", "kt-here", model.here));
   if (model.now && model.now.text) host.appendChild(el("p", "kt-now", model.now.text));
   // A label its segment cannot hold whole says its short form ("plan", "merge"); never a clipped word.
   for (const lab of host.querySelectorAll ? host.querySelectorAll(".kt-label") : []) {

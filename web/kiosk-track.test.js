@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FILL_CAP, cycleTrack, trackModel, waitingSpec } from "./kiosk-track.js";
+import { FILL_CAP, cycleTrack, hereWords, trackModel, waitingSpec } from "./kiosk-track.js";
 
 // behold#631: chant-fanout's last finished cycle as cycles/chant-fanout/latest.json had it (cycle 499):
 // fifteen steps, two pull requests, from the change's open to the reset.
@@ -112,6 +112,12 @@ describe("the track in the story's four chapters (behold#631)", () => {
     const m = trackModel(track, { demo: { step: "applying", pull: 13, chapter: chapters[2] }, pulls: [12, 13], since: now - 2_000, now });
     expect(m.chapters.map((c) => [c.title, c.state])).toEqual([["1 The change goes out", "done"], ["2 cluster-a breaks", "done"], ["3 The fix", "current"], ["4 Done", "ahead"]]);
     expect(m.chapters[2].segments[4]).toMatchObject({ label: "applying", state: "current" });
+    // behold#778: and names the step in words, for a phone whose segments are too narrow for their labels.
+    expect(m.here).toBe("Step: applying, in 3 The fix");
+  });
+  it("names no step when the cycle stands at none (behold#778)", () => {
+    expect(hereWords([{ title: "1 The change", segments: [{ label: "opened" }] }], { chapter: 0, segment: -1 })).toBeNull();
+    expect(hereWords([{ title: "1 The change", segments: [{ label: "opened" }] }], { chapter: 0, segment: 0 })).toBe("Step: opened, in 1 The change");
   });
   it("names a chapter from its headline when the driver gives no short name", () => {
     const plain = cycleTrack({ ...cycle, steps: told.steps.map((s) => ({ ...s, chapter: { n: s.chapter.n, of: 4, headline: s.chapter.headline } })) });
