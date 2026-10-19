@@ -93,6 +93,46 @@ export interface Demo {
    * Absent from drivers and scenarios without chapters.
    */
   chapter?: DemoChapter;
+  /**
+   * behold#743: an apply made outside the pipeline at this step (terragucci#1163's fan-out-choudoufu: an operator's
+   * `choudoufu apply` on app-01's estate while the pipeline's wave 3 applies it). Absent when demo.json has null, none,
+   * or one not of its form.
+   */
+  outside?: DemoOutside;
+}
+
+/** behold#743: demo.json's `outside`, as the driver writes it (terragucci#1163). */
+export interface DemoOutside {
+  who: string;
+  estate: string;
+  command: string;
+  state: (typeof OUTSIDE_STATES)[number];
+  started_at: string | null;
+  ended_at: string | null;
+  resources: string[];
+  log: string[];
+}
+
+export const OUTSIDE_STATES = ["applying", "applied", "failed"] as const;
+
+/** behold#743: a demo.json `outside`, or undefined when it is null, absent or not of the driver's form. */
+export function outsideOf(v: unknown): DemoOutside | undefined {
+  if (!isRecord(v)) return undefined;
+  const estate = text(v.estate);
+  const state = v.state;
+  if (!estate || !str(state) || !(OUTSIDE_STATES as readonly string[]).includes(state)) return undefined;
+  const time = (t: unknown): string | null => (str(t) && UTC_MS.test(t) ? t : null);
+  const lines = (l: unknown, n: number): string[] => (Array.isArray(l) ? l.filter(str).map((x) => x.slice(0, 300)) : []).slice(-n);
+  return {
+    who: text(v.who) ?? "someone",
+    estate,
+    command: text(v.command) ?? "an apply",
+    state: state as DemoOutside["state"],
+    started_at: time(v.started_at),
+    ended_at: time(v.ended_at),
+    resources: lines(v.resources, 50).filter((r) => r.trim()),
+    log: lines(v.log, 20),
+  };
 }
 
 export interface DemoChapter {
@@ -118,6 +158,8 @@ export type DemoAnswer =
   | { source: string; read: string; demo: null; error: string; code: "terragucci-demo" };
 
 const UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+/** behold#743: the same, with or without milliseconds. */
+const UTC_MS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const str = (v: unknown): v is string => typeof v === "string";
 const int = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v);
@@ -198,6 +240,11 @@ export function demoOf(d: Demo): Demo {
     ...((): { chapter?: DemoChapter } => {
       const ch = chapterOf((d as { chapter?: unknown }).chapter);
       return ch ? { chapter: ch } : {};
+    })(),
+    // behold#743: kept only when it is one, so a demo.json without it reads as before.
+    ...((): { outside?: DemoOutside } => {
+      const o = outsideOf((d as { outside?: unknown }).outside);
+      return o ? { outside: o } : {};
     })(),
   };
 }
