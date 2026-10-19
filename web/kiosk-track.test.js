@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FILL_CAP, cycleTrack, hereWords, trackModel, waitingSpec } from "./kiosk-track.js";
+import { FILL_CAP, applyJobs, cycleTrack, hereWords, trackModel, waitingSpec } from "./kiosk-track.js";
 
 // behold#631: chant-fanout's last finished cycle as cycles/chant-fanout/latest.json had it (cycle 499):
 // fifteen steps, two pull requests, from the change's open to the reset.
@@ -150,5 +150,44 @@ describe("the Waiting on… modal (behold#631)", () => {
   it("never during an apply that is receiving events, or a step that waits on nothing", () => {
     expect(waitingSpec(at({ step: "applying", pull: 12 }, 1_000), { quietMs: 5_000, applyLive: true })).toBeNull();
     expect(waitingSpec(at({ step: "planned", pull: 12 }, 1_000), { quietMs: 5_000 })).toBeNull();
+  });
+});
+
+// behold#774: on demo.intentius.io "Waiting on the pipeline to start the apply" stayed up about 2 minutes while
+// apply-wave-3 ran: the run view moves a wave only once its job reports. The run's own jobs say it first.
+describe("the apply's jobs end the wait (behold#774)", () => {
+  const track = cycleTrack(cycle);
+  const now = Date.parse(T("40:00"));
+  const C = "c27888c42a093b72166e924a339cf6f01a739547";
+  const doc = (jobs, commit = C) => ({ commit, jobs: jobs.map(([name, status]) => ({ name, status })) });
+  const run = doc([["check", "success"], ["plan", "skipped"], ["apply-comment", "skipped"], ["apply-wave-1", "success"], ["apply-wave-2", "success"], ["apply-wave-3", "running"], ["tips", "queued"]]);
+  it("reads the started apply jobs of this step's commit, by wave", () => {
+    expect(applyJobs(run, { commit: C })).toEqual([
+      { job: "apply-wave-1", wave: 1, status: "success" },
+      { job: "apply-wave-2", wave: 2, status: "success" },
+      { job: "apply-wave-3", wave: 3, status: "running" },
+    ]);
+    // A short commit either way matches.
+    expect(applyJobs(run, { commit: C.slice(0, 8) })).toHaveLength(3);
+    expect(applyJobs(doc([["apply-wave-1", "running"]], C.slice(0, 8)), { commit: C })).toHaveLength(1);
+  });
+  it("is empty for another commit's run, a queued job, or no run", () => {
+    expect(applyJobs(run, { commit: "298a730c2764cbbcc29b75360d12e8e5d03a8406" })).toEqual([]);
+    expect(applyJobs(doc([["apply-wave-1", "queued"]]), { commit: C })).toEqual([]);
+    expect(applyJobs(run, { commit: null })).toEqual([]);
+    expect(applyJobs(null, { commit: C })).toEqual([]);
+    expect(applyJobs({ commit: C }, { commit: C })).toEqual([]);
+  });
+  it("says which wave is applying, and opens no Waiting modal, once a job runs", () => {
+    const at = (step, jobs) => trackModel(track, { demo: { step, pull: 12, commit: C }, pulls: [12], since: now - 1_000, now, jobs });
+    const m = at("applying", applyJobs(run, { commit: C }));
+    expect(m.now).toMatchObject({ text: "Wave 3 is applying", waiting: null });
+    expect(waitingSpec(m, { quietMs: 60_000 })).toBeNull();
+    // The merged step, its first job already started.
+    expect(at("merged", [{ job: "apply-wave-1", wave: 1, status: "running" }]).now.text).toBe("Wave 1 is applying");
+    // Jobs that started and finished, none running now: under way.
+    expect(at("applying", [{ job: "apply-wave-1", wave: 1, status: "success" }]).now).toMatchObject({ text: "The apply is under way", waiting: null });
+    // No job yet: the wait stands.
+    expect(waitingSpec(at("applying", []), { quietMs: 5_000 }).what).toBe("the pipeline to start the apply");
   });
 });

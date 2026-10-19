@@ -16,7 +16,7 @@
 import { linkState, linkWords, noteBack, noteRead, readFailed, shareLink } from "./kiosk-link.js";
 import { CHANT_PANEL_STEPS, chantApprovalModel, chantResultModel } from "./chant-pr-marks.js";
 import { createLivePacer } from "./chant-live-pace.js";
-import { cycleTrack, drawTrack, trackModel, waitingSpec } from "./kiosk-track.js";
+import { applyJobs, cycleTrack, drawTrack, trackModel, waitingSpec } from "./kiosk-track.js";
 import { FORGES, iconSvg } from "./forge-mark.js";
 import { TOOLS } from "./tool-mark.js";
 import { graphWaves } from "./chant-pr-marks.js";
@@ -1972,7 +1972,9 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       trackState.key = key;
       trackState.since = Number.isFinite(from) && from <= t && t - from < 600_000 ? from : t;
     }
-    const model = trackModel(track, { demo: d, pulls: trackState.pulls, since: trackState.since, now: t, waves: live ? live.waves : null });
+    // behold#774: the run's own jobs say the apply started before its run view does.
+    const jobs = applyJobs(runsApi && runsApi.run ? runsApi.run.doc : null, d);
+    const model = trackModel(track, { demo: d, pulls: trackState.pulls, since: trackState.since, now: t, waves: live ? live.waves : null, jobs });
     s.trackModel = model;
     drawTrack(trackHost, model);
     // In the trail's place: over the caption.

@@ -79,10 +79,11 @@ describe("Tips: a closed modal stays closed, and none covers the details popover
   afterEach(() => vi.useRealTimers());
   const FRAME = { getBoundingClientRect: () => ({ left: 5, top: 77, width: 1356, height: 686, right: 1361, bottom: 763 }) };
   /** One page of the kiosk; `store` is its sessionStorage, which a reload keeps. */
-  const page = (store, { pop = null } = {}) => {
+  const page = (store, { pop = null, phone = false } = {}) => {
     const doc = fakeDoc();
     const view = { demo: demo("pull-request"), watch: true, waiting: WAIT, frame: FRAME, pop };
-    const api = startEventHelp({ doc, store: shelf(), session: store, tipsHost: doc.body, modalHost: doc.body, now: () => t, get: () => ({ ...view, strip: null, stripReady: true }), reduced: () => true });
+    const stripHost = doc.createElement("div");
+    const api = startEventHelp({ doc, store: shelf(), session: store, tipsHost: doc.body, modalHost: doc.body, stripHost, narrow: () => phone, now: () => t, get: () => ({ ...view, strip: null, stripReady: true }), reduced: () => true });
     const modal = (kind) => all(doc.body).find((n) => n.className && n.className.split(" ").includes(`eh-modal-${kind}`));
     const step = (ms = 1_000, more = {}) => {
       Object.assign(view, more);
@@ -94,8 +95,31 @@ describe("Tips: a closed modal stays closed, and none covers the details popover
       const x = all(modal(kind)).find((n) => n.className === "eh-modal-close");
       x.handlers.click.forEach((fn) => fn({}));
     };
-    return { api, doc, view, modal, step, closeX };
+    return { api, doc, view, modal, step, closeX, stripHost };
   };
+
+  // behold#774: on a phone the Waiting modal dimmed the page and covered the graph for a minute and more.
+  it("on a phone, the Waiting modal and a highlight are a strip under the step bar, with no sheet over the page", () => {
+    const k = page(session(), { phone: true });
+    k.step();
+    expect(k.modal("waiting")).toBeUndefined();
+    const inStrip = (kind) => all(k.stripHost).find((n) => n.classes && n.classes.has(`eh-modal-${kind}`));
+    expect(inStrip("waiting")).toBeDefined();
+    expect(k.stripHost.children[0].classes.has("eh-modal-strip")).toBe(true);
+    // Its × still closes it for good.
+    all(inStrip("waiting")).find((n) => n.className === "eh-modal-close").handlers.click.forEach((fn) => fn({}));
+    k.step(1_000);
+    expect(inStrip("waiting")).toBeUndefined();
+    k.step(1_000, { demo: demo("failed", { highlight: HL }), waiting: null });
+    expect(inStrip("highlight")).toBeDefined();
+    expect(k.modal("highlight")).toBeUndefined();
+  });
+  it("off a phone, they open over the page as before", () => {
+    const k = page(session());
+    k.step();
+    expect(k.modal("waiting")).toBeDefined();
+    expect(k.stripHost.children).toHaveLength(0);
+  });
 
   it("the Waiting modal, closed with ×, does not come back on the next looks at the same wait", () => {
     const k = page(session());
