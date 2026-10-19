@@ -583,7 +583,7 @@ export function startEventHelp({ doc = document, store = null, session = null, s
     drawTrail(h);
     settleModal(h, facts);
     // A modal Inspect opened goes when the viewer turns to Watch on a held small stage, where nothing overlays the graph.
-    if (st.modal && modalShownElsewhere(st.modal.event, { watch: !!h.watch, held: !!h.held })) st.modal.api.close();
+    if (st.modal && modalShownElsewhere(st.modal.event, { watch: !!h.watch, held: !!h.held, result: !!h.result })) st.modal.api.close();
     // behold#757: a step's highlight is read on every look (Tips off or not, so turning them on mid-step still shows it,
     // and one the driver adds partway through a step shows when it appears); its modal goes with its step, or when the
     // viewer turns to Inspect: it is Watch's.
@@ -633,7 +633,7 @@ export function startEventHelp({ doc = document, store = null, session = null, s
     // behold#631: a chant repo's approval is the card beside the graph; a modal over it would hide it, so its hold opens none.
     // Its result is the Applied card beside the graph; a modal would say it twice, over the cards.
     // On a held small stage in Watch no modal opens: nothing overlays the graph there, and the caption says each step.
-    const told = (e) => modalShownElsewhere(e, { watch: !!h.watch, held: !!h.held });
+    const told = (e) => modalShownElsewhere(e, { watch: !!h.watch, held: !!h.held, result: !!h.result });
     // behold#764: one the viewer closed stays closed; one due while a details popover is open waits for it to close.
     const closedOne = (e) => st.closed.has(dismissKey(e.kind === "refused" ? "failed" : e.kind, h.demo, e.id));
     st.modals = modalQueue(st.modals, { add: (h.chant ? news.filter((f) => f.kind !== "held" && f.kind !== "applied") : news).filter((e) => !told(e) && !closedOne(e)), now: now(), lastInput: st.lastInput, open: !!st.modal || !!pop });
