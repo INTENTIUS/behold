@@ -15,7 +15,7 @@ import { readTerragucci } from "../src/terragucci-reports.ts";
 import { terragucciSource } from "../src/terragucci-source.ts";
 import { cycleFacts, ehSnapshot, storyTrail } from "./kiosk-event-help.js";
 import { componentMarks, reportStatus } from "./terragucci-components-live.js";
-import { resultWords, waveResultOf } from "./terragucci-change.js";
+import { blockedOf, outcomesOf, resultWords, rootStates, waveResultOf } from "./terragucci-change.js";
 
 const FIXTURE = join(import.meta.dirname, "..", "src", "__fixtures__", "terragucci-wave-results");
 const CHANGE = "2a615596a4f0ed954bdcaa83f77e575eaf2cb5ab";
@@ -39,10 +39,12 @@ const changeView = runView(CHANGE, "2026-10-19T01:58:52.600Z", [[1, "applied", [
 const fixView = runView(FIX, "2026-10-19T02:01:47.800Z", [[1, "applied", ["network"]], [2, "applied", ["cluster-a", "cluster-b"]], [3, "applied", [...APPS_A, ...APPS_B]]]);
 
 let answer;
+let read;
 beforeAll(async () => {
   const structural = { validation: { by: "structural" }, check: (_n, doc) => (doc && typeof doc === "object" ? undefined : "not an object") };
   const r = await readTerragucci(terragucciSource(FIXTURE), { validator: structural });
   answer = { roots: [], pull_request: null, results: r.results };
+  read = r;
 });
 
 const facts = (snap) => cycleFacts(ehSnapshot({ waves, ...snap }));
@@ -121,5 +123,58 @@ describe("the wave box's title (behold#751)", () => {
     const failed = { status: "failure", words: "failed", tone: "bad", run: 6745 };
     expect(reportStatus(failed, waveResultOf(answer, CHANGE, 2))).toBe(failed);
     expect(reportStatus(failed, null)).toBe(failed);
+  });
+});
+
+// behold#770: a tool page's replay of the cycle (kiosk-vendor.js) pins the
+// change's run view (wave 2 failed) after the fix applied, so /api/terragucci's
+// `outcomes` and `blocked` are the fix's, the newest apply's. The replay read
+// cluster-b "failed" and wave 2 "2 failed" from the wave's state, where live it
+// read cluster-b applied beside a failed cluster-a. The change's own reports,
+// in `results`, say how each root came out.
+describe("the replay of the failure, after the fix applied (behold#770)", () => {
+  const facets = {
+    jobs: [
+      { component: "network", jobName: "apply-wave-1", wave: 1 },
+      { component: "cluster-a", jobName: "apply-wave-2", wave: 2 },
+      { component: "cluster-b", jobName: "apply-wave-2", wave: 2 },
+      ...[...APPS_A, ...APPS_B].map((c) => ({ component: c, jobName: "apply-wave-3", wave: 3 })),
+    ],
+  };
+  // /api/terragucci as it answers after the fix's apply: its outcomes are the fix's, and nothing of it is blocked.
+  const replayAnswer = () => ({ roots: [], pull_request: null, ...(read.outcomes ? { outcomes: read.outcomes } : {}), ...(read.blocked ? { blocked: read.blocked } : {}), results: read.results });
+  const runs = { doc: { runs: [{ id: 6745, commit: CHANGE, jobs: run6745.jobs.map(({ name, status }) => ({ name, status })) }] } };
+
+  it("is the fixture's case: the read's outcomes are the fix's, not the change's", () => {
+    expect(read.outcomes.commit).toBe(FIX);
+    expect(read.blocked).toBeUndefined();
+    expect(Object.keys(read.results)).toEqual(expect.arrayContaining([CHANGE, FIX]));
+  });
+
+  it("reads each root of the change's run from the change's own reports", () => {
+    const o = outcomesOf(replayAnswer(), changeView);
+    expect(o.get("cluster-a")).toMatchObject({ wave: 2, outcome: "failed" });
+    expect(o.get("cluster-a").error).toMatch(/QueueAlreadyExists/);
+    expect(o.get("cluster-b")).toEqual({ wave: 2, outcome: "applied" });
+    expect([...blockedOf(replayAnswer(), changeView).keys()].sort()).toEqual(APPS_A);
+    expect(blockedOf(replayAnswer(), changeView).get("app-01")).toEqual({ wave: 3, by: "cluster-a" });
+  });
+
+  it("draws cluster-a failed, cluster-b applied, cluster-a's apps blocked and cluster-b's applied", () => {
+    const m = componentMarks(replayAnswer(), changeView, facets, { runs, story: { kiosk: true } });
+    expect(m.cards["cluster-a"]).toMatchObject({ state: "failed", tone: "bad" });
+    expect(m.cards["cluster-b"]).toMatchObject({ state: "applied", tone: "ok", words: "applied" });
+    for (const a of APPS_A) expect(m.cards[a]).toMatchObject({ state: "blocked", blockedBy: "cluster-a" });
+    for (const a of APPS_B) expect(m.cards[a]).toMatchObject({ state: "applied" });
+    expect(m.waves[2].status).toMatchObject({ status: "failed", words: "1 failed, 1 applied", tone: "bad" });
+    expect(m.waves[3].title).toBe("apply-wave-3 · 6 applied, 6 blocked by cluster-a");
+  });
+
+  it("holds a wave the paced replay hasn't started, and falls back to the wave's state for a commit the read kept no result of", () => {
+    const paced = { ...changeView, states: changeView.states.map((w) => (w.number === 3 ? { ...w, state: "not-started" } : w)) };
+    expect(blockedOf(replayAnswer(), paced).size).toBe(0);
+    expect(outcomesOf(replayAnswer(), paced).has("app-07")).toBe(false);
+    const gone = { ...replayAnswer(), results: { [FIX]: read.results[FIX] } };
+    expect(rootStates(gone, changeView, { story: true }).roots["cluster-b"].state).toBe("failed");
   });
 });
