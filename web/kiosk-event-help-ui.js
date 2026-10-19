@@ -410,7 +410,11 @@ export function startEventHelp({ doc = document, store = null, session = null, s
       chip.dataset.ehTone = toneOf(f.kind);
       // A chip asked for shows its tip again: on a hover while Tips are on, on a click always.
       chip.addEventListener("pointerenter", () => st.on && replay(f));
-      chip.addEventListener("click", () => replay(f));
+      // behold#775: a trace's chip opens the trace too, as its tip does.
+      chip.addEventListener("click", () => {
+        replay(f);
+        if (f.kind === "trace" && Number.isInteger(f.subjects.wave)) openTrace(f.subjects.wave);
+      });
       trailHost.appendChild(chip);
     });
     // The newest beat stays in view.

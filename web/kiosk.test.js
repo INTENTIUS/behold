@@ -560,3 +560,62 @@ describe("nextProgress and nextSeen", () => {
     expect(nextSeen(nextSeen(undefined, null, "live", 0), a, "live", 6000).seen).toBe(6000);
   });
 });
+
+describe("kiosk: a phone's trace rows under the step (behold#775)", () => {
+  const fakeDocument = () => {
+    const make = (tag) => {
+      const n = { tagName: tag, className: "", textContent: "", children: [], dataset: {}, style: {}, hidden: false, on: {} };
+      n.appendChild = (c) => (n.children.push(c), c);
+      n.append = (...cs) => cs.forEach((c) => n.children.push(typeof c === "string" ? { tagName: "#text", textContent: c, children: [] } : c));
+      n.replaceChildren = () => (n.children = []);
+      n.addEventListener = (k, f) => (n.on[k] = f);
+      return n;
+    };
+    return { createElement: make };
+  };
+  const find = (n, cls) => (n.className.split(" ").includes(cls) ? [n] : []).concat(...(n.children || []).map((c) => (c.className !== undefined ? find(c, cls) : [])));
+  const T = 1_792_166_000_000;
+  const trace = (wave, ms) => ({
+    start: T + wave * 10_000,
+    ms,
+    spans: [
+      { id: "s", parent: null, name: "tf-apply", start: T, ms, attrs: {} },
+      { id: "p", parent: "s", name: "plan", start: T, ms: ms / 2, attrs: { "terragucci.phase": "plan" } },
+      { id: "a", parent: "s", name: "apply", start: T + ms / 2, ms: ms / 2, attrs: { "terragucci.phase": "apply" } },
+    ],
+  });
+
+  it("draws a row per wave with a trace as each lands, opens that wave's trace on a tap, and none once the result card has them", async () => {
+    const { drawWaveTraces, WAVE_TRACES_WORDS, TRACE_LINK_WORDS } = await import("./kiosk.js");
+    const was = globalThis.document;
+    globalThis.document = fakeDocument();
+    try {
+      const host = document.createElement("section");
+      const opened = [];
+      const s = { waveTraces: {}, openWave: (n, view) => opened.push([n, view]) };
+      drawWaveTraces(host, s);
+      expect(host.hidden).toBe(true);
+      expect(host.children).toEqual([]);
+      // Wave 1 finished: its row shows at once, before the run is done.
+      s.waveTraces = { 1: { run: "8047", job: "apply-wave-1", trace: trace(1, 2000) } };
+      drawWaveTraces(host, s);
+      expect(host.hidden).toBe(false);
+      expect(host.children[0].textContent).toBe(WAVE_TRACES_WORDS);
+      let rows = find(host, "k-wf-row");
+      expect(rows.map((r) => r.children[0].textContent)).toEqual(["Wave 1"]);
+      expect(rows[0].children[3].textContent).toBe(TRACE_LINK_WORDS);
+      s.waveTraces[2] = { run: "8047", job: "apply-wave-2", trace: trace(2, 4000) };
+      drawWaveTraces(host, s);
+      rows = find(host, "k-wf-row");
+      expect(rows.map((r) => r.children[0].textContent)).toEqual(["Wave 1", "Wave 2"]);
+      rows[1].on.click();
+      expect(opened).toEqual([[2, "trace"]]);
+      // At the end the result card lists the same rows, so these go.
+      drawWaveTraces(host, s, { shown: false });
+      expect(host.hidden).toBe(true);
+      expect(host.children).toEqual([]);
+    } finally {
+      globalThis.document = was;
+    }
+  });
+});

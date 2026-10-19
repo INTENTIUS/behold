@@ -1301,34 +1301,64 @@ function drawResult(host, model, s) {
         wf.appendChild(row);
         continue;
       }
-      const row = el("button", "k-wf-row");
-      row.type = "button";
-      const held = r.bars.find((b) => b.phase === "held");
-      row.title = `${TRACE_OPEN_WORDS} · ${r.bars.map(phaseWords).join(" · ")}`;
-      const track = el("span", "k-wf-track");
-      for (const b of r.bars) {
-        const seg = el("i", `k-wf-seg k-wf-${b.phase}`);
-        seg.style.left = `${(b.at * 100).toFixed(2)}%`;
-        seg.style.width = `${Math.max(0.6, b.width * 100).toFixed(2)}%`;
-        seg.title = phaseWords(b);
-        track.appendChild(seg);
-      }
-      row.append(el("span", "k-wf-wave", `Wave ${r.wave}`), track, el("span", "k-wf-ms", held ? phaseWords(held) : r.words), el("span", "k-wf-go", TRACE_LINK_WORDS));
-      row.addEventListener("click", () => s.openWave && s.openWave(r.wave, "trace"));
-      wf.appendChild(row);
+      wf.appendChild(traceRow(r, s));
     }
-    if (bars.size) {
-      const key = el("p", "k-wf-key");
-      for (const [cls, words] of PHASE_KEY) {
-        const k = el("span");
-        k.append(el("i", `k-wf-sw k-wf-${cls}`), words);
-        key.appendChild(k);
-      }
-      wf.appendChild(key);
-    }
+    if (bars.size) wf.appendChild(phaseKey());
     host.appendChild(wf);
   }
 }
+
+/** behold#571: a wave's trace as one bar of its phases, a button that opens the whole trace. */
+function traceRow(r, s) {
+  const row = el("button", "k-wf-row");
+  row.type = "button";
+  const held = r.bars.find((b) => b.phase === "held");
+  row.title = `${TRACE_OPEN_WORDS} · ${r.bars.map(phaseWords).join(" · ")}`;
+  const track = el("span", "k-wf-track");
+  for (const b of r.bars) {
+    const seg = el("i", `k-wf-seg k-wf-${b.phase}`);
+    seg.style.left = `${(b.at * 100).toFixed(2)}%`;
+    seg.style.width = `${Math.max(0.6, b.width * 100).toFixed(2)}%`;
+    seg.title = phaseWords(b);
+    track.appendChild(seg);
+  }
+  row.append(el("span", "k-wf-wave", `Wave ${r.wave}`), track, el("span", "k-wf-ms", held ? phaseWords(held) : r.words), el("span", "k-wf-go", TRACE_LINK_WORDS));
+  row.addEventListener("click", () => s.openWave && s.openWave(r.wave, "trace"));
+  return row;
+}
+
+/** The phases' key under the trace rows. */
+function phaseKey() {
+  const key = el("p", "k-wf-key");
+  for (const [cls, words] of PHASE_KEY) {
+    const k = el("span");
+    k.append(el("i", `k-wf-sw k-wf-${cls}`), words);
+    key.appendChild(k);
+  }
+  return key;
+}
+
+/**
+ * behold#775: on a phone, each wave's trace as soon as the wave has one, under
+ * the step: the badges that open a trace on a wider screen have no room
+ * there. The result card carries the same rows at the end, so this goes then.
+ */
+export function drawWaveTraces(host, s, { shown = true } = {}) {
+  const rows = shown ? miniWaterfall(s.waveTraces || {}) : [];
+  host.hidden = !rows.length;
+  const key = rows.map((r) => `${r.wave}|${r.run}|${r.ms}`).join(",");
+  if (host.dataset.key === key) return;
+  host.dataset.key = key;
+  host.replaceChildren();
+  if (!rows.length) return;
+  host.appendChild(el("p", "k-w-traces-head", WAVE_TRACES_WORDS));
+  const wf = el("div", "k-wf");
+  for (const r of rows) wf.appendChild(traceRow(r, s));
+  wf.appendChild(phaseKey());
+  host.appendChild(wf);
+}
+/** behold#775: the head over the phone's trace rows. */
+export const WAVE_TRACES_WORDS = "Each wave's trace, as it finishes";
 /** behold#571: a wave's row on the result card before its numbers land. */
 export const NUMBERS_SOON = "its numbers land in a moment";
 /** behold#571: the words of a trace's links, and the phases' key. */
@@ -1991,6 +2021,14 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     // behold#781, behold#776: a phone's Watch says the change in words by the story, and lists the graph's marks.
     if (watch.change) drawChange(watch.change, s);
     drawWaves();
+    // behold#775: on a phone, each finished wave's trace under the step (hidden on a wider screen, where the badges open them).
+    let traces = watch.layer.querySelector(":scope > .k-w-traces");
+    if (!traces) {
+      traces = el("section", "k-w-traces");
+      if (traces.setAttribute) traces.setAttribute("aria-label", WAVE_TRACES_WORDS);
+      watch.caption.after ? watch.caption.after(traces) : watch.layer.appendChild(traces);
+    }
+    drawWaveTraces(traces, s, { shown: !result });
     watch.badges.replaceChildren();
     const skip = call ? hold.wave : drawer ? drawerOn : null;
     // At applied the result card lists every wave's numbers, so the boxes carry none; a held small stage carries none at all.
@@ -2282,7 +2320,14 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const v = view === "trace" && tr ? "trace" : "log";
     const w = (s.waves || []).find((x) => x.wave === n);
     if (!s.watchMode) {
-      if (runsApi && runsApi.showJob && (tr || w)) runsApi.showJob(tr && v === "trace" ? tr.run : runsApi.run && runsApi.run.doc ? runsApi.run.doc.id : null, tr && v === "trace" ? tr.job : w.job, v === "trace" ? "trace" : "steps");
+      if (!runsApi || !runsApi.showJob || !(tr || w)) return;
+      // behold#775: on a phone the runs fold under "Runs and logs": it opens, and the job's trace comes into view.
+      if (tools && tools.runsToggle) setRunsOpen(true);
+      runsApi.showJob(tr && v === "trace" ? tr.run : runsApi.run && runsApi.run.doc ? runsApi.run.doc.id : null, tr && v === "trace" ? tr.job : w.job, v === "trace" ? "trace" : "steps");
+      if (isPhone() && main && main.querySelector) setTimeout(() => {
+        const at = main.querySelector(".t-tabs") || main.querySelector(".r-steps");
+        if (at && at.scrollIntoView) at.scrollIntoView({ block: "start", behavior: "smooth" });
+      }, 400);
       return;
     }
     drawerWave = n;
