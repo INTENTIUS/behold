@@ -1,0 +1,42 @@
+{
+ "schema": "terragucci.report/v1",
+ "minor": 41,
+ "run": {
+  "project": "forgejo:3000/terragucci-admin/demo-choudoufu-fanout",
+  "commit": "2a615596a4f0ed954bdcaa83f77e575eaf2cb5ab",
+  "job_url": "http://forgejo:3000/terragucci-admin/demo-choudoufu-fanout/actions/runs/6745",
+  "commit_url": "http://forgejo:3000/terragucci-admin/demo-choudoufu-fanout/commit/2a615596a4f0ed954bdcaa83f77e575eaf2cb5ab",
+  "stage": "tf-apply",
+  "wave": 1,
+  "binary": "choudoufu",
+  "runtime": "forge",
+  "started": "2026-10-19T01:58:21.644Z",
+  "finished": "2026-10-19T01:58:26.314Z",
+  "terragucci": "0.4.35",
+  "trace_id": "5c4aa580584fe2d4ad0cedf4a561c28b"
+ },
+ "roots": [
+  {
+   "path": "network",
+   "status": "planned",
+   "changes": []
+  }
+ ],
+ "waves": [
+  {
+   "number": 1,
+   "roots": [
+    "network"
+   ],
+   "set_digest": "jcs1-sha256:094a1ea8e9881d1641cdf7f58ea3b7fb97c47e770c907912cb820bc52699ee32",
+   "approval": "not-required",
+   "state": "applied",
+   "outcomes": [
+    {
+     "root": "network",
+     "outcome": "applied"
+    }
+   ]
+  }
+ ]
+}

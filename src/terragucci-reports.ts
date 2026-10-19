@@ -604,6 +604,48 @@ export function waveBlocked(w: Pick<ReportWave, "blocked"> | undefined): { root:
   return rows.flatMap((b) => (isRecord(b) && str(b.root) && b.root && str(b.blocked_by) && b.blocked_by ? [{ root: b.root, by: b.blocked_by }] : []));
 }
 
+/**
+ * behold#751: how a tf-apply wave came out, as its own report says it, for the
+ * wave's words in place of its Forgejo job's status. terragucci ends a wave's
+ * job as a failure while any root of it is blocked (terragucci#1161), so the
+ * commit status isn't green with roots unapplied; the report's `state`
+ * (terragucci's waveState) is `applied` for a wave that applied all it
+ * planned and blocked the rest, `blocked` only when it planned nothing, and
+ * `failed` when a root of its own failed. `finished` is the report's, so a
+ * reader can tell a report of an earlier run on the commit from this one's.
+ */
+export interface WaveResult {
+  wave: number;
+  state: ReportWaveState;
+  finished: string;
+  /** The roots that applied a change; the wave's roots, less the blocked, when the report names no outcome. */
+  applied: string[];
+  /** The roots whose apply changed nothing. */
+  unchanged: string[];
+  failed: { root: string; error?: string }[];
+  blocked: { root: string; by: string }[];
+}
+
+/** behold#751: how many tf-apply commits, newest first, {@link TerragucciRead.results} keeps the waves of. */
+export const RESULT_COMMITS = 4;
+
+/** behold#751: a tf-apply wave's result from its report; none for a report without the wave's `state` (before minor 21). Pure. */
+export function waveResult(w: ReportWave | undefined, finished: string): WaveResult | undefined {
+  if (!w || !Number.isInteger(w.number) || !str(w.state) || !w.state) return undefined;
+  const outcomes = waveOutcomes(w);
+  const blocked = waveBlocked(w);
+  const held = new Set(blocked.map((b) => b.root));
+  return {
+    wave: w.number,
+    state: w.state,
+    finished,
+    applied: outcomes.length ? outcomes.filter((o) => o.outcome === "applied").map((o) => o.root) : w.state === "applied" ? waveRootNames(w).filter((r) => !held.has(r)) : [],
+    unchanged: outcomes.filter((o) => o.outcome === "unchanged").map((o) => o.root),
+    failed: outcomes.filter((o) => o.outcome === "failed").map((o) => ({ root: o.root, ...(o.error ? { error: o.error } : {}) })),
+    blocked,
+  };
+}
+
 export interface TerragucciRead {
   source: string;
   kind: TerragucciSource["kind"];
@@ -633,6 +675,12 @@ export interface TerragucciRead {
   blocked?: BlockedRead;
   /** behold#741: each root's own outcome in the newest apply's waves; absent when no report carries one. */
   outcomes?: OutcomesRead;
+  /**
+   * behold#751: each wave's result by its own report, for the newest
+   * {@link RESULT_COMMITS} tf-apply commits, by commit, each wave by its
+   * newest report. Absent when no report carries a wave's `state`.
+   */
+  results?: Record<string, WaveResult[]>;
 }
 
 export interface ReadOptions {
@@ -887,6 +935,26 @@ export async function readTerragucci(source: TerragucciSource, opts: ReadOptions
     if (commit && Object.keys(own).length) outcomes = { commit, roots: own };
   }
 
+  // behold#751: each wave's result by its report, for the newest tf-apply commits (a fix's apply, and the change's before it),
+  // each wave by its newest report: a wave's words follow what it did ("applied 6, 6 blocked by cluster-a"), not its job's
+  // exit, which terragucci fails while roots are blocked.
+  const results: Record<string, WaveResult[]> = {};
+  {
+    const applies = rows.filter((r) => r.stage === "tf-apply" && r.wave !== undefined);
+    for (const commit of [...new Set(applies.map((r) => r.commit))].slice(0, RESULT_COMMITS)) {
+      const seen = new Set<number>();
+      const out: WaveResult[] = [];
+      for (const r of applies.filter((a) => a.commit === commit)) {
+        if (seen.has(r.wave!)) continue;
+        seen.add(r.wave!);
+        const doc = await report(r);
+        const res = waveResult(doc?.waves.find((w) => w.number === r.wave) ?? doc?.waves[0], doc?.run.finished ?? r.finished);
+        if (res) out.push({ ...res, wave: r.wave! });
+      }
+      if (out.length) results[commit] = out.sort((a, b) => a.wave - b.wave);
+    }
+  }
+
   // minor 34: a cone plan, with every root of the estate the read knows and the instances each cone's plan.json planned.
   if (pullRequest && prRow && prDoc) {
     await Promise.all([...cache.values()].map((p) => p.catch(() => undefined)));
@@ -921,6 +989,7 @@ export async function readTerragucci(source: TerragucciSource, opts: ReadOptions
       : {}),
     ...(blocked ? { blocked } : {}),
     ...(outcomes ? { outcomes } : {}),
+    ...(Object.keys(results).length ? { results } : {}),
   };
 }
 

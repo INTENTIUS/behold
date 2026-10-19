@@ -1,0 +1,53 @@
+{
+ "schema": "terragucci.report/v1",
+ "minor": 41,
+ "run": {
+  "project": "forgejo:3000/terragucci-admin/demo-choudoufu-fanout",
+  "commit": "2a615596a4f0ed954bdcaa83f77e575eaf2cb5ab",
+  "job_url": "http://forgejo:3000/terragucci-admin/demo-choudoufu-fanout/actions/runs/6745",
+  "commit_url": "http://forgejo:3000/terragucci-admin/demo-choudoufu-fanout/commit/2a615596a4f0ed954bdcaa83f77e575eaf2cb5ab",
+  "stage": "tf-apply",
+  "wave": 2,
+  "binary": "choudoufu",
+  "runtime": "forge",
+  "started": "2026-10-19T01:58:31.495Z",
+  "finished": "2026-10-19T01:58:37.730Z",
+  "terragucci": "0.4.35",
+  "trace_id": "c18806d0867a8ceed4bb6239abf32633"
+ },
+ "roots": [
+  {
+   "path": "cluster-a",
+   "status": "planned",
+   "changes": []
+  },
+  {
+   "path": "cluster-b",
+   "status": "planned",
+   "changes": []
+  }
+ ],
+ "waves": [
+  {
+   "number": 2,
+   "roots": [
+    "cluster-a",
+    "cluster-b"
+   ],
+   "set_digest": "jcs1-sha256:aa1d23387b8a7e87974317acfd96626b9a0541e8eaa8d6cdb57d8adc0ebac061",
+   "approval": "not-required",
+   "state": "failed",
+   "outcomes": [
+    {
+     "root": "cluster-a",
+     "outcome": "failed",
+     "error": "Error: creating SQS Queue (fan-out-choudoufu-network-events): operation error SQS: CreateQueue, https response error StatusCode: 400, RequestID: 8bc82e82-3a97-4b59-8ef1-b4e901474ca2, QueueAlreadyExists: A queue already exists with the same name but different attributes."
+    },
+    {
+     "root": "cluster-b",
+     "outcome": "applied"
+    }
+   ]
+  }
+ ]
+}

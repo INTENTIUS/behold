@@ -1,0 +1,281 @@
+{
+ "schema": "demo.run/v1",
+ "id": 6748,
+ "title": "Merge pull request 'cluster-a: its events queue gets a name of its own' (#56) from demo-fan-out-choudoufu-fix into main",
+ "event": "push",
+ "trigger": "merge",
+ "repo": "terragucci-admin/demo-choudoufu-fanout",
+ "tool": "choudoufu-fanout",
+ "commit": "5cfbdb79c7a45d4b4d80e4c8e2a200afcc9c225e",
+ "pull": 56,
+ "cycle": 605,
+ "scenario": "fan-out-choudoufu",
+ "status": "success",
+ "created_at": "2026-10-19T02:00:03Z",
+ "started_at": "2026-10-19T02:00:04Z",
+ "ended_at": "2026-10-19T02:01:52Z",
+ "jobs": [
+  {
+   "id": 39694,
+   "name": "check",
+   "needs": [],
+   "status": "success",
+   "started_at": "2026-10-19T02:00:04.216Z",
+   "ended_at": "2026-10-19T02:00:44.363Z",
+   "steps": [
+    {
+     "name": "Set up job",
+     "status": "success"
+    },
+    {
+     "name": "Check out the change",
+     "status": "success"
+    },
+    {
+     "name": "Format check and validate, every root",
+     "status": "success"
+    },
+    {
+     "name": "Complete job",
+     "status": "success"
+    }
+   ]
+  },
+  {
+   "id": 39695,
+   "name": "check-report",
+   "needs": [
+    "check"
+   ],
+   "status": "success",
+   "started_at": "2026-10-19T02:00:46.250Z",
+   "ended_at": "2026-10-19T02:00:47.580Z",
+   "steps": [
+    {
+     "name": "Set up job",
+     "status": "success"
+    },
+    {
+     "name": "Take the check report from the check job",
+     "status": "success"
+    },
+    {
+     "name": "Keep the check report",
+     "status": "success"
+    },
+    {
+     "name": "Complete job",
+     "status": "success"
+    }
+   ]
+  },
+  {
+   "id": 39696,
+   "name": "plan",
+   "needs": [],
+   "status": "skipped",
+   "started_at": null,
+   "ended_at": null,
+   "steps": []
+  },
+  {
+   "id": 39697,
+   "name": "plan-note",
+   "needs": [
+    "plan"
+   ],
+   "status": "skipped",
+   "started_at": null,
+   "ended_at": null,
+   "steps": []
+  },
+  {
+   "id": 39698,
+   "name": "replan",
+   "needs": [],
+   "status": "skipped",
+   "started_at": null,
+   "ended_at": null,
+   "steps": []
+  },
+  {
+   "id": 39699,
+   "name": "replan-note",
+   "needs": [
+    "replan"
+   ],
+   "status": "skipped",
+   "started_at": null,
+   "ended_at": null,
+   "steps": []
+  },
+  {
+   "id": 39700,
+   "name": "fmt",
+   "needs": [
+    "check"
+   ],
+   "status": "skipped",
+   "started_at": null,
+   "ended_at": null,
+   "steps": []
+  },
+  {
+   "id": 39701,
+   "name": "apply-comment",
+   "needs": [],
+   "status": "skipped",
+   "started_at": null,
+   "ended_at": null,
+   "steps": []
+  },
+  {
+   "id": 39702,
+   "name": "apply-wave-1",
+   "needs": [
+    "check"
+   ],
+   "status": "success",
+   "started_at": "2026-10-19T02:00:46.249Z",
+   "ended_at": "2026-10-19T02:00:53.252Z",
+   "steps": [
+    {
+     "name": "Set up job",
+     "status": "success"
+    },
+    {
+     "name": "https://code.forgejo.org/actions/checkout@v4",
+     "status": "success"
+    },
+    {
+     "name": "Apply wave 1 of 3",
+     "status": "success"
+    },
+    {
+     "name": "Keep the apply report",
+     "status": "success"
+    },
+    {
+     "name": "Post https://code.forgejo.org/actions/checkout@v4",
+     "status": "success"
+    },
+    {
+     "name": "Complete job",
+     "status": "success"
+    }
+   ]
+  },
+  {
+   "id": 39703,
+   "name": "apply-wave-2",
+   "needs": [
+    "apply-wave-1"
+   ],
+   "status": "success",
+   "started_at": "2026-10-19T02:00:54.229Z",
+   "ended_at": "2026-10-19T02:01:27.831Z",
+   "steps": [
+    {
+     "name": "Set up job",
+     "status": "success"
+    },
+    {
+     "name": "https://code.forgejo.org/actions/checkout@v4",
+     "status": "success"
+    },
+    {
+     "name": "Fetch the earlier waves' outcomes",
+     "status": "success"
+    },
+    {
+     "name": "Apply wave 2 of 3",
+     "status": "success"
+    },
+    {
+     "name": "Keep the apply report",
+     "status": "success"
+    },
+    {
+     "name": "Post https://code.forgejo.org/actions/checkout@v4",
+     "status": "success"
+    },
+    {
+     "name": "Complete job",
+     "status": "success"
+    }
+   ]
+  },
+  {
+   "id": 39704,
+   "name": "apply-wave-3",
+   "needs": [
+    "apply-wave-2"
+   ],
+   "status": "success",
+   "started_at": "2026-10-19T02:01:29.240Z",
+   "ended_at": "2026-10-19T02:01:48.121Z",
+   "steps": [
+    {
+     "name": "Set up job",
+     "status": "success"
+    },
+    {
+     "name": "https://code.forgejo.org/actions/checkout@v4",
+     "status": "success"
+    },
+    {
+     "name": "Fetch the earlier waves' outcomes",
+     "status": "success"
+    },
+    {
+     "name": "Apply wave 3 of 3",
+     "status": "success"
+    },
+    {
+     "name": "Keep the apply report",
+     "status": "success"
+    },
+    {
+     "name": "Post https://code.forgejo.org/actions/checkout@v4",
+     "status": "success"
+    },
+    {
+     "name": "Complete job",
+     "status": "success"
+    }
+   ]
+  },
+  {
+   "id": 39705,
+   "name": "tips",
+   "needs": [
+    "apply-wave-3"
+   ],
+   "status": "success",
+   "started_at": "2026-10-19T02:01:50.243Z",
+   "ended_at": "2026-10-19T02:01:51.933Z",
+   "steps": [
+    {
+     "name": "Set up job",
+     "status": "success"
+    },
+    {
+     "name": "https://code.forgejo.org/actions/checkout@v4",
+     "status": "success"
+    },
+    {
+     "name": "Open a pull request for each tip",
+     "status": "success"
+    },
+    {
+     "name": "Post https://code.forgejo.org/actions/checkout@v4",
+     "status": "success"
+    },
+    {
+     "name": "Complete job",
+     "status": "success"
+    }
+   ]
+  }
+ ]
+}

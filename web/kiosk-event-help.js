@@ -15,6 +15,7 @@
 import { STRIP, matchingPull, matchingRun } from "./kiosk.js";
 import { defaultStep } from "./kiosk-runs.js";
 import { traceReadyWords } from "./kiosk-wave-traces.js";
+import { resultBlocked, resultFailed, resultWords, waveResultOf } from "./terragucci-change.js";
 
 export { EH_STORE, ehStore, ehStored } from "./event-help-store.js";
 
@@ -68,6 +69,16 @@ export function ehSnapshot({ demo = null, answer = null, progress = null, runDoc
   const pr = matchingPull(answer, demo) || (answer && !answer.error && answer.pull_request && demo.pull !== null && String(answer.pull_request.run && answer.pull_request.run.pull_request) === String(demo.pull) ? answer.pull_request : null);
   const run = matchingRun(progress, demo);
   const jobs = runDoc && Array.isArray(runDoc.jobs) && (!demo.cycle || runDoc.cycle === undefined || runDoc.cycle === demo.cycle) ? runDoc.jobs : [];
+  // behold#751: a wave's result by its own report, of the commit the run applied: its job's status is no witness to it,
+  // since terragucci fails the job of a wave that applied what it planned and blocked the rest (terragucci#1161).
+  const resultOf = (commit, name, started) => {
+    const n = waveOfJob(name, waves);
+    return n === null ? null : waveResultOf(answer, commit, n, { after: started || null });
+  };
+  // The cycle's earlier runs' wave jobs that ended as failures, each with its report's word on the wave when there is one.
+  const pastJobs = (runDocs || [])
+    .filter((d) => d && d.id !== (runDoc && runDoc.id) && (!demo.cycle || d.cycle === undefined || d.cycle === demo.cycle) && Array.isArray(d.jobs))
+    .flatMap((d) => d.jobs.filter((j) => j.status === "failure" && waveOfJob(j.name, waves) !== null).map((j) => ({ wave: waveOfJob(j.name, waves), job: j.name, run: d.id, refusal: yodelRefusal(jobLines(j)), result: resultOf(d.commit, j.name, j.started_at) })));
   return {
     cycle: demo.cycle,
     // behold#631: a chant repo's pull-request loop: a cycle may hold a fix's pull request after the first, each told as its own run of beats.
@@ -78,8 +89,9 @@ export function ehSnapshot({ demo = null, answer = null, progress = null, runDoc
     pull: demo.pull,
     label: demo.label || "",
     plan: pr ? { totals: pr.totals || null, roots: pr.roots || [], reads: pr.reads || [] } : null,
-    states: run ? progress.states || [] : [],
-    run: runDoc ? { id: runDoc.id, jobs: jobs.map((j) => ({ name: j.name, status: j.status, wave: waveOfJob(j.name, waves), refusal: j.status === "failure" ? yodelRefusal(jobLines(j)) : null, step: j.steps ? defaultStep(j.steps) : -1 })) } : null,
+    // behold#751: each wave with its report's result, of the run view's commit.
+    states: run ? (progress.states || []).map((s) => ({ ...s, result: waveResultOf(answer, run.commit, s.number) })) : [],
+    run: runDoc ? { id: runDoc.id, jobs: jobs.map((j) => ({ name: j.name, status: j.status, wave: waveOfJob(j.name, waves), refusal: j.status === "failure" ? yodelRefusal(jobLines(j)) : null, step: j.steps ? defaultStep(j.steps) : -1, result: resultOf(runDoc.commit, j.name, j.started_at) })) } : null,
     approval: approval && Array.isArray(approval.rows) ? { wave: approval.wave, rows: approval.rows.filter((r) => r.state === "lit").map((r) => ({ id: r.id, at: r.at || null, actor: r.id === "approved" ? actorOf(r.text) : null, signed: !!(r.seal && /^signed/.test(r.seal.text || "")) })), ...(Array.isArray(approval.chantWaves) ? { chantWaves: approval.chantWaves } : {}) } : null,
     // The numbers of this cycle's merge only: from the merge on, and only for its commit.
     metrics: metrics && metrics.run && metrics.run.current && stepRank(demo.step, strip) >= stepRank("merged", strip) && (!demo.commit || String(metrics.run.label || "").includes(String(demo.commit).slice(0, 8))) ? metrics.run.waves.map((w) => ({ wave: w.wave, words: [w.seconds, w.held ? `held ${w.held}` : null, w.changed].filter(Boolean).join(" · ") })).filter((w) => w.words) : [],
@@ -91,9 +103,9 @@ export function ehSnapshot({ demo = null, answer = null, progress = null, runDoc
     // The waves this cycle saw fail, kept by the kiosk: a re-run is news only against a failure seen before it.
     failed: [...new Set(failed)],
     // The cycle's earlier runs' failures (the approval panel reads them): a viewer who arrives after the re-run still gets the refusal.
-    pastFailures: (runDocs || [])
-      .filter((d) => d && d.id !== (runDoc && runDoc.id) && (!demo.cycle || d.cycle === undefined || d.cycle === demo.cycle) && Array.isArray(d.jobs))
-      .flatMap((d) => d.jobs.filter((j) => j.status === "failure" && waveOfJob(j.name, waves) !== null).map((j) => ({ wave: waveOfJob(j.name, waves), job: j.name, run: d.id, refusal: yodelRefusal(jobLines(j)) }))),
+    // behold#751: a failed job whose wave's report says it applied and blocked roots is no failure of the wave: it is `pastBlocked`.
+    pastFailures: pastJobs.filter((f) => !f.result || resultFailed(f.result)).map(({ result, ...f }) => f),
+    pastBlocked: pastJobs.filter((f) => f.result && !resultFailed(f.result) && resultBlocked(f.result)),
   };
 }
 
@@ -153,7 +165,8 @@ export function cycleFacts(snap) {
   const jobOf = (n) => (snap.run ? snap.run.jobs.find((j) => j.wave === n) : null);
   const approved = snap.approval ? snap.approval.rows.find((r) => r.id === "approved") : null;
   const states = [...snap.states].sort((a, b) => a.number - b.number);
-  const failedBefore = new Set([...(snap.failed || []), ...(snap.pastFailures || []).map((f) => f.wave)]);
+  // behold#751: a wave an earlier run left roots of blocked runs again, as a failed one does.
+  const failedBefore = new Set([...(snap.failed || []), ...(snap.pastFailures || []).map((f) => f.wave), ...(snap.pastBlocked || []).map((f) => f.wave)]);
   for (const s of states) {
     const n = s.number;
     const roots = rootsOfWave(n, snap.waves, states);
@@ -162,7 +175,9 @@ export function cycleFacts(snap) {
     const base = 10 + n * 10;
     if (["applying", "waiting", "applied", "failed", "refused"].includes(s.state)) add({ id: `${c}|w${n}|start`, kind: "started", text: `wave ${n} started`, order: base, subjects, trail: false });
     // A failure the run view no longer shows (the re-run moved on) is still the pipeline's run's.
-    const failedJob = job && job.status === "failure" ? job : null;
+    // behold#751: unless the wave's report says otherwise: a wave that applied what it planned and blocked the rest ends its
+    // job as a failure (terragucci#1161), and is no failed wave. The job's status speaks only where no report of the wave does.
+    const failedJob = job && job.status === "failure" && !(job.result && !resultFailed(job.result)) ? job : null;
     const past = (snap.pastFailures || []).find((f) => f.wave === n);
     if (s.state === "failed" || s.state === "refused" || failedJob || past) {
       failedBefore.add(n);
@@ -181,7 +196,16 @@ export function cycleFacts(snap) {
       }
     }
     if (failedBefore.has(n) && (s.state === "applying" || s.state === "applied") && !failedJob) add({ id: `${c}|w${n}|rerun`, kind: "rerun", text: `wave ${n} runs again`, order: base + 6, subjects });
-    if (s.state === "applied") {
+    // behold#751: what the wave's report says it held back, once the run view settles it, or an earlier run of the cycle did:
+    // "wave 3 applied 6, 6 blocked by cluster-a", "wave 3: 6 blocked by cluster-a" for one that ran nothing.
+    const nowHeld = ["applied", "blocked"].includes(s.state) ? [s.result, job && job.result].find((r) => r && !resultFailed(r) && resultBlocked(r)) : null;
+    const pastHeld = (snap.pastBlocked || []).find((f) => f.wave === n);
+    const held = nowHeld || (pastHeld && pastHeld.result);
+    if (held) {
+      const words = resultWords(held);
+      add({ id: `${c}|w${n}|blocked`, kind: "blocked", text: held.state === "applied" ? `wave ${n} ${words}` : `wave ${n}: ${words}`, order: base + 7, subjects: pastHeld && !(job && job.status === "failure") ? { ...subjects, job: pastHeld.job, run: pastHeld.run } : subjects });
+    }
+    if (s.state === "applied" && !nowHeld) {
       const changed = changedWords(s.totals);
       const under = approved && snap.approval.wave === n && approved.actor ? ` under ${approved.actor}'s approval` : "";
       add({ id: `${c}|w${n}|applied`, kind: "applied-wave", text: `wave ${n} applied${under || (changed ? `: ${changed}` : "")}`, order: base + 7, subjects });
