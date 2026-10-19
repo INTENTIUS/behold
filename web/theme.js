@@ -613,7 +613,7 @@ export function setTheme(nameOrObj, { persist = true } = {}) {
 }
 
 /** behold#571: the kiosk's theme for a viewer who hasn't picked one; the app keeps DEFAULT_THEME. */
-export const KIOSK_THEME = "Batman"; // behold#755; Sea Shells before
+export const KIOSK_THEME = "Box"; // behold#758; Batman (behold#755) and Sea Shells before
 
 // Restore the persisted theme (or `fallback`, else the default) and apply. Call once on boot.
 export function initTheme(fallback = null) {
