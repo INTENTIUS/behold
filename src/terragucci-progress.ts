@@ -428,6 +428,8 @@ export interface ProgressOptions {
   source: TerragucciSource;
   /** `--terragucci-project`. */
   project?: string;
+  /** behold#749: asked per read: whether it reads another checkout than the serve's own, so `project` isn't its pin. */
+  strict?: () => boolean;
   /** The checkout's project, from its git remote, asked per read. */
   checkoutProject?: () => string | undefined;
   /** The validators, asked per read. */
@@ -517,7 +519,8 @@ export class TerragucciProgress {
     if (why) refuse(`index.json in ${src.location} is not a terragucci terragucci.report-index/v1 document: ${why}.`, "Check that terragucci wrote it.");
     const rows = (doc as { reports: IndexRow[] }).reports;
     const checkout = this.o.checkoutProject?.();
-    const project = pickProject(rows, { ...(this.o.project ? { project: this.o.project } : {}), ...(checkout ? { checkoutProject: checkout } : {}) }, src);
+    const strict = !!this.o.strict?.();
+    const project = pickProject(rows, { ...(strict ? { strict } : this.o.project ? { project: this.o.project } : {}), ...(checkout ? { checkoutProject: checkout } : {}) }, src);
     const row = commit ? newestApply(rows.filter((r) => r.commit === commit || r.commit.startsWith(commit)), project) : newestApply(rows, project);
     if (!row) {
       if (!commit) this.watch = undefined;

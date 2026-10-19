@@ -56,6 +56,12 @@ export interface TerragucciOptions {
   source: string;
   /** `--terragucci-project`: which project, when the reports hold several. */
   project?: string;
+  /**
+   * behold#749, asked per request: whether it reads another checkout than the serve's own (`serve --repos`, a
+   * `?repo=` naming another). Such a request reads the project its checkout's remote names, matched by
+   * `<owner>/<name>` (matchProject), or none; `project` pins the serve's own checkout only.
+   */
+  otherRepo?: () => boolean;
   /** #569 `--terragucci-runs`: where the kiosk reads the demo's pipeline runs, when not beside the reports. */
   runsSource?: string;
   /** Injected by a test: the aws CLI and fetch the source reads through. */
@@ -157,12 +163,13 @@ export function terragucciRoutes(app: Hono, opts: TerragucciOptions, dirs: () =>
   let cached: { at: number; key: string; read: Promise<TerragucciRead> } | undefined;
 
   const read = (roots: CheckoutRoot[], served: string[], fresh: boolean): Promise<TerragucciRead> => {
-    const key = served.join("\u0000");
+    const strict = !!opts.otherRepo?.();
+    const key = [...served, strict].join("\u0000");
     const now = Date.now();
     if (!fresh && cached && cached.key === key && now - cached.at < TERRAGUCCI_READ_TTL_MS) return cached.read;
     const base = repoBase(served);
     const p = readTerragucci(source, {
-      ...(opts.project ? { project: opts.project } : {}),
+      ...(strict ? { strict } : opts.project ? { project: opts.project } : {}),
       ...(checkoutProject(base) ? { checkoutProject: checkoutProject(base)! } : {}),
       roots: roots.map((r) => r.path),
       validator: terragucciValidator(served),
@@ -178,6 +185,7 @@ export function terragucciRoutes(app: Hono, opts: TerragucciOptions, dirs: () =>
   const progress = new TerragucciProgress({
     source,
     ...(opts.project ? { project: opts.project } : {}),
+    ...(opts.otherRepo ? { strict: opts.otherRepo } : {}),
     checkoutProject: () => checkoutProject(repoBase(dirs())),
     validators: () => ({ index: terragucciValidator(dirs()), run: runValidator(dirs()) }),
     context: async () => {
@@ -252,6 +260,7 @@ export function terragucciRoutes(app: Hono, opts: TerragucciOptions, dirs: () =>
   // #506: the timeline lane, from the audit record at the same source.
   terragucciTimelineRoute(app, source, {
     ...(opts.project ? { project: opts.project } : {}),
+    ...(opts.otherRepo ? { strict: opts.otherRepo } : {}),
     checkoutProject: () => checkoutProject(repoBase(dirs())),
     validator: () => auditValidator(dirs()),
     ...(opts.now ? { now: opts.now } : {}),
