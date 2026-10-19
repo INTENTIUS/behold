@@ -523,8 +523,12 @@
       /* behold#571: the marks drawn over a card let the pointer through to it, so pointing anywhere on the card opens its popover. */
       .bare #graph text[data-tg-root], .bare #graph g[data-tg-root] { pointer-events: none; }
       /* behold#571: the kiosk frame's popover, beside the card it describes. */
-      #k-pop { position: fixed; z-index: 50; max-width: min(30em, 46vw); padding: 0.7em 0.9em 0.6em; background: var(--panel); color: var(--fg);
-        border: 1px solid var(--rule); border-radius: 8px; box-shadow: 0 6px 22px color-mix(in srgb, var(--shadow) 70%, transparent);
+      /* behold#764: capped to the frame's view by placePopover (max-height), its body scrolls. */
+      /* behold#764: on the kiosk's raised surface (its modals' and callouts'), not --panel: in Batman --panel is within a
+         few steps of the cards and wave boxes under it, so the popover read as see-through over the graph. A focus-tinted
+         border and a deeper shadow set it apart in every theme. */
+      #k-pop { position: fixed; z-index: 50; max-width: min(30em, 46vw); overflow-y: auto; overscroll-behavior: contain; padding: 0.7em 0.9em 0.6em; background: var(--surface-pane-b, var(--panel)); color: var(--fg);
+        border: 1.5px solid color-mix(in srgb, var(--focus) 70%, var(--rule)); border-radius: 8px; box-shadow: 0 10px 34px color-mix(in srgb, var(--shadow) 80%, transparent);
         font: 14px/1.4 var(--font-ui); pointer-events: auto; }
       #k-pop[hidden] { display: none; }
       /* behold#571: on a phone the popover takes the frame's width, less a margin. */

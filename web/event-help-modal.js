@@ -113,6 +113,10 @@ export const MODAL_STYLE = `
 /* behold#744: a modal placed off the cards leaves the graph to the pointer (hover a card or a line), not under a sheet that swallows it. */
 .eh-modal-wrap.eh-modal-placed { align-items: flex-start; justify-content: flex-start; pointer-events: none; }
 .eh-modal-wrap.eh-modal-placed > .eh-modal { pointer-events: auto; }
+/* behold#764: a card's details popover is open: no sheet over it, and a modal that cannot stand clear of it waits out of sight. */
+.eh-modal-wrap.eh-modal-keep { background: transparent; pointer-events: none; }
+.eh-modal-wrap.eh-modal-keep > .eh-modal { pointer-events: auto; }
+.eh-modal-wrap.eh-modal-yield > .eh-modal { visibility: hidden; pointer-events: none; }
 .eh-modal { position: relative; width: min(36em, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow-y: auto; padding: 1em 1.2em 1.1em; border-radius: 12px; background: var(--surface-pane-b, var(--panel)); color: var(--fg);
   border: 2px solid var(--bar, var(--focus)); box-shadow: 0 16px 48px color-mix(in srgb, var(--shadow) 80%, transparent); font-size: 1.05em; }
 .eh-modal-held { --bar: var(--bar-foreign, var(--foreign)); } .eh-modal-failed { --bar: var(--bar-degraded, var(--degraded)); } .eh-modal-applied { --bar: var(--bar-managed, var(--managed)); }
@@ -159,6 +163,11 @@ export function modalStyle(doc) {
  * graph's frame) when given, else the window. When no spot clears `avoid`,
  * the one that covers least of it.
  */
+/** behold#764: whether box `a` covers any of rect `b` (both `{ left, top, width, height }`). */
+export function coversRect(a, b) {
+  return !!a && !!b && a.left < b.left + b.width && a.left + a.width > b.left && a.top < b.top + b.height && a.top + a.height > b.top;
+}
+
 export function modalSpot(win, size, avoid, { prefer = [], bounds = null, margin = 16, step = 24 } = {}) {
   const grow = (a) => ({ x0: a.left - 12, y0: a.top - 12, x1: a.left + a.width + 12, y1: a.top + a.height + 12 });
   const rects = (avoid || []).filter((a) => a && a.width > 0 && a.height > 0).map(grow);
@@ -216,9 +225,12 @@ export function openEventModal(host, { mode, kind, data = {}, actions = {}, doc 
   wrap.appendChild(box);
   host.appendChild(wrap);
 
-  const close = () => {
+  // behold#764: who closed it, on its state for onClose: "viewer" (×, Escape, a click on the sheet), else the page
+  // (its time, its event, the next modal), so a closed "Waiting on…" stays closed for the wait it was about.
+  const close = (by = null) => {
     if (st.closed) return;
     st.closed = true;
+    st.closedBy = by === "viewer" ? "viewer" : "page";
     clearTimer(timer);
     if (watchTimer) clearTimer(watchTimer);
     if (doc.removeEventListener) doc.removeEventListener("keydown", onKey);
@@ -227,11 +239,11 @@ export function openEventModal(host, { mode, kind, data = {}, actions = {}, doc 
     onClose(st);
   };
   const onKey = (e) => {
-    if (e && e.key === ESC) close();
+    if (e && e.key === ESC) close("viewer");
   };
   if (doc.addEventListener) doc.addEventListener("keydown", onKey);
   wrap.addEventListener("click", (e) => {
-    if (e && e.target === wrap) close();
+    if (e && e.target === wrap) close("viewer");
   });
   // Hovered, it holds: its time to close starts again when the pointer leaves.
   box.addEventListener("pointerenter", () => (st.hovered = true));
@@ -247,7 +259,7 @@ export function openEventModal(host, { mode, kind, data = {}, actions = {}, doc 
     const x = el("button", "eh-modal-close", "×");
     x.type = "button";
     x.setAttribute("aria-label", "Close");
-    x.addEventListener("click", close);
+    x.addEventListener("click", () => close("viewer"));
     box.appendChild(x);
     const line = modeLine(mode, kind, { at: data.at, now: t, resolved: st.resolved, outcome: st.outcome, replayAt: data.replayAt, action: data.action, fix: !!data.fix });
     if (line) box.appendChild(el("p", `eh-modal-mode eh-modal-${mode}`, line));
@@ -331,17 +343,42 @@ export function openEventModal(host, { mode, kind, data = {}, actions = {}, doc 
   }
   // behold#631: a modal that must keep things in view (a failed card and the cards it blocked) moves off them.
   const placeClear = () => {
-    if (typeof data.avoid !== "function" || !box.getBoundingClientRect || !doc.defaultView) return;
+    // behold#764: what it must never cover, whatever else it keeps off: the card's details popover a viewer has open.
+    const keep = typeof data.keepClear === "function" ? data.keepClear() : null;
+    if ((typeof data.avoid !== "function" && !keep) || !box.getBoundingClientRect || !doc.defaultView) {
+      // The popover closed: the modal steps back into sight, its sheet as it was.
+      if (st.kept && wrap.classList) {
+        wrap.classList.toggle("eh-modal-yield", false);
+        wrap.classList.toggle("eh-modal-keep", false);
+        // Moved off the popover alone (no `avoid` of its own): back to the middle.
+        wrap.classList.toggle("eh-modal-placed", false);
+        box.style.marginLeft = "";
+        box.style.marginTop = "";
+      }
+      st.kept = false;
+      st.yielded = false;
+      return;
+    }
+    // Measured where it would stand: a modal that yielded is hidden, not gone.
     const r = box.getBoundingClientRect();
     if (!r.width) return;
     const win = { w: doc.defaultView.innerWidth, h: doc.defaultView.innerHeight };
-    const spot = modalSpot(win, { w: r.width, h: r.height }, data.avoid() || [], { prefer: typeof data.prefer === "function" ? data.prefer() || [] : [], bounds: typeof data.bounds === "function" ? data.bounds() : null });
+    const avoid = [...(typeof data.avoid === "function" ? data.avoid() || [] : []), ...(keep ? [keep] : [])];
+    const spot = modalSpot(win, { w: r.width, h: r.height }, avoid, { prefer: typeof data.prefer === "function" ? data.prefer() || [] : [], bounds: typeof data.bounds === "function" ? data.bounds() : null });
     wrap.classList.toggle("eh-modal-placed", !!spot);
+    wrap.classList.toggle("eh-modal-keep", !!keep);
+    st.kept = !!keep;
     box.style.marginLeft = spot ? `${Math.round(spot.left)}px` : "";
     box.style.marginTop = spot ? `${Math.round(spot.top)}px` : "";
+    // Where no spot clears the popover, the modal steps out of sight until it closes; its sheet never tints over it.
+    const at = spot ? { left: spot.left, top: spot.top } : { left: (win.w - r.width) / 2, top: (win.h - r.height) / 2 };
+    st.yielded = !!keep && coversRect({ ...at, width: r.width, height: r.height }, keep);
+    wrap.classList.toggle("eh-modal-yield", st.yielded);
   };
   const tick = () => {
     if (st.closed) return;
+    // behold#764: out of sight behind a details popover, its time to close waits, as a hovered one's does.
+    if (st.closeAt !== null && st.yielded) st.closeAt = Math.max(st.closeAt, now() + 2_000);
     if (st.closeAt !== null && !st.hovered && now() >= st.closeAt) return close();
     render();
     placeClear();
@@ -369,7 +406,7 @@ export function openEventModal(host, { mode, kind, data = {}, actions = {}, doc 
       Object.assign(data, next);
       render();
     },
-    close,
+    close: () => close(),
   };
   return api;
 }

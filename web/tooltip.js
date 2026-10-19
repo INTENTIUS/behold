@@ -10,6 +10,8 @@
 // its words go into the shared tooltip; they go back when the pointer or the
 // focus leaves. An HTML element can ask for the tooltip with data-tip.
 
+import { shiftInto } from "./float-place.js";
+
 export const TIP_ID = "b-tip";
 /** The room between the tooltip and what it describes, and between it and the window's edge, in px. */
 export const TIP_GAP = 8;
@@ -29,8 +31,9 @@ export function placeTip(target, size, view, { gap = TIP_GAP, margin = TIP_MARGI
   const side = fitsBelow || above < margin ? "below" : "above";
   const top = side === "below" ? below : above;
   const centred = (target.left + target.right) / 2 - size.width / 2;
-  const left = Math.max(margin, Math.min(centred, view.width - margin - size.width));
-  return { left: Math.round(left), top: Math.round(Math.max(margin, top)), side };
+  // behold#764: inside the window on every side (web/float-place.js), its bottom too when it fits neither way.
+  const { dx, dy } = shiftInto({ left: centred, top, width: size.width, height: size.height }, { left: 0, top: 0, width: view.width, height: view.height }, margin);
+  return { left: Math.round(centred + dx), top: Math.round(top + dy), side };
 }
 
 /** An id list (aria-describedby) with `id` in it once. */

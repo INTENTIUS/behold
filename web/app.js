@@ -13,6 +13,7 @@ import { createRefreshQueue } from "./refresh-queue.js";
 import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine } from "./view-url.js";
 import { quietCardLines, readEmbed, selectMessage, viewFromMessage, wheelPx, wheelZoomsBare } from "./embed.js";
 import { WORDS as POP_WORDS, cardRoot as popCardRoot, placePopover, popReduce, popState, resourcePopover, rootPopover } from "./kiosk-popover.js";
+import { shiftInto } from "./float-place.js"; // behold#764
 import { cssString, hoverCss, hoverFromMessage, hoverLinks, hoverMessage, isLightBg, rootPaint, rootText } from "./kiosk-roots.js";
 import { gateCards } from "./workspace-gates.js";
 import { cornerOf, estateLine, hrefOf as tgHref, legend as tgLegend, markLine, rootRows as tgRootRows, waveCards } from "./terragucci.js";
@@ -4499,6 +4500,95 @@ function tgReadShow(svg) {
   const hot = new Set(tgReadHot);
   for (const el of svg.querySelectorAll("[data-tg-read]")) el.classList.toggle("tg-hot", hot.has(el.getAttribute("data-tg-read")));
   for (const g of svg.querySelectorAll("g[data-tg-read-pill].tg-hot")) g.parentNode.appendChild(g);
+  tgPillsKeepIn(svg);
+}
+/**
+ * behold#764: a kiosk frame's shown pills stay inside what the frame shows. A pill is placed when the reads are drawn,
+ * against the shot's viewBox then; the camera moves after, and a pointed card lights the pills of readers it has
+ * panned out of view (331px over the frame's top on /tofu-fanout). A pill whose reader is out of view does not show
+ * (tg-off): its leader would point at nothing. One whose reader shows slides in by as little as keeps it inside
+ * (shiftInto), its leader and dot left on the reader's card. Run after each light and each camera move.
+ */
+function tgPillsKeepIn(svg) {
+  if (!embedOpts.bare || !svg || !svg.getScreenCTM) return;
+  const ctm = svg.getScreenCTM();
+  const scale = ctm && ctm.a ? ctm.a : 1;
+  const host = document.getElementById("graph");
+  const pane = host ? host.getBoundingClientRect() : { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+  const coveredBelow = kioskShot && kioskShot.insets ? Math.max(0, kioskShot.insets.bottom || 0) : 0;
+  const bottom = Math.min(pane.bottom, window.innerHeight - coveredBelow);
+  const view = { left: Math.max(0, pane.left), top: Math.max(0, pane.top), width: Math.min(window.innerWidth, pane.right) - Math.max(0, pane.left), height: bottom - Math.max(0, pane.top) };
+  for (const g of svg.querySelectorAll("g[data-tg-read-pill]")) {
+    const lead = g.querySelector(":scope > line");
+    const dot = g.querySelector(":scope > circle");
+    const body = g.querySelector(":scope > rect");
+    if (!lead || !dot || !body) continue;
+    // Where the draw put it, kept on the group: each pass starts from there.
+    if (!g.dataset.tgAt) {
+      const m = /translate\(([-\d.e]+)[ ,]+([-\d.e]+)\)/.exec(g.getAttribute("transform") || "");
+      if (!m) continue;
+      g.dataset.tgAt = `${m[1]} ${m[2]} ${lead.getAttribute("x1")} ${lead.getAttribute("y1")} ${lead.getAttribute("x2")} ${lead.getAttribute("y2")}`;
+    }
+    const [cx, cy, lx1, ly1, lx2, ly2] = g.dataset.tgAt.split(" ").map(Number);
+    const set = (x, y) => {
+      g.setAttribute("transform", `translate(${x} ${y})`);
+      const ax = cx + lx1 - x;
+      const ay = cy + ly1 - y;
+      const bx = Number(body.getAttribute("x"));
+      const by = Number(body.getAttribute("y"));
+      const near = tgNearestOn({ x: bx, y: by, x2: bx + Number(body.getAttribute("width")), y2: by + Number(body.getAttribute("height")) }, { x: ax, y: ay });
+      const moved = x !== cx || y !== cy;
+      lead.setAttribute("x1", String(ax));
+      lead.setAttribute("y1", String(ay));
+      lead.setAttribute("x2", String(moved ? near.x : lx2));
+      lead.setAttribute("y2", String(moved ? near.y : ly2));
+      dot.setAttribute("cx", String(ax));
+      dot.setAttribute("cy", String(ay));
+    };
+    set(cx, cy);
+    g.style.display = ""; // measured where it is drawn, then hidden again below if its reader is out of view
+    if (!(view.width > 0 && view.height > 0)) continue;
+    const d = dot.getBoundingClientRect();
+    const dx0 = d.left + d.width / 2;
+    const dy0 = d.top + d.height / 2;
+    const off = dx0 < view.left || dx0 > view.left + view.width || dy0 < view.top || dy0 > view.top + view.height;
+    g.classList.toggle("tg-off", off);
+    // Gone at once, whatever its fade or flash is doing (an opacity rule lost to a running transition on the kiosk).
+    g.style.display = off ? "none" : "";
+    if (off) continue;
+    const r = body.getBoundingClientRect();
+    const { dx, dy } = shiftInto({ left: r.left, top: r.top, width: r.width, height: r.height }, view, 8);
+    if (dx || dy) set(cx + dx / scale, cy + dy / scale);
+  }
+  // behold#748's outside mark, the same way: its box and tag slide in (its ring stays on the card, its leader's
+  // card end too). It was 2px over the frame's top on /choudoufu-fanout at the end of the run.
+  for (const g of svg.querySelectorAll("g[data-tg-outside]")) {
+    const ring = g.firstElementChild;
+    const lead = g.querySelector(":scope > line");
+    const moving = [...g.children].filter((c) => c !== ring && c !== lead && c.localName !== "circle" && c.localName !== "title");
+    if (!moving.length) continue;
+    if (!g.dataset.tgAt) g.dataset.tgAt = lead ? `${lead.getAttribute("x2")} ${lead.getAttribute("y2")}` : "";
+    for (const c of moving) c.removeAttribute("transform");
+    if (lead && g.dataset.tgAt) {
+      const [x2, y2] = g.dataset.tgAt.split(" ");
+      lead.setAttribute("x2", x2);
+      lead.setAttribute("y2", y2);
+    }
+    if (!(view.width > 0 && view.height > 0)) continue;
+    const rs = moving.map((c) => c.getBoundingClientRect()).filter((r) => r.width > 0);
+    if (!rs.length) continue;
+    const left = Math.min(...rs.map((r) => r.left));
+    const top = Math.min(...rs.map((r) => r.top));
+    const box = { left, top, width: Math.max(...rs.map((r) => r.right)) - left, height: Math.max(...rs.map((r) => r.bottom)) - top };
+    const { dx, dy } = shiftInto(box, view, 8);
+    if (!dx && !dy) continue;
+    for (const c of moving) c.setAttribute("transform", `translate(${dx / scale} ${dy / scale})`);
+    if (lead && g.dataset.tgAt) {
+      const [x2, y2] = g.dataset.tgAt.split(" ").map(Number);
+      lead.setAttribute("x2", String(x2 + dx / scale));
+      lead.setAttribute("y2", String(y2 + dy / scale));
+    }
+  }
 }
 let tgReadWired = false;
 function wireTgReadHover() {
@@ -4517,6 +4607,7 @@ function ensureTgReadStyle() {
   st.id = "tg-read-style";
   st.textContent = `#graph g[data-tg-read-pill] { opacity: 0; }
 #graph g[data-tg-read-pill].tg-hot, #graph g[data-tg-read-pill].tg-shown { opacity: 1 !important; }
+#graph g[data-tg-read-pill].tg-off { opacity: 0 !important; animation: none; }
 #graph g[data-tg-read-pill].tg-hot { transition: opacity .15s ease; }
 #graph g[data-tg-read-pill].tg-flash { animation: tg-read-flash 6s linear both; }
 #graph line[data-tg-read].tg-hot { stroke-width: 5; filter: drop-shadow(0 0 3px var(--bg)); }
@@ -5292,6 +5383,7 @@ function kioskPopRender() {
   const content = !card || !answer ? null : kioskCompMode() ? rootPopover(answer, kioskRootOfComponent(id), resourcesByComponent[id]) : resourcePopover(answer, id);
   if (!content) {
     if (pop) pop.hidden = true;
+    kioskTellPop(pop);
     return;
   }
   if (!pop) {
@@ -5352,12 +5444,34 @@ function kioskPopRender() {
   const touchOnly = typeof matchMedia === "function" && matchMedia("(hover: none)").matches;
   add("p", "k-pop-hint", kioskPop.pinned ? (touchOnly ? POP_WORDS.tapPinnedHint : POP_WORDS.pinnedHint) : POP_WORDS.pinHint);
   pop.hidden = false;
+  // behold#764: measured at its own height, then capped (its body scrolls) when the frame's view is shorter.
+  pop.style.maxHeight = "";
   const cb = card.getBoundingClientRect();
   const pb = pop.getBoundingClientRect();
-  const at = placePopover({ left: cb.left, top: cb.top, width: cb.width, height: cb.height }, { width: pb.width, height: pb.height }, { width: window.innerWidth, height: window.innerHeight });
+  // The part of the frame that shows: Watch's caption and track cover its bottom (the shot's insets), unless that leaves too little.
+  const coveredBelow = kioskShot && kioskShot.insets ? Math.max(0, kioskShot.insets.bottom || 0) : 0;
+  const height = window.innerHeight - coveredBelow >= 240 ? window.innerHeight - coveredBelow : window.innerHeight;
+  const at = placePopover({ left: cb.left, top: cb.top, width: cb.width, height: cb.height }, { width: pb.width, height: pb.height }, { width: window.innerWidth, height });
+  pop.style.maxHeight = at.maxHeight ? `${Math.floor(at.maxHeight)}px` : "";
   pop.style.left = `${Math.round(at.left)}px`;
   pop.style.top = `${Math.round(at.top)}px`;
+  kioskTellPop(pop);
 }
+/** behold#764: tell the kiosk where the card's details popover is (or that none is open), so its modals never cover it. */
+function kioskTellPop(pop) {
+  if (!embedOpts.bare || !embedOpts.host || window.parent === window) return;
+  const r = pop && !pop.hidden ? pop.getBoundingClientRect() : null;
+  const at = r && r.width ? { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) } : null;
+  const key = JSON.stringify(at);
+  if (key === kioskPopTold) return;
+  kioskPopTold = key;
+  try {
+    window.parent.postMessage({ type: "behold:pop", at }, embedOpts.host);
+  } catch {
+    /* the parent went away */
+  }
+}
+var kioskPopTold = "null"; // var: kioskPopRender may run before this line is reached
 /** Wire the frame's pointer once: the popover, and the hover links to the kiosk. Bare frames only. */
 // --- behold#571: the kiosk's Watch mode -------------------------------------
 // The kiosk sends a `behold:shot` (web/kiosk-shot.js) with each step: the
@@ -5570,6 +5684,7 @@ function kioskTellBoxes() {
     boxesQueued = false;
     const svg = currentSvg();
     if (!svg) return;
+    tgPillsKeepIn(svg); // behold#764: the camera moved; the shown pills stay in view
     const waves = {};
     const rect = (r) => ({ x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) });
     for (const r of svg.querySelectorAll("rect[data-group-id]")) {

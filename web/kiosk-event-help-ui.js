@@ -19,7 +19,7 @@
 // lights, the glows and the modals off; the trail stays, since it is the
 // record.
 
-import { EH_STORE, HIGHLIGHT_MS, LATE_ORDER, TIP_MS, cycleFacts, storyKey, ehSnapshot, ehStore, ehStored, highlightOpens, highlightShown, highlightTurn, modalQueue, modalShownElsewhere, newEvents, storyTrail, tipsQueue, tipsShown } from "./kiosk-event-help.js";
+import { EH_STORE, HIGHLIGHT_MS, LATE_ORDER, TIP_MS, createDismissals, cycleFacts, dismissKey, stepWrittenAt, storyKey, ehSnapshot, ehStore, ehStored, highlightOpens, highlightShown, highlightTurn, modalQueue, modalShownElsewhere, newEvents, storyTrail, tipsQueue, tipsShown, waitingOpens } from "./kiosk-event-help.js";
 
 /** How long after the page opens (or the cycle turns) what arrives is the story so far, not news: the reads land one by one. */
 export const SETTLE_MS = 8_000;
@@ -114,7 +114,11 @@ export function tipSpot(rect, size, win, labels = []) {
       if (y >= 8) spots.push({ x: spots[0].x, y, below: false });
     }
   }
-  spots.push(...along(rect.top + rect.height + 12, true));
+  // behold#764: below, kept inside the window's bottom when its height is known (a tip under a card low in the view).
+  const belowY = win.h ? Math.max(8, Math.min(rect.top + rect.height + 12, win.h - h - 8)) : rect.top + rect.height + 12;
+  spots.push(...along(belowY, true));
+  // An anchor too narrow for any spot along it to reach: the centred spot, still inside the window.
+  if (!spots.length) spots.push({ x: clampX(mid - w / 2), y: aboveY >= 8 ? aboveY : belowY, below: aboveY < 8 });
   let best = null;
   for (const p of spots) {
     const c = covered(p);
@@ -138,7 +142,7 @@ export function toneOf(kind) {
  * lights them across the panes as a hover does (null puts them out);
  * `panel(kind)` builds the real panel the modal shows (the approval panel).
  */
-export function startEventHelp({ doc = document, store = null, switchHost = null, trailHost, tipsHost, modalHost, get, light = () => {}, panel = () => null, openTrace = () => {}, now = () => Date.now(), shown = now, reduced = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches }) {
+export function startEventHelp({ doc = document, store = null, session = null, switchHost = null, trailHost, tipsHost, modalHost, get, light = () => {}, panel = () => null, openTrace = () => {}, now = () => Date.now(), shown = now, reduced = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches }) {
   if (doc.head && !doc.getElementById("eh-style")) {
     const style = doc.createElement("style");
     style.id = "eh-style";
@@ -147,6 +151,13 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
   }
   modalStyle(doc);
   const st = { bootAt: now(), maxOrder: -Infinity, appliedAt: new Map(), on: ehStored(store), cycle: null, seen: null, trail: new Map(), failed: new Set(), tips: null, modals: null, modal: null, lastInput: -Infinity, lit: null, litUntil: 0, nodes: new Map(), glows: [] };
+  // behold#764: the story modals the viewer closed this visit (sessionStorage, `session`), which do not open again for the same thing.
+  st.closed = createDismissals(session);
+  /** The onClose of a story modal about `key` of `kind`: a close by the viewer is kept, so the same thing never reopens it. */
+  const closedBy = (kind, d, key) => (ms) => {
+    st.modal = null;
+    if (ms && ms.closedBy === "viewer") st.closed.add(dismissKey(kind, d, key));
+  };
   const el = (tag, cls, text) => {
     const n = doc.createElement(tag);
     if (cls) n.className = cls;
@@ -212,6 +223,11 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     const now = (get && get()) || h;
     return ((now && now.boxes && now.boxes.labels) || []).map((l) => fromFrame(now, l)).filter(Boolean);
   };
+  /** behold#764: the card's details popover the frame has open (its `pop`, read fresh), in the window's coordinates, or null. */
+  const popRect = (at) => {
+    const h = (get && get()) || at;
+    return h && h.pop ? fromFrame(h, h.pop) : null;
+  };
   /** behold#631: the graph's area above the bottom band (the track or trail, and the caption): where a chant modal may go. */
   const graphArea = (h) => {
     const F = frameRect(h);
@@ -254,7 +270,7 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
 
   // ---- tips ----------------------------------------------------------------
   const place = (node, rect, h) => {
-    const win = { w: doc.defaultView ? doc.defaultView.innerWidth : 1600 };
+    const win = { w: doc.defaultView ? doc.defaultView.innerWidth : 1600, h: doc.defaultView ? doc.defaultView.innerHeight : 0 };
     // The frame's edge labels, in the window's coordinates (behold#695).
     const F = h ? frameRect(h) : null;
     const labels = F && h.boxes && Array.isArray(h.boxes.labels) ? h.boxes.labels.map((l) => ({ x: F.left + l.x, y: F.top + l.y, w: l.w, h: l.h })) : [];
@@ -428,6 +444,8 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
       data = { title: "Applied", lines: [...(h.label ? [{ text: h.label }] : []), ...(r ? r.counts.map((c) => ({ text: c })) : [])], replayAt: t };
     }
     const kind = event.kind === "refused" ? "failed" : event.kind;
+    // behold#764: never over the card's details popover a viewer has open.
+    data.keepClear = () => popRect(h);
     // behold#631: a chant failure's modal keeps clear of the failed card and the cards it blocked.
     // It must leave the failed wave and the wave after it in view (`avoid`), and covers as few other cards as it can.
     // behold#741: a terragucci story's modals do the same: off the cards they are about (a held wave's, a failed one's),
@@ -441,7 +459,7 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
       data.bounds = () => graphArea(h);
     }
     // A chant kiosk counts down on the clock its track and caption use, so all three say the same second.
-    const api = openEventModal(modalHost, { mode, kind, data, doc, now: event.chant ? now : shown, reduced: reduced(), onClose: () => (st.modal = null) });
+    const api = openEventModal(modalHost, { mode, kind, data, doc, now: event.chant ? now : shown, reduced: reduced(), onClose: closedBy(kind, d, event.id) });
     st.modal = { api, event, kind, step: d ? d.step : null, cycle: d ? d.cycle : null, pull: d ? d.pull : null };
   };
   /** behold#631: the "Waiting on…" modal's words: what is waited on, why it matters, and how long it usually takes. */
@@ -450,6 +468,7 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     lines: w.why ? [{ text: w.why }] : [],
     progress: { fraction: w.fraction, words: w.words },
     ...offCards(h),
+    keepClear: () => popRect(h),
   });
   /**
    * Where a modal about no one card goes (the "Waiting on…" one, a step's highlight): never over a card, since any
@@ -462,7 +481,9 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
   const offCards = (at) => ({
     avoid: () => {
       const h = (get && get()) || at;
-      return [...Object.keys((h.boxes && h.boxes.roots) || {}).map((r) => fromFrame(h, h.boxes.roots[r])).filter(Boolean), ...pillRects(h)];
+      // behold#764: nor over the job box (the log drawer) or the approval callout beside a wave.
+      const overs = doc.querySelectorAll ? [...doc.querySelectorAll("#k-drawer.k-placed, #k-callout.k-placed")].filter((n) => !n.hidden && n.getBoundingClientRect).map((n) => n.getBoundingClientRect()).filter((r) => r.width > 0) : [];
+      return [...Object.keys((h.boxes && h.boxes.roots) || {}).map((r) => fromFrame(h, h.boxes.roots[r])).filter(Boolean), ...pillRects(h), ...overs];
     },
     prefer: () => {
       const h = (get && get()) || at;
@@ -478,14 +499,16 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
   });
   const openWaiting = (w, h) => {
     const d = h.demo;
-    const api = openEventModal(modalHost, { mode: "narrated", kind: "waiting", data: waitingData(w, h), doc, now, reduced: reduced(), onClose: () => (st.modal = null) });
+    const api = openEventModal(modalHost, { mode: "narrated", kind: "waiting", data: waitingData(w, h), doc, now, reduced: reduced(), onClose: closedBy("waiting", d, w.key) });
     st.modal = { api, event: { kind: "waiting", subjects: { roots: [], wave: null } }, kind: "waiting", key: w.key, step: d ? d.step : null, cycle: d ? d.cycle : null, pull: d ? d.pull : null };
     if (st.story) for (const n of st.nodes.values()) n.style.visibility = "hidden";
   };
   /** behold#757: a step's highlight, as a modal off the cards: up HIGHLIGHT_MS (longer while hovered), or until its step goes. */
   const openHighlight = (hl, h) => {
     const d = h.demo;
-    const data = { title: hl.title, lines: [{ text: hl.body }], closeAfter: HIGHLIGHT_MS, ...offCards(h) };
+    const data = { title: hl.title, lines: [{ text: hl.body }], closeAfter: HIGHLIGHT_MS, ...offCards(h), keepClear: () => popRect(h) };
+    // behold#764: once per cycle, step and title for the visit, a reload included: kept as it opens.
+    st.closed.add(dismissKey("highlight", d, hl.id));
     const api = openEventModal(modalHost, { mode: h.replay ? "replay" : "narrated", kind: "highlight", data, doc, now, reduced: reduced(), onClose: () => (st.modal = null) });
     st.modal = { api, event: { kind: "highlight", subjects: { roots: [], wave: null } }, kind: "highlight", key: hl.key, step: d ? d.step : null, cycle: d ? d.cycle : null, pull: d ? d.pull : null };
     for (const n of st.nodes.values()) n.style.visibility = "hidden";
@@ -532,6 +555,10 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
       st.trail.clear();
       st.failed.clear();
     }
+    // behold#764: a replay looping round to its start (its step's time goes back) is a new telling: what the viewer closed opens again.
+    const at = stepWrittenAt(h.demo);
+    if (at !== null && st.writtenAt !== undefined && st.writtenAt !== null && at < st.writtenAt) st.closed.clear();
+    st.writtenAt = at;
     for (const f of facts) if ((f.kind === "failed" || f.kind === "refused") && Number.isInteger(f.subjects.wave)) st.failed.add(f.subjects.wave);
     // While the page settles, everything is the story so far.
     const settling = now() - st.bootAt < SETTLE_MS;
@@ -585,7 +612,10 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     }
     // behold#757: the step's highlight, once per cycle, step and title, before the critical modals: one due now waits
     // behind it in the queue, and opens when it closes if its step is still the step.
-    if (highlightOpens({ pending: st.hl.pending, on: st.on, watch: !!h.watch, held: !!h.held, modal: st.modal ? st.modal.kind : null })) {
+    // behold#764: a highlight this visit already showed (before a reload) is not shown again; none opens over a details popover.
+    const pop = popRect(h);
+    if (st.hl.pending && st.closed.has(dismissKey("highlight", h.demo, st.hl.pending.id))) st.hl = highlightShown(st.hl);
+    if (highlightOpens({ pending: st.hl.pending, on: st.on, watch: !!h.watch, held: !!h.held, modal: st.modal ? st.modal.kind : null, pop })) {
       if (st.modal) st.modal.api.close();
       openHighlight(st.hl.pending, h);
       st.hl = highlightShown(st.hl);
@@ -594,7 +624,9 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     // Its result is the Applied card beside the graph; a modal would say it twice, over the cards.
     // On a held small stage in Watch no modal opens: nothing overlays the graph there, and the caption says each step.
     const told = (e) => modalShownElsewhere(e, { watch: !!h.watch, held: !!h.held });
-    st.modals = modalQueue(st.modals, { add: (h.chant ? news.filter((f) => f.kind !== "held" && f.kind !== "applied") : news).filter((e) => !told(e)), now: now(), lastInput: st.lastInput, open: !!st.modal });
+    // behold#764: one the viewer closed stays closed; one due while a details popover is open waits for it to close.
+    const closedOne = (e) => st.closed.has(dismissKey(e.kind === "refused" ? "failed" : e.kind, h.demo, e.id));
+    st.modals = modalQueue(st.modals, { add: (h.chant ? news.filter((f) => f.kind !== "held" && f.kind !== "applied") : news).filter((e) => !told(e) && !closedOne(e)), now: now(), lastInput: st.lastInput, open: !!st.modal || !!pop });
     // A modal opens only while its event is still the step's: one that waited out a viewer at the page and went by is history.
     if (st.modals.next && stillNow(st.modals.next, h.demo)) {
       openModal(st.modals.next, h);
@@ -603,7 +635,8 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     }
     // behold#631: a quiet stretch on a chant kiosk: "Waiting on …", when no other modal is up or due.
     const held = st.waitingHold && h.waiting && st.waitingHold.key === h.waiting.key && now() < st.waitingHold.until;
-    if (h.waiting && st.on && !held && !st.modal && !(st.modals && st.modals.next)) openWaiting(h.waiting, h);
+    const closedWait = !!h.waiting && st.closed.has(dismissKey("waiting", h.demo, h.waiting.key));
+    if (waitingOpens({ waiting: h.waiting, on: st.on, held, modal: st.modal, due: !!(st.modals && st.modals.next), pop, closed: closedWait })) openWaiting(h.waiting, h);
     else if (h.waiting && st.modal && st.modal.kind === "waiting") st.modal.api.update(waitingData(h.waiting, h));
   };
   const stillNow = (e, d) => (e.kind === "held" ? d.step === "waiting" : e.kind === "failed" || e.kind === "refused" ? d.step === "failed" : e.kind === "applied" ? d.step === "applied" : false);

@@ -2013,6 +2013,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const carvingNow = shownCaption() !== watch.caption || !!s.stageHeld;
     const put = (node, n) => {
       if (node.hidden) return;
+      // behold#764: measured at its own height, then capped to the view (placeBeside's maxHeight); its body scrolls.
+      node.style.maxHeight = "";
       const size = { w: node.offsetWidth, h: node.offsetHeight };
       const box = carvingNow ? null : boxOf(n);
       // Before the frame says where the box is: the right of the view, under its top.
@@ -2021,13 +2023,16 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       const labels = [...((s.boxes && s.boxes.labels) || []).map((r) => ({ x: r.x + view.x, y: r.y + view.y, w: r.w, h: r.h })), chrome];
       const p = box ? placeBeside(box, size, view, 18, labels) : { x: view.x + view.w - size.w - 20, y: view.y + FRAME_CONTROLS.h + 8, side: "below" };
       // The result card stands level with the middle of the graph it sums up.
-      if (box && node === watch.result) p.y = Math.max(view.y + 8, Math.min(box.y + box.h / 2 - size.h / 2, view.y + view.h - size.h - 8));
+      const h = p.maxHeight || size.h;
+      node.style.maxHeight = p.maxHeight ? `${Math.floor(p.maxHeight)}px` : "";
+      node.classList.toggle("k-capped", !!p.maxHeight);
+      if (box && node === watch.result) p.y = Math.max(view.y + 8, Math.min(box.y + box.h / 2 - h / 2, view.y + view.h - h - 8));
       node.style.transform = `translate(${Math.round(p.x)}px, ${Math.round(p.y)}px)`;
-      for (const k of ["right", "left", "below"]) node.classList.toggle(`k-side-${k}`, p.side === k);
+      for (const k of ["right", "left", "below", "above"]) node.classList.toggle(`k-side-${k}`, p.side === k);
       node.classList.add("k-placed");
       const notch = node.querySelector(":scope > .k-notch");
-      if (notch && box) notch.style.top = `${Math.round(Math.max(12, Math.min(size.h - 26, box.y + 22 - p.y)))}px`;
-      taken.push({ x: p.x, y: p.y, x2: p.x + size.w, y2: p.y + size.h });
+      if (notch && box) notch.style.top = `${Math.round(Math.max(12, Math.min(h - 26, box.y + 22 - p.y)))}px`;
+      taken.push({ x: p.x, y: p.y, x2: p.x + size.w, y2: p.y + h });
     };
     put(watch.callout, s.held);
     put(watch.drawer, drawerWave !== null ? drawerWave : s.shot && s.shot.waves[0]);
@@ -2056,6 +2061,13 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     window.addEventListener("message", (e) => {
       if (e.origin !== origin || !frame || e.source !== frame.contentWindow || !e.data) return;
       if (e.data.type === "behold:viewer") return holdShot();
+      // behold#764: the frame's card details popover opened, moved or closed: a modal yields to it, and one held back opens after.
+      if (e.data.type === "behold:pop") {
+        const a = e.data.at;
+        s.framePop = a && [a.x, a.y, a.w, a.h].every(Number.isFinite) ? { x: a.x, y: a.y, w: a.w, h: a.h } : null;
+        if (ehApi) ehApi.tick();
+        return;
+      }
       if (e.data.type !== "behold:boxes") return;
       s.boxes = e.data;
       // A held small stage: nothing the step shows overlays the graph (watchOverlays), and a drawer the viewer opens
@@ -2113,6 +2125,14 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     ? startEventHelp({
         doc: document,
         store: shelf,
+        // behold#764: the story modals a viewer closes, for this visit only (never localStorage).
+        session: (() => {
+          try {
+            return typeof sessionStorage !== "undefined" ? sessionStorage : null;
+          } catch {
+            return null;
+          }
+        })(),
         switchHost: eh.switchHost,
         trailHost: eh.trailHost,
         tipsHost: eh.tipsHost,
@@ -2152,6 +2172,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
             // which the approval card beside the graph wins over.
             hideTrail: !!(storyOn(s) && s.trackOn && s.watchMode),
             waiting: storyOn(s) && s.watchMode && !(watch && watch.callout && !watch.callout.hidden) ? s.waitingNow || null : null,
+            // behold#764: the card's details popover the frame has open (`behold:pop`), which no modal covers.
+            pop: s.framePop || null,
             frame,
             watch: s.watchMode,
             // The caption shown now: the live carve's while it has the camera (web/kiosk-carve.js).
@@ -2560,6 +2582,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     buffer = null;
     frameDrawn = true;
     s.boxes = null;
+    s.framePop = null; // behold#764: the old frame's details popover went with it
     lastFocus = undefined;
     tellFrame(true);
     tellShot(true);
