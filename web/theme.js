@@ -542,6 +542,18 @@ export function getTheme() { return _active; }
 export function getTokens() { return _tokens; }
 export function getThemeName() { return _active && _active.name; }
 export function onThemeChange(cb) { _subs.add(cb); return () => _subs.delete(cb); }
+/** behold#755: the theme `dir` steps (+1 next, -1 previous) from `current` in `names`, wrapping at both ends; the first for a name not in the list. */
+export function themeStep(names, current, dir) {
+  if (!names.length) return null;
+  const i = names.indexOf(current);
+  if (i < 0) return names[0];
+  return names[(((i + dir) % names.length) + names.length) % names.length];
+}
+/** behold#755: the kiosk's < and > beside the picker: the next or previous theme, kept like a pick. */
+export function stepTheme(dir) {
+  const name = themeStep(listThemes(), getThemeName(), dir);
+  return name ? setTheme(name) : false;
+}
 
 /**
  * behold#725: every custom property applyTheme sets for `tokens`, as
@@ -601,7 +613,7 @@ export function setTheme(nameOrObj, { persist = true } = {}) {
 }
 
 /** behold#571: the kiosk's theme for a viewer who hasn't picked one; the app keeps DEFAULT_THEME. */
-export const KIOSK_THEME = "Sea Shells";
+export const KIOSK_THEME = "Batman"; // behold#755; Sea Shells before
 
 // Restore the persisted theme (or `fallback`, else the default) and apply. Call once on boot.
 export function initTheme(fallback = null) {
