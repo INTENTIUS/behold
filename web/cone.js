@@ -30,14 +30,32 @@ export function coneSize(r) {
   return null;
 }
 
-/** One root's part of the plan in words, for its box: "2 of 16 blocks, as a cone", "planned in full: <reason>", "not planned"; null for a root planned with no cone. */
+/**
+ * behold#736: a fallback's kind in words, for a card: choudoufu's `empty-cone` is "empty cone". The reason is the
+ * tooltip's (fallbackWhy): on fan-out-choudoufu's fix six apps fall back at once, and a card holds a few words.
+ * Null for a kind choudoufu didn't name.
+ */
+export function fallbackKind(r) {
+  const k = r && r.fallback && typeof r.fallback.kind === "string" ? r.fallback.kind : "";
+  return k && k !== "unknown" ? k.replace(/[-_]+/g, " ") : null;
+}
+
+/** behold#736: why choudoufu planned the whole estate, for a fallback's tooltip: "choudoufu planned it in full: <reason>". Null without a reason. */
+export function fallbackWhy(r) {
+  return r && r.kind === "full" && r.fallback && r.fallback.reason ? `choudoufu planned it in full: ${r.fallback.reason}` : null;
+}
+
+/** One root's part of the plan in words, for its box: "2 of 16 blocks, as a cone", "planned in full: empty cone" (else its reason), "not planned"; null for a root planned with no cone. */
 export function coneFact(r) {
   if (!r) return null;
   if (r.kind === "cone") {
     const size = coneSize(r);
     return size ? `${size}, as a cone` : "planned as a cone";
   }
-  if (r.kind === "full") return r.fallback && r.fallback.reason ? `planned in full: ${r.fallback.reason}` : "planned in full";
+  if (r.kind === "full") {
+    const why = fallbackKind(r) || (r.fallback && r.fallback.reason) || "";
+    return why ? `planned in full: ${why}` : "planned in full";
+  }
   if (r.kind === "not-planned") return "not planned";
   return null;
 }
@@ -59,17 +77,30 @@ export function coneLine(cone) {
     }
     if (r.kind === "full") return stop(`Planned in full${r.fallback && r.fallback.reason ? `: ${r.fallback.reason}` : ""}`);
   }
-  const parts = [];
+  // behold#736: roots the plan treated alike say it once (fan-out-choudoufu's fix: six apps fall back on an empty
+  // cone, eight roots aren't planned), so the line stays one line on a fifteen-estate stage.
+  const groups = new Map();
   for (const r of roots) {
     if (r.kind === "not-planned") continue;
-    if (r.kind === "cone") parts.push(`${r.root}: ${coneFact(r)}`);
-    else if (r.kind === "full") parts.push(`${r.root} ${coneFact(r)}`);
-    else parts.push(`${r.root}: planned`);
+    const fact = r.kind === "planned" ? "planned" : coneFact(r);
+    const key = `${r.kind}\u0000${fact}`;
+    if (!groups.has(key)) groups.set(key, { kind: r.kind, fact, names: [] });
+    groups.get(key).names.push(r.root);
   }
+  const parts = [];
+  const order = { cone: 0, full: 1, planned: 2 };
+  for (const g of [...groups.values()].sort((a, b) => order[a.kind] - order[b.kind])) parts.push(g.kind === "full" ? `${names(g.names)} ${g.fact}` : `${names(g.names)}: ${g.fact}`);
   const not = roots.filter((r) => r.kind === "not-planned").map((r) => r.root);
-  if (not.length) parts.push(`${not.join(", ")}: not planned`);
+  if (not.length) parts.push(not.length > 3 ? `${not.length} others not planned` : `${not.join(", ")}: not planned`);
   return parts.join(" · ");
 }
+
+/** behold#736: a group's roots: up to three by name, more as the first to the last ("app-01 to app-06"). */
+const names = (list) => {
+  if (list.length <= 3) return list.join(", ");
+  const sorted = [...list].sort();
+  return `${sorted[0]} to ${sorted[sorted.length - 1]}`;
+};
 
 /** A resource's address as a card line says it: the provider's prefix off its type (`aws_iam_role.x` is `iam_role.x`), module calls kept. */
 export function shortAddress(address) {

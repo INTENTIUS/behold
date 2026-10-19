@@ -21,7 +21,7 @@
 // run view without the composed fields draws as before.
 
 import { ago, clock, hrefOf } from "./terragucci.js";
-import { coneFact, coneOf, coneResourceLines } from "./cone.js";
+import { coneFact, coneOf, coneResourceLines, fallbackWhy } from "./cone.js";
 
 export const STATE_WORDS = {
   "not-started": "queued",
@@ -583,7 +583,7 @@ export function rootStates(answer, progress, { story = false } = {}) {
         const cf = cr && (cr.kind === "cone" || cr.kind === "full") ? coneFact(cr) : null;
         const said = cr && cr.kind === "cone" ? `planned · ${cf}` : cf || "planned";
         const lines = cr ? coneResourceLines(cr) : [];
-        roots[root] = { wave: w.number, state: "planned", tone: STATE_TONE.planned, words: `wave ${w.number} · ${said}${c ? ", composed" : ""}`, facts: cf ? [cf, ...facts] : facts, ...(cr ? { cone: cr.kind } : {}), ...(lines.length ? { lines } : {}) };
+        roots[root] = { wave: w.number, state: "planned", tone: STATE_TONE.planned, words: `wave ${w.number} · ${said}${c ? ", composed" : ""}`, facts: cf ? [cf, ...(fallbackWhy(cr) ? [fallbackWhy(cr)] : []), ...facts] : facts, ...(cr ? { cone: cr.kind } : {}), ...(lines.length ? { lines } : {}) };
       }
     }
     // With a cone view, a root the pull request's plan holds nothing of is said to be not planned.

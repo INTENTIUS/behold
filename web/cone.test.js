@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pullRequestPlan } from "../src/terragucci-reports.ts";
 import { coneView, plannedInstances } from "../src/terragucci-cone.ts";
-import { backendLine, blockPath, cardRoot, coneFact, coneLights, coneLine, coneOf, coneResourceLines, resourceLight, rootLight, shortAddress } from "./cone.js";
+import { backendLine, blockPath, cardRoot, coneFact, coneLights, coneLine, coneOf, coneResourceLines, fallbackWhy, resourceLight, rootLight, shortAddress } from "./cone.js";
 import { componentMarks } from "./terragucci-components-live.js";
 import { rootStates } from "./terragucci-change.js";
 import { captionModel, coneCaption } from "./kiosk-watch.js";
@@ -38,10 +38,11 @@ describe("a cone plan's words (minor 34)", () => {
     expect(coneFact(cone.roots[0])).toBe("2 of 6 blocks, as a cone");
   });
 
-  it("says plainly that choudoufu planned in full, with the guard's reason", () => {
+  it("says plainly that choudoufu planned in full, with the guard's kind on the card and its reason in the tooltip", () => {
     const cone = coneOf(prOf("pr-fallback"));
-    expect(coneLine(cone)).toBe("service-b planned in full: a provider block changed · network, service-a: not planned");
-    expect(coneFact(cone.roots[0])).toBe("planned in full: a provider block changed");
+    expect(coneLine(cone)).toBe("service-b planned in full: provider changed · network, service-a: not planned");
+    expect(coneFact(cone.roots[0])).toBe("planned in full: provider changed");
+    expect(fallbackWhy(cone.roots[0])).toBe("choudoufu planned it in full: a provider block changed");
   });
 
   it("with one root and nothing else, says it in the brief's words", () => {
@@ -104,7 +105,7 @@ describe("a cone plan on the boxes and in the kiosk (minor 34)", () => {
     // The cone's resources, two short lines for the card's body: the change first, then what the plan only read.
     expect(roots["service-b"].lines).toEqual(["iam_role_policy.service_b · changed", "iam_role.service_b · read"]);
     expect(roots.network).toMatchObject({ state: "outside", words: "not planned", cone: "not-planned" });
-    expect(rootStates(answerOf("pr-fallback"), null).roots["service-b"]).toMatchObject({ words: "wave 1 · planned in full: a provider block changed" });
+    expect(rootStates(answerOf("pr-fallback"), null).roots["service-b"]).toMatchObject({ words: "wave 1 · planned in full: provider changed", facts: expect.arrayContaining(["choudoufu planned it in full: a provider block changed"]) });
     expect(rootStates(answerOf("pr-fallback"), null).roots["service-b"]).not.toHaveProperty("lines");
   });
 
@@ -151,5 +152,55 @@ describe("a cone plan on the boxes and in the kiosk (minor 34)", () => {
     expect(coneCaption(demo("planned"), a)).toBeNull();
     expect(captionModel(demo("planned"), { answer: a }).cone).toBeNull();
     expect(coneLines(demo("planned"), a)).toEqual([]);
+  });
+});
+
+// behold#736: the cone on fan-out-choudoufu (terragucci#1167/#1168), fifteen estates. The fix's pull request plan is
+// the stack's own (demo-choudoufu-fanout fe809a32): cluster-a planned as a cone of 1 of 5 blocks, app-01 to app-06
+// planned in full on an empty cone, the other eight not in the plan. Chapter 1's release plans every estate in full.
+describe("a cone on fan-out-choudoufu's fix (behold#736)", () => {
+  const FAN = ["network", "cluster-a", "cluster-b", ...Array.from({ length: 12 }, (_, i) => `app-${String(i + 1).padStart(2, "0")}`)];
+  const fanFacts = Object.fromEntries(FAN.map((r) => [r, { binary: "choudoufu" }]));
+  const doc = json("runs", "fanout-fix", "report.json");
+  const fix = (() => {
+    const pr = pullRequestPlan(doc, "runs/fanout-fix/report.html");
+    const cone = coneView(doc, { roots: FAN, planned: { "cluster-a": plannedInstances(json("runs", "fanout-fix", "cluster-a.plan.json")) }, facts: fanFacts });
+    return { roots: FAN.map((path) => ({ member: path, name: path, path })), pull_request: { ...pr, cone } };
+  })();
+  const facets = { jobs: FAN.map((c) => ({ component: c, wave: c === "network" ? 1 : c.startsWith("cluster") ? 2 : 3, jobName: `apply-wave-${c === "network" ? 1 : c.startsWith("cluster") ? 2 : 3}` })), roots: {} };
+
+  it("reads cluster-a as a cone with its resource, and each app as planned in full on an empty cone", () => {
+    const { roots } = rootStates(fix, null);
+    expect(roots["cluster-a"]).toMatchObject({ wave: 2, words: "wave 2 · planned · 1 of 5 blocks, as a cone", cone: "cone", lines: ["sqs_queue.events · changed"] });
+    for (const app of ["app-01", "app-06"]) {
+      expect(roots[app]).toMatchObject({ wave: 3, words: "wave 3 · planned in full: empty cone", cone: "full" });
+      expect(roots[app].facts).toContain("choudoufu planned it in full: the diff reaches no resource, data source or module call");
+      expect(roots[app]).not.toHaveProperty("lines");
+    }
+    expect(roots["app-07"]).toMatchObject({ cone: "not-planned" });
+  });
+
+  it("puts it on the story's cards, where what landed earlier in the cycle still says so", () => {
+    const story = { kiosk: true, earlier: new Set(["network", "cluster-b", "app-07"]), lastStates: {} };
+    const { cards } = componentMarks(fix, null, facets, { story });
+    expect(cards["cluster-a"]).toMatchObject({ words: "planned · 1 of 5 blocks, as a cone", short: "planned", lines: ["sqs_queue.events · changed"] });
+    expect(cards["app-03"]).toMatchObject({ words: "planned in full: empty cone", short: "planned", cone: "full" });
+    // The story's carry-over wins over "not planned": these applied in the cycle's first apply.
+    expect(cards.network).toMatchObject({ state: "applied-earlier", words: "applied earlier" });
+    expect(cards.network).not.toHaveProperty("cone");
+  });
+
+  it("says the plan in one line however many estates fall back alike", () => {
+    expect(coneLine(coneOf(fix.pull_request))).toBe("cluster-a: 1 of 5 blocks, as a cone · app-01 to app-06 planned in full: empty cone · 8 others not planned");
+    expect(backendLine(coneOf(fix.pull_request))).toBe("15 estates · 1 backend · no state files");
+  });
+
+  it("draws chapter 1's release, planned in full with no cone, as before", () => {
+    const full = { ...doc, roots: doc.roots.map(({ cone, ...r }) => r) };
+    expect(coneView(full, { roots: FAN, facts: fanFacts })).toBeUndefined();
+    const pr = pullRequestPlan(full, "runs/fanout-fix/report.html");
+    const { roots } = rootStates({ roots: fix.roots, pull_request: pr }, null);
+    expect(roots["cluster-a"]).toMatchObject({ words: "wave 2 · planned" });
+    expect(roots["cluster-a"]).not.toHaveProperty("cone");
   });
 });

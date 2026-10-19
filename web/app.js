@@ -5436,7 +5436,9 @@ function kioskShotBox() {
   if (!kioskHeld) kioskHeld = readHeld();
   const held = kioskHeld && kioskHeld.key === graph ? kioskHeld : null;
   // Only an estate on choudoufu's live backend (the cone scenario's) is held; every other keeps a shot per step, as on main.
-  if (whole && holdsStage(tgAnswer && !tgAnswer.error ? tgAnswer.binaries : null) && smallStage(whole, pane, held ? held.insets : docked, cardW)) {
+  // behold#736: a story's stage (fan-out-choudoufu, a chapter-carrying scenario, behold#741) is never held: it keeps
+  // the story's own look, its result card, #745's pills and #748's outside mark.
+  if (whole && !tgStoryOn() && holdsStage(tgAnswer && !tgAnswer.error ? tgAnswer.binaries : null) && smallStage(whole, pane, held ? held.insets : docked, cardW)) {
     kioskHeld = heldFrame(kioskHeld, { key: graph, pane, insets: docked, target: whole });
     writeHeld(kioskHeld);
     document.documentElement.classList.add("kiosk-held");
