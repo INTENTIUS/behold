@@ -75,6 +75,18 @@ const scope = new AsyncLocalStorage<RepoTarget>();
 export const requestRepo = (): RepoTarget | undefined => scope.getStore();
 
 /**
+ * behold#749: whether this request reads another checkout than the one on the command line: a `?repo=` naming
+ * any checkout but `defaultName`. Such a request reads its own terragucci project, never `--terragucci-project`'s,
+ * which names the command line's checkout (src/terragucci-view.ts `otherRepo`).
+ */
+export function readsOtherRepo(repos: ViewRepos): boolean {
+  const asked = requestRepo();
+  if (!asked) return false;
+  const own = repos.defaultName !== undefined ? repos.repos.get(repos.defaultName) : undefined;
+  return !own || asked.projectDir !== own.projectDir;
+}
+
+/**
  * Make `cfg.projectDir` and `cfg.projectDirs` answer for the request's repo.
  * Assignments (a project switch) set what a request without `repo` gets.
  */

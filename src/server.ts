@@ -192,7 +192,7 @@ import { terragucciSource } from "./terragucci-source.ts";
 import { metricsRoute } from "./prometheus-metrics.ts";
 import { tracesRoute } from "./tempo-traces.ts";
 import { kioskRoute, shareImageRoute, vendorFallback, vendorRoutes } from "./terragucci-demo.ts";
-import { scopeServedDirs, viewRepoFacts, viewReposMiddleware, type ViewRepos } from "./view-repos.ts";
+import { readsOtherRepo, scopeServedDirs, viewRepoFacts, viewReposMiddleware, type ViewRepos } from "./view-repos.ts";
 import { lifecycleHistoryRoute } from "./lifecycle-history.ts";
 import { hasReleaseLedgerHint, releasesRoutes } from "./lifecycle-releases.ts";
 import { laneFloorRefusal, readTrunkLane } from "./trunk-lane.ts";
@@ -1073,7 +1073,9 @@ export function createApp(
   });
 
   // #490: the reports' marks, when serve was given --terragucci.
-  if (cfg.terragucci) terragucciRoutes(app, cfg.terragucci, () => cfg.projectDirs ?? [cfg.projectDir]);
+  // behold#749: under --repos, a request for another checkout reads that checkout's project, not the pinned one.
+  const viewRepos = cfg.viewRepos;
+  if (cfg.terragucci) terragucciRoutes(app, { ...cfg.terragucci, ...(viewRepos ? { otherRepo: () => readsOtherRepo(viewRepos) } : {}) }, () => cfg.projectDirs ?? [cfg.projectDir]);
   // #509: a control repo's projects, from estate.json and each project's run view.
   if (cfg.terragucci) terragucciEstateRoutes(app, cfg.terragucci, () => cfg.projectDirs ?? [cfg.projectDir]);
   // #525: each environment's newest release, from the release ledger on chant/lifecycle.
@@ -1940,7 +1942,8 @@ export function createApp(
         return r?.product === "sql-yodeler" ? { sqlYodeler: { config: r.config, ...productRefusal(r, "applying from behold") } } : {};
       })(),
       // #490: the page asks /api/terragucci for the marks when this is set.
-      ...(cfg.terragucci ? { terragucciReports: { source: cfg.terragucci.source, ...(cfg.terragucci.project ? { project: cfg.terragucci.project } : {}) } } : {}),
+      // behold#749: the pinned project is the command line checkout's only.
+      ...(cfg.terragucci ? { terragucciReports: { source: cfg.terragucci.source, ...(cfg.terragucci.project && !(cfg.viewRepos && readsOtherRepo(cfg.viewRepos)) ? { project: cfg.terragucci.project } : {}) } } : {}),
       // #526: the page asks /api/yodel-report for the marks when this is set.
       ...(cfg.yodelReport ? { yodelReport: { source: cfg.yodelReport } } : {}),
       // #509: a control repo (`projects:`, no roots): the page asks /api/terragucci/estate.

@@ -174,7 +174,12 @@ Options:
                       cloud, and a waiting wave offers only the line to run.
   --terragucci-project <host/path>
                       serve/export: which project, when the reports hold several
-                      and none is this checkout's git remote.
+                      and none is this checkout's git remote (the same
+                      <host>/<path>, or else the one project with its
+                      <owner>/<name>). Under --repos it names <project-dir>'s
+                      project only: a ?repo= for another checkout reads the
+                      project its remote names by <owner>/<name>, or none
+                      (behold#749).
   --terragucci-poll <secs>
                       serve with --terragucci only: while a page is open, ask
                       whether index.json changed (If-None-Match, or its mtime)

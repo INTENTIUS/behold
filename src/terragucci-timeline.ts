@@ -37,7 +37,7 @@ import { fileURLToPath } from "node:url";
 import type { Hono } from "hono";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { waveOfGate } from "./terragucci-lifecycle.ts";
-import { TerragucciReadError, type Validation } from "./terragucci-reports.ts";
+import { matchProject, TerragucciReadError, type Validation } from "./terragucci-reports.ts";
 import { deniedWords, TerragucciDenied, type TerragucciSource } from "./terragucci-source.ts";
 
 export const AUDIT_SCHEMA = "terragucci.audit/v1";
@@ -328,6 +328,8 @@ export interface TimelineOptions {
   project?: string;
   /** The checkout's own project, from its git remote: the pick among several. */
   checkoutProject?: string;
+  /** behold#749: another checkout's request: its own project's lines (matchProject), never `project`'s. */
+  strict?: boolean;
   validator?: AuditValidator;
   now?: Date;
 }
@@ -352,9 +354,11 @@ export async function readTimeline(source: TerragucciSource, opts: TimelineOptio
   const all = parseAudit(text, source.location, v);
   const projects = [...new Set(all.map((e) => e.project))].sort();
   let project: string | null;
-  if (opts.project) project = opts.project;
+  // behold#749: another checkout's request (serve --repos, ?repo=) reads its own project's lines or none.
+  if (opts.strict) project = matchProject(projects, opts.checkoutProject) ?? opts.checkoutProject ?? null;
+  else if (opts.project) project = opts.project;
   else if (projects.length <= 1) project = projects[0] ?? opts.checkoutProject ?? null;
-  else if (opts.checkoutProject && projects.includes(opts.checkoutProject)) project = opts.checkoutProject;
+  else if (matchProject(projects, opts.checkoutProject)) project = matchProject(projects, opts.checkoutProject)!;
   else {
     project = refuse(
       `${source.location}/${AUDIT_KEY} holds ${projects.length} projects, and none is this checkout's${opts.checkoutProject ? ` (${opts.checkoutProject})` : ""}.`,
@@ -418,6 +422,8 @@ export interface TimelineRouteOptions {
   project?: string;
   /** The checkout's project, asked per request (a project switch changes it). */
   checkoutProject?: () => string | undefined;
+  /** behold#749: asked per request: whether it reads another checkout than the serve's own, so `project` isn't its pin. */
+  strict?: () => boolean;
   /** The validator, asked per read. */
   validator?: () => AuditValidator;
   now?: () => Date;
@@ -438,11 +444,12 @@ export function terragucciTimelineRoute(app: Hono, source: TerragucciSource, opt
     }
     const root = q.get("root") || undefined;
     const checkout = opts.checkoutProject?.();
-    const key = checkout ?? "";
+    const strict = !!opts.strict?.();
+    const key = `${checkout ?? ""}\u0000${strict}`;
     const now = Date.now();
     if (q.get("fresh") === "1" || !cached || cached.key !== key || now - cached.at >= TIMELINE_TTL_MS) {
       const p = readTimeline(source, {
-        ...(opts.project ? { project: opts.project } : {}),
+        ...(strict ? { strict } : opts.project ? { project: opts.project } : {}),
         ...(checkout ? { checkoutProject: checkout } : {}),
         ...(opts.validator ? { validator: opts.validator() } : {}),
         ...(opts.now ? { now: opts.now() } : {}),

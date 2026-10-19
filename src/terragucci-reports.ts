@@ -619,6 +619,11 @@ export interface ReadOptions {
   project?: string;
   /** The checkout's own project name, from its git remote: the default pick among several. */
   checkoutProject?: string;
+  /**
+   * behold#749: the request reads another checkout than the serve's own (`serve --repos`, `?repo=`): its project is
+   * the one its remote names (matchProject) or none, never `--terragucci-project`'s nor the index's only project.
+   */
+  strict?: boolean;
   /** The roots the checkout declares, by path: the read stops once each has its newest plan and drift. */
   roots?: readonly string[];
   validator?: Validator;
@@ -660,8 +665,34 @@ const readRemedy = (source: TerragucciSource): string =>
 
 const under = (base: string, rel: string): string => [base, rel].filter(Boolean).join("/");
 
+/**
+ * behold#749: the project among `projects` that a checkout's remote names: the same `<host>/<path>`, else the one
+ * project with the same path (`<owner>/<name>`). A demo host's checkouts are cloned from the forge's published port
+ * (`localhost:3300/terragucci-admin/demo-fanout`) while its pipeline names the project by the forge's own address
+ * (`forgejo:3000/terragucci-admin/demo-fanout`), so the host can't be the key; the owner and name are the repo.
+ * Two projects with that path on different hosts name none.
+ */
+export function matchProject(projects: readonly string[], checkout: string | undefined): string | undefined {
+  if (!checkout) return undefined;
+  if (projects.includes(checkout)) return checkout;
+  const path = (p: string): string => p.slice(p.indexOf("/") + 1).toLowerCase();
+  if (!checkout.includes("/")) return undefined;
+  const same = projects.filter((p) => p.includes("/") && path(p) === path(checkout));
+  return same.length === 1 ? same[0] : undefined;
+}
+
 export function pickProject(rows: IndexRow[], opts: ReadOptions, source: TerragucciSource): string {
   const projects = [...new Set(rows.map((r) => r.project))].sort();
+  // behold#749: another checkout's request takes its own project or none, so a frame for another scenario's repo
+  // draws no plan rather than the pinned project's.
+  if (opts.strict) {
+    const mine = matchProject(projects, opts.checkoutProject);
+    if (mine) return mine;
+    return refuse(
+      `${source.location}/index.json lists no runs of this checkout's project${opts.checkoutProject ? ` (${opts.checkoutProject})` : ""}.`,
+      projects.length ? `Projects in it: ${projects.join(", ")}. A checkout picked with ?repo= reads the project its git remote names, matched by <owner>/<name>.` : "It lists no runs at all yet.",
+    );
+  }
   if (opts.project) {
     if (!projects.includes(opts.project)) {
       refuse(
@@ -672,7 +703,8 @@ export function pickProject(rows: IndexRow[], opts: ReadOptions, source: Terragu
     return opts.project;
   }
   if (projects.length === 1) return projects[0]!;
-  if (opts.checkoutProject && projects.includes(opts.checkoutProject)) return opts.checkoutProject;
+  const mine = matchProject(projects, opts.checkoutProject);
+  if (mine) return mine;
   if (projects.length === 0) refuse(`${source.location}/index.json lists no runs yet.`, "Run terragucci's pipeline once, or point --terragucci at a prefix it has written to.");
   return refuse(
     `${source.location}/index.json lists ${projects.length} projects, and none is this checkout's${opts.checkoutProject ? ` (${opts.checkoutProject})` : ""}.`,
