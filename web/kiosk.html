@@ -580,7 +580,19 @@
       .k-badge.k-badge-trace { pointer-events: auto; cursor: pointer; border-color: color-mix(in srgb, var(--pending) 60%, var(--rule)); }
       .k-badge.k-badge-trace:hover { border-color: var(--pending); background: var(--active); }
       .k-badge-go { margin-left: var(--s3); color: var(--pending); font-weight: 600; }
-      .k-badge-go::after, .k-wf-go::after { content: " ›"; }
+      .k-badge-go::after, .k-wf-go::after, .r-job-trace::after { content: " ›"; }
+      /* behold#801: Inspect's per-wave traces in the header's right box, and a job row's way into its trace. */
+      .k-i-traces[hidden] { display: none; }
+      .k-box-hold .k-hold + .k-i-traces, .k-box-hold > * + .k-i-traces { margin-top: var(--s3); }
+      .k-i-traces .k-w-traces-head { margin: 0; font: 600 0.82em var(--font-ui); color: var(--muted); }
+      .k-i-traces .k-wf { margin-top: var(--s1); }
+      .r-job-trace { margin-left: var(--s2); padding: 0.05em var(--s3); border: 1px solid color-mix(in srgb, var(--pending) 60%, var(--rule)); border-radius: 999px; background: transparent; color: var(--pending); font: 600 0.78em var(--font-ui); cursor: pointer; white-space: nowrap; }
+      .r-job-trace:hover, .r-job-trace:focus-visible { border-color: var(--pending); background: var(--active); }
+      /* behold#801: an open trace gets the pane's height: the jobs scroll in a short list over it and the features fold away (Steps brings both back). */
+      @media (min-width: 601px) {
+        #runs-main:has(.r-trace) > .r-jobs { max-height: 9.5em; overflow-y: auto; }
+        #runs-main:has(.r-trace) > .r-feats, #runs-main:has(.r-trace) > .r-feats + .r-label { display: none; }
+      }
       #k-drawer.k-trace-only .k-drawer-tail, #k-drawer.k-trace-only .k-drawer-body { display: none; }
       #k-drawer.k-trace-only #k-traces { max-height: 60vh; border-top: 1px solid var(--rule); }
       #k-drawer.k-trace-only #k-traces:empty::before { content: "Reading the trace from Tempo…"; display: block; padding: var(--s4) var(--s4); color: var(--muted); }

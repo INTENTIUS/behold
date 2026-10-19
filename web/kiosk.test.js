@@ -142,6 +142,30 @@ describe("the scenario's card under the title (behold#571)", () => {
   };
   const find = (n, cls) => (n.className.split(" ").includes(cls) ? [n] : []).concat(...(n.children || []).map((c) => (c.className !== undefined ? find(c, cls) : [])));
 
+  // behold#801: Inspect's header shows each finished wave's trace in its right box, as Watch's result card does.
+  it("lists each finished wave's trace in the right box, and nothing there before one lands", () => {
+    const was = globalThis.document;
+    // The trace rows set their bars' style and listen for a click.
+    const base = fakeDocument();
+    globalThis.document = { createElement: (tag) => Object.assign(base.createElement(tag), { style: {}, addEventListener() {} }) };
+    try {
+      const T = 1_792_166_000_000;
+      const spans = [{ id: "s", parent: null, name: "tf-apply", start: T, ms: 4000, attrs: {} }, { id: "a", parent: "s", name: "apply", start: T, ms: 4000, attrs: { "terragucci.phase": "apply" } }];
+      const s = { demo: { source: "fx", read: "2026-10-15T03:00:00Z", demo: demo("applying", { scenario: "failure", about }) }, answer: null, progress: null, waveTraces: {} };
+      let bar = document.createElement("header");
+      renderKiosk(bar, s, new Date("2026-10-15T03:01:00Z"));
+      expect(find(bar, "k-i-traces")).toEqual([]);
+      s.waveTraces = { 1: { run: "8047", job: "apply-wave-1", trace: { start: T, ms: 4000, spans } } };
+      bar = document.createElement("header");
+      renderKiosk(bar, s, new Date("2026-10-15T03:01:00Z"));
+      const box = find(find(bar, "k-right")[0], "k-i-traces");
+      expect(box.length).toBe(1);
+      expect(find(box[0], "k-wf-row").map((r) => r.children[0].textContent)).toEqual(["Wave 1"]);
+    } finally {
+      globalThis.document = was;
+    }
+  });
+
   it("draws the card right under the title, and none without about", () => {
     const was = globalThis.document;
     globalThis.document = fakeDocument();

@@ -1006,6 +1006,10 @@ function drawBar(bar, s, now) {
       holdBox.appendChild(a);
     } else for (const l of hold.lines) holdBox.appendChild(elRoots("p", l.cls, l.text, s));
   }
+  // behold#801: each finished wave's trace, as Watch's result card shows them, under the hold (or in its place).
+  const traces = el("section", "k-i-traces");
+  drawWaveTraces(traces, s);
+  if (!traces.hidden) holdBox.appendChild(traces);
   // behold#571: render what's present: an empty hold keeps its place (nothing moves when one comes) but draws no box.
   if (!holdBox.children.length) holdBox.className += " k-box-empty";
   right.appendChild(holdBox);
@@ -1365,8 +1369,10 @@ export function drawWaveTraces(host, s, { shown = true } = {}) {
   const rows = shown ? miniWaterfall(s.waveTraces || {}) : [];
   host.hidden = !rows.length;
   const key = rows.map((r) => `${r.wave}|${r.run}|${r.ms}`).join(",");
-  if (host.dataset.key === key) return;
-  host.dataset.key = key;
+  // A host built fresh each draw (Inspect's header) may have no dataset to remember its key by.
+  const ds = host.dataset || {};
+  if (ds.key === key) return;
+  ds.key = key;
   host.replaceChildren();
   if (!rows.length) return;
   host.appendChild(el("p", "k-w-traces-head", WAVE_TRACES_WORDS));
