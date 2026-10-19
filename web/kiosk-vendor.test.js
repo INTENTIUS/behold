@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { VENDOR_TOOLS } from "../src/terragucci-demo.ts";
 import { logRows } from "./kiosk-runs.js";
-import { NO_GRAPH_WORDS, SCENARIOS, readingRows, scenarioHead } from "./kiosk.js";
+import { NO_GRAPH_WORDS, SCENARIOS, WHAT_TITLE, readingRows, scenarioHead, whatParts, whatTitle } from "./kiosk.js";
 import {
   REPLAY_LAST_HOLD_MS,
   RUNS_WITH,
@@ -11,6 +11,7 @@ import {
   demoTool,
   filterIndex,
   keepRun,
+  kioskVendorOf,
   liveEstimate,
   liveFor,
   linkSegments,
@@ -138,7 +139,7 @@ describe("the branding table (behold#571)", () => {
   });
   it("links every name to an official https site, and shows a logo for choudoufu alone", () => {
     for (const v of Object.values(VENDORS)) expect(v.url).toMatch(/^https:\/\//);
-    expect(Object.entries(VENDORS).filter(([, v]) => v.logo).map(([id]) => id)).toEqual(["choudoufu"]);
+    expect(Object.entries(VENDORS).filter(([, v]) => v.logo).map(([id]) => id)).toEqual(["choudoufu", "choudoufu-fanout"]);
     expect(VENDORS["cdk-terrain"].url).toBe("https://cdktn.io/");
     expect(VENDORS.terraform.credit).toContain("Terraform is a trademark of HashiCorp.");
   });
@@ -148,7 +149,7 @@ describe("the branding table (behold#571)", () => {
       const words = [v.name, ...creditLines(tool).map((l) => l.map((s) => s.text).join("")), ...Object.values(notRunWords(v)), ...readingRows("components", tool).map((r) => r.words), ...readingRows("resources", tool).map((r) => r.words)];
       for (const w of words) expect(namesOther(w, tool), `${tool}: ${w}`).toBe(false);
       // choudoufu and chant are ours: their credits say so instead.
-      if (tool !== "choudoufu" && tool !== "chant") expect(v.credit).toMatch(/(does not|don't) endorse this demo\./);
+      if (v.owner !== "Intentius") expect(v.credit).toMatch(/(does not|don't) endorse this demo\./);
     }
     expect(VENDORS.choudoufu.credit).toMatch(/AWS and Kubernetes/);
     expect(VENDORS.choudoufu.credit).not.toMatch(/experimental/i);
@@ -172,6 +173,10 @@ describe("the branding table (behold#571)", () => {
       choudoufu: ["Terraform", "HashiCorp", "OpenTofu"],
       // A pipeline: no other tool with a page is one.
       chant: [],
+      // behold#746: the fan-outs compete with each other; chant's page leaves out terragucci and its tofu image too.
+      "chant-fanout": ["OpenTofu", "choudoufu", "terragucci", "tofu"],
+      "tofu-fanout": ["choudoufu"],
+      "choudoufu-fanout": ["OpenTofu"],
     });
     expect(otherTerms(null)).toEqual([]);
   });
@@ -292,6 +297,101 @@ describe("a tool's page, drawn (behold#571)", () => {
       // The credit shows on every tool page, before its first cycle too.
       expect(all(bar).filter((n) => n.className === "k-credit").map(text)).toEqual([VENDORS.choudoufu.credit]);
       expect(all(brand).some((n) => n.className === "k-brand-logo" && n.src === VENDORS.choudoufu.logo.src)).toBe(true);
+    } finally {
+      globalThis.document = was;
+    }
+  });
+});
+
+describe("a page per fan-out tool (behold#746)", () => {
+  const FANOUTS = ["chant-fanout", "tofu-fanout", "choudoufu-fanout"];
+  const fan = (tool, extra = {}) =>
+    demo({ scenario: { "chant-fanout": "fan-out", "tofu-fanout": "fan-out-tofu", "choudoufu-fanout": "fan-out-choudoufu" }[tool], tool, repo: `terragucci-admin/${toolCheckout(tool)}`, title: "A broken stack shouldn't stall the whole rollout", name: "fifteen stacks", intro: "Big Terraform setups split what they build across many states.", ...extra });
+  const BANNED = /terragucci|opentofu|tofu/i;
+
+  it("routes each fan-out tool to a page of its own, its product's name in the title", () => {
+    for (const t of FANOUTS) expect(VENDOR_TOOLS).toContain(t);
+    expect([VENDORS["chant-fanout"].name, VENDORS["tofu-fanout"].name, VENDORS["choudoufu-fanout"].name]).toEqual(["chant", "OpenTofu", "choudoufu"]);
+    expect(FANOUTS.map(toolCheckout)).toEqual(["demo-chant-fanout", "demo-fanout", "demo-choudoufu-fanout"]);
+  });
+  it("is live only while its own fan-out runs, and replays its latest cycle otherwise", () => {
+    for (const live of FANOUTS) for (const page of FANOUTS) expect(liveFor(fan(live), page, SCENARIOS), `${live} on ${page}`).toBe(live === page);
+    // The vendor pages are no fan-out's: chant's own page replays while chant's fan-out runs.
+    expect(liveFor(fan("chant-fanout"), "chant", SCENARIOS)).toBe(false);
+    expect(liveFor(fan("chant-fanout", { scenario: "base" }), "chant-fanout", SCENARIOS)).toBe(false);
+  });
+  it("keeps its own repo's runs alone", () => {
+    const index = { doc: { runs: [{ id: 3, repo: "terragucci-admin/demo-chant-fanout" }, { id: 2, repo: "terragucci-admin/demo-fanout" }, { id: 1, repo: "terragucci-admin/demo-choudoufu-fanout" }] } };
+    expect(filterIndex(index, { tool: "chant-fanout", repo: "terragucci-admin/demo-chant-fanout" }).doc.runs.map((r) => r.id)).toEqual([3]);
+    expect(filterIndex(index, { tool: "tofu-fanout", repo: "terragucci-admin/demo-fanout" }).doc.runs.map((r) => r.id)).toEqual([2]);
+  });
+  it("leaves terragucci and OpenTofu off chant's page, inside an identifier too, and keeps Terraform and chant", () => {
+    for (const t of ["terragucci · OpenTofu · on Forgejo", "image: terragucci-demo-tofu:local", "OpenTofu v1.9.0", "http://localhost:3300/terragucci-admin/demo-chant-fanout.git", "tofu init", "The demo stack and its driver are terragucci's.", "runs on choudoufu"]) {
+      expect(namesOther(t, "chant-fanout"), t).toBe(true);
+    }
+    for (const t of ["chant pr-plan: 15 member(s), planned", "chant approve pr-763 pr-apply --plan jcs1-sha256:8d30", "Big Terraform setups split", "cluster-a failed"]) expect(namesOther(t, "chant-fanout"), t).toBe(false);
+    // Each word chant's page leaves out today, and more.
+    for (const t of otherTerms("chant")) expect(otherTerms("chant-fanout")).toContain(t);
+  });
+  it("shows each fan-out page only its own product: the others' names go, terragucci stays where it is the pipeline", () => {
+    expect(namesOther("choudoufu live-import", "tofu-fanout")).toBe(true);
+    expect(namesOther("OpenTofu v1.9.0", "choudoufu-fanout")).toBe(true);
+    for (const t of ["tofu-fanout", "choudoufu-fanout"]) {
+      expect(namesOther("terragucci · on Forgejo · fan out", t), t).toBe(false);
+      expect(namesOther("chant approve tf-apply wave-2 --actor demo-reviewer --sign", t), t).toBe(false);
+    }
+    expect(namesOther("terragucci · OpenTofu", "tofu-fanout")).toBe(false);
+  });
+  it("leaves /kiosk's branding as it was: no fan-out brand there, the vendor pages' as before", () => {
+    for (const t of FANOUTS) expect(kioskVendorOf(t), t).toBe(null);
+    expect(kioskVendorOf("chant")).toBe(VENDORS.chant);
+    expect(kioskVendorOf("terraform")).toBe(VENDORS.terraform);
+    expect(kioskVendorOf(null)).toBe(null);
+    for (const view of ["components", "resources"]) expect(readingRows(view, "chant-fanout")).toEqual(readingRows(view, null));
+  });
+  it("says whose pipeline it is on chant's page, without the sentence that names terragucci", () => {
+    const hide = (t) => namesOther(t, "chant-fanout");
+    expect(whatTitle(null, hide)).toBe("The pipeline is chant's (chant components pr-plan / pr-apply on Forgejo).");
+    expect(whatTitle(null)).toBe(WHAT_TITLE);
+    expect(whatParts({ scenario: "fan-out" }, "forgejo", null, hide).map((p) => p.text)).toEqual(["chant's pull-request pipeline", "on Forgejo", "fan-out", "live demo"]);
+    // Were chant's page ever drawn on a terragucci repo, the line would drop terragucci and its engine.
+    expect(whatParts({ scenario: "fan-out" }, "forgejo", { tools: ["opentofu"] }, hide).map((p) => p.text)).toEqual(["on Forgejo", "fan-out", "live demo"]);
+    expect(whatParts({ scenario: "fan-out-tofu" }, "forgejo", { tools: ["opentofu"] }, (t) => namesOther(t, "tofu-fanout")).map((p) => p.text)).toEqual(["terragucci", "OpenTofu", "on Forgejo", "fan out tofu", "live demo"]);
+  });
+  it("draws chant's page, live and in replay, in Inspect and in Watch, with no terragucci or OpenTofu anywhere", async () => {
+    const { renderKiosk } = await import("./kiosk.js");
+    const was = globalThis.document;
+    const make = (tag) => {
+      const n = { tagName: tag, className: "", textContent: "", children: [], attrs: {} };
+      n.appendChild = (c) => (n.children.push(c), c);
+      n.append = (...cs) => cs.forEach((c) => n.children.push(typeof c === "string" ? { tagName: "#text", textContent: c, children: [], attrs: {} } : c));
+      n.replaceChildren = () => (n.children = []);
+      n.setAttribute = (k, v) => (n.attrs[k] = String(v));
+      n.querySelectorAll = () => [];
+      n.addEventListener = () => {};
+      return n;
+    };
+    globalThis.document = { createElement: make };
+    const words = (n) => [n.textContent || "", n.href || "", ...Object.values(n.attrs || {}), ...(n.children || []).flatMap(words)];
+    try {
+      const d = scrubDemo(fan("chant-fanout", { step: "planned", label: "The plan covers fifteen stacks. image: terragucci-demo-tofu:local", about: { changes: "A pull request edits the shared network.", watch: "OpenTofu plans the stacks", shows: "A failure blocks only what depends on it." } }), "chant-fanout");
+      for (const mode of ["live", "replay"]) {
+        for (const watchMode of [false, true]) {
+          const bar = make("header");
+          const s = { vendor: "chant-fanout", mode, replay: mode === "replay" ? { banner: "Replay of the run at 00:39 UTC · live again in about 2 min" } : null, demo: { demo: d }, answer: { error: "s3://demo-reports/demo/index.json lists 7 projects, and none is this checkout's (localhost:3300/terragucci-admin/demo-chant-fanout)." }, progress: null, watchMode, chantLoop: true, trackOn: true, chantForge: () => "forgejo" };
+          renderKiosk(bar, s, new Date("2026-10-20T10:01:00Z"));
+          const all = words(bar).join("\n");
+          expect(all, `${mode} ${watchMode ? "watch" : "inspect"}`).not.toMatch(BANNED);
+          expect(all).toContain("chant");
+          if (watchMode) expect(all).toContain("chant's pull-request pipeline");
+          if (mode === "replay") expect(all).toContain("Replay of the run at 00:39 UTC");
+          // Replaying, the line says so and drops its "live demo".
+          if (mode === "replay" && watchMode) expect(all).not.toContain("live demo");
+        }
+      }
+      // The credit, the not-run words and the legend say neither.
+      const fixed = [...creditLines("chant-fanout").map((l) => l.map((x) => x.text).join("")), ...Object.values(notRunWords(VENDORS["chant-fanout"])), ...readingRows("components", "chant-fanout").map((r) => r.words)];
+      for (const w of fixed) expect(w).not.toMatch(BANNED);
     } finally {
       globalThis.document = was;
     }

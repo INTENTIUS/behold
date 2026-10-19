@@ -30,7 +30,7 @@ import { miniWaterfall, phaseWords, waveTraces } from "./kiosk-wave-traces.js";
 import { PANEL_STEPS, PANEL_TITLE, approvalModel, cycleRuns, digestHex, rowFacts } from "./kiosk-approval.js";
 import { getThemeName, mountThemePicker, onThemeChange } from "./theme.js";
 import { cssString, hoverCss, hoverFromMessage, hoverLinks, hoverMessage, isLightBg, rootSegments, rootText } from "./kiosk-roots.js";
-import { creditLines, filterIndex, keepRun, liveEstimate, liveFor, namesOther, notRunRepo, notRunWords, replayAt, replayBanner, replayIndex, rootNoun, rootWord, runAsOf, scrubDemo, servesRepo, vendorOf } from "./kiosk-vendor.js";
+import { creditLines, filterIndex, keepRun, kioskVendorOf, liveEstimate, liveFor, namesOther, notRunRepo, notRunWords, replayAt, replayBanner, replayIndex, rootNoun, rootWord, runAsOf, scrubDemo, servesRepo, vendorOf } from "./kiosk-vendor.js";
 import { repoParam, repoUrl, stepCheckout } from "./kiosk-repo.js";
 import { startKioskCarve } from "./kiosk-carve.js";
 import { STATE_WORDS, changingRoots, costLine, pinsCommit, planFitsPin, pullPin, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
@@ -168,7 +168,9 @@ export function whatLine(demo, forge = null, tg = null) {
  * The line's parts, each `{ text, short, logo? }`: a logo (a mark behold ships) only where a product is named,
  * chant's beside chant, the forge's beside the forge. `short` is the phone's words.
  */
-export function whatParts(demo, forge = null, tg = null) {
+export function whatParts(demo, forge = null, tg = null, hide = null) {
+  // behold#746: a tool's page leaves out each part that names what it may not.
+  if (hide) return whatParts(demo, forge, tg).filter((p) => !hide(p.text) && !hide(p.short));
   const sc = demo && typeof demo.scenario === "string" ? demo.scenario : null;
   const f = forge && FORGES[forge] ? FORGES[forge] : null;
   // behold#741: a terragucci repo's line: terragucci (behold ships no terragucci mark, so its name alone), the engine
@@ -194,10 +196,10 @@ export function whatTool(tools) {
   return null;
 }
 /** The line drawn: each part's logo at the words' height, at its own aspect (the marks are square), then the words. */
-function whatLineEl(demo, forge, tg = null) {
+function whatLineEl(demo, forge, tg = null, hide = null) {
   const line = el("span", "k-cycle k-what-line");
   const light = typeof document !== "undefined" && typeof getComputedStyle === "function" ? isLightBg(getComputedStyle(document.documentElement).getPropertyValue("--bg")) : false;
-  whatParts(demo, forge, tg).forEach((p, i) => {
+  whatParts(demo, forge, tg, hide).forEach((p, i) => {
     if (i) line.appendChild(el("span", "k-what-sep", "·"));
     const part = el("span", "k-what-part");
     const spec = p.logo && TOOLS[p.logo] && TOOLS[p.logo].icon ? TOOLS[p.logo].icon : p.logo && FORGES[p.logo] ? FORGES[p.logo] : null;
@@ -214,7 +216,7 @@ function whatLineEl(demo, forge, tg = null) {
     part.append(el("span", "k-what-full", p.text), el("span", "k-what-short", p.short));
     line.appendChild(part);
   });
-  if (line.setAttribute) line.setAttribute("title", tg ? WHAT_TITLE_TG : WHAT_TITLE);
+  if (line.setAttribute) line.setAttribute("title", whatTitle(tg, hide));
   whatStyle();
   return line;
 }
@@ -237,6 +239,11 @@ function whatStyle() {
 export const WHAT_TITLE = "The pipeline is chant's (chant components pr-plan / pr-apply on Forgejo). The demo stack and its driver are terragucci's.";
 /** behold#741: a terragucci repo's: the pipeline, the stack and the driver are all terragucci's. */
 export const WHAT_TITLE_TG = "The pipeline is terragucci's (its waves, one job per wave). The demo stack and its driver are terragucci's.";
+/** behold#746: the tooltip, less each sentence a tool's page may not say (`/chant-fanout` keeps whose pipeline it is). */
+export function whatTitle(tg = null, hide = null) {
+  const t = tg ? WHAT_TITLE_TG : WHAT_TITLE;
+  return hide ? t.split(/(?<=\.) /).filter((x) => !hide(x)).join(" ") : t;
+}
 
 /** behold#631: the step a chant kiosk's strip lights: a wait for approval before the merge is "planned" when the strip has no approval stop. */
 export function railStep(s, demo) {
@@ -639,7 +646,8 @@ export const READ_STORE = "behold.kiosk.read";
 export function readingRows(view, tool = null) {
   const root = rootWord(tool);
   const n = rootNoun(tool);
-  if (reportless(vendorOf(tool))) {
+  // behold#746: a fan-out's page keeps the legend /kiosk shows for it.
+  if (reportless(kioskVendorOf(tool))) {
     if (view !== "components") return [{ mark: "box", words: `Box: ${root} with its own state.` }];
     return [
       { mark: "card", words: `Card: ${root} with its own state.` },
@@ -836,7 +844,7 @@ export function holdModel(s, demo) {
   if (s.approval) return { kind: "approval", wave: s.approval.wave, head: holdHead({ wave: s.approval.wave, run: s.approval.run, digest: s.approval.digest }), model: s.approval };
   const appr = pendingApproval(demo, s.progress);
   if (appr) return { kind: "driver", wave: appr.wave, head: holdHead({ wave: appr.wave, digest: appr.digest }), appr };
-  if (s.noReports || reportless(vendor || vendorOf(demo.tool))) return null;
+  if (s.noReports || reportless(vendor || kioskVendorOf(demo.tool))) return null;
   const panel = runPanel(demo, s.answer, s.progress);
   const lines = panel.note ? [{ cls: "k-note", text: panel.note }] : panel.stage === "pull-request" ? unreviewedLines(s.answer).map((u) => ({ cls: "k-note k-unknown", text: u })) : [];
   if (!lines.length) return null;
@@ -885,7 +893,8 @@ function drawBar(bar, s, now) {
   const titleBox = box("title", "k-box-title");
   const over = el("div", "k-overline");
   // behold#571: /kiosk names the tool each scenario runs on, as its own page does.
-  const shownTool = vendor || (demo.scenario !== "base" ? vendorOf(demo.tool) : null);
+  // behold#746: but for a fan-out, whose brand its own page alone carries.
+  const shownTool = vendor || (demo.scenario !== "base" ? kioskVendorOf(demo.tool) : null);
   if (shownTool) over.appendChild(brandEl(shownTool));
   over.appendChild(el("span", "k-kicker", head.kicker));
   // The scenario's progress: the strip's stops, at the end of the line over the title.
@@ -1021,16 +1030,21 @@ function drawWatchHead(bar, s, now) {
   const demo = s.demo.demo;
   const vendor = vendorOf(s.vendor);
   const place = el("div", "k-w-place");
-  const shownTool = vendor || (demo.scenario !== "base" ? vendorOf(demo.tool) : null);
+  const shownTool = vendor || (demo.scenario !== "base" ? kioskVendorOf(demo.tool) : null);
   if (storyOn(s) && s.trackOn) {
     // behold#631: a chant kiosk names what this is in one line; the cycle number and its clock are Inspect's.
     // behold#741: a terragucci repo's chapter-carrying scenario names terragucci, its engine and its forge.
-    if (s.chantLoop) place.appendChild(whatLineEl(demo, s.chantForge ? s.chantForge() : null));
-    else place.appendChild(whatLineEl(demo, s.tgForge || null, { tools: s.tools || [] }));
+    // behold#746: a tool's page leaves out the parts (and the tooltip's sentence) that name what it may not.
+    // On its replay the line's "live demo" goes; the replay's banner follows the line instead.
+    const hide = vendor ? (t) => namesOther(t, s.vendor) || (s.mode === "replay" && /^live\b/.test(t)) : null;
+    if (s.chantLoop) place.appendChild(whatLineEl(demo, s.chantForge ? s.chantForge() : null, null, hide));
+    else place.appendChild(whatLineEl(demo, s.tgForge || null, { tools: s.tools || [] }, hide));
   } else {
     if (shownTool) place.appendChild(brandEl(shownTool));
     place.appendChild(el("span", "k-cycle", cycleWords(demo, now)));
   }
+  // behold#746: a tool's page says in Watch too that it replays an earlier run.
+  if (vendor && s.mode === "replay" && s.replay && s.replay.banner) place.appendChild(el("span", "k-cycle k-w-replay", s.replay.banner));
   bar.appendChild(place);
   const strip = el("ol", "k-strip");
   // behold#631: a chant pull request's wait for its approval comes before its merge. Without a stop of its own on the

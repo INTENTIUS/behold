@@ -99,6 +99,22 @@ describe("GET /<tool> (behold#571)", () => {
     }
     expect(await (await app().request("/kiosk")).text()).not.toContain("kiosk-tool");
   });
+  it("serves a page per fan-out tool (behold#746), titled with its own product alone", async () => {
+    const titles: Record<string, string> = {};
+    for (const tool of ["chant-fanout", "tofu-fanout", "choudoufu-fanout"]) {
+      const r = await app().request(`/${tool}`);
+      expect(r.status).toBe(200);
+      const html = await r.text();
+      expect(html).toContain(`<meta name="kiosk-tool" content="${tool}" />`);
+      titles[tool] = [...html.matchAll(/<title>([^<]*)<\/title>|<meta (?:property|name)="(?:og:title|og:description|description|twitter:title|twitter:description)" content="([^"]*)"/g)].map((m) => m[1] ?? m[2]).join(" | ");
+    }
+    expect(titles["chant-fanout"]).toContain("behold · chant");
+    expect(titles["chant-fanout"]).not.toMatch(/terragucci|tofu/i);
+    expect(titles["tofu-fanout"]).toContain("behold · OpenTofu");
+    expect(titles["tofu-fanout"]).not.toMatch(/chant|choudoufu/i);
+    expect(titles["choudoufu-fanout"]).toContain("behold · choudoufu");
+    expect(titles["choudoufu-fanout"]).not.toMatch(/chant|tofu/i);
+  });
   it("answers a short path that is no tool 404, with a link to /kiosk; other paths as before", async () => {
     const r = await app().request("/pulumi");
     expect(r.status).toBe(404);

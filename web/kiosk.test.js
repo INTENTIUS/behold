@@ -346,7 +346,8 @@ describe("which view the frame shows (#571)", () => {
   });
 
   it("knows a tool whose pipeline writes no terragucci reports, and a chant project behold draws itself", () => {
-    expect(Object.entries(VENDORS).filter(([, v]) => reportless(v)).map(([id]) => id)).toEqual(["chant"]);
+    // behold#746: chant's fan-out too, whose runs are chant's own.
+    expect(Object.entries(VENDORS).filter(([, v]) => reportless(v)).map(([id]) => id)).toEqual(["chant", "chant-fanout"]);
     expect(reportless(null)).toBe(false);
     expect(chantProject({ memberKinds: ["chant"] })).toBe(true);
     expect(chantProject({ memberKinds: ["terraform"] })).toBe(false);
