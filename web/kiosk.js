@@ -33,6 +33,7 @@ import { cssString, hoverCss, hoverFromMessage, hoverLinks, hoverMessage, isLigh
 import { creditLines, filterIndex, keepRun, kioskVendorOf, liveEstimate, liveFor, namesOther, notRunRepo, notRunWords, replayAt, replayBanner, replayIndex, rootNoun, rootWord, runAsOf, scrubDemo, servesRepo, vendorOf } from "./kiosk-vendor.js";
 import { repoParam, repoUrl, stepCheckout } from "./kiosk-repo.js";
 import { startKioskCarve } from "./kiosk-carve.js";
+import { drawWaveList, waveListKey } from "./kiosk-wave-list.js";
 import { readsFor } from "./kiosk-source.js";
 import { STATE_WORDS, changingRoots, costLine, pinsCommit, planFitsPin, pullPin, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
 
@@ -1189,6 +1190,25 @@ function drawCaption(host, s, now) {
   }
 }
 
+/**
+ * behold#781: Inspect's "The change" block (factLines: the pull request's
+ * totals, its blast radius, what it leaves unchanged), for a phone's Watch,
+ * where the graph's colours were its only telling. CSS shows it on a phone.
+ */
+function drawChange(host, s) {
+  const demo = s.demo && s.demo.demo;
+  const parts = demo && !s.noReports ? factLines(demo, s.answer, nounTool(s)) : [];
+  host.hidden = !parts.length;
+  const key = JSON.stringify([parts, s.light, s.rootNames]);
+  if (host.dataset.key === key) return;
+  host.dataset.key = key;
+  host.replaceChildren();
+  if (!parts.length) return;
+  const p = el("p", "k-facts");
+  for (const part of parts) p.appendChild(elRoots("span", "k-fact", part, s));
+  host.append(el("p", "k-change-label", FACTS_LABEL), p);
+}
+
 /** The cone plan's line (kiosk-watch.js coneCaption): the plan's words, then the backend's, quieter. */
 export function coneEl(cls, c) {
   const p = el("p", `${cls} k-cone`);
@@ -1968,6 +1988,9 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       watch.layer.appendChild(foot);
     }
     foot.textContent = doraLine(s.metrics) || "";
+    // behold#781, behold#776: a phone's Watch says the change in words by the story, and lists the graph's marks.
+    if (watch.change) drawChange(watch.change, s);
+    drawWaves();
     watch.badges.replaceChildren();
     const skip = call ? hold.wave : drawer ? drawerOn : null;
     // At applied the result card lists every wave's numbers, so the boxes carry none; a held small stage carries none at all.
@@ -1986,6 +2009,40 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       watch.badges.appendChild(b);
     }
     placeWatch();
+  }
+  /**
+   * behold#776: the frame's marks as a list (web/kiosk-wave-list.js), drawn
+   * again only when they or the roots opened change, so a tap's row keeps its
+   * place. A tap on a root opens its resources under it and lights its card.
+   */
+  // Its state lives on `s`, made on first use: drawWatch may run before this part of startKiosk has. Each frame's last
+  // marks are kept by its window, since the next frame posts its own while it loads out of sight, before it swaps in.
+  function waveState() {
+    return s.wl || (s.wl = { by: new WeakMap(), open: new Set(), drawn: null });
+  }
+  if (watch && watch.waves && typeof window !== "undefined" && window.addEventListener) {
+    window.addEventListener("message", (e) => {
+      if (e.origin !== origin || !e.source || !e.data || e.data.type !== "behold:marks") return;
+      waveState().by.set(e.source, e.data.list && Array.isArray(e.data.list.waves) ? e.data.list : null);
+      drawWaves();
+    });
+  }
+  function drawWaves() {
+    if (!watch || !watch.waves) return;
+    const wl = waveState();
+    s.waveList = (frame && frame.contentWindow && wl.by.get(frame.contentWindow)) || null;
+    const key = `${waveListKey(s.waveList)}|${[...wl.open].join(",")}|${s.light}`;
+    if (key === wl.drawn) return;
+    wl.drawn = key;
+    drawWaveList(watch.waves, s.waveList, {
+      open: wl.open,
+      paint: (_doc, root) => elRoots("span", null, root, s),
+      onToggle: (root) => {
+        if (wl.open.has(root)) wl.open.delete(root);
+        else wl.open.add(root);
+        drawWaves();
+      },
+    });
   }
   /**
    * behold#571: the active wave's job's trace waterfall (web/kiosk-trace.js),

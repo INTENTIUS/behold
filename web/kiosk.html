@@ -630,10 +630,40 @@
         .k-cap-lead { font-size: 1.12em; }
         .k-over, #k-result { position: static; visibility: visible; width: auto; margin: 0 16px; max-height: none; transform: none !important; }
         #k-callout, #k-drawer, #k-result { width: auto; }
-        #k-callout { order: 2; padding: var(--s3) var(--s4); } #k-drawer { order: 3; } #k-result { order: 4; }
+        /* behold#781, behold#776: the story, the change it makes, the approval or the result, then the waves as a list, then the running job's log. */
+        #k-change { order: 2; } #k-callout { order: 3; padding: var(--s3) var(--s4); } #k-result { order: 4; } #k-waves { order: 5; } #k-drawer { order: 6; }
         #k-callout .k-ap-row { grid-template-columns: 1em 5.4em minmax(0, 1fr); }
         .k-notch, .k-badge { display: none; }
-        .k-w-dora-foot { display: block; order: 5; margin: 0 16px; color: var(--muted); font-size: 0.9em; }
+        .k-w-dora-foot { display: block; order: 7; margin: 0 16px; color: var(--muted); font-size: 0.9em; }
+        /* behold#776: with the list under it, the graph is the picture, not the place to read. */
+        body.k-watch:has(#k-waves:not([hidden])) #view-pane { height: 32vh; }
+      }
+      /* behold#781: Inspect's "The change" block (factLines), in a phone's Watch by the story. */
+      #k-change, #k-waves { display: none; }
+      @media (max-width: 600px) {
+        body.k-watch #k-change:not([hidden]) { display: block; margin: 0 16px; padding: var(--s2) var(--s3); box-shadow: inset 3px 0 0 var(--bar-neutral); }
+        #k-change .k-change-label { margin: 0 0 0.15em; font: 600 0.86em/1.3 var(--font-ui); color: var(--muted); }
+        #k-change .k-facts { display: flex; flex-wrap: wrap; gap: 0 var(--s2); margin: 0; font-size: 0.92em; line-height: 1.45; color: var(--fg); }
+        /* behold#776: the waves and their roots in words, every line 12px or more. */
+        body.k-watch #k-waves:not([hidden]) { display: block; margin: 0 16px; }
+        .k-wl-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s3); margin-bottom: var(--s2); }
+        .k-wl-title { margin: 0; font: 700 1em var(--font-ui); color: var(--fg); }
+        .k-wl-hint { color: var(--muted); font-size: 0.86em; }
+        .k-wl-wave { position: relative; margin: 0 0 var(--s3); padding: var(--s2) 0 var(--s2) var(--s4); background: var(--surface-pane-b); border-radius: 8px; box-shadow: inset 4px 0 0 var(--bar, var(--bar-neutral)); }
+        .k-wl-wave-head { margin: 0 var(--s3) var(--s1) 0; font: 700 0.95em var(--font-mono); color: var(--fg); }
+        .k-wl-roots { list-style: none; margin: 0; padding: 0 var(--s2) 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(10.5em, 1fr)); gap: 0 var(--s2); }
+        .k-wl-root.k-wl-open { grid-column: 1 / -1; }
+        .k-wl-row { display: flex; align-items: baseline; gap: var(--s2); width: 100%; min-height: 2.4em; padding: var(--s1) var(--s2); border: 0; border-radius: 6px; background: transparent; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+        .k-wl-row:hover, .k-wl-open > .k-wl-row { background: var(--active); }
+        .k-wl-name { font-weight: 600; white-space: nowrap; }
+        .k-wl-state { font-size: 0.92em; min-width: 0; overflow-wrap: anywhere; }
+        .k-wl-ok { color: var(--managed); } .k-wl-bad { color: var(--degraded); } .k-wl-wait { color: var(--foreign); } .k-wl-busy { color: var(--pending); } .k-wl-idle { color: var(--muted); }
+        .k-wl-wave-head.k-wl-idle { color: var(--fg); }
+        .k-wl-detail { margin: 0.1em 0 var(--s2) var(--s2); padding: var(--s1) var(--s3); border-left: 2px solid var(--rule); font-size: 0.92em; line-height: 1.4; }
+        .k-wl-detail p { margin: 0 0 0.15em; }
+        .k-wl-res-head { color: var(--fg); }
+        .k-wl-res { list-style: none; margin: 0; padding: 0; font-family: var(--font-mono); font-size: 0.95em; overflow-wrap: anywhere; }
+        .k-wl-res-change, .k-wl-res-unknown { color: var(--pending); } .k-wl-res-same, .k-wl-res-more { color: var(--muted); }
       }
       /*
        * behold#725: the readability pass.
@@ -694,6 +724,9 @@
         </section>
         <aside id="k-result" class="k-over" aria-label="The result" hidden></aside>
         <footer id="k-caption" aria-live="polite"></footer>
+        <!-- behold#781, behold#776: a phone's Watch only: the change's facts by the story, and the graph's marks as a list. -->
+        <section id="k-change" aria-label="The change" hidden></section>
+        <section id="k-waves" aria-label="The waves" hidden></section>
       </div>
     </div>
     <!-- behold#571: event-help's tips and its modal, over everything. -->
@@ -722,7 +755,7 @@
           bar: document.getElementById("bar"), frame: document.getElementById("view"), read: document.getElementById("k-read"), side: document.getElementById("runs-side"), main: document.getElementById("runs-main"), views: document.getElementById("views"),
           tools: { what: document.querySelector(".k-what"), pop: document.getElementById("k-what-pop"), theme: document.getElementById("k-theme"), runsToggle: document.getElementById("k-runs-toggle"), mode: document.getElementById("k-mode") },
           eh: { switchHost: document.getElementById("k-tools"), trailHost: document.getElementById("eh-trail"), tipsHost: document.getElementById("eh-tips"), modalHost: document.getElementById("eh-modals") },
-          watch: { layer: document.getElementById("k-watch"), caption: document.getElementById("k-caption"), callout: document.getElementById("k-callout"), drawer: document.getElementById("k-drawer"), badges: document.getElementById("k-badges"), result: document.getElementById("k-result") },
+          watch: { layer: document.getElementById("k-watch"), caption: document.getElementById("k-caption"), change: document.getElementById("k-change"), waves: document.getElementById("k-waves"), callout: document.getElementById("k-callout"), drawer: document.getElementById("k-drawer"), badges: document.getElementById("k-badges"), result: document.getElementById("k-result") },
         },
         { tool: pageTool(document), source: pageSource(document) },
       );

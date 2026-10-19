@@ -13,6 +13,7 @@ import { createRefreshQueue } from "./refresh-queue.js";
 import { readViewQuery, writeViewQuery, settleView, settlePlace, refusalLine } from "./view-url.js";
 import { quietCardLines, readEmbed, selectMessage, viewFromMessage, wheelPx, wheelZoomsBare } from "./embed.js";
 import { WORDS as POP_WORDS, cardRoot as popCardRoot, placePopover, popReduce, popState, resourcePopover, rootPopover } from "./kiosk-popover.js";
+import { waveListKey, waveListOf } from "./kiosk-wave-list.js";
 import { shiftInto } from "./float-place.js"; // behold#764
 import { cssString, hoverCss, hoverFromMessage, hoverLinks, hoverMessage, isLightBg, rootPaint, rootText } from "./kiosk-roots.js";
 import { gateCards } from "./workspace-gates.js";
@@ -5004,6 +5005,7 @@ function ensureWorkingStyle() {
 }
 function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints, marks: given = null }) {
   const marks = given || tgComponentMarks(drawnAnswer, tgProgress, tgComponentFacets, { runs: tgRuns, pin: view.run || null });
+  kioskTellMarks(marks);
   // behold#631: where the marks came from, said in each tooltip.
   const cardSource = marks.source || "(from terragucci's reports, not live)";
   const boxSource = marks.source || "(the job's status from the pipeline's runs; the wave's from terragucci's reports)";
@@ -5472,6 +5474,26 @@ function kioskTellPop(pop) {
   }
 }
 var kioskPopTold = "null"; // var: kioskPopRender may run before this line is reached
+/**
+ * behold#776: tell the kiosk the cards' and waves' marks as words (web/kiosk-wave-list.js), with each card's
+ * popover content, so a phone too narrow to read the graph lists them. Posted when they change.
+ */
+function kioskTellMarks(marks) {
+  if (!embedOpts.bare || !embedOpts.host || window.parent === window) return;
+  const answer = tgAnswerDrawn();
+  const details = {};
+  if (answer && !answer.error) for (const [id, c] of Object.entries((marks && marks.cards) || {})) if (c && c.root) details[id] = rootPopover(answer, c.root, resourcesByComponent[id]);
+  const list = waveListOf(marks, details);
+  const key = waveListKey(list);
+  if (key === kioskMarksTold) return;
+  kioskMarksTold = key;
+  try {
+    window.parent.postMessage({ type: "behold:marks", list }, embedOpts.host);
+  } catch {
+    /* the parent went away */
+  }
+}
+var kioskMarksTold = ""; // var: the marks may draw before this line is reached
 /** Wire the frame's pointer once: the popover, and the hover links to the kiosk. Bare frames only. */
 // --- behold#571: the kiosk's Watch mode -------------------------------------
 // The kiosk sends a `behold:shot` (web/kiosk-shot.js) with each step: the
