@@ -722,6 +722,18 @@ export function readStored(store) {
   }
 }
 
+/**
+ * behold#765: whether chant's demo (`--chant-demo`, the page's own reads) has its graph on this behold. A behold
+ * serving one checkout (/api/project names no `viewRepos`) was paired with the demo by its operator, so the frame is
+ * the demo's repo; one serving several (`--repos`) draws it when it serves the step's repo by name. `single` is null
+ * until /api/project answers. Neither terragucci's answer nor a report naming the repo is asked for: there is none.
+ */
+export function demoFrameOk(own, single, repo, viewRepos) {
+  if (!own) return false;
+  if (single === true) return true;
+  return !!repoParam(repo, viewRepos);
+}
+
 /** Whether a tool's pipeline writes no terragucci reports or run view (VENDORS' `reports: false`). */
 export function reportless(vendor) {
   return !!vendor && vendor.reports === false;
@@ -1485,6 +1497,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   /** behold#571: the frame and the plan's facts are the served repo's, so a tool's page shows them only for its own repo. */
   const frameOk = () => {
     if (!vendor) return true;
+    // behold#765: chant's demo has no terragucci answer to name its repo, and one checkout served sends no viewRepos.
+    if (demoFrameOk(reads.own, s.single, s.repo, s.viewRepos)) return true;
     // Before the tool's first cycle: its repo's checkout, when this behold serves it.
     if (s.mode === "none") return !!notRunRepo(tool, s.viewRepos) && s.aimed === notRunRepo(tool, s.viewRepos);
     if (servesRepo(s.answer && !s.answer.error ? s.answer.project : null, s.repo)) return true;
@@ -1496,6 +1510,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   // graph's reads from the checkout of the repo the page is about, asked by
   // name. `viewRepos` is what it serves, `aimed` the repo the reads are for.
   s.viewRepos = null;
+  // behold#765: whether this behold serves one checkout (no viewRepos), null until /api/project answers.
+  s.single = null;
   s.aimed = null;
   s.viewCommits = null;
   const repoNamed = () => repoParam(s.repo, s.viewRepos) || (vendor && s.mode === "none" ? notRunRepo(tool, s.viewRepos) : null);
@@ -2609,6 +2625,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       s.viewCommits = p.viewCommits || null;
       if (s.aimed === null && p.viewRepo) s.aimed = p.viewRepo;
     }
+    if (p && !p.error) s.single = !Array.isArray(p.viewRepos);
     // A chant project's graph is its components (web/app.js bootZoom), so it has that view too.
     s.components = !!(p && !p.error && (p.terragucciComponents || chantProject(p)));
     // behold#631: a chant project may run chant's pull-request loop; /api/chant/pr says (its `loop`).

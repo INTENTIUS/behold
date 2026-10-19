@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
-import { CHANT_DEMO_TOOL, ChantDemo, chantDemoRoutes, contractRefusal, DEMO_CYCLE_SCHEMA, DEMO_STEP_SCHEMA, knownStep, readDemoCycle, readerSchema, readStep, runIdFor, schemaProblem, type DemoRun } from "./chant-demo.ts";
+import { besideFirst, CHANT_DEMO_TOOL, ChantDemo, chantDemoRoutes, contractRefusal, DEMO_CYCLE_SCHEMA, DEMO_STEP_SCHEMA, knownStep, readDemoCycle, readerSchema, readStep, runIdFor, schemaProblem, type DemoRun } from "./chant-demo.ts";
 import { readChantPr, type RunDoc } from "./chant-pr.ts";
 import { kioskRoute, vendorRoutes } from "./terragucci-demo.ts";
 import { terragucciSource, type TerragucciSource } from "./terragucci-source.ts";
@@ -314,5 +314,72 @@ describe("the pages (behold#752)", () => {
     vendorRoutes(off, WEB, false, []);
     expect((await page(off, "/kiosk")).status).toBe(404);
     expect((await page(off, "/chant-fanout")).status).toBe(404);
+  });
+});
+
+describe("a saved cycle whose bucket this behold can't reach reads reports/ beside its records (behold#765)", () => {
+  // The step names s3://chant-demo/…/reports; a copy of the demo's records (`--chant-demo <dir>`) carries the same
+  // keys under reports/. Before #765 every read went to the bucket, failed, and the runs and the graph's waves were empty.
+  const BESIDE = `${FIX}/reports`;
+  const asked: string[] = [];
+  const unreachable = { kind: "s3", location: REPORTS_URL, read: async (k: string) => { asked.push(k); throw new Error("connect ECONNREFUSED"); } } as TerragucciSource;
+  const offline = (u: string): TerragucciSource => (u === FIX ? records : u === BESIDE ? reportsDir : u === REPORTS_URL ? unreachable : (undefined as never));
+  const noGit = async () => ({ code: 1, stdout: "", stderr: "" });
+  const noLedger = { history: async () => ({ found: false, via: "none" as const, fetch: { ok: false }, read: { at: "" }, logs: [], note: "" }), git: noGit };
+  const WORKFLOW = `jobs:
+  plan:
+    steps:
+      - run: chant components pr-plan --base "$BASE_SHA" --pr "$PR_NUMBER" --env demo --gate pr-apply --output .chant/pr --forge forgejo
+`;
+  const checkout = () => {
+    const dir = join(mkdtempSync(join(tmpdir(), "behold-chant-demo-")), "fan-out-estate");
+    mkdirSync(join(dir, ".forgejo", "workflows"), { recursive: true });
+    writeFileSync(join(dir, ".forgejo", "workflows", "chant-pr.yml"), WORKFLOW);
+    return dir;
+  };
+
+  it("the runs come from the copy, not the bucket", async () => {
+    const a = new Hono();
+    chantDemoRoutes(a, new ChantDemo({ source: FIX, sourceOf: offline }));
+    const idx = (await (await a.request("/api/chant/demo/runs")).json()) as { doc: { runs: DemoRun[] } };
+    expect(idx.doc.runs.map((x) => x.status)).toEqual(["success", "success", "failure", "success"]);
+    expect(asked).toEqual([]);
+  });
+  it("/api/chant/pr reads the demo's URL through the demo's source: the failed merge's waves and states, then the fix's", async () => {
+    const demo = new ChantDemo({ source: FIX, sourceOf: offline });
+    const deps = { ...noLedger, reportSource: (u: string) => demo.reportSource(u) ?? offline(u), demoReports: (d: string) => demo.prReports(d, noGit) };
+    const a = await readChantPr(checkout(), MERGE_773, deps);
+    expect(a.apply).toMatchObject({ from: "report", status: "failed", pr: 773 });
+    expect(a.live).toMatchObject({ reportUrl: REPORTS_URL, via: "step" });
+    expect(a.live!.apply!.components["cluster-a"]!.state).toBe("failed");
+    expect(a.live!.apply!.components["app-01"]!.state).toBe("blocked");
+    const fix = await readChantPr(checkout(), MERGE_774, deps);
+    expect(fix.apply).toMatchObject({ from: "report", status: "applied", pr: 774 });
+    expect(fix.live!.earlier!.applied).toContain("cluster-b");
+  });
+  it("answers for the demo's own URL only: another checkout's loop reads as before", async () => {
+    const demo = new ChantDemo({ source: FIX, sourceOf: offline });
+    expect(demo.reportSource(REPORTS_URL)).toBeUndefined(); // no read has named it yet
+    await demo.entries();
+    expect(demo.reportSource(REPORTS_URL)).toBeDefined();
+    expect(demo.reportSource("s3://elsewhere/never")).toBeUndefined();
+  });
+  it("--chant-report-url is read alone: serve named it, so nothing beside the records is asked", async () => {
+    const seen: string[] = [];
+    const sourceOf = (u: string): TerragucciSource => (seen.push(u), u === FIX ? records : reportsDir);
+    const demo = new ChantDemo({ source: FIX, reportUrl: "s3://given/reports", sourceOf });
+    await demo.run((await demo.entries()).entries[0]!, "chant-demo/fan-out-estate", "s3://given/reports");
+    expect(seen).toContain("s3://given/reports");
+    expect(seen).not.toContain(BESIDE);
+  });
+  it("besideFirst: the first source's object, else the second's; the first's failure is never the caller's", async () => {
+    const one = memory({ a: 1 });
+    const broken = { ...one, read: async () => { throw new Error("refused"); } } as TerragucciSource;
+    const two = { ...memory({ a: 2, b: 3 }), kind: "s3", location: "s3://two" } as TerragucciSource;
+    expect(await besideFirst(one, two).read("a")).toBe("1");
+    expect(await besideFirst(one, two).read("b")).toBe("3");
+    expect(await besideFirst(broken, two).read("a")).toBe("2");
+    expect(await besideFirst(one, two).read("c")).toBeUndefined();
+    expect(besideFirst(one, two).location).toBe("s3://two");
   });
 });

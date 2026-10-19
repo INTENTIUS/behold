@@ -1100,7 +1100,8 @@ export function createApp(
       ...(chantDemo ? { demoReports: (d: string, g?: GitRun) => chantDemo.prReports(d, g), ...(runs ? { source: runs } : {}) } : runs ? { source: runs } : {}),
       ...(cfg.chantReportUrl ? { reportUrl: cfg.chantReportUrl } : {}),
       // The report URL is read through the same S3 client and endpoint handling as --terragucci's.
-      reportSource: (url) => reportSourceOf(url, via),
+      // behold#765: the demo's own URL through the demo's source, as its runs are read (reports/ beside its records first).
+      reportSource: (url) => chantDemo?.reportSource(url) ?? reportSourceOf(url, via),
       // A blocked component's blocker, from the edges of the components graph last drawn for the checkout.
       dependsOn: (d) => chantNeeds.get(d)?.needs,
       componentWaves: (d) => chantNeeds.get(d)?.waves,
