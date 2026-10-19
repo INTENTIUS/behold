@@ -23,8 +23,8 @@ describe("themeStep — the kiosk's < and > (behold#755)", () => {
     expect(themeStep(names, "Z", 1)).toBe("A");
     expect(themeStep([], "A", 1)).toBe(null);
   });
-  it("the kiosk opens on Batman, a theme that exists", () => {
-    expect(KIOSK_THEME).toBe("Batman");
+  it("the kiosk opens on Box, a theme that exists (behold#758)", () => {
+    expect(KIOSK_THEME).toBe("Box");
     expect(THEMES[KIOSK_THEME]).toBeTruthy();
   });
 });
