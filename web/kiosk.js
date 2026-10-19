@@ -1278,14 +1278,19 @@ export const DRAWER_EMPTY = "The job's lines show here as it writes them.";
 export const DRAWER_MORE = "Open the log";
 export const DRAWER_LESS = "Close";
 
-/** The result card at the end of the run: the result line, the counts, and each wave's numbers. */
-function drawResult(host, model, s) {
+/**
+ * The result card at the end of the run: the counts, and each wave's numbers.
+ * behold#782: the caption under the graph already says "Applied" and the
+ * step's line, so the card leads with its first count ("3 waves applied") and
+ * leaves the line to the caption.
+ */
+export function drawResult(host, model, s) {
   host.replaceChildren();
-  host.appendChild(el("p", "k-result-head", model.head));
-  if (model.line) host.appendChild(elRoots("p", "k-result-line", model.line, s));
+  const [lead, ...rest] = model.counts.length ? model.counts : [model.head];
+  host.appendChild(el("p", "k-result-head", lead));
   const counts = el("ul", "k-result-counts");
-  for (const c of model.counts) counts.appendChild(el("li", null, c));
-  host.appendChild(counts);
+  for (const c of rest) counts.appendChild(el("li", null, c));
+  if (rest.length) host.appendChild(counts);
   // behold#571: a row for every wave, in wave order: its trace as one bar of its phases (a click opens the whole trace),
   // else its numbers, else a quiet line until they land. Never fewer rows than the count says.
   const bars = new Map(miniWaterfall(s.waveTraces || {}).map((r) => [r.wave, r]));

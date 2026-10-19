@@ -315,11 +315,14 @@ export function tipsQueue(state, { add = [], now = 0, max = TIPS_AT_ONCE, ms = T
  * Whether the caption already says what a critical modal would, so the modal
  * stays shut: on a held small stage in Watch (`held`) nothing overlays the
  * graph (web/kiosk-watch.js watchOverlays), and the caption says each step
- * (the applied counts, a held wave's approval, a failure's label). Any other
+ * (the applied counts, a held wave's approval, a failure's label).
+ * behold#782: in Watch the applied step has its result card (`result`) and
+ * the caption's "Applied", so its modal would say it a third time. Any other
  * stage, and Inspect, open them as they always have.
  */
-export function modalShownElsewhere(event, { watch = false, held = false } = {}) {
-  return !!watch && !!held && !!event;
+export function modalShownElsewhere(event, { watch = false, held = false, result = false } = {}) {
+  if (!watch || !event) return false;
+  return !!held || (event.kind === "applied" && !!result);
 }
 
 /** Whether Tips' bubbles show: everywhere but a held small stage in Watch, where nothing overlays the graph; the trail over the caption stays. */

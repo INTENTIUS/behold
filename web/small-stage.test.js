@@ -106,6 +106,14 @@ describe("nothing overlays the graph in Watch, on a held small stage only", () =
     expect(tipsShown({ watch: false, held: true })).toBe(true);
   });
 
+  it("applied: Watch's result card says it, so no modal says it again; Inspect, with no card, opens it (behold#782)", () => {
+    expect(modalShownElsewhere({ kind: "applied" }, { watch: true, result: true })).toBe(true);
+    // Before the card has the run to draw, the modal opens as before.
+    expect(modalShownElsewhere({ kind: "applied" }, { watch: true, result: false })).toBe(false);
+    expect(modalShownElsewhere({ kind: "applied" }, { watch: false, result: true })).toBe(false);
+    for (const kind of ["held", "failed", "refused"]) expect(modalShownElsewhere({ kind }, { watch: true, result: true })).toBe(false);
+  });
+
   it("held: says what the cards said in one quiet line of the caption; not held, no such line", () => {
     const result = { head: "Applied", line: "Done in 2 waves.", counts: ["2 waves applied", "1 updated", "3.2 s of job time"], waves: [] };
     expect(stepLine(demo("applied"), { result, held: true })).toBe("2 waves applied · 1 updated · 3.2 s of job time");
