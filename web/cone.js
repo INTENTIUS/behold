@@ -89,14 +89,14 @@ export function coneLine(cone) {
   }
   const parts = [];
   const order = { cone: 0, full: 1, planned: 2 };
-  for (const g of [...groups.values()].sort((a, b) => order[a.kind] - order[b.kind])) parts.push(g.kind === "full" ? `${names(g.names)} ${g.fact}` : `${names(g.names)}: ${g.fact}`);
+  for (const g of [...groups.values()].sort((a, b) => order[a.kind] - order[b.kind])) parts.push(g.kind === "full" ? `${rootNames(g.names)} ${g.fact}` : `${rootNames(g.names)}: ${g.fact}`);
   const not = roots.filter((r) => r.kind === "not-planned").map((r) => r.root);
   if (not.length) parts.push(not.length > 3 ? `${not.length} others not planned` : `${not.join(", ")}: not planned`);
   return parts.join(" · ");
 }
 
 /** behold#736: a group's roots: up to three by name, more as the first to the last ("app-01 to app-06"). */
-const names = (list) => {
+export const rootNames = (list) => {
   if (list.length <= 3) return list.join(", ");
   const sorted = [...list].sort();
   return `${sorted[0]} to ${sorted[sorted.length - 1]}`;

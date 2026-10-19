@@ -13,6 +13,7 @@
 
 import { BLOCKED_TONE, blockedHeader, blockedOf, pinsCommit, rootStates, totalsLine } from "./terragucci-change.js";
 import { shortReason } from "./chant-pr-marks.js";
+import { rootNames } from "./cone.js";
 
 /** A job's status as its wave box says it. A job held at a terragucci gate is never a failure. */
 export const JOB_WORDS = {
@@ -196,7 +197,12 @@ export function componentMarks(answer, progress, facets, { runs = null, pin = nu
     // never "queued" under a box that says the job succeeded.
     if (stage === "apply" && status && status.status === "success") for (const m of members) settleMember(m, progress, n);
     const facts = [];
-    for (const m of members) for (const f of m.facts) if (!facts.includes(f)) facts.push(f);
+    // behold#736: a cone's fact is its root's (each card's first), so the wave's box names whose it is: "cluster-a: 1
+    // of 5 blocks, as a cone", "app-01 to app-06 planned in full: empty cone" for a wave of several estates.
+    const coneSaid = new Map();
+    for (const m of members) if ((m.cone === "cone" || m.cone === "full") && m.facts[0]) coneSaid.set(m.facts[0], [...(coneSaid.get(m.facts[0]) || []), m]);
+    for (const [f, ms] of coneSaid) facts.push(ms[0].cone === "full" ? `${rootNames(ms.map((m) => m.root))} ${f}` : `${rootNames(ms.map((m) => m.root))}: ${f}`);
+    for (const m of members) for (const f of m.facts) if (!facts.includes(f) && !coneSaid.has(f)) facts.push(f);
     // The plan a waiting wave is approved for first, as it's what the approval
     // names; then, for a wave that failed, the waves before it that stay applied.
     const rank = (f) => (/^approve plan /.test(f) ? 0 : / stays applied$/.test(f) ? 1 : 2);

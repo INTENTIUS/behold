@@ -4966,7 +4966,9 @@ function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints
     const cardFont = marks.cardFont || 12;
     // A cone root's words that don't fit: the state on this line, the cone's size wrapped under it (never cut).
     const coneCard = m.cone === "cone" || m.cone === "full";
-    const words = width(m.words, cardFont, 700) <= room ? m.words : coneCard ? m.words.split(" · ")[0] : m.mid && width(m.mid, cardFont, 700) <= room ? m.mid : m.short;
+    // behold#736: a fallback's line breaks after "planned in full", its kind under it ("empty cone").
+    const coneCut = coneCard ? m.words.indexOf(m.cone === "full" ? ": " : " · ") : -1;
+    const words = width(m.words, cardFont, 700) <= room ? m.words : coneCut > 0 ? m.words.slice(0, coneCut) : m.mid && width(m.mid, cardFont, 700) <= room ? m.mid : m.short;
     sub.setAttribute("visibility", "hidden");
     sub.setAttribute("data-tg-hid", "1");
     const t = make("text", { "data-tg-root": "card", x, y: marks.cardFont ? y + 4 : y, "font-size": cardFont, "font-weight": 700, fill: quiet ? "var(--frame-card-muted, var(--muted))" : TG_CARD_TONE[m.tone] || TG_CARD_TONE.idle }, words);
@@ -4979,7 +4981,7 @@ function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints
     // Report minor 34: under the state, what didn't fit of its words (the cone's size), then the cone's resources, a
     // line each, each wrapped to the card's width (web/cone.js wrapWords) so it reads in full. The card's body grows
     // to hold them when the gap under it has room; no box round them.
-    const rest = words !== m.words && coneCard ? [m.words.slice(words.length).replace(/^ · /, "")] : [];
+    const rest = words !== m.words && coneCut > 0 ? [m.words.slice(words.length).replace(/^(?: · |: )/, "")] : [];
     const said = [...rest, ...(m.lines || [])].flatMap((line) => wrapWords(line, room, (txt) => width(txt, 11.5, 600)));
     if (said.length) {
       const LH = 15;

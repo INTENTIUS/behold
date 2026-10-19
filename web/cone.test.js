@@ -182,7 +182,11 @@ describe("a cone on fan-out-choudoufu's fix (behold#736)", () => {
 
   it("puts it on the story's cards, where what landed earlier in the cycle still says so", () => {
     const story = { kiosk: true, earlier: new Set(["network", "cluster-b", "app-07"]), lastStates: {} };
-    const { cards } = componentMarks(fix, null, facets, { story });
+    const { cards, waves } = componentMarks(fix, null, facets, { story });
+    // A wave's box names whose cone it is: a wave holds several estates.
+    expect(waves[2].facts[0]).toBe("cluster-a: 1 of 5 blocks, as a cone");
+    expect(waves[3].facts[0]).toBe("app-01 to app-06 planned in full: empty cone");
+    expect(waves[3].facts).not.toContain("planned in full: empty cone");
     expect(cards["cluster-a"]).toMatchObject({ words: "planned · 1 of 5 blocks, as a cone", short: "planned", lines: ["sqs_queue.events · changed"] });
     expect(cards["app-03"]).toMatchObject({ words: "planned in full: empty cone", short: "planned", cone: "full" });
     // The story's carry-over wins over "not planned": these applied in the cycle's first apply.
