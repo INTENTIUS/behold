@@ -499,6 +499,8 @@ export class ChantDemo {
   private readonly runs = new Map<string, { at: number; read: Promise<DemoRun> }>();
   private live: { cycle: number; reports: CycleReport[] } | null = null;
   private readonly sources = new Map<string, TerragucciSource>();
+  /** behold#765: the report URLs {@link entries} has named, the ones {@link reportSource} answers for. */
+  private readonly reportUrls = new Set<string>();
 
   constructor(opts: ChantDemoOptions) {
     this.opts = opts;
@@ -509,9 +511,19 @@ export class ChantDemo {
     const hit = this.sources.get(url);
     if (hit) return hit;
     const via = { ...(this.opts.aws ? { aws: this.opts.aws } : {}), ...(this.opts.fetch ? { fetch: this.opts.fetch } : {}) };
-    const s = this.opts.sourceOf ? this.opts.sourceOf(url) : url === this.opts.source ? terragucciSource(url, via) : reportSourceOf(url, via);
+    const of = (u: string): TerragucciSource => (this.opts.sourceOf ? this.opts.sourceOf(u) : u === this.opts.source ? terragucciSource(u, via) : reportSourceOf(u, via));
+    // behold#765: a step's URL (not serve's --chant-report-url) is read after the copy beside the records, which a saved
+    // cycle carries: its bucket may be one this behold can't reach, and a key names one commit's stage, so both hold the same.
+    const beside = this.besideUrl();
+    const near = url !== this.opts.source && url !== beside && !this.opts.reportUrl ? of(beside) : undefined;
+    const s = near ? besideFirst(near, of(url)) : of(url);
     this.sources.set(url, s);
     return s;
+  }
+
+  /** `reports/` beside the records. */
+  private besideUrl(): string {
+    return `${this.opts.source.replace(/\/+$/, "")}/${REPORTS_DIR}`;
   }
 
   private now(): Date {
@@ -566,8 +578,7 @@ export class ChantDemo {
     if (this.opts.reportUrl) return this.opts.reportUrl;
     const u = step?.reports?.url;
     if (u) return u;
-    const base = this.opts.source.replace(/\/+$/, "");
-    return `${base}/${REPORTS_DIR}`;
+    return this.besideUrl();
   }
 
   /** Every stage the runs pane may show: the latest cycle's, and the cycle in progress's, each with its id. */
@@ -580,7 +591,9 @@ export class ChantDemo {
     if (live && (!latest || live.cycle !== latest.cycle)) live.reports.forEach((r, i) => out.push({ ...r, id: runIdFor(live.cycle, i + 1), cycle: live.cycle }));
     const step = s.demo;
     const withUrl = step ?? (latest ? latest.steps.find((x) => x.reports && x.reports.url) ?? null : null);
-    return { entries: out, repo: step ? step.repo : latest ? latest.repo : null, url: this.reportsUrl(withUrl), latest };
+    const url = this.reportsUrl(withUrl);
+    this.reportUrls.add(url);
+    return { entries: out, repo: step ? step.repo : latest ? latest.repo : null, url, latest };
   }
 
   /** One stage's run, built from its events (and its report, to end a run the events left open). Shared for {@link RUN_READ_TTL_MS}. */
@@ -630,6 +643,32 @@ export class ChantDemo {
     const runs: RunDoc[] = entries.map((e) => ({ id: e.id, event: e.stage === "plan" ? "pull_request" : "push", trigger: e.stage === "plan" ? "plan" : "merge", commit: e.commit, pull: e.pr, cycle: e.cycle, status: "success", jobs: [], reportKey: e.key })).reverse();
     return { url, runs };
   }
+
+  /**
+   * behold#765: the source /api/chant/pr reads a report URL through, when it is the demo's (the URL its records
+   * name, or the one serve gave): the runs' own, so the graph's waves read what the runs pane does. Undefined for
+   * any other URL (another served checkout's loop), which reads as before.
+   */
+  reportSource(url: string): TerragucciSource | undefined {
+    return this.reportUrls.has(url) ? this.sourceOf(url) : undefined;
+  }
+}
+
+/**
+ * behold#765: `first`'s object at a key, else `then`'s. A read `first` can't make (absent, refused, unreachable)
+ * goes to `then`, whose own failure is the caller's. Listing is `then`'s, else `first`'s.
+ */
+export function besideFirst(first: TerragucciSource, then: TerragucciSource): TerragucciSource {
+  const lister = then.list ? then : first.list ? first : null;
+  return {
+    kind: then.kind,
+    location: then.location,
+    async read(key) {
+      const a = await first.read(key).catch(() => undefined);
+      return a !== undefined ? a : then.read(key);
+    },
+    ...(lister ? { list: (prefix: string, max: number) => lister.list!(prefix, max) } : {}),
+  };
 }
 
 /** The routes, all GET: the step, the latest cycle, and the runs built from chant's run events. */
