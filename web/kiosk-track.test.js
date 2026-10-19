@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FILL_CAP, applyJobs, cycleTrack, hereWords, trackModel, waitingSpec } from "./kiosk-track.js";
+import { FAILURE_LEAD_MS, FILL_CAP, applyJobs, cycleTrack, failureAt, hereWords, seekMs, trackModel, waitingSpec } from "./kiosk-track.js";
 
 // behold#631: chant-fanout's last finished cycle as cycles/chant-fanout/latest.json had it (cycle 499):
 // fifteen steps, two pull requests, from the change's open to the reset.
@@ -189,5 +189,43 @@ describe("the apply's jobs end the wait (behold#774)", () => {
     expect(at("applying", [{ job: "apply-wave-1", wave: 1, status: "success" }]).now).toMatchObject({ text: "The apply is under way", waiting: null });
     // No job yet: the wait stands.
     expect(waitingSpec(at("applying", []), { quietMs: 5_000 }).what).toBe("the pipeline to start the apply");
+  });
+});
+
+describe("a past step replays from its start (behold#787)", () => {
+  const ch = (n, short) => ({ n, of: 4, headline: short, short });
+  const chapters = [ch(1, "The change goes out"), ch(2, "cluster-a breaks"), ch(3, "The fix"), ch(4, "Done")];
+  const of = (step, i) => (step === "failed" ? chapters[1] : ["applied", "reset"].includes(step) ? chapters[3] : i < 6 ? chapters[0] : chapters[2]);
+  const track = cycleTrack({ ...cycle, steps: cycle.steps.map((s, i) => ({ ...s, chapter: of(s.step, i) })) });
+  const now = Date.parse(T("40:00"));
+
+  it("gives each segment already past its first step's time, and each chapter its first segment's", () => {
+    const m = trackModel(track, { demo: { step: "planned", pull: 13, chapter: chapters[2] }, pulls: [12, 13], since: now, now });
+    expect(m.chapters[0].segments.map((g) => g.seek)).toEqual([T("18:49"), T("19:01"), T("19:14"), T("19:27"), T("19:30")]);
+    expect(m.chapters.map((c) => c.seek)).toEqual([T("18:49"), T("19:49"), T("20:10"), null]);
+    // The current step and those ahead have no seek in the live cycle.
+    expect(m.chapters[2].segments.map((g) => g.seek)).toEqual([T("20:10"), null, null, null, null]);
+  });
+
+  it("lets a replay seek to any step but the one it shows, and never to the reset", () => {
+    const m = trackModel(track, { demo: { step: "failed", pull: 12, chapter: chapters[1] }, pulls: [12], since: now, now, replay: true });
+    expect(m.chapters[1].segments[0]).toMatchObject({ state: "current", seek: null });
+    expect(m.chapters[2].segments[4]).toMatchObject({ state: "ahead", seek: T("20:37") });
+    expect(m.chapters[3].segments.map((g) => [g.label, g.seek])).toEqual([["done", T("20:56")], ["reset", null]]);
+  });
+
+  it("measures a seek from the cycle's first step", () => {
+    expect(seekMs(cycle, T("19:49"))).toBe(60_000);
+    expect(seekMs(cycle, "2026-10-18T17:00:00Z")).toBe(0);
+    expect(seekMs(null, T("19:49"))).toBe(0);
+  });
+
+  it("starts a replay of the failure in the apply's last stretch, never before the apply", () => {
+    // The apply took 19 s, under the lead: the replay starts with it.
+    expect(failureAt(cycle)).toBe(new Date(T("19:30")).toISOString());
+    const long = { ...cycle, steps: cycle.steps.map((s) => (s.step === "applying" && s.pull === 641 ? { ...s, at: "2026-10-18T18:17:00Z" } : s)) };
+    expect(Date.parse(failureAt(long))).toBe(Date.parse(T("19:49")) - FAILURE_LEAD_MS);
+    expect(failureAt({ ...cycle, steps: cycle.steps.filter((s) => s.step !== "failed") })).toBeNull();
+    expect(failureAt(null)).toBeNull();
   });
 });
