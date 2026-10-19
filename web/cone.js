@@ -99,7 +99,10 @@ export function coneLine(cone) {
 export const rootNames = (list) => {
   if (list.length <= 3) return list.join(", ");
   const sorted = [...list].sort();
-  return `${sorted[0]} to ${sorted[sorted.length - 1]}`;
+  // A run only when it is one: the same name with numbers one after another (app-01 to app-06); else how many.
+  const parts = sorted.map((s) => /^(.*?)(\d+)$/.exec(s));
+  const run = parts.every((p, i) => p && p[1] === parts[0][1] && Number(p[2]) === Number(parts[0][2]) + i);
+  return run ? `${sorted[0]} to ${sorted[sorted.length - 1]}` : `${list.length} estates`;
 };
 
 /** A resource's address as a card line says it: the provider's prefix off its type (`aws_iam_role.x` is `iam_role.x`), module calls kept. */

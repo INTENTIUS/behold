@@ -197,6 +197,9 @@ describe("a cone on fan-out-choudoufu's fix (behold#736)", () => {
   it("says the plan in one line however many estates fall back alike", () => {
     expect(coneLine(coneOf(fix.pull_request))).toBe("cluster-a: 1 of 5 blocks, as a cone · app-01 to app-06 planned in full: empty cone · 8 others not planned");
     expect(backendLine(coneOf(fix.pull_request))).toBe("15 estates · 1 backend · no state files");
+    // Chapter 1's release: network falls back on a cone too large, the other fourteen plan with no cone; no false run of names.
+    const release = { roots: [{ root: "network", kind: "full", fallback: { kind: "cone-too-large", reason: "the cone is over 30% of the estate's blocks" } }, ...FAN.slice(1).map((root) => ({ root, kind: "planned" }))] };
+    expect(coneLine(release)).toBe("network planned in full: cone too large · 14 estates: planned");
   });
 
   it("draws chapter 1's release, planned in full with no cone, as before", () => {

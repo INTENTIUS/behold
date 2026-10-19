@@ -479,7 +479,8 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     } else if (m.kind === "failed") {
       if (d && (d.cycle !== m.cycle || ["resumed", "applying", "waiting", "applied"].includes(d.step))) m.api.resolve(d.cycle === m.cycle ? "the waves run again" : null);
       // behold#631: a chant failure's modal goes once the cycle moves on, to a new pull request or a new step (the fix's plan, its wait).
-      if (m.event.chant && d && (d.cycle !== m.cycle || d.pull !== m.pull || d.step !== m.step)) m.api.close();
+      // behold#736: a terragucci story's too (#741's look): on fan-out-choudoufu it stayed over the fix's cone plan.
+      if ((m.event.chant || st.story) && d && (d.cycle !== m.cycle || d.pull !== m.pull || d.step !== m.step)) m.api.close();
     }
   };
 

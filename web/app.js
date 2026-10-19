@@ -4982,12 +4982,15 @@ function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints
     // line each, each wrapped to the card's width (web/cone.js wrapWords) so it reads in full. The card's body grows
     // to hold them when the gap under it has room; no box round them.
     const rest = words !== m.words && coneCut > 0 ? [m.words.slice(words.length).replace(/^(?: · |: )/, "")] : [];
-    const said = [...rest, ...(m.lines || [])].flatMap((line) => wrapWords(line, room, (txt) => width(txt, 11.5, 600)));
+    // behold#736: a story's cards say their state at its bigger size (cardFont); the lines under it follow, a size smaller.
+    const lineFont = marks.cardFont ? cardFont - 2 : 11.5;
+    const y0 = marks.cardFont ? y + 4 : y;
+    const said = [...rest, ...(m.lines || [])].flatMap((line) => wrapWords(line, room, (txt) => width(txt, lineFont, 600)));
     if (said.length) {
-      const LH = 15;
+      const LH = lineFont + 3.5;
       const top = Number(body.getAttribute("y"));
       const h0 = Number(body.getAttribute("height"));
-      const need = y + LH * said.length + 8 - top;
+      const need = y0 + LH * said.length + 8 - top;
       if (need > h0) {
         // Grow into the gap under the card, never onto another card; its box grows with it when nothing lies under the box.
         const b = boxOf(body);
@@ -5000,10 +5003,10 @@ function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints
       }
       const floor = top + Number(body.getAttribute("height")) - 6;
       said.forEach((line, k) => {
-        const ly = y + LH * (k + 1);
+        const ly = y0 + LH * (k + 1);
         if (ly > floor) return;
-        const last = k === said.length - 1 || y + LH * (k + 2) <= floor ? line : `${line} …`;
-        g.appendChild(make("text", { "data-tg-root": "cone-line", x, y: ly, "font-size": 11.5, "font-weight": 600, fill: "var(--frame-card-muted, var(--muted))" }, last));
+        const last = k === said.length - 1 || y0 + LH * (k + 2) <= floor ? line : `${line} …`;
+        g.appendChild(make("text", { "data-tg-root": "cone-line", x, y: ly, "font-size": lineFont, "font-weight": 600, fill: "var(--frame-card-muted, var(--muted))" }, last));
       });
     }
   }
