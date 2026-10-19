@@ -575,6 +575,44 @@ and each `dependency` block is a card with an arrow to the unit it reads.
 behold reads those two blocks and evaluates nothing else. A unit whose module
 it can't read is one card saying so.
 
+#### chant's fan-out demo, from its own bucket
+
+chant runs its fan-out demo itself, from `examples/fan-out-estate/demo` in
+chant's repo, with no terragucci in it. Its driver writes two records under
+one prefix: `step.json` at every step (chant's `demo-step/v1`) and
+`cycles/latest.json` at each reset (`demo-cycle/v1`). Point behold at that
+prefix:
+
+```sh
+behold serve <checkout> --repos <parent> --chant-demo s3://chant-demo/fan-out-estate
+```
+
+`/chant-fanout` then reads the demo from those records, through
+`GET /api/chant/demo` (the step) and `GET /api/chant/demo/cycle` (the last
+cycle, which the page replays between cycles). Without `--terragucci`,
+`/kiosk` is the same page. The step keeps the field names the kiosk reads
+from `demo.json`, `chapter` included.
+
+Each step names chant's report keys (`reports`: `url`, `plan` and `apply`,
+each `<pr>/<commit>`). behold reads the stage's `pr-plan.json` or
+`pr-apply.json` (`pr-report/v1`) and its `.events.jsonl` (`run-event/v1`) at
+those keys, for the graph's waves and the gate. The runs pane shows one run per
+stage, built from its run events: the plan, the gate and each wave as steps,
+each with the events' lines. Nothing is read from forge runs, and the
+pipeline's `--report-url` is not looked up in the workflow file.
+`--chant-report-url`, when given, overrides the step's `url`. The step's
+`cycle_reports`, every stage of the cycle so far, name the first apply's key,
+so the fix's run shows what that apply landed even when behold started
+mid-cycle.
+
+Each record is checked against chant's schema before it is read. A record of
+another contract version (`contract`, or the `v<n>` in its `$schema`) is
+refused, and the page says which version behold reads. So is a `reports.url`
+that is not `s3://` or `https://`. A `step` behold doesn't know is not
+refused: chant may add steps within a version, so the page shows it by its
+name and lights no stop. Without
+`--chant-demo`, every page reads terragucci's loop as above.
+
 ## Try it on terragucci's example
 
 behold ships a reports bucket for terragucci's own example estate, written by

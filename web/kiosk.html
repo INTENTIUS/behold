@@ -671,6 +671,7 @@
       import { initTheme, KIOSK_THEME, getThemeName, onThemeChange } from "/theme.js";
       import { startKiosk } from "/kiosk.js";
       import { pageTool } from "/kiosk-vendor.js";
+      import { pageSource, readsFor } from "/kiosk-source.js";
       import { installMotion } from "/motion.js";
       initTheme(KIOSK_THEME);
       // behold#725: every looping animation holds while the tab is hidden.
@@ -688,10 +689,10 @@
           eh: { switchHost: document.getElementById("k-tools"), trailHost: document.getElementById("eh-trail"), tipsHost: document.getElementById("eh-tips"), modalHost: document.getElementById("eh-modals") },
           watch: { layer: document.getElementById("k-watch"), caption: document.getElementById("k-caption"), callout: document.getElementById("k-callout"), drawer: document.getElementById("k-drawer"), badges: document.getElementById("k-badges"), result: document.getElementById("k-result") },
         },
-        { tool: pageTool(document) },
+        { tool: pageTool(document), source: pageSource(document) },
       );
       // behold#571: the repo's numbers from Prometheus, a pane of its own in Inspect (web/kiosk-metrics.js), and Watch's badges and delivery line.
-      import("/kiosk-metrics.js").then((m) => m.startMetrics(document.getElementById("k-metrics"), { tool: pageTool(document), onModel: (model) => kiosk.setMetrics(model) }));
+      import("/kiosk-metrics.js").then((m) => m.startMetrics(document.getElementById("k-metrics"), { tool: pageTool(document), reads: readsFor(pageSource(document)), onModel: (model) => kiosk.setMetrics(model) }));
     </script>
   </body>
 </html>

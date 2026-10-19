@@ -2658,7 +2658,7 @@ window.addEventListener("message", (e) => {
   const pullBefore = view.pull;
   const moved = applyWantedView(want);
   if (view.run !== runBefore || view.pull !== pullBefore) {
-    void loadTgProgress({ fresh: true }); // #569: the run the narration is about
+    if (tgServed) void loadTgProgress({ fresh: true }); // #569: the run the narration is about
     if (chantFacets) void loadChantPr(); // behold#631
     // The reports too, read fresh now, and again every few seconds while the pin's plan or run isn't written yet:
     // the reports a frame read a step ago don't hold this cycle's pull request.
@@ -3553,10 +3553,13 @@ let tgAnswer = null;
 let tgHost = null;
 let tgTimeline = null; // #506: /api/terragucci/timeline, the audit record's lane
 let tgHistory = null; // #522: /api/lifecycle/history, the gate ledgers' history
+/** behold#752: whether serve reads terragucci's reports; without them a pin's run view is never asked (chant's demo has none). */
+let tgServed = false;
 async function initTerragucci() {
   const project = await apiFetch("/api/project").then((r) => r.json()).catch(() => ({}));
   kioskRoots = project.terragucciRoots || null; // behold#571
   if (!project.terragucciReports) return;
+  tgServed = true;
   // #715: the live carve's gate, asked beside the reports; closed, nothing below changes.
   if (!staticMode) void liveCarveGate();
   await loadTerragucci();

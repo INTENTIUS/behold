@@ -1,0 +1,794 @@
+{
+ "$schema": "https://intentius.io/chant/schemas/demo/demo-cycle/v1/demo-cycle.schema.json",
+ "contract": 1,
+ "demo": "fan-out-estate",
+ "repo": "chant-demo/fan-out-estate",
+ "cycle": 610,
+ "started": "2026-10-19T02:25:07Z",
+ "ended": "2026-10-19T02:27:37Z",
+ "steps": [
+  {
+   "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
+   "contract": 1,
+   "demo": "fan-out-estate",
+   "repo": "chant-demo/fan-out-estate",
+   "name": "fifteen stacks",
+   "cycle": 610,
+   "scenario": "fan-out",
+   "title": "A broken stack shouldn't stall the whole rollout",
+   "step": "pull-request",
+   "label": "Pull request 773 is open. Network's topic gets a new display name, and cluster-a gains a FIFO queue whose name lacks .fifo.",
+   "started_at": "2026-10-19T02:25:07Z",
+   "next": {
+    "action": "wait for the plan note",
+    "from": "2026-10-19T02:25:09Z"
+   },
+   "pull": 773,
+   "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+   "chapter": {
+    "n": 1,
+    "of": 4,
+    "headline": "A change to the shared network goes out to all 15 stacks",
+    "short": "The change goes out"
+   },
+   "about": {
+    "changes": "A pull request (a change up for review) edits the shared network. It also adds a cluster-a queue whose name AWS refuses.",
+    "watch": "chant plans fifteen stacks in three waves. After the merge, network applies first. Then cluster-a fails and its six apps are blocked. Cluster-b's six apps go ahead. A fix applies the seven left.",
+    "shows": "A failure blocks only the stacks that depend on it, and the fix applies only what was left."
+   },
+   "at": "2026-10-19T02:25:09Z",
+   "reports": {
+    "url": "s3://chant-demo/fan-out-estate/reports",
+    "plan": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+   },
+   "cycle_reports": []
+  },
+  {
+   "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
+   "contract": 1,
+   "demo": "fan-out-estate",
+   "repo": "chant-demo/fan-out-estate",
+   "name": "fifteen stacks",
+   "cycle": 610,
+   "scenario": "fan-out",
+   "title": "A broken stack shouldn't stall the whole rollout",
+   "step": "planned",
+   "label": "The plan covers fifteen stacks in three waves: network, then cluster-a and cluster-b, then twelve apps.",
+   "started_at": "2026-10-19T02:25:07Z",
+   "next": {
+    "action": "ask for a review",
+    "from": "2026-10-19T02:25:20Z",
+    "at": "2026-10-19T02:25:32Z"
+   },
+   "pull": 773,
+   "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+   "chapter": {
+    "n": 1,
+    "of": 4,
+    "headline": "A change to the shared network goes out to all 15 stacks",
+    "short": "The change goes out"
+   },
+   "about": {
+    "changes": "A pull request (a change up for review) edits the shared network. It also adds a cluster-a queue whose name AWS refuses.",
+    "watch": "chant plans fifteen stacks in three waves. After the merge, network applies first. Then cluster-a fails and its six apps are blocked. Cluster-b's six apps go ahead. A fix applies the seven left.",
+    "shows": "A failure blocks only the stacks that depend on it, and the fix applies only what was left."
+   },
+   "at": "2026-10-19T02:25:20Z",
+   "reports": {
+    "url": "s3://chant-demo/fan-out-estate/reports",
+    "plan": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    }
+   ]
+  },
+  {
+   "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
+   "contract": 1,
+   "demo": "fan-out-estate",
+   "repo": "chant-demo/fan-out-estate",
+   "name": "fifteen stacks",
+   "cycle": 610,
+   "scenario": "fan-out",
+   "title": "A broken stack shouldn't stall the whole rollout",
+   "step": "waiting",
+   "label": "The plan waits for a reviewer's approval.",
+   "started_at": "2026-10-19T02:25:07Z",
+   "next": {
+    "action": "approve the plan's digest",
+    "from": "2026-10-19T02:25:32Z",
+    "at": "2026-10-19T02:25:44Z"
+   },
+   "pull": 773,
+   "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+   "chapter": {
+    "n": 1,
+    "of": 4,
+    "headline": "A change to the shared network goes out to all 15 stacks",
+    "short": "The change goes out"
+   },
+   "about": {
+    "changes": "A pull request (a change up for review) edits the shared network. It also adds a cluster-a queue whose name AWS refuses.",
+    "watch": "chant plans fifteen stacks in three waves. After the merge, network applies first. Then cluster-a fails and its six apps are blocked. Cluster-b's six apps go ahead. A fix applies the seven left.",
+    "shows": "A failure blocks only the stacks that depend on it, and the fix applies only what was left."
+   },
+   "at": "2026-10-19T02:25:32Z",
+   "reports": {
+    "url": "s3://chant-demo/fan-out-estate/reports",
+    "plan": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    }
+   ]
+  },
+  {
+   "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
+   "contract": 1,
+   "demo": "fan-out-estate",
+   "repo": "chant-demo/fan-out-estate",
+   "name": "fifteen stacks",
+   "cycle": 610,
+   "scenario": "fan-out",
+   "title": "A broken stack shouldn't stall the whole rollout",
+   "step": "approved",
+   "label": "The driver approves the pull request and its digest as the reviewer, who had no hand in the change.",
+   "started_at": "2026-10-19T02:25:07Z",
+   "next": {
+    "action": "merge pull request 773",
+    "from": "2026-10-19T02:25:46Z"
+   },
+   "pull": 773,
+   "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+   "chapter": {
+    "n": 1,
+    "of": 4,
+    "headline": "A change to the shared network goes out to all 15 stacks",
+    "short": "The change goes out"
+   },
+   "about": {
+    "changes": "A pull request (a change up for review) edits the shared network. It also adds a cluster-a queue whose name AWS refuses.",
+    "watch": "chant plans fifteen stacks in three waves. After the merge, network applies first. Then cluster-a fails and its six apps are blocked. Cluster-b's six apps go ahead. A fix applies the seven left.",
+    "shows": "A failure blocks only the stacks that depend on it, and the fix applies only what was left."
+   },
+   "at": "2026-10-19T02:25:46Z",
+   "reports": {
+    "url": "s3://chant-demo/fan-out-estate/reports",
+    "plan": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    }
+   ]
+  },
+  {
+   "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
+   "contract": 1,
+   "demo": "fan-out-estate",
+   "repo": "chant-demo/fan-out-estate",
+   "name": "fifteen stacks",
+   "cycle": 610,
+   "scenario": "fan-out",
+   "title": "A broken stack shouldn't stall the whole rollout",
+   "step": "merged",
+   "label": "Pull request 773 is merged into main (the branch the pipeline applies) at a7cf3abc, and the pipeline starts.",
+   "started_at": "2026-10-19T02:25:07Z",
+   "next": {
+    "action": "follow the waves",
+    "from": "2026-10-19T02:25:46Z"
+   },
+   "pull": 773,
+   "commit": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+   "chapter": {
+    "n": 1,
+    "of": 4,
+    "headline": "A change to the shared network goes out to all 15 stacks",
+    "short": "The change goes out"
+   },
+   "about": {
+    "changes": "A pull request (a change up for review) edits the shared network. It also adds a cluster-a queue whose name AWS refuses.",
+    "watch": "chant plans fifteen stacks in three waves. After the merge, network applies first. Then cluster-a fails and its six apps are blocked. Cluster-b's six apps go ahead. A fix applies the seven left.",
+    "shows": "A failure blocks only the stacks that depend on it, and the fix applies only what was left."
+   },
+   "at": "2026-10-19T02:25:46Z",
+   "reports": {
+    "url": "s3://chant-demo/fan-out-estate/reports",
+    "plan": "773/6d4a48da36317886b549ca0d46c44646e697f561",
+    "apply": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    }
+   ]
+  },
+  {
+   "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
+   "contract": 1,
+   "demo": "fan-out-estate",
+   "repo": "chant-demo/fan-out-estate",
+   "name": "fifteen stacks",
+   "cycle": 610,
+   "scenario": "fan-out",
+   "title": "A broken stack shouldn't stall the whole rollout",
+   "step": "applying",
+   "label": "Network applies in wave 1. Cluster-a and cluster-b apply side by side in wave 2, and each one's six apps follow in wave 3.",
+   "started_at": "2026-10-19T02:25:07Z",
+   "next": {
+    "action": "follow the apply",
+    "from": "2026-10-19T02:25:48Z"
+   },
+   "pull": 773,
+   "commit": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+   "chapter": {
+    "n": 1,
+    "of": 4,
+    "headline": "A change to the shared network goes out to all 15 stacks",
+    "short": "The change goes out"
+   },
+   "about": {
+    "changes": "A pull request (a change up for review) edits the shared network. It also adds a cluster-a queue whose name AWS refuses.",
+    "watch": "chant plans fifteen stacks in three waves. After the merge, network applies first. Then cluster-a fails and its six apps are blocked. Cluster-b's six apps go ahead. A fix applies the seven left.",
+    "shows": "A failure blocks only the stacks that depend on it, and the fix applies only what was left."
+   },
+   "at": "2026-10-19T02:25:48Z",
+   "reports": {
+    "url": "s3://chant-demo/fan-out-estate/reports",
+    "plan": "773/6d4a48da36317886b549ca0d46c44646e697f561",
+    "apply": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    }
+   ]
+  },
+  {
+   "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
+   "contract": 1,
+   "demo": "fan-out-estate",
+   "repo": "chant-demo/fan-out-estate",
+   "name": "fifteen stacks",
+   "cycle": 610,
+   "scenario": "fan-out",
+   "title": "A broken stack shouldn't stall the whole rollout",
+   "step": "failed",
+   "label": "cluster-a failed because SQS refuses a FIFO queue whose name lacks .fifo. Its six apps are blocked; cluster-b's six went ahead.",
+   "started_at": "2026-10-19T02:25:07Z",
+   "next": {
+    "action": "open the fix",
+    "from": "2026-10-19T02:26:12Z",
+    "at": "2026-10-19T02:26:32Z"
+   },
+   "pull": 773,
+   "commit": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+   "chapter": {
+    "n": 2,
+    "of": 4,
+    "headline": "cluster-a breaks. Only its 6 apps stop; the other 8 stacks ship anyway",
+    "short": "cluster-a breaks"
+   },
+   "about": {
+    "changes": "A pull request (a change up for review) edits the shared network. It also adds a cluster-a queue whose name AWS refuses.",
+    "watch": "chant plans fifteen stacks in three waves. After the merge, network applies first. Then cluster-a fails and its six apps are blocked. Cluster-b's six apps go ahead. A fix applies the seven left.",
+    "shows": "A failure blocks only the stacks that depend on it, and the fix applies only what was left."
+   },
+   "at": "2026-10-19T02:26:12Z",
+   "reports": {
+    "url": "s3://chant-demo/fan-out-estate/reports",
+    "plan": "773/6d4a48da36317886b549ca0d46c44646e697f561",
+    "apply": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    },
+    {
+     "stage": "apply",
+     "pr": 773,
+     "commit": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+     "key": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
+    }
+   ]
+  },
+  {
+   "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
+   "contract": 1,
+   "demo": "fan-out-estate",
+   "repo": "chant-demo/fan-out-estate",
+   "name": "fifteen stacks",
+   "cycle": 610,
+   "scenario": "fan-out",
+   "title": "A broken stack shouldn't stall the whole rollout",
+   "step": "pull-request",
+   "label": "The fix is pull request 774: the queue's name now ends in .fifo. It reaches cluster-a and its six apps, and nothing else.",
+   "started_at": "2026-10-19T02:25:07Z",
+   "next": {
+    "action": "wait for the plan note",
+    "from": "2026-10-19T02:26:33Z"
+   },
+   "pull": 774,
+   "commit": "47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
+   "chapter": {
+    "n": 3,
+    "of": 4,
+    "headline": "The fix re-runs only the 7 that were blocked",
+    "short": "The fix"
+   },
+   "about": {
+    "changes": "The fix gives the queue a name that ends in .fifo. It touches cluster-a and its six apps, nothing else.",
+    "watch": "chant plans only those seven stacks. A reviewer approves the fix. The merge applies cluster-a first and its six apps after it.",
+    "shows": "A failure blocks only the stacks that depend on it, and the fix applies only what was left."
+   },
+   "at": "2026-10-19T02:26:33Z",
+   "reports": {
+    "url": "s3://chant-demo/fan-out-estate/reports",
+    "plan": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404"
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    },
+    {
+     "stage": "apply",
+     "pr": 773,
+     "commit": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+     "key": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
+    }
+   ]
+  },
+  {
+   "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
+   "contract": 1,
+   "demo": "fan-out-estate",
+   "repo": "chant-demo/fan-out-estate",
+   "name": "fifteen stacks",
+   "cycle": 610,
+   "scenario": "fan-out",
+   "title": "A broken stack shouldn't stall the whole rollout",
+   "step": "planned",
+   "label": "The fix's plan covers seven stacks: cluster-a, then app-01 to app-06. Network, cluster-b and its apps stay as they applied.",
+   "started_at": "2026-10-19T02:25:07Z",
+   "next": {
+    "action": "ask for a review",
+    "from": "2026-10-19T02:26:46Z",
+    "at": "2026-10-19T02:26:50Z"
+   },
+   "pull": 774,
+   "commit": "47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
+   "chapter": {
+    "n": 3,
+    "of": 4,
+    "headline": "The fix re-runs only the 7 that were blocked",
+    "short": "The fix"
+   },
+   "about": {
+    "changes": "The fix gives the queue a name that ends in .fifo. It touches cluster-a and its six apps, nothing else.",
+    "watch": "chant plans only those seven stacks. A reviewer approves the fix. The merge applies cluster-a first and its six apps after it.",
+    "shows": "A failure blocks only the stacks that depend on it, and the fix applies only what was left."
+   },
+   "at": "2026-10-19T02:26:46Z",
+   "reports": {
+    "url": "s3://chant-demo/fan-out-estate/reports",
+    "plan": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404"
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    },
+    {
+     "stage": "apply",
+     "pr": 773,
+     "commit": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+     "key": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
+    },
+    {
+     "stage": "plan",
+     "pr": 774,
+     "commit": "47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
+     "key": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404"
+    }
+   ]
+  },
+  {
+   "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
+   "contract": 1,
+   "demo": "fan-out-estate",
+   "repo": "chant-demo/fan-out-estate",
+   "name": "fifteen stacks",
+   "cycle": 610,
+   "scenario": "fan-out",
+   "title": "A broken stack shouldn't stall the whole rollout",
+   "step": "waiting",
+   "label": "The fix's plan waits for a reviewer's approval.",
+   "started_at": "2026-10-19T02:25:07Z",
+   "next": {
+    "action": "approve the plan's digest",
+    "from": "2026-10-19T02:26:50Z",
+    "at": "2026-10-19T02:26:58Z"
+   },
+   "pull": 774,
+   "commit": "47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
+   "chapter": {
+    "n": 3,
+    "of": 4,
+    "headline": "The fix re-runs only the 7 that were blocked",
+    "short": "The fix"
+   },
+   "about": {
+    "changes": "The fix gives the queue a name that ends in .fifo. It touches cluster-a and its six apps, nothing else.",
+    "watch": "chant plans only those seven stacks. A reviewer approves the fix. The merge applies cluster-a first and its six apps after it.",
+    "shows": "A failure blocks only the stacks that depend on it, and the fix applies only what was left."
+   },
+   "at": "2026-10-19T02:26:50Z",
+   "reports": {
+    "url": "s3://chant-demo/fan-out-estate/reports",
+    "plan": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404"
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    },
+    {
+     "stage": "apply",
+     "pr": 773,
+     "commit": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+     "key": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
+    },
+    {
+     "stage": "plan",
+     "pr": 774,
+     "commit": "47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
+     "key": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404"
+    }
+   ]
+  },
+  {
+   "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
+   "contract": 1,
+   "demo": "fan-out-estate",
+   "repo": "chant-demo/fan-out-estate",
+   "name": "fifteen stacks",
+   "cycle": 610,
+   "scenario": "fan-out",
+   "title": "A broken stack shouldn't stall the whole rollout",
+   "step": "approved",
+   "label": "The driver approves the fix and its digest as the reviewer.",
+   "started_at": "2026-10-19T02:25:07Z",
+   "next": {
+    "action": "merge pull request 774",
+    "from": "2026-10-19T02:26:59Z"
+   },
+   "pull": 774,
+   "commit": "47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
+   "chapter": {
+    "n": 3,
+    "of": 4,
+    "headline": "The fix re-runs only the 7 that were blocked",
+    "short": "The fix"
+   },
+   "about": {
+    "changes": "The fix gives the queue a name that ends in .fifo. It touches cluster-a and its six apps, nothing else.",
+    "watch": "chant plans only those seven stacks. A reviewer approves the fix. The merge applies cluster-a first and its six apps after it.",
+    "shows": "A failure blocks only the stacks that depend on it, and the fix applies only what was left."
+   },
+   "at": "2026-10-19T02:26:59Z",
+   "reports": {
+    "url": "s3://chant-demo/fan-out-estate/reports",
+    "plan": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404"
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    },
+    {
+     "stage": "apply",
+     "pr": 773,
+     "commit": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+     "key": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
+    },
+    {
+     "stage": "plan",
+     "pr": 774,
+     "commit": "47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
+     "key": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404"
+    }
+   ]
+  },
+  {
+   "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
+   "contract": 1,
+   "demo": "fan-out-estate",
+   "repo": "chant-demo/fan-out-estate",
+   "name": "fifteen stacks",
+   "cycle": 610,
+   "scenario": "fan-out",
+   "title": "A broken stack shouldn't stall the whole rollout",
+   "step": "merged",
+   "label": "Pull request 774 is merged into main (the branch the pipeline applies) at 80eef4a5, and the pipeline starts.",
+   "started_at": "2026-10-19T02:25:07Z",
+   "next": {
+    "action": "follow the waves",
+    "from": "2026-10-19T02:27:00Z"
+   },
+   "pull": 774,
+   "commit": "80eef4a5e0eb747fddb04a7067e91ea59dd8dade",
+   "chapter": {
+    "n": 3,
+    "of": 4,
+    "headline": "The fix re-runs only the 7 that were blocked",
+    "short": "The fix"
+   },
+   "about": {
+    "changes": "The fix gives the queue a name that ends in .fifo. It touches cluster-a and its six apps, nothing else.",
+    "watch": "chant plans only those seven stacks. A reviewer approves the fix. The merge applies cluster-a first and its six apps after it.",
+    "shows": "A failure blocks only the stacks that depend on it, and the fix applies only what was left."
+   },
+   "at": "2026-10-19T02:27:00Z",
+   "reports": {
+    "url": "s3://chant-demo/fan-out-estate/reports",
+    "plan": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
+    "apply": "774/80eef4a5e0eb747fddb04a7067e91ea59dd8dade"
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    },
+    {
+     "stage": "apply",
+     "pr": 773,
+     "commit": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+     "key": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
+    },
+    {
+     "stage": "plan",
+     "pr": 774,
+     "commit": "47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
+     "key": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404"
+    }
+   ]
+  },
+  {
+   "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
+   "contract": 1,
+   "demo": "fan-out-estate",
+   "repo": "chant-demo/fan-out-estate",
+   "name": "fifteen stacks",
+   "cycle": 610,
+   "scenario": "fan-out",
+   "title": "A broken stack shouldn't stall the whole rollout",
+   "step": "applying",
+   "label": "The merge applies the plan the reviewer approved: cluster-a first, then its six apps.",
+   "started_at": "2026-10-19T02:25:07Z",
+   "next": {
+    "action": "follow the apply",
+    "from": "2026-10-19T02:27:01Z"
+   },
+   "pull": 774,
+   "commit": "80eef4a5e0eb747fddb04a7067e91ea59dd8dade",
+   "chapter": {
+    "n": 3,
+    "of": 4,
+    "headline": "The fix re-runs only the 7 that were blocked",
+    "short": "The fix"
+   },
+   "about": {
+    "changes": "The fix gives the queue a name that ends in .fifo. It touches cluster-a and its six apps, nothing else.",
+    "watch": "chant plans only those seven stacks. A reviewer approves the fix. The merge applies cluster-a first and its six apps after it.",
+    "shows": "A failure blocks only the stacks that depend on it, and the fix applies only what was left."
+   },
+   "at": "2026-10-19T02:27:01Z",
+   "reports": {
+    "url": "s3://chant-demo/fan-out-estate/reports",
+    "plan": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
+    "apply": "774/80eef4a5e0eb747fddb04a7067e91ea59dd8dade"
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    },
+    {
+     "stage": "apply",
+     "pr": 773,
+     "commit": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+     "key": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
+    },
+    {
+     "stage": "plan",
+     "pr": 774,
+     "commit": "47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
+     "key": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404"
+    }
+   ]
+  },
+  {
+   "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
+   "contract": 1,
+   "demo": "fan-out-estate",
+   "repo": "chant-demo/fan-out-estate",
+   "name": "fifteen stacks",
+   "cycle": 610,
+   "scenario": "fan-out",
+   "title": "A broken stack shouldn't stall the whole rollout",
+   "step": "applied",
+   "label": "All fifteen stacks are in. The first run applied eight. The fix applied the seven that cluster-a's failure blocked.",
+   "started_at": "2026-10-19T02:25:07Z",
+   "next": {
+    "action": "reset",
+    "from": "2026-10-19T02:27:19Z",
+    "at": "2026-10-19T02:27:37Z"
+   },
+   "pull": 774,
+   "commit": "80eef4a5e0eb747fddb04a7067e91ea59dd8dade",
+   "chapter": {
+    "n": 4,
+    "of": 4,
+    "headline": "All 15 are in, and nothing was applied twice",
+    "short": "Done"
+   },
+   "about": {
+    "changes": "The fix gives the queue a name that ends in .fifo. It touches cluster-a and its six apps, nothing else.",
+    "watch": "chant plans only those seven stacks. A reviewer approves the fix. The merge applies cluster-a first and its six apps after it.",
+    "shows": "A failure blocks only the stacks that depend on it, and the fix applies only what was left."
+   },
+   "at": "2026-10-19T02:27:19Z",
+   "reports": {
+    "url": "s3://chant-demo/fan-out-estate/reports",
+    "plan": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
+    "apply": "774/80eef4a5e0eb747fddb04a7067e91ea59dd8dade"
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    },
+    {
+     "stage": "apply",
+     "pr": 773,
+     "commit": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+     "key": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
+    },
+    {
+     "stage": "plan",
+     "pr": 774,
+     "commit": "47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
+     "key": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404"
+    },
+    {
+     "stage": "apply",
+     "pr": 774,
+     "commit": "80eef4a5e0eb747fddb04a7067e91ea59dd8dade",
+     "key": "774/80eef4a5e0eb747fddb04a7067e91ea59dd8dade"
+    }
+   ]
+  },
+  {
+   "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
+   "contract": 1,
+   "demo": "fan-out-estate",
+   "repo": "chant-demo/fan-out-estate",
+   "name": "fifteen stacks",
+   "cycle": 610,
+   "scenario": "fan-out",
+   "title": "A broken stack shouldn't stall the whole rollout",
+   "step": "reset",
+   "label": "Outside the pipeline, the driver resets every state to how it started. It also moves main back to 37e10ba3 for the next scenario.",
+   "started_at": "2026-10-19T02:25:07Z",
+   "next": {
+    "action": "start the next cycle",
+    "from": "2026-10-19T02:27:37Z"
+   },
+   "pull": null,
+   "commit": "37e10ba32894248bf74b5777e5b949dd73b2d503",
+   "chapter": {
+    "n": 4,
+    "of": 4,
+    "headline": "All 15 are in, and nothing was applied twice",
+    "short": "Done"
+   },
+   "about": {
+    "changes": "The fix gives the queue a name that ends in .fifo. It touches cluster-a and its six apps, nothing else.",
+    "watch": "chant plans only those seven stacks. A reviewer approves the fix. The merge applies cluster-a first and its six apps after it.",
+    "shows": "A failure blocks only the stacks that depend on it, and the fix applies only what was left."
+   },
+   "at": "2026-10-19T02:27:37Z",
+   "reports": {
+    "url": "s3://chant-demo/fan-out-estate/reports"
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    },
+    {
+     "stage": "apply",
+     "pr": 773,
+     "commit": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+     "key": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
+    },
+    {
+     "stage": "plan",
+     "pr": 774,
+     "commit": "47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
+     "key": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404"
+    },
+    {
+     "stage": "apply",
+     "pr": 774,
+     "commit": "80eef4a5e0eb747fddb04a7067e91ea59dd8dade",
+     "key": "774/80eef4a5e0eb747fddb04a7067e91ea59dd8dade"
+    }
+   ]
+  }
+ ],
+ "reports": [
+  {
+   "stage": "plan",
+   "pr": 773,
+   "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+   "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+  },
+  {
+   "stage": "apply",
+   "pr": 773,
+   "commit": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+   "key": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
+  },
+  {
+   "stage": "plan",
+   "pr": 774,
+   "commit": "47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
+   "key": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404"
+  },
+  {
+   "stage": "apply",
+   "pr": 774,
+   "commit": "80eef4a5e0eb747fddb04a7067e91ea59dd8dade",
+   "key": "774/80eef4a5e0eb747fddb04a7067e91ea59dd8dade"
+  }
+ ]
+}

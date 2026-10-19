@@ -414,12 +414,13 @@ export function statusIcon(status) {
 }
 
 /** The sidebar: the live run pinned, then the recent ones. `pick(id)` selects one; nothing here writes. */
-export function renderSidebar(host, index, selectedId, { now = new Date(), scenarios = {}, titles = {}, names = {}, pick = () => {}, merged = null, replay = false } = {}) {
+export function renderSidebar(host, index, selectedId, { now = new Date(), scenarios = {}, titles = {}, names = {}, pick = () => {}, merged = null, replay = false, chant = false } = {}) {
   host.replaceChildren();
   const head = el("div", "r-side-head");
   head.appendChild(el("div", "r-side-title", "Runs"));
   // behold#571: a tool's page replays an earlier cycle's runs, and says so.
-  head.appendChild(el("div", "r-side-note", replay ? "The replayed cycle's runs, newest first." : "From the forge, newest first."));
+  // behold#752: chant's demo's runs are built from chant's run events, not copied from the forge.
+  head.appendChild(el("div", "r-side-note", replay ? "The replayed cycle's runs, newest first." : chant ? "From chant's run events, newest first." : "From the forge, newest first."));
   host.appendChild(head);
   if (!index || index.error || index.absent || !index.doc) {
     host.appendChild(el("p", "r-note", index ? index.absent || index.error : "Reading the runs…"));
@@ -817,6 +818,8 @@ export function startRuns(
     filter = (index) => index,
     replay = () => false,
     hideLine = null,
+    // behold#752: where the live runs are read: terragucci's copies of forge runs, or chant's demo's runs built from its run events.
+    urls = { runs: "/api/terragucci/runs", run: (id) => `/api/terragucci/runs/${id}` },
   } = {},
 ) {
   const s = { index: null, run: null, selected: null, picked: 0, ui: { job: null, open: null, setup: null }, note: null, flash: null, scrollTo: null, pending: null, featsOpen: false };
@@ -865,7 +868,7 @@ export function startRuns(
     }
     // One merged read of the selected run for both the sidebar and its page.
     const merged = ans && ans.doc ? mergeRun(entry, ans.doc) : null;
-    renderSidebar(side, s.index, id, { now: shown(), scenarios, titles: titles(), names: names(), pick, merged, replay: replay() });
+    renderSidebar(side, s.index, id, { now: shown(), scenarios, titles: titles(), names: names(), pick, merged, replay: replay(), chant: urls.runs.startsWith("/api/chant/") });
     // The redraw replaces the scrollers: keep where a viewer left them.
     const old = main.querySelector(".r-log");
     const oldSteps = main.querySelector(".r-steps");
@@ -1068,7 +1071,7 @@ export function startRuns(
   const readIndex = async () => {
     // behold#571: a tool's page reads its replay's runs from `source`, and keeps its own repo's alone.
     const src = source();
-    s.index = filter(src ? await src.index() : await fetchJson("/api/terragucci/runs"));
+    s.index = filter(src ? await src.index() : await fetchJson(urls.runs));
     const runs = s.index && s.index.doc ? s.index.doc.runs : [];
     const live = liveRun(runs);
     onLive(live);
@@ -1087,7 +1090,7 @@ export function startRuns(
     if (key === lastRunKey && entry && !LIVE.has(entry.status) && s.run && s.run.doc && s.run.doc.id === id) return draw();
     if (s.run && s.run.doc && s.run.doc.id !== id && !s.pending) s.ui = { job: null, open: null, setup: null };
     lastRunKey = key;
-    s.run = src ? await src.run(id) : await fetchJson(`/api/terragucci/runs/${id}`);
+    s.run = src ? await src.run(id) : await fetchJson(urls.run(id));
     draw();
   };
   void readIndex();

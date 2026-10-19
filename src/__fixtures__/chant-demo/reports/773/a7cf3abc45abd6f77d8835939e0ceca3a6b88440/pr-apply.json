@@ -1,0 +1,395 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/pr-report/v1/pr-report.schema.json",
+  "contract": 1,
+  "stage": "apply",
+  "pr": 773,
+  "env": "demo",
+  "base": "37e10ba32894248bf74b5777e5b949dd73b2d503",
+  "head": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+  "op": "pr-773",
+  "gate": "pr-apply",
+  "digest": "jcs1-sha256:8d3069e0d123e23a4da2d7f959fc2a557808bece0c1e6a48301e9795f97e5db8",
+  "status": "failed",
+  "approval": {
+    "status": "approved",
+    "approvedBy": [
+      "forgejo@forgejo:3000:reviewer"
+    ]
+  },
+  "selection": {
+    "changed": [
+      "network",
+      "cluster-a"
+    ],
+    "dependents": [
+      "cluster-b",
+      "app-01",
+      "app-02",
+      "app-03",
+      "app-04",
+      "app-05",
+      "app-06",
+      "app-07",
+      "app-08",
+      "app-09",
+      "app-10",
+      "app-11",
+      "app-12"
+    ],
+    "unclaimed": [],
+    "indeterminate": [],
+    "waves": [
+      [
+        "network"
+      ],
+      [
+        "cluster-a",
+        "cluster-b"
+      ],
+      [
+        "app-01",
+        "app-02",
+        "app-03",
+        "app-04",
+        "app-05",
+        "app-06",
+        "app-07",
+        "app-08",
+        "app-09",
+        "app-10",
+        "app-11",
+        "app-12"
+      ]
+    ]
+  },
+  "members": [
+    {
+      "member": "app-01",
+      "component": "app-01",
+      "planDigest": "jcs1-sha256:e12d8deea0662e063d4cf8919a3e80ec5473daf696c05cb5bd277a93452a5f82",
+      "status": "blocked",
+      "counts": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      }
+    },
+    {
+      "member": "app-02",
+      "component": "app-02",
+      "planDigest": "jcs1-sha256:a970daf698d6b4112c04bf64e2002d759ff2638e7101d31a3b12d05ef805e902",
+      "status": "blocked",
+      "counts": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      }
+    },
+    {
+      "member": "app-03",
+      "component": "app-03",
+      "planDigest": "jcs1-sha256:f4af6ea3c49e24fb26cbda9bc09cf158e8ead27cc46c22b3342706e86704b15f",
+      "status": "blocked",
+      "counts": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      }
+    },
+    {
+      "member": "app-04",
+      "component": "app-04",
+      "planDigest": "jcs1-sha256:ef1a9ad5e5b1e4c83ae467d52e23655b3b6fea578bbdc0b499b8b47ff7c3461c",
+      "status": "blocked",
+      "counts": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      }
+    },
+    {
+      "member": "app-05",
+      "component": "app-05",
+      "planDigest": "jcs1-sha256:8be7c76c742017bbb49eb3afc0394eb03206b2b5c9261060ddc35c0640cd2ab4",
+      "status": "blocked",
+      "counts": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      }
+    },
+    {
+      "member": "app-06",
+      "component": "app-06",
+      "planDigest": "jcs1-sha256:2d0290953e6fdc9a45ff35ebba4fa599865e5555adce908ca424b1c839568385",
+      "status": "blocked",
+      "counts": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      }
+    },
+    {
+      "member": "app-07",
+      "component": "app-07",
+      "planDigest": "jcs1-sha256:eaef693bbc1dd7508a905b441244cc6f46f9ca5bd96a0740594390f40e6b6750",
+      "status": "applied",
+      "counts": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      }
+    },
+    {
+      "member": "app-08",
+      "component": "app-08",
+      "planDigest": "jcs1-sha256:d6061c27d10f9ee548b07344a0dfe418f4749b48187f1c97e020d5e8ab41e25a",
+      "status": "applied",
+      "counts": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      }
+    },
+    {
+      "member": "app-09",
+      "component": "app-09",
+      "planDigest": "jcs1-sha256:faa3cc9a2dc006f422498dbb8dabcbe5a7cfe3d3b11d140b5b73b3d0c743e763",
+      "status": "applied",
+      "counts": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      }
+    },
+    {
+      "member": "app-10",
+      "component": "app-10",
+      "planDigest": "jcs1-sha256:9d0288cecf1bbb4e8bb0413f5a7a35cecc175ac9e5d421b4cb9a860429d02029",
+      "status": "applied",
+      "counts": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      }
+    },
+    {
+      "member": "app-11",
+      "component": "app-11",
+      "planDigest": "jcs1-sha256:4e52fb0c6148ec66e852db79ebfb2a34f9332d524080f774a6264ec04d569478",
+      "status": "applied",
+      "counts": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      }
+    },
+    {
+      "member": "app-12",
+      "component": "app-12",
+      "planDigest": "jcs1-sha256:ac42ff89cd2f8c4e592017f39df5a953ed1b5195d0e7d1551f43310a56636275",
+      "status": "applied",
+      "counts": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      }
+    },
+    {
+      "member": "cluster-a",
+      "component": "cluster-a",
+      "planDigest": "jcs1-sha256:c3d853fdd829eff20685dbdae939c88bfa8f32aa9bc5aab157922ca622cf71b9",
+      "status": "failed",
+      "counts": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      },
+      "error": "cfn-deploy \"cluster-a\": stack reached UPDATE_ROLLBACK_COMPLETE — the deploy failed and was rolled back. Inspect the stack events for the resource that failed to create/update."
+    },
+    {
+      "member": "cluster-b",
+      "component": "cluster-b",
+      "planDigest": "jcs1-sha256:d06c5a8e169352761f7a730fd07c56ef07bacd4813ef7b5031499d249402b6db",
+      "status": "applied",
+      "counts": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      }
+    },
+    {
+      "member": "network",
+      "component": "network",
+      "planDigest": "jcs1-sha256:6c1d2a11b44443ede687185678df28e1a2afd949d48d6c648a0aca2a7ac72b20",
+      "status": "applied",
+      "counts": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      }
+    }
+  ],
+  "changeSet": {
+    "$schema": "https://intentius.io/chant/schemas/workspace/change-set/v1/change-set.schema.json",
+    "contract": 1,
+    "digest": "jcs1-sha256:8d3069e0d123e23a4da2d7f959fc2a557808bece0c1e6a48301e9795f97e5db8",
+    "members": [
+      {
+        "member": "app-01",
+        "lexicon": "chant",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:e12d8deea0662e063d4cf8919a3e80ec5473daf696c05cb5bd277a93452a5f82",
+        "holes": []
+      },
+      {
+        "member": "app-02",
+        "lexicon": "chant",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:a970daf698d6b4112c04bf64e2002d759ff2638e7101d31a3b12d05ef805e902",
+        "holes": []
+      },
+      {
+        "member": "app-03",
+        "lexicon": "chant",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:f4af6ea3c49e24fb26cbda9bc09cf158e8ead27cc46c22b3342706e86704b15f",
+        "holes": []
+      },
+      {
+        "member": "app-04",
+        "lexicon": "chant",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:ef1a9ad5e5b1e4c83ae467d52e23655b3b6fea578bbdc0b499b8b47ff7c3461c",
+        "holes": []
+      },
+      {
+        "member": "app-05",
+        "lexicon": "chant",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:8be7c76c742017bbb49eb3afc0394eb03206b2b5c9261060ddc35c0640cd2ab4",
+        "holes": []
+      },
+      {
+        "member": "app-06",
+        "lexicon": "chant",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:2d0290953e6fdc9a45ff35ebba4fa599865e5555adce908ca424b1c839568385",
+        "holes": []
+      },
+      {
+        "member": "app-07",
+        "lexicon": "chant",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:eaef693bbc1dd7508a905b441244cc6f46f9ca5bd96a0740594390f40e6b6750",
+        "holes": []
+      },
+      {
+        "member": "app-08",
+        "lexicon": "chant",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:d6061c27d10f9ee548b07344a0dfe418f4749b48187f1c97e020d5e8ab41e25a",
+        "holes": []
+      },
+      {
+        "member": "app-09",
+        "lexicon": "chant",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:faa3cc9a2dc006f422498dbb8dabcbe5a7cfe3d3b11d140b5b73b3d0c743e763",
+        "holes": []
+      },
+      {
+        "member": "app-10",
+        "lexicon": "chant",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:9d0288cecf1bbb4e8bb0413f5a7a35cecc175ac9e5d421b4cb9a860429d02029",
+        "holes": []
+      },
+      {
+        "member": "app-11",
+        "lexicon": "chant",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:4e52fb0c6148ec66e852db79ebfb2a34f9332d524080f774a6264ec04d569478",
+        "holes": []
+      },
+      {
+        "member": "app-12",
+        "lexicon": "chant",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:ac42ff89cd2f8c4e592017f39df5a953ed1b5195d0e7d1551f43310a56636275",
+        "holes": []
+      },
+      {
+        "member": "cluster-a",
+        "lexicon": "chant",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:c3d853fdd829eff20685dbdae939c88bfa8f32aa9bc5aab157922ca622cf71b9",
+        "holes": []
+      },
+      {
+        "member": "cluster-b",
+        "lexicon": "chant",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:d06c5a8e169352761f7a730fd07c56ef07bacd4813ef7b5031499d249402b6db",
+        "holes": []
+      },
+      {
+        "member": "network",
+        "lexicon": "chant",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:6c1d2a11b44443ede687185678df28e1a2afd949d48d6c648a0aca2a7ac72b20",
+        "holes": []
+      }
+    ],
+    "entries": [],
+    "summary": {
+      "members": 15,
+      "entries": 0,
+      "actions": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 0,
+        "read": 0,
+        "no-op": 0,
+        "forget": 0
+      },
+      "types": {},
+      "byMember": {},
+      "deletes": [],
+      "replacements": [],
+      "failed": [],
+      "holes": 0
+    }
+  }
+}

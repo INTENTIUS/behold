@@ -279,7 +279,7 @@ async function defaultFetch(url) {
  * Start the pane in `host`. `tool` is the tool of a tool's page, null on
  * /kiosk. Returns `{ stop }`.
  */
-export function startMetrics(host, { tool = null, fetchJson = defaultFetch, store = null, setTimer = setInterval, clearTimer = clearInterval, doc = document, onModel = () => {} } = {}) {
+export function startMetrics(host, { tool = null, reads = { demo: "/api/terragucci/demo", cycle: (t) => `/api/terragucci/cycles/${t}` }, fetchJson = defaultFetch, store = null, setTimer = setInterval, clearTimer = clearInterval, doc = document, onModel = () => {} } = {}) {
   if (!host) return { stop() {} };
   if (doc.head && !doc.getElementById("k-metrics-style")) {
     const style = el(doc, "style");
@@ -311,8 +311,9 @@ export function startMetrics(host, { tool = null, fetchJson = defaultFetch, stor
     if (busy) return;
     busy = true;
     try {
-      const demo = await fetchJson("/api/terragucci/demo");
-      const latest = tool && !(demo && demo.demo && demo.demo.tool === tool) ? await fetchJson(`/api/terragucci/cycles/${tool}`) : null;
+      // behold#752: the page's own demo, terragucci's or chant's (web/kiosk-source.js).
+      const demo = await fetchJson(reads.demo);
+      const latest = tool && !(demo && demo.demo && demo.demo.tool === tool) ? await fetchJson(reads.cycle(tool)) : null;
       const target = metricsTarget(demo, latest, tool);
       const answer = target ? await fetchJson(metricsUrl(target)) : null;
       // behold#571: which cycle this read is of; a read that failed keeps the pane as it was.
