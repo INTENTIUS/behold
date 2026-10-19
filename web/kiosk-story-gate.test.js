@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { storyGate, whatLine, whatParts, whatTool } from "./kiosk.js";
+import { WHAT_TEXT, WHAT_TEXT_CHANT, introLine, storyGate, whatLine, whatParts, whatTextFor, whatTool } from "./kiosk.js";
 
 // behold#741: the #740 kiosk features (track, chapters, wedge, waiting modal,
 // pacing, wave blocks, applied earlier, one tip at a time, the title line)
@@ -40,5 +40,26 @@ describe("a terragucci story's title line (behold#741)", () => {
   });
   it("leaves chant's line as it was", () => {
     expect(whatLine({ scenario: "fan-out" }, "forgejo")).toBe("chant's pull-request pipeline · on Forgejo · fan-out · live demo");
+  });
+});
+
+// behold#777: a phone names behold and whose pipeline it watches in one line under the title, and "What is this?" agrees.
+describe("the phone's intro line and What is this? (behold#777)", () => {
+  it("names behold and terragucci for a terragucci repo, in the popover too", () => {
+    const line = introLine({ tg: true });
+    expect(line).toMatch(/^behold, a live view of infrastructure/);
+    expect(line).toMatch(/terragucci/);
+    const pop = whatTextFor({ tg: true });
+    expect(pop).toMatch(/^This is behold, a live view of infrastructure/);
+    expect(pop).toMatch(/terragucci/);
+  });
+  it("keeps chant's words for chant's pipeline, and the plain words elsewhere", () => {
+    expect(whatTextFor({ chant: true, tg: true })).toBe(WHAT_TEXT_CHANT);
+    expect(whatTextFor({})).toBe(WHAT_TEXT);
+    expect(introLine({ chant: true })).toMatch(/chant's pull-request pipeline/);
+    expect(introLine({})).toMatch(/^behold, a live view of infrastructure/);
+  });
+  it("says nothing on a tool's page, which may not name the others", () => {
+    expect(introLine({ tg: true, vendor: true })).toBeNull();
   });
 });
