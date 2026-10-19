@@ -14,6 +14,7 @@
 import { STEP_WORDS, focusRoots, matchingPull, matchingRun, scenarioHead, introText, aboutRows, nextWords, demoStage } from "./kiosk.js";
 import { defaultJob, defaultStep, logLineWords, setupLine } from "./kiosk-runs.js";
 import { backendLine, coneLine, coneOf } from "./cone.js";
+import { placeFloat } from "./float-place.js";
 
 /** The two modes, Watch first: it is the default. */
 export const MODES = [
@@ -356,20 +357,26 @@ export function tailLines(runDoc, n = 2) {
 /**
  * Where an overlay of `size` goes beside `box` inside `view` (all pixels,
  * `{x, y, w, h}`): to the right of the box when it fits, else to its left,
- * else under it; its top level with the box's, kept inside the view. On the
- * right it moves past any of `avoid` (the reads' labels) it would cover.
- * `{ x, y, side }`, `side` "right", "left" or "below".
+ * else under it, else over it; its top level with the box's, kept inside the
+ * view. On the right it moves past any of `avoid` (the reads' labels) it
+ * would cover. `{ x, y, side }`, `side` "right", "left", "below" or "above".
+ * behold#764: never past the view's top or bottom. The job box's log drawer,
+ * opened, is taller than the graph above the caption at 1366x768, and was
+ * lifted 94px off the top; now it keeps the view's top, with `maxHeight` (the
+ * caller caps it there and its log scrolls) when it is taller than the view.
+ * No side with room: the side with the most (web/float-place.js).
  */
 export function placeBeside(box, size, view, gap = 18, avoid = []) {
-  const top = Math.max(view.y + 8, Math.min(box.y, view.y + view.h - size.h - 8));
+  const fit = placeFloat({ left: box.x, top: box.y, width: box.w, height: box.h }, { width: size.w, height: size.h }, { left: view.x, top: view.y, width: view.w, height: view.h }, { sides: ["left", "below", "above", "right"], gap, margin: 8 });
+  const cap = fit.maxHeight ? { maxHeight: fit.maxHeight } : {};
+  const h = fit.maxHeight || size.h;
+  const top = Math.max(view.y + 8, Math.min(box.y, view.y + view.h - h - 8));
   // Clear of the graph's own labels beside the box: past the right edge of any it would cover.
-  const over = (x) => avoid.filter((a) => a.x < x + size.w && a.x + a.w > x && a.y < top + size.h && a.y + a.h > top);
+  const over = (x) => avoid.filter((a) => a.x < x + size.w && a.x + a.w > x && a.y < top + h && a.y + a.h > top);
   let right = box.x + box.w + gap;
   for (let i = 0; i < 4 && over(right).length; i++) right = Math.max(...over(right).map((a) => a.x + a.w)) + gap / 2;
-  if (right + size.w <= view.x + view.w - 8) return { x: right, y: top, side: "right" };
-  if (box.x - gap - size.w >= view.x + 8) return { x: box.x - gap - size.w, y: top, side: "left" };
-  const x = Math.max(view.x + 8, Math.min(box.x, view.x + view.w - size.w - 8));
-  return { x, y: Math.min(box.y + box.h + gap, view.y + view.h - size.h - 8), side: "below" };
+  if (right + size.w <= view.x + view.w - 8) return { x: right, y: top, side: "right", ...cap };
+  return { x: fit.left, y: fit.top, side: fit.side, ...cap };
 }
 
 // ---------------------------------------------------------------------------

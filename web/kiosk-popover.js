@@ -12,6 +12,7 @@
 
 import { PICK_HOLD_MS } from "./kiosk-runs.js";
 import { clock } from "./terragucci.js";
+import { placeFloat } from "./float-place.js";
 
 /** How many attribute lines the popover shows before "and N more". */
 export const MAX_LINES = 6;
@@ -208,28 +209,11 @@ export function popReduce(s, ev, now) {
  * that side, as near the card's top (or left) as the frame allows. When no
  * side fits, the side with the most room, kept inside the frame. All boxes
  * are `{ left, top, width, height }` in the frame's pixels.
+ * behold#764: the shared placement (web/float-place.js), so a card at the
+ * frame's very top never puts it off the top, and a popover taller than the
+ * frame gets `maxHeight` and scrolls.
  */
 export function placePopover(card, pop, frame, { gap = 12, margin = 8 } = {}) {
-  const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, Math.max(lo, hi)));
-  const right = card.left + card.width;
-  const bottom = card.top + card.height;
-  const room = {
-    right: frame.width - margin - (right + gap),
-    left: card.left - gap - margin,
-    below: frame.height - margin - (bottom + gap),
-    above: card.top - gap - margin,
-  };
-  const at = (side) => {
-    if (side === "right") return { left: right + gap, top: clamp(card.top, margin, frame.height - margin - pop.height), side };
-    if (side === "left") return { left: card.left - gap - pop.width, top: clamp(card.top, margin, frame.height - margin - pop.height), side };
-    if (side === "below") return { left: clamp(card.left, margin, frame.width - margin - pop.width), top: bottom + gap, side };
-    return { left: clamp(card.left, margin, frame.width - margin - pop.width), top: card.top - gap - pop.height, side };
-  };
-  if (room.right >= pop.width) return at("right");
-  if (room.left >= pop.width) return at("left");
-  if (room.below >= pop.height) return at("below");
-  if (room.above >= pop.height) return at("above");
-  const best = Object.entries({ right: room.right / pop.width, left: room.left / pop.width, below: room.below / pop.height, above: room.above / pop.height }).sort((a, b) => b[1] - a[1])[0][0];
-  const p = at(best);
-  return { left: clamp(p.left, margin, frame.width - margin - pop.width), top: clamp(p.top, margin, frame.height - margin - pop.height), side: best };
+  const view = { left: frame.left || 0, top: frame.top || 0, width: frame.width, height: frame.height };
+  return placeFloat(card, pop, view, { gap, margin });
 }

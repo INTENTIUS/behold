@@ -410,6 +410,79 @@ export function highlightShown(state) {
  * small stage (nothing overlays the graph there), and no modal up but a
  * "Waiting on…" one, which it replaces. A critical modal up keeps it waiting.
  */
-export function highlightOpens({ pending = null, on = true, watch = false, held = false, modal = null } = {}) {
-  return !!pending && !!on && !!watch && !held && (!modal || modal === "waiting");
+export function highlightOpens({ pending = null, on = true, watch = false, held = false, modal = null, pop = null } = {}) {
+  // behold#764: nor over the card's details popover a viewer has open (`pop`): it waits until that closes.
+  return !!pending && !!on && !!watch && !held && !pop && (!modal || modal === "waiting");
+}
+
+// ---------------------------------------------------------------------------
+// behold#764: a story modal a viewer closes stays closed. "Waiting on the
+// pipeline…" came straight back on the next look after its ×: the tick opens
+// one whenever a wait is up and no modal is. A close by the viewer (×, Escape,
+// a click on the sheet) is kept for what the modal was about: its kind, the
+// cycle (and beat), the pull request, the step, and its own key (the wait's
+// chapter, segment and what it waits on; a fact's id; a highlight's id). A new
+// wait (a later step, a new pull request, a new cycle) opens again. Kept for
+// the visit in sessionStorage, so a reload does not bring it back either; a
+// replay that loops round to its start forgets them, as it does a highlight.
+// A step's highlight is kept here once it has opened, so it is once per
+// cycle, step and title across a reload too.
+
+/** Where the visit's closed modals are kept (sessionStorage). */
+export const DISMISS_STORE = "behold.eventHelp.closed";
+/** At most this many are kept: the newest. */
+export const DISMISS_MAX = 64;
+
+/** What a story modal is about, as one key: kind, cycle, beat, pull request, step and its own key. */
+export function dismissKey(kind, demo, key) {
+  const d = demo || {};
+  return [kind, d.cycle ?? "", d.beat || "", d.pull ?? "", d.step || "", key ?? ""].join("|");
+}
+
+/** When a step was written, in ms (a replay's `at`, a live step's `started_at`), or null. */
+export const stepWrittenAt = (demo) => writtenAt(demo);
+
+/**
+ * The visit's closed modals: `{ has(key), add(key), clear(), keys() }`, kept
+ * in `store` (sessionStorage) where it lets them be, in memory where it
+ * throws or is missing. Never localStorage: a closed modal is this visit's.
+ */
+export function createDismissals(store = null) {
+  let keys = [];
+  try {
+    const raw = store ? JSON.parse(store.getItem(DISMISS_STORE) || "[]") : [];
+    if (Array.isArray(raw)) keys = raw.filter((k) => typeof k === "string").slice(-DISMISS_MAX);
+  } catch {
+    keys = [];
+  }
+  const save = () => {
+    try {
+      if (store) store.setItem(DISMISS_STORE, JSON.stringify(keys));
+    } catch {
+      /* kept for this page only */
+    }
+  };
+  return {
+    has: (key) => keys.includes(key),
+    add(key) {
+      if (keys.includes(key)) return;
+      keys = [...keys, key].slice(-DISMISS_MAX);
+      save();
+    },
+    clear() {
+      if (!keys.length) return;
+      keys = [];
+      save();
+    },
+    keys: () => [...keys],
+  };
+}
+
+/**
+ * behold#764: whether the "Waiting on…" modal opens now: a wait is up, Tips
+ * on, no other modal up or due, the wait not just closed by news (`held`),
+ * no details popover open (`pop`), and the viewer has not closed this wait.
+ */
+export function waitingOpens({ waiting = null, on = true, held = false, modal = null, due = false, pop = null, closed = false } = {}) {
+  return !!waiting && !!on && !held && !modal && !due && !pop && !closed;
 }

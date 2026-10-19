@@ -353,6 +353,8 @@
       .k-what { font: 600 0.92em var(--font-ui); color: var(--pending); background: transparent; border: 0; padding: 0.1em 0.2em; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
       #k-what-pop { position: absolute; top: 1.8em; right: 0; width: min(34em, calc(100vw - 32px)); padding: var(--s3) var(--s4); background: var(--surface-pane-b); color: var(--fg); border: 1px solid var(--focus);
         border-radius: 8px; box-shadow: 0 6px 24px color-mix(in srgb, var(--shadow) 70%, transparent); font-size: 1.15em; line-height: 1.45; }
+      /* behold#764: never past the window's bottom on a short screen: it scrolls. */
+      #k-what-pop { max-height: calc(100vh - 4em); overflow-y: auto; overscroll-behavior: contain; }
       #k-what-pop[hidden] { display: none; }
       #k-what-pop p { margin: 0; }
       #k-what-pop .k-what-more { margin-top: var(--s2); }
@@ -518,7 +520,13 @@
       .k-notch { position: absolute; width: 14px; height: 14px; background: inherit; border: inherit; transform: rotate(45deg); top: 1.4em; }
       .k-side-right > .k-notch { left: -9px; border-top: 0; border-right: 0; }
       .k-side-left > .k-notch { right: -9px; border-bottom: 0; border-left: 0; }
-      .k-side-below > .k-notch { display: none; }
+      .k-side-below > .k-notch, .k-side-above > .k-notch { display: none; }
+      /* behold#764: an overlay taller than the graph's view is capped (placeBeside's maxHeight, .k-capped): the callout and
+         the result scroll (their notch goes: a scroller clips it), the drawer's log shrinks to fit and scrolls. */
+      .k-over.k-capped { overflow-y: auto; overscroll-behavior: contain; }
+      .k-over.k-capped > .k-notch { display: none; }
+      #k-drawer.k-capped { overflow: hidden; }
+      #k-drawer.k-open .k-drawer-body { flex: 1 1 auto; }
       /* The running job's log, a drawer from the active wave's box: folded to its last lines, open on a hover or a click. */
       #k-drawer { width: min(34em, 46vw); background: var(--surface-pane-a); border: 2px solid color-mix(in srgb, var(--pending) 80%, var(--fg)); border-radius: 10px; box-shadow: 0 10px 34px color-mix(in srgb, var(--shadow) 75%, transparent); display: flex; flex-direction: column; }
       .k-drawer-head { display: flex; align-items: center; gap: var(--s3); width: 100%; padding: var(--s3) var(--s4) var(--s1); background: transparent; border: 0; color: var(--fg); cursor: pointer; text-align: left; font: inherit; }
