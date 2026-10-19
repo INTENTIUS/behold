@@ -84,6 +84,54 @@ export const VENDORS = {
     runsWith: ["opentofu"],
     reports: false,
   },
+  // behold#746: a page per fan-out scenario. The loop runs one fan-out per
+  // pipeline, each on its own repo, and each repo's behold links its own page;
+  // /kiosk follows whichever runs. A fan-out page carries its product's name
+  // alone and competes with the other fan-outs (`kind: "fanout"`), so none
+  // names another's product. `hides` are words the page leaves out anywhere,
+  // inside an identifier too (the jobs' `terragucci-demo-tofu:local` image,
+  // the forge's `terragucci-admin`).
+  // - chant-fanout: chant's own pull-request pipeline does the work; terragucci
+  //   only supplies the demo stack and its driver, so neither terragucci nor the
+  //   OpenTofu its jobs install is said. Its runs are chant's (no terragucci reports).
+  //   chant is no word the other two leave out: terragucci's waves approve
+  //   with `chant approve`, as on the engine pages (COMPETES).
+  // - tofu-fanout: terragucci's pipeline on OpenTofu. terragucci is the product
+  //   there, so it stays. Its repo is demo-fanout (`checkout`).
+  // - choudoufu-fanout: terragucci's pipeline on choudoufu.
+  "chant-fanout": {
+    name: "chant",
+    owner: "Intentius",
+    url: "https://intentius.io/chant/",
+    logo: null,
+    credit: "chant is made by Intentius, who also make this demo.",
+    kind: "fanout",
+    terms: [],
+    runsWith: [],
+    reports: false,
+    hides: ["terragucci", "tofu"],
+  },
+  "tofu-fanout": {
+    name: "OpenTofu",
+    owner: "the Linux Foundation",
+    url: "https://opentofu.org/",
+    logo: null,
+    credit: "OpenTofu is a Linux Foundation project. Its makers don't endorse this demo.",
+    kind: "fanout",
+    terms: ["OpenTofu"],
+    runsWith: [],
+    checkout: "demo-fanout",
+  },
+  "choudoufu-fanout": {
+    name: "choudoufu",
+    owner: "Intentius",
+    url: "https://intentius.io/choudoufu/",
+    logo: { src: "/vendors/choudoufu-64.png", src2x: "/vendors/choudoufu-128.png" },
+    credit: "choudoufu is made by Intentius, who also make this demo. It supports AWS and Kubernetes.",
+    kind: "fanout",
+    terms: ["choudoufu"],
+    runsWith: [],
+  },
 };
 
 /** What a tool's scenarios run on, said on its page as the owner's rules allow ("works with OpenTofu"). */
@@ -114,8 +162,10 @@ export const COMPETITORS = {
  * freely; an engine's page names no other engine, but for the one its
  * scenarios really run with (`runsWith`). chant is a pipeline, so the engine
  * and orchestrator pages keep the `chant approve` lines their runs print.
+ * behold#746: the fan-out pages compete with each other alone, whatever
+ * engine or pipeline each runs: three takes on one scenario.
  */
-export const COMPETES = { engine: "engine", orchestrator: "orchestrator", pipeline: "pipeline" };
+export const COMPETES = { engine: "engine", orchestrator: "orchestrator", pipeline: "pipeline", fanout: "fanout" };
 
 const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 
@@ -132,9 +182,20 @@ export function pageTool(doc) {
 }
 
 /**
+ * behold#746: a scenario's tool as /kiosk brands it: its entry, but none for a
+ * fan-out tool, whose brand only its own page carries (/kiosk draws a fan-out
+ * as it did before the fan-outs had pages).
+ */
+export function kioskVendorOf(tool) {
+  const v = vendorOf(tool);
+  return v && v.kind !== "fanout" ? v : null;
+}
+
+/**
  * The words no page for `tool` may show: each competitor's name and maker's,
  * the competitors being the other tools of its kind, less what its scenarios
- * run with. A page for no tool (/kiosk) has none.
+ * run with, then (behold#746) what the tool's entry `hides`. A page for no
+ * tool (/kiosk) has none.
  */
 export function otherTerms(tool) {
   const v = vendorOf(tool);
@@ -145,7 +206,7 @@ export function otherTerms(tool) {
     if (id === tool || x.kind !== rivals || v.runsWith.includes(id)) continue;
     out.push(...x.terms);
   }
-  return out;
+  return [...out, ...(v.hides || [])];
 }
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -157,6 +218,9 @@ const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
  */
 export function namesOther(text, tool) {
   if (typeof text !== "string" || !text) return false;
+  // behold#746: a word the tool's entry `hides` goes inside an identifier too (`terragucci-demo-tofu:local`).
+  const hides = (vendorOf(tool) || {}).hides || [];
+  if (hides.some((t) => text.toLowerCase().includes(t.toLowerCase()))) return true;
   return otherTerms(tool).some((t) => new RegExp(`(?<![\\w./-])${escapeRe(t)}(?![\\w/-])`, "i").test(text));
 }
 
@@ -370,7 +434,10 @@ export function notRunWords(vendor, { graph = false } = {}) {
  * for a tool with no page.
  */
 export function toolCheckout(tool) {
-  if (!vendorOf(tool)) return null;
+  const v = vendorOf(tool);
+  if (!v) return null;
+  // behold#746: a repo the driver names otherwise says so (tofu-fanout's is demo-fanout).
+  if (v.checkout) return v.checkout;
   return tool === "terraform" ? "demo" : `demo-${tool}`;
 }
 

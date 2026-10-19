@@ -321,8 +321,11 @@ export function shareImageRoute(app: Hono, webRoot: string): void {
 // `https://<host>/<tool>`: the kiosk with that tool's scenarios alone, live
 // when demo.json's `tool` is it, otherwise a replay of its newest cycle.
 
-/** The tools with a page of their own, in the order the loop runs them. web/kiosk-vendor.js has their names. */
-export const VENDOR_TOOLS = ["terraform", "terragrunt", "cdk-terrain", "choudoufu", "chant"] as const;
+/**
+ * The tools with a page of their own, in the order the loop runs them. web/kiosk-vendor.js has their names.
+ * behold#746: then the fan-out loop's three, each a page of its own (`/chant-fanout` is chant's alone).
+ */
+export const VENDOR_TOOLS = ["terraform", "terragrunt", "cdk-terrain", "choudoufu", "chant", "chant-fanout", "tofu-fanout", "choudoufu-fanout"] as const;
 export type VendorTool = (typeof VENDOR_TOOLS)[number];
 
 /** Each tool's name as its owner writes it, for the page's title. web/kiosk-vendor.js VENDORS has the same names. */
@@ -332,6 +335,10 @@ export const VENDOR_NAMES: Record<VendorTool, string> = {
   "cdk-terrain": "CDK Terrain",
   choudoufu: "choudoufu",
   chant: "chant",
+  // behold#746: a fan-out page's title is its product's name, as its vendor page's is.
+  "chant-fanout": "chant",
+  "tofu-fanout": "OpenTofu",
+  "choudoufu-fanout": "choudoufu",
 };
 
 export const isVendorTool = (v: string): v is VendorTool => (VENDOR_TOOLS as readonly string[]).includes(v);
@@ -340,8 +347,8 @@ export const cycleKey = (tool: string): string => `cycles/${tool}/latest.json`;
 
 /**
  * behold#631: a tool name a cycle may be read for: a vendor page's, or any
- * demo.json `tool` (`chant-fanout`), which has no page of its own but whose
- * kiosk draws the cycle track from its last cycle. Lower-case words and dashes.
+ * demo.json `tool` whose kiosk draws the cycle track from its last cycle
+ * (`chant-fanout`, a page of its own since behold#746). Lower-case words and dashes.
  */
 export const cycleToolName = (v: string): boolean => isVendorTool(v) || /^[a-z0-9][a-z0-9-]{0,40}$/.test(v);
 
