@@ -4,9 +4,11 @@
 // each root's init, plan and apply, and OpenTofu's own spans under them.
 //
 // It shows what Tempo holds and nothing else: a job with no trace has no
-// Trace view. Deep levels start folded; a click on a row opens or folds it.
-// The spans that make up the job's critical path are lit, and so is a wait:
-// the gate, or a state lock.
+// Trace view. Deep levels start folded, except the critical path and the way
+// down to an error, which start open all the way to the binary's own spans
+// (behold#788); a click on a row opens or folds it, and one control opens or
+// folds them all. The spans that make up the job's critical path are lit, and
+// so is a wait: the gate, or a state lock.
 //
 // Two ways in, both GET only:
 // - `traceSource({ fetchJson })`: the kiosk's job pane asks it, on every
@@ -17,7 +19,7 @@
 
 /** How often a run's traces are asked for again. The route shares one read of Tempo for 10 s. */
 export const TRACE_POLL_MS = 15_000;
-/** Rows deeper than this start folded: the stage, its phases and the roots show; the binary's spans wait for a click. */
+/** Rows deeper than this start folded: the stage, its phases and the roots show. A row on the critical path, or over an error, starts open at any depth (behold#788). */
 export const OPEN_DEPTH = 3;
 /** Two spans closer than this, in ms, count as touching on the critical path. */
 const EPS = 0.5;
@@ -132,23 +134,37 @@ export function spanWords(s) {
   return { label: s.name, sub: "" };
 }
 
+/** behold#788: the spans with an error somewhere under them: the way down to each error opens by default. */
+export function overErrors(spans) {
+  const parent = new Map(spans.map((s) => [s.id, s.parent]));
+  const over = new Set();
+  for (const s of spans) {
+    if (!s.error) continue;
+    for (let p = parent.get(s.id); p && parent.has(p) && !over.has(p); p = parent.get(p)) over.add(p);
+  }
+  return over;
+}
+
 /**
  * The rows a trace draws, top to bottom: each visible span with its depth,
  * its place on the job's time line (0..1), and whether it is on the critical
- * path, a wait or failed. `open` is the set of span ids a viewer opened past
- * OPEN_DEPTH, `shut` the ones they folded above it.
+ * path, a wait or failed. A row starts open (`byDefault`) above OPEN_DEPTH,
+ * on the critical path, or over an error; `open` is the set of span ids a
+ * viewer opened of the rest, `shut` the ones they folded of those.
  */
 export function waterfallRows(trace, { open = new Set(), shut = new Set() } = {}) {
   const spans = trace.spans || [];
   if (!spans.length) return [];
   const { kids, tops } = spanTree(spans);
   const crit = criticalPath(spans);
+  const errs = overErrors(spans);
   const t0 = Math.min(...spans.map((s) => s.start));
   const span = Math.max(1e-6, Math.max(...spans.map(end)) - t0);
   const rows = [];
   const visit = (s, depth) => {
     const children = kids.get(s.id) || [];
-    const isOpen = children.length > 0 && (depth < OPEN_DEPTH ? !shut.has(s.id) : open.has(s.id));
+    const byDefault = children.length > 0 && (depth < OPEN_DEPTH || crit.has(s.id) || errs.has(s.id));
+    const isOpen = children.length > 0 && (byDefault ? !shut.has(s.id) : open.has(s.id));
     const words = spanWords(s);
     rows.push({
       id: s.id,
@@ -164,6 +180,7 @@ export function waterfallRows(trace, { open = new Set(), shut = new Set() } = {}
       error: s.error || null,
       kids: children.length,
       open: isOpen,
+      byDefault,
     });
     if (isOpen) for (const c of children) visit(c, depth + 1);
   };
@@ -228,11 +245,16 @@ const STYLE = `
 .t-sw.t-w { background: repeating-linear-gradient(135deg, var(--foreign) 0 4px, color-mix(in srgb, var(--foreign) 45%, transparent) 4px 8px); }
 .t-sw.t-b { background: color-mix(in srgb, var(--managed) 70%, transparent); }
 .t-note { color: var(--muted); padding: 0.3em 1em; font-size: 0.9em; }
+.t-sec-row { display: flex; align-items: baseline; justify-content: space-between; gap: 0.6em; }
+.t-all { font: 600 0.95em var(--font-ui); color: var(--pending); background: transparent; border: 1px solid var(--rule); border-radius: 999px; padding: 0.1em 0.8em; cursor: pointer; flex: none; }
+.t-all:hover, .t-all:focus-visible { color: var(--fg); border-color: var(--pending); }
+/* behold#788: on a phone a deep row steps in less, and no further than six levels, so the binary's spans keep the width to read; their names wrap. */
 @media (max-width: 600px) {
   .t-row { grid-template-columns: minmax(0, 1fr) 4.2em; grid-template-areas: "name ms" "track track"; row-gap: 0.15em; padding: 0.25em 0.8em; }
-  .t-name { grid-area: name; }
+  .t-name { grid-area: name; padding-left: calc(min(var(--d, 0), 6) * 0.45em); }
+  .t-label { white-space: normal; overflow-wrap: anywhere; }
   .t-ms { grid-area: ms; }
-  .t-track { grid-area: track; margin-left: calc(var(--d, 0) * 0.85em); }
+  .t-track { grid-area: track; margin-left: calc(min(var(--d, 0), 6) * 0.45em); }
 }
 `;
 
@@ -294,7 +316,11 @@ export function attemptWords(i, n, start) {
   return `Attempt ${i + 1} of ${n}, started at ${new Date(start).toISOString().slice(11, 16)} UTC`;
 }
 
-export function renderTrace(host, { traces, run = [], job }, { doc = document, toggle = () => {}, pickJob = null, open = new Set(), shut = new Set(), attempt = null, pickAttempt = null } = {}) {
+/** behold#788: the words of the control that opens or folds every row. */
+export const OPEN_ALL_WORDS = "Open all";
+export const FOLD_ALL_WORDS = "Fold all";
+
+export function renderTrace(host, { traces, run = [], job }, { doc = document, toggle = () => {}, pickJob = null, open = new Set(), shut = new Set(), attempt = null, pickAttempt = null, all = null } = {}) {
   traceStyle(doc);
   const box = el(doc, "div", "t-trace");
   const strip = runStrip(run);
@@ -316,6 +342,21 @@ export function renderTrace(host, { traces, run = [], job }, { doc = document, t
   // behold#571: asked about one attempt of several, it shows that one, with a switch to the others.
   const one = attempt !== null && attempt >= 0 && attempt < traces.length && traces.length > 1;
   const shown = one ? [traces[attempt]] : traces;
+  // behold#788: one control opens every row of the shown traces, or folds them all once every one is open.
+  const drawn = shown.map((t) => waterfallRows(t, { open, shut }));
+  const folding = drawn.flat().filter((r) => r.kids);
+  const allOpen = folding.length > 0 && folding.every((r) => r.open);
+  const allButton = () => {
+    const b = el(doc, "button", "t-all", allOpen ? FOLD_ALL_WORDS : OPEN_ALL_WORDS);
+    b.type = "button";
+    b.setAttribute("aria-label", allOpen ? "Fold every span" : "Open every span");
+    const ids = shown.flatMap((t) => {
+      const { kids } = spanTree(t.spans || []);
+      return [...kids.keys()];
+    });
+    b.addEventListener("click", () => all(ids, !allOpen));
+    return b;
+  };
   shown.forEach((t, k) => {
     const i = one ? attempt : k;
     const head = traces.length > 1 ? attemptWords(i, traces.length, t.start) : `This job · ${msWords(t.ms)}`;
@@ -335,9 +376,17 @@ export function renderTrace(host, { traces, run = [], job }, { doc = document, t
       });
       sec.appendChild(seg);
       box.appendChild(sec);
-    } else box.appendChild(el(doc, "div", "t-sec", head));
+      if (all && folding.length) sec.appendChild(allButton());
+    } else {
+      const sec = el(doc, "div", "t-sec", head);
+      if (all && folding.length && k === 0) {
+        sec.classList.add("t-sec-row");
+        sec.replaceChildren(el(doc, "span", null, head), allButton());
+      }
+      box.appendChild(sec);
+    }
     const rows = el(doc, "div", "t-rows");
-    for (const r of waterfallRows(t, { open, shut })) {
+    for (const r of drawn[k]) {
       const cls = ["t-row", r.kids ? "t-can" : "", r.service !== "terragucci" ? "t-bin" : "", r.critical ? "t-crit" : "", r.wait ? "t-wait" : "", r.error ? "t-err" : ""].filter(Boolean).join(" ");
       const row = el(doc, "div", cls);
       row.style.setProperty("--d", String(r.depth));
@@ -346,7 +395,7 @@ export function renderTrace(host, { traces, run = [], job }, { doc = document, t
       if (r.sub) name.appendChild(el(doc, "span", "t-sub", r.sub));
       row.title = [r.label, r.sub, msWords(r.ms), r.critical ? "on the critical path" : "", r.error ? `error: ${r.error}` : "", r.kids && !r.open ? `${r.kids} spans inside` : ""].filter(Boolean).join(" · ");
       row.append(name, bar(doc, r.at, r.width), el(doc, "div", "t-ms", msWords(r.ms)));
-      if (r.kids) row.addEventListener("click", () => toggle(r.id, r.depth));
+      if (r.kids) row.addEventListener("click", () => toggle(r.id, r.byDefault));
       rows.appendChild(row);
     }
     box.appendChild(rows);
@@ -364,19 +413,29 @@ export function renderTrace(host, { traces, run = [], job }, { doc = document, t
   return box;
 }
 
-/** The viewer's folds: a click on a row opens it or folds it, whatever its depth. */
+/**
+ * The viewer's folds: a click on a row opens it or folds it, whatever its
+ * depth. `byDefault` is whether the row starts open (waterfallRows says).
+ * behold#788: `all(ids, true)` opens every one of `ids`, `all(ids, false)`
+ * folds them all, and other jobs' folds stay; a click after either works as before.
+ */
 export function foldState() {
   const open = new Set();
   const shut = new Set();
   return {
     open,
     shut,
-    toggle(id, depth) {
-      if (depth < OPEN_DEPTH) {
-        if (shut.has(id)) shut.delete(id);
-        else shut.add(id);
-      } else if (open.has(id)) open.delete(id);
-      else open.add(id);
+    toggle(id, byDefault) {
+      const set = byDefault ? shut : open;
+      if (set.has(id)) set.delete(id);
+      else set.add(id);
+    },
+    all(ids, opened) {
+      for (const id of ids) {
+        open.delete(id);
+        shut.delete(id);
+        (opened ? open : shut).add(id);
+      }
     },
   };
 }
@@ -426,7 +485,7 @@ export function traceSource({ fetchJson, onChange = () => {}, now = () => Date.n
     traces: of,
     all: (repo, run) => (read(repo, run) || { traces: [] }).traces,
     draw(host, { repo, run, job, pickJob = null, doc = document, attempt = null, pickAttempt = null }) {
-      return renderTrace(host, { traces: of(repo, run, job), run: this.all(repo, run), job }, { doc, pickJob, attempt, pickAttempt, open: folds.open, shut: folds.shut, toggle: (id, depth) => { folds.toggle(id, depth); onChange(); } });
+      return renderTrace(host, { traces: of(repo, run, job), run: this.all(repo, run), job }, { doc, pickJob, attempt, pickAttempt, open: folds.open, shut: folds.shut, toggle: (id, byDefault) => { folds.toggle(id, byDefault); onChange(); }, all: (ids, opened) => { folds.all(ids, opened); onChange(); } });
     },
   };
 }

@@ -69,7 +69,7 @@ describe("the waterfall", () => {
     expect([...early].sort()).toEqual(["p", "y"]);
   });
 
-  it("shows the stage, its phases, the roots and their commands, and folds the binary's spans", () => {
+  it("shows the stage, its phases and the roots, and opens the critical path down to the binary's spans (behold#788)", () => {
     const rows = waterfallRows({ spans: SPANS });
     expect(rows.map((r) => `${"  ".repeat(r.depth)}${r.label}`)).toEqual([
       "tf-apply, wave 1",
@@ -77,28 +77,74 @@ describe("the waterfall", () => {
       "    root a",
       "    root b",
       "      tofu plan",
+      "        OpenTofu",
+      "          terraform_data.release",
       "  gate",
       "  apply",
       "    root a",
       "    root b",
     ]);
     const cmd = rows.find((r) => r.label === "tofu plan");
-    expect(cmd).toMatchObject({ depth: OPEN_DEPTH, kids: 1, open: false, critical: true });
+    expect(cmd).toMatchObject({ depth: OPEN_DEPTH, kids: 1, open: true, byDefault: true, critical: true });
     const gate = rows.find((r) => r.label === "gate");
     expect(gate).toMatchObject({ wait: true, critical: true, sub: "approved after 40 s held", at: 0.4, width: 0.4 });
     expect(rows[0]).toMatchObject({ at: 0, width: 1, sub: "applied" });
   });
 
-  it("opens a folded row on a click and folds an open one", () => {
+  // behold#788: a root that planned beside the slow one, with its own command under it.
+  const SIDE = [
+    ...SPANS,
+    sp("pa", "ra", "tofu plan", 120, 290),
+    sp("oa", "pa", "tofu", 130, 280, {}, "OpenTofu CLI"),
+    sp("ria", "oa", "Plan resource instance changes", 140, 200, { "opentofu.resource_instance.address": "aws_sqs_queue.a" }, "OpenTofu CLI"),
+  ];
+
+  it("keeps a branch off the critical path folded below the roots, and opens the way down to an error (behold#788)", () => {
+    let rows = waterfallRows({ spans: SIDE });
+    expect(rows.find((r) => r.id === "pa")).toMatchObject({ depth: OPEN_DEPTH, open: false, byDefault: false, critical: false });
+    expect(rows.some((r) => r.id === "oa")).toBe(false);
+    // The resource failed: every span over it opens, on the critical path or off it.
+    rows = waterfallRows({ spans: SIDE.map((s) => (s.id === "ria" ? { ...s, error: "QueueAlreadyExists" } : s)) });
+    expect(rows.find((r) => r.id === "pa")).toMatchObject({ open: true, byDefault: true });
+    expect(rows.find((r) => r.id === "ria")).toMatchObject({ label: "aws_sqs_queue.a", error: "QueueAlreadyExists", depth: 5 });
+  });
+
+  it("opens a folded row on a click and folds an open one, at any depth", () => {
     const folds = foldState();
-    folds.toggle("pb", OPEN_DEPTH);
-    folds.toggle("ob", OPEN_DEPTH + 1);
-    let rows = waterfallRows({ spans: SPANS }, folds);
-    expect(rows.find((r) => r.label === "OpenTofu")).toMatchObject({ depth: 4, service: "OpenTofu CLI", open: true });
-    expect(rows.find((r) => r.label === "terraform_data.release")).toMatchObject({ sub: "plan", depth: 5 });
-    folds.toggle("p", 1);
-    rows = waterfallRows({ spans: SPANS }, folds);
+    folds.toggle("pa", false);
+    let rows = waterfallRows({ spans: SIDE }, folds);
+    expect(rows.find((r) => r.id === "oa")).toMatchObject({ depth: 4, service: "OpenTofu CLI", open: false, byDefault: false });
+    folds.toggle("oa", false);
+    rows = waterfallRows({ spans: SIDE }, folds);
+    expect(rows.find((r) => r.label === "aws_sqs_queue.a")).toMatchObject({ sub: "plan", depth: 5 });
+    // A row on the critical path folds on a click, and opens again on the next.
+    folds.toggle("ob", true);
+    rows = waterfallRows({ spans: SIDE }, folds);
+    expect(rows.find((r) => r.id === "ob")).toMatchObject({ open: false });
+    expect(rows.some((r) => r.id === "rib")).toBe(false);
+    folds.toggle("ob", true);
+    expect(waterfallRows({ spans: SIDE }, folds).some((r) => r.id === "rib")).toBe(true);
+    folds.toggle("p", true);
+    rows = waterfallRows({ spans: SIDE }, folds);
     expect(rows.some((r) => r.label === "root a" && r.depth === 2 && r.at < 0.5)).toBe(false);
+  });
+
+  it("opens every row, or folds them all, with one control, and a click after works as before (behold#788)", () => {
+    const folds = foldState();
+    const ids = [...new Set(SIDE.filter((s) => s.parent).map((s) => s.parent))];
+    folds.all(ids, true);
+    let rows = waterfallRows({ spans: SIDE }, folds);
+    expect(rows).toHaveLength(SIDE.length);
+    expect(rows.filter((r) => r.kids).every((r) => r.open)).toBe(true);
+    folds.all(ids, false);
+    rows = waterfallRows({ spans: SIDE }, folds);
+    expect(rows.map((r) => r.id)).toEqual(["s"]);
+    folds.toggle("s", rows[0].byDefault);
+    expect(waterfallRows({ spans: SIDE }, folds).map((r) => r.label)).toEqual(["tf-apply, wave 1", "plan", "gate", "apply"]);
+    // Another job's folds stay as they were.
+    folds.toggle("other-job-span", false);
+    folds.all(ids, true);
+    expect(folds.open.has("other-job-span")).toBe(true);
   });
 
   it("names OpenTofu's spans by what they act on", () => {
