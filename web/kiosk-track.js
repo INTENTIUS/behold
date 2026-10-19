@@ -102,7 +102,8 @@ export function cycleTrack(cycle) {
       last.ms += took;
       return;
     }
-    chapter.segments.push({ label, steps: [s.step], ms: took, labelText: s.label || "" });
+    // behold#787: the segment's first step's time, where a replay of it starts.
+    chapter.segments.push({ label, steps: [s.step], ms: took, labelText: s.label || "", at: s.at });
   });
   const total = chapters.reduce((sum, c) => sum + c.segments.reduce((a, g) => a + g.ms, 0), 0) || 1;
   return { chapters, total, cycle: cycle.cycle, byStory };
@@ -127,9 +128,11 @@ export function chapterTitle(index, pull) {
  * this cycle has opened, in order; `since` when the current segment began
  * (ms); `waves` the apply's waves as the paced graph shows them
  * ([{ wave, state }]), for the applying segment's ticks; `jobs` the apply
- * jobs of this step's run that have started ({@link applyJobs}).
+ * jobs of this step's run that have started ({@link applyJobs}). behold#787:
+ * a segment already past (in a `replay`, any but the current one) carries
+ * `seek`, its first step's time, and a chapter carries its first segment's.
  */
-export function trackModel(track, { demo, pulls = [], since = null, now = Date.now(), waves = null, jobs = [] } = {}) {
+export function trackModel(track, { demo, pulls = [], since = null, now = Date.now(), waves = null, jobs = [], replay = false } = {}) {
   if (!track || !demo) return null;
   // Where the cycle is: the step's own story chapter when told in them; else the chapter of the current pull request
   // (the reset, the last). Then the segment holding the step.
@@ -158,12 +161,40 @@ export function trackModel(track, { demo, pulls = [], since = null, now = Date.n
         state,
         tone,
         fill: state === "done" ? 1 : state === "current" ? fill : 0,
+        // The reset is the cycle's end: nothing to replay from there.
+        seek: (replay ? state !== "current" : state === "done") && g.label !== "reset" && typeof g.at === "string" ? g.at : null,
         ...(state === "current" && g.label === "applying" && Array.isArray(waves) && waves.length ? { ticks: waves.map((w) => ({ wave: w.wave, state: w.state })) } : {}),
       };
     }),
   }));
+  for (const c of chapters) c.seek = c.segments.length ? c.segments[0].seek : null;
   const nowLine = nowWords({ demo, segment: current, expected, elapsed, overrun, waves, jobs, now, fix: track.byStory ? pulls.indexOf(demo.pull) > 0 : at.chapter > 0 });
   return { chapters, at, elapsed, expected, overrun, now: nowLine, here: hereWords(chapters, at) };
+}
+
+/** behold#787: how long before the failed step a replay of the failure starts: the apply's last stretch, where it breaks. */
+export const FAILURE_LEAD_MS = 30_000;
+
+/** behold#787: how far into the cycle a time is, in ms from its first step, for the replay's clock (kiosk-vendor.js replayAt). */
+export function seekMs(cycle, at) {
+  const first = cycle && Array.isArray(cycle.steps) && cycle.steps[0] ? Date.parse(cycle.steps[0].at) : NaN;
+  const t = Date.parse(at || "");
+  return Number.isFinite(first) && Number.isFinite(t) ? Math.max(0, t - first) : 0;
+}
+
+/**
+ * behold#787: where a replay of the cycle's failure starts: FAILURE_LEAD_MS
+ * before its failed step, never before the step ahead of it (the apply that
+ * broke). Null for a cycle with no failure.
+ */
+export function failureAt(cycle) {
+  const steps = cycle && Array.isArray(cycle.steps) ? cycle.steps : [];
+  const i = steps.findIndex((x) => x && x.step === "failed");
+  if (i < 0) return null;
+  const t = Date.parse(steps[i].at);
+  const before = i > 0 ? Date.parse(steps[i - 1].at) : t;
+  if (!Number.isFinite(t)) return null;
+  return new Date(Math.max(Number.isFinite(before) ? before : t, t - FAILURE_LEAD_MS)).toISOString();
 }
 
 /**
@@ -283,6 +314,12 @@ body.k-watch #k-track { position: fixed; z-index: 7; left: 5px; right: 5px; }
   @keyframes kt-sheen { from { background-position: -60% 0; } to { background-position: 160% 0; } }
 }
 #k-track .kt-here { display: none; }
+/* behold#787: a step already past is a button that replays it. */
+#k-track button.kt-seek { font: inherit; margin: 0; cursor: pointer; background: transparent; color: inherit; text-align: inherit; }
+#k-track button.kt-seg.kt-seek { padding: 0; }
+#k-track button.kt-chapter-title.kt-seek { padding: 0; border: 0; color: var(--fg); text-decoration: underline dotted; text-underline-offset: 2px; }
+#k-track button.kt-seg.kt-seek:hover { border-color: var(--pending); }
+#k-track button.kt-seek:focus-visible { outline: 2px solid var(--pending); outline-offset: 1px; }
 /* behold#778: a phone's segments are too narrow for their labels, so a line names the current step, and the chapters wrap to a new line instead of running off the right edge. */
 @media (max-width: 600px) {
   body.k-watch #k-track { position: static; }
@@ -293,6 +330,10 @@ body.k-watch #k-track { position: fixed; z-index: 7; left: 5px; right: 5px; }
   #k-track .kt-seg { height: 0.8em; min-width: 0.6em !important; }
   #k-track .kt-here { display: block; margin: 0; color: var(--pending); font-size: 0.92em; }
   #k-track .kt-now { font-size: 0.92em; white-space: normal; }
+  /* behold#787: a phone's segments are too thin to press; a past chapter's title is the 44px target. */
+  #k-track button.kt-seg.kt-seek { pointer-events: none; }
+  #k-track button.kt-chapter-title.kt-seek { align-self: flex-start; max-width: 100%; min-height: 44px; padding: 0 0.8em; border: 1.5px solid color-mix(in srgb, var(--pending) 70%, transparent); border-radius: 999px; text-decoration: none; }
+  #k-track button.kt-chapter-title.kt-seek::after { content: " · replay"; color: var(--pending); font-weight: 500; }
 }
 `;
 
@@ -311,6 +352,25 @@ export function drawTrack(host, model, doc = typeof document !== "undefined" ? d
     if (text !== undefined && text !== null) n.textContent = text;
     return n;
   };
+  // behold#787: the track is rebuilt every second, so a press is read on the host: a tap whose button was
+  // rebuilt between its down and its up still seeks to where it went down, and a focused button keeps its focus.
+  host.ktSeek = model && model.onSeek ? model.onSeek : null;
+  if (!host.ktWired && host.addEventListener) {
+    host.ktWired = true;
+    let down = null;
+    const seekOf = (t) => (t && t.closest ? t.closest("[data-seek]") : null);
+    host.addEventListener("pointerdown", (e) => {
+      const b = seekOf(e.target);
+      down = b ? { seek: b.dataset.seek, at: Date.now() } : null;
+    });
+    host.addEventListener("click", (e) => {
+      const b = seekOf(e.target);
+      const seek = b ? b.dataset.seek : down && Date.now() - down.at < 1500 ? down.seek : null;
+      down = null;
+      if (seek && host.ktSeek) host.ktSeek(seek);
+    });
+  }
+  const focused = doc.activeElement && host.contains && host.contains(doc.activeElement) && doc.activeElement.dataset ? doc.activeElement.dataset.seek : null;
   host.replaceChildren();
   if (!model) {
     host.hidden = true;
@@ -324,14 +384,26 @@ export function drawTrack(host, model, doc = typeof document !== "undefined" ? d
     const ch = el("div", `kt-chapter kt-${c.state}`);
     // Grow factors summing to well over 1: below 1 a flex row leaves the rest of its width empty.
     ch.style.flex = `${Math.round(share * 1000)} 1 0`;
-    ch.appendChild(el("div", "kt-chapter-title", c.title));
+    // behold#787: a step already past replays from its start on a press: the chapter's title (a phone's target) and each segment.
+    const seekable = (o) => !!(o.seek && model.onSeek);
+    const head = el(seekable(c) ? "button" : "div", `kt-chapter-title${seekable(c) ? " kt-seek" : ""}`, c.title);
+    if (seekable(c)) {
+      head.type = "button";
+      head.title = `Replay from ${c.title}`;
+      head.dataset.seek = c.seek;
+    }
+    ch.appendChild(head);
     const segs = el("div", "kt-segs");
     for (const g of c.segments) {
-      const seg = el("div", `kt-seg kt-${g.state} kt-${g.tone}`);
+      const seg = el(seekable(g) ? "button" : "div", `kt-seg kt-${g.state} kt-${g.tone}${seekable(g) ? " kt-seek" : ""}`);
+      if (seekable(g)) {
+        seg.type = "button";
+        seg.dataset.seek = g.seek;
+      }
       seg.style.flex = `${Math.round(g.share * 1000)} 1 0`;
       // Never narrower than its short label, whole.
       seg.style.minWidth = `${(g.short.length * 0.62 + 1).toFixed(2)}em`;
-      seg.title = g.label;
+      seg.title = seekable(g) ? `Replay from ${g.label}` : g.label;
       const fill = el("div", "kt-fill");
       fill.style.width = `${Math.round(g.fill * 1000) / 10}%`;
       seg.appendChild(fill);
@@ -358,5 +430,9 @@ export function drawTrack(host, model, doc = typeof document !== "undefined" ? d
   // A label its segment cannot hold whole says its short form ("plan", "merge"); never a clipped word.
   for (const lab of host.querySelectorAll ? host.querySelectorAll(".kt-label") : []) {
     if (lab.scrollWidth > lab.clientWidth + 1 && lab.dataset.short) lab.textContent = lab.dataset.short;
+  }
+  if (focused && host.querySelector) {
+    const again = [...host.querySelectorAll("[data-seek]")].find((b) => b.dataset.seek === focused);
+    if (again && again.focus) again.focus();
   }
 }

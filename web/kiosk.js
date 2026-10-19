@@ -16,7 +16,7 @@
 import { linkState, linkWords, noteBack, noteRead, readFailed, shareLink } from "./kiosk-link.js";
 import { CHANT_PANEL_STEPS, chantApprovalModel, chantResultModel } from "./chant-pr-marks.js";
 import { createLivePacer } from "./chant-live-pace.js";
-import { applyJobs, cycleTrack, drawTrack, trackModel, waitingSpec } from "./kiosk-track.js";
+import { applyJobs, cycleTrack, drawTrack, failureAt, seekMs, trackModel, waitingSpec } from "./kiosk-track.js";
 import { FORGES, iconSvg } from "./forge-mark.js";
 import { TOOLS } from "./tool-mark.js";
 import { graphWaves } from "./chant-pr-marks.js";
@@ -912,7 +912,8 @@ function drawBar(bar, s, now) {
   const head = scenarioHead(demo, { vendor: s.vendor || null });
 
   // behold#571: a tool's page says plainly when it replays an earlier run, and when it can't draw the repo's graph.
-  if (s.replay && s.replay.banner) bar.appendChild(el("p", "k-replay", s.replay.banner));
+  if (s.replay && s.replay.asked) bar.appendChild(askedLine(s));
+  else if (s.replay && s.replay.banner) bar.appendChild(el("p", "k-replay", s.replay.banner));
   if (vendor && s.noReports && (s.mode === "live" || s.mode === "replay")) bar.appendChild(el("p", "k-nograph-note", NO_GRAPH_WORDS));
   const intro = introText(demo);
 
@@ -1068,6 +1069,35 @@ export function touchScreen() {
 export function heldWords(secs, touch = false) {
   return touch ? `Paused where you tapped · the steps go on in ${secs} s` : `Held where you left it · the steps lead again in ${secs} s`;
 }
+/** behold#787: the button that ends a replay the viewer asked for. */
+export const BACK_WORDS = "Back to live";
+/** behold#787: the done card's chip that replays the cycle's failure. */
+export const FAILURE_WORDS = "Replay the failure";
+/** behold#787: how long a replay the viewer asked for runs with no input before the kiosk is live again. */
+export const REPLAY_IDLE_MS = 180_000;
+
+/** behold#787: whether the replay is one the viewer asked for, which the live poll leaves alone. */
+export function viewerReplay(s) {
+  return !!s && s.mode === "replay" && !!s.replay && !!s.replay.asked;
+}
+
+/** behold#787: whether a replay the viewer asked for is over: it reached the cycle's last step (the reset), or `idle` ms went by with no input. */
+export function replayOver(steps, elapsed, idle) {
+  if (!Array.isArray(steps) || !steps.length) return true;
+  return replayAt(steps, elapsed).index === steps.length - 1 || idle > REPLAY_IDLE_MS;
+}
+
+/** behold#787: the banner of a replay the viewer asked for, with its way back to live. */
+export function askedLine(s) {
+  const p = el("p", "k-replay k-replay-asked", null);
+  p.setAttribute("role", "status");
+  p.appendChild(el("span", "k-replay-words", s.replay.banner || "Replay of the latest run"));
+  const b = el("button", "k-replay-back", BACK_WORDS);
+  b.type = "button";
+  b.addEventListener("click", () => s.backToLive && s.backToLive());
+  p.appendChild(b);
+  return p;
+}
 export const FOLLOW_WORDS = "Follow the steps";
 export const RESUME_WORDS = "Resume now";
 /** behold#779: how long a tap on a touch screen holds Watch's shot (a click holds it PICK_HOLD_MS). */
@@ -1084,7 +1114,9 @@ function drawWatchHead(bar, s, now) {
     // behold#741: a terragucci repo's chapter-carrying scenario names terragucci, its engine and its forge.
     // behold#746: a tool's page leaves out the parts (and the tooltip's sentence) that name what it may not.
     // On its replay the line's "live demo" goes; the replay's banner follows the line instead.
-    const hide = vendor ? (t) => namesOther(t, s.vendor) || (s.mode === "replay" && /^live\b/.test(t)) : null;
+    // behold#787: and on a replay the viewer asked for.
+    const asked = !!(s.replay && s.replay.asked);
+    const hide = vendor || asked ? (t) => (!!vendor && namesOther(t, s.vendor)) || (s.mode === "replay" && /^live\b/.test(t)) : null;
     if (s.chantLoop) place.appendChild(whatLineEl(demo, s.chantForge ? s.chantForge() : null, null, hide, s.source === "chant-demo"));
     else place.appendChild(whatLineEl(demo, s.tgForge || null, { tools: s.tools || [] }, hide));
   } else {
@@ -1092,8 +1124,9 @@ function drawWatchHead(bar, s, now) {
     place.appendChild(el("span", "k-cycle", cycleWords(demo, now)));
   }
   // behold#746: a tool's page says in Watch too that it replays an earlier run.
-  if (vendor && s.mode === "replay" && s.replay && s.replay.banner) place.appendChild(el("span", "k-cycle k-w-replay", s.replay.banner));
+  if (vendor && s.mode === "replay" && s.replay && s.replay.banner && !s.replay.asked) place.appendChild(el("span", "k-cycle k-w-replay", s.replay.banner));
   bar.appendChild(place);
+  if (s.mode === "replay" && s.replay && s.replay.asked) bar.appendChild(askedLine(s));
   const intro = introFor(s);
   if (intro) bar.appendChild(el("p", "k-w-intro", intro));
   const strip = el("ol", "k-strip");
@@ -1327,6 +1360,24 @@ export function drawResult(host, model, s) {
     }
     if (bars.size) wf.appendChild(phaseKey());
     host.appendChild(wf);
+  }
+  // behold#787: a visitor who missed the failure's few seconds replays them from here.
+  // The card is rebuilt every second: the press is read on the card, so a tap across a rebuild still counts.
+  if (s.failureAt && s.failureAt()) {
+    const b = el("button", "k-result-replay", FAILURE_WORDS);
+    b.type = "button";
+    host.appendChild(b);
+    if (!host.krWired && host.addEventListener) {
+      host.krWired = true;
+      let down = 0;
+      const on = (e) => !!(e.target && e.target.closest && e.target.closest(".k-result-replay"));
+      host.addEventListener("pointerdown", (e) => { down = on(e) ? Date.now() : 0; });
+      host.addEventListener("click", (e) => {
+        const hit = on(e) || (down && Date.now() - down < 1500 && e.target === host);
+        down = 0;
+        if (hit && s.seekTo && s.failureAt()) s.seekTo(s.failureAt());
+      });
+    }
   }
 }
 
@@ -1762,10 +1813,65 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     if (s.mode !== "replay" || !s.replay) return;
     const steps = s.replay.cycle.steps;
     const r = replayAt(steps, now().getTime() - s.replay.start);
+    // behold#787: a replay the viewer asked for ends at the cycle's end (its reset), or after a while with no input.
+    if (s.replay.asked && replayOver(steps, now().getTime() - s.replay.start, now().getTime() - s.replay.input)) return leaveReplay();
     s.replay.at = r.at;
-    s.replay.banner = replayBanner(s.replay.cycle, liveEstimate(s.live && s.live.demo, s.replay.cycle, now()));
-    setDemo({ source: "replay", read: steps[r.index].at, demo: scrubDemo(steps[r.index], tool) });
+    s.replay.banner = replayBanner(s.replay.cycle, s.replay.asked ? null : liveEstimate(s.live && s.live.demo, s.replay.cycle, now()));
+    setDemo({ source: "replay", read: steps[r.index].at, demo: vendor ? scrubDemo(steps[r.index], tool) : steps[r.index] });
   };
+  /** behold#787: what a seek or the end of a replay leaves behind: the story's place, the track's, the run view's memo and Watch's hold. */
+  const rewind = () => {
+    if (s.resetStory) s.resetStory();
+    Object.assign(trackState, { cycle: null, pulls: [], key: null, since: null });
+    runMemo = null;
+    watchHoldAt = null;
+    s.watchHeld = null;
+    drawerWave = null;
+    drawerView = null;
+    lastShot = null;
+  };
+  /**
+   * behold#787: replay the track's cycle from `at` (a step's time): the replay a tool's page shows, the viewer's
+   * this time. Within a replay it seeks; the live poll leaves it alone until it ends.
+   */
+  s.seekTo = (at) => {
+    const cycle = s.mode === "replay" && s.replay ? s.replay.cycle : s.lastCycle();
+    if (!cycle || !Array.isArray(cycle.steps) || !cycle.steps.length) return;
+    const start = now().getTime() - seekMs(cycle, at);
+    if (s.mode === "replay" && s.replay) s.replay.start = start;
+    else {
+      s.replay = { cycle, start, at: null, banner: null, runs: null, asked: true };
+      s.mode = "replay";
+      s.repo = cycle.repo || s.repo;
+    }
+    s.replay.input = now().getTime();
+    rewind();
+    draw();
+  };
+  /** behold#787: the cycle's failure, where the done card's chip replays it from; null for a cycle with none. */
+  s.failureAt = () => failureAt(s.mode === "replay" && s.replay ? s.replay.cycle : s.lastCycle());
+  const leaveReplay = () => {
+    if (!s.replay || !s.replay.asked) return;
+    s.replay = null;
+    s.mode = "live";
+    rewind();
+    if (!vendor && s.live) {
+      s.repo = s.live.demo ? s.live.demo.repo : s.repo;
+      setDemo(s.live);
+    }
+    void demo();
+  };
+  s.backToLive = () => {
+    leaveReplay();
+    draw();
+  };
+  // behold#787: any input keeps the viewer's replay going.
+  if (typeof document !== "undefined" && document.addEventListener) {
+    const touched = () => {
+      if (s.replay && s.replay.asked) s.replay.input = now().getTime();
+    };
+    for (const ev of ["pointerdown", "keydown", "wheel"]) document.addEventListener(ev, touched, { passive: true, capture: true });
+  }
 
   const draw = () => {
     followRepo();
@@ -1994,8 +2100,10 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     }
     // behold#774: the run's own jobs say the apply started before its run view does.
     const jobs = applyJobs(runsApi && runsApi.run ? runsApi.run.doc : null, d);
-    const model = trackModel(track, { demo: d, pulls: trackState.pulls, since: trackState.since, now: t, waves: live ? live.waves : null, jobs });
+    const model = trackModel(track, { demo: d, pulls: trackState.pulls, since: trackState.since, now: t, waves: live ? live.waves : null, jobs, replay: s.mode === "replay" });
     s.trackModel = model;
+    // behold#787: a past step's segment replays it.
+    if (model) model.onSeek = s.seekTo;
     drawTrack(trackHost, model);
     // In the trail's place: over the caption.
     const cap = shownCaption().getBoundingClientRect();
@@ -2416,6 +2524,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   s.strip = null;
   /** behold#631: the running tool's last finished cycle, when one is published. */
   s.lastCycle = () => {
+    // behold#787: while it replays, the replayed cycle, though a newer one has ended since.
+    if (s.mode === "replay" && s.replay && s.replay.cycle) return s.replay.cycle;
     const d = s.demo && s.demo.demo;
     const t = vendor ? tool : d && typeof d.tool === "string" ? d.tool : null;
     const r = t ? strips.get(t) : null;
@@ -2464,19 +2574,23 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   };
   const replayRuns = async () => {
     const r = s.replay;
+    // behold#787: a replay the viewer ended while this read was out.
+    if (!r) return [];
     if (r.runs) return r.runs;
     const idx = await fetchJson(reads.runs);
     const listed = new Map((idx && idx.doc && Array.isArray(idx.doc.runs) ? idx.doc.runs : []).map((x) => [x.id, x]));
     const runs = [];
-    for (const id of r.cycle.runs) {
+    for (const id of Array.isArray(r.cycle.runs) ? r.cycle.runs : []) {
       const e = listed.get(id) || (await runDoc(id));
       if (e) runs.push(e);
     }
-    r.runs = runs.filter((x) => keepRun(x, { tool, repo: r.cycle.repo }));
+    // behold#787: /kiosk names no tool; the cycle does.
+    r.runs = runs.filter((x) => keepRun(x, { tool: tool || r.cycle.tool, repo: r.cycle.repo }));
     return r.runs;
   };
   const runsSource = () => {
-    if (!vendor || s.mode === "live") return null;
+    // behold#787: /kiosk replays too, when the viewer asks.
+    if (s.mode === "live") return null;
     if (s.mode !== "replay" || !s.replay) return { index: async () => ({ doc: { schema: "demo.runs/v1", runs: [] } }), run: async () => ({ doc: null, absent: "No run to show yet." }) };
     return {
       index: async () => replayIndex(await replayRuns(), shownNow().getTime()),
@@ -2575,6 +2689,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
    * up; the story never goes back within a cycle.
    */
   const story = { cycle: null, n: 0, chapter: null, step: null };
+  // behold#787: a seek may go back within a cycle; the story starts from where it lands.
+  s.resetStory = () => Object.assign(story, { cycle: null, n: 0, chapter: null, step: null });
   /** behold#631: the forge chant's pipeline runs on, from its loop as /api/chant/pr read it. */
   s.chantForge = () => (ap.chant && ap.chant.loop && ap.chant.loop.forge) || null;
   s.storyDemo = (d) => {
@@ -2944,6 +3060,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     noteRead(link, "poll", !readFailed(live), now());
     paintLink();
     s.live = live;
+    // behold#787: the poll leaves a replay the viewer asked for alone; its end takes the live step from here.
+    if (viewerReplay(s)) return draw();
     if (!vendor) {
       s.repo = live && live.demo ? live.demo.repo : null;
       setDemo(live);

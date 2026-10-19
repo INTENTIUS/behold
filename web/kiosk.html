@@ -616,6 +616,13 @@
       .k-wf-sw { display: inline-block; width: 1.2em; height: 0.55em; border-radius: 2px; }
       .k-result-head { margin: 0 0 0.2em; font: 700 1.5em var(--font-ui); color: var(--managed); }
       .k-result-counts { list-style: none; margin: 0 0 var(--s3); padding: 0; display: flex; flex-wrap: wrap; gap: var(--s1) var(--s2); }
+      /* behold#787: the done card's chip that replays the failure, and the banner of a replay the viewer asked for with its way back. */
+      .k-result-replay, .k-replay-back { font: 600 0.95em var(--font-ui); color: var(--pending); background: color-mix(in srgb, var(--pending) 16%, transparent); border: 2px solid var(--pending); border-radius: 999px; padding: 0.25em var(--s4); cursor: pointer; }
+      .k-result-replay { margin-top: var(--s3); color: var(--degraded); border-color: var(--degraded); background: color-mix(in srgb, var(--degraded) 12%, transparent); }
+      .k-result-replay:focus-visible, .k-replay-back:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+      .k-replay.k-replay-asked { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s4); padding-right: var(--s3); white-space: normal; border-left-color: var(--pending); }
+      body.k-watch #bar > .k-replay-asked { flex: 1 1 100%; }
+      @media (pointer: coarse), (max-width: 600px) { .k-result-replay, .k-replay-back { min-height: 44px; padding: 0 var(--s5); } }
       .k-result-counts li { padding: 0.15em var(--s3); border-radius: 999px; background: var(--surface-box); border: 1px solid var(--rule); font-size: 0.95em; font-variant-numeric: tabular-nums; }
       .k-result-counts li:first-child { border-color: var(--managed); font-weight: 600; }
       .k-result-waves { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.2em var(--s4); margin: 0; padding-top: var(--s2); border-top: 1px solid var(--rule); }
