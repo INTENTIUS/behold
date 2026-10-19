@@ -571,6 +571,18 @@ export function renderRun(host, answer, ui, { now = new Date(), pickJob = () => 
     }
     if (j.needs && j.needs.length) li.appendChild(el("span", "r-job-needs", `after ${j.needs.join(", ")}`));
     li.appendChild(el("span", "r-dur", j.status === "waiting" ? "held at the gate" : durationWords(j.started_at, j.ended_at, now) || STATUS_WORDS[j.status] || ""));
+    // behold#801: a job with a trace says so on its row, one click from it.
+    if (trace && trace.has(j.name)) {
+      const go = el("button", "r-job-trace", "Trace");
+      go.type = "button";
+      go.title = `${j.name}: open its trace`;
+      go.addEventListener("click", (e) => {
+        e.stopPropagation();
+        pickJob(j.name);
+        pickView("trace");
+      });
+      li.appendChild(go);
+    }
     li.addEventListener("click", () => pickJob(j.name));
     jobsBox.appendChild(li);
   }
