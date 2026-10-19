@@ -21,6 +21,7 @@
 // run view without the composed fields draws as before.
 
 import { ago, clock, hrefOf } from "./terragucci.js";
+import { coneFact, coneOf, coneResourceLines } from "./cone.js";
 
 export const STATE_WORDS = {
   "not-started": "queued",
@@ -54,6 +55,9 @@ export function changeStage(answer, progress) {
  */
 export function readEdges(answer, progress) {
   const stage = changeStage(answer, progress);
+  // Two choudoufu roots: the reader reads the estate's outputs (terraform_estate_outputs); there is no state file to read.
+  const bin = (answer && answer.binaries) || {};
+  const estate = (from, to) => (bin[from] === "choudoufu" && bin[to] === "choudoufu" ? { estate: true } : {});
   if (stage === "pull-request") {
     const run = answer.pull_request.compose && answer.pull_request.compose.wave;
     return answer.pull_request.reads.map((r) => ({
@@ -64,6 +68,7 @@ export function readEdges(answer, progress) {
       unknown: r.unknown || [],
       ...(r.why ? { why: r.why } : {}),
       ...(r.composed && run !== undefined ? { composed: run } : {}),
+      ...estate(r.root, r.upstream),
       stage,
     }));
   }
@@ -78,6 +83,7 @@ export function readEdges(answer, progress) {
         unknown: [],
         stage,
         wave: r.wave,
+        ...estate(r.root, up),
         // #568 step 3: both ends in one composed run: the read is inside it.
         ...(r.composed && runOf.get(up) === r.composed.wave ? { composed: r.composed.wave } : {}),
       })),
@@ -94,7 +100,7 @@ export function readLine(e) {
     const unknown = e.unknown.length ? `, read before known, known once ${e.to}'s part of the run applies: ${list(e.unknown)}` : "";
     return `${e.from} reads ${e.to}${via}, in wave ${e.composed}'s composed run${unknown}`;
   }
-  const what = e.outputs === "planned" ? `${e.to}'s planned outputs` : `${e.to}'s state as it stands`;
+  const what = e.outputs === "planned" ? `${e.to}'s planned outputs` : e.estate ? `${e.to}'s outputs as they stand` : `${e.to}'s state as it stands`;
   const unknown = e.unknown.length ? `, read before known, known after ${e.to} applies: ${list(e.unknown)}` : "";
   const why = e.why ? ` (${e.why})` : "";
   return `${e.from} reads ${what}${via}${unknown}${why}`;
@@ -554,6 +560,7 @@ export function rootStates(answer, progress, { story = false } = {}) {
   const known = (answer && answer.roots ? answer.roots.map((r) => r.path) : []).filter(Boolean);
   if (stage === "pull-request") {
     const pr = answer.pull_request;
+    const cone = coneOf(pr);
     for (const w of pr.waves) {
       const c = w.composed;
       const members = c ? c.members.map((m) => m.root) : [];
@@ -571,10 +578,16 @@ export function rootStates(answer, progress, { story = false } = {}) {
         else if (w.review_digest || w.set_digest) facts.push(`plan ${short(w.review_digest || w.set_digest)}`);
         if (c && c.held_by_unknown && c.held_by_unknown.includes(root)) facts.push("reads a value unknown when planned");
         if (w.waits) facts.push("will wait for an approval");
-        roots[root] = { wave: w.number, state: "planned", tone: STATE_TONE.planned, words: `wave ${w.number} · planned${c ? ", composed" : ""}`, facts };
+        // Report minor 34: a cone plan says its size, or why choudoufu planned the whole estate, on the root's own box.
+        const cr = cone ? cone.roots.find((x) => x.root === root) : null;
+        const cf = cr && (cr.kind === "cone" || cr.kind === "full") ? coneFact(cr) : null;
+        const said = cr && cr.kind === "cone" ? `planned · ${cf}` : cf || "planned";
+        const lines = cr ? coneResourceLines(cr) : [];
+        roots[root] = { wave: w.number, state: "planned", tone: STATE_TONE.planned, words: `wave ${w.number} · ${said}${c ? ", composed" : ""}`, facts: cf ? [cf, ...facts] : facts, ...(cr ? { cone: cr.kind } : {}), ...(lines.length ? { lines } : {}) };
       }
     }
-    for (const root of known) if (!roots[root]) roots[root] = { wave: null, state: "outside", tone: STATE_TONE.outside, words: "unchanged", facts: [] };
+    // With a cone view, a root the pull request's plan holds nothing of is said to be not planned.
+    for (const root of known) if (!roots[root]) roots[root] = { wave: null, state: "outside", tone: STATE_TONE.outside, words: cone ? "not planned" : "unchanged", facts: [], ...(cone ? { cone: "not-planned" } : {}) };
     return { stage, roots };
   }
   if (stage === "apply") {
@@ -633,7 +646,7 @@ export function readLabel(e) {
     return `reads ${e.to} in wave ${e.composed}'s composed run${e.unknown.length ? `: ${list(e.unknown)} known once ${e.to}'s part applies` : ""}`;
   }
   if (e.outputs === "planned") return e.unknown.length ? `reads ${list(e.unknown)} from ${e.to}, set when ${e.to} applies` : `reads ${e.to}'s planned outputs`;
-  return `reads ${e.to}'s applied state`;
+  return e.estate ? `reads ${e.to}'s outputs` : `reads ${e.to}'s applied state`;
 }
 
 /**
@@ -665,36 +678,68 @@ export function planFitsPin(pr, pin) {
  * nothing is in flight; at `pull-…` only that pull request's plan, so another
  * cycle's plan is never drawn as this one's. Anything else draws them as read.
  */
-export function pinnedAnswer(answer, run) {
+export function pinnedAnswer(answer, run, pull = null) {
   if (!answer || answer.error) return answer;
   const pin = pullPin(run);
   if (run === "base" || (pin && !planFitsPin(answer.pull_request, pin))) return { ...answer, pull_request: null };
+  // A commit's run is the merge of the cycle's pull request (`pull`): another cycle's plan is never drawn for it.
+  if (pull && pinsCommit(run) && !mergedPull(answer.pull_request, pull)) return { ...answer, pull_request: null };
   return answer;
 }
 
+/** Whether a pull request's plan is the one numbered `pull`. */
+const mergedPull = (pr, pull) => !!pr && !!pr.run && String(pr.run.pull_request) === String(pull);
+
 /**
  * #569: the sentence above the boxes when the pin holds the view off every
- * plan and run: the base, or a pull request whose plan isn't written yet.
- * Null when the view draws a run, and viewCaption says which.
+ * plan and run: the base, a pull request whose plan isn't written yet, or a
+ * merge whose run hasn't started and whose pull request's plan isn't read yet.
+ * Null when the view draws a plan or a run, and viewCaption says which.
  */
-export function pinnedCaption(answer, run) {
+export function pinnedCaption(answer, run, pull = null, progress = null) {
   if (run === "base") return "Nothing in flight: the states went back to the base";
   const pin = pullPin(run);
-  if (!pin || (answer && !answer.error && planFitsPin(answer.pull_request, pin))) return null;
+  if (!pin) {
+    const ran = progress && !progress.error && progress.run && progress.run.present;
+    if (pull && pinsCommit(run) && !ran && !(answer && !answer.error && mergedPull(answer.pull_request, pull))) return `Pull request #${pull} is merged; the merge's run shows here once it starts`;
+    return null;
+  }
+  if (answer && !answer.error && planFitsPin(answer.pull_request, pin)) return null;
   if (pin.pull === null) return "The pull request isn't open yet; its plan shows here once the plan job writes it";
   return `Pull request #${pin.pull} is being planned; its plan shows here once the plan job writes it`;
 }
 
-/** Which run the view's marks come from, dated: "the plan of pull request #201, 03:11 UTC". */
-export function viewCaption(answer, progress, now = new Date()) {
+/**
+ * What the frame pinned to `run` still waits for, so it reads again soon:
+ * `plan`, the reports, while the pin's pull request's plan (or, for a merge,
+ * the cycle's pull request) isn't in them; `run`, the run view, while a
+ * merge's isn't written. Pure.
+ */
+export function pinWaits(answer, progress, run, pull = null) {
+  const read = !!answer && !answer.error;
+  const ran = !!progress && !progress.error && !!progress.run && !!progress.run.present;
+  const pin = pullPin(run);
+  const plan = read && !!run && run !== "base" && (pin ? !planFitsPin(answer.pull_request, pin) : !!pull && pinsCommit(run) && !ran && !mergedPull(answer.pull_request, pull));
+  return { plan, run: !!run && pinsCommit(run) && !ran };
+}
+
+/**
+ * Which run the view's marks come from, dated: "the plan of pull request #201
+ * at 03:11 UTC, before the merge". `merged`: the view is pinned to the merge,
+ * whose run hasn't started yet, so the plan is said as what the merge's run
+ * follows. A run of a pull request planned as a cone says the merge plans each
+ * estate in full.
+ */
+export function viewCaption(answer, progress, now = new Date(), { merged = false } = {}) {
   const stage = changeStage(answer, progress);
   if (stage === "pull-request") {
     const r = answer.pull_request.run;
-    return `the plan of pull request #${r.pull_request} at ${clock(r.finished, now)}, before the merge`;
+    return merged ? `the plan of pull request #${r.pull_request} at ${clock(r.finished, now)}; the merge's run starts next` : `the plan of pull request #${r.pull_request} at ${clock(r.finished, now)}, before the merge`;
   }
   if (stage === "apply") {
     const r = progress.run;
-    return `the run of merge ${r.commit.slice(0, 8)}, as of ${clock(r.updated, now)}`;
+    const full = !!(answer && !answer.error && coneOf(answer.pull_request));
+    return full ? `the merge's run (${r.commit.slice(0, 8)}), planning each estate in full, as of ${clock(r.updated, now)}` : `the run of merge ${r.commit.slice(0, 8)}, as of ${clock(r.updated, now)}`;
   }
   return null;
 }

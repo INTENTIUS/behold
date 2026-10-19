@@ -32,7 +32,7 @@ import { noStateFill } from "./frame-fill.js";
 import { componentMarks as tgComponentMarks, runsCommit as tgRunsCommit, statusShort as tgStatusShort, waveOfKey as tgWaveOfKey } from "./terragucci-components-live.js";
 import { FORGES, MARK, componentsForge, forgeOfName, iconSvg, markLink, markTitle, waveJobUrl } from "./forge-mark.js";
 import { TOOLS, orderTools } from "./tool-mark.js";
-import { STATE_WORDS as tgStateWords, changeSection as tgChangeSection, readCardIds as tgReadCardIds, readEdges as tgReadEdges, readLabel as tgReadLabel, readLine as tgReadLine, readTag as tgReadTag, rootStates as tgRootStates, viewCaption as tgViewCaption, pinnedAnswer as tgPinnedAnswer, pinnedCaption as tgPinnedCaption, pinsCommit as tgPinsCommit } from "./terragucci-change.js";
+import { STATE_WORDS as tgStateWords, changeSection as tgChangeSection, readCardIds as tgReadCardIds, readEdges as tgReadEdges, readLabel as tgReadLabel, readLine as tgReadLine, readTag as tgReadTag, rootStates as tgRootStates, viewCaption as tgViewCaption, pinnedAnswer as tgPinnedAnswer, pinnedCaption as tgPinnedCaption, pinsCommit as tgPinsCommit, pinWaits as tgPinWaits } from "./terragucci-change.js";
 import { auditLines as yrAuditLines, cornerText as yrCorner, datedWords as yrDated, environmentLines as yrEnvLines, joinMarks as yrJoin, legend as yrLegend, markLine as yrMarkLine } from "./yodel-report.js";
 import { cardProgress as tgCardProgress, progressLines as tgProgressLines, progressSection as tgProgressSection, stampProgress as tgStampProgress } from "./terragucci-progress.js";
 import { seconds, whyQuery, whyView } from "./why.js";
@@ -120,13 +120,15 @@ import { danglingFor, danglingRows, danglingHeading, DANGLING_EXPLAINED } from "
 import { comparisonRow, comparisonSummary } from "./cross-env.js";
 // The marker-vs-derived mark on a choudoufu card: how its identity was found.
 import { identityMark, tagGlyphSvg } from "./identity-mark.js";
-import { shotFromMessage, shotViewBox, tweenViewBox, unionBox, sameViewBox } from "./kiosk-shot.js"; // behold#571: Watch's camera
+import { shotFromMessage, shotViewBox, tweenViewBox, unionBox, sameViewBox, heldFrame, heldInsets, heldTarget, holdsStage, medianWidth, smallStage } from "./kiosk-shot.js"; // behold#571: Watch's camera
 // #712, #715: the dots layer, the zoom past the cards. Mounted for a live
 // carve when the estate has choudoufu roots or estate rosters
 // (/api/terragucci/carve, liveCarveGate below), or when /api/graph's meta
 // carries `dots` (the local preview server, scripts/dots-preview.ts). With
 // neither it stays unmounted, and its hooks below are no-ops.
-import { mountDots, unmountDots, dotsCamera, dotsZoomOutFactor, dotsCarving, dotsMinViewWidth } from "./dots.js";
+import { mountDots, unmountDots, dotsCamera, dotsZoomOutFactor, dotsCarving, dotsMinViewWidth, setDotsCone } from "./dots.js";
+// Report minor 34: a cone plan's lights, on the cards and the dots (web/cone.js).
+import { cardRoot as coneCardRoot, coneLights, coneOf, resourceLight as coneResourceLight, rootLight as coneRootLight, wrapWords } from "./cone.js";
 import { carveDrawable } from "./dots-live.js";
 import { FLASH_MS as TG_FLASH_MS, createReadFlash, hotReads as tgHotReads, nearestOn as tgNearestOn, pillSpots as tgPillSpots, readKey as tgReadKey, readerStates as tgReaderStates } from "./tg-read-pills.js"; // behold#744
 import { outsideCard as tgOutsideCard, outsideModel as tgOutsideModel, outsideSpots as tgOutsideSpots } from "./tg-outside.js"; // behold#743
@@ -2627,6 +2629,7 @@ function applyWantedView(want) {
   if ("gates" in apply) view.gates = apply.gates;
   if ("focus" in apply) view.focus = apply.focus; // #569: drawn by drawTgReads, no new read
   if ("run" in apply) view.run = apply.run; // #569: which run the view draws; read in the message handler
+  if ("pull" in apply) view.pull = apply.pull; // the cycle's pull request: a commit's run never draws another's plan
   if (want.member === null) {
     view.member = null;
     selectedNodeId = null;
@@ -2652,10 +2655,14 @@ window.addEventListener("message", (e) => {
   const gatesBefore = view.gates;
   const focusBefore = view.focus;
   const runBefore = view.run;
+  const pullBefore = view.pull;
   const moved = applyWantedView(want);
-  if (view.run !== runBefore) {
+  if (view.run !== runBefore || view.pull !== pullBefore) {
     void loadTgProgress({ fresh: true }); // #569: the run the narration is about
     if (chantFacets) void loadChantPr(); // behold#631
+    // The reports too, read fresh now, and again every few seconds while the pin's plan or run isn't written yet:
+    // the reports a frame read a step ago don't hold this cycle's pull request.
+    if (tgAnswer && embedOpts.bare) void refreshTgAnswer();
   }
   else if (view.focus !== focusBefore && !moved) drawTgReads(); // #569
   // #477: the host's env for the gate strip moved. Read it now, not on the
@@ -3595,6 +3602,8 @@ function mountLiveCarve(g, svgEl) {
     vbInit: vbInit.slice(),
     getVB: () => vb,
     setVB: (a) => {
+      // A held small stage in Watch keeps its one framing: only the carve's director moves the camera then.
+      if (kioskHeld && kioskShot && !dotsCarving()) return;
       vb = a.slice();
       vbAtFit = false;
       applyVB();
@@ -3663,6 +3672,38 @@ async function loadTerragucci({ fresh = false } = {}) {
   renderTerragucciPanel();
   markTerragucciCards();
   if (!staticMode) await loadTgProgress({ fresh });
+  tgRefreshSoon();
+}
+/**
+ * The kiosk's frame is pinned to one step's run (#569) and swapped for the next step's, so it reads again soon while
+ * what its pin names isn't written yet: the pull request's plan (the plan job is still running), or the merge's run
+ * view (the waves have not started). The plan then lights from planned on, and the waves' own states take over as
+ * soon as their run view is there, without waiting for the reports poll.
+ */
+var tgSoon = null;
+var TG_SOON_MS = 5_000;
+/** The reports alone, read fresh and drawn at once: the timeline and the gate ledgers' history (slow reads) wait for the next full read. */
+async function refreshTgAnswer() {
+  const answer = await apiFetch("/api/terragucci?fresh=1")
+    .then((r) => r.json())
+    .catch((e) => ({ error: String(e), code: "terragucci-report", remedy: "" }));
+  if (!answer.error || !tgAnswer) tgAnswer = answer;
+  renderTerragucciPanel();
+  markTerragucciCards();
+  drawTgReads();
+  tgRefreshSoon();
+}
+function tgRefreshSoon() {
+  if (!embedOpts.bare || staticMode || tgSoon) return;
+  const waits = tgPinWaits(tgAnswer, tgProgress, view.run, view.pull || null);
+  if (!waits.plan && !waits.run) return;
+  tgSoon = setTimeout(() => {
+    tgSoon = null;
+    // Asked again now: the pin may have moved while the timer ran.
+    const now = tgPinWaits(tgAnswer, tgProgress, view.run, view.pull || null);
+    if (now.plan) void refreshTgAnswer();
+    else if (now.run) void loadTgProgress({ fresh: true }).then(tgRefreshSoon);
+  }, TG_SOON_MS);
 }
 // #511: /api/terragucci/progress, the newest apply's run view on the cards.
 let tgProgress = null;
@@ -3694,7 +3735,7 @@ function tgPushFits(answer) {
 }
 /** #569: the reports as the view draws them: at `run=base` no pull request, at `run=pull-<n>` only that one's plan. */
 function tgAnswerDrawn() {
-  return tgPinnedAnswer(tgAnswer, view.run);
+  return tgPinnedAnswer(tgAnswer, view.run, view.pull || null);
 }
 function paintTgProgress() {
   tgStampProgress(document.querySelector("#graph svg"), tgProgress, new Date());
@@ -3732,6 +3773,11 @@ function drawTgReads() {
     r.removeAttribute("data-tg-stroke0");
     r.removeAttribute("data-tg-width0");
   }
+  // A card grown to hold a cone's lines goes back to its own height (drawTgComponentMarks).
+  for (const r of svg.querySelectorAll("rect[data-tg-h0]")) {
+    r.setAttribute("height", r.getAttribute("data-tg-h0"));
+    r.removeAttribute("data-tg-h0");
+  }
   for (const r of svg.querySelectorAll("[data-tg-fill0]")) {
     r.setAttribute("fill", r.getAttribute("data-tg-fill0"));
     r.removeAttribute("data-tg-fill0");
@@ -3746,6 +3792,8 @@ function drawTgReads() {
   }
   // behold#631: a chant repo's pull-request loop marks its components from chant's records, not terragucci's reports.
   const chantMode = chantPrDrawn();
+  // Report minor 34: last draw's cone lights go; drawConeLights sets this draw's.
+  if (chantMode || !tgAnswer || tgAnswer.error || !tgAnswer.roots) drawConeLights(svg, { stage: null });
   if (!chantMode && (!tgAnswer || tgAnswer.error || !tgAnswer.roots)) return;
   const toSvg = svg.getScreenCTM && svg.getScreenCTM();
   if (!toSvg) return;
@@ -3924,6 +3972,9 @@ function drawTgReads() {
       });
     }
   }
+
+  // Report minor 34: a cone plan lights what it planned and dims the rest, never hiding it (web/cone.js).
+  drawConeLights(svg, { stage: states.stage, drawnAnswer, compMode, componentsOfRoot, rootOf });
 
   // #571: the components zoom's own marks; its wave boxes are the boxes the caption and the labels keep clear of.
   const edgePoints = compMode ? chantEdgePoints(svg) : [];
@@ -4136,8 +4187,8 @@ function drawTgReads() {
 
   // Which run the marks come from, above the boxes.
   // #569: a pin that holds the view off every plan says why in its own words.
-  const shown = tgViewCaption(drawnAnswer, tgProgress, new Date());
-  const caption = tgPinnedCaption(tgAnswer, view.run) || (shown ? `Showing ${shown}` : null);
+  const shown = tgViewCaption(drawnAnswer, tgProgress, new Date(), { merged: tgPinsCommit(view.run) });
+  const caption = tgPinnedCaption(tgAnswer, view.run, view.pull || null, tgProgress) || (shown ? `Showing ${shown}` : null);
   const all = union(boxes);
   if (caption && all) {
     const line = make("text", { "data-tg-reads": "caption", x: all.x, y: all.y - 22, "font-size": 16, "font-weight": 600, fill: "var(--muted)" }, caption);
@@ -4280,6 +4331,115 @@ function drawTgOutside(svg, { layer, make, boxOf, marks, roots, cardBoxOf, avoid
     g.insertBefore(make("circle", { cx: p.x, cy: p.y, r: 4.5, fill: tone }), body);
   }
   g.appendChild(make("title", {}, [`${model.tag}: ${outside.who} ran ${outside.command} on ${outside.estate}`, `${outside.state}${(outside.resources || []).length ? ` · ${outside.resources.join(", ")}` : ""}`, ...(outside.log || []).slice(-3)].join("\n") + "\n(from the demo's narration, demo.json)"));
+}
+/**
+ * Report minor 34: while the view draws a pull request's plan that has a cone
+ * view, each card of a root it names takes `data-cone`: `changed` and `lit`
+ * (planned: outlined in the plan's colour), or `dim` (not planned: faded,
+ * still drawn). A components card, one per root, lights as its root does.
+ * The dots layer is told the same lights. Any other plan sets nothing.
+ */
+function drawConeLights(svg, { stage, drawnAnswer, compMode, componentsOfRoot, rootOf }) {
+  for (const g of svg.querySelectorAll("[data-cone]")) g.removeAttribute("data-cone");
+  for (const g of svg.querySelectorAll("[data-cone-dim]")) {
+    g.removeAttribute("data-cone-dim");
+    g.style.opacity = g.getAttribute("data-tg-dim") ? "0.5" : "";
+  }
+  const lights = stage === "pull-request" ? coneLights(coneOf(drawnAnswer && drawnAnswer.pull_request)) : null;
+  setDotsCone(lights);
+  if (!lights) return;
+  const outline = (g, width) => {
+    const r = g.querySelector(":scope > rect");
+    if (!r) return;
+    if (!r.hasAttribute("data-tg-stroke0")) {
+      r.setAttribute("data-tg-stroke0", r.getAttribute("stroke") || "");
+      r.setAttribute("data-tg-width0", r.getAttribute("stroke-width") || "1.2");
+    }
+    r.setAttribute("stroke", TG_TONE.plan);
+    r.setAttribute("stroke-width", width);
+  };
+  const dim = (g) => {
+    g.setAttribute("data-cone-dim", "1");
+    g.style.opacity = "0.35";
+  };
+  const mark = (g, light) => {
+    if (!light) return;
+    g.setAttribute("data-cone", light);
+    if (light === "dim") dim(g);
+    // A components card is outlined by its root's state already (drawTgComponentMarks), which keeps the original stroke to put back.
+    else if (!compMode) outline(g, light === "changed" ? "4" : "2.5");
+  };
+  if (compMode) {
+    // Each components card by the root its job names (terragucci.components.json), else by the answer's root.
+    const named = (tgComponentFacets && tgComponentFacets.roots) || {};
+    const done = new Set();
+    for (const g of svg.querySelectorAll("[data-node-id]")) {
+      const id = g.getAttribute("data-node-id");
+      const path = [named[id], id].find((p) => p && lights.roots.has(p));
+      if (path) {
+        mark(g, coneRootLight(lights, path));
+        done.add(g);
+      }
+    }
+    for (const path of lights.roots.keys()) {
+      const r = rootOf(path);
+      if (!r) continue;
+      for (const c of componentsOfRoot(r)) {
+        const g = svg.querySelector(`[data-node-id="${CSS.escape(c)}"]`);
+        if (g && !done.has(g)) mark(g, coneRootLight(lights, path));
+      }
+    }
+    return;
+  }
+  for (const g of svg.querySelectorAll("[data-node-id]")) {
+    const at = coneCardRoot(g.getAttribute("data-node-id"), lights, (tgAnswer && tgAnswer.roots) || []);
+    if (at) mark(g, coneResourceLight(lights, at.root, at.address));
+  }
+  // Each root's box says how the plan took it (the badge's words, web/terragucci-change.js rootStates).
+  for (const m of svg.querySelectorAll("g[data-tg-root]")) {
+    const light = coneRootLight(lights, m.getAttribute("data-tg-root"));
+    if (light) m.setAttribute("data-cone", light);
+  }
+}
+/**
+ * How far a card (`b`, svg units) may grow down: to the next card under it, or the bottom of the box that holds it,
+ * with a gap; nothing when no box holds it, so a grown card never changes what the graph spans.
+ */
+function roomUnder(b, svg, boxOf, own, need = 0) {
+  // The innermost box that holds the card.
+  let box = null;
+  let boxB = null;
+  for (const r of svg.querySelectorAll("rect[data-group-id]")) {
+    const g = boxOf(r);
+    if (g && b.x >= g.x - 0.5 && b.x2 <= g.x2 + 0.5 && b.y >= g.y - 0.5 && b.y2 <= g.y2 + 0.5 && (!boxB || g.y2 - g.y < boxB.y2 - boxB.y)) {
+      box = r;
+      boxB = g;
+    }
+  }
+  if (!box) return 0;
+  let cardRoom = Infinity;
+  for (const c of svg.querySelectorAll("[data-node-id]")) {
+    if (c === own) continue;
+    const o = boxOf(c);
+    if (o && o.x < b.x2 && o.x2 > b.x && o.y >= b.y2 - 0.5) cardRoom = Math.min(cardRoom, o.y - b.y2 - 8);
+  }
+  let room = boxB.y2 - b.y2 - 10;
+  // Not enough in the box, and no card under this one in it: the box grows too, when nothing lies under the box.
+  if (need > room && cardRoom === Infinity) {
+    const extra = need - room;
+    const below = [...svg.querySelectorAll("rect[data-group-id], [data-node-id]")].some((n) => {
+      if (n === box || n === own || box.contains(n)) return false;
+      const o = boxOf(n);
+      return o && o.x < boxB.x2 && o.x2 > boxB.x && o.y >= boxB.y2 - 0.5 && o.y < boxB.y2 + extra + 12;
+    });
+    if (!below) {
+      const h0 = Number(box.getAttribute("height"));
+      if (!box.hasAttribute("data-tg-h0")) box.setAttribute("data-tg-h0", String(h0));
+      box.setAttribute("height", String(h0 + extra));
+      room = need;
+    }
+  }
+  return Math.max(0, Math.min(room, cardRoom));
 }
 const sameBox = (a, b) => !!a && !!b && Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5 && Math.abs(a.x2 - b.x2) < 0.5 && Math.abs(a.y2 - b.y2) < 0.5;
 
@@ -4774,7 +4934,7 @@ function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints
     const rects = [...g.querySelectorAll(":scope > rect")];
     const body = rects.reduce((a, r) => (!a || Number(r.getAttribute("width")) * Number(r.getAttribute("height")) > Number(a.getAttribute("width")) * Number(a.getAttribute("height")) ? r : a), null);
     const bar = rects.find((r) => r !== body && Number(r.getAttribute("width")) <= 6);
-    const quiet = m.state === "outside" || m.state === "unchanged" || m.state === "not-started";
+    const quiet = m.state === "outside" || m.state === "unchanged" || m.state === "not-started" || m.state === "reading";
     const inFocus = !focus || focus.has(m.root) || focus.has(id);
     if (body) {
       body.setAttribute("data-tg-stroke0", body.getAttribute("stroke") || "");
@@ -4804,14 +4964,46 @@ function drawTgComponentMarks(svg, { drawnAnswer, focus, boxOf, make, edgePoints
     // behold#631: a middle form (a failure's first words, a blocker's name) before the one-word short.
     // behold#631: a chant kiosk says a card's state at the size of its name, readable from a few feet.
     const cardFont = marks.cardFont || 12;
-    const words = width(m.words, cardFont, 700) <= room ? m.words : m.mid && width(m.mid, cardFont, 700) <= room ? m.mid : m.short;
+    // A cone root's words that don't fit: the state on this line, the cone's size wrapped under it (never cut).
+    const coneCard = m.cone === "cone" || m.cone === "full";
+    const words = width(m.words, cardFont, 700) <= room ? m.words : coneCard ? m.words.split(" · ")[0] : m.mid && width(m.mid, cardFont, 700) <= room ? m.mid : m.short;
     sub.setAttribute("visibility", "hidden");
     sub.setAttribute("data-tg-hid", "1");
     const t = make("text", { "data-tg-root": "card", x, y: marks.cardFont ? y + 4 : y, "font-size": cardFont, "font-weight": 700, fill: quiet ? "var(--frame-card-muted, var(--muted))" : TG_CARD_TONE[m.tone] || TG_CARD_TONE.idle }, words);
     if (m.state === "applying") t.setAttribute("class", "pin-pulse");
     if (!inFocus) t.style.opacity = "0.6";
-    t.appendChild(make("title", {}, [`wave ${m.wave} · ${m.words}`, ...m.facts].join("\n") + "\n" + cardSource));
-    g.appendChild(t);
+    // The tooltip (with where the marks come from) beside the words, in a group of their own, so the card's text is its words alone.
+    const tip = make("g", { "data-tg-root": "card-tip" });
+    tip.append(make("title", {}, [`wave ${m.wave} · ${m.words}`, ...m.facts].join("\n") + "\n" + cardSource), t);
+    g.appendChild(tip);
+    // Report minor 34: under the state, what didn't fit of its words (the cone's size), then the cone's resources, a
+    // line each, each wrapped to the card's width (web/cone.js wrapWords) so it reads in full. The card's body grows
+    // to hold them when the gap under it has room; no box round them.
+    const rest = words !== m.words && coneCard ? [m.words.slice(words.length).replace(/^ · /, "")] : [];
+    const said = [...rest, ...(m.lines || [])].flatMap((line) => wrapWords(line, room, (txt) => width(txt, 11.5, 600)));
+    if (said.length) {
+      const LH = 15;
+      const top = Number(body.getAttribute("y"));
+      const h0 = Number(body.getAttribute("height"));
+      const need = y + LH * said.length + 8 - top;
+      if (need > h0) {
+        // Grow into the gap under the card, never onto another card; its box grows with it when nothing lies under the box.
+        const b = boxOf(body);
+        const gap = b ? roomUnder(b, svg, boxOf, g, need - h0) : 0;
+        const grow = Math.max(0, Math.min(need - h0, gap));
+        if (grow > 0) {
+          body.setAttribute("data-tg-h0", String(h0));
+          body.setAttribute("height", String(h0 + grow));
+        }
+      }
+      const floor = top + Number(body.getAttribute("height")) - 6;
+      said.forEach((line, k) => {
+        const ly = y + LH * (k + 1);
+        if (ly > floor) return;
+        const last = k === said.length - 1 || y + LH * (k + 2) <= floor ? line : `${line} …`;
+        g.appendChild(make("text", { "data-tg-root": "cone-line", x, y: ly, "font-size": 11.5, "font-weight": 600, fill: "var(--frame-card-muted, var(--muted))" }, last));
+      });
+    }
   }
 
   // The wave boxes.
@@ -5211,14 +5403,83 @@ function kioskShotBox() {
   const host = document.getElementById("graph");
   if (!svg || !host || !kioskShot) return null;
   const pane = host.getBoundingClientRect();
-  const i = kioskShot.insets;
-  const insets = {
-    top: Math.max(0, i.top - pane.top),
-    left: Math.max(0, i.left - pane.left),
-    bottom: Math.max(0, i.bottom - (window.innerHeight - pane.bottom)),
-    right: Math.max(0, i.right - (window.innerWidth - pane.right)),
+  const insets = kioskPaneInsets(kioskShot);
+  // One framing on a small stage (web/kiosk-shot.js): when the whole graph fits with its cards readable, every step's
+  // shot is the whole graph, and the viewBox holds from step to step and cycle to cycle while the repo, the view and
+  // the pane stay. Judged with the room the held framing keeps, so a caption's height never flips the rule.
+  // heldInsets: the run's caption's room at the top and the caption under the stage; nothing a step shows sits at the side.
+  const docked = heldInsets(insets, kioskShot.room || 0);
+  const rects = [...svg.querySelectorAll("[data-node-id] > rect")];
+  const graph = `${new URLSearchParams(location.search).get("repo") || ""}|${view.components ? "components" : "resources"}`;
+  // The graph itself, its boxes and cards: the marks, the reads' labels and the caption on it change from step to step.
+  // Only the boxes' and the cards' own rects: a card's group also spans its hidden text and tooltips, and anything
+  // else on the page (the reads' labels, the caption, the marks) is drawn over the graph, not part of what it spans.
+  // A card or box grown to hold a cone's lines counts at its own height: the lines grow into the room under the
+  // graph that the framing keeps, so they come and go with no move.
+  const own = (r) => {
+    const b = userBoxOf(svg, r);
+    const h0 = Number(r.getAttribute("data-tg-h0"));
+    const h = Number(r.getAttribute("height"));
+    return b && h0 > 0 && h > 0 ? { ...b, y2: b.y + ((b.y2 - b.y) * h0) / h } : b;
   };
+  // Only what is drawn: a rect hidden, or with no size on screen, is not part of the graph.
+  const drawn = (r) => {
+    const c = r.getBoundingClientRect();
+    return c.width > 0 && c.height > 0 && !r.closest("[visibility='hidden'], [display='none']") && getComputedStyle(r).visibility !== "hidden";
+  };
+  const whole = heldTarget([...svg.querySelectorAll("rect[data-group-id]")].filter(drawn).map(own), rects.filter(drawn).map(own));
+  const cardW = medianWidth(rects.map((r) => {
+    const b = userBoxOf(svg, r);
+    return b ? b.x2 - b.x : 0;
+  }));
+  // A frame the kiosk swapped in (a new pin each step) takes up the framing the last one held.
+  if (!kioskHeld) kioskHeld = readHeld();
+  const held = kioskHeld && kioskHeld.key === graph ? kioskHeld : null;
+  // Only an estate on choudoufu's live backend (the cone scenario's) is held; every other keeps a shot per step, as on main.
+  if (whole && holdsStage(tgAnswer && !tgAnswer.error ? tgAnswer.binaries : null) && smallStage(whole, pane, held ? held.insets : docked, cardW)) {
+    kioskHeld = heldFrame(kioskHeld, { key: graph, pane, insets: docked, target: whole });
+    writeHeld(kioskHeld);
+    document.documentElement.classList.add("kiosk-held");
+    // What the framing was made of, for a check from outside: the inputs, and why it last framed again.
+    window.__kioskHeld = () => ({ ...kioskHeld, inputs: { pane: { width: pane.width, height: pane.height }, insets: docked, shot: kioskShot.insets, room: kioskShot.room || 0, cards: rects.length, cardW, target: whole } });
+    return kioskHeld.vb;
+  }
+  kioskHeld = null;
+  document.documentElement.classList.remove("kiosk-held");
   return shotViewBox(kioskShotTarget(svg, kioskShot), pane, insets);
+}
+/** The whole-graph framing Watch holds on a small stage while the graph and the pane stay (web/kiosk-shot.js heldFrame); null on a bigger one. */
+var kioskHeld = null;
+/** Where the held framing is kept for the frame the kiosk swaps in next: this tab's session, same origin as every frame. */
+var HELD_STORE = "behold.kiosk.held.v3";
+function readHeld() {
+  try {
+    const h = JSON.parse(sessionStorage.getItem(HELD_STORE) || "null");
+    return h && typeof h.key === "string" && Array.isArray(h.vb) && h.pane && h.insets && h.target ? h : null;
+  } catch {
+    return null;
+  }
+}
+function writeHeld(h) {
+  try {
+    sessionStorage.setItem(HELD_STORE, JSON.stringify(h));
+  } catch {
+    /* no storage: this frame still holds its own framing */
+  }
+}
+
+/** A shot's insets (the frame's window px) as the graph pane's own: the pane's offset in the window comes off them. */
+function kioskPaneInsets(shot) {
+  const host = document.getElementById("graph");
+  const i = (shot && shot.insets) || {};
+  if (!host) return { top: 0, right: 0, bottom: 0, left: 0 };
+  const pane = host.getBoundingClientRect();
+  return {
+    top: Math.max(0, (i.top || 0) - pane.top),
+    left: Math.max(0, (i.left || 0) - pane.left),
+    bottom: Math.max(0, (i.bottom || 0) - (window.innerHeight - pane.bottom)),
+    right: Math.max(0, (i.right || 0) - (window.innerWidth - pane.right)),
+  };
 }
 
 /** Move to the shot: a pan and zoom over its time, or at once (a re-render, a resize, reduced motion). */
@@ -5232,9 +5493,11 @@ function applyKioskShot(animate) {
     return;
   }
   if (sameViewBox(vb, to)) return kioskTellBoxes();
+  // A held small stage lands on its one framing at once: a frame the kiosk swapped in never moves into it on screen.
+  const landing = !!kioskHeld && vbAtFit;
   vbAtFit = false;
   const ms = kioskShot.ms;
-  if (!animate || reducedMotion() || !(ms > 0)) {
+  if (!animate || landing || reducedMotion() || !(ms > 0)) {
     if (shotAnim) cancelAnimationFrame(shotAnim.raf);
     shotAnim = null;
     vb = to;
@@ -5305,7 +5568,8 @@ function kioskTellBoxes() {
     const host = document.getElementById("graph");
     const pane = host ? rect(host.getBoundingClientRect()) : null;
     try {
-      window.parent.postMessage({ type: "behold:boxes", waves, roots, labels, pane, moving: !!shotAnim }, embedOpts.host);
+      // held: one framing holds the small stage.
+      window.parent.postMessage({ type: "behold:boxes", waves, roots, labels, pane, moving: !!shotAnim, held: !!kioskHeld }, embedOpts.host);
     } catch {
       /* the parent went away */
     }
@@ -5346,6 +5610,7 @@ window.addEventListener("message", (e) => {
     if (shotAnim) cancelAnimationFrame(shotAnim.raf);
     shotAnim = null;
     kioskShot = null;
+    document.documentElement.classList.remove("kiosk-held"); // Inspect: the zoom rail is the viewer's again
     fitGraph();
     return;
   }
@@ -8994,6 +9259,10 @@ async function loadOnce(opts = {}, isCurrent = () => true) {
       if (view.env) q.set("env", view.env);
       // behold#741: a chapter-carrying scenario's fan-out wave as one block per parent, as chant's loop lays it out.
       if (tgStoryOn()) q.set("blocks", "1");
+      // The kiosk's frame of a choudoufu estate (the held small stage): its waves in a row, wave 1 on the left, so
+      // the graph's shape is the stage's and the held framing can zoom in as far as the width allows. A story's
+      // fan-out (fan-out-choudoufu) keeps its blocks.
+      else if (embedOpts.bare && projectInfo && projectInfo.terragucciChoudoufu) q.set("waves", "row");
     } else if (view.stacks) {
       // The apply-order lens (#426): chant's cross-stack ordering, built fresh
       // for the same reason the ops lens is — it reads none of the entity

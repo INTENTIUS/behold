@@ -17,7 +17,7 @@
  * `none` (no run view: the newest pull request's plan), `pull-<n>[-<sha>]`
  * (no run view, and only that pull request's plan, of that commit) or `base`
  * (nothing in flight); absent, the newest. */
-export const VIEW_KEYS = ["member", "zoom", "env", "tier", "lens", "node", "radial", "gates", "focus", "run"];
+export const VIEW_KEYS = ["member", "zoom", "env", "tier", "lens", "node", "radial", "gates", "focus", "run", "pull"];
 
 /** An env name as the server takes one (src/workspace-gates.ts isEnvName). */
 export function isEnvName(env) {
@@ -49,7 +49,7 @@ export function readViewQuery(search) {
       want.env = v || null;
       continue;
     }
-    if (k === "focus" || k === "run") {
+    if (k === "focus" || k === "run" || k === "pull") {
       want[k] = v || null;
       continue;
     }
@@ -83,6 +83,7 @@ export function writeViewQuery(search, state, defaults = {}) {
   if (s.gates) q.set("gates", s.gates);
   if (s.focus) q.set("focus", s.focus);
   if (s.run) q.set("run", s.run);
+  if (s.pull) q.set("pull", s.pull);
   const out = q.toString();
   return out ? `?${out}` : "";
 }
@@ -134,6 +135,11 @@ export function settleView(want, offer) {
     // null: the newest run, as without the key.
     if (want.run === null || /^([0-9a-f]{7,40}|none|base|pull(-\d+(-[0-9a-f]{7,40})?)?)$/.test(String(want.run))) apply.run = want.run;
     else refused.push({ key: "run", value: want.run, reason: "run is a commit sha, none, base or pull-<number>[-<sha>]" });
+  }
+  if ("pull" in want) {
+    // The pull request a commit's run merged (the kiosk's cycle): the frame never draws another's plan for it. null: any.
+    if (want.pull === null || /^\d+$/.test(String(want.pull))) apply.pull = want.pull;
+    else refused.push({ key: "pull", value: want.pull, reason: "pull is a pull request's number" });
   }
   if (want.member) apply.member = want.member;
   if (want.node) apply.node = want.node;

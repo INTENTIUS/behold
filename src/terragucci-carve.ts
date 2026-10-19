@@ -102,6 +102,8 @@ export interface CarveRoster {
   count: number;
   resources: CarveResource[];
   key: string;
+  /** The root the estate is, as estates.json names it (a path in its repo), when it names one: the cone view lights by root. */
+  root?: string;
 }
 
 export interface CarveLine {
@@ -662,7 +664,7 @@ export async function readCarve(source: TerragucciSource, opts: CarveReadOptions
       continue;
     }
     const resources = doc.resources.map(rosterResource).filter((r): r is CarveResource => !!r);
-    estates.push({ estate: str(doc.estate) ? doc.estate : e.estate, at: str(doc.at) ? doc.at : e.at, count: e.count ?? resources.length, resources, key: e.roster });
+    estates.push({ estate: str(doc.estate) ? doc.estate : e.estate, at: str(doc.at) ? doc.at : e.at, count: e.count ?? resources.length, resources, key: e.roster, ...(e.root ? { root: e.root } : {}) });
   }
   if (entries.length > MAX_ROSTERS) problems.push(`the index lists ${entries.length} estates; the first ${MAX_ROSTERS} are drawn`);
 

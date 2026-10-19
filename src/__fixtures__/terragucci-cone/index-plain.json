@@ -1,0 +1,22 @@
+{
+  "schema": "terragucci.report-index/v1",
+  "reports": [
+    {
+      "project": "forgejo:3000/demo/demo-cone",
+      "commit": "2222222",
+      "stage": "tf-plan",
+      "finished": "2026-10-17T10:05:00.000Z",
+      "path": "runs/pr-plain",
+      "pull_request": "7"
+    },
+    {
+      "project": "forgejo:3000/demo/demo-cone",
+      "commit": "1111111",
+      "stage": "tf-apply",
+      "wave": 1,
+      "finished": "2026-10-17T10:00:00.000Z",
+      "path": "runs/base",
+      "approval": "not-required"
+    }
+  ]
+}

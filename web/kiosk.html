@@ -492,6 +492,10 @@
       .k-cap-lead .k-cap-label { padding-top: var(--s3); }
       /* The quiet line (web/kiosk-watch.js quietWords): what runs while nothing new comes in, and for how long. One muted line under the fixed rows, no spinner. */
       .k-cap-quiet { margin: 0; padding-left: var(--s3); color: var(--muted); font-size: 0.92em; line-height: 1.35; font-variant-numeric: tabular-nums; }
+      /* A cone plan's line (web/kiosk-watch.js coneCaption): what the plan planned, in the caption's ink; the estates' backend after it, muted. One line, no box. */
+      .k-cap-cone { margin: 0; padding-left: var(--s3); color: var(--ink2, var(--fg)); font-size: 0.92em; line-height: 1.35; font-variant-numeric: tabular-nums; display: flex; flex-wrap: wrap; gap: 0 var(--s4); }
+      .k-cone-backend { color: var(--muted); }
+      .k-note.k-cone-backend { color: var(--muted); }
       /* Both captions' quiet line (here and web/kiosk-carve.js): one line; the driver's words take an ellipsis, the job and the time never do. */
       .k-quiet { display: flex; min-width: 0; white-space: nowrap; }
       .k-quiet-said { min-width: 0; overflow: hidden; text-overflow: ellipsis; }

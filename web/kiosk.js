@@ -22,7 +22,7 @@ import { TOOLS } from "./tool-mark.js";
 import { graphWaves } from "./chant-pr-marks.js";
 import { createProgressPacer, trackWaves } from "./terragucci-live-pace.js";
 import { PICK_HOLD_MS, annMark, mergeRun, startRuns, statusIcon } from "./kiosk-runs.js";
-import { MODES, MODE_STORE, badges as waveBadges, badgeTitle, behindStep, steadyRun, captionModel, doraLine, modeStored, placeBeside, quietWords, recordKey, resultModel, runningStep, shotFor, stepTone, tailLines } from "./kiosk-watch.js";
+import { MODES, MODE_STORE, badges as waveBadges, badgeTitle, behindStep, steadyRun, captionModel, captionRoom, coneCaption, stepLine, watchOverlays, doraLine, modeStored, placeBeside, quietWords, recordKey, resultModel, runningStep, shotFor, stepTone, tailLines } from "./kiosk-watch.js";
 import { shotMessage } from "./kiosk-shot.js";
 import { mountTrace } from "./kiosk-trace.js";
 import { startEventHelp } from "./kiosk-event-help-ui.js";
@@ -565,6 +565,12 @@ export function runPin(demo) {
   return demo.commit || "none";
 }
 
+/** The cycle's pull request number for the frame (`pull` view key), or null before one opens and on the base. */
+export function framePull(demo) {
+  if (!demo || demo.scenario === "base" || demo.step === "reset") return null;
+  return demo.pull !== null && demo.pull !== undefined && /^\d+$/.test(String(demo.pull)) ? String(demo.pull) : null;
+}
+
 /** The framed view's address: behold's own page, bare, at a zoom (the resources zoom unless told), told who its host is. */
 export function frameSrc(origin, zoom = "resources", repo = null, theme = null) {
   const q = new URLSearchParams({ embed: "1", bare: "1", zoom, host: origin });
@@ -834,6 +840,13 @@ export function holdHead({ wave = null, run = null, digest = null, pull = null, 
   return parts.length ? parts.join(" · ") : null;
 }
 
+/** Report minor 34: Inspect's note lines for a cone plan, the same words as Watch's caption (kiosk-watch.js coneCaption); none for any other plan. */
+export function coneLines(demo, answer) {
+  const c = coneCaption(demo, answer);
+  if (!c) return [];
+  return [{ cls: "k-note k-cone-note", text: c.line }, ...(c.backend ? [{ cls: "k-note k-cone-backend", text: c.backend }] : [])];
+}
+
 /**
  * behold#571: what the hold panel holds, or null for nothing: how the hold
  * ends (from the records), else the driver's approval, else the run's note.
@@ -846,7 +859,7 @@ export function holdModel(s, demo) {
   if (appr) return { kind: "driver", wave: appr.wave, head: holdHead({ wave: appr.wave, digest: appr.digest }), appr };
   if (s.noReports || reportless(vendor || kioskVendorOf(demo.tool))) return null;
   const panel = runPanel(demo, s.answer, s.progress);
-  const lines = panel.note ? [{ cls: "k-note", text: panel.note }] : panel.stage === "pull-request" ? unreviewedLines(s.answer).map((u) => ({ cls: "k-note k-unknown", text: u })) : [];
+  const lines = panel.note ? [{ cls: "k-note", text: panel.note }] : panel.stage === "pull-request" ? [...coneLines(demo, s.answer), ...unreviewedLines(s.answer).map((u) => ({ cls: "k-note k-unknown", text: u }))] : [];
   if (!lines.length) return null;
   const head = holdHead(panel.stage === "pull-request" ? { pull: demo.pull } : { commit: demo.commit });
   return { kind: "note", wave: null, head, lines };
@@ -1072,7 +1085,7 @@ function drawWatchHead(bar, s, now) {
 function drawCaption(host, s, now) {
   host.replaceChildren();
   const demo = s.demo && s.demo.demo;
-  const cap = captionModel(demo, { vendor: s.vendor || null, now });
+  const cap = captionModel(demo, { vendor: s.vendor || null, now, answer: s.answer });
   if (!cap) return;
   if (s.chantCaptionStep) cap.step = s.chantCaptionStep(demo, cap.step);
   const top = el("div", "k-cap-top");
@@ -1133,6 +1146,18 @@ function drawCaption(host, s, now) {
   step.append(el("span", "k-cap-label", cap.step.word), elRoots("span", "k-cap-text", cap.step.text, s));
   if (step.setAttribute) step.setAttribute("title", cap.step.text);
   host.appendChild(step);
+  // Report minor 34: a cone plan, in one quiet line: what it planned, and the estates' backend when the reports say it.
+  if (cap.cone) host.appendChild(coneEl("k-cap-cone", cap.cone));
+  // What used to be a card over the graph (the result, the approval): one quiet line under the label, in the caption.
+  const said = stepLine(demo, { held: !!s.stageHeld, result: demo && demo.step === "applied" ? resultModel(demo, s.metrics, s.steady) : null, hold: demo && (demo.step === "waiting" || demo.step === "approved") ? holdModel(s, demo) : null });
+  if (said) {
+    const p = el("p", "k-cap-quiet k-cap-step-line", said);
+    if (p.setAttribute) {
+      p.setAttribute("data-step-line", demo.step);
+      p.setAttribute("title", said);
+    }
+    host.appendChild(p);
+  }
   // A long step with nothing new coming in: what runs, and for how long (kiosk-watch.js quietWords).
   if (s.quiet) {
     const q = quietEl("k-cap-quiet", s.quiet);
@@ -1142,6 +1167,18 @@ function drawCaption(host, s, now) {
     }
     host.appendChild(q);
   }
+}
+
+/** The cone plan's line (kiosk-watch.js coneCaption): the plan's words, then the backend's, quieter. */
+export function coneEl(cls, c) {
+  const p = el("p", `${cls} k-cone`);
+  if (p.setAttribute) {
+    p.setAttribute("data-cone-line", "");
+    p.setAttribute("title", c.backend ? `${c.line} · ${c.backend}` : c.line);
+  }
+  p.appendChild(el("span", "k-cone-plan", c.line));
+  if (c.backend) p.appendChild(el("span", "k-cone-backend", c.backend));
+  return p;
 }
 
 /** The corner the framed graph's own controls take at its top right (⤢ fit at 8 px, ↺ layout at 66 px from the right edge, web/index.html), in px. Watch's overlays stay out of it. */
@@ -1479,11 +1516,13 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const roots = d ? focusRoots(d, s.answer, s.progress) : null;
     const focus = roots ? roots.join(",") : null;
     const run = d ? runPin(d) : "base";
+    // The cycle's pull request, so a merge's frame never draws another cycle's plan (web/terragucci-change.js pinnedAnswer).
+    const pull = framePull(d);
     const zoom = viewZoom(shownView().view);
-    const key = `${focus}|${run}|${zoom}`;
+    const key = `${focus}|${run}|${pull}|${zoom}`;
     if (!force && key === lastFocus) return;
     lastFocus = key;
-    post({ type: "behold:view", member: null, focus, run, zoom });
+    post({ type: "behold:view", member: null, focus, run, pull, zoom });
     tellHover(s.hover);
   };
   const pickView = (view) => {
@@ -1768,6 +1807,26 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const right = s.chantLoop ? Math.max(measured, CHANT_SIDE_ROOM) : measured;
     return { top: 20, right, bottom, left: 20 };
   };
+  /**
+   * The tallest the caption gets in a cycle, as a bottom inset in px (kiosk-watch.js captionRoom), measured from the
+   * caption as it is: a held small stage keeps this room from the first step, so the cone line, the step line, the
+   * quiet line or the trail that comes later moves nothing. None on a phone, where the caption is under the graph.
+   */
+  function captionRoomPx() {
+    if (!watch || !frame || isPhone() || !frame.getBoundingClientRect || typeof getComputedStyle !== "function") return 0;
+    const f = frame.getBoundingClientRect();
+    const cap = watch.caption;
+    const c = cap.getBoundingClientRect();
+    const fs = parseFloat(getComputedStyle(cap).fontSize) || 16;
+    const gap = fs * 0.25;
+    const extras = [...cap.querySelectorAll(":scope > .k-cap-cone, :scope > .k-cap-quiet")].map((n) => n.getBoundingClientRect().height + gap);
+    const rowH = extras.length ? Math.max(...extras) : fs * 0.92 * 1.35 + gap;
+    const trail = eh && eh.trailHost && !eh.trailHost.hidden ? eh.trailHost.getBoundingClientRect() : null;
+    const trailH = trail && trail.height && trail.top < c.top ? c.top - trail.top : 0;
+    const chip = eh && eh.trailHost ? eh.trailHost.querySelector(".eh-chip") : null;
+    const trailLineH = chip ? chip.getBoundingClientRect().height + 4 : 26;
+    return captionRoom({ capHeight: c.height, extras, rowH, trailH, trailLineH, below: Math.max(0, f.bottom - c.bottom) });
+  }
   function tellShot(force) {
     if (!frame || !frame.contentWindow || !watch) return;
     if (!s.watchMode) {
@@ -1779,10 +1838,12 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     }
     if (s.watchHeld || !s.shot) return;
     const insets = shotInsets(s.shot);
-    const key = `${s.shot.id}|${insets.right || 0}|${Math.round((insets.bottom || 0) / 12)}|${s.shot.roots.join(",")}`;
+    // The caption's tallest, for a held small stage's one framing; a stage that isn't held never reads it.
+    const room = captionRoomPx();
+    const key = `${s.shot.id}|${insets.right || 0}|${Math.round((insets.bottom || 0) / 12)}|${s.shot.roots.join(",")}|${Math.round(room / 12)}`;
     if (!force && key === lastShot) return;
     lastShot = key;
-    post(shotMessage({ roots: s.shot.roots, waves: s.shot.waves, whole: s.shot.whole, insets, id: s.shot.id }));
+    post(shotMessage({ roots: s.shot.roots, waves: s.shot.waves, whole: s.shot.whole, insets, id: s.shot.id, room }));
   }
   // behold#631: the projected cycle track, a chant kiosk's bottom band in place of the chip strip and the rail.
   const trackState = { cycle: null, pulls: [], key: null, since: null };
@@ -1844,11 +1905,14 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     const shot = shotFor(d, { answer: s.answer, progress: s.progress, held: s.held, gate, runDoc: runsApi && runsApi.run ? runsApi.run.doc : null, waves: s.waves });
     s.shot = shot;
     const nums = waveBadges(s.metrics);
-    const call = shot.kind === "held" && gate;
+    const opened = drawerWave !== null;
+    // On a held small stage nothing overlays the graph (web/kiosk-watch.js watchOverlays): the approval, the result and the
+    // running job are the caption's quiet lines there. Any other stage shows its cards as it always has.
+    const shows = watchOverlays({ kind: shot.kind, opened, held: !!s.stageHeld });
+    const call = shows.callout && shot.kind === "held" && gate;
     watch.callout.hidden = !call;
     if (call) drawCallout(watch.callout, s, hold, badgeTitle(nums[hold.wave]));
-    const opened = drawerWave !== null;
-    const drawer = shot.kind === "active" || opened;
+    const drawer = shows.drawer;
     const drawerOn = opened ? drawerWave : shot.waves[0];
     const open = drawer && (drawerOpen || drawerHover || opened);
     watch.drawer.hidden = !drawer;
@@ -1860,7 +1924,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     if (drawer) drawDrawer(watch.drawer, tail, badgeTitle(nums[drawerOn]), open);
     if (drawer) traceDrawer(d, drawerOn);
     // A drawer the viewer opened on a wave takes the card's place beside the graph until it folds.
-    const result = shot.kind === "result" && !opened ? resultModel(d, s.metrics, s.steady) || (s.chantResult ? s.chantResult(d) : null) : null;
+    const result = shows.result && shot.kind === "result" && !opened ? resultModel(d, s.metrics, s.steady) || (s.chantResult ? s.chantResult(d) : null) : null;
     watch.result.hidden = !result;
     if (result) drawResult(watch.result, result, s);
     // On a phone the delivery numbers stack under the rest, where the header has no room for them.
@@ -1872,8 +1936,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     foot.textContent = doraLine(s.metrics) || "";
     watch.badges.replaceChildren();
     const skip = call ? hold.wave : drawer ? drawerOn : null;
-    // At applied the result card lists every wave's numbers, so the boxes carry none.
-    for (const [n, words] of shot.kind === "result" && result ? [] : Object.entries(nums)) {
+    // At applied the result card lists every wave's numbers, so the boxes carry none; a held small stage carries none at all.
+    for (const [n, words] of !shows.badges || (shot.kind === "result" && result) ? [] : Object.entries(nums)) {
       if (Number(n) === skip) continue;
       const b = el("span", "k-badge", words);
       b.dataset.kWave = n;
@@ -1934,7 +1998,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     };
     const taken = [];
     // While the live carve has the camera, the graph shows dots, not the wave boxes: the panes sit at the view's top right.
-    const carvingNow = shownCaption() !== watch.caption;
+    // On a held small stage a drawer the viewer opened sits at the stage top right.
+    const carvingNow = shownCaption() !== watch.caption || !!s.stageHeld;
     const put = (node, n) => {
       if (node.hidden) return;
       const size = { w: node.offsetWidth, h: node.offsetHeight };
@@ -1982,6 +2047,14 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       if (e.data.type === "behold:viewer") return holdShot();
       if (e.data.type !== "behold:boxes") return;
       s.boxes = e.data;
+      // A held small stage: nothing the step shows overlays the graph (watchOverlays), and a drawer the viewer opens
+      // sits at the stage's top right, not by a box. body.k-held says so, for a check from outside.
+      const held = !!e.data.held;
+      if (held !== !!s.stageHeld) {
+        s.stageHeld = held;
+        if (document.body && document.body.classList) document.body.classList.toggle("k-held", held);
+        draw();
+      }
       if (ehApi) ehApi.follow();
       if (queued) return;
       queued = true;
@@ -2076,6 +2149,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
             approveLine: appr ? appr.approve : null,
             label: d.label || "",
             result: resultModel(d, s.metrics, s.steady) || (s.chantResult ? s.chantResult(d) : null),
+            // A held small stage (one framing): no modal and no Tips bubble over the graph in Watch there.
+            held: !!s.stageHeld,
             waveTraces: s.waveTraces,
             strip: s.stripReady() ? s.strip : null,
             stripReady: s.stripReady(),

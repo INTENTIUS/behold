@@ -30,6 +30,7 @@ import { fileURLToPath } from "node:url";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { terragucciApproveCommand } from "./terragucci-lifecycle.ts";
 import type { TerragucciSource } from "./terragucci-source.ts";
+import { coneView, readConePlans, type PlanConeView, type RootFacts } from "./terragucci-cone.ts";
 
 export const REPORT_SCHEMA = "terragucci.report/v1";
 export const INDEX_SCHEMA = "terragucci.report-index/v1";
@@ -196,6 +197,14 @@ export interface ReportRoot {
   counts?: Record<string, number>;
   /** #568 step 3, minor 38 (INTENTIUS/terragucci#1013): on each root in a composed run. */
   composed?: { wave: number; module: string };
+  /** minor 34: a choudoufu root under a `live` block that a pull request planned with `plan -cone=<base>` (src/terragucci-cone.ts). */
+  cone?: unknown;
+  /** minor 18: the binary the root ran. */
+  binary?: { name?: string; version?: string };
+  /** The root's plan files beside the report, as keys relative to the run. */
+  plan?: { text?: string; json?: string };
+  /** minor 20: on a tf-apply wave, the state file its backend holds afterwards. */
+  state?: unknown;
 }
 
 /** A wave's or a run's monthly cost (minor 12 and 19, #568). Null where the estimator gave no figure. */
@@ -563,6 +572,13 @@ export interface PullRequestPlan {
   counts?: Record<string, Record<string, number>>;
   /** behold#741: each planned root's upstreams, the roots it reads and its `dependencies` (minor 23); absent when none has any. */
   upstreams?: Record<string, string[]>;
+  /**
+   * minor 34: when a root of the plan carries `cone`, every root of the
+   * estate as the plan treated it: planned as a cone (with the instances its
+   * plan.json planned), planned in full by choudoufu's guard and why, planned
+   * with no cone, or not planned. Absent on every other plan.
+   */
+  cone?: PlanConeView;
 }
 
 /**
@@ -600,6 +616,11 @@ export interface TerragucciRead {
   /** The newest run of each stage that planned each root, by root path. */
   roots: Record<string, { plan?: RootRun; drift?: RootRun; apply?: RootRun }>;
   waiting: WaitingWave[];
+  /**
+   * The binary each root ran by the newest report read that names it (`roots[].binary`, minor 18), by root path.
+   * Absent when no report names one. A read between two choudoufu roots is of the estate's outputs, not a state file.
+   */
+  binaries?: Record<string, string>;
   /** #568: the newest pull request's plan, when the index holds one. */
   pull_request?: PullRequestPlan;
   /**
@@ -696,9 +717,24 @@ export async function readTerragucci(source: TerragucciSource, opts: ReadOptions
   const rows = index!.reports.filter((r) => r.project === project).sort(newestFirst);
 
   const cache = new Map<string, Promise<Report | undefined>>();
+  // minor 34: what the reports read say of each root besides the pull request (its binary, a state file), for the cone view.
+  const facts: Record<string, RootFacts> = {};
+  const seenRoots = new Set<string>();
+  const note = (doc: Report | undefined): void => {
+    for (const r of doc?.roots ?? []) {
+      seenRoots.add(r.path);
+      const f = (facts[r.path] ??= {});
+      if (f.binary === undefined && r.binary && typeof r.binary.name === "string") f.binary = r.binary.name;
+      if (doc!.run.stage === "tf-apply" && r.state && typeof r.state === "object") f.state = true;
+    }
+  };
   const report = (row: IndexRow): Promise<Report | undefined> => {
     const key = under(row.path, "report.json");
-    if (!cache.has(key)) cache.set(key, readDoc<Report>(source, key, "report", v));
+    if (!cache.has(key)) {
+      const p = readDoc<Report>(source, key, "report", v);
+      cache.set(key, p);
+      void p.then(note, () => undefined);
+    }
     return cache.get(key)!;
   };
 
@@ -819,6 +855,14 @@ export async function readTerragucci(source: TerragucciSource, opts: ReadOptions
     if (commit && Object.keys(own).length) outcomes = { commit, roots: own };
   }
 
+  // minor 34: a cone plan, with every root of the estate the read knows and the instances each cone's plan.json planned.
+  if (pullRequest && prRow && prDoc) {
+    await Promise.all([...cache.values()].map((p) => p.catch(() => undefined)));
+    const planned = prDoc.roots.some((r) => r.cone !== undefined) ? await readConePlans(source, prRow.path, prDoc) : {};
+    const cone = coneView(prDoc, { roots: [...new Set([...(opts.roots ?? []), ...seenRoots])], planned, facts });
+    if (cone) pullRequest.cone = cone;
+  }
+
   return {
     source: source.location,
     kind: source.kind,
@@ -829,6 +873,7 @@ export async function readTerragucci(source: TerragucciSource, opts: ReadOptions
     roots,
     waiting,
     ...(pullRequest ? { pull_request: pullRequest } : {}),
+    ...(Object.values(facts).some((f) => f.binary) ? { binaries: Object.fromEntries(Object.entries(facts).filter(([, f]) => f.binary).map(([p, f]) => [p, f.binary!])) } : {}),
     ...(estateDoc && estateProject
       ? {
           estate: {
