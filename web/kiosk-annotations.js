@@ -291,7 +291,7 @@ export const ANNOTATIONS = [
   {
     id: "T33", product: "terragucci", feature: "Reports bucket",
     pattern: String.raw`^wave \d+: report copied to (\S+?)(?:, at (\S+))?$`,
-    note: "The wave's report was uploaded to the reports bucket under this prefix, so it outlives the CI job.",
+    note: "The wave's report was uploaded to the reports bucket under this prefix (a key there, not a web address), so it outlives the CI job.",
     docs: { product: "terragucci", path: "/guides/keep-reports-in-a-bucket/" },
     source: "terragucci:packages/terragucci/src/apply.ts:1566",
     sample: "wave 1: report copied to demo/forgejo:3000/terragucci-admin/demo/2026/10/e8863ee426177316d84499a5b8401c4b6adfb546/tf-apply-wave-1",
@@ -299,7 +299,7 @@ export const ANNOTATIONS = [
   {
     id: "T34", product: "terragucci", feature: "Run view",
     pattern: String.raw`^wave \d+: run view at (\S+)/run\.html$`,
-    note: "Where the page showing this whole run, wave by wave, was written in the reports bucket.",
+    note: "Where the page of this whole run, wave by wave, went in the reports bucket: a key there, not a web address. This page draws its waves from it.",
     docs: { product: "terragucci", path: "/concepts/waves-and-approvals/#the-run-view" },
     source: "terragucci:packages/terragucci/src/apply.ts:1483",
     sample: "wave 1: run view at demo/forgejo:3000/terragucci-admin/demo/runs/e8863ee426177316d84499a5b8401c4b6adfb546/run.html",
