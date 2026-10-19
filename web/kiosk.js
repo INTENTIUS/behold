@@ -935,6 +935,9 @@ function drawBar(bar, s, now) {
   title.appendChild(el("span", "k-title-text", head.title));
   if (title.setAttribute) title.setAttribute("title", `${head.kicker} · ${head.title || ""}`);
   titleBox.append(over, title);
+  // behold#777: a phone's line on what this is, under the title (hidden wider, so the title's box keeps its height).
+  const introWords = introFor(s);
+  if (introWords) titleBox.appendChild(el("p", "k-w-intro", introWords));
   left.appendChild(titleBox);
 
   // The first beat: what changes; between scenarios, what the demo is about.
@@ -1074,6 +1077,8 @@ function drawWatchHead(bar, s, now) {
   // behold#746: a tool's page says in Watch too that it replays an earlier run.
   if (vendor && s.mode === "replay" && s.replay && s.replay.banner) place.appendChild(el("span", "k-cycle k-w-replay", s.replay.banner));
   bar.appendChild(place);
+  const intro = introFor(s);
+  if (intro) bar.appendChild(el("p", "k-w-intro", intro));
   const strip = el("ol", "k-strip");
   // behold#631: a chant pull request's wait for its approval comes before its merge. Without a stop of its own on the
   // strip it shows as "planned", for the fix's pull request as for the first.
@@ -1418,6 +1423,24 @@ export const DRIVER_SIGNS = "Next the driver plays a reviewer outside the change
 export const WHAT_TEXT = "This is behold, a live view of infrastructure. It draws the setup as a graph and shows its pipeline runs, their logs and the approvals they wait for, as they happen. Here it watches a demo pipeline that runs one change through several Terraform states in a loop.";
 /** behold#752: the same, for chant's fan-out demo, whose stacks are CloudFormation's. */
 export const WHAT_TEXT_CHANT = "This is behold, a live view of infrastructure. It draws the setup as a graph and shows its pipeline runs, their logs and the approvals they wait for, as they happen. Here it watches chant's pull-request pipeline run one change across fifteen stacks in a loop.";
+/** behold#777: the same, for a terragucci repo's demo, so the popover names what the phone's intro line names. */
+export const WHAT_TEXT_TG = "This is behold, a live view of infrastructure. It draws the setup as a graph and shows its pipeline runs, their logs and the approvals they wait for, as they happen. Here it watches terragucci, which applies one change to many Terraform or OpenTofu states in waves, run its demo pipeline in a loop.";
+/** behold#777: "What is this?"'s words for the page: chant's pipeline, a terragucci repo's, or any other. */
+export function whatTextFor({ chant = false, tg = false } = {}) {
+  return chant ? WHAT_TEXT_CHANT : tg ? WHAT_TEXT_TG : WHAT_TEXT;
+}
+/**
+ * behold#777: the phone's one line under the title, the popover's first two
+ * sentences cut to one: what behold is, and whose pipeline it watches. None on
+ * a tool's page, which may not name the others.
+ */
+export function introLine({ chant = false, tg = false, vendor = false } = {}) {
+  if (vendor) return null;
+  if (tg) return "behold, a live view of infrastructure, watching terragucci apply one change to many states, wave by wave.";
+  if (chant) return "behold, a live view of infrastructure, watching chant's pull-request pipeline apply one change across many stacks.";
+  return "behold, a live view of infrastructure, watching a demo pipeline run one change in a loop.";
+}
+const introFor = (s) => introLine({ chant: !!(s.chantLoop || s.source === "chant-demo"), tg: !!s.tgRepo, vendor: !!vendorOf(s.vendor) });
 export const WHAT_DOCS = { text: "behold's documentation", url: "https://intentius.io/behold/" };
 
 /** behold#571: a fade at a box's edge where its text goes on past it. */
@@ -2493,14 +2516,18 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
 
   // behold#571: "What is this?" opens what behold is over the page (no layout moves); a click elsewhere or Escape closes it.
   const whatText = () => {
-    if (!tools || !tools.pop || tools.pop.firstElementChild) return;
+    if (!tools || !tools.pop) return;
+    // behold#777: written again once the repo turns out to be terragucci's, so it names what the intro line names.
+    const words = whatTextFor({ chant: !!(s.chantLoop || s.source === "chant-demo"), tg: !!s.tgRepo });
+    if (tools.pop.firstElementChild && tools.pop.dataset.words === words) return;
+    tools.pop.dataset.words = words;
     const docs = el("a", null, WHAT_DOCS.text);
     docs.href = WHAT_DOCS.url;
     docs.target = "_blank";
     docs.rel = "noopener";
     const more = el("p", "k-what-more");
     more.append(docs);
-    tools.pop.replaceChildren(el("p", null, s.source === "chant-demo" ? WHAT_TEXT_CHANT : WHAT_TEXT), more);
+    tools.pop.replaceChildren(el("p", null, words), more);
   };
   if (tools && tools.what && tools.pop) {
     const setWhat = (open) => {

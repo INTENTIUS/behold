@@ -364,10 +364,13 @@
       .k-menu summary::after { content: " ▾"; }
       .k-menu[open] summary { border-color: var(--focus); }
       .k-menu-body { position: absolute; right: 0; top: 2.4em; padding: var(--s2); background: var(--surface-pane-b); border: 1px solid var(--rule); border-radius: 8px; }
-      /* behold#755: the picker between its < and > arrows. */
-      .k-theme-step { position: relative; display: inline-flex; align-items: center; gap: var(--s1); }
-      .k-theme-arrow { display: inline-flex; align-items: center; justify-content: center; width: 2em; height: 2em; padding: 0; border: 1px solid var(--rule); border-radius: 999px; background: var(--surface-pane-a); color: var(--fg); font: 600 0.92em var(--font-ui); cursor: pointer; }
-      .k-theme-arrow:hover, .k-theme-arrow:focus-visible { border-color: var(--focus); }
+      /* behold#755: the picker between its < and > arrows. behold#783: all three in one pill, so < and > read as
+         the theme's own arrows and never as a step back or forward. */
+      .k-theme-step { position: relative; display: inline-flex; align-items: center; gap: 0; border: 1px solid var(--rule); border-radius: 999px; background: var(--surface-pane-a); }
+      .k-theme-step:hover, .k-theme-step:has(.k-menu[open]) { border-color: var(--focus); }
+      .k-theme-arrow { display: inline-flex; align-items: center; justify-content: center; width: 1.9em; height: calc(2em - 2px); padding: 0; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font: 600 0.92em var(--font-ui); cursor: pointer; }
+      .k-theme-arrow:hover, .k-theme-arrow:focus-visible { color: var(--fg); background: var(--active); }
+      .k-theme-step .k-menu summary { height: calc(2em - 2px); padding: 0 var(--s3); border: 0; border-radius: 0; background: transparent; box-shadow: inset 1px 0 0 var(--rule), inset -1px 0 0 var(--rule); }
       .k-credit { color: var(--muted); }
       .k-credit-link { color: var(--fg); }
       .k-nograph-note { margin: 0; color: var(--ink2); font-size: 0.88em; }
@@ -412,7 +415,8 @@
         #k-tools { position: static; justify-content: flex-end; flex-wrap: wrap; row-gap: var(--s2); margin: 0; padding: var(--s2) 16px 0; }
         .k-theme-n { display: none; }
         .k-what { white-space: nowrap; }
-        #k-what-pop { right: 16px; left: 16px; width: auto; top: 2.2em; }
+        /* behold#777: over the title and the step bar, which come later in the page and are placed. */
+        #k-what-pop { right: 16px; left: 16px; width: auto; top: 2.2em; z-index: 45; }
         .k-ap-row { grid-template-columns: 1.1em 5.6em minmax(0, 1fr); }
         #stage, body.k-nograph #stage { display: flex; flex-direction: column; padding: 0; gap: 0; }
         #view-pane { order: 1; height: 64vh; }
@@ -597,6 +601,9 @@
       .k-result-waves dd.k-result-soon { color: var(--muted); font-style: italic; }
       @media (max-width: 900px) and (min-width: 601px) { body.k-watch #k-head { display: flex; flex-direction: column-reverse; } body.k-watch #k-tools { position: static; justify-content: flex-end; padding: var(--s2) var(--s4) 0; } }
       .k-w-dora-foot { display: none; }
+      /* behold#777: a phone's one line under the title, on what this is; the wide layouts have room for "What is this?". */
+      .k-w-intro { display: none; }
+      @media (max-width: 600px) { .k-w-intro { display: block; flex: 1 1 100%; margin: 0; color: var(--ink2); font-size: 0.92em; line-height: 1.35; } }
       /* A phone: a short header, the graph, then the step and the approval under it; the rest stacks below, in the page's flow. */
       @media (max-width: 600px) {
         body.k-watch #bar { display: flex; flex-wrap: wrap; gap: 0.2em var(--s4); padding: var(--s1) 16px var(--s2); min-height: 0; }

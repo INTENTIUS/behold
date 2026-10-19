@@ -155,7 +155,8 @@ describe("the scenario's card under the title (behold#571)", () => {
       expect(left.children.map((c) => c.className)).toEqual([
         "k-box k-box-title", "k-row k-row-beat", "k-row k-row-step k-step-failed", "k-row k-row-next", "k-row k-row-more", "k-row k-row-more", "k-row k-row-facts k-row-empty",
       ]);
-      expect(left.children.map((c) => c.children.map((x) => x.className.split(" ")[0]))).toEqual([["k-overline", "k-title"], ["k-row-label", "k-box"], ["k-row-label", "k-box"], ["k-row-label", "k-box", "k-nbar"], ["k-row-label", "k-box"], ["k-row-label", "k-box"], []]);
+      // behold#777: under the title, the phone's line on what this is (CSS shows it on a phone only).
+      expect(left.children.map((c) => c.children.map((x) => x.className.split(" ")[0]))).toEqual([["k-overline", "k-title", "k-w-intro"],["k-row-label", "k-box"], ["k-row-label", "k-box"], ["k-row-label", "k-box", "k-nbar"], ["k-row-label", "k-box"], ["k-row-label", "k-box"], []]);
       // The next row's bar is placed by CSS, in the step's tone; a stalled driver's next has none.
       const nbar = find(bar, "k-nbar")[0];
       expect(nbar.className).toBe("k-nbar k-nbar-none");
