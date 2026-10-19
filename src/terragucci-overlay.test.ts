@@ -85,4 +85,11 @@ describe("joinTerragucci over terragucci's example (#490)", () => {
     const fewer = joinTerragucci(read, NODES, ROOTS.filter((r) => r.path !== "envs/prod/search"));
     expect(fewer.unmatched.roots).toEqual(["envs/prod/search"]);
   });
+
+  it("says a change no card is with its action and its mark's kind, for the root popover (behold#796)", async () => {
+    const read = await readTerragucci(terragucciSource(BUCKET), { roots: ROOTS.map((r) => r.path) });
+    // The checkout has no card for the block the plan replaces, as with a resource the change adds.
+    const m = joinTerragucci(read, NODES.filter((n) => !n.id.endsWith("envs-prod-search/module.service/aws_dynamodb_table.records")), ROOTS);
+    expect(m.unmatched.changes).toEqual([{ root: "envs/prod/search", address: "module.service.aws_dynamodb_table.records[0]", action: "replace", verdict: "plan" }]);
+  });
 });

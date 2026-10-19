@@ -149,6 +149,32 @@ export function resourceCardId(answer, root, resourceId) {
 }
 
 /**
+ * behold#796: the rows for a root's planned changes no card of the checkout
+ * is (`answer.unmatched.changes`): a resource the change adds is in the plan
+ * but not yet in the checkout's source, so the resources facet never lists
+ * it. One row a block, instance keys dropped; drift is not a plan.
+ */
+function plannedOnly(answer, root, declared) {
+  const changes = answer && !answer.error && answer.unmatched && Array.isArray(answer.unmatched.changes) ? answer.unmatched.changes : [];
+  const r = Array.isArray(answer && answer.roots) ? answer.roots.find((x) => x.name === root || x.path === root) : null;
+  const path = r ? r.path : root;
+  const seen = new Set(declared.map((d) => d.address));
+  const byBlock = new Map();
+  for (const c of changes) {
+    if (c.root !== path || c.verdict === "drift") continue;
+    const address = c.address.replace(/\[(?:"(?:[^"\\]|\\.)*"|[^\]])*\]/g, "");
+    if (seen.has(address)) continue;
+    // A waiting wave's (the newest plan) before the pull request's plan, as planMark reads cards.
+    const had = byBlock.get(address);
+    if (!had || (c.verdict === "wave" && had.verdict !== "wave")) byBlock.set(address, c);
+  }
+  return [...byBlock].map(([address, c]) => ({ address, state: "change", words: PLANNED_WORDS[c.action] || WORDS.changes }));
+}
+
+/** behold#796: a row's words for a planned change the checkout has no card for. */
+const PLANNED_WORDS = { create: "to create", delete: "to destroy", replace: "to replace" };
+
+/**
  * What the popover says about one root's card (Components): its
  * resources, each "changes", "no change" or "known after apply", and how
  * many change. `resources` is the components zoom's resources facet for the
@@ -156,7 +182,7 @@ export function resourceCardId(answer, root, resourceId) {
  */
 export function rootPopover(answer, root, resources) {
   const list = Array.isArray(resources) ? resources : [];
-  const rows = list.map((res) => {
+  const declared = list.map((res) => {
     const id = answer && !answer.error ? resourceCardId(answer, root, res.id) : null;
     const mark = id && answer.cards ? planMark(answer.cards[id]) : null;
     const address = res.id.startsWith(`${root}/`) ? res.id.slice(root.length + 1).split("/").join(".") : res.id;
@@ -164,6 +190,8 @@ export function rootPopover(answer, root, resources) {
     const unknown = (mark.values || []).some((v) => v.unknown);
     return { address, state: unknown ? "unknown" : "change", words: unknown ? WORDS.unknown2 : WORDS.changes };
   });
+  // behold#796: first, so "and N more" never hides them.
+  const rows = [...plannedOnly(answer, root, declared), ...declared];
   const changed = rows.filter((r) => r.state !== "same").length;
   const head = !rows.length ? WORDS.noResources : changed === 0 ? WORDS.noRootChange : `${changed} of ${rows.length} ${rows.length === 1 ? "resource changes" : "resources change"}.`;
   const shown = rows.slice(0, MAX_LINES + 2);

@@ -83,12 +83,20 @@ export interface RootMarks extends CheckoutRoot {
   apply?: RootVerdict;
 }
 
+/** A change no card of the checkout is. behold#796: with its action and its mark's kind, so the kiosk's root popover lists a planned create the checkout does not declare yet. */
+export interface UnmatchedChange {
+  root: string;
+  address: string;
+  action: string;
+  verdict: CardMark["verdict"];
+}
+
 export interface TerragucciMarks {
   /** Marks by card id. */
   cards: Record<string, CardMark[]>;
   roots: RootMarks[];
   /** Report roots no root of the checkout is, and changes no card is: said, never dropped. */
-  unmatched: { roots: string[]; changes: { root: string; address: string }[] };
+  unmatched: { roots: string[]; changes: UnmatchedChange[] };
   waiting: WaitingWave[];
   /** behold#571: by card id, the attributes the root's newest applied wave wrote. */
   applied: Record<string, AppliedValues>;
@@ -164,7 +172,7 @@ export function joinTerragucci(read: TerragucciRead, nodes: readonly Node[], roo
 
   const cards: Record<string, CardMark[]> = {};
   const applied: Record<string, AppliedValues> = {};
-  const unmatchedChanges: { root: string; address: string }[] = [];
+  const unmatchedChanges: UnmatchedChange[] = [];
   const out: RootMarks[] = [];
   const known = new Set(roots.map((r) => r.path));
   for (const root of roots) {
@@ -197,7 +205,7 @@ export function joinTerragucci(read: TerragucciRead, nodes: readonly Node[], roo
         if (!said) continue;
         const id = blocks?.get(blockPath(c.address));
         if (!id) {
-          unmatchedChanges.push({ root: root.path, address: c.address });
+          unmatchedChanges.push({ root: root.path, address: c.address, action: c.action, verdict: kind });
           continue;
         }
         const k = `${id}\u0000${c.action}`;
