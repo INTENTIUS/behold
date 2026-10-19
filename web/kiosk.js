@@ -1731,12 +1731,6 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   const applyMode = () => {
     if (typeof document === "undefined" || !document.body || !document.body.classList) return;
     document.body.classList.toggle("k-watch", s.watchMode);
-    // behold#631: the theme picker a chant kiosk hides in Watch is back in Inspect.
-    {
-      const themeMenu = document.getElementById("k-theme-name");
-      const menu = themeMenu && themeMenu.closest ? themeMenu.closest("details") : null;
-      if (menu && !s.watchMode) menu.hidden = false;
-    }
     if (watch && watch.drawer && main) {
       const body = watch.drawer.querySelector(".k-drawer-body");
       // The runs pane is the drawer's open state in Watch, and back in its column in Inspect.
@@ -1899,12 +1893,6 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   function drawWatch(at) {
     if (!watch || !s.watchMode) return;
     const d = s.demo && s.demo.demo;
-    // behold#631: a chant kiosk hides the theme picker; Inspect keeps it.
-    if (typeof document !== "undefined") {
-      const themeMenu = document.getElementById("k-theme-name");
-      const menu = themeMenu && themeMenu.closest ? themeMenu.closest("details") : null;
-      if (menu) menu.hidden = !!(storyOn(s) && s.trackOn);
-    }
     drawCaption(watch.caption, s, at);
     drawChantTrack(d, at);
     const hold = d ? holdModel(s, d) : null;

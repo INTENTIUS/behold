@@ -6,8 +6,28 @@
 // sweeps all 552 palettes for the same assertion; this pins the exact
 // palette the issue was filed against, with no browser involved.
 import { describe, it, expect } from "vitest";
-import { BAR_FLOOR, BAR_STATES, FRAME_STATES, INK2_FLOOR, MIN_STEP, MUTED_FLOOR, SURFACE_CHROMA, barGrounds, barInks, barVars, SOFT_CEILING, ZEBRA, contrast, desaturate, frameGrounds, frameInks, hexToOklch, ink2Grounds, mix, PAINT_KEY, paintFor, pinTokensFor, tokensFor } from "./theme.js";
+import { BAR_FLOOR, BAR_STATES, FRAME_STATES, INK2_FLOOR, KIOSK_THEME, MIN_STEP, MUTED_FLOOR, SURFACE_CHROMA, barGrounds, barInks, barVars, SOFT_CEILING, ZEBRA, contrast, desaturate, frameGrounds, frameInks, hexToOklch, ink2Grounds, mix, PAINT_KEY, paintFor, pinTokensFor, themeStep, tokensFor } from "./theme.js";
 import { THEMES } from "./themes.js";
+
+describe("themeStep — the kiosk's < and > (behold#755)", () => {
+  const names = ["A", "B", "C"];
+  it("steps forward and back", () => {
+    expect(themeStep(names, "B", 1)).toBe("C");
+    expect(themeStep(names, "B", -1)).toBe("A");
+  });
+  it("wraps at both ends", () => {
+    expect(themeStep(names, "C", 1)).toBe("A");
+    expect(themeStep(names, "A", -1)).toBe("C");
+  });
+  it("starts at the first for a name not in the list, and has nothing for no names", () => {
+    expect(themeStep(names, "Z", 1)).toBe("A");
+    expect(themeStep([], "A", 1)).toBe(null);
+  });
+  it("the kiosk opens on Batman, a theme that exists", () => {
+    expect(KIOSK_THEME).toBe("Batman");
+    expect(THEMES[KIOSK_THEME]).toBeTruthy();
+  });
+});
 
 describe("tokensFor — the --muted contrast floor (#240)", () => {
   it("Darkermatrix's naive fg/panel mix reads at ~1.25:1, the issue's reported ratio — the floor push has to move it", () => {

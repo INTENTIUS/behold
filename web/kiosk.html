@@ -29,15 +29,15 @@
       /* #569 step 2. The pre-paint fallback: the kiosk's default theme's
          tokens (KIOSK_THEME in theme.js), which initTheme() replaces with the viewer's theme. */
       :root {
-        --bg: #09141b; --panel: #1c2325; --line: #2c2e2d; --fg: #deb88d; --muted: #91877a; --ink2: #ceb395;
-        --edge: #4d483f; --managed: #027c9b; --foreign: #fca02f; --pending: #1e4950;
-        --degraded: #d15123; --neutral: #695e4e; --runtime: #50a3b5;
-        --rule: #3d4142; --focus: #364548; --active: #243235; --well: #01070d; --shadow: #010304;
-        /* behold#571: the kiosk's surfaces and ink (theme.js kioskSurfaces), the kiosk's default theme's (KIOSK_THEME, Sea Shells) until initTheme() runs. */
-        --surface-box: #161a1d; --surface-pane-a: #1c2023; --surface-pane-b: #222629; --zebra: #deb88d; --soft: #deb88d; --muted-ink: #9a9083;
-        --managed-ink: #0e7f9e; --foreign-ink: #fca02f; --pending-ink: #567b82; --degraded-ink: #d15123; --runtime-ink: #50a3b5;
-        /* behold#571: the left bars (theme.js barInks), Sea Shells' until initTheme() runs. */
-        --bar-managed: #258dac; --bar-foreign: #fca02f; --bar-pending: #5e8a91; --bar-degraded: #da592c; --bar-runtime: #50a3b5; --bar-neutral: #8c8170;
+        --bg: #1b1d1e; --panel: #232425; --line: #282a2b; --fg: #6f6f6f; --muted: #8c8d8e; --ink2: #b4b4b4;
+        --edge: #363738; --managed: #c8be46; --foreign: #f4fd22; --pending: #737174;
+        --degraded: #e6dc44; --neutral: #414242; --runtime: #62605f;
+        --rule: #3d3f40; --focus: #727173; --active: #313132; --well: #0e1010; --shadow: #040405;
+        /* behold#571: the kiosk's surfaces and ink (theme.js kioskSurfaces), the kiosk's default theme's (KIOSK_THEME, Batman since behold#755) until initTheme() runs. */
+        --surface-box: #151616; --surface-pane-a: #101011; --surface-pane-b: #0a0b0b; --zebra: #6f6f6f; --soft: #898989; --muted-ink: #868788;
+        --managed-ink: #c8be46; --foreign-ink: #f4fd22; --pending-ink: #737174; --degraded-ink: #e6dc44; --runtime-ink: #6d6b6a;
+        /* behold#571: the left bars (theme.js barInks), Batman's until initTheme() runs. */
+        --bar-managed: #c8be46; --bar-foreign: #f4fd22; --bar-pending: #8c8a8d; --bar-degraded: #e6dc44; --bar-runtime: #8c8a89; --bar-neutral: #8b8c8c;
         --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
         --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       }
@@ -362,6 +362,10 @@
       .k-menu summary::after { content: " ▾"; }
       .k-menu[open] summary { border-color: var(--focus); }
       .k-menu-body { position: absolute; right: 0; top: 2.4em; padding: var(--s2); background: var(--surface-pane-b); border: 1px solid var(--rule); border-radius: 8px; }
+      /* behold#755: the picker between its < and > arrows. */
+      .k-theme-step { position: relative; display: inline-flex; align-items: center; gap: var(--s1); }
+      .k-theme-arrow { display: inline-flex; align-items: center; justify-content: center; width: 2em; height: 2em; padding: 0; border: 1px solid var(--rule); border-radius: 999px; background: var(--surface-pane-a); color: var(--fg); font: 600 0.92em var(--font-ui); cursor: pointer; }
+      .k-theme-arrow:hover, .k-theme-arrow:focus-visible { border-color: var(--focus); }
       .k-credit { color: var(--muted); }
       .k-credit-link { color: var(--fg); }
       .k-nograph-note { margin: 0; color: var(--ink2); font-size: 0.88em; }
@@ -632,7 +636,12 @@
       <div id="k-tools">
         <div id="k-mode" class="k-modes" role="group" aria-label="Layout"></div>
         <button type="button" class="k-what" aria-expanded="false" aria-controls="k-what-pop">What is this?</button>
-        <details class="k-menu"><summary id="k-theme-name">Theme</summary><div class="k-menu-body" id="k-theme"></div></details>
+        <!-- behold#755: < and > step through the themes beside the picker, in Watch and Inspect alike. -->
+        <div class="k-theme-step" role="group" aria-label="Theme">
+          <button type="button" class="k-theme-arrow" id="k-theme-prev" aria-label="Previous theme" title="Previous theme">&lt;</button>
+          <details class="k-menu"><summary id="k-theme-name">Theme</summary><div class="k-menu-body" id="k-theme"></div></details>
+          <button type="button" class="k-theme-arrow" id="k-theme-next" aria-label="Next theme" title="Next theme">&gt;</button>
+        </div>
         <div id="k-what-pop" role="dialog" aria-label="What is this?" hidden></div>
       </div>
       <header id="bar" aria-live="polite"></header>
@@ -668,7 +677,7 @@
     <div id="eh-tips" aria-live="polite"></div>
     <div id="eh-modals"></div>
     <script type="module">
-      import { initTheme, KIOSK_THEME, getThemeName, onThemeChange } from "/theme.js";
+      import { initTheme, KIOSK_THEME, getThemeName, onThemeChange, stepTheme } from "/theme.js";
       import { startKiosk } from "/kiosk.js";
       import { pageTool } from "/kiosk-vendor.js";
       import { pageSource, readsFor } from "/kiosk-source.js";
@@ -681,6 +690,9 @@
       const nameTheme = () => { if (!themeName) return; const n = document.createElement("span"); n.className = "k-theme-n"; n.textContent = `: ${getThemeName()}`; themeName.replaceChildren("Theme", n); };
       nameTheme();
       onThemeChange(nameTheme);
+      // behold#755: < and > step to the previous and next theme.
+      document.getElementById("k-theme-prev")?.addEventListener("click", () => stepTheme(-1));
+      document.getElementById("k-theme-next")?.addEventListener("click", () => stepTheme(1));
       // behold#571: /<tool> serves this page with its tool in a meta tag; /kiosk has none.
       const kiosk = startKiosk(
         {
