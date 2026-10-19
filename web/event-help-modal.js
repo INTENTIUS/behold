@@ -39,6 +39,9 @@ export const VERBS = {
 /** behold#631: a chant failure's button: the driver opens a fix's pull request. */
 export const FIX_VERBS = { verb: "Fix", ing: "Opening the fix…", past: "Fix opened" };
 
+/** behold#757: a step's highlight's kicker, over its title. */
+export const HIGHLIGHT_KICKER = "What's special here";
+
 /** Whole seconds until `at` (ms), never below 0; null without a time. */
 export function secondsLeft(at, now) {
   if (!Number.isFinite(at)) return null;
@@ -71,6 +74,8 @@ const utc = (ms) => new Date(ms).toISOString().slice(11, 16);
 export function modeLine(mode, kind, { at = null, now = 0, resolved = false, outcome = null, replayAt = null, action = null, fix = false } = {}) {
   // behold#631: a "Waiting on…" modal says what it waits on in its title; it has no mode line.
   if (kind === "waiting") return null;
+  // behold#757: a highlight's kicker says what it is, in a replay as live: the replay's banner says which run it is.
+  if (kind === "highlight") return HIGHLIGHT_KICKER;
   if (mode === "replay") return `Replay of the run at ${utc(Number.isFinite(replayAt) ? replayAt : now)} UTC`;
   if (mode !== "narrated") return null;
   if (resolved) return outcome ? `Live · ${outcome}` : "Live";
@@ -111,6 +116,11 @@ export const MODAL_STYLE = `
 .eh-modal { position: relative; width: min(36em, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow-y: auto; padding: 1em 1.2em 1.1em; border-radius: 12px; background: var(--surface-pane-b, var(--panel)); color: var(--fg);
   border: 2px solid var(--bar, var(--focus)); box-shadow: 0 16px 48px color-mix(in srgb, var(--shadow) 80%, transparent); font-size: 1.05em; }
 .eh-modal-held { --bar: var(--bar-foreign, var(--foreign)); } .eh-modal-failed { --bar: var(--bar-degraded, var(--degraded)); } .eh-modal-applied { --bar: var(--bar-managed, var(--managed)); }
+/* behold#757: a step's highlight: the runtime bar's tone (no state's), a kicker in it, and its body set to be read. */
+.eh-modal-highlight { --bar: var(--bar-runtime, var(--runtime, var(--focus))); background: linear-gradient(color-mix(in srgb, var(--bar) 9%, transparent), transparent 5em), var(--surface-pane-b, var(--panel)); box-shadow: inset 5px 0 0 var(--bar), 0 16px 48px color-mix(in srgb, var(--shadow) 80%, transparent); }
+.eh-modal-highlight .eh-modal-mode { text-transform: uppercase; letter-spacing: 0.08em; }
+.eh-modal-highlight .eh-modal-mode::before { content: "\\2605"; margin-right: 0.45em; }
+.eh-modal-highlight .eh-modal-line { color: var(--fg); line-height: 1.45; }
 .eh-modal-close { position: absolute; top: 0.4em; right: 0.5em; font-size: 1.3em; background: transparent; border: 0; color: var(--muted); cursor: pointer; }
 .eh-modal-mode { margin: 0 2em 0.3em 0; font: 600 0.8em var(--font-ui); font-variant-numeric: tabular-nums; color: var(--bar, var(--muted)); }
 .eh-modal-title { margin: 0 0 0.5em; font-size: 1.35em; }
@@ -257,7 +267,8 @@ export function openEventModal(host, { mode, kind, data = {}, actions = {}, doc 
       box.appendChild(bar);
       if (data.progress.words) box.appendChild(el("p", "eh-modal-note", data.progress.words));
     }
-    if (kind === "waiting") return;
+    // behold#757: a highlight is words to read: no command, no button.
+    if (kind === "waiting" || kind === "highlight") return;
     const routed = mode === "live" && approveRoute(data.gate);
     // The panel, when there is one, already carries the command.
     if (data.command && !routed && !(data.panel && mode !== "live")) {
@@ -338,6 +349,8 @@ export function openEventModal(host, { mode, kind, data = {}, actions = {}, doc 
   const timer = setTimer(tick, 250);
   // The result needs no event to wait for: it closes on its own after its time.
   if (kind === "applied" && mode !== "live") st.closeAt = now() + MODAL_CLOSE_MS;
+  // behold#757: so does a highlight, after its own time (`closeAfter`, ms); hovered, it holds as any modal does.
+  if (Number.isFinite(data.closeAfter)) st.closeAt = now() + data.closeAfter;
   render();
   placeClear();
 

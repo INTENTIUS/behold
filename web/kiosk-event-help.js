@@ -340,3 +340,76 @@ export function modalQueue(state, { add = [], now = 0, lastInput = -Infinity, qu
   if (open || !queue.length || now - lastInput < quietMs) return { next: null, waiting: queue };
   return { next: queue[0], waiting: queue.slice(1) };
 }
+
+// ---------------------------------------------------------------------------
+// behold#757: a step's highlight. The scenario's driver says what is special
+// about a step (demo.json's or demo-step/v1's `highlight: { title, body }`,
+// terragucci#1176, chant#4106) on the step where it happens; Watch opens it as
+// a modal once per cycle, step and title. The driver writes a step more than
+// once (an apply, its holds) with the same highlight, which opens once; a step
+// can gain one partway through (choudoufu's operator, on one write of the
+// applying step), which opens when it first appears; and a replay that loops
+// round to its step opens it again.
+
+/** How long a highlight stays up, longer than a tip: it is a paragraph to read. It goes sooner when its step does. */
+export const HIGHLIGHT_MS = 12_000;
+
+/** A demo step's highlight, `{ title, body }`, or null unless both are non-empty strings (the server's floor, again). */
+export function stepHighlight(demo) {
+  const h = demo && demo.highlight;
+  if (!h || typeof h !== "object" || Array.isArray(h)) return null;
+  const title = typeof h.title === "string" ? h.title.trim() : "";
+  const body = typeof h.body === "string" ? h.body.trim() : "";
+  return title && body ? { title, body } : null;
+}
+
+/** The step a highlight's modal stays with: its cycle, beat, pull request and step. It closes when the step moves on. */
+export function highlightStepKey(demo) {
+  if (!demo) return null;
+  return [demo.cycle, demo.beat || "", demo.pull === null || demo.pull === undefined ? "" : demo.pull, demo.step].join("|");
+}
+
+/** What a highlight opens once for: its cycle (and beat), its step and its title (terragucci#1176). */
+export const highlightId = (demo, h) => [demo.cycle, demo.beat || "", demo.step, h.title].join("|");
+
+/** When a step was written: a replay's step its `at`, a live one its `started_at`. A time that goes back is a replay looping round. */
+const writtenAt = (demo) => {
+  const t = Date.parse((demo && (demo.at || demo.started_at)) || "");
+  return Number.isFinite(t) ? t : null;
+};
+
+/**
+ * The highlight's state after a look at `demo`: `{ step, seen, at, pending }`.
+ * `pending` is the step's highlight while it has not opened (`{ id, key,
+ * title, body }`), to open once nothing stops it; `seen` the ids opened this
+ * pass of the cycle, so a highlight written again is not opened again. A step
+ * that goes takes a pending highlight with it; a replay looping round (its
+ * step's time going back) starts a new pass.
+ */
+export function highlightTurn(state, demo) {
+  const at = writtenAt(demo);
+  const looped = !!state && state.at !== null && at !== null && at < state.at;
+  const seen = !state || looped ? new Set() : state.seen;
+  const step = highlightStepKey(demo);
+  const h = stepHighlight(demo);
+  const id = h ? highlightId(demo, h) : null;
+  const kept = state && !looped && state.pending && state.pending.id === id && state.step === step ? state.pending : null;
+  const pending = h && !seen.has(id) ? kept || { id, key: step, ...h } : null;
+  if (state && !looped && state.step === step && state.pending === pending && state.at === at) return state;
+  return { step, seen, at, pending };
+}
+
+/** The state once its pending highlight has opened: seen for the rest of the pass. */
+export function highlightShown(state) {
+  if (!state || !state.pending) return state;
+  return { ...state, seen: new Set([...state.seen, state.pending.id]), pending: null };
+}
+
+/**
+ * Whether a pending highlight opens now: Tips on, in Watch, not on a held
+ * small stage (nothing overlays the graph there), and no modal up but a
+ * "Waiting on…" one, which it replaces. A critical modal up keeps it waiting.
+ */
+export function highlightOpens({ pending = null, on = true, watch = false, held = false, modal = null } = {}) {
+  return !!pending && !!on && !!watch && !held && (!modal || modal === "waiting");
+}
