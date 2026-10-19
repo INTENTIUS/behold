@@ -234,7 +234,8 @@ export function nowWords({ demo, segment, expected = 0, elapsed = 0, overrun = f
     case "fix opened":
       return say("The pipeline is starting the plan job", "the pipeline to start the plan");
     case "planned":
-      return say(fix ? "The fix is planned; a review is asked next" : "The plan is in; a review is asked next");
+      // behold#784: no review is asked unless a wave would destroy something; the driver's line says what comes next.
+      return say(fix ? "The fix is planned" : "The plan is in");
     case "review":
       return say("Waiting for the reviewer", "the reviewer to approve the plan");
     case "merged":

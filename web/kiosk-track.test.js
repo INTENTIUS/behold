@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FAILURE_LEAD_MS, FILL_CAP, applyJobs, cycleTrack, failureAt, hereWords, seekMs, trackModel, waitingSpec } from "./kiosk-track.js";
+import { FAILURE_LEAD_MS, FILL_CAP, applyJobs, cycleTrack, failureAt, hereWords, nowWords, seekMs, trackModel, waitingSpec } from "./kiosk-track.js";
 
 // behold#631: chant-fanout's last finished cycle as cycles/chant-fanout/latest.json had it (cycle 499):
 // fifteen steps, two pull requests, from the change's open to the reset.
@@ -227,5 +227,14 @@ describe("a past step replays from its start (behold#787)", () => {
     expect(Date.parse(failureAt(long))).toBe(Date.parse(T("19:49")) - FAILURE_LEAD_MS);
     expect(failureAt({ ...cycle, steps: cycle.steps.filter((s) => s.step !== "failed") })).toBeNull();
     expect(failureAt(null)).toBeNull();
+  });
+});
+
+describe("nowWords", () => {
+  // behold#784: a plan asks no review unless a wave would destroy something, so the planned line doesn't promise one.
+  it("says the plan is in, and nothing about a review", () => {
+    const demo = { label: "Fan out." };
+    expect(nowWords({ demo, segment: { label: "planned" } }).text).toBe("The plan is in");
+    expect(nowWords({ demo, segment: { label: "planned" }, fix: true }).text).toBe("The fix is planned");
   });
 });
