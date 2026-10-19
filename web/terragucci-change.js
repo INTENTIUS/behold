@@ -458,6 +458,18 @@ export const BLOCKED_TONE = "wait";
 const sameCommit = (a, b) => !!a && !!b && (a.startsWith(b) || b.startsWith(a));
 
 /**
+ * behold#770: the wave results (/api/terragucci's `results`, behold#751) of
+ * one commit, each wave by its newest report. None without a commit, or when
+ * the read kept none of it (older than its newest tf-apply commits).
+ */
+function commitResults(answer, commit) {
+  const all = answer && !answer.error && answer.results && typeof answer.results === "object" ? answer.results : null;
+  if (!all || typeof commit !== "string" || !commit) return [];
+  const key = Object.keys(all).find((c) => sameCommit(c, commit));
+  return key && Array.isArray(all[key]) ? all[key].filter((r) => r && Number.isInteger(r.wave)) : [];
+}
+
+/**
  * behold#741 (terragucci#1161): the roots the run view's run blocked, each
  * with its wave and the root whose failure held it (`by`), from the wave
  * reports' `waves[].blocked` (/api/terragucci's `blocked`, report minor 41)
@@ -474,6 +486,13 @@ export function blockedOf(answer, progress) {
   const notStarted = new Set((progress && Array.isArray(progress.states) ? progress.states : []).filter((w) => w.state === "not-started").map((w) => w.number));
   if (b && (!run || !run.commit || sameCommit(b.commit, run.commit))) {
     for (const [root, x] of Object.entries(b.roots)) if (x && typeof x.by === "string" && x.by && !(Number.isInteger(x.wave) && notStarted.has(x.wave))) out.set(root, { wave: Number.isInteger(x.wave) ? x.wave : null, by: x.by });
+  } else {
+    // behold#770: `blocked` is the newest apply's alone. A run view of an older commit (a tool page's replay, pinned to
+    // its cycle's change after the fix applied) takes its blocked roots from that commit's own wave reports (`results`).
+    for (const r of commitResults(answer, run && run.commit)) {
+      if (notStarted.has(r.wave)) continue;
+      for (const x of Array.isArray(r.blocked) ? r.blocked : []) if (x && typeof x.root === "string" && typeof x.by === "string" && x.by && !out.has(x.root)) out.set(x.root, { wave: r.wave, by: x.by });
+    }
   }
   for (const w of progress && Array.isArray(progress.states) ? progress.states : []) {
     if (w.state !== "blocked") continue;
@@ -492,8 +511,20 @@ export function outcomesOf(answer, progress) {
   const out = new Map();
   const run = progress && !progress.error && progress.run && progress.run.present ? progress.run : null;
   const o = answer && !answer.error && answer.outcomes && answer.outcomes.roots && typeof answer.outcomes.roots === "object" ? answer.outcomes : null;
-  if (!o || (run && run.commit && !sameCommit(o.commit, run.commit))) return out;
   const notStarted = new Set((progress && Array.isArray(progress.states) ? progress.states : []).filter((w) => w.state === "not-started").map((w) => w.number));
+  if (!o || (run && run.commit && !sameCommit(o.commit, run.commit))) {
+    // behold#770: `outcomes` is the newest apply's alone. A run view of an older commit (a tool page's replay of its
+    // cycle's failure, after the fix applied) reads that commit's own wave reports (`results`, behold#751), not its
+    // wave's state: cluster-b applied beside a failed cluster-a in the replay too, as it did live.
+    for (const r of commitResults(answer, run && run.commit)) {
+      if (notStarted.has(r.wave)) continue;
+      const put = (root, outcome, error) => !out.has(root) && out.set(root, { wave: r.wave, outcome, ...(typeof error === "string" && error ? { error } : {}) });
+      for (const root of Array.isArray(r.applied) ? r.applied : []) if (typeof root === "string") put(root, "applied");
+      for (const root of Array.isArray(r.unchanged) ? r.unchanged : []) if (typeof root === "string") put(root, "unchanged");
+      for (const f of Array.isArray(r.failed) ? r.failed : []) if (f && typeof f.root === "string") put(f.root, "failed", f.error);
+    }
+    return out;
+  }
   for (const [root, x] of Object.entries(o.roots)) {
     if (!x || !["applied", "unchanged", "failed"].includes(x.outcome)) continue;
     if (Number.isInteger(x.wave) && notStarted.has(x.wave)) continue;
