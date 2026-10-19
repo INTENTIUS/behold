@@ -543,6 +543,8 @@
       #k-drawer.k-open .k-drawer-tail { display: none; }
       #k-drawer.k-open .k-drawer-body { display: flex; flex-direction: column; height: min(62vh, 40em); border-top: 1px solid var(--rule); overflow: hidden; border-radius: 0 0 10px 10px; }
       #k-drawer.k-open .k-drawer-body #runs-main { flex: 1; border-radius: 0; }
+      /* behold#771: the drawer is the job's log: the drawer's head names the job, so the run's head, its jobs and its features stay in Inspect. */
+      #k-drawer .k-drawer-body #runs-main > :not(.r-steps) { display: none; }
       /* behold#571: where the job's trace waterfall mounts (OpenTelemetry traces), once that pane is built. Empty, it takes no room. */
       #k-traces:empty { display: none; }
       #k-traces { border-top: 1px solid var(--rule); max-height: 30vh; overflow: auto; }
