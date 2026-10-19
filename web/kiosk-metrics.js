@@ -64,6 +64,24 @@ export function changeWords(changes) {
   return parts.length ? parts.join(", ") : null;
 }
 
+/**
+ * behold#786: the span a deploy rate divides by, as terragucci's estate page
+ * names it: "24 hours", "3.5 days", "7.4 weeks".
+ */
+export function spanWords(secs) {
+  if (typeof secs !== "number" || !Number.isFinite(secs) || secs <= 0) return null;
+  const h = secs / 3600;
+  if (h < 48) return `${Math.round(h)} ${Math.round(h) === 1 ? "hour" : "hours"}`;
+  const d = h / 24;
+  if (d < 14) return `${Math.round(d * 10) / 10} days`;
+  return `${Math.round((d / 7) * 10) / 10} weeks`;
+}
+
+/** behold#786: what the delivery numbers cover, said over them. */
+export function windowNote(span) {
+  return `Deploys are the applied waves of the last ${span}, scaled to a week. All four are counted again after each cycle, so they move while you watch.`;
+}
+
 /** "14:05", the viewer's clock, from Unix seconds. */
 export function clockWords(unix) {
   if (typeof unix !== "number" || !Number.isFinite(unix)) return null;
@@ -73,10 +91,13 @@ export function clockWords(unix) {
 
 /**
  * What the pane shows, from one /api/metrics answer, or null for no pane:
- * `{ count, run: { label, waves: [{ head, rows: [[label, value, root?]] }] } | null, dora: [[label, value]] | null, note? }`.
+ * `{ count, run: { label, note?, waves: [{ head, rows: [[label, value, root?]] }] } | null, dora: [[label, value]] | null, note?, window?, windowNote? }`.
  * `note` is the line over the delivery numbers, demo.json's `delivery`, when there are numbers and a line.
+ * behold#786: `asked` is the commit the kiosk is on: a run of another commit
+ * says it is an earlier one, and that this one has no numbers yet. `window`
+ * ("last 24 hours") and `windowNote` say what the delivery numbers cover.
  */
-export function metricsModel(answer, delivery = null) {
+export function metricsModel(answer, delivery = null, asked = null) {
   if (!answer || answer.error) return null;
   let run = null;
   if (answer.run && Array.isArray(answer.run.waves)) {
@@ -101,11 +122,16 @@ export function metricsModel(answer, delivery = null) {
       const took = secondsWords(w.seconds);
       // behold#571: Watch mode's badge on the wave's box reads the same numbers, short ("1.6 s · held 25 s · 4 created").
       const badge = { seconds: took, held, changed, secondsRaw: typeof w.seconds === "number" ? w.seconds : null, heldRaw: typeof w.held_seconds === "number" ? w.held_seconds : null, changesRaw: w.changes || null };
-      if (rows.length || took) waves.push({ wave: w.wave, head: `Wave ${w.wave}`, took: took ? `${took} in all` : null, rows, ...badge });
+      // behold#786: a wave whose job failed says so over its roots' times.
+      const failed = w.result === "failed";
+      if (rows.length || took) waves.push({ wave: w.wave, head: failed ? `Wave ${w.wave} · failed` : `Wave ${w.wave}`, took: took ? `${took} in all` : null, rows, ...badge, ...(w.result ? { result: w.result } : {}) });
     }
     if (waves.length) {
-      const c = answer.run.commit ? ` · ${String(answer.run.commit).slice(0, 8)}` : "";
-      run = { label: `${answer.run.current ? "This run" : "Latest run"}${c}`, current: !!answer.run.current, waves };
+      const commit = answer.run.commit ? String(answer.run.commit).slice(0, 8) : null;
+      const c = commit ? ` · ${commit}` : "";
+      // behold#786: before this commit's waves send their numbers, the newest run that did is another commit's: an earlier one.
+      const other = !answer.run.current && commit && typeof asked === "string" && /^[0-9a-f]{7,64}$/.test(asked) && !asked.startsWith(commit) ? asked.slice(0, 8) : null;
+      run = { label: `${answer.run.current ? "This run" : other ? "Earlier run" : "Latest run"}${c}`, current: !!answer.run.current, ...(other ? { note: `This run, ${other}, has no numbers yet.` } : {}), waves };
     }
   }
   let dora = null;
@@ -123,7 +149,8 @@ export function metricsModel(answer, delivery = null) {
   const n = run ? run.waves.length : 0;
   const count = [n ? `${n} ${n === 1 ? "wave" : "waves"}` : null, dora ? `${dora.length} delivery` : null].filter(Boolean).join(" · ");
   const note = dora && typeof delivery === "string" && delivery.trim() ? delivery.trim() : null;
-  return { count, run, dora, ...(note ? { note } : {}) };
+  const span = dora ? spanWords(answer.dora.span_seconds) : null;
+  return { count, run, dora, ...(note ? { note } : {}), ...(span ? { window: `last ${span}`, windowNote: windowNote(span) } : {}) };
 }
 
 /**
@@ -140,9 +167,11 @@ export function steadyModel(prev, next, { same = false, failed = false } = {}) {
   const run = next.run || prev.run;
   const dora = next.dora || prev.dora;
   const note = next.note || (next.dora ? null : prev.note) || null;
+  // The window goes with the numbers it is about.
+  const span = next.dora ? next : prev;
   const n = run ? run.waves.length : 0;
   const count = [n ? `${n} ${n === 1 ? "wave" : "waves"}` : null, dora ? `${dora.length} delivery` : null].filter(Boolean).join(" · ");
-  return { count, run, dora, ...(note ? { note } : {}) };
+  return { count, run, dora, ...(note ? { note } : {}), ...(span.window ? { window: span.window, windowNote: span.windowNote } : {}) };
 }
 
 /** The viewer's fold: true open, false folded, null when they never chose. */
@@ -243,6 +272,7 @@ export function renderMetrics(host, model, { open = true, onToggle = () => {}, d
   const body = el(doc, "div", "k-metrics-body");
   if (model.run) {
     body.appendChild(el(doc, "h3", "k-metrics-label", model.run.label));
+    if (model.run.note) body.appendChild(el(doc, "p", "k-metrics-note", model.run.note));
     const list = el(doc, "ol", "k-metrics-waves");
     for (const w of model.run.waves) {
       const li = el(doc, "li", "k-metrics-wave");
@@ -258,6 +288,7 @@ export function renderMetrics(host, model, { open = true, onToggle = () => {}, d
   if (model.dora) {
     body.appendChild(el(doc, "h3", "k-metrics-label", "Delivery (DORA)"));
     if (model.note) body.appendChild(el(doc, "p", "k-metrics-note", model.note));
+    if (model.windowNote) body.appendChild(el(doc, "p", "k-metrics-note", model.windowNote));
     const box = el(doc, "div", "k-metrics-dora");
     box.appendChild(rowsEl(doc, model.dora));
     body.appendChild(box);
@@ -320,7 +351,7 @@ export function startMetrics(host, { tool = null, reads = { demo: "/api/terraguc
       const d = demo && demo.demo;
       const now = d ? `${d.repo}|${d.cycle}` : latest && latest.cycle ? `${latest.cycle.repo}|${latest.cycle.cycle}` : null;
       const failed = !demo || !!demo.error || !target || !answer || !!answer.error;
-      const next = steadyModel(model, target ? metricsModel(answer, d ? d.delivery : null) : null, { same: now !== null && now === cycle, failed });
+      const next = steadyModel(model, target ? metricsModel(answer, d ? d.delivery : null, target.commit) : null, { same: now !== null && now === cycle, failed });
       if (now !== null && !failed) cycle = now;
       if (JSON.stringify(next) !== JSON.stringify(model)) {
         model = next;

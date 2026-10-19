@@ -235,8 +235,10 @@ export function badges(metrics) {
 export function doraLine(metrics) {
   const rows = metrics && metrics.dora;
   if (!rows || !rows.length) return null;
+  // behold#786: the deploy rate says the span it counts ("last 24 hours"), since the numbers are recounted each cycle.
+  const span = metrics.window ? ` (${metrics.window})` : "";
   const say = {
-    Deploys: (v) => `${roundedWeek(v)} deploys a week`,
+    Deploys: (v) => `${roundedWeek(v)} deploys a week${span}`,
     "Lead time": (v) => `lead time ${v}`,
     "Change failure rate": (v) => `change failure rate ${v}`,
     "Time to restore": (v) => `time to restore ${v}`,

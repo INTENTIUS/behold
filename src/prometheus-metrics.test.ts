@@ -61,6 +61,16 @@ describe("prometheus-metrics: one run's waves", () => {
     ]);
   });
 
+  it("says a wave's result when its stage gauge carries one, the one it ended on (behold#786)", () => {
+    const a = cycle();
+    // Wave 2 waited, then failed after the approval, in one run; wave 3 ran nothing.
+    a.waveSeconds = [s(w(C1, "4101", "1", { result: "applied" }), 5.36), s(w(C1, "4102", "2", { result: "waiting" }), 3), s(w(C1, "4102", "2", { result: "failed" }), 11.8), s(w(C1, "4102", "3", { result: "nothing" }), 5.6)];
+    const r = runOf(a, "terragucci-admin/demo", C1)!;
+    expect(r.waves.map((x) => [x.wave, x.result, x.seconds])).toEqual([[1, "applied", 5.36], [2, "failed", 11.8], [3, "nothing", 5.6]]);
+    // A gauge with no result keeps none.
+    expect(runOf(cycle(), "terragucci-admin/demo", C1)!.waves.every((x) => !("result" in x))).toBe(true);
+  });
+
   it("a wave still waiting shows when it started waiting, with its plan and no apply", () => {
     const a = cycle();
     a.rootPlan = a.rootPlan.filter((x) => x.labels.run !== "4102");
@@ -108,6 +118,9 @@ describe("prometheus-metrics: dora.json", () => {
     const doc = { schema: "terragucci.dora/v1", projects: [{ project: P, per_week: 3.5, lead_time: { median_seconds: 4500 }, change_failure: { rate: null }, restore: { median_seconds: 600 } }] };
     expect(doraFromFile(JSON.stringify(doc), "terragucci-admin/demo")).toEqual({ project: P, dora: { from: "dora.json", deployments_per_week: 3.5, lead_time_seconds: 4500, restore_seconds: 600 } });
     expect(doraFromFile(JSON.stringify(doc), "terragucci-admin/other")).toBeNull();
+    // behold#786: the span the rate divides by.
+    const spanned = { projects: [{ project: P, per_week: 1526, span_seconds: 86400 }] };
+    expect(doraFromFile(JSON.stringify(spanned), "terragucci-admin/demo")!.dora).toEqual({ from: "dora.json", deployments_per_week: 1526, span_seconds: 86400 });
     expect(doraFromFile("not json", "terragucci-admin/demo")).toBeNull();
     expect(doraFromFile(undefined, "terragucci-admin/demo")).toBeNull();
   });
@@ -167,6 +180,12 @@ describe("prometheus-metrics: GET /api/metrics", () => {
     const a = app({ prometheus: "http://prom:9090", fetch: prom(empty).fetchFn, doraFile: async () => file });
     expect(await (await a.request("/api/metrics?project=terragucci-admin/demo")).json()).toMatchObject({ project: null, run: null, dora: null });
     expect(await (await a.request("/api/metrics?project=terragucci-admin/demo-terragrunt")).json()).toMatchObject({ project: "forgejo:3000/terragucci-admin/demo-terragrunt", run: null, dora: { from: "dora.json", deployments_per_week: 2 } });
+  });
+
+  it("adds dora.json's span to Prometheus's numbers, which stay Prometheus's (behold#786)", async () => {
+    const file = JSON.stringify({ projects: [{ project: P, per_week: 99, span_seconds: 86400 }] });
+    const a = app({ prometheus: "http://prom:9090", fetch: prom().fetchFn, doraFile: async () => file });
+    expect(((await (await a.request("/api/metrics?project=terragucci-admin/demo")).json()) as { dora: unknown }).dora).toEqual({ from: "prometheus", deployments_per_week: 30, lead_time_seconds: 900, change_failure_ratio: 0.1, span_seconds: 86400 });
   });
 
   it("says so when Prometheus cannot answer, and asks again on the next request", async () => {
