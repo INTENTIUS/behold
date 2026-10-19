@@ -71,6 +71,12 @@ body.k-watch #eh-trail { position: fixed; z-index: 7; left: 5px; right: 5px; pad
 /* behold#631: a chant kiosk's strip fades in at its left edge, so a chip scrolled past it never reads as a word cut short. */
 #eh-trail.eh-trail-fade { -webkit-mask-image: linear-gradient(to right, transparent 0, #000 72px); mask-image: linear-gradient(to right, transparent 0, #000 72px); }
 @media (max-width: 600px) { #eh-trail { padding: 0.2em 16px; } body.k-watch #eh-trail { position: static; background: transparent; border: 0; } .eh-tip { max-width: 18em; } }
+/* behold#780: a phone's trail wraps, every chip in view, instead of a strip many screens wide that scrolls sideways with no cue. */
+@media (max-width: 600px) {
+  #eh-trail { flex-wrap: wrap; row-gap: 0.3em; overflow-x: visible; contain: none; }
+  #eh-trail.eh-trail-fade { -webkit-mask-image: none; mask-image: none; }
+  #eh-trail .eh-chip { flex: 0 1 auto; max-width: 100%; white-space: normal; text-align: left; }
+}
 `;
 
 /**
