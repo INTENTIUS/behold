@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stepTone, nextProgress, nextSeen, BEAT_CHANGES, INTRO_HEAD, READ_STORE, READ_TITLE, STEP_VIEW, STEP_WORDS, aboutRows, approvalPanel, approveGloss, chantProject, factsLine, focusRoots, holdHead, holdModel, introText, readStored, readingRows, renderReading, scenarioHead, frameSrc, factLines, kioskView, matchingPull, pendingApproval, renderKiosk, renderViewToggle, reportless, runPanel, runPin, stepView, viewZoom } from "./kiosk.js";
+import { FOLLOW_WORDS, RESUME_WORDS, TAP_HOLD_MS, heldWords, touchScreen, stepTone, nextProgress, nextSeen,BEAT_CHANGES, INTRO_HEAD, READ_STORE, READ_TITLE, STEP_VIEW, STEP_WORDS, aboutRows, approvalPanel, approveGloss, chantProject, factsLine, focusRoots, holdHead, holdModel, introText, readStored, readingRows, renderReading, scenarioHead, frameSrc, factLines, kioskView, matchingPull, pendingApproval, renderKiosk, renderViewToggle, reportless, runPanel, runPin, stepView, viewZoom } from "./kiosk.js";
 import { VENDORS } from "./kiosk-vendor.js";
 import { PICK_HOLD_MS } from "./kiosk-runs.js";
 
@@ -384,6 +384,9 @@ describe("which view the frame shows (#571)", () => {
 
       renderViewToggle(host, { view: "resources", pinned: true, secs: 42 }, { components: true });
       expect(host.children[1].textContent).toBe("each resource the change touches · held by a click; the step leads again in 42 s");
+      // behold#779: on a touch screen it was a tap.
+      renderViewToggle(host, { view: "resources", pinned: true, secs: 42 }, { components: true, touch: true });
+      expect(host.children[1].textContent).toBe("each resource the change touches · held by a tap; the step leads again in 42 s");
 
       renderViewToggle(host, { view: "resources", pinned: false, secs: null }, { components: false });
       expect(host.hidden).toBe(true);
@@ -616,6 +619,29 @@ describe("kiosk: a phone's trace rows under the step (behold#775)", () => {
       expect(host.children).toEqual([]);
     } finally {
       globalThis.document = was;
+    }
+  });
+});
+
+// behold#779: on a phone a stray tap on the graph held Watch's shot 90 s, under words about a click.
+describe("a held shot on a touch screen", () => {
+  it("says it was a tap, holds a shorter time, and its button says resume", () => {
+    expect(heldWords(42)).toBe("Held where you left it · the steps lead again in 42 s");
+    expect(heldWords(12, true)).toBe("Paused where you tapped · the steps go on in 12 s");
+    expect(TAP_HOLD_MS).toBeLessThan(PICK_HOLD_MS);
+    expect([FOLLOW_WORDS, RESUME_WORDS]).toEqual(["Follow the steps", "Resume now"]);
+  });
+  it("reads a touch screen from a coarse pointer", () => {
+    const was = globalThis.matchMedia;
+    try {
+      globalThis.matchMedia = (q) => ({ matches: q === "(pointer: coarse)" });
+      expect(touchScreen()).toBe(true);
+      globalThis.matchMedia = () => ({ matches: false });
+      expect(touchScreen()).toBe(false);
+      delete globalThis.matchMedia;
+      expect(touchScreen()).toBe(false);
+    } finally {
+      globalThis.matchMedia = was;
     }
   });
 });
