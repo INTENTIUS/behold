@@ -113,6 +113,38 @@ describe("what the popover says about a root, in Components (behold#571)", () =>
     expect(rootPopover(answer(), "other", [{ kind: "terraform_data", id: "other/terraform_data.backup_schedule" }]).head).toBe(WORDS.noRootChange);
     expect(rootPopover(answer(), "other", []).head).toBe(WORDS.noResources);
   });
+
+  it("lists a create the plan holds but the checkout does not declare yet, first, as a create (behold#796)", () => {
+    const resources = [
+      { kind: "terraform_remote_state", id: "cluster-a/data.terraform_remote_state.network" },
+      { kind: "aws_dynamodb_table", id: "cluster-a/aws_dynamodb_table.jobs" },
+    ];
+    const a = answer({
+      roots: [{ member: "repo", name: "cluster-a", path: "cluster-a", plan: { changes: 1 } }],
+      pull_request: { roots: ["cluster-a"] },
+      unmatched: {
+        roots: [],
+        changes: [
+          { root: "cluster-a", address: "aws_sqs_queue.events", action: "create", verdict: "plan" },
+          { root: "cluster-a", address: "aws_sqs_queue.events", action: "create", verdict: "wave" },
+          { root: "cluster-a", address: "aws_s3_bucket.logs", action: "delete", verdict: "drift" },
+          { root: "cluster-b", address: "aws_sqs_queue.other", action: "create", verdict: "plan" },
+        ],
+      },
+    });
+    const p = rootPopover(a, "cluster-a", resources);
+    expect(p.head).toBe("1 of 3 resources change.");
+    expect(p.changed).toBe(1);
+    expect(p.rows).toEqual([
+      { address: "aws_sqs_queue.events", state: "change", words: "to create" },
+      { address: "data.terraform_remote_state.network", state: "same", words: "no change" },
+      { address: "aws_dynamodb_table.jobs", state: "same", words: "no change" },
+    ]);
+    // An answer from before behold#796 carries no action: it still counts as a change.
+    const old = rootPopover(answer({ roots: a.roots, unmatched: { roots: [], changes: [{ root: "cluster-a", address: 'aws_sqs_queue.q["a"]' }] } }), "cluster-a", []);
+    expect(old.rows).toEqual([{ address: "aws_sqs_queue.q", state: "change", words: "changes" }]);
+    expect(old.head).toBe("1 of 1 resource changes.");
+  });
 });
 
 describe("when the popover shows (behold#571)", () => {
