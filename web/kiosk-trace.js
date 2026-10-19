@@ -256,6 +256,10 @@ const STYLE = `
   .t-ms { grid-area: ms; }
   .t-track { grid-area: track; margin-left: calc(min(var(--d, 0), 6) * 0.45em); }
 }
+/* behold#779: on a touch screen a row that opens and the Steps/Trace switch are at least 44px under the finger. */
+@media (pointer: coarse) {
+  .t-row.t-can, .t-tab { min-height: 44px; }
+}
 `;
 
 const el = (doc, tag, cls, text) => {

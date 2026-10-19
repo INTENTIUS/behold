@@ -760,10 +760,11 @@ export function viewZoom(view) {
 
 /**
  * The toggle, "Resources | Components", over the frame: the view shown
- * pressed, and a line saying whether the step leads or a click holds it.
- * Not drawn at all when the repo offers no components zoom.
+ * pressed, and a line saying whether the step leads or a click holds it
+ * (behold#779: a tap, on a touch screen). Not drawn at all when the repo
+ * offers no components zoom.
  */
-export function renderViewToggle(host, shown, { components = false, onPick = () => {} } = {}) {
+export function renderViewToggle(host, shown, { components = false, onPick = () => {}, touch = touchScreen() } = {}) {
   if (!host) return;
   host.replaceChildren();
   host.hidden = !components;
@@ -781,7 +782,7 @@ export function renderViewToggle(host, shown, { components = false, onPick = () 
   }
   host.appendChild(group);
   const on = VIEWS.find((v) => v.id === shown.view);
-  const lead = shown.pinned ? `held by a click; the step leads again in ${shown.secs} s` : "follows the step";
+  const lead = shown.pinned ? `held by a ${touch ? "tap" : "click"}; the step leads again in ${shown.secs} s` : "follows the step";
   host.appendChild(el("span", "k-view-note", on ? `${on.shows} · ${lead}` : lead));
 }
 
@@ -1051,11 +1052,22 @@ export function renderModeToggle(host, mode, onPick) {
   }
 }
 
-/** behold#571: the words over a held shot, and the button that follows the step again. */
-export function heldWords(secs) {
-  return `Held where you left it · the steps lead again in ${secs} s`;
+/** behold#779: a touch screen (a phone), where the viewer taps rather than clicks. */
+export function touchScreen() {
+  return typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
+}
+
+/**
+ * behold#571: the words over a held shot, and the button that follows the step again.
+ * behold#779: on a touch screen a tap held it, often a stray one, so the words say so and the button is a big one.
+ */
+export function heldWords(secs, touch = false) {
+  return touch ? `Paused where you tapped · the steps go on in ${secs} s` : `Held where you left it · the steps lead again in ${secs} s`;
 }
 export const FOLLOW_WORDS = "Follow the steps";
+export const RESUME_WORDS = "Resume now";
+/** behold#779: how long a tap on a touch screen holds Watch's shot (a click holds it PICK_HOLD_MS). */
+export const TAP_HOLD_MS = 20_000;
 
 /** Watch's header: the scenario's place and the strip on the left, the delivery numbers on the right. */
 function drawWatchHead(bar, s, now) {
@@ -1087,8 +1099,9 @@ function drawWatchHead(bar, s, now) {
   // behold#631: a chant kiosk's projected track says where the cycle is; the rail goes.
   if (!s.trackOn) bar.appendChild(strip);
   if (s.watchHeld) {
-    const p = el("span", "k-w-held", heldWords(s.watchHeld.secs));
-    const b = el("button", null, FOLLOW_WORDS);
+    const touch = touchScreen();
+    const p = el("span", "k-w-held", heldWords(s.watchHeld.secs, touch));
+    const b = el("button", "k-w-resume", touch ? RESUME_WORDS : FOLLOW_WORDS);
     b.type = "button";
     b.addEventListener("click", () => s.followSteps && s.followSteps());
     p.appendChild(b);
@@ -1867,7 +1880,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   };
   function holdTick() {
     if (watchHoldAt === null) return void (s.watchHeld = null);
-    const left = watchHoldAt + PICK_HOLD_MS - now().getTime();
+    // behold#779: on a touch screen most holds are a stray tap or a scroll over the graph: they hold a shorter time.
+    const left = watchHoldAt + (touchScreen() ? TAP_HOLD_MS : PICK_HOLD_MS) - now().getTime();
     if (left <= 0) {
       watchHoldAt = null;
       s.watchHeld = null;

@@ -482,6 +482,14 @@
       .k-w-dora b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
       .k-w-held { color: var(--foreign); font-size: 0.85em; min-width: 0; }
       .k-w-held button { font: inherit; color: var(--pending); background: transparent; border: 0; padding: 0 0 0 var(--s2); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+      /* behold#779: on a touch screen each control is at least 44px under the finger, and a paused shot's resume is a big button. */
+      @media (pointer: coarse) {
+        .k-mode, .k-what, .k-theme-arrow, .k-menu summary, .eh-switch, .k-view, .eh-chip, .k-drawer-head { min-height: 44px; }
+        .k-modes { height: auto; }
+        .k-theme-arrow { min-width: 44px; }
+        .k-w-held { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); flex: 1 1 100%; }
+        .k-w-held button.k-w-resume { min-height: 44px; padding: 0 var(--s5); border: 2px solid var(--pending); border-radius: 999px; background: color-mix(in srgb, var(--pending) 18%, transparent); text-decoration: none; font-weight: 600; }
+      }
       /* The caption: the title, what changes, the step. One of the two beats leads. */
       #k-caption { position: absolute; left: 5px; right: 5px; bottom: 5px; display: grid; grid-template-rows: auto calc(2 * 1.25em * 1.3) calc(2 * 1.25em * 1.3); gap: 0.25em; padding: var(--s3) 1.4em var(--s4);
         background: var(--surface-pane-b); border-top: 1px solid var(--rule); border-radius: 0 0 8px 8px; box-shadow: 0 -10px 30px color-mix(in srgb, var(--bg) 70%, transparent); }
