@@ -129,6 +129,7 @@ import { shotFromMessage, shotViewBox, tweenViewBox, unionBox, sameViewBox } fro
 import { mountDots, unmountDots, dotsCamera, dotsZoomOutFactor, dotsCarving, dotsMinViewWidth } from "./dots.js";
 import { carveDrawable } from "./dots-live.js";
 import { FLASH_MS as TG_FLASH_MS, createReadFlash, hotReads as tgHotReads, nearestOn as tgNearestOn, pillSpots as tgPillSpots, readKey as tgReadKey, readerStates as tgReaderStates } from "./tg-read-pills.js"; // behold#744
+import { outsideCard as tgOutsideCard, outsideModel as tgOutsideModel, outsideSpots as tgOutsideSpots } from "./tg-outside.js"; // behold#743
 initTheme();
 // #476: framed in a host pane. The flag is a class on <html>, so the CSS that
 // folds the chrome away needs no JS, and the theme is the host's for this
@@ -4076,6 +4077,7 @@ function drawTgReads() {
   const cardBoxes = cardEls.map((g) => cardBoxOf.get(g)).filter(Boolean);
   const headers = boxes.map((b) => ({ x: b.x, y: b.y - 14, x2: b.x2, y2: b.y + 36 }));
   const placed = [];
+  const pillsBy = []; // behold#743: each pill's rect and its reader, shown or not
   const overlap = (r, b) => Math.max(0, Math.min(r.x2, b.x2) - Math.max(r.x, b.x)) * Math.max(0, Math.min(r.y2, b.y2) - Math.max(r.y, b.y));
   const sum = (r, list, k) => list.reduce((a, b) => a + k * overlap(r, b), 0);
   const span = union(boxes);
@@ -4114,6 +4116,7 @@ function drawTgReads() {
     }
     const { c, r } = best.s;
     (flash.has(l.key) ? lit : placed).push(r);
+    pillsBy.push({ from: l.e.from, r, lit: flash.has(l.key) });
     p.g.setAttribute("transform", `translate(${c.x} ${c.y})`);
     // The leader: from the line's start on the card's border to the pill's nearest edge, with a dot where it leaves the card.
     const q = tgNearestOn(r, l.p0);
@@ -4153,6 +4156,130 @@ function drawTgReads() {
       layer.appendChild(make("text", { "data-tg-reads": "caption", x: all.x, y: all.y - 22, "font-size": 16, "font-weight": 600, fill: "var(--muted)" }, caption.slice(cut + 2)));
     }
   }
+  // behold#743: an apply made outside the pipeline, on its estate's card, clear of the reads' pills and the caption.
+  if (compMode && readMarks) {
+    const captions = [...layer.querySelectorAll("text[data-tg-reads=caption]")].map(boxOf).filter(Boolean).map((b) => grow(b, 4));
+    drawTgOutside(svg, { layer, make, boxOf, marks: readMarks, roots: states.roots, cardBoxOf, avoid: { pills: pillsBy, texts: textBoxes, captions, headers }, edgeIn, crosses });
+  }
+}
+
+/**
+ * behold#743: demo.json's `outside` (an operator's apply to app-01's estate while the pipeline's wave 3 applies it),
+ * drawn as a mark joined to the estate's card: dashed, tagged "outside the pipeline", with who ran it, the command, its
+ * state and its resources, and what the pipeline does to the same estate meanwhile; once both land, both changes. Only
+ * a kiosk frame telling a chapter-carrying story draws it, and only while the step carries one: other scenarios, and
+ * steps without it, draw nothing new. The mark is a child of the reads' layer, so the kiosk's modals and callouts keep
+ * clear of it as of the pills (kioskTellBoxes' `labels`).
+ */
+function drawTgOutside(svg, { layer, make, boxOf, marks, roots, cardBoxOf, avoid, edgeIn, crosses }) {
+  const outside = tgStoryOn() && tgStory.outside ? tgStory.outside : null;
+  if (!outside || !marks || !marks.cards) return;
+  const cards = marks.cards;
+  const id = tgOutsideCard(outside.estate, [...Object.keys(cards), ...Object.values(cards).map((c) => c && c.root)]);
+  const cid = id && (cards[id] ? id : Object.keys(cards).find((k) => cards[k] && cards[k].root === id));
+  const el = cid ? svg.querySelector(`[data-node-id="${CSS.escape(cid)}"]`) : null;
+  const cardBox = el ? cardBoxOf.get(el) || boxOf(el) : null;
+  if (!cardBox) return;
+  const m = cards[cid];
+  // The pipeline's own state for the card, as the reads' flash reads it: a card whose wave's job runs now is applying.
+  const pipeline = tgReaderStates(marks, roots)[m.root] || m.state;
+  const plans = (m.facts || []).find((f) => /^plans /.test(f));
+  const model = tgOutsideModel(outside, { pipeline, card: cid, change: plans ? plans.slice(6) : null, wave: Number.isInteger(m.wave) ? m.wave : null });
+  if (!model) return;
+  const tone = TG_TONE[model.tone] || TG_TONE.idle;
+  const g = make("g", { "data-tg-outside": cid, "pointer-events": "none" });
+  layer.appendChild(g);
+  // The card's own ring, dashed in the mark's tone: the estate the outside apply is on.
+  const ring = make("rect", { x: cardBox.x - 6, y: cardBox.y - 6, width: cardBox.x2 - cardBox.x + 12, height: cardBox.y2 - cardBox.y + 12, rx: 10, fill: "none", stroke: tone, "stroke-width": 2.5, "stroke-dasharray": "7 5" });
+  g.appendChild(ring);
+  // The words, measured where they are drawn; the box is sized to them.
+  const size = embedOpts.bare ? 15 : 13;
+  const mono = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+  const style = {
+    who: { size, weight: 700, fill: tone },
+    landed: { size, weight: 700, fill: tone },
+    command: { size: size - 2, weight: 500, fill: "var(--fg)", family: mono },
+    resources: { size: size - 1, weight: 600, fill: "var(--fg)", family: mono },
+    pipeline: { size: size - 1, weight: 600, fill: "var(--muted)" },
+  };
+  const body = make("g", {});
+  g.appendChild(body);
+  const texts = model.lines.map((l) => {
+    const s = style[l.kind] || style.pipeline;
+    const t = make("text", { "font-size": s.size, "font-weight": s.weight, fill: s.fill, ...(s.family ? { "font-family": s.family } : {}) }, l.text);
+    if (l.kind === "who" && model.pulse) t.setAttribute("class", "pin-pulse");
+    body.appendChild(t);
+    let w = l.text.length * s.size * 0.6;
+    try {
+      w = t.getComputedTextLength() || w;
+    } catch {
+      /* not laid out: the estimate stands */
+    }
+    return { t, w, s };
+  });
+  const tagSize = size - 3;
+  const tag = make("text", { "font-size": tagSize, "font-weight": 800, fill: "var(--bg)", "letter-spacing": "0.04em" }, model.tag.toUpperCase());
+  let tagW = model.tag.length * tagSize * 0.72;
+  g.appendChild(tag);
+  try {
+    tagW = tag.getComputedTextLength() || tagW;
+  } catch {
+    /* not laid out */
+  }
+  const padX = 14;
+  const lineGap = 7;
+  const top = 18; // under the tag, which sits across the top border
+  const w = Math.max(tagW + 24, ...texts.map((x) => x.w)) + 2 * padX;
+  const h = top + texts.reduce((a, x) => a + x.s.size + lineGap, 0) + 6;
+  // Where it goes: beside the card, clear of the other cards, the card's read pills (behold#744), the caption and the
+  // text around, and inside what Watch's camera shows.
+  const vbb = embedOpts.bare && svg.viewBox && svg.viewBox.baseVal && svg.viewBox.baseVal.width ? svg.viewBox.baseVal : null;
+  const seen = vbb ? { x: vbb.x + 8, y: vbb.y + 8, x2: vbb.x + vbb.width - 8, y2: vbb.y + vbb.height - 8 } : null;
+  const overlap = (r, b) => Math.max(0, Math.min(r.x2, b.x2) - Math.max(r.x, b.x)) * Math.max(0, Math.min(r.y2, b.y2) - Math.max(r.y, b.y));
+  const sum = (r, list, k) => list.reduce((a, b) => a + k * overlap(r, b), 0);
+  const others = [...cardBoxOf.values()].filter((b) => b && b !== cardBox);
+  const ringBox = { x: cardBox.x - 8, y: cardBox.y - 8, x2: cardBox.x2 + 8, y2: cardBox.y2 + 8 };
+  // The card's own read pills (behold#744) and the ones flashing now must stay clear; the others show only on a pointer.
+  const ownPills = avoid.pills.filter((x) => x.lit || x.from === m.root || x.from === cid).map((x) => x.r);
+  const restPills = avoid.pills.filter((x) => !(x.lit || x.from === m.root || x.from === cid)).map((x) => x.r);
+  // The leader: from the box's nearest edge to the card's ring, which it meets with a dot.
+  const inner = { x: ringBox.x + 2, y: ringBox.y + 2, x2: ringBox.x2 - 2, y2: ringBox.y2 - 2 };
+  const leaderOf = (r) => {
+    const q = tgNearestOn(r, { x: (cardBox.x + cardBox.x2) / 2, y: (cardBox.y + cardBox.y2) / 2 });
+    return { p: tgNearestOn(inner, q), q };
+  };
+  let best = null;
+  // Slid further along a side than a pill is: the mark is wide, and a caption may sit over the card's box.
+  for (const s of tgOutsideSpots(ringBox, w, h + 12, { gaps: [12, 28, 48, 72, 100, 140, 180], slides: [0, -0.25, 0.25, -0.5, 0.5, 0.75, 1, 1.25, 1.5, 1.75, -0.75, -1, -1.25] })) {
+    const r = { ...s.r, y: s.r.y + 12 }; // the tag reaches 12 above the box
+    const hit = { ...r, y: r.y - 12 };
+    const unseen = seen ? (hit.x2 - hit.x) * (hit.y2 - hit.y) - overlap(hit, seen) : 0;
+    const { p, q } = leaderOf(r);
+    const across = [...avoid.texts, ...avoid.captions, ...ownPills, ...others].filter((t) => crosses(p, q, t)).length;
+    const score = sum(hit, [ringBox], 400) + sum(hit, others, 200) + sum(hit, ownPills, 300) + sum(hit, restPills, 10) + sum(hit, avoid.captions, 300) + sum(hit, avoid.texts, 60) + sum(hit, avoid.headers, 15) + unseen * 120 + edgeIn(hit) * 4 + across * 4000 + s.far * 6;
+    if (!best || score < best.score) best = { r, score };
+  }
+  if (!best) return g.remove();
+  const r = best.r;
+  body.prepend(make("rect", { x: r.x, y: r.y, width: w, height: h, rx: 9, fill: "var(--bg)", stroke: tone, "stroke-width": 2.5, "stroke-dasharray": "9 5" }));
+  // The tag across the top border, filled, so it reads as a label of the box and not as one of the pipeline's states.
+  g.insertBefore(make("rect", { x: r.x + padX - 8, y: r.y - 12, width: tagW + 16, height: 24, rx: 12, fill: tone }), tag);
+  tag.setAttribute("x", String(r.x + padX));
+  tag.setAttribute("y", String(r.y));
+  tag.setAttribute("dominant-baseline", "central");
+  let y = r.y + top;
+  for (const x of texts) {
+    y += x.s.size;
+    x.t.setAttribute("x", String(r.x + padX));
+    x.t.setAttribute("y", String(y));
+    y += lineGap;
+  }
+  const { p, q } = leaderOf(r);
+  if (Math.hypot(q.x - p.x, q.y - p.y) > 3) {
+    g.insertBefore(make("line", { x1: p.x, y1: p.y, x2: q.x, y2: q.y, stroke: tone, "stroke-width": 2.5, "stroke-dasharray": "6 4" }), body);
+    g.insertBefore(make("circle", { cx: p.x, cy: p.y, r: 4.5, fill: tone }), body);
+  }
+  g.appendChild(make("title", {}, [`${model.tag}: ${outside.who} ran ${outside.command} on ${outside.estate}`, `${outside.state}${(outside.resources || []).length ? ` · ${outside.resources.join(", ")}` : ""}`, ...(outside.log || []).slice(-3)].join("\n") + "\n(from the demo's narration, demo.json)"));
 }
 const sameBox = (a, b) => !!a && !!b && Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5 && Math.abs(a.x2 - b.x2) < 0.5 && Math.abs(a.y2 - b.y2) < 0.5;
 
@@ -5296,8 +5423,12 @@ function wireKioskFrame() {
       const on = e.data.on === true;
       const cycle = Number.isInteger(e.data.cycle) ? e.data.cycle : null;
       const was = tgStoryOn();
-      tgStory = { on, cycle };
+      // behold#743: the step's apply made outside the pipeline, or null; a change redraws the marks.
+      const outside = e.data.outside && typeof e.data.outside === "object" && typeof e.data.outside.estate === "string" ? e.data.outside : null;
+      const outsideMoved = JSON.stringify(outside) !== JSON.stringify((tgStory && tgStory.outside) || null);
+      tgStory = { on, cycle, outside };
       if (tgStoryOn() !== was && view.components && terragucciComponentsRepo) load({ quiet: true });
+      else if (outsideMoved && tgStoryOn()) drawTgReads();
       return;
     }
     const h = hoverFromMessage(e.data);
@@ -6286,6 +6417,7 @@ let terragucciComponentsRepo = false;
  * behold#741: the kiosk's word that the scenario it shows carries chapters (demo.json's step `chapter`), with the
  * cycle: `{ on, cycle }` from a `behold:story` message, null until one comes. Only a kiosk frame (bare) of a
  * terragucci repo's components zoom acts on it; b-waves, failure and tg-planned-outputs send `on: false`.
+ * behold#743: `outside` too, the step's apply made outside the pipeline (demo.json's), or null.
  */
 let tgStory = null;
 function tgStoryOn() {

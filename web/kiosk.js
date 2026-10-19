@@ -1601,7 +1601,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     {
       const d = s.demo && s.demo.demo;
       s.tgStory = storyGate({ chantLoop: s.chantLoop, terragucciRepo: s.tgRepo, demo: d }) === "terragucci";
-      if (s.tgRepo) post({ type: "behold:story", on: s.tgStory, cycle: d && Number.isInteger(d.cycle) ? d.cycle : null });
+      // behold#743: and the step's apply made outside the pipeline, which the frame draws on its estate's card.
+      if (s.tgRepo) post({ type: "behold:story", on: s.tgStory, cycle: d && Number.isInteger(d.cycle) ? d.cycle : null, outside: (s.tgStory && d && d.outside) || null });
     }
     s.light = typeof document !== "undefined" && document.documentElement ? isLightBg(getComputedStyle(document.documentElement).getPropertyValue("--bg")) : false;
     s.rootNames = rootList();
