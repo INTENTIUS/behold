@@ -37,7 +37,8 @@
  * One part of the schema is not enforced: `step`'s enum, which lists what a
  * writer may write in contract 1. Steps can be added within the contract, so
  * a step behold doesn't know is shown by its name and lights no stop of the
- * strip, never refused ({@link readerSchema}).
+ * strip, never refused ({@link readerSchema}). Nor is `highlight`'s (chant#4106,
+ * behold#757): one not of its form is left out, the step read as before.
  *
  * demo-step/v1 requires only `$schema`, `contract`, `demo`, `cycle` and
  * `step`; everything the kiosk shows is optional, so a missing field reads
@@ -52,15 +53,18 @@ import type { GitRun } from "./terragucci-lifecycle.ts";
 import demoCycleSchema from "./demo-schemas/demo-cycle.schema.json" with { type: "json" };
 import demoStepSchema from "./demo-schemas/demo-step.schema.json" with { type: "json" };
 import { runEventLine, type RunLine } from "./run-events.ts";
-import { chapterOf, DEMO_STEPS, type Cycle, type Demo, type DemoStep } from "./terragucci-demo.ts";
+import { chapterOf, DEMO_STEPS, highlightOf, type Cycle, type Demo, type DemoStep } from "./terragucci-demo.ts";
 import { deniedWords, TerragucciDenied, terragucciSource, type AwsRun, type TerragucciSource } from "./terragucci-source.ts";
 
-/** Where the vendored schemas come from: chant#4102 (for chant#4092), not merged yet. Re-copy from main once it is. */
+/**
+ * Where the vendored schemas come from: chant's main, as chant#4102 (for chant#4092) wrote them and chant#4106 added
+ * the optional `highlight` to a step (behold#757).
+ */
 export const DEMO_SCHEMA_SOURCE = {
   repo: "INTENTIUS/chant",
   path: "examples/fan-out-estate/demo/schemas/",
-  pr: 4102,
-  commit: "ae1669be561a9ef3c6f5b89f824e4326710ebc92",
+  pr: 4106,
+  commit: "70357348d23a8f608198da327ae0190f7e0683b0",
 } as const;
 
 /** The demo contract version behold reads (`contract: 1`). */
@@ -177,6 +181,9 @@ export function readerSchema(kind: DemoKind): Record<string, unknown> {
     delete steps.enum;
     steps.type = "string";
   }
+  // behold#757: a `highlight` not of chant#4106's form is ignored (highlightOf), never a refusal of the step it rides on.
+  const props = kind === "demo-step" ? schema.properties : schema.$defs?.cycleStep?.properties;
+  if (props && props.highlight) delete props.highlight;
   return schema;
 }
 
@@ -208,6 +215,8 @@ export function stepOf(d: Record<string, unknown>): ChantStep {
   const about = isRecord(d.about) && ["changes", "watch", "shows"].every((f) => text((d.about as Record<string, unknown>)[f])) ? (d.about as Record<string, string>) : null;
   const r = isRecord(d.reports) ? d.reports : null;
   const chapter = chapterOf(d.chapter);
+  // behold#757: chant#4106's optional `highlight`, floored as terragucci's is (src/terragucci-demo.ts highlightOf).
+  const highlight = highlightOf(d.highlight);
   const demo = str(d.demo) ? d.demo : "";
   return {
     demo,
@@ -231,6 +240,7 @@ export function stepOf(d: Record<string, unknown>): ChantStep {
     delivery: null,
     beat: null,
     ...(chapter ? { chapter } : {}),
+    ...(highlight ? { highlight } : {}),
     at: str(d.at) ? d.at : null,
     reports: r ? { url: text(r.url), plan: str(r.plan) ? r.plan : null, apply: str(r.apply) ? r.apply : null } : null,
     cycleReports: Array.isArray(d.cycle_reports) ? reportsOf(d.cycle_reports) : null,

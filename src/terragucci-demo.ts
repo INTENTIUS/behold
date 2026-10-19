@@ -99,6 +99,26 @@ export interface Demo {
    * or one not of its form.
    */
   outside?: DemoOutside;
+  /**
+   * behold#757: what is special about this step, in the scenario's own words (terragucci-89, chant#4106): the kiosk
+   * opens it as a modal in Watch. Absent when demo.json has null, none, or one whose title or body is not a
+   * non-empty string.
+   */
+  highlight?: DemoHighlight;
+}
+
+/** behold#757: a step's `highlight`, as the driver writes it. */
+export interface DemoHighlight {
+  title: string;
+  body: string;
+}
+
+/** behold#757: a demo step's `highlight`, or undefined unless its title and body are both non-empty strings (chant#4106's floor). */
+export function highlightOf(v: unknown): DemoHighlight | undefined {
+  if (!isRecord(v)) return undefined;
+  const title = text(v.title);
+  const body = text(v.body);
+  return title && body ? { title, body } : undefined;
 }
 
 /** behold#743: demo.json's `outside`, as the driver writes it (terragucci#1163). */
@@ -245,6 +265,11 @@ export function demoOf(d: Demo): Demo {
     ...((): { outside?: DemoOutside } => {
       const o = outsideOf((d as { outside?: unknown }).outside);
       return o ? { outside: o } : {};
+    })(),
+    // behold#757: so is the step's highlight.
+    ...((): { highlight?: DemoHighlight } => {
+      const h = highlightOf((d as { highlight?: unknown }).highlight);
+      return h ? { highlight: h } : {};
     })(),
   };
 }

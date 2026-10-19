@@ -10,13 +10,16 @@
 //   Inspect and by the caption in Watch; a chip, pointed at or clicked,
 //   shows its tip and its lights again;
 // - a critical event (a wave held, a wave failed, the cycle applied) opens
-//   web/event-help-modal.js, narrated (or replayed on a tool's page).
+//   web/event-help-modal.js, narrated (or replayed on a tool's page);
+// - behold#757: a step whose driver wrote a `highlight` (what is special about
+//   it) opens it in Watch as a modal of its own, off the cards, when the step
+//   arrives, for HIGHLIGHT_MS or until the step goes.
 //
 // The Tips switch, on by default and kept per viewer, turns the tips, the
 // lights, the glows and the modals off; the trail stays, since it is the
 // record.
 
-import { EH_STORE, LATE_ORDER, TIP_MS, cycleFacts, storyKey, ehSnapshot, ehStore, ehStored, modalQueue, modalShownElsewhere, newEvents, storyTrail, tipsQueue, tipsShown } from "./kiosk-event-help.js";
+import { EH_STORE, HIGHLIGHT_MS, LATE_ORDER, TIP_MS, cycleFacts, storyKey, ehSnapshot, ehStore, ehStored, highlightOpens, highlightShown, highlightTurn, modalQueue, modalShownElsewhere, newEvents, storyTrail, tipsQueue, tipsShown } from "./kiosk-event-help.js";
 
 /** How long after the page opens (or the cycle turns) what arrives is the story so far, not news: the reads land one by one. */
 export const SETTLE_MS = 8_000;
@@ -446,11 +449,23 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     title: `Waiting on ${w.what}`,
     lines: w.why ? [{ text: w.why }] : [],
     progress: { fraction: w.fraction, words: w.words },
-    // Never over a card: any card of the graph is to stay in view. Then, where it can, off the graph altogether
-    // (its wave boxes and the space between them, where a reach is drawn): the space beside it first.
-    // behold#744: nor over a read pill the frame shows.
-    avoid: () => [...Object.keys((h.boxes && h.boxes.roots) || {}).map((r) => fromFrame(h, h.boxes.roots[r])).filter(Boolean), ...pillRects(h)],
+    ...offCards(h),
+  });
+  /**
+   * Where a modal about no one card goes (the "Waiting on…" one, a step's highlight): never over a card, since any
+   * card of the graph is to stay in view. Then, where it can, off the graph altogether (its wave boxes and the space
+   * between them, where a reach is drawn): the space beside it first. behold#744: nor over a read pill the frame
+   * shows; behold#748's outside mark sits in the pills' layer, so it is kept clear of the same way.
+   * behold#757: each read of the cards is of what the frame says now: a highlight opens with its step, often
+   * before the frame has said where its cards are.
+   */
+  const offCards = (at) => ({
+    avoid: () => {
+      const h = (get && get()) || at;
+      return [...Object.keys((h.boxes && h.boxes.roots) || {}).map((r) => fromFrame(h, h.boxes.roots[r])).filter(Boolean), ...pillRects(h)];
+    },
     prefer: () => {
+      const h = (get && get()) || at;
       const waves = Object.values((h.boxes && h.boxes.waves) || {}).map((b) => fromFrame(h, b)).filter(Boolean);
       if (!waves.length) return [];
       const left = Math.min(...waves.map((b) => b.left));
@@ -459,13 +474,21 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
       const bottom = Math.max(...waves.map((b) => b.top + b.height));
       return [{ left, top, width: right - left, height: bottom - top }];
     },
-    bounds: () => graphArea(h),
+    bounds: () => graphArea((get && get()) || at),
   });
   const openWaiting = (w, h) => {
     const d = h.demo;
     const api = openEventModal(modalHost, { mode: "narrated", kind: "waiting", data: waitingData(w, h), doc, now, reduced: reduced(), onClose: () => (st.modal = null) });
     st.modal = { api, event: { kind: "waiting", subjects: { roots: [], wave: null } }, kind: "waiting", key: w.key, step: d ? d.step : null, cycle: d ? d.cycle : null, pull: d ? d.pull : null };
     if (st.story) for (const n of st.nodes.values()) n.style.visibility = "hidden";
+  };
+  /** behold#757: a step's highlight, as a modal off the cards: up HIGHLIGHT_MS (longer while hovered), or until its step goes. */
+  const openHighlight = (hl, h) => {
+    const d = h.demo;
+    const data = { title: hl.title, lines: [{ text: hl.body }], closeAfter: HIGHLIGHT_MS, ...offCards(h) };
+    const api = openEventModal(modalHost, { mode: h.replay ? "replay" : "narrated", kind: "highlight", data, doc, now, reduced: reduced(), onClose: () => (st.modal = null) });
+    st.modal = { api, event: { kind: "highlight", subjects: { roots: [], wave: null } }, kind: "highlight", key: hl.key, step: d ? d.step : null, cycle: d ? d.cycle : null, pull: d ? d.pull : null };
+    for (const n of st.nodes.values()) n.style.visibility = "hidden";
   };
   /** The modal's real event: the approval landed, the waves ran again, the cycle moved on. */
   const settleModal = (h, facts) => {
@@ -524,6 +547,11 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
     settleModal(h, facts);
     // A modal Inspect opened goes when the viewer turns to Watch on a held small stage, where nothing overlays the graph.
     if (st.modal && modalShownElsewhere(st.modal.event, { watch: !!h.watch, held: !!h.held })) st.modal.api.close();
+    // behold#757: a step's highlight is read on every look (Tips off or not, so turning them on mid-step still shows it,
+    // and one the driver adds partway through a step shows when it appears); its modal goes with its step, or when the
+    // viewer turns to Inspect: it is Watch's.
+    st.hl = highlightTurn(st.hl, h.demo);
+    if (st.modal && st.modal.kind === "highlight" && (st.modal.key !== st.hl.step || !h.watch)) st.modal.api.close();
     if (!st.on) return;
     // behold#631: a new pull request of a chant cycle (the fix) starts with no tip of the one before.
     if (h.chant && st.tipsPull !== undefined && st.tipsPull !== h.demo.pull) {
@@ -554,6 +582,13 @@ export function startEventHelp({ doc = document, store = null, switchHost = null
       // News closed it: the same wait does not come straight back over the news.
       if (news.length && h.waiting) st.waitingHold = { key: h.waiting.key, until: now() + 4_000 };
       st.modal.api.close();
+    }
+    // behold#757: the step's highlight, once per cycle, step and title, before the critical modals: one due now waits
+    // behind it in the queue, and opens when it closes if its step is still the step.
+    if (highlightOpens({ pending: st.hl.pending, on: st.on, watch: !!h.watch, held: !!h.held, modal: st.modal ? st.modal.kind : null })) {
+      if (st.modal) st.modal.api.close();
+      openHighlight(st.hl.pending, h);
+      st.hl = highlightShown(st.hl);
     }
     // behold#631: a chant repo's approval is the card beside the graph; a modal over it would hide it, so its hold opens none.
     // Its result is the Applied card beside the graph; a modal would say it twice, over the cards.

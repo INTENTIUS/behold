@@ -247,6 +247,8 @@ export function scrubDemo(demo, tool) {
     label: keep(demo.label) ?? "",
     about: about && Object.keys(about).length ? about : null,
     next: demo.next ? { ...demo.next, action: keep(demo.next.action) ?? "the next step" } : null,
+    // behold#757: a step's highlight goes whole when its title or body names a rival: half of it would read wrong.
+    ...(demo.highlight ? { highlight: namesOther(demo.highlight.title, tool) || namesOther(demo.highlight.body, tool) ? null : demo.highlight } : {}),
   };
 }
 
