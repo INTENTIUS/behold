@@ -120,3 +120,26 @@ export function pillSpots(box, p0, w, h, { gaps = [6, 18, 34], slides = [0, -0.3
 export function nearestOn(r, p) {
   return { x: Math.max(r.x, Math.min(p.x, r.x2)), y: Math.max(r.y, Math.min(p.y, r.y2)) };
 }
+
+/**
+ * behold#762: whether a read's root (a path, "apps/app-01", or a name) is the card `id` names: the components zoom names a
+ * card after the root, and the read after its path (tipComponentEdges matches them the same way).
+ */
+const sameEnd = (root, id) => !!root && !!id && (root === id || root.endsWith(`/${id}`));
+
+/**
+ * behold#762: which dependency edges a read line already draws, so a pair gets one line, not two. `deps` are the graph's
+ * edges ({ from, to }, as pinhole names their ends); answers, for each, the key of the read (readKey) whose ends are the
+ * edge's, in either direction, or null when no read covers it.
+ */
+export function coveredEdges(reads, deps) {
+  return (deps || []).map((d) => {
+    const r = (reads || []).find((e) => (sameEnd(e.from, d.from) && sameEnd(e.to, d.to)) || (sameEnd(e.from, d.to) && sameEnd(e.to, d.from)));
+    return r ? readKey(r) : null;
+  });
+}
+
+/** behold#762: what a dependency edge means, in the words its own tooltip had (behold#744), for the read line that stands for it. */
+export function dependsLine(d) {
+  return `${d.from} → ${d.to}\n${d.from} depends on ${d.to}, so ${d.to} applies first`;
+}
