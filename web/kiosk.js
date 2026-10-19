@@ -1097,7 +1097,7 @@ function drawWatchHead(bar, s, now) {
   const dora = doraLine(s.metrics);
   if (dora) {
     const p = el("p", "k-w-dora", dora);
-    if (p.setAttribute) p.setAttribute("title", s.metrics && s.metrics.note ? `${dora}. ${s.metrics.note}` : dora);
+    if (p.setAttribute) p.setAttribute("title", [dora, s.metrics && s.metrics.windowNote, s.metrics && s.metrics.note].filter(Boolean).join(". "));
     bar.appendChild(p);
   }
 }

@@ -127,6 +127,8 @@ describe("kiosk watch: the numbers", () => {
   it("says the delivery numbers on one line, a large rate rounded", () => {
     expect(doraLine(metrics)).toBe("19,489 deploys a week · lead time 1 min 56 s · change failure rate 1% · time to restore 1 min 12 s");
     expect(doraLine({ dora: [["Deploys", "4.5 a week"]] })).toBe("4.5 deploys a week");
+    // behold#786: with the span it counts.
+    expect(doraLine({ dora: [["Deploys", "1526 a week"], ["Lead time", "1 min 21 s"]], window: "last 24 hours" })).toBe("1,526 deploys a week (last 24 hours) · lead time 1 min 21 s");
     expect(doraLine({ dora: null })).toBeNull();
   });
 

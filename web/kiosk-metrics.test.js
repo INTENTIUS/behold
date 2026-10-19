@@ -1,7 +1,7 @@
 // behold#571: the kiosk's "Pipeline metrics" pane, as words. No DOM: the
 // model decides what shows, and an answer with nothing in it shows no pane.
 import { describe, expect, it } from "vitest";
-import { changeWords, METRICS_STORE, metricsModel, metricsStored, metricsTarget, metricsUrl, percentWords, perWeekWords, secondsWords, steadyModel, startMetrics } from "./kiosk-metrics.js";
+import { changeWords, METRICS_STORE, metricsModel, metricsStored, metricsTarget, metricsUrl, percentWords, perWeekWords, secondsWords, spanWords, steadyModel, startMetrics, windowNote } from "./kiosk-metrics.js";
 
 const C1 = "9f3c2a71d04e5b8c6a1f2e3d4c5b6a7980716253";
 const answer = () => ({
@@ -55,6 +55,41 @@ describe("kiosk metrics: what the pane shows", () => {
     expect(metricsModel(a).run.label).toBe("Latest run · 9f3c2a71");
     a.run.commit = null;
     expect(metricsModel(a).run.label).toBe("Latest run");
+  });
+
+  it("names another commit's run as an earlier one while the kiosk's commit has no numbers yet (behold#786)", () => {
+    const a = answer();
+    a.run.current = false;
+    const C2 = "151b3302aaaabbbbccccddddeeeeffff00001111";
+    const m = metricsModel(a, null, C2);
+    expect(m.run.label).toBe("Earlier run · 9f3c2a71");
+    expect(m.run.note).toBe("This run, 151b3302, has no numbers yet.");
+    // Asked for the commit it has, or for none: as before.
+    expect(metricsModel(a, null, C1).run).toMatchObject({ label: "Latest run · 9f3c2a71" });
+    expect(metricsModel(a, null, C1).run.note).toBeUndefined();
+    expect(metricsModel(a, null, null).run.label).toBe("Latest run · 9f3c2a71");
+  });
+
+  it("says a wave whose job failed, over its roots' times (behold#786)", () => {
+    const a = answer();
+    a.run.waves[1] = { ...a.run.waves[1], seconds: 13, result: "failed" };
+    a.run.waves[0] = { ...a.run.waves[0], result: "applied" };
+    const [w1, w2] = metricsModel(a).run.waves;
+    expect([w1.head, w1.result]).toEqual(["Wave 1", "applied"]);
+    expect([w2.head, w2.took, w2.result]).toEqual(["Wave 2 · failed", "13 s in all", "failed"]);
+  });
+
+  it("says what span the delivery numbers cover, when the answer names it (behold#786)", () => {
+    expect([3600, 86400, 32 * 3600, 3.5 * 86400, 52 * 86400, 0, undefined].map(spanWords)).toEqual(["1 hour", "24 hours", "32 hours", "3.5 days", "7.4 weeks", null, null]);
+    const a = answer();
+    a.dora.span_seconds = 86400;
+    const m = metricsModel(a);
+    expect(m.window).toBe("last 24 hours");
+    expect(m.windowNote).toBe(windowNote("24 hours"));
+    expect(m.windowNote).toMatch(/^Deploys are the applied waves of the last 24 hours, scaled to a week\./);
+    expect(metricsModel(answer()).window).toBeUndefined();
+    // The window goes with the numbers: kept through a read that has none.
+    expect(steadyModel(m, { ...metricsModel({ ...a, dora: null }) }, { same: true }).window).toBe("last 24 hours");
   });
 
   it("a waiting wave says since when, by the viewer's clock", () => {

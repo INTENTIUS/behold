@@ -19,7 +19,10 @@
  *   otherwise the newest one it has. `dora` is the estate's four delivery
  *   metrics for the repo, from terragucci estate's gauges, or from the
  *   `dora.json` it writes beside the reports when Prometheus has none.
- *   Either is null when there is nothing to show.
+ *   Either is null when there is nothing to show. behold#786: each wave
+ *   carries its job's result (`failed`, `applied`, `nothing`), and `dora`
+ *   the span its deploy rate divides by (`span_seconds`, from dora.json),
+ *   so the pane can say what the numbers cover.
  * - One read asks every query for every project, and is shared by every
  *   repo's request for {@link METRICS_TTL_MS}, as the reports read is: any
  *   number of open kiosks ask Prometheus at most that often.
@@ -58,7 +61,8 @@ const newest = (selector: string): string => `last_over_time((max by (project) (
  * ever put in one. Each keeps only the labels behold reads.
  */
 export const QUERIES = {
-  waveSeconds: `max by (project, commit, run, wave) (last_over_time(terragucci_stage_duration_seconds{stage="tf-apply"}[${RUN_WINDOW}]))`,
+  // behold#786: the stage's result stays a label, so a wave that failed says so.
+  waveSeconds: `max by (project, commit, run, wave, result) (last_over_time(terragucci_stage_duration_seconds{stage="tf-apply"}[${RUN_WINDOW}]))`,
   rootInit: `max by (project, commit, run, wave, root) (last_over_time(terragucci_root_init_seconds{stage="tf-apply"}[${RUN_WINDOW}]))`,
   rootPlan: `max by (project, commit, run, wave, root) (last_over_time(terragucci_root_plan_seconds{stage="tf-apply"}[${RUN_WINDOW}]))`,
   rootApply: `max by (project, commit, run, wave, root) (last_over_time(terragucci_root_apply_seconds{stage="tf-apply"}[${RUN_WINDOW}]))`,
@@ -98,6 +102,8 @@ export interface WaveMetrics {
   run: string | null;
   /** The wave job's own time, from its stage's start to its end. */
   seconds?: number;
+  /** behold#786: the stage's result, as terragucci names it ("applied", "failed", "nothing"), when its gauge carries one. */
+  result?: string;
   roots: WaveRoot[];
   /** How long an approval held the wave at its gate. */
   held_seconds?: number;
@@ -120,6 +126,8 @@ export interface RunMetrics {
 export interface DoraMetrics {
   /** Where the numbers came from. */
   from: "prometheus" | "dora.json";
+  /** behold#786: what the deploy rate divides by: from the estate run back to the oldest apply on record, at least a day (terragucci's dora.json). */
+  span_seconds?: number;
   deployments_per_week?: number;
   lead_time_seconds?: number;
   change_failure_ratio?: number;
@@ -210,7 +218,10 @@ export function runOf(a: Answers, repo: string, commit?: string): RunMetrics | n
       const r = s.labels.root;
       if (r && roots.has(r) && projectIs(s.labels.project, repo) && (s.labels.commit ?? "") === chosen && (s.labels.run ?? "") === run) put(r, { lock_wait_seconds: s.value });
     }
-    const wall = of(rows.waveSeconds, wave, run)[0];
+    // A wave that waited and went on in the same run has a series per result: the time is the longest, the result the one it ended on.
+    const walls = of(rows.waveSeconds, wave, run);
+    const wall = walls.length ? { value: Math.max(...walls.map((s) => s.value)) } : undefined;
+    const result = (walls.find((s) => s.labels.result && s.labels.result !== "waiting") ?? walls.find((s) => s.labels.result))?.labels.result;
     const changes: Record<string, number> = {};
     for (const s of of(rows.changes, wave, run)) if (s.labels.action && s.value > 0) changes[s.labels.action] = s.value;
     const held = of(rows.held, wave, run)[0];
@@ -220,6 +231,7 @@ export function runOf(a: Answers, repo: string, commit?: string): RunMetrics | n
       wave,
       run: run || null,
       ...(wall ? { seconds: wall.value } : {}),
+      ...(result ? { result } : {}),
       roots: [...roots.values()].sort((x, y) => x.root.localeCompare(y.root)),
       ...(held ? { held_seconds: held.value } : {}),
       changes,
@@ -250,7 +262,7 @@ export function doraFromFile(text: string | undefined, repo: string): { dora: Do
   const projects = (doc as { projects?: unknown }).projects;
   if (!Array.isArray(projects)) return null;
   const p = projects.find((x) => x && typeof x === "object" && projectIs((x as { project?: string }).project, repo)) as
-    | { project: string; per_week?: unknown; lead_time?: { median_seconds?: unknown }; change_failure?: { rate?: unknown }; restore?: { median_seconds?: unknown } }
+    | { project: string; per_week?: unknown; span_seconds?: unknown; lead_time?: { median_seconds?: unknown }; change_failure?: { rate?: unknown }; restore?: { median_seconds?: unknown } }
     | undefined;
   if (!p) return null;
   const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
@@ -259,6 +271,7 @@ export function doraFromFile(text: string | undefined, repo: string): { dora: Do
     lead_time_seconds: num(p.lead_time?.median_seconds),
     change_failure_ratio: num(p.change_failure?.rate),
     restore_seconds: num(p.restore?.median_seconds),
+    span_seconds: num(p.span_seconds),
   };
   const set = Object.fromEntries(Object.entries(d).filter(([, v]) => v !== undefined));
   return Object.keys(set).length ? { dora: { from: "dora.json", ...set }, project: p.project } : null;
@@ -335,13 +348,12 @@ export function metricsRoute(app: Hono, opts: MetricsOptions): void {
     const run = runOf(a, repo, asked);
     let d = doraOf(a, repo);
     let project = [...a.settled, ...a.waiting, ...a.rootPlan, ...a.deployments].find((s) => projectIs(s.labels.project, repo))?.labels.project ?? null;
-    if (!d) {
-      const f = doraFromFile(await doraText(), repo);
-      if (f) {
-        d = f.dora;
-        project ??= f.project;
-      }
-    }
+    // behold#786: dora.json, written by the same estate run as the gauges, says the span the deploy rate covers.
+    const f = opts.doraFile ? doraFromFile(await doraText(), repo) : null;
+    if (!d && f) {
+      d = f.dora;
+      project ??= f.project;
+    } else if (d && f && f.dora.span_seconds !== undefined) d = { ...d, span_seconds: f.dora.span_seconds };
     const body: MetricsAnswer = { read: (opts.now ? opts.now() : new Date()).toISOString(), repo, project, run, dora: d };
     return c.json(body, 200, { "cache-control": "no-store" });
   });
