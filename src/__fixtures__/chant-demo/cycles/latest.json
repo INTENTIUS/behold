@@ -40,7 +40,8 @@
    "reports": {
     "url": "s3://chant-demo/fan-out-estate/reports",
     "plan": "773/6d4a48da36317886b549ca0d46c44646e697f561"
-   }
+   },
+   "cycle_reports": []
   },
   {
    "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
@@ -76,7 +77,15 @@
    "reports": {
     "url": "s3://chant-demo/fan-out-estate/reports",
     "plan": "773/6d4a48da36317886b549ca0d46c44646e697f561"
-   }
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    }
+   ]
   },
   {
    "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
@@ -112,7 +121,15 @@
    "reports": {
     "url": "s3://chant-demo/fan-out-estate/reports",
     "plan": "773/6d4a48da36317886b549ca0d46c44646e697f561"
-   }
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    }
+   ]
   },
   {
    "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
@@ -147,7 +164,15 @@
    "reports": {
     "url": "s3://chant-demo/fan-out-estate/reports",
     "plan": "773/6d4a48da36317886b549ca0d46c44646e697f561"
-   }
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    }
+   ]
   },
   {
    "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
@@ -183,7 +208,15 @@
     "url": "s3://chant-demo/fan-out-estate/reports",
     "plan": "773/6d4a48da36317886b549ca0d46c44646e697f561",
     "apply": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
-   }
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    }
+   ]
   },
   {
    "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
@@ -219,7 +252,15 @@
     "url": "s3://chant-demo/fan-out-estate/reports",
     "plan": "773/6d4a48da36317886b549ca0d46c44646e697f561",
     "apply": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
-   }
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    }
+   ]
   },
   {
    "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
@@ -256,7 +297,21 @@
     "url": "s3://chant-demo/fan-out-estate/reports",
     "plan": "773/6d4a48da36317886b549ca0d46c44646e697f561",
     "apply": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
-   }
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    },
+    {
+     "stage": "apply",
+     "pr": 773,
+     "commit": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+     "key": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
+    }
+   ]
   },
   {
    "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
@@ -291,7 +346,21 @@
    "reports": {
     "url": "s3://chant-demo/fan-out-estate/reports",
     "plan": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404"
-   }
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    },
+    {
+     "stage": "apply",
+     "pr": 773,
+     "commit": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+     "key": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
+    }
+   ]
   },
   {
    "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
@@ -327,7 +396,27 @@
    "reports": {
     "url": "s3://chant-demo/fan-out-estate/reports",
     "plan": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404"
-   }
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    },
+    {
+     "stage": "apply",
+     "pr": 773,
+     "commit": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+     "key": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
+    },
+    {
+     "stage": "plan",
+     "pr": 774,
+     "commit": "47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
+     "key": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404"
+    }
+   ]
   },
   {
    "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
@@ -363,7 +452,27 @@
    "reports": {
     "url": "s3://chant-demo/fan-out-estate/reports",
     "plan": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404"
-   }
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    },
+    {
+     "stage": "apply",
+     "pr": 773,
+     "commit": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+     "key": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
+    },
+    {
+     "stage": "plan",
+     "pr": 774,
+     "commit": "47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
+     "key": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404"
+    }
+   ]
   },
   {
    "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
@@ -398,7 +507,27 @@
    "reports": {
     "url": "s3://chant-demo/fan-out-estate/reports",
     "plan": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404"
-   }
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    },
+    {
+     "stage": "apply",
+     "pr": 773,
+     "commit": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+     "key": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
+    },
+    {
+     "stage": "plan",
+     "pr": 774,
+     "commit": "47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
+     "key": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404"
+    }
+   ]
   },
   {
    "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
@@ -434,7 +563,27 @@
     "url": "s3://chant-demo/fan-out-estate/reports",
     "plan": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
     "apply": "774/80eef4a5e0eb747fddb04a7067e91ea59dd8dade"
-   }
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    },
+    {
+     "stage": "apply",
+     "pr": 773,
+     "commit": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+     "key": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
+    },
+    {
+     "stage": "plan",
+     "pr": 774,
+     "commit": "47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
+     "key": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404"
+    }
+   ]
   },
   {
    "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
@@ -470,7 +619,27 @@
     "url": "s3://chant-demo/fan-out-estate/reports",
     "plan": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
     "apply": "774/80eef4a5e0eb747fddb04a7067e91ea59dd8dade"
-   }
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    },
+    {
+     "stage": "apply",
+     "pr": 773,
+     "commit": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+     "key": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
+    },
+    {
+     "stage": "plan",
+     "pr": 774,
+     "commit": "47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
+     "key": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404"
+    }
+   ]
   },
   {
    "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
@@ -507,7 +676,33 @@
     "url": "s3://chant-demo/fan-out-estate/reports",
     "plan": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
     "apply": "774/80eef4a5e0eb747fddb04a7067e91ea59dd8dade"
-   }
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    },
+    {
+     "stage": "apply",
+     "pr": 773,
+     "commit": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+     "key": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
+    },
+    {
+     "stage": "plan",
+     "pr": 774,
+     "commit": "47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
+     "key": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404"
+    },
+    {
+     "stage": "apply",
+     "pr": 774,
+     "commit": "80eef4a5e0eb747fddb04a7067e91ea59dd8dade",
+     "key": "774/80eef4a5e0eb747fddb04a7067e91ea59dd8dade"
+    }
+   ]
   },
   {
    "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
@@ -541,7 +736,33 @@
    "at": "2026-10-19T02:27:37Z",
    "reports": {
     "url": "s3://chant-demo/fan-out-estate/reports"
-   }
+   },
+   "cycle_reports": [
+    {
+     "stage": "plan",
+     "pr": 773,
+     "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+     "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+    },
+    {
+     "stage": "apply",
+     "pr": 773,
+     "commit": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+     "key": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
+    },
+    {
+     "stage": "plan",
+     "pr": 774,
+     "commit": "47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
+     "key": "774/47f4df6dc66e00aa3cff1d8a1512554ee3bb8404"
+    },
+    {
+     "stage": "apply",
+     "pr": 774,
+     "commit": "80eef4a5e0eb747fddb04a7067e91ea59dd8dade",
+     "key": "774/80eef4a5e0eb747fddb04a7067e91ea59dd8dade"
+    }
+   ]
   }
  ],
  "reports": [

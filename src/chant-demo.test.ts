@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
-import { CHANT_DEMO_TOOL, ChantDemo, chantDemoRoutes, contractRefusal, DEMO_CYCLE_SCHEMA, DEMO_STEP_SCHEMA, readDemoCycle, readStep, runIdFor, schemaProblem, type DemoRun } from "./chant-demo.ts";
+import { CHANT_DEMO_TOOL, ChantDemo, chantDemoRoutes, contractRefusal, DEMO_CYCLE_SCHEMA, DEMO_STEP_SCHEMA, knownStep, readDemoCycle, readerSchema, readStep, runIdFor, schemaProblem, type DemoRun } from "./chant-demo.ts";
 import { readChantPr, type RunDoc } from "./chant-pr.ts";
 import { kioskRoute, vendorRoutes } from "./terragucci-demo.ts";
 import { terragucciSource, type TerragucciSource } from "./terragucci-source.ts";
@@ -87,11 +87,29 @@ describe("step.json, demo-step/v1 (behold#752)", () => {
     expect(contractRefusal({ $schema: DEMO_CYCLE_SCHEMA, contract: 1 }, "demo-step")?.problem).toMatch(/not https:\/\/intentius\.io\/chant\/schemas\/demo\/demo-step\/v1/);
     expect(contractRefusal({ $schema: DEMO_STEP_SCHEMA }, "demo-step")?.problem).toMatch(/contract is null/);
   });
-  it("refuses what the schema refuses: a report key not in reportKey(pr, commit) form, a step it doesn't know", async () => {
+  it("refuses what the schema refuses: a report key not in reportKey(pr, commit) form, a report URL not s3:// or https://", async () => {
     const key = await readStep(memory({ "step.json": step({ reports: { url: REPORTS_URL, plan: "773/not-a-sha" } }) }));
     expect("error" in key && key.error).toMatch(/demo-step\/v1 format: \/reports\/plan must match pattern/);
-    const s = await readStep(memory({ "step.json": step({ step: "teleported" }) }));
-    expect("error" in s && s.error).toMatch(/\/step must be equal to one of the allowed values/);
+    for (const url of ["file:///etc", "http://elsewhere/r", "/srv/reports"]) {
+      const u = await readStep(memory({ "step.json": step({ reports: { url } }) }));
+      expect("error" in u && u.error).toMatch(/\/reports\/url must match pattern "\^\(s3\|https\):\/\/"/);
+    }
+  });
+  it("reads a step it doesn't know as unclassified, never refusing the record (chant#4102: steps are added within contract 1)", async () => {
+    const a = await readStep(memory({ "step.json": step({ step: "rolling-back", label: "Something new." }) }));
+    expect(a.demo).toMatchObject({ step: "rolling-back", label: "Something new.", chapter: { n: 2 } });
+    expect(knownStep(a.demo!.step)).toBe(false);
+    expect(knownStep("failed")).toBe(true);
+    const c = json("cycles/latest.json");
+    const steps = (c.steps as Record<string, unknown>[]).map((x, i) => (i === 3 ? { ...x, step: "rolling-back" } : x));
+    const r = await readDemoCycle(memory({ "cycles/latest.json": { ...c, steps } }));
+    expect(r.cycle!.steps[3]!.step).toBe("rolling-back");
+    // The vendored schema keeps chant's enum; only the reader leaves it out.
+    expect(JSON.stringify(readerSchema("demo-step"))).not.toContain('"rolling-back"');
+  });
+  it("reads the cycle's stages so far, in run order", async () => {
+    const a = await readStep(records);
+    expect(a.demo!.cycleReports!.map((r) => `${r.stage} ${r.pr}`)).toEqual(["plan 773", "apply 773"]);
   });
   it("says where the record is missing", async () => {
     const a = await readStep(memory({}));
@@ -210,6 +228,33 @@ describe("/api/chant/pr on the demo's repo reads the step's keys, not the workfl
     const a = await readChantPr(checkout(), MERGE_774, deps);
     expect(a.apply).toMatchObject({ from: "report", status: "applied", pr: 774 });
     expect(a.live!.earlier).toEqual({ runs: [61002], applied: ["app-07", "app-08", "app-09", "app-10", "app-11", "app-12", "cluster-b", "network"] });
+  });
+  it("mid-cycle, with no published cycle: the step's cycle_reports name the change's apply", async () => {
+    const fix = (json("cycles/latest.json").steps as Record<string, unknown>[])[12]!;
+    expect(fix).toMatchObject({ step: "applying", pull: 774 });
+    const only = new ChantDemo({ source: "mem", sourceOf: (u) => (u === "mem" ? memory({ "step.json": { ...fix, cycle: 611 } }) : sourceOf(u)) });
+    const a = await readChantPr(checkout(), MERGE_774, { ...noLedger, reportSource: sourceOf, demoReports: (d: string) => only.prReports(d, noGit) });
+    expect(a.live!.earlier).toEqual({ runs: [runIdFor(611, 2)], applied: ["app-07", "app-08", "app-09", "app-10", "app-11", "app-12", "cluster-b", "network"] });
+  });
+  it("without cycle_reports, falls back to the keys the steps read so far named", async () => {
+    const all = json("cycles/latest.json").steps as Record<string, unknown>[];
+    const bare = (i: number) => {
+      const { cycle_reports: _c, ...x } = all[i]!;
+      return { ...x, cycle: 611 };
+    };
+    const files: Record<string, unknown> = { "step.json": bare(12) };
+    const late = new ChantDemo({ source: "mem", sourceOf: (u) => (u === "mem" ? memory(files) : sourceOf(u)) });
+    const deps = { ...noLedger, reportSource: sourceOf, demoReports: (d: string) => late.prReports(d, noGit) };
+    // Started at the fix's apply: it never saw the change's, so it can't name what that landed.
+    expect((await readChantPr(checkout(), MERGE_774, deps)).live!.earlier).toBeUndefined();
+    // One that read the failed step first remembers its apply.
+    const seen = new ChantDemo({ source: "mem2", sourceOf: (u) => (u === "mem2" ? { ...memory({}), read: async (k: string) => (k === "step.json" ? JSON.stringify(files["step.json"]) : undefined) } as TerragucciSource : sourceOf(u)) });
+    files["step.json"] = bare(6);
+    await seen.readStep();
+    await new Promise((r) => setTimeout(r, 2_100));
+    files["step.json"] = bare(12);
+    const b = await readChantPr(checkout(), MERGE_774, { ...deps, demoReports: (d: string) => seen.prReports(d, noGit) });
+    expect(b.live!.earlier?.applied).toContain("cluster-b");
   });
   it("the pull request's plan before the merge", async () => {
     const a = await readChantPr(checkout(), `pull-774-${HEAD_774}`, deps);

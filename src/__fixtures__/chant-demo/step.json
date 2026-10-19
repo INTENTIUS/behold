@@ -33,5 +33,19 @@
   "url": "s3://chant-demo/fan-out-estate/reports",
   "plan": "773/6d4a48da36317886b549ca0d46c44646e697f561",
   "apply": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
- }
+ },
+ "cycle_reports": [
+  {
+   "stage": "plan",
+   "pr": 773,
+   "commit": "6d4a48da36317886b549ca0d46c44646e697f561",
+   "key": "773/6d4a48da36317886b549ca0d46c44646e697f561"
+  },
+  {
+   "stage": "apply",
+   "pr": 773,
+   "commit": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+   "key": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
+  }
+ ]
 }

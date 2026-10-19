@@ -600,13 +600,17 @@ those keys, for the graph's waves and the gate. The runs pane shows one run per
 stage, built from its run events: the plan, the gate and each wave as steps,
 each with the events' lines. Nothing is read from forge runs, and the
 pipeline's `--report-url` is not looked up in the workflow file.
-`--chant-report-url`, when given, overrides the step's `url`. A step whose
-`url` is not `s3://` or `https://` is read from `reports/` beside the
-records.
+`--chant-report-url`, when given, overrides the step's `url`. The step's
+`cycle_reports`, every stage of the cycle so far, name the first apply's key,
+so the fix's run shows what that apply landed even when behold started
+mid-cycle.
 
 Each record is checked against chant's schema before it is read. A record of
 another contract version (`contract`, or the `v<n>` in its `$schema`) is
-refused, and the page says which version behold reads. Without
+refused, and the page says which version behold reads. So is a `reports.url`
+that is not `s3://` or `https://`. A `step` behold doesn't know is not
+refused: chant may add steps within a version, so the page shows it by its
+name and lights no stop. Without
 `--chant-demo`, every page reads terragucci's loop as above.
 
 ## Try it on terragucci's example

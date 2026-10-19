@@ -34,6 +34,11 @@
  * {@link DEMO_CONTRACT}, is refused with the version behold reads, never
  * read field by field.
  *
+ * One part of the schema is not enforced: `step`'s enum, which lists what a
+ * writer may write in contract 1. Steps can be added within the contract, so
+ * a step behold doesn't know is shown by its name and lights no stop of the
+ * strip, never refused ({@link readerSchema}).
+ *
  * demo-step/v1 requires only `$schema`, `contract`, `demo`, `cycle` and
  * `step`; everything the kiosk shows is optional, so a missing field reads
  * as the kiosk's own "none" (an empty label, no chapter, no card). Fields
@@ -55,7 +60,7 @@ export const DEMO_SCHEMA_SOURCE = {
   repo: "INTENTIUS/chant",
   path: "examples/fan-out-estate/demo/schemas/",
   pr: 4102,
-  commit: "31df1762c7ddad73719ee33c7ea0ff4cbf84dc2f",
+  commit: "ae1669be561a9ef3c6f5b89f824e4326710ebc92",
 } as const;
 
 /** The demo contract version behold reads (`contract: 1`). */
@@ -87,7 +92,15 @@ export interface StepReports {
 }
 
 /** A demo-step/v1 write as the kiosk reads it: demo.json's fields, and the step's own. */
-export type ChantStep = Demo & { demo: string; at: string | null; reports: StepReports | null };
+export type ChantStep = Omit<Demo, "step"> & {
+  /** The step as written. One outside {@link DEMO_STEPS} is a step added within contract 1 that this behold can't classify: shown by its own name, never refused. */
+  step: DemoStep | string;
+  demo: string;
+  at: string | null;
+  reports: StepReports | null;
+  /** `cycle_reports`: every stage of the cycle so far, in the order they ran; null when the step names none. */
+  cycleReports: CycleReport[] | null;
+};
 
 /** One stage a cycle ran, by its report key. */
 export interface CycleReport {
@@ -150,12 +163,29 @@ export function contractRefusal(doc: Record<string, unknown>, kind: DemoKind): C
 
 type Validator = ((v: unknown) => boolean) & { errors?: Array<{ instancePath?: string; message?: string }> | null };
 const validators: Partial<Record<DemoKind, Validator>> = {};
-/** What the vendored schema says is wrong with `doc`, or undefined. */
+
+/**
+ * The schema behold validates with: chant's, less `step`'s enum. The enum is
+ * what a writer may write in contract 1, and a step can be added within it, so
+ * a reader takes any string there and leaves a step it doesn't know
+ * unclassified (chant#4102). The vendored file stays as chant wrote it.
+ */
+export function readerSchema(kind: DemoKind): Record<string, unknown> {
+  const schema = structuredClone(kind === "demo-step" ? demoStepSchema : demoCycleSchema) as Record<string, any>;
+  const steps = kind === "demo-step" ? schema.properties?.step : schema.$defs?.cycleStep?.properties?.step;
+  if (steps && Array.isArray(steps.enum)) {
+    delete steps.enum;
+    steps.type = "string";
+  }
+  return schema;
+}
+
+/** What the vendored schema (as a reader takes it, {@link readerSchema}) says is wrong with `doc`, or undefined. */
 export function schemaProblem(doc: unknown, kind: DemoKind): string | undefined {
   let v = validators[kind];
   if (!v) {
     const ajv = new Ajv2020({ strict: false, allErrors: false });
-    v = validators[kind] = ajv.compile((kind === "demo-step" ? demoStepSchema : demoCycleSchema) as object) as Validator;
+    v = validators[kind] = ajv.compile(readerSchema(kind)) as Validator;
   }
   if (v(doc)) return undefined;
   const e = v.errors?.[0];
@@ -184,7 +214,7 @@ export function stepOf(d: Record<string, unknown>): ChantStep {
     cycle: d.cycle as number,
     scenario: text(d.scenario) ?? (demo || "demo"),
     title: str(d.title) ? d.title : "",
-    step: d.step as DemoStep,
+    step: d.step as string,
     label: str(d.label) ? d.label : "",
     started_at: str(d.started_at) ? d.started_at : str(d.at) ? d.at : "",
     next: next ? { action: str(next.action) ? next.action : "the next step", ...(str(next.from) ? { from: next.from } : {}), at: str(next.at) ? next.at : null } : null,
@@ -203,12 +233,20 @@ export function stepOf(d: Record<string, unknown>): ChantStep {
     ...(chapter ? { chapter } : {}),
     at: str(d.at) ? d.at : null,
     reports: r ? { url: text(r.url), plan: str(r.plan) ? r.plan : null, apply: str(r.apply) ? r.apply : null } : null,
+    cycleReports: Array.isArray(d.cycle_reports) ? reportsOf(d.cycle_reports) : null,
   };
 }
 
-/** The checks a record passes past its schema: the step names one the kiosk knows (the schema's set, which behold#752 reads in full). */
-export function stepProblem(d: Record<string, unknown>): string | undefined {
-  return str(d.step) && (DEMO_STEPS as readonly string[]).includes(d.step) ? undefined : `step ${JSON.stringify(d.step)} is not one behold knows (${DEMO_STEPS.join(", ")})`;
+/** demo-cycle's `reports` or a step's `cycle_reports`, which their schema passed, in the order the stages ran. */
+const reportsOf = (list: unknown[]): CycleReport[] =>
+  (list as Record<string, unknown>[]).map((r) => ({ stage: r.stage as "plan" | "apply", pr: r.pr as number, commit: r.commit as string, key: r.key as string }));
+
+/** Whether behold can classify a step: one of the steps it knows. Any other is shown by its name and lights no stop. */
+export const knownStep = (step: string): step is DemoStep => (DEMO_STEPS as readonly string[]).includes(step);
+
+/** The checks a step passes past its schema: none. An unknown `step` is unclassified, never a refusal (chant#4102). */
+export function stepProblem(_d: Record<string, unknown>): string | undefined {
+  return undefined;
 }
 
 /** The id the runs pane gives a cycle's `n`th stage (1-based): ordered as they ran, and unique across cycles. */
@@ -222,7 +260,8 @@ export function cycleOf(d: Record<string, unknown>): ChantCycle {
     const step = stepOf({ demo: d.demo, ...(str(d.repo) ? { repo: d.repo } : {}), cycle, ...s });
     return { ...step, at: s.at as string };
   });
-  const reports: CycleReport[] = (Array.isArray(d.reports) ? (d.reports as Record<string, unknown>[]) : []).map((r) => ({ stage: r.stage as "plan" | "apply", pr: r.pr as number, commit: r.commit as string, key: r.key as string }));
+  // In the order the stages ran (chant#4102), which the run ids keep.
+  const reports = reportsOf(Array.isArray(d.reports) ? d.reports : []);
   const repo = text(d.repo) ?? steps.map((s) => s.repo).find((x) => !!x) ?? "";
   return {
     tool: CHANT_DEMO_TOOL,
@@ -237,15 +276,9 @@ export function cycleOf(d: Record<string, unknown>): ChantCycle {
   };
 }
 
-/** The cycle's own checks past its schema: at least one step, each one the kiosk knows. */
+/** The cycle's own check past its schema: a step to replay. */
 export function cycleProblem(d: Record<string, unknown>): string | undefined {
-  const steps = d.steps as Record<string, unknown>[];
-  if (!steps.length) return "steps is empty";
-  for (const [i, s] of steps.entries()) {
-    const p = stepProblem(s);
-    if (p) return `steps[${i}]: ${p}`;
-  }
-  return undefined;
+  return (d.steps as unknown[]).length ? undefined : "steps is empty";
 }
 
 type Read<T> = { ok: T } | { absent: true } | { error: string; remedy?: string };
@@ -495,8 +528,15 @@ export class ChantDemo {
     return this.latest.read;
   }
 
+  /**
+   * The cycle in progress's stages: the step's `cycle_reports` when it writes
+   * them (in run order), else the keys the steps read so far named, a list a
+   * behold started mid-cycle only has from its start. Then the step's own keys
+   * not in it yet (a stage whose report isn't written).
+   */
   private note(step: ChantStep): void {
-    if (!this.live || this.live.cycle !== step.cycle) this.live = { cycle: step.cycle, reports: [] };
+    if (step.cycleReports) this.live = { cycle: step.cycle, reports: [...step.cycleReports] };
+    else if (!this.live || this.live.cycle !== step.cycle) this.live = { cycle: step.cycle, reports: [] };
     for (const stage of ["plan", "apply"] as const) {
       const key = step.reports?.[stage];
       if (!key || this.live.reports.some((r) => r.stage === stage && r.key === key)) continue;
@@ -507,14 +547,15 @@ export class ChantDemo {
 
   /**
    * Where chant's reports are read: `--chant-report-url` when serve was given
-   * one; else the step's `reports.url` when it is an s3:// or https://
-   * address (never a file a bucket's record could point behold at); else
-   * `reports/` beside the records.
+   * one; else the step's `reports.url`, which the schema holds to s3:// or
+   * https:// (a record with another is refused whole); else, with no valid
+   * record naming one (step.json refused or not there, and no cycle step with
+   * a URL), `reports/` beside the records.
    */
   reportsUrl(step: { reports: StepReports | null } | null): string {
     if (this.opts.reportUrl) return this.opts.reportUrl;
     const u = step?.reports?.url;
-    if (u && /^(s3|https):\/\//.test(u)) return u;
+    if (u) return u;
     const base = this.opts.source.replace(/\/+$/, "");
     return `${base}/${REPORTS_DIR}`;
   }
@@ -575,9 +616,8 @@ export class ChantDemo {
       const want = repo ?? "";
       if (!want || !(here.full === want || here.name === want.slice(want.lastIndexOf("/") + 1))) return null;
     }
-    const runs: RunDoc[] = entries
-      .map((e) => ({ id: e.id, event: e.stage === "plan" ? "pull_request" : "push", trigger: e.stage === "plan" ? "plan" : "merge", commit: e.commit, pull: e.pr, cycle: e.cycle, status: "success", jobs: [], reportKey: e.key }))
-      .sort((a, b) => b.id - a.id);
+    // Newest first, as a runs index is: the entries are in run order (chant#4102), so reversed.
+    const runs: RunDoc[] = entries.map((e) => ({ id: e.id, event: e.stage === "plan" ? "pull_request" : "push", trigger: e.stage === "plan" ? "plan" : "merge", commit: e.commit, pull: e.pr, cycle: e.cycle, status: "success", jobs: [], reportKey: e.key })).reverse();
     return { url, runs };
   }
 }
@@ -596,7 +636,7 @@ export function chantDemoRoutes(app: Hono, demo: ChantDemo): void {
   app.get("/api/chant/demo/runs", async (c) => {
     const { entries, repo, url } = await demo.entries();
     const runs = await Promise.all(entries.map((e) => demo.run(e, repo ?? "", url)));
-    return c.json({ ...read(new Date()), key: "runs", doc: { schema: "demo.runs/v1", runs: runs.sort((a, b) => b.id - a.id).map(indexEntry) } }, 200, { "cache-control": "no-store" });
+    return c.json({ ...read(new Date()), key: "runs", doc: { schema: "demo.runs/v1", runs: [...runs].reverse().map(indexEntry) } }, 200, { "cache-control": "no-store" });
   });
   app.get("/api/chant/demo/runs/:id", async (c) => {
     const raw = c.req.param("id");
