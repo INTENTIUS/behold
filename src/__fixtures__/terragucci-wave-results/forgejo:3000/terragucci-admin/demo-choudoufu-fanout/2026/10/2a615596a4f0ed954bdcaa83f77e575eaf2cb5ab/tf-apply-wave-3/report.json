@@ -1,0 +1,148 @@
+{
+ "schema": "terragucci.report/v1",
+ "minor": 41,
+ "run": {
+  "project": "forgejo:3000/terragucci-admin/demo-choudoufu-fanout",
+  "commit": "2a615596a4f0ed954bdcaa83f77e575eaf2cb5ab",
+  "job_url": "http://forgejo:3000/terragucci-admin/demo-choudoufu-fanout/actions/runs/6745",
+  "commit_url": "http://forgejo:3000/terragucci-admin/demo-choudoufu-fanout/commit/2a615596a4f0ed954bdcaa83f77e575eaf2cb5ab",
+  "stage": "tf-apply",
+  "wave": 3,
+  "binary": "choudoufu",
+  "runtime": "forge",
+  "started": "2026-10-19T01:58:42.521Z",
+  "finished": "2026-10-19T01:58:52.464Z",
+  "terragucci": "0.4.35",
+  "trace_id": "8ebb6c1aee7a752e5a2a4d2b16407975"
+ },
+ "roots": [
+  {
+   "path": "app-07",
+   "status": "planned",
+   "changes": []
+  },
+  {
+   "path": "app-08",
+   "status": "planned",
+   "changes": []
+  },
+  {
+   "path": "app-09",
+   "status": "planned",
+   "changes": []
+  },
+  {
+   "path": "app-10",
+   "status": "planned",
+   "changes": []
+  },
+  {
+   "path": "app-11",
+   "status": "planned",
+   "changes": []
+  },
+  {
+   "path": "app-12",
+   "status": "planned",
+   "changes": []
+  }
+ ],
+ "waves": [
+  {
+   "number": 3,
+   "roots": [
+    "app-07",
+    "app-08",
+    "app-09",
+    "app-10",
+    "app-11",
+    "app-12"
+   ],
+   "set_digest": "jcs1-sha256:5f21673dded02f8058c07d7700a863cf395e5e9cd570ea47cc3375556fadaf07",
+   "approval": "not-required",
+   "state": "applied",
+   "blocked": [
+    {
+     "root": "app-01",
+     "blocked_by": "cluster-a"
+    },
+    {
+     "root": "app-02",
+     "blocked_by": "cluster-a"
+    },
+    {
+     "root": "app-03",
+     "blocked_by": "cluster-a"
+    },
+    {
+     "root": "app-04",
+     "blocked_by": "cluster-a"
+    },
+    {
+     "root": "app-05",
+     "blocked_by": "cluster-a"
+    },
+    {
+     "root": "app-06",
+     "blocked_by": "cluster-a"
+    }
+   ],
+   "outcomes": [
+    {
+     "root": "app-01",
+     "outcome": "blocked",
+     "blocked_by": "cluster-a"
+    },
+    {
+     "root": "app-02",
+     "outcome": "blocked",
+     "blocked_by": "cluster-a"
+    },
+    {
+     "root": "app-03",
+     "outcome": "blocked",
+     "blocked_by": "cluster-a"
+    },
+    {
+     "root": "app-04",
+     "outcome": "blocked",
+     "blocked_by": "cluster-a"
+    },
+    {
+     "root": "app-05",
+     "outcome": "blocked",
+     "blocked_by": "cluster-a"
+    },
+    {
+     "root": "app-06",
+     "outcome": "blocked",
+     "blocked_by": "cluster-a"
+    },
+    {
+     "root": "app-07",
+     "outcome": "applied"
+    },
+    {
+     "root": "app-08",
+     "outcome": "applied"
+    },
+    {
+     "root": "app-09",
+     "outcome": "applied"
+    },
+    {
+     "root": "app-10",
+     "outcome": "applied"
+    },
+    {
+     "root": "app-11",
+     "outcome": "applied"
+    },
+    {
+     "root": "app-12",
+     "outcome": "applied"
+    }
+   ]
+  }
+ ]
+}

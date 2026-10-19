@@ -1,0 +1,152 @@
+{
+ "schema": "terragucci.report/v1",
+ "minor": 41,
+ "run": {
+  "project": "forgejo:3000/terragucci-admin/demo-choudoufu-fanout",
+  "commit": "5cfbdb79c7a45d4b4d80e4c8e2a200afcc9c225e",
+  "job_url": "http://forgejo:3000/terragucci-admin/demo-choudoufu-fanout/actions/runs/6748",
+  "commit_url": "http://forgejo:3000/terragucci-admin/demo-choudoufu-fanout/commit/5cfbdb79c7a45d4b4d80e4c8e2a200afcc9c225e",
+  "stage": "tf-apply",
+  "wave": 3,
+  "binary": "choudoufu",
+  "runtime": "forge",
+  "started": "2026-10-19T02:01:32.459Z",
+  "finished": "2026-10-19T02:01:47.700Z",
+  "terragucci": "0.4.35",
+  "trace_id": "f90b82490188b6f6d9953ea8f1f9db1a"
+ },
+ "roots": [
+  {
+   "path": "app-01",
+   "status": "planned",
+   "changes": []
+  },
+  {
+   "path": "app-02",
+   "status": "planned",
+   "changes": []
+  },
+  {
+   "path": "app-03",
+   "status": "planned",
+   "changes": []
+  },
+  {
+   "path": "app-04",
+   "status": "planned",
+   "changes": []
+  },
+  {
+   "path": "app-05",
+   "status": "planned",
+   "changes": []
+  },
+  {
+   "path": "app-06",
+   "status": "planned",
+   "changes": []
+  },
+  {
+   "path": "app-07",
+   "status": "planned",
+   "changes": []
+  },
+  {
+   "path": "app-08",
+   "status": "planned",
+   "changes": []
+  },
+  {
+   "path": "app-09",
+   "status": "planned",
+   "changes": []
+  },
+  {
+   "path": "app-10",
+   "status": "planned",
+   "changes": []
+  },
+  {
+   "path": "app-11",
+   "status": "planned",
+   "changes": []
+  },
+  {
+   "path": "app-12",
+   "status": "planned",
+   "changes": []
+  }
+ ],
+ "waves": [
+  {
+   "number": 3,
+   "roots": [
+    "app-01",
+    "app-02",
+    "app-03",
+    "app-04",
+    "app-05",
+    "app-06",
+    "app-07",
+    "app-08",
+    "app-09",
+    "app-10",
+    "app-11",
+    "app-12"
+   ],
+   "set_digest": "jcs1-sha256:0edb0b0b555a0d24abee90f5adceb8eebd7c0ca3cffa685c246314823fd62c9f",
+   "approval": "not-required",
+   "state": "applied",
+   "outcomes": [
+    {
+     "root": "app-01",
+     "outcome": "applied"
+    },
+    {
+     "root": "app-02",
+     "outcome": "applied"
+    },
+    {
+     "root": "app-03",
+     "outcome": "applied"
+    },
+    {
+     "root": "app-04",
+     "outcome": "applied"
+    },
+    {
+     "root": "app-05",
+     "outcome": "applied"
+    },
+    {
+     "root": "app-06",
+     "outcome": "applied"
+    },
+    {
+     "root": "app-07",
+     "outcome": "unchanged"
+    },
+    {
+     "root": "app-08",
+     "outcome": "unchanged"
+    },
+    {
+     "root": "app-09",
+     "outcome": "unchanged"
+    },
+    {
+     "root": "app-10",
+     "outcome": "unchanged"
+    },
+    {
+     "root": "app-11",
+     "outcome": "unchanged"
+    },
+    {
+     "root": "app-12",
+     "outcome": "unchanged"
+    }
+   ]
+  }
+ ]
+}

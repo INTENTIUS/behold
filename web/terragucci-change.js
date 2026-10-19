@@ -522,6 +522,58 @@ export function blockedHeader(roots, blocked, state) {
 }
 
 /**
+ * behold#751: a wave's result as its own report says it (/api/terragucci's
+ * `results`, by commit), for the commit the run that applied it is of. A
+ * wave's job is no witness to it: terragucci ends the job of a wave that
+ * applied what it planned and blocked the rest as a failure (terragucci#1161),
+ * so the commit status isn't green while roots are unapplied. `after` is when
+ * the job started: a report finished before it is an earlier run's on the
+ * commit, and says nothing of this one. Null without a report of the wave,
+ * where the job's status is all there is.
+ */
+export function waveResultOf(answer, commit, wave, { after = null } = {}) {
+  const all = answer && !answer.error && answer.results && typeof answer.results === "object" ? answer.results : null;
+  if (!all || typeof commit !== "string" || !commit || !Number.isInteger(wave)) return null;
+  const key = Object.keys(all).find((c) => sameCommit(c, commit));
+  const r = key && Array.isArray(all[key]) ? all[key].find((x) => x && x.wave === wave && typeof x.state === "string") : null;
+  if (!r) return null;
+  const done = Date.parse(r.finished);
+  const start = after ? Date.parse(after) : NaN;
+  if (Number.isFinite(done) && Number.isFinite(start) && done < start) return null;
+  return r;
+}
+
+/** behold#751: whether a wave's report says the wave itself failed (a root of its own failed, or the wave was refused). */
+export const resultFailed = (r) => !!r && (r.state === "failed" || r.state === "refused");
+
+/** behold#751: whether a wave's report says it held roots back: some blocked, or the whole wave. */
+export const resultBlocked = (r) => !!r && (r.state === "blocked" || (Array.isArray(r.blocked) && r.blocked.length > 0));
+
+/**
+ * behold#751: a wave's result in words, from its report: "applied 6, 6
+ * blocked by cluster-a" for a wave that applied what it planned and blocked
+ * the rest, "6 blocked by cluster-a" for one that ran nothing, "1 failed, 1
+ * applied" for one a root of its own failed, else its state ("applied").
+ */
+export function resultWords(r) {
+  if (!r) return null;
+  const held = Array.isArray(r.blocked) ? r.blocked : [];
+  const by = [...new Set(held.map((b) => b && b.by).filter(Boolean))].sort();
+  const blocked = held.length ? `${held.length} blocked${by.length ? ` by ${and(by)}` : ""}` : null;
+  const ran = (Array.isArray(r.applied) ? r.applied.length : 0) + (Array.isArray(r.unchanged) ? r.unchanged.length : 0);
+  if (r.state === "applied") return blocked ? `applied ${ran}, ${blocked}` : "applied";
+  if (r.state === "blocked") return blocked || "blocked";
+  if (r.state === "failed") {
+    const failed = Array.isArray(r.failed) ? r.failed.length : 0;
+    return failed ? `${failed} failed${ran ? `, ${ran} applied` : ""}${blocked ? `, ${blocked}` : ""}` : "failed";
+  }
+  return STATE_WORDS[r.state] || r.state;
+}
+
+/** behold#751: the tone a wave's result is drawn in: blocked's for one that held roots back, bad for a failure. */
+export const resultTone = (r) => (resultFailed(r) ? "bad" : resultBlocked(r) ? BLOCKED_TONE : r && r.state === "applied" ? "ok" : "idle");
+
+/**
  * #569 review: whether a root of a run-view wave plans a change. A root its
  * wave planned without a change (`changed`, the roots whose plan changes a
  * resource or an output) is never shown waiting, applying or failed: nothing

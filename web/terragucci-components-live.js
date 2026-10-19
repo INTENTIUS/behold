@@ -11,7 +11,7 @@
 // wave that failed says the waves before it stay applied, and nothing here is
 // all-or-nothing.
 
-import { BLOCKED_TONE, blockedHeader, blockedOf, pinsCommit, rootStates, totalsLine } from "./terragucci-change.js";
+import { BLOCKED_TONE, blockedHeader, blockedOf, pinsCommit, resultFailed, resultTone, resultWords, rootStates, totalsLine, waveResultOf } from "./terragucci-change.js";
 import { shortReason } from "./chant-pr-marks.js";
 import { rootNames } from "./cone.js";
 
@@ -110,6 +110,20 @@ export function waveStatus(status, state) {
   return { status: state, words: WAVE_WORDS[state], tone: toneOf(state), run: status.superseded };
 }
 
+/**
+ * behold#751: a wave's job status, unless the job failed and the wave's own
+ * report (`result`, terragucci-change.js waveResultOf) says the wave did not:
+ * terragucci ends the job of a wave that applied what it planned and blocked
+ * the rest as a failure (terragucci#1161), so the commit status isn't green
+ * while roots are unapplied. Then the box says what the report does, "applied
+ * 6, 6 blocked by cluster-a", in its tone (`report`). A wave the report says
+ * failed, and a job with no report of its wave, keep the job's status.
+ */
+export function reportStatus(status, result) {
+  if (!status || status.status !== "failure" || !result || resultFailed(result)) return status;
+  return { status: result.state === "blocked" ? "blocked" : "done", words: resultWords(result), tone: resultTone(result), report: true, ...(status.run ? { run: status.run } : {}) };
+}
+
 /** A status's words in a narrow box, where the full words cross an edge (behold#693): "held" for a wave held at its gate. */
 export function statusShort(status) {
   if (!status) return null;
@@ -192,7 +206,8 @@ export function componentMarks(answer, progress, facets, { runs = null, pin = nu
     const jobName = jobs.find((j) => j.wave === n).jobName;
     const members = jobs.filter((j) => j.wave === n).map((j) => cards[j.component]).filter(Boolean);
     const w = waveState(answer, progress, stage, n);
-    const status = commit ? waveStatus(jobStatus(runs, commit, jobName), w) : null;
+    // behold#751: a job that failed while its wave's report says the wave applied (and blocked the rest) reads as the report says.
+    const status = commit ? reportStatus(waveStatus(jobStatus(runs, commit, jobName), w), waveResultOf(answer, commit, n)) : null;
     // The wave's job ended well and the run view never started a root: the wave applied nothing to it. Say so,
     // never "queued" under a box that says the job succeeded.
     if (stage === "apply" && status && status.status === "success") for (const m of members) settleMember(m, progress, n);
@@ -230,7 +245,7 @@ export function componentMarks(answer, progress, facets, { runs = null, pin = nu
       job: jobName,
       state: w,
       // A re-run held at its gate (behold#693) tones the box as its title says.
-      tone: header ? headerTone : shown && shown.held && shown.status === "waiting" ? shown.tone : w ? toneOf(w) : shown ? shown.tone : "idle",
+      tone: header ? headerTone : shown && ((shown.held && shown.status === "waiting") || shown.report) ? shown.tone : w ? toneOf(w) : shown ? shown.tone : "idle",
       status: shown,
       title: waveTitle(jobName, shown),
       facts,

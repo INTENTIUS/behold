@@ -241,6 +241,8 @@ export function terragucciRoutes(app: Hono, opts: TerragucciOptions, dirs: () =>
       ...(r.blocked ? { blocked: r.blocked } : {}),
       // behold#741: each root's own outcome in the newest apply's waves, absent when no report carries one.
       ...(r.outcomes ? { outcomes: r.outcomes } : {}),
+      // behold#751: each wave's result by its own report, for the newest tf-apply commits; absent when no report says one.
+      ...(r.results ? { results: r.results } : {}),
       ...(r.binaries ? { binaries: r.binaries } : {}),
       ...marks,
     });
