@@ -426,6 +426,8 @@
         #runs-main { order: 4; display: none; height: 85vh; border-radius: 0; }
         body.k-runs-open #runs-side, body.k-runs-open #runs-main { display: flex; flex-direction: column; }
         body.k-runs-open #runs-side { display: block; }
+        /* behold#771: in Watch the pane is the drawer's log, open with the drawer and not with the runs toggle. */
+        #k-drawer .k-drawer-body #runs-main { display: flex; height: auto; }
         .r-log { margin-left: var(--s2); max-height: 60vh; }
         .r-log-line { grid-template-columns: 2.4em 1fr; gap: var(--s2); }
         .r-ann-note { grid-column: 1 / -1; }
