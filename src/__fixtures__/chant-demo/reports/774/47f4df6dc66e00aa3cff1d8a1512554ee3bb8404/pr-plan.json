@@ -1,0 +1,221 @@
+{
+  "$schema": "https://intentius.io/chant/schemas/workspace/pr-report/v1/pr-report.schema.json",
+  "contract": 1,
+  "stage": "plan",
+  "pr": 774,
+  "env": "demo",
+  "base": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+  "head": "47f4df6dc66e00aa3cff1d8a1512554ee3bb8404",
+  "op": "pr-774",
+  "gate": "pr-apply",
+  "digest": "jcs1-sha256:c270878ee1de07dadb3450b362bb313d3eef369104131815a0dc9ad4e9ea58f3",
+  "status": "planned",
+  "approval": {
+    "status": "pending"
+  },
+  "selection": {
+    "changed": [
+      "cluster-a"
+    ],
+    "dependents": [
+      "app-01",
+      "app-02",
+      "app-03",
+      "app-04",
+      "app-05",
+      "app-06"
+    ],
+    "unclaimed": [],
+    "indeterminate": [
+      "app-07",
+      "app-08",
+      "app-09",
+      "app-10",
+      "app-11",
+      "app-12",
+      "cluster-b"
+    ],
+    "waves": [
+      [
+        "cluster-a"
+      ],
+      [
+        "app-01",
+        "app-02",
+        "app-03",
+        "app-04",
+        "app-05",
+        "app-06"
+      ]
+    ]
+  },
+  "members": [
+    {
+      "member": "app-01",
+      "component": "app-01",
+      "planDigest": "jcs1-sha256:e12d8deea0662e063d4cf8919a3e80ec5473daf696c05cb5bd277a93452a5f82",
+      "status": "planned",
+      "counts": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      }
+    },
+    {
+      "member": "app-02",
+      "component": "app-02",
+      "planDigest": "jcs1-sha256:a970daf698d6b4112c04bf64e2002d759ff2638e7101d31a3b12d05ef805e902",
+      "status": "planned",
+      "counts": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      }
+    },
+    {
+      "member": "app-03",
+      "component": "app-03",
+      "planDigest": "jcs1-sha256:f4af6ea3c49e24fb26cbda9bc09cf158e8ead27cc46c22b3342706e86704b15f",
+      "status": "planned",
+      "counts": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      }
+    },
+    {
+      "member": "app-04",
+      "component": "app-04",
+      "planDigest": "jcs1-sha256:ef1a9ad5e5b1e4c83ae467d52e23655b3b6fea578bbdc0b499b8b47ff7c3461c",
+      "status": "planned",
+      "counts": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      }
+    },
+    {
+      "member": "app-05",
+      "component": "app-05",
+      "planDigest": "jcs1-sha256:8be7c76c742017bbb49eb3afc0394eb03206b2b5c9261060ddc35c0640cd2ab4",
+      "status": "planned",
+      "counts": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      }
+    },
+    {
+      "member": "app-06",
+      "component": "app-06",
+      "planDigest": "jcs1-sha256:2d0290953e6fdc9a45ff35ebba4fa599865e5555adce908ca424b1c839568385",
+      "status": "planned",
+      "counts": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      }
+    },
+    {
+      "member": "cluster-a",
+      "component": "cluster-a",
+      "planDigest": "jcs1-sha256:c3d853fdd829eff20685dbdae939c88bfa8f32aa9bc5aab157922ca622cf71b9",
+      "status": "planned",
+      "counts": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 0
+      }
+    }
+  ],
+  "changeSet": {
+    "$schema": "https://intentius.io/chant/schemas/workspace/change-set/v1/change-set.schema.json",
+    "contract": 1,
+    "digest": "jcs1-sha256:c270878ee1de07dadb3450b362bb313d3eef369104131815a0dc9ad4e9ea58f3",
+    "members": [
+      {
+        "member": "app-01",
+        "lexicon": "chant",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:e12d8deea0662e063d4cf8919a3e80ec5473daf696c05cb5bd277a93452a5f82",
+        "holes": []
+      },
+      {
+        "member": "app-02",
+        "lexicon": "chant",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:a970daf698d6b4112c04bf64e2002d759ff2638e7101d31a3b12d05ef805e902",
+        "holes": []
+      },
+      {
+        "member": "app-03",
+        "lexicon": "chant",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:f4af6ea3c49e24fb26cbda9bc09cf158e8ead27cc46c22b3342706e86704b15f",
+        "holes": []
+      },
+      {
+        "member": "app-04",
+        "lexicon": "chant",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:ef1a9ad5e5b1e4c83ae467d52e23655b3b6fea578bbdc0b499b8b47ff7c3461c",
+        "holes": []
+      },
+      {
+        "member": "app-05",
+        "lexicon": "chant",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:8be7c76c742017bbb49eb3afc0394eb03206b2b5c9261060ddc35c0640cd2ab4",
+        "holes": []
+      },
+      {
+        "member": "app-06",
+        "lexicon": "chant",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:2d0290953e6fdc9a45ff35ebba4fa599865e5555adce908ca424b1c839568385",
+        "holes": []
+      },
+      {
+        "member": "cluster-a",
+        "lexicon": "chant",
+        "planner": "chant",
+        "status": "planned",
+        "planDigest": "jcs1-sha256:c3d853fdd829eff20685dbdae939c88bfa8f32aa9bc5aab157922ca622cf71b9",
+        "holes": []
+      }
+    ],
+    "entries": [],
+    "summary": {
+      "members": 7,
+      "entries": 0,
+      "actions": {
+        "create": 0,
+        "update": 0,
+        "replace": 0,
+        "delete": 0,
+        "read": 0,
+        "no-op": 0,
+        "forget": 0
+      },
+      "types": {},
+      "byMember": {},
+      "deletes": [],
+      "replacements": [],
+      "failed": [],
+      "holes": 0
+    }
+  }
+}

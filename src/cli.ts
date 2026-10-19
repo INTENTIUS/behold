@@ -50,7 +50,7 @@ Usage:
                 [--publish s3://<bucket>/<prefix>/views/<name> [--commit <sha>] [--keep <n>]]
   behold serve <project-dir…> [--port <n>] [--host <addr>] [--allow-host <name,…>] [--hud <url>] [--env <name>] [--poll <secs>] [--local]
                 [--public] [--terragucci <src> [--terragucci-project <p>] [--terragucci-poll <secs>] [--terragucci-runs <src>]]
-                [--repos <parent>] [--yodel-report <file|dir>] [--chant-report-url <url>]
+                [--repos <parent>] [--yodel-report <file|dir>] [--chant-report-url <url>] [--chant-demo <src>]
   behold carve <report.json> [--port <n>]
 
   carve   Render a chant Terraform peelability report — the JSON from
@@ -205,7 +205,18 @@ Options:
                       pr-apply --report-url, behold#631), when the pipeline
                       names it through a variable set outside the file.
                       Without it, behold reads the --report-url the
-                      pipeline's own lines pass.
+                      pipeline's own lines pass. With --chant-demo, it
+                      overrides the URL the demo's step names.
+  --chant-demo <s3://…|https://…|dir>
+                      serve only: where chant's fan-out demo writes its
+                      records (behold#752): step.json (demo-step/v1) at every
+                      step and cycles/latest.json (demo-cycle/v1) at each
+                      reset, e.g. s3://chant-demo/fan-out-estate. /chant-fanout
+                      reads it, and so does /kiosk when --terragucci isn't
+                      given. Its runs come from chant's run events and
+                      pr-report/v1 under each step's reports keys, never from
+                      the workflow file's --report-url. A record of another
+                      contract major is refused.
   --yodel-report <file|dir>
                       serve/export: mark SQL Yodeler's \`yodel report --json\`
                       output and any \`yodel drift <env> --json\` beside it
@@ -336,6 +347,7 @@ export async function run(argv: string[]): Promise<void> {
   let terragucciRuns: string | undefined;
   let yodelReport: string | undefined;
   let chantReportUrl: string | undefined;
+  let chantDemo: string | undefined;
   let isPublic = false;
   let reposParent: string | undefined;
   const allowHosts: string[] = [];
@@ -359,6 +371,7 @@ export async function run(argv: string[]): Promise<void> {
     else if (a === "--terragucci-runs") terragucciRuns = rest[++i];
     else if (a === "--repos") reposParent = rest[++i];
     else if (a === "--chant-report-url") chantReportUrl = rest[++i];
+    else if (a === "--chant-demo") chantDemo = rest[++i];
     else if (a === "--yodel-report") yodelReport = rest[++i];
     else if (a === "--env") env = rest[++i];
     else if (a === "--poll") pollSecs = Number(rest[++i]);
@@ -459,6 +472,10 @@ export async function run(argv: string[]): Promise<void> {
     process.stderr.write("behold serve: --chant-report-url needs s3://bucket/prefix, an https address, file://<path> or a directory\n");
     process.exit(2);
   }
+  if (chantDemo !== undefined && (!chantDemo || chantDemo.startsWith("--"))) {
+    process.stderr.write("behold serve: --chant-demo needs s3://bucket/prefix, an https address or a directory: where the demo writes step.json\n");
+    process.exit(2);
+  }
   if (yodelReport !== undefined && !yodelReport) {
     process.stderr.write("behold serve: --yodel-report needs the file `yodel report --json` wrote, or the directory holding it\n");
     process.exit(2);
@@ -507,6 +524,7 @@ export async function run(argv: string[]): Promise<void> {
     ...(tempo ? { tempo } : {}),
     ...(yodelReport ? { yodelReport: resolve(yodelReport) } : {}),
     ...(chantReportUrl ? { chantReportUrl } : {}),
+    ...(chantDemo ? { chantDemo } : {}),
     ...(terragucci ? { terragucci: { source: terragucci, ...(terragucciProject ? { project: terragucciProject } : {}), ...(terragucciPoll !== undefined ? { pollSecs: terragucciPoll } : {}), ...(terragucciRuns ? { runsSource: terragucciRuns } : {}) } } : {}),
   });
 }

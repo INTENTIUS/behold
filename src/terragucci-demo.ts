@@ -270,8 +270,10 @@ const disabledPage =
  * `GET /kiosk`: the kiosk page. Without `--terragucci` there is nothing to
  * narrate, and the page says so instead of loading.
  */
-export function kioskRoute(app: Hono, webRoot: string, enabled: boolean, allowedHosts: string[] = []): void {
+export function kioskRoute(app: Hono, webRoot: string, enabled: boolean, allowedHosts: string[] = [], opts: { chantDemo?: boolean } = {}): void {
   app.get("/kiosk", (c) => {
+    // behold#752: with chant's fan-out demo the only one served (`--chant-demo`, no `--terragucci`), /kiosk is its page.
+    if (!enabled && opts.chantDemo) return chantFanoutPage(c, webRoot, allowedHosts, "/kiosk");
     if (!enabled) {
       return c.html(disabledPage, 404);
     }
@@ -494,18 +496,39 @@ export function terragucciCyclesRoute(app: Hono, source: TerragucciSource, opts:
   });
 }
 
-/** The kiosk page for one tool: kiosk.html, told its tool by a meta tag the page reads. */
-export function vendorPage(html: string, tool: VendorTool): string {
-  return html.replace(/<meta charset="utf-8" \/>/, `<meta charset="utf-8" />\n    <meta name="kiosk-tool" content="${tool}" />`);
+/**
+ * behold#752: where a kiosk page reads its demo. `chant-demo`: chant's fan-out demo's own records (src/chant-demo.ts,
+ * /api/chant/demo…); without the tag, terragucci's (/api/terragucci/demo…). web/kiosk-source.js reads it.
+ */
+export type KioskSource = "chant-demo";
+
+/** The kiosk page for one tool: kiosk.html, told its tool (and, behold#752, its demo's source) by meta tags the page reads. */
+export function vendorPage(html: string, tool: VendorTool, source?: KioskSource): string {
+  const src = source ? `\n    <meta name="kiosk-source" content="${source}" />` : "";
+  return html.replace(/<meta charset="utf-8" \/>/, `<meta charset="utf-8" />\n    <meta name="kiosk-tool" content="${tool}" />${src}`);
+}
+
+/** behold#752: chant's fan-out page, reading chant's own demo records, at `path`. */
+function chantFanoutPage(c: { req: { header(name: string): string | undefined } }, webRoot: string, allowedHosts: string[], path: string): Response {
+  const name = VENDOR_NAMES["chant-fanout"];
+  const shared = sharePage(readFileSync(join(webRoot, "kiosk.html"), "utf8"), {
+    title: `behold · ${name}`,
+    description: `Watch ${name} carry one change from pull request to apply, live.`,
+    origin: shareOrigin(c.req.header("host"), c.req.header("x-forwarded-proto"), allowedHosts),
+    path,
+  });
+  return new Response(vendorPage(shared, "chant-fanout", "chant-demo"), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } });
 }
 
 /**
  * `GET /<tool>` for each of {@link VENDOR_TOOLS}: the kiosk for that tool
  * alone. Without `--terragucci` it says what /kiosk says.
  */
-export function vendorRoutes(app: Hono, webRoot: string, enabled: boolean, allowedHosts: string[] = []): void {
+export function vendorRoutes(app: Hono, webRoot: string, enabled: boolean, allowedHosts: string[] = [], opts: { chantDemo?: boolean } = {}): void {
   for (const tool of VENDOR_TOOLS) {
     app.get(`/${tool}`, (c) => {
+      // behold#752: `--chant-demo` gives /chant-fanout chant's own records, whatever else is served.
+      if (opts.chantDemo && tool === "chant-fanout") return chantFanoutPage(c, webRoot, allowedHosts, `/${tool}`);
       if (!enabled) return c.html(disabledPage, 404);
       const name = VENDOR_NAMES[tool];
       const shared = sharePage(readFileSync(join(webRoot, "kiosk.html"), "utf8"), {

@@ -33,6 +33,7 @@ import { cssString, hoverCss, hoverFromMessage, hoverLinks, hoverMessage, isLigh
 import { creditLines, filterIndex, keepRun, kioskVendorOf, liveEstimate, liveFor, namesOther, notRunRepo, notRunWords, replayAt, replayBanner, replayIndex, rootNoun, rootWord, runAsOf, scrubDemo, servesRepo, vendorOf } from "./kiosk-vendor.js";
 import { repoParam, repoUrl, stepCheckout } from "./kiosk-repo.js";
 import { startKioskCarve } from "./kiosk-carve.js";
+import { readsFor } from "./kiosk-source.js";
 import { STATE_WORDS, changingRoots, costLine, pinsCommit, planFitsPin, pullPin, readEdges, rootsCount, totalsLine, waveRows, blastRows } from "./terragucci-change.js";
 
 /** The scenarios terragucci#1014 numbers. An id not here is shown by the title demo.json carries. */
@@ -196,7 +197,7 @@ export function whatTool(tools) {
   return null;
 }
 /** The line drawn: each part's logo at the words' height, at its own aspect (the marks are square), then the words. */
-function whatLineEl(demo, forge, tg = null, hide = null) {
+function whatLineEl(demo, forge, tg = null, hide = null, own = false) {
   const line = el("span", "k-cycle k-what-line");
   const light = typeof document !== "undefined" && typeof getComputedStyle === "function" ? isLightBg(getComputedStyle(document.documentElement).getPropertyValue("--bg")) : false;
   whatParts(demo, forge, tg, hide).forEach((p, i) => {
@@ -216,7 +217,7 @@ function whatLineEl(demo, forge, tg = null, hide = null) {
     part.append(el("span", "k-what-full", p.text), el("span", "k-what-short", p.short));
     line.appendChild(part);
   });
-  if (line.setAttribute) line.setAttribute("title", whatTitle(tg, hide));
+  if (line.setAttribute) line.setAttribute("title", whatTitle(tg, hide, own));
   whatStyle();
   return line;
 }
@@ -239,9 +240,11 @@ function whatStyle() {
 export const WHAT_TITLE = "The pipeline is chant's (chant components pr-plan / pr-apply on Forgejo). The demo stack and its driver are terragucci's.";
 /** behold#741: a terragucci repo's: the pipeline, the stack and the driver are all terragucci's. */
 export const WHAT_TITLE_TG = "The pipeline is terragucci's (its waves, one job per wave). The demo stack and its driver are terragucci's.";
+/** behold#752: chant's own fan-out demo, from its own records: the pipeline, the stack and the driver are all chant's. */
+export const WHAT_TITLE_CHANT = "The pipeline is chant's (chant components pr-plan / pr-apply on Forgejo). The demo stack and its driver are chant's too.";
 /** behold#746: the tooltip, less each sentence a tool's page may not say (`/chant-fanout` keeps whose pipeline it is). */
-export function whatTitle(tg = null, hide = null) {
-  const t = tg ? WHAT_TITLE_TG : WHAT_TITLE;
+export function whatTitle(tg = null, hide = null, own = false) {
+  const t = tg ? WHAT_TITLE_TG : own ? WHAT_TITLE_CHANT : WHAT_TITLE;
   return hide ? t.split(/(?<=\.) /).filter((x) => !hide(x)).join(" ") : t;
 }
 
@@ -1050,7 +1053,7 @@ function drawWatchHead(bar, s, now) {
     // behold#746: a tool's page leaves out the parts (and the tooltip's sentence) that name what it may not.
     // On its replay the line's "live demo" goes; the replay's banner follows the line instead.
     const hide = vendor ? (t) => namesOther(t, s.vendor) || (s.mode === "replay" && /^live\b/.test(t)) : null;
-    if (s.chantLoop) place.appendChild(whatLineEl(demo, s.chantForge ? s.chantForge() : null, null, hide));
+    if (s.chantLoop) place.appendChild(whatLineEl(demo, s.chantForge ? s.chantForge() : null, null, hide, s.source === "chant-demo"));
     else place.appendChild(whatLineEl(demo, s.tgForge || null, { tools: s.tools || [] }, hide));
   } else {
     if (shownTool) place.appendChild(brandEl(shownTool));
@@ -1401,6 +1404,8 @@ export const DRIVER_SIGNS = "Next the driver plays a reviewer outside the change
 
 /** behold#571: "What is this?" says what behold is; the demo's own intro stays on the card between scenarios. */
 export const WHAT_TEXT = "This is behold, a live view of infrastructure. It draws the setup as a graph and shows its pipeline runs, their logs and the approvals they wait for, as they happen. Here it watches a demo pipeline that runs one change through several Terraform states in a loop.";
+/** behold#752: the same, for chant's fan-out demo, whose stacks are CloudFormation's. */
+export const WHAT_TEXT_CHANT = "This is behold, a live view of infrastructure. It draws the setup as a graph and shows its pipeline runs, their logs and the approvals they wait for, as they happen. Here it watches chant's pull-request pipeline run one change across fifteen stacks in a loop.";
 export const WHAT_DOCS = { text: "behold's documentation", url: "https://intentius.io/behold/" };
 
 /** behold#571: a fade at a box's edge where its text goes on past it. */
@@ -1435,8 +1440,10 @@ export const CHANT_SIDE_ROOM = 520;
  * countdown. When the roots the step is about change, move the framed view
  * with a `behold:view` message; the frame takes them only from this origin.
  */
-export function startKiosk({ bar, frame, side, main, views, read = null, tools = null, watch = null, eh = null }, { fetchJson = defaultFetch, now = () => new Date(), origin = location.origin, tool = null } = {}) {
-  const s = { demo: null, answer: null, progress: null, components: false, pick: null, view: "resources", roots: [], waves: [], light: false, hover: null, frameHover: null, held: null };
+export function startKiosk({ bar, frame, side, main, views, read = null, tools = null, watch = null, eh = null }, { fetchJson = defaultFetch, now = () => new Date(), origin = location.origin, tool = null, source = null } = {}) {
+  // behold#752: terragucci's loop, or chant's fan-out demo from its own records (web/kiosk-source.js).
+  const reads = readsFor(source);
+  const s = { source: reads.source, demo: null, answer: null, progress: null, components: false, pick: null, view: "resources", roots: [], waves: [], light: false, hover: null, frameHover: null, held: null };
   // behold#571: Watch or Inspect, the viewer's pick kept in their browser; Watch until they pick Inspect.
   const shelf = typeof localStorage !== "undefined" ? (() => { try { return localStorage; } catch { return null; } })() : null;
   s.metrics = null;
@@ -2197,7 +2204,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       drawerWave = null;
       drawerView = null;
     }
-    if (tracesBusy || !d || !d.repo || !runsApi || !runsApi.index || !runsApi.index.doc) return;
+    // behold#752: chant's demo has no forge runs for Tempo to have traced.
+    if (tracesBusy || reads.own || !d || !d.repo || !runsApi || !runsApi.index || !runsApi.index.doc) return;
     if (!["merged", "applying", "waiting", "approved", "failed", "resumed", "applied"].includes(d.step)) return;
     tracesBusy = true;
     try {
@@ -2256,7 +2264,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
       return;
     }
     strips.set(t, { at: now().getTime(), strip: had ? had.strip : null, done: had ? had.done : false, cycle: had ? had.cycle : null });
-    const a = await fetchServed(`/api/terragucci/cycles/${encodeURIComponent(t)}`);
+    const a = await fetchServed(reads.cycle(t));
     const strip = a && a.cycle && Array.isArray(a.cycle.steps) ? stripFromSteps(a.cycle.steps.map((x) => x.step)) : null;
     // behold#631: the cycle itself too, for a chant kiosk's projected track.
     strips.set(t, { at: now().getTime(), strip: strip || (had ? had.strip : null), done: true, cycle: a && a.cycle ? a.cycle : had ? had.cycle : null });
@@ -2273,13 +2281,13 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   // behold#571: on a tool's page the runs pane shows the tool's repo alone; in the replay, the cycle's runs as they stood.
   const runDocs = new Map();
   const runDoc = (id) => {
-    if (!runDocs.has(id)) runDocs.set(id, fetchJson(`/api/terragucci/runs/${id}`).then((a) => (a && a.doc ? a.doc : null)));
+    if (!runDocs.has(id)) runDocs.set(id, fetchJson(reads.run(id)).then((a) => (a && a.doc ? a.doc : null)));
     return runDocs.get(id);
   };
   const replayRuns = async () => {
     const r = s.replay;
     if (r.runs) return r.runs;
-    const idx = await fetchJson("/api/terragucci/runs");
+    const idx = await fetchJson(reads.runs);
     const listed = new Map((idx && idx.doc && Array.isArray(idx.doc.runs) ? idx.doc.runs : []).map((x) => [x.id, x]));
     const runs = [];
     for (const id of r.cycle.runs) {
@@ -2316,20 +2324,21 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     ap.at = t;
     try {
       const src = runsSource();
-      const raw = src ? await src.index() : await fetchJson("/api/terragucci/runs");
+      const raw = src ? await src.index() : await fetchJson(reads.runs);
       const idx = vendor ? filterIndex(raw, { tool, repo: s.repo }) : raw;
       const mine = cycleRuns(idx && idx.doc && Array.isArray(idx.doc.runs) ? idx.doc.runs : [], d);
       for (const e of mine) {
         const key = `${s.mode}|${e.status}|${e.ended_at}|${src ? Math.floor(shownNow().getTime() / 5000) : ""}`;
         const had = ap.runs.get(e.id);
         if (had && had.key === key) continue;
-        const r = src ? await src.run(e.id) : await fetchJson(`/api/terragucci/runs/${e.id}`);
+        const r = src ? await src.run(e.id) : await fetchJson(reads.run(e.id));
         if (r && r.doc) ap.runs.set(e.id, { key, doc: mergeRun(e, r.doc) });
       }
       ap.list = mine.map((e) => ap.runs.get(e.id)).filter(Boolean).map((x) => x.doc);
       if (t - ap.ledgerAt >= LEDGER_POLL_MS) {
         ap.ledgerAt = t;
-        const [lifecycle, history] = await Promise.all([fetchJson("/api/terragucci/lifecycle"), fetchJson("/api/lifecycle/history?limit=200")]);
+        // behold#752: chant's demo has no terragucci lane; the gate ledger is chant/lifecycle's alone.
+        const [lifecycle, history] = await Promise.all([reads.own ? null : fetchJson("/api/terragucci/lifecycle"), fetchJson("/api/lifecycle/history?limit=200")]);
         ap.lifecycle = lifecycle && !lifecycle.error ? lifecycle : null;
         ap.history = history && !history.error ? history : null;
       }
@@ -2465,7 +2474,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     docs.rel = "noopener";
     const more = el("p", "k-what-more");
     more.append(docs);
-    tools.pop.replaceChildren(el("p", null, WHAT_TEXT), more);
+    tools.pop.replaceChildren(el("p", null, s.source === "chant-demo" ? WHAT_TEXT_CHANT : WHAT_TEXT), more);
   };
   if (tools && tools.what && tools.pop) {
     const setWhat = (open) => {
@@ -2510,6 +2519,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
         filter: vendor ? (index) => filterIndex(index, { tool, repo: s.repo }) : (index) => index,
         replay: () => s.mode === "replay",
         hideLine: vendor ? (line) => namesOther(line, tool) : null,
+        urls: { runs: reads.runs, run: reads.run },
       },
     );
   }
@@ -2638,6 +2648,8 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   void readProject();
 
   const reports = async (fresh) => {
+    // behold#752: chant's demo writes no terragucci reports or run view; its facts come through /api/chant/pr.
+    if (reads.own) return;
     s.answer = await fetchJson(`/api/terragucci${fresh ? "?fresh=1" : ""}`);
     draw();
   };
@@ -2647,6 +2659,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
     return pinsCommit(pin) ? pin : null;
   };
   const progress = async (fresh) => {
+    if (reads.own) return;
     const pin = pinnedCommit();
     const q = new URLSearchParams();
     if (pin) q.set("commit", pin);
@@ -2660,7 +2673,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   let cycleRead = 0;
   const readCycle = async () => {
     cycleRead = now().getTime();
-    const a = await fetchJson(`/api/terragucci/cycles/${tool}`);
+    const a = await fetchJson(reads.cycle(tool));
     if (s.mode === "live") return; // its scenario started while the read was out
     if (a && a.cycle) {
       if (!s.replay || s.replay.cycle.cycle !== a.cycle.cycle) s.replay = { cycle: a.cycle, start: now().getTime(), at: null, banner: null, runs: null };
@@ -2743,7 +2756,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   };
 
   const demo = async () => {
-    const live = await fetchJson("/api/terragucci/demo");
+    const live = await fetchJson(reads.demo);
     noteRead(link, "poll", !readFailed(live), now());
     paintLink();
     s.live = live;
@@ -2773,7 +2786,7 @@ export function startKiosk({ bar, frame, side, main, views, read = null, tools =
   setInterval(() => void readApproval(), 1000);
   setInterval(draw, 1000);
 
-  if (typeof EventSource !== "undefined") {
+  if (typeof EventSource !== "undefined" && !reads.own) {
     const es = new EventSource("/api/terragucci/events");
     // behold#725: the browser retries a dropped stream by itself (CONNECTING);
     // one it closed for good (a 404, say) leaves the polls to carry the cue.

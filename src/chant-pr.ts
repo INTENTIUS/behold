@@ -371,6 +371,8 @@ export interface RunDoc {
   created_at?: string | null;
   started_at?: string | null;
   jobs: { name: string; status: string; started_at?: string | null; steps?: { name: string; status: string; log: string[] }[] }[];
+  /** behold#752: the stage's key under the report URL (`reportKey(pr, commit)`), when the run is a chant demo step's, not a forge run. */
+  reportKey?: string;
 }
 
 const sameSha = (a?: string | null, b?: string | null): boolean => !!a && !!b && (a.startsWith(b) || b.startsWith(a));
@@ -479,9 +481,9 @@ export interface ChantPrAnswer {
 }
 
 export interface ChantPrLive {
-  /** Where the events were looked for, and whether that came from the pipeline or serve's `--chant-report-url`. */
+  /** Where the events were looked for, and whether that came from the pipeline, serve's `--chant-report-url`, or (behold#752) the demo's step. */
   reportUrl: string;
-  via: "pipeline" | "serve";
+  via: "pipeline" | "serve" | "step";
   plan: PrLive | null;
   apply: PrLive | null;
   /**
@@ -503,6 +505,13 @@ export interface ChantPrDeps {
   reportUrl?: string;
   /** The source a report URL is read through; defaults to {@link reportSourceOf}. */
   reportSource?: (url: string) => TerragucciSource;
+  /**
+   * behold#752 `--chant-demo`: the stages chant's fan-out demo named, each a run keyed by its report key, and the URL
+   * they sit under (src/chant-demo.ts `prReports`). Given, the runs index and the pipeline's `--report-url` are not
+   * read: the stages' reports (pr-report/v1) and run events come from the keys, never from forge runs or the workflow file.
+   * Null for a checkout that is not the demo's repo, which reads as before.
+   */
+  demoReports?: (dir: string, git?: GitRun) => Promise<{ url: string; runs: RunDoc[] } | null>;
   /** Component -> the components it depends on, from the components graph, for a blocked component's blocker when chant's events don't name it. */
   dependsOn?: (dir: string) => Record<string, readonly string[]> | undefined;
   /** Component -> its wave in the components graph, for placing a component the run's own waves do not list (a resume's already-applied). */
@@ -536,7 +545,7 @@ export async function readChantPr(dir: string, pinRaw: string | null, deps: Chan
   const pin = pinOf(pinRaw);
   const reads: ChantPrAnswer["reads"] = [];
   const gaps: ChantPrAnswer["gaps"] = [];
-  const answer = (rest: Partial<ChantPrAnswer>): ChantPrAnswer => ({ schema: "behold.chant-pr/v1", read: now.toISOString(), loop, pull: null, plan: null, apply: null, running: null, gate: null, reads, gaps, live: null, eventsExpected: !!(loop && (deps.reportUrl ?? loop.reportUrl)), ...rest });
+  const answer = (rest: Partial<ChantPrAnswer>): ChantPrAnswer => ({ schema: "behold.chant-pr/v1", read: now.toISOString(), loop, pull: null, plan: null, apply: null, running: null, gate: null, reads, gaps, live: null, eventsExpected: !!(loop && (deps.demoReports || deps.reportUrl || loop.reportUrl)), ...rest });
   if (!loop) return answer({});
   if (loop) reads.push({ what: "the pull-request loop", contract: null, from: loop.workflow });
 
@@ -555,8 +564,11 @@ export async function readChantPr(dir: string, pinRaw: string | null, deps: Chan
   }
 
   // The runs the reports bucket holds for this repo, newest first.
+  // behold#752: for chant's demo, the stages its steps named instead, each by its report key.
+  const demo = deps.demoReports ? await deps.demoReports(dir, deps.git).catch(() => null) : null;
   let runs: RunDoc[] = [];
-  if (deps.source) {
+  if (demo) runs = demo.runs;
+  else if (deps.source) {
     const idx = await readRunsIndex(deps.source, now);
     const repo = await repoNameOf(dir, deps.git);
     const listed = idx.doc && Array.isArray((idx.doc as { runs?: unknown }).runs) ? ((idx.doc as { runs: RunDoc[] }).runs) : [];
@@ -568,7 +580,25 @@ export async function readChantPr(dir: string, pinRaw: string | null, deps: Chan
     const a = await readRun(deps.source, r.id, now);
     return a.doc ? (a.doc as RunDoc) : null;
   };
-  const [planDoc, applyDoc] = await Promise.all([docOf(cyc.plan), docOf(cyc.apply)]);
+  const [planDoc, applyDoc] = await Promise.all([docOf(demo ? null : cyc.plan), docOf(demo ? null : cyc.apply)]);
+  // behold#752: a demo stage's report (pr-report/v1) at its key, over a report the checkout holds.
+  if (demo) {
+    const src = demoSource(deps, demo.url);
+    await Promise.all(
+      (["plan", "apply"] as const).map(async (stage) => {
+        const r = stage === "plan" ? cyc.plan : cyc.apply;
+        if (!src || !r?.reportKey) return;
+        const key = `${r.reportKey}/pr-${stage}.json`;
+        try {
+          const text = await src.read(key);
+          const s = text ? prStageOfReport(JSON.parse(text), `${src.location.replace(/\/+$/, "")}/${key}`) : undefined;
+          if (s) reports[stage] = s;
+        } catch {
+          /* not there yet, refused, or not JSON: the stage has no report yet */
+        }
+      }),
+    );
+  }
   const fromLog = (doc: RunDoc | null, stage: "plan" | "apply"): PrStageRead | null => {
     if (!doc) return null;
     const found = prStagesInLog(runLines(doc), `run #${doc.id}`, doc.id).filter((s) => s.stage === stage);
@@ -602,7 +632,7 @@ export async function readChantPr(dir: string, pinRaw: string | null, deps: Chan
     typeof cycleOf === "number"
       ? runs.filter((r) => isApplyRun(r) && r.cycle === cycleOf && r !== cyc.apply && (!cyc.apply || r.id < cyc.apply.id) && !!r.commit).sort((a, b) => a.id - b.id).slice(-3)
       : [];
-  const live = await readLive(dir, loop, deps, cyc.pull ?? pin.pull, cyc.plan, cyc.apply, earlierRuns);
+  const live = await readLive(dir, loop, deps, cyc.pull ?? pin.pull, cyc.plan, cyc.apply, earlierRuns, demo?.url);
   for (const l of [live?.plan, live?.apply]) if (l) reads.push({ what: `chant components pr-${l.stage}'s run events`, contract: "run-event/v1", from: l.source });
   if (run && run.stage === "apply" && !live?.apply) gaps.push({ what: "progress per wave and component while the apply runs", ...CHANT_GAPS.report });
 
@@ -629,8 +659,9 @@ export async function readChantPr(dir: string, pinRaw: string | null, deps: Chan
  * stage's run, `<pr>` being `unknown` when the cycle has none (chant#4083).
  * Null when there is no URL or neither stage uploaded any. Never throws.
  */
-async function readLive(dir: string, loop: PrLoop, deps: ChantPrDeps, pull: number | null, plan: RunDoc | null, apply: RunDoc | null, earlierRuns: readonly RunDoc[] = []): Promise<ChantPrLive | null> {
-  const url = deps.reportUrl ?? loop.reportUrl;
+async function readLive(dir: string, loop: PrLoop, deps: ChantPrDeps, pull: number | null, plan: RunDoc | null, apply: RunDoc | null, earlierRuns: readonly RunDoc[] = [], demoUrl?: string): Promise<ChantPrLive | null> {
+  // behold#752: a demo's stages are read under the URL its step names, never the workflow file's.
+  const url = demoUrl ?? deps.reportUrl ?? loop.reportUrl;
   if (!url) return null;
   let src: TerragucciSource;
   try {
@@ -651,7 +682,7 @@ async function readLive(dir: string, loop: PrLoop, deps: ChantPrDeps, pull: numb
     const commit = r?.commit;
     if (!commit) return null;
     try {
-      const key = await eventsKey(src, prOf, commit, eventsFileOf(stage));
+      const key = r?.reportKey ? `${r.reportKey}/${eventsFileOf(stage)}` : await eventsKey(src, prOf, commit, eventsFileOf(stage));
       const text = await src.read(key);
       return readPrLive(text, { stage, source: `${src.location.replace(/\/+$/, "")}/${key}`, ...(dependsOn ? { dependsOn } : {}), ...(componentWaves ? { componentWaves } : {}) });
     } catch {
@@ -667,7 +698,16 @@ async function readLive(dir: string, loop: PrLoop, deps: ChantPrDeps, pull: numb
     for (const c of Object.values(l.components)) if (c.state === "applied" || c.state === "already-applied") landed.add(c.component);
   });
   if (!p && !a && !landed.size) return null;
-  return { reportUrl: url, via: deps.reportUrl ? "serve" : "pipeline", plan: p, apply: a, ...(landed.size ? { earlier: { runs: from, applied: [...landed].sort() } } : {}) };
+  return { reportUrl: url, via: demoUrl ? "step" : deps.reportUrl ? "serve" : "pipeline", plan: p, apply: a, ...(landed.size ? { earlier: { runs: from, applied: [...landed].sort() } } : {}) };
+}
+
+/** behold#752: the source a demo's report URL is read through, or undefined when it can't be made. */
+function demoSource(deps: ChantPrDeps, url: string): TerragucciSource | undefined {
+  try {
+    return (deps.reportSource ?? ((u: string) => reportSourceOf(u)))(url);
+  } catch {
+    return undefined;
+  }
 }
 
 /**

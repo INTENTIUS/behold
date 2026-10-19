@@ -67,6 +67,8 @@ import { notesFor, danglingNote, tierMismatchNote, namespaceMismatchNote, namesp
 import { resourcesByComponent, resourcesByRoot, nonResourceEntities } from "./resources.ts";
 import { configKeys, declaredRootTools, pipelineForge, repoTools, toolOfBinary } from "./pipeline-marks.ts";
 import { chantPrFacets, chantPrRoute, prLoopOf, reportSourceOf } from "./chant-pr.ts";
+import { ChantDemo, chantDemoRoutes } from "./chant-demo.ts";
+import type { GitRun } from "./terragucci-lifecycle.ts";
 import { TERRAGUCCI_COMPONENTS_FILE, componentJobs, componentRootMap, readTerragucciComponents, waveTitles, type TerragucciComponents } from "./terragucci-components.ts";
 import { hasTerragruntUnits } from "./terragrunt-units.ts";
 import { summarizePlan } from "./reconcile.ts";
@@ -246,6 +248,8 @@ export interface ServerOptions {
   yodelReport?: string;
   /** behold#631 `--chant-report-url`: where a chant repo's pull-request stages upload their run events, over the pipeline's `--report-url`. */
   chantReportUrl?: string;
+  /** behold#752 `--chant-demo`: where chant's fan-out demo writes step.json and cycles/ (src/chant-demo.ts); /chant-fanout reads it. */
+  chantDemo?: string;
   /** #471: hud's address (`--hud`, BEHOLD_HUD_URL). A proposed decision in a
    * "why" links to its review there; without it the decision is named by id. */
   hud?: string;
@@ -1089,8 +1093,11 @@ export function createApp(
     const t = cfg.terragucci;
     const via = { ...(t?.aws ? { aws: t.aws } : {}), ...(t?.fetch ? { fetch: t.fetch } : {}) };
     const runs = t ? terragucciSource(t.runsSource ?? t.source, via) : undefined;
+    // behold#752: chant's fan-out demo, from its own records; its stages are the pull-request loop's runs.
+    const chantDemo = cfg.chantDemo ? new ChantDemo({ source: cfg.chantDemo, ...(cfg.chantReportUrl ? { reportUrl: cfg.chantReportUrl } : {}), ...via }) : undefined;
+    if (chantDemo) chantDemoRoutes(app, chantDemo);
     chantPrRoute(app, () => cfg.projectDir, {
-      ...(runs ? { source: runs } : {}),
+      ...(chantDemo ? { demoReports: (d: string, g?: GitRun) => chantDemo.prReports(d, g), ...(runs ? { source: runs } : {}) } : runs ? { source: runs } : {}),
       ...(cfg.chantReportUrl ? { reportUrl: cfg.chantReportUrl } : {}),
       // The report URL is read through the same S3 client and endpoint handling as --terragucci's.
       reportSource: (url) => reportSourceOf(url, via),
@@ -1196,7 +1203,7 @@ export function createApp(
   app.get("/healthz", (c) => c.json({ ok: true, projectDir: cfg.projectDir, env: cfg.env ?? null, frames: frames.size }));
 
   // #569 step 2: the kiosk, a looping terragucci demo narrated from demo.json.
-  kioskRoute(app, webRoot, !!cfg.terragucci, guard.allowedHosts);
+  kioskRoute(app, webRoot, !!cfg.terragucci, guard.allowedHosts, { chantDemo: !!cfg.chantDemo });
   // behold#571: the image link previews show, which the kiosk's og:image names.
   shareImageRoute(app, webRoot);
   // behold#571: the kiosk's "Pipeline metrics", from Prometheus; dora.json beside the reports when Prometheus has no DORA gauges.
@@ -1205,7 +1212,7 @@ export function createApp(
   // behold#571: a job's trace for the kiosk's Trace view, from Tempo, by fixed queries only.
   tracesRoute(app, cfg.tempo ? { tempo: cfg.tempo } : {});
   // behold#571: a page per tool (/terraform, /terragrunt, ...), the kiosk for that tool alone.
-  vendorRoutes(app, webRoot, !!cfg.terragucci, guard.allowedHosts);
+  vendorRoutes(app, webRoot, !!cfg.terragucci, guard.allowedHosts, { chantDemo: !!cfg.chantDemo });
 
   // Deployment lanes (#5): the captured keyframes as a per-substrate filmstrip.
   app.get("/api/frames", (c) => c.json({ frames: frames.summaries() }));
@@ -4252,7 +4259,7 @@ export function createApp(
   app.use("/*", serveStatic({ root: rel }));
   app.get("/", serveStatic({ path: join(rel, "index.html") }));
   // behold#571: a short path that is no tool's page links to the kiosk.
-  if (cfg.terragucci) vendorFallback(app);
+  if (cfg.terragucci || cfg.chantDemo) vendorFallback(app);
 
   return app;
 }

@@ -1,0 +1,37 @@
+{
+ "$schema": "https://intentius.io/chant/schemas/demo/demo-step/v1/demo-step.schema.json",
+ "contract": 1,
+ "demo": "fan-out-estate",
+ "repo": "chant-demo/fan-out-estate",
+ "name": "fifteen stacks",
+ "cycle": 610,
+ "scenario": "fan-out",
+ "title": "A broken stack shouldn't stall the whole rollout",
+ "step": "failed",
+ "label": "cluster-a failed because SQS refuses a FIFO queue whose name lacks .fifo. Its six apps are blocked; cluster-b's six went ahead.",
+ "started_at": "2026-10-19T02:25:07Z",
+ "next": {
+  "action": "open the fix",
+  "from": "2026-10-19T02:26:12Z",
+  "at": "2026-10-19T02:26:32Z"
+ },
+ "pull": 773,
+ "commit": "a7cf3abc45abd6f77d8835939e0ceca3a6b88440",
+ "chapter": {
+  "n": 2,
+  "of": 4,
+  "headline": "cluster-a breaks. Only its 6 apps stop; the other 8 stacks ship anyway",
+  "short": "cluster-a breaks"
+ },
+ "about": {
+  "changes": "A pull request (a change up for review) edits the shared network. It also adds a cluster-a queue whose name AWS refuses.",
+  "watch": "chant plans fifteen stacks in three waves. After the merge, network applies first. Then cluster-a fails and its six apps are blocked. Cluster-b's six apps go ahead. A fix applies the seven left.",
+  "shows": "A failure blocks only the stacks that depend on it, and the fix applies only what was left."
+ },
+ "at": "2026-10-19T02:26:12Z",
+ "reports": {
+  "url": "s3://chant-demo/fan-out-estate/reports",
+  "plan": "773/6d4a48da36317886b549ca0d46c44646e697f561",
+  "apply": "773/a7cf3abc45abd6f77d8835939e0ceca3a6b88440"
+ }
+}
