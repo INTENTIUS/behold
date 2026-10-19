@@ -70,6 +70,11 @@ body.k-watch #eh-trail { position: fixed; z-index: 7; left: 5px; right: 5px; pad
 @keyframes eh-pulse { 0%, 100% { outline-color: color-mix(in srgb, var(--eh-glow, var(--focus)) 35%, transparent); } 50% { outline-color: var(--eh-glow, var(--focus)); } }
 /* behold#631: a chant kiosk's strip fades in at its left edge, so a chip scrolled past it never reads as a word cut short. */
 #eh-trail.eh-trail-fade { -webkit-mask-image: linear-gradient(to right, transparent 0, #000 72px); mask-image: linear-gradient(to right, transparent 0, #000 72px); }
+/* behold#774: a phone's strip under the step bar: its tips and narrated modals in the page's flow, never over the graph. */
+#eh-strip:empty { display: none; }
+#eh-strip .eh-tip { position: static; transform: none !important; max-width: none; margin: 0.3em 16px; }
+#eh-strip .eh-tip::after { display: none; }
+#eh-strip:has(.eh-modal-wrap) .eh-tip { display: none; }
 @media (max-width: 600px) { #eh-trail { padding: 0.2em 16px; } body.k-watch #eh-trail { position: static; background: transparent; border: 0; } .eh-tip { max-width: 18em; } }
 /* behold#780: a phone's trail wraps, every chip in view, instead of a strip many screens wide that scrolls sideways with no cue. */
 @media (max-width: 600px) {
@@ -147,8 +152,10 @@ export function toneOf(kind) {
  * Start Tips. `get()` answers what the kiosk holds now; `light(subjects)`
  * lights them across the panes as a hover does (null puts them out);
  * `panel(kind)` builds the real panel the modal shows (the approval panel).
+ * behold#774: while `narrow()` (a phone), the tips and the narrated modals go
+ * in `stripHost` (made after the trail when not given), under the step bar.
  */
-export function startEventHelp({ doc = document, store = null, session = null, switchHost = null, trailHost, tipsHost, modalHost, get, light = () => {}, panel = () => null, openTrace = () => {}, now = () => Date.now(), shown = now, reduced = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches }) {
+export function startEventHelp({ doc = document, store = null, session = null, switchHost = null, trailHost, tipsHost, modalHost, stripHost = null, get, light = () => {}, panel = () => null, openTrace = () => {}, now = () => Date.now(), shown = now, reduced = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches, narrow = () => typeof matchMedia === "function" && matchMedia("(max-width: 600px)").matches }) {
   if (doc.head && !doc.getElementById("eh-style")) {
     const style = doc.createElement("style");
     style.id = "eh-style";
@@ -170,6 +177,21 @@ export function startEventHelp({ doc = document, store = null, session = null, s
     if (text !== undefined && text !== null) n.textContent = text;
     return n;
   };
+  // behold#774: on a phone a centred modal covered the graph for a minute and more, and a tip the failed card.
+  // There they stand in a strip under the step bar (the track, then the trail), in the page's flow.
+  let strip = stripHost;
+  const stripEl = () => {
+    if (!strip && trailHost && trailHost.parentNode && trailHost.parentNode.insertBefore) {
+      strip = el("div");
+      strip.id = "eh-strip";
+      strip.setAttribute("aria-live", "polite");
+      trailHost.parentNode.insertBefore(strip, trailHost.nextSibling);
+    }
+    return strip;
+  };
+  const onPhone = () => !!narrow() && !!stripEl();
+  /** Where a modal opens now: the phone's strip, else over the page. */
+  const modalAt = () => (onPhone() ? { host: stripEl(), strip: true } : { host: modalHost, strip: false });
 
   // The switch, by the theme picker and "What is this?".
   if (switchHost) {
@@ -341,11 +363,13 @@ export function startEventHelp({ doc = document, store = null, session = null, s
           const w = event.subjects.wave;
           node.addEventListener("click", () => openTrace(w));
         }
-        tipsHost.appendChild(node);
+        if (onPhone()) node.dataset.ehStrip = "1";
+        (node.dataset.ehStrip ? stripEl() : tipsHost).appendChild(node);
         st.nodes.set(event.id, node);
       }
       node.style.visibility = "";
-      place(node, anchors[0].rect, h);
+      // A tip in the phone's strip stands in its flow, not over its thing.
+      if (!node.dataset.ehStrip) place(node, anchors[0].rect, h);
       if (isNew) {
         // The things it is about glow while it is up, and light together across the panes.
         for (const a of anchors) if (a.el) glowOn(a.el, toneOf(event.kind));
@@ -465,7 +489,8 @@ export function startEventHelp({ doc = document, store = null, session = null, s
       data.bounds = () => graphArea(h);
     }
     // A chant kiosk counts down on the clock its track and caption use, so all three say the same second.
-    const api = openEventModal(modalHost, { mode, kind, data, doc, now: event.chant ? now : shown, reduced: reduced(), onClose: closedBy(kind, d, event.id) });
+    const at = modalAt();
+    const api = openEventModal(at.host, { mode, kind, data, doc, now: event.chant ? now : shown, reduced: reduced(), strip: at.strip, onClose: closedBy(kind, d, event.id) });
     st.modal = { api, event, kind, step: d ? d.step : null, cycle: d ? d.cycle : null, pull: d ? d.pull : null };
   };
   /** behold#631: the "Waiting on…" modal's words: what is waited on, why it matters, and how long it usually takes. */
@@ -505,7 +530,8 @@ export function startEventHelp({ doc = document, store = null, session = null, s
   });
   const openWaiting = (w, h) => {
     const d = h.demo;
-    const api = openEventModal(modalHost, { mode: "narrated", kind: "waiting", data: waitingData(w, h), doc, now, reduced: reduced(), onClose: closedBy("waiting", d, w.key) });
+    const at = modalAt();
+    const api = openEventModal(at.host, { mode: "narrated", kind: "waiting", data: waitingData(w, h), doc, now, reduced: reduced(), strip: at.strip, onClose: closedBy("waiting", d, w.key) });
     st.modal = { api, event: { kind: "waiting", subjects: { roots: [], wave: null } }, kind: "waiting", key: w.key, step: d ? d.step : null, cycle: d ? d.cycle : null, pull: d ? d.pull : null };
     if (st.story) for (const n of st.nodes.values()) n.style.visibility = "hidden";
   };
@@ -515,7 +541,8 @@ export function startEventHelp({ doc = document, store = null, session = null, s
     const data = { title: hl.title, lines: [{ text: hl.body }], closeAfter: HIGHLIGHT_MS, ...offCards(h), keepClear: () => popRect(h) };
     // behold#764: once per cycle, step and title for the visit, a reload included: kept as it opens.
     st.closed.add(dismissKey("highlight", d, hl.id));
-    const api = openEventModal(modalHost, { mode: h.replay ? "replay" : "narrated", kind: "highlight", data, doc, now, reduced: reduced(), onClose: () => (st.modal = null) });
+    const at = modalAt();
+    const api = openEventModal(at.host, { mode: h.replay ? "replay" : "narrated", kind: "highlight", data, doc, now, reduced: reduced(), strip: at.strip, onClose: () => (st.modal = null) });
     st.modal = { api, event: { kind: "highlight", subjects: { roots: [], wave: null } }, kind: "highlight", key: hl.key, step: d ? d.step : null, cycle: d ? d.cycle : null, pull: d ? d.pull : null };
     for (const n of st.nodes.values()) n.style.visibility = "hidden";
   };

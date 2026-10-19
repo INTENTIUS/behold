@@ -32,6 +32,30 @@ export const MIN_SHARE = 0.045;
 /** How long nothing must change before the "Waiting on…" modal shows. */
 export const WAITING_AFTER_MS = 3_000;
 
+/** A job that has started, as the run's own document says it. */
+const STARTED = new Set(["running", "waiting", "success", "failure"]);
+
+/**
+ * behold#774: the apply jobs of this step's run that have started, from the
+ * run's own document (the forge's jobs): `[{ job, wave, status }]`. The run
+ * view moves a wave only once its job reports, a minute or two into a long
+ * apply, so "Waiting on the pipeline to start the apply" stayed up while
+ * apply-wave-3 ran. A job starting is the first sign the apply is under way.
+ * Empty for another commit's run (the change's, while the fix's merge starts).
+ */
+export function applyJobs(runDoc, demo) {
+  if (!runDoc || !Array.isArray(runDoc.jobs) || !demo) return [];
+  const c = typeof runDoc.commit === "string" ? runDoc.commit : "";
+  const d = typeof demo.commit === "string" ? demo.commit : "";
+  if (!c || !d || !(c.startsWith(d) || d.startsWith(c))) return [];
+  return runDoc.jobs
+    .filter((j) => j && typeof j.name === "string" && /^apply/.test(j.name) && STARTED.has(j.status))
+    .map((j) => {
+      const m = /^apply-wave-(\d+)$/.exec(j.name);
+      return { job: j.name, wave: m ? Number(m[1]) : null, status: j.status };
+    });
+}
+
 const ms = (a, b) => Math.max(0, Date.parse(b) - Date.parse(a));
 const secs = (n) => Math.max(1, Math.round(n / 1000));
 
@@ -102,9 +126,10 @@ export function chapterTitle(index, pull) {
  * The track as it stands now. `demo` is demo.json; `pulls` the pull requests
  * this cycle has opened, in order; `since` when the current segment began
  * (ms); `waves` the apply's waves as the paced graph shows them
- * ([{ wave, state }]), for the applying segment's ticks.
+ * ([{ wave, state }]), for the applying segment's ticks; `jobs` the apply
+ * jobs of this step's run that have started ({@link applyJobs}).
  */
-export function trackModel(track, { demo, pulls = [], since = null, now = Date.now(), waves = null } = {}) {
+export function trackModel(track, { demo, pulls = [], since = null, now = Date.now(), waves = null, jobs = [] } = {}) {
   if (!track || !demo) return null;
   // Where the cycle is: the step's own story chapter when told in them; else the chapter of the current pull request
   // (the reset, the last). Then the segment holding the step.
@@ -137,7 +162,7 @@ export function trackModel(track, { demo, pulls = [], since = null, now = Date.n
       };
     }),
   }));
-  const nowLine = nowWords({ demo, segment: current, expected, elapsed, overrun, waves, now, fix: track.byStory ? pulls.indexOf(demo.pull) > 0 : at.chapter > 0 });
+  const nowLine = nowWords({ demo, segment: current, expected, elapsed, overrun, waves, jobs, now, fix: track.byStory ? pulls.indexOf(demo.pull) > 0 : at.chapter > 0 });
   return { chapters, at, elapsed, expected, overrun, now: nowLine, here: hereWords(chapters, at) };
 }
 
@@ -159,7 +184,7 @@ const countdown = (demo, now) => {
 };
 
 /** What is happening now and what is waited on, in plain words: `{ text, waiting, why, expected, elapsed, overrun }`. */
-export function nowWords({ demo, segment, expected = 0, elapsed = 0, overrun = false, waves = null, now = Date.now(), fix = false } = {}) {
+export function nowWords({ demo, segment, expected = 0, elapsed = 0, overrun = false, waves = null, jobs = [], now = Date.now(), fix = false } = {}) {
   if (!demo || !segment) return null;
   const why = firstSentence(demo.label);
   const base = { why, expected, elapsed, overrun };
@@ -167,6 +192,12 @@ export function nowWords({ demo, segment, expected = 0, elapsed = 0, overrun = f
   const running = Array.isArray(waves) ? waves.filter((w) => w.state === "running").map((w) => w.wave) : [];
   const wavesSeen = Array.isArray(waves) && waves.some((w) => w.state && w.state !== "waiting");
   const say = (text, waiting = null, timed = true) => ({ ...base, text: timed && typical(expected, overrun) ? `${text} · ${typical(expected, overrun)}` : text, waiting });
+  // behold#774: an apply job the run view has not caught up with yet: nothing waits on the pipeline any more.
+  const started = () => {
+    const ws = (jobs || []).filter((j) => j.status === "running" && Number.isInteger(j.wave)).map((j) => j.wave);
+    if (ws.length) return say(`Wave ${ws.join(" and ")} is applying`, null, false);
+    return (jobs || []).length ? say("The apply is under way", null, false) : null;
+  };
   switch (segment.label) {
     case "opened":
     case "fix opened":
@@ -176,11 +207,11 @@ export function nowWords({ demo, segment, expected = 0, elapsed = 0, overrun = f
     case "review":
       return say("Waiting for the reviewer", "the reviewer to approve the plan");
     case "merged":
-      return say("The pipeline is starting the apply job", "the pipeline to start the apply");
+      return started() || say("The pipeline is starting the apply job", "the pipeline to start the apply");
     case "applying":
       if (running.length) return say(`Wave ${running.join(" and ")} is applying`, null, false);
       if (wavesSeen) return say("The apply is under way", null, false);
-      return say("The pipeline is starting the apply job", "the pipeline to start the apply");
+      return started() || say("The pipeline is starting the apply job", "the pipeline to start the apply");
     case "failed":
       return { ...base, text: left !== null && left > 0 ? `The fix opens in ${left} s` : "The fix opens next", waiting: "the fix to open" };
     case "done":

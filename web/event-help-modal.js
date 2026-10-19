@@ -140,6 +140,12 @@ export const MODAL_STYLE = `
 .eh-modal-act.eh-pressed { background: var(--bar, var(--pending)); color: var(--bg); transform: translateY(1px); }
 .eh-mode-live .eh-modal-act:not(.eh-pressed) { cursor: pointer; }
 .eh-modal .k-ap { margin-top: 0.4em; }
+/* behold#774: on a phone a narrated modal is a strip in the page's flow, under the step bar: no sheet, nothing over the graph. */
+.eh-modal-wrap.eh-modal-strip { position: static; inset: auto; z-index: auto; display: block; background: none; padding: 0.3em 16px 0.4em; }
+.eh-modal-strip > .eh-modal { width: auto; max-height: none; padding: 0.5em 2.2em 0.6em 0.8em; border-width: 1px; border-radius: 8px; box-shadow: inset 4px 0 0 var(--bar, var(--focus)); font-size: 0.92em; }
+.eh-modal-strip .eh-modal-title { margin-bottom: 0.25em; font-size: 1.1em; }
+.eh-modal-strip .eh-modal-close { top: 0; right: 0; min-width: 44px; min-height: 44px; }
+.eh-modal-strip .eh-modal-progress { margin-top: 0.4em; }
 .eh-modal-progress { position: relative; height: 6px; margin-top: 0.7em; border-radius: 3px; background: color-mix(in srgb, var(--muted) 30%, transparent); overflow: hidden; }
 .eh-modal-progress-fill { position: absolute; inset: 0 auto 0 0; background: var(--pending); border-radius: 3px; transition: width 0.9s linear; }
 @media (prefers-reduced-motion: reduce) { .eh-modal-progress-fill { transition: none; } }
@@ -206,8 +212,10 @@ export function modalSpot(win, size, avoid, { prefer = [], bounds = null, margin
  * `data`: `{ title, lines: [{ text, lit? }], panel?: Node, command?, at?, from?, action?, replayAt?, verbs?, gate?: { kind, op, gate, approve? } }`.
  * `actions` (live only): `approve()` the app's own approve call, and
  * `watch()` a read that answers an outcome once the ledger has the approval.
+ * behold#774: `strip` opens it as a strip in `host`'s flow (a phone's, under
+ * the step bar) in place of a box over the page: never placed, no sheet.
  */
-export function openEventModal(host, { mode, kind, data = {}, actions = {}, doc = typeof document !== "undefined" ? document : null, now = () => Date.now(), reduced = false, onClose = () => {}, setTimer = setInterval, clearTimer = clearInterval } = {}) {
+export function openEventModal(host, { mode, kind, data = {}, actions = {}, doc = typeof document !== "undefined" ? document : null, now = () => Date.now(), reduced = false, strip = false, onClose = () => {}, setTimer = setInterval, clearTimer = clearInterval } = {}) {
   if (!MODAL_MODES.includes(mode)) throw new Error(`event-help modal: no mode ${JSON.stringify(mode)}`);
   modalStyle(doc);
   const st = { mode, kind, data, resolved: false, outcome: null, closed: false, hovered: false, closeAt: null, pressing: false };
@@ -217,7 +225,7 @@ export function openEventModal(host, { mode, kind, data = {}, actions = {}, doc 
     if (text !== undefined && text !== null) n.textContent = String(text);
     return n;
   };
-  const wrap = el("div", "eh-modal-wrap");
+  const wrap = el("div", strip ? "eh-modal-wrap eh-modal-strip" : "eh-modal-wrap");
   const box = el("div", `eh-modal eh-modal-${kind} eh-mode-${mode}`);
   box.setAttribute("role", "dialog");
   box.setAttribute("aria-modal", "false");
@@ -243,7 +251,7 @@ export function openEventModal(host, { mode, kind, data = {}, actions = {}, doc 
   };
   if (doc.addEventListener) doc.addEventListener("keydown", onKey);
   wrap.addEventListener("click", (e) => {
-    if (e && e.target === wrap) close("viewer");
+    if (!strip && e && e.target === wrap) close("viewer");
   });
   // Hovered, it holds: its time to close starts again when the pointer leaves.
   box.addEventListener("pointerenter", () => (st.hovered = true));
@@ -343,6 +351,8 @@ export function openEventModal(host, { mode, kind, data = {}, actions = {}, doc 
   }
   // behold#631: a modal that must keep things in view (a failed card and the cards it blocked) moves off them.
   const placeClear = () => {
+    // behold#774: a strip is in the page's flow, over nothing.
+    if (strip) return;
     // behold#764: what it must never cover, whatever else it keeps off: the card's details popover a viewer has open.
     const keep = typeof data.keepClear === "function" ? data.keepClear() : null;
     if ((typeof data.avoid !== "function" && !keep) || !box.getBoundingClientRect || !doc.defaultView) {
